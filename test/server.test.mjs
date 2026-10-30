@@ -35,6 +35,7 @@ before(async () => {
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
+      OFFICE_OPEN_DRY_RUN: '1', // "open in VS Code / folder" reports the command instead of launching it
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -121,6 +122,9 @@ test('security: token, origin, host and path checks', async () => {
   assert.equal((await fetch(`${BASE}/api/demo`, { method: 'POST', headers: { 'Content-Type': 'text/plain', 'X-Office-Token': token }, body: '{}' })).status, 415);
   assert.equal(await rawRequest({ Host: 'evil.example' }), 421); // DNS rebinding
   assert.equal((await fetch(`${BASE}/..%2fserver.js`)).status, 404);
+  const page = await fetch(BASE);
+  assert.equal(page.headers.get('content-security-policy'), "frame-ancestors 'self'", 'other sites cannot frame the office (clickjacking)');
+  assert.equal(page.headers.get('x-frame-options'), 'SAMEORIGIN');
 });
 
 test('projects come from the configured root; bad roots are rejected', async () => {
@@ -194,7 +198,14 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   await sleep(300);
   assert.equal((await lan('/')).headers.get('location'), '/pair', 'unpaired device is sent to pairing');
   assert.equal((await lan('/stream')).status, 401);
-  assert.match(await (await lan('/pair')).text(), /Hubungkan ke Claude Coworking/);
+  assert.match(await (await lan('/pair')).text(), /Hubungkan ke Adhit Office/);
+  // the app icon and manifest load before pairing (browsers fetch the manifest without cookies)
+  const manifest = await lan('/manifest.webmanifest');
+  assert.equal(manifest.status, 200);
+  assert.equal(manifest.headers.get('content-type'), 'application/manifest+json');
+  assert.equal((await manifest.json()).name, 'Adhit Office');
+  assert.equal((await lan('/icons/icon-192.png')).headers.get('content-type'), 'image/png');
+  assert.equal((await lan('/js/app.js')).status, 302, 'everything else still needs pairing');
 
   // 6-digit code
   let pairing = (await api('/api/remote/pairing')).body;
@@ -216,7 +227,8 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   const phoneToken = (await page.text()).match(/office-token" content="([^"]+)"/)[1];
   const phoneApi = (p, body = {}) => lan(p, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', 'X-Office-Token': phoneToken }, body: JSON.stringify(body) });
   assert.equal((await phoneApi(`/api/projects/${await projectId()}/files`, { q: 'check' })).status, 200);
-  for (const p of ['/api/config', '/api/autostart', '/api/shutdown', '/api/remote', '/api/remote/pairing']) assert.equal((await phoneApi(p, { enabled: false, roots: [] })).status, 403, p);
+  const laptopOnly = ['/api/config', '/api/autostart', '/api/shutdown', '/api/remote', '/api/remote/pairing', '/api/account/login', '/api/account/logout', `/api/projects/${await projectId()}/open`];
+  for (const p of laptopOnly) assert.equal((await phoneApi(p, { enabled: false, roots: [] })).status, 403, p);
 
   // QR link: one-time key, redirects home with a cookie
   pairing = (await api('/api/remote/pairing')).body;
@@ -251,4 +263,41 @@ test('settings are validated; the demo runs without Claude', async () => {
   assert.equal(snap.statuses[id].team, false);
   assert.equal((await api('/api/demo')).status, 202);
   await waitFor((t, o) => t === 'chat' && o.project === 'demo' && o.kind === 'assistant');
+});
+
+test('account: profile, plan usage and per-account token report', async () => {
+  // tokens from the earlier prompts were tagged with the fake CLI's logged-in account
+  const acct = (await api('/api/account', { force: true })).body;
+  assert.equal(acct.profile.loggedIn, true);
+  assert.equal(acct.profile.email, 'tester@example.com');
+  assert.ok(acct.usage.today.total >= 105, 'web turns are counted for the logged-in account');
+
+  const limits = (await api('/api/account/limits', { force: true })).body;
+  assert.deepEqual(limits.windows[0], { label: 'Current session', percent: 4, resets: 'Oct 31, 10:40am (Asia/Jakarta)' });
+
+  const { accounts, current } = (await api('/api/report/accounts')).body;
+  assert.ok(accounts.some((a) => a.id === current && a.email === 'tester@example.com'));
+  const mine = (await api('/api/report/summary', { accountId: current })).body;
+  assert.ok(mine.records > 0);
+  assert.equal(mine.byModel[0].key, 'fake-model');
+  assert.equal(mine.totals.cacheRead, mine.records * 90);
+  const other = (await api('/api/report/summary', { accountId: 'someone-else@example.com' })).body;
+  assert.equal(other.records, 0, 'another account never sees these tokens');
+  assert.equal((await api('/api/report/pdf', { accountId: 'someone-else@example.com' })).status, 404);
+});
+
+test('favorites are stored server-side; "open in VS Code" stays inside the project', async () => {
+  const id = await projectId();
+  const isFavorite = async () => (await snapshot()).projects.find((p) => p.id === id).favorite;
+  assert.equal((await api(`/api/projects/${id}/favorite`, { on: true })).status, 200);
+  assert.equal(await isFavorite(), true);
+  await api(`/api/projects/${id}/favorite`, { on: false });
+  assert.equal(await isFavorite(), false);
+
+  // OFFICE_OPEN_DRY_RUN: the server reports the command instead of launching anything
+  const norm = (p) => p.replace(/\\/g, '/').toLowerCase();
+  const folder = await api(`/api/projects/${id}/open`, { app: 'folder' });
+  assert.equal(folder.status, 200);
+  assert.equal(norm(folder.body.args[0]), norm(path.join(TMP, 'projects', 'toko')));
+  assert.equal((await api(`/api/projects/${id}/open`, { app: 'code', file: '../../rahasia.txt' })).status, 400, 'files outside the project are refused');
 });

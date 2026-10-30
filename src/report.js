@@ -1,0 +1,177 @@
+// Usage report: print-ready HTML, turned into a PDF by a locally installed Edge/Chrome (headless).
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const num = (n) => Math.round(n ?? 0).toLocaleString('id-ID');
+const short = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} M` : n >= 1e6 ? `${(n / 1e6).toFixed(2)} jt` : n >= 1e3 ? `${(n / 1e3).toFixed(1)} rb` : num(n));
+const pct = (x) => `${(x * 100).toFixed(1)}%`;
+const usd = (x) => (x == null ? '—' : `$${x.toFixed(2)}`);
+const dateFmt = (ts, opts = { dateStyle: 'medium' }) => new Date(ts).toLocaleString('id-ID', opts);
+
+function table(title, rows, label) {
+  if (!rows.length) return '';
+  return `<h2>${esc(title)}</h2>
+  <table>
+    <thead><tr><th>${esc(label)}</th><th>Input</th><th>Output</th><th>Cache read</th><th>Cache write</th><th>Total</th><th>Cache hit</th></tr></thead>
+    <tbody>${rows
+      .map((r) => `<tr><td>${esc(r.key)}</td><td>${num(r.input)}</td><td>${num(r.output)}</td><td>${num(r.cacheRead)}</td><td>${num(r.cacheWrite)}</td><td><b>${num(r.total)}</b></td><td>${pct(r.cacheHitRate)}</td></tr>`)
+      .join('')}</tbody>
+  </table>`;
+}
+
+function dailyChart(days) {
+  if (!days.length) return '';
+  const max = Math.max(1, ...days.map((d) => d.total));
+  const bars = days
+    .map((d) => {
+      const h = (v) => `${((v / max) * 100).toFixed(2)}%`;
+      return `<div class="bar" title="${esc(dateFmt(d.date))}: ${num(d.total)}">
+        <div class="stack"><span class="s-out" style="height:${h(d.output)}"></span><span class="s-read" style="height:${h(d.cacheRead)}"></span><span class="s-in" style="height:${h(d.input + d.cacheWrite)}"></span></div>
+        <small>${new Date(d.date).getDate()}</small>
+      </div>`;
+    })
+    .join('');
+  return `<h2>Pemakaian per hari</h2>
+  <div class="chart">${bars}</div>
+  <div class="legend"><span class="s-in"></span>Input + cache write <span class="s-read"></span>Cache read <span class="s-out"></span>Output · puncak ${short(max)} token/hari</div>`;
+}
+
+/** @param {{ account, profile, limits, summary, generatedAt }} data */
+export function reportHtml({ account, profile, limits, summary }) {
+  const t = summary.totals;
+  const kpis = [
+    ['Total token', short(t.total), `${num(t.total)} token`],
+    ['Input', short(t.input), 'token baru yang dikirim'],
+    ['Output', short(t.output), 'token yang dihasilkan'],
+    ['Cache read', short(t.cacheRead), 'konteks dibaca dari cache'],
+    ['Cache write', short(t.cacheWrite), 'konteks disimpan ke cache'],
+    ['Cache hit rate', pct(t.cacheHitRate), 'cache read ÷ total konteks'],
+    ['Permintaan / giliran', `${num(t.requests)} / ${num(t.turns)}`, 'API request (CLI) / giliran (web)'],
+    ['Estimasi biaya', usd(t.costUsd), t.costCoverage < 1 ? `list price · ${pct(t.costCoverage)} catatan punya biaya` : 'list price'],
+  ];
+  const limitRows = (limits?.windows ?? []).map((w) => `<tr><td>${esc(w.label)}</td><td><div class="meter"><span style="width:${Math.min(100, w.percent)}%"></span></div></td><td>${w.percent}%</td><td>${esc(w.resets ?? '—')}</td></tr>`).join('');
+  return `<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><title>Laporan Penggunaan Token — ${esc(account.email)}</title>
+<style>
+  @page { size: A4; margin: 14mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font: 10.5px/1.45 "Segoe UI", Arial, sans-serif; color: #1d1f24; margin: 0; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #d97757; padding-bottom: 10px; margin-bottom: 14px; }
+  h1 { font-size: 19px; margin: 0 0 2px; }
+  h1 span { color: #d97757; }
+  h2 { font-size: 12.5px; margin: 18px 0 6px; padding-bottom: 3px; border-bottom: 1px solid #e3e5ea; }
+  .muted { color: #6b7280; }
+  .who { text-align: right; }
+  .who b { font-size: 12px; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 999px; background: #fdeee8; color: #b85f42; font-weight: 700; font-size: 9.5px; text-transform: uppercase; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .kpi { border: 1px solid #e3e5ea; border-radius: 8px; padding: 8px 10px; break-inside: avoid; }
+  .kpi small { display: block; color: #6b7280; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; }
+  .kpi b { display: block; font-size: 17px; margin: 2px 0; }
+  .kpi span { color: #6b7280; font-size: 9px; }
+  table { width: 100%; border-collapse: collapse; break-inside: auto; }
+  th, td { padding: 4px 6px; border-bottom: 1px solid #eef0f3; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  th { background: #f6f7f9; font-size: 9.5px; text-transform: uppercase; color: #4b5563; }
+  tr { break-inside: avoid; }
+  .chart { display: flex; align-items: flex-end; gap: 2px; height: 130px; border-bottom: 1px solid #d0d4da; padding-top: 4px; }
+  .bar { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 0; }
+  .stack { flex: 1; width: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start; }
+  .stack span { display: block; width: 100%; }
+  .bar small { font-size: 7.5px; color: #6b7280; }
+  .s-in { background: #3d85c6; }
+  .s-read { background: #9cc3e8; }
+  .s-out { background: #d97757; }
+  .legend { margin-top: 4px; color: #4b5563; font-size: 9px; }
+  .legend span { display: inline-block; width: 9px; height: 9px; margin: 0 3px 0 10px; vertical-align: -1px; border-radius: 2px; }
+  .meter { height: 8px; background: #eef0f3; border-radius: 99px; overflow: hidden; }
+  .meter span { display: block; height: 100%; background: #d97757; }
+  .notes { margin-top: 16px; padding: 8px 10px; background: #f6f7f9; border-radius: 8px; color: #4b5563; font-size: 9px; }
+  .notes li { margin: 2px 0; }
+  .empty { padding: 30px; text-align: center; color: #6b7280; border: 1px dashed #d0d4da; border-radius: 8px; }
+</style></head>
+<body>
+  <header>
+    <div>
+      <h1>Laporan Penggunaan Token</h1>
+      <div class="muted">Periode ${esc(dateFmt(summary.from))} — ${esc(dateFmt(summary.to))} · dibuat ${esc(dateFmt(Date.now(), { dateStyle: 'medium', timeStyle: 'short' }))}</div>
+    </div>
+    <div class="who">
+      <b>${esc(profile?.fullName || profile?.displayName || account.email)}</b><br>
+      ${esc(account.email)}<br>
+      <span class="muted">${esc(account.org ?? '')}</span> ${profile?.subscriptionType ? `<span class="badge">${esc(profile.subscriptionType)}</span>` : ''}
+    </div>
+  </header>
+
+  ${summary.records ? `
+  <div class="kpis">${kpis.map(([label, value, hint]) => `<div class="kpi"><small>${esc(label)}</small><b>${esc(value)}</b><span>${esc(hint)}</span></div>`).join('')}</div>
+  ${dailyChart(summary.byDay)}
+  ${table('Per model', summary.byModel, 'Model')}
+  ${table('Per project', summary.byProject, 'Project')}
+  ${table('Per sumber', summary.bySource, 'Sumber')}
+  ${table('10 sesi teratas', summary.topSessions.map((s) => ({ ...s, key: `${s.key.split('|')[0]} · ${s.key.split('|')[1].slice(0, 8)}` })), 'Project · sesi')}
+  ` : '<div class="empty">Belum ada pemakaian tercatat untuk akun ini pada periode tersebut.</div>'}
+
+  ${limitRows ? `<h2>Kuota langganan saat laporan dibuat</h2><table><thead><tr><th>Jendela</th><th style="width:45%">Terpakai</th><th>%</th><th>Reset</th></tr></thead><tbody>${limitRows}</tbody></table>` : ''}
+
+  <div class="notes"><b>Catatan</b><ul>
+    <li>Hanya pemakaian akun <b>${esc(account.email)}</b>. Setiap catatan menyimpan akun yang sedang login saat token dipakai, jadi akun lain tidak ikut terhitung.</li>
+    <li>Sumber: sesi dari web Adhit Office (per giliran, termasuk subagent) dan sesi Claude Code di terminal yang terbaca oleh mirror (per API request), sejak pencatatan aktif.</li>
+    <li><b>Cache read</b> = konteks yang dipakai ulang dari cache (jauh lebih murah); <b>cache write</b> = konteks yang baru disimpan ke cache. Cache hit rate tinggi berarti sesi efisien.</li>
+    <li>Biaya adalah estimasi harga list dari Claude Code (hanya tersedia untuk sesi web). Untuk langganan Pro/Max/Team, yang membatasi adalah kuota, bukan biaya.</li>
+  </ul></div>
+</body></html>`;
+}
+
+/** Edge or Chrome, whichever is installed (override with OFFICE_BROWSER). */
+export function findBrowser() {
+  const candidates = [
+    process.env.OFFICE_BROWSER,
+    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+    'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/microsoft-edge',
+  ].filter(Boolean);
+  return candidates.find((p) => existsSync(p)) ?? null;
+}
+
+/** @returns {Promise<Buffer>} */
+export function renderPdf(html) {
+  const browser = findBrowser();
+  if (!browser) return Promise.reject(new Error('Tidak ada Edge/Chrome untuk membuat PDF.'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'office-report-'));
+  const htmlFile = path.join(dir, 'report.html');
+  const pdfFile = path.join(dir, 'report.pdf');
+  writeFileSync(htmlFile, html, 'utf8');
+  return new Promise((resolve, reject) => {
+    const child = spawn(browser, [
+      '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+      `--user-data-dir=${path.join(dir, 'profile')}`, // never touches your real browser profile
+      '--no-pdf-header-footer', '--print-to-pdf-no-header',
+      `--print-to-pdf=${pdfFile}`, pathToFileURL(htmlFile).href,
+    ], { windowsHide: true, stdio: 'ignore' });
+    const timer = setTimeout(() => child.kill(), 60_000);
+    child.on('error', reject);
+    child.on('exit', () => {
+      clearTimeout(timer);
+      try {
+        const pdf = readFileSync(pdfFile);
+        resolve(pdf);
+      } catch {
+        reject(new Error('Browser gagal membuat PDF.'));
+      } finally {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+      }
+    });
+  });
+}

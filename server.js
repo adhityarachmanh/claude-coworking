@@ -1,4 +1,4 @@
-// Claude Coworking server: runs headless Claude Code per project and serves the office web app.
+// Adhit Office server: runs headless Claude Code per project and serves the office web app.
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -10,9 +10,13 @@ import { runDemo } from './src/demo.js';
 import { DEMO_ID, Hub } from './src/hub.js';
 import { discoverProjects, isDirectory } from './src/projects.js';
 import { appendFileSync, mkdirSync } from 'node:fs';
+import { AccountService } from './src/account.js';
 import { autostartStatus, setAutostart } from './src/autostart.js';
+import { renderPdf, reportHtml } from './src/report.js';
+import { UsageLedger, summarize, totals } from './src/usage.js';
 import { searchFiles } from './src/files.js';
 import { gitCommit, gitDiff, gitStatus } from './src/git.js';
+import { openInApp } from './src/open.js';
 import { TranscriptMirror } from './src/mirror.js';
 import { DEVICE_COOKIE, RemoteAccess, lanAddresses, networkAddresses } from './src/remote.js';
 import { listSessions, sessionHistory } from './src/transcripts.js';
@@ -34,7 +38,7 @@ const DEFAULT_SLASH = ['compact', 'context', 'cost', 'init', 'review'];
 // Per-start secret: only pages served by this process can call the API (blocks CSRF from other sites).
 const TOKEN = randomBytes(24).toString('hex');
 
-const TEAM_PROMPT = `You are the Engineering Lead of an IT team that the user watches live in the "Claude Coworking" office.
+const TEAM_PROMPT = `You are the Engineering Lead of an IT team that the user watches live in the "Adhit Office" pixel office.
 Delegate focused work to the specialist subagents with the Agent tool, but only to the roles a task actually needs:
 each delegation costs time and tokens, so do small or trivial work yourself.
 - pm: scope, priorities, acceptance criteria, task breakdown
@@ -61,6 +65,7 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
 };
 
 // Started hidden at Windows login: there is no console, so keep a log file instead.
@@ -73,11 +78,25 @@ if (process.argv.includes('--background')) {
 }
 
 // OFFICE_DATA_DIR lets tests run against a throwaway state file.
-const hub = new Hub({ dataDir: process.env.OFFICE_DATA_DIR ?? path.join(APP_DIR, 'data') });
+const DATA_DIR = process.env.OFFICE_DATA_DIR ?? path.join(APP_DIR, 'data');
+const hub = new Hub({ dataDir: DATA_DIR });
 const claude = findClaude();
 const agents = loadAgentDefinitions(path.join(APP_DIR, '.claude', 'agents'));
-const sessions = new SessionManager({ hub, claude, agents, teamPrompt: TEAM_PROMPT });
-const mirror = new TranscriptMirror(hub);
+
+let lastAccountId;
+const account = new AccountService({
+  claude,
+  onChange: (state) => {
+    hub.broadcast('account', state);
+    // Switched or logged out: idle Claude processes still hold the old credentials.
+    const id = account.current?.id ?? null;
+    if (lastAccountId !== undefined && id !== lastAccountId) sessions.accountChanged();
+    lastAccountId = id;
+  },
+});
+const ledger = new UsageLedger({ file: path.join(DATA_DIR, 'usage.jsonl'), account: () => account.current });
+const sessions = new SessionManager({ hub, claude, agents, teamPrompt: TEAM_PROMPT, ledger, account });
+const mirror = new TranscriptMirror(hub, { ledger });
 const remote = new RemoteAccess(hub);
 
 const projectRoots = () => (hub.persisted.roots.length ? hub.persisted.roots : [DEFAULT_ROOT]);
@@ -107,7 +126,10 @@ function refreshProjects() {
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Settings that only the laptop itself may change, never a paired phone.
-const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config']);
+const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config', '/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout']);
+// Opening VS Code / Explorer only makes sense on the laptop itself.
+const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/open$/;
+const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+)$/;
 
 const isLocal = (req) => LOOPBACK.has(req.socket.remoteAddress);
 
@@ -176,7 +198,7 @@ async function serveStatic(pathname, res) {
 
 function openStream(req, res, local) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-  res.write(`event: snapshot\ndata: ${JSON.stringify({ ...hub.snapshot(), client: { local } })}\n\n`);
+  res.write(`event: snapshot\ndata: ${JSON.stringify({ ...hub.snapshot(), account: account.publicState(), client: { local } })}\n\n`);
   hub.clients.add(res);
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 15000);
   req.on('close', () => {
@@ -217,6 +239,59 @@ async function handleApi(req, res, pathname) {
     setTimeout(shutdown, 300);
     return;
   }
+  // ---------- account ----------
+  if (pathname === '/api/account') {
+    await account.refreshProfile(Boolean(body.force));
+    const id = account.current?.id;
+    const since = (ms) => totals(id ? ledger.query({ accountId: id, from: Date.now() - ms }) : []);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return json(res, 200, { ...account.publicState(), usage: { today: totals(id ? ledger.query({ accountId: id, from: today.getTime() }) : []), week: since(7 * 86_400_000) } });
+  }
+  if (pathname === '/api/account/limits') return json(res, 200, (await account.refreshLimits(Boolean(body.force))) ?? {});
+  if (pathname === '/api/account/login') return json(res, 200, account.startLogin({ console: Boolean(body.console) }));
+  if (pathname === '/api/account/login/code') {
+    const code = String(body.code ?? '').trim();
+    if (!code) return json(res, 400, { error: 'Kode kosong.' });
+    account.submitCode(code);
+    return json(res, 200, { ok: true });
+  }
+  if (pathname === '/api/account/login/cancel') {
+    account.cancelLogin();
+    return json(res, 200, { ok: true });
+  }
+  if (pathname === '/api/account/logout') return json(res, 200, { profile: await account.logout() });
+
+  // ---------- usage report ----------
+  if (pathname === '/api/report/accounts') {
+    const known = ledger.accounts();
+    const current = account.current;
+    if (current && !known.some((a) => a.id === current.id)) known.unshift({ ...current, tokens: 0 });
+    return json(res, 200, { accounts: known, current: current?.id ?? null });
+  }
+  if (pathname === '/api/report/summary' || pathname === '/api/report/pdf') {
+    const accountId = String(body.accountId ?? account.current?.id ?? '');
+    const to = Number(body.to) || Date.now();
+    const from = Number(body.from) || 0;
+    const rows = ledger.query({ accountId, from, to });
+    const summary = summarize(rows, { from: from || (rows[0]?.ts ?? to), to });
+    if (pathname === '/api/report/summary') return json(res, 200, summary);
+    const who = ledger.accounts().find((a) => a.id === accountId) ?? (account.current?.id === accountId ? account.current : null);
+    if (!who) return json(res, 404, { error: 'Akun tidak dikenal.' });
+    const isCurrent = account.current?.id === accountId;
+    const html = reportHtml({ account: who, profile: isCurrent ? account.profile : null, limits: isCurrent ? account.limits : null, summary });
+    try {
+      const pdf = await renderPdf(html);
+      // Local date (sv-SE = YYYY-MM-DD): toISOString is UTC, a day behind in the Jakarta morning.
+      const name = `laporan-token-${who.email.replace(/[^\w.-]+/g, '_')}-${new Date().toLocaleDateString('sv-SE')}.pdf`;
+      res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
+      return res.end(pdf);
+    } catch (err) {
+      // No headless browser available: hand back the HTML so the page can print it to PDF.
+      return json(res, 501, { error: err.message, html });
+    }
+  }
+
   if (pathname === '/api/remote') {
     remote.setEnabled(Boolean(body.enabled));
     syncLanServers();
@@ -266,7 +341,7 @@ async function handleApi(req, res, pathname) {
     return json(res, ok ? 200 : 409, { ok });
   }
 
-  const action = pathname.match(/^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|changes|diff|commit)$/);
+  const action = pathname.match(/^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|changes|diff|commit|favorite|open)$/);
   const project = action && hub.projects.get(action[1]);
   if (!project || project.id === DEMO_ID) return json(res, 404, { error: 'project not found' });
   const session = sessions.get(project);
@@ -281,6 +356,16 @@ async function handleApi(req, res, pathname) {
       const result = await gitCommit(project.path, message.slice(0, 2000));
       if (result.ok) hub.chat(project.id, { kind: 'info', text: `Commit dibuat: ${message.split('\n')[0]}` });
       return json(res, result.ok ? 200 : 400, result.ok ? result : { error: result.output });
+    }
+    case 'favorite':
+      hub.setFavorite(project.id, Boolean(body.on));
+      return json(res, 200, { ok: true, favorite: Boolean(body.on) });
+    case 'open': {
+      const app = body.app === 'folder' ? 'folder' : 'code';
+      // A file must resolve inside the project: never open arbitrary paths sent by a client.
+      const file = body.file ? path.resolve(project.path, String(body.file)) : null;
+      if (file && !file.startsWith(path.resolve(project.path) + path.sep)) return json(res, 400, { error: 'File di luar project.' });
+      return json(res, 200, { ok: true, ...openInApp(app, project.path, { file }) });
     }
     case 'files':
       return json(res, 200, { files: searchFiles(project.path, body.q) });
@@ -356,6 +441,10 @@ async function handlePair(req, res, url) {
 // ---------- request handling (shared by the localhost and LAN listeners) ----------
 
 async function handler(req, res) {
+  // No other site may frame the office (clickjacking an "Izinkan" button); same-origin frames are fine.
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   // DNS-rebinding guard: only answer to our own host names.
   const host = String(req.headers.host).toLowerCase();
   const hosts = allowedHosts();
@@ -368,6 +457,8 @@ async function handler(req, res) {
       // Another device on the network: it must be paired, and some settings stay laptop-only.
       if (!remote.enabled) return json(res, 403, { error: 'Akses dari perangkat lain sedang dimatikan.' });
       if (pathname === '/pair') return await handlePair(req, res, new URL(req.url, `http://${host}`));
+      // App icon + manifest hold no data, and browsers fetch the manifest without cookies.
+      if (req.method === 'GET' && PUBLIC_ASSET.test(pathname)) return await serveStatic(pathname, res);
       if (!remote.verify(cookies(req)[DEVICE_COOKIE])) {
         if (req.method === 'GET' && pathname !== '/stream' && !pathname.startsWith('/api/')) {
           res.writeHead(302, { Location: '/pair' });
@@ -375,7 +466,7 @@ async function handler(req, res) {
         }
         return json(res, 401, { error: 'Perangkat belum dipasangkan.' });
       }
-      if (LOCAL_ONLY.has(pathname) || pathname.startsWith('/api/remote')) return json(res, 403, { error: 'Pengaturan ini hanya bisa diubah dari laptop.' });
+      if (LOCAL_ONLY.has(pathname) || pathname.startsWith('/api/remote') || LOCAL_ONLY_ACTION.test(pathname)) return json(res, 403, { error: 'Pengaturan ini hanya bisa diubah dari laptop.' });
     }
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname);
     if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' });
@@ -424,16 +515,19 @@ setInterval(() => remote.enabled && syncLanServers(), 30000).unref();
 refreshProjects();
 hub.ready = true;
 const mirroring = mirror.start();
+// Know who is logged in (usage is tagged with it); notice logins/logouts done in a terminal too.
+account.refreshProfile(true).catch(() => {});
+setInterval(() => account.refreshProfile(true).catch(() => {}), 60_000).unref();
 
 server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') console.error(`Port ${PORT} sudah dipakai — Claude Coworking mungkin sudah berjalan.`);
+  if (err.code === 'EADDRINUSE') console.error(`Port ${PORT} sudah dipakai — Adhit Office mungkin sudah berjalan.`);
   else console.error(err);
   process.exit(1);
 });
 
 server.listen(PORT, HOST, () => {
   const url = `http://localhost:${PORT}`;
-  console.log(`Claude Coworking berjalan di ${url}`);
+  console.log(`Adhit Office berjalan di ${url}`);
   console.log(claude ? `Claude Code: ${claude.command}` : 'PERINGATAN: Claude Code tidak ditemukan (set env CLAUDE_BIN).');
   console.log(`Folder projects: ${projectRoots().join('; ')}  ·  Role agents: ${Object.keys(agents).join(', ') || '-'}`);
   console.log(mirroring ? 'Mirror CLI: aktif (membaca ~/.claude/projects)' : 'Mirror CLI: nonaktif (~/.claude/projects tidak ada)');

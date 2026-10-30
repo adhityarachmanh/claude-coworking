@@ -1,6 +1,6 @@
 @echo off
-title Claude Coworking
+title Adhit Office
 cd /d "%~dp0"
-echo Menjalankan Claude Coworking... (tutup jendela ini untuk berhenti)
+echo Menjalankan Adhit Office... (tutup jendela ini untuk berhenti)
 node server.js --open
 pause

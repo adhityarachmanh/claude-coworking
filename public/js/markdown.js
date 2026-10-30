@@ -69,7 +69,8 @@ export function renderMarkdown(src) {
       const lang = line.trim().slice(3).trim().toLowerCase();
       const code = [];
       while (++i < lines.length && !lines[i].trimStart().startsWith('```')) code.push(lines[i]);
-      out.push(`<pre class="code">${lang ? `<span class="lang">${escapeHtml(lang)}</span>` : ''}<code>${highlight(code.join('\n'), lang)}</code></pre>`);
+      const bar = `<span class="code-bar">${lang ? `<span class="lang">${escapeHtml(lang)}</span>` : ''}<button type="button" class="copy" data-copy-code title="Salin kode">Salin</button></span>`;
+      out.push(`<pre class="code">${bar}<code>${highlight(code.join('\n'), lang)}</code></pre>`);
       continue;
     }
     if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|?[\s:-]+\|/.test(lines[i + 1] ?? '')) {

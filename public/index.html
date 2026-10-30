@@ -5,47 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#16171c" />
     <meta name="office-token" content="__OFFICE_TOKEN__" />
-    <title>Claude Coworking</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d97757'/%3E%3Cpath d='M16 6v20M6 16h20M9 9l14 14M23 9 9 23' stroke='%23fff3e8' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <title>Adhit Office</title>
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <!-- Installable on a phone's home screen (PWA) -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="application-name" content="Adhit Office" />
+    <meta name="apple-mobile-web-app-title" content="Adhit Office" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="stylesheet" href="/css/app.css" />
   </head>
   <body data-view="panel" data-tab="chat">
     <header class="topbar">
-      <button id="toggle-sidebar" class="icon-btn" title="Daftar project">☰</button>
-      <div class="brand"><span class="spark">✳</span> Claude Coworking</div>
-      <div id="crumb" class="crumb"></div>
-      <button id="btn-phone" class="icon-btn" title="Buka dari HP (scan QR)" hidden>📱</button>
-      <button id="btn-notify" class="icon-btn" title="Notifikasi & suara">🔕</button>
+      <div class="brand"><img class="logo" src="/icons/icon.svg" alt="" /><span>Adhit Office</span></div>
+      <button id="crumb" class="crumb" title="Ganti project (Ctrl+K)"></button>
+      <span class="grow"></span>
+      <button id="btn-account" class="account-btn" title="Akun Claude, kuota & login"><span id="account-avatar" class="avatar">?</span><span id="account-label" class="account-label">Akun</span></button>
+      <button id="btn-report" class="icon-btn labeled" title="Laporan penggunaan token (PDF)"><span class="ico">📊</span><span class="lbl">Laporan</span></button>
+      <button id="btn-phone" class="icon-btn labeled" title="Buka dari HP (scan QR)" hidden><span class="ico">📱</span><span class="lbl">Buka di HP</span></button>
+      <button id="btn-notify" class="icon-btn labeled" title="Notifikasi & suara"><span class="ico">🔕</span><span class="lbl">Notifikasi</span></button>
+      <button id="btn-help" class="icon-btn labeled" title="Panduan & shortcut keyboard (?)"><span class="ico">❓</span><span class="lbl">Bantuan</span></button>
+      <button id="btn-settings" class="icon-btn labeled" title="Pengaturan"><span class="ico">⚙</span><span class="lbl">Pengaturan</span></button>
       <span id="conn" class="pill">menghubungkan…</span>
     </header>
 
     <div class="layout">
-      <aside class="sidebar">
-        <div class="side-head">
-          <input id="project-search" type="search" placeholder="Cari project…" autocomplete="off" />
-          <button id="refresh-projects" class="icon-btn" title="Pindai ulang folder">↻</button>
-          <button id="toggle-roots" class="icon-btn" title="Atur folder projects">⚙</button>
-        </div>
-        <form id="roots-form" class="roots" hidden>
-          <label for="roots-input">Folder induk projects <small>(satu per baris — semua subfolder-nya jadi project)</small></label>
-          <textarea id="roots-input" rows="3" spellcheck="false" placeholder="C:\Users\nama\projects"></textarea>
-          <p id="roots-hint" class="muted"></p>
-          <div class="roots-actions">
-            <button type="button" id="roots-cancel" class="ghost">Batal</button>
-            <button class="primary">Simpan & pindai</button>
-          </div>
-          <hr />
-          <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
-          <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>
-          <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
-        </form>
-        <ul id="project-list" class="projects"></ul>
-        <form id="add-project" class="add-project">
-          <input id="add-project-path" placeholder="Tambah folder: C:\path\project" autocomplete="off" />
-          <button class="icon-btn" title="Tambah">＋</button>
-        </form>
-      </aside>
-
       <main class="office">
         <div id="stage" class="stage">
           <canvas aria-label="Kantor tim Claude"></canvas>
@@ -64,6 +50,7 @@
           <div class="ch-head">
             <span id="ch-branch" class="muted"></span>
             <span class="grow"></span>
+            <button id="ch-open" class="ghost local-only" title="Buka file yang dipilih (atau project) di VS Code">🧭 VS Code</button>
             <button id="ch-review" class="ghost" title="Minta Arif (Tech Lead) me-review semua perubahan">🔍 Minta review</button>
             <button id="ch-refresh" class="ghost icon" title="Muat ulang">↻</button>
           </div>
@@ -75,6 +62,20 @@
           </form>
         </div>
         <div class="chat-wrap">
+          <!-- Which Claude Code session this chat continues, with history / new session -->
+          <div id="session-bar" class="session-bar">
+            <b id="sb-title">Percakapan baru</b>
+            <button id="btn-sessions" class="sb-btn" title="Lihat dan lanjutkan sesi Claude Code sebelumnya (dari terminal maupun web)">🕘 <span>Riwayat sesi</span></button>
+            <button id="btn-new" class="sb-btn" title="Mulai percakapan baru — Claude tidak membawa konteks percakapan ini">＋ <span>Sesi baru</span></button>
+            <button id="btn-more" class="sb-btn sb-more" title="Lainnya: export, lanjut di terminal, buka di VS Code" aria-haspopup="menu" aria-expanded="false">⋯</button>
+            <small id="sb-meta"></small>
+            <div id="more-menu" class="menu" role="menu" hidden>
+              <button role="menuitem" data-more="export">⬇ Export percakapan (.md)</button>
+              <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
+              <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
+              <button role="menuitem" data-more="folder" class="local-only">📁 Buka folder project</button>
+            </div>
+          </div>
           <div id="chat" class="chat"></div>
           <button id="jump-latest" class="jump" hidden>↓ Terbaru</button>
         </div>
@@ -83,33 +84,35 @@
 
         <div id="composer" class="composer">
           <div class="controls">
-            <select id="mode" title="Mode izin">
-              <option value="manual">🛡 Tanya dulu</option>
-              <option value="acceptEdits">✏️ Auto-edit file</option>
-              <option value="auto">⚡ Auto</option>
-              <option value="plan">📋 Rencana dulu</option>
-            </select>
-            <select id="model" title="Model">
-              <option value="">Model default</option>
-              <option value="opus">Opus</option>
-              <option value="sonnet">Sonnet</option>
-              <option value="haiku">Haiku</option>
-            </select>
-            <label class="switch" title="Claude mendelegasikan ke subagent PM/BA/UI-UX/Dev/QA (lebih hidup, lebih banyak token)">
+            <label class="ctl" title="Kapan Claude harus minta izinmu sebelum mengedit file atau menjalankan perintah">
+              <span>Izin</span>
+              <select id="mode">
+                <option value="manual">🛡️ Tanya dulu</option>
+                <option value="acceptEdits">✏️ Auto-edit file</option>
+                <option value="auto">⚡ Auto</option>
+                <option value="plan">📋 Rencana dulu</option>
+              </select>
+            </label>
+            <label class="ctl" title="Model Claude untuk project ini">
+              <span>Model</span>
+              <select id="model">
+                <option value="">Default</option>
+                <option value="opus">Opus</option>
+                <option value="sonnet">Sonnet</option>
+                <option value="haiku">Haiku</option>
+              </select>
+            </label>
+            <label class="switch" title="Claude mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.">
               <input id="team-mode" type="checkbox" checked /> Mode tim
             </label>
-            <span class="grow"></span>
-            <button id="btn-stop" class="danger" hidden title="Hentikan (Esc)">■ Stop</button>
-            <button id="btn-sessions" class="ghost icon" title="Riwayat sesi (lanjutkan sesi CLI/web lama)">🕘</button>
-            <button id="btn-new" class="ghost icon" title="Mulai sesi baru (Claude lupa percakapan sebelumnya)">↺</button>
           </div>
-          <div id="sessions-panel" class="sessions" hidden></div>
           <div id="suggest" class="suggest" hidden></div>
           <div id="attachments" class="attachments" hidden></div>
           <div class="input">
             <button id="btn-attach" class="ghost icon attach" title="Lampirkan gambar (atau paste / drag ke kotak ini)">📎</button>
             <input id="file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
             <textarea id="prompt" rows="3" placeholder="Minta sesuatu ke tim…   ( / command · @file · Shift+Enter baris baru )"></textarea>
+            <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)">■ Stop</button>
             <button id="btn-send" class="primary">Kirim</button>
           </div>
           <div id="composer-hint" class="hint"></div>
@@ -125,6 +128,140 @@
       <button data-view="changes"><span class="ico">📝</span>Perubahan<span id="nav-badge-changes" class="nav-badge muted-badge" hidden></span></button>
       <button data-view="activity"><span class="ico">📋</span>Aktivitas</button>
     </nav>
+
+    <!-- Project picker (Ctrl+K) -->
+    <div id="project-modal" class="modal" hidden>
+      <div class="modal-card project-card" role="dialog" aria-label="Pilih project">
+        <div class="side-head">
+          <input id="project-search" type="search" placeholder="Cari project…  (↑↓ pilih · Enter buka · Esc tutup)" autocomplete="off" />
+          <button id="refresh-projects" class="icon-btn" title="Pindai ulang folder">↻</button>
+          <button class="icon-btn" data-close title="Tutup">✕</button>
+        </div>
+        <ul id="project-list" class="projects"></ul>
+        <form id="add-project" class="add-project">
+          <input id="add-project-path" placeholder="Tambah folder lain: C:\path\project" autocomplete="off" />
+          <button class="icon-btn" title="Tambah">＋</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Help: how the office works + keyboard shortcuts (opens with ?) -->
+    <div id="help-modal" class="modal" hidden>
+      <div class="modal-card help-card" role="dialog" aria-label="Panduan">
+        <div class="modal-head"><b>❓ Panduan Adhit Office</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+        <div class="help">
+          <section>
+            <h3>Mulai dalam 4 langkah</h3>
+            <ol class="steps">
+              <li><b>Pilih project</b>: klik nama project di kiri atas, atau tekan <kbd>Ctrl</kbd> <kbd>K</kbd>.</li>
+              <li><b>Ketik permintaan</b> di chat, atau klik salah satu ide di layar sambutan. Claude Code bekerja langsung di folder project itu.</li>
+              <li><b>Setujui izin</b>: saat tim mau mengedit file atau menjalankan perintah, kartu izin muncul di chat.</li>
+              <li><b>Cek hasilnya</b> di tab <b>Perubahan</b> (diff per file), lalu commit.</li>
+            </ol>
+          </section>
+          <section>
+            <h3>Shortcut keyboard</h3>
+            <table class="keys">
+              <tr><td><kbd>Ctrl</kbd> <kbd>K</kbd></td><td>Ganti project</td></tr>
+              <tr><td><kbd>Enter</kbd></td><td>Kirim pesan</td></tr>
+              <tr><td><kbd>Shift</kbd> <kbd>Enter</kbd></td><td>Baris baru</td></tr>
+              <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Panggil lagi prompt sebelumnya (di kotak pesan)</td></tr>
+              <tr><td><kbd>/</kbd></td><td>Slash command &amp; skill, misalnya <code>/compact</code> atau <code>/context</code></td></tr>
+              <tr><td><kbd>@</kbd></td><td>Sebut file di project</td></tr>
+              <tr><td><kbd>Ctrl</kbd> <kbd>V</kbd></td><td>Tempel gambar atau screenshot</td></tr>
+              <tr><td><kbd>Esc</kbd></td><td>Hentikan giliran yang berjalan, atau tutup dialog</td></tr>
+              <tr><td><kbd>?</kbd></td><td>Buka panduan ini</td></tr>
+            </table>
+          </section>
+          <section>
+            <h3>Mode izin</h3>
+            <table class="keys">
+              <tr><td>🛡️ Tanya dulu</td><td>Setiap edit file dan perintah menunggu izinmu. Paling aman.</td></tr>
+              <tr><td>✏️ Auto-edit file</td><td>Edit file langsung jalan, perintah terminal tetap minta izin.</td></tr>
+              <tr><td>⚡ Auto</td><td>Aksi yang dinilai aman langsung jalan, yang berisiko diblokir.</td></tr>
+              <tr><td>📋 Rencana dulu</td><td>Claude menyusun rencana dulu, dan baru dikerjakan setelah kamu setujui.</td></tr>
+            </table>
+          </section>
+          <section>
+            <h3>Tips</h3>
+            <ul>
+              <li><b>Mode tim</b>: Claude mendelegasikan ke PM, BA, developer, QA, dan lainnya. Kantor lebih hidup, tapi token lebih banyak.</li>
+              <li><b>🕘 Riwayat sesi</b> melanjutkan percakapan lama, termasuk yang dimulai di terminal. Menu <b>⋯</b> menyalin perintah untuk melanjutkan sesi web di terminal.</li>
+              <li>Sesi yang kamu jalankan di terminal (CLI) ikut tampil live di sini.</li>
+              <li>Tandai project yang sering dipakai dengan <b>★</b> di daftar project supaya selalu di atas.</li>
+              <li><b>📱 Buka di HP</b>: scan QR-nya, lalu pilih <i>Add to Home Screen</i> agar Adhit Office tampil seperti aplikasi.</li>
+            </ul>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- Session history: continue an earlier Claude Code session (CLI or web) -->
+    <div id="sessions-modal" class="modal" hidden>
+      <div class="modal-card sessions-card" role="dialog" aria-label="Riwayat sesi">
+        <div class="modal-head"><b>🕘 Riwayat sesi <small id="sessions-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+        <p class="muted small">Lanjutkan percakapan Claude Code sebelumnya di project ini, baik dari terminal (CLI) maupun dari web. Isi percakapannya dimuat ke chat dan Claude ingat konteksnya.</p>
+        <div class="sessions-tools">
+          <input id="sessions-search" type="search" placeholder="Cari judul sesi…" autocomplete="off" />
+          <button id="sessions-new" class="ghost">＋ Sesi baru</button>
+        </div>
+        <div id="sessions-list" class="sessions-list"></div>
+      </div>
+    </div>
+
+    <!-- Settings (laptop only) -->
+    <div id="settings-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-label="Pengaturan">
+        <div class="modal-head"><b>⚙ Pengaturan</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+        <form id="roots-form" class="roots">
+          <label for="roots-input">Folder induk projects <small>(satu per baris — semua subfolder-nya jadi project)</small></label>
+          <textarea id="roots-input" rows="3" spellcheck="false" placeholder="C:\Users\nama\projects"></textarea>
+          <p id="roots-hint" class="muted"></p>
+          <div class="roots-actions">
+            <button class="primary">Simpan & pindai</button>
+          </div>
+          <hr />
+          <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
+          <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>
+          <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Claude account: profile, plan usage, login/logout -->
+    <div id="account-modal" class="modal" hidden>
+      <div class="modal-card account-card" role="dialog" aria-label="Akun Claude">
+        <div class="modal-head"><b>👤 Akun Claude</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+        <div id="account-body"></div>
+      </div>
+    </div>
+
+    <!-- Token usage report -->
+    <div id="report-modal" class="modal" hidden>
+      <div class="modal-card report-card" role="dialog" aria-label="Laporan penggunaan token">
+        <div class="modal-head"><b>📊 Laporan penggunaan token</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+        <div class="report-filters">
+          <label>Akun<select id="report-account"></select></label>
+          <label>Periode
+            <select id="report-period">
+              <option value="today">Hari ini</option>
+              <option value="7" selected>7 hari terakhir</option>
+              <option value="30">30 hari terakhir</option>
+              <option value="month">Bulan ini</option>
+              <option value="all">Semua</option>
+              <option value="custom">Pilih tanggal…</option>
+            </select>
+          </label>
+          <label class="custom-range" hidden>Dari<input id="report-from" type="date" /></label>
+          <label class="custom-range" hidden>Sampai<input id="report-to" type="date" /></label>
+        </div>
+        <div id="report-preview" class="report-preview"></div>
+        <div class="report-actions">
+          <span class="muted small">Hanya pemakaian akun yang dipilih — akun lain tidak ikut terhitung.</span>
+          <button id="report-pdf" class="primary">⬇ Unduh PDF</button>
+        </div>
+      </div>
+    </div>
 
     <div id="phone-modal" class="modal" hidden>
       <div class="modal-card" role="dialog" aria-labelledby="phone-title">

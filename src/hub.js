@@ -22,7 +22,7 @@ export class Hub {
   }
 
   load() {
-    const empty = { roots: [], custom: [], settings: {}, sessions: {}, chats: {}, activity: {} };
+    const empty = { roots: [], custom: [], favorites: [], settings: {}, sessions: {}, chats: {}, activity: {} };
     try {
       return { ...empty, ...JSON.parse(readFileSync(this.file, 'utf8')) };
     } catch {
@@ -80,6 +80,7 @@ export class Hub {
     const project = this.projects.get(id);
     if (!project?.sources.includes('custom')) return false;
     this.persisted.custom = this.persisted.custom.filter((p) => projectId(p) !== id);
+    this.persisted.favorites = this.persisted.favorites.filter((f) => f !== id);
     for (const key of ['settings', 'sessions', 'chats', 'activity']) delete this.persisted[key][id];
     this.runtime.delete(id);
     project.sources = project.sources.filter((s) => s !== 'custom');
@@ -90,7 +91,15 @@ export class Hub {
   }
 
   listProjects() {
-    return [...this.projects.values()].map((p) => ({ ...p, lastActivity: this.persisted.activity[p.id] ?? 0 }));
+    return [...this.projects.values()].map((p) => ({ ...p, lastActivity: this.persisted.activity[p.id] ?? 0, favorite: this.persisted.favorites.includes(p.id) }));
+  }
+
+  /** Starred projects stay on top of the picker on every device (stored server-side). */
+  setFavorite(id, on) {
+    const rest = this.persisted.favorites.filter((f) => f !== id);
+    this.persisted.favorites = on ? [...rest, id] : rest;
+    this.scheduleSave();
+    this.broadcast('projects', this.listProjects());
   }
 
   settingsFor(id) {

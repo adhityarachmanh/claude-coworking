@@ -15,7 +15,7 @@ import { findClaude } from '../src/claude-bin.js';
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.OFFICE_PORT ?? 4317);
 const WIN = process.platform === 'win32';
-const FIREWALL_RULE = 'Claude Coworking (Tailscale)';
+const FIREWALL_RULE = 'Claude Coworking (Tailscale)'; // pre-rename id, kept so existing rules are found
 const CHECK_ONLY = process.argv.includes('--check');
 
 const ok = (msg) => console.log(`  [OK]  ${msg}`);
@@ -162,7 +162,7 @@ async function setupAutostart() {
 
 // ---------- main ----------
 
-console.log('\n=== Claude Coworking — setup ===');
+console.log('\n=== Adhit Office — setup ===');
 if (process.argv.includes('--remove')) {
   setAutostart(false, APP_DIR, PORT);
   ok('Auto-start dan penjaga Task Scheduler dihapus.');

@@ -1,6 +1,6 @@
-# Claude Coworking
+# Adhit Office
 
-Kantor pixel-art untuk **mengoperasikan Claude Code dari browser**. Pilih project, ketik prompt, setujui izin. Tim IT berisi 12 orang terlihat bekerja di kantor secara real-time. CLI tidak perlu dibuka, tapi sesi yang kamu jalankan di CLI juga ikut tampil.
+Kantor pixel-art untuk **mengoperasikan Claude Code dari browser dan HP**. Pilih project, ketik prompt, setujui izin. Tim IT berisi 12 orang terlihat bekerja di kantor secara real-time. CLI tidak perlu dibuka, tapi sesi yang kamu jalankan di CLI juga ikut tampil.
 
 ```
 Browser ──HTTP/SSE──▶ server.js ──stdin/stdout (stream-json)──▶ claude.exe -p   (sesi dari web, satu proses per project)
@@ -9,6 +9,8 @@ Browser ──HTTP/SSE──▶ server.js ──stdin/stdout (stream-json)──
 ```
 
 Server menjalankan Claude Code milikmu sendiri dalam mode headless, jadi login, settings, MCP, dan `CLAUDE.md` tiap project tetap terpakai. Tidak perlu API key dan tidak ada dependency npm. Cukup Node.js ≥ 20.
+
+> Dulu bernama *Claude Coworking*. Nama teknis yang sudah terpasang di Windows (file `claude-coworking.vbs`, task Task Scheduler `Claude Coworking`, rule firewall `Claude Coworking (Tailscale)`) sengaja tidak diganti, supaya auto-start yang sudah jalan tidak rusak.
 
 ## Tim
 
@@ -43,6 +45,7 @@ Claude hanya memanggil role yang relevan. Tugas kecil dikerjakan langsung tanpa 
 2. Sambungkan HP ke **WiFi yang sama** dengan laptop.
 3. Scan QR dengan kamera HP. Atau buka alamat yang tertera (mis. `http://192.168.1.10:4317`) lalu masukkan **kode 6 digit**.
 4. Selesai. HP diingat, jadi lain kali cukup buka alamat itu lagi.
+5. Opsional: pilih **Add to Home Screen** / **Tambahkan ke Layar Utama** di menu browser. Adhit Office muncul dengan ikonnya sendiri dan terbuka seperti aplikasi. Di iPhone, aplikasi dari layar utama punya penyimpanan terpisah dari Safari, jadi masukkan kode pairing sekali lagi di sana.
 
 Di HP kamu bisa memakai semuanya: chat, kartu izin, panel perubahan, dan melihat kantor. Pengaturan sensitif (folder projects, auto-start, matikan server, akses HP) hanya bisa diubah dari laptop.
 
@@ -115,33 +118,55 @@ npm run open    # http://localhost:4317
 
 Tutup jendela server (atau tekan Ctrl+C) untuk berhenti. Semua proses Claude Code ikut ditutup.
 
-**Nyala otomatis saat Windows login:** buka **⚙** di sidebar, lalu centang *Nyalakan otomatis saat Windows login*. Server berjalan tanpa jendela (log di `data/server.log`), jadi kamu cukup membuka `http://localhost:4317`. Untuk mematikannya, pakai tombol **⏻ Matikan server** di panel yang sama. Mencentang ini membuat file `claude-coworking.vbs` di folder Startup Windows, dan menghapus centang akan menghapus file itu.
+**Nyala otomatis saat Windows login:** buka **⚙** di header, lalu centang *Nyalakan otomatis saat Windows login*. Server berjalan tanpa jendela (log di `data/server.log`), jadi kamu cukup membuka `http://localhost:4317`. Untuk mematikannya, pakai tombol **⏻ Matikan server** di panel yang sama. Mencentang ini membuat file `claude-coworking.vbs` di folder Startup Windows, dan menghapus centang akan menghapus file itu.
 
 ## Cara pakai
 
 | Bagian | Fungsi |
 |---|---|
-| **Sidebar** | Daftar project: folder yang pernah dibuka Claude Code di device ini (✳) + semua subfolder dari **folder induk** yang kamu atur lewat **⚙**. Satu folder lepas bisa ditambah lewat kolom di bawah. |
+| **Pilih project** (`Ctrl+K`) | Klik nama project di header. Dialog berisi folder yang pernah dibuka Claude Code di device ini (✳) dan semua subfolder dari **folder induk** yang kamu atur lewat **⚙**. Bisa dicari, dipilih dengan ↑↓ + Enter, dan ditambah satu folder lepas lewat kolom di bawah. Klik **☆** untuk menjadikan favorit: project favorit selalu di atas (tersimpan di server, sama di laptop dan HP), disusul project yang sedang bekerja atau minta izin. Tombol project juga menampilkan jumlah izin yang menunggu di project lain. |
+| **👤 Akun** | Profil akun Claude yang sedang login, kuota paket, pemakaian token hari ini/7 hari, serta **Ganti akun** / **Logout**. Lihat [Akun Claude & laporan token](#akun-claude--laporan-token). |
+| **📊 Laporan** | Laporan pemakaian token per akun (input, output, cache read/write, cache hit, request, estimasi biaya) yang bisa diunduh sebagai PDF. |
 | **⚙ Folder projects** | Atur satu atau lebih folder induk (satu per baris). Disimpan per device di `data/state.json`. Kalau belum diatur, dipakai folder tempat `agent-place` berada (atau env `PROJECTS_ROOT`). |
 | **Chat** | Prompt ke Claude Code di folder project itu. Saat tim bekerja, pesan baru masuk antrean. |
 | **Kartu izin** | Muncul setiap kali Claude butuh izin: **Izinkan**, **Izinkan selalu** (simpan aturan), **Izinkan semua (sesi ini)**, atau **Tolak**. Pertanyaan (`AskUserQuestion`) dan rencana (mode *Rencana dulu*) juga dijawab di sini. |
-| **Mode izin** | 🛡 Tanya dulu (default) · ✏️ Auto-edit file · ⚡ Auto · 📋 Rencana dulu |
+| **Izin** | 🛡️ Tanya dulu (default) · ✏️ Auto-edit file · ⚡ Auto · 📋 Rencana dulu |
 | **Model** | Default dari settings Claude Code, atau Opus / Sonnet / Haiku |
 | **Mode tim** | Claude mendelegasikan ke 11 subagent di atas. Visualnya lebih hidup, tapi **lebih banyak token**. Matikan untuk Claude Code biasa. |
-| **■ Stop** / `Esc` | Menghentikan giliran yang sedang berjalan. Sesi tetap bisa dilanjutkan. |
-| **↺ Sesi baru** | Mulai percakapan baru (Claude lupa konteks sebelumnya). |
-| **🕘 Riwayat sesi** | Lanjutkan sesi Claude Code lama di project itu, baik dari CLI maupun web. Percakapan terakhirnya dimuat ke chat. |
+| **■ Stop** / `Esc` | Muncul di sebelah **Kirim** saat tim bekerja. Menghentikan giliran yang sedang berjalan, dan sesi tetap bisa dilanjutkan. |
+| **Bar sesi** | Baris di atas chat yang menunjukkan percakapan Claude Code yang sedang dipakai: judul, asal (web atau lanjutan sesi terminal), dan model. |
+| **＋ Sesi baru** | Mulai percakapan baru. Claude tidak membawa konteks sebelumnya, tapi percakapan lama tetap ada di riwayat. |
+| **🕘 Riwayat sesi** | Dialog berisi sesi Claude Code di project itu, dari terminal maupun web. Sesi dikelompokkan per hari dan bisa dicari. Klik **Lanjutkan** untuk memuat percakapan terakhirnya ke chat, dan Claude melanjutkan dengan konteks yang sama. |
+| **⋯ Lainnya** | Menu di bar sesi: **Export percakapan** ke Markdown, **Salin perintah lanjut di terminal** (`cd` ke project + `claude --resume <id>`), serta **Buka project di VS Code** dan **Buka folder project** (khusus laptop). |
+| **Salin · Edit · ↻ Ulangi** | Arahkan kursor ke pesan (di HP selalu tampil). Jawaban dan code block bisa disalin. Prompt bisa disalin, diedit ulang di kotak pesan, atau dikirim lagi (**Ulangi** hanya ada di prompt web terakhir). |
+| **↑ / ↓** | Di kotak pesan, panggil lagi prompt sebelumnya di project itu, seperti di CLI. Draft yang sedang diketik kembali setelah prompt terbaru. |
+| **❓ Bantuan** / `?` | Panduan singkat, penjelasan mode izin, dan daftar shortcut keyboard. |
 | **`/` command** | Autocomplete slash command, skill, dan custom command yang dilaporkan Claude Code (`/context`, `/compact`, `/code-review`, …). |
 | **`@file`** | Autocomplete path file di project. |
 | **📎 Gambar** | Lampirkan gambar (paste, drag & drop, atau 📎). PNG/JPEG/GIF/WebP, maks 5 gambar × 5 MB. |
 | **🔔 Notifikasi** | Klik 🔔 di header untuk mengaktifkan. Notifikasi Windows dan suara muncul saat ada yang **minta izin**, tugas **selesai**, atau **berhenti/error**, selama kamu sedang di tab/aplikasi lain atau di project lain. Klik notifikasinya untuk langsung ke project itu. |
-| **Tab Perubahan** | `git status` dan diff per file yang belum di-commit (diperbarui otomatis setelah tim mengedit), tombol **🔍 Minta review** (Arif me-review semua perubahan), dan **Commit** (`git add -A` + commit, dengan konfirmasi). |
+| **Tab Perubahan** | `git status` dan diff per file yang belum di-commit (diperbarui otomatis setelah tim mengedit), tombol **🔍 Minta review** (Arif me-review semua perubahan), **🧭 VS Code** (membuka file yang dipilih di VS Code, khusus laptop), dan **Commit** (`git add -A` + commit, dengan konfirmasi). |
 | **Detail tool** | Klik baris tool untuk melihat perintah, diff edit (`-`/`+`), dan output. Klik baris delegasi untuk melihat instruksi dan laporan subagent. |
-
-Balasan Claude tampil streaming per kata, code block diberi syntax highlighting, dan setiap giliran ditutup dengan durasi, jumlah langkah, ukuran konteks, dan token output.
 | **🎬 Demo kantor** | Simulasi tanpa Claude Code, termasuk satu kartu izin. |
 
+Balasan Claude tampil streaming per kata, code block diberi syntax highlighting, dan setiap giliran ditutup dengan durasi, jumlah langkah, ukuran konteks, dan token output.
+
 Percakapan berlanjut antar prompt (`--resume`). Riwayat chat dan pengaturan per project disimpan di `data/state.json`.
+
+## Akun Claude & laporan token
+
+Klik avatar di header (**👤**) untuk melihat akun mana yang sedang dipakai Claude Code di laptop ini: nama, email, organisasi, paket, peran, tier rate limit, kuota paket (sesi 5 jam & mingguan, dari `/usage` — tidak memakai token), dan pemakaian token akun itu hari ini dan 7 hari terakhir.
+
+- **Ganti akun / Login** menjalankan `claude auth login` seperti biasa: halaman login claude.ai terbuka di browser. Kalau halaman itu menampilkan kode, tempel kodenya di dialog. Ada juga *Login via Console* untuk akun API.
+- **Logout** menjalankan `claude auth logout`. Ini berlaku untuk **seluruh Claude Code di laptop**, termasuk terminal/CLI.
+- Setelah ganti akun atau logout, proses Claude dari web dimulai ulang agar memakai akun baru. Giliran yang sedang berjalan dibiarkan selesai dulu, dan tokennya tetap dicatat ke akun lama.
+- Login/logout hanya bisa dari laptop. HP yang dipasangkan hanya bisa melihat profil, kuota, dan laporan.
+
+**📊 Laporan** membuat PDF pemakaian token untuk **satu akun** dan satu periode (hari ini, 7/30 hari, bulan ini, semua, atau tanggal pilihan): ringkasan KPI, grafik harian, rincian per model, project, sumber (web/CLI), sesi teratas, dan kuota paket. Setiap catatan token disimpan bersama akun yang sedang login saat token itu dipakai (`data/usage.jsonl`), jadi pemakaian dua akun tidak pernah tercampur.
+
+- Data mulai terkumpul **sejak fitur ini aktif**. Transcript lama Claude Code tidak mencatat akun, jadi sengaja tidak dihitung.
+- Sesi dari web dan dari CLI (lewat mirror) sama-sama tercatat. Transcript CLI tidak menyimpan akun, jadi token CLI dicatat ke akun yang sedang login. Setelah ganti akun, tutup lalu buka lagi sesi CLI yang masih terbuka agar catatannya tetap akurat. Estimasi biaya (USD, harga list) hanya tersedia untuk sesi web. Untuk paket Pro/Max/Team yang membatasi adalah kuota, bukan biaya.
+- PDF dibuat oleh Edge/Chrome dalam mode headless dengan profil sementara. Kalau tidak ada keduanya, laporan dibuka di tab baru untuk dicetak ke PDF dari browser.
 
 ## Kantor
 
@@ -155,7 +180,11 @@ Percakapan berlanjut antar prompt (`--resume`). Riwayat chat dan pengaturan per 
 ## Keamanan
 
 - Server hanya listen di `127.0.0.1`, memeriksa header `Host`/`Origin`, dan semua API butuh token acak per start (disisipkan ke halaman). Situs lain tidak bisa menyuruh server menjalankan Claude Code.
+- Situs lain tidak bisa memuat kantor di dalam iframe (`frame-ancestors 'self'`, `X-Frame-Options`), sehingga tombol seperti **Izinkan** tidak bisa dipancing lewat clickjacking.
 - Izin tetap mengikuti aturan Claude Code. Mode default selalu bertanya sebelum menulis file atau menjalankan perintah.
+- Login/logout akun hanya bisa dari laptop. Server tidak pernah membaca token login (`.credentials.json`); profil diambil dari `claude auth status` dan data profil di `~/.claude.json`.
+- **Buka di VS Code / folder** hanya bisa dari laptop, hanya untuk folder project yang terdaftar (file harus berada di dalam project), dan dijalankan tanpa shell. Path dikirim sebagai argumen biasa, tidak pernah ditafsirkan sebagai perintah.
+- Ikon dan manifest PWA bisa diambil tanpa pairing karena tidak berisi data. Selain itu semuanya tetap butuh pairing.
 
 ## Test
 
@@ -166,8 +195,8 @@ npm run test:claude  # uji kontrak ke Claude Code asli (beberapa request Haiku)
 
 | Lapis | Isi |
 |---|---|
-| Unit (`test/*.test.mjs`) | Pemetaan role/file/perintah, translator (streaming, tool, subagent, token), markdown & keamanan HTML, git panel, mirror CLI & riwayat sesi dengan transcript palsu |
-| Integrasi (`test/server.test.mjs`) | Server dijalankan dengan `test-support/fake-claude.mjs` yang meniru protokol stream-json: keamanan API (token, Origin, Host, path), prompt + streaming, izin (izinkan/tolak), stop/interrupt, validasi pengaturan, demo |
+| Unit (`test/*.test.mjs`) | Pemetaan role/file/perintah, translator (streaming, tool, subagent, token), markdown & keamanan HTML, git panel, mirror CLI & riwayat sesi dengan transcript palsu, parsing `/usage`, ledger token per akun, ringkasan & PDF laporan, perintah buka VS Code/folder per OS, ikon app sesuai generator |
+| Integrasi (`test/server.test.mjs`) | Server dijalankan dengan `test-support/fake-claude.mjs` yang meniru protokol stream-json: keamanan API (token, Origin, Host, path, anti-iframe), prompt + streaming, izin (izinkan/tolak), stop/interrupt, validasi pengaturan, demo, profil & kuota akun, laporan yang tidak mencampur akun, favorit, buka VS Code (dry-run), manifest PWA tanpa pairing |
 | Kontrak (`test-support/claude-contract.mjs`) | 15 cek terhadap Claude Code asli: `init`, streaming, `can_use_tool`, allow/deny, interrupt, `--agents`, format transcript yang dipakai mirror |
 
 **Setelah meng-update Claude Code, jalankan `npm run test:claude`.** Aplikasi ini bergantung pada protokol internal CLI, dan test ini yang pertama memberi tahu kalau ada yang berubah. Test offline juga jalan otomatis di GitHub Actions (Windows dan Linux) setiap kali push.
@@ -185,9 +214,17 @@ src/hub.js           state, SSE broadcast, persistensi
 src/projects.js      penemuan folder project
 src/roles.js         pemetaan agent/tool → role, label, isi layar
 src/demo.js          skenario demo
-public/js/app.js     UI: sidebar, chat, kartu izin, panel tim
+src/account.js       profil akun, kuota (/usage), login/logout lewat CLI
+src/usage.js         ledger token per akun (data/usage.jsonl) + ringkasan
+src/report.js        HTML laporan + PDF via Edge/Chrome headless
+src/open.js          buka project/file di VS Code atau file manager (tanpa shell)
+public/js/app.js     UI: pemilih project, chat, kartu izin, akun, laporan, bantuan, panel tim
 public/js/office/    renderer pixel-art (sprite, dunia, scene, stage)
+public/icons/        ikon app (PWA, favicon) — dibuat oleh scripts/make-icons.mjs
+public/manifest.webmanifest   manifest PWA (Add to Home Screen)
 .claude/agents/      definisi subagent per role
 ```
 
-Env opsional: `OFFICE_PORT` (default 4317), `PROJECTS_ROOT` (default folder induk app ini), `CLAUDE_BIN` (path `claude` jika tidak terdeteksi).
+Env opsional: `OFFICE_PORT` (default 4317), `PROJECTS_ROOT` (default folder induk app ini), `CLAUDE_BIN` (path `claude` jika tidak terdeteksi), `OFFICE_BROWSER` (path Edge/Chrome untuk PDF laporan), `OFFICE_EDITOR` (path editor selain VS Code, misalnya Cursor).
+
+Ikon diubah lewat sprite 16×16 di `scripts/make-icons.mjs`, lalu jalankan `node scripts/make-icons.mjs`. Test akan gagal kalau ikon yang di-commit tidak sesuai generator.

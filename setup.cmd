@@ -1,5 +1,5 @@
 @echo off
-title Claude Coworking - Setup
+title Adhit Office - Setup
 cd /d "%~dp0"
 
 where node >nul 2>nul

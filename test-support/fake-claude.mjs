@@ -9,6 +9,18 @@ import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
 
 const args = process.argv.slice(2);
+
+// Account commands: a fixed logged-in test account; `/usage` prints plan usage like the real CLI.
+if (args[0] === 'auth') {
+  if (args[1] === 'status') console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', email: 'tester@example.com', orgId: 'org-test', orgName: 'Test Org', subscriptionType: 'team' }));
+  else console.log(`auth ${args[1]} ok`);
+  process.exit(0);
+}
+if (args.includes('--output-format') && args[args.indexOf('--output-format') + 1] === 'json') {
+  console.log(JSON.stringify({ type: 'result', result: 'Current session: 4% used · resets Oct 31, 10:40am (Asia/Jakarta)\nCurrent week (all models): 20% used · resets Nov 3, 9am (Asia/Jakarta)' }));
+  process.exit(0);
+}
+
 const sessionId = args.includes('--resume') ? args[args.indexOf('--resume') + 1] : randomUUID();
 const send = (obj) => process.stdout.write(`${JSON.stringify(obj)}\n`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -33,7 +45,7 @@ async function streamText(text, delay = 40) {
 }
 
 function result(extra = {}) {
-  send({ type: 'result', subtype: 'success', is_error: false, result: 'done', duration_ms: 1234, num_turns: 1, session_id: sessionId, usage: { input_tokens: 10, cache_read_input_tokens: 90, output_tokens: 5 }, permission_denials: [], ...extra });
+  send({ type: 'result', subtype: 'success', is_error: false, result: 'done', duration_ms: 1234, num_turns: 1, session_id: sessionId, usage: { input_tokens: 10, cache_read_input_tokens: 90, output_tokens: 5 }, model_usage_since_last_result: { 'fake-model': { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 90, cacheCreationInputTokens: 0, costUSD: 0.01 } }, permission_denials: [], ...extra });
 }
 
 async function handlePrompt(text) {

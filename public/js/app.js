@@ -1,4 +1,4 @@
-// Claude Coworking web app: project picker, chat with Claude Code, approvals, live office.
+// Adhit Office web app: project picker, chat with Claude Code, approvals, live office.
 import { renderMarkdown } from './markdown.js';
 import { qrSvg } from './qr.js';
 import { CAST, ROLE_ORDER, roleColor, roleName } from './office/cast.js';
@@ -7,6 +7,7 @@ import { avatarURL } from './office/sprites.js';
 import { Stage, escapeHtml } from './office/stage.js';
 
 const TOKEN = document.querySelector('meta[name="office-token"]').content;
+const APP_NAME = 'Adhit Office';
 const DEMO_ID = 'demo';
 const $ = (sel) => document.querySelector(sel);
 
@@ -85,6 +86,8 @@ function connect() {
     state.local = snap.client?.local !== false;
     document.body.classList.toggle('remote-client', !state.local);
     $('#btn-phone').hidden = !state.local;
+    $('#btn-settings').hidden = !state.local;
+    state.account = snap.account ?? null;
     renderRoots(snap.config);
     state.projects = snap.projects;
     state.statuses = snap.statuses;
@@ -94,7 +97,9 @@ function connect() {
     scenes.clear();
     const remembered = location.hash.slice(1) || localStorage.getItem('office.active');
     selectProject(state.projects.some((p) => p.id === remembered) ? remembered : DEMO_ID);
+    renderAccountButton(); // after the core UI, so a profile quirk can never blank the office
   });
+  on('account', onAccountState);
   on('projects', (projects) => {
     state.projects = projects;
     renderSidebar();
@@ -148,20 +153,47 @@ function connect() {
 
 function projectRank(p) {
   const st = state.statuses[p.id] ?? {};
-  if (p.id === DEMO_ID) return 4;
+  if (p.id === DEMO_ID) return -1; // the demo sits at the bottom
   if (st.pending) return 3;
   if (st.busy || st.cliBusy) return 2;
   if (st.alive) return 1;
   return 0;
 }
 
+// ---------- dialogs ----------
+
+function openModal(id) {
+  $(`#${id}`).hidden = false;
+}
+
+function closeModal(id) {
+  $(`#${id}`).hidden = true;
+}
+
+// ✕ buttons and clicks on the dimmed backdrop close the dialog.
+document.querySelectorAll('.modal').forEach((modal) =>
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal || e.target.closest('[data-close]')) modal.hidden = true;
+  }),
+);
+
+// ---------- project picker (Ctrl+K) ----------
+
+const picker = { cursor: 0, visible: [] };
+
 function renderSidebar() {
   const q = state.search.toLowerCase();
   const list = state.projects
     .filter((p) => !q || p.name.toLowerCase().includes(q) || (p.path ?? '').toLowerCase().includes(q))
-    .sort((a, b) => projectRank(b) - projectRank(a) || (b.lastActivity ?? 0) - (a.lastActivity ?? 0) || Number(b.sources.includes('claude')) - Number(a.sources.includes('claude')) || a.name.localeCompare(b.name));
+    .sort((a, b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || projectRank(b) - projectRank(a) || (b.lastActivity ?? 0) - (a.lastActivity ?? 0) || Number(b.sources.includes('claude')) - Number(a.sources.includes('claude')) || a.name.localeCompare(b.name));
+  picker.visible = list.map((p) => p.id);
+  picker.cursor = Math.min(picker.cursor, Math.max(0, list.length - 1));
+  const grouped = list.some((p) => p.favorite);
   $('#project-list').innerHTML = list
-    .map((p) => {
+    .map((p, i) => {
+      // Section titles only when there are favourites to separate from the rest.
+      const head = !grouped ? '' : i === 0 ? '<li class="group">★ Favorit</li>' : !p.favorite && list[i - 1].favorite ? '<li class="group">Semua project</li>' : '';
+      const star = p.id === DEMO_ID ? '' : `<button class="fav ${p.favorite ? 'on' : ''}" title="${p.favorite ? 'Hapus dari favorit' : 'Jadikan favorit (selalu di atas)'}" aria-pressed="${Boolean(p.favorite)}">${p.favorite ? '★' : '☆'}</button>`;
       const st = state.statuses[p.id] ?? {};
       const badge = st.pending
         ? `<span class="badge ask">${st.pending}</span>`
@@ -171,14 +203,16 @@ function renderSidebar() {
             ? '<span class="dot live"></span>'
             : '';
       const icon = p.id === DEMO_ID ? '🎬' : p.sources.includes('claude') ? '✳' : '▢';
-      return `<li class="${p.id === state.active ? 'active' : ''}" data-id="${p.id}" title="${escapeHtml(p.path ?? 'Simulasi tanpa Claude Code')}">
+      return `${head}<li class="${p.id === state.active ? 'active' : ''} ${i === picker.cursor ? 'cursor' : ''}" data-id="${p.id}" title="${escapeHtml(p.path ?? 'Simulasi tanpa Claude Code')}">
         <span class="p-icon">${icon}</span>
         <span class="p-text"><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.path ? p.path.replace(/^.*\/projects\//, '…/') : 'simulasi')}</small></span>
         ${badge}
+        ${star}
         ${p.sources.includes('custom') ? '<button class="forget" title="Hapus dari daftar">×</button>' : ''}
       </li>`;
     })
     .join('');
+  renderHeader();
 }
 
 function selectProject(id) {
@@ -191,22 +225,90 @@ function selectProject(id) {
   renderChat();
   renderActivity();
   renderComposer();
-  $('#sessions-panel').hidden = true;
+  closeModal('sessions-modal');
   closeSuggest();
   changes.selected = null;
   $('#ch-diff').innerHTML = '';
   loadChanges();
-  document.body.classList.remove('sidebar-open');
+  closeModal('project-modal');
 }
+
+let crumbHtml = '';
 
 function renderHeader() {
   const p = state.projects.find((x) => x.id === state.active);
-  $('#crumb').innerHTML = p ? `<b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.path ?? 'Demo — tidak menjalankan Claude Code')}</small>` : '';
+  const icon = !p ? '📁' : p.id === DEMO_ID ? '🎬' : p.sources.includes('claude') ? '✳' : '📁';
+  // The project list lives in a dialog, so the switcher itself tells you when another project needs you.
+  const others = state.projects.filter((x) => x.id !== state.active).map((x) => state.statuses[x.id] ?? {});
+  const waiting = others.reduce((n, st) => n + (st.pending ?? 0), 0);
+  const working = others.filter((st) => st.busy || st.cliBusy).length;
+  const badge = waiting
+    ? `<span class="badge ask" title="${waiting} permintaan izin menunggu di project lain">${waiting}</span>`
+    : working
+      ? `<span class="crumb-busy" title="${working} project lain sedang bekerja"><span class="spinner"></span>${working}</span>`
+      : '';
+  const current = p
+    ? `<span class="p-icon">${icon}</span><span class="crumb-text"><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.path ?? 'Demo — tidak menjalankan Claude Code')}</small></span>`
+    : '<span class="crumb-text"><b>Pilih project</b></span>';
+  const html = `${current}${badge}<kbd>Ctrl K</kbd><svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  // Runs on every status/chat event: only touch the DOM when something changed (keeps the spinner smooth).
+  if (html !== crumbHtml) $('#crumb').innerHTML = crumbHtml = html;
 }
+
+function openProjects() {
+  state.search = '';
+  $('#project-search').value = '';
+  picker.cursor = 0;
+  renderSidebar();
+  openModal('project-modal');
+  $('#project-search').focus();
+}
+
+function moveCursor(delta) {
+  if (!picker.visible.length) return;
+  picker.cursor = (picker.cursor + delta + picker.visible.length) % picker.visible.length;
+  renderSidebar();
+  $('#project-list .cursor')?.scrollIntoView({ block: 'nearest' });
+}
+
+$('#crumb').addEventListener('click', openProjects);
+$('#project-search').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    moveCursor(e.key === 'ArrowDown' ? 1 : -1);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const id = picker.visible[picker.cursor];
+    if (id) selectProject(id);
+  }
+});
+const isTyping = (el) => el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
+
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    openProjects();
+  } else if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && !isTyping(e.target)) {
+    e.preventDefault();
+    openModal('help-modal');
+  } else if (e.key === 'Escape') {
+    // Esc closes the topmost menu/dialog first; only with nothing open does it stop a running turn.
+    if (!$('#more-menu').hidden) {
+      toggleMoreMenu(false);
+      e.stopImmediatePropagation();
+      return;
+    }
+    const open = [...document.querySelectorAll('.modal')].filter((m) => !m.hidden).at(-1);
+    if (open) {
+      open.hidden = true;
+      e.stopImmediatePropagation();
+    }
+  }
+}, true);
 
 function updateTitle() {
   const pending = [...state.approvals.values()].filter((a) => a.status === 'pending').length;
-  document.title = pending ? `(${pending}) Menunggu izin — Claude Coworking` : 'Claude Coworking';
+  document.title = pending ? `(${pending}) Menunggu izin — ${APP_NAME}` : APP_NAME;
   const badge = $('#nav-badge-chat');
   badge.hidden = !pending;
   badge.textContent = pending;
@@ -223,13 +325,6 @@ function setMobileView(view) {
 $('#mobile-nav').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-view]');
   if (btn) setMobileView(btn.dataset.view);
-});
-
-// Tapping outside the project drawer closes it.
-document.addEventListener('click', (e) => {
-  if (document.body.classList.contains('sidebar-open') && !e.target.closest('.sidebar, #toggle-sidebar')) {
-    document.body.classList.remove('sidebar-open');
-  }
 });
 
 // A shorter hint fits a phone-width composer on one line.
@@ -253,16 +348,34 @@ applyPlaceholder();
 
 const chatEl = $('#chat');
 
+// One click fills the composer with a ready-made request (still editable before sending).
+const STARTERS = [
+  ['🧭', 'Jelaskan project ini', 'Jelaskan struktur, teknologi, dan alur utama project ini secara singkat.'],
+  ['🐞', 'Cari bug', 'Cari bug atau potensi masalah di project ini, urutkan dari yang paling berisiko, lalu usulkan perbaikannya.'],
+  ['🧪', 'Tambah test', 'Tulis test untuk bagian penting yang belum punya test, lalu jalankan.'],
+  ['🔍', 'Review perubahan', 'Review perubahan yang belum di-commit: cari bug, risiko keamanan, dan bagian yang bisa dirapikan.'],
+];
+
 function renderChat() {
   chatEl.innerHTML = '';
   const messages = state.chats[state.active] ?? [];
   if (!messages.length) {
     chatEl.innerHTML = state.active === DEMO_ID
-      ? '<div class="empty"><b>Demo kantor</b><p>Klik <b>▶ Jalankan demo</b> untuk melihat tim bekerja: delegasi, layar monitor, error, sampai minta izin.</p></div>'
-      : '<div class="empty"><b>Mulai kerja di project ini</b><p>Ketik permintaan di bawah. Claude Code berjalan langsung di folder project ini, dan setiap aksi yang butuh izin muncul sebagai kartu di sini.</p></div>';
+      ? '<div class="empty"><div class="empty-icon">🎬</div><b>Demo kantor</b><p>Klik <b>▶ Jalankan demo</b> untuk melihat tim bekerja: delegasi, layar monitor, error, sampai minta izin. Demo tidak menjalankan Claude Code.</p></div>'
+      : `<div class="empty">
+          <div class="empty-icon">✳</div>
+          <b>Mulai kerja di ${escapeHtml(projectName(state.active))}</b>
+          <p>Claude Code berjalan langsung di folder project ini. Setiap aksi yang butuh izin muncul sebagai kartu di chat.</p>
+          <div class="starters">${STARTERS.map(([icon, label, text]) => `<button data-starter="${escapeHtml(text)}"><span>${icon}</span>${label}</button>`).join('')}</div>
+          <div class="empty-links"><button class="text-btn" data-open-history>🕘 Lanjutkan sesi sebelumnya</button><button class="text-btn" data-open-help>❓ Panduan &amp; shortcut</button></div>
+        </div>`;
   }
   for (const msg of messages) appendChat(msg, false);
-  scrollChat(true);
+  if (messages.length) scrollChat(true);
+  else {
+    chatEl.scrollTop = 0; // the welcome card reads from the top
+    $('#jump-latest').hidden = true;
+  }
 }
 
 // Chat follows the newest message unless the user scrolls up to read; "↓ Terbaru" resumes following.
@@ -288,13 +401,15 @@ chatEl.addEventListener('scroll', () => {
 });
 
 function appendChat(msg, scroll = true) {
-  chatEl.querySelector('.empty')?.remove();
+  const welcome = chatEl.querySelector('.empty');
+  welcome?.remove();
   const node = document.createElement('div');
   node.dataset.id = msg.id;
   fillChat(node, msg);
   chatEl.append(node);
-  // Your own prompt and anything waiting for your decision always come into view.
-  const mustSee = msg.kind === 'approval' || (msg.kind === 'user' && msg.source === 'web');
+  if (msg.kind === 'user') markLatestUser();
+  // Your own prompt, anything waiting for your decision, and the first message always come into view.
+  const mustSee = msg.kind === 'approval' || (msg.kind === 'user' && msg.source === 'web') || Boolean(welcome);
   if (scroll) scrollChat(mustSee);
 }
 
@@ -302,8 +417,67 @@ function replaceChat(msg) {
   const node = chatEl.querySelector(`[data-id="${msg.id}"]`);
   if (!node) return;
   fillChat(node, msg);
+  if (msg.kind === 'user') markLatestUser();
   scrollChat(msg.kind === 'approval' && msg.status === 'pending');
 }
+
+/** Puts text in the composer to edit before sending (starters, "Edit" on a sent prompt). */
+function fillComposer(text) {
+  if (narrow.matches) setMobileView('chat');
+  const input = $('#prompt');
+  input.value = text;
+  input.focus();
+  input.setSelectionRange(text.length, text.length);
+  autosize();
+}
+
+/** The Clipboard API needs a secure context; a phone on http://100.x… falls back to execCommand. */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = Object.assign(document.createElement('textarea'), { value: text, readOnly: true });
+    area.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.append(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    return ok;
+  }
+}
+
+function flashButton(btn, text) {
+  const label = btn.textContent;
+  btn.textContent = text;
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = label;
+    btn.disabled = false;
+  }, 1400);
+}
+
+/** Only the newest prompt offers "Ulangi", so an old one is never re-sent by a stray tap. */
+function markLatestUser() {
+  const users = chatEl.querySelectorAll('.msg.user');
+  users.forEach((node, i) => node.classList.toggle('latest', i === users.length - 1));
+}
+
+chatEl.addEventListener('click', async (e) => {
+  const starter = e.target.closest('[data-starter]');
+  if (starter) return fillComposer(starter.dataset.starter);
+  if (e.target.closest('[data-open-history]')) return openSessions();
+  if (e.target.closest('[data-open-help]')) return openModal('help-modal');
+  const codeBtn = e.target.closest('[data-copy-code]');
+  if (codeBtn) return flashButton(codeBtn, (await copyText(codeBtn.closest('pre').querySelector('code').textContent)) ? '✓ Tersalin' : 'Gagal');
+  const act = e.target.closest('[data-msg-act]');
+  if (!act) return;
+  const msg = state.chats[state.active]?.find((m) => m.id === act.closest('[data-id]')?.dataset.id);
+  if (!msg) return;
+  if (act.dataset.msgAct === 'copy') flashButton(act, (await copyText(msg.text)) ? '✓ Tersalin' : 'Gagal');
+  else if (act.dataset.msgAct === 'edit') fillComposer(msg.text);
+  else if (act.dataset.msgAct === 'resend') api(`/api/projects/${state.active}/prompt`, { text: msg.text }).catch((err) => toast(`Gagal mengirim: ${err.message}`));
+});
 
 // Tool/delegate rows the user has expanded stay open across live updates.
 const expanded = new Set();
@@ -370,8 +544,12 @@ function fillChat(node, msg) {
         msg.queued ? 'antre' : '',
         msg.cancelled ? 'dibatalkan' : '',
       ].filter(Boolean);
+      // Re-sending a prompt typed in the terminal would run it in the web session, so only web prompts offer it.
+      const actions = msg.source === 'demo'
+        ? ''
+        : `<span class="msg-actions"><button data-msg-act="copy" title="Salin teks prompt">Salin</button><button data-msg-act="edit" title="Salin ke kotak pesan untuk diedit lalu dikirim">Edit</button>${msg.source === 'cli' ? '' : '<button class="resend" data-msg-act="resend" title="Kirim prompt ini sekali lagi">↻ Ulangi</button>'}</span>`;
       node.className = `msg user ${msg.source === 'cli' ? 'cli' : ''} ${msg.history ? 'history' : ''}`;
-      node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div><div class="meta">${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
+      node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div><div class="meta">${actions}${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
       break;
     }
     case 'assistant':
@@ -381,7 +559,7 @@ function fillChat(node, msg) {
         break;
       }
       node.className = `msg assistant ${msg.streaming ? 'streaming' : ''} ${msg.history ? 'history' : ''}`;
-      node.innerHTML = `<div class="who">${who('claude')}${msg.source === 'cli' ? '<span class="cli-tag">CLI</span>' : ''}${msg.history ? '<span class="tag">riwayat</span>' : ''}<span>${time(msg.ts)}</span></div><div class="body md">${renderMarkdown(msg.text)}</div>`;
+      node.innerHTML = `<div class="who">${who('claude')}${msg.source === 'cli' ? '<span class="cli-tag">CLI</span>' : ''}${msg.history ? '<span class="tag">riwayat</span>' : ''}<span>${time(msg.ts)}</span>${msg.streaming ? '' : '<button class="msg-copy" data-msg-act="copy" title="Salin jawaban (Markdown)">Salin</button>'}</div><div class="body md">${renderMarkdown(msg.text)}</div>`;
       break;
     case 'tool': {
       const open = expanded.has(msg.id);
@@ -545,13 +723,13 @@ function renderComposer() {
   $('#model').value = st.model ?? '';
   $('#team-mode').checked = st.team ?? true;
   const hint = [];
-  if (st.busy) hint.push('Tim sedang bekerja — pesan baru akan masuk antrean.');
-  if (st.cliBusy) hint.push('Sesi CLI sedang berjalan di terminal (izinnya dijawab di terminal).');
+  if (st.busy) hint.push(st.queue ? `Tim sedang bekerja — ${st.queue} pesan menunggu di antrean.` : 'Tim sedang bekerja — pesan baru akan masuk antrean.');
+  if (st.cliBusy) hint.push('Sesi di terminal sedang berjalan (izinnya dijawab di terminal).');
   if (st.autoApprove) hint.push('⚠ Semua izin otomatis di sesi ini.');
-  if (st.sessionId) hint.push(`Sesi web ${st.sessionId.slice(0, 8)}${st.activeModel ? ` · ${st.activeModel}` : ''}`);
   $('#composer-hint').textContent = hint.join('  ·  ');
   $('#typing').hidden = !(st.busy || st.cliBusy);
   $('#typing-text').textContent = st.busy ? 'Tim sedang bekerja…' : 'Claude Code (terminal) sedang bekerja…';
+  renderSessionBar();
 }
 
 async function sendPrompt() {
@@ -560,6 +738,7 @@ async function sendPrompt() {
   if ((!text && !attachments.length) || state.active === DEMO_ID) return;
   const images = attachments.map(({ mediaType, data }) => ({ mediaType, data }));
   input.value = '';
+  recall.index = -1;
   autosize();
   clearAttachments();
   closeSuggest();
@@ -724,48 +903,223 @@ $('#suggest').addEventListener('mousedown', (e) => {
   applySuggest(Number(opt.dataset.i));
 });
 
-// ---------- session history ----------
+// ---------- session bar + history ----------
 
-async function toggleSessions() {
-  const panel = $('#sessions-panel');
-  if (!panel.hidden) {
-    panel.hidden = true;
-    return;
-  }
-  panel.hidden = false;
-  panel.innerHTML = '<div class="muted">Memuat riwayat sesi…</div>';
+const sessionTitles = new Map(); // Claude Code session id -> { title, source }
+const titleTried = new Map(); // session id -> last lookup (a brand-new transcript may not exist yet)
+const sessionsView = { project: null, list: [], current: null }; // the open history dialog
+
+/** "baru saja", "12 menit lalu", "3 jam lalu", else a short date. */
+function ago(ts) {
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return 'baru saja';
+  if (s < 3600) return `${Math.floor(s / 60)} menit lalu`;
+  if (s < 86400) return `${Math.floor(s / 3600)} jam lalu`;
+  return new Date(ts).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function rememberSessions(sessions) {
+  for (const s of sessions) sessionTitles.set(s.id, { title: s.title, source: s.source });
+}
+
+function lookupSessionTitle(projectId, sessionId) {
+  if (Date.now() - (titleTried.get(sessionId) ?? 0) < 15_000) return;
+  titleTried.set(sessionId, Date.now());
+  api(`/api/projects/${projectId}/sessions`)
+    .then(({ sessions }) => {
+      rememberSessions(sessions);
+      if (state.active === projectId) renderSessionBar();
+    })
+    .catch(() => {});
+}
+
+/** Which Claude Code conversation the chat continues: shown above the messages. */
+function renderSessionBar() {
+  const isDemo = state.active === DEMO_ID;
+  $('#session-bar').hidden = isDemo;
+  if (isDemo) return;
+  const st = state.statuses[state.active] ?? {};
+  const known = st.sessionId ? sessionTitles.get(st.sessionId) : null;
+  if (st.sessionId && !known) lookupSessionTitle(state.active, st.sessionId);
+  $('#sb-title').textContent = st.sessionId ? (known?.title ?? `Sesi ${st.sessionId.slice(0, 8)}`) : 'Percakapan baru';
+  const meta = st.sessionId
+    ? [known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
+    : ['pesan pertamamu memulai sesi Claude Code baru'];
+  if (st.cliBusy) meta.push('terminal aktif');
+  $('#sb-meta').textContent = meta.filter(Boolean).join(' · ');
+}
+
+function dayGroup(ts) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const t = today.getTime();
+  if (ts >= t) return 'Hari ini';
+  if (ts >= t - DAY) return 'Kemarin';
+  if (ts >= t - 6 * DAY) return '7 hari terakhir';
+  return 'Lebih lama';
+}
+
+async function openSessions() {
+  if (state.active === DEMO_ID) return;
+  sessionsView.project = state.active;
+  $('#sessions-project').textContent = `· ${projectName(state.active)}`;
+  $('#sessions-search').value = '';
+  $('#sessions-list').innerHTML = '<p class="muted">Memuat riwayat…</p>';
+  openModal('sessions-modal');
   try {
-    const { sessions, current } = await api(`/api/projects/${state.active}/sessions`);
-    panel.innerHTML = sessions.length
-      ? `<div class="sessions-head">Lanjutkan sesi Claude Code di project ini</div>${sessions
-          .map(
-            (s) => `<button class="session ${s.id === current ? 'current' : ''}" data-id="${s.id}">
-              <span class="s-title">${escapeHtml(s.title)}</span>
-              <span class="s-meta"><span class="cli-tag">${s.source === 'web' ? 'WEB' : 'CLI'}</span> ${new Date(s.updated).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}${s.id === current ? ' · <b>sesi aktif</b>' : ''}</span>
-            </button>`,
-          )
-          .join('')}`
-      : '<div class="muted">Belum ada sesi Claude Code untuk project ini.</div>';
+    const { sessions, current } = await api(`/api/projects/${sessionsView.project}/sessions`);
+    rememberSessions(sessions);
+    Object.assign(sessionsView, { list: sessions, current });
+    renderSessionList();
+    renderSessionBar();
+    if (!narrow.matches) $('#sessions-search').focus();
   } catch (err) {
-    panel.innerHTML = `<div class="muted">Gagal memuat: ${escapeHtml(err.message)}</div>`;
+    $('#sessions-list').innerHTML = `<p class="warn">Gagal memuat riwayat: ${escapeHtml(err.message)}</p>`;
   }
 }
 
-$('#btn-sessions').addEventListener('click', toggleSessions);
-$('#jump-latest').addEventListener('click', () => scrollChat(true));
-$('#sessions-panel').addEventListener('click', async (e) => {
-  const btn = e.target.closest('.session[data-id]');
-  if (!btn || btn.classList.contains('current')) return;
-  const st = state.statuses[state.active] ?? {};
-  const warn = st.cliBusy ? '\n\nPerhatian: ada sesi CLI yang sedang berjalan di project ini. Jangan lanjutkan sesi yang sama di dua tempat sekaligus.' : '';
-  if (!window.confirm(`Lanjutkan sesi ini dari web?${warn}`)) return;
+function renderSessionList() {
+  const box = $('#sessions-list');
+  if (!sessionsView.list.length) {
+    box.innerHTML = '<div class="s-empty"><b>Belum ada sesi</b><p class="muted">Sesi Claude Code dari terminal atau web untuk project ini akan muncul di sini.</p></div>';
+    return;
+  }
+  const q = $('#sessions-search').value.trim().toLowerCase();
+  const list = sessionsView.list.filter((s) => !q || s.title.toLowerCase().includes(q) || s.id.startsWith(q));
+  if (!list.length) {
+    box.innerHTML = '<div class="s-empty"><p class="muted">Tidak ada sesi yang cocok.</p></div>';
+    return;
+  }
+  // A session still running in a terminal must not be continued here too: both would write one transcript.
+  const st = state.statuses[sessionsView.project] ?? {};
+  const liveInTerminal = st.cliBusy ? st.cliSession : null;
+  let group = null;
+  box.innerHTML = list
+    .map((s) => {
+      const g = dayGroup(s.updated);
+      const head = g !== group ? `<div class="s-group">${g}</div>` : '';
+      group = g;
+      const current = s.id === sessionsView.current;
+      const action = current
+        ? '<span class="s-current">● Sedang dibuka</span>'
+        : s.id === liveInTerminal
+          ? '<span class="s-live" title="Selesaikan atau tutup dulu di terminal sebelum melanjutkannya di sini">● Berjalan di terminal</span>'
+          : `<button class="primary s-resume" data-resume="${s.id}">Lanjutkan</button>`;
+      return `${head}<div class="s-item ${current ? 'current' : ''}">
+        <div class="s-main">
+          <span class="s-title">${escapeHtml(s.title)}</span>
+          <span class="s-meta"><span class="src src-${s.source}">${s.source === 'web' ? 'Web' : 'Terminal'}</span>${ago(s.updated)} · <code>${s.id.slice(0, 8)}</code></span>
+        </div>
+        ${action}
+      </div>`;
+    })
+    .join('');
+}
+
+$('#btn-sessions').addEventListener('click', openSessions);
+$('#sessions-search').addEventListener('input', renderSessionList);
+$('#sessions-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-resume]');
+  if (!btn) return;
+  const st = state.statuses[sessionsView.project] ?? {};
+  const warnings = [
+    st.busy ? 'Tim sedang bekerja di percakapan ini — pekerjaannya akan dihentikan.' : '',
+    st.cliBusy ? 'Ada sesi yang sedang berjalan di terminal untuk project ini. Jangan lanjutkan sesi yang sama di dua tempat sekaligus.' : '',
+  ].filter(Boolean);
+  if (warnings.length && !window.confirm(`${warnings.join('\n\n')}\n\nTetap lanjutkan sesi ini?`)) return;
+  btn.disabled = true;
+  btn.textContent = 'Membuka…';
   try {
-    await api(`/api/projects/${state.active}/resume`, { sessionId: btn.dataset.id });
-    $('#sessions-panel').hidden = true;
+    await api(`/api/projects/${sessionsView.project}/resume`, { sessionId: btn.dataset.resume });
+    closeModal('sessions-modal');
+    toast('Sesi dilanjutkan — percakapan terakhirnya dimuat ke chat.', 'ok');
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Lanjutkan';
+    toast(err.message);
+  }
+});
+$('#sessions-new').addEventListener('click', () => {
+  if (!confirmNew()) return;
+  closeModal('sessions-modal');
+  api(`/api/projects/${state.active}/reset`).catch((err) => toast(err.message));
+});
+$('#jump-latest').addEventListener('click', () => scrollChat(true));
+
+// ---------- ⋯ menu: export, continue in a terminal, open in VS Code / Explorer ----------
+
+function toggleMoreMenu(open = $('#more-menu').hidden) {
+  $('#more-menu').hidden = !open;
+  $('#btn-more').setAttribute('aria-expanded', String(open));
+}
+
+function saveBlob(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** The whole chat of the active project as Markdown: prompts, answers, tools, approvals, results. */
+function exportChat() {
+  const messages = state.chats[state.active] ?? [];
+  if (!messages.length) return toast('Belum ada percakapan untuk diekspor.');
+  const project = state.projects.find((p) => p.id === state.active);
+  const st = state.statuses[state.active] ?? {};
+  const stamp = (ts) => new Date(ts).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+  const approvalLabel = { allowed: 'diizinkan', denied: 'ditolak', cancelled: 'dibatalkan', pending: 'menunggu' };
+  const lines = [`# ${project?.name ?? 'Percakapan'}`, '', `Diekspor dari ${APP_NAME} · ${stamp(Date.now())}${st.sessionId ? ` · sesi \`${st.sessionId}\`` : ''}`];
+  for (const m of messages) {
+    if (m.kind === 'user') lines.push('', `## 🧑 Kamu${m.source === 'cli' ? ' (terminal)' : ''} · ${stamp(m.ts)}`, '', m.text);
+    else if (m.kind === 'assistant' && m.text) lines.push('', `## ${roleName('claude')} · ${stamp(m.ts)}`, '', m.text);
+    else if (m.kind === 'tool') lines.push(`- ${m.status === 'fail' ? '✗' : '✓'} **${roleName(m.role)}**: ${m.text}`);
+    else if (m.kind === 'delegate') lines.push(`- ➜ **${roleName(m.role)}** ditugaskan: ${m.text}`);
+    else if (m.kind === 'approval') lines.push(`- ✋ Izin: ${m.text} (${approvalLabel[state.approvals.get(m.approvalId)?.status ?? m.status] ?? 'menunggu'})`);
+    else if (m.kind === 'result') lines.push('', `> ${m.ok ? '✓ Selesai' : `■ Berhenti${m.text ? `: ${m.text}` : ''}`}`);
+    else if (m.kind === 'error') lines.push('', `> ⚠ ${m.text}`);
+    else if (m.kind === 'divider') lines.push('', '---', '', `*${m.text}*`);
+  }
+  const slug = (project?.name ?? 'chat').replace(/[^\w.-]+/g, '-');
+  // sv-SE formats as YYYY-MM-DD in local time (toISOString would give yesterday's date before 07:00 in Jakarta).
+  saveBlob(`${slug}-${new Date().toLocaleDateString('sv-SE')}.md`, new Blob([`${lines.join('\n')}\n`], { type: 'text/markdown' }));
+  toast('Percakapan diekspor ke Markdown.', 'ok');
+}
+
+$('#btn-more').addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleMoreMenu();
+});
+document.addEventListener('click', (e) => {
+  if (!$('#more-menu').hidden && !e.target.closest('#more-menu')) toggleMoreMenu(false);
+});
+$('#more-menu').addEventListener('click', async (e) => {
+  const item = e.target.closest('[data-more]');
+  if (!item) return;
+  toggleMoreMenu(false);
+  const project = state.projects.find((p) => p.id === state.active);
+  const st = state.statuses[state.active] ?? {};
+  try {
+    if (item.dataset.more === 'export') exportChat();
+    else if (item.dataset.more === 'terminal') {
+      if (!st.sessionId) return toast('Belum ada sesi web. Kirim pesan dulu, lalu sesinya bisa dilanjutkan di terminal.');
+      // Two lines work the same in PowerShell, cmd and Git Bash (no && vs ; differences).
+      const dir = /^[A-Za-z]:\//.test(project.path) ? project.path.replace(/\//g, '\\') : project.path;
+      const ok = await copyText(`cd "${dir}"\nclaude --resume ${st.sessionId}`);
+      toast(ok ? 'Perintah disalin. Tempel di terminal untuk melanjutkan sesi ini di CLI.' : 'Gagal menyalin.', ok ? 'ok' : 'error');
+    } else {
+      await api(`/api/projects/${state.active}/open`, { app: item.dataset.more });
+      toast(item.dataset.more === 'code' ? 'Membuka VS Code…' : 'Membuka folder project…', 'ok');
+    }
   } catch (err) {
     toast(err.message);
   }
 });
+
+// ---------- help ----------
+
+$('#btn-help').addEventListener('click', () => openModal('help-modal'));
 
 async function saveSettings() {
   try {
@@ -780,6 +1134,11 @@ async function saveSettings() {
 $('#project-list').addEventListener('click', (e) => {
   const li = e.target.closest('li[data-id]');
   if (!li) return;
+  if (e.target.closest('.fav')) {
+    const project = state.projects.find((p) => p.id === li.dataset.id);
+    api(`/api/projects/${li.dataset.id}/favorite`, { on: !project?.favorite }).catch((err) => toast(err.message));
+    return;
+  }
   if (e.target.closest('.forget')) {
     if (window.confirm('Hapus folder ini dari daftar? (folder di disk tidak dihapus)')) {
       api(`/api/projects/${li.dataset.id}/forget`)
@@ -801,7 +1160,9 @@ let audioCtx = null;
 
 function renderNotifyButton() {
   const btn = $('#btn-notify');
-  btn.textContent = notifyState.on ? '🔔' : '🔕';
+  btn.classList.toggle('on', notifyState.on);
+  btn.querySelector('.ico').textContent = notifyState.on ? '🔔' : '🔕';
+  btn.querySelector('.lbl').textContent = notifyState.on ? 'Notifikasi aktif' : 'Notifikasi';
   btn.title = notifyState.on ? 'Notifikasi aktif — klik untuk mematikan' : 'Aktifkan notifikasi & suara (izin, tugas selesai)';
 }
 
@@ -944,6 +1305,11 @@ $('#ch-files').addEventListener('click', (e) => {
   loadDiff(li.dataset.path);
 });
 $('#ch-refresh').addEventListener('click', loadChanges);
+$('#ch-open').addEventListener('click', () =>
+  api(`/api/projects/${state.active}/open`, { app: 'code', file: changes.selected || undefined })
+    .then(() => toast('Membuka VS Code…', 'ok'))
+    .catch((err) => toast(err.message)),
+);
 $('#ch-review').addEventListener('click', async () => {
   try {
     await api(`/api/projects/${state.active}/prompt`, {
@@ -1080,6 +1446,340 @@ $('#phone-body').addEventListener('click', async (e) => {
   await api('/api/remote/revoke', { id: btn.dataset.revoke }).catch((err) => toast(err.message));
 });
 
+// ---------- Claude account: profile, plan quota, login/logout ----------
+
+const fmtNum = (n) => Number(n ?? 0).toLocaleString('id-ID');
+const fmtShort = (n) => new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 }).format(n ?? 0);
+const fmtUsd = (n) => (n == null ? '—' : `$${n.toFixed(2)}`);
+const LOGIN_TEXT = {
+  starting: 'Membuka halaman login di browser…',
+  waiting_code: 'Selesaikan login di browser. Kalau diminta, salin kode dari halaman itu lalu tempel di sini.',
+  verifying: 'Memverifikasi kode…',
+  done: 'Login berhasil.',
+  cancelled: 'Login dibatalkan.',
+};
+const account = { usage: null, loading: false, loginState: null };
+
+function accountName(p) {
+  // Profiles can hold blank names (a full name of " "), so take the first field with real text.
+  return [p?.fullName, p?.displayName, p?.email].map((v) => v?.trim()).find(Boolean) ?? 'Akun Claude';
+}
+const accountInitial = (p) => accountName(p)[0].toUpperCase();
+
+function renderAccountButton() {
+  const p = state.account?.profile;
+  const btn = $('#btn-account');
+  btn.classList.toggle('logged-out', !p?.loggedIn);
+  $('#account-avatar').textContent = p?.loggedIn ? accountInitial(p) : '!';
+  $('#account-label').textContent = p ? (p.loggedIn ? p.email : 'Belum login') : 'Akun';
+  btn.title = p?.loggedIn ? `${p.email}${p.orgName ? ` · ${p.orgName}` : ''} — profil, kuota & login` : 'Belum login ke Claude — klik untuk login';
+}
+
+/** Quota bars: `/usage` text when fetched, else the structured rate-limit info from a running session. */
+/** `/usage` prints English labels; show them in the app's language. */
+const quotaLabel = (label) =>
+  label
+    .replace(/^Current session$/i, 'Sesi saat ini (5 jam)')
+    .replace(/^Current week \((.+)\)$/i, (_, m) => `Minggu ini (${/^all models$/i.test(m) ? 'semua model' : m})`);
+
+function quotaRows() {
+  const limits = state.account?.limits;
+  if (limits?.windows?.length) return limits.windows.map((w) => ({ ...w, label: quotaLabel(w.label) }));
+  const win = state.account?.rateLimit?.unifiedWindows ?? {};
+  const label = { five_hour: 'Sesi 5 jam', seven_day: 'Minggu ini' };
+  return Object.entries(win)
+    .filter(([, w]) => w?.utilization != null)
+    .map(([k, w]) => ({ label: label[k] ?? k, percent: Math.round(w.utilization * 100), resets: w.resetsAt ? new Date(w.resetsAt * 1000).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : null }));
+}
+
+function usageTable(usage) {
+  if (!usage) return '<p class="muted small">Memuat…</p>';
+  const row = (label, t) => `<tr><th>${label}</th><td>${fmtShort(t.input)}</td><td>${fmtShort(t.output)}</td><td>${fmtShort(t.cacheRead)}</td><td>${fmtShort(t.cacheWrite)}</td><td><b>${fmtShort(t.total)}</b></td></tr>`;
+  return `<table class="usage-table">
+    <thead><tr><th></th><th>Input</th><th>Output</th><th>Cache read</th><th>Cache write</th><th>Total</th></tr></thead>
+    <tbody>${row('Hari ini', usage.today)}${row('7 hari', usage.week)}</tbody>
+  </table>`;
+}
+
+function renderLoginFlow() {
+  const box = $('#acct-login');
+  if (!box) return;
+  const login = state.account?.login;
+  const active = login && ['starting', 'waiting_code', 'verifying'].includes(login.state);
+  account.loginState = login?.state ?? null;
+  if (!active) {
+    box.innerHTML = login?.state === 'error' ? `<p class="warn">Login gagal: ${escapeHtml(login.error ?? 'tidak diketahui')}</p>` : '';
+    return;
+  }
+  box.innerHTML = `<div class="login-flow">
+      <p>${LOGIN_TEXT[login.state]}</p>
+      ${login.url ? `<a class="primary link-btn" href="${escapeHtml(login.url)}" target="_blank" rel="noopener noreferrer">🔑 Buka halaman login Claude</a>` : '<span class="spinner"></span>'}
+      <form id="login-code" class="login-code">
+        <input id="login-code-input" placeholder="Tempel kode dari browser (jika diminta)" autocomplete="off" spellcheck="false" ${login.state === 'verifying' ? 'disabled' : ''} />
+        <button class="primary" ${login.state === 'verifying' ? 'disabled' : ''}>Kirim</button>
+      </form>
+      <button type="button" class="ghost" data-act="cancel-login">Batal</button>
+    </div>`;
+}
+
+function renderAccount() {
+  const body = $('#account-body');
+  const p = state.account?.profile;
+  if (!p) {
+    body.innerHTML = '<p class="muted">Memeriksa akun Claude Code…</p>';
+    return;
+  }
+  const local = state.local !== false;
+  const actions = local
+    ? p.loggedIn
+      ? `<button class="ghost" data-act="login">⇄ Ganti akun</button><button class="danger" data-act="logout">⏻ Logout</button>`
+      : `<button class="primary" data-act="login">🔑 Login dengan akun Claude</button><button class="ghost" data-act="login-console">Login via Console (API)</button>`
+    : '<p class="muted small">Login/logout hanya bisa dari laptop.</p>';
+  if (!p.loggedIn) {
+    body.innerHTML = `<div class="acct-empty"><p>Claude Code di laptop ini <b>belum login</b>. Login membuka halaman claude.ai di browser, sama seperti <code>claude auth login</code>.</p></div>
+      <div class="acct-actions">${actions}</div><div id="acct-login"></div>`;
+    renderLoginFlow();
+    return;
+  }
+  const facts = [
+    ['Email', p.email],
+    ['Organisasi', p.orgName],
+    ['Paket', p.subscriptionType],
+    ['Peran', p.role],
+    ['Seat', p.seatTier],
+    ['Metode login', p.authMethod],
+    ['Tier rate limit', p.rateLimitTier],
+    ['ID akun', p.accountUuid],
+  ].filter(([, v]) => v);
+  const quota = quotaRows();
+  const quotaHtml = quota.length
+    ? quota
+        .map((w) => {
+          const tone = w.percent >= 90 ? 'bad' : w.percent >= 70 ? 'warn' : 'ok';
+          return `<div class="quota"><div class="quota-head"><span>${escapeHtml(w.label)}</span><b>${w.percent}%</b></div>
+            <div class="bar"><i class="${tone}" style="width:${Math.min(100, w.percent)}%"></i></div>
+            ${w.resets ? `<small class="muted">reset ${escapeHtml(w.resets)}</small>` : ''}</div>`;
+        })
+        .join('')
+    : `<p class="muted small">${account.loading ? 'Mengambil kuota…' : 'Belum ada data kuota.'}</p>`;
+  body.innerHTML = `<div class="acct-head">
+      <span class="avatar big">${escapeHtml(accountInitial(p))}</span>
+      <div><b>${escapeHtml(accountName(p))}</b><small>${escapeHtml(p.email ?? '')}</small></div>
+      ${p.subscriptionType ? `<span class="plan">${escapeHtml(p.subscriptionType)}</span>` : ''}
+    </div>
+    <dl class="acct-facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>
+    <div class="acct-section"><div class="acct-title"><b>Kuota paket</b><button class="ghost icon" data-act="limits" title="Cek ulang kuota">↻</button></div>${quotaHtml}</div>
+    <div class="acct-section"><div class="acct-title"><b>Pemakaian token akun ini</b><button class="ghost" data-act="report">📊 Laporan</button></div>${usageTable(account.usage)}
+      <p class="muted small">Dihitung dari sesi web & CLI sejak fitur ini aktif, hanya untuk akun yang sedang login.</p></div>
+    <div class="acct-actions">${actions}</div>
+    <div id="acct-login"></div>`;
+  renderLoginFlow();
+}
+
+async function loadAccount(force = false) {
+  try {
+    const data = await api('/api/account', { force });
+    account.usage = data.usage;
+    state.account = { ...state.account, ...data };
+    renderAccountButton();
+    renderAccount();
+    if (!data.profile?.loggedIn) return;
+    account.loading = true;
+    renderAccount();
+    state.account.limits = await api('/api/account/limits', { force });
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    account.loading = false;
+    if (!$('#account-modal').hidden) renderAccount();
+  }
+}
+
+function onAccountState(next) {
+  const prevId = state.account?.profile?.accountUuid ?? state.account?.profile?.email;
+  state.account = { ...state.account, ...next };
+  renderAccountButton();
+  const id = next.profile?.accountUuid ?? next.profile?.email;
+  if (next.login?.state === 'done' && account.loginState !== 'done') toast(`Login berhasil sebagai ${next.profile?.email ?? 'akun baru'}.`, 'ok');
+  if ($('#account-modal').hidden) return;
+  if (prevId !== id) return loadAccount(true); // switched account: usage & quota belong to the new one
+  // Keep what the user is typing in the code box: only redraw the flow when its state changes.
+  if ((next.login?.state ?? null) !== account.loginState) renderLoginFlow();
+  if (!$('#login-code-input')) renderAccount();
+}
+
+$('#btn-account').addEventListener('click', () => {
+  openModal('account-modal');
+  renderAccount();
+  loadAccount();
+});
+$('#account-body').addEventListener('click', async (e) => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (!act) return;
+  try {
+    if (act === 'login' || act === 'login-console') {
+      state.account = { ...state.account, login: await api('/api/account/login', { console: act === 'login-console' }) };
+      renderLoginFlow();
+    } else if (act === 'cancel-login') {
+      await api('/api/account/login/cancel');
+    } else if (act === 'logout') {
+      const email = state.account?.profile?.email ?? 'akun ini';
+      if (!window.confirm(`Logout dari ${email}?\n\nClaude Code di laptop ini (termasuk terminal/CLI) ikut logout. Giliran yang sedang berjalan di web dibiarkan selesai dulu.`)) return;
+      await api('/api/account/logout');
+      account.usage = null;
+      toast('Sudah logout.', 'ok');
+      loadAccount(true);
+    } else if (act === 'limits') {
+      account.loading = true;
+      renderAccount();
+      state.account.limits = await api('/api/account/limits', { force: true });
+      account.loading = false;
+      renderAccount();
+    } else if (act === 'report') {
+      closeModal('account-modal');
+      openReport();
+    }
+  } catch (err) {
+    account.loading = false;
+    toast(err.message);
+  }
+});
+$('#account-body').addEventListener('submit', async (e) => {
+  if (e.target.id !== 'login-code') return;
+  e.preventDefault();
+  const code = $('#login-code-input').value.trim();
+  if (!code) return;
+  await api('/api/account/login/code', { code }).catch((err) => toast(err.message));
+});
+
+// ---------- token usage report (PDF, per account) ----------
+
+const DAY = 86_400_000;
+
+function reportRange() {
+  const period = $('#report-period').value;
+  const now = new Date();
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  if (period === 'today') return { from: startOfDay(now), to: Date.now() };
+  if (period === 'month') return { from: new Date(now.getFullYear(), now.getMonth(), 1).getTime(), to: Date.now() };
+  if (period === 'all') return { from: 0, to: Date.now() };
+  if (period === 'custom') {
+    const from = $('#report-from').valueAsDate;
+    const to = $('#report-to').valueAsDate;
+    // <input type=date> gives UTC midnight: shift to local day bounds.
+    const local = (d) => d.getTime() + d.getTimezoneOffset() * 60_000;
+    return { from: from ? local(from) : 0, to: to ? local(to) + DAY - 1 : Date.now() };
+  }
+  return { from: startOfDay(now) - (Number(period) - 1) * DAY, to: Date.now() };
+}
+
+function reportQuery() {
+  return { accountId: $('#report-account').value, ...reportRange() };
+}
+
+async function openReport() {
+  openModal('report-modal');
+  $('#report-preview').innerHTML = '<p class="muted">Memuat…</p>';
+  try {
+    const { accounts, current } = await api('/api/report/accounts');
+    const select = $('#report-account');
+    const keep = select.value;
+    select.innerHTML = accounts.length
+      ? accounts.map((a) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.email)}${a.org ? ` — ${escapeHtml(a.org)}` : ''}${a.id === current ? ' (aktif)' : ''}</option>`).join('')
+      : '<option value="">Belum ada data</option>';
+    select.value = accounts.some((a) => a.id === keep) ? keep : (current ?? accounts[0]?.id ?? '');
+    await previewReport();
+  } catch (err) {
+    $('#report-preview').innerHTML = `<p class="warn">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function previewReport() {
+  const box = $('#report-preview');
+  const q = reportQuery();
+  if (!q.accountId) {
+    box.innerHTML = '<p class="muted">Belum ada pemakaian yang tercatat. Data mulai dikumpulkan sejak fitur ini aktif.</p>';
+    $('#report-pdf').disabled = true;
+    return;
+  }
+  try {
+    const s = await api('/api/report/summary', q);
+    const t = s.totals;
+    $('#report-pdf').disabled = false;
+    const kpi = [
+      ['Total token', fmtShort(t.total)],
+      ['Input', fmtShort(t.input)],
+      ['Output', fmtShort(t.output)],
+      ['Cache read', fmtShort(t.cacheRead)],
+      ['Cache write', fmtShort(t.cacheWrite)],
+      ['Cache hit', `${Math.round(t.cacheHitRate * 100)}%`],
+      ['Request API', fmtNum(t.requests)],
+      ['Estimasi biaya', fmtUsd(t.costUsd)],
+    ];
+    const models = s.byModel
+      .slice(0, 5)
+      .map((m) => `<tr><td>${escapeHtml(m.key ?? '-')}</td><td>${fmtShort(m.input)}</td><td>${fmtShort(m.output)}</td><td>${fmtShort(m.cacheRead)}</td><td><b>${fmtShort(m.total)}</b></td></tr>`)
+      .join('');
+    box.innerHTML = s.records
+      ? `<div class="kpis">${kpi.map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('')}</div>
+         <table class="usage-table"><thead><tr><th>Model</th><th>Input</th><th>Output</th><th>Cache read</th><th>Total</th></tr></thead><tbody>${models}</tbody></table>
+         <p class="muted small">${fmtNum(s.records)} catatan · ${s.byProject.length} project · PDF berisi grafik harian, rincian per project, sumber (web/CLI) dan sesi teratas.</p>`
+      : '<p class="muted">Tidak ada pemakaian di periode ini untuk akun tersebut.</p>';
+  } catch (err) {
+    box.innerHTML = `<p class="warn">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function downloadReport() {
+  const btn = $('#report-pdf');
+  btn.disabled = true;
+  btn.textContent = 'Membuat PDF…';
+  try {
+    const res = await fetch('/api/report/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Office-Token': TOKEN },
+      body: JSON.stringify(reportQuery()),
+    });
+    if (res.ok) {
+      const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'laporan-token.pdf';
+      saveBlob(name, await res.blob());
+      toast('PDF diunduh.', 'ok');
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 501 && data.html) {
+      // No Edge/Chrome for headless printing: let the browser print the same report.
+      const win = window.open('', '_blank');
+      if (!win) throw new Error('Pop-up diblokir — izinkan pop-up untuk mencetak laporan.');
+      win.document.write(data.html);
+      win.document.close();
+      win.addEventListener('load', () => win.print());
+      return;
+    }
+    throw new Error(data.error ?? `HTTP ${res.status}`);
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⬇ Unduh PDF';
+  }
+}
+
+$('#btn-report').addEventListener('click', openReport);
+$('#report-account').addEventListener('change', previewReport);
+$('#report-period').addEventListener('change', () => {
+  const custom = $('#report-period').value === 'custom';
+  document.querySelectorAll('.custom-range').forEach((n) => (n.hidden = !custom));
+  if (custom && !$('#report-from').value) {
+    const iso = (ms) => new Date(ms - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+    $('#report-from').value = iso(Date.now() - 6 * DAY);
+    $('#report-to').value = iso(Date.now());
+  }
+  previewReport();
+});
+for (const id of ['#report-from', '#report-to']) $(id).addEventListener('change', previewReport);
+$('#report-pdf').addEventListener('click', downloadReport);
+
 // ---------- server settings: auto-start, shutdown ----------
 
 $('#autostart').addEventListener('change', async (e) => {
@@ -1092,7 +1792,7 @@ $('#autostart').addEventListener('change', async (e) => {
   }
 });
 $('#btn-shutdown').addEventListener('click', async () => {
-  if (!window.confirm('Matikan server Claude Coworking? Sesi Claude yang sedang berjalan ikut dihentikan.')) return;
+  if (!window.confirm(`Matikan server ${APP_NAME}? Sesi Claude yang sedang berjalan ikut dihentikan.`)) return;
   await api('/api/shutdown').catch(() => {});
   toast('Server dimatikan. Jalankan start-office.cmd untuk menyalakan lagi.', 'ok');
 });
@@ -1104,28 +1804,23 @@ function renderRoots(config) {
   state.config = config;
   $('#autostart-row').hidden = !config.autostart?.supported;
   $('#autostart').checked = Boolean(config.autostart?.enabled);
-  if (!$('#roots-form').hidden) return; // don't clobber what the user is typing
+  if (!$('#settings-modal').hidden) return; // don't clobber what the user is typing
   $('#roots-input').value = config.roots.join('\n');
   $('#roots-hint').textContent = config.usingDefault
     ? `Belum diatur — sekarang memakai folder default: ${config.defaultRoot}`
     : 'Disimpan di device ini. Folder yang pernah dibuka Claude Code juga ikut tampil.';
 }
 
-$('#toggle-roots').addEventListener('click', () => {
-  const form = $('#roots-form');
-  form.hidden = !form.hidden;
-  if (!form.hidden) {
-    $('#roots-input').value = state.config?.roots.join('\n') ?? '';
-    $('#roots-input').focus();
-  }
+$('#btn-settings').addEventListener('click', () => {
+  $('#roots-input').value = state.config?.roots.join('\n') ?? '';
+  openModal('settings-modal');
 });
-$('#roots-cancel').addEventListener('click', () => ($('#roots-form').hidden = true));
 $('#roots-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const roots = $('#roots-input').value.split('\n').map((r) => r.trim()).filter(Boolean);
   try {
     await api('/api/config', { roots });
-    $('#roots-form').hidden = true;
+    closeModal('settings-modal');
     toast(`Folder disimpan, ${roots.length || 1} folder dipindai.`, 'ok');
   } catch (err) {
     toast(err.message);
@@ -1144,7 +1839,49 @@ $('#add-project').addEventListener('submit', async (e) => {
     toast(err.message);
   }
 });
+// ---------- prompt history: ↑/↓ recall earlier prompts, like the CLI ----------
+
+const recall = { project: null, index: -1, draft: '' };
+
+/** This project's prompts, newest first, without repeats. */
+function promptHistory() {
+  const seen = new Set();
+  return (state.chats[state.active] ?? [])
+    .filter((m) => m.kind === 'user' && m.text)
+    .map((m) => m.text)
+    .reverse()
+    .filter((text) => !seen.has(text) && seen.add(text));
+}
+
+/** @param dir -1 = older (↑), +1 = newer (↓). Returns true when the key was used for history. */
+function recallPrompt(dir) {
+  const input = $('#prompt');
+  // Only from the first line (↑) or the last line (↓); elsewhere the arrows move the caret as usual.
+  if (dir < 0 && input.value.slice(0, input.selectionStart).includes('\n')) return false;
+  if (dir > 0 && input.value.slice(input.selectionEnd).includes('\n')) return false;
+  if (recall.project !== state.active) Object.assign(recall, { project: state.active, index: -1, draft: '' });
+  if (recall.index === -1) {
+    if (dir > 0) return false;
+    recall.draft = input.value; // what you were typing comes back after the newest prompt
+  }
+  const list = promptHistory();
+  const next = recall.index - dir;
+  if (next >= list.length) return list.length > 0; // already at the oldest
+  recall.index = next;
+  input.value = next === -1 ? recall.draft : list[next];
+  input.setSelectionRange(input.value.length, input.value.length);
+  autosize();
+  return true;
+}
+
+$('#prompt').addEventListener('input', () => (recall.index = -1));
+
 $('#prompt').addEventListener('keydown', (e) => {
+  const plainArrow = (e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey;
+  if (plainArrow && !suggest.items.length && recallPrompt(e.key === 'ArrowUp' ? -1 : 1)) {
+    e.preventDefault();
+    return;
+  }
   if (suggest.items.length) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
@@ -1181,7 +1918,6 @@ $('#btn-new').addEventListener('click', () => {
 });
 $('#btn-demo').addEventListener('click', () => api('/api/demo').catch((err) => toast(err.message)));
 for (const id of ['#mode', '#model', '#team-mode']) $(id).addEventListener('change', saveSettings);
-$('#toggle-sidebar').addEventListener('click', () => document.body.classList.toggle('sidebar-open'));
 document.querySelectorAll('.tabs button').forEach((btn) =>
   btn.addEventListener('click', () => {
     state.tab = btn.dataset.tab;
@@ -1197,7 +1933,9 @@ document.querySelectorAll('.tabs button').forEach((btn) =>
 
 function confirmNew() {
   const st = state.statuses[state.active] ?? {};
-  return !st.sessionId || window.confirm('Mulai sesi baru? Claude tidak akan mengingat percakapan sebelumnya di project ini.');
+  if (!st.sessionId && !st.busy) return true;
+  const busy = st.busy ? '\n\nTim sedang bekerja — pekerjaannya akan dihentikan.' : '';
+  return window.confirm(`Mulai sesi baru?\n\nClaude tidak membawa konteks percakapan ini. Percakapan ini tetap bisa dilanjutkan lagi lewat 🕘 Riwayat sesi.${busy}`);
 }
 
 // ---------- main loop ----------

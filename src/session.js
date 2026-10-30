@@ -36,12 +36,25 @@ function previewInput(tool, input = {}) {
 }
 
 export class SessionManager {
-  constructor({ hub, claude, agents, teamPrompt }) {
+  constructor({ hub, claude, agents, teamPrompt, ledger, account }) {
     this.hub = hub;
     this.claude = claude;
     this.agents = agents;
     this.teamPrompt = teamPrompt;
+    this.ledger = ledger;
+    this.account = account;
     this.sessions = new Map();
+  }
+
+  /**
+   * After a login/logout every running process still holds the old credentials: idle ones
+   * respawn on the next prompt, busy ones finish their turn first (see onMessage).
+   */
+  accountChanged() {
+    for (const session of this.sessions.values()) {
+      if (session.busy) session.staleAccount = true;
+      else session.closeChild();
+    }
   }
 
   get(project) {
@@ -184,6 +197,10 @@ class ClaudeSession {
 
     this.child = child;
     this.childKey = settingsKey(settings);
+    // Tokens are billed to the account whose credentials the process loaded at start.
+    this.childAccount = this.m.account?.current ?? null;
+    this.staleAccount = false;
+    this.lastModelUsage = null; // modelUsage counts restart with the process
     this.stderr = '';
     this.translator = new StreamTranslator({
       office: (evt) => this.hub.office(this.id, evt),
@@ -274,6 +291,8 @@ class ClaudeSession {
       this.hub.setStatus(this.id, { activeModel: msg.model ?? null });
       if (Array.isArray(msg.slash_commands)) this.hub.setSlashCommands(msg.slash_commands);
     }
+    if (msg.type === 'rate_limit_event' && msg.rate_limit_info) this.m.account?.noteRateLimit(msg.rate_limit_info);
+    if (msg.type === 'result') this.recordUsage(msg);
     if (msg.type === 'result' && this.interrupting) {
       // The CLI reports an interrupted turn as a normal success; label it for the UI.
       msg = { ...msg, subtype: 'interrupted', is_error: true, result: 'Dihentikan oleh kamu' };
@@ -283,10 +302,48 @@ class ClaudeSession {
       this.busy = false;
       this.interrupting = false;
       clearTimeout(this.killTimer);
+      if (this.staleAccount) {
+        // The account changed mid-turn: queued prompts go to a fresh process (onExit pumps them).
+        this.closeChild();
+        return this.updateStatus();
+      }
       this.idleTimer = setTimeout(() => this.closeChild(), IDLE_SHUTDOWN_MS);
       this.updateStatus();
       this.pump();
     }
+  }
+
+  /**
+   * Token usage of the turn that just ended, per model (subagents included).
+   * `modelUsage` is cumulative for the process, so prefer the per-turn field and
+   * fall back to the difference from the previous result.
+   */
+  recordUsage(msg) {
+    if (!this.m.ledger) return;
+    let perTurn = msg.model_usage_since_last_result;
+    if (!perTurn || typeof perTurn !== 'object') {
+      perTurn = {};
+      for (const [model, u] of Object.entries(msg.modelUsage ?? {})) {
+        const prev = this.lastModelUsage?.[model] ?? {};
+        perTurn[model] = Object.fromEntries(Object.entries(u).map(([k, v]) => [k, typeof v === 'number' ? v - (prev[k] ?? 0) : v]));
+      }
+      this.lastModelUsage = msg.modelUsage;
+    }
+    Object.entries(perTurn).forEach(([model, u], i) => {
+      this.m.ledger.record({
+        account: this.childAccount,
+        source: 'web',
+        project: this.project,
+        sessionId: msg.session_id ?? this.hub.sessionIdFor(this.id),
+        model,
+        input: u.inputTokens,
+        output: u.outputTokens,
+        cacheRead: u.cacheReadInputTokens,
+        cacheWrite: u.cacheCreationInputTokens,
+        costUsd: u.costUSD,
+        turns: i === 0 ? 1 : 0,
+      });
+    });
   }
 
   onControlRequest(msg) {
@@ -328,7 +385,7 @@ class ClaudeSession {
       if (decision.always && req.permission_suggestions?.length) response.updatedPermissions = req.permission_suggestions;
       if (decision.allowAll) this.autoApprove = true;
     } else {
-      response = { behavior: 'deny', message: decision.message || 'Ditolak oleh user dari web Claude Coworking.' };
+      response = { behavior: 'deny', message: decision.message || 'Ditolak oleh user dari web Adhit Office.' };
     }
     this.write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } });
     this.hub.office(this.id, { kind: 'ask_done', role, allowed: Boolean(decision.allow) });

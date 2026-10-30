@@ -1,8 +1,8 @@
 {
-  "name": "claude-coworking",
+  "name": "adhit-office",
   "version": "0.2.0",
   "private": true,
-  "description": "Kantor pixel-art untuk mengoperasikan Claude Code dari browser",
+  "description": "Adhit Office — kantor pixel-art untuk mengoperasikan Claude Code dari browser dan HP",
   "type": "module",
   "engines": {
     "node": ">=20"

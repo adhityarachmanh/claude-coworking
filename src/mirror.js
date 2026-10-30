@@ -33,9 +33,10 @@ function readMeta(file) {
 }
 
 export class TranscriptMirror {
-  constructor(hub, { root = DEFAULT_ROOT } = {}) {
+  constructor(hub, { root = DEFAULT_ROOT, ledger = null } = {}) {
     this.hub = hub;
     this.root = root;
+    this.ledger = ledger;
     this.files = new Map(); // file -> { offset, rest: Buffer, mtime }
     this.sessions = new Map(); // CLI session id -> mirror state
     this.timers = new Map(); // file -> debounce timer
@@ -158,6 +159,7 @@ export class TranscriptMirror {
     // Sessions started from the web ("sdk-cli") are already shown by their own runner.
     if (entry.entrypoint !== 'cli' || !entry.sessionId || !entry.cwd) return;
     const session = this.session(entry.sessionId, entry.cwd);
+    if (entry.type === 'assistant') this.recordUsage(session, entry);
     const sub = SUBAGENT_FILE.exec(file);
     if (sub) this.ingestSubagent(session, file, sub[1], entry);
     else this.ingestMain(session, entry);
@@ -167,7 +169,7 @@ export class TranscriptMirror {
     let s = this.sessions.get(id);
     if (!s) {
       const pid = this.hub.upsertProject(cwd, 'cli').id;
-      s = { id, pid, turnOpen: false, endTimer: null, agents: new Map(), queued: new Map(), lastSeen: Date.now() };
+      s = { id, pid, turnOpen: false, endTimer: null, agents: new Map(), queued: new Map(), recorded: new Set(), lastSeen: Date.now() };
       s.translator = new StreamTranslator({
         office: (evt) => this.hub.office(pid, { source: 'cli', ...evt }),
         chat: (msg) => this.hub.chat(pid, { source: 'cli', ...msg }),
@@ -177,6 +179,27 @@ export class TranscriptMirror {
     }
     s.lastSeen = Date.now();
     return s;
+  }
+
+  /** One API response = one usage record; its content blocks arrive as several entries with the same id. */
+  recordUsage(s, entry) {
+    const usage = entry.message?.usage;
+    const id = entry.message?.id;
+    if (!this.ledger || !usage || !id || s.recorded.has(id)) return;
+    s.recorded.add(id);
+    if (s.recorded.size > 5000) s.recorded = new Set([...s.recorded].slice(-2000));
+    const project = this.hub.projects.get(s.pid);
+    this.ledger.record({
+      source: 'cli',
+      project: { id: s.pid, name: project?.name },
+      sessionId: s.id,
+      model: entry.message.model,
+      input: usage.input_tokens,
+      output: usage.output_tokens,
+      cacheRead: usage.cache_read_input_tokens,
+      cacheWrite: usage.cache_creation_input_tokens,
+      requests: 1,
+    });
   }
 
   ingestMain(s, entry) {

@@ -1,5 +1,5 @@
 @echo off
-title Claude Coworking - Hapus auto-start
+title Adhit Office - Hapus auto-start
 cd /d "%~dp0"
 node scripts\setup.mjs --remove
 pause
