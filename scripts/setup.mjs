@@ -139,13 +139,16 @@ async function setupAutostart() {
   }
   if (CHECK_ONLY) {
     const current = autostartStatus();
-    (current.enabled ? ok : warn)(`Auto-start ${current.enabled ? 'terpasang' : 'belum terpasang'}`);
+    (current.enabled ? ok : warn)(`Auto-start saat login ${current.enabled ? 'terpasang' : 'belum terpasang'}`);
+    (current.watchdog ? ok : warn)(`Penjaga 5 menit (Task Scheduler) ${current.watchdog ? 'terpasang' : 'belum terpasang'}`);
     ((await serverRunning()) ? ok : warn)(`Server di port ${PORT} ${(await serverRunning()) ? 'berjalan' : 'tidak berjalan'}`);
     return;
   }
-  const status = setAutostart(true, APP_DIR);
+  const status = setAutostart(true, APP_DIR, PORT);
   ok('Auto-start terpasang — server menyala sendiri setiap Windows login');
   info(status.path);
+  if (status.watchdog) ok('Penjaga terpasang — dicek tiap 5 menit, server dinyalakan lagi kalau mati (setelah sleep/hibernate/crash)');
+  else warn('Penjaga Task Scheduler gagal dipasang; auto-start tetap jalan saat login.');
   if (await serverRunning()) {
     ok(`Server sudah berjalan di port ${PORT}`);
     info('Kalau itu `npm run dev` di terminal, tutup terminalnya lalu jalankan setup lagi supaya server background yang dipakai.');
@@ -161,8 +164,8 @@ async function setupAutostart() {
 
 console.log('\n=== Claude Coworking — setup ===');
 if (process.argv.includes('--remove')) {
-  setAutostart(false, APP_DIR);
-  ok('Auto-start dihapus dari Startup Windows.');
+  setAutostart(false, APP_DIR, PORT);
+  ok('Auto-start dan penjaga Task Scheduler dihapus.');
   rl.close();
   process.exit(0);
 }

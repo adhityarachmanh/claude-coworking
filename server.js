@@ -208,7 +208,7 @@ async function handleApi(req, res, pathname) {
     return json(res, 200, hub.config);
   }
   if (pathname === '/api/autostart') {
-    hub.config = { ...hub.config, autostart: setAutostart(Boolean(body.enabled), APP_DIR) };
+    hub.config = { ...hub.config, autostart: setAutostart(Boolean(body.enabled), APP_DIR, PORT) };
     hub.broadcast('config', hub.config);
     return json(res, 200, hub.config.autostart);
   }

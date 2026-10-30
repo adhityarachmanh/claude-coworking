@@ -88,7 +88,7 @@ Batasan: izin untuk sesi CLI tetap dijawab di terminal (transcript tidak mencata
    | 1. Node.js & Claude Code | Memeriksa versi, memberi tahu cara memasang kalau belum ada |
    | 2. Tailscale (opsional) | Menawarkan pasang lewat winget, lalu membuka halaman login. Dibutuhkan supaya HP bisa membuka kantor dari jaringan mana saja |
    | 3. Firewall | Menawarkan aturan sempit: hanya TCP 4317, hanya dari alamat Tailscale (muncul jendela izin Administrator sekali) |
-   | 4. Auto-start & server | Memasang auto-start saat Windows login, lalu langsung menyalakan server di latar belakang |
+   | 4. Auto-start & server | Memasang auto-start saat login **plus penjaga Task Scheduler** yang mengecek setiap 5 menit dan menyalakan server lagi kalau mati (setelah sleep, hibernate, Fast Startup, atau crash). Lalu langsung menyalakan server di latar belakang |
 
 4. Di web: **⚙** untuk folder projects, **🔔** untuk notifikasi, **📱** untuk menghubungkan HP.
 5. Di HP: pasang **Tailscale**, login dengan akun yang sama, lalu scan QR dari 📱.
