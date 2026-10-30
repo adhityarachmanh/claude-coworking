@@ -207,7 +207,47 @@ function renderHeader() {
 function updateTitle() {
   const pending = [...state.approvals.values()].filter((a) => a.status === 'pending').length;
   document.title = pending ? `(${pending}) Menunggu izin — Claude Coworking` : 'Claude Coworking';
+  const badge = $('#nav-badge-chat');
+  badge.hidden = !pending;
+  badge.textContent = pending;
 }
+
+// ---------- phone layout: bottom navigation between full-screen views ----------
+
+function setMobileView(view) {
+  document.body.dataset.view = view === 'office' ? 'office' : 'panel';
+  if (view !== 'office') document.querySelector(`.tabs button[data-tab="${view}"]`)?.click();
+  document.querySelectorAll('#mobile-nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+}
+
+$('#mobile-nav').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-view]');
+  if (btn) setMobileView(btn.dataset.view);
+});
+
+// Tapping outside the project drawer closes it.
+document.addEventListener('click', (e) => {
+  if (document.body.classList.contains('sidebar-open') && !e.target.closest('.sidebar, #toggle-sidebar')) {
+    document.body.classList.remove('sidebar-open');
+  }
+});
+
+// A shorter hint fits a phone-width composer on one line.
+const narrow = matchMedia('(max-width: 760px)');
+const applyPlaceholder = () => {
+  $('#prompt').placeholder = narrow.matches ? 'Ketik pesan…  ( / command · @file )' : 'Minta sesuatu ke tim…   ( / command · @file · Shift+Enter baris baru )';
+  $('#prompt').rows = narrow.matches ? 1 : 3;
+  autosize();
+};
+// On a phone the composer starts at one line and grows with the text, like a chat app.
+function autosize() {
+  const input = $('#prompt');
+  input.style.height = '';
+  if (narrow.matches) input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+}
+$('#prompt').addEventListener('input', autosize);
+narrow.addEventListener('change', applyPlaceholder);
+applyPlaceholder();
 
 // ---------- chat ----------
 
@@ -520,6 +560,7 @@ async function sendPrompt() {
   if ((!text && !attachments.length) || state.active === DEMO_ID) return;
   const images = attachments.map(({ mediaType, data }) => ({ mediaType, data }));
   input.value = '';
+  autosize();
   clearAttachments();
   closeSuggest();
   try {
@@ -839,6 +880,7 @@ async function loadChanges() {
     list.innerHTML = '<li class="empty-line">Demo tidak punya repository. Pilih project sungguhan.</li>';
     $('#ch-diff').innerHTML = '';
     $('#changes-count').hidden = true;
+    $('#nav-badge-changes').hidden = true;
     return;
   }
   let data;
@@ -851,8 +893,10 @@ async function loadChanges() {
   if (project !== state.active) return;
   changes.data = data;
   const count = data.files?.length ?? 0;
-  $('#changes-count').hidden = !count;
-  $('#changes-count').textContent = count;
+  for (const badge of [$('#changes-count'), $('#nav-badge-changes')]) {
+    badge.hidden = !count;
+    badge.textContent = count;
+  }
   if (!data.repo) {
     $('#ch-branch').textContent = '';
     list.innerHTML = `<li class="empty-line">${data.error ? escapeHtml(data.error) : 'Folder ini bukan repository git. Jalankan <code>git init</code> untuk memakai panel ini.'}</li>`;
@@ -1142,6 +1186,7 @@ document.querySelectorAll('.tabs button').forEach((btn) =>
   btn.addEventListener('click', () => {
     state.tab = btn.dataset.tab;
     document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b === btn));
+    document.body.dataset.tab = state.tab; // phone layout shows the composer only on the chat tab
     $('.chat-wrap').hidden = state.tab !== 'chat';
     $('#changes').hidden = state.tab !== 'changes';
     if (state.tab === 'chat') scrollChat(true);

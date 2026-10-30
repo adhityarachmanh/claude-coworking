@@ -547,29 +547,109 @@ body.remote-client #toggle-roots, body.remote-client #roots-form, body.remote-cl
 @media (max-width: 1100px) {
   .team { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
-@media (max-width: 900px) {
+/* Wide content (tables, code) scrolls inside its bubble instead of widening the page. */
+.md table { display: block; overflow-x: auto; max-width: 100%; }
+.msg, .msg .body, .approval, .line { min-width: 0; overflow-wrap: anywhere; }
+.mobile-nav { display: none; }
+
+/* ---------- tablet: office on top, panel below ---------- */
+@media (max-width: 1100px) and (min-width: 761px) {
   body { overflow: auto; height: auto; min-height: 100%; }
-  .layout { grid-template-columns: 1fr; grid-template-rows: auto auto; }
-  .stage { height: 54vw; margin: 8px 8px 0; }
-  .panel { height: 88vh; min-height: 480px; border-left: 0; border-top: 1px solid var(--border); }
-  .team { display: flex; overflow-x: auto; gap: 6px; padding: 8px; scrollbar-width: none; }
-  .member { flex: none; width: 150px; }
-  .crumb small { display: none; }
-  .pair { flex-direction: column; }
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .stage { height: 52vw; }
+  .panel { height: 80vh; border-left: 0; border-top: 1px solid var(--border); }
+  .team { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
-/* phones */
-@media (max-width: 600px) {
-  .topbar { gap: 8px; padding: 0 10px; height: 48px; }
+
+/* ---------- phone: app-style, one full-screen view + bottom navigation ---------- */
+@media (max-width: 760px) {
+  html, body { height: 100%; }
+  body { height: 100dvh; overflow: hidden; }
+  .topbar { flex: none; gap: 8px; height: 52px; padding: 0 10px; padding-top: env(safe-area-inset-top); }
   .brand { font-size: 0; }
-  .brand .spark { font-size: 18px; }
-  .crumb { padding-left: 8px; }
-  .pill { font-size: 10.5px; padding: 2px 8px; }
-  .sidebar { top: 48px; width: 86vw; }
-  .stage { height: 56vw; }
-  .tabs button { padding: 8px 9px; font-size: 13px; }
-  .controls { flex-wrap: wrap; }
-  .controls select { max-width: none; flex: 1; }
-  .input textarea { font-size: 16px; } /* no zoom-on-focus in iOS Safari */
-  .msg.user { max-width: 94%; }
+  .brand .spark { font-size: 20px; }
+  .crumb { padding-left: 10px; min-width: 0; }
+  .crumb b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crumb small { display: none; }
+  .topbar .icon-btn { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; }
+  #toggle-sidebar { display: grid; }
+  .pill { font-size: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%; flex: none; }
+  .pill.ok { background: var(--ok); }
+  .pill.bad { background: var(--err); }
+
+  .layout { flex: 1; min-height: 0; display: block; position: relative; }
+  .office, .panel { position: absolute; inset: 0; border: 0; }
+  body[data-view='office'] .panel, body[data-view='panel'] .office { display: none; }
+
+  /* office view: full-width office, team as cards */
+  .office { overflow-y: auto; background: var(--bg); }
+  .stage { flex: none; height: calc((100vw - 16px) * 288 / 544); margin: 8px; }
+  .stage canvas { border-radius: 10px; }
+  .team { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 4px 8px 16px; }
+  .member { padding: 8px; }
+
+  /* panel views: the bottom nav replaces the tabs */
+  .tabs { display: none; }
+  .chat { padding: 10px 10px 4px; gap: 6px; }
+  .msg { padding: 9px 11px; font-size: 14.5px; }
+  .msg.user { max-width: 90%; }
+  .line .who-s { width: auto; }
+  .line .txt { font-size: 11px; }
+  .line .detail { margin-left: 8px; }
+  .approval .ap-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .approval .ap-actions button { padding: 9px 8px; }
+  .changes { padding: 8px; }
+  .ch-files { max-height: 30%; }
+  .activity { padding: 8px 10px; }
+
+  /* composer pinned at the bottom of the chat view */
+  .composer { padding: 8px 8px 6px; }
+  .controls { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-bottom: 6px; }
+  .controls::-webkit-scrollbar { display: none; }
+  .controls select { flex: none; font-size: 12px; max-width: 132px; }
+  .switch { font-size: 12px; }
+  .input { padding: 4px 4px 4px 6px; }
+  .input textarea { font-size: 16px; min-height: 38px; padding: 8px 0; } /* 16px: no zoom-on-focus on iOS */
+  .input button { height: 38px; padding: 0 14px; }
+  .hint { font-size: 10.5px; margin-top: 4px; min-height: 0; }
+  .typing { padding: 2px 12px 4px; }
+
+  /* bottom navigation */
+  .mobile-nav {
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    background: #16171c;
+    border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mobile-nav button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 7px 2px 8px;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .mobile-nav .ico { font-size: 19px; line-height: 1; filter: grayscale(1) opacity(.7); }
+  .mobile-nav button.active { color: var(--text); }
+  .mobile-nav button.active .ico { filter: none; }
+  .mobile-nav button.active::before { content: ''; position: absolute; top: 0; left: 30%; right: 30%; height: 2px; background: var(--accent); border-radius: 2px; }
+  .nav-badge { position: absolute; top: 4px; left: calc(50% + 8px); min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--ask); color: #2a1a00; font: 700 10px/17px var(--font); }
+  .nav-badge.muted-badge { background: var(--accent); color: #fff; }
+
+  /* the composer belongs to the chat view only */
+  body:not([data-tab='chat']) .composer, body:not([data-tab='chat']) .typing { display: none !important; }
+
+  /* project drawer with a dimmed backdrop */
+  .sidebar { top: 52px; bottom: 0; width: 88vw; z-index: 60; }
+  body.sidebar-open .layout::after { content: ''; position: fixed; inset: 52px 0 0; background: #000a; z-index: 55; }
   .modal-card { padding: 14px; }
+  .pair { flex-direction: column; }
+  .toast { bottom: 76px; width: calc(100vw - 32px); text-align: center; }
 }
