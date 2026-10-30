@@ -518,6 +518,14 @@ pre.diff .add { color: #9be3b0; background: #16321f66; display: inline-block; wi
 .pair-info code { font: 12.5px var(--mono); color: var(--accent-2); overflow-wrap: anywhere; }
 .pair .code { font: 700 30px/1.2 var(--mono); letter-spacing: 4px; color: var(--text); margin: 4px 0; }
 .warn { color: #ffd38a; font-size: 13px; }
+.addr-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.addr-tabs button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; font-size: 12.5px; padding: 6px 10px; }
+.addr-tabs button small { font: 11px var(--mono); color: var(--muted); }
+.addr-tabs button.active { border-color: var(--accent); background: #2a211d; }
+.tip { margin-top: 12px; font-size: 13px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+.tip summary { cursor: pointer; font-weight: 600; }
+.tip ol { margin: 8px 0 4px; padding-left: 18px; }
+.tip code { font: 12px var(--mono); color: var(--accent-2); }
 .small { font-size: 12px; }
 .devices { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; font-size: 13px; }
 .devices ul { list-style: none; margin: 6px 0 0; padding: 0; }

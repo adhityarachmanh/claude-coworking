@@ -15,15 +15,30 @@ const sameSecret = (a, b) => {
   return x.length === y.length && timingSafeEqual(x, y);
 };
 
-/** IPv4 addresses other devices on the LAN can reach (private ranges first). */
-export function lanAddresses() {
-  const all = [];
-  for (const addrs of Object.values(os.networkInterfaces())) {
-    for (const a of addrs ?? []) if (a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')) all.push(a.address);
+const VIRTUAL_ADAPTER = /vethernet|wsl|hyper-v|docker|virtualbox|vmware|vbox|br-|veth|virbr/i;
+// Tailscale hands out addresses from the CGNAT range 100.64.0.0/10.
+const isTailscale = (ip, name) => /tailscale/i.test(name) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip);
+
+/**
+ * Addresses other devices can reach, best first:
+ * WiFi/LAN (same network), Tailscale (from anywhere via your tailnet), then virtual adapters (WSL, Docker).
+ * @returns {{ ip: string, kind: 'lan'|'tailscale'|'virtual', name: string }[]}
+ */
+export function networkAddresses() {
+  const found = [];
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
+    for (const a of addrs ?? []) {
+      if (a.family !== 'IPv4' || a.internal || a.address.startsWith('169.254.')) continue;
+      const kind = isTailscale(a.address, name) ? 'tailscale' : VIRTUAL_ADAPTER.test(name) ? 'virtual' : 'lan';
+      found.push({ ip: a.address, kind, name });
+    }
   }
-  const isPrivate = (ip) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
-  return [...all.filter(isPrivate), ...all.filter((ip) => !isPrivate(ip))];
+  const rank = { lan: 0, tailscale: 1, virtual: 2 };
+  return found.sort((a, b) => rank[a.kind] - rank[b.kind]);
 }
+
+/** Every IP the phone listener binds to and answers for. */
+export const lanAddresses = () => networkAddresses().map((a) => a.ip);
 
 function deviceName(userAgent = '') {
   const os = /iPhone/.test(userAgent) ? 'iPhone' : /iPad/.test(userAgent) ? 'iPad' : /Android/.test(userAgent) ? 'Android' : /Windows/.test(userAgent) ? 'Windows' : /Mac OS/.test(userAgent) ? 'Mac' : 'Perangkat';
@@ -108,6 +123,7 @@ export class RemoteAccess {
     return {
       enabled: this.enabled,
       urls: this.enabled ? lanAddresses().map((ip) => `http://${ip}:${port}`) : [],
+      tailscale: networkAddresses().some((a) => a.kind === 'tailscale'),
       devices: this.state.devices.map(({ id, name, created, lastSeen }) => ({ id, name, created, lastSeen })),
     };
   }

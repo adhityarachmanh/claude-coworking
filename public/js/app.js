@@ -928,7 +928,8 @@ $('#ch-commit').addEventListener('submit', async (e) => {
 
 // ---------- phone access (QR pairing) — laptop only ----------
 
-const phone = { timer: null, pairing: null };
+const phone = { timer: null, pairing: null, ip: null };
+const ADDRESS_LABEL = { lan: '📶 WiFi yang sama', tailscale: '🌐 Dari mana saja (Tailscale)' };
 
 function renderPhone() {
   const info = state.config?.remote ?? { enabled: false, urls: [], devices: [] };
@@ -944,12 +945,26 @@ function renderPhone() {
   const devices = info.devices
     .map((d) => `<li><span>${escapeHtml(d.name)}<small>dipasangkan ${new Date(d.created).toLocaleDateString('id-ID')} · terakhir aktif ${new Date(d.lastSeen).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}</small></span><button class="danger" data-revoke="${d.id}">Cabut</button></li>`)
     .join('');
+  const viaTailscale = p?.addresses.find((a) => a.ip === p.ip)?.kind === 'tailscale';
+  const chooser = p && p.addresses.length > 1
+    ? `<div class="addr-tabs">${p.addresses.map((a) => `<button class="${a.ip === p.ip ? 'active' : ''}" data-ip="${a.ip}">${ADDRESS_LABEL[a.kind] ?? a.kind}<small>${a.ip}</small></button>`).join('')}</div>`
+    : '';
+  const tailscaleTip = info.tailscale
+    ? ''
+    : `<details class="tip"><summary>🌐 Mau buka dari luar rumah (beda jaringan)?</summary>
+        <ol>
+          <li>Pasang <b>Tailscale</b> (gratis) di laptop: <code>tailscale.com/download</code>, lalu login.</li>
+          <li>Pasang aplikasi Tailscale di HP, login dengan akun yang sama.</li>
+          <li>Buka lagi jendela ini — muncul pilihan <b>Dari mana saja (Tailscale)</b> dengan QR-nya.</li>
+        </ol>
+        <p class="muted small">Tailscale membuat jaringan pribadi terenkripsi antara laptop dan HP-mu. Laptop tidak terbuka ke internet publik.</p>
+      </details>`;
   body.innerHTML = p
-    ? `<div class="pair">
+    ? `${chooser}<div class="pair">
         <div class="qr">${qrSvg(p.qrUrl)}</div>
         <div class="pair-info">
           <ol>
-            <li>Sambungkan HP ke WiFi yang sama.</li>
+            <li>${viaTailscale ? 'Nyalakan Tailscale di HP (boleh pakai data seluler / WiFi mana saja).' : 'Sambungkan HP ke WiFi yang sama.'}</li>
             <li>Scan QR dengan kamera HP.</li>
             <li>Atau buka <code>${escapeHtml(p.url)}</code> lalu masukkan kode:</li>
           </ol>
@@ -960,13 +975,21 @@ function renderPhone() {
       <p class="muted small">Belum tersambung? Saat pertama kali, Windows mungkin menanyakan izin firewall untuk Node.js — pilih <b>Allow / Izinkan</b> (jaringan Private).</p>`
     : '<p class="muted">Menyiapkan kode…</p>';
   body.innerHTML += `<div class="devices"><b>Perangkat terhubung</b>${devices ? `<ul>${devices}</ul>` : '<p class="muted small">Belum ada.</p>'}</div>`;
+  // Rendered apart from the per-second countdown so an opened <details> stays open.
+  const tipBox = $('#phone-tip');
+  if (tipBox.dataset.tailscale !== String(info.tailscale)) {
+    tipBox.innerHTML = tailscaleTip;
+    tipBox.dataset.tailscale = String(info.tailscale);
+  }
 }
 
 async function refreshPairing() {
   clearTimeout(phone.timer);
   if ($('#phone-modal').hidden || !state.config?.remote?.enabled) return;
   try {
-    if (!phone.pairing || Date.now() > phone.pairing.expires - 1000) phone.pairing = await api('/api/remote/pairing');
+    if (!phone.pairing || Date.now() > phone.pairing.expires - 1000 || (phone.ip && phone.pairing.ip !== phone.ip)) {
+      phone.pairing = await api('/api/remote/pairing', { ip: phone.ip });
+    }
   } catch (err) {
     phone.pairing = null;
     $('#phone-body').innerHTML = `<p class="warn">${escapeHtml(err.message)}</p>`;
@@ -1002,6 +1025,12 @@ $('#remote-enabled').addEventListener('change', async (e) => {
   }
 });
 $('#phone-body').addEventListener('click', async (e) => {
+  const tab = e.target.closest('[data-ip]');
+  if (tab) {
+    phone.ip = tab.dataset.ip; // same pairing code, QR for the other address
+    refreshPairing();
+    return;
+  }
   const btn = e.target.closest('[data-revoke]');
   if (!btn || !window.confirm('Cabut akses perangkat ini? HP itu harus scan QR lagi untuk masuk.')) return;
   await api('/api/remote/revoke', { id: btn.dataset.revoke }).catch((err) => toast(err.message));

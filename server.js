@@ -14,7 +14,7 @@ import { autostartStatus, setAutostart } from './src/autostart.js';
 import { searchFiles } from './src/files.js';
 import { gitCommit, gitDiff, gitStatus } from './src/git.js';
 import { TranscriptMirror } from './src/mirror.js';
-import { DEVICE_COOKIE, RemoteAccess, lanAddresses } from './src/remote.js';
+import { DEVICE_COOKIE, RemoteAccess, lanAddresses, networkAddresses } from './src/remote.js';
 import { listSessions, sessionHistory } from './src/transcripts.js';
 import { loadAgentDefinitions } from './src/roles.js';
 import { SessionManager } from './src/session.js';
@@ -225,10 +225,20 @@ async function handleApi(req, res, pathname) {
   }
   if (pathname === '/api/remote/pairing') {
     if (!remote.enabled) return json(res, 400, { error: 'Nyalakan akses dari HP dulu.' });
-    const ips = lanAddresses();
-    if (!ips.length) return json(res, 400, { error: 'Laptop tidak terhubung ke jaringan (WiFi/LAN).' });
+    // Virtual adapters (WSL, Docker) are unreachable from a phone, so they never go in the QR.
+    const usable = networkAddresses().filter((a) => a.kind !== 'virtual');
+    if (!usable.length) return json(res, 400, { error: 'Laptop tidak terhubung ke jaringan (WiFi/LAN atau Tailscale).' });
+    const chosen = usable.find((a) => a.ip === body.ip) ?? usable[0];
     const { code, key, expires } = remote.currentPairing();
-    return json(res, 200, { code, expires, url: `http://${ips[0]}:${PORT}`, qrUrl: `http://${ips[0]}:${PORT}/pair?k=${key}`, urls: ips.map((ip) => `http://${ip}:${PORT}`) });
+    const base = `http://${chosen.ip}:${PORT}`;
+    return json(res, 200, {
+      code,
+      expires,
+      ip: chosen.ip,
+      url: base,
+      qrUrl: `${base}/pair?k=${key}`,
+      addresses: usable.map(({ ip, kind, name }) => ({ ip, kind, name })),
+    });
   }
   if (pathname === '/api/remote/revoke') {
     remote.revoke(String(body.id ?? ''));

@@ -55,6 +55,22 @@ Di HP kamu bisa memakai semuanya: chat, kartu izin, panel perubahan, dan melihat
 - Koneksinya HTTP biasa (tanpa enkripsi), jadi **pakai hanya di WiFi yang kamu percaya** (rumah/kantor), bukan WiFi publik.
 - Saat pertama kali dinyalakan, Windows bisa menanyakan izin firewall untuk Node.js. Pilih **Allow** untuk jaringan *Private*.
 
+### Dari luar rumah (beda jaringan) dengan Tailscale
+
+Supaya bisa membuka kantor dari mana saja (data seluler, WiFi kantor, dll.) **tanpa membuka laptop ke internet publik**:
+
+1. Pasang **Tailscale** di laptop (`tailscale.com/download`), lalu login.
+2. Pasang aplikasi **Tailscale** di HP, lalu login dengan akun yang sama.
+3. Di laptop, buka **📱**. Muncul pilihan **🌐 Dari mana saja (Tailscale)**. Pilih itu, lalu scan QR-nya dari HP.
+
+Tailscale membuat jaringan pribadi terenkripsi (WireGuard) yang hanya berisi perangkatmu sendiri. Aplikasi ini otomatis mengenali alamat Tailscale (`100.64.0.0/10`) dan mendengarkannya saat akses HP aktif, tanpa pengaturan tambahan. Alamat WiFi dan Tailscale dipasangkan terpisah, jadi HP perlu scan sekali untuk masing-masing.
+
+Supaya tetap bisa diakses saat kamu pergi:
+- **Laptop harus menyala dan tidak sleep.** Atur di *Settings → System → Power*: saat dicolok, sleep = **Never**. Atur juga *saat lid ditutup = Do nothing* kalau laptop sering kamu tutup.
+- Nyalakan **auto-start** (⚙), supaya server langsung jalan lagi setelah laptop restart.
+
+> Tunnel publik seperti ngrok atau Cloudflare Tunnel sengaja tidak dipakai. Aplikasi ini bisa menjalankan perintah di laptopmu, jadi lebih aman kalau tidak punya alamat publik sama sekali.
+
 ## Sesi dari CLI (real-time)
 
 Semua sesi `claude` yang kamu jalankan di terminal, di project mana pun, otomatis tampil di kantor. Prompt, balasan, tool, delegasi subagent, dan tanda selesai ditandai **CLI**. Server hanya **membaca** file transcript yang memang ditulis Claude Code (`~/.claude/projects`), jadi tidak ada hook dan CLI tidak terpengaruh sama sekali.
