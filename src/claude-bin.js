@@ -7,7 +7,7 @@ const WIN = process.platform === 'win32';
 
 export function findClaude() {
   const override = process.env.CLAUDE_BIN;
-  if (override) return override.endsWith('.js') ? { command: process.execPath, args: [override] } : { command: override, args: [] };
+  if (override) return /\.[cm]?js$/.test(override) ? { command: process.execPath, args: [override] } : { command: override, args: [] };
 
   const dirs = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
   dirs.push(path.join(os.homedir(), '.local', 'bin'), path.join(os.homedir(), '.claude', 'local'));

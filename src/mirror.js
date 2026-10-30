@@ -6,7 +6,8 @@ import path from 'node:path';
 import { StreamTranslator } from './translator.js';
 import { truncate } from './util.js';
 
-const ROOT = path.join(os.homedir(), '.claude', 'projects');
+// Overridable so tests can point the mirror at a throwaway folder.
+const DEFAULT_ROOT = process.env.CLAUDE_PROJECTS_DIR ?? path.join(os.homedir(), '.claude', 'projects');
 const END_TURN_DELAY_MS = 2000; // wait for a turn_duration record before closing quietly
 const SWEEP_MS = 2000;
 const HOT_MS = 10 * 60 * 1000;
@@ -32,19 +33,20 @@ function readMeta(file) {
 }
 
 export class TranscriptMirror {
-  constructor(hub) {
+  constructor(hub, { root = DEFAULT_ROOT } = {}) {
     this.hub = hub;
+    this.root = root;
     this.files = new Map(); // file -> { offset, rest: Buffer, mtime }
     this.sessions = new Map(); // CLI session id -> mirror state
     this.timers = new Map(); // file -> debounce timer
   }
 
   start() {
-    if (!existsSync(ROOT)) return false;
+    if (!existsSync(this.root)) return false;
     // Existing history is skipped: the office shows what happens from now on.
     for (const file of this.listTranscripts()) this.track(file, true);
     try {
-      this.watcher = watch(ROOT, { recursive: true }, (_event, name) => name && this.schedule(path.join(ROOT, name)));
+      this.watcher = watch(this.root, { recursive: true }, (_event, name) => name && this.schedule(path.join(this.root, name)));
     } catch {
       this.watcher = null; // no recursive watch on this platform: the sweep below still works
     }
@@ -59,9 +61,9 @@ export class TranscriptMirror {
 
   listTranscripts() {
     const files = [];
-    for (const dir of entries(ROOT)) {
+    for (const dir of entries(this.root)) {
       if (!dir.isDirectory()) continue;
-      const projectDir = path.join(ROOT, dir.name);
+      const projectDir = path.join(this.root, dir.name);
       for (const entry of entries(projectDir)) {
         if (entry.isFile() && entry.name.endsWith('.jsonl')) files.push(path.join(projectDir, entry.name));
         else if (entry.isDirectory()) {

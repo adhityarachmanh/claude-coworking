@@ -17,7 +17,7 @@ export function isDirectory(p) {
 export function discoverProjects({ roots }) {
   const found = [];
   try {
-    const config = JSON.parse(readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8'));
+    const config = JSON.parse(readFileSync(process.env.CLAUDE_CONFIG_FILE ?? path.join(os.homedir(), '.claude.json'), 'utf8'));
     for (const dir of Object.keys(config.projects ?? {})) if (isDirectory(dir)) found.push([dir, 'claude']);
   } catch {
     // No Claude Code config yet.

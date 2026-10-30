@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { truncate } from './util.js';
 
-const ROOT = path.join(os.homedir(), '.claude', 'projects');
+// Overridable so tests can use a throwaway folder.
+const ROOT = process.env.CLAUDE_PROJECTS_DIR ?? path.join(os.homedir(), '.claude', 'projects');
 const HEAD_BYTES = 256 * 1024;
 const TAIL_BYTES = 2 * 1024 * 1024;
 const SESSION_ID = /^[0-9a-f-]{36}$/i;

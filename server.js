@@ -71,7 +71,8 @@ if (process.argv.includes('--background')) {
   console.error = write('ERROR');
 }
 
-const hub = new Hub({ dataDir: path.join(APP_DIR, 'data') });
+// OFFICE_DATA_DIR lets tests run against a throwaway state file.
+const hub = new Hub({ dataDir: process.env.OFFICE_DATA_DIR ?? path.join(APP_DIR, 'data') });
 const claude = findClaude();
 const agents = loadAgentDefinitions(path.join(APP_DIR, '.claude', 'agents'));
 const sessions = new SessionManager({ hub, claude, agents, teamPrompt: TEAM_PROMPT });

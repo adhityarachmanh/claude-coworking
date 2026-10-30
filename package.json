@@ -10,6 +10,8 @@
   "scripts": {
     "start": "node server.js",
     "open": "node server.js --open",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "node --test --test-concurrency=1",
+    "test:claude": "node test-support/claude-contract.mjs"
   }
 }
