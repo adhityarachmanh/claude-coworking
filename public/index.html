@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="office-token" content="__OFFICE_TOKEN__" />
+    <title>Claude Coworking</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d97757'/%3E%3Cpath d='M16 6v20M6 16h20M9 9l14 14M23 9 9 23' stroke='%23fff3e8' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/css/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <button id="toggle-sidebar" class="icon-btn" title="Daftar project">☰</button>
+      <div class="brand"><span class="spark">✳</span> Claude Coworking</div>
+      <div id="crumb" class="crumb"></div>
+      <button id="btn-notify" class="icon-btn" title="Notifikasi & suara">🔕</button>
+      <span id="conn" class="pill">menghubungkan…</span>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="side-head">
+          <input id="project-search" type="search" placeholder="Cari project…" autocomplete="off" />
+          <button id="refresh-projects" class="icon-btn" title="Pindai ulang folder">↻</button>
+          <button id="toggle-roots" class="icon-btn" title="Atur folder projects">⚙</button>
+        </div>
+        <form id="roots-form" class="roots" hidden>
+          <label for="roots-input">Folder induk projects <small>(satu per baris — semua subfolder-nya jadi project)</small></label>
+          <textarea id="roots-input" rows="3" spellcheck="false" placeholder="C:\Users\nama\projects"></textarea>
+          <p id="roots-hint" class="muted"></p>
+          <div class="roots-actions">
+            <button type="button" id="roots-cancel" class="ghost">Batal</button>
+            <button class="primary">Simpan & pindai</button>
+          </div>
+          <hr />
+          <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
+          <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>
+          <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
+        </form>
+        <ul id="project-list" class="projects"></ul>
+        <form id="add-project" class="add-project">
+          <input id="add-project-path" placeholder="Tambah folder: C:\path\project" autocomplete="off" />
+          <button class="icon-btn" title="Tambah">＋</button>
+        </form>
+      </aside>
+
+      <main class="office">
+        <div id="stage" class="stage">
+          <canvas aria-label="Kantor tim Claude"></canvas>
+          <div class="overlay"></div>
+        </div>
+        <div id="team" class="team"></div>
+      </main>
+
+      <section class="panel">
+        <nav class="tabs">
+          <button data-tab="chat" class="active">Chat</button>
+          <button data-tab="changes">Perubahan <span id="changes-count" class="count" hidden></span></button>
+          <button data-tab="activity">Aktivitas</button>
+        </nav>
+        <div id="changes" class="changes" hidden>
+          <div class="ch-head">
+            <span id="ch-branch" class="muted"></span>
+            <span class="grow"></span>
+            <button id="ch-review" class="ghost" title="Minta Arif (Tech Lead) me-review semua perubahan">🔍 Minta review</button>
+            <button id="ch-refresh" class="ghost icon" title="Muat ulang">↻</button>
+          </div>
+          <ul id="ch-files" class="ch-files"></ul>
+          <div id="ch-diff" class="ch-diff"></div>
+          <form id="ch-commit" class="ch-commit">
+            <input id="ch-message" placeholder="Pesan commit…" autocomplete="off" />
+            <button class="primary">Commit</button>
+          </form>
+        </div>
+        <div class="chat-wrap">
+          <div id="chat" class="chat"></div>
+          <button id="jump-latest" class="jump" hidden>↓ Terbaru</button>
+        </div>
+        <ol id="activity" class="activity" hidden></ol>
+        <div id="typing" class="typing" hidden><span></span><span></span><span></span><em id="typing-text">Tim sedang bekerja…</em></div>
+
+        <div id="composer" class="composer">
+          <div class="controls">
+            <select id="mode" title="Mode izin">
+              <option value="manual">🛡 Tanya dulu</option>
+              <option value="acceptEdits">✏️ Auto-edit file</option>
+              <option value="auto">⚡ Auto</option>
+              <option value="plan">📋 Rencana dulu</option>
+            </select>
+            <select id="model" title="Model">
+              <option value="">Model default</option>
+              <option value="opus">Opus</option>
+              <option value="sonnet">Sonnet</option>
+              <option value="haiku">Haiku</option>
+            </select>
+            <label class="switch" title="Claude mendelegasikan ke subagent PM/BA/UI-UX/Dev/QA (lebih hidup, lebih banyak token)">
+              <input id="team-mode" type="checkbox" checked /> Mode tim
+            </label>
+            <span class="grow"></span>
+            <button id="btn-stop" class="danger" hidden title="Hentikan (Esc)">■ Stop</button>
+            <button id="btn-sessions" class="ghost icon" title="Riwayat sesi (lanjutkan sesi CLI/web lama)">🕘</button>
+            <button id="btn-new" class="ghost icon" title="Mulai sesi baru (Claude lupa percakapan sebelumnya)">↺</button>
+          </div>
+          <div id="sessions-panel" class="sessions" hidden></div>
+          <div id="suggest" class="suggest" hidden></div>
+          <div id="attachments" class="attachments" hidden></div>
+          <div class="input">
+            <button id="btn-attach" class="ghost icon attach" title="Lampirkan gambar (atau paste / drag ke kotak ini)">📎</button>
+            <input id="file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
+            <textarea id="prompt" rows="3" placeholder="Minta sesuatu ke tim…   ( / command · @file · Shift+Enter baris baru )"></textarea>
+            <button id="btn-send" class="primary">Kirim</button>
+          </div>
+          <div id="composer-hint" class="hint"></div>
+          <button id="btn-demo" class="primary demo-btn">▶ Jalankan demo</button>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>

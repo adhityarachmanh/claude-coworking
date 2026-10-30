@@ -1,0 +1,15 @@
+{
+  "name": "claude-coworking",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Kantor pixel-art untuk mengoperasikan Claude Code dari browser",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "open": "node server.js --open",
+    "dev": "node --watch server.js"
+  }
+}
