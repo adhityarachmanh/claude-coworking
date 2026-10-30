@@ -180,6 +180,68 @@ test('stop interrupts a running turn and the session stays usable', async () => 
   assert.equal((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result')).ok, true);
 });
 
+test('phone access: off by default, pairing required, laptop-only settings, revoke', async (t) => {
+  const { lanAddresses } = await import('../src/remote.js');
+  const ip = lanAddresses()[0];
+  if (!ip) return t.skip('no LAN address on this machine');
+  const LAN = `http://${ip}:${PORT}`;
+  const lan = (p, opts = {}) => fetch(LAN + p, { redirect: 'manual', ...opts });
+
+  assert.equal((await api('/api/remote/pairing')).status, 400, 'no pairing while disabled');
+  await assert.rejects(lan('/health'), 'nothing listens on the LAN while disabled');
+
+  assert.equal((await api('/api/remote', { enabled: true })).status, 200);
+  await sleep(300);
+  assert.equal((await lan('/')).headers.get('location'), '/pair', 'unpaired device is sent to pairing');
+  assert.equal((await lan('/stream')).status, 401);
+  assert.match(await (await lan('/pair')).text(), /Hubungkan ke Claude Coworking/);
+
+  // 6-digit code
+  let pairing = (await api('/api/remote/pairing')).body;
+  assert.match(pairing.code, /^\d{6}$/);
+  assert.ok(pairing.qrUrl.startsWith(`http://${lanAddresses()[0]}:${PORT}/pair?k=`));
+  const tryCode = (code) => lan('/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+  const wrong = await tryCode(pairing.code === '000000' ? '111111' : '000000');
+  assert.equal(wrong.status, 400);
+  assert.equal((await wrong.json()).triesLeft, 4);
+  const right = await tryCode(pairing.code);
+  assert.equal(right.status, 200);
+  const cookie = right.headers.get('set-cookie').split(';')[0];
+  assert.match(right.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
+  assert.equal((await tryCode(pairing.code)).status, 400, 'codes are single-use');
+
+  // the paired phone can use the office, but not laptop-only settings
+  const page = await lan('/', { headers: { Cookie: cookie } });
+  assert.equal(page.status, 200);
+  const phoneToken = (await page.text()).match(/office-token" content="([^"]+)"/)[1];
+  const phoneApi = (p, body = {}) => lan(p, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', 'X-Office-Token': phoneToken }, body: JSON.stringify(body) });
+  assert.equal((await phoneApi(`/api/projects/${await projectId()}/files`, { q: 'check' })).status, 200);
+  for (const p of ['/api/config', '/api/autostart', '/api/shutdown', '/api/remote', '/api/remote/pairing']) assert.equal((await phoneApi(p, { enabled: false, roots: [] })).status, 403, p);
+
+  // QR link: one-time key, redirects home with a cookie
+  pairing = (await api('/api/remote/pairing')).body;
+  const qrPath = new URL(pairing.qrUrl).pathname + new URL(pairing.qrUrl).search;
+  const viaQr = await lan(qrPath);
+  assert.equal(viaQr.status, 302);
+  assert.equal(viaQr.headers.get('location'), '/');
+  assert.match(await (await lan(qrPath)).text(), /kedaluwarsa/, 'QR key cannot be reused');
+
+  // brute force: 5 wrong codes rotate the code
+  pairing = (await api('/api/remote/pairing')).body;
+  for (let i = 0; i < 5; i++) await tryCode(pairing.code === '000000' ? '111111' : '000000');
+  assert.equal((await tryCode(pairing.code)).status, 400, 'old code dead after 5 failures');
+
+  // revoke + disable
+  const devices = (await snapshot()).config.remote.devices;
+  assert.equal(devices.length, 2);
+  assert.ok(!JSON.stringify(devices).includes('hash'), 'no secrets sent to browsers');
+  for (const d of devices) await api('/api/remote/revoke', { id: d.id });
+  assert.equal((await lan('/stream', { headers: { Cookie: cookie } })).status, 401, 'revoked device is out');
+  await api('/api/remote', { enabled: false });
+  await sleep(300);
+  await assert.rejects(lan('/health'), 'LAN listener closed again');
+});
+
 test('settings are validated; the demo runs without Claude', async () => {
   const id = await projectId();
   await api(`/api/projects/${id}/settings`, { mode: 'rm -rf', model: 'gpt', team: false });

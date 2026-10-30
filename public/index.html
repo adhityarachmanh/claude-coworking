@@ -13,6 +13,7 @@
       <button id="toggle-sidebar" class="icon-btn" title="Daftar project">☰</button>
       <div class="brand"><span class="spark">✳</span> Claude Coworking</div>
       <div id="crumb" class="crumb"></div>
+      <button id="btn-phone" class="icon-btn" title="Buka dari HP (scan QR)" hidden>📱</button>
       <button id="btn-notify" class="icon-btn" title="Notifikasi & suara">🔕</button>
       <span id="conn" class="pill">menghubungkan…</span>
     </header>
@@ -114,6 +115,17 @@
           <button id="btn-demo" class="primary demo-btn">▶ Jalankan demo</button>
         </div>
       </section>
+    </div>
+
+    <div id="phone-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-labelledby="phone-title">
+        <div class="modal-head">
+          <b id="phone-title">📱 Buka dari HP</b>
+          <button id="phone-close" class="icon-btn" title="Tutup">✕</button>
+        </div>
+        <label class="switch big"><input id="remote-enabled" type="checkbox" /> Izinkan akses dari HP di jaringan WiFi yang sama</label>
+        <div id="phone-body"></div>
+      </div>
     </div>
 
     <script type="module" src="/js/app.js"></script>

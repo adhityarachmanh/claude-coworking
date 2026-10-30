@@ -14,6 +14,7 @@ import { autostartStatus, setAutostart } from './src/autostart.js';
 import { searchFiles } from './src/files.js';
 import { gitCommit, gitDiff, gitStatus } from './src/git.js';
 import { TranscriptMirror } from './src/mirror.js';
+import { DEVICE_COOKIE, RemoteAccess, lanAddresses } from './src/remote.js';
 import { listSessions, sessionHistory } from './src/transcripts.js';
 import { loadAgentDefinitions } from './src/roles.js';
 import { SessionManager } from './src/session.js';
@@ -77,6 +78,7 @@ const claude = findClaude();
 const agents = loadAgentDefinitions(path.join(APP_DIR, '.claude', 'agents'));
 const sessions = new SessionManager({ hub, claude, agents, teamPrompt: TEAM_PROMPT });
 const mirror = new TranscriptMirror(hub);
+const remote = new RemoteAccess(hub);
 
 const projectRoots = () => (hub.persisted.roots.length ? hub.persisted.roots : [DEFAULT_ROOT]);
 
@@ -94,6 +96,7 @@ function refreshProjects() {
     usingDefault: !hub.persisted.roots.length,
     slashCommands: [...new Set([...DEFAULT_SLASH, ...(hub.persisted.slashCommands ?? [])])].sort(),
     autostart: autostartStatus(),
+    remote: remote.publicInfo(PORT),
   };
   hub.ready = wasReady;
   hub.broadcast('config', hub.config);
@@ -102,8 +105,33 @@ function refreshProjects() {
 
 // ---------- http helpers ----------
 
-const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
-const ALLOWED_ORIGINS = new Set([`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`]);
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+// Settings that only the laptop itself may change, never a paired phone.
+const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config']);
+
+const isLocal = (req) => LOOPBACK.has(req.socket.remoteAddress);
+
+/** Host names we answer to (DNS-rebinding guard); LAN addresses only while phone access is on. */
+function allowedHosts() {
+  const hosts = [`localhost:${PORT}`, `127.0.0.1:${PORT}`];
+  if (remote.enabled) for (const ip of lanAddresses()) hosts.push(`${ip}:${PORT}`);
+  return hosts;
+}
+
+function cookies(req) {
+  return Object.fromEntries(
+    String(req.headers.cookie ?? '')
+      .split(';')
+      .map((part) => part.trim().split('='))
+      .filter(([key, value]) => key && value)
+      .map(([key, ...rest]) => [key, decodeURIComponent(rest.join('='))]),
+  );
+}
+
+function publishConfig() {
+  hub.config = { ...hub.config, remote: remote.publicInfo(PORT) };
+  hub.broadcast('config', hub.config);
+}
 
 function json(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -146,9 +174,9 @@ async function serveStatic(pathname, res) {
   }
 }
 
-function openStream(req, res) {
+function openStream(req, res, local) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-  res.write(`event: snapshot\ndata: ${JSON.stringify(hub.snapshot())}\n\n`);
+  res.write(`event: snapshot\ndata: ${JSON.stringify({ ...hub.snapshot(), client: { local } })}\n\n`);
   hub.clients.add(res);
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 15000);
   req.on('close', () => {
@@ -188,6 +216,24 @@ async function handleApi(req, res, pathname) {
     json(res, 200, { ok: true });
     setTimeout(shutdown, 300);
     return;
+  }
+  if (pathname === '/api/remote') {
+    remote.setEnabled(Boolean(body.enabled));
+    syncLanServers();
+    publishConfig();
+    return json(res, 200, remote.publicInfo(PORT));
+  }
+  if (pathname === '/api/remote/pairing') {
+    if (!remote.enabled) return json(res, 400, { error: 'Nyalakan akses dari HP dulu.' });
+    const ips = lanAddresses();
+    if (!ips.length) return json(res, 400, { error: 'Laptop tidak terhubung ke jaringan (WiFi/LAN).' });
+    const { code, key, expires } = remote.currentPairing();
+    return json(res, 200, { code, expires, url: `http://${ips[0]}:${PORT}`, qrUrl: `http://${ips[0]}:${PORT}/pair?k=${key}`, urls: ips.map((ip) => `http://${ip}:${PORT}`) });
+  }
+  if (pathname === '/api/remote/revoke') {
+    remote.revoke(String(body.id ?? ''));
+    publishConfig();
+    return json(res, 200, { ok: true });
   }
   if (pathname === '/api/projects/refresh') {
     refreshProjects();
@@ -265,23 +311,105 @@ async function handleApi(req, res, pathname) {
   return json(res, 200, { ok: true });
 }
 
-const server = http.createServer(async (req, res) => {
-  // DNS-rebinding guard: only answer to our own host name.
-  if (!ALLOWED_HOSTS.has(String(req.headers.host).toLowerCase())) return json(res, 421, { error: 'bad host' });
-  if (req.headers.origin && !ALLOWED_ORIGINS.has(req.headers.origin)) return json(res, 403, { error: 'bad origin' });
-  const { pathname } = new URL(req.url, `http://${req.headers.host}`);
+// ---------- pairing a phone ----------
+
+async function servePairPage(res, message = '') {
+  const html = (await readFile(path.join(PUBLIC_DIR, 'pair.html'), 'utf8')).replace('__MESSAGE__', message.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`));
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(html);
+}
+
+function deviceCookie(token) {
+  return `${DEVICE_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`;
+}
+
+/** GET /pair?k=… (QR link), GET /pair (code form), POST /pair {code}. */
+async function handlePair(req, res, url) {
+  const userAgent = String(req.headers['user-agent'] ?? '');
+  const key = url.searchParams.get('k');
+  if (req.method === 'GET' && key) {
+    const result = remote.pair({ key }, userAgent);
+    if (!result.token) return servePairPage(res, result.error);
+    publishConfig();
+    res.writeHead(302, { 'Set-Cookie': deviceCookie(result.token), Location: '/' }); // drop the key from the address bar
+    return res.end();
+  }
+  if (req.method === 'GET') return servePairPage(res);
+  if (req.method !== 'POST' || !String(req.headers['content-type']).startsWith('application/json')) return json(res, 405, { error: 'method not allowed' });
+  const result = remote.pair({ code: (await readJson(req)).code }, userAgent);
+  if (!result.token) return json(res, 400, result);
+  publishConfig();
+  res.writeHead(200, { 'Set-Cookie': deviceCookie(result.token), 'Content-Type': 'application/json' });
+  return res.end(JSON.stringify({ ok: true }));
+}
+
+// ---------- request handling (shared by the localhost and LAN listeners) ----------
+
+async function handler(req, res) {
+  // DNS-rebinding guard: only answer to our own host names.
+  const host = String(req.headers.host).toLowerCase();
+  const hosts = allowedHosts();
+  if (!hosts.includes(host)) return json(res, 421, { error: 'bad host' });
+  if (req.headers.origin && !hosts.some((h) => req.headers.origin === `http://${h}`)) return json(res, 403, { error: 'bad origin' });
+  const { pathname, searchParams } = new URL(req.url, `http://${host}`);
+  const local = isLocal(req);
   try {
+    if (!local) {
+      // Another device on the network: it must be paired, and some settings stay laptop-only.
+      if (!remote.enabled) return json(res, 403, { error: 'Akses dari perangkat lain sedang dimatikan.' });
+      if (pathname === '/pair') return await handlePair(req, res, new URL(req.url, `http://${host}`));
+      if (!remote.verify(cookies(req)[DEVICE_COOKIE])) {
+        if (req.method === 'GET' && pathname !== '/stream' && !pathname.startsWith('/api/')) {
+          res.writeHead(302, { Location: '/pair' });
+          return res.end();
+        }
+        return json(res, 401, { error: 'Perangkat belum dipasangkan.' });
+      }
+      if (LOCAL_ONLY.has(pathname) || pathname.startsWith('/api/remote')) return json(res, 403, { error: 'Pengaturan ini hanya bisa diubah dari laptop.' });
+    }
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname);
     if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' });
-    if (pathname === '/stream') return openStream(req, res);
+    if (pathname === '/stream') return openStream(req, res, local);
     if (pathname === '/health') return json(res, 200, { ok: true, claude: Boolean(claude) });
+    if (pathname === '/pair' && searchParams.size === 0) return servePairPage(res);
     return await serveStatic(pathname, res);
   } catch (err) {
     console.error(err);
     if (!res.headersSent) json(res, 500, { error: String(err.message ?? err) });
     else res.end();
   }
-});
+}
+
+const server = http.createServer(handler);
+
+// One extra listener per LAN address while phone access is on (never 0.0.0.0).
+const lanServers = new Map(); // ip -> { server, sockets }
+function syncLanServers() {
+  const wanted = new Set(remote.enabled ? lanAddresses() : []);
+  for (const [ip, entry] of lanServers) {
+    if (wanted.has(ip)) continue;
+    entry.server.close();
+    for (const socket of entry.sockets) socket.destroy(); // also ends open event streams
+    lanServers.delete(ip);
+  }
+  for (const ip of wanted) {
+    if (lanServers.has(ip)) continue;
+    const lan = http.createServer(handler);
+    const sockets = new Set();
+    lan.on('connection', (socket) => {
+      sockets.add(socket);
+      socket.on('close', () => sockets.delete(socket));
+    });
+    lan.on('error', (err) => {
+      console.error(`Akses HP di ${ip} gagal: ${err.message}`);
+      lanServers.delete(ip);
+    });
+    lan.listen(PORT, ip, () => console.log(`Akses HP aktif: http://${ip}:${PORT}`));
+    lanServers.set(ip, { server: lan, sockets });
+  }
+}
+// WiFi changes (new IP) are picked up without a restart.
+setInterval(() => remote.enabled && syncLanServers(), 30000).unref();
 
 refreshProjects();
 hub.ready = true;
@@ -300,6 +428,7 @@ server.listen(PORT, HOST, () => {
   console.log(`Folder projects: ${projectRoots().join('; ')}  ·  Role agents: ${Object.keys(agents).join(', ') || '-'}`);
   console.log(mirroring ? 'Mirror CLI: aktif (membaca ~/.claude/projects)' : 'Mirror CLI: nonaktif (~/.claude/projects tidak ada)');
   console.log('Tekan Ctrl+C untuk berhenti.');
+  syncLanServers();
   if (process.argv.includes('--open')) {
     const opener = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]];
     spawn(opener[0], opener[1], { stdio: 'ignore', detached: true, windowsHide: true }).unref();

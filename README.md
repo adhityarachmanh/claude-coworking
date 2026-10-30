@@ -37,6 +37,24 @@ Definisinya ada di `.claude/agents/*.md` (bisa diedit). Dengan **Mode tim** akti
 
 Claude hanya memanggil role yang relevan. Tugas kecil dikerjakan langsung tanpa delegasi. Tanpa Mode tim (atau untuk sesi CLI biasa), tiap aksi tetap dibagi ke orang yang paling cocok menurut jenis file/perintahnya: `.tsx` ke Putri, migrasi ke Jaka, `npm test` ke Rizka, `docker` ke Doni, `git diff` ke Arif, dan seterusnya.
 
+## Buka dari HP
+
+1. Di laptop, klik **📱** di header, lalu centang **Izinkan akses dari HP**.
+2. Sambungkan HP ke **WiFi yang sama** dengan laptop.
+3. Scan QR dengan kamera HP. Atau buka alamat yang tertera (mis. `http://192.168.1.10:4317`) lalu masukkan **kode 6 digit**.
+4. Selesai. HP diingat, jadi lain kali cukup buka alamat itu lagi.
+
+Di HP kamu bisa memakai semuanya: chat, kartu izin, panel perubahan, dan melihat kantor. Pengaturan sensitif (folder projects, auto-start, matikan server, akses HP) hanya bisa diubah dari laptop.
+
+**Keamanan:**
+- Mati secara default. Saat dimatikan, server hanya mendengarkan `127.0.0.1`.
+- Saat dinyalakan, server juga mendengarkan alamat LAN laptop (bukan `0.0.0.0`).
+- Perangkat baru wajib pairing dengan kode dari layar laptop. Kode berlaku 2 menit, sekali pakai, dan diganti setelah 5 kali salah.
+- HP yang terpasang menyimpan token acak di cookie `HttpOnly`. Server hanya menyimpan hash-nya.
+- Perangkat bisa dicabut kapan saja di jendela 📱.
+- Koneksinya HTTP biasa (tanpa enkripsi), jadi **pakai hanya di WiFi yang kamu percaya** (rumah/kantor), bukan WiFi publik.
+- Saat pertama kali dinyalakan, Windows bisa menanyakan izin firewall untuk Node.js. Pilih **Allow** untuk jaringan *Private*.
+
 ## Sesi dari CLI (real-time)
 
 Semua sesi `claude` yang kamu jalankan di terminal, di project mana pun, otomatis tampil di kantor. Prompt, balasan, tool, delegasi subagent, dan tanda selesai ditandai **CLI**. Server hanya **membaca** file transcript yang memang ditulis Claude Code (`~/.claude/projects`), jadi tidak ada hook dan CLI tidak terpengaruh sama sekali.

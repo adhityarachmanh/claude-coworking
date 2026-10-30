@@ -1,0 +1,114 @@
+// Access from other devices on the same network (e.g. a phone), off by default.
+// A device must be paired once — QR link or 6-digit code shown only on the laptop —
+// and then carries a long random device token in an HttpOnly cookie. Only token hashes are stored.
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
+import os from 'node:os';
+
+const PAIRING_TTL_MS = 2 * 60 * 1000;
+const MAX_TRIES = 5;
+export const DEVICE_COOKIE = 'office_device';
+
+const sha256 = (s) => createHash('sha256').update(s).digest('hex');
+const sameSecret = (a, b) => {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && timingSafeEqual(x, y);
+};
+
+/** IPv4 addresses other devices on the LAN can reach (private ranges first). */
+export function lanAddresses() {
+  const all = [];
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const a of addrs ?? []) if (a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')) all.push(a.address);
+  }
+  const isPrivate = (ip) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
+  return [...all.filter(isPrivate), ...all.filter((ip) => !isPrivate(ip))];
+}
+
+function deviceName(userAgent = '') {
+  const os = /iPhone/.test(userAgent) ? 'iPhone' : /iPad/.test(userAgent) ? 'iPad' : /Android/.test(userAgent) ? 'Android' : /Windows/.test(userAgent) ? 'Windows' : /Mac OS/.test(userAgent) ? 'Mac' : 'Perangkat';
+  const browser = /EdgA?\//.test(userAgent) ? 'Edge' : /CriOS|Chrome\//.test(userAgent) ? 'Chrome' : /FxiOS|Firefox\//.test(userAgent) ? 'Firefox' : /Safari\//.test(userAgent) ? 'Safari' : 'browser';
+  return `${os} · ${browser}`;
+}
+
+export class RemoteAccess {
+  constructor(hub) {
+    this.hub = hub;
+    hub.persisted.remote ??= { enabled: false, devices: [] };
+    this.pairing = null;
+  }
+
+  get state() {
+    return this.hub.persisted.remote;
+  }
+
+  get enabled() {
+    return this.state.enabled;
+  }
+
+  setEnabled(enabled) {
+    this.state.enabled = Boolean(enabled);
+    this.pairing = null;
+    this.hub.save();
+  }
+
+  /** Current one-time pairing secrets (rotated after use, expiry or too many wrong codes). */
+  currentPairing() {
+    if (!this.pairing || Date.now() > this.pairing.expires) {
+      this.pairing = {
+        code: String(randomInt(0, 1_000_000)).padStart(6, '0'),
+        key: randomBytes(18).toString('base64url'),
+        expires: Date.now() + PAIRING_TTL_MS,
+        tries: 0,
+      };
+    }
+    return this.pairing;
+  }
+
+  /** @returns {{ token?: string, error?: string, triesLeft?: number }} */
+  pair({ code, key }, userAgent) {
+    if (!this.enabled) return { error: 'Akses dari perangkat lain sedang dimatikan.' };
+    const p = this.pairing;
+    if (!p || Date.now() > p.expires) return { error: 'Kode sudah kedaluwarsa. Minta kode baru di laptop (⚙ → Akses dari HP).' };
+    const ok = key ? sameSecret(key, p.key) : sameSecret(String(code ?? '').replace(/\D/g, ''), p.code);
+    if (!ok) {
+      p.tries++;
+      if (p.tries >= MAX_TRIES) {
+        this.pairing = null;
+        return { error: 'Terlalu banyak percobaan salah. Kode diganti — lihat kode baru di laptop.' };
+      }
+      return { error: 'Kode salah.', triesLeft: MAX_TRIES - p.tries };
+    }
+    this.pairing = null; // single use
+    const token = randomBytes(32).toString('base64url');
+    this.state.devices.push({ id: randomUUID(), hash: sha256(token), name: deviceName(userAgent), created: Date.now(), lastSeen: Date.now() });
+    this.hub.save();
+    return { token };
+  }
+
+  /** The paired device for a cookie token, or null. */
+  verify(token) {
+    if (!token || !this.enabled) return null;
+    const hash = sha256(token);
+    const device = this.state.devices.find((d) => sameSecret(d.hash, hash));
+    if (device && Date.now() - device.lastSeen > 60_000) {
+      device.lastSeen = Date.now();
+      this.hub.scheduleSave();
+    }
+    return device ?? null;
+  }
+
+  revoke(id) {
+    this.state.devices = this.state.devices.filter((d) => d.id !== id);
+    this.hub.save();
+  }
+
+  /** Safe to send to browsers: no token hashes. */
+  publicInfo(port) {
+    return {
+      enabled: this.enabled,
+      urls: this.enabled ? lanAddresses().map((ip) => `http://${ip}:${port}`) : [],
+      devices: this.state.devices.map(({ id, name, created, lastSeen }) => ({ id, name, created, lastSeen })),
+    };
+  }
+}

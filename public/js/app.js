@@ -1,5 +1,6 @@
 // Claude Coworking web app: project picker, chat with Claude Code, approvals, live office.
 import { renderMarkdown } from './markdown.js';
+import { qrSvg } from './qr.js';
 import { CAST, ROLE_ORDER, roleColor, roleName } from './office/cast.js';
 import { Scene } from './office/scene.js';
 import { avatarURL } from './office/sprites.js';
@@ -72,8 +73,18 @@ function connect() {
   });
   const on = (type, fn) => source.addEventListener(type, (msg) => fn(JSON.parse(msg.data)));
 
-  on('config', (config) => renderRoots(config));
+  on('config', (config) => {
+    renderRoots(config);
+    if (!$('#phone-modal').hidden) {
+      phone.pairing = null; // a device just paired (codes are single-use) or settings changed
+      refreshPairing();
+    }
+  });
   on('snapshot', (snap) => {
+    // Opened from a paired phone: laptop-only settings are hidden (the server refuses them anyway).
+    state.local = snap.client?.local !== false;
+    document.body.classList.toggle('remote-client', !state.local);
+    $('#btn-phone').hidden = !state.local;
     renderRoots(snap.config);
     state.projects = snap.projects;
     state.statuses = snap.statuses;
@@ -913,6 +924,87 @@ $('#ch-commit').addEventListener('submit', async (e) => {
   } catch (err) {
     toast(`Commit gagal: ${err.message}`);
   }
+});
+
+// ---------- phone access (QR pairing) — laptop only ----------
+
+const phone = { timer: null, pairing: null };
+
+function renderPhone() {
+  const info = state.config?.remote ?? { enabled: false, urls: [], devices: [] };
+  $('#remote-enabled').checked = info.enabled;
+  const body = $('#phone-body');
+  if (!info.enabled) {
+    body.innerHTML = `<p class="muted">Setelah dinyalakan, scan QR dengan kamera HP untuk membuka kantor ini dari HP. HP harus terhubung ke WiFi yang sama dengan laptop.</p>
+      <p class="warn">Hanya nyalakan di jaringan yang kamu percaya (rumah/kantor). Siapa pun di jaringan tetap butuh kode dari layar laptop ini untuk masuk.</p>`;
+    return;
+  }
+  const p = phone.pairing;
+  const left = p ? Math.max(0, Math.round((p.expires - Date.now()) / 1000)) : 0;
+  const devices = info.devices
+    .map((d) => `<li><span>${escapeHtml(d.name)}<small>dipasangkan ${new Date(d.created).toLocaleDateString('id-ID')} · terakhir aktif ${new Date(d.lastSeen).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}</small></span><button class="danger" data-revoke="${d.id}">Cabut</button></li>`)
+    .join('');
+  body.innerHTML = p
+    ? `<div class="pair">
+        <div class="qr">${qrSvg(p.qrUrl)}</div>
+        <div class="pair-info">
+          <ol>
+            <li>Sambungkan HP ke WiFi yang sama.</li>
+            <li>Scan QR dengan kamera HP.</li>
+            <li>Atau buka <code>${escapeHtml(p.url)}</code> lalu masukkan kode:</li>
+          </ol>
+          <div class="code">${p.code.slice(0, 3)} ${p.code.slice(3)}</div>
+          <div class="muted">Berlaku ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · sekali pakai</div>
+        </div>
+      </div>
+      <p class="muted small">Belum tersambung? Saat pertama kali, Windows mungkin menanyakan izin firewall untuk Node.js — pilih <b>Allow / Izinkan</b> (jaringan Private).</p>`
+    : '<p class="muted">Menyiapkan kode…</p>';
+  body.innerHTML += `<div class="devices"><b>Perangkat terhubung</b>${devices ? `<ul>${devices}</ul>` : '<p class="muted small">Belum ada.</p>'}</div>`;
+}
+
+async function refreshPairing() {
+  clearTimeout(phone.timer);
+  if ($('#phone-modal').hidden || !state.config?.remote?.enabled) return;
+  try {
+    if (!phone.pairing || Date.now() > phone.pairing.expires - 1000) phone.pairing = await api('/api/remote/pairing');
+  } catch (err) {
+    phone.pairing = null;
+    $('#phone-body').innerHTML = `<p class="warn">${escapeHtml(err.message)}</p>`;
+    return;
+  }
+  renderPhone();
+  phone.timer = setTimeout(refreshPairing, 1000); // countdown + auto-rotate when expired
+}
+
+function openPhone() {
+  $('#phone-modal').hidden = false;
+  phone.pairing = null;
+  renderPhone();
+  refreshPairing();
+}
+
+$('#btn-phone').addEventListener('click', openPhone);
+$('#phone-close').addEventListener('click', () => {
+  $('#phone-modal').hidden = true;
+  clearTimeout(phone.timer);
+});
+$('#phone-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'phone-modal') $('#phone-close').click();
+});
+$('#remote-enabled').addEventListener('change', async (e) => {
+  try {
+    await api('/api/remote', { enabled: e.target.checked });
+    phone.pairing = null;
+    setTimeout(refreshPairing, 300);
+  } catch (err) {
+    e.target.checked = !e.target.checked;
+    toast(err.message);
+  }
+});
+$('#phone-body').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-revoke]');
+  if (!btn || !window.confirm('Cabut akses perangkat ini? HP itu harus scan QR lagi untuk masuk.')) return;
+  await api('/api/remote/revoke', { id: btn.dataset.revoke }).catch((err) => toast(err.message));
 });
 
 // ---------- server settings: auto-start, shutdown ----------
