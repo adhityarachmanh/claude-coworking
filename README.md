@@ -81,10 +81,27 @@ Batasan: izin untuk sesi CLI tetap dijawab di terminal (transcript tidak mencata
 
 1. Pasang **Node.js 20+** dan **Claude Code** (`npm install -g @anthropic-ai/claude-code`), lalu login sekali dengan menjalankan `claude` di terminal.
 2. Clone repo ini ke folder mana saja.
-3. Double-click **`setup.cmd`**. Script ini memeriksa Node.js dan Claude Code, memasang auto-start, menyalakan server di latar belakang, lalu membuka browser.
-4. Di web, klik **⚙** dan atur folder projects device itu, lalu klik 🔔 untuk notifikasi.
+3. Double-click **`setup.cmd`**. Setup berjalan langkah demi langkah dan **selalu bertanya (Y/n) sebelum memasang apa pun**:
 
-Setelah itu server selalu menyala sendiri setiap Windows login. Untuk melepas auto-start, jalankan `uninstall-autostart.cmd`.
+   | Langkah | Yang dilakukan |
+   |---|---|
+   | 1. Node.js & Claude Code | Memeriksa versi, memberi tahu cara memasang kalau belum ada |
+   | 2. Tailscale (opsional) | Menawarkan pasang lewat winget, lalu membuka halaman login. Dibutuhkan supaya HP bisa membuka kantor dari jaringan mana saja |
+   | 3. Firewall | Menawarkan aturan sempit: hanya TCP 4317, hanya dari alamat Tailscale (muncul jendela izin Administrator sekali) |
+   | 4. Auto-start & server | Memasang auto-start saat Windows login, lalu langsung menyalakan server di latar belakang |
+
+4. Di web: **⚙** untuk folder projects, **🔔** untuk notifikasi, **📱** untuk menghubungkan HP.
+5. Di HP: pasang **Tailscale**, login dengan akun yang sama, lalu scan QR dari 📱.
+
+Setelah itu Claude Code, terminal, dan browser di laptop boleh ditutup. Server tetap jalan dan menyala sendiri setiap Windows login.
+
+| Perintah | Fungsi |
+|---|---|
+| `node scripts\setup.mjs --check` | Cek status semua langkah tanpa mengubah apa pun |
+| `uninstall-autostart.cmd` | Melepas auto-start |
+| ⚙ → **⏻ Matikan server** | Menghentikan server background, misalnya sebelum `git pull` lalu `setup.cmd` lagi |
+
+> Jangan jalankan `npm run dev` bersamaan dengan server background, karena keduanya memakai port 4317.
 
 > Kalau folder repo dipindah atau versi Node.js diganti (misalnya lewat nvm), jalankan `setup.cmd` lagi, karena lokasi keduanya tercatat di script auto-start.
 

@@ -11,15 +11,13 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem Checks Node + Claude Code, installs auto-start at Windows login, starts the server now.
-node scripts\setup.mjs --autostart
+rem Step by step: Node + Claude Code, Tailscale, firewall rule, auto-start + start the server now.
+rem Every install asks first (Y/n).
+node scripts\setup.mjs
 if errorlevel 1 (
   pause
   exit /b 1
 )
 
-rem Give the server a moment, then open the office.
-timeout /t 3 /nobreak >nul
 start "" http://localhost:4317
-echo Selesai. Jendela ini boleh ditutup.
 pause
