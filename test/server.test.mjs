@@ -229,6 +229,10 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   assert.equal((await phoneApi(`/api/projects/${await projectId()}/files`, { q: 'check' })).status, 200);
   const laptopOnly = ['/api/config', '/api/autostart', '/api/shutdown', '/api/remote', '/api/remote/pairing', '/api/account/login', '/api/account/logout', `/api/projects/${await projectId()}/open`];
   for (const p of laptopOnly) assert.equal((await phoneApi(p, { enabled: false, roots: [] })).status, 403, p);
+  // login/logout from a phone needs Tailscale; over plain WiFi it is refused with a clear reason
+  const wifiLogout = await phoneApi('/api/account/logout', { confirm: 'LOGOUT' });
+  assert.equal(wifiLogout.status, 403);
+  assert.match((await wifiLogout.json()).error, /Tailscale/);
 
   // QR link: one-time key, redirects home with a cookie
   pairing = (await api('/api/remote/pairing')).body;

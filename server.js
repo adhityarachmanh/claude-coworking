@@ -18,7 +18,7 @@ import { searchFiles } from './src/files.js';
 import { gitCommit, gitDiff, gitStatus } from './src/git.js';
 import { openInApp } from './src/open.js';
 import { TranscriptMirror } from './src/mirror.js';
-import { DEVICE_COOKIE, RemoteAccess, lanAddresses, networkAddresses } from './src/remote.js';
+import { DEVICE_COOKIE, RemoteAccess, isTailscaleIp, lanAddresses, networkAddresses } from './src/remote.js';
 import { listSessions, sessionHistory } from './src/transcripts.js';
 import { ROLE_IDS, loadAgentDefinitions } from './src/roles.js';
 import { SessionManager } from './src/session.js';
@@ -127,12 +127,18 @@ function refreshProjects() {
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Settings that only the laptop itself may change, never a paired phone.
-const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config', '/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout']);
+const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config']);
+// Login/logout switch the account of every Claude Code on the laptop: from a phone only over
+// Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
+const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout']);
+const LOGOUT_CONFIRM = 'LOGOUT';
 // Opening VS Code / Explorer only makes sense on the laptop itself.
 const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/open$/;
 const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+)$/;
 
 const isLocal = (req) => LOOPBACK.has(req.socket.remoteAddress);
+/** What this browser may do with the Claude account: laptop, or a paired phone over Tailscale. */
+const canManageAccount = (req) => isLocal(req) || isTailscaleIp(req.socket.remoteAddress);
 
 /** Host names we answer to (DNS-rebinding guard); LAN addresses only while phone access is on. */
 function allowedHosts() {
@@ -199,7 +205,7 @@ async function serveStatic(pathname, res) {
 
 function openStream(req, res, local) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-  res.write(`event: snapshot\ndata: ${JSON.stringify({ ...hub.snapshot(), account: account.publicState(), client: { local } })}\n\n`);
+  res.write(`event: snapshot\ndata: ${JSON.stringify({ ...hub.snapshot(), account: account.publicState(), client: { local, accountAuth: canManageAccount(req) } })}\n\n`);
   hub.clients.add(res);
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 15000);
   req.on('close', () => {
@@ -210,7 +216,13 @@ function openStream(req, res, local) {
 
 // ---------- api ----------
 
-async function handleApi(req, res, pathname) {
+/** Tells the laptop that a phone started a login or logged out (shown as a toast + notification). */
+function accountAlert(action, device, email = null) {
+  console.log(`Akun: ${action} dari HP "${device.name}"${email ? ` (${email})` : ''}`);
+  hub.broadcast('account-alert', { action, device: device.name, email, ts: Date.now() });
+}
+
+async function handleApi(req, res, pathname, device = null) {
   if (req.headers['x-office-token'] !== TOKEN) return json(res, 403, { error: 'forbidden' });
   if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
   if (!String(req.headers['content-type']).startsWith('application/json')) return json(res, 415, { error: 'json only' });
@@ -264,7 +276,11 @@ async function handleApi(req, res, pathname) {
     return json(res, 200, { ...account.publicState(), usage: { today: totals(id ? ledger.query({ accountId: id, from: today.getTime() }) : []), week: since(7 * 86_400_000) } });
   }
   if (pathname === '/api/account/limits') return json(res, 200, (await account.refreshLimits(Boolean(body.force))) ?? {});
-  if (pathname === '/api/account/login') return json(res, 200, account.startLogin({ console: Boolean(body.console) }));
+  if (pathname === '/api/account/login') {
+    const flow = account.startLogin({ console: Boolean(body.console) });
+    if (device) accountAlert('login', device);
+    return json(res, 200, flow);
+  }
   if (pathname === '/api/account/login/code') {
     const code = String(body.code ?? '').trim();
     if (!code) return json(res, 400, { error: 'Kode kosong.' });
@@ -275,7 +291,14 @@ async function handleApi(req, res, pathname) {
     account.cancelLogin();
     return json(res, 200, { ok: true });
   }
-  if (pathname === '/api/account/logout') return json(res, 200, { profile: await account.logout() });
+  if (pathname === '/api/account/logout') {
+    // Second step for phones: the user must type LOGOUT, so a stray tap can't sign the laptop out.
+    if (device && body.confirm !== LOGOUT_CONFIRM) return json(res, 400, { error: `Ketik ${LOGOUT_CONFIRM} untuk konfirmasi logout dari HP.` });
+    const email = account.current?.email ?? null;
+    const profile = await account.logout();
+    if (device) accountAlert('logout', device, email);
+    return json(res, 200, { profile });
+  }
 
   // ---------- usage report ----------
   if (pathname === '/api/report/accounts') {
@@ -467,6 +490,7 @@ async function handler(req, res) {
   if (req.headers.origin && !hosts.some((h) => req.headers.origin === `http://${h}`)) return json(res, 403, { error: 'bad origin' });
   const { pathname, searchParams } = new URL(req.url, `http://${host}`);
   const local = isLocal(req);
+  let device = null; // the paired phone making this request (null on the laptop)
   try {
     if (!local) {
       // Another device on the network: it must be paired, and some settings stay laptop-only.
@@ -474,7 +498,8 @@ async function handler(req, res) {
       if (pathname === '/pair') return await handlePair(req, res, new URL(req.url, `http://${host}`));
       // App icon + manifest hold no data, and browsers fetch the manifest without cookies.
       if (req.method === 'GET' && PUBLIC_ASSET.test(pathname)) return await serveStatic(pathname, res);
-      if (!remote.verify(cookies(req)[DEVICE_COOKIE])) {
+      device = remote.verify(cookies(req)[DEVICE_COOKIE]);
+      if (!device) {
         if (req.method === 'GET' && pathname !== '/stream' && !pathname.startsWith('/api/')) {
           res.writeHead(302, { Location: '/pair' });
           return res.end();
@@ -482,8 +507,9 @@ async function handler(req, res) {
         return json(res, 401, { error: 'Perangkat belum dipasangkan.' });
       }
       if (LOCAL_ONLY.has(pathname) || pathname.startsWith('/api/remote') || LOCAL_ONLY_ACTION.test(pathname)) return json(res, 403, { error: 'Pengaturan ini hanya bisa diubah dari laptop.' });
+      if (ACCOUNT_AUTH.has(pathname) && !canManageAccount(req)) return json(res, 403, { error: 'Login/logout dari HP hanya lewat Tailscale (koneksi terenkripsi), bukan WiFi biasa.' });
     }
-    if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname);
+    if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, device);
     if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' });
     if (pathname === '/stream') return openStream(req, res, local);
     if (pathname === '/health') return json(res, 200, { ok: true, claude: Boolean(claude) });

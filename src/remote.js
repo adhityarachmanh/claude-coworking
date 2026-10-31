@@ -17,7 +17,10 @@ const sameSecret = (a, b) => {
 
 const VIRTUAL_ADAPTER = /vethernet|wsl|hyper-v|docker|virtualbox|vmware|vbox|br-|veth|virbr/i;
 // Tailscale hands out addresses from the CGNAT range 100.64.0.0/10.
-const isTailscale = (ip, name) => /tailscale/i.test(name) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip);
+const TAILSCALE_IP = /^(::ffff:)?100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./;
+const isTailscale = (ip, name) => /tailscale/i.test(name) || TAILSCALE_IP.test(ip);
+/** True when a client connects from a Tailscale address (encrypted WireGuard tunnel, not plain WiFi). */
+export const isTailscaleIp = (ip) => TAILSCALE_IP.test(String(ip ?? ''));
 
 /**
  * Addresses other devices can reach, best first:

@@ -85,6 +85,7 @@ function connect() {
   on('snapshot', (snap) => {
     // Opened from a paired phone: laptop-only settings are hidden (the server refuses them anyway).
     state.local = snap.client?.local !== false;
+    state.accountAuth = snap.client?.accountAuth ?? state.local; // laptop, or a phone over Tailscale
     document.body.classList.toggle('remote-client', !state.local);
     $('#btn-phone').hidden = !state.local;
     $('#btn-settings').hidden = !state.local;
@@ -102,6 +103,7 @@ function connect() {
     renderAccountButton(); // after the core UI, so a profile quirk can never blank the office
   });
   on('account', onAccountState);
+  on('account-alert', onAccountAlert);
   on('projects', (projects) => {
     state.projects = projects;
     renderSidebar();
@@ -1570,6 +1572,15 @@ function renderLoginFlow() {
     </div>`;
 }
 
+/** The laptop is told whenever a phone starts a login or logs out. */
+function onAccountAlert({ action, device, email }) {
+  if (!state.local) return;
+  const text = action === 'logout' ? `HP "${device}" me-logout Claude Code${email ? ` (${email})` : ''}.` : `HP "${device}" memulai login/ganti akun Claude Code.`;
+  toast(text, 'warn');
+  chime('ask');
+  if ('Notification' in window && Notification.permission === 'granted') new Notification('Adhit Office: akun Claude', { body: text, tag: 'account-alert' });
+}
+
 function renderAccount() {
   const body = $('#account-body');
   const p = state.account?.profile;
@@ -1577,12 +1588,11 @@ function renderAccount() {
     body.innerHTML = '<p class="muted">Memeriksa akun Claude Code…</p>';
     return;
   }
-  const local = state.local !== false;
-  const actions = local
+  const actions = state.accountAuth
     ? p.loggedIn
       ? `<button class="ghost" data-act="login">⇄ Ganti akun</button><button class="danger" data-act="logout">⏻ Logout</button>`
       : `<button class="primary" data-act="login">🔑 Login dengan akun Claude</button><button class="ghost" data-act="login-console">Login via Console (API)</button>`
-    : '<p class="muted small">Login/logout hanya bisa dari laptop.</p>';
+    : '<p class="muted small">Login/logout dari HP hanya lewat Tailscale (koneksi terenkripsi). Buka kantor lewat alamat Tailscale, atau lakukan dari laptop.</p>';
   if (!p.loggedIn) {
     body.innerHTML = `<div class="acct-empty"><p>Claude Code di laptop ini <b>belum login</b>. Login membuka halaman claude.ai di browser, sama seperti <code>claude auth login</code>.</p></div>
       <div class="acct-actions">${actions}</div><div id="acct-login"></div>`;
@@ -1673,7 +1683,13 @@ $('#account-body').addEventListener('click', async (e) => {
     } else if (act === 'logout') {
       const email = state.account?.profile?.email ?? 'akun ini';
       if (!window.confirm(`Logout dari ${email}?\n\nClaude Code di laptop ini (termasuk terminal/CLI) ikut logout. Giliran yang sedang berjalan di web dibiarkan selesai dulu.`)) return;
-      await api('/api/account/logout');
+      // From a phone, a second step: type LOGOUT (the server checks it too).
+      let confirm;
+      if (!state.local) {
+        confirm = window.prompt('Logout dari HP akan mengeluarkan Claude Code di laptop.\nKetik LOGOUT untuk melanjutkan:')?.trim().toUpperCase();
+        if (confirm !== 'LOGOUT') return toast('Logout dibatalkan.', 'ok');
+      }
+      await api('/api/account/logout', { confirm });
       account.usage = null;
       toast('Sudah logout.', 'ok');
       loadAccount(true);

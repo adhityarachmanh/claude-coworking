@@ -47,7 +47,7 @@ Claude hanya memanggil role yang relevan. Tugas kecil dikerjakan langsung tanpa 
 4. Selesai. HP diingat, jadi lain kali cukup buka alamat itu lagi.
 5. Opsional: pilih **Add to Home Screen** / **Tambahkan ke Layar Utama** di menu browser. Adhit Office muncul dengan ikonnya sendiri dan terbuka seperti aplikasi. Di iPhone, aplikasi dari layar utama punya penyimpanan terpisah dari Safari, jadi masukkan kode pairing sekali lagi di sana.
 
-Di HP kamu bisa memakai semuanya: chat, kartu izin, panel perubahan, dan melihat kantor. Pengaturan sensitif (folder projects, auto-start, matikan server, akses HP) hanya bisa diubah dari laptop.
+Di HP kamu bisa memakai semuanya: chat, kartu izin, panel perubahan, dan melihat kantor. Pengaturan sensitif (folder projects, auto-start, matikan server, akses HP) hanya bisa diubah dari laptop. Login/logout akun Claude bisa dari HP, tapi hanya lewat Tailscale.
 
 **Keamanan:**
 - Mati secara default. Saat dimatikan, server hanya mendengarkan `127.0.0.1`.
@@ -160,7 +160,10 @@ Klik avatar di header (**👤**) untuk melihat akun mana yang sedang dipakai Cla
 - **Ganti akun / Login** menjalankan `claude auth login` seperti biasa: halaman login claude.ai terbuka di browser. Kalau halaman itu menampilkan kode, tempel kodenya di dialog. Ada juga *Login via Console* untuk akun API.
 - **Logout** menjalankan `claude auth logout`. Ini berlaku untuk **seluruh Claude Code di laptop**, termasuk terminal/CLI.
 - Setelah ganti akun atau logout, proses Claude dari web dimulai ulang agar memakai akun baru. Giliran yang sedang berjalan dibiarkan selesai dulu, dan tokennya tetap dicatat ke akun lama.
-- Login/logout hanya bisa dari laptop. HP yang dipasangkan hanya bisa melihat profil, kuota, dan laporan.
+- Login/logout bisa dari laptop, atau dari HP **hanya lewat Tailscale** (koneksi terenkripsi). Lewat WiFi biasa (HTTP) HP hanya bisa melihat profil, kuota, dan laporan.
+  - Login dari HP: ketuk **🔑 Buka halaman login Claude**, selesaikan login di HP, lalu tempel kode yang ditampilkan halaman itu.
+  - Logout dari HP butuh dua langkah: konfirmasi, lalu ketik `LOGOUT`.
+  - Setiap login/logout dari HP memunculkan peringatan (toast, suara, dan notifikasi) di laptop dan dicatat di `data/server.log`.
 
 **📊 Laporan** membuat PDF pemakaian token untuk **satu akun** dan satu periode (hari ini, 7/30 hari, bulan ini, semua, atau tanggal pilihan): ringkasan KPI, grafik harian, rincian per model, project, sumber (web/CLI), sesi teratas, dan kuota paket. Setiap catatan token disimpan bersama akun yang sedang login saat token itu dipakai (`data/usage.jsonl`), jadi pemakaian dua akun tidak pernah tercampur.
 
@@ -182,7 +185,7 @@ Klik avatar di header (**👤**) untuk melihat akun mana yang sedang dipakai Cla
 - Server hanya listen di `127.0.0.1`, memeriksa header `Host`/`Origin`, dan semua API butuh token acak per start (disisipkan ke halaman). Situs lain tidak bisa menyuruh server menjalankan Claude Code.
 - Situs lain tidak bisa memuat kantor di dalam iframe (`frame-ancestors 'self'`, `X-Frame-Options`), sehingga tombol seperti **Izinkan** tidak bisa dipancing lewat clickjacking.
 - Izin tetap mengikuti aturan Claude Code. Mode default selalu bertanya sebelum menulis file atau menjalankan perintah.
-- Login/logout akun hanya bisa dari laptop. Server tidak pernah membaca token login (`.credentials.json`); profil diambil dari `claude auth status` dan data profil di `~/.claude.json`.
+- Login/logout akun hanya dari laptop atau dari HP lewat Tailscale (ditolak lewat WiFi biasa), dengan peringatan ke laptop. Server tidak pernah membaca token login (`.credentials.json`); profil diambil dari `claude auth status` dan data profil di `~/.claude.json`.
 - **Buka di VS Code / folder** hanya bisa dari laptop, hanya untuk folder project yang terdaftar (file harus berada di dalam project), dan dijalankan tanpa shell. Path dikirim sebagai argumen biasa, tidak pernah ditafsirkan sebagai perintah.
 - Ikon dan manifest PWA bisa diambil tanpa pairing karena tidak berisi data. Selain itu semuanya tetap butuh pairing.
 

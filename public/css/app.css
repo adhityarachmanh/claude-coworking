@@ -192,7 +192,8 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: 11.5px/1.5
 .actor .bubble {
   position: absolute;
   left: 0;
-  transform: translateX(-50%) scale(.6);
+  /* --dx: sideways nudge from stage.js so the bubble stays inside the office frame */
+  transform: translateX(calc(-50% + var(--dx, 0px))) scale(.6);
   transform-origin: bottom center;
   opacity: 0;
   max-width: clamp(110px, calc(var(--s) * 92px), 200px);
@@ -210,7 +211,8 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: 11.5px/1.5
   overflow: hidden;
   overflow-wrap: anywhere;
 }
-.actor .bubble.show { opacity: 1; transform: translateX(-50%) scale(1); }
+.actor .bubble.show { opacity: 1; transform: translateX(calc(-50% + var(--dx, 0px))) scale(1); }
+.actor .bubble.below { transform-origin: top center; } /* flipped under the name tag near the top wall */
 .bubble.tone-work { background: #e7f0ff; color: #1f4f8f; font-family: var(--mono); font-weight: 500; font-size: 11px; }
 .bubble.tone-ok { background: #ddf6e5; color: #18663a; }
 .bubble.tone-error { background: #ffe1df; color: #a3231b; }
@@ -677,6 +679,7 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
 .report-actions { display: flex; align-items: center; gap: 12px; justify-content: space-between; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 
 .toast.ok { background: #16321f; color: #b6efc8; border-color: #1f4d2e; }
+.toast.warn { background: #3a2e14; color: #ffe2a8; border-color: #6a5220; }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px; background: #3a1a1c; color: #ffd0cc; border: 1px solid #5a2a2a; z-index: 1000; box-shadow: 0 8px 24px #0008; }
 
 /* ---------- responsive ---------- */

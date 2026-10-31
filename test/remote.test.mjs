@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import { test } from 'node:test';
-import { lanAddresses, networkAddresses } from '../src/remote.js';
+import { isTailscaleIp, lanAddresses, networkAddresses } from '../src/remote.js';
 
 const v4 = (address) => ({ family: 'IPv4', address, internal: false });
 
@@ -28,4 +28,9 @@ test('addresses are classified: WiFi/LAN first, then Tailscale, virtual adapters
 test('a 100.x address outside the Tailscale range is ordinary LAN', (t) => {
   t.mock.method(os, 'networkInterfaces', () => ({ Ethernet: [v4('100.200.1.1')] }));
   assert.equal(networkAddresses()[0].kind, 'lan');
+});
+
+test('only Tailscale addresses may manage the Claude account from a phone', () => {
+  for (const ip of ['100.64.0.1', '100.101.5.9', '100.127.255.254', '::ffff:100.80.1.2']) assert.ok(isTailscaleIp(ip), ip);
+  for (const ip of ['192.168.1.14', '100.63.0.1', '100.128.0.1', '10.100.0.1', '172.18.144.1', '', undefined]) assert.ok(!isTailscaleIp(ip), String(ip));
 });

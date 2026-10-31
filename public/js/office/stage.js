@@ -58,6 +58,7 @@ export class Stage {
     this.view.style.imageRendering = fit >= k ? 'pixelated' : 'auto';
     this.overlay.style.setProperty('--s', fit.toFixed(3));
     this.lastBoard = null; // reposition the whiteboard overlay
+    for (const tag of this.tags.values()) tag.bubbleSize = null; // bubbles scale with --s: measure again
   }
 
   frame(t) {
@@ -125,11 +126,38 @@ export class Stage {
         tag.bubbleKey = bubble?.key ?? null;
         tag.bubble.textContent = bubble?.text ?? '';
         tag.bubble.className = `bubble ${bubble ? `show tone-${bubble.tone}` : ''}`;
+        tag.bubbleSize = null; // new text: measure again
       }
-      tag.bubble.style.bottom = `${((actor.y - actor.headTop()) * s + 6).toFixed(1)}px`;
-      if (bubble) tag.root.style.zIndex = '500';
+      if (bubble) {
+        this.placeBubble(actor, tag);
+        tag.root.style.zIndex = '500';
+      }
     }
     this.updateBoard();
+  }
+
+  /** Keeps a speech bubble inside the office: shifted sideways near the walls, flipped below near the top. */
+  placeBubble(actor, tag) {
+    const s = this.scale;
+    const PAD = 4;
+    // offsetWidth/Height ignore the pop-in scale transform; measured once per text (and after a resize).
+    tag.bubbleSize ??= { w: tag.bubble.offsetWidth, h: tag.bubble.offsetHeight, nameBottom: tag.name.offsetTop + tag.name.offsetHeight };
+    const { w, h, nameBottom } = tag.bubbleSize;
+    const x = actor.x * s;
+    const left = x - w / 2;
+    const right = x + w / 2;
+    const dx = left < PAD ? PAD - left : right > W * s - PAD ? W * s - PAD - right : 0;
+    const above = (actor.y - actor.headTop()) * s + 6; // gap from the feet to the bubble's bottom edge
+    const below = actor.y * s - above - h < PAD; // not enough room above the head
+    tag.bubble.classList.toggle('below', below);
+    tag.bubble.style.setProperty('--dx', `${dx.toFixed(1)}px`);
+    if (below) {
+      tag.bubble.style.bottom = '';
+      tag.bubble.style.top = `${(nameBottom + 4).toFixed(1)}px`;
+    } else {
+      tag.bubble.style.top = '';
+      tag.bubble.style.bottom = `${above.toFixed(1)}px`;
+    }
   }
 
   updateBoard() {
