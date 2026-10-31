@@ -33,30 +33,8 @@
         <button id="btn">Hubungkan</button>
       </form>
       <div id="msg" class="msg" role="alert">__MESSAGE__</div>
-      <small>Atau scan QR di laptop. Perangkat ini akan diingat sampai dicabut dari laptop.</small>
+      <small>Atau scan QR di laptop. Perangkat ini akan diingat sampai dicabut dari laptop.<br />Lewat WiFi biasa HP hanya bisa melihat; untuk mengirim perintah pakai Tailscale.</small>
     </main>
-    <script>
-      const form = document.getElementById('form');
-      const msg = document.getElementById('msg');
-      const btn = document.getElementById('btn');
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        btn.disabled = true;
-        msg.textContent = '';
-        try {
-          const res = await fetch('/pair', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: document.getElementById('code').value }),
-          });
-          const data = await res.json();
-          if (res.ok) return location.replace('/');
-          msg.textContent = data.error + (data.triesLeft ? ` Sisa ${data.triesLeft} percobaan.` : '');
-        } catch {
-          msg.textContent = 'Tidak bisa menghubungi laptop. Pastikan di WiFi yang sama.';
-        }
-        btn.disabled = false;
-      });
-    </script>
+    <script src="/js/pair.js" defer></script>
   </body>
 </html>

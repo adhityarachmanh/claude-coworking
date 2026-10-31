@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { findClaude } from './src/claude-bin.js';
 import { runDemo } from './src/demo.js';
 import { DEMO_ID, Hub, PERMISSION_MODES } from './src/hub.js';
-import { discoverProjects, isDirectory } from './src/projects.js';
+import { discoverProjects, isDirectory, isNetworkPath } from './src/projects.js';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { AccountService } from './src/account.js';
 import { autostartStatus, setAutostart } from './src/autostart.js';
@@ -18,7 +18,7 @@ import { searchFiles } from './src/files.js';
 import { gitCommit, gitDiff, gitStatus } from './src/git.js';
 import { openInApp } from './src/open.js';
 import { TranscriptMirror } from './src/mirror.js';
-import { DEVICE_COOKIE, RemoteAccess, isTailscaleIp, lanAddresses, networkAddresses } from './src/remote.js';
+import { DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, isTailscaleIp, lanAddresses, networkAddresses, wifiAllows } from './src/remote.js';
 import { listSessions, sessionHistory } from './src/transcripts.js';
 import { ROLE_IDS, loadAgentDefinitions } from './src/roles.js';
 import { SessionManager } from './src/session.js';
@@ -30,6 +30,7 @@ const PUBLIC_DIR = path.join(APP_DIR, 'public');
 // Used until roots are set in the web UI: env, else the folder this app lives in.
 const DEFAULT_ROOT = path.resolve(process.env.PROJECTS_ROOT ?? path.dirname(APP_DIR));
 const MAX_BODY = 30 * 1024 * 1024; // prompts may carry pasted images
+const MAX_PAIR_BODY = 1024; // POST /pair is reachable before pairing: it only carries a 6-digit code
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -58,6 +59,27 @@ Typical flows:
 - Bug fix: qa reproduces it (ideally a failing test) → the owning frontend/backend/dba fixes the root cause → architect reviews the diff → qa verifies.
 - Build/deploy/incident: devops first, then backend or dba as needed, qa verifies.
 Run independent pieces in parallel when they do not touch the same files. Reply in the user's language.`;
+
+// Every response: no inline/foreign scripts, no plugins, nothing but this origin may frame the office
+// (clickjacking an "Izinkan" button). style-src keeps 'unsafe-inline': the app and the printable usage
+// report set style="" attributes and <style> blocks (an about:blank report window inherits this policy).
+const SECURITY_HEADERS = {
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'",
+  'X-Frame-Options': 'SAMEORIGIN',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+};
+// Browsers honour COOP only on trustworthy origins (localhost); on http://<LAN/Tailscale IP> they ignore it
+// and log a console error, so it is sent to the laptop's own page only.
+const LOCAL_SECURITY_HEADERS = { 'Cross-Origin-Opener-Policy': 'same-origin' };
+
+/** An error whose message is meant for the user, sent with its own status (anything else becomes a generic 500). */
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -129,18 +151,21 @@ function refreshProjects() {
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Settings that only the laptop itself may change, never a paired phone.
-const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config']);
+// Adding a project folder points Claude Code (and git, file search) at any path: laptop only.
+const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config', '/api/projects']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout']);
 const LOGOUT_CONFIRM = 'LOGOUT';
 // Opening VS Code / Explorer only makes sense on the laptop itself.
 const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/open$/;
-const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+)$/;
+const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+|js\/pair\.js)$/;
 
 const isLocal = (req) => LOOPBACK.has(req.socket.remoteAddress);
 /** What this browser may do with the Claude account: laptop, or a paired phone over Tailscale. */
 const canManageAccount = (req) => isLocal(req) || isTailscaleIp(req.socket.remoteAddress);
+/** A paired phone on plain-HTTP WiFi (not Tailscale): it may look, never act (see wifiAllows). */
+const isReadOnly = (req) => !canManageAccount(req);
 
 /** Host names we answer to (DNS-rebinding guard); LAN addresses only while phone access is on. */
 function allowedHosts() {
@@ -169,22 +194,26 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function readJson(req) {
+function readJson(req, limit = MAX_BODY) {
   return new Promise((resolve, reject) => {
     let size = 0;
+    let tooLarge = false;
     const chunks = [];
     req.on('data', (chunk) => {
+      if (tooLarge) return; // drained, not kept; the socket is closed once the 413 is sent
       size += chunk.length;
-      if (size > MAX_BODY) {
-        reject(new Error('payload too large'));
-        req.destroy();
+      if (size > limit) {
+        tooLarge = true;
+        chunks.length = 0;
+        reject(new HttpError(413, 'Data yang dikirim terlalu besar.'));
       } else chunks.push(chunk);
     });
     req.on('end', () => {
+      if (tooLarge) return;
       try {
         resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
-      } catch (err) {
-        reject(err);
+      } catch {
+        reject(new HttpError(400, 'Data JSON tidak valid.'));
       }
     });
     req.on('error', reject);
@@ -205,14 +234,37 @@ async function serveStatic(pathname, res) {
   }
 }
 
-function openStream(req, res, local) {
+const STREAM_HEARTBEAT_MS = 15000;
+const deviceStreams = new Map(); // event stream (res) -> id of the paired phone holding it
+
+/** Ends an event stream now, socket included (a revoked phone must stop receiving the office at once). */
+function dropStream(res) {
+  hub.clients.delete(res);
+  deviceStreams.delete(res);
+  res.end();
+  res.socket?.destroy();
+}
+
+/** Every open event stream of one paired device (after "Cabut"). */
+function dropDeviceStreams(deviceId) {
+  for (const [res, owner] of deviceStreams) if (owner === deviceId) dropStream(res);
+}
+
+function openStream(req, res, local, device = null, deviceToken = null) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-  res.write(`event: snapshot\ndata: ${JSON.stringify({ ...hub.snapshot(), account: account.publicState(), client: { local, accountAuth: canManageAccount(req) } })}\n\n`);
+  const client = { local, accountAuth: canManageAccount(req), readOnly: isReadOnly(req) };
+  res.write(`event: snapshot\ndata: ${JSON.stringify({ ...hub.snapshot(), account: account.publicState(), client })}\n\n`);
   hub.clients.add(res);
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 15000);
+  if (device) deviceStreams.set(res, device.id);
+  const heartbeat = setInterval(() => {
+    // Revoked, or phone access switched off since the stream opened: the device is out.
+    if (device && !remote.verify(deviceToken)) return dropStream(res);
+    res.write(': ping\n\n');
+  }, STREAM_HEARTBEAT_MS);
   req.on('close', () => {
     clearInterval(heartbeat);
     hub.clients.delete(res);
+    deviceStreams.delete(res);
   });
 }
 
@@ -232,6 +284,7 @@ async function handleApi(req, res, pathname, device = null) {
 
   if (pathname === '/api/projects') {
     const dir = String(body.path ?? '').trim();
+    if (isNetworkPath(dir)) return json(res, 400, { error: 'Folder jaringan (\\\\server\\share) tidak didukung. Pakai folder di laptop ini.' });
     if (!path.isAbsolute(dir) || !isDirectory(dir)) return json(res, 400, { error: 'Folder tidak ditemukan' });
     return json(res, 200, hub.addCustomProject(dir));
   }
@@ -357,7 +410,9 @@ async function handleApi(req, res, pathname, device = null) {
     });
   }
   if (pathname === '/api/remote/revoke') {
-    remote.revoke(String(body.id ?? ''));
+    const id = String(body.id ?? '');
+    remote.revoke(id);
+    dropDeviceStreams(id); // its open event streams end now, not at the next reconnect
     publishConfig();
     return json(res, 200, { ok: true });
   }
@@ -438,8 +493,7 @@ async function handleApi(req, res, pathname, device = null) {
       break;
     }
     case 'shell': {
-      // A shell skips Claude's permission checks, so (like login) never over plain-HTTP WiFi.
-      if (!canManageAccount(req)) return json(res, 403, { error: 'Perintah ! dari HP hanya lewat Tailscale (koneksi terenkripsi), bukan WiFi biasa.' });
+      // A shell skips Claude's permission checks: plain-HTTP WiFi is already refused in handler() (read-only).
       const command = String(body.command ?? '').trim();
       if (!command) return json(res, 400, { error: 'Perintah kosong' });
       session.shell(command.slice(0, 4000));
@@ -467,8 +521,6 @@ async function handleApi(req, res, pathname, device = null) {
       return answer(res, session.mcpStatus().then((servers) => ({ servers })));
     case 'mcp-action': {
       const act = String(body.action ?? '');
-      // Signing an MCP server in stores credentials on the laptop: like the Claude login, not over plain WiFi.
-      if ((act === 'login' || act === 'callback') && !canManageAccount(req)) return json(res, 403, { error: 'Login server MCP dari HP hanya lewat Tailscale (koneksi terenkripsi).' });
       const callbackUrl = String(body.callbackUrl ?? '');
       if (act === 'callback' && !/^https?:\/\//.test(callbackUrl)) return json(res, 400, { error: 'Tempel URL lengkap dari address bar setelah login.' });
       return answer(res, session.mcpAction(String(body.server ?? ''), act, callbackUrl));
@@ -513,9 +565,10 @@ function deviceCookie(token) {
 /** GET /pair?k=… (QR link), GET /pair (code form), POST /pair {code}. */
 async function handlePair(req, res, url) {
   const userAgent = String(req.headers['user-agent'] ?? '');
+  const ip = String(req.socket.remoteAddress ?? '');
   const key = url.searchParams.get('k');
   if (req.method === 'GET' && key) {
-    const result = remote.pair({ key }, userAgent);
+    const result = remote.pair({ key }, userAgent, ip);
     if (!result.token) return servePairPage(res, result.error);
     publishConfig();
     res.writeHead(302, { 'Set-Cookie': deviceCookie(result.token), Location: '/' }); // drop the key from the address bar
@@ -523,7 +576,11 @@ async function handlePair(req, res, url) {
   }
   if (req.method === 'GET') return servePairPage(res);
   if (req.method !== 'POST' || !String(req.headers['content-type']).startsWith('application/json')) return json(res, 405, { error: 'method not allowed' });
-  const result = remote.pair({ code: (await readJson(req)).code }, userAgent);
+  const result = remote.pair({ code: (await readJson(req, MAX_PAIR_BODY)).code }, userAgent, ip);
+  if (result.retryAfter) {
+    res.setHeader('Retry-After', String(result.retryAfter));
+    return json(res, 429, result);
+  }
   if (!result.token) return json(res, 400, result);
   publishConfig();
   res.writeHead(200, { 'Set-Cookie': deviceCookie(result.token), 'Content-Type': 'application/json' });
@@ -533,10 +590,8 @@ async function handlePair(req, res, url) {
 // ---------- request handling (shared by the localhost and LAN listeners) ----------
 
 async function handler(req, res) {
-  // No other site may frame the office (clickjacking an "Izinkan" button); same-origin frames are fine.
-  res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
+  if (isLocal(req)) for (const [name, value] of Object.entries(LOCAL_SECURITY_HEADERS)) res.setHeader(name, value);
   // DNS-rebinding guard: only answer to our own host names.
   const host = String(req.headers.host).toLowerCase();
   const hosts = allowedHosts();
@@ -562,16 +617,24 @@ async function handler(req, res) {
       }
       if (LOCAL_ONLY.has(pathname) || pathname.startsWith('/api/remote') || LOCAL_ONLY_ACTION.test(pathname)) return json(res, 403, { error: 'Pengaturan ini hanya bisa diubah dari laptop.' });
       if (ACCOUNT_AUTH.has(pathname) && !canManageAccount(req)) return json(res, 403, { error: 'Login/logout dari HP hanya lewat Tailscale (koneksi terenkripsi), bukan WiFi biasa.' });
+      // The one gate for plain-HTTP WiFi: read-only, by allowlist (a new endpoint is refused until listed there).
+      if (pathname.startsWith('/api/') && isReadOnly(req) && !wifiAllows(pathname)) return json(res, 403, { error: READ_ONLY_ERROR, readOnly: true });
     }
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, device);
     if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' });
-    if (pathname === '/stream') return openStream(req, res, local);
+    if (pathname === '/stream') return openStream(req, res, local, device, device ? cookies(req)[DEVICE_COOKIE] : null);
     if (pathname === '/health') return json(res, 200, { ok: true, claude: Boolean(claude) });
     if (pathname === '/pair' && searchParams.size === 0) return servePairPage(res);
     return await serveStatic(pathname, res);
   } catch (err) {
-    console.error(err);
-    if (!res.headersSent) json(res, 500, { error: String(err.message ?? err) });
+    if (err instanceof HttpError) {
+      if (err.status === 413) res.on('finish', () => req.destroy()); // stop reading the rest of an oversized body
+      if (!res.headersSent) return json(res, err.status, { error: err.message });
+      return res.end();
+    }
+    // Details (paths, stack) stay in the server log; the browser only gets a generic message.
+    console.error(`${req.method} ${req.url}:`, err?.stack ?? err);
+    if (!res.headersSent) json(res, 500, { error: 'Terjadi kesalahan di server.' });
     else res.end();
   }
 }

@@ -6,7 +6,25 @@ import os from 'node:os';
 
 const PAIRING_TTL_MS = 2 * 60 * 1000;
 const MAX_TRIES = 5;
+// Per remote IP, across pairing codes: this many wrong guesses lock that IP out for a while.
+const IP_MAX_FAILURES = 5;
+const IP_LOCKOUT_MS = 60 * 1000;
 export const DEVICE_COOKIE = 'office_device';
+
+// ---------- what a phone on plain WiFi may do ----------
+
+/** Shown when a phone on plain-HTTP WiFi tries anything beyond looking. */
+export const READ_ONLY_ERROR = 'Lewat WiFi hanya bisa melihat. Pakai laptop atau Tailscale untuk mengirim perintah.';
+
+// Allowlist (everything else is refused): reading the office, git changes, files, history, usage.
+// Anything that changes state or can run code (prompts, shell, settings, approvals, commit, rewind,
+// MCP, tasks, projects, team names…) needs the laptop or Tailscale. Over plain HTTP the device
+// cookie can be sniffed, so a WiFi phone must never be able to act.
+const WIFI_READ_GLOBAL = new Set(['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', '/api/report/pdf']);
+const WIFI_READ_PROJECT = /^\/api\/projects\/[\w-]+\/(changes|diff|files|sessions|rewind-points|task-output)$/;
+
+/** True when a paired device on plain WiFi (read-only) may call this API path. */
+export const wifiAllows = (pathname) => WIFI_READ_GLOBAL.has(pathname) || WIFI_READ_PROJECT.test(pathname);
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 const sameSecret = (a, b) => {
@@ -54,6 +72,7 @@ export class RemoteAccess {
     this.hub = hub;
     hub.persisted.remote ??= { enabled: false, devices: [] };
     this.pairing = null;
+    this.failures = new Map(); // remote ip -> { count, until } (wrong pairing guesses)
   }
 
   get state() {
@@ -83,20 +102,44 @@ export class RemoteAccess {
     return this.pairing;
   }
 
-  /** @returns {{ token?: string, error?: string, triesLeft?: number }} */
-  pair({ code, key }, userAgent) {
+  /** Seconds this IP must still wait after too many wrong codes (0 = may try). */
+  lockedFor(ip) {
+    const entry = this.failures.get(ip);
+    const left = entry?.until ? entry.until - Date.now() : 0;
+    return left > 0 ? Math.ceil(left / 1000) : 0;
+  }
+
+  /** Counts a wrong guess from `ip`; the IP is locked out after IP_MAX_FAILURES of them. */
+  recordFailure(ip) {
+    const now = Date.now();
+    if (this.failures.size > 1000) for (const [k, v] of this.failures) if (!v.until || v.until < now) this.failures.delete(k); // bounded memory
+    const entry = this.failures.get(ip) ?? { count: 0, until: 0 };
+    if (entry.until && entry.until < now) Object.assign(entry, { count: 0, until: 0 }); // lockout served
+    entry.count++;
+    if (entry.count >= IP_MAX_FAILURES) Object.assign(entry, { count: 0, until: now + IP_LOCKOUT_MS });
+    this.failures.set(ip, entry);
+  }
+
+  /** @returns {{ token?: string, error?: string, triesLeft?: number, retryAfter?: number }} */
+  pair({ code, key }, userAgent, ip = '') {
     if (!this.enabled) return { error: 'Akses dari perangkat lain sedang dimatikan.' };
+    const wait = this.lockedFor(ip);
+    if (wait) return { error: `Terlalu banyak percobaan salah dari perangkat ini. Coba lagi dalam ${wait} detik.`, retryAfter: wait };
     const p = this.pairing;
     if (!p || Date.now() > p.expires) return { error: 'Kode sudah kedaluwarsa. Minta kode baru di laptop (⚙ → Akses dari HP).' };
     const ok = key ? sameSecret(key, p.key) : sameSecret(String(code ?? '').replace(/\D/g, ''), p.code);
     if (!ok) {
       p.tries++;
+      this.recordFailure(ip);
       if (p.tries >= MAX_TRIES) {
         this.pairing = null;
+        // The laptop still shows the dead code: tell it to fetch a new one right away.
+        this.hub.broadcast('pairing-reset', { ts: Date.now() });
         return { error: 'Terlalu banyak percobaan salah. Kode diganti — lihat kode baru di laptop.' };
       }
       return { error: 'Kode salah.', triesLeft: MAX_TRIES - p.tries };
     }
+    this.failures.delete(ip);
     this.pairing = null; // single use
     const token = randomBytes(32).toString('base64url');
     this.state.devices.push({ id: randomUUID(), hash: sha256(token), name: deviceName(userAgent), created: Date.now(), lastSeen: Date.now() });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
@@ -47,4 +47,26 @@ test('changes panel: status, diffs, commit', { skip: !hasGit && 'git not install
 
 test('a folder without git is reported, not an error', async () => {
   assert.equal((await gitStatus(plain)).repo, false);
+});
+
+test('a new symlink shows where it points, never the content of its target', { skip: !hasGit && 'git not installed' }, async (t) => {
+  const repo2 = mkdtempSync(path.join(tmpdir(), 'office-git-link-'));
+  const outside = mkdtempSync(path.join(tmpdir(), 'office-secret-'));
+  t.after(() => {
+    rmSync(repo2, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+  const secret = path.join(outside, 'id_rsa');
+  writeFileSync(secret, 'RAHASIA-JANGAN-BOCOR\n');
+  execFileSync('git', ['init', '-q'], { cwd: repo2, stdio: 'ignore' });
+  try {
+    symlinkSync(secret, path.join(repo2, 'kunci'), 'file');
+  } catch (err) {
+    // Windows without Developer Mode / admin cannot create symlinks.
+    return t.skip(`symlink not allowed here (${err.code})`);
+  }
+  const { diff, error } = await gitDiff(repo2, 'kunci');
+  assert.equal(error, undefined);
+  assert.match(diff, /symlink → .*id_rsa/);
+  assert.doesNotMatch(diff, /RAHASIA/);
 });

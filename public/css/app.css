@@ -699,6 +699,11 @@ pre.diff .add { color: #9be3b0; background: #16321f66; display: inline-block; wi
 .pair-info code { font: 12.5px var(--mono); color: var(--accent-2); overflow-wrap: anywhere; }
 .pair .code { font: 700 30px/1.2 var(--mono); letter-spacing: 4px; color: var(--text); margin: 4px 0; }
 .warn { color: #ffd38a; font-size: 13px; }
+.access-modes { margin: 0 0 10px; padding-left: 18px; }
+.access-modes li { margin-bottom: 4px; }
+.access-mode { font-size: 12.5px; margin: 10px 0 0; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); }
+.access-mode.view { color: #ffd38a; }
+.access-mode.full { color: var(--ok); }
 .addr-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
 .addr-tabs button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; font-size: 12.5px; padding: 6px 10px; }
 .addr-tabs button small { font: 11px var(--mono); color: var(--muted); }
@@ -714,6 +719,11 @@ pre.diff .add { color: #9be3b0; background: #16321f66; display: inline-block; wi
 .devices li small { display: block; color: var(--muted); font-size: 11px; }
 .devices li button { font-size: 12px; padding: 4px 10px; flex: none; }
 body.remote-client #btn-settings, body.remote-client .add-project, body.remote-client .local-only { display: none !important; }
+/* Phone on plain WiFi: read-only. Shortcuts that only fill the (disabled) composer are hidden; actions stay visible but disabled. */
+body.read-only .starters, body.read-only [data-msg-act="edit"], body.read-only [data-msg-act="resend"] { display: none !important; }
+body.read-only #prompt:disabled { cursor: not-allowed; opacity: .7; }
+body.read-only #composer-hint { color: var(--ask); }
+.ro-note { font-size: 12px; color: var(--ask); margin: 8px 0 0; }
 
 /* ---------- account dialog ---------- */
 .acct-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }

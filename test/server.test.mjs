@@ -126,8 +126,47 @@ test('security: token, origin, host and path checks', async () => {
   assert.equal(await rawRequest({ Host: 'evil.example' }), 421); // DNS rebinding
   assert.equal((await fetch(`${BASE}/..%2fserver.js`)).status, 404);
   const page = await fetch(BASE);
-  assert.equal(page.headers.get('content-security-policy'), "frame-ancestors 'self'", 'other sites cannot frame the office (clickjacking)');
   assert.equal(page.headers.get('x-frame-options'), 'SAMEORIGIN');
+});
+
+test('security headers: strict CSP (no inline script), no referrer, isolated opener — on pages, assets and API', async () => {
+  const csp = (h) => Object.fromEntries(h.get('content-security-policy').split(';').map((d) => d.trim().split(/\s+/)).map(([k, ...v]) => [k, v.join(' ')]));
+  const apiRes = await fetch(`${BASE}/api/report/accounts`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: '{}' });
+  for (const res of [await fetch(BASE), await fetch(`${BASE}/pair`), await fetch(`${BASE}/js/app.js`), await fetch(`${BASE}/health`), apiRes]) {
+    const policy = csp(res.headers);
+    assert.equal(policy['script-src'], "'self'", 'no inline or foreign scripts');
+    assert.equal(policy['default-src'], "'self'");
+    assert.equal(policy['object-src'], "'none'");
+    assert.equal(policy['base-uri'], "'none'");
+    assert.equal(policy['connect-src'], "'self'");
+    assert.equal(policy['frame-ancestors'], "'self'", 'other sites cannot frame the office (clickjacking)');
+    assert.equal(policy['style-src'], "'self' 'unsafe-inline'", 'style="" attributes and the report <style> keep working');
+    assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
+    assert.equal(res.headers.get('cross-origin-opener-policy'), 'same-origin');
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+  }
+  // CSP blocks inline scripts, so no page may carry one (the token <meta> is fine)
+  for (const p of ['/', '/pair']) {
+    const html = await (await fetch(BASE + p)).text();
+    assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/i, `${p}: inline <script>`);
+    assert.doesNotMatch(html, /\son[a-z]+\s*=/i, `${p}: inline event handler`);
+  }
+  assert.equal((await fetch(`${BASE}/js/pair.js`)).status, 200);
+});
+
+test('errors: bad JSON is a 400 with a clear message, never a stack or path', async () => {
+  const res = await fetch(`${BASE}/api/demo`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: '{bukan json' });
+  assert.equal(res.status, 400);
+  assert.deepEqual(await res.json(), { error: 'Data JSON tidak valid.' });
+});
+
+test('project folders: UNC / device paths are refused before the file system is touched', async () => {
+  for (const p of ['\\\\127.0.0.1\\c$', '//127.0.0.1/c$', '\\\\?\\C:\\Windows', '\\\\.\\C:\\', '\\??\\UNC\\server\\share']) {
+    const res = await api('/api/projects', { path: p });
+    assert.equal(res.status, 400, p);
+    assert.match(res.body.error, /jaringan/, p);
+  }
+  assert.equal((await api('/api/config', { roots: ['\\\\127.0.0.1\\share'] })).status, 400);
 });
 
 test('projects come from the configured root; bad roots are rejected', async () => {
@@ -220,6 +259,10 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   assert.equal(manifest.headers.get('content-type'), 'application/manifest+json');
   assert.equal((await manifest.json()).name, 'Adhit Office');
   assert.equal((await lan('/icons/icon-192.png')).headers.get('content-type'), 'image/png');
+  assert.equal((await lan('/js/pair.js')).status, 200, 'the pairing page script loads before pairing (no inline script under CSP)');
+  const lanPage = await lan('/pair');
+  assert.match(lanPage.headers.get('content-security-policy'), /script-src 'self'/, 'the phone gets the same CSP');
+  assert.equal(lanPage.headers.get('cross-origin-opener-policy'), null, 'no COOP over plain http://<ip> (ignored there, with a console error)');
   assert.equal((await lan('/js/app.js')).status, 302, 'everything else still needs pairing');
 
   // 6-digit code
@@ -236,18 +279,53 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   assert.match(right.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
   assert.equal((await tryCode(pairing.code)).status, 400, 'codes are single-use');
 
-  // the paired phone can use the office, but not laptop-only settings
+  // the paired phone can look at the office, but not laptop-only settings
   const page = await lan('/', { headers: { Cookie: cookie } });
   assert.equal(page.status, 200);
   const phoneToken = (await page.text()).match(/office-token" content="([^"]+)"/)[1];
   const phoneApi = (p, body = {}) => lan(p, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', 'X-Office-Token': phoneToken }, body: JSON.stringify(body) });
-  assert.equal((await phoneApi(`/api/projects/${await projectId()}/files`, { q: 'check' })).status, 200);
-  const laptopOnly = ['/api/config', '/api/autostart', '/api/shutdown', '/api/remote', '/api/remote/pairing', '/api/account/login', '/api/account/logout', `/api/projects/${await projectId()}/open`];
+  const id = await projectId();
+  assert.equal((await phoneApi(`/api/projects/${id}/files`, { q: 'check' })).status, 200);
+  const laptopOnly = ['/api/config', '/api/autostart', '/api/shutdown', '/api/remote', '/api/remote/pairing', '/api/account/login', '/api/account/logout', '/api/projects', `/api/projects/${id}/open`];
   for (const p of laptopOnly) assert.equal((await phoneApi(p, { enabled: false, roots: [] })).status, 403, p);
   // login/logout from a phone needs Tailscale; over plain WiFi it is refused with a clear reason
   const wifiLogout = await phoneApi('/api/account/logout', { confirm: 'LOGOUT' });
   assert.equal(wifiLogout.status, 403);
   assert.match((await wifiLogout.json()).error, /Tailscale/);
+
+  // plain WiFi (this test connects from a LAN address, not Tailscale) is read-only:
+  // the snapshot says so, reading works, every action is refused by the one gate in handler()
+  const phoneSnap = await (async () => {
+    const res = await lan('/stream', { headers: { Cookie: cookie } });
+    const reader = res.body.getReader();
+    let text = '';
+    while (!text.includes('\n\n')) text += new TextDecoder().decode((await reader.read()).value);
+    reader.cancel();
+    return JSON.parse(text.match(/^data: (.*)$/m)[1]);
+  })();
+  assert.deepEqual(phoneSnap.client, { local: false, accountAuth: false, readOnly: true });
+  assert.equal((await snapshot()).client.readOnly, false, 'the laptop is never read-only');
+  const reads = ['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`];
+  for (const p of reads) assert.notEqual((await phoneApi(p, { taskId: 'x' })).status, 403, `read ${p}`);
+  const actions = [
+    ...['prompt', 'shell', 'settings', 'commit', 'rewind', 'rewind-preview', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'favorite', 'rename'].map((a) => `/api/projects/${id}/${a}`),
+    '/api/approvals/abc',
+    '/api/team',
+    '/api/demo',
+    '/api/projects/refresh',
+    '/api/account/login/code',
+    '/api/account/login/cancel',
+    '/api/not-yet-written', // default deny: an endpoint nobody listed is refused too
+  ];
+  for (const p of actions) {
+    const res = await phoneApi(p, { text: 'rm -rf /', command: 'whoami', allow: true, mode: 'dontAsk', message: 'x', uuid: 'x', on: true, names: { qa: 'X' } });
+    assert.equal(res.status, 403, p);
+    const body = await res.json();
+    assert.ok(body.readOnly || /laptop|Tailscale/.test(body.error), `${p}: ${body.error}`);
+  }
+  const refused = await (await phoneApi(`/api/projects/${id}/prompt`, { text: 'halo' })).json();
+  assert.equal(refused.error, 'Lewat WiFi hanya bisa melihat. Pakai laptop atau Tailscale untuk mengirim perintah.');
+  assert.equal((await snapshot()).projects.find((p) => p.id === id).favorite, false, 'nothing changed');
 
   // QR link: one-time key, redirects home with a cookie
   pairing = (await api('/api/remote/pairing')).body;
@@ -257,16 +335,42 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   assert.equal(viaQr.headers.get('location'), '/');
   assert.match(await (await lan(qrPath)).text(), /kedaluwarsa/, 'QR key cannot be reused');
 
-  // brute force: 5 wrong codes rotate the code
-  pairing = (await api('/api/remote/pairing')).body;
-  for (let i = 0; i < 5; i++) await tryCode(pairing.code === '000000' ? '111111' : '000000');
-  assert.equal((await tryCode(pairing.code)).status, 400, 'old code dead after 5 failures');
+  // POST /pair is reachable unpaired: a tiny body limit, not the 30 MB of prompts
+  const huge = await lan('/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: '1'.repeat(4096) }) }).catch((err) => err);
+  assert.equal(huge.status, 413, `oversized pairing body refused (${huge})`);
 
-  // revoke + disable
+  // brute force: 5 wrong codes rotate the code, the laptop is told at once, and the guessing IP waits
+  pairing = (await api('/api/remote/pairing')).body;
+  mark = seen.length;
+  for (let i = 0; i < 5; i++) await tryCode(pairing.code === '000000' ? '111111' : '000000');
+  await waitFor((t) => t === 'pairing-reset', 3000); // the laptop's 📱 dialog fetches a new code right away
+  const locked = await tryCode(pairing.code);
+  assert.equal(locked.status, 429, 'this IP is locked out after 5 failures');
+  assert.ok(Number(locked.headers.get('retry-after')) > 0);
+  assert.match((await locked.json()).error, /Coba lagi dalam \d+ detik/);
+  const fresh = (await api('/api/remote/pairing')).body;
+  assert.notEqual(fresh.code + fresh.key, pairing.code + pairing.key, 'a new code after the old one died');
+  assert.equal((await tryCode(fresh.code)).status, 429, 'even the right new code waits out the lockout');
+
+  // revoke: the phone's open event stream is cut right away, not at its next reconnect
+  const live = await lan('/stream', { headers: { Cookie: cookie } });
+  assert.equal(live.status, 200);
+  const liveReader = live.body.getReader();
+  await liveReader.read(); // snapshot
   const devices = (await snapshot()).config.remote.devices;
   assert.equal(devices.length, 2);
   assert.ok(!JSON.stringify(devices).includes('hash'), 'no secrets sent to browsers');
   for (const d of devices) await api('/api/remote/revoke', { id: d.id });
+  const cut = await Promise.race([
+    (async () => {
+      for (;;) {
+        const { done } = await liveReader.read().catch(() => ({ done: true }));
+        if (done) return 'closed';
+      }
+    })(),
+    sleep(3000).then(() => 'still open'),
+  ]);
+  assert.equal(cut, 'closed', 'revoked device stops receiving the office immediately');
   assert.equal((await lan('/stream', { headers: { Cookie: cookie } })).status, 401, 'revoked device is out');
   await api('/api/remote', { enabled: false });
   await sleep(300);

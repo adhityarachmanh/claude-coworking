@@ -337,6 +337,7 @@ class ClaudeSession {
     const sessionId = this.hub.sessionIdFor(this.id);
     if (!sessionId) return [];
     return promptChain(this.project.path, sessionId, { leaf: this.chainLeaf })
+      .filter((p) => UUID.test(String(p.uuid))) // the transcript is a file on disk: only well-formed ids reach the page
       .reverse()
       .slice(0, 80)
       .map(({ uuid, text, ts }) => ({ uuid, text: truncate(text, 400), ts }));

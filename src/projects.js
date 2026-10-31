@@ -5,7 +5,14 @@ import path from 'node:path';
 
 const SKIP = new Set(['node_modules', 'backup']);
 
+/**
+ * UNC and device paths (\\server\share, //server/share, \\?\…, \\.\…, NT \??\…). Merely stat-ing one makes
+ * Windows connect over SMB and hand the server the user's NTLM hash, so they are refused before any fs call.
+ */
+export const isNetworkPath = (p) => /^([\\/]{2}|\\\?\?\\)/.test(String(p ?? '').trim());
+
 export function isDirectory(p) {
+  if (isNetworkPath(p)) return false;
   try {
     return statSync(p).isDirectory();
   } catch {
@@ -23,6 +30,7 @@ export function discoverProjects({ roots }) {
     // No Claude Code config yet.
   }
   for (const root of roots) {
+    if (isNetworkPath(root)) continue;
     try {
       for (const entry of readdirSync(root, { withFileTypes: true })) {
         if (entry.isDirectory() && !entry.name.startsWith('.') && !SKIP.has(entry.name)) found.push([path.join(root, entry.name), 'folder']);

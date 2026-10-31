@@ -59,15 +59,22 @@ Claude hanya memanggil role yang relevan. Tugas kecil dikerjakan langsung tanpa 
 4. Selesai. HP diingat, jadi lain kali cukup buka alamat itu lagi.
 5. Opsional: pilih **Add to Home Screen** / **Tambahkan ke Layar Utama** di menu browser. Adhit Office muncul dengan ikonnya sendiri dan terbuka seperti aplikasi. Di iPhone, aplikasi dari layar utama punya penyimpanan terpisah dari Safari, jadi masukkan kode pairing sekali lagi di sana.
 
-Di HP kamu bisa memakai semuanya: chat, kartu izin, panel perubahan, dan melihat kantor. Pengaturan sensitif (folder projects, auto-start, matikan server, akses HP) hanya bisa diubah dari laptop. Login/logout akun Claude bisa dari HP, tapi hanya lewat Tailscale.
+Apa yang bisa dilakukan HP tergantung jalurnya:
+
+| Jalur | Akses | Bisa | Tidak bisa |
+|---|---|---|---|
+| 📶 WiFi yang sama (HTTP biasa) | **Hanya lihat** | Melihat kantor, chat, kartu izin, panel perubahan & diff, aktivitas, riwayat sesi, akun & laporan token | Mengirim prompt atau `!` shell, menjawab izin, ganti mode/model/effort, commit, rewind, sesi baru/lanjutkan sesi, stop, MCP, hentikan tugas, favorit, ganti nama tim, login/logout |
+| 🌐 Tailscale (terenkripsi) | **Penuh** | Semua yang bisa dilakukan di laptop, termasuk login/logout akun Claude (dengan konfirmasi) | Pengaturan laptop (lihat di bawah) |
+
+Lewat WiFi, kotak pesan dan tombol aksi tampil nonaktif dengan keterangan *"Hanya lihat lewat WiFi — pakai Tailscale untuk mengirim perintah"*. Pengaturan sensitif (folder projects, tambah folder project, auto-start, matikan server, akses HP, buka VS Code/folder) hanya bisa diubah dari laptop, apa pun jalurnya.
 
 **Keamanan:**
 - Mati secara default. Saat dimatikan, server hanya mendengarkan `127.0.0.1`.
 - Saat dinyalakan, server juga mendengarkan alamat LAN laptop (bukan `0.0.0.0`).
-- Perangkat baru wajib pairing dengan kode dari layar laptop. Kode berlaku 2 menit, sekali pakai, dan diganti setelah 5 kali salah.
+- Perangkat baru wajib pairing dengan kode dari layar laptop. Kode berlaku 2 menit, sekali pakai, dan diganti setelah 5 kali salah (jendela 📱 di laptop langsung menampilkan kode baru). Alamat yang 5 kali salah menebak diblokir 60 detik.
 - HP yang terpasang menyimpan token acak di cookie `HttpOnly`. Server hanya menyimpan hash-nya.
-- Perangkat bisa dicabut kapan saja di jendela 📱.
-- Koneksinya HTTP biasa (tanpa enkripsi), jadi **pakai hanya di WiFi yang kamu percaya** (rumah/kantor), bukan WiFi publik.
+- Perangkat bisa dicabut kapan saja di jendela 📱. Koneksi live HP itu langsung diputus saat dicabut.
+- Koneksi WiFi adalah HTTP biasa (tanpa enkripsi): cookie perangkat bisa disadap orang lain di jaringan yang sama. Karena itu **lewat WiFi HP hanya bisa melihat**; semua aksi (prompt, shell, izin, commit, pengaturan) ditolak server. Untuk mengendalikan dari HP, pakai Tailscale. Tetap **pakai hanya di WiFi yang kamu percaya** (rumah/kantor), karena isi chat dan kode tetap terlihat.
 - Saat pertama kali dinyalakan, Windows bisa menanyakan izin firewall untuk Node.js. Pilih **Allow** untuk jaringan *Private*.
 
 ### Dari luar rumah (beda jaringan) dengan Tailscale
@@ -78,7 +85,7 @@ Supaya bisa membuka kantor dari mana saja (data seluler, WiFi kantor, dll.) **ta
 2. Pasang aplikasi **Tailscale** di HP, lalu login dengan akun yang sama.
 3. Di laptop, buka **📱**. Muncul pilihan **🌐 Dari mana saja (Tailscale)**. Pilih itu, lalu scan QR-nya dari HP.
 
-Tailscale membuat jaringan pribadi terenkripsi (WireGuard) yang hanya berisi perangkatmu sendiri. Aplikasi ini otomatis mengenali alamat Tailscale (`100.64.0.0/10`) dan mendengarkannya saat akses HP aktif, tanpa pengaturan tambahan. Alamat WiFi dan Tailscale dipasangkan terpisah, jadi HP perlu scan sekali untuk masing-masing.
+Tailscale membuat jaringan pribadi terenkripsi (WireGuard) yang hanya berisi perangkatmu sendiri, jadi lewat Tailscale HP mendapat **kendali penuh** (mengirim perintah, menjawab izin, commit). Aplikasi ini otomatis mengenali alamat Tailscale (`100.64.0.0/10`) dan mendengarkannya saat akses HP aktif, tanpa pengaturan tambahan. Alamat WiFi dan Tailscale dipasangkan terpisah, jadi HP perlu scan sekali untuk masing-masing.
 
 Supaya tetap bisa diakses saat kamu pergi:
 - **Laptop harus menyala dan tidak sleep.** Atur di *Settings → System → Power*: saat dicolok, sleep = **Never**. Atur juga *saat lid ditutup = Do nothing* kalau laptop sering kamu tutup.
@@ -209,6 +216,11 @@ Kalau pencatatan akun itu baru dimulai di tengah periode, pratinjau memberi tahu
 
 - Server hanya listen di `127.0.0.1`, memeriksa header `Host`/`Origin`, dan semua API butuh token acak per start (disisipkan ke halaman). Situs lain tidak bisa menyuruh server menjalankan Claude Code.
 - Situs lain tidak bisa memuat kantor di dalam iframe (`frame-ancestors 'self'`, `X-Frame-Options`), sehingga tombol seperti **Izinkan** tidak bisa dipancing lewat clickjacking.
+- Setiap respons membawa Content-Security-Policy ketat (`script-src 'self'`, tanpa script inline, `object-src 'none'`, `base-uri 'none'`, `connect-src 'self'`), dan `Referrer-Policy: no-referrer`; halaman di laptop juga `Cross-Origin-Opener-Policy: same-origin` (browser mengabaikan COOP di alamat http://IP, jadi tidak dikirim ke HP). Gaya inline tetap diizinkan karena tampilan dan laporan PDF memakainya.
+- Akses HP: **WiFi = hanya lihat, Tailscale = penuh**. Satu gerbang di server (`wifiAllows` di `src/remote.js`) mengizinkan WiFi hanya untuk daftar aksi baca; endpoint baru otomatis ditolak lewat WiFi sampai sengaja dimasukkan ke daftar itu.
+- Folder jaringan (UNC seperti `\\server\share`, `//server/share`, `\\?\`, `\\.\`) ditolak sebelum disentuh, supaya Windows tidak mengirim hash NTLM ke server lain.
+- Diff file baru yang berupa symlink hanya menampilkan tujuannya (`symlink → …`), bukan isi file yang ditunjuk.
+- Error tak terduga di server hanya dikirim ke browser sebagai pesan umum; detailnya ada di log server.
 - Izin tetap mengikuti aturan Claude Code. Mode default selalu bertanya sebelum menulis file atau menjalankan perintah.
 - Login/logout akun hanya dari laptop atau dari HP lewat Tailscale (ditolak lewat WiFi biasa), dengan peringatan ke laptop. Server tidak pernah membaca token login (`.credentials.json`); profil diambil dari `claude auth status` dan data profil di `~/.claude.json`.
 - **Buka di VS Code / folder** hanya bisa dari laptop, hanya untuk folder project yang terdaftar (file harus berada di dalam project), dan dijalankan tanpa shell. Path dikirim sebagai argumen biasa, tidak pernah ditafsirkan sebagai perintah.
@@ -224,7 +236,7 @@ npm run test:claude  # uji kontrak ke Claude Code asli (beberapa request Haiku)
 | Lapis | Isi |
 |---|---|
 | Unit (`test/*.test.mjs`) | Pemetaan role/file/perintah, translator (streaming, tool, subagent, token), markdown & keamanan HTML, git panel, mirror CLI & riwayat sesi dengan transcript palsu, parsing `/usage`, ledger token per akun, ringkasan & PDF laporan, perintah buka VS Code/folder per OS, ikon app sesuai generator |
-| Integrasi (`test/server.test.mjs`) | Server dijalankan dengan `test-support/fake-claude.mjs` yang meniru protokol stream-json: keamanan API (token, Origin, Host, path, anti-iframe), prompt + streaming, izin (izinkan/tolak), stop/interrupt, validasi pengaturan, demo, profil & kuota akun, laporan yang tidak mencampur akun, favorit, buka VS Code (dry-run), manifest PWA tanpa pairing |
+| Integrasi (`test/server.test.mjs`) | Server dijalankan dengan `test-support/fake-claude.mjs` yang meniru protokol stream-json: keamanan API (token, Origin, Host, path, anti-iframe, CSP), HP lewat WiFi hanya-lihat, pairing (lockout, putus saat dicabut), tolak folder UNC, prompt + streaming, izin (izinkan/tolak), stop/interrupt, validasi pengaturan, demo, profil & kuota akun, laporan yang tidak mencampur akun, favorit, buka VS Code (dry-run), manifest PWA tanpa pairing |
 | Kontrak (`test-support/claude-contract.mjs`) | 15 cek terhadap Claude Code asli: `init`, streaming, `can_use_tool`, allow/deny, interrupt, `--agents`, format transcript yang dipakai mirror |
 
 **Setelah meng-update Claude Code, jalankan `npm run test:claude`.** Aplikasi ini bergantung pada protokol internal CLI, dan test ini yang pertama memberi tahu kalau ada yang berubah. Test offline juga jalan otomatis di GitHub Actions (Windows dan Linux) setiap kali push.

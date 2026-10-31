@@ -1,6 +1,6 @@
 // Read-mostly git helpers for the "Perubahan" (changes) panel: status, per-file diff, commit.
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { lstat, readFile, readlink } from 'node:fs/promises';
 import path from 'node:path';
 
 const MAX_DIFF = 200 * 1024;
@@ -39,7 +39,10 @@ export async function gitDiff(cwd, file) {
   if (!entry) return { diff: '', error: 'File tidak ada di daftar perubahan' }; // only files git reports
   if (entry.untracked) {
     try {
-      const content = await readFile(path.join(cwd, file), 'utf8');
+      const full = path.join(cwd, file);
+      // A new symlink may point anywhere (~/.ssh/id_rsa…): show where it points, never what it points at.
+      if ((await lstat(full)).isSymbolicLink()) return { diff: `--- /dev/null\n+++ b/${file}\n+symlink → ${await readlink(full)}` };
+      const content = await readFile(full, 'utf8');
       const body = content.slice(0, MAX_DIFF).split('\n').map((l) => `+${l}`).join('\n');
       return { diff: `--- /dev/null\n+++ b/${file}\n${body}` };
     } catch (err) {

@@ -26,7 +26,13 @@ const stage = new Stage($('#stage'));
 
 // ---------- api ----------
 
+// A phone on plain-HTTP WiFi may only look (the server enforces it: wifiAllows in src/remote.js).
+// The UI disables every action up front; this list mirrors the server's so nothing is even sent.
+const READ_ONLY_HINT = 'Hanya lihat lewat WiFi — pakai Tailscale untuk mengirim perintah';
+const READ_ONLY_API = /^\/api\/(account|account\/limits|report\/(accounts|summary|pdf)|projects\/[\w-]+\/(changes|diff|files|sessions|rewind-points|task-output))$/;
+
 async function api(path, body = {}) {
+  if (state.readOnly && !READ_ONLY_API.test(path)) throw new Error(`${READ_ONLY_HINT}.`);
   const res = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Office-Token': TOKEN },
@@ -87,7 +93,9 @@ function connect() {
     // Opened from a paired phone: laptop-only settings are hidden (the server refuses them anyway).
     state.local = snap.client?.local !== false;
     state.accountAuth = snap.client?.accountAuth ?? state.local; // laptop, or a phone over Tailscale
+    state.readOnly = snap.client?.readOnly === true; // a phone on plain WiFi: look, don't act
     document.body.classList.toggle('remote-client', !state.local);
+    document.body.classList.toggle('read-only', state.readOnly);
     $('#btn-phone').hidden = !state.local;
     $('#btn-settings').hidden = !state.local;
     state.account = snap.account ?? null;
@@ -102,6 +110,12 @@ function connect() {
     const remembered = location.hash.slice(1) || localStorage.getItem('office.active');
     selectProject(state.projects.some((p) => p.id === remembered) ? remembered : DEMO_ID);
     renderAccountButton(); // after the core UI, so a profile quirk can never blank the office
+  });
+  on('pairing-reset', () => {
+    // Too many wrong codes on a phone: the shown code is dead, show the new one right away.
+    if ($('#phone-modal').hidden) return;
+    phone.pairing = null;
+    refreshPairing();
   });
   on('account', onAccountState);
   on('account-alert', onAccountAlert);
@@ -254,7 +268,8 @@ function renderSidebar() {
     .map((p, i) => {
       // Section titles only when there are favourites to separate from the rest.
       const head = !grouped ? '' : i === 0 ? '<li class="group">★ Favorit</li>' : !p.favorite && list[i - 1].favorite ? '<li class="group">Semua project</li>' : '';
-      const star = p.id === DEMO_ID ? '' : `<button class="fav ${p.favorite ? 'on' : ''}" title="${p.favorite ? 'Hapus dari favorit' : 'Jadikan favorit (selalu di atas)'}" aria-pressed="${Boolean(p.favorite)}">${p.favorite ? '★' : '☆'}</button>`;
+      const favTitle = state.readOnly ? READ_ONLY_HINT : p.favorite ? 'Hapus dari favorit' : 'Jadikan favorit (selalu di atas)';
+      const star = p.id === DEMO_ID ? '' : `<button class="fav ${p.favorite ? 'on' : ''}" title="${favTitle}" aria-pressed="${Boolean(p.favorite)}" ${state.readOnly ? 'disabled' : ''}>${p.favorite ? '★' : '☆'}</button>`;
       const st = state.statuses[p.id] ?? {};
       const badge = st.pending
         ? `<span class="badge ask">${st.pending}</span>`
@@ -401,7 +416,7 @@ $('#mobile-nav').addEventListener('click', (e) => {
 // A shorter hint fits a phone-width composer on one line.
 const narrow = matchMedia('(max-width: 760px)');
 const applyPlaceholder = () => {
-  $('#prompt').placeholder = narrow.matches ? 'Ketik pesan…  ( / command · @file )' : 'Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )';
+  $('#prompt').placeholder = state.readOnly ? READ_ONLY_HINT : narrow.matches ? 'Ketik pesan…  ( / command · @file )' : 'Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )';
   $('#prompt').rows = narrow.matches ? 1 : 3;
   autosize();
 };
@@ -494,6 +509,7 @@ function replaceChat(msg) {
 
 /** Puts text in the composer to edit before sending (starters, "Edit" on a sent prompt). */
 function fillComposer(text) {
+  if (state.readOnly) return;
   if (narrow.matches) setMobileView('chat');
   const input = $('#prompt');
   input.value = text;
@@ -741,6 +757,12 @@ function fillApproval(node, msg) {
     actions = `<button class="primary" data-act="allow">Izinkan</button>${approval.canAlways ? '<button data-act="always" title="Simpan aturan izin agar tidak ditanya lagi">Izinkan selalu</button>' : ''}<button data-act="all" title="Semua aksi berikutnya di sesi ini otomatis diizinkan">Izinkan semua (sesi ini)</button><button class="danger" data-act="deny">Tolak</button>`;
   }
   node.innerHTML = `${head}<div class="ap-label">${escapeHtml(approval.description || msg.text)}</div>${body}<div class="ap-actions">${actions}</div>`;
+  if (state.readOnly) {
+    // Visible, so the phone knows the team is waiting; answered from the laptop or over Tailscale.
+    node.querySelectorAll('button, input').forEach((el) => (el.disabled = true));
+    node.insertAdjacentHTML('beforeend', `<p class="ro-note">👁 ${READ_ONLY_HINT}: jawab izin ini dari laptop atau HP lewat Tailscale.</p>`);
+    return;
+  }
   node.querySelectorAll('[data-act]').forEach((btn) =>
     btn.addEventListener('click', () => decide(approval, btn.dataset.act, node, btn.dataset.mode)),
   );
@@ -848,7 +870,7 @@ function renderTeamForm() {
   $('#team-list').innerHTML = ROLE_ORDER.map((id) => `<label class="team-row">
       <img src="${avatarURL(CAST[id].look)}" alt="">
       <span class="team-role"><b style="color:${CAST[id].color}">${CAST[id].title}</b><small>bawaan: ${escapeHtml(DEFAULT_NAMES[id])}</small></span>
-      <input name="${id}" value="${escapeHtml(CAST[id].name === DEFAULT_NAMES[id] ? '' : CAST[id].name)}" placeholder="${escapeHtml(DEFAULT_NAMES[id])}" maxlength="24" autocomplete="off" />
+      <input name="${id}" value="${escapeHtml(CAST[id].name === DEFAULT_NAMES[id] ? '' : CAST[id].name)}" placeholder="${escapeHtml(DEFAULT_NAMES[id])}" maxlength="24" autocomplete="off" ${state.readOnly ? 'disabled' : ''} />
     </label>`).join('');
 }
 
@@ -895,18 +917,34 @@ function renderComposer() {
   if (st.busy) hint.push(st.queue ? `Tim sedang bekerja — ${st.queue} pesan antre, dibaca Claude di langkah berikutnya.` : 'Tim sedang bekerja — pesan baru dibaca Claude di langkah berikutnya.');
   if (st.cliBusy) hint.push('Sesi di terminal sedang berjalan (izinnya dijawab di terminal).');
   if (st.autoApprove) hint.push('⚠ Semua izin otomatis di sesi ini.');
+  if (state.readOnly) hint.unshift(`👁 ${READ_ONLY_HINT}.`);
   $('#composer-hint').textContent = hint.join('  ·  ');
   $('#typing').hidden = !(st.busy || st.cliBusy || st.compacting);
   $('#typing-text').textContent = st.compacting ? '✻ Memadatkan konteks percakapan…' : st.busy ? 'Tim sedang bekerja…' : 'Claude Code (terminal) sedang bekerja…';
   renderTodos(st);
   renderStatusline(st);
   renderSessionBar();
+  applyReadOnly();
   if (!$('#tasks-modal').hidden && tasksView.project === state.active) renderTasks();
+}
+
+// Controls that change something: disabled (with the reason as tooltip) for a phone on plain WiFi.
+const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-attach', '#btn-stop', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
+
+function applyReadOnly() {
+  if (!state.readOnly) return; // fixed per connection: a laptop / Tailscale page never needs undoing
+  for (const sel of ACTION_CONTROLS) {
+    const el = $(sel);
+    if (!el) continue;
+    el.disabled = true;
+    el.title = READ_ONLY_HINT;
+  }
+  applyPlaceholder();
 }
 
 $('#sb-title').addEventListener('click', async () => {
   const st = state.statuses[state.active] ?? {};
-  if (!st.sessionId || state.active === DEMO_ID) return;
+  if (!st.sessionId || state.active === DEMO_ID || state.readOnly) return;
   const current = $('#sb-title').textContent;
   const title = window.prompt('Nama sesi (sama dengan /rename di Claude Code):', current)?.trim();
   if (!title || title === current) return;
@@ -1001,7 +1039,7 @@ function renderModelOptions(current) {
   // Effort only for models that support it (as the CLI greys it out).
   const chosen = models.find((m) => m.value === (current || 'default'));
   const noEffort = Boolean(chosen && !chosen.efforts?.length);
-  $('#effort').disabled = noEffort;
+  $('#effort').disabled = noEffort || Boolean(state.readOnly);
   $('#effort').title = noEffort ? 'Model ini tidak mendukung pengaturan effort' : '';
 }
 
@@ -1083,6 +1121,7 @@ function localCommand(text) {
 }
 
 async function sendPrompt() {
+  if (state.readOnly) return;
   const input = $('#prompt');
   const text = input.value.trim();
   if ((!text && !attachments.length) || state.active === DEMO_ID) return;
@@ -1134,6 +1173,7 @@ function clearAttachments() {
 }
 
 function addImageFiles(files) {
+  if (state.readOnly) return;
   for (const file of files) {
     if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
       toast('Hanya gambar PNG, JPEG, GIF, atau WebP.');
@@ -1422,7 +1462,7 @@ function renderSessionList() {
         ? '<span class="s-current">● Sedang dibuka</span>'
         : s.id === liveInTerminal
           ? '<span class="s-live" title="Selesaikan atau tutup dulu di terminal sebelum melanjutkannya di sini">● Berjalan di terminal</span>'
-          : `<button class="primary s-resume" data-resume="${s.id}">Lanjutkan</button>`;
+          : `<button class="primary s-resume" data-resume="${escapeHtml(s.id)}" ${state.readOnly ? `disabled title="${READ_ONLY_HINT}"` : ''}>Lanjutkan</button>`;
       return `${head}<div class="s-item ${current ? 'current' : ''}">
         <div class="s-main">
           <span class="s-title">${escapeHtml(s.title)}</span>
@@ -1554,6 +1594,7 @@ $('#project-list').addEventListener('click', (e) => {
   const li = e.target.closest('li[data-id]');
   if (!li) return;
   if (e.target.closest('.fav')) {
+    if (state.readOnly) return;
     const project = state.projects.find((p) => p.id === li.dataset.id);
     api(`/api/projects/${li.dataset.id}/favorite`, { on: !project?.favorite }).catch((err) => toast(err.message));
     return;
@@ -1800,7 +1841,11 @@ function renderPhone() {
   $('#remote-enabled').checked = info.enabled;
   const body = $('#phone-body');
   if (!info.enabled) {
-    body.innerHTML = `<p class="muted">Setelah dinyalakan, scan QR dengan kamera HP untuk membuka kantor ini dari HP. HP harus terhubung ke WiFi yang sama dengan laptop.</p>
+    body.innerHTML = `<p class="muted">Setelah dinyalakan, scan QR dengan kamera HP untuk membuka kantor ini dari HP.</p>
+      <ul class="access-modes muted small">
+        <li><b>📶 WiFi yang sama: hanya lihat.</b> Pantau chat, perubahan, dan aktivitas. Koneksi WiFi tidak terenkripsi, jadi HP tidak bisa mengirim perintah, menjawab izin, atau commit.</li>
+        <li><b>🌐 Tailscale: kendali penuh</b> seperti di laptop (kecuali pengaturan laptop). Koneksinya terenkripsi dan bisa dari mana saja.</li>
+      </ul>
       <p class="warn">Hanya nyalakan di jaringan yang kamu percaya (rumah/kantor). Siapa pun di jaringan tetap butuh kode dari layar laptop ini untuk masuk.</p>`;
     return;
   }
@@ -1815,13 +1860,13 @@ function renderPhone() {
     : '';
   const tailscaleTip = info.tailscale
     ? ''
-    : `<details class="tip"><summary>🌐 Mau buka dari luar rumah (beda jaringan)?</summary>
+    : `<details class="tip"><summary>🌐 Mau mengirim perintah dari HP, atau buka dari luar rumah?</summary>
         <ol>
           <li>Pasang <b>Tailscale</b> (gratis) di laptop: <code>tailscale.com/download</code>, lalu login.</li>
           <li>Pasang aplikasi Tailscale di HP, login dengan akun yang sama.</li>
           <li>Buka lagi jendela ini — muncul pilihan <b>Dari mana saja (Tailscale)</b> dengan QR-nya.</li>
         </ol>
-        <p class="muted small">Tailscale membuat jaringan pribadi terenkripsi antara laptop dan HP-mu. Laptop tidak terbuka ke internet publik.</p>
+        <p class="muted small">Tailscale membuat jaringan pribadi terenkripsi antara laptop dan HP-mu. Laptop tidak terbuka ke internet publik. Lewat Tailscale HP bisa mengirim perintah; lewat WiFi biasa hanya bisa melihat.</p>
       </details>`;
   body.innerHTML = p
     ? `${chooser}<div class="pair">
@@ -1836,6 +1881,9 @@ function renderPhone() {
           <div class="muted">Berlaku ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · sekali pakai</div>
         </div>
       </div>
+      <p class="access-mode ${viaTailscale ? 'full' : 'view'}">${viaTailscale
+        ? '🌐 <b>Tailscale: kendali penuh.</b> HP bisa mengirim perintah, menjawab izin, dan commit.'
+        : '📶 <b>WiFi: hanya lihat.</b> HP bisa memantau chat, perubahan, dan aktivitas, tapi tidak bisa mengirim perintah. Untuk kendali penuh, pakai Tailscale.'}</p>
       <p class="muted small">Belum tersambung? Saat pertama kali, Windows mungkin menanyakan izin firewall untuk Node.js — pilih <b>Allow / Izinkan</b> (jaringan Private).</p>`
     : '<p class="muted">Menyiapkan kode…</p>';
   body.innerHTML += `<div class="devices"><b>Perangkat terhubung</b>${devices ? `<ul>${devices}</ul>` : '<p class="muted small">Belum ada.</p>'}</div>`;
@@ -1985,8 +2033,24 @@ function onAccountAlert({ action, device, email }) {
   if ('Notification' in window && Notification.permission === 'granted') new Notification('Adhit Office: akun Claude', { body: text, tag: 'account-alert' });
 }
 
+// renderAccount() rebuilds #account-body (up to 3× while account + quota load), which would drop keyboard focus
+// to <body>. Remember the focused action button and put focus back on its replacement — or keep it in the dialog.
 function renderAccount() {
   const body = $('#account-body');
+  const active = document.activeElement;
+  const hadFocus = body.contains(active);
+  const act = hadFocus ? active.closest('[data-act]')?.dataset.act : null;
+  try {
+    renderAccountBody(body);
+  } finally {
+    if (hadFocus && !body.contains(document.activeElement)) {
+      const target = (act && body.querySelector(`[data-act="${CSS.escape(act)}"]`)) || focusablesIn($('#account-modal'))[0];
+      target?.focus({ preventScroll: true });
+    }
+  }
+}
+
+function renderAccountBody(body) {
   const p = state.account?.profile;
   if (!p) {
     body.innerHTML = '<p class="muted">Memeriksa akun Claude Code…</p>';
@@ -2549,7 +2613,7 @@ $('#prompt').addEventListener('keydown', (e) => {
 });
 // Ctrl+B anywhere: the running Bash commands / subagents carry on in the background, as in the CLI.
 document.addEventListener('keydown', (e) => {
-  if (e.key.toLowerCase() !== 'b' || !e.ctrlKey || e.shiftKey || e.altKey || state.active === DEMO_ID) return;
+  if (e.key.toLowerCase() !== 'b' || !e.ctrlKey || e.shiftKey || e.altKey || state.active === DEMO_ID || state.readOnly) return;
   if (!(state.statuses[state.active] ?? {}).busy) return;
   e.preventDefault();
   backgroundRunning();
@@ -2557,7 +2621,7 @@ document.addEventListener('keydown', (e) => {
 // Esc stops the running turn, like in the CLI; Esc Esc when idle clears the box, or opens Rewind when it is empty.
 let lastEsc = 0;
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape' || suggest.items.length || state.active === DEMO_ID) return;
+  if (e.key !== 'Escape' || suggest.items.length || state.active === DEMO_ID || state.readOnly) return;
   if (document.querySelector('.modal:not([hidden])')) return; // Esc closes the dialog instead
   const st = state.statuses[state.active] ?? {};
   if (st.busy || st.queue) {
@@ -2580,7 +2644,7 @@ document.addEventListener('keydown', (e) => {
 });
 // Shift+Tab cycles the permission mode, like in the CLI (only from the prompt box, so Tab navigation still works elsewhere).
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Tab' || !e.shiftKey || e.defaultPrevented || state.active === DEMO_ID) return; // defaultPrevented: Tab picked an autocomplete item
+  if (e.key !== 'Tab' || !e.shiftKey || e.defaultPrevented || state.active === DEMO_ID || state.readOnly) return; // defaultPrevented: Tab picked an autocomplete item
   if (e.target !== $('#prompt') && e.target !== document.body) return;
   e.preventDefault();
   cycleMode();
@@ -2623,7 +2687,7 @@ const rewindView = { project: null, points: [], selected: null, preview: null };
 const shortDate = (ts) => (ts ? new Date(ts).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 
 async function openRewind() {
-  if (state.active === DEMO_ID) return;
+  if (state.active === DEMO_ID || state.readOnly) return;
   if ((state.statuses[state.active] ?? {}).busy) return toast('Tim masih bekerja. Tekan Esc untuk menghentikan dulu, lalu Esc Esc.', 'warn');
   Object.assign(rewindView, { project: state.active, points: [], selected: null, preview: null });
   $('#rewind-list').innerHTML = '<li class="muted">Memuat percakapan…</li>';
@@ -2644,7 +2708,7 @@ function renderRewindList() {
     return;
   }
   list.innerHTML = rewindView.points
-    .map((p, i) => `<li><button type="button" class="${rewindView.selected === p.uuid ? 'active' : ''}" data-uuid="${p.uuid}"><span class="rw-text">${escapeHtml(p.text)}</span><small>${i === 0 ? 'pesan terakhir · ' : ''}${shortDate(p.ts)}</small></button></li>`)
+    .map((p, i) => `<li><button type="button" class="${rewindView.selected === p.uuid ? 'active' : ''}" data-uuid="${escapeHtml(p.uuid)}"><span class="rw-text">${escapeHtml(p.text)}</span><small>${i === 0 ? 'pesan terakhir · ' : ''}${shortDate(p.ts)}</small></button></li>`)
     .join('');
 }
 
@@ -2718,7 +2782,7 @@ const MCP_STATUS = { connected: ['✓ tersambung', 'ok'], 'needs-auth': ['🔑 p
 const MCP_ORDER = ['needs-auth', 'failed', 'pending', 'connected', 'disabled'];
 
 async function openMcp() {
-  if (state.active === DEMO_ID) return;
+  if (state.active === DEMO_ID || state.readOnly) return; // asking for the status starts Claude Code
   mcpView.project = state.active;
   $('#mcp-callback').hidden = true;
   openModal('mcp-modal');
@@ -2844,7 +2908,7 @@ function openTasks() {
 function renderTasks() {
   const st = state.statuses[tasksView.project] ?? {};
   const tasks = st.tasks ?? [];
-  $('#tasks-background').disabled = !st.busy;
+  $('#tasks-background').disabled = !st.busy || Boolean(state.readOnly);
   if (!tasks.length) {
     $('#tasks-list').innerHTML = '<li class="muted">Belum ada tugas di sesi ini. Tugas muncul saat Claude menjalankan perintah atau agent, misalnya dev server di latar belakang.</li>';
     return;
@@ -2856,7 +2920,7 @@ function renderTasks() {
         .filter(Boolean)
         .join(' · ');
       const out = tasksView.outputs.get(t.id);
-      return `<li data-task="${escapeHtml(t.id)}"><div class="task-row">${t.kind === 'agent' ? '🤖' : '🖥'} <b>${escapeHtml(t.description || t.id)}</b>${running ? '<span class="spinner"></span>' : ''}</div><small class="muted">${escapeHtml(meta)}${t.summary ? ` — ${escapeHtml(t.summary)}` : ''}${t.error ? ` — ${escapeHtml(t.error)}` : ''}</small><div class="task-actions">${t.kind === 'shell' ? `<button data-task-act="output">📄 ${out != null ? 'Muat ulang output' : 'Lihat output'}</button>` : ''}${running ? '<button class="danger" data-task-act="stop">■ Hentikan</button>' : ''}</div>${out != null ? `<pre class="task-out">${escapeHtml(out || '(belum ada output)')}</pre>` : ''}</li>`;
+      return `<li data-task="${escapeHtml(t.id)}"><div class="task-row">${t.kind === 'agent' ? '🤖' : '🖥'} <b>${escapeHtml(t.description || t.id)}</b>${running ? '<span class="spinner"></span>' : ''}</div><small class="muted">${escapeHtml(meta)}${t.summary ? ` — ${escapeHtml(t.summary)}` : ''}${t.error ? ` — ${escapeHtml(t.error)}` : ''}</small><div class="task-actions">${t.kind === 'shell' ? `<button data-task-act="output">📄 ${out != null ? 'Muat ulang output' : 'Lihat output'}</button>` : ''}${running ? `<button class="danger" data-task-act="stop" ${state.readOnly ? `disabled title="${READ_ONLY_HINT}"` : ''}>■ Hentikan</button>` : ''}</div>${out != null ? `<pre class="task-out">${escapeHtml(out || '(belum ada output)')}</pre>` : ''}</li>`;
     })
     .join('');
 }

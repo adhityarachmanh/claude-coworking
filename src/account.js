@@ -57,6 +57,9 @@ export class AccountService {
     this.limitsAt = 0;
     this.rateLimit = null; // latest rate_limit_event from a running session
     this.login = null; // { state, url, error, child }
+    // Single-flight: the CLI call already running is shared, never a second process for the same answer.
+    this.profileLoad = null;
+    this.limitsLoad = null;
   }
 
   /** Account identity used to tag usage records. */
@@ -65,9 +68,21 @@ export class AccountService {
     return p?.loggedIn ? { id: p.accountUuid ?? p.email, email: p.email, org: p.orgName ?? null } : null;
   }
 
-  async refreshProfile(force = false) {
-    if (!this.claude) return null;
-    if (!force && this.profile && Date.now() - this.profileAt < PROFILE_TTL_MS) return this.profile;
+  /** The profile; `force` skips the cache. Concurrent calls share one `claude auth status`. */
+  refreshProfile(force = false) {
+    if (!this.claude) return Promise.resolve(null);
+    if (!force && this.profile && Date.now() - this.profileAt < PROFILE_TTL_MS) return Promise.resolve(this.profile);
+    this.profileLoad ??= this.loadProfile().finally(() => (this.profileLoad = null));
+    return this.profileLoad;
+  }
+
+  /** After a login/logout: a check started before it may be stale, so wait for it and ask again. */
+  async reloadProfile() {
+    await this.profileLoad?.catch(() => {});
+    return this.refreshProfile(true);
+  }
+
+  async loadProfile() {
     const { out } = await runClaude(this.claude, ['auth', 'status', '--json'], { timeout: 20_000 });
     let status = {};
     try {
@@ -102,9 +117,14 @@ export class AccountService {
   }
 
   /** Plan usage from `/usage` (a local command: no model call, nothing saved). */
-  async refreshLimits(force = false) {
-    if (!this.claude || !this.profile?.loggedIn) return null;
-    if (!force && this.limits && Date.now() - this.limitsAt < LIMITS_TTL_MS) return this.limits;
+  refreshLimits(force = false) {
+    if (!this.claude || !this.profile?.loggedIn) return Promise.resolve(null);
+    if (!force && this.limits && Date.now() - this.limitsAt < LIMITS_TTL_MS) return Promise.resolve(this.limits);
+    this.limitsLoad ??= this.loadLimits().finally(() => (this.limitsLoad = null));
+    return this.limitsLoad;
+  }
+
+  async loadLimits() {
     const { out } = await runClaude(this.claude, ['-p', '--output-format', 'json', '--no-session-persistence'], { input: '/usage', timeout: 45_000 });
     let text = '';
     try {
@@ -150,7 +170,7 @@ export class AccountService {
       if (this.login !== flow) return;
       if (code === 0) {
         flow.state = 'done';
-        await this.refreshProfile(true);
+        await this.reloadProfile();
       } else if (flow.state !== 'cancelled') {
         flow.state = 'error';
         const lastLine = flow.output.trim().split('\n').filter(Boolean).at(-1) ?? '';
@@ -183,7 +203,7 @@ export class AccountService {
   async logout() {
     if (!this.claude) throw new Error('Claude Code tidak ditemukan.');
     const { code, out } = await runClaude(this.claude, ['auth', 'logout'], { timeout: 30_000 });
-    await this.refreshProfile(true);
+    await this.reloadProfile();
     if (code !== 0) throw new Error(out.replace(ANSI, '').trim() || 'Logout gagal.');
     return this.profile;
   }
