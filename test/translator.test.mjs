@@ -246,3 +246,23 @@ test('Claude Code system events: retries, compaction, title, background tasks, t
   translator.handle({ type: 'tool_progress', tool_use_id: 't9', tool_name: 'Bash', parent_tool_use_id: null, elapsed_time_seconds: 12 });
   assert.equal(chat().find((m) => m.kind === 'tool').elapsed, 12);
 });
+
+test('status.working counts open tools and running subagents per role (for an office rebuilt after a refresh)', () => {
+  const statuses = [];
+  const translator = new StreamTranslator({ office: () => {}, chat: () => 'c', updateChat: () => {}, status: (p) => p.working && statuses.push(p.working) });
+  const last = () => statuses.at(-1);
+  translator.handle(use('t1', 'Bash', { command: 'npm test' }));
+  const role = Object.keys(last())[0];
+  assert.equal(last()[role].tools, 1, 'a running tool is counted');
+  assert.match(last()[role].label, /npm test/);
+  translator.handle(use('a1', 'Agent', { subagent_type: 'qa', description: 'cek', prompt: 'cek', run_in_background: true }));
+  assert.equal(last().qa.agents, 1, 'a delegated subagent is counted under its role');
+  translator.handle(done('t1', 'ok'));
+  assert.equal(last()[role]?.tools ?? 0, 0, 'tool finished');
+  translator.handle(done('a1', 'Async agent launched successfully.'));
+  assert.equal(last().qa.agents, 1, 'a background agent keeps working after its launch result');
+  translator.handle({ type: 'result', subtype: 'success', is_error: false, duration_ms: 10, usage: {}, modelUsage: {} });
+  assert.equal(last().qa.agents, 1, 'still at work after the turn ends');
+  translator.finishAgent('a1');
+  assert.deepEqual(last(), {}, 'nobody at work once it reports back');
+});

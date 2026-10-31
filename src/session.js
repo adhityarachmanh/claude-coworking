@@ -549,6 +549,7 @@ class ClaudeSession {
     this.inflight.clear();
     this.busy = false;
     this.interrupting = false;
+    this.hub.setStatus(this.id, { working: {} }); // the process is gone: nobody it started is still at work
     return child;
   }
 

@@ -111,6 +111,23 @@ export class StreamTranslator {
     this.sink.status?.(patch);
   }
 
+  /**
+   * Who is at work right now: open tool calls and running subagents per role ({ qa: { tools: 1, agents: 0 } }).
+   * Sent as status (part of every snapshot) so an office rebuilt after a page refresh keeps those characters
+   * typing — replayed history is not live and doesn't restart animations by itself.
+   */
+  emitWorking() {
+    const working = {};
+    for (const info of this.tools.values()) {
+      const w = (working[info.role] ??= { tools: 0, agents: 0 });
+      if (info.agent) w.agents++;
+      else w.tools++;
+      w.label = info.label; // the latest one (insertion order): shown on the team card / monitor after a refresh
+      if (info.screen) w.screen = info.screen;
+    }
+    this.status({ working });
+  }
+
   /** Role of whoever issued this tool call (used for permission prompts). */
   roleOf(toolUseId) {
     return this.tools.get(toolUseId)?.role;
@@ -135,6 +152,7 @@ export class StreamTranslator {
       failed,
       ...(report ? { report: firstSentence(report, 70) } : {}),
     });
+    this.emitWorking();
   }
 
   handle(msg) {
@@ -402,6 +420,7 @@ export class StreamTranslator {
       const chatId = this.sink.chat({ kind: 'delegate', role, from, agentType, text: label, status: 'running', input: { prompt: clip(input.prompt, 3000) } });
       this.tools.set(block.id, { name: block.name, role, from, label, chatId, agent: true, background: Boolean(input.run_in_background) });
       this.sink.office({ kind: 'delegate', role, from, label, agentType });
+      this.emitWorking();
       return;
     }
 
@@ -423,6 +442,7 @@ export class StreamTranslator {
     });
     this.tools.set(block.id, { name: block.name, input, role, label, screen, chatId });
     this.sink.office({ kind: 'tool_start', role, label, tool: block.name, screen, inferred: !parentRole });
+    this.emitWorking();
 
     const todos = extractTodos(block.name, input);
     if (todos) {
@@ -475,6 +495,7 @@ export class StreamTranslator {
       this.tools.delete(block.tool_use_id);
       this.sink.updateChat(info.chatId, { status: failed ? 'fail' : 'ok', output: clip(text, OUTPUT_LIMIT) });
       this.sink.office({ kind: failed ? 'tool_fail' : 'tool_end', role: info.role, label: info.label, tool: info.name, screen: info.screen });
+      this.emitWorking();
 
       // A test run: QA cheers on green, or takes the bug to whoever last touched the code.
       if (info.screen === 'tests') {
@@ -515,6 +536,7 @@ export class StreamTranslator {
         this.tools.delete(id);
       }
     }
+    this.emitWorking(); // only background agents are still at work after the turn
     const ok = !msg.is_error && msg.subtype === 'success';
     if (msg.quiet && ok) {
       // CLI mirror: a turn ended without a timing record; close it without a stats line.

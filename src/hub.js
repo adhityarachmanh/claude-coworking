@@ -276,7 +276,7 @@ export class Hub {
       rt = {
         events: [],
         chat: this.persisted.chats[id] ?? [],
-        status: { project: id, alive: false, busy: false, cliBusy: false, queue: 0, pending: 0, activeModel: null, activeRoles: [], sessionId: this.sessionIdFor(id), ...this.settingsFor(id) },
+        status: { project: id, alive: false, busy: false, cliBusy: false, queue: 0, pending: 0, activeModel: null, activeRoles: [], working: {}, cliWorking: {}, sessionId: this.sessionIdFor(id), ...this.settingsFor(id) },
       };
       this.runtime.set(id, rt);
     }

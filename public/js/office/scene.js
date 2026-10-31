@@ -364,6 +364,24 @@ export class Scene {
 
   setStatus(status) {
     this.status = status;
+    if (status.working || status.cliWorking) {
+      // The server's count of open tool calls / running subagents (web session + terminal session) is the truth.
+      // It is part of every snapshot, so after a page refresh — where replayed events don't animate — whoever
+      // is still mid-task keeps typing.
+      for (const p of Object.values(this.people)) {
+        const web = status.working?.[p.id];
+        const cli = status.cliWorking?.[p.id];
+        p.openTools = (web?.tools ?? 0) + (cli?.tools ?? 0);
+        p.agentCount = (web?.agents ?? 0) + (cli?.agents ?? 0);
+        const w = web ?? cli;
+        if (w && !p.task) {
+          p.task = w.label ?? '';
+          p.screen = w.screen ?? ROLE_SCREEN[p.id];
+        }
+      }
+      return;
+    }
+    // Older servers: only the roles of background agents.
     const roles = status.activeRoles ?? [];
     for (const role of new Set(roles)) {
       const p = this.person(role);

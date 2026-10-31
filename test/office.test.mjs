@@ -64,3 +64,20 @@ test('thinking keeps the role at work and sends it back to its desk', () => {
   assert.ok(lead.isBusy(3_000));
   assert.ok(lead.headingHome() || lead.seated, 'walks back to the desk');
 });
+
+test('after a page refresh the server status (working) puts mid-task characters back to work', () => {
+  const scene = at(0, () => new Scene());
+  // replayed history is not live: on its own it would leave everyone idle
+  at(0, () => scene.handle({ kind: 'tool_start', role: 'qa', label: 'npm test', tool: 'Bash' }, false));
+  at(0, () => scene.setStatus({ busy: true, working: { qa: { tools: 1, agents: 0, label: 'npm test' }, frontend: { tools: 0, agents: 1, label: 'Pecah app.js' } }, cliWorking: {} }));
+  assert.ok(scene.people.qa.isBusy(60_000), 'qa keeps typing while its tool runs');
+  assert.ok(scene.people.frontend.isBusy(60_000), 'a running subagent keeps its role busy');
+  assert.equal(scene.people.qa.task, 'npm test', 'task label restored for the team card');
+  assert.ok(!scene.people.backend.isBusy(60_000));
+  // the server says the tool ended → idle (no stale count left behind)
+  at(60_000, () => scene.setStatus({ busy: false, working: {}, cliWorking: {} }));
+  assert.ok(!scene.people.qa.isBusy(70_000));
+  // terminal (CLI mirror) work counts too
+  at(70_000, () => scene.setStatus({ busy: false, working: {}, cliWorking: { devops: { tools: 1, agents: 0, label: 'build' } } }));
+  assert.ok(scene.people.devops.isBusy(80_000));
+});
