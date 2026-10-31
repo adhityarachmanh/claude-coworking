@@ -735,7 +735,8 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
   .crumb small { display: none; }
   .account-btn { padding: 2px; }
   .avatar { width: 30px; height: 30px; }
-  #btn-report, #btn-notify, #btn-help { display: none; } /* help stays reachable from the welcome card */
+  #btn-notify, #btn-help { display: none; } /* help stays reachable from the welcome card; 📊 Laporan stays */
+  .report-filters label, .report-filters label:first-child { min-width: 0; flex-basis: 100%; }
   .topbar .icon-btn { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; }
   .pill { font-size: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%; flex: none; }
   .pill.ok { background: var(--ok); }
