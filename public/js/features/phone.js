@@ -1,11 +1,15 @@
 // Phone access (QR pairing), laptop only.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
+import { ago } from '../core/format.js';
 import { state } from '../core/state.js';
 import { qrSvg } from '../qr.js';
 
 export const phone = { timer: null, pairing: null, ip: null };
 const ADDRESS_LABEL = { lan: '📶 WiFi yang sama', tailscale: '🌐 Dari mana saja (Tailscale)' };
+
+// lastSeen is only stored about once an hour (server throttles disk writes), so recent use reads as "dalam 1 jam terakhir".
+const lastActive = (ts) => (Date.now() - ts < 3_600_000 ? 'dalam 1 jam terakhir' : ago(ts));
 
 function renderPhone() {
   const info = state.config?.remote ?? { enabled: false, urls: [], devices: [] };
@@ -23,7 +27,7 @@ function renderPhone() {
   const p = phone.pairing;
   const left = p ? Math.max(0, Math.round((p.expires - Date.now()) / 1000)) : 0;
   const devices = info.devices
-    .map((d) => `<li><span>${escapeHtml(d.name)}<small>dipasangkan ${new Date(d.created).toLocaleDateString('id-ID')} · terakhir aktif ${new Date(d.lastSeen).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}</small></span><button class="danger" data-revoke="${d.id}">Cabut</button></li>`)
+    .map((d) => `<li><span>${escapeHtml(d.name)}<small>dipasangkan ${new Date(d.created).toLocaleDateString('id-ID')} · terakhir aktif ${lastActive(d.lastSeen ?? d.created)}</small></span><button class="danger" data-revoke="${d.id}">Cabut</button></li>`)
     .join('');
   const viaTailscale = p?.addresses.find((a) => a.ip === p.ip)?.kind === 'tailscale';
   const chooser = p && p.addresses.length > 1
@@ -57,7 +61,7 @@ function renderPhone() {
         : '📶 <b>WiFi: hanya lihat.</b> HP bisa memantau chat, perubahan, dan aktivitas, tapi tidak bisa mengirim perintah. Untuk kendali penuh, pakai Tailscale.'}</p>
       <p class="muted small">Belum tersambung? Saat pertama kali, Windows mungkin menanyakan izin firewall untuk Node.js — pilih <b>Allow / Izinkan</b> (jaringan Private).</p>`
     : '<p class="muted">Menyiapkan kode…</p>';
-  body.innerHTML += `<div class="devices"><b>Perangkat terhubung</b>${devices ? `<ul>${devices}</ul>` : '<p class="muted small">Belum ada.</p>'}</div>`;
+  body.innerHTML += `<div class="devices"><b>Perangkat terhubung</b>${devices ? `<ul>${devices}</ul>` : '<p class="muted small">Belum ada.</p>'}<p class="muted small">Dicabut otomatis setelah ${info.idleDays ?? 30} hari tidak aktif.</p></div>`;
   // Rendered apart from the per-second countdown so an opened <details> stays open.
   const tipBox = $('#phone-tip');
   if (tipBox.dataset.tailscale !== String(info.tailscale)) {

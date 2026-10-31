@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -152,6 +152,59 @@ test('security headers: strict CSP (no inline script), no referrer, isolated ope
     assert.doesNotMatch(html, /\son[a-z]+\s*=/i, `${p}: inline event handler`);
   }
   assert.equal((await fetch(`${BASE}/js/pair.js`)).status, 200);
+});
+
+test('index.html preloads every module app.js imports (no waterfall on a phone)', async () => {
+  const html = await (await fetch(BASE)).text();
+  const preloaded = [...html.matchAll(/<link rel="modulepreload" href="([^"]+)"/g)].map((m) => m[1]);
+  // Recomputed here, independently of src/modules.js: walk the imports from app.js.
+  const pub = path.join(APP, 'public');
+  const want = new Set();
+  const walk = (url) => {
+    for (const [, a, b] of readFileSync(path.join(pub, url), 'utf8').matchAll(/\bfrom\s*'(\.{1,2}\/[^'\s]+\.js)'|\bimport\(\s*'(\.{1,2}\/[^'\s]+\.js)'\s*\)/g)) {
+      const next = new URL(a ?? b, `http://x${url}`).pathname;
+      if (!want.has(next)) (want.add(next), walk(next));
+    }
+  };
+  walk('/js/app.js');
+  assert.deepEqual([...preloaded].sort(), [...want].sort());
+  assert.equal(new Set(preloaded).size, preloaded.length, 'no duplicates');
+  for (const key of ['/js/core/api.js', '/js/features/phone.js', '/js/office/world.js', '/js/markdown.js', '/js/qr.js']) assert.ok(preloaded.includes(key), key);
+  assert.ok(!preloaded.includes('/js/pair.js') && !preloaded.includes('/js/app.js'), 'pair page script and the entry itself are not preloaded');
+  // Every module file of the app is reached (only pair.js, the classic script of /pair, is not a module).
+  const files = readdirSync(path.join(pub, 'js'), { recursive: true }).filter((f) => f.endsWith('.js')).map((f) => `/js/${f.split(path.sep).join('/')}`);
+  assert.deepEqual(files.filter((f) => !want.has(f)).sort(), ['/js/app.js', '/js/pair.js']);
+  assert.doesNotMatch(html, /module-preloads/, 'the placeholder is replaced');
+  // Each preloaded URL is served (same origin: CSP script-src 'self' allows it).
+  for (const url of preloaded.slice(0, 5)) assert.equal((await fetch(BASE + url)).status, 200, url);
+});
+
+test('static assets revalidate with ETag (304); index.html with its token is never stored', async () => {
+  const first = await fetch(`${BASE}/js/core/api.js`);
+  const etag = first.headers.get('etag');
+  assert.equal(first.status, 200);
+  assert.match(etag, /^"[\w-]+"$/);
+  assert.equal(first.headers.get('cache-control'), 'no-cache', 'kept but always revalidated');
+  assert.ok((await first.text()).length > 0);
+  const again = await fetch(`${BASE}/js/core/api.js`, { headers: { 'If-None-Match': etag } });
+  assert.equal(again.status, 304);
+  assert.equal(again.headers.get('etag'), etag);
+  assert.equal(await again.text(), '');
+  assert.equal((await fetch(`${BASE}/js/core/api.js`, { headers: { 'If-None-Match': `"other", W/${etag}` } })).status, 304, 'lists and weak validators');
+  const stale = await fetch(`${BASE}/js/core/api.js`, { headers: { 'If-None-Match': '"stale"' } });
+  assert.equal(stale.status, 200, 'a changed file is sent in full');
+  assert.equal(stale.headers.get('etag'), etag);
+  assert.equal(stale.headers.get('content-type'), 'text/javascript; charset=utf-8');
+  const css = await fetch(`${BASE}/css/app.css`);
+  assert.equal(css.headers.get('cache-control'), 'no-cache');
+  assert.ok(css.headers.get('etag'));
+  for (const p of ['/', '/index.html']) {
+    const page = await fetch(BASE + p, { headers: { 'If-None-Match': '*' } });
+    assert.equal(page.status, 200, `${p}: always sent`);
+    assert.equal(page.headers.get('cache-control'), 'no-store', `${p}: holds the API token`);
+    assert.equal(page.headers.get('etag'), null);
+  }
+  assert.equal((await fetch(`${BASE}/health`)).headers.get('cache-control'), 'no-store');
 });
 
 test('errors: bad JSON is a 400 with a clear message, never a stack or path', async () => {

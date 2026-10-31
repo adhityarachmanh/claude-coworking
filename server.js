@@ -1,6 +1,6 @@
 // Adhit Office server: runs headless Claude Code per project and serves the office web app.
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -15,6 +15,7 @@ import { autostartStatus, setAutostart } from './src/autostart.js';
 import { renderPdf, reportHtml } from './src/report.js';
 import { PERIOD_UNITS, UsageLedger, summarize, totals } from './src/usage.js';
 import { searchFiles } from './src/files.js';
+import { moduleGraph, preloadTags } from './src/modules.js';
 import { gitCommit, gitDiff, gitStatus } from './src/git.js';
 import { openInApp } from './src/open.js';
 import { TranscriptMirror } from './src/mirror.js';
@@ -120,7 +121,13 @@ const account = new AccountService({
 const ledger = new UsageLedger({ file: path.join(DATA_DIR, 'usage.jsonl'), account: () => account.current });
 const sessions = new SessionManager({ hub, claude, agents, teamPrompt: TEAM_PROMPT, ledger, account });
 const mirror = new TranscriptMirror(hub, { ledger });
-const remote = new RemoteAccess(hub);
+// A device unpaired for being idle loses its open event streams at once, like "Cabut".
+const remote = new RemoteAccess(hub, {
+  onExpire: (devices) => {
+    for (const d of devices) dropDeviceStreams(d.id);
+    publishConfig();
+  },
+});
 
 const projectRoots = () => (hub.persisted.roots.length ? hub.persisted.roots : [DEFAULT_ROOT]);
 
@@ -225,14 +232,41 @@ function readJson(req, limit = MAX_BODY) {
   });
 }
 
-async function serveStatic(pathname, res) {
+// Every module app.js pulls in, preloaded from index.html so a phone fetches them in parallel instead of in
+// a 3–4 level waterfall. Worked out once per start (a new import picked up on restart; until then it simply loads late).
+const MODULE_PRELOADS = preloadTags(moduleGraph(PUBLIC_DIR, '/js/app.js'));
+
+/** Strong validator for a static file's bytes. */
+const etagOf = (body) => `"${createHash('sha1').update(body).digest('base64url')}"`;
+
+/** If-None-Match (a list, possibly weak validators or "*") matches this ETag. */
+function notModified(req, etag) {
+  const header = String(req.headers['if-none-match'] ?? '');
+  return header.trim() === '*' || header.split(',').some((v) => v.trim().replace(/^W\//, '') === etag);
+}
+
+async function serveStatic(pathname, res, req) {
   const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.slice(1));
   const file = path.resolve(PUBLIC_DIR, rel);
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return json(res, 404, { error: 'not found' });
   try {
     let body = await readFile(file);
-    if (rel === 'index.html') body = body.toString('utf8').replace('__OFFICE_TOKEN__', TOKEN);
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-store' });
+    const type = MIME[path.extname(file)] ?? 'application/octet-stream';
+    if (rel === 'index.html') {
+      // Carries the per-start API token: never stored by the browser.
+      body = body.toString('utf8').replace('__OFFICE_TOKEN__', TOKEN).replace(/<!-- module-preloads:.*?-->/, MODULE_PRELOADS);
+      res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+      return res.end(body);
+    }
+    // Plain files (JS, CSS, icons): kept by the browser but revalidated on every use, so a reload is a
+    // round of tiny 304s instead of full downloads, and an edited file is still picked up at once.
+    const etag = etagOf(body);
+    const headers = { 'Cache-Control': 'no-cache', ETag: etag };
+    if (notModified(req, etag)) {
+      res.writeHead(304, headers);
+      return res.end();
+    }
+    res.writeHead(200, { ...headers, 'Content-Type': type });
     res.end(body);
   } catch {
     json(res, 404, { error: 'not found' });
@@ -616,7 +650,7 @@ async function handler(req, res) {
       if (!remote.enabled) return json(res, 403, { error: 'Akses dari perangkat lain sedang dimatikan.' });
       if (pathname === '/pair') return await handlePair(req, res, new URL(req.url, `http://${host}`));
       // App icon + manifest hold no data, and browsers fetch the manifest without cookies.
-      if (req.method === 'GET' && PUBLIC_ASSET.test(pathname)) return await serveStatic(pathname, res);
+      if (req.method === 'GET' && PUBLIC_ASSET.test(pathname)) return await serveStatic(pathname, res, req);
       device = remote.verify(cookies(req)[DEVICE_COOKIE]);
       if (!device) {
         if (req.method === 'GET' && pathname !== '/stream' && !pathname.startsWith('/api/')) {
@@ -635,7 +669,7 @@ async function handler(req, res) {
     if (pathname === '/stream') return openStream(req, res, local, device, device ? cookies(req)[DEVICE_COOKIE] : null);
     if (pathname === '/health') return json(res, 200, { ok: true, claude: Boolean(claude) });
     if (pathname === '/pair' && searchParams.size === 0) return servePairPage(res);
-    return await serveStatic(pathname, res);
+    return await serveStatic(pathname, res, req);
   } catch (err) {
     if (err instanceof HttpError) {
       if (err.status === 413) res.on('finish', () => req.destroy()); // stop reading the rest of an oversized body
@@ -686,6 +720,9 @@ const mirroring = mirror.start();
 // Know who is logged in (usage is tagged with it); notice logins/logouts done in a terminal too.
 account.refreshProfile(true).catch(() => {});
 setInterval(() => account.refreshProfile(true).catch(() => {}), 60_000).unref();
+// Phones unused for DEVICE_IDLE_MS are unpaired: now (after a long shutdown) and every hour.
+remote.pruneIdle();
+setInterval(() => remote.pruneIdle(), 60 * 60 * 1000).unref();
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') console.error(`Port ${PORT} sudah dipakai — Adhit Office mungkin sudah berjalan.`);

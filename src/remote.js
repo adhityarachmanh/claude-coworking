@@ -14,6 +14,10 @@ const GLOBAL_MAX_FAILURES = 20;
 const GLOBAL_WINDOW_MS = 10 * 60 * 1000;
 const GLOBAL_PAUSE_MS = 10 * 60 * 1000;
 export const DEVICE_COOKIE = 'office_device';
+// A paired device unused this long is unpaired automatically (enforced here, whatever the cookie's Max-Age).
+export const DEVICE_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
+// lastSeen only needs to be accurate to this for the idle rule, so a busy phone doesn't cause a disk write per request.
+const LAST_SEEN_STEP_MS = 60 * 60 * 1000;
 
 // ---------- what a phone on plain WiFi may do ----------
 
@@ -93,9 +97,19 @@ function deviceName(userAgent = '') {
   return `${os} · ${browser}`;
 }
 
+/** Last use of a device (pairing time if it was never seen after that). */
+const lastActive = (d) => d.lastSeen ?? d.created ?? 0;
+const isIdle = (d, now) => now - lastActive(d) > DEVICE_IDLE_MS;
+
 export class RemoteAccess {
-  constructor(hub) {
+  /**
+   * @param {object} hub
+   * @param {{ onExpire?: (devices: object[]) => void }} [options] onExpire: devices just unpaired for being idle
+   *   (the server ends their event streams, like a manual revoke).
+   */
+  constructor(hub, { onExpire } = {}) {
     this.hub = hub;
+    this.onExpire = onExpire ?? (() => {});
     hub.persisted.remote ??= { enabled: false, devices: [] };
     this.pairing = null;
     this.failures = new Map(); // remote ip -> { count, until } (wrong pairing guesses)
@@ -193,16 +207,38 @@ export class RemoteAccess {
     return { token };
   }
 
-  /** The paired device for a cookie token, or null. */
+  /** The paired device for a cookie token, or null (also null once it sat unused for DEVICE_IDLE_MS). */
   verify(token) {
     if (!token || !this.enabled) return null;
     const hash = sha256(token);
     const device = this.state.devices.find((d) => sameSecret(d.hash, hash));
-    if (device && Date.now() - device.lastSeen > 60_000) {
-      device.lastSeen = Date.now();
+    if (!device) return null;
+    const now = Date.now();
+    if (isIdle(device, now)) {
+      this.pruneIdle(now); // drops this one (and any other idle device) for good
+      return null;
+    }
+    // Throttled: at most one (debounced) save per device per LAST_SEEN_STEP_MS.
+    if (!(now - device.lastSeen < LAST_SEEN_STEP_MS)) {
+      device.lastSeen = now;
       this.hub.scheduleSave();
     }
-    return device ?? null;
+    return device;
+  }
+
+  /**
+   * Unpairs every device unused for DEVICE_IDLE_MS (run at start, hourly, and from verify()).
+   * @returns {object[]} the removed devices
+   */
+  pruneIdle(now = Date.now()) {
+    const expired = this.state.devices.filter((d) => isIdle(d, now));
+    if (!expired.length) return [];
+    this.state.devices = this.state.devices.filter((d) => !isIdle(d, now));
+    this.hub.save();
+    const days = Math.round(DEVICE_IDLE_MS / 86_400_000);
+    for (const d of expired) console.log(`Perangkat "${d.name}" dicabut otomatis: tidak aktif lebih dari ${days} hari`);
+    this.onExpire(expired);
+    return expired;
   }
 
   revoke(id) {
@@ -216,7 +252,8 @@ export class RemoteAccess {
       enabled: this.enabled,
       urls: this.enabled ? lanAddresses().map((ip) => `http://${ip}:${port}`) : [],
       tailscale: networkAddresses().some((a) => a.kind === 'tailscale'),
-      devices: this.state.devices.map(({ id, name, created, lastSeen }) => ({ id, name, created, lastSeen })),
+      devices: this.state.devices.map(({ id, name, created, lastSeen }) => ({ id, name, created, lastSeen: lastSeen ?? created })),
+      idleDays: Math.round(DEVICE_IDLE_MS / 86_400_000),
     };
   }
 }

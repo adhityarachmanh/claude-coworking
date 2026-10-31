@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import { test } from 'node:test';
-import { RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from '../src/remote.js';
+import { DEVICE_IDLE_MS, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from '../src/remote.js';
 
 const v4 = (address) => ({ family: 'IPv4', address, internal: false });
 
@@ -91,4 +91,77 @@ test('pairing: a right code clears the failures of that IP', () => {
   p = remote.currentPairing();
   for (let i = 0; i < 3; i++) remote.pair({ code: p.code === '000000' ? '111111' : '000000' }, '', '10.0.0.9');
   assert.equal(remote.lockedFor('10.0.0.9'), 0, 'counting starts over after a success');
+});
+
+/** fakeRemote() that also counts saves and records idle-unpaired devices. */
+function countingRemote() {
+  const saves = { now: 0, scheduled: 0 };
+  const expired = [];
+  const hub = { persisted: { remote: { enabled: true, devices: [] } }, save: () => saves.now++, scheduleSave: () => saves.scheduled++, broadcast() {} };
+  return { remote: new RemoteAccess(hub, { onExpire: (devices) => expired.push(...devices.map((d) => d.id)) }), hub, saves, expired };
+}
+
+const pairDevice = (remote, ua = 'iPhone Safari/1') => remote.pair({ key: remote.currentPairing().key }, ua, '10.0.0.2').token;
+
+test('idle devices: unused for more than 30 days they are refused, removed and stored without them', (t) => {
+  t.mock.method(console, 'log', () => {});
+  const { remote, hub, saves, expired } = countingRemote();
+  const t0 = Date.now();
+  const idle = pairDevice(remote);
+  const busy = pairDevice(remote, 'Android Chrome/1');
+  const [idleId, busyId] = hub.persisted.remote.devices.map((d) => d.id);
+
+  let now = t0 + DEVICE_IDLE_MS - 1000;
+  t.mock.method(Date, 'now', () => now);
+  assert.ok(remote.verify(busy), 'used just before the limit');
+  now = t0 + DEVICE_IDLE_MS + 1000;
+  const savedBefore = saves.now;
+  assert.equal(remote.verify(idle), null, 'idle for 30 days + 1 s: refused');
+  assert.deepEqual(hub.persisted.remote.devices.map((d) => d.id), [busyId], 'removed from the stored list');
+  assert.ok(saves.now > savedBefore, 'persisted right away');
+  assert.deepEqual(expired, [idleId], 'the server is told (it ends that device’s streams)');
+  assert.ok(remote.verify(busy), 'the active device stays paired');
+  assert.equal(remote.verify(idle), null, 'stays gone');
+  assert.ok(!JSON.stringify(console.log.mock.calls.map((c) => c.arguments)).includes(idle), 'the log never carries the token');
+  assert.match(String(console.log.mock.calls.at(-1).arguments[0]), /dicabut otomatis/);
+});
+
+test('idle devices: pruneIdle() (start + hourly) also drops never-seen devices by their pairing time', (t) => {
+  t.mock.method(console, 'log', () => {});
+  const { remote, hub, expired } = countingRemote();
+  const now = Date.now();
+  hub.persisted.remote.devices.push(
+    { id: 'old', hash: 'x', name: 'Lama', created: now - DEVICE_IDLE_MS - 60_000 }, // older data: no lastSeen
+    { id: 'fresh', hash: 'y', name: 'Baru', created: now - 1000 },
+    { id: 'seen', hash: 'z', name: 'Aktif', created: now - 2 * DEVICE_IDLE_MS, lastSeen: now - 5000 },
+  );
+  assert.deepEqual(remote.pruneIdle(now).map((d) => d.id), ['old']);
+  assert.deepEqual(hub.persisted.remote.devices.map((d) => d.id), ['fresh', 'seen']);
+  assert.deepEqual(expired, ['old']);
+  assert.deepEqual(remote.pruneIdle(now), [], 'nothing left to drop');
+  assert.equal(remote.publicInfo(1).devices.find((d) => d.id === 'fresh').lastSeen, now - 1000, 'UI gets a "last active" time');
+});
+
+test('lastSeen moves forward on use, but is saved at most once an hour per device', (t) => {
+  const { remote, hub, saves } = countingRemote();
+  const t0 = Date.now();
+  const token = pairDevice(remote);
+  const device = hub.persisted.remote.devices[0];
+  let now = t0;
+  t.mock.method(Date, 'now', () => now);
+  for (let i = 1; i <= 50; i++) {
+    now = t0 + i * 60_000; // a request every minute for 50 minutes
+    assert.ok(remote.verify(token));
+  }
+  assert.equal(saves.scheduled, 0, 'no disk write within the hour');
+  assert.equal(device.lastSeen, t0);
+  now = t0 + 61 * 60_000;
+  remote.verify(token);
+  assert.equal(device.lastSeen, now, 'updated after an hour');
+  assert.equal(saves.scheduled, 1);
+  // Steady use keeps a phone paired well past 30 days after pairing.
+  for (let day = 1; day <= 40; day++) {
+    now = t0 + day * 86_400_000;
+    assert.ok(remote.verify(token), `day ${day}`);
+  }
 });
