@@ -4,7 +4,10 @@
 // Behaviour per prompt text:
 //   contains "izin"  → asks permission for a Write (control_request can_use_tool), then reports allow/deny
 //   contains "lama"  → streams slowly so the test can interrupt it
+//   "status?"        → replies with the live mode/model/effort, its pid and its launch flags
 //   anything else    → streams a short text reply
+// Control requests (initialize, set_permission_mode, set_model, apply_flag_settings, rewind_files,
+// mcp_status, …) answer like the real CLI; every prompt reports command_lifecycle events.
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
 
@@ -27,6 +30,60 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let pendingPermission = null;
 let interrupted = false;
+const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
+const live = { mode: flag('--permission-mode') ?? 'default', model: flag('--model') ?? 'default', effort: flag('--effort') ?? 'auto' };
+const waiting = new Set(); // prompt uuids queued but not started (cancel_async_message)
+
+/** Control requests the web app sends, answered the way Claude Code answers them. */
+function control(req) {
+  switch (req.subtype) {
+    case 'initialize':
+      return {
+        commands: [
+          { name: 'fake-skill', description: 'Skill palsu untuk tes', argumentHint: '' },
+          { name: 'context', description: 'Show context usage', argumentHint: '' },
+        ],
+        models: [
+          { value: 'default', displayName: 'Default (recommended)', description: 'Fake Opus · default', supportedEffortLevels: ['low', 'high'] },
+          { value: 'fable', displayName: 'Fable 5.1', description: 'Most capable', supportedEffortLevels: ['low', 'high', 'max'] },
+          { value: 'old-model', displayName: 'Old', description: 'No effort', supportedEffortLevels: [] },
+        ],
+        claude_code_version: '9.9.9-fake',
+      };
+    case 'set_permission_mode':
+      live.mode = req.mode;
+      send({ type: 'system', subtype: 'status', status: null, permissionMode: req.mode, session_id: sessionId });
+      return { mode: req.mode };
+    case 'set_model':
+      if (/tidak-ada/.test(req.model)) throw new Error(`Model '${req.model}' not found`);
+      live.model = req.model;
+      return { model: `claude-${req.model}` };
+    case 'apply_flag_settings':
+      if (req.settings?.effortLevel) live.effort = req.settings.effortLevel;
+      return {};
+    case 'get_context_usage':
+      return { totalTokens: 21000, maxTokens: 1_000_000, percentage: 2, autoCompactThreshold: 967000, isAutoCompactEnabled: true };
+    case 'rewind_files':
+      return req.dry_run ? { canRewind: true, filesChanged: ['catatan.txt'], insertions: 1, deletions: 1 } : { canRewind: true };
+    case 'mcp_status':
+      return { mcpServers: [{ name: 'fake-mcp', status: 'connected', scope: 'user', tools: [{ name: 'a' }, { name: 'b' }] }, { name: 'auth-mcp', status: 'needs-auth', scope: 'user' }] };
+    case 'mcp_authenticate':
+      return { authUrl: 'https://example.com/oauth', requiresUserAction: true, callbackExpected: true, redirectScheme: 'localhost' };
+    case 'mcp_reconnect':
+    case 'mcp_toggle':
+    case 'background_tasks':
+    case 'stop_task':
+    case 'rename_session':
+    case 'mcp_oauth_callback_url':
+      return {};
+    case 'get_task_output':
+      return { output: 'server jalan di :3000\n' };
+    case 'cancel_async_message':
+      return { cancelled: waiting.delete(req.message_uuid) };
+    default:
+      throw new Error(`Unsupported: ${req.subtype}`);
+  }
+}
 
 function init() {
   send({ type: 'system', subtype: 'init', session_id: sessionId, model: 'fake-model', permissionMode: 'default', slash_commands: ['fake-skill', 'context'], agents: [] });
@@ -68,6 +125,28 @@ async function handlePrompt(text) {
     await streamText(Array.from({ length: 400 }, (_, i) => `kata${i}`).join(' '), 25);
     return result();
   }
+  if (/rencana/i.test(text)) {
+    // Plan mode: ExitPlanMode asks for approval; an approval with a setMode update switches the mode.
+    const toolUseId = `toolu_${randomUUID()}`;
+    const input = { plan: '1. Ubah validasi\n2. Tambah tes' };
+    send({ type: 'assistant', parent_tool_use_id: null, message: { id: `msg_${randomUUID()}`, content: [{ type: 'tool_use', id: toolUseId, name: 'ExitPlanMode', input }] } });
+    const decision = await new Promise((resolve) => {
+      pendingPermission = resolve;
+      send({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'can_use_tool', tool_name: 'ExitPlanMode', input, tool_use_id: toolUseId } });
+    });
+    const setMode = decision.updatedPermissions?.find((p) => p.type === 'setMode');
+    if (decision.behavior === 'allow') {
+      live.mode = setMode?.mode ?? 'default';
+      send({ type: 'system', subtype: 'status', status: null, permissionMode: live.mode, session_id: sessionId });
+    }
+    send({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: decision.behavior === 'allow' ? 'Plan approved' : decision.message, is_error: decision.behavior !== 'allow' }] } });
+    await streamText(decision.behavior === 'allow' ? 'Rencana disetujui.' : 'Rencana direvisi.');
+    return result();
+  }
+  if (/status\?/.test(text)) {
+    await streamText(`mode=${live.mode} model=${live.model} effort=${live.effort} pid=${process.pid} resumeAt=${flag('--resume-session-at') ?? '-'}`, 5);
+    return result();
+  }
   await streamText('Halo dari Claude palsu yang sedang mengetik.');
   return result();
 }
@@ -87,10 +166,26 @@ rl.on('line', (line) => {
   } else if (msg.type === 'control_request' && msg.request?.subtype === 'interrupt') {
     interrupted = true;
     send({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id } });
+  } else if (msg.type === 'control_request') {
+    try {
+      send({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: control(msg.request) } });
+    } catch (err) {
+      send({ type: 'control_response', response: { subtype: 'error', request_id: msg.request_id, error: err.message } });
+    }
   } else if (msg.type === 'user') {
     const content = msg.message.content;
     const text = typeof content === 'string' ? content : content.filter((b) => b.type === 'text').map((b) => b.text).join(' ');
-    queue = queue.then(() => handlePrompt(text));
+    const uuid = msg.uuid ?? randomUUID();
+    const lifecycle = (state) => send({ type: 'command_lifecycle', command_uuid: uuid, state, uuid: randomUUID() });
+    lifecycle('queued');
+    waiting.add(uuid);
+    queue = queue.then(async () => {
+      if (!waiting.delete(uuid)) return; // cancelled while queued
+      lifecycle('started');
+      if (args.includes('--replay-user-messages')) send({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, uuid, isReplay: true });
+      await handlePrompt(text);
+      lifecycle('completed');
+    });
   }
 });
 rl.on('close', () => queue.then(() => process.exit(0)));

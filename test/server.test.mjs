@@ -2,6 +2,7 @@
 // permission prompts and interrupts — no network, no tokens, no access to your real data.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
@@ -85,7 +86,9 @@ let mark = 0;
 function waitFor(pred, ms = 15000) {
   return new Promise((resolve, reject) => {
     for (let i = mark; i < seen.length; i++) if (pred(seen[i].type, seen[i].obj)) return ((mark = i + 1), resolve(seen[i].obj));
-    const timer = setTimeout(() => reject(new Error('timeout waiting for event')), ms);
+    // On timeout, say what did arrive: the last events since the mark.
+    const recent = () => seen.slice(Math.max(mark, seen.length - 8)).map((s) => `${s.type}:${JSON.stringify(s.obj).slice(0, 160)}`).join('\n  ');
+    const timer = setTimeout(() => reject(new Error(`timeout waiting for event; last events:\n  ${recent()}`)), ms);
     waiters.push({ pred, resolve: (o) => (clearTimeout(timer), (mark = seen.length), resolve(o)) });
   });
 }
@@ -329,4 +332,107 @@ test('favorites are stored server-side; "open in VS Code" stays inside the proje
   assert.equal(folder.status, 200);
   assert.equal(norm(folder.body.args[0]), norm(path.join(TMP, 'projects', 'toko')));
   assert.equal((await api(`/api/projects/${id}/open`, { app: 'code', file: '../../rahasia.txt' })).status, 400, 'files outside the project are refused');
+});
+
+// ---------- Claude Code's control protocol (what the IDE extensions use) ----------
+
+/** The final text of the next assistant reply in this project. */
+const nextReply = (id, pattern) => waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch.streaming === false && pattern.test(o.patch.text ?? ''));
+
+test('catalog: the models of /model and the described slash commands come from Claude Code', async () => {
+  let config;
+  for (let i = 0; i < 50 && !config?.models?.length; i++) {
+    config = (await snapshot()).config;
+    if (!config.models?.length) await sleep(100);
+  }
+  assert.ok(config.models.some((m) => m.value === 'fable' && m.displayName === 'Fable 5.1'), 'Fable is offered');
+  assert.ok(config.commands.some((c) => c.name === 'fake-skill' && c.description === 'Skill palsu untuk tes'));
+  assert.equal(config.cliVersion, '9.9.9-fake');
+});
+
+test('mode, model and effort switch live in the running Claude Code, without a restart', async () => {
+  const id = await projectId();
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'status?' });
+  const pid = (await nextReply(id, /pid=\d+/)).patch.text.match(/pid=(\d+)/)[1];
+  await api(`/api/projects/${id}/settings`, { mode: 'acceptEdits', model: 'fable', effort: 'high' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'status?' });
+  const reply = (await nextReply(id, /pid=\d+/)).patch.text;
+  assert.match(reply, /mode=acceptEdits model=fable effort=high/);
+  assert.equal(reply.match(/pid=(\d+)/)[1], pid, 'same process: nothing restarted');
+
+  // Claude Code refuses an unknown model: the app goes back to the one that works, as /model does.
+  mark = seen.length;
+  await api(`/api/projects/${id}/settings`, { model: 'claude-tidak-ada' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'error' && /Gagal mengganti model/.test(o.text));
+  assert.equal((await snapshot()).statuses[id].model, 'fable', 'back to the model that works');
+  assert.equal((await api(`/api/projects/${id}/settings`, { model: '--dangerously-skip-permissions' })).status, 200);
+  assert.equal((await snapshot()).statuses[id].model, 'fable', 'flags never pass as a model');
+});
+
+test("a prompt sent mid-turn waits in Claude Code's queue; Esc drops it and stops the turn", async () => {
+  const id = await projectId();
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'tugas lama' });
+  await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch.streaming === true);
+  await api(`/api/projects/${id}/prompt`, { text: 'pesan susulan' });
+  const followUp = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === 'pesan susulan');
+  assert.equal(followUp.queued, true);
+  assert.match(followUp.uuid, /^[0-9a-f-]{36}$/, 'prompts carry the uuid Claude Code knows them by');
+  await api(`/api/projects/${id}/stop`);
+  await waitFor((t, o) => t === 'chat_update' && o.project === id && o.id === followUp.id && o.patch.cancelled === true);
+  assert.equal((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result')).ok, false);
+  await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false && o.queue === 0);
+});
+
+test('approving a plan picks the mode the work continues in, like the CLI plan dialog', async () => {
+  const id = await projectId();
+  await api(`/api/projects/${id}/settings`, { mode: 'plan' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'buat rencana' });
+  const approval = await waitFor((t, o) => t === 'approval' && o.project === id && o.kind === 'plan' && o.status === 'pending');
+  await api(`/api/approvals/${approval.id}`, { allow: true, mode: 'acceptEdits' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  assert.equal((await snapshot()).statuses[id].mode, 'acceptEdits');
+});
+
+test('rewind: points from the transcript chain, code via checkpoints, conversation via --resume-session-at', async () => {
+  const id = await projectId();
+  const snap = await snapshot();
+  const sessionId = snap.statuses[id].sessionId;
+  const project = snap.projects.find((p) => p.id === id);
+  const dir = path.join(TMP, 'claude-projects', path.resolve(project.path).replace(/[^a-zA-Z0-9]/g, '-'));
+  mkdirSync(dir, { recursive: true });
+  const [u1, a1, u2, a2] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+  const entry = (type, uuid, parentUuid, content) => JSON.stringify({ type, uuid, parentUuid, sessionId, timestamp: new Date().toISOString(), message: { role: type, content } });
+  writeFileSync(
+    path.join(dir, `${sessionId}.jsonl`),
+    `${[entry('user', u1, null, 'pertama'), entry('assistant', a1, u1, [{ type: 'text', text: 'ok' }]), entry('user', u2, a1, 'kedua'), entry('assistant', a2, u2, [{ type: 'text', text: 'ok' }])].join('\n')}\n`,
+  );
+  const { points } = (await api(`/api/projects/${id}/rewind-points`)).body;
+  assert.deepEqual(points.map((p) => p.text), ['kedua', 'pertama'], 'newest first');
+  assert.deepEqual((await api(`/api/projects/${id}/rewind-preview`, { uuid: u2 })).body.filesChanged, ['catatan.txt']);
+  assert.equal((await api(`/api/projects/${id}/rewind`, { uuid: randomUUID(), code: true })).status, 400, 'only prompts of this conversation');
+
+  mark = seen.length;
+  const done = (await api(`/api/projects/${id}/rewind`, { uuid: u2, code: true, conversation: true })).body;
+  assert.equal(done.text, 'kedua', 'the prompt comes back to edit');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'divider' && /Kode & percakapan/.test(o.text));
+  assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['pertama'], 'the conversation now ends before "kedua"');
+  await api(`/api/projects/${id}/prompt`, { text: 'status?' });
+  assert.match((await nextReply(id, /resumeAt=/)).patch.text, new RegExp(`resumeAt=${a1}`), 'resumed at the entry before the prompt');
+});
+
+test('MCP servers, background tasks and rename are Claude Code control requests', async () => {
+  const id = await projectId();
+  const { servers } = (await api(`/api/projects/${id}/mcp`)).body;
+  assert.deepEqual(servers.map((s) => [s.name, s.status, s.tools]), [['fake-mcp', 'connected', 2], ['auth-mcp', 'needs-auth', null]]);
+  assert.equal((await api(`/api/projects/${id}/mcp-action`, { server: 'fake-mcp', action: 'reconnect' })).status, 200);
+  assert.equal((await api(`/api/projects/${id}/mcp-action`, { server: 'fake-mcp', action: 'hapus' })).status, 400);
+  assert.equal((await api(`/api/projects/${id}/mcp-action`, { server: 'auth-mcp', action: 'login' })).body.authUrl, 'https://example.com/oauth');
+  assert.equal((await api(`/api/projects/${id}/mcp-action`, { server: 'auth-mcp', action: 'callback', callbackUrl: 'javascript:alert(1)' })).status, 400);
+  assert.match((await api(`/api/projects/${id}/task-output`, { taskId: 't1' })).body.output, /3000/);
+  assert.equal((await api(`/api/projects/${id}/rename`, { title: '  ' })).status, 400);
+  assert.equal((await api(`/api/projects/${id}/rename`, { title: 'Sesi uji' })).status, 200);
 });

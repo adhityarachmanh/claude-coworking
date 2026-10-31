@@ -102,7 +102,9 @@ export class StreamTranslator {
     this.lastThink = 0;
     this.liveThinking = null; // { chatId, text } while a thinking block streams
     this.contextUsed = 0; // tokens in the context of the latest main-thread API call
-    this.contextWindow = 0; // from the result's modelUsage; kept across turns
+    this.contextWindow = 0; // from the result's modelUsage (or /context); kept across turns
+    this.retryChatId = null; // one "retrying…" line per turn, updated in place
+    this.bgTasks = new Map(); // task_id -> background/foreground task (Bash, subagent) for /tasks
   }
 
   status(patch) {
@@ -138,8 +140,10 @@ export class StreamTranslator {
   handle(msg) {
     switch (msg.type) {
       case 'system':
-        if (msg.subtype === 'compact_boundary') this.sink.chat({ kind: 'info', text: 'Konteks percakapan dipadatkan (compact).' });
-        else if (msg.subtype === 'thinking_tokens') this.think(msg.parent_tool_use_id);
+        this.onSystem(msg);
+        break;
+      case 'tool_progress':
+        this.onToolProgress(msg);
         break;
       case 'stream_event':
         this.onStream(msg);
@@ -162,6 +166,111 @@ export class StreamTranslator {
         break;
       }
     }
+  }
+
+  /** Claude Code's system events, shown the way the CLI shows them. */
+  onSystem(msg) {
+    switch (msg.subtype) {
+      case 'compact_boundary':
+        this.sink.chat({ kind: 'info', text: 'Konteks percakapan dipadatkan (compact).' });
+        this.status({ compacting: false });
+        break;
+      case 'thinking_tokens':
+        this.think(msg.parent_tool_use_id);
+        break;
+      case 'status': // "✻ Compacting conversation…"
+        this.status({ compacting: msg.status === 'compacting' });
+        if (msg.compact_result === 'failed') this.sink.chat({ kind: 'error', text: `Gagal memadatkan konteks${msg.compact_error ? `: ${msg.compact_error}` : '.'}` });
+        break;
+      case 'api_retry': {
+        const secs = Math.max(1, Math.round((msg.retry_delay_ms ?? 0) / 1000));
+        const text = `⟳ API ${msg.error_status ?? 'tidak menjawab'} — mencoba lagi (${msg.attempt}/${msg.max_retries}) dalam ${secs} dtk`;
+        if (this.retryChatId) this.sink.updateChat(this.retryChatId, { text });
+        else this.retryChatId = this.sink.chat({ kind: 'info', text, level: 'warning' });
+        break;
+      }
+      case 'informational': // level 'info' only shows in the CLI's transcript mode
+        if (msg.content && msg.level !== 'info') this.sink.chat({ kind: 'info', text: truncate(msg.content, 600), level: msg.level });
+        break;
+      case 'notification':
+        if (msg.text && msg.priority !== 'low') this.sink.chat({ kind: 'info', text: truncate(msg.text, 400), level: msg.priority === 'high' || msg.priority === 'immediate' ? 'warning' : 'notice' });
+        break;
+      case 'model_fallback':
+        this.sink.chat({ kind: 'info', text: msg.content || `Model ${msg.original_model} tidak tersedia; memakai ${msg.fallback_model}.`, level: 'warning' });
+        break;
+      case 'local_command_output': // e.g. /voice — shown as assistant text, as in the CLI
+        if (msg.content) this.sink.chat({ kind: 'assistant', text: msg.content });
+        break;
+      case 'session_title_changed':
+        this.status({ title: msg.title || null });
+        break;
+      case 'task_started':
+      case 'task_progress':
+      case 'task_updated':
+      case 'task_notification':
+        this.onTask(msg);
+        break;
+      case 'background_tasks_changed':
+        this.onBackgroundTasks(msg.tasks ?? []);
+        break;
+    }
+  }
+
+  /** "Running… (12s)" on a long tool call or subagent. */
+  onToolProgress(msg) {
+    const info = this.tools.get(msg.tool_use_id);
+    const secs = msg.elapsed_time_seconds;
+    if (!info || !(secs >= 3) || secs === info.elapsed) return;
+    info.elapsed = secs;
+    this.sink.updateChat(info.chatId, { elapsed: secs });
+  }
+
+  // ---------- background tasks (/tasks): Bash commands and subagents Claude Code runs as tasks ----------
+
+  onTask(msg) {
+    const id = msg.task_id;
+    if (!id) return;
+    const t = this.bgTasks.get(id) ?? { id, status: 'running', startedAt: Date.now() };
+    if (msg.subtype === 'task_started') {
+      Object.assign(t, { kind: msg.subagent_type ? 'agent' : 'shell', agent: msg.subagent_type ?? null, background: Boolean(msg.is_backgrounded), status: 'running' });
+    } else if (msg.subtype === 'task_progress') {
+      Object.assign(t, { summary: msg.summary ?? t.summary, lastTool: msg.last_tool_name ?? t.lastTool, tokens: msg.usage?.total_tokens ?? t.tokens, toolUses: msg.usage?.tool_uses ?? t.toolUses });
+    } else if (msg.subtype === 'task_updated') {
+      const p = msg.patch ?? {};
+      if (p.status) t.status = p.status;
+      if (p.is_backgrounded != null) t.background = p.is_backgrounded;
+      if (p.error) t.error = truncate(p.error, 300);
+      if (p.status && p.status !== 'running' && p.status !== 'pending') t.endedAt = Date.now();
+    } else if (msg.subtype === 'task_notification') {
+      Object.assign(t, { status: msg.status, summary: msg.summary ?? t.summary, endedAt: Date.now() });
+    }
+    if (msg.description) t.description = truncate(msg.description, 200);
+    t.kind ??= 'shell';
+    this.bgTasks.set(id, t);
+    this.emitBgTasks();
+  }
+
+  /** The full set of live background tasks (replace semantics). */
+  onBackgroundTasks(tasks) {
+    const live = new Set();
+    for (const x of tasks) {
+      live.add(x.task_id);
+      const t = this.bgTasks.get(x.task_id) ?? { id: x.task_id, status: 'running', startedAt: Date.now() };
+      Object.assign(t, { background: true, kind: x.task_type === 'local_agent' || x.subagent_type ? 'agent' : 'shell', agent: x.subagent_type ?? t.agent ?? null });
+      if (x.description) t.description = truncate(x.description, 200);
+      this.bgTasks.set(x.task_id, t);
+    }
+    for (const t of this.bgTasks.values()) {
+      if (t.background && t.status === 'running' && !live.has(t.id)) Object.assign(t, { status: 'completed', endedAt: Date.now() });
+    }
+    this.emitBgTasks();
+  }
+
+  emitBgTasks() {
+    // Running first, then the most recent; finished ones stay a while so their output can be read.
+    const list = [...this.bgTasks.values()].sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || b.startedAt - a.startedAt);
+    for (const t of list.slice(20)) this.bgTasks.delete(t.id);
+    this.status({ tasks: list.slice(0, 20).map((t) => ({ ...t })) });
   }
 
   parentRole(parentId) {
@@ -252,7 +361,7 @@ export class StreamTranslator {
     const used = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
     if (!used || used === this.contextUsed) return;
     this.contextUsed = used;
-    this.status({ context: { used, window: this.contextWindow || null } });
+    this.status({ context: { used, window: this.contextWindow || null, autoCompactAt: this.autoCompactAt ?? null } });
   }
 
   onText(text, parentId, parentRole, messageId) {
@@ -390,10 +499,12 @@ export class StreamTranslator {
   onResult(msg) {
     this.closeBubble();
     if (this.liveThinking) this.finishThinking('');
+    this.retryChatId = null;
+    this.status({ compacting: false });
     // The context window comes only with the result (per model); the main model's is the largest.
     const windows = Object.values(msg.modelUsage ?? {}).map((u) => u.contextWindow).filter((n) => n > 0);
     if (windows.length) this.contextWindow = Math.max(...windows);
-    if (this.contextUsed) this.status({ context: { used: this.contextUsed, window: this.contextWindow || null } });
+    if (this.contextUsed) this.status({ context: { used: this.contextUsed, window: this.contextWindow || null, autoCompactAt: this.autoCompactAt ?? null } });
     const activeRoles = [];
     for (const [id, info] of this.tools) {
       if (info.agent && info.background) activeRoles.push(info.role);

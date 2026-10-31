@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findClaude } from './src/claude-bin.js';
 import { runDemo } from './src/demo.js';
-import { DEMO_ID, Hub } from './src/hub.js';
+import { DEMO_ID, Hub, PERMISSION_MODES } from './src/hub.js';
 import { discoverProjects, isDirectory } from './src/projects.js';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { AccountService } from './src/account.js';
@@ -115,6 +115,7 @@ function refreshProjects() {
     defaultRoot: DEFAULT_ROOT,
     usingDefault: !hub.persisted.roots.length,
     slashCommands: [...new Set([...DEFAULT_SLASH, ...(hub.persisted.slashCommands ?? [])])].sort(),
+    ...hub.catalogConfig(), // models + commands with descriptions, as Claude Code reports them
     autostart: autostartStatus(),
     remote: remote.publicInfo(PORT),
     teamNames: hub.persisted.teamNames ?? {},
@@ -377,11 +378,14 @@ async function handleApi(req, res, pathname, device = null) {
       allowAll: Boolean(body.allowAll),
       answers: body.answers && typeof body.answers === 'object' ? body.answers : undefined,
       message: typeof body.message === 'string' ? body.message.slice(0, 2000) : undefined,
+      mode: PERMISSION_MODES.includes(body.mode) ? body.mode : undefined, // plan approved: how the work continues
     });
     return json(res, ok ? 200 : 409, { ok });
   }
 
-  const action = pathname.match(/^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|changes|diff|commit|favorite|open|shell)$/);
+  const action = pathname.match(
+    /^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|changes|diff|commit|favorite|open|shell|rewind-points|rewind-preview|rewind|mcp|mcp-action|task-output|task-stop|background|rename)$/,
+  );
   const project = action && hub.projects.get(action[1]);
   if (!project || project.id === DEMO_ID) return json(res, 404, { error: 'project not found' });
   const session = sessions.get(project);
@@ -443,6 +447,7 @@ async function handleApi(req, res, pathname, device = null) {
     }
     case 'settings':
       hub.updateSettings(project.id, body);
+      session.syncSettings(); // switches the running Claude Code live (mid-turn too, like Shift+Tab)
       break;
     case 'stop':
       session.stop();
@@ -450,8 +455,47 @@ async function handleApi(req, res, pathname, device = null) {
     case 'reset':
       session.reset();
       break;
+    // Esc Esc / /rewind
+    case 'rewind-points':
+      return json(res, 200, { points: session.rewindPoints() });
+    case 'rewind-preview':
+      return answer(res, session.rewindPreview(String(body.uuid ?? '')));
+    case 'rewind':
+      return answer(res, session.rewind(String(body.uuid ?? ''), { code: Boolean(body.code), conversation: Boolean(body.conversation) }));
+    // /mcp
+    case 'mcp':
+      return answer(res, session.mcpStatus().then((servers) => ({ servers })));
+    case 'mcp-action': {
+      const act = String(body.action ?? '');
+      // Signing an MCP server in stores credentials on the laptop: like the Claude login, not over plain WiFi.
+      if ((act === 'login' || act === 'callback') && !canManageAccount(req)) return json(res, 403, { error: 'Login server MCP dari HP hanya lewat Tailscale (koneksi terenkripsi).' });
+      const callbackUrl = String(body.callbackUrl ?? '');
+      if (act === 'callback' && !/^https?:\/\//.test(callbackUrl)) return json(res, 400, { error: 'Tempel URL lengkap dari address bar setelah login.' });
+      return answer(res, session.mcpAction(String(body.server ?? ''), act, callbackUrl));
+    }
+    // /tasks, Ctrl+B
+    case 'task-output':
+      return answer(res, session.taskOutput(String(body.taskId ?? '')));
+    case 'task-stop':
+      return answer(res, session.stopTask(String(body.taskId ?? '')));
+    case 'background':
+      return answer(res, session.backgroundTasks());
+    case 'rename': {
+      const title = String(body.title ?? '').trim().slice(0, 200);
+      if (!title) return json(res, 400, { error: 'Nama sesi kosong' });
+      return answer(res, session.rename(title));
+    }
   }
   return json(res, 200, { ok: true });
+}
+
+/** Replies with what a Claude Code control request answered, or its error as a 400. */
+async function answer(res, promise) {
+  try {
+    return json(res, 200, (await promise) ?? {});
+  } catch (err) {
+    return json(res, 400, { error: err.message });
+  }
 }
 
 // ---------- pairing a phone ----------
@@ -584,6 +628,7 @@ server.listen(PORT, HOST, () => {
   console.log(mirroring ? 'Mirror CLI: aktif (membaca ~/.claude/projects)' : 'Mirror CLI: nonaktif (~/.claude/projects tidak ada)');
   console.log('Tekan Ctrl+C untuk berhenti.');
   syncLanServers();
+  sessions.probeCatalog(); // what /model offers and the slash commands' descriptions (no model call)
   if (process.argv.includes('--open')) {
     const opener = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]];
     spawn(opener[0], opener[1], { stdio: 'ignore', detached: true, windowsHide: true }).unref();

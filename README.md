@@ -140,21 +140,28 @@ Tutup jendela server (atau tekan Ctrl+C) untuk berhenti. Semua proses Claude Cod
 | **👤 Akun** | Profil akun Claude yang sedang login, kuota paket, pemakaian token hari ini/7 hari, serta **Ganti akun** / **Logout**. Lihat [Akun Claude & laporan token](#akun-claude--laporan-token). |
 | **📊 Laporan** | Laporan pemakaian token per akun (input, output, cache read/write, cache hit, request, estimasi biaya) yang bisa diunduh sebagai PDF. |
 | **⚙ Folder projects** | Atur satu atau lebih folder induk (satu per baris). Disimpan per device di `data/state.json`. Kalau belum diatur, dipakai folder tempat `agent-place` berada (atau env `PROJECTS_ROOT`). |
-| **Chat** | Prompt ke Claude Code di folder project itu. Saat tim bekerja, pesan baru masuk antrean. |
-| **Kartu izin** | Muncul setiap kali Claude butuh izin: **Izinkan**, **Izinkan selalu** (simpan aturan), **Izinkan semua (sesi ini)**, atau **Tolak**. Pertanyaan (`AskUserQuestion`) dan rencana (mode *Rencana dulu*) juga dijawab di sini. |
-| **Izin** | 🛡️ Tanya dulu (default) · ✏️ Auto-edit file · ⚡ Auto · 📋 Rencana dulu |
-| **Model** | Default dari settings Claude Code, atau Opus / Sonnet / Haiku |
-| **Effort** | Seberapa dalam Claude berpikir (`--effort`): Default (dari settings Claude Code), Low, Medium, High, X-High, Max. Lebih tinggi lebih teliti untuk tugas sulit, tapi lebih lambat dan lebih banyak token. Berlaku per project; mengganti effort memulai ulang proses Claude dan percakapan tetap berlanjut. |
+| **Chat** | Prompt ke Claude Code di folder project itu. Pesan yang dikirim saat tim bekerja masuk antrean Claude Code sendiri dan dibaca Claude di langkah berikutnya, sama seperti di CLI. Di desktop, lebar panel chat bisa diatur dengan menggeser tepi kirinya (klik dua kali untuk ukuran bawaan). |
+| **Kartu izin** | Muncul setiap kali Claude butuh izin: **Izinkan**, **Izinkan selalu** (simpan aturan), **Izinkan semua (sesi ini)**, atau **Tolak** (bisa disertai instruksi untuk Claude). Pertanyaan (`AskUserQuestion`) bisa dijawab dengan pilihan atau jawaban sendiri. Rencana (mode *Rencana dulu*) disetujui dengan **auto-edit** atau **tanya tiap edit**, seperti dialog rencana di CLI. |
+| **Izin** | 🛡️ Tanya dulu (default) · ✏️ Auto-edit file · ⚡ Auto · 📋 Rencana dulu · 🚫 Jangan tanya. `Shift+Tab` di kotak pesan berganti mode. Perubahan langsung berlaku, juga di tengah giliran. |
+| **Model** | Daftar model dari Claude Code sendiri (sama dengan `/model`: Fable, Opus, Sonnet, Haiku, dan versi spesifik). `/model <nama>` juga menerima alias seperti `opus[1m]` atau `opusplan`. Ganti model langsung berlaku tanpa restart. |
+| **Effort** | Seberapa dalam Claude berpikir (`--effort`): Default (dari settings Claude Code), Low, Medium, High, X-High, Max. Lebih tinggi lebih teliti untuk tugas sulit, tapi lebih lambat dan lebih banyak token. Berlaku per project dan langsung berlaku tanpa restart (kembali ke Default memulai ulang prosesnya, percakapan tetap berlanjut). |
 | **Mode tim** | Claude mendelegasikan ke 11 subagent di atas. Visualnya lebih hidup, tapi **lebih banyak token**. Matikan untuk Claude Code biasa. |
-| **■ Stop** / `Esc` | Muncul di sebelah **Kirim** saat tim bekerja. Menghentikan giliran yang sedang berjalan, dan sesi tetap bisa dilanjutkan. |
-| **Bar sesi** | Baris di atas chat yang menunjukkan percakapan Claude Code yang sedang dipakai: judul, asal (web atau lanjutan sesi terminal), dan model. |
+| **■ Stop** / `Esc` | Muncul di sebelah **Kirim** saat tim bekerja. Menghentikan giliran yang sedang berjalan dan membatalkan pesan yang masih antre; sesi tetap bisa dilanjutkan. |
+| **⏪ Rewind** (`Esc Esc`, `/rewind`) | Kembalikan **kode dan/atau percakapan** ke sebelum salah satu pesanmu, memakai checkpoint Claude Code. Pratinjau menunjukkan file yang akan kembali (+/−). Pesan yang di-rewind masuk lagi ke kotak pesan untuk diedit. |
+| **Status line** | Di bawah kotak pesan: mode izin, model, dan konteks terpakai dari Claude Code (seperti `/context`, dengan batas auto-compact), plus jumlah tugas latar. |
+| **Daftar tugas** | Todo list Claude (TodoWrite/Task) menempel di atas kotak pesan dan update live. |
+| **✻ Berpikir** | Proses berpikir Claude tampil sebagai baris yang bisa dibuka (kalau modelnya membagikannya). |
+| **🔌 Server MCP** (`/mcp`) | Status semua server MCP, **Sambungkan ulang**, **Aktifkan/Nonaktifkan**, dan **Login** OAuth untuk server yang perlu login. Dari HP, login hanya lewat Tailscale. |
+| **⧗ Tugas latar** (`/tasks`, `Ctrl+B`) | Perintah dan agent yang dijalankan Claude Code (misalnya dev server): status, output terakhir, dan **Hentikan**. `Ctrl+B` memindahkan yang sedang jalan ke latar belakang. |
+| **`!perintah`** | Jalankan perintah shell langsung di folder project (PowerShell di Windows). Output-nya ikut ke Claude bersama pesan berikutnya, seperti bash mode di CLI. Dari HP hanya lewat Tailscale. |
+| **Bar sesi** | Baris di atas chat yang menunjukkan percakapan Claude Code yang sedang dipakai: judul, asal (web atau lanjutan sesi terminal), dan model. Klik judulnya untuk mengganti nama sesi (sama dengan `/rename`). |
 | **＋ Sesi baru** | Mulai percakapan baru. Claude tidak membawa konteks sebelumnya, tapi percakapan lama tetap ada di riwayat. |
 | **🕘 Riwayat sesi** | Dialog berisi sesi Claude Code di project itu, dari terminal maupun web. Sesi dikelompokkan per hari dan bisa dicari. Klik **Lanjutkan** untuk memuat percakapan terakhirnya ke chat, dan Claude melanjutkan dengan konteks yang sama. |
 | **⋯ Lainnya** | Menu di bar sesi: **Export percakapan** ke Markdown, **Salin perintah lanjut di terminal** (`cd` ke project + `claude --resume <id>`), serta **Buka project di VS Code** dan **Buka folder project** (khusus laptop). |
 | **Salin · Edit · ↻ Ulangi** | Arahkan kursor ke pesan (di HP selalu tampil). Jawaban dan code block bisa disalin. Prompt bisa disalin, diedit ulang di kotak pesan, atau dikirim lagi (**Ulangi** hanya ada di prompt web terakhir). |
-| **↑ / ↓** | Di kotak pesan, panggil lagi prompt sebelumnya di project itu, seperti di CLI. Draft yang sedang diketik kembali setelah prompt terbaru. |
+| **↑ / ↓** · `Ctrl+R` | Di kotak pesan, panggil lagi prompt sebelumnya di project itu, seperti di CLI. Draft yang sedang diketik kembali setelah prompt terbaru. `Ctrl+R` mencari di riwayat prompt. |
 | **❓ Bantuan** / `?` | Panduan singkat, penjelasan mode izin, dan daftar shortcut keyboard. |
-| **`/` command** | Autocomplete slash command, skill, dan custom command yang dilaporkan Claude Code (`/context`, `/compact`, `/code-review`, …). |
+| **`/` command** | Menu slash command lengkap dengan deskripsi dan argumen, langsung dari Claude Code (built-in, skill, plugin, custom command). Command yang jalan headless (`/usage`, `/context`, `/compact`, `/rename`, …) menampilkan output-nya di chat. Yang di terminal berupa dialog (`/clear`, `/model`, `/effort`, `/resume`, `/rewind`, `/mcp`, `/tasks`, `/memory`, `/help`) dijalankan oleh aplikasi ini. |
 | **`@file`** | Autocomplete path file di project. |
 | **📎 Gambar** | Lampirkan gambar (paste, drag & drop, atau 📎). PNG/JPEG/GIF/WebP, maks 5 gambar × 5 MB. |
 | **🔔 Notifikasi** | Klik 🔔 di header untuk mengaktifkan. Notifikasi Windows dan suara muncul saat ada yang **minta izin**, tugas **selesai**, atau **berhenti/error**, selama kamu sedang di tab/aplikasi lain atau di project lain. Klik notifikasinya untuk langsung ke project itu. |
@@ -228,9 +235,11 @@ Semua test memakai folder sementara (`OFFICE_DATA_DIR`, `CLAUDE_PROJECTS_DIR`, `
 
 ```
 server.js            HTTP + SSE + API
-src/session.js       proses headless Claude Code per project, antrean, izin, stop
+src/session.js       proses headless Claude Code per project, lewat control protocol-nya:
+                     antrean, izin, ganti mode/model/effort langsung, rewind, MCP, tugas latar
 src/mirror.js        tail transcript sesi CLI (read-only) → kantor & chat
-src/translator.js    stream-json → event kantor + pesan chat
+src/translator.js    stream-json → event kantor + pesan chat + status (todo, konteks, tugas, judul)
+src/transcripts.js   riwayat sesi, history untuk resume, rantai prompt untuk rewind
 src/hub.js           state, SSE broadcast, persistensi
 src/projects.js      penemuan folder project
 src/roles.js         pemetaan agent/tool → role, label, isi layar

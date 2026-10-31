@@ -95,6 +95,7 @@
                 <option value="acceptEdits">✏️ Auto-edit file</option>
                 <option value="auto">⚡ Auto</option>
                 <option value="plan">📋 Rencana dulu</option>
+                <option value="dontAsk">🚫 Jangan tanya</option>
               </select>
             </label>
             <label class="ctl" title="Model Claude untuk project ini">
@@ -188,9 +189,13 @@
               <tr><td><kbd>Ctrl</kbd> <kbd>V</kbd></td><td>Tempel gambar atau screenshot</td></tr>
               <tr><td><kbd>!</kbd></td><td>Jalankan perintah shell langsung di folder project, misalnya <code>!git status</code>. Output-nya ikut terkirim ke Claude bersama pesan berikutnya.</td></tr>
               <tr><td><kbd>Shift</kbd> <kbd>Tab</kbd></td><td>Ganti mode izin (Tanya dulu → Auto-edit → Rencana → Auto)</td></tr>
-              <tr><td><kbd>Esc</kbd></td><td>Hentikan giliran yang berjalan, atau tutup dialog</td></tr>
-              <tr><td><kbd>Esc</kbd> <kbd>Esc</kbd></td><td>Kosongkan kotak pesan; kalau sudah kosong, ambil prompt terakhir untuk diedit</td></tr>
-              <tr><td><code>/clear</code> <code>/model</code> <code>/effort</code> <code>/resume</code> <code>/cost</code></td><td>Sesi baru · ganti model · ganti effort · riwayat sesi · pemakaian sesi ini</td></tr>
+              <tr><td><kbd>Esc</kbd></td><td>Hentikan giliran yang berjalan (pesan yang antre ikut dibatalkan), atau tutup dialog</td></tr>
+              <tr><td><kbd>Esc</kbd> <kbd>Esc</kbd></td><td>Kosongkan kotak pesan; kalau sudah kosong, buka <b>Rewind</b>: kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu</td></tr>
+              <tr><td><kbd>Ctrl</kbd> <kbd>R</kbd></td><td>Cari di riwayat prompt</td></tr>
+              <tr><td><kbd>Ctrl</kbd> <kbd>B</kbd></td><td>Pindahkan perintah/agent yang sedang jalan ke latar belakang</td></tr>
+              <tr><td><code>/clear</code> <code>/model</code> <code>/effort</code> <code>/resume</code></td><td>Sesi baru · ganti model · ganti effort · riwayat sesi</td></tr>
+              <tr><td><code>/rewind</code> <code>/mcp</code> <code>/tasks</code> <code>/memory</code></td><td>Rewind · server MCP (status, login) · tugas latar · buka CLAUDE.md</td></tr>
+              <tr><td><code>/usage</code> <code>/context</code> <code>/compact</code> <code>/rename</code> …</td><td>Command Claude Code lain jalan seperti di terminal; ketik <kbd>/</kbd> untuk daftar lengkapnya</td></tr>
               <tr><td><kbd>?</kbd></td><td>Buka panduan ini</td></tr>
             </table>
           </section>
@@ -201,6 +206,7 @@
               <tr><td>✏️ Auto-edit file</td><td>Edit file langsung jalan, perintah terminal tetap minta izin.</td></tr>
               <tr><td>⚡ Auto</td><td>Aksi yang dinilai aman langsung jalan, yang berisiko diblokir.</td></tr>
               <tr><td>📋 Rencana dulu</td><td>Claude menyusun rencana dulu, dan baru dikerjakan setelah kamu setujui.</td></tr>
+              <tr><td>🚫 Jangan tanya</td><td>Tidak ada kartu izin: yang belum diizinkan lewat aturan langsung ditolak. Untuk kerja tanpa ditunggui.</td></tr>
             </table>
           </section>
           <section>
@@ -244,6 +250,38 @@
           <button id="sessions-new" class="ghost">＋ Sesi baru</button>
         </div>
         <div id="sessions-list" class="sessions-list"></div>
+      </div>
+    </div>
+
+    <!-- Rewind (Esc Esc, /rewind): restore code and/or conversation to before one of your prompts -->
+    <div id="rewind-modal" class="modal" hidden>
+      <div class="modal-card rewind-card" role="dialog" aria-label="Rewind">
+        <div class="modal-head"><b>⏪ Rewind</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+        <p class="muted small">Pilih pesanmu. Kode dan/atau percakapan dikembalikan ke keadaan <i>sebelum</i> pesan itu dikirim, seperti Esc Esc di Claude Code.</p>
+        <ol id="rewind-list" class="rewind-list"></ol>
+        <div id="rewind-detail" class="rewind-detail" hidden></div>
+      </div>
+    </div>
+
+    <!-- MCP servers (/mcp): status, reconnect, enable/disable, OAuth login -->
+    <div id="mcp-modal" class="modal" hidden>
+      <div class="modal-card mcp-card" role="dialog" aria-label="Server MCP">
+        <div class="modal-head"><b>🔌 Server MCP <small id="mcp-summary" class="muted"></small></b><button id="mcp-refresh" class="icon-btn" title="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup">✕</button></div>
+        <div id="mcp-callback" class="mcp-callback" hidden>
+          <p class="small">Setelah login, browser diarahkan ke alamat <code>localhost</code> yang mungkin gagal dibuka di perangkat ini. Salin URL lengkap dari address bar, lalu tempel di sini:</p>
+          <form id="mcp-callback-form"><input id="mcp-callback-url" placeholder="http://localhost:…/callback?code=…" autocomplete="off" /><button class="primary">Selesaikan login</button></form>
+        </div>
+        <ul id="mcp-list" class="mcp-list"></ul>
+      </div>
+    </div>
+
+    <!-- Background tasks (/tasks, Ctrl+B): Bash commands and subagents Claude Code runs -->
+    <div id="tasks-modal" class="modal" hidden>
+      <div class="modal-card tasks-card" role="dialog" aria-label="Tugas latar">
+        <div class="modal-head"><b>⧗ Tugas</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+        <p class="muted small">Perintah dan agent yang dijalankan Claude Code di sesi ini. <kbd>Ctrl</kbd> <kbd>B</kbd> memindahkan yang sedang jalan ke latar belakang supaya kamu bisa lanjut chat.</p>
+        <div class="tasks-tools"><button id="tasks-background" class="ghost" title="Ctrl+B">⏬ Pindahkan ke latar</button></div>
+        <ul id="tasks-list" class="tasks-list"></ul>
       </div>
     </div>
 

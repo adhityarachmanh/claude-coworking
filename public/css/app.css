@@ -365,7 +365,7 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .line { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #c9c6c1; padding: 3px 6px; border-radius: 6px; flex-wrap: wrap; }
 .line .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
 .line.delegate .txt { font-family: var(--font); font-size: 12.5px; white-space: normal; }
-.line .who-s { color: var(--muted); font-size: 11px; flex: none; width: 46px; }
+.line .who-s { color: var(--muted); font-size: 11px; flex: none; width: 108px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* one line, fixed width: the commands stay aligned */
 .line .ok { color: var(--ok); }
 .line .fail { color: var(--err); }
 .line.st-fail { background: #2a17194d; }
@@ -478,6 +478,7 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .statusline:empty { display: none; }
 .statusline .sep { opacity: .5; }
 .statusline kbd { font-size: 9.5px; padding: 0 4px; opacity: .7; }
+@media (hover: none) { .statusline kbd { display: none; } } /* no Shift+Tab on a touch screen */
 .sl-ctx { display: inline-flex; align-items: center; gap: 5px; }
 .sl-ctx .bar { width: 46px; height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
 .sl-ctx .bar i { display: block; height: 100%; background: var(--ok); }
@@ -486,6 +487,54 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .sl-ctx.high { color: var(--err); }
 .sl-ctx.high .bar i { background: var(--err); }
 .composer.bash-mode #prompt { border-color: #e879a8; box-shadow: 0 0 0 1px #e879a855; }
+
+/* ---------- Claude Code control protocol: rewind, MCP, tasks, statuses ---------- */
+.rewound { opacity: .42; }
+.rewound .body, .rewound .txt { text-decoration: line-through; text-decoration-color: #ffffff40; }
+.line .elapsed { flex: none; color: var(--muted); font: 10.5px var(--mono); }
+.info.warning { color: var(--ask); }
+.info.notice, .info.suggestion { color: #c9c6c1; }
+.approval .other-text { width: 100%; margin-top: 4px; font-size: 12.5px; }
+.approval .ap-label + pre, .approval pre + .feedback { margin-top: 6px; }
+#sb-title.renamable { cursor: pointer; }
+#sb-title.renamable:hover { text-decoration: underline dotted; }
+.sl-tasks { border: 0; background: none; padding: 0; color: var(--accent-2); font-size: 11px; cursor: pointer; }
+.sl-tasks:hover { text-decoration: underline; }
+.pill.warn { background: #3a2e14; color: #ffe2a8; }
+
+.modal-card.rewind-card, .modal-card.mcp-card, .modal-card.tasks-card { max-width: 640px; height: min(680px, calc(100vh - 32px)); display: flex; flex-direction: column; }
+.rewind-card > p, .tasks-card > p { margin: 0 0 10px; }
+.rewind-list, .mcp-list, .tasks-list { list-style: none; margin: 0 -6px; padding: 0 6px; flex: 1; min-height: 0; overflow-y: auto; }
+.rewind-list li > button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 8px 10px; margin: 0 0 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.rewind-list li > button.active { border-color: var(--accent); background: #2a211d; }
+.rw-text { font-size: 12.5px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.rewind-list small { color: var(--muted); font-size: 11px; }
+.rewind-detail { flex: none; border-top: 1px solid var(--border); margin-top: 8px; padding-top: 10px; font-size: 12.5px; }
+.rw-head { margin-bottom: 6px; }
+.rw-summary .add { color: var(--ok); }
+.rw-summary .del { color: var(--err); }
+.rw-files { margin: 4px 0 0; padding-left: 18px; font: 11.5px var(--mono); color: #c9c6c1; max-height: 96px; overflow-y: auto; }
+.rw-actions, .mcp-actions, .task-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.rw-actions button, .mcp-actions button, .task-actions button { font-size: 12px; padding: 5px 10px; }
+.mcp-list li, .tasks-list li { padding: 9px 10px; margin: 0 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.mcp-list li.muted, .tasks-list li.muted, .rewind-list li.muted { border: 0; background: none; padding: 6px 0; }
+.mcp-row, .task-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.mcp-row b, .task-row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-list small, .tasks-list small { display: block; margin-top: 2px; font-size: 11px; overflow-wrap: anywhere; }
+/* one compact row per server: name + status, actions on the right (they wrap below on a phone) */
+.mcp-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 10px; margin-bottom: 4px; }
+.mcp-main { flex: 1 1 240px; min-width: 0; }
+.mcp-list .mcp-actions { margin-top: 0; }
+.mcp-list .mcp-actions button { padding: 4px 8px; font-size: 11.5px; }
+.mcp-callback { margin: 0 0 10px; padding: 8px 10px; border: 1px solid #6a5220; border-radius: 8px; background: #3a2e1455; }
+.mcp-callback p { margin: 0 0 6px; }
+.mcp-callback form { display: flex; gap: 6px; }
+.mcp-callback input { flex: 1; min-width: 0; font-size: 12px; }
+.tasks-tools { display: flex; justify-content: flex-end; margin: -4px 0 8px; }
+.mcp-card .modal-head { gap: 6px; }
+.mcp-card .modal-head b { flex: 1; }
+.tasks-tools button { font-size: 12px; }
+.task-out { margin: 8px 0 0; max-height: 220px; overflow: auto; font: 11.5px/1.45 var(--mono); background: #0b0c10; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
 .hint:empty { display: none; }
@@ -575,6 +624,10 @@ pre.diff .add { color: #9be3b0; background: #16321f66; display: inline-block; wi
 .suggest .opt { padding: 6px 10px; border-radius: 6px; font: 12.5px var(--mono); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggest .opt.active, .suggest .opt:hover { background: #3a2a22; }
 .suggest .opt b, .suggest .opt .at { color: var(--accent-2); }
+/* Slash commands: name + argument hint on one line, the description under it (like the CLI's menu) */
+.suggest.described .opt { white-space: normal; }
+.suggest .opt .arg { color: var(--muted); }
+.suggest .opt small { display: block; font: 11.5px/1.35 var(--font); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modal-card.sessions-card { max-width: 640px; height: min(680px, calc(100vh - 32px)); display: flex; flex-direction: column; }
 .sessions-card > p { margin: 0 0 10px; }
 .sessions-tools { display: flex; gap: 8px; margin-bottom: 8px; }

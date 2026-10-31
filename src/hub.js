@@ -9,6 +9,12 @@ export const DEMO_ID = 'demo';
 export const DEFAULT_SETTINGS = { mode: 'manual', model: '', effort: '', team: true };
 // '' = Claude Code's own default; the rest map to `--effort`.
 export const EFFORT_LEVELS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
+// Claude Code's permission modes ('manual' is the app's name for its 'default'); bypassPermissions is left out on purpose.
+export const PERMISSION_MODES = ['manual', 'acceptEdits', 'auto', 'plan', 'dontAsk'];
+// '' = default; otherwise what `--model` / /model take: an alias (fable, opus[1m], opusplan…), a full
+// claude-… id, or a model Claude Code itself listed. Anything else never reaches the command line.
+const MODEL_ALIAS = /^(?:best|opusplan|(?:opus|sonnet|haiku|fable)(?:\[1m\])?)$/;
+const MODEL_ID = /^claude-[\w.:[\]-]{1,76}$/;
 
 export class Hub {
   constructor({ dataDir }) {
@@ -110,8 +116,9 @@ export class Hub {
 
   updateSettings(id, patch) {
     const next = { ...this.settingsFor(id) };
-    if (['manual', 'acceptEdits', 'auto', 'plan'].includes(patch.mode)) next.mode = patch.mode;
-    if (['', 'opus', 'sonnet', 'haiku'].includes(patch.model)) next.model = patch.model;
+    if (PERMISSION_MODES.includes(patch.mode)) next.mode = patch.mode;
+    if (patch.model === '' || patch.model === 'default') next.model = '';
+    else if (typeof patch.model === 'string' && this.knownModel(patch.model)) next.model = patch.model;
     if (EFFORT_LEVELS.includes(patch.effort)) next.effort = patch.effort;
     if (typeof patch.team === 'boolean') next.team = patch.team;
     this.persisted.settings[id] = next;
@@ -127,6 +134,36 @@ export class Hub {
     this.scheduleSave();
     this.config = { ...this.config, slashCommands: [...new Set([...(this.config?.slashCommands ?? []), ...next])].sort() };
     this.broadcast('config', this.config);
+  }
+
+  /**
+   * What Claude Code itself offers (its `initialize` answer): the /model picker's models and the
+   * slash commands with their descriptions. `replace` drops commands that no longer exist (the
+   * startup probe); a project's session only adds its own commands.
+   */
+  setCatalog({ models, commands, version }, { replace = false } = {}) {
+    const prev = this.persisted.catalog ?? {};
+    const byName = new Map(replace ? [] : (prev.commands ?? []).map((c) => [c.name, c]));
+    for (const c of commands ?? []) byName.set(c.name, c);
+    const next = {
+      models: models?.length ? models : (prev.models ?? []),
+      commands: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
+      version: version ?? prev.version ?? null,
+    };
+    if (JSON.stringify(next) === JSON.stringify(prev)) return;
+    this.persisted.catalog = next;
+    this.scheduleSave();
+    this.config = { ...this.config, ...this.catalogConfig() };
+    this.broadcast('config', this.config);
+  }
+
+  knownModel(model) {
+    return MODEL_ALIAS.test(model) || MODEL_ID.test(model) || (this.persisted.catalog?.models ?? []).some((m) => m.value === model);
+  }
+
+  catalogConfig() {
+    const c = this.persisted.catalog ?? {};
+    return { models: c.models ?? [], commands: c.commands ?? [], cliVersion: c.version ?? null };
   }
 
   sessionIdFor(id) {
@@ -185,6 +222,15 @@ export class Hub {
     Object.assign(message, patch);
     this.broadcast('chat_update', { project: id, id: chatId, patch });
     this.scheduleSave();
+  }
+
+  /** After a conversation rewind: the prompt and everything after it are greyed out (still readable). */
+  markRewound(id, uuid, text) {
+    const chat = this.rt(id).chat;
+    let at = chat.findLastIndex((m) => m.kind === 'user' && m.uuid === uuid);
+    if (at < 0) at = chat.findLastIndex((m) => m.kind === 'user' && m.text?.trim() === text?.trim());
+    if (at < 0) return;
+    for (const m of chat.slice(at)) if (!m.rewound && m.kind !== 'divider') this.updateChat(id, m.id, { rewound: true });
   }
 
   setStatus(id, patch) {

@@ -213,9 +213,36 @@ test('todos and context usage are reported as live status', () => {
     parent_tool_use_id: null,
     message: { id: 'm1', usage: { input_tokens: 10, cache_read_input_tokens: 40000, cache_creation_input_tokens: 2000 }, content: [] },
   });
-  assert.deepEqual(status.context, { used: 42010, window: null });
+  assert.deepEqual(status.context, { used: 42010, window: null, autoCompactAt: null });
   translator.handle(use('t1', 'TodoWrite', { todos: [{ content: 'Tulis tes', activeForm: 'Menulis tes', status: 'in_progress' }, { content: 'Rapikan', status: 'pending' }] }));
   assert.deepEqual(status.todos.map((t) => [t.content, t.activeForm, t.status]), [['Tulis tes', 'Menulis tes', 'in_progress'], ['Rapikan', undefined, 'pending']]);
   translator.handle({ type: 'result', subtype: 'success', modelUsage: { 'claude-opus': { contextWindow: 1000000 }, 'claude-haiku': { contextWindow: 200000 } }, usage: {} });
-  assert.deepEqual(status.context, { used: 42010, window: 1000000 });
+  assert.deepEqual(status.context, { used: 42010, window: 1000000, autoCompactAt: null });
+});
+
+test('Claude Code system events: retries, compaction, title, background tasks, tool progress', () => {
+  const { translator, status, chat } = statusRecorder();
+  translator.handle({ type: 'system', subtype: 'api_retry', attempt: 1, max_retries: 10, retry_delay_ms: 2000, error_status: 529 });
+  translator.handle({ type: 'system', subtype: 'api_retry', attempt: 2, max_retries: 10, retry_delay_ms: 4000, error_status: 529 });
+  assert.equal(chat().filter((m) => m.kind === 'info').length, 1, 'one retry line, updated in place');
+  assert.match(chat()[0].text, /529 .*\(2\/10\) dalam 4 dtk/);
+  translator.handle({ type: 'system', subtype: 'status', status: 'compacting' });
+  assert.equal(status.compacting, true);
+  translator.handle({ type: 'system', subtype: 'compact_boundary' });
+  assert.equal(status.compacting, false);
+  translator.handle({ type: 'system', subtype: 'session_title_changed', title: 'Perbaiki login' });
+  assert.equal(status.title, 'Perbaiki login');
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'b1', description: 'npm run dev', is_backgrounded: true });
+  translator.handle({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'b1', task_type: 'local_bash', description: 'npm run dev' }] });
+  assert.deepEqual(status.tasks.map((t) => [t.id, t.kind, t.status, t.background]), [['b1', 'shell', 'running', true]]);
+  translator.handle({ type: 'system', subtype: 'background_tasks_changed', tasks: [] });
+  assert.equal(status.tasks[0].status, 'completed', 'gone from the live set: finished');
+  translator.handle({ type: 'system', subtype: 'local_command_output', content: 'Voice mode on' });
+  assert.ok(chat().some((m) => m.kind === 'assistant' && m.text === 'Voice mode on'));
+  translator.handle({ type: 'system', subtype: 'informational', level: 'info', content: 'transcript only' });
+  assert.ok(!chat().some((m) => m.text === 'transcript only'), "'info' level shows only in the CLI's transcript mode");
+
+  translator.handle(use('t9', 'Bash', { command: 'npm test' }));
+  translator.handle({ type: 'tool_progress', tool_use_id: 't9', tool_name: 'Bash', parent_tool_use_id: null, elapsed_time_seconds: 12 });
+  assert.equal(chat().find((m) => m.kind === 'tool').elapsed, 12);
 });

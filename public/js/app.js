@@ -500,7 +500,7 @@ chatEl.addEventListener('click', (e) => {
   fillChat(node, msg);
 });
 
-const fmtTokens = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
+const fmtTokens = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(n % 1e6 ? 1 : 0)}M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
 
 function diffBlock(oldText, newText) {
   const lines = (text, sign) => String(text ?? '').split('\n').map((l) => `<span class="${sign === '-' ? 'del' : 'add'}">${sign} ${escapeHtml(l)}</span>`).join('\n');
@@ -569,13 +569,13 @@ function fillChat(node, msg) {
     case 'tool': {
       const open = expanded.has(msg.id);
       node.className = `line tool expandable st-${msg.status} ${open ? 'open' : ''} ${msg.sub ? 'sub' : ''}`;
-      node.innerHTML = `<div class="row" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span><span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s">${roleName(msg.role)}</span><span class="txt">${escapeHtml(msg.text)}</span>${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
+      node.innerHTML = `<div class="row" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span><span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s" title="${escapeHtml(roleName(msg.role))}">${escapeHtml(roleName(msg.role))}</span><span class="txt">${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
       break;
     }
     case 'delegate': {
       const open = expanded.has(msg.id);
       node.className = `line delegate expandable st-${msg.status} ${open ? 'open' : ''}`;
-      node.innerHTML = `<div class="row" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span><img class="ava sm" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${roleName(msg.role)}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
+      node.innerHTML = `<div class="row" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span><img class="ava sm" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${roleName(msg.role)}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
       break;
     }
     case 'thinking': {
@@ -618,10 +618,15 @@ function fillChat(node, msg) {
       node.innerHTML = `<span>${escapeHtml(msg.text)}</span>`;
       break;
     default:
-      node.className = 'info';
+      node.className = `info ${msg.level ?? ''}`; // warning / notice from Claude Code (retries, fallbacks…)
       node.textContent = msg.text;
   }
+  // Rewound: no longer part of the conversation Claude sees, still readable.
+  if (msg.rewound) node.classList.add('rewound');
 }
+
+/** "Running… (12s)" on a long tool call, as the CLI shows it. */
+const elapsedTag = (msg) => (msg.status === 'running' && msg.elapsed ? `<small class="elapsed">${msg.elapsed >= 60 ? `${Math.floor(msg.elapsed / 60)}m ${msg.elapsed % 60}d` : `${msg.elapsed} dtk`}</small>` : '');
 
 // ---------- approvals ----------
 
@@ -639,38 +644,47 @@ function fillApproval(node, msg) {
   let body = '';
   let actions = '';
   if (approval.kind === 'question') {
+    // Every question also takes a typed answer, like the CLI's "Other" option.
     body = (input.questions ?? [])
       .map((q, qi) => `<div class="q"><b>${escapeHtml(q.question)}</b><div class="opts">${(q.options ?? [])
         .map((o) => `<label><input type="${q.multiSelect ? 'checkbox' : 'radio'}" name="q${qi}" value="${escapeHtml(o.label)}"> <span><b>${escapeHtml(o.label)}</b>${o.description ? ` — ${escapeHtml(o.description)}` : ''}</span></label>`)
-        .join('')}</div></div>`)
+        .join('')}</div><input class="other-text" data-q="${qi}" placeholder="Atau tulis jawaban sendiri…"></div>`)
       .join('');
     actions = '<button class="primary" data-act="answer">Kirim jawaban</button><button data-act="deny">Lewati</button>';
   } else if (approval.kind === 'plan') {
-    body = `<div class="plan md">${renderMarkdown(input.plan ?? '')}</div><input class="feedback" placeholder="Catatan revisi (opsional, untuk Tolak)">`;
-    actions = '<button class="primary" data-act="allow">Setujui rencana</button><button data-act="deny">Minta revisi</button>';
+    // The CLI's plan dialog: approve and choose how edits are handled, or keep planning with feedback.
+    body = `<div class="plan md">${renderMarkdown(input.plan ?? '')}</div><input class="feedback" placeholder="Catatan revisi (untuk Minta revisi)">`;
+    actions =
+      '<button class="primary" data-act="allow" data-mode="acceptEdits" title="Mode berubah ke ✏️ Auto-edit file">✓ Setujui, auto-edit</button><button data-act="allow" data-mode="manual" title="Mode berubah ke 🛡️ Tanya dulu">✓ Setujui, tanya tiap edit</button><button data-act="deny">Minta revisi</button>';
   } else {
     if (input.command) body = `<pre>${escapeHtml(input.command)}</pre>${input.description ? `<p class="muted">${escapeHtml(input.description)}</p>` : ''}`;
     else if (input.content != null) body = `<p class="path">${escapeHtml(input.file_path)}</p><pre>${escapeHtml(input.content)}</pre>`;
     else if (input.old_string != null) body = `<p class="path">${escapeHtml(input.file_path)}</p><pre class="del">${escapeHtml(input.old_string)}</pre><pre class="add">${escapeHtml(input.new_string)}</pre>`;
     else if (input.url) body = `<pre>${escapeHtml(input.url)}</pre>`;
     else body = `<pre>${escapeHtml(input.json ?? JSON.stringify(input, null, 2))}</pre>`;
+    // "No, and tell Claude what to do differently": the note goes back to Claude with the refusal.
+    body += '<input class="feedback" placeholder="Kalau menolak: beri tahu Claude harus bagaimana (opsional)">';
     actions = `<button class="primary" data-act="allow">Izinkan</button>${approval.canAlways ? '<button data-act="always" title="Simpan aturan izin agar tidak ditanya lagi">Izinkan selalu</button>' : ''}<button data-act="all" title="Semua aksi berikutnya di sesi ini otomatis diizinkan">Izinkan semua (sesi ini)</button><button class="danger" data-act="deny">Tolak</button>`;
   }
   node.innerHTML = `${head}<div class="ap-label">${escapeHtml(approval.description || msg.text)}</div>${body}<div class="ap-actions">${actions}</div>`;
   node.querySelectorAll('[data-act]').forEach((btn) =>
-    btn.addEventListener('click', () => decide(approval, btn.dataset.act, node)),
+    btn.addEventListener('click', () => decide(approval, btn.dataset.act, node, btn.dataset.mode)),
   );
 }
 
-async function decide(approval, act, node) {
+async function decide(approval, act, node, mode) {
   const body = { allow: act !== 'deny' };
   if (act === 'always') body.always = true;
   if (act === 'all') body.allowAll = true;
+  if (mode) body.mode = mode; // plan approved: the mode the work continues in
   if (act === 'deny') body.message = node.querySelector('.feedback')?.value || undefined;
   if (act === 'answer') {
     const answers = {};
     (approval.input.questions ?? []).forEach((q, qi) => {
       const picked = [...node.querySelectorAll(`input[name="q${qi}"]:checked`)].map((i) => i.value);
+      const own = node.querySelector(`.other-text[data-q="${qi}"]`)?.value.trim();
+      // A typed answer replaces a single choice and joins multiple ones.
+      if (own) picked.splice(0, q.multiSelect ? 0 : picked.length, own);
       if (picked.length) answers[q.question] = picked.join(', ');
     });
     body.answers = answers;
@@ -789,20 +803,36 @@ function renderComposer() {
   $('#composer').classList.toggle('demo', isDemo);
   $('#btn-stop').hidden = isDemo || !(st.busy || st.queue);
   $('#mode').value = st.mode ?? 'manual';
-  $('#model').value = st.model ?? '';
+  renderModelOptions(st.model ?? '');
   $('#effort').value = st.effort ?? '';
   $('#team-mode').checked = st.team ?? true;
   const hint = [];
-  if (st.busy) hint.push(st.queue ? `Tim sedang bekerja — ${st.queue} pesan menunggu di antrean.` : 'Tim sedang bekerja — pesan baru akan masuk antrean.');
+  // As in the CLI, a message sent mid-turn reaches Claude at its next step instead of waiting for the end.
+  if (st.busy) hint.push(st.queue ? `Tim sedang bekerja — ${st.queue} pesan antre, dibaca Claude di langkah berikutnya.` : 'Tim sedang bekerja — pesan baru dibaca Claude di langkah berikutnya.');
   if (st.cliBusy) hint.push('Sesi di terminal sedang berjalan (izinnya dijawab di terminal).');
   if (st.autoApprove) hint.push('⚠ Semua izin otomatis di sesi ini.');
   $('#composer-hint').textContent = hint.join('  ·  ');
-  $('#typing').hidden = !(st.busy || st.cliBusy);
-  $('#typing-text').textContent = st.busy ? 'Tim sedang bekerja…' : 'Claude Code (terminal) sedang bekerja…';
+  $('#typing').hidden = !(st.busy || st.cliBusy || st.compacting);
+  $('#typing-text').textContent = st.compacting ? '✻ Memadatkan konteks percakapan…' : st.busy ? 'Tim sedang bekerja…' : 'Claude Code (terminal) sedang bekerja…';
   renderTodos(st);
   renderStatusline(st);
   renderSessionBar();
+  if (!$('#tasks-modal').hidden && tasksView.project === state.active) renderTasks();
 }
+
+$('#sb-title').addEventListener('click', async () => {
+  const st = state.statuses[state.active] ?? {};
+  if (!st.sessionId || state.active === DEMO_ID) return;
+  const current = $('#sb-title').textContent;
+  const title = window.prompt('Nama sesi (sama dengan /rename di Claude Code):', current)?.trim();
+  if (!title || title === current) return;
+  try {
+    await api(`/api/projects/${state.active}/rename`, { title });
+    sessionTitles.delete(st.sessionId); // the history list reads the new name next time
+  } catch (err) {
+    toast(err.message);
+  }
+});
 
 /** Claude's todo list, pinned above the composer while there is work left (CLI: ☐ ◼ ☒). */
 function renderTodos(st) {
@@ -831,7 +861,7 @@ $('#todos').addEventListener('click', (e) => {
   renderTodos(state.statuses[state.active] ?? {});
 });
 
-const MODE_LABEL = { manual: '🛡️ tanya dulu', acceptEdits: '✏️ auto-edit file', plan: '📋 rencana dulu', auto: '⚡ auto' };
+const MODE_LABEL = { manual: '🛡️ tanya dulu', acceptEdits: '✏️ auto-edit file', plan: '📋 rencana dulu', auto: '⚡ auto', dontAsk: '🚫 jangan tanya' };
 const MODE_CYCLE = ['manual', 'acceptEdits', 'plan', 'auto']; // Shift+Tab order, as in the CLI
 
 /** Status line under the composer: permission mode, model, and how full the context is. */
@@ -844,16 +874,51 @@ function renderStatusline(st) {
   const parts = [`<span class="sl-mode" title="Ganti dengan Shift+Tab">${MODE_LABEL[st.mode ?? 'manual']} <kbd>⇧Tab</kbd></span>`];
   const model = st.activeModel || st.model;
   if (model) parts.push(`<span>${escapeHtml(model)}</span>`);
-  if (st.context?.used) {
-    // The window is known after the first finished turn; until then assume the standard 200k.
-    const window = st.context.window || (/\[1m\]/i.test(model ?? '') ? 1_000_000 : 200_000);
-    const pct = Math.min(100, Math.round((st.context.used / window) * 100));
-    const level = pct >= 80 ? 'high' : pct >= 60 ? 'mid' : '';
+  if (st.context?.used && !st.context.window) {
+    // Window not reported yet (Claude Code tells it once the session runs): no guessed percentage.
+    parts.push(`<span class="sl-ctx" title="Konteks terpakai: ${st.context.used.toLocaleString('id-ID')} token">konteks ${fmtTokens(st.context.used)}</span>`);
+  } else if (st.context?.used) {
+    const win = st.context.window; // as /context counts it
+    const pct = Math.min(100, Math.round((st.context.used / win) * 100));
+    // Warn like the CLI does: relative to where auto-compact kicks in, not the hard limit.
+    const limit = st.context.autoCompactAt || win;
+    const nearCompact = st.context.used / limit;
+    const level = nearCompact >= 0.9 ? 'high' : nearCompact >= 0.7 ? 'mid' : '';
+    const compactNote = st.context.autoCompactAt ? ` · auto-compact pada ${fmtTokens(st.context.autoCompactAt)}` : '';
     parts.push(
-      `<span class="sl-ctx ${level}" title="Konteks terpakai: ${st.context.used.toLocaleString('id-ID')} dari ${window.toLocaleString('id-ID')} token${pct >= 60 ? ' · pertimbangkan /compact' : ''}"><span class="bar"><i style="width:${pct}%"></i></span>konteks ${pct}% · ${fmtTokens(st.context.used)}/${fmtTokens(window)}</span>`,
+      `<span class="sl-ctx ${level}" title="Konteks terpakai: ${st.context.used.toLocaleString('id-ID')} dari ${win.toLocaleString('id-ID')} token${compactNote}${level ? ' · pertimbangkan /compact' : ''}"><span class="bar"><i style="width:${pct}%"></i></span>konteks ${pct}% · ${fmtTokens(st.context.used)}/${fmtTokens(win)}</span>`,
     );
   }
+  const running = (st.tasks ?? []).filter((t) => t.status === 'running' && t.background).length;
+  if (running) parts.push(`<button type="button" class="sl-tasks" data-open-tasks title="Lihat tugas latar (/tasks)">⧗ ${running} tugas latar</button>`);
   line.innerHTML = parts.join('<span class="sep">·</span>');
+}
+$('#statusline').addEventListener('click', (e) => {
+  if (e.target.closest('[data-open-tasks]')) openTasks();
+});
+
+/** The /model picker: the models Claude Code itself offers for this account (Fable, Opus, Sonnet…). */
+function renderModelOptions(current) {
+  const select = $('#model');
+  const models = state.config?.models ?? [];
+  if (models.length) {
+    const def = models.find((m) => m.value === 'default');
+    const opts = [`<option value="" title="${escapeHtml(def?.description ?? '')}">Default${def ? ` (${escapeHtml(def.description.split('·')[0].trim())})` : ''}</option>`];
+    for (const m of models) if (m.value !== 'default') opts.push(`<option value="${escapeHtml(m.value)}" title="${escapeHtml(m.description)}">${escapeHtml(m.displayName)}</option>`);
+    // A model set with /model that the picker doesn't list (e.g. opus[1m] or a full id) stays selectable.
+    if (current && !models.some((m) => m.value === current)) opts.push(`<option value="${escapeHtml(current)}">${escapeHtml(current)}</option>`);
+    const html = opts.join('');
+    if (select.dataset.html !== html) {
+      select.innerHTML = html;
+      select.dataset.html = html;
+    }
+  }
+  select.value = current;
+  // Effort only for models that support it (as the CLI greys it out).
+  const chosen = models.find((m) => m.value === (current || 'default'));
+  const noEffort = Boolean(chosen && !chosen.efforts?.length);
+  $('#effort').disabled = noEffort;
+  $('#effort').title = noEffort ? 'Model ini tidak mendukung pengaturan effort' : '';
 }
 
 function cycleMode() {
@@ -862,18 +927,36 @@ function cycleMode() {
   saveSettings();
 }
 
-/**
- * Built-in CLI commands that don't work in headless mode, handled here instead.
- * Returns true when `text` was such a command. Others (/compact, /context, skills…) go to Claude.
- */
+// Commands this app runs itself: in headless mode Claude Code can't open its terminal dialogs
+// (/resume, /rewind, /mcp, /tasks…), and /clear /model /effort must also move the app's own controls.
+// Everything else (/usage, /context, /compact, /rename, skills…) goes to Claude Code and prints its output.
+const LOCAL_COMMANDS = [
+  { name: 'clear', description: 'Mulai percakapan baru (sesi baru)' },
+  { name: 'model', argumentHint: '<model>', description: 'Ganti model, misalnya /model fable, /model opus[1m], /model default' },
+  { name: 'effort', argumentHint: '<low|medium|high|xhigh|max|default>', description: 'Ganti effort (seberapa dalam Claude berpikir)' },
+  { name: 'resume', description: 'Lanjutkan sesi Claude Code sebelumnya' },
+  { name: 'rewind', description: 'Kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu (Esc Esc)' },
+  { name: 'mcp', description: 'Server MCP: status, sambungkan ulang, aktif/nonaktif, login' },
+  { name: 'tasks', description: 'Tugas latar: perintah & agent yang berjalan, output-nya, hentikan' },
+  { name: 'memory', description: 'Buka CLAUDE.md project di VS Code' },
+  { name: 'help', description: 'Panduan & shortcut keyboard' },
+];
+
+/** Returns true when `text` was one of LOCAL_COMMANDS (handled here, not sent to Claude). */
 function localCommand(text) {
-  const [, name, arg = ''] = text.match(/^\/(\w+)\s*(.*)$/s) ?? [];
-  const value = arg.trim().toLowerCase();
-  const pick = (select, label) => {
+  const [, name, arg = ''] = text.match(/^\/([\w-]+)\s*(.*)$/s) ?? [];
+  const value = arg.trim();
+  const pick = (select, label, allowCustom) => {
+    if (!value) {
+      // No argument: show the picker, like the CLI's /model dialog.
+      $(select).focus();
+      $(select).showPicker?.();
+      return;
+    }
     const options = [...$(select).options].map((o) => o.value);
-    const wanted = value === 'default' ? '' : value;
-    if (!value) return toast(`${label}: ${$(select).selectedOptions[0].text}. Pilihan: ${options.map((o) => o || 'default').join(', ')}`, 'warn');
-    if (!options.includes(wanted)) return toast(`${label} "${arg.trim()}" tidak dikenal. Pilihan: ${options.map((o) => o || 'default').join(', ')}`);
+    const wanted = value.toLowerCase() === 'default' ? '' : value;
+    if (!options.includes(wanted) && !allowCustom) return toast(`${label} "${value}" tidak dikenal. Pilihan: ${options.map((o) => o || 'default').join(', ')}`);
+    if (!options.includes(wanted)) $(select).append(new Option(wanted, wanted)); // an alias or full id; the server checks it
     $(select).value = wanted;
     saveSettings();
   };
@@ -884,28 +967,32 @@ function localCommand(text) {
       if (confirmNew()) api(`/api/projects/${state.active}/reset`).catch((err) => toast(err.message));
       return true;
     case 'model':
-      pick('#model', 'Model');
+      pick('#model', 'Model', true);
       return true;
     case 'effort':
-      pick('#effort', 'Effort');
+      pick('#effort', 'Effort', false);
       return true;
     case 'resume':
       openSessions();
       return true;
+    case 'rewind':
+    case 'checkpoint':
+      openRewind();
+      return true;
+    case 'mcp':
+      openMcp();
+      return true;
+    case 'tasks':
+    case 'bashes':
+      openTasks();
+      return true;
+    case 'memory':
+      if (!state.local) toast('CLAUDE.md hanya bisa dibuka dari laptop.');
+      else api(`/api/projects/${state.active}/open`, { app: 'code', file: 'CLAUDE.md' }).catch((err) => toast(err.message));
+      return true;
     case 'help':
       openModal('help-modal');
       return true;
-    case 'cost': {
-      // This session's turns: everything after the last "new session" / "resume" divider.
-      const chat = state.chats[state.active] ?? [];
-      const start = chat.findLastIndex((m) => m.kind === 'divider') + 1;
-      const results = chat.slice(start).filter((m) => m.kind === 'result' && m.meta);
-      const sum = (key) => results.reduce((n, m) => n + (m.meta[key] ?? 0), 0);
-      const st = state.statuses[state.active] ?? {};
-      const ctx = st.context?.used ? ` · konteks ${fmtTokens(st.context.used)}` : '';
-      toast(`Sesi ini: ${results.length} giliran · ${Math.round(sum('durationMs') / 1000)} dtk · output ${fmtTokens(sum('tokensOut'))} token${ctx}. Rincian per akun: 📊 Laporan.`, 'warn');
-      return true;
-    }
     default:
       return false;
   }
@@ -1041,9 +1128,15 @@ function renderSuggest() {
     return;
   }
   box.hidden = false;
-  box.innerHTML = suggest.items
-    .map((item, i) => `<div class="opt ${i === suggest.index ? 'active' : ''}" data-i="${i}">${suggest.kind === 'slash' ? `<b>/</b>${escapeHtml(item)}` : `<span class="at">@</span>${escapeHtml(item)}`}</div>`)
-    .join('');
+  const row = (item) => {
+    if (suggest.kind === 'slash') {
+      return `<b>/${escapeHtml(item.name)}</b>${item.argumentHint ? ` <span class="arg">${escapeHtml(item.argumentHint)}</span>` : ''}${item.description ? `<small>${escapeHtml(item.description)}</small>` : ''}`;
+    }
+    if (suggest.kind === 'history') return `<span class="at">↺</span> ${escapeHtml(item.replace(/\s+/g, ' '))}`;
+    return `<span class="at">@</span>${escapeHtml(item)}`;
+  };
+  box.classList.toggle('described', suggest.kind === 'slash');
+  box.innerHTML = suggest.items.map((item, i) => `<div class="opt ${i === suggest.index ? 'active' : ''}" data-i="${i}">${row(item)}</div>`).join('');
   box.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
 }
 
@@ -1051,7 +1144,17 @@ function applySuggest(i = suggest.index) {
   const input = $('#prompt');
   const item = suggest.items[i];
   if (item == null) return;
-  const insert = suggest.kind === 'slash' ? `/${item} ` : `@${item} `;
+  if (suggest.kind === 'history') {
+    // Ctrl+R: the picked prompt replaces what is in the box, as in the CLI's history search.
+    input.value = item;
+    input.setSelectionRange(item.length, item.length);
+    input.focus();
+    closeSuggest();
+    autosize();
+    updateBashMode();
+    return;
+  }
+  const insert = suggest.kind === 'slash' ? `/${item.name} ` : `@${item} `;
   input.value = input.value.slice(0, suggest.start) + insert + input.value.slice(suggest.end);
   const caret = suggest.start + insert.length;
   input.setSelectionRange(caret, caret);
@@ -1059,16 +1162,41 @@ function applySuggest(i = suggest.index) {
   closeSuggest();
 }
 
+/** Every slash command with its description: the app's own first, then Claude Code's (built-in, skills, plugins). */
+function slashCatalog() {
+  const byName = new Map();
+  for (const c of LOCAL_COMMANDS) byName.set(c.name, c);
+  for (const c of state.config?.commands ?? []) if (!byName.has(c.name)) byName.set(c.name, c);
+  for (const name of state.config?.slashCommands ?? []) if (!byName.has(name)) byName.set(name, { name });
+  return [...byName.values()];
+}
+
+/** Ctrl+R: prompts from this project's history that contain what is typed. */
+function searchHistory() {
+  const input = $('#prompt');
+  const q = input.value.trim().toLowerCase();
+  const matches = promptHistory().filter((p) => p.toLowerCase().includes(q)).slice(0, 30);
+  if (!matches.length) return toast(q ? `Tidak ada prompt yang berisi "${q}".` : 'Belum ada riwayat prompt.', 'warn');
+  showSuggest('history', matches, 0, input.value.length);
+}
+
 function updateSuggest() {
   const input = $('#prompt');
   const caret = input.selectionStart;
   const before = input.value.slice(0, caret);
+  if (suggest.kind === 'history') {
+    // Ctrl+R search narrows as you type
+    const q = input.value.trim().toLowerCase();
+    const matches = promptHistory().filter((p) => p.toLowerCase().includes(q)).slice(0, 30);
+    return matches.length ? showSuggest('history', matches, 0, input.value.length) : closeSuggest();
+  }
   const slash = before.match(/^\/([\w:.-]*)$/);
   if (slash) {
     const q = slash[1].toLowerCase();
-    const list = (state.config?.slashCommands ?? []).filter((c) => c.toLowerCase().includes(q));
-    list.sort((a, b) => Number(!a.toLowerCase().startsWith(q)) - Number(!b.toLowerCase().startsWith(q)) || a.localeCompare(b));
-    return showSuggest('slash', list.slice(0, 12), 0, caret);
+    const matchName = (c) => c.name.toLowerCase().includes(q) || c.aliases?.some((a) => a.toLowerCase().includes(q));
+    const list = slashCatalog().filter(matchName);
+    list.sort((a, b) => Number(!a.name.toLowerCase().startsWith(q)) - Number(!b.name.toLowerCase().startsWith(q)) || a.name.localeCompare(b.name));
+    return showSuggest('slash', list.slice(0, 40), 0, caret);
   }
   const at = before.match(/(^|\s)@([^\s@]*)$/);
   if (at && state.active !== DEMO_ID) {
@@ -1135,7 +1263,10 @@ function renderSessionBar() {
   const st = state.statuses[state.active] ?? {};
   const known = st.sessionId ? sessionTitles.get(st.sessionId) : null;
   if (st.sessionId && !known) lookupSessionTitle(state.active, st.sessionId);
-  $('#sb-title').textContent = st.sessionId ? (known?.title ?? `Sesi ${st.sessionId.slice(0, 8)}`) : 'Percakapan baru';
+  // A name set with /rename (or by clicking the title) wins, as in the CLI's /resume list.
+  $('#sb-title').textContent = st.sessionId ? (st.title ?? known?.title ?? `Sesi ${st.sessionId.slice(0, 8)}`) : 'Percakapan baru';
+  $('#sb-title').title = st.sessionId ? 'Klik untuk mengganti nama sesi (/rename)' : '';
+  $('#sb-title').classList.toggle('renamable', Boolean(st.sessionId));
   const meta = st.sessionId
     ? [known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
     : ['pesan pertamamu memulai sesi Claude Code baru'];
@@ -2280,9 +2411,22 @@ $('#prompt').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     sendPrompt();
+    return;
+  }
+  // Ctrl+R: search the prompt history (the browser's reload is not what you want while typing).
+  if (e.key.toLowerCase() === 'r' && e.ctrlKey && !e.shiftKey && !e.altKey) {
+    e.preventDefault();
+    searchHistory();
   }
 });
-// Esc stops the running turn, like in the CLI; Esc Esc when idle clears the box or recalls the last prompt.
+// Ctrl+B anywhere: the running Bash commands / subagents carry on in the background, as in the CLI.
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 'b' || !e.ctrlKey || e.shiftKey || e.altKey || state.active === DEMO_ID) return;
+  if (!(state.statuses[state.active] ?? {}).busy) return;
+  e.preventDefault();
+  backgroundRunning();
+});
+// Esc stops the running turn, like in the CLI; Esc Esc when idle clears the box, or opens Rewind when it is empty.
 let lastEsc = 0;
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || suggest.items.length || state.active === DEMO_ID) return;
@@ -2304,7 +2448,7 @@ document.addEventListener('keydown', (e) => {
     autosize();
     updateBashMode();
     input.focus();
-  } else if (promptHistory()[0]) fillComposer(promptHistory()[0]);
+  } else openRewind();
 });
 // Shift+Tab cycles the permission mode, like in the CLI (only from the prompt box, so Tab navigation still works elsewhere).
 document.addEventListener('keydown', (e) => {
@@ -2344,6 +2488,276 @@ function confirmNew() {
   const busy = st.busy ? '\n\nTim sedang bekerja — pekerjaannya akan dihentikan.' : '';
   return window.confirm(`Mulai sesi baru?\n\nClaude tidak membawa konteks percakapan ini. Percakapan ini tetap bisa dilanjutkan lagi lewat 🕘 Riwayat sesi.${busy}`);
 }
+
+// ---------- rewind (Esc Esc, /rewind): Claude Code's checkpoints ----------
+
+const rewindView = { project: null, points: [], selected: null, preview: null };
+const shortDate = (ts) => (ts ? new Date(ts).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+
+async function openRewind() {
+  if (state.active === DEMO_ID) return;
+  if ((state.statuses[state.active] ?? {}).busy) return toast('Tim masih bekerja. Tekan Esc untuk menghentikan dulu, lalu Esc Esc.', 'warn');
+  Object.assign(rewindView, { project: state.active, points: [], selected: null, preview: null });
+  $('#rewind-list').innerHTML = '<li class="muted">Memuat percakapan…</li>';
+  $('#rewind-detail').hidden = true;
+  openModal('rewind-modal');
+  try {
+    rewindView.points = (await api(`/api/projects/${state.active}/rewind-points`)).points;
+    renderRewindList();
+  } catch (err) {
+    $('#rewind-list').innerHTML = `<li class="muted">${escapeHtml(err.message)}</li>`;
+  }
+}
+
+function renderRewindList() {
+  const list = $('#rewind-list');
+  if (!rewindView.points.length) {
+    list.innerHTML = '<li class="muted">Belum ada pesan di percakapan ini yang bisa di-rewind.</li>';
+    return;
+  }
+  list.innerHTML = rewindView.points
+    .map((p, i) => `<li><button type="button" class="${rewindView.selected === p.uuid ? 'active' : ''}" data-uuid="${p.uuid}"><span class="rw-text">${escapeHtml(p.text)}</span><small>${i === 0 ? 'pesan terakhir · ' : ''}${shortDate(p.ts)}</small></button></li>`)
+    .join('');
+}
+
+$('#rewind-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-uuid]');
+  if (btn) selectRewind(btn.dataset.uuid);
+});
+
+async function selectRewind(uuid) {
+  Object.assign(rewindView, { selected: uuid, preview: null });
+  renderRewindList();
+  renderRewindDetail();
+  let preview;
+  try {
+    preview = await api(`/api/projects/${rewindView.project}/rewind-preview`, { uuid }); // dry run: which files would change back
+  } catch (err) {
+    preview = { canRewind: false, error: err.message };
+  }
+  if (rewindView.selected !== uuid) return;
+  rewindView.preview = preview;
+  renderRewindDetail();
+}
+
+function renderRewindDetail() {
+  const box = $('#rewind-detail');
+  const point = rewindView.points.find((p) => p.uuid === rewindView.selected);
+  box.hidden = !point;
+  if (!point) return;
+  const pv = rewindView.preview;
+  const files = pv?.filesChanged ?? [];
+  const codeOk = Boolean(pv?.canRewind && files.length);
+  const short = (f) => f.split(/[\\/]/).slice(-2).join('/');
+  let summary;
+  if (!pv) summary = '<span class="muted">Memeriksa perubahan file…</span>';
+  else if (codeOk) {
+    summary = `<b>${files.length} file</b> kembali seperti sebelum pesan ini <span class="add">+${pv.insertions ?? 0}</span> <span class="del">−${pv.deletions ?? 0}</span><ul class="rw-files">${files
+      .slice(0, 8)
+      .map((f) => `<li title="${escapeHtml(f)}">${escapeHtml(short(f))}</li>`)
+      .join('')}${files.length > 8 ? `<li class="muted">+${files.length - 8} lainnya</li>` : ''}</ul>`;
+  } else summary = `<span class="muted">${pv.canRewind ? 'Tidak ada file yang diubah sejak pesan ini.' : `Kode tidak bisa dikembalikan: ${escapeHtml(pv.error ?? 'tidak ada checkpoint untuk pesan ini')}`}</span>`;
+  box.innerHTML = `<div class="rw-head">Kembali ke sebelum: <i>“${escapeHtml(point.text.slice(0, 200))}”</i></div><div class="rw-summary">${summary}</div>
+    <div class="rw-actions">
+      <button class="primary" data-rw="both" ${codeOk ? '' : 'disabled'}>⏪ Kode &amp; percakapan</button>
+      <button data-rw="conversation">💬 Percakapan saja</button>
+      <button data-rw="code" ${codeOk ? '' : 'disabled'}>📄 Kode saja</button>
+    </div>`;
+}
+
+$('#rewind-detail').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-rw]');
+  if (!btn || !rewindView.selected) return;
+  const how = btn.dataset.rw;
+  const body = { uuid: rewindView.selected, code: how !== 'conversation', conversation: how !== 'code' };
+  $('#rewind-detail').querySelectorAll('button').forEach((b) => (b.disabled = true));
+  try {
+    const { text } = await api(`/api/projects/${rewindView.project}/rewind`, body);
+    closeModal('rewind-modal');
+    // As in the CLI, the rewound prompt comes back into the box to edit and resend.
+    if (body.conversation && text) fillComposer(text);
+    toast(body.conversation ? 'Dikembalikan. Pesanmu ada di kotak pesan untuk diedit.' : 'Kode dikembalikan.', 'ok');
+  } catch (err) {
+    toast(err.message);
+    renderRewindDetail();
+  }
+});
+
+// ---------- MCP servers (/mcp): headless Claude Code has no /mcp dialog, so it lives here ----------
+
+const mcpView = { project: null, servers: [], login: null, poll: null };
+const MCP_STATUS = { connected: ['✓ tersambung', 'ok'], 'needs-auth': ['🔑 perlu login', 'warn'], failed: ['✗ gagal', 'bad'], pending: ['… menyambung', ''], disabled: ['⏸ nonaktif', ''] };
+const MCP_ORDER = ['needs-auth', 'failed', 'pending', 'connected', 'disabled'];
+
+async function openMcp() {
+  if (state.active === DEMO_ID) return;
+  mcpView.project = state.active;
+  $('#mcp-callback').hidden = true;
+  openModal('mcp-modal');
+  $('#mcp-list').innerHTML = '<li class="muted">Menanyakan status ke Claude Code…</li>';
+  await loadMcp();
+}
+
+async function loadMcp(quiet = false, attempt = 0) {
+  try {
+    mcpView.servers = (await api(`/api/projects/${mcpView.project}/mcp`)).servers;
+    renderMcp();
+  } catch (err) {
+    if (!quiet) $('#mcp-list').innerHTML = `<li class="muted">${escapeHtml(err.message)}</li>`;
+    return;
+  }
+  // Servers still connecting right after Claude Code started: look again shortly, as /mcp updates live.
+  clearTimeout(mcpView.again);
+  if (attempt < 8 && mcpView.servers.some((s) => s.status === 'pending')) mcpView.again = setTimeout(() => !$('#mcp-modal').hidden && loadMcp(true, attempt + 1), 2500);
+}
+
+function renderMcp() {
+  const rank = (s) => (MCP_ORDER.indexOf(s.status) + 1 || MCP_ORDER.length + 1);
+  const servers = [...mcpView.servers].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  const count = (st) => servers.filter((s) => s.status === st).length;
+  $('#mcp-summary').textContent = servers.length
+    ? `· ${servers.length} server · ${count('connected')} tersambung${count('needs-auth') ? ` · ${count('needs-auth')} perlu login` : ''}${count('failed') ? ` · ${count('failed')} gagal` : ''}`
+    : '';
+  if (!servers.length) {
+    $('#mcp-list').innerHTML = '<li class="muted">Belum ada server MCP. Tambahkan lewat <code>claude mcp add</code> atau sebuah plugin.</li>';
+    return;
+  }
+  $('#mcp-list').innerHTML = servers
+    .map((s) => {
+      const [label, tone] = MCP_STATUS[s.status] ?? [s.status, ''];
+      const actions = [
+        s.status === 'needs-auth' ? '<button class="primary" data-mcp="login">🔑 Login</button>' : '',
+        s.status !== 'disabled' ? '<button data-mcp="reconnect">↻ Sambungkan ulang</button>' : '',
+        s.status === 'disabled' ? '<button data-mcp="enable">▶ Aktifkan</button>' : '<button data-mcp="disable">⏸ Nonaktifkan</button>',
+      ].join('');
+      const meta = [s.scope, s.tools != null ? `${s.tools} tool` : '', s.error].filter(Boolean).map(escapeHtml).join(' · ');
+      return `<li data-server="${escapeHtml(s.name)}"><div class="mcp-main"><div class="mcp-row"><b>${escapeHtml(s.name)}</b><span class="pill ${tone}">${label}</span></div>${meta ? `<small class="muted">${meta}</small>` : ''}</div><div class="mcp-actions">${actions}</div></li>`;
+    })
+    .join('');
+}
+
+/** After a login, watch until the server is connected (the OAuth tab finishes on its own). */
+function pollMcp(server) {
+  clearInterval(mcpView.poll);
+  let left = 40;
+  mcpView.poll = setInterval(async () => {
+    if ($('#mcp-modal').hidden || --left <= 0) return clearInterval(mcpView.poll);
+    await loadMcp(true);
+    if (mcpView.servers.find((s) => s.name === server)?.status === 'connected') {
+      clearInterval(mcpView.poll);
+      $('#mcp-callback').hidden = true;
+      toast(`${server} tersambung.`, 'ok');
+    }
+  }, 3000);
+}
+
+$('#mcp-refresh').addEventListener('click', () => loadMcp());
+$('#mcp-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-mcp]');
+  if (!btn) return;
+  const server = btn.closest('[data-server]').dataset.server;
+  const action = btn.dataset.mcp;
+  // Opened inside the click, or the browser blocks the pop-up; it gets its address once Claude Code answers.
+  const tab = action === 'login' ? window.open('', '_blank') : null;
+  btn.disabled = true;
+  try {
+    const r = await api(`/api/projects/${mcpView.project}/mcp-action`, { server, action });
+    if (action !== 'login') {
+      toast({ reconnect: `${server} disambungkan ulang.`, enable: `${server} diaktifkan.`, disable: `${server} dinonaktifkan.` }[action], 'ok');
+      return loadMcp();
+    }
+    if (!r.authUrl) {
+      tab?.close();
+      toast(`${server} tidak perlu login lagi.`, 'ok');
+      return loadMcp();
+    }
+    if (tab) {
+      tab.opener = null;
+      tab.location.href = r.authUrl;
+    } else window.open(r.authUrl, '_blank', 'noopener');
+    mcpView.login = server;
+    // On the laptop the OAuth redirect to localhost reaches Claude Code by itself; on a phone it can't, so paste it.
+    $('#mcp-callback').hidden = !(r.callbackExpected && !state.local);
+    toast('Selesaikan login di tab yang terbuka. Status diperbarui otomatis.', 'warn');
+    pollMcp(server);
+  } catch (err) {
+    tab?.close();
+    toast(err.message);
+    btn.disabled = false;
+  }
+});
+$('#mcp-callback-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const callbackUrl = $('#mcp-callback-url').value.trim();
+  if (!callbackUrl || !mcpView.login) return;
+  try {
+    await api(`/api/projects/${mcpView.project}/mcp-action`, { server: mcpView.login, action: 'callback', callbackUrl });
+    $('#mcp-callback-url').value = '';
+    $('#mcp-callback').hidden = true;
+    pollMcp(mcpView.login);
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+// ---------- tasks (/tasks, Ctrl+B): Bash commands and subagents Claude Code runs ----------
+
+const tasksView = { project: null, outputs: new Map() };
+const TASK_STATE = { completed: 'selesai', failed: 'gagal', stopped: 'dihentikan', killed: 'dihentikan', paused: 'dijeda', pending: 'menunggu' };
+
+function openTasks() {
+  if (state.active === DEMO_ID) return;
+  tasksView.project = state.active;
+  tasksView.outputs.clear();
+  renderTasks();
+  openModal('tasks-modal');
+}
+
+function renderTasks() {
+  const st = state.statuses[tasksView.project] ?? {};
+  const tasks = st.tasks ?? [];
+  $('#tasks-background').disabled = !st.busy;
+  if (!tasks.length) {
+    $('#tasks-list').innerHTML = '<li class="muted">Belum ada tugas di sesi ini. Tugas muncul saat Claude menjalankan perintah atau agent, misalnya dev server di latar belakang.</li>';
+    return;
+  }
+  $('#tasks-list').innerHTML = tasks
+    .map((t) => {
+      const running = t.status === 'running';
+      const meta = [t.agent, running ? (t.background ? 'berjalan di latar' : 'berjalan') : (TASK_STATE[t.status] ?? t.status), t.toolUses ? `${t.toolUses} langkah` : '', t.tokens ? `${fmtTokens(t.tokens)} token` : '']
+        .filter(Boolean)
+        .join(' · ');
+      const out = tasksView.outputs.get(t.id);
+      return `<li data-task="${escapeHtml(t.id)}"><div class="task-row">${t.kind === 'agent' ? '🤖' : '🖥'} <b>${escapeHtml(t.description || t.id)}</b>${running ? '<span class="spinner"></span>' : ''}</div><small class="muted">${escapeHtml(meta)}${t.summary ? ` — ${escapeHtml(t.summary)}` : ''}${t.error ? ` — ${escapeHtml(t.error)}` : ''}</small><div class="task-actions">${t.kind === 'shell' ? `<button data-task-act="output">📄 ${out != null ? 'Muat ulang output' : 'Lihat output'}</button>` : ''}${running ? '<button class="danger" data-task-act="stop">■ Hentikan</button>' : ''}</div>${out != null ? `<pre class="task-out">${escapeHtml(out || '(belum ada output)')}</pre>` : ''}</li>`;
+    })
+    .join('');
+}
+
+$('#tasks-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-task-act]');
+  if (!btn) return;
+  const taskId = btn.closest('[data-task]').dataset.task;
+  btn.disabled = true;
+  try {
+    if (btn.dataset.taskAct === 'output') {
+      const r = await api(`/api/projects/${tasksView.project}/task-output`, { taskId });
+      tasksView.outputs.set(taskId, `${r.truncated ? '… (hanya 8 KB terakhir)\n' : ''}${r.output ?? ''}`);
+    } else {
+      await api(`/api/projects/${tasksView.project}/task-stop`, { taskId });
+      toast('Tugas dihentikan.', 'ok');
+    }
+  } catch (err) {
+    toast(err.message);
+  }
+  renderTasks();
+});
+
+function backgroundRunning() {
+  api(`/api/projects/${state.active}/background`)
+    .then(() => toast('Dipindahkan ke latar belakang. Kamu bisa lanjut chat.', 'ok'))
+    .catch((err) => toast(err.message));
+}
+$('#tasks-background').addEventListener('click', backgroundRunning);
 
 // ---------- resizable chat panel (desktop) ----------
 

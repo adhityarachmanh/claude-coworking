@@ -100,3 +100,27 @@ test('session list and history for resuming from the web', () => {
   assert.equal(history.at(-1).text, 'Sudah diperbaiki.');
   assert.deepEqual(sessionHistory(PROJECT, '../../etc/passwd'), []);
 });
+
+test('rewind points follow the current chain: an abandoned branch drops out', async () => {
+  const { promptChain } = await import('../src/transcripts.js');
+  const sid = '99999999-2222-3333-4444-555555555555';
+  const e = (type, uuid, parentUuid, content, extra = {}) =>
+    JSON.stringify({ type, uuid, parentUuid, sessionId: sid, timestamp: new Date().toISOString(), message: { role: type, content }, ...extra });
+  writeFileSync(
+    path.join(dir, `${sid}.jsonl`),
+    `${[
+      e('user', 'u1', null, 'satu'),
+      e('assistant', 'a1', 'u1', [{ type: 'text', text: 'ok' }]),
+      e('user', 'u2', 'a1', 'dua (nanti di-rewind)'),
+      e('assistant', 'a2', 'u2', [{ type: 'text', text: 'ok' }]),
+      // resumed at a1 after a rewind; the web app sent `!ls` output ahead of the prompt
+      e('user', 'u3', 'a1', '<bash-input>ls</bash-input>\n<bash-stdout>a.txt</bash-stdout><bash-stderr></bash-stderr>\n\ntiga, setelah rewind'),
+      e('user', 'm1', 'u3', 'catatan sistem', { isMeta: true }),
+      e('assistant', 'a3', 'm1', [{ type: 'text', text: 'ok' }]),
+    ].join('\n')}\n`,
+  );
+  const chain = promptChain(PROJECT, sid);
+  assert.deepEqual(chain.map((p) => [p.uuid, p.parentUuid, p.text]), [['u1', null, 'satu'], ['u3', 'a1', 'tiga, setelah rewind']]);
+  assert.deepEqual(promptChain(PROJECT, sid, { leaf: 'a2' }).map((p) => p.uuid), ['u1', 'u2'], 'from an explicit leaf');
+  assert.deepEqual(promptChain(PROJECT, '../x'), []);
+});

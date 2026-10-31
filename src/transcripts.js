@@ -41,12 +41,15 @@ function parse(line) {
   }
 }
 
+// `!command` output the web app sends ahead of a prompt (the CLI's own tags): not part of what was typed.
+const SHELL_CONTEXT = /^(?:\s*<bash-input>[\s\S]*?<\/bash-input>\s*<bash-stdout>[\s\S]*?<\/bash-stdout>(?:<bash-stderr>[\s\S]*?<\/bash-stderr>)?)+\s*/;
+
 const promptText = (e) =>
-  typeof e.message?.content === 'string' ? e.message.content : (e.message?.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+  (typeof e.message?.content === 'string' ? e.message.content : (e.message?.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n')).replace(SHELL_CONTEXT, '');
 
 /** A real user prompt (typed in the CLI or sent from the web), not a reminder/command/hand-back. */
 function isPrompt(e) {
-  if (e?.type !== 'user' || e.isMeta || e.isSidechain) return false;
+  if (e?.type !== 'user' || e.isMeta || e.isSidechain || e.isCompactSummary) return false;
   if (Array.isArray(e.message?.content) && e.message.content.some((b) => b.type === 'tool_result')) return false;
   if (e.promptSource && !['typed', 'sdk'].includes(e.promptSource)) return false;
   const text = promptText(e).trim();
@@ -82,21 +85,58 @@ export function listSessions(projectPath, limit = 30) {
         }
       }
       let title = null;
+      let customTitle = null; // set with /rename: wins over the generated title, as in the CLI
       let prompts = 0;
       for (const line of readSlice(file, true, HEAD_BYTES)) {
         const e = parse(line);
         if (e?.type === 'ai-title' && (e.title || e.aiTitle)) title = e.title ?? e.aiTitle;
+        if (e?.type === 'custom-title' && e.customTitle) customTitle = e.customTitle;
         if (isPrompt(e)) prompts++;
       }
       return {
         id,
-        title: truncate(title ?? first ?? '(tanpa judul)', 90),
+        title: truncate(customTitle ?? title ?? first ?? '(tanpa judul)', 90),
         source: entrypoint === 'sdk-cli' ? 'web' : 'cli',
         updated: mtime,
         sizeKb: Math.round(size / 1024),
         recentPrompts: prompts,
       };
     });
+}
+
+const CHAIN_BYTES = 64 * 1024 * 1024;
+
+/**
+ * The prompts of a session's current conversation, oldest first: the chain from the newest entry
+ * (or `leaf`, right after a rewind) back through parentUuid — what Esc Esc in the CLI lists.
+ * Branches abandoned by an earlier rewind are not on the chain, so they drop out.
+ * `parentUuid` is where a conversation rewind to before that prompt resumes (--resume-session-at).
+ */
+export function promptChain(projectPath, sessionId, { leaf: leafUuid = null } = {}) {
+  if (!SESSION_ID.test(sessionId)) return [];
+  let lines;
+  try {
+    lines = readSlice(path.join(transcriptDir(projectPath), `${sessionId}.jsonl`), true, CHAIN_BYTES);
+  } catch {
+    return [];
+  }
+  const byUuid = new Map();
+  let leaf = null;
+  for (const line of lines) {
+    const e = parse(line);
+    if (!e?.uuid || e.isSidechain) continue;
+    byUuid.set(e.uuid, e);
+    if (e.type === 'user' || e.type === 'assistant' || e.type === 'system') leaf = e;
+  }
+  if (leafUuid) leaf = byUuid.get(leafUuid) ?? leaf;
+  const prompts = [];
+  const seen = new Set();
+  // After a compaction the chain continues through logicalParentUuid.
+  for (let e = leaf; e && !seen.has(e.uuid); e = byUuid.get(e.parentUuid ?? e.logicalParentUuid)) {
+    seen.add(e.uuid);
+    if (isPrompt(e)) prompts.push({ uuid: e.uuid, parentUuid: e.parentUuid ?? null, text: promptText(e).trim(), ts: Date.parse(e.timestamp) || 0 });
+  }
+  return prompts.reverse();
 }
 
 /** Last user prompts and assistant replies of a session, as chat messages. */

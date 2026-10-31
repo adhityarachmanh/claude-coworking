@@ -174,7 +174,8 @@ export class TranscriptMirror {
         office: (evt) => this.hub.office(pid, { source: 'cli', ...evt }),
         chat: (msg) => this.hub.chat(pid, { source: 'cli', ...msg }),
         updateChat: (chatId, patch) => this.hub.updateChat(pid, chatId, patch),
-        status: (patch) => this.hub.setStatus(pid, patch),
+        // Only the todo list: context, tasks and title describe the web session's own process, not this terminal one.
+        status: (patch) => patch.todos !== undefined && this.hub.setStatus(pid, { todos: patch.todos }),
       });
       this.sessions.set(id, s);
     }

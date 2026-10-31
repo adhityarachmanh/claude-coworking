@@ -1,8 +1,16 @@
-// Runs one long-lived headless Claude Code process per project and bridges it to the web:
-// prompts go in over stdin (stream-json), events come out over stdout, and permission
-// prompts (`can_use_tool` control requests) are answered from the browser.
+// Runs one long-lived headless Claude Code process per project and bridges it to the web, as a thin
+// client of Claude Code's own control protocol (the one its IDE extensions speak):
+//   - prompts go in over stdin (stream-json) and Claude Code queues them itself, so a message sent
+//     mid-turn reaches Claude at the next tool boundary, exactly as in the CLI;
+//   - permission prompts (`can_use_tool` control requests) are answered from the browser;
+//   - mode / model / effort switches, rewind, MCP and background tasks are control requests, so they
+//     do what the CLI's Shift+Tab, /model, /effort, Esc Esc, /mcp and /tasks do.
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import os from 'node:os';
+import { PERMISSION_MODES } from './hub.js';
 import { describeTool, inferRole } from './roles.js';
+import { promptChain } from './transcripts.js';
 import { StreamTranslator } from './translator.js';
 import { clip, truncate } from './util.js';
 
@@ -11,8 +19,17 @@ const INTERRUPT_GRACE_MS = 6000;
 const STDERR_TAIL = 4000;
 const SHELL_TIMEOUT_MS = 2 * 60 * 1000;
 const SHELL_OUTPUT = 30000;
+const CONTROL_TIMEOUT_MS = 30_000;
+const CATALOG_TIMEOUT_MS = 60_000;
+const UUID = /^[0-9a-f-]{36}$/i;
 
-const settingsKey = (s) => `${s.mode}|${s.model}|${s.effort}|${s.team}`;
+/** The app's "manual" is Claude Code's `default` permission mode (the CLI flag accepts both names). */
+const cliMode = (mode) => (mode === 'manual' ? 'default' : mode);
+const appMode = (mode) => (mode === 'default' ? 'manual' : mode);
+// Only the team setting (subagents + system prompt) needs a fresh process; mode/model/effort switch live.
+const restartKey = (s) => String(s.team);
+
+const streamArgs = (claude) => [...claude.args, '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
 
 /** Trims tool input to what the approval card needs to show. */
 function previewInput(tool, input = {}) {
@@ -37,6 +54,19 @@ function previewInput(tool, input = {}) {
   }
 }
 
+/** What the browser needs from Claude Code's `initialize` answer: the /model picker and slash commands. */
+function catalogOf(init) {
+  return {
+    models: (init.models ?? [])
+      .filter((m) => m?.value && !m.disabled)
+      .map((m) => ({ value: m.value, displayName: m.displayName ?? m.value, description: clip(m.description ?? '', 160), efforts: m.supportedEffortLevels ?? [] })),
+    commands: (init.commands ?? [])
+      .filter((c) => c?.name)
+      .map((c) => ({ name: c.name, description: clip(c.description ?? '', 200), argumentHint: c.argumentHint || undefined, aliases: c.aliases?.length ? c.aliases : undefined })),
+    version: init.claude_code_version ?? null,
+  };
+}
+
 export class SessionManager {
   constructor({ hub, claude, agents, teamPrompt, ledger, account }) {
     this.hub = hub;
@@ -50,13 +80,72 @@ export class SessionManager {
 
   /**
    * After a login/logout every running process still holds the old credentials: idle ones
-   * respawn on the next prompt, busy ones finish their turn first (see onMessage).
+   * respawn on the next prompt, busy ones finish their turn first (see becameIdle).
    */
   accountChanged() {
     for (const session of this.sessions.values()) {
       if (session.busy) session.staleAccount = true;
       else session.closeChild();
     }
+    this.probeCatalog(); // which models are offered depends on the account
+  }
+
+  /**
+   * Asks Claude Code what it offers — the models of its /model picker and the slash commands with
+   * their descriptions — without a model call: a short-lived process answers `initialize` and exits.
+   */
+  probeCatalog(cwd = os.homedir()) {
+    if (!this.claude) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      let child;
+      try {
+        child = spawn(this.claude.command, streamArgs(this.claude), { cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, OFFICE_MANAGED: '1' } });
+      } catch {
+        resolve(null);
+        return;
+      }
+      let settled = false;
+      const finish = (catalog) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        child.stdin.end();
+        if (catalog) this.hub.setCatalog(catalog, { replace: true });
+        resolve(catalog);
+      };
+      const timer = setTimeout(() => {
+        finish(null);
+        child.kill();
+      }, CATALOG_TIMEOUT_MS);
+      let buffer = '';
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', (chunk) => {
+        buffer += chunk;
+        let newline;
+        while ((newline = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          let msg;
+          try {
+            msg = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (msg.type === 'control_response' && msg.response?.request_id === 'office-catalog') {
+            finish(msg.response.subtype === 'success' ? catalogOf(msg.response.response ?? {}) : null);
+          }
+        }
+      });
+      child.stdin.on('error', () => {});
+      child.on('error', () => finish(null));
+      child.on('exit', () => finish(null));
+      child.stdin.write(`${JSON.stringify({ type: 'control_request', request_id: 'office-catalog', request: { subtype: 'initialize' } })}\n`);
+    });
+  }
+
+  /** A project's session started: its own commands (project skills, plugins) join the list. */
+  noteCatalog(init) {
+    this.hub.setCatalog(catalogOf(init));
   }
 
   get(project) {
@@ -81,7 +170,12 @@ class ClaudeSession {
     this.id = project.id;
     this.child = null;
     this.busy = false;
-    this.queue = [];
+    this.inflight = new Map(); // prompt uuid -> { chatId, text, state: 'queued' | 'started', announced }
+    this.pending = new Map(); // control request id -> { resolve, reject, timer }
+    this.requestSeq = 0;
+    this.applied = null; // { mode, model, effort } of the running process
+    this.resumeAt = null; // conversation rewind: --resume-session-at for the next start
+    this.chainLeaf = null; // where the conversation stands after a rewind, until the next prompt
     this.autoApprove = false;
     this.restartPending = false;
     this.stderr = '';
@@ -92,17 +186,31 @@ class ClaudeSession {
 
   /** @param images [{ mediaType, data(base64) }] pasted/dropped in the browser */
   prompt(text, images = []) {
-    const chatId = this.hub.chat(this.id, {
-      kind: 'user',
-      text,
-      source: 'web',
-      images: images.length || undefined,
-      queued: this.busy || this.queue.length > 0,
-    });
+    const uuid = randomUUID();
+    const chatId = this.hub.chat(this.id, { kind: 'user', text, source: 'web', images: images.length || undefined, queued: this.busy || undefined, uuid });
+    if (!this.m.claude) {
+      this.hub.updateChat(this.id, chatId, { queued: false, cancelled: true });
+      this.hub.chat(this.id, { kind: 'error', text: 'Claude Code tidak ditemukan. Pastikan `claude` terpasang, atau set env CLAUDE_BIN.' });
+      return;
+    }
+    this.syncSettings(); // a mode/model switch reaches Claude Code before the prompt does
+    if (!this.ensureChild()) {
+      this.hub.updateChat(this.id, chatId, { queued: false, cancelled: true });
+      return;
+    }
     // Shell output the user ran with `!` goes to Claude ahead of the prompt, not into the bubble.
     const context = this.shellContext.splice(0).join('\n');
-    this.queue.push({ text: context ? `${context}\n\n${text}` : text, images, chatId });
-    this.pump();
+    const body = context ? `${context}\n\n${text}` : text;
+    const content = images.length
+      ? [...images.map((img) => ({ type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.data } })), { type: 'text', text: body }]
+      : body;
+    const item = { chatId, text, state: this.busy ? 'queued' : 'started', announced: false };
+    this.inflight.set(uuid, item);
+    if (item.state === 'started') this.announce(item);
+    this.chainLeaf = null;
+    clearTimeout(this.idleTimer);
+    this.write({ type: 'user', uuid, message: { role: 'user', content }, parent_tool_use_id: null, session_id: '' });
+    this.afterProgress();
   }
 
   /**
@@ -143,19 +251,31 @@ class ClaudeSession {
     this.stop();
     this.closeChild();
     this.autoApprove = false;
+    this.resumeAt = null;
+    this.chainLeaf = null;
     this.hub.setSessionId(this.id, sessionId);
-    this.hub.setStatus(this.id, { todos: null, context: null }); // unknown until the first turn
+    this.hub.setStatus(this.id, { todos: null, context: null, tasks: null, title: null }); // known again after the first turn
     this.hub.chat(this.id, { kind: 'divider', text: `Melanjutkan sesi ${sessionId.slice(0, 8)}` });
     for (const msg of history) this.hub.chat(this.id, msg);
   }
 
+  /** Like Esc in the CLI: queued prompts leave Claude Code's queue, then the running turn is interrupted. */
   stop() {
-    for (const item of this.queue) this.hub.updateChat(this.id, item.chatId, { queued: false, cancelled: true });
-    this.queue = [];
+    for (const [uuid, item] of this.inflight) {
+      if (item.state === 'started') continue;
+      this.request({ subtype: 'cancel_async_message', message_uuid: uuid })
+        .then((r) => {
+          if (r?.cancelled === false || !this.inflight.has(uuid)) return; // it already reached Claude
+          this.inflight.delete(uuid);
+          this.hub.updateChat(this.id, item.chatId, { queued: false, cancelled: true });
+          this.afterProgress();
+        })
+        .catch(() => {});
+    }
     this.hub.cancelApprovals(this.id);
-    if (this.busy && this.child) {
+    if (this.child && [...this.inflight.values()].some((i) => i.state === 'started')) {
       this.interrupting = true;
-      this.write({ type: 'control_request', request_id: `interrupt-${Date.now()}`, request: { subtype: 'interrupt' } });
+      this.request({ subtype: 'interrupt' }).catch(() => {});
       clearTimeout(this.killTimer);
       this.killTimer = setTimeout(() => this.busy && this.kill(), INTERRUPT_GRACE_MS);
     }
@@ -166,54 +286,169 @@ class ClaudeSession {
     this.stop();
     this.closeChild();
     this.hub.setSessionId(this.id, null);
-    this.hub.setStatus(this.id, { todos: null, context: null });
+    this.hub.setStatus(this.id, { todos: null, context: null, tasks: null, title: null });
     this.shellContext = [];
+    this.resumeAt = null;
+    this.chainLeaf = null;
     this.autoApprove = false;
     this.hub.chat(this.id, { kind: 'divider', text: 'Sesi baru' });
   }
 
-  // ---------- process lifecycle ----------
-
-  pump() {
-    if (this.busy || !this.queue.length) return this.updateStatus();
-    if (!this.m.claude) {
-      const item = this.queue.shift();
-      this.hub.updateChat(this.id, item.chatId, { queued: false });
-      this.hub.chat(this.id, { kind: 'error', text: 'Claude Code tidak ditemukan. Pastikan `claude` terpasang, atau set env CLAUDE_BIN.' });
-      return this.updateStatus();
-    }
-    const settings = this.hub.settingsFor(this.id);
-    if (this.child && this.childKey !== settingsKey(settings)) {
-      // Mode/model/effort changed: restart the process (the conversation resumes via --resume).
-      this.restartPending = true;
-      this.closeChild();
+  /** Settings changed: mode, model and effort switch in the running process, like Shift+Tab, /model and /effort. */
+  syncSettings() {
+    if (!this.child || !this.applied) return; // a new process gets them as flags
+    const s = this.hub.settingsFor(this.id);
+    const a = this.applied;
+    // The team setting, and going back to the default effort, need a fresh process.
+    if (restartKey(s) !== this.childKey || (a.effort && !s.effort)) {
+      if (this.busy) this.restartPending = true;
+      else this.closeChild();
       return;
     }
-    if (!this.child && !this.spawn(settings)) return;
+    if (s.mode !== a.mode) {
+      a.mode = s.mode;
+      this.request({ subtype: 'set_permission_mode', mode: cliMode(s.mode) }).catch((err) => this.controlFailed('mode izin', err));
+    }
+    if (s.model !== a.model) {
+      const previous = a.model;
+      a.model = s.model;
+      this.request({ subtype: 'set_model', model: s.model || 'default' })
+        .then((r) => {
+          this.hub.setStatus(this.id, { activeModel: r?.model ?? null });
+          this.refreshContext(); // another model can have another context window
+        })
+        .catch((err) => {
+          // Unknown model: keep the one that works, as /model does.
+          a.model = previous;
+          this.hub.updateSettings(this.id, { model: previous });
+          this.controlFailed('model', err);
+        });
+    }
+    if (s.effort !== a.effort) {
+      a.effort = s.effort;
+      this.request({ subtype: 'apply_flag_settings', settings: { effortLevel: s.effort } }).catch((err) => this.controlFailed('effort', err));
+    }
+  }
 
-    const item = this.queue.shift();
-    this.hub.updateChat(this.id, item.chatId, { queued: false });
-    this.busy = true;
-    clearTimeout(this.idleTimer);
-    const content = item.images?.length
-      ? [
-          ...item.images.map((img) => ({ type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.data } })),
-          { type: 'text', text: item.text },
-        ]
-      : item.text;
-    this.write({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, session_id: '' });
-    this.hub.office(this.id, { kind: 'prompt', role: 'claude', label: truncate(item.text, 120) });
-    this.updateStatus();
+  // ---------- rewind (Esc Esc) ----------
+
+  /** The current conversation's prompts, newest first. */
+  rewindPoints() {
+    const sessionId = this.hub.sessionIdFor(this.id);
+    if (!sessionId) return [];
+    return promptChain(this.project.path, sessionId, { leaf: this.chainLeaf })
+      .reverse()
+      .slice(0, 80)
+      .map(({ uuid, text, ts }) => ({ uuid, text: truncate(text, 400), ts }));
+  }
+
+  /** Which files a code rewind to just before this prompt would restore (dry run). */
+  async rewindPreview(uuid) {
+    if (!UUID.test(uuid)) throw new Error('Pesan tidak dikenal.');
+    if (!this.ensureChild()) throw new Error('Claude Code tidak bisa dijalankan.');
+    return this.request({ subtype: 'rewind_files', user_message_id: uuid, dry_run: true });
+  }
+
+  /**
+   * Back to just before one of your prompts: the code (Claude Code's file checkpoints), the
+   * conversation (the next start resumes at the entry before it), or both — the CLI's three choices.
+   */
+  async rewind(uuid, { code = false, conversation = false } = {}) {
+    if (!code && !conversation) throw new Error('Pilih kode, percakapan, atau keduanya.');
+    if (this.busy) throw new Error('Hentikan dulu pekerjaan yang sedang berjalan (Esc).');
+    const sessionId = this.hub.sessionIdFor(this.id);
+    const point = sessionId ? promptChain(this.project.path, sessionId, { leaf: this.chainLeaf }).find((p) => p.uuid === uuid) : null;
+    if (!point) throw new Error('Pesan itu tidak ada di percakapan ini.');
+    if (code) {
+      if (!this.ensureChild()) throw new Error('Claude Code tidak bisa dijalankan.');
+      const files = await this.request({ subtype: 'rewind_files', user_message_id: uuid });
+      if (!files.canRewind) throw new Error(files.error || 'Perubahan file sejak pesan itu tidak bisa dikembalikan.');
+    }
+    if (conversation) {
+      this.closeChild();
+      if (point.parentUuid) {
+        this.resumeAt = point.parentUuid;
+        this.chainLeaf = point.parentUuid;
+      } else {
+        this.hub.setSessionId(this.id, null); // before the first prompt: an empty conversation
+        this.chainLeaf = null;
+      }
+      this.shellContext = [];
+      this.hub.setStatus(this.id, { todos: null, context: null, tasks: null });
+      this.hub.markRewound(this.id, uuid, point.text);
+    }
+    const what = code && conversation ? 'Kode & percakapan' : code ? 'Kode' : 'Percakapan';
+    this.hub.chat(this.id, { kind: 'divider', text: `⏪ ${what} dikembalikan ke sebelum: “${truncate(point.text, 60)}”` });
+    return { ok: true, text: point.text };
+  }
+
+  // ---------- MCP servers (/mcp) ----------
+
+  async mcpStatus() {
+    if (!this.ensureChild()) throw new Error('Claude Code tidak bisa dijalankan.');
+    const { mcpServers = [] } = await this.request({ subtype: 'mcp_status' });
+    return mcpServers.map((s) => ({
+      name: s.name,
+      status: s.status,
+      scope: s.scope ?? null,
+      source: s.source ?? null,
+      tools: Array.isArray(s.tools) ? s.tools.length : null,
+      error: s.error ? truncate(s.error, 300) : null,
+    }));
+  }
+
+  /** reconnect · enable · disable · login (OAuth: answers with the URL to open) · callback (pasted redirect URL). */
+  async mcpAction(serverName, action, callbackUrl) {
+    if (!this.ensureChild()) throw new Error('Claude Code tidak bisa dijalankan.');
+    switch (action) {
+      case 'reconnect':
+        return this.request({ subtype: 'mcp_reconnect', serverName }, 60_000);
+      case 'enable':
+      case 'disable':
+        return this.request({ subtype: 'mcp_toggle', serverName, enabled: action === 'enable' });
+      case 'login':
+        return this.request({ subtype: 'mcp_authenticate', serverName }, 60_000);
+      case 'callback':
+        return this.request({ subtype: 'mcp_oauth_callback_url', serverName, callbackUrl }, 60_000);
+      default:
+        throw new Error('Aksi MCP tidak dikenal.');
+    }
+  }
+
+  // ---------- background tasks (/tasks, Ctrl+B) ----------
+
+  taskOutput(taskId) {
+    return this.request({ subtype: 'get_task_output', task_id: taskId });
+  }
+
+  stopTask(taskId) {
+    return this.request({ subtype: 'stop_task', task_id: taskId });
+  }
+
+  /** Ctrl+B: the running Bash commands and subagents carry on in the background. */
+  backgroundTasks() {
+    return this.request({ subtype: 'background_tasks' });
+  }
+
+  /** /rename: the session's name in the history list (and in the CLI's /resume). */
+  rename(title) {
+    if (!this.hub.sessionIdFor(this.id)) return Promise.reject(new Error('Belum ada sesi. Kirim pesan dulu.'));
+    if (!this.ensureChild()) return Promise.reject(new Error('Claude Code tidak bisa dijalankan.'));
+    return this.request({ subtype: 'rename_session', title });
+  }
+
+  // ---------- process lifecycle ----------
+
+  ensureChild() {
+    return Boolean(this.child) || this.spawn(this.hub.settingsFor(this.id));
   }
 
   spawn(settings) {
+    if (!this.m.claude) return false;
     const args = [
-      ...this.m.claude.args,
-      '-p',
-      '--input-format', 'stream-json',
-      '--output-format', 'stream-json',
-      '--verbose',
+      ...streamArgs(this.m.claude),
       '--include-partial-messages',
+      '--replay-user-messages', // prompts come back with their uuid: lifecycle + rewind points
       '--permission-prompt-tool', 'stdio',
       '--permission-mode', settings.mode,
     ];
@@ -223,13 +458,18 @@ class ClaudeSession {
       args.push('--agents', JSON.stringify(this.m.agents), '--append-system-prompt', this.m.teamPrompt);
     }
     const sessionId = this.hub.sessionIdFor(this.id);
-    if (sessionId) args.push('--resume', sessionId);
+    if (sessionId) {
+      args.push('--resume', sessionId);
+      if (this.resumeAt) args.push('--resume-session-at', this.resumeAt); // after a conversation rewind
+    }
+    this.resumeAt = null;
 
     let child;
     try {
       child = spawn(this.m.claude.command, args, {
         cwd: this.project.path,
-        env: { ...process.env, OFFICE_MANAGED: '1' },
+        // File checkpoints before every edit (always on in the interactive CLI): what rewind restores.
+        env: { ...process.env, OFFICE_MANAGED: '1', CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: 'true' },
         windowsHide: true,
       });
     } catch (err) {
@@ -238,7 +478,9 @@ class ClaudeSession {
     }
 
     this.child = child;
-    this.childKey = settingsKey(settings);
+    this.childKey = restartKey(settings);
+    this.applied = { mode: settings.mode, model: settings.model, effort: settings.effort };
+    this.lifecycleSeen = false;
     // Tokens are billed to the account whose credentials the process loaded at start.
     this.childAccount = this.m.account?.current ?? null;
     this.staleAccount = false;
@@ -278,14 +520,44 @@ class ClaudeSession {
       this.hub.chat(this.id, { kind: 'error', text: `Gagal menjalankan Claude Code: ${err.message}` });
     });
     child.on('exit', (code) => this.onExit(child, code));
+    // The SDK's handshake: Claude Code answers with its commands, models and version.
+    this.request({ subtype: 'initialize' }, CATALOG_TIMEOUT_MS)
+      .then((init) => {
+        this.m.noteCatalog(init);
+        this.refreshContext();
+      })
+      .catch(() => {});
     this.updateStatus();
     return true;
   }
 
-  closeChild() {
+  /** Forgets the running process: its late output is ignored, open requests fail, queued prompts are dropped. */
+  detach() {
+    const child = this.child;
+    this.child = null;
+    this.applied = null;
     clearTimeout(this.idleTimer);
-    if (this.child && !this.busy) this.child.stdin.end();
-    else if (this.child) this.kill();
+    clearTimeout(this.killTimer);
+    for (const p of this.pending.values()) {
+      clearTimeout(p.timer);
+      p.reject(new Error('Claude Code berhenti.'));
+    }
+    this.pending.clear();
+    this.hub.cancelApprovals(this.id);
+    for (const item of this.inflight.values()) this.hub.updateChat(this.id, item.chatId, item.state === 'started' ? { queued: false } : { queued: false, cancelled: true });
+    this.inflight.clear();
+    this.busy = false;
+    this.interrupting = false;
+    return child;
+  }
+
+  closeChild() {
+    const busy = this.busy;
+    const child = this.detach();
+    if (!child) return;
+    if (busy) this.killTree(child.pid);
+    else child.stdin.end();
+    this.updateStatus();
   }
 
   kill() {
@@ -305,23 +577,15 @@ class ClaudeSession {
   }
 
   onExit(child, code) {
-    if (child !== this.child) return;
-    clearTimeout(this.killTimer);
-    clearTimeout(this.idleTimer);
+    if (child !== this.child) return; // closed on purpose
     const wasBusy = this.busy;
-    this.child = null;
-    this.busy = false;
-    this.hub.cancelApprovals(this.id);
+    this.detach();
     if (wasBusy) {
       const detail = this.stderr.trim().split('\n').slice(-6).join('\n');
       this.hub.chat(this.id, { kind: 'error', text: `Claude Code berhenti (exit ${code ?? '?'}).${detail ? `\n\n\`\`\`\n${detail}\n\`\`\`` : ''}` });
       this.hub.office(this.id, { kind: 'error', role: 'claude', label: 'Proses berhenti' });
     }
     this.updateStatus();
-    if (this.restartPending || this.queue.length) {
-      this.restartPending = false;
-      this.pump();
-    }
   }
 
   // ---------- protocol ----------
@@ -330,35 +594,134 @@ class ClaudeSession {
     if (this.child?.stdin.writable) this.child.stdin.write(`${JSON.stringify(obj)}\n`);
   }
 
+  /** A control request (what the SDK's Query methods send); resolves with Claude Code's answer. */
+  request(request, timeout = CONTROL_TIMEOUT_MS) {
+    if (!this.child) return Promise.reject(new Error('Claude Code tidak berjalan.'));
+    const id = `office-${++this.requestSeq}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error('Claude Code tidak menjawab.'));
+      }, timeout);
+      this.pending.set(id, { resolve, reject, timer });
+      this.write({ type: 'control_request', request_id: id, request });
+    });
+  }
+
+  onControlResponse(response) {
+    const p = this.pending.get(response.request_id);
+    if (!p) return;
+    this.pending.delete(response.request_id);
+    clearTimeout(p.timer);
+    if (response.subtype === 'success') p.resolve(response.response ?? {});
+    else p.reject(new Error(response.error || 'Claude Code menolak permintaan ini.'));
+  }
+
   onMessage(msg, child) {
     if (child !== this.child) return;
     if (msg.type === 'control_request') return this.onControlRequest(msg);
-    if (msg.type === 'control_response') return;
+    if (msg.type === 'control_response') return this.onControlResponse(msg.response ?? {});
+    if (msg.type === 'command_lifecycle') return this.onLifecycle(msg);
     if (msg.type === 'system' && msg.subtype === 'init') {
       if (msg.session_id && msg.session_id !== this.hub.sessionIdFor(this.id)) this.hub.setSessionId(this.id, msg.session_id);
       this.hub.setStatus(this.id, { activeModel: msg.model ?? null });
       if (Array.isArray(msg.slash_commands)) this.hub.setSlashCommands(msg.slash_commands);
     }
+    // Claude Code changed mode itself (a plan approved, Shift+Tab in another client): follow it.
+    if (msg.type === 'system' && msg.subtype === 'status' && msg.permissionMode) this.onModeReported(msg.permissionMode);
     if (msg.type === 'rate_limit_event' && msg.rate_limit_info) this.m.account?.noteRateLimit(msg.rate_limit_info);
     if (msg.type === 'result') this.recordUsage(msg);
     if (msg.type === 'result' && this.interrupting) {
       // The CLI reports an interrupted turn as a normal success; label it for the UI.
       msg = { ...msg, subtype: 'interrupted', is_error: true, result: 'Dihentikan oleh kamu' };
+      this.interrupting = false;
     }
     this.translator.handle(msg);
-    if (msg.type === 'result') {
-      this.busy = false;
-      this.interrupting = false;
-      clearTimeout(this.killTimer);
-      if (this.staleAccount) {
-        // The account changed mid-turn: queued prompts go to a fresh process (onExit pumps them).
-        this.closeChild();
-        return this.updateStatus();
-      }
-      this.idleTimer = setTimeout(() => this.closeChild(), IDLE_SHUTDOWN_MS);
+    if (msg.type === 'result') this.onTurnResult();
+  }
+
+  /** Claude Code's own queue: each prompt goes queued → started → completed; several can share a turn. */
+  onLifecycle({ command_uuid: uuid, state }) {
+    this.lifecycleSeen = true;
+    const item = this.inflight.get(uuid);
+    if (!item || state === 'queued') return;
+    if (state === 'started') {
+      item.state = 'started';
+      this.hub.updateChat(this.id, item.chatId, { queued: false });
+      this.announce(item);
       this.updateStatus();
-      this.pump();
+      return;
     }
+    this.inflight.delete(uuid); // completed (or dropped)
+    this.afterProgress();
+  }
+
+  announce(item) {
+    if (item.announced) return;
+    item.announced = true;
+    this.hub.office(this.id, { kind: 'prompt', role: 'claude', label: truncate(item.text, 120) });
+  }
+
+  /** A turn ended: the prompts it worked on are done (their `completed` can come after the result). */
+  onTurnResult() {
+    if (this.lifecycleSeen) {
+      for (const [uuid, item] of this.inflight) if (item.state === 'started') this.inflight.delete(uuid);
+    } else {
+      // A CLI without lifecycle events runs one queued prompt per turn, in order.
+      const first = this.inflight.keys().next().value;
+      if (first) this.inflight.delete(first);
+      const next = this.inflight.values().next().value;
+      if (next) {
+        next.state = 'started';
+        this.hub.updateChat(this.id, next.chatId, { queued: false });
+        this.announce(next);
+      }
+    }
+    this.afterProgress();
+  }
+
+  afterProgress() {
+    const wasBusy = this.busy;
+    this.busy = this.inflight.size > 0;
+    if (wasBusy && !this.busy) this.becameIdle();
+    this.updateStatus();
+  }
+
+  becameIdle() {
+    this.interrupting = false;
+    clearTimeout(this.killTimer);
+    if (this.staleAccount || this.restartPending) {
+      // The account or the team setting changed mid-turn: the next prompt starts a fresh process.
+      this.restartPending = false;
+      this.closeChild();
+      return;
+    }
+    clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => this.closeChild(), IDLE_SHUTDOWN_MS);
+    this.refreshContext();
+  }
+
+  onModeReported(mode) {
+    const next = appMode(mode);
+    if (this.applied) this.applied.mode = next;
+    if (PERMISSION_MODES.includes(next) && this.hub.settingsFor(this.id).mode !== next) this.hub.updateSettings(this.id, { mode: next });
+  }
+
+  /** Exact context usage, as /context counts it (from the last response; no extra model call). */
+  refreshContext() {
+    this.request({ subtype: 'get_context_usage', detail: 'summary' })
+      .then((c) => {
+        if (!c?.maxTokens) return;
+        if (this.translator) Object.assign(this.translator, { contextWindow: c.maxTokens, autoCompactAt: c.isAutoCompactEnabled ? (c.autoCompactThreshold ?? null) : null });
+        this.hub.setStatus(this.id, {
+          context: { used: c.totalTokens ?? 0, window: c.maxTokens, autoCompactAt: c.isAutoCompactEnabled ? (c.autoCompactThreshold ?? null) : null },
+        });
+      })
+      .catch(() => {});
+  }
+
+  controlFailed(what, err) {
+    this.hub.chat(this.id, { kind: 'error', text: `Gagal mengganti ${what}: ${err.message}` });
   }
 
   /**
@@ -432,6 +795,12 @@ class ClaudeSession {
       response = { behavior: 'allow', updatedInput: decision.answers ? { ...req.input, answers: decision.answers } : req.input };
       if (decision.always && req.permission_suggestions?.length) response.updatedPermissions = req.permission_suggestions;
       if (decision.allowAll) this.autoApprove = true;
+      // Approving a plan also picks how the work continues, as the CLI's plan dialog does.
+      if (req.tool_name === 'ExitPlanMode' && PERMISSION_MODES.includes(decision.mode)) {
+        response.updatedPermissions = [{ type: 'setMode', mode: cliMode(decision.mode), destination: 'session' }];
+        if (this.applied) this.applied.mode = decision.mode;
+        this.hub.updateSettings(this.id, { mode: decision.mode });
+      }
     } else {
       response = { behavior: 'deny', message: decision.message || 'Ditolak oleh user dari web Adhit Office.' };
     }
@@ -440,6 +809,7 @@ class ClaudeSession {
   }
 
   updateStatus() {
-    this.hub.setStatus(this.id, { alive: Boolean(this.child), busy: this.busy, queue: this.queue.length, autoApprove: this.autoApprove });
+    const queue = [...this.inflight.values()].filter((i) => i.state !== 'started').length;
+    this.hub.setStatus(this.id, { alive: Boolean(this.child), busy: this.busy, queue, autoApprove: this.autoApprove });
   }
 }
