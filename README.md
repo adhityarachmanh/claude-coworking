@@ -1,6 +1,6 @@
 # Adhit Office
 
-Kantor pixel-art untuk **mengoperasikan Claude Code dari browser dan HP**. Pilih project, ketik prompt, setujui izin. Tim IT berisi 12 orang terlihat bekerja di kantor secara real-time. CLI tidak perlu dibuka, tapi sesi yang kamu jalankan di CLI juga ikut tampil.
+Kantor pixel-art untuk **mengoperasikan Claude Code dari browser dan HP**. Pilih project, ketik prompt, setujui izin. Tim IT berisi 13 orang terlihat bekerja di kantor secara real-time. CLI tidak perlu dibuka, tapi sesi yang kamu jalankan di CLI juga ikut tampil.
 
 ```
 Browser ──HTTP/SSE──▶ server.js ──stdin/stdout (stream-json)──▶ claude.exe -p   (sesi dari web, satu proses per project)
@@ -16,18 +16,19 @@ Server menjalankan Claude Code milikmu sendiri dalam mode headless, jadi login, 
 
 | Orang | Role | Dipakai untuk |
 |---|---|---|
-| Adhitya | Engineering Lead (Claude) | Orkestrasi: memecah pekerjaan dan mendelegasikan |
-| Jepri | Product Manager | Scope, prioritas, acceptance criteria, severity bug |
-| Ebi | Business Analyst | Kebutuhan, aturan bisnis, analisis kode/dokumen |
-| Arif | Tech Lead / Architect | Desain teknis, keputusan arsitektur, **code review** |
-| Ananda | UI/UX Designer | Alur pengguna, styling, aksesibilitas |
-| Putri | Frontend Developer | Komponen, halaman, state, bug di sisi client |
-| William | Backend Developer | API, logika bisnis, integrasi, bug di sisi server |
-| Jaka | Database Engineer | Skema, migrasi, query, perbaikan data |
-| Rizka | QA Engineer | Reproduksi bug, test otomatis, regresi, verifikasi |
-| Reza | Security Engineer | Review OWASP, secret, audit dependensi |
-| Doni | DevOps / SRE | Build, CI/CD, Docker, environment, deploy |
-| Syifa | Technical Writer | README, dokumentasi API, changelog |
+| Adhit - Lead | Engineering Lead (Claude) | Orkestrasi: memecah pekerjaan dan mendelegasikan |
+| Adhit - PM | Product Manager | Scope, prioritas, acceptance criteria, severity bug |
+| Adhit - BA | Business Analyst | Kebutuhan, aturan bisnis, analisis kode/dokumen |
+| Adhit - Tech Lead | Tech Lead / Architect | Desain teknis, keputusan arsitektur, **code review** |
+| Adhit - UI/UX | UI/UX Designer | Alur pengguna, styling, aksesibilitas |
+| Adhit - Frontend | Frontend Developer | Komponen, halaman, state, bug di sisi client |
+| Adhit - Backend | Backend Developer | API, logika bisnis, integrasi, bug di sisi server |
+| Adhit - DBA | Database Engineer | Skema, migrasi, query, perbaikan data |
+| Adhit - QA | QA Engineer | Reproduksi bug, test otomatis, regresi, verifikasi |
+| Adhit - Security | Security Engineer | Review OWASP, secret, audit dependensi |
+| Adhit - DevOps | DevOps / SRE | Build, CI/CD, Docker, environment, deploy |
+| Adhit - Writer | Technical Writer | README, dokumentasi API, changelog |
+| Adhit - Freelancer | Freelancer / Generalist | Subagent yang bukan spesialis (`general-purpose`, `fork`, tipe custom yang tidak dikenali) |
 
 **Ganti nama anggota tim:** klik kartu orangnya di bawah kantor (atau ⚙ → *Ganti nama anggota tim*), isi nama baru, lalu **Simpan**. Nama yang kosong kembali ke nama bawaan. Nama baru langsung tampil di kantor, chat, dan aktivitas, dan tersimpan di server (`data/state.json`), jadi sama di laptop dan HP. Peran dan sifat kerja tiap role tidak berubah, hanya namanya. Tampilan (rambut, baju, warna) diatur di `public/js/office/cast.js`.
 
@@ -37,7 +38,18 @@ Definisinya ada di `.claude/agents/*.md` (bisa diedit). Dengan **Mode tim** akti
 - **Bug fix**: QA mereproduksi (failing test) → developer pemilik memperbaiki akar masalah → Architect review diff → QA verifikasi
 - **Build/deploy/insiden**: DevOps → Backend/DB → QA
 
-Claude hanya memanggil role yang relevan. Tugas kecil dikerjakan langsung tanpa delegasi. Tanpa Mode tim (atau untuk sesi CLI biasa), tiap aksi tetap dibagi ke orang yang paling cocok menurut jenis file/perintahnya: `.tsx` ke Putri, migrasi ke Jaka, `npm test` ke Rizka, `docker` ke Doni, `git diff` ke Arif, dan seterusnya.
+Claude hanya memanggil role yang relevan. Tugas kecil dikerjakan langsung tanpa delegasi. Tanpa Mode tim (atau untuk sesi CLI biasa), tiap aksi tetap dibagi ke orang yang paling cocok menurut jenis file/perintahnya: `.tsx` ke Adhit - Frontend, migrasi ke Adhit - DBA, `npm test` / `curl` ke Adhit - QA, `docker` / `npm install` / cek port & proses ke Adhit - DevOps, `grep` / `cat` / `git diff` ke Adhit - Tech Lead, otomasi browser (Claude in Chrome) ke Adhit - QA, MCP Docs ke Adhit - Writer, dan seterusnya. Rantai perintah (`cd x && npm test | tail`) dinilai dari perintah intinya, bukan dari kata yang kebetulan muncul.
+
+**Interaksi tim mengikuti stream Claude Code:**
+
+| Di stream | Di kantor |
+|---|---|
+| `Agent` dari Claude utama / dari subagent lain | Adhit - Lead, atau spesialis yang mendelegasikan, berjalan ke meja penerima tugas |
+| Subagent selesai (`tool_result` dari `Agent`) | Penerima tugas membawa laporan ke yang menugaskannya |
+| Beberapa subagent dengan role sama berjalan paralel | Badge **×N** di nama, dan tetap sibuk sampai semuanya selesai |
+| Output test (jest, vitest, pytest, mocha, phpunit, node, go, cargo) | Hijau: bersorak "✅ N test lulus". Merah: "🐞". Kalau test dijalankan Claude utama, QA mengantar bug ke developer terakhir yang mengedit kode. Kalau QA berupa subagent, temuannya kembali lewat laporan ke lead, sama seperti di Claude Code. |
+| `EnterPlanMode` / `ExitPlanMode` | PM, Tech Lead, dan BA rapat berdiri di area meeting |
+| `AskUserQuestion` / persetujuan rencana | Yang bertanya mengangkat tangan dengan pertanyaannya, dan seisi kantor menunggu jawabanmu |
 
 ## Buka dari HP
 
@@ -146,7 +158,7 @@ Tutup jendela server (atau tekan Ctrl+C) untuk berhenti. Semua proses Claude Cod
 | **`@file`** | Autocomplete path file di project. |
 | **📎 Gambar** | Lampirkan gambar (paste, drag & drop, atau 📎). PNG/JPEG/GIF/WebP, maks 5 gambar × 5 MB. |
 | **🔔 Notifikasi** | Klik 🔔 di header untuk mengaktifkan. Notifikasi Windows dan suara muncul saat ada yang **minta izin**, tugas **selesai**, atau **berhenti/error**, selama kamu sedang di tab/aplikasi lain atau di project lain. Klik notifikasinya untuk langsung ke project itu. |
-| **Tab Perubahan** | `git status` dan diff per file yang belum di-commit (diperbarui otomatis setelah tim mengedit), tombol **🔍 Minta review** (Arif me-review semua perubahan), **🧭 VS Code** (membuka file yang dipilih di VS Code, khusus laptop), dan **Commit** (`git add -A` + commit, dengan konfirmasi). |
+| **Tab Perubahan** | `git status` dan diff per file yang belum di-commit (diperbarui otomatis setelah tim mengedit), tombol **🔍 Minta review** (Adhit - Tech Lead me-review semua perubahan), **🧭 VS Code** (membuka file yang dipilih di VS Code, khusus laptop), dan **Commit** (`git add -A` + commit, dengan konfirmasi). |
 | **Detail tool** | Klik baris tool untuk melihat perintah, diff edit (`-`/`+`), dan output. Klik baris delegasi untuk melihat instruksi dan laporan subagent. |
 | **🎬 Demo kantor** | Simulasi tanpa Claude Code, termasuk satu kartu izin. |
 
@@ -179,7 +191,7 @@ Kalau pencatatan akun itu baru dimulai di tengah periode, pratinjau memberi tahu
 
 ## Kantor
 
-- **Ruang boss** berdinding kaca untuk Adhitya (Engineering Lead): meja eksekutif, kursi kulit, kursi tamu, dan TV grafik aktivitas. Boss duduk menghadap pintu, tamu (prompt) datang ke depan mejanya, dan boss keluar ruangan untuk mendelegasikan.
+- **Ruang boss** berdinding kaca untuk Adhit - Lead (Engineering Lead): meja eksekutif, kursi kulit, kursi tamu, dan TV grafik aktivitas. Boss duduk menghadap pintu, tamu (prompt) datang ke depan mejanya, dan boss keluar ruangan untuk mendelegasikan.
 - 11 meja staf dalam 3 baris (Produk & Desain, Engineering, Kualitas & Ops), meja meeting bundar, pantry, sofa, dan rak server di samping DevOps.
 - Tiap tool call menggerakkan karakter yang sesuai. Layar monitornya menunjukkan jenis kerja: kode, terminal, test, dokumen, desain, pencarian, browser, kanban, tabel database, pipeline CI/CD, security scan, diff review.
 - Delegasi: Claude berjalan ke meja anggota tim. Minta izin: anggota tim berdiri dan angkat tangan. Error: layar merah dan asap. Selesai: confetti.

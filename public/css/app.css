@@ -238,7 +238,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: 11.5px/1.5
 
 .team {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr)); /* 13 people: two even rows */
   gap: 6px;
   padding: 10px 14px 12px;
 }

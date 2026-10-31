@@ -102,8 +102,9 @@ export class Stage {
       tag.name.style.setProperty('--c', actor.cfg.color ?? roleColor(actor.id));
       this.tags.set(actor, tag);
     }
-    // Names can be renamed at runtime (team dialog): keep the tag in sync.
-    if (tag.nameText !== actor.cfg.name) tag.name.textContent = tag.nameText = actor.cfg.name;
+    // Names can be renamed at runtime (team dialog); ×N = parallel subagents of this role.
+    const label = actor.agentCount > 1 ? `${actor.cfg.name} ×${actor.agentCount}` : actor.cfg.name;
+    if (tag.nameText !== label) tag.name.textContent = tag.nameText = label;
     return tag;
   }
 

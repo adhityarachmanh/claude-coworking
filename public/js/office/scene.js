@@ -9,8 +9,11 @@ const rand = (a, b) => a + Math.random() * (b - a);
 
 const ROLE_SCREEN = {
   claude: 'terminal', pm: 'kanban', ba: 'doc', architect: 'review', 'ui-ux': 'design', frontend: 'code',
-  backend: 'code', dba: 'db', qa: 'tests', security: 'security', devops: 'pipeline', writer: 'doc',
+  backend: 'code', dba: 'db', qa: 'tests', security: 'security', devops: 'pipeline', writer: 'doc', freelancer: 'code',
 };
+const MEET_SPOTS = ['meet1', 'meet2', 'meet3', 'meet4'];
+const ERRAND_MS = 9000; // an errand (report, bug hand-off, huddle) is not cut short by new work
+const DELEGATION_STALE_MS = 8000;
 const IDLE_ACTIVITIES = {
   claude: ['window2', 'coffee', 'meet', 'stretch'],
   pm: ['board', 'coffee', 'meet', 'chat', 'stretch'],
@@ -24,6 +27,7 @@ const IDLE_ACTIVITIES = {
   security: ['rack', 'window2', 'coffee', 'stretch'],
   devops: ['rack', 'coffee', 'fridge', 'chat'],
   writer: ['shelf', 'sofa', 'cafe', 'window', 'coffee'],
+  freelancer: ['cafe', 'coffee', 'sofa', 'window', 'chat'],
 };
 const ACTIVITY_BUCKETS = 12;
 const BUCKET_MS = 5000;
@@ -48,7 +52,8 @@ class Person {
     this.plan = [];
     this.walking = false;
     this.busyUntil = 0;
-    this.agentActive = false;
+    this.agentCount = 0; // subagents of this role running right now (parallel ones stack)
+    this.errandUntil = 0;
     this.task = '';
     this.screen = null;
     this.flashUntil = 0;
@@ -66,7 +71,7 @@ class Person {
 
   isBusy(now) {
     const status = this.scene.status;
-    return this.agentActive || now < this.busyUntil || (this.id === 'claude' && Boolean(status.busy || status.cliBusy));
+    return this.agentCount > 0 || now < this.busyUntil || (this.id === 'claude' && Boolean(status.busy || status.cliBusy));
   }
 
   say(text, tone = 'normal', ms = 4500) {
@@ -92,12 +97,16 @@ class Person {
     return this.seat ? [{ type: 'walk', x: this.seat.x, y: this.seat.y }, { type: 'sit' }] : [];
   }
 
+  /** True when the only thing left to do is walk back and sit down. */
+  headingHome() {
+    const [first] = this.plan;
+    return this.plan.length <= 2 && first?.type === 'walk' && first.x === this.seat?.x && first.y === this.seat?.y;
+  }
+
   /** Head straight back to the desk, cutting any break short. */
   goHome() {
     if (this.seated || !this.seat) return;
-    const [first] = this.plan;
-    const alreadyHeadingHome = this.plan.length <= 2 && first?.type === 'walk' && first.x === this.seat.x && first.y === this.seat.y;
-    if (alreadyHeadingHome) return;
+    if (this.headingHome()) return;
     this.holding = null;
     this.onSofa = null;
     this.go(this.homePlan());
@@ -108,8 +117,35 @@ class Person {
     this.task = label;
     this.screen = screen ?? this.screen;
     this.busyUntil = Math.max(this.busyUntil, now + 9000);
-    if (!this.asking && !this.delegating) this.goHome();
-    this.say(label, 'work', 3800);
+    if (!this.asking && !this.delegating && now > this.errandUntil) this.goHome();
+    // Mid-errand the errand's own lines stay up; the new task shows on the team card.
+    if (now > this.errandUntil) this.say(label, 'work', 3800);
+  }
+
+  /** Walk over to a colleague (or the boss's desk), run `steps` there, then go back to work. */
+  errand(to, steps) {
+    const spot = to.id === 'claude' ? DESKS.claude.visit : { x: to.seat.x + 16, y: to.seat.y + 4 };
+    this.errandUntil = performance.now() + ERRAND_MS;
+    this.go([
+      { type: 'walk', x: spot.x, y: spot.y },
+      { type: 'face', dir: to.id === 'claude' ? 'up' : 'left' },
+      ...steps,
+      { type: 'call', fn: () => ((this.holding = null), (this.errandUntil = 0)) },
+      ...this.homePlan(),
+    ]);
+  }
+
+  /** A finished subagent brings its report to whoever delegated the work. */
+  report(to, { report, failed }) {
+    this.holding = 'paper';
+    const text = failed ? `Ada kendala: ${report ?? 'cek chat'}` : report ? `Laporan: ${report}` : 'Tugas selesai ✓';
+    const reply = failed ? 'Oke, kita cari jalan lain.' : pick(['Mantap, makasih!', 'Kerja bagus 👍', 'Sip, lanjut.']);
+    this.errand(to, [
+      { type: 'call', fn: () => this.say(text, failed ? 'error' : 'ok', 4000) },
+      { type: 'wait', ms: 2600 },
+      { type: 'call', fn: () => to.say(reply, 'ok', 2600) },
+      { type: 'wait', ms: 1200 },
+    ]);
   }
 
   // ---------- idle life ----------
@@ -226,9 +262,9 @@ class Person {
         } else if (step.type === 'face') this.facing = step.dir;
         else if (step.type === 'call') step.fn();
       }
-    } else if (this.id === 'claude' && this.delegations.length) {
-      this.startDelegation();
-    } else if (this.seat && this.seated && !this.isBusy(now) && !this.asking && now > this.nextIdleAt) {
+    } else if (this.delegations.length && !this.asking) {
+      this.startDelegation(); // the boss, or a specialist handing part of its work to a colleague
+    } else if (this.seat && this.seated && !this.isBusy(now) && !this.asking && !this.scene.waitingUser && now > this.nextIdleAt) {
       this.idle(now);
     } else if (this.seat && !this.seated && !this.asking && !this.onSofa) {
       this.go(this.homePlan());
@@ -239,14 +275,25 @@ class Person {
   }
 
   startDelegation() {
-    const { target, label } = this.delegations.shift();
+    // Skip hand-overs the stream has already moved past (agent finished, or queued too long):
+    // walking over to assign work that is already done would replay history, not show it live.
+    const now = performance.now();
+    this.delegations = this.delegations.filter((d) => d.target.agentCount > 0 && now - d.at < DELEGATION_STALE_MS);
+    const next = this.delegations.shift();
+    if (!next) {
+      this.delegating = false;
+      return;
+    }
+    const { target, label } = next;
     this.delegating = true;
+    const ask = this.id === 'claude' ? `${target.cfg.name}, tolong: ${label}` : `${target.cfg.name}, bisa bantu? ${label}`;
+    const reply = target.id === 'freelancer' ? 'Siap, saya bantu!' : 'Siap, saya kerjakan!';
     const steps = [
       { type: 'walk', x: target.seat.x + 16, y: target.seat.y + 4 },
       { type: 'face', dir: 'left' },
-      { type: 'call', fn: () => this.say(`${target.cfg.name}, tolong: ${label}`, 'normal', 3200) },
+      { type: 'call', fn: () => this.say(ask, 'normal', 3200) },
       { type: 'wait', ms: 1700 },
-      { type: 'call', fn: () => target.say('Siap, saya kerjakan!', 'ok', 2600) },
+      { type: 'call', fn: () => target.say(reply, 'ok', 2600) },
       { type: 'wait', ms: 900 },
       { type: 'call', fn: () => (this.delegating = this.delegations.length > 0) },
     ];
@@ -315,7 +362,11 @@ export class Scene {
 
   setStatus(status) {
     this.status = status;
-    for (const role of status.activeRoles ?? []) this.person(role).agentActive = true;
+    const roles = status.activeRoles ?? [];
+    for (const role of new Set(roles)) {
+      const p = this.person(role);
+      p.agentCount = Math.max(p.agentCount, roles.filter((r) => r === role).length);
+    }
   }
 
   /** Where someone stands up to raise a hand for an approval. */
@@ -333,6 +384,7 @@ export class Scene {
     p.facing = 'down';
     p.plan = [];
     p.task = approval.label;
+    if (approval.kind === 'question' || approval.kind === 'plan') this.waitingUser = true;
   }
 
   /** Apply one server event. `live=false` replays history without animations. */
@@ -354,20 +406,29 @@ export class Scene {
       case 'delegate':
         if (!board.todoMode) board.items.push({ content: evt.label, status: 'in_progress', role: evt.role });
         if (!live) break;
-        p.agentActive = true;
+        p.agentCount++;
         p.task = evt.label;
         p.screen = ROLE_SCREEN[p.id];
-        if (p !== this.people.claude) this.people.claude.delegations.push({ target: p, label: evt.label });
-        p.goHome();
+        {
+          // Whoever issued the Agent call walks over: the boss, or a specialist delegating onward.
+          const from = this.person(evt.from ?? 'claude');
+          if (from !== p) {
+            from.delegations.push({ target: p, label: evt.label, at: now });
+            if (from.headingHome()) from.plan = []; // turn around now instead of sitting down first
+          }
+        }
+        if (now > p.errandUntil) p.goHome();
         break;
       case 'agent_stop': {
         const item = board.items.findLast((i) => i.role === evt.role && i.status === 'in_progress');
         if (item && !board.todoMode) item.status = 'completed';
         if (!live) break;
-        p.agentActive = false;
+        p.agentCount = Math.max(0, p.agentCount - 1);
         p.busyUntil = now + 1500;
-        p.say('Selesai ✓', 'ok', 3000);
-        p.setIcon('check', 1600);
+        p.setIcon(evt.failed ? 'cross' : 'check', 1600);
+        const to = this.person(evt.from ?? 'claude');
+        if (to !== p && !p.asking) p.report(to, evt);
+        else p.say(evt.failed ? 'Ada kendala, cek chat.' : 'Selesai ✓', evt.failed ? 'error' : 'ok', 3000);
         break;
       }
       default:
@@ -402,29 +463,43 @@ export class Scene {
         p.say(`Gagal: ${evt.label}`, 'error', 4500);
         this.smoke(DESKS[p.id] ?? DESKS.claude);
         break;
-      case 'ask':
+      case 'ask': {
         p.asking = true;
         p.task = evt.label;
         p.go([{ type: 'walk', ...this.askSpot(p) }, { type: 'face', dir: 'down' }]);
-        p.say(`Boleh? ${evt.label}`, 'ask', 6000);
+        // A question or a plan blocks the whole turn: the office waits for you (no wandering off).
+        if (evt.ask === 'question' || evt.ask === 'plan') this.waitingUser = true;
+        const text = evt.ask === 'question' ? `❓ ${evt.label.replace(/^Bertanya: /, '')}` : evt.ask === 'plan' ? '📋 Rencana siap. Setujui?' : `Boleh? ${evt.label}`;
+        p.say(text, 'ask', 8000);
         break;
+      }
       case 'ask_done':
+        this.waitingUser = false;
         p.asking = false;
         p.say(evt.allowed ? 'Makasih! 👍' : 'Oke, tidak jadi.', evt.allowed ? 'ok' : 'normal', 2500);
         if (evt.allowed) p.setIcon('heart', 1200);
         p.go(p.homePlan());
         break;
+      case 'tests':
+        this.testResult(evt, p, now);
+        break;
+      case 'huddle':
+        this.huddle(evt);
+        break;
       case 'stop':
+        this.waitingUser = false;
         for (const person of Object.values(this.people)) {
-          person.agentActive = (evt.activeRoles ?? []).includes(person.id);
+          // Background agents keep working past the end of the turn.
+          person.agentCount = (evt.activeRoles ?? []).filter((r) => r === person.id).length;
           if (person.seated) person.cheerUntil = now + 2200;
         }
         this.people.claude.say('Beres! Kerja bagus, tim 🎉', 'ok', 4500);
         this.confetti();
         break;
       case 'halt':
+        this.waitingUser = false;
         for (const person of Object.values(this.people)) {
-          person.agentActive = false;
+          person.agentCount = 0;
           person.busyUntil = 0;
         }
         p.say('Oke, berhenti dulu. ✋', 'normal', 3000);
@@ -438,6 +513,51 @@ export class Scene {
         p.say('Halo tim! 👋', 'normal');
         break;
     }
+  }
+
+  /** Test run finished: green → the runner cheers; red → QA carries the bug to the last developer. */
+  testResult(evt, p, now) {
+    if (!evt.failed) {
+      p.cheerUntil = now + 2200;
+      p.setIcon('check', 1600);
+      p.say(`✅ ${evt.label}`, 'ok', 3500);
+      return;
+    }
+    p.worriedUntil = now + 3000;
+    const dev = evt.to && this.people[evt.to];
+    // A QA *subagent* cannot talk to a developer: its finding goes back in its report to the lead,
+    // who delegates the fix. Only main-thread test runs are walked straight to the developer.
+    if (p.id !== 'qa' || !dev || dev === p || p.asking || p.agentCount > 0) {
+      p.say(`🐞 ${evt.label}`, 'error', 4000);
+      return;
+    }
+    p.holding = 'paper';
+    p.errand(dev, [
+      { type: 'call', fn: () => p.say(`🐞 ${evt.label}, tolong dicek ya`, 'error', 3500) },
+      { type: 'wait', ms: 2200 },
+      { type: 'call', fn: () => ((dev.worriedUntil = performance.now() + 2000), dev.say('Oke, saya cek sekarang!', 'normal', 2600)) },
+      { type: 'wait', ms: 1000 },
+    ]);
+  }
+
+  /** Planning: the people involved meet on the open floor, talk it through, then go back. */
+  huddle(evt) {
+    const lines = ['Kita sepakati scope-nya dulu.', 'Saya cek dampak teknisnya.', 'Aturan bisnisnya saya catat.'];
+    (evt.roles ?? []).forEach((role, i) => {
+      const m = this.people[role];
+      const spot = SPOTS[MEET_SPOTS[i]];
+      if (!m || !spot || m.asking) return;
+      m.errandUntil = performance.now() + ERRAND_MS;
+      m.go([
+        { type: 'walk', x: spot.x, y: spot.y },
+        { type: 'face', dir: spot.face },
+        { type: 'wait', ms: 600 + i * 1600 },
+        { type: 'call', fn: () => m.say(i === 0 ? evt.label : lines[i] ?? lines[1], 'normal', 3000) },
+        { type: 'wait', ms: 5200 - i * 1600 },
+        { type: 'call', fn: () => (m.errandUntil = 0) },
+        ...m.homePlan(),
+      ]);
+    });
   }
 
   spawnVisitor(prompt) {

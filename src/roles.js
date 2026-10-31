@@ -3,10 +3,22 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { basename, truncate } from './util.js';
 
-export const ROLE_IDS = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer'];
+// `freelancer` is the generalist at the spare desk: any subagent type that is not a specialist.
+export const ROLE_IDS = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer'];
+
+// Built-in agent types whose name alone would be misread by the patterns below.
+const AGENT_ALIASES = {
+  plan: 'architect', // "Plan" designs the implementation — a tech lead job
+  'general-purpose': 'freelancer',
+  fork: 'freelancer',
+  claude: 'freelancer',
+};
+
+/** Role for a subagent type; unknown types are the freelancer, never silently "backend". */
+export const agentRole = (agentType) => toRole(agentType ?? 'general-purpose') ?? 'freelancer';
 
 // Agent type → role. Ordered: first match wins ("code-reviewer" is architect, not backend;
-// "frontend-developer" is frontend; "claude-code-guide" is ba).
+// "frontend-developer" is frontend; "claude-code-guide" is writer).
 const ROLE_PATTERNS = [
   [/\b(security|sec|pentest|pentester|appsec|vuln|vulnerability|audit|auditor)\b/, 'security'],
   [/\b(devops|sre|ops|infra|infrastructure|deploy|deployer|cicd|ci|release|platform|statusline-setup)\b/, 'devops'],
@@ -38,10 +50,64 @@ const COMMAND_ROLES = [
   [/\bgit\s+(diff|log|blame|show|status)\b|\bgh pr\b/i, 'architect'],
 ];
 
+// ---- shell command analysis: judge each command in a chain by its verb, not by stray keywords ----
+
+// Read-only inspection (reading/searching code) — what the Grep/Glob tools also do.
+const INSPECT_VERBS = new Set([
+  'grep', 'rg', 'egrep', 'fgrep', 'sed', 'cat', 'head', 'tail', 'less', 'more', 'ls', 'dir', 'tree', 'find', 'wc', 'awk',
+  'diff', 'cmp', 'stat', 'file', 'jq', 'xxd', 'strings', 'select-string', 'get-content', 'gc', 'get-childitem', 'gci', 'type',
+]);
+// Machine / process / network housekeeping.
+const OPS_VERBS = new Set([
+  'ps', 'kill', 'pkill', 'killall', 'lsof', 'netstat', 'ss', 'top', 'htop', 'df', 'du', 'free', 'uptime', 'ping', 'nslookup',
+  'dig', 'traceroute', 'tracert', 'ipconfig', 'ifconfig', 'tailscale', 'schtasks', 'sc', 'service', 'tasklist', 'taskkill',
+  'get-process', 'stop-process', 'start-process', 'get-service', 'restart-service', 'get-nettcpconnection', 'test-netconnection',
+  'netsh', 'new-netfirewallrule', 'get-netfirewallrule', 'chmod', 'chown', 'crontab', 'apt', 'apt-get', 'brew', 'winget', 'choco', 'scoop',
+]);
+// Hitting a running app to see whether it answers correctly.
+const HTTP_VERBS = new Set(['curl', 'wget', 'http', 'https', 'httpie', 'invoke-webrequest', 'iwr', 'invoke-restmethod', 'irm']);
+const INSTALL = /^(npm|pnpm|yarn|bun)\s+(i|install|ci|add|remove|uninstall|update|upgrade)\b|^(pip3?|uv|poetry)\s+(install|add|remove|uninstall)\b|^composer\s+(install|require|update|remove)\b|^(go\s+get|cargo\s+add|gem\s+install|bundle(\s+install)?$)/i;
+const SYNTAX_CHECK = /^(node\s+--check|php\s+-l|python3?\s+-m\s+py_compile|bash\s+-n)\b/i;
+// Leading noise that is not the command itself: `S=/x;`, `OFFICE_PORT=1 node …`, `$p = …`, `cd x &&`, `do …`.
+const SKIP_SEGMENT = /^(cd|pushd|popd|set-location|sl|echo|printf|write-host|write-output|export|set|source|\.|true|false|done|fi|esac|then|else|\{|\})(\s|$)|^\$?[A-Za-z_][\w]*\s*=/i;
+const LEADING_NOISE = /^((sudo|time|nohup|npx|exec|env|do|then|&)\s+|[A-Za-z_]\w*=("[^"]*"|'[^']*'|\S*)\s+)+/i;
+
+/** Splits a shell line into its commands (`a && b | c; d`), dropping setup noise like `cd` and assignments. */
+function commandSegments(command) {
+  return String(command)
+    .split(/&&|\|\||[;|\n]/)
+    .map((s) => s.trim().replace(LEADING_NOISE, '').replace(/^["']|["']$/g, ''))
+    .filter((s) => s && !SKIP_SEGMENT.test(s));
+}
+
+/** Role for a single command, or 'inspect' for read-only looking around, or null when it says nothing. */
+function segmentRole(raw) {
+  // `/c/php83/php.exe -l x` → `php -l x`, so full program paths are judged like bare names.
+  const [first, ...args] = raw.split(/\s+/);
+  const verb = first.toLowerCase().replace(/^.*[\\/]/, '').replace(/\.exe$/, '');
+  const segment = [verb, ...args].join(' ');
+  if (INSPECT_VERBS.has(verb) && !(verb === 'sed' && /\s-i\b/.test(segment))) return 'inspect';
+  if (verb === 'git') {
+    // Judge git by its subcommand only — a commit message mentioning "tests" is not running tests.
+    const sub = segment.split(/\s+/).find((w, i) => i > 0 && !w.startsWith('-')) ?? '';
+    if (sub === 'push') return 'devops';
+    if (/^(diff|log|blame|show|status)$/.test(sub)) return 'architect';
+    if (/^(ls-files|ls-tree|grep)$/.test(sub)) return 'inspect';
+    return 'backend';
+  }
+  if (INSTALL.test(segment)) return 'devops'; // dependencies are DevOps' job, even `pip install pytest`
+  for (const [pattern, role] of COMMAND_ROLES) if (pattern.test(segment)) return role;
+  if (OPS_VERBS.has(verb)) return 'devops';
+  if (HTTP_VERBS.has(verb)) return /\s(-o|-O|--output|-OutFile)\b/.test(segment) ? 'devops' : 'qa';
+  if (SYNTAX_CHECK.test(segment)) return 'qa';
+  return null;
+}
+
 export function toRole(agentType) {
   if (!agentType) return null;
   const key = String(agentType).toLowerCase().trim();
   if (ROLE_IDS.includes(key)) return key;
+  if (AGENT_ALIASES[key]) return AGENT_ALIASES[key];
   for (const [pattern, role] of ROLE_PATTERNS) if (pattern.test(key)) return role;
   return null;
 }
@@ -58,9 +124,40 @@ function fileRole(file, reading) {
   return 'backend';
 }
 
-function commandRole(command = '') {
-  for (const [pattern, role] of COMMAND_ROLES) if (pattern.test(command)) return role;
-  return 'backend';
+/**
+ * Who would run this shell line. The first command that reveals an intent (test, deploy, migrate…)
+ * decides; a line that only reads/searches is the tech lead investigating (QA when it reads tests).
+ */
+function classifyCommand(command = '') {
+  let inspected = null;
+  for (const segment of commandSegments(command)) {
+    const role = segmentRole(segment);
+    if (role === 'inspect') inspected ??= segment;
+    else if (role) return { role, readOnly: false };
+  }
+  if (!inspected) return { role: 'backend', readOnly: false };
+  const readsTests = inspected.split(/\s+/).some((arg) => TEST_FILE.test(arg.replace(/["']/g, '')));
+  return { role: readsTests ? 'qa' : 'architect', readOnly: true };
+}
+
+const commandRole = (command) => classifyCommand(command).role;
+
+// MCP server name (mcp__<server>__<tool>) → role. Browser automation is UI testing.
+const MCP_ROLES = [
+  [/chrome|browser|playwright|puppeteer|selenium/, 'qa'],
+  [/postgres|mysql|sqlite|supabase|mongo|redis|bigquery|snowflake|database|\bdb\b|prisma/, 'dba'],
+  [/figma|canva|design/, 'ui-ux'],
+  [/docs|notion|confluence|drive|sheets|slides|word|gmail|outlook|calendar|slack/, 'writer'],
+  [/sentry|datadog|grafana|vercel|netlify|cloudflare|aws|gcp|azure|docker|kubernetes|k8s/, 'devops'],
+  [/github|gitlab|bitbucket/, 'architect'],
+  [/jira|linear|asana|trello|monday|clickup/, 'pm'],
+  [/context7|search|research|pubmed|consensus/, 'ba'],
+];
+
+function mcpRole(tool) {
+  const server = tool.split('__')[1]?.toLowerCase() ?? '';
+  for (const [pattern, role] of MCP_ROLES) if (pattern.test(server)) return role;
+  return 'claude';
 }
 
 /** Guess who in the office would do this tool call when no subagent is involved. */
@@ -90,12 +187,20 @@ export function inferRole(tool, input = {}) {
     case 'Bash':
     case 'PowerShell':
       return commandRole(input.command);
+    case 'Artifact':
+      return 'ui-ux'; // a published page / report is design work
     default:
-      return 'claude';
+      // Coordination tools (AskUserQuestion, Skill, ToolSearch, TaskStop…) stay with Claude, the lead.
+      return tool.startsWith('mcp__') ? mcpRole(tool) : 'claude';
   }
 }
 
 const ROLE_SCREEN = { qa: 'tests', dba: 'db', devops: 'pipeline', security: 'security', architect: 'review', writer: 'doc', ba: 'doc', 'ui-ux': 'design' };
+// Shell lines that only read/search show the search screen, like Grep does.
+const shellScreen = (command) => {
+  const { role, readOnly } = classifyCommand(command);
+  return readOnly ? 'search' : (ROLE_SCREEN[role] ?? 'terminal');
+};
 
 /** Which kind of content the worker's monitor shows for this tool. */
 export function screenFor(tool, input = {}) {
@@ -115,13 +220,19 @@ export function screenFor(tool, input = {}) {
       return 'browser';
     case 'Bash':
     case 'PowerShell':
-      return ROLE_SCREEN[commandRole(input.command)] ?? 'terminal';
+      return shellScreen(input.command);
     case 'TodoWrite':
     case 'TaskCreate':
     case 'TaskUpdate':
     case 'ExitPlanMode':
       return 'kanban';
+    case 'Artifact':
+      return 'design';
     default:
+      if (tool.startsWith('mcp__')) {
+        const role = mcpRole(tool);
+        return role === 'qa' ? 'browser' : (ROLE_SCREEN[role] ?? 'terminal');
+      }
       return 'terminal';
   }
 }
@@ -162,8 +273,10 @@ export function describeTool(tool, input = {}) {
       return `Task baru: ${truncate(input.subject, 40)}`;
     case 'TaskUpdate':
       return `Update task #${input.taskId ?? '?'}${input.status ? ` → ${input.status}` : ''}`;
-    case 'AskUserQuestion':
-      return 'Bertanya ke kamu';
+    case 'AskUserQuestion': {
+      const question = input.questions?.[0]?.question;
+      return question ? `Bertanya: ${truncate(question, 60)}` : 'Bertanya ke kamu';
+    }
     case 'ExitPlanMode':
       return 'Mengajukan rencana kerja';
     case 'Skill':

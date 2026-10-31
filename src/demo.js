@@ -30,7 +30,9 @@ function delegate(id, type, description, steps, report) {
 /** [delay ms, stream message | { approval }] */
 const SCRIPT = [
   [2500, text('Siap! Saya susun rencananya dulu, lalu saya bagi ke tim sesuai keahlian.')],
-  [1200, use('t0', 'TodoWrite', todos(0))],
+  [800, use('p0', 'EnterPlanMode', {})], // PM, Tech Lead and BA huddle on the open floor
+  [400, done('p0')],
+  [7000, use('t0', 'TodoWrite', todos(0))],
   [500, done('t0')],
   ...delegate('a-pm', 'pm', 'Scope & acceptance criteria login', [['Write', { file_path: 'docs/login-scope.md' }]], 'Scope dan 6 acceptance criteria siap.'),
   [800, use('t1', 'TodoWrite', todos(1))],
@@ -56,7 +58,15 @@ const SCRIPT = [
   ...delegate('a-qa', 'qa', 'Test end-to-end login', [['Write', { file_path: 'tests/login.spec.ts' }], ['Bash', { command: 'npm test -- login' }, '2 failing: email dengan spasi lolos validasi', true]], 'BUG: email dengan spasi lolos validasi (2 test gagal).'),
   [1200, text('QA menemukan bug. Backend perbaiki akar masalahnya, lalu Tech Lead review.')],
   ...delegate('a-fix', 'backend', 'Perbaiki validasi email', [['Edit', { file_path: 'src/api/auth.ts' }]], 'Akar masalah: email tidak di-trim sebelum validasi. Sudah diperbaiki.'),
-  ...delegate('a-rv', 'architect', 'Review diff perbaikan', [['Bash', { command: 'git diff src/api/auth.ts' }]], 'Review OK, test regresi sudah ada.'),
+  // Nested delegation: the tech lead hands a side search to the freelancer, who reports back to them.
+  [900, use('a-rv', 'Agent', { subagent_type: 'architect', description: 'Review diff perbaikan' })],
+  [3200, use('rv-1', 'Bash', { command: 'git diff src/api/auth.ts' }, 'a-rv')],
+  [1700, done('rv-1', 'diff ok', false, 'a-rv')],
+  [700, use('a-gp', 'Agent', { subagent_type: 'general-purpose', description: 'Cari pemakaian validasi email lain' }, 'a-rv')],
+  [4500, use('gp-1', 'Grep', { pattern: 'validateEmail' }, 'a-gp')],
+  [1700, done('gp-1', '3 file', false, 'a-gp')],
+  [1200, done('a-gp', 'Ada 3 pemakaian lain, semuanya sudah lewat trim.', false, 'a-rv')],
+  [5000, done('a-rv', 'Review OK, test regresi sudah ada.')],
   ...delegate('a-qa2', 'qa', 'Verifikasi ulang', [['Bash', { command: 'npm test' }, '24 passed']], 'Semua test lulus.'),
   ...delegate('a-sec', 'security', 'Security review auth', [['Bash', { command: 'npm audit --omit=dev' }, '0 vulnerabilities'], ['Grep', { pattern: 'password|secret' }]], 'Tidak ada temuan kritis. Saran: rate limit login.'),
   [800, use('t5', 'TodoWrite', todos(5))],

@@ -376,7 +376,7 @@ class ClaudeSession {
       },
       (decision) => this.respond(msg.request_id, req, role, decision),
     );
-    this.hub.office(this.id, { kind: 'ask', role, label });
+    this.hub.office(this.id, { kind: 'ask', role, label, ask: kind }); // question / plan / tool look different in the office
   }
 
   respond(requestId, req, role, decision) {

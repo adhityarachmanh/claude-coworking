@@ -9,10 +9,10 @@ const COLS_X = [24, 88, 152, 216];
 const ROWS_Y = [76, 148, 220];
 const LAYOUT = [
   ['pm', 'ba', 'architect', 'ui-ux'],
-  ['frontend', 'backend', 'dba', null], // last slot: open floor (standing huddle spot)
+  ['frontend', 'backend', 'dba', 'freelancer'], // freelancer: hot desk for generalist subagents
   ['qa', 'security', 'writer', 'devops'],
 ];
-const PROPS = { pm: 'notes', ba: 'papers', architect: 'blueprint', 'ui-ux': 'tablet', frontend: 'phone', backend: 'duck', dba: 'dbcan', qa: 'bug', security: 'lock', writer: 'books', devops: 'cactus' };
+const PROPS = { pm: 'notes', ba: 'papers', architect: 'blueprint', 'ui-ux': 'tablet', frontend: 'phone', backend: 'duck', dba: 'dbcan', qa: 'bug', security: 'lock', writer: 'books', devops: 'cactus', freelancer: 'lamp' };
 const DUAL = new Set(['frontend', 'backend', 'devops']);
 
 export const DESKS = {};
@@ -41,11 +41,11 @@ export const SPOTS = {
   board: { x: 160, y: 56, face: 'up' },
   shelf: { x: 28, y: 132, face: 'left' },
   rack: { x: 292, y: 222, face: 'left' },
-  // standing huddle on the open floor next to Jaka
-  meet1: { x: 232, y: 146, face: 'right' },
-  meet2: { x: 252, y: 146, face: 'left' },
-  meet3: { x: 242, y: 160, face: 'up' },
-  meet4: { x: 242, y: 136, face: 'down' },
+  // standing huddle on the open floor below the boss office (planning, syncs)
+  meet1: { x: 352, y: 238, face: 'right' },
+  meet2: { x: 380, y: 238, face: 'left' },
+  meet3: { x: 366, y: 254, face: 'up' },
+  meet4: { x: 366, y: 222, face: 'down' },
 };
 export const SOFA_SEATS = [
   { x: 474, y: 250 },

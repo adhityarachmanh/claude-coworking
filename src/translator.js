@@ -1,8 +1,11 @@
 // Translates Claude Code `--output-format stream-json` messages into office events and chat messages.
-import { describeTool, extractTodos, inferRole, screenFor, toRole } from './roles.js';
+import { agentRole, describeTool, extractTodos, inferRole, screenFor } from './roles.js';
 import { clip, firstSentence, truncate } from './util.js';
 
 const DELEGATE_TOOLS = new Set(['Agent', 'Task']);
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+// Who writes product code — the people QA hands a bug back to.
+const BUILDER_ROLES = new Set(['frontend', 'backend', 'dba', 'devops', 'ui-ux', 'security', 'freelancer']);
 const IGNORED_TOOLS = new Set(['SubagentHandback']); // harness plumbing, not work
 const ASYNC_LAUNCH = /async agent launched|launched successfully|running in the background/i;
 const THINK_THROTTLE_MS = 4000;
@@ -46,6 +49,36 @@ function inputDetail(tool, input = {}) {
   }
 }
 
+const lastNumber = (text, pattern) => {
+  const all = [...text.matchAll(pattern)];
+  return all.length ? Number(all.at(-1)[1]) : null;
+};
+
+/**
+ * Pass/fail counts from a test runner's output (node:test, TAP, jest, vitest, pest, pytest,
+ * mocha, cargo, go, phpunit). Null when the output has no recognizable summary.
+ */
+export function parseTestSummary(output) {
+  const text = String(output ?? '').slice(-8000);
+  let m = text.match(/^[ℹ#] pass (\d+)[\s\S]*?^[ℹ#] fail (\d+)/m); // node --test, TAP
+  if (m) return { passed: Number(m[1]), failed: Number(m[2]) };
+  m = text.match(/\bOK \((\d+) tests?\b/); // phpunit, all green
+  if (m) return { passed: Number(m[1]), failed: 0 };
+  m = text.match(/\bTests: (\d+), Assertions: \d+(?:, Errors: (\d+))?(?:, Failures: (\d+))?/); // phpunit, failures
+  if (m) {
+    const failed = Number(m[2] ?? 0) + Number(m[3] ?? 0);
+    return { passed: Number(m[1]) - failed, failed };
+  }
+  const passed = lastNumber(text, /(\d+) (?:passed|passing)\b/g);
+  const failed = lastNumber(text, /(\d+) (?:failed|failing)\b/g);
+  if (passed == null && failed == null) {
+    const goFails = (text.match(/^--- FAIL:/gm) ?? []).length; // go test
+    if (goFails) return { passed: (text.match(/^--- PASS:/gm) ?? []).length, failed: goFails };
+    return null;
+  }
+  return { passed: passed ?? 0, failed: failed ?? 0 };
+}
+
 export class StreamTranslator {
   /** @param {{ office(evt): void, chat(msg): string, updateChat(id: string, patch: object): void }} sink */
   constructor(sink) {
@@ -53,6 +86,7 @@ export class StreamTranslator {
     this.tools = new Map(); // tool_use_id -> { name, input, role, label, screen, chatId, agent?, background? }
     this.agentRoles = new Map(); // Agent tool_use_id -> office role of that subagent
     this.tasks = new Map(); // TaskCreate id -> { subject, status }
+    this.lastBuilder = null; // role that last edited product code (who gets QA's bug report)
     // One chat bubble per API message: `done` = finished text blocks, `live` = block being streamed.
     this.lastAssistant = null;
     this.streamMessageId = null;
@@ -67,16 +101,23 @@ export class StreamTranslator {
 
   /** Lets a caller that knows a subagent's type up front (CLI mirror) attribute its work. */
   registerAgent(toolUseId, agentType) {
-    if (!this.agentRoles.has(toolUseId)) this.agentRoles.set(toolUseId, toRole(agentType) ?? 'backend');
+    if (!this.agentRoles.has(toolUseId)) this.agentRoles.set(toolUseId, agentRole(agentType));
   }
 
-  /** Marks a (background) subagent as done, keeping its report for the chat. */
+  /** Marks a (background) subagent as done; it walks back to whoever delegated with its report. */
   finishAgent(toolUseId, failed = false, report = '') {
     const info = this.tools.get(toolUseId);
     if (!info?.agent) return;
     this.tools.delete(toolUseId);
     this.sink.updateChat(info.chatId, { status: failed ? 'fail' : 'ok', ...(report ? { output: clip(report, OUTPUT_LIMIT) } : {}) });
-    this.sink.office({ kind: 'agent_stop', role: info.role, label: info.label });
+    this.sink.office({
+      kind: 'agent_stop',
+      role: info.role,
+      label: info.label,
+      from: info.from,
+      failed,
+      ...(report ? { report: firstSentence(report, 70) } : {}),
+    });
   }
 
   handle(msg) {
@@ -109,7 +150,7 @@ export class StreamTranslator {
   }
 
   parentRole(parentId) {
-    return parentId ? (this.agentRoles.get(parentId) ?? 'backend') : null;
+    return parentId ? (this.agentRoles.get(parentId) ?? 'freelancer') : null;
   }
 
   think(parentId) {
@@ -190,16 +231,21 @@ export class StreamTranslator {
     if (IGNORED_TOOLS.has(block.name)) return;
     if (DELEGATE_TOOLS.has(block.name)) {
       const agentType = input.subagent_type ?? 'general-purpose';
-      const role = toRole(agentType) ?? 'backend';
+      const role = agentRole(agentType);
+      const from = parentRole ?? 'claude'; // a subagent can hand work to another specialist
       const label = truncate(input.description ?? input.prompt, 80);
       this.agentRoles.set(block.id, role);
-      const chatId = this.sink.chat({ kind: 'delegate', role, agentType, text: label, status: 'running', input: { prompt: clip(input.prompt, 3000) } });
-      this.tools.set(block.id, { name: block.name, role, label, chatId, agent: true, background: Boolean(input.run_in_background) });
-      this.sink.office({ kind: 'delegate', role, label, agentType });
+      const chatId = this.sink.chat({ kind: 'delegate', role, from, agentType, text: label, status: 'running', input: { prompt: clip(input.prompt, 3000) } });
+      this.tools.set(block.id, { name: block.name, role, from, label, chatId, agent: true, background: Boolean(input.run_in_background) });
+      this.sink.office({ kind: 'delegate', role, from, label, agentType });
       return;
     }
 
     const role = parentRole ?? inferRole(block.name, input);
+    if (EDIT_TOOLS.has(block.name) && BUILDER_ROLES.has(role)) this.lastBuilder = role;
+    // Planning happens around a table: the PM and tech lead meet before work starts / to present it.
+    if (block.name === 'EnterPlanMode') this.sink.office({ kind: 'huddle', role: 'pm', roles: ['pm', 'architect', 'ba'], label: 'Susun rencana dulu sebelum eksekusi' });
+    if (block.name === 'ExitPlanMode') this.sink.office({ kind: 'huddle', role: 'pm', roles: ['pm', 'architect'], label: 'Rencana siap, minta persetujuan' });
     const label = describeTool(block.name, input);
     const screen = screenFor(block.name, input);
     const chatId = this.sink.chat({
@@ -256,6 +302,16 @@ export class StreamTranslator {
       this.tools.delete(block.tool_use_id);
       this.sink.updateChat(info.chatId, { status: failed ? 'fail' : 'ok', output: clip(text, OUTPUT_LIMIT) });
       this.sink.office({ kind: failed ? 'tool_fail' : 'tool_end', role: info.role, label: info.label, tool: info.name, screen: info.screen });
+
+      // A test run: QA cheers on green, or takes the bug to whoever last touched the code.
+      if (info.screen === 'tests') {
+        const summary = parseTestSummary(text);
+        if (summary) {
+          const to = summary.failed && this.lastBuilder !== info.role ? this.lastBuilder : null;
+          const label = summary.failed ? `${summary.failed} test gagal` : `${summary.passed} test lulus`;
+          this.sink.office({ kind: 'tests', role: info.role, ...summary, label, ...(to ? { to } : {}) });
+        }
+      }
 
       if (info.name === 'TaskCreate' && !failed) {
         const id = text.match(/#(\d+)/)?.[1] ?? text.match(/\btask\s+(\d+)/i)?.[1];

@@ -520,7 +520,7 @@ function toolDetail(msg) {
   }
   if (input.todos) parts.push(`<ul class="todos">${input.todos.map((t) => `<li class="st-${t.status}">${t.status === 'completed' ? '✔' : t.status === 'in_progress' ? '▶' : '○'} ${escapeHtml(t.content)}</li>`).join('')}</ul>`);
   if (input.json) parts.push(`<pre>${escapeHtml(input.json)}</pre>`);
-  if (msg.kind === 'delegate' && input.prompt) parts.push(`<div class="label">Instruksi dari Claude</div><div class="md sub">${renderMarkdown(input.prompt)}</div>`);
+  if (msg.kind === 'delegate' && input.prompt) parts.push(`<div class="label">Instruksi dari ${escapeHtml(roleName(msg.from ?? 'claude'))}</div><div class="md sub">${renderMarkdown(input.prompt)}</div>`);
   if (msg.output) {
     parts.push(msg.kind === 'delegate'
       ? `<div class="label">Laporan ${escapeHtml(roleName(msg.role))}</div><div class="md sub">${renderMarkdown(msg.output)}</div>`
@@ -574,7 +574,7 @@ function fillChat(node, msg) {
     case 'delegate': {
       const open = expanded.has(msg.id);
       node.className = `line delegate expandable st-${msg.status} ${open ? 'open' : ''}`;
-      node.innerHTML = `<div class="row" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span><img class="ava sm" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${roleName(msg.role)}</b> ditugaskan: ${escapeHtml(msg.text)}</span>${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
+      node.innerHTML = `<div class="row" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span><img class="ava sm" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${roleName(msg.role)}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
       break;
     }
     case 'approval':
@@ -670,13 +670,16 @@ async function decide(approval, act, node) {
 
 // ---------- activity ----------
 
-const KIND_ICON = { prompt: '💬', delegate: '➜', agent_stop: '✓', tool_start: '•', tool_fail: '✗', ask: '✋', ask_done: '👍', stop: '🎉', error: '⚠', say: '💭' };
+const KIND_ICON = { prompt: '💬', delegate: '➜', agent_stop: '✓', tool_start: '•', tool_fail: '✗', ask: '✋', ask_done: '👍', stop: '🎉', error: '⚠', say: '💭', tests: '🧪', huddle: '🗣' };
+
+/** "dari Adhit - Tech Lead " when a specialist (not the lead) handed the work over. */
+const fromPrefix = (from) => (from && from !== 'claude' ? `dari ${roleName(from)} ` : '');
 
 function appendActivity(evt, prepend) {
   if (!KIND_ICON[evt.kind]) return;
   const li = document.createElement('li');
   li.className = `k-${evt.kind}`;
-  const text = evt.kind === 'delegate' ? `→ ${evt.agentType}: ${evt.label}` : evt.kind === 'say' ? evt.text : evt.label ?? '';
+  const text = evt.kind === 'delegate' ? `${fromPrefix(evt.from)}→ ${evt.agentType}: ${evt.label}` : evt.kind === 'say' ? evt.text : evt.label ?? '';
   li.innerHTML = `<time>${time(evt.ts)}</time><span class="dot" style="background:${roleColor(evt.role)}"></span><span><b>${roleName(evt.role)}</b> ${KIND_ICON[evt.kind]} ${escapeHtml(text)}</span>`;
   const list = $('#activity');
   if (prepend) list.prepend(li);
@@ -702,7 +705,7 @@ function renderTeam() {
       : now < p.flashUntil
         ? ['err', 'Ketemu error']
         : p.isBusy(now)
-          ? ['work', p.seated ? 'Bekerja' : 'Menuju meja']
+          ? ['work', `${p.seated ? 'Bekerja' : 'Menuju meja'}${p.agentCount > 1 ? ` (${p.agentCount} tugas paralel)` : ''}`]
           : p.onSofa || p.x > 440
             ? ['idle', 'Istirahat ☕']
             : p.plan.length
