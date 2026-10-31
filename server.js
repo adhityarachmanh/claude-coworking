@@ -18,7 +18,7 @@ import { searchFiles } from './src/files.js';
 import { gitCommit, gitDiff, gitStatus } from './src/git.js';
 import { openInApp } from './src/open.js';
 import { TranscriptMirror } from './src/mirror.js';
-import { DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, isTailscaleIp, lanAddresses, networkAddresses, wifiAllows } from './src/remote.js';
+import { DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from './src/remote.js';
 import { listSessions, sessionHistory } from './src/transcripts.js';
 import { ROLE_IDS, loadAgentDefinitions } from './src/roles.js';
 import { SessionManager } from './src/session.js';
@@ -163,7 +163,8 @@ const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+|js\/pair\.js)$/;
 
 const isLocal = (req) => LOOPBACK.has(req.socket.remoteAddress);
 /** What this browser may do with the Claude account: laptop, or a paired phone over Tailscale. */
-const canManageAccount = (req) => isLocal(req) || isTailscaleIp(req.socket.remoteAddress);
+// Tailscale = came in through the laptop's Tailscale interface from a tailnet peer, not just any 100.x address (CGNAT WiFi uses those too).
+const canManageAccount = (req) => isLocal(req) || isTailscaleConnection(req.socket.localAddress, req.socket.remoteAddress);
 /** A paired phone on plain-HTTP WiFi (not Tailscale): it may look, never act (see wifiAllows). */
 const isReadOnly = (req) => !canManageAccount(req);
 

@@ -9,6 +9,10 @@ const MAX_TRIES = 5;
 // Per remote IP, across pairing codes: this many wrong guesses lock that IP out for a while.
 const IP_MAX_FAILURES = 5;
 const IP_LOCKOUT_MS = 60 * 1000;
+// Across all IPs (changing IP on a LAN is easy): too many wrong guesses pause pairing for everyone.
+const GLOBAL_MAX_FAILURES = 20;
+const GLOBAL_WINDOW_MS = 10 * 60 * 1000;
+const GLOBAL_PAUSE_MS = 10 * 60 * 1000;
 export const DEVICE_COOKIE = 'office_device';
 
 // ---------- what a phone on plain WiFi may do ----------
@@ -34,11 +38,24 @@ const sameSecret = (a, b) => {
 };
 
 const VIRTUAL_ADAPTER = /vethernet|wsl|hyper-v|docker|virtualbox|vmware|vbox|br-|veth|virbr/i;
-// Tailscale hands out addresses from the CGNAT range 100.64.0.0/10.
+// An interface is Tailscale by its name only ("Tailscale" on Windows, tailscale0 on Linux). Its addresses come
+// from 100.64.0.0/10, but so do the CGNAT addresses some office WiFi / phone hotspots hand out, so the IP alone
+// never makes an interface "Tailscale".
+const TAILSCALE_NAME = /tailscale/i;
+// A tailnet peer's address (the client side of a Tailscale connection).
 const TAILSCALE_IP = /^(::ffff:)?100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./;
-const isTailscale = (ip, name) => /tailscale/i.test(name) || TAILSCALE_IP.test(ip);
-/** True when a client connects from a Tailscale address (encrypted WireGuard tunnel, not plain WiFi). */
-export const isTailscaleIp = (ip) => TAILSCALE_IP.test(String(ip ?? ''));
+const plainIp = (ip) => String(ip ?? '').replace(/^::ffff:/, '');
+
+/**
+ * True when a connection came in through the laptop's Tailscale interface (encrypted WireGuard tunnel):
+ * the laptop-side address (`req.socket.localAddress`, one listener per IP) belongs to an interface named
+ * Tailscale, and the peer has a tailnet address. A 100.x address on WiFi stays plain WiFi.
+ */
+export function isTailscaleConnection(localAddress, remoteAddress) {
+  if (!TAILSCALE_IP.test(String(remoteAddress ?? ''))) return false;
+  const local = plainIp(localAddress);
+  return networkAddresses().some((a) => a.ip === local && a.kind === 'tailscale');
+}
 
 /**
  * Addresses other devices can reach, best first:
@@ -50,7 +67,7 @@ export function networkAddresses() {
   for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
     for (const a of addrs ?? []) {
       if (a.family !== 'IPv4' || a.internal || a.address.startsWith('169.254.')) continue;
-      const kind = isTailscale(a.address, name) ? 'tailscale' : VIRTUAL_ADAPTER.test(name) ? 'virtual' : 'lan';
+      const kind = TAILSCALE_NAME.test(name) ? 'tailscale' : VIRTUAL_ADAPTER.test(name) ? 'virtual' : 'lan';
       found.push({ ip: a.address, kind, name });
     }
   }
@@ -73,6 +90,14 @@ export class RemoteAccess {
     hub.persisted.remote ??= { enabled: false, devices: [] };
     this.pairing = null;
     this.failures = new Map(); // remote ip -> { count, until } (wrong pairing guesses)
+    this.recentFailures = []; // timestamps of wrong guesses from any IP (last GLOBAL_WINDOW_MS)
+    this.pausedUntil = 0;
+  }
+
+  /** Seconds pairing stays paused after too many wrong guesses overall (0 = open). */
+  pausedFor() {
+    const left = this.pausedUntil - Date.now();
+    return left > 0 ? Math.ceil(left / 1000) : 0;
   }
 
   get state() {
@@ -118,11 +143,22 @@ export class RemoteAccess {
     entry.count++;
     if (entry.count >= IP_MAX_FAILURES) Object.assign(entry, { count: 0, until: now + IP_LOCKOUT_MS });
     this.failures.set(ip, entry);
+    // Global budget: someone cycling IPs still runs out of guesses.
+    this.recentFailures = this.recentFailures.filter((t) => now - t < GLOBAL_WINDOW_MS);
+    this.recentFailures.push(now);
+    if (this.recentFailures.length > GLOBAL_MAX_FAILURES) {
+      this.recentFailures = [];
+      this.pausedUntil = now + GLOBAL_PAUSE_MS;
+      this.pairing = null;
+      this.hub.broadcast('pairing-paused', { until: this.pausedUntil });
+    }
   }
 
   /** @returns {{ token?: string, error?: string, triesLeft?: number, retryAfter?: number }} */
   pair({ code, key }, userAgent, ip = '') {
     if (!this.enabled) return { error: 'Akses dari perangkat lain sedang dimatikan.' };
+    const paused = this.pausedFor();
+    if (paused) return { error: `Pairing dijeda karena terlalu banyak percobaan salah. Coba lagi dalam ${Math.ceil(paused / 60)} menit.`, retryAfter: paused };
     const wait = this.lockedFor(ip);
     if (wait) return { error: `Terlalu banyak percobaan salah dari perangkat ini. Coba lagi dalam ${wait} detik.`, retryAfter: wait };
     const p = this.pairing;
@@ -131,6 +167,7 @@ export class RemoteAccess {
     if (!ok) {
       p.tries++;
       this.recordFailure(ip);
+      if (this.pausedFor()) return { error: 'Terlalu banyak percobaan salah. Pairing dijeda 10 menit.', retryAfter: this.pausedFor() };
       if (p.tries >= MAX_TRIES) {
         this.pairing = null;
         // The laptop still shows the dead code: tell it to fetch a new one right away.

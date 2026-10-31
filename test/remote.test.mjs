@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import { test } from 'node:test';
-import { RemoteAccess, isTailscaleIp, lanAddresses, networkAddresses, wifiAllows } from '../src/remote.js';
+import { RemoteAccess, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from '../src/remote.js';
 
 const v4 = (address) => ({ family: 'IPv4', address, internal: false });
 
@@ -30,9 +30,14 @@ test('a 100.x address outside the Tailscale range is ordinary LAN', (t) => {
   assert.equal(networkAddresses()[0].kind, 'lan');
 });
 
-test('only Tailscale addresses may manage the Claude account from a phone', () => {
-  for (const ip of ['100.64.0.1', '100.101.5.9', '100.127.255.254', '::ffff:100.80.1.2']) assert.ok(isTailscaleIp(ip), ip);
-  for (const ip of ['192.168.1.14', '100.63.0.1', '100.128.0.1', '10.100.0.1', '172.18.144.1', '', undefined]) assert.ok(!isTailscaleIp(ip), String(ip));
+test('only connections through the Tailscale interface may manage the Claude account from a phone', () => {
+  // The peer must have a tailnet address…
+  for (const ip of ['192.168.1.14', '100.63.0.1', '100.128.0.1', '10.100.0.1', '172.18.144.1', '', undefined]) assert.ok(!isTailscaleConnection('100.100.1.1', ip), String(ip));
+  // …and the laptop side must be an interface named Tailscale: a 100.x peer on CGNAT WiFi stays plain WiFi.
+  const lan = networkAddresses().find((a) => a.kind !== 'tailscale');
+  if (lan) assert.ok(!isTailscaleConnection(lan.ip, '100.80.1.2'), 'CGNAT WiFi is not Tailscale');
+  const tailscale = networkAddresses().find((a) => a.kind === 'tailscale');
+  if (tailscale) for (const ip of ['100.64.0.1', '100.127.255.254', '::ffff:100.80.1.2']) assert.ok(isTailscaleConnection(tailscale.ip, ip), ip);
 });
 
 test('plain WiFi is read-only: only listed read actions pass, everything else is refused by default', () => {
