@@ -8,6 +8,7 @@ import { renderActivity } from './activity.js';
 import { changes, loadChanges } from './changes.js';
 import { renderChat } from './chat.js';
 import { renderComposer } from './composer.js';
+import { restoreDraft } from './draft.js';
 import { closeSuggest } from './suggest.js';
 
 function projectRank(p) {
@@ -67,6 +68,7 @@ export function selectProject(id) {
   renderHeader();
   renderChat();
   renderActivity();
+  restoreDraft(); // before renderComposer, which sizes the box
   renderComposer();
   closeModal('sessions-modal');
   closeSuggest();

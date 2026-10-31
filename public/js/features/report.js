@@ -2,7 +2,7 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { DAY, fmtNum, fmtShort, fmtUsd } from '../core/format.js';
-import { TOKEN } from '../core/state.js';
+import { auth } from '../core/state.js';
 import { saveBlob } from '../core/util.js';
 import { openModal } from '../ui/modals.js';
 
@@ -250,7 +250,7 @@ async function downloadReport() {
   try {
     const res = await fetch('/api/report/pdf', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Office-Token': TOKEN },
+      headers: { 'Content-Type': 'application/json', 'X-Office-Token': auth.token },
       body: JSON.stringify(reportQuery()),
     });
     if (res.ok) {

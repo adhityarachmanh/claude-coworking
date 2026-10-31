@@ -31,6 +31,9 @@
       <button id="btn-settings" class="icon-btn labeled" title="Pengaturan"><span class="ico" aria-hidden="true">⚙</span><span class="lbl">Pengaturan</span></button>
       <span id="conn" class="pill">menghubungkan…</span>
     </header>
+    <!-- Lost connection to the laptop (features/connection.js). Always present and empty while connected, so the
+         live region is announced when the banner is put in. -->
+    <div id="conn-banner" class="conn-region" role="status" aria-live="polite"></div>
 
     <div class="layout">
       <main class="office">

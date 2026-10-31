@@ -41,6 +41,7 @@ const IGNORED_PROBLEMS = [];
 
 let TMP;
 let BASE;
+let PORT;
 let server;
 let browser;
 let projectId;
@@ -67,21 +68,14 @@ async function snapshot() {
   return JSON.parse(text.match(/^data: (.*)$/m)[1]);
 }
 
-before(async () => {
-  if (SKIP) return;
-  TMP = mkdtempSync(path.join(tmpdir(), 'office-ui-'));
-  const projects = path.join(TMP, 'projects');
-  mkdirSync(path.join(projects, 'toko', 'src'), { recursive: true });
-  writeFileSync(path.join(projects, 'toko', 'src', 'checkout.ts'), 'export {};\n');
-  mkdirSync(path.join(TMP, 'claude-projects'));
-  const port = await freePort();
-  BASE = `http://localhost:${port}`;
+/** Starts the server on PORT with the throwaway data in TMP (again after stopServer: same data, a new token). */
+async function startServer() {
   server = spawn(process.execPath, [path.join(APP, 'server.js')], {
     env: {
       ...process.env,
-      OFFICE_PORT: String(port),
+      OFFICE_PORT: String(PORT),
       OFFICE_DATA_DIR: path.join(TMP, 'data'),
-      PROJECTS_ROOT: projects,
+      PROJECTS_ROOT: path.join(TMP, 'projects'),
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
@@ -94,6 +88,25 @@ before(async () => {
     server.on('exit', (code) => reject(new Error(`server exited ${code}`)));
   });
   server.stderr.resume();
+}
+
+async function stopServer() {
+  if (!server || server.exitCode !== null) return;
+  const exited = new Promise((r) => server.once('exit', r));
+  server.kill();
+  await Promise.race([exited, sleep(3000)]);
+}
+
+before(async () => {
+  if (SKIP) return;
+  TMP = mkdtempSync(path.join(tmpdir(), 'office-ui-'));
+  const projects = path.join(TMP, 'projects');
+  mkdirSync(path.join(projects, 'toko', 'src'), { recursive: true });
+  writeFileSync(path.join(projects, 'toko', 'src', 'checkout.ts'), 'export {};\n');
+  mkdirSync(path.join(TMP, 'claude-projects'));
+  PORT = await freePort();
+  BASE = `http://localhost:${PORT}`;
+  await startServer();
   projectId = (await snapshot()).projects.find((p) => p.name === 'toko').id;
   browser = await launchBrowser();
 });
@@ -101,11 +114,7 @@ before(async () => {
 after(async () => {
   // Every step is guarded so a failure in one never leaks the others (browser, server, temp dir).
   await browser?.close().catch(() => {});
-  if (server && server.exitCode === null) {
-    const exited = new Promise((r) => server.once('exit', r));
-    server.kill();
-    await Promise.race([exited, sleep(3000)]);
-  }
+  await stopServer();
   if (TMP) {
     for (let i = 0; i < 10; i++) {
       try {
@@ -187,6 +196,20 @@ async function openApp(page, hash = '') {
   await page.waitFor(appReady, { timeoutMs: 10000, message: 'app terhubung (#conn.ok) dan header terisi' });
   await sleep(300); // let late async work (account, usage) surface any errors
 }
+
+const draftKey = () => `office.draft.${projectId}`;
+
+/** Replaces the composer text by typing (a trusted `input` event, as from the keyboard). */
+async function typeInPrompt(page, text) {
+  await page.eval(() => {
+    const input = document.querySelector('#prompt');
+    input.value = '';
+    input.focus();
+  });
+  await page.send('Input.insertText', { text });
+}
+
+const bannerText = (page) => page.eval(() => document.querySelector('#conn-banner').textContent.trim());
 
 /** Waits until a dialog's markup stops changing (async loaders re-render it after opening). */
 async function settle(page, id, { quietMs = 200, timeoutMs = 4000 } = {}) {
@@ -348,6 +371,21 @@ for (const vp of VIEWPORTS) {
       assert.ok(st.focusInside, `fokus pindah ke ${st.active} setelah kuota dimuat ulang`);
     });
 
+    // After the dialog checks: sending a prompt removes the welcome card (the phone's only way into help-modal).
+    test('draf prompt: kembali setelah reload, terhapus setelah server menerima prompt', async () => {
+      const text = `draf ${vp.name} ${Date.now()}`;
+      await typeInPrompt(page, text);
+      await page.waitFor((k, t) => localStorage.getItem(k) === t, { timeoutMs: 3000, message: 'draf tersimpan (debounce)' }, draftKey(), text);
+      await openApp(page, `#${projectId}`); // full reload
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), text, 'draf dipulihkan');
+      await page.eval(() => document.querySelector('#prompt').focus());
+      await page.press('Enter');
+      await page.waitFor((t) => [...document.querySelectorAll('.msg.user')].some((m) => m.textContent.includes(t)), { timeoutMs: 5000, message: 'prompt terkirim' }, text);
+      await page.waitFor((k) => localStorage.getItem(k) === null, { timeoutMs: 3000, message: 'draf dihapus setelah terkirim' }, draftKey());
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), '');
+      assert.deepEqual(realProblems(page), []);
+    });
+
     test('pair.html termuat tanpa error dan tanpa scroll horizontal', async () => {
       page.clearProblems();
       await page.goto(`${BASE}/pair`);
@@ -473,5 +511,99 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
     assert.doesNotMatch(ui.changesText, /Hanya lihat lewat WiFi/, 'panel perubahan tetap bisa dibaca');
     assert.equal(await page.eval(horizontalOverflow), null);
     assert.deepEqual(await page.eval(unnamedButtons), []);
+  });
+
+  // The stream really stays up here; the handlers are driven directly (same module instance as the app's).
+  test('putus lama di HP: petunjuk laptop/Tailscale (bukan start-office), Kirim tetap hanya-lihat', async (t) => {
+    if (!LAN) return t.skip('laptop ini tidak punya alamat LAN');
+    const shown = await page.eval(async () => {
+      const m = await import('/js/features/connection.js');
+      const saved = { ...m.CONN_TIMING };
+      Object.assign(m.CONN_TIMING, { showAfterMs: 0, longAfterMs: 50 });
+      m.streamLost();
+      await new Promise((r) => setTimeout(r, 300));
+      const text = document.querySelector('#conn-banner').textContent.trim();
+      Object.assign(m.CONN_TIMING, saved);
+      await m.streamOpened();
+      return text;
+    });
+    assert.match(shown, /^Laptop tidak terjangkau — pastikan laptop menyala dan Tailscale\/WiFi aktif/);
+    assert.doesNotMatch(shown, /start-office/);
+    assert.equal(await bannerText(page), '', 'banner hilang setelah tersambung');
+    assert.equal(await page.eval(() => document.querySelector('#btn-send').disabled), true, 'tersambung lagi tidak membuka Kirim di WiFi');
+  });
+});
+
+// ---------- lost connection: the server stops and comes back (runs last: the restart gives a new token) ----------
+
+describe('UI koneksi putus', { skip: SKIP ?? false }, () => {
+  let page;
+  before(async () => {
+    if (SKIP) return;
+    page = await browser.newPage();
+    await page.setViewport(VIEWPORTS[0]);
+    await openApp(page, `#${projectId}`);
+  });
+  after(async () => page?.close());
+
+  test('putus sebentar (< ambang): tidak ada banner, tidak ada toast', async () => {
+    const r = await page.eval(async () => {
+      const m = await import('/js/features/connection.js');
+      m.streamLost();
+      await new Promise((res) => setTimeout(res, 500));
+      const during = { banner: document.querySelector('#conn-banner').textContent, send: document.querySelector('#btn-send').disabled };
+      await m.streamOpened();
+      await new Promise((res) => setTimeout(res, m.CONN_TIMING.showAfterMs + 200)); // the cancelled timer must not fire
+      const toast = [...document.querySelectorAll('.toast')].some((n) => /Tersambung lagi/.test(n.textContent));
+      return { during, after: document.querySelector('#conn-banner').textContent, toast, send: document.querySelector('#btn-send').disabled };
+    });
+    assert.deepEqual(r, { during: { banner: '', send: true }, after: '', toast: false, send: false });
+  });
+
+  test('server mati → banner setelah ±2 dtk, Kirim ditahan, draf aman; hidup lagi → banner hilang, kirim jalan', async () => {
+    await page.eval(async () => {
+      const m = await import('/js/features/connection.js');
+      m.CONN_TIMING.longAfterMs = 4500; // instead of 30 s
+    });
+    const text = `kirim setelah tersambung lagi ${Date.now()}`;
+    await typeInPrompt(page, text);
+    await page.waitFor((k, t) => localStorage.getItem(k) === t, { timeoutMs: 3000, message: 'draf tersimpan' }, draftKey(), text);
+
+    const stoppedAt = Date.now();
+    await stopServer();
+    await page.waitFor(() => document.querySelector('#conn.bad'), { timeoutMs: 5000, message: '#conn merah' });
+    if (Date.now() - stoppedAt < 1500) assert.equal(await bannerText(page), '', 'banner belum muncul sebelum ambang');
+    await page.waitFor(() => /Terputus dari laptop — menyambung lagi/.test(document.querySelector('#conn-banner').textContent), { timeoutMs: 6000, message: 'banner terputus' });
+    const ui = await page.eval(() => ({
+      role: document.querySelector('#conn-banner').getAttribute('role'),
+      live: document.querySelector('#conn-banner').getAttribute('aria-live'),
+      send: document.querySelector('#btn-send').disabled,
+      prompt: document.querySelector('#prompt').disabled,
+    }));
+    assert.deepEqual(ui, { role: 'status', live: 'polite', send: true, prompt: false });
+    assert.equal(await page.eval(horizontalOverflow), null);
+
+    // Enter while offline: refused with a message, nothing lost.
+    await page.eval(() => document.querySelector('#prompt').focus());
+    await page.press('Enter');
+    await page.waitFor(() => [...document.querySelectorAll('.toast')].some((n) => /Belum tersambung ke laptop/.test(n.textContent)), { timeoutMs: 2000, message: 'toast belum tersambung' });
+    assert.equal(await page.eval(() => document.querySelector('#prompt').value), text);
+    assert.equal(await page.eval((k) => localStorage.getItem(k), draftKey()), text);
+
+    await page.waitFor(() => /Server Adhit Office tidak berjalan — jalankan start-office\.cmd/.test(document.querySelector('#conn-banner').textContent), { timeoutMs: 6000, message: 'petunjuk putus lama (laptop)' });
+
+    await startServer();
+    await page.waitFor(() => document.querySelector('#conn.ok') && !document.querySelector('#conn-banner').textContent, { timeoutMs: 15000, message: 'tersambung lagi, banner hilang' });
+    assert.ok(await page.eval(() => [...document.querySelectorAll('.toast')].some((n) => n.textContent === 'Tersambung lagi.')), 'toast tersambung lagi');
+    assert.equal(await page.eval(() => document.querySelector('#btn-send').disabled), false);
+    assert.equal(await page.eval(() => document.querySelector('#prompt').value), text, 'teks tetap di kotak');
+
+    // The restarted server has a new token: sending works without a reload, then the draft goes.
+    page.clearProblems();
+    await page.eval(() => document.querySelector('#prompt').focus());
+    await page.press('Enter');
+    await page.waitFor((t) => [...document.querySelectorAll('.msg.user')].some((m) => m.textContent.includes(t)), { timeoutMs: 8000, message: 'prompt terkirim setelah restart' }, text);
+    await page.waitFor((k) => localStorage.getItem(k) === null, { timeoutMs: 3000, message: 'draf dihapus' }, draftKey());
+    assert.deepEqual(realProblems(page), []);
   });
 });

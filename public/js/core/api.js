@@ -1,5 +1,5 @@
 // Talking to the server: JSON API calls (with the WiFi read-only guard) and toasts.
-import { READ_ONLY_HINT, state, TOKEN } from './state.js';
+import { auth, READ_ONLY_HINT, state } from './state.js';
 
 // The server is the gate for a phone on plain WiFi (wifiAllows in src/remote.js). It sends that same allowlist in the
 // snapshot (`client.readOnlyApi`), so the UI never sends what would be refused, without keeping its own copy of the rules.
@@ -23,7 +23,7 @@ export async function api(path, body = {}) {
   if (state.readOnly && !readOnlyAllows(path)) throw new Error(`${READ_ONLY_HINT}.`);
   const res = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Office-Token': TOKEN },
+    headers: { 'Content-Type': 'application/json', 'X-Office-Token': auth.token },
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));

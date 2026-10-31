@@ -4,6 +4,7 @@ import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { LOCAL_COMMANDS } from './commands.js';
 import { autosize, updateBashMode } from './composer.js';
+import { scheduleDraftSave } from './draft.js';
 import { promptHistory } from './history.js';
 
 // ---------- autocomplete: /commands and @files ----------
@@ -64,6 +65,7 @@ export function applySuggest(i = suggest.index) {
   input.setSelectionRange(caret, caret);
   input.focus();
   closeSuggest();
+  scheduleDraftSave(); // an edit like typing (a prompt picked from history, like ↑/↓, is not a draft)
 }
 
 /** Every slash command with its description: the app's own first, then Claude Code's (built-in, skills, plugins). */

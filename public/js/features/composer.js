@@ -5,6 +5,8 @@ import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
 import { attachments, clearAttachments } from './attachments.js';
 import { localCommand } from './commands.js';
+import { connection } from './connection.js';
+import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
 import { recall, recallPrompt } from './history.js';
 import { openRewind } from './rewind.js';
 import { confirmNew, renderSessionBar } from './sessions.js';
@@ -35,6 +37,7 @@ export function fillComposer(text) {
   input.setSelectionRange(text.length, text.length);
   autosize();
   updateBashMode();
+  scheduleDraftSave();
 }
 
 // ---------- composer ----------
@@ -61,6 +64,7 @@ export function renderComposer() {
   renderStatusline(st);
   renderSessionBar();
   applyReadOnly();
+  renderSendState();
   if (!$('#tasks-modal').hidden && tasksView.project === state.active) renderTasks();
 }
 
@@ -76,6 +80,16 @@ function applyReadOnly() {
     el.title = READ_ONLY_HINT;
   }
   applyPlaceholder();
+}
+
+const OFFLINE_HINT = 'Belum tersambung ke laptop — pesan belum dikirim, teksnya tetap di kotak';
+
+/** Kirim waits for the connection (the text box stays usable, so typing carries on and is kept as a draft). */
+export function renderSendState() {
+  if (state.readOnly) return; // applyReadOnly owns the button there
+  const send = $('#btn-send');
+  send.disabled = !connection.online;
+  send.title = connection.online ? '' : OFFLINE_HINT;
 }
 
 /** The /model picker: the models Claude Code itself offers for this account (Fable, Opus, Sonnet…). */
@@ -113,19 +127,26 @@ async function sendPrompt() {
   const input = $('#prompt');
   const text = input.value.trim();
   if ((!text && !attachments.length) || state.active === DEMO_ID) return;
+  // Offline the request could only fail: say so and keep everything as it is (text, images, draft).
+  if (!connection.online) return toast(`${OFFLINE_HINT}.`);
+  const project = state.active;
+  flushDraft(); // the stored draft stays until the server has accepted the prompt (draftSent)
   if (!attachments.length && (localCommand(text) || text.startsWith('!'))) {
     input.value = '';
     recall.index = -1;
     autosize();
     closeSuggest();
     updateBashMode();
-    if (text.startsWith('!') && text.slice(1).trim()) {
-      api(`/api/projects/${state.active}/shell`, { command: text.slice(1).trim() }).catch((err) => {
+    const command = text.startsWith('!') ? text.slice(1).trim() : '';
+    if (!command) return draftSent(project, text); // handled right here (a local /command)
+    api(`/api/projects/${project}/shell`, { command }).then(
+      () => draftSent(project, text),
+      (err) => {
         input.value = text;
         updateBashMode();
         toast(`Gagal menjalankan: ${err.message}`);
-      });
-    }
+      },
+    );
     return;
   }
   const images = attachments.map(({ mediaType, data }) => ({ mediaType, data }));
@@ -135,7 +156,8 @@ async function sendPrompt() {
   clearAttachments();
   closeSuggest();
   try {
-    await api(`/api/projects/${state.active}/prompt`, { text, images });
+    await api(`/api/projects/${project}/prompt`, { text, images });
+    draftSent(project, text);
   } catch (err) {
     input.value = text;
     toast(`Gagal mengirim: ${err.message}`);
@@ -227,6 +249,7 @@ export function initComposerControls() {
       input.value = '';
       autosize();
       updateBashMode();
+      scheduleDraftSave();
       input.focus();
     } else openRewind();
   });

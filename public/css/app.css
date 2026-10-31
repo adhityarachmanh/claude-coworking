@@ -166,6 +166,18 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .pill.ok { background: var(--ok-soft); color: var(--ok-text); }
 .pill.bad { background: var(--err-soft); color: var(--err-text); }
 
+/* lost connection: a thin bar under the top bar (in the page flow, so it pushes content down instead of covering it) */
+.conn-region { flex: none; min-width: 0; }
+.conn-banner {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 6px max(16px, env(safe-area-inset-right)) 6px max(16px, env(safe-area-inset-left));
+  font-size: var(--fs-md); line-height: 1.35;
+  background: var(--warn-soft); color: var(--warn-text-strong); border-bottom: 1px solid var(--warn-line);
+}
+.conn-banner.long { background: var(--err-soft); color: var(--err-text-strong); border-bottom-color: var(--err-line); }
+.conn-banner .spinner { width: 12px; height: 12px; border-top-color: currentColor; }
+.conn-text { min-width: 0; overflow-wrap: anywhere; } /* wraps on a narrow phone: never a sideways scroll */
+
 /* ---------- layout ---------- */
 .layout {
   flex: 1;

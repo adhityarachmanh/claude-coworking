@@ -4,6 +4,7 @@ import { appendActivity } from '../features/activity.js';
 import { scheduleChanges } from '../features/changes.js';
 import { appendChat, replaceChat } from '../features/chat.js';
 import { renderComposer } from '../features/composer.js';
+import { retryDelay, streamLost, streamOpened } from '../features/connection.js';
 import { notify } from '../features/notify.js';
 import { phone, refreshPairing } from '../features/phone.js';
 import { renderSidebar, selectProject } from '../features/picker.js';
@@ -18,14 +19,12 @@ import { DEMO_ID, projectName, state } from './state.js';
 
 export function connect() {
   const source = new EventSource('/stream');
-  const conn = $('#conn');
-  source.addEventListener('open', () => {
-    conn.textContent = 'terhubung';
-    conn.className = 'pill ok';
-  });
+  source.addEventListener('open', streamOpened);
   source.addEventListener('error', () => {
-    conn.textContent = 'server mati — jalankan start-office';
-    conn.className = 'pill bad';
+    streamLost();
+    // A network error is retried by the browser itself (readyState CONNECTING). A refused stream (an HTTP error
+    // instead of the event stream) is not: it stays CLOSED for good, so open a new one after a pause.
+    if (source.readyState === EventSource.CLOSED) setTimeout(connect, retryDelay());
   });
   const on = (type, fn) => source.addEventListener(type, (msg) => fn(JSON.parse(msg.data)));
 
