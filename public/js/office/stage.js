@@ -98,10 +98,11 @@ export class Stage {
       root.innerHTML = '<div class="bubble"></div><div class="name"></div>';
       this.overlay.append(root);
       tag = { root, bubble: root.firstChild, name: root.lastChild, bubbleKey: null };
-      tag.name.textContent = actor.cfg.name;
       tag.name.style.setProperty('--c', actor.cfg.color ?? roleColor(actor.id));
       this.tags.set(actor, tag);
     }
+    // Names can be renamed at runtime (team dialog): keep the tag in sync.
+    if (tag.nameText !== actor.cfg.name) tag.name.textContent = tag.nameText = actor.cfg.name;
     return tag;
   }
 

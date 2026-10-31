@@ -54,7 +54,7 @@ const SCRIPT = [
   [800, use('t4', 'TodoWrite', todos(4))],
   [400, done('t4')],
   ...delegate('a-qa', 'qa', 'Test end-to-end login', [['Write', { file_path: 'tests/login.spec.ts' }], ['Bash', { command: 'npm test -- login' }, '2 failing: email dengan spasi lolos validasi', true]], 'BUG: email dengan spasi lolos validasi (2 test gagal).'),
-  [1200, text('QA menemukan bug. Backend perbaiki akar masalahnya, lalu Arif review.')],
+  [1200, text('QA menemukan bug. Backend perbaiki akar masalahnya, lalu Tech Lead review.')],
   ...delegate('a-fix', 'backend', 'Perbaiki validasi email', [['Edit', { file_path: 'src/api/auth.ts' }]], 'Akar masalah: email tidak di-trim sebelum validasi. Sudah diperbaiki.'),
   ...delegate('a-rv', 'architect', 'Review diff perbaikan', [['Bash', { command: 'git diff src/api/auth.ts' }]], 'Review OK, test regresi sudah ada.'),
   ...delegate('a-qa2', 'qa', 'Verifikasi ulang', [['Bash', { command: 'npm test' }, '24 passed']], 'Semua test lulus.'),

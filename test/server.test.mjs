@@ -286,6 +286,15 @@ test('account: profile, plan usage and per-account token report', async () => {
   assert.equal((await api('/api/report/pdf', { accountId: 'someone-else@example.com' })).status, 404);
 });
 
+test('team names: validated, shared through the config, empty = default', async () => {
+  const res = await api('/api/team', { names: { qa: '  Sinta  ', claude: 'Bos', pm: '', hacker: 'x', backend: '<img src=x>Budi' } });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.names, { qa: 'Sinta', claude: 'Bos', backend: 'img src=xBudi' }, 'trimmed, unknown roles dropped, no markup');
+  assert.deepEqual((await snapshot()).config.teamNames, res.body.names);
+  await api('/api/team', { names: {} });
+  assert.deepEqual((await snapshot()).config.teamNames, {});
+});
+
 test('favorites are stored server-side; "open in VS Code" stays inside the project', async () => {
   const id = await projectId();
   const isFavorite = async () => (await snapshot()).projects.find((p) => p.id === id).favorite;

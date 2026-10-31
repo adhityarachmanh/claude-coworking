@@ -29,7 +29,7 @@ Server menjalankan Claude Code milikmu sendiri dalam mode headless, jadi login, 
 | Doni | DevOps / SRE | Build, CI/CD, Docker, environment, deploy |
 | Syifa | Technical Writer | README, dokumentasi API, changelog |
 
-Nama dan tampilan bisa diubah di `public/js/office/cast.js`.
+**Ganti nama anggota tim:** klik kartu orangnya di bawah kantor (atau ⚙ → *Ganti nama anggota tim*), isi nama baru, lalu **Simpan**. Nama yang kosong kembali ke nama bawaan. Nama baru langsung tampil di kantor, chat, dan aktivitas, dan tersimpan di server (`data/state.json`), jadi sama di laptop dan HP. Peran dan sifat kerja tiap role tidak berubah, hanya namanya. Tampilan (rambut, baju, warna) diatur di `public/js/office/cast.js`.
 
 Definisinya ada di `.claude/agents/*.md` (bisa diedit). Dengan **Mode tim** aktif, agent ini diinjeksi ke project mana pun lewat `--agents`, dan Claude diberi alur kerja:
 

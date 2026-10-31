@@ -60,5 +60,20 @@ export const VISITOR = {
   look: { ...base, id: 'visitor', skin: '#e0b48f', skinShade: '#c99a76', blush: '#e09a8a', hair: '#2a2a2a', hairShade: '#444', hairStyle: 'short', top: '#6c7a89', topShade: '#56626f', topStyle: 'shirt', pants: '#34495e' },
 };
 
+export const DEFAULT_NAMES = Object.fromEntries(Object.entries(CAST).map(([id, c]) => [id, c.name]));
+
+/** Custom names from the server (per role); missing ones fall back to the defaults. Returns true if anything changed. */
+export function applyTeamNames(names = {}) {
+  let changed = false;
+  for (const id of ROLE_ORDER) {
+    const next = names[id] || DEFAULT_NAMES[id];
+    if (CAST[id].name !== next) {
+      CAST[id].name = next;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 export const roleName = (role) => CAST[role]?.name ?? 'Claude';
 export const roleColor = (role) => CAST[role]?.color ?? CAST.claude.color;

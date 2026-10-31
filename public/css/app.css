@@ -250,7 +250,9 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: 11.5px/1.5
   border: 1px solid var(--border);
   border-left: 3px solid var(--c);
   min-width: 0;
+  cursor: pointer; /* opens the rename dialog */
 }
+.member:hover { border-color: color-mix(in srgb, var(--c) 60%, var(--border)); }
 .member img { width: 26px; height: 30px; image-rendering: pixelated; flex: none; }
 .member div { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 .member b { font-size: 12px; }
@@ -639,6 +641,18 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
 .login-code input { flex: 1; min-width: 0; font-family: var(--mono); }
 .login-flow > .ghost { align-self: flex-end; font-size: 12px; }
 
+/* ---------- team names dialog ---------- */
+.modal-card.team-card { max-width: 560px; }
+.team-card > p { margin: 0 0 10px; }
+.team-list { display: flex; flex-direction: column; gap: 6px; }
+.team-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.team-row img { width: 26px; height: 30px; image-rendering: pixelated; flex: none; }
+.team-role { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; font-size: 12.5px; }
+.team-role small { color: var(--muted); font-size: 11px; }
+.team-row input { width: 160px; flex: none; font-size: 13px; padding: 5px 8px; background: var(--surface); }
+.team-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.roots .team-names-btn { align-self: flex-start; font-size: 12.5px; }
+
 /* ---------- help dialog ---------- */
 .modal-card.help-card { max-width: 640px; }
 .help section + section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
@@ -749,6 +763,7 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
   .empty-icon { width: 38px; height: 38px; font-size: 19px; margin-bottom: 8px; }
   .s-item { padding: 10px; gap: 8px; }
   .sessions-tools input { font-size: 16px; }
+  .team-row input { width: 130px; font-size: 16px; }
 
   /* composer pinned at the bottom of the chat view */
   .composer { padding: 8px 8px 6px; }

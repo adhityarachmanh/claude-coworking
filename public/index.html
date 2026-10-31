@@ -51,7 +51,7 @@
             <span id="ch-branch" class="muted"></span>
             <span class="grow"></span>
             <button id="ch-open" class="ghost local-only" title="Buka file yang dipilih (atau project) di VS Code">🧭 VS Code</button>
-            <button id="ch-review" class="ghost" title="Minta Arif (Tech Lead) me-review semua perubahan">🔍 Minta review</button>
+            <button id="ch-review" class="ghost" title="Minta Tech Lead me-review semua perubahan">🔍 Minta review</button>
             <button id="ch-refresh" class="ghost icon" title="Muat ulang">↻</button>
           </div>
           <ul id="ch-files" class="ch-files"></ul>
@@ -189,10 +189,27 @@
               <li><b>🕘 Riwayat sesi</b> melanjutkan percakapan lama, termasuk yang dimulai di terminal. Menu <b>⋯</b> menyalin perintah untuk melanjutkan sesi web di terminal.</li>
               <li>Sesi yang kamu jalankan di terminal (CLI) ikut tampil live di sini.</li>
               <li>Tandai project yang sering dipakai dengan <b>★</b> di daftar project supaya selalu di atas.</li>
+              <li>Klik kartu anggota tim di bawah kantor untuk <b>mengganti nama</b> mereka.</li>
               <li><b>📱 Buka di HP</b>: scan QR-nya, lalu pilih <i>Add to Home Screen</i> agar Adhit Office tampil seperti aplikasi.</li>
             </ul>
           </section>
         </div>
+      </div>
+    </div>
+
+    <!-- Team names: rename the people in the office (shared by every device) -->
+    <div id="team-modal" class="modal" hidden>
+      <div class="modal-card team-card" role="dialog" aria-label="Nama anggota tim">
+        <div class="modal-head"><b>👥 Nama anggota tim</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+        <p class="muted small">Nama tampil di kantor, chat, aktivitas, dan laporan. Kosongkan untuk kembali ke nama bawaan. Berlaku di laptop dan HP.</p>
+        <form id="team-form">
+          <div id="team-list" class="team-list"></div>
+          <div class="team-actions">
+            <button type="button" id="team-reset" class="ghost">↺ Kembalikan semua</button>
+            <span class="grow"></span>
+            <button class="primary">Simpan</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -220,6 +237,8 @@
           <div class="roots-actions">
             <button class="primary">Simpan & pindai</button>
           </div>
+          <hr />
+          <button type="button" id="btn-team-names" class="ghost team-names-btn">👥 Ganti nama anggota tim</button>
           <hr />
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
           <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>

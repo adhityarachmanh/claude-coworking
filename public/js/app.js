@@ -1,7 +1,7 @@
 // Adhit Office web app: project picker, chat with Claude Code, approvals, live office.
 import { renderMarkdown } from './markdown.js';
 import { qrSvg } from './qr.js';
-import { CAST, ROLE_ORDER, roleColor, roleName } from './office/cast.js';
+import { CAST, DEFAULT_NAMES, ROLE_ORDER, applyTeamNames, roleColor, roleName } from './office/cast.js';
 import { Scene } from './office/scene.js';
 import { avatarURL } from './office/sprites.js';
 import { Stage, escapeHtml } from './office/stage.js';
@@ -76,6 +76,7 @@ function connect() {
 
   on('config', (config) => {
     renderRoots(config);
+    applyNames(config);
     if (!$('#phone-modal').hidden) {
       phone.pairing = null; // a device just paired (codes are single-use) or settings changed
       refreshPairing();
@@ -89,6 +90,7 @@ function connect() {
     $('#btn-settings').hidden = !state.local;
     state.account = snap.account ?? null;
     renderRoots(snap.config);
+    applyTeamNames(snap.config?.teamNames); // before the first render, so nothing shows the old names
     state.projects = snap.projects;
     state.statuses = snap.statuses;
     state.chats = snap.chats;
@@ -704,13 +706,59 @@ function renderTeam() {
             : p.plan.length
               ? ['idle', 'Jalan-jalan']
               : ['idle', 'Standby'];
-    const tip = `${CAST[id].name} — ${CAST[id].title}\n${text}${p.task ? `\n${p.task}` : ''}`;
-    return `<div class="member ${cls}" style="--c:${CAST[id].color}" title="${escapeHtml(tip)}">
+    const tip = `${CAST[id].name} — ${CAST[id].title}\n${text}${p.task ? `\n${p.task}` : ''}\n(klik untuk ganti nama)`;
+    return `<div class="member ${cls}" data-role="${id}" style="--c:${CAST[id].color}" title="${escapeHtml(tip)}">
       <img src="${avatarURL(CAST[id].look)}" alt="">
-      <div><b>${CAST[id].name}</b><small>${CAST[id].title}</small><span class="st">${p.task && cls !== 'idle' ? escapeHtml(p.task) : text}</span></div>
+      <div><b>${escapeHtml(CAST[id].name)}</b><small>${CAST[id].title}</small><span class="st">${p.task && cls !== 'idle' ? escapeHtml(p.task) : text}</span></div>
     </div>`;
   }).join('');
 }
+
+// ---------- team names (rename the people in the office) ----------
+
+/** New names from the server: everything that prints a name is redrawn. */
+function applyNames(config) {
+  if (!applyTeamNames(config?.teamNames)) return;
+  renderChat();
+  renderActivity();
+  renderTeam();
+  if (!$('#team-modal').hidden) renderTeamForm();
+}
+
+function renderTeamForm() {
+  $('#team-list').innerHTML = ROLE_ORDER.map((id) => `<label class="team-row">
+      <img src="${avatarURL(CAST[id].look)}" alt="">
+      <span class="team-role"><b style="color:${CAST[id].color}">${CAST[id].title}</b><small>bawaan: ${escapeHtml(DEFAULT_NAMES[id])}</small></span>
+      <input name="${id}" value="${escapeHtml(CAST[id].name === DEFAULT_NAMES[id] ? '' : CAST[id].name)}" placeholder="${escapeHtml(DEFAULT_NAMES[id])}" maxlength="24" autocomplete="off" />
+    </label>`).join('');
+}
+
+function openTeam(focusRole) {
+  renderTeamForm();
+  openModal('team-modal'); // visible first: a hidden input cannot take focus
+  if (focusRole) $(`#team-list input[name="${focusRole}"]`)?.focus();
+}
+
+$('#team').addEventListener('click', (e) => {
+  const card = e.target.closest('.member[data-role]');
+  if (card) openTeam(card.dataset.role);
+});
+$('#btn-team-names').addEventListener('click', () => {
+  closeModal('settings-modal');
+  openTeam();
+});
+$('#team-reset').addEventListener('click', () => $('#team-list').querySelectorAll('input').forEach((input) => (input.value = '')));
+$('#team-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const names = Object.fromEntries([...$('#team-list').querySelectorAll('input')].map((input) => [input.name, input.value.trim()]));
+  try {
+    await api('/api/team', { names });
+    closeModal('team-modal');
+    toast('Nama tim disimpan.', 'ok');
+  } catch (err) {
+    toast(err.message);
+  }
+});
 
 // ---------- composer ----------
 

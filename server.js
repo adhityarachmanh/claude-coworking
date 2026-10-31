@@ -20,7 +20,7 @@ import { openInApp } from './src/open.js';
 import { TranscriptMirror } from './src/mirror.js';
 import { DEVICE_COOKIE, RemoteAccess, lanAddresses, networkAddresses } from './src/remote.js';
 import { listSessions, sessionHistory } from './src/transcripts.js';
-import { loadAgentDefinitions } from './src/roles.js';
+import { ROLE_IDS, loadAgentDefinitions } from './src/roles.js';
 import { SessionManager } from './src/session.js';
 
 const PORT = Number(process.env.OFFICE_PORT ?? 4317);
@@ -116,6 +116,7 @@ function refreshProjects() {
     slashCommands: [...new Set([...DEFAULT_SLASH, ...(hub.persisted.slashCommands ?? [])])].sort(),
     autostart: autostartStatus(),
     remote: remote.publicInfo(PORT),
+    teamNames: hub.persisted.teamNames ?? {},
   };
   hub.ready = wasReady;
   hub.broadcast('config', hub.config);
@@ -228,6 +229,20 @@ async function handleApi(req, res, pathname) {
     hub.save();
     refreshProjects();
     return json(res, 200, hub.config);
+  }
+  if (pathname === '/api/team') {
+    // Custom display names per role ("claude" = the lead). Empty → back to the default name.
+    const names = {};
+    for (const [role, value] of Object.entries(body.names ?? {})) {
+      if (role !== 'claude' && !ROLE_IDS.includes(role)) continue;
+      const name = String(value ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 24);
+      if (name) names[role] = name;
+    }
+    hub.persisted.teamNames = names;
+    hub.scheduleSave();
+    hub.config = { ...hub.config, teamNames: names };
+    hub.broadcast('config', hub.config);
+    return json(res, 200, { names });
   }
   if (pathname === '/api/autostart') {
     hub.config = { ...hub.config, autostart: setAutostart(Boolean(body.enabled), APP_DIR, PORT) };
