@@ -270,7 +270,9 @@
     <div id="report-modal" class="modal" hidden>
       <div class="modal-card report-card" role="dialog" aria-label="Laporan penggunaan token">
         <div class="modal-head"><b>📊 Laporan penggunaan token</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
-        <div class="report-filters">
+        <!-- One set of filters: the preview below and the PDF always show the same data. -->
+        <fieldset class="report-filters">
+          <legend>🔎 Filter · berlaku untuk pratinjau <i>dan</i> PDF</legend>
           <label>Akun<select id="report-account"></select></label>
           <label>Periode
             <select id="report-period">
@@ -291,10 +293,11 @@
           </label>
           <label class="custom-range" hidden>Dari<input id="report-from" type="date" /></label>
           <label class="custom-range" hidden>Sampai<input id="report-to" type="date" /></label>
-        </div>
+        </fieldset>
+        <div class="report-preview-head">👁 Pratinjau</div>
         <div id="report-preview" class="report-preview"></div>
         <div class="report-actions">
-          <span class="muted small">Hanya pemakaian akun yang dipilih — akun lain tidak ikut terhitung.</span>
+          <div id="report-scope" class="report-scope muted small"></div>
           <button id="report-pdf" class="primary">⬇ Unduh PDF</button>
         </div>
       </div>

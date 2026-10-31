@@ -1785,9 +1785,21 @@ function periodTable(s) {
     <table class="usage-table"><thead><tr><th>${name[0].toUpperCase() + name.slice(1)}</th><th>Input</th><th>Output</th><th>Cache read</th><th>Total</th><th>Biaya</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+/** Footer line next to the PDF button: exactly what the PDF will contain. */
+function renderReportScope(q) {
+  const scope = $('#report-scope');
+  if (!q.accountId) return void (scope.textContent = '');
+  const account = $('#report-account').selectedOptions[0]?.textContent.replace(/ \(aktif\)$/, '') ?? '';
+  const day = (ts) => new Date(ts).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  const period = $('#report-period').value;
+  const range = period === 'all' ? 'semua data' : period === 'custom' ? `${day(q.from)} – ${day(q.to)}` : $('#report-period').selectedOptions[0].textContent.toLowerCase();
+  scope.innerHTML = `PDF berisi persis yang tampil di atas:<br><b>${escapeHtml(account)}</b> · <b>${escapeHtml(range)}</b> · rincian per <b>${UNIT_NAME[q.groupBy]}</b>`;
+}
+
 async function previewReport() {
   const box = $('#report-preview');
   const q = reportQuery();
+  renderReportScope(q);
   if (!q.accountId) {
     box.innerHTML = '<p class="muted">Belum ada pemakaian yang tercatat. Data mulai dikumpulkan sejak fitur ini aktif.</p>';
     $('#report-pdf').disabled = true;
