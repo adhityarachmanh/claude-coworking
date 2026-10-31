@@ -144,11 +144,12 @@ test('idle devices: pruneIdle() (start + hourly) also drops never-seen devices b
 
 test('lastSeen moves forward on use, but is saved at most once an hour per device', (t) => {
   const { remote, hub, saves } = countingRemote();
+  // Freeze the clock before pairing: otherwise lastSeen can land a millisecond after t0 and the test flakes.
   const t0 = Date.now();
-  const token = pairDevice(remote);
-  const device = hub.persisted.remote.devices[0];
   let now = t0;
   t.mock.method(Date, 'now', () => now);
+  const token = pairDevice(remote);
+  const device = hub.persisted.remote.devices[0];
   for (let i = 1; i <= 50; i++) {
     now = t0 + i * 60_000; // a request every minute for 50 minutes
     assert.ok(remote.verify(token));

@@ -127,6 +127,42 @@ Setelah itu Claude Code, terminal, dan browser di laptop boleh ditutup. Server t
 
 > Kalau folder repo dipindah atau versi Node.js diganti (misalnya lewat nvm), jalankan `setup.cmd` lagi, karena lokasi keduanya tercatat di script auto-start.
 
+## Pindah laptop / backup riwayat
+
+Ganti SSD, install ulang Windows, atau pindah ke laptop baru, tanpa kehilangan percakapan lama:
+
+1. Di laptop lama: **⚙ → Cadangkan riwayat → ⬇ Export riwayat**. Browser mengunduh `adhit-office-backup-YYYY-MM-DD.zip`. Simpan file ini di tempat aman, karena isinya seluruh riwayat percakapanmu.
+2. Di laptop baru: pasang app seperti di [Setup di device baru](#setup-di-device-baru), login dengan `claude`, lalu clone/salin folder project-mu.
+3. **⚙ → Cadangkan riwayat → ⬆ Import riwayat**, pilih file `.zip`, lalu konfirmasi. Ringkasan hasil tampil di dialog, dan daftar project/sesi langsung ter-update tanpa restart.
+4. Lanjutkan: buka project → **Riwayat sesi**, pilih sesinya, atau jalankan `claude --resume` di folder project. Sesi lama tidak dilanjutkan otomatis, dan mode izin tiap project kembali ke **Manual**.
+
+> **Hanya import backup milikmu sendiri.** Import memperlakukan file backup sebagai data yang belum tentu tepercaya. Backup tidak bisa menimpa file yang sudah ada (selain melanjutkan transcript yang sama), tidak bisa mengubah mode izin, tidak bisa memilih sesi yang dilanjutkan, dan tidak bisa menambah folder di luar folder home-mu. Meski begitu, isi transcript dan memori project tetap dibaca Claude saat sesi dilanjutkan.
+
+| Ikut di backup | Tidak ikut |
+|---|---|
+| `~/.claude/projects/**` (semua project: sesi `.jsonl`, subagent, `memory/`), `history.jsonl` (↑ riwayat prompt), `file-history/` (checkpoint rewind), `plans/` | Login & kredensial (`.credentials.json`, `~/.claude.json`) |
+| `data/state.json` (folder induk, folder tambahan, favorit, pengaturan per project, nama tim) dan `data/usage.jsonl` (laporan token) | Cache, downloads, `server.log`, HP yang dipasangkan (pasangkan ulang di laptop baru) |
+
+**Folder home berbeda** (mis. `C:\Users\lama` → `C:\Users\baru`): folder transcript diganti nama mengikuti aturan Claude Code (karakter non-alfanumerik jadi `-`, mis. `C:\Users\baru\projects\toko` → `C--Users-baru-projects-toko`), supaya `claude --resume` di folder baru menemukannya. Path di luar folder home tidak diubah. Isi file sesi tidak diubah. Satu-satunya pengecualian adalah field `project` di `history.jsonl`, yang dipindah ke home baru supaya riwayat ↑ per project tetap jalan.
+
+**Import menggabungkan, tidak menimpa buta:**
+
+| Data | Aturan |
+|---|---|
+| Sesi `.jsonl` (termasuk subagent) | Belum ada → ditulis. Sudah ada → diganti hanya kalau versi backup adalah **lanjutan** dari yang ada (isi lama sama persis, lalu bertambah). Kalau isinya bercabang, file tidak ditimpa dan ada peringatan. Tidak dibuat salinan kedua, supaya tidak muncul sesi ganda. Sesi yang sedang berjalan (proses web aktif, giliran CLI berjalan, atau file ditulis < 1 menit lalu) **tidak disentuh** |
+| File lain (memori, checkpoint, rencana, meta) | Belum ada → ditulis. Identik (ukuran + CRC) → dilewati. Berbeda → **tidak pernah ditimpa**: versi backup disimpan di sampingnya sebagai `<nama>.from-backup` (`-2`, `-3`, …) dengan peringatan. Memori yang ditambahkan ke project yang sudah ada di laptop ini selalu dilaporkan di peringatan |
+| `history.jsonl` | Baris unik dari keduanya, diurutkan menurut `timestamp` (maks 64 MB, lebih besar dilewati dengan peringatan) |
+| `usage.jsonl` | Digabung tanpa duplikat (maks 64 MB) |
+| `state.json` | Lewat hub, bukan menimpa file. Folder induk/tambahan (dan folder project dari manifest) hanya ditambah kalau, setelah di-remap, berada **di bawah folder home** laptop ini (bukan home itu sendiri, bukan root drive, bukan folder jaringan) dan foldernya ada. Selain itu dilewati dengan peringatan, jadi tambahkan manual bila perlu. Favorit ditambah. Pengaturan per project (model, effort, mode tim) diisi hanya kalau di laptop ini belum ada. **Mode izin tidak pernah dipulihkan** (selalu Manual), dan **sesi yang dilanjutkan tidak dipilih otomatis**. Nama tim hanya untuk role yang belum diganti. Chat panel tidak dipulihkan (riwayat sesi diambil dari transcript). **HP yang dipasangkan tidak diimpor**: token HP terikat ke alamat laptop lama, dan mengimpor hash-nya diam-diam akan memberi akses lagi ke perangkat yang mungkin sudah tidak kamu pakai |
+
+Project yang foldernya sudah ada di laptop baru langsung muncul di daftar. Folder yang belum ada dilaporkan di peringatan, dan riwayatnya tetap dipulihkan, jadi akan muncul setelah folder itu di-clone. Setiap file ditulis atomik (file sementara lalu rename, folder tujuan diperiksa ulang tepat sebelum rename). Waktu modifikasi aslinya dipertahankan supaya urutan "terakhir dipakai" tetap benar, tetapi tidak pernah melewati waktu sekarang. Import yang sama boleh dijalankan berulang: tidak ada yang ditambahkan dua kali.
+
+**Keamanan:** Export/import hanya dari laptop. HP ditolak (403), termasuk lewat Tailscale. Endpoint tetap butuh token + cek Host/Origin. Upload maksimal 4 GB (`OFFICE_BACKUP_MAX_BYTES`), disimpan sementara di `data/tmp/` lalu dihapus. Sisa upload yang terputus dibersihkan saat server start. Zip dibatasi maksimal 200.000 entri dan central directory 64 MB. Sebelum ada satu byte pun yang ditulis, setiap entri zip diperiksa: harus berada di bawah prefix yang dikenal (`claude/projects/`, `claude/file-history/`, `claude/plans/`, `claude/history.jsonl`, `office/state.json`, `office/usage.jsonl`, `manifest.json`), dan ditolak kalau berisi `..`, path absolut, drive letter, backslash, nama device Windows, nama pendek 8.3 (`~1`), symlink, entri terenkripsi, atau nama ganda. Tujuan akhir di-resolve (termasuk symlink/junction) dan harus berada di dalam folder tujuan. Ukuran dan CRC setiap file diverifikasi saat diekstrak. Hanya satu export/import yang bisa berjalan pada satu waktu.
+
+**Format:** ZIP standar (bisa dibuka Windows Explorer / `Expand-Archive`), ditulis dan dibaca oleh `src/zip.js` tanpa dependency: deflate streaming per file, CRC-32, nama UTF-8, dan ZIP64 otomatis untuk file > ~3,75 GB, total > 4 GB, atau lebih dari 65.535 file. Export di-stream langsung ke browser, tanpa menampung seluruh zip di memori server. Contoh ukuran: 173 MB transcript menjadi zip 57 MB dalam ±4 detik.
+
+Batasan: lokasi Claude mengikuti `~/.claude` (atau `CLAUDE_PROJECTS_DIR`). `CLAUDE_CONFIG_DIR` belum dibaca, sama seperti bagian app lainnya. Pindah antar-OS (Windows ↔ macOS/Linux) memetakan path di bawah home, tetapi belum diuji. Nama folder transcript yang dipotong Claude Code untuk path yang sangat panjang (> 200 karakter) tidak di-remap.
+
 ## Menjalankan
 
 Double-click **`start-office.cmd`** (otomatis membuka browser), atau:
@@ -224,6 +260,7 @@ Kalau pencatatan akun itu baru dimulai di tengah periode, pratinjau memberi tahu
 - Izin tetap mengikuti aturan Claude Code. Mode default selalu bertanya sebelum menulis file atau menjalankan perintah.
 - Login/logout akun hanya dari laptop atau dari HP lewat Tailscale (ditolak lewat WiFi biasa), dengan peringatan ke laptop. Server tidak pernah membaca token login (`.credentials.json`); profil diambil dari `claude auth status` dan data profil di `~/.claude.json`.
 - **Buka di VS Code / folder** hanya bisa dari laptop, hanya untuk folder project yang terdaftar (file harus berada di dalam project), dan dijalankan tanpa shell. Path dikirim sebagai argumen biasa, tidak pernah ditafsirkan sebagai perintah.
+- Export/import riwayat hanya dari laptop. Isi zip diperiksa (zip-slip, symlink, nama device, CRC) sebelum ada yang ditulis, dan kredensial login tidak pernah ikut di backup. Lihat [Pindah laptop / backup riwayat](#pindah-laptop--backup-riwayat).
 - Ikon dan manifest PWA bisa diambil tanpa pairing karena tidak berisi data. Selain itu semuanya tetap butuh pairing.
 
 ## Test
@@ -237,6 +274,7 @@ npm run test:claude  # uji kontrak ke Claude Code asli (beberapa request Haiku)
 |---|---|
 | Unit (`test/*.test.mjs`) | Pemetaan role/file/perintah, translator (streaming, tool, subagent, token), markdown & keamanan HTML, git panel, mirror CLI & riwayat sesi dengan transcript palsu, parsing `/usage`, ledger token per akun, ringkasan & PDF laporan, perintah buka VS Code/folder per OS, ikon app sesuai generator |
 | Integrasi (`test/server.test.mjs`) | Server dijalankan dengan `test-support/fake-claude.mjs` yang meniru protokol stream-json: keamanan API (token, Origin, Host, path, anti-iframe, CSP), HP lewat WiFi hanya-lihat, pairing (lockout, putus saat dicabut), tolak folder UNC, prompt + streaming, izin (izinkan/tolak), stop/interrupt, validasi pengaturan, demo, profil & kuota akun, laporan yang tidak mencampur akun, favorit, buka VS Code (dry-run), manifest PWA tanpa pairing |
+| Backup (`test/zip.test.mjs`, `test/backup.test.mjs`) | ZIP round-trip (kosong, UTF-8, ribuan file, beberapa MB, ZIP64), CRC salah, zip-slip/symlink/nama device ditolak, dibuka `Expand-Archive` (Windows). Dua server dengan home berbeda: export → import, folder di-remap, aturan merge, usage & riwayat prompt digabung, sesi muncul di API, import ulang idempoten, 413, tanpa token/HP ditolak |
 | Kontrak (`test-support/claude-contract.mjs`) | 15 cek terhadap Claude Code asli: `init`, streaming, `can_use_tool`, allow/deny, interrupt, `--agents`, format transcript yang dipakai mirror |
 
 **Setelah meng-update Claude Code, jalankan `npm run test:claude`.** Aplikasi ini bergantung pada protokol internal CLI, dan test ini yang pertama memberi tahu kalau ada yang berubah. Test offline juga jalan otomatis di GitHub Actions (Windows dan Linux) setiap kali push.
@@ -260,6 +298,8 @@ src/account.js       profil akun, kuota (/usage), login/logout lewat CLI
 src/usage.js         ledger token per akun (data/usage.jsonl) + ringkasan
 src/report.js        HTML laporan + PDF via Edge/Chrome headless
 src/open.js          buka project/file di VS Code atau file manager (tanpa shell)
+src/backup.js        export/import riwayat (⚙ → Cadangkan riwayat): isi backup, remap folder, aturan merge
+src/zip.js           ZIP writer/reader tanpa dependency (deflate streaming, CRC-32, ZIP64, cek nama aman)
 public/js/app.js     entry point UI (ES module native, tanpa build): menyambungkan semua fitur sesuai urutan
 public/js/core/      $/escapeHtml, state global, api() + toast, format, stream SSE, scene kantor
 public/js/ui/        dialog (fokus, Tab trap), shortcut global, layout (tab, nav HP, panel resizable)
@@ -270,6 +310,6 @@ public/manifest.webmanifest   manifest PWA (Add to Home Screen)
 .claude/agents/      definisi subagent per role
 ```
 
-Env opsional: `OFFICE_PORT` (default 4317), `PROJECTS_ROOT` (default folder induk app ini), `CLAUDE_BIN` (path `claude` jika tidak terdeteksi), `OFFICE_BROWSER` (path Edge/Chrome untuk PDF laporan), `OFFICE_EDITOR` (path editor selain VS Code, misalnya Cursor).
+Env opsional: `OFFICE_PORT` (default 4317), `PROJECTS_ROOT` (default folder induk app ini), `CLAUDE_BIN` (path `claude` jika tidak terdeteksi), `OFFICE_BROWSER` (path Edge/Chrome untuk PDF laporan), `OFFICE_EDITOR` (path editor selain VS Code, misalnya Cursor), `OFFICE_BACKUP_MAX_BYTES` (batas upload import riwayat, default 4 GB).
 
 Ikon diubah lewat sprite 16×16 di `scripts/make-icons.mjs`, lalu jalankan `node scripts/make-icons.mjs`. Test akan gagal kalau ikon yang di-commit tidak sesuai generator.

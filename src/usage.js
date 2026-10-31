@@ -40,6 +40,24 @@ export class UsageLedger {
     appendFileSync(this.file, `${JSON.stringify(row)}\n`);
   }
 
+  /**
+   * Adds rows from a restored backup, skipping malformed rows and ones already on record (same time,
+   * account, session, model and token counts). Every query reads the file, so they count at once.
+   * @returns {number} rows added
+   */
+  importRows(rows) {
+    const key = (r) => [r.ts, r.account.id, r.source, r.projectId, r.sessionId, r.model, r.input, r.output, r.cacheRead, r.cacheWrite, r.requests, r.turns].join('|');
+    const seen = new Set(this.rows().filter(validRow).map(key));
+    const fresh = [];
+    for (const r of rows) {
+      if (!validRow(r) || seen.has(key(r))) continue;
+      seen.add(key(r));
+      fresh.push(r);
+    }
+    if (fresh.length) appendFileSync(this.file, fresh.map((r) => `${JSON.stringify(r)}\n`).join(''));
+    return fresh.length;
+  }
+
   rows() {
     if (!existsSync(this.file)) return [];
     return readFileSync(this.file, 'utf8')
@@ -70,6 +88,12 @@ export class UsageLedger {
   query({ accountId, from = 0, to = Date.now() }) {
     return this.rows().filter((r) => r.account.id === accountId && r.ts >= from && r.ts <= to);
   }
+}
+
+const COUNTS = ['input', 'output', 'cacheRead', 'cacheWrite'];
+/** The shape record() writes: a time, an account id and non-negative token counts. */
+function validRow(r) {
+  return Boolean(r && typeof r === 'object' && Number.isFinite(r.ts) && typeof r.account?.id === 'string' && r.account.id && COUNTS.every((k) => Number.isFinite(r[k]) && r[k] >= 0));
 }
 
 const sum = (rows, key) => rows.reduce((acc, r) => acc + (r[key] ?? 0), 0);

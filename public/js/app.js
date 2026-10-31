@@ -11,6 +11,7 @@ import { scenes, stage } from './core/scenes.js';
 import { connect } from './core/stream.js';
 import { initAccount } from './features/account.js';
 import { initAttachments } from './features/attachments.js';
+import { initBackup } from './features/backup.js';
 import { initChanges } from './features/changes.js';
 import { initChat } from './features/chat.js';
 import { initComposerControls, initComposerInput } from './features/composer.js';
@@ -48,6 +49,7 @@ initSuggest();
 initSessions();
 initMoreMenu();
 initSettings();
+initBackup(); // after initSettings: its #btn-settings listener runs after the dialog's own
 initNotify();
 initChanges();
 initPhone();

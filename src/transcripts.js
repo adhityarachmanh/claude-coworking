@@ -7,6 +7,8 @@ import { truncate } from './util.js';
 
 // Overridable so tests can use a throwaway folder.
 const ROOT = process.env.CLAUDE_PROJECTS_DIR ?? path.join(os.homedir(), '.claude', 'projects');
+/** Where Claude Code keeps its transcripts (~/.claude/projects, or CLAUDE_PROJECTS_DIR). */
+export const PROJECTS_DIR = ROOT;
 const HEAD_BYTES = 256 * 1024;
 const TAIL_BYTES = 2 * 1024 * 1024;
 const SESSION_ID = /^[0-9a-f-]{36}$/i;

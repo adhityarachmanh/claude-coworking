@@ -303,6 +303,19 @@
           <hr />
           <button type="button" id="btn-team-names" class="ghost team-names-btn">👥 Ganti nama anggota tim</button>
           <hr />
+          <section class="backup" aria-labelledby="backup-title" aria-describedby="backup-desc">
+            <b id="backup-title">💾 Cadangkan riwayat</b>
+            <p id="backup-desc" class="muted">Untuk pindah laptop atau install ulang: <b>Export</b> di sini, lalu <b>Import</b> di laptop baru dan lanjutkan percakapan lama (Riwayat sesi di app maupun <code>claude --resume</code>). Ikut: semua sesi Claude Code di semua project (termasuk subagent, memori, checkpoint, rencana, riwayat prompt) plus data kantor ini (folder, favorit, nama tim, laporan token). <b>Login tidak ikut</b>: login ulang dengan <code>claude</code> di laptop baru.</p>
+            <p id="backup-remote" class="muted" hidden>Hanya dari laptop.</p>
+            <div class="backup-actions">
+              <button type="button" id="btn-backup-export" class="ghost">⬇ Export riwayat</button>
+              <button type="button" id="btn-backup-import" class="ghost">⬆ Import riwayat</button>
+              <input type="file" id="backup-file" accept=".zip,application/zip" aria-label="File backup riwayat (.zip)" hidden />
+            </div>
+            <p id="backup-status" class="muted" role="status" aria-live="polite"></p>
+            <div id="backup-result" class="backup-result" hidden></div>
+          </section>
+          <hr />
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
           <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>
           <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>

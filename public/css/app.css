@@ -1097,3 +1097,12 @@ body.read-only #composer-hint { color: var(--ask); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- ⚙ → Cadangkan riwayat (export / import) ---------- */
+.backup { display: flex; flex-direction: column; gap: 6px; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.backup-actions button { font-size: var(--fs-sm); padding: 5px 10px; }
+.backup-result { font-size: var(--fs-xs); color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px 10px; overflow-wrap: anywhere; }
+.backup-result ul { margin: 4px 0 0; padding-left: 18px; }
+.backup-result summary { cursor: pointer; margin-top: 4px; }
+.backup-result .warn { color: var(--warn-text); }

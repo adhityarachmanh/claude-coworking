@@ -58,6 +58,19 @@ export class TranscriptMirror {
   stop() {
     this.watcher?.close();
     clearInterval(this.sweepTimer);
+    this.sweepTimer = null;
+  }
+
+  get running() {
+    return Boolean(this.sweepTimer);
+  }
+
+  /**
+   * A transcript written by the app itself (restored from a backup): it is history, not live activity, so
+   * reading continues from its current end. Call right after the file is in place, before the watcher fires.
+   */
+  markSeen(file) {
+    this.track(file, true);
   }
 
   listTranscripts() {

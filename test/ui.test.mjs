@@ -357,6 +357,34 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), [], 'error console saat membuka modal');
     });
 
+    test('⚙ Pengaturan: bagian Cadangkan riwayat tampil, tombol aktif di laptop, export terunduh, tanpa error console', async () => {
+      page.clearProblems();
+      await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+      await page.click('#btn-settings');
+      await settle(page, 'settings-modal');
+      const r = await page.eval(() => ({
+        visible: Boolean(document.querySelector('#settings-modal .backup')?.getClientRects().length),
+        title: document.querySelector('#backup-title')?.textContent,
+        exportEnabled: !document.querySelector('#btn-backup-export').disabled,
+        importEnabled: !document.querySelector('#btn-backup-import').disabled,
+        laptopOnlyNoteHidden: document.querySelector('#backup-remote').hidden,
+        live: document.querySelector('#backup-status').getAttribute('aria-live'),
+      }));
+      const overflow = await page.eval(horizontalOverflow);
+      // The same request the ⬇ button makes (CSP connect-src, token): a zip comes back.
+      const download = await page.eval(async () => {
+        const token = document.querySelector('meta[name="office-token"]').content;
+        const res = await fetch('/api/backup/export', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: '{}' });
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        return { status: res.status, type: res.headers.get('content-type'), zip: bytes[0] === 0x50 && bytes[1] === 0x4b };
+      });
+      await page.press('Escape');
+      assert.deepEqual(r, { visible: true, title: '💾 Cadangkan riwayat', exportEnabled: true, importEnabled: true, laptopOnlyNoteHidden: true, live: 'polite' });
+      assert.equal(overflow, null);
+      assert.deepEqual(download, { status: 200, type: 'application/zip', zip: true });
+      assert.deepEqual(realProblems(page), []);
+    });
+
     // Regression: renderAccount() rebuilds #account-body; focus must survive (↻ "Cek ulang kuota" re-renders it).
     test('account-modal: fokus tetap di dalam modal setelah ↻ Cek ulang kuota', async () => {
       await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));

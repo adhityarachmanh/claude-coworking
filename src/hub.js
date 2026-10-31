@@ -15,6 +15,7 @@ export const PERMISSION_MODES = ['manual', 'acceptEdits', 'auto', 'plan', 'dontA
 // claude-… id, or a model Claude Code itself listed. Anything else never reaches the command line.
 const MODEL_ALIAS = /^(?:best|opusplan|(?:opus|sonnet|haiku|fable)(?:\[1m\])?)$/;
 const MODEL_ID = /^claude-[\w.:[\]-]{1,76}$/;
+const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 
 export class Hub {
   constructor({ dataDir }) {
@@ -114,13 +115,20 @@ export class Hub {
     return { ...DEFAULT_SETTINGS, ...this.persisted.settings[id] };
   }
 
-  updateSettings(id, patch) {
-    const next = { ...this.settingsFor(id) };
+  /** `base` with the valid fields of `patch` (anything unknown or malformed is ignored). */
+  cleanSettings(base, patch) {
+    const next = { ...base };
+    if (!isObject(patch)) return next;
     if (PERMISSION_MODES.includes(patch.mode)) next.mode = patch.mode;
     if (patch.model === '' || patch.model === 'default') next.model = '';
     else if (typeof patch.model === 'string' && this.knownModel(patch.model)) next.model = patch.model;
     if (EFFORT_LEVELS.includes(patch.effort)) next.effort = patch.effort;
     if (typeof patch.team === 'boolean') next.team = patch.team;
+    return next;
+  }
+
+  updateSettings(id, patch) {
+    const next = this.cleanSettings(this.settingsFor(id), patch);
     this.persisted.settings[id] = next;
     this.scheduleSave();
     this.setStatus(id, next);
@@ -175,6 +183,89 @@ export class Hub {
     else delete this.persisted.sessions[id];
     this.scheduleSave();
     this.setStatus(id, { sessionId: sessionId ?? null });
+  }
+
+  // ---------- backup ----------
+
+  /** The office state a backup carries: everything persisted except paired-device hashes and the CLI catalog cache. */
+  exportState() {
+    const { remote: _remote, catalog: _catalog, ...rest } = this.persisted;
+    const chats = {};
+    for (const [id, rt] of this.runtime) if (id !== DEMO_ID && rt.chat.length) chats[id] = rt.chat.slice(-CHAT_LIMIT);
+    return structuredClone({ ...rest, chats: { ...this.persisted.chats, ...chats } });
+  }
+
+  /**
+   * Restoring a backup, step 1: project roots and manually added folders, moved to this home folder.
+   * A backup may come from anyone, so a folder is only taken when `accept` allows it (the server: strictly
+   * below this home, existing, not UNC); the others are returned in `skipped`. Adds only; nothing is removed.
+   * @param {object} imported  office/state.json of the backup (untrusted)
+   * @param {{ mapPath: (p: string) => string, roots: string[], accept: (p: string) => boolean }} options
+   *   roots: the roots in effect now (the default root too, so adding one doesn't drop it)
+   * @returns {{ roots: number, custom: number, skipped: string[] }}
+   */
+  mergeFolders(imported, { mapPath, roots, accept }) {
+    const result = { roots: 0, custom: 0, skipped: [] };
+    const paths = (v) => (Array.isArray(v) ? v.filter((p) => typeof p === 'string' && p.trim()) : []).slice(0, 500).map((p) => mapPath(p.trim()));
+    const nextRoots = roots.map((r) => path.resolve(r));
+    for (const p of paths(imported.roots)) {
+      if (nextRoots.some((r) => projectId(r) === projectId(p))) continue;
+      if (!accept(p)) {
+        result.skipped.push(p);
+        continue;
+      }
+      nextRoots.push(path.resolve(p));
+      result.roots++;
+    }
+    if (result.roots) this.persisted.roots = nextRoots;
+    for (const p of paths(imported.custom)) {
+      if (this.persisted.custom.some((c) => projectId(c) === projectId(p))) continue;
+      if (!accept(p)) {
+        result.skipped.push(p);
+        continue;
+      }
+      this.persisted.custom.push(normalizePath(p));
+      result.custom++;
+    }
+    if (result.roots || result.custom) this.scheduleSave();
+    return result;
+  }
+
+  /**
+   * Restoring a backup, step 2: per-project data, keyed by project id. `idMap` maps the backup's ids to
+   * projects of this machine (ids hash the path, so a new home means new ids); unknown ids are dropped.
+   * Only fills gaps: favorites are added, settings only where this machine has none, activity keeps the
+   * latest time. Never restored, because a backup may come from someone else:
+   * - the permission mode (always the default "manual": a backup must not switch a project to auto-accept);
+   * - the session a project continues (a planted transcript must not be resumed with the next prompt) —
+   *   restored sessions are listed in "Riwayat sesi" and the user picks one to continue;
+   * - chats (a resumed session shows its history from the transcript).
+   * @param {object} imported
+   * @param {Map<string, string>} idMap
+   */
+  mergeProjectData(imported, idMap) {
+    const added = { favorites: 0, settings: 0 };
+    const entries = (v) => (isObject(v) ? Object.entries(v) : []);
+    for (const id of Array.isArray(imported.favorites) ? imported.favorites : []) {
+      const to = idMap.get(id);
+      if (!to || this.persisted.favorites.includes(to)) continue;
+      this.persisted.favorites.push(to);
+      added.favorites++;
+    }
+    for (const [id, settings] of entries(imported.settings)) {
+      const to = idMap.get(id);
+      if (!to || this.persisted.settings[to]) continue;
+      const { mode: _mode, ...safe } = isObject(settings) ? settings : {}; // model, effort, team (validated)
+      this.persisted.settings[to] = this.cleanSettings(DEFAULT_SETTINGS, safe);
+      if (this.runtime.has(to)) this.setStatus(to, this.persisted.settings[to]);
+      added.settings++;
+    }
+    for (const [id, ts] of entries(imported.activity)) {
+      const to = idMap.get(id);
+      if (to && Number.isFinite(ts) && ts > (this.persisted.activity[to] ?? 0) && ts <= Date.now()) this.persisted.activity[to] = ts;
+    }
+    this.scheduleSave();
+    return added;
   }
 
   // ---------- runtime state ----------

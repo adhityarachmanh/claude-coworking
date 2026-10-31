@@ -1,7 +1,7 @@
 // Adhit Office server: runs headless Claude Code per project and serves the office web app.
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, rm } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +9,13 @@ import { findClaude } from './src/claude-bin.js';
 import { runDemo } from './src/demo.js';
 import { DEMO_ID, Hub, PERMISSION_MODES } from './src/hub.js';
 import { discoverProjects, isDirectory, isNetworkPath } from './src/projects.js';
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, createWriteStream, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { BackupError, isUnderHome, restoreBackup, writeBackup } from './src/backup.js';
+import { ZipError } from './src/zip.js';
+import { projectId as idOfPath } from './src/util.js';
 import { AccountService } from './src/account.js';
 import { autostartStatus, setAutostart } from './src/autostart.js';
 import { renderPdf, reportHtml } from './src/report.js';
@@ -27,10 +33,14 @@ import { SessionManager } from './src/session.js';
 const PORT = Number(process.env.OFFICE_PORT ?? 4317);
 const HOST = '127.0.0.1';
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
+const APP_VERSION = JSON.parse(readFileSync(path.join(APP_DIR, 'package.json'), 'utf8')).version;
 const PUBLIC_DIR = path.join(APP_DIR, 'public');
 // Used until roots are set in the web UI: env, else the folder this app lives in.
 const DEFAULT_ROOT = path.resolve(process.env.PROJECTS_ROOT ?? path.dirname(APP_DIR));
 const MAX_BODY = 30 * 1024 * 1024; // prompts may carry pasted images
+// A history backup upload (POST /api/backup/import, raw .zip): large, but not unbounded. Env override for tests.
+const MAX_BACKUP_BYTES = Number(process.env.OFFICE_BACKUP_MAX_BYTES) || 4 * 1024 ** 3;
+const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed', 'application/octet-stream']);
 const MAX_PAIR_BODY = 1024; // POST /pair is reachable before pairing: it only carries a 6-digit code
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 const MAX_IMAGES = 5;
@@ -104,6 +114,8 @@ if (process.argv.includes('--background')) {
 // OFFICE_DATA_DIR lets tests run against a throwaway state file.
 const DATA_DIR = process.env.OFFICE_DATA_DIR ?? path.join(APP_DIR, 'data');
 const hub = new Hub({ dataDir: DATA_DIR });
+// Leftovers of an import cut short by a crash or shutdown (uploaded .zip files): only this app writes there.
+rmSync(path.join(DATA_DIR, 'tmp'), { recursive: true, force: true });
 const claude = findClaude();
 const agents = loadAgentDefinitions(path.join(APP_DIR, '.claude', 'agents'));
 
@@ -159,7 +171,8 @@ function refreshProjects() {
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Settings that only the laptop itself may change, never a paired phone.
 // Adding a project folder points Claude Code (and git, file search) at any path: laptop only.
-const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config', '/api/projects']);
+// Backup export/import read and write the whole Claude history: laptop only (Tailscale phones too are refused).
+const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout']);
@@ -319,6 +332,8 @@ function accountAlert(action, device, email = null) {
 async function handleApi(req, res, pathname, device = null) {
   if (req.headers['x-office-token'] !== TOKEN) return json(res, 403, { error: 'forbidden' });
   if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
+  // The one API whose body is not JSON (a raw .zip, far over MAX_BODY): handled before readJson.
+  if (pathname === '/api/backup/import') return importBackup(req, res);
   if (!String(req.headers['content-type']).startsWith('application/json')) return json(res, 415, { error: 'json only' });
   const body = await readJson(req);
 
@@ -337,14 +352,9 @@ async function handleApi(req, res, pathname, device = null) {
     refreshProjects();
     return json(res, 200, hub.config);
   }
+  if (pathname === '/api/backup/export') return exportBackup(req, res);
   if (pathname === '/api/team') {
-    // Custom display names per role ("claude" = the lead). Empty → back to the default name.
-    const names = {};
-    for (const [role, value] of Object.entries(body.names ?? {})) {
-      if (role !== 'claude' && !ROLE_IDS.includes(role)) continue;
-      const name = String(value ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 24);
-      if (name) names[role] = name;
-    }
+    const names = cleanTeamNames(body.names);
     hub.persisted.teamNames = names;
     hub.scheduleSave();
     hub.config = { ...hub.config, teamNames: names };
@@ -583,6 +593,151 @@ async function handleApi(req, res, pathname, device = null) {
     }
   }
   return json(res, 200, { ok: true });
+}
+
+/** Custom display names per role ("claude" = the lead), validated. Empty → back to the default name. */
+function cleanTeamNames(input) {
+  const names = {};
+  for (const [role, value] of Object.entries(input && typeof input === 'object' ? input : {})) {
+    if (role !== 'claude' && !ROLE_IDS.includes(role)) continue;
+    const name = String(value ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 24);
+    if (name) names[role] = name;
+  }
+  return names;
+}
+
+// ---------- history backup (⚙ → Cadangkan riwayat) ----------
+
+let backupBusy = false; // one export or import at a time
+
+/** Session ids a Claude Code process may be writing right now (web sessions alive, CLI turns running). */
+function activeSessionIds() {
+  const ids = new Set();
+  for (const rt of hub.runtime.values()) {
+    const st = rt.status;
+    if (st.alive && st.sessionId) ids.add(st.sessionId);
+    if (st.cliBusy && st.cliSession) ids.add(st.cliSession);
+  }
+  return ids;
+}
+
+/** POST /api/backup/export: the backup .zip, streamed (never held in memory). */
+async function exportBackup(req, res) {
+  if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
+  if (backupBusy) return json(res, 409, { error: 'Export/import riwayat lain sedang berjalan. Tunggu sampai selesai.' });
+  backupBusy = true;
+  try {
+    hub.save(); // the state file on disk and in the backup agree
+    const name = `adhit-office-backup-${new Date().toLocaleDateString('sv-SE')}.zip`; // local date, YYYY-MM-DD
+    res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
+    const result = await writeBackup(res, { state: hub.exportState(), usageFile: ledger.file, appVersion: APP_VERSION });
+    res.end();
+    const skipped = result.skipped.length ? `, ${result.skipped.length} dilewati (symlink/nama tidak valid)` : '';
+    console.log(`Backup riwayat diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB${skipped}`);
+  } catch (err) {
+    console.error('Export backup gagal:', err?.stack ?? err);
+    // Headers are out: cut the connection so the browser reports a failed download, not a broken .zip.
+    if (res.headersSent) res.destroy();
+    else json(res, 500, { error: 'Export gagal. Lihat log server.' });
+  } finally {
+    backupBusy = false;
+  }
+}
+
+/** Streams the request body to `file`, refusing it (413) once it passes `limit` bytes. */
+async function receiveUpload(req, file, limit) {
+  let size = 0;
+  const counter = new Transform({
+    transform(chunk, _enc, cb) {
+      size += chunk.length;
+      if (size > limit) cb(new HttpError(413, `File backup terlalu besar (maks ${Math.round(limit / 1024 ** 2)} MB).`));
+      else cb(null, chunk);
+    },
+  });
+  // A dropped upload must not leave the temp file open.
+  req.once('close', () => !req.complete && counter.destroy(new HttpError(400, 'Upload terputus.')));
+  req.once('error', (err) => counter.destroy(err));
+  req.pipe(counter);
+  try {
+    await pipeline(counter, createWriteStream(file)); // req stays out of the pipeline, so a 413 can still be answered
+  } finally {
+    req.unpipe(counter);
+  }
+  return size;
+}
+
+/** POST /api/backup/import: raw .zip body → temp file in DATA_DIR/tmp → merged restore → JSON summary. */
+async function importBackup(req, res) {
+  if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
+  const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+  if (!ZIP_TYPES.has(type)) return json(res, 415, { error: 'Kirim file .zip hasil Export riwayat.' });
+  if (Number(req.headers['content-length']) > MAX_BACKUP_BYTES) throw new HttpError(413, `File backup terlalu besar (maks ${Math.round(MAX_BACKUP_BYTES / 1024 ** 2)} MB).`);
+  if (backupBusy) {
+    res.on('finish', () => req.destroy()); // don't read an upload that is refused
+    return json(res, 409, { error: 'Export/import riwayat lain sedang berjalan. Tunggu sampai selesai.' });
+  }
+  backupBusy = true;
+  const tmpDir = path.join(DATA_DIR, 'tmp');
+  const file = path.join(tmpDir, `import-${Date.now()}-${randomBytes(4).toString('hex')}.zip`);
+  try {
+    await mkdir(tmpDir, { recursive: true });
+    await receiveUpload(req, file, MAX_BACKUP_BYTES);
+    const running = [...hub.runtime.values()].some((rt) => rt.status.busy || rt.status.cliBusy);
+    const result = await restoreBackup(file, { activeSessions: activeSessionIds(), ledger, onFileWritten: (f) => mirror.markSeen(f) });
+    const { summary, state: imported, remap } = result;
+    if (running) summary.warnings.unshift('Ada sesi Claude yang sedang berjalan saat import: file sesinya tidak ditimpa. Import lagi setelah selesai bila perlu.');
+
+    // Office state: folders first (they decide which projects exist here), then per-project data by id.
+    // A backup names folders (roots, added folders, project paths): only ones below this home are used.
+    const home = os.homedir();
+    const outside = (p) => `Folder dari backup dilewati (di luar folder home ${home}, atau tidak ada): ${p}. Tambahkan manual bila perlu.`;
+    summary.state = { roots: 0, custom: 0, favorites: 0, settings: 0, teamNames: 0 };
+    if (imported) {
+      const { skipped, ...added } = hub.mergeFolders(imported, { mapPath: remap.mapPath, roots: projectRoots(), accept: (p) => isUnderHome(p, home) && isDirectory(p) });
+      Object.assign(summary.state, added);
+      for (const p of skipped) summary.warnings.push(outside(p));
+    }
+    refreshProjects();
+    // Projects whose history came back are listed when their folder exists on this machine.
+    summary.projectsAdded = [];
+    for (const p of result.projects) {
+      if (!p.cwd || !p.sessions || hub.projects.has(idOfPath(p.cwd))) continue;
+      if (!isUnderHome(p.cwd, home)) {
+        summary.warnings.push(outside(p.cwd));
+      } else if (isDirectory(p.cwd)) {
+        hub.addCustomProject(p.cwd);
+        summary.projectsAdded.push(p.cwd);
+      } else {
+        summary.warnings.push(`Folder project belum ada di laptop ini: ${p.cwd}. Riwayatnya sudah dipulihkan; project muncul setelah foldernya ada (clone/salin, lalu ⚙ → tambah folder).`);
+      }
+    }
+    if (imported) {
+      const idMap = new Map();
+      for (const p of hub.projects.values()) {
+        if (!p.path) continue;
+        idMap.set(p.id, p.id);
+        idMap.set(idOfPath(remap.unmapPath(path.resolve(p.path))), p.id); // the id this folder had on the old machine
+      }
+      Object.assign(summary.state, hub.mergeProjectData(imported, idMap));
+      // Team names: only roles this machine has not renamed itself.
+      const own = hub.persisted.teamNames ?? {};
+      const names = { ...cleanTeamNames(imported.teamNames), ...own };
+      summary.state.teamNames = Object.keys(names).length - Object.keys(own).length;
+      hub.persisted.teamNames = names;
+    }
+    hub.save();
+    refreshProjects(); // broadcasts config + projects: every open page shows the restored history
+    if (!mirror.running) mirror.start(); // ~/.claude/projects may only exist since this import
+    console.log(`Backup riwayat diimpor: ${summary.projects} project, sesi +${summary.sessions.added} diperbarui ${summary.sessions.updated}`);
+    return json(res, 200, summary);
+  } catch (err) {
+    if (err instanceof ZipError) return json(res, 400, { error: `File backup tidak valid: ${err.message}` });
+    if (err instanceof BackupError) return json(res, err.status, { error: err.message });
+    throw err;
+  } finally {
+    await rm(file, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    backupBusy = false;
+  }
 }
 
 /** Replies with what a Claude Code control request answered, or its error as a 400. */
