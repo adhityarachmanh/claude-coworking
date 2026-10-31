@@ -79,8 +79,16 @@ export function parseTestSummary(output) {
   return { passed: passed ?? 0, failed: failed ?? 0 };
 }
 
+/** Todo items for the pinned list above the composer (full text, unlike the office board). */
+function todoItems(todos) {
+  return todos.map((t) => ({ content: clip(t.content, 300), activeForm: t.activeForm ? clip(t.activeForm, 300) : undefined, status: t.status }));
+}
+
 export class StreamTranslator {
-  /** @param {{ office(evt): void, chat(msg): string, updateChat(id: string, patch: object): void }} sink */
+  /**
+   * @param {{ office(evt): void, chat(msg): string, updateChat(id: string, patch: object): void, status?(patch: object): void }} sink
+   * `status` (optional) receives live session state: `todos` and `context` ({ used, window }).
+   */
   constructor(sink) {
     this.sink = sink;
     this.tools = new Map(); // tool_use_id -> { name, input, role, label, screen, chatId, agent?, background? }
@@ -92,6 +100,13 @@ export class StreamTranslator {
     this.streamMessageId = null;
     this.flushTimer = null;
     this.lastThink = 0;
+    this.liveThinking = null; // { chatId, text } while a thinking block streams
+    this.contextUsed = 0; // tokens in the context of the latest main-thread API call
+    this.contextWindow = 0; // from the result's modelUsage; kept across turns
+  }
+
+  status(patch) {
+    this.sink.status?.(patch);
   }
 
   /** Role of whoever issued this tool call (used for permission prompts). */
@@ -178,6 +193,8 @@ export class StreamTranslator {
     const e = msg.event ?? {};
     if (e.type === 'message_start') {
       this.streamMessageId = e.message?.id ?? null;
+    } else if (e.type === 'content_block_delta' && e.delta?.type === 'thinking_delta' && e.delta.thinking) {
+      this.streamThinking(e.delta.thinking);
     } else if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') {
       const bubble = this.bubbleFor(this.streamMessageId);
       bubble.live += e.delta.text;
@@ -193,11 +210,49 @@ export class StreamTranslator {
   onAssistant(msg) {
     const parentId = msg.parent_tool_use_id ?? null;
     const parentRole = this.parentRole(parentId);
+    if (!parentId) this.noteContext(msg.message?.usage);
     for (const block of msg.message?.content ?? []) {
       if (block.type === 'text' && block.text?.trim()) this.onText(block.text, parentId, parentRole, msg.message.id);
-      else if (block.type === 'thinking') this.think(parentId);
+      else if (block.type === 'thinking') {
+        this.think(parentId);
+        if (!parentId) this.finishThinking(block.thinking);
+      }
       else if (block.type === 'tool_use') this.onToolUse(block, parentRole);
     }
+  }
+
+  // ---------- thinking (collapsible "✻ Thinking" rows, main thread only) ----------
+
+  streamThinking(delta) {
+    if (!this.liveThinking) this.liveThinking = { chatId: this.sink.chat({ kind: 'thinking', text: '', streaming: true }), text: '' };
+    this.liveThinking.text += delta;
+    if (!this.thinkFlushTimer) {
+      this.thinkFlushTimer = setTimeout(() => {
+        this.thinkFlushTimer = null;
+        if (this.liveThinking) this.sink.updateChat(this.liveThinking.chatId, { text: this.liveThinking.text, streaming: true });
+      }, STREAM_FLUSH_MS);
+    }
+  }
+
+  /** The finished block replaces the streamed text; models that hide their thinking send none. */
+  finishThinking(text) {
+    clearTimeout(this.thinkFlushTimer);
+    this.thinkFlushTimer = null;
+    const live = this.liveThinking;
+    this.liveThinking = null;
+    const final = text?.trim() ? text : (live?.text ?? '');
+    if (live) this.sink.updateChat(live.chatId, { text: final, streaming: false });
+    else if (final.trim()) this.sink.chat({ kind: 'thinking', text: final });
+  }
+
+  // ---------- context usage (status line) ----------
+
+  noteContext(usage) {
+    if (!usage) return;
+    const used = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
+    if (!used || used === this.contextUsed) return;
+    this.contextUsed = used;
+    this.status({ context: { used, window: this.contextWindow || null } });
   }
 
   onText(text, parentId, parentRole, messageId) {
@@ -261,12 +316,16 @@ export class StreamTranslator {
     this.sink.office({ kind: 'tool_start', role, label, tool: block.name, screen, inferred: !parentRole });
 
     const todos = extractTodos(block.name, input);
-    if (todos) this.sink.office({ kind: 'board', items: todos });
+    if (todos) {
+      this.sink.office({ kind: 'board', items: todos });
+      if (!parentRole) this.status({ todos: todoItems(input.todos) });
+    }
     if (block.name === 'TaskUpdate' && input.taskId != null) {
       const task = this.tasks.get(String(input.taskId));
       if (task) {
         if (input.status) task.status = input.status;
         if (input.subject) task.subject = input.subject;
+        if (input.activeForm) task.activeForm = input.activeForm;
         this.emitTasks();
       }
     }
@@ -277,6 +336,11 @@ export class StreamTranslator {
       .filter((t) => t.status !== 'deleted')
       .map((t) => ({ content: truncate(t.subject, 60), status: t.status }));
     this.sink.office({ kind: 'board', items });
+    this.status({
+      todos: [...this.tasks.values()]
+        .filter((t) => t.status !== 'deleted')
+        .map((t) => ({ content: clip(t.subject, 300), activeForm: t.activeForm ? clip(t.activeForm, 300) : undefined, status: t.status })),
+    });
   }
 
   onUser(msg) {
@@ -316,7 +380,7 @@ export class StreamTranslator {
       if (info.name === 'TaskCreate' && !failed) {
         const id = text.match(/#(\d+)/)?.[1] ?? text.match(/\btask\s+(\d+)/i)?.[1];
         if (id) {
-          this.tasks.set(id, { subject: info.input.subject ?? info.label, status: 'pending' });
+          this.tasks.set(id, { subject: info.input.subject ?? info.label, activeForm: info.input.activeForm, status: 'pending' });
           this.emitTasks();
         }
       }
@@ -325,6 +389,11 @@ export class StreamTranslator {
 
   onResult(msg) {
     this.closeBubble();
+    if (this.liveThinking) this.finishThinking('');
+    // The context window comes only with the result (per model); the main model's is the largest.
+    const windows = Object.values(msg.modelUsage ?? {}).map((u) => u.contextWindow).filter((n) => n > 0);
+    if (windows.length) this.contextWindow = Math.max(...windows);
+    if (this.contextUsed) this.status({ context: { used: this.contextUsed, window: this.contextWindow || null } });
     const activeRoles = [];
     for (const [id, info] of this.tools) {
       if (info.agent && info.background) activeRoles.push(info.role);

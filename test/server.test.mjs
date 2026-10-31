@@ -184,6 +184,18 @@ test('stop interrupts a running turn and the session stays usable', async () => 
   assert.equal((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result')).ok, true);
 });
 
+test('! shell commands run in the project folder and show their output', async () => {
+  const id = await projectId();
+  mark = seen.length;
+  assert.equal((await api(`/api/projects/${id}/shell`, { command: '   ' })).status, 400);
+  assert.equal((await api(`/api/projects/${id}/shell`, { command: 'echo halo-shell' })).status, 200);
+  const row = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'shell');
+  assert.equal(row.text, 'echo halo-shell');
+  const done = await waitFor((t, o) => t === 'chat_update' && o.project === id && o.id === row.id && o.patch.status);
+  assert.equal(done.patch.status, 'ok');
+  assert.match(done.patch.output, /halo-shell/);
+});
+
 test('phone access: off by default, pairing required, laptop-only settings, revoke', async (t) => {
   const { lanAddresses } = await import('../src/remote.js');
   const ip = lanAddresses()[0];

@@ -174,6 +174,7 @@ export class TranscriptMirror {
         office: (evt) => this.hub.office(pid, { source: 'cli', ...evt }),
         chat: (msg) => this.hub.chat(pid, { source: 'cli', ...msg }),
         updateChat: (chatId, patch) => this.hub.updateChat(pid, chatId, patch),
+        status: (patch) => this.hub.setStatus(pid, patch),
       });
       this.sessions.set(id, s);
     }

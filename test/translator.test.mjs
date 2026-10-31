@@ -173,3 +173,49 @@ test('plan mode gathers the planners', () => {
   translator.handle(use('p2', 'ExitPlanMode', { plan: '1. a' }));
   assert.deepEqual(office.filter((e) => e.kind === 'huddle').map((e) => e.roles), [['pm', 'architect', 'ba'], ['pm', 'architect']]);
 });
+
+/** Like recorder(), plus the live status patches (todos, context). */
+function statusRecorder() {
+  const status = {};
+  const chat = new Map();
+  let n = 0;
+  const translator = new StreamTranslator({
+    office: () => {},
+    chat: (msg) => {
+      const id = `c${++n}`;
+      chat.set(id, { ...msg });
+      return id;
+    },
+    updateChat: (id, patch) => Object.assign(chat.get(id), patch),
+    status: (patch) => Object.assign(status, patch),
+  });
+  return { translator, status, chat: () => [...chat.values()] };
+}
+
+test('thinking streams into a collapsible row; subagent thinking stays out of the chat', async () => {
+  const { translator, chat } = statusRecorder();
+  const thinkDelta = (t) => ({ type: 'stream_event', parent_tool_use_id: null, event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: t } } });
+  translator.handle(thinkDelta('Cek dulu '));
+  translator.handle(thinkDelta('file-nya.'));
+  await sleep(120);
+  assert.deepEqual(chat().map((m) => [m.kind, m.text, m.streaming]), [['thinking', 'Cek dulu file-nya.', true]]);
+  translator.handle({ type: 'assistant', parent_tool_use_id: null, message: { id: 'm1', content: [{ type: 'thinking', thinking: 'Cek dulu file-nya. Final.' }] } });
+  assert.deepEqual(chat().map((m) => [m.kind, m.text, m.streaming]), [['thinking', 'Cek dulu file-nya. Final.', false]]);
+  translator.handle({ type: 'assistant', parent_tool_use_id: 'agent-1', message: { id: 'm2', content: [{ type: 'thinking', thinking: 'sub' }] } });
+  translator.handle({ type: 'assistant', parent_tool_use_id: null, message: { id: 'm3', content: [{ type: 'thinking', thinking: '' }] } }); // hidden thinking
+  assert.equal(chat().length, 1);
+});
+
+test('todos and context usage are reported as live status', () => {
+  const { translator, status } = statusRecorder();
+  translator.handle({
+    type: 'assistant',
+    parent_tool_use_id: null,
+    message: { id: 'm1', usage: { input_tokens: 10, cache_read_input_tokens: 40000, cache_creation_input_tokens: 2000 }, content: [] },
+  });
+  assert.deepEqual(status.context, { used: 42010, window: null });
+  translator.handle(use('t1', 'TodoWrite', { todos: [{ content: 'Tulis tes', activeForm: 'Menulis tes', status: 'in_progress' }, { content: 'Rapikan', status: 'pending' }] }));
+  assert.deepEqual(status.todos.map((t) => [t.content, t.activeForm, t.status]), [['Tulis tes', 'Menulis tes', 'in_progress'], ['Rapikan', undefined, 'pending']]);
+  translator.handle({ type: 'result', subtype: 'success', modelUsage: { 'claude-opus': { contextWindow: 1000000 }, 'claude-haiku': { contextWindow: 200000 } }, usage: {} });
+  assert.deepEqual(status.context, { used: 42010, window: 1000000 });
+});

@@ -41,6 +41,8 @@
       </main>
 
       <section class="panel">
+        <!-- Desktop only: drag to resize the panel (double-click resets) -->
+        <div id="panel-resizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Ubah lebar panel chat" tabindex="0" title="Geser untuk ubah lebar · klik dua kali untuk ukuran bawaan"></div>
         <nav class="tabs">
           <button data-tab="chat" class="active">Chat</button>
           <button data-tab="changes">Perubahan <span id="changes-count" class="count" hidden></span></button>
@@ -83,6 +85,8 @@
         <div id="typing" class="typing" hidden><span></span><span></span><span></span><em id="typing-text">Tim sedang bekerja…</em></div>
 
         <div id="composer" class="composer">
+          <!-- Claude's live todo list (TodoWrite / Task tools), pinned like in the CLI -->
+          <div id="todos" class="todos-pinned" hidden></div>
           <div class="controls">
             <label class="ctl" title="Kapan Claude harus minta izinmu sebelum mengedit file atau menjalankan perintah">
               <span>Izin</span>
@@ -122,10 +126,12 @@
           <div class="input">
             <button id="btn-attach" class="ghost icon attach" title="Lampirkan gambar (atau paste / drag ke kotak ini)">📎</button>
             <input id="file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
-            <textarea id="prompt" rows="3" placeholder="Minta sesuatu ke tim…   ( / command · @file · Shift+Enter baris baru )"></textarea>
+            <textarea id="prompt" rows="3" placeholder="Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )"></textarea>
             <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)">■ Stop</button>
             <button id="btn-send" class="primary">Kirim</button>
           </div>
+          <!-- Status line: permission mode (Shift+Tab), model, context used -->
+          <div id="statusline" class="statusline"></div>
           <div id="composer-hint" class="hint"></div>
           <button id="btn-demo" class="primary demo-btn">▶ Jalankan demo</button>
         </div>
@@ -180,7 +186,11 @@
               <tr><td><kbd>/</kbd></td><td>Slash command &amp; skill, misalnya <code>/compact</code> atau <code>/context</code></td></tr>
               <tr><td><kbd>@</kbd></td><td>Sebut file di project</td></tr>
               <tr><td><kbd>Ctrl</kbd> <kbd>V</kbd></td><td>Tempel gambar atau screenshot</td></tr>
+              <tr><td><kbd>!</kbd></td><td>Jalankan perintah shell langsung di folder project, misalnya <code>!git status</code>. Output-nya ikut terkirim ke Claude bersama pesan berikutnya.</td></tr>
+              <tr><td><kbd>Shift</kbd> <kbd>Tab</kbd></td><td>Ganti mode izin (Tanya dulu → Auto-edit → Rencana → Auto)</td></tr>
               <tr><td><kbd>Esc</kbd></td><td>Hentikan giliran yang berjalan, atau tutup dialog</td></tr>
+              <tr><td><kbd>Esc</kbd> <kbd>Esc</kbd></td><td>Kosongkan kotak pesan; kalau sudah kosong, ambil prompt terakhir untuk diedit</td></tr>
+              <tr><td><code>/clear</code> <code>/model</code> <code>/effort</code> <code>/resume</code> <code>/cost</code></td><td>Sesi baru · ganti model · ganti effort · riwayat sesi · pemakaian sesi ini</td></tr>
               <tr><td><kbd>?</kbd></td><td>Buka panduan ini</td></tr>
             </table>
           </section>

@@ -34,7 +34,8 @@ const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp
 const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 // Built-ins that work headless; the full list (skills, custom commands) arrives from Claude Code itself.
-const DEFAULT_SLASH = ['compact', 'context', 'cost', 'init', 'review'];
+// clear/model/effort/resume/cost/help are handled by the web app itself (see localCommand in app.js).
+const DEFAULT_SLASH = ['clear', 'compact', 'context', 'cost', 'effort', 'help', 'init', 'model', 'resume', 'review'];
 // Per-start secret: only pages served by this process can call the API (blocks CSRF from other sites).
 const TOKEN = randomBytes(24).toString('hex');
 
@@ -380,7 +381,7 @@ async function handleApi(req, res, pathname, device = null) {
     return json(res, ok ? 200 : 409, { ok });
   }
 
-  const action = pathname.match(/^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|changes|diff|commit|favorite|open)$/);
+  const action = pathname.match(/^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|changes|diff|commit|favorite|open|shell)$/);
   const project = action && hub.projects.get(action[1]);
   if (!project || project.id === DEMO_ID) return json(res, 404, { error: 'project not found' });
   const session = sessions.get(project);
@@ -430,6 +431,14 @@ async function handleApi(req, res, pathname, device = null) {
       }
       if (!text && !images.length) return json(res, 400, { error: 'prompt kosong' });
       session.prompt((text || 'Lihat gambar terlampir.').slice(0, 50000), images);
+      break;
+    }
+    case 'shell': {
+      // A shell skips Claude's permission checks, so (like login) never over plain-HTTP WiFi.
+      if (!canManageAccount(req)) return json(res, 403, { error: 'Perintah ! dari HP hanya lewat Tailscale (koneksi terenkripsi), bukan WiFi biasa.' });
+      const command = String(body.command ?? '').trim();
+      if (!command) return json(res, 400, { error: 'Perintah kosong' });
+      session.shell(command.slice(0, 4000));
       break;
     }
     case 'settings':

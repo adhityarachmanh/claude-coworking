@@ -9,6 +9,8 @@ import { clip, truncate } from './util.js';
 const IDLE_SHUTDOWN_MS = 20 * 60 * 1000;
 const INTERRUPT_GRACE_MS = 6000;
 const STDERR_TAIL = 4000;
+const SHELL_TIMEOUT_MS = 2 * 60 * 1000;
+const SHELL_OUTPUT = 30000;
 
 const settingsKey = (s) => `${s.mode}|${s.model}|${s.effort}|${s.team}`;
 
@@ -83,6 +85,7 @@ class ClaudeSession {
     this.autoApprove = false;
     this.restartPending = false;
     this.stderr = '';
+    this.shellContext = []; // `!command` results not yet sent to Claude
   }
 
   // ---------- public ----------
@@ -96,8 +99,43 @@ class ClaudeSession {
       images: images.length || undefined,
       queued: this.busy || this.queue.length > 0,
     });
-    this.queue.push({ text, images, chatId });
+    // Shell output the user ran with `!` goes to Claude ahead of the prompt, not into the bubble.
+    const context = this.shellContext.splice(0).join('\n');
+    this.queue.push({ text: context ? `${context}\n\n${text}` : text, images, chatId });
     this.pump();
+  }
+
+  /**
+   * `!command` (bash mode, like the CLI): runs in the project folder without asking Claude, and the
+   * output rides along as context with the next prompt, in the same tags the CLI uses.
+   */
+  shell(command) {
+    const chatId = this.hub.chat(this.id, { kind: 'shell', text: command, status: 'running' });
+    const [cmd, args] = process.platform === 'win32' ? ['powershell', ['-NoProfile', '-NonInteractive', '-Command', command]] : ['/bin/sh', ['-c', command]];
+    let stdout = '';
+    let stderr = '';
+    let child;
+    try {
+      child = spawn(cmd, args, { cwd: this.project.path, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      this.hub.updateChat(this.id, chatId, { status: 'fail', output: err.message });
+      return;
+    }
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => { stdout = (stdout + chunk).slice(-SHELL_OUTPUT); });
+    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-SHELL_OUTPUT); });
+    const timer = setTimeout(() => this.killTree(child.pid), SHELL_TIMEOUT_MS);
+    const finish = (code, error) => {
+      clearTimeout(timer);
+      const output = [stdout.trimEnd(), stderr.trimEnd(), error].filter(Boolean).join('\n');
+      this.hub.updateChat(this.id, chatId, { status: code === 0 ? 'ok' : 'fail', exitCode: code, output: clip(output, 8000) || '(tanpa output)' });
+      this.shellContext.push(
+        `<bash-input>${command}</bash-input>\n<bash-stdout>${clip(stdout.trimEnd(), 8000)}</bash-stdout><bash-stderr>${clip([stderr.trimEnd(), error].filter(Boolean).join('\n'), 4000)}</bash-stderr>`,
+      );
+    };
+    child.on('error', (err) => finish(-1, err.message));
+    child.on('close', (code) => finish(code ?? -1));
   }
 
   /** Continue an existing Claude Code session (from the CLI or an earlier web session). */
@@ -106,6 +144,7 @@ class ClaudeSession {
     this.closeChild();
     this.autoApprove = false;
     this.hub.setSessionId(this.id, sessionId);
+    this.hub.setStatus(this.id, { todos: null, context: null }); // unknown until the first turn
     this.hub.chat(this.id, { kind: 'divider', text: `Melanjutkan sesi ${sessionId.slice(0, 8)}` });
     for (const msg of history) this.hub.chat(this.id, msg);
   }
@@ -127,6 +166,8 @@ class ClaudeSession {
     this.stop();
     this.closeChild();
     this.hub.setSessionId(this.id, null);
+    this.hub.setStatus(this.id, { todos: null, context: null });
+    this.shellContext = [];
     this.autoApprove = false;
     this.hub.chat(this.id, { kind: 'divider', text: 'Sesi baru' });
   }
@@ -207,6 +248,7 @@ class ClaudeSession {
       office: (evt) => this.hub.office(this.id, evt),
       chat: (msg) => this.hub.chat(this.id, msg),
       updateChat: (chatId, patch) => this.hub.updateChat(this.id, chatId, patch),
+      status: (patch) => this.hub.setStatus(this.id, patch),
     });
 
     let buffer = '';
@@ -247,13 +289,18 @@ class ClaudeSession {
   }
 
   kill() {
-    const pid = this.child?.pid;
+    this.killTree(this.child?.pid);
+  }
+
+  killTree(pid) {
     if (!pid) return;
     if (process.platform === 'win32') {
       // Kill the whole tree: Claude Code may have shells/test runners running.
       spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
     } else {
-      this.child.kill('SIGTERM');
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch {}
     }
   }
 

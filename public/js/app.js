@@ -433,6 +433,7 @@ function fillComposer(text) {
   input.focus();
   input.setSelectionRange(text.length, text.length);
   autosize();
+  updateBashMode();
 }
 
 /** The Clipboard API needs a secure context; a phone on http://100.x… falls back to execCommand. */
@@ -575,6 +576,21 @@ function fillChat(node, msg) {
       const open = expanded.has(msg.id);
       node.className = `line delegate expandable st-${msg.status} ${open ? 'open' : ''}`;
       node.innerHTML = `<div class="row" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span><img class="ava sm" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${roleName(msg.role)}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
+      break;
+    }
+    case 'thinking': {
+      // Collapsed like the CLI's "✻ Thinking…"; streams while open.
+      const open = expanded.has(msg.id);
+      node.className = `line thinking expandable ${open ? 'open' : ''} ${msg.streaming ? 'streaming' : ''}`;
+      const preview = String(msg.text ?? '').replace(/\s+/g, ' ').trim();
+      node.innerHTML = `<div class="row" title="Klik untuk lihat proses berpikir"><span class="chev">${open ? '▾' : '▸'}</span><span class="think-ico">✻</span><span class="txt">${msg.streaming ? 'Berpikir…' : 'Berpikir'} <i>${escapeHtml(msg.streaming ? preview.slice(-200) : preview.slice(0, 200))}</i></span>${msg.streaming ? STATUS_ICON.running : ''}</div>${open ? `<div class="detail"><div class="md sub">${renderMarkdown(msg.text || '…')}</div></div>` : ''}`;
+      break;
+    }
+    case 'shell': {
+      // `!command` (bash mode): command and output always visible, like the CLI.
+      node.className = `line shell st-${msg.status}`;
+      const exit = msg.status === 'fail' && msg.exitCode != null ? ` <small>exit ${msg.exitCode}</small>` : '';
+      node.innerHTML = `<div class="row"><span class="bang">!</span><span class="txt">${escapeHtml(msg.text)}</span>${exit}${STATUS_ICON[msg.status] ?? ''}</div>${msg.output ? `<pre class="out ${msg.status === 'fail' ? 'fail' : ''}">${escapeHtml(msg.output)}</pre>` : ''}`;
       break;
     }
     case 'approval':
@@ -783,13 +799,137 @@ function renderComposer() {
   $('#composer-hint').textContent = hint.join('  ·  ');
   $('#typing').hidden = !(st.busy || st.cliBusy);
   $('#typing-text').textContent = st.busy ? 'Tim sedang bekerja…' : 'Claude Code (terminal) sedang bekerja…';
+  renderTodos(st);
+  renderStatusline(st);
   renderSessionBar();
+}
+
+/** Claude's todo list, pinned above the composer while there is work left (CLI: ☐ ◼ ☒). */
+function renderTodos(st) {
+  const box = $('#todos');
+  const todos = state.active === DEMO_ID ? [] : (st.todos ?? []);
+  const done = todos.filter((t) => t.status === 'completed').length;
+  // Like the CLI: the list goes away once everything is done and the turn has ended.
+  if (!todos.length || (done === todos.length && !st.busy)) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  const collapsed = box.classList.contains('collapsed');
+  const mark = { completed: '☒', in_progress: '◼' };
+  box.innerHTML = `<button class="todos-head" type="button" title="Sembunyikan / tampilkan daftar tugas">${collapsed ? '▸' : '▾'} Daftar tugas <small>${done}/${todos.length}</small></button>${
+    collapsed
+      ? ''
+      : `<ul>${todos
+          .map((t) => `<li class="st-${t.status}"><span>${mark[t.status] ?? '☐'}</span>${escapeHtml(t.status === 'in_progress' && t.activeForm ? t.activeForm : t.content)}</li>`)
+          .join('')}</ul>`
+  }`;
+}
+$('#todos').addEventListener('click', (e) => {
+  if (!e.target.closest('.todos-head')) return;
+  $('#todos').classList.toggle('collapsed');
+  renderTodos(state.statuses[state.active] ?? {});
+});
+
+const MODE_LABEL = { manual: '🛡️ tanya dulu', acceptEdits: '✏️ auto-edit file', plan: '📋 rencana dulu', auto: '⚡ auto' };
+const MODE_CYCLE = ['manual', 'acceptEdits', 'plan', 'auto']; // Shift+Tab order, as in the CLI
+
+/** Status line under the composer: permission mode, model, and how full the context is. */
+function renderStatusline(st) {
+  const line = $('#statusline');
+  if (state.active === DEMO_ID) {
+    line.innerHTML = '';
+    return;
+  }
+  const parts = [`<span class="sl-mode" title="Ganti dengan Shift+Tab">${MODE_LABEL[st.mode ?? 'manual']} <kbd>⇧Tab</kbd></span>`];
+  const model = st.activeModel || st.model;
+  if (model) parts.push(`<span>${escapeHtml(model)}</span>`);
+  if (st.context?.used) {
+    // The window is known after the first finished turn; until then assume the standard 200k.
+    const window = st.context.window || (/\[1m\]/i.test(model ?? '') ? 1_000_000 : 200_000);
+    const pct = Math.min(100, Math.round((st.context.used / window) * 100));
+    const level = pct >= 80 ? 'high' : pct >= 60 ? 'mid' : '';
+    parts.push(
+      `<span class="sl-ctx ${level}" title="Konteks terpakai: ${st.context.used.toLocaleString('id-ID')} dari ${window.toLocaleString('id-ID')} token${pct >= 60 ? ' · pertimbangkan /compact' : ''}"><span class="bar"><i style="width:${pct}%"></i></span>konteks ${pct}% · ${fmtTokens(st.context.used)}/${fmtTokens(window)}</span>`,
+    );
+  }
+  line.innerHTML = parts.join('<span class="sep">·</span>');
+}
+
+function cycleMode() {
+  const select = $('#mode');
+  select.value = MODE_CYCLE[(MODE_CYCLE.indexOf(select.value) + 1) % MODE_CYCLE.length];
+  saveSettings();
+}
+
+/**
+ * Built-in CLI commands that don't work in headless mode, handled here instead.
+ * Returns true when `text` was such a command. Others (/compact, /context, skills…) go to Claude.
+ */
+function localCommand(text) {
+  const [, name, arg = ''] = text.match(/^\/(\w+)\s*(.*)$/s) ?? [];
+  const value = arg.trim().toLowerCase();
+  const pick = (select, label) => {
+    const options = [...$(select).options].map((o) => o.value);
+    const wanted = value === 'default' ? '' : value;
+    if (!value) return toast(`${label}: ${$(select).selectedOptions[0].text}. Pilihan: ${options.map((o) => o || 'default').join(', ')}`, 'warn');
+    if (!options.includes(wanted)) return toast(`${label} "${arg.trim()}" tidak dikenal. Pilihan: ${options.map((o) => o || 'default').join(', ')}`);
+    $(select).value = wanted;
+    saveSettings();
+  };
+  switch (name) {
+    case 'clear':
+    case 'new':
+    case 'reset':
+      if (confirmNew()) api(`/api/projects/${state.active}/reset`).catch((err) => toast(err.message));
+      return true;
+    case 'model':
+      pick('#model', 'Model');
+      return true;
+    case 'effort':
+      pick('#effort', 'Effort');
+      return true;
+    case 'resume':
+      openSessions();
+      return true;
+    case 'help':
+      openModal('help-modal');
+      return true;
+    case 'cost': {
+      // This session's turns: everything after the last "new session" / "resume" divider.
+      const chat = state.chats[state.active] ?? [];
+      const start = chat.findLastIndex((m) => m.kind === 'divider') + 1;
+      const results = chat.slice(start).filter((m) => m.kind === 'result' && m.meta);
+      const sum = (key) => results.reduce((n, m) => n + (m.meta[key] ?? 0), 0);
+      const st = state.statuses[state.active] ?? {};
+      const ctx = st.context?.used ? ` · konteks ${fmtTokens(st.context.used)}` : '';
+      toast(`Sesi ini: ${results.length} giliran · ${Math.round(sum('durationMs') / 1000)} dtk · output ${fmtTokens(sum('tokensOut'))} token${ctx}. Rincian per akun: 📊 Laporan.`, 'warn');
+      return true;
+    }
+    default:
+      return false;
+  }
 }
 
 async function sendPrompt() {
   const input = $('#prompt');
   const text = input.value.trim();
   if ((!text && !attachments.length) || state.active === DEMO_ID) return;
+  if (!attachments.length && (localCommand(text) || text.startsWith('!'))) {
+    input.value = '';
+    recall.index = -1;
+    autosize();
+    closeSuggest();
+    updateBashMode();
+    if (text.startsWith('!') && text.slice(1).trim()) {
+      api(`/api/projects/${state.active}/shell`, { command: text.slice(1).trim() }).catch((err) => {
+        input.value = text;
+        updateBashMode();
+        toast(`Gagal menjalankan: ${err.message}`);
+      });
+    }
+    return;
+  }
   const images = attachments.map(({ mediaType, data }) => ({ mediaType, data }));
   input.value = '';
   recall.index = -1;
@@ -1134,6 +1274,7 @@ function exportChat() {
     else if (m.kind === 'result') lines.push('', `> ${m.ok ? '✓ Selesai' : `■ Berhenti${m.text ? `: ${m.text}` : ''}`}`);
     else if (m.kind === 'error') lines.push('', `> ⚠ ${m.text}`);
     else if (m.kind === 'divider') lines.push('', '---', '', `*${m.text}*`);
+    else if (m.kind === 'shell') lines.push('', `\`\`\`\n$ ${m.text}\n${m.output ?? ''}\n\`\`\``);
   }
   const slug = (project?.name ?? 'chat').replace(/[^\w.-]+/g, '-');
   // sv-SE formats as YYYY-MM-DD in local time (toISOString would give yesterday's date before 07:00 in Jakarta).
@@ -2082,8 +2223,8 @@ const recall = { project: null, index: -1, draft: '' };
 function promptHistory() {
   const seen = new Set();
   return (state.chats[state.active] ?? [])
-    .filter((m) => m.kind === 'user' && m.text)
-    .map((m) => m.text)
+    .filter((m) => (m.kind === 'user' || m.kind === 'shell') && m.text)
+    .map((m) => (m.kind === 'shell' ? `!${m.text}` : m.text))
     .reverse()
     .filter((text) => !seen.has(text) && seen.add(text));
 }
@@ -2106,6 +2247,7 @@ function recallPrompt(dir) {
   input.value = next === -1 ? recall.draft : list[next];
   input.setSelectionRange(input.value.length, input.value.length);
   autosize();
+  updateBashMode();
   return true;
 }
 
@@ -2140,12 +2282,42 @@ $('#prompt').addEventListener('keydown', (e) => {
     sendPrompt();
   }
 });
-// Esc stops the running turn, like in the CLI.
+// Esc stops the running turn, like in the CLI; Esc Esc when idle clears the box or recalls the last prompt.
+let lastEsc = 0;
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || suggest.items.length || state.active === DEMO_ID) return;
+  if (document.querySelector('.modal:not([hidden])')) return; // Esc closes the dialog instead
   const st = state.statuses[state.active] ?? {};
-  if (st.busy || st.queue) api(`/api/projects/${state.active}/stop`).catch((err) => toast(err.message));
+  if (st.busy || st.queue) {
+    api(`/api/projects/${state.active}/stop`).catch((err) => toast(err.message));
+    return;
+  }
+  const now = Date.now();
+  if (now - lastEsc > 500) {
+    lastEsc = now;
+    return;
+  }
+  lastEsc = 0;
+  const input = $('#prompt');
+  if (input.value.trim()) {
+    input.value = '';
+    autosize();
+    updateBashMode();
+    input.focus();
+  } else if (promptHistory()[0]) fillComposer(promptHistory()[0]);
 });
+// Shift+Tab cycles the permission mode, like in the CLI (only from the prompt box, so Tab navigation still works elsewhere).
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab' || !e.shiftKey || e.defaultPrevented || state.active === DEMO_ID) return; // defaultPrevented: Tab picked an autocomplete item
+  if (e.target !== $('#prompt') && e.target !== document.body) return;
+  e.preventDefault();
+  cycleMode();
+});
+// Bash mode: a prompt starting with ! runs as a shell command; the box shows it.
+function updateBashMode() {
+  $('#composer').classList.toggle('bash-mode', $('#prompt').value.startsWith('!'));
+}
+$('#prompt').addEventListener('input', updateBashMode);
 $('#btn-send').addEventListener('click', sendPrompt);
 $('#btn-stop').addEventListener('click', () => api(`/api/projects/${state.active}/stop`).catch((err) => toast(err.message)));
 $('#btn-new').addEventListener('click', () => {
@@ -2171,6 +2343,63 @@ function confirmNew() {
   if (!st.sessionId && !st.busy) return true;
   const busy = st.busy ? '\n\nTim sedang bekerja — pekerjaannya akan dihentikan.' : '';
   return window.confirm(`Mulai sesi baru?\n\nClaude tidak membawa konteks percakapan ini. Percakapan ini tetap bisa dilanjutkan lagi lewat 🕘 Riwayat sesi.${busy}`);
+}
+
+// ---------- resizable chat panel (desktop) ----------
+
+const PANEL_MIN = 340; // narrower and the composer controls wrap badly
+const PANEL_MAX = 960;
+const OFFICE_MIN = 480; // the office keeps at least this much room
+const panelBounds = () => [PANEL_MIN, Math.max(PANEL_MIN, Math.min(PANEL_MAX, window.innerWidth - OFFICE_MIN))];
+
+function setPanelWidth(px, persist = true) {
+  const layout = $('.layout');
+  if (px == null) {
+    layout.style.removeProperty('--panel-w'); // back to the CSS default (410px / 380px)
+    if (persist) try { localStorage.removeItem('office.panelWidth'); } catch {}
+    return;
+  }
+  const [min, max] = panelBounds();
+  const width = Math.round(Math.min(max, Math.max(min, px)));
+  layout.style.setProperty('--panel-w', `${width}px`);
+  if (persist) try { localStorage.setItem('office.panelWidth', String(width)); } catch {}
+}
+
+{
+  const resizer = $('#panel-resizer');
+  const saved = (() => { try { return Number(localStorage.getItem('office.panelWidth')); } catch { return 0; } })();
+  if (saved) setPanelWidth(saved, false);
+
+  resizer.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    resizer.setPointerCapture(e.pointerId);
+    document.body.classList.add('resizing');
+    // The panel sits on the right, so its width is the distance from the pointer to the window's right edge.
+    const onMove = (ev) => setPanelWidth(window.innerWidth - ev.clientX, false);
+    const onUp = () => {
+      resizer.removeEventListener('pointermove', onMove);
+      document.body.classList.remove('resizing');
+      setPanelWidth($('.panel').getBoundingClientRect().width);
+    };
+    resizer.addEventListener('pointermove', onMove);
+    resizer.addEventListener('pointerup', onUp, { once: true });
+    resizer.addEventListener('pointercancel', onUp, { once: true });
+  });
+  resizer.addEventListener('dblclick', () => setPanelWidth(null));
+  resizer.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 80 : 20;
+    const width = $('.panel').getBoundingClientRect().width;
+    if (e.key === 'ArrowLeft') setPanelWidth(width + step);
+    else if (e.key === 'ArrowRight') setPanelWidth(width - step);
+    else return;
+    e.preventDefault();
+  });
+  // Re-clamp a saved width when the window shrinks, without overwriting the preference.
+  window.addEventListener('resize', () => {
+    const want = (() => { try { return Number(localStorage.getItem('office.panelWidth')); } catch { return 0; } })();
+    if (want) setPanelWidth(want, false);
+  });
 }
 
 // ---------- main loop ----------
