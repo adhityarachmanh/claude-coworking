@@ -695,9 +695,17 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
 @media (max-width: 1100px) {
   .team { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
-/* Wide content (tables, code) scrolls inside its bubble instead of widening the page. */
-.md table { display: block; overflow-x: auto; max-width: 100%; }
 .msg, .msg .body, .approval, .line { min-width: 0; overflow-wrap: anywhere; }
+/* Wide content (tables, code) scrolls sideways inside its bubble instead of being squeezed:
+   the bubble's `overflow-wrap: anywhere` must not reach cells and code, or they shrink to one letter. */
+.md .table-wrap { max-width: 100%; overflow-x: auto; margin: 6px 0; -webkit-overflow-scrolling: touch; }
+.md .table-wrap table { width: auto; min-width: 100%; margin: 0; }
+.md th, .md td { overflow-wrap: normal; word-break: normal; min-width: 9ch; }
+.md th { white-space: nowrap; }
+.md pre { white-space: pre; overflow-wrap: normal; }
+/* Code blocks scroll on the <code> so the Salin button stays in place. */
+.md pre.code { overflow: hidden; }
+.md pre.code > code { display: block; overflow: auto; max-height: 220px; -webkit-overflow-scrolling: touch; }
 .mobile-nav { display: none; }
 
 /* ---------- tablet: office on top, panel below ---------- */

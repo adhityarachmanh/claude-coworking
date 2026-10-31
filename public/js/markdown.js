@@ -49,9 +49,10 @@ function inline(text) {
 function table(lines) {
   const cells = (line) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
   const [head, , ...body] = lines;
-  return `<table><thead><tr>${cells(head).map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${body
+  // Wrapped so a wide table scrolls sideways inside the bubble instead of being squeezed.
+  return `<div class="table-wrap"><table><thead><tr>${cells(head).map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${body
     .map((row) => `<tr>${cells(row).map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`)
-    .join('')}</tbody></table>`;
+    .join('')}</tbody></table></div>`;
 }
 
 export function renderMarkdown(src) {
