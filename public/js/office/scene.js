@@ -53,6 +53,7 @@ class Person {
     this.walking = false;
     this.busyUntil = 0;
     this.agentCount = 0; // subagents of this role running right now (parallel ones stack)
+    this.openTools = 0; // tools this role started that haven't finished (a long npm test, a build, …)
     this.errandUntil = 0;
     this.task = '';
     this.screen = null;
@@ -71,7 +72,8 @@ class Person {
 
   isBusy(now) {
     const status = this.scene.status;
-    return this.agentCount > 0 || now < this.busyUntil || (this.id === 'claude' && Boolean(status.busy || status.cliBusy));
+    // A tool still running keeps its role at the keyboard however long it takes (busyUntil only covers short gaps).
+    return this.agentCount > 0 || this.openTools > 0 || now < this.busyUntil || (this.id === 'claude' && Boolean(status.busy || status.cliBusy));
   }
 
   say(text, tone = 'normal', ms = 4500) {
@@ -443,19 +445,25 @@ export class Scene {
         break;
       case 'think':
         if (!p.bubble) p.setIcon('think', 2500);
+        // Thinking is work too: back to the desk (from the sofa / pantry) and keep typing while it lasts.
+        p.busyUntil = Math.max(p.busyUntil, now + 4000);
+        if (!p.asking && !p.delegating && now > p.errandUntil) p.goHome();
         break;
       case 'tool_start':
         this.toolTimes.push(now);
+        p.openTools++;
         p.work(evt.label, evt.screen);
         if (evt.tool === 'TodoWrite' && p.id === 'pm' && !p.asking) {
           p.go([{ type: 'walk', ...SPOTS.board }, { type: 'face', dir: 'up' }, { type: 'wait', ms: 2200 }, ...p.homePlan()]);
         }
         break;
       case 'tool_end':
+        p.openTools = Math.max(0, p.openTools - 1);
         p.busyUntil = Math.max(p.busyUntil, now + 3000);
         if (['Edit', 'Write', 'Bash', 'PowerShell'].includes(evt.tool)) p.setIcon('check', 900);
         break;
       case 'tool_fail':
+        p.openTools = Math.max(0, p.openTools - 1);
         p.flashUntil = now + 1600;
         p.scratchUntil = now + 2000;
         p.worriedUntil = now + 3500;
@@ -491,6 +499,7 @@ export class Scene {
         for (const person of Object.values(this.people)) {
           // Background agents keep working past the end of the turn.
           person.agentCount = (evt.activeRoles ?? []).filter((r) => r === person.id).length;
+          person.openTools = 0; // the turn is over: nothing it started is still running in the foreground
           if (person.seated) person.cheerUntil = now + 2200;
         }
         this.people.claude.say('Beres! Kerja bagus, tim 🎉', 'ok', 4500);
@@ -500,6 +509,7 @@ export class Scene {
         this.waitingUser = false;
         for (const person of Object.values(this.people)) {
           person.agentCount = 0;
+          person.openTools = 0;
           person.busyUntil = 0;
         }
         p.say('Oke, berhenti dulu. ✋', 'normal', 3000);
