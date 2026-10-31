@@ -167,6 +167,10 @@ const isLocal = (req) => LOOPBACK.has(req.socket.remoteAddress);
 const canManageAccount = (req) => isLocal(req) || isTailscaleConnection(req.socket.localAddress, req.socket.remoteAddress);
 /** A paired phone on plain-HTTP WiFi (not Tailscale): it may look, never act (see wifiAllows). */
 const isReadOnly = (req) => !canManageAccount(req);
+/** `force` re-runs the Claude CLI; a read-only phone always gets the cached answer so it can't keep spawning processes. */
+const allowForce = (req, body) => Boolean(body.force) && !isReadOnly(req);
+/** One headless browser at a time renders report PDFs (each is a full Chrome/Edge process for up to 60 s). */
+let pdfRendering = false;
 
 /** Host names we answer to (DNS-rebinding guard); LAN addresses only while phone access is on. */
 function allowedHosts() {
@@ -324,14 +328,14 @@ async function handleApi(req, res, pathname, device = null) {
   }
   // ---------- account ----------
   if (pathname === '/api/account') {
-    await account.refreshProfile(Boolean(body.force));
+    await account.refreshProfile(allowForce(req, body));
     const id = account.current?.id;
     const since = (ms) => totals(id ? ledger.query({ accountId: id, from: Date.now() - ms }) : []);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return json(res, 200, { ...account.publicState(), usage: { today: totals(id ? ledger.query({ accountId: id, from: today.getTime() }) : []), week: since(7 * 86_400_000) } });
   }
-  if (pathname === '/api/account/limits') return json(res, 200, (await account.refreshLimits(Boolean(body.force))) ?? {});
+  if (pathname === '/api/account/limits') return json(res, 200, (await account.refreshLimits(allowForce(req, body))) ?? {});
   if (pathname === '/api/account/login') {
     const flow = account.startLogin({ console: Boolean(body.console) });
     if (device) accountAlert('login', device);
@@ -375,6 +379,8 @@ async function handleApi(req, res, pathname, device = null) {
     if (!who) return json(res, 404, { error: 'Akun tidak dikenal.' });
     const isCurrent = account.current?.id === accountId;
     const html = reportHtml({ account: who, profile: isCurrent ? account.profile : null, limits: isCurrent ? account.limits : null, summary });
+    if (pdfRendering) return json(res, 429, { error: 'Laporan PDF lain sedang dibuat. Coba lagi sebentar.' });
+    pdfRendering = true;
     try {
       const pdf = await renderPdf(html);
       // Local date (sv-SE = YYYY-MM-DD): toISOString is UTC, a day behind in the Jakarta morning.
@@ -384,6 +390,8 @@ async function handleApi(req, res, pathname, device = null) {
     } catch (err) {
       // No headless browser available: hand back the HTML so the page can print it to PDF.
       return json(res, 501, { error: err.message, html });
+    } finally {
+      pdfRendering = false;
     }
   }
 

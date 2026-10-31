@@ -307,6 +307,11 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   assert.equal((await snapshot()).client.readOnly, false, 'the laptop is never read-only');
   const reads = ['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`];
   for (const p of reads) assert.notEqual((await phoneApi(p, { taskId: 'x' })).status, 403, `read ${p}`);
+  // a read-only phone can't make the laptop re-run the Claude CLI: `force` is ignored, the cached answer comes back
+  const cachedLimits = await (await phoneApi('/api/account/limits', {})).json();
+  assert.ok(cachedLimits.at, 'limits were loaded');
+  await new Promise((r) => setTimeout(r, 5)); // a fresh CLI run would get a later `at`
+  assert.equal((await (await phoneApi('/api/account/limits', { force: true })).json()).at, cachedLimits.at, 'force from WiFi reuses the cache');
   const actions = [
     ...['prompt', 'shell', 'settings', 'commit', 'rewind', 'rewind-preview', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'favorite', 'rename'].map((a) => `/api/projects/${id}/${a}`),
     '/api/approvals/abc',
