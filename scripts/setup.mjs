@@ -75,7 +75,10 @@ async function checkBasics() {
 
 function tailscaleBin() {
   const candidates = WIN ? ['C:\\Program Files\\Tailscale\\tailscale.exe'] : ['/usr/bin/tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale'];
-  return candidates.find((p) => existsSync(p)) ?? (capture(WIN ? 'where' : 'which', ['tailscale'])?.split(/\r?\n/)[0] || null);
+  if (candidates.some((p) => existsSync(p))) return candidates.find((p) => existsSync(p));
+  // capture() returns stderr on failure (e.g. "INFO: Could not find files..."), so only trust a real path
+  const found = capture(WIN ? 'where' : 'which', ['tailscale'])?.split(/\r?\n/)[0];
+  return found && existsSync(found) ? found : null;
 }
 
 async function setupTailscale() {
