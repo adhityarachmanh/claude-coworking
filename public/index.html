@@ -23,11 +23,11 @@
       <button id="crumb" class="crumb" title="Ganti project (Ctrl+K)"></button>
       <span class="grow"></span>
       <button id="btn-account" class="account-btn" title="Akun Claude, kuota & login"><span id="account-avatar" class="avatar">?</span><span id="account-label" class="account-label">Akun</span></button>
-      <button id="btn-report" class="icon-btn labeled" title="Laporan penggunaan token (PDF)"><span class="ico">📊</span><span class="lbl">Laporan</span></button>
-      <button id="btn-phone" class="icon-btn labeled" title="Buka dari HP (scan QR)" hidden><span class="ico">📱</span><span class="lbl">Buka di HP</span></button>
-      <button id="btn-notify" class="icon-btn labeled" title="Notifikasi & suara"><span class="ico">🔕</span><span class="lbl">Notifikasi</span></button>
-      <button id="btn-help" class="icon-btn labeled" title="Panduan & shortcut keyboard (?)"><span class="ico">❓</span><span class="lbl">Bantuan</span></button>
-      <button id="btn-settings" class="icon-btn labeled" title="Pengaturan"><span class="ico">⚙</span><span class="lbl">Pengaturan</span></button>
+      <button id="btn-report" class="icon-btn labeled" title="Laporan penggunaan token (PDF)"><span class="ico" aria-hidden="true">📊</span><span class="lbl">Laporan</span></button>
+      <button id="btn-phone" class="icon-btn labeled" title="Buka dari HP (scan QR)" hidden><span class="ico" aria-hidden="true">📱</span><span class="lbl">Buka di HP</span></button>
+      <button id="btn-notify" class="icon-btn labeled" title="Notifikasi & suara"><span class="ico" aria-hidden="true">🔕</span><span class="lbl">Notifikasi</span></button>
+      <button id="btn-help" class="icon-btn labeled" title="Panduan & shortcut keyboard (?)"><span class="ico" aria-hidden="true">❓</span><span class="lbl">Bantuan</span></button>
+      <button id="btn-settings" class="icon-btn labeled" title="Pengaturan"><span class="ico" aria-hidden="true">⚙</span><span class="lbl">Pengaturan</span></button>
       <span id="conn" class="pill">menghubungkan…</span>
     </header>
 
@@ -54,12 +54,12 @@
             <span class="grow"></span>
             <button id="ch-open" class="ghost local-only" title="Buka file yang dipilih (atau project) di VS Code">🧭 VS Code</button>
             <button id="ch-review" class="ghost" title="Minta Tech Lead me-review semua perubahan">🔍 Minta review</button>
-            <button id="ch-refresh" class="ghost icon" title="Muat ulang">↻</button>
+            <button id="ch-refresh" class="ghost icon" title="Muat ulang" aria-label="Muat ulang">↻</button>
           </div>
           <ul id="ch-files" class="ch-files"></ul>
           <div id="ch-diff" class="ch-diff"></div>
           <form id="ch-commit" class="ch-commit">
-            <input id="ch-message" placeholder="Pesan commit…" autocomplete="off" />
+            <input id="ch-message" aria-label="Pesan commit" placeholder="Pesan commit…" autocomplete="off" />
             <button class="primary">Commit</button>
           </form>
         </div>
@@ -69,7 +69,7 @@
             <b id="sb-title">Percakapan baru</b>
             <button id="btn-sessions" class="sb-btn" title="Lihat dan lanjutkan sesi Claude Code sebelumnya (dari terminal maupun web)">🕘 <span>Riwayat sesi</span></button>
             <button id="btn-new" class="sb-btn" title="Mulai percakapan baru — Claude tidak membawa konteks percakapan ini">＋ <span>Sesi baru</span></button>
-            <button id="btn-more" class="sb-btn sb-more" title="Lainnya: export, lanjut di terminal, buka di VS Code" aria-haspopup="menu" aria-expanded="false">⋯</button>
+            <button id="btn-more" class="sb-btn sb-more" title="Lainnya: export, lanjut di terminal, buka di VS Code" aria-haspopup="menu" aria-expanded="false" aria-label="Lainnya">⋯</button>
             <small id="sb-meta"></small>
             <div id="more-menu" class="menu" role="menu" hidden>
               <button role="menuitem" data-more="export">⬇ Export percakapan (.md)</button>
@@ -125,9 +125,9 @@
           <div id="suggest" class="suggest" hidden></div>
           <div id="attachments" class="attachments" hidden></div>
           <div class="input">
-            <button id="btn-attach" class="ghost icon attach" title="Lampirkan gambar (atau paste / drag ke kotak ini)">📎</button>
+            <button id="btn-attach" class="ghost icon attach" title="Lampirkan gambar (atau paste / drag ke kotak ini)" aria-label="Lampirkan gambar">📎</button>
             <input id="file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
-            <textarea id="prompt" rows="3" placeholder="Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )"></textarea>
+            <textarea id="prompt" rows="3" aria-label="Pesan untuk tim" placeholder="Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )"></textarea>
             <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)">■ Stop</button>
             <button id="btn-send" class="primary">Kirim</button>
           </div>
@@ -149,24 +149,24 @@
 
     <!-- Project picker (Ctrl+K) -->
     <div id="project-modal" class="modal" hidden>
-      <div class="modal-card project-card" role="dialog" aria-label="Pilih project">
+      <div class="modal-card project-card" role="dialog" aria-modal="true" aria-label="Pilih project">
         <div class="side-head">
-          <input id="project-search" type="search" placeholder="Cari project…  (↑↓ pilih · Enter buka · Esc tutup)" autocomplete="off" />
-          <button id="refresh-projects" class="icon-btn" title="Pindai ulang folder">↻</button>
-          <button class="icon-btn" data-close title="Tutup">✕</button>
+          <input id="project-search" type="search" aria-label="Cari project" placeholder="Cari project…  (↑↓ pilih · Enter buka · Esc tutup)" autocomplete="off" />
+          <button id="refresh-projects" class="icon-btn" title="Pindai ulang folder" aria-label="Pindai ulang folder">↻</button>
+          <button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button>
         </div>
         <ul id="project-list" class="projects"></ul>
         <form id="add-project" class="add-project">
-          <input id="add-project-path" placeholder="Tambah folder lain: C:\path\project" autocomplete="off" />
-          <button class="icon-btn" title="Tambah">＋</button>
+          <input id="add-project-path" aria-label="Tambah folder project" placeholder="Tambah folder lain: C:\path\project" autocomplete="off" />
+          <button class="icon-btn" title="Tambah" aria-label="Tambah folder">＋</button>
         </form>
       </div>
     </div>
 
     <!-- Help: how the office works + keyboard shortcuts (opens with ?) -->
     <div id="help-modal" class="modal" hidden>
-      <div class="modal-card help-card" role="dialog" aria-label="Panduan">
-        <div class="modal-head"><b>❓ Panduan Adhit Office</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+      <div class="modal-card help-card" role="dialog" aria-modal="true" aria-label="Panduan">
+        <div class="modal-head"><b>❓ Panduan Adhit Office</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div class="help">
           <section>
             <h3>Mulai dalam 4 langkah</h3>
@@ -226,8 +226,8 @@
 
     <!-- Team names: rename the people in the office (shared by every device) -->
     <div id="team-modal" class="modal" hidden>
-      <div class="modal-card team-card" role="dialog" aria-label="Nama anggota tim">
-        <div class="modal-head"><b>👥 Nama anggota tim</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+      <div class="modal-card team-card" role="dialog" aria-modal="true" aria-label="Nama anggota tim">
+        <div class="modal-head"><b>👥 Nama anggota tim</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <p class="muted small">Nama tampil di kantor, chat, aktivitas, dan laporan. Kosongkan untuk kembali ke nama bawaan. Berlaku di laptop dan HP.</p>
         <form id="team-form">
           <div id="team-list" class="team-list"></div>
@@ -242,11 +242,11 @@
 
     <!-- Session history: continue an earlier Claude Code session (CLI or web) -->
     <div id="sessions-modal" class="modal" hidden>
-      <div class="modal-card sessions-card" role="dialog" aria-label="Riwayat sesi">
-        <div class="modal-head"><b>🕘 Riwayat sesi <small id="sessions-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+      <div class="modal-card sessions-card" role="dialog" aria-modal="true" aria-label="Riwayat sesi">
+        <div class="modal-head"><b>🕘 Riwayat sesi <small id="sessions-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <p class="muted small">Lanjutkan percakapan Claude Code sebelumnya di project ini, baik dari terminal (CLI) maupun dari web. Isi percakapannya dimuat ke chat dan Claude ingat konteksnya.</p>
         <div class="sessions-tools">
-          <input id="sessions-search" type="search" placeholder="Cari judul sesi…" autocomplete="off" />
+          <input id="sessions-search" type="search" aria-label="Cari sesi" placeholder="Cari judul sesi…" autocomplete="off" />
           <button id="sessions-new" class="ghost">＋ Sesi baru</button>
         </div>
         <div id="sessions-list" class="sessions-list"></div>
@@ -255,8 +255,8 @@
 
     <!-- Rewind (Esc Esc, /rewind): restore code and/or conversation to before one of your prompts -->
     <div id="rewind-modal" class="modal" hidden>
-      <div class="modal-card rewind-card" role="dialog" aria-label="Rewind">
-        <div class="modal-head"><b>⏪ Rewind</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+      <div class="modal-card rewind-card" role="dialog" aria-modal="true" aria-label="Rewind">
+        <div class="modal-head"><b>⏪ Rewind</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <p class="muted small">Pilih pesanmu. Kode dan/atau percakapan dikembalikan ke keadaan <i>sebelum</i> pesan itu dikirim, seperti Esc Esc di Claude Code.</p>
         <ol id="rewind-list" class="rewind-list"></ol>
         <div id="rewind-detail" class="rewind-detail" hidden></div>
@@ -265,11 +265,11 @@
 
     <!-- MCP servers (/mcp): status, reconnect, enable/disable, OAuth login -->
     <div id="mcp-modal" class="modal" hidden>
-      <div class="modal-card mcp-card" role="dialog" aria-label="Server MCP">
-        <div class="modal-head"><b>🔌 Server MCP <small id="mcp-summary" class="muted"></small></b><button id="mcp-refresh" class="icon-btn" title="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup">✕</button></div>
+      <div class="modal-card mcp-card" role="dialog" aria-modal="true" aria-label="Server MCP">
+        <div class="modal-head"><b>🔌 Server MCP <small id="mcp-summary" class="muted"></small></b><button id="mcp-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div id="mcp-callback" class="mcp-callback" hidden>
           <p class="small">Setelah login, browser diarahkan ke alamat <code>localhost</code> yang mungkin gagal dibuka di perangkat ini. Salin URL lengkap dari address bar, lalu tempel di sini:</p>
-          <form id="mcp-callback-form"><input id="mcp-callback-url" placeholder="http://localhost:…/callback?code=…" autocomplete="off" /><button class="primary">Selesaikan login</button></form>
+          <form id="mcp-callback-form"><input id="mcp-callback-url" aria-label="URL callback login MCP" placeholder="http://localhost:…/callback?code=…" autocomplete="off" /><button class="primary">Selesaikan login</button></form>
         </div>
         <ul id="mcp-list" class="mcp-list"></ul>
       </div>
@@ -277,8 +277,8 @@
 
     <!-- Background tasks (/tasks, Ctrl+B): Bash commands and subagents Claude Code runs -->
     <div id="tasks-modal" class="modal" hidden>
-      <div class="modal-card tasks-card" role="dialog" aria-label="Tugas latar">
-        <div class="modal-head"><b>⧗ Tugas</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+      <div class="modal-card tasks-card" role="dialog" aria-modal="true" aria-label="Tugas latar">
+        <div class="modal-head"><b>⧗ Tugas</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <p class="muted small">Perintah dan agent yang dijalankan Claude Code di sesi ini. <kbd>Ctrl</kbd> <kbd>B</kbd> memindahkan yang sedang jalan ke latar belakang supaya kamu bisa lanjut chat.</p>
         <div class="tasks-tools"><button id="tasks-background" class="ghost" title="Ctrl+B">⏬ Pindahkan ke latar</button></div>
         <ul id="tasks-list" class="tasks-list"></ul>
@@ -287,8 +287,8 @@
 
     <!-- Settings (laptop only) -->
     <div id="settings-modal" class="modal" hidden>
-      <div class="modal-card" role="dialog" aria-label="Pengaturan">
-        <div class="modal-head"><b>⚙ Pengaturan</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-label="Pengaturan">
+        <div class="modal-head"><b>⚙ Pengaturan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <form id="roots-form" class="roots">
           <label for="roots-input">Folder induk projects <small>(satu per baris — semua subfolder-nya jadi project)</small></label>
           <textarea id="roots-input" rows="3" spellcheck="false" placeholder="C:\Users\nama\projects"></textarea>
@@ -308,16 +308,16 @@
 
     <!-- Claude account: profile, plan usage, login/logout -->
     <div id="account-modal" class="modal" hidden>
-      <div class="modal-card account-card" role="dialog" aria-label="Akun Claude">
-        <div class="modal-head"><b>👤 Akun Claude</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+      <div class="modal-card account-card" role="dialog" aria-modal="true" aria-label="Akun Claude">
+        <div class="modal-head"><b>👤 Akun Claude</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div id="account-body"></div>
       </div>
     </div>
 
     <!-- Token usage report -->
     <div id="report-modal" class="modal" hidden>
-      <div class="modal-card report-card" role="dialog" aria-label="Laporan penggunaan token">
-        <div class="modal-head"><b>📊 Laporan penggunaan token</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
+      <div class="modal-card report-card" role="dialog" aria-modal="true" aria-label="Laporan penggunaan token">
+        <div class="modal-head"><b>📊 Laporan penggunaan token</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <!-- Step 1: which data. The preview below and the PDF always show exactly this. -->
         <fieldset class="report-filters">
           <legend>🔎 Pilih data · berlaku untuk pratinjau <i>dan</i> PDF</legend>
@@ -373,10 +373,10 @@
     </div>
 
     <div id="phone-modal" class="modal" hidden>
-      <div class="modal-card" role="dialog" aria-labelledby="phone-title">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="phone-title">
         <div class="modal-head">
           <b id="phone-title">📱 Buka dari HP</b>
-          <button id="phone-close" class="icon-btn" title="Tutup">✕</button>
+          <button id="phone-close" class="icon-btn" title="Tutup" aria-label="Tutup">✕</button>
         </div>
         <label class="switch big"><input id="remote-enabled" type="checkbox" /> Izinkan akses dari HP di jaringan WiFi yang sama</label>
         <div id="phone-body"></div>

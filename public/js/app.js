@@ -40,6 +40,7 @@ async function api(path, body = {}) {
 function toast(message, tone = 'error') {
   const node = document.createElement('div');
   node.className = `toast ${tone}`;
+  node.setAttribute('role', tone === 'error' ? 'alert' : 'status'); // errors interrupt a screen reader, the rest wait
   node.textContent = message;
   document.body.append(node);
   setTimeout(() => node.remove(), 4000);
@@ -181,6 +182,62 @@ document.querySelectorAll('.modal').forEach((modal) =>
   }),
 );
 
+// Focus follows the dialogs: into a dialog when it opens, back to where it was when the last one closes.
+// Dialogs open and close from many places (openModal, Esc, backdrop, ✕, direct `hidden` writes),
+// so this watches the `hidden` attribute instead of hooking each of them.
+const FOCUSABLE = 'button, [href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])';
+const openModals = () => [...document.querySelectorAll('.modal')].filter((m) => !m.hidden);
+const focusablesIn = (root) => [...root.querySelectorAll(FOCUSABLE)].filter((el) => !el.disabled && !el.closest('[hidden]') && el.getClientRects().length);
+let focusBeforeModal = null;
+document.addEventListener('focusin', (e) => {
+  if (!e.target.closest?.('.modal')) focusBeforeModal = e.target;
+});
+// Focus leaving to nowhere (iOS keyboard dismissed, Safari taps that don't focus buttons) forgets the origin,
+// so closing a dialog never re-focuses a stale #prompt and pops the phone keyboard unasked.
+document.addEventListener('focusout', (e) => {
+  if (!e.relatedTarget && !e.target.closest?.('.modal')) focusBeforeModal = null;
+});
+// The origin may have been re-rendered while the dialog was open (team cards every 500ms): find its replacement.
+function focusOrigin() {
+  const el = focusBeforeModal;
+  if (!el || el.isConnected) return el;
+  if (el.dataset?.role) return document.querySelector(`#team .member[data-role="${CSS.escape(el.dataset.role)}"]`);
+  if (el.dataset?.path) return [...document.querySelectorAll('#ch-files li[data-path]')].find((li) => li.dataset.path === el.dataset.path) ?? null;
+  return null;
+}
+const modalObserver = new MutationObserver((records) => {
+  const changed = new Map(); // modal -> was it hidden before this batch
+  for (const r of records) if (!changed.has(r.target)) changed.set(r.target, r.oldValue !== null);
+  for (const [modal, wasHidden] of changed) {
+    if (wasHidden === modal.hidden) continue; // re-setting the same value (e.g. closing a closed dialog)
+    const active = document.activeElement;
+    if (!modal.hidden) {
+      // A caller that already placed focus (project search, a team member's name field) wins.
+      if (!modal.contains(active)) focusablesIn(modal)[0]?.focus({ preventScroll: true });
+    } else if (!openModals().length && (!active || active === document.body || modal.contains(active))) {
+      const origin = focusOrigin();
+      if (origin?.getClientRects().length) origin.focus({ preventScroll: true });
+    }
+  }
+});
+document.querySelectorAll('.modal').forEach((modal) => modalObserver.observe(modal, { attributeFilter: ['hidden'], attributeOldValue: true }));
+
+// Tab stays inside the topmost open dialog.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab') return;
+  const modal = openModals().at(-1);
+  if (!modal) return;
+  const items = focusablesIn(modal);
+  if (!items.length) return;
+  const first = items[0];
+  const last = items.at(-1);
+  const active = document.activeElement;
+  if (!modal.contains(active) || (e.shiftKey && active === first) || (!e.shiftKey && active === last)) {
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus();
+  }
+});
+
 // ---------- project picker (Ctrl+K) ----------
 
 const picker = { cursor: 0, visible: [] };
@@ -212,7 +269,7 @@ function renderSidebar() {
         <span class="p-text"><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.path ? p.path.replace(/^.*\/projects\//, '…/') : 'simulasi')}</small></span>
         ${badge}
         ${star}
-        ${p.sources.includes('custom') ? '<button class="forget" title="Hapus dari daftar">×</button>' : ''}
+        ${p.sources.includes('custom') ? '<button class="forget" title="Hapus dari daftar" aria-label="Hapus dari daftar">×</button>' : ''}
       </li>`;
     })
     .join('');
@@ -310,6 +367,16 @@ document.addEventListener('keydown', (e) => {
   }
 }, true);
 
+// Clickable non-buttons (file rows, tool rows, team cards, the session title) carry role="button":
+// Enter/Space runs the same click handler a mouse would, through one delegated listener.
+document.addEventListener('keydown', (e) => {
+  if ((e.key !== 'Enter' && e.key !== ' ') || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const el = e.target;
+  if (!(el instanceof HTMLElement) || el.tagName === 'BUTTON' || el.getAttribute('role') !== 'button') return;
+  e.preventDefault(); // Space would scroll the list
+  el.click();
+});
+
 function updateTitle() {
   const pending = [...state.approvals.values()].filter((a) => a.status === 'pending').length;
   document.title = pending ? `(${pending}) Menunggu izin — ${APP_NAME}` : APP_NAME;
@@ -334,7 +401,7 @@ $('#mobile-nav').addEventListener('click', (e) => {
 // A shorter hint fits a phone-width composer on one line.
 const narrow = matchMedia('(max-width: 760px)');
 const applyPlaceholder = () => {
-  $('#prompt').placeholder = narrow.matches ? 'Ketik pesan…  ( / command · @file )' : 'Minta sesuatu ke tim…   ( / command · @file · Shift+Enter baris baru )';
+  $('#prompt').placeholder = narrow.matches ? 'Ketik pesan…  ( / command · @file )' : 'Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )';
   $('#prompt').rows = narrow.matches ? 1 : 3;
   autosize();
 };
@@ -539,6 +606,13 @@ function who(role) {
 }
 
 function fillChat(node, msg) {
+  // Re-rendering replaces the row: keep keyboard focus on it (toggle via Enter, live status updates).
+  const refocusRow = node.contains(document.activeElement) && document.activeElement.classList.contains('row');
+  fillChatBody(node, msg);
+  if (refocusRow) node.querySelector(':scope > .row')?.focus({ preventScroll: true });
+}
+
+function fillChatBody(node, msg) {
   switch (msg.kind) {
     case 'user': {
       const tags = [
@@ -569,13 +643,13 @@ function fillChat(node, msg) {
     case 'tool': {
       const open = expanded.has(msg.id);
       node.className = `line tool expandable st-${msg.status} ${open ? 'open' : ''} ${msg.sub ? 'sub' : ''}`;
-      node.innerHTML = `<div class="row" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span><span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s" title="${escapeHtml(roleName(msg.role))}">${escapeHtml(roleName(msg.role))}</span><span class="txt">${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span><span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s" title="${escapeHtml(roleName(msg.role))}">${escapeHtml(roleName(msg.role))}</span><span class="txt">${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
       break;
     }
     case 'delegate': {
       const open = expanded.has(msg.id);
       node.className = `line delegate expandable st-${msg.status} ${open ? 'open' : ''}`;
-      node.innerHTML = `<div class="row" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span><img class="ava sm" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${roleName(msg.role)}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span><img class="ava sm" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${roleName(msg.role)}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
       break;
     }
     case 'thinking': {
@@ -583,7 +657,7 @@ function fillChat(node, msg) {
       const open = expanded.has(msg.id);
       node.className = `line thinking expandable ${open ? 'open' : ''} ${msg.streaming ? 'streaming' : ''}`;
       const preview = String(msg.text ?? '').replace(/\s+/g, ' ').trim();
-      node.innerHTML = `<div class="row" title="Klik untuk lihat proses berpikir"><span class="chev">${open ? '▾' : '▸'}</span><span class="think-ico">✻</span><span class="txt">${msg.streaming ? 'Berpikir…' : 'Berpikir'} <i>${escapeHtml(msg.streaming ? preview.slice(-200) : preview.slice(0, 200))}</i></span>${msg.streaming ? STATUS_ICON.running : ''}</div>${open ? `<div class="detail"><div class="md sub">${renderMarkdown(msg.text || '…')}</div></div>` : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk lihat proses berpikir"><span class="chev">${open ? '▾' : '▸'}</span><span class="think-ico">✻</span><span class="txt">${msg.streaming ? 'Berpikir…' : 'Berpikir'} <i>${escapeHtml(msg.streaming ? preview.slice(-200) : preview.slice(0, 200))}</i></span>${msg.streaming ? STATUS_ICON.running : ''}</div>${open ? `<div class="detail"><div class="md sub">${renderMarkdown(msg.text || '…')}</div></div>` : ''}`;
       break;
     }
     case 'shell': {
@@ -626,7 +700,7 @@ function fillChat(node, msg) {
 }
 
 /** "Running… (12s)" on a long tool call, as the CLI shows it. */
-const elapsedTag = (msg) => (msg.status === 'running' && msg.elapsed ? `<small class="elapsed">${msg.elapsed >= 60 ? `${Math.floor(msg.elapsed / 60)}m ${msg.elapsed % 60}d` : `${msg.elapsed} dtk`}</small>` : '');
+const elapsedTag = (msg) => (msg.status === 'running' && msg.elapsed ? `<small class="elapsed">${msg.elapsed >= 60 ? `${Math.floor(msg.elapsed / 60)} mnt ${msg.elapsed % 60} dtk` : `${msg.elapsed} dtk`}</small>` : '');
 
 // ---------- approvals ----------
 
@@ -648,12 +722,12 @@ function fillApproval(node, msg) {
     body = (input.questions ?? [])
       .map((q, qi) => `<div class="q"><b>${escapeHtml(q.question)}</b><div class="opts">${(q.options ?? [])
         .map((o) => `<label><input type="${q.multiSelect ? 'checkbox' : 'radio'}" name="q${qi}" value="${escapeHtml(o.label)}"> <span><b>${escapeHtml(o.label)}</b>${o.description ? ` — ${escapeHtml(o.description)}` : ''}</span></label>`)
-        .join('')}</div><input class="other-text" data-q="${qi}" placeholder="Atau tulis jawaban sendiri…"></div>`)
+        .join('')}</div><input class="other-text" data-q="${qi}" placeholder="Atau tulis jawaban sendiri…" aria-label="Jawaban sendiri"></div>`)
       .join('');
     actions = '<button class="primary" data-act="answer">Kirim jawaban</button><button data-act="deny">Lewati</button>';
   } else if (approval.kind === 'plan') {
     // The CLI's plan dialog: approve and choose how edits are handled, or keep planning with feedback.
-    body = `<div class="plan md">${renderMarkdown(input.plan ?? '')}</div><input class="feedback" placeholder="Catatan revisi (untuk Minta revisi)">`;
+    body = `<div class="plan md">${renderMarkdown(input.plan ?? '')}</div><input class="feedback" placeholder="Catatan revisi (untuk Minta revisi)" aria-label="Catatan revisi rencana">`;
     actions =
       '<button class="primary" data-act="allow" data-mode="acceptEdits" title="Mode berubah ke ✏️ Auto-edit file">✓ Setujui, auto-edit</button><button data-act="allow" data-mode="manual" title="Mode berubah ke 🛡️ Tanya dulu">✓ Setujui, tanya tiap edit</button><button data-act="deny">Minta revisi</button>';
   } else {
@@ -663,7 +737,7 @@ function fillApproval(node, msg) {
     else if (input.url) body = `<pre>${escapeHtml(input.url)}</pre>`;
     else body = `<pre>${escapeHtml(input.json ?? JSON.stringify(input, null, 2))}</pre>`;
     // "No, and tell Claude what to do differently": the note goes back to Claude with the refusal.
-    body += '<input class="feedback" placeholder="Kalau menolak: beri tahu Claude harus bagaimana (opsional)">';
+    body += '<input class="feedback" placeholder="Kalau menolak: beri tahu Claude harus bagaimana (opsional)" aria-label="Alasan menolak (opsional)">';
     actions = `<button class="primary" data-act="allow">Izinkan</button>${approval.canAlways ? '<button data-act="always" title="Simpan aturan izin agar tidak ditanya lagi">Izinkan selalu</button>' : ''}<button data-act="all" title="Semua aksi berikutnya di sesi ini otomatis diizinkan">Izinkan semua (sesi ini)</button><button class="danger" data-act="deny">Tolak</button>`;
   }
   node.innerHTML = `${head}<div class="ap-label">${escapeHtml(approval.description || msg.text)}</div>${body}<div class="ap-actions">${actions}</div>`;
@@ -712,23 +786,28 @@ function appendActivity(evt, prepend) {
   const text = evt.kind === 'delegate' ? `${fromPrefix(evt.from)}→ ${evt.agentType}: ${evt.label}` : evt.kind === 'say' ? evt.text : evt.label ?? '';
   li.innerHTML = `<time>${time(evt.ts)}</time><span class="dot" style="background:${roleColor(evt.role)}"></span><span><b>${roleName(evt.role)}</b> ${KIND_ICON[evt.kind]} ${escapeHtml(text)}</span>`;
   const list = $('#activity');
+  list.querySelector('.activity-empty')?.remove();
   if (prepend) list.prepend(li);
   else list.append(li);
   while (list.children.length > 200) list.lastElementChild.remove();
 }
 
 function renderActivity() {
-  $('#activity').innerHTML = '';
+  const list = $('#activity');
+  list.innerHTML = '';
   for (const evt of [...(state.events[state.active] ?? [])].reverse()) appendActivity(evt, false);
+  if (!list.children.length) list.innerHTML = '<li class="activity-empty">Belum ada aktivitas di project ini.</li>';
 }
 
 // ---------- team strip ----------
+
+let teamHtml = '';
 
 function renderTeam() {
   const scene = scenes.get(state.active);
   if (!scene) return;
   const now = performance.now();
-  $('#team').innerHTML = ROLE_ORDER.map((id) => {
+  const html = ROLE_ORDER.map((id) => {
     const p = scene.people[id];
     const [cls, text] = p.asking
       ? ['ask', 'Menunggu izinmu']
@@ -742,11 +821,16 @@ function renderTeam() {
               ? ['idle', 'Jalan-jalan']
               : ['idle', 'Standby'];
     const tip = `${CAST[id].name} — ${CAST[id].title}\n${text}${p.task ? `\n${p.task}` : ''}\n(klik untuk ganti nama)`;
-    return `<div class="member ${cls}" data-role="${id}" style="--c:${CAST[id].color}" title="${escapeHtml(tip)}">
+    return `<div class="member ${cls}" data-role="${id}" role="button" tabindex="0" style="--c:${CAST[id].color}" title="${escapeHtml(tip)}">
       <img src="${avatarURL(CAST[id].look)}" alt="">
       <div><b>${escapeHtml(CAST[id].name)}</b><small>${CAST[id].title}</small><span class="st">${p.task && cls !== 'idle' ? escapeHtml(p.task) : text}</span></div>
     </div>`;
   }).join('');
+  // Runs every 500 ms: only touch the DOM on a change, and keep keyboard focus on the same card.
+  if (html === teamHtml) return;
+  const focused = document.activeElement?.closest?.('#team .member')?.dataset.role;
+  $('#team').innerHTML = teamHtml = html;
+  if (focused) $(`#team .member[data-role="${focused}"]`)?.focus({ preventScroll: true });
 }
 
 // ---------- team names (rename the people in the office) ----------
@@ -1040,7 +1124,7 @@ function renderAttachments() {
   const box = $('#attachments');
   box.hidden = !attachments.length;
   box.innerHTML = attachments
-    .map((a, i) => `<div class="thumb"><img src="${a.url}" alt=""><button data-i="${i}" title="Hapus">×</button></div>`)
+    .map((a, i) => `<div class="thumb"><img src="${a.url}" alt=""><button data-i="${i}" title="Hapus" aria-label="Hapus gambar ${i + 1}">×</button></div>`)
     .join('');
 }
 
@@ -1266,7 +1350,16 @@ function renderSessionBar() {
   // A name set with /rename (or by clicking the title) wins, as in the CLI's /resume list.
   $('#sb-title').textContent = st.sessionId ? (st.title ?? known?.title ?? `Sesi ${st.sessionId.slice(0, 8)}`) : 'Percakapan baru';
   $('#sb-title').title = st.sessionId ? 'Klik untuk mengganti nama sesi (/rename)' : '';
-  $('#sb-title').classList.toggle('renamable', Boolean(st.sessionId));
+  const title = $('#sb-title');
+  title.classList.toggle('renamable', Boolean(st.sessionId));
+  // Renamable: reachable by keyboard like a button (Enter/Space handled by the delegated listener).
+  if (st.sessionId) {
+    title.setAttribute('role', 'button');
+    title.tabIndex = 0;
+  } else {
+    title.removeAttribute('role');
+    title.removeAttribute('tabindex');
+  }
   const meta = st.sessionId
     ? [known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
     : ['pesan pertamamu memulai sesi Claude Code baru'];
@@ -1299,7 +1392,7 @@ async function openSessions() {
     renderSessionBar();
     if (!narrow.matches) $('#sessions-search').focus();
   } catch (err) {
-    $('#sessions-list').innerHTML = `<p class="warn">Gagal memuat riwayat: ${escapeHtml(err.message)}</p>`;
+    $('#sessions-list').innerHTML = `<p class="state-error">Gagal memuat riwayat: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -1545,7 +1638,9 @@ renderNotifyButton();
 
 // ---------- changes panel (git) ----------
 
-const changes = { selected: null, timer: null, data: null };
+// project: whose files the list shows; diffFor: `${project}\n${file}` of the diff on screen (both drive the loading state)
+const changes = { selected: null, timer: null, data: null, project: null, diffFor: null };
+const LOADING = '<span class="spinner" aria-hidden="true"></span> Memuat…';
 
 function renderDiff(diff) {
   return diff
@@ -1563,6 +1658,7 @@ async function loadChanges() {
   const list = $('#ch-files');
   if (project === DEMO_ID) {
     changes.data = null;
+    changes.project = project;
     $('#ch-branch').textContent = '';
     list.innerHTML = '<li class="empty-line">Demo tidak punya repository. Pilih project sungguhan.</li>';
     $('#ch-diff').innerHTML = '';
@@ -1570,15 +1666,33 @@ async function loadChanges() {
     $('#nav-badge-changes').hidden = true;
     return;
   }
+  // Loading only when the list shows another project (or nothing yet): the auto-refresh after
+  // every tool call keeps the current list in place instead of flickering.
+  if (changes.project !== project) {
+    list.innerHTML = `<li class="empty-line">${LOADING}</li>`;
+    $('#ch-diff').innerHTML = '';
+    changes.diffFor = null;
+  }
   let data;
   try {
     data = await api(`/api/projects/${project}/changes`);
   } catch (err) {
-    list.innerHTML = `<li class="empty-line">Gagal membaca git: ${escapeHtml(err.message)}</li>`;
+    if (project !== state.active) return;
+    // Nothing stale stays on screen: files, diff, branch and the commit box belong to the failed read.
+    changes.data = null;
+    changes.project = null;
+    changes.diffFor = null;
+    $('#ch-branch').textContent = '';
+    $('#ch-diff').innerHTML = '';
+    $('#ch-commit').hidden = true;
+    $('#changes-count').hidden = true;
+    $('#nav-badge-changes').hidden = true;
+    list.innerHTML = `<li class="empty-line"><div class="state-error">Gagal membaca git: ${escapeHtml(err.message)}</div></li>`;
     return;
   }
   if (project !== state.active) return;
   changes.data = data;
+  changes.project = project;
   const count = data.files?.length ?? 0;
   for (const badge of [$('#changes-count'), $('#nav-badge-changes')]) {
     badge.hidden = !count;
@@ -1586,7 +1700,7 @@ async function loadChanges() {
   }
   if (!data.repo) {
     $('#ch-branch').textContent = '';
-    list.innerHTML = `<li class="empty-line">${data.error ? escapeHtml(data.error) : 'Folder ini bukan repository git. Jalankan <code>git init</code> untuk memakai panel ini.'}</li>`;
+    list.innerHTML = `<li class="empty-line">${data.error ? `<div class="state-error">${escapeHtml(data.error)}</div>` : 'Folder ini bukan repository git. Jalankan <code>git init</code> untuk memakai panel ini.'}</li>`;
     $('#ch-diff').innerHTML = '';
     $('#ch-commit').hidden = true;
     return;
@@ -1600,20 +1714,31 @@ async function loadChanges() {
     return;
   }
   if (!data.files.some((f) => f.path === changes.selected)) changes.selected = data.files[0].path;
+  const focused = document.activeElement?.closest?.('#ch-files li[data-path]')?.dataset.path; // survives the refresh
+  // <bdi>: the row is rtl (ellipsis on the left), the path inside stays ltr so ".env" is not shown as "env."
   list.innerHTML = data.files
-    .map((f) => `<li class="${f.path === changes.selected ? 'active' : ''}" data-path="${escapeHtml(f.path)}"><span class="st st-${f.code.trim()[0] === '?' ? 'A' : escapeHtml(f.code.trim()[0])}">${escapeHtml(f.status)}</span><span class="p">${escapeHtml(f.path)}</span></li>`)
+    .map((f) => `<li class="${f.path === changes.selected ? 'active' : ''}" data-path="${escapeHtml(f.path)}" role="button" tabindex="0" aria-current="${f.path === changes.selected}"><span class="st st-${f.code.trim()[0] === '?' ? 'A' : escapeHtml(f.code.trim()[0])}">${escapeHtml(f.status)}</span><span class="p"><bdi>${escapeHtml(f.path)}</bdi></span></li>`)
     .join('');
+  if (focused) [...list.querySelectorAll('li[data-path]')].find((li) => li.dataset.path === focused)?.focus({ preventScroll: true });
   loadDiff(changes.selected);
 }
 
 async function loadDiff(file) {
   changes.selected = file;
+  const project = state.active;
+  const key = `${project}\n${file}`;
   const box = $('#ch-diff');
+  // A newly picked file shows "Memuat…"; a background refresh of the same file keeps the old diff (and scroll).
+  if (changes.diffFor !== key || !box.firstChild) box.innerHTML = `<div class="muted ch-loading">${LOADING}</div>`;
   try {
-    const { diff, error, truncated } = await api(`/api/projects/${state.active}/diff`, { file });
-    box.innerHTML = error && !diff ? `<div class="muted">${escapeHtml(error)}</div>` : `<pre>${renderDiff(diff)}</pre>${truncated ? '<div class="muted">Diff dipotong (terlalu besar).</div>' : ''}`;
+    const { diff, error, truncated } = await api(`/api/projects/${project}/diff`, { file });
+    if (changes.selected !== file || state.active !== project) return; // a later pick won the race
+    box.innerHTML = error && !diff ? `<div class="state-error">${escapeHtml(error)}</div>` : `<pre>${renderDiff(diff)}</pre>${truncated ? '<div class="muted">Diff dipotong (terlalu besar).</div>' : ''}`;
+    changes.diffFor = key;
   } catch (err) {
-    box.innerHTML = `<div class="muted">${escapeHtml(err.message)}</div>`;
+    if (changes.selected !== file || state.active !== project) return;
+    box.innerHTML = `<div class="state-error">${escapeHtml(err.message)}</div>`; // replaces the old diff
+    changes.diffFor = null;
   }
 }
 
@@ -1626,8 +1751,11 @@ function scheduleChanges() {
 $('#ch-files').addEventListener('click', (e) => {
   const li = e.target.closest('li[data-path]');
   if (!li) return;
-  $('#ch-files .active')?.classList.remove('active');
+  const prev = $('#ch-files .active');
+  prev?.classList.remove('active');
+  prev?.setAttribute('aria-current', 'false');
   li.classList.add('active');
+  li.setAttribute('aria-current', 'true');
   loadDiff(li.dataset.path);
 });
 $('#ch-refresh').addEventListener('click', loadChanges);
@@ -1841,7 +1969,7 @@ function renderLoginFlow() {
       <p>${LOGIN_TEXT[login.state]}</p>
       ${login.url ? `<a class="primary link-btn" href="${escapeHtml(login.url)}" target="_blank" rel="noopener noreferrer">🔑 Buka halaman login Claude</a>` : '<span class="spinner"></span>'}
       <form id="login-code" class="login-code">
-        <input id="login-code-input" placeholder="Tempel kode dari browser (jika diminta)" autocomplete="off" spellcheck="false" ${login.state === 'verifying' ? 'disabled' : ''} />
+        <input id="login-code-input" placeholder="Tempel kode dari browser (jika diminta)" aria-label="Kode login dari browser" autocomplete="off" spellcheck="false" ${login.state === 'verifying' ? 'disabled' : ''} />
         <button class="primary" ${login.state === 'verifying' ? 'disabled' : ''}>Kirim</button>
       </form>
       <button type="button" class="ghost" data-act="cancel-login">Batal</button>
@@ -1899,7 +2027,7 @@ function renderAccount() {
   body.innerHTML = `<div class="acct-head">
       <span class="avatar big">${escapeHtml(accountInitial(p))}</span>
       <div><b>${escapeHtml(accountName(p))}</b><small>${escapeHtml(p.email ?? '')}</small></div>
-      ${p.subscriptionType ? `<span class="plan">${escapeHtml(p.subscriptionType)}</span>` : ''}
+      ${p.subscriptionType ? `<span class="plan-badge">${escapeHtml(p.subscriptionType)}</span>` : ''}
     </div>
     <dl class="acct-facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>
     <div class="acct-section"><div class="acct-title"><b>Kuota paket</b><button class="ghost icon" data-act="limits" title="Cek ulang kuota">↻</button></div>${quotaHtml}</div>
@@ -2505,7 +2633,7 @@ async function openRewind() {
     rewindView.points = (await api(`/api/projects/${state.active}/rewind-points`)).points;
     renderRewindList();
   } catch (err) {
-    $('#rewind-list').innerHTML = `<li class="muted">${escapeHtml(err.message)}</li>`;
+    $('#rewind-list').innerHTML = `<li class="muted"><div class="state-error">${escapeHtml(err.message)}</div></li>`;
   }
 }
 
@@ -2603,7 +2731,7 @@ async function loadMcp(quiet = false, attempt = 0) {
     mcpView.servers = (await api(`/api/projects/${mcpView.project}/mcp`)).servers;
     renderMcp();
   } catch (err) {
-    if (!quiet) $('#mcp-list').innerHTML = `<li class="muted">${escapeHtml(err.message)}</li>`;
+    if (!quiet) $('#mcp-list').innerHTML = `<li class="muted"><div class="state-error">${escapeHtml(err.message)}</div></li>`;
     return;
   }
   // Servers still connecting right after Claude Code started: look again shortly, as /mcp updates live.

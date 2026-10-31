@@ -17,7 +17,7 @@
       p { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
       input { width: 100%; font: 600 30px/1 ui-monospace, Consolas, monospace; letter-spacing: 10px; text-align: center; padding: 12px 8px 12px 18px; border-radius: 12px; border: 1px solid var(--border); background: #15171c; color: var(--text); outline: none; }
       input:focus { border-color: var(--accent); }
-      button { width: 100%; margin-top: 12px; padding: 13px; border: 0; border-radius: 12px; background: var(--accent); color: #fff; font: 600 16px/1 inherit; cursor: pointer; }
+      button { width: 100%; margin-top: 12px; padding: 13px; border: 0; border-radius: 12px; background: #b85a3c; color: #fff; font-weight: 600; font-size: 16px; line-height: 1; font-family: inherit; cursor: pointer; }
       button:disabled { opacity: .5; }
       .msg { min-height: 22px; margin-top: 12px; font-size: 14px; color: var(--err); }
       small { display: block; margin-top: 16px; color: var(--muted); font-size: 12px; }
@@ -27,12 +27,12 @@
     <main>
       <img class="logo" src="/icons/icon.svg" alt="" />
       <h1>Hubungkan ke Adhit Office</h1>
-      <p>Masukkan kode 6 digit yang tampil di laptop:<br />⚙ → Akses dari HP</p>
+      <p>Masukkan kode 6 digit yang tampil di laptop:<br />📱 Buka di HP (kanan atas)</p>
       <form id="form">
-        <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required autofocus />
+        <input id="code" aria-label="Kode 6 digit dari laptop" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required autofocus />
         <button id="btn">Hubungkan</button>
       </form>
-      <div id="msg" class="msg">__MESSAGE__</div>
+      <div id="msg" class="msg" role="alert">__MESSAGE__</div>
       <small>Atau scan QR di laptop. Perangkat ini akan diingat sampai dicabut dari laptop.</small>
     </main>
     <script>

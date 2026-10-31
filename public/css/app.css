@@ -8,6 +8,9 @@
   --muted: #8d939f;
   --accent: #d97757;
   --accent-2: #f0a07f;
+  /* Solid fills behind white text: #fff on --accent is ~3.1:1; these pass WCAG AA (4.6:1 / 5.7:1). */
+  --accent-solid: #b85a3c;
+  --accent-solid-hover: #a24f34;
   --ok: #3fb950;
   --err: #f0524a;
   --ask: #f5a524;
@@ -41,8 +44,8 @@ button {
 }
 button:hover:not(:disabled) { background: var(--surface-3); }
 button:disabled { opacity: .5; cursor: default; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-button.primary:hover:not(:disabled) { background: #e5856a; }
+button.primary { background: var(--accent-solid); border-color: var(--accent-solid); color: #fff; font-weight: 600; }
+button.primary:hover:not(:disabled) { background: var(--accent-solid-hover); border-color: var(--accent-solid-hover); }
 button.danger { color: #ffb3ae; border-color: #5a2a2a; background: #2a1719; }
 button.ghost { background: transparent; }
 .icon-btn { padding: 4px 9px; background: transparent; }
@@ -84,7 +87,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: 11.5px/1.5
 .account-btn { display: flex; align-items: center; gap: 8px; max-width: 260px; padding: 4px 10px 4px 4px; border-radius: 999px; background: var(--surface-2); }
 .account-label { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-btn.logged-out { border-color: #6b4a14; color: #ffd38a; }
-.avatar { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; }
+.avatar { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--accent-solid); color: #fff; font-weight: 700; font-size: 13px; }
 .account-btn.logged-out .avatar { background: #6b4a14; }
 .avatar.big { width: 44px; height: 44px; font-size: 20px; }
 .pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--surface-3); color: var(--muted); white-space: nowrap; }
@@ -106,7 +109,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: 11.5px/1.5
 .side-head { display: flex; gap: 6px; padding: 12px; border-bottom: 1px solid var(--border); }
 .side-head input { flex: 1; min-width: 0; }
 .roots { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
-.roots hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 6px 0; }
+.roots hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 6px 0 2px; }
 .roots label small { color: var(--muted); }
 .roots textarea { resize: vertical; font: 12px/1.45 var(--mono); background: var(--surface); }
 .roots p { margin: 0; font-size: 11px; }
@@ -137,8 +140,9 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: 11.5px/1.5
 .badge.ask { background: var(--ask); color: #2a1a00; animation: pulse 1.2s infinite; }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
 .dot.live { background: var(--ok); box-shadow: 0 0 0 3px #3fb95026; }
-.projects .forget { display: none; padding: 0 6px; border: 0; background: none; color: var(--muted); font-size: 16px; line-height: 1; }
-.projects li:hover .forget { display: block; }
+/* visibility (not display): row layout stays stable; shown on hover, on the keyboard-cursor row, and always on touch */
+.projects .forget { visibility: hidden; padding: 0 6px; border: 0; background: none; color: var(--muted); font-size: 16px; line-height: 1; }
+.projects li:hover .forget, .projects li.cursor .forget { visibility: visible; }
 .projects .forget:hover { color: var(--err); }
 .add-project { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); }
 .add-project input { flex: 1; min-width: 0; font-size: 12px; }
@@ -261,11 +265,10 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: 11.5px/1.5
 .member small { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .member .st { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .member.work { background: color-mix(in srgb, var(--c) 12%, var(--surface)); }
-.member.work .st { color: #8cc8ff; }
+.member.work .st { color: #8cc8ff; font-family: var(--mono); }
 .member.ask { border-color: var(--ask); }
 .member.ask .st { color: var(--ask); font-weight: 700; }
 .member.err .st { color: var(--err); }
-.member.work .st { font-family: var(--mono); }
 .cli-tag { font: 700 9.5px/1 var(--font); padding: 3px 5px; border-radius: 4px; background: #2d3442; color: #9fb7d9; letter-spacing: .04em; }
 .msg.user.cli { background: #24303f; border-color: #34465c; }
 .msg.user.cli .meta { color: #9fb7d9; }
@@ -295,7 +298,7 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 /* title + buttons on the first row, details across the full width below */
 .session-bar { position: relative; flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 3px 6px; padding: 7px 12px 8px; border-bottom: 1px solid var(--border); background: #1b1d23; }
 #sb-title { font-size: 12.5px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#sb-title::before { content: '💬 '; }
+#sb-title::before { content: '💬 ' / ''; } /* decorative: empty alt text for screen readers */
 #sb-meta { grid-column: 1 / -1; font-size: 11px; line-height: 1.3; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #sb-meta:empty { display: none; }
 .sb-btn { flex: none; display: flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: 12px; white-space: nowrap; }
@@ -311,8 +314,8 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
   padding: 5px 14px;
   border-radius: 999px;
   font-size: 12px;
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
   color: #fff;
   box-shadow: 0 4px 16px #0009;
   z-index: 5;
@@ -349,6 +352,8 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .ava { width: 20px; height: 22px; image-rendering: pixelated; }
 .ava.sm { width: 16px; height: 18px; }
 .msg.error { background: #2a1719; border: 1px solid #5a2a2a; color: #ffc9c4; }
+/* one look for "this failed" messages in panels and dialogs (changes, diff, rewind, MCP, session history) */
+.state-error { flex: 1; min-width: 0; margin: 0; padding: 8px 10px; border: 1px solid #5a2a2a; border-radius: 8px; background: #2a1719; color: #ffc9c4; font: 12.5px/1.45 var(--font); overflow-wrap: anywhere; }
 
 .md p { margin: 0 0 6px; }
 .md p:last-child { margin-bottom: 0; }
@@ -405,6 +410,7 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .activity .dot { transform: translateY(1px); }
 .activity .k-tool_fail { color: #ffaaa4; }
 .activity .k-ask { color: #ffd38a; }
+.activity li.activity-empty { display: block; padding: 18px 0; border: 0; color: var(--muted); text-align: center; }
 
 .typing { display: flex; align-items: center; gap: 4px; padding: 4px 16px 8px; font-size: 12px; color: var(--muted); }
 .typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); animation: bounce 1s infinite; }
@@ -412,15 +418,13 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .typing span:nth-child(3) { animation-delay: .3s; margin-right: 6px; }
 @keyframes bounce { 50% { transform: translateY(-4px); opacity: .5; } }
 
-.composer { border-top: 1px solid var(--border); padding: 10px 12px 12px; background: #17181e; }
-.controls { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; min-width: 0; }
-.controls { flex-wrap: wrap; gap: 6px 12px; }
+.composer { position: relative; border-top: 1px solid var(--border); padding: 10px 12px 12px; background: #17181e; }
+.controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 8px; min-width: 0; }
 .ctl { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 .controls select { font-size: 12px; padding: 4px 6px; min-width: 0; max-width: 150px; }
 .controls button { font-size: 12px; padding: 5px 10px; flex: none; }
 .controls button.icon { width: 30px; height: 30px; padding: 0; font-size: 15px; }
-.switch { white-space: nowrap; }
-.switch { display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.switch { display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .switch input { accent-color: var(--accent); }
 .grow { flex: 1; }
 /* Textarea and send button share one rounded box; the button sits bottom-right at a fixed size. */
@@ -486,7 +490,8 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .sl-ctx.mid .bar i { background: var(--ask); }
 .sl-ctx.high { color: var(--err); }
 .sl-ctx.high .bar i { background: var(--err); }
-.composer.bash-mode #prompt { border-color: #e879a8; box-shadow: 0 0 0 1px #e879a855; }
+/* the textarea has no border of its own: the shared .input box shows bash mode */
+.composer.bash-mode .input, .composer.bash-mode .input:focus-within { border-color: #e879a8; box-shadow: 0 0 0 1px #e879a855; }
 
 /* ---------- Claude Code control protocol: rewind, MCP, tasks, statuses ---------- */
 .rewound { opacity: .42; }
@@ -500,7 +505,7 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 #sb-title.renamable:hover { text-decoration: underline dotted; }
 .sl-tasks { border: 0; background: none; padding: 0; color: var(--accent-2); font-size: 11px; cursor: pointer; }
 .sl-tasks:hover { text-decoration: underline; }
-.pill.warn { background: #3a2e14; color: #ffe2a8; }
+.pill.warn { background: #3a2e14; color: #ffe2a8; font-size: 12px; } /* keep the pill size, not the 13px of .warn text */
 
 .modal-card.rewind-card, .modal-card.mcp-card, .modal-card.tasks-card { max-width: 640px; height: min(680px, calc(100vh - 32px)); display: flex; flex-direction: column; }
 .rewind-card > p, .tasks-card > p { margin: 0 0 10px; }
@@ -592,15 +597,14 @@ pre.diff .add { color: #9be3b0; background: #16321f66; display: inline-block; wi
 @media (hover: none) {
   .msg-actions, .msg-copy { opacity: .85; }
   .code-bar .copy { opacity: 1; }
-  .projects .fav { visibility: visible; }
+  .projects .fav, .projects .forget { visibility: visible; }
 }
 .hl-k { color: #c792ea; }
 .hl-s { color: #c3e88d; }
 .hl-n { color: #f78c6c; }
-.hl-c { color: #6b7280; font-style: italic; }
+.hl-c { color: #8b93a1; font-style: italic; }
 
 /* ---------- composer extras ---------- */
-.composer { position: relative; }
 .input.drop { border-color: var(--accent); background: #2a211d; }
 .input .attach { align-self: flex-end; width: 32px; height: 36px; padding: 0; font-size: 15px; border: 0; }
 .attachments { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
@@ -652,7 +656,7 @@ pre.diff .add { color: #9be3b0; background: #16321f66; display: inline-block; wi
 .s-empty p { margin: 6px 0 0; }
 
 /* ---------- changes panel ---------- */
-.tabs .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 10.5px; font-weight: 700; line-height: 17px; text-align: center; }
+.tabs .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 999px; background: var(--accent-solid); color: #fff; font-size: 10.5px; font-weight: 700; line-height: 17px; text-align: center; }
 .changes { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 12px; gap: 8px; }
 .ch-head { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .ch-head button { font-size: 12px; padding: 4px 9px; }
@@ -662,7 +666,9 @@ pre.diff .add { color: #9be3b0; background: #16321f66; display: inline-block; wi
 .ch-files li:hover { background: var(--surface-2); }
 .ch-files li.active { background: #2a211d; }
 .ch-files li.empty-line { cursor: default; font-family: var(--font); color: var(--muted); }
+/* rtl puts the ellipsis on the left so the file name stays visible; the <bdi> keeps the path itself ltr (".env", not "env.") */
 .ch-files .p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; flex: 1; }
+.ch-files .p bdi { direction: ltr; unicode-bidi: isolate; }
 .ch-files .st { font: 600 10px var(--font); padding: 1px 6px; border-radius: 4px; flex: none; background: #3a3f4b; color: #c9ced8; }
 .ch-files .st-A { background: #16321f; color: #8fe0a8; }
 .ch-files .st-D { background: #3a1a1c; color: #ffaaa4; }
@@ -674,9 +680,10 @@ pre.diff .add { color: #9be3b0; background: #16321f66; display: inline-block; wi
 .ch-diff .hunk { color: #82aaff; }
 .ch-diff .meta { color: var(--muted); }
 .ch-diff .muted { padding: 10px; }
+.ch-diff .state-error { margin: 10px; }
+.ch-loading { display: flex; align-items: center; gap: 8px; }
 .ch-commit { display: flex; gap: 6px; flex: none; }
 .ch-commit input { flex: 1; min-width: 0; font-size: 12.5px; }
-.roots hr { border: 0; border-top: 1px solid var(--border); margin: 6px 0 2px; width: 100%; }
 .roots #btn-shutdown { align-self: flex-start; font-size: 12px; padding: 5px 10px; }
 
 /* ---------- phone access modal ---------- */
@@ -712,7 +719,7 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
 .acct-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .acct-head > div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .acct-head small { color: var(--muted); overflow-wrap: anywhere; }
-.plan { padding: 3px 10px; border-radius: 999px; background: #2a211d; border: 1px solid #5a3a2c; color: var(--accent-2); font-size: 12px; text-transform: capitalize; }
+.plan-badge { padding: 3px 10px; border-radius: 999px; background: #2a211d; border: 1px solid #5a3a2c; color: var(--accent-2); font-size: 12px; text-transform: capitalize; }
 .acct-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 12px; font-size: 12.5px; }
 .acct-facts dt { color: var(--muted); }
 .acct-facts dd { margin: 0; overflow-wrap: anywhere; }
@@ -770,14 +777,13 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
 .report-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; font-size: 12px; color: var(--muted); }
 .report-field select, .report-field input { color: var(--text); background: var(--surface); }
 .custom-range { display: flex; gap: 10px; }
-.custom-range[hidden] { display: none; }
 .custom-range .report-field { flex: 1; }
 .report-range { margin: 0; font-size: 12.5px; color: var(--text); }
 /* period chips and the day/week/month switch look alike: the chosen one is filled */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips button, .seg button { padding: 5px 12px; border-radius: 999px; font-size: 12.5px; color: var(--muted); background: var(--surface); }
-.chips button.active, .seg button.active { color: #fff; background: var(--accent); border-color: var(--accent); font-weight: 600; }
-.chips button.active:hover, .seg button.active:hover { background: #e5856a; }
+.chips button.active, .seg button.active { color: #fff; background: var(--accent-solid); border-color: var(--accent-solid); font-weight: 600; }
+.chips button.active:hover, .seg button.active:hover { background: var(--accent-solid-hover); }
 .seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); }
 .seg button { border: 0; padding: 4px 12px; }
 .seg button:disabled { opacity: .35; cursor: not-allowed; }
@@ -813,7 +819,7 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
 .report-scope b { color: var(--text); font-weight: 600; }
 
 .toast.ok { background: #16321f; color: #b6efc8; border-color: #1f4d2e; }
-.toast.warn { background: #3a2e14; color: #ffe2a8; border-color: #6a5220; }
+.toast.warn { font-size: inherit; background: #3a2e14; color: #ffe2a8; border-color: #6a5220; }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px; background: #3a1a1c; color: #ffd0cc; border: 1px solid #5a2a2a; z-index: 1000; box-shadow: 0 8px 24px #0008; }
 
 /* ---------- responsive ---------- */
@@ -821,7 +827,7 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
   .layout { grid-template-columns: minmax(0, 1fr) var(--panel-w, 380px); }
 }
 @media (max-width: 1360px) {
-  .icon-btn.labeled .lbl { display: none; }
+  .icon-btn.labeled .lbl { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; } /* visually hidden, still the button's name */
   .icon-btn.labeled { padding: 5px 8px; }
 }
 @media (max-width: 1250px) {
@@ -831,6 +837,7 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
 }
 @media (max-width: 1100px) {
   .team { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .panel-resizer { display: none; } /* panel is full width below 1100px */
 }
 .msg, .msg .body, .approval, .line { min-width: 0; overflow-wrap: anywhere; }
 /* Wide content (tables, code) scrolls sideways inside its bubble instead of being squeezed:
@@ -846,9 +853,6 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
 .mobile-nav { display: none; }
 
 /* ---------- tablet: office on top, panel below ---------- */
-@media (max-width: 1100px) {
-  .panel-resizer { display: none; } /* panel is full width below 1100px */
-}
 @media (max-width: 1100px) and (min-width: 761px) {
   body { overflow: auto; height: auto; min-height: 100%; }
   .layout { grid-template-columns: minmax(0, 1fr); }
@@ -859,7 +863,6 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
 
 /* ---------- phone: app-style, one full-screen view + bottom navigation ---------- */
 @media (max-width: 760px) {
-  html, body { height: 100%; }
   body { height: 100dvh; overflow: hidden; }
   .topbar { flex: none; gap: 8px; height: calc(52px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 10px 0; }
   .brand span { display: none; }
@@ -879,11 +882,13 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
   .seg { display: flex; }
   .seg button { flex: 1; }
   .trend-chart { height: 112px; gap: 2px; }
-  .report-actions { bottom: -14px; margin: 12px -14px -14px; padding: 12px 14px 14px; } /* matches the sheet's 14px padding */
+  /* matches the sheet's padding, safe-area included, so the sticky footer reaches the bottom edge */
+  .report-actions { bottom: calc(-14px - env(safe-area-inset-bottom)); margin: 12px -14px calc(-14px - env(safe-area-inset-bottom)); padding: 12px 14px calc(14px + env(safe-area-inset-bottom)); }
   .topbar .icon-btn { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; }
-  .pill { font-size: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%; flex: none; }
-  .pill.ok { background: var(--ok); }
-  .pill.bad { background: var(--err); }
+  /* only the connection indicator shrinks to a dot; other pills (MCP status…) keep their text */
+  #conn { font-size: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%; flex: none; }
+  #conn.ok { background: var(--ok); }
+  #conn.bad { background: var(--err); }
 
   .layout { flex: 1; min-height: 0; display: block; position: relative; }
   .office, .panel { position: absolute; inset: 0; border: 0; }
@@ -924,7 +929,7 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
   .composer { padding: 8px 8px 6px; }
   .controls { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-bottom: 6px; gap: 10px; }
   .controls::-webkit-scrollbar { display: none; }
-  .controls select { flex: none; font-size: 12px; max-width: 132px; }
+  .controls select { flex: none; font-size: 16px; max-width: 132px; } /* 16px: no zoom-on-focus on iOS */
   .switch { font-size: 12px; }
   .input { padding: 4px 4px 4px 6px; }
   .input textarea { font-size: 16px; min-height: 38px; padding: 8px 0; } /* 16px: no zoom-on-focus on iOS */
@@ -959,20 +964,37 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
   .mobile-nav button.active .ico { filter: none; }
   .mobile-nav button.active::before { content: ''; position: absolute; top: 0; left: 30%; right: 30%; height: 2px; background: var(--accent); border-radius: 2px; }
   .nav-badge { position: absolute; top: 4px; left: calc(50% + 8px); min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--ask); color: #2a1a00; font: 700 10px/17px var(--font); }
-  .nav-badge.muted-badge { background: var(--accent); color: #fff; }
+  .nav-badge.muted-badge { background: var(--accent-solid); color: #fff; }
 
   /* the composer belongs to the chat view only */
   body:not([data-tab='chat']) .composer, body:not([data-tab='chat']) .typing { display: none !important; }
 
   /* dialogs become bottom sheets */
   .modal { padding: 0; place-items: end stretch; }
-  .modal-card { max-height: 92dvh; border-radius: 16px 16px 0 0; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
-  .modal-card.project-card { height: 85dvh; }
-  .side-head input, .add-project input, .login-code input { font-size: 16px; }
+  .modal-card { max-height: 92dvh; border-radius: 16px 16px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
+  .modal-card.project-card { height: 85dvh; padding-bottom: env(safe-area-inset-bottom); }
+  /* 16px: iOS zooms into any smaller input on focus */
+  .side-head input, .add-project input, .login-code input,
+  .ch-commit input, .approval .feedback, .approval .other-text, .mcp-callback input,
+  #report-account, #report-from, #report-to, #roots-input { font-size: 16px; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .report-actions { flex-direction: column; align-items: stretch; }
   .usage-table { display: block; overflow-x: auto; }
-  .modal-card { padding: 14px; }
   .pair { flex-direction: column; }
-  .toast { bottom: 76px; width: calc(100vw - 32px); text-align: center; }
+  .toast { bottom: calc(64px + env(safe-area-inset-bottom)); width: calc(100vw - 32px); text-align: center; } /* just above the ~54px bottom nav */
+}
+
+/* ---------- touch: finger-sized targets ---------- */
+@media (pointer: coarse) {
+  .topbar .icon-btn, .modal-head .icon-btn { min-width: 44px; min-height: 44px; }
+  .sb-btn, .msg-actions button, .msg-copy, .code-bar .copy, .todos-head, .sl-tasks { min-height: 36px; }
+  .md pre.code { padding-top: 42px; } /* room for the taller Salin button above the code */
+  .thumb button { width: 28px; height: 28px; }
+}
+
+/* ---------- accessibility ---------- */
+:where(button, [role="button"], a, select, input, textarea, [tabindex]):focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.input textarea:focus-visible { outline: none; } /* the composer box already lights up (:focus-within) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
