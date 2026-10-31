@@ -30,6 +30,15 @@ const WIFI_READ_PROJECT = /^\/api\/projects\/[\w-]+\/(changes|diff|files|session
 /** True when a paired device on plain WiFi (read-only) may call this API path. */
 export const wifiAllows = (pathname) => WIFI_READ_GLOBAL.has(pathname) || WIFI_READ_PROJECT.test(pathname);
 
+/**
+ * The same allowlist for the browser (snapshot `client.readOnlyApi`): the UI checks it before sending, so a
+ * read-only phone never fires a request that would be refused. One source of truth; the server still enforces it.
+ * `patterns` are RegExp sources (anchored), matched exactly like `wifiAllows` does.
+ */
+// Only the source travels to the browser, so a flag (e.g. /i) would silently not apply there: refuse to start.
+if (WIFI_READ_PROJECT.flags) throw new Error('WIFI_READ_PROJECT must not use RegExp flags (they are not sent to the browser)');
+export const WIFI_READ_API = Object.freeze({ paths: [...WIFI_READ_GLOBAL], patterns: [WIFI_READ_PROJECT.source] });
+
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 const sameSecret = (a, b) => {
   const x = Buffer.from(String(a));

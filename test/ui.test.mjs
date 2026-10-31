@@ -446,6 +446,7 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
     await page.waitFor(appReady, { timeoutMs: 10000, message: 'app terhubung lewat LAN' });
     await page.waitFor(() => document.querySelector('.approval.pending'), { timeoutMs: 10000, message: 'kartu izin tampil' });
     await sleep(500);
+    await page.waitFor(() => !document.querySelector('#ch-files .spinner'), { timeoutMs: 10000, message: 'panel perubahan termuat' });
     // Any 403 the UI triggers on its own shows up here as an http problem: the page asks only for what it may read.
     assert.deepEqual(realProblems(page), []);
     const ui = await page.eval(() => {
@@ -458,6 +459,8 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
         hint: document.querySelector('#composer-hint').textContent,
         approvalEnabled: [...document.querySelectorAll('.approval.pending button, .approval.pending input')].filter((b) => !b.disabled).length,
         approvalNote: document.querySelector('.approval.pending .ro-note')?.textContent ?? '',
+        // reads still go out: the UI checks them against the server's allowlist from the snapshot
+        changesText: document.querySelector('#ch-files').textContent,
       };
     });
     assert.equal(ui.readOnly, true);
@@ -467,6 +470,7 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
     assert.match(ui.hint, /Hanya lihat lewat WiFi/);
     assert.equal(ui.approvalEnabled, 0, 'kartu izin tidak bisa dijawab');
     assert.match(ui.approvalNote, /laptop atau HP lewat Tailscale/);
+    assert.doesNotMatch(ui.changesText, /Hanya lihat lewat WiFi/, 'panel perubahan tetap bisa dibaca');
     assert.equal(await page.eval(horizontalOverflow), null);
     assert.deepEqual(await page.eval(unnamedButtons), []);
   });

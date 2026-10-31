@@ -303,10 +303,15 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     reader.cancel();
     return JSON.parse(text.match(/^data: (.*)$/m)[1]);
   })();
-  assert.deepEqual(phoneSnap.client, { local: false, accountAuth: false, readOnly: true });
+  const { readOnlyApi, ...access } = phoneSnap.client;
+  assert.deepEqual(access, { local: false, accountAuth: false, readOnly: true });
+  // the UI's guard uses the server's own allowlist from the snapshot (no copy of the rules in app code)
+  assert.ok(readOnlyApi.paths.length && readOnlyApi.patterns.length, 'snapshot carries the read-only allowlist');
+  const uiAllows = (p) => readOnlyApi.paths.includes(p) || readOnlyApi.patterns.some((source) => new RegExp(source).test(p));
   assert.equal((await snapshot()).client.readOnly, false, 'the laptop is never read-only');
   const reads = ['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`];
   for (const p of reads) assert.notEqual((await phoneApi(p, { taskId: 'x' })).status, 403, `read ${p}`);
+  for (const p of reads) assert.ok(uiAllows(p), `UI lets ${p} through`);
   // a read-only phone can't make the laptop re-run the Claude CLI: `force` is ignored, the cached answer comes back
   const cachedLimits = await (await phoneApi('/api/account/limits', {})).json();
   assert.ok(cachedLimits.at, 'limits were loaded');
@@ -328,6 +333,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     const body = await res.json();
     assert.ok(body.readOnly || /laptop|Tailscale/.test(body.error), `${p}: ${body.error}`);
   }
+  for (const p of actions) assert.ok(!uiAllows(p), `UI holds back ${p}`);
   const refused = await (await phoneApi(`/api/projects/${id}/prompt`, { text: 'halo' })).json();
   assert.equal(refused.error, 'Lewat WiFi hanya bisa melihat. Pakai laptop atau Tailscale untuk mengirim perintah.');
   assert.equal((await snapshot()).projects.find((p) => p.id === id).favorite, false, 'nothing changed');

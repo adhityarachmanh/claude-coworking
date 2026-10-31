@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import { test } from 'node:test';
-import { RemoteAccess, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from '../src/remote.js';
+import { RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from '../src/remote.js';
 
 const v4 = (address) => ({ family: 'IPv4', address, internal: false });
 
@@ -48,6 +48,10 @@ test('plain WiFi is read-only: only listed read actions pass, everything else is
   for (const a of ['prompt', 'shell', 'settings', 'commit', 'rewind', 'rewind-preview', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'favorite', 'rename', 'open']) act.push(`/api/projects/toko/${a}`);
   act.push('/api/projects/toko/changes/../prompt', '/api/projects/toko/diffx', '/api/projects/a/b/changes');
   for (const p of act) assert.ok(!wifiAllows(p), p);
+  // The browser gets the same rules as JSON (snapshot client.readOnlyApi) and must decide exactly like the server.
+  const sent = JSON.parse(JSON.stringify(WIFI_READ_API));
+  const uiAllows = (p) => sent.paths.includes(p) || sent.patterns.some((source) => new RegExp(source).test(p));
+  for (const p of [...read, ...act]) assert.equal(uiAllows(p), wifiAllows(p), p);
 });
 
 /** RemoteAccess on a fake hub (no disk, broadcasts recorded). */

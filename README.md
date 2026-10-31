@@ -260,7 +260,10 @@ src/account.js       profil akun, kuota (/usage), login/logout lewat CLI
 src/usage.js         ledger token per akun (data/usage.jsonl) + ringkasan
 src/report.js        HTML laporan + PDF via Edge/Chrome headless
 src/open.js          buka project/file di VS Code atau file manager (tanpa shell)
-public/js/app.js     UI: pemilih project, chat, kartu izin, akun, laporan, bantuan, panel tim
+public/js/app.js     entry point UI (ES module native, tanpa build): menyambungkan semua fitur sesuai urutan
+public/js/core/      $/escapeHtml, state global, api() + toast, format, stream SSE, scene kantor
+public/js/ui/        dialog (fokus, Tab trap), shortcut global, layout (tab, nav HP, panel resizable)
+public/js/features/  satu module per fitur: chat, composer, izin, tim, sesi, rewind, perubahan, akun, laporan, MCP, tugas, HP, …
 public/js/office/    renderer pixel-art (sprite, dunia, scene, stage)
 public/icons/        ikon app (PWA, favicon) — dibuat oleh scripts/make-icons.mjs
 public/manifest.webmanifest   manifest PWA (Add to Home Screen)

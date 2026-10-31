@@ -18,7 +18,7 @@ import { searchFiles } from './src/files.js';
 import { gitCommit, gitDiff, gitStatus } from './src/git.js';
 import { openInApp } from './src/open.js';
 import { TranscriptMirror } from './src/mirror.js';
-import { DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from './src/remote.js';
+import { DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from './src/remote.js';
 import { listSessions, sessionHistory } from './src/transcripts.js';
 import { ROLE_IDS, loadAgentDefinitions } from './src/roles.js';
 import { SessionManager } from './src/session.js';
@@ -35,7 +35,7 @@ const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp
 const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 // Built-ins that work headless; the full list (skills, custom commands) arrives from Claude Code itself.
-// clear/model/effort/resume/cost/help are handled by the web app itself (see localCommand in app.js).
+// clear/model/effort/resume/cost/help are handled by the web app itself (see localCommand in public/js/features/commands.js).
 const DEFAULT_SLASH = ['clear', 'compact', 'context', 'cost', 'effort', 'help', 'init', 'model', 'resume', 'review'];
 // Per-start secret: only pages served by this process can call the API (blocks CSRF from other sites).
 const TOKEN = randomBytes(24).toString('hex');
@@ -257,7 +257,8 @@ function dropDeviceStreams(deviceId) {
 
 function openStream(req, res, local, device = null, deviceToken = null) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-  const client = { local, accountAuth: canManageAccount(req), readOnly: isReadOnly(req) };
+  // readOnlyApi: what a read-only phone may still call, so the UI doesn't keep its own copy of wifiAllows.
+  const client = { local, accountAuth: canManageAccount(req), readOnly: isReadOnly(req), readOnlyApi: WIFI_READ_API };
   res.write(`event: snapshot\ndata: ${JSON.stringify({ ...hub.snapshot(), account: account.publicState(), client })}\n\n`);
   hub.clients.add(res);
   if (device) deviceStreams.set(res, device.id);

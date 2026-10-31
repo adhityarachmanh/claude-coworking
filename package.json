@@ -12,6 +12,7 @@
     "open": "node server.js --open",
     "dev": "node --watch server.js",
     "test": "node --test --test-concurrency=1",
-    "test:claude": "node test-support/claude-contract.mjs"
+    "test:claude": "node test-support/claude-contract.mjs",
+    "lint": "npx --yes eslint@9.39.5 ."
   }
 }
