@@ -270,32 +270,53 @@
     <div id="report-modal" class="modal" hidden>
       <div class="modal-card report-card" role="dialog" aria-label="Laporan penggunaan token">
         <div class="modal-head"><b>📊 Laporan penggunaan token</b><button class="icon-btn" data-close title="Tutup">✕</button></div>
-        <!-- One set of filters: the preview below and the PDF always show the same data. -->
+        <!-- Step 1: which data. The preview below and the PDF always show exactly this. -->
         <fieldset class="report-filters">
-          <legend>🔎 Filter · berlaku untuk pratinjau <i>dan</i> PDF</legend>
-          <label>Akun<select id="report-account"></select></label>
-          <label>Periode
-            <select id="report-period">
-              <option value="today">Hari ini</option>
-              <option value="7" selected>7 hari terakhir</option>
-              <option value="30">30 hari terakhir</option>
-              <option value="month">Bulan ini</option>
-              <option value="all">Semua</option>
-              <option value="custom">Pilih tanggal…</option>
-            </select>
-          </label>
-          <label>Rincian per
-            <select id="report-group">
-              <option value="day">Hari</option>
-              <option value="week">Minggu</option>
-              <option value="month">Bulan</option>
-            </select>
-          </label>
-          <label class="custom-range" hidden>Dari<input id="report-from" type="date" /></label>
-          <label class="custom-range" hidden>Sampai<input id="report-to" type="date" /></label>
+          <legend>🔎 Pilih data · berlaku untuk pratinjau <i>dan</i> PDF</legend>
+          <label class="report-field">Akun<select id="report-account"></select></label>
+          <div class="report-field">
+            <span id="report-period-label">Periode</span>
+            <div id="report-periods" class="chips" role="group" aria-labelledby="report-period-label">
+              <button type="button" data-period="today">Hari ini</button>
+              <button type="button" data-period="7">7 hari</button>
+              <button type="button" data-period="30">30 hari</button>
+              <button type="button" data-period="month">Bulan ini</button>
+              <button type="button" data-period="all">Semua</button>
+              <button type="button" data-period="custom">📅 Pilih tanggal</button>
+            </div>
+          </div>
+          <div class="custom-range" hidden>
+            <label class="report-field">Dari<input id="report-from" type="date" /></label>
+            <label class="report-field">Sampai<input id="report-to" type="date" /></label>
+          </div>
+          <p id="report-range" class="report-range"></p>
         </fieldset>
+
+        <!-- Step 2: the preview. The day/week/month switch sits on the chart it changes. -->
         <div class="report-preview-head">👁 Pratinjau</div>
-        <div id="report-preview" class="report-preview"></div>
+        <div id="report-preview" class="report-preview">
+          <p id="report-note" class="report-note" hidden></p>
+          <p id="report-empty" class="muted" hidden></p>
+          <div id="report-body">
+            <div id="report-kpis" class="kpis"></div>
+            <p id="report-kpi-more" class="kpi-more muted small"></p>
+            <section class="trend" aria-labelledby="trend-title">
+              <div class="trend-head">
+                <b id="trend-title">📈 Tren pemakaian</b>
+                <div id="report-units" class="seg" role="group" aria-label="Rincian per">
+                  <button type="button" data-unit="day">Per hari</button>
+                  <button type="button" data-unit="week">Per minggu</button>
+                  <button type="button" data-unit="month">Per bulan</button>
+                </div>
+              </div>
+              <div id="report-chart" class="trend-chart"></div>
+              <p id="report-chart-caption" class="muted small trend-caption"></p>
+              <div id="report-period-table"></div>
+            </section>
+            <h4 class="report-sub">Per model</h4>
+            <div id="report-models"></div>
+          </div>
+        </div>
         <div class="report-actions">
           <div id="report-scope" class="report-scope muted small"></div>
           <button id="report-pdf" class="primary">⬇ Unduh PDF</button>

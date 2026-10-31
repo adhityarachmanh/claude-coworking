@@ -667,24 +667,54 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
 
 /* ---------- report dialog ---------- */
 .modal-card.report-card { max-width: 680px; }
-.report-filters { min-width: 0; display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; padding: 8px 12px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+/* step 1: which data (the preview and the PDF both follow it) */
+.report-filters { min-width: 0; display: flex; flex-direction: column; gap: 10px; margin: 0 0 12px; padding: 8px 12px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
 .report-filters legend { padding: 0 6px; font-size: 11.5px; font-weight: 600; color: var(--text); }
 .report-filters legend i { font-style: normal; color: var(--accent-2); }
+.report-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; font-size: 12px; color: var(--muted); }
+.report-field select, .report-field input { color: var(--text); background: var(--surface); }
+.custom-range { display: flex; gap: 10px; }
+.custom-range[hidden] { display: none; }
+.custom-range .report-field { flex: 1; }
+.report-range { margin: 0; font-size: 12.5px; color: var(--text); }
+/* period chips and the day/week/month switch look alike: the chosen one is filled */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button, .seg button { padding: 5px 12px; border-radius: 999px; font-size: 12.5px; color: var(--muted); background: var(--surface); }
+.chips button.active, .seg button.active { color: #fff; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+.chips button.active:hover, .seg button.active:hover { background: #e5856a; }
+.seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); }
+.seg button { border: 0; padding: 4px 12px; }
+.seg button:disabled { opacity: .35; cursor: not-allowed; }
+/* step 2: the preview */
 .report-preview-head { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
-.report-scope { line-height: 1.4; }
-.report-scope b { color: var(--text); font-weight: 600; }
-.report-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); flex: 1; min-width: 150px; }
-.report-filters label:first-child { flex: 2; min-width: 220px; }
-.report-filters select, .report-filters input { color: var(--text); }
-.report-preview { min-height: 120px; }
-.report-sub { margin: 14px 0 6px; font-size: 12.5px; }
-.usage-table tr.muted td { color: var(--muted); }
-.report-preview .usage-table { margin-bottom: 4px; }
-.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.report-preview { min-height: 120px; transition: opacity .15s; }
+.report-preview.loading { opacity: .45; }
+.report-note { margin: 0 0 10px; padding: 7px 10px; font-size: 12px; line-height: 1.45; color: #ffe2a8; background: #3a2e1466; border: 1px solid #6a5220; border-radius: 8px; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .kpis div { padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
 .kpis small { display: block; color: var(--muted); font-size: 11px; }
 .kpis b { font-size: 17px; font-variant-numeric: tabular-nums; }
-.report-actions { display: flex; align-items: center; gap: 12px; justify-content: space-between; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.kpi-more { margin: 6px 0 0; }
+.trend { margin-top: 14px; padding: 10px 12px 8px; border: 1px solid var(--border); border-radius: 10px; }
+.trend-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; font-size: 13px; }
+/* one bar per day/week/month; empty periods keep a flat grey stub so gaps stay visible */
+.trend-chart { display: flex; align-items: stretch; justify-content: center; gap: 3px; height: 132px; }
+.tb { flex: 1 1 0; max-width: 44px; min-width: 0; display: flex; flex-direction: column; }
+.tb-col { flex: 1; display: flex; align-items: flex-end; border-bottom: 1px solid var(--border); }
+.tb i { display: block; width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; transition: height .25s; }
+.tb:hover i { background: var(--accent-2); }
+.tb.zero .tb-col { border-bottom: 2px solid var(--surface-3); }
+.tb small { display: flex; justify-content: center; height: 16px; padding-top: 4px; font-size: 9.5px; line-height: 1; color: var(--muted); white-space: nowrap; }
+.trend-caption { margin: 6px 0 8px; }
+.report-sub { margin: 14px 0 6px; font-size: 12.5px; }
+.usage-table tr.muted td { color: var(--muted); }
+.report-preview .usage-table { margin-bottom: 4px; }
+#report-period-table .text-btn { margin: 4px 0 0; padding: 4px 6px; }
+/* the PDF button stays in reach while the preview scrolls */
+.report-actions { position: sticky; bottom: -16px; z-index: 1; display: flex; align-items: center; gap: 12px; justify-content: space-between; margin: 12px -18px -16px; padding: 12px 18px 16px; border-top: 1px solid var(--border); background: var(--surface); }
+#report-pdf { flex: none; white-space: nowrap; }
+.report-scope { line-height: 1.4; }
+.report-scope b { color: var(--text); font-weight: 600; }
 
 .toast.ok { background: #16321f; color: #b6efc8; border-color: #1f4d2e; }
 .toast.warn { background: #3a2e14; color: #ffe2a8; border-color: #6a5220; }
@@ -744,7 +774,13 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
   .account-btn { padding: 2px; }
   .avatar { width: 30px; height: 30px; }
   #btn-notify, #btn-help { display: none; } /* help stays reachable from the welcome card; 📊 Laporan stays */
-  .report-filters label, .report-filters label:first-child { min-width: 0; flex-basis: 100%; }
+  .report-filters { padding: 8px 10px 10px; }
+  .chips button { flex: 1 1 auto; }
+  .trend-head { flex-direction: column; align-items: stretch; }
+  .seg { display: flex; }
+  .seg button { flex: 1; }
+  .trend-chart { height: 112px; gap: 2px; }
+  .report-actions { bottom: -14px; margin: 12px -14px -14px; padding: 12px 14px 14px; } /* matches the sheet's 14px padding */
   .topbar .icon-btn { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; }
   .pill { font-size: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%; flex: none; }
   .pill.ok { background: var(--ok); }

@@ -47,7 +47,7 @@ test('ledger keeps accounts apart', () => {
   assert.equal(ledger.query({ accountId: A.id, from: Date.now() + 1000 }).length, 0, 'period filter');
 });
 
-test('summarize groups by model, project, source and day', () => {
+test('summarize groups by model, project, source and period', () => {
   const ledger = ledgerWithTwoAccounts();
   const rows = ledger.query({ accountId: A.id });
   const s = summarize(rows, { from: 0, to: Date.now() });
@@ -55,8 +55,9 @@ test('summarize groups by model, project, source and day', () => {
   assert.deepEqual(s.byModel.map((m) => m.key), ['opus', 'sonnet']);
   assert.deepEqual(s.byProject.map((p) => p.key), ['toko']);
   assert.deepEqual(s.bySource.map((p) => p.key), ['Web']);
-  assert.equal(s.byDay.length, 1);
-  assert.equal(s.byDay[0].total, s.totals.total);
+  assert.equal(s.groupBy, 'day');
+  assert.equal(s.byPeriod.length, 1, 'no range start: the breakdown begins at the first record');
+  assert.equal(s.byPeriod[0].total, s.totals.total);
 });
 
 test('usage is broken down per day, week (Mon–Sun) or month, gaps included', () => {
@@ -71,10 +72,12 @@ test('usage is broken down per day, week (Mon–Sun) or month, gaps included', (
   assert.equal(days.reduce((n, d) => n + d.total, 0), 42, 'nothing lost or counted twice');
 
   const weeks = byPeriod(rows, { ...range, unit: 'week' });
-  assert.equal(new Date(weeks[0].start).getDay(), 1, 'weeks start on Monday');
-  assert.equal(weeks[0].start, at(2026, 9, 28, 0), 'Thu 1 Oct belongs to the week of Mon 28 Sep');
+  assert.equal(weeks[0].start, range.from, 'the first week is clipped to the range (Thu 1 Oct, not Mon 28 Sep)');
+  assert.equal(weeks[0].end, at(2026, 10, 4, 23) + 59 * 60_000 + 59_999, '…and ends on Sunday 4 Oct');
+  assert.equal(new Date(weeks[1].start).getDay(), 1, 'weeks start on Monday');
   assert.equal(weeks[0].total, 30);
   assert.equal(weeks.at(-1).total, 7, 'Mon 2 Nov opens a new week');
+  assert.equal(weeks.at(-1).end, range.to, 'the last week stops at the end of the range');
 
   const months = byPeriod(rows, { ...range, unit: 'month' });
   assert.deepEqual(months.map((m) => m.total), [35, 7]);
@@ -84,6 +87,19 @@ test('usage is broken down per day, week (Mon–Sun) or month, gaps included', (
   const s = summarize(rows, { ...range, groupBy: 'week' });
   assert.equal(s.groupBy, 'week');
   assert.match(reportHtml({ account: A, profile: null, limits: null, summary: s }), /Rincian per minggu/);
+});
+
+test('a 7-day range with usage only today still shows all 7 days (the empty ones too)', () => {
+  const now = new Date(2026, 9, 31, 15).getTime(); // Sat 31 Oct
+  const from = new Date(2026, 9, 25).getTime(); // Sun 25 Oct, 7 days back
+  const rows = [{ ts: now - 3_600_000, input: 100, output: 10, cacheRead: 0, cacheWrite: 0 }];
+  const days = byPeriod(rows, { from, to: now, unit: 'day' });
+  assert.equal(days.length, 7);
+  assert.deepEqual(days.map((d) => d.total), [0, 0, 0, 0, 0, 0, 110]);
+  const weeks = byPeriod(rows, { from, to: now, unit: 'week' });
+  assert.equal(weeks.length, 2, 'Sun 25 Oct is the tail of one week, Mon 26 – Sat 31 the next');
+  assert.equal(periodLabel(weeks[0], 'week'), 'Min, 25 Okt 2026', 'a one-day week reads as that day');
+  assert.equal(byPeriod(rows, { from, to: now, unit: 'month' }).length, 1, 'still one month: the UI disables "per bulan" here');
 });
 
 test('report HTML shows only the chosen account and escapes text', async (t) => {

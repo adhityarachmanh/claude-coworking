@@ -23,36 +23,52 @@ function table(title, rows, label) {
   </table>`;
 }
 
-function dailyChart(days) {
-  if (!days.length) return '';
-  const max = Math.max(1, ...days.map((d) => d.total));
-  const bars = days
-    .map((d) => {
-      const h = (v) => `${((v / max) * 100).toFixed(2)}%`;
-      return `<div class="bar" title="${esc(dateFmt(d.date))}: ${num(d.total)}">
-        <div class="stack"><span class="s-out" style="height:${h(d.output)}"></span><span class="s-read" style="height:${h(d.cacheRead)}"></span><span class="s-in" style="height:${h(d.input + d.cacheWrite)}"></span></div>
-        <small>${new Date(d.date).getDate()}</small>
-      </div>`;
-    })
-    .join('');
-  return `<h2>Pemakaian per hari</h2>
-  <div class="chart">${bars}</div>
-  <div class="legend"><span class="s-in"></span>Input + cache write <span class="s-read"></span>Cache read <span class="s-out"></span>Output · puncak ${short(max)} token/hari</div>`;
-}
-
 const UNIT_TITLE = { day: 'hari', week: 'minggu', month: 'bulan' };
 
 /** "31 Okt 2026", "26 Okt – 1 Nov 2026" or "Oktober 2026". */
 export function periodLabel({ start, end }, unit) {
   if (unit === 'month') return dateFmt(start, { month: 'long', year: 'numeric' });
-  if (unit === 'week') return `${dateFmt(start, { day: 'numeric', month: 'short' })} – ${dateFmt(end, { dateStyle: 'medium' })}`;
+  if (unit === 'week' && new Date(start).toDateString() !== new Date(end).toDateString()) {
+    return `${dateFmt(start, { day: 'numeric', month: 'short' })} – ${dateFmt(end, { dateStyle: 'medium' })}`;
+  }
   return dateFmt(start, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/** Bar label under the chart: "31/10" for a day or week start, "Okt" for a month. */
+function shortLabel({ start }, unit) {
+  const d = new Date(start);
+  return unit === 'month' ? dateFmt(start, { month: 'short' }) : `${d.getDate()}/${d.getMonth() + 1}`;
+}
+
+/** Stacked bars, one per day/week/month of the range (empty ones included, so gaps show). */
+function periodChart(summary) {
+  const unit = summary.groupBy ?? 'day';
+  const periods = summary.byPeriod ?? [];
+  if (!periods.length) return '';
+  const max = periods.reduce((m, p) => Math.max(m, p.total), 1);
+  const every = Math.ceil(periods.length / 16); // keep the labels readable on A4
+  const bars = periods
+    .map((p, i) => {
+      const h = (v) => `${((v / max) * 100).toFixed(2)}%`;
+      const label = i % every === 0 || i === periods.length - 1 ? shortLabel(p, unit) : '';
+      return `<div class="bar" title="${esc(periodLabel(p, unit))}: ${num(p.total)}">
+        <div class="stack"><span class="s-out" style="height:${h(p.output)}"></span><span class="s-read" style="height:${h(p.cacheRead)}"></span><span class="s-in" style="height:${h(p.input + p.cacheWrite)}"></span></div>
+        <small>${esc(label)}</small>
+      </div>`;
+    })
+    .join('');
+  return `<h2>Pemakaian per ${UNIT_TITLE[unit]}</h2>
+  <div class="chart">${bars}</div>
+  <div class="legend"><span class="s-in"></span>Input + cache write <span class="s-read"></span>Cache read <span class="s-out"></span>Output · puncak ${short(max)} token/${UNIT_TITLE[unit]}</div>`;
+}
+
+/** Only the periods with usage (oldest first); how many were empty is said in the title. */
 function periodTable(summary) {
   const unit = summary.groupBy ?? 'day';
-  const rows = (summary.byPeriod ?? []).map((p) => ({ ...p, key: periodLabel(p, unit) }));
-  return table(`Rincian per ${UNIT_TITLE[unit]}`, rows, UNIT_TITLE[unit][0].toUpperCase() + UNIT_TITLE[unit].slice(1));
+  const periods = summary.byPeriod ?? [];
+  const used = periods.filter((p) => p.total).map((p) => ({ ...p, key: periodLabel(p, unit) }));
+  const name = UNIT_TITLE[unit];
+  return table(`Rincian per ${name} · ${used.length} dari ${periods.length} ${name} ada pemakaian`, used, name[0].toUpperCase() + name.slice(1));
 }
 
 /** @param {{ account, profile, limits, summary, generatedAt }} data */
@@ -93,8 +109,8 @@ export function reportHtml({ account, profile, limits, summary }) {
   th:first-child, td:first-child { text-align: left; }
   th { background: #f6f7f9; font-size: 9.5px; text-transform: uppercase; color: #4b5563; }
   tr { break-inside: avoid; }
-  .chart { display: flex; align-items: flex-end; gap: 2px; height: 130px; border-bottom: 1px solid #d0d4da; padding-top: 4px; }
-  .bar { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 0; }
+  .chart { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 130px; border-bottom: 1px solid #d0d4da; padding-top: 4px; }
+  .bar { flex: 1; max-width: 48px; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 0; }
   .stack { flex: 1; width: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start; }
   .stack span { display: block; width: 100%; }
   .bar small { font-size: 7.5px; color: #6b7280; }
@@ -124,7 +140,7 @@ export function reportHtml({ account, profile, limits, summary }) {
 
   ${summary.records ? `
   <div class="kpis">${kpis.map(([label, value, hint]) => `<div class="kpi"><small>${esc(label)}</small><b>${esc(value)}</b><span>${esc(hint)}</span></div>`).join('')}</div>
-  ${dailyChart(summary.byDay)}
+  ${periodChart(summary)}
   ${periodTable(summary)}
   ${table('Per model', summary.byModel, 'Model')}
   ${table('Per project', summary.byProject, 'Project')}

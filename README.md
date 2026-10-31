@@ -166,7 +166,12 @@ Klik avatar di header (**👤**) untuk melihat akun mana yang sedang dipakai Cla
   - Logout dari HP butuh dua langkah: konfirmasi, lalu ketik `LOGOUT`.
   - Setiap login/logout dari HP memunculkan peringatan (toast, suara, dan notifikasi) di laptop dan dicatat di `data/server.log`.
 
-**📊 Laporan** membuat PDF pemakaian token untuk **satu akun** dan satu periode (hari ini, 7/30 hari, bulan ini, semua, atau tanggal pilihan): ringkasan KPI, grafik harian, rincian per model, project, sumber (web/CLI), sesi teratas, dan kuota paket. Setiap catatan token disimpan bersama akun yang sedang login saat token itu dipakai (`data/usage.jsonl`), jadi pemakaian dua akun tidak pernah tercampur.
+**📊 Laporan** menampilkan dan mengunduh (PDF) pemakaian token untuk **satu akun** dan satu periode. Alurnya dua langkah:
+
+1. **Pilih data**: akun dan periode (Hari ini, 7 hari, 30 hari, Bulan ini, Semua, atau 📅 Pilih tanggal). Rentang tanggalnya ditulis di bawah pilihan. Pilihan ini berlaku untuk pratinjau **dan** PDF.
+2. **Pratinjau**: ringkasan KPI, lalu **📈 Tren pemakaian** dengan tombol **Per hari / Per minggu / Per bulan** tepat di atas grafiknya. Grafik menampilkan satu batang per hari/minggu/bulan untuk seluruh periode, termasuk yang kosong. Tabel di bawahnya hanya berisi periode yang ada pemakaian, terbaru di atas. *Per minggu* dan *per bulan* nonaktif kalau periodenya belum mencakup dua minggu/bulan, karena isinya akan sama dengan total.
+
+Kalau pencatatan akun itu baru dimulai di tengah periode, pratinjau memberi tahu sejak kapan, supaya batang kosong di awal tidak disangka "tidak dipakai". Baris di samping **⬇ Unduh PDF** menyebut isi PDF-nya: akun, rentang tanggal, dan rinciannya. PDF juga memuat rincian per model, project, sumber (web/CLI), sesi teratas, dan kuota paket. Setiap catatan token disimpan bersama akun yang sedang login saat token itu dipakai (`data/usage.jsonl`), jadi pemakaian dua akun tidak pernah tercampur.
 
 - Data mulai terkumpul **sejak fitur ini aktif**. Transcript lama Claude Code tidak mencatat akun, jadi sengaja tidak dihitung.
 - Sesi dari web dan dari CLI (lewat mirror) sama-sama tercatat. Transcript CLI tidak menyimpan akun, jadi token CLI dicatat ke akun yang sedang login. Setelah ganti akun, tutup lalu buka lagi sesi CLI yang masih terbuka agar catatannya tetap akurat. Estimasi biaya (USD, harga list) hanya tersedia untuk sesi web. Untuk paket Pro/Max/Team yang membatasi adalah kuota, bukan biaya.

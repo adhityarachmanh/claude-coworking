@@ -3,8 +3,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-const DAY_MS = 86_400_000;
-
 export class UsageLedger {
   constructor({ file, account }) {
     this.file = file;
@@ -126,28 +124,32 @@ function nextPeriod(start, unit) {
   return d.getTime();
 }
 
-/** Totals per day/week/month, oldest first, including empty periods so gaps stay visible. */
+const MAX_PERIODS = 400;
+
+/**
+ * Totals per day/week/month across the whole range [from, to], oldest first. Empty periods are
+ * kept so a chart shows the gaps; start/end are clipped to the range (a 7-day range that starts
+ * on a Sunday opens with a one-day "week"). At most the latest 400 periods.
+ */
 export function byPeriod(rows, { from, to, unit = 'day' }) {
-  const periods = [];
-  const first = Math.max(from, rows.length ? rows.reduce((min, r) => Math.min(min, r.ts), to) : to);
-  for (let start = periodStart(first, unit); start <= to && periods.length < 400; ) {
-    const end = nextPeriod(start, unit);
-    periods.push({ start, end: end - 1, ...totals(rows.filter((r) => r.ts >= start && r.ts < end)) });
-    start = end;
+  const buckets = new Map(); // period start -> rows, in one pass
+  for (const r of rows) {
+    const key = periodStart(r.ts, unit);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(r);
   }
-  return periods;
+  const first = from || rows.reduce((min, r) => Math.min(min, r.ts), to); // no range start: begin at the first record
+  const starts = [];
+  for (let start = periodStart(first, unit); start <= to; start = nextPeriod(start, unit)) starts.push(start);
+  return starts.slice(-MAX_PERIODS).map((start) => ({
+    start: Math.max(start, first),
+    end: Math.min(nextPeriod(start, unit) - 1, to),
+    ...totals(buckets.get(start) ?? []),
+  }));
 }
 
 /** Everything the report shows, for one account and period. */
 export function summarize(rows, { from, to, groupBy = 'day' }) {
-  const days = [];
-  // reduce, not Math.min(...rows): spreading a large ledger overflows the call stack
-  const start = new Date(Math.max(from, rows.length ? rows.reduce((min, r) => Math.min(min, r.ts), to) : to));
-  start.setHours(0, 0, 0, 0);
-  for (let d = start.getTime(); d <= to && days.length < 400; d += DAY_MS) {
-    const dayRows = rows.filter((r) => r.ts >= d && r.ts < d + DAY_MS);
-    days.push({ date: d, ...totals(dayRows) });
-  }
   const sessions = group(rows.filter((r) => r.sessionId), (r) => `${r.project ?? '-'}|${r.sessionId}`).slice(0, 10);
   return {
     from,
@@ -157,7 +159,6 @@ export function summarize(rows, { from, to, groupBy = 'day' }) {
     byModel: group(rows, (r) => r.model),
     byProject: group(rows, (r) => r.project ?? '(tanpa project)'),
     bySource: group(rows, (r) => (r.source === 'cli' ? 'CLI (terminal)' : 'Web')),
-    byDay: days,
     groupBy,
     byPeriod: byPeriod(rows, { from, to, unit: groupBy }),
     topSessions: sessions,
