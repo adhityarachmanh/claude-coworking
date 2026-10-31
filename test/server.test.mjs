@@ -260,10 +260,14 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
 
 test('settings are validated; the demo runs without Claude', async () => {
   const id = await projectId();
-  await api(`/api/projects/${id}/settings`, { mode: 'rm -rf', model: 'gpt', team: false });
+  await api(`/api/projects/${id}/settings`, { mode: 'rm -rf', model: 'gpt', effort: '--dangerously-skip-permissions', team: false });
   const snap = await snapshot();
   assert.equal(snap.statuses[id].mode, 'manual');
   assert.equal(snap.statuses[id].model, '');
+  assert.equal(snap.statuses[id].effort, '', 'only known effort levels reach the CLI');
+  await api(`/api/projects/${id}/settings`, { effort: 'high' });
+  assert.equal((await snapshot()).statuses[id].effort, 'high');
+  await api(`/api/projects/${id}/settings`, { effort: '' });
   assert.equal(snap.statuses[id].team, false);
   assert.equal((await api('/api/demo')).status, 202);
   await waitFor((t, o) => t === 'chat' && o.project === 'demo' && o.kind === 'assistant');

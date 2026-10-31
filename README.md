@@ -132,6 +132,7 @@ Tutup jendela server (atau tekan Ctrl+C) untuk berhenti. Semua proses Claude Cod
 | **Kartu izin** | Muncul setiap kali Claude butuh izin: **Izinkan**, **Izinkan selalu** (simpan aturan), **Izinkan semua (sesi ini)**, atau **Tolak**. Pertanyaan (`AskUserQuestion`) dan rencana (mode *Rencana dulu*) juga dijawab di sini. |
 | **Izin** | 🛡️ Tanya dulu (default) · ✏️ Auto-edit file · ⚡ Auto · 📋 Rencana dulu |
 | **Model** | Default dari settings Claude Code, atau Opus / Sonnet / Haiku |
+| **Effort** | Seberapa dalam Claude berpikir (`--effort`): Default (dari settings Claude Code), Low, Medium, High, X-High, Max. Lebih tinggi lebih teliti untuk tugas sulit, tapi lebih lambat dan lebih banyak token. Berlaku per project; mengganti effort memulai ulang proses Claude dan percakapan tetap berlanjut. |
 | **Mode tim** | Claude mendelegasikan ke 11 subagent di atas. Visualnya lebih hidup, tapi **lebih banyak token**. Matikan untuk Claude Code biasa. |
 | **■ Stop** / `Esc` | Muncul di sebelah **Kirim** saat tim bekerja. Menghentikan giliran yang sedang berjalan, dan sesi tetap bisa dilanjutkan. |
 | **Bar sesi** | Baris di atas chat yang menunjukkan percakapan Claude Code yang sedang dipakai: judul, asal (web atau lanjutan sesi terminal), dan model. |

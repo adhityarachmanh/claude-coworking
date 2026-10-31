@@ -40,6 +40,21 @@ function dailyChart(days) {
   <div class="legend"><span class="s-in"></span>Input + cache write <span class="s-read"></span>Cache read <span class="s-out"></span>Output · puncak ${short(max)} token/hari</div>`;
 }
 
+const UNIT_TITLE = { day: 'hari', week: 'minggu', month: 'bulan' };
+
+/** "31 Okt 2026", "26 Okt – 1 Nov 2026" or "Oktober 2026". */
+export function periodLabel({ start, end }, unit) {
+  if (unit === 'month') return dateFmt(start, { month: 'long', year: 'numeric' });
+  if (unit === 'week') return `${dateFmt(start, { day: 'numeric', month: 'short' })} – ${dateFmt(end, { dateStyle: 'medium' })}`;
+  return dateFmt(start, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function periodTable(summary) {
+  const unit = summary.groupBy ?? 'day';
+  const rows = (summary.byPeriod ?? []).map((p) => ({ ...p, key: periodLabel(p, unit) }));
+  return table(`Rincian per ${UNIT_TITLE[unit]}`, rows, UNIT_TITLE[unit][0].toUpperCase() + UNIT_TITLE[unit].slice(1));
+}
+
 /** @param {{ account, profile, limits, summary, generatedAt }} data */
 export function reportHtml({ account, profile, limits, summary }) {
   const t = summary.totals;
@@ -110,6 +125,7 @@ export function reportHtml({ account, profile, limits, summary }) {
   ${summary.records ? `
   <div class="kpis">${kpis.map(([label, value, hint]) => `<div class="kpi"><small>${esc(label)}</small><b>${esc(value)}</b><span>${esc(hint)}</span></div>`).join('')}</div>
   ${dailyChart(summary.byDay)}
+  ${periodTable(summary)}
   ${table('Per model', summary.byModel, 'Model')}
   ${table('Per project', summary.byProject, 'Project')}
   ${table('Per sumber', summary.bySource, 'Sumber')}

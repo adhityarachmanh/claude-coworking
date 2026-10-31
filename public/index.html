@@ -102,6 +102,17 @@
                 <option value="haiku">Haiku</option>
               </select>
             </label>
+            <label class="ctl" title="Seberapa dalam Claude berpikir. Lebih tinggi: lebih teliti untuk tugas sulit, tapi lebih lambat dan lebih banyak token.">
+              <span>Effort</span>
+              <select id="effort">
+                <option value="">Default</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">X-High</option>
+                <option value="max">Max</option>
+              </select>
+            </label>
             <label class="switch" title="Claude mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.">
               <input id="team-mode" type="checkbox" checked /> Mode tim
             </label>
@@ -269,6 +280,13 @@
               <option value="month">Bulan ini</option>
               <option value="all">Semua</option>
               <option value="custom">Pilih tanggal…</option>
+            </select>
+          </label>
+          <label>Rincian per
+            <select id="report-group">
+              <option value="day">Hari</option>
+              <option value="week">Minggu</option>
+              <option value="month">Bulan</option>
             </select>
           </label>
           <label class="custom-range" hidden>Dari<input id="report-from" type="date" /></label>

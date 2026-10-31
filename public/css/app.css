@@ -672,6 +672,9 @@ body.remote-client #btn-settings, body.remote-client .add-project, body.remote-c
 .report-filters label:first-child { flex: 2; min-width: 220px; }
 .report-filters select, .report-filters input { color: var(--text); }
 .report-preview { min-height: 120px; }
+.report-sub { margin: 14px 0 6px; font-size: 12.5px; }
+.usage-table tr.muted td { color: var(--muted); }
+.report-preview .usage-table { margin-bottom: 4px; }
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
 .kpis div { padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
 .kpis small { display: block; color: var(--muted); font-size: 11px; }

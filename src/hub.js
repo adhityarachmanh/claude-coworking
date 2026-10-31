@@ -6,7 +6,9 @@ import { basename, normalizePath, projectId } from './util.js';
 const EVENT_LIMIT = 80;
 const CHAT_LIMIT = 250;
 export const DEMO_ID = 'demo';
-export const DEFAULT_SETTINGS = { mode: 'manual', model: '', team: true };
+export const DEFAULT_SETTINGS = { mode: 'manual', model: '', effort: '', team: true };
+// '' = Claude Code's own default; the rest map to `--effort`.
+export const EFFORT_LEVELS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 export class Hub {
   constructor({ dataDir }) {
@@ -110,6 +112,7 @@ export class Hub {
     const next = { ...this.settingsFor(id) };
     if (['manual', 'acceptEdits', 'auto', 'plan'].includes(patch.mode)) next.mode = patch.mode;
     if (['', 'opus', 'sonnet', 'haiku'].includes(patch.model)) next.model = patch.model;
+    if (EFFORT_LEVELS.includes(patch.effort)) next.effort = patch.effort;
     if (typeof patch.team === 'boolean') next.team = patch.team;
     this.persisted.settings[id] = next;
     this.scheduleSave();

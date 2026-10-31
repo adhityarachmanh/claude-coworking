@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { parseUsageText } from '../src/account.js';
-import { findBrowser, renderPdf, reportHtml } from '../src/report.js';
-import { summarize, totals, UsageLedger } from '../src/usage.js';
+import { findBrowser, periodLabel, renderPdf, reportHtml } from '../src/report.js';
+import { byPeriod, periodStart, summarize, totals, UsageLedger } from '../src/usage.js';
 
 const A = { id: 'uuid-a', email: 'kantor@example.com', org: 'Kantor' };
 const B = { id: 'uuid-b', email: 'pribadi@example.com', org: null };
@@ -57,6 +57,33 @@ test('summarize groups by model, project, source and day', () => {
   assert.deepEqual(s.bySource.map((p) => p.key), ['Web']);
   assert.equal(s.byDay.length, 1);
   assert.equal(s.byDay[0].total, s.totals.total);
+});
+
+test('usage is broken down per day, week (Mon–Sun) or month, gaps included', () => {
+  const at = (y, m, d, h = 12) => new Date(y, m - 1, d, h).getTime();
+  const row = (ts, input) => ({ ts, input, output: 0, cacheRead: 0, cacheWrite: 0 });
+  const rows = [row(at(2026, 10, 1), 10), row(at(2026, 10, 3), 20), row(at(2026, 10, 30), 5), row(at(2026, 11, 2), 7)];
+  const range = { from: at(2026, 10, 1, 0), to: at(2026, 11, 2, 23) };
+
+  const days = byPeriod(rows, { ...range, unit: 'day' });
+  assert.equal(days.length, 33, '1 Oct – 2 Nov, empty days included');
+  assert.equal(days[1].total, 0);
+  assert.equal(days.reduce((n, d) => n + d.total, 0), 42, 'nothing lost or counted twice');
+
+  const weeks = byPeriod(rows, { ...range, unit: 'week' });
+  assert.equal(new Date(weeks[0].start).getDay(), 1, 'weeks start on Monday');
+  assert.equal(weeks[0].start, at(2026, 9, 28, 0), 'Thu 1 Oct belongs to the week of Mon 28 Sep');
+  assert.equal(weeks[0].total, 30);
+  assert.equal(weeks.at(-1).total, 7, 'Mon 2 Nov opens a new week');
+
+  const months = byPeriod(rows, { ...range, unit: 'month' });
+  assert.deepEqual(months.map((m) => m.total), [35, 7]);
+  assert.equal(periodLabel(months[0], 'month'), 'Oktober 2026');
+  assert.equal(periodStart(at(2026, 10, 31), 'month'), at(2026, 10, 1, 0));
+
+  const s = summarize(rows, { ...range, groupBy: 'week' });
+  assert.equal(s.groupBy, 'week');
+  assert.match(reportHtml({ account: A, profile: null, limits: null, summary: s }), /Rincian per minggu/);
 });
 
 test('report HTML shows only the chosen account and escapes text', async (t) => {

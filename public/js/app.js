@@ -771,6 +771,7 @@ function renderComposer() {
   $('#btn-stop').hidden = isDemo || !(st.busy || st.queue);
   $('#mode').value = st.mode ?? 'manual';
   $('#model').value = st.model ?? '';
+  $('#effort').value = st.effort ?? '';
   $('#team-mode').checked = st.team ?? true;
   const hint = [];
   if (st.busy) hint.push(st.queue ? `Tim sedang bekerja — ${st.queue} pesan menunggu di antrean.` : 'Tim sedang bekerja — pesan baru akan masuk antrean.');
@@ -1173,7 +1174,7 @@ $('#btn-help').addEventListener('click', () => openModal('help-modal'));
 
 async function saveSettings() {
   try {
-    await api(`/api/projects/${state.active}/settings`, { mode: $('#mode').value, model: $('#model').value, team: $('#team-mode').checked });
+    await api(`/api/projects/${state.active}/settings`, { mode: $('#mode').value, model: $('#model').value, effort: $('#effort').value, team: $('#team-mode').checked });
   } catch (err) {
     toast(err.message);
   }
@@ -1738,7 +1739,7 @@ function reportRange() {
 }
 
 function reportQuery() {
-  return { accountId: $('#report-account').value, ...reportRange() };
+  return { accountId: $('#report-account').value, groupBy: $('#report-group').value, ...reportRange() };
 }
 
 async function openReport() {
@@ -1756,6 +1757,32 @@ async function openReport() {
   } catch (err) {
     $('#report-preview').innerHTML = `<p class="warn">${escapeHtml(err.message)}</p>`;
   }
+}
+
+const UNIT_NAME = { day: 'hari', week: 'minggu', month: 'bulan' };
+
+/** Same labels as the PDF: "Sab, 31 Okt 2026", "26 Okt – 1 Nov 2026", "Oktober 2026". */
+function periodLabel({ start, end }, unit) {
+  const f = (ts, opts) => new Date(ts).toLocaleDateString('id-ID', opts);
+  if (unit === 'month') return f(start, { month: 'long', year: 'numeric' });
+  if (unit === 'week') return `${f(start, { day: 'numeric', month: 'short' })} – ${f(end, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  return f(start, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/** One row per day/week/month, newest first; empty periods stay as a dimmed "–" row. */
+function periodTable(s) {
+  const unit = s.groupBy ?? 'day';
+  const rows = [...(s.byPeriod ?? [])]
+    .reverse()
+    .map((p) =>
+      p.total
+        ? `<tr><td>${escapeHtml(periodLabel(p, unit))}</td><td>${fmtShort(p.input)}</td><td>${fmtShort(p.output)}</td><td>${fmtShort(p.cacheRead)}</td><td><b>${fmtShort(p.total)}</b></td><td>${fmtUsd(p.costUsd)}</td></tr>`
+        : `<tr class="muted"><td>${escapeHtml(periodLabel(p, unit))}</td><td colspan="5">–</td></tr>`,
+    )
+    .join('');
+  const name = UNIT_NAME[unit];
+  return `<h4 class="report-sub">Rincian per ${name}</h4>
+    <table class="usage-table"><thead><tr><th>${name[0].toUpperCase() + name.slice(1)}</th><th>Input</th><th>Output</th><th>Cache read</th><th>Total</th><th>Biaya</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 async function previewReport() {
@@ -1786,6 +1813,8 @@ async function previewReport() {
       .join('');
     box.innerHTML = s.records
       ? `<div class="kpis">${kpi.map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('')}</div>
+         ${periodTable(s)}
+         <h4 class="report-sub">Per model</h4>
          <table class="usage-table"><thead><tr><th>Model</th><th>Input</th><th>Output</th><th>Cache read</th><th>Total</th></tr></thead><tbody>${models}</tbody></table>
          <p class="muted small">${fmtNum(s.records)} catatan · ${s.byProject.length} project · PDF berisi grafik harian, rincian per project, sumber (web/CLI) dan sesi teratas.</p>`
       : '<p class="muted">Tidak ada pemakaian di periode ini untuk akun tersebut.</p>';
@@ -1831,6 +1860,7 @@ async function downloadReport() {
 
 $('#btn-report').addEventListener('click', openReport);
 $('#report-account').addEventListener('change', previewReport);
+$('#report-group').addEventListener('change', previewReport);
 $('#report-period').addEventListener('change', () => {
   const custom = $('#report-period').value === 'custom';
   document.querySelectorAll('.custom-range').forEach((n) => (n.hidden = !custom));
@@ -1981,7 +2011,7 @@ $('#btn-new').addEventListener('click', () => {
   if (confirmNew()) api(`/api/projects/${state.active}/reset`).catch((err) => toast(err.message));
 });
 $('#btn-demo').addEventListener('click', () => api('/api/demo').catch((err) => toast(err.message)));
-for (const id of ['#mode', '#model', '#team-mode']) $(id).addEventListener('change', saveSettings);
+for (const id of ['#mode', '#model', '#effort', '#team-mode']) $(id).addEventListener('change', saveSettings);
 document.querySelectorAll('.tabs button').forEach((btn) =>
   btn.addEventListener('click', () => {
     state.tab = btn.dataset.tab;

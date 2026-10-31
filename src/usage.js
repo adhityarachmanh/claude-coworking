@@ -107,10 +107,42 @@ export function totals(rows) {
   };
 }
 
+export const PERIOD_UNITS = ['day', 'week', 'month'];
+
+/** Local start of the day / week (Monday) / month containing `ts`. */
+export function periodStart(ts, unit) {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  if (unit === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  if (unit === 'month') d.setDate(1);
+  return d.getTime();
+}
+
+/** Start of the next period (calendar-aware: months differ in length, DST shifts days). */
+function nextPeriod(start, unit) {
+  const d = new Date(start);
+  if (unit === 'month') d.setMonth(d.getMonth() + 1);
+  else d.setDate(d.getDate() + (unit === 'week' ? 7 : 1));
+  return d.getTime();
+}
+
+/** Totals per day/week/month, oldest first, including empty periods so gaps stay visible. */
+export function byPeriod(rows, { from, to, unit = 'day' }) {
+  const periods = [];
+  const first = Math.max(from, rows.length ? rows.reduce((min, r) => Math.min(min, r.ts), to) : to);
+  for (let start = periodStart(first, unit); start <= to && periods.length < 400; ) {
+    const end = nextPeriod(start, unit);
+    periods.push({ start, end: end - 1, ...totals(rows.filter((r) => r.ts >= start && r.ts < end)) });
+    start = end;
+  }
+  return periods;
+}
+
 /** Everything the report shows, for one account and period. */
-export function summarize(rows, { from, to }) {
+export function summarize(rows, { from, to, groupBy = 'day' }) {
   const days = [];
-  const start = new Date(Math.max(from, rows.length ? Math.min(...rows.map((r) => r.ts)) : to));
+  // reduce, not Math.min(...rows): spreading a large ledger overflows the call stack
+  const start = new Date(Math.max(from, rows.length ? rows.reduce((min, r) => Math.min(min, r.ts), to) : to));
   start.setHours(0, 0, 0, 0);
   for (let d = start.getTime(); d <= to && days.length < 400; d += DAY_MS) {
     const dayRows = rows.filter((r) => r.ts >= d && r.ts < d + DAY_MS);
@@ -126,6 +158,8 @@ export function summarize(rows, { from, to }) {
     byProject: group(rows, (r) => r.project ?? '(tanpa project)'),
     bySource: group(rows, (r) => (r.source === 'cli' ? 'CLI (terminal)' : 'Web')),
     byDay: days,
+    groupBy,
+    byPeriod: byPeriod(rows, { from, to, unit: groupBy }),
     topSessions: sessions,
   };
 }

@@ -10,7 +10,7 @@ const IDLE_SHUTDOWN_MS = 20 * 60 * 1000;
 const INTERRUPT_GRACE_MS = 6000;
 const STDERR_TAIL = 4000;
 
-const settingsKey = (s) => `${s.mode}|${s.model}|${s.team}`;
+const settingsKey = (s) => `${s.mode}|${s.model}|${s.effort}|${s.team}`;
 
 /** Trims tool input to what the approval card needs to show. */
 function previewInput(tool, input = {}) {
@@ -143,7 +143,7 @@ class ClaudeSession {
     }
     const settings = this.hub.settingsFor(this.id);
     if (this.child && this.childKey !== settingsKey(settings)) {
-      // Mode/model changed: restart the process (the conversation resumes via --resume).
+      // Mode/model/effort changed: restart the process (the conversation resumes via --resume).
       this.restartPending = true;
       this.closeChild();
       return;
@@ -177,6 +177,7 @@ class ClaudeSession {
       '--permission-mode', settings.mode,
     ];
     if (settings.model) args.push('--model', settings.model);
+    if (settings.effort) args.push('--effort', settings.effort);
     if (settings.team && Object.keys(this.m.agents).length) {
       args.push('--agents', JSON.stringify(this.m.agents), '--append-system-prompt', this.m.teamPrompt);
     }

@@ -13,7 +13,7 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { AccountService } from './src/account.js';
 import { autostartStatus, setAutostart } from './src/autostart.js';
 import { renderPdf, reportHtml } from './src/report.js';
-import { UsageLedger, summarize, totals } from './src/usage.js';
+import { PERIOD_UNITS, UsageLedger, summarize, totals } from './src/usage.js';
 import { searchFiles } from './src/files.js';
 import { gitCommit, gitDiff, gitStatus } from './src/git.js';
 import { openInApp } from './src/open.js';
@@ -312,7 +312,8 @@ async function handleApi(req, res, pathname, device = null) {
     const to = Number(body.to) || Date.now();
     const from = Number(body.from) || 0;
     const rows = ledger.query({ accountId, from, to });
-    const summary = summarize(rows, { from: from || (rows[0]?.ts ?? to), to });
+    const groupBy = PERIOD_UNITS.includes(body.groupBy) ? body.groupBy : 'day';
+    const summary = summarize(rows, { from: from || (rows[0]?.ts ?? to), to, groupBy });
     if (pathname === '/api/report/summary') return json(res, 200, summary);
     const who = ledger.accounts().find((a) => a.id === accountId) ?? (account.current?.id === accountId ? account.current : null);
     if (!who) return json(res, 404, { error: 'Akun tidak dikenal.' });
