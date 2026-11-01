@@ -68,10 +68,23 @@ export function initTheme() {
   const saved = readStorage(THEME_KEY);
   applyTheme(isTheme(saved) ? saved : 'kantor', { persist: false });
 
-  // October and no choice made yet: suggest (never switch) the Halloween theme, once per year.
+  // Seasonal month and no choice made yet: suggest (never switch) the matching theme, once per season per year.
   const now = new Date();
-  if (!saved && now.getMonth() === 9 && readStorage(HINT_KEY) !== String(now.getFullYear())) {
-    writeStorage(HINT_KEY, String(now.getFullYear()));
-    setTimeout(() => toast('🎃 Sudah Oktober! Coba tema Halloween di ⚙ Pengaturan → Tema kantor.', 'ok'), 1500);
+  const season = SEASONS[now.getMonth()];
+  if (!saved && season) {
+    // Halloween keeps its original marker (just the year), so a hint already shown is not repeated.
+    const mark = season.id === 'halloween' ? String(now.getFullYear()) : `${now.getFullYear()}:${season.id}`;
+    if (readStorage(HINT_KEY) !== mark) {
+      writeStorage(HINT_KEY, mark);
+      setTimeout(() => toast(season.text, 'ok'), 1500);
+    }
   }
 }
+
+// Month (0-based) → suggested theme. Lebaran is left out on purpose: Idulfitri follows the Hijri calendar and moves
+// about 11 days every year, so there is no reliable fixed month to suggest it in.
+const SEASONS = {
+  7: { id: 'agustus', text: '🇮🇩 Sudah Agustus! Dirgahayu RI — coba tema 17 Agustus di ⚙ Pengaturan → Tema kantor.' },
+  9: { id: 'halloween', text: '🎃 Sudah Oktober! Coba tema Halloween di ⚙ Pengaturan → Tema kantor.' },
+  11: { id: 'natal', text: '🎄 Sudah Desember! Coba tema Natal di ⚙ Pengaturan → Tema kantor.' },
+};

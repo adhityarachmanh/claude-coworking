@@ -47,6 +47,8 @@ test('plain WiFi is read-only: only listed read actions pass, everything else is
   const act = ['/api/approvals/abc', '/api/team', '/api/demo', '/api/projects', '/api/projects/refresh', '/api/config', '/api/remote', '/api/account/login', '/api/account/logout', '/api/something-new', '/api/templates/save', '/api/templates/delete'];
   for (const a of ['prompt', 'shell', 'settings', 'commit', 'rewind', 'rewind-preview', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'favorite', 'rename', 'open']) act.push(`/api/projects/toko/${a}`);
   act.push('/api/projects/toko/changes/../prompt', '/api/projects/toko/diffx', '/api/projects/a/b/changes');
+  // whole conversation history / saved permission rules: not over sniffable WiFi (laptop + Tailscale only)
+  act.push('/api/projects/toko/search', '/api/projects/toko/export-session', '/api/projects/toko/permissions');
   for (const p of act) assert.ok(!wifiAllows(p), p);
   // The browser gets the same rules as JSON (snapshot client.readOnlyApi) and must decide exactly like the server.
   const sent = JSON.parse(JSON.stringify(WIFI_READ_API));

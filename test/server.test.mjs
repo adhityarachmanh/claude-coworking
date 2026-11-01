@@ -36,6 +36,7 @@ before(async () => {
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
+      CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'), // user-level settings.json (🛡️ Aturan izin), never the real ~/.claude
       OFFICE_OPEN_DRY_RUN: '1', // "open in VS Code / folder" reports the command instead of launching it
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -339,7 +340,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   const phoneApi = (p, body = {}) => lan(p, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', 'X-Office-Token': phoneToken }, body: JSON.stringify(body) });
   const id = await projectId();
   assert.equal((await phoneApi(`/api/projects/${id}/files`, { q: 'check' })).status, 200);
-  const laptopOnly = ['/api/config', '/api/autostart', '/api/shutdown', '/api/remote', '/api/remote/pairing', '/api/account/login', '/api/account/logout', '/api/projects', `/api/projects/${id}/open`, '/api/backup/export', '/api/backup/import'];
+  const laptopOnly = ['/api/config', '/api/autostart', '/api/shutdown', '/api/remote', '/api/remote/pairing', '/api/account/login', '/api/account/logout', '/api/projects', `/api/projects/${id}/open`, `/api/projects/${id}/permissions-edit`, '/api/backup/export', '/api/backup/import'];
   for (const p of laptopOnly) assert.equal((await phoneApi(p, { enabled: false, roots: [] })).status, 403, p);
   // login/logout from a phone needs Tailscale; over plain WiFi it is refused with a clear reason
   const wifiLogout = await phoneApi('/api/account/logout', { confirm: 'LOGOUT' });
@@ -362,8 +363,10 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   assert.ok(readOnlyApi.paths.length && readOnlyApi.patterns.length, 'snapshot carries the read-only allowlist');
   const uiAllows = (p) => readOnlyApi.paths.includes(p) || readOnlyApi.patterns.some((source) => new RegExp(source).test(p));
   assert.equal((await snapshot()).client.readOnly, false, 'the laptop is never read-only');
-  const reads = ['/api/account', '/api/account/limits', '/api/templates', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`, `/api/projects/${id}/task-detail`];
+  const reads = ['/api/account', '/api/account/limits', '/api/templates', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/git-branches`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`, `/api/projects/${id}/task-detail`];
   for (const p of reads) assert.notEqual((await phoneApi(p, { taskId: 'x' })).status, 403, `read ${p}`);
+  // history search/export and saved permission rules stay off sniffable WiFi
+  for (const p of ['search', 'export-session', 'permissions']) assert.equal((await phoneApi(`/api/projects/${id}/${p}`, { q: 'abc' })).status, 403, `wifi ${p}`);
   for (const p of reads) assert.ok(uiAllows(p), `UI lets ${p} through`);
   // the file viewer reads over WiFi too, but never a likely secret (that stays on the laptop's own screen)
   assert.ok(uiAllows(`/api/projects/${id}/file`));
@@ -383,7 +386,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   await new Promise((r) => setTimeout(r, 5)); // a fresh CLI run would get a later `at`
   assert.equal((await (await phoneApi('/api/account/limits', { force: true })).json()).at, cachedLimits.at, 'force from WiFi reuses the cache');
   const actions = [
-    ...['prompt', 'shell', 'settings', 'commit', 'rewind', 'rewind-preview', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'favorite', 'rename'].map((a) => `/api/projects/${id}/${a}`),
+    ...['prompt', 'shell', 'settings', 'commit', 'git-action', 'rewind', 'rewind-preview', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'favorite', 'rename'].map((a) => `/api/projects/${id}/${a}`),
     '/api/approvals/abc',
     '/api/team',
     '/api/demo',
@@ -775,4 +778,160 @@ test('file viewer: reads text inside the project; truncates, refuses binaries, t
   assert.equal(env.body.secret, true);
   assert.equal(env.body.content, null);
   assert.equal((await read('.env', { reveal: true })).body.content, 'API_KEY=rahasia\n');
+});
+
+test('search & export-session: transcript text only, bounded, safe paths', async () => {
+  const id = await projectId();
+  const project = (await snapshot()).projects.find((p) => p.id === id);
+  const dir = path.join(TMP, 'claude-projects', path.resolve(project.path).replace(/[^a-zA-Z0-9]/g, '-'));
+  mkdirSync(dir, { recursive: true });
+  const sid = randomUUID();
+  const t0 = Date.parse('2026-10-01T08:00:00Z');
+  const entry = (i, e) => JSON.stringify({ sessionId: sid, uuid: randomUUID(), cwd: project.path, timestamp: new Date(t0 + i * 60000).toISOString(), ...e });
+  const lines = [
+    entry(0, { type: 'user', promptSource: 'typed', message: { role: 'user', content: 'Tolong perbaiki Bug Pembayaran di checkout' } }),
+    entry(1, { type: 'assistant', message: { id: 'm1', role: 'assistant', content: [{ type: 'thinking', thinking: 'RAHASIA-PIKIRAN pembayaran' }, { type: 'text', text: 'Saya cek dulu modul pembayaran.' }] } }),
+    entry(2, { type: 'assistant', message: { id: 'm1', role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm test -- pembayaran' } }] } }),
+    entry(3, { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'OUTPUT-MENTAH pembayaran gagal' }] } }),
+    entry(4, { type: 'assistant', isSidechain: true, message: { id: 'm2', role: 'assistant', content: [{ type: 'text', text: 'subagent pembayaran' }] } }),
+    entry(5, { type: 'assistant', message: { id: 'm3', role: 'assistant', content: [{ type: 'text', text: 'Sudah diperbaiki: <script>alert(1)</script> aman.' }] } }),
+    entry(6, { type: 'custom-title', customTitle: 'Bug pembayaran' }),
+  ];
+  writeFileSync(path.join(dir, `${sid}.jsonl`), `${lines.join('\n')}\n`);
+  // Many hits in another session: the per-request limit holds.
+  const busy = randomUUID();
+  writeFileSync(path.join(dir, `${busy}.jsonl`), `${Array.from({ length: 30 }, (_, i) => JSON.stringify({ sessionId: busy, type: 'user', promptSource: 'typed', timestamp: new Date(t0).toISOString(), message: { role: 'user', content: `zebra nomor ${i}` } })).join('\n')}\n`);
+
+  const found = (await api(`/api/projects/${id}/search`, { q: 'PEMBAYARAN' })).body;
+  assert.ok(found.results.length >= 2, JSON.stringify(found));
+  assert.ok(found.results.every((r) => r.sessionId === sid && r.projectId === id && r.title === 'Bug pembayaran'));
+  assert.deepEqual(found.results.map((r) => r.role), ['user', 'assistant']);
+  assert.deepEqual(found.results[0].snippet, { before: 'Tolong perbaiki Bug ', match: 'Pembayaran', after: ' di checkout' });
+  assert.equal(found.results[0].ts, t0);
+  const raw = JSON.stringify(found);
+  for (const hidden of ['RAHASIA-PIKIRAN', 'OUTPUT-MENTAH', 'subagent']) assert.ok(!raw.includes(hidden), `${hidden} is not searched`);
+  // quotes/backslashes skip the raw-line prefilter but still match
+  assert.equal((await api(`/api/projects/${id}/search`, { q: '<script>' })).body.results.length, 1);
+  const limited = (await api(`/api/projects/${id}/search`, { q: 'zebra', limit: 3 })).body;
+  assert.equal(limited.results.length, 3);
+  assert.equal(limited.truncated, true);
+  assert.ok((await api(`/api/projects/${id}/search`, { q: 'zebra' })).body.results.length <= 5, 'at most 5 hits per session');
+  for (const q of ['', ' ', 'a', null]) assert.equal((await api(`/api/projects/${id}/search`, { q })).status, 400, `query ${JSON.stringify(q)}`);
+  assert.deepEqual((await api(`/api/projects/${id}/search`, { q: 'tidak-ada-di-mana-mana' })).body.results, []);
+  assert.ok((await api(`/api/projects/${id}/search`, { q: 'pembayaran', all: true })).body.results.length >= 2, 'all projects');
+
+  // export: title, dates, user/assistant, no thinking / raw tool output / sidechains; tools only on request
+  const ex = (await api(`/api/projects/${id}/export-session`, { sessionId: sid })).body;
+  assert.match(ex.filename, /^bug-pembayaran-[0-9a-f]{8}\.md$/);
+  assert.match(ex.markdown, /^# Bug pembayaran\n/);
+  assert.match(ex.markdown, /\*\*Tanggal:\*\* 2026-10-01 08:00 UTC/);
+  assert.match(ex.markdown, /## 🧑 Kamu · 2026-10-01 08:00 UTC\n\nTolong perbaiki Bug Pembayaran di checkout/);
+  assert.match(ex.markdown, /## ✳ Claude[^\n]*\n\nSaya cek dulu modul pembayaran\./);
+  assert.match(ex.markdown, /<script>alert\(1\)<\/script>/, 'text kept verbatim (it is a .md file, escaped when shown)');
+  for (const hidden of ['RAHASIA-PIKIRAN', 'OUTPUT-MENTAH', 'subagent', 'npm test']) assert.ok(!ex.markdown.includes(hidden), hidden);
+  assert.equal(ex.messages, 3);
+  const withTools = (await api(`/api/projects/${id}/export-session`, { sessionId: sid, tools: true })).body.markdown;
+  assert.match(withTools, /- 🔧 \*\*Bash\*\* `npm test -- pembayaran`/);
+  assert.ok(!withTools.includes('OUTPUT-MENTAH'));
+
+  // hostile session ids never leave the project's transcript folder
+  writeFileSync(path.join(TMP, 'claude-projects', 'luar.jsonl'), entry(0, { type: 'user', message: { role: 'user', content: 'RAHASIA-LUAR' } }));
+  for (const bad of ['../luar', '..\luar', `${sid}/../../luar`, `${sid}.jsonl`, 'x'.repeat(36), '', null, 42, { a: 1 }]) {
+    const res = await api(`/api/projects/${id}/export-session`, { sessionId: bad });
+    assert.equal(res.status, 400, `sessionId ${JSON.stringify(bad)}`);
+    assert.ok(!JSON.stringify(res.body).includes('RAHASIA-LUAR'));
+  }
+  assert.equal((await api(`/api/projects/${id}/export-session`, { sessionId: randomUUID() })).status, 404);
+  assert.doesNotMatch((await api(`/api/projects/${id}/export-session`, { sessionId: randomUUID() })).body.error, /[\/]/, 'no server paths');
+});
+
+test('🛡️ permission rules: read per source, add / move / remove keep other keys, broken JSON and bad rules refused', async (t) => {
+  const id = await projectId();
+  const local = path.join(TMP, 'projects', 'toko', '.claude', 'settings.local.json');
+  const user = path.join(TMP, 'claude-config', 'settings.json');
+  t.after(() => rmSync(path.join(TMP, 'projects', 'toko', '.claude'), { recursive: true, force: true }));
+  mkdirSync(path.dirname(local), { recursive: true });
+  writeFileSync(local, JSON.stringify({ permissions: { allow: ['Bash(node *)'], defaultMode: 'default' }, env: { A: '1' } }, null, 2));
+
+  const read = await api(`/api/projects/${id}/permissions`);
+  assert.equal(read.status, 200);
+  assert.deepEqual(read.body.scopes.map((s) => [s.scope, s.exists, s.rules.allow]), [['local', true, ['Bash(node *)']], ['project', false, []], ['user', false, []]]);
+  assert.equal(read.body.scopes[0].file, '.claude/settings.local.json', 'project files are shown relative, not as server paths');
+
+  // a session with a live, idle Claude Code process restarts so the rule applies
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'halo' });
+  await waitFor((t2, o) => t2 === 'status' && o.project === id && o.busy === false && o.alive);
+  const added = await api(`/api/projects/${id}/permissions-edit`, { scope: 'local', action: 'add', list: 'allow', rule: 'Bash(npm run test:*)' });
+  assert.equal(added.status, 200);
+  assert.equal(added.body.applied, 'restarted');
+  assert.deepEqual(added.body.rules.allow, ['Bash(node *)', 'Bash(npm run test:*)']);
+  await waitFor((t2, o) => t2 === 'chat' && o.project === id && o.kind === 'info' && /Bash\(npm run test:\*\)" ditambahkan ke allow/.test(o.text));
+
+  assert.equal((await api(`/api/projects/${id}/permissions-edit`, { scope: 'local', action: 'move', list: 'allow', rule: 'Bash(node *)', to: 'deny' })).status, 200);
+  const file = JSON.parse(readFileSync(local, 'utf8'));
+  assert.deepEqual(file, { permissions: { allow: ['Bash(npm run test:*)'], defaultMode: 'default', deny: ['Bash(node *)'] }, env: { A: '1' } });
+  assert.equal((await api(`/api/projects/${id}/permissions-edit`, { scope: 'local', action: 'remove', list: 'deny', rule: 'Bash(node *)' })).status, 200);
+
+  // user level: CLAUDE_CONFIG_DIR/settings.json, created on the first rule
+  assert.equal((await api(`/api/projects/${id}/permissions-edit`, { scope: 'user', action: 'add', list: 'ask', rule: 'WebFetch' })).status, 200);
+  assert.deepEqual(JSON.parse(readFileSync(user, 'utf8')), { permissions: { ask: ['WebFetch'] } });
+
+  // refusals: clear status + message, the file stays as it was
+  for (const [body, status] of [
+    [{ scope: 'local', action: 'add', list: 'allow', rule: 'Bash(' }, 400],
+    [{ scope: 'local', action: 'add', list: 'allow', rule: 'rm -rf /' }, 400],
+    [{ scope: 'elsewhere', action: 'add', list: 'allow', rule: 'Read' }, 400],
+    [{ scope: 'local', action: 'add', list: 'yes', rule: 'Read' }, 400],
+    [{ scope: 'local', action: 'add', list: 'allow', rule: 'Bash(npm run test:*)' }, 409],
+    [{ scope: 'local', action: 'remove', list: 'allow', rule: 'Nope' }, 404],
+  ]) {
+    const res = await api(`/api/projects/${id}/permissions-edit`, body);
+    assert.equal(res.status, status, JSON.stringify(body));
+    assert.ok(res.body.error, 'a message');
+  }
+  writeFileSync(local, '{ "permissions": ');
+  const broken = await api(`/api/projects/${id}/permissions-edit`, { scope: 'local', action: 'add', list: 'allow', rule: 'Read' });
+  assert.equal(broken.status, 409);
+  assert.match(broken.body.error, /bukan JSON yang valid/);
+  assert.equal(readFileSync(local, 'utf8'), '{ "permissions": ', 'never overwritten');
+  assert.match((await api(`/api/projects/${id}/permissions`)).body.scopes[0].error, /bukan JSON yang valid/);
+});
+
+test('⎇ git from the Changes tab: branches, create/switch, validation, unknown action', async (t) => {
+  const id = await projectId();
+  const dir = path.join(TMP, 'projects', 'toko');
+  t.after(() => rmSync(path.join(dir, '.git'), { recursive: true, force: true }));
+  assert.equal((await api(`/api/projects/${id}/git-branches`)).body.repo, false, 'not a repo yet');
+  const { execFileSync } = await import('node:child_process');
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir, stdio: 'ignore' });
+  git('init', '-q', '-b', 'main');
+  git('add', '-A');
+  git('commit', '-qm', 'awal');
+
+  let info = (await api(`/api/projects/${id}/git-branches`)).body;
+  assert.deepEqual([info.repo, info.branch, info.upstream, info.remotes], [true, 'main', null, []]);
+  const created = await api(`/api/projects/${id}/git-action`, { action: 'create', name: 'fitur/a' });
+  assert.equal(created.status, 200);
+  assert.equal(created.body.branch, 'fitur/a');
+  info = (await api(`/api/projects/${id}/git-branches`)).body;
+  assert.deepEqual(info.branches.map((b) => b.name).sort(), ['fitur/a', 'main']);
+  assert.equal(info.branch, 'fitur/a');
+
+  writeFileSync(path.join(dir, 'kotor.txt'), 'x\n');
+  const dirty = await api(`/api/projects/${id}/git-action`, { action: 'switch', name: 'main' });
+  assert.equal(dirty.status, 409);
+  assert.equal(dirty.body.code, 'dirty');
+  assert.equal((await api(`/api/projects/${id}/git-action`, { action: 'switch', name: 'main', carry: true })).status, 200);
+  rmSync(path.join(dir, 'kotor.txt'));
+
+  for (const name of ['--upload-pack=calc.exe', 'a..b', 'ada spasi', '']) {
+    const res = await api(`/api/projects/${id}/git-action`, { action: 'create', name });
+    assert.equal(res.status, 400, name);
+    assert.equal(res.body.code, 'invalid');
+  }
+  const push = await api(`/api/projects/${id}/git-action`, { action: 'push' });
+  assert.equal(push.status, 409);
+  assert.equal(push.body.code, 'no-remote');
+  assert.equal((await api(`/api/projects/${id}/git-action`, { action: 'reset --hard' })).status, 400);
 });

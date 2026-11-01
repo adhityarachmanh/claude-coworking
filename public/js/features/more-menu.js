@@ -4,6 +4,8 @@ import { $ } from '../core/dom.js';
 import { APP_NAME, state } from '../core/state.js';
 import { copyText, saveBlob } from '../core/util.js';
 import { roleName } from '../office/cast.js';
+import { openPermissions } from './permissions.js';
+import { exportActiveSession } from './conversations.js';
 
 export function toggleMoreMenu(open = $('#more-menu').hidden) {
   $('#more-menu').hidden = !open;
@@ -52,6 +54,8 @@ export function initMoreMenu() {
     const st = state.statuses[state.active] ?? {};
     try {
       if (item.dataset.more === 'export') exportChat();
+      else if (item.dataset.more === 'permissions') openPermissions();
+      else if (item.dataset.more === 'export-session') await exportActiveSession();
       else if (item.dataset.more === 'terminal') {
         if (!st.sessionId) return toast('Belum ada sesi web. Kirim pesan dulu, lalu sesinya bisa dilanjutkan di terminal.');
         // Two lines work the same in PowerShell, cmd and Git Bash (no && vs ; differences).

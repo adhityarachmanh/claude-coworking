@@ -1,6 +1,6 @@
 // Visual check of the pixel office: starts the real server (fake Claude Code, throwaway data) and a headless
 // Chrome, then writes PNG screenshots per theme × viewport plus an enlarged sprite sheet.
-//   node test-support/office-shots.mjs <outDir> [themes=kantor,halloween]
+//   node test-support/office-shots.mjs <outDir> [themes=kantor,halloween,natal,lebaran,agustus]
 //   node test-support/office-shots.mjs --fingerprint    # prints render hashes (regression check for a theme)
 // Output goes wherever <outDir> points — keep it outside the repo (e.g. %TEMP%).
 import { spawn } from 'node:child_process';
@@ -186,7 +186,7 @@ async function someoneWalks() {
 const args = process.argv.slice(2);
 const fingerprintOnly = args.includes('--fingerprint');
 const outDir = fingerprintOnly ? null : path.resolve(args[0] ?? path.join(tmpdir(), 'office-shots'));
-const themes = (args[1] ?? 'kantor,halloween').split(',');
+const themes = (args[1] ?? 'kantor,halloween,natal,lebaran,agustus').split(',');
 const tmp = mkdtempSync(path.join(tmpdir(), 'office-shots-data-'));
 const port = await freePort();
 const base = `http://localhost:${port}`;

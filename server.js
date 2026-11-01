@@ -23,15 +23,19 @@ import { PERIOD_UNITS, UsageLedger, summarize, totals } from './src/usage.js';
 import { FileViewError, readProjectFile } from './src/file-view.js';
 import { searchFiles } from './src/files.js';
 import { moduleGraph, preloadTags } from './src/modules.js';
-import { gitCommit, gitDiff, gitStatus } from './src/git.js';
+import { GitError, gitAction, gitBranches, gitCommit, gitDiff, gitStatus } from './src/git.js';
+import { PermissionError, editPermission, readPermissions } from './src/permissions.js';
 import { openInApp } from './src/open.js';
 import { TranscriptMirror } from './src/mirror.js';
 import { DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from './src/remote.js';
 import { listSessions, sessionHistory } from './src/transcripts.js';
+import { ConversationError, exportSession, searchSessions } from './src/conversation.js';
 import { taskDetail } from './src/task-detail.js';
 import { ROLE_IDS, loadAgentDefinitions } from './src/roles.js';
 import { SessionManager } from './src/session.js';
 import { TEMPLATE_LIMITS, TemplateError, TemplateStore } from './src/templates.js';
+import { QueueError, TaskQueue } from './src/queue.js';
+import { BackupScheduler, ScheduleError } from './src/backup-schedule.js';
 
 const PORT = Number(process.env.OFFICE_PORT ?? 4317);
 const HOST = '127.0.0.1';
@@ -147,6 +151,9 @@ const remote = new RemoteAccess(hub, {
 });
 
 const templates = new TemplateStore(hub);
+// 📋 Antrian: prompts sent one by one whenever the project's session is idle (src/queue.js).
+const taskQueue = new TaskQueue({ hub, sessions });
+sessions.onRateLimit = (id, info) => taskQueue.onRateLimit(id, info);
 
 const projectRoots = () => (hub.persisted.roots.length ? hub.persisted.roots : [DEFAULT_ROOT]);
 
@@ -179,13 +186,14 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Settings that only the laptop itself may change, never a paired phone.
 // Adding a project folder points Claude Code (and git, file search) at any path: laptop only.
 // Backup export/import read and write the whole Claude history: laptop only (Tailscale phones too are refused).
-const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import']);
+const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout']);
 const LOGOUT_CONFIRM = 'LOGOUT';
 // Opening VS Code / Explorer only makes sense on the laptop itself.
-const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/open$/;
+// Changing saved permission rules (🛡️ Aturan izin) changes what Claude Code may do unasked: laptop only (phones may look).
+const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit)$/;
 const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+|js\/pair\.js)$/;
 
 const isLocal = (req) => LOOPBACK.has(req.socket.remoteAddress);
@@ -360,6 +368,7 @@ async function handleApi(req, res, pathname, device = null) {
     return json(res, 200, hub.config);
   }
   if (pathname === '/api/backup/export') return exportBackup(req, res);
+  if (pathname.startsWith('/api/backup/schedule')) return backupSchedule(req, res, pathname, body);
   if (pathname === '/api/team') {
     const names = cleanTeamNames(body.names);
     hub.persisted.teamNames = names;
@@ -515,8 +524,16 @@ async function handleApi(req, res, pathname, device = null) {
     return json(res, ok ? 200 : 409, { ok });
   }
 
+  // ⎇ git branches / remotes and 🛡️ permission rules (handled in projectTools, below).
+  const tool = pathname.match(/^\/api\/projects\/([\w-]+)\/(git-branches|git-action|permissions|permissions-edit)$/);
+  if (tool) return projectTools(req, res, tool[1], tool[2], body);
+
+  // 📋 Antrian: `queue` reads (allowed over WiFi), every queue-* is a change (refused there by the gate).
+  const queueRoute = pathname.match(/^\/api\/projects\/([\w-]+)\/queue(?:-(add|update|remove|reorder|pause|retry|clear))?$/);
+  if (queueRoute) return queueApi(res, queueRoute[1], queueRoute[2] ?? 'list', body);
+
   const action = pathname.match(
-    /^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|continue|changes|diff|file|commit|favorite|open|shell|rewind-points|rewind-preview|rewind|mcp|mcp-action|task-output|task-detail|task-stop|background|rename)$/,
+    /^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|continue|changes|diff|file|commit|favorite|open|shell|rewind-points|rewind-preview|rewind|mcp|mcp-action|task-output|task-detail|task-stop|background|rename|search|export-session)$/,
   );
   const project = action && hub.projects.get(action[1]);
   if (!project || project.id === DEMO_ID) return json(res, 404, { error: 'project not found' });
@@ -557,6 +574,18 @@ async function handleApi(req, res, pathname, device = null) {
       }
     case 'sessions':
       return json(res, 200, { sessions: listSessions(project.path), current: hub.sessionIdFor(project.id) });
+    // 🔎 Cari percakapan / ⬇ Export .md: read-only, bounded reads of this project's transcripts (src/conversation.js).
+    case 'search':
+    case 'export-session':
+      try {
+        if (action[2] === 'export-session') return json(res, 200, exportSession(project.path, body.sessionId, { tools: body.tools === true, projectName: project.name }));
+        // all: every listed project, the active one first.
+        const scope = body.all === true ? [project, ...[...hub.projects.values()].filter((p) => p.id !== project.id && p.id !== DEMO_ID && p.path)] : [project];
+        return json(res, 200, searchSessions(scope, body.q, { limit: body.limit }));
+      } catch (err) {
+        if (err instanceof ConversationError) return json(res, err.status, { error: err.message });
+        throw err;
+      }
     case 'resume': {
       const sessionId = String(body.sessionId ?? '');
       const known = listSessions(project.path, 200).some((s) => s.id === sessionId);
@@ -578,6 +607,7 @@ async function handleApi(req, res, pathname, device = null) {
       }
     }
     case 'forget':
+      taskQueue.forget(project.id);
       session.reset();
       session.kill();
       sessions.sessions.delete(project.id);
@@ -649,6 +679,47 @@ async function handleApi(req, res, pathname, device = null) {
   return json(res, 200, { ok: true });
 }
 
+/**
+ * Perubahan → ⎇ git (git-branches: read; git-action: switch/create/fetch/pull/push — the WiFi gate refuses it)
+ * and 🛡️ Aturan izin (permissions: read; permissions-edit: laptop only, see LOCAL_ONLY_ACTION).
+ */
+async function projectTools(req, res, id, kind, body) {
+  const project = hub.projects.get(id);
+  if (!project || project.id === DEMO_ID) return json(res, 404, { error: 'project not found' });
+  try {
+    switch (kind) {
+      case 'git-branches':
+        return json(res, 200, await gitBranches(project.path));
+      case 'git-action': {
+        const act = String(body.action ?? '');
+        const result = await gitAction(project.path, { action: act, name: body.name == null ? undefined : String(body.name), carry: body.carry === true });
+        const label = { switch: `Pindah ke branch ${result.branch}`, create: `Branch baru ${result.branch}`, fetch: 'git fetch', pull: 'git pull', push: 'git push' }[act];
+        hub.chat(project.id, { kind: 'info', text: `⎇ ${label} berhasil.` });
+        return json(res, 200, result);
+      }
+      case 'permissions':
+        return json(res, 200, await readPermissions(project.path));
+      case 'permissions-edit': {
+        const edit = { scope: String(body.scope ?? ''), action: String(body.action ?? ''), list: String(body.list ?? ''), rule: body.rule, to: body.to == null ? undefined : String(body.to) };
+        const result = await editPermission(project.path, edit);
+        // Claude Code reads its rules at start: idle processes restart, busy ones after their turn.
+        // A user-level rule applies to every project.
+        const affected = edit.scope === 'user' ? [...sessions.sessions.values()] : [sessions.get(project)];
+        const applied = affected.map((s) => s.reloadSettings());
+        const rule = String(edit.rule ?? '').trim();
+        const what = { add: `ditambahkan ke ${edit.list}`, remove: `dihapus dari ${edit.list}`, move: `dipindah ${edit.list} → ${edit.to}` }[edit.action];
+        hub.chat(project.id, { kind: 'info', text: `🛡️ Aturan izin "${rule}" ${what} (${result.file}).` });
+        return json(res, 200, { ...result, applied: applied.includes('pending') ? 'pending' : applied.includes('restarted') ? 'restarted' : 'none' });
+      }
+    }
+  } catch (err) {
+    if (err instanceof GitError) return json(res, err.status, { error: err.output ? `${err.message}\n\n${err.output}` : err.message, code: err.code, output: err.output });
+    if (err instanceof PermissionError) return json(res, err.status, { error: err.message });
+    throw err;
+  }
+  return json(res, 404, { error: 'not found' });
+}
+
 /** Custom display names per role ("claude" = the lead), validated. Empty → back to the default name. */
 function cleanTeamNames(input) {
   const names = {};
@@ -663,6 +734,91 @@ function cleanTeamNames(input) {
 // ---------- history backup (⚙ → Cadangkan riwayat) ----------
 
 let backupBusy = false; // one export or import at a time
+
+// Backup otomatis (⚙ → Cadangkan riwayat): the same .zip as Export, written on a schedule (src/backup-schedule.js).
+// It takes the same one-at-a-time flag, so a scheduled run never overlaps an export or import.
+const backupScheduler = new BackupScheduler({
+  store: {
+    get schedule() {
+      return hub.persisted.backupSchedule;
+    },
+    set schedule(value) {
+      hub.persisted.backupSchedule = value;
+    },
+    get runs() {
+      return hub.persisted.backupRuns;
+    },
+    set runs(value) {
+      hub.persisted.backupRuns = value;
+    },
+    save: () => hub.save(),
+  },
+  backup: (out) => {
+    hub.save(); // the state file on disk and in the backup agree
+    return writeBackup(out, { state: hub.exportState(), usageFile: ledger.file, appVersion: APP_VERSION });
+  },
+  lock: () => !backupBusy && (backupBusy = true),
+  unlock: () => (backupBusy = false),
+  onChange: (view) => hub.broadcast('backup-schedule', view),
+  log: (msg) => console.log(msg),
+});
+
+/** POST /api/backup/schedule (read), /save (settings), /run (now, in the background). Laptop only (LOCAL_ONLY). */
+async function backupSchedule(req, res, pathname, body) {
+  if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
+  if (pathname === '/api/backup/schedule') return json(res, 200, backupScheduler.view());
+  if (pathname === '/api/backup/schedule/save') {
+    try {
+      return json(res, 200, await backupScheduler.save(body));
+    } catch (err) {
+      if (err instanceof ScheduleError) return json(res, err.status, { error: err.message });
+      throw err;
+    }
+  }
+  if (pathname === '/api/backup/schedule/run') {
+    if (!backupScheduler.schedule.folder) return json(res, 400, { error: 'Atur folder tujuan dulu.' });
+    const run = backupScheduler.run({ trigger: 'manual' });
+    if (!run) return json(res, 409, { error: 'Export/import/backup lain sedang berjalan. Tunggu sampai selesai.' });
+    return json(res, 202, backupScheduler.view()); // the result arrives as a backup-schedule event (and in /schedule)
+  }
+  return json(res, 404, { error: 'not found' });
+}
+
+/** 📋 Antrian of one project: list, or a change (add/update/remove/reorder/pause/retry/clear). */
+function queueApi(res, id, op, body) {
+  const project = hub.projects.get(id);
+  if (!project || project.id === DEMO_ID) return json(res, 404, { error: 'project not found' });
+  try {
+    switch (op) {
+      case 'add': {
+        const item = taskQueue.add(id, body.text);
+        return json(res, 200, { item, queue: taskQueue.view(id) });
+      }
+      case 'update':
+        taskQueue.update(id, body.itemId, body.text);
+        break;
+      case 'remove':
+        taskQueue.remove(id, body.itemId);
+        break;
+      case 'reorder':
+        taskQueue.reorder(id, body.order);
+        break;
+      case 'pause':
+        taskQueue.setPaused(id, body.paused === true);
+        break;
+      case 'retry':
+        taskQueue.retry(id, body.itemId);
+        break;
+      case 'clear':
+        taskQueue.clearFinished(id);
+        break;
+    }
+  } catch (err) {
+    if (err instanceof QueueError) return json(res, err.status, { error: err.message });
+    throw err;
+  }
+  return json(res, 200, { queue: taskQueue.view(id) });
+}
 
 /** Session ids a Claude Code process may be writing right now (web sessions alive, CLI turns running). */
 function activeSessionIds() {
@@ -926,6 +1082,8 @@ setInterval(() => remote.enabled && syncLanServers(), 30000).unref();
 
 refreshProjects();
 hub.ready = true;
+taskQueue.start();
+backupScheduler.start();
 const mirroring = mirror.start();
 // Know who is logged in (usage is tagged with it); notice logins/logouts done in a terminal too.
 account.refreshProfile(true).catch(() => {});

@@ -12,19 +12,25 @@ import { connect } from './core/stream.js';
 import { initAccount } from './features/account.js';
 import { initAttachments } from './features/attachments.js';
 import { initBackup } from './features/backup.js';
+import { initBackupAuto } from './features/backup-auto.js';
 import { initChanges } from './features/changes.js';
 import { initChat } from './features/chat.js';
 import { initComposerControls, initComposerInput } from './features/composer.js';
+import { initConversations } from './features/conversations.js';
 import { initDraft } from './features/draft.js';
 import { initFileViewer } from './features/file-viewer.js';
+import { initGitBar } from './features/git-branches.js';
 import { initPromptHistory } from './features/history.js';
 import { initLiveOutput } from './features/live-output.js';
 import { initMcp } from './features/mcp.js';
 import { initMoreMenu } from './features/more-menu.js';
 import { initNotify } from './features/notify.js';
+import { initPalette } from './features/palette.js';
+import { initPermissions } from './features/permissions.js';
 import { initPhone } from './features/phone.js';
 import { initPicker } from './features/picker.js';
 import { initQuota } from './features/quota.js';
+import { initQueue } from './features/queue.js';
 import { initReport } from './features/report.js';
 import { initResumeTurn } from './features/resume-turn.js';
 import { initRewind } from './features/rewind.js';
@@ -59,21 +65,27 @@ initMoreMenu();
 initSettings();
 initTheme(); // before the first frame: the saved theme is drawn right away
 initBackup(); // after initSettings: its #btn-settings listener runs after the dialog's own
+initBackupAuto(); // ⏰ Backup otomatis in the same ⚙ section
 initNotify();
 initQuota(); // after initSettings: refreshes its ⚙ fields when the dialog opens
 initChanges();
+initGitBar(); // ⎇ branch / fetch / pull / push in the Changes tab
 initPhone();
 initAccount();
 initReport();
 initPromptHistory();
 initDraft();
+initQueue(); // 📋 Antrian; before initComposerControls: its Alt+Enter on #prompt must win over Enter = send
 initComposerControls();
 initTemplates(); // ⚡ Template picker (also opened by /t from the composer)
 initTabs();
 initRewind();
 initMcp();
+initPermissions(); // 🛡️ Aturan izin (⚙, ⋯, /permissions)
 initTasks();
 initResumeTurn(); // the "turn cut short by a server restart" banner, drawn by renderComposer
+initConversations(); // 🔎 Cari percakapan + ⬇ Export sesi (.md)
+initPalette(); // Ctrl+P command palette (the shortcut itself is in ui/shortcuts.js)
 initPanelResizer();
 
 // ---------- main loop ----------

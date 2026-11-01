@@ -6,7 +6,10 @@ import { CAST, ROLE_ORDER, VISITOR } from '../public/js/office/cast.js';
 import { COSTUMES } from '../public/js/office/costumes.js';
 import { Scene } from '../public/js/office/scene.js';
 import { spriteLift } from '../public/js/office/sprites.js';
-import { THEMES, activeTheme, isTheme, theme, themedLook } from '../public/js/office/themes.js';
+import { THEMES, THEME_IDS, activeTheme, isTheme, theme, themedLook } from '../public/js/office/themes.js';
+
+/** Every theme that dresses the team up (all but the plain office). */
+const COSTUMED = THEME_IDS.filter((id) => id !== 'kantor');
 
 /** Runs `fn` with performance.now() frozen at `ms`, so busy timers can be checked deterministically. */
 function at(ms, fn) {
@@ -102,28 +105,31 @@ function withTheme(id, fn) {
 
 test('theme registry: kantor is the default and leaves every look untouched', () => {
   assert.equal(theme.current, 'kantor');
-  assert.ok(isTheme('kantor') && isTheme('halloween') && !isTheme('toString') && !isTheme('nope'));
+  assert.deepEqual(THEME_IDS, ['kantor', 'halloween', 'natal', 'lebaran', 'agustus']);
+  assert.ok(THEME_IDS.every(isTheme) && !isTheme('toString') && !isTheme('nope'));
   for (const id of ROLE_ORDER) assert.equal(themedLook(CAST[id].look), CAST[id].look, `${id}: same object, so sprites are identical`);
   assert.equal(themedLook(VISITOR.look), VISITOR.look);
   for (const t of Object.values(THEMES)) for (const key of ['id', 'label', 'icon', 'looks', 'cat']) assert.ok(key in t, `${t.id}.${key}`);
 });
 
-test('halloween: every role has its own costume and keeps its role colour as an accent', () => {
-  withTheme('halloween', () => {
-    assert.equal(activeTheme().id, 'halloween');
+for (const id of COSTUMED) {
+  test(`${id}: every role has its own costume and keeps its role colour as an accent`, () => {
+    withTheme(id, () => {
+    assert.equal(activeTheme().id, id);
     const ids = new Set();
     for (const role of ROLE_ORDER) {
       const look = themedLook(CAST[role].look);
       assert.ok(look.costume, `${role} has a costume`);
       assert.ok(COSTUMES[look.costume], `${role}: costume "${look.costume}" has a painter`);
-      assert.equal(look.id, `${role}@halloween`, 'own sprite cache key');
+      assert.equal(look.id, `${role}@${id}`, 'own sprite cache key');
       assert.ok(Object.values(look).includes(CAST[role].color), `${role}: role colour ${CAST[role].color} used in the costume`);
       assert.equal(themedLook(CAST[role].look), look, 'memoised');
       ids.add(look.id);
     }
     assert.equal(ids.size, ROLE_ORDER.length);
+    });
   });
-});
+}
 
 test('halloween ghosts float (gentle bob), everyone else stays on the floor', () => {
   for (const role of ROLE_ORDER) assert.equal(spriteLift(CAST[role].look, 1234), 0, `kantor: ${role} on the floor`);
@@ -138,10 +144,16 @@ test('halloween ghosts float (gentle bob), everyone else stays on the floor', ()
     }
     assert.ok(['ui-ux', 'qa', 'writer'].every((r) => themedLook(CAST[r].look).float), 'the ghosts float');
   });
+  for (const id of COSTUMED.filter((t) => t !== 'halloween')) {
+    withTheme(id, () => {
+      for (const role of ROLE_ORDER) assert.equal(spriteLift(CAST[role].look, 1234), 0, `${id}: ${role} on the floor`);
+    });
+  }
 });
 
-test('costume painters: every role × view × pose × arms paints inside the 20×32 sprite', () => {
-  withTheme('halloween', () => {
+for (const id of COSTUMED) {
+  test(`${id} costume painters: every role × view × pose × arms paints inside the 20×32 sprite`, () => {
+    withTheme(id, () => {
     const noItem = () => {};
     for (const role of ROLE_ORDER) {
       const look = themedLook(CAST[role].look);
@@ -170,7 +182,69 @@ test('costume painters: every role × view × pose × arms paints inside the 20�
         }
       }
     }
+    });
   });
+}
+
+/** Canvas stand-in that checks every fillRect lands inside a box (decor painters use g.fillRect via rect()). */
+function boxGraphics(box, label) {
+  let pixels = 0;
+  return {
+    get pixels() {
+      return pixels;
+    },
+    fillStyle: '',
+    fillRect(x, y, w, h) {
+      if (w <= 0 || h <= 0) return;
+      pixels++;
+      assert.ok(x >= box.x && y >= box.y && x + w <= box.x + box.w && y + h <= box.y + box.h, `${label}: rect ${x},${y} ${w}×${h} outside ${JSON.stringify(box)}`);
+    },
+  };
+}
+
+test('theme cats: accessories stay inside the 16×12 cat sprite; every new theme dresses the cat', () => {
+  for (const id of THEME_IDS) {
+    const { cat } = THEMES[id];
+    for (const key of ['fur', 'stripe', 'eye', 'closed', 'nose', 'outline']) assert.match(cat[key], /^#[0-9a-f]{6}$/, `${id}.cat.${key}`);
+    if (!cat.wear) continue;
+    for (const state of ['sleep', 'sit', 'walk']) {
+      const g = boxGraphics({ x: 0, y: 0, w: 16, h: 12 }, `${id} cat ${state}`);
+      cat.wear((x, y, w, h, c) => {
+        g.fillStyle = c;
+        g.fillRect(x, y, w, h);
+      }, state);
+      assert.ok(g.pixels > 0, `${id}: cat wears something when ${state}`);
+    }
+  }
+  assert.ok(['natal', 'lebaran', 'agustus'].every((id) => THEMES[id].cat.wear), 'Santa hat, peci, bandana');
+  assert.equal(new Set(THEME_IDS.map((id) => THEMES[id].cat.fur)).size, THEME_IDS.length, 'a different cat per theme');
+});
+
+test('theme decor: window views stay inside the glass, scenery stays inside the office, at any moment', () => {
+  // Halloween's bats fly in from outside the office on purpose; the newer themes keep everything inside.
+  for (const id of COSTUMED.filter((t) => t !== 'halloween')) {
+    const { decor, sky, light } = THEMES[id];
+    assert.ok(sky && light && decor, `${id}: sky, light and decor`);
+    for (const t of [0, 450, 1300, 2600, 4100, 5000, 9999, 123456]) {
+      if (decor.sky) {
+        for (const wx of [40, 252]) {
+          const g = boxGraphics({ x: wx + 2, y: 11, w: 44, h: 22 }, `${id} sky @${t}`);
+          decor.sky((x, y, w, h) => g.fillRect(x, y, w, h), sky, wx, t);
+          assert.ok(g.pixels > 0);
+        }
+      }
+      const office = boxGraphics({ x: 0, y: 0, w: 544, h: 288 }, `${id} decor @${t}`);
+      decor.overlay(office, t);
+      for (const item of decor.furniture()) {
+        assert.ok(Number.isFinite(item.y), `${id}: furniture has a sort depth`);
+        item.draw(office, t);
+      }
+      for (const l of decor.lights(t)) assert.ok(l.radius > 0 && l.color.startsWith('rgba('), `${id}: glow`);
+    }
+    const bg = boxGraphics({ x: 0, y: 0, w: 544, h: 288 }, `${id} static`);
+    decor.paintStatic(bg);
+    assert.ok(bg.pixels > 0, `${id}: static scenery`);
+  }
 });
 
 test('a turn cut short by a server restart: the lead shows the waiting sign until it is continued', () => {

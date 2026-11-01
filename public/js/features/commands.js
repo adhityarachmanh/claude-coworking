@@ -4,7 +4,10 @@ import { $ } from '../core/dom.js';
 import { state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { saveSettings } from './composer.js';
+import { exportActiveSession, openSearch } from './conversations.js';
 import { openMcp } from './mcp.js';
+import { openQueue } from './queue.js';
+import { openPermissions } from './permissions.js';
 import { openRewind } from './rewind.js';
 import { confirmNew, openSessions } from './sessions.js';
 import { openTasks } from './tasks.js';
@@ -20,9 +23,13 @@ export const LOCAL_COMMANDS = [
   { name: 'resume', description: 'Lanjutkan sesi Claude Code sebelumnya' },
   { name: 'rewind', description: 'Kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu (Esc Esc)' },
   { name: 'mcp', description: 'Server MCP: status, sambungkan ulang, aktif/nonaktif, login' },
+  { name: 'permissions', aliases: ['allowed-tools'], description: '🛡️ Aturan izin tersimpan (allow / ask / deny): lihat, tambah, hapus, pindah' },
+  { name: 'antrian', aliases: ['queue'], description: '📋 Antrian prompt: susun beberapa prompt, dijalankan satu per satu saat tim tidak sibuk' },
   { name: 'tasks', description: 'Tugas latar: perintah & agent yang berjalan, output-nya, hentikan' },
   { name: 'memory', description: 'Buka CLAUDE.md project di VS Code' },
   { name: 'help', description: 'Panduan & shortcut keyboard' },
+  { name: 'export', argumentHint: '[tools]', description: 'Unduh sesi ini sebagai Markdown (.md) — /export tools: sertakan ringkasan tool' },
+  { name: 'search', aliases: ['find'], argumentHint: '<kata kunci>', description: '🔎 Cari di semua percakapan project ini' },
   { name: 'template', aliases: ['t'], description: '⚡ Sisipkan template prompt (review, test, perbaiki error, commit…) — /t' },
 ];
 
@@ -66,6 +73,14 @@ export function localCommand(text) {
     case 'mcp':
       openMcp();
       return true;
+    case 'permissions':
+    case 'allowed-tools':
+      openPermissions();
+      return true;
+    case 'antrian':
+    case 'queue':
+      openQueue();
+      return true;
     case 'tasks':
     case 'bashes':
       openTasks();
@@ -76,6 +91,13 @@ export function localCommand(text) {
       return true;
     case 'help':
       openModal('help-modal');
+      return true;
+    case 'export':
+      exportActiveSession(value);
+      return true;
+    case 'search':
+    case 'find':
+      openSearch(value);
       return true;
     case 'template':
     case 't':

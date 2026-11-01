@@ -722,7 +722,13 @@ export function drawWallLive(g, t, now, activity) {
   const sky = activeTheme().sky;
   for (const wx of [40, 252]) {
     if (sky) {
-      paintThemedSky(r, sky, wx, t);
+      // A theme may paint its own window view (decor.sky: snow, takbiran fireworks, a sunny day); the frame stays.
+      const paintSky = activeTheme().decor?.sky;
+      if (paintSky) {
+        paintSky(r, sky, wx, t);
+        r(wx + 23, 11, 2, 22, '#7a6248');
+        r(wx + 2, 21, 44, 1, '#7a6248');
+      } else paintThemedSky(r, sky, wx, t);
       continue;
     }
     r(wx + 2, 11, 44, 11, night ? '#141b3a' : dusk ? '#f39c6b' : '#7cc4f2');
@@ -809,16 +815,7 @@ export function drawLighting(g, { night, dusk }, glows, t = 0) {
   const themed = activeTheme();
   if (themed.light) return drawThemedLighting(g, themed, night, glows, t);
   if (!night && !dusk) {
-    g.fillStyle = 'rgba(255,248,220,.07)';
-    for (const wx of [40, 252]) {
-      g.beginPath();
-      g.moveTo(wx, WALL_H);
-      g.lineTo(wx + 48, WALL_H);
-      g.lineTo(wx + 100, H);
-      g.lineTo(wx + 44, H);
-      g.closePath();
-      g.fill();
-    }
+    sunBeams(g, 'rgba(255,248,220,.07)');
     return;
   }
   g.fillStyle = night ? 'rgba(12,16,44,.48)' : 'rgba(80,40,60,.16)';
@@ -837,11 +834,29 @@ export function drawLighting(g, { night, dusk }, glows, t = 0) {
   g.globalCompositeOperation = 'source-over';
 }
 
-/** Theme lighting (Halloween): purple tint at any hour, warm lamps, flickering candle/pumpkin glows. */
+/** Daylight falling through the two windows onto the floor. */
+function sunBeams(g, color) {
+  g.fillStyle = color;
+  for (const wx of [40, 252]) {
+    g.beginPath();
+    g.moveTo(wx, WALL_H);
+    g.lineTo(wx + 48, WALL_H);
+    g.lineTo(wx + 100, H);
+    g.lineTo(wx + 44, H);
+    g.closePath();
+    g.fill();
+  }
+}
+
+/**
+ * Theme lighting: a tint at any hour (stronger at night), warm lamps, the decor's own glow points
+ * (candles, lanterns, tree lights) and optional sun beams (`light.beams`: a bright daytime theme).
+ */
 function drawThemedLighting(g, themed, night, glows, t) {
   const light = themed.light;
   g.fillStyle = night ? light.nightTint : light.tint;
   g.fillRect(0, 0, W, H);
+  if (light.beams) sunBeams(g, light.beams);
   // keep the whiteboard readable: undo most of the tint over it
   g.fillStyle = 'rgba(255,255,255,.22)';
   g.fillRect(BOARD.x, BOARD.y, BOARD.w, BOARD.h);

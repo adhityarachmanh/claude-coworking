@@ -161,6 +161,10 @@ Project yang foldernya sudah ada di laptop baru langsung muncul di daftar. Folde
 
 **Format:** ZIP standar (bisa dibuka Windows Explorer / `Expand-Archive`), ditulis dan dibaca oleh `src/zip.js` tanpa dependency: deflate streaming per file, CRC-32, nama UTF-8, dan ZIP64 otomatis untuk file > ~3,75 GB, total > 4 GB, atau lebih dari 65.535 file. Export di-stream langsung ke browser, tanpa menampung seluruh zip di memori server. Contoh ukuran: 173 MB transcript menjadi zip 57 MB dalam ±4 detik.
 
+### ⏰ Backup otomatis
+
+**⚙ → Cadangkan riwayat → ⏰ Backup otomatis** (nonaktif secara default, hanya dari laptop): pilih **Harian** atau **Mingguan** + hari, **jam** (waktu lokal), **folder tujuan** (path lengkap di laptop ini yang ada dan bisa ditulis; folder jaringan `\\server\share`, path perangkat `\\.\…`/`\\?\…`, path relatif, dan nama perangkat Windows ditolak), dan **simpan N backup terakhir** (1–100). Isinya sama dengan Export riwayat, bernama `adhit-office-backup-auto-YYYYMMDD-HHmmss.zip`. Server memeriksa jadwal tiap menit; jadwal yang terlewat saat laptop mati dijalankan sekali begitu server menyala, sedangkan jadwal sebelum pengaturan disimpan tidak pernah dijalankan. Backup ditulis ke `.<nama>.zip.partial` di folder yang sama, di-flush, lalu di-rename, jadi tidak pernah ada zip setengah jadi dengan nama backup. Rotasi hanya menghapus file yang cocok dengan pola nama `adhit-office-backup-auto-*.zip` (export manual dan file lain tidak disentuh). Backup otomatis tidak berjalan bersamaan dengan export/import (dicoba lagi menit berikutnya). Hasil terakhir (waktu, nama, ukuran, atau error) tampil di ⚙, plus tombol **▶ Jalankan sekarang**.
+
 Batasan: lokasi Claude mengikuti `~/.claude` (atau `CLAUDE_PROJECTS_DIR`). `CLAUDE_CONFIG_DIR` belum dibaca, sama seperti bagian app lainnya. Pindah antar-OS (Windows ↔ macOS/Linux) memetakan path di bawah home, tetapi belum diuji. Nama folder transcript yang dipotong Claude Code untuk path yang sangat panjang (> 200 karakter) tidak di-remap.
 
 ## Menjalankan
@@ -206,6 +210,7 @@ Setelah server hidup lagi, chat project itu menampilkan *"Server di-restart saat
 | **Model** | Daftar model dari Claude Code sendiri (sama dengan `/model`: Fable, Opus, Sonnet, Haiku, dan versi spesifik). `/model <nama>` juga menerima alias seperti `opus[1m]` atau `opusplan`. Ganti model langsung berlaku tanpa restart. |
 | **Effort** | Seberapa dalam Claude berpikir (`--effort`): Default (dari settings Claude Code), Low, Medium, High, X-High, Max. Lebih tinggi lebih teliti untuk tugas sulit, tapi lebih lambat dan lebih banyak token. Berlaku per project dan langsung berlaku tanpa restart (kembali ke Default memulai ulang prosesnya, percakapan tetap berlanjut). |
 | **Mode tim** | Claude mendelegasikan ke 11 subagent di atas. Visualnya lebih hidup, tapi **lebih banyak token**. Matikan untuk Claude Code biasa. |
+| **📋 Antrian** (`Alt+Enter`, tombol 📋, `/antrian`) | Susun beberapa prompt untuk satu project: `Alt+Enter` (atau tombol 📋 di samping **Kirim**) memasukkan isi kotak pesan ke antrian, bukan langsung dikirim; kotak kosong membuka daftarnya. Server mengirim item berikutnya otomatis saat sesi project itu **idle** (tidak bekerja, tidak ada izin yang menunggu, tidak ada giliran terputus), satu per satu, masing-masing di gilirannya sendiri. Di dialog: ubah urutan (seret atau ↑↓), edit/hapus item yang menunggu, **Jeda/Lanjutkan**, **Ulangi** item gagal, **💬 Lihat hasil** (lompat ke prompt dan jawabannya di chat). Status: menunggu/berjalan/selesai/gagal. Antrian berhenti sendiri bila item gagal atau dihentikan (Esc) atau kuota akun habis (pemberitahuan di chat + toast), dan disimpan di `data/state.json`: setelah server di-restart antrian **tetap dijeda** sampai kamu melanjutkan. Maks 30 item belum selesai, 20.000 karakter per item. Chip 📋 di bar sesi menampilkan jumlahnya (⏸ saat dijeda). Lewat WiFi hanya bisa melihat. |
 | **■ Stop** / `Esc` | Muncul di sebelah **Kirim** saat tim bekerja. Menghentikan giliran yang sedang berjalan dan membatalkan pesan yang masih antre; sesi tetap bisa dilanjutkan. |
 | **⏪ Rewind** (`Esc Esc`, `/rewind`) | Kembalikan **kode dan/atau percakapan** ke sebelum salah satu pesanmu, memakai checkpoint Claude Code. Pratinjau menunjukkan file yang akan kembali (+/−). Pesan yang di-rewind masuk lagi ke kotak pesan untuk diedit. |
 | **Status line** | Di bawah kotak pesan: mode izin, model, dan konteks terpakai dari Claude Code (seperti `/context`, dengan batas auto-compact), plus jumlah tugas latar. |
@@ -318,6 +323,8 @@ src/usage.js         ledger token per akun (data/usage.jsonl) + ringkasan
 src/report.js        HTML laporan + PDF via Edge/Chrome headless
 src/open.js          buka project/file di VS Code atau file manager (tanpa shell)
 src/backup.js        export/import riwayat (⚙ → Cadangkan riwayat): isi backup, remap folder, aturan merge
+src/backup-schedule.js  ⏰ backup otomatis terjadwal: validasi folder, jadwal, tulis atomik, rotasi
+src/queue.js         📋 antrian prompt per project: simpan, urutan, jalankan saat sesi idle, jeda otomatis
 src/zip.js           ZIP writer/reader tanpa dependency (deflate streaming, CRC-32, ZIP64, cek nama aman)
 public/js/app.js     entry point UI (ES module native, tanpa build): menyambungkan semua fitur sesuai urutan
 public/js/core/      $/escapeHtml, state global, api() + toast, format, stream SSE, scene kantor

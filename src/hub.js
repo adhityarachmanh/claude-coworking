@@ -39,6 +39,7 @@ export class Hub {
     this.runtime = new Map();
     this.approvals = new Map(); // id -> { approval, onResolve }
     this.clients = new Set();
+    this.observers = new Set(); // server-side listeners to every broadcast, fn(type, data) (📋 Antrian, src/queue.js)
     this.persisted = this.load();
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
@@ -110,7 +111,7 @@ export class Hub {
     if (!project?.sources.includes('custom')) return false;
     this.persisted.custom = this.persisted.custom.filter((p) => projectId(p) !== id);
     this.persisted.favorites = this.persisted.favorites.filter((f) => f !== id);
-    for (const key of ['settings', 'sessions', 'chats', 'activity', 'turns', 'interrupted']) delete this.persisted[key][id];
+    for (const key of ['settings', 'sessions', 'chats', 'activity', 'turns', 'interrupted', 'queues']) if (this.persisted[key]) delete this.persisted[key][id];
     this.runtime.delete(id);
     project.sources = project.sources.filter((s) => s !== 'custom');
     if (!project.sources.length) this.projects.delete(id);
@@ -295,7 +296,7 @@ export class Hub {
 
   /** The office state a backup carries: everything persisted except paired-device hashes and the CLI catalog cache. */
   exportState() {
-    const { remote: _remote, catalog: _catalog, turns: _turns, interrupted: _interrupted, ...rest } = this.persisted;
+    const { remote: _remote, catalog: _catalog, turns: _turns, interrupted: _interrupted, queues: _queues, backupSchedule: _backupSchedule, backupRuns: _backupRuns, ...rest } = this.persisted;
     const chats = {};
     for (const [id, rt] of this.runtime) if (id !== DEMO_ID && rt.chat.length) chats[id] = rt.chat.slice(-CHAT_LIMIT);
     return structuredClone({ ...rest, chats: { ...this.persisted.chats, ...chats } });
@@ -475,6 +476,7 @@ export class Hub {
   broadcast(type, data) {
     const frame = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
     for (const res of this.clients) res.write(frame);
+    for (const fn of this.observers) fn(type, data);
   }
 
   snapshot() {

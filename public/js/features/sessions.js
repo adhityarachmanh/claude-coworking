@@ -4,6 +4,7 @@ import { $, escapeHtml, narrow } from '../core/dom.js';
 import { ago, DAY } from '../core/format.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
+import { exportSessionMarkdown } from './conversations.js';
 
 const sessionTitles = new Map(); // Claude Code session id -> { title, source }
 const titleTried = new Map(); // session id -> last lookup (a brand-new transcript may not exist yet)
@@ -113,10 +114,38 @@ function renderSessionList() {
           <span class="s-title">${escapeHtml(s.title)}</span>
           <span class="s-meta"><span class="src src-${s.source}">${s.source === 'web' ? 'Web' : 'Terminal'}</span>${ago(s.updated)} · <code>${s.id.slice(0, 8)}</code></span>
         </div>
+        <button type="button" class="ghost s-export" data-export="${escapeHtml(s.id)}" title="Unduh sesi ini sebagai Markdown (.md)" aria-label="Export .md: ${escapeHtml(s.title)}">⬇ .md</button>
         ${action}
       </div>`;
     })
     .join('');
+}
+
+/** Continues a past session (Riwayat sesi, 🔎 Cari percakapan). True when it was resumed. */
+export async function resumeSession(projectId, sessionId, btn = null) {
+  const st = state.statuses[projectId] ?? {};
+  const warnings = [
+    st.busy ? 'Tim sedang bekerja di percakapan ini — pekerjaannya akan dihentikan.' : '',
+    st.cliBusy ? 'Ada sesi yang sedang berjalan di terminal untuk project ini. Jangan lanjutkan sesi yang sama di dua tempat sekaligus.' : '',
+  ].filter(Boolean);
+  if (warnings.length && !window.confirm(`${warnings.join('\n\n')}\n\nTetap lanjutkan sesi ini?`)) return false;
+  const label = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Membuka…';
+  }
+  try {
+    await api(`/api/projects/${projectId}/resume`, { sessionId });
+    toast('Sesi dilanjutkan — percakapan terakhirnya dimuat ke chat.', 'ok');
+    return true;
+  } catch (err) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+    toast(err.message);
+    return false;
+  }
 }
 
 export function confirmNew() {
@@ -144,25 +173,10 @@ export function initSessions() {
   $('#btn-sessions').addEventListener('click', openSessions);
   $('#sessions-search').addEventListener('input', renderSessionList);
   $('#sessions-list').addEventListener('click', async (e) => {
+    const exp = e.target.closest('[data-export]');
+    if (exp) return exportSessionMarkdown(sessionsView.project, exp.dataset.export);
     const btn = e.target.closest('[data-resume]');
-    if (!btn) return;
-    const st = state.statuses[sessionsView.project] ?? {};
-    const warnings = [
-      st.busy ? 'Tim sedang bekerja di percakapan ini — pekerjaannya akan dihentikan.' : '',
-      st.cliBusy ? 'Ada sesi yang sedang berjalan di terminal untuk project ini. Jangan lanjutkan sesi yang sama di dua tempat sekaligus.' : '',
-    ].filter(Boolean);
-    if (warnings.length && !window.confirm(`${warnings.join('\n\n')}\n\nTetap lanjutkan sesi ini?`)) return;
-    btn.disabled = true;
-    btn.textContent = 'Membuka…';
-    try {
-      await api(`/api/projects/${sessionsView.project}/resume`, { sessionId: btn.dataset.resume });
-      closeModal('sessions-modal');
-      toast('Sesi dilanjutkan — percakapan terakhirnya dimuat ke chat.', 'ok');
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = 'Lanjutkan';
-      toast(err.message);
-    }
+    if (btn && (await resumeSession(sessionsView.project, btn.dataset.resume, btn))) closeModal('sessions-modal');
   });
   $('#sessions-new').addEventListener('click', () => {
     if (!confirmNew()) return;

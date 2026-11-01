@@ -15,6 +15,7 @@ import { MODE_CYCLE, renderStatusline, renderTodos } from './statusline.js';
 import { applySuggest, closeSuggest, renderSuggest, searchHistory, suggest } from './suggest.js';
 import { backgroundRunning, renderTaskChip, renderTasks, tasksView } from './tasks.js';
 import { placeholders, tabToPlaceholder } from './templates.js';
+import { renderQueueChip } from './queue.js';
 
 // A shorter hint fits a phone-width composer on one line.
 const applyPlaceholder = () => {
@@ -67,13 +68,14 @@ export function renderComposer() {
   renderStatusline(st);
   renderSessionBar();
   renderTaskChip(st);
+  renderQueueChip(st);
   applyReadOnly();
   renderSendState();
   if (!$('#tasks-modal').hidden && tasksView.project === state.active) renderTasks();
 }
 
 // Controls that change something: disabled (with the reason as tooltip) for a phone on plain WiFi.
-const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-attach', '#btn-template','#btn-stop', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
+const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
 
 function applyReadOnly() {
   if (!state.readOnly) return; // fixed per connection: a laptop / Tailscale page never needs undoing

@@ -200,20 +200,24 @@ class ClaudeSession {
 
   // ---------- public ----------
 
-  /** @param images [{ mediaType, data(base64) }] pasted/dropped in the browser */
-  prompt(text, images = []) {
+  /**
+   * @param images [{ mediaType, data(base64) }] pasted/dropped in the browser
+   * @param extra more fields for the prompt's chat bubble (`queueItem`: sent from 📋 Antrian, src/queue.js)
+   * @returns {{ chatId: string }} the prompt's chat bubble
+   */
+  prompt(text, images = [], extra = {}) {
     this.hub.clearInterrupted(this.id); // the user carries on (or starts over): the cut-short notice is done
     const uuid = randomUUID();
-    const chatId = this.hub.chat(this.id, { kind: 'user', text, source: 'web', images: images.length || undefined, queued: this.busy || undefined, uuid });
+    const chatId = this.hub.chat(this.id, { kind: 'user', text, source: 'web', images: images.length || undefined, queued: this.busy || undefined, uuid, ...extra });
     if (!this.m.claude) {
       this.hub.updateChat(this.id, chatId, { queued: false, cancelled: true });
       this.hub.chat(this.id, { kind: 'error', text: 'Claude Code tidak ditemukan. Pastikan `claude` terpasang, atau set env CLAUDE_BIN.' });
-      return;
+      return { chatId };
     }
     this.syncSettings(); // a mode/model switch reaches Claude Code before the prompt does
     if (!this.ensureChild()) {
       this.hub.updateChat(this.id, chatId, { queued: false, cancelled: true });
-      return;
+      return { chatId };
     }
     // Shell output the user ran with `!` goes to Claude ahead of the prompt, not into the bubble.
     const context = this.shellContext.splice(0).join('\n');
@@ -228,6 +232,7 @@ class ClaudeSession {
     clearTimeout(this.idleTimer);
     this.write({ type: 'user', uuid, message: { role: 'user', content }, parent_tool_use_id: null, session_id: '' });
     this.afterProgress();
+    return { chatId };
   }
 
   /**
@@ -650,6 +655,24 @@ class ClaudeSession {
     this.closeChild();
   }
 
+  /**
+   * Its settings files changed (🛡️ Aturan izin): Claude Code reads permission rules when it starts, so an
+   * idle process is closed (the next prompt resumes the same session in a fresh one); a busy one, or one
+   * with background tasks, finishes first. Returns 'none' | 'restarted' | 'pending'.
+   */
+  reloadSettings() {
+    if (!this.child) return 'none';
+    if (this.busy) {
+      this.restartPending = true; // closed when the turn ends (becameIdle), like a team-setting change
+      return 'pending';
+    }
+    // Background agents/shells still running: never cut them off; the process closes on its own once
+    // they are done (idleShutdown), and the next one reads the new rules.
+    if (this.autoTurn || this.translator?.hasRunningTasks()) return 'pending';
+    this.closeChild();
+    return 'restarted';
+  }
+
   closeChild() {
     const busy = this.busy;
     const child = this.detach();
@@ -731,7 +754,10 @@ class ClaudeSession {
     }
     // Claude Code changed mode itself (a plan approved, Shift+Tab in another client): follow it.
     if (msg.type === 'system' && msg.subtype === 'status' && msg.permissionMode) this.onModeReported(msg.permissionMode);
-    if (msg.type === 'rate_limit_event' && msg.rate_limit_info) this.m.account?.noteRateLimit(msg.rate_limit_info);
+    if (msg.type === 'rate_limit_event' && msg.rate_limit_info) {
+      this.m.account?.noteRateLimit(msg.rate_limit_info);
+      this.m.onRateLimit?.(this.id, msg.rate_limit_info); // 📋 Antrian pauses when the quota is out (src/queue.js)
+    }
     if (msg.type === 'result') this.recordUsage(msg);
     if (msg.type === 'result' && this.interrupting) {
       // The CLI reports an interrupted turn as a normal success; label it for the UI.

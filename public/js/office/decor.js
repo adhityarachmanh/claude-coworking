@@ -1,17 +1,17 @@
-// Theme scenery painted on top of the office (pure drawing, no state). Halloween:
+// Theme scenery painted on top of the office (pure drawing, no state); rect/hash are shared with decor-*.js. Halloween:
 //   paintStatic – once into the cached background: cobwebs in the corners, bunting on the wall
 //   furniture   – depth-sorted live items: glowing jack-o'-lanterns and flickering candles
 //   overlay     – every frame, over the scene: bats flying slowly across, a dangling spider
 //   lights      – warm glow points for drawLighting (flicker with the flames)
-const W = 544;
-const H = 288;
+export const W = 544;
+export const H = 288;
 
-const rect = (g) => (x, y, w, h, c) => {
+export const rect = (g) => (x, y, w, h, c) => {
   g.fillStyle = c;
   g.fillRect(Math.round(x), Math.round(y), w, h);
 };
 
-function hash(n) {
+export function hash(n) {
   const x = Math.sin(n * 127.1) * 43758.5453;
   return x - Math.floor(x);
 }

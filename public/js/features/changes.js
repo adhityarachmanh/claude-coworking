@@ -3,6 +3,7 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { openFile } from './file-viewer.js';
+import { hideGitBar, loadGitBar } from './git-branches.js';
 
 // project: whose files the list shows; diffFor: `${project}\n${file}` of the diff on screen (both drive the loading state)
 export const changes = { selected: null, timer: null, data: null, project: null, diffFor: null };
@@ -26,6 +27,7 @@ export async function loadChanges() {
     changes.data = null;
     changes.project = project;
     $('#ch-branch').textContent = '';
+    hideGitBar();
     list.innerHTML = '<li class="empty-line">Demo tidak punya repository. Pilih project sungguhan.</li>';
     $('#ch-diff').innerHTML = '';
     $('#changes-count').hidden = true;
@@ -49,6 +51,7 @@ export async function loadChanges() {
     changes.project = null;
     changes.diffFor = null;
     $('#ch-branch').textContent = '';
+    hideGitBar();
     $('#ch-diff').innerHTML = '';
     $('#ch-commit').hidden = true;
     $('#changes-count').hidden = true;
@@ -66,13 +69,16 @@ export async function loadChanges() {
   }
   if (!data.repo) {
     $('#ch-branch').textContent = '';
+    hideGitBar();
     list.innerHTML = `<li class="empty-line">${data.error ? `<div class="state-error">${escapeHtml(data.error)}</div>` : 'Folder ini bukan repository git. Jalankan <code>git init</code> untuk memakai panel ini.'}</li>`;
     $('#ch-diff').innerHTML = '';
     $('#ch-commit').hidden = true;
     return;
   }
   $('#ch-commit').hidden = !count;
-  $('#ch-branch').innerHTML = `⎇ <b>${escapeHtml(data.branch || '(detached)')}</b> · ${count ? `${count} file berubah` : 'bersih'}${data.ahead ? ` · ${data.ahead} commit belum di-push` : ''}`;
+  // Branch, ahead/behind and the branch actions live in the ⎇ git bar (git-branches.js).
+  $('#ch-branch').textContent = count ? `${count} file berubah` : 'bersih';
+  loadGitBar(data);
   if (!count) {
     list.innerHTML = '<li class="empty-line">Tidak ada perubahan yang belum di-commit. ✓</li>';
     $('#ch-diff').innerHTML = '';

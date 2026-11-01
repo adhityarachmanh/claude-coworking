@@ -79,6 +79,7 @@ async function startServer() {
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
+      CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'), // user-level settings.json (🛡️ Aturan izin), never the real ~/.claude
       OFFICE_OPEN_DRY_RUN: '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -617,7 +618,11 @@ for (const vp of VIEWPORTS) {
         label: document.querySelector('#theme-seg').getAttribute('aria-labelledby'),
         options: [...document.querySelectorAll('#theme-seg button')].map((b) => [b.dataset.theme, b.textContent.trim()]),
       }));
-      assert.deepEqual(seg, { role: 'group', label: 'theme-title', options: [['kantor', '🏢 Kantor'], ['halloween', '🎃 Halloween']] });
+      assert.deepEqual(seg, {
+        role: 'group',
+        label: 'theme-title',
+        options: [['kantor', '🏢 Kantor'], ['halloween', '🎃 Halloween'], ['natal', '🎄 Natal'], ['lebaran', '🌙 Lebaran'], ['agustus', '🇮🇩 17 Agustus']],
+      });
       const before = await page.eval(themeState);
       assert.deepEqual({ root: before.root, checked: before.checked }, { root: 'kantor', checked: ['kantor'] }, 'default: Kantor');
 
@@ -653,19 +658,54 @@ for (const vp of VIEWPORTS) {
         applyTheme('halloween', { persist: false });
         out.halloween = render();
         out.catHalloween = catSprite('sit', 0, false).toDataURL();
+        // The newer themes: a sample of the poses (every view and pose, fewer frames) keeps this test quick.
+        const sample = states.filter((_, i) => i % 3 === 0);
+        const renderSample = () => Object.fromEntries(ROLE_ORDER.map((id) => [id, sample.map((s) => characterSprite(CAST[id].look, s).toDataURL()).join()]));
+        applyTheme('kantor', { persist: false });
+        const kantorSample = renderSample();
+        const festive = {};
+        for (const id of ['natal', 'lebaran', 'agustus']) {
+          applyTheme(id, { persist: false });
+          const looks = renderSample();
+          festive[id] = {
+            changed: ROLE_ORDER.filter((role) => kantorSample[role] !== looks[role]),
+            catChanged: catSprite('sit', 0, false).toDataURL() !== out.catKantor,
+          };
+        }
         applyTheme('kantor', { persist: false });
         out.kantorAgain = render();
+        out.catKantorAgain = catSprite('sit', 0, false).toDataURL();
         applyTheme('halloween', { persist: false });
         return {
           changed: ROLE_ORDER.filter((id) => out.kantor[id] !== out.halloween[id]),
           stable: ROLE_ORDER.filter((id) => out.kantor[id] === out.kantorAgain[id]),
           roles: ROLE_ORDER,
           catChanged: out.catKantor !== out.catHalloween,
+          catStable: out.catKantor === out.catKantorAgain,
+          festive,
         };
       });
       assert.deepEqual(sprites.changed, sprites.roles, 'setiap role berkostum di Halloween');
       assert.deepEqual(sprites.stable, sprites.roles, 'kembali ke Kantor = sprite semula');
       assert.ok(sprites.catChanged, 'kucing hitam di Halloween');
+      assert.ok(sprites.catStable, 'kucing Kantor kembali semula');
+      for (const [id, f] of Object.entries(sprites.festive)) {
+        assert.deepEqual(f.changed, sprites.roles, `setiap role berkostum di ${id}`);
+        assert.ok(f.catChanged, `kucing ${id} berbeda`);
+      }
+
+      // Natal, Lebaran, 17 Agustus via the picker: saved, avatars redrawn, a few frames of decor/lighting, no errors.
+      await openSettings();
+      for (const id of ['natal', 'lebaran', 'agustus']) {
+        const prev = await page.eval(themeState);
+        await page.click(`#theme-seg button[data-theme="${id}"]`);
+        const now = await page.eval(themeState);
+        assert.deepEqual({ stored: now.stored, root: now.root, checked: now.checked }, { stored: id, root: id, checked: [id] }, `${id} tersimpan`);
+        assert.notEqual(now.avatar, prev.avatar, `${id}: avatar digambar ulang`);
+        assert.equal(await page.eval(horizontalOverflow), null, `${id}: dialog tanpa scroll horizontal`);
+        await sleep(200);
+      }
+      await page.press('Escape');
 
       // A couple of frames in Halloween (bats, candles, lighting) without errors, then back to Kantor.
       await sleep(300);
@@ -929,6 +969,96 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
+    test('🛡️ Aturan izin + ⎇ git di tab Perubahan: tampil rapi, validasi, tanpa error console/overflow', async (t) => {
+      await openApp(page, `#${projectId}`);
+      page.clearProblems();
+      const proj = path.join(TMP, 'projects', 'toko');
+      const shot = async (name) => {
+        // OFFICE_UI_SHOTS=<dir>: keep screenshots to look at (never written otherwise)
+        if (process.env.OFFICE_UI_SHOTS) writeFileSync(path.join(process.env.OFFICE_UI_SHOTS, `${name}-${vp.mobile ? 'mobile' : 'desktop'}.png`), await page.screenshot());
+      };
+      // Rules as "Izinkan selalu" stores them, next to other keys that must survive an edit
+      const local = path.join(proj, '.claude', 'settings.local.json');
+      t.after(() => rmSync(path.join(proj, '.claude'), { recursive: true, force: true }));
+      mkdirSync(path.dirname(local), { recursive: true });
+      writeFileSync(local, JSON.stringify({ permissions: { allow: ['Bash(npm run test:*)', 'Read(src/**)'], deny: ['Bash(curl *)'] }, env: { KEEP: '1' } }, null, 2));
+
+      // opened from ⋯ (on every device; ⚙ is the laptop's other way in, /permissions the third)
+      await page.click('#btn-more');
+      await page.click('#more-menu [data-more="permissions"]');
+      await page.waitFor(() => document.querySelectorAll('#perm-list .perm-rules li').length === 3, { timeoutMs: 4000, message: 'aturan tampil' });
+      const perm = await page.eval(() => ({
+        scopes: [...document.querySelectorAll('#perm-list .perm-scope-head b')].map((b) => b.textContent),
+        rules: [...document.querySelectorAll('#perm-list .perm-rules li code')].map((c) => c.textContent),
+        addVisible: Boolean(document.querySelector('#perm-add').getClientRects().length),
+        roHidden: document.querySelector('#perm-ro').hidden,
+        focusInside: document.querySelector('#perm-modal').contains(document.activeElement),
+      }));
+      assert.deepEqual(perm, { scopes: ['Project lokal', 'Project bersama', 'User'], rules: ['Bash(npm run test:*)', 'Read(src/**)', 'Bash(curl *)'], addVisible: true, roHidden: true, focusInside: true });
+      assert.equal(await page.eval(horizontalOverflow), null, 'dialog aturan izin tanpa scroll horizontal');
+      assert.deepEqual(await page.eval(unnamedButtons, '#perm-modal'), []);
+      // a malformed rule is caught in place, nothing is sent
+      await page.eval(() => (document.querySelector('#perm-add-rule').value = 'Bash('));
+      await page.click('#perm-add button.primary');
+      assert.match(await page.eval(() => document.querySelector('#perm-add-error').textContent), /Format/);
+      await page.eval(() => (document.querySelector('#perm-add-rule').value = 'WebFetch(domain:example.com)'));
+      await page.click('#perm-add button.primary');
+      await page.waitFor(() => [...document.querySelectorAll('#perm-list .perm-rules code')].some((c) => c.textContent === 'WebFetch(domain:example.com)'), { timeoutMs: 4000, message: 'aturan baru tampil' });
+      assert.deepEqual(JSON.parse(readFileSync(local, 'utf8')).env, { KEEP: '1' }, 'key lain di file tetap ada');
+      assert.equal(await page.eval(() => document.querySelector('#perm-add-error').textContent), '');
+      await shot('perm');
+      await page.press('Escape');
+      assert.equal(await page.eval(() => document.querySelector('#perm-modal').hidden), true);
+
+      // ⎇ git bar: the project is a git repo (made by the file viewer test above, or here)
+      if (!existsSync(path.join(proj, '.git'))) {
+        const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: proj, stdio: 'ignore' });
+        git('init', '-q');
+        git('add', '-A');
+        git('commit', '-qm', 'awal');
+      }
+      if (vp.mobile) await page.click('#mobile-nav [data-view="changes"]');
+      else await page.click('.tabs button[data-tab="changes"]');
+      await page.click('#ch-refresh');
+      await page.waitFor(() => !document.querySelector('#ch-git').hidden && document.querySelector('#ch-git-select').options.length > 0 && document.querySelector('#ch-git-sync').textContent.trim(), { timeoutMs: 6000, message: 'bar git tampil' });
+      const bar = await page.eval(() => ({
+        branch: document.querySelector('#ch-git-select').value,
+        sync: document.querySelector('#ch-git-sync').textContent.trim(),
+        enabled: ['#ch-git-new', '#ch-git-pr', '#ch-git-select'].filter((s) => !document.querySelector(s).disabled),
+        // no remote here: nothing to fetch/pull/push
+        disabled: ['#ch-git-fetch', '#ch-git-pull', '#ch-git-push'].filter((s) => document.querySelector(s).disabled),
+      }));
+      assert.ok(bar.branch, 'branch saat ini terpilih');
+      assert.equal(bar.sync, 'tanpa remote');
+      assert.deepEqual(bar.enabled, ['#ch-git-new', '#ch-git-pr', '#ch-git-select']);
+      assert.deepEqual(bar.disabled, ['#ch-git-fetch', '#ch-git-pull', '#ch-git-push']);
+      assert.equal(await page.eval(horizontalOverflow), null, 'tab Perubahan + bar git tanpa scroll horizontal');
+      assert.deepEqual(await page.eval(unnamedButtons, '#changes'), []);
+      // ＋ Branch: a name with a space is caught before it is sent; a server refusal shows git's message in the panel
+      await page.click('#ch-git-new');
+      await page.waitFor(() => document.activeElement?.id === 'ch-git-name', { timeoutMs: 2000, message: 'fokus di nama branch' });
+      await page.eval(() => (document.querySelector('#ch-git-name').value = 'ada spasi'));
+      await page.click('#ch-git-create button.primary');
+      assert.match(await page.eval(() => document.querySelector('#ch-git-name-error').textContent), /spasi/);
+      await page.eval(() => (document.querySelector('#ch-git-name').value = 'a.lock'));
+      await page.click('#ch-git-create button.primary');
+      await page.waitFor(() => document.querySelector('#ch-git-out.err') && !document.querySelector('#ch-git-out').hidden, { timeoutMs: 4000, message: 'pesan penolakan git' });
+      assert.match(await page.eval(() => document.querySelector('#ch-git-text').textContent), /ditolak git|tidak valid/);
+      assert.equal(await page.eval(horizontalOverflow), null);
+      await shot('git');
+      await page.click('#ch-git-create-cancel');
+      await page.click('#ch-git-out-close');
+      // 🤖 PR: the prompt lands in the composer, not sent
+      const users = await page.eval(() => document.querySelectorAll('#chat .msg.user, #chat [data-kind="user"]').length);
+      await page.click('#ch-git-pr');
+      await page.waitFor(() => /pull request/.test(document.querySelector('#prompt').value), { timeoutMs: 2000, message: 'prompt PR di kotak pesan' });
+      assert.match(await page.eval(() => document.querySelector('#prompt').value), new RegExp(`branch \`${bar.branch}\``));
+      assert.equal(await page.eval(() => document.querySelectorAll('#chat .msg.user, #chat [data-kind="user"]').length), users, 'tidak terkirim');
+      await typeInPrompt(page, '');
+      // The refused branch name (400) is the expected answer, logged by the browser as a failed request; nothing else.
+      assert.deepEqual(realProblems(page).filter((p) => !/\/git-action\b/.test(p.text)), []);
+    });
+
     test('pair.html termuat tanpa error dan tanpa scroll horizontal', async () => {
       page.clearProblems();
       await page.goto(`${BASE}/pair`);
@@ -1036,7 +1166,7 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
         readOnly: document.body.classList.contains('read-only'),
         prompt: dis('#prompt'),
         placeholder: document.querySelector('#prompt').placeholder,
-        controls: ['#btn-send', '#btn-attach', '#btn-template', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#ch-review', '#ch-commit button'].filter((sel) => !dis(sel)),
+        controls: ['#btn-send', '#btn-attach', '#btn-template', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#ch-review', '#ch-commit button', '#ch-git-select', '#ch-git-new', '#ch-git-fetch', '#ch-git-pull', '#ch-git-push', '#ch-git-pr'].filter((sel) => !dis(sel)),
         hint: document.querySelector('#composer-hint').textContent,
         approvalEnabled: [...document.querySelectorAll('.approval.pending button, .approval.pending input')].filter((b) => !b.disabled).length,
         approvalNote: document.querySelector('.approval.pending .ro-note')?.textContent ?? '',
@@ -1235,3 +1365,245 @@ describe('UI koneksi putus', { skip: SKIP ?? false }, () => {
     assert.deepEqual(realProblems(page), []);
   });
 });
+
+// ---------- Ctrl+P command palette, 🔎 search conversations, ⬇ export .md ----------
+
+/** Trusted key press with modifiers (Ctrl+P, arrows), which page.press doesn't do. */
+async function keyCombo(page, key, { ctrl = false, shift = false } = {}) {
+  const vk = { ArrowDown: 40, ArrowUp: 38, Enter: 13, Escape: 27 }[key] ?? key.toUpperCase().charCodeAt(0);
+  const params = { key, code: key.length === 1 ? `Key${key.toUpperCase()}` : key, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers: (ctrl ? 2 : 0) | (shift ? 8 : 0) };
+  await page.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...params });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', ...params });
+}
+
+/** Opens the palette with Ctrl+P and types `text` into it (trusted input events). */
+async function paletteType(page, text) {
+  await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+  await keyCombo(page, 'p', { ctrl: true });
+  await page.waitFor(() => !document.querySelector('#palette-modal').hidden && document.activeElement?.id === 'palette-input', { timeoutMs: 2000, message: 'palet terbuka, fokus di input' });
+  if (text) await page.send('Input.insertText', { text });
+}
+
+const activeOption = (page) =>
+  page.eval(() => {
+    const input = document.querySelector('#palette-input');
+    const opt = document.getElementById(input.getAttribute('aria-activedescendant'));
+    return opt ? { label: opt.querySelector('.pal-label').textContent, marked: [...opt.querySelectorAll('mark')].map((m) => m.textContent).join(''), selected: opt.getAttribute('aria-selected') } : null;
+  });
+
+/** Captures what saveBlob downloads (anchor click on a blob: URL) instead of saving a file. */
+function captureDownloads() {
+  window.__downloads = [];
+  const blobs = new Map(); // blob: URL -> Blob (CSP connect-src would refuse fetching the blob: URL back)
+  const create = URL.createObjectURL.bind(URL);
+  URL.createObjectURL = (blob) => {
+    const url = create(blob);
+    blobs.set(url, blob);
+    return url;
+  };
+  window.HTMLAnchorElement.prototype.click = function () {
+    const blob = this.download && blobs.get(this.href);
+    if (blob) blob.text().then((text) => window.__downloads.push({ name: this.download, text }));
+  };
+}
+
+for (const vp of VIEWPORTS) {
+  describe(`UI palet perintah & cari percakapan — ${vp.name}`, { skip: SKIP ?? false }, () => {
+    let page;
+    let sid;
+    before(async () => {
+      if (SKIP) return;
+      // A transcript of the toko project to search and export (the folder Claude Code itself would use).
+      const project = (await snapshot()).projects.find((p) => p.id === projectId);
+      const dir = path.join(TMP, 'claude-projects', path.resolve(project.path).replace(/[^a-zA-Z0-9]/g, '-'));
+      mkdirSync(dir, { recursive: true });
+      sid = vp.mobile ? 'aaaaaaaa-1111-4222-8333-444444444444' : 'bbbbbbbb-1111-4222-8333-444444444444';
+      const ts = new Date(Date.now() - 3600_000).toISOString();
+      const lines = [
+        { type: 'user', promptSource: 'typed', sessionId: sid, timestamp: ts, message: { role: 'user', content: 'Perbaiki alur Pembayaran <img src=x onerror="window.__xss=1"> di checkout' } },
+        { type: 'assistant', sessionId: sid, timestamp: ts, message: { id: 'm1', role: 'assistant', content: [{ type: 'thinking', thinking: 'PIKIRAN-RAHASIA' }, { type: 'text', text: 'Modul pembayaran sudah saya perbaiki.' }] } },
+        { type: 'custom-title', customTitle: `Bug pembayaran ${vp.mobile ? 'HP' : 'laptop'}` },
+      ];
+      writeFileSync(path.join(dir, `${sid}.jsonl`), `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`);
+      page = await browser.newPage();
+      await page.setViewport(vp);
+      await openApp(page, `#${projectId}`);
+      await page.eval(() => localStorage.removeItem('office.palette.recent'));
+      await page.eval(captureDownloads);
+    });
+    after(async () => page?.close());
+
+    test('Ctrl+P membuka palet (combobox/listbox), ↓ dan Esc; Ctrl+K tetap pemilih project', async () => {
+      page.clearProblems();
+      await paletteType(page, '');
+      const a11y = await page.eval(() => {
+        const input = document.querySelector('#palette-input');
+        return {
+          role: input.getAttribute('role'),
+          controls: input.getAttribute('aria-controls'),
+          listRole: document.querySelector('#palette-list').getAttribute('role'),
+          active: Boolean(document.getElementById(input.getAttribute('aria-activedescendant'))),
+          groups: [...document.querySelectorAll('#palette-list .pal-group-head')].map((g) => g.textContent),
+        };
+      });
+      const { groups, ...roles } = a11y;
+      assert.deepEqual(roles, { role: 'combobox', controls: 'palette-list', listRole: 'listbox', active: true });
+      for (const g of ['Project', 'Chat', 'Buka', 'Tema', 'Perintah']) assert.ok(groups.includes(g), `grup ${g}: ${groups.join(', ')}`);
+      assert.equal(await page.eval(horizontalOverflow), null, 'palet tanpa scroll horizontal');
+      assert.deepEqual(await page.eval(unnamedButtons, '#palette-modal'), []);
+      const first = await activeOption(page);
+      await keyCombo(page, 'ArrowDown');
+      const second = await activeOption(page);
+      assert.notEqual(second.label, first.label, '↓ pindah pilihan');
+      assert.equal(second.selected, 'true');
+      await page.press('Escape');
+      assert.equal(await page.eval(() => document.querySelector('#palette-modal').hidden), true, 'Esc menutup');
+      // Ctrl+K is untouched
+      await keyCombo(page, 'k', { ctrl: true });
+      await page.waitFor(() => !document.querySelector('#project-modal').hidden, { timeoutMs: 2000, message: 'Ctrl+K membuka pemilih project' });
+      assert.equal(await page.eval(() => document.querySelector('#palette-modal').hidden), true, 'palet tidak ikut terbuka');
+      await page.press('Escape');
+      // Ctrl+Shift+P: straight to commands
+      await keyCombo(page, 'P', { ctrl: true, shift: true });
+      await page.waitFor(() => document.querySelector('#palette-input').value === '>' && !document.querySelector('#palette-scope').hidden, { timeoutMs: 2000, message: 'Ctrl+Shift+P → prefix >' });
+      await page.press('Escape');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('fuzzy + Enter: pindah project (#), buka file (@), buka dialog, ganti tema, riwayat aksi', async () => {
+      page.clearProblems();
+      await paletteType(page, '#demo');
+      await page.waitFor(() => /Demo/.test((document.querySelector('#palette-list .pal-opt.active .pal-label')?.textContent ?? '')), { timeoutMs: 2000, message: 'Demo terpilih' });
+      assert.match((await activeOption(page)).marked, /demo/i, 'huruf yang cocok di-highlight');
+      await page.press('Enter');
+      await page.waitFor(() => location.hash === '#demo' && document.querySelector('#palette-modal').hidden, { timeoutMs: 2000, message: 'pindah ke demo' });
+      await paletteType(page, 'tko'); // fuzzy: t…k…o
+      await page.waitFor(() => (document.querySelector('#palette-list .pal-opt.active .pal-label')?.textContent ?? '') === 'toko', { timeoutMs: 2000, message: 'toko (fuzzy) di urutan pertama' });
+      assert.equal((await activeOption(page)).marked, 'tko');
+      await page.press('Enter');
+      await page.waitFor((id) => location.hash === `#${id}`, { timeoutMs: 2000, message: 'kembali ke toko' }, projectId);
+
+      // @ file: the project's file index → the file viewer
+      await paletteType(page, '@checkout');
+      await page.waitFor(() => (document.querySelector('#palette-list .pal-opt.active .pal-label')?.textContent ?? '') === 'src/checkout.ts', { timeoutMs: 4000, message: 'file ditemukan' });
+      await page.press('Enter');
+      await page.waitFor(() => !document.querySelector('#file-modal').hidden && /checkout\.ts/.test(document.querySelector('#fv-title').textContent), { timeoutMs: 4000, message: 'penampil file terbuka' });
+      await page.press('Escape');
+
+      // a dialog by a fuzzy name
+      await paletteType(page, 'pngtrn');
+      await page.waitFor(() => (document.querySelector('#palette-list .pal-opt.active .pal-label')?.textContent ?? '') === 'Pengaturan', { timeoutMs: 2000, message: 'Pengaturan (fuzzy)' });
+      await page.press('Enter');
+      await page.waitFor(() => !document.querySelector('#settings-modal').hidden && document.querySelector('#palette-modal').hidden, { timeoutMs: 2000, message: 'Pengaturan terbuka' });
+      await page.press('Escape');
+
+      // theme, then back; the last action is listed first next time
+      await paletteType(page, 'halloween');
+      await page.press('Enter');
+      await page.waitFor(() => document.documentElement.dataset.officeTheme === 'halloween', { timeoutMs: 2000, message: 'tema halloween' });
+      await paletteType(page, 'tema kantor');
+      await page.press('Enter');
+      await page.waitFor(() => document.documentElement.dataset.officeTheme === 'kantor', { timeoutMs: 2000, message: 'tema kantor' });
+      await paletteType(page, '');
+      const recent = await page.eval(() => ({ head: document.querySelector('#palette-list .pal-group-head')?.textContent, first: document.querySelector('#palette-list .pal-opt .pal-label')?.textContent }));
+      assert.deepEqual(recent, { head: 'Terakhir dipakai', first: 'Tema: Kantor' });
+      await page.press('Escape');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('🔎 cari percakapan: cuplikan ber-highlight (teks di-escape), validasi, export .md terunduh', async () => {
+      page.clearProblems();
+      await paletteType(page, 'cari percakapan');
+      await page.press('Enter');
+      await page.waitFor(() => !document.querySelector('#search-modal').hidden, { timeoutMs: 2000, message: 'dialog cari terbuka' });
+      // Desktop: focus is in the search box at once; a phone waits for a tap (no keyboard popping up unasked).
+      if (vp.mobile) await page.click('#search-q');
+      assert.equal(await page.eval(() => document.activeElement?.id), 'search-q');
+      await page.send('Input.insertText', { text: 'a' });
+      await page.press('Enter');
+      assert.match(await page.eval(() => document.querySelector('#search-error').textContent), /minimal 2 huruf/);
+      await page.eval(() => (document.querySelector('#search-q').value = ''));
+      await page.send('Input.insertText', { text: 'PEMBAYARAN' });
+      await page.press('Enter');
+      await page.waitFor((id) => [...document.querySelectorAll('#search-results .sr-item')].filter((li) => li.textContent.includes(id.slice(0, 8))).length >= 2, { timeoutMs: 4000, message: 'hasil pencarian' }, sid);
+      const r = await page.eval(() => ({
+        marks: [...document.querySelectorAll('#search-results mark')].map((m) => m.textContent),
+        text: document.querySelector('#search-results').textContent,
+        img: document.querySelectorAll('#search-results img').length,
+        xss: window.__xss ?? null,
+        status: document.querySelector('#search-status').textContent,
+        invalid: document.querySelector('#search-q').getAttribute('aria-invalid'),
+      }));
+      assert.ok(r.marks.length && r.marks.every((m) => m.toLowerCase() === 'pembayaran'), r.marks.join(','));
+      assert.match(r.text, /<img src=x/, 'teks tampil apa adanya');
+      assert.equal(r.img, 0);
+      assert.equal(r.xss, null);
+      assert.ok(!r.text.includes('PIKIRAN-RAHASIA'), 'thinking tidak ikut dicari');
+      assert.match(r.status, /hasil/);
+      assert.equal(r.invalid, null);
+      assert.equal(await page.eval(horizontalOverflow), null, 'dialog cari tanpa scroll horizontal');
+      assert.deepEqual(await page.eval(unnamedButtons, '#search-modal'), []);
+      await page.eval(() => (window.__downloads = []));
+      await page.eval((id) => [...document.querySelectorAll('#search-results .sr-item')].find((li) => li.textContent.includes(id.slice(0, 8))).querySelector('.s-export').click(), sid);
+      await page.waitFor(() => window.__downloads.length === 1, { timeoutMs: 4000, message: 'export terunduh' });
+      const dl = await page.eval(() => window.__downloads[0]);
+      assert.match(dl.name, /^bug-pembayaran-(hp|laptop)-[0-9a-f]{8}\.md$/);
+      assert.match(dl.text, /^# Bug pembayaran/);
+      assert.match(dl.text, /## 🧑 Kamu/);
+      assert.match(dl.text, /Modul pembayaran sudah saya perbaiki\./);
+      assert.ok(!dl.text.includes('PIKIRAN-RAHASIA'), 'tanpa thinking');
+      await page.press('Escape');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⬇ export dari Riwayat sesi; /export tanpa sesi aktif memberi pesan jelas', async () => {
+      page.clearProblems();
+      await page.eval(() => {
+        document.querySelectorAll('.modal').forEach((m) => (m.hidden = true));
+        window.__downloads = [];
+      });
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      await page.click('#btn-sessions');
+      await page.waitFor((id) => document.querySelector(`#sessions-list [data-export="${id}"]`), { timeoutMs: 4000, message: 'tombol export di riwayat' }, sid);
+      assert.equal(await page.eval(horizontalOverflow), null);
+      assert.deepEqual(await page.eval(unnamedButtons, '#sessions-modal'), []);
+      await page.eval((id) => document.querySelector(`#sessions-list [data-export="${id}"]`).click(), sid);
+      await page.waitFor(() => window.__downloads.length === 1, { timeoutMs: 4000, message: 'export dari riwayat' });
+      await page.press('Escape');
+      // /export: the session the chat continues. Earlier tests may or may not have started one, so both paths
+      // are checked deterministically: with a session its transcript is exported, without one a clear message.
+      const snap = await snapshot();
+      const live = snap.statuses[projectId]?.sessionId;
+      if (live) {
+        const project = snap.projects.find((p) => p.id === projectId);
+        const dir = path.join(TMP, 'claude-projects', path.resolve(project.path).replace(/[^a-zA-Z0-9]/g, '-'));
+        const line = { type: 'user', promptSource: 'typed', sessionId: live, timestamp: new Date().toISOString(), message: { role: 'user', content: 'EKSPOR-SESI-AKTIF' } };
+        writeFileSync(path.join(dir, `${live}.jsonl`), `${JSON.stringify(line)}\n`, { flag: 'a' });
+      }
+      await typeInPrompt(page, '/export');
+      await page.eval(() => document.querySelector('#btn-send').click());
+      if (live) {
+        await page.waitFor(() => window.__downloads.length === 2, { timeoutMs: 4000, message: '/export mengunduh sesi aktif' });
+        assert.match(await page.eval(() => window.__downloads[1].text), /EKSPOR-SESI-AKTIF/);
+      } else {
+        await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => /Belum ada sesi/.test(t.textContent)), { timeoutMs: 2000, message: 'pesan "belum ada sesi"' });
+        assert.equal(await page.eval(() => window.__downloads.length), 1);
+      }
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    if (vp.mobile) {
+      test('HP: tombol 🔎 di navigasi bawah membuka palet, tanpa overflow', async () => {
+        page.clearProblems();
+        await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+        assert.equal(await page.eval(horizontalOverflow), null, 'topbar dengan 🔎 tanpa overflow');
+        assert.equal(await page.eval(() => document.querySelector('#btn-palette').getClientRects().length), 0, '🔎 tidak di topbar HP');
+        await page.click('#nav-palette');
+        await page.waitFor(() => !document.querySelector('#palette-modal').hidden, { timeoutMs: 2000, message: 'palet terbuka lewat 🔎' });
+        assert.equal(await page.eval(horizontalOverflow), null);
+        await page.press('Escape');
+        assert.deepEqual(realProblems(page), []);
+      });
+    }
+  });
+}

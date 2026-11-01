@@ -26,6 +26,7 @@
       <!-- Quota warning (features/quota.js): shown only while a plan window is past the yellow/red threshold -->
       <button id="quota-pill" class="quota-pill" type="button" hidden></button>
       <button id="btn-account" class="account-btn" title="Akun Claude, kuota & login"><span id="account-avatar" class="avatar">?</span><span id="account-label" class="account-label">Akun</span></button>
+      <button id="btn-palette" class="icon-btn labeled" title="Palet perintah: cari aksi, file, project (Ctrl+P)" aria-haspopup="dialog" aria-keyshortcuts="Control+P"><span class="ico" aria-hidden="true">🔎</span><span class="lbl">Cari</span></button>
       <button id="btn-report" class="icon-btn labeled" title="Laporan penggunaan token (PDF)"><span class="ico" aria-hidden="true">📊</span><span class="lbl">Laporan</span></button>
       <button id="btn-phone" class="icon-btn labeled" title="Buka dari HP (scan QR)" hidden><span class="ico" aria-hidden="true">📱</span><span class="lbl">Buka di HP</span></button>
       <button id="btn-notify" class="icon-btn labeled" title="Notifikasi & suara"><span class="ico" aria-hidden="true">🔕</span><span class="lbl">Notifikasi</span></button>
@@ -63,6 +64,27 @@
             <button id="ch-review" class="ghost" title="Minta Tech Lead me-review semua perubahan">🔍 Minta review</button>
             <button id="ch-refresh" class="ghost icon" title="Muat ulang" aria-label="Muat ulang">↻</button>
           </div>
+          <!-- ⎇ git: branch + ahead/behind, switch / new branch, fetch, pull (ff-only), push (never --force), PR prompt -->
+          <div id="ch-git" class="ch-git" hidden>
+            <label class="ch-git-branch" title="Branch saat ini — pilih branch lain untuk pindah"><span aria-hidden="true">⎇</span><select id="ch-git-select" aria-label="Branch (pilih untuk pindah)"></select></label>
+            <span id="ch-git-sync" class="ch-git-sync"></span>
+            <span class="grow"></span>
+            <button id="ch-git-new" class="ghost" type="button" title="Buat branch baru dari commit saat ini">＋ Branch</button>
+            <button id="ch-git-fetch" class="ghost" type="button" title="git fetch: ambil info terbaru dari remote">⟳ Fetch</button>
+            <button id="ch-git-pull" class="ghost" type="button">⬇ Pull</button>
+            <button id="ch-git-push" class="ghost" type="button">⬆ Push</button>
+            <button id="ch-git-pr" class="ghost" type="button" title="Sisipkan prompt ke kotak pesan (tidak langsung terkirim): Claude membuat pull request">🤖 Minta Claude buat PR</button>
+          </div>
+          <form id="ch-git-create" class="ch-git-create" hidden>
+            <input id="ch-git-name" aria-label="Nama branch baru" aria-describedby="ch-git-name-error" placeholder="nama-branch-baru, mis. fitur/login" autocomplete="off" spellcheck="false" maxlength="200" />
+            <button class="primary">Buat &amp; pindah</button>
+            <button id="ch-git-create-cancel" type="button" class="ghost">Batal</button>
+            <p id="ch-git-name-error" class="field-error" role="alert"></p>
+          </form>
+          <div id="ch-git-out" class="ch-git-out" role="status" aria-live="polite" hidden>
+            <pre id="ch-git-text"></pre>
+            <button id="ch-git-out-close" class="icon-btn" type="button" title="Tutup pesan git" aria-label="Tutup pesan git">✕</button>
+          </div>
           <ul id="ch-files" class="ch-files"></ul>
           <div id="ch-diff" class="ch-diff"></div>
           <form id="ch-commit" class="ch-commit">
@@ -75,12 +97,15 @@
           <div id="session-bar" class="session-bar">
             <b id="sb-title">Percakapan baru</b>
             <button id="sb-tasks" class="sb-btn sb-tasks" type="button" hidden title="Tugas latar yang sedang berjalan (/tasks)"><span aria-hidden="true">⧗</span> <span id="sb-tasks-n">0</span> <span class="sb-tasks-lbl">berjalan</span></button>
+            <button id="sb-queue" class="sb-btn sb-queue" type="button" hidden title="📋 Antrian prompt: dijalankan satu per satu saat tim tidak sibuk"><span aria-hidden="true">📋</span> <span id="sb-queue-n">0</span> <span class="sb-queue-lbl">antrian</span></button>
             <button id="btn-sessions" class="sb-btn" title="Lihat dan lanjutkan sesi Claude Code sebelumnya (dari terminal maupun web)">🕘 <span>Riwayat sesi</span></button>
             <button id="btn-new" class="sb-btn" title="Mulai percakapan baru — Claude tidak membawa konteks percakapan ini">＋ <span>Sesi baru</span></button>
             <button id="btn-more" class="sb-btn sb-more" title="Lainnya: export, lanjut di terminal, buka di VS Code" aria-haspopup="menu" aria-expanded="false" aria-label="Lainnya">⋯</button>
             <small id="sb-meta"></small>
             <div id="more-menu" class="menu" role="menu" hidden>
               <button role="menuitem" data-more="export">⬇ Export percakapan (.md)</button>
+              <button role="menuitem" data-more="export-session" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">⬇ Export sesi lengkap (.md)</button>
+              <button role="menuitem" data-more="permissions">🛡️ Aturan izin (/permissions)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
               <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
               <button role="menuitem" data-more="folder" class="local-only">📁 Buka folder project</button>
@@ -138,6 +163,7 @@
             <button id="btn-template" class="ghost icon attach" type="button" title="Template prompt (/t)" aria-label="Template prompt" aria-haspopup="dialog">⚡</button>
             <textarea id="prompt" rows="3" aria-label="Pesan untuk tim" placeholder="Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )"></textarea>
             <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)">■ Stop</button>
+            <button id="btn-queue-add" class="ghost icon attach queue-add" type="button" title="Tambah ke 📋 Antrian, dijalankan saat tim tidak sibuk (Alt+Enter). Kotak kosong: buka antrian" aria-label="Tambah ke antrian">📋</button>
             <button id="btn-send" class="primary">Kirim</button>
           </div>
           <!-- Status line: permission mode (Shift+Tab), model, context used -->
@@ -154,6 +180,8 @@
       <button data-view="chat" class="active"><span class="ico">💬</span>Chat<span id="nav-badge-chat" class="nav-badge" hidden></span></button>
       <button data-view="changes"><span class="ico">📝</span>Perubahan<span id="nav-badge-changes" class="nav-badge muted-badge" hidden></span></button>
       <button data-view="activity"><span class="ico">📋</span>Aktivitas</button>
+      <!-- Phone: the 🔎 command palette lives here (the top bar has no room left with the quota pill) -->
+      <button id="nav-palette" type="button" aria-haspopup="dialog" title="Palet perintah: cari aksi, file, project"><span class="ico" aria-hidden="true">🔎</span>Cari</button>
     </nav>
 
     <!-- Project picker (Ctrl+K) -->
@@ -190,8 +218,10 @@
             <h3>Shortcut keyboard</h3>
             <table class="keys">
               <tr><td><kbd>Ctrl</kbd> <kbd>K</kbd></td><td>Ganti project</td></tr>
+              <tr><td><kbd>Ctrl</kbd> <kbd>P</kbd></td><td>Palet perintah: semua aksi, file (<kbd>@</kbd>), project (<kbd>#</kbd>), perintah (<kbd>&gt;</kbd>) — <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> langsung ke perintah</td></tr>
               <tr><td><kbd>Enter</kbd></td><td>Kirim pesan</td></tr>
               <tr><td><kbd>Shift</kbd> <kbd>Enter</kbd></td><td>Baris baru</td></tr>
+              <tr><td><kbd>Alt</kbd> <kbd>Enter</kbd></td><td>📋 Tambah ke antrian (juga tombol 📋 di samping Kirim, atau <code>/antrian</code>): prompt dijalankan satu per satu otomatis saat tim tidak sibuk</td></tr>
               <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Panggil lagi prompt sebelumnya (di kotak pesan)</td></tr>
               <tr><td><kbd>/</kbd></td><td>Slash command &amp; skill, misalnya <code>/compact</code> atau <code>/context</code></td></tr>
               <tr><td><kbd>@</kbd></td><td>Sebut file di project</td></tr>
@@ -259,6 +289,7 @@
           <input id="sessions-search" type="search" aria-label="Cari sesi" placeholder="Cari judul sesi…" autocomplete="off" />
           <button id="sessions-new" class="ghost">＋ Sesi baru</button>
         </div>
+        <label class="switch small export-opt"><input class="export-tools-opt" type="checkbox" /> Export .md: sertakan ringkasan tool calls</label>
         <div id="sessions-list" class="sessions-list"></div>
       </div>
     </div>
@@ -282,6 +313,23 @@
           <form id="mcp-callback-form"><input id="mcp-callback-url" aria-label="URL callback login MCP" placeholder="http://localhost:…/callback?code=…" autocomplete="off" /><button class="primary">Selesaikan login</button></form>
         </div>
         <ul id="mcp-list" class="mcp-list"></ul>
+      </div>
+    </div>
+
+    <!-- 🛡️ Saved permission rules (/permissions): per settings file; changing them is laptop-only -->
+    <div id="perm-modal" class="modal" hidden>
+      <div class="modal-card perm-card" role="dialog" aria-modal="true" aria-labelledby="perm-title">
+        <div class="modal-head"><b id="perm-title">🛡️ Aturan izin <small id="perm-project" class="muted"></small> <small id="perm-count" class="muted"></small></b><button id="perm-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small perm-intro">Aturan yang disimpan "Izinkan selalu" (seperti <code>/permissions</code> di Claude Code). <b>allow</b> jalan tanpa bertanya · <b>ask</b> selalu tanya · <b>deny</b> selalu ditolak (deny menang). Berlaku untuk proses Claude Code berikutnya: sesi web yang diam dimulai ulang otomatis; sesi di terminal setelah dibuka ulang.</p>
+        <p id="perm-ro" class="ro-note" hidden>Hanya bisa diubah dari laptop (aturan ini menentukan apa yang boleh dijalankan Claude tanpa bertanya).</p>
+        <form id="perm-add" class="perm-add">
+          <select id="perm-add-list" aria-label="Jenis aturan"><option value="allow">allow</option><option value="ask">ask</option><option value="deny">deny</option></select>
+          <input id="perm-add-rule" aria-label="Aturan baru" aria-describedby="perm-add-error" placeholder="Bash(npm run test:*)" autocomplete="off" spellcheck="false" maxlength="500" />
+          <select id="perm-add-scope" aria-label="Simpan di"><option value="local">Project lokal</option><option value="project">Project bersama</option><option value="user">User (semua project)</option></select>
+          <button class="primary">Tambah</button>
+          <p id="perm-add-error" class="field-error" role="alert"></p>
+        </form>
+        <div id="perm-list" class="perm-list"></div>
       </div>
     </div>
 
@@ -366,6 +414,29 @@
       </div>
     </div>
 
+    <!-- 📋 Antrian (features/queue.js, server src/queue.js): prompts run one by one when the session is idle -->
+    <div id="queue-modal" class="modal" hidden>
+      <div class="modal-card queue-card" role="dialog" aria-modal="true" aria-labelledby="queue-title">
+        <div class="modal-head"><b id="queue-title">📋 Antrian <small id="queue-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="queue-bar">
+          <p id="queue-state" class="queue-state" role="status" aria-live="polite"></p>
+          <button id="queue-toggle" type="button" class="ghost">⏸ Jeda</button>
+        </div>
+        <ol id="queue-list" class="queue-list" aria-label="Item antrian"></ol>
+        <div class="queue-new">
+          <label for="queue-new" class="sr-only">Prompt baru untuk antrian</label>
+          <textarea id="queue-new" rows="2" maxlength="20000" placeholder="Prompt berikutnya… (Ctrl+Enter untuk menambah)"></textarea>
+          <button id="queue-add" type="button" class="primary">＋ Tambah</button>
+        </div>
+        <div class="queue-foot">
+          <small id="queue-count" class="muted"></small>
+          <span class="grow"></span>
+          <button id="queue-clear" type="button" class="ghost" hidden>🧹 Bersihkan yang selesai</button>
+        </div>
+        <p class="muted small queue-help">Satu item dikirim setiap kali giliran sebelumnya selesai (tidak ada izin yang menunggu). Antrian berhenti sendiri bila item gagal/dihentikan atau kuota habis, dan tetap dijeda setelah server di-restart sampai kamu melanjutkan. Seret atau ↑↓ untuk mengubah urutan.</p>
+      </div>
+    </div>
+
     <!-- Settings (laptop only) -->
     <div id="settings-modal" class="modal" hidden>
       <div class="modal-card" role="dialog" aria-modal="true" aria-label="Pengaturan">
@@ -384,6 +455,7 @@
             <p id="theme-desc" class="muted">Ganti tampilan kantor pixel dan kostum tim. Disimpan di browser ini.</p>
           </section>
           <button type="button" id="btn-team-names" class="ghost team-names-btn">👥 Ganti nama anggota tim</button>
+          <button type="button" id="btn-permissions" class="ghost team-names-btn" title="Aturan allow / ask / deny Claude Code untuk project yang sedang dibuka">🛡️ Aturan izin project ini</button>
           <hr />
           <section class="quota-alerts" aria-labelledby="quota-title" aria-describedby="quota-desc">
             <b id="quota-title">⏳ Peringatan kuota</b>
@@ -409,6 +481,30 @@
             </div>
             <p id="backup-status" class="muted" role="status" aria-live="polite"></p>
             <div id="backup-result" class="backup-result" hidden></div>
+            <!-- ⏰ Backup otomatis (features/backup-auto.js, server src/backup-schedule.js) -->
+            <div class="backup-auto" role="group" aria-labelledby="ba-title">
+              <b id="ba-title">⏰ Backup otomatis</b>
+              <label class="switch"><input id="ba-enabled" type="checkbox" /> Buat backup terjadwal ke folder di laptop ini</label>
+              <div class="ba-grid">
+                <label for="ba-frequency">Jadwal</label>
+                <select id="ba-frequency"><option value="daily">Harian</option><option value="weekly">Mingguan</option></select>
+                <label for="ba-weekday" id="ba-weekday-label" class="ba-weekday">Hari</label>
+                <span id="ba-weekday-row" class="ba-weekday" hidden><select id="ba-weekday" aria-labelledby="ba-weekday-label"></select></span>
+                <label for="ba-time">Jam</label>
+                <input id="ba-time" type="time" step="60" />
+                <label for="ba-keep">Simpan</label>
+                <span class="ba-keep"><input id="ba-keep" type="number" min="1" max="100" step="1" inputmode="numeric" /> backup terakhir</span>
+              </div>
+              <label for="ba-folder">Folder tujuan <small>(path lengkap, misalnya <code>D:\Backup\adhit-office</code>; bukan folder jaringan)</small></label>
+              <input id="ba-folder" spellcheck="false" autocomplete="off" placeholder="D:\Backup\adhit-office"aria-describedby="ba-error ba-desc" />
+              <p id="ba-error" class="field-error" role="alert"></p>
+              <div class="backup-actions">
+                <button type="button" id="ba-save" class="ghost">💾 Simpan jadwal</button>
+                <button type="button" id="ba-run" class="ghost">▶ Jalankan sekarang</button>
+              </div>
+              <p id="ba-status" class="muted" role="status" aria-live="polite"></p>
+              <p id="ba-desc" class="muted small">Isinya sama dengan Export riwayat. Rotasi hanya menghapus file <code>adhit-office-backup-auto-*.zip</code> yang lebih lama di folder itu; file lain tidak disentuh. Saat jadwal terlewat (laptop mati), backup dibuat sekali begitu server menyala.</p>
+            </div>
           </section>
           <hr />
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
@@ -493,6 +589,38 @@
         <label class="switch big"><input id="remote-enabled" type="checkbox" /> Izinkan akses dari HP (WiFi: hanya lihat · Tailscale: penuh)</label>
         <div id="phone-body"></div>
         <div id="phone-tip"></div>
+      </div>
+    </div>
+
+    <!-- 🔎 Search conversations (features/conversations.js): every session of the project, or every project -->
+    <div id="search-modal" class="modal" hidden>
+      <div class="modal-card sessions-card search-card" role="dialog" aria-modal="true" aria-labelledby="search-title">
+        <div class="modal-head"><b id="search-title">🔎 Cari percakapan <small id="search-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <form id="search-form" class="sessions-tools" role="search" novalidate>
+          <input id="search-q" type="search" aria-label="Kata kunci" placeholder="Cari di pesanmu dan balasan Claude…" maxlength="200" autocomplete="off" spellcheck="false" aria-describedby="search-error" />
+          <button class="primary" type="submit">Cari</button>
+        </form>
+        <p id="search-error" class="field-error" role="alert"></p>
+        <div class="search-opts">
+          <label class="switch small"><input id="search-all" type="checkbox" /> Semua project</label>
+          <label class="switch small"><input class="export-tools-opt" type="checkbox" /> Export .md dengan ringkasan tool</label>
+        </div>
+        <p id="search-status" class="muted small search-status" role="status" aria-live="polite"></p>
+        <ul id="search-results" class="sessions-list search-results" aria-label="Hasil pencarian"></ul>
+      </div>
+    </div>
+
+    <!-- Command palette (Ctrl+P, features/palette.js): last in the page so it sits above any open dialog -->
+    <div id="palette-modal" class="modal palette-modal" hidden>
+      <div class="modal-card palette-card" role="dialog" aria-modal="true" aria-label="Palet perintah">
+        <div class="palette-head">
+          <span class="pal-search-ico" aria-hidden="true">🔎</span>
+          <span id="palette-scope" class="pal-scope" hidden></span>
+          <input id="palette-input" type="text" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" aria-haspopup="listbox" aria-label="Cari aksi, file, atau project" aria-describedby="palette-keys" placeholder="Cari aksi, file, project…" autocomplete="off" spellcheck="false" />
+          <button class="icon-btn pal-close" data-close title="Tutup (Esc)" aria-label="Tutup">✕</button>
+        </div>
+        <div id="palette-list" class="palette-list" role="listbox" aria-label="Hasil"></div>
+        <p id="palette-keys" class="palette-keys muted small"><span>↑↓ pilih · Enter jalankan · Esc tutup</span><span><kbd>&gt;</kbd> perintah · <kbd>@</kbd> file · <kbd>#</kbd> project</span><span id="palette-count" class="sr-only" aria-live="polite"></span></p>
       </div>
     </div>
 

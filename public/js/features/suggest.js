@@ -80,7 +80,7 @@ export function applySuggest(i = suggest.index) {
 }
 
 /** Every slash command with its description: the app's own first, then Claude Code's (built-in, skills, plugins). */
-function slashCatalog() {
+export function slashCatalog() {
   const byName = new Map();
   for (const c of LOCAL_COMMANDS) byName.set(c.name, c);
   for (const c of state.config?.commands ?? []) if (!byName.has(c.name)) byName.set(c.name, c);

@@ -46,11 +46,11 @@ function parse(line) {
 // `!command` output the web app sends ahead of a prompt (the CLI's own tags): not part of what was typed.
 const SHELL_CONTEXT = /^(?:\s*<bash-input>[\s\S]*?<\/bash-input>\s*<bash-stdout>[\s\S]*?<\/bash-stdout>(?:<bash-stderr>[\s\S]*?<\/bash-stderr>)?)+\s*/;
 
-const promptText = (e) =>
+export const promptText = (e) =>
   (typeof e.message?.content === 'string' ? e.message.content : (e.message?.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n')).replace(SHELL_CONTEXT, '');
 
 /** A real user prompt (typed in the CLI or sent from the web), not a reminder/command/hand-back. */
-function isPrompt(e) {
+export function isPrompt(e) {
   if (e?.type !== 'user' || e.isMeta || e.isSidechain || e.isCompactSummary) return false;
   if (Array.isArray(e.message?.content) && e.message.content.some((b) => b.type === 'tool_result')) return false;
   if (e.promptSource && !['typed', 'sdk'].includes(e.promptSource)) return false;

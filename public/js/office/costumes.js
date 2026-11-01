@@ -8,6 +8,10 @@
 //   after  – last, over everything (held props)
 // `ghost: true` costumes paint the whole figure themselves (no legs: they float).
 // ctx = { view: 'down'|'up'|'left' (right is mirrored), s, headY, torsoY, torsoH, seated, arms, f, sleeve, paintItem }
+// Natal, Lebaran and 17 Agustus costumes live in costumes-<theme>.js and are merged into COSTUMES below.
+import { AGUSTUS_COSTUMES } from './costumes-agustus.js';
+import { LEBARAN_COSTUMES } from './costumes-lebaran.js';
+import { NATAL_COSTUMES } from './costumes-natal.js';
 
 const WHITE = '#f4f1ea';
 const INK = '#1d1424';
@@ -567,4 +571,8 @@ export const COSTUMES = {
       if (!s.talk && s.mood !== 'happy') p(9, headY + 8, 2, 1, '#e58fb0');
     },
   },
+
+  ...NATAL_COSTUMES,
+  ...LEBARAN_COSTUMES,
+  ...AGUSTUS_COSTUMES,
 };

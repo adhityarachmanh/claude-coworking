@@ -536,7 +536,7 @@ export function avatarURL(baseLook, scale = 3) {
 
 export function catSprite(state, frame, flip) {
   const pal = activeTheme().cat;
-  const key = `cat|${state}|${frame}|${flip ? 1 : 0}|${pal.fur}`;
+  const key = `cat|${activeTheme().id}|${state}|${frame}|${flip ? 1 : 0}|${pal.fur}`;
   if (cache.has(key)) return cache.get(key);
   const c = canvas(16, 12);
   const p = painter(c.getContext('2d'));
@@ -575,6 +575,7 @@ export function catSprite(state, frame, flip) {
     const legs = frame ? [4, 7, 9, 11] : [5, 6, 10, 11];
     for (const x of legs) p(x, 8, 1, 2, fur);
   }
+  pal.wear?.(p, state); // theme accessory (Santa hat, peci, bandana) painted before the outline
   outline(c, pal.outline);
   const result = flip ? mirror(c) : c;
   cache.set(key, result);

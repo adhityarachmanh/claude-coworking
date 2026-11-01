@@ -13,6 +13,8 @@
 //                      line every 300 ms for ~5 s (readable live with get_task_output), then its tool_result
 //   contains "sebut file" → a Read of src/checkout.ts (absolute path, offset 2), then a reply naming project files
 //                      (`src/checkout.ts:2`, src/app.js:3, a URL and a missing file) for the file viewer's links
+//   contains "gagal sengaja" → the turn ends with an error result
+//   contains "kuota habis" → a rate_limit_event with status "rejected", then an error result
 //   anything else    → streams a short text reply
 // Control requests (initialize, set_permission_mode, set_model, apply_flag_settings, rewind_files,
 // mcp_status, …) answer like the real CLI; every prompt reports command_lifecycle events.
@@ -264,6 +266,15 @@ async function handlePrompt(text) {
     finishAgent('completed', '## Hasil\nSemua **12 tes** checkout lulus.');
     await streamText('Agent QA selesai.', 5);
     return result();
+  }
+  // 📋 Antrian tests: a turn that ends in an error, and one that hits the account's usage limit.
+  if (/gagal sengaja/i.test(text)) {
+    await streamText('Ada yang rusak.', 5);
+    return result({ subtype: 'error_during_execution', is_error: true, result: 'Error palsu untuk tes' });
+  }
+  if (/kuota habis/i.test(text)) {
+    send({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour', resetsAt: Math.floor(Date.now() / 1000) + 3600 }, session_id: sessionId });
+    return result({ subtype: 'success', is_error: true, result: 'Claude AI usage limit reached' });
   }
   if (/Lanjutkan/.test(text)) {
     await streamText(`lanjut session=${sessionId} resume=${flag('--resume') ?? '-'}`, 5);
