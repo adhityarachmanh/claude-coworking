@@ -27,6 +27,7 @@ import { openInApp } from './src/open.js';
 import { TranscriptMirror } from './src/mirror.js';
 import { DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from './src/remote.js';
 import { listSessions, sessionHistory } from './src/transcripts.js';
+import { taskDetail } from './src/task-detail.js';
 import { ROLE_IDS, loadAgentDefinitions } from './src/roles.js';
 import { SessionManager } from './src/session.js';
 
@@ -495,7 +496,7 @@ async function handleApi(req, res, pathname, device = null) {
   }
 
   const action = pathname.match(
-    /^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|continue|changes|diff|commit|favorite|open|shell|rewind-points|rewind-preview|rewind|mcp|mcp-action|task-output|task-stop|background|rename)$/,
+    /^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|continue|changes|diff|commit|favorite|open|shell|rewind-points|rewind-preview|rewind|mcp|mcp-action|task-output|task-detail|task-stop|background|rename)$/,
   );
   const project = action && hub.projects.get(action[1]);
   if (!project || project.id === DEMO_ID) return json(res, 404, { error: 'project not found' });
@@ -597,6 +598,14 @@ async function handleApi(req, res, pathname, device = null) {
     // /tasks, Ctrl+B
     case 'task-output':
       return answer(res, session.taskOutput(String(body.taskId ?? '')));
+    case 'task-detail': {
+      // Read-only monitor (⧗ Tugas latar): the task must be one of this session's own; files are found server-side.
+      const taskId = String(body.taskId ?? '');
+      if (!taskId) return json(res, 400, { error: 'taskId kosong' });
+      const task = (hub.rt(project.id).status.tasks ?? []).find((t) => t.id === taskId);
+      if (!task) return json(res, 404, { error: 'Tugas tidak ditemukan (mungkin sudah dibersihkan).' });
+      return json(res, 200, taskDetail(project.path, hub.sessionIdFor(project.id), task));
+    }
     case 'task-stop':
       return answer(res, session.stopTask(String(body.taskId ?? '')));
     case 'background':

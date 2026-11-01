@@ -2,7 +2,7 @@
 import { $, escapeHtml } from '../core/dom.js';
 import { fmtTokens } from '../core/format.js';
 import { DEMO_ID, state } from '../core/state.js';
-import { openTasks } from './tasks.js';
+import { openTasks, runningCount } from './tasks.js';
 
 /** Claude's todo list, pinned above the composer while there is work left (CLI: ☐ ◼ ☒). */
 export function renderTodos(st) {
@@ -54,8 +54,8 @@ export function renderStatusline(st) {
       `<span class="sl-ctx ${level}" title="Konteks terpakai: ${st.context.used.toLocaleString('id-ID')} dari ${win.toLocaleString('id-ID')} token${compactNote}${level ? ' · pertimbangkan /compact' : ''}"><span class="bar"><i style="width:${pct}%"></i></span>konteks ${pct}% · ${fmtTokens(st.context.used)}/${fmtTokens(win)}</span>`,
     );
   }
-  const running = (st.tasks ?? []).filter((t) => t.status === 'running' && t.background).length;
-  if (running) parts.push(`<button type="button" class="sl-tasks" data-open-tasks title="Lihat tugas latar (/tasks)">⧗ ${running} tugas latar</button>`);
+  const running = runningCount(st); // same count as the ⧗ chip in the session bar
+  if (running) parts.push(`<button type="button" class="sl-tasks" data-open-tasks title="Buka monitor tugas latar (/tasks)">⧗ ${running} tugas berjalan</button>`);
   line.innerHTML = parts.join('<span class="sep">·</span>');
 }
 

@@ -93,6 +93,7 @@ export class StreamTranslator {
     this.sink = sink;
     this.tools = new Map(); // tool_use_id -> { name, input, role, label, screen, chatId, agent?, background? }
     this.toolRoles = new Map(); // tool_use_id -> role, kept after the call returns (background tasks point back at it)
+    this.toolCommands = new Map(); // Bash/PowerShell tool_use_id -> command, so a background shell task can show it
     this.bgShellRoles = []; // roles of `run_in_background` shells whose task hasn't been seen yet
     this.agentRoles = new Map(); // Agent tool_use_id -> office role of that subagent
     this.tasks = new Map(); // TaskCreate id -> { subject, status }
@@ -286,6 +287,7 @@ export class StreamTranslator {
       const i = this.bgShellRoles.indexOf(t.role);
       if (t.background && i >= 0) this.bgShellRoles.splice(i, 1); // matched by id: not waiting anymore
     }
+    this.attachCommand(t);
     this.bgTasks.set(id, t);
     this.settleTask(t);
     this.emitBgTasks();
@@ -295,6 +297,17 @@ export class StreamTranslator {
   rememberRole(toolUseId, role) {
     this.toolRoles.set(toolUseId, role);
     if (this.toolRoles.size > 500) this.toolRoles.delete(this.toolRoles.keys().next().value);
+  }
+
+  /** tool_use_id -> shell command, bounded like rememberRole (the task monitor shows the full command). */
+  rememberCommand(toolUseId, command) {
+    this.toolCommands.set(toolUseId, clip(command, 2000));
+    if (this.toolCommands.size > 200) this.toolCommands.delete(this.toolCommands.keys().next().value);
+  }
+
+  /** The command behind a shell task, once its tool call is known. */
+  attachCommand(t) {
+    if (t.kind === 'shell' && !t.command && t.toolUseId && this.toolCommands.has(t.toolUseId)) t.command = this.toolCommands.get(t.toolUseId);
   }
 
   /** A background subagent's task ended: its character reports back and stops working. */
@@ -322,6 +335,7 @@ export class StreamTranslator {
       if (x.description) t.description = truncate(x.description, 200);
       if (x.tool_use_id) t.toolUseId = x.tool_use_id;
       t.role ??= (t.toolUseId && this.toolRoles.get(t.toolUseId)) || (t.agent ? agentRole(t.agent) : null);
+      this.attachCommand(t);
       this.bgTasks.set(x.task_id, t);
     }
     for (const t of this.bgTasks.values()) {
@@ -498,6 +512,7 @@ export class StreamTranslator {
     });
     this.tools.set(block.id, { name: block.name, input, role, label, screen, chatId });
     this.rememberRole(block.id, role);
+    if ((block.name === 'Bash' || block.name === 'PowerShell') && input.command) this.rememberCommand(block.id, input.command);
     if (input.run_in_background && this.bgShellRoles.push(role) > 50) this.bgShellRoles.shift();
     this.sink.office({ kind: 'tool_start', role, label, tool: block.name, screen, inferred: !parentRole });
     this.emitWorking();

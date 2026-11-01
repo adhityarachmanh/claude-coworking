@@ -8,6 +8,7 @@ import { avatarURL } from '../office/sprites.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { renderActivity } from './activity.js';
 import { renderChat } from './chat.js';
+import { openTasks, tasksOf } from './tasks.js';
 
 // ---------- team strip ----------
 
@@ -17,6 +18,9 @@ export function renderTeam() {
   const scene = scenes.get(state.active);
   if (!scene) return;
   const now = performance.now();
+  // Running background tasks per role: a ⧗ badge on the card opens the task monitor (the card itself renames).
+  const running = new Map();
+  for (const t of tasksOf(state.active)) if ((t.status === 'running' || t.status === 'pending') && t.role) running.set(t.role, [...(running.get(t.role) ?? []), t]);
   const html = ROLE_ORDER.map((id) => {
     const p = scene.people[id];
     const [cls, text] = p.asking
@@ -31,16 +35,26 @@ export function renderTeam() {
               ? ['idle', 'Jalan-jalan']
               : ['idle', 'Standby'];
     const tip = `${CAST[id].name} — ${CAST[id].title}\n${text}${p.task ? `\n${p.task}` : ''}\n(klik untuk ganti nama)`;
-    return `<div class="member ${cls}" data-role="${id}" role="button" tabindex="0" style="--c:${CAST[id].color}" title="${escapeHtml(tip)}">
+    const tasks = running.get(id) ?? [];
+    const label = `Lihat tugas latar ${CAST[id].name}: ${tasks.length} berjalan`;
+    const list = `${tasks.map((t) => t.description || 'tugas latar').join('\n')}\n(klik untuk lihat detail)`;
+    const badge = tasks.length
+      ? `<button type="button" class="member-task" data-task-open="${escapeHtml(tasks[0].id)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(list)}"><span aria-hidden="true">⧗</span>${tasks.length > 1 ? tasks.length : ''}</button>`
+      : '';
+    return `<div class="member-cell"><div class="member ${cls}" data-role="${id}" role="button" tabindex="0" style="--c:${CAST[id].color}" title="${escapeHtml(tip)}">
       <img src="${avatarURL(CAST[id].look)}" alt="">
       <div><b>${escapeHtml(CAST[id].name)}</b><small>${CAST[id].title}</small><span class="st">${p.task && cls !== 'idle' ? escapeHtml(p.task) : text}</span></div>
-    </div>`;
+    </div>${badge}</div>`;
   }).join('');
   // Runs every 500 ms: only touch the DOM on a change, and keep keyboard focus on the same card.
   if (html === teamHtml) return;
-  const focused = document.activeElement?.closest?.('#team .member')?.dataset.role;
+  const active = document.activeElement;
+  const focused = active?.closest?.('#team .member')?.dataset.role;
+  const focusedBadge = active?.closest?.('#team .member-task') ? active.closest('.member-cell')?.querySelector('.member')?.dataset.role : null;
   $('#team').innerHTML = teamHtml = html;
   if (focused) $(`#team .member[data-role="${focused}"]`)?.focus({ preventScroll: true });
+  // The badge keeps focus while its role still has a task; else the card next to it takes it.
+  if (focusedBadge) ($(`#team .member[data-role="${focusedBadge}"] + .member-task`) ?? $(`#team .member[data-role="${focusedBadge}"]`))?.focus({ preventScroll: true });
 }
 
 // ---------- team names (rename the people in the office) ----------
@@ -70,6 +84,8 @@ function openTeam(focusRole) {
 
 export function initTeam() {
   $('#team').addEventListener('click', (e) => {
+    const badge = e.target.closest('[data-task-open]');
+    if (badge) return openTasks({ taskId: badge.dataset.taskOpen });
     const card = e.target.closest('.member[data-role]');
     if (card) openTeam(card.dataset.role);
   });

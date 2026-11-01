@@ -13,7 +13,7 @@ import { openRewind } from './rewind.js';
 import { confirmNew, renderSessionBar } from './sessions.js';
 import { MODE_CYCLE, renderStatusline, renderTodos } from './statusline.js';
 import { applySuggest, closeSuggest, renderSuggest, searchHistory, suggest } from './suggest.js';
-import { backgroundRunning, renderTasks, tasksView } from './tasks.js';
+import { backgroundRunning, renderTaskChip, renderTasks, tasksView } from './tasks.js';
 
 // A shorter hint fits a phone-width composer on one line.
 const applyPlaceholder = () => {
@@ -65,6 +65,7 @@ export function renderComposer() {
   renderTodos(st);
   renderStatusline(st);
   renderSessionBar();
+  renderTaskChip(st);
   applyReadOnly();
   renderSendState();
   if (!$('#tasks-modal').hidden && tasksView.project === state.active) renderTasks();

@@ -71,6 +71,7 @@
           <!-- Which Claude Code session this chat continues, with history / new session -->
           <div id="session-bar" class="session-bar">
             <b id="sb-title">Percakapan baru</b>
+            <button id="sb-tasks" class="sb-btn sb-tasks" type="button" hidden title="Tugas latar yang sedang berjalan (/tasks)"><span aria-hidden="true">⧗</span> <span id="sb-tasks-n">0</span> <span class="sb-tasks-lbl">berjalan</span></button>
             <button id="btn-sessions" class="sb-btn" title="Lihat dan lanjutkan sesi Claude Code sebelumnya (dari terminal maupun web)">🕘 <span>Riwayat sesi</span></button>
             <button id="btn-new" class="sb-btn" title="Mulai percakapan baru — Claude tidak membawa konteks percakapan ini">＋ <span>Sesi baru</span></button>
             <button id="btn-more" class="sb-btn sb-more" title="Lainnya: export, lanjut di terminal, buka di VS Code" aria-haspopup="menu" aria-expanded="false" aria-label="Lainnya">⋯</button>
@@ -279,13 +280,28 @@
       </div>
     </div>
 
-    <!-- Background tasks (/tasks, Ctrl+B): Bash commands and subagents Claude Code runs -->
+    <!-- Background task monitor (/tasks, Ctrl+B, ⧗ chip): Bash commands and subagents Claude Code runs.
+         Desktop: list left, live detail right. Phone: the list, then the detail with a back button. -->
     <div id="tasks-modal" class="modal" hidden>
-      <div class="modal-card tasks-card" role="dialog" aria-modal="true" aria-label="Tugas latar">
-        <div class="modal-head"><b>⧗ Tugas</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <p class="muted small">Perintah dan agent yang dijalankan Claude Code di sesi ini. <kbd>Ctrl</kbd> <kbd>B</kbd> memindahkan yang sedang jalan ke latar belakang supaya kamu bisa lanjut chat.</p>
-        <div class="tasks-tools"><button id="tasks-background" class="ghost" title="Ctrl+B">⏬ Pindahkan ke latar</button></div>
-        <ul id="tasks-list" class="tasks-list"></ul>
+      <div class="modal-card tasks-card" role="dialog" aria-modal="true" aria-labelledby="tasks-title">
+        <div class="modal-head"><b id="tasks-title">⧗ Tugas latar <small id="tasks-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="tasks-tools">
+          <p class="muted small">Perintah dan agent yang dijalankan Claude Code di sesi ini. <kbd>Ctrl</kbd> <kbd>B</kbd> memindahkan yang sedang jalan ke latar belakang supaya kamu bisa lanjut chat.</p>
+          <button id="tasks-background" class="ghost" title="Ctrl+B">⏬ Pindahkan ke latar</button>
+        </div>
+        <div id="tasks-body" class="tasks-body">
+          <ul id="tasks-list" class="tasks-list" aria-label="Daftar tugas"></ul>
+          <section id="task-detail" class="task-detail" aria-labelledby="td-title">
+            <div class="td-head">
+              <button id="td-back" class="ghost td-back" type="button">← Daftar tugas</button>
+              <h3 id="td-title" class="td-title"></h3>
+              <p id="td-info" class="td-info"></p>
+              <p id="td-meta" class="td-meta" role="status" aria-live="polite"></p>
+              <div id="td-actions" class="task-actions"></div>
+            </div>
+            <div id="td-body" class="td-body" tabindex="0" aria-label="Isi tugas"></div>
+          </section>
+        </div>
       </div>
     </div>
 

@@ -22,6 +22,7 @@ function focusOrigin() {
   const el = focusBeforeModal;
   if (!el || el.isConnected) return el;
   if (el.dataset?.role) return document.querySelector(`#team .member[data-role="${CSS.escape(el.dataset.role)}"]`);
+  if (el.dataset?.taskOpen) return document.querySelector(`#team [data-task-open="${CSS.escape(el.dataset.taskOpen)}"]`);
   if (el.dataset?.path) return [...document.querySelectorAll('#ch-files li[data-path]')].find((li) => li.dataset.path === el.dataset.path) ?? null;
   return null;
 }

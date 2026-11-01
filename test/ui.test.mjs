@@ -496,6 +496,119 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
+    test('⧗ monitor tugas latar: chip, daftar, detail agent & shell live, buka dari kantor, polling berhenti saat ditutup', async () => {
+      await openApp(page, `#${projectId}`);
+      page.clearProblems();
+      // Two background tasks (fake Claude: a qa subagent whose transcript grows, and a dev server) — once per run.
+      const runningCount = (pid) =>
+        fetch('/stream').then(async (res) => {
+          const reader = res.body.getReader();
+          let text = '';
+          while (!text.includes('\n\n')) text += new TextDecoder().decode((await reader.read()).value);
+          reader.cancel();
+          return (JSON.parse(text.match(/^data: (.*)$/m)[1]).statuses[pid]?.tasks ?? []).filter((t) => t.status === 'running').length;
+        });
+      if ((await page.eval(runningCount, projectId)) < 2) {
+        await page.eval(async (pid) => {
+          const token = document.querySelector('meta[name="office-token"]').content;
+          await fetch(`/api/projects/${pid}/prompt`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify({ text: 'jalankan tugas latar' }) });
+        }, projectId);
+      }
+      await page.waitFor(() => !document.querySelector('#sb-tasks').hidden, { timeoutMs: 10000, message: 'chip ⧗ tampil' });
+      const n = await page.eval(runningCount, projectId);
+      const chip = await page.eval(() => ({ n: document.querySelector('#sb-tasks-n').textContent, label: document.querySelector('#sb-tasks').getAttribute('aria-label'), statusline: document.querySelector('#statusline .sl-tasks')?.textContent }));
+      assert.equal(chip.n, String(n), 'jumlah di chip = tugas berjalan');
+      assert.match(chip.label, new RegExp(`^${n} tugas berjalan`));
+      assert.match(chip.statusline, new RegExp(`⧗ ${n} tugas berjalan`));
+      assert.equal(await page.eval(horizontalOverflow), null, 'chip tidak membuat overflow');
+
+      // Count monitor requests from here on (to prove polling stops when the dialog closes).
+      await page.eval(() => {
+        window.__taskCalls = 0;
+        const orig = window.fetch;
+        window.fetch = (url, ...rest) => {
+          if (/\/task-(detail|output)$/.test(String(url))) window.__taskCalls++;
+          return orig(url, ...rest);
+        };
+      });
+      await page.click('#sb-tasks');
+      await page.waitFor(() => !document.querySelector('#tasks-modal').hidden && document.querySelectorAll('#tasks-list [data-task]').length >= 2, { timeoutMs: 3000, message: 'monitor terbuka dengan daftar' });
+      const groups = await page.eval(() => [...document.querySelectorAll('#tasks-list .tasks-group')].map((g) => g.textContent));
+      assert.match(groups[0], /^Berjalan/, 'yang berjalan di atas');
+
+      // Agent detail: live steps (labels like the chat), auto-scrolled to the newest.
+      await page.eval(() => [...document.querySelectorAll('#tasks-list [data-task]')].find((b) => b.textContent.includes('Uji regresi')).click());
+      await page.waitFor(() => document.querySelectorAll('#td-body .td-steps .step').length >= 2, { timeoutMs: 5000, message: 'langkah agent tampil' });
+      const before = await page.eval(() => document.querySelectorAll('#td-body .td-steps .step').length);
+      await page.waitFor((b) => document.querySelectorAll('#td-body .td-steps .step').length > b, { timeoutMs: 6000, message: 'langkah bertambah (polling)' }, before);
+      const agent = await page.eval(() => {
+        const body = document.querySelector('#td-body');
+        return {
+          title: document.querySelector('#td-title').textContent,
+          info: document.querySelector('#td-info').textContent,
+          live: document.querySelector('#td-meta').getAttribute('aria-live'),
+          labels: [...body.querySelectorAll('.step-label')].map((l) => l.textContent),
+          atBottom: body.scrollHeight - body.scrollTop - body.clientHeight < 40,
+          stop: Boolean(document.querySelector('#td-actions [data-task-act="stop"]')),
+          showDetail: document.querySelector('#tasks-body').classList.contains('show-detail'),
+          listVisible: Boolean(document.querySelector('#tasks-list').getClientRects().length),
+        };
+      });
+      assert.match(agent.title, /Uji regresi checkout/);
+      assert.match(agent.info, /Adhit - QA/);
+      assert.match(agent.info, /\d+ (dtk|mnt)/, 'durasi tampil');
+      assert.equal(agent.live, 'polite');
+      assert.ok(agent.labels.some((l) => /^Membaca checkout\.ts$|^\$ npm test -- checkout$|^Mengedit checkout\.ts$/.test(l)), agent.labels.join(' | '));
+      assert.ok(agent.atBottom, 'auto-scroll ke langkah terbaru');
+      assert.ok(agent.stop, 'tombol Hentikan');
+      assert.equal(agent.listVisible, !vp.mobile, vp.mobile ? 'HP: detail menggantikan daftar' : 'desktop: daftar & detail berdampingan');
+
+      // Shell detail: the command and its live output.
+      if (vp.mobile) await page.click('#td-back');
+      await page.eval(() => [...document.querySelectorAll('#tasks-list [data-task]')].find((b) => b.textContent.includes('Dev server')).click());
+      await page.waitFor(() => /GET \/checkout/.test(document.querySelector('#td-body .td-out')?.textContent ?? ''), { timeoutMs: 5000, message: 'output shell tampil' });
+      const outLen = await page.eval(() => document.querySelector('#td-body .td-out').textContent.length);
+      await page.waitFor((l) => document.querySelector('#td-body .td-out').textContent.length > l, { timeoutMs: 6000, message: 'output shell bertambah' }, outLen);
+      assert.match(await page.eval(() => document.querySelector('#td-body .td-command').textContent), /\$ npm run dev -- --port 3000/);
+      assert.deepEqual(await page.eval(unnamedButtons, '#tasks-modal'), []);
+      assert.equal(await page.eval(horizontalOverflow), null, 'monitor tanpa scroll horizontal');
+
+      // Closed: no more polling.
+      await page.press('Escape');
+      await sleep(300);
+      const calls = await page.eval(() => window.__taskCalls);
+      await sleep(4500);
+      assert.equal(await page.eval(() => window.__taskCalls), calls, 'polling berhenti setelah monitor ditutup');
+
+      // From the office: the ⧗ badge on the QA card (the card itself still renames).
+      if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
+      await page.waitFor(() => Boolean(document.querySelector('#team .member[data-role="qa"] + .member-task')), { timeoutMs: 3000, message: 'badge ⧗ di kartu QA' });
+      await page.click('#team .member[data-role="qa"] + .member-task');
+      await page.waitFor(() => !document.querySelector('#tasks-modal').hidden && /Uji regresi/.test(document.querySelector('#td-title').textContent), { timeoutMs: 3000, message: 'monitor terbuka dengan tugas QA' });
+      assert.equal(await page.eval(() => document.querySelector('#team-modal').hidden), true, 'dialog ganti nama tidak ikut terbuka');
+      await page.press('Escape');
+
+      if (!vp.mobile) {
+        // A click on the QA character in the canvas opens the same task.
+        const at = await page.eval(async () => {
+          const { sceneFor } = await import('/js/core/scenes.js');
+          const { W } = await import('/js/office/world.js');
+          const qa = sceneFor(location.hash.slice(1)).people.qa;
+          const r = document.querySelector('#stage canvas').getBoundingClientRect();
+          const k = r.width / W;
+          return { x: r.left + qa.x * k, y: r.top + (qa.y - 12) * k };
+        });
+        const base = { x: at.x, y: at.y, button: 'left', clickCount: 1 };
+        await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+        await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base });
+        await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base });
+        await page.waitFor(() => !document.querySelector('#tasks-modal').hidden && /Uji regresi/.test(document.querySelector('#td-title').textContent), { timeoutMs: 3000, message: 'klik karakter QA membuka monitor' });
+        await page.press('Escape');
+      }
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      assert.deepEqual(realProblems(page), []);
+    });
+
     test('pair.html termuat tanpa error dan tanpa scroll horizontal', async () => {
       page.clearProblems();
       await page.goto(`${BASE}/pair`);

@@ -29,7 +29,7 @@ export const READ_ONLY_ERROR = 'Lewat WiFi hanya bisa melihat. Pakai laptop atau
 // MCP, tasks, projects, team names…) needs the laptop or Tailscale. Over plain HTTP the device
 // cookie can be sniffed, so a WiFi phone must never be able to act.
 const WIFI_READ_GLOBAL = new Set(['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', '/api/report/pdf']);
-const WIFI_READ_PROJECT = /^\/api\/projects\/[\w-]+\/(changes|diff|files|sessions|rewind-points|task-output)$/;
+const WIFI_READ_PROJECT = /^\/api\/projects\/[\w-]+\/(changes|diff|files|sessions|rewind-points|task-output|task-detail)$/;
 
 /** True when a paired device on plain WiFi (read-only) may call this API path. */
 export const wifiAllows = (pathname) => WIFI_READ_GLOBAL.has(pathname) || WIFI_READ_PROJECT.test(pathname);

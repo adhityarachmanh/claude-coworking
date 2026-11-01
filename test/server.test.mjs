@@ -362,7 +362,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   assert.ok(readOnlyApi.paths.length && readOnlyApi.patterns.length, 'snapshot carries the read-only allowlist');
   const uiAllows = (p) => readOnlyApi.paths.includes(p) || readOnlyApi.patterns.some((source) => new RegExp(source).test(p));
   assert.equal((await snapshot()).client.readOnly, false, 'the laptop is never read-only');
-  const reads = ['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`];
+  const reads = ['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`, `/api/projects/${id}/task-detail`];
   for (const p of reads) assert.notEqual((await phoneApi(p, { taskId: 'x' })).status, 403, `read ${p}`);
   for (const p of reads) assert.ok(uiAllows(p), `UI lets ${p} through`);
   // a read-only phone can't make the laptop re-run the Claude CLI: `force` is ignored, the cached answer comes back
@@ -603,4 +603,50 @@ test('MCP servers, background tasks and rename are Claude Code control requests'
   assert.match((await api(`/api/projects/${id}/task-output`, { taskId: 't1' })).body.output, /3000/);
   assert.equal((await api(`/api/projects/${id}/rename`, { title: '  ' })).status, 400);
   assert.equal((await api(`/api/projects/${id}/rename`, { title: 'Sesi uji' })).status, 200);
+});
+
+test('task monitor: background tasks in the status, task-detail reads the live subagent transcript, 404 for unknown ids', async () => {
+  const id = await projectId();
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'jalankan tugas latar' });
+  const st = await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).filter((x) => x.status === 'running').length === 2);
+  const agent = st.tasks.find((x) => x.kind === 'agent');
+  const shell = st.tasks.find((x) => x.kind === 'shell');
+  assert.equal(agent.role, 'qa');
+  assert.equal(shell.command, 'npm run dev -- --port 3000', 'the shell task carries its command');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+
+  // The subagent keeps working: its steps grow between two polls, in order, as short labels.
+  await sleep(900);
+  const first = await api(`/api/projects/${id}/task-detail`, { taskId: agent.id });
+  assert.equal(first.status, 200);
+  assert.equal(first.body.found, true);
+  assert.equal(first.body.agentType, 'qa');
+  assert.equal(first.body.prompt, 'Jalankan tes checkout dan laporkan hasilnya.');
+  assert.equal(first.body.steps[0].text, 'Saya mulai dengan membaca kode checkout.');
+  assert.ok(first.body.steps.length >= 3, `${first.body.steps.length} steps after ~900 ms`);
+  assert.deepEqual(first.body.steps.slice(1, 3).map((s) => [s.label, s.status]), [['Membaca checkout.ts', 'ok'], ['$ npm test -- checkout', 'error']]);
+  await sleep(700);
+  const second = await api(`/api/projects/${id}/task-detail`, { taskId: agent.id });
+  assert.ok(second.body.steps.length > first.body.steps.length, 'live: more steps on the next poll');
+  assert.equal(second.body.result, null, 'no report while it runs');
+
+  assert.equal((await api(`/api/projects/${id}/task-detail`, { taskId: shell.id })).body.command, 'npm run dev -- --port 3000');
+  assert.match((await api(`/api/projects/${id}/task-output`, { taskId: shell.id })).body.output, /GET \/checkout/, 'live shell output');
+
+  const unknown = await api(`/api/projects/${id}/task-detail`, { taskId: '../../etc/passwd' });
+  assert.equal(unknown.status, 404);
+  assert.match(unknown.body.error, /Tugas tidak ditemukan/);
+  assert.equal((await api(`/api/projects/${id}/task-detail`, {})).status, 400);
+
+  // Done: the report it handed back is the result; stopping the shell ends it.
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'selesaikan latar' });
+  await waitFor((t, o) => t === 'status' && o.project === id && o.tasks?.find((x) => x.id === agent.id)?.status === 'completed');
+  const done = (await api(`/api/projects/${id}/task-detail`, { taskId: agent.id })).body;
+  assert.equal(done.status, 'completed');
+  assert.match(done.result, /12 tes/);
+  assert.ok(!done.steps.some((s) => s.tool === 'SubagentHandback'), 'harness plumbing is not a step');
+  await api(`/api/projects/${id}/task-stop`, { taskId: shell.id });
+  await waitFor((t, o) => t === 'status' && o.project === id && o.tasks?.find((x) => x.id === shell.id)?.status === 'stopped');
 });

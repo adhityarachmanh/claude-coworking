@@ -6,10 +6,15 @@
 //   contains "lama"  → streams slowly so the test can interrupt it
 //   "status?"        → replies with the live mode/model/effort, its pid and its launch flags
 //   contains "Lanjutkan" → replies with the session it runs in and the --resume it was started with
+//   contains "tugas latar" → starts a background subagent (qa) and a background shell; the subagent's transcript
+//                      is written under CLAUDE_PROJECTS_DIR and grows a step every 300 ms until it is stopped
+//   contains "selesaikan latar" → the background subagent hands its report back and its task completes
 //   anything else    → streams a short text reply
 // Control requests (initialize, set_permission_mode, set_model, apply_flag_settings, rewind_files,
 // mcp_status, …) answer like the real CLI; every prompt reports command_lifecycle events.
 import { randomUUID } from 'node:crypto';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { createInterface } from 'node:readline';
 
 const args = process.argv.slice(2);
@@ -72,17 +77,85 @@ function control(req) {
       return { authUrl: 'https://example.com/oauth', requiresUserAction: true, callbackExpected: true, redirectScheme: 'localhost' };
     case 'mcp_reconnect':
     case 'mcp_toggle':
-    case 'background_tasks':
     case 'stop_task':
+      stopBackground(req.task_id);
+      return {};
+    case 'background_tasks':
     case 'rename_session':
     case 'mcp_oauth_callback_url':
       return {};
     case 'get_task_output':
-      return { output: 'server jalan di :3000\n' };
+      return bg.shell && req.task_id === bg.shell.id ? { output: bg.shell.output } : { output: 'server jalan di :3000\n' };
     case 'cancel_async_message':
       return { cancelled: waiting.delete(req.message_uuid) };
     default:
       throw new Error(`Unsupported: ${req.subtype}`);
+  }
+}
+
+// ---------- background tasks ("tugas latar") ----------
+
+const bg = { agent: null, shell: null };
+
+function agentLine(file, type, content) {
+  appendFileSync(file, `${JSON.stringify({ type, isSidechain: true, agentId: bg.agent.id, sessionId, timestamp: new Date().toISOString(), uuid: randomUUID(), message: { role: type, content } })}\n`);
+}
+
+function startBackground() {
+  const agentId = `a${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+  const agentToolUse = `toolu_${randomUUID()}`;
+  const shellToolUse = `toolu_${randomUUID()}`;
+  const description = 'Uji regresi checkout';
+  send({ type: 'assistant', parent_tool_use_id: null, message: { id: `msg_${randomUUID()}`, content: [{ type: 'tool_use', id: agentToolUse, name: 'Agent', input: { subagent_type: 'qa', description, prompt: 'Jalankan tes checkout dan laporkan hasilnya.', run_in_background: true } }] } });
+  send({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: agentToolUse, content: `Async agent launched successfully. agentId: ${agentId}` }] } });
+  send({ type: 'system', subtype: 'task_started', task_id: agentId, tool_use_id: agentToolUse, description, subagent_type: 'qa', is_backgrounded: true, session_id: sessionId });
+  const command = 'npm run dev -- --port 3000';
+  send({ type: 'assistant', parent_tool_use_id: null, message: { id: `msg_${randomUUID()}`, content: [{ type: 'tool_use', id: shellToolUse, name: 'Bash', input: { command, description: 'Dev server', run_in_background: true } }] } });
+  const shellId = `b${randomUUID().slice(0, 8)}`;
+  send({ type: 'system', subtype: 'task_started', task_id: shellId, tool_use_id: shellToolUse, description: 'Dev server', is_backgrounded: true, session_id: sessionId });
+  send({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: shellToolUse, content: `Command running in background with ID: ${shellId}` }] } });
+
+  bg.shell = { id: shellId, output: '> dev\nserver jalan di :3000\n', timer: null };
+  bg.shell.timer = setInterval(() => (bg.shell.output += `GET /checkout 200 ${Date.now() % 1000}ms\n`), 300);
+  bg.agent = { id: agentId, toolUseId: agentToolUse, file: null, timer: null, n: 0 };
+  const root = process.env.CLAUDE_PROJECTS_DIR;
+  if (!root) return;
+  const dir = path.join(root, path.resolve(process.cwd()).replace(/[^a-zA-Z0-9]/g, '-'), sessionId, 'subagents');
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `agent-${agentId}.jsonl`);
+  bg.agent.file = file;
+  writeFileSync(file.replace(/\.jsonl$/, '.meta.json'), JSON.stringify({ agentType: 'qa', description, toolUseId: agentToolUse }));
+  agentLine(file, 'user', 'Jalankan tes checkout dan laporkan hasilnya.');
+  agentLine(file, 'assistant', [{ type: 'text', text: 'Saya mulai dengan membaca kode checkout.' }]);
+  // One step every 300 ms: a Read, a Bash and an Edit in turn, each with its result (the first Bash fails).
+  const tools = [
+    { name: 'Read', input: { file_path: 'src/checkout.ts' } },
+    { name: 'Bash', input: { command: 'npm test -- checkout' } },
+    { name: 'Edit', input: { file_path: 'src/checkout.ts', old_string: 'a', new_string: 'b' } },
+  ];
+  bg.agent.timer = setInterval(() => {
+    const t = tools[bg.agent.n++ % tools.length];
+    const id = `toolu_${randomUUID()}`;
+    agentLine(file, 'assistant', [{ type: 'tool_use', id, name: t.name, input: t.input }]);
+    agentLine(file, 'user', [{ type: 'tool_result', tool_use_id: id, content: 'ok', is_error: bg.agent.n === 2 }]);
+    send({ type: 'system', subtype: 'task_progress', task_id: agentId, description, last_tool_name: t.name, usage: { total_tokens: 1200 * bg.agent.n, tool_uses: bg.agent.n }, session_id: sessionId });
+    if (bg.agent.n >= 400) clearInterval(bg.agent.timer);
+  }, 300);
+}
+
+function finishAgent(status, report) {
+  if (!bg.agent) return;
+  clearInterval(bg.agent.timer);
+  if (bg.agent.file && report) agentLine(bg.agent.file, 'assistant', [{ type: 'tool_use', id: `toolu_${randomUUID()}`, name: 'SubagentHandback', input: { message: report } }]);
+  send({ type: 'system', subtype: 'task_notification', task_id: bg.agent.id, tool_use_id: bg.agent.toolUseId, status, summary: report ? 'Semua tes checkout lulus' : undefined, session_id: sessionId });
+  bg.agent = null;
+}
+
+function stopBackground(taskId) {
+  if (bg.agent && taskId === bg.agent.id) finishAgent('stopped');
+  if (bg.shell && taskId === bg.shell.id) {
+    clearInterval(bg.shell.timer);
+    send({ type: 'system', subtype: 'task_notification', task_id: bg.shell.id, status: 'stopped', session_id: sessionId });
   }
 }
 
@@ -142,6 +215,16 @@ async function handlePrompt(text) {
     }
     send({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: decision.behavior === 'allow' ? 'Plan approved' : decision.message, is_error: decision.behavior !== 'allow' }] } });
     await streamText(decision.behavior === 'allow' ? 'Rencana disetujui.' : 'Rencana direvisi.');
+    return result();
+  }
+  if (/tugas latar/i.test(text)) {
+    startBackground();
+    await streamText('Agent QA dan dev server berjalan di latar belakang.', 5);
+    return result();
+  }
+  if (/selesaikan latar/i.test(text)) {
+    finishAgent('completed', '## Hasil\nSemua **12 tes** checkout lulus.');
+    await streamText('Agent QA selesai.', 5);
     return result();
   }
   if (/Lanjutkan/.test(text)) {
