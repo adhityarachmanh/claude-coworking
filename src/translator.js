@@ -641,8 +641,9 @@ export class StreamTranslator {
         durationMs: msg.duration_ms,
         turns: msg.num_turns,
         tokensIn: context || undefined,
-        tokensOut: u.output_tokens || undefined,
-        costUsd: msg.total_cost_usd,
+        // Per-turn numbers from the session (subagents included); `total_cost_usd` counts the whole process.
+        tokensOut: msg.turnUsage?.outputTokens || u.output_tokens || undefined,
+        costUsd: msg.turnUsage ? msg.turnUsage.costUsd : undefined,
         denials: msg.permission_denials?.length ?? 0,
       },
     });

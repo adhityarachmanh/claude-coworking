@@ -7,11 +7,15 @@
 // that was running is paused ("dijeda karena restart"): nothing is sent until the user resumes it.
 // The queue also pauses itself when an item fails (error, stopped with Esc, Claude Code exited) or the account
 // hits its usage limit (rate_limit_event with status "rejected"), and tells the user in the project's chat.
+// A queue can also have a budget (output tokens and/or cost in USD, counted from each finished item's result):
+// once it is used up the queue pauses ('budget'). It is only checked between items: a running turn is never cut.
 import { randomBytes } from 'node:crypto';
 
 export const QUEUE_LIMITS = Object.freeze({ items: 30, text: 20000, finished: 20 });
-/** Why a queue is paused: by the user, by a server restart, after a failed item, by the usage limit. */
-export const PAUSE_REASONS = ['user', 'restart', 'failed', 'rate_limit'];
+/** Why a queue is paused: by the user, by a server restart, after a failed item, by the usage limit, by its budget. */
+export const PAUSE_REASONS = ['user', 'restart', 'failed', 'rate_limit', 'budget'];
+/** Allowed budget limits (both inclusive): output tokens (integer) and cost in USD (rounded to cents). */
+export const BUDGET_LIMITS = Object.freeze({ tokensOut: Object.freeze({ min: 1000, max: 100_000_000 }), costUsd: Object.freeze({ min: 0.01, max: 10000 }) });
 const STATUSES = new Set(['waiting', 'running', 'done', 'failed']);
 const ID = /^q_[a-f0-9]{12}$/;
 const TEXT_JUNK = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
@@ -31,6 +35,46 @@ export function cleanText(input) {
   if (!text) throw new QueueError(400, 'Isi prompt antrian kosong.');
   if (text.length > QUEUE_LIMITS.text) throw new QueueError(400, `Prompt antrian maksimal ${QUEUE_LIMITS.text} karakter.`);
   return text;
+}
+
+// ---------- budget ----------
+
+const emptyBudget = () => ({ tokensOut: null, costUsd: null, spentTokensOut: 0, spentCostUsd: 0, since: null });
+const validTokens = (v) => Number.isInteger(v) && v >= BUDGET_LIMITS.tokensOut.min && v <= BUDGET_LIMITS.tokensOut.max;
+const validCost = (v) => Number.isFinite(v) && v >= BUDGET_LIMITS.costUsd.min && v <= BUDGET_LIMITS.costUsd.max;
+const cents = (v) => Math.round(v * 100) / 100;
+/** True when at least one limit is set. */
+export const hasBudget = (b) => b?.tokensOut != null || b?.costUsd != null;
+/** True when a set limit is used up. */
+export const budgetExceeded = (b) => (b?.tokensOut != null && b.spentTokensOut >= b.tokensOut) || (b?.costUsd != null && b.spentCostUsd >= b.costUsd);
+/** 12345 -> "12.345" (Indonesian thousands separator, independent of the runtime's locale data). */
+const thousands = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+/** Validates the limits of POST queue-budget; throws QueueError with a user-facing reason. null (or absent) = no limit. */
+export function cleanBudget(input) {
+  const body = isObject(input) ? input : {};
+  const tokensOut = body.tokensOut ?? null;
+  const costUsd = body.costUsd ?? null;
+  if (tokensOut !== null && !validTokens(tokensOut)) {
+    throw new QueueError(400, `Batas token output harus bilangan bulat ${thousands(BUDGET_LIMITS.tokensOut.min)}–${thousands(BUDGET_LIMITS.tokensOut.max)}, atau kosong.`);
+  }
+  if (costUsd !== null && !validCost(costUsd)) {
+    throw new QueueError(400, `Batas biaya harus angka $${BUDGET_LIMITS.costUsd.min.toFixed(2)}–$${BUDGET_LIMITS.costUsd.max}, atau kosong.`);
+  }
+  return { tokensOut, costUsd: costUsd === null ? null : cents(costUsd) };
+}
+
+/** A stored budget that still looks right (absent in older state.json files; bad values fall back to "no limit"). */
+function restoreBudget(raw) {
+  if (!isObject(raw)) return emptyBudget();
+  const budget = {
+    tokensOut: validTokens(raw.tokensOut) ? raw.tokensOut : null,
+    costUsd: validCost(raw.costUsd) ? cents(raw.costUsd) : null,
+    spentTokensOut: Number.isFinite(raw.spentTokensOut) && raw.spentTokensOut >= 0 ? raw.spentTokensOut : 0,
+    spentCostUsd: Number.isFinite(raw.spentCostUsd) && raw.spentCostUsd >= 0 ? raw.spentCostUsd : 0,
+    since: Number.isFinite(raw.since) ? raw.since : null,
+  };
+  return hasBudget(budget) ? budget : emptyBudget();
 }
 
 /** A stored item that still looks right (a hand-edited or older state.json never breaks the queue). */
@@ -86,7 +130,7 @@ export class TaskQueue {
     for (const [id, raw] of Object.entries(isObject(stored) ? stored : {})) {
       if (!/^[\w-]{1,64}$/.test(id) || !isObject(raw)) continue;
       const items = (Array.isArray(raw.items) ? raw.items : []).map(cleanItem).filter(Boolean);
-      const q = { paused: raw.paused === true, reason: PAUSE_REASONS.includes(raw.reason) ? raw.reason : null, pausedAt: Number.isFinite(raw.pausedAt) ? raw.pausedAt : null, items };
+      const q = { paused: raw.paused === true, reason: PAUSE_REASONS.includes(raw.reason) ? raw.reason : null, pausedAt: Number.isFinite(raw.pausedAt) ? raw.pausedAt : null, items, budget: restoreBudget(raw.budget) };
       if (!q.paused) q.reason = null;
       for (const item of items) {
         if (item.status !== 'running') continue;
@@ -97,7 +141,7 @@ export class TaskQueue {
         Object.assign(q, { paused: true, reason: 'restart', pausedAt: this.now() });
         changed = true;
       }
-      if (items.length || q.paused) queues[id] = q;
+      if (items.length || q.paused || hasBudget(q.budget)) queues[id] = q;
     }
     if (changed) {
       this.hub.persisted.queues = queues;
@@ -111,7 +155,15 @@ export class TaskQueue {
   /** The queue as the API returns it (a copy). */
   view(id) {
     const q = this.queues[id];
-    return { project: id, paused: q?.paused ?? false, reason: q?.reason ?? null, pausedAt: q?.pausedAt ?? null, items: structuredClone(q?.items ?? []), limits: QUEUE_LIMITS };
+    return {
+      project: id,
+      paused: q?.paused ?? false,
+      reason: q?.reason ?? null,
+      pausedAt: q?.pausedAt ?? null,
+      items: structuredClone(q?.items ?? []),
+      limits: QUEUE_LIMITS,
+      budget: { ...(q?.budget ?? emptyBudget()) },
+    };
   }
 
   /** The few numbers the session bar shows (in the project's status, so every page has them from the snapshot). */
@@ -119,13 +171,15 @@ export class TaskQueue {
     const q = this.queues[id];
     if (!q) return null;
     const count = (s) => q.items.filter((i) => i.status === s).length;
-    return { waiting: count('waiting'), running: count('running'), failed: count('failed'), done: count('done'), paused: q.paused, reason: q.reason, rev: this.rev };
+    const b = q.budget;
+    const budget = hasBudget(b) ? { tokensOut: b.tokensOut, costUsd: b.costUsd, spentTokensOut: b.spentTokensOut, spentCostUsd: b.spentCostUsd } : null;
+    return { waiting: count('waiting'), running: count('running'), failed: count('failed'), done: count('done'), paused: q.paused, reason: q.reason, budget, rev: this.rev };
   }
 
   // ---------- changes (every one is a write: refused over plain WiFi by the server's gate) ----------
 
   q(id) {
-    return (this.queues[id] ??= { paused: false, reason: null, pausedAt: null, items: [] });
+    return (this.queues[id] ??= { paused: false, reason: null, pausedAt: null, items: [], budget: emptyBudget() });
   }
 
   item(id, itemId) {
@@ -202,7 +256,24 @@ export class TaskQueue {
   setPaused(id, paused, reason = 'user') {
     const q = this.q(id);
     if (paused) Object.assign(q, { paused: true, reason, pausedAt: this.now() });
-    else Object.assign(q, { paused: false, reason: null, pausedAt: null });
+    else {
+      const budgetPause = q.reason === 'budget';
+      Object.assign(q, { paused: false, reason: null, pausedAt: null });
+      // Resuming a budget pause starts a new budget window (otherwise it would pause again after one item).
+      // A budget used up under another pause (an item failed and went over) is not reset silently:
+      // dispatch() pauses again with reason "budget" and says so in the chat.
+      if (budgetPause && budgetExceeded(q.budget)) Object.assign(q.budget, { spentTokensOut: 0, spentCostUsd: 0, since: this.now() });
+    }
+    this.changed(id);
+  }
+
+  /** Sets the budget limits (validated); spending starts again from 0. Both null = no budget. */
+  setBudget(id, input) {
+    const { tokensOut, costUsd } = cleanBudget(input);
+    const q = this.q(id);
+    q.budget = tokensOut === null && costUsd === null ? emptyBudget() : { tokensOut, costUsd, spentTokensOut: 0, spentCostUsd: 0, since: this.now() };
+    // A budget pause is no longer about this budget: it stays paused (the user resumes it) but is labelled as such.
+    if (q.paused && q.reason === 'budget') q.reason = 'user';
     this.changed(id);
   }
 
@@ -224,7 +295,7 @@ export class TaskQueue {
   /** Saved at once (small, and a queue must not lose items to a crash), published, and maybe the next item sent. */
   changed(id) {
     const q = this.queues[id];
-    if (q && !q.items.length && !q.paused) delete this.queues[id];
+    if (q && !q.items.length && !q.paused && !hasBudget(q.budget)) delete this.queues[id];
     this.publish(id);
     this.schedule(id);
   }
@@ -256,6 +327,21 @@ export class TaskQueue {
     const stopped = !msg.ok && /dihentikan/i.test(msg.text ?? '');
     this.finish(id, item, msg.ok ? { status: 'done' } : { status: 'failed', error: msg.text || 'Giliran berakhir dengan error.' }, msg);
     if (!msg.ok) this.pauseFor(id, 'failed', stopped ? 'item dihentikan' : 'item gagal');
+    this.checkBudget(id); // no-op when the failure above already paused it
+  }
+
+  /**
+   * Between items only (called after an item's result): a used-up budget pauses the queue before the next item
+   * is sent. A running turn is never cut short by the budget, so the spending can end a little above the limit.
+   */
+  checkBudget(id) {
+    const q = this.queues[id];
+    const b = q?.budget;
+    if (!q || q.paused || !budgetExceeded(b) || !q.items.some((i) => i.status === 'waiting')) return;
+    const why = [];
+    if (b.tokensOut != null && b.spentTokensOut >= b.tokensOut) why.push(`batas token antrian tercapai (${thousands(b.spentTokensOut)} / ${thousands(b.tokensOut)} token output)`);
+    if (b.costUsd != null && b.spentCostUsd >= b.costUsd) why.push(`batas biaya antrian tercapai ($${b.spentCostUsd.toFixed(2)} / $${b.costUsd.toFixed(2)})`);
+    this.pauseFor(id, 'budget', why.join(' dan '));
   }
 
   onStatus(status) {
@@ -284,8 +370,17 @@ export class TaskQueue {
   }
 
   finish(id, item, patch, msg = null) {
-    const meta = msg?.meta ? { durationMs: msg.meta.durationMs ?? null, costUsd: msg.meta.costUsd ?? null, turns: msg.meta.turns ?? null } : null;
+    const meta = msg?.meta
+      ? { durationMs: msg.meta.durationMs ?? null, costUsd: msg.meta.costUsd ?? null, turns: msg.meta.turns ?? null, tokensOut: msg.meta.tokensOut ?? null }
+      : null;
     Object.assign(item, { error: null, ...patch, endedAt: this.now(), updatedAt: this.now(), resultChatId: msg?.id ?? null, meta });
+    const b = this.queues[id].budget;
+    if (msg && hasBudget(b)) {
+      // Every finished turn counts (done or failed): it was spent either way.
+      const n = (v) => (Number.isFinite(v) && v > 0 ? v : 0);
+      b.spentTokensOut += n(msg.meta?.tokensOut);
+      b.spentCostUsd = Math.round((b.spentCostUsd + n(msg.meta?.costUsd)) * 1e6) / 1e6; // no float dust
+    }
     this.trimFinished(this.queues[id]);
     this.changed(id);
   }
@@ -322,6 +417,7 @@ export class TaskQueue {
     const q = this.queues[id];
     if (!q || q.paused || this.running(id) || this.sessions.stopping) return;
     const item = q.items.find((i) => i.status === 'waiting');
+    if (item && budgetExceeded(q.budget)) return this.checkBudget(id); // used up while the queue was empty or paused
     const project = this.hub.projects.get(id);
     if (!item || !project || project.virtual || !this.idle(id)) return;
     const session = this.sessions.get(project);

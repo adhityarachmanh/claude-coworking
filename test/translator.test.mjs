@@ -378,3 +378,10 @@ test('Read with an offset carries the line to jump to in the file viewer', () =>
   translator.handle(use('r1', 'Read', { file_path: 'src/x.js', offset: 120, limit: 40 }));
   assert.deepEqual(chat()[0].input, { file: 'src/x.js', range: 'baris 120–160', line: 120 });
 });
+
+test('result cost and output tokens are per turn (session turnUsage), never the cumulative total_cost_usd', () => {
+  const { translator, chat } = recorder();
+  translator.handle({ type: 'result', subtype: 'success', is_error: false, duration_ms: 10, num_turns: 1, total_cost_usd: 3.5, usage: { output_tokens: 40 }, turnUsage: { costUsd: 1.25, outputTokens: 900 } });
+  assert.equal(chat()[0].meta.costUsd, 1.25);
+  assert.equal(chat()[0].meta.tokensOut, 900, 'subagents included');
+});

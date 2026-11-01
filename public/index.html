@@ -452,7 +452,27 @@
           <span class="grow"></span>
           <button id="queue-clear" type="button" class="ghost" hidden>🧹 Bersihkan yang selesai</button>
         </div>
-        <p class="muted small queue-help">Satu item dikirim setiap kali giliran sebelumnya selesai (tidak ada izin yang menunggu). Antrian berhenti sendiri bila item gagal/dihentikan atau kuota habis, dan tetap dijeda setelah server di-restart sampai kamu melanjutkan. Seret atau ↑↓ untuk mengubah urutan.</p>
+        <!-- Batas antrian: token/cost budget, checked by the server after each item (POST queue-budget) -->
+        <section id="qb" class="queue-budget" aria-label="Batas antrian">
+          <div class="qb-head">
+            <button id="qb-toggle" type="button" class="qb-toggle" aria-expanded="false" aria-controls="qb-body">💰 Batas antrian</button>
+            <span id="qb-usage" class="qb-usage muted">tanpa batas</span>
+            <span id="qb-bar" class="qb-bar" role="progressbar" aria-label="Pemakaian batas antrian" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><span class="qb-fill"></span></span>
+          </div>
+          <div id="qb-body" hidden>
+          <form id="qb-form" class="qb-form" novalidate>
+            <label class="qb-field">Maks token output <input id="qb-tokens" type="number" inputmode="numeric" min="1000" max="100000000" step="1" placeholder="mis. 50000" aria-describedby="qb-error"></label>
+            <label class="qb-field">Maks biaya (USD) <input id="qb-cost" type="number" inputmode="decimal" min="0.01" max="10000" step="0.01" placeholder="mis. 5" aria-describedby="qb-error"></label>
+            <div class="qb-actions">
+              <button id="qb-save" type="submit" class="primary">Simpan</button>
+              <button id="qb-clear" type="button" class="ghost">Hapus batas</button>
+            </div>
+          </form>
+          <p id="qb-error" class="qb-error" role="alert" hidden></p>
+          <p class="muted small qb-note">Dicek setelah tiap item selesai; giliran yang berjalan tidak dipotong. Biaya hanya estimasi (harga list).</p>
+          </div>
+        </section>
+        <p class="muted small queue-help">Satu item dikirim setiap kali giliran sebelumnya selesai (tidak ada izin yang menunggu). Antrian berhenti sendiri bila item gagal/dihentikan, kuota habis, atau batas antrian tercapai, dan tetap dijeda setelah server di-restart sampai kamu melanjutkan. Seret atau ↑↓ untuk mengubah urutan.</p>
       </div>
     </div>
 

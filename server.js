@@ -526,7 +526,7 @@ async function handleApi(req, res, pathname, device = null) {
   if (tool) return projectTools(req, res, tool[1], tool[2], body);
 
   // 📋 Antrian: `queue` reads (allowed over WiFi), every queue-* is a change (refused there by the gate).
-  const queueRoute = pathname.match(/^\/api\/projects\/([\w-]+)\/queue(?:-(add|update|remove|reorder|pause|retry|clear))?$/);
+  const queueRoute = pathname.match(/^\/api\/projects\/([\w-]+)\/queue(?:-(add|update|remove|reorder|pause|retry|clear|budget))?$/);
   if (queueRoute) return queueApi(res, queueRoute[1], queueRoute[2] ?? 'list', body);
 
   const action = pathname.match(
@@ -807,7 +807,7 @@ async function backupSchedule(req, res, pathname, body) {
   return json(res, 404, { error: 'not found' });
 }
 
-/** 📋 Antrian of one project: list, or a change (add/update/remove/reorder/pause/retry/clear). */
+/** 📋 Antrian of one project: list, or a change (add/update/remove/reorder/pause/retry/clear/budget). */
 function queueApi(res, id, op, body) {
   const project = hub.projects.get(id);
   if (!project || project.id === DEMO_ID) return json(res, 404, { error: 'project not found' });
@@ -834,6 +834,9 @@ function queueApi(res, id, op, body) {
         break;
       case 'clear':
         taskQueue.clearFinished(id);
+        break;
+      case 'budget':
+        taskQueue.setBudget(id, body);
         break;
     }
   } catch (err) {

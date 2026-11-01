@@ -4,7 +4,7 @@
 // refuses it, so a read-only phone gets the list without the buttons).
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
-import { ago } from '../core/format.js';
+import { ago, fmtShort } from '../core/format.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { setMobileView } from '../ui/layout.js';
@@ -17,9 +17,14 @@ const REASON_LABEL = {
   restart: 'dijeda karena server di-restart — periksa urutannya, lalu lanjutkan',
   failed: 'dijeda karena item terakhir gagal / dihentikan',
   rate_limit: 'dijeda karena batas pemakaian akun Claude tercapai',
+  budget: 'dijeda karena batas token/biaya antrian tercapai',
 };
-/** The open dialog: which project, its queue as last fetched, the item being edited. */
-export const queueView = { project: null, data: null, editing: null, rev: -1, loading: false };
+/** Pauses the user didn't ask for: announced once with a toast. */
+const WARN_REASONS = new Set(['failed', 'rate_limit', 'budget']);
+/** Budget ranges, same as the server's (src/queue.js); the server stays the judge. */
+const BUDGET_RANGE = { tokensOut: [1000, 100_000_000], costUsd: [0.01, 10_000] };
+/** The open dialog: which project, its queue as last fetched, the item being edited, the budget the fields show. */
+export const queueView = { project: null, data: null, editing: null, rev: -1, loading: false, budgetKey: null, budgetOpened: false };
 const lastReason = new Map(); // project -> pause reason last seen (a new failure/limit pause gets a toast)
 
 const canEdit = () => !state.readOnly;
@@ -38,18 +43,19 @@ export function renderQueueChip(st) {
     const left = s.waiting + s.running;
     $('#sb-queue-n').textContent = s.paused ? `⏸ ${left}` : String(left);
     chip.classList.toggle('paused', Boolean(s.paused));
-    chip.setAttribute('aria-label', `Antrian: ${left} belum selesai${s.paused ? ', dijeda' : ''} — buka antrian`);
+    const paused = !s.paused ? '' : s.reason === 'budget' ? ', dijeda karena batas token/biaya tercapai' : ', dijeda';
+    chip.setAttribute('aria-label', `Antrian: ${left} belum selesai${paused} — buka antrian`);
   }
   // The dialog follows the server: a new revision (an item finished, someone reordered) is fetched again.
   if (!$('#queue-modal').hidden && queueView.project === state.active && s && s.rev !== queueView.rev && !queueView.loading) loadQueue();
 }
 
-/** A pause the user didn't ask for (failure, usage limit) is announced once. */
+/** A pause the user didn't ask for (failure, usage limit, budget) is announced once. */
 function noticePause(project, s) {
   const reason = s?.paused ? s.reason : null;
   const prev = lastReason.get(project);
   lastReason.set(project, reason);
-  if (prev === undefined || reason === prev || !(reason === 'failed' || reason === 'rate_limit')) return;
+  if (prev === undefined || reason === prev || !WARN_REASONS.has(reason)) return;
   toast(`📋 Antrian ${projectName(project)} ${REASON_LABEL[reason]}.`, 'warn');
 }
 
@@ -59,6 +65,10 @@ export async function openQueue({ focusAdd = false } = {}) {
   if (state.active === DEMO_ID) return toast('Pilih project dulu — demo tidak punya antrian.');
   queueView.project = state.active;
   queueView.editing = null;
+  queueView.budgetKey = null; // prefill the budget fields again
+  queueView.budgetOpened = false;
+  setBudgetOpen(false);
+  showBudgetError('');
   $('#queue-project').textContent = `· ${projectName(state.active)}`;
   openModal('queue-modal');
   await loadQueue();
@@ -144,6 +154,126 @@ function renderQueue() {
     $(id).disabled = !edit;
     $(id).title = edit ? '' : READ_ONLY_HINT;
   }
+  renderBudget(q, edit);
+}
+
+// ---------- budget (Batas antrian) ----------
+
+/** A count from the server: a finite number >= 0, else null (never trust the payload blindly). */
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+const usd = (n) => `$${n.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** The budget as shown: limits (null = not set, 0 counts as not set) and what was spent since it was set. */
+function readBudget(b) {
+  return { tokensOut: num(b?.tokensOut) || null, costUsd: num(b?.costUsd) || null, spentTokensOut: num(b?.spentTokensOut) ?? 0, spentCostUsd: num(b?.spentCostUsd) ?? 0 };
+}
+
+/** "12,3 rb / 50 rb token output · $0,42 / $5,00" and the highest spent/limit ratio; null without any limit. */
+export function budgetUsage(raw) {
+  const b = readBudget(raw);
+  const parts = [];
+  const ratios = [];
+  if (b.tokensOut) {
+    parts.push(`${fmtShort(b.spentTokensOut)} / ${fmtShort(b.tokensOut)} token output`);
+    ratios.push(b.spentTokensOut / b.tokensOut);
+  }
+  if (b.costUsd) {
+    parts.push(`${usd(b.spentCostUsd)} / ${usd(b.costUsd)}`);
+    ratios.push(b.spentCostUsd / b.costUsd);
+  }
+  return parts.length ? { text: parts.join(' · '), ratio: Math.max(...ratios) } : null;
+}
+
+/**
+ * The two fields → the POST body, or why it can't be sent. An empty field = no limit of that kind.
+ * `bad` flags a field the browser couldn't read as a number (an input type=number then reports "").
+ */
+export function parseBudget(tokensText, costText, bad = {}) {
+  const tok = String(tokensText ?? '').trim();
+  const cost = String(costText ?? '').trim();
+  const [tMin, tMax] = BUDGET_RANGE.tokensOut;
+  const [cMin, cMax] = BUDGET_RANGE.costUsd;
+  const tokensOut = tok === '' ? null : Number(tok);
+  const costUsd = cost === '' ? null : Number(cost);
+  if (bad.tokens || (tokensOut !== null && !(Number.isInteger(tokensOut) && tokensOut >= tMin && tokensOut <= tMax))) {
+    return { field: 'tokens', error: `Maks token output harus bilangan bulat ${tMin.toLocaleString('id-ID')}–${tMax.toLocaleString('id-ID')}.` };
+  }
+  if (bad.cost || (costUsd !== null && !(Number.isFinite(costUsd) && costUsd >= cMin && costUsd <= cMax))) {
+    return { field: 'cost', error: `Maks biaya harus antara ${usd(cMin)} dan ${usd(cMax)}.` };
+  }
+  if (tokensOut === null && costUsd === null) return { field: 'tokens', error: 'Isi minimal satu batas, atau pakai “Hapus batas”.' };
+  return { body: { tokensOut, costUsd: costUsd === null ? null : Math.round(costUsd * 100) / 100 } };
+}
+
+/** Disclosure for the budget form (a button + `hidden`, not <details>: the modal Tab trap skips [hidden] content). */
+function setBudgetOpen(open) {
+  $('#qb-body').hidden = !open;
+  $('#qb-toggle').setAttribute('aria-expanded', String(open));
+}
+
+function showBudgetError(message, field) {
+  const box = $('#qb-error');
+  box.textContent = message;
+  box.hidden = !message;
+  $('#qb-tokens').setAttribute('aria-invalid', String(Boolean(message) && field === 'tokens'));
+  $('#qb-cost').setAttribute('aria-invalid', String(Boolean(message) && field === 'cost'));
+}
+
+function renderBudget(q, edit) {
+  const b = readBudget(q.budget);
+  const usage = budgetUsage(b);
+  const label = $('#qb-usage');
+  const bar = $('#qb-bar');
+  const level = !usage ? '' : usage.ratio >= 1 ? 'over' : usage.ratio >= 0.8 ? 'warn' : '';
+  label.textContent = usage ? usage.text : 'tanpa batas';
+  label.classList.toggle('muted', !level);
+  for (const n of [label, bar]) {
+    n.classList.toggle('warn', level === 'warn');
+    n.classList.toggle('over', level === 'over');
+  }
+  bar.hidden = !usage;
+  if (usage) {
+    const pct = Math.min(100, Math.round(usage.ratio * 100)); // aria-valuenow must stay within min..max
+    bar.setAttribute('aria-valuenow', String(pct));
+    bar.setAttribute('aria-valuetext', `${Math.round(usage.ratio * 100)}% dari batas${level === 'over' ? ' (terlampaui)' : ''}`);
+    bar.firstElementChild.style.width = `${pct}%`;
+  }
+  // Prefill when the limits differ from what the fields last showed, but never while the user is typing in them.
+  const key = `${b.tokensOut}|${b.costUsd}`;
+  const typing = document.activeElement?.matches?.('#qb-tokens, #qb-cost');
+  if (key !== queueView.budgetKey && !typing) {
+    queueView.budgetKey = key;
+    $('#qb-tokens').value = b.tokensOut ?? '';
+    $('#qb-cost').value = b.costUsd ?? '';
+  }
+  // Paused by the budget: open the section once so the limit can be raised (or removed) right away.
+  const budgetPause = Boolean(q.paused && q.reason === 'budget');
+  if (budgetPause && !queueView.budgetOpened) setBudgetOpen(true);
+  queueView.budgetOpened = budgetPause;
+  for (const id of ['#qb-tokens', '#qb-cost', '#qb-save', '#qb-clear']) {
+    $(id).disabled = !edit || (id === '#qb-clear' && !usage);
+    $(id).title = edit ? '' : READ_ONLY_HINT;
+  }
+}
+
+async function saveBudget(e) {
+  e.preventDefault();
+  const tokens = $('#qb-tokens');
+  const cost = $('#qb-cost');
+  const parsed = parseBudget(tokens.value, cost.value, { tokens: tokens.validity.badInput, cost: cost.validity.badInput });
+  if (parsed.error) {
+    showBudgetError(parsed.error, parsed.field);
+    return (parsed.field === 'cost' ? cost : tokens).focus();
+  }
+  showBudgetError('');
+  queueView.budgetKey = null; // the fields take the saved values back from the server
+  if (await change('budget', parsed.body)) toast('💰 Batas antrian disimpan — hitungan dimulai dari nol.', 'ok');
+}
+
+async function clearBudget() {
+  showBudgetError('');
+  queueView.budgetKey = null;
+  if (await change('budget', { tokensOut: null, costUsd: null })) toast('💰 Batas antrian dihapus.', 'ok');
 }
 
 function itemHtml(item, waiting, edit) {
@@ -240,6 +370,10 @@ export function initQueue() {
   });
   $('#queue-toggle').addEventListener('click', () => change('pause', { paused: !queueView.data?.paused }));
   $('#queue-clear').addEventListener('click', () => change('clear'));
+  $('#qb-toggle').addEventListener('click', () => setBudgetOpen($('#qb-body').hidden));
+  $('#qb-form').addEventListener('submit', saveBudget);
+  $('#qb-clear').addEventListener('click', clearBudget);
+  for (const id of ['#qb-tokens', '#qb-cost']) $(id).addEventListener('input', () => showBudgetError(''));
 
   const list = $('#queue-list');
   list.addEventListener('click', (e) => {

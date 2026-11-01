@@ -1,4 +1,4 @@
-/* global document -- functions passed to page.eval run in the browser */
+/* global document, window -- functions passed to page.eval run in the browser */
 // UI of 📋 Antrian and ⏰ Backup otomatis in a headless Chrome/Edge (test-support/cdp.mjs), phone and desktop:
 // add from the composer (button, Alt+Enter), reorder/edit/remove in the dialog, resume and "Lihat hasil";
 // the backup schedule form in ⚙ (validation, save, "Jalankan sekarang"). No console errors, no sideways scroll.
@@ -49,6 +49,7 @@ before(async () => {
   const port = await freePort();
   BASE = `http://localhost:${port}`;
   server = spawn(process.execPath, [path.join(APP, 'server.js')], {
+    windowsHide: true,
     env: {
       ...process.env,
       OFFICE_PORT: String(port),
@@ -104,6 +105,45 @@ async function shot(page, name) {
   if (!SHOTS) return;
   mkdirSync(SHOTS, { recursive: true });
   writeFileSync(path.join(SHOTS, `${name}.png`), await page.screenshot());
+}
+
+/**
+ * Fake of the queue BUDGET backend, in the page: wraps window.fetch so every queue answer carries `window.__qb.budget`
+ * (plus an optional forced pause reason) and POST …/queue-budget is answered here, with the contract's validation.
+ * Keeps this test independent of src/queue.js; the real endpoint is covered by test/queue.test.mjs.
+ */
+function installBudgetFake() {
+  if (window.__qb) return;
+  const realFetch = window.fetch.bind(window);
+  const fake = { budget: { tokensOut: null, costUsd: null, spentTokensOut: 0, spentCostUsd: 0, since: null }, posts: [], pause: null, failNext: null };
+  window.__qb = fake;
+  const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
+  const decorate = (q) => q && { ...q, budget: { ...fake.budget }, ...(fake.pause ? { paused: true, reason: fake.pause } : {}) };
+  const okTokens = (v) => v === null || (Number.isInteger(v) && v >= 1000 && v <= 100_000_000);
+  const okCost = (v) => v === null || (typeof v === 'number' && v >= 0.01 && v <= 10_000);
+  window.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    const budgetCall = u.match(/^(.*\/api\/projects\/[^/]+\/queue)-budget$/);
+    if (budgetCall) {
+      const body = JSON.parse(opts.body);
+      fake.posts.push(body);
+      if (fake.failNext) {
+        const error = fake.failNext;
+        fake.failNext = null;
+        return json({ error }, 400);
+      }
+      if (!okTokens(body.tokensOut) || !okCost(body.costUsd)) return json({ error: 'Batas antrian tidak valid.' }, 400);
+      const on = body.tokensOut !== null || body.costUsd !== null;
+      fake.budget = { tokensOut: body.tokensOut, costUsd: body.costUsd, spentTokensOut: 0, spentCostUsd: 0, since: on ? Date.now() : null };
+      const real = await (await realFetch(budgetCall[1], { ...opts, body: '{}' })).json();
+      return json({ queue: decorate(real.queue) });
+    }
+    if (!/\/api\/projects\/[^/]+\/queue(-[a-z]+)?$/.test(u)) return realFetch(url, opts);
+    const res = await realFetch(url, opts);
+    const data = await res.json();
+    if (data.queue) data.queue = decorate(data.queue);
+    return json(data, res.status);
+  };
 }
 
 async function altEnter(page) {
@@ -199,6 +239,129 @@ for (const vp of VIEWPORTS) {
       await page.click('#queue-clear');
       await page.waitFor(() => document.querySelectorAll('#queue-list li.queue-item').length === 0, { message: 'cleared' });
       await page.press('Escape');
+    });
+
+    test('💰 Batas antrian: validation, save → POST body, progress (warn/over), server error, budget pause label + toast, remove, read-only', async () => {
+      for (const item of (await queue()).items) await api(`/api/projects/${projectId}/queue-remove`, { itemId: item.id });
+      await api(`/api/projects/${projectId}/queue-add`, { text: 'item untuk batas' });
+      await api(`/api/projects/${projectId}/queue-pause`, { paused: true });
+      page.clearProblems();
+      await page.goto(`${BASE}/#${projectId}`);
+      await page.waitFor(() => document.querySelector('#conn')?.classList.contains('ok') && !document.querySelector('#sb-queue').hidden, { timeoutMs: 10000, message: 'app ready with the 📋 chip' });
+      await page.eval(installBudgetFake);
+      const fake = () => page.eval(() => window.__qb);
+      const setFake = (patch) => page.eval((p) => Object.assign(window.__qb, p), patch);
+      const reopen = () => page.eval(async () => (await import('/js/features/queue.js')).openQueue());
+      const ui = () =>
+        page.eval(() => {
+          const bar = document.querySelector('#qb-bar');
+          return {
+            usage: document.querySelector('#qb-usage').textContent.replace(/\s/g, ' '),
+            level: ['warn', 'over'].find((c) => bar.classList.contains(c)) ?? '',
+            bar: bar.hidden ? null : { now: bar.getAttribute('aria-valuenow'), max: bar.getAttribute('aria-valuemax'), role: bar.getAttribute('role') },
+          };
+        });
+      const clearToasts = () => page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+
+      await reopen();
+      await page.waitFor(() => document.querySelectorAll('#queue-list li.queue-item').length === 1, { message: 'dialog loaded' });
+      assert.deepEqual(await ui(), { usage: 'tanpa batas', level: '', bar: null });
+      assert.equal(await page.eval(() => document.querySelector('#qb-clear').disabled), true, 'nothing to remove yet');
+      await page.click('#qb-toggle');
+      await page.waitFor(() => !document.querySelector('#qb-body').hidden && document.querySelector('#qb-toggle').getAttribute('aria-expanded') === 'true', { message: 'section opened' });
+      assert.match(await page.eval(() => document.querySelector('.qb-note').textContent), /Dicek setelah tiap item selesai; giliran yang berjalan tidak dipotong\. Biaya hanya estimasi \(harga list\)\./);
+
+      // out of range: explained inline, nothing sent
+      await page.eval(() => {
+        document.querySelector('#qb-tokens').value = '500';
+        document.querySelector('#qb-cost').value = '';
+      });
+      await page.click('#qb-save');
+      await page.waitFor(() => !document.querySelector('#qb-error').hidden, { message: 'inline validation error' });
+      assert.match(await page.eval(() => document.querySelector('#qb-error').textContent), /bilangan bulat 1\.000–100\.000\.000/);
+      assert.equal(await page.eval(() => document.querySelector('#qb-tokens').getAttribute('aria-invalid')), 'true');
+      assert.equal((await fake()).posts.length, 0);
+
+      // valid: the POST body, then progress from the answer
+      await page.eval(() => {
+        document.querySelector('#qb-tokens').value = '50000';
+        document.querySelector('#qb-cost').value = '5';
+      });
+      await page.click('#qb-save');
+      await page.waitFor(() => window.__qb.posts.length === 1 && document.querySelector('#qb-error').hidden, { message: 'budget posted' });
+      assert.deepEqual((await fake()).posts[0], { tokensOut: 50000, costUsd: 5 });
+      await page.waitFor(() => !document.querySelector('#qb-bar').hidden, { message: 'progress shown' });
+      assert.deepEqual(await ui(), { usage: '0 / 50 rb token output · $0,00 / $5,00', level: '', bar: { now: '0', max: '100', role: 'progressbar' } });
+      assert.deepEqual(await page.eval(() => [document.querySelector('#qb-tokens').value, document.querySelector('#qb-cost').value]), ['50000', '5'], 'prefilled from the budget');
+
+      // spent grows: highest ratio drives the bar; ≥80% warns, ≥100% is exceeded (valuenow stays within max)
+      await setFake({ budget: { tokensOut: 50000, costUsd: 5, spentTokensOut: 12345, spentCostUsd: 0.42, since: 1 } });
+      await reopen();
+      await page.waitFor(() => /12,3/.test(document.querySelector('#qb-usage').textContent), { message: 'progress updated' });
+      assert.deepEqual(await ui(), { usage: '12,3 rb / 50 rb token output · $0,42 / $5,00', level: '', bar: { now: '25', max: '100', role: 'progressbar' } });
+      await setFake({ budget: { tokensOut: 50000, costUsd: 5, spentTokensOut: 1000, spentCostUsd: 4.1, since: 1 } });
+      await reopen();
+      await page.waitFor(() => document.querySelector('#qb-bar').classList.contains('warn'), { message: 'warn at ≥80%' });
+      assert.equal((await ui()).bar.now, '82');
+      await setFake({ budget: { tokensOut: 50000, costUsd: null, spentTokensOut: 61000, spentCostUsd: 0.9, since: 1 } });
+      await reopen();
+      await page.waitFor(() => document.querySelector('#qb-bar').classList.contains('over'), { message: 'exceeded at ≥100%' });
+      assert.deepEqual(await ui(), { usage: '61 rb / 50 rb token output', level: 'over', bar: { now: '100', max: '100', role: 'progressbar' } });
+
+      // a 400 from the server is shown like the other queue errors (toast)
+      await clearToasts();
+      await setFake({ failNext: 'Maks biaya terlalu besar.' });
+      await page.eval(() => document.querySelector('#qb-body').hidden && document.querySelector('#qb-toggle').click());
+      await page.eval(() => document.querySelector('#qb-save').click());
+      await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Maks biaya terlalu besar.')), { message: 'server error toast' });
+
+      // paused by the budget: one-time warning toast, chip label, warn state line, section opened
+      await clearToasts();
+      await setFake({ pause: 'budget' });
+      const chip = await page.eval(async (id) => {
+        const { state } = await import('/js/core/state.js');
+        const { renderQueueChip } = await import('/js/features/queue.js');
+        const st = state.statuses[id];
+        const s = { ...st.taskQueue, waiting: 1, running: 0, failed: 0, paused: true, reason: 'budget' };
+        renderQueueChip({ ...st, taskQueue: s });
+        const label = document.querySelector('#sb-queue').getAttribute('aria-label');
+        renderQueueChip({ ...st, taskQueue: s }); // same reason again: no second toast
+        return label;
+      }, projectId);
+      assert.match(chip, /dijeda karena batas token\/biaya tercapai/);
+      const warnToasts = await page.eval(() => [...document.querySelectorAll('.toast.warn')].map((t) => t.textContent));
+      assert.equal(warnToasts.filter((t) => t.includes('dijeda karena batas token/biaya antrian tercapai')).length, 1, `one budget toast: ${warnToasts}`);
+      await reopen();
+      await page.waitFor(() => /batas token\/biaya antrian tercapai/.test(document.querySelector('#queue-state').textContent), { message: 'budget pause label' });
+      assert.deepEqual(await page.eval(() => ({ warn: document.querySelector('#queue-state').classList.contains('warn'), open: !document.querySelector('#qb-body').hidden })), { warn: true, open: true });
+      await clearToasts();
+      assert.equal(await page.eval(horizontalOverflow), null);
+      assert.deepEqual(await page.eval(unnamed, '#queue-modal'), []);
+      await shot(page, `budget-${vp.mobile ? 'mobile' : 'desktop'}`);
+
+      // Hapus batas: both null
+      await setFake({ pause: null });
+      await page.eval(() => document.querySelector('#qb-clear').click());
+      await page.waitFor(() => window.__qb.posts.length === 3 && document.querySelector('#qb-usage').textContent === 'tanpa batas', { message: 'budget removed' });
+      assert.deepEqual((await fake()).posts[2], { tokensOut: null, costUsd: null });
+      assert.deepEqual(await page.eval(() => [document.querySelector('#qb-tokens').value, document.querySelector('#qb-cost').value, document.querySelector('#qb-clear').disabled]), ['', '', true]);
+
+      // read-only phone on WiFi: everything shown, nothing editable
+      await setFake({ budget: { tokensOut: 50000, costUsd: 5, spentTokensOut: 100, spentCostUsd: 0.01, since: 1 } });
+      await page.eval(async () => {
+        (await import('/js/core/state.js')).state.readOnly = true;
+      });
+      await reopen();
+      await page.waitFor(() => !document.querySelector('#qb-bar').hidden, { message: 'read-only dialog loaded' });
+      const ro = await page.eval(() => ['#qb-tokens', '#qb-cost', '#qb-save', '#qb-clear', '#queue-add'].map((s) => document.querySelector(s).disabled));
+      await page.eval(async () => {
+        (await import('/js/core/state.js')).state.readOnly = false;
+      });
+      assert.deepEqual(ro, [true, true, true, true, true]);
+      assert.equal((await fake()).posts.length, 3, 'nothing sent while read-only');
+      assert.deepEqual(page.problems, [], 'no console errors');
+      await page.press('Escape');
+      for (const item of (await queue()).items) await api(`/api/projects/${projectId}/queue-remove`, { itemId: item.id });
     });
 
     test('⚙ → ⏰ Backup otomatis: off by default, invalid folder explained, save, "Jalankan sekarang" writes a backup', async () => {

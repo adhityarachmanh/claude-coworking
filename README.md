@@ -1,6 +1,6 @@
 # Adhit Office
 
-Kantor pixel-art untuk **mengoperasikan Claude Code dari browser dan HP**. Pilih project, ketik prompt, setujui izin. Tim IT berisi 13 orang terlihat bekerja di kantor secara real-time. CLI tidak perlu dibuka, tapi sesi yang kamu jalankan di CLI juga ikut tampil.
+Kantor pixel-art untuk **mengoperasikan Claude Code dari browser dan HP**. Pilih project, ketik prompt, setujui izin. Tim IT berisi 16 role + Lead terlihat bekerja di kantor secara real-time. CLI tidak perlu dibuka, tapi sesi yang kamu jalankan di CLI juga ikut tampil.
 
 ```
 Browser ──HTTP/SSE──▶ server.js ──stdin/stdout (stream-json)──▶ claude.exe -p   (sesi dari web, satu proses per project)
@@ -29,8 +29,12 @@ Server menjalankan Claude Code milikmu sendiri dalam mode headless, jadi login, 
 | Adhit - DevOps | DevOps / SRE | Build, CI/CD, Docker, environment, deploy |
 | Adhit - Writer | Technical Writer | README, dokumentasi API, changelog |
 | Adhit - Freelancer | Freelancer / Generalist | Subagent yang bukan spesialis (`general-purpose`, `fork`, tipe custom yang tidak dikenali) |
+| Adhit - Mobile | Mobile Developer | Flutter, React Native, Android/iOS, build & bug khusus perangkat |
+| Adhit - Data/AI | Data / AI Engineer | Pipeline data, analitik, notebook, fitur ML/AI (LLM, embedding, RAG) |
+| Adhit - Support | Tech Support / Ops Helpdesk | Triage laporan user, reproduksi dari log, respons awal insiden |
+| Adhit - Reviewer | Code Reviewer | Review kode independen atas diff sebelum pekerjaan dinyatakan selesai |
 
-**👥 Kelola tim:** ⚙ → *Kelola tim*, menu ⋯, palet Ctrl+P, atau ketik `/team`. Susunan tim hanya dipilih dari **katalog role bawaan** (tidak ada role buatan bebas): 12 role di atas + 4 role opsional — `mobile` (Mobile Developer), `data` (Data / AI Engineer), `support` (Tech Support / Ops Helpdesk), `reviewer` (Code Reviewer). Lead selalu ada; Freelancer selalu aktif karena jadi pengganti generalis di ujung setiap rantai fallback. Maks 16 role aktif (semua muat; mulai 13 role kantor mendapat baris meja ke-4 dan ruangan lebih tinggi). Bawaan: 12 role lama aktif, 4 role baru nonaktif. Role nonaktif tidak pernah dipakai: pekerjaannya dialihkan ke role aktif terdekat (mis. reviewer → architect, data → backend, mobile → frontend, support → qa/ba; katalog di `src/role-catalog.js`). Hanya role aktif yang dikirim ke `--agents` dan disebut di prompt Lead; sesi yang diam dimulai ulang otomatis, yang sibuk setelah gilirannya selesai. Lewat WiFi hanya bisa dilihat.
+**👥 Kelola tim:** ⚙ → *Kelola tim*, menu ⋯, palet Ctrl+P, atau ketik `/team`. Susunan tim hanya dipilih dari **katalog role bawaan** (tidak ada role buatan bebas): 12 role inti + 4 role opsional — `mobile` (Mobile Developer), `data` (Data / AI Engineer), `support` (Tech Support / Ops Helpdesk), `reviewer` (Code Reviewer). Lead selalu ada; Freelancer selalu aktif karena jadi pengganti generalis di ujung setiap rantai fallback. Maks 16 role aktif (semua muat; mulai 13 role kantor mendapat baris meja ke-4 dan ruangan lebih tinggi). Bawaan: semua 16 role aktif (4 baris meja). Tim yang sudah pernah disimpan tidak diubah; **↺ Tim bawaan** mengembalikannya ke 16 role. Role nonaktif tidak pernah dipakai: pekerjaannya dialihkan ke role aktif terdekat (mis. reviewer → architect, data → backend, mobile → frontend, support → qa/ba; katalog di `src/role-catalog.js`). Hanya role aktif yang dikirim ke `--agents` dan disebut di prompt Lead; sesi yang diam dimulai ulang otomatis, yang sibuk setelah gilirannya selesai. Lewat WiFi hanya bisa dilihat.
 
 **Ganti nama anggota tim:** klik kartu orangnya di bawah kantor (atau ⚙ → *Ganti nama anggota tim*), isi nama baru, lalu **Simpan**. Nama yang kosong kembali ke nama bawaan. Nama baru langsung tampil di kantor, chat, dan aktivitas, dan tersimpan di server (`data/state.json`), jadi sama di laptop dan HP. Peran dan sifat kerja tiap role tidak berubah, hanya namanya. Tampilan (rambut, baju, warna) diatur di `public/js/office/cast.js`.
 
@@ -39,6 +43,13 @@ Definisinya ada di `.claude/agents/*.md` (bisa diedit). Dengan **Mode tim** akti
 - **Fitur baru**: PM → BA → Architect → UI/UX → Frontend/Backend/DB → QA → Security (jika menyentuh auth/input/data) → Writer
 - **Bug fix**: QA mereproduksi (failing test) → developer pemilik memperbaiki akar masalah → Architect review diff → QA verifikasi
 - **Build/deploy/insiden**: DevOps → Backend/DB → QA
+
+Selama role opsional aktif, alurnya bertambah:
+
+- **Mobile**: Mobile mengerjakan sisi app → Backend untuk API-nya → QA verifikasi di build device/emulator
+- **Data/AI**: Data merancang pipeline/analisis/integrasi model → DBA pemilik skema → Backend menyajikan → QA
+- **Laporan user/insiden**: Support triage dan reproduksi dari log dulu → developer pemilik menerima laporan yang jelas
+- **Sebelum kode dinyatakan selesai**: Reviewer me-review diff (Architect tetap untuk keputusan desain)
 
 Claude hanya memanggil role yang relevan. Tugas kecil dikerjakan langsung tanpa delegasi. Tanpa Mode tim (atau untuk sesi CLI biasa), tiap aksi tetap dibagi ke orang yang paling cocok menurut jenis file/perintahnya: `.tsx` ke Adhit - Frontend, migrasi ke Adhit - DBA, `npm test` / `curl` ke Adhit - QA, `docker` / `npm install` / cek port & proses ke Adhit - DevOps, `grep` / `cat` / `git diff` ke Adhit - Tech Lead, otomasi browser (Claude in Chrome) ke Adhit - QA, MCP Docs ke Adhit - Writer, dan seterusnya. Rantai perintah (`cd x && npm test | tail`) dinilai dari perintah intinya, bukan dari kata yang kebetulan muncul.
 
@@ -211,8 +222,8 @@ Setelah server hidup lagi, chat project itu menampilkan *"Server di-restart saat
 | **Izin** | 🛡️ Tanya dulu (default) · ✏️ Auto-edit file · ⚡ Auto · 📋 Rencana dulu · 🚫 Jangan tanya. `Shift+Tab` di kotak pesan berganti mode. Perubahan langsung berlaku, juga di tengah giliran. |
 | **Model** | Daftar model dari Claude Code sendiri (sama dengan `/model`: Fable, Opus, Sonnet, Haiku, dan versi spesifik). `/model <nama>` juga menerima alias seperti `opus[1m]` atau `opusplan`. Ganti model langsung berlaku tanpa restart. |
 | **Effort** | Seberapa dalam Claude berpikir (`--effort`): Default (dari settings Claude Code), Low, Medium, High, X-High, Max. Lebih tinggi lebih teliti untuk tugas sulit, tapi lebih lambat dan lebih banyak token. Berlaku per project dan langsung berlaku tanpa restart (kembali ke Default memulai ulang prosesnya, percakapan tetap berlanjut). |
-| **Mode tim** | Claude mendelegasikan ke 11 subagent di atas. Visualnya lebih hidup, tapi **lebih banyak token**. Matikan untuk Claude Code biasa. |
-| **📋 Antrian** (`Alt+Enter`, tombol 📋, `/antrian`) | Susun beberapa prompt untuk satu project: `Alt+Enter` (atau tombol 📋 di samping **Kirim**) memasukkan isi kotak pesan ke antrian, bukan langsung dikirim; kotak kosong membuka daftarnya. Server mengirim item berikutnya otomatis saat sesi project itu **idle** (tidak bekerja, tidak ada izin yang menunggu, tidak ada giliran terputus), satu per satu, masing-masing di gilirannya sendiri. Di dialog: ubah urutan (seret atau ↑↓), edit/hapus item yang menunggu, **Jeda/Lanjutkan**, **Ulangi** item gagal, **💬 Lihat hasil** (lompat ke prompt dan jawabannya di chat). Status: menunggu/berjalan/selesai/gagal. Antrian berhenti sendiri bila item gagal atau dihentikan (Esc) atau kuota akun habis (pemberitahuan di chat + toast), dan disimpan di `data/state.json`: setelah server di-restart antrian **tetap dijeda** sampai kamu melanjutkan. Maks 30 item belum selesai, 20.000 karakter per item. Chip 📋 di bar sesi menampilkan jumlahnya (⏸ saat dijeda). Lewat WiFi hanya bisa melihat. |
+| **Mode tim** | Claude mendelegasikan ke subagent dari role yang aktif (bawaan 15; Freelancer menampung tipe `general-purpose`/`fork`). Visualnya lebih hidup, tapi **lebih banyak token**. Matikan untuk Claude Code biasa. |
+| **📋 Antrian** (`Alt+Enter`, tombol 📋, `/antrian`) | Susun beberapa prompt untuk satu project: `Alt+Enter` (atau tombol 📋 di samping **Kirim**) memasukkan isi kotak pesan ke antrian, bukan langsung dikirim; kotak kosong membuka daftarnya. Server mengirim item berikutnya otomatis saat sesi project itu **idle** (tidak bekerja, tidak ada izin yang menunggu, tidak ada giliran terputus), satu per satu, masing-masing di gilirannya sendiri. Di dialog: ubah urutan (seret atau ↑↓), edit/hapus item yang menunggu, **Jeda/Lanjutkan**, **Ulangi** item gagal, **💬 Lihat hasil** (lompat ke prompt dan jawabannya di chat). Status: menunggu/berjalan/selesai/gagal. Antrian berhenti sendiri bila item gagal atau dihentikan (Esc), kuota akun habis, atau **batas antrian** tercapai (pemberitahuan di chat + toast). **Batas antrian** (di dialog): maks token output dan/atau maks biaya (USD, estimasi harga list) per project; progresnya tampil sebagai bar. Batas dicek setiap kali satu item selesai, jadi giliran yang sedang berjalan tidak pernah dipotong. Menyimpan batas baru, atau melanjutkan antrian yang dijeda karena batas, memulai hitungan dari nol. Biaya dan token dihitung per giliran (termasuk subagent); giliran yang berhenti tanpa hasil (server di-restart, Claude Code keluar) tidak ikut terhitung. Antrian disimpan di `data/state.json`: setelah server di-restart antrian **tetap dijeda** sampai kamu melanjutkan. Maks 30 item belum selesai, 20.000 karakter per item. Chip 📋 di bar sesi menampilkan jumlahnya (⏸ saat dijeda). Lewat WiFi hanya bisa melihat. |
 | **■ Stop** / `Esc` | Muncul di sebelah **Kirim** saat tim bekerja. Menghentikan giliran yang sedang berjalan dan membatalkan pesan yang masih antre; sesi tetap bisa dilanjutkan. |
 | **⏪ Rewind** (`Esc Esc`, `/rewind`) | Kembalikan **kode dan/atau percakapan** ke sebelum salah satu pesanmu, memakai checkpoint Claude Code. Pratinjau menunjukkan file yang akan kembali (+/−). Pesan yang di-rewind masuk lagi ke kotak pesan untuk diedit. |
 | **Status line** | Di bawah kotak pesan: mode izin, model, dan konteks terpakai dari Claude Code (seperti `/context`, dengan batas auto-compact), plus jumlah tugas latar. |
@@ -268,7 +279,7 @@ Kalau pencatatan akun itu baru dimulai di tengah periode, pratinjau memberi tahu
 ## Kantor
 
 - **Ruang boss** berdinding kaca untuk Adhit - Lead (Engineering Lead): meja eksekutif, kursi kulit, kursi tamu, dan TV grafik aktivitas. Boss duduk menghadap pintu, tamu (prompt) datang ke depan mejanya, dan boss keluar ruangan untuk mendelegasikan.
-- 11 meja staf dalam 3 baris (Produk & Desain, Engineering, Kualitas & Ops), meja meeting bundar, pantry, sofa, dan rak server di samping DevOps.
+- Satu meja staf per role aktif dalam grid 4 kolom (bawaan 16 meja dalam 4 baris; tim ≤ 12 role tetap 3 baris), meja meeting bundar, pantry, sofa, dan rak server di samping DevOps.
 - Tiap tool call menggerakkan karakter yang sesuai. Layar monitornya menunjukkan jenis kerja: kode, terminal, test, dokumen, desain, pencarian, browser, kanban, tabel database, pipeline CI/CD, security scan, diff review.
 - Delegasi: Claude berjalan ke meja anggota tim. Minta izin: anggota tim berdiri dan angkat tangan. Error: layar merah dan asap. Selesai: confetti.
 - Whiteboard menampilkan todo list Claude, atau daftar delegasi.

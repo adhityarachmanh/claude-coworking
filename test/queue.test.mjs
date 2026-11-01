@@ -9,7 +9,7 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { lanAddresses, wifiAllows } from '../src/remote.js';
-import { QUEUE_LIMITS } from '../src/queue.js';
+import { BUDGET_LIMITS, PAUSE_REASONS, QUEUE_LIMITS, QueueError, TaskQueue } from '../src/queue.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-queue-'));
@@ -23,6 +23,7 @@ let id;
 
 async function start() {
   const proc = spawn(process.execPath, [path.join(APP, 'server.js')], {
+    windowsHide: true,
     env: {
       ...process.env,
       OFFICE_PORT: String(PORT),
@@ -237,9 +238,31 @@ test('queue: after a restart it stays paused ("restart") until the user resumes;
   assert.equal(list.paused, false);
 });
 
+test('queue-budget: set, validated, in the view, the session bar and state.json; both null clears it', async () => {
+  const none = await queue();
+  assert.deepEqual(none.budget, { tokensOut: null, costUsd: null, spentTokensOut: 0, spentCostUsd: 0, since: null }, 'always present');
+  for (const body of [{ tokensOut: 999 }, { tokensOut: 1500.5 }, { tokensOut: '5000' }, { costUsd: 0 }, { costUsd: 10001 }, { costUsd: 'x' }]) {
+    const res = await q('budget', body);
+    assert.equal(res.status, 400, JSON.stringify(body));
+    assert.match(res.body.error, /^Batas /);
+  }
+  const set = await q('budget', { tokensOut: 20000, costUsd: 1.234 });
+  assert.equal(set.status, 200);
+  const { since, ...rest } = set.body.queue.budget;
+  assert.deepEqual(rest, { tokensOut: 20000, costUsd: 1.23, spentTokensOut: 0, spentCostUsd: 0 });
+  assert.ok(Number.isFinite(since));
+  assert.deepEqual((await snapshot()).statuses[id].taskQueue.budget, { tokensOut: 20000, costUsd: 1.23, spentTokensOut: 0, spentCostUsd: 0 });
+  assert.equal(JSON.parse(readFileSync(path.join(DATA, 'state.json'), 'utf8')).queues[id].budget.tokensOut, 20000);
+  assert.equal((await api('/api/projects/nope/queue-budget', { tokensOut: 5000 })).status, 404);
+
+  const cleared = await q('budget', { tokensOut: null, costUsd: null });
+  assert.equal(cleared.status, 200);
+  assert.deepEqual(cleared.body.queue.budget, none.budget);
+});
+
 test('queue over plain WiFi: reading is allowed, every change is refused (default deny)', async (t) => {
   assert.ok(wifiAllows(`/api/projects/${id}/queue`));
-  const changes = ['add', 'update', 'remove', 'reorder', 'pause', 'retry', 'clear'].map((op) => `/api/projects/${id}/queue-${op}`);
+  const changes = ['add', 'update', 'remove', 'reorder', 'pause', 'retry', 'clear', 'budget'].map((op) => `/api/projects/${id}/queue-${op}`);
   for (const p of changes) assert.ok(!wifiAllows(p), p);
   for (const p of ['/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run']) assert.ok(!wifiAllows(p), p);
 
@@ -269,4 +292,212 @@ test('queue over plain WiFi: reading is allowed, every change is refused (defaul
   } finally {
     await api('/api/remote', { enabled: false });
   }
+});
+
+// ---------- budget: TaskQueue on its own (a fake hub, no server, nothing is ever sent) ----------
+
+function fakeQueue(stored) {
+  const chats = [];
+  const hub = {
+    persisted: { queues: stored },
+    observers: new Set(),
+    projects: new Map(),
+    runtime: new Map(),
+    save() {},
+    setStatus() {},
+    broadcast() {},
+    chat: (project, msg) => chats.push({ project, ...msg }),
+  };
+  let clock = 1000;
+  const tq = new TaskQueue({ hub, sessions: { get: () => null, stopping: false }, delayMs: 60_000, now: () => clock });
+  return { tq, chats, tick: (ms) => (clock += ms) };
+}
+
+/** Marks the first waiting item running and ends it with a result carrying these numbers. */
+function runOne(tq, project, { ok = true, tokensOut, costUsd } = {}) {
+  const item = tq.queues[project].items.find((i) => i.status === 'waiting');
+  item.status = 'running';
+  tq.onResult(project, { kind: 'result', ok, id: 'm1', text: ok ? '' : 'Error palsu', meta: { durationMs: 10, turns: 1, tokensOut, costUsd } });
+  return item;
+}
+
+test('budget unit: validation of the limits (tokens 1000..1e8 integer, cost 0.01..10000 to cents, null = none)', () => {
+  const { tq } = fakeQueue();
+  assert.ok(PAUSE_REASONS.includes('budget'));
+  const bad = [
+    { tokensOut: BUDGET_LIMITS.tokensOut.min - 1 },
+    { tokensOut: BUDGET_LIMITS.tokensOut.max + 1 },
+    { tokensOut: 1000.5 },
+    { tokensOut: '2000' },
+    { tokensOut: Number.NaN },
+    { costUsd: 0.009 },
+    { costUsd: 10000.01 },
+    { costUsd: Infinity },
+    { costUsd: '5' },
+    { costUsd: true },
+  ];
+  for (const body of bad) {
+    assert.throws(() => tq.setBudget('p', body), (e) => e instanceof QueueError && e.status === 400 && /^Batas /.test(e.message), JSON.stringify(body));
+  }
+  assert.equal(tq.queues.p, undefined, 'a refused budget creates nothing');
+  tq.setBudget('p', { tokensOut: 1000, costUsd: 9999.999 });
+  assert.deepEqual(tq.view('p').budget, { tokensOut: 1000, costUsd: 10000, spentTokensOut: 0, spentCostUsd: 0, since: 1000 });
+  tq.setBudget('p', { tokensOut: null, costUsd: 0.014 });
+  assert.equal(tq.view('p').budget.costUsd, 0.01);
+  assert.deepEqual(tq.view('nothing').budget, { tokensOut: null, costUsd: null, spentTokensOut: 0, spentCostUsd: 0, since: null }, 'view always has a budget');
+});
+
+test('budget unit: spending accumulates from results (done and failed); tokensOut is kept in item.meta', () => {
+  const { tq } = fakeQueue();
+  tq.add('p', 'tanpa budget');
+  const free = runOne(tq, 'p', { tokensOut: 700, costUsd: 0.2 });
+  assert.equal(free.meta.tokensOut, 700, 'kept even without a budget');
+  assert.equal(tq.view('p').budget.spentTokensOut, 0, 'nothing counted without a limit');
+
+  tq.setBudget('p', { tokensOut: 100000 });
+  for (const t of ['a', 'b', 'c']) tq.add('p', t);
+  runOne(tq, 'p', { tokensOut: 1200, costUsd: 0.1 });
+  runOne(tq, 'p', { tokensOut: undefined, costUsd: undefined });
+  runOne(tq, 'p', { ok: false, tokensOut: 300, costUsd: 0.2 });
+  const b = tq.view('p').budget;
+  assert.equal(b.spentTokensOut, 1500);
+  assert.equal(b.spentCostUsd, 0.3, 'no float dust');
+  assert.deepEqual(tq.summary('p').budget, { tokensOut: 100000, costUsd: null, spentTokensOut: 1500, spentCostUsd: 0.3 });
+});
+
+test('budget unit: the token limit pauses the queue between items and warns in the chat; resume starts a new window', () => {
+  const { tq, chats, tick } = fakeQueue();
+  tq.setBudget('p', { tokensOut: 10000 });
+  for (const t of ['satu', 'dua', 'tiga']) tq.add('p', t);
+  runOne(tq, 'p', { tokensOut: 6000 });
+  assert.equal(tq.view('p').paused, false, 'under the limit');
+  runOne(tq, 'p', { tokensOut: 6345 });
+  const v = tq.view('p');
+  assert.equal(v.paused, true);
+  assert.equal(v.reason, 'budget');
+  assert.equal(tq.summary('p').reason, 'budget');
+  assert.equal(v.items[2].status, 'waiting');
+  assert.equal(chats.length, 1);
+  assert.match(chats[0].text, /Antrian dijeda: batas token antrian tercapai \(12\.345 \/ 10\.000 token output\)\. 1 item masih menunggu/);
+  assert.equal(chats[0].queue, true);
+
+  tick(5000);
+  tq.setPaused('p', false);
+  const b = tq.view('p').budget;
+  assert.deepEqual([b.spentTokensOut, b.spentCostUsd, b.since, b.tokensOut], [0, 0, 6000, 10000], 'exceeded: reset on resume');
+});
+
+test('budget unit: the cost limit; no pause when nothing waits; a failure pauses once (no double warning)', () => {
+  const { tq, chats } = fakeQueue();
+  tq.setBudget('p', { costUsd: 5 });
+  tq.add('p', 'mahal');
+  tq.add('p', 'berikutnya');
+  runOne(tq, 'p', { costUsd: 5.123 });
+  assert.equal(tq.view('p').reason, 'budget');
+  assert.match(chats.at(-1).text, /batas biaya antrian tercapai \(\$5\.12 \/ \$5\.00\)/);
+
+  // The last item: nothing waits, so no pause and no warning.
+  const second = fakeQueue();
+  second.tq.setBudget('p', { costUsd: 1 });
+  second.tq.add('p', 'satu-satunya');
+  runOne(second.tq, 'p', { costUsd: 2 });
+  assert.equal(second.tq.view('p').paused, false);
+  assert.equal(second.chats.length, 0);
+
+  // A failed item over the budget: the failure pause fires, the budget does not pause (or warn) again.
+  const third = fakeQueue();
+  third.tq.setBudget('p', { tokensOut: 1000 });
+  third.tq.add('p', 'gagal');
+  third.tq.add('p', 'nanti');
+  runOne(third.tq, 'p', { ok: false, tokensOut: 5000 });
+  assert.equal(third.tq.view('p').reason, 'failed');
+  assert.equal(third.chats.length, 1);
+});
+
+test('budget unit: resuming under the limit keeps the spending', () => {
+  const { tq } = fakeQueue();
+  tq.setBudget('p', { tokensOut: 10000 });
+  tq.add('p', 'a');
+  tq.add('p', 'b');
+  runOne(tq, 'p', { tokensOut: 2000 });
+  tq.setPaused('p', true);
+  tq.setPaused('p', false);
+  assert.equal(tq.view('p').budget.spentTokensOut, 2000);
+  assert.equal(tq.view('p').budget.since, 1000);
+});
+
+test('budget unit: an empty, unpaused queue with a budget is kept; without one it is dropped', () => {
+  const { tq } = fakeQueue();
+  tq.setBudget('p', { tokensOut: 5000 });
+  tq.add('p', 'x');
+  runOne(tq, 'p', { tokensOut: 100 });
+  tq.clearFinished('p');
+  assert.ok(tq.queues.p, 'kept: it holds the budget');
+  assert.equal(tq.view('p').budget.spentTokensOut, 100);
+  assert.equal(tq.summary('p').budget.tokensOut, 5000);
+  tq.setBudget('p', { tokensOut: null, costUsd: null });
+  assert.equal(tq.queues.p, undefined, 'no budget, no items: gone');
+  assert.equal(tq.summary('p'), null);
+});
+
+test('budget unit: restore keeps a good budget, a bad or missing one falls back to no limit', () => {
+  const item = { id: 'q_0123456789ab', text: 'lama', status: 'done', createdAt: 1, updatedAt: 1 };
+  const { tq } = fakeQueue({
+    good: { paused: false, items: [], budget: { tokensOut: 5000, costUsd: 2.5, spentTokensOut: 4000, spentCostUsd: 1, since: 77 } },
+    old: { paused: false, items: [item] }, // a state.json from before budgets
+    bad: { paused: false, items: [item], budget: { tokensOut: 'banyak', costUsd: -3, spentTokensOut: -1, spentCostUsd: 'x', since: 'kemarin' } },
+    half: { paused: false, items: [], budget: { tokensOut: 99, costUsd: 3, spentTokensOut: Number.NaN, spentCostUsd: 0.5, since: null } },
+    junk: { paused: false, items: [], budget: 'tak terbatas' },
+    stored: { paused: true, reason: 'budget', items: [item] },
+  });
+  const empty = { tokensOut: null, costUsd: null, spentTokensOut: 0, spentCostUsd: 0, since: null };
+  assert.deepEqual(tq.view('good').budget, { tokensOut: 5000, costUsd: 2.5, spentTokensOut: 4000, spentCostUsd: 1, since: 77 });
+  assert.ok(tq.queues.good, 'an empty queue with a budget survives a restart');
+  assert.deepEqual(tq.view('old').budget, empty);
+  assert.deepEqual(tq.view('bad').budget, empty);
+  assert.deepEqual(tq.view('half').budget, { tokensOut: null, costUsd: 3, spentTokensOut: 0, spentCostUsd: 0.5, since: null });
+  assert.equal(tq.queues.junk, undefined, 'empty, no budget: not kept');
+  assert.equal(tq.view('stored').reason, 'budget', 'budget is a valid stored pause reason');
+});
+
+test('budget unit: a used-up budget is not bypassed by adding an item to an empty queue (review #2)', () => {
+  const { tq, chats } = fakeQueue();
+  tq.setBudget('p', { tokensOut: 1000 });
+  tq.add('p', 'terakhir');
+  runOne(tq, 'p', { tokensOut: 4000 }); // the last item goes over: nothing waits, so no pause yet
+  assert.equal(tq.view('p').paused, false);
+  tq.add('p', 'baru');
+  tq.dispatch('p');
+  const v = tq.view('p');
+  assert.equal(v.paused, true);
+  assert.equal(v.reason, 'budget');
+  assert.equal(v.items.at(-1).status, 'waiting', 'nothing was sent');
+  assert.match(chats.at(-1).text, /batas token antrian tercapai \(4\.000 \/ 1\.000 token output\)/);
+});
+
+test('budget unit: resuming a failure pause never resets a used-up budget silently (review #3)', () => {
+  const { tq, chats } = fakeQueue();
+  tq.setBudget('p', { tokensOut: 1000 });
+  tq.add('p', 'gagal');
+  tq.add('p', 'nanti');
+  runOne(tq, 'p', { ok: false, tokensOut: 5000 });
+  assert.equal(tq.view('p').reason, 'failed');
+  tq.setPaused('p', false);
+  assert.equal(tq.view('p').budget.spentTokensOut, 5000, 'kept');
+  tq.dispatch('p');
+  assert.equal(tq.view('p').reason, 'budget', 'paused again, now for the budget');
+  assert.match(chats.at(-1).text, /batas token antrian tercapai/);
+  tq.setPaused('p', false); // a budget pause: this resume starts a new window
+  assert.equal(tq.view('p').budget.spentTokensOut, 0);
+});
+
+test('budget unit: a new budget while paused by the budget keeps it paused, labelled as a user pause (review #4)', () => {
+  const { tq } = fakeQueue();
+  tq.setBudget('p', { tokensOut: 1000 });
+  for (const t of ['a', 'b']) tq.add('p', t);
+  runOne(tq, 'p', { tokensOut: 2000 });
+  assert.equal(tq.view('p').reason, 'budget');
+  tq.setBudget('p', { tokensOut: 50000 });
+  const v = tq.view('p');
+  assert.deepEqual([v.paused, v.reason, v.budget.spentTokensOut], [true, 'user', 0]);
 });

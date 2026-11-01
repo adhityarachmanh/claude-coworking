@@ -30,7 +30,7 @@ export const READ_ONLY_ERROR = 'Lewat WiFi hanya bisa melihat. Pakai laptop atau
 // MCP, tasks, projects, team names…) needs the laptop or Tailscale. Over plain HTTP the device
 // cookie can be sniffed, so a WiFi phone must never be able to act.
 // `/api/templates` lists the prompt templates (read); saving/deleting them (`/api/templates/save|delete`) is an action.
-// `queue` shows a project's 📋 Antrian (read); every change to it (`queue-add|update|remove|reorder|pause|retry|clear`) is an action.
+// `queue` shows a project's 📋 Antrian (read); every change to it (`queue-add|update|remove|reorder|pause|retry|clear|budget`) is an action.
 // `git-branches` (branch list, ahead/behind) and `permissions` (saved permission rules) are reads; switching/pulling/
 // pushing (`git-action`) is an action, and changing rules (`permissions-edit`) is laptop-only (LOCAL_ONLY_ACTION).
 // Not over WiFi on purpose (security review): `search` / `export-session` expose the whole conversation history and

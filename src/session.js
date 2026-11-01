@@ -867,16 +867,15 @@ class ClaudeSession {
    * fall back to the difference from the previous result.
    */
   recordUsage(msg) {
-    if (!this.m.ledger) return;
-    let perTurn = msg.model_usage_since_last_result;
-    if (!perTurn || typeof perTurn !== 'object') {
-      perTurn = {};
-      for (const [model, u] of Object.entries(msg.modelUsage ?? {})) {
-        const prev = this.lastModelUsage?.[model] ?? {};
-        perTurn[model] = Object.fromEntries(Object.entries(u).map(([k, v]) => [k, typeof v === 'number' ? v - (prev[k] ?? 0) : v]));
-      }
-      this.lastModelUsage = msg.modelUsage;
+    const perTurn = this.turnModelUsage(msg);
+    // Per-turn totals (subagents included) for the result line and the 📋 queue budget: `total_cost_usd`
+    // is cumulative for the process, so summing it per turn would count earlier turns again.
+    const models = Object.values(perTurn);
+    if (models.length) {
+      const sum = (key) => models.reduce((n, u) => n + (Number.isFinite(u[key]) ? u[key] : 0), 0);
+      msg.turnUsage = { costUsd: sum('costUSD'), outputTokens: sum('outputTokens') };
     }
+    if (!this.m.ledger) return;
     Object.entries(perTurn).forEach(([model, u], i) => {
       this.m.ledger.record({
         account: this.childAccount,
@@ -892,6 +891,20 @@ class ClaudeSession {
         turns: i === 0 ? 1 : 0,
       });
     });
+  }
+
+  /** Usage per model of the turn that just ended: the per-turn field, or the difference from the previous result. */
+  turnModelUsage(msg) {
+    let perTurn = msg.model_usage_since_last_result;
+    if (!perTurn || typeof perTurn !== 'object') {
+      perTurn = {};
+      for (const [model, u] of Object.entries(msg.modelUsage ?? {})) {
+        const prev = this.lastModelUsage?.[model] ?? {};
+        perTurn[model] = Object.fromEntries(Object.entries(u).map(([k, v]) => [k, typeof v === 'number' ? v - (prev[k] ?? 0) : v]));
+      }
+      this.lastModelUsage = msg.modelUsage;
+    }
+    return perTurn;
   }
 
   onControlRequest(msg) {

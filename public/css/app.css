@@ -1486,6 +1486,29 @@ body.read-only #composer-hint { color: var(--ask); }
 .queue-foot { display: flex; align-items: center; gap: 8px; flex: none; }
 .queue-foot button, .queue-bar button { font-size: var(--fs-sm); padding: 4px 10px; }
 .queue-help { margin: 0; flex: none; }
+/* Batas antrian (token/cost budget) */
+.queue-budget { flex: none; border: 1px solid var(--border); border-radius: var(--r-md); padding: 6px 10px; background: var(--surface-2); }
+.qb-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--fs-sm); }
+.qb-toggle { padding: 2px 4px; border: 0; background: none; color: var(--text); font: 600 var(--fs-sm)/1.4 var(--font); cursor: pointer; }
+.qb-toggle::before { content: '▸ '; color: var(--muted); }
+.qb-toggle[aria-expanded="true"]::before { content: '▾ '; }
+#qb-body[hidden] { display: none; }
+.qb-usage { min-width: 0; overflow-wrap: anywhere; }
+.qb-bar { flex: 1 1 80px; min-width: 60px; max-width: 160px; height: 6px; border-radius: var(--r-pill); background: var(--border); overflow: hidden; }
+.qb-bar[hidden] { display: none; }
+.qb-fill { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.qb-bar.warn .qb-fill { background: var(--warn-line); }
+.qb-bar.over .qb-fill { background: var(--err); }
+.qb-usage.warn { color: var(--warn-text); }
+.qb-usage.over { color: var(--err-text); }
+.qb-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin-top: 8px; }
+.qb-field { display: flex; flex-direction: column; gap: 2px; flex: 1 1 140px; min-width: 0; font-size: var(--fs-sm); color: var(--text-2); }
+.qb-field input { width: 100%; min-width: 0; }
+.qb-actions { display: flex; gap: 6px; flex: none; }
+.qb-actions button { font-size: var(--fs-sm); padding: 4px 10px; }
+.qb-error { margin: 6px 0 0; font-size: var(--fs-sm); color: var(--err-text); }
+.qb-error[hidden] { display: none; }
+.qb-note { margin: 6px 0 0; }
 #chat .queue-flash { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-md); transition: outline-color .6s; }
 
 /* ⏰ Backup otomatis (features/backup-auto.js), inside ⚙ → Cadangkan riwayat */
@@ -1503,5 +1526,7 @@ body.read-only #composer-hint { color: var(--ask); }
   .queue-item { grid-template-columns: 22px minmax(0, 1fr); }
   .queue-actions { grid-column: 1 / -1; max-width: none; }
   .queue-actions button { padding: 6px 9px; }
-  .queue-new textarea, .queue-edit, #ba-folder, .ba-grid input, .ba-grid select { font-size: var(--fs-input-touch); }
+  .qb-actions { flex: 1 1 100%; }
+  .qb-actions button { flex: 1; padding: 6px 9px; }
+  .queue-new textarea, .queue-edit, .qb-field input, #ba-folder, .ba-grid input, .ba-grid select { font-size: var(--fs-input-touch); }
 }
