@@ -16,6 +16,7 @@ import { applySuggest, closeSuggest, renderSuggest, searchHistory, suggest } fro
 import { backgroundRunning, renderTaskChip, renderTasks, tasksView } from './tasks.js';
 import { placeholders, tabToPlaceholder } from './templates.js';
 import { renderQueueChip } from './queue.js';
+import { renderVoice } from './voice.js';
 
 // A shorter hint fits a phone-width composer on one line.
 const applyPlaceholder = () => {
@@ -69,6 +70,7 @@ export function renderComposer() {
   renderSessionBar();
   renderTaskChip(st);
   renderQueueChip(st);
+  renderVoice();
   applyReadOnly();
   renderSendState();
   if (!$('#tasks-modal').hidden && tasksView.project === state.active) renderTasks();

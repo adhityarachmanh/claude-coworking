@@ -1715,3 +1715,449 @@ for (const vp of VIEWPORTS) {
     }
   });
 }
+
+// ---------- 🔔 notification settings and 🎤 voice input (browser APIs stubbed in the page) ----------
+
+/** Fake AudioContext + Notification: counts oscillators (one per note), gain peaks and notifications. */
+function stubSoundAndNotifications() {
+  window.__audio = { osc: 0, peaks: [] };
+  window.__notes = [];
+  window.AudioContext = class {
+    constructor() {
+      this.currentTime = 0;
+      this.destination = {};
+    }
+    createOscillator() {
+      window.__audio.osc++;
+      return { frequency: {}, connect: (g) => g, start() {}, stop() {} };
+    }
+    createGain() {
+      return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime: (v) => window.__audio.peaks.push(v) }, connect: (d) => d };
+    }
+  };
+  window.Notification = class {
+    static permission = 'granted';
+    static requestPermission = () => Promise.resolve('granted');
+    constructor(title, opts) {
+      window.__notes.push({ title, tag: opts?.tag });
+    }
+    close() {}
+  };
+}
+
+/** Fake SpeechRecognition: the instance is exposed as window.__rec; results are pushed by the test. */
+function stubSpeech() {
+  window.__recs = [];
+  class FakeRecognition {
+    start() {
+      this.started = true;
+      window.__rec = this;
+      window.__recs.push(this);
+    }
+    stop() {
+      this.stopped = true;
+      setTimeout(() => this.onend?.(), 10);
+    }
+    abort() {
+      this.stop();
+    }
+  }
+  window.SpeechRecognition = FakeRecognition;
+  window.webkitSpeechRecognition = FakeRecognition;
+  window.__speak = (text, isFinal) => window.__rec.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: text }], { isFinal })] });
+}
+
+for (const vp of VIEWPORTS) {
+  describe(`UI notifikasi & input suara — ${vp.name}`, { skip: SKIP ?? false }, () => {
+    let page;
+    before(async () => {
+      if (SKIP) return;
+      page = await browser.newPage();
+      await page.setViewport(vp);
+    });
+    after(async () => page?.close());
+
+    // A fresh page per test: the stubs must be in place before the first chime creates the AudioContext.
+    async function freshApp(storage = {}) {
+      await openApp(page, `#${projectId}`);
+      await page.eval((s) => {
+        for (const k of ['office.notify', 'office.notifySettings', 'office.voiceLang']) localStorage.removeItem(k);
+        for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v);
+      }, storage);
+      await openApp(page, `#${projectId}`);
+    }
+
+    const counts = () => page.eval(() => ({ osc: window.__audio.osc, notes: window.__notes.length, peak: Math.max(0, ...window.__audio.peaks.filter((v) => v > 0.001)) }));
+    const fire = (kind, where) =>
+      page.eval(
+        async (k, w) => {
+          const { notify } = await import('/js/features/notify.js');
+          const { state } = await import('/js/core/state.js');
+          notify(k, `judul ${k}`, 'isi', w === 'here' ? state.active : 'project-lain');
+        },
+        kind,
+        where,
+      );
+
+    test('🔔 bawaan tidak berubah: suara + pop-up hanya saat di project lain, izin tetap berbunyi', async () => {
+      await freshApp({ 'office.notify': '1' });
+      page.clearProblems();
+      await page.eval(stubSoundAndNotifications);
+      await fire('done', 'away');
+      assert.deepEqual(await counts(), { osc: 2, notes: 1, peak: 0.18 }, 'selesai di project lain: 2 nada + 1 notifikasi, volume penuh');
+      await fire('done', 'here');
+      await fire('error', 'here');
+      assert.deepEqual(await counts(), { osc: 2, notes: 1, peak: 0.18 }, 'sedang dilihat: diam');
+      await fire('ask', 'here');
+      assert.deepEqual(await counts(), { osc: 5, notes: 1, peak: 0.18 }, 'minta izin di project ini: bunyi tanpa pop-up');
+      await fire('error', 'away');
+      assert.deepEqual(await counts(), { osc: 7, notes: 2, peak: 0.18 });
+      assert.equal(await page.eval(() => localStorage.getItem('office.notifySettings')), null, 'tanpa pengaturan tersimpan');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('🔔 pengaturan: dialog (klik kanan / Ctrl+P), tersimpan, jam tenang membisukan, izin dikecualikan, volume, tes suara', async () => {
+      await freshApp({ 'office.notify': '1' });
+      page.clearProblems();
+      await page.eval(stubSoundAndNotifications);
+      if (vp.mobile) {
+        // the 🔔 button is not in the phone's top bar: the palette is the way in
+        await paletteType(page, 'pengaturan notifikasi');
+        await page.waitFor(() => (document.querySelector('#palette-list .pal-opt.active .pal-label')?.textContent ?? '') === 'Pengaturan notifikasi', { timeoutMs: 2000, message: 'aksi di palet' });
+        await page.press('Enter');
+      } else {
+        await page.eval(() => document.querySelector('#btn-notify').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })));
+      }
+      await page.waitFor(() => !document.querySelector('#notify-modal').hidden, { timeoutMs: 2000, message: 'dialog notifikasi terbuka' });
+      const form = await page.eval(() => ({
+        on: document.querySelector('#ns-on').checked,
+        events: [...document.querySelectorAll('.ns-table input')].map((i) => i.checked),
+        quiet: document.querySelector('#ns-quiet').checked,
+        timesDisabled: document.querySelector('#ns-from').disabled && document.querySelector('#ns-to').disabled,
+        allowAsk: document.querySelector('#ns-quiet-ask').checked,
+        fav: document.querySelector('#ns-fav').checked,
+        volume: document.querySelector('#ns-volume').value,
+        labelled: [...document.querySelectorAll('#notify-form input')].every((i) => i.getAttribute('aria-label') || i.closest('label') || document.querySelector(`label[for="${i.id}"]`)),
+        focusInside: document.querySelector('#notify-modal').contains(document.activeElement),
+      }));
+      assert.deepEqual(form, { on: true, events: [true, true, true, true, true, true], quiet: false, timesDisabled: true, allowAsk: true, fav: false, volume: '100', labelled: true, focusInside: true });
+      assert.equal(await page.eval(horizontalOverflow), null, 'dialog tanpa scroll horizontal');
+      assert.deepEqual(await page.eval(unnamedButtons, '#notify-modal'), []);
+      assert.equal(await page.eval(() => document.querySelector('.notify-card').scrollWidth <= document.querySelector('.notify-card').clientWidth + 1), true, 'isi dialog muat');
+
+      // Selesai: no sound; quiet hours around "now"; volume 50
+      const saved = await page.eval(() => {
+        const pad = (n) => String(n).padStart(2, '0');
+        const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        const now = Date.now();
+        const set = (sel, value) => {
+          const el = document.querySelector(sel);
+          el.value = value;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        document.querySelector('#ns-done-sound').click();
+        document.querySelector('#ns-quiet').click();
+        set('#ns-from', hhmm(new Date(now - 3600_000)));
+        set('#ns-to', hhmm(new Date(now + 3600_000)));
+        set('#ns-volume', '50');
+        return JSON.parse(localStorage.getItem('office.notifySettings'));
+      });
+      assert.deepEqual(saved.events.done, { popup: true, sound: false });
+      assert.equal(saved.quiet.enabled, true);
+      assert.equal(saved.volume, 50);
+      assert.equal(await page.eval(() => document.querySelector('#ns-volume-val').textContent), '50%');
+
+      await fire('done', 'away');
+      await fire('error', 'away');
+      assert.deepEqual(await counts(), { osc: 0, notes: 0, peak: 0 }, 'jam tenang: tanpa suara, tanpa pop-up');
+      await fire('ask', 'away');
+      assert.deepEqual(await counts(), { osc: 3, notes: 1, peak: 0.09 }, 'izin tetap diberitahu, dengan volume 50%');
+      await page.eval(() => document.querySelector('#ns-quiet-ask').click());
+      await fire('ask', 'away');
+      assert.deepEqual(await counts(), { osc: 3, notes: 1, peak: 0.09 }, 'tanpa pengecualian: izin juga dibisukan');
+
+      // ▶ Tes suara plays at the slider's volume (quiet hours don't apply to a test)
+      await page.eval(() => document.querySelector('#ns-test').click());
+      assert.equal((await counts()).osc, 5);
+
+      // same start and end: an error, the stored times stay
+      const prevQuiet = await page.eval(() => JSON.parse(localStorage.getItem('office.notifySettings')).quiet);
+      await page.eval(() => {
+        const to = document.querySelector('#ns-to');
+        to.value = document.querySelector('#ns-from').value;
+        to.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      assert.match(await page.eval(() => document.querySelector('#ns-quiet-error').textContent), /tidak boleh sama/);
+      assert.equal(await page.eval(() => document.querySelector('#ns-to').getAttribute('aria-invalid')), 'true');
+      const afterErr = await page.eval(() => JSON.parse(localStorage.getItem('office.notifySettings')).quiet);
+      assert.deepEqual([afterErr.from, afterErr.to, afterErr.enabled], [prevQuiet.from, prevQuiet.to, prevQuiet.enabled]);
+
+      // favourites only: the test project is not a favourite
+      await page.eval(() => document.querySelector('#ns-quiet').click()); // quiet off (also clears the error)
+      assert.equal(await page.eval(() => document.querySelector('#ns-quiet-error').textContent), '');
+      await page.eval(() => document.querySelector('#ns-fav').click());
+      await fire('error', 'away');
+      assert.deepEqual(await counts(), { osc: 5, notes: 1, peak: 0.09 }, 'bukan favorit: diam');
+      await page.press('Escape');
+
+      // survives a reload, shown again in the dialog
+      await openApp(page, `#${projectId}`);
+      const restored = await page.eval(async () => {
+        (await import('/js/features/notify.js')).openNotifySettings();
+        return {
+          doneSound: document.querySelector('#ns-done-sound').checked,
+          askSound: document.querySelector('#ns-ask-sound').checked,
+          fav: document.querySelector('#ns-fav').checked,
+          allowAsk: document.querySelector('#ns-quiet-ask').checked,
+          volume: document.querySelector('#ns-volume').value,
+        };
+      });
+      assert.deepEqual(restored, { doneSound: false, askSound: true, fav: true, allowAsk: false, volume: '50' });
+
+      // ↺ back to the defaults
+      await page.eval(() => document.querySelector('#ns-reset').click());
+      assert.equal(await page.eval(() => document.querySelector('#ns-done-sound').checked && !document.querySelector('#ns-fav').checked && document.querySelector('#ns-volume').value === '100'), true);
+      await page.press('Escape');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('🎤 deteksi fitur: muncul hanya bila API ada, konteks aman, dan bukan hanya-lihat', async () => {
+      await freshApp();
+      page.clearProblems();
+      const shown = () =>
+        page.eval(async () => {
+          (await import('/js/features/voice.js')).renderVoice();
+          const b = document.querySelector('#btn-voice');
+          return !b.hidden && b.getClientRects().length > 0 && !document.querySelector('#voice-lang-ctl').hidden;
+        });
+      await page.eval(stubSpeech);
+      assert.equal(await shown(), true, 'API ada + localhost (secure context)');
+      assert.equal(await page.eval(horizontalOverflow), null, 'kotak pesan dengan 🎤 tanpa overflow');
+      await page.eval(() => {
+        window.__saved = [window.SpeechRecognition, window.webkitSpeechRecognition];
+        window.SpeechRecognition = undefined;
+        window.webkitSpeechRecognition = undefined;
+      });
+      assert.equal(await shown(), false, 'tanpa API: tersembunyi');
+      await page.eval(() => void ([window.SpeechRecognition, window.webkitSpeechRecognition] = window.__saved));
+      // window.isSecureContext is an own accessor of the global: overridden, then put back exactly as it was
+      await page.eval(() => {
+        window.__secureDesc = Object.getOwnPropertyDescriptor(window, 'isSecureContext');
+        Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true });
+      });
+      assert.equal(await shown(), false, 'http:// biasa (bukan secure context): tersembunyi');
+      await page.eval(() => void Object.defineProperty(window, 'isSecureContext', window.__secureDesc));
+      assert.equal(await page.eval(() => window.isSecureContext), true);
+      await page.eval(async () => ((await import('/js/core/state.js')).state.readOnly = true));
+      assert.equal(await shown(), false, 'WiFi hanya-lihat: tersembunyi');
+      await page.eval(async () => ((await import('/js/core/state.js')).state.readOnly = false));
+      assert.equal(await shown(), true);
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('🎤 interim tampil live, hasil final masuk di posisi kursor, klik/Esc berhenti, error → toast', async () => {
+      await freshApp();
+      page.clearProblems();
+      await page.eval(stubSpeech);
+      await page.eval(async () => (await import('/js/features/voice.js')).renderVoice());
+      await typeInPrompt(page, 'halo dunia');
+      await page.eval(() => document.querySelector('#prompt').setSelectionRange(5, 5)); // after "halo "
+      await page.click('#btn-voice');
+      const rec = await page.eval(() => ({
+        started: window.__rec?.started === true,
+        lang: window.__rec.lang,
+        interim: window.__rec.interimResults,
+        pressed: document.querySelector('#btn-voice').getAttribute('aria-pressed'),
+        label: document.querySelector('#btn-voice').getAttribute('aria-label'),
+        pulsing: getComputedStyle(document.querySelector('#btn-voice')).animationName,
+      }));
+      assert.deepEqual(rec, { started: true, lang: 'id-ID', interim: true, pressed: 'true', label: 'Hentikan input suara', pulsing: 'voice-pulse' });
+
+      await page.eval(() => window.__speak('apa', false));
+      assert.match(await page.eval(() => document.querySelector('#voice-live').textContent), /Mendengarkan… apa$/);
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), 'halo dunia', 'interim belum masuk kotak');
+      await page.eval(() => window.__speak('apa kabar', true));
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), 'halo apa kabar dunia', 'final di posisi kursor, teks lama utuh');
+      await page.eval(() => window.__speak(' <b>tes</b>', true)); // the next phrase continues at the cursor
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), 'halo apa kabar <b>tes</b> dunia');
+      await page.eval(() => window.__speak('<img src=x onerror="window.__xss=1">', false));
+      assert.equal(await page.eval(() => document.querySelector('#voice-live img')), null, 'interim tidak di-parse sebagai HTML');
+
+      // Esc stops recording (and nothing else)
+      await page.press('Escape');
+      await page.waitFor(() => document.querySelector('#btn-voice').getAttribute('aria-pressed') === 'false', { timeoutMs: 2000, message: 'Esc menghentikan' });
+      assert.equal(await page.eval(() => window.__rec.stopped), true);
+      assert.equal(await page.eval(() => document.querySelector('#voice-live').textContent), '');
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), 'halo apa kabar <b>tes</b> dunia', 'Esc tidak mengosongkan kotak');
+
+      // click toggles on and off; English remembered for the next start
+      await page.eval(() => {
+        const sel = document.querySelector('#voice-lang');
+        sel.value = 'en-US';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      assert.equal(await page.eval(() => localStorage.getItem('office.voiceLang')), 'en-US');
+      await page.click('#btn-voice');
+      assert.equal(await page.eval(() => window.__recs.length === 2 && window.__rec.lang), 'en-US');
+      await page.click('#btn-voice');
+      await page.waitFor(() => document.querySelector('#btn-voice').getAttribute('aria-pressed') === 'false', { timeoutMs: 2000, message: 'klik lagi menghentikan' });
+
+      // the browser ends it on its own (silence): back to idle
+      await page.eval(() => document.querySelector('#btn-voice').click());
+      await page.eval(() => window.__rec.onend());
+      assert.equal(await page.eval(() => document.querySelector('#btn-voice').getAttribute('aria-pressed')), 'false', 'berhenti otomatis saat end');
+
+      // errors: a short Indonesian toast
+      await page.eval(() => document.querySelector('#btn-voice').click());
+      await page.eval(() => window.__rec.onerror({ error: 'not-allowed' }));
+      await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => /Akses mikrofon ditolak/.test(t.textContent)), { timeoutMs: 2000, message: 'toast izin mikrofon' });
+      await page.eval(() => window.__rec.onerror({ error: 'no-speech' }));
+      await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => /Tidak terdengar suara/.test(t.textContent)), { timeoutMs: 2000, message: 'toast tanpa suara' });
+      await page.eval(() => window.__rec.onend());
+
+      // Alt+M toggles
+      const altM = () => page.eval(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', code: 'KeyM', altKey: true, bubbles: true })));
+      await altM();
+      assert.equal(await page.eval(() => document.querySelector('#btn-voice').getAttribute('aria-pressed')), 'true', 'Alt+M mulai');
+      await altM();
+      await page.waitFor(() => document.querySelector('#btn-voice').getAttribute('aria-pressed') === 'false', { timeoutMs: 2000, message: 'Alt+M berhenti' });
+      // a held key (repeat) and an open dialog: Alt+M does nothing
+      await page.eval(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', code: 'KeyM', altKey: true, repeat: true, bubbles: true })));
+      assert.equal(await page.eval(() => document.querySelector('#btn-voice').getAttribute('aria-pressed')), 'false', 'Alt+M repeat diabaikan');
+      await page.eval(() => (document.querySelector('#help-modal').hidden = false));
+      await altM();
+      assert.equal(await page.eval(() => document.querySelector('#btn-voice').getAttribute('aria-pressed')), 'false', 'Alt+M diabaikan saat dialog terbuka');
+      await page.eval(() => (document.querySelector('#help-modal').hidden = true));
+      assert.equal(await page.eval(() => window.__xss), undefined);
+      await page.eval(() => localStorage.removeItem('office.voiceLang'));
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('🎤 Esc saat merekam: hanya berhenti merekam — tanpa /stop di giliran yang berjalan, tanpa Esc-Esc (kosongkan / Rewind)', async () => {
+      await freshApp();
+      page.clearProblems();
+      await page.eval(stubSpeech);
+      await page.eval(async () => {
+        (await import('/js/features/voice.js')).renderVoice();
+        window.__posts = [];
+        const orig = window.fetch;
+        window.fetch = (url, opts) => (window.__posts.push(String(url)), orig(url, opts));
+        const { state } = await import('/js/core/state.js');
+        window.__savedStatus = state.statuses[state.active];
+        state.statuses[state.active] = { ...(window.__savedStatus ?? {}), busy: true }; // a turn is running
+      });
+      const stopped = () => page.waitFor(() => document.querySelector('#btn-voice').getAttribute('aria-pressed') === 'false', { timeoutMs: 2000, message: 'rekaman berhenti' });
+      await page.eval(() => document.querySelector('#btn-voice').click());
+      await page.press('Escape');
+      await stopped();
+      await sleep(300);
+      assert.deepEqual(await page.eval(() => window.__posts.filter((u) => /\/stop$/.test(u))), [], 'Esc tidak menghentikan giliran');
+
+      // idle: two Esc in a row (each while recording) neither clear the box nor open Rewind
+      await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        state.statuses[state.active] = window.__savedStatus;
+      });
+      await typeInPrompt(page, 'jangan dihapus');
+      await page.eval(() => document.querySelector('#btn-voice').click());
+      await page.press('Escape');
+      await stopped();
+      await page.eval(() => document.querySelector('#btn-voice').click());
+      await page.press('Escape');
+      await stopped();
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), 'jangan dihapus');
+      assert.equal(await page.eval(() => document.querySelector('#rewind-modal').hidden), true, 'Rewind tidak terbuka');
+      assert.deepEqual(await page.eval(() => window.__posts.filter((u) => /\/stop$/.test(u))), []);
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('🎤 hasil final yang datang setelah pindah project tidak masuk ke kotak pesan project lain', async () => {
+      await freshApp();
+      const dir = path.join(TMP, vp.mobile ? 'kasir-hp' : 'kasir-laptop'); // outside the projects root: only this test sees it
+      mkdirSync(dir, { recursive: true });
+      const other = await page.eval(async (d) => {
+        const token = document.querySelector('meta[name="office-token"]').content;
+        const r = await fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify({ path: d }) });
+        return (await r.json()).id;
+      }, dir);
+      assert.ok(other, 'project kedua dibuat');
+      page.clearProblems();
+      await page.eval(stubSpeech);
+      await page.eval(async () => (await import('/js/features/voice.js')).renderVoice());
+      await typeInPrompt(page, 'draf toko');
+      await page.eval(() => document.querySelector('#btn-voice').click());
+      await page.eval(() => window.__speak('masih', false));
+      await page.eval(async (id) => (await import('/js/features/picker.js')).selectProject(id), other);
+      await page.waitFor(() => document.querySelector('#btn-voice').getAttribute('aria-pressed') === 'false' && document.querySelector('#voice-live').textContent === '', { timeoutMs: 2000, message: 'pindah project menghentikan rekaman' });
+      assert.equal(await page.eval(() => window.__rec.stopped), true);
+      await page.eval(() => window.__speak('kata terlambat', true)); // the engine delivers the last words after stop
+      assert.doesNotMatch(await page.eval(() => document.querySelector('#prompt').value), /kata terlambat/, 'tidak masuk ke project lain');
+      await page.eval(async (id) => (await import('/js/features/picker.js')).selectProject(id), projectId);
+      assert.doesNotMatch(await page.eval(() => document.querySelector('#prompt').value), /kata terlambat/);
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('🔔 jam tenang tidak valid saat diaktifkan: saklar kembali mati, jam tetap bisa diperbaiki', async () => {
+      await freshApp({ 'office.notify': '1' });
+      page.clearProblems();
+      await page.eval(async () => (await import('/js/features/notify.js')).openNotifySettings());
+      const ui = () =>
+        page.eval(() => ({
+          checked: document.querySelector('#ns-quiet').checked,
+          error: document.querySelector('#ns-quiet-error').textContent !== '',
+          timesEnabled: !document.querySelector('#ns-from').disabled && !document.querySelector('#ns-to').disabled,
+          stored: JSON.parse(localStorage.getItem('office.notifySettings') ?? 'null')?.quiet?.enabled ?? false,
+        }));
+      const change = (sel, value) =>
+        page.eval(
+          (s, v) => {
+            const el = document.querySelector(s);
+            el.value = v;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          },
+          sel,
+          value,
+        );
+      await page.eval(() => document.querySelector('#ns-quiet').click()); // on with the default 22:00–07:00
+      await change('#ns-to', '22:00'); // same as the start: refused, stays on with the stored times
+      assert.deepEqual(await ui(), { checked: true, error: true, timesEnabled: true, stored: true });
+      await page.eval(() => document.querySelector('#ns-quiet').click()); // off: no validation, saved off
+      assert.deepEqual(await ui(), { checked: false, error: false, timesEnabled: false, stored: false });
+      await page.eval(() => document.querySelector('#ns-quiet').click()); // on again with 22:00–22:00: refused
+      assert.deepEqual(await ui(), { checked: false, error: true, timesEnabled: true, stored: false }, 'saklar kembali mati, jam bisa diperbaiki');
+      await change('#ns-to', '06:00');
+      await page.eval(() => document.querySelector('#ns-quiet').click());
+      assert.deepEqual(await ui(), { checked: true, error: false, timesEnabled: true, stored: true });
+      await page.press('Escape');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    if (!vp.mobile) {
+      test('🔔 tekan lama (sentuh) membuka pengaturan tanpa ikut mematikan; ketuk singkat tetap on/off', async () => {
+        await freshApp({ 'office.notify': '1' });
+        page.clearProblems();
+        await page.eval(stubSoundAndNotifications);
+        const pointer = (type) =>
+          page.eval((t) => {
+            const btn = document.querySelector('#btn-notify');
+            const r = btn.getBoundingClientRect();
+            btn.dispatchEvent(new PointerEvent(t, { pointerType: 'touch', clientX: r.left + 5, clientY: r.top + 5, bubbles: true }));
+          }, type);
+        await pointer('pointerdown');
+        await sleep(650);
+        assert.equal(await page.eval(() => document.querySelector('#notify-modal').hidden), false, 'tekan lama membuka dialog');
+        await pointer('pointerup');
+        await page.eval(() => document.querySelector('#btn-notify').click()); // the click that ends the press
+        assert.equal(await page.eval(() => localStorage.getItem('office.notify')), '1', '🔔 tetap aktif');
+        await page.press('Escape');
+        await pointer('pointerdown');
+        await sleep(80);
+        await pointer('pointerup');
+        await page.eval(() => document.querySelector('#btn-notify').click());
+        await page.waitFor(() => localStorage.getItem('office.notify') === '0', { timeoutMs: 2000, message: 'ketuk singkat mematikan 🔔' });
+        assert.equal(await page.eval(() => document.querySelector('#notify-modal').hidden), true);
+        assert.deepEqual(realProblems(page), []);
+      });
+    }
+  });
+}

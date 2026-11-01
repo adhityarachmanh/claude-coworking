@@ -155,14 +155,26 @@
             <label class="switch" title="Claude mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.">
               <input id="team-mode" type="checkbox" checked /> Mode tim
             </label>
+            <!-- 🎤 input suara (features/voice.js): shown together with the 🎤 button, remembered per browser -->
+            <label id="voice-lang-ctl" class="ctl" title="Bahasa input suara 🎤 (disimpan di browser ini)" hidden>
+              <span>Suara</span>
+              <select id="voice-lang">
+                <option value="id-ID">Indonesia</option>
+                <option value="en-US">English</option>
+              </select>
+            </label>
           </div>
           <div id="suggest" class="suggest" hidden></div>
+          <!-- 🎤 what is being heard (interim), before it lands in the box at the cursor -->
+          <div id="voice-live" class="voice-live" role="status" aria-live="polite"></div>
           <div id="attachments" class="attachments" hidden></div>
           <div class="input">
             <button id="btn-attach" class="ghost icon attach" title="Lampirkan gambar (atau paste / drag ke kotak ini)" aria-label="Lampirkan gambar">📎</button>
             <input id="file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
             <button id="btn-template" class="ghost icon attach" type="button" title="Template prompt (/t)" aria-label="Template prompt" aria-haspopup="dialog">⚡</button>
             <textarea id="prompt" rows="3" aria-label="Pesan untuk tim" placeholder="Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )"></textarea>
+            <!-- 🎤 hidden unless the Web Speech API exists in a secure context (HTTPS / localhost) and the page may act -->
+            <button id="btn-voice" class="ghost icon attach voice-btn" type="button" title="Input suara (Alt+M)" aria-label="Mulai input suara" aria-pressed="false" aria-keyshortcuts="Alt+M" hidden>🎤</button>
             <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)">■ Stop</button>
             <button id="btn-queue-add" class="ghost icon attach queue-add" type="button" title="Tambah ke 📋 Antrian, dijalankan saat tim tidak sibuk (Alt+Enter). Kotak kosong: buka antrian" aria-label="Tambah ke antrian">📋</button>
             <button id="btn-send" class="primary">Kirim</button>
@@ -234,6 +246,7 @@
               <tr><td><kbd>Esc</kbd> <kbd>Esc</kbd></td><td>Kosongkan kotak pesan; kalau sudah kosong, buka <b>Rewind</b>: kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu</td></tr>
               <tr><td><kbd>Ctrl</kbd> <kbd>R</kbd></td><td>Cari di riwayat prompt</td></tr>
               <tr><td><kbd>Ctrl</kbd> <kbd>B</kbd></td><td>Pindahkan perintah/agent yang sedang jalan ke latar belakang</td></tr>
+              <tr><td><kbd>Alt</kbd> <kbd>M</kbd></td><td>🎤 Input suara: mulai / berhenti (juga tombol 🎤 di kotak pesan; <kbd>Esc</kbd> berhenti). Teks masuk di posisi kursor. Butuh HTTPS atau localhost</td></tr>
               <tr><td><code>/clear</code> <code>/model</code> <code>/effort</code> <code>/resume</code></td><td>Sesi baru · ganti model · ganti effort · riwayat sesi</td></tr>
               <tr><td><code>/rewind</code> <code>/mcp</code> <code>/tasks</code> <code>/memory</code></td><td>Rewind · server MCP (status, login) · tugas latar · buka CLAUDE.md</td></tr>
               <tr><td><code>/usage</code> <code>/context</code> <code>/compact</code> <code>/rename</code> …</td><td>Command Claude Code lain jalan seperti di terminal; ketik <kbd>/</kbd> untuk daftar lengkapnya</td></tr>
@@ -257,6 +270,7 @@
               <li><b>🕘 Riwayat sesi</b> melanjutkan percakapan lama, termasuk yang dimulai di terminal. Menu <b>⋯</b> menyalin perintah untuk melanjutkan sesi web di terminal.</li>
               <li>Sesi yang kamu jalankan di terminal (CLI) ikut tampil live di sini.</li>
               <li>Tandai project yang sering dipakai dengan <b>★</b> di daftar project supaya selalu di atas.</li>
+              <li><b>🔔 Pengaturan notifikasi</b> (per jenis kejadian, jam tenang, hanya project favorit, volume): buka palet <kbd>Ctrl</kbd> <kbd>P</kbd> (di HP: tombol 🔎 di bawah) → <i>Pengaturan notifikasi</i>. Di laptop juga lewat klik kanan 🔔 atau ⚙ Pengaturan.</li>
               <li>Klik kartu anggota tim di bawah kantor untuk <b>mengganti nama</b> mereka.</li>
               <li><b>📱 Buka di HP</b>: scan QR-nya, lalu pilih <i>Add to Home Screen</i> agar Adhit Office tampil seperti aplikasi. Lewat WiFi HP hanya bisa melihat; lewat Tailscale bisa mengirim perintah.</li>
             </ul>
@@ -496,6 +510,7 @@
           <button type="button" id="btn-roster" class="ghost team-names-btn" title="Pilih role bawaan yang punya meja di kantor">👥 Kelola tim (role aktif)</button>
           <button type="button" id="btn-team-names" class="ghost team-names-btn">✏️ Ganti nama anggota tim</button>
           <button type="button" id="btn-permissions" class="ghost team-names-btn" title="Aturan allow / ask / deny Claude Code untuk project yang sedang dibuka">🛡️ Aturan izin project ini</button>
+          <button type="button" id="btn-notify-settings" class="ghost team-names-btn" aria-haspopup="dialog" title="Per jenis kejadian, jam tenang, hanya project favorit, volume (disimpan di browser ini)">🔔 Pengaturan notifikasi</button>
           <hr />
           <section class="quota-alerts" aria-labelledby="quota-title" aria-describedby="quota-desc">
             <b id="quota-title">⏳ Peringatan kuota</b>
@@ -550,6 +565,52 @@
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
           <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>
           <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- 🔔 Pengaturan notifikasi (features/notify.js): per device (localStorage), also on a phone (Ctrl+P / 🔎) -->
+    <div id="notify-modal" class="modal" hidden>
+      <div class="modal-card notify-card" role="dialog" aria-modal="true" aria-labelledby="notify-title" aria-describedby="notify-desc">
+        <div class="modal-head"><b id="notify-title">🔔 Pengaturan notifikasi</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <form id="notify-form" class="notify-form" novalidate>
+          <label class="switch big"><input id="ns-on" type="checkbox" /> Aktifkan notifikasi &amp; suara di perangkat ini</label>
+          <p id="notify-desc" class="muted small">Muncul saat kamu di tab/aplikasi lain atau di project lain; permintaan izin tetap berbunyi walau sedang kamu lihat. Disimpan di browser ini.</p>
+          <p id="ns-perm" class="muted small"></p>
+          <fieldset class="ns-group">
+            <legend>Per jenis kejadian</legend>
+            <table class="ns-table">
+              <thead><tr><th scope="col">Kejadian</th><th scope="col">Notifikasi</th><th scope="col">Suara</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">✋ Minta izin</th><td><input id="ns-ask-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Minta izin" /></td><td><input id="ns-ask-sound" type="checkbox" aria-label="Suara untuk Minta izin" /></td></tr>
+                <tr><th scope="row">✓ Selesai</th><td><input id="ns-done-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Selesai" /></td><td><input id="ns-done-sound" type="checkbox" aria-label="Suara untuk Selesai" /></td></tr>
+                <tr><th scope="row">■ Berhenti / error</th><td><input id="ns-error-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Berhenti / error" /></td><td><input id="ns-error-sound" type="checkbox" aria-label="Suara untuk Berhenti / error" /></td></tr>
+              </tbody>
+            </table>
+          </fieldset>
+          <fieldset class="ns-group">
+            <legend>🌙 Jam tenang</legend>
+            <label class="switch"><input id="ns-quiet" type="checkbox" aria-describedby="ns-quiet-desc" /> Senyapkan pada jam tertentu</label>
+            <div class="ns-times">
+              <label for="ns-from">Dari</label>
+              <input id="ns-from" type="time" step="60" required aria-describedby="ns-quiet-error ns-quiet-desc" />
+              <label for="ns-to">sampai</label>
+              <input id="ns-to" type="time" step="60" required aria-describedby="ns-quiet-error ns-quiet-desc" />
+            </div>
+            <p id="ns-quiet-error" class="field-error" role="alert"></p>
+            <label class="switch wrap"><input id="ns-quiet-ask" type="checkbox" /> Izin tetap diberitahu saat jam tenang</label>
+            <p id="ns-quiet-desc" class="muted small">Tanpa suara dan tanpa pop-up selama jam tenang. Jam lokal perangkat ini, boleh melewati tengah malam (misalnya 22:00–07:00).</p>
+          </fieldset>
+          <label class="switch wrap"><input id="ns-fav" type="checkbox" /> Hanya project favorit ★</label>
+          <div class="ns-volume">
+            <label for="ns-volume">🔊 Volume</label>
+            <input id="ns-volume" type="range" min="0" max="100" step="5" />
+            <output id="ns-volume-val" for="ns-volume" aria-hidden="true">100%</output>
+            <button type="button" id="ns-test" class="ghost">▶ Tes suara</button>
+          </div>
+          <div class="ns-actions">
+            <button type="button" id="ns-reset" class="ghost">↺ Kembalikan bawaan</button>
+          </div>
         </form>
       </div>
     </div>

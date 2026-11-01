@@ -43,6 +43,7 @@ import { initTasks } from './features/tasks.js';
 import { initTeam, renderTeam } from './features/team.js';
 import { initTemplates } from './features/templates.js';
 import { initTheme } from './features/theme.js';
+import { initVoice } from './features/voice.js';
 import { initMobileNav, initPanelResizer, initTabs } from './ui/layout.js';
 import { initModals } from './ui/modals.js';
 import { initShortcuts } from './ui/shortcuts.js';
@@ -79,6 +80,7 @@ initPromptHistory();
 initDraft();
 initQueue(); // 📋 Antrian; before initComposerControls: its Alt+Enter on #prompt must win over Enter = send
 initComposerControls();
+initVoice(); // 🎤 Input suara; its capture-phase Esc (while recording) runs after ui/shortcuts.js closes dialogs
 initTemplates(); // ⚡ Template picker (also opened by /t from the composer)
 initTabs();
 initRewind();

@@ -13,6 +13,7 @@ import { fillComposer } from './composer.js';
 import { exportActiveSession, openSearch } from './conversations.js';
 import { openFile } from './file-viewer.js';
 import { openMcp } from './mcp.js';
+import { openNotifySettings } from './notify.js';
 import { openProjects, selectProject } from './picker.js';
 import { openRewind } from './rewind.js';
 import { openRoster } from './roster.js';
@@ -20,6 +21,7 @@ import { openSessions } from './sessions.js';
 import { slashCatalog } from './suggest.js';
 import { openTasks } from './tasks.js';
 import { applyTheme } from './theme.js';
+import { toggleVoice, voiceAvailable, voiceRecording } from './voice.js';
 
 const RECENT_KEY = 'office.palette.recent';
 const RECENT_MAX = 6;
@@ -161,6 +163,8 @@ function buildItems() {
   add({ id: 'chat:export-session', group: 'chat', icon: '⬇', label: 'Export sesi ke Markdown (.md)', hint: 'Dari transcript Claude Code', kbd: '/export', disabled: needProject ?? (st.sessionId ? null : 'Belum ada sesi'), keywords: 'export download unduh markdown', run: () => exportActiveSession() });
   add({ id: 'chat:export-chat', group: 'chat', icon: '⬇', label: 'Export chat yang tampil (.md)', disabled: (state.chats[state.active] ?? []).length ? null : 'Belum ada percakapan', keywords: 'export download unduh', run: click('#more-menu [data-more="export"]') });
   add({ id: 'chat:search', group: 'chat', icon: '🔎', label: 'Cari percakapan', hint: 'Di semua sesi project', kbd: '/search', disabled: needProject, keywords: 'search find cari riwayat transcript', run: () => openSearch() });
+  const noVoice = state.active === DEMO_ID ? 'Input suara tidak tersedia di demo' : !window.isSecureContext ? 'Butuh HTTPS atau localhost' : 'Browser ini tidak mendukung input suara';
+  add({ id: 'chat:voice', group: 'chat', icon: '🎤', label: voiceRecording() ? 'Hentikan input suara' : 'Input suara', hint: 'Ketik dengan suara di kotak pesan', kbd: 'Alt M', disabled: state.active === DEMO_ID ? noVoice : (needProject ?? ro ?? (voiceAvailable() ? null : noVoice)), keywords: 'voice mic mikrofon suara dikte speech', run: () => toggleVoice() });
 
   const dialogs = [
     ['projects', '📁', 'Ganti project', 'Ctrl K', null, () => openProjects(), 'switch project picker'],
@@ -171,6 +175,7 @@ function buildItems() {
     ['templates', '⚡', 'Template prompt', '/t', needProject ?? ro, () => localCommand('/template'), 'template snippet'],
     ['roster', '👥', 'Kelola tim', '/team', null, () => openRoster(), 'team tim role roster anggota meja kelola'],
     ['settings', '⚙', 'Pengaturan', '', laptopOnly, click('#btn-settings'), 'settings config preferences'],
+    ['notify', '🔔', 'Pengaturan notifikasi', '', null, () => openNotifySettings(), 'notification notifikasi suara sound jam tenang quiet volume favorit'],
     ['account', '👤', 'Akun Claude', '', null, click('#btn-account'), 'account login kuota quota'],
     ['report', '📊', 'Laporan penggunaan token', '', null, click('#btn-report'), 'report usage token pdf'],
     ['phone', '📱', 'Buka di HP', '', $('#btn-phone')?.hidden ? laptopOnly ?? 'Tidak tersedia' : null, click('#btn-phone'), 'phone mobile qr hp'],

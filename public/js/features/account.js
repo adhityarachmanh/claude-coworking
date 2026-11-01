@@ -85,7 +85,7 @@ export function onAccountAlert({ action, device, email }) {
   if (!state.local) return;
   const text = action === 'logout' ? `HP "${device}" me-logout Claude Code${email ? ` (${email})` : ''}.` : `HP "${device}" memulai login/ganti akun Claude Code.`;
   toast(text, 'warn');
-  chime('ask');
+  chime('ask', 100); // a security alert: always full volume, whatever the 🔔 volume setting
   if ('Notification' in window && Notification.permission === 'granted') new Notification('Adhit Office: akun Claude', { body: text, tag: 'account-alert' });
 }
 
