@@ -1,5 +1,5 @@
 // 👥 Kelola tim: the built-in role catalog, team validation, role mapping per active team (with fallbacks),
-// the subagents / Lead prompt per team, and the office layout for 12 (unchanged), 16 and 17 desks.
+// the subagents / Lead prompt per team, and the fixed office floor plan (desks per department, reachability).
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { afterEach, test } from 'node:test';
@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { Scene } from '../public/js/office/scene.js';
 import { CAST } from '../public/js/office/cast.js';
 import { CLASSIC_TEAM as CLIENT_CLASSIC, DEFAULT_TEAM, defaultTeam, resolveRole as clientResolve, roster, setRoster, teamOrder } from '../public/js/office/roster.js';
-import { DESKS, DOOR, H, W, findPath, layoutDesks, room } from '../public/js/office/world.js';
+import { CAT_SPOTS, DESKS, DOOR, H, SIGNS, SLOTS, SOFA_SEATS, SPOTS, W, findPath, isWalkable, layoutDesks, room } from '../public/js/office/world.js';
 import {
   CATALOG_IDS, CLASSIC_TEAM, COMMAND_RULES, DEFAULT_ENABLED, MAX_ACTIVE_ROLES, ROLE_CATALOG, TeamConfigError, activeAgents, normalizeEnabled, publicCatalog, resolveRole, storedEnabled, teamPrompt,
 } from '../src/role-catalog.js';
@@ -196,29 +196,48 @@ test('Lead prompt: the classic 12-role team keeps its prompt (plus the command r
 
 const deskBox = (d) => [d.x, d.y - 12, d.w, 30];
 const inside = (p, [x, y, w, h]) => p.x >= x && p.x < x + w && p.y >= y && p.y < y + h;
+/** The fixed floor plan (world.js header): every role's desk, whatever the team. */
+const FLOOR = {
+  pm: [320, 72], architect: [408, 72], // private glass offices
+  ba: [56, 88], 'ui-ux': [112, 88], writer: [168, 88], // Produk & Desain
+  frontend: [24, 192], mobile: [80, 192], backend: [136, 192], dba: [192, 192], data: [248, 192], // Engineering
+  qa: [336, 192], reviewer: [392, 192], security: [448, 192], compliance: [504, 192], // Kualitas & Keamanan
+  devops: [40, 280], support: [96, 280], freelancer: [152, 280], // Ops & Support
+};
 
-test('layout: the classic 12 desks are exactly where they always were', () => {
-  setRoster({ enabled: [...CLIENT_CLASSIC], catalog: publicCatalog() });
-  layoutDesks(CLIENT_CLASSIC);
-  const expected = {
-    pm: [24, 76], ba: [88, 76], architect: [152, 76], 'ui-ux': [216, 76],
-    frontend: [24, 148], backend: [88, 148], dba: [152, 148], freelancer: [216, 148],
-    qa: [24, 220], security: [88, 220], writer: [152, 220], devops: [216, 220],
-  };
-  assert.deepEqual(Object.keys(DESKS), [...Object.keys(expected), 'claude'], 'same order too (drawing order)');
-  for (const [id, [x, y]] of Object.entries(expected)) assert.deepEqual([DESKS[id].x, DESKS[id].y, DESKS[id].seat.x, DESKS[id].seat.y], [x, y, x + 24, y + 34], id);
-  assert.deepEqual([W, room.h], [544, H]);
-  assert.equal(H, 288);
+test('layout: one fixed 640×344 floor; every role at its own department desk, whatever the team', () => {
+  assert.deepEqual([W, H, room.h], [640, 344, 344]);
+  assert.deepEqual(Object.keys(SLOTS).sort(), Object.keys(FLOOR).sort(), 'a desk for every catalog role');
+  for (const team of [ALL, [...CLIENT_CLASSIC], ['pm', 'qa', 'freelancer'], ALL.filter((r) => r !== 'compliance')]) {
+    setRoster({ enabled: team, catalog: publicCatalog() });
+    layoutDesks(team);
+    assert.deepEqual(Object.keys(DESKS).sort(), [...team, 'claude'].sort(), `${team.length} roles: only the active ones sit`);
+    for (const id of team) {
+      const [x, y] = FLOOR[id];
+      assert.deepEqual([DESKS[id].x, DESKS[id].y, DESKS[id].seat.x, DESKS[id].seat.y], [x, y, x + 24, y + 34], `${id} never moves`);
+      assert.equal(DESKS[id].prop, SLOTS[id].prop);
+    }
+    assert.equal(room.h, 344, 'the floor never grows or shrinks');
+    assert.deepEqual([DESKS.claude.x, DESKS.claude.y, DESKS.claude.seat.facing], [528, 92, 'down'], 'the Lead in the corner office');
+  }
+  // the desks are cloned: a scene changing one does not move the floor plan
+  DESKS.qa.x = 0;
+  assert.equal(SLOTS.qa.x, 336);
+  layoutDesks(ALL);
+  // no two desks (with their chairs) overlap
+  const all = Object.values(SLOTS);
+  for (const a of all) for (const b of all) if (a !== b) assert.ok(Math.abs(a.x - b.x) >= 56 || Math.abs(a.y - b.y) >= 56, `${a.x},${a.y} vs ${b.x},${b.y}`);
 });
 
 /** Every desk inside the room, each seat reachable from the door without walking through another desk. */
 function assertReachable() {
-  const boxes = Object.entries(DESKS).filter(([id]) => id !== 'claude').map(([, d]) => deskBox(d));
   for (const [id, d] of Object.entries(DESKS)) {
+    // empty desks are furniture too; the Lead's own desk is the one it walks around to reach its chair
+    const boxes = Object.entries(SLOTS).filter(([other]) => other !== id).map(([, s]) => deskBox(s));
     assert.ok(d.x >= 0 && d.x + d.w <= W && d.seat.y < room.h - 8, `${id} inside the room`);
     const path = findPath(DOOR, d.seat);
     assert.deepEqual(path.at(-1), { x: d.seat.x, y: d.seat.y }, `${id}: reaches its seat`);
-    if (d.y >= 292) assert.ok(path.length >= 2, `${id}: walks around the desks, not through them`);
+    assertOpenRoute(DOOR, path, id);
     // no straight leg crosses another desk
     let from = DOOR;
     for (const p of path) {
@@ -231,37 +250,95 @@ function assertReachable() {
   }
 }
 
-test('layout: 16 desks → a 4th row, a taller room, every desk inside and reachable', () => {
-  const sixteen = DEFAULT_TEAM.filter((id) => id !== 'compliance');
-  setRoster({ enabled: sixteen, catalog: publicCatalog() });
-  layoutDesks(sixteen);
-  assert.equal(room.h, 360);
-  assert.equal(Object.keys(DESKS).length, 17);
-  for (const id of ['mobile', 'data', 'support', 'reviewer']) assert.equal(DESKS[id].y, 292, `${id} in row 4`);
-  assert.equal(DESKS.compliance, undefined, 'Compliance switched off: no 5th row');
-  assertReachable();
-  // a smaller team keeps the room size; 13 desks need the 4th row
-  layoutDesks(['pm', 'qa', 'freelancer']);
-  assert.equal(room.h, 288);
-  assert.deepEqual(Object.keys(DESKS), ['pm', 'freelancer', 'qa', 'claude'], 'packed in desk order');
-  layoutDesks([...CLIENT_CLASSIC, 'reviewer']);
-  assert.equal(room.h, 360);
-  assert.deepEqual([DESKS.reviewer.x, DESKS.reviewer.y], [24, 292]);
-});
+/**
+ * Every leg of a route runs over open floor (findPath falls back to one straight hop when there is no route, which
+ * would cross a wall). The first and last few px may be inside a furniture cell: a seat tucked under its desk.
+ */
+function assertOpenRoute(from, path, label) {
+  const end = path.at(-1);
+  let a = from;
+  for (const b of path) {
+    const steps = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 2);
+    for (let i = 0; i <= steps; i++) {
+      const q = { x: a.x + ((b.x - a.x) * i) / steps || a.x, y: a.y + ((b.y - a.y) * i) / steps || a.y };
+      if (Math.hypot(q.x - from.x, q.y - from.y) < 12 || Math.hypot(q.x - end.x, q.y - end.y) < 12) continue;
+      assert.ok(isWalkable(q), `${label}: crosses a wall or furniture at ${q.x.toFixed(0)},${q.y.toFixed(0)}`);
+    }
+    a = b;
+  }
+}
 
-test('layout: all 17 catalog roles (the default team) → a 5th row, the room grows again, every desk reachable', () => {
+/** Every spot (errands, huddle, sofa, cat, visits, colleagues' desks) reachable from the door and from other seats. */
+function assertSpotsReachable() {
+  const targets = {
+    ...SPOTS,
+    ...Object.fromEntries(SOFA_SEATS.map((s, i) => [`sofa${i}`, s])),
+    ...Object.fromEntries(CAT_SPOTS.map((s, i) => [`cat${i}`, s])),
+    visit: DESKS.claude.visit,
+    ask: DESKS.claude.ask,
+    ...Object.fromEntries(Object.entries(DESKS).filter(([id]) => id !== 'claude').flatMap(([id, d]) => [
+      [`${id}:errand`, { x: d.seat.x + 16, y: d.seat.y + 4 }], // delegation / chat / report spot
+      [`${id}:ask`, { x: d.seat.x, y: d.seat.y + 8 }], // stands up to ask for approval
+    ])),
+  };
+  for (const [name, spot] of Object.entries(targets)) {
+    assert.ok(spot.x > 0 && spot.x < W && spot.y > 48 && spot.y < room.h, `${name} inside the floor`);
+    for (const from of [DOOR, DESKS.claude.seat, DESKS.qa.seat, DESKS.devops.seat, DESKS.pm.seat]) {
+      const path = findPath(from, spot);
+      assert.deepEqual(path.at(-1), { x: spot.x, y: spot.y }, `${name} from ${from.x},${from.y}`);
+      assertOpenRoute(from, path, `${name} from ${from.x},${from.y}`);
+    }
+  }
+}
+
+test('layout: the full team (17 desks + the Lead) — every desk and every spot reachable', () => {
   assert.equal(ALL.length, 17);
   setRoster({ enabled: ALL, catalog: publicCatalog() });
   layoutDesks(ALL);
-  assert.equal(room.h, 432);
   assert.equal(Object.keys(DESKS).length, 18);
-  assert.deepEqual([DESKS.compliance.x, DESKS.compliance.y, DESKS.compliance.prop], [24, 364, 'stamp'], 'Compliance opens row 5');
-  for (const id of ['mobile', 'data', 'support', 'reviewer']) assert.equal(DESKS[id].y, 292, `${id} stays in row 4`);
+  assert.deepEqual([DESKS.compliance.x, DESKS.compliance.y, DESKS.compliance.prop], [504, 192, 'stamp']);
   assertReachable();
-  // 13 desks with Compliance among them: still 4 rows (desks are packed in order)
-  layoutDesks([...CLIENT_CLASSIC, 'compliance']);
-  assert.equal(room.h, 360);
-  assert.deepEqual([DESKS.compliance.x, DESKS.compliance.y], [24, 292]);
+  assertSpotsReachable();
+});
+
+test('layout: a smaller team leaves desks empty in place; the paths stay the same', () => {
+  const sixteen = DEFAULT_TEAM.filter((id) => id !== 'compliance');
+  layoutDesks(sixteen);
+  assert.equal(DESKS.compliance, undefined, 'Compliance off: no desk of its own in DESKS…');
+  assert.deepEqual([SLOTS.compliance.x, SLOTS.compliance.y], [504, 192], '…its empty desk stays in the pod');
+  assertReachable();
+  const before = findPath(DOOR, DESKS.reviewer.seat);
+  layoutDesks(['pm', 'qa', 'freelancer']);
+  assert.deepEqual(Object.keys(DESKS), ['pm', 'freelancer', 'qa', 'claude'], 'catalog order');
+  assertReachable();
+  layoutDesks(ALL);
+  assert.deepEqual(findPath(DOOR, DESKS.reviewer.seat), before, 'the walk grid does not depend on the team');
+});
+
+test('layout: glass walls and cubicle partitions block, the door gaps let people through', () => {
+  layoutDesks(ALL);
+  const via = (path, x0, x1, y0, y1) => path.some((p, i) => {
+    const prev = path[i - 1];
+    if (!prev) return false;
+    // some point of this leg passes through the gap
+    for (let k = 0; k <= 10; k++) {
+      const x = prev.x + ((p.x - prev.x) * k) / 10;
+      const y = prev.y + ((p.y - prev.y) * k) / 10;
+      if (x >= x0 && x <= x1 && y >= y0 && y <= y1) return true;
+    }
+    return false;
+  });
+  // into the PM office from the aisle below: through its door, not through the glass
+  const pm = [{ x: DESKS.pm.seat.x, y: 160 }, ...findPath({ x: DESKS.pm.seat.x, y: 160 }, DESKS.pm.seat)];
+  assert.ok(via(pm, 360, 384, 136, 144), 'via the PM door gap (x 360–384)');
+  // into the meeting room via its door in the top glass wall
+  const meet = [{ x: 240, y: 244 }, ...findPath({ x: 240, y: 244 }, SPOTS.meet1)];
+  assert.ok(via(meet, 288, 320, 256, 264), 'via the meeting-room door (x 288–320)');
+  // the visitor walks from the entrance into the corner office
+  const visit = [DOOR, ...findPath(DOOR, DESKS.claude.visit)];
+  assert.ok(via(visit, 496, 520, 136, 144), 'into the corner office via its door (x 496–520)');
+  for (const label of ['Produk & Desain', 'Engineering', 'Kualitas & Keamanan', 'Ops & Support', 'PM', 'Tech Lead', 'Lead', 'Ruang Rapat']) assert.ok(SIGNS.some((s) => s.text === label), label);
+  for (const s of SIGNS) assert.ok(s.x > 0 && s.x < W && s.y > 0 && s.y < H, `${s.text} on the floor`);
 });
 
 test('client defaults: DEFAULT_TEAM and "↺ Tim bawaan" are all 17 roles, Compliance included; max 17 desks', () => {

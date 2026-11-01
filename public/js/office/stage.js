@@ -1,6 +1,6 @@
 // Renders the active Scene: low-res pixel canvas scaled up, plus an HTML overlay for crisp text.
 import { roleColor } from './cast.js';
-import { BOARD, W, buildFurniture, drawDoor, drawLighting, drawThemeOverlay, drawWallLive, renderBackground, room } from './world.js';
+import { BOARD, SIGNS, W, buildFurniture, drawDoor, drawLighting, drawThemeOverlay, drawWallLive, renderBackground, room } from './world.js';
 
 const STATUS_MARK = { completed: '✔', in_progress: '▶', pending: '○' };
 
@@ -21,6 +21,13 @@ export class Stage {
     this.tags = new Map();
     this.boardEl = this.el('div', 'board');
     this.emptyEl = this.el('div', 'stage-empty');
+    // Pod names and door nameplates: crisp HTML text, placed in resize().
+    this.signs = SIGNS.map((sign) => {
+      const node = this.el('div', sign.plate ? 'sign plate' : 'sign');
+      node.textContent = sign.text;
+      return { sign, node };
+    });
+    this.setRoomSize();
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
   }
@@ -31,12 +38,18 @@ export class Stage {
     this.furniture = buildFurniture();
   }
 
-  /** The desks were laid out again (👥 Kelola tim): the room may be taller, so size the canvases again too. */
+  /** The team changed (👥 Kelola tim): desks fill or empty in place; the floor keeps its size. */
   refreshLayout() {
-    this.world.height = room.h;
-    this.host.style.setProperty('--room-h', String(room.h)); // the phone layout sizes the stage from it
+    this.setRoomSize();
     this.refreshTheme();
     this.resize();
+  }
+
+  /** The phone layout sizes the stage from the floor's logical size (--room-w × --room-h). */
+  setRoomSize() {
+    this.world.height = room.h;
+    this.host.style.setProperty('--room-w', String(W));
+    this.host.style.setProperty('--room-h', String(room.h));
   }
 
   el(tag, cls) {
@@ -72,6 +85,7 @@ export class Stage {
     this.view.style.imageRendering = fit >= k ? 'pixelated' : 'auto';
     this.overlay.style.setProperty('--s', fit.toFixed(3));
     this.lastBoard = null; // reposition the whiteboard overlay
+    for (const { sign, node } of this.signs) Object.assign(node.style, { left: `${(sign.x * fit).toFixed(1)}px`, top: `${(sign.y * fit).toFixed(1)}px` });
     for (const tag of this.tags.values()) tag.bubbleSize = null; // bubbles scale with --s: measure again
   }
 

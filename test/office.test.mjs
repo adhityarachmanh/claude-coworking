@@ -7,6 +7,7 @@ import { COSTUMES } from '../public/js/office/costumes.js';
 import { Scene } from '../public/js/office/scene.js';
 import { spriteLift } from '../public/js/office/sprites.js';
 import { THEMES, THEME_IDS, activeTheme, isTheme, theme, themedLook } from '../public/js/office/themes.js';
+import { H, W, WINDOWS } from '../public/js/office/world.js';
 
 /** Every theme that dresses the team up (all but the plain office). */
 const COSTUMED = THEME_IDS.filter((id) => id !== 'kantor');
@@ -227,13 +228,13 @@ test('theme decor: window views stay inside the glass, scenery stays inside the 
     assert.ok(sky && light && decor, `${id}: sky, light and decor`);
     for (const t of [0, 450, 1300, 2600, 4100, 5000, 9999, 123456]) {
       if (decor.sky) {
-        for (const wx of [40, 252]) {
+        for (const wx of WINDOWS) {
           const g = boxGraphics({ x: wx + 2, y: 11, w: 44, h: 22 }, `${id} sky @${t}`);
           decor.sky((x, y, w, h) => g.fillRect(x, y, w, h), sky, wx, t);
           assert.ok(g.pixels > 0);
         }
       }
-      const office = boxGraphics({ x: 0, y: 0, w: 544, h: 288 }, `${id} decor @${t}`);
+      const office = boxGraphics({ x: 0, y: 0, w: W, h: H }, `${id} decor @${t}`);
       decor.overlay(office, t);
       for (const item of decor.furniture()) {
         assert.ok(Number.isFinite(item.y), `${id}: furniture has a sort depth`);
@@ -241,7 +242,7 @@ test('theme decor: window views stay inside the glass, scenery stays inside the 
       }
       for (const l of decor.lights(t)) assert.ok(l.radius > 0 && l.color.startsWith('rgba('), `${id}: glow`);
     }
-    const bg = boxGraphics({ x: 0, y: 0, w: 544, h: 288 }, `${id} static`);
+    const bg = boxGraphics({ x: 0, y: 0, w: W, h: H }, `${id} static`);
     decor.paintStatic(bg);
     assert.ok(bg.pixels > 0, `${id}: static scenery`);
   }

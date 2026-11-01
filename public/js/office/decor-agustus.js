@@ -12,13 +12,13 @@ const RED_DARK = '#a8101f';
 const WHITE = '#f6f3ee';
 const WHITE_SHADE = '#d9d4cc';
 
-const FLAG = { x: 318, y: 96 };
+const FLAG = { x: 502, y: 104 }; // in the Lead's corner office
 const UMBUL = [
-  [436, 124],
-  [436, 196],
+  [388, 300], // flanking the pantry
+  [388, 340],
 ];
-const KERUPUK = { x0: 338, x1: 394, y: 208, base: 236 };
-const PINANG = { x: 418, y: 280 };
+const KERUPUK = { x0: 240, x1: 296, y: 96, base: 124 }; // between Produk & Desain and the PM office
+const PINANG = { x: 12, y: 108 }; // by the entrance
 
 /** A string of small rectangular red-white flags sagging between x0 and x1. */
 function flagLine(r, x0, x1) {
@@ -35,7 +35,7 @@ function paintStatic(g) {
   const r = rect(g);
   flagLine(r, 36, 96);
   flagLine(r, 224, 300);
-  flagLine(r, 444, 512);
+  flagLine(r, 400, 472);
   // gapura: red-white striped pillars either side of the door and a beam across the top
   for (const px of [0, 32]) {
     for (let y = 4; y < 48; y += 4) r(px, y, 4, 4, (y / 4) % 2 ? RED : WHITE);
@@ -85,7 +85,7 @@ function drawKerupuk(g, t) {
     r(x - 2, base - 1, 5, 1, '#7a6248');
   }
   r(x0, y, x1 - x0, 1, '#e8dcc0');
-  [352, 366, 380].forEach((cx, i) => {
+  [x0 + 14, x0 + 28, x0 + 42].forEach((cx, i) => {
     const swing = Math.round(Math.sin(t / 500 + i * 1.7) * 1);
     r(cx, y + 1, 1, 3, '#e8dcc0');
     const kx = cx + swing;

@@ -1,28 +1,58 @@
-// Office layout (logical pixels), static background, furniture, monitor screens and walk grid.
+// Office floor plan (logical pixels), static background, furniture, monitor screens and walk grid.
 // Colours, extra scenery, window sky and lighting follow the active theme (themes.js).
+//
+// ---------- floor plan ----------
+// One fixed floor for the whole team (17 roles + the Lead), laid out like a real office floor: glass-walled private
+// offices along the top wall for the senior roles, the rest in department pods with low cubicle partitions, a glass
+// meeting room, a pantry and a lounge. Every role has its own desk in its department; a role switched off
+// (👥 Kelola tim) leaves its desk empty — nothing moves and the room never changes size.
+//
+//  x 0    56              216   304       392       480 496  520              640
+//  y 0 ┌────┬──────────────────────┬─────────┬─────────┬───────────────────────┐
+//      │door│ win  [ papan ]  🕒 win │  PM     │ TechLead│ ▤ poster    win  ✿    │  top wall (0–48)
+//   48 │    ·  ┌ Produk & Desain ┐  │ ▢    ✿  │ ▢     ≡ │ flag    ▣ Lead        │
+//      │ ▥  │  │ ba  ui-ux writer│ ✿│         │         │      ⌂     ⌂          │  glass partitions
+//  144 │ ▥     └─────────────────┘  └───··────┴────··───┴··─────────────────────┘  (·· = door gaps)
+//      │    main aisle
+//  168 │ ┌ Engineering ──────────────────┐   ┌ Kualitas & Keamanan ───┐  🛋 lounge
+//      │ │ frontend mobile backend dba data│   │ qa reviewer security compl.│  (sofa, coffee table)
+//      │ └───────────────────────────────┘   └────────────────────────┘
+//  256 │▣┌ Ops & Support ───┐  ┌─ Ruang Rapat ··──┐ ┌ Pantry ───────────────────┐
+//      │▣│devops support free│  │ TV    ( meja )   │ │ counter ☕   fridge  water │
+//      │ └──────────────────┘  │                  │ │                  cafe ○   │
+//  344 └───────────────────────┴──────────────────┴─┴───────────────────────────┘
+//
+//  area                 rect (x, y, w, h)        contents
+//  entrance             door x 4–32 in the wall   DOOR spot (18, 54), bookshelf on the left wall (shelf spot)
+//  Produk & Desain pod  desks y 88, x 56–216      ba, ui-ux, writer (whiteboard + windows behind, board spot)
+//  PM office            304, 48, 88, 96           desk (320, 72), plant, door gap x 360–384
+//  Tech Lead office     392, 48, 88, 96           desk (408, 72), bookcase, door gap x 448–472
+//  Lead corner office   480, 48, 160, 96          executive desk (528, 92), guest chairs, window, door gap x 496–520
+//  Engineering pod      desks y 192, x 24–296     frontend, mobile, backend, dba, data
+//  Kualitas & Keamanan  desks y 192, x 336–552    qa, reviewer, security, compliance
+//  lounge               560, 144, 80, 112         sofa (3 seats), coffee table
+//  Ops & Support pod    desks y 280, x 40–200     devops (next to the server rack), support, freelancer (hot desk)
+//  meeting room         224, 256, 160, 88         round table (meet1–4 around it), activity TV, door gap x 288–320
+//  pantry               392, 256, 248, 88         counter + coffee machine, fridge, water cooler, cafe table
+//  aisles               rows y 128–168 (main), y 232–256, x 304–328 and x 208–224 between the pods
+//
+// Cubicles: a pod is a row of desks (step 56) behind one back panel, with a low divider between desks and at both
+// ends; everyone faces the back panel (monitors up), the walkway is behind the chairs.
 import { activeTheme } from './themes.js';
 
-export const W = 544;
-/** Height of the default office (up to 12 desks); `room.h` is the live height. */
-export const H = 288;
+export const W = 640;
+/** Height of the floor (fixed: a smaller team leaves desks empty). `room.h` is the same number. */
+export const H = 344;
 export const WALL_H = 48;
 const CELL = 8;
-// The office as it is now: taller than H when the team needs a 4th / 5th row of desks (👥 Kelola tim, layoutDesks).
 export const room = { w: W, h: H };
+/** x of the three windows in the top wall (the last one is in the Lead's corner office). */
+export const WINDOWS = [40, 252, 584];
 
-// Workstations: a grid of 4 columns, one desk per active role, filled row by row in DESK_ORDER (the default
-// team of 12 gives the original 3 × 4 layout). seat = where the worker's feet are when seated.
-const COLS_X = [24, 88, 152, 216];
-const FIRST_ROW_Y = 76;
-const ROW_STEP = 72;
-const MIN_ROWS = 3; // a smaller team keeps the room size (empty floor where desks would be)
-const MAX_DESKS = COLS_X.length * 5; // 17 catalog roles: up to 5 rows
+/** Desk roles in catalog order (DESKS keeps this order). */
 const DESK_ORDER = [
-  'pm', 'ba', 'architect', 'ui-ux',
-  'frontend', 'backend', 'dba', 'freelancer', // freelancer: hot desk for generalist subagents
-  'qa', 'security', 'writer', 'devops',
-  'mobile', 'data', 'support', 'reviewer',
-  'compliance', // the 17th role: opens a 5th row
+  'pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'freelancer', 'qa', 'security', 'writer', 'devops',
+  'mobile', 'data', 'support', 'reviewer', 'compliance',
 ];
 /** Desk roles not in the default team (catalog defaultOff; must match roster.js DEFAULT_TEAM). None today. */
 const DEFAULT_OFF = new Set([]);
@@ -31,95 +61,155 @@ const PROPS = {
   mobile: 'phonestand', data: 'chart', support: 'headset', reviewer: 'magnifier', compliance: 'stamp',
 };
 const DUAL = new Set(['frontend', 'backend', 'devops', 'data']);
-// The boss sits alone in the glass office, behind an executive desk, facing the door.
-const BOSS_DESK = { x: 340, y: 100, w: 64, cx: 372, boss: true, seat: { x: 372, y: 96, facing: 'down' }, ask: { x: 396, y: 92 }, visit: { x: 372, y: 132 } };
 
+// Department pods: desks side by side, POD_STEP apart (48 desk + 8 divider).
+const POD_STEP = 56;
+const PODS = [
+  { label: 'Produk & Desain', x: 56, y: 88, roles: ['ba', 'ui-ux', 'writer'] },
+  { label: 'Engineering', x: 24, y: 192, roles: ['frontend', 'mobile', 'backend', 'dba', 'data'] },
+  { label: 'Kualitas & Keamanan', x: 336, y: 192, roles: ['qa', 'reviewer', 'security', 'compliance'] },
+  { label: 'Ops & Support', x: 40, y: 280, roles: ['devops', 'support', 'freelancer'] },
+];
+const podRight = (pod) => pod.x + pod.roles.length * POD_STEP - 8;
+
+// Private offices along the top wall: glass on the left and bottom, a 24 px door gap in the bottom wall.
+const OFFICE_BOTTOM = 144;
+const DOOR_GAP = 24;
+const OFFICES = [
+  { role: 'pm', label: 'PM', x: 304, w: 88, door: 360, desk: { x: 320, y: 72 } },
+  { role: 'architect', label: 'Tech Lead', x: 392, w: 88, door: 448, desk: { x: 408, y: 72 } },
+  { role: 'claude', label: 'Lead', x: 480, w: 160, door: 496 },
+];
+// The boss sits alone in the corner office, behind an executive desk, facing the door.
+const BOSS_DESK = { x: 528, y: 92, w: 64, cx: 560, boss: true, seat: { x: 560, y: 88, facing: 'down' }, ask: { x: 584, y: 84 }, visit: { x: 560, y: 124 } };
+
+// Meeting room (glass, door gap in the top wall) and pantry, side by side at the bottom.
+const MEET = { x: 224, y: 256, w: 160, door: 288 };
+const TABLE = { x: 304, y: 300 };
+
+function deskAt(role, x, y) {
+  return { x, y, w: 48, cx: x + 24, dual: DUAL.has(role), prop: PROPS[role], seat: { x: x + 24, y: y + 34 } };
+}
+
+/** Every role's desk at its fixed department position, whether the role is on the team or not. */
+export const SLOTS = (() => {
+  const at = {};
+  for (const o of OFFICES) if (o.desk) at[o.role] = deskAt(o.role, o.desk.x, o.desk.y);
+  for (const pod of PODS) pod.roles.forEach((role, i) => (at[role] = deskAt(role, pod.x + i * POD_STEP, pod.y)));
+  return Object.fromEntries(DESK_ORDER.map((role) => [role, at[role]]));
+})();
+
+/** The active team's desks (+ the Lead). */
 export const DESKS = {};
 
 /**
- * Lays the desks out for the active roles (any order; unknown ids are ignored) and sizes the room and the
- * walk grid to match. Mutates DESKS / room in place: callers rebuild their scenes and the stage afterwards.
+ * Seats the active roles at their own desks (any order; unknown ids are ignored). Desks never move: an off role's
+ * desk stays in place, empty. Mutates DESKS in place; callers rebuild their scenes and the stage afterwards.
  */
 export function layoutDesks(roles) {
   const on = new Set(roles);
-  const order = DESK_ORDER.filter((id) => on.has(id)).slice(0, MAX_DESKS);
   for (const key of Object.keys(DESKS)) delete DESKS[key];
-  order.forEach((role, i) => {
-    const x = COLS_X[i % COLS_X.length];
-    const y = FIRST_ROW_Y + Math.floor(i / COLS_X.length) * ROW_STEP;
-    DESKS[role] = { x, y, w: 48, cx: x + 24, dual: DUAL.has(role), prop: PROPS[role], seat: { x: x + 24, y: y + 34 } };
-  });
+  for (const role of DESK_ORDER) if (on.has(role)) DESKS[role] = structuredClone(SLOTS[role]);
   DESKS.claude = structuredClone(BOSS_DESK);
-  const rows = Math.max(MIN_ROWS, Math.ceil(order.length / COLS_X.length));
-  room.h = H + (rows - MIN_ROWS) * ROW_STEP;
-  buildWalkGrid();
 }
+
+/** Small signs drawn as crisp HTML over the canvas: pod names on the back panels, nameplates by the doors. */
+export const SIGNS = [
+  ...PODS.map((pod) => ({ x: (pod.x + podRight(pod)) / 2, y: pod.y - 19, text: pod.label })),
+  ...OFFICES.map((o) => ({ x: o.role === 'claude' ? 552 : (o.x + o.door) / 2, y: 141, text: o.label, plate: true })),
+  { x: (MEET.x + MEET.door) / 2, y: 257, text: 'Ruang Rapat', plate: true },
+  { x: 462, y: 257, text: 'Pantry', plate: true },
+];
 
 export const DOOR = { x: 18, y: 54 };
 export const BOARD = { x: 102, y: 8, w: 118, h: 31 };
+/** Where the coffee machine's steam rises. */
+export const COFFEE_MACHINE = { x: 412, y: 252 };
 export const SPOTS = {
-  coffee: { x: 454, y: 70, face: 'up' },
-  fridge: { x: 526, y: 72, face: 'up' },
-  water: { x: 516, y: 120, face: 'right' },
-  cafe1: { x: 458, y: 156, face: 'right' },
-  cafe2: { x: 494, y: 156, face: 'left' },
-  pantry1: { x: 478, y: 104, face: 'down' },
+  coffee: { x: 412, y: 292, face: 'up' },
+  fridge: { x: 540, y: 304, face: 'up' },
+  water: { x: 566, y: 300, face: 'up' },
+  cafe1: { x: 591, y: 314, face: 'right' },
+  cafe2: { x: 627, y: 314, face: 'left' },
+  pantry1: { x: 470, y: 320, face: 'down' },
   window: { x: 64, y: 56, face: 'up' },
   window2: { x: 276, y: 56, face: 'up' },
+  window3: { x: 608, y: 56, face: 'up' }, // the Lead's own window
   board: { x: 160, y: 56, face: 'up' },
   shelf: { x: 28, y: 132, face: 'left' },
-  rack: { x: 292, y: 222, face: 'left' },
-  // standing huddle on the open floor below the boss office (planning, syncs)
-  meet1: { x: 352, y: 238, face: 'right' },
-  meet2: { x: 380, y: 238, face: 'left' },
-  meet3: { x: 366, y: 254, face: 'up' },
-  meet4: { x: 366, y: 222, face: 'down' },
+  rack: { x: 20, y: 316, face: 'up' },
+  // around the round table in the meeting room (planning, syncs)
+  meet1: { x: TABLE.x - 28, y: TABLE.y, face: 'right' },
+  meet2: { x: TABLE.x + 28, y: TABLE.y, face: 'left' },
+  meet3: { x: TABLE.x, y: TABLE.y + 22, face: 'up' },
+  meet4: { x: TABLE.x, y: TABLE.y - 20, face: 'down' },
 };
 export const SOFA_SEATS = [
-  { x: 474, y: 250 },
-  { x: 490, y: 250 },
-  { x: 506, y: 250 },
+  { x: 584, y: 204 },
+  { x: 600, y: 204 },
+  { x: 616, y: 204 },
 ];
 export const CAT_SPOTS = [
-  { x: 368, y: 182, sleep: true },
-  { x: 300, y: 272, sleep: true },
-  { x: 120, y: 270 },
-  { x: 476, y: 200 },
-  { x: 200, y: 128 },
-  { x: 520, y: 270, sleep: true },
+  { x: 264, y: 112, sleep: true },
+  { x: 316, y: 244 },
+  { x: 120, y: 148 },
+  { x: 600, y: 236 },
+  { x: 304, y: 336, sleep: true },
+  { x: 470, y: 330, sleep: true },
+  { x: 440, y: 120 },
+];
+const PLANTS = [
+  [296, 84],
+  [382, 68], // PM office
+  [628, 70], // Lead office
+  [370, 340], // meeting room
+  [10, 340],
+  [628, 162], // lounge
+  [628, 340],
 ];
 
+/** Glass walls of the offices and the meeting room, cubicle partitions, then the furniture. */
 const FIXED_BLOCKERS = [
-  [270, 204, 14, 32], // server rack
+  ...OFFICES.flatMap((o) => [
+    [o.x, WALL_H, CELL, OFFICE_BOTTOM - WALL_H], // left glass wall
+    [o.x, OFFICE_BOTTOM - CELL, o.door - o.x, CELL], // bottom wall, left of the door
+    [o.door + DOOR_GAP, OFFICE_BOTTOM - CELL, o.x + o.w - o.door - DOOR_GAP, CELL], // …and right of it
+  ]),
+  ...PODS.flatMap((pod) => [
+    [pod.x - 8, pod.y - 20, podRight(pod) - pod.x + 16, 8], // back panel
+    ...pod.roles.map((_, i) => [pod.x - 8 + i * POD_STEP, pod.y - 20, 8, 38]), // left end + dividers
+    [podRight(pod), pod.y - 20, 8, 38], // right end
+  ]),
+  [MEET.x, MEET.y, MEET.door - MEET.x, CELL], // meeting room: top wall left of the door
+  [MEET.door + 32, MEET.y, MEET.x + MEET.w - MEET.door - 32, CELL],
+  [MEET.x, MEET.y, CELL, H - MEET.y], // left wall
+  [MEET.x + MEET.w - CELL, MEET.y, CELL, H - MEET.y], // right wall
+  [TABLE.x - 16, TABLE.y - 8, 32, 16], // round table
+  [232, 264, 48, 28], // TV cabinet
   [4, 116, 16, 40], // bookshelf
-  [304, 48, 8, 64], // meeting room glass: left wall (door gap y 112–139)
-  [304, 140, 8, 64],
-  [304, 200, 128, 8], // bottom wall
-  [430, 48, 8, 156], // right wall
-  [442, 44, 66, 20], // counter
-  [516, 12, 22, 52], // fridge
-  [526, 100, 12, 28], // water cooler
-  [467, 141, 18, 18], // cafe table
-  [452, 222, 76, 20], // sofa
-  [470, 258, 40, 10], // coffee table
-  [284, 52, 12, 14], // plants
-  [6, 268, 12, 14],
-  [290, 270, 12, 14],
-  [414, 184, 12, 14],
-  [530, 190, 12, 14],
+  [8, 264, 24, 36], // server rack
+  [460, 56, 16, 32], // Tech Lead's bookcase
+  [400, 256, 120, 28], // pantry counter
+  [528, 256, 24, 40], // fridge
+  [560, 260, 12, 28], // water cooler
+  [600, 299, 18, 18], // cafe table
+  [568, 176, 64, 20], // sofa
+  [580, 212, 40, 10], // coffee table
+  ...PLANTS.map(([x, y]) => [x - 6, y - 14, 12, 14]),
 ];
 
 // ---------- walk grid + A* ----------
 
 const COLS = W / CELL;
-const grid = { rows: H / CELL, blocked: new Uint8Array(0) };
+const ROWS = H / CELL;
+const grid = { rows: ROWS, blocked: new Uint8Array(0) };
 
-/** Marks the cells covered by walls, furniture and the current desks (after every layoutDesks). */
+/** Marks the cells covered by walls, partitions, furniture and every desk (occupied or not): built once. */
 function buildWalkGrid() {
-  const blockers = [...Object.values(DESKS).map((d) => (d.boss ? [d.x, d.y - 2, d.w, 22] : [d.x, d.y - 12, d.w, 30])), ...FIXED_BLOCKERS];
-  const rows = room.h / CELL;
-  const blocked = new Uint8Array(COLS * rows);
-  for (let r = 0; r < rows; r++) {
+  const desks = [...Object.values(SLOTS).map((d) => [d.x, d.y - 12, d.w, 30]), [BOSS_DESK.x, BOSS_DESK.y - 2, BOSS_DESK.w, 22]];
+  const blockers = [...desks, ...FIXED_BLOCKERS];
+  const blocked = new Uint8Array(COLS * ROWS);
+  for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const x = c * CELL + 4;
       const y = r * CELL + 4;
@@ -127,14 +217,17 @@ function buildWalkGrid() {
       for (const [bx, by, bw, bh] of blockers) if (x >= bx && x < bx + bw && y >= by && y < by + bh) blocked[r * COLS + c] = 1;
     }
   }
-  grid.rows = rows;
   grid.blocked = blocked;
 }
 
+buildWalkGrid();
 layoutDesks(DESK_ORDER.filter((id) => !DEFAULT_OFF.has(id))); // the default team until the server says otherwise — must match roster.js DEFAULT_TEAM
 
 const cellOf = (p) => [Math.max(0, Math.min(COLS - 1, Math.floor(p.x / CELL))), Math.max(0, Math.min(grid.rows - 1, Math.floor(p.y / CELL)))];
 const free = (c, r) => c >= 0 && r >= 0 && c < COLS && r < grid.rows && !grid.blocked[r * COLS + c];
+
+/** True when a point is on open floor (not a wall, partition, desk or piece of furniture). */
+export const isWalkable = (p) => free(...cellOf(p));
 
 function nearestFree([c, r]) {
   if (free(c, r)) return [c, r];
@@ -144,11 +237,41 @@ function nearestFree([c, r]) {
   return [c, r];
 }
 
+/**
+ * True when the straight line a → b only touches open cells (its own two end cells excepted: a seat may be tucked
+ * under its desk). Walks every cell the line crosses (grid traversal), so a shortcut never clips the corner of a
+ * partition or a glass wall; through an exact cell corner both side cells must be open.
+ */
 function lineFree(a, b) {
-  const steps = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 3);
-  for (let i = 1; i < steps; i++) {
-    const [c, r] = cellOf({ x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps });
-    if (!free(c, r)) return false;
+  const [c0, r0] = cellOf(a);
+  const [c1, r1] = cellOf(b);
+  const ok = (c, r) => (c === c0 && r === r0) || (c === c1 && r === r1) || free(c, r);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const sc = Math.sign(dx);
+  const sr = Math.sign(dy);
+  // distance along the line (as a fraction of it) to the next vertical / horizontal cell border, and per cell
+  const stepX = dx ? CELL / Math.abs(dx) : Infinity;
+  const stepY = dy ? CELL / Math.abs(dy) : Infinity;
+  let c = c0;
+  let r = r0;
+  let tx = dx ? (sc > 0 ? (c + 1) * CELL - a.x : a.x - c * CELL) / Math.abs(dx) : Infinity;
+  let ty = dy ? (sr > 0 ? (r + 1) * CELL - a.y : a.y - r * CELL) / Math.abs(dy) : Infinity;
+  for (let guard = 0; guard < COLS + ROWS && (c !== c1 || r !== r1); guard++) {
+    if (Math.abs(tx - ty) < 1e-9) {
+      if (!ok(c + sc, r) || !ok(c, r + sr)) return false;
+      c += sc;
+      r += sr;
+      tx += stepX;
+      ty += stepY;
+    } else if (tx < ty) {
+      c += sc;
+      tx += stepX;
+    } else {
+      r += sr;
+      ty += stepY;
+    }
+    if (!ok(c, r)) return false;
   }
   return true;
 }
@@ -223,57 +346,79 @@ function hash(n) {
 
 /** Static background (walls, floors, wall decor) rendered once. */
 export function renderBackground() {
-  const h = room.h; // taller with a 4th / 5th row of desks
+  const h = room.h;
   const c = document.createElement('canvas');
   c.width = W;
   c.height = h;
   const g = c.getContext('2d');
   const r = paintFn(g);
 
-  // wood floor (work area, corridor, under meeting room)
+  // wood floor everywhere; the rooms lay their own floor on top
   for (let y = WALL_H; y < h; y += 6) {
     const row = (y - WALL_H) / 6;
-    for (let x = -((row * 13) % 32); x < 440; x += 32) {
+    for (let x = -((row * 13) % 32); x < W; x += 32) {
       r(x, y, 32, 6, hash(row * 31 + x) > 0.5 ? '#c9a57a' : '#c39e72');
       r(x, y + 5, 32, 1, '#b48e64');
       r(x + 31, y, 1, 6, '#b48e64');
     }
   }
+  // PM and Tech Lead offices: light carpet
+  for (const o of OFFICES.slice(0, 2)) {
+    r(o.x + 2, WALL_H, o.w - 2, OFFICE_BOTTOM - WALL_H - 2, '#e2d3b9');
+    for (let y = WALL_H + 3; y < OFFICE_BOTTOM - 2; y += 4) r(o.x + 2, y, o.w - 2, 1, '#d2bf9f');
+  }
+  // Lead's corner office: burgundy carpet with a gold-trimmed rug under the desk
+  r(482, WALL_H, 158, OFFICE_BOTTOM - WALL_H - 2, '#5a2f33');
+  for (let y = WALL_H + 2; y < OFFICE_BOTTOM - 2; y += 4) r(482, y, 158, 1, '#52292d');
+  r(514, 68, 92, 64, '#c9a227');
+  r(516, 70, 88, 60, '#7a2e35');
+  r(520, 74, 80, 52, '#86343b');
+  // meeting room carpet
+  r(MEET.x + 2, MEET.y + 2, MEET.w - 4, h - MEET.y - 2, '#6a8fb8');
+  for (let y = MEET.y + 4; y < h; y += 4) r(MEET.x + 2, y, MEET.w - 4, 1, '#5e83ad');
   // pantry tiles
-  for (let y = WALL_H; y < h; y += 8) for (let x = 440; x < W; x += 8) r(x, y, 8, 8, ((x + y) / 8) % 2 ? '#e7e0d3' : '#dad1c1');
-  r(439, WALL_H, 1, h - WALL_H, '#a98a64');
-  // boss office: burgundy carpet with a gold-trimmed rug under the desk
-  r(306, 48, 124, 152, '#5a2f33');
-  for (let y = 50; y < 198; y += 4) r(306, y, 124, 1, '#52292d');
-  r(326, 78, 92, 76, '#c9a227');
-  r(328, 80, 88, 72, '#7a2e35');
-  r(332, 84, 80, 64, '#86343b');
-  // rugs
+  for (let y = 256; y < h; y += 8) for (let x = 392; x < W; x += 8) r(x, y, 8, 8, ((x + y) / 8) % 2 ? '#e7e0d3' : '#dad1c1');
+  r(391, 256, 1, h - 256, '#a98a64');
+  r(391, 255, W - 391, 1, '#a98a64');
+  // rugs: entrance mat, lounge rug
   r(6, 48, 24, 7, '#8b3a3a');
   r(8, 50, 20, 3, '#a24848');
-  r(456, 252, 72, 22, '#c98b6b');
-  r(458, 254, 68, 18, '#d69b7b');
+  r(566, 206, 72, 22, '#c98b6b');
+  r(568, 208, 68, 18, '#d69b7b');
 
-  // wall
+  // wall: open plan, PM and Tech Lead (plaster), the Lead's office (wood wainscot)
   r(0, 0, W, 4, '#5e4a3a');
-  r(0, 4, 440, 40, '#efe5d4');
-  for (let x = 0; x < 304; x += 32) r(x, 4, 1, 26, '#e6d9c3');
-  r(0, 30, 440, 14, '#e2d3b9');
-  r(0, 30, 440, 1, '#d2bf9f');
-  r(306, 4, 124, 40, '#e8ddd0'); // boss office wall: wood wainscot
-  r(306, 26, 124, 18, '#8a5a3b');
-  r(306, 26, 124, 1, '#a87648');
-  for (let x = 314; x < 430; x += 16) r(x, 28, 1, 15, '#7a4e33');
-  // bookshelf behind the boss's chair
-  r(310, 8, 20, 18, '#6e4b30');
-  for (let i = 0; i < 3; i++) for (let b = 0; b < 5; b++) r(312 + b * 3.5, 10 + i * 5, 2, 4, ['#c9a227', '#7a2e35', '#3d85c6', '#2b9a66', '#e9e4dc'][(b + i) % 5]);
+  r(0, 4, 480, 40, '#efe5d4');
+  for (let x = 0; x < 480; x += 32) r(x, 4, 1, 26, '#e6d9c3');
+  r(0, 30, 480, 14, '#e2d3b9');
+  r(0, 30, 480, 1, '#d2bf9f');
+  r(480, 4, 160, 40, '#e8ddd0');
+  r(480, 26, 160, 18, '#8a5a3b');
+  r(480, 26, 160, 1, '#a87648');
+  for (let x = 488; x < W; x += 16) r(x, 28, 1, 15, '#7a4e33');
+  for (const o of OFFICES) r(o.x, 4, 2, 40, '#d2bf9f'); // where the partitions meet the wall
   r(0, 44, W, 4, '#97806a');
-  r(440, 4, 104, 40, '#dfe9ec'); // pantry backsplash
-  for (let y = 4; y < 44; y += 6) r(440, y, 104, 1, '#ccdade');
-  for (let x = 440; x < W; x += 8) r(x, 4, 1, 40, '#ccdade');
+  // PM: cork board with sticky notes; Tech Lead: framed blueprint
+  r(318, 10, 44, 20, '#a7835f');
+  r(320, 12, 40, 16, '#c19b75');
+  for (const [x, y, col] of [[323, 14, '#ffd166'], [331, 15, '#ef8fb0'], [339, 14, '#8ecae6'], [347, 15, '#ffd166'], [326, 21, '#8ecae6'], [342, 21, '#ef8fb0']]) r(x, y, 6, 5, col);
+  r(406, 10, 44, 20, '#7a6248');
+  r(408, 12, 40, 16, '#2f6fb0');
+  for (let x = 412; x < 446; x += 6) r(x, 13, 1, 14, '#4a86c4');
+  r(410, 18, 36, 1, '#cfe3f7');
+  r(420, 14, 1, 12, '#cfe3f7');
+  r(432, 15, 10, 8, '#cfe3f7');
+  r(433, 16, 8, 6, '#2f6fb0');
+  // Lead: bookshelf and the Claude poster
+  r(488, 8, 20, 18, '#6e4b30');
+  for (let i = 0; i < 3; i++) for (let b = 0; b < 5; b++) r(490 + b * 3.5, 10 + i * 5, 2, 4, ['#c9a227', '#7a2e35', '#3d85c6', '#2b9a66', '#e9e4dc'][(b + i) % 5]);
+  r(514, 10, 22, 24, '#3a2f2a');
+  r(516, 12, 18, 20, '#d97757');
+  for (const [dx, dy] of [[0, -5], [0, 5], [-5, 0], [5, 0], [-3, -3], [3, 3], [-3, 3], [3, -3]]) r(524 + dx, 21 + dy, 2, 2, '#fff3e8');
+  r(523, 20, 4, 4, '#fff3e8');
 
   // windows (glass painted live), whiteboard frame (text is an HTML overlay)
-  for (const wx of [40, 252]) {
+  for (const wx of WINDOWS) {
     r(wx, 9, 48, 26, '#7a6248');
     r(wx - 2, 35, 52, 2, '#bfa88a');
   }
@@ -283,25 +428,19 @@ export function renderBackground() {
   r(116, 40, 4, 1, '#e5534b');
   r(122, 40, 4, 1, '#3d85c6');
   r(128, 40, 4, 1, '#2b9a66');
-  // TV frame in the meeting room (content painted live)
-  r(332, 8, 68, 30, '#1b1d24');
-  r(364, 38, 4, 3, '#1b1d24');
-  // Claude poster
-  r(406, 10, 22, 24, '#3a2f2a');
-  r(408, 12, 18, 20, '#d97757');
-  for (const [dx, dy] of [[0, -5], [0, 5], [-5, 0], [5, 0], [-3, -3], [3, 3], [-3, 3], [3, -3]]) r(416 + dx, 21 + dy, 2, 2, '#fff3e8');
-  r(415, 20, 4, 4, '#fff3e8');
   // door frame + exit sign
   r(4, 12, 28, 36, '#5e4a3a');
   r(10, 5, 16, 5, '#2f9e62');
   r(12, 7, 12, 1, '#e8fff1');
-  // pantry upper cabinets
-  r(444, 6, 56, 13, '#c4ad92');
-  for (const x of [444, 458, 472, 486]) {
-    r(x, 6, 1, 13, '#a99278');
-    r(x + 10, 11, 1, 3, '#7b6650');
-  }
-  r(444, 19, 56, 1, '#a99278');
+  // meeting room: TV on a low cabinet (content painted live)
+  r(236, 262, 44, 22, '#1b1d24');
+  r(256, 284, 4, 3, '#1b1d24');
+  r(232, 286, 52, 6, '#94673f');
+  r(232, 286, 52, 1, '#a87648');
+  // pantry: tiled backsplash behind the counter
+  r(400, 252, 120, 14, '#dfe9ec');
+  for (let y = 252; y < 266; y += 5) r(400, y, 120, 1, '#ccdade');
+  for (let x = 400; x < 520; x += 8) r(x, 252, 1, 14, '#ccdade');
   activeTheme().decor?.paintStatic(g);
   return c;
 }
@@ -310,44 +449,177 @@ export function renderBackground() {
 export function buildFurniture() {
   const items = [];
   const add = (sortY, draw) => items.push({ y: sortY, draw });
+  const glass = 'rgba(190,225,245,.38)';
+  const shine = 'rgba(255,255,255,.35)';
+  const frame = '#8fa3b5';
 
-  // pantry counter with coffee machine, fridge
-  add(63, (g, t, ctx) => {
+  // private offices: glass on the left and in front, a door gap with darker posts
+  add(OFFICE_BOTTOM, (g) => {
     const r = paintFn(g);
-    r(442, 44, 66, 6, '#a3826a');
-    r(442, 44, 66, 1, '#bf9c82');
-    r(442, 50, 66, 12, '#c4ad92');
-    for (const x of [442, 458, 474, 490]) r(x, 50, 1, 12, '#a99278');
-    r(448, 31, 12, 14, '#2d2f36');
-    r(450, 34, 8, 4, '#4a4e5a');
-    r(457, 33, 1, 1, ctx.coffeeBusy ? '#ffb347' : '#d97757');
-    r(451, 41, 6, 3, '#f4f1ea');
-    r(466, 39, 5, 5, '#f4f1ea');
-    r(480, 40, 12, 4, '#e8a33d');
-    r(482, 38, 3, 2, '#e5534b');
-    r(487, 38, 3, 2, '#8fc93a');
-    r(516, 12, 22, 52, '#e3e9ee');
-    r(516, 12, 22, 1, '#f5f8fa');
-    r(516, 32, 22, 1, '#b8c2ca');
-    r(519, 20, 1, 8, '#9aa5ae');
-    r(519, 36, 1, 12, '#9aa5ae');
-    r(516, 63, 22, 1, '#9aa5ae');
-  });
-
-  // server rack beside DevOps (LEDs blink faster while commands run)
-  add(236, (g, t, ctx) => {
-    const r = paintFn(g);
-    r(270, 200, 14, 36, '#23252e');
-    r(270, 200, 14, 1, '#3a3d4a');
-    for (let i = 0; i < 7; i++) {
-      r(272, 203 + i * 4, 10, 3, '#30333f');
-      const speed = ctx.rackBusy ? 110 : 600;
-      r(273, 204 + i * 4, 1, 1, hash(i * 7 + Math.floor(t / speed)) > 0.4 ? '#3fb950' : '#1d3a24');
-      r(275, 204 + i * 4, 1, 1, hash(i * 3 + Math.floor(t / (speed * 1.7))) > 0.6 ? '#f5a524' : '#3a2d14');
+    for (const o of OFFICES) {
+      r(o.x, WALL_H, 2, OFFICE_BOTTOM - WALL_H, glass);
+      r(o.x + 1, WALL_H, 1, OFFICE_BOTTOM - WALL_H, shine);
+      for (let y = WALL_H; y < OFFICE_BOTTOM; y += 32) r(o.x, y, 2, 2, frame);
+      r(o.x, OFFICE_BOTTOM - 3, o.door - o.x, 3, glass);
+      r(o.door + DOOR_GAP, OFFICE_BOTTOM - 3, o.x + o.w - o.door - DOOR_GAP, 3, glass);
+      r(o.x, OFFICE_BOTTOM - 3, o.door - o.x, 1, shine);
+      r(o.door + DOOR_GAP, OFFICE_BOTTOM - 3, o.x + o.w - o.door - DOOR_GAP, 1, shine);
+      for (let x = o.x; x < o.x + o.w; x += 32) if (x < o.door - 4 || x > o.door + DOOR_GAP + 2) r(x, OFFICE_BOTTOM - 3, 2, 3, frame);
+      r(o.door - 2, OFFICE_BOTTOM - 8, 2, 8, frame);
+      r(o.door + DOOR_GAP, OFFICE_BOTTOM - 8, 2, 8, frame);
     }
   });
 
-  // bookshelf
+  // cubicle pods: one back panel behind the monitors, low dividers between the desks and at both ends
+  for (const pod of PODS) {
+    const x0 = pod.x - 6;
+    const span = podRight(pod) - pod.x + 12;
+    const y = pod.y;
+    add(y - 10, (g) => {
+      const r = paintFn(g);
+      r(x0, y - 24, span, 14, '#c4ad92');
+      r(x0, y - 24, span, 2, '#bf9c82');
+      r(x0, y - 11, span, 1, '#a99278');
+      for (let x = x0 + 8; x < x0 + span - 4; x += 8) r(x, y - 21, 1, 9, '#bba48a'); // fabric seams
+    });
+    add(y + 18, (g) => {
+      const r = paintFn(g);
+      for (let i = 0; i <= pod.roles.length; i++) {
+        const x = x0 + i * POD_STEP;
+        r(x + 4, y - 20, 1, 38, 'rgba(0,0,0,.08)');
+        r(x, y - 24, 4, 42, '#c4ad92');
+        r(x, y - 24, 4, 2, '#bf9c82');
+        r(x + 3, y - 22, 1, 40, '#a99278');
+        r(x, y + 16, 4, 2, '#a3826a');
+      }
+    });
+  }
+
+  // meeting room glass: the top wall (with the door), then the side walls
+  add(MEET.y + 2, (g) => {
+    const r = paintFn(g);
+    const right = MEET.x + MEET.w;
+    r(MEET.x, MEET.y, MEET.door - MEET.x, 3, glass);
+    r(MEET.door + 32, MEET.y, right - MEET.door - 32, 3, glass);
+    r(MEET.x, MEET.y, MEET.door - MEET.x, 1, shine);
+    r(MEET.door + 32, MEET.y, right - MEET.door - 32, 1, shine);
+    for (let x = MEET.x; x < right; x += 32) if (x < MEET.door - 4 || x > MEET.door + 34) r(x, MEET.y, 2, 3, frame);
+    r(MEET.door - 2, MEET.y, 2, 8, frame);
+    r(MEET.door + 32, MEET.y, 2, 8, frame);
+  });
+  add(H, (g) => {
+    const r = paintFn(g);
+    for (const x of [MEET.x, MEET.x + MEET.w - 2]) {
+      r(x, MEET.y, 2, H - MEET.y, glass);
+      for (let y = MEET.y; y < H; y += 32) r(x, y, 2, 2, frame);
+    }
+  });
+  // round meeting table with a laptop and papers
+  add(TABLE.y + 6, (g) => {
+    const r = paintFn(g);
+    const { x, y } = TABLE;
+    r(x - 8, y + 7, 16, 2, 'rgba(0,0,0,.15)');
+    r(x - 2, y + 2, 4, 6, '#6e4b30');
+    [20, 26, 30, 32, 32, 32, 30, 26, 20].forEach((w, i) => r(x - w / 2, y - 8 + i, w, 1, i === 0 ? '#d8ab78' : '#c4935f'));
+    [26, 20].forEach((w, i) => r(x - w / 2, y + 1 + i, w, 1, '#94673f'));
+    r(x - 10, y - 5, 8, 4, '#3a3f4b');
+    r(x - 9, y - 4, 6, 1, '#66d9e8');
+    r(x + 4, y - 6, 7, 5, '#f4f1ea');
+    r(x + 5, y - 4, 5, 1, '#9aa3ad');
+  });
+
+  // pantry counter with coffee machine, fruit bowl and sink
+  add(285, (g, t, ctx) => {
+    const r = paintFn(g);
+    r(400, 266, 120, 6, '#a3826a');
+    r(400, 266, 120, 1, '#bf9c82');
+    r(400, 272, 120, 12, '#c4ad92');
+    for (let x = 400; x < 520; x += 16) {
+      r(x, 272, 1, 12, '#a99278');
+      r(x + 10, 277, 1, 3, '#7b6650');
+    }
+    r(406, 253, 12, 14, '#2d2f36');
+    r(408, 256, 8, 4, '#4a4e5a');
+    r(415, 255, 1, 1, ctx.coffeeBusy ? '#ffb347' : '#d97757');
+    r(409, 263, 6, 3, '#f4f1ea');
+    r(424, 261, 5, 5, '#f4f1ea');
+    r(438, 262, 12, 4, '#e8a33d');
+    r(440, 260, 3, 2, '#e5534b');
+    r(445, 260, 3, 2, '#8fc93a');
+    r(476, 267, 20, 4, '#b8c2ca');
+    r(477, 268, 18, 2, '#9aa5ae');
+    r(485, 261, 2, 6, '#9aa5ae');
+  });
+  // fridge
+  add(296, (g) => {
+    const r = paintFn(g);
+    r(528, 248, 22, 48, '#e3e9ee');
+    r(528, 248, 22, 1, '#f5f8fa');
+    r(528, 264, 22, 1, '#b8c2ca');
+    r(531, 254, 1, 7, '#9aa5ae');
+    r(531, 268, 1, 12, '#9aa5ae');
+    r(528, 295, 22, 1, '#9aa5ae');
+  });
+  // water cooler
+  add(288, (g) => {
+    const r = paintFn(g);
+    r(560, 268, 12, 20, '#e3e9ee');
+    r(560, 268, 12, 1, '#f5f8fa');
+    r(562, 256, 8, 12, '#8fd0f0');
+    r(563, 257, 2, 10, '#c4ecff');
+    r(564, 274, 4, 2, '#3d85c6');
+  });
+  // cafe table with two stools
+  add(317, (g) => {
+    const r = paintFn(g);
+    for (const x of [591, 627]) {
+      r(x - 4, 308, 9, 5, '#a7835f');
+      r(x - 4, 308, 9, 1, '#c19b75');
+    }
+    r(600, 300, 18, 12, '#f2efe8');
+    r(600, 300, 18, 1, '#ffffff');
+    r(600, 312, 18, 2, '#d6d0c4');
+    r(608, 314, 2, 3, '#8a8478');
+    r(604, 303, 3, 3, '#7a4a2a');
+  });
+
+  // lounge: sofa and coffee table
+  add(201, (g) => {
+    const r = paintFn(g);
+    r(568, 176, 64, 12, '#4f7299');
+    r(568, 176, 64, 2, '#6a8fb8');
+    r(568, 188, 64, 8, '#5e83ad');
+    r(568, 188, 64, 1, '#7aa0c9');
+    r(568, 196, 64, 4, '#45678c');
+    r(563, 180, 6, 20, '#45678c');
+    r(631, 180, 6, 20, '#45678c');
+    r(563, 180, 6, 2, '#5e83ad');
+    r(631, 180, 6, 2, '#5e83ad');
+    r(586, 179, 10, 7, '#f2c14e');
+  });
+  add(222, (g) => {
+    const r = paintFn(g);
+    r(580, 212, 40, 7, '#a7835f');
+    r(580, 212, 40, 1, '#c19b75');
+    r(580, 219, 40, 2, '#86643f');
+    r(588, 209, 4, 3, '#f4f1ea');
+    r(604, 210, 8, 2, '#3d85c6');
+  });
+
+  // server rack beside DevOps (LEDs blink faster while commands run)
+  add(299, (g, t, ctx) => {
+    const r = paintFn(g);
+    r(12, 262, 14, 36, '#23252e');
+    r(12, 262, 14, 1, '#3a3d4a');
+    for (let i = 0; i < 7; i++) {
+      r(14, 265 + i * 4, 10, 3, '#30333f');
+      const speed = ctx.rackBusy ? 110 : 600;
+      r(15, 266 + i * 4, 1, 1, hash(i * 7 + Math.floor(t / speed)) > 0.4 ? '#3fb950' : '#1d3a24');
+      r(17, 266 + i * 4, 1, 1, hash(i * 3 + Math.floor(t / (speed * 1.7))) > 0.6 ? '#f5a524' : '#3a2d14');
+    }
+  });
+
+  // bookshelf by the entrance
   add(156, (g) => {
     const r = paintFn(g);
     r(4, 112, 16, 44, '#7a5636');
@@ -359,76 +631,32 @@ export function buildFurniture() {
       for (let b = 0; b < 4; b++) r(6 + b * 3, y + (b % 2), 2, 8 - (b % 2), colors[(b + shelf * 2) % colors.length]);
     }
   });
-
-  // boss office: two leather guest chairs facing the executive desk
-  add(146, (g) => {
+  // Tech Lead's bookcase
+  add(88, (g) => {
     const r = paintFn(g);
-    for (const x of [352, 392]) {
-      r(x - 6, 134, 12, 4, '#6b3a2e');
-      r(x - 6, 138, 12, 8, '#7d4636');
-      r(x - 6, 138, 12, 1, '#94573f');
-      r(x - 7, 136, 2, 10, '#5a2f25');
-      r(x + 5, 136, 2, 10, '#5a2f25');
+    r(462, 54, 14, 34, '#7a5636');
+    r(462, 54, 14, 2, '#95704c');
+    const colors = ['#2f6fb0', '#e9e4dc', '#5c5fd6', '#81b29a'];
+    for (let shelf = 0; shelf < 3; shelf++) {
+      const y = 58 + shelf * 10;
+      r(463, y + 8, 12, 1, '#5c3f26');
+      for (let b = 0; b < 3; b++) r(464 + b * 3, y + (b % 2), 2, 8 - (b % 2), colors[(b + shelf) % colors.length]);
     }
   });
-  add(203, (g) => {
-    const glass = 'rgba(190,225,245,.35)';
-    const frame = '#8fa3b5';
+  // Lead's office: two leather guest chairs facing the executive desk
+  add(138, (g) => {
     const r = paintFn(g);
-    r(304, 48, 2, 64, glass);
-    r(304, 140, 2, 64, glass);
-    r(304, 202, 128, 2, glass);
-    r(430, 48, 2, 156, glass);
-    for (const y of [48, 80, 111, 140, 172, 202]) r(304, y, 2, 2, frame);
-    for (let x = 304; x <= 430; x += 32) r(x, 202, 2, 2, frame);
-    for (const y of [48, 96, 144, 202]) r(430, y, 2, 2, frame);
-  });
-
-  // pantry: water cooler, cafe table, sofa, coffee table
-  add(127, (g) => {
-    const r = paintFn(g);
-    r(526, 108, 12, 20, '#e3e9ee');
-    r(526, 108, 12, 1, '#f5f8fa');
-    r(528, 96, 8, 12, '#8fd0f0');
-    r(529, 97, 2, 10, '#c4ecff');
-    r(530, 114, 4, 2, '#3d85c6');
-  });
-  add(159, (g) => {
-    const r = paintFn(g);
-    for (const x of [458, 494]) {
-      r(x - 4, 150, 9, 5, '#a7835f');
-      r(x - 4, 150, 9, 1, '#c19b75');
+    for (const x of [538, 582]) {
+      r(x - 6, 126, 12, 4, '#6b3a2e');
+      r(x - 6, 130, 12, 8, '#7d4636');
+      r(x - 6, 130, 12, 1, '#94573f');
+      r(x - 7, 128, 2, 10, '#5a2f25');
+      r(x + 5, 128, 2, 10, '#5a2f25');
     }
-    r(467, 142, 18, 12, '#f2efe8');
-    r(467, 142, 18, 1, '#ffffff');
-    r(467, 154, 18, 2, '#d6d0c4');
-    r(475, 156, 2, 3, '#8a8478');
-    r(471, 145, 3, 3, '#7a4a2a');
-  });
-  add(247, (g) => {
-    const r = paintFn(g);
-    r(458, 222, 64, 12, '#4f7299');
-    r(458, 222, 64, 2, '#6a8fb8');
-    r(458, 234, 64, 8, '#5e83ad');
-    r(458, 234, 64, 1, '#7aa0c9');
-    r(458, 242, 64, 4, '#45678c');
-    r(453, 226, 6, 20, '#45678c');
-    r(521, 226, 6, 20, '#45678c');
-    r(453, 226, 6, 2, '#5e83ad');
-    r(521, 226, 6, 2, '#5e83ad');
-    r(476, 225, 10, 7, '#f2c14e');
-  });
-  add(268, (g) => {
-    const r = paintFn(g);
-    r(470, 258, 40, 7, '#a7835f');
-    r(470, 258, 40, 1, '#c19b75');
-    r(470, 265, 40, 2, '#86643f');
-    r(478, 255, 4, 3, '#f4f1ea');
-    r(494, 256, 8, 2, '#3d85c6');
   });
 
   // plants (sway gently)
-  for (const [x, y] of [[290, 66], [12, 282], [296, 284], [420, 198], [536, 204]]) {
+  for (const [x, y] of PLANTS) {
     add(y, (g, t) => {
       const r = paintFn(g);
       const sway = Math.sin(t / 900 + x) > 0.6 ? 1 : 0;
@@ -801,7 +1029,7 @@ export function drawWallLive(g, t, now, activity) {
   const night = hour < 5.5 || hour >= 19;
   const dusk = (hour >= 17 && hour < 19) || (hour >= 5.5 && hour < 7);
   const sky = activeTheme().sky;
-  for (const wx of [40, 252]) {
+  for (const wx of WINDOWS) {
     if (sky) {
       // A theme may paint its own window view (decor.sky: snow, takbiran fireworks, a sunny day); the frame stays.
       const paintSky = activeTheme().decor?.sky;
@@ -828,12 +1056,12 @@ export function drawWallLive(g, t, now, activity) {
   }
 
   // meeting-room TV: live activity bars
-  r(334, 10, 64, 26, '#0f1a2b');
-  r(336, 12, 18, 2, '#d97757');
-  if (activity.busy && Math.floor(t / 500) % 2) r(392, 12, 3, 3, '#f0524a');
+  r(238, 264, 40, 18, '#0f1a2b');
+  r(240, 266, 12, 2, '#d97757');
+  if (activity.busy && Math.floor(t / 500) % 2) r(273, 266, 3, 3, '#f0524a');
   activity.bars.forEach((v, i) => {
-    const bh = Math.max(1, Math.round(v * 16));
-    r(337 + i * 5, 33 - bh, 4, bh, i === activity.bars.length - 1 ? '#66d9e8' : '#3d85c6');
+    const bh = Math.max(1, Math.round(v * 10));
+    r(240 + i * 3, 280 - bh, 2, bh, i === activity.bars.length - 1 ? '#66d9e8' : '#3d85c6');
   });
 
   // clock
@@ -891,6 +1119,9 @@ export function drawDoor(g, open) {
   }
 }
 
+/** Ceiling lamps: one over every pod, office, the meeting room, the pantry and the lounge. */
+const LAMPS = [[136, 108], [160, 216], [444, 216], [120, 304], [348, 96], [436, 96], [560, 100], [304, 300], [480, 304], [600, 210]];
+
 /** Night darkening + lamp/monitor glow, drawn over the scene. */
 export function drawLighting(g, { night, dusk }, glows, t = 0) {
   const themed = activeTheme();
@@ -910,15 +1141,15 @@ export function drawLighting(g, { night, dusk }, glows, t = 0) {
     g.fillRect(x - radius, y - radius, radius * 2, radius * 2);
   };
   const lamp = night ? 'rgba(255,200,130,.20)' : 'rgba(255,190,120,.10)';
-  for (const [x, y] of [[80, 128], [200, 128], [80, 200], [200, 200], [368, 120], [490, 170], [140, 272], [490, 250]]) glow(x, y, 70, lamp);
+  for (const [x, y] of LAMPS) glow(x, y, 64, lamp);
   for (const { x, y, color } of glows) glow(x, y, 24, color);
   g.globalCompositeOperation = 'source-over';
 }
 
-/** Daylight falling through the two windows onto the floor. */
+/** Daylight falling through the windows onto the floor. */
 function sunBeams(g, color) {
   g.fillStyle = color;
-  for (const wx of [40, 252]) {
+  for (const wx of WINDOWS) {
     g.beginPath();
     g.moveTo(wx, WALL_H);
     g.lineTo(wx + 48, WALL_H);
@@ -950,7 +1181,7 @@ function drawThemedLighting(g, themed, night, glows, t) {
     g.fillRect(x - radius, y - radius, radius * 2, radius * 2);
   };
   const lamp = night ? light.lampNight : light.lamp;
-  for (const [x, y] of [[80, 128], [200, 128], [80, 200], [200, 200], [368, 120], [490, 170]]) glow(x, y, 64, lamp);
+  for (const [x, y] of LAMPS) glow(x, y, 60, lamp);
   for (const l of themed.decor?.lights(t) ?? []) glow(l.x, l.y, l.radius, l.color);
   for (const { x, y, color } of glows) glow(x, y, 24, color);
   g.globalCompositeOperation = 'source-over';

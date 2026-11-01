@@ -3,8 +3,9 @@
 //   furniture   – depth-sorted live items: glowing jack-o'-lanterns and flickering candles
 //   overlay     – every frame, over the scene: bats flying slowly across, a dangling spider
 //   lights      – warm glow points for drawLighting (flicker with the flames)
-export const W = 544;
-export const H = 288;
+// The office floor (world.js W × H; not imported: world.js → themes.js → decor.js).
+export const W = 640;
+export const H = 344;
 
 export const rect = (g) => (x, y, w, h, c) => {
   g.fillStyle = c;
@@ -68,10 +69,10 @@ function paintStatic(g) {
   const r = rect(g);
   cobweb(r, 0, 4, 1, 1, 15);
   cobweb(r, 303, 4, -1, 1, 13);
-  cobweb(r, 429, 4, -1, 1, 12);
-  cobweb(r, 543, 4, -1, 1, 15);
-  cobweb(r, 0, 287, 1, -1, 16);
-  cobweb(r, 543, 287, -1, -1, 14);
+  cobweb(r, 479, 4, -1, 1, 12);
+  cobweb(r, W - 1, 4, -1, 1, 15);
+  cobweb(r, 0, H - 1, 1, -1, 16);
+  cobweb(r, W - 1, H - 1, -1, -1, 14);
   bunting(r, 36, 96);
   bunting(r, 224, 300);
 }
@@ -80,19 +81,19 @@ function paintStatic(g) {
 
 const PUMPKINS = [
   [14, 168],
-  [262, 238],
-  [428, 216],
-  [446, 238],
-  [28, 284],
-  [536, 94],
+  [296, 132],
+  [606, 134], // Lead office
+  [388, 250], // between the meeting room and the pantry
+  [24, 338],
+  [634, 246], // lounge
 ];
 const CANDLES = [
   [8, 111, 157],
   [12, 111, 157],
   [16, 111, 157],
-  [497, 43, 64],
-  [502, 43, 64],
-  [480, 141, 160],
+  [455, 265, 285], // pantry counter
+  [460, 265, 285],
+  [613, 299, 318], // cafe table
 ];
 
 function drawPumpkin(g, t, x, y, i) {
@@ -157,7 +158,7 @@ function overlay(g, t) {
     const rows = Math.floor(t / 150 + i) % 2 ? BAT_UP : BAT_DOWN;
     rows.forEach((row, dy) => [...row].forEach((ch, dx) => ch === 'x' && r(x + dx, y + dy, 1, 1, '#140d1a')));
   });
-  // spider on a thread from the web above the boss office wall
+  // spider on a thread from the web above the PM office wall
   const len = 12 + Math.round(Math.sin(t / 1300) * 4);
   r(296, 4, 1, len, 'rgba(226,220,242,.55)');
   r(295, 4 + len, 3, 2, '#140d1a');

@@ -2,7 +2,7 @@
 import { CAST, VISITOR } from './cast.js';
 import { resolveRole, teamOrder } from './roster.js';
 import { ANCHOR_X, ANCHOR_Y, catSprite, characterSprite, iconSprite, spriteLift } from './sprites.js';
-import { CAT_SPOTS, DESKS, DOOR, SOFA_SEATS, SPOTS, drawBossChair, drawBossDesk, drawChair, drawDesk, drawMonitors, findPath, rectFn } from './world.js';
+import { CAT_SPOTS, COFFEE_MACHINE, DESKS, DOOR, SLOTS, SOFA_SEATS, SPOTS, W, drawBossChair, drawBossDesk, drawChair, drawDesk, drawMonitors, findPath, rectFn, room } from './world.js';
 
 const WALK_SPEED = 46; // logical px per second
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -17,7 +17,7 @@ const MEET_SPOTS = ['meet1', 'meet2', 'meet3', 'meet4'];
 const ERRAND_MS = 9000; // an errand (report, bug hand-off, huddle) is not cut short by new work
 const DELEGATION_STALE_MS = 8000;
 const IDLE_ACTIVITIES = {
-  claude: ['window2', 'coffee', 'meet', 'stretch'],
+  claude: ['window3', 'coffee', 'meet', 'stretch'],
   pm: ['board', 'coffee', 'meet', 'chat', 'stretch'],
   ba: ['shelf', 'coffee', 'water', 'window', 'chat'],
   architect: ['board', 'meet', 'coffee', 'window2', 'chat'],
@@ -348,8 +348,10 @@ export class Scene {
     this.people = {};
     // Only the active team (👥 Kelola tim) has a desk and a person; the Lead always does.
     for (const id of teamOrder()) if (DESKS[id]) this.people[id] = new Person(this, id, CAST[id], DESKS[id].seat);
+    // Desks of roles off the team stay where they are, empty (no prop, screen off, chair pushed in).
+    this.emptyDesks = Object.entries(SLOTS).filter(([id]) => !this.people[id]).map(([, desk]) => ({ ...desk, prop: null }));
     this.visitor = null;
-    this.cat = { x: 300, y: 200, plan: null, state: 'sleep', until: performance.now() + 15000, flip: false };
+    this.cat = { x: CAT_SPOTS[0].x, y: CAT_SPOTS[0].y, plan: null, state: 'sleep', until: performance.now() + 15000, flip: false };
     this.board = { goal: '', items: [], todoMode: false };
     this.status = { busy: false };
     this.reserved = new Set();
@@ -641,7 +643,7 @@ export class Scene {
   confetti() {
     const colors = teamOrder().map((id) => CAST[id].color);
     for (let i = 0; i < 90; i++) {
-      this.particles.push({ kind: 'confetti', x: rand(20, 400), y: rand(-20, 30), vx: rand(-25, 25), vy: rand(10, 50), life: rand(2.5, 4), color: pick(colors) });
+      this.particles.push({ kind: 'confetti', x: rand(20, W - 20), y: rand(-20, 30), vx: rand(-25, 25), vy: rand(10, 50), life: rand(2.5, 4), color: pick(colors) });
     }
   }
 
@@ -657,7 +659,7 @@ export class Scene {
     this.doorOpen = actors.some((a) => Math.abs(a.x - DOOR.x) < 14 && a.y < DOOR.y + 14);
     this.updateCat(dt, now);
     if (now < this.coffeeUntil && Math.random() < 0.3) {
-      this.particles.push({ kind: 'steam', x: 341 + rand(-1, 1), y: 40, vx: rand(-2, 2), vy: rand(-10, -6), life: 1.2 });
+      this.particles.push({ kind: 'steam', x: COFFEE_MACHINE.x + rand(-1, 1), y: COFFEE_MACHINE.y, vx: rand(-2, 2), vy: rand(-10, -6), life: 1.2 });
     }
     for (const part of this.particles) {
       part.life -= dt;
@@ -665,7 +667,7 @@ export class Scene {
       part.y += part.vy * dt;
       if (part.kind === 'confetti') part.vy = Math.min(part.vy + 30 * dt, 60);
     }
-    this.particles = this.particles.filter((part) => part.life > 0 && part.y < 260);
+    this.particles = this.particles.filter((part) => part.life > 0 && part.y < room.h);
   }
 
   updateCat(dt, now) {
@@ -711,6 +713,10 @@ export class Scene {
       items.push({ y: desk.y + 17, draw: (g, t) => this.drawWorkstation(g, t, now, desk, owner) });
       if (desk.boss) items.push({ y: desk.seat.y - 0.5, draw: (g) => drawBossChair(g, desk.seat) });
       else items.push({ y: desk.seat.y + 0.5, draw: (g) => drawChair(g, desk.seat, owner.seated) });
+    }
+    for (const desk of this.emptyDesks) {
+      items.push({ y: desk.y + 17, draw: (g, t) => (drawDesk(g, desk), drawMonitors(g, desk, 'off', t, desk.x)) });
+      items.push({ y: desk.seat.y + 0.5, draw: (g) => drawChair(g, desk.seat, false) });
     }
     for (const a of this.actors()) items.push({ y: a.y, draw: (g) => a.draw(g, now) });
     const cat = this.cat;

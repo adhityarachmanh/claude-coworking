@@ -1868,12 +1868,14 @@ for (const vp of VIEWPORTS) {
           roomH: room.h,
           reviewerY: DESKS.reviewer?.y ?? null,
           complianceY: DESKS.compliance?.y ?? null,
+          empty: scenes.get(location.hash.slice(1))?.emptyDesks.length ?? null, // off roles: their desk stays, empty
+          signs: document.querySelectorAll('#stage .sign').length, // pod names + nameplates
           ratio: Math.round((canvas.height / canvas.width) * 100) / 100,
           marker: window.__sameDocument === true,
         };
       });
       await page.eval(() => (window.__sameDocument = true)); // gone after a reload
-      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 432, reviewerY: 292, complianceY: 364, ratio: 0.79, marker: true }, 'tim bawaan: 17 meja + Lead, baris ke-5');
+      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 344, reviewerY: 192, complianceY: 192, empty: 0, signs: 9, ratio: 0.54, marker: true }, 'tim bawaan: 17 meja + Lead di denah tetap');
 
       // opened from ⋯ (⚙, Ctrl+P and /team are the other ways in)
       await page.click('#btn-more');
@@ -1896,7 +1898,7 @@ for (const vp of VIEWPORTS) {
       assert.equal(await page.eval(horizontalOverflow), null, 'dialog tanpa scroll horizontal');
       assert.deepEqual(await page.eval(unnamedButtons, '#roster-modal'), []);
 
-      // the five optional roles off: 12/17, saved, the office drops rows 4 and 5 without a reload
+      // the five optional roles off: 12/17, saved, their desks empty in place without a reload
       for (const role of ['mobile', 'data', 'support', 'reviewer', 'compliance']) await page.eval((r) => document.querySelector(`#roster-${r}`).click(), role);
       assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '12/17 meja');
       assert.match(await page.eval(() => document.querySelector('#roster-mobile-desc').textContent), /Nonaktif → dikerjakan Adhit - Frontend/, 'fallback tampil');
@@ -1906,7 +1908,7 @@ for (const vp of VIEWPORTS) {
       await page.click('#roster-save');
       await page.waitFor(() => document.querySelector('#roster-modal').hidden, { timeoutMs: 4000, message: 'dialog tertutup setelah simpan' });
       await page.waitFor(() => document.querySelectorAll('#team .member').length === 13, { timeoutMs: 3000, message: 'kartu tim berkurang' });
-      assert.deepEqual(await office(), { people: 13, cards: 13, roomH: 288, reviewerY: null, complianceY: null, ratio: 0.53, marker: true }, '12 meja + Lead, ruangan kembali pendek, tanpa reload');
+      assert.deepEqual(await office(), { people: 13, cards: 13, roomH: 344, reviewerY: null, complianceY: null, empty: 5, signs: 9, ratio: 0.54, marker: true }, '12 meja + Lead: 5 meja kosong di tempatnya, ukuran kantor tetap, tanpa reload');
       assert.deepEqual((await snapshot()).config.team.enabled.filter((r) => ['mobile', 'data', 'support', 'reviewer', 'compliance'].includes(r)), [], 'tersimpan di server');
 
       // a phone on plain WiFi sees the same dialog, read-only
@@ -1928,7 +1930,7 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(ro, { note: true, save: true, allDisabled: true });
       await page.press('Escape');
 
-      // /team, then ↺ Tim bawaan: back to all 17 desks (5 rows)
+      // /team, then ↺ Tim bawaan: back to all 17 desks
       await typeInPrompt(page, '/team');
       await page.eval(() => document.querySelector('#btn-send').click());
       await page.waitFor(() => !document.querySelector('#roster-modal').hidden, { timeoutMs: 2000, message: '/team membuka dialog' });
@@ -1938,14 +1940,14 @@ for (const vp of VIEWPORTS) {
       assert.equal(await page.eval(() => document.querySelector('#roster-compliance').checked), true, '↺ Tim bawaan: Compliance ikut aktif');
       await page.eval(() => document.querySelector('#roster-save').click());
       await page.waitFor(() => document.querySelectorAll('#team .member').length === 18, { timeoutMs: 4000, message: 'kembali ke 17 meja' });
-      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 432, reviewerY: 292, complianceY: 364, ratio: 0.79, marker: true });
+      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 344, reviewerY: 192, complianceY: 192, empty: 0, signs: 9, ratio: 0.54, marker: true });
       if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
       await sleep(400);
       assert.equal(await page.eval(horizontalOverflow), null, 'kantor 17 meja tanpa scroll horizontal');
       await shot('office-17');
       if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
 
-      // Compliance off: 16/17, the 5th row goes, still no reload
+      // Compliance off: 16/17, its desk empties, still no reload
       await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
       await page.click('#btn-more');
       await page.click('#more-menu [data-more="roster"]');
@@ -1954,7 +1956,7 @@ for (const vp of VIEWPORTS) {
       assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '16/17 meja');
       await page.eval(() => document.querySelector('#roster-save').click());
       await page.waitFor(() => document.querySelectorAll('#team .member').length === 17, { timeoutMs: 4000, message: '16 meja' });
-      assert.deepEqual(await office(), { people: 17, cards: 17, roomH: 360, reviewerY: 292, complianceY: null, ratio: 0.66, marker: true }, '16 meja: 4 baris');
+      assert.deepEqual(await office(), { people: 17, cards: 17, roomH: 344, reviewerY: 192, complianceY: null, empty: 1, signs: 9, ratio: 0.54, marker: true }, '16 meja: meja Compliance kosong');
       if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
       await sleep(400);
       assert.equal(await page.eval(horizontalOverflow), null, 'kantor 16 meja tanpa scroll horizontal');
@@ -1970,7 +1972,7 @@ for (const vp of VIEWPORTS) {
       assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '17/17 meja');
       await page.eval(() => document.querySelector('#roster-save').click());
       await page.waitFor(() => document.querySelectorAll('#team .member').length === 18, { timeoutMs: 4000, message: 'kembali ke 17 meja' });
-      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 432, reviewerY: 292, complianceY: 364, ratio: 0.79, marker: true });
+      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 344, reviewerY: 192, complianceY: 192, empty: 0, signs: 9, ratio: 0.54, marker: true });
       assert.deepEqual(realProblems(page), []);
     });
 

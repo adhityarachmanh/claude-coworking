@@ -15,25 +15,25 @@ const WEAVE = '#d9c45a';
 
 const LANTERNS = [
   [14, 168],
-  [262, 238],
-  [446, 238],
-  [28, 284],
-  [536, 94],
+  [296, 132],
+  [388, 250], // between the meeting room and the pantry
+  [24, 338],
+  [596, 134], // Lead office
 ];
 const PELITA = [
   [10, 111, 157],
   [16, 111, 157],
-  [503, 43, 64],
-  [509, 43, 64],
+  [461, 265, 285], // pantry counter
+  [467, 265, 285],
 ];
 // jars of kue kering: [x, tabletop y, sort y, cookie colour]
 const JARS = [
-  [474, 146, 160, '#e9a23b'],
-  [480, 146, 160, '#c98a4a'],
-  [499, 258, 269, '#e9a23b'],
-  [494, 43, 64, '#c98a4a'],
+  [607, 304, 318, '#e9a23b'], // cafe table
+  [613, 304, 318, '#c98a4a'],
+  [609, 212, 223, '#e9a23b'], // lounge coffee table
+  [452, 265, 285, '#c98a4a'], // pantry counter
 ];
-const BEDUK = { x: 418, y: 276 };
+const BEDUK = { x: 620, y: 132 }; // in the Lead's corner office
 
 /** Woven ketupat (5×5 diamond) hanging from (x, y) by a short string. */
 function ketupat(r, x, y, len) {
@@ -65,7 +65,7 @@ function paintStatic(g) {
   const r = rect(g);
   garland(r, 36, 96);
   garland(r, 224, 300);
-  garland(r, 444, 512);
+  garland(r, 400, 472);
   // crescent and star ornament between the left window and the whiteboard
   [3, 5, 6, 6, 6, 5, 3].forEach((w, i) => r(94 - (w - 1) / 2, 12 + i, w, 1, GOLD));
   [3, 5, 5, 5, 5, 3].forEach((w, i) => r(96 - (w - 1) / 2, 12 + i, w, 1, '#efe5d4'));

@@ -327,6 +327,20 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .board .st-completed span { color: var(--ok); }
 .board .st-in_progress span { color: var(--accent); }
 .board .muted { color: #9aa0a8; }
+/* Pod names on the cubicle panels and nameplates by the office doors (positioned by stage.js). */
+.sign {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 0 .45em;
+  border-radius: 3px;
+  font: 700 clamp(5px, calc(var(--s) * 5.5px), 10px)/1.35 var(--font);
+  letter-spacing: .02em;
+  white-space: nowrap;
+  color: #f4f1ea;
+  background: #3a3f4bd9;
+  pointer-events: none;
+}
+.sign.plate { color: #2a1e12; background: #e3c25ae6; font-weight: 800; }
 
 .team {
   display: grid;
@@ -1107,8 +1121,8 @@ body.read-only #composer-hint { color: var(--ask); }
 
   /* office view: full-width office, team as cards */
   .office { overflow-y: auto; background: var(--bg); }
-  /* --room-h: the office's logical height (taller with 13–16 desks, set by the stage) */
-  .stage { flex: none; height: calc((100vw - 16px) * var(--room-h, 288) / 544); margin: 8px; }
+  /* --room-w × --room-h: the office floor's logical size (set by the stage) */
+  .stage { flex: none; height: calc((100vw - 16px) * var(--room-h, 344) / var(--room-w, 640)); margin: 8px; }
   .stage canvas { border-radius: var(--r-lg); }
   .team { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 4px 8px 16px; }
   .member { padding: 8px; }

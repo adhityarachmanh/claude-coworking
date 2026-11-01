@@ -1,6 +1,6 @@
 // Natal scenery (pure drawing, same contract as decor.js):
 //   paintStatic – light-string wires on the walls, a garland over the whiteboard, snow on the window sills,
-//                 stockings under the left window, a wreath on the pantry wall
+//                 stockings under the left window, a wreath on the Lead's wall
 //   furniture   – a twinkling Christmas tree with presents underneath, red candles with holly
 //   overlay     – the wall light-strings blink in turns
 //   lights      – warm glows: tree, candles, light-strings
@@ -11,19 +11,19 @@ const BULBS = ['#ff5a5f', '#ffd23f', '#5ad1ff', '#7bd88f', '#ff9f43'];
 const WIRES = [
   [36, 96],
   [224, 300],
-  [444, 512],
+  [400, 472],
 ];
-const TREE = { x: 418, y: 274 };
+const TREE = { x: 620, y: 128 }; // in the Lead's corner office
 const GIFTS = [
-  [404, 280, 7, 5, '#c8102e', '#ffd23f'],
-  [425, 281, 8, 6, '#2e6fbf', '#f4f1ea'],
-  [413, 284, 9, 5, '#2e8b57', '#e5383b'],
+  [606, 134, 7, 5, '#c8102e', '#ffd23f'],
+  [627, 135, 8, 6, '#2e6fbf', '#f4f1ea'],
+  [615, 138, 9, 5, '#2e8b57', '#e5383b'],
 ];
 const CANDLES = [
   [10, 111, 157],
   [15, 111, 157],
-  [500, 43, 64],
-  [477, 141, 160],
+  [458, 265, 285], // pantry counter
+  [610, 299, 318], // cafe table
 ];
 
 const sagAt = (x0, x1, x) => 5 + Math.round(Math.sin((Math.PI * (x - x0)) / (x1 - x0)) * 3);
@@ -44,7 +44,7 @@ function paintStatic(g) {
   for (let x = 101; x < 222; x += 4) r(x, 4 + (x % 8 === 1 ? 0 : 3), 2, 1, '#3f9b62');
   for (let x = 104; x < 222; x += 9) r(x, 6, 1, 1, '#e5383b');
   // snow on the window sills
-  for (const wx of [40, 252]) {
+  for (const wx of [40, 252, 584]) {
     r(wx - 2, 34, 52, 1, '#f4f8ff');
     r(wx + 4, 33, 6, 1, '#f4f8ff');
     r(wx + 30, 33, 9, 1, '#f4f8ff');
@@ -56,13 +56,13 @@ function paintStatic(g) {
     r(x, 40, 4, 3, c);
     r(x - 2, 42, 5, 2, c);
   });
-  // wreath on the pantry wall between the cabinets and the fridge
+  // wreath on the Lead's wall, between the poster and the window
   const wreath = [[2, 0, 4], [1, 1, 6], [0, 2, 2], [6, 2, 2], [0, 3, 2], [6, 3, 2], [0, 4, 2], [6, 4, 2], [1, 5, 6], [2, 6, 4]];
-  for (const [dx, dy, w] of wreath) r(504 + dx, 22 + dy, w, 1, '#2e7d4f');
-  for (const [dx, dy] of [[2, 0], [6, 3], [1, 5], [5, 6]]) r(504 + dx, 22 + dy, 1, 1, '#e5383b');
-  r(506, 28, 4, 2, '#c8102e');
-  r(507, 30, 1, 2, '#c8102e');
-  r(509, 30, 1, 2, '#c8102e');
+  for (const [dx, dy, w] of wreath) r(552 + dx, 12 + dy, w, 1, '#2e7d4f');
+  for (const [dx, dy] of [[2, 0], [6, 3], [1, 5], [5, 6]]) r(552 + dx, 12 + dy, 1, 1, '#e5383b');
+  r(554, 18, 4, 2, '#c8102e');
+  r(555, 20, 1, 2, '#c8102e');
+  r(557, 20, 1, 2, '#c8102e');
 }
 
 // ---------- live items ----------
