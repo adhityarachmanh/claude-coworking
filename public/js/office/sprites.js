@@ -1,4 +1,8 @@
 // Procedural pixel-art sprites (characters, cat, icons) with automatic dark outlines, cached per state.
+// Characters and the cat follow the active office theme (themes.js); costumes are painted by costumes.js.
+import { COSTUMES } from './costumes.js';
+import { activeTheme, themedLook } from './themes.js';
+
 export const SPRITE_W = 20;
 export const SPRITE_H = 32;
 export const ANCHOR_X = 10; // feet center
@@ -9,6 +13,11 @@ const OUTLINE = '#2a1e2c';
 const EYE = '#2a1e2c';
 const WHITE = '#f4f1ea';
 const cache = new Map();
+
+/** Drops every cached sprite/avatar (after a theme switch the old ones are never drawn again). */
+export function clearSpriteCache() {
+  cache.clear();
+}
 
 function canvas(w, h) {
   const c = document.createElement('canvas');
@@ -294,6 +303,8 @@ function paintTorso(p, look, view, x, y, w, h) {
       p(x + 7, y, 1, 3, '#e9ecef');
       p(x, y + 3, w, 1, '#e9ecef');
       break;
+    case 'plain': // costumes paint their own details
+      break;
     default:
       p(x + 4, y, 2, 1, WHITE);
   }
@@ -316,6 +327,14 @@ function paintCharacter(look, s) {
   const sleeve = look.sleeve ?? look.top;
   const arms = s.arms ?? 'down';
   const f = s.frame ?? 0;
+  // Theme costume hooks (none for the plain office look: that path paints exactly as before).
+  const costume = look.costume ? COSTUMES[look.costume] : null;
+  const ctx = costume && { view, s, headY, torsoY, torsoH, seated, arms, f, sleeve, paintItem };
+  if (costume?.ghost) {
+    costume.paint(p, look, ctx);
+    return finishCharacter(c, g, look, s);
+  }
+  costume?.back?.(p, look, ctx);
 
   // legs
   if (s.pose === 'stand' || s.pose === 'walk') {
@@ -353,9 +372,12 @@ function paintCharacter(look, s) {
   } else {
     paintTorso(p, look, view, 5, torsoY, 10, torsoH);
   }
+  costume?.body?.(p, look, ctx);
 
   // head
-  if (view === 'left') {
+  if (costume?.head) {
+    costume.head(p, look, ctx);
+  } else if (view === 'left') {
     p(5, headY, 10, 11, look.skin);
     p(4, headY + 6, 1, 1, look.skin); // nose
     p(10, headY + 5, 1, 2, look.skinShade); // ear
@@ -382,12 +404,20 @@ function paintCharacter(look, s) {
       }
     }
   }
-  // neck
-  p(9, headY + 11, 2, 1, look.skinShade);
-  paintHair(p, look, view, headY, torsoY);
+  if (!costume?.head) {
+    // neck
+    p(9, headY + 11, 2, 1, look.skinShade);
+    paintHair(p, look, view, headY, torsoY);
+  }
   paintAccessories(p, look, view, headY);
   if (s.mood === 'worried' && view === 'down') p(17, headY + 1, 1, 2, '#8fd3ff');
+  costume?.front?.(p, look, ctx);
+  if (!costume?.arms?.(p, look, ctx)) paintArms(p, look, s, view, headY, torsoY, sleeve, arms, f);
+  costume?.after?.(p, look, ctx);
+  return finishCharacter(c, g, look, s);
+}
 
+function paintArms(p, look, s, view, headY, torsoY, sleeve, arms, f) {
   // arms
   const armUp = (x) => {
     p(x, headY + 2, 2, torsoY - headY - 2, sleeve);
@@ -437,10 +467,20 @@ function paintCharacter(look, s) {
     p(15, torsoY, 2, 4, sleeve);
     p(15, torsoY + 4, 2, 3 - swingR, look.skin);
   }
+}
 
+/** Outline, optional translucency (ghosts), mirror for the right-facing view. */
+function finishCharacter(c, g, look, s) {
   g.setTransform(1, 0, 0, 1, 0, 0);
   outline(c);
-  return s.view === 'right' ? mirror(c) : c;
+  let out = c;
+  if (look.alpha) {
+    out = canvas(c.width, c.height);
+    const og = out.getContext('2d');
+    og.globalAlpha = look.alpha;
+    og.drawImage(c, 0, 0);
+  }
+  return s.view === 'right' ? mirror(out) : out;
 }
 
 function paintItem(p, item, x, y) {
@@ -455,7 +495,8 @@ function paintItem(p, item, x, y) {
   }
 }
 
-export function characterSprite(look, s) {
+export function characterSprite(baseLook, s) {
+  const look = themedLook(baseLook);
   const key = `${look.id}|${s.view}|${s.pose}|${s.frame ?? 0}|${s.arms ?? 'down'}|${s.blink ? 1 : 0}|${s.talk ? 1 : 0}|${s.mood ?? ''}|${s.item ?? ''}`;
   let sprite = cache.get(key);
   if (!sprite) {
@@ -465,11 +506,23 @@ export function characterSprite(look, s) {
   return sprite;
 }
 
+/**
+ * Pixels to lift the sprite off the floor this frame: floating costumes (ghosts) bob gently; others 0.
+ * The phase comes from the role so ghosts don't bob in sync.
+ */
+export function spriteLift(baseLook, now) {
+  const look = themedLook(baseLook);
+  if (!look.float) return 0;
+  const phase = [...look.id].reduce((n, ch) => n + ch.charCodeAt(0), 0);
+  return 1 + Math.round(Math.sin(now / 420 + phase) * 1.4);
+}
+
 /** Head-and-shoulders portrait as a data URL for the team panel. */
-export function avatarURL(look, scale = 3) {
+export function avatarURL(baseLook, scale = 3) {
+  const look = themedLook(baseLook);
   const key = `avatar|${look.id}|${scale}`;
   if (cache.has(key)) return cache.get(key);
-  const sprite = characterSprite(look, { view: 'down', pose: 'stand', mood: 'happy' });
+  const sprite = characterSprite(baseLook, { view: 'down', pose: 'stand', mood: 'happy' });
   const c = canvas(18 * scale, 21 * scale);
   const g = c.getContext('2d');
   g.imageSmoothingEnabled = false;
@@ -482,12 +535,12 @@ export function avatarURL(look, scale = 3) {
 // ---------- cat ----------
 
 export function catSprite(state, frame, flip) {
-  const key = `cat|${state}|${frame}|${flip ? 1 : 0}`;
+  const pal = activeTheme().cat;
+  const key = `cat|${state}|${frame}|${flip ? 1 : 0}|${pal.fur}`;
   if (cache.has(key)) return cache.get(key);
   const c = canvas(16, 12);
   const p = painter(c.getContext('2d'));
-  const fur = '#f0a050';
-  const stripe = '#c8752e';
+  const { fur, stripe } = pal;
   if (state === 'sleep') {
     p(3, 6, 10, 4, fur);
     p(2, 7, 12, 3, fur);
@@ -496,16 +549,16 @@ export function catSprite(state, frame, flip) {
     p(13, 3, 1, 1, fur);
     p(5, 6, 1, 3, stripe);
     p(8, 6, 1, 3, stripe);
-    p(11, 6, 2, 1, '#2a1e2c');
+    p(11, 6, 2, 1, pal.closed);
     p(2, 9, 6, 1, stripe);
   } else if (state === 'sit') {
     p(5, 5, 6, 6, fur);
     p(4, 1, 8, 5, fur);
     p(4, 0, 1, 1, fur);
     p(11, 0, 1, 1, fur);
-    p(6, 3, 1, 1, '#2a1e2c');
-    p(9, 3, 1, 1, '#2a1e2c');
-    p(7, 4, 2, 1, '#e07a7a');
+    p(6, 3, 1, 1, pal.eye);
+    p(9, 3, 1, 1, pal.eye);
+    p(7, 4, 2, 1, pal.nose);
     p(10, 9, 4, 1, fur);
     p(6, 7, 1, 2, stripe);
     p(9, 7, 1, 2, stripe);
@@ -514,7 +567,7 @@ export function catSprite(state, frame, flip) {
     p(1, 2, 5, 4, fur);
     p(1, 1, 1, 1, fur);
     p(4, 1, 1, 1, fur);
-    p(2, 3, 1, 1, '#2a1e2c');
+    p(2, 3, 1, 1, pal.eye);
     p(12, 1, 1, 4, fur);
     p(13, 0, 1, 2, fur);
     p(6, 4, 1, 3, stripe);
@@ -522,7 +575,7 @@ export function catSprite(state, frame, flip) {
     const legs = frame ? [4, 7, 9, 11] : [5, 6, 10, 11];
     for (const x of legs) p(x, 8, 1, 2, fur);
   }
-  outline(c);
+  outline(c, pal.outline);
   const result = flip ? mirror(c) : c;
   cache.set(key, result);
   return result;

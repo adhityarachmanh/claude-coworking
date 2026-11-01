@@ -30,6 +30,7 @@ import { initStatusline } from './features/statusline.js';
 import { initSuggest } from './features/suggest.js';
 import { initTasks } from './features/tasks.js';
 import { initTeam, renderTeam } from './features/team.js';
+import { initTheme } from './features/theme.js';
 import { initMobileNav, initPanelResizer, initTabs } from './ui/layout.js';
 import { initModals } from './ui/modals.js';
 import { initShortcuts } from './ui/shortcuts.js';
@@ -49,6 +50,7 @@ initSuggest();
 initSessions();
 initMoreMenu();
 initSettings();
+initTheme(); // before the first frame: the saved theme is drawn right away
 initBackup(); // after initSettings: its #btn-settings listener runs after the dialog's own
 initNotify();
 initChanges();

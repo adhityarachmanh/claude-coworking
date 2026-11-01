@@ -1,4 +1,7 @@
 // Office layout (logical pixels), static background, furniture, monitor screens and walk grid.
+// Colours, extra scenery, window sky and lighting follow the active theme (themes.js).
+import { activeTheme } from './themes.js';
+
 export const W = 544;
 export const H = 288;
 export const WALL_H = 48;
@@ -172,6 +175,13 @@ export function rectFn(g) {
   };
 }
 
+/** rectFn with the active theme's palette remap (the plain office has none: identical to rectFn). */
+function paintFn(g) {
+  const r = rectFn(g);
+  const map = activeTheme().colors;
+  return map ? (x, y, w, h, c) => r(x, y, w, h, map[c] ?? c) : r;
+}
+
 function hash(n) {
   const x = Math.sin(n * 127.1) * 43758.5453;
   return x - Math.floor(x);
@@ -183,7 +193,7 @@ export function renderBackground() {
   c.width = W;
   c.height = H;
   const g = c.getContext('2d');
-  const r = rectFn(g);
+  const r = paintFn(g);
 
   // wood floor (work area, corridor, under meeting room)
   for (let y = WALL_H; y < H; y += 6) {
@@ -257,6 +267,7 @@ export function renderBackground() {
     r(x + 10, 11, 1, 3, '#7b6650');
   }
   r(444, 19, 56, 1, '#a99278');
+  activeTheme().decor?.paintStatic(g);
   return c;
 }
 
@@ -267,7 +278,7 @@ export function buildFurniture() {
 
   // pantry counter with coffee machine, fridge
   add(63, (g, t, ctx) => {
-    const r = rectFn(g);
+    const r = paintFn(g);
     r(442, 44, 66, 6, '#a3826a');
     r(442, 44, 66, 1, '#bf9c82');
     r(442, 50, 66, 12, '#c4ad92');
@@ -290,7 +301,7 @@ export function buildFurniture() {
 
   // server rack beside DevOps (LEDs blink faster while commands run)
   add(236, (g, t, ctx) => {
-    const r = rectFn(g);
+    const r = paintFn(g);
     r(270, 200, 14, 36, '#23252e');
     r(270, 200, 14, 1, '#3a3d4a');
     for (let i = 0; i < 7; i++) {
@@ -303,7 +314,7 @@ export function buildFurniture() {
 
   // bookshelf
   add(156, (g) => {
-    const r = rectFn(g);
+    const r = paintFn(g);
     r(4, 112, 16, 44, '#7a5636');
     r(4, 112, 16, 2, '#95704c');
     const colors = ['#e07a5f', '#3d85c6', '#f2cc8f', '#81b29a', '#9b5de5', '#e5534b'];
@@ -316,7 +327,7 @@ export function buildFurniture() {
 
   // boss office: two leather guest chairs facing the executive desk
   add(146, (g) => {
-    const r = rectFn(g);
+    const r = paintFn(g);
     for (const x of [352, 392]) {
       r(x - 6, 134, 12, 4, '#6b3a2e');
       r(x - 6, 138, 12, 8, '#7d4636');
@@ -328,7 +339,7 @@ export function buildFurniture() {
   add(203, (g) => {
     const glass = 'rgba(190,225,245,.35)';
     const frame = '#8fa3b5';
-    const r = rectFn(g);
+    const r = paintFn(g);
     r(304, 48, 2, 64, glass);
     r(304, 140, 2, 64, glass);
     r(304, 202, 128, 2, glass);
@@ -340,7 +351,7 @@ export function buildFurniture() {
 
   // pantry: water cooler, cafe table, sofa, coffee table
   add(127, (g) => {
-    const r = rectFn(g);
+    const r = paintFn(g);
     r(526, 108, 12, 20, '#e3e9ee');
     r(526, 108, 12, 1, '#f5f8fa');
     r(528, 96, 8, 12, '#8fd0f0');
@@ -348,7 +359,7 @@ export function buildFurniture() {
     r(530, 114, 4, 2, '#3d85c6');
   });
   add(159, (g) => {
-    const r = rectFn(g);
+    const r = paintFn(g);
     for (const x of [458, 494]) {
       r(x - 4, 150, 9, 5, '#a7835f');
       r(x - 4, 150, 9, 1, '#c19b75');
@@ -360,7 +371,7 @@ export function buildFurniture() {
     r(471, 145, 3, 3, '#7a4a2a');
   });
   add(247, (g) => {
-    const r = rectFn(g);
+    const r = paintFn(g);
     r(458, 222, 64, 12, '#4f7299');
     r(458, 222, 64, 2, '#6a8fb8');
     r(458, 234, 64, 8, '#5e83ad');
@@ -373,7 +384,7 @@ export function buildFurniture() {
     r(476, 225, 10, 7, '#f2c14e');
   });
   add(268, (g) => {
-    const r = rectFn(g);
+    const r = paintFn(g);
     r(470, 258, 40, 7, '#a7835f');
     r(470, 258, 40, 1, '#c19b75');
     r(470, 265, 40, 2, '#86643f');
@@ -384,7 +395,7 @@ export function buildFurniture() {
   // plants (sway gently)
   for (const [x, y] of [[290, 66], [12, 282], [296, 284], [420, 198], [536, 204]]) {
     add(y, (g, t) => {
-      const r = rectFn(g);
+      const r = paintFn(g);
       const sway = Math.sin(t / 900 + x) > 0.6 ? 1 : 0;
       r(x - 4, y - 6, 9, 7, '#b5653b');
       r(x - 4, y - 6, 9, 1, '#cf7a4c');
@@ -395,11 +406,12 @@ export function buildFurniture() {
       r(x + 5 + sway, y - 13, 4, 6, '#3d8b5a');
     });
   }
+  items.push(...(activeTheme().decor?.furniture() ?? []));
   return items;
 }
 
 export function drawDesk(g, desk) {
-  const r = rectFn(g);
+  const r = paintFn(g);
   const { x, y, w, cx } = desk;
   r(x + 2, y + 18, w - 4, 2, 'rgba(0,0,0,.12)');
   r(x, y, w, 10, '#c4935f');
@@ -485,7 +497,7 @@ export function drawDesk(g, desk) {
 
 /** Executive desk seen from the front: the boss sits behind it, monitor back faces the room. */
 export function drawBossDesk(g, desk, working, t) {
-  const r = rectFn(g);
+  const r = paintFn(g);
   const { x, y, w, cx } = desk;
   r(x + 2, y + 20, w - 4, 2, 'rgba(0,0,0,.18)');
   // monitor (back side) on the left, laptop on the right
@@ -511,7 +523,7 @@ export function drawBossDesk(g, desk, working, t) {
 
 /** High-back leather chair behind the boss; drawn before the boss so they sit in it. */
 export function drawBossChair(g, seat) {
-  const r = rectFn(g);
+  const r = paintFn(g);
   const { x, y } = seat;
   r(x - 9, y - 30, 18, 24, '#3b2622');
   r(x - 8, y - 29, 16, 1, '#5a3a33');
@@ -523,7 +535,7 @@ export function drawBossChair(g, seat) {
 
 /** Chair seen from behind; drawn after a seated worker so the backrest overlaps them. */
 export function drawChair(g, seat, occupied) {
-  const r = rectFn(g);
+  const r = paintFn(g);
   const { x, y } = seat;
   if (!occupied) r(x - 6, y - 11, 12, 2, '#59607d');
   r(x - 6, y - 9, 12, 7, '#3f4560');
@@ -538,7 +550,7 @@ export function drawChair(g, seat, occupied) {
 const CODE_COLORS = ['#c792ea', '#82aaff', '#c3e88d', '#f78c6c', '#89ddff', '#ffcb6b'];
 
 export function drawMonitors(g, desk, mode, t, seed) {
-  const r = rectFn(g);
+  const r = paintFn(g);
   const screens = desk.dual ? [[desk.cx - 18, 16], [desk.cx + 2, 16]] : [[desk.cx - 10, 20]];
   screens.forEach(([mx, mw], i) => {
     const my = desk.y - 12;
@@ -703,11 +715,16 @@ function drawScreen(r, x, y, w, h, mode, t, seed) {
 // ---------- live wall details ----------
 
 export function drawWallLive(g, t, now, activity) {
-  const r = rectFn(g);
+  const r = paintFn(g);
   const hour = now.getHours() + now.getMinutes() / 60;
   const night = hour < 5.5 || hour >= 19;
   const dusk = (hour >= 17 && hour < 19) || (hour >= 5.5 && hour < 7);
+  const sky = activeTheme().sky;
   for (const wx of [40, 252]) {
+    if (sky) {
+      paintThemedSky(r, sky, wx, t);
+      continue;
+    }
     r(wx + 2, 11, 44, 11, night ? '#141b3a' : dusk ? '#f39c6b' : '#7cc4f2');
     r(wx + 2, 22, 44, 11, night ? '#27325e' : dusk ? '#f7c59f' : '#b7e2fa');
     if (night) {
@@ -753,8 +770,28 @@ export function drawWallLive(g, t, now, activity) {
   return { night, dusk };
 }
 
+/** A theme's fixed night sky in one window: gradient bands, a big moon, twinkling stars, frame bars. */
+function paintThemedSky(r, sky, wx, t) {
+  r(wx + 2, 11, 44, 11, sky.top);
+  r(wx + 2, 22, 44, 11, sky.bottom);
+  for (let i = 0; i < 6; i++) if (hash(i + wx + Math.floor(t / 1100)) > 0.35) r(wx + 4 + i * 7, 13 + ((i * 5) % 12), 1, 1, sky.star);
+  if (wx === 40) {
+    // round full moon (row widths of a pixel circle) with two craters
+    [3, 5, 7, 7, 7, 5, 3].forEach((w, i) => r(wx + 33 - (w - 1) / 2, 12 + i, w, 1, sky.moon));
+    r(wx + 31, 14, 2, 1, '#ddd3a0');
+    r(wx + 34, 16, 1, 2, '#ddd3a0');
+  }
+  r(wx + 23, 11, 2, 22, '#7a6248');
+  r(wx + 2, 21, 44, 1, '#7a6248');
+}
+
+/** Theme scenery drawn over the scene every frame (Halloween: bats, spider). */
+export function drawThemeOverlay(g, t) {
+  activeTheme().decor?.overlay(g, t);
+}
+
 export function drawDoor(g, open) {
-  const r = rectFn(g);
+  const r = paintFn(g);
   if (open) {
     r(7, 15, 22, 33, '#2c221c');
     r(7, 15, 4, 33, '#8a5a3b');
@@ -768,7 +805,9 @@ export function drawDoor(g, open) {
 }
 
 /** Night darkening + lamp/monitor glow, drawn over the scene. */
-export function drawLighting(g, { night, dusk }, glows) {
+export function drawLighting(g, { night, dusk }, glows, t = 0) {
+  const themed = activeTheme();
+  if (themed.light) return drawThemedLighting(g, themed, night, glows, t);
   if (!night && !dusk) {
     g.fillStyle = 'rgba(255,248,220,.07)';
     for (const wx of [40, 252]) {
@@ -794,6 +833,29 @@ export function drawLighting(g, { night, dusk }, glows) {
   };
   const lamp = night ? 'rgba(255,200,130,.20)' : 'rgba(255,190,120,.10)';
   for (const [x, y] of [[80, 128], [200, 128], [80, 200], [200, 200], [368, 120], [490, 170], [140, 272], [490, 250]]) glow(x, y, 70, lamp);
+  for (const { x, y, color } of glows) glow(x, y, 24, color);
+  g.globalCompositeOperation = 'source-over';
+}
+
+/** Theme lighting (Halloween): purple tint at any hour, warm lamps, flickering candle/pumpkin glows. */
+function drawThemedLighting(g, themed, night, glows, t) {
+  const light = themed.light;
+  g.fillStyle = night ? light.nightTint : light.tint;
+  g.fillRect(0, 0, W, H);
+  // keep the whiteboard readable: undo most of the tint over it
+  g.fillStyle = 'rgba(255,255,255,.22)';
+  g.fillRect(BOARD.x, BOARD.y, BOARD.w, BOARD.h);
+  g.globalCompositeOperation = 'lighter';
+  const glow = (x, y, radius, color) => {
+    const grad = g.createRadialGradient(x, y, 0, x, y, radius);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+  };
+  const lamp = night ? light.lampNight : light.lamp;
+  for (const [x, y] of [[80, 128], [200, 128], [80, 200], [200, 200], [368, 120], [490, 170]]) glow(x, y, 64, lamp);
+  for (const l of themed.decor?.lights(t) ?? []) glow(l.x, l.y, l.radius, l.color);
   for (const { x, y, color } of glows) glow(x, y, 24, color);
   g.globalCompositeOperation = 'source-over';
 }

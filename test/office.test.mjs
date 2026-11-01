@@ -1,7 +1,12 @@
-// Office scene logic (no canvas needed): who counts as "working" while the chat is still loading.
+// Office scene logic (no canvas needed): who counts as "working" while the chat is still loading;
+// office themes (registry, costume painters).
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { CAST, ROLE_ORDER, VISITOR } from '../public/js/office/cast.js';
+import { COSTUMES } from '../public/js/office/costumes.js';
 import { Scene } from '../public/js/office/scene.js';
+import { spriteLift } from '../public/js/office/sprites.js';
+import { THEMES, activeTheme, isTheme, theme, themedLook } from '../public/js/office/themes.js';
 
 /** Runs `fn` with performance.now() frozen at `ms`, so busy timers can be checked deterministically. */
 function at(ms, fn) {
@@ -80,4 +85,90 @@ test('after a page refresh the server status (working) puts mid-task characters 
   // terminal (CLI mirror) work counts too
   at(70_000, () => scene.setStatus({ busy: false, working: {}, cliWorking: { devops: { tools: 1, agents: 0, label: 'build' } } }));
   assert.ok(scene.people.devops.isBusy(80_000));
+});
+
+// ---------- themes (registry and costume painters; sprites themselves are checked in the browser: ui.test.mjs) ----------
+
+/** Runs `fn` with `theme.current = id`, restoring the default afterwards. */
+function withTheme(id, fn) {
+  const before = theme.current;
+  theme.current = id;
+  try {
+    return fn();
+  } finally {
+    theme.current = before;
+  }
+}
+
+test('theme registry: kantor is the default and leaves every look untouched', () => {
+  assert.equal(theme.current, 'kantor');
+  assert.ok(isTheme('kantor') && isTheme('halloween') && !isTheme('toString') && !isTheme('nope'));
+  for (const id of ROLE_ORDER) assert.equal(themedLook(CAST[id].look), CAST[id].look, `${id}: same object, so sprites are identical`);
+  assert.equal(themedLook(VISITOR.look), VISITOR.look);
+  for (const t of Object.values(THEMES)) for (const key of ['id', 'label', 'icon', 'looks', 'cat']) assert.ok(key in t, `${t.id}.${key}`);
+});
+
+test('halloween: every role has its own costume and keeps its role colour as an accent', () => {
+  withTheme('halloween', () => {
+    assert.equal(activeTheme().id, 'halloween');
+    const ids = new Set();
+    for (const role of ROLE_ORDER) {
+      const look = themedLook(CAST[role].look);
+      assert.ok(look.costume, `${role} has a costume`);
+      assert.ok(COSTUMES[look.costume], `${role}: costume "${look.costume}" has a painter`);
+      assert.equal(look.id, `${role}@halloween`, 'own sprite cache key');
+      assert.ok(Object.values(look).includes(CAST[role].color), `${role}: role colour ${CAST[role].color} used in the costume`);
+      assert.equal(themedLook(CAST[role].look), look, 'memoised');
+      ids.add(look.id);
+    }
+    assert.equal(ids.size, ROLE_ORDER.length);
+  });
+});
+
+test('halloween ghosts float (gentle bob), everyone else stays on the floor', () => {
+  for (const role of ROLE_ORDER) assert.equal(spriteLift(CAST[role].look, 1234), 0, `kantor: ${role} on the floor`);
+  withTheme('halloween', () => {
+    for (const role of ROLE_ORDER) {
+      const floats = Boolean(themedLook(CAST[role].look).float);
+      const lifts = new Set(Array.from({ length: 40 }, (_, i) => spriteLift(CAST[role].look, i * 97)));
+      if (floats) {
+        assert.ok(lifts.size > 1, `${role}: bobs`);
+        for (const v of lifts) assert.ok(v >= -1 && v <= 3, `${role}: small lift (${v})`);
+      } else assert.deepEqual([...lifts], [0], `${role}: no lift`);
+    }
+    assert.ok(['ui-ux', 'qa', 'writer'].every((r) => themedLook(CAST[r].look).float), 'the ghosts float');
+  });
+});
+
+test('costume painters: every role × view × pose × arms paints inside the 20×32 sprite', () => {
+  withTheme('halloween', () => {
+    const noItem = () => {};
+    for (const role of ROLE_ORDER) {
+      const look = themedLook(CAST[role].look);
+      const cos = COSTUMES[look.costume];
+      for (const view of ['down', 'up', 'left']) {
+        for (const pose of ['stand', 'walk', 'sit', 'sofa']) {
+          for (const arms of ['down', 'type', 'cheer', 'raise', 'hold', 'scratch']) {
+            for (const f of [0, 1, 2]) {
+              const seated = pose === 'sit' || pose === 'sofa';
+              const headY = seated ? 6 : 3;
+              const s = { view, pose, arms, frame: f, blink: f === 2, talk: f === 1, mood: ['', 'happy', 'worried'][f], item: arms === 'hold' ? 'cup' : '' };
+              const ctx = { view, s, headY, torsoY: headY + 12, torsoH: seated ? 6 : 7, seated, arms, f, sleeve: look.top, paintItem: noItem };
+              let pixels = 0;
+              // Sprite canvas is 32 tall with a 2px top pad: painter y runs from -2 to 29.
+              const p = (x, y, w, h, color) => {
+                if (!color || w <= 0 || h <= 0) return;
+                pixels++;
+                const where = `${role} ${view}/${pose}/${arms}/${f}: rect ${x},${y} ${w}×${h}`;
+                assert.ok(x >= 0 && x + w <= 20 && y >= -2 && y + h <= 30, `outside the sprite — ${where}`);
+              };
+              if (cos.ghost) cos.paint(p, look, ctx);
+              else for (const hook of ['back', 'body', 'head', 'front', 'arms', 'after']) cos[hook]?.(p, look, ctx);
+              assert.ok(pixels > 0 || !cos.ghost, `${role}: ghost painted something`);
+            }
+          }
+        }
+      }
+    }
+  });
 });

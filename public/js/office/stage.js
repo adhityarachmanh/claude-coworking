@@ -1,6 +1,6 @@
 // Renders the active Scene: low-res pixel canvas scaled up, plus an HTML overlay for crisp text.
 import { roleColor } from './cast.js';
-import { BOARD, H, W, buildFurniture, drawDoor, drawLighting, drawWallLive, renderBackground } from './world.js';
+import { BOARD, H, W, buildFurniture, drawDoor, drawLighting, drawThemeOverlay, drawWallLive, renderBackground } from './world.js';
 
 const STATUS_MARK = { completed: '✔', in_progress: '▶', pending: '○' };
 
@@ -23,6 +23,12 @@ export class Stage {
     this.emptyEl = this.el('div', 'stage-empty');
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
+  }
+
+  /** Theme switched: rebuild the cached background and the furniture list (sprites are cleared by the caller). */
+  refreshTheme() {
+    this.background = renderBackground();
+    this.furniture = buildFurniture();
   }
 
   el(tag, cls) {
@@ -78,7 +84,8 @@ export class Stage {
       ...scene.drawables(now),
     ].sort((a, b) => a.y - b.y);
     for (const d of drawables) d.draw(g, t);
-    drawLighting(g, light, scene.monitorGlows(now));
+    drawThemeOverlay(g, t);
+    drawLighting(g, light, scene.monitorGlows(now), t);
     scene.drawEffects(g, now);
     this.blit();
     this.updateOverlay(now);

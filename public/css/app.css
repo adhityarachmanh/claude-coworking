@@ -1100,6 +1100,10 @@ body.read-only #composer-hint { color: var(--ask); }
 
 /* ---------- ⚙ → Cadangkan riwayat (export / import) ---------- */
 .backup { display: flex; flex-direction: column; gap: 6px; }
+.theme-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.theme-pick p { margin: 0; }
+.theme-pick .seg button { white-space: nowrap; }
+@media (max-width: 760px) { .theme-pick .seg { align-self: stretch; } }
 .backup-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .backup-actions button { font-size: var(--fs-sm); padding: 5px 10px; }
 .backup-result { font-size: var(--fs-xs); color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px 10px; overflow-wrap: anywhere; }

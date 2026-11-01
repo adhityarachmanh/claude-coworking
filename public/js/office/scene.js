@@ -1,6 +1,6 @@
 // One office per project: people, cat, whiteboard and effects, driven by office events from the server.
 import { CAST, ROLE_ORDER, VISITOR } from './cast.js';
-import { ANCHOR_X, ANCHOR_Y, catSprite, characterSprite, iconSprite } from './sprites.js';
+import { ANCHOR_X, ANCHOR_Y, catSprite, characterSprite, iconSprite, spriteLift } from './sprites.js';
 import { CAT_SPOTS, DESKS, DOOR, SOFA_SEATS, SPOTS, drawBossChair, drawBossDesk, drawChair, drawDesk, drawMonitors, findPath, rectFn } from './world.js';
 
 const WALK_SPEED = 46; // logical px per second
@@ -330,7 +330,8 @@ class Person {
     const y = Math.round(this.y);
     r(x - 5, y - 1, 11, 2, 'rgba(0,0,0,.18)');
     r(x - 3, y - 2, 7, 1, 'rgba(0,0,0,.10)');
-    g.drawImage(characterSprite(this.cfg.look, this.spriteState(now)), x - ANCHOR_X, y - ANCHOR_Y);
+    // Floating costumes (theme ghosts) hover above their shadow; everyone else stands on it (lift 0).
+    g.drawImage(characterSprite(this.cfg.look, this.spriteState(now)), x - ANCHOR_X, y - ANCHOR_Y - spriteLift(this.cfg.look, now));
   }
 }
 

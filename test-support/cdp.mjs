@@ -299,6 +299,14 @@ export class Page {
     await this.send('Input.dispatchKeyEvent', { type: 'keyUp', ...params });
   }
 
+  /** PNG of the viewport (or a `clip` {x, y, width, height} in CSS px) as a Buffer. */
+  async screenshot({ clip } = {}) {
+    const params = { format: 'png', captureBeyondViewport: false };
+    if (clip) params.clip = { ...clip, scale: 1 };
+    const { data } = await this.send('Page.captureScreenshot', params);
+    return Buffer.from(data, 'base64');
+  }
+
   async close() {
     await this.conn.send('Target.closeTarget', { targetId: this.targetId }).catch(() => {});
   }

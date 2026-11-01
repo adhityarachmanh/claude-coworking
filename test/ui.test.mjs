@@ -414,6 +414,88 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
+    test('⚙ Tema kantor: pilih Halloween → tersimpan, bertahan setelah reload, sprite & avatar berganti; kembali ke Kantor', async () => {
+      page.clearProblems();
+      const openSettings = async () => {
+        await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+        await page.click('#btn-settings');
+        await settle(page, 'settings-modal');
+      };
+      const themeState = () => ({
+        stored: localStorage.getItem('office.theme'),
+        root: document.documentElement.dataset.officeTheme,
+        checked: [...document.querySelectorAll('#theme-seg button[aria-pressed="true"]')].map((b) => b.dataset.theme),
+        avatar: document.querySelector('#team .member[data-role="ui-ux"] img')?.src ?? '',
+      });
+
+      await openSettings();
+      const seg = await page.eval(() => ({
+        role: document.querySelector('#theme-seg').getAttribute('role'),
+        label: document.querySelector('#theme-seg').getAttribute('aria-labelledby'),
+        options: [...document.querySelectorAll('#theme-seg button')].map((b) => [b.dataset.theme, b.textContent.trim()]),
+      }));
+      assert.deepEqual(seg, { role: 'group', label: 'theme-title', options: [['kantor', '🏢 Kantor'], ['halloween', '🎃 Halloween']] });
+      const before = await page.eval(themeState);
+      assert.deepEqual({ root: before.root, checked: before.checked }, { root: 'kantor', checked: ['kantor'] }, 'default: Kantor');
+
+      await page.click('#theme-seg button[data-theme="halloween"]');
+      const picked = await page.eval(themeState);
+      assert.deepEqual({ stored: picked.stored, root: picked.root, checked: picked.checked }, { stored: 'halloween', root: 'halloween', checked: ['halloween'] });
+      assert.notEqual(picked.avatar, before.avatar, 'avatar kartu tim digambar ulang tanpa reload');
+      assert.equal(await page.eval(horizontalOverflow), null, 'dialog Pengaturan tanpa scroll horizontal');
+      await page.press('Escape');
+
+      await openApp(page, `#${projectId}`); // full reload
+      const reloaded = await page.eval(themeState);
+      assert.deepEqual({ stored: reloaded.stored, root: reloaded.root, checked: reloaded.checked }, { stored: 'halloween', root: 'halloween', checked: ['halloween'] }, 'bertahan setelah reload');
+      assert.equal(reloaded.avatar, picked.avatar);
+      assert.equal(await page.eval(horizontalOverflow), null);
+
+      // Every role in the main poses paints in both themes; switching really changes the sprites (cache invalidated).
+      const sprites = await page.eval(async () => {
+        const { applyTheme } = await import('/js/features/theme.js');
+        const { characterSprite, catSprite } = await import('/js/office/sprites.js');
+        const { CAST, ROLE_ORDER } = await import('/js/office/cast.js');
+        const states = [];
+        for (const view of ['down', 'up', 'left', 'right']) {
+          for (const [pose, arms] of [['stand', 'down'], ['walk', 'down'], ['sit', 'type'], ['sofa', 'hold'], ['stand', 'raise'], ['stand', 'cheer'], ['stand', 'scratch']]) {
+            for (const frame of [0, 1, 2]) states.push({ view, pose, arms, frame, item: 'cup', blink: frame === 2, talk: frame === 1, mood: frame ? 'happy' : 'worried' });
+          }
+        }
+        const render = () => Object.fromEntries(ROLE_ORDER.map((id) => [id, states.map((s) => characterSprite(CAST[id].look, s).toDataURL()).join()]));
+        const out = {};
+        applyTheme('kantor', { persist: false });
+        out.kantor = render();
+        out.catKantor = catSprite('sit', 0, false).toDataURL();
+        applyTheme('halloween', { persist: false });
+        out.halloween = render();
+        out.catHalloween = catSprite('sit', 0, false).toDataURL();
+        applyTheme('kantor', { persist: false });
+        out.kantorAgain = render();
+        applyTheme('halloween', { persist: false });
+        return {
+          changed: ROLE_ORDER.filter((id) => out.kantor[id] !== out.halloween[id]),
+          stable: ROLE_ORDER.filter((id) => out.kantor[id] === out.kantorAgain[id]),
+          roles: ROLE_ORDER,
+          catChanged: out.catKantor !== out.catHalloween,
+        };
+      });
+      assert.deepEqual(sprites.changed, sprites.roles, 'setiap role berkostum di Halloween');
+      assert.deepEqual(sprites.stable, sprites.roles, 'kembali ke Kantor = sprite semula');
+      assert.ok(sprites.catChanged, 'kucing hitam di Halloween');
+
+      // A couple of frames in Halloween (bats, candles, lighting) without errors, then back to Kantor.
+      await sleep(300);
+      await openSettings();
+      await page.click('#theme-seg button[data-theme="kantor"]');
+      await page.press('Escape');
+      await openApp(page, `#${projectId}`);
+      const back = await page.eval(themeState);
+      assert.deepEqual({ stored: back.stored, root: back.root }, { stored: 'kantor', root: 'kantor' });
+      assert.equal(back.avatar, before.avatar, 'avatar Kantor kembali seperti semula');
+      assert.deepEqual(realProblems(page), []);
+    });
+
     test('pair.html termuat tanpa error dan tanpa scroll horizontal', async () => {
       page.clearProblems();
       await page.goto(`${BASE}/pair`);
