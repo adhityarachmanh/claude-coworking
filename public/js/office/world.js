@@ -128,7 +128,7 @@ function buildWalkGrid() {
   grid.blocked = blocked;
 }
 
-layoutDesks(DESK_ORDER.slice(0, 12)); // the default team until the server says otherwise
+layoutDesks(DESK_ORDER); // the default team (every catalog role) until the server says otherwise — must match roster.js DEFAULT_TEAM
 
 const cellOf = (p) => [Math.max(0, Math.min(COLS - 1, Math.floor(p.x / CELL))), Math.max(0, Math.min(grid.rows - 1, Math.floor(p.y / CELL)))];
 const free = (c, r) => c >= 0 && r >= 0 && c < COLS && r < grid.rows && !grid.blocked[r * COLS + c];
