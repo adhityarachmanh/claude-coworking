@@ -280,6 +280,13 @@ async function handlePrompt(text) {
     await streamText(`lanjut session=${sessionId} resume=${flag('--resume') ?? '-'}`, 5);
     return result();
   }
+  if (/tim\?/.test(text)) {
+    // 👥 Kelola tim: which subagents (--agents) and Lead prompt lines this process was started with.
+    const agents = Object.keys(JSON.parse(flag('--agents') ?? '{}')).sort().join(',');
+    const leadRoles = [...(flag('--append-system-prompt') ?? '').matchAll(/^- ([\w-]+): /gm)].map((m) => m[1]).sort().join(',');
+    await streamText(`agents=${agents || '-'} lead=${leadRoles || '-'} pid=${process.pid}`, 5);
+    return result();
+  }
   if (/status\?/.test(text)) {
     await streamText(`mode=${live.mode} model=${live.model} effort=${live.effort} pid=${process.pid} resumeAt=${flag('--resume-session-at') ?? '-'}`, 5);
     return result();

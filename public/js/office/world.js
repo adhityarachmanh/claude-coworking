@@ -3,32 +3,54 @@
 import { activeTheme } from './themes.js';
 
 export const W = 544;
+/** Height of the default office (up to 12 desks); `room.h` is the live height. */
 export const H = 288;
 export const WALL_H = 48;
 const CELL = 8;
+// The office as it is now: taller than H when the team needs a 4th row of desks (👥 Kelola tim, layoutDesks).
+export const room = { w: W, h: H };
 
-// Workstations: 3 rows × 4 desks. seat = where the worker's feet are when seated.
+// Workstations: a grid of 4 columns, one desk per active role, filled row by row in DESK_ORDER (the default
+// team of 12 gives the original 3 × 4 layout). seat = where the worker's feet are when seated.
 const COLS_X = [24, 88, 152, 216];
-const ROWS_Y = [76, 148, 220];
-const LAYOUT = [
-  ['pm', 'ba', 'architect', 'ui-ux'],
-  ['frontend', 'backend', 'dba', 'freelancer'], // freelancer: hot desk for generalist subagents
-  ['qa', 'security', 'writer', 'devops'],
+const FIRST_ROW_Y = 76;
+const ROW_STEP = 72;
+const MIN_ROWS = 3; // a smaller team keeps the room size (empty floor where desks would be)
+const MAX_DESKS = COLS_X.length * 4;
+const DESK_ORDER = [
+  'pm', 'ba', 'architect', 'ui-ux',
+  'frontend', 'backend', 'dba', 'freelancer', // freelancer: hot desk for generalist subagents
+  'qa', 'security', 'writer', 'devops',
+  'mobile', 'data', 'support', 'reviewer',
 ];
-const PROPS = { pm: 'notes', ba: 'papers', architect: 'blueprint', 'ui-ux': 'tablet', frontend: 'phone', backend: 'duck', dba: 'dbcan', qa: 'bug', security: 'lock', writer: 'books', devops: 'cactus', freelancer: 'lamp' };
-const DUAL = new Set(['frontend', 'backend', 'devops']);
+const PROPS = {
+  pm: 'notes', ba: 'papers', architect: 'blueprint', 'ui-ux': 'tablet', frontend: 'phone', backend: 'duck', dba: 'dbcan', qa: 'bug', security: 'lock', writer: 'books', devops: 'cactus', freelancer: 'lamp',
+  mobile: 'phonestand', data: 'chart', support: 'headset', reviewer: 'magnifier',
+};
+const DUAL = new Set(['frontend', 'backend', 'devops', 'data']);
+// The boss sits alone in the glass office, behind an executive desk, facing the door.
+const BOSS_DESK = { x: 340, y: 100, w: 64, cx: 372, boss: true, seat: { x: 372, y: 96, facing: 'down' }, ask: { x: 396, y: 92 }, visit: { x: 372, y: 132 } };
 
 export const DESKS = {};
-LAYOUT.forEach((row, r) =>
-  row.forEach((role, c) => {
-    if (!role) return;
-    const x = COLS_X[c];
-    const y = ROWS_Y[r];
+
+/**
+ * Lays the desks out for the active roles (any order; unknown ids are ignored) and sizes the room and the
+ * walk grid to match. Mutates DESKS / room in place: callers rebuild their scenes and the stage afterwards.
+ */
+export function layoutDesks(roles) {
+  const on = new Set(roles);
+  const order = DESK_ORDER.filter((id) => on.has(id)).slice(0, MAX_DESKS);
+  for (const key of Object.keys(DESKS)) delete DESKS[key];
+  order.forEach((role, i) => {
+    const x = COLS_X[i % COLS_X.length];
+    const y = FIRST_ROW_Y + Math.floor(i / COLS_X.length) * ROW_STEP;
     DESKS[role] = { x, y, w: 48, cx: x + 24, dual: DUAL.has(role), prop: PROPS[role], seat: { x: x + 24, y: y + 34 } };
-  }),
-);
-// The boss sits alone in the glass office, behind an executive desk, facing the door.
-DESKS.claude = { x: 340, y: 100, w: 64, cx: 372, boss: true, seat: { x: 372, y: 96, facing: 'down' }, ask: { x: 396, y: 92 }, visit: { x: 372, y: 132 } };
+  });
+  DESKS.claude = structuredClone(BOSS_DESK);
+  const rows = Math.max(MIN_ROWS, Math.ceil(order.length / COLS_X.length));
+  room.h = H + (rows - MIN_ROWS) * ROW_STEP;
+  buildWalkGrid();
+}
 
 export const DOOR = { x: 18, y: 54 };
 export const BOARD = { x: 102, y: 8, w: 118, h: 31 };
@@ -64,8 +86,7 @@ export const CAT_SPOTS = [
   { x: 520, y: 270, sleep: true },
 ];
 
-const BLOCKERS = [
-  ...Object.values(DESKS).map((d) => (d.boss ? [d.x, d.y - 2, d.w, 22] : [d.x, d.y - 12, d.w, 30])),
+const FIXED_BLOCKERS = [
   [270, 204, 14, 32], // server rack
   [4, 116, 16, 40], // bookshelf
   [304, 48, 8, 64], // meeting room glass: left wall (door gap y 112–139)
@@ -88,19 +109,29 @@ const BLOCKERS = [
 // ---------- walk grid + A* ----------
 
 const COLS = W / CELL;
-const ROWS = H / CELL;
-const blocked = new Uint8Array(COLS * ROWS);
-for (let r = 0; r < ROWS; r++) {
-  for (let c = 0; c < COLS; c++) {
-    const x = c * CELL + 4;
-    const y = r * CELL + 4;
-    if (y < WALL_H) blocked[r * COLS + c] = 1;
-    for (const [bx, by, bw, bh] of BLOCKERS) if (x >= bx && x < bx + bw && y >= by && y < by + bh) blocked[r * COLS + c] = 1;
+const grid = { rows: H / CELL, blocked: new Uint8Array(0) };
+
+/** Marks the cells covered by walls, furniture and the current desks (after every layoutDesks). */
+function buildWalkGrid() {
+  const blockers = [...Object.values(DESKS).map((d) => (d.boss ? [d.x, d.y - 2, d.w, 22] : [d.x, d.y - 12, d.w, 30])), ...FIXED_BLOCKERS];
+  const rows = room.h / CELL;
+  const blocked = new Uint8Array(COLS * rows);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const x = c * CELL + 4;
+      const y = r * CELL + 4;
+      if (y < WALL_H) blocked[r * COLS + c] = 1;
+      for (const [bx, by, bw, bh] of blockers) if (x >= bx && x < bx + bw && y >= by && y < by + bh) blocked[r * COLS + c] = 1;
+    }
   }
+  grid.rows = rows;
+  grid.blocked = blocked;
 }
 
-const cellOf = (p) => [Math.max(0, Math.min(COLS - 1, Math.floor(p.x / CELL))), Math.max(0, Math.min(ROWS - 1, Math.floor(p.y / CELL)))];
-const free = (c, r) => c >= 0 && r >= 0 && c < COLS && r < ROWS && !blocked[r * COLS + c];
+layoutDesks(DESK_ORDER.slice(0, 12)); // the default team until the server says otherwise
+
+const cellOf = (p) => [Math.max(0, Math.min(COLS - 1, Math.floor(p.x / CELL))), Math.max(0, Math.min(grid.rows - 1, Math.floor(p.y / CELL)))];
+const free = (c, r) => c >= 0 && r >= 0 && c < COLS && r < grid.rows && !grid.blocked[r * COLS + c];
 
 function nearestFree([c, r]) {
   if (free(c, r)) return [c, r];
@@ -189,14 +220,15 @@ function hash(n) {
 
 /** Static background (walls, floors, wall decor) rendered once. */
 export function renderBackground() {
+  const h = room.h; // taller with a 4th row of desks
   const c = document.createElement('canvas');
   c.width = W;
-  c.height = H;
+  c.height = h;
   const g = c.getContext('2d');
   const r = paintFn(g);
 
   // wood floor (work area, corridor, under meeting room)
-  for (let y = WALL_H; y < H; y += 6) {
+  for (let y = WALL_H; y < h; y += 6) {
     const row = (y - WALL_H) / 6;
     for (let x = -((row * 13) % 32); x < 440; x += 32) {
       r(x, y, 32, 6, hash(row * 31 + x) > 0.5 ? '#c9a57a' : '#c39e72');
@@ -205,8 +237,8 @@ export function renderBackground() {
     }
   }
   // pantry tiles
-  for (let y = WALL_H; y < H; y += 8) for (let x = 440; x < W; x += 8) r(x, y, 8, 8, ((x + y) / 8) % 2 ? '#e7e0d3' : '#dad1c1');
-  r(439, WALL_H, 1, H - WALL_H, '#a98a64');
+  for (let y = WALL_H; y < h; y += 8) for (let x = 440; x < W; x += 8) r(x, y, 8, 8, ((x + y) / 8) % 2 ? '#e7e0d3' : '#dad1c1');
+  r(439, WALL_H, 1, h - WALL_H, '#a98a64');
   // boss office: burgundy carpet with a gold-trimmed rug under the desk
   r(306, 48, 124, 152, '#5a2f33');
   for (let y = 50; y < 198; y += 4) r(306, y, 124, 1, '#52292d');
@@ -491,6 +523,42 @@ export function drawDesk(g, desk) {
       r(px + 1, y + 3, 4, 3, '#b5653b');
       r(px, y - 1, 3, 4, '#4caf72');
       r(px + 3, y - 2, 2, 5, '#5cc282');
+      break;
+    // Props of the optional roles (👥 Kelola tim).
+    case 'phonestand': // mobile: a phone upright on a stand, a second device lying flat
+      r(px + 2, y + 6, 6, 2, '#3a3d46');
+      r(px + 3, y - 2, 4, 8, '#22252e');
+      r(px + 4, y - 1, 2, 6, '#9be3ff');
+      r(px - 2, y + 4, 3, 5, '#22252e');
+      r(px - 1, y + 5, 1, 3, '#e046d2');
+      break;
+    case 'chart': // data: a little bar chart on a stand
+      r(px, y - 3, 9, 9, '#f4f1ea');
+      r(px, y + 6, 9, 1, '#9aa3ad');
+      r(px + 1, y + 2, 2, 4, '#2f9e94');
+      r(px + 4, y, 2, 6, '#e9a23b');
+      r(px + 7, y - 2, 1, 8, '#3d85c6');
+      r(px + 4, y + 7, 1, 2, '#6e4b30');
+      break;
+    case 'headset': // support: a headset with its mic boom, on the desk
+      r(px + 1, y + 1, 7, 1, '#3a3d46');
+      r(px, y + 2, 1, 2, '#3a3d46');
+      r(px + 8, y + 2, 1, 2, '#3a3d46');
+      r(px - 1, y + 3, 3, 4, '#22252e');
+      r(px + 7, y + 3, 3, 4, '#22252e');
+      r(px + 1, y + 6, 4, 1, '#3a3d46');
+      r(px + 4, y + 6, 2, 2, '#e5534b');
+      break;
+    case 'magnifier': // reviewer: a magnifying glass over a printed diff
+      r(px - 1, y + 2, 8, 6, '#f7f5ef');
+      r(px, y + 3, 4, 1, '#e5534b');
+      r(px, y + 5, 5, 1, '#2b9a66');
+      r(px + 4, y, 4, 1, '#8a6d3b');
+      r(px + 3, y + 1, 1, 3, '#8a6d3b');
+      r(px + 8, y + 1, 1, 3, '#8a6d3b');
+      r(px + 4, y + 4, 4, 1, '#8a6d3b');
+      r(px + 4, y + 1, 4, 3, 'rgba(190,225,255,.75)');
+      r(px + 8, y + 5, 2, 2, '#5e4a3a');
       break;
   }
 }
@@ -819,7 +887,7 @@ export function drawLighting(g, { night, dusk }, glows, t = 0) {
     return;
   }
   g.fillStyle = night ? 'rgba(12,16,44,.48)' : 'rgba(80,40,60,.16)';
-  g.fillRect(0, 0, W, H);
+  g.fillRect(0, 0, W, room.h);
   g.globalCompositeOperation = 'lighter';
   const glow = (x, y, radius, color) => {
     const grad = g.createRadialGradient(x, y, 0, x, y, radius);
@@ -841,8 +909,8 @@ function sunBeams(g, color) {
     g.beginPath();
     g.moveTo(wx, WALL_H);
     g.lineTo(wx + 48, WALL_H);
-    g.lineTo(wx + 100, H);
-    g.lineTo(wx + 44, H);
+    g.lineTo(wx + 100, room.h);
+    g.lineTo(wx + 44, room.h);
     g.closePath();
     g.fill();
   }
@@ -855,7 +923,7 @@ function sunBeams(g, color) {
 function drawThemedLighting(g, themed, night, glows, t) {
   const light = themed.light;
   g.fillStyle = night ? light.nightTint : light.tint;
-  g.fillRect(0, 0, W, H);
+  g.fillRect(0, 0, W, room.h);
   if (light.beams) sunBeams(g, light.beams);
   // keep the whiteboard readable: undo most of the tint over it
   g.fillStyle = 'rgba(255,255,255,.22)';

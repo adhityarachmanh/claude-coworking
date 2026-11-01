@@ -87,9 +87,9 @@ test('monitor screens and labels', () => {
   assert.equal(describeTool('mcp__github__create_issue', {}), 'Pakai github › create_issue');
 });
 
-test('all 11 role agents load with a prompt', () => {
+test('all 15 role agents load with a prompt (the 4 optional roles included)', () => {
   const agents = loadAgentDefinitions(path.join(ROOT, '.claude', 'agents'));
-  assert.deepEqual(Object.keys(agents).sort(), ['architect', 'ba', 'backend', 'dba', 'devops', 'frontend', 'pm', 'qa', 'security', 'ui-ux', 'writer']);
+  assert.deepEqual(Object.keys(agents).sort(), ['architect', 'ba', 'backend', 'data', 'dba', 'devops', 'frontend', 'mobile', 'pm', 'qa', 'reviewer', 'security', 'support', 'ui-ux', 'writer']);
   for (const [name, def] of Object.entries(agents)) {
     assert.ok(def.description.length > 20, `${name} description`);
     assert.ok(def.prompt.length > 100, `${name} prompt`);

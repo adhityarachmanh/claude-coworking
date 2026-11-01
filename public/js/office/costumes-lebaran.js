@@ -50,6 +50,20 @@ function heldProp(p, look, { view, torsoY, seated, arms }) {
     p(17, torsoY + 4, 1, 1, '#8a6a3c');
     p(16, torsoY + 5, 3, 3, '#3f9b4f');
     p(17, torsoY + 6, 1, 1, '#d9c45a');
+  } else if (look.prop === 'kurma') {
+    // box of dates with a gold lid
+    p(15, torsoY + 4, 4, 1, GOLD);
+    p(15, torsoY + 5, 4, 3, '#5a2e16');
+    p(16, torsoY + 5, 1, 1, '#9a5a2c');
+    p(17, torsoY + 6, 1, 1, '#9a5a2c');
+  } else if (look.prop === 'rantang') {
+    // rantang (stacked food carrier) for silaturahmi visits
+    p(15, torsoY + 2, 4, 1, '#9aa5ae');
+    p(15, torsoY + 3, 1, 1, '#9aa5ae');
+    p(18, torsoY + 3, 1, 1, '#9aa5ae');
+    p(15, torsoY + 4, 4, 5, '#2e8b57');
+    p(15, torsoY + 5, 4, 1, '#f4efe2');
+    p(15, torsoY + 7, 4, 1, '#f4efe2');
   }
 }
 
@@ -76,8 +90,15 @@ export const LEBARAN_COSTUMES = {
       p(tube.x + 2, 22, 1, 6, look.sarungCheck);
       p(tube.x + tube.w - 3, 22, 1, 6, look.sarungCheck);
     },
-    front(p, look, { view, headY }) {
+    front(p, look, { view, headY, torsoY }) {
       peci(p, view, headY, look.peci, look.peciDots);
+      // folded sajadah over the shoulder, on the way to the Ied prayer
+      if (look.sajadah && view !== 'left') {
+        const x = view === 'up' ? 5 : 12;
+        p(x, torsoY - 1, 3, 6, look.sajadah);
+        p(x + 1, torsoY, 1, 4, GOLD);
+        p(x, torsoY + 5, 3, 1, '#f4efe2');
+      } else if (look.sajadah) p(9, torsoY - 1, 3, 5, look.sajadah);
     },
     after: heldProp,
   },

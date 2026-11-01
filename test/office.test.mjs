@@ -256,3 +256,139 @@ test('a turn cut short by a server restart: the lead shows the waiting sign unti
   at(2_000, () => scene.setStatus({ busy: true, interrupted: null }));
   assert.equal(lead.icon, null, 'sign gone once the turn continues');
 });
+
+// ---------- the four roles added later (mobile, data, support, reviewer) ----------
+
+const NEW_ROLES = ['mobile', 'data', 'support', 'reviewer'];
+const ORIGINAL_ROLES = ['claude', 'pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer'];
+
+/** "Redmean" RGB distance: cheap perceptual colour difference (the original 13 role colours are ≥ 62 apart). */
+function colourDistance(a, b) {
+  const rgb = (hex) => [0, 2, 4].map((i) => parseInt(hex.slice(1 + i, 3 + i), 16));
+  const [r1, g1, b1] = rgb(a);
+  const [r2, g2, b2] = rgb(b);
+  const rm = (r1 + r2) / 2;
+  return Math.sqrt((2 + rm / 256) * (r1 - r2) ** 2 + 4 * (g1 - g2) ** 2 + (2 + (255 - rm) / 256) * (b1 - b2) ** 2);
+}
+
+test('new roles: appended after the original 13 (order unchanged) with names, titles and distinct colours', () => {
+  assert.deepEqual(ROLE_ORDER.slice(0, ORIGINAL_ROLES.length), ORIGINAL_ROLES, 'the original order is untouched');
+  for (const id of NEW_ROLES) assert.ok(ROLE_ORDER.includes(id), `${id} in ROLE_ORDER`);
+  assert.deepEqual(
+    NEW_ROLES.map((id) => CAST[id].name),
+    ['Adhit - Mobile', 'Adhit - Data/AI', 'Adhit - Support', 'Adhit - Reviewer'],
+  );
+  const colours = ROLE_ORDER.map((id) => CAST[id].color);
+  assert.equal(new Set(colours).size, colours.length, 'one colour per role');
+  for (const id of NEW_ROLES) {
+    const { color, title, look } = CAST[id];
+    assert.match(color, /^#[0-9a-f]{6}$/);
+    assert.ok(title && look.id === id, `${id}: title and look id`);
+    for (const other of ROLE_ORDER.filter((r) => r !== id)) {
+      const d = colourDistance(color, CAST[other].color);
+      assert.ok(d >= 75, `${id} ${color} too close to ${other} ${CAST[other].color} (${d.toFixed(0)})`);
+    }
+    for (const key of ['skin', 'skinShade', 'hair', 'hairShade', 'top', 'topShade', 'pants', 'shoes']) assert.match(look[key], /^#[0-9a-f]{6}$/, `${id}.${key}`);
+  }
+  assert.ok(Object.values(CAST.data.look).includes(CAST.data.color) && CAST.mobile.look.top === CAST.mobile.color, 'role colour worn in the office');
+});
+
+test('new roles: a costume of their own in every theme (no copy of another role in the same theme)', () => {
+  for (const id of COSTUMED) {
+    withTheme(id, () => {
+      const looks = ROLE_ORDER.map((role) => themedLook(CAST[role].look));
+      for (const role of NEW_ROLES) {
+        const look = themedLook(CAST[role].look);
+        const { id: _id, ...mine } = look;
+        for (const other of looks.filter((l) => l !== look)) {
+          const { id: _o, ...theirs } = other;
+          assert.notDeepEqual(mine, theirs, `${id}: ${role} looks exactly like ${other.id}`);
+        }
+      }
+    });
+  }
+  // Each new Halloween costume is new (no second witch/mummy/ghost…); the props reflect the role.
+  withTheme('halloween', () => assert.deepEqual(NEW_ROLES.map((r) => themedLook(CAST[r].look).costume), ['imp', 'bat', 'scarecrow', 'owl']));
+  withTheme('agustus', () => assert.deepEqual(NEW_ROLES.map((r) => themedLook(CAST[r].look).prop ?? themedLook(CAST[r].look).costume), ['kerupuk', 'tambang', 'bakiak', 'juri']));
+});
+
+/**
+ * Minimal canvas stand-in for sprites.js in Node: records every fillRect (with the current translation) so a
+ * whole character — base painter, accessories, gadgets and costume hooks — can be checked against its canvas.
+ */
+function fakeDocument(onRect) {
+  return {
+    createElement() {
+      const c = { width: 0, height: 0, ops: [] };
+      let ty = 0;
+      const g = {
+        fillStyle: '',
+        globalAlpha: 1,
+        imageSmoothingEnabled: true,
+        translate(_x, y) {
+          ty += y;
+        },
+        setTransform() {
+          ty = 0;
+        },
+        scale() {},
+        clearRect() {},
+        drawImage(src) {
+          c.ops.push(`img:${src.ops?.length ?? 0}:${src.ops?.join(';') ?? ''}`);
+        },
+        fillRect(x, y, w, h) {
+          c.ops.push(`${x},${y + ty},${w},${h},${g.fillStyle}`);
+          onRect(c, x, y + ty, w, h);
+        },
+        getImageData: (_x, _y, w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+      };
+      c.getContext = () => g;
+      c.toDataURL = () => `fake:${c.ops.join(';')}`;
+      return c;
+    },
+  };
+}
+
+test('new roles: every theme × view × pose × arms paints inside the 20×32 sprite (base look, accessories, phone); avatars change per theme', async () => {
+  const { characterSprite, avatarURL, clearSpriteCache } = await import('../public/js/office/sprites.js');
+  const before = globalThis.document;
+  let where = '';
+  globalThis.document = fakeDocument((c, x, y, w, h) => {
+    if (c.width !== 20 || c.height !== 32) return; // avatar canvas: drawImage only
+    assert.ok(x >= 0 && y >= 0 && x + w <= 20 && y + h <= 32, `outside the sprite — ${where}: rect ${x},${y} ${w}×${h}`);
+  });
+  try {
+    const avatars = {};
+    for (const id of THEME_IDS) {
+      withTheme(id, () => {
+        clearSpriteCache();
+        for (const role of NEW_ROLES) {
+          const look = CAST[role].look;
+          for (const view of ['down', 'up', 'left', 'right']) {
+            for (const pose of ['stand', 'walk', 'sit', 'sofa']) {
+              for (const arms of ['down', 'type', 'cheer', 'raise', 'hold', 'scratch']) {
+                for (const frame of [0, 1, 2]) {
+                  where = `${id} ${role} ${view}/${pose}/${arms}/${frame}`;
+                  const sprite = characterSprite(look, { view, pose, arms, frame, item: arms === 'hold' ? 'cup' : '', blink: frame === 2, talk: frame === 1, mood: ['', 'happy', 'worried'][frame] });
+                  assert.ok(sprite.ops.join(';').split(',').length > 40, `${where}: painted`); // mirrored sprites hold one drawImage of the painted one
+                }
+              }
+            }
+          }
+          (avatars[role] ??= []).push(avatarURL(look));
+        }
+      });
+    }
+    for (const role of NEW_ROLES) assert.equal(new Set(avatars[role]).size, THEME_IDS.length, `${role}: a different avatar in every theme`);
+    // The office phone (mobile) and headset (support) are really painted in the Kantor look.
+    clearSpriteCache();
+    const stand = { view: 'down', pose: 'stand' };
+    const ops = (look) => characterSprite(look, stand).ops.join(';');
+    assert.match(ops(CAST.mobile.look), /#8fd3ff/, 'phone screen');
+    assert.match(ops(CAST.support.look), /#dfe3e8/, 'headset ear cups');
+    assert.match(ops(CAST.data.look), /#f1e8d6/, 'shirt under the cardigan');
+  } finally {
+    clearSpriteCache();
+    globalThis.document = before;
+  }
+});

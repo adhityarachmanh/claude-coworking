@@ -1,6 +1,6 @@
 // Renders the active Scene: low-res pixel canvas scaled up, plus an HTML overlay for crisp text.
 import { roleColor } from './cast.js';
-import { BOARD, H, W, buildFurniture, drawDoor, drawLighting, drawThemeOverlay, drawWallLive, renderBackground } from './world.js';
+import { BOARD, W, buildFurniture, drawDoor, drawLighting, drawThemeOverlay, drawWallLive, renderBackground, room } from './world.js';
 
 const STATUS_MARK = { completed: '✔', in_progress: '▶', pending: '○' };
 
@@ -9,7 +9,7 @@ export class Stage {
     this.host = host;
     this.world = document.createElement('canvas');
     this.world.width = W;
-    this.world.height = H;
+    this.world.height = room.h;
     this.wg = this.world.getContext('2d');
     this.view = host.querySelector('canvas');
     this.vg = this.view.getContext('2d');
@@ -31,6 +31,14 @@ export class Stage {
     this.furniture = buildFurniture();
   }
 
+  /** The desks were laid out again (👥 Kelola tim): the room may be taller, so size the canvases again too. */
+  refreshLayout() {
+    this.world.height = room.h;
+    this.host.style.setProperty('--room-h', String(room.h)); // the phone layout sizes the stage from it
+    this.refreshTheme();
+    this.resize();
+  }
+
   el(tag, cls) {
     const node = document.createElement(tag);
     node.className = cls;
@@ -48,15 +56,15 @@ export class Stage {
   resize() {
     const { clientWidth: cw, clientHeight: ch } = this.host;
     if (!cw || !ch) return;
-    const fit = Math.min(cw / W, ch / H);
+    const fit = Math.min(cw / W, ch / room.h);
     // Render at an integer multiple for crisp pixels, then let CSS do the (small) remaining scale.
     const k = Math.max(1, Math.round(fit));
     this.view.width = W * k;
-    this.view.height = H * k;
+    this.view.height = room.h * k;
     this.k = k;
     this.scale = fit;
     const width = Math.floor(W * fit);
-    const height = Math.floor(H * fit);
+    const height = Math.floor(room.h * fit);
     for (const node of [this.view, this.overlay]) {
       node.style.width = `${width}px`;
       node.style.height = `${height}px`;
@@ -78,7 +86,8 @@ export class Stage {
       return;
     }
     drawDoor(g, scene.doorOpen);
-    const ctx = { rackBusy: scene.people.devops.isBusy(now) || scene.people.backend.isBusy(now), coffeeBusy: now < scene.coffeeUntil };
+    // Either may be off the team (👥 Kelola tim).
+    const ctx = { rackBusy: Boolean(scene.people.devops?.isBusy(now) || scene.people.backend?.isBusy(now)), coffeeBusy: now < scene.coffeeUntil };
     const drawables = [
       ...this.furniture.map((f) => ({ y: f.y, draw: (gg, tt) => f.draw(gg, tt, ctx) })),
       ...scene.drawables(now),

@@ -170,6 +170,27 @@ const pointedEars = (p, headY, view, fur, inner) => {
   }
 };
 
+/** Bat wings spread from the shoulders (front view: behind the arms; back view: over the back). */
+function batWings(p, look, torsoY, back) {
+  const W = look.wing;
+  const L = look.lining;
+  for (const mirror of [false, true]) {
+    const r = (x, y, w, h, c) => p(mirror ? 20 - x - w : x, y, w, h, c);
+    r(2, torsoY - 2, 3, 1, W);
+    r(1, torsoY - 1, 4, 1, W);
+    r(0, torsoY, 5, 5, W);
+    r(1, torsoY, 3, 4, L);
+    r(0, torsoY + 5, 1, 1, W);
+    r(2, torsoY + 5, 1, 1, W);
+    r(4, torsoY + 5, 1, 1, W);
+    r(2, torsoY + 1, 1, 4, look.wingShade);
+  }
+  if (back) {
+    p(5, torsoY - 1, 10, 6, W);
+    p(9, torsoY, 2, 5, look.wingShade);
+  }
+}
+
 // ---------- costumes ----------
 
 export const COSTUMES = {
@@ -569,6 +590,152 @@ export const COSTUMES = {
       p(15, headY + 7, 4, 1, '#d8d4e3');
       p(16, headY + 9, 3, 1, '#d8d4e3');
       if (!s.talk && s.mood !== 'happy') p(9, headY + 8, 2, 1, '#e58fb0');
+    },
+  },
+
+  // Mobile: imp — little horns and a pointed tail in the role colour, dark outfit, phone glowing eerie green.
+  imp: {
+    back(p, look, { view, torsoY, torsoH }) {
+      const c = look.horns;
+      if (view === 'down') {
+        p(15, torsoY + torsoH - 2, 2, 1, c);
+        p(17, torsoY, 1, torsoH - 1, c);
+        p(16, torsoY - 2, 3, 1, c);
+        p(17, torsoY - 3, 1, 1, c);
+        p(17, torsoY - 1, 1, 1, c);
+      } else if (view === 'left') {
+        p(13, torsoY + torsoH - 2, 3, 1, c);
+        p(16, torsoY, 1, torsoH - 1, c);
+        p(15, torsoY - 2, 3, 1, c);
+        p(16, torsoY - 3, 1, 1, c);
+        p(16, torsoY - 1, 1, 1, c);
+      }
+    },
+    body(p, look, { view, torsoY }) {
+      if (view === 'left') p(7, torsoY + 4, 6, 1, look.horns);
+      else p(5, torsoY + 4, 10, 1, look.horns);
+    },
+    front(p, look, { view, headY, torsoY, torsoH, seated }) {
+      const c = look.horns;
+      const left = view === 'left' ? 2 : 0;
+      p(4 + left, headY - 2, 2, 2, c);
+      p(4 + left, headY - 3, 1, 1, c);
+      p(14, headY - 2, 2, 2, c);
+      p(15, headY - 3, 1, 1, c);
+      if (view === 'up') {
+        // tail hanging down the back, arrow tip at the end
+        const len = seated ? 2 : 5;
+        const y = torsoY + torsoH - 2;
+        p(9, y, 1, len, c);
+        p(8, y + len, 3, 1, c);
+        p(9, y + len + 1, 1, 1, c);
+      }
+    },
+  },
+
+  // Data/AI: vampire bat — scalloped wings with a role-colour membrane, bat ears over the afro, tiny fangs.
+  bat: {
+    back(p, look, { view, torsoY }) {
+      if (view === 'down') batWings(p, look, torsoY, false);
+      else if (view === 'left') {
+        p(12, torsoY - 2, 4, 1, look.wing);
+        p(11, torsoY - 1, 6, 6, look.wing);
+        p(12, torsoY, 4, 4, look.lining);
+        for (const x of [11, 13, 15]) p(x, torsoY + 5, 1, 1, look.wing);
+      }
+    },
+    body(p, look, { view, torsoY }) {
+      if (view === 'left') p(7, torsoY, 6, 1, look.lining);
+      else p(5, torsoY, 10, 1, look.lining);
+    },
+    front(p, look, { view, s, headY, torsoY }) {
+      const W = look.wing;
+      p(3, headY - 5, 2, 1, W);
+      p(3, headY - 4, 3, 1, W);
+      p(15, headY - 5, 2, 1, W);
+      p(14, headY - 4, 3, 1, W);
+      if (view === 'down') {
+        p(4, headY - 4, 1, 1, look.lining);
+        p(15, headY - 4, 1, 1, look.lining);
+        if (!s.talk) {
+          p(8, headY + 10, 1, 1, WHITE);
+          p(11, headY + 10, 1, 1, WHITE);
+        }
+      }
+      if (view === 'up') batWings(p, look, torsoY, true);
+    },
+  },
+
+  // Support: scarecrow — straw hat over the hijab (a crow on the brim), patched shirt in the role colour,
+  // rope belt, straw tufts; the helpdesk headset stays on.
+  scarecrow: {
+    body(p, look, { view, torsoY, torsoH }) {
+      const x0 = view === 'left' ? 7 : 5;
+      const w = view === 'left' ? 6 : 10;
+      p(x0, torsoY + 4, w, 1, '#c9a46a');
+      if (view === 'down') {
+        p(6, torsoY + 2, 2, 2, '#c95a3a');
+        p(12, torsoY + 5, 2, 2, '#6b8fb8');
+        p(7, torsoY + 3, 1, 1, '#f4f1ea');
+      } else if (view === 'up') p(7, torsoY + 2, 3, 2, '#c95a3a');
+      for (let x = x0; x < x0 + w; x += 2) p(x, torsoY + torsoH, 1, 1, look.straw);
+    },
+    front(p, look, { view, headY }) {
+      const H = look.hat;
+      p(view === 'left' ? 1 : 1, headY, view === 'left' ? 17 : 18, 1, H);
+      p(2, headY + 1, 1, 2, look.straw);
+      p(17, headY + 1, 1, 2, look.straw);
+      p(5, headY - 3, 10, 3, H);
+      p(5, headY - 1, 10, 1, '#7a3b2a');
+      p(6, headY - 3, 3, 1, look.hatShade);
+      p(1, headY, 3, 1, look.hatShade);
+      if (view !== 'up') {
+        // a crow perched on the brim
+        p(15, headY - 2, 3, 2, '#1d1a22');
+        p(16, headY - 3, 2, 1, '#1d1a22');
+        p(14, headY - 2, 1, 1, '#e9a23b');
+        p(16, headY - 2, 1, 1, '#f4f1ea');
+      }
+    },
+  },
+
+  // Reviewer: owl professor — feathered hood with ear tufts, beak, pale chest, role-colour bow tie, glasses, talons.
+  owl: {
+    body(p, look, { view, torsoY, torsoH }) {
+      const c = look.tie;
+      if (view === 'left') {
+        p(7, torsoY + 1, 2, torsoH - 2, look.chest);
+        p(7, torsoY, 2, 2, c);
+        return;
+      }
+      if (view === 'up') {
+        for (const [x, y] of [[6, 1], [12, 1], [9, 3], [6, 5], [12, 5]]) if (y < torsoH) p(x, torsoY + y, 2, 1, look.hoodShade);
+        return;
+      }
+      p(7, torsoY + 1, 6, torsoH - 2, look.chest);
+      for (const [x, y] of [[8, 3], [11, 3], [9, 5]]) if (y < torsoH - 1) p(x, torsoY + y, 1, 1, look.feather);
+      p(7, torsoY, 2, 2, c);
+      p(11, torsoY, 2, 2, c);
+      p(9, torsoY, 2, 1, c);
+    },
+    front(p, look, { view, s, headY }) {
+      const H = look.hood;
+      const HS = look.hoodShade;
+      p(3, headY - 3, 2, 2, H);
+      p(15, headY - 3, 2, 2, H);
+      if (view !== 'down') {
+        p(3, headY - 1, 14, 12, H);
+        for (const [x, y] of [[6, 2], [11, 2], [8, 5], [13, 5], [5, 8], [10, 8]]) p(x, headY + y, 2, 1, HS);
+        return;
+      }
+      p(3, headY - 1, 14, 3, H);
+      p(3, headY + 2, 2, 8, H);
+      p(15, headY + 2, 2, 8, H);
+      p(4, headY - 3, 1, 1, HS);
+      p(15, headY - 3, 1, 1, HS);
+      for (const x of [6, 9, 12]) p(x, headY, 2, 1, HS);
+      p(9, headY + 8, 2, 1, '#e9a23b');
+      if (s.talk) p(9, headY + 9, 2, 1, '#b5525a');
     },
   },
 

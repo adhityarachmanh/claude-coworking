@@ -949,6 +949,23 @@ body.read-only #composer-hint { color: var(--ask); }
 .team-role small { color: var(--muted); font-size: var(--fs-xs); }
 .team-row input { width: 160px; flex: none; font-size: var(--fs-md); padding: 5px 8px; background: var(--surface); }
 .team-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+/* 👥 Kelola tim */
+.modal-card.roster-card { max-width: 600px; display: flex; flex-direction: column; overflow: hidden; } /* the list scrolls, Simpan stays in view */
+.roster-card > p { margin: 0 0 10px; }
+.roster-card form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.roster-list { list-style: none; margin: 0; padding: 0 2px 0 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; flex: 1; overscroll-behavior: contain; }
+.roster-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); }
+.roster-row.on { border-color: var(--border-strong); background: var(--surface-3); }
+.roster-row img { width: 26px; height: 30px; image-rendering: pixelated; flex: none; }
+.roster-row:not(.on):not(.locked) img { opacity: .55; }
+.roster-text { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.3; font-size: var(--fs-md); cursor: pointer; }
+.roster-row.locked .roster-text { cursor: default; }
+.roster-text small { color: var(--muted); font-size: var(--fs-xs); }
+.roster-desc { color: var(--text-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.roster-new { color: var(--accent-2); font-weight: 600; }
+.roster-state { flex: none; color: var(--muted); font-size: var(--fs-sm); }
+.roster-row input[type='checkbox'] { flex: none; width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
+.roster-row input[type='checkbox']:disabled { cursor: default; }
 .roots .team-names-btn { align-self: flex-start; font-size: var(--fs-md); }
 
 /* ---------- help dialog ---------- */
@@ -1089,7 +1106,8 @@ body.read-only #composer-hint { color: var(--ask); }
 
   /* office view: full-width office, team as cards */
   .office { overflow-y: auto; background: var(--bg); }
-  .stage { flex: none; height: calc((100vw - 16px) * 288 / 544); margin: 8px; }
+  /* --room-h: the office's logical height (taller with 13–16 desks, set by the stage) */
+  .stage { flex: none; height: calc((100vw - 16px) * var(--room-h, 288) / 544); margin: 8px; }
   .stage canvas { border-radius: var(--r-lg); }
   .team { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 4px 8px 16px; }
   .member { padding: 8px; }

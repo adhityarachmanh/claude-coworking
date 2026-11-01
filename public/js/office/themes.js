@@ -37,6 +37,10 @@ const HALLOWEEN_LOOKS = {
   devops: () => ({ costume: 'zombie', skin: '#a3b58c', skinShade: '#879a72', blush: '#8fa279', hair: '#2e2a1f', hairShade: '#4a4232', hairStyle: 'curly', topStyle: 'plain', pants: '#3b4a5c', pantsShade: '#2f3b4a', shoes: '#3a2f28' }),
   writer: (c) => ghost('#ece6ff', '#c3b8e6', { small: true, glasses: true, lantern: true, accent: c }),
   freelancer: (c) => ({ costume: 'blackcat', hair: '#211e29', hairShade: '#2e2a38', hairStyle: 'hijab', top: '#211e29', topShade: '#16141b', topStyle: 'plain', pants: '#211e29', pantsShade: '#16141b', shoes: '#16141b', collar: c }),
+  mobile: (c) => ({ costume: 'imp', top: '#3b1f3f', topShade: '#2a152d', topStyle: 'plain', pants: '#3b1f3f', pantsShade: '#2a152d', shoes: '#1a1220', horns: c, gadgetGlow: '#b6ff6b' }),
+  data: (c) => ({ costume: 'bat', top: '#2b2735', topShade: '#1d1a25', topStyle: 'plain', pants: '#2b2735', pantsShade: '#1d1a25', shoes: '#16131c', wing: '#40384d', wingShade: '#2a2433', lining: c, acc: ['glasses'] }),
+  support: (c) => ({ costume: 'scarecrow', top: c, topShade: shade(c), topStyle: 'plain', pants: '#4a6fa5', pantsShade: '#3a5a88', shoes: '#5e3a1e', hat: '#d9b45a', hatShade: '#b8913d', straw: '#f2d36b', acc: ['headset'], accColor: '#dfe3e8' }),
+  reviewer: (c) => ({ costume: 'owl', top: '#7a5a3c', topShade: '#5e4430', topStyle: 'plain', pants: '#5e4430', pantsShade: '#4a3524', shoes: '#e9a23b', hood: '#7a5a3c', hoodShade: '#5e4430', chest: '#efe0c0', feather: '#a07a52', tie: c, acc: ['glasses'] }),
 };
 
 // Kantor colour → Halloween colour: darker, purple-tinted floors and walls, plum sofa, orange accents.
@@ -101,6 +105,10 @@ const NATAL_LOOKS = {
   devops: (c) => ({ costume: 'xtree', hairStyle: 'short', top: '#1f6b3a', topShade: '#17552e', topStyle: 'plain', pants: '#5e3a1e', pantsShade: '#4a2d16', tree: '#1f6b3a', treeLight: XGREEN, tinsel: c, acc: ['beard'] }),
   writer: (c) => sweater(c, { motif: 'tree', band: XGREEN, hat: 'earmuffs', acc: ['glasses'] }),
   freelancer: (c) => ({ costume: 'gift', top: XRED, topShade: XRED_SHADE, topStyle: 'plain', box: XRED, boxShade: XRED_SHADE, ribbon: c, ribbonShade: shade(c) }),
+  mobile: (c) => ({ costume: 'gingerbread', skin: '#b8733a', skinShade: '#94592a', top: '#b8733a', topShade: '#94592a', topStyle: 'plain', pants: '#b8733a', pantsShade: '#94592a', shoes: '#94592a', icing: '#fbf6ee', gum: c, gadgetGlow: '#ffd23f' }),
+  data: (c) => sweater(c, { motif: 'snowflake', hat: 'pompom', acc: ['glasses'] }),
+  support: (c) => ({ costume: 'elf', top: XRED, topShade: XRED_SHADE, topStyle: 'plain', pants: XGREEN, pantsShade: '#23704a', shoes: XRED, hat: XRED, hatShade: XRED_SHADE, collar: c, ears: false, acc: ['headset'], accColor: SNOW }),
+  reviewer: (c) => ({ costume: 'caroler', top: '#24543f', topShade: '#1b4030', topStyle: 'plain', pants: '#2b2d42', pantsShade: '#22253a', shoes: '#1d1424', scarf: c, hat: '#1d1424', hatBand: XGREEN, scroll: '#f4efe2', acc: ['glasses'] }),
 };
 
 const NATAL_COLORS = remap('#24503a', '#1f4632', '#8e1b2b', '#a3222f', '#1f6b45', XGREEN, '#a3222f', '#c8243a', '#2e6b4a', '#3f8a62', '#367a56', '#4f9d72', '#245a3d', '#e5383b');
@@ -150,6 +158,10 @@ const LEBARAN_LOOKS = {
   devops: (c) => koko(c, '#2b4a6b', { ...kopiah, acc: ['beard'], prop: 'ketupat' }),
   writer: (c) => gamis(c, { selendang: LGREEN, acc: ['glasses'] }),
   freelancer: (c) => gamis(c, { selendang: '#1f6b4a', trim: CREAM }),
+  mobile: (c) => gamis(c, { selendang: '#2b4a8b', gadgetGlow: '#b6f0c8' }), // video call with family back home
+  data: (c) => koko(c, '#5b4a3a', { ...kopiah, acc: ['glasses'], prop: 'kurma' }),
+  support: (c) => gamis(c, { trim: CREAM, prop: 'rantang' }), // keeps her own navy hijab
+  reviewer: (c) => koko(c, '#2f4858', { sajadah: LGREEN, acc: ['glasses'] }),
 };
 
 const LEBARAN_COLORS = remap('#1d4a3a', '#18402f', '#2c6e4f', '#347d5b', LGREEN, '#c9a227', LGREEN, '#3a8d5c', LGREEN, '#3f9662', '#358a57', '#4aa36d', '#22603b', '#f2c14e');
@@ -197,6 +209,10 @@ const AGUSTUS_LOOKS = {
   devops: (c) => kaos(c, 'putih', { acc: ['beard'], prop: 'kelereng', marble: '#4dabf7' }),
   writer: (c) => kebaya(c, MERAH, MERAH_SHADE, { acc: ['glasses'] }),
   freelancer: (c) => kaos(c, 'merahputih', { headband: false, acc: ['cap'], accColor: c }),
+  mobile: (c) => kaos(c, 'merahputih', { prop: 'kerupuk', gadget: undefined }), // hands behind the back: no phone
+  data: (c) => kaos(c, 'putih', { acc: ['glasses'], prop: 'tambang' }),
+  support: (c) => kaos(c, 'merahputih', { prop: 'bakiak' }),
+  reviewer: (c) => ({ costume: 'juri', top: PUTIH, topShade: PUTIH_SHADE, topStyle: 'plain', pants: '#2b2d42', pantsShade: '#22253a', shoes: '#1d1424', lanyard: c, acc: ['glasses'] }),
 };
 
 const AGUSTUS_COLORS = remap('#5a2f33', '#52292d', '#b3122e', '#c8243a', MERAH, PUTIH, MERAH, PUTIH, '#c8243a', '#e0404f', '#d0303f', '#ec5a66', '#9e1b2b', PUTIH);

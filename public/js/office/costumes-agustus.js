@@ -43,7 +43,97 @@ function kain(p, { view, s }, color) {
   return { x: 5, w: 10, y: 22 };
 }
 
+/** Lomba makan kerupuk: a round kerupuk hanging on a string right at the mouth. */
+function kerupuk(p, look, { view, s, headY, seated }) {
+  if (seated || view === 'up') return;
+  const K = '#f3e3b0';
+  const dot = '#d9a95a';
+  const x = view === 'left' ? 1 : 7;
+  const sx = view === 'left' ? 3 : 10;
+  p(sx, -2, 1, headY + 9, '#6b5a48');
+  const y = headY + 7 + (s.pose === 'walk' && s.frame === 1 ? 1 : 0);
+  p(x + 1, y, 4, 1, K);
+  p(x, y + 1, 6, 3, K);
+  p(x + 1, y + 4, 4, 1, K);
+  p(x + 1, y + 1, 1, 1, dot);
+  p(x + 4, y + 2, 1, 1, dot);
+  p(x + 2, y + 3, 1, 1, dot);
+  if (view === 'down') p(x + 3, y + 4, 2, 1, '#e0c88a'); // a bite out of it
+}
+
+/** Tarik tambang: a thick rope held across the body at hand height. */
+function tambang(p, look, { view, s, torsoY, seated, arms }) {
+  if (seated || arms !== 'down' || view === 'up') return;
+  const R = '#c9a46a';
+  const RS = '#9c7a45';
+  const y = torsoY + 5;
+  const w = view === 'left' ? 11 : 20;
+  p(0, y, w, 2, R);
+  for (let x = 0; x < w; x += 3) {
+    p(x, y, 1, 1, RS);
+    p(x + 1, y + 1, 1, 1, RS);
+  }
+  if (view === 'left') p(9, y, 2, 2, look.skin);
+  else {
+    p(3, y, 2, 2, look.skin);
+    p(15, y, 2, 2, look.skin);
+  }
+  if (s.pose === 'walk') p(view === 'left' ? 0 : 18, y + 2, 2, 1, RS); // rope end swinging
+}
+
+/** Balap bakiak: a long wooden plank under both feet with black rubber straps. */
+function bakiak(p, look, { view, s }) {
+  if (s.pose !== 'stand' && s.pose !== 'walk' && s.pose !== 'sofa') return;
+  const wood = '#b5834f';
+  p(view === 'left' ? 2 : 3, 28, view === 'left' ? 15 : 14, 1, wood);
+  p(view === 'left' ? 2 : 3, 29, view === 'left' ? 15 : 14, 1, '#8a5f33');
+  if (view === 'left') p(7, 27, 6, 1, INK);
+  else {
+    p(5, 27, 4, 1, INK);
+    p(11, 27, 4, 1, INK);
+  }
+}
+
 export const AGUSTUS_COSTUMES = {
+  // Juri lomba: white kemeja tucked in, peci, red-white rosette, whistle on a role-colour lanyard, clipboard.
+  juri: {
+    body(p, look, { view, torsoY, torsoH }) {
+      const c = look.lanyard;
+      const x0 = view === 'left' ? 7 : 5;
+      const w = view === 'left' ? 6 : 10;
+      p(x0, torsoY + torsoH - 1, w, 1, INK);
+      if (view === 'left') {
+        p(8, torsoY, 1, 3, c);
+        p(8, torsoY + 3, 1, 1, '#c9d1d9');
+        return;
+      }
+      if (view === 'up') {
+        p(7, torsoY, 6, 1, c);
+        return;
+      }
+      p(7, torsoY, 1, 1, '#c9c2b4');
+      p(12, torsoY, 1, 1, '#c9c2b4');
+      p(8, torsoY, 1, 2, c);
+      p(11, torsoY, 1, 2, c);
+      p(9, torsoY + 2, 2, 1, c);
+      p(9, torsoY + 3, 2, 1, '#c9d1d9');
+      p(5, torsoY + 1, 2, 2, RED);
+      p(6, torsoY + 2, 1, 1, WHITE);
+    },
+    front(p, look, { view, headY }) {
+      peci(p, view, headY);
+    },
+    after(p, look, { view, torsoY, seated, arms }) {
+      if (seated || arms !== 'down' || view === 'up') return;
+      const x = view === 'left' ? 5 : 14;
+      p(x, torsoY + 2, 4, 6, '#a0703f');
+      p(x + 1, torsoY + 3, 2, 4, WHITE);
+      p(x + 1, torsoY + 4, 2, 1, '#9aa3ad');
+      p(x + 1, torsoY + 6, 2, 1, '#9aa3ad');
+      p(x + 1, torsoY + 2, 2, 1, look.lanyard);
+    },
+  },
+
   // Lomba kaos: red-over-white (or white with red collar/sleeves), a race number in the role colour, ikat kepala.
   kaos: {
     body(p, look, { view, torsoY, torsoH }) {
@@ -68,7 +158,18 @@ export const AGUSTUS_COSTUMES = {
     front(p, look, { view, headY }) {
       if (look.headband) ikat(p, view, headY);
     },
-    after(p, look, { view, torsoY, seated, arms }) {
+    arms(p, look, { view, s, torsoY, sleeve, arms }) {
+      // lomba makan kerupuk: hands behind the back (only the short sleeves show)
+      if (look.prop !== 'kerupuk' || arms !== 'down' || view !== 'down' || (s.pose !== 'stand' && s.pose !== 'walk')) return false;
+      p(3, torsoY, 2, 3, sleeve);
+      p(15, torsoY, 2, 3, sleeve);
+      return true;
+    },
+    after(p, look, ctx) {
+      const { view, torsoY, seated, arms } = ctx;
+      if (look.prop === 'kerupuk') return kerupuk(p, look, ctx);
+      if (look.prop === 'tambang') return tambang(p, look, ctx);
+      if (look.prop === 'bakiak') return bakiak(p, look, ctx);
       // lomba kelereng: a spoon with a marble, held in front
       if (look.prop !== 'kelereng' || seated || view !== 'down' || arms !== 'down') return;
       p(16, torsoY + 2, 1, 4, '#c9d1d9');

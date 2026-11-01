@@ -60,6 +60,17 @@ function earmuffs(p, view, headY, muff, band) {
   p(15, headY + 3, 3, 4, muff);
 }
 
+/** Knitted beanie with a white band and pompom; the big variant sits over an afro. */
+function pompomBeanie(p, headY, big) {
+  const top = big ? headY - 3 : headY - 2;
+  p(big ? 3 : 4, top, big ? 14 : 12, headY - top + 1, RED);
+  p(big ? 5 : 6, top, 2, headY - top + 1, '#9e0c24');
+  p(big ? 11 : 10, top, 2, headY - top + 1, '#9e0c24');
+  p(big ? 2 : 3, headY, big ? 16 : 14, 1, WHITE);
+  p(8, top - 1, 4, 1, WHITE);
+  p(9, top - 2, 2, 1, WHITE);
+}
+
 /** Knitted pattern on the torso: zigzag, a dotted band, optional centre motif and ribbed hem. */
 function knit(p, look, { view, torsoY, torsoH }) {
   const x0 = view === 'left' ? 7 : 5;
@@ -72,6 +83,12 @@ function knit(p, look, { view, torsoY, torsoH }) {
     p(8, torsoY + 5, 4, 1, GREEN);
   } else if (view === 'down' && look.motif === 'star') {
     p(9, torsoY + 4, 2, 2, GOLD);
+  } else if (view === 'down' && look.motif === 'snowflake') {
+    p(8, torsoY + 4, 1, 1, WHITE);
+    p(11, torsoY + 4, 1, 1, WHITE);
+    p(9, torsoY + 4, 2, 2, WHITE);
+    p(8, torsoY + 6, 1, 1, WHITE);
+    p(11, torsoY + 6, 1, 1, WHITE);
   }
   if (torsoH > 6) p(x0, torsoY + torsoH - 1, w, 1, look.topShade);
 }
@@ -137,6 +154,7 @@ export const NATAL_COSTUMES = {
       p(14, headY - 4, 4, 1, H);
       p(left ? 6 : 5, headY - 1, 3, 1, look.hatShade);
       p(18, headY - 4, 1, 2, GOLD); // bell
+      if (look.ears === false) return; // e.g. a headset over the ears
       if (left) {
         p(12, headY + 4, 2, 2, look.skin);
         p(13, headY + 3, 1, 1, look.skin);
@@ -159,6 +177,7 @@ export const NATAL_COSTUMES = {
         antlers(p, view, headY, '#a0703f');
         rudolphNose(p, view, headY);
       } else if (look.hat === 'earmuffs') earmuffs(p, view, headY, WHITE, RED);
+      else if (look.hat === 'pompom') pompomBeanie(p, headY, look.hairStyle === 'afro');
       if (look.pin && view === 'down') {
         p(12, torsoY, 2, 1, GREEN);
         p(13, torsoY + 1, 1, 1, NOSE);
@@ -328,6 +347,102 @@ export const NATAL_COSTUMES = {
       p(9, headY - 4, 2, 1, GOLD);
       p(8, headY - 3, 4, 1, GOLD);
       p(9, headY - 2, 2, 1, GOLD);
+    },
+  },
+
+  // Mobile: gingerbread cookie — round cookie head with an icing face, gumdrop buttons in the role colour,
+  // icing cuffs; the phone stays in hand.
+  gingerbread: {
+    head(p, look, { view, s, headY }) {
+      const K = look.skin;
+      const KS = look.skinShade;
+      const I = look.icing;
+      const choc = '#3a2214';
+      p(9, headY + 11, 2, 1, KS);
+      if (view === 'left') {
+        p(5, headY, 9, 1, K);
+        p(4, headY + 1, 11, 9, K);
+        p(5, headY + 10, 9, 1, K);
+        p(14, headY + 1, 1, 9, KS);
+        for (let x = 5; x < 14; x++) p(x, headY + 1 + (x % 2), 1, 1, I);
+        p(6, s.blink ? headY + 6 : headY + 5, 1, s.blink ? 1 : 2, choc);
+        p(4, headY + 8, 3, 1, I);
+        return;
+      }
+      p(5, headY, 10, 1, K);
+      p(4, headY + 1, 12, 9, K);
+      p(5, headY + 10, 10, 1, K);
+      p(15, headY + 1, 1, 9, KS);
+      for (let x = 5; x < 15; x++) p(x, headY + 1 + (x % 2), 1, 1, I);
+      if (view === 'up') return;
+      p(7, s.blink ? headY + 6 : headY + 5, 1, s.blink ? 1 : 2, choc);
+      p(12, s.blink ? headY + 6 : headY + 5, 1, s.blink ? 1 : 2, choc);
+      p(5, headY + 7, 1, 1, '#f2a0b0');
+      p(14, headY + 7, 1, 1, '#f2a0b0');
+      if (s.talk) p(9, headY + 8, 2, 2, choc);
+      else if (s.mood === 'worried') p(8, headY + 9, 4, 1, I);
+      else {
+        p(7, headY + 8, 1, 1, I);
+        p(8, headY + 9, 4, 1, I);
+        p(12, headY + 8, 1, 1, I);
+      }
+    },
+    body(p, look, { view, torsoY, torsoH }) {
+      if (view === 'up') return;
+      const x = view === 'left' ? 8 : 9;
+      const w = view === 'left' ? 1 : 2;
+      p(x, torsoY + 1, w, 1, look.gum);
+      p(x, torsoY + 3, w, 1, GREEN);
+      if (torsoH > 6) p(x, torsoY + 5, w, 1, look.gum);
+    },
+    after(p, look, { view, torsoY, seated, arms }) {
+      // icing zigzag cuffs at the wrists (arms down, facing the viewer)
+      if (view !== 'down' || arms !== 'down' || seated) return;
+      p(3, torsoY + 3, 2, 1, look.icing);
+      p(15, torsoY + 3, 2, 1, look.icing);
+      p(6, 26, 3, 1, look.icing);
+      p(11, 26, 3, 1, look.icing);
+    },
+  },
+
+  // Reviewer: caroler — long green coat, top hat with a holly band, role-colour scarf, glasses and a long
+  // "nice list" scroll to check twice.
+  caroler: {
+    body(p, look, { view, torsoY, torsoH }) {
+      if (view === 'up') {
+        p(9, torsoY + 3, 2, torsoH - 3, look.topShade);
+        return;
+      }
+      const x = view === 'left' ? 8 : 9;
+      p(x, torsoY + 2, 1, 1, GOLD);
+      p(x, torsoY + 4, 1, 1, GOLD);
+      if (view === 'down') p(5, torsoY + torsoH - 1, 10, 1, look.topShade);
+    },
+    front(p, look, { view, headY, torsoY }) {
+      const H = look.hat;
+      p(6, headY - 4, 8, 3, H);
+      p(6, headY - 1, 8, 1, look.hatBand);
+      if (view !== 'up') p(7, headY - 1, 1, 1, RED);
+      p(4, headY, 12, 1, H);
+      const sc = look.scarf;
+      if (view === 'left') {
+        p(5, torsoY - 1, 10, 2, sc);
+        p(13, torsoY + 1, 2, 4, sc);
+        p(13, torsoY + 5, 2, 1, WHITE);
+        return;
+      }
+      p(4, torsoY - 1, 12, 2, sc);
+      const ex = view === 'up' ? 6 : 12;
+      p(ex, torsoY + 1, 2, 4, sc);
+      p(ex, torsoY + 5, 2, 1, WHITE);
+    },
+    after(p, look, { view, torsoY, seated, arms }) {
+      if (seated || arms !== 'down' || view === 'up') return;
+      const x = view === 'left' ? 6 : 15;
+      p(x, torsoY + 3, 3, 1, '#c9b48a');
+      p(x, torsoY + 4, 3, 9, look.scroll);
+      for (let y = torsoY + 5; y < torsoY + 12; y += 2) p(x + 1, y, 1, 1, '#9aa3ad');
+      p(x, torsoY + 13, 3, 1, '#c9b48a');
     },
   },
 

@@ -32,6 +32,7 @@ import { initPicker } from './features/picker.js';
 import { initQuota } from './features/quota.js';
 import { initQueue } from './features/queue.js';
 import { initReport } from './features/report.js';
+import { initRoster } from './features/roster.js';
 import { initResumeTurn } from './features/resume-turn.js';
 import { initRewind } from './features/rewind.js';
 import { initSessions } from './features/sessions.js';
@@ -57,6 +58,7 @@ initLiveOutput(); // before initChat / the first render: rows register with its 
 initChat();
 initFileViewer();
 initTeam();
+initRoster(); // 👥 Kelola tim (⚙, ⋯, Ctrl+P, /team)
 initStatusline();
 initAttachments();
 initSuggest();

@@ -1,5 +1,5 @@
 // The office team: names, role colors and how each person looks.
-export const ROLE_ORDER = ['claude', 'pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer'];
+export const ROLE_ORDER = ['claude', 'pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer'];
 
 const base = { pantsShade: '#22253a', shoes: '#2a2a33' };
 
@@ -57,6 +57,28 @@ export const CAST = {
   freelancer: {
     name: 'Adhit - Freelancer', title: 'Freelancer / Generalist', color: '#e0b100',
     look: { ...base, id: 'freelancer', skin: '#dcaa85', skinShade: '#c39069', blush: '#d99282', hair: '#3b2a20', hairShade: '#5a4232', hairStyle: 'bob', top: '#495057', topShade: '#343a40', topStyle: 'hoodie', acc: ['cap'], accColor: '#e0b100', pants: '#2b3a4a', shoes: '#f4f1ea' },
+  },
+  // Added later (appended to ROLE_ORDER so the original 13 keep their order). Colours were picked to stay
+  // clearly apart from the palette above (CIEDE2000 ≥ 12) and readable as text on light and dark panels.
+  mobile: {
+    // Magenta hoodie, long hair, earbuds and a phone in hand.
+    name: 'Adhit - Mobile', title: 'Mobile Developer', color: '#e046d2',
+    look: { ...base, id: 'mobile', skin: '#e9b48e', skinShade: '#d19a74', blush: '#e8968a', hair: '#4a2419', hairShade: '#6b3a28', hairStyle: 'long', top: '#e046d2', topShade: '#b532a9', topStyle: 'hoodie', acc: ['earbuds'], gadget: 'phone', pants: '#2d3047', shoes: '#f4f1ea' },
+  },
+  data: {
+    // Teal cardigan over a cream shirt, afro, dark-framed glasses (glassesColor: reads on deeper skin).
+    name: 'Adhit - Data/AI', title: 'Data / AI Engineer', color: '#2f9e94',
+    look: { ...base, id: 'data', skin: '#8d5b3d', skinShade: '#744830', blush: '#9c5a48', hair: '#1c1512', hairShade: '#3a2b24', hairStyle: 'afro', top: '#2f9e94', topShade: '#237a72', topStyle: 'cardigan', undershirt: '#f1e8d6', acc: ['glasses'], glassesColor: '#140e0c', pants: '#3b3a4a', shoes: '#3a2a1e' },
+  },
+  support: {
+    // Olive polo with an ID badge, navy hijab, headset with a mic.
+    name: 'Adhit - Support', title: 'Tech Support / Ops Helpdesk', color: '#8d8135',
+    look: { ...base, id: 'support', skin: '#a5683f', skinShade: '#8b5430', blush: '#ad6450', hair: '#34405e', hairShade: '#28324a', hairStyle: 'hijab', top: '#8d8135', topShade: '#6e6427', topStyle: 'polo', undershirt: '#f4f1ea', acc: ['headset'], accColor: '#dfe3e8', pants: '#2f3542', shoes: '#2a2a33' },
+  },
+  reviewer: {
+    // Crimson ("red pen") sweater vest over a light shirt, grey hair, glasses.
+    name: 'Adhit - Reviewer', title: 'Code Reviewer', color: '#e03140',
+    look: { ...base, id: 'reviewer', skin: '#efc6a6', skinShade: '#d6aa88', blush: '#eaa29a', hair: '#a9adb5', hairShade: '#c9ccd2', hairStyle: 'short', top: '#e03140', topShade: '#b3222f', topStyle: 'sweatervest', sleeve: '#dfe8f3', undershirt: '#dfe8f3', acc: ['glasses'], pants: '#3a3f4f', shoes: '#4a2c2a' },
   },
 };
 

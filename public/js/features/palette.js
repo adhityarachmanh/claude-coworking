@@ -15,6 +15,7 @@ import { openFile } from './file-viewer.js';
 import { openMcp } from './mcp.js';
 import { openProjects, selectProject } from './picker.js';
 import { openRewind } from './rewind.js';
+import { openRoster } from './roster.js';
 import { openSessions } from './sessions.js';
 import { slashCatalog } from './suggest.js';
 import { openTasks } from './tasks.js';
@@ -168,6 +169,7 @@ function buildItems() {
     ['rewind', '⏪', 'Rewind', 'Esc Esc', needProject, () => openRewind(), 'checkpoint undo kembalikan'],
     ['mcp', '🔌', 'Server MCP', '/mcp', needProject ?? ro, () => openMcp(), 'mcp server plugin'],
     ['templates', '⚡', 'Template prompt', '/t', needProject ?? ro, () => localCommand('/template'), 'template snippet'],
+    ['roster', '👥', 'Kelola tim', '/team', null, () => openRoster(), 'team tim role roster anggota meja kelola'],
     ['settings', '⚙', 'Pengaturan', '', laptopOnly, click('#btn-settings'), 'settings config preferences'],
     ['account', '👤', 'Akun Claude', '', null, click('#btn-account'), 'account login kuota quota'],
     ['report', '📊', 'Laporan penggunaan token', '', null, click('#btn-report'), 'report usage token pdf'],

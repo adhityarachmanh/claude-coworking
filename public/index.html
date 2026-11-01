@@ -106,6 +106,7 @@
               <button role="menuitem" data-more="export">⬇ Export percakapan (.md)</button>
               <button role="menuitem" data-more="export-session" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">⬇ Export sesi lengkap (.md)</button>
               <button role="menuitem" data-more="permissions">🛡️ Aturan izin (/permissions)</button>
+              <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
               <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
               <button role="menuitem" data-more="folder" class="local-only">📁 Buka folder project</button>
@@ -275,6 +276,24 @@
             <button type="button" id="team-reset" class="ghost">↺ Kembalikan semua</button>
             <span class="grow"></span>
             <button class="primary">Simpan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 👥 Kelola tim (/team): which built-in roles have a desk; catalog only, the Lead is always there -->
+    <div id="roster-modal" class="modal" hidden>
+      <div class="modal-card roster-card" role="dialog" aria-modal="true" aria-labelledby="roster-title" aria-describedby="roster-intro">
+        <div class="modal-head"><b id="roster-title">👥 Kelola tim <small id="roster-count" class="muted" aria-live="polite"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="roster-intro" class="muted small">Pilih role bawaan yang punya meja di kantor. Role nonaktif tidak dipakai: pekerjaannya dialihkan ke role aktif terdekat. Berlaku untuk proses Claude Code berikutnya (sesi yang diam dimulai ulang otomatis) dan di semua perangkat.</p>
+        <p id="roster-ro" class="ro-note" hidden>Lewat WiFi hanya bisa melihat. Pakai laptop atau Tailscale untuk mengubah tim.</p>
+        <form id="roster-form">
+          <ul id="roster-list" class="roster-list" aria-label="Katalog role"></ul>
+          <p id="roster-error" class="field-error" role="alert"></p>
+          <div class="team-actions">
+            <button type="button" id="roster-default" class="ghost">↺ Tim bawaan</button>
+            <span class="grow"></span>
+            <button id="roster-save" class="primary">Simpan</button>
           </div>
         </form>
       </div>
@@ -454,7 +473,8 @@
             <div id="theme-seg" class="seg" role="group" aria-labelledby="theme-title"></div>
             <p id="theme-desc" class="muted">Ganti tampilan kantor pixel dan kostum tim. Disimpan di browser ini.</p>
           </section>
-          <button type="button" id="btn-team-names" class="ghost team-names-btn">👥 Ganti nama anggota tim</button>
+          <button type="button" id="btn-roster" class="ghost team-names-btn" title="Pilih role bawaan yang punya meja di kantor">👥 Kelola tim (role aktif)</button>
+          <button type="button" id="btn-team-names" class="ghost team-names-btn">✏️ Ganti nama anggota tim</button>
           <button type="button" id="btn-permissions" class="ghost team-names-btn" title="Aturan allow / ask / deny Claude Code untuk project yang sedang dibuka">🛡️ Aturan izin project ini</button>
           <hr />
           <section class="quota-alerts" aria-labelledby="quota-title" aria-describedby="quota-desc">

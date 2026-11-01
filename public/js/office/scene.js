@@ -1,5 +1,6 @@
 // One office per project: people, cat, whiteboard and effects, driven by office events from the server.
-import { CAST, ROLE_ORDER, VISITOR } from './cast.js';
+import { CAST, VISITOR } from './cast.js';
+import { resolveRole, teamOrder } from './roster.js';
 import { ANCHOR_X, ANCHOR_Y, catSprite, characterSprite, iconSprite, spriteLift } from './sprites.js';
 import { CAT_SPOTS, DESKS, DOOR, SOFA_SEATS, SPOTS, drawBossChair, drawBossDesk, drawChair, drawDesk, drawMonitors, findPath, rectFn } from './world.js';
 
@@ -10,6 +11,7 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const ROLE_SCREEN = {
   claude: 'terminal', pm: 'kanban', ba: 'doc', architect: 'review', 'ui-ux': 'design', frontend: 'code',
   backend: 'code', dba: 'db', qa: 'tests', security: 'security', devops: 'pipeline', writer: 'doc', freelancer: 'code',
+  mobile: 'code', data: 'db', support: 'terminal', reviewer: 'review',
 };
 const MEET_SPOTS = ['meet1', 'meet2', 'meet3', 'meet4'];
 const ERRAND_MS = 9000; // an errand (report, bug hand-off, huddle) is not cut short by new work
@@ -28,6 +30,10 @@ const IDLE_ACTIVITIES = {
   devops: ['rack', 'coffee', 'fridge', 'chat'],
   writer: ['shelf', 'sofa', 'cafe', 'window', 'coffee'],
   freelancer: ['cafe', 'coffee', 'sofa', 'window', 'chat'],
+  mobile: ['coffee', 'sofa', 'cafe', 'chat', 'stretch'],
+  data: ['board', 'coffee', 'rack', 'window', 'chat'],
+  support: ['water', 'coffee', 'chat', 'stretch'],
+  reviewer: ['board', 'shelf', 'coffee', 'window2', 'chat'],
 };
 const ACTIVITY_BUCKETS = 12;
 const BUCKET_MS = 5000;
@@ -173,7 +179,7 @@ class Person {
     }
     if (activity === 'chat') {
       // Small talk happens at colleagues' desks, never at the boss's.
-      const buddy = ROLE_ORDER.map((id) => scene.people[id]).find((p) => p !== this && p.id !== 'claude' && this.id !== 'claude' && p.seated && !p.isBusy(now) && !p.asking);
+      const buddy = Object.values(scene.people).find((p) => p !== this && p.id !== 'claude' && this.id !== 'claude' && p.seated && !p.isBusy(now) && !p.asking);
       if (!buddy) return;
       const [line, reply] = pick(CHAT_LINES);
       this.go([
@@ -338,7 +344,8 @@ class Person {
 export class Scene {
   constructor() {
     this.people = {};
-    for (const id of ROLE_ORDER) this.people[id] = new Person(this, id, CAST[id], DESKS[id].seat);
+    // Only the active team (👥 Kelola tim) has a desk and a person; the Lead always does.
+    for (const id of teamOrder()) if (DESKS[id]) this.people[id] = new Person(this, id, CAST[id], DESKS[id].seat);
     this.visitor = null;
     this.cat = { x: 300, y: 200, plan: null, state: 'sleep', until: performance.now() + 15000, flip: false };
     this.board = { goal: '', items: [], todoMode: false };
@@ -360,7 +367,8 @@ export class Scene {
   }
 
   person(role) {
-    return this.people[role] ?? this.people.claude;
+    // A role that is off the team (older events) is shown at whoever covers it now.
+    return this.people[role] ?? this.people[resolveRole(role)] ?? this.people.claude;
   }
 
   setStatus(status) {
@@ -623,7 +631,7 @@ export class Scene {
   }
 
   confetti() {
-    const colors = ROLE_ORDER.map((id) => CAST[id].color);
+    const colors = teamOrder().map((id) => CAST[id].color);
     for (let i = 0; i < 90; i++) {
       this.particles.push({ kind: 'confetti', x: rand(20, 400), y: rand(-20, 30), vx: rand(-25, 25), vy: rand(10, 50), life: rand(2.5, 4), color: pick(colors) });
     }
@@ -691,6 +699,7 @@ export class Scene {
     const items = [];
     for (const [role, desk] of Object.entries(DESKS)) {
       const owner = this.people[role];
+      if (!owner) continue;
       items.push({ y: desk.y + 17, draw: (g, t) => this.drawWorkstation(g, t, now, desk, owner) });
       if (desk.boss) items.push({ y: desk.seat.y - 0.5, draw: (g) => drawBossChair(g, desk.seat) });
       else items.push({ y: desk.seat.y + 0.5, draw: (g) => drawChair(g, desk.seat, owner.seated) });
@@ -723,6 +732,7 @@ export class Scene {
   monitorGlows(now) {
     const glows = [];
     for (const [role, desk] of Object.entries(DESKS)) {
+      if (!this.people[role]) continue;
       const mode = this.screenMode(this.people[role], now);
       if (mode === 'off') continue;
       const color = mode === 'error' ? 'rgba(240,82,74,.45)' : mode === 'idle' ? 'rgba(120,140,255,.12)' : 'rgba(150,200,255,.32)';

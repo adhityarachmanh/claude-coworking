@@ -2,6 +2,8 @@
 // Chrome, then writes PNG screenshots per theme × viewport plus an enlarged sprite sheet.
 //   node test-support/office-shots.mjs <outDir> [themes=kantor,halloween,natal,lebaran,agustus]
 //   node test-support/office-shots.mjs --fingerprint    # prints render hashes (regression check for a theme)
+//   node test-support/office-shots.mjs --fingerprint --per-role   # one character/avatar hash per role (+ visitor)
+//   node test-support/office-shots.mjs <outDir> [themes] --sheets [--roles=mobile,data]   # sprite sheets only
 // Output goes wherever <outDir> points — keep it outside the repo (e.g. %TEMP%).
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -111,8 +113,33 @@ async function fingerprint() {
   return out;
 }
 
+/** Per-role hashes of every character sprite state + the avatar (adding a role must leave the others alone). */
+async function fingerprintPerRole() {
+  const sprites = await import('/js/office/sprites.js');
+  const { CAST, ROLE_ORDER, VISITOR } = await import('/js/office/cast.js');
+  const hash = async (text) => {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return [...new Uint8Array(buf)].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+  };
+  const states = [];
+  for (const view of ['down', 'up', 'left', 'right']) {
+    for (const pose of ['stand', 'walk', 'sit', 'sofa']) {
+      for (const arms of ['down', 'type', 'cheer', 'raise', 'hold', 'scratch']) {
+        for (const frame of [0, 1, 2]) states.push({ view, pose, arms, frame, item: arms === 'hold' ? 'cup' : '', blink: frame === 2, talk: frame === 1, mood: ['', 'happy', 'worried'][frame] });
+      }
+    }
+  }
+  const out = {};
+  for (const [id, look] of [...ROLE_ORDER.map((r) => [r, CAST[r].look]), ['visitor', VISITOR.look]]) {
+    let all = '';
+    for (const s of states) all += sprites.characterSprite(look, s).toDataURL();
+    out[id] = `${await hash(all)}/${await hash(sprites.avatarURL(look))}`;
+  }
+  return out;
+}
+
 /** Enlarged sheet: every role in the main poses (rows) — returns a PNG data URL. */
-async function spriteSheet(scale) {
+async function spriteSheet(scale, only = null) {
   const sprites = await import('/js/office/sprites.js');
   const { CAST, ROLE_ORDER, VISITOR } = await import('/js/office/cast.js');
   const states = [
@@ -131,7 +158,7 @@ async function spriteSheet(scale) {
     { view: 'left', pose: 'stand', arms: 'hold', item: 'paper' },
     { view: 'down', pose: 'stand', mood: 'worried', arms: 'scratch' },
   ];
-  const looks = [...ROLE_ORDER.map((id) => CAST[id].look), VISITOR.look];
+  const looks = only ? only.map((id) => CAST[id].look) : [...ROLE_ORDER.map((id) => CAST[id].look), VISITOR.look];
   const cw = 22;
   const ch = 34;
   const c = document.createElement('canvas');
@@ -183,8 +210,12 @@ async function someoneWalks() {
 
 // ---------- main ----------
 
-const args = process.argv.slice(2);
-const fingerprintOnly = args.includes('--fingerprint');
+const flags = process.argv.slice(2).filter((a) => a.startsWith('--'));
+const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const fingerprintOnly = flags.includes('--fingerprint');
+const perRole = flags.includes('--per-role');
+const sheetsOnly = flags.includes('--sheets');
+const onlyRoles = flags.find((f) => f.startsWith('--roles='))?.slice(8).split(',') ?? null;
 const outDir = fingerprintOnly ? null : path.resolve(args[0] ?? path.join(tmpdir(), 'office-shots'));
 const themes = (args[1] ?? 'kantor,halloween,natal,lebaran,agustus').split(',');
 const tmp = mkdtempSync(path.join(tmpdir(), 'office-shots-data-'));
@@ -202,8 +233,21 @@ try {
       await page.eval((t) => localStorage.setItem('office.theme', t), theme);
       await page.goto(`${base}/`);
       await page.waitFor(() => document.querySelector('#conn')?.classList.contains('ok'), { timeoutMs: 10000 });
-      console.log(theme, JSON.stringify(await page.eval(fingerprint)));
+      console.log(theme, JSON.stringify(await page.eval(perRole ? fingerprintPerRole : fingerprint)));
     }
+  } else if (sheetsOnly) {
+    // Just the enlarged sprite sheets (optionally a few roles): no waiting for people to walk to their desks.
+    mkdirSync(outDir, { recursive: true });
+    await page.setViewport(VIEWPORTS[0]);
+    for (const theme of themes) {
+      await page.goto(`${base}/`);
+      await page.eval((t) => localStorage.setItem('office.theme', t), theme);
+      await page.goto(`${base}/`);
+      await page.waitFor(() => document.querySelector('#conn')?.classList.contains('ok'), { timeoutMs: 10000 });
+      const sheet = await page.eval(spriteSheet, 5, onlyRoles);
+      writeFileSync(path.join(outDir, `${theme}-sprites${onlyRoles ? '-' + onlyRoles.join('_') : ''}.png`), Buffer.from(sheet.split(',')[1], 'base64'));
+    }
+    console.log(`PNG ditulis ke ${outDir}`);
   } else {
     mkdirSync(outDir, { recursive: true });
     for (const theme of themes) {

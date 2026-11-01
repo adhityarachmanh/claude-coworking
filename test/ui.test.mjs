@@ -762,8 +762,17 @@ for (const vp of VIEWPORTS) {
       // Agent detail: live steps (labels like the chat), auto-scrolled to the newest.
       await page.eval(() => [...document.querySelectorAll('#tasks-list [data-task]')].find((b) => b.textContent.includes('Uji regresi')).click());
       await page.waitFor(() => document.querySelectorAll('#td-body .td-steps .step').length >= 2, { timeoutMs: 5000, message: 'langkah agent tampil' });
-      const before = await page.eval(() => document.querySelectorAll('#td-body .td-steps .step').length);
-      await page.waitFor((b) => document.querySelectorAll('#td-body .td-steps .step').length > b, { timeoutMs: 6000, message: 'langkah bertambah (polling)' }, before);
+      // The agent is started once per run: by the second viewport it can be past the newest DETAIL_MAX_STEPS (200)
+      // the monitor shows, so "grows" means more steps or, once full, a newer last step.
+      const lastStep = () => {
+        const steps = document.querySelectorAll('#td-body .td-steps .step');
+        return { n: steps.length, last: steps[steps.length - 1]?.textContent ?? '' };
+      };
+      const before = await page.eval(lastStep);
+      await page.waitFor((b) => {
+        const steps = document.querySelectorAll('#td-body .td-steps .step');
+        return steps.length > b.n || (steps[steps.length - 1]?.textContent ?? '') !== b.last;
+      }, { timeoutMs: 6000, message: 'langkah bertambah (polling)' }, before);
       const agent = await page.eval(() => {
         const body = document.querySelector('#td-body');
         return {
@@ -1589,6 +1598,104 @@ for (const vp of VIEWPORTS) {
         await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => /Belum ada sesi/.test(t.textContent)), { timeoutMs: 2000, message: 'pesan "belum ada sesi"' });
         assert.equal(await page.eval(() => window.__downloads.length), 1);
       }
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('👥 Kelola tim: dialog, toggle, kantor bertambah meja tanpa reload, read-only di WiFi, tanpa error console/overflow', async (t) => {
+      await openApp(page, `#${projectId}`);
+      page.clearProblems();
+      const shot = async (name) => {
+        if (process.env.OFFICE_UI_SHOTS) writeFileSync(path.join(process.env.OFFICE_UI_SHOTS, `${name}-${vp.mobile ? 'mobile' : 'desktop'}.png`), await page.screenshot());
+      };
+      const DEFAULT = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer'];
+      // whatever happens, the next test gets the default team back
+      t.after(() => page.eval((enabled) => {
+        const token = document.querySelector('meta[name="office-token"]').content;
+        return fetch('/api/team/roster/save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify({ enabled }) }).then((r) => r.status);
+      }, DEFAULT));
+      const office = () => page.eval(async () => {
+        const { scenes, stage } = await import('/js/core/scenes.js');
+        const { DESKS, room } = await import('/js/office/world.js');
+        const canvas = stage.world; // the logical canvas the office is drawn on (the view may be hidden on a phone)
+        return {
+          people: Object.keys(scenes.get(location.hash.slice(1))?.people ?? {}).length,
+          cards: document.querySelectorAll('#team .member').length,
+          roomH: room.h,
+          reviewerY: DESKS.reviewer?.y ?? null,
+          ratio: Math.round((canvas.height / canvas.width) * 100) / 100,
+          marker: window.__sameDocument === true,
+        };
+      });
+      await page.eval(() => (window.__sameDocument = true)); // gone after a reload
+      assert.deepEqual(await office(), { people: 13, cards: 13, roomH: 288, reviewerY: null, ratio: 0.53, marker: true }, 'tim bawaan: 12 meja + Lead');
+
+      // opened from ⋯ (⚙, Ctrl+P and /team are the other ways in)
+      await page.click('#btn-more');
+      await page.click('#more-menu [data-more="roster"]');
+      await page.waitFor(() => !document.querySelector('#roster-modal').hidden && document.querySelectorAll('#roster-list .roster-row').length === 17, { timeoutMs: 3000, message: 'dialog Kelola tim terbuka' });
+      await settle(page, 'roster-modal');
+      const dialog = await page.eval(() => ({
+        count: document.querySelector('#roster-count').textContent,
+        leadLocked: !document.querySelector('#roster-list .roster-row:first-child input') && /Lead/.test(document.querySelector('#roster-list .roster-row:first-child').textContent),
+        freelancer: [document.querySelector('#roster-freelancer').checked, document.querySelector('#roster-freelancer').disabled],
+        off: [...document.querySelectorAll('#roster-list input:not(:checked)')].map((i) => i.dataset.role),
+        saveDisabled: document.querySelector('#roster-save').disabled,
+        roHidden: document.querySelector('#roster-ro').hidden,
+        avatars: [...document.querySelectorAll('#roster-list img')].every((img) => img.complete && img.naturalWidth > 0),
+        switches: [...document.querySelectorAll('#roster-list input')].every((i) => i.getAttribute('role') === 'switch' && document.querySelector(`label[for="${i.id}"]`) && i.getAttribute('aria-describedby')),
+        focusInside: document.querySelector('#roster-modal').contains(document.activeElement),
+        rowsFit: [...document.querySelectorAll('#roster-list .roster-row')].every((r) => r.scrollWidth <= r.clientWidth + 1),
+      }));
+      assert.deepEqual(dialog, { count: '12/16 meja', leadLocked: true, freelancer: [true, true], off: ['mobile', 'data', 'support', 'reviewer'], saveDisabled: true, roHidden: true, avatars: true, switches: true, focusInside: true, rowsFit: true });
+      assert.match(await page.eval(() => document.querySelector('#roster-mobile-desc').textContent), /Nonaktif → dikerjakan Adhit - Frontend/, 'fallback tampil');
+      assert.equal(await page.eval(horizontalOverflow), null, 'dialog tanpa scroll horizontal');
+      assert.deepEqual(await page.eval(unnamedButtons, '#roster-modal'), []);
+
+      // all four new roles on: 16/16, saved, the office grows a 4th row without a reload
+      for (const role of ['mobile', 'data', 'support', 'reviewer']) await page.eval((r) => document.querySelector(`#roster-${r}`).click(), role);
+      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '16/16 meja');
+      assert.equal(await page.eval(() => document.querySelector('#roster-save').disabled), false);
+      await shot('roster');
+      await page.click('#roster-save');
+      await page.waitFor(() => document.querySelector('#roster-modal').hidden, { timeoutMs: 4000, message: 'dialog tertutup setelah simpan' });
+      await page.waitFor(() => document.querySelectorAll('#team .member').length === 17, { timeoutMs: 3000, message: 'kartu tim bertambah' });
+      assert.deepEqual(await office(), { people: 17, cards: 17, roomH: 360, reviewerY: 292, ratio: 0.66, marker: true }, '16 meja + Lead, ruangan lebih tinggi, tanpa reload');
+      assert.deepEqual((await snapshot()).config.team.enabled.slice(-4), ['mobile', 'data', 'support', 'reviewer'], 'tersimpan di server');
+      if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
+      await sleep(400);
+      assert.equal(await page.eval(horizontalOverflow), null, 'kantor 16 meja tanpa scroll horizontal');
+      await shot('office-16');
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+
+      // a phone on plain WiFi sees the same dialog, read-only
+      await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        state.readOnly = true;
+        (await import('/js/features/roster.js')).openRoster();
+      });
+      await page.waitFor(() => !document.querySelector('#roster-modal').hidden, { timeoutMs: 2000, message: 'dialog terbuka (read-only)' });
+      const ro = await page.eval(() => ({
+        note: !document.querySelector('#roster-ro').hidden,
+        save: document.querySelector('#roster-save').hidden,
+        allDisabled: [...document.querySelectorAll('#roster-list input')].every((i) => i.disabled),
+      }));
+      await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        state.readOnly = false;
+      });
+      assert.deepEqual(ro, { note: true, save: true, allDisabled: true });
+      await page.press('Escape');
+
+      // /team, then ↺ Tim bawaan: back to 12 desks and the original room
+      await typeInPrompt(page, '/team');
+      await page.eval(() => document.querySelector('#btn-send').click());
+      await page.waitFor(() => !document.querySelector('#roster-modal').hidden, { timeoutMs: 2000, message: '/team membuka dialog' });
+      // (clicked in-page: the "Tim disimpan" toast from the first save may still cover the dialog's bottom edge)
+      await page.eval(() => document.querySelector('#roster-default').click());
+      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '12/16 meja');
+      await page.eval(() => document.querySelector('#roster-save').click());
+      await page.waitFor(() => document.querySelectorAll('#team .member').length === 13, { timeoutMs: 4000, message: 'kembali ke 12 meja' });
+      assert.deepEqual(await office(), { people: 13, cards: 13, roomH: 288, reviewerY: null, ratio: 0.53, marker: true });
       assert.deepEqual(realProblems(page), []);
     });
 

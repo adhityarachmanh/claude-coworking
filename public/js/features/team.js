@@ -3,7 +3,8 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { scenes } from '../core/scenes.js';
 import { state } from '../core/state.js';
-import { applyTeamNames, CAST, DEFAULT_NAMES, ROLE_ORDER } from '../office/cast.js';
+import { applyTeamNames, CAST, DEFAULT_NAMES } from '../office/cast.js';
+import { teamOrder } from '../office/roster.js';
 import { avatarURL } from '../office/sprites.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { renderActivity } from './activity.js';
@@ -21,7 +22,9 @@ export function renderTeam() {
   // Running background tasks per role: a ⧗ badge on the card opens the task monitor (the card itself renames).
   const running = new Map();
   for (const t of tasksOf(state.active)) if ((t.status === 'running' || t.status === 'pending') && t.role) running.set(t.role, [...(running.get(t.role) ?? []), t]);
-  const html = ROLE_ORDER.map((id) => {
+  // The active team only (👥 Kelola tim): the Lead, then every role with a desk.
+  const members = teamOrder().filter((id) => scene.people[id]);
+  const html = members.map((id) => {
     const p = scene.people[id];
     const [cls, text] = p.asking
       ? ['ask', 'Menunggu izinmu']
@@ -69,10 +72,10 @@ export function applyNames(config) {
 }
 
 function renderTeamForm() {
-  $('#team-list').innerHTML = ROLE_ORDER.map((id) => `<label class="team-row">
+  $('#team-list').innerHTML = teamOrder().map((id) => `<label class="team-row">
       <img src="${avatarURL(CAST[id].look)}" alt="">
-      <span class="team-role"><b style="color:${CAST[id].color}">${CAST[id].title}</b><small>bawaan: ${escapeHtml(DEFAULT_NAMES[id])}</small></span>
-      <input name="${id}" value="${escapeHtml(CAST[id].name === DEFAULT_NAMES[id] ? '' : CAST[id].name)}" placeholder="${escapeHtml(DEFAULT_NAMES[id])}" maxlength="24" autocomplete="off" ${state.readOnly ? 'disabled' : ''} />
+      <span class="team-role"><b style="color:${CAST[id].color}">${CAST[id].title}</b><small>bawaan: ${escapeHtml(DEFAULT_NAMES[id] ?? CAST[id].name)}</small></span>
+      <input name="${id}" value="${escapeHtml(CAST[id].name === DEFAULT_NAMES[id] ? '' : CAST[id].name)}" placeholder="${escapeHtml(DEFAULT_NAMES[id] ?? CAST[id].name)}" maxlength="24" autocomplete="off" ${state.readOnly ? 'disabled' : ''} />
     </label>`).join('');
 }
 

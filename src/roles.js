@@ -1,10 +1,28 @@
 // Maps Claude Code agents/tools onto the office roles, plus human-readable tool labels.
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { CATALOG, CATALOG_IDS, DEFAULT_ENABLED, GENERALIST, resolveRole } from './role-catalog.js';
 import { basename, truncate } from './util.js';
 
-// `freelancer` is the generalist at the spare desk: any subagent type that is not a specialist.
-export const ROLE_IDS = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer'];
+// Every role a team can have (src/role-catalog.js). `freelancer` is the generalist at the spare desk: any
+// subagent type that is not a specialist.
+export const ROLE_IDS = CATALOG_IDS;
+
+// The active team (👥 Kelola tim). Every role this module hands out is one of these, or the Lead (`claude`):
+// a switched-off role's work goes along its fallback chain (resolveRole in src/role-catalog.js). The optional
+// roles' own patterns are only consulted while they are on, so with them off every mapping is exactly what
+// it was before they existed.
+const team = { active: new Set(DEFAULT_ENABLED) };
+
+/** Sets the active roles (ids already validated by normalizeEnabled). */
+export function setActiveRoles(ids) {
+  team.active = new Set(ids);
+}
+
+export const activeRoles = () => CATALOG_IDS.filter((id) => team.active.has(id));
+const resolve = (role) => resolveRole(role, team.active);
+/** An optional role's own pattern of one kind (agent / file / command / mcp), only while that role is on. */
+const signal = (role, kind) => (team.active.has(role) ? CATALOG[role].signals?.[kind] : null);
 
 // Built-in agent types whose name alone would be misread by the patterns below.
 const AGENT_ALIASES = {
@@ -15,18 +33,23 @@ const AGENT_ALIASES = {
 };
 
 /** Role for a subagent type; unknown types are the freelancer, never silently "backend". */
-export const agentRole = (agentType) => toRole(agentType ?? 'general-purpose') ?? 'freelancer';
+export const agentRole = (agentType) => toRole(agentType ?? 'general-purpose') ?? resolve(GENERALIST);
 
 // Agent type → role. Ordered: first match wins ("code-reviewer" is architect, not backend;
-// "frontend-developer" is frontend; "claude-code-guide" is writer).
+// "frontend-developer" is frontend; "claude-code-guide" is writer). A `null` pattern is an optional
+// role's own pattern (catalog `signals.agent`), skipped while that role is off.
 const ROLE_PATTERNS = [
   [/\b(security|sec|pentest|pentester|appsec|vuln|vulnerability|audit|auditor)\b/, 'security'],
   [/\b(devops|sre|ops|infra|infrastructure|deploy|deployer|cicd|ci|release|platform|statusline-setup)\b/, 'devops'],
+  [null, 'data'], // data-engineer, ml, llm… (before dba, whose pattern also has "data")
   [/\b(dba|db|database|sql|data|migration|migrator|schema)\b/, 'dba'],
   [/\b(writer|docs?|documentation|documenter|technical-writer|changelog|guide)\b/, 'writer'],
   [/\b(qa|test|tests|tester|testing|verify|verifier|e2e)\b/, 'qa'],
+  [null, 'support'],
+  [null, 'reviewer'], // review, code-reviewer… (while it is off, the architect below takes them, as before)
   [/\b(architect|architecture|arch|tech-lead|techlead|lead|review|reviewer|code-reviewer)\b/, 'architect'],
   [/\b(ui|ux|uiux|ui-ux|design|designer)\b/, 'ui-ux'],
+  [null, 'mobile'], // flutter, android, ios… (before frontend, whose pattern also has "mobile")
   [/\b(frontend|front-end|fe|web|react|vue|nuxt|next|angular|mobile)\b/, 'frontend'],
   [/\b(backend|back-end|be|api|server|developer|dev|engineer|coder|code|general|fullstack|build|fix|fixer|implement)\b/, 'backend'],
   [/\b(ba|analyst|analysis|explore|explorer|research|researcher)\b/, 'ba'],
@@ -42,13 +65,26 @@ const OPS_FILE = /dockerfile|docker-compose|\.dockerignore|\.tf$|(^|[\\/])\.gith
 const STYLE_FILE = /\.(css|scss|sass|less|svg)$|tailwind\.config|(^|[\\/])(styles?|design|tokens|themes?)[\\/]/i;
 const FRONTEND_FILE = /\.(tsx|jsx|vue|svelte|html|astro)$|\.blade\.php$|(^|[\\/])(components|pages|views|layouts|composables|hooks|stores?|public|assets)[\\/]/i;
 
+// A `null` pattern is an optional role's own one (catalog `signals.command`), skipped while that role is off.
 const COMMAND_ROLES = [
   [/\b(npm audit|yarn audit|pnpm audit|composer audit|snyk|trivy|semgrep|gitleaks|osv-scanner|bandit|safety check)\b/i, 'security'],
   [/\b(test|tests|jest|vitest|pytest|playwright|cypress|mocha|phpunit|pest|coverage|lint|eslint|tsc|ruff|flake8|phpstan|pint)\b/i, 'qa'],
+  [null, 'mobile'],
+  [null, 'data'],
   [/\b(psql|mysql|mysqldump|sqlite3|mongosh?|redis-cli|migrate|migration|prisma|sequelize|knex|alembic|flyway|db:seed|typeorm)\b/i, 'dba'],
   [/\b(docker|docker-compose|kubectl|helm|terraform|ansible|deploy|ssh|scp|rsync|nginx|pm2|systemctl|vercel|netlify|gcloud|aws|az|gh run|gh workflow)\b|\bgit push\b|\b(build|webpack|vite build|next build|nuxt build)\b/i, 'devops'],
+  [null, 'reviewer'],
   [/\bgit\s+(diff|log|blame|show|status)\b|\bgh pr\b/i, 'architect'],
 ];
+
+/** First role whose pattern matches `text`; a `null` pattern is the optional role's own `kind` pattern while it is on. */
+function matchRole(table, kind, text) {
+  for (const [own, role] of table) {
+    const pattern = own ?? signal(role, kind);
+    if (pattern?.test(text)) return role;
+  }
+  return null;
+}
 
 // ---- shell command analysis: judge each command in a chain by its verb, not by stray keywords ----
 
@@ -96,20 +132,22 @@ function segmentRole(raw) {
     return 'backend';
   }
   if (INSTALL.test(segment)) return 'devops'; // dependencies are DevOps' job, even `pip install pytest`
-  for (const [pattern, role] of COMMAND_ROLES) if (pattern.test(segment)) return role;
+  const known = matchRole(COMMAND_ROLES, 'command', segment);
+  if (known) return known;
   if (OPS_VERBS.has(verb)) return 'devops';
   if (HTTP_VERBS.has(verb)) return /\s(-o|-O|--output|-OutFile)\b/.test(segment) ? 'devops' : 'qa';
   if (SYNTAX_CHECK.test(segment)) return 'qa';
   return null;
 }
 
+/** Office role (in the active team) of a subagent type; null when its name says nothing. */
 export function toRole(agentType) {
   if (!agentType) return null;
   const key = String(agentType).toLowerCase().trim();
-  if (ROLE_IDS.includes(key)) return key;
-  if (AGENT_ALIASES[key]) return AGENT_ALIASES[key];
-  for (const [pattern, role] of ROLE_PATTERNS) if (pattern.test(key)) return role;
-  return null;
+  if (ROLE_IDS.includes(key)) return resolve(key);
+  if (AGENT_ALIASES[key]) return resolve(AGENT_ALIASES[key]);
+  const role = matchRole(ROLE_PATTERNS, 'agent', key);
+  return role ? resolve(role) : null;
 }
 
 /** Who owns a file, judged by its path. `reading` sends docs to the analyst instead of the writer. */
@@ -117,6 +155,9 @@ function fileRole(file, reading) {
   if (!file) return reading ? 'architect' : 'backend';
   if (TEST_FILE.test(file) || TEST_CLASS.test(file)) return 'qa';
   if (DOC_FILE.test(file)) return reading ? 'ba' : 'writer';
+  // Optional roles' files, only while on: *.dart / android/ / ios/ → mobile; *.ipynb / dbt/ / airflow → data.
+  if (signal('mobile', 'file')?.test(file)) return 'mobile';
+  if (signal('data', 'file')?.test(file)) return 'data';
   if (DB_FILE.test(file)) return 'dba';
   if (OPS_FILE.test(file)) return 'devops';
   if (STYLE_FILE.test(file)) return 'ui-ux';
@@ -156,12 +197,16 @@ const MCP_ROLES = [
 
 function mcpRole(tool) {
   const server = tool.split('__')[1]?.toLowerCase() ?? '';
+  if (signal('support', 'mcp')?.test(server)) return 'support';
   for (const [pattern, role] of MCP_ROLES) if (pattern.test(server)) return role;
   return 'claude';
 }
 
-/** Guess who in the office would do this tool call when no subagent is involved. */
-export function inferRole(tool, input = {}) {
+/** Guess who in the office would do this tool call when no subagent is involved: an active role or the Lead. */
+export const inferRole = (tool, input = {}) => resolve(ownerOf(tool, input));
+
+/** The role that owns a tool call, before the active team is applied. */
+function ownerOf(tool, input) {
   switch (tool) {
     case 'TodoWrite':
     case 'TaskCreate':
@@ -195,7 +240,7 @@ export function inferRole(tool, input = {}) {
   }
 }
 
-const ROLE_SCREEN = { qa: 'tests', dba: 'db', devops: 'pipeline', security: 'security', architect: 'review', writer: 'doc', ba: 'doc', 'ui-ux': 'design' };
+const ROLE_SCREEN = { qa: 'tests', dba: 'db', devops: 'pipeline', security: 'security', architect: 'review', reviewer: 'review', writer: 'doc', ba: 'doc', 'ui-ux': 'design' };
 // Shell lines that only read/search show the search screen, like Grep does.
 const shellScreen = (command) => {
   const { role, readOnly } = classifyCommand(command);

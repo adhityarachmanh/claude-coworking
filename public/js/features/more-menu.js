@@ -6,6 +6,7 @@ import { copyText, saveBlob } from '../core/util.js';
 import { roleName } from '../office/cast.js';
 import { openPermissions } from './permissions.js';
 import { exportActiveSession } from './conversations.js';
+import { openRoster } from './roster.js';
 
 export function toggleMoreMenu(open = $('#more-menu').hidden) {
   $('#more-menu').hidden = !open;
@@ -55,6 +56,7 @@ export function initMoreMenu() {
     try {
       if (item.dataset.more === 'export') exportChat();
       else if (item.dataset.more === 'permissions') openPermissions();
+      else if (item.dataset.more === 'roster') openRoster();
       else if (item.dataset.more === 'export-session') await exportActiveSession();
       else if (item.dataset.more === 'terminal') {
         if (!st.sessionId) return toast('Belum ada sesi web. Kirim pesan dulu, lalu sesinya bisa dilanjutkan di terminal.');

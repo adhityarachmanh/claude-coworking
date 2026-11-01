@@ -9,6 +9,7 @@ import { openMcp } from './mcp.js';
 import { openQueue } from './queue.js';
 import { openPermissions } from './permissions.js';
 import { openRewind } from './rewind.js';
+import { openRoster } from './roster.js';
 import { confirmNew, openSessions } from './sessions.js';
 import { openTasks } from './tasks.js';
 import { openTemplates } from './templates.js';
@@ -24,6 +25,7 @@ export const LOCAL_COMMANDS = [
   { name: 'rewind', description: 'Kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu (Esc Esc)' },
   { name: 'mcp', description: 'Server MCP: status, sambungkan ulang, aktif/nonaktif, login' },
   { name: 'permissions', aliases: ['allowed-tools'], description: '🛡️ Aturan izin tersimpan (allow / ask / deny): lihat, tambah, hapus, pindah' },
+  { name: 'team', aliases: ['tim'], description: '👥 Kelola tim: pilih role bawaan yang punya meja di kantor (Lead selalu ada)' },
   { name: 'antrian', aliases: ['queue'], description: '📋 Antrian prompt: susun beberapa prompt, dijalankan satu per satu saat tim tidak sibuk' },
   { name: 'tasks', description: 'Tugas latar: perintah & agent yang berjalan, output-nya, hentikan' },
   { name: 'memory', description: 'Buka CLAUDE.md project di VS Code' },
@@ -76,6 +78,10 @@ export function localCommand(text) {
     case 'permissions':
     case 'allowed-tools':
       openPermissions();
+      return true;
+    case 'team':
+    case 'tim':
+      openRoster();
       return true;
     case 'antrian':
     case 'queue':

@@ -363,7 +363,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   assert.ok(readOnlyApi.paths.length && readOnlyApi.patterns.length, 'snapshot carries the read-only allowlist');
   const uiAllows = (p) => readOnlyApi.paths.includes(p) || readOnlyApi.patterns.some((source) => new RegExp(source).test(p));
   assert.equal((await snapshot()).client.readOnly, false, 'the laptop is never read-only');
-  const reads = ['/api/account', '/api/account/limits', '/api/templates', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/git-branches`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`, `/api/projects/${id}/task-detail`];
+  const reads = ['/api/account', '/api/account/limits', '/api/templates', '/api/team/roster', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/git-branches`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`, `/api/projects/${id}/task-detail`];
   for (const p of reads) assert.notEqual((await phoneApi(p, { taskId: 'x' })).status, 403, `read ${p}`);
   // history search/export and saved permission rules stay off sniffable WiFi
   for (const p of ['search', 'export-session', 'permissions']) assert.equal((await phoneApi(`/api/projects/${id}/${p}`, { q: 'abc' })).status, 403, `wifi ${p}`);
@@ -389,6 +389,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     ...['prompt', 'shell', 'settings', 'commit', 'git-action', 'rewind', 'rewind-preview', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'favorite', 'rename'].map((a) => `/api/projects/${id}/${a}`),
     '/api/approvals/abc',
     '/api/team',
+    '/api/team/roster/save', // 👥 Kelola tim: the team is readable, changing it is an action
     '/api/demo',
     '/api/projects/refresh',
     '/api/account/login/code',
@@ -501,6 +502,62 @@ test('team names: validated, shared through the config, empty = default', async 
   assert.deepEqual((await snapshot()).config.teamNames, res.body.names);
   await api('/api/team', { names: {} });
   assert.deepEqual((await snapshot()).config.teamNames, {});
+});
+
+test('👥 Kelola tim: catalog-only team, validated, persisted, and the next Claude process gets only the active roles', async () => {
+  const DEFAULT = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer'];
+  const read = await api('/api/team/roster');
+  assert.equal(read.status, 200);
+  assert.deepEqual(read.body.enabled, DEFAULT, 'a fresh install keeps the old team of 12');
+  assert.equal(read.body.max, 16);
+  assert.equal(read.body.catalog.length, 16);
+  assert.deepEqual(read.body.catalog.slice(-4).map((r) => [r.id, r.optional]), [['mobile', true], ['data', true], ['support', true], ['reviewer', true]]);
+  assert.ok(read.body.catalog.find((r) => r.id === 'freelancer').locked);
+  assert.ok(!read.body.catalog.some((r) => r.id === 'claude'), 'the Lead is not a catalog role');
+  assert.deepEqual((await snapshot()).config.team.enabled, DEFAULT, 'the snapshot carries the team too');
+
+  // validation: catalog ids only, never the Lead, an array
+  for (const [enabled, why] of [[['pm', 'hacker'], /tidak ada di katalog/], [['claude', 'pm'], /Lead/], ['pm', /array/], [[1], /teks/]]) {
+    const res = await api('/api/team/roster/save', { enabled });
+    assert.equal(res.status, 400, JSON.stringify(enabled));
+    assert.match(res.body.error, why);
+  }
+  assert.deepEqual((await api('/api/team/roster')).body.enabled, DEFAULT, 'a refused save changes nothing');
+
+  // the running process holds the old team; saving restarts the idle one, the next prompt gets the new team
+  const id = await projectId();
+  const teamMode = (await snapshot()).statuses[id]?.team ?? true;
+  await api(`/api/projects/${id}/settings`, { team: true }); // 'Mode tim' on: the team goes to the CLI
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'tim?' });
+  const before = (await nextReply(id, /pid=\d+/)).patch.text;
+  assert.match(before, /agents=architect,ba,backend,dba,devops,frontend,pm,qa,security,ui-ux,writer /, 'default: the 11 specialists, no optional roles');
+  assert.match(before, /lead=architect,ba,backend,dba,devops,frontend,pm,qa,security,ui-ux,writer /);
+  for (let i = 0; i < 50 && (await snapshot()).statuses[id]?.busy; i++) await sleep(100); // the turn has ended
+  const wanted = DEFAULT.filter((r) => r !== 'writer' && r !== 'freelancer').concat('reviewer', 'mobile', 'pm');
+  mark = seen.length;
+  const saved = await api('/api/team/roster/save', { enabled: wanted });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.body.enabled, ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'freelancer', 'mobile', 'reviewer'], 'catalog order, duplicates dropped, the freelancer always on');
+  assert.equal(saved.body.applied, 'restarted', 'the idle process is closed so the next prompt starts with the new team');
+  const config = await waitFor((t, o) => t === 'config' && o.team?.enabled.includes('mobile'));
+  assert.equal(config.team.enabled.length, 13, 'every open page hears about it');
+  await api(`/api/projects/${id}/prompt`, { text: 'tim?' });
+  const after = (await nextReply(id, /pid=\d+/)).patch.text;
+  assert.match(after, /agents=architect,ba,backend,dba,devops,frontend,mobile,pm,qa,reviewer,security,ui-ux /, 'only the active roles go to --agents');
+  assert.match(after, /lead=architect,ba,backend,dba,devops,frontend,mobile,pm,qa,reviewer,security,ui-ux /, 'and the Lead is told about exactly those');
+  assert.notEqual(after.match(/pid=(\d+)/)[1], before.match(/pid=(\d+)/)[1], 'a fresh process');
+
+  // stored in state.json (debounced save)
+  await sleep(1100);
+  const stored = JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8'));
+  assert.deepEqual(stored.team.enabled, saved.body.enabled);
+  // saving the same team again restarts nothing
+  assert.equal((await api('/api/team/roster/save', { enabled: saved.body.enabled })).body.applied, 'none');
+
+  // back to the default team (and the project's own team setting) for the tests after this one
+  assert.deepEqual((await api('/api/team/roster/save', { enabled: DEFAULT })).body.enabled, DEFAULT);
+  await api(`/api/projects/${id}/settings`, { team: teamMode });
 });
 
 test('prompt templates: list, add, update, delete over the API; validated; stored in state.json', async () => {

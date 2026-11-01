@@ -11,7 +11,7 @@ import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { copyText, flashButton } from '../core/util.js';
 import { renderMarkdown } from '../markdown.js';
 import { CAST } from '../office/cast.js';
-import { H, W } from '../office/world.js';
+import { W, room } from '../office/world.js';
 import { openModal } from '../ui/modals.js';
 
 const POLL_MS = OUTPUT_POLL_MS;
@@ -330,7 +330,7 @@ function personAt(canvas, clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   if (!scene || !rect.width) return null;
   const x = ((clientX - rect.left) / rect.width) * W;
-  const y = ((clientY - rect.top) / rect.height) * H;
+  const y = ((clientY - rect.top) / rect.height) * room.h;
   // Front-most first (larger y is drawn on top).
   const people = scene.actors().filter((a) => CAST[a.id] && Math.abs(a.x - x) <= 9 && y >= a.headTop() - 3 && y <= a.y + 3);
   return people.sort((a, b) => b.y - a.y)[0] ?? null;

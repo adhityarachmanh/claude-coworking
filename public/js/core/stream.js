@@ -9,6 +9,7 @@ import { notify } from '../features/notify.js';
 import { phone, refreshPairing } from '../features/phone.js';
 import { renderSidebar, selectProject } from '../features/picker.js';
 import { renderRoots } from '../features/settings.js';
+import { applyRoster } from '../features/roster.js';
 import { applyNames } from '../features/team.js';
 import { applyTeamNames, roleName } from '../office/cast.js';
 import { updateTitle } from '../ui/layout.js';
@@ -34,6 +35,7 @@ export function connect() {
   on('config', (config) => {
     renderRoots(config);
     applyNames(config);
+    applyRoster(config.team); // 👥 Kelola tim saved somewhere: the office gets or loses desks, no reload
     if (!$('#phone-modal').hidden) {
       phone.pairing = null; // a device just paired (codes are single-use) or settings changed
       refreshPairing();
@@ -52,6 +54,7 @@ export function connect() {
     state.account = snap.account ?? null;
     renderRoots(snap.config);
     applyTeamNames(snap.config?.teamNames); // before the first render, so nothing shows the old names
+    applyRoster(snap.config?.team, { rebuild: false }); // desks for the active team; the scenes are rebuilt below
     state.projects = snap.projects;
     state.statuses = snap.statuses;
     state.chats = snap.chats;

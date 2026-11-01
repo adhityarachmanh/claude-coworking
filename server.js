@@ -31,7 +31,8 @@ import { DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscal
 import { listSessions, sessionHistory } from './src/transcripts.js';
 import { ConversationError, exportSession, searchSessions } from './src/conversation.js';
 import { taskDetail } from './src/task-detail.js';
-import { ROLE_IDS, loadAgentDefinitions } from './src/roles.js';
+import { MAX_ACTIVE_ROLES, TeamConfigError, activeAgents, normalizeEnabled, publicCatalog, storedEnabled, teamPrompt } from './src/role-catalog.js';
+import { ROLE_IDS, activeRoles, loadAgentDefinitions, setActiveRoles } from './src/roles.js';
 import { SessionManager } from './src/session.js';
 import { TEMPLATE_LIMITS, TemplateError, TemplateStore } from './src/templates.js';
 import { QueueError, TaskQueue } from './src/queue.js';
@@ -58,25 +59,7 @@ const DEFAULT_SLASH = ['clear', 'compact', 'context', 'cost', 'effort', 'help', 
 // Per-start secret: only pages served by this process can call the API (blocks CSRF from other sites).
 const TOKEN = randomBytes(24).toString('hex');
 
-const TEAM_PROMPT = `You are the Engineering Lead of an IT team that the user watches live in the "Adhit Office" pixel office.
-Delegate focused work to the specialist subagents with the Agent tool, but only to the roles a task actually needs:
-each delegation costs time and tokens, so do small or trivial work yourself.
-- pm: scope, priorities, acceptance criteria, task breakdown
-- ba: requirements, business rules, analysis of existing code and documents
-- architect: technical design, architecture decisions, code review of diffs
-- ui-ux: user flows, UI design, styling, accessibility
-- frontend: UI implementation (components, pages, client state)
-- backend: APIs, business logic, integrations, server-side fixes
-- dba: schema, migrations, queries, data fixes, database performance
-- qa: test plans, automated tests, bug reproduction, verification
-- security: security review, vulnerabilities, secrets, dependency audit
-- devops: build, CI/CD, Docker, deployment, environment and config issues
-- writer: README, API docs, changelog, user guides
-Typical flows:
-- New feature: pm → ba → architect → ui-ux → frontend/backend/dba → qa → security (when auth, input or data is touched) → writer.
-- Bug fix: qa reproduces it (ideally a failing test) → the owning frontend/backend/dba fixes the root cause → architect reviews the diff → qa verifies.
-- Build/deploy/incident: devops first, then backend or dba as needed, qa verifies.
-Run independent pieces in parallel when they do not touch the same files. Reply in the user's language.`;
+// The Lead's team prompt and the subagents (--agents) follow the active team (👥 Kelola tim): src/role-catalog.js.
 
 // Every response: no inline/foreign scripts, no plugins, nothing but this origin may frame the office
 // (clickjacking an "Izinkan" button). style-src keeps 'unsafe-inline': the app and the printable usage
@@ -126,7 +109,10 @@ const cutShort = hub.recoverTurns();
 // Leftovers of an import cut short by a crash or shutdown (uploaded .zip files): only this app writes there.
 rmSync(path.join(DATA_DIR, 'tmp'), { recursive: true, force: true });
 const claude = findClaude();
-const agents = loadAgentDefinitions(path.join(APP_DIR, '.claude', 'agents'));
+// Every role's subagent template; only the active team's go to `claude --agents` (saveTeam).
+const allAgents = loadAgentDefinitions(path.join(APP_DIR, '.claude', 'agents'));
+const initialTeam = storedEnabled(hub.persisted.team);
+setActiveRoles(initialTeam);
 
 let lastAccountId;
 const account = new AccountService({
@@ -140,7 +126,7 @@ const account = new AccountService({
   },
 });
 const ledger = new UsageLedger({ file: path.join(DATA_DIR, 'usage.jsonl'), account: () => account.current });
-const sessions = new SessionManager({ hub, claude, agents, teamPrompt: TEAM_PROMPT, ledger, account });
+const sessions = new SessionManager({ hub, claude, agents: activeAgents(allAgents, initialTeam), teamPrompt: teamPrompt(initialTeam, Object.keys(allAgents)), ledger, account });
 const mirror = new TranscriptMirror(hub, { ledger });
 // A device unpaired for being idle loses its open event streams at once, like "Cabut".
 const remote = new RemoteAccess(hub, {
@@ -174,6 +160,7 @@ function refreshProjects() {
     autostart: autostartStatus(),
     remote: remote.publicInfo(PORT),
     teamNames: hub.persisted.teamNames ?? {},
+    team: teamConfig(),
   };
   hub.ready = wasReady;
   hub.broadcast('config', hub.config);
@@ -376,6 +363,16 @@ async function handleApi(req, res, pathname, device = null) {
     hub.config = { ...hub.config, teamNames: names };
     hub.broadcast('config', hub.config);
     return json(res, 200, { names });
+  }
+  // 👥 Kelola tim: reading the team is allowed over WiFi (src/remote.js); saving it is an action.
+  if (pathname === '/api/team/roster') return json(res, 200, teamConfig());
+  if (pathname === '/api/team/roster/save') {
+    try {
+      return json(res, 200, saveTeam(normalizeEnabled(body.enabled)));
+    } catch (err) {
+      if (err instanceof TeamConfigError) return json(res, err.status, { error: err.message });
+      throw err;
+    }
   }
   if (pathname === '/api/autostart') {
     hub.config = { ...hub.config, autostart: setAutostart(Boolean(body.enabled), APP_DIR, PORT) };
@@ -718,6 +715,32 @@ async function projectTools(req, res, id, kind, body) {
     throw err;
   }
   return json(res, 404, { error: 'not found' });
+}
+
+// ---------- the active team (👥 Kelola tim) ----------
+
+/** What the browser gets: the active role ids (catalog order, Lead excluded) and the built-in catalog. */
+function teamConfig() {
+  return { enabled: activeRoles(), catalog: publicCatalog(), max: MAX_ACTIVE_ROLES, lead: 'claude' };
+}
+
+/**
+ * Switches the team: role mapping, the subagents sent with --agents and the Lead's prompt. Claude Code reads
+ * those when it starts, so idle team-mode sessions restart now and busy ones after their turn (reloadSettings).
+ */
+function saveTeam(enabled) {
+  const same = enabled.join() === activeRoles().join();
+  hub.persisted.team = { enabled };
+  hub.scheduleSave();
+  if (same) return { ...teamConfig(), applied: 'none' };
+  setActiveRoles(enabled);
+  sessions.agents = activeAgents(allAgents, enabled);
+  sessions.teamPrompt = teamPrompt(enabled, Object.keys(allAgents));
+  const applied = [...sessions.sessions.values()].filter((s) => hub.settingsFor(s.id).team).map((s) => s.reloadSettings());
+  hub.config = { ...hub.config, team: teamConfig() };
+  hub.broadcast('config', hub.config);
+  console.log(`Tim diubah: ${enabled.length} role aktif (${enabled.join(', ')})`);
+  return { ...teamConfig(), applied: applied.includes('pending') ? 'pending' : applied.includes('restarted') ? 'restarted' : 'none' };
 }
 
 /** Custom display names per role ("claude" = the lead), validated. Empty → back to the default name. */
@@ -1102,7 +1125,7 @@ server.listen(PORT, HOST, () => {
   const url = `http://localhost:${PORT}`;
   console.log(`Adhit Office berjalan di ${url}`);
   console.log(claude ? `Claude Code: ${claude.command}` : 'PERINGATAN: Claude Code tidak ditemukan (set env CLAUDE_BIN).');
-  console.log(`Folder projects: ${projectRoots().join('; ')}  ·  Role agents: ${Object.keys(agents).join(', ') || '-'}`);
+  console.log(`Folder projects: ${projectRoots().join('; ')}  ·  Role agents: ${Object.keys(sessions.agents).join(', ') || '-'}`);
   console.log(mirroring ? 'Mirror CLI: aktif (membaca ~/.claude/projects)' : 'Mirror CLI: nonaktif (~/.claude/projects tidak ada)');
   console.log('Tekan Ctrl+C untuk berhenti.');
   if (cutShort.length) console.log(`Giliran terputus saat server berhenti: ${cutShort.length} project (tombol "Lanjutkan" di chat).`);

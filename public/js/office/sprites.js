@@ -88,11 +88,27 @@ function paintHijab(p, c, shade, view, headY, torsoY) {
   }
 }
 
+/** Afro: a big round puff around the head (front: face open below the hairline; side/back: covers the head). */
+function paintAfro(p, h, hs, view, headY) {
+  p(5, headY - 3, 10, 1, h);
+  p(3, headY - 2, 14, 1, h);
+  p(2, headY - 1, 16, view === 'down' ? 4 : 10, h);
+  if (view === 'down') {
+    p(2, headY + 3, 2, 5, h);
+    p(16, headY + 3, 2, 5, h);
+    p(3, headY + 8, 1, 1, h);
+    p(16, headY + 8, 1, 1, h);
+  } else p(3, headY + 9, 14, 1, h);
+  p(6, headY - 2, 4, 1, hs);
+  p(4, headY - 1, 2, 1, hs);
+}
+
 function paintHair(p, look, view, headY, torsoY) {
   const h = look.hair;
   const hs = look.hairShade;
   const style = look.hairStyle;
   if (style === 'hijab') return paintHijab(p, h, hs, view, headY, torsoY);
+  if (style === 'afro') return paintAfro(p, h, hs, view, headY);
 
   if (view === 'side') {
     p(5, headY - 1, 9, 1, h);
@@ -186,19 +202,20 @@ function paintHair(p, look, view, headY, torsoY) {
 function paintAccessories(p, look, view, headY) {
   for (const acc of look.acc ?? []) {
     if (acc === 'glasses' && view !== 'up') {
+      const gc = look.glassesColor ?? '#3b3340'; // light frames read better on dark skin
       if (view === 'down') {
-        p(5, headY + 5, 4, 1, '#3b3340');
-        p(11, headY + 5, 4, 1, '#3b3340');
-        p(9, headY + 5, 2, 1, '#3b3340');
-        p(5, headY + 6, 1, 2, '#3b3340');
-        p(8, headY + 6, 1, 2, '#3b3340');
-        p(11, headY + 6, 1, 2, '#3b3340');
-        p(14, headY + 6, 1, 2, '#3b3340');
+        p(5, headY + 5, 4, 1, gc);
+        p(11, headY + 5, 4, 1, gc);
+        p(9, headY + 5, 2, 1, gc);
+        p(5, headY + 6, 1, 2, gc);
+        p(8, headY + 6, 1, 2, gc);
+        p(11, headY + 6, 1, 2, gc);
+        p(14, headY + 6, 1, 2, gc);
       } else {
-        p(5, headY + 5, 3, 1, '#3b3340');
-        p(5, headY + 6, 1, 2, '#3b3340');
-        p(7, headY + 6, 1, 2, '#3b3340');
-        p(8, headY + 5, 3, 1, '#3b3340');
+        p(5, headY + 5, 3, 1, gc);
+        p(5, headY + 6, 1, 2, gc);
+        p(7, headY + 6, 1, 2, gc);
+        p(8, headY + 5, 3, 1, gc);
       }
     }
     if (acc === 'headphones') {
@@ -212,6 +229,25 @@ function paintAccessories(p, look, view, headY) {
         p(16, headY - 1, 1, 4, band);
         p(2, headY + 3, 2, 4, look.accColor);
         p(16, headY + 3, 2, 4, look.accColor);
+      }
+    }
+    if (acc === 'earbuds') {
+      // white earbuds with a short stem (on the hair or the cheek)
+      p(3, headY + 6, 1, 2, WHITE);
+      p(16, headY + 6, 1, 2, WHITE);
+    }
+    if (acc === 'headset') {
+      // call-centre headset: band, two ear cups (accColor) and a mic boom to the mouth on one side
+      const band = '#2f3140';
+      p(4, headY - 2, 12, 1, band);
+      p(3, headY - 1, 1, 4, band);
+      p(16, headY - 1, 1, 4, band);
+      p(2, headY + 3, 2, 4, look.accColor);
+      p(16, headY + 3, 2, 4, look.accColor);
+      if (view === 'down') {
+        p(3, headY + 7, 1, 2, band);
+        p(4, headY + 9, 2, 1, band);
+        p(6, headY + 9, 2, 1, '#55596a'); // mic
       }
     }
     if (acc === 'cap') {
@@ -302,6 +338,34 @@ function paintTorso(p, look, view, x, y, w, h) {
       p(x + 2, y, 1, 3, '#e9ecef');
       p(x + 7, y, 1, 3, '#e9ecef');
       p(x, y + 3, w, 1, '#e9ecef');
+      break;
+    case 'cardigan':
+      // open cardigan over a light shirt: two buttons, pockets, ribbed hem
+      p(x + 4, y, 2, h - 1, look.undershirt);
+      p(x + 3, y, 1, h, shade);
+      p(x + 3, y + 2, 1, 1, look.undershirt);
+      p(x + 3, y + 4, 1, 1, look.undershirt);
+      p(x + 1, y + h - 3, 2, 1, shade);
+      p(x + 7, y + h - 3, 2, 1, shade);
+      p(x, y + h - 1, w, 1, shade);
+      break;
+    case 'polo':
+      // collar tips, button placket and an ID badge on a lanyard
+      p(x + 2, y, 2, 1, look.undershirt);
+      p(x + 6, y, 2, 1, look.undershirt);
+      p(x + 4, y, 2, 3, shade);
+      p(x + 6, y + 3, 2, 2, look.undershirt);
+      p(x + 6, y + 3, 2, 1, '#4dabf7');
+      p(x + 7, y + 1, 1, 2, '#2f3140');
+      break;
+    case 'sweatervest':
+      // V-neck over a shirt (sleeves = shirt colour), white collar points, a row of argyle dots, ribbed hem
+      p(x + 3, y, 4, 1, look.undershirt);
+      p(x + 4, y + 1, 2, 1, look.undershirt);
+      p(x + 3, y, 1, 1, WHITE);
+      p(x + 6, y, 1, 1, WHITE);
+      for (const dx of [1, 4, 7]) p(x + dx, y + 3, 2, 1, shade);
+      p(x, y + h - 1, w, 1, shade);
       break;
     case 'plain': // costumes paint their own details
       break;
@@ -413,6 +477,7 @@ function paintCharacter(look, s) {
   if (s.mood === 'worried' && view === 'down') p(17, headY + 1, 1, 2, '#8fd3ff');
   costume?.front?.(p, look, ctx);
   if (!costume?.arms?.(p, look, ctx)) paintArms(p, look, s, view, headY, torsoY, sleeve, arms, f);
+  if (look.gadget) paintGadget(p, look, s, view, torsoY, arms);
   costume?.after?.(p, look, ctx);
   return finishCharacter(c, g, look, s);
 }
@@ -467,6 +532,20 @@ function paintArms(p, look, s, view, headY, torsoY, sleeve, arms, f) {
     p(15, torsoY, 2, 4, sleeve);
     p(15, torsoY + 4, 2, 3 - swingR, look.skin);
   }
+}
+
+/** A phone in the free hand (arms down, facing the viewer or sideways); the screen glows in gadgetGlow. */
+function paintGadget(p, look, s, view, torsoY, arms) {
+  if (look.gadget !== 'phone' || arms !== 'down' || view === 'up' || s.pose === 'sit') return;
+  const glow = look.gadgetGlow ?? '#8fd3ff';
+  if (view === 'left') {
+    p(7, torsoY + 3, 2, 4, '#262a36');
+    p(7, torsoY + 4, 1, 2, glow);
+    return;
+  }
+  const lift = s.pose === 'walk' && s.frame === 2 ? 1 : 0;
+  p(14, torsoY + 4 - lift, 3, 4, '#262a36');
+  p(15, torsoY + 5 - lift, 1, 2, glow);
 }
 
 /** Outline, optional translucency (ghosts), mirror for the right-facing view. */
