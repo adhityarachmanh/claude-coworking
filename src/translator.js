@@ -92,6 +92,8 @@ export class StreamTranslator {
   constructor(sink) {
     this.sink = sink;
     this.tools = new Map(); // tool_use_id -> { name, input, role, label, screen, chatId, agent?, background? }
+    this.toolRoles = new Map(); // tool_use_id -> role, kept after the call returns (background tasks point back at it)
+    this.bgShellRoles = []; // roles of `run_in_background` shells whose task hasn't been seen yet
     this.agentRoles = new Map(); // Agent tool_use_id -> office role of that subagent
     this.tasks = new Map(); // TaskCreate id -> { subject, status }
     this.lastBuilder = null; // role that last edited product code (who gets QA's bug report)
@@ -124,6 +126,15 @@ export class StreamTranslator {
       else w.tools++;
       w.label = info.label; // the latest one (insertion order): shown on the team card / monitor after a refresh
       if (info.screen) w.screen = info.screen;
+    }
+    // Shell commands left running in the background: their tool call already "returned", the work goes on.
+    for (const t of this.bgTasks.values()) {
+      if (t.kind !== 'shell' || t.status !== 'running' || !t.role) continue;
+      if (t.toolUseId && this.tools.has(t.toolUseId)) continue; // still a foreground call, counted above
+      const w = (working[t.role] ??= { tools: 0, agents: 0 });
+      w.tools++;
+      w.label ??= t.description ? `⏳ ${t.description}` : '⏳ Perintah di latar belakang';
+      w.screen ??= 'terminal';
     }
     this.status({ working });
   }
@@ -264,8 +275,41 @@ export class StreamTranslator {
     }
     if (msg.description) t.description = truncate(msg.description, 200);
     t.kind ??= 'shell';
+    if (msg.tool_use_id) t.toolUseId = msg.tool_use_id;
+    t.role ??=
+      (t.toolUseId && this.toolRoles.get(t.toolUseId)) ||
+      (t.agent ? agentRole(t.agent) : null) ||
+      // A background shell without a tool_use_id: the oldest `run_in_background` call still waiting for its task.
+      (t.kind === 'shell' && t.background && this.bgShellRoles.shift()) ||
+      null;
+    if (t.toolUseId && t.kind === 'shell') {
+      const i = this.bgShellRoles.indexOf(t.role);
+      if (t.background && i >= 0) this.bgShellRoles.splice(i, 1); // matched by id: not waiting anymore
+    }
     this.bgTasks.set(id, t);
+    this.settleTask(t);
     this.emitBgTasks();
+  }
+
+  /** tool_use_id -> role, bounded (only recent calls can still have a task running). */
+  rememberRole(toolUseId, role) {
+    this.toolRoles.set(toolUseId, role);
+    if (this.toolRoles.size > 500) this.toolRoles.delete(this.toolRoles.keys().next().value);
+  }
+
+  /** A background subagent's task ended: its character reports back and stops working. */
+  settleTask(t) {
+    if (t.status === 'running' || t.status === 'pending' || t.kind !== 'agent') return;
+    const toolUseId =
+      (t.toolUseId && this.tools.get(t.toolUseId)?.agent && t.toolUseId) ||
+      // No tool_use_id on the task: the oldest background agent of that role.
+      [...this.tools].find(([, info]) => info.agent && info.background && info.role === t.role)?.[0];
+    if (toolUseId) this.finishAgent(toolUseId, t.status === 'failed' || t.status === 'killed', t.summary ?? '');
+  }
+
+  /** Anything still running in the background (keeps the process from being closed while idle). */
+  hasRunningTasks() {
+    return [...this.bgTasks.values()].some((t) => t.status === 'running') || [...this.tools.values()].some((i) => i.agent && i.background);
   }
 
   /** The full set of live background tasks (replace semantics). */
@@ -276,10 +320,15 @@ export class StreamTranslator {
       const t = this.bgTasks.get(x.task_id) ?? { id: x.task_id, status: 'running', startedAt: Date.now() };
       Object.assign(t, { background: true, kind: x.task_type === 'local_agent' || x.subagent_type ? 'agent' : 'shell', agent: x.subagent_type ?? t.agent ?? null });
       if (x.description) t.description = truncate(x.description, 200);
+      if (x.tool_use_id) t.toolUseId = x.tool_use_id;
+      t.role ??= (t.toolUseId && this.toolRoles.get(t.toolUseId)) || (t.agent ? agentRole(t.agent) : null);
       this.bgTasks.set(x.task_id, t);
     }
     for (const t of this.bgTasks.values()) {
-      if (t.background && t.status === 'running' && !live.has(t.id)) Object.assign(t, { status: 'completed', endedAt: Date.now() });
+      if (t.background && t.status === 'running' && !live.has(t.id)) {
+        Object.assign(t, { status: 'completed', endedAt: Date.now() });
+        this.settleTask(t);
+      }
     }
     this.emitBgTasks();
   }
@@ -289,6 +338,7 @@ export class StreamTranslator {
     const list = [...this.bgTasks.values()].sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || b.startedAt - a.startedAt);
     for (const t of list.slice(20)) this.bgTasks.delete(t.id);
     this.status({ tasks: list.slice(0, 20).map((t) => ({ ...t })) });
+    this.emitWorking(); // a background shell starting or ending changes who is at work
   }
 
   parentRole(parentId) {
@@ -419,6 +469,7 @@ export class StreamTranslator {
       this.agentRoles.set(block.id, role);
       const chatId = this.sink.chat({ kind: 'delegate', role, from, agentType, text: label, status: 'running', input: { prompt: clip(input.prompt, 3000) } });
       this.tools.set(block.id, { name: block.name, role, from, label, chatId, agent: true, background: Boolean(input.run_in_background) });
+      this.rememberRole(block.id, role);
       this.sink.office({ kind: 'delegate', role, from, label, agentType });
       this.emitWorking();
       return;
@@ -441,6 +492,8 @@ export class StreamTranslator {
       ...(parentRole ? { sub: true } : {}),
     });
     this.tools.set(block.id, { name: block.name, input, role, label, screen, chatId });
+    this.rememberRole(block.id, role);
+    if (input.run_in_background && this.bgShellRoles.push(role) > 50) this.bgShellRoles.shift();
     this.sink.office({ kind: 'tool_start', role, label, tool: block.name, screen, inferred: !parentRole });
     this.emitWorking();
 

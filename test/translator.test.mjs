@@ -266,3 +266,40 @@ test('status.working counts open tools and running subagents per role (for an of
   translator.finishAgent('a1');
   assert.deepEqual(last(), {}, 'nobody at work once it reports back');
 });
+
+test('background work keeps its role at work until the task ends (shell + subagent)', () => {
+  const statuses = [];
+  const translator = new StreamTranslator({ office: () => {}, chat: () => 'c', updateChat: () => {}, status: (p) => p.working && statuses.push(p.working) });
+  const last = () => statuses.at(-1);
+  // a backgrounded shell: the tool call returns at once, the command keeps running as a task
+  translator.handle(use('s1', 'Bash', { command: 'npm run build', run_in_background: true }));
+  const role = Object.keys(last())[0];
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T1', tool_use_id: 's1', description: 'build', is_backgrounded: true });
+  translator.handle(done('s1', 'Command running in background with ID: T1'));
+  assert.equal(last()[role]?.tools, 1, 'still at work after the call returned');
+  // a background subagent whose task ends later
+  translator.handle(use('a1', 'Agent', { subagent_type: 'qa', description: 'cek', prompt: 'cek', run_in_background: true }));
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T2', tool_use_id: 'a1', subagent_type: 'qa', description: 'cek', is_backgrounded: true });
+  translator.handle(done('a1', 'Async agent launched successfully.'));
+  translator.handle({ type: 'result', subtype: 'success', is_error: false, duration_ms: 5, usage: {}, modelUsage: {} });
+  assert.equal(last().qa.agents, 1, 'agent at work after the turn');
+  assert.equal(last()[role]?.tools, 1, 'shell at work after the turn');
+  assert.ok(translator.hasRunningTasks());
+  translator.handle({ type: 'system', subtype: 'task_notification', task_id: 'T2', tool_use_id: 'a1', status: 'completed', summary: 'beres' });
+  assert.equal(last().qa?.agents ?? 0, 0, 'agent done → no longer counted (was stuck before)');
+  translator.handle({ type: 'system', subtype: 'task_notification', task_id: 'T1', tool_use_id: 's1', status: 'completed' });
+  assert.deepEqual(last(), {}, 'nobody at work');
+  assert.ok(!translator.hasRunningTasks());
+});
+
+test('background tasks without tool_use_id still map to the right role', () => {
+  const statuses = [];
+  const translator = new StreamTranslator({ office: () => {}, chat: () => 'c', updateChat: () => {}, status: (p) => p.working && statuses.push(p.working) });
+  const last = () => statuses.at(-1);
+  translator.handle(use('a1', 'Agent', { subagent_type: 'qa', description: 'cek', prompt: 'cek', run_in_background: true }));
+  translator.handle(done('a1', 'Async agent launched successfully.'));
+  translator.handle({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'T9', task_type: 'local_agent', subagent_type: 'qa' }] });
+  assert.equal(last().qa.agents, 1);
+  translator.handle({ type: 'system', subtype: 'background_tasks_changed', tasks: [] });
+  assert.equal(last().qa?.agents ?? 0, 0, 'gone from the live list → finished');
+});

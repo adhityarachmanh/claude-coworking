@@ -548,9 +548,19 @@ class ClaudeSession {
     for (const item of this.inflight.values()) this.hub.updateChat(this.id, item.chatId, item.state === 'started' ? { queued: false } : { queued: false, cancelled: true });
     this.inflight.clear();
     this.busy = false;
+    this.autoTurn = false;
     this.interrupting = false;
     this.hub.setStatus(this.id, { working: {} }); // the process is gone: nobody it started is still at work
     return child;
+  }
+
+  /** Idle for a while: close the process — unless background tasks (agents, shells) are still running in it. */
+  idleShutdown() {
+    if (this.busy || this.autoTurn || this.translator?.hasRunningTasks()) {
+      this.idleTimer = setTimeout(() => this.idleShutdown(), IDLE_SHUTDOWN_MS);
+      return;
+    }
+    this.closeChild();
   }
 
   closeChild() {
@@ -638,8 +648,17 @@ class ClaudeSession {
       msg = { ...msg, subtype: 'interrupted', is_error: true, result: 'Dihentikan oleh kamu' };
       this.interrupting = false;
     }
+    // A turn Claude Code starts by itself (a background task finished and it reacts to the notification) has no
+    // prompt of ours in flight, so `busy` stays false and the lead would sit idle: track it as its own turn.
+    if (!this.busy && !this.autoTurn && (msg.type === 'assistant' || msg.type === 'stream_event')) {
+      this.autoTurn = true;
+      this.updateStatus();
+    }
     this.translator.handle(msg);
-    if (msg.type === 'result') this.onTurnResult();
+    if (msg.type === 'result') {
+      this.autoTurn = false;
+      this.onTurnResult();
+    }
   }
 
   /** Claude Code's own queue: each prompt goes queued → started → completed; several can share a turn. */
@@ -699,7 +718,7 @@ class ClaudeSession {
       return;
     }
     clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => this.closeChild(), IDLE_SHUTDOWN_MS);
+    this.idleTimer = setTimeout(() => this.idleShutdown(), IDLE_SHUTDOWN_MS);
     this.refreshContext();
   }
 
@@ -812,6 +831,6 @@ class ClaudeSession {
 
   updateStatus() {
     const queue = [...this.inflight.values()].filter((i) => i.state !== 'started').length;
-    this.hub.setStatus(this.id, { alive: Boolean(this.child), busy: this.busy, queue, autoApprove: this.autoApprove });
+    this.hub.setStatus(this.id, { alive: Boolean(this.child), busy: this.busy || Boolean(this.autoTurn), queue, autoApprove: this.autoApprove });
   }
 }
