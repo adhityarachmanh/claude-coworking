@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { describeTool, inferRole, loadAgentDefinitions, screenFor, toRole } from '../src/roles.js';
+import { describeTool, inferRole, loadAgentDefinitions, screenFor, toRole, setActiveRoles } from '../src/roles.js';
+import { CLASSIC_TEAM } from '../src/role-catalog.js';
+
+// These cases pin the classic 12-role mapping; the four optional roles are covered in team.test.mjs.
+setActiveRoles(CLASSIC_TEAM);
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 

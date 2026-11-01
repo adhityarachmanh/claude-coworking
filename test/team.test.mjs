@@ -5,10 +5,10 @@ import path from 'node:path';
 import { afterEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { Scene } from '../public/js/office/scene.js';
-import { DEFAULT_TEAM, resolveRole as clientResolve, roster, setRoster, teamOrder } from '../public/js/office/roster.js';
+import { CLASSIC_TEAM as CLIENT_CLASSIC, DEFAULT_TEAM, resolveRole as clientResolve, roster, setRoster, teamOrder } from '../public/js/office/roster.js';
 import { DESKS, DOOR, H, W, findPath, layoutDesks, room } from '../public/js/office/world.js';
 import {
-  CATALOG_IDS, DEFAULT_ENABLED, MAX_ACTIVE_ROLES, ROLE_CATALOG, TeamConfigError, activeAgents, normalizeEnabled, publicCatalog, resolveRole, storedEnabled, teamPrompt,
+  CATALOG_IDS, CLASSIC_TEAM, DEFAULT_ENABLED, MAX_ACTIVE_ROLES, ROLE_CATALOG, TeamConfigError, activeAgents, normalizeEnabled, publicCatalog, resolveRole, storedEnabled, teamPrompt,
 } from '../src/role-catalog.js';
 import { activeRoles, agentRole, inferRole, loadAgentDefinitions, screenFor, setActiveRoles, toRole } from '../src/roles.js';
 
@@ -20,11 +20,14 @@ afterEach(() => setActiveRoles(DEFAULT_ENABLED));
 
 // ---------- catalog & validation ----------
 
-test('catalog: the 12 existing roles + 4 new ones, fixed ids; the default team is the old 12', () => {
+test('catalog: the 12 existing roles + 4 new ones, fixed ids; the default team is all 16', () => {
   assert.deepEqual(ALL, ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer']);
   assert.equal(MAX_ACTIVE_ROLES, 16);
-  assert.deepEqual([...DEFAULT_ENABLED], ALL.slice(0, 12));
+  assert.deepEqual([...DEFAULT_ENABLED], ALL, 'default: every catalog role on');
+  assert.deepEqual([...CLASSIC_TEAM], ALL.slice(0, 12), 'the classic team (before the catalog)');
+  assert.deepEqual([...CLIENT_CLASSIC], [...CLASSIC_TEAM]);
   assert.deepEqual([...DEFAULT_TEAM].sort(), [...DEFAULT_ENABLED].sort(), 'the browser starts with the same default');
+  assert.deepEqual([...DEFAULT_TEAM], [...DEFAULT_ENABLED], 'same order as the catalog');
   for (const role of ROLE_CATALOG) {
     assert.ok(role.name && role.title && role.description.length > 20, role.id);
     for (const next of role.fallback) assert.ok(CATALOG_IDS.includes(next), `${role.id} → ${next}`);
@@ -42,7 +45,7 @@ test('validation: catalog ids only, no Lead, at most 16; duplicates dropped, fre
   assert.deepEqual(normalizeEnabled(ALL), ALL, 'all 16 fit');
   for (const bad of [null, 'pm', { pm: true }, ['claude'], ['pm', 'hacker'], ['__proto__'], [42]]) assert.throws(() => normalizeEnabled(bad), TeamConfigError, JSON.stringify(bad));
   assert.equal(new TeamConfigError('x').status, 400);
-  assert.deepEqual(storedEnabled(undefined), [...DEFAULT_ENABLED], 'old state.json: the old team');
+  assert.deepEqual(storedEnabled(undefined), [...DEFAULT_ENABLED], 'never saved: the default team (all 16)');
   assert.deepEqual(storedEnabled({ enabled: ['nope'] }), [...DEFAULT_ENABLED], 'a corrupt stored team falls back to the default');
   assert.deepEqual(storedEnabled({ enabled: ['pm', 'data'] }), ['pm', 'freelancer', 'data']);
 });
@@ -77,8 +80,8 @@ const OLD_AGENTS = {
 const OLD_FILES = { 'lib/main.dart': 'backend', 'android/app/build.gradle': 'backend', 'ios/Runner/AppDelegate.swift': 'backend', 'notebooks/eda.ipynb': 'backend', 'dbt/models/orders.sql': 'dba', 'src/components/Button.tsx': 'frontend' };
 const OLD_COMMANDS = { 'flutter build apk': 'devops', 'dbt run': 'backend', 'gh pr review 12': 'architect', 'jupyter nbconvert x.ipynb': 'backend', 'npm test': 'qa' };
 
-test('new roles off (the default team): every old mapping stays exactly as it was', () => {
-  setActiveRoles(DEFAULT_ENABLED);
+test('new roles off (the classic 12-role team): every old mapping stays exactly as it was', () => {
+  setActiveRoles(CLASSIC_TEAM);
   for (const [agent, role] of Object.entries(OLD_AGENTS)) assert.equal(toRole(agent), role, agent);
   for (const [file, role] of Object.entries(OLD_FILES)) assert.equal(inferRole('Edit', { file_path: file }), role, file);
   for (const [command, role] of Object.entries(OLD_COMMANDS)) assert.equal(inferRole('Bash', { command }), role, command);
@@ -109,7 +112,7 @@ test('new roles on: their agents, files, commands and MCP servers go to them', (
 
 test('some roles off: work goes along the fallback chain; an off role is never handed out', () => {
   // writer and dba off, reviewer + data on
-  const team = normalizeEnabled(DEFAULT_ENABLED.filter((r) => r !== 'writer' && r !== 'dba').concat('reviewer', 'data'));
+  const team = normalizeEnabled(CLASSIC_TEAM.filter((r) => r !== 'writer' && r !== 'dba').concat('reviewer', 'data'));
   setActiveRoles(team);
   assert.deepEqual(activeRoles(), team);
   assert.equal(inferRole('Edit', { file_path: 'README.md' }), 'ba', 'writer → ba');
@@ -164,13 +167,13 @@ test('agent templates: 15 role agents load; --agents carries only the active one
     assert.match(all[id].prompt, /Output ke Lead:/, `${id} follows the same structure`);
   }
   assert.deepEqual(all.reviewer.tools, ['Read', 'Grep', 'Glob', 'Bash'], 'the reviewer reads, never edits');
-  assert.deepEqual(Object.keys(activeAgents(all, [...DEFAULT_ENABLED])).sort(), Object.keys(all).filter((id) => !NEW.includes(id)).sort());
+  assert.deepEqual(Object.keys(activeAgents(all, [...CLASSIC_TEAM])).sort(), Object.keys(all).filter((id) => !NEW.includes(id)).sort());
   assert.deepEqual(Object.keys(activeAgents(all, ['qa', 'freelancer', 'mobile'])), ['qa', 'mobile']);
 });
 
-test('Lead prompt: unchanged for the default team; lists exactly the active roles otherwise', () => {
+test('Lead prompt: unchanged for the classic 12-role team; lists exactly the active roles otherwise', () => {
   const agentNames = ALL.filter((id) => id !== 'freelancer');
-  assert.equal(teamPrompt([...DEFAULT_ENABLED], agentNames), OLD_TEAM_PROMPT);
+  assert.equal(teamPrompt([...CLASSIC_TEAM], agentNames), OLD_TEAM_PROMPT);
   const custom = teamPrompt(normalizeEnabled(['pm', 'qa', 'backend', 'reviewer', 'support']), agentNames);
   const listed = [...custom.matchAll(/^- ([\w-]+): /gm)].map((m) => m[1]);
   assert.deepEqual(listed, ['pm', 'backend', 'qa', 'support', 'reviewer']);
@@ -185,9 +188,9 @@ test('Lead prompt: unchanged for the default team; lists exactly the active role
 const deskBox = (d) => [d.x, d.y - 12, d.w, 30];
 const inside = (p, [x, y, w, h]) => p.x >= x && p.x < x + w && p.y >= y && p.y < y + h;
 
-test('layout: the default 12 desks are exactly where they always were', () => {
-  setRoster({ enabled: [...DEFAULT_TEAM], catalog: publicCatalog() });
-  layoutDesks(DEFAULT_TEAM);
+test('layout: the classic 12 desks are exactly where they always were', () => {
+  setRoster({ enabled: [...CLIENT_CLASSIC], catalog: publicCatalog() });
+  layoutDesks(CLIENT_CLASSIC);
   const expected = {
     pm: [24, 76], ba: [88, 76], architect: [152, 76], 'ui-ux': [216, 76],
     frontend: [24, 148], backend: [88, 148], dba: [152, 148], freelancer: [216, 148],
@@ -225,7 +228,7 @@ test('layout: 16 desks → a 4th row, a taller room, every desk inside and reach
   layoutDesks(['pm', 'qa', 'freelancer']);
   assert.equal(room.h, 288);
   assert.deepEqual(Object.keys(DESKS), ['pm', 'freelancer', 'qa', 'claude'], 'packed in desk order');
-  layoutDesks([...DEFAULT_TEAM, 'reviewer']);
+  layoutDesks([...CLIENT_CLASSIC, 'reviewer']);
   assert.equal(room.h, 360);
   assert.deepEqual([DESKS.reviewer.x, DESKS.reviewer.y], [24, 292]);
 });
@@ -235,9 +238,9 @@ test('office scene: a person per active role (+ the Lead); an off role\'s events
   layoutDesks(ALL);
   assert.deepEqual(Object.keys(new Scene().people).sort(), ['claude', ...ALL].sort());
 
-  setRoster({ enabled: [...DEFAULT_TEAM].filter((r) => r !== 'devops'), catalog: publicCatalog() });
+  setRoster({ enabled: [...CLIENT_CLASSIC].filter((r) => r !== 'devops'), catalog: publicCatalog() });
   layoutDesks(roster.enabled);
-  assert.deepEqual(teamOrder(), ['claude', ...DEFAULT_TEAM.filter((r) => r !== 'devops')]);
+  assert.deepEqual(teamOrder(), ['claude', ...CLIENT_CLASSIC.filter((r) => r !== 'devops')]);
   const scene = new Scene();
   assert.equal(scene.people.devops, undefined);
   assert.equal(clientResolve('devops'), 'backend');
@@ -249,6 +252,6 @@ test('office scene: a person per active role (+ the Lead); an off role\'s events
   scene.handle({ kind: 'huddle', role: 'pm', roles: ['pm', 'devops'], label: 'x' }, true); // a missing member is skipped
   assert.equal(setRoster({ enabled: roster.enabled }), false, 'same team: nothing to rebuild');
 
-  setRoster({ enabled: [...DEFAULT_TEAM], catalog: publicCatalog() });
-  layoutDesks(DEFAULT_TEAM);
+  setRoster({ enabled: [...CLIENT_CLASSIC], catalog: publicCatalog() });
+  layoutDesks(CLIENT_CLASSIC);
 });

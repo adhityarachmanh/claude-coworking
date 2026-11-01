@@ -3,8 +3,10 @@
 import { CAST, ROLE_ORDER } from './cast.js';
 
 export const LEAD = 'claude';
-/** The team before the catalog existed (and until the server says otherwise). */
-export const DEFAULT_TEAM = Object.freeze(['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer']);
+/** The team before the catalog existed (12 roles; regression reference). */
+export const CLASSIC_TEAM = Object.freeze(['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer']);
+/** Default team until the server says otherwise, and "↺ Tim bawaan": every catalog role. */
+export const DEFAULT_TEAM = Object.freeze([...CLASSIC_TEAM, 'mobile', 'data', 'support', 'reviewer']);
 const GENERALIST = 'freelancer';
 // Look of a catalog role whose character is not drawn yet (cast.js has no entry for it): the generalist's.
 const PLACEHOLDER_COLOR = '#8b98a9';

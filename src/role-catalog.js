@@ -73,8 +73,10 @@ export const ROLE_CATALOG = Object.freeze(ENTRIES.map((r) => Object.freeze({ ...
 
 export const CATALOG = Object.freeze(Object.fromEntries(ROLE_CATALOG.map((r) => [r.id, r])));
 export const CATALOG_IDS = Object.freeze(ROLE_CATALOG.map((r) => r.id));
-/** The team before the catalog existed: every role except the four optional ones. */
-export const DEFAULT_ENABLED = Object.freeze(ROLE_CATALOG.filter((r) => !r.optional).map((r) => r.id));
+/** The team before the catalog existed: every role except the four optional ones (kept for the Lead prompt and regression checks). */
+export const CLASSIC_TEAM = Object.freeze(ROLE_CATALOG.filter((r) => !r.optional).map((r) => r.id));
+/** Default team (never saved / reset): the whole catalog — all 16 roles on. */
+export const DEFAULT_ENABLED = Object.freeze([...CATALOG_IDS]);
 
 /** A team setting the user sent that cannot be accepted (shown as-is, HTTP 400). */
 export class TeamConfigError extends Error {
@@ -155,14 +157,14 @@ const OPTIONAL_FLOWS = {
 
 /**
  * The Lead's system prompt (`--append-system-prompt`): the roles of THIS team and how work flows between them.
- * With the default team it is the prompt the app always had.
+ * With the classic 12-role team it is the prompt the app always had.
  */
 export function teamPrompt(enabled, agentNames = enabled) {
   const on = new Set(enabled);
   const hasAgent = new Set(agentNames);
   const roles = ROLE_CATALOG.filter((r) => on.has(r.id) && r.lead && hasAgent.has(r.id)).map((r) => `- ${r.id}: ${r.lead}`);
   const flows = [...DEFAULT_FLOWS, ...ROLE_CATALOG.filter((r) => r.optional && on.has(r.id)).map((r) => OPTIONAL_FLOWS[r.id])];
-  const missing = DEFAULT_ENABLED.some((id) => !on.has(id));
+  const missing = CLASSIC_TEAM.some((id) => !on.has(id));
   return [
     'You are the Engineering Lead of an IT team that the user watches live in the "Adhit Office" pixel office.',
     'Delegate focused work to the specialist subagents with the Agent tool, but only to the roles a task actually needs:',

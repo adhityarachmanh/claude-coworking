@@ -505,10 +505,10 @@ test('team names: validated, shared through the config, empty = default', async 
 });
 
 test('👥 Kelola tim: catalog-only team, validated, persisted, and the next Claude process gets only the active roles', async () => {
-  const DEFAULT = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer'];
+  const DEFAULT = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer'];
   const read = await api('/api/team/roster');
   assert.equal(read.status, 200);
-  assert.deepEqual(read.body.enabled, DEFAULT, 'a fresh install keeps the old team of 12');
+  assert.deepEqual(read.body.enabled, DEFAULT, 'a fresh install has the whole catalog on (16 roles)');
   assert.equal(read.body.max, 16);
   assert.equal(read.body.catalog.length, 16);
   assert.deepEqual(read.body.catalog.slice(-4).map((r) => [r.id, r.optional]), [['mobile', true], ['data', true], ['support', true], ['reviewer', true]]);
@@ -531,10 +531,11 @@ test('👥 Kelola tim: catalog-only team, validated, persisted, and the next Cla
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'tim?' });
   const before = (await nextReply(id, /pid=\d+/)).patch.text;
-  assert.match(before, /agents=architect,ba,backend,dba,devops,frontend,pm,qa,security,ui-ux,writer /, 'default: the 11 specialists, no optional roles');
-  assert.match(before, /lead=architect,ba,backend,dba,devops,frontend,pm,qa,security,ui-ux,writer /);
+  assert.match(before, /agents=architect,ba,backend,data,dba,devops,frontend,mobile,pm,qa,reviewer,security,support,ui-ux,writer /, 'default: all 15 specialists, the four new roles included');
+  assert.match(before, /lead=architect,ba,backend,data,dba,devops,frontend,mobile,pm,qa,reviewer,security,support,ui-ux,writer /);
   for (let i = 0; i < 50 && (await snapshot()).statuses[id]?.busy; i++) await sleep(100); // the turn has ended
-  const wanted = DEFAULT.filter((r) => r !== 'writer' && r !== 'freelancer').concat('reviewer', 'mobile', 'pm');
+  const CLASSIC = DEFAULT.slice(0, 12); // the 12 roles from before the catalog
+  const wanted = CLASSIC.filter((r) => r !== 'writer' && r !== 'freelancer').concat('reviewer', 'mobile', 'pm');
   mark = seen.length;
   const saved = await api('/api/team/roster/save', { enabled: wanted });
   assert.equal(saved.status, 200);
