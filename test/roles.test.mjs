@@ -91,12 +91,43 @@ test('monitor screens and labels', () => {
   assert.equal(describeTool('mcp__github__create_issue', {}), 'Pakai github › create_issue');
 });
 
-test('all 15 role agents load with a prompt (the 4 optional roles included)', () => {
+test('all 16 role agents load with a prompt (the 5 optional roles included)', () => {
   const agents = loadAgentDefinitions(path.join(ROOT, '.claude', 'agents'));
-  assert.deepEqual(Object.keys(agents).sort(), ['architect', 'ba', 'backend', 'data', 'dba', 'devops', 'frontend', 'mobile', 'pm', 'qa', 'reviewer', 'security', 'support', 'ui-ux', 'writer']);
+  assert.deepEqual(Object.keys(agents).sort(), ['architect', 'ba', 'backend', 'compliance', 'data', 'dba', 'devops', 'frontend', 'mobile', 'pm', 'qa', 'reviewer', 'security', 'support', 'ui-ux', 'writer']);
   for (const [name, def] of Object.entries(agents)) {
     assert.ok(def.description.length > 20, `${name} description`);
     assert.ok(def.prompt.length > 100, `${name} prompt`);
   }
   assert.deepEqual(agents.security.tools, ['Read', 'Grep', 'Glob', 'Bash', 'WebFetch', 'WebSearch']);
+});
+
+test('shell lines are described as what the person is doing, not the raw command', () => {
+  const label = (command, description) => describeTool('Bash', { command, description });
+  // Claude Code's own description wins (capitalised, bounded).
+  assert.equal(label('npm test', 'run full test suite'), 'Run full test suite');
+  assert.equal(label('x', 'Menjalankan test checkout'), 'Menjalankan test checkout');
+  assert.equal(describeTool('PowerShell', { command: 'Get-Process', description: '' }), 'Mengecek proses');
+  // Without one: a phrase for common commands, judged across the chain by priority.
+  const cases = {
+    "python - <<'EOF'\np='test/ui.test.mjs'": 'Menjalankan skrip kecil',
+    'cd /c/x && npm test 2>&1 | tail -8': 'Menjalankan test',
+    'node --test --test-isolation=none test/team.test.mjs': 'Menjalankan test',
+    'git status --short; git log --oneline -3': 'Mengecek perubahan di git',
+    'git add -A && git commit -q -m "fix tests"': 'Membuat commit',
+    'GIT_TERMINAL_PROMPT=0 timeout 60 git push origin main': 'Push ke repository',
+    'sed -n 1,40p src/roles.js': 'Membaca roles.js',
+    'grep -rn "foo" src': 'Mencari di kode',
+    '"C:/nvm/node.exe" scripts/restart.mjs': 'Menjalankan restart.mjs',
+    'npx --yes eslint@9.39.5 .': 'Mengecek kualitas kode (lint)',
+    'npm install zod': 'Memasang dependency',
+    'docker compose up -d': 'Mengurus container',
+    "cat > /tmp/newtest.txt <<'JSEOF'\ntest('x')": 'Menulis newtest.txt',
+    'wc -l notes.txt': 'Menghitung baris notes.txt',
+  };
+  for (const [command, expected] of Object.entries(cases)) assert.equal(label(command), expected, command);
+  // Unknown commands name the program only: arguments, paths and secrets never reach the bubble.
+  assert.equal(label('some-weird-tool --flag --token=abc123'), 'Menjalankan some-weird-tool');
+  assert.equal(label('"C:/Tools/My App/run.exe" --password hunter2'), 'Menjalankan run');
+  assert.equal(label(''), 'Menjalankan perintah');
+  for (const c of ['deploy-secret --key=SECRET123', `unknown-cmd ${'x'.repeat(200)}`]) assert.doesNotMatch(label(c), /SECRET123|xxxx|--/);
 });

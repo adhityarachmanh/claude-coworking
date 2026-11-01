@@ -76,6 +76,7 @@ async function startServer() {
       ...process.env,
       OFFICE_PORT: String(PORT),
       OFFICE_DATA_DIR: path.join(TMP, 'data'),
+      OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale.exe'), // never the real Tailscale CLI
       PROJECTS_ROOT: path.join(TMP, 'projects'),
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
@@ -889,6 +890,207 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
+    test('⚠ deteksi macet: chip di baris tool & delegasi (jam digeser), aksi, kantor, fokus, tanpa auto-stop', async () => {
+      await openApp(page, `#${projectId}`); // self-contained: also runs alone (--test-name-pattern)
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+      // Client-side only: a busy status and two running rows (no task id: nothing is read from the server).
+      const r = await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        const { appendChat } = await import('/js/features/chat.js');
+        const { onChatUpdate } = await import('/js/core/stream.js');
+        const { checkStuck, stuck, stuckClock } = await import('/js/features/stuck.js');
+        const { sceneFor } = await import('/js/core/scenes.js');
+        const frame = () => new Promise((res) => requestAnimationFrame(() => setTimeout(res, 0)));
+        // A normal tick at "start + min": the previous tick was 15 s ago (not a sleep/wake jump).
+        const tick = (min) => {
+          stuckClock.now = () => Date.now() + min * 60_000;
+          stuck.lastTick = stuckClock.now() - 15_000;
+          checkStuck();
+        };
+        const pid = state.active;
+        const savedStatus = state.statuses[pid];
+        state.statuses[pid] = { ...savedStatus, busy: true };
+        const now = Date.now();
+        const tool = { id: 'stuck-tool', project: pid, ts: now, kind: 'tool', role: 'dba', tool: 'Bash', text: 'until grep -q X file; do sleep 2; done', status: 'running', input: { command: 'until grep -q X file; do sleep 2; done' } };
+        const dele = { id: 'stuck-dele', project: pid, ts: now, kind: 'delegate', role: 'data', from: 'claude', text: 'Perbaiki API', status: 'running', input: { prompt: 'x' } };
+        for (const m of [tool, dele]) {
+          (state.chats[pid] ??= []).push(m);
+          appendChat(m);
+        }
+        const calls = [];
+        const origFetch = window.fetch;
+        window.fetch = (url, opts) => {
+          if (/\/(stop|background|task-stop)$/.test(String(url))) {
+            calls.push(String(url).split('/').pop());
+            return Promise.resolve(new Response('{"ok":true}', { headers: { 'Content-Type': 'application/json' } }));
+          }
+          return origFetch(url, opts);
+        };
+        const chip = (id) => document.querySelector(`#chat > [data-id="${id}"] > .stuck-chip`);
+        const mine = () => [...stuck.episodes.keys()].filter((k) => /\|(dba|data)$/.test(k)).sort();
+        const out = {};
+        try {
+          tick(4);
+          out.at4 = { tool: chip('stuck-tool')?.textContent ?? null, dele: chip('stuck-dele')?.textContent ?? null };
+          tick(11 + 5 / 60);
+          out.at11 = {
+            tool: chip('stuck-tool').querySelector('.stuck-text').textContent,
+            toolActs: [...chip('stuck-tool').querySelectorAll('button')].map((b) => [b.dataset.stuckAct, b.disabled]),
+            dele: chip('stuck-dele').querySelector('.stuck-text').textContent,
+            deleActs: [...chip('stuck-dele').querySelectorAll('button')].map((b) => [b.dataset.stuckAct, b.disabled]),
+            office: { dba: sceneFor(pid).people.dba?.stuck ?? null, data: sceneFor(pid).people.data?.stuck ?? null },
+            episodes: mine(),
+            autoStopped: calls.length,
+            // Layout while the chips are up (phone: 390 px).
+            overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            chipsInside: [chip('stuck-tool'), chip('stuck-dele')].every((c) => c.getBoundingClientRect().right <= document.documentElement.clientWidth + 0.5),
+            unnamed: [...document.querySelectorAll('#chat .stuck-chip button')].filter((b) => !/[\p{L}\p{N}]/u.test(b.textContent) && !b.getAttribute('aria-label')).length,
+          };
+          // A minute later: same episode, the text counts on, a focused button keeps its focus.
+          chip('stuck-tool').querySelector('[data-stuck-act="stop"]').focus();
+          tick(12 + 5 / 60);
+          out.at12 = { tool: chip('stuck-tool').querySelector('.stuck-text').textContent, focusKept: document.activeElement?.dataset?.stuckAct === 'stop', episodes: mine().length };
+          // An "elapsed" update redraws the whole row: the focused chip button is focused again.
+          onChatUpdate({ project: pid, id: 'stuck-tool', patch: { elapsed: 700 } });
+          await frame();
+          out.focusAfterElapsed = document.activeElement?.dataset?.stuckAct === 'stop' && Boolean(document.activeElement.closest('[data-id="stuck-tool"]'));
+          chip('stuck-tool').querySelector('[data-stuck-act="stop"]').click();
+          chip('stuck-dele').querySelector('[data-stuck-act="detail"]').click();
+          await new Promise((res) => setTimeout(res, 100));
+          out.calls = [...calls];
+          out.deleOpen = document.querySelector('#chat > [data-id="stuck-dele"]').classList.contains('open');
+          out.chipAfterRerender = Boolean(chip('stuck-dele'));
+          // The tool ends (chat_update) while its verdict is still cached: no chip, and a stale Stop does nothing.
+          const staleStop = chip('stuck-tool').querySelector('[data-stuck-act="stop"]');
+          onChatUpdate({ project: pid, id: 'stuck-tool', patch: { status: 'ok', output: 'selesai' } });
+          await frame();
+          out.chipAfterDone = Boolean(chip('stuck-tool'));
+          staleStop.click(); // detached button of the old row: nothing happens
+          await new Promise((res) => setTimeout(res, 50));
+          out.callsAfterDone = calls.length;
+        } finally {
+          // Ended: chips and the office mark go away.
+          tool.status = 'cancel';
+          dele.status = 'cancel';
+          stuckClock.now = () => Date.now();
+          stuck.lastTick = null;
+          state.statuses[pid] = savedStatus;
+          checkStuck();
+          out.cleared = { tool: Boolean(chip('stuck-tool')), dele: Boolean(chip('stuck-dele')), office: Boolean(sceneFor(pid).people.dba?.stuck || sceneFor(pid).people.data?.stuck) };
+          for (const id of ['stuck-tool', 'stuck-dele']) state.chats[pid].splice(state.chats[pid].findIndex((m) => m.id === id), 1);
+          window.fetch = origFetch;
+        }
+        return out;
+      });
+      assert.deepEqual(r.at4.dele, null, 'delegasi belum 5 mnt');
+      assert.equal(r.at4.tool, null, 'tool tanpa output terbaca: hanya aturan 10 mnt');
+      assert.equal(r.at11.tool, '⚠ Berjalan 11 mnt — mungkin macet');
+      assert.deepEqual(r.at11.toolActs, [['stop', false], ['background', false]]);
+      assert.match(r.at11.dele, /^⚠ .+ tidak ada aktivitas 11 mnt$/);
+      assert.deepEqual(r.at11.deleActs, [['detail', false], ['stop', false]]);
+      assert.deepEqual(r.at11.office, { dba: true, data: true }, 'yang macet ditandai di kantor');
+      assert.equal(r.at11.episodes.length, 2, 'satu episode per orang');
+      assert.equal(r.at11.autoStopped, 0, 'tidak pernah menghentikan sendiri');
+      assert.equal(r.at12.tool, '⚠ Berjalan 12 mnt — mungkin macet');
+      assert.equal(r.at12.focusKept, true, 'fokus tetap di tombol');
+      assert.equal(r.at12.episodes, 2);
+      assert.equal(r.focusAfterElapsed, true, 'fokus bertahan setelah update elapsed');
+      assert.deepEqual(r.calls, ['stop']);
+      assert.equal(r.deleOpen, true, 'Lihat detail (tanpa tugas) membuka instruksi & laporan');
+      assert.equal(r.chipAfterRerender, true, 'chip tetap ada setelah baris digambar ulang');
+      assert.equal(r.chipAfterDone, false, 'baris selesai: chip hilang tanpa menunggu tick');
+      assert.equal(r.callsAfterDone, 1, 'Stop dari chip basi tidak terkirim');
+      assert.deepEqual(r.cleared, { tool: false, dele: false, office: false });
+      assert.equal(r.at11.overflow, false, 'chip tanpa scroll horizontal');
+      assert.equal(r.at11.chipsInside, true, 'chip muat di layar');
+      assert.equal(r.at11.unnamed, 0, 'tombol punya nama aksesibel');
+      assert.equal(await page.eval(horizontalOverflow), null);
+      await page.eval(() => document.querySelectorAll('#chat > [data-id^="stuck-"]').forEach((n) => n.remove()));
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⚠ deteksi macet: tidak saat menunggu izin (jam mulai ulang), tidak ada notifikasi beruntun setelah laptop tidur', async () => {
+      await openApp(page, `#${projectId}`);
+      const r = await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        const { appendChat } = await import('/js/features/chat.js');
+        const { checkStuck, stuck, stuckClock } = await import('/js/features/stuck.js');
+        const tick = (min, { wake = false } = {}) => {
+          stuckClock.now = () => Date.now() + min * 60_000;
+          if (!wake) stuck.lastTick = stuckClock.now() - 15_000;
+          checkStuck();
+        };
+        const pid = state.active;
+        const savedStatus = state.statuses[pid];
+        state.statuses[pid] = { ...savedStatus, busy: true };
+        const tool = { id: 'stuck-wait', project: pid, ts: Date.now(), kind: 'tool', role: 'dba', tool: 'WebFetch', text: 'Fetch https://x', status: 'running', input: {} };
+        (state.chats[pid] ??= []).push(tool);
+        appendChat(tool);
+        const chip = () => Boolean(document.querySelector('#chat > [data-id="stuck-wait"] > .stuck-chip'));
+        const out = {};
+        try {
+          // A permission card is waiting: no verdict however long it takes.
+          state.approvals.set('stuck-ap', { id: 'stuck-ap', project: pid, status: 'pending', role: 'dba', label: 'x' });
+          tick(11);
+          out.waiting = chip();
+          // Answered at +11: the clock starts again, so +20 is only 9 minutes of running.
+          state.approvals.delete('stuck-ap');
+          tick(20);
+          out.afterWait9 = chip();
+          tick(21.5);
+          out.afterWait10 = chip();
+          // Reset, then: the laptop sleeps 60 minutes between two ticks: nothing stuck, no notification burst.
+          tool.status = 'cancel';
+          stuck.lastTick = null;
+          stuckClock.now = () => Date.now();
+          checkStuck();
+          tool.status = 'running';
+          tool.ts = Date.now();
+          tick(1);
+          const episodesBefore = new Set(stuck.episodes.keys());
+          tick(61, { wake: true });
+          out.afterSleep = { chip: chip(), newEpisodes: [...stuck.episodes.keys()].filter((k) => !episodesBefore.has(k)).length };
+        } finally {
+          state.approvals.delete('stuck-ap');
+          tool.status = 'cancel';
+          stuckClock.now = () => Date.now();
+          stuck.lastTick = null;
+          state.statuses[pid] = savedStatus;
+          checkStuck();
+          state.chats[pid].splice(state.chats[pid].indexOf(tool), 1);
+          document.querySelector('#chat > [data-id="stuck-wait"]')?.remove();
+        }
+        return out;
+      });
+      assert.deepEqual(r, { waiting: false, afterWait9: false, afterWait10: true, afterSleep: { chip: false, newEpisodes: 0 } });
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('nama role yang diganti berisi HTML tampil sebagai teks di baris delegasi dan aktivitas', async () => {
+      await openApp(page, `#${projectId}`);
+      const r = await page.eval(async () => {
+        const { CAST } = await import('/js/office/cast.js');
+        const { appendChat } = await import('/js/features/chat.js');
+        const { appendActivity } = await import('/js/features/activity.js');
+        const saved = CAST.data.name;
+        window.__xss = 0;
+        CAST.data.name = '<img src=x onerror="window.__xss++">';
+        try {
+          appendChat({ id: 'xss-dele', ts: Date.now(), kind: 'delegate', role: 'data', from: 'claude', text: 'cek', status: 'ok', input: {} }, false);
+          appendActivity({ ts: Date.now(), kind: 'tool_start', role: 'data', label: 'x' }, false);
+          await new Promise((res) => setTimeout(res, 100));
+          const row = document.querySelector('#chat > [data-id="xss-dele"]');
+          return { injected: document.querySelectorAll('img[src="x"]').length, text: row.querySelector('.txt b').textContent, fired: window.__xss };
+        } finally {
+          CAST.data.name = saved;
+          document.querySelector('#chat > [data-id="xss-dele"]')?.remove();
+        }
+      });
+      assert.deepEqual(r, { injected: 0, text: '<img src=x onerror="window.__xss++">', fired: 0 });
+      assert.deepEqual(realProblems(page), []);
+    });
+
     test('📄 penampil file: dari path di jawaban (:line disorot), baris tool Read, tab Perubahan; cari, escape, rapi', async () => {
       page.clearProblems();
       const proj = path.join(TMP, 'projects', 'toko');
@@ -1194,6 +1396,48 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
     assert.doesNotMatch(ui.changesText, /Hanya lihat lewat WiFi/, 'panel perubahan tetap bisa dibaca');
     assert.equal(await page.eval(horizontalOverflow), null);
     assert.deepEqual(await page.eval(unnamedButtons), []);
+  });
+
+  test('⚠ chip macet terlihat di HP, tombol aksi nonaktif dengan petunjuk hanya-lihat', async (t) => {
+    if (!LAN) return t.skip('laptop ini tidak punya alamat LAN');
+    if (!(await page.eval(() => location.href.includes('#')))) {
+      await page.goto(`${LAN}/#${projectId}`);
+      await page.waitFor(appReady, { timeoutMs: 10000, message: 'app terhubung lewat LAN' });
+    }
+    page.clearProblems();
+    const r = await page.eval(async () => {
+      const { state } = await import('/js/core/state.js');
+      const { appendChat } = await import('/js/features/chat.js');
+      const { checkStuck, stuck, stuckClock } = await import('/js/features/stuck.js');
+      const pid = state.active;
+      const saved = state.statuses[pid];
+      state.statuses[pid] = { ...saved, busy: true, pending: 0 };
+      // This suite keeps a permission card pending, and a project waiting for the user is never "stuck":
+      // park its approvals for the check (restored below).
+      const parked = [...(state.approvals?.entries?.() ?? [])].filter(([, a]) => a.project === pid && a.status === 'pending');
+      for (const [k] of parked) state.approvals.delete(k);
+      const msg = { id: 'stuck-ro', project: pid, ts: Date.now(), kind: 'tool', role: 'devops', tool: 'Bash', text: 'sleep', status: 'running', input: { command: 'sleep' } };
+      (state.chats[pid] ??= []).push(msg);
+      appendChat(msg);
+      stuckClock.now = () => Date.now() + 10 * 60_000 + 5000;
+      stuck.lastTick = stuckClock.now() - 15_000; // a normal tick, not a wake-up
+      checkStuck();
+      const chip = document.querySelector('#chat > [data-id="stuck-ro"] > .stuck-chip');
+      const out = { text: chip?.querySelector('.stuck-text').textContent ?? null, buttons: [...(chip?.querySelectorAll('button') ?? [])].map((b) => [b.dataset.stuckAct, b.disabled, b.title]) };
+      msg.status = 'cancel';
+      stuck.lastTick = null;
+      checkStuck();
+      state.chats[pid].splice(state.chats[pid].indexOf(msg), 1);
+      document.querySelector('#chat > [data-id="stuck-ro"]')?.remove();
+      stuckClock.now = () => Date.now();
+      state.statuses[pid] = saved;
+      for (const [k, a] of parked) state.approvals.set(k, a);
+      return out;
+    });
+    assert.equal(r.text, '⚠ Berjalan 10 mnt — mungkin macet');
+    assert.deepEqual(r.buttons.map(([a, d]) => [a, d]), [['stop', true], ['background', true]]);
+    for (const [, , title] of r.buttons) assert.equal(title, 'Hanya lihat lewat WiFi — pakai Tailscale untuk mengirim perintah');
+    assert.deepEqual(realProblems(page), []);
   });
 
   // The stream really stays up here; the handlers are driven directly (same module instance as the app's).
@@ -1608,7 +1852,7 @@ for (const vp of VIEWPORTS) {
       const shot = async (name) => {
         if (process.env.OFFICE_UI_SHOTS) writeFileSync(path.join(process.env.OFFICE_UI_SHOTS, `${name}-${vp.mobile ? 'mobile' : 'desktop'}.png`), await page.screenshot());
       };
-      const DEFAULT = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer'];
+      const DEFAULT = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer', 'compliance'];
       // whatever happens, the next test gets the default team back
       t.after(() => page.eval((enabled) => {
         const token = document.querySelector('meta[name="office-token"]').content;
@@ -1623,17 +1867,18 @@ for (const vp of VIEWPORTS) {
           cards: document.querySelectorAll('#team .member').length,
           roomH: room.h,
           reviewerY: DESKS.reviewer?.y ?? null,
+          complianceY: DESKS.compliance?.y ?? null,
           ratio: Math.round((canvas.height / canvas.width) * 100) / 100,
           marker: window.__sameDocument === true,
         };
       });
       await page.eval(() => (window.__sameDocument = true)); // gone after a reload
-      assert.deepEqual(await office(), { people: 17, cards: 17, roomH: 360, reviewerY: 292, ratio: 0.66, marker: true }, 'tim bawaan: 16 meja + Lead');
+      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 432, reviewerY: 292, complianceY: 364, ratio: 0.79, marker: true }, 'tim bawaan: 17 meja + Lead, baris ke-5');
 
       // opened from ⋯ (⚙, Ctrl+P and /team are the other ways in)
       await page.click('#btn-more');
       await page.click('#more-menu [data-more="roster"]');
-      await page.waitFor(() => !document.querySelector('#roster-modal').hidden && document.querySelectorAll('#roster-list .roster-row').length === 17, { timeoutMs: 3000, message: 'dialog Kelola tim terbuka' });
+      await page.waitFor(() => !document.querySelector('#roster-modal').hidden && document.querySelectorAll('#roster-list .roster-row').length === 18, { timeoutMs: 3000, message: 'dialog Kelola tim terbuka' });
       await settle(page, 'roster-modal');
       const dialog = await page.eval(() => ({
         count: document.querySelector('#roster-count').textContent,
@@ -1647,21 +1892,22 @@ for (const vp of VIEWPORTS) {
         focusInside: document.querySelector('#roster-modal').contains(document.activeElement),
         rowsFit: [...document.querySelectorAll('#roster-list .roster-row')].every((r) => r.scrollWidth <= r.clientWidth + 1),
       }));
-      assert.deepEqual(dialog, { count: '16/16 meja', leadLocked: true, freelancer: [true, true], off: [], saveDisabled: true, roHidden: true, avatars: true, switches: true, focusInside: true, rowsFit: true });
+      assert.deepEqual(dialog, { count: '17/17 meja', leadLocked: true, freelancer: [true, true], off: [], saveDisabled: true, roHidden: true, avatars: true, switches: true, focusInside: true, rowsFit: true });
       assert.equal(await page.eval(horizontalOverflow), null, 'dialog tanpa scroll horizontal');
       assert.deepEqual(await page.eval(unnamedButtons, '#roster-modal'), []);
 
-      // the four optional roles off: 12/16, saved, the office drops the 4th row without a reload
-      for (const role of ['mobile', 'data', 'support', 'reviewer']) await page.eval((r) => document.querySelector(`#roster-${r}`).click(), role);
-      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '12/16 meja');
+      // the five optional roles off: 12/17, saved, the office drops rows 4 and 5 without a reload
+      for (const role of ['mobile', 'data', 'support', 'reviewer', 'compliance']) await page.eval((r) => document.querySelector(`#roster-${r}`).click(), role);
+      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '12/17 meja');
       assert.match(await page.eval(() => document.querySelector('#roster-mobile-desc').textContent), /Nonaktif → dikerjakan Adhit - Frontend/, 'fallback tampil');
+      assert.match(await page.eval(() => document.querySelector('#roster-compliance-desc').textContent), /Nonaktif → dikerjakan Adhit - Security/, 'Compliance mati: Security yang mengerjakan');
       assert.equal(await page.eval(() => document.querySelector('#roster-save').disabled), false);
       await shot('roster');
       await page.click('#roster-save');
       await page.waitFor(() => document.querySelector('#roster-modal').hidden, { timeoutMs: 4000, message: 'dialog tertutup setelah simpan' });
       await page.waitFor(() => document.querySelectorAll('#team .member').length === 13, { timeoutMs: 3000, message: 'kartu tim berkurang' });
-      assert.deepEqual(await office(), { people: 13, cards: 13, roomH: 288, reviewerY: null, ratio: 0.53, marker: true }, '12 meja + Lead, ruangan kembali pendek, tanpa reload');
-      assert.deepEqual((await snapshot()).config.team.enabled.filter((r) => ['mobile', 'data', 'support', 'reviewer'].includes(r)), [], 'tersimpan di server');
+      assert.deepEqual(await office(), { people: 13, cards: 13, roomH: 288, reviewerY: null, complianceY: null, ratio: 0.53, marker: true }, '12 meja + Lead, ruangan kembali pendek, tanpa reload');
+      assert.deepEqual((await snapshot()).config.team.enabled.filter((r) => ['mobile', 'data', 'support', 'reviewer', 'compliance'].includes(r)), [], 'tersimpan di server');
 
       // a phone on plain WiFi sees the same dialog, read-only
       await page.eval(async () => {
@@ -1682,21 +1928,49 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(ro, { note: true, save: true, allDisabled: true });
       await page.press('Escape');
 
-      // /team, then ↺ Tim bawaan: back to 16 desks and the taller room
+      // /team, then ↺ Tim bawaan: back to all 17 desks (5 rows)
       await typeInPrompt(page, '/team');
       await page.eval(() => document.querySelector('#btn-send').click());
       await page.waitFor(() => !document.querySelector('#roster-modal').hidden, { timeoutMs: 2000, message: '/team membuka dialog' });
       // (clicked in-page: the "Tim disimpan" toast from the first save may still cover the dialog's bottom edge)
       await page.eval(() => document.querySelector('#roster-default').click());
-      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '16/16 meja');
+      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '17/17 meja');
+      assert.equal(await page.eval(() => document.querySelector('#roster-compliance').checked), true, '↺ Tim bawaan: Compliance ikut aktif');
       await page.eval(() => document.querySelector('#roster-save').click());
-      await page.waitFor(() => document.querySelectorAll('#team .member').length === 17, { timeoutMs: 4000, message: 'kembali ke 16 meja' });
-      assert.deepEqual(await office(), { people: 17, cards: 17, roomH: 360, reviewerY: 292, ratio: 0.66, marker: true });
+      await page.waitFor(() => document.querySelectorAll('#team .member').length === 18, { timeoutMs: 4000, message: 'kembali ke 17 meja' });
+      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 432, reviewerY: 292, complianceY: 364, ratio: 0.79, marker: true });
+      if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
+      await sleep(400);
+      assert.equal(await page.eval(horizontalOverflow), null, 'kantor 17 meja tanpa scroll horizontal');
+      await shot('office-17');
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+
+      // Compliance off: 16/17, the 5th row goes, still no reload
+      await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+      await page.click('#btn-more');
+      await page.click('#more-menu [data-more="roster"]');
+      await page.waitFor(() => !document.querySelector('#roster-modal').hidden, { timeoutMs: 3000, message: 'dialog terbuka lagi' });
+      await page.eval(() => document.querySelector('#roster-compliance').click());
+      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '16/17 meja');
+      await page.eval(() => document.querySelector('#roster-save').click());
+      await page.waitFor(() => document.querySelectorAll('#team .member').length === 17, { timeoutMs: 4000, message: '16 meja' });
+      assert.deepEqual(await office(), { people: 17, cards: 17, roomH: 360, reviewerY: 292, complianceY: null, ratio: 0.66, marker: true }, '16 meja: 4 baris');
       if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
       await sleep(400);
       assert.equal(await page.eval(horizontalOverflow), null, 'kantor 16 meja tanpa scroll horizontal');
       await shot('office-16');
       if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+
+      // ↺ Tim bawaan again: back to 17 (Compliance on)
+      await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+      await page.click('#btn-more');
+      await page.click('#more-menu [data-more="roster"]');
+      await page.waitFor(() => !document.querySelector('#roster-modal').hidden, { timeoutMs: 3000, message: 'dialog terbuka lagi' });
+      await page.eval(() => document.querySelector('#roster-default').click());
+      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '17/17 meja');
+      await page.eval(() => document.querySelector('#roster-save').click());
+      await page.waitFor(() => document.querySelectorAll('#team .member').length === 18, { timeoutMs: 4000, message: 'kembali ke 17 meja' });
+      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 432, reviewerY: 292, complianceY: 364, ratio: 0.79, marker: true });
       assert.deepEqual(realProblems(page), []);
     });
 

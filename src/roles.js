@@ -1,7 +1,7 @@
 // Maps Claude Code agents/tools onto the office roles, plus human-readable tool labels.
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { CATALOG, CATALOG_IDS, DEFAULT_ENABLED, GENERALIST, resolveRole } from './role-catalog.js';
+import { CATALOG, CATALOG_IDS, COMMAND_RULES, DEFAULT_ENABLED, GENERALIST, resolveRole } from './role-catalog.js';
 import { basename, truncate } from './util.js';
 
 // Every role a team can have (src/role-catalog.js). `freelancer` is the generalist at the spare desk: any
@@ -39,6 +39,7 @@ export const agentRole = (agentType) => toRole(agentType ?? 'general-purpose') ?
 // "frontend-developer" is frontend; "claude-code-guide" is writer). A `null` pattern is an optional
 // role's own pattern (catalog `signals.agent`), skipped while that role is off.
 const ROLE_PATTERNS = [
+  [null, 'compliance'], // privacy, gdpr, dpo… (before security, whose pattern has "audit")
   [/\b(security|sec|pentest|pentester|appsec|vuln|vulnerability|audit|auditor)\b/, 'security'],
   [/\b(devops|sre|ops|infra|infrastructure|deploy|deployer|cicd|ci|release|platform|statusline-setup)\b/, 'devops'],
   [null, 'data'], // data-engineer, ml, llm… (before dba, whose pattern also has "data")
@@ -154,6 +155,7 @@ export function toRole(agentType) {
 function fileRole(file, reading) {
   if (!file) return reading ? 'architect' : 'backend';
   if (TEST_FILE.test(file) || TEST_CLASS.test(file)) return 'qa';
+  if (signal('compliance', 'file')?.test(file)) return 'compliance'; // privacy policy, DPIA, consent docs (before DOC_FILE)
   if (DOC_FILE.test(file)) return reading ? 'ba' : 'writer';
   // Optional roles' files, only while on: *.dart / android/ / ios/ → mobile; *.ipynb / dbt/ / airflow → data.
   if (signal('mobile', 'file')?.test(file)) return 'mobile';
@@ -240,7 +242,7 @@ function ownerOf(tool, input) {
   }
 }
 
-const ROLE_SCREEN = { qa: 'tests', dba: 'db', devops: 'pipeline', security: 'security', architect: 'review', reviewer: 'review', writer: 'doc', ba: 'doc', 'ui-ux': 'design' };
+const ROLE_SCREEN = { qa: 'tests', dba: 'db', devops: 'pipeline', security: 'security', compliance: 'security', architect: 'review', reviewer: 'review', writer: 'doc', ba: 'doc', 'ui-ux': 'design' };
 // Shell lines that only read/search show the search screen, like Grep does.
 const shellScreen = (command) => {
   const { role, readOnly } = classifyCommand(command);
@@ -290,6 +292,66 @@ function hostname(url) {
   }
 }
 
+// Shell line → what the person is doing, for the office bubble and the chat row (the exact command stays in the
+// row's detail). Checked per segment of a chain; an action (test, build, commit…) beats looking around (cat, ls…).
+const fileArg = (args) => basename(args.split(/\s+/).reverse().find((a) => /[\w-]\.[\w]+["']?$/.test(a))?.replace(/["']/g, '') ?? '');
+const SHELL_ACTIONS = [
+  [/^(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|^(npx\s+)?(jest|vitest|mocha|playwright|cypress)\b|^node\s+--test\b|^(pytest|phpunit|pest)\b|^go\s+test\b|^cargo\s+test\b|^(php\s+)?artisan\s+test\b/i, 'Menjalankan test'],
+  [/^(npm|pnpm|yarn)\s+(run\s+)?lint\b|^(npx\s+)?(--yes\s+)?eslint\b|^(ruff|flake8|phpstan|pint)\b|^(npx\s+)?tsc\b/i, 'Mengecek kualitas kode (lint)'],
+  [/^(npm|pnpm|yarn|bun)\s+(ci|install|add|i)\b|^pip3?\s+install\b|^composer\s+(install|require|update)\b|^go\s+get\b|^cargo\s+add\b/i, 'Memasang dependency'],
+  [/^(npm|pnpm|yarn)\s+(run\s+)?build\b|^(vite|next|nuxt)\s+build\b|^cargo\s+build\b|^go\s+build\b|^(flutter|gradlew|\.\/gradlew)\s+\S*(build|assemble)/i, 'Mem-build aplikasi'],
+  [/^(npm|pnpm|yarn)\s+(run\s+)?(dev|start|serve)\b|^node\s+server\.js\b|^(php\s+)?artisan\s+serve\b/i, 'Menjalankan aplikasi'],
+  [/^git\s+commit\b/i, 'Membuat commit'],
+  [/^git\s+push\b/i, 'Push ke repository'],
+  [/^git\s+(pull|fetch)\b/i, 'Mengambil update dari repository'],
+  [/^git\s+(checkout|switch|branch)\b/i, 'Mengatur branch git'],
+  [/^git\s+(add|restore|reset|stash)\b/i, 'Menyiapkan perubahan git'],
+  [/^git\s+(diff|status|log|show|blame)\b/i, 'Mengecek perubahan di git'],
+  [/^(docker|docker-compose|kubectl|helm)\b/i, 'Mengurus container'],
+  [/^(terraform|ansible|vercel|netlify|gcloud|aws|az)\b/i, 'Mengurus infrastruktur'],
+  [/^(psql|mysql|sqlite3|mongosh?|redis-cli)\b|\b(migrate|migration|prisma|db:seed)\b/i, 'Mengurus database'],
+  [/^(curl|wget|http|Invoke-WebRequest|Invoke-RestMethod)\b/i, 'Memanggil API / URL'],
+  [/^(python3?|py)\s+(-\s|-c\b|<<|-I\b.*<<)|^node\s+(-e\b|-\s|<<)|^(python3?|node)\s*$/i, 'Menjalankan skrip kecil'],
+  [/^(python3?|py|node|deno|bun|php|ruby)\s+\S+/i, (s) => `Menjalankan ${fileArg(s) || 'skrip'}`],
+  // `cat > f <<EOF`, `tee f`, `echo x > f`, Set-Content: writing a file, not reading it.
+  [/^cat\s*>>?\s*\S|^tee\b|^(echo|printf)\b.*>>?\s*\S|^(Set-Content|Add-Content|Out-File)\b/i, (s) => (fileArg(s) ? `Menulis ${fileArg(s)}` : 'Menulis file')],
+  [/^(mkdir|rm|rmdir|mv|cp|touch|New-Item|Remove-Item|Move-Item|Copy-Item)\b/i, 'Mengatur file & folder'],
+  [/^(Stop-Process|kill|taskkill|Get-Process|ps|netstat|lsof|Get-CimInstance)\b/i, 'Mengecek proses'],
+  [/^(tailscale|ipconfig|ping|nslookup)\b/i, 'Mengecek jaringan'],
+];
+const SHELL_LOOKS = [
+  [/^(cat|head|tail|less|more|type|Get-Content)\b|^sed\s+-n\b/i, (s) => (fileArg(s) ? `Membaca ${fileArg(s)}` : 'Membaca file')],
+  [/^(grep|rg|ag|findstr|Select-String)\b/i, 'Mencari di kode'],
+  [/^wc\b/i, (s) => (fileArg(s) ? `Menghitung baris ${fileArg(s)}` : 'Menghitung baris')],
+  [/^(ls|dir|find|tree|Get-ChildItem)\b/i, 'Melihat isi folder'],
+];
+function shellLabel(input) {
+  const description = typeof input.description === 'string' ? input.description.trim() : '';
+  // Claude Code's own one-line description of the command is the best "what am I doing".
+  if (description) return truncate(description.charAt(0).toUpperCase() + description.slice(1), 70);
+  const segments = commandSegments(input.command ?? '').map((s) =>
+    s
+      .replace(/^(\w+=\S*\s+)+/, '') // FOO=1 BAR=2 cmd
+      .replace(/^timeout\s+\d+\w?\s+/i, '') // timeout 60 cmd
+      .replace(/^["']?(\S*?)["']?(?=\s|$)/, '$1') // "C:/Program Files…/node.exe" x
+      .replace(/^\S*[\\/]/, '') // C:/nvm/node.exe x → node.exe x
+      .replace(/^(\S+)\.exe\b/i, '$1'), // node.exe → node
+  );
+  // The phrase order is the priority: `git add && git commit` is committing, `cd x && npm test` is testing.
+  for (const table of [SHELL_ACTIONS, SHELL_LOOKS]) {
+    for (const [re, text] of table) {
+      const segment = segments.find((s) => re.test(s));
+      if (segment) return typeof text === 'function' ? text(segment) : text;
+    }
+  }
+  // Unknown command: name the program only — arguments, paths and secrets never reach the bubble
+  // (the exact command stays in the chat row's detail).
+  const raw = String(input.command ?? '').trim().replace(/^(\w+=\S*\s+)+/, '');
+  const first = /^["']/.test(raw) ? raw.slice(1, raw.indexOf(raw[0], 1) >>> 0) : raw.split(/\s+/)[0]; // "C:/My App/run.exe" x
+  const program = truncate(first.replace(/^.*[\\/]/, '').replace(/\.exe$/i, '').replace(/[^\w.@+-]/g, ''), 30);
+  return program ? `Menjalankan ${program}` : 'Menjalankan perintah';
+}
+
 export function describeTool(tool, input = {}) {
   switch (tool) {
     case 'Read':
@@ -303,7 +365,7 @@ export function describeTool(tool, input = {}) {
       return `Mengedit ${basename(input.notebook_path)}`;
     case 'Bash':
     case 'PowerShell':
-      return `$ ${truncate(input.command, 60)}`;
+      return shellLabel(input);
     case 'Grep':
       return `Mencari "${truncate(input.pattern, 28)}"`;
     case 'Glob':
@@ -362,7 +424,8 @@ export function loadAgentDefinitions(dir) {
     if (!meta.name) continue;
     agents[meta.name] = {
       description: meta.description ?? meta.name,
-      prompt: match[2].trim(),
+      // Every subagent gets the same never-hang rules for running commands (src/role-catalog.js).
+      prompt: `${match[2].trim()}\n\n${COMMAND_RULES}`,
       ...(meta.tools ? { tools: meta.tools.split(',').map((t) => t.trim()).filter(Boolean) } : {}),
       ...(meta.model ? { model: meta.model } : {}),
     };

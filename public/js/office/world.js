@@ -7,7 +7,7 @@ export const W = 544;
 export const H = 288;
 export const WALL_H = 48;
 const CELL = 8;
-// The office as it is now: taller than H when the team needs a 4th row of desks (👥 Kelola tim, layoutDesks).
+// The office as it is now: taller than H when the team needs a 4th / 5th row of desks (👥 Kelola tim, layoutDesks).
 export const room = { w: W, h: H };
 
 // Workstations: a grid of 4 columns, one desk per active role, filled row by row in DESK_ORDER (the default
@@ -16,16 +16,19 @@ const COLS_X = [24, 88, 152, 216];
 const FIRST_ROW_Y = 76;
 const ROW_STEP = 72;
 const MIN_ROWS = 3; // a smaller team keeps the room size (empty floor where desks would be)
-const MAX_DESKS = COLS_X.length * 4;
+const MAX_DESKS = COLS_X.length * 5; // 17 catalog roles: up to 5 rows
 const DESK_ORDER = [
   'pm', 'ba', 'architect', 'ui-ux',
   'frontend', 'backend', 'dba', 'freelancer', // freelancer: hot desk for generalist subagents
   'qa', 'security', 'writer', 'devops',
   'mobile', 'data', 'support', 'reviewer',
+  'compliance', // the 17th role: opens a 5th row
 ];
+/** Desk roles not in the default team (catalog defaultOff; must match roster.js DEFAULT_TEAM). None today. */
+const DEFAULT_OFF = new Set([]);
 const PROPS = {
   pm: 'notes', ba: 'papers', architect: 'blueprint', 'ui-ux': 'tablet', frontend: 'phone', backend: 'duck', dba: 'dbcan', qa: 'bug', security: 'lock', writer: 'books', devops: 'cactus', freelancer: 'lamp',
-  mobile: 'phonestand', data: 'chart', support: 'headset', reviewer: 'magnifier',
+  mobile: 'phonestand', data: 'chart', support: 'headset', reviewer: 'magnifier', compliance: 'stamp',
 };
 const DUAL = new Set(['frontend', 'backend', 'devops', 'data']);
 // The boss sits alone in the glass office, behind an executive desk, facing the door.
@@ -128,7 +131,7 @@ function buildWalkGrid() {
   grid.blocked = blocked;
 }
 
-layoutDesks(DESK_ORDER); // the default team (every catalog role) until the server says otherwise — must match roster.js DEFAULT_TEAM
+layoutDesks(DESK_ORDER.filter((id) => !DEFAULT_OFF.has(id))); // the default team until the server says otherwise — must match roster.js DEFAULT_TEAM
 
 const cellOf = (p) => [Math.max(0, Math.min(COLS - 1, Math.floor(p.x / CELL))), Math.max(0, Math.min(grid.rows - 1, Math.floor(p.y / CELL)))];
 const free = (c, r) => c >= 0 && r >= 0 && c < COLS && r < grid.rows && !grid.blocked[r * COLS + c];
@@ -220,7 +223,7 @@ function hash(n) {
 
 /** Static background (walls, floors, wall decor) rendered once. */
 export function renderBackground() {
-  const h = room.h; // taller with a 4th row of desks
+  const h = room.h; // taller with a 4th / 5th row of desks
   const c = document.createElement('canvas');
   c.width = W;
   c.height = h;
@@ -559,6 +562,16 @@ export function drawDesk(g, desk) {
       r(px + 4, y + 4, 4, 1, '#8a6d3b');
       r(px + 4, y + 1, 4, 3, 'rgba(190,225,255,.75)');
       r(px + 8, y + 5, 2, 2, '#5e4a3a');
+      break;
+    case 'stamp': // compliance: a policy document with a red seal, a small padlock clipped to it
+      r(px - 1, y, 7, 9, '#f7f5ef');
+      r(px, y + 1, 5, 1, '#9aa3ad');
+      r(px, y + 3, 4, 1, '#9aa3ad');
+      r(px + 1, y + 5, 3, 3, '#c92a2a');
+      r(px + 2, y + 6, 1, 1, '#f08c8c');
+      r(px + 7, y + 2, 3, 2, '#b0b8c4');
+      r(px + 6, y + 4, 5, 4, '#b56a9e');
+      r(px + 8, y + 5, 1, 2, '#3a2830');
       break;
   }
 }

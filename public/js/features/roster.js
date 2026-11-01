@@ -7,7 +7,7 @@ import { $, escapeHtml } from '../core/dom.js';
 import { sceneFor, scenes, stage } from '../core/scenes.js';
 import { state } from '../core/state.js';
 import { CAST } from '../office/cast.js';
-import { DEFAULT_TEAM, LEAD, roster, setRoster } from '../office/roster.js';
+import { LEAD, defaultTeam, roster, setRoster } from '../office/roster.js';
 import { avatarURL } from '../office/sprites.js';
 import { layoutDesks } from '../office/world.js';
 import { closeModal, openModal } from '../ui/modals.js';
@@ -93,7 +93,7 @@ function renderRoster() {
         : `${role.description} Nonaktif → dikerjakan ${nameOf(coverOf(role.id, enabled))}.`;
     return `<li class="roster-row${on ? ' on' : ''}${role.locked ? ' locked' : ''}">
       <img src="${avatarURL(cast.look)}" alt="">
-      <label class="roster-text" for="${id}"><b style="color:${cast.color}">${escapeHtml(cast.name)}</b><small>${escapeHtml(cast.title)}${role.optional ? ' · <span class="roster-new">baru</span>' : ''}</small><span id="${id}-desc" class="roster-desc">${escapeHtml(note)}</span></label>
+      <label class="roster-text" for="${id}"><b style="color:${cast.color}">${escapeHtml(cast.name)}</b><small>${escapeHtml(cast.title)}${role.defaultOff ? ' · <span class="roster-new">opsional</span>' : role.optional ? ' · <span class="roster-new">baru</span>' : ''}</small><span id="${id}-desc" class="roster-desc">${escapeHtml(note)}</span></label>
       <input id="${id}" type="checkbox" role="switch" data-role="${role.id}" aria-describedby="${id}-desc" ${on ? 'checked' : ''} ${role.locked || ro ? 'disabled' : ''} />
     </li>`;
   });
@@ -146,7 +146,7 @@ export function initRoster() {
     $(`#roster-${input.dataset.role}`)?.focus();
   });
   $('#roster-default').addEventListener('click', () => {
-    draft.enabled = new Set(DEFAULT_TEAM);
+    draft.enabled = new Set(defaultTeam()); // the catalog's opt-in roles (Compliance) stay off
     renderRoster();
   });
   $('#roster-form').addEventListener('submit', saveRoster);

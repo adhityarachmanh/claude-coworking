@@ -19,7 +19,7 @@
 // Control requests (initialize, set_permission_mode, set_model, apply_flag_settings, rewind_files,
 // mcp_status, …) answer like the real CLI; every prompt reports command_lifecycle events.
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 
@@ -282,8 +282,12 @@ async function handlePrompt(text) {
   }
   if (/tim\?/.test(text)) {
     // 👥 Kelola tim: which subagents (--agents) and Lead prompt lines this process was started with.
-    const agents = Object.keys(JSON.parse(flag('--agents') ?? '{}')).sort().join(',');
-    const leadRoles = [...(flag('--append-system-prompt') ?? '').matchAll(/^- ([\w-]+): /gm)].map((m) => m[1]).sort().join(',');
+    // Like the real CLI: --agents is inline JSON or (with -p) a file path; the Lead prompt may come from a file.
+    const agentsArg = flag('--agents') ?? '{}';
+    const agents = Object.keys(JSON.parse(agentsArg.trimStart().startsWith('{') ? agentsArg : readFileSync(agentsArg, 'utf8'))).sort().join(',');
+    const promptFile = flag('--append-system-prompt-file');
+    const leadPrompt = promptFile ? readFileSync(promptFile, 'utf8') : (flag('--append-system-prompt') ?? '');
+    const leadRoles = [...leadPrompt.matchAll(/^- ([\w-]+): /gm)].map((m) => m[1]).sort().join(',');
     await streamText(`agents=${agents || '-'} lead=${leadRoles || '-'} pid=${process.pid}`, 5);
     return result();
   }

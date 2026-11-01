@@ -111,7 +111,7 @@ export async function runDemo(hub) {
 function demoApproval(hub, id, role) {
   return new Promise((resolve) => {
     const approvalId = `demo-${Date.now()}`;
-    const label = '$ npm install zod bcrypt';
+    const label = 'Install validasi & hashing'; // what describeTool shows for this Bash call (its description)
     const chatId = hub.chat(id, { kind: 'approval', role, text: label, approvalId, status: 'pending' });
     const timer = setTimeout(() => hub.resolveApproval(approvalId, { allow: true }), APPROVAL_TIMEOUT_MS);
     hub.requestApproval(

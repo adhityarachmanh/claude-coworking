@@ -10,6 +10,7 @@ import { phone, refreshPairing } from '../features/phone.js';
 import { renderSidebar, selectProject } from '../features/picker.js';
 import { renderRoots } from '../features/settings.js';
 import { applyRoster } from '../features/roster.js';
+import { noteLiveMessage, setStuckOnline } from '../features/stuck.js';
 import { applyNames } from '../features/team.js';
 import { applyTeamNames, roleName } from '../office/cast.js';
 import { updateTitle } from '../ui/layout.js';
@@ -26,6 +27,7 @@ export function connect() {
   source.addEventListener('open', streamOpened);
   source.addEventListener('error', () => {
     streamLost();
+    setStuckOnline(false); // the stuck detector waits for the fresh snapshot (the chat may be stale)
     // A network error is retried by the browser itself (readyState CONNECTING). A refused stream (an HTTP error
     // instead of the event stream) is not: it stays CLOSED for good, so open a new one after a pause.
     if (self === source && self.readyState === EventSource.CLOSED) setTimeout(connect, retryDelay());
@@ -63,6 +65,7 @@ export function connect() {
     scenes.clear();
     const remembered = location.hash.slice(1) || localStorage.getItem('office.active');
     selectProject(state.projects.some((p) => p.id === remembered) ? remembered : DEMO_ID);
+    setStuckOnline(true);
     renderAccountButton(); // after the core UI, so a profile quirk can never blank the office
   });
   on('pairing-reset', () => {
@@ -94,6 +97,7 @@ export function connect() {
   });
   on('chat', (msg) => {
     (state.chats[msg.project] ??= []).push(msg);
+    noteLiveMessage(msg); // a sample of the browser/server clock difference (stuck detector)
     if (msg.project === state.active) appendChat(msg);
     if (msg.kind === 'result') {
       notify(msg.ok ? 'done' : 'error', msg.ok ? `✓ Tugas selesai — ${projectName(msg.project)}` : `■ Tugas berhenti — ${projectName(msg.project)}`, msg.ok ? 'Tim sudah menyelesaikan permintaanmu.' : msg.text || 'Cek chat untuk detailnya.', msg.project);

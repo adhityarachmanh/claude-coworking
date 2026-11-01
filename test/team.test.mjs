@@ -1,29 +1,31 @@
 // 👥 Kelola tim: the built-in role catalog, team validation, role mapping per active team (with fallbacks),
-// the subagents / Lead prompt per team, and the office layout for 12 (unchanged) and 16 desks.
+// the subagents / Lead prompt per team, and the office layout for 12 (unchanged), 16 and 17 desks.
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { afterEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { Scene } from '../public/js/office/scene.js';
-import { CLASSIC_TEAM as CLIENT_CLASSIC, DEFAULT_TEAM, resolveRole as clientResolve, roster, setRoster, teamOrder } from '../public/js/office/roster.js';
+import { CAST } from '../public/js/office/cast.js';
+import { CLASSIC_TEAM as CLIENT_CLASSIC, DEFAULT_TEAM, defaultTeam, resolveRole as clientResolve, roster, setRoster, teamOrder } from '../public/js/office/roster.js';
 import { DESKS, DOOR, H, W, findPath, layoutDesks, room } from '../public/js/office/world.js';
 import {
-  CATALOG_IDS, CLASSIC_TEAM, DEFAULT_ENABLED, MAX_ACTIVE_ROLES, ROLE_CATALOG, TeamConfigError, activeAgents, normalizeEnabled, publicCatalog, resolveRole, storedEnabled, teamPrompt,
+  CATALOG_IDS, CLASSIC_TEAM, COMMAND_RULES, DEFAULT_ENABLED, MAX_ACTIVE_ROLES, ROLE_CATALOG, TeamConfigError, activeAgents, normalizeEnabled, publicCatalog, resolveRole, storedEnabled, teamPrompt,
 } from '../src/role-catalog.js';
 import { activeRoles, agentRole, inferRole, loadAgentDefinitions, screenFor, setActiveRoles, toRole } from '../src/roles.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ALL = [...CATALOG_IDS];
-const NEW = ['mobile', 'data', 'support', 'reviewer'];
+const NEW = ['mobile', 'data', 'support', 'reviewer', 'compliance'];
 
 afterEach(() => setActiveRoles(DEFAULT_ENABLED));
 
 // ---------- catalog & validation ----------
 
-test('catalog: the 12 existing roles + 4 new ones, fixed ids; the default team is all 16', () => {
-  assert.deepEqual(ALL, ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer']);
-  assert.equal(MAX_ACTIVE_ROLES, 16);
-  assert.deepEqual([...DEFAULT_ENABLED], ALL, 'default: every catalog role on');
+test('catalog: the 12 existing roles + 5 optional ones, fixed ids; the default team is all 17', () => {
+  assert.deepEqual(ALL, ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer', 'compliance']);
+  assert.equal(MAX_ACTIVE_ROLES, 17);
+  assert.deepEqual([...DEFAULT_ENABLED], ALL, 'default: every catalog role on, Compliance included');
+  assert.deepEqual(publicCatalog().filter((r) => r.defaultOff).map((r) => r.id), [], 'no opt-in roles today');
   assert.deepEqual([...CLASSIC_TEAM], ALL.slice(0, 12), 'the classic team (before the catalog)');
   assert.deepEqual([...CLIENT_CLASSIC], [...CLASSIC_TEAM]);
   assert.deepEqual([...DEFAULT_TEAM].sort(), [...DEFAULT_ENABLED].sort(), 'the browser starts with the same default');
@@ -157,21 +159,25 @@ Typical flows:
 - New feature: pm → ba → architect → ui-ux → frontend/backend/dba → qa → security (when auth, input or data is touched) → writer.
 - Bug fix: qa reproduces it (ideally a failing test) → the owning frontend/backend/dba fixes the root cause → architect reviews the diff → qa verifies.
 - Build/deploy/incident: devops first, then backend or dba as needed, qa verifies.
-Run independent pieces in parallel when they do not touch the same files. Reply in the user's language.`;
+Run independent pieces in parallel when they do not touch the same files. Reply in the user's language.
+${COMMAND_RULES}`;
 
-test('agent templates: 15 role agents load; --agents carries only the active ones', () => {
+test('agent templates: 16 role agents load; --agents carries only the active ones', () => {
   const all = loadAgentDefinitions(path.join(ROOT, '.claude', 'agents'));
   assert.deepEqual(Object.keys(all).sort(), ALL.filter((id) => id !== 'freelancer').sort());
   for (const id of NEW) {
     assert.ok(all[id].description.length > 40 && all[id].prompt.length > 300, id);
     assert.match(all[id].prompt, /Output ke Lead:/, `${id} follows the same structure`);
   }
+  for (const [id, def] of Object.entries(all)) assert.ok(def.prompt.endsWith(`
+
+${COMMAND_RULES}`), `${id} gets the never-hang command rules`);
   assert.deepEqual(all.reviewer.tools, ['Read', 'Grep', 'Glob', 'Bash'], 'the reviewer reads, never edits');
   assert.deepEqual(Object.keys(activeAgents(all, [...CLASSIC_TEAM])).sort(), Object.keys(all).filter((id) => !NEW.includes(id)).sort());
   assert.deepEqual(Object.keys(activeAgents(all, ['qa', 'freelancer', 'mobile'])), ['qa', 'mobile']);
 });
 
-test('Lead prompt: unchanged for the classic 12-role team; lists exactly the active roles otherwise', () => {
+test('Lead prompt: the classic 12-role team keeps its prompt (plus the command rules); lists exactly the active roles otherwise', () => {
   const agentNames = ALL.filter((id) => id !== 'freelancer');
   assert.equal(teamPrompt([...CLASSIC_TEAM], agentNames), OLD_TEAM_PROMPT);
   const custom = teamPrompt(normalizeEnabled(['pm', 'qa', 'backend', 'reviewer', 'support']), agentNames);
@@ -181,6 +187,9 @@ test('Lead prompt: unchanged for the classic 12-role team; lists exactly the act
   assert.match(custom, /support triages it/);
   assert.match(custom, /not listed, give that step to the closest listed role/, 'missing default roles are explained');
   assert.doesNotMatch(custom, /^- mobile:/m);
+  assert.ok(custom.endsWith(COMMAND_RULES), 'every team gets the command rules');
+  assert.match(COMMAND_RULES, /Every wait has a deadline/);
+  assert.match(COMMAND_RULES, /never poll for one specific line/);
 });
 
 // ---------- office layout ----------
@@ -202,18 +211,14 @@ test('layout: the classic 12 desks are exactly where they always were', () => {
   assert.equal(H, 288);
 });
 
-test('layout: 16 desks → a 4th row, a taller room, every desk inside and reachable', () => {
-  setRoster({ enabled: ALL, catalog: publicCatalog() });
-  layoutDesks(ALL);
-  assert.equal(room.h, 360);
-  assert.equal(Object.keys(DESKS).length, 17);
-  for (const id of NEW) assert.equal(DESKS[id].y, 292, `${id} in row 4`);
+/** Every desk inside the room, each seat reachable from the door without walking through another desk. */
+function assertReachable() {
   const boxes = Object.entries(DESKS).filter(([id]) => id !== 'claude').map(([, d]) => deskBox(d));
   for (const [id, d] of Object.entries(DESKS)) {
     assert.ok(d.x >= 0 && d.x + d.w <= W && d.seat.y < room.h - 8, `${id} inside the room`);
     const path = findPath(DOOR, d.seat);
     assert.deepEqual(path.at(-1), { x: d.seat.x, y: d.seat.y }, `${id}: reaches its seat`);
-    if (d.y === 292) assert.ok(path.length >= 2, `${id}: walks around the desks, not through them`);
+    if (d.y >= 292) assert.ok(path.length >= 2, `${id}: walks around the desks, not through them`);
     // no straight leg crosses another desk
     let from = DOOR;
     for (const p of path) {
@@ -224,6 +229,17 @@ test('layout: 16 desks → a 4th row, a taller room, every desk inside and reach
       from = p;
     }
   }
+}
+
+test('layout: 16 desks → a 4th row, a taller room, every desk inside and reachable', () => {
+  const sixteen = DEFAULT_TEAM.filter((id) => id !== 'compliance');
+  setRoster({ enabled: sixteen, catalog: publicCatalog() });
+  layoutDesks(sixteen);
+  assert.equal(room.h, 360);
+  assert.equal(Object.keys(DESKS).length, 17);
+  for (const id of ['mobile', 'data', 'support', 'reviewer']) assert.equal(DESKS[id].y, 292, `${id} in row 4`);
+  assert.equal(DESKS.compliance, undefined, 'Compliance switched off: no 5th row');
+  assertReachable();
   // a smaller team keeps the room size; 13 desks need the 4th row
   layoutDesks(['pm', 'qa', 'freelancer']);
   assert.equal(room.h, 288);
@@ -231,6 +247,41 @@ test('layout: 16 desks → a 4th row, a taller room, every desk inside and reach
   layoutDesks([...CLIENT_CLASSIC, 'reviewer']);
   assert.equal(room.h, 360);
   assert.deepEqual([DESKS.reviewer.x, DESKS.reviewer.y], [24, 292]);
+});
+
+test('layout: all 17 catalog roles (the default team) → a 5th row, the room grows again, every desk reachable', () => {
+  assert.equal(ALL.length, 17);
+  setRoster({ enabled: ALL, catalog: publicCatalog() });
+  layoutDesks(ALL);
+  assert.equal(room.h, 432);
+  assert.equal(Object.keys(DESKS).length, 18);
+  assert.deepEqual([DESKS.compliance.x, DESKS.compliance.y, DESKS.compliance.prop], [24, 364, 'stamp'], 'Compliance opens row 5');
+  for (const id of ['mobile', 'data', 'support', 'reviewer']) assert.equal(DESKS[id].y, 292, `${id} stays in row 4`);
+  assertReachable();
+  // 13 desks with Compliance among them: still 4 rows (desks are packed in order)
+  layoutDesks([...CLIENT_CLASSIC, 'compliance']);
+  assert.equal(room.h, 360);
+  assert.deepEqual([DESKS.compliance.x, DESKS.compliance.y], [24, 292]);
+});
+
+test('client defaults: DEFAULT_TEAM and "↺ Tim bawaan" are all 17 roles, Compliance included; max 17 desks', () => {
+  assert.equal(DEFAULT_TEAM.length, 17);
+  assert.ok(DEFAULT_TEAM.includes('compliance'));
+  setRoster({ enabled: ALL, catalog: publicCatalog(), max: MAX_ACTIVE_ROLES });
+  assert.equal(roster.max, 17);
+  assert.deepEqual(defaultTeam().sort(), [...DEFAULT_ENABLED].sort(), 'same default as the server');
+  assert.equal(CAST.compliance.name, 'Adhit - Compliance');
+  assert.equal(clientResolve('compliance'), 'compliance');
+  const noCompliance = DEFAULT_TEAM.filter((r) => r !== 'compliance');
+  setRoster({ enabled: noCompliance, catalog: publicCatalog() });
+  assert.equal(clientResolve('compliance'), 'security', 'off → Security covers it');
+  // Security off too: its own chain comes first (security → reviewer), exactly like the server's resolveRole.
+  const noSec = noCompliance.filter((r) => r !== 'security');
+  setRoster({ enabled: noSec, catalog: publicCatalog() });
+  assert.equal(clientResolve('compliance'), resolveRole('compliance', new Set(noSec)));
+  setRoster({ enabled: ['pm', 'ba', 'freelancer'], catalog: publicCatalog() });
+  assert.equal(clientResolve('compliance'), 'ba', 'no security chain left: the BA');
+  setRoster({ enabled: [...CLIENT_CLASSIC], catalog: publicCatalog() });
 });
 
 test('office scene: a person per active role (+ the Lead); an off role\'s events reach whoever covers it', () => {

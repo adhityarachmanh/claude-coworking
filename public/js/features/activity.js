@@ -16,7 +16,7 @@ export function appendActivity(evt, prepend) {
   const li = document.createElement('li');
   li.className = `k-${evt.kind}`;
   const text = evt.kind === 'delegate' ? `${fromPrefix(evt.from)}→ ${evt.agentType}: ${evt.label}` : evt.kind === 'say' ? evt.text : evt.label ?? '';
-  li.innerHTML = `<time>${time(evt.ts)}</time><span class="dot" style="background:${roleColor(evt.role)}"></span><span><b>${roleName(evt.role)}</b> ${KIND_ICON[evt.kind]} ${escapeHtml(text)}</span>`;
+  li.innerHTML = `<time>${time(evt.ts)}</time><span class="dot" style="background:${roleColor(evt.role)}"></span><span><b>${escapeHtml(roleName(evt.role))}</b> ${KIND_ICON[evt.kind]} ${escapeHtml(text)}</span>`;
   const list = $('#activity');
   list.querySelector('.activity-empty')?.remove();
   if (prepend) list.prepend(li);

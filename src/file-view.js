@@ -1,11 +1,15 @@
 // Read-only file viewer (📄 Lihat file): one text file inside a project folder, never anything outside it.
 // Every path is checked twice: lexically (resolve) and on disk (realpath), so `..`, absolute paths, symlinks
 // and junctions that lead out of the project, UNC/device paths and NTFS streams are all refused.
-import { open, realpath, stat } from 'node:fs/promises';
+import { open, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 export const MAX_VIEW_BYTES = 512 * 1024;
 const MAX_PATH = 1024;
+// A bare file name Claude wrote in prose ("server.test.mjs") is looked up below the project, bounded.
+const FIND_SKIP = new Set(['node_modules', '.git', 'vendor', 'dist', 'build', 'coverage', '.next', '.nuxt', '__pycache__', '.venv', 'venv', 'target']);
+const FIND_MAX_DEPTH = 8;
+const FIND_MAX_ENTRIES = 20000;
 
 /** An error meant for the user, with the HTTP status it is sent with. */
 export class FileViewError extends Error {
@@ -60,7 +64,49 @@ function inside(root, child) {
 }
 
 /** Validates a client path and returns { abs, rel } inside the project, or throws FileViewError. */
+/** Files named `name` below `root` (relative paths), breadth-first, bounded; stops after 6 hits. */
+async function findByName(root, name) {
+  const want = process.platform === 'win32' ? name.toLowerCase() : name;
+  const hits = [];
+  let seen = 0;
+  let level = [''];
+  for (let depth = 0; depth <= FIND_MAX_DEPTH && level.length && hits.length < 6; depth++) {
+    const next = [];
+    for (const dir of level) {
+      let entries;
+      try {
+        entries = await readdir(path.join(root, dir), { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const e of entries) {
+        if (++seen > FIND_MAX_ENTRIES) return hits;
+        const rel = dir ? `${dir}/${e.name}` : e.name;
+        if (e.isDirectory()) {
+          if (!FIND_SKIP.has(e.name) && !e.name.startsWith('.')) next.push(rel);
+        } else if (e.isFile() && (process.platform === 'win32' ? e.name.toLowerCase() : e.name) === want) hits.push(rel);
+      }
+    }
+    level = next;
+  }
+  return hits;
+}
+
 export async function resolveProjectFile(projectPath, input) {
+  try {
+    return await resolveExact(projectPath, input);
+  } catch (err) {
+    // "server.test.mjs" in Claude's prose: not at the root, but maybe exactly one file of that name below it.
+    const name = typeof input === 'string' ? input.trim() : '';
+    if (!(err instanceof FileViewError) || err.status !== 404 || /[\\/]/.test(name) || !/^[\w.@+-]+\.\w+$/.test(name)) throw err;
+    const hits = await findByName(path.resolve(projectPath), name);
+    if (hits.length === 1) return resolveExact(projectPath, hits[0]); // the same checks again (symlinks, secrets…)
+    if (hits.length > 1) throw new FileViewError(404, `Ada beberapa file bernama ${name}: ${hits.slice(0, 5).join(', ')}${hits.length > 5 ? ', …' : ''}. Buka lewat path lengkapnya.`);
+    throw err;
+  }
+}
+
+async function resolveExact(projectPath, input) {
   const raw = typeof input === 'string' ? input.trim() : '';
   if (!raw) throw new FileViewError(400, 'Path file kosong.');
   if (raw.length > MAX_PATH || raw.includes('\0')) throw new FileViewError(400, 'Path file tidak valid.');

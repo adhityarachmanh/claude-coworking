@@ -302,7 +302,7 @@ test('status.working counts open tools and running subagents per role (for an of
   translator.handle(use('t1', 'Bash', { command: 'npm test' }));
   const role = Object.keys(last())[0];
   assert.equal(last()[role].tools, 1, 'a running tool is counted');
-  assert.match(last()[role].label, /npm test/);
+  assert.equal(last()[role].label, 'Menjalankan test');
   translator.handle(use('a1', 'Agent', { subagent_type: 'qa', description: 'cek', prompt: 'cek', run_in_background: true }));
   assert.equal(last().qa.agents, 1, 'a delegated subagent is counted under its role');
   translator.handle(done('t1', 'ok'));

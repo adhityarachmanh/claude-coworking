@@ -16,6 +16,8 @@ export function hideGitBar() {
   $('#ch-git').hidden = true;
   $('#ch-git-create').hidden = true;
   gitBar.info = null;
+  // A hidden bar never leaves live controls behind (keyboard, read-only checks): render() enables them again.
+  for (const sel of ACTIONS) $(sel).disabled = true;
 }
 
 /**

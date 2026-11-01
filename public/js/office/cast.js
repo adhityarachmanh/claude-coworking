@@ -1,5 +1,5 @@
 // The office team: names, role colors and how each person looks.
-export const ROLE_ORDER = ['claude', 'pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer'];
+export const ROLE_ORDER = ['claude', 'pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer', 'compliance'];
 
 const base = { pantsShade: '#22253a', shoes: '#2a2a33' };
 
@@ -79,6 +79,12 @@ export const CAST = {
     // Crimson ("red pen") sweater vest over a light shirt, grey hair, glasses.
     name: 'Adhit - Reviewer', title: 'Code Reviewer', color: '#e03140',
     look: { ...base, id: 'reviewer', skin: '#efc6a6', skinShade: '#d6aa88', blush: '#eaa29a', hair: '#a9adb5', hairShade: '#c9ccd2', hairStyle: 'short', top: '#e03140', topShade: '#b3222f', topStyle: 'sweatervest', sleeve: '#dfe8f3', undershirt: '#dfe8f3', acc: ['glasses'], pants: '#3a3f4f', shoes: '#4a2c2a' },
+  },
+  // Optional (off by default, 👥 Kelola tim): only for projects that handle personal data.
+  compliance: {
+    // Mauve blazer over a white collar, long dark hair: the formal one who reads the fine print.
+    name: 'Adhit - Compliance', title: 'Compliance / Privacy (DPO)', color: '#b56a9e',
+    look: { ...base, id: 'compliance', skin: '#f0c6a2', skinShade: '#d8ab86', blush: '#eba09a', hair: '#1e1418', hairShade: '#3a2830', hairStyle: 'long', top: '#b56a9e', topShade: '#924f7e', topStyle: 'blazer', pants: '#2f2b3a', shoes: '#2a2a33' },
   },
 };
 

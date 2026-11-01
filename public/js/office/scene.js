@@ -11,7 +11,7 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const ROLE_SCREEN = {
   claude: 'terminal', pm: 'kanban', ba: 'doc', architect: 'review', 'ui-ux': 'design', frontend: 'code',
   backend: 'code', dba: 'db', qa: 'tests', security: 'security', devops: 'pipeline', writer: 'doc', freelancer: 'code',
-  mobile: 'code', data: 'db', support: 'terminal', reviewer: 'review',
+  mobile: 'code', data: 'db', support: 'terminal', reviewer: 'review', compliance: 'security',
 };
 const MEET_SPOTS = ['meet1', 'meet2', 'meet3', 'meet4'];
 const ERRAND_MS = 9000; // an errand (report, bug hand-off, huddle) is not cut short by new work
@@ -34,6 +34,7 @@ const IDLE_ACTIVITIES = {
   data: ['board', 'coffee', 'rack', 'window', 'chat'],
   support: ['water', 'coffee', 'chat', 'stretch'],
   reviewer: ['board', 'shelf', 'coffee', 'window2', 'chat'],
+  compliance: ['shelf', 'meet', 'coffee', 'water', 'chat'],
 };
 const ACTIVITY_BUCKETS = 12;
 const BUCKET_MS = 5000;
@@ -71,6 +72,7 @@ class Person {
     this.scratchUntil = 0;
     this.worriedUntil = 0;
     this.holding = null;
+    this.stuck = false; // ⚠ stuck detector (features/stuck.js): a quiet "…?" over the head
     this.delegations = [];
     this.blinkOffset = Math.random() * 4000;
     this.nextIdleAt = performance.now() + rand(15000, 40000);
@@ -364,6 +366,12 @@ export class Scene {
     for (const ts of this.toolTimes) buckets[ACTIVITY_BUCKETS - 1 - Math.floor((now - ts) / BUCKET_MS)]++;
     const max = Math.max(3, ...buckets);
     return { busy: Boolean(this.status.busy || this.status.cliBusy), bars: buckets.map((n) => n / max) };
+  }
+
+  /** The roles whose running tool / delegation looks stuck (features/stuck.js); everyone else is cleared. */
+  setStuck(roles) {
+    const marked = new Set([...roles].map((r) => this.person(r)));
+    for (const p of Object.values(this.people)) p.stuck = marked.has(p);
   }
 
   person(role) {
@@ -752,7 +760,9 @@ export class Scene {
       }
     }
     for (const a of this.actors()) {
-      const name = a.asking ? 'ask' : a.icon?.name;
+      // Stuck: a dim "…?" that comes and goes, only when nothing louder (question, icon, speech) is showing.
+      const quiet = a.stuck && !a.bubble && Math.floor(now / 1600) % 2 === 0 ? 'stuck' : null;
+      const name = a.asking ? 'ask' : (a.icon?.name ?? quiet);
       if (!name || (a.bubble && name === 'think')) continue;
       const icon = iconSprite(name);
       const bob = Math.round(Math.sin(now / 160) * 1.5);

@@ -41,6 +41,8 @@ const HALLOWEEN_LOOKS = {
   data: (c) => ({ costume: 'bat', top: '#2b2735', topShade: '#1d1a25', topStyle: 'plain', pants: '#2b2735', pantsShade: '#1d1a25', shoes: '#16131c', wing: '#40384d', wingShade: '#2a2433', lining: c, acc: ['glasses'] }),
   support: (c) => ({ costume: 'scarecrow', top: c, topShade: shade(c), topStyle: 'plain', pants: '#4a6fa5', pantsShade: '#3a5a88', shoes: '#5e3a1e', hat: '#d9b45a', hatShade: '#b8913d', straw: '#f2d36b', acc: ['headset'], accColor: '#dfe3e8' }),
   reviewer: (c) => ({ costume: 'owl', top: '#7a5a3c', topShade: '#5e4430', topStyle: 'plain', pants: '#5e4430', pantsShade: '#4a3524', shoes: '#e9a23b', hood: '#7a5a3c', hoodShade: '#5e4430', chest: '#efe0c0', feather: '#a07a52', tie: c, acc: ['glasses'] }),
+  // A countess in a mauve-lined cape (the Lead's vampire costume, her own palette and long hair).
+  compliance: (c) => ({ costume: 'vampire', skin: '#f1eaee', skinShade: '#d8ccd4', blush: '#e9bccb', hair: '#1e1418', hairShade: '#3a2830', hairStyle: 'long', top: '#2e2230', topShade: '#1f1720', topStyle: 'blazer', pants: '#261c28', pantsShade: '#18111a', shoes: '#120d14', cape: '#3a1f33', lining: c }),
 };
 
 // Kantor colour → Halloween colour: darker, purple-tinted floors and walls, plum sofa, orange accents.
@@ -109,6 +111,7 @@ const NATAL_LOOKS = {
   data: (c) => sweater(c, { motif: 'snowflake', hat: 'pompom', acc: ['glasses'] }),
   support: (c) => ({ costume: 'elf', top: XRED, topShade: XRED_SHADE, topStyle: 'plain', pants: XGREEN, pantsShade: '#23704a', shoes: XRED, hat: XRED, hatShade: XRED_SHADE, collar: c, ears: false, acc: ['headset'], accColor: SNOW }),
   reviewer: (c) => ({ costume: 'caroler', top: '#24543f', topShade: '#1b4030', topStyle: 'plain', pants: '#2b2d42', pantsShade: '#22253a', shoes: '#1d1424', scarf: c, hat: '#1d1424', hatBand: XGREEN, scroll: '#f4efe2', acc: ['glasses'] }),
+  compliance: (c) => sweater(c, { motif: 'star', band: XGREEN, hat: 'earmuffs' }),
 };
 
 const NATAL_COLORS = remap('#24503a', '#1f4632', '#8e1b2b', '#a3222f', '#1f6b45', XGREEN, '#a3222f', '#c8243a', '#2e6b4a', '#3f8a62', '#367a56', '#4f9d72', '#245a3d', '#e5383b');
@@ -162,6 +165,7 @@ const LEBARAN_LOOKS = {
   data: (c) => koko(c, '#5b4a3a', { ...kopiah, acc: ['glasses'], prop: 'kurma' }),
   support: (c) => gamis(c, { trim: CREAM, prop: 'rantang' }), // keeps her own navy hijab
   reviewer: (c) => koko(c, '#2f4858', { sajadah: LGREEN, acc: ['glasses'] }),
+  compliance: (c) => gamis(c, { selendang: CREAM, trim: LGOLD }),
 };
 
 const LEBARAN_COLORS = remap('#1d4a3a', '#18402f', '#2c6e4f', '#347d5b', LGREEN, '#c9a227', LGREEN, '#3a8d5c', LGREEN, '#3f9662', '#358a57', '#4aa36d', '#22603b', '#f2c14e');
@@ -187,6 +191,7 @@ const MERAH = '#d7182a';
 const MERAH_SHADE = '#a8101f';
 const PUTIH = '#f6f3ee';
 const PUTIH_SHADE = '#d9d4cc';
+const LACE_GOLD = '#e0c27a';
 
 const kaos = (c, shirt, extra) => ({
   costume: 'kaos', shirt, topStyle: 'plain', bib: c, headband: true, pants: '#2b2d42', pantsShade: '#22253a',
@@ -213,6 +218,7 @@ const AGUSTUS_LOOKS = {
   data: (c) => kaos(c, 'putih', { acc: ['glasses'], prop: 'tambang' }),
   support: (c) => kaos(c, 'merahputih', { prop: 'bakiak' }),
   reviewer: (c) => ({ costume: 'juri', top: PUTIH, topShade: PUTIH_SHADE, topStyle: 'plain', pants: '#2b2d42', pantsShade: '#22253a', shoes: '#1d1424', lanyard: c, acc: ['glasses'] }),
+  compliance: (c) => kebaya(c, PUTIH, PUTIH_SHADE, { lace: LACE_GOLD }),
 };
 
 const AGUSTUS_COLORS = remap('#5a2f33', '#52292d', '#b3122e', '#c8243a', MERAH, PUTIH, MERAH, PUTIH, '#c8243a', '#e0404f', '#d0303f', '#ec5a66', '#9e1b2b', PUTIH);

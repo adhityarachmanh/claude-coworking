@@ -38,6 +38,7 @@ import { initRewind } from './features/rewind.js';
 import { initSessions } from './features/sessions.js';
 import { initSettings } from './features/settings.js';
 import { initStatusline } from './features/statusline.js';
+import { initStuck } from './features/stuck.js';
 import { initSuggest } from './features/suggest.js';
 import { initTasks } from './features/tasks.js';
 import { initTeam, renderTeam } from './features/team.js';
@@ -57,6 +58,7 @@ initMobileNav();
 initComposerInput();
 initLiveOutput(); // before initChat / the first render: rows register with its observer as they are drawn
 initChat();
+initStuck(); // ⚠ stuck detector: chips on running rows (after initChat: #chat exists, its clicks are wired)
 initFileViewer();
 initTeam();
 initRoster(); // 👥 Kelola tim (⚙, ⋯, Ctrl+P, /team)

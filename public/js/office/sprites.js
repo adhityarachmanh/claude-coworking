@@ -669,6 +669,7 @@ const ICONS = {
   alert: { color: '#f0524a', rows: ['.xx.', '.xx.', '.xx.', '.xx.', '....', '.xx.'] },
   ask: { color: '#f5a524', rows: ['.xxx.', 'x...x', '...x.', '..x..', '.....', '..x..'] },
   zzz: { color: '#9fb7ff', rows: ['xxxx', '..x.', '.x..', 'xxxx'] },
+  stuck: { color: '#9fb7ff', rows: ['......xxx', '........x', '.......x.', '.........', 'x.x.x..x.'] }, // "…?": no sign of progress for a while
   heart: { color: '#ff6b8b', rows: ['.x.x.', 'xxxxx', 'xxxxx', '.xxx.', '..x..'] },
   think: { color: '#c9d1e3', rows: ['x.x.x'] },
   note: { color: '#ffd166', rows: ['xxxx', 'x..x', 'xxxx', 'x..x', 'xxxx'] },

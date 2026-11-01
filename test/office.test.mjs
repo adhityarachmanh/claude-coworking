@@ -260,6 +260,8 @@ test('a turn cut short by a server restart: the lead shows the waiting sign unti
 // ---------- the four roles added later (mobile, data, support, reviewer) ----------
 
 const NEW_ROLES = ['mobile', 'data', 'support', 'reviewer'];
+// …and the optional 17th (off by default): same rules for colour, costumes and sprites.
+const LATER_ROLES = [...NEW_ROLES, 'compliance'];
 const ORIGINAL_ROLES = ['claude', 'pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer'];
 
 /** "Redmean" RGB distance: cheap perceptual colour difference (the original 13 role colours are ≥ 62 apart). */
@@ -278,9 +280,11 @@ test('new roles: appended after the original 13 (order unchanged) with names, ti
     NEW_ROLES.map((id) => CAST[id].name),
     ['Adhit - Mobile', 'Adhit - Data/AI', 'Adhit - Support', 'Adhit - Reviewer'],
   );
+  assert.equal(ROLE_ORDER.at(-1), 'compliance', 'the 17th role is appended last');
+  assert.deepEqual([CAST.compliance.name, CAST.compliance.title], ['Adhit - Compliance', 'Compliance / Privacy (DPO)']);
   const colours = ROLE_ORDER.map((id) => CAST[id].color);
   assert.equal(new Set(colours).size, colours.length, 'one colour per role');
-  for (const id of NEW_ROLES) {
+  for (const id of LATER_ROLES) {
     const { color, title, look } = CAST[id];
     assert.match(color, /^#[0-9a-f]{6}$/);
     assert.ok(title && look.id === id, `${id}: title and look id`);
@@ -297,7 +301,7 @@ test('new roles: a costume of their own in every theme (no copy of another role 
   for (const id of COSTUMED) {
     withTheme(id, () => {
       const looks = ROLE_ORDER.map((role) => themedLook(CAST[role].look));
-      for (const role of NEW_ROLES) {
+      for (const role of LATER_ROLES) {
         const look = themedLook(CAST[role].look);
         const { id: _id, ...mine } = look;
         for (const other of looks.filter((l) => l !== look)) {
@@ -362,7 +366,7 @@ test('new roles: every theme × view × pose × arms paints inside the 20×32 sp
     for (const id of THEME_IDS) {
       withTheme(id, () => {
         clearSpriteCache();
-        for (const role of NEW_ROLES) {
+        for (const role of LATER_ROLES) {
           const look = CAST[role].look;
           for (const view of ['down', 'up', 'left', 'right']) {
             for (const pose of ['stand', 'walk', 'sit', 'sofa']) {
@@ -379,7 +383,7 @@ test('new roles: every theme × view × pose × arms paints inside the 20×32 sp
         }
       });
     }
-    for (const role of NEW_ROLES) assert.equal(new Set(avatars[role]).size, THEME_IDS.length, `${role}: a different avatar in every theme`);
+    for (const role of LATER_ROLES) assert.equal(new Set(avatars[role]).size, THEME_IDS.length, `${role}: a different avatar in every theme`);
     // The office phone (mobile) and headset (support) are really painted in the Kantor look.
     clearSpriteCache();
     const stand = { view: 'down', pose: 'stand' };

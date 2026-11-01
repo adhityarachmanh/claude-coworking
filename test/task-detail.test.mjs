@@ -59,7 +59,7 @@ test('agent detail: ordered short steps with ok/error, the final report, the pro
     [
       ['text', 'Mulai baca kode.', undefined],
       ['tool', 'Membaca checkout.ts', 'ok'],
-      ['tool', '$ npm test -- checkout', 'error'],
+      ['tool', 'Menjalankan test', 'error'],
       ['tool', 'Menulis big.txt', 'running'],
     ],
   );
@@ -93,7 +93,7 @@ test('limits: the answer stays under DETAIL_MAX_ANSWER even with long messages',
   const d = mod.taskDetail(PROJECT, SESSION, { id: 'tc', kind: 'agent', status: 'running', toolUseId: 'toolu_C' });
   assert.ok(JSON.stringify(d).length <= mod.DETAIL_MAX_ANSWER, `${JSON.stringify(d).length} bytes`);
   assert.ok(d.steps.length > 20 && d.truncated);
-  assert.match(d.steps.at(-1).label, /^\$ echo z+/);
+  assert.equal(d.steps.at(-1).label, 'Menjalankan echo', 'the label never carries the 5000-char argument');
 });
 
 test('finding the transcript: meta toolUseId, then the agent id, then description + type', () => {

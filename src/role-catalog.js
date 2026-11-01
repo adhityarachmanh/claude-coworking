@@ -1,13 +1,13 @@
 // The built-in role catalog: the only roles a team can be assembled from (no free-form roles).
 // One source of truth for ids, default names/titles, descriptions, the fallback chain of each role,
-// the matching signals of the four optional roles, and the Lead's team prompt.
+// the matching signals of the optional roles, and the Lead's team prompt.
 //
 // The Lead (`claude`) is not in the catalog: it always exists. `freelancer` is locked on too — it is the
 // generalist every fallback chain ends at (unknown/general-purpose subagents), so subagent work never
 // lands on the Lead's desk (the Lead is the main thread only).
 
 export const LEAD_ID = 'claude';
-export const MAX_ACTIVE_ROLES = 16;
+export const MAX_ACTIVE_ROLES = 17;
 /** Roles that cannot be switched off (besides the Lead, which is not in the list at all). */
 export const LOCKED_ROLES = Object.freeze(['freelancer']);
 /** Terminal of every fallback chain. */
@@ -66,6 +66,14 @@ const ENTRIES = [
       command: /\bgh pr (review|diff|checks)\b/i,
     },
   },
+  {
+    id: 'compliance', name: 'Adhit - Compliance', title: 'Compliance / Privacy (DPO)', description: 'Kepatuhan data pribadi (UU PDP, GDPR): consent, retensi, kebijakan privasi, DPIA.', fallback: ['security', 'ba'], optional: true,
+    lead: 'privacy & compliance: personal data handling (UU PDP / GDPR), consent, retention, data subject rights, privacy policy/ToS review, DPIA',
+    signals: {
+      agent: /\b(compliance|privacy|dpo|gdpr|pdp|legal|consent|dpia|data-protection)\b/,
+      file: /(^|[\\/])[^\\/]*(privacy|cookie-policy|cookies-policy|consent|terms-of-service|tos|dpa|dpia|ropa|retention|gdpr|pdp)[^\\/]*\.(md|mdx|txt|html|docx|pdf)$/i,
+    },
+  },
 ];
 
 // agentFile: the subagent template in .claude/agents (sent with --agents while the role is on).
@@ -73,10 +81,10 @@ export const ROLE_CATALOG = Object.freeze(ENTRIES.map((r) => Object.freeze({ ...
 
 export const CATALOG = Object.freeze(Object.fromEntries(ROLE_CATALOG.map((r) => [r.id, r])));
 export const CATALOG_IDS = Object.freeze(ROLE_CATALOG.map((r) => r.id));
-/** The team before the catalog existed: every role except the four optional ones (kept for the Lead prompt and regression checks). */
+/** The team before the catalog existed: every role except the optional ones (kept for the Lead prompt and regression checks). */
 export const CLASSIC_TEAM = Object.freeze(ROLE_CATALOG.filter((r) => !r.optional).map((r) => r.id));
-/** Default team (never saved / reset): the whole catalog — all 16 roles on. */
-export const DEFAULT_ENABLED = Object.freeze([...CATALOG_IDS]);
+/** Default team (never saved / reset): the whole catalog (all 17 roles) except roles marked `defaultOff` (none today). */
+export const DEFAULT_ENABLED = Object.freeze(ROLE_CATALOG.filter((r) => !r.defaultOff).map((r) => r.id));
 
 /** A team setting the user sent that cannot be accepted (shown as-is, HTTP 400). */
 export class TeamConfigError extends Error {
@@ -136,7 +144,7 @@ export function resolveRole(role, active) {
 
 /** The catalog as the browser gets it (no RegExps). */
 export const publicCatalog = () =>
-  ROLE_CATALOG.map(({ id, name, title, description, fallback, optional }) => ({ id, name, title, description, fallback, optional: Boolean(optional), locked: LOCKED_ROLES.includes(id) }));
+  ROLE_CATALOG.map(({ id, name, title, description, fallback, optional, defaultOff }) => ({ id, name, title, description, fallback, optional: Boolean(optional), defaultOff: Boolean(defaultOff), locked: LOCKED_ROLES.includes(id) }));
 
 /** Only the active roles' subagent definitions go to `claude --agents`. */
 export function activeAgents(all, enabled) {
@@ -153,7 +161,21 @@ const OPTIONAL_FLOWS = {
   data: '- Data/AI work: data designs the pipeline, analysis or model integration; dba owns the schema, backend serves it, qa verifies.',
   support: '- A user-reported problem or incident: support triages it and reproduces it from logs first, then hands the owning developer a clear report.',
   reviewer: '- Before code work is reported done: reviewer reviews the diff (architect stays on design decisions).',
+  compliance: '- Personal data touched (collected, stored, shared, logged, retained or deleted): compliance reviews it against UU PDP / GDPR alongside security before release; privacy policy and consent changes go to compliance.',
 };
+
+/**
+ * How every agent (the Lead and each subagent) runs commands so a turn never hangs: an agent that waits on a
+ * condition that never comes sits "loading" in the office until the tool timeout, burning time and tokens.
+ */
+export const COMMAND_RULES = [
+  'Running commands (never leave the team stuck):',
+  '- Every wait has a deadline: no unbounded `until ...; do sleep`, `while true` or `tail -f`; use `timeout <s>` or a bounded loop, and make the exit condition cover failure and process exit too, not only a success marker.',
+  '- For a background command, wait for its completion notice and then read its whole output; never poll for one specific line (a filter, crash or format change can make it never appear).',
+  '- Run long tests/builds with an explicit timeout; if a command shows no new output for several minutes, stop it and investigate instead of waiting.',
+  '- Avoid anything that can wait for input: use non-interactive flags (e.g. GIT_TERMINAL_PROMPT=0, --yes, CI=1) and never open an editor or pager.',
+  "- Give every shell command a short `description` in the user's language saying what you are doing (e.g. \"Menjalankan test checkout\"): the office shows it instead of the raw command.",
+].join('\n');
 
 /**
  * The Lead's system prompt (`--append-system-prompt`): the roles of THIS team and how work flows between them.
@@ -174,5 +196,6 @@ export function teamPrompt(enabled, agentNames = enabled) {
     ...flows,
     ...(missing ? ['Only the roles listed above are on this team: when a flow names a role that is not listed, give that step to the closest listed role or do it yourself.'] : []),
     "Run independent pieces in parallel when they do not touch the same files. Reply in the user's language.",
+    COMMAND_RULES,
   ].join('\n');
 }

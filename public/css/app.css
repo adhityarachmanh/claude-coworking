@@ -1288,6 +1288,13 @@ body.read-only #composer-hint { color: var(--ask); }
   .tpl-opt { padding: 10px; }
 }
 
+/* ---------- ⚠ stuck detector: a chip under a running row that has gone quiet (features/stuck.js) ---------- */
+.line > .stuck-chip { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 2px 0 4px 18px; padding: 4px 8px; min-width: 0; font-family: var(--font); font-size: var(--fs-sm); color: var(--warn-text-strong); background: var(--warn-soft); border: 1px solid var(--warn-line); border-radius: var(--r-sm); white-space: normal; }
+.line.delegate > .stuck-chip { margin-left: 0; }
+.stuck-chip .stuck-text { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.stuck-chip .stuck-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.stuck-chip button { padding: 2px 8px; font-size: var(--fs-xs); }
+
 /* ---------- live output of a running Bash/PowerShell row (features/live-output.js) ---------- */
 /* collapsed: the last lines, compact and one line each (no wrap, no sideways scroll) */
 .line .live-tail { margin: 2px 0 4px 18px; padding: 4px 8px; font: var(--fs-xs)/1.45 var(--mono); color: var(--text-2); background: var(--code-bg); border-left: 2px solid var(--work-text); border-radius: 0 var(--r-sm) var(--r-sm) 0; white-space: normal; overflow: hidden; }

@@ -13,6 +13,7 @@ import { fillComposer } from './composer.js';
 import { fileLinkHtml, linkifyPaths } from './file-viewer.js';
 import { afterRowRender, isLiveShell, liveBlock, liveTail, resetLiveOutput, saveLiveScroll } from './live-output.js';
 import { openSessions } from './sessions.js';
+import { stuckChip } from './stuck.js';
 
 // ---------- chat ----------
 
@@ -159,12 +160,14 @@ const STATUS_ICON = { running: '<span class="spinner"></span>', ok: '<span class
 
 export function who(role) {
   const look = CAST[role]?.look ?? CAST.claude.look;
-  return `<img class="ava" src="${avatarURL(look)}" alt=""><b style="color:${roleColor(role)}">${roleName(role)}</b>`;
+  return `<img class="ava" src="${avatarURL(look)}" alt=""><b style="color:${roleColor(role)}">${escapeHtml(roleName(role))}</b>`;
 }
 
 function fillChat(node, msg) {
   // Re-rendering replaces the row: keep keyboard focus on it (toggle via Enter, live status updates).
   const refocusRow = node.contains(document.activeElement) && document.activeElement.classList.contains('row');
+  // A focused button of the stuck chip (features/stuck.js) survives the redraw (e.g. an "elapsed" tick).
+  const refocusAct = node.contains(document.activeElement) ? document.activeElement.dataset?.stuckAct : null;
   const liveTop = saveLiveScroll(node);
   try {
     fillChatBody(node, msg);
@@ -176,6 +179,7 @@ function fillChat(node, msg) {
     node.textContent = String(msg.text ?? '');
   }
   if (refocusRow) node.querySelector(':scope > .row')?.focus({ preventScroll: true });
+  else if (refocusAct) node.querySelector(`:scope > .stuck-chip [data-stuck-act="${CSS.escape(refocusAct)}"]`)?.focus({ preventScroll: true });
 }
 
 function fillChatBody(node, msg) {
@@ -212,13 +216,13 @@ function fillChatBody(node, msg) {
     case 'tool': {
       const open = expanded.has(msg.id);
       node.className = `line tool expandable st-${msg.status} ${open ? 'open' : ''} ${msg.sub ? 'sub' : ''}`;
-      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span><span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s" title="${escapeHtml(roleName(msg.role))}">${escapeHtml(roleName(msg.role))}</span><span class="txt">${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : isLiveShell(msg) ? liveTail(msg) : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span><span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s" title="${escapeHtml(roleName(msg.role))}">${escapeHtml(roleName(msg.role))}</span><span class="txt">${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : isLiveShell(msg) ? liveTail(msg) : ''}`;
       break;
     }
     case 'delegate': {
       const open = expanded.has(msg.id);
       node.className = `line delegate expandable st-${msg.status} ${open ? 'open' : ''}`;
-      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span><img class="ava sm" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${roleName(msg.role)}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span><img class="ava sm" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${escapeHtml(roleName(msg.role))}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
       break;
     }
     case 'thinking': {

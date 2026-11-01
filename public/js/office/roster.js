@@ -5,15 +5,24 @@ import { CAST, ROLE_ORDER } from './cast.js';
 export const LEAD = 'claude';
 /** The team before the catalog existed (12 roles; regression reference). */
 export const CLASSIC_TEAM = Object.freeze(['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer']);
-/** Default team until the server says otherwise, and "↺ Tim bawaan": every catalog role. */
-export const DEFAULT_TEAM = Object.freeze([...CLASSIC_TEAM, 'mobile', 'data', 'support', 'reviewer']);
+/**
+ * Default team until the server says otherwise: every catalog role (17) except opt-in ones marked `defaultOff`
+ * (none today). Mirrors DEFAULT_ENABLED in src/role-catalog.js.
+ */
+export const DEFAULT_TEAM = Object.freeze([...CLASSIC_TEAM, 'mobile', 'data', 'support', 'reviewer', 'compliance']);
 const GENERALIST = 'freelancer';
 // Look of a catalog role whose character is not drawn yet (cast.js has no entry for it): the generalist's.
 const PLACEHOLDER_COLOR = '#8b98a9';
 
-export const roster = { enabled: [...DEFAULT_TEAM], catalog: [], max: 16 };
+export const roster = { enabled: [...DEFAULT_TEAM], catalog: [], max: 17 };
 
 export const isOnTeam = (id) => id === LEAD || roster.enabled.includes(id);
+
+/** "↺ Tim bawaan": from the server's catalog (roles not marked defaultOff, locked ones always), else DEFAULT_TEAM. */
+export function defaultTeam() {
+  if (!roster.catalog.length) return [...DEFAULT_TEAM];
+  return roster.catalog.filter((r) => r.locked || !r.defaultOff).map((r) => r.id);
+}
 
 /** The Lead first, then the active roles in the office's usual order (team strip, rename dialog, confetti…). */
 export const teamOrder = () => [...ROLE_ORDER.filter(isOnTeam), ...roster.enabled.filter((id) => !ROLE_ORDER.includes(id))];

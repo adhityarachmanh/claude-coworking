@@ -39,6 +39,7 @@ before(async () => {
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'), // user-level settings.json (🛡️ Aturan izin), never the real ~/.claude
       OFFICE_OPEN_DRY_RUN: '1', // "open in VS Code / folder" reports the command instead of launching it
+      OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale'), // phone access on: never ask the real Tailscale for a certificate
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -303,7 +304,9 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   assert.equal((await api('/api/remote/pairing')).status, 400, 'no pairing while disabled');
   await assert.rejects(lan('/health'), 'nothing listens on the LAN while disabled');
 
-  assert.equal((await api('/api/remote', { enabled: true })).status, 200);
+  const enabled = await api('/api/remote', { enabled: true });
+  assert.equal(enabled.status, 200);
+  assert.equal(enabled.body.https.state, 'no-tailscale', 'no Tailscale CLI: HTTPS reported unavailable, HTTP unchanged');
   await sleep(300);
   assert.equal((await lan('/')).headers.get('location'), '/pair', 'unpaired device is sent to pairing');
   assert.equal((await lan('/stream')).status, 401);
@@ -506,13 +509,13 @@ test('team names: validated, shared through the config, empty = default', async 
 });
 
 test('👥 Kelola tim: catalog-only team, validated, persisted, and the next Claude process gets only the active roles', async () => {
-  const DEFAULT = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer'];
+  const DEFAULT = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer', 'compliance'];
   const read = await api('/api/team/roster');
   assert.equal(read.status, 200);
-  assert.deepEqual(read.body.enabled, DEFAULT, 'a fresh install has the whole catalog on (16 roles)');
-  assert.equal(read.body.max, 16);
-  assert.equal(read.body.catalog.length, 16);
-  assert.deepEqual(read.body.catalog.slice(-4).map((r) => [r.id, r.optional]), [['mobile', true], ['data', true], ['support', true], ['reviewer', true]]);
+  assert.deepEqual(read.body.enabled, DEFAULT, 'a fresh install has the whole catalog on (17 roles)');
+  assert.equal(read.body.max, 17);
+  assert.equal(read.body.catalog.length, 17);
+  assert.deepEqual(read.body.catalog.slice(-5).map((r) => [r.id, r.optional, r.defaultOff]), [['mobile', true, false], ['data', true, false], ['support', true, false], ['reviewer', true, false], ['compliance', true, false]]);
   assert.ok(read.body.catalog.find((r) => r.id === 'freelancer').locked);
   assert.ok(!read.body.catalog.some((r) => r.id === 'claude'), 'the Lead is not a catalog role');
   assert.deepEqual((await snapshot()).config.team.enabled, DEFAULT, 'the snapshot carries the team too');
@@ -532,22 +535,22 @@ test('👥 Kelola tim: catalog-only team, validated, persisted, and the next Cla
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'tim?' });
   const before = (await nextReply(id, /pid=\d+/)).patch.text;
-  assert.match(before, /agents=architect,ba,backend,data,dba,devops,frontend,mobile,pm,qa,reviewer,security,support,ui-ux,writer /, 'default: all 15 specialists, the four new roles included');
-  assert.match(before, /lead=architect,ba,backend,data,dba,devops,frontend,mobile,pm,qa,reviewer,security,support,ui-ux,writer /);
+  assert.match(before, /agents=architect,ba,backend,compliance,data,dba,devops,frontend,mobile,pm,qa,reviewer,security,support,ui-ux,writer /, 'default: all 16 specialists, the optional roles included');
+  assert.match(before, /lead=architect,ba,backend,compliance,data,dba,devops,frontend,mobile,pm,qa,reviewer,security,support,ui-ux,writer /);
   for (let i = 0; i < 50 && (await snapshot()).statuses[id]?.busy; i++) await sleep(100); // the turn has ended
   const CLASSIC = DEFAULT.slice(0, 12); // the 12 roles from before the catalog
-  const wanted = CLASSIC.filter((r) => r !== 'writer' && r !== 'freelancer').concat('reviewer', 'mobile', 'pm');
+  const wanted = CLASSIC.filter((r) => r !== 'writer' && r !== 'freelancer').concat('reviewer', 'mobile', 'pm', 'compliance');
   mark = seen.length;
   const saved = await api('/api/team/roster/save', { enabled: wanted });
   assert.equal(saved.status, 200);
-  assert.deepEqual(saved.body.enabled, ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'freelancer', 'mobile', 'reviewer'], 'catalog order, duplicates dropped, the freelancer always on');
+  assert.deepEqual(saved.body.enabled, ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'freelancer', 'mobile', 'reviewer', 'compliance'], 'catalog order, duplicates dropped, the freelancer always on');
   assert.equal(saved.body.applied, 'restarted', 'the idle process is closed so the next prompt starts with the new team');
   const config = await waitFor((t, o) => t === 'config' && o.team?.enabled.includes('mobile'));
-  assert.equal(config.team.enabled.length, 13, 'every open page hears about it');
+  assert.equal(config.team.enabled.length, 14, 'every open page hears about it');
   await api(`/api/projects/${id}/prompt`, { text: 'tim?' });
   const after = (await nextReply(id, /pid=\d+/)).patch.text;
-  assert.match(after, /agents=architect,ba,backend,dba,devops,frontend,mobile,pm,qa,reviewer,security,ui-ux /, 'only the active roles go to --agents');
-  assert.match(after, /lead=architect,ba,backend,dba,devops,frontend,mobile,pm,qa,reviewer,security,ui-ux /, 'and the Lead is told about exactly those');
+  assert.match(after, /agents=architect,ba,backend,compliance,dba,devops,frontend,mobile,pm,qa,reviewer,security,ui-ux /, 'only the active roles go to --agents');
+  assert.match(after, /lead=architect,ba,backend,compliance,dba,devops,frontend,mobile,pm,qa,reviewer,security,ui-ux /, 'and the Lead is told about exactly those');
   assert.notEqual(after.match(/pid=(\d+)/)[1], before.match(/pid=(\d+)/)[1], 'a fresh process');
 
   // stored in state.json (debounced save)
@@ -730,7 +733,7 @@ test('task monitor: background tasks in the status, task-detail reads the live s
   assert.equal(first.body.prompt, 'Jalankan tes checkout dan laporkan hasilnya.');
   assert.equal(first.body.steps[0].text, 'Saya mulai dengan membaca kode checkout.');
   assert.ok(first.body.steps.length >= 3, `${first.body.steps.length} steps after ~900 ms`);
-  assert.deepEqual(first.body.steps.slice(1, 3).map((s) => [s.label, s.status]), [['Membaca checkout.ts', 'ok'], ['$ npm test -- checkout', 'error']]);
+  assert.deepEqual(first.body.steps.slice(1, 3).map((s) => [s.label, s.status]), [['Membaca checkout.ts', 'ok'], ['Menjalankan test', 'error']]);
   await sleep(700);
   const second = await api(`/api/projects/${id}/task-detail`, { taskId: agent.id });
   assert.ok(second.body.steps.length > first.body.steps.length, 'live: more steps on the next poll');
