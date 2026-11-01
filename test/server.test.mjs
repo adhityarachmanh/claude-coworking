@@ -28,6 +28,7 @@ before(async () => {
   writeFileSync(path.join(projects, 'toko', 'src', 'checkout.ts'), 'export {};\n');
   mkdirSync(path.join(TMP, 'claude-projects'));
   server = spawn(process.execPath, [path.join(APP, 'server.js')], {
+    windowsHide: true,
     env: {
       ...process.env,
       OFFICE_PORT: String(PORT),

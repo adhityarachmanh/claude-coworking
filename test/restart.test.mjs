@@ -33,6 +33,7 @@ after(async () => {
 /** Starts the server on the shared data dir (same state.json every time) and waits until it answers. */
 async function start() {
   const proc = spawn(process.execPath, [path.join(APP, 'server.js')], {
+    windowsHide: true,
     env: {
       ...process.env,
       OFFICE_PORT: String(PORT),
@@ -212,7 +213,7 @@ test('scripts/restart.mjs: clean shutdown, waits for the port, starts again deta
     CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
   };
   // `--` with nothing after it: no --background (that would log into the app's own data folder).
-  const script = spawn(process.execPath, [path.join(APP, 'scripts', 'restart.mjs'), '--port', String(PORT), '--'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const script = spawn(process.execPath, [path.join(APP, 'scripts', 'restart.mjs'), '--port', String(PORT), '--'], { windowsHide: true, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   script.stdout.on('data', (d) => (out += d));
   script.stderr.on('data', (d) => (out += d));

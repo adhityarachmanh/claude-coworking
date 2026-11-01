@@ -67,7 +67,7 @@ export async function launchBrowser({ executable = findBrowser(), timeoutMs = 15
       ...(process.platform === 'linux' ? ['--no-sandbox', '--disable-dev-shm-usage'] : []),
       'about:blank',
     ],
-    { stdio: ['ignore', 'ignore', 'pipe'] },
+    { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true },
   );
   const cleanupDir = async () => {
     for (let i = 0; i < 10; i++) {

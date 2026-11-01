@@ -214,6 +214,7 @@ describe('server API (laptop only)', () => {
     mkdirSync(path.join(TMP, 'srv', 'claude-projects', 'C--x-toko'), { recursive: true });
     writeFileSync(path.join(TMP, 'srv', 'claude-projects', 'C--x-toko', '11111111-2222-3333-4444-555555555555.jsonl'), '{"cwd":"C:\\\\x\\\\toko"}\n');
     server = spawn(process.execPath, [path.join(APP, 'server.js')], {
+    windowsHide: true,
       env: {
         ...process.env,
         OFFICE_PORT: String(PORT),

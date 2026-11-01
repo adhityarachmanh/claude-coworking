@@ -57,6 +57,7 @@ async function freePort() {
 async function start(m, extraEnv = {}) {
   const port = await freePort();
   const proc = spawn(process.execPath, [path.join(APP, 'server.js')], {
+    windowsHide: true,
     env: {
       ...process.env,
       HOME: m.home,

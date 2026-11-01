@@ -71,6 +71,7 @@ async function snapshot() {
 /** Starts the server on PORT with the throwaway data in TMP (again after stopServer: same data, a new token). */
 async function startServer() {
   server = spawn(process.execPath, [path.join(APP, 'server.js')], {
+    windowsHide: true,
     env: {
       ...process.env,
       OFFICE_PORT: String(PORT),
@@ -1607,7 +1608,7 @@ for (const vp of VIEWPORTS) {
       const shot = async (name) => {
         if (process.env.OFFICE_UI_SHOTS) writeFileSync(path.join(process.env.OFFICE_UI_SHOTS, `${name}-${vp.mobile ? 'mobile' : 'desktop'}.png`), await page.screenshot());
       };
-      const DEFAULT = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer'];
+      const DEFAULT = ['pm', 'ba', 'architect', 'ui-ux', 'frontend', 'backend', 'dba', 'qa', 'security', 'devops', 'writer', 'freelancer', 'mobile', 'data', 'support', 'reviewer'];
       // whatever happens, the next test gets the default team back
       t.after(() => page.eval((enabled) => {
         const token = document.querySelector('meta[name="office-token"]').content;
@@ -1627,7 +1628,7 @@ for (const vp of VIEWPORTS) {
         };
       });
       await page.eval(() => (window.__sameDocument = true)); // gone after a reload
-      assert.deepEqual(await office(), { people: 13, cards: 13, roomH: 288, reviewerY: null, ratio: 0.53, marker: true }, 'tim bawaan: 12 meja + Lead');
+      assert.deepEqual(await office(), { people: 17, cards: 17, roomH: 360, reviewerY: 292, ratio: 0.66, marker: true }, 'tim bawaan: 16 meja + Lead');
 
       // opened from ⋯ (⚙, Ctrl+P and /team are the other ways in)
       await page.click('#btn-more');
@@ -1646,26 +1647,21 @@ for (const vp of VIEWPORTS) {
         focusInside: document.querySelector('#roster-modal').contains(document.activeElement),
         rowsFit: [...document.querySelectorAll('#roster-list .roster-row')].every((r) => r.scrollWidth <= r.clientWidth + 1),
       }));
-      assert.deepEqual(dialog, { count: '12/16 meja', leadLocked: true, freelancer: [true, true], off: ['mobile', 'data', 'support', 'reviewer'], saveDisabled: true, roHidden: true, avatars: true, switches: true, focusInside: true, rowsFit: true });
-      assert.match(await page.eval(() => document.querySelector('#roster-mobile-desc').textContent), /Nonaktif → dikerjakan Adhit - Frontend/, 'fallback tampil');
+      assert.deepEqual(dialog, { count: '16/16 meja', leadLocked: true, freelancer: [true, true], off: [], saveDisabled: true, roHidden: true, avatars: true, switches: true, focusInside: true, rowsFit: true });
       assert.equal(await page.eval(horizontalOverflow), null, 'dialog tanpa scroll horizontal');
       assert.deepEqual(await page.eval(unnamedButtons, '#roster-modal'), []);
 
-      // all four new roles on: 16/16, saved, the office grows a 4th row without a reload
+      // the four optional roles off: 12/16, saved, the office drops the 4th row without a reload
       for (const role of ['mobile', 'data', 'support', 'reviewer']) await page.eval((r) => document.querySelector(`#roster-${r}`).click(), role);
-      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '16/16 meja');
+      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '12/16 meja');
+      assert.match(await page.eval(() => document.querySelector('#roster-mobile-desc').textContent), /Nonaktif → dikerjakan Adhit - Frontend/, 'fallback tampil');
       assert.equal(await page.eval(() => document.querySelector('#roster-save').disabled), false);
       await shot('roster');
       await page.click('#roster-save');
       await page.waitFor(() => document.querySelector('#roster-modal').hidden, { timeoutMs: 4000, message: 'dialog tertutup setelah simpan' });
-      await page.waitFor(() => document.querySelectorAll('#team .member').length === 17, { timeoutMs: 3000, message: 'kartu tim bertambah' });
-      assert.deepEqual(await office(), { people: 17, cards: 17, roomH: 360, reviewerY: 292, ratio: 0.66, marker: true }, '16 meja + Lead, ruangan lebih tinggi, tanpa reload');
-      assert.deepEqual((await snapshot()).config.team.enabled.slice(-4), ['mobile', 'data', 'support', 'reviewer'], 'tersimpan di server');
-      if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
-      await sleep(400);
-      assert.equal(await page.eval(horizontalOverflow), null, 'kantor 16 meja tanpa scroll horizontal');
-      await shot('office-16');
-      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      await page.waitFor(() => document.querySelectorAll('#team .member').length === 13, { timeoutMs: 3000, message: 'kartu tim berkurang' });
+      assert.deepEqual(await office(), { people: 13, cards: 13, roomH: 288, reviewerY: null, ratio: 0.53, marker: true }, '12 meja + Lead, ruangan kembali pendek, tanpa reload');
+      assert.deepEqual((await snapshot()).config.team.enabled.filter((r) => ['mobile', 'data', 'support', 'reviewer'].includes(r)), [], 'tersimpan di server');
 
       // a phone on plain WiFi sees the same dialog, read-only
       await page.eval(async () => {
@@ -1686,16 +1682,21 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(ro, { note: true, save: true, allDisabled: true });
       await page.press('Escape');
 
-      // /team, then ↺ Tim bawaan: back to 12 desks and the original room
+      // /team, then ↺ Tim bawaan: back to 16 desks and the taller room
       await typeInPrompt(page, '/team');
       await page.eval(() => document.querySelector('#btn-send').click());
       await page.waitFor(() => !document.querySelector('#roster-modal').hidden, { timeoutMs: 2000, message: '/team membuka dialog' });
       // (clicked in-page: the "Tim disimpan" toast from the first save may still cover the dialog's bottom edge)
       await page.eval(() => document.querySelector('#roster-default').click());
-      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '12/16 meja');
+      assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '16/16 meja');
       await page.eval(() => document.querySelector('#roster-save').click());
-      await page.waitFor(() => document.querySelectorAll('#team .member').length === 13, { timeoutMs: 4000, message: 'kembali ke 12 meja' });
-      assert.deepEqual(await office(), { people: 13, cards: 13, roomH: 288, reviewerY: null, ratio: 0.53, marker: true });
+      await page.waitFor(() => document.querySelectorAll('#team .member').length === 17, { timeoutMs: 4000, message: 'kembali ke 16 meja' });
+      assert.deepEqual(await office(), { people: 17, cards: 17, roomH: 360, reviewerY: 292, ratio: 0.66, marker: true });
+      if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
+      await sleep(400);
+      assert.equal(await page.eval(horizontalOverflow), null, 'kantor 16 meja tanpa scroll horizontal');
+      await shot('office-16');
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
       assert.deepEqual(realProblems(page), []);
     });
 
