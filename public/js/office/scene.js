@@ -365,6 +365,7 @@ export class Scene {
 
   setStatus(status) {
     this.status = status;
+    this.flagCutShort(status);
     if (status.working || status.cliWorking) {
       // The server's count of open tool calls / running subagents (web session + terminal session) is the truth.
       // It is part of every snapshot, so after a page refresh — where replayed events don't animate — whoever
@@ -388,6 +389,19 @@ export class Scene {
       const p = this.person(role);
       p.agentCount = Math.max(p.agentCount, roles.filter((r) => r === role).length);
     }
+  }
+
+  /**
+   * A turn cut short by a server restart (status `interrupted`): the lead shows the "waiting for you" sign
+   * and says so once, until the user continues or dismisses it ("Lanjutkan" above the composer).
+   */
+  flagCutShort(status) {
+    const lead = this.people.claude;
+    const cut = Boolean(status.interrupted) && !status.busy;
+    if (cut && !this.cutShort) lead.say('Pekerjaanku terputus saat server restart. Klik “Lanjutkan” kalau mau kuteruskan.', 'ask', 9000);
+    if (cut) lead.setIcon('ask', 60 * 60 * 1000);
+    else if (this.cutShort && lead.icon?.name === 'ask') lead.icon = null;
+    this.cutShort = cut;
   }
 
   /** Where someone stands up to raise a hand for an approval. */

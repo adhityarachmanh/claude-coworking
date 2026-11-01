@@ -565,6 +565,13 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .todos-pinned li.st-in_progress span { color: var(--accent-2); }
 .todos-pinned li.st-completed { color: var(--muted); text-decoration: line-through; }
 
+/* A turn cut short by a server restart (features/resume-turn.js) */
+.resume-turn { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; padding: 6px 10px; border: 1px solid var(--warn-line); border-radius: var(--r-md); background: var(--warn-soft); color: var(--warn-text-strong); font-size: var(--fs-sm); }
+.resume-turn[hidden] { display: none; }
+.resume-turn .resume-text { flex: 1 1 240px; min-width: 0; }
+.resume-turn .resume-prompt { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resume-turn .resume-actions { display: flex; gap: 6px; }
+
 .statusline { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; margin-top: 6px; font-size: var(--fs-xs); color: var(--muted); }
 .statusline:empty { display: none; }
 .statusline .sep { opacity: .5; }
@@ -637,6 +644,11 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 /* ---------- chat details ---------- */
 .hidden-msg { display: none; }
 .msg.history { opacity: .78; }
+/* Messages out of view skip layout/paint: a reply streaming at the bottom no longer re-lays out the whole
+   (long) chat on every update (~55 ms → ~2 ms per update with 150 messages). `auto` keeps the last real size. */
+.chat > .msg { content-visibility: auto; contain-intrinsic-size: auto 80px; }
+/* the cursor also shows before the first words arrive (no empty-looking bubble) */
+.msg.assistant.streaming .md:empty::after,
 .msg.assistant.streaming .md > :last-child::after {
   content: '▍';
   color: var(--accent-2);

@@ -3,7 +3,7 @@
 //   CHROME_PATH=/path/to/chrome npm test    # pick the browser explicitly
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -641,6 +641,91 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
     assert.doesNotMatch(shown, /start-office/);
     assert.equal(await bannerText(page), '', 'banner hilang setelah tersambung');
     assert.equal(await page.eval(() => document.querySelector('#btn-send').disabled), true, 'tersambung lagi tidak membuka Kirim di WiFi');
+  });
+});
+
+// ---------- live chat: bubbles stay filled (restart with stored chats, desync, finished-but-empty) ----------
+
+describe('UI chat live', { skip: SKIP ?? false }, () => {
+  let page;
+  const OLD = 120; // all within the 150 messages a snapshot carries, so every old bubble is on the page
+  const api = async (p, body = {}) => {
+    const token = (await (await fetch(BASE)).text()).match(/office-token" content="([^"]+)"/)[1];
+    return fetch(BASE + p, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify(body) }).then((r) => r.json());
+  };
+  const bubbles = () => page.eval(() => [...document.querySelectorAll('#chat .msg.assistant')].map((n) => n.querySelector('.body').textContent));
+
+  before(async () => {
+    if (SKIP) return;
+    // A previous server run left a chat behind (ids m1…m120). The restarted server must not hand out
+    // those ids again: the browser finds a bubble by id, so a reused id paints the new reply onto an old bubble.
+    await stopServer();
+    const file = path.join(TMP, 'data', 'state.json');
+    let saved = {};
+    try {
+      saved = JSON.parse(readFileSync(file, 'utf8'));
+    } catch {
+      // nothing saved yet
+    }
+    const old = Array.from({ length: OLD }, (_, i) => ({ id: `m${i + 1}`, ts: Date.now() - 86400000, project: projectId, kind: 'assistant', text: `jawaban lama ${i + 1}` }));
+    writeFileSync(file, JSON.stringify({ ...saved, chats: { ...saved.chats, [projectId]: old } }));
+    await startServer();
+    page = await browser.newPage();
+    await page.setViewport(VIEWPORTS[1]);
+    await openApp(page, `#${projectId}`);
+  });
+  after(async () => page?.close());
+
+  test('setelah server restart: balasan baru tampil berisi di bubble baru, bubble lama tidak tertimpa', async () => {
+    await api(`/api/projects/${projectId}/prompt`, { text: 'halo setelah restart' });
+    await page.waitFor(() => document.querySelector('#chat .result.ok'), { timeoutMs: 10000, message: 'giliran selesai (baris hasil)' });
+    await sleep(300);
+    const all = await bubbles();
+    assert.deepEqual(await page.eval(() => document.querySelectorAll('#chat .msg.assistant.streaming').length), 0, `masih "mengetik" setelah selesai; 3 bubble terakhir: ${JSON.stringify(all.slice(-3))}`);
+    assert.match(all.at(-1), /Halo dari Claude palsu yang sedang mengetik\./, 'bubble terakhir berisi balasan');
+    assert.equal(all.filter((t) => !t.trim()).length, 0, 'tidak ada bubble kosong');
+    const oldShown = all.filter((t) => /^jawaban lama \d+$/.test(t));
+    assert.deepEqual(oldShown, Array.from({ length: OLD }, (_, i) => `jawaban lama ${i + 1}`), 'bubble lama tetap utuh');
+    // What the page shows equals what a fresh load shows.
+    await openApp(page, `#${projectId}`);
+    assert.deepEqual(await bubbles(), all);
+  });
+
+  test('bubble assistant selesai tapi kosong (atau hanya spasi) tidak ditampilkan', async () => {
+    const shown = await page.eval(async () => {
+      const { appendChat } = await import('/js/features/chat.js');
+      const probe = (msg) => {
+        appendChat({ id: `probe-${Math.random()}`, ts: Date.now(), kind: 'assistant', ...msg }, false);
+        const node = document.querySelector('#chat').lastElementChild;
+        const visible = node.getClientRects().length > 0;
+        node.remove();
+        return visible;
+      };
+      return { empty: probe({ text: '', streaming: false }), blank: probe({ text: '\n\n ', streaming: false }), streaming: probe({ text: '', streaming: true }) };
+    });
+    assert.deepEqual(shown, { empty: false, blank: false, streaming: true });
+  });
+
+  test('update untuk pesan yang tak dikenal klien → sinkron ulang dari server (tidak dibuang)', async () => {
+    // Simulates a missed `chat` event: the newest reply is gone from the page's state and DOM, then an update for it arrives.
+    const r = await page.eval(async () => {
+      const { state } = await import('/js/core/state.js');
+      const { onChatUpdate } = await import('/js/core/stream.js');
+      const list = state.chats[state.active];
+      const lost = list.findLast((m) => m.kind === 'assistant');
+      list.splice(list.indexOf(lost), 1);
+      document.querySelector(`#chat [data-id="${lost.id}"]`)?.remove();
+      onChatUpdate({ project: state.active, id: lost.id, patch: { text: lost.text, streaming: false } });
+      const end = Date.now() + 5000;
+      while (Date.now() < end && !document.querySelector(`#chat [data-id="${lost.id}"]`)) await new Promise((res) => setTimeout(res, 50));
+      const node = document.querySelector(`#chat [data-id="${lost.id}"]`);
+      return { back: Boolean(node), text: node?.textContent ?? '', inState: state.chats[state.active].some((m) => m.id === lost.id) };
+    });
+    assert.equal(r.back, true, 'pesan muncul lagi');
+    assert.match(r.text, /Halo dari Claude palsu/);
+    assert.equal(r.inState, true);
+    await page.waitFor(appReady, { timeoutMs: 5000, message: 'tetap terhubung' });
+    assert.deepEqual(realProblems(page), []);
   });
 });
 

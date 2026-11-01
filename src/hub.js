@@ -16,6 +16,20 @@ export const PERMISSION_MODES = ['manual', 'acceptEdits', 'auto', 'plan', 'dontA
 const MODEL_ALIAS = /^(?:best|opusplan|(?:opus|sonnet|haiku|fable)(?:\[1m\])?)$/;
 const MODEL_ID = /^claude-[\w.:[\]-]{1,76}$/;
 const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+/** Highest counter behind the stored chat ids (`m<seq>`), so a restarted server never hands one out again. */
+function maxStoredSeq(chats) {
+  let max = 0;
+  for (const list of Object.values(isObject(chats) ? chats : {})) {
+    if (!Array.isArray(list)) continue;
+    for (const m of list) {
+      const n = Number(/^m(\d+)$/.exec(m?.id ?? '')?.[1]);
+      if (n > max) max = n;
+    }
+  }
+  return max;
+}
+/** What the browser gets of a cut-short turn (status `interrupted`): enough for the notice and the "Lanjutkan" button. */
+const publicTurn = (t) => (t ? { reason: t.reason, at: t.at, startedAt: t.startedAt, sessionId: t.sessionId, prompt: t.prompt ? t.prompt.slice(0, 300) : null } : null);
 
 export class Hub {
   constructor({ dataDir }) {
@@ -25,13 +39,18 @@ export class Hub {
     this.runtime = new Map();
     this.approvals = new Map(); // id -> { approval, onResolve }
     this.clients = new Set();
-    this.seq = 0;
     this.persisted = this.load();
+    // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
+    // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
+    this.seq = maxStoredSeq(this.persisted.chats);
     this.projects.set(DEMO_ID, { id: DEMO_ID, name: 'Demo kantor', path: null, sources: ['demo'], virtual: true });
   }
 
   load() {
-    const empty = { roots: [], custom: [], favorites: [], settings: {}, sessions: {}, chats: {}, activity: {} };
+    // turns: the turn running right now per project (written when it starts, removed when it ends); one left
+    // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
+    // the user continues or dismisses them (see recoverTurns / interruptTurn).
+    const empty = { roots: [], custom: [], favorites: [], settings: {}, sessions: {}, chats: {}, activity: {}, turns: {}, interrupted: {} };
     try {
       return { ...empty, ...JSON.parse(readFileSync(this.file, 'utf8')) };
     } catch {
@@ -46,7 +65,8 @@ export class Hub {
 
   save() {
     clearTimeout(this.saveTimer);
-    const chats = {};
+    // Projects nobody opened since the start have no runtime yet: their stored chat stays as it was.
+    const chats = { ...this.persisted.chats };
     for (const [id, rt] of this.runtime) if (id !== DEMO_ID && rt.chat.length) chats[id] = rt.chat.slice(-CHAT_LIMIT);
     mkdirSync(this.dataDir, { recursive: true });
     const tmp = `${this.file}.tmp`;
@@ -90,7 +110,7 @@ export class Hub {
     if (!project?.sources.includes('custom')) return false;
     this.persisted.custom = this.persisted.custom.filter((p) => projectId(p) !== id);
     this.persisted.favorites = this.persisted.favorites.filter((f) => f !== id);
-    for (const key of ['settings', 'sessions', 'chats', 'activity']) delete this.persisted[key][id];
+    for (const key of ['settings', 'sessions', 'chats', 'activity', 'turns', 'interrupted']) delete this.persisted[key][id];
     this.runtime.delete(id);
     project.sources = project.sources.filter((s) => s !== 'custom');
     if (!project.sources.length) this.projects.delete(id);
@@ -181,15 +201,101 @@ export class Hub {
   setSessionId(id, sessionId) {
     if (sessionId) this.persisted.sessions[id] = sessionId;
     else delete this.persisted.sessions[id];
-    this.scheduleSave();
+    // A new conversation's id arrives after its first turn started: the running-turn marker follows it.
+    const turn = this.persisted.turns[id];
+    if (turn && sessionId && turn.sessionId !== sessionId) {
+      turn.sessionId = sessionId;
+      this.save();
+    } else this.scheduleSave();
     this.setStatus(id, { sessionId: sessionId ?? null });
+  }
+
+  // ---------- turns cut short by a server stop ----------
+
+  /**
+   * A turn started (or moved on to the next prompt). Written to disk at once: if the server is then killed
+   * (crash, Stop-Process -Force) this marker is what tells the next start that the turn was cut short.
+   * @param {string} id project id
+   * @param {{ sessionId: string|null, prompt: string|null, uuid: string|null }} turn
+   */
+  beginTurn(id, { sessionId, prompt, uuid }) {
+    const prev = this.persisted.turns[id];
+    this.persisted.turns[id] = {
+      sessionId: sessionId ?? null,
+      prompt: prompt == null ? null : String(prompt).slice(0, 2000),
+      uuid: uuid ?? null,
+      startedAt: prev?.startedAt ?? Date.now(),
+    };
+    this.save();
+  }
+
+  /** The turn ended (result, Esc, Claude Code exited): nothing to recover. */
+  endTurn(id) {
+    if (!this.persisted.turns[id]) return;
+    delete this.persisted.turns[id];
+    this.scheduleSave();
+  }
+
+  /**
+   * This project's turn was cut short: kept (on disk at once) until the user continues or dismisses it.
+   * @param {'shutdown'|'crash'|'exit'} reason  server stopped cleanly · server died (found at the next start) ·
+   *   Claude Code itself exited mid-turn
+   * @param {{ announced?: boolean }} options  announced: the chat already says so (no notice at the next start)
+   */
+  interruptTurn(id, reason = 'shutdown', { announced = false } = {}) {
+    const turn = this.persisted.turns[id];
+    if (!turn) return null;
+    delete this.persisted.turns[id];
+    const cut = { ...turn, reason, at: Date.now(), announced };
+    this.persisted.interrupted[id] = cut;
+    this.save();
+    if (this.runtime.has(id)) this.setStatus(id, { interrupted: publicTurn(cut) });
+    return cut;
+  }
+
+  interruptedFor(id) {
+    return this.persisted.interrupted[id] ?? null;
+  }
+
+  /** The user continued, dismissed, or moved on (new prompt, other session): the notice goes away. */
+  clearInterrupted(id) {
+    if (!this.persisted.interrupted[id]) return;
+    delete this.persisted.interrupted[id];
+    this.scheduleSave();
+    if (this.runtime.has(id)) this.setStatus(id, { interrupted: null });
+  }
+
+  /**
+   * At start. A turn still marked as running was cut short without a clean shutdown (crash, forced kill).
+   * Each cut-short turn gets one notice in its chat (once, not again on every restart) and shows in the
+   * status (`interrupted`) until the user continues or dismisses it.
+   * @returns {string[]} ids of the projects with a cut-short turn
+   */
+  recoverTurns() {
+    for (const id of Object.keys(this.persisted.turns)) this.interruptTurn(id, 'crash');
+    const ids = Object.keys(this.persisted.interrupted);
+    for (const id of ids) {
+      const turn = this.persisted.interrupted[id];
+      this.rt(id).status.interrupted = publicTurn(turn);
+      if (turn.announced) continue;
+      turn.announced = true;
+      const what = turn.reason === 'crash' ? 'Server berhenti mendadak (crash / dimatikan paksa)' : 'Server di-restart';
+      this.chat(id, {
+        kind: 'info',
+        level: 'warning',
+        interruptedTurn: true,
+        text: `⚠ ${what} saat Claude sedang bekerja — giliran terputus. Pilih “Lanjutkan” di atas kotak pesan untuk melanjutkan di sesi yang sama.`,
+      });
+    }
+    if (ids.length) this.save();
+    return ids;
   }
 
   // ---------- backup ----------
 
   /** The office state a backup carries: everything persisted except paired-device hashes and the CLI catalog cache. */
   exportState() {
-    const { remote: _remote, catalog: _catalog, ...rest } = this.persisted;
+    const { remote: _remote, catalog: _catalog, turns: _turns, interrupted: _interrupted, ...rest } = this.persisted;
     const chats = {};
     for (const [id, rt] of this.runtime) if (id !== DEMO_ID && rt.chat.length) chats[id] = rt.chat.slice(-CHAT_LIMIT);
     return structuredClone({ ...rest, chats: { ...this.persisted.chats, ...chats } });
@@ -276,7 +382,7 @@ export class Hub {
       rt = {
         events: [],
         chat: this.persisted.chats[id] ?? [],
-        status: { project: id, alive: false, busy: false, cliBusy: false, queue: 0, pending: 0, activeModel: null, activeRoles: [], working: {}, cliWorking: {}, sessionId: this.sessionIdFor(id), ...this.settingsFor(id) },
+        status: { project: id, alive: false, busy: false, cliBusy: false, queue: 0, pending: 0, activeModel: null, activeRoles: [], working: {}, cliWorking: {}, sessionId: this.sessionIdFor(id), interrupted: publicTurn(this.persisted.interrupted[id]), ...this.settingsFor(id) },
       };
       this.runtime.set(id, rt);
     }

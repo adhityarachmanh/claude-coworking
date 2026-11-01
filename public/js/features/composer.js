@@ -8,6 +8,7 @@ import { localCommand } from './commands.js';
 import { connection } from './connection.js';
 import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
 import { recall, recallPrompt } from './history.js';
+import { renderResumeTurn } from './resume-turn.js';
 import { openRewind } from './rewind.js';
 import { confirmNew, renderSessionBar } from './sessions.js';
 import { MODE_CYCLE, renderStatusline, renderTodos } from './statusline.js';
@@ -60,6 +61,7 @@ export function renderComposer() {
   $('#composer-hint').textContent = hint.join('  ·  ');
   $('#typing').hidden = !(st.busy || st.cliBusy || st.compacting);
   $('#typing-text').textContent = st.compacting ? '✻ Memadatkan konteks percakapan…' : st.busy ? 'Tim sedang bekerja…' : 'Claude Code (terminal) sedang bekerja…';
+  renderResumeTurn(st);
   renderTodos(st);
   renderStatusline(st);
   renderSessionBar();

@@ -21,7 +21,13 @@ const SHELL_TIMEOUT_MS = 2 * 60 * 1000;
 const SHELL_OUTPUT = 30000;
 const CONTROL_TIMEOUT_MS = 30_000;
 const CATALOG_TIMEOUT_MS = 60_000;
+// Server stopping mid-turn: how long Claude Code gets to end the turn after the interrupt (it then writes the
+// interruption to its transcript, so `--resume` continues from a clean point) before its process tree is killed.
+export const SHUTDOWN_GRACE_MS = 3000;
+// What "Lanjutkan" sends to the cut-short session (the conversation, tool results included, is in its transcript).
+export const CONTINUE_PROMPT = 'Lanjutkan pekerjaan yang terputus tadi (server Adhit Office sempat di-restart di tengah giliranmu). Periksa dulu kondisi terakhir, lalu teruskan.';
 const UUID = /^[0-9a-f-]{36}$/i;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The app's "manual" is Claude Code's `default` permission mode (the CLI flag accepts both names). */
 const cliMode = (mode) => (mode === 'manual' ? 'default' : mode);
@@ -157,8 +163,18 @@ export class SessionManager {
     return session;
   }
 
-  shutdown() {
-    for (const session of this.sessions.values()) session.kill();
+  /**
+   * The server is stopping. Turns still running are recorded as cut short first (on disk, so even a hard
+   * exit right after keeps the record), then interrupted like Esc so Claude Code closes the turn in its
+   * transcript; whatever has not finished within `graceMs` is killed. Idle processes just get their stdin closed.
+   */
+  async shutdown({ graceMs = SHUTDOWN_GRACE_MS } = {}) {
+    this.stopping = true;
+    const all = [...this.sessions.values()];
+    const running = all.filter((s) => s.child && s.turnActive());
+    for (const s of running) s.beginShutdown();
+    await Promise.all(running.map((s) => s.waitTurnEnd(graceMs)));
+    for (const s of all) s.closeChild();
   }
 }
 
@@ -186,6 +202,7 @@ class ClaudeSession {
 
   /** @param images [{ mediaType, data(base64) }] pasted/dropped in the browser */
   prompt(text, images = []) {
+    this.hub.clearInterrupted(this.id); // the user carries on (or starts over): the cut-short notice is done
     const uuid = randomUUID();
     const chatId = this.hub.chat(this.id, { kind: 'user', text, source: 'web', images: images.length || undefined, queued: this.busy || undefined, uuid });
     if (!this.m.claude) {
@@ -253,6 +270,7 @@ class ClaudeSession {
     this.autoApprove = false;
     this.resumeAt = null;
     this.chainLeaf = null;
+    this.hub.clearInterrupted(this.id);
     this.hub.setSessionId(this.id, sessionId);
     this.hub.setStatus(this.id, { todos: null, context: null, tasks: null, title: null }); // known again after the first turn
     this.hub.chat(this.id, { kind: 'divider', text: `Melanjutkan sesi ${sessionId.slice(0, 8)}` });
@@ -285,6 +303,7 @@ class ClaudeSession {
   reset() {
     this.stop();
     this.closeChild();
+    this.hub.clearInterrupted(this.id);
     this.hub.setSessionId(this.id, null);
     this.hub.setStatus(this.id, { todos: null, context: null, tasks: null, title: null });
     this.shellContext = [];
@@ -292,6 +311,73 @@ class ClaudeSession {
     this.chainLeaf = null;
     this.autoApprove = false;
     this.hub.chat(this.id, { kind: 'divider', text: 'Sesi baru' });
+  }
+
+  // ---------- a turn cut short by a server stop ----------
+
+  /**
+   * "Lanjutkan": continues the cut-short turn in the same Claude Code session (the next start passes
+   * `--resume <its id>`). A turn cut short before Claude Code even reported its session id has nothing to
+   * resume: then its prompt is sent again instead.
+   * @returns {{ ok: true, sessionId: string|null, resent: boolean }}
+   */
+  continueInterrupted() {
+    const turn = this.hub.interruptedFor(this.id);
+    if (!turn) throw Object.assign(new Error('Tidak ada giliran terputus di project ini.'), { status: 404 });
+    if (this.turnActive()) throw Object.assign(new Error('Tim sedang bekerja. Tunggu sampai selesai atau hentikan dulu.'), { status: 409 });
+    if (turn.sessionId && turn.sessionId !== this.hub.sessionIdFor(this.id)) {
+      // Defensive: switching sessions clears the notice, so normally this is already the current one.
+      this.closeChild();
+      this.resumeAt = null;
+      this.chainLeaf = null;
+      this.hub.setSessionId(this.id, turn.sessionId);
+    }
+    const resent = !turn.sessionId && Boolean(turn.prompt);
+    this.prompt(resent ? turn.prompt : CONTINUE_PROMPT); // clears the notice
+    return { ok: true, sessionId: turn.sessionId ?? null, resent };
+  }
+
+  /** A turn is running: one of our prompts, or a turn Claude Code started by itself. */
+  turnActive() {
+    return this.busy || Boolean(this.autoTurn);
+  }
+
+  /** Keeps the on-disk "turn in progress" marker in step with the turn (see Hub.beginTurn). */
+  trackTurn() {
+    if (this.m.stopping) return; // from here on the shutdown owns the marker
+    if (!this.turnActive()) {
+      if (this.marked) this.hub.endTurn(this.id);
+      this.marked = null;
+      return;
+    }
+    // The prompt the turn works on: the newest started one (several can share a turn).
+    let uuid = null;
+    let text = null;
+    for (const [id, item] of this.inflight) if (item.state === 'started') [uuid, text] = [id, item.text];
+    const sessionId = this.hub.sessionIdFor(this.id);
+    if (this.marked?.uuid === uuid && this.marked?.sessionId === sessionId) return;
+    this.marked = { uuid, sessionId };
+    this.hub.beginTurn(this.id, { sessionId, prompt: text, uuid });
+  }
+
+  /** Server stopping mid-turn: record the turn as cut short, then interrupt it like Esc. */
+  beginShutdown() {
+    this.shuttingDown = true;
+    this.hub.interruptTurn(this.id, 'shutdown');
+    // A permission prompt nobody can answer any more. The reason ends up in the transcript, so after "Lanjutkan"
+    // Claude knows it was the restart, not the user, that refused.
+    for (const { approval } of [...this.hub.approvals.values()]) {
+      if (approval.project !== this.id) continue;
+      this.hub.resolveApproval(approval.id, { allow: false, cancelled: true, message: 'Server Adhit Office di-restart sebelum izin ini dijawab. Minta izin lagi bila masih perlu.' });
+    }
+    this.interrupting = true;
+    this.request({ subtype: 'interrupt' }).catch(() => {});
+  }
+
+  /** Resolves once the running turn ended (its result arrived or the process exited), or after `ms`. */
+  async waitTurnEnd(ms) {
+    const deadline = Date.now() + ms;
+    while (this.child && this.turnActive() && Date.now() < deadline) await sleep(50);
   }
 
   /** Settings changed: mode, model and effort switch in the running process, like Shift+Tab, /model and /effort. */
@@ -367,6 +453,7 @@ class ClaudeSession {
     }
     if (conversation) {
       this.closeChild();
+      this.hub.clearInterrupted(this.id); // the conversation moved: a cut-short turn after this point is gone
       if (point.parentUuid) {
         this.resumeAt = point.parentUuid;
         this.chainLeaf = point.parentUuid;
@@ -591,6 +678,9 @@ class ClaudeSession {
   onExit(child, code) {
     if (child !== this.child) return; // closed on purpose
     const wasBusy = this.busy;
+    // Claude Code died mid-turn on its own (not Esc): offer "Lanjutkan" as after a server restart. On a
+    // Windows console Ctrl+C reaches it before the server's own shutdown, so this covers that race too.
+    if (this.turnActive() && !this.interrupting && !this.m.stopping) this.hub.interruptTurn(this.id, 'exit', { announced: true });
     this.detach();
     if (wasBusy) {
       const detail = this.stderr.trim().split('\n').slice(-6).join('\n');
@@ -645,7 +735,7 @@ class ClaudeSession {
     if (msg.type === 'result') this.recordUsage(msg);
     if (msg.type === 'result' && this.interrupting) {
       // The CLI reports an interrupted turn as a normal success; label it for the UI.
-      msg = { ...msg, subtype: 'interrupted', is_error: true, result: 'Dihentikan oleh kamu' };
+      msg = { ...msg, subtype: 'interrupted', is_error: true, result: this.shuttingDown ? 'Server dihentikan — giliran terputus' : 'Dihentikan oleh kamu' };
       this.interrupting = false;
     }
     // A turn Claude Code starts by itself (a background task finished and it reacts to the notification) has no
@@ -831,6 +921,7 @@ class ClaudeSession {
 
   updateStatus() {
     const queue = [...this.inflight.values()].filter((i) => i.state !== 'started').length;
+    this.trackTurn(); // on disk before the browser hears the turn started
     this.hub.setStatus(this.id, { alive: Boolean(this.child), busy: this.busy || Boolean(this.autoTurn), queue, autoApprove: this.autoApprove });
   }
 }

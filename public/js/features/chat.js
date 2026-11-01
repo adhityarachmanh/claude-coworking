@@ -24,8 +24,15 @@ const STARTERS = [
   ['🔍', 'Review perubahan', 'Review perubahan yang belum di-commit: cari bug, risiko keamanan, dan bagian yang bisa dirapikan.'],
 ];
 
+// The row shown for each message id (the newest wins: chats stored before ids were unique across server
+// restarts can hold one id twice, and live updates always belong to the newest), and the message behind each row.
+const rows = new Map();
+const rowMsg = new WeakMap();
+
 export function renderChat() {
   chatEl.innerHTML = '';
+  rows.clear();
+  pendingReplace.clear();
   const messages = state.chats[state.active] ?? [];
   if (!messages.length) {
     chatEl.innerHTML = state.active === DEMO_ID
@@ -69,6 +76,8 @@ export function appendChat(msg, scroll = true) {
   node.dataset.id = msg.id;
   fillChat(node, msg);
   chatEl.append(node);
+  rows.set(msg.id, node);
+  rowMsg.set(node, msg);
   if (msg.kind === 'user') markLatestUser();
   // Your own prompt, anything waiting for your decision, and the first message always come into view.
   const mustSee = msg.kind === 'approval' || (msg.kind === 'user' && msg.source === 'web') || Boolean(welcome);
@@ -76,11 +85,32 @@ export function appendChat(msg, scroll = true) {
 }
 
 export function replaceChat(msg) {
-  const node = chatEl.querySelector(`[data-id="${msg.id}"]`);
-  if (!node) return;
+  pendingReplace.delete(msg.id);
+  const node = rows.get(msg.id);
+  if (!node?.isConnected) {
+    // A message of the open chat without a row (never drawn): draw the chat again rather than drop the update.
+    if (msg.project === state.active && state.chats[state.active]?.includes(msg)) renderChat();
+    return;
+  }
+  rowMsg.set(node, msg);
   fillChat(node, msg);
   if (msg.kind === 'user') markLatestUser();
   scrollChat(msg.kind === 'approval' && msg.status === 'pending');
+}
+
+// Live updates (streamed text every ~80 ms, tool status, …) are drawn once per frame: several updates of one
+// message arriving together (a backlog after a busy moment, a hidden tab) cost one render, not one each.
+const pendingReplace = new Map();
+let replaceFrame = 0;
+
+export function scheduleReplace(msg) {
+  pendingReplace.set(msg.id, msg);
+  replaceFrame ||= requestAnimationFrame(() => {
+    replaceFrame = 0;
+    const batch = [...pendingReplace.values()];
+    pendingReplace.clear();
+    for (const m of batch) if (m.project === state.active) replaceChat(m);
+  });
 }
 
 /** Only the newest prompt offers "Ulangi", so an old one is never re-sent by a stray tap. */
@@ -130,7 +160,14 @@ export function who(role) {
 function fillChat(node, msg) {
   // Re-rendering replaces the row: keep keyboard focus on it (toggle via Enter, live status updates).
   const refocusRow = node.contains(document.activeElement) && document.activeElement.classList.contains('row');
-  fillChatBody(node, msg);
+  try {
+    fillChatBody(node, msg);
+  } catch (err) {
+    // A message that fails to render still shows its text (never an empty bubble).
+    console.error('chat render', msg.kind, err);
+    node.className = `msg ${msg.kind === 'assistant' ? 'assistant' : 'info'}`;
+    node.textContent = String(msg.text ?? '');
+  }
   if (refocusRow) node.querySelector(':scope > .row')?.focus({ preventScroll: true });
 }
 
@@ -154,7 +191,8 @@ function fillChatBody(node, msg) {
       break;
     }
     case 'assistant':
-      if (!msg.text && !msg.streaming) {
+      // A finished reply with no text (only whitespace, or a block that turned out empty) is not shown.
+      if (!String(msg.text ?? '').trim() && !msg.streaming) {
         node.className = 'hidden-msg';
         node.innerHTML = '';
         break;
@@ -240,7 +278,7 @@ export function initChat() {
     if (codeBtn) return flashButton(codeBtn, (await copyText(codeBtn.closest('pre').querySelector('code').textContent)) ? '✓ Tersalin' : 'Gagal');
     const act = e.target.closest('[data-msg-act]');
     if (!act) return;
-    const msg = state.chats[state.active]?.find((m) => m.id === act.closest('[data-id]')?.dataset.id);
+    const msg = rowMsg.get(act.closest('[data-id]')); // the row's own message (ids of old chats may repeat)
     if (!msg) return;
     if (act.dataset.msgAct === 'copy') flashButton(act, (await copyText(msg.text)) ? '✓ Tersalin' : 'Gagal');
     else if (act.dataset.msgAct === 'edit') fillComposer(msg.text);
@@ -254,7 +292,7 @@ export function initChat() {
     const id = node.dataset.id;
     if (expanded.has(id)) expanded.delete(id);
     else expanded.add(id);
-    const msg = state.chats[state.active]?.find((m) => m.id === id);
+    const msg = rowMsg.get(node);
     if (!msg) return;
     // Reading a tool's detail is a deliberate look back: pause following and keep the row in view.
     if (expanded.has(id) && node !== chatEl.lastElementChild) followChat = false;

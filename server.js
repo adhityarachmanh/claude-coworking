@@ -114,6 +114,8 @@ if (process.argv.includes('--background')) {
 // OFFICE_DATA_DIR lets tests run against a throwaway state file.
 const DATA_DIR = process.env.OFFICE_DATA_DIR ?? path.join(APP_DIR, 'data');
 const hub = new Hub({ dataDir: DATA_DIR });
+// Turns the last run left unfinished (stopped mid-turn, cleanly or not): a notice + "Lanjutkan" in their chat.
+const cutShort = hub.recoverTurns();
 // Leftovers of an import cut short by a crash or shutdown (uploaded .zip files): only this app writes there.
 rmSync(path.join(DATA_DIR, 'tmp'), { recursive: true, force: true });
 const claude = findClaude();
@@ -493,7 +495,7 @@ async function handleApi(req, res, pathname, device = null) {
   }
 
   const action = pathname.match(
-    /^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|changes|diff|commit|favorite|open|shell|rewind-points|rewind-preview|rewind|mcp|mcp-action|task-output|task-stop|background|rename)$/,
+    /^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|continue|changes|diff|commit|favorite|open|shell|rewind-points|rewind-preview|rewind|mcp|mcp-action|task-output|task-stop|background|rename)$/,
   );
   const project = action && hub.projects.get(action[1]);
   if (!project || project.id === DEMO_ID) return json(res, 404, { error: 'project not found' });
@@ -530,6 +532,19 @@ async function handleApi(req, res, pathname, device = null) {
       if (!known) return json(res, 404, { error: 'Sesi tidak ditemukan' });
       session.resume(sessionId, sessionHistory(project.path, sessionId));
       return json(res, 200, { ok: true });
+    }
+    case 'continue': {
+      // A turn cut short by a server restart: continue it in the same session, or just drop the notice.
+      if (body.dismiss === true) {
+        hub.clearInterrupted(project.id);
+        return json(res, 200, { ok: true });
+      }
+      try {
+        return json(res, 200, session.continueInterrupted());
+      } catch (err) {
+        if (err.status) return json(res, err.status, { error: err.message });
+        throw err;
+      }
     }
     case 'forget':
       session.reset();
@@ -822,7 +837,8 @@ async function handler(req, res) {
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, device);
     if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' });
     if (pathname === '/stream') return openStream(req, res, local, device, device ? cookies(req)[DEVICE_COOKIE] : null);
-    if (pathname === '/health') return json(res, 200, { ok: true, claude: Boolean(claude) });
+    // pid: for scripts/restart.mjs on this laptop (its fallback when a clean shutdown hangs).
+    if (pathname === '/health') return json(res, 200, { ok: true, claude: Boolean(claude), ...(local ? { pid: process.pid } : {}) });
     if (pathname === '/pair' && searchParams.size === 0) return servePairPage(res);
     return await serveStatic(pathname, res, req);
   } catch (err) {
@@ -892,6 +908,7 @@ server.listen(PORT, HOST, () => {
   console.log(`Folder projects: ${projectRoots().join('; ')}  ·  Role agents: ${Object.keys(agents).join(', ') || '-'}`);
   console.log(mirroring ? 'Mirror CLI: aktif (membaca ~/.claude/projects)' : 'Mirror CLI: nonaktif (~/.claude/projects tidak ada)');
   console.log('Tekan Ctrl+C untuk berhenti.');
+  if (cutShort.length) console.log(`Giliran terputus saat server berhenti: ${cutShort.length} project (tombol "Lanjutkan" di chat).`);
   syncLanServers();
   sessions.probeCatalog(); // what /model offers and the slash commands' descriptions (no model call)
   if (process.argv.includes('--open')) {
@@ -900,9 +917,29 @@ server.listen(PORT, HOST, () => {
   }
 });
 
-function shutdown() {
+// Clean stop (Ctrl+C, SIGTERM, ⚙ → Matikan server, scripts/restart.mjs): running turns are recorded as cut short
+// and interrupted so Claude Code closes them in its transcript (see SessionManager.shutdown), then the process ends.
+// A second Ctrl+C, or a shutdown that hangs, ends it at once; the turn records are already on disk by then.
+const SHUTDOWN_HARD_LIMIT_MS = 10_000;
+let stopping = false;
+async function shutdown() {
+  if (stopping) {
+    hub.save();
+    process.exit(1);
+  }
+  stopping = true;
+  setTimeout(() => {
+    hub.save();
+    process.exit(1);
+  }, SHUTDOWN_HARD_LIMIT_MS).unref();
+  server.close(); // no new connections; open event streams end with the process
+  for (const { server: lan } of lanServers.values()) lan.close();
   mirror.stop();
-  sessions.shutdown();
+  try {
+    await sessions.shutdown();
+  } catch (err) {
+    console.error('Shutdown:', err?.stack ?? err);
+  }
   hub.save();
   process.exit(0);
 }

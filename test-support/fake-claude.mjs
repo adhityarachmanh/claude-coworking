@@ -5,6 +5,7 @@
 //   contains "izin"  → asks permission for a Write (control_request can_use_tool), then reports allow/deny
 //   contains "lama"  → streams slowly so the test can interrupt it
 //   "status?"        → replies with the live mode/model/effort, its pid and its launch flags
+//   contains "Lanjutkan" → replies with the session it runs in and the --resume it was started with
 //   anything else    → streams a short text reply
 // Control requests (initialize, set_permission_mode, set_model, apply_flag_settings, rewind_files,
 // mcp_status, …) answer like the real CLI; every prompt reports command_lifecycle events.
@@ -141,6 +142,10 @@ async function handlePrompt(text) {
     }
     send({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: decision.behavior === 'allow' ? 'Plan approved' : decision.message, is_error: decision.behavior !== 'allow' }] } });
     await streamText(decision.behavior === 'allow' ? 'Rencana disetujui.' : 'Rencana direvisi.');
+    return result();
+  }
+  if (/Lanjutkan/.test(text)) {
+    await streamText(`lanjut session=${sessionId} resume=${flag('--resume') ?? '-'}`, 5);
     return result();
   }
   if (/status\?/.test(text)) {

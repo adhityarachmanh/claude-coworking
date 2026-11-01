@@ -23,6 +23,7 @@ import { initNotify } from './features/notify.js';
 import { initPhone } from './features/phone.js';
 import { initPicker } from './features/picker.js';
 import { initReport } from './features/report.js';
+import { initResumeTurn } from './features/resume-turn.js';
 import { initRewind } from './features/rewind.js';
 import { initSessions } from './features/sessions.js';
 import { initSettings } from './features/settings.js';
@@ -64,6 +65,7 @@ initTabs();
 initRewind();
 initMcp();
 initTasks();
+initResumeTurn(); // the "turn cut short by a server restart" banner, drawn by renderComposer
 initPanelResizer();
 
 // ---------- main loop ----------

@@ -60,6 +60,54 @@ test('streamed text grows one bubble, then the final block replaces it', async (
   assert.equal(chat()[0].streaming, false);
 });
 
+const start = (id) => ({ type: 'stream_event', parent_tool_use_id: null, event: { type: 'message_start', message: { id } } });
+const thinkDelta = (t) => ({ type: 'stream_event', parent_tool_use_id: null, event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: t } } });
+const assistants = (chat) => chat().filter((m) => m.kind === 'assistant');
+
+test('the block orders Claude Code really sends end in one finished bubble each, never an empty one', async () => {
+  // Per-message block orders seen in real transcripts: thinking,text,tool_use · text,tool_use · two text blocks.
+  const { translator, chat } = recorder();
+  translator.handle(start('a'));
+  translator.handle(thinkDelta('hmm'));
+  translator.handle({ type: 'assistant', parent_tool_use_id: null, message: { id: 'a', content: [{ type: 'thinking', thinking: 'hmm' }] } });
+  translator.handle(delta('Saya cek '));
+  await sleep(100);
+  translator.handle(delta('dulu.'));
+  translator.handle(text('a', 'Saya cek dulu.'));
+  translator.handle({ ...use('t1', 'Read', { file_path: 'a.js' }), message: { id: 'a', content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'a.js' } }] } });
+  translator.handle(done('t1', 'isi'));
+  translator.handle(start('b'));
+  translator.handle(delta('Satu'));
+  translator.handle(text('b', 'Satu'));
+  translator.handle(delta('Dua'));
+  await sleep(100);
+  translator.handle(text('b', 'Dua'));
+  translator.handle({ type: 'result', subtype: 'success' });
+  assert.deepEqual(assistants(chat).map((m) => [m.text, m.streaming]), [['Saya cek dulu.', false], ['Satu\n\nDua', false]]);
+});
+
+test('a whitespace-only text block closes as an empty (hidden) bubble, not a blank one', async () => {
+  const { translator, chat } = recorder();
+  translator.handle(start('a'));
+  translator.handle(delta('\n\n'));
+  await sleep(100);
+  translator.handle(text('a', '\n\n')); // skipped as "no text", the streamed whitespace stays
+  translator.handle(use('t1', 'Read', { file_path: 'a.js' }));
+  translator.handle({ type: 'result', subtype: 'success' });
+  assert.deepEqual(assistants(chat).map((m) => [m.text, m.streaming]), [['', false]]);
+});
+
+test('a streamed message whose final block never came is closed when the next message starts', async () => {
+  const { translator, chat } = recorder();
+  translator.handle(start('a'));
+  translator.handle(delta('Sebagian'));
+  translator.handle(start('b')); // e.g. the stream of `a` was cut off; flush pending text, stop its cursor
+  translator.handle(delta('Lengkap'));
+  translator.handle(text('b', 'Lengkap'));
+  translator.handle({ type: 'result', subtype: 'success' });
+  assert.deepEqual(assistants(chat).map((m) => [m.text, m.streaming]), [['Sebagian', false], ['Lengkap', false]]);
+});
+
 test('tools carry input detail and output; failures are flagged', () => {
   const { translator, office, chat } = recorder();
   translator.handle(use('t1', 'Edit', { file_path: 'src/a.ts', old_string: 'x', new_string: 'y' }));

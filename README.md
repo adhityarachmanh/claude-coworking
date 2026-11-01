@@ -173,6 +173,23 @@ npm run open    # http://localhost:4317
 
 Tutup jendela server (atau tekan Ctrl+C) untuk berhenti. Semua proses Claude Code ikut ditutup.
 
+### Restart server (mis. saat mengembangkan app ini)
+
+```bash
+node scripts/restart.mjs            # port lain: --port 4400 (atau env OFFICE_PORT)
+```
+
+Skrip ini meminta server berhenti dengan rapi (`POST /api/shutdown`, hanya dari laptop), menunggu port bebas, lalu menjalankan `node server.js --background` ter-detach (log di `data/server.log`) dan menunggu `/health`. Argumen lain untuk `server.js` bisa ditaruh setelah `--` (mis. `node scripts/restart.mjs -- --open`; tanpa `--background`, output server tidak tersimpan).
+
+Pakai ini, bukan `Stop-Process -Force`. Proses Claude Code adalah child process server (prompt & jawaban lewat pipe stdin/stdout), jadi **giliran yang sedang berjalan selalu terputus saat server berhenti**. Bedanya:
+
+| Cara berhenti | Yang terjadi pada giliran yang sedang berjalan |
+|---|---|
+| `scripts/restart.mjs`, Ctrl+C, ⚙ → **⏻ Matikan server**, SIGTERM | Dicatat sebagai terputus, lalu di-interrupt seperti Esc (maks 3 dtk) supaya Claude Code menutup giliran di transcript-nya, baru prosesnya dimatikan |
+| `Stop-Process -Force`, crash, laptop mati | Penanda "giliran berjalan" (ditulis ke `data/state.json` saat giliran mulai) ditemukan saat start berikutnya. Bagian jawaban yang belum selesai ditulis bisa hilang |
+
+Setelah server hidup lagi, chat project itu menampilkan *"Server di-restart saat Claude sedang bekerja — giliran terputus"*, dan di atas kotak pesan ada tombol **▶ Lanjutkan** (mengirim "Lanjutkan pekerjaan yang terputus tadi…" ke sesi yang sama lewat `--resume`) dan **Tutup**. Tidak ada yang dikirim otomatis, karena melanjutkan memakai token. Di kantor, Lead memasang tanda menunggu (✋). Mengirim prompt lain, memulai sesi baru, atau membuka sesi lain juga menutup pemberitahuan itu.
+
 **Nyala otomatis saat Windows login:** buka **⚙** di header, lalu centang *Nyalakan otomatis saat Windows login*. Server berjalan tanpa jendela (log di `data/server.log`), jadi kamu cukup membuka `http://localhost:4317`. Untuk mematikannya, pakai tombol **⏻ Matikan server** di panel yang sama. Mencentang ini membuat file `claude-coworking.vbs` di folder Startup Windows, dan menghapus centang akan menghapus file itu.
 
 ## Cara pakai

@@ -2,7 +2,7 @@
 import { onAccountAlert, onAccountState, renderAccountButton } from '../features/account.js';
 import { appendActivity } from '../features/activity.js';
 import { scheduleChanges } from '../features/changes.js';
-import { appendChat, replaceChat } from '../features/chat.js';
+import { appendChat, replaceChat, scheduleReplace } from '../features/chat.js';
 import { renderComposer } from '../features/composer.js';
 import { retryDelay, streamLost, streamOpened } from '../features/connection.js';
 import { notify } from '../features/notify.js';
@@ -17,16 +17,19 @@ import { $ } from './dom.js';
 import { scenes } from './scenes.js';
 import { DEMO_ID, projectName, state } from './state.js';
 
+let source = null;
+
 export function connect() {
-  const source = new EventSource('/stream');
+  source = new EventSource('/stream');
+  const self = source;
   source.addEventListener('open', streamOpened);
   source.addEventListener('error', () => {
     streamLost();
     // A network error is retried by the browser itself (readyState CONNECTING). A refused stream (an HTTP error
     // instead of the event stream) is not: it stays CLOSED for good, so open a new one after a pause.
-    if (source.readyState === EventSource.CLOSED) setTimeout(connect, retryDelay());
+    if (self === source && self.readyState === EventSource.CLOSED) setTimeout(connect, retryDelay());
   });
-  const on = (type, fn) => source.addEventListener(type, (msg) => fn(JSON.parse(msg.data)));
+  const on = (type, fn) => self.addEventListener(type, (msg) => fn(JSON.parse(msg.data)));
 
   on('config', (config) => {
     renderRoots(config);
@@ -96,12 +99,7 @@ export function connect() {
     }
     renderSidebar();
   });
-  on('chat_update', ({ project, id, patch }) => {
-    const msg = state.chats[project]?.findLast((m) => m.id === id);
-    if (!msg) return;
-    Object.assign(msg, patch);
-    if (project === state.active) replaceChat(msg);
-  });
+  on('chat_update', onChatUpdate);
   on('approval', (approval) => {
     if (approval.status === 'pending' && !state.approvals.has(approval.id)) {
       notify('ask', `✋ ${roleName(approval.role)} minta izin — ${projectName(approval.project)}`, approval.label, approval.project);
@@ -114,4 +112,31 @@ export function connect() {
     updateTitle();
     renderSidebar();
   });
+}
+
+// Server ids count up (`m<n>`): an unknown id newer than the oldest message this page holds falls inside the
+// window the page should have, so the page missed it; an older one simply fell out of the snapshot window.
+const idNumber = (id) => Number(/^m(\d+)$/.exec(id ?? '')?.[1] ?? 0);
+const RESYNC_GAP_MS = 5000;
+let lastResync = 0;
+
+/** A live change to a chat message; one this page never received is fetched again instead of dropped. */
+export function onChatUpdate({ project, id, patch }) {
+  const list = state.chats[project] ?? [];
+  const msg = list.findLast((m) => m.id === id);
+  if (msg) {
+    Object.assign(msg, patch);
+    if (project === state.active) scheduleReplace(msg);
+    return;
+  }
+  const oldest = list.length ? Math.min(...list.map((m) => idNumber(m.id))) : 0;
+  if (idNumber(id) > oldest) resync();
+}
+
+/** Reopens the event stream: its snapshot carries every message as the server has it now. */
+function resync() {
+  if (Date.now() - lastResync < RESYNC_GAP_MS) return;
+  lastResync = Date.now();
+  source?.close();
+  connect();
 }

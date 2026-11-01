@@ -370,6 +370,9 @@ export class StreamTranslator {
     const e = msg.event ?? {};
     if (e.type === 'message_start') {
       this.streamMessageId = e.message?.id ?? null;
+      // The previous message's final block never came (stream cut off): settle its bubble with what was
+      // streamed, before the throttled flush would write that text into the next message's bubble instead.
+      if (this.lastAssistant && this.lastAssistant.messageId !== this.streamMessageId && this.lastAssistant.live) this.closeBubble();
     } else if (e.type === 'content_block_delta' && e.delta?.type === 'thinking_delta' && e.delta.thinking) {
       this.streamThinking(e.delta.thinking);
     } else if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') {
@@ -451,8 +454,10 @@ export class StreamTranslator {
     clearTimeout(this.flushTimer);
     this.flushTimer = null;
     const b = this.lastAssistant;
-    if (b?.live) this.sink.updateChat(b.chatId, { text: this.bubbleText(b), streaming: false });
-    else if (b && !b.done) this.sink.updateChat(b.chatId, { text: '', streaming: false });
+    // Whitespace-only streamed text (a block the final message drops as empty) closes as an empty bubble,
+    // which the browser hides, instead of a blank one.
+    const text = this.bubbleText(b ?? {});
+    if (b && (b.live || !b.done)) this.sink.updateChat(b.chatId, { text: text.trim() ? text : '', streaming: false });
     this.lastAssistant = null;
   }
 

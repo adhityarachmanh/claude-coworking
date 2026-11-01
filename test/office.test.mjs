@@ -172,3 +172,13 @@ test('costume painters: every role × view × pose × arms paints inside the 20�
     }
   });
 });
+
+test('a turn cut short by a server restart: the lead shows the waiting sign until it is continued', () => {
+  const scene = at(0, () => new Scene());
+  const lead = scene.people.claude;
+  at(1_000, () => scene.setStatus({ busy: false, interrupted: { reason: 'shutdown', sessionId: 's1' } }));
+  assert.equal(lead.icon?.name, 'ask');
+  assert.match(lead.bubble?.text ?? '', /terputus/);
+  at(2_000, () => scene.setStatus({ busy: true, interrupted: null }));
+  assert.equal(lead.icon, null, 'sign gone once the turn continues');
+});
