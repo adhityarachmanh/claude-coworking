@@ -52,6 +52,13 @@ export function notify(kind, title, body, projectId) {
   }
 }
 
+/** An app-wide notice (not tied to a project), e.g. a quota warning: chime + notification, only when 🔔 is on. */
+export function notifyNotice(title, body, tag) {
+  if (!notifyState.on) return;
+  chime('ask');
+  if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body, tag });
+}
+
 export function initNotify() {
   $('#btn-notify').addEventListener('click', async () => {
     if (!notifyState.on && 'Notification' in window && Notification.permission === 'default') await Notification.requestPermission();

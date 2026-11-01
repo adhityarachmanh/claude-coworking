@@ -47,6 +47,17 @@ export function parseUsageText(text) {
   return windows;
 }
 
+const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/** What a browser shows of the rate-limit state: a change here is worth a broadcast, anything else is not. */
+function rateLimitSignature(rl) {
+  if (!rl) return '';
+  const windows = Object.entries(rl.windows ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, w]) => [k, w.status, w.utilization == null ? null : Math.round(w.utilization * 100), w.resetsAt]);
+  return JSON.stringify(windows);
+}
+
 export class AccountService {
   constructor({ claude, onChange }) {
     this.claude = claude;
@@ -138,9 +149,29 @@ export class AccountService {
     return this.limits;
   }
 
-  /** Called by sessions on every rate_limit_event (structured 5-hour / 7-day utilization). */
+  /**
+   * Called by sessions on every rate_limit_event (structured 5-hour / 7-day utilization). Each event reports one
+   * window (`rateLimitType`), so they are kept per window in `windows` ({ five_hour: { status, utilization,
+   * resetsAt, at } }). Browsers are told only when something they show changed (status, whole percent, reset):
+   * these events come free with every turn, the quota warnings are built from them instead of re-running `/usage`.
+   */
   noteRateLimit(info) {
-    this.rateLimit = { ...info, at: Date.now() };
+    if (!info || typeof info !== 'object') return;
+    const now = Date.now();
+    const prev = this.rateLimit;
+    const windows = { ...(prev?.windows ?? {}) };
+    const put = (key, w) => {
+      if (!key || !w || typeof w !== 'object') return;
+      const old = windows[key];
+      const resetsAt = finite(w.resetsAt) ?? finite(info.resetsAt);
+      // An event without utilization (plain "allowed") keeps the number already known for the same period.
+      const samePeriod = old && (resetsAt == null || old.resetsAt === resetsAt);
+      windows[key] = { status: w.status ?? info.status ?? null, utilization: finite(w.utilization) ?? (samePeriod ? old.utilization : null), resetsAt: resetsAt ?? (samePeriod ? old.resetsAt : null), at: now };
+    };
+    put(info.rateLimitType, info);
+    for (const [key, w] of Object.entries(info.unifiedWindows ?? {})) put(key, w);
+    this.rateLimit = { ...info, windows, at: now };
+    if (rateLimitSignature(prev) !== rateLimitSignature(this.rateLimit)) this.emit();
   }
 
   // ---------- login / logout ----------

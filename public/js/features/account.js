@@ -5,6 +5,7 @@ import { fmtShort } from '../core/format.js';
 import { state } from '../core/state.js';
 import { closeModal, focusablesIn, openModal } from '../ui/modals.js';
 import { chime } from './notify.js';
+import { checkQuota } from './quota.js';
 import { openReport } from './report.js';
 
 const LOGIN_TEXT = {
@@ -29,6 +30,7 @@ export function renderAccountButton() {
   $('#account-avatar').textContent = p?.loggedIn ? accountInitial(p) : '!';
   $('#account-label').textContent = p ? (p.loggedIn ? p.email : 'Belum login') : 'Akun';
   btn.title = p?.loggedIn ? `${p.email}${p.orgName ? ` · ${p.orgName}` : ''} — profil, kuota & login` : 'Belum login ke Claude — klik untuk login';
+  checkQuota(); // after every account change (snapshot, live rate-limit events): warnings + top-bar indicator
 }
 
 /** Quota bars: `/usage` text when fetched, else the structured rate-limit info from a running session. */
@@ -41,7 +43,7 @@ const quotaLabel = (label) =>
 function quotaRows() {
   const limits = state.account?.limits;
   if (limits?.windows?.length) return limits.windows.map((w) => ({ ...w, label: quotaLabel(w.label) }));
-  const win = state.account?.rateLimit?.unifiedWindows ?? {};
+  const win = state.account?.rateLimit?.windows ?? state.account?.rateLimit?.unifiedWindows ?? {};
   const label = { five_hour: 'Sesi 5 jam', seven_day: 'Minggu ini' };
   return Object.entries(win)
     .filter(([, w]) => w?.utilization != null)
@@ -167,6 +169,7 @@ async function loadAccount(force = false) {
     account.loading = true;
     renderAccount();
     state.account.limits = await api('/api/account/limits', { force });
+    checkQuota(); // a fresh `/usage` (fetched for this dialog anyway) may cross a threshold
   } catch (err) {
     toast(err.message);
   } finally {
@@ -220,6 +223,7 @@ export function initAccount() {
         account.loading = true;
         renderAccount();
         state.account.limits = await api('/api/account/limits', { force: true });
+        checkQuota();
         account.loading = false;
         renderAccount();
       } else if (act === 'report') {

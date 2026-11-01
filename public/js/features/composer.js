@@ -14,6 +14,7 @@ import { confirmNew, renderSessionBar } from './sessions.js';
 import { MODE_CYCLE, renderStatusline, renderTodos } from './statusline.js';
 import { applySuggest, closeSuggest, renderSuggest, searchHistory, suggest } from './suggest.js';
 import { backgroundRunning, renderTaskChip, renderTasks, tasksView } from './tasks.js';
+import { placeholders, tabToPlaceholder } from './templates.js';
 
 // A shorter hint fits a phone-width composer on one line.
 const applyPlaceholder = () => {
@@ -72,7 +73,7 @@ export function renderComposer() {
 }
 
 // Controls that change something: disabled (with the reason as tooltip) for a phone on plain WiFi.
-const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-attach', '#btn-stop', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
+const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-attach', '#btn-template','#btn-stop', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
 
 function applyReadOnly() {
   if (!state.readOnly) return; // fixed per connection: a laptop / Tailscale page never needs undoing
@@ -133,6 +134,7 @@ async function sendPrompt() {
   // Offline the request could only fail: say so and keep everything as it is (text, images, draft).
   if (!connection.online) return toast(`${OFFLINE_HINT}.`);
   const project = state.active;
+  placeholders.active = false; // a template's {placeholders} are done with once the text goes out
   flushDraft(); // the stored draft stays until the server has accepted the prompt (draftSent)
   if (!attachments.length && (localCommand(text) || text.startsWith('!'))) {
     input.value = '';
@@ -213,6 +215,11 @@ export function initComposerControls() {
         closeSuggest();
         return;
       }
+    }
+    // After a template: Tab selects its next {placeholder}; with none left, Tab moves focus as usual.
+    if (e.key === 'Tab' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && tabToPlaceholder(e.target)) {
+      e.preventDefault();
+      return;
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();

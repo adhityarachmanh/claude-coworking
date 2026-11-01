@@ -16,12 +16,15 @@ import { initChanges } from './features/changes.js';
 import { initChat } from './features/chat.js';
 import { initComposerControls, initComposerInput } from './features/composer.js';
 import { initDraft } from './features/draft.js';
+import { initFileViewer } from './features/file-viewer.js';
 import { initPromptHistory } from './features/history.js';
+import { initLiveOutput } from './features/live-output.js';
 import { initMcp } from './features/mcp.js';
 import { initMoreMenu } from './features/more-menu.js';
 import { initNotify } from './features/notify.js';
 import { initPhone } from './features/phone.js';
 import { initPicker } from './features/picker.js';
+import { initQuota } from './features/quota.js';
 import { initReport } from './features/report.js';
 import { initResumeTurn } from './features/resume-turn.js';
 import { initRewind } from './features/rewind.js';
@@ -31,6 +34,7 @@ import { initStatusline } from './features/statusline.js';
 import { initSuggest } from './features/suggest.js';
 import { initTasks } from './features/tasks.js';
 import { initTeam, renderTeam } from './features/team.js';
+import { initTemplates } from './features/templates.js';
 import { initTheme } from './features/theme.js';
 import { initMobileNav, initPanelResizer, initTabs } from './ui/layout.js';
 import { initModals } from './ui/modals.js';
@@ -43,7 +47,9 @@ initPicker();
 initShortcuts();
 initMobileNav();
 initComposerInput();
+initLiveOutput(); // before initChat / the first render: rows register with its observer as they are drawn
 initChat();
+initFileViewer();
 initTeam();
 initStatusline();
 initAttachments();
@@ -54,6 +60,7 @@ initSettings();
 initTheme(); // before the first frame: the saved theme is drawn right away
 initBackup(); // after initSettings: its #btn-settings listener runs after the dialog's own
 initNotify();
+initQuota(); // after initSettings: refreshes its ⚙ fields when the dialog opens
 initChanges();
 initPhone();
 initAccount();
@@ -61,6 +68,7 @@ initReport();
 initPromptHistory();
 initDraft();
 initComposerControls();
+initTemplates(); // ⚡ Template picker (also opened by /t from the composer)
 initTabs();
 initRewind();
 initMcp();

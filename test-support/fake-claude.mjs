@@ -9,6 +9,10 @@
 //   contains "tugas latar" → starts a background subagent (qa) and a background shell; the subagent's transcript
 //                      is written under CLAUDE_PROJECTS_DIR and grows a step every 300 ms until it is stopped
 //   contains "selesaikan latar" → the background subagent hands its report back and its task completes
+//   contains "perintah panjang" → a foreground Bash command (task_started, not backgrounded) whose output grows a
+//                      line every 300 ms for ~5 s (readable live with get_task_output), then its tool_result
+//   contains "sebut file" → a Read of src/checkout.ts (absolute path, offset 2), then a reply naming project files
+//                      (`src/checkout.ts:2`, src/app.js:3, a URL and a missing file) for the file viewer's links
 //   anything else    → streams a short text reply
 // Control requests (initialize, set_permission_mode, set_model, apply_flag_settings, rewind_files,
 // mcp_status, …) answer like the real CLI; every prompt reports command_lifecycle events.
@@ -85,7 +89,9 @@ function control(req) {
     case 'mcp_oauth_callback_url':
       return {};
     case 'get_task_output':
-      return bg.shell && req.task_id === bg.shell.id ? { output: bg.shell.output } : { output: 'server jalan di :3000\n' };
+      if (bg.shell && req.task_id === bg.shell.id) return { output: bg.shell.output };
+      if (fg.has(req.task_id)) return { output: fg.get(req.task_id).output };
+      return { output: 'server jalan di :3000\n' };
     case 'cancel_async_message':
       return { cancelled: waiting.delete(req.message_uuid) };
     default:
@@ -96,6 +102,26 @@ function control(req) {
 // ---------- background tasks ("tugas latar") ----------
 
 const bg = { agent: null, shell: null };
+const fg = new Map(); // foreground shell task id -> { output }
+
+/** A long foreground command: its output can be read live while the tool call is still open. */
+async function longCommand() {
+  const toolUseId = `toolu_${randomUUID()}`;
+  const taskId = `f${randomUUID().slice(0, 8)}`;
+  const command = 'npm run build -- --verbose';
+  send({ type: 'assistant', parent_tool_use_id: null, message: { id: `msg_${randomUUID()}`, content: [{ type: 'tool_use', id: toolUseId, name: 'Bash', input: { command, description: 'Build lengkap' } }] } });
+  send({ type: 'system', subtype: 'task_started', task_id: taskId, tool_use_id: toolUseId, description: 'Build lengkap', is_backgrounded: false, session_id: sessionId });
+  const task = { output: '> build\n' };
+  fg.set(taskId, task);
+  for (let i = 1; i <= 16 && !interrupted; i++) {
+    await sleep(300);
+    task.output += `[${String(i).padStart(2, '0')}/16] compile modul-${i}.js ok\n`;
+    send({ type: 'tool_progress', tool_use_id: toolUseId, tool_name: 'Bash', elapsed_time_seconds: Math.floor((i * 300) / 1000), session_id: sessionId });
+  }
+  task.output += 'Build selesai.\n';
+  send({ type: 'system', subtype: 'task_notification', task_id: taskId, tool_use_id: toolUseId, status: 'completed', session_id: sessionId });
+  send({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: task.output }] } });
+}
 
 function agentLine(file, type, content) {
   appendFileSync(file, `${JSON.stringify({ type, isSidechain: true, agentId: bg.agent.id, sessionId, timestamp: new Date().toISOString(), uuid: randomUUID(), message: { role: type, content } })}\n`);
@@ -220,6 +246,18 @@ async function handlePrompt(text) {
   if (/tugas latar/i.test(text)) {
     startBackground();
     await streamText('Agent QA dan dev server berjalan di latar belakang.', 5);
+    return result();
+  }
+  if (/sebut file/i.test(text)) {
+    const toolUseId = `toolu_${randomUUID()}`;
+    send({ type: 'assistant', parent_tool_use_id: null, message: { id: `msg_${randomUUID()}`, content: [{ type: 'tool_use', id: toolUseId, name: 'Read', input: { file_path: path.join(process.cwd(), 'src', 'checkout.ts'), offset: 2, limit: 10 } }] } });
+    send({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: '1\texport {};' }] } });
+    await streamText('Cek `src/checkout.ts:2` dan juga src/app.js:3 lalu https://example.com/a/b.js serta src/hilang.ts untuk detail.', 5);
+    return result();
+  }
+  if (/perintah panjang/i.test(text)) {
+    await longCommand();
+    await streamText('Build selesai.', 5);
     return result();
   }
   if (/selesaikan latar/i.test(text)) {

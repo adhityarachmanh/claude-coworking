@@ -1215,3 +1215,107 @@ body.read-only #composer-hint { color: var(--ask); }
 .backup-result ul { margin: 4px 0 0; padding-left: 18px; }
 .backup-result summary { cursor: pointer; margin-top: 4px; }
 .backup-result .warn { color: var(--warn-text); }
+
+/* ---------- ⚡ Template prompt (features/templates.js) ---------- */
+.modal-card.templates-card { max-width: 640px; height: min(680px, calc(100vh - 32px)); display: flex; flex-direction: column; }
+.tpl-pick, .tpl-form { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.tpl-pick .sessions-tools { margin-bottom: 0; }
+.tpl-list { flex: 1; min-height: 120px; overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
+.tpl-opt { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; margin-bottom: 4px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); cursor: pointer; }
+.tpl-opt:hover { border-color: var(--border-strong); }
+.tpl-opt.active { background: var(--accent-tint); border-color: var(--accent-line); }
+.tpl-opt b { font-size: var(--fs-md); font-weight: 600; overflow-wrap: anywhere; }
+.tpl-opt small { color: var(--muted); font-size: var(--fs-sm); line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-opt.active small { color: var(--accent-meta); }
+.tpl-empty { margin: 2px 2px 8px; }
+.tpl-preview { flex: none; max-height: 140px; overflow-y: auto; padding: 8px 10px; font: var(--fs-sm)/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--r-md); }
+.tpl-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.tpl-actions button { font-size: var(--fs-md); }
+.tpl-keys { margin: 0; }
+.tpl-form-title { font-size: var(--fs-base); }
+.tpl-form label { font-size: var(--fs-md); }
+.tpl-form textarea { flex: 1; min-height: 140px; resize: vertical; font: var(--fs-md)/1.45 var(--mono); }
+.tpl-count { align-self: flex-end; margin-top: -4px; }
+.field-error { margin: 0; color: var(--err-text); font-size: var(--fs-sm); }
+.field-error:empty { display: none; }
+[aria-invalid='true'] { border-color: var(--err); }
+
+/* ---------- quota warning: top-bar indicator + ⚙ thresholds (features/quota.js) ---------- */
+.quota-pill { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 3px 10px; border-radius: var(--r-pill); font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; }
+.quota-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.quota-pill.warn { background: var(--warn-soft); border-color: var(--warn-line); color: var(--warn-text-strong); }
+.quota-pill.crit { background: var(--err-soft); border-color: var(--err-line); color: var(--err-text-strong); }
+.quota-pill.warn:hover:not(:disabled) { background: var(--warn-soft); border-color: var(--ask); }
+.quota-pill.crit:hover:not(:disabled) { background: var(--err-soft); border-color: var(--err); }
+.quota-alerts { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.quota-alerts p { margin: 0; }
+.quota-thresholds { display: grid; grid-template-columns: auto auto; align-items: center; gap: 6px 10px; }
+.quota-thresholds label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-md); }
+.quota-num { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.quota-num input { width: 72px; }
+.quota-swatch { width: 10px; height: 10px; border-radius: 50%; }
+.quota-swatch.warn { background: var(--ask); }
+.quota-swatch.crit { background: var(--err); }
+@media (max-width: 760px) {
+  .modal-card.templates-card { height: 92dvh; }
+  .tpl-actions button { flex: 1 1 auto; }
+  .tpl-actions .grow { display: none; }
+  .tpl-form input, .tpl-form textarea, .quota-num input, #tpl-search { font-size: var(--fs-input-touch); }
+  .quota-pill { padding: 3px 8px; }
+}
+@media (pointer: coarse) {
+  .quota-pill { min-height: 36px; }
+  .tpl-opt { padding: 10px; }
+}
+
+/* ---------- live output of a running Bash/PowerShell row (features/live-output.js) ---------- */
+/* collapsed: the last lines, compact and one line each (no wrap, no sideways scroll) */
+.line .live-tail { margin: 2px 0 4px 18px; padding: 4px 8px; font: var(--fs-xs)/1.45 var(--mono); color: var(--text-2); background: var(--code-bg); border-left: 2px solid var(--work-text); border-radius: 0 var(--r-sm) var(--r-sm) 0; white-space: normal; overflow: hidden; }
+.line .live-tail span { display: block; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+/* expanded: the whole output (last 8 KB), following the newest line */
+.line .detail pre.live-out { max-height: 280px; color: var(--text-2); }
+.line .detail .label .spinner { width: 9px; height: 9px; vertical-align: -1px; margin-left: 4px; }
+.out-note { margin: 4px 0 0; }
+
+/* ---------- 📄 file viewer (features/file-viewer.js) ---------- */
+.file-link { display: inline; padding: 0; margin: 0; border: 0; background: none; color: var(--accent-2); font: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; overflow-wrap: anywhere; min-height: 0; }
+.file-link:hover:not(:disabled) { color: var(--accent); background: none; text-decoration-style: solid; }
+.file-link code { color: inherit; }
+.line .detail .kv .file-link code { color: inherit; }
+.modal-card.file-card { max-width: 1000px; height: min(820px, calc(100vh - 32px)); display: flex; flex-direction: column; overflow: hidden; }
+.file-card .modal-head { gap: 8px; margin-bottom: 2px; }
+.fv-title { flex: 1; min-width: 0; font-size: var(--fs-lg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fv-dir { font: 400 var(--fs-sm) var(--mono); color: var(--muted); }
+.fv-name { font-family: var(--mono); }
+.fv-meta { margin: 0 0 8px; }
+.fv-meta:empty { display: none; }
+.fv-tools { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+.fv-tools > button { font-size: var(--fs-sm); padding: 5px 10px; }
+.fv-search { flex: 1 1 260px; min-width: 0; display: flex; align-items: center; gap: 4px; }
+.fv-search input { flex: 1; min-width: 0; font-size: var(--fs-sm); padding: 5px 8px; }
+.fv-search button { width: 30px; height: 30px; padding: 0; flex: none; }
+.fv-search span { flex: none; min-width: 3ch; text-align: right; }
+.fv-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fv-state { margin: 8px 0; }
+.fv-note { flex: none; margin: 0 0 6px; font-size: var(--fs-sm); color: var(--text-2); }
+.fv-note.warn { color: var(--warn-text); }
+.fv-secret { padding: 12px 14px; border: 1px solid var(--warn-line); border-radius: var(--r-md); background: var(--warn-soft); color: var(--warn-text-strong); }
+.fv-secret p { margin: 0 0 6px; }
+.fv-secret button { margin-top: 4px; }
+/* the code: its own scroll box in both directions, long lines scroll sideways (never the page); numbers stay put */
+.fv-code { position: relative; flex: 1; min-height: 0; overflow: auto; background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--r-md); font: var(--fs-sm)/1.55 var(--mono); padding: 4px 0; overscroll-behavior: contain; }
+.fv-l { display: flex; min-width: max-content; }
+.fv-n { position: sticky; left: 0; flex: none; width: calc(var(--ln, 3ch) + 18px); padding: 0 8px 0 6px; text-align: right; color: var(--muted); background: var(--code-bg); border-right: 1px solid var(--border); user-select: none; }
+.fv-t { display: block; padding: 0 12px 0 10px; white-space: pre; tab-size: 4; color: var(--text); background: none; font: inherit; }
+.fv-l.hit { background: var(--wash-1); }
+.fv-l.cur, .fv-l.target { background: var(--accent-soft); }
+.fv-l.cur .fv-n, .fv-l.target .fv-n { color: var(--accent-2); background: var(--accent-tint); }
+.fv-t mark { background: var(--warn-line); color: var(--warn-text-strong); border-radius: 2px; }
+.fv-l.cur mark { background: var(--ask); color: var(--on-ask); }
+.ch-head { flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .modal-card.file-card { height: 92dvh; }
+  .fv-search input { font-size: var(--fs-input-touch); }
+  .fv-tools > button { padding: 6px 9px; }
+  .fv-code { font-size: var(--fs-xs); }
+}

@@ -10,6 +10,8 @@ import { avatarURL } from '../office/sprites.js';
 import { openModal } from '../ui/modals.js';
 import { fillApproval } from './approvals.js';
 import { fillComposer } from './composer.js';
+import { fileLinkHtml, linkifyPaths } from './file-viewer.js';
+import { afterRowRender, isLiveShell, liveBlock, liveTail, resetLiveOutput, saveLiveScroll } from './live-output.js';
 import { openSessions } from './sessions.js';
 
 // ---------- chat ----------
@@ -32,6 +34,7 @@ const rowMsg = new WeakMap();
 export function renderChat() {
   chatEl.innerHTML = '';
   rows.clear();
+  resetLiveOutput();
   pendingReplace.clear();
   const messages = state.chats[state.active] ?? [];
   if (!messages.length) {
@@ -131,7 +134,8 @@ function diffBlock(oldText, newText) {
 function toolDetail(msg) {
   const input = msg.input ?? {};
   const parts = [];
-  if (input.file) parts.push(`<div class="kv"><span>file</span><code>${escapeHtml(input.file)}</code>${input.range ? ` <small>${escapeHtml(input.range)}</small>` : ''}</div>`);
+  // The path opens the file viewer (at the line read, for a Read with an offset).
+  if (input.file) parts.push(`<div class="kv"><span>file</span>${fileLinkHtml(input.file, `<code>${escapeHtml(input.file)}</code>`, { line: input.line })}${input.range ? ` <small>${escapeHtml(input.range)}</small>` : ''}</div>`);
   if (input.command) parts.push(`<pre class="cmd">$ ${escapeHtml(input.command)}</pre>${input.description ? `<div class="muted">${escapeHtml(input.description)}</div>` : ''}`);
   if (input.old != null || input.new != null) parts.push(diffBlock(input.old, input.new));
   if (input.edits) for (const edit of input.edits) parts.push(diffBlock(edit.old, edit.new));
@@ -146,7 +150,8 @@ function toolDetail(msg) {
     parts.push(msg.kind === 'delegate'
       ? `<div class="label">Laporan ${escapeHtml(roleName(msg.role))}</div><div class="md sub">${renderMarkdown(msg.output)}</div>`
       : `<div class="label">${msg.status === 'fail' ? 'Error' : 'Output'}</div><pre class="out ${msg.status === 'fail' ? 'fail' : ''}">${escapeHtml(msg.output)}</pre>`);
-  } else if (msg.status === 'running') parts.push('<div class="muted">Sedang berjalan…</div>');
+  } else if (isLiveShell(msg)) parts.push(liveBlock(msg));
+  else if (msg.status === 'running') parts.push('<div class="muted">Sedang berjalan…</div>');
   return parts.join('') || '<div class="muted">Tidak ada detail.</div>';
 }
 
@@ -160,8 +165,10 @@ export function who(role) {
 function fillChat(node, msg) {
   // Re-rendering replaces the row: keep keyboard focus on it (toggle via Enter, live status updates).
   const refocusRow = node.contains(document.activeElement) && document.activeElement.classList.contains('row');
+  const liveTop = saveLiveScroll(node);
   try {
     fillChatBody(node, msg);
+    if (msg.kind === 'tool') afterRowRender(node, msg, liveTop);
   } catch (err) {
     // A message that fails to render still shows its text (never an empty bubble).
     console.error('chat render', msg.kind, err);
@@ -199,11 +206,13 @@ function fillChatBody(node, msg) {
       }
       node.className = `msg assistant ${msg.streaming ? 'streaming' : ''} ${msg.history ? 'history' : ''}`;
       node.innerHTML = `<div class="who">${who('claude')}${msg.source === 'cli' ? '<span class="cli-tag">CLI</span>' : ''}${msg.history ? '<span class="tag">riwayat</span>' : ''}<span>${time(msg.ts)}</span>${msg.streaming ? '' : '<button class="msg-copy" data-msg-act="copy" title="Salin jawaban (Markdown)">Salin</button>'}</div><div class="body md">${renderMarkdown(msg.text)}</div>`;
+      // Paths to project files (`src/x.js`, public/js/app.js:120) open the file viewer; not while streaming.
+      if (!msg.streaming) linkifyPaths(node.querySelector('.body'));
       break;
     case 'tool': {
       const open = expanded.has(msg.id);
       node.className = `line tool expandable st-${msg.status} ${open ? 'open' : ''} ${msg.sub ? 'sub' : ''}`;
-      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span><span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s" title="${escapeHtml(roleName(msg.role))}">${escapeHtml(roleName(msg.role))}</span><span class="txt">${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span><span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s" title="${escapeHtml(roleName(msg.role))}">${escapeHtml(roleName(msg.role))}</span><span class="txt">${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${open ? `<div class="detail">${toolDetail(msg)}</div>` : isLiveShell(msg) ? liveTail(msg) : ''}`;
       break;
     }
     case 'delegate': {

@@ -20,6 +20,7 @@ import { AccountService } from './src/account.js';
 import { autostartStatus, setAutostart } from './src/autostart.js';
 import { renderPdf, reportHtml } from './src/report.js';
 import { PERIOD_UNITS, UsageLedger, summarize, totals } from './src/usage.js';
+import { FileViewError, readProjectFile } from './src/file-view.js';
 import { searchFiles } from './src/files.js';
 import { moduleGraph, preloadTags } from './src/modules.js';
 import { gitCommit, gitDiff, gitStatus } from './src/git.js';
@@ -30,6 +31,7 @@ import { listSessions, sessionHistory } from './src/transcripts.js';
 import { taskDetail } from './src/task-detail.js';
 import { ROLE_IDS, loadAgentDefinitions } from './src/roles.js';
 import { SessionManager } from './src/session.js';
+import { TEMPLATE_LIMITS, TemplateError, TemplateStore } from './src/templates.js';
 
 const PORT = Number(process.env.OFFICE_PORT ?? 4317);
 const HOST = '127.0.0.1';
@@ -143,6 +145,8 @@ const remote = new RemoteAccess(hub, {
     publishConfig();
   },
 });
+
+const templates = new TemplateStore(hub);
 
 const projectRoots = () => (hub.persisted.roots.length ? hub.persisted.roots : [DEFAULT_ROOT]);
 
@@ -374,6 +378,22 @@ async function handleApi(req, res, pathname, device = null) {
     setTimeout(shutdown, 300);
     return;
   }
+  // ---------- prompt templates (⚡ Template) ----------
+  // Reading the list is allowed over WiFi (src/remote.js); save/delete are actions, refused there by the gate.
+  if (pathname === '/api/templates') return json(res, 200, { templates: templates.list(), limits: TEMPLATE_LIMITS });
+  if (pathname === '/api/templates/save' || pathname === '/api/templates/delete') {
+    try {
+      if (pathname === '/api/templates/save') {
+        const template = templates.save({ id: body.id, name: body.name, text: body.text });
+        return json(res, 200, { template, templates: templates.list() });
+      }
+      templates.remove(body.id);
+      return json(res, 200, { templates: templates.list() });
+    } catch (err) {
+      if (err instanceof TemplateError) throw new HttpError(400, err.message);
+      throw err;
+    }
+  }
   // ---------- account ----------
   if (pathname === '/api/account') {
     await account.refreshProfile(allowForce(req, body));
@@ -496,7 +516,7 @@ async function handleApi(req, res, pathname, device = null) {
   }
 
   const action = pathname.match(
-    /^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|continue|changes|diff|commit|favorite|open|shell|rewind-points|rewind-preview|rewind|mcp|mcp-action|task-output|task-detail|task-stop|background|rename)$/,
+    /^\/api\/projects\/([\w-]+)\/(prompt|settings|stop|reset|forget|files|sessions|resume|continue|changes|diff|file|commit|favorite|open|shell|rewind-points|rewind-preview|rewind|mcp|mcp-action|task-output|task-detail|task-stop|background|rename)$/,
   );
   const project = action && hub.projects.get(action[1]);
   if (!project || project.id === DEMO_ID) return json(res, 404, { error: 'project not found' });
@@ -521,10 +541,20 @@ async function handleApi(req, res, pathname, device = null) {
       // A file must resolve inside the project: never open arbitrary paths sent by a client.
       const file = body.file ? path.resolve(project.path, String(body.file)) : null;
       if (file && !file.startsWith(path.resolve(project.path) + path.sep)) return json(res, 400, { error: 'File di luar project.' });
-      return json(res, 200, { ok: true, ...openInApp(app, project.path, { file }) });
+      const line = Number.isInteger(body.line) && body.line > 0 && body.line < 1e7 ? body.line : null;
+      return json(res, 200, { ok: true, ...openInApp(app, project.path, { file, line }) });
     }
     case 'files':
       return json(res, 200, { files: searchFiles(project.path, body.q) });
+    case 'file':
+      // 📄 Lihat file: read-only, inside the project only. Likely secrets (.env, keys, credentials) need a click
+      // on the laptop (`reveal`) and are never sent to another device, whatever the connection.
+      try {
+        return json(res, 200, await readProjectFile(project.path, body.path, { allowSecret: isLocal(req), reveal: body.reveal === true }));
+      } catch (err) {
+        if (err instanceof FileViewError) return json(res, err.status, { error: err.message });
+        throw err;
+      }
     case 'sessions':
       return json(res, 200, { sessions: listSessions(project.path), current: hub.sessionIdFor(project.id) });
     case 'resume': {

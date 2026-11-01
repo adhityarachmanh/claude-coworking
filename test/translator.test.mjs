@@ -351,3 +351,30 @@ test('background tasks without tool_use_id still map to the right role', () => {
   translator.handle({ type: 'system', subtype: 'background_tasks_changed', tasks: [] });
   assert.equal(last().qa?.agents ?? 0, 0, 'gone from the live list → finished');
 });
+
+test('a running shell row learns its task id (live output), in either order; other tools and agents do not', () => {
+  const { translator, chat } = recorder();
+  // foreground command: the call first, then its task
+  translator.handle(use('s1', 'Bash', { command: 'npm test' }));
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T1', tool_use_id: 's1', description: 'npm test', is_backgrounded: false });
+  // the task announced before the call
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T2', tool_use_id: 's2', description: 'build', is_backgrounded: false });
+  translator.handle(use('s2', 'PowerShell', { command: 'npm run build' }));
+  // a subagent task never links to a tool row
+  translator.handle(use('a1', 'Agent', { subagent_type: 'qa', description: 'cek', prompt: 'cek' }));
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T3', tool_use_id: 'a1', subagent_type: 'qa', description: 'cek', is_backgrounded: false });
+  // progress for the same task doesn't send the id again
+  translator.handle({ type: 'system', subtype: 'task_progress', task_id: 'T1', tool_use_id: 's1', description: 'npm test' });
+  const rows = chat();
+  assert.equal(rows.find((m) => m.tool === 'Bash').taskId, 'T1');
+  assert.equal(rows.find((m) => m.tool === 'PowerShell').taskId, 'T2');
+  assert.equal(rows.find((m) => m.kind === 'delegate').taskId, undefined);
+  translator.handle(done('s1', 'ok'));
+  assert.equal(rows.find((m) => m.tool === 'Bash').taskId, 'T1', 'kept after the call returns (the final output comes from the result)');
+});
+
+test('Read with an offset carries the line to jump to in the file viewer', () => {
+  const { translator, chat } = recorder();
+  translator.handle(use('r1', 'Read', { file_path: 'src/x.js', offset: 120, limit: 40 }));
+  assert.deepEqual(chat()[0].input, { file: 'src/x.js', range: 'baris 120–160', line: 120 });
+});

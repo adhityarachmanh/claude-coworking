@@ -41,10 +41,10 @@ test('only connections through the Tailscale interface may manage the Claude acc
 });
 
 test('plain WiFi is read-only: only listed read actions pass, everything else is refused by default', () => {
-  const read = ['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', '/api/report/pdf'];
-  for (const a of ['changes', 'diff', 'files', 'sessions', 'rewind-points', 'task-output', 'task-detail']) read.push(`/api/projects/toko-1a2b/${a}`);
+  const read = ['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', '/api/report/pdf', '/api/templates'];
+  for (const a of ['changes', 'diff', 'file', 'files', 'sessions', 'rewind-points', 'task-output', 'task-detail']) read.push(`/api/projects/toko-1a2b/${a}`);
   for (const p of read) assert.ok(wifiAllows(p), p);
-  const act = ['/api/approvals/abc', '/api/team', '/api/demo', '/api/projects', '/api/projects/refresh', '/api/config', '/api/remote', '/api/account/login', '/api/account/logout', '/api/something-new'];
+  const act = ['/api/approvals/abc', '/api/team', '/api/demo', '/api/projects', '/api/projects/refresh', '/api/config', '/api/remote', '/api/account/login', '/api/account/logout', '/api/something-new', '/api/templates/save', '/api/templates/delete'];
   for (const a of ['prompt', 'shell', 'settings', 'commit', 'rewind', 'rewind-preview', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'favorite', 'rename', 'open']) act.push(`/api/projects/toko/${a}`);
   act.push('/api/projects/toko/changes/../prompt', '/api/projects/toko/diffx', '/api/projects/a/b/changes');
   for (const p of act) assert.ok(!wifiAllows(p), p);

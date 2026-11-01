@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -362,9 +362,21 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   assert.ok(readOnlyApi.paths.length && readOnlyApi.patterns.length, 'snapshot carries the read-only allowlist');
   const uiAllows = (p) => readOnlyApi.paths.includes(p) || readOnlyApi.patterns.some((source) => new RegExp(source).test(p));
   assert.equal((await snapshot()).client.readOnly, false, 'the laptop is never read-only');
-  const reads = ['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`, `/api/projects/${id}/task-detail`];
+  const reads = ['/api/account', '/api/account/limits', '/api/templates', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`, `/api/projects/${id}/task-detail`];
   for (const p of reads) assert.notEqual((await phoneApi(p, { taskId: 'x' })).status, 403, `read ${p}`);
   for (const p of reads) assert.ok(uiAllows(p), `UI lets ${p} through`);
+  // the file viewer reads over WiFi too, but never a likely secret (that stays on the laptop's own screen)
+  assert.ok(uiAllows(`/api/projects/${id}/file`));
+  writeFileSync(path.join(TMP, 'projects', 'toko', '.env.local'), 'TOKEN=isi-pribadi-123\n');
+  const viewed = await phoneApi(`/api/projects/${id}/file`, { path: 'src/checkout.ts' });
+  assert.equal(viewed.status, 200);
+  assert.equal((await viewed.json()).content, 'export {};\n');
+  for (const p of ['.env.local', 'src/../.env.local', 'id_rsa', 'certs/server.pem', '.ssh/config']) {
+    const secret = await phoneApi(`/api/projects/${id}/file`, { path: p, reveal: true });
+    assert.ok([403, 404].includes(secret.status), `${p}: ${secret.status}`);
+    assert.doesNotMatch(await secret.text(), /isi-pribadi-123/);
+  }
+  assert.equal((await phoneApi(`/api/projects/${id}/file`, { path: '.env.local', reveal: true })).status, 403);
   // a read-only phone can't make the laptop re-run the Claude CLI: `force` is ignored, the cached answer comes back
   const cachedLimits = await (await phoneApi('/api/account/limits', {})).json();
   assert.ok(cachedLimits.at, 'limits were loaded');
@@ -378,6 +390,8 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     '/api/projects/refresh',
     '/api/account/login/code',
     '/api/account/login/cancel',
+    '/api/templates/save', // the template list is readable, changing it is an action
+    '/api/templates/delete',
     '/api/not-yet-written', // default deny: an endpoint nobody listed is refused too
   ];
   for (const p of actions) {
@@ -484,6 +498,35 @@ test('team names: validated, shared through the config, empty = default', async 
   assert.deepEqual((await snapshot()).config.teamNames, res.body.names);
   await api('/api/team', { names: {} });
   assert.deepEqual((await snapshot()).config.teamNames, {});
+});
+
+test('prompt templates: list, add, update, delete over the API; validated; stored in state.json', async () => {
+  const empty = await api('/api/templates');
+  assert.equal(empty.status, 200);
+  assert.deepEqual(empty.body, { templates: [], limits: { name: 60, text: 8000, count: 50 } });
+  const added = await api('/api/templates/save', { name: 'Review modul', text: 'Review {path file}' });
+  assert.equal(added.status, 200);
+  const id = added.body.template.id;
+  assert.deepEqual(added.body.templates.map((t) => t.name), ['Review modul']);
+  for (const [body, error] of [
+    [{ name: '', text: 'x' }, /Nama template wajib/],
+    [{ name: 'x'.repeat(61), text: 'x' }, /maksimal 60/],
+    [{ name: 'x', text: 'x'.repeat(8001) }, /maksimal 8000/],
+    [{ name: 'review MODUL', text: 'x' }, /Sudah ada/],
+    [{ id: 't_000000000000', name: 'y', text: 'y' }, /tidak ditemukan/],
+  ]) {
+    const res = await api('/api/templates/save', body);
+    assert.equal(res.status, 400, JSON.stringify(body).slice(0, 60));
+    assert.match(res.body.error, error);
+  }
+  const updated = await api('/api/templates/save', { id, name: '<b>Review</b>', text: 'baru' });
+  assert.equal(updated.body.template.name, '<b>Review</b>', 'stored as typed; the UI escapes it');
+  assert.equal((await api('/api/templates')).body.templates[0].text, 'baru');
+  await sleep(50);
+  const saved = JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8'));
+  assert.equal(saved.templates[0].id, id, 'written to state.json right away');
+  assert.deepEqual((await api('/api/templates/delete', { id })).body.templates, []);
+  assert.equal((await api('/api/templates/delete', { id })).status, 400);
 });
 
 test('favorites are stored server-side; "open in VS Code" stays inside the project', async () => {
@@ -649,4 +692,87 @@ test('task monitor: background tasks in the status, task-detail reads the live s
   assert.ok(!done.steps.some((s) => s.tool === 'SubagentHandback'), 'harness plumbing is not a step');
   await api(`/api/projects/${id}/task-stop`, { taskId: shell.id });
   await waitFor((t, o) => t === 'status' && o.project === id && o.tasks?.find((x) => x.id === shell.id)?.status === 'stopped');
+});
+
+// ---------- 📄 file viewer: read-only, inside the project only ----------
+
+test('file viewer: reads text inside the project; truncates, refuses binaries, traversal, UNC, symlinks out; secrets need reveal', async (t) => {
+  const id = await projectId();
+  const root = path.join(TMP, 'projects', 'toko');
+  const outside = path.join(TMP, 'rahasia-luar');
+  mkdirSync(outside, { recursive: true });
+  writeFileSync(path.join(outside, 'kunci.txt'), 'JANGAN TERBACA');
+  writeFileSync(path.join(root, 'src', 'app.js'), '// app\nconst a = 1;\n<script>alert(1)</script>\n');
+  writeFileSync(path.join(root, 'besar.log'), 'x'.repeat(600 * 1024));
+  writeFileSync(path.join(root, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0x0d]));
+  writeFileSync(path.join(root, '.env'), 'API_KEY=rahasia\n');
+  const read = (p, extra = {}) => api(`/api/projects/${id}/file`, { path: p, ...extra });
+
+  const ok = await read('src/app.js');
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.path, 'src/app.js');
+  assert.equal(ok.body.content, '// app\nconst a = 1;\n<script>alert(1)</script>\n', 'raw text: the browser escapes it');
+  assert.equal(ok.body.language, 'js');
+  assert.equal(ok.body.truncated, false);
+  assert.equal(ok.body.secret, false);
+  assert.equal(ok.body.size, ok.body.content.length);
+  assert.ok(ok.body.mtime > 0);
+  // backslashes and an absolute path inside the project are fine (tool rows carry absolute paths)
+  assert.equal((await read(String.raw`src\app.js`)).body.path, 'src/app.js');
+  assert.equal((await read(path.join(root, 'src', 'app.js'))).body.path, 'src/app.js');
+
+  const big = await read('besar.log');
+  assert.equal(big.status, 200);
+  assert.equal(big.body.truncated, true);
+  assert.equal(big.body.content.length, 512 * 1024);
+  assert.equal(big.body.size, 600 * 1024);
+
+  const bin = await read('logo.png');
+  assert.equal(bin.status, 415);
+  assert.match(bin.body.error, /biner/);
+
+  for (const p of ['../rahasia-luar/kunci.txt', '../../../../Windows/win.ini', 'src/../../rahasia-luar/kunci.txt', path.join(outside, 'kunci.txt'), '/etc/passwd']) {
+    const res = await read(p);
+    assert.ok([403, 404].includes(res.status), `${p}: ${res.status}`);
+    assert.doesNotMatch(JSON.stringify(res.body), /JANGAN TERBACA/);
+  }
+  assert.equal((await read('../rahasia-luar/kunci.txt')).status, 403);
+  for (const p of [String.raw`\\server\share\x.txt`, '//server/share/x.txt', String.raw`\\?\C:\Windows\win.ini`, String.raw`\\.\PhysicalDrive0`, String.raw`\??\C:\x`, 'src/app.js:secret', 'NUL', 'src/con.txt', '', 'a\u0000b']) {
+    assert.equal((await read(p)).status, 400, JSON.stringify(p));
+  }
+  assert.equal((await api(`/api/projects/${id}/file`, { path: 42 })).status, 400, 'not a string');
+  assert.equal((await read('src')).status, 400, 'a folder');
+
+  const missing = await read('src/tidak-ada.ts');
+  assert.equal(missing.status, 404);
+  assert.match(missing.body.error, /tidak ditemukan/);
+  assert.doesNotMatch(missing.body.error, /[A-Z]:\|\/tmp\//i, 'no server paths in the message');
+
+  // A junction / symlink inside the project that leads out of it is refused (checked on the real path).
+  let linked = false;
+  try {
+    symlinkSync(outside, path.join(root, 'tautan'), 'junction');
+    linked = true;
+  } catch (err) {
+    t.diagnostic(`junction not possible here: ${err.code}`);
+  }
+  if (linked) {
+    const via = await read('tautan/kunci.txt');
+    assert.equal(via.status, 403);
+    assert.doesNotMatch(JSON.stringify(via.body), /JANGAN TERBACA/);
+  }
+  try {
+    symlinkSync(path.join(outside, 'kunci.txt'), path.join(root, 'tautan-file.txt'), 'file');
+    assert.equal((await read('tautan-file.txt')).status, 403, 'file symlink out');
+  } catch (err) {
+    if (err.code !== 'EPERM') throw err;
+    t.diagnostic('file symlinks need admin / developer mode here: skipped');
+  }
+
+  // Secrets on the laptop: metadata first, the content only with an explicit reveal.
+  const env = await read('.env');
+  assert.equal(env.status, 200);
+  assert.equal(env.body.secret, true);
+  assert.equal(env.body.content, null);
+  assert.equal((await read('.env', { reveal: true })).body.content, 'API_KEY=rahasia\n');
 });

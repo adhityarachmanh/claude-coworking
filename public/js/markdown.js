@@ -9,7 +9,7 @@ const KEYWORDS = new Set(
 const HASH_COMMENT = new Set(['py', 'python', 'sh', 'bash', 'shell', 'ps1', 'powershell', 'yaml', 'yml', 'rb', 'toml', 'dockerfile', 'env']);
 
 /** Tiny tokenizer-based highlighter: comments, strings, numbers, keywords. Output is escaped. */
-function highlight(code, lang) {
+export function highlight(code, lang) {
   const hash = HASH_COMMENT.has(lang);
   const dashComments = lang === 'sql' || lang === 'lua';
   const pattern = new RegExp(

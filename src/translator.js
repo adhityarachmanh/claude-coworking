@@ -31,7 +31,7 @@ function inputDetail(tool, input = {}) {
     case 'Write':
       return { file: input.file_path, content: clip(input.content, 2000) };
     case 'Read':
-      return { file: input.file_path, range: input.offset ? `baris ${input.offset}–${input.offset + (input.limit ?? 2000)}` : undefined };
+      return { file: input.file_path, range: input.offset ? `baris ${input.offset}–${input.offset + (input.limit ?? 2000)}` : undefined, line: input.offset || undefined };
     case 'NotebookEdit':
       return { file: input.notebook_path, content: clip(input.new_source, 2000) };
     case 'Grep':
@@ -289,8 +289,21 @@ export class StreamTranslator {
     }
     this.attachCommand(t);
     this.bgTasks.set(id, t);
+    this.linkShellTask(t);
     this.settleTask(t);
     this.emitBgTasks();
+  }
+
+  /**
+   * A shell task of a Bash/PowerShell call still on screen as a running chat row: the row learns the task id,
+   * so the browser can read its output live (get_task_output) while the command runs.
+   */
+  linkShellTask(t) {
+    if (t.kind !== 'shell' || !t.toolUseId) return;
+    const info = this.tools.get(t.toolUseId);
+    if (!info || info.agent || info.taskId === t.id) return;
+    info.taskId = t.id;
+    this.sink.updateChat(info.chatId, { taskId: t.id });
   }
 
   /** tool_use_id -> role, bounded (only recent calls can still have a task running). */
@@ -513,6 +526,8 @@ export class StreamTranslator {
     this.tools.set(block.id, { name: block.name, input, role, label, screen, chatId });
     this.rememberRole(block.id, role);
     if ((block.name === 'Bash' || block.name === 'PowerShell') && input.command) this.rememberCommand(block.id, input.command);
+    // Its task may have been announced before the call itself (order is not guaranteed).
+    for (const t of this.bgTasks.values()) if (t.toolUseId === block.id) this.linkShellTask(t);
     if (input.run_in_background && this.bgShellRoles.push(role) > 50) this.bgShellRoles.shift();
     this.sink.office({ kind: 'tool_start', role, label, tool: block.name, screen, inferred: !parentRole });
     this.emitWorking();

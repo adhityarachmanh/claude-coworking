@@ -23,6 +23,8 @@
       <div class="brand"><img class="logo" src="/icons/icon.svg" alt="" /><span>Adhit Office</span></div>
       <button id="crumb" class="crumb" title="Ganti project (Ctrl+K)"></button>
       <span class="grow"></span>
+      <!-- Quota warning (features/quota.js): shown only while a plan window is past the yellow/red threshold -->
+      <button id="quota-pill" class="quota-pill" type="button" hidden></button>
       <button id="btn-account" class="account-btn" title="Akun Claude, kuota & login"><span id="account-avatar" class="avatar">?</span><span id="account-label" class="account-label">Akun</span></button>
       <button id="btn-report" class="icon-btn labeled" title="Laporan penggunaan token (PDF)"><span class="ico" aria-hidden="true">📊</span><span class="lbl">Laporan</span></button>
       <button id="btn-phone" class="icon-btn labeled" title="Buka dari HP (scan QR)" hidden><span class="ico" aria-hidden="true">📱</span><span class="lbl">Buka di HP</span></button>
@@ -56,6 +58,7 @@
           <div class="ch-head">
             <span id="ch-branch" class="muted"></span>
             <span class="grow"></span>
+            <button id="ch-view" class="ghost" title="Lihat isi file yang dipilih (di sini, juga di HP)">📄 Lihat file</button>
             <button id="ch-open" class="ghost local-only" title="Buka file yang dipilih (atau project) di VS Code">🧭 VS Code</button>
             <button id="ch-review" class="ghost" title="Minta Tech Lead me-review semua perubahan">🔍 Minta review</button>
             <button id="ch-refresh" class="ghost icon" title="Muat ulang" aria-label="Muat ulang">↻</button>
@@ -132,6 +135,7 @@
           <div class="input">
             <button id="btn-attach" class="ghost icon attach" title="Lampirkan gambar (atau paste / drag ke kotak ini)" aria-label="Lampirkan gambar">📎</button>
             <input id="file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
+            <button id="btn-template" class="ghost icon attach" type="button" title="Template prompt (/t)" aria-label="Template prompt" aria-haspopup="dialog">⚡</button>
             <textarea id="prompt" rows="3" aria-label="Pesan untuk tim" placeholder="Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )"></textarea>
             <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)">■ Stop</button>
             <button id="btn-send" class="primary">Kirim</button>
@@ -191,6 +195,7 @@
               <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Panggil lagi prompt sebelumnya (di kotak pesan)</td></tr>
               <tr><td><kbd>/</kbd></td><td>Slash command &amp; skill, misalnya <code>/compact</code> atau <code>/context</code></td></tr>
               <tr><td><kbd>@</kbd></td><td>Sebut file di project</td></tr>
+              <tr><td><kbd>/t</kbd></td><td>⚡ Template prompt (review, test, perbaiki error, commit…), juga tombol ⚡ di kotak pesan. Bagian <code>{…}</code> langsung terpilih; <kbd>Tab</kbd> ke bagian berikutnya</td></tr>
               <tr><td><kbd>Ctrl</kbd> <kbd>V</kbd></td><td>Tempel gambar atau screenshot</td></tr>
               <tr><td><kbd>!</kbd></td><td>Jalankan perintah shell langsung di folder project, misalnya <code>!git status</code>. Output-nya ikut terkirim ke Claude bersama pesan berikutnya.</td></tr>
               <tr><td><kbd>Shift</kbd> <kbd>Tab</kbd></td><td>Ganti mode izin (Tanya dulu → Auto-edit → Rencana → Auto)</td></tr>
@@ -280,6 +285,25 @@
       </div>
     </div>
 
+    <!-- 📄 File viewer: one text file of the project, read-only (paths in the chat, the Changes tab) -->
+    <div id="file-modal" class="modal" hidden>
+      <div class="modal-card file-card" role="dialog" aria-modal="true" aria-labelledby="fv-title">
+        <div class="modal-head"><b id="fv-title" class="fv-title">📄 Lihat file</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="fv-meta" class="fv-meta muted small"></p>
+        <div class="fv-tools">
+          <div class="fv-search" role="search">
+            <input id="fv-q" type="search" placeholder="Cari di file (Ctrl+F)" aria-label="Cari di file" autocomplete="off" spellcheck="false" />
+            <span id="fv-count" class="muted small" aria-live="polite"></span>
+            <button id="fv-prev" class="ghost icon" type="button" title="Hasil sebelumnya (Shift+Enter)" aria-label="Hasil sebelumnya">↑</button>
+            <button id="fv-next" class="ghost icon" type="button" title="Hasil berikutnya (Enter)" aria-label="Hasil berikutnya">↓</button>
+          </div>
+          <button id="fv-copy" class="ghost" type="button" title="Salin seluruh isi file">📋 Salin</button>
+          <button id="fv-open" class="ghost local-only" type="button" title="Buka file ini di VS Code (di laptop)">🧭 Buka di VS Code</button>
+        </div>
+        <div id="fv-body" class="fv-body"></div>
+      </div>
+    </div>
+
     <!-- Background task monitor (/tasks, Ctrl+B, ⧗ chip): Bash commands and subagents Claude Code runs.
          Desktop: list left, live detail right. Phone: the list, then the detail with a back button. -->
     <div id="tasks-modal" class="modal" hidden>
@@ -305,6 +329,43 @@
       </div>
     </div>
 
+    <!-- ⚡ Prompt templates (features/templates.js): pick one into the composer; the user's own are stored on the server -->
+    <div id="templates-modal" class="modal" hidden>
+      <div class="modal-card templates-card" role="dialog" aria-modal="true" aria-labelledby="tpl-heading">
+        <div class="modal-head"><b id="tpl-heading">⚡ Template prompt</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div id="tpl-pick" class="tpl-pick">
+          <div class="sessions-tools">
+            <input id="tpl-search" type="search" placeholder="Cari template…" aria-label="Cari template" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="tpl-list" aria-autocomplete="list" aria-describedby="tpl-keys" />
+            <button id="tpl-new" type="button" class="ghost">＋ Baru</button>
+          </div>
+          <div id="tpl-list" class="tpl-list" role="listbox" aria-label="Daftar template"></div>
+          <div id="tpl-preview" class="tpl-preview" aria-live="polite" aria-label="Isi template terpilih"></div>
+          <div class="tpl-actions">
+            <button id="tpl-delete" type="button" class="danger" hidden>🗑 Hapus</button>
+            <button id="tpl-edit" type="button" class="ghost" hidden>✎ Ubah</button>
+            <button id="tpl-copy" type="button" class="ghost" hidden>⧉ Jadikan milikku</button>
+            <span class="grow"></span>
+            <button id="tpl-use" type="button" class="primary">Sisipkan</button>
+          </div>
+          <p id="tpl-keys" class="muted small tpl-keys">↑↓ pilih · Enter sisipkan · Esc tutup. Template masuk ke kotak pesan (tidak langsung dikirim); bagian <code>{…}</code> langsung terpilih untuk diisi, Tab ke bagian berikutnya.</p>
+        </div>
+        <form id="tpl-form" class="tpl-form" hidden novalidate>
+          <b id="tpl-form-title" class="tpl-form-title">Template baru</b>
+          <label for="tpl-name">Nama <small id="tpl-name-count" class="muted"></small></label>
+          <input id="tpl-name" maxlength="60" autocomplete="off" aria-describedby="tpl-error" />
+          <label for="tpl-text">Isi <small class="muted">— tulis <code>{placeholder}</code> untuk bagian yang diisi setiap kali</small></label>
+          <textarea id="tpl-text" rows="8" maxlength="8000" spellcheck="false" aria-describedby="tpl-text-count tpl-error"></textarea>
+          <small id="tpl-text-count" class="muted tpl-count"></small>
+          <p id="tpl-error" class="field-error" role="alert"></p>
+          <div class="tpl-actions">
+            <button id="tpl-cancel" type="button" class="ghost">Batal</button>
+            <span class="grow"></span>
+            <button id="tpl-save" class="primary">Simpan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Settings (laptop only) -->
     <div id="settings-modal" class="modal" hidden>
       <div class="modal-card" role="dialog" aria-modal="true" aria-label="Pengaturan">
@@ -323,6 +384,19 @@
             <p id="theme-desc" class="muted">Ganti tampilan kantor pixel dan kostum tim. Disimpan di browser ini.</p>
           </section>
           <button type="button" id="btn-team-names" class="ghost team-names-btn">👥 Ganti nama anggota tim</button>
+          <hr />
+          <section class="quota-alerts" aria-labelledby="quota-title" aria-describedby="quota-desc">
+            <b id="quota-title">⏳ Peringatan kuota</b>
+            <label class="switch"><input id="quota-on" type="checkbox" /> Ingatkan saat kuota Claude hampir habis</label>
+            <div class="quota-thresholds">
+              <label for="quota-warn"><span class="quota-swatch warn" aria-hidden="true"></span>Kuning pada</label>
+              <span class="quota-num"><input id="quota-warn" type="number" min="1" max="99" step="1" inputmode="numeric" aria-describedby="quota-error" /> %</span>
+              <label for="quota-crit"><span class="quota-swatch crit" aria-hidden="true"></span>Merah pada</label>
+              <span class="quota-num"><input id="quota-crit" type="number" min="2" max="100" step="1" inputmode="numeric" aria-describedby="quota-error" /> %</span>
+            </div>
+            <p id="quota-error" class="field-error" role="alert"></p>
+            <p id="quota-desc" class="muted">Per jendela kuota (sesi 5 jam, mingguan): toast dan notifikasi (bila 🔔 aktif) sekali per ambang tiap periode reset, plus penanda berwarna di atas. Dibaca dari sesi yang berjalan, tanpa request tambahan. Disimpan di browser ini.</p>
+          </section>
           <hr />
           <section class="backup" aria-labelledby="backup-title" aria-describedby="backup-desc">
             <b id="backup-title">💾 Cadangkan riwayat</b>

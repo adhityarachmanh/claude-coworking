@@ -63,7 +63,7 @@ Apa yang bisa dilakukan HP tergantung jalurnya:
 
 | Jalur | Akses | Bisa | Tidak bisa |
 |---|---|---|---|
-| 📶 WiFi yang sama (HTTP biasa) | **Hanya lihat** | Melihat kantor, chat, kartu izin, panel perubahan & diff, aktivitas, riwayat sesi, akun & laporan token | Mengirim prompt atau `!` shell, menjawab izin, ganti mode/model/effort, commit, rewind, sesi baru/lanjutkan sesi, stop, MCP, hentikan tugas, favorit, ganti nama tim, login/logout |
+| 📶 WiFi yang sama (HTTP biasa) | **Hanya lihat** | Melihat kantor, chat, kartu izin, panel perubahan & diff, isi file (kecuali file rahasia), aktivitas, riwayat sesi, akun & laporan token | Mengirim prompt atau `!` shell, menjawab izin, ganti mode/model/effort, commit, rewind, sesi baru/lanjutkan sesi, stop, MCP, hentikan tugas, favorit, ganti nama tim, login/logout |
 | 🌐 Tailscale (terenkripsi) | **Penuh** | Semua yang bisa dilakukan di laptop, termasuk login/logout akun Claude (dengan konfirmasi) | Pengaturan laptop (lihat di bawah) |
 
 Lewat WiFi, kotak pesan dan tombol aksi tampil nonaktif dengan keterangan *"Hanya lihat lewat WiFi — pakai Tailscale untuk mengirim perintah"*. Pengaturan sensitif (folder projects, tambah folder project, auto-start, matikan server, akses HP, buka VS Code/folder) hanya bisa diubah dari laptop, apa pun jalurnya.
@@ -213,6 +213,8 @@ Setelah server hidup lagi, chat project itu menampilkan *"Server di-restart saat
 | **✻ Berpikir** | Proses berpikir Claude tampil sebagai baris yang bisa dibuka (kalau modelnya membagikannya). |
 | **🔌 Server MCP** (`/mcp`) | Status semua server MCP, **Sambungkan ulang**, **Aktifkan/Nonaktifkan**, dan **Login** OAuth untuk server yang perlu login. Dari HP, login hanya lewat Tailscale. |
 | **⧗ Tugas latar** (`/tasks`, `Ctrl+B`) | Perintah dan agent yang dijalankan Claude Code (misalnya dev server): status, output terakhir, dan **Hentikan**. `Ctrl+B` memindahkan yang sedang jalan ke latar belakang. |
+| **Output live di chat** | Baris perintah Bash/PowerShell yang sedang berjalan menampilkan beberapa baris output terakhir; dibuka (▸) menampilkan output lengkap (8 KB terakhir) yang terus bertambah. Hanya dibaca selama baris itu terlihat di layar; berhenti saat perintah selesai. |
+| **📄 Lihat file** | Path file di chat (baris Read/Edit/Write, path seperti `src/app.js:120` di jawaban Claude) dan tombol **📄 Lihat file** di tab Perubahan membuka isi file (read-only, hanya di dalam folder project): nomor baris, syntax highlight, `:baris` disorot, cari (`Ctrl+F`), salin, **Buka di VS Code** (laptop). File yang mungkin berisi rahasia (`.env*`, `*.pem`, `id_*`, kredensial) butuh konfirmasi di laptop dan tidak pernah dikirim ke HP. |
 | **`!perintah`** | Jalankan perintah shell langsung di folder project (PowerShell di Windows). Output-nya ikut ke Claude bersama pesan berikutnya, seperti bash mode di CLI. Dari HP hanya lewat Tailscale. |
 | **Bar sesi** | Baris di atas chat yang menunjukkan percakapan Claude Code yang sedang dipakai: judul, asal (web atau lanjutan sesi terminal), dan model. Klik judulnya untuk mengganti nama sesi (sama dengan `/rename`). |
 | **＋ Sesi baru** | Mulai percakapan baru. Claude tidak membawa konteks sebelumnya, tapi percakapan lama tetap ada di riwayat. |

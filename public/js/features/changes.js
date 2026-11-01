@@ -2,6 +2,7 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, state } from '../core/state.js';
+import { openFile } from './file-viewer.js';
 
 // project: whose files the list shows; diffFor: `${project}\n${file}` of the diff on screen (both drive the loading state)
 export const changes = { selected: null, timer: null, data: null, project: null, diffFor: null };
@@ -125,6 +126,8 @@ export function initChanges() {
     loadDiff(li.dataset.path);
   });
   $('#ch-refresh').addEventListener('click', loadChanges);
+  // The selected file's current content (a deleted file says so in the viewer).
+  $('#ch-view').addEventListener('click', () => (changes.selected ? openFile(changes.selected) : toast('Pilih file di daftar perubahan dulu.')));
   $('#ch-open').addEventListener('click', () =>
     api(`/api/projects/${state.active}/open`, { app: 'code', file: changes.selected || undefined })
       .then(() => toast('Membuka VS Code…', 'ok'))

@@ -8,6 +8,7 @@ import { openMcp } from './mcp.js';
 import { openRewind } from './rewind.js';
 import { confirmNew, openSessions } from './sessions.js';
 import { openTasks } from './tasks.js';
+import { openTemplates } from './templates.js';
 
 // Commands this app runs itself: in headless mode Claude Code can't open its terminal dialogs
 // (/resume, /rewind, /mcp, /tasks…), and /clear /model /effort must also move the app's own controls.
@@ -22,6 +23,7 @@ export const LOCAL_COMMANDS = [
   { name: 'tasks', description: 'Tugas latar: perintah & agent yang berjalan, output-nya, hentikan' },
   { name: 'memory', description: 'Buka CLAUDE.md project di VS Code' },
   { name: 'help', description: 'Panduan & shortcut keyboard' },
+  { name: 'template', aliases: ['t'], description: '⚡ Sisipkan template prompt (review, test, perbaiki error, commit…) — /t' },
 ];
 
 /** Returns true when `text` was one of LOCAL_COMMANDS (handled here, not sent to Claude). */
@@ -74,6 +76,10 @@ export function localCommand(text) {
       return true;
     case 'help':
       openModal('help-modal');
+      return true;
+    case 'template':
+    case 't':
+      openTemplates({ start: 0, end: 0 }); // the box is emptied of "/t" right after this
       return true;
     default:
       return false;

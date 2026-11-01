@@ -6,6 +6,7 @@ import { LOCAL_COMMANDS } from './commands.js';
 import { autosize, updateBashMode } from './composer.js';
 import { scheduleDraftSave } from './draft.js';
 import { promptHistory } from './history.js';
+import { openTemplates } from './templates.js';
 
 // ---------- autocomplete: /commands and @files ----------
 
@@ -59,6 +60,16 @@ export function applySuggest(i = suggest.index) {
     updateBashMode();
     return;
   }
+  if (suggest.kind === 'slash' && item.name === 'template') {
+    // /t, /template: the typed command goes away and the picker opens; the template lands where it was.
+    input.value = input.value.slice(0, suggest.start) + input.value.slice(suggest.end);
+    const at = suggest.start;
+    closeSuggest();
+    autosize();
+    scheduleDraftSave();
+    openTemplates({ start: at, end: at });
+    return;
+  }
   const insert = suggest.kind === 'slash' ? `/${item.name} ` : `@${item} `;
   input.value = input.value.slice(0, suggest.start) + insert + input.value.slice(suggest.end);
   const caret = suggest.start + insert.length;
@@ -101,7 +112,9 @@ function updateSuggest() {
     const q = slash[1].toLowerCase();
     const matchName = (c) => c.name.toLowerCase().includes(q) || c.aliases?.some((a) => a.toLowerCase().includes(q));
     const list = slashCatalog().filter(matchName);
-    list.sort((a, b) => Number(!a.name.toLowerCase().startsWith(q)) - Number(!b.name.toLowerCase().startsWith(q)) || a.name.localeCompare(b.name));
+    // An exact name or alias first (/t → /template), then names starting with what is typed.
+    const exact = (c) => c.name.toLowerCase() === q || Boolean(c.aliases?.some((a) => a.toLowerCase() === q));
+    list.sort((a, b) => Number(!exact(a)) - Number(!exact(b)) || Number(!a.name.toLowerCase().startsWith(q)) - Number(!b.name.toLowerCase().startsWith(q)) || a.name.localeCompare(b.name));
     return showSuggest('slash', list.slice(0, 40), 0, caret);
   }
   const at = before.match(/(^|\s)@([^\s@]*)$/);

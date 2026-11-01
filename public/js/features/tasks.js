@@ -6,6 +6,7 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { fmtTokens } from '../core/format.js';
 import { sceneFor } from '../core/scenes.js';
+import { OUTPUT_POLL_MS, fetchTaskOutput, nearBottom, truncatedNote } from '../core/task-output.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { copyText, flashButton } from '../core/util.js';
 import { renderMarkdown } from '../markdown.js';
@@ -13,7 +14,7 @@ import { CAST } from '../office/cast.js';
 import { H, W } from '../office/world.js';
 import { openModal } from '../ui/modals.js';
 
-const POLL_MS = 2000;
+const POLL_MS = OUTPUT_POLL_MS;
 const TASK_STATE = { running: 'berjalan', completed: 'selesai', failed: 'gagal', stopped: 'dihentikan', killed: 'dihentikan', paused: 'dijeda', pending: 'menunggu' };
 
 export const tasksView = {
@@ -124,8 +125,7 @@ async function fetchSelected() {
     if (task.kind === 'agent') {
       tasksView.details.set(task.id, await api(`/api/projects/${project}/task-detail`, { taskId: task.id }));
     } else {
-      const r = await api(`/api/projects/${project}/task-output`, { taskId: task.id });
-      tasksView.outputs.set(task.id, { text: String(r.output ?? ''), truncated: Boolean(r.truncated) });
+      tasksView.outputs.set(task.id, await fetchTaskOutput(project, task.id));
     }
     tasksView.errors.delete(task.id);
   } catch (err) {
@@ -283,7 +283,7 @@ function shellBody(task) {
   return [
     task.command ? `<div class="td-cmd"><span class="muted small">Perintah</span><pre class="td-command">$ ${escapeHtml(task.command)}</pre></div>` : '',
     err ? `<p class="state-error">Gagal memuat output: ${escapeHtml(err)}</p>` : '',
-    out?.truncated ? '<p class="muted small">… hanya 8 KB terakhir yang ditampilkan.</p>' : '',
+    truncatedNote(out),
     out ? `<pre class="task-out td-out">${escapeHtml(out.text || '(belum ada output)')}</pre>` : err ? '' : '<p class="muted small"><span class="spinner" aria-hidden="true"></span> Memuat output…</p>',
   ].join('');
 }
@@ -392,7 +392,7 @@ export function initTasks() {
 
   $('#td-body').addEventListener('scroll', () => {
     const el = $('#td-body');
-    tasksView.stick = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+    tasksView.stick = nearBottom(el);
   });
 
   $('#tasks-background').addEventListener('click', backgroundRunning);

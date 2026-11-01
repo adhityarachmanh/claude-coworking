@@ -17,10 +17,10 @@ export function findVsCode(env = process.env, platform = process.platform) {
 
 /**
  * @param app  'code' (VS Code) or 'folder' (Explorer / Finder / file manager)
- * @param dir  project folder; `file` (absolute, inside dir) is opened in VS Code next to it
+ * @param dir  project folder; `file` (absolute, inside dir) is opened in VS Code next to it, at `line` if given
  * @returns {{ command: string, args: string[] } | null} null when VS Code is not installed
  */
-export function openCommand(app, dir, { file = null, platform = process.platform, env = process.env } = {}) {
+export function openCommand(app, dir, { file = null, line = null, platform = process.platform, env = process.env } = {}) {
   if (app === 'folder') {
     if (platform === 'win32') return { command: 'explorer.exe', args: [dir] };
     if (platform === 'darwin') return { command: 'open', args: [dir] };
@@ -28,7 +28,9 @@ export function openCommand(app, dir, { file = null, platform = process.platform
   }
   const code = findVsCode(env, platform);
   if (!code) return null;
-  return { command: code, args: file ? [dir, file] : [dir] };
+  if (!file) return { command: code, args: [dir] };
+  // `-g file:line` jumps to a line (the file viewer's "Buka di VS Code" at the line being read).
+  return { command: code, args: Number.isInteger(line) && line > 0 ? [dir, '-g', `${file}:${line}`] : [dir, file] };
 }
 
 /** Starts the program detached so it outlives the server; OFFICE_OPEN_DRY_RUN=1 only reports it (tests). */

@@ -23,6 +23,9 @@ test('VS Code: Code.exe found per user, OFFICE_EDITOR wins, missing → null', (
   assert.equal(findVsCode({ LOCALAPPDATA: local }, 'win32'), exe);
   // the project folder plus, optionally, one file inside it — as separate arguments
   assert.deepEqual(openCommand('code', 'C:\\p', { platform: 'win32', env: { LOCALAPPDATA: local }, file: 'C:\\p\\a b.ts' }), { command: exe, args: ['C:\\p', 'C:\\p\\a b.ts'] });
+  // …at a line (`-g file:line`); anything but a positive integer line is ignored
+  assert.deepEqual(openCommand('code', 'C:\\p', { platform: 'win32', env: { LOCALAPPDATA: local }, file: 'C:\\p\\a.ts', line: 12 }).args, ['C:\\p', '-g', 'C:\\p\\a.ts:12']);
+  assert.deepEqual(openCommand('code', 'C:\\p', { platform: 'win32', env: { LOCALAPPDATA: local }, file: 'C:\\p\\a.ts', line: '12; rm' }).args, ['C:\\p', 'C:\\p\\a.ts']);
   assert.equal(findVsCode({ LOCALAPPDATA: local, OFFICE_EDITOR: 'D:\\Cursor\\Cursor.exe' }, 'win32'), 'D:\\Cursor\\Cursor.exe');
   assert.equal(findVsCode({}, 'linux'), 'code');
 });

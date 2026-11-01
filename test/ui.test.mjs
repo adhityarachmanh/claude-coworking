@@ -2,8 +2,8 @@
 // DevTools Protocol, at a phone and a desktop viewport. No dependencies; skipped when no browser is found.
 //   CHROME_PATH=/path/to/chrome npm test    # pick the browser explicitly
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -399,6 +399,189 @@ for (const vp of VIEWPORTS) {
       assert.ok(st.focusInside, `fokus pindah ke ${st.active} setelah kuota dimuat ulang`);
     });
 
+    test('⚡ Template: /t membuka pemilih, ↑↓ Enter menyisipkan (tidak terkirim), placeholder terseleksi, Tab ke berikutnya', async () => {
+      await openApp(page, `#${projectId}`);
+      page.clearProblems();
+      const selected = () => page.eval(() => {
+        const i = document.querySelector('#prompt');
+        return { text: i.value.slice(i.selectionStart, i.selectionEnd), focused: document.activeElement === i };
+      });
+      // Other slash commands are untouched: /ta still offers /tasks first.
+      await typeInPrompt(page, '/ta');
+      await page.waitFor(() => !document.querySelector('#suggest').hidden, { timeoutMs: 2000, message: 'autocomplete /ta' });
+      assert.match(await page.eval(() => document.querySelector('#suggest .opt.active').textContent), /^\/tasks/);
+      await typeInPrompt(page, '/t');
+      await page.waitFor(() => /^\/template/.test(document.querySelector('#suggest .opt.active')?.textContent ?? ''), { timeoutMs: 2000, message: '/t → /template di urutan pertama' });
+      await page.press('Enter');
+      await page.waitFor(() => !document.querySelector('#templates-modal').hidden && document.activeElement?.id === 'tpl-search', { timeoutMs: 2000, message: 'pemilih terbuka, fokus di pencarian' });
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), '', '"/t" dihapus dari kotak pesan');
+      const builtins = await page.eval(() => [...document.querySelectorAll('#tpl-list [role="option"] b')].map((b) => b.textContent));
+      assert.ok(builtins.length >= 8, `template bawaan: ${builtins.join(' | ')}`);
+      assert.equal(await page.eval(horizontalOverflow), null, 'pemilih tanpa scroll horizontal');
+      assert.deepEqual(await page.eval(unnamedButtons, '#templates-modal'), []);
+
+      await page.send('Input.insertText', { text: 'root cause' });
+      const listed = await page.eval(() => [...document.querySelectorAll('#tpl-list [role="option"] b')].map((b) => b.textContent));
+      assert.deepEqual(listed.slice(0, 2), ['Jelaskan error ini & perbaiki root cause', 'Cari & perbaiki bug']);
+      await page.press('ArrowDown');
+      assert.equal(await page.eval(() => document.querySelector('#tpl-list [aria-selected="true"] b').textContent), 'Cari & perbaiki bug');
+      assert.equal(await page.eval(() => document.querySelector('#tpl-search').getAttribute('aria-activedescendant')), await page.eval(() => document.querySelector('#tpl-list [aria-selected="true"]').id));
+      await page.press('ArrowUp');
+      await page.press('Enter');
+      await page.waitFor(() => document.querySelector('#templates-modal').hidden, { timeoutMs: 2000, message: 'pemilih tertutup' });
+      const value = await page.eval(() => document.querySelector('#prompt').value);
+      assert.match(value, /^Error berikut muncul saat \{langkah untuk mereproduksi\}/);
+      assert.deepEqual(await selected(), { text: '{langkah untuk mereproduksi}', focused: true }, 'placeholder pertama terseleksi');
+      await page.send('Input.insertText', { text: 'klik Bayar' });
+      await page.press('Tab');
+      assert.deepEqual(await selected(), { text: '{tempel log / stack trace di sini}', focused: true }, 'Tab ke placeholder berikutnya');
+      await page.press('Tab');
+      assert.equal((await selected()).focused, false, 'tanpa placeholder tersisa, Tab pindah fokus seperti biasa');
+      assert.match(await page.eval(() => document.querySelector('#prompt').value), /saat klik Bayar:/);
+      assert.equal(await page.eval(() => [...document.querySelectorAll('.msg.user')].some((m) => m.textContent.includes('Error berikut muncul'))), false, 'tidak langsung dikirim');
+      await page.eval((k) => {
+        document.querySelector('#prompt').value = '';
+        localStorage.removeItem(k);
+      }, draftKey());
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⚡ Template milikku: tambah (validasi, di-escape), tersimpan di server setelah reload, hapus', async () => {
+      await openApp(page, `#${projectId}`);
+      page.clearProblems();
+      const openPicker = async () => {
+        await page.click('#btn-template');
+        await page.waitFor(() => !document.querySelector('#templates-modal').hidden && !document.querySelector('#tpl-new').disabled, { timeoutMs: 3000, message: 'pemilih terbuka & daftar milikku termuat' });
+      };
+      const name = `<img src=x onerror="window.__xss=1">Cek ${vp.name}`;
+      await openPicker();
+      await page.click('#tpl-new');
+      assert.equal(await page.eval(() => document.activeElement.id), 'tpl-name');
+      await page.click('#tpl-save'); // empty: refused in the page, nothing sent
+      assert.match(await page.eval(() => document.querySelector('#tpl-error').textContent), /Nama template wajib diisi/);
+      assert.equal(await page.eval(() => document.querySelector('#tpl-name').getAttribute('aria-invalid')), 'true');
+      await page.send('Input.insertText', { text: name });
+      await page.eval(() => document.querySelector('#tpl-text').focus());
+      await page.send('Input.insertText', { text: 'Halo {nama}, cek {file}' });
+      assert.equal(await page.eval(() => document.querySelector('#tpl-text-count').textContent), '23/8000');
+      assert.equal(await page.eval(horizontalOverflow), null, 'form tanpa scroll horizontal');
+      await page.click('#tpl-save');
+      await page.waitFor((n) => [...document.querySelectorAll('#tpl-list [role="option"] b')].some((b) => b.textContent === n), { timeoutMs: 3000, message: 'template baru di daftar' }, name);
+      const safe = await page.eval(() => ({ img: Boolean(document.querySelector('#tpl-list img, #tpl-preview img')), xss: window.__xss ?? null, preview: document.querySelector('#tpl-preview').textContent }));
+      assert.deepEqual(safe, { img: false, xss: null, preview: 'Halo {nama}, cek {file}' }, 'nama ditampilkan sebagai teks');
+      await page.press('Escape');
+
+      await openApp(page, `#${projectId}`); // reload: the list comes from the server
+      await openPicker();
+      const i = await page.eval((n) => [...document.querySelectorAll('#tpl-list [role="option"]')].findIndex((o) => o.querySelector('b').textContent === n), name);
+      assert.ok(i >= 0, 'masih ada setelah reload');
+      await page.eval((idx) => document.querySelectorAll('#tpl-list [role="option"]')[idx].click(), i);
+      assert.deepEqual(await page.eval(() => ({ edit: !document.querySelector('#tpl-edit').hidden, del: !document.querySelector('#tpl-delete').hidden, copy: !document.querySelector('#tpl-copy').hidden })), { edit: true, del: true, copy: false });
+      await page.click('#tpl-use');
+      await page.waitFor(() => document.querySelector('#templates-modal').hidden, { timeoutMs: 2000, message: 'disisipkan' });
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), 'Halo {nama}, cek {file}');
+      await openPicker();
+      await page.eval((idx) => document.querySelectorAll('#tpl-list [role="option"]')[idx].click(), i);
+      await page.eval(() => (window.confirm = () => true));
+      await page.click('#tpl-delete');
+      await page.waitFor((n) => ![...document.querySelectorAll('#tpl-list [role="option"] b')].some((b) => b.textContent === n), { timeoutMs: 3000, message: 'terhapus' }, name);
+      await page.press('Escape');
+      await page.eval((k) => {
+        document.querySelector('#prompt').value = '';
+        localStorage.removeItem(k);
+      }, draftKey());
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⏳ Peringatan kuota: sekali per ambang 70/90/100, tidak berulang setelah reload, muncul lagi setelah reset; indikator & tooltip; ambang di ⚙', async () => {
+      await openApp(page, `#${projectId}`);
+      await page.eval(() => {
+        localStorage.removeItem('office.quotaWarned');
+        localStorage.removeItem('office.quotaAlerts');
+      });
+      await openApp(page, `#${projectId}`);
+      await page.waitFor(() => window.document.querySelector('#account-label').textContent.includes('@'), { timeoutMs: 10000, message: 'profil akun termuat' });
+      page.clearProblems();
+      const reset1 = Math.floor(Date.now() / 1000) + 3 * 86400;
+      // A rate_limit_event as the server forwards it (account.rateLimit.windows), straight into the app's handler.
+      const fire = (pct, resetsAt) =>
+        page.eval(
+          async (p, r) => {
+            document.querySelectorAll('.toast').forEach((t) => t.remove());
+            const { onAccountState } = await import('/js/features/account.js');
+            onAccountState({ rateLimit: { windows: { seven_day: { status: p >= 100 ? 'rejected' : 'allowed_warning', utilization: p / 100, resetsAt: r, at: Date.now() } }, at: Date.now() } });
+            const pill = document.querySelector('#quota-pill');
+            return {
+              toasts: [...document.querySelectorAll('.toast')].map((t) => t.textContent).filter((t) => /Kuota/.test(t)),
+              pill: pill.hidden ? null : { text: pill.textContent, tone: pill.classList.contains('crit') ? 'crit' : pill.classList.contains('warn') ? 'warn' : '', title: pill.title, label: pill.getAttribute('aria-label') },
+            };
+          },
+          pct,
+          resetsAt,
+        );
+      let r = await fire(50, reset1);
+      assert.deepEqual(r, { toasts: [], pill: null }, 'di bawah 70: diam');
+      r = await fire(72, reset1);
+      assert.equal(r.toasts.length, 1);
+      assert.match(r.toasts[0], /^⚠ Kuota mingguan sudah 72% — reset \S+ \d{2}\.\d{2}\.$/);
+      assert.equal(r.pill.tone, 'warn');
+      assert.equal(r.pill.text, '72%');
+      assert.match(r.pill.title, /^Kuota mingguan 72% · reset \S+ \d{2}\.\d{2}\n/);
+      assert.match(r.pill.label, /^Peringatan kuota: Kuota mingguan 72%/);
+      assert.equal(await page.eval(horizontalOverflow), null, 'indikator tidak membuat overflow');
+      assert.deepEqual((await fire(75, reset1)).toasts, [], 'tidak berulang');
+
+      await openApp(page, `#${projectId}`); // reload: the same period is remembered
+      r = await fire(76, reset1);
+      assert.deepEqual(r.toasts, [], 'tidak berulang setelah reload');
+      r = await fire(92, reset1);
+      assert.equal(r.toasts.length, 1);
+      assert.match(r.toasts[0], /sudah 92%/);
+      assert.equal(r.pill.tone, 'crit');
+      r = await fire(100, reset1);
+      assert.match(r.toasts[0], /^⛔ Kuota mingguan habis — Claude tidak bisa dipakai sampai reset \S+ \d{2}\.\d{2}\.$/);
+      assert.equal(r.pill.text, 'habis');
+      // the next period (a later reset time): warned again
+      r = await fire(71, reset1 + 7 * 86400);
+      assert.equal(r.toasts.length, 1, 'muncul lagi setelah reset');
+      assert.match(r.toasts[0], /sudah 71%/);
+
+      // ⚙ Pengaturan: thresholds validated, saved per browser, can be switched off.
+      await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+      await page.click('#btn-settings');
+      await settle(page, 'settings-modal');
+      assert.deepEqual(await page.eval(() => ({ on: document.querySelector('#quota-on').checked, warn: document.querySelector('#quota-warn').value, crit: document.querySelector('#quota-crit').value })), { on: true, warn: '70', crit: '90' });
+      const setField = (sel, v) =>
+        page.eval(
+          (s, val) => {
+            const el = document.querySelector(s);
+            el.value = val;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          },
+          sel,
+          v,
+        );
+      await setField('#quota-warn', '95');
+      assert.match(await page.eval(() => document.querySelector('#quota-error').textContent), /lebih kecil/);
+      assert.equal(await page.eval(() => localStorage.getItem('office.quotaAlerts')), null, 'nilai salah tidak disimpan');
+      await setField('#quota-warn', '60');
+      await setField('#quota-crit', '80');
+      assert.deepEqual(await page.eval(() => JSON.parse(localStorage.getItem('office.quotaAlerts'))), { enabled: true, warn: 60, crit: 80 });
+      assert.equal(await page.eval(horizontalOverflow), null, 'Pengaturan tanpa scroll horizontal');
+      await page.click('#quota-on');
+      assert.equal(await page.eval(() => JSON.parse(localStorage.getItem('office.quotaAlerts')).enabled), false);
+      await page.press('Escape');
+      assert.deepEqual(await fire(99, reset1 + 14 * 86400), { toasts: [], pill: null }, 'dimatikan: tanpa toast & indikator');
+
+      await page.eval(async () => {
+        localStorage.removeItem('office.quotaWarned');
+        localStorage.removeItem('office.quotaAlerts');
+        const { onAccountState } = await import('/js/features/account.js');
+        onAccountState({ rateLimit: null });
+      });
+      assert.deepEqual(realProblems(page), []);
+    });
+
     // After the dialog checks: sending a prompt removes the welcome card (the phone's only way into help-modal).
     test('draf prompt: kembali setelah reload, terhapus setelah server menerima prompt', async () => {
       const text = `draf ${vp.name} ${Date.now()}`;
@@ -609,6 +792,143 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
+    test('output live perintah di chat: ekor ringkas & blok terbuka bertambah, polling berhenti setelah selesai', async () => {
+      page.clearProblems();
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+      await page.eval(() => {
+        window.__liveCalls = 0;
+        if (window.__liveWrapped) return;
+        window.__liveWrapped = true;
+        const orig = window.fetch;
+        window.fetch = (url, opts) => {
+          if (/\/task-output$/.test(String(url))) window.__liveCalls++;
+          return orig(url, opts);
+        };
+      });
+      const before = await page.eval(() => document.querySelectorAll('#chat .line.tool').length);
+      await page.eval(async (pid) => {
+        const token = document.querySelector('meta[name="office-token"]').content;
+        await fetch(`/api/projects/${pid}/prompt`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify({ text: 'jalankan perintah panjang' }) });
+      }, projectId);
+      await page.waitFor((n) => document.querySelectorAll('#chat .line.tool').length > n, { timeoutMs: 8000, message: 'baris perintah muncul' }, before);
+      // Collapsed: the last lines appear under the row and grow while it runs.
+      const tail = (n) => [...document.querySelectorAll('#chat .line.tool')][n]?.querySelector('.live-tail:not([hidden])')?.textContent ?? '';
+      await page.waitFor((n) => /compile modul-/.test([...document.querySelectorAll('#chat .line.tool')][n]?.querySelector('.live-tail:not([hidden])')?.textContent ?? ''), { timeoutMs: 6000, message: 'ekor output tampil di baris tertutup' }, before);
+      const first = await page.eval(tail, before);
+      await page.waitFor((n, t) => ([...document.querySelectorAll('#chat .line.tool')][n]?.querySelector('.live-tail')?.textContent ?? '') !== t, { timeoutMs: 5000, message: 'ekor output bertambah' }, before, first);
+      assert.ok((await page.eval((n) => [...document.querySelectorAll('#chat .line.tool')][n].querySelectorAll('.live-tail span').length, before)) <= 8, 'paling banyak 8 baris ringkas');
+      // Expanded: the whole live output, still growing.
+      await page.eval((n) => [...document.querySelectorAll('#chat .line.tool')][n].querySelector('.row').click(), before);
+      await page.waitFor((n) => /compile modul-/.test([...document.querySelectorAll('#chat .line.tool')][n].querySelector('[data-live-out]')?.textContent ?? ''), { timeoutMs: 4000, message: 'blok output live terbuka' }, before);
+      const len = await page.eval((n) => [...document.querySelectorAll('#chat .line.tool')][n].querySelector('[data-live-out]').textContent.length, before);
+      await page.waitFor((n, l) => ([...document.querySelectorAll('#chat .line.tool')][n].querySelector('[data-live-out]')?.textContent.length ?? Infinity) > l, { timeoutMs: 5000, message: 'output live bertambah' }, before, len);
+      assert.equal(await page.eval(horizontalOverflow), null, 'output live tanpa scroll horizontal');
+      // Done: the final output (tool_result) replaces the live block; no more reads.
+      await page.waitFor((n) => [...document.querySelectorAll('#chat .line.tool')][n].classList.contains('st-ok'), { timeoutMs: 12000, message: 'perintah selesai' }, before);
+      const done = await page.eval((n) => {
+        const r = [...document.querySelectorAll('#chat .line.tool')][n];
+        return { live: Boolean(r.querySelector('[data-live-out], .live-tail')), out: r.querySelector('pre.out')?.textContent ?? '' };
+      }, before);
+      assert.equal(done.live, false, 'blok live hilang setelah selesai');
+      assert.match(done.out, /\[16\/16\][\s\S]*Build selesai\./);
+      const calls = await page.eval(() => window.__liveCalls);
+      assert.ok(calls >= 2, `task-output dibaca ${calls}x`);
+      await sleep(3500);
+      assert.equal(await page.eval(() => window.__liveCalls), calls, 'polling berhenti setelah perintah selesai');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('📄 penampil file: dari path di jawaban (:line disorot), baris tool Read, tab Perubahan; cari, escape, rapi', async () => {
+      page.clearProblems();
+      const proj = path.join(TMP, 'projects', 'toko');
+      writeFileSync(path.join(proj, 'src', 'app.js'), 'const a = 1;\n/* multi\nbaris */\n<b>tebal</b>\nconst b = "nilai";\n');
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+      const before = await page.eval(() => document.querySelectorAll('#chat .msg.assistant').length);
+      await page.eval(async (pid) => {
+        const token = document.querySelector('meta[name="office-token"]').content;
+        await fetch(`/api/projects/${pid}/prompt`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify({ text: 'sebut file' }) });
+      }, projectId);
+      await page.waitFor((n) => document.querySelectorAll('#chat .msg.assistant').length > n && [...document.querySelectorAll('#chat .msg.assistant')].at(-1).querySelector('.file-link[data-file="src/app.js"]'), { timeoutMs: 8000, message: 'path di jawaban jadi link' }, before);
+      const links = await page.eval(() => [...[...document.querySelectorAll('#chat .msg.assistant')].at(-1).querySelectorAll('.file-link')].map((b) => [b.dataset.file, b.dataset.line ?? null]));
+      assert.deepEqual(links, [['src/checkout.ts', '2'], ['src/app.js', '3'], ['src/hilang.ts', null]], 'URL tidak ikut jadi link');
+
+      // From the answer, with :line
+      await page.eval(() => [...document.querySelectorAll('#chat .msg.assistant')].at(-1).querySelector('.file-link[data-file="src/app.js"]').click());
+      await page.waitFor(() => document.querySelector('#fv-code .fv-l'), { timeoutMs: 5000, message: 'penampil terbuka dengan isi' });
+      const view = await page.eval(() => ({
+        title: document.querySelector('#fv-title').textContent,
+        meta: document.querySelector('#fv-meta').textContent,
+        target: [...document.querySelectorAll('#fv-code .fv-l.target')].map((l) => l.dataset.n),
+        carried: Boolean(document.querySelector('#fv-code .fv-l[data-n="3"] .hl-c')),
+        injected: document.querySelectorAll('#fv-code b').length,
+        line4: document.querySelector('#fv-code .fv-l[data-n="4"] .fv-t').textContent,
+        targetVisible: (() => {
+          const box = document.querySelector('#fv-code').getBoundingClientRect();
+          const r = document.querySelector('#fv-code .fv-l.target').getBoundingClientRect();
+          return r.top >= box.top && r.bottom <= box.bottom;
+        })(),
+        focusInside: document.querySelector('#file-modal').contains(document.activeElement),
+      }));
+      assert.match(view.title, /app\.js/);
+      assert.match(view.meta, /byte · diubah .* · js · 5 baris/);
+      assert.deepEqual(view.target, ['3'], 'baris :3 disorot');
+      assert.equal(view.carried, true, 'komentar multi-baris tetap ter-highlight di baris berikutnya');
+      assert.equal(view.injected, 0, 'isi file tidak pernah dirender sebagai HTML');
+      assert.equal(view.line4, '<b>tebal</b>');
+      assert.equal(view.targetVisible, true, 'baris tujuan terlihat');
+      assert.equal(view.focusInside, true, 'fokus di dalam penampil');
+      assert.equal(await page.eval(horizontalOverflow), null, 'penampil tanpa scroll horizontal halaman');
+      assert.deepEqual(await page.eval(unnamedButtons, '#file-modal'), []);
+      // Ctrl+F searches the file
+      await page.eval(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true })));
+      assert.equal(await page.eval(() => document.activeElement.id), 'fv-q', 'Ctrl+F ke kotak cari');
+      await page.send('Input.insertText', { text: 'NILAI' });
+      await page.waitFor(() => document.querySelector('#fv-count').textContent === '1/1', { timeoutMs: 2000, message: 'hasil pencarian' });
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll('#fv-code mark')].map((m) => m.textContent)), ['nilai']);
+      await page.press('Escape');
+      assert.equal(await page.eval(() => document.querySelector('#file-modal').hidden), true, 'Esc menutup');
+
+      // A missing file says so
+      await page.eval(() => [...document.querySelectorAll('#chat .msg.assistant')].at(-1).querySelector('.file-link[data-file="src/hilang.ts"]').click());
+      await page.waitFor(() => /tidak ditemukan/.test(document.querySelector('#fv-body .state-error')?.textContent ?? ''), { timeoutMs: 4000, message: 'file hilang: pesan rapi' });
+      await page.press('Escape');
+      // The 404 itself is the expected answer (logged by the browser as a failed request), nothing else.
+      assert.deepEqual(realProblems(page).filter((p) => !/\/file\b/.test(p.text)), []);
+      page.clearProblems();
+
+      // From a Read row (absolute path in the tool input)
+      await page.eval(() => [...document.querySelectorAll('#chat .line.tool')].reverse().find((r) => /checkout\.ts/.test(r.textContent)).querySelector('.row').click());
+      await page.waitFor(() => [...document.querySelectorAll('#chat .line.tool.open .file-link')].some((b) => /checkout\.ts$/.test(b.dataset.file)), { timeoutMs: 3000, message: 'path di baris Read' });
+      await page.eval(() => [...document.querySelectorAll('#chat .line.tool.open .file-link')].reverse().find((b) => /checkout\.ts$/.test(b.dataset.file)).click());
+      await page.waitFor(() => /checkout\.ts/.test(document.querySelector('#fv-title').textContent) && document.querySelector('#fv-code .fv-l'), { timeoutMs: 4000, message: 'penampil dari baris Read' });
+      assert.equal(await page.eval(() => /^export /.test(document.querySelector('#fv-code .fv-t').textContent)), true, 'isi checkout.ts');
+      await page.press('Escape');
+
+      // From the Changes tab (the project becomes a git repo with one changed file)
+      if (!existsSync(path.join(proj, '.git'))) {
+        const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: proj, stdio: 'ignore' });
+        git('init', '-q');
+        git('add', '-A');
+        git('commit', '-qm', 'awal');
+      }
+      writeFileSync(path.join(proj, 'src', 'checkout.ts'), `export const total = ${Date.now()};\n`);
+      if (vp.mobile) await page.click('#mobile-nav [data-view="changes"]');
+      else await page.click('.tabs button[data-tab="changes"]');
+      await page.click('#ch-refresh');
+      await page.waitFor(() => [...document.querySelectorAll('#ch-files li[data-path]')].some((li) => li.dataset.path === 'src/checkout.ts'), { timeoutMs: 6000, message: 'file berubah di tab Perubahan' });
+      await page.eval(() => [...document.querySelectorAll('#ch-files li[data-path]')].find((li) => li.dataset.path === 'src/checkout.ts').click());
+      assert.equal(await page.eval(horizontalOverflow), null, 'tab Perubahan tanpa scroll horizontal');
+      await page.click('#ch-view');
+      await page.waitFor(() => /export const total/.test(document.querySelector('#fv-code')?.textContent ?? ''), { timeoutMs: 4000, message: 'penampil dari tab Perubahan' });
+      assert.equal(await page.eval(horizontalOverflow), null);
+      await page.press('Escape');
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      else await page.click('.tabs button[data-tab="chat"]');
+      assert.deepEqual(realProblems(page), []);
+    });
+
     test('pair.html termuat tanpa error dan tanpa scroll horizontal', async () => {
       page.clearProblems();
       await page.goto(`${BASE}/pair`);
@@ -716,7 +1036,7 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
         readOnly: document.body.classList.contains('read-only'),
         prompt: dis('#prompt'),
         placeholder: document.querySelector('#prompt').placeholder,
-        controls: ['#btn-send', '#btn-attach', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#ch-review', '#ch-commit button'].filter((sel) => !dis(sel)),
+        controls: ['#btn-send', '#btn-attach', '#btn-template', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#ch-review', '#ch-commit button'].filter((sel) => !dis(sel)),
         hint: document.querySelector('#composer-hint').textContent,
         approvalEnabled: [...document.querySelectorAll('.approval.pending button, .approval.pending input')].filter((b) => !b.disabled).length,
         approvalNote: document.querySelector('.approval.pending .ro-note')?.textContent ?? '',
