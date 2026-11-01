@@ -131,3 +131,19 @@ test('shell lines are described as what the person is doing, not the raw command
   assert.equal(label(''), 'Menjalankan perintah');
   for (const c of ['deploy-secret --key=SECRET123', `unknown-cmd ${'x'.repeat(200)}`]) assert.doesNotMatch(label(c), /SECRET123|xxxx|--/);
 });
+
+test('stored shell rows from before the human labels are relabelled from their own input when loaded', async () => {
+  const { relabelShellRows } = await import('../src/hub.js');
+  const chats = {
+    p1: [
+      { kind: 'tool', tool: 'Bash', text: "$ cat > /tmp/fix11.mjs <<'EOF' import { readFileSync…", input: { command: "cat > /tmp/fix11.mjs <<'EOF'\nimport x" } },
+      { kind: 'tool', tool: 'Bash', text: '$ timeout 300 node --test …', input: { command: 'timeout 300 node --test x', description: 'Menjalankan test server' } },
+      { kind: 'tool', tool: 'Read', text: 'Membaca a.js', input: { file_path: 'a.js' } },
+      { kind: 'text', text: '$ not a tool row' },
+    ],
+  };
+  assert.equal(relabelShellRows(chats), 2);
+  assert.deepEqual(chats.p1.map((m) => m.text), ['Menulis fix11.mjs', 'Menjalankan test server', 'Membaca a.js', '$ not a tool row']);
+  assert.equal(relabelShellRows(chats), 0, 'idempotent');
+  assert.equal(relabelShellRows(null), 0);
+});

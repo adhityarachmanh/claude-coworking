@@ -1,6 +1,7 @@
 // Central state: project registry, per-project chat/events/status, approvals, SSE broadcast, persistence.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { describeTool } from './roles.js';
 import { basename, normalizePath, projectId } from './util.js';
 
 const EVENT_LIMIT = 80;
@@ -17,6 +18,25 @@ const MODEL_ALIAS = /^(?:best|opusplan|(?:opus|sonnet|haiku|fable)(?:\[1m\])?)$/
 const MODEL_ID = /^claude-[\w.:[\]-]{1,76}$/;
 const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 /** Highest counter behind the stored chat ids (`m<seq>`), so a restarted server never hands one out again. */
+/**
+ * Shell rows stored before the human labels existed ("$ cat > /tmp/x <<EOF …") get today's label from their
+ * own stored input (the command and Claude's description), so old history reads like new rows.
+ */
+export function relabelShellRows(chats) {
+  let changed = 0;
+  for (const list of Object.values(isObject(chats) ? chats : {})) {
+    for (const m of Array.isArray(list) ? list : []) {
+      if (m?.kind !== 'tool' || (m.tool !== 'Bash' && m.tool !== 'PowerShell') || typeof m.input?.command !== 'string') continue;
+      const label = describeTool(m.tool, m.input);
+      if (label !== m.text) {
+        m.text = label;
+        changed++;
+      }
+    }
+  }
+  return changed;
+}
+
 function maxStoredSeq(chats) {
   let max = 0;
   for (const list of Object.values(isObject(chats) ? chats : {})) {
@@ -41,6 +61,7 @@ export class Hub {
     this.clients = new Set();
     this.observers = new Set(); // server-side listeners to every broadcast, fn(type, data) (📋 Antrian, src/queue.js)
     this.persisted = this.load();
+    relabelShellRows(this.persisted.chats);
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
     this.seq = maxStoredSeq(this.persisted.chats);
