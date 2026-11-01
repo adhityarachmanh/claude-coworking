@@ -32,6 +32,7 @@ async function start() {
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
+      OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale'), // phone access on: never ask the real Tailscale for a certificate
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

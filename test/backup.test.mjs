@@ -134,6 +134,9 @@ before(async () => {
   put(path.join(A.claude, '.credentials.json'), '{"secret":"JANGAN-DIEKSPOR"}');
   put(path.join(A.claude, 'cache', 'x.json'), '{}');
   put(path.join(A.data, 'usage.jsonl'), `${usageRow(1)}\n${usageRow(2)}\n`);
+  // HTTPS certificate + key from `tailscale cert` (src/tls.js): machine-bound secrets, never in a backup
+  put(path.join(A.data, 'tls', 'office.test.crt'), 'CERT-JANGAN-DIEKSPOR');
+  put(path.join(A.data, 'tls', 'office.test.key'), 'KEY-JANGAN-DIEKSPOR');
 
   // New laptop B: toko already has some history of its own.
   put(path.join(dirB('toko'), `${S(1)}.jsonl`), transcript(S(1), cwdA.toko, ['halo toko'])); // shorter: A's wins
@@ -206,11 +209,12 @@ test('export: a streamed .zip with every project, history, checkpoints, plans, s
     assert.ok(names.includes(want), `missing ${want}`);
   }
   assert.ok(!names.some((n) => /credentials|cache\//.test(n)), 'no credentials or caches');
+  assert.ok(!names.some((n) => /(^|\/)tls\/|\.(crt|key)$/.test(n)), 'no HTTPS certificate or key (data/tls)');
   assert.equal(manifest.format, 'adhit-office-backup');
   assert.equal(manifest.homeDir, homeA);
   assert.equal(manifest.projects.find((p) => p.folder === enc).cwd, cwdA.toko, 'project path read from the transcript');
   assert.equal(manifest.projects.find((p) => p.folder === enc).sessions, 4);
-  assert.ok(!('remote' in state), 'no paired-device hashes in the backup');
+  assert.ok(!('remote' in state), 'no paired-device hashes (nor the VAPID key, persisted.remote.vapid) in the backup');
   assert.deepEqual(state.favorites, [fav]);
 });
 

@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import http from 'node:http';
+import https from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findClaude } from './src/claude-bin.js';
@@ -27,7 +28,8 @@ import { GitError, gitAction, gitBranches, gitCommit, gitDiff, gitStatus } from 
 import { PermissionError, editPermission, readPermissions } from './src/permissions.js';
 import { openInApp } from './src/open.js';
 import { TranscriptMirror } from './src/mirror.js';
-import { DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from './src/remote.js';
+import { DEVICE_COOKIE, HTTPS_DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from './src/remote.js';
+import { TailscaleCert, httpsPortFrom } from './src/tls.js';
 import { listSessions, sessionHistory } from './src/transcripts.js';
 import { ConversationError, exportSession, searchSessions } from './src/conversation.js';
 import { taskDetail } from './src/task-detail.js';
@@ -40,6 +42,13 @@ import { BackupScheduler, ScheduleError } from './src/backup-schedule.js';
 
 const PORT = Number(process.env.OFFICE_PORT ?? 4317);
 const HOST = '127.0.0.1';
+// HTTPS for phones over Tailscale (src/tls.js): its own port, bound only to the Tailscale interface.
+// null = HTTPS off (the port clashes with OFFICE_PORT); a warning is logged at start.
+const { port: HTTPS_PORT, warning: HTTPS_PORT_WARNING } = httpsPortFrom(process.env.OFFICE_HTTPS_PORT, PORT);
+// Tests only: bind the https listener to loopback instead of the Tailscale interface (CI has none).
+// Loopback only, never another address; a TLS socket is never treated as the laptop (isLocal), so this
+// cannot grant anything: such a client is an ordinary paired phone on a non-Tailscale link (read-only).
+const HTTPS_TEST_BIND = process.env.OFFICE_HTTPS_TEST_BIND === '127.0.0.1' ? '127.0.0.1' : null;
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_VERSION = JSON.parse(readFileSync(path.join(APP_DIR, 'package.json'), 'utf8')).version;
 const PUBLIC_DIR = path.join(APP_DIR, 'public');
@@ -136,6 +145,32 @@ const remote = new RemoteAccess(hub, {
   },
 });
 
+// The https listener's certificate (Tailscale MagicDNS name). Checked only while phone access is on.
+const tls = new TailscaleCert({
+  dir: path.join(DATA_DIR, 'tls'),
+  enabled: () => remote.enabled,
+  // Runs from timers and background refreshes: a failure here must never take the server down.
+  onChange: () => {
+    try {
+      syncListeners();
+      publishConfig();
+    } catch (err) {
+      console.error('HTTPS: listener sync gagal:', err?.stack ?? err);
+    }
+  },
+});
+
+/** The HTTPS status for browsers (no key, no paths); "error" when HTTPS is off by configuration. */
+function httpsInfo() {
+  if (HTTPS_PORT === null) return { ...tls.publicInfo(0), state: remote.enabled ? 'error' : 'off', host: null, url: null, validTo: null, error: remote.enabled ? 'OFFICE_HTTPS_PORT bentrok dengan OFFICE_PORT; HTTPS dimatikan.' : null };
+  return tls.publicInfo(HTTPS_PORT);
+}
+
+/** Phone access as browsers see it: devices, addresses, and the HTTPS (Tailscale) status. */
+function remoteInfo() {
+  return { ...remote.publicInfo(PORT), https: httpsInfo() };
+}
+
 const templates = new TemplateStore(hub);
 // 📋 Antrian: prompts sent one by one whenever the project's session is idle (src/queue.js).
 const taskQueue = new TaskQueue({ hub, sessions });
@@ -158,7 +193,7 @@ function refreshProjects() {
     slashCommands: [...new Set([...DEFAULT_SLASH, ...(hub.persisted.slashCommands ?? [])])].sort(),
     ...hub.catalogConfig(), // models + commands with descriptions, as Claude Code reports them
     autostart: autostartStatus(),
-    remote: remote.publicInfo(PORT),
+    remote: remoteInfo(),
     teamNames: hub.persisted.teamNames ?? {},
     team: teamConfig(),
   };
@@ -183,7 +218,14 @@ const LOGOUT_CONFIRM = 'LOGOUT';
 const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit)$/;
 const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+|js\/pair\.js)$/;
 
-const isLocal = (req) => LOOPBACK.has(req.socket.remoteAddress);
+// A TLS socket is never the laptop, even from loopback (e.g. someone puts `tailscale serve` in front of it):
+// the laptop is plain http on 127.0.0.1 only.
+const isLocal = (req) => LOOPBACK.has(req.socket.remoteAddress) && !req.socket.encrypted;
+/** Came in on the https listener (Tailscale). */
+const isSecure = (req) => Boolean(req.socket.encrypted);
+const transportOf = (req) => (isSecure(req) ? 'https' : 'http');
+/** The device cookie of this transport: each listener reads only its own (see src/remote.js). */
+const deviceToken = (req) => cookies(req)[isSecure(req) ? HTTPS_DEVICE_COOKIE : DEVICE_COOKIE];
 /** What this browser may do with the Claude account: laptop, or a paired phone over Tailscale. */
 // Tailscale = came in through the laptop's Tailscale interface from a tailnet peer, not just any 100.x address (CGNAT WiFi uses those too).
 const canManageAccount = (req) => isLocal(req) || isTailscaleConnection(req.socket.localAddress, req.socket.remoteAddress);
@@ -194,25 +236,38 @@ const allowForce = (req, body) => Boolean(body.force) && !isReadOnly(req);
 /** One headless browser at a time renders report PDFs (each is a full Chrome/Edge process for up to 60 s). */
 let pdfRendering = false;
 
-/** Host names we answer to (DNS-rebinding guard); LAN addresses only while phone access is on. */
-function allowedHosts() {
+/**
+ * Host names we answer to (DNS-rebinding guard); LAN addresses only while phone access is on.
+ * The https listener answers to the certificate's MagicDNS name only (and the http ones never to it).
+ */
+function allowedHosts(secure = false) {
+  if (secure) {
+    const name = remote.enabled && HTTPS_PORT !== null ? tls.host : null;
+    if (!name) return [];
+    return HTTPS_PORT === 443 ? [name, `${name}:443`] : [`${name}:${HTTPS_PORT}`];
+  }
   const hosts = [`localhost:${PORT}`, `127.0.0.1:${PORT}`];
   if (remote.enabled) for (const ip of lanAddresses()) hosts.push(`${ip}:${PORT}`);
   return hosts;
 }
 
 function cookies(req) {
-  return Object.fromEntries(
-    String(req.headers.cookie ?? '')
-      .split(';')
-      .map((part) => part.trim().split('='))
-      .filter(([key, value]) => key && value)
-      .map(([key, ...rest]) => [key, decodeURIComponent(rest.join('='))]),
-  );
+  const found = {};
+  for (const part of String(req.headers.cookie ?? '').split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    const value = rest.join('=');
+    if (!key || !value) continue;
+    try {
+      found[key] = decodeURIComponent(value);
+    } catch {
+      // malformed %-escape (another site's cookie, or garbage): skipped, never a 500
+    }
+  }
+  return found;
 }
 
 function publishConfig() {
-  hub.config = { ...hub.config, remote: remote.publicInfo(PORT) };
+  hub.config = { ...hub.config, remote: remoteInfo() };
   hub.broadcast('config', hub.config);
 }
 
@@ -304,7 +359,7 @@ function dropDeviceStreams(deviceId) {
   for (const [res, owner] of deviceStreams) if (owner === deviceId) dropStream(res);
 }
 
-function openStream(req, res, local, device = null, deviceToken = null) {
+function openStream(req, res, local, device = null, token = null) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
   // readOnlyApi: what a read-only phone may still call, so the UI doesn't keep its own copy of wifiAllows.
   const client = { local, accountAuth: canManageAccount(req), readOnly: isReadOnly(req), readOnlyApi: WIFI_READ_API };
@@ -313,7 +368,7 @@ function openStream(req, res, local, device = null, deviceToken = null) {
   if (device) deviceStreams.set(res, device.id);
   const heartbeat = setInterval(() => {
     // Revoked, or phone access switched off since the stream opened: the device is out.
-    if (device && !remote.verify(deviceToken)) return dropStream(res);
+    if (device && !remote.verify(token, { transport: transportOf(req) })) return dropStream(res);
     res.write(': ping\n\n');
   }, STREAM_HEARTBEAT_MS);
   req.on('close', () => {
@@ -471,9 +526,16 @@ async function handleApi(req, res, pathname, device = null) {
 
   if (pathname === '/api/remote') {
     remote.setEnabled(Boolean(body.enabled));
-    syncLanServers();
+    syncListeners();
+    if (remote.enabled) tls.refresh(); // in the background; a certificate brings the https listener up (onChange)
     publishConfig();
-    return json(res, 200, remote.publicInfo(PORT));
+    return json(res, 200, remoteInfo());
+  }
+  // "Periksa lagi" in the phone dialog: ask Tailscale for the certificate now (laptop only, like all of /api/remote).
+  if (pathname === '/api/remote/https-check') {
+    if (!remote.enabled) return json(res, 400, { error: 'Nyalakan akses dari HP dulu.' });
+    if (HTTPS_PORT !== null) await tls.refresh();
+    return json(res, 200, httpsInfo());
   }
   if (pathname === '/api/remote/pairing') {
     if (!remote.enabled) return json(res, 400, { error: 'Nyalakan akses dari HP dulu.' });
@@ -481,8 +543,11 @@ async function handleApi(req, res, pathname, device = null) {
     const usable = networkAddresses().filter((a) => a.kind !== 'virtual');
     if (!usable.length) return json(res, 400, { error: 'Laptop tidak terhubung ke jaringan (WiFi/LAN atau Tailscale).' });
     const chosen = usable.find((a) => a.ip === body.ip) ?? usable[0];
+    // { https: true }: the QR opens the https (Tailscale) origin, which pairs separately (its own cookie).
+    const secureUrl = httpsInfo().url;
+    if (body.https === true && !secureUrl) return json(res, 400, { error: 'HTTPS lewat Tailscale belum tersedia.' });
     const { code, key, expires } = remote.currentPairing();
-    const base = `http://${chosen.ip}:${PORT}`;
+    const base = body.https === true ? secureUrl : `http://${chosen.ip}:${PORT}`;
     return json(res, 200, {
       code,
       expires,
@@ -490,6 +555,7 @@ async function handleApi(req, res, pathname, device = null) {
       url: base,
       qrUrl: `${base}/pair?k=${key}`,
       addresses: usable.map(({ ip, kind, name }) => ({ ip, kind, name })),
+      https: secureUrl ? { url: secureUrl, qrUrl: `${secureUrl}/pair?k=${key}` } : null,
     });
   }
   if (pathname === '/api/remote/revoke') {
@@ -993,7 +1059,9 @@ async function servePairPage(res, message = '') {
   res.end(html);
 }
 
-function deviceCookie(token) {
+function deviceCookie(token, secure) {
+  // __Host-: browsers only accept it with Secure, Path=/ and no Domain.
+  if (secure) return `${HTTPS_DEVICE_COOKIE}=${token}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`;
   return `${DEVICE_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`;
 }
 
@@ -1002,47 +1070,54 @@ async function handlePair(req, res, url) {
   const userAgent = String(req.headers['user-agent'] ?? '');
   const ip = String(req.socket.remoteAddress ?? '');
   const key = url.searchParams.get('k');
+  const secure = isSecure(req);
+  const transport = { transport: transportOf(req) }; // the token works only over the transport it was paired on
   if (req.method === 'GET' && key) {
-    const result = remote.pair({ key }, userAgent, ip);
+    const result = remote.pair({ key }, userAgent, ip, transport);
     if (!result.token) return servePairPage(res, result.error);
     publishConfig();
-    res.writeHead(302, { 'Set-Cookie': deviceCookie(result.token), Location: '/' }); // drop the key from the address bar
+    res.writeHead(302, { 'Set-Cookie': deviceCookie(result.token, secure), Location: '/' }); // drop the key from the address bar
     return res.end();
   }
   if (req.method === 'GET') return servePairPage(res);
   if (req.method !== 'POST' || !String(req.headers['content-type']).startsWith('application/json')) return json(res, 405, { error: 'method not allowed' });
-  const result = remote.pair({ code: (await readJson(req, MAX_PAIR_BODY)).code }, userAgent, ip);
+  const result = remote.pair({ code: (await readJson(req, MAX_PAIR_BODY)).code }, userAgent, ip, transport);
   if (result.retryAfter) {
     res.setHeader('Retry-After', String(result.retryAfter));
     return json(res, 429, result);
   }
   if (!result.token) return json(res, 400, result);
   publishConfig();
-  res.writeHead(200, { 'Set-Cookie': deviceCookie(result.token), 'Content-Type': 'application/json' });
+  res.writeHead(200, { 'Set-Cookie': deviceCookie(result.token, secure), 'Content-Type': 'application/json' });
   return res.end(JSON.stringify({ ok: true }));
 }
 
-// ---------- request handling (shared by the localhost and LAN listeners) ----------
+// ---------- request handling (shared by the localhost, LAN and https listeners) ----------
 
 async function handler(req, res) {
+  const secure = isSecure(req);
+  const scheme = secure ? 'https' : 'http';
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
-  if (isLocal(req)) for (const [name, value] of Object.entries(LOCAL_SECURITY_HEADERS)) res.setHeader(name, value);
-  // DNS-rebinding guard: only answer to our own host names.
+  // COOP: honoured on trustworthy origins only (localhost, https). No HSTS on purpose: it would apply to the
+  // MagicDNS name on every port (docs/design-web-push.md D4).
+  if (isLocal(req) || secure) for (const [name, value] of Object.entries(LOCAL_SECURITY_HEADERS)) res.setHeader(name, value);
+  // DNS-rebinding guard: only answer to our own host names, per scheme (https: the MagicDNS name only).
   const host = String(req.headers.host).toLowerCase();
-  const hosts = allowedHosts();
+  const hosts = allowedHosts(secure);
   if (!hosts.includes(host)) return json(res, 421, { error: 'bad host' });
-  if (req.headers.origin && !hosts.some((h) => req.headers.origin === `http://${h}`)) return json(res, 403, { error: 'bad origin' });
-  const { pathname, searchParams } = new URL(req.url, `http://${host}`);
+  // Origin must match scheme and host: an http page can't call the https origin, nor the other way round.
+  if (req.headers.origin && !hosts.some((h) => req.headers.origin === `${scheme}://${h}`)) return json(res, 403, { error: 'bad origin' });
+  const { pathname, searchParams } = new URL(req.url, `${scheme}://${host}`);
   const local = isLocal(req);
   let device = null; // the paired phone making this request (null on the laptop)
   try {
     if (!local) {
       // Another device on the network: it must be paired, and some settings stay laptop-only.
       if (!remote.enabled) return json(res, 403, { error: 'Akses dari perangkat lain sedang dimatikan.' });
-      if (pathname === '/pair') return await handlePair(req, res, new URL(req.url, `http://${host}`));
+      if (pathname === '/pair') return await handlePair(req, res, new URL(req.url, `${scheme}://${host}`));
       // App icon + manifest hold no data, and browsers fetch the manifest without cookies.
       if (req.method === 'GET' && PUBLIC_ASSET.test(pathname)) return await serveStatic(pathname, res, req);
-      device = remote.verify(cookies(req)[DEVICE_COOKIE]);
+      device = remote.verify(deviceToken(req), { transport: transportOf(req) });
       if (!device) {
         if (req.method === 'GET' && pathname !== '/stream' && !pathname.startsWith('/api/')) {
           res.writeHead(302, { Location: '/pair' });
@@ -1057,7 +1132,7 @@ async function handler(req, res) {
     }
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, device);
     if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' });
-    if (pathname === '/stream') return openStream(req, res, local, device, device ? cookies(req)[DEVICE_COOKIE] : null);
+    if (pathname === '/stream') return openStream(req, res, local, device, device ? deviceToken(req) : null);
     // pid: for scripts/restart.mjs on this laptop (its fallback when a clean shutdown hangs).
     if (pathname === '/health') return json(res, 200, { ok: true, claude: Boolean(claude), ...(local ? { pid: process.pid } : {}) });
     if (pathname === '/pair' && searchParams.size === 0) return servePairPage(res);
@@ -1077,34 +1152,69 @@ async function handler(req, res) {
 
 const server = http.createServer(handler);
 
-// One extra listener per LAN address while phone access is on (never 0.0.0.0).
+// While phone access is on: one extra http listener per LAN address (never 0.0.0.0), and one https
+// listener per Tailscale address once a certificate is usable (src/tls.js).
 const lanServers = new Map(); // ip -> { server, sockets }
-function syncLanServers() {
+const httpsServers = new Map(); // ip -> { server, sockets, fingerprint }
+
+function closeListener(map, ip) {
+  const entry = map.get(ip);
+  entry.server.close();
+  for (const socket of entry.sockets) socket.destroy(); // also ends open event streams
+  map.delete(ip);
+}
+
+function openListener(map, ip, port, server, label, extra = {}) {
+  const sockets = new Set();
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
+  server.on('error', (err) => {
+    console.error(`Akses HP di ${ip}:${port} gagal: ${err.message}`);
+    if (map.get(ip)?.server === server) map.delete(ip);
+  });
+  server.listen(port, ip, () => console.log(`Akses HP aktif: ${label}`));
+  map.set(ip, { server, sockets, ...extra });
+}
+
+/** Tailscale interface addresses the https listener binds to (loopback only under OFFICE_HTTPS_TEST_BIND). */
+const httpsAddresses = () => (HTTPS_TEST_BIND ? [HTTPS_TEST_BIND] : networkAddresses().filter((a) => a.kind === 'tailscale').map((a) => a.ip));
+
+function syncListeners() {
   const wanted = new Set(remote.enabled ? lanAddresses() : []);
-  for (const [ip, entry] of lanServers) {
-    if (wanted.has(ip)) continue;
-    entry.server.close();
-    for (const socket of entry.sockets) socket.destroy(); // also ends open event streams
-    lanServers.delete(ip);
-  }
-  for (const ip of wanted) {
-    if (lanServers.has(ip)) continue;
-    const lan = http.createServer(handler);
-    const sockets = new Set();
-    lan.on('connection', (socket) => {
-      sockets.add(socket);
-      socket.on('close', () => sockets.delete(socket));
-    });
-    lan.on('error', (err) => {
-      console.error(`Akses HP di ${ip} gagal: ${err.message}`);
-      lanServers.delete(ip);
-    });
-    lan.listen(PORT, ip, () => console.log(`Akses HP aktif: http://${ip}:${PORT}`));
-    lanServers.set(ip, { server: lan, sockets });
+  for (const ip of [...lanServers.keys()]) if (!wanted.has(ip)) closeListener(lanServers, ip);
+  for (const ip of wanted) if (!lanServers.has(ip)) openListener(lanServers, ip, PORT, http.createServer(handler), `http://${ip}:${PORT}`);
+
+  // https: only with a usable certificate; a renewed one is swapped in without dropping connections.
+  const cert = remote.enabled && HTTPS_PORT !== null && tls.usable ? tls.material : null;
+  const wantedHttps = new Set(cert ? httpsAddresses() : []);
+  for (const ip of [...httpsServers.keys()]) if (!wantedHttps.has(ip)) closeListener(httpsServers, ip);
+  for (const ip of wantedHttps) {
+    const entry = httpsServers.get(ip);
+    if (entry) {
+      if (entry.fingerprint !== cert.fingerprint) {
+        entry.server.setSecureContext({ cert: cert.cert, key: cert.key });
+        entry.fingerprint = cert.fingerprint;
+      }
+      continue;
+    }
+    const server = https.createServer({ cert: cert.cert, key: cert.key, minVersion: 'TLSv1.2' }, handler);
+    // Slow-loris guard for the phone-facing listener (event streams are responses, not affected).
+    server.headersTimeout = 15_000;
+    server.requestTimeout = 120_000;
+    openListener(httpsServers, ip, HTTPS_PORT, server, `https://${cert.host}:${HTTPS_PORT} (${ip})`, { fingerprint: cert.fingerprint });
   }
 }
-// WiFi changes (new IP) are picked up without a restart.
-setInterval(() => remote.enabled && syncLanServers(), 30000).unref();
+// WiFi changes (new IP) are picked up without a restart; so is a certificate passing its expiry date.
+setInterval(() => {
+  try {
+    tls.tick();
+    if (remote.enabled) syncListeners();
+  } catch (err) {
+    console.error('Sinkronisasi listener gagal:', err?.stack ?? err); // retried in 30 s; never crashes the server
+  }
+}, 30000).unref();
 
 refreshProjects();
 hub.ready = true;
@@ -1132,7 +1242,11 @@ server.listen(PORT, HOST, () => {
   console.log(mirroring ? 'Mirror CLI: aktif (membaca ~/.claude/projects)' : 'Mirror CLI: nonaktif (~/.claude/projects tidak ada)');
   console.log('Tekan Ctrl+C untuk berhenti.');
   if (cutShort.length) console.log(`Giliran terputus saat server berhenti: ${cutShort.length} project (tombol "Lanjutkan" di chat).`);
-  syncLanServers();
+  if (HTTPS_PORT_WARNING) console.error(`PERINGATAN: ${HTTPS_PORT_WARNING}`);
+  if (process.env.OFFICE_TAILSCALE_BIN) console.error(`PERINGATAN: OFFICE_TAILSCALE_BIN dipakai (${process.env.OFFICE_TAILSCALE_BIN}) — Tailscale CLI bukan dari lokasi bawaan.`);
+  if (HTTPS_TEST_BIND) console.error('PERINGATAN: OFFICE_HTTPS_TEST_BIND aktif — listener HTTPS di 127.0.0.1 (hanya untuk test).');
+  syncListeners();
+  tls.start(); // a certificate on disk is used at once; Tailscale is asked in the background
   sessions.probeCatalog(); // what /model offers and the slash commands' descriptions (no model call)
   if (process.argv.includes('--open')) {
     const opener = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]];
@@ -1156,7 +1270,8 @@ async function shutdown() {
     process.exit(1);
   }, SHUTDOWN_HARD_LIMIT_MS).unref();
   server.close(); // no new connections; open event streams end with the process
-  for (const { server: lan } of lanServers.values()) lan.close();
+  for (const { server: lan } of [...lanServers.values(), ...httpsServers.values()]) lan.close();
+  tls.stop();
   mirror.stop();
   try {
     await sessions.shutdown();

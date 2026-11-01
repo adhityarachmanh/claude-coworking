@@ -14,6 +14,12 @@ const GLOBAL_MAX_FAILURES = 20;
 const GLOBAL_WINDOW_MS = 10 * 60 * 1000;
 const GLOBAL_PAUSE_MS = 10 * 60 * 1000;
 export const DEVICE_COOKIE = 'office_device';
+// The https (Tailscale) origin's cookie: `__Host-` = Secure, no Domain, Path=/ (enforced by browsers).
+export const HTTPS_DEVICE_COOKIE = '__Host-office_device';
+// A device is bound to the transport it paired over: a token paired over https is refused over http (where it
+// could be sniffed) and the other way round. Records from before HTTPS existed are 'http'.
+const transportOf = (d) => (d.transport === 'https' ? 'https' : 'http');
+const cleanTransport = (t) => (t === 'https' ? 'https' : 'http');
 // A paired device unused this long is unpaired automatically (enforced here, whatever the cookie's Max-Age).
 export const DEVICE_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 // lastSeen only needs to be accurate to this for the idle rule, so a busy phone doesn't cause a disk write per request.
@@ -185,8 +191,11 @@ export class RemoteAccess {
     }
   }
 
-  /** @returns {{ token?: string, error?: string, triesLeft?: number, retryAfter?: number }} */
-  pair({ code, key }, userAgent, ip = '') {
+  /**
+   * @param {{ transport?: 'http'|'https' }} [options] the transport this pairing came in over (the token only works there)
+   * @returns {{ token?: string, error?: string, triesLeft?: number, retryAfter?: number }}
+   */
+  pair({ code, key }, userAgent, ip = '', { transport = 'http' } = {}) {
     if (!this.enabled) return { error: 'Akses dari perangkat lain sedang dimatikan.' };
     const paused = this.pausedFor();
     if (paused) return { error: `Pairing dijeda karena terlalu banyak percobaan salah. Coba lagi dalam ${Math.ceil(paused / 60)} menit.`, retryAfter: paused };
@@ -210,17 +219,21 @@ export class RemoteAccess {
     this.failures.delete(ip);
     this.pairing = null; // single use
     const token = randomBytes(32).toString('base64url');
-    this.state.devices.push({ id: randomUUID(), hash: sha256(token), name: deviceName(userAgent), created: Date.now(), lastSeen: Date.now() });
+    this.state.devices.push({ id: randomUUID(), hash: sha256(token), name: deviceName(userAgent), created: Date.now(), lastSeen: Date.now(), transport: cleanTransport(transport) });
     this.hub.save();
     return { token };
   }
 
-  /** The paired device for a cookie token, or null (also null once it sat unused for DEVICE_IDLE_MS). */
-  verify(token) {
+  /**
+   * The paired device for a cookie token, or null (also null once it sat unused for DEVICE_IDLE_MS, and null
+   * when the request came over another transport than the pairing did).
+   * @param {{ transport?: 'http'|'https' }} [options]
+   */
+  verify(token, { transport = 'http' } = {}) {
     if (!token || !this.enabled) return null;
     const hash = sha256(token);
     const device = this.state.devices.find((d) => sameSecret(d.hash, hash));
-    if (!device) return null;
+    if (!device || transportOf(device) !== cleanTransport(transport)) return null;
     const now = Date.now();
     if (isIdle(device, now)) {
       this.pruneIdle(now); // drops this one (and any other idle device) for good
@@ -260,7 +273,7 @@ export class RemoteAccess {
       enabled: this.enabled,
       urls: this.enabled ? lanAddresses().map((ip) => `http://${ip}:${port}`) : [],
       tailscale: networkAddresses().some((a) => a.kind === 'tailscale'),
-      devices: this.state.devices.map(({ id, name, created, lastSeen }) => ({ id, name, created, lastSeen: lastSeen ?? created })),
+      devices: this.state.devices.map((d) => ({ id: d.id, name: d.name, created: d.created, lastSeen: d.lastSeen ?? d.created, transport: transportOf(d) })),
       idleDays: Math.round(DEVICE_IDLE_MS / 86_400_000),
     };
   }

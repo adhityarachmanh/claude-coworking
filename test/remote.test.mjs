@@ -168,3 +168,25 @@ test('lastSeen moves forward on use, but is saved at most once an hour per devic
     assert.ok(remote.verify(token), `day ${day}`);
   }
 });
+
+test('a device token only works over the transport it was paired on (http vs https)', () => {
+  const { remote } = fakeRemote();
+  const viaHttp = remote.pair({ key: remote.currentPairing().key }, 'Android Chrome/1', '100.80.1.2').token;
+  const viaHttps = remote.pair({ key: remote.currentPairing().key }, 'Android Chrome/1', '100.80.1.2', { transport: 'https' }).token;
+  assert.ok(remote.verify(viaHttp), 'default transport is http');
+  assert.ok(remote.verify(viaHttp, { transport: 'http' }));
+  assert.equal(remote.verify(viaHttp, { transport: 'https' }), null, 'an http token is refused over https');
+  assert.ok(remote.verify(viaHttps, { transport: 'https' }));
+  assert.equal(remote.verify(viaHttps), null, 'an https token is refused over plain http (where it could be sniffed)');
+  assert.equal(remote.verify(viaHttps, { transport: 'http' }), null);
+  // records from before HTTPS existed count as http; an unknown value can't make a device https
+  remote.state.devices[0].transport = undefined;
+  assert.ok(remote.verify(viaHttp));
+  assert.equal(remote.verify(viaHttp, { transport: 'https' }), null);
+  const odd = remote.pair({ key: remote.currentPairing().key }, '', '', { transport: 'HTTPS ' }).token;
+  assert.ok(remote.verify(odd, { transport: 'http' }));
+  // the 📱 list shows the transport, never a hash
+  const info = remote.publicInfo(4317);
+  assert.deepEqual(info.devices.map((d) => d.transport), ['http', 'https', 'http']);
+  assert.ok(!JSON.stringify(info).includes('hash'));
+});

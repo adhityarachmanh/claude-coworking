@@ -54,6 +54,7 @@ before(async () => {
       ...process.env,
       OFFICE_PORT: String(port),
       OFFICE_DATA_DIR: path.join(TMP, 'data'),
+      OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale.exe'), // never the real Tailscale CLI
       PROJECTS_ROOT: path.join(TMP, 'projects'),
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
