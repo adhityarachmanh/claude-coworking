@@ -27,6 +27,7 @@ import { TemplateStore } from './src/templates.js';
 import { TaskQueue } from './src/queue.js';
 import { BackupScheduler } from './src/backup-schedule.js';
 import { SpotifyService, wifiSpotifyState } from './src/spotify.js';
+import { trustSystemCertificates } from './src/system-ca.js';
 import { createSpotifyLauncher } from './src/spotify-launcher.js';
 import { callback as spotifyCallback } from './src/routes/spotify.js';
 import { wifiAccountAlert } from './src/routes/account.js';
@@ -97,6 +98,9 @@ if (process.argv.includes('--background')) {
   console.log = write('INFO');
   console.error = write('ERROR');
 }
+
+// Before any outgoing HTTPS: also trust the OS certificate store (TLS-inspecting proxies such as Zscaler).
+const SYSTEM_CERTS = trustSystemCertificates();
 
 // OFFICE_DATA_DIR lets tests run against a throwaway state file.
 const DATA_DIR = process.env.OFFICE_DATA_DIR ?? path.join(APP_DIR, 'data');
@@ -694,6 +698,7 @@ server.listen(PORT, HOST, () => {
   console.log(claude ? `Claude Code: ${claude.command}` : 'PERINGATAN: Claude Code tidak ditemukan (set env CLAUDE_BIN).');
   console.log(`Folder projects: ${projectRoots().join('; ')}  ·  Role agents: ${Object.keys(sessions.agents).join(', ') || '-'}`);
   console.log(mirroring ? 'Mirror CLI: aktif (membaca ~/.claude/projects)' : 'Mirror CLI: nonaktif (~/.claude/projects tidak ada)');
+  if (SYSTEM_CERTS) console.log(`TLS: ${SYSTEM_CERTS} sertifikat dari sistem ikut dipercaya (proxy/antivirus yang memeriksa HTTPS).`);
   console.log('Tekan Ctrl+C untuk berhenti.');
   if (cutShort.length) console.log(`Giliran terputus saat server berhenti: ${cutShort.length} project (tombol "Lanjutkan" di chat).`);
   if (HTTPS_PORT_WARNING) console.error(`PERINGATAN: ${HTTPS_PORT_WARNING}`);

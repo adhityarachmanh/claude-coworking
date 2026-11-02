@@ -584,8 +584,10 @@ export class SpotifyService {
     let res;
     try {
       res = await this.fetchImpl(u.href, { method, headers, body, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) });
-    } catch {
-      this.#logFail(action, 0, 'network');
+    } catch (err) {
+      // An untrusted TLS-inspecting proxy (Zscaler, antivirus) is a certificate error, not a dead network: say so.
+      const cert = /CERT|ISSUER|SELF_SIGNED/.test(String(err?.cause?.code ?? ''));
+      this.#logFail(action, 0, cert ? 'cert' : 'network');
       throw new SpotifyError('network');
     }
     if (res.status === 429 && !image) {

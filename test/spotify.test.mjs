@@ -552,3 +552,16 @@ test('logs: a reason from a Spotify body cannot inject a log line; bursts of con
   await Promise.all([svc.control({ action: 'pause' }), svc.control({ action: 'play' }), svc.control({ action: 'pause' })]);
   assert.equal(svc.burstTimers.size, 1, 'one pending follow-up poll');
 });
+
+test('a TLS-inspecting proxy Node does not trust is logged as a certificate problem, not a dead network', async (t) => {
+  const fake = await startFakeSpotify();
+  t.after(() => fake.close());
+  // Zscaler-style: the token endpoint fails the TLS check before any HTTP answer
+  const certFail = async (url, init) => {
+    if (String(url).includes('/api/token')) throw new TypeError('fetch failed', { cause: Object.assign(new Error('unable to get local issuer certificate'), { code: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' }) });
+    return fetch(url, init);
+  };
+  const { svc, logs } = make(fake, { fetch: certFail });
+  assert.equal((await login(svc)).error, 'exchange');
+  assert.ok(logs.some((l) => /^Spotify: login gagal \(0\/cert\)$/.test(l)), logs.join('\n'));
+});
