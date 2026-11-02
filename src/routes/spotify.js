@@ -13,6 +13,9 @@ const STATUS = {
   premium: 403,
   restricted: 403,
   'no-device': 404,
+  'no-app': 404,
+  'pick-device': 409,
+  'launch-timeout': 504,
   'not-found': 404,
   'bad-request': 400,
   'rate-limited': 503,
@@ -49,8 +52,11 @@ export function register(router) {
   );
   router.post('/api/spotify/devices', guard(async ({ spotify }, req, res) => json(res, 200, await spotify.devices())));
   router.post('/api/spotify/playlists', guard(async ({ spotify }, req, res, body) => json(res, 200, await spotify.playlists({ offset: body.offset ?? 0 }))));
-  router.post('/api/spotify/control', guard(async ({ spotify }, req, res, body) => json(res, 200, await spotify.control(body))));
-  // "Saat ada permintaan izin" only (duck/duckVolume): a Tailscale phone may change it too (Lead, Q5).
+  // allowLaunch: ▶ may start the Spotify desktop app on this laptop only for the laptop itself or a Tailscale phone.
+  // (Plain WiFi never gets here: server.js refuses /control as read-only. Checked again so a future gate change can't
+  // make a sniffable request start programs.)
+  router.post('/api/spotify/control', guard(async (ctx, req, res, body) => json(res, 200, await ctx.spotify.control(body, { allowLaunch: ctx.canManageAccount?.(req) === true }))));
+  // duck/duckVolume ("Saat ada permintaan izin") and autoLaunch: a Tailscale phone may change them too (Lead, Q5).
   router.post('/api/spotify/settings', guard(async ({ spotify }, req, res, body) => json(res, 200, { settings: spotify.setConfig({ settings: body.settings ?? {} }, { settingsOnly: true }).settings })));
   // Laptop only (server.js LOCAL_ONLY): empty body = read.
   router.post(

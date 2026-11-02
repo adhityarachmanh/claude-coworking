@@ -4,7 +4,8 @@
 // type-checked, and the views put it in the page with textContent / attributes only.
 
 export const STATUSES = ['unconfigured', 'disconnected', 'idle', 'playing', 'paused'];
-export const ERROR_CODES = ['no-device', 'premium', 'restricted', 'rate-limited', 'network', 'revoked'];
+export const ERROR_CODES = ['no-device', 'premium', 'restricted', 'rate-limited', 'network', 'revoked', 'no-app', 'launch-timeout'];
+export const LAUNCHING_TEXT = 'Membuka Spotify di latar belakang…';
 const KINDS = ['track', 'episode', 'ad'];
 const MAX_TEXT = 200;
 const ART_ID = /^[0-9a-f]{16}$/;
@@ -52,12 +53,15 @@ export function cleanState(raw) {
     at: num(raw.at, 0),
     device,
     office: raw.office !== false,
+    launching: raw.launching === true, // the server is starting the desktop app (bounded: it always ends)
     updatedAt: num(raw.updatedAt, 0),
   };
 }
 
 export const isConnected = (s) => Boolean(s) && !['unconfigured', 'disconnected'].includes(s.status);
 export const hasTrack = (s) => Boolean(s?.track) && ['playing', 'paused'].includes(s.status);
+/** Connected but nothing active: ▶ may still start music (the server picks a device or opens Spotify on the laptop). */
+export const canStart = (s) => isConnected(s) && !s.device;
 
 /** Where the song is at `now`: the server's reading plus the time since, while playing (never past the end). */
 export function progressAt(s, now = Date.now()) {
@@ -102,7 +106,12 @@ export function statusText(s, { now = Date.now() } = {}) {
   if (!s) return '';
   if (s.status === 'unconfigured') return 'Spotify belum diatur. Isi Client ID di ⚙ Pengaturan (laptop).';
   if (s.status === 'disconnected') return s.error?.code === 'revoked' ? `Akses Spotify dicabut. ${SETTINGS_HINT}.` : `${SETTINGS_HINT}.`;
+  if (s.launching) return LAUNCHING_TEXT;
   switch (s.error?.code) {
+    case 'no-app':
+      return 'Spotify belum terpasang di laptop ini. Pasang Spotify, atau buka Spotify di HP/PC lain lalu pilih di sini.';
+    case 'launch-timeout':
+      return 'Spotify dibuka di laptop tapi belum siap. Tunggu sebentar lalu tekan ▶ lagi.';
     case 'no-device':
       return 'Tidak ada perangkat aktif. Buka Spotify di HP/PC lalu pilih di sini.';
     case 'premium':
@@ -117,7 +126,7 @@ export function statusText(s, { now = Date.now() } = {}) {
     case 'revoked':
       return `Akses Spotify dicabut. ${SETTINGS_HINT}.`;
     default:
-      return s.status === 'idle' ? 'Tidak ada yang diputar. Pilih perangkat di bawah atau putar playlist.' : '';
+      return s.status === 'idle' ? 'Tidak ada yang diputar. Tekan ▶, pilih perangkat di bawah, atau putar playlist.' : '';
   }
 }
 

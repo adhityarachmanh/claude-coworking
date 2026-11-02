@@ -64,10 +64,10 @@ test('routes against the service: state, config (hint only), settings limited to
   assert.equal((await call(ctx, '/api/spotify/state')).json().status, 'unconfigured');
   assert.equal((await call(ctx, '/api/spotify/login')).status, 409);
   const cfg = (await call(ctx, '/api/spotify/config', { clientId: '0123456789abcdef0123456789abcdef' })).json();
-  assert.deepEqual(cfg, { clientIdSet: true, clientIdHint: '…cdef', clientIdSource: 'file', redirectUri: `http://127.0.0.1:${PORT}/spotify/callback`, connected: false, displayName: null, settings: { office: true, duck: 'off', duckVolume: 20 } });
+  assert.deepEqual(cfg, { clientIdSet: true, clientIdHint: '…cdef', clientIdSource: 'file', redirectUri: `http://127.0.0.1:${PORT}/spotify/callback`, connected: false, displayName: null, settings: { office: true, duck: 'off', duckVolume: 20, autoLaunch: true } });
   assert.deepEqual((await call(ctx, '/api/spotify/config')).json(), cfg, 'empty body = read');
   assert.equal((await call(ctx, '/api/spotify/config', { clientId: 'nope' })).status, 400);
-  assert.deepEqual((await call(ctx, '/api/spotify/settings', { settings: { duck: 'duck' } })).json(), { settings: { office: true, duck: 'duck', duckVolume: 20 } });
+  assert.deepEqual((await call(ctx, '/api/spotify/settings', { settings: { duck: 'duck' } })).json(), { settings: { office: true, duck: 'duck', duckVolume: 20, autoLaunch: true } });
   assert.equal((await call(ctx, '/api/spotify/settings', { settings: { office: false } })).status, 400, 'office toggle stays laptop-only');
   assert.equal((await call(ctx, '/api/spotify/settings', { clientId: 'ffffffffffffffffffffffffffffffff' })).json().settings.duck, 'duck', 'clientId ignored here');
   assert.equal(spotify.config().clientIdHint, '…cdef');

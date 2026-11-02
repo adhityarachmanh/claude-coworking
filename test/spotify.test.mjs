@@ -160,7 +160,7 @@ test('token store: atomic file without secret, origin-bound; state carries no to
 
   const s = await svc.refreshState();
   assert.equal(s.status, 'playing');
-  assert.deepEqual(Object.keys(s).sort(), ['at', 'device', 'error', 'office', 'progressMs', 'status', 'track', 'updatedAt']);
+  assert.deepEqual(Object.keys(s).sort(), ['at', 'device', 'error', 'launching', 'office', 'progressMs', 'status', 'track', 'updatedAt']);
   assert.deepEqual(s.track, { kind: 'track', title: 'Lagu Satu', artists: 'Artis Fake', album: 'Album Fake', artId: s.track.artId, durationMs: 200_000 });
   assert.match(s.track.artId, /^[0-9a-f]{16}$/);
   assert.deepEqual(s.device, { name: 'Laptop Adhit', type: 'computer', volume: 60, supportsVolume: true });
@@ -202,7 +202,7 @@ test('store: a corrupt file is set aside; Client ID validated; env is a read-onl
   assert.throws(() => svc.setConfig({ settings: { duckVolume: 80 } }), { code: 'bad-request' });
   assert.throws(() => svc.setConfig({ settings: { nope: 1 } }), { code: 'bad-request' });
   assert.throws(() => svc.setConfig({ settings: { office: false } }, { settingsOnly: true }), { code: 'bad-request' }, 'phones change only the duck settings');
-  assert.deepEqual(svc.setConfig({ settings: { duck: 'pause', duckVolume: 10 } }, { settingsOnly: true }).settings, { office: true, duck: 'pause', duckVolume: 10 });
+  assert.deepEqual(svc.setConfig({ settings: { duck: 'pause', duckVolume: 10 } }, { settingsOnly: true }).settings, { office: true, duck: 'pause', duckVolume: 10, autoLaunch: true });
 
   const env = make(fake, { clientId: false, envClientId: 'ffffffffffffffffffffffffffffffff' });
   assert.equal(env.svc.config().clientIdSource, 'env');

@@ -120,7 +120,7 @@ const tokenRequests = () => fake.log.filter((l) => l.path === '/api/token').leng
 test('test hook: logged as a warning; the snapshot carries `spotify` (unconfigured), config carries the redirect URI', async () => {
   assert.match(output, new RegExp(`PERINGATAN: OFFICE_SPOTIFY_TEST_ORIGIN aktif — Spotify: MODE TEST \\(${fake.origin.replace(/\./g, '\\.')}\\)`));
   const snap = await waitEvent((t) => t === 'snapshot');
-  assert.deepEqual(snap.obj.spotify, { status: 'unconfigured', error: null, track: null, progressMs: 0, at: 0, device: null, office: true, updatedAt: 0 });
+  assert.deepEqual(snap.obj.spotify, { status: 'unconfigured', error: null, track: null, progressMs: 0, at: 0, device: null, office: true, launching: false, updatedAt: 0 });
   assert.equal(snap.obj.config.spotify.redirectUri, `http://127.0.0.1:${PORT}/spotify/callback`);
 });
 

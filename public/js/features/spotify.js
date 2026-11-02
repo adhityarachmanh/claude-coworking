@@ -8,7 +8,7 @@ import { api, canCall, toast } from '../core/api.js';
 import { $ } from '../core/dom.js';
 import { stage } from '../core/scenes.js';
 import { READ_ONLY_HINT, state } from '../core/state.js';
-import { CLIENT_ID_RE, DUCK_MODES, SETTINGS_HINT, clockTime, cleanState, controlBlock, deviceIcon, fmtTime, hasTrack, isConnected, progressAt, radioLabel, statusText, trackLine } from '../core/spotify-rules.js';
+import { CLIENT_ID_RE, DUCK_MODES, LAUNCHING_TEXT, SETTINGS_HINT, canStart, clockTime, cleanState, controlBlock, deviceIcon, fmtTime, hasTrack, isConnected, progressAt, radioLabel, statusText, trackLine } from '../core/spotify-rules.js';
 import { radio } from '../office/radio.js';
 import { closeModal, openModal } from '../ui/modals.js';
 
@@ -18,8 +18,8 @@ const P = {
   devices: '/api/spotify/devices',
   playlists: '/api/spotify/playlists',
   control: '/api/spotify/control',
-  config: '/api/spotify/config', // laptop only: Client ID, office toggle, duck
-  settings: '/api/spotify/settings', // duck only: laptop and Tailscale phones
+  config: '/api/spotify/config', // laptop only: Client ID, office toggle, duck, autoLaunch
+  settings: '/api/spotify/settings', // duck + autoLaunch: laptop and Tailscale phones
   login: '/api/spotify/login',
   logout: '/api/spotify/logout',
 };
@@ -176,10 +176,14 @@ function renderPill() {
   }
   box.hidden = false;
   const pill = $('#spotify-pill');
-  const warnText = ['rate-limited', 'network'].includes(s.error?.code) ? statusText(s) : '';
+  const warnText = !s.launching && ['rate-limited', 'network', 'no-app', 'launch-timeout'].includes(s.error?.code) ? statusText(s) : '';
   let text;
   let label;
-  if (s.status === 'disconnected') {
+  if (s.launching) {
+    // The server is starting the desktop app (bounded wait; it always ends with a state or an error).
+    text = LAUNCHING_TEXT;
+    label = `Musik: ${LAUNCHING_TEXT} Buka pemutar musik`;
+  } else if (s.status === 'disconnected') {
     text = 'Hubungkan';
     label = 'Spotify belum terhubung. Buka pengaturan Spotify';
   } else if (hasTrack(s)) {
@@ -193,13 +197,14 @@ function renderPill() {
   $('#spotify-pill-warn').hidden = !warnText;
   pill.classList.toggle('disconnected', s.status === 'disconnected');
   pill.classList.toggle('playing', s.status === 'playing');
+  pill.classList.toggle('launching', s.launching);
   pill.setAttribute('aria-label', warnText ? `${label}. ${warnText}` : label);
   pill.title = warnText ? `${text}\n${warnText}` : text;
   const toggle = $('#spotify-toggle');
-  // Read-only WiFi: no ⏯ at all (the dialog still opens, with its controls off).
-  toggle.hidden = state.readOnly || !hasTrack(s) || Boolean(controlReason());
+  // Read-only WiFi: no ⏯ at all (the dialog still opens, with its controls off). Nothing active: ▶ still starts music.
+  toggle.hidden = state.readOnly || !(hasTrack(s) || canStart(s)) || Boolean(controlReason());
   setPlayButton(toggle, s);
-  toggle.disabled = music.busy;
+  toggle.disabled = music.busy || s.launching;
   updateProgress();
 }
 
@@ -263,6 +268,8 @@ async function control(body, { quiet = false } = {}) {
     return true;
   } catch (err) {
     toast(err?.data?.code === 'rate-limited' || err?.status === 503 ? rateLimitText(err) : err.message);
+    // The launch ended in an error: never leave "Membuka Spotify…" up (the pushed state says so too; this is a backstop).
+    if (music.s?.launching) applySpotify({ ...music.s, launching: false });
     return false;
   } finally {
     if (!quiet) {
@@ -313,11 +320,13 @@ export function openPlayer() {
 function renderControls() {
   const s = music.s;
   const reason = controlReason();
-  const off = Boolean(reason) || music.busy;
+  const off = Boolean(reason) || music.busy || Boolean(s?.launching);
   for (const id of ['#sp-prev', '#sp-play', '#sp-next']) {
     const btn = $(id);
-    btn.disabled = off || !s?.device;
-    btn.title = reason ?? (s?.device ? '' : 'Tidak ada perangkat aktif');
+    // ▶ without an active device: the server picks one (or opens Spotify on the laptop in the background).
+    const startable = id === '#sp-play' && canStart(s);
+    btn.disabled = off || (!s?.device && !startable);
+    btn.title = reason ?? (s?.launching ? LAUNCHING_TEXT : s?.device ? '' : startable ? 'Putar di perangkat utama (★), atau buka Spotify di laptop' : 'Tidak ada perangkat aktif');
   }
   setPlayButton($('#sp-play'), s);
   const vol = $('#sp-volume');
@@ -340,7 +349,8 @@ function renderDialog() {
   $('#sp-controls').hidden = !connected;
   renderControls();
   $('#sp-status').textContent = statusText(s);
-  $('#sp-status').classList.toggle('warn', Boolean(s?.error) || !connected);
+  $('#sp-status').classList.toggle('warn', (Boolean(s?.error) && !s.launching) || !connected);
+  $('#sp-status').classList.toggle('launching', Boolean(s?.launching));
   const ro = $('#sp-ro');
   ro.hidden = !state.readOnly;
   ro.textContent = state.readOnly ? `👁 ${READ_ONLY_HINT}.` : '';
@@ -361,7 +371,7 @@ function cleanDevices(res) {
   return list
     .filter((d) => d && typeof d === 'object' && typeof d.id === 'string' && DEVICE_ID.test(d.id))
     .slice(0, 30)
-    .map((d) => ({ id: d.id, name: str(d.name) || 'Perangkat', type: str(d.type, 40), active: d.active === true, restricted: d.restricted === true }));
+    .map((d) => ({ id: d.id, name: str(d.name) || 'Perangkat', type: str(d.type, 40), active: d.active === true, restricted: d.restricted === true, preferred: d.preferred === true }));
 }
 
 async function loadDevices() {
@@ -382,8 +392,10 @@ function renderDevices() {
   const reason = controlReason();
   box.replaceChildren(
     ...music.devices.map((d) => {
+      const row = document.createElement('div');
+      row.className = 'sp-dev-row';
       const label = document.createElement('label');
-      label.className = `sp-dev${d.active ? ' active' : ''}`;
+      label.className = `sp-dev${d.active ? ' active' : ''}${d.preferred ? ' preferred' : ''}`;
       const input = document.createElement('input');
       input.type = 'radio';
       input.name = 'sp-device';
@@ -394,13 +406,28 @@ function renderDevices() {
       name.className = 'sp-dev-name';
       name.textContent = `${deviceIcon(d.type)} ${d.name}`;
       label.append(input, name);
-      if (d.active || d.restricted) {
+      const tags = [d.preferred ? '★ utama' : '', d.restricted ? 'tidak bisa dikendalikan' : d.active ? 'aktif' : ''].filter(Boolean);
+      if (tags.length) {
         const tag = document.createElement('small');
         tag.className = 'muted';
-        tag.textContent = d.restricted ? 'tidak bisa dikendalikan' : 'aktif';
+        tag.textContent = tags.join(' · ');
+        if (d.preferred) tag.title = 'Perangkat utama: ▶ memutar di sini saat tidak ada yang aktif';
         label.append(tag);
       }
-      return label;
+      row.append(label);
+      // "Selalu putar di sini": makes it the ★ device (only remembered; nothing plays yet).
+      if (!d.preferred && !d.restricted) {
+        const star = document.createElement('button');
+        star.type = 'button';
+        star.className = 'ghost sp-small sp-dev-star';
+        star.dataset.prefer = d.id;
+        star.textContent = '☆';
+        star.title = 'Selalu putar di sini';
+        star.setAttribute('aria-label', `Selalu putar di ${d.name}`);
+        star.disabled = Boolean(reason) || music.busy;
+        row.append(star);
+      }
+      return row;
     }),
   );
 }
@@ -410,6 +437,16 @@ async function onDevicePick(e) {
   if (!input || !music.devices.some((d) => d.id === input.value)) return;
   const ok = await control({ action: 'transfer', deviceId: input.value, play: music.s?.status === 'playing' });
   if (dialogOpen()) (ok ? loadDevices() : renderDevices());
+}
+
+async function onPreferClick(e) {
+  const btn = e.target.closest('[data-prefer]');
+  const device = btn && music.devices.find((d) => d.id === btn.dataset.prefer);
+  if (!device) return;
+  if (await control({ action: 'prefer', deviceId: device.id })) {
+    toast(`▶ akan memutar di ${device.name} saat tidak ada perangkat aktif.`, 'ok');
+    if (dialogOpen()) loadDevices();
+  }
 }
 
 const pickedDevice = () => $('#sp-devices input[name="sp-device"]:checked')?.value ?? null;
@@ -572,6 +609,7 @@ function cleanSettings(raw) {
     office: s.office !== false,
     duck: DUCK_MODES.includes(s.duck) ? s.duck : 'off',
     duckVolume: Number.isFinite(s.duckVolume) ? Math.max(0, Math.min(50, Math.round(s.duckVolume))) : 20,
+    autoLaunch: s.autoLaunch !== false,
   };
 }
 
@@ -637,6 +675,7 @@ function renderConfig(cfg) {
   $('#sps-switch').hidden = !cfg.connected;
   $('#sps-logout').hidden = !cfg.connected;
   $('#sps-office').checked = cfg.settings.office;
+  $('#sps-autolaunch').checked = cfg.settings.autoLaunch;
   setDuckSelect($('#sps-duck'), cfg.settings);
 }
 
@@ -765,9 +804,9 @@ function renderDashRow() {
   const sub = track ? [s.status === 'paused' ? 'dijeda' : 'diputar', s.device?.name].filter(Boolean).join(' · ') : isConnected(s) ? statusText(s) : SETTINGS_HINT;
   $('#dash-music-sub').textContent = sub;
   const toggle = $('#dash-music-toggle');
-  toggle.hidden = !track || Boolean(controlReason());
+  toggle.hidden = !(track || canStart(s)) || Boolean(controlReason());
   setPlayButton(toggle, s);
-  toggle.disabled = music.busy;
+  toggle.disabled = music.busy || s.launching;
 }
 
 // ---------- Ctrl+P ----------
@@ -776,9 +815,10 @@ function renderDashRow() {
 export function musicPaletteItems() {
   const s = music.s;
   const reason = !music.available ? 'Spotify tidak tersedia' : controlReason() ?? (hasTrack(s) || s?.device ? null : 'Tidak ada yang diputar');
+  const playReason = reason && canStart(s) && !controlReason() ? null : reason; // ▶ with nothing active still starts music
   const keywords = 'musik music spotify lagu song';
   return [
-    { id: 'music:toggle', group: 'music', icon: '⏯', label: 'Musik: putar/jeda', hint: hasTrack(s) ? trackLine(s) : '', disabled: reason, keywords: `${keywords} play pause putar jeda`, run: () => togglePlay() },
+    { id: 'music:toggle', group: 'music', icon: '⏯', label: 'Musik: putar/jeda', hint: hasTrack(s) ? trackLine(s) : '', disabled: playReason, keywords: `${keywords} play pause putar jeda`, run: () => togglePlay() },
     { id: 'music:next', group: 'music', icon: '⏭', label: 'Musik: berikutnya', disabled: reason, keywords: `${keywords} next skip lewati`, run: () => nextTrack() },
     { id: 'music:open', group: 'music', icon: '♪', label: 'Buka pemutar musik', disabled: music.available ? null : 'Spotify tidak tersedia', keywords: `${keywords} player pemutar radio playlist perangkat volume`, run: () => openPlayer() },
   ];
@@ -808,6 +848,7 @@ export function initSpotify() {
     sendVolume(vol.value);
   });
   $('#sp-devices').addEventListener('change', onDevicePick);
+  $('#sp-devices').addEventListener('click', onPreferClick);
   $('#sp-devices-refresh').addEventListener('click', loadDevices);
   $('#sp-pl-toggle').addEventListener('click', togglePlaylists);
   $('#sp-pl-filter').addEventListener('input', filterPlaylists);
@@ -834,6 +875,7 @@ export function initSpotify() {
   $('#sps-logout').addEventListener('click', disconnect);
   $('#sps-copy').addEventListener('click', copyRedirect);
   $('#sps-office').addEventListener('change', (e) => saveSetting({ office: e.target.checked }, () => (e.target.checked = !e.target.checked)));
+  $('#sps-autolaunch').addEventListener('change', (e) => saveSetting({ autoLaunch: e.target.checked }, () => (e.target.checked = !e.target.checked)));
   $('#sps-duck').addEventListener('change', (e) => {
     const prev = music.config?.settings.duck ?? 'off';
     saveSetting({ duck: e.target.value }, () => (e.target.value = prev));

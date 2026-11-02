@@ -212,17 +212,44 @@ Rincian proxy:
 ```js
 {
   status: 'unconfigured' | 'disconnected' | 'idle' | 'playing' | 'paused',
-  error: null | { code: 'no-device'|'premium'|'restricted'|'rate-limited'|'network'|'revoked', message: string, until?: number },
+  error: null | { code: 'no-device'|'premium'|'restricted'|'rate-limited'|'network'|'revoked'|'no-app'|'launch-timeout', message: string, until?: number },
   track: null | { kind: 'track'|'episode'|'ad', title: string, artists: string, album: string, artId: string|null, durationMs: number },
   progressMs: number, at: number,          // at = Date.now() server saat progress diukur (interpolasi klien)
   device: null | { name: string, type: string, volume: number|null, supportsVolume: boolean },
   office: boolean,                         // settings.office: tampilkan radio/ticker di kantor
+  launching: boolean,                      // server sedang membuka aplikasi Spotify di laptop (§2.8), selalu berakhir
   updatedAt: number,
 }
 ```
 - **Tidak ada**: token, Client ID, URI/ID track, album, playlist, perangkat, maupun nama akun. Test mengecek ini dengan memindai key dan nilai secara rekursif (§9).
 - Semua string dipotong 200 karakter. Klien merender **hanya lewat `textContent`**, karena judul lagu adalah input yang tidak tepercaya.
 - Snapshot SSE mendapat field `spotify` (satu baris di `openStream`), jadi halaman baru langsung punya state tanpa request.
+
+### 2.7 Perangkat utama (★)
+
+- `data/spotify.json` menyimpan `preferredDevice: { id, name, type } | null` (di samping `settings`, bukan di dalamnya, supaya `/settings` tidak pernah mengirim id perangkat). Isinya diperbarui setelah `transfer`, `play`, atau `playlist` berhasil: perangkat tujuan, atau perangkat yang aktif menurut Spotify. File hanya ditulis kalau nilainya berubah.
+- `POST /devices` → `{ devices: [{ …, preferred: boolean }], preferred: null | { name, type, available } }`.
+- `POST /control { action: 'prefer', deviceId: string | null }` ("Selalu putar di sini"): hanya disimpan, tanpa request ke Spotify. `deviceId` harus ada di daftar perangkat terakhir; `null` menghapus ★. Balasan: `publicState()`.
+- id perangkat tidak pernah masuk `publicState()`.
+
+### 2.8 ▶ tanpa perangkat aktif: pilih otomatis, lalu buka Spotify di latar belakang
+
+Berlaku untuk `play` dan `playlist` tanpa `deviceId`. Kalau masih ada perangkat aktif, ini cuma play biasa. Kalau perangkat aktif ternyata sudah hilang (balasan 404), langsung ke langkah di bawah.
+1. Ambil `/me/player/devices`. Kalau ada yang aktif, play biasa.
+2. Tepat **satu** perangkat yang bisa dipakai (tidak `restricted`) → transfer + play di perangkat itu.
+3. Kalau tidak, dan perangkat ★ tersedia → pakai perangkat ★.
+4. Tidak ada perangkat sama sekali, **atau** ★ bertipe `computer` (laptop ini) tetapi tidak tersedia → buka aplikasi di laptop, dengan syarat: request datang dari laptop atau HP lewat Tailscale (`ctx.canManageAccount(req)` → `allowLaunch`; WiFi biasa sudah ditolak gerbang read-only), `settings.autoLaunch` aktif (default ON; laptop lewat `/config`, HP Tailscale lewat `/settings`), dan server punya launcher (`null` di mode test).
+5. Selain itu, error `pick-device` (409: ada beberapa perangkat, pilih satu atau tandai ★) atau `no-device` (404).
+
+Membuka aplikasi (`src/spotify-launcher.js`, tanpa shell, argumen tetap):
+- Windows (a): `%APPDATA%\Spotify\Spotify.exe --minimized` lewat `execFile` (`windowsHide`, `detached`, `unref`).
+- Windows (b), versi Microsoft Store: folder `%LOCALAPPDATA%\Packages\SpotifyAB.SpotifyMusic_<publisher>` (nama divalidasi regex) → AUMID `<family>!Spotify` → `explorer.exe shell:AppsFolder\<AUMID>`. Versi Store tidak menerima argumen, jadi jendelanya bisa muncul. Setelah perangkatnya terdeteksi, PowerShell tersembunyi dengan skrip tetap (tanpa input user, timeout 5 s) memanggil `ShowWindowAsync(MainWindowHandle, 6)` (SW_MINIMIZE, fokus kembali ke jendela sebelumnya). Langkah ini opsional (`createSpotifyLauncher({ minimizeStoreWindow: false })`) dan best effort.
+- (c) Tidak terpasang → `no-app` (404): "Pasang Spotify, atau buka Spotify di HP/PC lain lalu pilih di sini."
+- macOS: `open -g -a Spotify`. Linux/lainnya: tidak membuka apa pun (→ `no-device`).
+- Aplikasi dibuka paling sering sekali per `launchGapMs` = 30 s. ▶ kedua dalam rentang itu hanya ikut menunggu. Prosesnya single-flight: ▶ yang datang bersamaan berbagi satu proses buka dan satu masa tunggu.
+- Masa tunggunya terbatas: polling `/me/player/devices` tiap `launchPollMs` = 1 s, paling lama `launchWaitMs` = 20 s (dibatasi tenggat waktu **dan** jumlah poll). Tiap poll kena timeout request yang sama dan blok 429 global (429 langsung menghentikan tunggu). Yang dicari: perangkat ★ bertipe computer, perangkat computer yang namanya sama dengan hostname, perangkat computer baru, atau satu-satunya perangkat kalau sebelumnya kosong. Sesudah ketemu: transfer + play (atau putar playlist dengan `device_id`), dengan retry 404 maksimal 2 kali. Kalau tidak ketemu: `launch-timeout` (504).
+- Selama proses, `publicState().launching = true` (SSE). Setelah selesai, nilainya selalu `false`. Error `no-app`/`launch-timeout` juga masuk `publicState().error` sampai poll berikutnya.
+- UI: pill dan dialog menampilkan "Membuka Spotify di latar belakang…" (teks miring, tanpa spinner) dan tombol menunggu. ▶ tetap aktif saat tidak ada perangkat aktif (pill, dialog, 🗂, Ctrl+P). Daftar perangkat menampilkan "★ utama" dan tombol ☆ "Selalu putar di sini". Opsi ⚙ "Buka Spotify otomatis di latar belakang". Kalau balasan error datang tanpa event SSE, klien sendiri yang mematikan `launching`.
 
 ---
 

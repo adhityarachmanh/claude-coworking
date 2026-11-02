@@ -1719,6 +1719,13 @@ body.read-only #composer-hint { color: var(--ask); }
 .sp-dev-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-dev small { flex: none; }
 .sp-dev:has(input:disabled) { cursor: default; opacity: .7; }
+.sp-dev-row { display: flex; align-items: stretch; gap: 4px; min-width: 0; }
+.sp-dev-row > .sp-dev { flex: 1; }
+.sp-dev.preferred small { color: var(--warn-text); }
+.sp-dev-star { flex: none; }
+/* "Membuka Spotify di latar belakang…": a steady hint, no endless spinner (the server's wait is bounded) */
+.spotify-pill.launching { color: var(--text-2); font-style: italic; }
+.sp-status.launching { color: var(--text-2); font-style: italic; }
 .sp-pl-toggle { align-self: flex-start; font-weight: 600; min-height: 32px; }
 .sp-pl-panel { display: flex; flex-direction: column; gap: 6px; }
 .sp-pl-panel[hidden] { display: none; }

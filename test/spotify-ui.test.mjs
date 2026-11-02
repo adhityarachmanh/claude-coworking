@@ -117,7 +117,7 @@ function installSpotifyFake(cfg) {
       { id: 'B'.repeat(22), name: 'Lagu <b>Santai</b>', tracks: 12, artId: null },
       { id: 'C'.repeat(22), name: 'Jazz Pagi', tracks: 30, artId: 'aaaaaaaaaaaaaaa2' },
     ],
-    config: { clientIdSet: false, clientIdHint: null, clientIdSource: null, redirectUri: 'http://127.0.0.1:4317/spotify/callback', connected: false, displayName: null, settings: { office: true, duck: 'off', duckVolume: 20 } },
+    config: { clientIdSet: false, clientIdHint: null, clientIdSource: null, redirectUri: 'http://127.0.0.1:4317/spotify/callback', connected: false, displayName: null, settings: { office: true, duck: 'off', duckVolume: 20, autoLaunch: true } },
   };
   window.__sp = fake;
   // Probes used inside page.eval callbacks (they run in the page, so they must live there).
@@ -182,6 +182,7 @@ function installSpotifyFake(cfg) {
     if (body.action === 'play' || body.action === 'playlist') s.status = 'playing';
     if (body.action === 'next' || body.action === 'previous') s.track = { ...s.track, title: `${body.action} lagu`, artId: body.action === 'next' ? 'bbbbbbbbbbbbbbb2' : s.track.artId };
     if (body.action === 'volume') s.device = { ...s.device, volume: body.volume };
+    if (body.action === 'prefer') for (const d of fake.devices) d.preferred = d.id === body.deviceId;
     fake.state = s;
     return s;
   };
@@ -192,6 +193,11 @@ function installSpotifyFake(cfg) {
     const name = m[1];
     const body = opts.body ? JSON.parse(opts.body) : {};
     fake.posts.push({ name, body });
+    // fake.hold: the next control waits for fake.release() (a server busy starting the desktop app)
+    if (name === 'control' && fake.hold) {
+      await new Promise((r) => (fake.release = r));
+      fake.hold = false;
+    }
     const fail = fake.failNext[name];
     if (fail) {
       delete fake.failNext[name];
@@ -484,6 +490,79 @@ for (const vp of VIEWPORTS) {
       await page.eval(() => [...document.querySelectorAll('#palette-list .pal-opt')].find((o) => o.textContent.includes('Musik: berikutnya')).click());
       await page.waitFor(() => window.__sp.posts.some((p) => p.name === 'control'), { message: 'palette next' });
       assert.deepEqual(await posts(page, 'control'), [{ action: 'next' }]);
+      await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+      assertClean(page);
+    });
+
+    test('▶ with nothing active: "Membuka Spotify di latar belakang…" on pill + dialog, then playing or a clear error; ★ and "Selalu putar di sini"', async () => {
+      const LAUNCHING = 'Membuka Spotify di latar belakang…';
+      const IDLE = STATE({ status: 'idle', track: null, device: null, progressMs: 0 });
+      await open(page, { snap: IDLE });
+      await page.eval(() => (window.__sp.devices = window.__sp.devices.map((d) => ({ ...d, active: false, preferred: d.id === 'dev-2' }))));
+      // nothing active: ▶ is still offered (the server picks a device or opens Spotify on the laptop)
+      await page.waitFor(() => !document.querySelector('#spotify-box').hidden && !document.querySelector('#spotify-toggle').hidden, { message: '▶ in the top bar while idle' });
+      assert.equal(await page.eval(() => document.querySelector('#spotify-toggle').getAttribute('aria-label')), 'Putar musik');
+      await page.click('#spotify-pill');
+      await page.waitFor(() => document.querySelectorAll('#sp-devices input').length === 3, { message: 'devices listed' });
+      assert.equal(await page.eval(() => document.querySelector('#sp-play').disabled), false, '▶ enabled without an active device');
+      assert.deepEqual(await page.eval(() => ['#sp-prev', '#sp-next'].map((s) => document.querySelector(s).disabled)), [true, true]);
+      // ★: the preferred device is marked; "Selalu putar di sini" on the others (not on a restricted one)
+      assert.match(await page.eval(() => document.querySelector('#sp-devices input[value="dev-2"]').closest('label').textContent), /★ utama/);
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll('#sp-devices [data-prefer]')].map((b) => [b.dataset.prefer, b.getAttribute('aria-label'), b.title])), [['dev-1', 'Selalu putar di Laptop Adhit', 'Selalu putar di sini']]);
+      await clearPosts(page);
+
+      // ▶ → the server starts Spotify: the pushed state says launching; buttons wait; a text, no spinner
+      await page.eval(() => (window.__sp.hold = true));
+      await page.click('#sp-play');
+      await push(page, { ...IDLE, launching: true, updatedAt: Date.now() });
+      await page.waitFor((t) => document.querySelector('#spotify-pill-text').textContent === t && document.querySelector('#sp-status').textContent === t, { message: 'launching text on pill + dialog' }, LAUNCHING);
+      assert.equal(await page.eval(() => document.querySelector('#sp-play').disabled), true, 'no second ▶ meanwhile');
+      assert.equal(await page.eval(() => document.querySelector('#spotify-pill').classList.contains('launching')), true);
+      assert.match(await page.eval(() => document.querySelector('#spotify-pill').getAttribute('aria-label')), /Membuka Spotify di latar belakang/);
+      assert.equal(await page.eval(() => document.querySelectorAll('#spotify-modal .spinner, #spotify-box .spinner').length), 0);
+      await shot(page, `${tag}-8-launching`);
+      await push(page, STATE({ device: { ...DEVICE }, updatedAt: Date.now() + 1 }));
+      await page.eval(() => window.__sp.release());
+      await page.waitFor(() => document.querySelector('#sp-title').textContent === 'Bengawan Solo' && document.querySelector('#sp-status').textContent === '', { message: 'playing after the launch' });
+      assert.deepEqual(await posts(page, 'control'), [{ action: 'play' }]);
+
+      // the bounded wait ran out: a clear error, and never "Membuka…" forever (even without a pushed event)
+      await push(page, { ...IDLE, updatedAt: Date.now() + 2 });
+      await page.waitFor(() => !document.querySelector('#sp-play').disabled, { message: 'idle again' });
+      await page.eval(() => (window.__sp.hold = true));
+      await page.click('#sp-play');
+      await push(page, { ...IDLE, launching: true, updatedAt: Date.now() + 3 });
+      await page.waitFor((t) => document.querySelector('#sp-status').textContent === t, { message: 'launching again' }, LAUNCHING);
+      await page.eval(() => {
+        window.__sp.failNext.control = { status: 504, body: { error: 'Spotify dibuka di laptop tapi belum siap. Tunggu sebentar lalu tekan ▶ lagi.', code: 'launch-timeout' } };
+        window.__sp.release();
+      });
+      await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => /belum siap/.test(t.textContent)), { message: 'timeout toast' });
+      await page.waitFor((t) => document.querySelector('#spotify-pill-text').textContent !== t && !document.querySelector('#sp-play').disabled, { message: 'launching cleared by the error answer' }, LAUNCHING);
+      await push(page, { ...IDLE, error: { code: 'launch-timeout', message: 'x' }, updatedAt: Date.now() + 4 });
+      await page.waitFor(() => /belum siap/.test(document.querySelector('#sp-status').textContent) && !document.querySelector('#spotify-pill-warn').hidden, { message: 'launch-timeout in the dialog, ⚠ on the pill' });
+      await push(page, { ...IDLE, error: { code: 'no-app', message: 'x' }, updatedAt: Date.now() + 5 });
+      await page.waitFor(() => /Pasang Spotify/.test(document.querySelector('#sp-status').textContent), { message: 'no-app text' });
+
+      // "Selalu putar di sini" → control prefer, the list reloads with the new ★
+      await clearPosts(page);
+      await page.click('#sp-devices [data-prefer="dev-1"]');
+      await page.waitFor(() => /★ utama/.test(document.querySelector('#sp-devices input[value="dev-1"]')?.closest('label').textContent ?? ''), { message: 'new ★' });
+      assert.deepEqual(await posts(page, 'control'), [{ action: 'prefer', deviceId: 'dev-1' }]);
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll('#sp-devices [data-prefer]')].map((b) => b.dataset.prefer)), ['dev-2']);
+      assert.deepEqual(await page.eval(unnamed, '#spotify-modal'), []);
+      assert.equal(await page.eval(horizontalOverflow), null);
+      await page.press('Escape');
+      await page.waitFor(() => document.querySelector('#spotify-modal').hidden, { message: 'closed' });
+
+      // ⚙: "Buka Spotify otomatis di latar belakang" (default on) is saved through /config
+      await page.click('#btn-settings');
+      await page.waitFor(() => visible('#sps-autolaunch') && document.querySelector('#sps-autolaunch').checked, { message: 'autoLaunch on by default' });
+      await clearPosts(page);
+      await page.click('#sps-autolaunch');
+      await page.waitFor(() => window.__sp.posts.some((p) => p.name === 'config' && p.body.settings), { message: 'autoLaunch saved' });
+      assert.deepEqual((await posts(page, 'config')).filter((b) => b.settings), [{ settings: { autoLaunch: false } }]);
+      await page.press('Escape');
       await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
       assertClean(page);
     });

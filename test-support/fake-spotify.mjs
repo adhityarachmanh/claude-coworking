@@ -10,7 +10,9 @@
 //
 // As a child process (`node test-support/fake-spotify.mjs`) it prints one JSON line {"origin": "..."} and runs
 // until killed. Scenarios: deny, invalidGrant, rateLimit {retryAfter}, premiumRequired, noDevice, expiresIn (s),
-// unauthorizedOnce, hang, badImageType, bigImage, noRotation, apiDown (500).
+// unauthorizedOnce, hang, badImageType, bigImage, noRotation, apiDown (500), visible [ids] (only these devices are
+// listed and accept a transfer), appearAfter { polls, ids } (after that many GET /me/player/devices, those ids become
+// visible: a desktop app that was just started; counted from fake.set). fake.devicePolls counts the device list requests.
 //
 // Tokens and codes carry fixed prefixes (fake-access-, fake-refresh-, fake-code-) so tests can scan logs for them.
 import { createHash, randomBytes } from 'node:crypto';
@@ -34,11 +36,13 @@ export function startFakeSpotify({ scenario = {} } = {}) {
   const issued = { access: [], refresh: [], codes: [] };
   let origin = '';
   let unauthorizedServed = false;
+  let devicePolls = 0;
   const devices = [
     { id: FAKE_DEVICE_ID, is_active: true, is_private_session: false, is_restricted: false, name: 'Laptop Adhit', type: 'Computer', volume_percent: 60, supports_volume: true },
     { id: 'fake-device-phone-02', is_active: false, is_private_session: false, is_restricted: false, name: 'HP Adhit', type: 'Smartphone', volume_percent: 40, supports_volume: true },
   ];
   const tracks = ['Lagu Satu', 'Lagu Dua', 'Lagu Tiga'];
+  const listed = () => (s.visible ? devices.filter((d) => s.visible.includes(d.id)) : devices);
   const player = { isPlaying: true, index: 0, progressMs: 30_000, device: devices[0], title: null, context: null };
 
   const track = () => ({
@@ -149,7 +153,14 @@ export function startFakeSpotify({ scenario = {} } = {}) {
       if (s.ad) return send(res, 200, { device: player.device, is_playing: true, progress_ms: 1000, currently_playing_type: 'ad', item: null });
       return send(res, 200, { device: player.device, is_playing: player.isPlaying, progress_ms: player.progressMs, currently_playing_type: 'track', item: track(), context: player.context });
     }
-    if (req.method === 'GET' && p === '/v1/me/player/devices') return send(res, 200, { devices: s.noDevice ? [] : devices });
+    if (req.method === 'GET' && p === '/v1/me/player/devices') {
+      devicePolls++;
+      if (s.appearAfter && devicePolls - (s.appearAfter.base ?? 0) >= s.appearAfter.polls) {
+        s.visible = [...new Set([...(s.visible ?? []), ...s.appearAfter.ids])];
+        delete s.appearAfter;
+      }
+      return send(res, 200, { devices: s.noDevice ? [] : listed() });
+    }
     if (req.method === 'GET' && p === '/v1/me/playlists') {
       const offset = Number(url.searchParams.get('offset') ?? 0);
       return send(res, 200, {
@@ -157,10 +168,19 @@ export function startFakeSpotify({ scenario = {} } = {}) {
         next: offset === 0 ? `${origin}/v1/me/playlists?offset=50` : null,
       });
     }
-    if (write && (s.noDevice || !player.device) && p.startsWith('/v1/me/player')) return apiError(res, 404, 'Player command failed: No active device found', 'NO_ACTIVE_DEVICE');
+    // A transfer (PUT /me/player) or a play aimed at a device needs no active device, like the real service.
+    const targeted = (req.method === 'PUT' && p === '/v1/me/player') || (p === '/v1/me/player/play' && url.searchParams.has('device_id'));
+    if (write && (s.noDevice || (!player.device && !targeted)) && p.startsWith('/v1/me/player')) return apiError(res, 404, 'Player command failed: No active device found', 'NO_ACTIVE_DEVICE');
     if (req.method === 'PUT' && p === '/v1/me/player/play') {
       const body = (await readBody(req)) || '{}';
       const ctx = JSON.parse(body).context_uri;
+      const target = url.searchParams.get('device_id');
+      if (target) {
+        const d = listed().find((x) => x.id === target);
+        if (!d) return apiError(res, 404, 'Device not found');
+        for (const x of devices) x.is_active = x === d;
+        player.device = d;
+      }
       if (ctx) {
         player.context = { uri: ctx };
         player.index = 0;
@@ -185,7 +205,7 @@ export function startFakeSpotify({ scenario = {} } = {}) {
     }
     if (req.method === 'PUT' && p === '/v1/me/player') {
       const { device_ids: ids, play } = JSON.parse((await readBody(req)) || '{}');
-      const d = devices.find((x) => x.id === ids?.[0]);
+      const d = listed().find((x) => x.id === ids?.[0]);
       if (!d) return apiError(res, 404, 'Device not found');
       for (const x of devices) x.is_active = x === d;
       player.device = d;
@@ -209,8 +229,12 @@ export function startFakeSpotify({ scenario = {} } = {}) {
         issued,
         player,
         devices,
+        get devicePolls() {
+          return devicePolls;
+        },
         set(patch) {
           Object.assign(s, patch);
+          if (patch.appearAfter) s.appearAfter = { ...patch.appearAfter, base: devicePolls }; // counted from now
           for (const [k, v] of Object.entries(patch)) if (v === undefined || v === false) delete s[k];
         },
         /** Expire every access token now (the next API call answers 401). */

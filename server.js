@@ -25,6 +25,7 @@ import { TemplateStore } from './src/templates.js';
 import { TaskQueue } from './src/queue.js';
 import { BackupScheduler } from './src/backup-schedule.js';
 import { SpotifyService } from './src/spotify.js';
+import { createSpotifyLauncher } from './src/spotify-launcher.js';
 import { callback as spotifyCallback } from './src/routes/spotify.js';
 import { HttpError, json, readJson } from './src/routes/http.js';
 import { buildRouter } from './src/routes/index.js';
@@ -160,6 +161,8 @@ const spotify = new SpotifyService({
   viewers: () => hub.clients.size,
   onChange: (state) => hub.broadcast('spotify', state),
   envClientId: process.env.SPOTIFY_CLIENT_ID,
+  // ▶ with no device may start the desktop app in the background (never in test mode: no real Spotify from tests).
+  launcher: SPOTIFY_TEST_ORIGIN ? null : createSpotifyLauncher(),
   ...(SPOTIFY_TEST_ORIGIN ? { accountsOrigin: SPOTIFY_TEST_ORIGIN, apiOrigin: SPOTIFY_TEST_ORIGIN, artHosts: new Set([new URL(SPOTIFY_TEST_ORIGIN).host]) } : {}),
 });
 // "Kecilkan saat izin": counted on the server, so it works with no page open.
@@ -412,6 +415,7 @@ const ctx = {
   httpsPort: HTTPS_PORT,
   maxBackupBytes: MAX_BACKUP_BYTES,
   isLocal,
+  canManageAccount, // laptop or Tailscale (♪ control: may start the Spotify app)
   allowForce,
   projectRoots,
   refreshProjects,
