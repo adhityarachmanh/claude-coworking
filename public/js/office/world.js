@@ -113,10 +113,14 @@ export function layoutDesks(roles) {
   DESKS.claude = structuredClone(BOSS_DESK);
 }
 
-/** Small signs drawn as crisp HTML over the canvas: pod names on the back panels, nameplates by the doors. */
+/**
+ * Small signs drawn as crisp HTML over the canvas: pod names on the back panels, room plates. A private office's
+ * door plate (`vacant`: its role) only shows while that role is off the team — someone sitting there already has
+ * a name tag. The Lead is always in, so the corner office has none.
+ */
 export const SIGNS = [
   ...PODS.map((pod) => ({ x: (pod.x + podRight(pod)) / 2, y: pod.y - 19, text: pod.label })),
-  ...OFFICES.map((o) => ({ x: o.role === 'claude' ? 552 : (o.x + o.door) / 2, y: 141, text: o.label, plate: true })),
+  ...OFFICES.filter((o) => o.desk).map((o) => ({ x: (o.x + o.door) / 2, y: 141, text: o.label, plate: true, vacant: o.role })),
   { x: (MEET.x + MEET.door) / 2, y: 257, text: 'Ruang Rapat', plate: true },
   { x: 462, y: 257, text: 'Pantry', plate: true },
 ];
@@ -445,28 +449,88 @@ export function renderBackground() {
   return c;
 }
 
+// ---------- glass walls ----------
+// A light blue tint (people behind stay visible), a frame (top rail, sill, posts every GLASS_PANE px) and one
+// diagonal highlight streak per pane, so the walls read as glass. Translucent colours: themes don't remap them,
+// and the theme's light tint shades them like the rest of the room.
+const GLASS = {
+  tint: 'rgba(170,218,245,.34)',
+  edge: 'rgba(225,246,255,.6)', // the pane's lit top edge
+  streak: 'rgba(255,255,255,.7)',
+  streakSoft: 'rgba(255,255,255,.32)',
+  frame: '#7b91a6',
+  rail: '#a9bccb',
+  sill: '#5d7186',
+};
+const GLASS_PANE = 32;
+const GLASS_FRONT_H = 11; // a front wall seen from above: its face rises this high from the floor line
+const GLASS_SIDE_W = 4;
+const MEET_DOOR = 32;
+
+/** A glass wall facing the viewer, from x0 to x1, standing on the floor line `base` (painted upward). */
+function frontGlass(r, x0, x1, base) {
+  const top = base - GLASS_FRONT_H;
+  const w = x1 - x0;
+  r(x0, top, w, GLASS_FRONT_H - 2, GLASS.tint);
+  r(x0, top + 1, w, 1, GLASS.edge);
+  r(x0, top, w, 1, GLASS.rail);
+  r(x0, base - 2, w, 2, GLASS.sill);
+  // posts at both ends and every GLASS_PANE px (no sliver panes next to an end post)
+  const posts = [x0];
+  for (let x = x0 + GLASS_PANE; x < x1 - 10; x += GLASS_PANE) posts.push(x);
+  posts.push(x1 - 2);
+  for (const x of posts) r(x, top, 2, GLASS_FRONT_H, GLASS.frame);
+  // one diagonal streak per pane (bottom-left → top-right) and a thin echo beside it
+  const rise = GLASS_FRONT_H - 4; // between the lit edge and the sill
+  for (let i = 0; i < posts.length - 1; i++) {
+    const left = posts[i] + 2;
+    const right = posts[i + 1];
+    if (right - left < rise + 6) continue; // too narrow for a streak
+    const sx = left + Math.floor((right - left - rise) * 0.3);
+    for (let k = 0; k < rise; k++) {
+      r(sx + k, base - 3 - k, 2, 1, GLASS.streak);
+      if (k < rise - 2 && sx + k + 5 < right) r(sx + k + 4, base - 3 - k, 1, 1, GLASS.streakSoft);
+    }
+  }
+}
+
+/** A glass wall running away from the viewer at x (GLASS_SIDE_W wide), from y0 down to y1. */
+function sideGlass(r, x, y0, y1) {
+  const h = y1 - y0;
+  r(x, y0, GLASS_SIDE_W, h, GLASS.tint);
+  r(x, y0, 1, h, GLASS.frame);
+  r(x + GLASS_SIDE_W - 1, y0, 1, h, GLASS.edge);
+  for (let y = y0; y < y1 - 6; y += GLASS_PANE) {
+    r(x, y, GLASS_SIDE_W, 2, GLASS.frame);
+    r(x, y, GLASS_SIDE_W, 1, GLASS.rail);
+    // a short diagonal glint in each pane
+    for (let k = 0; k < GLASS_SIDE_W - 1; k++) {
+      r(x + 1 + k, y + 12 - k, 1, 2, GLASS.streak);
+      r(x + 1 + k, y + 18 - k, 1, 1, GLASS.streakSoft);
+    }
+  }
+}
+
+/** Darker, taller posts on both sides of a door gap. */
+function doorJambs(r, door, gap, base) {
+  const top = base - GLASS_FRONT_H - 3;
+  r(door - 2, top, 2, base - top, GLASS.sill);
+  r(door + gap, top, 2, base - top, GLASS.sill);
+}
+
 /** Furniture pieces drawn in depth order with the characters. */
 export function buildFurniture() {
   const items = [];
   const add = (sortY, draw) => items.push({ y: sortY, draw });
-  const glass = 'rgba(190,225,245,.38)';
-  const shine = 'rgba(255,255,255,.35)';
-  const frame = '#8fa3b5';
 
-  // private offices: glass on the left and in front, a door gap with darker posts
+  // private offices: a glass wall on the left and a glass front with a door gap between two jambs
   add(OFFICE_BOTTOM, (g) => {
     const r = paintFn(g);
     for (const o of OFFICES) {
-      r(o.x, WALL_H, 2, OFFICE_BOTTOM - WALL_H, glass);
-      r(o.x + 1, WALL_H, 1, OFFICE_BOTTOM - WALL_H, shine);
-      for (let y = WALL_H; y < OFFICE_BOTTOM; y += 32) r(o.x, y, 2, 2, frame);
-      r(o.x, OFFICE_BOTTOM - 3, o.door - o.x, 3, glass);
-      r(o.door + DOOR_GAP, OFFICE_BOTTOM - 3, o.x + o.w - o.door - DOOR_GAP, 3, glass);
-      r(o.x, OFFICE_BOTTOM - 3, o.door - o.x, 1, shine);
-      r(o.door + DOOR_GAP, OFFICE_BOTTOM - 3, o.x + o.w - o.door - DOOR_GAP, 1, shine);
-      for (let x = o.x; x < o.x + o.w; x += 32) if (x < o.door - 4 || x > o.door + DOOR_GAP + 2) r(x, OFFICE_BOTTOM - 3, 2, 3, frame);
-      r(o.door - 2, OFFICE_BOTTOM - 8, 2, 8, frame);
-      r(o.door + DOOR_GAP, OFFICE_BOTTOM - 8, 2, 8, frame);
+      sideGlass(r, o.x, WALL_H, OFFICE_BOTTOM - GLASS_FRONT_H);
+      frontGlass(r, o.x, o.door, OFFICE_BOTTOM);
+      frontGlass(r, o.door + DOOR_GAP, o.x + o.w, OFFICE_BOTTOM);
+      doorJambs(r, o.door, DOOR_GAP, OFFICE_BOTTOM);
     }
   });
 
@@ -496,23 +560,16 @@ export function buildFurniture() {
   }
 
   // meeting room glass: the top wall (with the door), then the side walls
+  const meetBase = MEET.y + 3;
   add(MEET.y + 2, (g) => {
     const r = paintFn(g);
-    const right = MEET.x + MEET.w;
-    r(MEET.x, MEET.y, MEET.door - MEET.x, 3, glass);
-    r(MEET.door + 32, MEET.y, right - MEET.door - 32, 3, glass);
-    r(MEET.x, MEET.y, MEET.door - MEET.x, 1, shine);
-    r(MEET.door + 32, MEET.y, right - MEET.door - 32, 1, shine);
-    for (let x = MEET.x; x < right; x += 32) if (x < MEET.door - 4 || x > MEET.door + 34) r(x, MEET.y, 2, 3, frame);
-    r(MEET.door - 2, MEET.y, 2, 8, frame);
-    r(MEET.door + 32, MEET.y, 2, 8, frame);
+    frontGlass(r, MEET.x, MEET.door, meetBase);
+    frontGlass(r, MEET.door + MEET_DOOR, MEET.x + MEET.w, meetBase);
+    doorJambs(r, MEET.door, MEET_DOOR, meetBase);
   });
   add(H, (g) => {
     const r = paintFn(g);
-    for (const x of [MEET.x, MEET.x + MEET.w - 2]) {
-      r(x, MEET.y, 2, H - MEET.y, glass);
-      for (let y = MEET.y; y < H; y += 32) r(x, y, 2, 2, frame);
-    }
+    for (const x of [MEET.x, MEET.x + MEET.w - GLASS_SIDE_W]) sideGlass(r, x, meetBase, H);
   });
   // round meeting table with a laptop and papers
   add(TABLE.y + 6, (g) => {

@@ -1,6 +1,7 @@
 // Renders the active Scene: low-res pixel canvas scaled up, plus an HTML overlay for crisp text.
 import { roleColor } from './cast.js';
-import { BOARD, SIGNS, W, buildFurniture, drawDoor, drawLighting, drawThemeOverlay, drawWallLive, renderBackground, room } from './world.js';
+import { fitLabels, labelVariants, sharedPrefix } from './tags.js';
+import { BOARD, DESKS, SIGNS, W, buildFurniture, drawDoor, drawLighting, drawThemeOverlay, drawWallLive, renderBackground, room } from './world.js';
 
 const STATUS_MARK = { completed: '✔', in_progress: '▶', pending: '○' };
 
@@ -19,14 +20,22 @@ export class Stage {
     this.scene = null;
     this.scale = 2;
     this.tags = new Map();
+    this.tagsDirty = true; // labels must be fitted again (resize, rename, team or ×N change)
     this.boardEl = this.el('div', 'board');
     this.emptyEl = this.el('div', 'stage-empty');
-    // Pod names and door nameplates: crisp HTML text, placed in resize().
+    // Pod names and room plates: crisp HTML text, placed in resize(). A private office's door plate only shows
+    // while the room is empty (its role switched off): otherwise the person's own name tag says who works there.
     this.signs = SIGNS.map((sign) => {
       const node = this.el('div', sign.plate ? 'sign plate' : 'sign');
       node.textContent = sign.text;
+      if (sign.vacant) node.title = `Ruang ${sign.text} kosong`;
       return { sign, node };
     });
+    this.showVacantPlates();
+    // Hidden copy of a name tag, to measure label variants with the live font size.
+    this.measure = this.el('div', 'actor tag-measure');
+    this.measure.setAttribute('aria-hidden', 'true');
+    this.measure.innerHTML = '<div class="name"></div>';
     this.setRoomSize();
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
@@ -41,8 +50,15 @@ export class Stage {
   /** The team changed (👥 Kelola tim): desks fill or empty in place; the floor keeps its size. */
   refreshLayout() {
     this.setRoomSize();
+    this.showVacantPlates();
+    this.tagsDirty = true;
     this.refreshTheme();
     this.resize();
+  }
+
+  /** Door plates of the private offices: shown only while the room's role is off the team. */
+  showVacantPlates() {
+    for (const { sign, node } of this.signs) if (sign.vacant) node.hidden = Boolean(DESKS[sign.vacant]);
   }
 
   /** The phone layout sizes the stage from the floor's logical size (--room-w × --room-h). */
@@ -64,6 +80,7 @@ export class Stage {
     for (const tag of this.tags.values()) tag.root.remove();
     this.tags.clear();
     this.lastBoard = null;
+    this.tagsDirty = true;
   }
 
   resize() {
@@ -87,6 +104,7 @@ export class Stage {
     this.lastBoard = null; // reposition the whiteboard overlay
     for (const { sign, node } of this.signs) Object.assign(node.style, { left: `${(sign.x * fit).toFixed(1)}px`, top: `${(sign.y * fit).toFixed(1)}px` });
     for (const tag of this.tags.values()) tag.bubbleSize = null; // bubbles scale with --s: measure again
+    this.tagsDirty = true; // so do the name tags
   }
 
   frame(t) {
@@ -128,14 +146,64 @@ export class Stage {
       root.className = 'actor';
       root.innerHTML = '<div class="bubble"></div><div class="name"></div>';
       this.overlay.append(root);
-      tag = { root, bubble: root.firstChild, name: root.lastChild, bubbleKey: null };
+      tag = { root, bubble: root.firstChild, name: root.lastChild, bubbleKey: null, key: null, label: null };
       tag.name.style.setProperty('--c', actor.cfg.color ?? roleColor(actor.id));
       this.tags.set(actor, tag);
+      this.tagsDirty = true;
     }
     // Names can be renamed at runtime (team dialog); ×N = parallel subagents of this role.
-    const label = actor.agentCount > 1 ? `${actor.cfg.name} ×${actor.agentCount}` : actor.cfg.name;
-    if (tag.nameText !== label) tag.name.textContent = tag.nameText = label;
+    const key = `${actor.cfg.name}
+${actor.agentCount}`;
+    if (tag.key !== key) {
+      tag.key = key;
+      this.tagsDirty = true;
+    }
     return tag;
+  }
+
+  /**
+   * Chooses each name tag's label so no two overlap where the people sit: the full name while it fits, else the
+   * name without the prefix the whole team shares ("Adhit - "), else the role's short title. The full name stays
+   * in the tag's tooltip and accessible name. Runs only when sizes, names or the team change.
+   */
+  fitTags(actors) {
+    this.tagsDirty = false;
+    const s = this.scale;
+    const seated = actors.filter((a) => a.seat); // the visitor walks through: always its full label
+    const prefix = sharedPrefix(seated.map((a) => a.cfg.name));
+    const box = this.measure.firstChild;
+    const items = [];
+    for (const actor of actors) {
+      const tag = this.tags.get(actor);
+      const variants = labelVariants({ name: actor.cfg.name, short: actor.cfg.short, count: actor.agentCount }, actor.seat ? prefix : '');
+      const widths = variants.map((text) => {
+        box.textContent = text;
+        return box.getBoundingClientRect().width;
+      });
+      const spot = actor.seat ?? actor;
+      items.push({ tag, variants, x: spot.x * s, y: spot.y * s + box.offsetTop, h: box.offsetHeight, widths });
+    }
+    const levels = fitLabels(items, 2);
+    items.forEach(({ tag, variants }, i) => {
+      const label = variants[levels[i]];
+      if (tag.label === label) return;
+      tag.label = label;
+      const full = variants[0];
+      tag.name.title = full;
+      if (label === full) tag.name.textContent = label;
+      else {
+        // Shortened: screen readers still get the full name.
+        const shown = document.createElement('span');
+        shown.setAttribute('aria-hidden', 'true');
+        shown.textContent = label;
+        const spoken = document.createElement('span');
+        spoken.className = 'sr-only';
+        spoken.textContent = full;
+        tag.name.replaceChildren(shown, spoken);
+      }
+      tag.name.classList.toggle('short', label !== full);
+      tag.bubbleSize = null; // the name's height may differ: measure the bubble's anchor again
+    });
   }
 
   updateOverlay(now) {
@@ -145,10 +213,13 @@ export class Stage {
       if (!actors.has(actor)) {
         tag.root.remove();
         this.tags.delete(actor);
+        this.tagsDirty = true;
       }
     }
+    for (const actor of actors) this.tagFor(actor);
+    if (this.tagsDirty) this.fitTags([...actors]);
     for (const actor of actors) {
-      const tag = this.tagFor(actor);
+      const tag = this.tags.get(actor);
       tag.root.style.transform = `translate(${(actor.x * s).toFixed(1)}px, ${(actor.y * s).toFixed(1)}px)`;
       tag.root.style.zIndex = String(Math.round(actor.y));
       tag.root.classList.toggle('busy', actor.isBusy(now));

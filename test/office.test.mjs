@@ -7,6 +7,7 @@ import { COSTUMES } from '../public/js/office/costumes.js';
 import { Scene } from '../public/js/office/scene.js';
 import { spriteLift } from '../public/js/office/sprites.js';
 import { THEMES, THEME_IDS, activeTheme, isTheme, theme, themedLook } from '../public/js/office/themes.js';
+import { fitLabels, labelVariants, sharedPrefix } from '../public/js/office/tags.js';
 import { H, W, WINDOWS } from '../public/js/office/world.js';
 
 /** Every theme that dresses the team up (all but the plain office). */
@@ -396,4 +397,27 @@ test('new roles: every theme × view × pose × arms paints inside the 20×32 sp
     clearSpriteCache();
     globalThis.document = before;
   }
+});
+
+test('name tags: the prefix the whole team shares is computed from the current names, not hardcoded', () => {
+  assert.equal(sharedPrefix(ROLE_ORDER.map((id) => CAST[id].name)), 'Adhit - ', 'default names');
+  assert.equal(sharedPrefix(['Tim Rina - PM', 'Tim Rina - DBA', 'Tim Rina - Data']), 'Tim Rina - ', 'renamed team');
+  assert.equal(sharedPrefix(['Adhit - PM', 'Budi', 'Adhit - QA']), '', 'one renamed person: no shared prefix');
+  assert.equal(sharedPrefix(['Adhit - Data', 'Adhit - DBA']), 'Adhit - ', 'cut back to the separator, not mid-word');
+  assert.equal(sharedPrefix(['Dewi Ayu', 'Dewi Sari']), '', 'a common first word without a separator is part of the name');
+  assert.equal(sharedPrefix(['Adhit - PM', 'Adhit - ']), '', 'nothing may be left empty');
+  assert.equal(sharedPrefix(['Adhit - PM']), '', 'a single name keeps its prefix');
+  assert.deepEqual(labelVariants({ name: 'Adhit - Frontend', short: 'FE', count: 2 }, 'Adhit - '), ['Adhit - Frontend ×2', 'Frontend ×2', 'FE ×2']);
+  assert.deepEqual(labelVariants({ name: 'Budi', short: '' }, ''), ['Budi', 'Budi', 'Budi'], 'no short title: the name');
+  for (const id of ROLE_ORDER) assert.ok(CAST[id].short && CAST[id].short.length <= 4, `${id}: a short title of at most 4 characters`);
+  assert.equal(new Set(ROLE_ORDER.map((id) => CAST[id].short)).size, ROLE_ORDER.length, 'short titles are distinct');
+});
+
+test('name tags: full names while they fit, else the team drops its prefix, else the colliding tags go short', () => {
+  const item = (x, widths) => ({ x, y: 0, h: 8, widths });
+  assert.deepEqual(fitLabels([item(0, [40, 20, 10]), item(100, [40, 20, 10])]), [0, 0], 'room enough: full names');
+  assert.deepEqual(fitLabels([item(0, [40, 20, 10]), item(36, [40, 20, 10]), item(200, [40, 20, 10])]), [1, 1, 1], 'one collision: the whole team drops the prefix');
+  assert.deepEqual(fitLabels([item(0, [40, 30, 10]), item(26, [40, 20, 10]), item(200, [40, 20, 10])]), [2, 1, 1], 'still colliding: the wider tag goes short');
+  assert.deepEqual(fitLabels([item(0, [9, 9, 9]), item(1, [9, 9, 9])]), [2, 2], 'nothing left to shrink: ends anyway');
+  assert.deepEqual(fitLabels([item(0, [40, 20, 10]), { x: 0, y: 50, h: 8, widths: [40, 20, 10] }]), [0, 0], 'different rows never collide');
 });

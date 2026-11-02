@@ -337,7 +337,10 @@ test('layout: glass walls and cubicle partitions block, the door gaps let people
   // the visitor walks from the entrance into the corner office
   const visit = [DOOR, ...findPath(DOOR, DESKS.claude.visit)];
   assert.ok(via(visit, 496, 520, 136, 144), 'into the corner office via its door (x 496–520)');
-  for (const label of ['Produk & Desain', 'Engineering', 'Kualitas & Keamanan', 'Ops & Support', 'PM', 'Tech Lead', 'Lead', 'Ruang Rapat']) assert.ok(SIGNS.some((s) => s.text === label), label);
+  for (const label of ['Produk & Desain', 'Engineering', 'Kualitas & Keamanan', 'Ops & Support', 'Ruang Rapat', 'Pantry']) assert.ok(SIGNS.some((x) => x.text === label && !x.vacant), label);
+  // office door plates only for rooms whose role can be switched off (shown while empty); the Lead has none
+  assert.deepEqual(SIGNS.filter((x) => x.vacant).map((x) => [x.text, x.vacant]), [['PM', 'pm'], ['Tech Lead', 'architect']]);
+  assert.ok(!SIGNS.some((x) => x.text === 'Lead'), 'no plate under the Lead');
   for (const s of SIGNS) assert.ok(s.x > 0 && s.x < W && s.y > 0 && s.y < H, `${s.text} on the floor`);
 });
 
