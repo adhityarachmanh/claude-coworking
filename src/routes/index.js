@@ -12,6 +12,7 @@ import * as projects from './projects.js';
 import * as queue from './queue.js';
 import * as remote from './remote.js';
 import * as session from './session.js';
+import * as spotify from './spotify.js';
 import * as tasks from './tasks.js';
 import * as team from './team.js';
 import * as templates from './templates.js';
@@ -34,6 +35,7 @@ export function buildRouter() {
     account.register,
     remote.register,
     backup.register,
+    spotify.register,
     misc.register,
   ])
     register(router);

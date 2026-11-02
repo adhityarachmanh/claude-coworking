@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
@@ -208,6 +209,21 @@ test('static assets revalidate with ETag (304); index.html with its token is nev
     assert.equal(page.headers.get('etag'), null);
   }
   assert.equal((await fetch(`${BASE}/health`)).headers.get('cache-control'), 'no-store');
+});
+
+test('errors: a request target the URL parser refuses is a 400, and the server keeps running', async () => {
+  /** Sends a raw request line (fetch/http.request would refuse these targets) and returns the status code. */
+  const rawLine = (target) =>
+    new Promise((resolve, reject) => {
+      let text = '';
+      const socket = net.connect(PORT, '127.0.0.1', () => socket.write(`GET ${target} HTTP/1.1\r\nHost: localhost:${PORT}\r\nConnection: close\r\n\r\n`));
+      socket.setTimeout(5000, () => socket.destroy(new Error(`no answer for ${target}`)));
+      socket.on('data', (d) => (text += d));
+      socket.on('error', reject);
+      socket.on('close', () => resolve(Number(text.match(/^HTTP\/1\.1 (\d{3})/)?.[1] ?? 0)));
+    });
+  for (const target of ['http://[', 'http://a:99999/', 'http://%zz/', 'https://[::1']) assert.equal(await rawLine(target), 400, target);
+  assert.equal((await fetch(`${BASE}/health`)).status, 200, 'still up (no unhandled rejection)');
 });
 
 test('errors: bad JSON is a 400 with a clear message, never a stack or path', async () => {

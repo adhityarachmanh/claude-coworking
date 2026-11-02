@@ -24,6 +24,8 @@ import { SessionManager } from './src/session.js';
 import { TemplateStore } from './src/templates.js';
 import { TaskQueue } from './src/queue.js';
 import { BackupScheduler } from './src/backup-schedule.js';
+import { SpotifyService } from './src/spotify.js';
+import { callback as spotifyCallback } from './src/routes/spotify.js';
 import { HttpError, json, readJson } from './src/routes/http.js';
 import { buildRouter } from './src/routes/index.js';
 import { teamConfig } from './src/routes/team.js';
@@ -37,6 +39,9 @@ const { port: HTTPS_PORT, warning: HTTPS_PORT_WARNING } = httpsPortFrom(process.
 // Loopback only, never another address; a TLS socket is never treated as the laptop (isLocal), so this
 // cannot grant anything: such a client is an ordinary paired phone on a non-Tailscale link (read-only).
 const HTTPS_TEST_BIND = process.env.OFFICE_HTTPS_TEST_BIND === '127.0.0.1' ? '127.0.0.1' : null;
+// Tests only: point ♪ Spotify at test-support/fake-spotify.mjs. Loopback only; tokens are bound to the origin that
+// issued them (src/spotify.js), so this can never send a real token anywhere else.
+const SPOTIFY_TEST_ORIGIN = /^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(process.env.OFFICE_SPOTIFY_TEST_ORIGIN ?? '') ? process.env.OFFICE_SPOTIFY_TEST_ORIGIN : null;
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_VERSION = JSON.parse(readFileSync(path.join(APP_DIR, 'package.json'), 'utf8')).version;
 const PUBLIC_DIR = path.join(APP_DIR, 'public');
@@ -148,6 +153,17 @@ function remoteInfo() {
 }
 
 const templates = new TemplateStore(hub);
+// ♪ Spotify (src/spotify.js): polls only while an event stream is open; tokens stay in data/spotify.json (not in backups).
+const spotify = new SpotifyService({
+  file: path.join(DATA_DIR, 'spotify.json'),
+  redirectUri: `http://127.0.0.1:${PORT}/spotify/callback`,
+  viewers: () => hub.clients.size,
+  onChange: (state) => hub.broadcast('spotify', state),
+  envClientId: process.env.SPOTIFY_CLIENT_ID,
+  ...(SPOTIFY_TEST_ORIGIN ? { accountsOrigin: SPOTIFY_TEST_ORIGIN, apiOrigin: SPOTIFY_TEST_ORIGIN, artHosts: new Set([new URL(SPOTIFY_TEST_ORIGIN).host]) } : {}),
+});
+// "Kecilkan saat izin": counted on the server, so it works with no page open.
+hub.observers.add((type, data) => spotify.observeApproval(type, data, hub.approvals.size));
 // 📋 Antrian: prompts sent one by one whenever the project's session is idle (src/queue.js).
 const taskQueue = new TaskQueue({ hub, sessions });
 sessions.onRateLimit = (id, info) => taskQueue.onRateLimit(id, info);
@@ -172,6 +188,7 @@ function refreshProjects() {
     remote: remoteInfo(),
     teamNames: hub.persisted.teamNames ?? {},
     team: teamConfig(),
+    spotify: { redirectUri: spotify.redirectUri }, // shown (with a copy button) in ⚙ → Spotify
   };
   hub.ready = wasReady;
   hub.broadcast('config', hub.config);
@@ -184,7 +201,8 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Settings that only the laptop itself may change, never a paired phone.
 // Adding a project folder points Claude Code (and git, file search) at any path: laptop only.
 // Backup export/import read and write the whole Claude history: laptop only (Tailscale phones too are refused).
-const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run']);
+// Spotify's Client ID, login and logout: laptop only (the redirect URI is the laptop's 127.0.0.1).
+const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout']);
@@ -305,8 +323,9 @@ function openStream(req, res, local, device = null, token = null) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
   // readOnlyApi: what a read-only phone may still call, so the UI doesn't keep its own copy of wifiAllows.
   const client = { local, accountAuth: canManageAccount(req), readOnly: isReadOnly(req), readOnlyApi: WIFI_READ_API };
-  res.write(`event: snapshot\ndata: ${JSON.stringify({ ...hub.snapshot(), account: account.publicState(), client })}\n\n`);
+  res.write(`event: snapshot\ndata: ${JSON.stringify({ ...hub.snapshot(), account: account.publicState(), spotify: spotify.publicState(), client })}\n\n`);
   hub.clients.add(res);
+  spotify.wake(); // the poller sleeps while nobody watches
   if (device) deviceStreams.set(res, device.id);
   const heartbeat = setInterval(() => {
     // Revoked, or phone access switched off since the stream opened: the device is out.
@@ -382,6 +401,7 @@ const ctx = {
   tls,
   templates,
   taskQueue,
+  spotify,
   backupScheduler,
   backupLock,
   allAgents,
@@ -460,13 +480,20 @@ async function handler(req, res) {
   if (!hosts.includes(host)) return json(res, 421, { error: 'bad host' });
   // Origin must match scheme and host: an http page can't call the https origin, nor the other way round.
   if (req.headers.origin && !hosts.some((h) => req.headers.origin === `${scheme}://${h}`)) return json(res, 403, { error: 'bad origin' });
-  const { pathname, searchParams } = new URL(req.url, `${scheme}://${host}`);
+  // A request target the URL parser refuses (e.g. `GET http://[ HTTP/1.1`): a 400, never an unhandled rejection.
+  let pathname, searchParams;
+  try {
+    ({ pathname, searchParams } = new URL(req.url, `${scheme}://${host}`));
+  } catch {
+    return json(res, 400, { error: 'bad request' });
+  }
   const local = isLocal(req);
   let device = null; // the paired phone making this request (null on the laptop)
   try {
     if (!local) {
       // Another device on the network: it must be paired, and some settings stay laptop-only.
       if (!remote.enabled) return json(res, 403, { error: 'Akses dari perangkat lain sedang dimatikan.' });
+      if (pathname === '/spotify/callback') return json(res, 404, { error: 'not found' }); // the laptop's own login only
       if (pathname === '/pair') return await handlePair(req, res, new URL(req.url, `${scheme}://${host}`));
       // App icon + manifest hold no data, and browsers fetch the manifest without cookies.
       if (req.method === 'GET' && PUBLIC_ASSET.test(pathname)) return await serveStatic(pathname, res, req);
@@ -484,6 +511,8 @@ async function handler(req, res) {
       if (pathname.startsWith('/api/') && isReadOnly(req) && !wifiAllows(pathname)) return json(res, 403, { error: READ_ONLY_ERROR, readOnly: true });
     }
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, device);
+    // Spotify's redirect after login (laptop only). Handles its own errors: its URL holds the code and state.
+    if (local && req.method === 'GET' && pathname === '/spotify/callback') return await spotifyCallback(ctx, req, res, new URL(req.url, `${scheme}://${host}`));
     if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' });
     if (pathname === '/stream') return openStream(req, res, local, device, device ? deviceToken(req) : null);
     // pid: for scripts/restart.mjs on this laptop (its fallback when a clean shutdown hangs).
@@ -598,6 +627,9 @@ server.listen(PORT, HOST, () => {
   if (HTTPS_PORT_WARNING) console.error(`PERINGATAN: ${HTTPS_PORT_WARNING}`);
   if (process.env.OFFICE_TAILSCALE_BIN) console.error(`PERINGATAN: OFFICE_TAILSCALE_BIN dipakai (${process.env.OFFICE_TAILSCALE_BIN}) — Tailscale CLI bukan dari lokasi bawaan.`);
   if (HTTPS_TEST_BIND) console.error('PERINGATAN: OFFICE_HTTPS_TEST_BIND aktif — listener HTTPS di 127.0.0.1 (hanya untuk test).');
+  if (SPOTIFY_TEST_ORIGIN) console.error(`PERINGATAN: OFFICE_SPOTIFY_TEST_ORIGIN aktif — Spotify: MODE TEST (${SPOTIFY_TEST_ORIGIN}).`);
+  else if (process.env.OFFICE_SPOTIFY_TEST_ORIGIN) console.error('PERINGATAN: OFFICE_SPOTIFY_TEST_ORIGIN diabaikan (hanya http://127.0.0.1:<port>).');
+  spotify.start();
   syncListeners();
   tls.start(); // a certificate on disk is used at once; Tailscale is asked in the background
   sessions.probeCatalog(); // what /model offers and the slash commands' descriptions (no model call)
@@ -626,6 +658,7 @@ async function shutdown() {
   for (const { server: lan } of [...lanServers.values(), ...httpsServers.values()]) lan.close();
   tls.stop();
   mirror.stop();
+  spotify.stop();
   try {
     await sessions.shutdown();
   } catch (err) {

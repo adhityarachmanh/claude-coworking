@@ -16,6 +16,8 @@ const WIFI_READS = new Set([
   '/api/report/pdf',
   '/api/templates',
   '/api/team/roster',
+  '/api/spotify/state', // ♪ now-playing (already audible in the room) and its album art; never devices/playlists/control
+  '/api/spotify/art',
   ...['changes', 'diff', 'git-branches', 'file', 'files', 'sessions', 'rewind-points', 'task-output', 'task-detail', 'queue'].map((a) => `/api/projects/:id/${a}`),
 ]);
 
