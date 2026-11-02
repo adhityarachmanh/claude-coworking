@@ -10,6 +10,7 @@ import { phone, refreshPairing } from '../features/phone.js';
 import { renderSidebar, selectProject } from '../features/picker.js';
 import { renderRoots } from '../features/settings.js';
 import { applyRoster } from '../features/roster.js';
+import { applySpotify } from '../features/spotify.js';
 import { noteLiveMessage, setStuckOnline } from '../features/stuck.js';
 import { applyNames } from '../features/team.js';
 import { applyTeamNames, roleName } from '../office/cast.js';
@@ -67,6 +68,7 @@ export function connect() {
     selectProject(state.projects.some((p) => p.id === remembered) ? remembered : DEMO_ID);
     setStuckOnline(true);
     renderAccountButton(); // after the core UI, so a profile quirk can never blank the office
+    applySpotify(snap.spotify, { snapshot: true }); // ♪ absent = this server has no Spotify support
   });
   on('pairing-reset', () => {
     // Too many wrong codes on a phone: the shown code is dead, show the new one right away.
@@ -75,6 +77,7 @@ export function connect() {
     refreshPairing();
   });
   on('account', onAccountState);
+  on('spotify', (s) => applySpotify(s));
   on('account-alert', onAccountAlert);
   on('projects', (projects) => {
     state.projects = projects;

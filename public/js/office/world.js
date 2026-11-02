@@ -38,6 +38,7 @@
 //
 // Cubicles: a pod is a row of desks (step 56) behind one back panel, with a low divider between desks and at both
 // ends; everyone faces the back panel (monitors up), the walkway is behind the chairs.
+import { drawRadio } from './radio.js';
 import { activeTheme } from './themes.js';
 
 export const W = 640;
@@ -660,7 +661,8 @@ export function buildFurniture() {
     r(580, 212, 40, 1, '#c19b75');
     r(580, 219, 40, 2, '#86643f');
     r(588, 209, 4, 3, '#f4f1ea');
-    r(604, 210, 8, 2, '#3d85c6');
+    r(594, 210, 7, 2, '#3d85c6');
+    drawRadio(r); // ♪ the lounge radio (office/radio.js): grey, idle or playing
   });
 
   // server rack beside DevOps (LEDs blink faster while commands run)

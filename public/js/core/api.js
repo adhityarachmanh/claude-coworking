@@ -19,15 +19,28 @@ export function setReadOnlyApi(rules) {
 
 const readOnlyAllows = (path) => Boolean(readOnlyApi && (readOnlyApi.paths.includes(path) || readOnlyApi.patterns.some((re) => re.test(path))));
 
-export async function api(path, body = {}) {
-  if (state.readOnly && !readOnlyAllows(path)) throw new Error(`${READ_ONLY_HINT}.`);
+/** Whether this page may call `path` at all (false only for a read-only phone on WiFi and a path off its allowlist). */
+export const canCall = (path) => !state.readOnly || readOnlyAllows(path);
+
+/**
+ * POSTs JSON to the server. Resolves with the parsed JSON, or with a Blob when `raw` (images: ♪ album art).
+ * A refused call throws an Error carrying `status` and the server's JSON (`data`: e.g. `code`, `retryAfter`).
+ */
+export async function api(path, body = {}, { raw = false } = {}) {
+  if (!canCall(path)) throw new Error(`${READ_ONLY_HINT}.`);
   const res = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Office-Token': auth.token },
     body: JSON.stringify(body),
   });
+  if (raw && res.ok) return res.blob();
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(typeof data.error === 'string' && data.error ? data.error : `HTTP ${res.status}`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
   return data;
 }
 

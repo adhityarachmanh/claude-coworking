@@ -30,7 +30,7 @@ const PELITA = [
 const JARS = [
   [607, 304, 318, '#e9a23b'], // cafe table
   [613, 304, 318, '#c98a4a'],
-  [609, 212, 223, '#e9a23b'], // lounge coffee table
+  [597, 212, 223, '#e9a23b'], // lounge coffee table (left of the ♪ radio)
   [452, 265, 285, '#c98a4a'], // pantry counter
 ];
 const BEDUK = { x: 620, y: 132 }; // in the Lead's corner office

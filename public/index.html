@@ -25,6 +25,11 @@
       <span class="grow"></span>
       <!-- Quota warning (features/quota.js): shown only while a plan window is past the yellow/red threshold -->
       <button id="quota-pill" class="quota-pill" type="button" hidden></button>
+      <!-- ♪ Now playing (features/spotify.js): only once the server reports a Spotify state; phone: art/♪ + ⏯ only -->
+      <span id="spotify-box" class="spotify-box" hidden>
+        <button id="spotify-pill" class="spotify-pill" type="button" aria-haspopup="dialog"><span class="sp-art sp-art-16" aria-hidden="true"><img alt="" hidden /><span class="sp-note">♪</span></span><span id="spotify-pill-text" class="sp-pill-text"></span><span id="spotify-pill-warn" class="sp-pill-warn" aria-hidden="true" hidden>⚠</span><span class="sp-pill-bar" aria-hidden="true"><span></span></span></button>
+        <button id="spotify-toggle" class="spotify-toggle" type="button" aria-label="Putar musik" hidden>▶</button>
+      </span>
       <button id="btn-account" class="account-btn" title="Akun Claude, kuota & login"><span id="account-avatar" class="avatar">?</span><span id="account-label" class="account-label">Akun</span></button>
       <!-- 🗂 Semua project (features/dashboard.js); phone: the Kantor bar and the 🗂 in the project picker -->
       <button id="btn-dashboard" class="icon-btn labeled" title="Semua project: status setiap project sekaligus" aria-haspopup="dialog"><span class="ico" aria-hidden="true">🗂</span><span class="lbl">Semua project</span></button>
@@ -531,6 +536,36 @@
             <p id="quota-desc" class="muted">Per jendela kuota (sesi 5 jam, mingguan): toast dan notifikasi (bila 🔔 aktif) sekali per ambang tiap periode reset, plus penanda berwarna di atas. Dibaca dari sesi yang berjalan, tanpa request tambahan. Disimpan di browser ini.</p>
           </section>
           <hr />
+          <!-- ♪ Spotify (features/spotify.js; laptop only, like this whole dialog). Hidden while the server has no Spotify support. -->
+          <section id="sps" class="spotify-settings" aria-labelledby="sps-title" hidden>
+            <b id="sps-title">♪ Spotify</b>
+            <ol class="sps-steps muted small">
+              <li>Buat app di <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer">developer.spotify.com</a>.</li>
+              <li>Tambahkan Redirect URI ini persis: <code id="sps-redirect">…</code> <button type="button" id="sps-copy" class="ghost sps-copy" aria-label="Salin Redirect URI">📋 Salin</button></li>
+              <li>Di <i>Users and Access</i>, tambahkan email akun Spotify kamu.</li>
+              <li>Tempel Client ID di bawah. Tanpa client secret.</li>
+            </ol>
+            <label for="sps-client">Client ID</label>
+            <div class="sps-row">
+              <input id="sps-client" type="text" autocomplete="off" spellcheck="false" maxlength="32" aria-describedby="sps-client-hint sps-error" />
+              <button type="button" id="sps-save" class="ghost">Simpan</button>
+            </div>
+            <p id="sps-client-hint" class="muted small"></p>
+            <p id="sps-error" class="field-error" role="alert"></p>
+            <p id="sps-status" class="sps-status" role="status" aria-live="polite"></p>
+            <div class="backup-actions">
+              <button type="button" id="sps-connect" class="ghost">🔗 Hubungkan</button>
+              <button type="button" id="sps-switch" class="ghost" hidden>↻ Ganti akun</button>
+              <button type="button" id="sps-logout" class="ghost" hidden>⏏ Putuskan</button>
+            </div>
+            <p id="sps-revoke" class="muted small" hidden>Untuk mencabut akses sepenuhnya, buka <a href="https://www.spotify.com/account/apps/" target="_blank" rel="noopener noreferrer">spotify.com/account/apps</a>.</p>
+            <label class="switch"><input id="sps-office" type="checkbox" /> Tampilkan radio musik di kantor</label>
+            <div class="sps-row">
+              <label for="sps-duck">Saat ada permintaan izin</label>
+              <select id="sps-duck"><option value="off">Mati</option><option value="duck">Kecilkan</option><option value="pause">Jeda</option></select>
+            </div>
+          </section>
+          <hr id="sps-rule" hidden />
           <section class="backup" aria-labelledby="backup-title" aria-describedby="backup-desc">
             <b id="backup-title">💾 Cadangkan riwayat</b>
             <p id="backup-desc" class="muted">Untuk pindah laptop atau install ulang: <b>Export</b> di sini, lalu <b>Import</b> di laptop baru dan lanjutkan percakapan lama (Riwayat sesi di app maupun <code>claude --resume</code>). Ikut: semua sesi Claude Code di semua project (termasuk subagent, memori, checkpoint, rencana, riwayat prompt) plus data kantor ini (folder, favorit, nama tim, laporan token). <b>Login tidak ikut</b>: login ulang dengan <code>claude</code> di laptop baru.</p>
@@ -721,10 +756,64 @@
     <div id="dash-modal" class="modal" hidden>
       <div class="modal-card dash-modal-card" role="dialog" aria-modal="true" aria-labelledby="dash-title">
         <div class="modal-head"><b id="dash-title">🗂 Semua project <small id="dash-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <!-- ♪ one music row (features/spotify.js): read-only info, ⏯ when this device may control it -->
+        <div id="dash-music" class="dash-music" hidden>
+          <span class="sp-art sp-art-32" aria-hidden="true"><img alt="" hidden /><span class="sp-note">♪</span></span>
+          <span class="dash-music-text"><b id="dash-music-title"></b><small id="dash-music-sub" class="muted"></small></span>
+          <button type="button" id="dash-music-toggle" class="ghost dash-music-btn" aria-label="Putar musik" hidden>▶</button>
+          <button type="button" id="dash-music-more" class="ghost dash-music-btn" aria-haspopup="dialog">Lainnya…</button>
+        </div>
         <input id="dash-search" class="dash-search" type="search" aria-label="Saring project" aria-controls="dash-list" placeholder="Saring project…  (Enter buka yang pertama)" autocomplete="off" />
         <ul id="dash-list" class="dash-list" aria-label="Status semua project"></ul>
         <p id="dash-empty" class="dash-empty muted" hidden></p>
         <p id="dash-live" class="sr-only" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+
+    <!-- ♪ Musik (features/spotify.js): now playing, controls, devices, playlists. Over WiFi: look only. -->
+    <div id="spotify-modal" class="modal" hidden>
+      <div class="modal-card spotify-card" role="dialog" aria-modal="true" aria-labelledby="sp-head">
+        <div class="modal-head"><b id="sp-head">♪ Musik</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="sp-now">
+          <span class="sp-art sp-art-96" aria-hidden="true"><img alt="" hidden /><span class="sp-note">♪</span></span>
+          <div class="sp-meta">
+            <h2 id="sp-title" class="sp-title"></h2>
+            <p id="sp-artist" class="sp-artist"></p>
+            <p id="sp-album" class="sp-album muted small"></p>
+            <p id="sp-device" class="sp-device muted small"></p>
+          </div>
+        </div>
+        <div id="sp-progress-row" class="sp-progress-row">
+          <div id="sp-progress" class="sp-progress" role="progressbar" aria-label="Posisi lagu" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span></span></div>
+          <span id="sp-time" class="sp-time muted small">0:00 / 0:00</span>
+        </div>
+        <div id="sp-controls" class="sp-controls">
+          <button type="button" id="sp-prev" class="sp-btn" aria-label="Lagu sebelumnya">⏮</button>
+          <button type="button" id="sp-play" class="sp-btn sp-play" aria-label="Putar musik">▶</button>
+          <button type="button" id="sp-next" class="sp-btn" aria-label="Lagu berikutnya">⏭</button>
+          <label class="sp-volume"><span aria-hidden="true">🔊</span><input id="sp-volume" type="range" min="0" max="100" step="1" value="50" aria-label="Volume" /></label>
+        </div>
+        <p id="sp-status" class="sp-status" role="status" aria-live="polite"></p>
+        <p id="sp-ro" class="ro-note" hidden></p>
+        <section id="sp-devices-box" class="sp-section" aria-labelledby="sp-devices-title">
+          <div class="sp-section-head"><b id="sp-devices-title">Perangkat</b><button type="button" id="sp-devices-refresh" class="ghost sp-small" aria-label="Muat ulang daftar perangkat">↻</button></div>
+          <div id="sp-devices" class="sp-devices" role="radiogroup" aria-labelledby="sp-devices-title"></div>
+          <p id="sp-devices-note" class="muted small" role="status"></p>
+        </section>
+        <section id="sp-playlists-box" class="sp-section" aria-labelledby="sp-pl-toggle">
+          <button type="button" id="sp-pl-toggle" class="ghost sp-pl-toggle" aria-expanded="false" aria-controls="sp-pl-panel">▸ Playlist</button>
+          <div id="sp-pl-panel" class="sp-pl-panel" hidden>
+            <input id="sp-pl-filter" type="search" class="sp-pl-filter" placeholder="Saring playlist…" aria-label="Saring playlist" autocomplete="off" />
+            <ul id="sp-pl-list" class="sp-pl-list" aria-label="Playlist"></ul>
+            <p id="sp-pl-note" class="muted small" role="status"></p>
+            <button type="button" id="sp-pl-more" class="ghost sp-small" hidden>Muat lagi</button>
+          </div>
+        </section>
+        <div id="sp-duck-row" class="sp-duck-row" hidden>
+          <label for="sp-duck">Saat ada permintaan izin</label>
+          <select id="sp-duck"><option value="off">Mati</option><option value="duck">Kecilkan</option><option value="pause">Jeda</option></select>
+        </div>
+        <button type="button" id="sp-settings" class="ghost sp-small" hidden>⚙ Pengaturan Spotify</button>
       </div>
     </div>
 

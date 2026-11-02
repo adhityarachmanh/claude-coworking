@@ -1,5 +1,6 @@
 // Renders the active Scene: low-res pixel canvas scaled up, plus an HTML overlay for crisp text.
 import { roleColor } from './cast.js';
+import { RADIO, drawRadioLive, grooving, radio } from './radio.js';
 import { fitLabels, labelVariants, sharedPrefix } from './tags.js';
 import { BOARD, DESKS, SIGNS, W, buildFurniture, drawDoor, drawLighting, drawThemeOverlay, drawWallLive, renderBackground, room } from './world.js';
 
@@ -33,6 +34,13 @@ export class Stage {
     });
     this.showVacantPlates();
     // Hidden copy of a name tag, to measure label variants with the live font size.
+    // ♪ The lounge radio's button (features/spotify.js names it and handles the click): at least 32×32 CSS px even
+    // on a phone-sized stage, over the 14×9 px sprite.
+    this.radioBtn = this.el('button', 'office-radio');
+    this.radioBtn.type = 'button';
+    this.radioBtn.hidden = true;
+    this.radioBtn.setAttribute('aria-haspopup', 'dialog');
+    this.musicKey = '';
     this.measure = this.el('div', 'actor tag-measure');
     this.measure.setAttribute('aria-hidden', 'true');
     this.measure.innerHTML = '<div class="name"></div>';
@@ -103,6 +111,8 @@ export class Stage {
     this.overlay.style.setProperty('--s', fit.toFixed(3));
     this.lastBoard = null; // reposition the whiteboard overlay
     for (const { sign, node } of this.signs) Object.assign(node.style, { left: `${(sign.x * fit).toFixed(1)}px`, top: `${(sign.y * fit).toFixed(1)}px` });
+    const box = Math.max(32, RADIO.w * fit);
+    Object.assign(this.radioBtn.style, { width: `${box}px`, height: `${box}px`, left: `${((RADIO.x + RADIO.w / 2) * fit - box / 2).toFixed(1)}px`, top: `${((RADIO.y + RADIO.h / 2 - 2) * fit - box / 2).toFixed(1)}px` });
     for (const tag of this.tags.values()) tag.bubbleSize = null; // bubbles scale with --s: measure again
     this.tagsDirty = true; // so do the name tags
   }
@@ -113,6 +123,7 @@ export class Stage {
     const now = performance.now();
     g.drawImage(this.background, 0, 0);
     const light = drawWallLive(g, t, new Date(), scene ? scene.activity(now) : { busy: false, bars: [] });
+    this.markMusic();
     if (!scene) {
       this.blit();
       return;
@@ -125,11 +136,23 @@ export class Stage {
       ...scene.drawables(now),
     ].sort((a, b) => a.y - b.y);
     for (const d of drawables) d.draw(g, t);
+    drawRadioLive(g, now);
     drawThemeOverlay(g, t);
     drawLighting(g, light, scene.monitorGlows(now), t);
     scene.drawEffects(g, now);
     this.blit();
     this.updateOverlay(now);
+  }
+
+  /** ♪ Radio state on the stage element (data-music / data-groove): CSS hooks, and what the UI tests read. */
+  markMusic() {
+    const groove = grooving() ? 'on' : 'off';
+    const key = `${radio.mode}|${groove}|${radio.button}`;
+    if (key === this.musicKey) return;
+    this.musicKey = key;
+    this.host.dataset.music = radio.mode;
+    this.host.dataset.groove = groove;
+    this.radioBtn.hidden = !radio.button;
   }
 
   blit() {

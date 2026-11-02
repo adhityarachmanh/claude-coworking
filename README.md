@@ -303,6 +303,7 @@ Kalau pencatatan akun itu baru dimulai di tengah periode, pratinjau memberi tahu
 - Login/logout akun hanya dari laptop atau dari HP lewat Tailscale (ditolak lewat WiFi biasa), dengan peringatan ke laptop. Server tidak pernah membaca token login (`.credentials.json`); profil diambil dari `claude auth status` dan data profil di `~/.claude.json`.
 - **Buka di VS Code / folder** hanya bisa dari laptop, hanya untuk folder project yang terdaftar (file harus berada di dalam project), dan dijalankan tanpa shell. Path dikirim sebagai argumen biasa, tidak pernah ditafsirkan sebagai perintah.
 - Export/import riwayat hanya dari laptop. Isi zip diperiksa (zip-slip, symlink, nama device, CRC) sebelum ada yang ditulis, dan kredensial login tidak pernah ikut di backup. Lihat [Pindah laptop / backup riwayat](#pindah-laptop--backup-riwayat).
+- ♪ Spotify: token login Spotify disimpan di `data/spotify.json` (mode 0600, tidak ikut backup, tidak pernah dikirim ke browser). Folder data harus **pribadi**: jangan arahkan `OFFICE_DATA_DIR` ke folder bersama/sinkron (folder jaringan, OneDrive bersama, dsb.), karena siapa pun yang bisa membaca file itu bisa memakai akun Spotify-mu. Untuk mencabut akses sepenuhnya, buka spotify.com/account/apps.
 - Ikon dan manifest PWA bisa diambil tanpa pairing karena tidak berisi data. Selain itu semuanya tetap butuh pairing.
 - HTTPS lewat Tailscale (segera): jangan jalankan layanan HTTPS lain (`tailscale serve`/Funnel) di nama mesin yang sama, karena cookie berlaku per host, bukan per port.
 

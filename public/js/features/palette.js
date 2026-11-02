@@ -19,6 +19,7 @@ import { openProjects, selectProject } from './picker.js';
 import { openRewind } from './rewind.js';
 import { openRoster } from './roster.js';
 import { openSessions } from './sessions.js';
+import { musicPaletteItems } from './spotify.js';
 import { slashCatalog } from './suggest.js';
 import { openTasks } from './tasks.js';
 import { applyTheme } from './theme.js';
@@ -38,6 +39,7 @@ const GROUPS = [
   ['file', 'File'],
   ['chat', 'Chat'],
   ['dialog', 'Buka'],
+  ['music', 'Musik'],
   ['setting', 'Izin, model & effort'],
   ['theme', 'Tema'],
   ['command', 'Perintah'],
@@ -45,7 +47,7 @@ const GROUPS = [
 const GROUP_LABEL = Object.fromEntries(GROUPS);
 
 const PREFIXES = {
-  '>': { label: 'Perintah & aksi', groups: ['chat', 'dialog', 'setting', 'theme', 'command'] },
+  '>': { label: 'Perintah & aksi', groups: ['chat', 'dialog', 'music', 'setting', 'theme', 'command'] },
   '@': { label: 'File project', groups: ['file'] },
   '#': { label: 'Project', groups: ['project'] },
 };
@@ -186,6 +188,7 @@ function buildItems() {
     ['help', '❓', 'Bantuan & shortcut', '?', null, () => openModal('help-modal'), 'help shortcut panduan keyboard'],
   ];
   for (const [id, icon, label, kbd, disabled, run, keywords] of dialogs) add({ id: `dialog:${id}`, group: 'dialog', icon, label, kbd, disabled, run, keywords });
+  for (const item of musicPaletteItems()) add(item); // ♪ Spotify: putar/jeda, berikutnya, buka pemutar
 
   // The composer's own selects: their options are the source of truth (the model list grows with the catalog).
   const selects = [

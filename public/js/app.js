@@ -38,6 +38,7 @@ import { initResumeTurn } from './features/resume-turn.js';
 import { initRewind } from './features/rewind.js';
 import { initSessions } from './features/sessions.js';
 import { initSettings } from './features/settings.js';
+import { initSpotify } from './features/spotify.js';
 import { initStatusline } from './features/statusline.js';
 import { initStuck } from './features/stuck.js';
 import { initSuggest } from './features/suggest.js';
@@ -93,6 +94,7 @@ initTasks();
 initResumeTurn(); // the "turn cut short by a server restart" banner, drawn by renderComposer
 initConversations(); // 🔎 Cari percakapan + ⬇ Export sesi (.md)
 initDashboard(); // 🗂 Semua project (header, phone Kantor bar, picker, Ctrl+P, /dashboard)
+initSpotify(); // ♪ Spotify: pill, ♪ dialog, 🗂 row, ⚙ section, office radio (after initSettings: ⚙ opens first)
 initPalette(); // Ctrl+P command palette (the shortcut itself is in ui/shortcuts.js)
 initPanelResizer();
 
