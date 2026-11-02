@@ -48,6 +48,36 @@ export function parseUsageText(text) {
   return windows;
 }
 
+/**
+ * The plan part of `/usage` as plain lines, for accounts it reports no "% used" windows for (e.g. an Enterprise seat
+ * whose usage an admin manages: "You've already sent a usage credit request to your admin."). Stops at the tips
+ * section, which is about this machine's sessions, not the plan.
+ */
+export function usageNote(text) {
+  const lines = [];
+  for (const raw of String(text).replace(ANSI, '').split('\n')) {
+    const line = raw.trim();
+    if (/^What's contributing/i.test(line)) break;
+    if (line) lines.push(line.slice(0, 200));
+  }
+  return lines.slice(0, 4).join('\n');
+}
+
+/**
+ * Usage-based seats (Enterprise `enterprise_usage_based`: billed to the organisation within a limit its admin sets)
+ * have no session/weekly "% used" windows. What the stream's rate-limit events do tell: whether usage is still within
+ * that limit, and when the billing period resets.
+ * @returns {{ status: 'allowed'|'allowed_warning'|'rejected'|null, resetsAt: number|null } | null} null for plan seats
+ */
+export function billingStatus(profile, rateLimit) {
+  const usageBased = /usage_based/i.test(profile?.seatTier ?? '') || rateLimit?.rateLimitType === 'overage';
+  if (!usageBased) return null;
+  return {
+    status: rateLimit?.overageStatus ?? rateLimit?.status ?? null,
+    resetsAt: finite(rateLimit?.overageResetsAt) ?? finite(rateLimit?.resetsAt), // epoch seconds
+  };
+}
+
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 /** What a browser shows of the rate-limit state: a change here is worth a broadcast, anything else is not. */
@@ -144,7 +174,9 @@ export class AccountService {
     } catch {
       text = out;
     }
-    this.limits = { windows: parseUsageText(text), text: text.trim(), at: Date.now() };
+    const windows = parseUsageText(text);
+    // No "% used" lines (Enterprise/admin-managed usage): keep what Claude Code did say, so ⚙ isn't just empty.
+    this.limits = { windows, note: windows.length ? '' : usageNote(text), text: text.trim(), at: Date.now() };
     this.limitsAt = Date.now();
     this.emit();
     return this.limits;
@@ -249,7 +281,7 @@ export class AccountService {
   }
 
   publicState() {
-    return { profile: this.profile, limits: this.limits, rateLimit: this.rateLimit, login: this.publicLogin() };
+    return { profile: this.profile, limits: this.limits, rateLimit: this.rateLimit, billing: billingStatus(this.profile, this.rateLimit), login: this.publicLogin() };
   }
 
   emit() {

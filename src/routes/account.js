@@ -3,7 +3,7 @@
 // account of every Claude Code on the laptop: server.js lets a phone call them only over Tailscale (ACCOUNT_AUTH).
 // `ctx.device` is the paired phone making the request (null on the laptop).
 import { randomBytes } from 'node:crypto';
-import { accountPrivacyView } from '../account.js';
+import { accountPrivacyView, billingStatus } from '../account.js';
 import { renderPdf, reportHtml } from '../report.js';
 import { PERIOD_UNITS, summarize, totals } from '../usage.js';
 import { json } from './http.js';
@@ -115,7 +115,9 @@ async function report(ctx, req, res, body, { pdf: wantPdf }) {
   // WiFi: the PDF (and its file name) says "Akun Claude", never the email, name or organisation.
   const who = view ? { ...found, email: 'Akun Claude', org: null } : found;
   const profile = isCurrent ? (view ? view.state({ profile: account.profile }).profile : account.profile) : null;
-  const html = reportHtml({ account: who, profile, limits: isCurrent ? account.limits : null, summary });
+  // billing (usage-based seats): only a limit status and a reset date, nothing personal, so WiFi gets it too
+  const billing = isCurrent ? billingStatus(account.profile, account.rateLimit) : null;
+  const html = reportHtml({ account: who, profile, limits: isCurrent ? account.limits : null, billing, summary });
   if (pdfRendering) return json(res, 429, { error: 'Laporan PDF lain sedang dibuat. Coba lagi sebentar.' });
   pdfRendering = true;
   try {

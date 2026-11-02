@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { parseUsageText } from '../src/account.js';
+import { billingStatus, parseUsageText, usageNote } from '../src/account.js';
 import { findBrowser, periodLabel, renderPdf, reportHtml } from '../src/report.js';
 import { byPeriod, periodStart, summarize, totals, UsageLedger } from '../src/usage.js';
 
@@ -31,6 +31,30 @@ test('parseUsageText reads the plan usage lines of /usage', () => {
     { label: 'Current week (all models)', percent: 20.5, resets: 'Nov 3, 9am (Asia/Jakarta)' },
     { label: 'Current week (Fable)', percent: 0, resets: null },
   ]);
+});
+
+test('usageNote keeps the /usage message of accounts without "% used" windows (Enterprise)', () => {
+  const enterprise = "You've already sent a usage credit request to your admin.\n";
+  assert.deepEqual(parseUsageText(enterprise), [], 'nothing to draw as a bar');
+  assert.equal(usageNote(enterprise), "You've already sent a usage credit request to your admin.");
+  // the tips section is about this machine, not the plan; ANSI colours are dropped
+  const tips = "\u001b[1mYour organization manages usage\u001b[0m\n\nWhat's contributing to your usage?\nLast 24h · 36 requests";
+  assert.equal(usageNote(tips), 'Your organization manages usage');
+});
+
+test('usage-based Enterprise seats get the organisation-limit status instead of "% used" bars', () => {
+  // as seen live: seat enterprise_usage_based, an "overage" rate-limit event without utilization
+  const profile = { subscriptionType: 'enterprise', seatTier: 'enterprise_usage_based' };
+  const rateLimit = { status: 'allowed', resetsAt: 1796083200, rateLimitType: 'overage', overageStatus: 'allowed', overageResetsAt: 1796083200, windows: { overage: { status: 'allowed', utilization: null, resetsAt: 1796083200 } } };
+  assert.deepEqual(billingStatus(profile, rateLimit), { status: 'allowed', resetsAt: 1796083200 });
+  assert.deepEqual(billingStatus(profile, null), { status: null, resetsAt: null }, 'known as usage-based before the first turn');
+  assert.equal(billingStatus({ subscriptionType: 'team', seatTier: 'team_premium' }, { status: 'allowed', rateLimitType: 'five_hour' }), null, 'plan seats keep their % bars');
+
+  const summary = summarize([], { from: 0, to: Date.now() });
+  const html = reportHtml({ account: A, profile, limits: { windows: [], note: 'x' }, billing: billingStatus(profile, { ...rateLimit, overageStatus: 'rejected' }), summary });
+  assert.match(html, /Batas pemakaian organisasi/);
+  assert.match(html, /Batas organisasi tercapai/);
+  assert.doesNotMatch(html, /pesan asli dari/, 'the /usage note is only the last resort');
 });
 
 test('ledger keeps accounts apart', () => {

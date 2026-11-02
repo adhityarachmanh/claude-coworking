@@ -52,6 +52,20 @@ function quotaRows() {
     .map(([k, w]) => ({ label: label[k] ?? k, percent: Math.round(w.utilization * 100), resets: w.resetsAt ? new Date(w.resetsAt * 1000).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : null }));
 }
 
+// Usage-based seats (Enterprise): no "% used" windows, only "still within the organisation's limit?" + the reset.
+const BILLING_STATUS = {
+  allowed: ['ok', '✅ Masih dalam batas organisasi'],
+  allowed_warning: ['warn', '⚠️ Mendekati batas yang diatur admin'],
+  rejected: ['bad', '⛔ Batas organisasi tercapai: minta admin menambah limit'],
+};
+
+function billingHtml(billing) {
+  const [tone, text] = BILLING_STATUS[billing.status] ?? ['', 'Status muncul setelah Claude menjawab satu giliran'];
+  const reset = billing.resetsAt ? new Date(billing.resetsAt * 1000).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : null;
+  return `<div class="billing ${tone}"><b>${text}</b>${reset ? `<small class="muted">Periode tagihan reset ${escapeHtml(reset)}</small>` : ''}</div>
+    <p class="muted small">Paket berbasis pemakaian (usage-based): tidak ada kuota sesi/mingguan dalam persen. Pemakaian ditagih ke organisasi dengan batas yang diatur admin, dan Claude Code tidak mengirim sisa batasnya.</p>`;
+}
+
 function usageTable(usage) {
   if (!usage) return '<p class="muted small">Memuat…</p>';
   const row = (label, t) => `<tr><th>${label}</th><td>${fmtShort(t.input)}</td><td>${fmtShort(t.output)}</td><td>${fmtShort(t.cacheRead)}</td><td>${fmtShort(t.cacheWrite)}</td><td><b>${fmtShort(t.total)}</b></td></tr>`;
@@ -145,7 +159,13 @@ function renderAccountBody(body) {
             ${w.resets ? `<small class="muted">reset ${escapeHtml(w.resets)}</small>` : ''}</div>`;
         })
         .join('')
-    : `<p class="muted small">${account.loading ? 'Mengambil kuota…' : 'Belum ada data kuota.'}</p>`;
+    : state.account?.billing
+      ? billingHtml(state.account.billing)
+      : state.account?.limits?.note && !account.loading
+        ? // No "% used" windows and no rate-limit status yet: show what Claude Code's /usage said.
+          `<p class="quota-note">${escapeHtml(state.account.limits.note)}</p>
+           <p class="muted small">Akun ini tidak melaporkan kuota dalam persen. Di atas adalah pesan asli dari <code>/usage</code>.</p>`
+        : `<p class="muted small">${account.loading ? 'Mengambil kuota…' : 'Belum ada data kuota.'}</p>`;
   body.innerHTML = `<div class="acct-head">
       <span class="avatar big">${escapeHtml(accountInitial(p))}</span>
       <div><b>${escapeHtml(accountName(p))}</b><small>${escapeHtml(p.email ?? '')}</small></div>

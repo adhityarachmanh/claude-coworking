@@ -24,6 +24,12 @@ function table(title, rows, label) {
 }
 
 const UNIT_TITLE = { day: 'hari', week: 'minggu', month: 'bulan' };
+// Usage-based seats (Enterprise): the organisation's limit status from the rate-limit events (src/account.js billingStatus).
+const BILLING_TEXT = {
+  allowed: 'Masih dalam batas organisasi',
+  allowed_warning: 'Mendekati batas yang diatur admin',
+  rejected: 'Batas organisasi tercapai',
+};
 
 /** "31 Okt 2026", "26 Okt – 1 Nov 2026" or "Oktober 2026". */
 export function periodLabel({ start, end }, unit) {
@@ -72,7 +78,7 @@ function periodTable(summary) {
 }
 
 /** @param {{ account, profile, limits, summary, generatedAt }} data */
-export function reportHtml({ account, profile, limits, summary }) {
+export function reportHtml({ account, profile, limits, billing = null, summary }) {
   const t = summary.totals;
   const kpis = [
     ['Total token', short(t.total), `${num(t.total)} token`],
@@ -149,6 +155,8 @@ export function reportHtml({ account, profile, limits, summary }) {
   ` : '<div class="empty">Belum ada pemakaian tercatat untuk akun ini pada periode tersebut.</div>'}
 
   ${limitRows ? `<h2>Kuota langganan saat laporan dibuat</h2><table><thead><tr><th>Jendela</th><th style="width:45%">Terpakai</th><th>%</th><th>Reset</th></tr></thead><tbody>${limitRows}</tbody></table>` : ''}
+  ${!limitRows && billing ? `<h2>Batas pemakaian organisasi saat laporan dibuat</h2><p><b>${esc(BILLING_TEXT[billing.status] ?? 'Status belum diketahui')}</b>${billing.resetsAt ? ` · periode tagihan reset ${esc(dateFmt(billing.resetsAt * 1000, { dateStyle: 'medium', timeStyle: 'short' }))}` : ''}</p><p class="muted">Paket berbasis pemakaian (usage-based): tidak ada kuota sesi/mingguan dalam persen. Pemakaian ditagih ke organisasi dengan batas yang diatur admin.</p>` : ''}
+  ${!limitRows && !billing && limits?.note ? `<h2>Kuota langganan saat laporan dibuat</h2><p style="white-space:pre-line">${esc(limits.note)}</p><p class="muted">Akun ini tidak melaporkan kuota dalam persen. Teks di atas adalah pesan asli dari <code>/usage</code>.</p>` : ''}
 
   <div class="notes"><b>Catatan</b><ul>
     <li>Hanya pemakaian akun <b>${esc(account.email)}</b>. Setiap catatan menyimpan akun yang sedang login saat token dipakai, jadi akun lain tidak ikut terhitung.</li>

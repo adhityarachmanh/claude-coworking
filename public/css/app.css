@@ -968,6 +968,14 @@ body.read-only #composer-hint { color: var(--ask); }
 .acct-title button { font-size: var(--fs-sm); padding: 3px 9px; }
 .quota { margin-bottom: 9px; font-size: var(--fs-md); }
 .quota-head { display: flex; justify-content: space-between; margin-bottom: 3px; }
+/* usage-based seats (Enterprise): status of the organisation's limit instead of "% used" bars */
+.billing { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px; padding: 7px 10px; font-size: var(--fs-md); background: var(--surface-2); border: 1px solid var(--border); border-left: 3px solid var(--muted); border-radius: 8px; }
+.billing.ok { border-left-color: var(--ok); }
+.billing.warn { border-left-color: var(--ask); }
+.billing.bad { border-left-color: var(--err); }
+.billing small { font-size: var(--fs-sm); }
+/* /usage message for accounts without "% used" windows (Enterprise / admin-managed usage) */
+.quota-note { margin: 0 0 6px; padding: 7px 10px; font-size: var(--fs-md); line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; }
 .bar { height: 7px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; }
 .bar i { display: block; height: 100%; border-radius: inherit; background: var(--ok); }
 .bar i.warn { background: var(--ask); }
