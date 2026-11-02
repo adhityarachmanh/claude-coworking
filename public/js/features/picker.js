@@ -8,6 +8,7 @@ import { renderActivity } from './activity.js';
 import { changes, loadChanges } from './changes.js';
 import { renderChat } from './chat.js';
 import { renderComposer } from './composer.js';
+import { scheduleDashboard } from './dashboard.js';
 import { restoreDraft } from './draft.js';
 import { closeSuggest } from './suggest.js';
 
@@ -57,6 +58,7 @@ export function renderSidebar() {
     })
     .join('');
   renderHeader();
+  scheduleDashboard(); // runs after every status/chat/approval/projects event: 🗂 Semua project follows live
 }
 
 export function selectProject(id) {

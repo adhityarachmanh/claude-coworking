@@ -11,6 +11,7 @@ import { closeModal, openModal } from '../ui/modals.js';
 import { LOCAL_COMMANDS, localCommand } from './commands.js';
 import { fillComposer } from './composer.js';
 import { exportActiveSession, openSearch } from './conversations.js';
+import { openDashboard } from './dashboard.js';
 import { openFile } from './file-viewer.js';
 import { openMcp } from './mcp.js';
 import { openNotifySettings } from './notify.js';
@@ -24,6 +25,8 @@ import { applyTheme } from './theme.js';
 import { toggleVoice, voiceAvailable, voiceRecording } from './voice.js';
 
 const RECENT_KEY = 'office.palette.recent';
+// Slash commands that only open something to look at: usable in the demo and over read-only WiFi too.
+const ALWAYS_COMMANDS = new Set(['help', 'dashboard']);
 const RECENT_MAX = 6;
 const MAX_PER_GROUP = { project: 12, file: 12, command: 12 };
 const MAX_ITEMS = 80;
@@ -168,6 +171,7 @@ function buildItems() {
 
   const dialogs = [
     ['projects', '📁', 'Ganti project', 'Ctrl K', null, () => openProjects(), 'switch project picker'],
+    ['dashboard', '🗂', 'Semua project', '/dashboard', null, () => openDashboard(), 'dashboard overview ringkasan status semua project izin bekerja antrian'],
     ['sessions', '🕘', 'Riwayat sesi', '/resume', needProject, () => openSessions(), 'history resume lanjutkan'],
     ['tasks', '⧗', 'Tugas latar', '/tasks', needProject, () => openTasks(), 'background tasks agent'],
     ['rewind', '⏪', 'Rewind', 'Esc Esc', needProject, () => openRewind(), 'checkpoint undo kembalikan'],
@@ -226,7 +230,7 @@ function buildItems() {
       label: `/${c.name}`,
       hint: c.description ?? (own ? '' : 'Perintah Claude Code'),
       kbd: own ? '' : 'ke kotak pesan',
-      disabled: c.name === 'help' ? null : needProject ?? ro,
+      disabled: ALWAYS_COMMANDS.has(c.name) ? null : needProject ?? ro,
       keywords: c.aliases?.join(' ') ?? '',
       run: () => (own ? localCommand(`/${c.name}`) : fillComposer(`/${c.name} `)),
     });

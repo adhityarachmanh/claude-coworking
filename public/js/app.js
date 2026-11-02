@@ -17,6 +17,7 @@ import { initChanges } from './features/changes.js';
 import { initChat } from './features/chat.js';
 import { initComposerControls, initComposerInput } from './features/composer.js';
 import { initConversations } from './features/conversations.js';
+import { initDashboard } from './features/dashboard.js';
 import { initDraft } from './features/draft.js';
 import { initFileViewer } from './features/file-viewer.js';
 import { initGitBar } from './features/git-branches.js';
@@ -91,6 +92,7 @@ initPermissions(); // 🛡️ Aturan izin (⚙, ⋯, /permissions)
 initTasks();
 initResumeTurn(); // the "turn cut short by a server restart" banner, drawn by renderComposer
 initConversations(); // 🔎 Cari percakapan + ⬇ Export sesi (.md)
+initDashboard(); // 🗂 Semua project (header, phone Kantor bar, picker, Ctrl+P, /dashboard)
 initPalette(); // Ctrl+P command palette (the shortcut itself is in ui/shortcuts.js)
 initPanelResizer();
 

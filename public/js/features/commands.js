@@ -5,6 +5,7 @@ import { state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { saveSettings } from './composer.js';
 import { exportActiveSession, openSearch } from './conversations.js';
+import { openDashboard } from './dashboard.js';
 import { openMcp } from './mcp.js';
 import { openQueue } from './queue.js';
 import { openPermissions } from './permissions.js';
@@ -29,6 +30,7 @@ export const LOCAL_COMMANDS = [
   { name: 'antrian', aliases: ['queue'], description: '📋 Antrian prompt: susun beberapa prompt, dijalankan satu per satu saat tim tidak sibuk' },
   { name: 'tasks', description: 'Tugas latar: perintah & agent yang berjalan, output-nya, hentikan' },
   { name: 'memory', description: 'Buka CLAUDE.md project di VS Code' },
+  { name: 'dashboard', aliases: ['semua'], description: '🗂 Semua project: status setiap project sekaligus (izin, bekerja, antrian, idle)' },
   { name: 'help', description: 'Panduan & shortcut keyboard' },
   { name: 'export', argumentHint: '[tools]', description: 'Unduh sesi ini sebagai Markdown (.md) — /export tools: sertakan ringkasan tool' },
   { name: 'search', aliases: ['find'], argumentHint: '<kata kunci>', description: '🔎 Cari di semua percakapan project ini' },
@@ -94,6 +96,10 @@ export function localCommand(text) {
     case 'memory':
       if (!state.local) toast('CLAUDE.md hanya bisa dibuka dari laptop.');
       else api(`/api/projects/${state.active}/open`, { app: 'code', file: 'CLAUDE.md' }).catch((err) => toast(err.message));
+      return true;
+    case 'dashboard':
+    case 'semua':
+      openDashboard();
       return true;
     case 'help':
       openModal('help-modal');
