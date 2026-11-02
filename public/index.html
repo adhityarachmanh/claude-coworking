@@ -856,7 +856,7 @@
       </div>
     </div>
 
-    <!-- ---------- Phone only (≤ 760 px): bottom sheets of the Chat view (features/phone-sheets.js) ----------
+    <!-- ---------- Phone only (≤ 760 px or a phone sideways): bottom sheets of the Chat view (⋯ is view-aware) (features/phone-sheets.js) ----------
          Every row/tile forwards to a control that already exists (data-proxy); no logic of its own. -->
     <div id="plus-modal" class="modal phone-sheet" hidden>
       <div class="modal-card sheet-card" role="dialog" aria-modal="true" aria-labelledby="plus-title">
@@ -887,15 +887,31 @@
     <div id="head-more-modal" class="modal phone-sheet" hidden>
       <div class="modal-card sheet-card" role="dialog" aria-modal="true" aria-labelledby="hm-project">
         <div class="modal-head"><b id="hm-project">Project</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <p class="hm-session"><span id="hm-title"></span><small id="hm-meta" class="muted"></small></p>
-        <div class="sheet-group" role="group" aria-labelledby="hm-g-session" data-needs-project>
+        <p class="hm-session" data-view="chat"><span id="hm-title"></span><small id="hm-meta" class="muted"></small></p>
+        <!-- View-aware: [data-view] groups show only in that phone view (Chat: session + conversation, Perubahan: git) -->
+        <div class="sheet-group" role="group" aria-labelledby="hm-g-changes" data-view="changes" data-needs-project>
+          <h3 id="hm-g-changes" class="sheet-group-head">Perubahan</h3>
+          <button type="button" class="sheet-row" data-proxy="#ch-view"><span aria-hidden="true">📄</span><span>Lihat isi file terpilih</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-review" data-mutates><span aria-hidden="true">🔍</span><span>Minta review semua perubahan</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-refresh"><span aria-hidden="true">↻</span><span>Muat ulang</span></button>
+          <button type="button" class="sheet-row local-only" data-proxy="#ch-open"><span aria-hidden="true">🧭</span><span>Buka di VS Code</span></button>
+        </div>
+        <div class="sheet-group" role="group" aria-labelledby="hm-g-git" data-view="changes" data-show-if="#ch-git">
+          <h3 id="hm-g-git" class="sheet-group-head">Git</h3>
+          <button type="button" class="sheet-row" data-proxy="#ch-git-new" data-reason><span aria-hidden="true">＋</span><span>Branch baru</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-git-fetch" data-reason="Belum ada remote (git remote add origin …)"><span aria-hidden="true">⟳</span><span>Fetch</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-git-pull" data-reason><span aria-hidden="true">⬇</span><span>Pull</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-git-push" data-reason="Belum ada remote, atau HEAD detached"><span aria-hidden="true">⬆</span><span>Push</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-git-pr" data-reason><span aria-hidden="true">🤖</span><span>Minta Claude buat PR</span></button>
+        </div>
+        <div class="sheet-group" role="group" aria-labelledby="hm-g-session" data-view="chat" data-needs-project>
           <h3 id="hm-g-session" class="sheet-group-head">Sesi</h3>
           <button type="button" class="sheet-row" data-proxy="#btn-sessions"><span aria-hidden="true">🕘</span><span>Riwayat sesi</span></button>
           <button type="button" class="sheet-row" data-proxy="#btn-new" data-mutates><span aria-hidden="true">＋</span><span>Sesi baru</span></button>
           <button type="button" class="sheet-row" data-proxy="#sb-title" data-mutates data-needs-session><span aria-hidden="true">✎</span><span>Ganti nama sesi</span></button>
           <button type="button" class="sheet-row" data-action="rewind" data-mutates><span aria-hidden="true">⏪</span><span>Rewind</span></button>
         </div>
-        <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-needs-project>
+        <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>
           <h3 id="hm-g-chat" class="sheet-group-head">Percakapan</h3>
           <button type="button" class="sheet-row" data-proxy="[data-more='export']"><span aria-hidden="true">⬇</span><span>Export percakapan (.md)</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='export-session']"><span aria-hidden="true">⬇</span><span>Export sesi lengkap (.md)</span></button>

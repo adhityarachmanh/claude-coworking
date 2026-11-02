@@ -1090,7 +1090,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .mobile-nav { display: none; }
 
 /* ---------- tablet: office on top, panel below ---------- */
-@media (max-width: 1100px) and (min-width: 761px) {
+@media (max-width: 1100px) and (min-width: 761px) and (pointer: fine), (max-width: 1100px) and (min-width: 761px) and (pointer: none), (max-width: 1100px) and (min-width: 761px) and (min-height: 501px) {
   body { overflow: auto; height: auto; min-height: 100%; }
   .layout { grid-template-columns: minmax(0, 1fr); }
   .stage { height: 52vw; }
@@ -1099,7 +1099,7 @@ body.read-only #composer-hint { color: var(--ask); }
 }
 
 /* ---------- phone: app-style, one full-screen view + bottom navigation ---------- */
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   body { height: 100dvh; overflow: hidden; }
   .topbar { flex: none; gap: 8px; height: calc(52px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 10px 0; }
   .brand span { display: none; }
@@ -1255,7 +1255,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .theme-pick p { margin: 0; }
 .theme-pick .seg { flex-wrap: wrap; max-width: 100%; border-radius: var(--r-lg); }
 .theme-pick .seg button { white-space: nowrap; border-radius: var(--r-md); }
-@media (max-width: 760px) { .theme-pick .seg { align-self: stretch; } }
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) { .theme-pick .seg { align-self: stretch; } }
 .backup-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .backup-actions button { font-size: var(--fs-sm); padding: 5px 10px; }
 .backup-result { font-size: var(--fs-xs); color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px 10px; overflow-wrap: anywhere; }
@@ -1303,7 +1303,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .quota-swatch { width: 10px; height: 10px; border-radius: 50%; }
 .quota-swatch.warn { background: var(--ask); }
 .quota-swatch.crit { background: var(--err); }
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   .modal-card.templates-card { height: 92dvh; }
   .tpl-actions button { flex: 1 1 auto; }
   .tpl-actions .grow { display: none; }
@@ -1367,7 +1367,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .fv-t mark { background: var(--warn-line); color: var(--warn-text-strong); border-radius: 2px; }
 .fv-l.cur mark { background: var(--ask); color: var(--on-ask); }
 .ch-head { flex-wrap: wrap; }
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   .modal-card.file-card { height: 92dvh; }
   .fv-search input { font-size: var(--fs-input-touch); }
   .fv-tools > button { padding: 6px 9px; }
@@ -1415,7 +1415,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .sr-actions { flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .s-export { flex: none; padding: 5px 10px; font-size: var(--fs-sm); white-space: nowrap; }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   #btn-palette { display: none; } /* phone: 🔎 sits in the bottom nav (#nav-palette), the top bar stays within the screen */
   .mobile-nav { grid-template-columns: repeat(5, 1fr); }
   .palette-modal { padding: 0; place-items: end stretch; }
@@ -1474,7 +1474,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .perm-acts button { padding: 3px 8px; font-size: var(--fs-xs); }
 .perm-acts .danger-text { color: var(--err-text); }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   .ch-git-branch select { max-width: 160px; }
   .ch-git button { padding: 6px 9px; }
   .ch-git-create input, .perm-add input, .perm-add select { font-size: var(--fs-input-touch); }
@@ -1556,7 +1556,7 @@ body.read-only #composer-hint { color: var(--ask); }
 #ba-folder { width: 100%; font-family: var(--mono); font-size: var(--fs-sm); }
 #ba-status.warn { color: var(--warn-text); }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   .modal-card.queue-card { height: 92dvh; }
   .queue-item { grid-template-columns: 22px minmax(0, 1fr); }
   .queue-actions { grid-column: 1 / -1; max-width: none; }
@@ -1587,7 +1587,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .ns-volume output { min-width: 3.2em; font-variant-numeric: tabular-nums; color: var(--text-2); }
 .ns-volume button, .ns-actions button { font-size: var(--fs-sm); padding: 5px 10px; }
 .ns-actions { display: flex; justify-content: flex-end; }
-@media (max-width: 760px) { .ns-times input { font-size: var(--fs-input-touch); } }
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) { .ns-times input { font-size: var(--fs-input-touch); } }
 
 /* ---------- 🎤 Input suara (features/voice.js) ---------- */
 .input .voice-btn[aria-pressed='true'] { color: var(--err); background: var(--err-soft); border-radius: var(--r-pill); animation: voice-pulse 1.2s ease-in-out infinite; }
@@ -1637,7 +1637,7 @@ body.read-only #composer-hint { color: var(--ask); }
 /* Kantor-view bar: phone only (the laptop has the header button) */
 .dash-bar { display: none; }
 #chat > [tabindex='-1']:focus { outline: 2px solid var(--ask); outline-offset: 2px; }
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   #btn-dashboard { display: none; } /* phone: the Kantor bar and the 🗂 in the project picker */
   .dash-bar { display: flex; align-items: center; gap: 8px; width: calc(100% - 16px); margin: 8px 8px 0; padding: 10px 12px; text-align: left; border-radius: var(--r-lg); background: var(--surface-2); }
   .dash-bar.needs { border-color: var(--ask); }
@@ -1806,7 +1806,7 @@ body.read-only #composer-hint { color: var(--ask); }
    docs/design-mobile-chat.md. Everything below is phone-only: on a laptop .phone-only never shows and the rest is gated. */
 .phone-only { display: none; }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   /* header: [logo] [project / session · status] (♪ in Kantor) [⋯] [●] */
   .topbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; column-gap: 8px; }
   .topbar > * { grid-row: 1; }
@@ -1931,3 +1931,85 @@ body.read-only #composer-hint { color: var(--ask); }
   .hm-dot[hidden] { display: none; }
 }
 @keyframes sheet-up { from { transform: translateY(24px); opacity: .6; } }
+
+/* ---------- 📱 the other phone views: Kantor, Perubahan, Aktivitas (docs/design-mobile-chat.md §9) ----------
+   One clear primary action per view (Kantor: 🗂 Semua project, Perubahan: Commit); the rest is in the header ⋯ sheet,
+   which shows the rows of the view on screen (features/phone-sheets.js). Laptop (> 760 px, fine pointer): unchanged. */
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
+  /* header: the session subtitle belongs to Chat; elsewhere the project name sits centred */
+  body[data-view='office'] #head-sub, body:not([data-tab='chat']) #head-sub { display: none; }
+  body[data-view='office'] #crumb, body:not([data-tab='chat']) #crumb { align-items: center; padding: 4px 10px; }
+
+  /* sheets: the title row (with ✕) stays in view while a long sheet scrolls */
+  .sheet-card > .modal-head { position: sticky; top: -14px; z-index: 1; margin: -14px -14px 10px; padding: 14px 14px 6px; background: var(--surface); }
+
+  /* Kantor: 🗂 stays on top while the team list scrolls under it */
+  .dash-bar { position: sticky; top: 0; z-index: 2; min-height: 48px; box-shadow: 0 -8px 0 8px var(--bg); }
+  .member small { display: none; } /* role title: the name says it ("Adhit - QA"); full text in the card's title */
+  .member { min-height: 48px; }
+
+  /* Perubahan: [⎇ branch · sync] → files → diff → [pesan][Commit]. Buttons live in ⋯ (Perubahan + Git groups). */
+  .changes { gap: 6px; }
+  .ch-head { display: none; } /* "3 file berubah" is on the nav badge; its buttons are in ⋯ */
+  .ch-git { flex-wrap: nowrap; min-height: 44px; }
+  .ch-git > button, .ch-git > .grow { display: none; }
+  .ch-git-branch { flex: none; max-width: 60%; }
+  .ch-git-branch select { max-width: 100%; min-height: 40px; font-size: var(--fs-input-touch); }
+  .ch-git-sync { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .ch-files li { min-height: 44px; padding: 8px 10px; }
+  /* the diff wraps inside its own box: no sideways scrolling, nothing wider than the screen */
+  .ch-diff pre { padding: 6px 8px; font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .ch-commit input, .ch-commit button { min-height: 44px; }
+  .ch-git-create input, .ch-git-create button { min-height: 44px; }
+
+  /* Aktivitas: readable rows, long text wraps inside the row */
+  .activity li { padding: 8px 0; font-size: var(--fs-md); line-height: 1.45; }
+  .activity li > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+}
+
+/* ---------- 📱 a phone held sideways (touch, ≤ 500 px tall) ----------
+   The bottom nav becomes a rail on the left, the header is 44 px, the composer is one row, the office sits beside
+   the team list and every sheet fits the short screen (scrolling inside, ✕ always in view). */
+@media (pointer: coarse) and (max-height: 500px) and (orientation: landscape) {
+  body { display: grid; grid-template-columns: calc(72px + env(safe-area-inset-left)) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
+  .topbar { grid-column: 2; grid-row: 1; height: calc(44px + env(safe-area-inset-top)); padding-right: calc(10px + env(safe-area-inset-right)); }
+  #conn-banner { grid-column: 2; grid-row: 2; }
+  .layout { grid-column: 2; grid-row: 3; }
+  .mobile-nav { grid-column: 1; grid-row: 1 / -1; display: flex; flex-direction: column; justify-content: center; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left); border-top: 0; border-right: 1px solid var(--border); }
+  .mobile-nav button { flex: 0 1 68px; justify-content: center; min-height: 44px; padding: 4px 2px; }
+  .mobile-nav button.active::before { top: 22%; bottom: 22%; left: 0; right: auto; width: 3px; height: auto; }
+  .nav-badge { top: 2px; }
+  /* typing: the keyboard takes half the screen, so the header and the rail step aside */
+  body.kb-open { grid-template-columns: 0 minmax(0, 1fr); }
+  body.kb-open .topbar { display: none; }
+  .toast { bottom: 12px; }
+
+  /* Chat: one-row composer [＋][text…][chip][↑] */
+  .input { flex-wrap: nowrap; }
+  #btn-plus { order: 0; }
+  .input textarea { order: 1; flex: 1 1 0; min-width: 0; max-height: 30dvh; }
+  .settings-chip { order: 2; flex: 0 1 auto; max-width: 34%; margin-right: 0; }
+
+  /* Kantor: the office on the left (fits the height), 🗂 + team list on the right */
+  .office { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 2fr); grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+  .stage { grid-column: 1; grid-row: 1 / -1; height: auto; min-width: 0; min-height: 0; margin: 8px; overflow: hidden; }
+  .dash-bar { grid-column: 2; grid-row: 1; width: auto; margin: 8px 8px 0 0; position: static; box-shadow: none; }
+  .team { grid-column: 2; grid-row: 2; min-height: 0; overflow-y: auto; grid-template-columns: minmax(0, 1fr); align-content: start; padding: 8px 8px 8px 0; }
+
+  /* Perubahan: files beside the diff, the branch row on top and Commit at the bottom */
+  .changes { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(0, 5fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  .changes > * { grid-column: 1 / -1; }
+  .ch-git { grid-row: 1; }
+  .ch-git-create { grid-row: 2; }
+  .ch-git-out { grid-row: 3; }
+  .ch-files { grid-column: 1; grid-row: 4; max-height: none; }
+  .ch-diff { grid-column: 2; grid-row: 4; }
+  .ch-commit { grid-row: 5; }
+
+  /* sheets: centred, never wider than a phone in portrait, as tall as the screen allows */
+  .modal { place-items: end center; }
+  .modal-card { max-width: min(640px, 100%); max-height: calc(100dvh - 8px); }
+  .plus-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .plus-tile { min-height: 64px; }
+  #turn-settings-modal .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+}

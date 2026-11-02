@@ -272,6 +272,17 @@ async function tapMore(page, item) {
 }
 
 /** Replaces the composer text by typing (a trusted `input` event, as from the keyboard). */
+/**
+ * Taps a Perubahan-tab action: on a laptop the button itself, on a phone the row of the header ⋯ sheet that forwards
+ * to it (the phone shows only ⎇ and Commit in that view, docs/design-mobile-chat.md §9).
+ */
+async function tapChangesAction(page, sel, mobile) {
+  if (!mobile) return page.click(sel);
+  await page.click('#btn-head-more');
+  await page.waitFor(() => !document.querySelector('#head-more-modal').hidden, { timeoutMs: 2000, message: 'sheet ⋯' });
+  await page.click(`#head-more-modal [data-proxy="${sel}"]`);
+}
+
 async function typeInPrompt(page, text) {
   await page.eval(() => {
     const input = document.querySelector('#prompt');
@@ -1616,11 +1627,11 @@ for (const vp of VIEWPORTS) {
       writeFileSync(path.join(proj, 'src', 'checkout.ts'), `export const total = ${Date.now()};\n`);
       if (vp.mobile) await page.click('#mobile-nav [data-view="changes"]');
       else await page.click('.tabs button[data-tab="changes"]');
-      await page.click('#ch-refresh');
+      await tapChangesAction(page, '#ch-refresh', vp.mobile);
       await page.waitFor(() => [...document.querySelectorAll('#ch-files li[data-path]')].some((li) => li.dataset.path === 'src/checkout.ts'), { timeoutMs: 6000, message: 'file berubah di tab Perubahan' });
       await page.eval(() => [...document.querySelectorAll('#ch-files li[data-path]')].find((li) => li.dataset.path === 'src/checkout.ts').click());
       assert.equal(await page.eval(horizontalOverflow), null, 'tab Perubahan tanpa scroll horizontal');
-      await page.click('#ch-view');
+      await tapChangesAction(page, '#ch-view', vp.mobile);
       await page.waitFor(() => /export const total/.test(document.querySelector('#fv-code')?.textContent ?? ''), { timeoutMs: 4000, message: 'penampil dari tab Perubahan' });
       assert.equal(await page.eval(horizontalOverflow), null);
       await page.press('Escape');
@@ -1678,7 +1689,7 @@ for (const vp of VIEWPORTS) {
       }
       if (vp.mobile) await page.click('#mobile-nav [data-view="changes"]');
       else await page.click('.tabs button[data-tab="changes"]');
-      await page.click('#ch-refresh');
+      await tapChangesAction(page, '#ch-refresh', vp.mobile);
       await page.waitFor(() => !document.querySelector('#ch-git').hidden && document.querySelector('#ch-git-select').options.length > 0 && document.querySelector('#ch-git-sync').textContent.trim(), { timeoutMs: 6000, message: 'bar git tampil' });
       const bar = await page.eval(() => ({
         branch: document.querySelector('#ch-git-select').value,
@@ -1694,7 +1705,7 @@ for (const vp of VIEWPORTS) {
       assert.equal(await page.eval(horizontalOverflow), null, 'tab Perubahan + bar git tanpa scroll horizontal');
       assert.deepEqual(await page.eval(unnamedButtons, '#changes'), []);
       // ＋ Branch: a name with a space is caught before it is sent; a server refusal shows git's message in the panel
-      await page.click('#ch-git-new');
+      await tapChangesAction(page, '#ch-git-new', vp.mobile);
       await page.waitFor(() => document.activeElement?.id === 'ch-git-name', { timeoutMs: 2000, message: 'fokus di nama branch' });
       await page.eval(() => (document.querySelector('#ch-git-name').value = 'ada spasi'));
       await page.click('#ch-git-create button.primary');
@@ -1709,7 +1720,7 @@ for (const vp of VIEWPORTS) {
       await page.click('#ch-git-out-close');
       // 🤖 PR: the prompt lands in the composer, not sent
       const users = await page.eval(() => document.querySelectorAll('#chat .msg.user, #chat [data-kind="user"]').length);
-      await page.click('#ch-git-pr');
+      await tapChangesAction(page, '#ch-git-pr', vp.mobile);
       await page.waitFor(() => /pull request/.test(document.querySelector('#prompt').value), { timeoutMs: 2000, message: 'prompt PR di kotak pesan' });
       assert.match(await page.eval(() => document.querySelector('#prompt').value), new RegExp(`branch \`${bar.branch}\``));
       assert.equal(await page.eval(() => document.querySelectorAll('#chat .msg.user, #chat [data-kind="user"]').length), users, 'tidak terkirim');

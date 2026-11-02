@@ -540,3 +540,21 @@ Semua `waitFor` memakai `timeoutMs` eksplisit (pola yang ada). Jalankan per test
 ### 8.3 Manual (perangkat nyata)
 
 iPhone (Safari + PWA standalone) dan Android Chrome, potret: keyboard buka/tutup saat chat panjang, rotasi, VoiceOver/TalkBack urutan baca (§4), Dynamic Type besar (teks 130 %), mode WiFi (read-only) dan Tailscale.
+
+---
+
+## 9. Fase 2: view lain + HP landscape (diimplementasi)
+
+Query HP sekarang `(max-width: 760px), (pointer: coarse) and (max-height: 500px)` di `public/js/core/dom.js` (`narrow`) dan semua blok `@media` HP di `public/css/app.css`. Blok tablet (761–1100 px) dikecualikan untuk HP landscape. Laptop (> 760 px, pointer halus) tidak berubah: sidik layout 1440×900 dan 900×480 identik sebelum/sesudah.
+
+| View | Sebelum (390 px, kontrol di luar baris daftar) | Sesudah | Aksi utama | Ke ⋯ |
+|---|---|---|---|---|
+| Kantor | header 2 + 🗂 1 | header 2 + 🗂 1 (sticky saat gulir), kartu tim tanpa subjudul peran | 🗂 Semua project | – |
+| Perubahan | header 2 + 12 (Lihat file, VS Code, Review, ↻, ⎇, ＋ Branch, Fetch, Pull, Push, PR, pesan, Commit) | header 2 + 3 (⎇, pesan, Commit) | Commit | Lihat file, Review, ↻, VS Code, ＋ Branch, Fetch, Pull, Push, PR (nonaktif dengan alasan tertulis) |
+| Aktivitas | 0 (teks panjang meluber ke samping) | 0, teks dibungkus, 13 px | – | – |
+| Cari | input + ✕ | sama, sheet muat di landscape | – | – |
+
+- Header ⋯ **sadar-view**: grup `[data-view="chat"]` (Sesi, Percakapan) hanya di Chat, `[data-view="changes"]` (Perubahan, Git) hanya di Perubahan; "Lainnya" selalu ada. Subjudul sesi hanya di Chat.
+- Diff di HP: `pre-wrap` di dalam `#ch-diff` (tanpa geser samping); header ⎇ dan Commit tidak ikut tergulir.
+- Landscape (`(pointer: coarse) and (max-height: 500px) and (orientation: landscape)`): navigasi jadi rail kiri 72 px (+ safe-area), header 44 px, composer satu baris `[＋][teks][chip][↑]`, Kantor = kantor kiri + 🗂/tim kanan, Perubahan = file kiri + diff kanan. Keyboard terbuka: header dan rail disembunyikan. Sheet: tengah, maks 640 px, tinggi maks layar, judul + ✕ sticky.
+- Test: `test/mobile-views.test.mjs` (390×844, 360×740, 844×390, desktop 1440×900 dan 900×480).

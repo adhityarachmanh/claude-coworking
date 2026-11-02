@@ -1,4 +1,5 @@
-// Phone Chat view (≤ 760 px, docs/design-mobile-chat.md): the ＋ sheet, the turn-settings sheet and the header ⋯ sheet.
+// Phone views (≤ 760 px or a phone sideways, docs/design-mobile-chat.md): the ＋ sheet, the turn-settings sheet and the
+// header ⋯ sheet (view-aware: Chat → session/conversation rows, Perubahan → git rows, every view → Lainnya).
 // Every row/tile forwards a click to a control that already exists (data-proxy), so shortcuts, tests and the
 // read-only rules keep working on the original controls; this module only opens sheets and fills labels.
 import { $, narrow } from '../core/dom.js';
@@ -25,6 +26,9 @@ export function placeControls() {
   }
 }
 
+/** The phone view on screen: 'office', or the panel tab ('chat' | 'changes' | 'activity'). */
+const currentView = () => (document.body.dataset.view === 'office' ? 'office' : state.tab || 'chat');
+
 /** The ⋯ sheet's rows: label text, hidden rows (control absent here), disabled rows with a visible reason. */
 function renderHeadMore() {
   const st = state.statuses[state.active] ?? {};
@@ -39,7 +43,14 @@ function renderHeadMore() {
   $('#hm-quota-dot').className = `hm-dot ${quota.classList.contains('crit') ? 'crit' : 'warn'}`;
   $('#hm-music').textContent = $('#spotify-pill-text').textContent.trim() ? `Musik · ${$('#spotify-pill-text').textContent.trim()}` : 'Musik';
 
+  // View-aware: a [data-view] block shows only in its phone view (Chat rows in Chat, git rows in Perubahan).
+  const view = currentView();
+  for (const block of document.querySelectorAll('#head-more-modal [data-view]')) {
+    const showIf = block.dataset.showIf ? $(block.dataset.showIf) : null;
+    block.hidden = block.dataset.view !== view || Boolean(showIf?.hidden);
+  }
   for (const row of document.querySelectorAll('#head-more-modal .sheet-row')) {
+    if (row.closest('[data-view][hidden]')) continue;
     const target = row.dataset.proxy ? document.querySelector(row.dataset.proxy) : null;
     const showIf = row.dataset.showIf ? $(row.dataset.showIf) : null;
     row.hidden = Boolean(
@@ -50,15 +61,18 @@ function renderHeadMore() {
         (state.active === DEMO_ID && Boolean(row.closest('[data-needs-project]'))), // demo: no session to act on
     );
     // WiFi view-only: a row that would change something is disabled and says why, in text (no tooltips on a phone).
-    const blocked = state.readOnly && ('mutates' in row.dataset || Boolean(target?.disabled));
+    // [data-reason] rows (git) are also off while their control is (no remote, no upstream…): the row's own reason, else the control's title.
+    const readOnly = state.readOnly && ('mutates' in row.dataset || Boolean(target?.disabled));
+    const blocked = readOnly || ('reason' in row.dataset && Boolean(target?.disabled));
     row.disabled = blocked;
     let note = row.querySelector('.sheet-row-note');
     if (blocked && !note) {
       note = document.createElement('small');
       note.className = 'sheet-row-note';
-      note.textContent = RO_REASON;
       row.append(note);
-    } else if (!blocked) note?.remove();
+    }
+    if (blocked) note.textContent = readOnly ? RO_REASON : row.dataset.reason || target.title || 'Belum bisa sekarang';
+    else note?.remove();
   }
 }
 

@@ -33,6 +33,8 @@ export function initTabs() {
       state.tab = btn.dataset.tab;
       document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b === btn));
       document.body.dataset.tab = state.tab; // phone layout shows the composer only on the chat tab
+      // A tab switched from code (🔍 Minta review → Chat) moves the phone's bottom-nav highlight along.
+      if (document.body.dataset.view !== 'office') document.querySelectorAll('#mobile-nav button[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === state.tab));
       $('.chat-wrap').hidden = state.tab !== 'chat';
       $('#changes').hidden = state.tab !== 'changes';
       if (state.tab === 'chat') scrollChat(true);
