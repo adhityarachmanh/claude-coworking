@@ -114,6 +114,7 @@ const browserGlobals = {
   InputEvent: 'readonly',
   ClipboardEvent: 'readonly',
   DragEvent: 'readonly',
+  DataTransfer: 'readonly',
   ClipboardItem: 'readonly',
   MutationObserver: 'readonly',
   ResizeObserver: 'readonly',

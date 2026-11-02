@@ -9,6 +9,7 @@ import { CAST, roleColor, roleName } from '../office/cast.js';
 import { avatarURL } from '../office/sprites.js';
 import { openModal } from '../ui/modals.js';
 import { fillApproval } from './approvals.js';
+import { attachmentChip } from './attachments.js';
 import { fillComposer } from './composer.js';
 import { fileLinkHtml, linkifyPaths } from './file-viewer.js';
 import { afterRowRender, isLiveShell, liveBlock, liveTail, resetLiveOutput, saveLiveScroll } from './live-output.js';
@@ -189,7 +190,7 @@ function fillChatBody(node, msg) {
         msg.source === 'demo' ? 'demo' : '',
         msg.source === 'cli' ? 'dari terminal' : '',
         msg.history ? 'riwayat' : '',
-        msg.images ? `🖼 ${msg.images} gambar` : '',
+        msg.images && !msg.attachments ? `🖼 ${msg.images} gambar` : '', // bubbles stored before 📎 Lampiran
         msg.queued ? 'antre' : '',
         msg.cancelled ? 'dibatalkan' : '',
       ].filter(Boolean);
@@ -198,7 +199,9 @@ function fillChatBody(node, msg) {
         ? ''
         : `<span class="msg-actions"><button data-msg-act="copy" title="Salin teks prompt">Salin</button><button data-msg-act="edit" title="Salin ke kotak pesan untuk diedit lalu dikirim">Edit</button>${msg.source === 'cli' ? '' : '<button class="resend" data-msg-act="resend" title="Kirim prompt ini sekali lagi">↻ Ulangi</button>'}</span>`;
       node.className = `msg user ${msg.source === 'cli' ? 'cli' : ''} ${msg.history ? 'history' : ''}`;
-      node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div><div class="meta">${actions}${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
+      // 📎 Name + size chips only: the files' content went to Claude, not into the bubble.
+      const files = Array.isArray(msg.attachments) && msg.attachments.length ? `<div class="msg-attachments">${msg.attachments.map((a) => attachmentChip(a)).join('')}</div>` : '';
+      node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>${files}<div class="meta">${actions}${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
       break;
     }
     case 'assistant':

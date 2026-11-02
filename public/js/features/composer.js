@@ -3,7 +3,7 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
-import { attachments, clearAttachments } from './attachments.js';
+import { attachmentPayload, attachments, attachmentsReady, clearAttachments, restoreAttachments } from './attachments.js';
 import { localCommand } from './commands.js';
 import { connection } from './connection.js';
 import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
@@ -132,6 +132,7 @@ function cycleMode() {
 
 async function sendPrompt() {
   if (state.readOnly) return;
+  await attachmentsReady(); // a file dropped just before Enter goes out with this prompt
   const input = $('#prompt');
   const text = input.value.trim();
   if ((!text && !attachments.length) || state.active === DEMO_ID) return;
@@ -158,17 +159,19 @@ async function sendPrompt() {
     );
     return;
   }
-  const images = attachments.map(({ mediaType, data }) => ({ mediaType, data }));
+  const files = attachmentPayload();
+  const kept = attachments.slice(); // back in the box if the server refuses
   input.value = '';
   recall.index = -1;
   autosize();
   clearAttachments();
   closeSuggest();
   try {
-    await api(`/api/projects/${project}/prompt`, { text, images });
+    await api(`/api/projects/${project}/prompt`, { text, attachments: files });
     draftSent(project, text);
   } catch (err) {
     input.value = text;
+    restoreAttachments(kept);
     toast(`Gagal mengirim: ${err.message}`);
   }
 }

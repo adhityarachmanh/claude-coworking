@@ -169,8 +169,9 @@
           <div id="voice-live" class="voice-live" role="status" aria-live="polite"></div>
           <div id="attachments" class="attachments" hidden></div>
           <div class="input">
-            <button id="btn-attach" class="ghost icon attach" title="Lampirkan gambar (atau paste / drag ke kotak ini)" aria-label="Lampirkan gambar">📎</button>
-            <input id="file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
+            <button id="btn-attach" class="ghost icon attach" title="Lampirkan file: gambar, PDF, log/teks/kode (atau paste / drag ke kotak ini)" aria-label="Lampirkan file">📎</button>
+            <!-- accept is filled from core/attachment-rules.js (ATTACH_ACCEPT) at start -->
+            <input id="file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,.pdf,text/*" multiple hidden />
             <button id="btn-template" class="ghost icon attach" type="button" title="Template prompt (/t)" aria-label="Template prompt" aria-haspopup="dialog">⚡</button>
             <textarea id="prompt" rows="3" aria-label="Pesan untuk tim" placeholder="Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )"></textarea>
             <!-- 🎤 hidden unless the Web Speech API exists in a secure context (HTTPS / localhost) and the page may act -->

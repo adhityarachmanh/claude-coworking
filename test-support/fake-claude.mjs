@@ -15,6 +15,7 @@
 //                      (`src/checkout.ts:2`, src/app.js:3, a URL and a missing file) for the file viewer's links
 //   contains "gagal sengaja" → the turn ends with an error result
 //   contains "kuota habis" → a rate_limit_event with status "rejected", then an error result
+//   contains "lampiran?" → replies with the content block types it received (📎 attachments: image/document/text)
 //   anything else    → streams a short text reply
 // Control requests (initialize, set_permission_mode, set_model, apply_flag_settings, rewind_files,
 // mcp_status, …) answer like the real CLI; every prompt reports command_lifecycle events.
@@ -207,9 +208,18 @@ function result(extra = {}) {
   send({ type: 'result', subtype: 'success', is_error: false, result: 'done', duration_ms: 1234, num_turns: 1, session_id: sessionId, usage: { input_tokens: 10, cache_read_input_tokens: 90, output_tokens: 5 }, model_usage_since_last_result: { 'fake-model': { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 90, cacheCreationInputTokens: 0, costUSD: 0.01 } }, permission_denials: [], ...extra });
 }
 
-async function handlePrompt(text) {
+async function handlePrompt(text, content) {
   init();
   interrupted = false;
+  if (/lampiran\?/.test(text)) {
+    // 📎 What arrived: the block types in order, document titles/media types, and the text attachments' first lines.
+    const blocks = Array.isArray(content) ? content : [{ type: 'text', text: content }];
+    const docs = blocks.filter((b) => b.type === 'document').map((b) => `${b.title}:${b.source?.media_type}`);
+    const images = blocks.filter((b) => b.type === 'image').map((b) => b.source?.media_type);
+    const texts = blocks.filter((b) => b.type === 'text' && b.text.startsWith('<attachment ')).map((b) => b.text.split('\n').slice(0, 3).join(' / '));
+    await streamText(`blocks=${blocks.map((b) => b.type).join(',')} docs=${docs.join('|') || '-'} images=${images.join('|') || '-'} texts=${texts.join('|') || '-'}`, 5);
+    return result();
+  }
   if (/izin/i.test(text)) {
     const toolUseId = `toolu_${randomUUID()}`;
     const input = { file_path: 'hasil.txt', content: 'halo' };
@@ -331,7 +341,7 @@ rl.on('line', (line) => {
       if (!waiting.delete(uuid)) return; // cancelled while queued
       lifecycle('started');
       if (args.includes('--replay-user-messages')) send({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, uuid, isReplay: true });
-      await handlePrompt(text);
+      await handlePrompt(text, content);
       lifecycle('completed');
     });
   }

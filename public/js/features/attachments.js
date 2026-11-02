@@ -1,19 +1,25 @@
-// Image attachments for a prompt: paste, drop, 📎.
+// 📎 Attachments for a prompt (paste, drop, 📎): images, PDF and text files (logs, source, md/json/csv/…).
+// The rules (kinds, limits, refusals) live in core/attachment-rules.js and are applied again by the server.
 import { toast } from '../core/api.js';
-import { $ } from '../core/dom.js';
+import { ATTACH_ACCEPT, ATTACH_ICONS, ATTACH_LIMITS, checkAttachmentSet, formatSize, inspectAttachment, precheckAttachment, safeName } from '../core/attachment-rules.js';
+import { $, escapeHtml } from '../core/dom.js';
 import { state } from '../core/state.js';
 
-// ---------- image attachments (paste, drop, 📎) ----------
-
+/** [{ kind, name, size, mediaType, data(base64), url? }] waiting to go out with the next prompt. */
 export const attachments = [];
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** One chip: icon (a thumbnail for images in the composer), name, size, optional × button. */
+export function attachmentChip({ kind, name, size, url }, removeIndex = null) {
+  const icon = kind === 'image' && url ? `<img src="${escapeHtml(url)}" alt="">` : `<span class="att-icon" aria-hidden="true">${ATTACH_ICONS[kind] ?? '📄'}</span>`;
+  const label = escapeHtml(safeName(name));
+  const remove = removeIndex === null ? '' : `<button type="button" data-i="${removeIndex}" title="Hapus" aria-label="Hapus lampiran ${label}">×</button>`;
+  return `<span class="att-chip" data-kind="${escapeHtml(kind)}" title="${label}"><span class="att-thumb">${icon}</span><span class="att-name">${label}</span><span class="att-size">${formatSize(size)}</span>${remove}</span>`;
+}
 
 function renderAttachments() {
   const box = $('#attachments');
   box.hidden = !attachments.length;
-  box.innerHTML = attachments
-    .map((a, i) => `<div class="thumb"><img src="${a.url}" alt=""><button data-i="${i}" title="Hapus" aria-label="Hapus gambar ${i + 1}">×</button></div>`)
-    .join('');
+  box.innerHTML = attachments.map((a, i) => attachmentChip(a, i)).join('');
 }
 
 export function clearAttachments() {
@@ -21,31 +27,70 @@ export function clearAttachments() {
   renderAttachments();
 }
 
-function addImageFiles(files) {
-  if (state.readOnly) return;
-  for (const file of files) {
-    if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
-      toast('Hanya gambar PNG, JPEG, GIF, atau WebP.');
-      continue;
-    }
-    if (file.size > MAX_IMAGE_BYTES) {
-      toast(`${file.name || 'Gambar'} lebih dari 5 MB.`);
-      continue;
-    }
-    if (attachments.length >= 5) {
-      toast('Maksimal 5 gambar per pesan.');
-      break;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      attachments.push({ mediaType: file.type, data: String(reader.result).split(',')[1], url: reader.result });
-      renderAttachments();
-    };
-    reader.readAsDataURL(file);
-  }
+/** Puts attachments back (a prompt the server refused), ahead of anything added meanwhile. */
+export function restoreAttachments(list) {
+  attachments.unshift(...list.slice(0, Math.max(0, ATTACH_LIMITS.maxFiles - attachments.length)));
+  renderAttachments();
 }
 
+/** What the prompt API takes: { name, mediaType, data } (the server checks it all again). */
+export const attachmentPayload = () => attachments.map(({ name, mediaType, data }) => ({ name, mediaType, data }));
+
+function toBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+// Files are read one after another so the totals (count, text, size) are checked in order.
+let reading = Promise.resolve();
+
+export function addFiles(files) {
+  if (state.readOnly || !files.length) return reading;
+  reading = reading.then(async () => {
+    for (const file of files) {
+      const name = safeName(file.name);
+      // Refuse early (before reading) what can never pass: unknown type, empty, too big, too many.
+      const early = precheckAttachment(name, file.type, file.size);
+      if (early) {
+        toast(early);
+        continue;
+      }
+      if (attachments.length >= ATTACH_LIMITS.maxFiles) {
+        toast(checkAttachmentSet([...attachments, { kind: 'text', size: 0 }]));
+        break;
+      }
+      let bytes;
+      try {
+        bytes = new Uint8Array(await file.arrayBuffer());
+      } catch {
+        toast(`${name} tidak bisa dibaca.`);
+        continue;
+      }
+      const checked = inspectAttachment({ name, mediaType: file.type, bytes });
+      if (!checked.ok) {
+        toast(checked.error);
+        continue;
+      }
+      const setError = checkAttachmentSet([...attachments, checked.item]);
+      if (setError) {
+        toast(setError);
+        continue;
+      }
+      const { kind: k, size, mediaType } = checked.item;
+      const data = toBase64(bytes);
+      attachments.push({ kind: k, name: checked.item.name, size, mediaType, data, url: k === 'image' ? `data:${mediaType};base64,${data}` : undefined });
+      renderAttachments();
+    }
+  });
+  return reading;
+}
+
+/** Waits until dropped/picked files are read (so a quick Enter doesn't send without them). */
+export const attachmentsReady = () => reading;
+
 export function initAttachments() {
+  $('#file-input').accept = ATTACH_ACCEPT;
   $('#attachments').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-i]');
     if (!btn) return;
@@ -54,15 +99,15 @@ export function initAttachments() {
   });
   $('#btn-attach').addEventListener('click', () => $('#file-input').click());
   $('#file-input').addEventListener('change', (e) => {
-    addImageFiles([...e.target.files]);
+    addFiles([...e.target.files]);
     e.target.value = '';
   });
   $('#prompt').addEventListener('paste', (e) => {
     const files = [...(e.clipboardData?.files ?? [])];
-    if (files.length) {
-      e.preventDefault();
-      addImageFiles(files);
-    }
+    // Text on the clipboard stays a normal paste (a long log too; apps like Excel add an image copy of it).
+    if (!files.length || e.clipboardData.getData('text/plain')) return;
+    e.preventDefault();
+    addFiles(files);
   });
   const inputBox = document.querySelector('.input');
   inputBox.addEventListener('dragover', (e) => {
@@ -73,6 +118,6 @@ export function initAttachments() {
   inputBox.addEventListener('drop', (e) => {
     e.preventDefault();
     inputBox.classList.remove('drop');
-    addImageFiles([...e.dataTransfer.files]);
+    addFiles([...e.dataTransfer.files]);
   });
 }

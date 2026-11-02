@@ -281,6 +281,8 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
   box-shadow: 0 2px 6px #0006;
 }
 .actor.busy .name { background: color-mix(in srgb, var(--c) 55%, #15161b); }
+/* Hidden copy of a name tag: stage.js measures label variants with it to pick ones that don't overlap. */
+.actor.tag-measure { visibility: hidden; }
 .actor .bubble {
   position: absolute;
   left: 0;
@@ -327,7 +329,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .board .st-completed span { color: var(--ok); }
 .board .st-in_progress span { color: var(--accent); }
 .board .muted { color: #9aa0a8; }
-/* Pod names on the cubicle panels and nameplates by the office doors (positioned by stage.js). */
+/* Pod names on the cubicle panels, room plates, and door plates of empty offices (positioned by stage.js). */
 .sign {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -341,6 +343,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
   pointer-events: none;
 }
 .sign.plate { color: #2a1e12; background: #e3c25ae6; font-weight: 800; }
+.sign[hidden] { display: none; } /* door plate of an occupied office */
 
 .team {
   display: grid;
@@ -806,9 +809,17 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .input.drop { border-color: var(--accent); background: var(--accent-soft); }
 .input .attach { align-self: flex-end; width: 32px; height: 36px; padding: 0; font-size: var(--fs-lg); border: 0; }
 .attachments { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
-.thumb { position: relative; width: 56px; height: 56px; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--border); }
-.thumb img { width: 100%; height: 100%; object-fit: cover; }
-.thumb button { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: var(--fs-sm); line-height: 1; background: #000a; border: 0; }
+/* 📎 attachment chips: in the composer (with ×) and in the user's chat bubble (name + size only) */
+.att-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; height: 32px; padding: 0 4px 0 4px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); font-size: var(--fs-sm); }
+.att-thumb { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; overflow: hidden; }
+.att-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.att-name { min-width: 0; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-size { flex: none; color: var(--muted); }
+.att-chip button { flex: none; width: 22px; height: 22px; padding: 0; border-radius: 50%; line-height: 1; border: 0; background: transparent; color: var(--muted); }
+.att-chip button:hover { color: var(--text); background: var(--surface-3); }
+.msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.msg-attachments .att-chip { background: transparent; border-color: var(--accent-line); padding-right: 8px; }
+.msg-attachments .att-size { color: var(--accent-meta); }
 .suggest {
   position: absolute;
   left: 12px;
@@ -1226,7 +1237,8 @@ body.read-only #composer-hint { color: var(--ask); }
   .topbar .icon-btn, .modal-head .icon-btn { min-width: 44px; min-height: 44px; }
   .sb-btn, .msg-actions button, .msg-copy, .code-bar .copy, .todos-head, .sl-tasks { min-height: 36px; }
   .md pre.code { padding-top: 42px; } /* room for the taller Salin button above the code */
-  .thumb button { width: 28px; height: 28px; }
+  .att-chip { height: 40px; }
+  .att-chip button { width: 32px; height: 32px; }
 }
 
 /* ---------- accessibility ---------- */

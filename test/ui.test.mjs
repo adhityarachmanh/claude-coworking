@@ -600,6 +600,65 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
+    test('📎 lampiran: drop log/PDF/gambar → chip (ikon, nama, ukuran, hapus), jenis lain ditolak, paste teks tetap teks, bubble hanya chip', async () => {
+      await openApp(page, `#${projectId}`);
+      await page.eval(() => {
+        document.querySelectorAll('.toast').forEach((t) => t.remove());
+        const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
+        const dt = new DataTransfer();
+        dt.items.add(new File(['TypeError: boom\n'], 'error "<b>x".log', { type: 'text/plain' }));
+        dt.items.add(new File(['%PDF-1.4\n%%EOF\n'], 'spec.pdf', { type: 'application/pdf' }));
+        dt.items.add(new File([png], 'shot.png', { type: 'image/png' }));
+        dt.items.add(new File(['MZ'], 'setup.exe', { type: 'application/x-msdownload' }));
+        document.querySelector('.input').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+      });
+      await page.waitFor(() => document.querySelectorAll('#attachments .att-chip').length === 3, { timeoutMs: 5000, message: '3 chip lampiran' });
+      const chips = await page.eval(() => [...document.querySelectorAll('#attachments .att-chip')].map((c) => ({
+        kind: c.dataset.kind,
+        name: c.querySelector('.att-name').textContent,
+        size: c.querySelector('.att-size').textContent,
+        img: Boolean(c.querySelector('.att-thumb img')),
+        icon: c.querySelector('.att-icon')?.textContent ?? '',
+        remove: c.querySelector('button')?.getAttribute('aria-label'),
+        fits: c.getBoundingClientRect().right <= document.documentElement.clientWidth,
+      })));
+      assert.deepEqual(chips.map((c) => [c.kind, c.name, c.size, c.img, c.icon]), [
+        ['text', 'error __b_x_.log', '16 B', false, '📄'],
+        ['pdf', 'spec.pdf', '15 B', false, '📕'],
+        ['image', 'shot.png', '70 B', true, ''],
+      ]);
+      assert.ok(chips.every((c) => c.remove?.startsWith('Hapus lampiran ') && c.fits), 'tombol hapus bernama, chip tidak melebar');
+      assert.ok((await page.eval(() => [...document.querySelectorAll('.toast')].map((t) => t.textContent).join('\n'))).includes('setup.exe: jenis file tidak didukung'));
+      assert.equal(await page.eval(horizontalOverflow), null);
+      assert.deepEqual(await page.eval(unnamedButtons, '#composer'), []);
+
+      // × removes one; text on the clipboard stays a normal paste even when a file rides along
+      await page.eval(() => document.querySelector('#attachments .att-chip[data-kind="pdf"] button').click());
+      await page.eval(() => {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', 'baris log panjang\n'.repeat(200));
+        dt.items.add(new File(['x'], 'excel.png', { type: 'image/png' }));
+        document.querySelector('#prompt').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      });
+      await sleep(200);
+      assert.equal(await page.eval(() => document.querySelectorAll('#attachments .att-chip').length), 2);
+
+      await typeInPrompt(page, 'lampiran?');
+      await page.press('Enter');
+      await page.waitFor(() => [...document.querySelectorAll('.msg.user')].some((m) => m.textContent.includes('lampiran?') && m.querySelectorAll('.msg-attachments .att-chip').length === 2), { timeoutMs: 5000, message: 'bubble dengan 2 chip' });
+      const bubble = await page.eval(() => {
+        const m = [...document.querySelectorAll('.msg.user')].reverse().find((n) => n.textContent.includes('lampiran?'));
+        return { body: m.querySelector('.body').textContent, chips: [...m.querySelectorAll('.att-chip')].map((c) => c.textContent), buttons: m.querySelectorAll('.att-chip button').length };
+      });
+      assert.equal(bubble.body, 'lampiran?', 'isi file tidak masuk bubble');
+      assert.deepEqual(bubble.chips, ['📄error __b_x_.log16 B', '🖼shot.png70 B']);
+      assert.equal(bubble.buttons, 0);
+      assert.equal(await page.eval(() => document.querySelector('#attachments').hidden), true, 'kotak lampiran kosong setelah kirim');
+      await page.waitFor(() => [...document.querySelectorAll('.msg.assistant')].some((m) => m.textContent.includes('blocks=text,image,text')), { timeoutMs: 5000, message: 'Claude menerima blok text + image' });
+      assert.equal(await page.eval(horizontalOverflow), null);
+      assert.deepEqual(realProblems(page), []);
+    });
+
     test('⚙ Tema kantor: pilih Halloween → tersimpan, bertahan setelah reload, sprite & avatar berganti; kembali ke Kantor', async () => {
       page.clearProblems();
       const openSettings = async () => {
@@ -1869,13 +1928,14 @@ for (const vp of VIEWPORTS) {
           reviewerY: DESKS.reviewer?.y ?? null,
           complianceY: DESKS.compliance?.y ?? null,
           empty: scenes.get(location.hash.slice(1))?.emptyDesks.length ?? null, // off roles: their desk stays, empty
-          signs: document.querySelectorAll('#stage .sign').length, // pod names + nameplates
+          // pod names, Ruang Rapat, Pantry (+ the door plate of an empty private office)
+          signs: [...document.querySelectorAll('#stage .sign')].filter((n) => !n.hidden).length,
           ratio: Math.round((canvas.height / canvas.width) * 100) / 100,
           marker: window.__sameDocument === true,
         };
       });
       await page.eval(() => (window.__sameDocument = true)); // gone after a reload
-      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 344, reviewerY: 192, complianceY: 192, empty: 0, signs: 9, ratio: 0.54, marker: true }, 'tim bawaan: 17 meja + Lead di denah tetap');
+      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 344, reviewerY: 192, complianceY: 192, empty: 0, signs: 6, ratio: 0.54, marker: true }, 'tim bawaan: 17 meja + Lead di denah tetap');
 
       // opened from ⋯ (⚙, Ctrl+P and /team are the other ways in)
       await page.click('#btn-more');
@@ -1908,7 +1968,7 @@ for (const vp of VIEWPORTS) {
       await page.click('#roster-save');
       await page.waitFor(() => document.querySelector('#roster-modal').hidden, { timeoutMs: 4000, message: 'dialog tertutup setelah simpan' });
       await page.waitFor(() => document.querySelectorAll('#team .member').length === 13, { timeoutMs: 3000, message: 'kartu tim berkurang' });
-      assert.deepEqual(await office(), { people: 13, cards: 13, roomH: 344, reviewerY: null, complianceY: null, empty: 5, signs: 9, ratio: 0.54, marker: true }, '12 meja + Lead: 5 meja kosong di tempatnya, ukuran kantor tetap, tanpa reload');
+      assert.deepEqual(await office(), { people: 13, cards: 13, roomH: 344, reviewerY: null, complianceY: null, empty: 5, signs: 6, ratio: 0.54, marker: true }, '12 meja + Lead: 5 meja kosong di tempatnya, ukuran kantor tetap, tanpa reload');
       assert.deepEqual((await snapshot()).config.team.enabled.filter((r) => ['mobile', 'data', 'support', 'reviewer', 'compliance'].includes(r)), [], 'tersimpan di server');
 
       // a phone on plain WiFi sees the same dialog, read-only
@@ -1940,10 +2000,58 @@ for (const vp of VIEWPORTS) {
       assert.equal(await page.eval(() => document.querySelector('#roster-compliance').checked), true, '↺ Tim bawaan: Compliance ikut aktif');
       await page.eval(() => document.querySelector('#roster-save').click());
       await page.waitFor(() => document.querySelectorAll('#team .member').length === 18, { timeoutMs: 4000, message: 'kembali ke 17 meja' });
-      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 344, reviewerY: 192, complianceY: 192, empty: 0, signs: 9, ratio: 0.54, marker: true });
+      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 344, reviewerY: 192, complianceY: 192, empty: 0, signs: 6, ratio: 0.54, marker: true });
       if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
       await sleep(400);
       assert.equal(await page.eval(horizontalOverflow), null, 'kantor 17 meja tanpa scroll horizontal');
+      // Name tags with everyone at their desk: none overlap (a phone shortens them), the full name stays in the
+      // tooltip and for screen readers, and a desktop keeps the full names.
+      const tags = await page.eval(async () => {
+        const { scenes, stage } = await import('/js/core/scenes.js');
+        const scene = scenes.get(location.hash.slice(1));
+        for (const p of Object.values(scene.people)) {
+          p.release();
+          Object.assign(p, { plan: [], walking: false, onSofa: null, holding: null, seated: true, x: p.seat.x, y: p.seat.y, nextIdleAt: performance.now() + 60_000 });
+        }
+        scene.visitor = null;
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const names = [...stage.overlay.querySelectorAll('.actor:not(.tag-measure) .name')];
+        const rects = names.map((n) => n.getBoundingClientRect());
+        const overlaps = [];
+        for (let i = 0; i < rects.length; i++) {
+          for (let j = i + 1; j < rects.length; j++) {
+            const [a, b] = [rects[i], rects[j]];
+            if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) overlaps.push(`${names[i].title} × ${names[j].title}`);
+          }
+        }
+        return {
+          count: names.length,
+          overlaps,
+          titled: names.every((n) => /^Adhit - /.test(n.title)),
+          spoken: names.every((n) => n.querySelector('.sr-only')?.textContent === n.title || n.textContent === n.title),
+          shown: names.map((n) => n.querySelector('[aria-hidden]')?.textContent ?? n.textContent),
+        };
+      });
+      assert.equal(tags.count, 18, '18 label nama');
+      assert.deepEqual(tags.overlaps, [], 'label nama tidak saling tumpuk');
+      assert.ok(tags.titled && tags.spoken, 'nama lengkap tetap di title dan untuk pembaca layar');
+      if (vp.mobile) assert.ok(tags.shown.every((t) => !t.startsWith('Adhit - ')), `HP: awalan bersama "Adhit - " dibuang (${tags.shown.join(', ')})`);
+      else assert.ok(tags.shown.every((t) => t.startsWith('Adhit - ')), `desktop: nama lengkap (${tags.shown.join(', ')})`);
+      // A private office whose role is off shows its door plate; occupied, it has none (its person has a name tag).
+      const plates = await page.eval(async () => {
+        const { stage } = await import('/js/core/scenes.js');
+        const { DESKS, layoutDesks } = await import('/js/office/world.js');
+        const visible = () => [...document.querySelectorAll('#stage .sign.plate')].filter((n) => !n.hidden).map((n) => n.textContent);
+        const team = Object.keys(DESKS).filter((id) => id !== 'claude');
+        const occupied = visible();
+        layoutDesks(team.filter((id) => id !== 'pm'));
+        stage.refreshLayout();
+        const empty = visible();
+        layoutDesks(team);
+        stage.refreshLayout();
+        return { occupied, empty, back: visible() };
+      });
+      assert.deepEqual(plates, { occupied: ['Ruang Rapat', 'Pantry'], empty: ['PM', 'Ruang Rapat', 'Pantry'], back: ['Ruang Rapat', 'Pantry'] });
       await shot('office-17');
       if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
 
@@ -1956,7 +2064,7 @@ for (const vp of VIEWPORTS) {
       assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '16/17 meja');
       await page.eval(() => document.querySelector('#roster-save').click());
       await page.waitFor(() => document.querySelectorAll('#team .member').length === 17, { timeoutMs: 4000, message: '16 meja' });
-      assert.deepEqual(await office(), { people: 17, cards: 17, roomH: 344, reviewerY: 192, complianceY: null, empty: 1, signs: 9, ratio: 0.54, marker: true }, '16 meja: meja Compliance kosong');
+      assert.deepEqual(await office(), { people: 17, cards: 17, roomH: 344, reviewerY: 192, complianceY: null, empty: 1, signs: 6, ratio: 0.54, marker: true }, '16 meja: meja Compliance kosong');
       if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
       await sleep(400);
       assert.equal(await page.eval(horizontalOverflow), null, 'kantor 16 meja tanpa scroll horizontal');
@@ -1972,7 +2080,7 @@ for (const vp of VIEWPORTS) {
       assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '17/17 meja');
       await page.eval(() => document.querySelector('#roster-save').click());
       await page.waitFor(() => document.querySelectorAll('#team .member').length === 18, { timeoutMs: 4000, message: 'kembali ke 17 meja' });
-      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 344, reviewerY: 192, complianceY: 192, empty: 0, signs: 9, ratio: 0.54, marker: true });
+      assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 344, reviewerY: 192, complianceY: 192, empty: 0, signs: 6, ratio: 0.54, marker: true });
       assert.deepEqual(realProblems(page), []);
     });
 

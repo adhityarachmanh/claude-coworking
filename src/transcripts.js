@@ -3,6 +3,7 @@
 import { closeSync, fstatSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { parseAttachmentBlock, safeName } from '../public/js/core/attachment-rules.js';
 import { truncate } from './util.js';
 
 // Overridable so tests can use a throwaway folder.
@@ -46,8 +47,29 @@ function parse(line) {
 // `!command` output the web app sends ahead of a prompt (the CLI's own tags): not part of what was typed.
 const SHELL_CONTEXT = /^(?:\s*<bash-input>[\s\S]*?<\/bash-input>\s*<bash-stdout>[\s\S]*?<\/bash-stdout>(?:<bash-stderr>[\s\S]*?<\/bash-stderr>)?)+\s*/;
 
+// 📎 Text attachments travel as their own text blocks (src/attachments.js): they are not what was typed.
 export const promptText = (e) =>
-  (typeof e.message?.content === 'string' ? e.message.content : (e.message?.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n')).replace(SHELL_CONTEXT, '');
+  (typeof e.message?.content === 'string'
+    ? e.message.content
+    : (e.message?.content ?? []).filter((b) => b.type === 'text' && !parseAttachmentBlock(b.text)).map((b) => b.text).join('\n')
+  ).replace(SHELL_CONTEXT, '');
+
+const base64Bytes = (data) => {
+  const s = String(data ?? '');
+  return Math.max(0, Math.floor((s.length * 3) / 4) - (s.endsWith('==') ? 2 : s.endsWith('=') ? 1 : 0));
+};
+
+/** 📎 A prompt's attachments as chat chips ({ kind, name, size }); the content itself stays out of the bubble. */
+export function promptAttachments(e) {
+  if (!Array.isArray(e.message?.content)) return [];
+  let images = 0;
+  return e.message.content.flatMap((b) => {
+    if (b.type === 'image') return [{ kind: 'image', name: `gambar-${++images}`, size: base64Bytes(b.source?.data) }];
+    if (b.type === 'document') return [{ kind: 'pdf', name: safeName(b.title || 'dokumen.pdf'), size: base64Bytes(b.source?.data) }];
+    const att = b.type === 'text' ? parseAttachmentBlock(b.text) : null;
+    return att ? [{ kind: 'text', name: safeName(att.name), size: att.size }] : [];
+  });
+}
 
 /** A real user prompt (typed in the CLI or sent from the web), not a reminder/command/hand-back. */
 export function isPrompt(e) {
@@ -158,7 +180,8 @@ export function sessionHistory(projectPath, sessionId, limit = 40) {
     if (!e || e.isSidechain) continue;
     const ts = Date.parse(e.timestamp) || Date.now();
     if (isPrompt(e)) {
-      messages.push({ kind: 'user', text: promptText(e), source: e.entrypoint === 'sdk-cli' ? 'web' : 'cli', ts, history: true });
+      const attachments = promptAttachments(e);
+      messages.push({ kind: 'user', text: promptText(e), source: e.entrypoint === 'sdk-cli' ? 'web' : 'cli', ts, history: true, ...(attachments.length && { attachments }) });
       current = null;
     } else if (e.type === 'assistant') {
       const text = (e.message?.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n\n').trim();

@@ -36,6 +36,7 @@ import { taskDetail } from './src/task-detail.js';
 import { MAX_ACTIVE_ROLES, TeamConfigError, activeAgents, normalizeEnabled, publicCatalog, storedEnabled, teamPrompt } from './src/role-catalog.js';
 import { ROLE_IDS, activeRoles, loadAgentDefinitions, setActiveRoles } from './src/roles.js';
 import { SessionManager } from './src/session.js';
+import { AttachmentError, readAttachments } from './src/attachments.js';
 import { TEMPLATE_LIMITS, TemplateError, TemplateStore } from './src/templates.js';
 import { QueueError, TaskQueue } from './src/queue.js';
 import { BackupScheduler, ScheduleError } from './src/backup-schedule.js';
@@ -54,14 +55,11 @@ const APP_VERSION = JSON.parse(readFileSync(path.join(APP_DIR, 'package.json'), 
 const PUBLIC_DIR = path.join(APP_DIR, 'public');
 // Used until roots are set in the web UI: env, else the folder this app lives in.
 const DEFAULT_ROOT = path.resolve(process.env.PROJECTS_ROOT ?? path.dirname(APP_DIR));
-const MAX_BODY = 30 * 1024 * 1024; // prompts may carry pasted images
+const MAX_BODY = 30 * 1024 * 1024; // prompts may carry 📎 attachments (max 20 MB, base64 in JSON)
 // A history backup upload (POST /api/backup/import, raw .zip): large, but not unbounded. Env override for tests.
 const MAX_BACKUP_BYTES = Number(process.env.OFFICE_BACKUP_MAX_BYTES) || 4 * 1024 ** 3;
 const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed', 'application/octet-stream']);
 const MAX_PAIR_BODY = 1024; // POST /pair is reachable before pairing: it only carries a 6-digit code
-const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
-const MAX_IMAGES = 5;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 // Built-ins that work headless; the full list (skills, custom commands) arrives from Claude Code itself.
 // clear/model/effort/resume/cost/help are handled by the web app itself (see localCommand in public/js/features/commands.js).
 const DEFAULT_SLASH = ['clear', 'compact', 'context', 'cost', 'effort', 'help', 'init', 'model', 'resume', 'review'];
@@ -677,12 +675,15 @@ async function handleApi(req, res, pathname, device = null) {
       return json(res, hub.forgetProject(project.id) ? 200 : 400, { ok: true });
     case 'prompt': {
       const text = String(body.text ?? '').trim();
-      const images = (Array.isArray(body.images) ? body.images : []).slice(0, MAX_IMAGES).map((img) => ({ mediaType: String(img?.mediaType), data: String(img?.data ?? '') }));
-      if (images.some((img) => !IMAGE_TYPES.has(img.mediaType) || !/^[A-Za-z0-9+/=]+$/.test(img.data) || img.data.length * 0.75 > MAX_IMAGE_BYTES)) {
-        return json(res, 400, { error: 'Gambar harus PNG/JPEG/GIF/WebP, maks 5 MB per gambar' });
+      let attachments;
+      try {
+        attachments = readAttachments(body); // type, magic bytes/UTF-8, size, count, name: never trust the browser
+      } catch (err) {
+        if (err instanceof AttachmentError) return json(res, err.status, { error: err.message });
+        throw err;
       }
-      if (!text && !images.length) return json(res, 400, { error: 'prompt kosong' });
-      session.prompt((text || 'Lihat gambar terlampir.').slice(0, 50000), images);
+      if (!text && !attachments.length) return json(res, 400, { error: 'prompt kosong' });
+      session.prompt((text || 'Lihat file terlampir.').slice(0, 50000), attachments);
       break;
     }
     case 'shell': {
