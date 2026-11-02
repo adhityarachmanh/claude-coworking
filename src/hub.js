@@ -36,7 +36,11 @@ const MAX_IMPORTED_MESSAGE = 512 * 1024;
 //   When writing fails, the app stays on the old format for this run: chats are shown, kept in state.json
 //   (not in data/chats) and the move is tried again at the next start.
 export const DEMO_ID = 'demo';
-export const DEFAULT_SETTINGS = { mode: 'manual', model: '', effort: '', team: true };
+export const DEFAULT_SETTINGS = { mode: 'manual', model: '', effort: '', team: true, engine: 'claude' };
+// Which coding agent runs the project: Claude Code (stream-json) or OpenCode (ACP, src/acp-session.js).
+export const ENGINES = ['claude', 'opencode'];
+// OpenCode models are "provider/model" (optionally #variant), as `opencode models` lists them.
+const OPENCODE_MODEL = /^[\w.-]+\/[\w.:@#/-]{1,120}$/;
 // '' = Claude Code's own default; the rest map to `--effort`.
 export const EFFORT_LEVELS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 // Claude Code's permission modes ('manual' is the app's name for its 'default'); bypassPermissions is left out on purpose.
@@ -374,8 +378,12 @@ export class Hub {
     const next = { ...base };
     if (!isObject(patch)) return next;
     if (PERMISSION_MODES.includes(patch.mode)) next.mode = patch.mode;
+    if (ENGINES.includes(patch.engine) && patch.engine !== next.engine) {
+      next.engine = patch.engine;
+      next.model = ''; // a Claude alias means nothing to OpenCode and vice versa
+    }
     if (patch.model === '' || patch.model === 'default') next.model = '';
-    else if (typeof patch.model === 'string' && this.knownModel(patch.model)) next.model = patch.model;
+    else if (typeof patch.model === 'string' && (next.engine === 'opencode' ? OPENCODE_MODEL.test(patch.model) : this.knownModel(patch.model))) next.model = patch.model;
     if (EFFORT_LEVELS.includes(patch.effort)) next.effort = patch.effort;
     if (typeof patch.team === 'boolean') next.team = patch.team;
     return next;

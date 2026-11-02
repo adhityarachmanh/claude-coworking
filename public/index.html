@@ -111,6 +111,7 @@
           <!-- Which Claude Code session this chat continues, with history / new session -->
           <div id="session-bar" class="session-bar">
             <b id="sb-title">Percakapan baru</b>
+            <span id="sb-engine" class="engine-badge" hidden></span>
             <button id="sb-tasks" class="sb-btn sb-tasks" type="button" hidden title="Tugas latar yang sedang berjalan (/tasks)"><span aria-hidden="true">⧗</span> <span id="sb-tasks-n">0</span> <span class="sb-tasks-lbl">berjalan</span></button>
             <button id="sb-queue" class="sb-btn sb-queue" type="button" hidden title="📋 Antrian prompt: dijalankan satu per satu saat tim tidak sibuk"><span aria-hidden="true">📋</span> <span id="sb-queue-n">0</span> <span class="sb-queue-lbl">antrian</span></button>
             <button id="btn-sessions" class="sb-btn" title="Lihat dan lanjutkan sesi Claude Code sebelumnya (dari terminal maupun web)">🕘 <span>Riwayat sesi</span></button>
@@ -119,7 +120,7 @@
             <small id="sb-meta"></small>
             <div id="more-menu" class="menu" role="menu" hidden>
               <button role="menuitem" data-more="export">⬇ Export percakapan (.md)</button>
-              <button role="menuitem" data-more="export-session" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">⬇ Export sesi lengkap (.md)</button>
+              <button role="menuitem" data-more="export-session" data-cap="exportSession" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">⬇ Export sesi lengkap (.md)</button>
               <button role="menuitem" data-more="permissions">🛡️ Aturan izin (/permissions)</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
@@ -137,6 +138,11 @@
           <!-- Claude's live todo list (TodoWrite / Task tools), pinned like in the CLI -->
           <div id="todos" class="todos-pinned" hidden></div>
           <div class="controls">
+            <!-- Engine per project (features/engine.js): shown only when the server reports more than one (config.engines) -->
+            <label id="engine-ctl" class="ctl engine-ctl" hidden>
+              <span>Mesin</span>
+              <select id="engine" aria-describedby="engine-note"></select>
+            </label>
             <label class="ctl" title="Kapan Claude harus minta izinmu sebelum mengedit file atau menjalankan perintah">
               <span>Izin</span>
               <select id="mode">
@@ -147,7 +153,7 @@
                 <option value="dontAsk">🚫 Jangan tanya</option>
               </select>
             </label>
-            <label class="ctl" title="Model Claude untuk project ini">
+            <label class="ctl" title="Model untuk project ini">
               <span>Model</span>
               <select id="model">
                 <option value="">Default</option>
@@ -155,6 +161,12 @@
                 <option value="sonnet">Sonnet</option>
                 <option value="haiku">Haiku</option>
               </select>
+            </label>
+            <!-- A long per-project model list (OpenCode): filters the Model select; Enter picks the first match -->
+            <label id="model-search-ctl" class="ctl model-search-ctl" hidden>
+              <span>Cari model</span>
+              <input id="model-search" type="search" placeholder="mis. claude, gpt, free…" autocomplete="off" spellcheck="false" aria-controls="model" aria-describedby="model-search-count" />
+              <small id="model-search-count" class="sr-only" aria-live="polite"></small>
             </label>
             <label class="ctl" title="Seberapa dalam Claude berpikir. Lebih tinggi: lebih teliti untuk tugas sulit, tapi lebih lambat dan lebih banyak token.">
               <span>Effort</span>
@@ -167,7 +179,7 @@
                 <option value="max">Max</option>
               </select>
             </label>
-            <label class="switch" title="Claude mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.">
+            <label id="team-ctl" class="switch" title="Claude mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.">
               <input id="team-mode" type="checkbox" checked /> Mode tim
             </label>
             <!-- 🎤 input suara (features/voice.js): shown together with the 🎤 button, remembered per browser -->
@@ -912,6 +924,7 @@
         <!-- the composer's own .controls (same ids and listeners) are moved in here on a phone -->
         <div class="sheet-body"></div>
         <p id="effort-note" class="muted small" hidden></p>
+        <p id="engine-note" class="muted small" hidden></p>
         <p class="muted small sheet-help">Berlaku untuk project ini. Tersimpan otomatis.</p>
       </div>
     </div>
@@ -941,12 +954,12 @@
           <button type="button" class="sheet-row" data-proxy="#btn-sessions"><span aria-hidden="true">🕘</span><span>Riwayat sesi</span></button>
           <button type="button" class="sheet-row" data-proxy="#btn-new" data-mutates><span aria-hidden="true">＋</span><span>Sesi baru</span></button>
           <button type="button" class="sheet-row" data-proxy="#sb-title" data-mutates data-needs-session><span aria-hidden="true">✎</span><span>Ganti nama sesi</span></button>
-          <button type="button" class="sheet-row" data-action="rewind" data-mutates><span aria-hidden="true">⏪</span><span>Rewind</span></button>
+          <button type="button" class="sheet-row" data-action="rewind" data-mutates data-cap="rewind"><span aria-hidden="true">⏪</span><span>Rewind</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>
           <h3 id="hm-g-chat" class="sheet-group-head">Percakapan</h3>
           <button type="button" class="sheet-row" data-proxy="[data-more='export']"><span aria-hidden="true">⬇</span><span>Export percakapan (.md)</span></button>
-          <button type="button" class="sheet-row" data-proxy="[data-more='export-session']"><span aria-hidden="true">⬇</span><span>Export sesi lengkap (.md)</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='export-session']" data-cap="exportSession"><span aria-hidden="true">⬇</span><span>Export sesi lengkap (.md)</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='terminal']"><span aria-hidden="true">⌨</span><span>Salin perintah lanjut di terminal</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='permissions']"><span aria-hidden="true">🛡️</span><span>Aturan izin</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='roster']"><span aria-hidden="true">👥</span><span>Kelola tim</span></button>

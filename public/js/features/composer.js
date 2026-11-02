@@ -1,12 +1,14 @@
 // The composer: prompt box, send, mode/model/effort controls, read-only state, composer keyboard.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
+import { capReason, capsFor, DEFAULT_ENGINE, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
 import { attachmentPayload, attachments, attachmentsReady, clearAttachments, rememberSent, restoreAttachments } from './attachments.js';
 import { localCommand } from './commands.js';
 import { connection } from './connection.js';
 import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
+import { applyCapsToDom, guardCap, initEngine, matchCount, projectCaps, projectModelOptions, projectModels, renderEnginePicker } from './engine.js';
 import { recall, recallPrompt } from './history.js';
 import { renderResumeTurn } from './resume-turn.js';
 import { openRewind } from './rewind.js';
@@ -49,12 +51,17 @@ export function fillComposer(text) {
 export function renderComposer() {
   const isDemo = state.active === DEMO_ID;
   const st = state.statuses[state.active] ?? {};
+  const engine = engineOf(st);
+  const caps = capsFor(state.config, engine);
   $('#composer').classList.toggle('demo', isDemo);
   $('#btn-stop').hidden = isDemo || !(st.busy || st.queue);
-  $('#mode').value = st.mode ?? 'manual';
-  renderModelOptions(st.model ?? '');
+  renderEnginePicker(st);
+  renderModeOptions(caps);
+  $('#mode').value = modeFor(st.mode ?? 'manual', caps);
+  renderModelOptions(st.model ?? '', engine);
   $('#effort').value = st.effort ?? '';
   $('#team-mode').checked = st.team ?? true;
+  applyCaps(caps, engine);
   const hint = [];
   // As in the CLI, a message sent mid-turn reaches Claude at its next step instead of waiting for the end.
   if (st.busy) hint.push(st.queue ? `Tim sedang bekerja — ${st.queue} pesan antre, dibaca Claude di langkah berikutnya.` : 'Tim sedang bekerja — pesan baru dibaca Claude di langkah berikutnya.');
@@ -78,7 +85,7 @@ export function renderComposer() {
 }
 
 // Controls that change something: disabled (with the reason as tooltip) for a phone on plain WiFi.
-const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
+const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#engine', '#mode', '#model', '#model-search', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
 
 function applyReadOnly() {
   if (!state.readOnly) return; // fixed per connection: a laptop / Tailscale page never needs undoing
@@ -111,18 +118,73 @@ function renderSettingsChip(st) {
   const label = (sel) => ($(sel).selectedOptions[0]?.textContent ?? '').replace(/\s*\(.*$/, '').trim();
   const model = label('#model') || 'Default';
   const effort = $('#effort').value && !$('#effort').disabled ? label('#effort') : '';
-  const team = $('#team-mode').checked;
-  chip.textContent = [MODE_SHORT[mode] ?? mode, model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
-  chip.setAttribute('aria-label', `Pengaturan giliran: mode ${(MODE_SHORT[mode] ?? mode).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
+  const team = $('#team-mode').checked && !$('#team-ctl').classList.contains('cap-off');
+  const engine = engineOf(st);
+  const engineName = engine !== DEFAULT_ENGINE ? engineLabel(engine) : ''; // only the non-default engine takes space
+  chip.textContent = [engineName, MODE_SHORT[mode] ?? mode, model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
+  chip.setAttribute('aria-label', `Pengaturan giliran: ${engineName ? `mesin ${engineName}, ` : ''}mode ${(MODE_SHORT[mode] ?? mode).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
   chip.classList.toggle('warn', mode === 'dontAsk' || Boolean(st?.autoApprove));
   const note = $('#effort-note');
   note.hidden = !$('#effort').disabled || Boolean(state.readOnly) || !$('#effort').title;
   note.textContent = $('#effort').title;
 }
 
-/** The /model picker: the models Claude Code itself offers for this account (Fable, Opus, Sonnet…). */
-function renderModelOptions(current) {
+/** Permission modes the engine doesn't offer (🚫 dontAsk on OpenCode) leave the select and the Shift+Tab cycle. */
+function renderModeOptions(caps) {
+  for (const opt of $('#mode').options) {
+    const off = !caps.modes.includes(opt.value);
+    opt.hidden = off;
+    opt.disabled = off;
+  }
+}
+
+const TEAM_TITLE = 'Claude mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.';
+const CAP_NAMES = { effort: 'effort', team: 'Mode tim', rewind: 'Rewind', mcp: 'Server MCP', bgTasks: 'tugas latar' };
+
+/**
+ * Effort and Mode tim follow the engine's caps: disabled with the reason as tooltip (and, on a phone, as notes in
+ * the settings sheet: no tooltips there). One place for every engine, no per-engine branches.
+ */
+function applyCaps(caps, engine) {
+  if (!caps.effort) {
+    $('#effort').disabled = true;
+    $('#effort').title = capReason('effort', engine);
+  }
+  $('#effort').closest('.ctl').classList.toggle('cap-off', !caps.effort);
+  const team = $('#team-ctl');
+  $('#team-mode').disabled = !caps.team || Boolean(state.readOnly);
+  team.title = caps.team ? TEAM_TITLE : capReason('team', engine);
+  team.classList.toggle('cap-off', !caps.team);
+  const off = Object.keys(CAP_NAMES).filter((c) => !caps[c]);
+  const note = $('#engine-note');
+  note.hidden = !off.length || state.active === DEMO_ID;
+  note.textContent = off.length ? `${engineLabel(engine)} (Fase 1) belum mendukung: ${off.map((c) => CAP_NAMES[c]).join(', ')}.` : '';
+  applyCapsToDom();
+}
+
+/** The Model select: Claude Code's models from the app config, or the project's own list for another engine. */
+function renderModelOptions(current, engine) {
   const select = $('#model');
+  const search = $('#model-search');
+  const entry = modelsPerProject(engine) ? projectModels(state.active, state.statuses[state.active], renderComposer) : null;
+  if (entry) {
+    const query = search.value.trim();
+    const html = projectModelOptions(entry, current, query);
+    if (select.dataset.html !== html) {
+      select.innerHTML = html;
+      select.dataset.html = html;
+    }
+    select.value = current;
+    select.title = entry.models.length ? `${entry.models.length} model dari config ${engineLabel(engine)}` : 'Daftar model muncul setelah pesan pertama';
+    $('#model-search-ctl').hidden = entry.models.length < 8; // a short list needs no search box
+    $('#model-search-count').textContent = query ? `${matchCount(entry, query)} model cocok` : '';
+    $('#effort').disabled = Boolean(state.readOnly); // caps decide (applyCaps), not Claude's model list
+    $('#effort').title = '';
+    return;
+  }
+  $('#model-search-ctl').hidden = true;
+  if (search.value) search.value = '';
+  select.title = '';
   const models = state.config?.models ?? [];
   if (models.length) {
     const def = models.find((m) => m.value === 'default');
@@ -135,6 +197,9 @@ function renderModelOptions(current) {
       select.innerHTML = html;
       select.dataset.html = html;
     }
+  } else if (select.dataset.html) {
+    select.innerHTML = '<option value="">Default</option>'; // no catalog yet: not another engine's list
+    delete select.dataset.html;
   }
   select.value = current;
   // Effort only for models that support it (as the CLI greys it out).
@@ -146,7 +211,8 @@ function renderModelOptions(current) {
 
 function cycleMode() {
   const select = $('#mode');
-  select.value = MODE_CYCLE[(MODE_CYCLE.indexOf(select.value) + 1) % MODE_CYCLE.length];
+  const cycle = MODE_CYCLE.filter((m) => projectCaps().modes.includes(m)); // only the modes the engine offers
+  select.value = cycle[(cycle.indexOf(select.value) + 1) % cycle.length];
   saveSettings();
 }
 
@@ -289,7 +355,7 @@ export function initComposerControls() {
       updateBashMode();
       scheduleDraftSave();
       input.focus();
-    } else openRewind();
+    } else if (!guardCap('rewind')) openRewind(); // OpenCode (Fase 1) has no rewind: say so instead
   });
 
   // Shift+Tab cycles the permission mode, like in the CLI (only from the prompt box, so Tab navigation still works elsewhere).
@@ -307,6 +373,8 @@ export function initComposerControls() {
     if (confirmNew()) api(`/api/projects/${state.active}/reset`).catch((err) => toast(err.message));
   });
   $('#btn-demo').addEventListener('click', () => api('/api/demo').catch((err) => toast(err.message)));
+  // Engine picker + the searchable per-project model list (features/engine.js).
+  initEngine({ onModelPicked: saveSettings, rerender: renderComposer });
   for (const id of ['#mode', '#model', '#effort', '#team-mode']) {
     $(id).addEventListener('change', saveSettings);
     $(id).addEventListener('change', () => renderSettingsChip(state.statuses[state.active])); // right away, before the server echoes it

@@ -7,6 +7,8 @@ import https from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findClaude } from './src/claude-bin.js';
+import { findOpenCode } from './src/opencode-bin.js';
+import { OPENCODE_CAPS } from './src/acp-session.js';
 import { ClaudeCheckService } from './src/claude-check.js';
 import { Hub } from './src/hub.js';
 import { discoverProjects, isDirectory } from './src/projects.js';
@@ -114,6 +116,7 @@ const cutShort = hub.recoverTurns();
 // Leftovers of an import cut short by a crash or shutdown (uploaded .zip files): only this app writes there.
 rmSync(path.join(DATA_DIR, 'tmp'), { recursive: true, force: true });
 const claude = findClaude();
+const opencode = findOpenCode(); // optional second engine (src/acp-session.js); null when not installed
 // Every role's subagent template; only the active team's go to `claude --agents` (saveTeam).
 const allAgents = loadAgentDefinitions(path.join(APP_DIR, '.claude', 'agents'));
 const initialTeam = storedEnabled(hub.persisted.team);
@@ -131,7 +134,7 @@ const account = new AccountService({
   },
 });
 const ledger = new UsageLedger({ file: path.join(DATA_DIR, 'usage.jsonl'), account: () => account.current });
-const sessions = new SessionManager({ hub, claude, agents: activeAgents(allAgents, initialTeam), teamPrompt: teamPrompt(initialTeam, Object.keys(allAgents)), ledger, account });
+const sessions = new SessionManager({ hub, claude, opencode, agents: activeAgents(allAgents, initialTeam), teamPrompt: teamPrompt(initialTeam, Object.keys(allAgents)), ledger, account });
 const mirror = new TranscriptMirror(hub, { ledger });
 // A device unpaired for being idle loses its open event streams at once, like "Cabut".
 const remote = new RemoteAccess(hub, {
@@ -244,6 +247,11 @@ function refreshProjects() {
     team: teamConfig(),
     spotify: { redirectUri: spotify.redirectUri }, // shown (with a copy button) in ⚙ → Spotify
     claudeCheck: claudeCheck.publicView(), // versions + last contract check result (no details)
+    // The engines a project can run on (docs/design-opencode.md §6.1): Claude Code's caps are the UI's defaults.
+    engines: {
+      claude: { available: Boolean(claude), version: hub.catalogConfig().version ?? '' },
+      opencode: { available: Boolean(opencode), version: '', caps: OPENCODE_CAPS },
+    },
   };
   hub.ready = wasReady;
   hub.broadcast('config', hub.config);
@@ -457,6 +465,7 @@ const backupScheduler = new BackupScheduler({
 const ctx = {
   hub,
   sessions,
+  opencode,
   account,
   ledger,
   mirror,
@@ -696,6 +705,7 @@ server.listen(PORT, HOST, () => {
   const url = `http://localhost:${PORT}`;
   console.log(`Adhit Office berjalan di ${url}`);
   console.log(claude ? `Claude Code: ${claude.command}` : 'PERINGATAN: Claude Code tidak ditemukan (set env CLAUDE_BIN).');
+  if (opencode) console.log(`OpenCode: ${opencode.command}`);
   console.log(`Folder projects: ${projectRoots().join('; ')}  ·  Role agents: ${Object.keys(sessions.agents).join(', ') || '-'}`);
   console.log(mirroring ? 'Mirror CLI: aktif (membaca ~/.claude/projects)' : 'Mirror CLI: nonaktif (~/.claude/projects tidak ada)');
   if (SYSTEM_CERTS) console.log(`TLS: ${SYSTEM_CERTS} sertifikat dari sistem ikut dipercaya (proxy/antivirus yang memeriksa HTTPS).`);

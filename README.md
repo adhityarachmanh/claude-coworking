@@ -176,6 +176,27 @@ Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhi
 
 **Banyak tab:** semua tab di satu browser berbagi **satu koneksi live** ke server (satu tab memimpin, yang lain menerima lewat BroadcastChannel), jadi membuka banyak tab tidak lagi menghabiskan batas koneksi browser.
 
+### Mesin: Claude Code atau OpenCode
+
+Tiap project bisa memilih mesin lewat **Mesin** di sebelah Model:
+
+- **Claude Code** (bawaan)
+- **OpenCode**: banyak provider, mis. Gemini dan model gratis OpenCode Go. Pilihan ini muncul kalau `opencode` terpasang (`npm i -g @opencode/cli`, atau set env `OPENCODE_BIN`).
+
+Mengganti mesin memulai percakapan baru, dan tidak bisa dilakukan saat tim sedang bekerja.
+
+| | OpenCode (Fase 1) |
+|---|---|
+| Didukung | Chat streaming, tool + animasi kantor, papan todo, **kartu izin** (Izinkan / Selalu / Izinkan semua / Tolak), ■ Stop / `Esc`, antrean, `!` shell, lanjut sesi OpenCode (`ses_…`), ▶ Lanjutkan setelah restart, token + biaya ke 📊 Laporan dan 💰 Batas antrian |
+| Model | Daftar dari `opencode models` (provider yang kamu atur di OpenCode), bisa dicari; *Default* = pilihan OpenCode sendiri |
+| Mode izin | 🛡️ Tanya dulu · ✏️ Auto-edit · ⚡ Auto · 📋 Rencana dulu (agent `plan` OpenCode). Aturannya dikirim per proses lewat `OPENCODE_CONFIG_CONTENT`, jadi config OpenCode milikmu tidak pernah diubah |
+| Belum | Effort, Mode tim, Rewind, kelola MCP, tugas latar, mirror sesi terminal OpenCode. Kontrolnya disembunyikan atau diberi alasan |
+
+- Token OpenCode tercatat di laporan sebagai akun **OpenCode**, terpisah dari akun Claude.
+- Setelah satu **Tolak**, OpenCode menghentikan gilirannya, sehingga kartu izin lain dari giliran itu ditutup otomatis.
+- Pesan pertama yang menyalakan layanan latar OpenCode dicoba ulang sekali secara otomatis.
+- Desain lengkap: [`docs/design-opencode.md`](docs/design-opencode.md).
+
 ### Tim & kantor
 
 | Orang | Role | Dipakai untuk |

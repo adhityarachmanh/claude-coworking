@@ -1,6 +1,7 @@
 // ---------- the project list: folders to scan, added folders, per-project settings ----------
 // /api/projects and /api/config point Claude Code (and git, file search) at any path: laptop only (LOCAL_ONLY in
 // server.js). Opening VS Code / Explorer (`open`) is laptop only too (LOCAL_ONLY_ACTION).
+import { openCodeModels } from '../opencode-bin.js';
 import path from 'node:path';
 import { isDirectory, isNetworkPath } from '../projects.js';
 import { openInApp } from '../open.js';
@@ -32,9 +33,19 @@ export function register(router) {
 /** Per-project actions; registered with the other /api/projects/:id routes (see index.js). */
 export function registerProjectActions(router) {
   router.post('/api/projects/:id/settings', withSession(({ hub }, req, res, { project, session }, body) => {
+    // Switching engines starts a new conversation: never under a running turn (design §9.3).
+    if (body?.engine && body.engine !== hub.settingsFor(project.id).engine && session.turnActive()) return json(res, 409, { error: 'busy' });
     hub.updateSettings(project.id, body);
     session.syncSettings(); // switches the running Claude Code live (mid-turn too, like Shift+Tab)
     return json(res, 200, { ok: true });
+  }));
+  // The model picker of a non-Claude engine (OpenCode: `opencode models` for the providers set up on this laptop).
+  router.post('/api/projects/:id/models', withSession(async ({ hub, opencode }, req, res, { project }) => {
+    const s = hub.settingsFor(project.id);
+    if (s.engine !== 'opencode') return json(res, 200, { engine: s.engine, models: [], current: s.model, needsStart: false });
+    const models = (await openCodeModels(opencode)).map((value) => ({ value, name: `${value.slice(value.indexOf('/') + 1)}${/free/i.test(value) ? ' (gratis)' : ''}` }));
+    // An empty list (OpenCode still starting, or `opencode models` failed): the picker asks again shortly.
+    return json(res, 200, { engine: 'opencode', models, current: s.model, needsStart: !models.length });
   }));
   router.post('/api/projects/:id/favorite', withSession(({ hub }, req, res, { project }, body) => {
     hub.setFavorite(project.id, Boolean(body.on));
