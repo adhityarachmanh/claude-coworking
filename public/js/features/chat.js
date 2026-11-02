@@ -54,13 +54,24 @@ export function renderChat() {
   if (messages.length) scrollChat(true);
   else {
     chatEl.scrollTop = 0; // the welcome card reads from the top
+    pinnedTop = Infinity; // nothing pinned: a scroll here is judged by position alone
     $('#jump-latest').hidden = true;
   }
 }
 
 // Chat follows the newest message unless the user scrolls up to read; "↓ Terbaru" resumes following.
 let followChat = true;
+// Where the chat was last put at the bottom (by us, or by the user scrolling there). A scroll event that is not at
+// the bottom yet not above this point was not the user scrolling up: the bottom moved under us. That happens on
+// every renderChat (project switch): the rebuild resets scrollTop, and rows with `content-visibility: auto` are
+// laid out at an 80px estimate first, so "bottom" grows a frame later and the scroll event lands mid-chat.
+let pinnedTop = 0;
 const distanceFromBottom = () => chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight;
+
+function pinToBottom() {
+  chatEl.scrollTop = chatEl.scrollHeight;
+  pinnedTop = chatEl.scrollTop;
+}
 
 export function scrollChat(force) {
   if (force) followChat = true;
@@ -68,9 +79,9 @@ export function scrollChat(force) {
     $('#jump-latest').hidden = false;
     return;
   }
-  chatEl.scrollTop = chatEl.scrollHeight;
+  pinToBottom();
   // Again after layout settles (markdown, images, expanded details).
-  requestAnimationFrame(() => followChat && (chatEl.scrollTop = chatEl.scrollHeight));
+  requestAnimationFrame(() => followChat && pinToBottom());
   $('#jump-latest').hidden = true;
 }
 
@@ -315,9 +326,15 @@ function fillChatBody(node, msg) {
 const elapsedTag = (msg) => (msg.status === 'running' && msg.elapsed ? `<small class="elapsed">${msg.elapsed >= 60 ? `${Math.floor(msg.elapsed / 60)} mnt ${msg.elapsed % 60} dtk` : `${msg.elapsed} dtk`}</small>` : '');
 
 export function initChat() {
-  // We only ever scroll to the very bottom, so a scroll that leaves the bottom is the user's.
+  // We only ever scroll to the very bottom, so a scroll that moves up from there is the user's.
   chatEl.addEventListener('scroll', () => {
-    followChat = distanceFromBottom() < 60;
+    const atBottom = distanceFromBottom() < 60;
+    if (!atBottom && followChat && chatEl.scrollTop >= pinnedTop - 1) {
+      pinToBottom(); // the content moved, not the user (see pinnedTop): keep following
+    } else {
+      followChat = atBottom;
+      if (atBottom) pinnedTop = chatEl.scrollTop;
+    }
     $('#jump-latest').hidden = followChat;
   });
 
