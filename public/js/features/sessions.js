@@ -29,7 +29,10 @@ function lookupSessionTitle(projectId, sessionId) {
 export function renderSessionBar() {
   const isDemo = state.active === DEMO_ID;
   $('#session-bar').hidden = isDemo;
-  if (isDemo) return;
+  if (isDemo) {
+    $('#head-sub').textContent = '';
+    return;
+  }
   const st = state.statuses[state.active] ?? {};
   const known = st.sessionId ? sessionTitles.get(st.sessionId) : null;
   if (st.sessionId && !known) lookupSessionTitle(state.active, st.sessionId);
@@ -51,6 +54,9 @@ export function renderSessionBar() {
     : ['pesan pertamamu memulai sesi Claude Code baru'];
   if (st.cliBusy) meta.push('terminal aktif');
   $('#sb-meta').textContent = meta.filter(Boolean).join(' · ');
+  // Phone header: the session bar is hidden there, its title and the turn's state sit under the project name.
+  const status = st.pending ? 'menunggu izin' : st.busy || st.cliBusy ? 'bekerja…' : '';
+  $('#head-sub').textContent = [$('#sb-title').textContent, status].filter(Boolean).join(' · ');
 }
 
 function dayGroup(ts) {

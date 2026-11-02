@@ -11,7 +11,7 @@ import { recall, recallPrompt } from './history.js';
 import { renderResumeTurn } from './resume-turn.js';
 import { openRewind } from './rewind.js';
 import { confirmNew, renderSessionBar } from './sessions.js';
-import { MODE_CYCLE, renderStatusline, renderTodos } from './statusline.js';
+import { MODE_CYCLE, MODE_SHORT, renderStatusline, renderTodos } from './statusline.js';
 import { applySuggest, closeSuggest, renderSuggest, searchHistory, suggest } from './suggest.js';
 import { backgroundRunning, renderTaskChip, renderTasks, tasksView } from './tasks.js';
 import { placeholders, tabToPlaceholder } from './templates.js';
@@ -71,13 +71,14 @@ export function renderComposer() {
   renderTaskChip(st);
   renderQueueChip(st);
   renderVoice();
+  renderSettingsChip(st);
   applyReadOnly();
   renderSendState();
   if (!$('#tasks-modal').hidden && tasksView.project === state.active) renderTasks();
 }
 
 // Controls that change something: disabled (with the reason as tooltip) for a phone on plain WiFi.
-const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
+const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
 
 function applyReadOnly() {
   if (!state.readOnly) return; // fixed per connection: a laptop / Tailscale page never needs undoing
@@ -87,6 +88,7 @@ function applyReadOnly() {
     el.disabled = true;
     el.title = READ_ONLY_HINT;
   }
+  $('#ro-banner').hidden = false; // phone: one visible reason instead of a greyed-out composer
   applyPlaceholder();
 }
 
@@ -98,6 +100,24 @@ export function renderSendState() {
   const send = $('#btn-send');
   send.disabled = !connection.online;
   send.title = connection.online ? '' : OFFLINE_HINT;
+  if (narrow.matches) renderStatusline(state.statuses[state.active] ?? {}); // phone: the "not connected" chip
+}
+
+/** Phone: the chip in the composer toolbar sums up the turn settings that moved into its sheet. */
+function renderSettingsChip(st) {
+  const chip = $('#settings-chip');
+  const mode = $('#mode').value || 'manual';
+  // "Default (Fable 5 · …)" → "Default": the chip stays one short line
+  const label = (sel) => ($(sel).selectedOptions[0]?.textContent ?? '').replace(/\s*\(.*$/, '').trim();
+  const model = label('#model') || 'Default';
+  const effort = $('#effort').value && !$('#effort').disabled ? label('#effort') : '';
+  const team = $('#team-mode').checked;
+  chip.textContent = [MODE_SHORT[mode] ?? mode, model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
+  chip.setAttribute('aria-label', `Pengaturan giliran: mode ${(MODE_SHORT[mode] ?? mode).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
+  chip.classList.toggle('warn', mode === 'dontAsk' || Boolean(st?.autoApprove));
+  const note = $('#effort-note');
+  note.hidden = !$('#effort').disabled || Boolean(state.readOnly) || !$('#effort').title;
+  note.textContent = $('#effort').title;
 }
 
 /** The /model picker: the models Claude Code itself offers for this account (Fable, Opus, Sonnet…). */
@@ -287,5 +307,8 @@ export function initComposerControls() {
     if (confirmNew()) api(`/api/projects/${state.active}/reset`).catch((err) => toast(err.message));
   });
   $('#btn-demo').addEventListener('click', () => api('/api/demo').catch((err) => toast(err.message)));
-  for (const id of ['#mode', '#model', '#effort', '#team-mode']) $(id).addEventListener('change', saveSettings);
+  for (const id of ['#mode', '#model', '#effort', '#team-mode']) {
+    $(id).addEventListener('change', saveSettings);
+    $(id).addEventListener('change', () => renderSettingsChip(state.statuses[state.active])); // right away, before the server echoes it
+  }
 }

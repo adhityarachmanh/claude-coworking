@@ -102,6 +102,23 @@ function unnamed(sel) {
     .map((b) => b.outerHTML.slice(0, 120));
 }
 
+// Phone Chat (docs/design-mobile-chat.md): 📋 and ⚙ are reached through the ＋ / ⋯ sheets, which forward the click.
+const PHONE_ROUTE = {
+  '#btn-queue-add': ['#btn-plus', '#plus-modal [data-proxy="#btn-queue-add"]'],
+  '#btn-settings': ['#btn-head-more', '#head-more-modal [data-proxy="#btn-settings"]'],
+  '#sb-queue': ['#statusline [data-open-queue]'], // the 📋 chip of the status strip
+};
+
+/** Clicks `sel` when it is on screen, else (phone) through its sheet. */
+async function tap(page, sel) {
+  const shown = (q) => page.eval((s) => Boolean(document.querySelector(s)?.getClientRects().length), q);
+  if ((await shown(sel)) || !PHONE_ROUTE[sel] || !(await shown(PHONE_ROUTE[sel][0]))) return page.click(sel);
+  for (const step of PHONE_ROUTE[sel]) {
+    await page.waitFor((q) => document.querySelector(q)?.getClientRects().length && !document.querySelector(q).closest('.modal-card')?.getAnimations().some((a) => a.playState === 'running'), { message: `${step} terlihat` }, step);
+    await page.click(step);
+  }
+}
+
 async function shot(page, name) {
   if (!SHOTS) return;
   mkdirSync(SHOTS, { recursive: true });
@@ -183,7 +200,7 @@ for (const vp of VIEWPORTS) {
         input.value = 'pertama dari tombol';
         input.focus();
       });
-      await page.click('#btn-queue-add');
+      await tap(page, '#btn-queue-add');
       await page.waitFor(() => document.querySelector('#prompt').value === '', { message: 'composer emptied' });
       // Alt+Enter: added too, and NOT sent as a prompt
       const bubbles = () => document.querySelectorAll('#chat [data-id]').length;
@@ -199,7 +216,7 @@ for (const vp of VIEWPORTS) {
       await page.waitFor(() => /⏸ 2/.test(document.querySelector('#sb-queue').textContent), { message: 'chip shows ⏸ 2' });
 
       // the dialog from the chip
-      await page.click('#sb-queue');
+      await tap(page, '#sb-queue');
       await page.waitFor(() => document.querySelectorAll('#queue-list li.queue-item').length === 2, { message: 'two items listed' });
       assert.match(await page.eval(() => document.querySelector('#queue-state').textContent), /dijeda olehmu/);
       assert.deepEqual(await page.eval(unnamed, '#queue-modal'), []);
@@ -242,7 +259,7 @@ for (const vp of VIEWPORTS) {
       await page.waitFor(() => document.querySelector('#sb-queue').hidden, { message: 'chip hidden when nothing is left to run' });
       await page.eval(() => (document.querySelector('#prompt').value = ''));
       await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove())); // a toast sits over the phone composer
-      await page.click('#btn-queue-add');
+      await tap(page, '#btn-queue-add');
       await page.waitFor(() => !document.querySelector('#queue-modal').hidden && !document.querySelector('#queue-clear').hidden, { message: 'dialog with clear button' });
       await page.click('#queue-clear');
       await page.waitFor(() => document.querySelectorAll('#queue-list li.queue-item').length === 0, { message: 'cleared' });
@@ -267,7 +284,7 @@ for (const vp of VIEWPORTS) {
       });
       await page.waitFor(() => document.querySelectorAll('#attachments .att-chip').length === 1, { message: 'chip lampiran' });
       const refused = () => [...document.querySelectorAll('.toast')].some((t) => /Lampiran belum bisa masuk antrian; kirim langsung/.test(t.textContent));
-      await page.click('#btn-queue-add');
+      await tap(page, '#btn-queue-add');
       await page.waitFor(refused, { message: 'toast penolakan (tombol)' });
       await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
       await page.eval(() => document.querySelector('#prompt').focus());
@@ -414,7 +431,7 @@ for (const vp of VIEWPORTS) {
       await api('/api/backup/schedule/save', { enabled: false, frequency: 'daily', weekday: 1, time: '02:00', folder: '', keep: 7 });
       await openApp(page);
       page.clearProblems();
-      await page.click('#btn-settings').catch(async () => page.eval(() => (document.querySelector('#settings-modal').hidden = false)));
+      await tap(page, '#btn-settings');
       await page.waitFor(() => !document.querySelector('#settings-modal').hidden && /nonaktif|Berikutnya/.test(document.querySelector('#ba-status').textContent), { message: 'backup schedule loaded' });
       await page.eval(() => document.querySelector('.backup-auto').scrollIntoView({ block: 'center' }));
       const dir = path.join(TMP, `backups-${vp.mobile ? 'm' : 'd'}`);

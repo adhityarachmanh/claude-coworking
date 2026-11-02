@@ -73,6 +73,11 @@ function pinToBottom() {
   pinnedTop = chatEl.scrollTop;
 }
 
+/** The chat area changed size (phone keyboard): stay at the newest message if that is where the user was. */
+export function keepChatPinned() {
+  if (followChat && !chatEl.querySelector('.empty')) pinToBottom(); // the welcome card reads from the top
+}
+
 export function scrollChat(force) {
   if (force) followChat = true;
   if (!followChat) {

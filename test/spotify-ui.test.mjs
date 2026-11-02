@@ -303,6 +303,19 @@ function assertClean(page) {
   assert.deepEqual(page.problems, [], 'no console errors, exceptions or failed requests');
 }
 
+/**
+ * Clicks a header control like a user. Phone Chat view (docs/design-mobile-chat.md): the ♪ pill and ⚙ are not in the
+ * header there, they are rows of the ⋯ sheet that forward the click to the same control.
+ */
+async function tapHeader(page, sel) {
+  const shown = (s) => page.eval((q) => Boolean(document.querySelector(q)?.getClientRects().length), s);
+  if ((await shown(sel)) || !(await shown('#btn-head-more'))) return page.click(sel);
+  await page.click('#btn-head-more');
+  const row = `#head-more-modal [data-proxy="${sel}"]`;
+  await page.waitFor((q) => document.querySelector(q)?.getClientRects().length && !document.querySelector(q).closest('.modal-card').getAnimations().some((a) => a.playState === 'running'), { message: `⋯ → ${sel}` }, row);
+  await page.click(row);
+}
+
 /** Phone: the office lives in its own view (bottom nav "Kantor"). */
 async function showOffice(page, vp) {
   if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
@@ -401,7 +414,7 @@ for (const vp of VIEWPORTS) {
 
     test('♪ dialog: controls, volume, devices, playlists and palette send the contract bodies; error states', async () => {
       await open(page, { snap: STATE() });
-      await page.click('#spotify-pill');
+      await tapHeader(page, '#spotify-pill');
       await page.waitFor(() => visible('#spotify-modal') && document.activeElement?.id === 'sp-play', { message: 'dialog open, focus on ⏯' });
       await page.waitFor(() => document.querySelectorAll('#sp-devices input').length === 3, { message: 'devices listed' });
       assert.deepEqual(await page.eval(() => window.__sp.posts.map((p) => p.name).filter((n) => n !== 'art')), ['state', 'devices']);
@@ -522,7 +535,7 @@ for (const vp of VIEWPORTS) {
       // nothing active: ▶ is still offered (the server picks a device or opens Spotify on the laptop)
       await page.waitFor(() => !document.querySelector('#spotify-box').hidden && !document.querySelector('#spotify-toggle').hidden, { message: '▶ in the top bar while idle' });
       assert.equal(await page.eval(() => document.querySelector('#spotify-toggle').getAttribute('aria-label')), 'Putar musik');
-      await page.click('#spotify-pill');
+      await tapHeader(page, '#spotify-pill');
       await page.waitFor(() => document.querySelectorAll('#sp-devices input').length === 3, { message: 'devices listed' });
       assert.equal(await page.eval(() => document.querySelector('#sp-play').disabled), false, '▶ enabled without an active device');
       assert.deepEqual(await page.eval(() => ['#sp-prev', '#sp-next'].map((s) => document.querySelector(s).disabled)), [true, true]);
@@ -598,7 +611,7 @@ for (const vp of VIEWPORTS) {
       await page.waitFor(() => document.querySelector('#spotify-modal').hidden, { message: 'closed' });
 
       // ⚙: "Buka Spotify otomatis di latar belakang" (default on) is saved through /config
-      await page.click('#btn-settings');
+      await tapHeader(page, '#btn-settings');
       await page.waitFor(() => visible('#sps-autolaunch') && document.querySelector('#sps-autolaunch').checked, { message: 'autoLaunch on by default' });
       await clearPosts(page);
       await page.click('#sps-autolaunch');
@@ -611,7 +624,7 @@ for (const vp of VIEWPORTS) {
 
     test('playlist tracks: drill in, ← back, filter, Muat lagi, ♪ on the current song, greyed unplayable, play from a track; locked playlist', async () => {
       await open(page, { snap: STATE() });
-      await page.click('#spotify-pill');
+      await tapHeader(page, '#spotify-pill');
       await page.waitFor(() => visible('#spotify-modal') && document.querySelectorAll('#sp-devices input').length === 3, { message: 'dialog open' });
       await page.click('#sp-pl-toggle');
       await page.waitFor(() => document.querySelectorAll('#sp-pl-list li').length === 3, { message: 'playlists listed' });
@@ -731,7 +744,7 @@ for (const vp of VIEWPORTS) {
 
     test('Tailscale phone: controls work, the duck setting is changed through /settings', async () => {
       await open(page, { snap: STATE(), client: { local: false, accountAuth: true, readOnly: false } });
-      await page.click('#spotify-pill');
+      await tapHeader(page, '#spotify-pill');
       await page.waitFor(() => visible('#sp-duck-row'), { message: 'duck row on a Tailscale phone' });
       assert.equal(await page.eval(() => visible('#sp-settings')), false, 'no ⚙ link on a phone');
       assert.equal(await page.eval(() => document.querySelector('#sp-duck option[value="duck"]').textContent), 'Kecilkan (ke 20%)');
@@ -751,7 +764,7 @@ for (const vp of VIEWPORTS) {
 
     test('⚙ Spotify (laptop): Client ID validation, Hubungkan opens the login URL, Putuskan, settings', async () => {
       await open(page, { snap: { status: 'unconfigured', error: null, track: null, progressMs: 0, at: 0, device: null, office: true, updatedAt: 0 } });
-      await page.click('#btn-settings');
+      await tapHeader(page, '#btn-settings');
       await page.waitFor(() => visible('#sps') && document.querySelector('#sps-redirect').textContent.startsWith('http://127.0.0.1'), { message: 'Spotify section' });
       assert.equal(await page.eval(() => document.querySelector('#sps-connect').disabled), true, 'no Client ID yet: Hubungkan off');
       await page.eval(() => {

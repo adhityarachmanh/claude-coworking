@@ -2,7 +2,7 @@
 <html lang="id">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#16171c" />
     <meta name="office-token" content="__OFFICE_TOKEN__" />
     <title>Adhit Office</title>
@@ -39,6 +39,10 @@
       <button id="btn-notify" class="icon-btn labeled" title="Notifikasi & suara"><span class="ico" aria-hidden="true">🔕</span><span class="lbl">Notifikasi</span></button>
       <button id="btn-help" class="icon-btn labeled" title="Panduan & shortcut keyboard (?)"><span class="ico" aria-hidden="true">❓</span><span class="lbl">Bantuan</span></button>
       <button id="btn-settings" class="icon-btn labeled" title="Pengaturan"><span class="ico" aria-hidden="true">⚙</span><span class="lbl">Pengaturan</span></button>
+      <!-- Phone only: session title · status under the project name (features/phone-sheets.js) -->
+      <small id="head-sub" class="head-sub phone-only"></small>
+      <!-- Phone only: one ⋯ for session, export, account, report, music, settings (sheet #head-more-modal) -->
+      <button id="btn-head-more" class="icon-btn phone-only" type="button" aria-haspopup="dialog" aria-label="Menu: sesi, export, akun, lainnya">⋯</button>
       <span id="conn" class="pill">menghubungkan…</span>
     </header>
     <!-- Lost connection to the laptop (features/connection.js). Always present and empty while connected, so the
@@ -121,11 +125,11 @@
               <button role="menuitem" data-more="folder" class="local-only">📁 Buka folder project</button>
             </div>
           </div>
-          <div id="chat" class="chat"></div>
+          <div id="chat" class="chat" role="log" aria-label="Percakapan"></div>
           <button id="jump-latest" class="jump" hidden>↓ Terbaru</button>
         </div>
         <ol id="activity" class="activity" hidden></ol>
-        <div id="typing" class="typing" hidden><span></span><span></span><span></span><em id="typing-text">Tim sedang bekerja…</em></div>
+        <div id="typing" class="typing" hidden><span></span><span></span><span></span><em id="typing-text">Tim sedang bekerja…</em><button id="typing-stop" class="ghost phone-only" type="button" aria-label="Hentikan giliran">■ Stop</button></div>
 
         <div id="composer" class="composer">
           <!-- Claude's live todo list (TodoWrite / Task tools), pinned like in the CLI -->
@@ -177,6 +181,8 @@
           <!-- 🎤 what is being heard (interim), before it lands in the box at the cursor -->
           <div id="voice-live" class="voice-live" role="status" aria-live="polite"></div>
           <div id="attachments" class="attachments" hidden></div>
+          <!-- Phone on plain WiFi: one clear banner instead of a greyed-out composer -->
+          <div id="ro-banner" class="ro-banner phone-only" role="status" hidden>👁 Hanya lihat lewat WiFi. Kirim perintah dari laptop atau lewat Tailscale.</div>
           <div class="input">
             <button id="btn-attach" class="ghost icon attach" title="Lampirkan file: gambar, PDF, log/teks/kode (atau paste / drag ke kotak ini)" aria-label="Lampirkan file">📎</button>
             <!-- accept is filled from core/attachment-rules.js (ATTACH_ACCEPT) at start -->
@@ -184,10 +190,13 @@
             <button id="btn-template" class="ghost icon attach" type="button" title="Template prompt (/t)" aria-label="Template prompt" aria-haspopup="dialog">⚡</button>
             <textarea id="prompt" rows="3" aria-label="Pesan untuk tim" placeholder="Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )"></textarea>
             <!-- 🎤 hidden unless the Web Speech API exists in a secure context (HTTPS / localhost) and the page may act -->
+            <!-- Phone only: ＋ (attach, template, queue, voice, ! @ /) and the turn-settings chip, in the toolbar under the text -->
+            <button id="btn-plus" class="ghost icon phone-only" type="button" aria-haspopup="dialog" aria-label="Tambahkan: lampiran, template, antrian, suara">＋</button>
+            <button id="settings-chip" class="settings-chip phone-only" type="button" aria-haspopup="dialog" aria-label="Pengaturan giliran"></button>
             <button id="btn-voice" class="ghost icon attach voice-btn" type="button" title="Input suara (Alt+M)" aria-label="Mulai input suara" aria-pressed="false" aria-keyshortcuts="Alt+M" hidden>🎤</button>
-            <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)">■ Stop</button>
+            <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)" aria-label="Hentikan giliran">■ Stop</button>
             <button id="btn-queue-add" class="ghost icon attach queue-add" type="button" title="Tambah ke 📋 Antrian, dijalankan saat tim tidak sibuk (Alt+Enter). Kotak kosong: buka antrian" aria-label="Tambah ke antrian">📋</button>
-            <button id="btn-send" class="primary">Kirim</button>
+            <button id="btn-send" class="primary" aria-label="Kirim pesan">Kirim</button>
           </div>
           <!-- Status line: permission mode (Shift+Tab), model, context used -->
           <div id="statusline" class="statusline"></div>
@@ -844,6 +853,68 @@
         </div>
         <div id="palette-list" class="palette-list" role="listbox" aria-label="Hasil"></div>
         <p id="palette-keys" class="palette-keys muted small"><span>↑↓ pilih · Enter jalankan · Esc tutup</span><span><kbd>&gt;</kbd> perintah · <kbd>@</kbd> file · <kbd>#</kbd> project</span><span id="palette-count" class="sr-only" aria-live="polite"></span></p>
+      </div>
+    </div>
+
+    <!-- ---------- Phone only (≤ 760 px): bottom sheets of the Chat view (features/phone-sheets.js) ----------
+         Every row/tile forwards to a control that already exists (data-proxy); no logic of its own. -->
+    <div id="plus-modal" class="modal phone-sheet" hidden>
+      <div class="modal-card sheet-card" role="dialog" aria-modal="true" aria-labelledby="plus-title">
+        <div class="modal-head"><b id="plus-title">Tambahkan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="plus-grid">
+          <button type="button" class="plus-tile" data-proxy="#btn-attach"><span class="pt-ico" aria-hidden="true">📎</span><span>Lampiran</span></button>
+          <button type="button" class="plus-tile" data-proxy="#btn-template"><span class="pt-ico" aria-hidden="true">⚡</span><span>Template</span></button>
+          <button type="button" class="plus-tile" data-proxy="#btn-voice"><span class="pt-ico" aria-hidden="true">🎤</span><span>Suara</span></button>
+          <button type="button" class="plus-tile" data-proxy="#btn-queue-add"><span class="pt-ico" aria-hidden="true">📋</span><span id="plus-queue-label">Buka antrian</span></button>
+          <button type="button" class="plus-tile" data-insert="!"><span class="pt-ico" aria-hidden="true">!</span><span>Shell</span></button>
+          <button type="button" class="plus-tile" data-insert="@"><span class="pt-ico" aria-hidden="true">@</span><span>File</span></button>
+          <button type="button" class="plus-tile" data-insert="/"><span class="pt-ico" aria-hidden="true">/</span><span>Command</span><small id="plus-slash-note" hidden>Kosongkan kotak dulu</small></button>
+        </div>
+        <p class="muted small sheet-help">Gambar, PDF, log/teks/kode · <b>!</b> menjalankan perintah di folder project · <b>@</b> menyebut file · <b>/</b> command Claude Code</p>
+      </div>
+    </div>
+
+    <div id="turn-settings-modal" class="modal phone-sheet" hidden>
+      <div class="modal-card sheet-card" role="dialog" aria-modal="true" aria-labelledby="turn-settings-title">
+        <div class="modal-head"><b id="turn-settings-title">Pengaturan giliran</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <!-- the composer's own .controls (same ids and listeners) are moved in here on a phone -->
+        <div class="sheet-body"></div>
+        <p id="effort-note" class="muted small" hidden></p>
+        <p class="muted small sheet-help">Berlaku untuk project ini. Tersimpan otomatis.</p>
+      </div>
+    </div>
+
+    <div id="head-more-modal" class="modal phone-sheet" hidden>
+      <div class="modal-card sheet-card" role="dialog" aria-modal="true" aria-labelledby="hm-project">
+        <div class="modal-head"><b id="hm-project">Project</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="hm-session"><span id="hm-title"></span><small id="hm-meta" class="muted"></small></p>
+        <div class="sheet-group" role="group" aria-labelledby="hm-g-session" data-needs-project>
+          <h3 id="hm-g-session" class="sheet-group-head">Sesi</h3>
+          <button type="button" class="sheet-row" data-proxy="#btn-sessions"><span aria-hidden="true">🕘</span><span>Riwayat sesi</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-new" data-mutates><span aria-hidden="true">＋</span><span>Sesi baru</span></button>
+          <button type="button" class="sheet-row" data-proxy="#sb-title" data-mutates data-needs-session><span aria-hidden="true">✎</span><span>Ganti nama sesi</span></button>
+          <button type="button" class="sheet-row" data-action="rewind" data-mutates><span aria-hidden="true">⏪</span><span>Rewind</span></button>
+        </div>
+        <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-needs-project>
+          <h3 id="hm-g-chat" class="sheet-group-head">Percakapan</h3>
+          <button type="button" class="sheet-row" data-proxy="[data-more='export']"><span aria-hidden="true">⬇</span><span>Export percakapan (.md)</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='export-session']"><span aria-hidden="true">⬇</span><span>Export sesi lengkap (.md)</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='terminal']"><span aria-hidden="true">⌨</span><span>Salin perintah lanjut di terminal</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='permissions']"><span aria-hidden="true">🛡️</span><span>Aturan izin</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='roster']"><span aria-hidden="true">👥</span><span>Kelola tim</span></button>
+          <button type="button" class="sheet-row local-only" data-proxy="[data-more='code']"><span aria-hidden="true">🧭</span><span>Buka project di VS Code</span></button>
+          <button type="button" class="sheet-row local-only" data-proxy="[data-more='folder']"><span aria-hidden="true">📁</span><span>Buka folder project</span></button>
+        </div>
+        <div class="sheet-group" role="group" aria-labelledby="hm-g-more">
+          <h3 id="hm-g-more" class="sheet-group-head">Lainnya</h3>
+          <button type="button" class="sheet-row" data-proxy="#btn-account"><span aria-hidden="true">👤</span><span id="hm-account">Akun</span><span id="hm-quota-dot" class="hm-dot" aria-hidden="true" hidden></span></button>
+          <button type="button" class="sheet-row" data-proxy="#spotify-pill" data-show-if="#spotify-box"><span aria-hidden="true">♪</span><span id="hm-music">Musik</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-report"><span aria-hidden="true">📊</span><span>Laporan token</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-notify-settings" data-always><span aria-hidden="true">🔔</span><span>Pengaturan notifikasi</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-help"><span aria-hidden="true">❓</span><span>Panduan &amp; shortcut</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-settings"><span aria-hidden="true">⚙</span><span>Pengaturan</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-phone"><span aria-hidden="true">📱</span><span>Buka di HP</span></button>
+        </div>
       </div>
     </div>
 

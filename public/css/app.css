@@ -1112,7 +1112,7 @@ body.read-only #composer-hint { color: var(--ask); }
   .crumb small { display: none; }
   .account-btn { padding: 2px; }
   .avatar { width: 30px; height: 30px; }
-  #btn-notify, #btn-help { display: none; } /* help stays reachable from the welcome card; 📊 Laporan stays */
+  #btn-notify, #btn-help { display: none; } /* help: the welcome card and the ⋯ sheet (📊, 👤, ⚙, 📱 moved there too, see the 📱 Chat block) */
   .report-filters { padding: 8px 10px 10px; }
   .chips button { flex: 1 1 auto; }
   .trend-head { flex-direction: column; align-items: stretch; }
@@ -1801,3 +1801,133 @@ body.read-only #composer-hint { color: var(--ask); }
   .sp-art-96 { width: 72px; height: 72px; font-size: 28px; }
   .sp-pl-filter, .sps-row input { font-size: var(--fs-input-touch); }
 }
+
+/* ---------- 📱 Chat on a phone (≤ 760 px): compact header, two-row composer, sheets (features/phone-sheets.js) ----------
+   docs/design-mobile-chat.md. Everything below is phone-only: on a laptop .phone-only never shows and the rest is gated. */
+.phone-only { display: none; }
+
+@media (max-width: 760px) {
+  /* header: [logo] [project / session · status] (♪ in Kantor) [⋯] [●] */
+  .topbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; column-gap: 8px; }
+  .topbar > * { grid-row: 1; }
+  .topbar .brand { grid-column: 1; }
+  #crumb { grid-column: 2; justify-self: stretch; height: 44px; align-items: flex-start; padding: 4px 10px 0; background: none; border-color: transparent; } /* the subtitle sits in its lower half */
+  #crumb .crumb-text { flex: 0 1 auto; } /* "toko ▾": the chevron right after the name */
+  .topbar:has(#head-sub:empty) #crumb { align-items: center; padding: 4px 10px; }
+  /* taps on the subtitle fall through to the crumb (project picker) */
+  .head-sub { display: block; grid-column: 2; align-self: end; justify-self: start; max-width: 100%; margin: 0 0 9px; padding: 0 30px 0 11px; font-size: var(--fs-xs); line-height: 1.2; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+  .head-sub:empty { display: none; }
+  #spotify-box { grid-column: 3; }
+  #btn-head-more { grid-column: 4; display: grid; place-items: center; position: relative; width: 44px; height: 44px; font-size: var(--fs-xl); letter-spacing: 1px; }
+  #conn { grid-column: 5; }
+  .topbar .grow, #btn-account, #btn-report, #btn-settings, #btn-phone, #quota-pill { display: none !important; }
+  body[data-view='panel'] #spotify-box { display: none !important; } /* still in the Kantor view and in ⋯ */
+  /* quota past the yellow/red line: a dot on ⋯ (the numbers are on the sheet's Akun row) */
+  body:has(#quota-pill:not([hidden])) #btn-head-more::after { content: ''; position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--ask); }
+  body:has(#quota-pill.crit:not([hidden])) #btn-head-more::after { background: var(--err); }
+
+  /* the session bar's title is the header subtitle; its buttons are in ⋯ */
+  .session-bar { display: none; }
+
+  /* composer rows: [todo chip][status strip] → attachments → box. The safe-area bottom stays on the bottom nav. */
+  .composer { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: 6px; padding: 6px 8px; }
+  .composer > * { flex: 1 0 100%; min-width: 0; }
+  #todos { order: 1; }
+  #statusline { order: 2; }
+  #suggest { order: 3; }
+  #voice-live { order: 4; }
+  #attachments { order: 5; }
+  .input, #ro-banner { order: 6; }
+  #btn-demo { order: 7; }
+  .composer > .controls, #composer-hint { display: none; } /* .controls lives in the settings sheet; this is the fallback */
+
+  /* the box: full-width text on top, toolbar [＋] [chip] … [↑ / ■ / 🎤] below (DOM order unchanged) */
+  .input { flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 4px 4px 4px 10px; }
+  .input textarea { flex: 1 0 100%; order: 0; min-height: 40px; padding: 8px 0 4px; }
+  #btn-attach, #btn-template, #btn-queue-add { display: none; }
+  #btn-plus { display: grid; place-items: center; order: 1; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; font-size: var(--fs-xl); }
+  .settings-chip { display: block; order: 2; flex: 0 1 auto; min-width: 0; height: 36px; margin-right: auto; padding: 0 12px; border-radius: var(--r-pill); background: var(--surface-3); color: var(--text-2); font-size: var(--fs-sm); line-height: 34px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .settings-chip.warn { background: var(--warn-soft); border-color: var(--warn-line); color: var(--warn-text-strong); }
+  .input #btn-voice, .input #btn-stop, .input #btn-send { order: 3; width: 44px; height: 44px; padding: 0; border-radius: 50%; display: grid; place-items: center; align-self: center; }
+  .input #btn-voice[hidden], .input #btn-stop[hidden] { display: none; }
+  #btn-send, #btn-stop { font-size: 0; } /* icon only; the names come from aria-label */
+  #btn-send::before { content: '↑' / ''; font-size: var(--fs-xl); font-weight: 700; }
+  #btn-stop::before { content: '■' / ''; font-size: var(--fs-lg); }
+  /* one morphing button: empty box → 🎤 (■ while busy), text/attachments → ↑ Kirim, recording → 🎤 only */
+  .composer:has(#prompt:placeholder-shown):not(:has(.att-chip)) #btn-send { display: none; }
+  .composer:has(#prompt:placeholder-shown):not(:has(.att-chip)):has(#btn-stop[hidden]):has(#btn-voice[hidden]) #btn-send { display: grid; } /* nothing else to show: Kirim keeps the spot */
+  .composer:has(#prompt:not(:placeholder-shown)) #btn-stop, .composer:has(.att-chip) #btn-stop { display: none; }
+  .composer:has(#prompt:not(:placeholder-shown)) #btn-voice, .composer:has(.att-chip) #btn-voice, .composer:has(#btn-stop:not([hidden])) #btn-voice { display: none; }
+  .input #btn-voice[aria-pressed='true']:not([hidden]) { display: grid !important; }
+  .composer:has(#btn-voice[aria-pressed='true']:not([hidden])) #btn-send, .composer:has(#btn-voice[aria-pressed='true']:not([hidden])) #btn-stop { display: none !important; }
+
+  /* ■ Stop next to "Tim sedang bekerja…" while the box holds text (the toolbar button is ↑ then) */
+  #typing-stop { display: none; margin-left: auto; min-height: 36px; padding: 0 12px; font-size: var(--fs-sm); color: var(--err-text); }
+  .panel:has(#btn-stop:not([hidden])):has(#prompt:not(:placeholder-shown)) #typing:not([hidden]) #typing-stop,
+  .panel:has(#btn-stop:not([hidden])):has(.att-chip) #typing:not([hidden]) #typing-stop { display: inline-flex; align-items: center; }
+
+  /* status strip: one row of chips, only with something to say (mode + model are on the settings chip) */
+  .statusline { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 6px; margin: 0 0 6px; font-size: var(--fs-sm); }
+  .statusline::-webkit-scrollbar { display: none; }
+  .statusline:not(.has-chips) { display: none; }
+  .statusline .sl-mode, .statusline .sl-model, .statusline .sep, .statusline .sl-ctx:not(.mid):not(.high) { display: none; }
+  .statusline > :not(.sl-mode, .sl-model, .sep, .sl-ctx:not(.mid):not(.high)) { flex: none; display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; }
+  .statusline > .sl-tasks { color: var(--accent-2); }
+  .statusline > .sl-ask { border-color: var(--ask); color: var(--ask); }
+  .statusline > .sl-warn { border-color: var(--warn-line); background: var(--warn-soft); color: var(--warn-text-strong); }
+  #todos { margin: 0 0 6px; padding: 4px 10px; }
+  #todos.collapsed { flex: 0 1 auto; max-width: 100%; display: flex; align-items: center; min-height: 36px; padding: 0 10px; border-radius: var(--r-pill); }
+  #todos.collapsed:has(~ #statusline.has-chips) { max-width: 62%; }
+  #todos.collapsed ~ #statusline { flex: 1 1 0; } /* shares the row with the folded todo chip */
+  .todos-head { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+  .todos-now { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--text-2); }
+
+  /* WiFi view-only: one banner instead of the box */
+  body.read-only #ro-banner:not([hidden]) { display: block; padding: 10px 12px; border: 1px solid var(--warn-line); border-radius: var(--r-xl); background: var(--surface-2); color: var(--ask); font-size: var(--fs-md); line-height: 1.4; }
+  body.read-only .input, body.read-only #typing-stop { display: none !important; }
+
+  /* on-screen keyboard open (ui/layout.js): the page is the visible area, no bottom nav */
+  body.kb-open { height: var(--vv-h, 100dvh); }
+  body.kb-open .mobile-nav { display: none; }
+  body.kb-open .input textarea { max-height: 30dvh; }
+  body.kb-open .toast { bottom: 12px; }
+  body:has(.phone-sheet:not([hidden])) .toast { top: calc(12px + env(safe-area-inset-top)); bottom: auto; } /* never over a sheet's rows */
+
+  /* permission card: Izinkan + Tolak on the first row, 44 px tall */
+  .approval .ap-actions [data-act='deny'] { order: 1; }
+  .approval .ap-actions [data-act='always'] { order: 2; }
+  .approval .ap-actions [data-act='all'] { order: 3; }
+  .approval .ap-actions button { min-height: 44px; }
+
+  /* sheets */
+  .sheet-card { animation: sheet-up .18s ease-out; }
+  .sheet-help { margin: 12px 0 0; }
+  .plus-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .plus-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 72px; padding: 8px 4px; border-radius: var(--r-lg); font-size: var(--fs-sm); color: var(--text); }
+  .plus-tile[hidden] { display: none; }
+  .plus-tile .pt-ico { font: 700 22px/1 var(--font); color: var(--accent-2); }
+  .plus-tile small { color: var(--muted); font-size: var(--fs-2xs); }
+  #turn-settings-modal .controls { flex-direction: column; align-items: stretch; flex-wrap: nowrap; overflow: visible; gap: 14px; margin: 0; }
+  #turn-settings-modal .ctl { flex-direction: column; align-items: stretch; gap: 4px; white-space: normal; font-size: var(--fs-md); color: var(--text); }
+  #turn-settings-modal .ctl[hidden] { display: none; }
+  /* each control's own description (its title), as visible text: a phone has no tooltips */
+  #turn-settings-modal .ctl::after, #turn-settings-modal .switch::after { content: attr(title); font-size: var(--fs-xs); line-height: 1.35; color: var(--muted); }
+  #turn-settings-modal select { max-width: none; width: 100%; min-height: 44px; font-size: var(--fs-input-touch); }
+  #turn-settings-modal .switch { flex-wrap: wrap; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); font-size: var(--fs-md); color: var(--text); white-space: normal; }
+  #turn-settings-modal .switch::after { flex: 1 0 100%; }
+  #turn-settings-modal .switch input { width: 22px; height: 22px; }
+  #effort-note { margin: 8px 0 0; }
+  .hm-session { display: flex; flex-direction: column; gap: 2px; margin: -4px 0 8px; font-size: var(--fs-md); }
+  .hm-session small { font-size: var(--fs-xs); }
+  .sheet-group { display: flex; flex-direction: column; padding: 4px 0; border-top: 1px solid var(--border); }
+  .sheet-group-head { margin: 6px 4px 2px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .sheet-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; width: 100%; min-height: 48px; padding: 8px 10px; border: 0; border-radius: var(--r-md); background: none; text-align: left; font-size: var(--fs-base); }
+  .sheet-row[hidden] { display: none; }
+  .sheet-row > span:first-child { width: 22px; text-align: center; flex: none; }
+  .sheet-row-note { flex: 1 0 100%; padding-left: 34px; font-size: var(--fs-xs); color: var(--ask); }
+  .sheet-row:disabled { color: var(--muted); }
+  .hm-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ask); }
+  .hm-dot.crit { background: var(--err); }
+  .hm-dot[hidden] { display: none; }
+}
+@keyframes sheet-up { from { transform: translateY(24px); opacity: .6; } }

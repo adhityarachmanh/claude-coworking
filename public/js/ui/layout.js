@@ -1,8 +1,8 @@
 // Page chrome: title badge, phone bottom navigation, panel tabs, resizable chat panel.
-import { $ } from '../core/dom.js';
+import { $, isTyping, narrow } from '../core/dom.js';
 import { APP_NAME, state } from '../core/state.js';
 import { loadChanges } from '../features/changes.js';
-import { scrollChat } from '../features/chat.js';
+import { keepChatPinned, scrollChat } from '../features/chat.js';
 
 export function updateTitle() {
   const pending = [...state.approvals.values()].filter((a) => a.status === 'pending').length;
@@ -40,6 +40,38 @@ export function initTabs() {
       $('#activity').hidden = state.tab !== 'activity';
     }),
   );
+}
+
+// ---------- phone keyboard: composer above it, bottom nav out of the way ----------
+
+const KEYBOARD_MIN = 120; // px of height lost to count as an on-screen keyboard (not a URL bar collapsing)
+
+/**
+ * The visual viewport shrinks when the on-screen keyboard opens (iOS; Android with resizes-content shrinks the
+ * layout viewport too, so the comparison is against the tallest height seen at this width, not innerHeight).
+ * Event-driven only: visualViewport `resize` plus focus changes, no polling.
+ */
+export function initKeyboardInset() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  let width = window.innerWidth;
+  let tallest = Math.max(window.innerHeight, vv.height);
+  const update = () => {
+    if (window.innerWidth !== width) {
+      width = window.innerWidth; // rotated / resized: start over
+      tallest = 0;
+    }
+    tallest = Math.max(tallest, window.innerHeight, vv.height);
+    const open = narrow.matches && tallest - vv.height > KEYBOARD_MIN && isTyping(document.activeElement);
+    const body = document.body;
+    if (open) body.style.setProperty('--vv-h', `${Math.round(vv.height)}px`);
+    else body.style.removeProperty('--vv-h');
+    if (open !== body.classList.contains('kb-open')) body.classList.toggle('kb-open', open);
+    if (open && document.scrollingElement.scrollTop) document.scrollingElement.scrollTop = 0; // iOS pans the page up
+    if (narrow.matches) keepChatPinned(); // the chat got shorter or taller: the newest message stays in view
+  };
+  vv.addEventListener('resize', update);
+  document.addEventListener('focusout', () => requestAnimationFrame(update)); // keyboard closing without a resize yet
 }
 
 // ---------- resizable chat panel (desktop) ----------

@@ -234,6 +234,43 @@ const forgetTempProject = (id) => (id ? apiPost(`/api/projects/${id}/forget`).ca
 
 const draftKey = () => `office.draft.${projectId}`;
 
+// Phone Chat (docs/design-mobile-chat.md): these controls stay in the DOM but are reached through a sheet on a phone.
+const viaHeadMore = (sel) => ['#btn-head-more', `#head-more-modal [data-proxy="${sel}"]`];
+const PHONE_ROUTE = {
+  '#btn-settings': viaHeadMore('#btn-settings'),
+  '#btn-account': viaHeadMore('#btn-account'),
+  '#btn-report': viaHeadMore('#btn-report'),
+  '#btn-phone': viaHeadMore('#btn-phone'),
+  '#btn-sessions': viaHeadMore('#btn-sessions'),
+  '#btn-template': ['#btn-plus', '#plus-modal [data-proxy="#btn-template"]'],
+  '#btn-voice': ['#btn-plus', '#plus-modal [data-proxy="#btn-voice"]'],
+  '#sb-tasks': ['#statusline [data-open-tasks]'],
+  '#sb-queue': ['#statusline [data-open-queue]'],
+};
+for (const item of ['export', 'export-session', 'permissions', 'roster', 'terminal']) PHONE_ROUTE[`#more-menu [data-more="${item}"]`] = viaHeadMore(`[data-more='${item}']`);
+
+const shownInPage = (page, sel) => page.eval((s) => Boolean(document.querySelector(s)?.getClientRects().length), sel);
+
+/** Clicks `sel` like a user: directly when it is on screen, else (phone) through its sheet route. */
+async function tap(page, sel) {
+  const route = PHONE_ROUTE[sel];
+  if ((await shownInPage(page, sel)) || !route || !(await shownInPage(page, route[0]))) return page.click(sel);
+  for (const step of route) {
+    // visible, and its sheet done sliding up (a tap mid-animation would land on the row next to it)
+    await page.waitFor((s) => document.querySelector(s)?.getClientRects().length && !document.querySelector(s).closest('.modal-card')?.getAnimations().some((a) => a.playState === 'running'), { timeoutMs: 2000, message: `${step} terlihat` }, step);
+    await page.click(step);
+  }
+}
+
+/** ⋯ → item: the session bar menu on a laptop, the header sheet on a phone. */
+async function tapMore(page, item) {
+  if (await shownInPage(page, '#btn-more')) {
+    await page.click('#btn-more');
+    return page.click(`#more-menu [data-more="${item}"]`);
+  }
+  return tap(page, `#more-menu [data-more="${item}"]`);
+}
+
 /** Replaces the composer text by typing (a trusted `input` event, as from the keyboard). */
 async function typeInPrompt(page, text) {
   await page.eval(() => {
@@ -267,8 +304,13 @@ async function checkModal(page, id) {
     document.querySelectorAll('.modal').forEach((m) => (m.hidden = true));
     document.activeElement?.blur?.();
   });
-  const trigger = candidates ? await page.eval((sels) => sels.find((sel) => document.querySelector(sel)?.getClientRects().length) ?? null, candidates) : null;
-  if (candidates) {
+  let trigger = candidates ? await page.eval((sels) => sels.find((sel) => document.querySelector(sel)?.getClientRects().length) ?? null, candidates) : null;
+  // Phone: a header button lives in the ⋯ sheet; focus then returns to ⋯ (the sheet's opener).
+  const routed = !trigger && candidates?.find((sel) => PHONE_ROUTE[sel]);
+  if (routed && (await shownInPage(page, PHONE_ROUTE[routed][0]))) {
+    trigger = PHONE_ROUTE[routed][0];
+    await tap(page, routed);
+  } else if (candidates) {
     if (!trigger) return { fails: [`tidak ada pemicu yang terlihat di viewport ini (${candidates.join(', ')})`] };
     await page.click(trigger);
   } else {
@@ -282,7 +324,7 @@ async function checkModal(page, id) {
   // Let loaders finish first so the checks see the settled dialog.
   await settle(page, id);
   let st = await page.eval(modalState, id);
-  const via = trigger ? `klik ${trigger}` : 'hidden=false';
+  const via = routed && trigger ? `klik ${PHONE_ROUTE[routed].join(' → ')}` : trigger ? `klik ${trigger}` : 'hidden=false';
   if (!st.open) return { fails: [`tidak terbuka lewat ${via}`] };
   if (!st.focusInside) fails.push(`fokus tidak masuk modal setelah dibuka (activeElement=${st.active})`);
 
@@ -407,7 +449,7 @@ for (const vp of VIEWPORTS) {
 
     test('⚙ Pengaturan: bagian Cadangkan riwayat tampil, tombol aktif di laptop, export terunduh, tanpa error console', async () => {
       await ensureApp(page, `#${projectId}`);
-      await page.click('#btn-settings');
+      await tap(page, '#btn-settings');
       await settle(page, 'settings-modal');
       const r = await page.eval(() => ({
         visible: Boolean(document.querySelector('#settings-modal .backup')?.getClientRects().length),
@@ -435,7 +477,7 @@ for (const vp of VIEWPORTS) {
     // Regression: renderAccount() rebuilds #account-body; focus must survive (↻ "Cek ulang kuota" re-renders it).
     test('account-modal: fokus tetap di dalam modal setelah ↻ Cek ulang kuota', async () => {
       await ensureApp(page, `#${projectId}`);
-      await page.click('#btn-account');
+      await tap(page, '#btn-account');
       await settle(page, 'account-modal');
       await page.eval(() => document.querySelector('#account-body [data-act="limits"]').focus());
       assert.equal(await page.eval(() => document.activeElement.dataset.act), 'limits');
@@ -497,7 +539,7 @@ for (const vp of VIEWPORTS) {
       await openApp(page, `#${projectId}`);
       page.clearProblems();
       const openPicker = async () => {
-        await page.click('#btn-template');
+        await tap(page, '#btn-template');
         await page.waitFor(() => !document.querySelector('#templates-modal').hidden && !document.querySelector('#tpl-new').disabled, { timeoutMs: 3000, message: 'pemilih terbuka & daftar milikku termuat' });
       };
       const name = `<img src=x onerror="window.__xss=1">Cek ${vp.name}`;
@@ -595,7 +637,7 @@ for (const vp of VIEWPORTS) {
 
       // ⚙ Pengaturan: thresholds validated, saved per browser, can be switched off.
       await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
-      await page.click('#btn-settings');
+      await tap(page, '#btn-settings');
       await settle(page, 'settings-modal');
       assert.deepEqual(await page.eval(() => ({ on: document.querySelector('#quota-on').checked, warn: document.querySelector('#quota-warn').value, crit: document.querySelector('#quota-crit').value })), { on: true, warn: '70', crit: '90' });
       const setField = (sel, v) =>
@@ -847,7 +889,7 @@ for (const vp of VIEWPORTS) {
       page.clearProblems();
       const openSettings = async () => {
         await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
-        await page.click('#btn-settings');
+        await tap(page, '#btn-settings');
         await settle(page, 'settings-modal');
       };
       const themeState = () => ({
@@ -987,7 +1029,8 @@ for (const vp of VIEWPORTS) {
       const chip = await page.eval(() => ({ n: document.querySelector('#sb-tasks-n').textContent, label: document.querySelector('#sb-tasks').getAttribute('aria-label'), statusline: document.querySelector('#statusline .sl-tasks')?.textContent }));
       assert.equal(chip.n, String(n), 'jumlah di chip = tugas berjalan');
       assert.match(chip.label, new RegExp(`^${n} tugas berjalan`));
-      assert.match(chip.statusline, new RegExp(`⧗ ${n} tugas berjalan`));
+      // phone: the strip chip is short ("⧗ 2"), its aria-label says the rest
+      assert.match(chip.statusline, vp.mobile ? new RegExp(`^⧗ ${n}$`) : new RegExp(`⧗ ${n} tugas berjalan`));
       assert.equal(await page.eval(horizontalOverflow), null, 'chip tidak membuat overflow');
 
       // Count monitor requests from here on (to prove polling stops when the dialog closes).
@@ -999,7 +1042,7 @@ for (const vp of VIEWPORTS) {
           return orig(url, ...rest);
         };
       });
-      await page.click('#sb-tasks');
+      await tap(page, '#sb-tasks');
       await page.waitFor(() => !document.querySelector('#tasks-modal').hidden && document.querySelectorAll('#tasks-list [data-task]').length >= 2, { timeoutMs: 3000, message: 'monitor terbuka dengan daftar' });
       const groups = await page.eval(() => [...document.querySelectorAll('#tasks-list .tasks-group')].map((g) => g.textContent));
       assert.match(groups[0], /^Berjalan/, 'yang berjalan di atas');
@@ -1601,8 +1644,7 @@ for (const vp of VIEWPORTS) {
       writeFileSync(local, JSON.stringify({ permissions: { allow: ['Bash(npm run test:*)', 'Read(src/**)'], deny: ['Bash(curl *)'] }, env: { KEEP: '1' } }, null, 2));
 
       // opened from ⋯ (on every device; ⚙ is the laptop's other way in, /permissions the third)
-      await page.click('#btn-more');
-      await page.click('#more-menu [data-more="permissions"]');
+      await tapMore(page, 'permissions');
       await page.waitFor(() => document.querySelectorAll('#perm-list .perm-rules li').length === 3, { timeoutMs: 4000, message: 'aturan tampil' });
       const perm = await page.eval(() => ({
         scopes: [...document.querySelectorAll('#perm-list .perm-scope-head b')].map((b) => b.textContent),
@@ -2273,7 +2315,7 @@ for (const vp of VIEWPORTS) {
       await ready();
       await page.eval(() => (window.__downloads = []));
       if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
-      await page.click('#btn-sessions');
+      await tap(page, '#btn-sessions');
       await page.waitFor((id) => document.querySelector(`#sessions-list [data-export="${id}"]`), { timeoutMs: 4000, message: 'tombol export di riwayat' }, sid);
       assert.equal(await page.eval(horizontalOverflow), null);
       assert.deepEqual(await page.eval(unnamedButtons, '#sessions-modal'), []);
@@ -2335,8 +2377,7 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(await office(), { people: 18, cards: 18, roomH: 344, reviewerY: 192, complianceY: 192, empty: 0, signs: 6, ratio: 0.54, marker: true }, 'tim bawaan: 17 meja + Lead di denah tetap');
 
       // opened from ⋯ (⚙, Ctrl+P and /team are the other ways in)
-      await page.click('#btn-more');
-      await page.click('#more-menu [data-more="roster"]');
+      await tapMore(page, 'roster');
       await page.waitFor(() => !document.querySelector('#roster-modal').hidden && document.querySelectorAll('#roster-list .roster-row').length === 18, { timeoutMs: 3000, message: 'dialog Kelola tim terbuka' });
       await settle(page, 'roster-modal');
       const dialog = await page.eval(() => ({
@@ -2454,8 +2495,7 @@ for (const vp of VIEWPORTS) {
 
       // Compliance off: 16/17, its desk empties, still no reload
       await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
-      await page.click('#btn-more');
-      await page.click('#more-menu [data-more="roster"]');
+      await tapMore(page, 'roster');
       await page.waitFor(() => !document.querySelector('#roster-modal').hidden, { timeoutMs: 3000, message: 'dialog terbuka lagi' });
       await page.eval(() => document.querySelector('#roster-compliance').click());
       assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '16/17 meja');
@@ -2470,8 +2510,7 @@ for (const vp of VIEWPORTS) {
 
       // ↺ Tim bawaan again: back to 17 (Compliance on)
       await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
-      await page.click('#btn-more');
-      await page.click('#more-menu [data-more="roster"]');
+      await tapMore(page, 'roster');
       await page.waitFor(() => !document.querySelector('#roster-modal').hidden, { timeoutMs: 3000, message: 'dialog terbuka lagi' });
       await page.eval(() => document.querySelector('#roster-default').click());
       assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '17/17 meja');
@@ -2742,7 +2781,7 @@ for (const vp of VIEWPORTS) {
       await page.eval(async () => (await import('/js/features/voice.js')).renderVoice());
       await typeInPrompt(page, 'halo dunia');
       await page.eval(() => document.querySelector('#prompt').setSelectionRange(5, 5)); // after "halo "
-      await page.click('#btn-voice');
+      await tap(page, '#btn-voice');
       const rec = await page.eval(() => ({
         started: window.__rec?.started === true,
         lang: window.__rec.lang,
@@ -2777,9 +2816,9 @@ for (const vp of VIEWPORTS) {
         sel.dispatchEvent(new Event('change', { bubbles: true }));
       });
       assert.equal(await page.eval(() => localStorage.getItem('office.voiceLang')), 'en-US');
-      await page.click('#btn-voice');
+      await tap(page, '#btn-voice');
       assert.equal(await page.eval(() => window.__recs.length === 2 && window.__rec.lang), 'en-US');
-      await page.click('#btn-voice');
+      await tap(page, '#btn-voice');
       await page.waitFor(() => document.querySelector('#btn-voice').getAttribute('aria-pressed') === 'false', { timeoutMs: 2000, message: 'klik lagi menghentikan' });
 
       // the browser ends it on its own (silence): back to idle

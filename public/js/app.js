@@ -29,6 +29,7 @@ import { initNotify } from './features/notify.js';
 import { initPalette } from './features/palette.js';
 import { initPermissions } from './features/permissions.js';
 import { initPhone } from './features/phone.js';
+import { initPhoneSheets } from './features/phone-sheets.js';
 import { initPicker } from './features/picker.js';
 import { initQuota } from './features/quota.js';
 import { initQueue } from './features/queue.js';
@@ -47,7 +48,7 @@ import { initTeam, renderTeam } from './features/team.js';
 import { initTemplates } from './features/templates.js';
 import { initTheme } from './features/theme.js';
 import { initVoice } from './features/voice.js';
-import { initMobileNav, initPanelResizer, initTabs } from './ui/layout.js';
+import { initKeyboardInset, initMobileNav, initPanelResizer, initTabs } from './ui/layout.js';
 import { initModals } from './ui/modals.js';
 import { initShortcuts } from './ui/shortcuts.js';
 
@@ -97,6 +98,8 @@ initDashboard(); // 🗂 Semua project (header, phone Kantor bar, picker, Ctrl+P
 initSpotify(); // ♪ Spotify: pill, ♪ dialog, 🗂 row, ⚙ section, office radio (after initSettings: ⚙ opens first)
 initPalette(); // Ctrl+P command palette (the shortcut itself is in ui/shortcuts.js)
 initPanelResizer();
+initPhoneSheets(); // phone Chat: ＋ / settings / ⋯ sheets (moves .controls into its sheet on a phone)
+initKeyboardInset(); // phone: composer above the on-screen keyboard, bottom nav hidden while typing
 
 // ---------- main loop ----------
 
