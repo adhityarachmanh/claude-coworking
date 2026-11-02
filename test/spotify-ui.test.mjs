@@ -182,7 +182,11 @@ function installSpotifyFake(cfg) {
     if (body.action === 'play' || body.action === 'playlist') s.status = 'playing';
     if (body.action === 'next' || body.action === 'previous') s.track = { ...s.track, title: `${body.action} lagu`, artId: body.action === 'next' ? 'bbbbbbbbbbbbbbb2' : s.track.artId };
     if (body.action === 'volume') s.device = { ...s.device, volume: body.volume };
-    if (body.action === 'prefer') for (const d of fake.devices) d.preferred = d.id === body.deviceId;
+    if (body.action === 'prefer') {
+      for (const d of fake.devices) d.preferred = !body.laptop && d.id === body.deviceId;
+      if (fake.thisLaptop) fake.thisLaptop = { preferred: body.laptop === true };
+    }
+    if (body.action === 'launch') fake.thisLaptop = null; // its real device shows up
     fake.state = s;
     return s;
   };
@@ -211,7 +215,7 @@ function installSpotifyFake(cfg) {
       case 'control':
         return json(control(body));
       case 'devices':
-        return json({ devices: fake.devices });
+        return json({ devices: fake.devices, thisLaptop: fake.thisLaptop ?? null });
       case 'playlists':
         return json(body.offset ? { items: [{ id: 'D'.repeat(22), name: 'Halaman Dua', tracks: 5, artId: null }], next: null } : { items: fake.playlists, next: 3 });
       case 'config': {
@@ -543,6 +547,28 @@ for (const vp of VIEWPORTS) {
       await page.waitFor(() => /belum siap/.test(document.querySelector('#sp-status').textContent) && !document.querySelector('#spotify-pill-warn').hidden, { message: 'launch-timeout in the dialog, ⚠ on the pill' });
       await push(page, { ...IDLE, error: { code: 'no-app', message: 'x' }, updatedAt: Date.now() + 5 });
       await page.waitFor(() => /Pasang Spotify/.test(document.querySelector('#sp-status').textContent), { message: 'no-app text' });
+
+      // 💻 Laptop ini (its Spotify is closed): a virtual entry → "Buka & putar di sini" (launch), ☆ = prefer laptop
+      await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove())); // a toast could sit on the buttons
+      await page.eval(() => (window.__sp.thisLaptop = { preferred: false }));
+      await page.click('#sp-devices-refresh');
+      await page.waitFor(() => /Laptop ini/.test(document.querySelector('#sp-devices .sp-dev-virtual')?.textContent ?? ''), { message: 'virtual laptop entry' });
+      assert.match(await page.eval(() => document.querySelector('.sp-dev-virtual').textContent), /Spotify belum terbuka/);
+      assert.equal(await page.eval(horizontalOverflow), null, 'no sideways scroll with the long button');
+      await shot(page, `${tag}-9-laptop-entry`);
+      await clearPosts(page);
+      await page.click('.sp-dev-virtual [data-prefer-laptop]');
+      await page.waitFor(() => /★ utama/.test(document.querySelector('.sp-dev-virtual')?.textContent ?? ''), { message: '★ on Laptop ini' });
+      assert.equal(await page.eval(() => document.querySelector('.sp-dev-virtual [data-prefer-laptop]')), null);
+      await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+      await page.click('.sp-dev-virtual [data-launch]');
+      await page.waitFor(() => !document.querySelector('.sp-dev-virtual'), { message: 'virtual entry gone after the launch' });
+      assert.deepEqual(await posts(page, 'control'), [{ action: 'prefer', laptop: true }, { action: 'launch' }]);
+      // a transfer to an offline device: the server's clear message as a toast
+      await page.eval(() => (window.__sp.failNext.control = { status: 404, body: { error: 'Perangkat ini sedang offline — buka Spotify di perangkat itu, atau pilih 💻 Laptop ini.', code: 'device-offline' } }));
+      await page.click('#sp-devices input[value="dev-2"]');
+      await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => /sedang offline/.test(t.textContent)), { message: 'device-offline toast' });
+      await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
 
       // "Selalu putar di sini" → control prefer, the list reloads with the new ★
       await clearPosts(page);

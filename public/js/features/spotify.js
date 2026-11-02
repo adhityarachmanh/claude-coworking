@@ -38,6 +38,7 @@ export const music = {
   plArt: new Map(), // playlist artId -> blob: URL, only while the dialog is open
   artLoads: new Map(), // artId -> Promise<string|null> (no double downloads)
   devices: [],
+  thisLaptop: null, // { preferred } : "💻 Laptop ini" (its Spotify is closed; the server can start it), or null
   playlists: [],
   plNext: null,
   plAt: 0,
@@ -378,10 +379,13 @@ async function loadDevices() {
   const note = $('#sp-devices-note');
   note.textContent = 'Memuat perangkat…';
   try {
-    music.devices = cleanDevices(await api(P.devices));
-    note.textContent = music.devices.length ? '' : 'Tidak ada perangkat. Buka Spotify di HP/PC dulu, lalu ↻.';
+    const res = await api(P.devices);
+    music.devices = cleanDevices(res);
+    music.thisLaptop = res?.thisLaptop && typeof res.thisLaptop === 'object' ? { preferred: res.thisLaptop.preferred === true } : null;
+    note.textContent = music.devices.length || music.thisLaptop ? '' : 'Tidak ada perangkat. Buka Spotify di HP/PC dulu, lalu ↻.';
   } catch (err) {
     music.devices = [];
+    music.thisLaptop = null;
     note.textContent = `Daftar perangkat gagal dimuat: ${err.message}`;
   }
   renderDevices();
@@ -429,7 +433,46 @@ function renderDevices() {
       }
       return row;
     }),
+    ...(music.thisLaptop ? [laptopRow(music.thisLaptop, reason)] : []),
   );
+}
+
+/**
+ * "💻 Laptop ini": this laptop while its Spotify is closed (a closed app is no Connect device, so Spotify doesn't
+ * list it). "Buka & putar di sini" starts it in the background and plays there; ☆ makes it the ★ device.
+ */
+function laptopRow(laptop, reason) {
+  const row = document.createElement('div');
+  row.className = 'sp-dev-row sp-dev-virtual';
+  const box = document.createElement('div');
+  box.className = `sp-dev${laptop.preferred ? ' preferred' : ''}`;
+  const name = document.createElement('span');
+  name.className = 'sp-dev-name';
+  name.textContent = '💻 Laptop ini';
+  const tag = document.createElement('small');
+  tag.className = 'muted';
+  tag.textContent = [laptop.preferred ? '★ utama' : '', 'Spotify belum terbuka'].filter(Boolean).join(' · ');
+  box.append(name, tag);
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'ghost sp-small';
+  open.dataset.launch = '1';
+  open.textContent = '▶ Buka & putar di sini';
+  open.title = 'Buka Spotify di laptop ini (latar belakang), lalu putar di sini';
+  open.disabled = Boolean(reason) || music.busy || Boolean(music.s?.launching);
+  row.append(box, open);
+  if (!laptop.preferred) {
+    const star = document.createElement('button');
+    star.type = 'button';
+    star.className = 'ghost sp-small sp-dev-star';
+    star.dataset.preferLaptop = '1';
+    star.textContent = '☆';
+    star.title = 'Selalu putar di sini';
+    star.setAttribute('aria-label', 'Selalu putar di laptop ini');
+    star.disabled = Boolean(reason) || music.busy;
+    row.append(star);
+  }
+  return row;
 }
 
 async function onDevicePick(e) {
@@ -440,6 +483,18 @@ async function onDevicePick(e) {
 }
 
 async function onPreferClick(e) {
+  if (e.target.closest('[data-launch]')) {
+    if (await control({ action: 'launch' })) toast('Spotify dibuka di laptop ini.', 'ok');
+    if (dialogOpen()) loadDevices();
+    return;
+  }
+  if (e.target.closest('[data-prefer-laptop]')) {
+    if (await control({ action: 'prefer', laptop: true })) {
+      toast('▶ akan memutar di laptop ini saat tidak ada perangkat aktif.', 'ok');
+      if (dialogOpen()) loadDevices();
+    }
+    return;
+  }
   const btn = e.target.closest('[data-prefer]');
   const device = btn && music.devices.find((d) => d.id === btn.dataset.prefer);
   if (!device) return;

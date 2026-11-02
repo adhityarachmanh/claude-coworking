@@ -1723,6 +1723,12 @@ body.read-only #composer-hint { color: var(--ask); }
 .sp-dev-row > .sp-dev { flex: 1; }
 .sp-dev.preferred small { color: var(--warn-text); }
 .sp-dev-star { flex: none; }
+.sp-dev-virtual .sp-dev { border-style: dashed; cursor: default; }
+.sp-dev-virtual { flex-wrap: wrap; }
+.sp-dev-virtual > .sp-dev { flex: 1 1 16em; }
+.sp-dev-virtual .sp-dev-name { flex: none; }
+.sp-dev-virtual .sp-dev small { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.sp-dev-virtual > button { flex: none; }
 /* "Membuka Spotify di latar belakang…": a steady hint, no endless spinner (the server's wait is bounded) */
 .spotify-pill.launching { color: var(--text-2); font-style: italic; }
 .sp-status.launching { color: var(--text-2); font-style: italic; }

@@ -87,10 +87,10 @@ test('★ preferred device: remembered on transfer, marked in devices(), set/cle
   assert.equal(JSON.parse(readFileSync(svc.file, 'utf8')).preferredDevice.id, FAKE_DEVICE_ID);
   await assert.rejects(svc.control({ action: 'prefer', deviceId: 'never-listed' }), { code: 'bad-request' });
   await assert.rejects(svc.control({ action: 'prefer', deviceId: '../x' }), { code: 'bad-request' });
-  // a play on the active device remembers that device too
+  // a plain play on the active device (the phone) never replaces the user's ★
   await svc.control({ action: 'pause' });
   await svc.control({ action: 'play' });
-  assert.equal(JSON.parse(readFileSync(svc.file, 'utf8')).preferredDevice.id, PHONE_ID, 'the phone is the active one');
+  assert.equal(JSON.parse(readFileSync(svc.file, 'utf8')).preferredDevice.id, FAKE_DEVICE_ID, 'the ★ stays');
   await svc.control({ action: 'prefer', deviceId: null });
   assert.equal(JSON.parse(readFileSync(svc.file, 'utf8')).preferredDevice, null);
   // a reload keeps it; garbage in the file is dropped
@@ -283,6 +283,144 @@ test('route: control gets allowLaunch from ctx.canManageAccount; new codes map t
     assert.equal(r.status, status, code);
     assert.equal(JSON.parse(r.body).code, code);
   }
+});
+
+// ---------- after real-world feedback: 💻 Laptop ini, ★ offline, offline transfer target ----------
+
+test('💻 Laptop ini: offered in devices() only when this server may start Spotify here and its device is not listed', async (t) => {
+  const { fake, svc } = await setup(t);
+  // the laptop's app is closed: only the phone is a Connect device
+  fake.set({ visible: [PHONE_ID] });
+  assert.deepEqual((await svc.devices({ allowLaunch: true })).thisLaptop, { preferred: false });
+  assert.equal((await svc.devices()).thisLaptop, null, 'not over WiFi / without allowLaunch');
+  svc.setConfig({ settings: { autoLaunch: false } });
+  assert.equal((await svc.devices({ allowLaunch: true })).thisLaptop, null, 'not with the setting off');
+  svc.setConfig({ settings: { autoLaunch: true } });
+  const bare = await setup(t, { launcher: null });
+  bare.fake.set({ visible: [PHONE_ID] });
+  assert.equal((await bare.svc.devices({ allowLaunch: true })).thisLaptop, null, 'not without a launcher');
+  // a computer named after this host is this laptop: no virtual entry
+  const named = await setup(t);
+  named.svc.hostname = 'laptop adhit';
+  assert.equal((await named.svc.devices({ allowLaunch: true })).thisLaptop, null);
+});
+
+test('💻 Laptop ini → "Buka & putar di sini" (launch): starts Spotify (throttled, bounded), plays there, keeps the ★; "Selalu putar di sini" makes it ★', async (t) => {
+  const { fake, svc, launcher } = await setup(t);
+  fake.set({ visible: [PHONE_ID] });
+  await svc.devices();
+  await svc.control({ action: 'prefer', deviceId: PHONE_ID });
+  noActive(fake, [PHONE_ID]);
+  await assert.rejects(svc.control({ action: 'launch' }), { code: 'bad-request' }, 'not without allowLaunch');
+  assert.equal(launcher.launches, 0);
+  fake.set({ appearAfter: { polls: 2, ids: [FAKE_DEVICE_ID] } });
+  const s = await svc.control({ action: 'launch' }, { allowLaunch: true });
+  assert.equal(launcher.launches, 1);
+  assert.equal(s.device.name, 'Laptop Adhit');
+  assert.equal(s.status, 'playing');
+  const file = JSON.parse(readFileSync(svc.file, 'utf8'));
+  assert.equal(file.preferredDevice.id, PHONE_ID, 'the ★ stays until the user changes it');
+  assert.equal(file.laptopDeviceId, FAKE_DEVICE_ID, 'this laptop is known from now on');
+  const list = await svc.devices({ allowLaunch: true });
+  assert.equal(list.thisLaptop, null, 'its real device is listed now');
+
+  // ★ = "Laptop ini" (works before its app ever ran: no Connect id needed)
+  await svc.control({ action: 'prefer', laptop: true }, { allowLaunch: true });
+  assert.deepEqual(JSON.parse(readFileSync(svc.file, 'utf8')).preferredDevice, { id: null, name: 'Laptop ini', type: 'computer', laptop: true });
+  assert.equal((await svc.devices()).devices.find((d) => d.preferred)?.id, FAKE_DEVICE_ID, 'marked on its real device');
+  // closed again → ▶ goes to the laptop (the ★ laptop is offline; within the 30 s gap it only waits for it)
+  noActive(fake, [PHONE_ID]);
+  fake.set({ appearAfter: { polls: 2, ids: [FAKE_DEVICE_ID] } });
+  await svc.refreshState();
+  assert.equal((await svc.control({ action: 'play' }, { allowLaunch: true })).device.name, 'Laptop Adhit');
+  assert.equal(JSON.parse(readFileSync(svc.file, 'utf8')).preferredDevice.laptop, true, '★ unchanged');
+});
+
+test('▶ with the ★ phone offline (not listed) and nothing active: Spotify is started on the laptop, not pick-device; the ★ stays', async (t) => {
+  const { fake, svc, launcher } = await setup(t);
+  await svc.devices();
+  await svc.control({ action: 'prefer', deviceId: PHONE_ID });
+  // another device is listed (a TV) but the ★ phone is gone: the laptop wins over "some other device"
+  fake.devices.push({ id: 'fake-device-tv-03', is_active: false, is_restricted: false, name: 'TV', type: 'TV', volume_percent: 10, supports_volume: true });
+  noActive(fake, ['fake-device-tv-03']);
+  fake.set({ appearAfter: { polls: 2, ids: [FAKE_DEVICE_ID] } });
+  await svc.refreshState();
+  const s = await svc.control({ action: 'play' }, { allowLaunch: true });
+  assert.equal(s.device.name, 'Laptop Adhit');
+  assert.equal(launcher.launches, 1);
+  assert.equal(JSON.parse(readFileSync(svc.file, 'utf8')).preferredDevice.id, PHONE_ID);
+  // without launch rights: the old rule (the only listed device)
+  const wifi = await setup(t);
+  await wifi.svc.devices();
+  await wifi.svc.control({ action: 'prefer', deviceId: PHONE_ID });
+  noActive(wifi.fake, [FAKE_DEVICE_ID]);
+  await wifi.svc.refreshState();
+  assert.equal((await wifi.svc.control({ action: 'play' })).device.name, 'Laptop Adhit', 'the only listed device');
+  assert.equal(wifi.launcher.launches, 0);
+});
+
+test('▶ with the ★ phone listed but offline (transfer fails 5xx): falls back to starting Spotify on the laptop', async (t) => {
+  const { fake, svc, launcher } = await setup(t);
+  await svc.devices();
+  await svc.control({ action: 'prefer', deviceId: PHONE_ID });
+  noActive(fake, [PHONE_ID]);
+  fake.set({ offline: [PHONE_ID], appearAfter: { polls: 2, ids: [FAKE_DEVICE_ID] } });
+  await svc.refreshState();
+  const s = await svc.control({ action: 'play' }, { allowLaunch: true });
+  assert.equal(s.device.name, 'Laptop Adhit');
+  assert.equal(launcher.launches, 1);
+  assert.equal(JSON.parse(readFileSync(svc.file, 'utf8')).preferredDevice.id, PHONE_ID, '★ kept');
+  // no launch rights: a clear device-offline error, not a generic network one
+  const other = await setup(t);
+  await other.svc.devices();
+  await other.svc.control({ action: 'prefer', deviceId: PHONE_ID });
+  noActive(other.fake, [PHONE_ID, FAKE_DEVICE_ID]);
+  other.fake.set({ offline: [PHONE_ID] });
+  await other.svc.refreshState();
+  await assert.rejects(other.svc.control({ action: 'play' }), (err) => err.code === 'device-offline' && /offline/.test(err.message) && /Laptop ini/.test(err.message));
+});
+
+test('transfer to an offline device: 5xx or 404 → device-offline (clear message), log carries the sanitised Spotify status and message', async (t) => {
+  const { fake, svc, logs } = await setup(t);
+  await svc.devices();
+  fake.set({ offline: [PHONE_ID] });
+  await assert.rejects(svc.control({ action: 'transfer', deviceId: PHONE_ID, play: true }), (err) => err.code === 'device-offline' && err.status === 500 && err.message.startsWith('Perangkat ini sedang offline'));
+  assert.ok(logs.includes('Spotify: pindah perangkat gagal (500/device-offline.Server_error)'), logs.join('\n'));
+  fake.set({ offlineStatus: 502 });
+  await assert.rejects(svc.control({ action: 'transfer', deviceId: PHONE_ID }), { code: 'device-offline' });
+  // a device that left the list since: Spotify answers 404 Device not found
+  fake.set({ offline: false, visible: [FAKE_DEVICE_ID] });
+  await assert.rejects(svc.control({ action: 'transfer', deviceId: PHONE_ID }), { code: 'device-offline' });
+  assert.ok(logs.some((l) => l === 'Spotify: pindah perangkat gagal (404/device-offline.Device_not_found)'), logs.join('\n'));
+  // a playlist aimed at an offline device: the same
+  await svc.playlists();
+  fake.set({ visible: false, offline: [PHONE_ID] });
+  await svc.devices();
+  await assert.rejects(svc.control({ action: 'playlist', playlistId: FAKE_PLAYLIST_ID, deviceId: PHONE_ID }), { code: 'device-offline' });
+  // logs never carry a device id
+  assert.ok(!logs.some((l) => l.includes(PHONE_ID)));
+});
+
+test('route: devices gets allowLaunch from ctx.canManageAccount; device-offline → 404', async () => {
+  const router = buildRouter();
+  const m = router.match('POST', '/api/spotify/devices');
+  const seen = [];
+  const res = () => {
+    const r = { status: 0, headers: {}, body: '' };
+    r.setHeader = (k, v) => (r.headers[k.toLowerCase()] = v);
+    r.writeHead = (s, h = {}) => ((r.status = s), Object.assign(r.headers, h));
+    r.end = (b) => (r.body = String(b ?? ''));
+    return r;
+  };
+  const spotify = { devices: async (o) => (seen.push(o), { devices: [], preferred: null, thisLaptop: null }) };
+  await m.route.handler({ spotify, canManageAccount: () => true }, { headers: {} }, res(), m.params, {});
+  await m.route.handler({ spotify }, { headers: {} }, res(), m.params, {});
+  assert.deepEqual(seen, [{ allowLaunch: true }, { allowLaunch: false }]);
+  const c = router.match('POST', '/api/spotify/control');
+  const r = res();
+  await c.route.handler({ spotify: { control: async () => Promise.reject(new SpotifyError('device-offline')) } }, { headers: {} }, r, c.params, {});
+  assert.equal(r.status, 404);
+  assert.equal(JSON.parse(r.body).code, 'device-offline');
 });
 
 // ---------- src/spotify-launcher.js (injected execFile and fs: nothing is started) ----------

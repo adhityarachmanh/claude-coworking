@@ -71,6 +71,7 @@ const ERROR_TEXT = {
   'no-app': 'Spotify belum terpasang di laptop ini. Pasang Spotify, atau buka Spotify di HP/PC lain lalu pilih di sini.',
   'launch-timeout': 'Spotify dibuka di laptop tapi belum siap. Tunggu sebentar lalu tekan ▶ lagi.',
   'pick-device': 'Ada beberapa perangkat. Pilih salah satu di ♪ Musik, atau tandai ★ Selalu putar di sini.',
+  'device-offline': 'Perangkat ini sedang offline — buka Spotify di perangkat itu, atau pilih 💻 Laptop ini.',
 };
 
 export class SpotifyError extends Error {
@@ -105,7 +106,11 @@ const clip = (s) => String(s ?? '').slice(0, MAX_TEXT);
 const intIn = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms).unref?.());
 /** The remembered "play here" device from data/spotify.json, or null. Its id never reaches publicState(). */
-const cleanPreferred = (p) => (p && typeof p === 'object' && typeof p.id === 'string' && DEVICE_ID.test(p.id) ? { id: p.id, name: clip(p.name), type: clip(p.type).toLowerCase() } : null);
+const cleanPreferred = (p) => {
+  if (!p || typeof p !== 'object') return null;
+  if (p.laptop === true) return { id: null, name: 'Laptop ini', type: 'computer', laptop: true }; // "💻 Laptop ini"
+  return typeof p.id === 'string' && DEVICE_ID.test(p.id) ? { id: p.id, name: clip(p.name), type: clip(p.type).toLowerCase() } : null;
+};
 
 /** The image kind from its first bytes (never trust Content-Type alone). */
 function sniffImage(buf) {
@@ -223,7 +228,7 @@ export class SpotifyService {
   // ---------- store: data/spotify.json ----------
 
   #defaults() {
-    return { v: 1, clientId: '', settings: { office: true, duck: 'off', duckVolume: 20, autoLaunch: true }, preferredDevice: null, auth: null };
+    return { v: 1, clientId: '', settings: { office: true, duck: 'off', duckVolume: 20, autoLaunch: true }, preferredDevice: null, laptopDeviceId: null, auth: null };
   }
 
   #load() {
@@ -246,6 +251,7 @@ export class SpotifyService {
     if (CLIENT_ID.test(String(raw.clientId ?? ''))) data.clientId = String(raw.clientId).toLowerCase();
     data.settings = this.#cleanSettings(raw.settings, data.settings);
     data.preferredDevice = cleanPreferred(raw.preferredDevice);
+    if (typeof raw.laptopDeviceId === 'string' && DEVICE_ID.test(raw.laptopDeviceId)) data.laptopDeviceId = raw.laptopDeviceId;
     const a = raw.auth;
     // Tokens are bound to the accounts origin that issued them: a token from another origin (a test fake, or the
     // real service while testing) is dropped, never sent anywhere.
@@ -585,8 +591,10 @@ export class SpotifyService {
    * A Web API call with the bearer token. 401 → one forced refresh and one retry. Returns parsed JSON, or null (204).
    * @param {string} method
    * @param {string} p path under /v1 (constant; ids are validated and encoded by the caller)
+   * @param {object} [o] target: the request addresses one device (transfer, play?device_id): a 404 or a 5xx there
+   *        means that device doesn't answer → 'device-offline' (Spotify answers both for a sleeping/stale device).
    */
-  async #api(method, p, { query, json, action = 'api', retried = false } = {}) {
+  async #api(method, p, { query, json, action = 'api', retried = false, target = false } = {}) {
     const token = await this.#accessToken({ force: retried });
     const qs = query ? `?${new URLSearchParams(query)}` : '';
     const headers = { Authorization: `Bearer ${token}` };
@@ -598,7 +606,7 @@ export class SpotifyService {
         this.#logFail(action, 401, 'revoked');
         throw new SpotifyError('revoked', { status: 401 });
       }
-      return this.#api(method, p, { query, json, action, retried: true });
+      return this.#api(method, p, { query, json, action, retried: true, target });
     }
     let buf;
     try {
@@ -615,7 +623,10 @@ export class SpotifyService {
     if (res.status === 403) code = reason === 'PREMIUM_REQUIRED' ? 'premium' : 'restricted';
     else if (res.status === 404) code = reason === 'NO_ACTIVE_DEVICE' || p.startsWith('/me/player') ? 'no-device' : 'not-found';
     else if (res.status === 400) code = 'bad-request';
-    this.#logFail(action, res.status, reason ?? code);
+    if (target && (res.status === 404 || res.status >= 500)) code = 'device-offline';
+    // A device-addressed failure also logs Spotify's message (sanitised by #logFail, e.g. "device-offline.Device_not_found").
+    const detail = code === 'device-offline' && typeof body?.error?.message === 'string' ? `${code}.${body.error.message}` : code;
+    this.#logFail(action, res.status, reason ?? detail);
     throw new SpotifyError(code, { status: res.status });
   }
 
@@ -776,37 +787,70 @@ export class SpotifyService {
     if (info) this.deviceCache.info.set(id, { name: clip(info.name), type: clip(info.type).toLowerCase() });
   }
 
-  /** POST /devices: the user's Connect devices (★ = the remembered one). Device ids go to controllers only (never over WiFi). */
-  async devices() {
+  /**
+   * POST /devices: the user's Connect devices (★ = the remembered one). Device ids go to controllers only (never over
+   * WiFi). `thisLaptop`: a virtual "💻 Laptop ini" entry when this server may start Spotify here (launcher, setting
+   * on, laptop/Tailscale request) and this laptop's own device is not listed (a closed app is no Connect device).
+   * @param {{ allowLaunch?: boolean }} [o]
+   */
+  async devices({ allowLaunch = false } = {}) {
     const data = await this.#api('GET', '/me/player/devices', { action: 'perangkat' });
     const list = (Array.isArray(data?.devices) ? data.devices : []).filter((d) => typeof d?.id === 'string' && DEVICE_ID.test(d.id));
     const pref = this.data.preferredDevice;
-    const devices = list.map((d) => ({
-      id: d.id,
-      name: clip(d.name),
-      type: clip(d.type).toLowerCase(),
-      active: Boolean(d.is_active),
-      volume: intIn(d.volume_percent, 0, 100) ? d.volume_percent : null,
-      supportsVolume: Boolean(d.supports_volume ?? true),
-      restricted: Boolean(d.is_restricted),
-      preferred: d.id === pref?.id,
-    }));
+    const devices = list.map((d) => {
+      const dev = {
+        id: d.id,
+        name: clip(d.name),
+        type: clip(d.type).toLowerCase(),
+        active: Boolean(d.is_active),
+        volume: intIn(d.volume_percent, 0, 100) ? d.volume_percent : null,
+        supportsVolume: Boolean(d.supports_volume ?? true),
+        restricted: Boolean(d.is_restricted),
+      };
+      dev.preferred = this.#isPreferred(dev);
+      return dev;
+    });
     this.deviceCache = { at: this.now(), ids: new Set(devices.map((d) => d.id)), info: new Map(devices.map((d) => [d.id, { name: d.name, type: d.type }])) };
-    return { devices, preferred: pref ? { name: pref.name, type: pref.type, available: devices.some((d) => d.preferred) } : null };
+    const laptopListed = devices.some((d) => this.#isThisLaptop(d));
+    return {
+      devices,
+      preferred: pref ? { name: pref.name, type: pref.type, available: devices.some((d) => d.preferred) } : null,
+      thisLaptop: this.#mayLaunch(allowLaunch) && !laptopListed ? { preferred: pref?.laptop === true } : null,
+    };
   }
 
-  /** Remembers the device the user last played on (★); null forgets it. Written only when it changed. */
-  #setPreferred(id, info) {
-    if (id === null) {
-      if (!this.data.preferredDevice) return;
-      this.data.preferredDevice = null;
-      this.#save();
-      return;
-    }
-    const known = this.deviceCache.info.get(id);
-    const next = cleanPreferred({ id, name: info?.name ?? known?.name, type: info?.type ?? known?.type });
+  /** This laptop's own Spotify device: the one found after the last launch, or a computer named after this host. */
+  #isThisLaptop(d) {
+    return d.type === 'computer' && ((this.data.laptopDeviceId && d.id === this.data.laptopDeviceId) || d.name.toLowerCase() === this.hostname);
+  }
+
+  #isPreferred(d) {
+    const pref = this.data.preferredDevice;
+    if (!pref) return false;
+    return pref.laptop ? this.#isThisLaptop(d) : d.id === pref.id;
+  }
+
+  /** May ▶ start the desktop app here: a launcher, the setting on, and a laptop/Tailscale request. */
+  #mayLaunch(allowLaunch) {
+    return Boolean(allowLaunch && this.launcher && this.data.settings.autoLaunch && !this.stopped);
+  }
+
+  /**
+   * Remembers the ★ device. `id` null forgets it; `{ laptop: true }` = "💻 Laptop ini" (its Connect id may not exist
+   * yet: matched by #isThisLaptop). `onlyIfUnset`: automatic plays never replace a ★ the user has (it stays until
+   * the user changes it). Written only when it changed.
+   */
+  #setPreferred(id, info, { laptop = false, onlyIfUnset = false } = {}) {
     const prev = this.data.preferredDevice;
-    if (!next || (prev && prev.id === next.id && prev.name === next.name && prev.type === next.type)) return;
+    if (onlyIfUnset && prev) return;
+    let next = null;
+    if (laptop) next = { id: null, name: 'Laptop ini', type: 'computer', laptop: true };
+    else if (id !== null) {
+      const known = this.deviceCache.info.get(id);
+      next = cleanPreferred({ id, name: info?.name ?? known?.name, type: info?.type ?? known?.type });
+      if (!next) return;
+    }
+    if (JSON.stringify(prev) === JSON.stringify(next)) return;
     this.data.preferredDevice = next;
     this.#save();
   }
@@ -847,14 +891,16 @@ export class SpotifyService {
   /**
    * POST /control. Validated here; ids must come from the last devices/playlists answer, URIs are built here.
    * Never retried (a doubled "next" is worse than a failed one), except the 401 → refresh path and a device that
-   * was only just found (play/playlist without an active device, docs/design-spotify.md §2.8).
+   * was only just started (docs/design-spotify.md §2.8).
    * @param {object} body
    * @param {{ allowLaunch?: boolean }} [o] allowLaunch: the request comes from the laptop or a Tailscale phone
-   *        (server.js decides); only then may ▶ start the desktop app.
+   *        (server.js decides); only then may Spotify be started here.
    */
   async control(body, { allowLaunch = false } = {}) {
     const action = body?.action;
-    let played = null; // { id, info? }: the device a play/transfer went to (remembered as ★)
+    // The device a play went to, and whether the user picked it (★ follows explicit picks; automatic ones only
+    // fill an empty ★, they never replace the user's).
+    let played = null; // { id, info?, explicit }
     const run = async () => {
       switch (action) {
         case 'play':
@@ -874,8 +920,8 @@ export class SpotifyService {
           if (body.play !== undefined && typeof body.play !== 'boolean') throw new SpotifyError('bad-request');
           const json = { device_ids: [body.deviceId] };
           if (body.play !== undefined) json.play = body.play;
-          await this.#api('PUT', '/me/player', { json, action: 'pindah perangkat' });
-          played = { id: body.deviceId };
+          await this.#api('PUT', '/me/player', { json, action: 'pindah perangkat', target: true });
+          played = { id: body.deviceId, explicit: true };
           return;
         }
         case 'playlist': {
@@ -883,8 +929,18 @@ export class SpotifyService {
           if (body.deviceId !== undefined && !this.#knownDevice(body.deviceId)) throw new SpotifyError('bad-request', { message: 'Perangkat tidak dikenal. Muat ulang daftar perangkat.' });
           if (body.deviceId) {
             await this.#playOn(body.deviceId, body.playlistId, 0);
-            played = { id: body.deviceId };
+            played = { id: body.deviceId, explicit: true };
           } else played = await this.#playSomewhere({ playlistId: body.playlistId, allowLaunch });
+          return;
+        }
+        case 'launch': {
+          // "💻 Laptop ini → Buka & putar di sini": start Spotify here (same throttle and bounded wait), then play.
+          if (!this.#mayLaunch(allowLaunch)) throw new SpotifyError('bad-request', { message: 'Spotify tidak bisa dibuka otomatis dari sini (aktifkan "Buka Spotify otomatis" di ⚙, dari laptop atau Tailscale).' });
+          const { devices } = await this.devices({ allowLaunch });
+          const listed = devices.find((d) => !d.restricted && this.#isThisLaptop(d));
+          const target = listed ?? (await this.#launchAndWait(devices));
+          await this.#playOn(target.id, null, listed ? 0 : this.timing.playRetries);
+          played = { id: target.id, info: target, explicit: false };
           return;
         }
         default:
@@ -894,9 +950,15 @@ export class SpotifyService {
     if (!this.clientId) throw new SpotifyError('unconfigured');
     if (!this.data.auth) throw new SpotifyError('disconnected');
     if (action === 'prefer') {
-      // "Selalu putar di sini" (★): only remembered, nothing is sent to Spotify. deviceId null forgets it.
-      if (body.deviceId !== null && !this.#knownDevice(body.deviceId)) throw new SpotifyError('bad-request', { message: 'Perangkat tidak dikenal. Muat ulang daftar perangkat.' });
-      this.#setPreferred(body.deviceId);
+      // "Selalu putar di sini" (★): only remembered, nothing is sent to Spotify. deviceId null forgets it;
+      // { laptop: true } = "💻 Laptop ini" (also before its app ever ran).
+      if (body.laptop === true) {
+        if (!this.#mayLaunch(allowLaunch) && !this.data.laptopDeviceId) throw new SpotifyError('bad-request', { message: 'Laptop ini belum bisa dipilih: aktifkan "Buka Spotify otomatis" di ⚙.' });
+        this.#setPreferred(null, null, { laptop: true });
+      } else {
+        if (body.deviceId !== null && !this.#knownDevice(body.deviceId)) throw new SpotifyError('bad-request', { message: 'Perangkat tidak dikenal. Muat ulang daftar perangkat.' });
+        this.#setPreferred(body.deviceId);
+      }
       return this.publicState();
     }
     try {
@@ -909,19 +971,18 @@ export class SpotifyService {
       throw err;
     }
     await this.#afterWrite();
-    // ★ follows the last device played on: the one we sent it to, else what Spotify now reports as active.
-    if (action === 'play' || action === 'playlist' || action === 'transfer') {
+    if (action === 'play' || action === 'playlist' || action === 'transfer' || action === 'launch') {
       const active = this.player?.device;
-      if (played?.id) this.#setPreferred(played.id, played.info);
-      else if (active?.id) this.#setPreferred(active.id, active);
+      if (played?.id) this.#setPreferred(played.id, played.info, { onlyIfUnset: !played.explicit });
+      else if (active?.id) this.#setPreferred(active.id, active, { onlyIfUnset: true });
     }
     return this.publicState();
   }
 
   /**
-   * ▶ (or a playlist) without a device chosen by the user. With an active device: plain play. Without one: the only
-   * available device, else the ★ device, else (laptop/Tailscale, setting on) the desktop app started in the
-   * background. Returns the device it went to ({ id, info }), or null (the active one).
+   * ▶ (or a playlist) without a device chosen by the user. With an active device: plain play. Without one: see
+   * #pickDevice. An auto-picked device that turns out offline falls back to starting Spotify here (if allowed).
+   * Returns { id, info, explicit: false } for the device it went to, or null (the active one).
    */
   async #playSomewhere({ playlistId = null, allowLaunch }) {
     if (this.player?.device) {
@@ -932,9 +993,21 @@ export class SpotifyService {
         if (err.code !== 'no-device') throw err; // the device went away since the last poll: pick one below
       }
     }
-    const target = await this.#pickDevice({ allowLaunch });
-    await this.#playOn(target?.id ?? null, playlistId, target ? this.timing.playRetries : 0);
-    return target ? { id: target.id, info: target } : null;
+    const { target, launched, devices } = await this.#pickDevice({ allowLaunch });
+    if (!target) {
+      await this.#playOn(null, playlistId, 0);
+      return null;
+    }
+    try {
+      await this.#playOn(target.id, playlistId, launched ? this.timing.playRetries : 0);
+      return { id: target.id, info: target, explicit: false };
+    } catch (err) {
+      // A listed device that doesn't answer (a phone with Spotify asleep stays listed for a while): play here instead.
+      if (launched || err.code !== 'device-offline' || !this.#mayLaunch(allowLaunch)) throw err;
+    }
+    const laptop = await this.#launchAndWait(devices.filter((d) => d.id !== target.id));
+    await this.#playOn(laptop.id, playlistId, this.timing.playRetries);
+    return { id: laptop.id, info: laptop, explicit: false };
   }
 
   /**
@@ -945,31 +1018,36 @@ export class SpotifyService {
     for (let attempt = 0; ; attempt++) {
       try {
         if (playlistId) {
-          return await this.#api('PUT', '/me/player/play', { query: deviceId ? { device_id: deviceId } : undefined, json: { context_uri: `spotify:playlist:${playlistId}` }, action: 'putar playlist' });
+          return await this.#api('PUT', '/me/player/play', { query: deviceId ? { device_id: deviceId } : undefined, json: { context_uri: `spotify:playlist:${playlistId}` }, action: 'putar playlist', target: Boolean(deviceId) });
         }
-        if (deviceId) return await this.#api('PUT', '/me/player', { json: { device_ids: [deviceId], play: true }, action: 'pindah perangkat' });
+        if (deviceId) return await this.#api('PUT', '/me/player', { json: { device_ids: [deviceId], play: true }, action: 'pindah perangkat', target: true });
         return await this.#api('PUT', '/me/player/play', { action: 'play' });
       } catch (err) {
-        if (attempt >= retries || !['no-device', 'not-found'].includes(err.code)) throw err;
+        if (attempt >= retries || !['no-device', 'not-found', 'device-offline'].includes(err.code)) throw err;
         await sleep(this.timing.launchPollMs);
       }
     }
   }
 
-  /** The device to play on when none is active (null: one is active after all). Throws when there is none. */
+  /**
+   * Where ▶ goes when nothing is active: the ★ device if listed; else (★ gone, or nothing listed) Spotify started on
+   * this laptop when allowed; else the only listed device. Several listed and no ★ → the user picks.
+   * @returns {Promise<{ target: object|null, launched: boolean, devices: object[] }>} target null: one is active after all
+   */
   async #pickDevice({ allowLaunch }) {
-    const { devices } = await this.devices();
-    if (devices.some((d) => d.active)) return null;
+    const { devices } = await this.devices({ allowLaunch });
+    if (devices.some((d) => d.active)) return { target: null, launched: false, devices };
     const usable = devices.filter((d) => !d.restricted);
-    if (usable.length === 1) return usable[0];
     const pref = this.data.preferredDevice;
-    const preferred = pref && usable.find((d) => d.id === pref.id);
-    if (preferred) return preferred;
-    const refuse = () => new SpotifyError(usable.length ? 'pick-device' : 'no-device');
-    // Launch only when there is nothing to play on, or the ★ device is a computer (this laptop) not running Spotify.
-    if (usable.length && pref?.type !== 'computer') throw refuse();
-    if (!allowLaunch || !this.launcher || !this.data.settings.autoLaunch || this.stopped) throw refuse();
-    return this.#launchAndWait(devices);
+    const preferred = pref && usable.find((d) => this.#isPreferred(d));
+    if (preferred) return { target: preferred, launched: false, devices };
+    const mayLaunch = this.#mayLaunch(allowLaunch);
+    // The ★ device is offline (any type): play on this laptop rather than on some other device (the ★ stays).
+    if (pref && mayLaunch) return { target: await this.#launchAndWait(devices), launched: true, devices };
+    if (usable.length === 1) return { target: usable[0], launched: false, devices };
+    if (usable.length) throw new SpotifyError('pick-device');
+    if (mayLaunch) return { target: await this.#launchAndWait(devices), launched: true, devices };
+    throw new SpotifyError('no-device');
   }
 
   /**
@@ -1011,6 +1089,10 @@ export class SpotifyService {
           }
           const found = this.#laptopDevice(list, known);
           if (found) {
+            if (this.data.laptopDeviceId !== found.id) {
+              this.data.laptopDeviceId = found.id; // "💻 Laptop ini" is this device from now on
+              this.#save();
+            }
             if (strategy) Promise.resolve(this.launcher.minimize?.(strategy)).catch(() => {});
             return found;
           }
@@ -1028,13 +1110,11 @@ export class SpotifyService {
     return this.launchRun;
   }
 
-  /** This laptop's Spotify device in a fresh list: the ★ computer, one named after this host, or a new computer. */
+  /** This laptop's device in a fresh list: known/named after this host, a new computer, or the only one (was empty). */
   #laptopDevice(list, known) {
     const usable = list.filter((d) => !d.restricted);
-    const pref = this.data.preferredDevice;
     return (
-      (pref?.type === 'computer' && usable.find((d) => d.id === pref.id)) ||
-      usable.find((d) => d.type === 'computer' && d.name.toLowerCase() === this.hostname) ||
+      usable.find((d) => this.#isThisLaptop(d)) ||
       usable.find((d) => d.type === 'computer' && !known.has(d.id)) ||
       (known.size === 0 && usable.length === 1 ? usable[0] : null)
     );

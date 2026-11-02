@@ -14,6 +14,7 @@ const STATUS = {
   restricted: 403,
   'no-device': 404,
   'no-app': 404,
+  'device-offline': 404,
   'pick-device': 409,
   'launch-timeout': 504,
   'not-found': 404,
@@ -50,7 +51,8 @@ export function register(router) {
       return res.end(bytes);
     }),
   );
-  router.post('/api/spotify/devices', guard(async ({ spotify }, req, res) => json(res, 200, await spotify.devices())));
+  // allowLaunch: whether the list may offer "💻 Laptop ini" (Spotify started here on demand).
+  router.post('/api/spotify/devices', guard(async (ctx, req, res) => json(res, 200, await ctx.spotify.devices({ allowLaunch: ctx.canManageAccount?.(req) === true }))));
   router.post('/api/spotify/playlists', guard(async ({ spotify }, req, res, body) => json(res, 200, await spotify.playlists({ offset: body.offset ?? 0 }))));
   // allowLaunch: ▶ may start the Spotify desktop app on this laptop only for the laptop itself or a Tailscale phone.
   // (Plain WiFi never gets here: server.js refuses /control as read-only. Checked again so a future gate change can't

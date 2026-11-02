@@ -12,7 +12,9 @@
 // until killed. Scenarios: deny, invalidGrant, rateLimit {retryAfter}, premiumRequired, noDevice, expiresIn (s),
 // unauthorizedOnce, hang, badImageType, bigImage, noRotation, apiDown (500), visible [ids] (only these devices are
 // listed and accept a transfer), appearAfter { polls, ids } (after that many GET /me/player/devices, those ids become
-// visible: a desktop app that was just started; counted from fake.set). fake.devicePolls counts the device list requests.
+// visible: a desktop app that was just started; counted from fake.set), offline [ids] (listed, but a transfer or
+// play?device_id to them fails with offlineStatus, default 500, like a phone whose Spotify went to sleep).
+// fake.devicePolls counts the device list requests.
 //
 // Tokens and codes carry fixed prefixes (fake-access-, fake-refresh-, fake-code-) so tests can scan logs for them.
 import { createHash, randomBytes } from 'node:crypto';
@@ -175,6 +177,7 @@ export function startFakeSpotify({ scenario = {} } = {}) {
       const body = (await readBody(req)) || '{}';
       const ctx = JSON.parse(body).context_uri;
       const target = url.searchParams.get('device_id');
+      if (target && s.offline?.includes(target)) return apiError(res, s.offlineStatus ?? 500, 'Server error');
       if (target) {
         const d = listed().find((x) => x.id === target);
         if (!d) return apiError(res, 404, 'Device not found');
@@ -205,6 +208,7 @@ export function startFakeSpotify({ scenario = {} } = {}) {
     }
     if (req.method === 'PUT' && p === '/v1/me/player') {
       const { device_ids: ids, play } = JSON.parse((await readBody(req)) || '{}');
+      if (s.offline?.includes(ids?.[0])) return apiError(res, s.offlineStatus ?? 500, 'Server error');
       const d = listed().find((x) => x.id === ids?.[0]);
       if (!d) return apiError(res, 404, 'Device not found');
       for (const x of devices) x.is_active = x === d;

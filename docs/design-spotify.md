@@ -227,19 +227,24 @@ Rincian proxy:
 
 ### 2.7 Perangkat utama (★)
 
-- `data/spotify.json` menyimpan `preferredDevice: { id, name, type } | null` (di samping `settings`, bukan di dalamnya, supaya `/settings` tidak pernah mengirim id perangkat). Isinya diperbarui setelah `transfer`, `play`, atau `playlist` berhasil: perangkat tujuan, atau perangkat yang aktif menurut Spotify. File hanya ditulis kalau nilainya berubah.
-- `POST /devices` → `{ devices: [{ …, preferred: boolean }], preferred: null | { name, type, available } }`.
-- `POST /control { action: 'prefer', deviceId: string | null }` ("Selalu putar di sini"): hanya disimpan, tanpa request ke Spotify. `deviceId` harus ada di daftar perangkat terakhir; `null` menghapus ★. Balasan: `publicState()`.
+- `data/spotify.json` menyimpan `preferredDevice: { id, name, type } | { id: null, name: 'Laptop ini', type: 'computer', laptop: true } | null` dan `laptopDeviceId` (id Connect laptop ini, dicatat setelah perangkatnya ditemukan sesudah aplikasi dibuka). Keduanya di samping `settings`, bukan di dalamnya, supaya `/settings` tidak pernah mengirim id perangkat.
+- ★ diganti hanya oleh pilihan eksplisit user: `transfer`, `playlist` dengan `deviceId`, atau `prefer`. Play otomatis (perangkat aktif, pilih otomatis, membuka aplikasi, `launch`) hanya mengisi ★ kalau ★ masih kosong. ★ yang offline **tetap disimpan**.
+- Laptop ini dikenali sebagai perangkat `computer` dengan id `laptopDeviceId`, atau nama perangkatnya sama dengan hostname.
+- `POST /devices` → `{ devices: [{ …, preferred: boolean }], preferred: null | { name, type, available }, thisLaptop: null | { preferred: boolean } }`. `thisLaptop` (entri virtual "💻 Laptop ini") muncul hanya kalau server boleh membuka aplikasi (launcher ada, `autoLaunch` aktif, request dari laptop/Tailscale) dan perangkat laptop ini tidak ada di daftar.
+- `POST /control { action: 'prefer', deviceId: string | null }` atau `{ action: 'prefer', laptop: true }` ("Selalu putar di sini"): hanya disimpan, tanpa request ke Spotify. `deviceId` harus ada di daftar perangkat terakhir; `null` menghapus ★. Balasan: `publicState()`.
+- `POST /control { action: 'launch' }` ("💻 Laptop ini → Buka & putar di sini"): buka aplikasi (throttle dan tunggu terbatas yang sama dengan §2.8), lalu transfer + play di laptop. Tanpa izin membuka → 400.
 - id perangkat tidak pernah masuk `publicState()`.
 
 ### 2.8 ▶ tanpa perangkat aktif: pilih otomatis, lalu buka Spotify di latar belakang
 
 Berlaku untuk `play` dan `playlist` tanpa `deviceId`. Kalau masih ada perangkat aktif, ini cuma play biasa. Kalau perangkat aktif ternyata sudah hilang (balasan 404), langsung ke langkah di bawah.
 1. Ambil `/me/player/devices`. Kalau ada yang aktif, play biasa.
-2. Tepat **satu** perangkat yang bisa dipakai (tidak `restricted`) → transfer + play di perangkat itu.
-3. Kalau tidak, dan perangkat ★ tersedia → pakai perangkat ★.
-4. Tidak ada perangkat sama sekali, **atau** ★ bertipe `computer` (laptop ini) tetapi tidak tersedia → buka aplikasi di laptop, dengan syarat: request datang dari laptop atau HP lewat Tailscale (`ctx.canManageAccount(req)` → `allowLaunch`; WiFi biasa sudah ditolak gerbang read-only), `settings.autoLaunch` aktif (default ON; laptop lewat `/config`, HP Tailscale lewat `/settings`), dan server punya launcher (`null` di mode test).
+2. ★ ada di daftar → pakai ★. Kalau transfer ke ★ gagal dengan `device-offline` (HP yang Spotify-nya tidur sering masih terdaftar), lanjut membuka aplikasi di laptop kalau boleh.
+3. ★ sudah diisi tetapi tidak ada di daftar (tipe apa pun) dan membuka aplikasi diizinkan → buka aplikasi di laptop dan putar di sana. ★ tidak diubah.
+4. Tepat **satu** perangkat yang bisa dipakai → perangkat itu. Ada beberapa tanpa ★ → `pick-device`. Tidak ada sama sekali → buka aplikasi di laptop. Membuka aplikasi selalu dengan syarat: request datang dari laptop atau HP lewat Tailscale (`ctx.canManageAccount(req)` → `allowLaunch`; WiFi biasa sudah ditolak gerbang read-only), `settings.autoLaunch` aktif (default ON; laptop lewat `/config`, HP Tailscale lewat `/settings`), dan server punya launcher (`null` di mode test).
 5. Selain itu, error `pick-device` (409: ada beberapa perangkat, pilih satu atau tandai ★) atau `no-device` (404).
+
+Perintah yang ditujukan ke satu perangkat (`transfer`, `play?device_id`): balasan 404 atau 5xx dipetakan ke `device-offline` (404), dengan pesan "Perangkat ini sedang offline — buka Spotify di perangkat itu, atau pilih 💻 Laptop ini." Ini heuristik: Spotify menjawab 404 "Device not found" atau 5xx untuk perangkat yang terdaftar tapi tidak merespons; gangguan Spotify yang sebenarnya tetap terlihat sebagai `network` di poll berikutnya. Log menyertakan pesan Spotify yang sudah disanitasi, contohnya `Spotify: pindah perangkat gagal (500/device-offline.Server_error)`. Id perangkat tidak pernah masuk log.
 
 Membuka aplikasi (`src/spotify-launcher.js`, tanpa shell, argumen tetap):
 - Windows (a): `%APPDATA%\Spotify\Spotify.exe --minimized` lewat `execFile` (`windowsHide`, `detached`, `unref`).
