@@ -11,9 +11,12 @@ import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { autostartStatus, setAutostart } from '../src/autostart.js';
 import { findClaude } from '../src/claude-bin.js';
+import { httpsPortFrom } from '../src/tls.js';
 
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.OFFICE_PORT ?? 4317);
+// HTTPS listener on the Tailscale address (Web Push / PWA); same default and validation as the server.
+const HTTPS_PORT = httpsPortFrom(process.env.OFFICE_HTTPS_PORT, PORT).port ?? 4318;
 const WIN = process.platform === 'win32';
 const FIREWALL_RULE = 'Claude Coworking (Tailscale)'; // pre-rename id, kept so existing rules are found
 const CHECK_ONLY = process.argv.includes('--check');
@@ -119,16 +122,24 @@ async function setupFirewall(tailscaleIp) {
   step(3, 'Firewall Windows untuk Tailscale');
   if (!WIN) return info('Bukan Windows — lewati.');
   if (!tailscaleIp) return info('Tailscale belum siap — lewati.');
-  const exists = powershell(`if (Get-NetFirewallRule -DisplayName '${FIREWALL_RULE}' -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }`);
-  if (exists === 'yes') return ok(`Aturan "${FIREWALL_RULE}" sudah ada`);
+  // Both listeners on the Tailscale address: HTTP (PORT) and HTTPS for push/PWA (HTTPS_PORT). A rule from an
+  // older setup only opened PORT, which silently blocks https://<machine>.ts.net:4318 from the phone.
+  const ports = [...new Set([PORT, HTTPS_PORT])].sort((a, b) => a - b);
+  const want = ports.join(',');
+  const current = powershell(`$r = Get-NetFirewallRule -DisplayName '${FIREWALL_RULE}' -ErrorAction SilentlyContinue; if ($r) { (($r | Get-NetFirewallPortFilter).LocalPort | Sort-Object) -join ',' } else { 'none' }`);
+  if (current === want) return ok(`Aturan "${FIREWALL_RULE}" sudah ada (TCP ${want})`);
   info('Windows menggolongkan Tailscale sebagai jaringan Private dan memblokir koneksi masuk ke Node.js.');
-  info(`Aturan yang dipasang: hanya TCP ${PORT}, hanya dari alamat Tailscale (100.64.0.0/10).`);
+  if (current && current !== 'none') info(`Aturan lama hanya membuka TCP ${current}; diperbarui menjadi TCP ${want} (HTTPS untuk notifikasi push).`);
+  info(`Aturan yang dipasang: hanya TCP ${want}, hanya dari alamat Tailscale (100.64.0.0/10).`);
   if (!(await ask('Pasang aturan firewall ini? (akan muncul jendela izin Administrator)'))) return info('Lewati. HP tidak akan bisa tersambung lewat Tailscale sampai aturan ini dipasang.');
-  const rule = `New-NetFirewallRule -DisplayName '${FIREWALL_RULE}' -Direction Inbound -Protocol TCP -LocalPort ${PORT} -RemoteAddress 100.64.0.0/10 -Profile Private -Action Allow`;
+  const rule = [
+    `Remove-NetFirewallRule -DisplayName '${FIREWALL_RULE}' -ErrorAction SilentlyContinue`,
+    `New-NetFirewallRule -DisplayName '${FIREWALL_RULE}' -Direction Inbound -Protocol TCP -LocalPort ${want} -RemoteAddress 100.64.0.0/10 -Profile Private -Action Allow`,
+  ].join('; ');
   const encoded = Buffer.from(rule, 'utf16le').toString('base64');
   powershell(`Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-EncodedCommand','${encoded}'`);
-  const now = powershell(`if (Get-NetFirewallRule -DisplayName '${FIREWALL_RULE}' -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }`);
-  if (now === 'yes') ok('Aturan firewall terpasang');
+  const now = powershell(`$r = Get-NetFirewallRule -DisplayName '${FIREWALL_RULE}' -ErrorAction SilentlyContinue; if ($r) { (($r | Get-NetFirewallPortFilter).LocalPort | Sort-Object) -join ',' } else { 'none' }`);
+  if (now === want) ok(`Aturan firewall terpasang (TCP ${want})`);
   else warn('Aturan belum terpasang (izin Administrator ditolak?). Jalankan setup lagi kapan saja.');
 }
 
