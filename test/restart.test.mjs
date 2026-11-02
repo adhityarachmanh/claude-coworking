@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { replayChat } from '../src/chat-store.js';
 import { Hub } from '../src/hub.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -125,7 +126,9 @@ test('clean stop mid-turn: turn recorded as cut short, notice after the restart,
   assert.equal(cut.uuid, running.uuid);
   assert.ok(cut.at >= cut.startedAt);
   // Claude Code was interrupted (not just killed): the turn's result says the server stopped it.
-  assert.ok(stored.chats[id].some((m) => m.kind === 'result' && /Server dihentikan/.test(m.text ?? '')), 'interrupted turn closed with a result');
+  assert.equal(stored.chats, undefined, 'chats live in data/chats, not in state.json');
+  const chat = replayChat(readFileSync(path.join(DATA, 'chats', `${id}.jsonl`), 'utf8')).messages;
+  assert.ok(chat.some((m) => m.kind === 'result' && /Server dihentikan/.test(m.text ?? '')), 'interrupted turn closed with a result');
 
   await start();
   const snap = await snapshot();

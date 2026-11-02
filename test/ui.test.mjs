@@ -1034,7 +1034,7 @@ for (const vp of VIEWPORTS) {
     });
 
     test('output live perintah di chat: ekor ringkas & blok terbuka bertambah, polling berhenti setelah selesai', async () => {
-      page.clearProblems();
+      await openApp(page, `#${projectId}`); // self-contained: also runs alone (--test-name-pattern)
       if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
       await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
       await page.eval(() => {
@@ -1047,36 +1047,122 @@ for (const vp of VIEWPORTS) {
           return orig(url, opts);
         };
       });
-      const before = await page.eval(() => document.querySelectorAll('#chat .line.tool').length);
+      // The new row is picked by its message id, not by position (earlier tests leave a chat of varying length).
+      const known = await page.eval(() => [...document.querySelectorAll('#chat > .line.tool')].map((n) => n.dataset.id));
       await page.eval(async (pid) => {
         const token = document.querySelector('meta[name="office-token"]').content;
         await fetch(`/api/projects/${pid}/prompt`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify({ text: 'jalankan perintah panjang' }) });
       }, projectId);
-      await page.waitFor((n) => document.querySelectorAll('#chat .line.tool').length > n, { timeoutMs: 8000, message: 'baris perintah muncul' }, before);
+      const rowId = await page.waitFor((ids) => [...document.querySelectorAll('#chat > .line.tool')].find((n) => !ids.includes(n.dataset.id))?.dataset.id, { timeoutMs: 8000, message: 'baris perintah muncul' }, known);
+      // Looked up again on every read (a resync redraws the chat) and kept on screen: live output is only read
+      // for rows in view, so this test does not depend on where the chat happens to be scrolled.
+      await page.eval((id) => {
+        window.__liveRow = () => {
+          const r = document.querySelector(`#chat > [data-id="${CSS.escape(id)}"]`);
+          r?.scrollIntoView({ block: 'nearest' });
+          return r;
+        };
+      }, rowId);
       // Collapsed: the last lines appear under the row and grow while it runs.
-      const tail = (n) => [...document.querySelectorAll('#chat .line.tool')][n]?.querySelector('.live-tail:not([hidden])')?.textContent ?? '';
-      await page.waitFor((n) => /compile modul-/.test([...document.querySelectorAll('#chat .line.tool')][n]?.querySelector('.live-tail:not([hidden])')?.textContent ?? ''), { timeoutMs: 6000, message: 'ekor output tampil di baris tertutup' }, before);
-      const first = await page.eval(tail, before);
-      await page.waitFor((n, t) => ([...document.querySelectorAll('#chat .line.tool')][n]?.querySelector('.live-tail')?.textContent ?? '') !== t, { timeoutMs: 5000, message: 'ekor output bertambah' }, before, first);
-      assert.ok((await page.eval((n) => [...document.querySelectorAll('#chat .line.tool')][n].querySelectorAll('.live-tail span').length, before)) <= 8, 'paling banyak 8 baris ringkas');
+      const tail = () => window.__liveRow()?.querySelector('.live-tail:not([hidden])')?.textContent ?? '';
+      await page.waitFor(() => /compile modul-/.test(window.__liveRow()?.querySelector('.live-tail:not([hidden])')?.textContent ?? ''), { timeoutMs: 6000, message: 'ekor output tampil di baris tertutup' });
+      const first = await page.eval(tail);
+      await page.waitFor((t) => (window.__liveRow()?.querySelector('.live-tail')?.textContent ?? '') !== t, { timeoutMs: 5000, message: 'ekor output bertambah' }, first);
+      assert.ok((await page.eval(() => window.__liveRow().querySelectorAll('.live-tail span').length)) <= 8, 'paling banyak 8 baris ringkas');
       // Expanded: the whole live output, still growing.
-      await page.eval((n) => [...document.querySelectorAll('#chat .line.tool')][n].querySelector('.row').click(), before);
-      await page.waitFor((n) => /compile modul-/.test([...document.querySelectorAll('#chat .line.tool')][n].querySelector('[data-live-out]')?.textContent ?? ''), { timeoutMs: 4000, message: 'blok output live terbuka' }, before);
-      const len = await page.eval((n) => [...document.querySelectorAll('#chat .line.tool')][n].querySelector('[data-live-out]').textContent.length, before);
-      await page.waitFor((n, l) => ([...document.querySelectorAll('#chat .line.tool')][n].querySelector('[data-live-out]')?.textContent.length ?? Infinity) > l, { timeoutMs: 5000, message: 'output live bertambah' }, before, len);
+      await page.eval(() => window.__liveRow().querySelector('.row').click());
+      await page.waitFor(() => /compile modul-/.test(window.__liveRow()?.querySelector('[data-live-out]')?.textContent ?? ''), { timeoutMs: 4000, message: 'blok output live terbuka' });
+      const len = await page.eval(() => window.__liveRow().querySelector('[data-live-out]').textContent.length);
+      await page.waitFor((l) => (window.__liveRow()?.querySelector('[data-live-out]')?.textContent.length ?? Infinity) > l, { timeoutMs: 5000, message: 'output live bertambah' }, len);
       assert.equal(await page.eval(horizontalOverflow), null, 'output live tanpa scroll horizontal');
       // Done: the final output (tool_result) replaces the live block; no more reads.
-      await page.waitFor((n) => [...document.querySelectorAll('#chat .line.tool')][n].classList.contains('st-ok'), { timeoutMs: 12000, message: 'perintah selesai' }, before);
-      const done = await page.eval((n) => {
-        const r = [...document.querySelectorAll('#chat .line.tool')][n];
+      await page.waitFor(() => window.__liveRow()?.classList.contains('st-ok'), { timeoutMs: 12000, message: 'perintah selesai' });
+      const done = await page.eval(() => {
+        const r = window.__liveRow();
         return { live: Boolean(r.querySelector('[data-live-out], .live-tail')), out: r.querySelector('pre.out')?.textContent ?? '' };
-      }, before);
+      });
       assert.equal(done.live, false, 'blok live hilang setelah selesai');
       assert.match(done.out, /\[16\/16\][\s\S]*Build selesai\./);
       const calls = await page.eval(() => window.__liveCalls);
       assert.ok(calls >= 2, `task-output dibaca ${calls}x`);
       await sleep(3500);
       assert.equal(await page.eval(() => window.__liveCalls), calls, 'polling berhenti setelah perintah selesai');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('chat tetap mengikuti pesan terbaru setelah pindah project cepat berkali-kali; ↓ Terbaru tetap jalan', async () => {
+      await openApp(page, `#${projectId}`);
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      // Own scratch projects: a & b get a long history, c stays empty (welcome card).
+      const pids = [await addScratchProject('ikut-a'), await addScratchProject('ikut-b'), await addScratchProject('ikut-c')];
+      const post = (pid, text) =>
+        page.eval(async (p, t) => {
+          const token = document.querySelector('meta[name="office-token"]').content;
+          await fetch(`/api/projects/${p}/${t ? 'prompt' : 'stop'}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify(t ? { text: t } : {}) });
+        }, pid, text);
+      const chatPos = () => {
+        const chat = document.querySelector('#chat');
+        return { dist: Math.round(chat.scrollHeight - chat.scrollTop - chat.clientHeight), jumpHidden: document.querySelector('#jump-latest').hidden };
+      };
+      try {
+        await post(pids[0], 'jawab lama');
+        await post(pids[1], 'jawab lama');
+        await page.waitFor(async (ps) => {
+          const { state } = await import('/js/core/state.js');
+          return ps.every((p) => (state.chats[p] ?? []).some((m) => m.kind === 'assistant' && /kata399/.test(m.text ?? '')) && !state.statuses[p]?.busy);
+        }, { timeoutMs: 25000, message: 'riwayat panjang di a & b' }, pids.slice(0, 2));
+        // Rapid switching like a user clicking through the picker (selectProject), ending on a.
+        const switchRapidly = (ps) =>
+          page.eval(async (ids) => {
+            const { selectProject } = await import('/js/features/picker.js');
+            const frame = () => new Promise((res) => requestAnimationFrame(() => res()));
+            const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+            const order = [ids[0], ids[1], ids[2], ids[0], ids[2], ids[1], ids[0], ids[1], ids[0]];
+            for (const [i, p] of order.entries()) {
+              selectProject(p);
+              await (i % 3 === 0 ? frame() : wait(i * 7));
+            }
+          }, ps);
+        await switchRapidly(pids);
+        await sleep(300);
+        const settled = await page.eval(chatPos);
+        assert.ok(settled.dist < 60, `setelah pindah cepat chat di pesan terbaru (jarak ${settled.dist}px)`);
+        assert.equal(settled.jumpHidden, true, 'setelah pindah cepat tombol ↓ Terbaru tidak muncul');
+        // A reply streaming in a (started while away, so no "your own prompt" force-scroll), then switch again.
+        await page.eval(async (p) => (await import('/js/features/picker.js')).selectProject(p), pids[1]);
+        await post(pids[0], 'jawab lama lagi');
+        await page.waitFor(async (p) => {
+          const { state } = await import('/js/core/state.js');
+          return (state.chats[p] ?? []).some((m) => m.kind === 'assistant' && m.streaming);
+        }, { timeoutMs: 8000, message: 'balasan baru mulai mengalir di a' }, pids[0]);
+        await switchRapidly(pids);
+        await page.waitFor(() => /kata1[5-9]\d/.test(document.querySelector('#chat .msg.assistant.streaming')?.textContent ?? ''), { timeoutMs: 10000, message: 'balasan terus mengalir' });
+        const streaming = await page.eval(chatPos);
+        assert.ok(streaming.dist < 60, `chat ikut ke bawah saat balasan mengalir (jarak ${streaming.dist}px)`);
+        assert.equal(streaming.jumpHidden, true, 'tombol ↓ Terbaru tidak muncul saat masih mengikuti');
+        // The user scrolls up to read: following stops and ↓ Terbaru shows; clicking it resumes following.
+        await page.eval(() => (document.querySelector('#chat').scrollTop = 0));
+        await page.waitFor(() => !document.querySelector('#jump-latest').hidden, { timeoutMs: 2000, message: 'tombol ↓ Terbaru muncul setelah scroll ke atas' });
+        await sleep(400);
+        assert.ok((await page.eval(chatPos)).dist > 200, 'scroll ke atas tidak ditarik kembali ke bawah');
+        await page.click('#jump-latest');
+        await sleep(400);
+        const resumed = await page.eval(chatPos);
+        assert.ok(resumed.dist < 60 && resumed.jumpHidden, `↓ Terbaru kembali mengikuti (${JSON.stringify(resumed)})`);
+      } finally {
+        // Leave nothing behind for the next test: the stopped turn must finish (its late chat updates for a
+        // project the page no longer knows would make the next test's page re-sync and redraw its chat), then
+        // the scratch projects go and the page is back on toko.
+        await post(pids[0], null).catch(() => {});
+        for (let i = 0; i < 50; i++) {
+          const snap = await snapshot().catch(() => null);
+          if (snap && pids.every((p) => !snap.statuses?.[p]?.busy)) break;
+          await sleep(200);
+        }
+        await sleep(300);
+        for (const p of pids) await forgetProject(p).catch(() => {});
+        await page.eval(async (p) => (await import('/js/features/picker.js')).selectProject(p), projectId).catch(() => {});
+      }
       assert.deepEqual(realProblems(page), []);
     });
 
@@ -1713,6 +1799,7 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
 describe('UI chat live', { skip: SKIP ?? false }, () => {
   let page;
   const OLD = 120; // all within the 150 messages a snapshot carries, so every old bubble is on the page
+  let replyAfterMigration = []; // the assistant bubbles after the first test (old ones + its reply)
   const api = async (p, body = {}) => {
     const token = (await (await fetch(BASE)).text()).match(/office-token" content="([^"]+)"/)[1];
     return fetch(BASE + p, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify(body) }).then((r) => r.json());
@@ -1732,8 +1819,13 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
       // nothing saved yet
     }
     const old = Array.from({ length: OLD }, (_, i) => ({ id: `m${i + 1}`, ts: Date.now() - 86400000, project: projectId, kind: 'assistant', text: `jawaban lama ${i + 1}` }));
+    // Left in the format of app versions before data/chats (chats inside state.json), as an upgrade finds it;
+    // this project's chat file from the tests above goes, so the seeded chat is its whole history.
+    rmSync(path.join(TMP, 'data', 'chats', `${projectId}.jsonl`), { force: true });
     writeFileSync(file, JSON.stringify({ ...saved, chats: { ...saved.chats, [projectId]: old } }));
     await startServer();
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).chats, undefined, 'chats moved out of state.json at start');
+    assert.ok(existsSync(path.join(TMP, 'data', 'chats', `${projectId}.jsonl`)), 'into data/chats');
     page = await browser.newPage();
     await page.setViewport(VIEWPORTS[1]);
     await openApp(page, `#${projectId}`);
@@ -1745,6 +1837,7 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
     await page.waitFor(() => document.querySelector('#chat .result.ok'), { timeoutMs: 10000, message: 'giliran selesai (baris hasil)' });
     await sleep(300);
     const all = await bubbles();
+    replyAfterMigration = all;
     assert.deepEqual(await page.eval(() => document.querySelectorAll('#chat .msg.assistant.streaming').length), 0, `masih "mengetik" setelah selesai; 3 bubble terakhir: ${JSON.stringify(all.slice(-3))}`);
     assert.match(all.at(-1), /Halo dari Claude palsu yang sedang mengetik\./, 'bubble terakhir berisi balasan');
     assert.equal(all.filter((t) => !t.trim()).length, 0, 'tidak ada bubble kosong');
@@ -1753,6 +1846,27 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
     // What the page shows equals what a fresh load shows.
     await openApp(page, `#${projectId}`);
     assert.deepEqual(await bubbles(), all);
+  });
+
+  test('restart lagi (riwayat dari data/chats): riwayat utuh, balasan baru di bubble baru', async () => {
+    // Clean stop (⚙ → Matikan server): the chat is in data/chats/<id>.jsonl now, not in state.json.
+    const exited = new Promise((r) => server.once('exit', r));
+    await api('/api/shutdown');
+    await Promise.race([exited, sleep(5000)]);
+    assert.equal(JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8')).chats, undefined);
+    await startServer();
+    await openApp(page, `#${projectId}`);
+    assert.deepEqual(await bubbles(), replyAfterMigration, 'the same history after a restart from data/chats');
+    const results = await page.eval(() => document.querySelectorAll('#chat .result.ok').length);
+    await api(`/api/projects/${projectId}/prompt`, { text: 'halo setelah restart kedua' });
+    await page.waitFor((n) => document.querySelectorAll('#chat .result.ok').length > n, { timeoutMs: 10000, message: 'giliran kedua selesai' }, results);
+    await sleep(300);
+    const all = await bubbles();
+    assert.equal(await page.eval(() => document.querySelectorAll('#chat .msg.assistant.streaming').length), 0, `masih "mengetik": ${JSON.stringify(all.slice(-3))}`);
+    assert.deepEqual(all.slice(0, -1), replyAfterMigration, 'old bubbles untouched');
+    assert.match(all.at(-1), /Halo dari Claude palsu yang sedang mengetik\./);
+    const ids = await page.eval(() => [...document.querySelectorAll('#chat [data-id]')].map((n) => n.dataset.id));
+    assert.equal(new Set(ids).size, ids.length, 'every message id on the page is unique');
   });
 
   test('bubble assistant selesai tapi kosong (atau hanya spasi) tidak ditampilkan', async () => {

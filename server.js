@@ -845,7 +845,7 @@ const backupScheduler = new BackupScheduler({
   },
   backup: (out) => {
     hub.save(); // the state file on disk and in the backup agree
-    return writeBackup(out, { state: hub.exportState(), usageFile: ledger.file, appVersion: APP_VERSION });
+    return writeBackup(out, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.chatStore.dir, appVersion: APP_VERSION });
   },
   lock: () => !backupBusy && (backupBusy = true),
   unlock: () => (backupBusy = false),
@@ -935,7 +935,7 @@ async function exportBackup(req, res) {
     hub.save(); // the state file on disk and in the backup agree
     const name = `adhit-office-backup-${new Date().toLocaleDateString('sv-SE')}.zip`; // local date, YYYY-MM-DD
     res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
-    const result = await writeBackup(res, { state: hub.exportState(), usageFile: ledger.file, appVersion: APP_VERSION });
+    const result = await writeBackup(res, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.chatStore.dir, appVersion: APP_VERSION });
     res.end();
     const skipped = result.skipped.length ? `, ${result.skipped.length} dilewati (symlink/nama tidak valid)` : '';
     console.log(`Backup riwayat diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB${skipped}`);
@@ -996,7 +996,7 @@ async function importBackup(req, res) {
     // A backup names folders (roots, added folders, project paths): only ones below this home are used.
     const home = os.homedir();
     const outside = (p) => `Folder dari backup dilewati (di luar folder home ${home}, atau tidak ada): ${p}. Tambahkan manual bila perlu.`;
-    summary.state = { roots: 0, custom: 0, favorites: 0, settings: 0, teamNames: 0 };
+    summary.state = { roots: 0, custom: 0, favorites: 0, settings: 0, chats: 0, teamNames: 0 };
     if (imported) {
       const { skipped, ...added } = hub.mergeFolders(imported, { mapPath: remap.mapPath, roots: projectRoots(), accept: (p) => isUnderHome(p, home) && isDirectory(p) });
       Object.assign(summary.state, added);
@@ -1023,7 +1023,7 @@ async function importBackup(req, res) {
         idMap.set(p.id, p.id);
         idMap.set(idOfPath(remap.unmapPath(path.resolve(p.path))), p.id); // the id this folder had on the old machine
       }
-      Object.assign(summary.state, hub.mergeProjectData(imported, idMap));
+      Object.assign(summary.state, hub.mergeProjectData(imported, idMap, result.chats));
       // Team names: only roles this machine has not renamed itself.
       const own = hub.persisted.teamNames ?? {};
       const names = { ...cleanTeamNames(imported.teamNames), ...own };

@@ -8,7 +8,9 @@
 //   claude/history.jsonl       prompt history (↑ in the CLI)
 //   claude/file-history/**     checkpoints used by rewind
 //   claude/plans/**            plan-mode plans
-//   office/state.json          the office's state (folders, favorites, settings…; no paired-device hashes)
+//   office/state.json          the office's state (folders, favorites, settings…; no paired-device hashes);
+//                              backups made before data/chats existed carry the chats in it (`chats`)
+//   office/chats/<id>.jsonl    each project's chat history (data/chats, see src/chat-store.js)
 //   office/usage.jsonl         token ledger
 // Never included: login credentials (.credentials.json, ~/.claude.json), caches, logs.
 //
@@ -22,6 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { CHAT_LIMIT, isChatId, parseChatFile } from './chat-store.js';
 import { PROJECTS_DIR } from './transcripts.js';
 import { ZipError, ZipReader, ZipWriter, crc32, unsafeEntryName } from './zip.js';
 
@@ -34,6 +37,13 @@ const HEAD_BYTES = 256 * 1024;
 const MAX_DEFAULT_UNPACKED = 64 * 1024 ** 3;
 // usage.jsonl / history.jsonl of a backup are merged in memory: anything larger is skipped (with a warning).
 const MAX_MERGE_BYTES = 64 * 1024 * 1024;
+// A project's chat file in the archive (and in data/chats): the project id is the file name.
+const CHAT_ENTRY = /^office\/chats\/([A-Za-z0-9_-]{1,64})\.jsonl$/;
+/** The project id of a chat entry name, or null (also for Windows device names: con, nul…). */
+const chatEntryId = (name) => {
+  const id = CHAT_ENTRY.exec(name)?.[1];
+  return id && isChatId(id) ? id : null;
+};
 
 /** An import problem with its own HTTP status (ZipError = malformed/unsafe archive = 400). */
 export class BackupError extends Error {
@@ -145,11 +155,12 @@ async function addFile(zip, f) {
 /**
  * Streams a complete backup into `out` (not ended here).
  * @param {import('node:stream').Writable} out
- * @param {{ state: object, usageFile?: string, appVersion?: string, homeDir?: string,
+ * @param {{ state: object, usageFile?: string, chatsDir?: string, appVersion?: string, homeDir?: string,
  *           locations?: { projectsDir: string, claudeDir: string }, zip64?: boolean }} options
+ *   chatsDir: data/chats (flushed by the caller first); its *.jsonl go in as office/chats/
  * @returns {Promise<{ files: number, bytes: number, skipped: string[] }>}
  */
-export async function writeBackup(out, { state, usageFile, appVersion = null, homeDir = os.homedir(), locations = claudeLocations(), zip64 = false }) {
+export async function writeBackup(out, { state, usageFile, chatsDir, appVersion = null, homeDir = os.homedir(), locations = claudeLocations(), zip64 = false }) {
   const { projectsDir, claudeDir } = locations;
   const files = [];
   const skipped = [];
@@ -184,6 +195,18 @@ export async function writeBackup(out, { state, usageFile, appVersion = null, ho
       files.push({ name: 'office/usage.jsonl', abs: usageFile, size: st.size, mtime: st.mtimeMs });
     } catch {
       // no usage recorded yet
+    }
+  }
+  if (chatsDir) {
+    for (const d of await readdirSafe(chatsDir)) {
+      const name = `office/chats/${d.name}`;
+      if (!d.isFile() || !chatEntryId(name)) continue; // symlinks, *.tmp of a compaction, anything else
+      try {
+        const st = await fs.stat(path.join(chatsDir, d.name));
+        files.push({ name, abs: path.join(chatsDir, d.name), size: st.size, mtime: st.mtimeMs });
+      } catch {
+        // vanished (project forgotten meanwhile)
+      }
     }
   }
 
@@ -267,7 +290,7 @@ export function makeRemap(oldHome, newHome, oldPlatform = process.platform) {
 
 const KNOWN_FILES = new Set(['manifest.json', 'office/state.json', 'office/usage.jsonl', 'claude/history.jsonl']);
 const KNOWN_DIRS = /^claude\/(projects|file-history|plans)\/./;
-const isKnownEntry = (name) => KNOWN_FILES.has(name) || KNOWN_DIRS.test(name);
+const isKnownEntry = (name) => KNOWN_FILES.has(name) || KNOWN_DIRS.test(name) || Boolean(chatEntryId(name));
 
 function parseJson(buf, what) {
   try {
@@ -377,6 +400,9 @@ const LOCKED = new Set(['EPERM', 'EBUSY', 'EACCES']);
  * - usage.jsonl: rows merged without duplicates through the ledger.
  *   (Both up to maxMergeBytes, 64 MB; larger is skipped with a warning.)
  * - state.json: parsed and returned (the server merges it into the hub, see Hub.mergeFolders / mergeProjectData).
+ * - office/chats/<id>.jsonl: parsed (newest CHAT_LIMIT messages; each file and all of them together up to
+ *   maxMergeBytes, the rest skipped with a warning) and returned as `chats`
+ *   by the backup's project id; never written as files here (Hub.mergeProjectData merges them by message).
  *
  * @param {string} zipFile
  * @param {{ locations?: { projectsDir: string, claudeDir: string }, homeDir?: string, activeSessions?: Set<string>,
@@ -548,11 +574,21 @@ export async function restoreBackup(zipFile, ctx = {}) {
     };
 
     let state = null;
+    const chats = {};
+    let chatBytes = 0; // every chat file is read into memory: bounded together, like usage/history
     for (const e of entries) {
       const parts = e.name.split('/');
       if (e.name === 'manifest.json') continue;
       if (e.name === 'office/state.json') {
         state = parseJson(await reader.read(e, 64 * 1024 * 1024), 'office/state.json');
+      } else if (chatEntryId(e.name)) {
+        if (!mergeable(e)) continue;
+        if (chatBytes + e.usize > maxMergeBytes) {
+          warn(`Dilewati, riwayat chat di backup terlalu besar secara total: ${e.name}`);
+          continue;
+        }
+        chatBytes += e.usize;
+        chats[chatEntryId(e.name)] = parseChatFile(await reader.read(e, maxMergeBytes), CHAT_LIMIT);
       } else if (e.name === 'office/usage.jsonl') {
         if (!ledger || !mergeable(e)) continue;
         const rows = [];
@@ -633,6 +669,7 @@ export async function restoreBackup(zipFile, ctx = {}) {
       manifest,
       summary,
       state,
+      chats,
       remap,
       projects: [...folders.values()],
     };
