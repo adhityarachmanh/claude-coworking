@@ -452,6 +452,19 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     assert.ok(body.readOnly || /laptop|Tailscale/.test(body.error), `${p}: ${body.error}`);
   }
   for (const p of actions) assert.ok(!uiAllows(p), `UI holds back ${p}`);
+  // Every registered API route (src/routes/*.js) that is not on the WiFi read allowlist is refused over plain
+  // WiFi by server.js itself, before any handler runs (the allowlist is pinned in test/routes.test.mjs).
+  const { buildRouter } = await import('../src/routes/index.js');
+  const { samplePath } = await import('../src/routes/router.js');
+  const { wifiAllows } = await import('../src/remote.js');
+  const nonReads = buildRouter().routes.map((r) => samplePath(r.pattern, id)).filter((p) => !wifiAllows(p));
+  assert.ok(nonReads.length > 40, `${nonReads.length} non-read routes`);
+  for (const p of nonReads) {
+    const res = await phoneApi(p, {});
+    assert.equal(res.status, 403, `wifi ${p}`);
+    const body = await res.json();
+    assert.ok(body.readOnly || /laptop|Tailscale/.test(body.error), `${p}: ${body.error}`);
+  }
   const refused = await (await phoneApi(`/api/projects/${id}/prompt`, { text: 'halo' })).json();
   assert.equal(refused.error, 'Lewat WiFi hanya bisa melihat. Pakai laptop atau Tailscale untuk mengirim perintah.');
   assert.equal((await snapshot()).projects.find((p) => p.id === id).favorite, false, 'nothing changed');

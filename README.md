@@ -327,7 +327,10 @@ Semua test memakai folder sementara (`OFFICE_DATA_DIR`, `CLAUDE_PROJECTS_DIR`, `
 ## Struktur
 
 ```
-server.js            HTTP + SSE + API
+server.js            composition root: config, listener HTTP/LAN/HTTPS, gerbang keamanan (Host/Origin, token,
+                     khusus laptop, WiFi read-only), SSE, halaman pairing
+src/routes/          handler API per kelompok (projects, session, git, files, queue, backup, akun, HP, …)
+                     lewat router kecil (router.js: method + pola path → handler(ctx, req, res, params, body))
 src/session.js       proses headless Claude Code per project, lewat control protocol-nya:
                      antrean, izin, ganti mode/model/effort langsung, rewind, MCP, tugas latar
 src/mirror.js        tail transcript sesi CLI (read-only) → kantor & chat

@@ -1,0 +1,14 @@
+// Per-project routes (/api/projects/:id/...): the project lookup they all start with.
+import { DEMO_ID } from '../hub.js';
+import { json } from './http.js';
+
+/** Wraps a handler: unknown project (or the demo) → 404; else params.project is the project. */
+export const withProject = (fn) => (ctx, req, res, params, body) => {
+  const project = ctx.hub.projects.get(params.id);
+  if (!project || project.id === DEMO_ID) return json(res, 404, { error: 'project not found' });
+  return fn(ctx, req, res, { ...params, project }, body);
+};
+
+/** Like withProject, plus params.session: the project's Claude Code session (created on first use). */
+export const withSession = (fn) =>
+  withProject((ctx, req, res, params, body) => fn(ctx, req, res, { ...params, session: ctx.sessions.get(params.project) }, body));
