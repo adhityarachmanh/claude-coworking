@@ -48,6 +48,8 @@
     <!-- Lost connection to the laptop (features/connection.js). Always present and empty while connected, so the
          live region is announced when the banner is put in. -->
     <div id="conn-banner" class="conn-region" role="status" aria-live="polite"></div>
+    <!-- Claude Code updated: the contract check's result (features/claude-check.js). Empty until there is news. -->
+    <div id="cc-banner" class="conn-region" role="status" aria-live="polite"></div>
 
     <div class="layout">
       <main class="office">
@@ -611,6 +613,19 @@
               </div>
               <p id="ba-status" class="muted" role="status" aria-live="polite"></p>
               <p id="ba-desc" class="muted small">Isinya sama dengan Export riwayat. Rotasi hanya menghapus file <code>adhit-office-backup-auto-*.zip</code> yang lebih lama di folder itu; file lain tidak disentuh. Saat jadwal terlewat (laptop mati), backup dibuat sekali begitu server menyala.</p>
+            </div>
+          </section>
+          <hr />
+          <!-- 🧩 Claude Code update detector (features/claude-check.js, server src/claude-check.js; laptop only like this dialog) -->
+          <section class="claude-check" aria-labelledby="cc-title" aria-describedby="cc-desc">
+            <b id="cc-title">🧩 Kompatibilitas Claude Code</b>
+            <p id="cc-desc" class="muted small">Adhit Office memakai protokol internal Claude Code. Saat Claude Code memperbarui dirinya, cek kontrak ringan dijalankan di latar belakang (setelah giliran yang berjalan selesai), dan hasilnya muncul sebagai pemberitahuan.</p>
+            <p id="cc-status" class="muted" role="status" aria-live="polite"></p>
+            <label class="switch"><input id="cc-auto" type="checkbox" /> Cek otomatis saat Claude Code diperbarui</label>
+            <label class="switch"><input id="cc-model" type="checkbox" aria-describedby="cc-model-hint" /> Boleh pakai 1 request kecil (Haiku)</label>
+            <p id="cc-model-hint" class="muted small">Untuk cek streaming dan pesan init. Tanpa ini hanya pemeriksaan tanpa token (versi, flag peluncuran, initialize, kontrol).</p>
+            <div class="backup-actions">
+              <button type="button" id="cc-run" class="ghost">▶ Cek kompatibilitas Claude Code</button>
             </div>
           </section>
           <hr />

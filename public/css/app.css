@@ -179,6 +179,24 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .conn-banner .spinner { width: 12px; height: 12px; border-top-color: currentColor; }
 .conn-text { min-width: 0; overflow-wrap: anywhere; } /* wraps on a narrow phone: never a sideways scroll */
 
+/* Claude Code updated (features/claude-check.js): same thin bar, ok / warning / failed; passive on read-only WiFi */
+.cc-banner {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0;
+  padding: 6px max(16px, env(safe-area-inset-right)) 6px max(16px, env(safe-area-inset-left));
+  font-size: var(--fs-md); line-height: 1.35;
+  background: var(--warn-soft); color: var(--warn-text-strong); border-bottom: 1px solid var(--warn-line);
+}
+.cc-banner.ok { background: var(--ok-soft); color: var(--ok-text-strong); border-bottom-color: var(--ok-line); }
+.cc-banner.err { background: var(--err-soft); color: var(--err-text-strong); border-bottom-color: var(--err-line); }
+.cc-banner.passive { font-size: var(--fs-sm); padding-top: 4px; padding-bottom: 4px; }
+.cc-text, .cc-hint { min-width: 0; overflow-wrap: anywhere; }
+.cc-hint { opacity: .9; }
+.cc-hint code { overflow-wrap: anywhere; }
+.cc-close { margin-left: auto; flex: none; min-width: 32px; min-height: 32px; }
+.claude-check { display: grid; gap: 6px; }
+.claude-check .switch { white-space: normal; }
+#cc-status.warn { color: var(--warn-text); }
+
 /* ---------- layout ---------- */
 .layout {
   flex: 1;
@@ -1986,10 +2004,11 @@ body.read-only #composer-hint { color: var(--ask); }
    The bottom nav becomes a rail on the left, the header is 44 px, the composer is one row, the office sits beside
    the team list and every sheet fits the short screen (scrolling inside, ✕ always in view). */
 @media (pointer: coarse) and (max-height: 500px) and (orientation: landscape) {
-  body { display: grid; grid-template-columns: calc(72px + env(safe-area-inset-left)) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
+  body { display: grid; grid-template-columns: calc(72px + env(safe-area-inset-left)) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr); }
   .topbar { grid-column: 2; grid-row: 1; height: calc(44px + env(safe-area-inset-top)); padding-right: calc(10px + env(safe-area-inset-right)); }
   #conn-banner { grid-column: 2; grid-row: 2; }
-  .layout { grid-column: 2; grid-row: 3; }
+  #cc-banner { grid-column: 2; grid-row: 3; }
+  .layout { grid-column: 2; grid-row: 4; }
   .mobile-nav { grid-column: 1; grid-row: 1 / -1; display: flex; flex-direction: column; justify-content: center; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left); border-top: 0; border-right: 1px solid var(--border); }
   .mobile-nav button { flex: 0 1 68px; justify-content: center; min-height: 44px; padding: 4px 2px; }
   .mobile-nav button.active::before { top: 22%; bottom: 22%; left: 0; right: auto; width: 3px; height: auto; }

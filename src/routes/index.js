@@ -4,6 +4,7 @@ import { Router } from './router.js';
 import * as account from './account.js';
 import * as approvals from './approvals.js';
 import * as backup from './backup.js';
+import * as claudeCheck from './claude-check.js';
 import * as files from './files.js';
 import * as git from './git.js';
 import * as misc from './misc.js';
@@ -38,6 +39,7 @@ export function buildRouter() {
     push.register,
     backup.register,
     spotify.register,
+    claudeCheck.register,
     misc.register,
   ])
     register(router);

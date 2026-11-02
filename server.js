@@ -7,6 +7,7 @@ import https from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findClaude } from './src/claude-bin.js';
+import { ClaudeCheckService } from './src/claude-check.js';
 import { Hub } from './src/hub.js';
 import { discoverProjects, isDirectory } from './src/projects.js';
 import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
@@ -202,6 +203,21 @@ push.seedQueues(Object.keys(taskQueue.queues)); // a pause from before this star
 hub.observers.add((type, data) => push.observe(type, data));
 hub.redactors.set('approval', wifiApproval); // "answered from <phone name>": not over sniffable WiFi
 
+// Claude Code update detector (src/claude-check.js): `claude --version` at start and every 6 h; a new version gets
+// the light contract check in the background once no turn is busy. Its own file (not in history backups).
+// OFFICE_CLAUDE_CHECK_DELAY_MS: tests only, how long after start the first look happens (default 20 s).
+const CHECK_DELAY = Number(process.env.OFFICE_CLAUDE_CHECK_DELAY_MS);
+const claudeCheck = new ClaudeCheckService({
+  file: path.join(DATA_DIR, 'claude-check.json'),
+  claude,
+  isBusy: () => [...hub.runtime.values()].some((rt) => rt.status.busy),
+  onChange: (view) => {
+    hub.config = { ...hub.config, claudeCheck: view };
+    hub.broadcast('config', hub.config);
+  },
+  ...(Number.isInteger(CHECK_DELAY) && CHECK_DELAY >= 0 && CHECK_DELAY <= 600_000 ? { timing: { startDelayMs: CHECK_DELAY } } : {}),
+});
+
 const projectRoots = () => (hub.persisted.roots.length ? hub.persisted.roots : [DEFAULT_ROOT]);
 
 /** Rescans all sources. Folders no longer under any root drop out (unless Claude Code or the user added them). */
@@ -223,6 +239,7 @@ function refreshProjects() {
     teamNames: hub.persisted.teamNames ?? {},
     team: teamConfig(),
     spotify: { redirectUri: spotify.redirectUri }, // shown (with a copy button) in ⚙ → Spotify
+    claudeCheck: claudeCheck.publicView(), // versions + last contract check result (no details)
   };
   hub.ready = wasReady;
   hub.broadcast('config', hub.config);
@@ -236,7 +253,8 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Adding a project folder points Claude Code (and git, file search) at any path: laptop only.
 // Backup export/import read and write the whole Claude history: laptop only (Tailscale phones too are refused).
 // Spotify's Client ID, login and logout: laptop only (the redirect URI is the laptop's 127.0.0.1).
-const LOCAL_ONLY = new Set(['/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+// ⚙ Cek kompatibilitas Claude Code (run, settings): laptop only (it spawns Claude Code, maybe a model call).
+const LOCAL_ONLY = new Set(['/api/claude-check/run', '/api/claude-check/settings', '/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout']);
@@ -446,6 +464,7 @@ const ctx = {
   spotify,
   backupScheduler,
   backupLock,
+  claudeCheck,
   allAgents,
   appDir: APP_DIR,
   appVersion: APP_VERSION,
@@ -686,6 +705,7 @@ server.listen(PORT, HOST, () => {
   syncListeners();
   tls.start(); // a certificate on disk is used at once; Tailscale is asked in the background
   sessions.probeCatalog(); // what /model offers and the slash commands' descriptions (no model call)
+  claudeCheck.start(); // Claude Code updated? First look after a delay, in the background
   if (process.argv.includes('--open')) {
     const opener = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]];
     spawn(opener[0], opener[1], { stdio: 'ignore', detached: true, windowsHide: true }).unref();
@@ -711,6 +731,7 @@ async function shutdown() {
   for (const { server: lan } of [...lanServers.values(), ...httpsServers.values()]) lan.close();
   tls.stop();
   mirror.stop();
+  claudeCheck.stop();
   spotify.stop();
   try {
     await sessions.shutdown();

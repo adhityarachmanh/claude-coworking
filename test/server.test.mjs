@@ -41,6 +41,7 @@ before(async () => {
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'), // user-level settings.json (🛡️ Aturan izin), never the real ~/.claude
       OFFICE_OPEN_DRY_RUN: '1', // "open in VS Code / folder" reports the command instead of launching it
       OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale'), // phone access on: never ask the real Tailscale for a certificate
+      OFFICE_CLAUDE_CHECK_DELAY_MS: '0', // 🧩 the update detector looks at the (fake) Claude Code version right away
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -403,7 +404,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   const phoneApi = (p, body = {}) => lan(p, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', 'X-Office-Token': phoneToken }, body: JSON.stringify(body) });
   const id = await projectId();
   assert.equal((await phoneApi(`/api/projects/${id}/files`, { q: 'check' })).status, 200);
-  const laptopOnly = ['/api/config', '/api/autostart', '/api/shutdown', '/api/remote', '/api/remote/pairing', '/api/account/login', '/api/account/logout', '/api/projects', `/api/projects/${id}/open`, `/api/projects/${id}/permissions-edit`, '/api/backup/export', '/api/backup/import'];
+  const laptopOnly = ['/api/claude-check/run', '/api/claude-check/settings', '/api/config', '/api/autostart', '/api/shutdown', '/api/remote', '/api/remote/pairing', '/api/account/login', '/api/account/logout', '/api/projects', `/api/projects/${id}/open`, `/api/projects/${id}/permissions-edit`, '/api/backup/export', '/api/backup/import'];
   for (const p of laptopOnly) assert.equal((await phoneApi(p, { enabled: false, roots: [] })).status, 403, p);
   // login/logout from a phone needs Tailscale; over plain WiFi it is refused with a clear reason
   const wifiLogout = await phoneApi('/api/account/logout', { confirm: 'LOGOUT' });
@@ -579,6 +580,46 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   await api('/api/remote', { enabled: false });
   await sleep(300);
   await assert.rejects(lan('/health'), 'LAN listener closed again');
+});
+
+test('🧩 Claude Code update detector: status in the config, settings validated, manual run in the background', async () => {
+  // The first look at start (OFFICE_CLAUDE_CHECK_DELAY_MS=0): a version never checked → the light check, in the background.
+  let view;
+  for (let i = 0; i < 150; i++) {
+    view = (await snapshot()).config.claudeCheck;
+    if (view?.result && !view.running) break;
+    await sleep(100);
+  }
+  assert.equal(view.available, true);
+  assert.equal(view.version, '9.9.9-fake');
+  assert.equal(view.checkedVersion, '9.9.9-fake');
+  assert.equal(view.result, 'ok');
+  assert.equal(view.lastGoodVersion, '9.9.9-fake');
+  assert.deepEqual(view.failing, []);
+  assert.deepEqual(view.settings, { autoCheck: true, allowModel: true });
+  assert.ok(!('checks' in view) && !JSON.stringify(view).includes('detail'), 'names and versions only, no details');
+  const stored = JSON.parse(readFileSync(path.join(TMP, 'data', 'claude-check.json'), 'utf8'));
+  assert.equal(stored.lastGoodVersion, '9.9.9-fake', 'its own file in the data folder');
+
+  for (const bad of [{}, { autoCheck: 'yes' }, { other: true }, { allowModel: 1 }]) assert.equal((await api('/api/claude-check/settings', bad)).status, 400, JSON.stringify(bad));
+  const off = await api('/api/claude-check/settings', { allowModel: false });
+  assert.equal(off.status, 200);
+  assert.deepEqual(off.body.settings, { autoCheck: true, allowModel: false });
+  assert.equal((await snapshot()).config.claudeCheck.settings.allowModel, false, 'shared through the config');
+
+  const run = await api('/api/claude-check/run');
+  assert.equal(run.status, 202);
+  assert.equal(run.body.running, true);
+  assert.equal((await api('/api/claude-check/run')).status, 409, 'one at a time');
+  for (let i = 0; i < 150; i++) {
+    view = (await snapshot()).config.claudeCheck;
+    if (!view.running) break;
+    await sleep(100);
+  }
+  assert.equal(view.trigger, 'manual');
+  assert.equal(view.result, 'ok');
+  assert.equal(view.usedModel, false, 'the setting is honoured: no model call');
+  assert.equal((await api('/api/claude-check/settings', { allowModel: true })).status, 200);
 });
 
 test('settings are validated; the demo runs without Claude', async () => {

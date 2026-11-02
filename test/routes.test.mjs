@@ -1,7 +1,10 @@
 // The API router (src/routes/*.js): every registered route against the plain-WiFi read-only allowlist
 // (src/remote.js wifiAllows), plus the tiny router itself. No server needed: registering touches no state.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { WIFI_READ_API, wifiAllows } from '../src/remote.js';
 import { buildRouter } from '../src/routes/index.js';
 import { Router, samplePath } from '../src/routes/router.js';
@@ -21,6 +24,7 @@ const WIFI_READS = new Set([
   ...['changes', 'diff', 'git-branches', 'file', 'files', 'sessions', 'rewind-points', 'task-output', 'task-detail', 'queue'].map((a) => `/api/projects/:id/${a}`),
 ]);
 
+const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const router = buildRouter();
 const patterns = router.routes.map((r) => r.pattern);
 /** Concrete paths for a route: several ids for :id, and a few suffixes for a prefix (*) route. */
@@ -82,4 +86,19 @@ test('routes: 🔔 /api/push/* never over plain WiFi; only /api/push/act skips x
   assert.deepEqual(router.routes.filter((r) => r.noToken).map((r) => r.pattern), ['/api/push/act']);
   for (const r of pushRoutes) assert.ok(r.maxBody > 0 && r.maxBody <= 4096, `${r.pattern} maxBody ${r.maxBody}`);
   assert.equal(router.routes.find((r) => r.pattern === '/api/push/act').maxBody, 1024);
+});
+
+test('routes: 🧩 /api/claude-check/* (manual run, settings) never over plain WiFi; small bodies', () => {
+  const routes = router.routes.filter((r) => r.pattern.startsWith('/api/claude-check/'));
+  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/claude-check/run', '/api/claude-check/settings']);
+  for (const r of routes) {
+    assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
+    assert.ok(!WIFI_READS.has(r.pattern));
+    assert.ok(r.maxBody > 0 && r.maxBody <= 1024, `${r.pattern} maxBody ${r.maxBody}`);
+    assert.equal(r.noToken, false);
+  }
+  // Laptop only: server.js refuses them for every paired phone (Tailscale too) before the WiFi gate.
+  const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  for (const r of routes) assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
 });

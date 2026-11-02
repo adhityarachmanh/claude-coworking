@@ -15,6 +15,7 @@ import { initBackup } from './features/backup.js';
 import { initBackupAuto } from './features/backup-auto.js';
 import { initChanges } from './features/changes.js';
 import { initChat } from './features/chat.js';
+import { initClaudeCheck } from './features/claude-check.js';
 import { initComposerControls, initComposerInput } from './features/composer.js';
 import { initConversations } from './features/conversations.js';
 import { initDashboard } from './features/dashboard.js';
@@ -75,6 +76,7 @@ initSettings();
 initTheme(); // before the first frame: the saved theme is drawn right away
 initBackup(); // after initSettings: its #btn-settings listener runs after the dialog's own
 initBackupAuto(); // ⏰ Backup otomatis in the same ⚙ section
+initClaudeCheck(); // 🧩 Claude Code update detector: banner + ⚙ section
 initNotify();
 initPush(); // 📱 Notifikasi HP (push): https only; the ?p=&ap= deep link runs after the first snapshot
 initQuota(); // after initSettings: refreshes its ⚙ fields when the dialog opens

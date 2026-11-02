@@ -26,6 +26,34 @@ import { createInterface } from 'node:readline';
 
 const args = process.argv.slice(2);
 
+// The Claude Code update detector (src/claude-check.js, src/claude-contract.js): which version this fake claims to be
+// and which parts of the protocol it "broke", read per process so a test can change them while a server runs:
+//   FAKE_CLAUDE_CONTRACT=<file.json> {"version": "2.0.0", "break": ["agents", ...]}  (wins over the env vars)
+//   FAKE_CLAUDE_VERSION=2.0.0  FAKE_CLAUDE_BREAK=agents,set_model
+// break: version (unparseable --version) · version-hang · hang (never answers initialize) · exit (dies on start like an
+// unknown flag) · catalog · agents · set_model · context · init (init message without session_id)
+const contract = (() => {
+  let file = {};
+  try {
+    if (process.env.FAKE_CLAUDE_CONTRACT) file = JSON.parse(readFileSync(process.env.FAKE_CLAUDE_CONTRACT, 'utf8'));
+  } catch {}
+  const env = (process.env.FAKE_CLAUDE_BREAK ?? '').split(',').filter(Boolean);
+  return { version: file.version ?? process.env.FAKE_CLAUDE_VERSION ?? '9.9.9-fake', broken: new Set(file.break ?? env) };
+})();
+const broken = (part) => contract.broken.has(part);
+
+if (args.includes('--version')) {
+  if (broken('version-hang')) setInterval(() => {}, 1000);
+  else {
+    console.log(broken('version') ? 'something else 1.0' : `${contract.version} (Claude Code)`);
+    process.exit(0);
+  }
+}
+if (broken('exit') && args.includes('--input-format')) {
+  console.error("error: unknown option '--permission-prompt-tool'");
+  process.exit(1);
+}
+
 // Account commands: a fixed logged-in test account; `/usage` prints plan usage like the real CLI.
 if (args[0] === 'auth') {
   if (args[1] === 'status') console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', email: 'tester@example.com', orgId: 'org-test', orgName: 'Test Org', subscriptionType: 'team' }));
@@ -47,11 +75,24 @@ const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : nul
 const live = { mode: flag('--permission-mode') ?? 'default', model: flag('--model') ?? 'default', effort: flag('--effort') ?? 'auto' };
 const waiting = new Set(); // prompt uuids queued but not started (cancel_async_message)
 
+/** The subagents of --agents (inline JSON, or a file path with -p), like the real CLI lists them. */
+function agentNames() {
+  const arg = flag('--agents');
+  if (!arg) return [];
+  try {
+    return Object.keys(JSON.parse(arg.trimStart().startsWith('{') ? arg : readFileSync(arg, 'utf8')));
+  } catch {
+    return [];
+  }
+}
+
 /** Control requests the web app sends, answered the way Claude Code answers them. */
 function control(req) {
   switch (req.subtype) {
     case 'initialize':
+      if (broken('catalog')) return { commands: 'none', models: null, agents: agentNames().map((name) => ({ name })), claude_code_version: contract.version };
       return {
+        agents: broken('agents') ? undefined : agentNames().map((name) => ({ name, description: `${name} (fake)` })),
         commands: [
           { name: 'fake-skill', description: 'Skill palsu untuk tes', argumentHint: '' },
           { name: 'context', description: 'Show context usage', argumentHint: '' },
@@ -61,13 +102,14 @@ function control(req) {
           { value: 'fable', displayName: 'Fable 5.1', description: 'Most capable', supportedEffortLevels: ['low', 'high', 'max'] },
           { value: 'old-model', displayName: 'Old', description: 'No effort', supportedEffortLevels: [] },
         ],
-        claude_code_version: '9.9.9-fake',
+        claude_code_version: contract.version,
       };
     case 'set_permission_mode':
       live.mode = req.mode;
       send({ type: 'system', subtype: 'status', status: null, permissionMode: req.mode, session_id: sessionId });
       return { mode: req.mode };
     case 'set_model':
+      if (broken('set_model')) throw new Error('set_model is not supported');
       if (/tidak-ada/.test(req.model)) throw new Error(`Model '${req.model}' not found`);
       live.model = req.model;
       return { model: `claude-${req.model}` };
@@ -75,6 +117,7 @@ function control(req) {
       if (req.settings?.effortLevel) live.effort = req.settings.effortLevel;
       return {};
     case 'get_context_usage':
+      if (broken('context')) return { tokens: 'n/a' };
       return { totalTokens: 21000, maxTokens: 1_000_000, percentage: 2, autoCompactThreshold: 967000, isAutoCompactEnabled: true };
     case 'rewind_files':
       return req.dry_run ? { canRewind: true, filesChanged: ['catatan.txt'], insertions: 1, deletions: 1 } : { canRewind: true };
@@ -189,7 +232,7 @@ function stopBackground(taskId) {
 }
 
 function init() {
-  send({ type: 'system', subtype: 'init', session_id: sessionId, model: 'fake-model', permissionMode: 'default', slash_commands: ['fake-skill', 'context'], agents: [] });
+  send({ type: 'system', subtype: 'init', session_id: broken('init') ? undefined : sessionId, model: 'fake-model', permissionMode: 'default', slash_commands: ['fake-skill', 'context'], agents: agentNames() });
 }
 
 async function streamText(text, delay = 40) {
@@ -325,6 +368,7 @@ rl.on('line', (line) => {
     interrupted = true;
     send({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id } });
   } else if (msg.type === 'control_request') {
+    if (broken('hang') && msg.request?.subtype === 'initialize') return; // never answers: the caller's timeout must end it
     try {
       send({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: control(msg.request) } });
     } catch (err) {
