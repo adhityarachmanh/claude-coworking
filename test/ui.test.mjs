@@ -645,9 +645,10 @@ for (const vp of VIEWPORTS) {
 
       await typeInPrompt(page, 'lampiran?');
       await page.press('Enter');
-      await page.waitFor(() => [...document.querySelectorAll('.msg.user')].some((m) => m.textContent.includes('lampiran?') && m.querySelectorAll('.msg-attachments .att-chip').length === 2), { timeoutMs: 5000, message: 'bubble dengan 2 chip' });
+      // The newest bubble (earlier 📎 tests in the same project left other "lampiran? …" bubbles with chips).
+      await page.waitFor(() => document.querySelector('.msg.user.latest .body')?.textContent === 'lampiran?' && document.querySelectorAll('.msg.user.latest .msg-attachments .att-chip').length === 2, { timeoutMs: 5000, message: 'bubble dengan 2 chip' });
       const bubble = await page.eval(() => {
-        const m = [...document.querySelectorAll('.msg.user')].reverse().find((n) => n.textContent.includes('lampiran?'));
+        const m = document.querySelector('.msg.user.latest');
         return { body: m.querySelector('.body').textContent, chips: [...m.querySelectorAll('.att-chip')].map((c) => c.textContent), buttons: m.querySelectorAll('.att-chip button').length };
       });
       assert.equal(bubble.body, 'lampiran?', 'isi file tidak masuk bubble');
@@ -657,6 +658,136 @@ for (const vp of VIEWPORTS) {
       await page.waitFor(() => [...document.querySelectorAll('.msg.assistant')].some((m) => m.textContent.includes('blocks=text,image,text')), { timeoutMs: 5000, message: 'Claude menerima blok text + image' });
       assert.equal(await page.eval(horizontalOverflow), null);
       assert.deepEqual(realProblems(page), []);
+    });
+
+    // 📎 helpers for the attachment tests below (in-page, so self-contained)
+    const dropLogAndImage = () => {
+      const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
+      const dt = new DataTransfer();
+      dt.items.add(new File(['TypeError: ulangi\n'], 'ulangi.log', { type: 'text/plain' }));
+      dt.items.add(new File([png], 'ulangi.png', { type: 'image/png' }));
+      document.querySelector('.input').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    };
+    const dropNamed = (name) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([`isi ${name}\n`], name, { type: 'text/plain' }));
+      document.querySelector('.input').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    };
+    const chipNames = () => [...document.querySelectorAll('#attachments .att-chip .att-name')].map((n) => n.textContent);
+    const repliesWith = (needle) => [...document.querySelectorAll('.msg.assistant')].filter((m) => m.textContent.includes(needle)).length;
+    // A scratch project outside the projects root, so these tests don't lengthen "toko"'s chat the later tests read.
+    const addScratchProject = async (name) => {
+      const dir = path.join(TMP, `${name}-${vp.mobile ? 'hp' : 'laptop'}`);
+      mkdirSync(dir, { recursive: true });
+      const id = await page.eval(async (d) => {
+        const token = document.querySelector('meta[name="office-token"]').content;
+        const r = await fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify({ path: d }) });
+        return (await r.json()).id;
+      }, dir);
+      assert.ok(id, `project ${name} dibuat`);
+      return id;
+    };
+    const forgetProject = (id) =>
+      page.eval(async (p) => {
+        const token = document.querySelector('meta[name="office-token"]').content;
+        await fetch(`/api/projects/${p}/forget`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: '{}' });
+      }, id);
+
+    test('📎 ↻ Ulangi / Edit prompt terakhir membawa lampirannya lagi; setelah reload hanya teks + catatan', async () => {
+      await openApp(page, `#${projectId}`);
+      const pid = await addScratchProject('ulangi');
+      await openApp(page, `#${pid}`);
+      await page.waitFor(() => document.querySelector('#btn-stop').hidden, { timeoutMs: 10000, message: 'tim diam' });
+      await page.eval(dropLogAndImage);
+      await page.waitFor(() => document.querySelectorAll('#attachments .att-chip').length === 2, { timeoutMs: 5000, message: '2 chip' });
+      const full = 'blocks=text,image,text';
+      const before = await page.eval(repliesWith, full);
+      await typeInPrompt(page, 'lampiran? ulangi');
+      await page.press('Enter');
+      await page.waitFor((n, s) => [...document.querySelectorAll('.msg.assistant')].filter((m) => m.textContent.includes(s)).length === n, { timeoutMs: 8000, message: 'balasan pertama' }, before + 1, full);
+      await page.waitFor(() => document.querySelector('#btn-stop').hidden, { timeoutMs: 8000, message: 'giliran selesai' });
+
+      // ↻ Ulangi: same text and the same files (Claude gets text + image + text again), the bubble shows the chips
+      await page.eval(() => document.querySelector('.msg.user.latest [data-msg-act="resend"]').click());
+      await page.waitFor((n, s) => [...document.querySelectorAll('.msg.assistant')].filter((m) => m.textContent.includes(s)).length === n, { timeoutMs: 8000, message: 'Ulangi dengan lampiran' }, before + 2, full);
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll('.msg.user.latest .att-chip .att-name')].map((n) => n.textContent)), ['ulangi.log', 'ulangi.png']);
+      await page.waitFor(() => document.querySelector('#btn-stop').hidden, { timeoutMs: 8000, message: 'giliran Ulangi selesai' });
+
+      // Edit: text and chips back in the composer (no duplicates on a second Edit), image thumbnail included
+      await page.eval(() => document.querySelector('.msg.user.latest [data-msg-act="edit"]').click());
+      await page.eval(() => document.querySelector('.msg.user.latest [data-msg-act="edit"]').click());
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), 'lampiran? ulangi');
+      assert.deepEqual(await page.eval(chipNames), ['ulangi.log', 'ulangi.png']);
+      assert.equal(await page.eval(() => Boolean(document.querySelector('#attachments .att-chip[data-kind="image"] img'))), true, 'thumbnail kembali');
+      assert.equal(await page.eval(horizontalOverflow), null);
+      await page.eval(() => {
+        while (document.querySelector('#attachments .att-chip button')) document.querySelector('#attachments .att-chip button').click();
+        const input = document.querySelector('#prompt');
+        input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true })); // the stored draft goes too (later tests start clean)
+      });
+
+      // after a reload the files are gone from memory: Ulangi sends the text only and says so; Edit says so too
+      await openApp(page, `#${pid}`);
+      await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+      const textOnly = 'blocks=text docs=-';
+      const beforeText = await page.eval(repliesWith, textOnly);
+      await page.eval(() => document.querySelector('.msg.user.latest [data-msg-act="resend"]').click());
+      await page.waitFor(() => [...document.querySelectorAll('.toast.warn')].some((t) => t.textContent.includes('Lampiran tidak ikut: muat ulang halaman menghapusnya')), { timeoutMs: 5000, message: 'catatan lampiran tidak ikut' });
+      await page.waitFor((n, s) => [...document.querySelectorAll('.msg.assistant')].filter((m) => m.textContent.includes(s)).length === n, { timeoutMs: 8000, message: 'Ulangi hanya teks' }, beforeText + 1, textOnly);
+      await page.waitFor(() => document.querySelector('#btn-stop').hidden, { timeoutMs: 8000, message: 'giliran selesai' });
+      await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+      // the text-only resend is now the latest prompt; Edit on the earlier bubble with chips: text back, note shown
+      await page.eval(() => [...document.querySelectorAll('.msg.user')].filter((m) => m.querySelector('.msg-attachments')).at(-1).querySelector('[data-msg-act="edit"]').click());
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), 'lampiran? ulangi');
+      assert.deepEqual(await page.eval(chipNames), []);
+      assert.ok(await page.eval(() => [...document.querySelectorAll('.toast.warn')].some((t) => t.textContent.includes('Lampiran tidak ikut'))));
+      await page.eval(() => {
+        const input = document.querySelector('#prompt');
+        input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelectorAll('.toast').forEach((t) => t.remove());
+      });
+      await page.waitFor((k) => localStorage.getItem(k) === null, { timeoutMs: 3000, message: 'draf Edit dihapus' }, `office.draft.${pid}`);
+      assert.deepEqual(realProblems(page), []);
+      await forgetProject(pid);
+      await openApp(page, `#${projectId}`);
+    });
+
+    test('📎 draf: chip lampiran tetap milik project-nya saat pindah project (memori saja), hilang setelah terkirim', async () => {
+      await openApp(page, `#${projectId}`);
+      const other = await addScratchProject('lampiran');
+      const select = (id) => page.eval(async (p) => (await import('/js/features/picker.js')).selectProject(p), id);
+
+      await page.eval(dropNamed, 'toko.log');
+      await page.waitFor(() => document.querySelectorAll('#attachments .att-chip').length === 1, { timeoutMs: 5000, message: 'chip toko' });
+      await select(other);
+      assert.deepEqual(await page.eval(chipNames), [], 'project lain: kotak lampiran kosong');
+      assert.equal(await page.eval(() => document.querySelector('#attachments').hidden), true);
+      await page.eval(dropNamed, 'kasir.log');
+      await page.waitFor(() => document.querySelectorAll('#attachments .att-chip').length === 1, { timeoutMs: 5000, message: 'chip kasir' });
+      await select(projectId);
+      assert.deepEqual(await page.eval(chipNames), ['toko.log'], 'kembali: chip toko dipulihkan');
+      await select(other);
+      assert.deepEqual(await page.eval(chipNames), ['kasir.log']);
+      assert.equal(await page.eval(() => Object.keys(localStorage).some((k) => (localStorage.getItem(k) ?? '').includes('isi kasir'))), false, 'isi lampiran tidak di localStorage');
+
+      // sent (in the scratch project): its box empties and stays empty across switches; toko keeps its own chip
+      await typeInPrompt(page, 'kirim draf dengan lampiran');
+      await page.press('Enter');
+      await page.waitFor(() => document.querySelector('.msg.user.latest .body')?.textContent === 'kirim draf dengan lampiran' && [...document.querySelectorAll('.msg.user.latest .att-chip .att-name')].map((n) => n.textContent).join() === 'kasir.log', { timeoutMs: 8000, message: 'terkirim dengan kasir.log' });
+      assert.deepEqual(await page.eval(chipNames), []);
+      await page.waitFor(() => document.querySelector('#btn-stop').hidden, { timeoutMs: 8000, message: 'giliran selesai' });
+      await select(projectId);
+      assert.deepEqual(await page.eval(chipNames), ['toko.log'], 'toko: chip-nya tetap');
+      await page.eval(() => document.querySelector('#attachments .att-chip button').click());
+      await select(other);
+      assert.deepEqual(await page.eval(chipNames), [], 'kasir: kosong setelah terkirim');
+      await select(projectId);
+      assert.deepEqual(await page.eval(chipNames), [], 'toko: chip yang dihapus tidak kembali');
+      assert.equal(await page.eval(horizontalOverflow), null);
+      assert.deepEqual(realProblems(page), []);
+      await forgetProject(other);
     });
 
     test('⚙ Tema kantor: pilih Halloween → tersimpan, bertahan setelah reload, sprite & avatar berganti; kembali ke Kantor', async () => {
@@ -1123,6 +1254,63 @@ for (const vp of VIEWPORTS) {
         return out;
       });
       assert.deepEqual(r, { waiting: false, afterWait9: false, afterWait10: true, afterSleep: { chip: false, newEpisodes: 0 } });
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⚠ deteksi macet: dua delegasi role sama paralel dicocokkan lewat taskId, lastActivityAt tanpa baca task-detail', async () => {
+      await openApp(page, `#${projectId}`);
+      const r = await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        const { appendChat } = await import('/js/features/chat.js');
+        const { checkStuck, stuck, stuckClock } = await import('/js/features/stuck.js');
+        const tick = (min) => {
+          stuckClock.now = () => Date.now() + min * 60_000;
+          stuck.lastTick = stuckClock.now() - 15_000;
+          checkStuck();
+        };
+        const pid = state.active;
+        const savedStatus = state.statuses[pid];
+        const now = Date.now();
+        // Same role, same start: role + nearest start time alone cannot tell them apart.
+        const task = (id, toolUseId, lastActivityAt) => ({ id, kind: 'agent', agent: 'backend', role: 'backend', status: 'running', background: true, startedAt: now, toolUseId, lastActivityAt });
+        state.statuses[pid] = { ...savedStatus, busy: true, tasks: [task('T-a', 'a1', now + 9 * 60_000), task('T-b', 'a2', now)] };
+        const row = (id, toolUseId, taskId) => ({ id, project: pid, ts: now, kind: 'delegate', role: 'backend', from: 'claude', text: id, status: 'running', input: { prompt: 'x' }, toolUseId, taskId });
+        const rows = [row('stuck-par-b', 'a2', 'T-b'), row('stuck-par-a', 'a1', 'T-a')];
+        for (const m of rows) {
+          (state.chats[pid] ??= []).push(m);
+          appendChat(m);
+        }
+        let detailReads = 0;
+        const origFetch = window.fetch;
+        window.fetch = (url, opts) => {
+          if (/\/task-detail$/.test(String(url))) detailReads++;
+          return origFetch(url, opts);
+        };
+        const chip = (id) => Boolean(document.querySelector(`#chat > [data-id="${id}"] > .stuck-chip`));
+        const out = {};
+        try {
+          for (const min of [2, 4, 6, 8, 11]) tick(min); // quiet long enough that task-detail would have been read before
+          await new Promise((res) => setTimeout(res, 50));
+          out.chips = { a: chip('stuck-par-a'), b: chip('stuck-par-b') };
+          out.taskOfB = stuck.verdicts.get(`${pid}|stuck-par-b`)?.taskId ?? null;
+          out.detailReads = detailReads;
+        } finally {
+          for (const m of rows) m.status = 'cancel';
+          stuckClock.now = () => Date.now();
+          stuck.lastTick = null;
+          state.statuses[pid] = savedStatus;
+          checkStuck();
+          for (const m of rows) {
+            state.chats[pid].splice(state.chats[pid].indexOf(m), 1);
+            document.querySelector(`#chat > [data-id="${m.id}"]`)?.remove();
+          }
+          window.fetch = origFetch;
+        }
+        return out;
+      });
+      assert.deepEqual(r.chips, { a: false, b: true }, 'hanya yang benar-benar diam yang ditandai');
+      assert.equal(r.taskOfB, 'T-b', 'Lihat detail membuka tugasnya sendiri');
+      assert.equal(r.detailReads, 0, 'lastActivityAt cukup: tidak membaca task-detail');
       assert.deepEqual(realProblems(page), []);
     });
 
@@ -2545,3 +2733,177 @@ for (const vp of VIEWPORTS) {
     }
   });
 }
+
+// ---------- 🗂 Semua project (features/dashboard.js): every project at once, live, read-only ----------
+
+describe('UI 🗂 Semua project', { skip: SKIP ?? false }, () => {
+  let api;
+  const ids = {};
+  const SHOTS = process.env.OFFICE_UI_SHOTS;
+
+  /** Waits (bounded) until the server's snapshot satisfies `ok`. */
+  async function untilSnapshot(ok, message) {
+    for (let i = 0; i < 50; i++) {
+      const snap = await snapshot();
+      if (ok(snap)) return snap;
+      await sleep(200);
+    }
+    throw new Error(`timeout menunggu ${message}`);
+  }
+
+  before(async () => {
+    if (SKIP) return;
+    const token = (await (await fetch(BASE)).text()).match(/office-token" content="([^"]+)"/)[1];
+    api = (p, body = {}) => fetch(BASE + p, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify(body) }).then((r) => r.json());
+    for (const name of ['gudang', 'kasir']) mkdirSync(path.join(TMP, 'projects', name), { recursive: true });
+    await api('/api/projects/refresh');
+    const snap = await untilSnapshot((s) => ['gudang', 'kasir'].every((n) => s.projects.some((p) => p.name === n)), 'project gudang & kasir terdaftar');
+    for (const name of ['gudang', 'kasir']) ids[name] = snap.projects.find((p) => p.name === name).id;
+    // gudang: a permission card waiting for the user (fake Claude asks before writing a file).
+    await api(`/api/projects/${ids.gudang}/prompt`, { text: 'minta izin tulis file <b>penting</b>' });
+    await untilSnapshot((s) => s.approvals.some((a) => a.project === ids.gudang && a.status === 'pending'), 'izin gudang menunggu');
+  });
+
+  after(async () => {
+    if (!api) return;
+    const snap = await snapshot().catch(() => null);
+    for (const a of snap?.approvals ?? []) if (a.status === 'pending') await api(`/api/approvals/${a.id}`, { allow: false }).catch(() => {});
+    if (ids.kasir) await api(`/api/projects/${ids.kasir}/stop`).catch(() => {});
+  });
+
+  /** kasir: a turn that is still running (fake Claude streams "lama" for ~10 s). */
+  async function startRunningTurn() {
+    const snap = await snapshot();
+    if (!snap.statuses[ids.kasir]?.busy) await api(`/api/projects/${ids.kasir}/prompt`, { text: 'jawab lama' });
+  }
+
+  async function openDashboardLikeUser(page, vp) {
+    if (vp.mobile) {
+      await page.click('#mobile-nav button[data-view="office"]');
+      await page.click('#dash-bar');
+    } else {
+      await page.click('#btn-dashboard');
+    }
+    await page.waitFor(() => !document.querySelector('#dash-modal').hidden && document.querySelectorAll('#dash-list > li').length > 0, { timeoutMs: 3000, message: 'dialog Semua project terbuka berisi kartu' });
+  }
+
+  function cards() {
+    return [...document.querySelectorAll('#dash-list > li')]
+      .filter((li) => !li.hidden)
+      .map((li) => ({ id: li.dataset.id, cls: li.className, pill: li.querySelector('.dash-pill')?.textContent.trim(), text: li.textContent, approval: Boolean(li.querySelector('[data-dash-approval]')) }));
+  }
+
+  for (const vp of VIEWPORTS) {
+    describe(vp.name, () => {
+      let page;
+      before(async () => {
+        if (SKIP) return;
+        page = await browser.newPage();
+        await page.setViewport(vp);
+      });
+      after(async () => page?.close());
+
+      test('kartu per project, urutan izin → bekerja → idle, update di tempat, tanpa overflow/tombol tanpa nama/error console', async () => {
+        await openApp(page, `#${projectId}`);
+        await startRunningTurn();
+        await openDashboardLikeUser(page, vp);
+        await page.waitFor(
+          (g, k) => {
+            const get = (id) => document.querySelector(`#dash-list > li[data-id="${id}"]`)?.className ?? '';
+            return get(g).includes('k-ask') && get(k).includes('k-busy');
+          },
+          { timeoutMs: 8000, message: 'kartu gudang (izin) dan kasir (bekerja)' },
+          ids.gudang,
+          ids.kasir,
+        );
+        const list = await page.eval(cards);
+        assert.deepEqual(list.slice(0, 2).map((c) => c.id), [ids.gudang, ids.kasir], 'izin dulu, lalu yang bekerja');
+        assert.ok(list.some((c) => c.id === projectId), 'project toko ada');
+        assert.equal(list.at(-1).id, 'demo', 'demo paling bawah');
+        assert.equal(list[0].pill, '✋ Butuh izin (1)');
+        assert.match(list[0].text, /Menunggu: /);
+        assert.equal(list[0].approval, true, 'tombol Lihat izin');
+        assert.match(list[0].text, /Kamu: minta izin tulis file <b>penting<\/b>/, 'potongan prompt tampil sebagai teks (di-escape)');
+        assert.equal(await page.eval(() => document.querySelectorAll('#dash-list .dash-snip b').length), 0, 'tidak ada HTML dari prompt');
+        assert.equal(list[1].pill, '⏳ Bekerja');
+        assert.match(await page.eval(() => document.querySelector('#dash-summary').textContent), /1 butuh kamu · 1 bekerja/);
+        // In place: the cards survive the running turn's events (no full re-render).
+        await page.eval(() => document.querySelectorAll('#dash-list > li').forEach((li) => (li.__kept = true)));
+        await sleep(1200);
+        assert.equal(await page.eval(() => [...document.querySelectorAll('#dash-list > li')].every((li) => li.__kept)), true, 'kartu tidak dibuat ulang');
+        assert.equal(await page.eval(horizontalOverflow), null);
+        assert.deepEqual(await page.eval(unnamedButtons, '#dash-modal'), []);
+        assert.equal(await page.eval(() => document.querySelector('#dash-list').getAttribute('aria-label')), 'Status semua project');
+        assert.equal(await page.eval(() => document.querySelector('#dash-live').getAttribute('aria-live')), 'polite');
+        if (SHOTS) writeFileSync(path.join(SHOTS, `dashboard-${vp.mobile ? 'mobile' : 'desktop'}.png`), await page.screenshot());
+        assert.deepEqual(realProblems(page), []);
+      });
+
+      test('ketuk kartu → pindah project dan lompat ke kartu izin', async () => {
+        await page.click(`#dash-list > li[data-id="${ids.gudang}"] .dash-open`);
+        await page.waitFor((g) => document.querySelector('#dash-modal').hidden && location.hash.slice(1) === g, { timeoutMs: 3000, message: 'pindah ke gudang' }, ids.gudang);
+        const r = await page.waitFor(
+          () => {
+            const el = document.activeElement;
+            return el?.matches?.('#chat > .approval.pending') ? { view: document.body.dataset.view, tab: document.body.dataset.tab } : null;
+          },
+          { timeoutMs: 3000, message: 'fokus di kartu izin' },
+        );
+        assert.deepEqual(r, { view: 'panel', tab: 'chat' });
+        if (vp.mobile) assert.equal(await page.eval(() => document.querySelector('#mobile-nav button[data-view="chat"]').classList.contains('active')), true);
+        if (SHOTS) writeFileSync(path.join(SHOTS, `dashboard-izin-${vp.mobile ? 'mobile' : 'desktop'}.png`), await page.screenshot());
+        assert.deepEqual(realProblems(page), []);
+      });
+
+      test('Ctrl+P "Semua project", saring, /dashboard dan 🗂 di pemilih project membuka dialog yang sama', async () => {
+        await page.click(vp.mobile ? '#nav-palette' : '#btn-palette');
+        await page.waitFor(() => !document.querySelector('#palette-modal').hidden, { timeoutMs: 2000, message: 'palet terbuka' });
+        await page.send('Input.insertText', { text: 'Semua project' });
+        await page.waitFor(() => document.querySelector('#palette-list .pal-opt.active')?.textContent.includes('Semua project'), { timeoutMs: 2000, message: 'aksi Semua project di atas' });
+        await page.press('Enter');
+        await page.waitFor(() => !document.querySelector('#dash-modal').hidden, { timeoutMs: 2000, message: 'dialog dari palet' });
+        await page.eval(() => {
+          const input = document.querySelector('#dash-search');
+          input.value = '';
+          input.focus();
+        });
+        await page.send('Input.insertText', { text: 'GUD' });
+        assert.deepEqual((await page.eval(cards)).map((c) => c.id), [ids.gudang], 'saring nama');
+        await page.send('Input.insertText', { text: 'zzz' });
+        assert.match(await page.eval(() => document.querySelector('#dash-empty:not([hidden])')?.textContent ?? ''), /Tidak ada project yang cocok/);
+        await page.press('Escape');
+        await page.waitFor(() => document.querySelector('#dash-modal').hidden, { timeoutMs: 2000, message: 'Esc menutup' });
+        const viaSlash = await page.eval(async () => {
+          const { localCommand } = await import('/js/features/commands.js');
+          const input = document.querySelector('#dash-search');
+          input.value = '';
+          input.dispatchEvent(new Event('input'));
+          return localCommand('/dashboard') && !document.querySelector('#dash-modal').hidden;
+        });
+        assert.equal(viaSlash, true, '/dashboard');
+        await page.press('Escape');
+        await page.click('#crumb');
+        await page.click('#project-dash');
+        await page.waitFor(() => !document.querySelector('#dash-modal').hidden && document.querySelector('#project-modal').hidden, { timeoutMs: 2000, message: '🗂 dari pemilih project' });
+        await page.press('Escape');
+        assert.deepEqual(realProblems(page), []);
+      });
+
+      test('hanya-lihat (WiFi): dialog tetap bisa dibuka, Lihat izin aktif (hanya navigasi)', async () => {
+        const r = await page.eval(async (g) => {
+          const { state } = await import('/js/core/state.js');
+          const { openDashboard } = await import('/js/features/dashboard.js');
+          state.readOnly = true;
+          openDashboard();
+          const btn = document.querySelector(`#dash-list > li[data-id="${g}"] [data-dash-approval]`);
+          const out = { open: !document.querySelector('#dash-modal').hidden, enabled: btn ? !btn.disabled : null };
+          state.readOnly = false;
+          return out;
+        }, ids.gudang);
+        assert.deepEqual(r, { open: true, enabled: true });
+        await page.press('Escape');
+        assert.deepEqual(realProblems(page), []);
+      });
+    });
+  }
+});

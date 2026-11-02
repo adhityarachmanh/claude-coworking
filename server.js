@@ -38,7 +38,7 @@ import { ROLE_IDS, activeRoles, loadAgentDefinitions, setActiveRoles } from './s
 import { SessionManager } from './src/session.js';
 import { AttachmentError, readAttachments } from './src/attachments.js';
 import { TEMPLATE_LIMITS, TemplateError, TemplateStore } from './src/templates.js';
-import { QueueError, TaskQueue } from './src/queue.js';
+import { QueueError, refuseAttachments, TaskQueue } from './src/queue.js';
 import { BackupScheduler, ScheduleError } from './src/backup-schedule.js';
 
 const PORT = Number(process.env.OFFICE_PORT ?? 4317);
@@ -881,10 +881,12 @@ function queueApi(res, id, op, body) {
   try {
     switch (op) {
       case 'add': {
+        refuseAttachments(body); // 📎 never stored in state.json (src/queue.js)
         const item = taskQueue.add(id, body.text);
         return json(res, 200, { item, queue: taskQueue.view(id) });
       }
       case 'update':
+        refuseAttachments(body);
         taskQueue.update(id, body.itemId, body.text);
         break;
       case 'remove':

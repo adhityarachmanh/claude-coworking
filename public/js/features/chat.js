@@ -9,7 +9,7 @@ import { CAST, roleColor, roleName } from '../office/cast.js';
 import { avatarURL } from '../office/sprites.js';
 import { openModal } from '../ui/modals.js';
 import { fillApproval } from './approvals.js';
-import { attachmentChip } from './attachments.js';
+import { attachmentChip, attachmentPayload, putBackAttachments, recallSent, rememberSent } from './attachments.js';
 import { fillComposer } from './composer.js';
 import { fileLinkHtml, linkifyPaths } from './file-viewer.js';
 import { afterRowRender, isLiveShell, liveBlock, liveTail, resetLiveOutput, saveLiveScroll } from './live-output.js';
@@ -116,6 +116,42 @@ export function scheduleReplace(msg) {
     pendingReplace.clear();
     for (const m of batch) if (m.project === state.active) replaceChat(m);
   });
+}
+
+// ---------- ↻ Ulangi / Edit with 📎 attachments ----------
+
+const LOST_ATTACHMENTS = 'Lampiran tidak ikut: muat ulang halaman menghapusnya';
+
+/**
+ * The files a sent prompt carried, from browser memory (attachments.js keeps the last few per project).
+ * @returns {{ files: object[], lost: boolean }} lost: it had files, but a reload emptied the memory
+ */
+function sentFiles(msg) {
+  const chips = Array.isArray(msg.attachments) ? msg.attachments : [];
+  const files = chips.length ? recallSent(state.active, chips) : null;
+  return { files: files ?? [], lost: (chips.length > 0 || msg.images > 0) && !files };
+}
+
+/** ↻ Ulangi: the same text, with the same files while they are still in memory (else text only, and it says so). */
+async function resendPrompt(msg) {
+  const project = state.active;
+  const { files, lost } = sentFiles(msg);
+  try {
+    await api(`/api/projects/${project}/prompt`, { text: msg.text, attachments: attachmentPayload(files) });
+    if (files.length) rememberSent(project, files);
+    if (lost) toast(`Dikirim ulang tanpa lampiran. ${LOST_ATTACHMENTS}.`, 'warn');
+  } catch (err) {
+    toast(`Gagal mengirim: ${err.message}`);
+  }
+}
+
+/** Edit: the text back in the box, and its files back as chips (when still in memory). */
+function editPrompt(msg) {
+  fillComposer(msg.text);
+  if (state.readOnly) return;
+  const { files, lost } = sentFiles(msg);
+  if (files.length) putBackAttachments(files);
+  else if (lost) toast(`${LOST_ATTACHMENTS}.`, 'warn');
 }
 
 /** Only the newest prompt offers "Ulangi", so an old one is never re-sent by a stray tap. */
@@ -297,8 +333,8 @@ export function initChat() {
     const msg = rowMsg.get(act.closest('[data-id]')); // the row's own message (ids of old chats may repeat)
     if (!msg) return;
     if (act.dataset.msgAct === 'copy') flashButton(act, (await copyText(msg.text)) ? '✓ Tersalin' : 'Gagal');
-    else if (act.dataset.msgAct === 'edit') fillComposer(msg.text);
-    else if (act.dataset.msgAct === 'resend') api(`/api/projects/${state.active}/prompt`, { text: msg.text }).catch((err) => toast(`Gagal mengirim: ${err.message}`));
+    else if (act.dataset.msgAct === 'edit') editPrompt(msg);
+    else if (act.dataset.msgAct === 'resend') resendPrompt(msg);
   });
 
   chatEl.addEventListener('click', (e) => {

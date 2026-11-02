@@ -24,12 +24,15 @@ export function renderResumeTurn(st) {
     box.innerHTML = '';
     return;
   }
-  const what = cut.sessionId ? 'Lanjutkan di sesi yang sama' : 'Kirim ulang prompt tadi';
+  // 📎 Continuing in the same session needs nothing more (the files are in that conversation already); a prompt
+  // resent because there was no session yet goes out as text only (file contents are never stored on the server).
+  const lost = !cut.sessionId && cut.attachments > 0;
+  const what = cut.sessionId ? 'Lanjutkan di sesi yang sama' : lost ? 'Kirim ulang prompt tadi (tanpa lampiran)' : 'Kirim ulang prompt tadi';
   const disabled = state.readOnly ? `disabled title="${escapeHtml(READ_ONLY_HINT)}"` : '';
   box.hidden = false;
   box.innerHTML = `<div class="resume-text">⚠ ${escapeHtml(REASON[cut.reason] ?? REASON.shutdown)}${cut.at ? ` <small class="muted">(${timeOf(cut.at)})</small>` : ''}${
     cut.prompt ? `<small class="muted resume-prompt">Prompt: “${escapeHtml(cut.prompt)}”</small>` : ''
-  }</div><div class="resume-actions"><button type="button" class="primary" data-resume="continue" title="${what}" ${disabled}>▶ Lanjutkan</button><button type="button" class="ghost" data-resume="dismiss" title="Abaikan pemberitahuan ini" ${disabled}>Tutup</button></div>`;
+  }${lost ? `<small class="muted resume-attach">📎 ${cut.attachments} lampiran tidak ikut dikirim ulang — lampirkan lagi bila perlu.</small>` : ''}</div><div class="resume-actions"><button type="button" class="primary" data-resume="continue" title="${what}" ${disabled}>▶ Lanjutkan</button><button type="button" class="ghost" data-resume="dismiss" title="Abaikan pemberitahuan ini" ${disabled}>Tutup</button></div>`;
 }
 
 export function initResumeTurn() {
@@ -47,8 +50,8 @@ export function initResumeTurn() {
     const dismiss = btn.dataset.resume === 'dismiss';
     for (const b of box.querySelectorAll('button')) b.disabled = true;
     try {
-      await api(`/api/projects/${state.active}/continue`, dismiss ? { dismiss: true } : {});
-      if (!dismiss) toast('Melanjutkan pekerjaan yang terputus…', 'ok');
+      const res = await api(`/api/projects/${state.active}/continue`, dismiss ? { dismiss: true } : {});
+      if (!dismiss) toast(res?.lostAttachments > 0 ? `Prompt dikirim ulang tanpa ${res.lostAttachments} lampiran — lampirkan lagi bila perlu.` : 'Melanjutkan pekerjaan yang terputus…', res?.lostAttachments > 0 ? 'warn' : 'ok');
     } catch (err) {
       toast(err.message);
       for (const b of box.querySelectorAll('button')) b.disabled = Boolean(state.readOnly);

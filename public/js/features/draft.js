@@ -1,8 +1,11 @@
 // Unsent prompt drafts: what is typed in the composer survives a reload, a lost connection or a server restart.
-// One draft per project in localStorage. Text only: attached images are never stored (size, and screenshots
-// can be private). A read-only phone (plain WiFi) can't type, so it neither stores nor restores drafts.
+// One draft per project in localStorage. Text only: 📎 attachments are never stored there (size, and screenshots
+// or logs can be private). Pending attachment chips do stay with their project in memory when switching projects
+// (attachments.js parkAttachments) and come back with it; a reload empties them. A read-only phone (plain WiFi)
+// can't type, so it neither stores nor restores drafts.
 import { $ } from '../core/dom.js';
 import { DEMO_ID, state } from '../core/state.js';
+import { parkAttachments } from './attachments.js';
 import { autosize, updateBashMode } from './composer.js';
 
 const KEY_PREFIX = 'office.draft.';
@@ -64,7 +67,9 @@ export function draftSent(project, text) {
 
 /** After selectProject: the box shows the chosen project's draft. Same project again (a reconnect) = untouched. */
 export function restoreDraft() {
-  if (state.readOnly || draft.project === state.active) return;
+  if (state.readOnly) return;
+  parkAttachments(state.active); // the chips follow their project too (memory only)
+  if (draft.project === state.active) return;
   const input = $('#prompt');
   flushDraft();
   // Text that could not be stored (too long, storage full) stays in the box rather than vanish.

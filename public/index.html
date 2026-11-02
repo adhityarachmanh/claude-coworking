@@ -26,6 +26,8 @@
       <!-- Quota warning (features/quota.js): shown only while a plan window is past the yellow/red threshold -->
       <button id="quota-pill" class="quota-pill" type="button" hidden></button>
       <button id="btn-account" class="account-btn" title="Akun Claude, kuota & login"><span id="account-avatar" class="avatar">?</span><span id="account-label" class="account-label">Akun</span></button>
+      <!-- 🗂 Semua project (features/dashboard.js); phone: the Kantor bar and the 🗂 in the project picker -->
+      <button id="btn-dashboard" class="icon-btn labeled" title="Semua project: status setiap project sekaligus" aria-haspopup="dialog"><span class="ico" aria-hidden="true">🗂</span><span class="lbl">Semua project</span></button>
       <button id="btn-palette" class="icon-btn labeled" title="Palet perintah: cari aksi, file, project (Ctrl+P)" aria-haspopup="dialog" aria-keyshortcuts="Control+P"><span class="ico" aria-hidden="true">🔎</span><span class="lbl">Cari</span></button>
       <button id="btn-report" class="icon-btn labeled" title="Laporan penggunaan token (PDF)"><span class="ico" aria-hidden="true">📊</span><span class="lbl">Laporan</span></button>
       <button id="btn-phone" class="icon-btn labeled" title="Buka dari HP (scan QR)" hidden><span class="ico" aria-hidden="true">📱</span><span class="lbl">Buka di HP</span></button>
@@ -40,6 +42,8 @@
 
     <div class="layout">
       <main class="office">
+        <!-- Phone only: 🗂 Semua project from the Kantor view, with a one-line summary (features/dashboard.js) -->
+        <button id="dash-bar" class="dash-bar" type="button" aria-haspopup="dialog"><span class="dash-bar-title"><span aria-hidden="true">🗂</span> Semua project</span><span id="dash-bar-sum" class="dash-bar-sum"></span><span class="dash-bar-chev" aria-hidden="true">›</span></button>
         <div id="stage" class="stage">
           <canvas aria-label="Kantor tim Claude"></canvas>
           <div class="overlay"></div>
@@ -203,6 +207,7 @@
       <div class="modal-card project-card" role="dialog" aria-modal="true" aria-label="Pilih project">
         <div class="side-head">
           <input id="project-search" type="search" aria-label="Cari project" placeholder="Cari project…  (↑↓ pilih · Enter buka · Esc tutup)" autocomplete="off" />
+          <button id="project-dash" class="icon-btn" type="button" title="Semua project: status setiap project sekaligus" aria-label="Semua project">🗂</button>
           <button id="refresh-projects" class="icon-btn" title="Pindai ulang folder" aria-label="Pindai ulang folder">↻</button>
           <button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button>
         </div>
@@ -709,6 +714,17 @@
         </div>
         <p id="search-status" class="muted small search-status" role="status" aria-live="polite"></p>
         <ul id="search-results" class="sessions-list search-results" aria-label="Hasil pencarian"></ul>
+      </div>
+    </div>
+
+    <!-- 🗂 Semua project (features/dashboard.js, rules in core/dashboard-rules.js): read-only, live from the stream -->
+    <div id="dash-modal" class="modal" hidden>
+      <div class="modal-card dash-modal-card" role="dialog" aria-modal="true" aria-labelledby="dash-title">
+        <div class="modal-head"><b id="dash-title">🗂 Semua project <small id="dash-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <input id="dash-search" class="dash-search" type="search" aria-label="Saring project" aria-controls="dash-list" placeholder="Saring project…  (Enter buka yang pertama)" autocomplete="off" />
+        <ul id="dash-list" class="dash-list" aria-label="Status semua project"></ul>
+        <p id="dash-empty" class="dash-empty muted" hidden></p>
+        <p id="dash-live" class="sr-only" role="status" aria-live="polite"></p>
       </div>
     </div>
 

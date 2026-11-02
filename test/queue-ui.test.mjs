@@ -242,6 +242,43 @@ for (const vp of VIEWPORTS) {
       await page.press('Escape');
     });
 
+    /* global DataTransfer, DragEvent -- used inside page.eval (runs in the browser) */
+    test('📎 lampiran tidak masuk antrian:＋📋 / Alt+Enter menolak dengan pesan jelas, teks & chip tetap di kotak', async () => {
+      for (const item of (await queue()).items) await api(`/api/projects/${projectId}/queue-remove`, { itemId: item.id });
+      await api(`/api/projects/${projectId}/queue-pause`, { paused: true });
+      page.clearProblems();
+      await page.goto(`${BASE}/#${projectId}`);
+      await page.waitFor(() => document.querySelector('#conn')?.classList.contains('ok'), { timeoutMs: 10000, message: 'app ready' });
+      await page.eval(() => {
+        document.querySelectorAll('.toast').forEach((t) => t.remove());
+        const dt = new DataTransfer();
+        dt.items.add(new File(['TypeError: boom\n'], 'error.log', { type: 'text/plain' }));
+        document.querySelector('.input').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        const input = document.querySelector('#prompt');
+        input.value = 'cek log ini nanti';
+        input.focus();
+      });
+      await page.waitFor(() => document.querySelectorAll('#attachments .att-chip').length === 1, { message: 'chip lampiran' });
+      const refused = () => [...document.querySelectorAll('.toast')].some((t) => /Lampiran belum bisa masuk antrian; kirim langsung/.test(t.textContent));
+      await page.click('#btn-queue-add');
+      await page.waitFor(refused, { message: 'toast penolakan (tombol)' });
+      await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+      await page.eval(() => document.querySelector('#prompt').focus());
+      await altEnter(page);
+      await page.waitFor(refused, { message: 'toast penolakan (Alt+Enter)' });
+      assert.deepEqual(await page.eval(() => ({ text: document.querySelector('#prompt').value, chips: document.querySelectorAll('#attachments .att-chip').length })), { text: 'cek log ini nanti', chips: 1 }, 'nothing lost');
+      assert.equal(await page.eval(() => document.querySelector('#queue-modal').hidden), true, 'dialog not opened');
+      assert.deepEqual((await queue()).items, [], 'nothing queued');
+      // clean up for the next test: chip and text out of the box
+      await page.eval(() => {
+        document.querySelector('#attachments .att-chip button').click();
+        document.querySelector('#prompt').value = '';
+        document.querySelectorAll('.toast').forEach((t) => t.remove());
+      });
+      assert.equal(await page.eval(horizontalOverflow), null);
+      assert.deepEqual(page.problems, [], 'no console errors');
+    });
+
     test('💰 Batas antrian: validation, save → POST body, progress (warn/over), server error, budget pause label + toast, remove, read-only', async () => {
       for (const item of (await queue()).items) await api(`/api/projects/${projectId}/queue-remove`, { itemId: item.id });
       await api(`/api/projects/${projectId}/queue-add`, { text: 'item untuk batas' });

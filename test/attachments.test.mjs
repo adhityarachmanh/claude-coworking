@@ -2,6 +2,7 @@
 // re-check + content blocks (src/attachments.js), plus how transcripts show attachments in history.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { chipSignature, createAttachmentMemory } from '../public/js/core/attachment-memory.js';
 import {
   ATTACH_LIMITS,
   attachmentKind,
@@ -193,4 +194,51 @@ test('history: the prompt text leaves attachments out, the bubble gets chips', (
     { kind: 'image', name: 'gambar-1', size: PNG.length },
   ]);
   assert.deepEqual(promptAttachments({ type: 'user', message: { content: 'teks biasa' } }), []);
+});
+
+// ---------- attachment memory (↻ Ulangi / Edit, browser memory only) ----------
+
+const file = (name, size, kind = 'text') => ({ kind, name, size, mediaType: 'text/plain', data: 'eA==' });
+
+test('memory: a sent prompt is found again by its chips (kind, name, size), per project, as a copy', () => {
+  const mem = createAttachmentMemory();
+  const sent = [file('a.log', 10), file('shot.png', 70, 'image')];
+  mem.remember('p1', sent);
+  const chips = sent.map(({ kind, name, size }) => ({ kind, name, size }));
+  const back = mem.recall('p1', chips);
+  assert.deepEqual(back, sent);
+  back[0].name = 'diubah';
+  assert.equal(mem.recall('p1', chips)[0].name, 'a.log', 'recall gives copies');
+  assert.equal(mem.recall('p2', chips), null, 'other project: not found');
+  assert.equal(mem.recall('p1', [chips[1], chips[0]]), null, 'order matters');
+  assert.equal(mem.recall('p1', [{ kind: 'text', name: 'a.log', size: 11 }]), null, 'size matters');
+  assert.equal(mem.recall('p1', []), null);
+  assert.equal(mem.recall('p1', undefined), null);
+  assert.equal(chipSignature(chips), 'text:a.log:10|image:shot.png:70');
+});
+
+test('memory: only the last N per project; the same files again move to the newest place; nothing for empty lists', () => {
+  const mem = createAttachmentMemory({ perProject: 2, totalBytes: 1e9 });
+  mem.remember('p1', [file('1.txt', 1)]);
+  mem.remember('p1', [file('2.txt', 1)]);
+  mem.remember('p2', [file('x.txt', 1)]);
+  mem.remember('p1', [file('1.txt', 1)]); // again: newest
+  mem.remember('p1', [file('3.txt', 1)]); // 2.txt is now the oldest of p1 and goes
+  mem.remember('p1', []);
+  mem.remember('', [file('y.txt', 1)]);
+  const has = (p, n) => mem.recall(p, [{ kind: 'text', name: n, size: 1 }]) !== null;
+  assert.deepEqual([has('p1', '1.txt'), has('p1', '2.txt'), has('p1', '3.txt'), has('p2', 'x.txt')], [true, false, true, true]);
+  assert.equal(mem.size(), 3);
+});
+
+test('memory: the total size cap drops the oldest entries; one bigger than the cap is not kept', () => {
+  const mem = createAttachmentMemory({ perProject: 10, totalBytes: 100 });
+  mem.remember('p1', [file('a', 60)]);
+  mem.remember('p2', [file('b', 30)]);
+  mem.remember('p1', [file('c', 30)]); // 120 > 100: a goes
+  assert.equal(mem.recall('p1', [{ kind: 'text', name: 'a', size: 60 }]), null);
+  assert.ok(mem.recall('p2', [{ kind: 'text', name: 'b', size: 30 }]));
+  mem.remember('p1', [file('huge', 500)]);
+  assert.equal(mem.recall('p1', [{ kind: 'text', name: 'huge', size: 500 }]), null, 'bigger than the cap: not kept');
+  assert.equal(mem.size(), 2, '…and nothing older was pushed out for it');
 });

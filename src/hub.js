@@ -49,7 +49,7 @@ function maxStoredSeq(chats) {
   return max;
 }
 /** What the browser gets of a cut-short turn (status `interrupted`): enough for the notice and the "Lanjutkan" button. */
-const publicTurn = (t) => (t ? { reason: t.reason, at: t.at, startedAt: t.startedAt, sessionId: t.sessionId, prompt: t.prompt ? t.prompt.slice(0, 300) : null } : null);
+const publicTurn = (t) => (t ? { reason: t.reason, at: t.at, startedAt: t.startedAt, sessionId: t.sessionId, prompt: t.prompt ? t.prompt.slice(0, 300) : null, attachments: t.attachments || 0 } : null);
 
 export class Hub {
   constructor({ dataDir }) {
@@ -238,14 +238,16 @@ export class Hub {
    * A turn started (or moved on to the next prompt). Written to disk at once: if the server is then killed
    * (crash, Stop-Process -Force) this marker is what tells the next start that the turn was cut short.
    * @param {string} id project id
-   * @param {{ sessionId: string|null, prompt: string|null, uuid: string|null }} turn
+   * @param {{ sessionId: string|null, prompt: string|null, uuid: string|null, attachments?: number }} turn
+   *   attachments: how many 📎 files the prompt carried (so "Lanjutkan" can say a resend goes without them)
    */
-  beginTurn(id, { sessionId, prompt, uuid }) {
+  beginTurn(id, { sessionId, prompt, uuid, attachments = 0 }) {
     const prev = this.persisted.turns[id];
     this.persisted.turns[id] = {
       sessionId: sessionId ?? null,
       prompt: prompt == null ? null : String(prompt).slice(0, 2000),
       uuid: uuid ?? null,
+      ...(attachments > 0 && { attachments: Math.min(Number(attachments) || 0, 100) }), // 📎 a count only, never contents
       startedAt: prev?.startedAt ?? Date.now(),
     };
     this.save();

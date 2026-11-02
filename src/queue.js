@@ -29,6 +29,15 @@ export class QueueError extends Error {
   }
 }
 
+/**
+ * 📎 Queue items are stored in state.json, so attachments (size, and logs/screenshots can hold secrets) are refused
+ * rather than stored or silently dropped. Throws QueueError when the request carries any.
+ */
+export function refuseAttachments(body) {
+  const listed = (key) => (Array.isArray(body?.[key]) ? body[key].length : 0);
+  if (listed('attachments') + listed('images') > 0) throw new QueueError(400, 'Lampiran belum bisa masuk antrian; kirim langsung (tombol Kirim), atau hapus lampirannya dulu.');
+}
+
 /** Validates a prompt for the queue; throws QueueError with a user-facing reason. */
 export function cleanText(input) {
   const text = String(input ?? '').replace(/\r\n?/g, '\n').replace(TEXT_JUNK, '').trim();

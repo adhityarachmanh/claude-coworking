@@ -125,6 +125,15 @@ test('queue: add, edit, reorder, remove while paused; validated; nothing runs wh
   assert.equal((await q('remove', { itemId: 'nope' })).status, 404);
   assert.equal((await api('/api/projects/nope/queue-add', { text: 'x' })).status, 404);
   assert.equal((await api('/api/projects/demo/queue')).status, 404, 'the demo has no queue');
+  // 📎 attachments never go into the queue (state.json): refused with a clear reason, nothing stored
+  const LOG = { name: 'error.log', mediaType: 'text/plain', data: Buffer.from('boom\n').toString('base64') };
+  const withFile = await q('add', { text: 'lihat log', attachments: [LOG] });
+  assert.equal(withFile.status, 400);
+  assert.match(withFile.body.error, /Lampiran belum bisa masuk antrian; kirim langsung/);
+  assert.equal((await q('add', { text: 'gambar lama', images: [{ mediaType: 'image/png', data: 'eA==' }] })).status, 400, 'the older images field too');
+  assert.equal((await q('update', { itemId: a, text: 'x', attachments: [LOG] })).status, 400);
+  assert.deepEqual(texts((await queue()).items), ['satu', 'dua diubah'], 'nothing added or changed');
+  assert.ok(!readFileSync(path.join(DATA, 'state.json'), 'utf8').includes(LOG.data), 'no file contents in state.json');
   for (let i = (await queue()).items.length; i < QUEUE_LIMITS.items; i++) assert.equal((await q('add', { text: `isi ${i}` })).status, 200);
   const full = await q('add', { text: 'satu lagi' });
   assert.equal(full.status, 400);

@@ -8,6 +8,7 @@ import { ago, fmtShort } from '../core/format.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { setMobileView } from '../ui/layout.js';
+import { attachments } from './attachments.js';
 import { autosize, updateBashMode } from './composer.js';
 import { scheduleDraftSave } from './draft.js';
 
@@ -28,6 +29,8 @@ export const queueView = { project: null, data: null, editing: null, rev: -1, lo
 const lastReason = new Map(); // project -> pause reason last seen (a new failure/limit pause gets a toast)
 
 const canEdit = () => !state.readOnly;
+/** Same wording as the server's refusal (src/queue.js). */
+const QUEUE_NO_ATTACHMENTS = 'Lampiran belum bisa masuk antrian; kirim langsung (tombol Kirim), atau hapus lampirannya dulu.';
 
 // ---------- session bar chip ----------
 
@@ -335,6 +338,8 @@ export async function queueFromComposer() {
   if (state.readOnly || state.active === DEMO_ID) return;
   const input = $('#prompt');
   const text = input.value.trim();
+  // 📎 Queue items live in state.json: file contents (big, possibly secret) never go there. The chips stay in the box.
+  if (attachments.length) return toast(QUEUE_NO_ATTACHMENTS, 'warn');
   if (!text) return openQueue({ focusAdd: true });
   if (text.startsWith('!') || /^\/[\w-]+/.test(text)) return toast('Perintah ! dan /command tidak bisa diantrekan — kirim langsung saja.');
   try {

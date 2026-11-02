@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { Hub } from '../src/hub.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-restart-'));
@@ -136,7 +137,7 @@ test('clean stop mid-turn: turn recorded as cut short, notice after the restart,
 
   const res = await api(`/api/projects/${id}/continue`);
   assert.equal(res.status, 200);
-  assert.deepEqual(res.body, { ok: true, sessionId, resent: false });
+  assert.deepEqual(res.body, { ok: true, sessionId, resent: false, lostAttachments: 0 });
   const reply = await until(async () => (await snapshot()).chats[id].find((m) => m.kind === 'assistant' && /lanjut session=/.test(m.text ?? '')), 'reply of the continued turn');
   assert.equal(reply.text, `lanjut session=${sessionId} resume=${sessionId}`, 'continued with --resume of the same session');
   const after = await snapshot();
@@ -233,4 +234,21 @@ test('scripts/restart.mjs: clean shutdown, waits for the port, starts again deta
   assert.equal((await api('/api/shutdown')).status, 200);
   await until(async () => !(await fetch(`${BASE}/health`).then(() => true, () => false)), 'detached server stopped');
   current = null;
+});
+
+test('📎 a cut-short turn keeps only the count of its attachments (never the contents) for "Lanjutkan"', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-hub-'));
+  try {
+    const hub = new Hub({ dataDir: dir });
+    hub.beginTurn('p1', { sessionId: null, prompt: 'lihat log ini', uuid: null, attachments: 2 });
+    hub.interruptTurn('p1', 'shutdown');
+    const cut = hub.interruptedFor('p1');
+    assert.equal(cut.attachments, 2);
+    assert.equal(cut.prompt, 'lihat log ini');
+    assert.deepEqual(Object.keys(cut).filter((k) => /data|text|content/i.test(k)), [], 'no file contents stored');
+    hub.beginTurn('p2', { sessionId: 's', prompt: 'tanpa lampiran', uuid: null });
+    assert.equal('attachments' in hub.persisted.turns.p2, false, 'no field without attachments');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -3,7 +3,7 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
-import { attachmentPayload, attachments, attachmentsReady, clearAttachments, restoreAttachments } from './attachments.js';
+import { attachmentPayload, attachments, attachmentsReady, clearAttachments, rememberSent, restoreAttachments } from './attachments.js';
 import { localCommand } from './commands.js';
 import { connection } from './connection.js';
 import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
@@ -169,9 +169,10 @@ async function sendPrompt() {
   try {
     await api(`/api/projects/${project}/prompt`, { text, attachments: files });
     draftSent(project, text);
+    rememberSent(project, kept); // memory only: ↻ Ulangi / Edit can send them again until a reload
   } catch (err) {
     input.value = text;
-    restoreAttachments(kept);
+    restoreAttachments(kept, project);
     toast(`Gagal mengirim: ${err.message}`);
   }
 }

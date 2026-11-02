@@ -1,12 +1,24 @@
 // 📎 Attachments for a prompt (paste, drop, 📎): images, PDF and text files (logs, source, md/json/csv/…).
 // The rules (kinds, limits, refusals) live in core/attachment-rules.js and are applied again by the server.
 import { toast } from '../core/api.js';
+import { chipSignature, createAttachmentMemory } from '../core/attachment-memory.js';
 import { ATTACH_ACCEPT, ATTACH_ICONS, ATTACH_LIMITS, checkAttachmentSet, formatSize, inspectAttachment, precheckAttachment, safeName } from '../core/attachment-rules.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { state } from '../core/state.js';
 
-/** [{ kind, name, size, mediaType, data(base64), url? }] waiting to go out with the next prompt. */
+/** [{ kind, name, size, mediaType, data(base64), url? }] waiting to go out with the next prompt (active project). */
 export const attachments = [];
+
+// Chips of the projects not on screen (draft.js parks them on a project switch). Memory only, like `attachments`:
+// never localStorage (size, and screenshots/logs can be private), so a reload empties it.
+const parked = new Map(); // project -> attachment list
+// Which project `attachments` belongs to (files still being read land in their own project's list).
+let owner = null;
+
+// The files sent with the last few web prompts per project, for ↻ Ulangi / Edit (core/attachment-memory.js).
+const sent = createAttachmentMemory();
+// Image chips carry a data: URL for the thumbnail; memory keeps only the base64 once and rebuilds the URL.
+const withUrl = (a) => ({ ...a, url: a.kind === 'image' ? `data:${a.mediaType};base64,${a.data}` : undefined });
 
 /** One chip: icon (a thumbnail for images in the composer), name, size, optional × button. */
 export function attachmentChip({ kind, name, size, url }, removeIndex = null) {
@@ -27,14 +39,52 @@ export function clearAttachments() {
   renderAttachments();
 }
 
-/** Puts attachments back (a prompt the server refused), ahead of anything added meanwhile. */
-export function restoreAttachments(list) {
-  attachments.unshift(...list.slice(0, Math.max(0, ATTACH_LIMITS.maxFiles - attachments.length)));
+/** Puts attachments back (a prompt the server refused), ahead of anything added meanwhile, in their own project. */
+export function restoreAttachments(list, project = state.active) {
+  const box = (owner ?? state.active) === project;
+  const into = box ? attachments : (parked.get(project) ?? []);
+  into.unshift(...list.slice(0, Math.max(0, ATTACH_LIMITS.maxFiles - into.length)));
+  if (box) renderAttachments();
+  else parked.set(project, into);
+}
+
+/**
+ * Edit on a sent prompt: its files come back as chips. Chips already in the box stay (nothing the user added is
+ * dropped) and a file already there is not added twice; the server still checks the totals on send.
+ */
+export function putBackAttachments(list) {
+  const have = new Set(attachments.map((a) => chipSignature([a])));
+  const fresh = list.filter((a) => !have.has(chipSignature([a])));
+  attachments.push(...fresh.slice(0, Math.max(0, ATTACH_LIMITS.maxFiles - attachments.length)).map(withUrl));
+  renderAttachments();
+}
+
+/**
+ * Project switch (draft.js): the chips in the box stay with the project they were added for, in memory, and the
+ * chosen project's parked chips come back. Same project again (a reconnect) = untouched.
+ */
+export function parkAttachments(to) {
+  if (owner === to) return;
+  if (owner && attachments.length) parked.set(owner, attachments.slice());
+  else if (owner) parked.delete(owner);
+  attachments.length = 0;
+  attachments.push(...(parked.get(to) ?? []));
+  parked.delete(to);
+  owner = to;
   renderAttachments();
 }
 
 /** What the prompt API takes: { name, mediaType, data } (the server checks it all again). */
-export const attachmentPayload = () => attachments.map(({ name, mediaType, data }) => ({ name, mediaType, data }));
+export const attachmentPayload = (list = attachments) => list.map(({ name, mediaType, data }) => ({ name, mediaType, data }));
+
+/** The server accepted a prompt with these files: keep them (memory only) for ↻ Ulangi / Edit. */
+export const rememberSent = (project, list) => sent.remember(project, list.map(({ url: _url, ...a }) => a));
+
+/** The files of a sent prompt whose bubble shows `chips` (with thumbnails again), or null after a reload. */
+export function recallSent(project, chips) {
+  const items = sent.recall(project, chips);
+  return items ? items.map(withUrl) : null;
+}
 
 function toBase64(bytes) {
   let binary = '';
@@ -47,6 +97,13 @@ let reading = Promise.resolve();
 
 export function addFiles(files) {
   if (state.readOnly || !files.length) return reading;
+  const project = state.active;
+  // The list the files go to: the box, or (after a project switch while reading) that project's parked chips.
+  const target = () => {
+    if ((owner ?? state.active) === project) return attachments;
+    if (!parked.has(project)) parked.set(project, []);
+    return parked.get(project);
+  };
   reading = reading.then(async () => {
     for (const file of files) {
       const name = safeName(file.name);
@@ -56,8 +113,8 @@ export function addFiles(files) {
         toast(early);
         continue;
       }
-      if (attachments.length >= ATTACH_LIMITS.maxFiles) {
-        toast(checkAttachmentSet([...attachments, { kind: 'text', size: 0 }]));
+      if (target().length >= ATTACH_LIMITS.maxFiles) {
+        toast(checkAttachmentSet([...target(), { kind: 'text', size: 0 }]));
         break;
       }
       let bytes;
@@ -72,15 +129,16 @@ export function addFiles(files) {
         toast(checked.error);
         continue;
       }
-      const setError = checkAttachmentSet([...attachments, checked.item]);
+      const setError = checkAttachmentSet([...target(), checked.item]);
       if (setError) {
         toast(setError);
         continue;
       }
       const { kind: k, size, mediaType } = checked.item;
       const data = toBase64(bytes);
-      attachments.push({ kind: k, name: checked.item.name, size, mediaType, data, url: k === 'image' ? `data:${mediaType};base64,${data}` : undefined });
-      renderAttachments();
+      const list = target();
+      list.push(withUrl({ kind: k, name: checked.item.name, size, mediaType, data }));
+      if (list === attachments) renderAttachments();
     }
   });
   return reading;
