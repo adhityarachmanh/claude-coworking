@@ -1,6 +1,7 @@
 # Desain: HTTPS via Tailscale + Web Push dengan tombol Izinkan / Tolak
 
-Status: **usulan** (belum diimplementasi) · Penulis: Tech Lead · 2026-11-01
+Status: **diimplementasi** (fase 0–4, 2026-11-02; commit 2d202d6 dan 091cd49) · Penulis: Tech Lead · 2026-11-01
+Selisih dengan desain ini: tombol **Izinkan** di notifikasi hanya untuk tool baca/edit file (`LOCKSCREEN_SAFE_TOOLS` di `src/push.js`) dan bisa dimatikan per HP; anti-dobel lewat laporan "halaman terlihat" (`/api/push/visible`); pengaturan dikirim lewat `/api/push/settings`. `tailscale cert` terbukti jalan tanpa admin di Windows (R1 tertutup). Belum: fase 5 (handoff HTTP → HTTPS tanpa scan ulang, Q5). Dokumentasi pengguna: README → "Notifikasi push ke HP".
 Lingkup: (1) listener HTTPS untuk akses Tailscale, (2) Web Push ke HP, (3) notifikasi dengan aksi Izinkan/Tolak.
 Batasan tetap: Node ≥ 20, **nol dependensi npm**, frontend vanilla, CSP ketat, semua jaminan di README "Buka dari HP" dan "Keamanan" dipertahankan.
 

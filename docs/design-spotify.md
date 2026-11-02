@@ -1,6 +1,7 @@
 # Desain: Integrasi Spotify (Spotify Connect lewat Web API dari server)
 
-Status: **usulan** (belum diimplementasi) · Penulis: Tech Lead · 2026-11-02
+Status: **diimplementasi** (2026-11-02, termasuk §2.7 perangkat ★, §2.8 buka Spotify di latar belakang, §2.9 isi playlist) · Penulis: Tech Lead · 2026-11-02
+Selisih dengan desain ini: "Saat ada permintaan izin" dan "buka otomatis" juga bisa diubah dari HP Tailscale (`/api/spotify/settings`, Q5). Belum: P2 aktivitas idle `radio` (§6.2: berjalan ke radio). Dokumentasi pengguna: README → "Musik (Spotify)".
 Lingkup: now-playing di kantor (radio di lounge + karakter idle ikut bergoyang), kontrol kecil (play/pause, next/prev, volume, pilih perangkat, playlist) di header dan 🗂 dashboard, bisa dari HP lewat Tailscale, read-only lewat WiFi. Opsional: kecilkan/jeda musik saat kartu izin muncul.
 Batasan tetap: Node ≥ 20, **nol dependensi npm**, frontend vanilla, CSP ketat (`script-src 'self'`, `connect-src 'self'`) **tidak diubah**, gerbang yang ada (`isLocal`, `LOCAL_ONLY`, `canManageAccount`, `wifiAllows`) dipakai apa adanya, rahasia tidak pernah masuk backup.
 Keputusan yang sudah diambil user/Lead: **Approach A**, yaitu server mengendalikan perangkat Spotify Connect yang sudah ada lewat Web API. Tanpa Web Playback SDK dan tanpa script pihak ketiga di halaman. User punya Premium dan sudah punya app Spotify (Client ID).

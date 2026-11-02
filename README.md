@@ -1,120 +1,30 @@
 # Adhit Office
 
-Kantor pixel-art untuk **mengoperasikan Claude Code dari browser dan HP**. Pilih project, ketik prompt, setujui izin. Tim IT berisi 17 role + Lead terlihat bekerja di kantor secara real-time. CLI tidak perlu dibuka, tapi sesi yang kamu jalankan di CLI juga ikut tampil.
+Kantor pixel-art untuk **mengoperasikan Claude Code dari browser dan HP**. Pilih project, ketik prompt, jawab izin. Tim IT berisi 17 role + Lead terlihat bekerja di kantor secara real-time. Sesi yang kamu jalankan di terminal (CLI) juga ikut tampil.
 
 ```
-Browser ──HTTP/SSE──▶ server.js ──stdin/stdout (stream-json)──▶ claude.exe -p   (sesi dari web, satu proses per project)
-                         ▲
-                         └── membaca ~/.claude/projects/*.jsonl  (sesi dari CLI, read-only, real-time)
+Browser / HP ──HTTP(S) + SSE──▶ server.js ──stdin/stdout (stream-json)──▶ claude -p   (sesi web, satu proses per project)
+                                   ▲
+                                   └── membaca ~/.claude/projects/*.jsonl  (sesi CLI, read-only, real-time)
 ```
 
 Server menjalankan Claude Code milikmu sendiri dalam mode headless, jadi login, settings, MCP, dan `CLAUDE.md` tiap project tetap terpakai. Tidak perlu API key dan tidak ada dependency npm. Cukup Node.js ≥ 20.
 
+Panduan harian yang lebih santai: [docs/PANDUAN.md](docs/PANDUAN.md). Riwayat perubahan: [CHANGELOG.md](CHANGELOG.md).
+
 > Dulu bernama *Claude Coworking*. Nama teknis yang sudah terpasang di Windows (file `claude-coworking.vbs`, task Task Scheduler `Claude Coworking`, rule firewall `Claude Coworking (Tailscale)`) sengaja tidak diganti, supaya auto-start yang sudah jalan tidak rusak.
 
-## Tim
+**Isi**
 
-| Orang | Role | Dipakai untuk |
-|---|---|---|
-| Adhit - Lead | Engineering Lead (Claude) | Orkestrasi: memecah pekerjaan dan mendelegasikan |
-| Adhit - PM | Product Manager | Scope, prioritas, acceptance criteria, severity bug |
-| Adhit - BA | Business Analyst | Kebutuhan, aturan bisnis, analisis kode/dokumen |
-| Adhit - Tech Lead | Tech Lead / Architect | Desain teknis, keputusan arsitektur, **code review** |
-| Adhit - UI/UX | UI/UX Designer | Alur pengguna, styling, aksesibilitas |
-| Adhit - Frontend | Frontend Developer | Komponen, halaman, state, bug di sisi client |
-| Adhit - Backend | Backend Developer | API, logika bisnis, integrasi, bug di sisi server |
-| Adhit - DBA | Database Engineer | Skema, migrasi, query, perbaikan data |
-| Adhit - QA | QA Engineer | Reproduksi bug, test otomatis, regresi, verifikasi |
-| Adhit - Security | Security Engineer | Review OWASP, secret, audit dependensi |
-| Adhit - DevOps | DevOps / SRE | Build, CI/CD, Docker, environment, deploy |
-| Adhit - Writer | Technical Writer | README, dokumentasi API, changelog |
-| Adhit - Freelancer | Freelancer / Generalist | Subagent yang bukan spesialis (`general-purpose`, `fork`, tipe custom yang tidak dikenali) |
-| Adhit - Mobile | Mobile Developer | Flutter, React Native, Android/iOS, build & bug khusus perangkat |
-| Adhit - Data/AI | Data / AI Engineer | Pipeline data, analitik, notebook, fitur ML/AI (LLM, embedding, RAG) |
-| Adhit - Support | Tech Support / Ops Helpdesk | Triage laporan user, reproduksi dari log, respons awal insiden |
-| Adhit - Reviewer | Code Reviewer | Review kode independen atas diff sebelum pekerjaan dinyatakan selesai |
-| Adhit - Compliance | Compliance / Privacy (DPO) | Data pribadi (UU PDP / GDPR): consent, retensi, kebijakan privasi/ToS, DPIA |
+- [Mulai cepat](#mulai-cepat)
+- [Dari HP](#dari-hp)
+- [Fitur](#fitur): [Chat & izin](#chat--izin) · [Tim & kantor](#tim--kantor) · [Project & dashboard](#project--dashboard) · [Git](#git) · [Lampiran](#lampiran) · [Antrian & batas](#antrian--batas) · [Notifikasi](#notifikasi) · [Musik (Spotify)](#musik-spotify) · [Akun & laporan](#akun--laporan) · [Backup & riwayat](#backup--riwayat)
+- [Keamanan & privasi](#keamanan--privasi)
+- [Saat Claude Code diperbarui](#saat-claude-code-diperbarui)
+- [Test & pengembangan](#test--pengembangan)
+- [Struktur](#struktur)
 
-**👥 Kelola tim:** ⚙ → *Kelola tim*, menu ⋯, palet Ctrl+P, atau ketik `/team`. Susunan tim hanya dipilih dari **katalog role bawaan** (tidak ada role buatan bebas): 12 role inti + 5 role opsional — `mobile` (Mobile Developer), `data` (Data / AI Engineer), `support` (Tech Support / Ops Helpdesk), `reviewer` (Code Reviewer), dan `compliance` (Compliance / Privacy, DPO). Semua role opsional bisa dimatikan per kebutuhan, mis. Compliance untuk project tanpa data pribadi. Lead selalu ada; Freelancer selalu aktif karena jadi pengganti generalis di ujung setiap rantai fallback. Maks 17 role aktif (semua muat; mulai 13 role kantor mendapat baris meja ke-4, dengan 17 role baris ke-5, dan ruangan makin tinggi). Bawaan: semua 17 role aktif (5 baris meja). Tim yang sudah pernah disimpan tidak diubah (aktifkan Compliance di sini bila perlu); **↺ Tim bawaan** mengembalikannya ke 17 role. Role nonaktif tidak pernah dipakai: pekerjaannya dialihkan ke role aktif terdekat (mis. reviewer → architect, data → backend, mobile → frontend, support → qa/ba, compliance → security → ba; katalog di `src/role-catalog.js`). Hanya role aktif yang dikirim ke `--agents` dan disebut di prompt Lead (keduanya lewat file di `data/team/`, karena prompt 17 role melebihi batas panjang command line Windows); sesi yang diam dimulai ulang otomatis, yang sibuk setelah gilirannya selesai. Lewat WiFi hanya bisa dilihat.
-
-**Ganti nama anggota tim:** klik kartu orangnya di bawah kantor (atau ⚙ → *Ganti nama anggota tim*), isi nama baru, lalu **Simpan**. Nama yang kosong kembali ke nama bawaan. Nama baru langsung tampil di kantor, chat, dan aktivitas, dan tersimpan di server (`data/state.json`), jadi sama di laptop dan HP. Peran dan sifat kerja tiap role tidak berubah, hanya namanya. Tampilan (rambut, baju, warna) diatur di `public/js/office/cast.js`.
-
-Definisinya ada di `.claude/agents/*.md` (bisa diedit). Dengan **Mode tim** aktif, agent ini diinjeksi ke project mana pun lewat `--agents`, dan Claude diberi alur kerja:
-
-- **Fitur baru**: PM → BA → Architect → UI/UX → Frontend/Backend/DB → QA → Security (jika menyentuh auth/input/data) → Writer
-- **Bug fix**: QA mereproduksi (failing test) → developer pemilik memperbaiki akar masalah → Architect review diff → QA verifikasi
-- **Build/deploy/insiden**: DevOps → Backend/DB → QA
-
-Selama role opsional aktif, alurnya bertambah:
-
-- **Mobile**: Mobile mengerjakan sisi app → Backend untuk API-nya → QA verifikasi di build device/emulator
-- **Data/AI**: Data merancang pipeline/analisis/integrasi model → DBA pemilik skema → Backend menyajikan → QA
-- **Laporan user/insiden**: Support triage dan reproduksi dari log dulu → developer pemilik menerima laporan yang jelas
-- **Sebelum kode dinyatakan selesai**: Reviewer me-review diff (Architect tetap untuk keputusan desain)
-- **Data pribadi** (dikumpulkan, disimpan, dibagikan, di-log, retensi): Compliance me-review terhadap UU PDP / GDPR bersama Security sebelum rilis; perubahan kebijakan privasi dan consent ke Compliance
-
-Claude hanya memanggil role yang relevan. Tugas kecil dikerjakan langsung tanpa delegasi. Tanpa Mode tim (atau untuk sesi CLI biasa), tiap aksi tetap dibagi ke orang yang paling cocok menurut jenis file/perintahnya: `.tsx` ke Adhit - Frontend, migrasi ke Adhit - DBA, `npm test` / `curl` ke Adhit - QA, `docker` / `npm install` / cek port & proses ke Adhit - DevOps, `grep` / `cat` / `git diff` ke Adhit - Tech Lead, otomasi browser (Claude in Chrome) ke Adhit - QA, MCP Docs ke Adhit - Writer, dan seterusnya. Rantai perintah (`cd x && npm test | tail`) dinilai dari perintah intinya, bukan dari kata yang kebetulan muncul.
-
-**Interaksi tim mengikuti stream Claude Code:**
-
-| Di stream | Di kantor |
-|---|---|
-| `Agent` dari Claude utama / dari subagent lain | Adhit - Lead, atau spesialis yang mendelegasikan, berjalan ke meja penerima tugas |
-| Subagent selesai (`tool_result` dari `Agent`) | Penerima tugas membawa laporan ke yang menugaskannya |
-| Beberapa subagent dengan role sama berjalan paralel | Badge **×N** di nama, dan tetap sibuk sampai semuanya selesai |
-| Output test (jest, vitest, pytest, mocha, phpunit, node, go, cargo) | Hijau: bersorak "✅ N test lulus". Merah: "🐞". Kalau test dijalankan Claude utama, QA mengantar bug ke developer terakhir yang mengedit kode. Kalau QA berupa subagent, temuannya kembali lewat laporan ke lead, sama seperti di Claude Code. |
-| `EnterPlanMode` / `ExitPlanMode` | PM, Tech Lead, dan BA rapat berdiri di area meeting |
-| `AskUserQuestion` / persetujuan rencana | Yang bertanya mengangkat tangan dengan pertanyaannya, dan seisi kantor menunggu jawabanmu |
-
-## Buka dari HP
-
-1. Di laptop, klik **📱** di header, lalu centang **Izinkan akses dari HP**.
-2. Sambungkan HP ke **WiFi yang sama** dengan laptop.
-3. Scan QR dengan kamera HP. Atau buka alamat yang tertera (mis. `http://192.168.1.10:4317`) lalu masukkan **kode 6 digit**.
-4. Selesai. HP diingat, jadi lain kali cukup buka alamat itu lagi.
-5. Opsional: pilih **Add to Home Screen** / **Tambahkan ke Layar Utama** di menu browser. Adhit Office muncul dengan ikonnya sendiri dan terbuka seperti aplikasi. Di iPhone, aplikasi dari layar utama punya penyimpanan terpisah dari Safari, jadi masukkan kode pairing sekali lagi di sana.
-
-Apa yang bisa dilakukan HP tergantung jalurnya:
-
-| Jalur | Akses | Bisa | Tidak bisa |
-|---|---|---|---|
-| 📶 WiFi yang sama (HTTP biasa) | **Hanya lihat** | Melihat kantor, chat, kartu izin, panel perubahan & diff, isi file (kecuali file rahasia), aktivitas, riwayat sesi, akun & laporan token | Mengirim prompt atau `!` shell, menjawab izin, ganti mode/model/effort, commit, rewind, sesi baru/lanjutkan sesi, stop, MCP, hentikan tugas, favorit, ganti nama tim, login/logout |
-| 🌐 Tailscale (terenkripsi) | **Penuh** | Semua yang bisa dilakukan di laptop, termasuk login/logout akun Claude (dengan konfirmasi) | Pengaturan laptop (lihat di bawah) |
-
-Lewat WiFi, kotak pesan dan tombol aksi tampil nonaktif dengan keterangan *"Hanya lihat lewat WiFi — pakai Tailscale untuk mengirim perintah"*. Pengaturan sensitif (folder projects, tambah folder project, auto-start, matikan server, akses HP, buka VS Code/folder) hanya bisa diubah dari laptop, apa pun jalurnya.
-
-**Keamanan:**
-- Mati secara default. Saat dimatikan, server hanya mendengarkan `127.0.0.1`.
-- Saat dinyalakan, server juga mendengarkan alamat LAN laptop (bukan `0.0.0.0`).
-- Perangkat baru wajib pairing dengan kode dari layar laptop. Kode berlaku 2 menit, sekali pakai, dan diganti setelah 5 kali salah (jendela 📱 di laptop langsung menampilkan kode baru). Alamat yang 5 kali salah menebak diblokir 60 detik.
-- HP yang terpasang menyimpan token acak di cookie `HttpOnly`. Server hanya menyimpan hash-nya.
-- Perangkat bisa dicabut kapan saja di jendela 📱. Koneksi live HP itu langsung diputus saat dicabut.
-- Koneksi WiFi adalah HTTP biasa (tanpa enkripsi): cookie perangkat bisa disadap orang lain di jaringan yang sama. Karena itu **lewat WiFi HP hanya bisa melihat**; semua aksi (prompt, shell, izin, commit, pengaturan) ditolak server. Untuk mengendalikan dari HP, pakai Tailscale. Tetap **pakai hanya di WiFi yang kamu percaya** (rumah/kantor), karena isi chat dan kode tetap terlihat.
-- Saat pertama kali dinyalakan, Windows bisa menanyakan izin firewall untuk Node.js. Pilih **Allow** untuk jaringan *Private*.
-
-### Dari luar rumah (beda jaringan) dengan Tailscale
-
-Supaya bisa membuka kantor dari mana saja (data seluler, WiFi kantor, dll.) **tanpa membuka laptop ke internet publik**:
-
-1. Pasang **Tailscale** di laptop (`tailscale.com/download`), lalu login.
-2. Pasang aplikasi **Tailscale** di HP, lalu login dengan akun yang sama.
-3. Di laptop, buka **📱**. Muncul pilihan **🌐 Dari mana saja (Tailscale)**. Pilih itu, lalu scan QR-nya dari HP.
-
-Tailscale membuat jaringan pribadi terenkripsi (WireGuard) yang hanya berisi perangkatmu sendiri, jadi lewat Tailscale HP mendapat **kendali penuh** (mengirim perintah, menjawab izin, commit). Aplikasi ini otomatis mengenali alamat Tailscale (`100.64.0.0/10`) dan mendengarkannya saat akses HP aktif, tanpa pengaturan tambahan. Alamat WiFi dan Tailscale dipasangkan terpisah, jadi HP perlu scan sekali untuk masing-masing.
-
-Supaya tetap bisa diakses saat kamu pergi:
-- **Laptop harus menyala dan tidak sleep.** Atur di *Settings → System → Power*: saat dicolok, sleep = **Never**. Atur juga *saat lid ditutup = Do nothing* kalau laptop sering kamu tutup.
-- Nyalakan **auto-start** (⚙), supaya server langsung jalan lagi setelah laptop restart.
-
-> Tunnel publik seperti ngrok atau Cloudflare Tunnel sengaja tidak dipakai. Aplikasi ini bisa menjalankan perintah di laptopmu, jadi lebih aman kalau tidak punya alamat publik sama sekali.
-
-## Sesi dari CLI (real-time)
-
-Semua sesi `claude` yang kamu jalankan di terminal, di project mana pun, otomatis tampil di kantor. Prompt, balasan, tool, delegasi subagent, dan tanda selesai ditandai **CLI**. Server hanya **membaca** file transcript yang memang ditulis Claude Code (`~/.claude/projects`), jadi tidak ada hook dan CLI tidak terpengaruh sama sekali.
-
-Batasan: izin untuk sesi CLI tetap dijawab di terminal (transcript tidak mencatat prompt izin yang sedang menunggu), dan mengetik prompt dari web membuat sesi web terpisah, bukan menyuntikkan pesan ke sesi CLI yang sedang terbuka.
-
-## Setup di device baru
+## Mulai cepat
 
 1. Pasang **Node.js 20+** dan **Claude Code** (`npm install -g @anthropic-ai/claude-code`), lalu login sekali dengan menjalankan `claude` di terminal.
 2. Clone repo ini ke folder mana saja.
@@ -123,243 +33,483 @@ Batasan: izin untuk sesi CLI tetap dijawab di terminal (transcript tidak mencata
    | Langkah | Yang dilakukan |
    |---|---|
    | 1. Node.js & Claude Code | Memeriksa versi, memberi tahu cara memasang kalau belum ada |
-   | 2. Tailscale (opsional) | Menawarkan pasang lewat winget, lalu membuka halaman login. Dibutuhkan supaya HP bisa membuka kantor dari jaringan mana saja |
-   | 3. Firewall | Menawarkan aturan sempit: hanya TCP 4317, hanya dari alamat Tailscale (muncul jendela izin Administrator sekali) |
-   | 4. Auto-start & server | Memasang auto-start saat login **plus penjaga Task Scheduler** yang mengecek setiap 5 menit dan menyalakan server lagi kalau mati (setelah sleep, hibernate, Fast Startup, atau crash). Lalu langsung menyalakan server di latar belakang |
+   | 2. Tailscale (opsional) | Menawarkan pasang lewat winget, lalu membuka halaman login. Dibutuhkan untuk kendali dari HP di jaringan mana saja |
+   | 3. Firewall | Aturan sempit: hanya TCP 4317 (HTTP) dan 4318 (HTTPS), hanya dari alamat Tailscale, profil Private (muncul jendela izin Administrator sekali). Aturan lama yang hanya membuka 4317 diganti |
+   | 4. Auto-start & server | Auto-start saat Windows login **plus penjaga Task Scheduler** yang mengecek tiap 5 menit dan menyalakan server lagi kalau mati (setelah sleep, hibernate, Fast Startup, atau crash). Lalu server langsung dinyalakan di latar belakang |
 
-4. Di web: **⚙** untuk folder projects, **🔔** untuk notifikasi, **📱** untuk menghubungkan HP.
-5. Di HP: pasang **Tailscale**, login dengan akun yang sama, lalu scan QR dari 📱.
+4. Buka `http://localhost:4317`. Atur **⚙ → Folder induk projects** (satu per baris; semua subfolder-nya jadi project). Tanpa pengaturan ini, dipakai folder induk dari folder app ini (atau env `PROJECTS_ROOT`).
+5. Klik **🔔** untuk notifikasi, lalu **📱** untuk menghubungkan HP ([Dari HP](#dari-hp)).
 
-Setelah itu Claude Code, terminal, dan browser di laptop boleh ditutup. Server tetap jalan dan menyala sendiri setiap Windows login.
+Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server tetap jalan dan menyala sendiri setiap Windows login.
+
+**Cara lain menjalankan**
 
 | Perintah | Fungsi |
 |---|---|
-| `node scripts\setup.mjs --check` | Cek status semua langkah tanpa mengubah apa pun |
-| `uninstall-autostart.cmd` | Melepas auto-start |
-| ⚙ → **⏻ Matikan server** | Menghentikan server background, misalnya sebelum `git pull` lalu `setup.cmd` lagi |
+| `start-office.cmd` | Jalankan server di jendela biasa dan buka browser |
+| `npm run open` | Sama, lewat npm (`http://localhost:4317`) |
+| `npm start` / `npm run dev` | Tanpa membuka browser / dengan `--watch` |
+| ⚙ → *Nyalakan otomatis saat Windows login* | Pasang atau lepas auto-start dari web (file `claude-coworking.vbs` di folder Startup). Log di `data/server.log` |
+| ⚙ → **⏻ Matikan server** | Hentikan server background, misalnya sebelum `git pull` |
+| `node scripts/restart.mjs` | Restart yang rapi (lihat [Test & pengembangan](#test--pengembangan)) |
+| `node scripts\setup.mjs --check` | Cek status semua langkah setup tanpa mengubah apa pun |
+| `uninstall-autostart.cmd` | Lepas auto-start dan penjaga Task Scheduler |
 
 > Jangan jalankan `npm run dev` bersamaan dengan server background, karena keduanya memakai port 4317.
 
 > Kalau folder repo dipindah atau versi Node.js diganti (misalnya lewat nvm), jalankan `setup.cmd` lagi, karena lokasi keduanya tercatat di script auto-start.
 
-## Pindah laptop / backup riwayat
+> **Setelah update dari versi sebelum HTTPS:** jalankan `setup.cmd` lagi sekali (minta izin Administrator). Aturan firewall lama hanya membuka port 4317, sehingga HTTPS `:4318` dari HP terblokir.
 
-Ganti SSD, install ulang Windows, atau pindah ke laptop baru, tanpa kehilangan percakapan lama:
+**Troubleshooting**
 
-1. Di laptop lama: **⚙ → Cadangkan riwayat → ⬇ Export riwayat**. Browser mengunduh `adhit-office-backup-YYYY-MM-DD.zip`. Simpan file ini di tempat aman, karena isinya seluruh riwayat percakapanmu.
-2. Di laptop baru: pasang app seperti di [Setup di device baru](#setup-di-device-baru), login dengan `claude`, lalu clone/salin folder project-mu.
-3. **⚙ → Cadangkan riwayat → ⬆ Import riwayat**, pilih file `.zip`, lalu konfirmasi. Ringkasan hasil tampil di dialog, dan daftar project/sesi langsung ter-update tanpa restart.
-4. Lanjutkan: buka project → **Riwayat sesi**, pilih sesinya, atau jalankan `claude --resume` di folder project. Sesi lama tidak dilanjutkan otomatis, dan mode izin tiap project kembali ke **Manual**.
+| Gejala | Penyebab & solusi |
+|---|---|
+| `Port 4317 sudah dipakai` | Server lain (background) sudah jalan. Buka saja `http://localhost:4317`, atau matikan dulu lewat ⚙ → ⏻ |
+| `Claude Code tidak ditemukan` di log | Set env `CLAUDE_BIN` ke path `claude` |
+| HP tidak tersambung | Lihat [Dari HP → Kalau HP tidak tersambung](#kalau-hp-tidak-tersambung) |
+| Chat terasa macet | Lihat chip ⚠ di [Chat & izin](#chat--izin) dan [PANDUAN: Kalau terasa macet](docs/PANDUAN.md#kalau-terasa-macet) |
+| Server mati setelah laptop sleep | Penjaga Task Scheduler menyalakannya lagi dalam ±5 menit. Jalankan `node scripts\setup.mjs --check` untuk memastikan penjaga terpasang |
 
-> **Hanya import backup milikmu sendiri.** Import memperlakukan file backup sebagai data yang belum tentu tepercaya. Backup tidak bisa menimpa file yang sudah ada (selain melanjutkan transcript yang sama), tidak bisa mengubah mode izin, tidak bisa memilih sesi yang dilanjutkan, dan tidak bisa menambah folder di luar folder home-mu. Meski begitu, isi transcript dan memori project tetap dibaca Claude saat sesi dilanjutkan.
+## Dari HP
+
+Akses HP **mati secara default**. Ada tiga jalur, dan masing-masing dipasangkan (pairing) terpisah:
+
+| Jalur | Alamat | Akses | Catatan |
+|---|---|---|---|
+| 📶 WiFi yang sama | `http://<IP-laptop>:4317` | **Hanya lihat** | HTTP tanpa enkripsi. Kotak pesan diganti banner *"👁 Hanya lihat lewat WiFi"* |
+| 🌐 Tailscale | `http://<IP-Tailscale>:4317` | **Penuh** | Terenkripsi oleh Tailscale (WireGuard), dari jaringan mana saja |
+| 🔒 Tailscale (HTTPS) | `https://<nama-laptop>.<tailnet>.ts.net:4318` | **Penuh + notifikasi push** | Wajib untuk Web Push dan 🎤 input suara di HP |
+
+Pengaturan laptop (folder projects, tambah folder project, auto-start, matikan server, akses HP, backup, Spotify Client ID/login, aturan izin, buka VS Code/folder) **hanya bisa diubah dari laptop**, apa pun jalurnya.
+
+### Menghubungkan HP
+
+1. Di laptop, klik **📱** di header, lalu centang **Izinkan akses dari HP**.
+2. Pilih jalur: alamat WiFi, **🌐 Dari mana saja (Tailscale)**, atau **🔒 Tailscale (HTTPS)** (muncul kalau sertifikat HTTPS sudah aktif).
+3. Scan QR dengan kamera HP. Atau buka alamatnya lalu masukkan **kode 6 digit** dari layar laptop.
+4. Selesai. HP diingat, jadi lain kali cukup buka alamat itu lagi. HP yang tidak dipakai 30 hari dicabut otomatis.
+
+Untuk Tailscale: pasang **Tailscale** di laptop dan HP (`tailscale.com/download`), login dengan akun yang sama, dan nyalakan VPN Tailscale di HP. Aplikasi mengenali interface Tailscale laptop secara otomatis saat akses HP aktif.
+
+### Pasang sebagai aplikasi (PWA)
+
+- **Android (Chrome/Edge):** menu ⋮ → *Add to Home screen* / *Install app*.
+- **iPhone/iPad (Safari):** Bagikan → **Tambahkan ke Layar Utama**. Aplikasi dari layar utama punya penyimpanan terpisah dari Safari, jadi **masukkan kode pairing sekali lagi** di sana.
+
+### Notifikasi push ke HP
+
+Notifikasi tetap muncul walau aplikasi ditutup atau HP terkunci. Hanya lewat jalur **🔒 Tailscale (HTTPS)**.
+
+1. **Sekali di Tailscale:** buka admin console Tailscale → **DNS**, pastikan MagicDNS aktif, lalu nyalakan **HTTPS Certificates**. Nama laptop + tailnet akan tercatat di log publik Certificate Transparency (bukan akses: alamatnya tetap hanya bisa dijangkau dari dalam tailnet).
+2. **Di laptop:** 📱 → klik **Periksa lagi** sampai muncul *"🔒 HTTPS aktif: https://…:4318"*. Sertifikat diambil lewat `tailscale cert` (di Windows berjalan tanpa hak Administrator), disimpan di `data/tls/`, dan diperbarui otomatis (dicek tiap 12 jam).
+3. **Di HP:** pairing lewat **🔒 Tailscale (HTTPS)** (lihat di atas).
+4. **Di HP:** buka **🔔 Pengaturan notifikasi** (tombol **🔎 Cari** di navigasi bawah → *Pengaturan notifikasi*, atau **⋯** → 🔔) → bagian **📱 Notifikasi HP (push)** → **Aktifkan**, izinkan notifikasi, lalu **Kirim tes**.
+
+| Platform | Push | Tombol di notifikasi |
+|---|---|---|
+| Android Chrome/Edge | Ya, tanpa perlu install PWA | **Tolak** selalu ada. **Izinkan** hanya untuk tool baca/edit file (Read, Edit, Write, Glob, Grep, …) dan hanya kalau *Tombol Izinkan di layar kunci* aktif. Bash/PowerShell, web, dan MCP selalu harus dibuka di aplikasi |
+| iPhone/iPad (iOS/iPadOS 16.4+) | **Hanya** dari aplikasi Layar Utama | Tidak ada tombol. Ketuk notifikasi untuk membuka kartu izinnya |
+| HP lewat WiFi atau Tailscale-http | Tidak (browser hanya mengizinkan push di HTTPS) | – |
+
+- Yang dikirim: minta izin, tugas selesai, berhenti/error, dan antrian yang berhenti sendiri. Pengaturan 🔔 di HP itu (per jenis, jam tenang memakai jam HP, hanya favorit) ikut berlaku.
+- Selama aplikasi terbuka dan terlihat di HP itu, push ditahan supaya tidak dobel.
+- Isi notifikasi hanya nama project, nama role, dan **nama tool**: tanpa perintah, path, isi chat, atau teks error.
+- Izin yang dijawab dari notifikasi memunculkan toast di laptop (*"Diizinkan dari HP (…) lewat notifikasi."*).
+
+### Supaya bisa diakses saat kamu pergi
+
+- **Laptop harus menyala dan tidak sleep.** *Settings → System → Power*: saat dicolok, sleep = **Never**; *saat lid ditutup = Do nothing* kalau laptop sering ditutup.
+- Nyalakan **auto-start** (⚙) supaya server jalan lagi setelah restart.
+
+> Tunnel publik seperti ngrok atau Cloudflare Tunnel sengaja tidak dipakai. Aplikasi ini bisa menjalankan perintah di laptopmu, jadi lebih aman kalau tidak punya alamat publik sama sekali.
+
+### Kalau HP tidak tersambung
+
+| Gejala | Solusi |
+|---|---|
+| Halaman tidak terbuka sama sekali | Saat pertama kali, Windows bisa menanyakan izin firewall untuk Node.js: pilih **Allow** untuk jaringan *Private*. Lewat Tailscale: pastikan langkah firewall `setup.cmd` sudah dijalankan |
+| HTTPS `:4318` tidak terbuka, padahal 📱 menulis "HTTPS aktif" | Aturan firewall masih versi lama (hanya 4317). Jalankan `setup.cmd` lagi: aturannya diganti dengan 4317 + 4318. Cadangan manual (PowerShell Administrator): `New-NetFirewallRule -DisplayName 'Claude Coworking (Tailscale)' -Direction Inbound -Protocol TCP -LocalPort 4317,4318 -RemoteAddress 100.64.0.0/10 -Profile Private -Action Allow` (hapus dulu aturan lama dengan nama itu) |
+| 📱 meminta menyalakan *HTTPS Certificates* | Nyalakan di admin console Tailscale (DNS → HTTPS Certificates), lalu **Periksa lagi** |
+| Kode ditolak | Kode berlaku 2 menit, sekali pakai, dan diganti setelah 5 kali salah. Ambil kode baru di laptop |
+| "Perangkat belum dipasangkan" | HP dicabut, tidak dipakai 30 hari, atau jalurnya beda (pairing HTTPS tidak berlaku di HTTP dan sebaliknya). Pairing ulang |
+| Tidak ada tombol 🎤 di HP | Input suara butuh HTTPS. Buka lewat 🔒 Tailscale (HTTPS) |
+
+### Sesi dari CLI
+
+Semua sesi `claude` yang kamu jalankan di terminal, di project mana pun, otomatis tampil di kantor dengan tanda **CLI**: prompt, balasan, tool, delegasi subagent, dan tanda selesai. Server hanya **membaca** transcript yang ditulis Claude Code (`~/.claude/projects`), jadi tidak ada hook dan CLI tidak terpengaruh.
+
+Batasan: izin untuk sesi CLI tetap dijawab di terminal, dan prompt dari web membuat sesi web terpisah (tidak menyuntikkan pesan ke sesi CLI yang sedang terbuka).
+
+## Fitur
+
+### Chat & izin
+
+| Bagian | Fungsi |
+|---|---|
+| **Chat** | Prompt ke Claude Code di folder project. Pesan yang dikirim saat tim bekerja masuk antrean Claude Code sendiri, seperti di CLI. Balasan streaming, code block di-highlight, tiap giliran ditutup dengan durasi, langkah, konteks, dan token output. Lebar panel bisa digeser (klik dua kali untuk ukuran bawaan) |
+| **Kartu izin** | **Izinkan**, **Izinkan selalu** (simpan aturan), **Izinkan semua (sesi ini)**, atau **Tolak** (bisa dengan instruksi). `AskUserQuestion` dijawab dengan pilihan atau jawaban sendiri. Rencana disetujui dengan auto-edit atau tanya tiap edit |
+| **Mode izin** | 🛡️ Tanya dulu (default) · ✏️ Auto-edit file · ⚡ Auto · 📋 Rencana dulu · 🚫 Jangan tanya. `Shift+Tab` berganti mode, langsung berlaku juga di tengah giliran |
+| **🛡️ Aturan izin** (`/permissions`, menu ⋯) | Aturan allow/ask/deny yang tersimpan, per file settings (project lokal, project bersama, user). Mengubah hanya dari laptop |
+| **Model · Effort · Mode tim** | Daftar model dari Claude Code sendiri (`/model`, termasuk alias seperti `opusplan`). Effort Default/Low/Medium/High/X-High/Max. Mode tim mendelegasikan ke subagent (lebih hidup, lebih banyak token). Semua per project, berlaku tanpa restart |
+| **■ Stop** / `Esc` | Hentikan giliran dan batalkan pesan yang antre. Sesi tetap bisa dilanjutkan |
+| **⏪ Rewind** (`Esc Esc`, `/rewind`) | Kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu (checkpoint Claude Code), dengan pratinjau file |
+| **▶ Lanjutkan setelah restart** | Kalau server berhenti di tengah giliran, chat menampilkan *"… giliran terputus"* dengan **▶ Lanjutkan** (ke sesi yang sama) dan **Tutup**. Tidak ada yang dikirim otomatis |
+| **⚠ Deteksi macet** | Tool tanpa output baru **3 mnt** atau berjalan **10+ mnt**, dan delegasi tanpa aktivitas **5 mnt**, mendapat chip *⚠ … mungkin macet* dengan **■ Hentikan giliran**, **⧗ Pindah ke latar** (perintah shell), atau **Lihat detail** (delegasi). Satu notifikasi *Berhenti / error* per kejadian. Hanya peringatan: tidak pernah menghentikan apa pun sendiri |
+| **Output live** | Perintah Bash/PowerShell yang berjalan menampilkan baris terakhir; dibuka (▸) menampilkan output lengkap (8 KB terakhir) |
+| **⧗ Tugas latar** (`/tasks`, `Ctrl+B`) | Perintah dan agent latar: status, output/detail live, **Hentikan**. `Ctrl+B` memindahkan yang sedang jalan ke latar |
+| **🔌 Server MCP** (`/mcp`) | Status, sambungkan ulang, aktif/nonaktif, login OAuth |
+| **Status line & daftar tugas** | Mode, model, konteks terpakai (seperti `/context`), tugas latar; todo list Claude menempel di atas kotak pesan |
+| **`/` · `@` · `!`** | Slash command lengkap dari Claude Code · autocomplete file · perintah shell langsung di folder project (PowerShell di Windows; output ikut ke Claude bersama pesan berikutnya) |
+| **⚡ Template** (`/t`) | Template bawaan dan buatan sendiri (tersimpan di server). Bagian `{…}` langsung terpilih, `Tab` ke bagian berikutnya |
+| **🎤 Input suara** (`Alt+M`) | Pengenalan suara bawaan browser, Indonesia/English. Hanya di HTTPS atau localhost |
+| **Sesi** | Bar sesi (judul, asal, model; klik judul untuk ganti nama), **＋ Sesi baru**, **🕘 Riwayat sesi** (web dan CLI, dikelompokkan per hari), menu ⋯: export percakapan / sesi lengkap ke `.md`, salin perintah `claude --resume`, buka di VS Code/folder (laptop) |
+| **🔎 Cari percakapan** (`/search`, `Ctrl+P`) | Cari teks di semua sesi project ini atau semua project |
+| **🔎 Palet perintah** (`Ctrl+P`) | Semua aksi, file (`@`), project (`#`), perintah (`>`) |
+| **Riwayat prompt** | `↑`/`↓` di kotak pesan, `Ctrl+R` untuk mencari |
+| **📄 Lihat file** | Klik path di chat atau tab Perubahan: isi file read-only, nomor baris, cari, salin, **Buka di VS Code** (laptop). File rahasia (`.env*`, `*.pem`, `id_*`, kredensial) butuh konfirmasi di laptop dan tidak pernah dikirim ke HP |
+| **❓ Bantuan** (`?`) · **🎬 Demo** | Panduan singkat dan shortcut · simulasi kantor tanpa Claude Code |
+
+Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhir). Pengaturan per project ada di `data/state.json`.
+
+**Di HP:** tampilan Chat ringkas: header = nama project + subjudul sesi + **⋯** (sesi, export, akun, laporan, musik, notifikasi, pengaturan); kotak pesan lebar penuh dengan **＋** (lampiran, template, antrian, suara, `!`, `@`, `/`) dan chip pengaturan giliran (izin, model, effort, mode tim). Satu tombol berganti fungsi: 🎤 → ↑ Kirim → ■ Stop. Tab Perubahan menyisakan ⎇, pesan commit, dan Commit; sisanya di ⋯. Mode **landscape** memakai rail navigasi kiri dan dua kolom. Saat keyboard terbuka, navigasi bawah disembunyikan.
+
+**Banyak tab:** semua tab di satu browser berbagi **satu koneksi live** ke server (satu tab memimpin, yang lain menerima lewat BroadcastChannel), jadi membuka banyak tab tidak lagi menghabiskan batas koneksi browser.
+
+### Tim & kantor
+
+| Orang | Role | Dipakai untuk |
+|---|---|---|
+| Adhit - Lead | Engineering Lead (Claude) | Orkestrasi: memecah pekerjaan dan mendelegasikan |
+| Adhit - PM | Product Manager | Scope, prioritas, acceptance criteria |
+| Adhit - BA | Business Analyst | Kebutuhan, aturan bisnis, analisis kode/dokumen |
+| Adhit - Tech Lead | Tech Lead / Architect | Desain teknis, arsitektur, review diff |
+| Adhit - UI/UX | UI/UX Designer | Alur pengguna, styling, aksesibilitas |
+| Adhit - Frontend | Frontend Developer | Komponen, halaman, state di client |
+| Adhit - Backend | Backend Developer | API, logika bisnis, integrasi |
+| Adhit - DBA | Database Engineer | Skema, migrasi, query, perbaikan data |
+| Adhit - QA | QA Engineer | Reproduksi bug, test otomatis, verifikasi |
+| Adhit - Security | Security Engineer | Review keamanan, secret, audit dependensi |
+| Adhit - DevOps | DevOps / SRE | Build, CI/CD, Docker, environment, deploy |
+| Adhit - Writer | Technical Writer | README, dokumentasi API, changelog |
+| Adhit - Freelancer | Freelancer / Generalist | Subagent non-spesialis (`general-purpose`, `fork`, tipe tak dikenal). Selalu aktif |
+| Adhit - Mobile | Mobile Developer | Flutter, React Native, Android/iOS |
+| Adhit - Data/AI | Data / AI Engineer | Pipeline data, analitik, fitur ML/AI |
+| Adhit - Support | Tech Support / Helpdesk | Triage laporan user, reproduksi dari log |
+| Adhit - Reviewer | Code Reviewer | Review kode independen sebelum dinyatakan selesai |
+| Adhit - Compliance | Compliance / Privacy (DPO) | Data pribadi (UU PDP / GDPR): consent, retensi, kebijakan privasi |
+
+**👥 Kelola tim** (⚙, menu ⋯, `Ctrl+P`, atau `/team`): pilih role dari katalog bawaan (12 inti + 5 opsional: Mobile, Data/AI, Support, Reviewer, Compliance). **Bawaan: semua 17 role aktif, termasuk Compliance.** Tim yang sudah pernah disimpan tidak diubah; aktifkan role baru di sini, atau **↺ Tim bawaan**. Lead selalu ada, Freelancer selalu aktif. Role nonaktif tidak dipakai: pekerjaannya dialihkan ke role aktif terdekat (mis. reviewer → architect, data → backend, compliance → security → ba; katalog di `src/role-catalog.js`). Sesi yang diam dimulai ulang otomatis, yang sibuk setelah gilirannya selesai.
+
+**Ganti nama:** klik kartu orangnya di bawah kantor (atau ⚙ → *Ganti nama anggota tim*). Nama tersimpan di server, jadi sama di laptop dan HP. Definisi subagent ada di `.claude/agents/*.md` (bisa diedit); hanya role aktif yang dikirim ke `--agents`.
+
+**Alur kerja dengan Mode tim:** fitur baru (PM → BA → Architect → UI/UX → developer → QA → Security bila perlu → Writer), bug fix (QA mereproduksi → developer → Architect review → QA verifikasi), build/insiden (DevOps → Backend/DB → QA). Role opsional menambah langkahnya sendiri (mis. Compliance bersama Security untuk perubahan data pribadi). Tugas kecil dikerjakan langsung. Tanpa Mode tim (dan untuk sesi CLI), tiap aksi tetap dibagi menurut jenis file/perintah: `.tsx` ke Frontend, migrasi ke DBA, `npm test` ke QA, `docker` ke DevOps, dan seterusnya.
+
+**Kantor:** satu lantai tetap **640×344 px** untuk 17 role + Lead. Ruang kaca untuk PM, Tech Lead, dan Lead (ruang sudut) di dinding atas; pod kubikel per departemen (Produk & Desain, Engineering, Kualitas & Keamanan, Ops & Support); ruang rapat, pantry, dan lounge dengan radio. Role yang dimatikan meninggalkan meja kosong, ruangan tidak berubah.
+
+| Di stream Claude Code | Di kantor |
+|---|---|
+| Delegasi `Agent` | Lead (atau spesialis yang mendelegasikan) berjalan ke meja penerima tugas; laporan dibawa balik saat selesai |
+| Beberapa subagent role sama paralel | Badge **×N** di nama |
+| Output test | Hijau: bersorak "✅ N test lulus". Merah: "🐞" dan bug diantar ke developer terakhir |
+| `EnterPlanMode` / `ExitPlanMode` | PM, Tech Lead, dan BA rapat di ruang rapat |
+| Minta izin / `AskUserQuestion` | Yang bertanya mengangkat tangan, seisi kantor menunggu |
+| Error / selesai | Layar merah dan asap / confetti |
+
+Monitor tiap meja menunjukkan jenis kerja (kode, terminal, test, dokumen, desain, database, CI/CD, …). Saat idle, tim ngopi, duduk di sofa, atau ngobrol. **🎨 Tema kantor** (⚙): Kantor, Halloween, Natal, Lebaran, 17 Agustus (disimpan per browser).
+
+### Project & dashboard
+
+- **Pilih project** (`Ctrl+K`, klik nama project): folder yang pernah dibuka Claude Code (✳) dan semua subfolder dari folder induk. Bisa dicari, ↑↓ + Enter, dan ditambah satu folder lepas (laptop). **☆** menjadikan favorit (selalu di atas, tersimpan di server). Tombol project menampilkan jumlah izin yang menunggu di project lain.
+- **🗂 Semua project** (header, `Ctrl+P`, `/dashboard`; di HP bar di atas tampilan Kantor): satu layar untuk semua project, diurutkan **butuh kamu** (✋ Butuh izin, ⚠ Terputus, ⚠ mungkin macet) → **⏳ Bekerja** → **📋 Antrian** → **💤 Idle**. Tiap kartu: aktivitas terakhir, model, konteks %, potongan prompt/jawaban. **✋ Lihat izin** langsung ke kartu izinnya. Update live, hanya membaca (juga jalan lewat WiFi). Baris **♪ Musik** di atas kalau Spotify terhubung.
+
+### Git
+
+Tab **Perubahan**: `git status` dan diff per file (diperbarui otomatis setelah tim mengedit), **📄 Lihat file**, **🔍 Minta review** (Tech Lead me-review semua perubahan), **🧭 VS Code** (laptop), dan **Commit** (`git add -A` + commit, dengan konfirmasi).
+
+Baris **⎇** (project dengan git): pindah branch, **＋ Branch**, **⟳ Fetch**, **⬇ Pull** (hanya fast-forward), **⬆ Push** (tidak pernah `--force`; upstream dipasang otomatis), dan **🤖 Minta Claude buat PR** (menyisipkan prompt, tidak langsung terkirim). Git tidak pernah meminta password: remote yang butuh login gagal cepat dengan pesan. Lewat WiFi hanya bisa melihat.
+
+### Lampiran
+
+Lampirkan lewat 📎, drag & drop, atau paste.
+
+| Jenis | Batas | Dikirim sebagai |
+|---|---|---|
+| 🖼 Gambar PNG/JPEG/GIF/WebP | ±3,75 MB per file (5 MB base64), maks 8000 px per sisi | Gambar |
+| 📕 PDF | 5 MB | Dokumen (Claude membaca teks dan gambarnya) |
+| 📄 Teks: log, `.txt`/`.md`/`.json`/`.csv`/`.yaml`/`.sql`, source code, `Dockerfile`, … | 200 KB per file, 500 KB total; UTF-8 atau UTF-16 ber-BOM | Teks dalam `<attachment>` dengan catatan "bukan instruksi" |
+
+Maks **10 lampiran / 20 MB** per pesan. Jenis lain (zip, exe, docx, …) ditolak; server memeriksa ulang jenis dari isi file. File teks yang lebih besar: taruh di project lalu sebut dengan `@file`.
+
+- **↻ Ulangi** dan **Edit** ikut membawa lampiran 5 prompt terakhir per project (di memori browser saja; hilang saat halaman dimuat ulang). Chip draf tetap milik project-nya saat pindah project.
+- **📋 Antrian tidak menerima lampiran**: kirim langsung.
+- Isi lampiran masuk konteks percakapan (memakai token sampai di-compact) dan tersimpan di transcript Claude Code, jadi ikut ke backup.
+- Tidak tersedia lewat WiFi hanya-lihat.
+
+### Antrian & batas
+
+**📋 Antrian** (`Alt+Enter`, tombol 📋, `/antrian`): susun beberapa prompt; server mengirim satu per satu setiap kali sesi project itu **idle** (tidak bekerja, tidak ada izin menunggu, tidak ada giliran terputus). Di dialog: ubah urutan (seret atau ↑↓), edit/hapus, **⏸ Jeda / Lanjutkan**, **Ulangi** item gagal, **💬 Lihat hasil**. Maks 30 item belum selesai, 20.000 karakter per item.
+
+Antrian **berhenti sendiri** bila item gagal atau dihentikan, kuota akun habis, atau batas tercapai. Setelah server restart, antrian **tetap dijeda** sampai kamu melanjutkan.
+
+**💰 Batas antrian** (di dialog): maks token output dan/atau maks biaya (USD, estimasi harga list) per project, dengan bar progres. Dicek setiap kali satu item selesai, jadi giliran yang berjalan tidak pernah dipotong. Menyimpan batas baru atau melanjutkan setelah berhenti karena batas memulai hitungan dari nol.
+
+**⏳ Peringatan kuota** (⚙): toast, notifikasi, dan penanda berwarna saat kuota sesi 5 jam atau mingguan melewati ambang kuning/merah (ambang diatur di ⚙, disimpan per browser). Dibaca dari sesi yang berjalan, tanpa request tambahan.
+
+### Notifikasi
+
+Klik **🔔** di header untuk mengaktifkan. Notifikasi dan suara muncul saat ada yang **minta izin**, tugas **selesai**, atau **berhenti/error**, selama kamu di tab/aplikasi lain atau project lain (minta izin tetap berbunyi walau sedang dilihat). Klik notifikasinya untuk langsung ke project itu.
+
+**🔔 Pengaturan notifikasi** (`Ctrl+P` → *Pengaturan notifikasi*; di HP tombol 🔎 atau ⋯; di laptop juga klik kanan 🔔 atau ⚙):
+
+- notifikasi dan suara on/off **per jenis kejadian**;
+- **🌙 jam tenang** (boleh lewat tengah malam), dengan *Izin tetap diberitahu saat jam tenang* (aktif secara bawaan);
+- **hanya project favorit ★**, **volume** dengan **▶ Tes suara**, **↺ Kembalikan bawaan**;
+- **📱 Notifikasi HP (push)**: lihat [Notifikasi push ke HP](#notifikasi-push-ke-hp).
+
+Disimpan per perangkat (browser).
+
+### Musik (Spotify)
+
+Kontrol Spotify yang sudah kamu pakai (Spotify Connect) lewat Spotify Web API. Butuh **Spotify Premium** untuk kontrol; now-playing tetap tampil tanpa Premium.
+
+**Setup (sekali, di laptop: ⚙ → ♪ Spotify):**
+
+1. Buat app di [developer.spotify.com](https://developer.spotify.com/dashboard).
+2. Tambahkan Redirect URI persis seperti yang tampil di ⚙ (tombol **📋 Salin**): `http://127.0.0.1:4317/spotify/callback`. Kalau `OFFICE_PORT` diubah, port di URI ikut berubah.
+3. Di *Users and Access*, tambahkan email akun Spotify kamu (app mode pengembangan).
+4. Tempel **Client ID** lalu **Simpan**. **Tanpa client secret** (login memakai PKCE). Bisa juga lewat env `SPOTIFY_CLIENT_ID`.
+5. **🔗 Hubungkan**, login di Spotify, lalu tutup tab-nya.
+
+**Pemakaian:**
+
+- **Pill lagu** di header, **radio** di lounge kantor (karakter yang santai ikut bergoyang), dan baris ♪ di 🗂 Semua project. Klik untuk dialog **♪ Musik**: ⏮ ⏯ ⏭, volume, **Perangkat**, dan **Playlist** (lihat isi playlist milikmu dan putar mulai dari lagu tertentu; playlist milik orang lain atau Spotify diputar utuh).
+- **▶ tanpa perangkat aktif:** server memilih perangkat ★ utama (☆ *Selalu putar di sini*), satu-satunya perangkat yang ada, atau **membuka aplikasi Spotify di laptop di latar belakang** (diperkecil, tanpa mencuri fokus) lalu memutar di sana. Bisa dimatikan: ⚙ → *Buka Spotify otomatis di latar belakang*. **💻 Laptop ini** selalu ada di daftar perangkat.
+- **Saat ada permintaan izin:** Mati / Kecilkan / Jeda; dipulihkan setelah izin dijawab kalau kamu tidak mengubah apa pun.
+- **⏏ Putuskan** menghapus token lokal. Untuk mencabut akses sepenuhnya: spotify.com/account/apps.
+
+| Dari | Bisa |
+|---|---|
+| Laptop | Semua, termasuk Client ID, hubungkan/putuskan, tampilkan radio |
+| HP Tailscale | Kontrol, perangkat, playlist, *saat ada permintaan izin* dan buka otomatis |
+| HP WiFi | Hanya melihat lagu yang diputar (tanpa nama perangkat) |
+
+### Akun & laporan
+
+**👤 Akun** (avatar di header): nama, email, organisasi, paket, kuota (sesi 5 jam & mingguan, dari `/usage`, tanpa memakai token), dan pemakaian token hari ini / 7 hari.
+
+- **Ganti akun / Login** menjalankan `claude auth login`; tempel kodenya di dialog bila diminta. Ada juga *Login via Console* untuk akun API.
+- **Logout** menjalankan `claude auth logout` dan berlaku untuk **seluruh Claude Code di laptop**, termasuk terminal.
+- Setelah ganti akun, proses Claude dari web dimulai ulang. Giliran yang berjalan selesai dulu, tokennya dicatat ke akun lama.
+- Dari HP **hanya lewat Tailscale**. Logout dari HP butuh konfirmasi + ketik `LOGOUT`. Setiap login/logout dari HP memunculkan peringatan di laptop dan dicatat di `data/server.log`.
+
+**📊 Laporan**: pemakaian token per akun dan periode (Hari ini, 7 hari, 30 hari, Bulan ini, Semua, atau 📅 tanggal). Pratinjau berisi KPI, **📈 Tren** per hari/minggu/bulan, dan rincian per model; **⬇ Unduh PDF** menambah rincian per project, sumber (web/CLI), sesi teratas, dan kuota. PDF dibuat Edge/Chrome headless (env `OFFICE_BROWSER` untuk path lain); tanpa keduanya, laporan dibuka di tab baru untuk dicetak.
+
+- Catatan token disimpan bersama akun yang login saat itu (`data/usage.jsonl`), jadi dua akun tidak tercampur. Data mulai terkumpul sejak fitur ini aktif; transcript lama tidak dihitung.
+- Sesi CLI ikut tercatat ke akun yang sedang login. Setelah ganti akun, buka ulang sesi CLI yang masih terbuka. Estimasi biaya (USD, harga list) hanya untuk sesi web.
+
+### Backup & riwayat
+
+Ganti SSD, install ulang Windows, atau pindah laptop tanpa kehilangan percakapan lama.
+
+1. Laptop lama: **⚙ → 💾 Cadangkan riwayat → ⬇ Export riwayat** → `adhit-office-backup-YYYY-MM-DD.zip`. Simpan di tempat aman (isinya seluruh riwayat percakapan).
+2. Laptop baru: [Mulai cepat](#mulai-cepat), login dengan `claude`, clone/salin folder project-mu.
+3. **⚙ → Cadangkan riwayat → ⬆ Import riwayat**, pilih `.zip`, konfirmasi. Daftar project/sesi langsung ter-update.
+4. Lanjutkan lewat **🕘 Riwayat sesi** atau `claude --resume`. Sesi lama tidak dilanjutkan otomatis, dan mode izin tiap project kembali ke **Tanya dulu**.
 
 | Ikut di backup | Tidak ikut |
 |---|---|
-| `~/.claude/projects/**` (semua project: sesi `.jsonl`, subagent, `memory/`), `history.jsonl` (↑ riwayat prompt), `file-history/` (checkpoint rewind), `plans/` | Login & kredensial (`.credentials.json`, `~/.claude.json`) |
-| `data/state.json` (folder induk, folder tambahan, favorit, pengaturan per project, nama tim) dan `data/usage.jsonl` (laporan token) | Cache, downloads, `server.log`, HP yang dipasangkan (pasangkan ulang di laptop baru) |
+| `~/.claude/projects/**` (sesi, subagent, `memory/`), `history.jsonl`, `file-history/` (checkpoint rewind), `plans/` | Login & kredensial Claude (`.credentials.json`, `~/.claude.json`) |
+| `data/state.json` (folder, favorit, pengaturan per project, nama tim, template), `data/usage.jsonl`, `data/chats/*.jsonl` (riwayat chat panel) | HP yang dipasangkan dan langganan push, kunci VAPID, `data/tls/`, `data/spotify.json`, cache, `server.log` |
 
-**Folder home berbeda** (mis. `C:\Users\lama` → `C:\Users\baru`): folder transcript diganti nama mengikuti aturan Claude Code (karakter non-alfanumerik jadi `-`, mis. `C:\Users\baru\projects\toko` → `C--Users-baru-projects-toko`), supaya `claude --resume` di folder baru menemukannya. Path di luar folder home tidak diubah. Isi file sesi tidak diubah. Satu-satunya pengecualian adalah field `project` di `history.jsonl`, yang dipindah ke home baru supaya riwayat ↑ per project tetap jalan.
-
-**Import menggabungkan, tidak menimpa buta:**
+**Import menggabungkan, tidak menimpa:**
 
 | Data | Aturan |
 |---|---|
-| Sesi `.jsonl` (termasuk subagent) | Belum ada → ditulis. Sudah ada → diganti hanya kalau versi backup adalah **lanjutan** dari yang ada (isi lama sama persis, lalu bertambah). Kalau isinya bercabang, file tidak ditimpa dan ada peringatan. Tidak dibuat salinan kedua, supaya tidak muncul sesi ganda. Sesi yang sedang berjalan (proses web aktif, giliran CLI berjalan, atau file ditulis < 1 menit lalu) **tidak disentuh** |
-| File lain (memori, checkpoint, rencana, meta) | Belum ada → ditulis. Identik (ukuran + CRC) → dilewati. Berbeda → **tidak pernah ditimpa**: versi backup disimpan di sampingnya sebagai `<nama>.from-backup` (`-2`, `-3`, …) dengan peringatan. Memori yang ditambahkan ke project yang sudah ada di laptop ini selalu dilaporkan di peringatan |
-| `history.jsonl` | Baris unik dari keduanya, diurutkan menurut `timestamp` (maks 64 MB, lebih besar dilewati dengan peringatan) |
-| `usage.jsonl` | Digabung tanpa duplikat (maks 64 MB) |
-| `state.json` | Lewat hub, bukan menimpa file. Folder induk/tambahan (dan folder project dari manifest) hanya ditambah kalau, setelah di-remap, berada **di bawah folder home** laptop ini (bukan home itu sendiri, bukan root drive, bukan folder jaringan) dan foldernya ada. Selain itu dilewati dengan peringatan, jadi tambahkan manual bila perlu. Favorit ditambah. Pengaturan per project (model, effort, mode tim) diisi hanya kalau di laptop ini belum ada. **Mode izin tidak pernah dipulihkan** (selalu Manual), dan **sesi yang dilanjutkan tidak dipilih otomatis**. Nama tim hanya untuk role yang belum diganti. Chat panel tidak dipulihkan (riwayat sesi diambil dari transcript). **HP yang dipasangkan tidak diimpor**: token HP terikat ke alamat laptop lama, dan mengimpor hash-nya diam-diam akan memberi akses lagi ke perangkat yang mungkin sudah tidak kamu pakai |
+| Sesi `.jsonl` | Belum ada → ditulis. Sudah ada → diganti hanya kalau versi backup adalah **lanjutan** dari yang ada. Bercabang → tidak ditimpa, ada peringatan. Sesi yang sedang berjalan tidak disentuh |
+| File lain (memori, checkpoint, rencana) | Belum ada → ditulis. Identik → dilewati. Berbeda → **tidak pernah ditimpa**: disimpan sebagai `<nama>.from-backup` dengan peringatan |
+| `history.jsonl`, `usage.jsonl` | Digabung tanpa duplikat (maks 64 MB) |
+| Chat panel | Digabung per pesan (yang sudah ada dilewati), 250 pesan terbaru disimpan. Izin/tool yang dulu menunggu tampil sebagai dibatalkan |
+| `state.json` | Folder hanya ditambah kalau berada **di bawah folder home** laptop ini dan ada. Favorit ditambah; pengaturan per project hanya mengisi yang kosong. **Mode izin tidak pernah dipulihkan**, **sesi yang dilanjutkan tidak dipilih otomatis** |
 
-Project yang foldernya sudah ada di laptop baru langsung muncul di daftar. Folder yang belum ada dilaporkan di peringatan, dan riwayatnya tetap dipulihkan, jadi akan muncul setelah folder itu di-clone. Setiap file ditulis atomik (file sementara lalu rename, folder tujuan diperiksa ulang tepat sebelum rename). Waktu modifikasi aslinya dipertahankan supaya urutan "terakhir dipakai" tetap benar, tetapi tidak pernah melewati waktu sekarang. Import yang sama boleh dijalankan berulang: tidak ada yang ditambahkan dua kali.
+**Folder home berbeda** (mis. `C:\Users\lama` → `C:\Users\baru`): folder transcript diganti nama mengikuti aturan Claude Code supaya `claude --resume` di folder baru menemukannya. Import yang sama boleh diulang; tidak ada yang ditambahkan dua kali.
 
-**Keamanan:** Export/import hanya dari laptop. HP ditolak (403), termasuk lewat Tailscale. Endpoint tetap butuh token + cek Host/Origin. Upload maksimal 4 GB (`OFFICE_BACKUP_MAX_BYTES`), disimpan sementara di `data/tmp/` lalu dihapus. Sisa upload yang terputus dibersihkan saat server start. Zip dibatasi maksimal 200.000 entri dan central directory 64 MB. Sebelum ada satu byte pun yang ditulis, setiap entri zip diperiksa: harus berada di bawah prefix yang dikenal (`claude/projects/`, `claude/file-history/`, `claude/plans/`, `claude/history.jsonl`, `office/state.json`, `office/usage.jsonl`, `manifest.json`), dan ditolak kalau berisi `..`, path absolut, drive letter, backslash, nama device Windows, nama pendek 8.3 (`~1`), symlink, entri terenkripsi, atau nama ganda. Tujuan akhir di-resolve (termasuk symlink/junction) dan harus berada di dalam folder tujuan. Ukuran dan CRC setiap file diverifikasi saat diekstrak. Hanya satu export/import yang bisa berjalan pada satu waktu.
+> **Hanya import backup milikmu sendiri.** Import memperlakukan backup sebagai data yang belum tentu tepercaya, tetapi isi transcript dan memori project tetap dibaca Claude saat sesi dilanjutkan.
 
-**Format:** ZIP standar (bisa dibuka Windows Explorer / `Expand-Archive`), ditulis dan dibaca oleh `src/zip.js` tanpa dependency: deflate streaming per file, CRC-32, nama UTF-8, dan ZIP64 otomatis untuk file > ~3,75 GB, total > 4 GB, atau lebih dari 65.535 file. Export di-stream langsung ke browser, tanpa menampung seluruh zip di memori server. Contoh ukuran: 173 MB transcript menjadi zip 57 MB dalam ±4 detik.
+**⏰ Backup otomatis** (⚙ → Cadangkan riwayat, laptop, nonaktif secara default): **Harian** atau **Mingguan** + hari, **jam**, **folder tujuan** (path lengkap di laptop ini; folder jaringan dan path relatif ditolak), dan **simpan N backup terakhir** (1–100). Nama file `adhit-office-backup-auto-YYYYMMDD-HHmmss.zip`. Jadwal yang terlewat saat laptop mati dijalankan sekali begitu server menyala. Rotasi hanya menghapus file `adhit-office-backup-auto-*.zip`. Ada **▶ Jalankan sekarang** dan status hasil terakhir.
 
-### ⏰ Backup otomatis
+**Format:** ZIP standar (bisa dibuka Explorer / `Expand-Archive`), ditulis tanpa dependency oleh `src/zip.js` (deflate streaming, CRC-32, ZIP64 otomatis). Upload import maks 4 GB (`OFFICE_BACKUP_MAX_BYTES`).
 
-**⚙ → Cadangkan riwayat → ⏰ Backup otomatis** (nonaktif secara default, hanya dari laptop): pilih **Harian** atau **Mingguan** + hari, **jam** (waktu lokal), **folder tujuan** (path lengkap di laptop ini yang ada dan bisa ditulis; folder jaringan `\\server\share`, path perangkat `\\.\…`/`\\?\…`, path relatif, dan nama perangkat Windows ditolak), dan **simpan N backup terakhir** (1–100). Isinya sama dengan Export riwayat, bernama `adhit-office-backup-auto-YYYYMMDD-HHmmss.zip`. Server memeriksa jadwal tiap menit; jadwal yang terlewat saat laptop mati dijalankan sekali begitu server menyala, sedangkan jadwal sebelum pengaturan disimpan tidak pernah dijalankan. Backup ditulis ke `.<nama>.zip.partial` di folder yang sama, di-flush, lalu di-rename, jadi tidak pernah ada zip setengah jadi dengan nama backup. Rotasi hanya menghapus file yang cocok dengan pola nama `adhit-office-backup-auto-*.zip` (export manual dan file lain tidak disentuh). Backup otomatis tidak berjalan bersamaan dengan export/import (dicoba lagi menit berikutnya). Hasil terakhir (waktu, nama, ukuran, atau error) tampil di ⚙, plus tombol **▶ Jalankan sekarang**.
+Batasan: lokasi Claude mengikuti `~/.claude` (atau `CLAUDE_PROJECTS_DIR`). Pindah antar-OS belum diuji. Nama folder transcript yang dipotong Claude Code (path > 200 karakter) tidak di-remap.
 
-Batasan: lokasi Claude mengikuti `~/.claude` (atau `CLAUDE_PROJECTS_DIR`). `CLAUDE_CONFIG_DIR` belum dibaca, sama seperti bagian app lainnya. Pindah antar-OS (Windows ↔ macOS/Linux) memetakan path di bawah home, tetapi belum diuji. Nama folder transcript yang dipotong Claude Code untuk path yang sangat panjang (> 200 karakter) tidak di-remap.
+## Keamanan & privasi
 
-## Menjalankan
+**Jaringan dan akses**
 
-Double-click **`start-office.cmd`** (otomatis membuka browser), atau:
+- Server hanya listen di `127.0.0.1`. Saat akses HP aktif, juga di alamat LAN dan Tailscale laptop (bukan `0.0.0.0`), plus listener HTTPS `:4318` **hanya** di interface Tailscale.
+- Setiap request diperiksa header `Host`/`Origin` (per skema: halaman http tidak bisa memanggil origin https dan sebaliknya). Semua API butuh token acak per start yang disisipkan ke halaman.
+- **WiFi = hanya lihat, Tailscale = penuh.** Satu gerbang di server (`wifiAllows`, `src/remote.js`) mengizinkan WiFi hanya untuk daftar baca; endpoint baru otomatis ditolak. Pencarian percakapan, export sesi, dan aturan izin juga tidak dibuka lewat WiFi.
+- Interface Tailscale dikenali dari **nama interface**, bukan sekadar alamat `100.x` (WiFi kantor/hotspot dengan CGNAT juga memakai rentang itu).
+- Koneksi dari loopback lewat TLS tidak pernah dianggap laptop.
+- Tunnel publik tidak dipakai. Lihat [Dari HP](#dari-hp).
+
+**Pairing HP**
+
+- Kode 6 digit berlaku 2 menit, sekali pakai, diganti setelah 5 kali salah. Alamat yang 5 kali salah diblokir 60 detik; lebih dari 20 tebakan salah dalam 10 menit menjeda pairing untuk semua selama 10 menit.
+- HP menyimpan token acak di cookie `HttpOnly; SameSite=Strict` (HTTPS: `__Host-office_device; Secure`). Server hanya menyimpan hash-nya. Token **terikat jalur**: pairing HTTPS tidak berlaku di HTTP, dan sebaliknya.
+- Cabut kapan saja di 📱 (koneksi live HP itu langsung diputus). HP yang tidak dipakai 30 hari dicabut otomatis, langganan push-nya ikut terhapus.
+
+**Privasi lewat WiFi** (HTTP biasa bisa disadap di jaringan yang sama). Penonton WiFi **tidak menerima**:
+
+| Data | Yang dikirim ke WiFi |
+|---|---|
+| Akun Claude | Hanya paket dan kuota. Tanpa email, nama, organisasi, atau ID asli |
+| Laporan token | Tanpa email/organisasi; ID akun diganti ID buram |
+| Daftar HP yang dipasangkan | Kosong |
+| Spotify | Lagu yang diputar, tanpa nama perangkat; tanpa playlist dan daftar perangkat |
+| Izin dijawab dari notifikasi | Tanpa nama HP yang menjawab |
+| File rahasia (`.env*`, kunci, kredensial) | Tidak pernah dikirim ke HP mana pun |
+
+Isi chat dan kode tetap terlihat lewat WiFi, jadi **pakai hanya di WiFi yang kamu percaya**.
+
+**Halaman web**
+
+- Content-Security-Policy ketat (`script-src 'self'`, tanpa script inline, `object-src 'none'`, `base-uri 'none'`, `connect-src 'self'`), `frame-ancestors 'self'` + `X-Frame-Options` (anti-clickjacking tombol **Izinkan**), `Referrer-Policy: no-referrer`. COOP `same-origin` di laptop dan HTTPS. Tanpa HSTS (sengaja: berlaku per host di semua port).
+- Error tak terduga hanya dikirim sebagai pesan umum; detail di log server.
+- Ikon, manifest PWA, dan service worker (HTTPS saja) bisa diambil tanpa pairing karena tidak berisi data.
+
+**Notifikasi push**
+
+- Langganan disimpan di record HP. Kunci VAPID di `data/state.json`; izin folder `data/` dibatasi ke user ini (best effort). Keduanya tidak ikut backup.
+- Server hanya mengirim ke layanan push yang dikenal (FCM, Mozilla, Apple, Windows), lewat HTTPS port 443.
+- **Izinkan/Tolak dari notifikasi** memakai token sekali pakai per (izin, HP), 256-bit, disimpan hanya sebagai hash di memori, berlaku 15 menit, plus cookie HTTPS HP itu. Izinkan dari layar kunci hanya untuk tool baca/edit file; selalu bisa dimatikan per HP.
+
+**Claude Code, file, dan perintah**
+
+- Izin tetap mengikuti aturan Claude Code. Mode default selalu bertanya sebelum menulis file atau menjalankan perintah. Mengubah aturan izin hanya dari laptop.
+- Login/logout akun hanya dari laptop atau HP lewat Tailscale, dengan peringatan ke laptop. Server tidak pernah membaca token login (`.credentials.json`).
+- Folder jaringan (`\\server\share`, `\\?\`, `\\.\`) ditolak sebelum disentuh, supaya Windows tidak mengirim hash NTLM ke server lain.
+- **Buka di VS Code / folder** hanya dari laptop, hanya untuk project terdaftar, dijalankan tanpa shell.
+- Diff file baru berupa symlink hanya menampilkan tujuannya.
+- Export/import riwayat hanya dari laptop. Isi zip diperiksa (zip-slip, symlink, nama device Windows, CRC) sebelum ada yang ditulis.
+
+**Spotify**
+
+- Token di `data/spotify.json` (mode 0600, tidak ikut backup, tidak pernah dikirim ke browser). Jangan arahkan `OFFICE_DATA_DIR` ke folder bersama/sinkron. Client ID, hubungkan, dan putuskan hanya dari laptop. Album art diproksikan server, jadi HP tidak menghubungi CDN Spotify.
+
+**HTTPS lewat Tailscale:** jangan jalankan layanan HTTPS lain (`tailscale serve`/Funnel) di nama mesin yang sama, karena cookie berlaku per host, bukan per port.
+
+## Saat Claude Code diperbarui
+
+Adhit Office memakai protokol internal Claude Code, sedangkan Claude Code memperbarui dirinya sendiri. Karena itu server membaca versi Claude Code (`claude --version`) saat menyala dan setiap 6 jam. Kalau versinya baru, server menjalankan **cek kontrak ringan** di latar belakang:
+
+- Menunggu sampai tidak ada giliran yang berjalan (prompt dan start server tidak pernah ditahan).
+- Sebagian besar tanpa token: versi, flag peluncuran yang dipakai aplikasi, `initialize` (perintah, model, agent dari file), dan perintah kontrol (mode, model, konteks).
+- Paling banyak **1 request Haiku kecil** untuk memeriksa format streaming; bisa dimatikan.
+
+Hasilnya tampil sebagai pemberitahuan di atas kantor: "Claude Code diperbarui ke vX — semua cek kontrak lulus ✅" (hilang sendiri), atau "⚠ … cek kontrak gagal (…)" beserta nama cek yang gagal (tetap tampil sampai ditutup). HP lewat WiFi biasa hanya melihat pemberitahuan pasif.
+
+**⚙ Pengaturan → 🧩 Kompatibilitas Claude Code** (hanya dari laptop) menampilkan status cek terakhir, tombol **Cek kompatibilitas Claude Code**, serta dua pengaturan: *Cek otomatis saat Claude Code diperbarui* dan *Boleh pakai 1 request kecil (Haiku)* (keduanya aktif secara bawaan). Statusnya disimpan di `data/claude-check.json` dan tidak ikut backup.
+
+Untuk detail lengkap, jalankan `npm run test:claude` (23 cek terhadap Claude Code asli, beberapa request Haiku; lihat [Test & pengembangan](#test--pengembangan)).
+
+## Test & pengembangan
 
 ```bash
-npm run open    # http://localhost:4317
+npm test             # offline: unit + server sungguhan dengan Claude Code palsu + UI (Chrome/Edge headless, dilewati bila tidak ada)
+npm run test:claude  # kontrak ke Claude Code asli (beberapa request Haiku, memakai akunmu)
+npm run lint         # ESLint versi terkunci lewat npx
 ```
 
-Tutup jendela server (atau tekan Ctrl+C) untuk berhenti. Semua proses Claude Code ikut ditutup.
+| Lapis | Isi |
+|---|---|
+| Unit (`test/*.test.mjs`) | Role & katalog tim, translator, markdown, git, mirror CLI, riwayat & chat store, aturan notifikasi/dashboard/deteksi macet/lampiran, ledger token, laporan, Web Push (kripto RFC 8291/8292), TLS, Spotify (dengan Spotify palsu), ZIP & backup, ikon |
+| Integrasi (`test/server.test.mjs`, `https`, `push`, `spotify-server`, …) | `server.js` sungguhan dengan `test-support/fake-claude.mjs`: keamanan API, gerbang WiFi, pairing, HTTPS, izin, stop, antrian, backup |
+| UI (`ui`, `mobile-chat`, `mobile-views`, `multitab`, `queue-ui`, `push-ui`, `spotify-ui`, …) | Browser headless lewat CDP (`test-support/cdp.mjs`), viewport HP dan desktop. `CHROME_PATH=…` untuk memilih browser, `OFFICE_UI_SHOTS=<folder>` untuk menyimpan screenshot |
+| Kontrak (`test-support/claude-contract.mjs`) | Asumsi protokol terhadap Claude Code asli: `init`, streaming, `can_use_tool`, allow/deny, interrupt, `--agents`, format transcript |
 
-### Restart server (mis. saat mengembangkan app ini)
+Test offline juga jalan di GitHub Actions (Windows dan Linux) setiap push, plus lint.
+
+**Isolasi.** Semua test memakai folder sementara dan port acak (`OFFICE_DATA_DIR`, `CLAUDE_PROJECTS_DIR`, `CLAUDE_CONFIG_FILE`, `CLAUDE_CONFIG_DIR`, `OFFICE_TAILSCALE_BIN`, `OFFICE_OPEN_DRY_RUN`), jadi tidak menyentuh riwayat, settings, Tailscale, atau Spotify aslimu, dan aman dijalankan saat server background menyala. Tips:
+
+- Jalankan satu file: `node --test --test-concurrency=1 test/ui.test.mjs`. Satu test: tambahkan `--test-name-pattern="<nama>"`.
+- Buktikan tiap test UI bisa jalan sendiri (tanpa bergantung urutan), dengan batas waktu per test:
+
+  ```bash
+  node test-support/run-each-ui-test.mjs test/ui.test.mjs test/queue-ui.test.mjs
+  node test-support/run-each-ui-test.mjs --timeout 120 --jobs 2 --filter "Semua project" test/ui.test.mjs
+  node test-support/run-each-ui-test.mjs --shuffle 3 test/ui.test.mjs   # plus 3 run penuh urutan acak
+  ```
+
+- Selalu beri batas waktu pada run yang lama (mis. `--test-timeout=900000`); jangan menunggu tanpa batas.
+
+**Restart server saat mengembangkan app ini:**
 
 ```bash
 node scripts/restart.mjs            # port lain: --port 4400 (atau env OFFICE_PORT)
 ```
 
-Skrip ini meminta server berhenti dengan rapi (`POST /api/shutdown`, hanya dari laptop), menunggu port bebas, lalu menjalankan `node server.js --background` ter-detach (log di `data/server.log`) dan menunggu `/health`. Argumen lain untuk `server.js` bisa ditaruh setelah `--` (mis. `node scripts/restart.mjs -- --open`; tanpa `--background`, output server tidak tersimpan).
+Skrip meminta server berhenti dengan rapi (`POST /api/shutdown`, hanya dari laptop), menunggu port bebas, lalu menjalankan `node server.js --background` ter-detach (log di `data/server.log`) dan menunggu `/health`. Argumen lain untuk `server.js` setelah `--` (mis. `node scripts/restart.mjs -- --open`).
 
-Pakai ini, bukan `Stop-Process -Force`. Proses Claude Code adalah child process server (prompt & jawaban lewat pipe stdin/stdout), jadi **giliran yang sedang berjalan selalu terputus saat server berhenti**. Bedanya:
+Pakai ini, bukan `Stop-Process -Force`, dan sebaiknya saat tidak ada giliran/subagent yang berjalan. Proses Claude Code adalah child process server, jadi **giliran yang berjalan selalu terputus saat server berhenti**:
 
-| Cara berhenti | Yang terjadi pada giliran yang sedang berjalan |
+| Cara berhenti | Giliran yang sedang berjalan |
 |---|---|
-| `scripts/restart.mjs`, Ctrl+C, ⚙ → **⏻ Matikan server**, SIGTERM | Dicatat sebagai terputus, lalu di-interrupt seperti Esc (maks 3 dtk) supaya Claude Code menutup giliran di transcript-nya, baru prosesnya dimatikan |
-| `Stop-Process -Force`, crash, laptop mati | Penanda "giliran berjalan" (ditulis ke `data/state.json` saat giliran mulai) ditemukan saat start berikutnya. Bagian jawaban yang belum selesai ditulis bisa hilang |
+| `scripts/restart.mjs`, Ctrl+C, ⚙ → ⏻ Matikan server, SIGTERM | Dicatat terputus, di-interrupt seperti Esc (maks 3 dtk) supaya Claude Code menutup giliran di transcript, baru proses dimatikan |
+| `Stop-Process -Force`, crash, laptop mati | Penanda giliran ditemukan saat start berikutnya; bagian jawaban yang belum ditulis bisa hilang |
 
-Setelah server hidup lagi, chat project itu menampilkan *"Server di-restart saat Claude sedang bekerja — giliran terputus"*, dan di atas kotak pesan ada tombol **▶ Lanjutkan** (mengirim "Lanjutkan pekerjaan yang terputus tadi…" ke sesi yang sama lewat `--resume`) dan **Tutup**. Tidak ada yang dikirim otomatis, karena melanjutkan memakai token. Di kantor, Lead memasang tanda menunggu (✋). Mengirim prompt lain, memulai sesi baru, atau membuka sesi lain juga menutup pemberitahuan itu.
+Setelah hidup lagi, chat project itu menawarkan **▶ Lanjutkan** / **Tutup** (lihat [Chat & izin](#chat--izin)).
 
-**Nyala otomatis saat Windows login:** buka **⚙** di header, lalu centang *Nyalakan otomatis saat Windows login*. Server berjalan tanpa jendela (log di `data/server.log`), jadi kamu cukup membuka `http://localhost:4317`. Untuk mematikannya, pakai tombol **⏻ Matikan server** di panel yang sama. Mencentang ini membuat file `claude-coworking.vbs` di folder Startup Windows, dan menghapus centang akan menghapus file itu.
+**Env opsional**
 
-## Cara pakai
+| Variabel | Default | Fungsi |
+|---|---|---|
+| `OFFICE_PORT` | `4317` | Port HTTP |
+| `OFFICE_HTTPS_PORT` | `4318` | Port HTTPS Tailscale (harus beda dari `OFFICE_PORT`) |
+| `OFFICE_DATA_DIR` | `data/` | Folder data (harus pribadi) |
+| `PROJECTS_ROOT` | folder induk app ini | Folder induk project sebelum diatur di ⚙ |
+| `CLAUDE_BIN` | terdeteksi | Path `claude` |
+| `CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | Lokasi transcript |
+| `OFFICE_TAILSCALE_BIN` | terdeteksi | Path Tailscale CLI |
+| `OFFICE_BROWSER` | Edge/Chrome | Browser untuk PDF laporan |
+| `OFFICE_BACKUP_MAX_BYTES` | 4 GB | Batas upload import riwayat |
+| `SPOTIFY_CLIENT_ID` | – | Client ID Spotify (kalau tidak diisi di ⚙) |
 
-| Bagian | Fungsi |
-|---|---|
-| **Pilih project** (`Ctrl+K`) | Klik nama project di header. Dialog berisi folder yang pernah dibuka Claude Code di device ini (✳) dan semua subfolder dari **folder induk** yang kamu atur lewat **⚙**. Bisa dicari, dipilih dengan ↑↓ + Enter, dan ditambah satu folder lepas lewat kolom di bawah. Klik **☆** untuk menjadikan favorit: project favorit selalu di atas (tersimpan di server, sama di laptop dan HP), disusul project yang sedang bekerja atau minta izin. Tombol project juga menampilkan jumlah izin yang menunggu di project lain. |
-| **🗂 Semua project** (header, `Ctrl+P` → *Semua project*, `/dashboard`) | Satu layar untuk memantau semua project sekaligus. Kartu per project diurutkan: **butuh kamu** (✋ Butuh izin (N), ⚠ Terputus, ⚠ mungkin macet) → **⏳ Bekerja** (role yang aktif dan tugas yang sedang berjalan) → **📋 Antrian** (⏸ saat dijeda) → **💤 Idle** (favorit dulu, lalu yang terakhir aktif). Tiap kartu menampilkan waktu aktivitas terakhir, model, konteks %, dan potongan prompt terakhir atau jawaban Claude. Ketuk kartu untuk pindah ke project itu; **✋ Lihat izin** langsung membawa ke kartu izinnya. Bisa disaring per nama. Update live dari stream (tanpa polling). Di HP: bar **🗂 Semua project** di atas tampilan **Kantor** (dengan ringkasan, misalnya *1 butuh kamu · 2 bekerja*) atau tombol 🗂 di pemilih project. Hanya membaca, jadi juga jalan lewat WiFi hanya-lihat. |
-| **👤 Akun** | Profil akun Claude yang sedang login, kuota paket, pemakaian token hari ini/7 hari, serta **Ganti akun** / **Logout**. Lihat [Akun Claude & laporan token](#akun-claude--laporan-token). |
-| **📊 Laporan** | Laporan pemakaian token per akun (input, output, cache read/write, cache hit, request, estimasi biaya) yang bisa diunduh sebagai PDF. |
-| **⚙ Folder projects** | Atur satu atau lebih folder induk (satu per baris). Disimpan per device di `data/state.json`. Kalau belum diatur, dipakai folder tempat `agent-place` berada (atau env `PROJECTS_ROOT`). |
-| **Chat** | Prompt ke Claude Code di folder project itu. Pesan yang dikirim saat tim bekerja masuk antrean Claude Code sendiri dan dibaca Claude di langkah berikutnya, sama seperti di CLI. Di desktop, lebar panel chat bisa diatur dengan menggeser tepi kirinya (klik dua kali untuk ukuran bawaan). |
-| **Kartu izin** | Muncul setiap kali Claude butuh izin: **Izinkan**, **Izinkan selalu** (simpan aturan), **Izinkan semua (sesi ini)**, atau **Tolak** (bisa disertai instruksi untuk Claude). Pertanyaan (`AskUserQuestion`) bisa dijawab dengan pilihan atau jawaban sendiri. Rencana (mode *Rencana dulu*) disetujui dengan **auto-edit** atau **tanya tiap edit**, seperti dialog rencana di CLI. |
-| **Izin** | 🛡️ Tanya dulu (default) · ✏️ Auto-edit file · ⚡ Auto · 📋 Rencana dulu · 🚫 Jangan tanya. `Shift+Tab` di kotak pesan berganti mode. Perubahan langsung berlaku, juga di tengah giliran. |
-| **Model** | Daftar model dari Claude Code sendiri (sama dengan `/model`: Fable, Opus, Sonnet, Haiku, dan versi spesifik). `/model <nama>` juga menerima alias seperti `opus[1m]` atau `opusplan`. Ganti model langsung berlaku tanpa restart. |
-| **Effort** | Seberapa dalam Claude berpikir (`--effort`): Default (dari settings Claude Code), Low, Medium, High, X-High, Max. Lebih tinggi lebih teliti untuk tugas sulit, tapi lebih lambat dan lebih banyak token. Berlaku per project dan langsung berlaku tanpa restart (kembali ke Default memulai ulang prosesnya, percakapan tetap berlanjut). |
-| **Mode tim** | Claude mendelegasikan ke subagent dari role yang aktif (bawaan 16; Freelancer menampung tipe `general-purpose`/`fork`). Visualnya lebih hidup, tapi **lebih banyak token**. Matikan untuk Claude Code biasa. |
-| **📋 Antrian** (`Alt+Enter`, tombol 📋, `/antrian`) | Susun beberapa prompt untuk satu project: `Alt+Enter` (atau tombol 📋 di samping **Kirim**) memasukkan isi kotak pesan ke antrian, bukan langsung dikirim; kotak kosong membuka daftarnya. Server mengirim item berikutnya otomatis saat sesi project itu **idle** (tidak bekerja, tidak ada izin yang menunggu, tidak ada giliran terputus), satu per satu, masing-masing di gilirannya sendiri. Di dialog: ubah urutan (seret atau ↑↓), edit/hapus item yang menunggu, **Jeda/Lanjutkan**, **Ulangi** item gagal, **💬 Lihat hasil** (lompat ke prompt dan jawabannya di chat). Status: menunggu/berjalan/selesai/gagal. Antrian berhenti sendiri bila item gagal atau dihentikan (Esc), kuota akun habis, atau **batas antrian** tercapai (pemberitahuan di chat + toast). **Batas antrian** (di dialog): maks token output dan/atau maks biaya (USD, estimasi harga list) per project; progresnya tampil sebagai bar. Batas dicek setiap kali satu item selesai, jadi giliran yang sedang berjalan tidak pernah dipotong. Menyimpan batas baru, atau melanjutkan antrian yang dijeda karena batas, memulai hitungan dari nol. Biaya dan token dihitung per giliran (termasuk subagent); giliran yang berhenti tanpa hasil (server di-restart, Claude Code keluar) tidak ikut terhitung. Antrian disimpan di `data/state.json`: setelah server di-restart antrian **tetap dijeda** sampai kamu melanjutkan. Maks 30 item belum selesai, 20.000 karakter per item. Chip 📋 di bar sesi menampilkan jumlahnya (⏸ saat dijeda). Lewat WiFi hanya bisa melihat. |
-| **■ Stop** / `Esc` | Muncul di sebelah **Kirim** saat tim bekerja. Menghentikan giliran yang sedang berjalan dan membatalkan pesan yang masih antre; sesi tetap bisa dilanjutkan. |
-| **⏪ Rewind** (`Esc Esc`, `/rewind`) | Kembalikan **kode dan/atau percakapan** ke sebelum salah satu pesanmu, memakai checkpoint Claude Code. Pratinjau menunjukkan file yang akan kembali (+/−). Pesan yang di-rewind masuk lagi ke kotak pesan untuk diedit. |
-| **Status line** | Di bawah kotak pesan: mode izin, model, dan konteks terpakai dari Claude Code (seperti `/context`, dengan batas auto-compact), plus jumlah tugas latar. |
-| **Daftar tugas** | Todo list Claude (TodoWrite/Task) menempel di atas kotak pesan dan update live. |
-| **✻ Berpikir** | Proses berpikir Claude tampil sebagai baris yang bisa dibuka (kalau modelnya membagikannya). |
-| **🔌 Server MCP** (`/mcp`) | Status semua server MCP, **Sambungkan ulang**, **Aktifkan/Nonaktifkan**, dan **Login** OAuth untuk server yang perlu login. Dari HP, login hanya lewat Tailscale. |
-| **⧗ Tugas latar** (`/tasks`, `Ctrl+B`) | Perintah dan agent yang dijalankan Claude Code (misalnya dev server): status, output terakhir, dan **Hentikan**. `Ctrl+B` memindahkan yang sedang jalan ke latar belakang. |
-| **Output live di chat** | Baris perintah Bash/PowerShell yang sedang berjalan menampilkan beberapa baris output terakhir; dibuka (▸) menampilkan output lengkap (8 KB terakhir) yang terus bertambah. Hanya dibaca selama baris itu terlihat di layar; berhenti saat perintah selesai. |
-| **⚠ Deteksi macet** | Baris tool yang sedang berjalan (Bash/PowerShell/tool lain) yang output-nya tidak berubah **3 mnt**, atau sudah berjalan **10+ mnt**, mendapat chip *⚠ Tidak ada output 3 mnt — mungkin macet* dengan **■ Hentikan giliran** dan (untuk perintah shell) **⧗ Pindah ke latar**. Delegasi tanpa aktivitas baru (langkah/tool di transcript subagent) **5 mnt** mendapat chip *⚠ <role> tidak ada aktivitas 5 mnt* dengan **Lihat detail** dan **■ Hentikan giliran**. Orangnya di kantor menampilkan “…?” kecil, dan satu notifikasi *Berhenti / error* per kejadian (ikut pengaturan notifikasi dan jam tenang). Hanya peringatan: tidak pernah menghentikan apa pun sendiri (build yang memang lama tetap jalan). Lewat WiFi chip tampil, tombol aksinya nonaktif. |
-| **📄 Lihat file** | Path file di chat (baris Read/Edit/Write, path seperti `src/app.js:120` di jawaban Claude) dan tombol **📄 Lihat file** di tab Perubahan membuka isi file (read-only, hanya di dalam folder project): nomor baris, syntax highlight, `:baris` disorot, cari (`Ctrl+F`), salin, **Buka di VS Code** (laptop). File yang mungkin berisi rahasia (`.env*`, `*.pem`, `id_*`, kredensial) butuh konfirmasi di laptop dan tidak pernah dikirim ke HP. |
-| **`!perintah`** | Jalankan perintah shell langsung di folder project (PowerShell di Windows). Output-nya ikut ke Claude bersama pesan berikutnya, seperti bash mode di CLI. Dari HP hanya lewat Tailscale. |
-| **Bar sesi** | Baris di atas chat yang menunjukkan percakapan Claude Code yang sedang dipakai: judul, asal (web atau lanjutan sesi terminal), dan model. Klik judulnya untuk mengganti nama sesi (sama dengan `/rename`). |
-| **＋ Sesi baru** | Mulai percakapan baru. Claude tidak membawa konteks sebelumnya, tapi percakapan lama tetap ada di riwayat. |
-| **🕘 Riwayat sesi** | Dialog berisi sesi Claude Code di project itu, dari terminal maupun web. Sesi dikelompokkan per hari dan bisa dicari. Klik **Lanjutkan** untuk memuat percakapan terakhirnya ke chat, dan Claude melanjutkan dengan konteks yang sama. |
-| **⋯ Lainnya** | Menu di bar sesi: **Export percakapan** ke Markdown, **Salin perintah lanjut di terminal** (`cd` ke project + `claude --resume <id>`), serta **Buka project di VS Code** dan **Buka folder project** (khusus laptop). |
-| **Salin · Edit · ↻ Ulangi** | Arahkan kursor ke pesan (di HP selalu tampil). Jawaban dan code block bisa disalin. Prompt bisa disalin, diedit ulang di kotak pesan, atau dikirim lagi (**Ulangi** hanya ada di prompt web terakhir). |
-| **↑ / ↓** · `Ctrl+R` | Di kotak pesan, panggil lagi prompt sebelumnya di project itu, seperti di CLI. Draft yang sedang diketik kembali setelah prompt terbaru. `Ctrl+R` mencari di riwayat prompt. |
-| **❓ Bantuan** / `?` | Panduan singkat, penjelasan mode izin, dan daftar shortcut keyboard. |
-| **`/` command** | Menu slash command lengkap dengan deskripsi dan argumen, langsung dari Claude Code (built-in, skill, plugin, custom command). Command yang jalan headless (`/usage`, `/context`, `/compact`, `/rename`, …) menampilkan output-nya di chat. Yang di terminal berupa dialog (`/clear`, `/model`, `/effort`, `/resume`, `/rewind`, `/mcp`, `/tasks`, `/memory`, `/help`) dijalankan oleh aplikasi ini. |
-| **`@file`** | Autocomplete path file di project. |
-| **📎 Lampiran** | Lampirkan file lewat 📎, drag & drop, atau paste file. **🖼 Gambar** PNG/JPEG/GIF/WebP (maks ±3,75 MB file = 5 MB base64, batas API; maks 8000 px per sisi), **📕 PDF** (maks 5 MB, dikirim sebagai dokumen sehingga Claude membaca teks dan gambarnya), dan **📄 file teks**: log, `.txt`/`.md`/`.json`/`.csv`/`.yaml`/`.xml`/`.sql`, source code (`.ts`, `.js`, `.py`, `.go`, …), `Dockerfile`, dan sejenisnya (dibungkus `<attachment id="acak">` dengan baris pembuka "bukan instruksi" agar isi file tidak bisa menyamar sebagai perintah; UTF-8 atau UTF-16 ber-BOM, maks 200 KB per file dan 500 KB total; lebih besar → taruh file di project lalu sebut dengan `@file`). Maks 10 lampiran / 20 MB per pesan. Jenis lain (zip, exe, docx, …) ditolak. Paste teks panjang tetap menjadi teks biasa. Chip di kotak pesan dan di bubble chat hanya menampilkan ikon, nama, dan ukuran. Server memeriksa ulang semuanya (jenis dari isi file, ukuran, jumlah, nama). Tidak tersedia saat WiFi hanya-lihat. Catatan: isi lampiran tetap berada di konteks percakapan (memakan token di giliran berikutnya sampai di-compact) dan tersimpan di transcript Claude Code (`~/.claude/projects`), jadi ikut masuk ke backup riwayat. **Mengirim ulang:** ↻ Ulangi dan Edit pada prompt web mengirim/mengembalikan lampirannya juga — browser menyimpan isi lampiran 5 prompt terakhir per project **di memori saja** (maks ±60 MB, tidak pernah ke localStorage/server); setelah halaman dimuat ulang hanya teksnya yang dikirim, dengan catatan "Lampiran tidak ikut: muat ulang halaman menghapusnya". **Draf:** chip lampiran yang belum dikirim tetap milik project-nya saat pindah project (memori saja; hilang saat reload, dibersihkan setelah terkirim) — teks draf tetap di localStorage seperti biasa. **▶ Lanjutkan** setelah restart meneruskan sesi yang sama, jadi lampiran sudah ada di percakapan dan tidak dikirim lagi; bila giliran terputus sebelum sesi terbentuk, prompt dikirim ulang tanpa lampiran dan banner menyebutnya (server hanya mencatat jumlahnya, bukan isinya). **📋 Antrian** tidak menerima lampiran (antrian disimpan di `state.json`; isi file bisa besar/rahasia): ＋📋 / Alt+Enter menolak dengan pesan "Lampiran belum bisa masuk antrian; kirim langsung" dan teks + chip tetap di kotak; server juga menolak `queue-add`/`queue-update` yang membawa lampiran. |
-| **🔔 Notifikasi** | Klik 🔔 di header untuk mengaktifkan. Notifikasi Windows dan suara muncul saat ada yang **minta izin**, tugas **selesai**, atau **berhenti/error**, selama kamu sedang di tab/aplikasi lain atau di project lain (minta izin tetap berbunyi walau sedang dilihat). Klik notifikasinya untuk langsung ke project itu. **Pengaturan notifikasi** (palet perintah → *Pengaturan notifikasi*: `Ctrl+P` di laptop, tombol **🔎** di navigasi bawah HP; di laptop juga klik kanan / tekan lama 🔔 atau tombol di ⚙ Pengaturan): notifikasi dan suara on/off **per jenis kejadian**, **🌙 jam tenang** (dari–sampai, jam lokal, boleh lewat tengah malam: tanpa suara dan tanpa pop-up, kecuali *Izin tetap diberitahu saat jam tenang* yang aktif secara bawaan), **hanya project favorit ★**, **volume** (0–100) dengan **▶ Tes suara**, dan **↺ Kembalikan bawaan**. Disimpan per perangkat (browser); bawaannya sama dengan perilaku lama. |
-| **🎤 Input suara** (`Alt+M`) | Tombol 🎤 di kotak pesan: bicara, kata yang sedang dikenali tampil live di atas kotak, hasil akhirnya masuk di **posisi kursor** (teks yang sudah diketik tetap). Klik 🎤 lagi, `Esc`, atau `Alt+M` untuk berhenti; berhenti sendiri bila browser mengakhirinya (misalnya lama diam) atau saat pindah project. Bahasa **Indonesia/English** dipilih di baris kontrol (*Suara*) dan diingat browser. Memakai pengenalan suara bawaan browser (Chrome/Edge mengirim audio ke layanan pengenalannya, jadi perlu internet). Hanya muncul di **HTTPS atau localhost** (syarat browser): di laptop (`localhost`) langsung ada, sedangkan di HP lewat `http://` (WiFi/Tailscale) tombolnya disembunyikan dan baru muncul bila Adhit Office dibuka lewat HTTPS. Tidak tampil saat WiFi hanya-lihat. |
-| **Tab Perubahan** | `git status` dan diff per file yang belum di-commit (diperbarui otomatis setelah tim mengedit), tombol **🔍 Minta review** (Adhit - Tech Lead me-review semua perubahan), **🧭 VS Code** (membuka file yang dipilih di VS Code, khusus laptop), dan **Commit** (`git add -A` + commit, dengan konfirmasi). |
-| **Detail tool** | Klik baris tool untuk melihat perintah, diff edit (`-`/`+`), dan output. Klik baris delegasi untuk melihat instruksi dan laporan subagent. |
-| **🎬 Demo kantor** | Simulasi tanpa Claude Code, termasuk satu kartu izin. |
-
-Balasan Claude tampil streaming per kata, code block diberi syntax highlighting, dan setiap giliran ditutup dengan durasi, jumlah langkah, ukuran konteks, dan token output.
-
-Percakapan berlanjut antar prompt (`--resume`). Riwayat chat dan pengaturan per project disimpan di `data/state.json`.
-
-## Akun Claude & laporan token
-
-Klik avatar di header (**👤**) untuk melihat akun mana yang sedang dipakai Claude Code di laptop ini: nama, email, organisasi, paket, peran, tier rate limit, kuota paket (sesi 5 jam & mingguan, dari `/usage` — tidak memakai token), dan pemakaian token akun itu hari ini dan 7 hari terakhir.
-
-- **Ganti akun / Login** menjalankan `claude auth login` seperti biasa: halaman login claude.ai terbuka di browser. Kalau halaman itu menampilkan kode, tempel kodenya di dialog. Ada juga *Login via Console* untuk akun API.
-- **Logout** menjalankan `claude auth logout`. Ini berlaku untuk **seluruh Claude Code di laptop**, termasuk terminal/CLI.
-- Setelah ganti akun atau logout, proses Claude dari web dimulai ulang agar memakai akun baru. Giliran yang sedang berjalan dibiarkan selesai dulu, dan tokennya tetap dicatat ke akun lama.
-- Login/logout bisa dari laptop, atau dari HP **hanya lewat Tailscale** (koneksi terenkripsi). Lewat WiFi biasa (HTTP) HP hanya bisa melihat profil, kuota, dan laporan.
-  - Login dari HP: ketuk **🔑 Buka halaman login Claude**, selesaikan login di HP, lalu tempel kode yang ditampilkan halaman itu.
-  - Logout dari HP butuh dua langkah: konfirmasi, lalu ketik `LOGOUT`.
-  - Setiap login/logout dari HP memunculkan peringatan (toast, suara, dan notifikasi) di laptop dan dicatat di `data/server.log`.
-
-**📊 Laporan** menampilkan dan mengunduh (PDF) pemakaian token untuk **satu akun** dan satu periode. Alurnya dua langkah:
-
-1. **Pilih data**: akun dan periode (Hari ini, 7 hari, 30 hari, Bulan ini, Semua, atau 📅 Pilih tanggal). Rentang tanggalnya ditulis di bawah pilihan. Pilihan ini berlaku untuk pratinjau **dan** PDF.
-2. **Pratinjau**: ringkasan KPI, lalu **📈 Tren pemakaian** dengan tombol **Per hari / Per minggu / Per bulan** tepat di atas grafiknya. Grafik menampilkan satu batang per hari/minggu/bulan untuk seluruh periode, termasuk yang kosong. Tabel di bawahnya hanya berisi periode yang ada pemakaian, terbaru di atas. *Per minggu* dan *per bulan* nonaktif kalau periodenya belum mencakup dua minggu/bulan, karena isinya akan sama dengan total.
-
-Kalau pencatatan akun itu baru dimulai di tengah periode, pratinjau memberi tahu sejak kapan, supaya batang kosong di awal tidak disangka "tidak dipakai". Baris di samping **⬇ Unduh PDF** menyebut isi PDF-nya: akun, rentang tanggal, dan rinciannya. PDF juga memuat rincian per model, project, sumber (web/CLI), sesi teratas, dan kuota paket. Setiap catatan token disimpan bersama akun yang sedang login saat token itu dipakai (`data/usage.jsonl`), jadi pemakaian dua akun tidak pernah tercampur.
-
-- Data mulai terkumpul **sejak fitur ini aktif**. Transcript lama Claude Code tidak mencatat akun, jadi sengaja tidak dihitung.
-- Sesi dari web dan dari CLI (lewat mirror) sama-sama tercatat. Transcript CLI tidak menyimpan akun, jadi token CLI dicatat ke akun yang sedang login. Setelah ganti akun, tutup lalu buka lagi sesi CLI yang masih terbuka agar catatannya tetap akurat. Estimasi biaya (USD, harga list) hanya tersedia untuk sesi web. Untuk paket Pro/Max/Team yang membatasi adalah kuota, bukan biaya.
-- PDF dibuat oleh Edge/Chrome dalam mode headless dengan profil sementara. Kalau tidak ada keduanya, laporan dibuka di tab baru untuk dicetak ke PDF dari browser.
-
-## Kantor
-
-- **Ruang boss** berdinding kaca untuk Adhit - Lead (Engineering Lead): meja eksekutif, kursi kulit, kursi tamu, dan TV grafik aktivitas. Boss duduk menghadap pintu, tamu (prompt) datang ke depan mejanya, dan boss keluar ruangan untuk mendelegasikan.
-- Satu meja staf per role aktif dalam grid 4 kolom (bawaan 17 meja dalam 5 baris; 13–16 role 4 baris; tim ≤ 12 role tetap 3 baris), meja meeting bundar, pantry, sofa, dan rak server di samping DevOps.
-- Tiap tool call menggerakkan karakter yang sesuai. Layar monitornya menunjukkan jenis kerja: kode, terminal, test, dokumen, desain, pencarian, browser, kanban, tabel database, pipeline CI/CD, security scan, diff review.
-- Delegasi: Claude berjalan ke meja anggota tim. Minta izin: anggota tim berdiri dan angkat tangan. Error: layar merah dan asap. Selesai: confetti.
-- Whiteboard menampilkan todo list Claude, atau daftar delegasi.
-- Saat idle, tim ngopi, duduk di sofa, ngobrol, atau cek server. Jendela dan lampu mengikuti jam lokal. Ada kucing kantor.
-
-## Keamanan
-
-- Server hanya listen di `127.0.0.1`, memeriksa header `Host`/`Origin`, dan semua API butuh token acak per start (disisipkan ke halaman). Situs lain tidak bisa menyuruh server menjalankan Claude Code.
-- Situs lain tidak bisa memuat kantor di dalam iframe (`frame-ancestors 'self'`, `X-Frame-Options`), sehingga tombol seperti **Izinkan** tidak bisa dipancing lewat clickjacking.
-- Setiap respons membawa Content-Security-Policy ketat (`script-src 'self'`, tanpa script inline, `object-src 'none'`, `base-uri 'none'`, `connect-src 'self'`), dan `Referrer-Policy: no-referrer`; halaman di laptop juga `Cross-Origin-Opener-Policy: same-origin` (browser mengabaikan COOP di alamat http://IP, jadi tidak dikirim ke HP). Gaya inline tetap diizinkan karena tampilan dan laporan PDF memakainya.
-- Akses HP: **WiFi = hanya lihat, Tailscale = penuh**. Satu gerbang di server (`wifiAllows` di `src/remote.js`) mengizinkan WiFi hanya untuk daftar aksi baca; endpoint baru otomatis ditolak lewat WiFi sampai sengaja dimasukkan ke daftar itu.
-- Folder jaringan (UNC seperti `\\server\share`, `//server/share`, `\\?\`, `\\.\`) ditolak sebelum disentuh, supaya Windows tidak mengirim hash NTLM ke server lain.
-- Diff file baru yang berupa symlink hanya menampilkan tujuannya (`symlink → …`), bukan isi file yang ditunjuk.
-- Error tak terduga di server hanya dikirim ke browser sebagai pesan umum; detailnya ada di log server.
-- Izin tetap mengikuti aturan Claude Code. Mode default selalu bertanya sebelum menulis file atau menjalankan perintah.
-- Login/logout akun hanya dari laptop atau dari HP lewat Tailscale (ditolak lewat WiFi biasa), dengan peringatan ke laptop. Server tidak pernah membaca token login (`.credentials.json`); profil diambil dari `claude auth status` dan data profil di `~/.claude.json`.
-- **Buka di VS Code / folder** hanya bisa dari laptop, hanya untuk folder project yang terdaftar (file harus berada di dalam project), dan dijalankan tanpa shell. Path dikirim sebagai argumen biasa, tidak pernah ditafsirkan sebagai perintah.
-- Export/import riwayat hanya dari laptop. Isi zip diperiksa (zip-slip, symlink, nama device, CRC) sebelum ada yang ditulis, dan kredensial login tidak pernah ikut di backup. Lihat [Pindah laptop / backup riwayat](#pindah-laptop--backup-riwayat).
-- ♪ Spotify: token login Spotify disimpan di `data/spotify.json` (mode 0600, tidak ikut backup, tidak pernah dikirim ke browser). Folder data harus **pribadi**: jangan arahkan `OFFICE_DATA_DIR` ke folder bersama/sinkron (folder jaringan, OneDrive bersama, dsb.), karena siapa pun yang bisa membaca file itu bisa memakai akun Spotify-mu. Untuk mencabut akses sepenuhnya, buka spotify.com/account/apps.
-- Ikon dan manifest PWA bisa diambil tanpa pairing karena tidak berisi data. Selain itu semuanya tetap butuh pairing.
-- HTTPS lewat Tailscale (segera): jangan jalankan layanan HTTPS lain (`tailscale serve`/Funnel) di nama mesin yang sama, karena cookie berlaku per host, bukan per port.
-
-## Test
-
-```bash
-npm test             # ±8 detik, offline: unit + server sungguhan dengan Claude Code palsu
-npm run test:claude  # uji kontrak ke Claude Code asli (beberapa request Haiku)
-```
-
-| Lapis | Isi |
-|---|---|
-| Unit (`test/*.test.mjs`) | Pemetaan role/file/perintah, translator (streaming, tool, subagent, token), markdown & keamanan HTML, git panel, mirror CLI & riwayat sesi dengan transcript palsu, parsing `/usage`, ledger token per akun, ringkasan & PDF laporan, perintah buka VS Code/folder per OS, ikon app sesuai generator |
-| Integrasi (`test/server.test.mjs`) | Server dijalankan dengan `test-support/fake-claude.mjs` yang meniru protokol stream-json: keamanan API (token, Origin, Host, path, anti-iframe, CSP), HP lewat WiFi hanya-lihat, pairing (lockout, putus saat dicabut), tolak folder UNC, prompt + streaming, izin (izinkan/tolak), stop/interrupt, validasi pengaturan, demo, profil & kuota akun, laporan yang tidak mencampur akun, favorit, buka VS Code (dry-run), manifest PWA tanpa pairing |
-| Backup (`test/zip.test.mjs`, `test/backup.test.mjs`) | ZIP round-trip (kosong, UTF-8, ribuan file, beberapa MB, ZIP64), CRC salah, zip-slip/symlink/nama device ditolak, dibuka `Expand-Archive` (Windows). Dua server dengan home berbeda: export → import, folder di-remap, aturan merge, usage & riwayat prompt digabung, sesi muncul di API, import ulang idempoten, 413, tanpa token/HP ditolak |
-| Kontrak (`test-support/claude-contract.mjs`) | 15 cek terhadap Claude Code asli: `init`, streaming, `can_use_tool`, allow/deny, interrupt, `--agents`, format transcript yang dipakai mirror |
-
-**Setelah meng-update Claude Code, jalankan `npm run test:claude`.** Aplikasi ini bergantung pada protokol internal CLI, dan test ini yang pertama memberi tahu kalau ada yang berubah. Test offline juga jalan otomatis di GitHub Actions (Windows dan Linux) setiap kali push.
-
-Semua test memakai folder sementara (`OFFICE_DATA_DIR`, `CLAUDE_PROJECTS_DIR`, `CLAUDE_CONFIG_FILE`), jadi tidak menyentuh riwayat chat atau transcript aslimu.
+Ikon diubah lewat sprite 16×16 di `scripts/make-icons.mjs`, lalu `node scripts/make-icons.mjs`. Test gagal kalau ikon yang di-commit tidak sesuai generator.
 
 ## Struktur
 
 ```
-server.js            composition root: config, listener HTTP/LAN/HTTPS, gerbang keamanan (Host/Origin, token,
-                     khusus laptop, WiFi read-only), SSE, halaman pairing
-src/routes/          handler API per kelompok (projects, session, git, files, queue, backup, akun, HP, …)
-                     lewat router kecil (router.js: method + pola path → handler(ctx, req, res, params, body))
-src/session.js       proses headless Claude Code per project, lewat control protocol-nya:
-                     antrean, izin, ganti mode/model/effort langsung, rewind, MCP, tugas latar
-src/mirror.js        tail transcript sesi CLI (read-only) → kantor & chat
-src/translator.js    stream-json → event kantor + pesan chat + status (todo, konteks, tugas, judul)
-src/transcripts.js   riwayat sesi, history untuk resume, rantai prompt untuk rewind
-src/hub.js           state, SSE broadcast, persistensi
-src/projects.js      penemuan folder project
-src/roles.js         pemetaan agent/tool → role, label, isi layar
-src/demo.js          skenario demo
-src/account.js       profil akun, kuota (/usage), login/logout lewat CLI
-src/usage.js         ledger token per akun (data/usage.jsonl) + ringkasan
-src/report.js        HTML laporan + PDF via Edge/Chrome headless
-src/open.js          buka project/file di VS Code atau file manager (tanpa shell)
-src/backup.js        export/import riwayat (⚙ → Cadangkan riwayat): isi backup, remap folder, aturan merge
-src/backup-schedule.js  ⏰ backup otomatis terjadwal: validasi folder, jadwal, tulis atomik, rotasi
-src/queue.js         📋 antrian prompt per project: simpan, urutan, jalankan saat sesi idle, jeda otomatis
-src/attachments.js   📎 lampiran prompt: cek ulang di server (aturan bersama public/js/core/attachment-rules.js) → content block
-src/zip.js           ZIP writer/reader tanpa dependency (deflate streaming, CRC-32, ZIP64, cek nama aman)
-public/js/app.js     entry point UI (ES module native, tanpa build): menyambungkan semua fitur sesuai urutan
-public/js/core/      $/escapeHtml, state global, api() + toast, format, stream SSE, scene kantor
-public/js/ui/        dialog (fokus, Tab trap), shortcut global, layout (tab, nav HP, panel resizable)
-public/js/features/  satu module per fitur: chat, composer, izin, tim, sesi, rewind, perubahan, akun, laporan, MCP, tugas, HP, …
-public/js/office/    renderer pixel-art (sprite, dunia, scene, stage)
-public/icons/        ikon app (PWA, favicon) — dibuat oleh scripts/make-icons.mjs
-public/manifest.webmanifest   manifest PWA (Add to Home Screen)
-.claude/agents/      definisi subagent per role
+server.js              composition root: config, listener HTTP/LAN/HTTPS, gerbang keamanan, SSE, pairing
+src/routes/            handler API per kelompok (router.js: method + pola path → handler)
+src/session.js         proses headless Claude Code per project (izin, mode/model/effort, rewind, MCP, tugas latar)
+src/mirror.js          tail transcript sesi CLI (read-only)
+src/translator.js      stream-json → event kantor + pesan chat + status
+src/transcripts.js     riwayat sesi, resume, rantai prompt untuk rewind
+src/conversation.js    🔎 cari percakapan + export sesi .md
+src/hub.js             state, SSE broadcast (dengan versi tersaring untuk WiFi), persistensi
+src/chat-store.js      riwayat chat per project (data/chats/*.jsonl)
+src/role-catalog.js    katalog 17 role, rantai fallback, prompt Lead
+src/roles.js           pemetaan agent/tool/file → role
+src/remote.js          akses HP: pairing, perangkat, gerbang WiFi (wifiAllows), redaksi
+src/tls.js             sertifikat HTTPS Tailscale (tailscale cert)
+src/webpush.js         Web Push tanpa dependency (VAPID, aes128gcm)
+src/push.js            kebijakan push: event, pengaturan per HP, token aksi Izinkan/Tolak
+src/spotify.js         ♪ Spotify: OAuth PKCE, polling, kontrol, album art proxy
+src/spotify-launcher.js  buka aplikasi Spotify di latar belakang
+src/queue.js           📋 antrian + batas antrian
+src/attachments.js     📎 validasi lampiran di server
+src/git.js · files.js · file-view.js · permissions.js · templates.js · task-detail.js
+src/account.js · usage.js · report.js   akun, ledger token, laporan PDF
+src/backup.js · backup-schedule.js · zip.js   export/import riwayat, backup otomatis, ZIP
+src/open.js · autostart.js · claude-bin.js · modules.js
+public/index.html      satu halaman; public/js/app.js = entry point (ES module native, tanpa build)
+public/js/core/        state, api, stream (+ stream-share: satu koneksi untuk semua tab), aturan murni (*-rules.js)
+public/js/features/    satu module per fitur (chat, composer, izin, dashboard, push, spotify, phone-sheets, …)
+public/js/office/      renderer pixel-art (dunia 640×344, sprite, tema, radio)
+public/sw.js           service worker push (hanya di HTTPS)
+.claude/agents/        definisi subagent per role
+scripts/               setup, restart, make-icons
+test/ · test-support/  test + Claude/Spotify/Tailscale palsu, CDP, run-each-ui-test
+docs/                  PANDUAN.md + catatan desain (web push, Spotify, chat HP)
 ```
-
-Env opsional: `OFFICE_PORT` (default 4317), `PROJECTS_ROOT` (default folder induk app ini), `CLAUDE_BIN` (path `claude` jika tidak terdeteksi), `OFFICE_BROWSER` (path Edge/Chrome untuk PDF laporan), `OFFICE_EDITOR` (path editor selain VS Code, misalnya Cursor), `OFFICE_BACKUP_MAX_BYTES` (batas upload import riwayat, default 4 GB).
-
-Ikon diubah lewat sprite 16×16 di `scripts/make-icons.mjs`, lalu jalankan `node scripts/make-icons.mjs`. Test akan gagal kalau ikon yang di-commit tidak sesuai generator.

@@ -1,6 +1,7 @@
 # Desain: Tab Chat di HP yang ringkas (≤ 760 px)
 
-Status: **usulan** (belum diimplementasi) · Penulis: UI/UX · 2026-11-02
+Status: **diimplementasi** (fase 1 Chat: commit 9082578; fase 2 view lain + landscape: commit 356d023, lihat §9) · Penulis: UI/UX · 2026-11-02
+Test: `test/mobile-chat.test.mjs`, `test/mobile-views.test.mjs`. Sisa: uji manual di perangkat nyata (§8.3) belum tercatat di repo.
 Lingkup: tampilan Chat di HP (target 390×844 dan 360×740): header, session bar, area chat, composer, navigasi bawah, mode WiFi hanya-lihat.
 Batasan: frontend vanilla, tanpa dependensi baru, **tanpa perubahan backend/API/skema data**, CSP tidak berubah, desktop (> 760 px) **tidak berubah**.
 
