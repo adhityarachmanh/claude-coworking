@@ -4,8 +4,9 @@ import { networkAddresses } from '../remote.js';
 import { json } from './http.js';
 
 export function register(router) {
-  router.post('/api/remote', ({ remote, tls, syncListeners, publishConfig, remoteInfo }, req, res, params, body) => {
+  router.post('/api/remote', ({ remote, tls, push, syncListeners, publishConfig, remoteInfo }, req, res, params, body) => {
     remote.setEnabled(Boolean(body.enabled));
+    if (!remote.enabled) push?.forgetAll(); // no notification button stays usable while phone access is off
     syncListeners();
     if (remote.enabled) tls.refresh(); // in the background; a certificate brings the https listener up (onChange)
     publishConfig();
@@ -18,9 +19,10 @@ export function register(router) {
     return json(res, 200, httpsInfo());
   });
   router.post('/api/remote/pairing', pairing);
-  router.post('/api/remote/revoke', ({ remote, dropDeviceStreams, publishConfig }, req, res, params, body) => {
+  router.post('/api/remote/revoke', ({ remote, push, dropDeviceStreams, publishConfig }, req, res, params, body) => {
     const id = String(body.id ?? '');
-    remote.revoke(id);
+    remote.revoke(id); // its push subscription lives on the record: gone with it
+    push?.forgetDevice(id); // and its notification buttons (action tokens)
     dropDeviceStreams(id); // its open event streams end now, not at the next reconnect
     publishConfig();
     return json(res, 200, { ok: true });

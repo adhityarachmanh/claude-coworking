@@ -9,6 +9,7 @@ import { retryDelay, streamLost, streamOpened } from '../features/connection.js'
 import { notify } from '../features/notify.js';
 import { phone, refreshPairing } from '../features/phone.js';
 import { renderSidebar, selectProject } from '../features/picker.js';
+import { onApprovalUpdate, onPushSnapshot, pushProjectsChanged } from '../features/push.js';
 import { renderRoots } from '../features/settings.js';
 import { applyRoster } from '../features/roster.js';
 import { applySpotify } from '../features/spotify.js';
@@ -41,6 +42,8 @@ const handlers = {
     state.local = snap.client?.local !== false;
     state.accountAuth = snap.client?.accountAuth ?? state.local; // laptop, or a phone over Tailscale
     state.readOnly = snap.client?.readOnly === true; // a phone on plain WiFi: look, don't act
+    state.secure = snap.client?.secure === true; // the https (Tailscale) origin
+    state.push = snap.client?.push ?? null; // https: this device's subscription as the server knows it
     setReadOnlyApi(snap.client?.readOnlyApi); // what such a phone may still call: the server's own list
     document.body.classList.toggle('remote-client', !state.local);
     document.body.classList.toggle('read-only', state.readOnly);
@@ -58,6 +61,7 @@ const handlers = {
     scenes.clear();
     const remembered = location.hash.slice(1) || localStorage.getItem('office.active');
     selectProject(state.projects.some((p) => p.id === remembered) ? remembered : DEMO_ID);
+    onPushSnapshot(); // a notification's ?p=&ap= wins over the remembered project; https: resubscribe once
     setStuckOnline(true);
     renderAccountButton(); // after the core UI, so a profile quirk can never blank the office
     applySpotify(snap.spotify, { snapshot: true }); // ♪ absent = this server has no Spotify support
@@ -78,6 +82,7 @@ const handlers = {
   projects(projects) {
     state.projects = projects;
     renderSidebar();
+    pushProjectsChanged(); // favourites changed: a phone with push tells the server
   },
   status(status) {
     state.statuses[status.project] = status;
@@ -112,6 +117,7 @@ const handlers = {
     if (live && approval.status === 'pending' && !state.approvals.has(approval.id)) {
       notify('ask', `✋ ${roleName(approval.role)} minta izin — ${projectName(approval.project)}`, approval.label, approval.project);
     }
+    if (live) onApprovalUpdate(state.approvals.get(approval.id), approval); // "Dijawab dari HP (…)" on the laptop
     state.approvals.set(approval.id, approval);
     if (approval.project === state.active) {
       const msg = state.chats[approval.project]?.findLast((m) => m.approvalId === approval.id);

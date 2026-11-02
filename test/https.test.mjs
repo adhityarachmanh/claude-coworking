@@ -254,6 +254,45 @@ test('pairing over https: __Host- cookie (Secure, HttpOnly, SameSite=Strict), to
   }
 });
 
+test('🔔 push: /sw.js only on https (Service-Worker-Allowed, no-cache), CSP worker-src/manifest-src, /api/push/* refused off Tailscale', async () => {
+  const sw = await tlsRequest('/sw.js'); // no cookie needed: the worker's update check must not depend on it
+  assert.equal(sw.status, 200);
+  assert.equal(sw.headers['service-worker-allowed'], '/');
+  assert.equal(sw.headers['cache-control'], 'no-cache');
+  assert.match(sw.headers['content-type'], /^text\/javascript/);
+  assert.match(sw.headers['content-security-policy'], /worker-src 'self'; manifest-src 'self'/);
+  assert.equal((await tlsRequest('/sw.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 404);
+  // http: 404 everywhere (the kill switch), laptop included; the http CSP stays as it was
+  const laptop = await fetch(`${BASE}/sw.js`);
+  assert.equal(laptop.status, 404);
+  assert.doesNotMatch(laptop.headers.get('content-security-policy'), /worker-src/);
+  assert.match((await tlsRequest('/pair')).headers['content-security-policy'], /worker-src 'self'/, 'every https response');
+
+  // The laptop (plain http) can't use the push API, nor the action endpoint without a token
+  assert.equal((await api('/api/push/vapid')).status, 403);
+  const act = await fetch(`${BASE}/api/push/act`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: 'x'.repeat(43), a: 'allow' }) });
+  assert.equal(act.status, 403);
+  assert.match((await act.json()).error, /HTTPS Tailscale/);
+  assert.equal((await fetch(`${BASE}/api/push/subscribe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 403, 'other push routes still need the office token');
+
+  // A phone paired over https, but not on the Tailscale interface (loopback here): read-only, every push route refused
+  const pairing = await api('/api/remote/pairing', { https: true });
+  const q = new URL(pairing.body.qrUrl);
+  const cookie = (await tlsRequest(q.pathname + q.search)).headers['set-cookie'][0].split(';')[0];
+  const phoneToken = (await tlsRequest('/', { headers: { Cookie: cookie } })).body.match(/office-token" content="([^"]+)"/)[1];
+  const snap = await tlsSnapshot(cookie);
+  assert.equal(snap.client.secure, true);
+  assert.deepEqual(snap.client.push, { subscribed: false, settings: null });
+  for (const p of ['/api/push/vapid', '/api/push/subscribe', '/api/push/settings', '/api/push/unsubscribe', '/api/push/visible', '/api/push/test']) {
+    const res = await tlsRequest(p, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', 'X-Office-Token': phoneToken }, body: '{}' });
+    assert.equal(res.status, 403, p);
+    assert.equal(JSON.parse(res.body).readOnly, true, p);
+  }
+  const tlsAct = await tlsRequest('/api/push/act', { method: 'POST', headers: { Cookie: cookie, Origin: `https://${HOST}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ t: 'x'.repeat(43), a: 'deny' }) });
+  assert.equal(tlsAct.status, 403, 'TLS but not Tailscale');
+  assert.equal(JSON.parse(tlsAct.body).readOnly, true);
+});
+
 test('a renewed certificate is swapped in without a restart; phone access off closes the listener', async () => {
   const before = (await tlsRequest('/pair')).fingerprint;
   const renewed = issue(85);

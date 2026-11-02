@@ -74,3 +74,12 @@ test('router: literal paths, :params of [\\w-]+, a trailing * prefix, first matc
 test('routes: only the backup import reads its own (non-JSON) body', () => {
   assert.deepEqual(router.routes.filter((r) => r.rawBody).map((r) => r.pattern), ['/api/backup/import']);
 });
+
+test('routes: 🔔 /api/push/* never over plain WiFi; only /api/push/act skips x-office-token; push bodies are small', () => {
+  const pushRoutes = router.routes.filter((r) => r.pattern.startsWith('/api/push/'));
+  assert.ok(pushRoutes.length >= 7, `${pushRoutes.length} push routes`);
+  for (const r of pushRoutes) assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
+  assert.deepEqual(router.routes.filter((r) => r.noToken).map((r) => r.pattern), ['/api/push/act']);
+  for (const r of pushRoutes) assert.ok(r.maxBody > 0 && r.maxBody <= 4096, `${r.pattern} maxBody ${r.maxBody}`);
+  assert.equal(router.routes.find((r) => r.pattern === '/api/push/act').maxBody, 1024);
+});

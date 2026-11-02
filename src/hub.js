@@ -722,6 +722,8 @@ export class Hub {
     if (!entry || entry.approval.status !== 'pending') return false;
     const { approval } = entry;
     approval.status = decision.cancelled ? 'cancelled' : decision.allow ? 'allowed' : 'denied';
+    // Answered from a phone's notification (src/push.js): the laptop shows "dijawab dari HP" (redacted on WiFi).
+    if (decision.answeredBy) approval.answeredBy = decision.answeredBy;
     this.approvals.delete(id);
     if (approval.chatId) this.updateChat(approval.project, approval.chatId, { status: approval.status });
     this.broadcast('approval', approval);

@@ -17,7 +17,8 @@ import { UsageLedger } from './src/usage.js';
 import { moduleGraph, preloadTags } from './src/modules.js';
 import { TranscriptMirror } from './src/mirror.js';
 import { DEVICE_COOKIE, HTTPS_DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows, wifiConfig } from './src/remote.js';
-import { TailscaleCert, httpsPortFrom } from './src/tls.js';
+import { TailscaleCert, httpsPortFrom, restrictDir } from './src/tls.js';
+import { PushService, wifiApproval } from './src/push.js';
 import { activeAgents, storedEnabled, teamPrompt } from './src/role-catalog.js';
 import { loadAgentDefinitions, setActiveRoles } from './src/roles.js';
 import { SessionManager } from './src/session.js';
@@ -70,6 +71,9 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
 };
+// The https (Tailscale) origin also runs the push service worker and offers the manifest for install: explicit
+// rather than through the default-src fallback (docs/design-web-push.md §A3, §D).
+const SECURE_CSP = `${SECURITY_HEADERS['Content-Security-Policy']}; worker-src 'self'; manifest-src 'self'`;
 // Browsers honour COOP only on trustworthy origins (localhost); on http://<LAN/Tailscale IP> they ignore it
 // and log a console error, so it is sent to the laptop's own page only.
 const LOCAL_SECURITY_HEADERS = { 'Cross-Origin-Opener-Policy': 'same-origin' };
@@ -96,6 +100,10 @@ if (process.argv.includes('--background')) {
 // OFFICE_DATA_DIR lets tests run against a throwaway state file.
 const DATA_DIR = process.env.OFFICE_DATA_DIR ?? path.join(APP_DIR, 'data');
 const hub = new Hub({ dataDir: DATA_DIR });
+// state.json holds the VAPID private key and push subscriptions: owner-only folder, like data/tls (best effort,
+// in the background; a failure is only logged).
+mkdirSync(DATA_DIR, { recursive: true });
+restrictDir(DATA_DIR, (msg) => console.error(`Folder data: ${msg}`));
 // Turns the last run left unfinished (stopped mid-turn, cleanly or not): a notice + "Lanjutkan" in their chat.
 const cutShort = hub.recoverTurns();
 // Leftovers of an import cut short by a crash or shutdown (uploaded .zip files): only this app writes there.
@@ -123,7 +131,10 @@ const mirror = new TranscriptMirror(hub, { ledger });
 // A device unpaired for being idle loses its open event streams at once, like "Cabut".
 const remote = new RemoteAccess(hub, {
   onExpire: (devices) => {
-    for (const d of devices) dropDeviceStreams(d.id);
+    for (const d of devices) {
+      dropDeviceStreams(d.id);
+      push.forgetDevice(d.id); // its subscription went with the record; its notification buttons go too
+    }
     publishConfig();
   },
 });
@@ -179,6 +190,17 @@ hub.redactors.set('account', accountPrivacy.state);
 // 📋 Antrian: prompts sent one by one whenever the project's session is idle (src/queue.js).
 const taskQueue = new TaskQueue({ hub, sessions });
 sessions.onRateLimit = (id, info) => taskQueue.onRateLimit(id, info);
+// 🔔 Web Push to paired https phones (src/push.js): permission requests, turn done/error, queue paused.
+const push = new PushService({
+  hub,
+  remote,
+  queueSummary: (id) => taskQueue.summary(id),
+  hasStream: (deviceId) => [...deviceStreams.values()].includes(deviceId),
+  onChange: () => publishConfig(),
+});
+push.seedQueues(Object.keys(taskQueue.queues)); // a pause from before this start is not news
+hub.observers.add((type, data) => push.observe(type, data));
+hub.redactors.set('approval', wifiApproval); // "answered from <phone name>": not over sniffable WiFi
 
 const projectRoots = () => (hub.persisted.roots.length ? hub.persisted.roots : [DEFAULT_ROOT]);
 
@@ -287,7 +309,7 @@ function notModified(req, etag) {
   return header.trim() === '*' || header.split(',').some((v) => v.trim().replace(/^W\//, '') === etag);
 }
 
-async function serveStatic(pathname, res, req) {
+async function serveStatic(pathname, res, req, extraHeaders = {}) {
   const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.slice(1));
   const file = path.resolve(PUBLIC_DIR, rel);
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return json(res, 404, { error: 'not found' });
@@ -303,7 +325,7 @@ async function serveStatic(pathname, res, req) {
     // Plain files (JS, CSS, icons): kept by the browser but revalidated on every use, so a reload is a
     // round of tiny 304s instead of full downloads, and an edited file is still picked up at once.
     const etag = etagOf(body);
-    const headers = { 'Cache-Control': 'no-cache', ETag: etag };
+    const headers = { 'Cache-Control': 'no-cache', ETag: etag, ...extraHeaders };
     if (notModified(req, etag)) {
       res.writeHead(304, headers);
       return res.end();
@@ -335,7 +357,8 @@ function openStream(req, res, local, device = null, token = null) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
   // readOnlyApi: what a read-only phone may still call, so the UI doesn't keep its own copy of wifiAllows.
   const readOnly = isReadOnly(req);
-  const client = { local, accountAuth: canManageAccount(req), readOnly, readOnlyApi: WIFI_READ_API };
+  // secure: the https (Tailscale) origin. push: this phone's subscription state (https devices only, else null).
+  const client = { local, accountAuth: canManageAccount(req), readOnly, readOnlyApi: WIFI_READ_API, secure: isSecure(req), push: isSecure(req) ? push.clientInfo(device) : null };
   const snap = { ...hub.snapshot(), account: account.publicState(), spotify: spotify.publicState() };
   // A snapshot key named like an event (config, spotify, …) gets that event's per-client view.
   for (const key of Object.keys(snap)) snap[key] = hub.viewFor(key, snap[key], readOnly);
@@ -359,15 +382,16 @@ function openStream(req, res, local, device = null, token = null) {
 // ---------- api ----------
 
 async function handleApi(req, res, pathname, device = null) {
-  if (req.headers['x-office-token'] !== TOKEN) return json(res, 403, { error: 'forbidden' });
-  if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
   const route = router.match(req.method, pathname);
+  // Every API needs this start's token, except a route that carries its own (only /api/push/act: src/routes/push.js).
+  if (!route?.route.noToken && req.headers['x-office-token'] !== TOKEN) return json(res, 403, { error: 'forbidden' });
+  if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
   // Per request: the paired phone making it (null on the laptop).
   const reqCtx = { ...ctx, device };
   // The one API whose body is not JSON (a raw .zip, far over MAX_BODY, /api/backup/import): handled before readJson.
   if (route?.route.rawBody) return route.route.handler(reqCtx, req, res, route.params, null);
   if (!String(req.headers['content-type']).startsWith('application/json')) return json(res, 415, { error: 'json only' });
-  const body = await readJson(req, MAX_BODY);
+  const body = await readJson(req, route?.route.maxBody ?? MAX_BODY);
   if (route) return route.route.handler(reqCtx, req, res, route.params, body);
   // Unknown path (also an unknown action under /api/projects/:id/): the same 404 as an unknown project.
   return json(res, 404, { error: 'project not found' });
@@ -418,6 +442,7 @@ const ctx = {
   tls,
   templates,
   taskQueue,
+  push,
   spotify,
   backupScheduler,
   backupLock,
@@ -430,6 +455,7 @@ const ctx = {
   maxBackupBytes: MAX_BACKUP_BYTES,
   isLocal,
   canManageAccount, // laptop or Tailscale (♪ control: may start the Spotify app)
+  isTailscale: (req) => isTailscaleConnection(req.socket.localAddress, req.socket.remoteAddress), // 🔔 push routes
   isReadOnly, // plain-HTTP WiFi phone (♪ state, 👤 account, report: reduced view)
   accountPrivacy, // that reduced account view (src/account.js accountPrivacyView)
   allowForce,
@@ -491,6 +517,7 @@ async function handler(req, res) {
   const secure = isSecure(req);
   const scheme = secure ? 'https' : 'http';
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
+  if (secure) res.setHeader('Content-Security-Policy', SECURE_CSP);
   // COOP: honoured on trustworthy origins only (localhost, https). No HSTS on purpose: it would apply to the
   // MagicDNS name on every port (docs/design-web-push.md D4).
   if (isLocal(req) || secure) for (const [name, value] of Object.entries(LOCAL_SECURITY_HEADERS)) res.setHeader(name, value);
@@ -509,6 +536,10 @@ async function handler(req, res) {
   }
   const local = isLocal(req);
   let device = null; // the paired phone making this request (null on the laptop)
+  // The push service worker exists only on the https origin; http (laptop included) answers 404. A 404 on the update
+  // check does NOT unregister an installed worker (the browser keeps the old one): a real kill switch would serve an
+  // sw.js that calls self.registration.unregister(). Server-side, deleting device.push already stops every push.
+  if (pathname === '/sw.js' && !(secure && req.method === 'GET')) return json(res, 404, { error: 'not found' });
   try {
     if (!local) {
       // Another device on the network: it must be paired, and some settings stay laptop-only.
@@ -517,6 +548,8 @@ async function handler(req, res) {
       if (pathname === '/pair') return await handlePair(req, res, new URL(req.url, `${scheme}://${host}`));
       // App icon + manifest hold no data, and browsers fetch the manifest without cookies.
       if (req.method === 'GET' && PUBLIC_ASSET.test(pathname)) return await serveStatic(pathname, res, req);
+      // The worker script holds no data, and its update check must not depend on the cookie (design §D).
+      if (pathname === '/sw.js') return await serveStatic(pathname, res, req, { 'Service-Worker-Allowed': '/' });
       device = remote.verify(deviceToken(req), { transport: transportOf(req) });
       if (!device) {
         if (req.method === 'GET' && pathname !== '/stream' && !pathname.startsWith('/api/')) {

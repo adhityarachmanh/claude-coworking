@@ -88,7 +88,7 @@ test('the tls folder is restricted to the current user (best effort, failures on
 });
 
 test('no CLI: no-tailscale, nothing served, HTTP unaffected', async () => {
-  const tls = new TailscaleCert({ dir: freshDir(), bin: null, log: quiet, secureDir: noop });
+  const tls = new TailscaleCert({ dir: freshDir(), bin: null, log: quiet, info: quiet, secureDir: noop });
   await tls.refresh();
   assert.equal(tls.state, 'no-tailscale');
   assert.equal(tls.usable, false);
@@ -98,7 +98,7 @@ test('no CLI: no-tailscale, nothing served, HTTP unaffected', async () => {
 
 test('phone access off: state off and the CLI is never run', async () => {
   const cli = fakeCli({ issue: certFor(HOST, 80) });
-  const tls = new TailscaleCert({ dir: freshDir(), enabled: () => false, run: cli.run, log: quiet, secureDir: noop });
+  const tls = new TailscaleCert({ dir: freshDir(), enabled: () => false, run: cli.run, log: quiet, info: quiet, secureDir: noop });
   await tls.refresh();
   assert.equal(tls.state, 'off');
   assert.equal(cli.calls.length, 0);
@@ -108,7 +108,7 @@ test('phone access off: state off and the CLI is never run', async () => {
 test('Tailscale installed but not connected / not logged in: no-tailscale', async () => {
   for (const status of [{ BackendState: 'Stopped', Self: { DNSName: `${HOST}.` }, CertDomains: null }, { BackendState: 'NeedsLogin' }, Object.assign(new Error('exit 1'), { code: 1 })]) {
     const cli = fakeCli({ status });
-    const tls = new TailscaleCert({ dir: freshDir(), run: cli.run, log: quiet, secureDir: noop });
+    const tls = new TailscaleCert({ dir: freshDir(), run: cli.run, log: quiet, info: quiet, secureDir: noop });
     await tls.refresh();
     assert.equal(tls.state, 'no-tailscale', JSON.stringify(status));
     assert.ok(!cli.calls.some((a) => a[0] === 'cert'), 'no certificate requested');
@@ -118,7 +118,7 @@ test('Tailscale installed but not connected / not logged in: no-tailscale', asyn
 test('HTTPS Certificates off in the tailnet (CertDomains empty): certs-disabled, no cert request, clear hint', async () => {
   for (const CertDomains of [null, [], ['other.taild0f8a1.ts.net']]) {
     const cli = fakeCli({ status: { BackendState: 'Running', Self: { DNSName: `${HOST}.` }, CertDomains } });
-    const tls = new TailscaleCert({ dir: freshDir(), run: cli.run, log: quiet, secureDir: noop });
+    const tls = new TailscaleCert({ dir: freshDir(), run: cli.run, log: quiet, info: quiet, secureDir: noop });
     await tls.refresh();
     assert.equal(tls.state, 'certs-disabled');
     assert.match(tls.publicInfo(4318).error, /HTTPS Certificates/);
@@ -127,7 +127,7 @@ test('HTTPS Certificates off in the tailnet (CertDomains empty): certs-disabled,
   }
   // no MagicDNS name at all
   const cli = fakeCli({ status: { BackendState: 'Running', Self: { DNSName: '' }, CertDomains: [] } });
-  const tls = new TailscaleCert({ dir: freshDir(), run: cli.run, log: quiet, secureDir: noop });
+  const tls = new TailscaleCert({ dir: freshDir(), run: cli.run, log: quiet, info: quiet, secureDir: noop });
   await tls.refresh();
   assert.equal(tls.state, 'certs-disabled');
   assert.match(tls.publicInfo(4318).error, /MagicDNS/);
@@ -138,9 +138,14 @@ test('success: certificate written to the folder, validated, state ok; never --f
   const issued = certFor(HOST, 80);
   const cli = fakeCli({ issue: issued });
   const changes = [];
-  const tls = new TailscaleCert({ dir, run: cli.run, log: quiet, secureDir: noop, onChange: (info) => changes.push(info) });
+  const errors = [];
+  const infos = [];
+  const tls = new TailscaleCert({ dir, run: cli.run, log: (m) => errors.push(m), info: (m) => infos.push(m), secureDir: noop, onChange: (info) => changes.push(info) });
   await tls.refresh();
   assert.equal(tls.state, 'ok');
+  // good news is INFO in server.log, never ERROR
+  assert.deepEqual(errors, []);
+  assert.match(infos.join(' | '), /sertifikat .* berlaku s\/d \d{4}-\d{2}-\d{2}/);
   assert.equal(tls.host, HOST);
   const info = tls.publicInfo(4318);
   assert.equal(info.url, `https://${HOST}:4318`);
@@ -174,7 +179,7 @@ test('success: certificate written to the folder, validated, state ok; never --f
 test('a certificate for another name or already expired is refused and never replaces the good one', async () => {
   const dir = freshDir();
   const good = certFor(HOST, 80);
-  const tls = new TailscaleCert({ dir, run: fakeCli({ issue: good }).run, log: quiet, secureDir: noop });
+  const tls = new TailscaleCert({ dir, run: fakeCli({ issue: good }).run, log: quiet, info: quiet, secureDir: noop });
   await tls.refresh();
   assert.equal(tls.state, 'ok');
 
@@ -186,22 +191,22 @@ test('a certificate for another name or already expired is refused and never rep
   assert.deepEqual(readdirSync(dir).sort(), [`${HOST}.pem`, 'last-host']);
 
   // a fresh install that only ever got bad answers
-  const wrongHost = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: certFor('someone-else.ts.net', 80) }).run, log: quiet, secureDir: noop });
+  const wrongHost = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: certFor('someone-else.ts.net', 80) }).run, log: quiet, info: quiet, secureDir: noop });
   await wrongHost.refresh();
   assert.equal(wrongHost.state, 'error');
   const expired = selfSignedCert({ cn: HOST, dns: [HOST], ips: [], notBefore: new Date(Date.now() - 100 * DAY), notAfter: new Date(Date.now() - DAY) });
-  const stale = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: expired }).run, log: quiet, secureDir: noop });
+  const stale = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: expired }).run, log: quiet, info: quiet, secureDir: noop });
   await stale.refresh();
   assert.equal(stale.state, 'expired');
   assert.equal(stale.usable, false);
   // key that does not belong to the certificate
-  const mixed = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: { cert: good.cert, key: certFor(HOST, 80).key } }).run, log: quiet, secureDir: noop });
+  const mixed = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: { cert: good.cert, key: certFor(HOST, 80).key } }).run, log: quiet, info: quiet, secureDir: noop });
   await mixed.refresh();
   assert.equal(mixed.state, 'error');
 });
 
 test('14 days or less left: expiring (still served, with a warning)', async () => {
-  const tls = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: certFor(HOST, 10) }).run, log: quiet, secureDir: noop });
+  const tls = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: certFor(HOST, 10) }).run, log: quiet, info: quiet, secureDir: noop });
   await tls.refresh();
   assert.equal(tls.state, 'expiring');
   assert.equal(tls.usable, true);
@@ -210,7 +215,7 @@ test('14 days or less left: expiring (still served, with a warning)', async () =
 
 test('CLI fails (e.g. needs admin) while a valid certificate exists: keep serving it, report the error', async () => {
   const dir = freshDir();
-  const tls = new TailscaleCert({ dir, run: fakeCli({ issue: certFor(HOST, 80) }).run, log: quiet, secureDir: noop });
+  const tls = new TailscaleCert({ dir, run: fakeCli({ issue: certFor(HOST, 80) }).run, log: quiet, info: quiet, secureDir: noop });
   await tls.refresh();
   tls.run = fakeCli({ certError: 'Access denied: cert access denied' }).run;
   await tls.refresh();
@@ -222,13 +227,13 @@ test('CLI fails (e.g. needs admin) while a valid certificate exists: keep servin
   await tls.refresh();
   assert.equal(tls.state, 'ok');
   // without a certificate, the same failure is an error state
-  const none = new TailscaleCert({ dir: freshDir(), run: fakeCli({ certError: 'boom' }).run, log: quiet, secureDir: noop });
+  const none = new TailscaleCert({ dir: freshDir(), run: fakeCli({ certError: 'boom' }).run, log: quiet, info: quiet, secureDir: noop });
   await none.refresh();
   assert.equal(none.state, 'error');
 });
 
 test('machine or tailnet renamed: the old certificate stops being served', async () => {
-  const tls = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: certFor(HOST, 80) }).run, log: quiet, secureDir: noop });
+  const tls = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: certFor(HOST, 80) }).run, log: quiet, info: quiet, secureDir: noop });
   await tls.refresh();
   tls.run = fakeCli({ status: { BackendState: 'Running', Self: { DNSName: 'new-name.taild0f8a1.ts.net.' }, CertDomains: [] } }).run;
   await tls.refresh();
@@ -238,12 +243,12 @@ test('machine or tailnet renamed: the old certificate stops being served', async
 
 test('start: a valid certificate on disk is used before (and without) asking Tailscale', async () => {
   const dir = freshDir();
-  const first = new TailscaleCert({ dir, run: fakeCli({ issue: certFor(HOST, 80) }).run, log: quiet, secureDir: noop });
+  const first = new TailscaleCert({ dir, run: fakeCli({ issue: certFor(HOST, 80) }).run, log: quiet, info: quiet, secureDir: noop });
   await first.refresh();
   writeFileSync(path.join(dir, 'broken.example.pem'), 'not a cert'); // ignored
   writeFileSync(path.join(dir, `${HOST}.pem.new`), 'half-written'); // a write cut short: removed
   const cli = fakeCli();
-  const later = new TailscaleCert({ dir, enabled: () => false, run: cli.run, log: quiet, secureDir: noop });
+  const later = new TailscaleCert({ dir, enabled: () => false, run: cli.run, log: quiet, info: quiet, secureDir: noop });
   await later.start();
   later.stop();
   assert.equal(later.usable, true);
@@ -264,19 +269,19 @@ test('several names on disk: last-host is preferred at start; a successful fetch
   write(OLD, 85); // newer, but not the name served last
   write(HOST, 60);
   writeFileSync(path.join(dir, 'last-host'), `${HOST}\n`);
-  const tls = new TailscaleCert({ dir, enabled: () => false, run: fakeCli().run, log: quiet, secureDir: noop });
+  const tls = new TailscaleCert({ dir, enabled: () => false, run: fakeCli().run, log: quiet, info: quiet, secureDir: noop });
   await tls.loadFromDisk();
   assert.equal(tls.host, HOST, 'last-host wins over a longer-lived certificate for another name');
   // last-host pointing at an expired / missing certificate: the newest valid one is used
   writeFileSync(path.join(dir, 'last-host'), 'gone.taild0f8a1.ts.net\n');
-  const fallback = new TailscaleCert({ dir, enabled: () => false, run: fakeCli().run, log: quiet, secureDir: noop });
+  const fallback = new TailscaleCert({ dir, enabled: () => false, run: fakeCli().run, log: quiet, info: quiet, secureDir: noop });
   await fallback.loadFromDisk();
   assert.equal(fallback.host, OLD);
   // fetch for HOST: other names' files (and any legacy .crt/.key) are deleted, last-host updated
   writeFileSync(path.join(dir, 'legacy.crt'), 'x');
   writeFileSync(path.join(dir, 'legacy.key'), 'x');
   let secured = 0;
-  const fetcher = new TailscaleCert({ dir, run: fakeCli({ issue: certFor(HOST, 80) }).run, log: quiet, secureDir: async () => secured++ });
+  const fetcher = new TailscaleCert({ dir, run: fakeCli({ issue: certFor(HOST, 80) }).run, log: quiet, info: quiet, secureDir: async () => secured++ });
   await fetcher.refresh();
   assert.equal(fetcher.state, 'ok');
   assert.deepEqual(readdirSync(dir).sort(), [`${HOST}.pem`, 'last-host']);
@@ -299,7 +304,7 @@ test('splitPem: key and chain from one file, in any order', () => {
 test('expiry while running is noticed without running the CLI (tick)', async () => {
   let now = Date.now();
   const changes = [];
-  const tls = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: certFor(HOST, 30) }).run, now: () => now, log: quiet, secureDir: noop, onChange: (i) => changes.push(i.state) });
+  const tls = new TailscaleCert({ dir: freshDir(), run: fakeCli({ issue: certFor(HOST, 30) }).run, now: () => now, log: quiet, info: quiet, secureDir: noop, onChange: (i) => changes.push(i.state) });
   await tls.refresh();
   assert.equal(tls.state, 'ok');
   tls.tick();
@@ -333,7 +338,7 @@ test('cliRunner runs a .mjs fake CLI under node (no shell, hidden window) and th
   writeFileSync(config, JSON.stringify({ host: 'office.test', certDomains: true, certFile, keyFile }));
   process.env.FAKE_TAILSCALE_CONFIG = config;
   try {
-    const tls = new TailscaleCert({ dir, run: cliRunner(path.join(APP, 'test-support', 'fake-tailscale.mjs')), log: quiet, secureDir: noop });
+    const tls = new TailscaleCert({ dir, run: cliRunner(path.join(APP, 'test-support', 'fake-tailscale.mjs')), log: quiet, info: quiet, secureDir: noop });
     await tls.refresh();
     assert.equal(tls.state, 'ok');
     assert.equal(tls.host, 'office.test');

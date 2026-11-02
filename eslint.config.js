@@ -227,4 +227,9 @@ export default [
     files: ['public/js/pair.js'],
     languageOptions: { sourceType: 'script' },
   },
+  {
+    // The service worker: a classic script (not a module SW), with the worker-only `clients` global.
+    files: ['public/sw.js'],
+    languageOptions: { sourceType: 'script', globals: { clients: 'readonly' } },
+  },
 ];

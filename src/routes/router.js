@@ -22,17 +22,19 @@ function compile(pattern) {
 }
 
 export class Router {
-  /** @type {{ method: string, pattern: string, regex: RegExp, handler: Function, rawBody: boolean }[]} */
+  /** @type {{ method: string, pattern: string, regex: RegExp, handler: Function, rawBody: boolean, maxBody: number|null, noToken: boolean }[]} */
   routes = [];
 
   /**
    * @param {string} method HTTP method
    * @param {string} pattern see the top of this file
    * @param {Function} handler (ctx, req, res, params, body) => any
-   * @param {{ rawBody?: boolean }} [options] rawBody: the handler reads the request body itself (not JSON)
+   * @param {{ rawBody?: boolean, maxBody?: number, noToken?: boolean }} [options] rawBody: the handler reads the request
+   *   body itself (not JSON) · maxBody: a smaller JSON body limit than the server's default · noToken: exempt from
+   *   x-office-token (only /api/push/act, which carries its own single-use token; see src/routes/push.js)
    */
-  add(method, pattern, handler, { rawBody = false } = {}) {
-    this.routes.push({ method, pattern, regex: compile(pattern), handler, rawBody });
+  add(method, pattern, handler, { rawBody = false, maxBody = null, noToken = false } = {}) {
+    this.routes.push({ method, pattern, regex: compile(pattern), handler, rawBody, maxBody, noToken });
     return this;
   }
 

@@ -31,6 +31,7 @@ import { initPermissions } from './features/permissions.js';
 import { initPhone } from './features/phone.js';
 import { initPhoneSheets } from './features/phone-sheets.js';
 import { initPicker } from './features/picker.js';
+import { initPush } from './features/push.js';
 import { initQuota } from './features/quota.js';
 import { initQueue } from './features/queue.js';
 import { initReport } from './features/report.js';
@@ -75,6 +76,7 @@ initTheme(); // before the first frame: the saved theme is drawn right away
 initBackup(); // after initSettings: its #btn-settings listener runs after the dialog's own
 initBackupAuto(); // ⏰ Backup otomatis in the same ⚙ section
 initNotify();
+initPush(); // 📱 Notifikasi HP (push): https only; the ?p=&ap= deep link runs after the first snapshot
 initQuota(); // after initSettings: refreshes its ⚙ fields when the dialog opens
 initChanges();
 initGitBar(); // ⎇ branch / fetch / pull / push in the Changes tab

@@ -5,8 +5,48 @@ import { ago } from '../core/format.js';
 import { state } from '../core/state.js';
 import { qrSvg } from '../qr.js';
 
-export const phone = { timer: null, pairing: null, ip: null };
+// https: true = the 🔒 Tailscale (HTTPS) QR, false = an http address, null = not chosen yet (HTTPS when available).
+export const phone = { timer: null, pairing: null, ip: null, https: null, checking: false };
 const ADDRESS_LABEL = { lan: '📶 WiFi yang sama', tailscale: '🌐 Dari mana saja (Tailscale)' };
+const HTTPS_LABEL = '🔒 Tailscale (HTTPS)';
+
+const fmtDate = (ts) => new Date(ts).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/**
+ * The HTTPS (Tailscale certificate) status line: { tone, html } or null when there is nothing to say.
+ * `https` = config.remote.https from the server: { state, host, url, validTo, error }.
+ */
+export function httpsStatus(https) {
+  if (!https || https.state === 'off' || https.state === 'no-tailscale') return null;
+  const until = Number.isFinite(https.validTo) ? ` · berlaku s/d ${escapeHtml(fmtDate(https.validTo))}` : '';
+  const error = https.error ? `<small>${escapeHtml(String(https.error))}</small>` : '';
+  switch (https.state) {
+    case 'ok':
+      return { tone: 'ok', html: `🔒 HTTPS aktif: <code>${escapeHtml(https.url ?? https.host ?? '')}</code>${until} — HP bisa dapat notifikasi push.` };
+    case 'expiring':
+      return { tone: 'warn', html: `⚠ Sertifikat HTTPS hampir habis${until}. ${error}` };
+    case 'certs-disabled':
+      return {
+        tone: 'warn',
+        html: 'Untuk notifikasi push ke HP: nyalakan <b>HTTPS Certificates</b> di admin console Tailscale (DNS → HTTPS Certificates), lalu klik Periksa lagi. <small>Nama laptop + tailnet akan tercatat di log publik Certificate Transparency.</small>',
+      };
+    default: // expired / error
+      return { tone: 'warn', html: `HTTPS tidak aktif${https.state === 'expired' ? ' (sertifikat kedaluwarsa)' : ''}. ${error}` };
+  }
+}
+
+function renderHttps(info) {
+  const box = $('#phone-https');
+  const status = info.enabled ? httpsStatus(info.https) : null;
+  const html = status
+    ? `<p class="https-status ${status.tone}"><span>${status.html}</span><span class="grow"></span><button type="button" data-https-check ${phone.checking ? 'disabled' : ''}>${phone.checking ? 'Memeriksa…' : 'Periksa lagi'}</button></p>`
+    : '';
+  // Drawn apart from the per-second countdown: the "Periksa lagi" button keeps its focus.
+  if (box.dataset.html !== html) {
+    box.innerHTML = html;
+    box.dataset.html = html;
+  }
+}
 
 // lastSeen is only stored about once an hour (server throttles disk writes), so recent use reads as "dalam 1 jam terakhir".
 const lastActive = (ts) => (Date.now() - ts < 3_600_000 ? 'dalam 1 jam terakhir' : ago(ts));
@@ -16,6 +56,7 @@ function renderPhone() {
   $('#remote-enabled').checked = info.enabled;
   const body = $('#phone-body');
   if (!info.enabled) {
+    renderHttps(info);
     body.innerHTML = `<p class="muted">Setelah dinyalakan, scan QR dengan kamera HP untuk membuka kantor ini dari HP.</p>
       <ul class="access-modes muted small">
         <li><b>📶 WiFi yang sama: hanya lihat.</b> Pantau chat, perubahan, dan aktivitas. Koneksi WiFi tidak terenkripsi, jadi HP tidak bisa mengirim perintah, menjawab izin, atau commit.</li>
@@ -26,13 +67,20 @@ function renderPhone() {
   }
   const p = phone.pairing;
   const left = p ? Math.max(0, Math.round((p.expires - Date.now()) / 1000)) : 0;
+  const badges = (d) => `${d.transport === 'https' ? ' <span class="dev-badge" title="Dipasangkan lewat HTTPS (Tailscale)">🔒 HTTPS</span>' : ''}${!d.push ? '' : d.push.failing ? ' <span class="dev-badge warn" title="Push terakhir gagal terkirim ke HP ini">🔔 Push ⚠</span>' : ' <span class="dev-badge" title="Notifikasi push aktif">🔔 Push</span>'}`;
   const devices = info.devices
-    .map((d) => `<li><span>${escapeHtml(d.name)}<small>dipasangkan ${new Date(d.created).toLocaleDateString('id-ID')} · terakhir aktif ${lastActive(d.lastSeen ?? d.created)}</small></span><button class="danger" data-revoke="${d.id}">Cabut</button></li>`)
+    .map((d) => `<li><span>${escapeHtml(d.name)}${badges(d)}<small>dipasangkan ${new Date(d.created).toLocaleDateString('id-ID')} · terakhir aktif ${lastActive(d.lastSeen ?? d.created)}</small></span><button class="danger" data-revoke="${d.id}">Cabut</button></li>`)
     .join('');
-  const viaTailscale = p?.addresses.find((a) => a.ip === p.ip)?.kind === 'tailscale';
-  const chooser = p && p.addresses.length > 1
-    ? `<div class="addr-tabs">${p.addresses.map((a) => `<button class="${a.ip === p.ip ? 'active' : ''}" data-ip="${a.ip}">${ADDRESS_LABEL[a.kind] ?? a.kind}<small>${a.ip}</small></button>`).join('')}</div>`
+  // 🔒 HTTPS: the same one-time code, but the QR opens the https origin (pairs separately, gets push).
+  const secure = p?.https?.qrUrl && p.https.url ? p.https : null;
+  const viaHttps = Boolean(secure) && phone.https !== false;
+  const viaTailscale = viaHttps || p?.addresses.find((a) => a.ip === p.ip)?.kind === 'tailscale';
+  const httpsHost = secure ? escapeHtml(secure.url.replace(/^https:\/\//, '')) : '';
+  const chooser = p && (p.addresses.length > 1 || secure)
+    ? `<div class="addr-tabs">${secure ? `<button class="${viaHttps ? 'active' : ''}" data-https>${HTTPS_LABEL}<small>${httpsHost}</small></button>` : ''}${p.addresses.map((a) => `<button class="${!viaHttps && a.ip === p.ip ? 'active' : ''}" data-ip="${a.ip}">${ADDRESS_LABEL[a.kind] ?? a.kind}<small>${a.ip}</small></button>`).join('')}</div>`
     : '';
+  const qrUrl = viaHttps ? secure.qrUrl : p?.qrUrl;
+  const openUrl = viaHttps ? secure.url : p?.url;
   const tailscaleTip = info.tailscale
     ? ''
     : `<details class="tip"><summary>🌐 Mau mengirim perintah dari HP, atau buka dari luar rumah?</summary>
@@ -45,22 +93,25 @@ function renderPhone() {
       </details>`;
   body.innerHTML = p
     ? `${chooser}<div class="pair">
-        <div class="qr">${qrSvg(p.qrUrl)}</div>
+        <div class="qr">${qrSvg(qrUrl)}</div>
         <div class="pair-info">
           <ol>
             <li>${viaTailscale ? 'Nyalakan Tailscale di HP (boleh pakai data seluler / WiFi mana saja).' : 'Sambungkan HP ke WiFi yang sama.'}</li>
             <li>Scan QR dengan kamera HP.</li>
-            <li>Atau buka <code>${escapeHtml(p.url)}</code> lalu masukkan kode:</li>
+            <li>Atau buka <code>${escapeHtml(openUrl)}</code> lalu masukkan kode:</li>
           </ol>
           <div class="code">${p.code.slice(0, 3)} ${p.code.slice(3)}</div>
           <div class="muted">Berlaku ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · sekali pakai</div>
         </div>
       </div>
-      <p class="access-mode ${viaTailscale ? 'full' : 'view'}">${viaTailscale
+      <p class="access-mode ${viaTailscale ? 'full' : 'view'}">${viaHttps
+        ? '🔒 <b>Tailscale HTTPS: kendali penuh + notifikasi push.</b> Setelah masuk, aktifkan di 🔔 Pengaturan notifikasi → Notifikasi HP. Dipasangkan terpisah dari alamat http.'
+        : viaTailscale
         ? '🌐 <b>Tailscale: kendali penuh.</b> HP bisa mengirim perintah, menjawab izin, dan commit.'
         : '📶 <b>WiFi: hanya lihat.</b> HP bisa memantau chat, perubahan, dan aktivitas, tapi tidak bisa mengirim perintah. Untuk kendali penuh, pakai Tailscale.'}</p>
       <p class="muted small">Belum tersambung? Saat pertama kali, Windows mungkin menanyakan izin firewall untuk Node.js — pilih <b>Allow / Izinkan</b> (jaringan Private).</p>`
     : '<p class="muted">Menyiapkan kode…</p>';
+  renderHttps(info);
   body.innerHTML += `<div class="devices"><b>Perangkat terhubung</b>${devices ? `<ul>${devices}</ul>` : '<p class="muted small">Belum ada.</p>'}<p class="muted small">Dicabut otomatis setelah ${info.idleDays ?? 30} hari tidak aktif.</p></div>`;
   // Rendered apart from the per-second countdown so an opened <details> stays open.
   const tipBox = $('#phone-tip');
@@ -89,6 +140,7 @@ export async function refreshPairing() {
 function openPhone() {
   $('#phone-modal').hidden = false;
   phone.pairing = null;
+  phone.https = null; // HTTPS first again when it is available
   renderPhone();
   refreshPairing();
 }
@@ -112,10 +164,32 @@ export function initPhone() {
       toast(err.message);
     }
   });
+  $('#phone-https').addEventListener('click', async (e) => {
+    if (!e.target.closest('[data-https-check]') || phone.checking) return;
+    phone.checking = true;
+    renderPhone();
+    try {
+      const https = await api('/api/remote/https-check');
+      if (state.config?.remote) state.config.remote = { ...state.config.remote, https };
+      phone.pairing = null; // a certificate that just arrived brings the 🔒 HTTPS QR
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      phone.checking = false;
+      renderPhone();
+      refreshPairing();
+    }
+  });
   $('#phone-body').addEventListener('click', async (e) => {
+    if (e.target.closest('[data-https]')) {
+      phone.https = true; // same pairing code, QR for the https origin
+      renderPhone();
+      return;
+    }
     const tab = e.target.closest('[data-ip]');
     if (tab) {
       phone.ip = tab.dataset.ip; // same pairing code, QR for the other address
+      phone.https = false;
       refreshPairing();
       return;
     }

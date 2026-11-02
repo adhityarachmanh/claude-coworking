@@ -7,6 +7,7 @@ import { NOTIFY_KINDS, cleanNotifySettings, notifyPlan, quietError } from '../co
 import { state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { selectProject } from './picker.js';
+import { isPushActive, pushSettingsChanged, renderPushSection } from './push.js';
 
 export const NOTIFY_KEY = 'office.notify';
 export const NOTIFY_SETTINGS_KEY = 'office.notifySettings';
@@ -43,7 +44,11 @@ export function notifySettings() {
 
 function saveNotifySettings(next) {
   writeStorage(NOTIFY_SETTINGS_KEY, JSON.stringify(cleanNotifySettings(next)));
+  pushSettingsChanged(); // a phone with push: the server applies the same rules (no-op elsewhere)
 }
+
+/** 🔔 on for this device (push.js: 🔔 off means no push either). */
+export const isNotifyOn = () => notifyState.on;
 
 const canPopup = () => 'Notification' in window && Notification.permission === 'granted';
 
@@ -89,7 +94,8 @@ export function notify(kind, title, body, projectId) {
   const settings = notifySettings();
   const plan = notifyPlan(kind, settings, { away, favorite });
   if (plan.sound) chime(kind, settings.volume);
-  if (plan.popup && canPopup()) {
+  // With push active on this device and the page out of view, the service worker shows it (one notification, not two).
+  if (plan.popup && canPopup() && !(isPushActive() && document.hidden)) {
     const n = new Notification(title, { body, tag: `${projectId}-${kind}`, requireInteraction: kind === 'ask' });
     n.onclick = () => {
       window.focus();
@@ -109,12 +115,13 @@ export function notifyNotice(title, body, tag) {
 }
 
 /** 🔔 on/off (the header button and the dialog's switch). Asks for the browser permission on the way on. */
-async function setNotifyOn(on) {
+export async function setNotifyOn(on) {
   if (on && 'Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
   notifyState.on = on;
   writeStorage(NOTIFY_KEY, on ? '1' : '0');
   renderNotifyButton();
   syncNotifyForm();
+  pushSettingsChanged();
   if (on) {
     chime('done');
     if ('Notification' in window && Notification.permission === 'denied') toast('Notifikasi Windows diblokir browser; yang aktif hanya suara.', 'ok');
@@ -149,6 +156,7 @@ export function syncNotifyForm() {
   setQuietError(null);
   renderFormState(s.volume);
   $('#ns-perm').textContent = permissionText();
+  renderPushSection();
 }
 
 /** Disabled-ness and the volume readout follow the switches (no save). */
@@ -229,7 +237,7 @@ export function initNotify() {
   form.addEventListener('submit', (e) => e.preventDefault()); // Enter in a time field must not reload anything
   $('#ns-on').addEventListener('change', (e) => setNotifyOn(e.target.checked));
   form.addEventListener('change', (e) => {
-    if (e.target.id === 'ns-on') return;
+    if (e.target.id === 'ns-on' || e.target.closest('#ns-push')) return; // push.js handles its own fields
     saveNotifyForm(e.target);
   });
   // The readout follows the slider while dragging; the value is saved on release (change).

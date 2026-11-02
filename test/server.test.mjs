@@ -421,7 +421,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     return JSON.parse(text.match(/^data: (.*)$/m)[1]);
   })();
   const { readOnlyApi, ...access } = phoneSnap.client;
-  assert.deepEqual(access, { local: false, accountAuth: false, readOnly: true });
+  assert.deepEqual(access, { local: false, accountAuth: false, readOnly: true, secure: false, push: null });
   // the UI's guard uses the server's own allowlist from the snapshot (no copy of the rules in app code)
   assert.ok(readOnlyApi.paths.length && readOnlyApi.patterns.length, 'snapshot carries the read-only allowlist');
   const uiAllows = (p) => readOnlyApi.paths.includes(p) || readOnlyApi.patterns.some((source) => new RegExp(source).test(p));
@@ -523,6 +523,10 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     const body = await res.json();
     assert.ok(body.readOnly || /laptop|Tailscale/.test(body.error), `${p}: ${body.error}`);
   }
+  // 🔔 the notification action endpoint needs no x-office-token, but WiFi (plain HTTP) still never reaches it
+  const act = await lan('/api/push/act', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ t: 'x'.repeat(43), a: 'allow' }) });
+  assert.equal(act.status, 403, 'push act over WiFi');
+  assert.equal((await act.json()).readOnly, true);
   const refused = await (await phoneApi(`/api/projects/${id}/prompt`, { text: 'halo' })).json();
   assert.equal(refused.error, 'Lewat WiFi hanya bisa melihat. Pakai laptop atau Tailscale untuk mengirim perintah.');
   assert.equal((await snapshot()).projects.find((p) => p.id === id).favorite, false, 'nothing changed');

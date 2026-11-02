@@ -275,7 +275,8 @@ export class RemoteAccess {
       enabled: this.enabled,
       urls: this.enabled ? lanAddresses().map((ip) => `http://${ip}:${port}`) : [],
       tailscale: networkAddresses().some((a) => a.kind === 'tailscale'),
-      devices: this.state.devices.map((d) => ({ id: d.id, name: d.name, created: d.created, lastSeen: d.lastSeen ?? d.created, transport: transportOf(d) })),
+      // push: 🔔 badge + "last push" (never the endpoint or keys); null = not subscribed
+      devices: this.state.devices.map((d) => ({ id: d.id, name: d.name, created: d.created, lastSeen: d.lastSeen ?? d.created, transport: transportOf(d), push: d.push ? { since: d.push.created ?? null, lastOk: d.push.lastOk ?? null, failing: (d.push.failures ?? 0) > 0 } : null })),
       idleDays: Math.round(DEVICE_IDLE_MS / 86_400_000),
     };
   }

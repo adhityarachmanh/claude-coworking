@@ -660,6 +660,22 @@
             <output id="ns-volume-val" for="ns-volume" aria-hidden="true">100%</output>
             <button type="button" id="ns-test" class="ghost">▶ Tes suara</button>
           </div>
+          <!-- 📱 Web Push (features/push.js): only on a phone; the buttons only on the https Tailscale origin -->
+          <fieldset id="ns-push" class="ns-group" hidden>
+            <legend>📱 Notifikasi HP (push)</legend>
+            <p class="muted small">Tetap muncul saat aplikasi tertutup atau HP terkunci. Pengaturan di atas ikut berlaku; jam tenang memakai jam HP ini.</p>
+            <p id="ns-push-hint" class="ns-push-hint small" hidden></p>
+            <p id="ns-push-status" class="small" role="status" aria-live="polite"></p>
+            <div class="ns-push-actions">
+              <button type="button" id="ns-push-on" class="primary" hidden>Aktifkan</button>
+              <button type="button" id="ns-push-test" class="ghost" hidden>Kirim tes</button>
+              <button type="button" id="ns-push-off" class="ghost" hidden>Matikan</button>
+            </div>
+            <div id="ns-push-lock-row" hidden>
+              <label class="switch wrap"><input id="ns-push-lock" type="checkbox" aria-describedby="ns-push-lock-desc" /> Tombol Izinkan di layar kunci</label>
+              <p id="ns-push-lock-desc" class="muted small">Mati: notifikasi izin hanya punya tombol Tolak; Izinkan dari dalam aplikasi.</p>
+            </div>
+          </fieldset>
           <div class="ns-actions">
             <button type="button" id="ns-reset" class="ghost">↺ Kembalikan bawaan</button>
           </div>
@@ -741,6 +757,7 @@
         </div>
         <label class="switch big"><input id="remote-enabled" type="checkbox" /> Izinkan akses dari HP (WiFi: hanya lihat · Tailscale: penuh)</label>
         <div id="phone-body"></div>
+        <div id="phone-https"></div>
         <div id="phone-tip"></div>
       </div>
     </div>

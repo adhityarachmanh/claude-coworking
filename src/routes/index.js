@@ -9,6 +9,7 @@ import * as git from './git.js';
 import * as misc from './misc.js';
 import * as permissions from './permissions.js';
 import * as projects from './projects.js';
+import * as push from './push.js';
 import * as queue from './queue.js';
 import * as remote from './remote.js';
 import * as session from './session.js';
@@ -34,6 +35,7 @@ export function buildRouter() {
     team.register,
     account.register,
     remote.register,
+    push.register,
     backup.register,
     spotify.register,
     misc.register,

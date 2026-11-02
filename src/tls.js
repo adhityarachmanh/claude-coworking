@@ -153,10 +153,11 @@ export class TailscaleCert {
    * @param {(args: string[]) => Promise<string>} [options.run]  runs the CLI (tests inject a fake)
    * @param {() => number} [options.now]
    * @param {(info: object) => void} [options.onChange]  state or certificate changed
-   * @param {(...args: any[]) => void} [options.log]
+   * @param {(...args: any[]) => void} [options.log]  problems (server.log ERROR)
+   * @param {(...args: any[]) => void} [options.info]  good news, e.g. a certificate loaded (server.log INFO)
    * @param {(dir: string) => Promise<void>} [options.secureDir]  restricts the folder's permissions (tests inject a no-op)
    */
-  constructor({ dir, enabled = () => true, bin, run, now = Date.now, onChange = () => {}, log = console.error, secureDir }) {
+  constructor({ dir, enabled = () => true, bin, run, now = Date.now, onChange = () => {}, log = console.error, info = console.log, secureDir }) {
     this.dir = dir;
     this.secureDir = secureDir ?? ((d) => restrictDir(d, log));
     this.enabled = enabled;
@@ -165,6 +166,7 @@ export class TailscaleCert {
     this.now = now;
     this.onChange = onChange;
     this.log = log;
+    this.info = info;
     this.material = null; // { cert, key, host, validTo, fingerprint } while usable
     // { state, error } of the last refresh that brought no usable certificate (before the first one: still checking)
     this.problem = this.run ? { state: 'error', error: 'Sedang diperiksa…' } : { state: 'no-tailscale', error: 'Tailscale tidak terpasang di laptop ini.' };
@@ -299,7 +301,7 @@ export class TailscaleCert {
   }
 
   #adopt(found) {
-    if (found.fingerprint !== this.material?.fingerprint) this.log(`HTTPS: sertifikat ${found.host} berlaku s/d ${new Date(found.validTo).toISOString().slice(0, 10)}`);
+    if (found.fingerprint !== this.material?.fingerprint) this.info(`HTTPS: sertifikat ${found.host} berlaku s/d ${new Date(found.validTo).toISOString().slice(0, 10)}`);
     this.material = found;
   }
 
