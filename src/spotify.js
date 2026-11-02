@@ -30,6 +30,9 @@ const MAX_ART_BYTES = 20;
 const PLAYLIST_PAGE = 50;
 const MIN_ART_PX = 128;
 const MAX_PLAYLIST_OFFSET = 5000;
+const MAX_ITEMS_OFFSET = 10_000; // playlist items: deepest page offered (Spotify playlists hold up to 10 000 items)
+const MAX_ITEM_PAGES = 40; // playlist-items pages cached at once (≤ 2000 ids)
+const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/;
 const MAX_RETRY_AFTER_S = 3600; // a longer Retry-After is capped: the poller retries hourly at worst
 const MAX_TIMER_MS = 2 ** 31 - 1; // setTimeout fires at once (1 ms) for anything larger
 /** Text from Spotify (or an error) made safe for one log line: no spaces, newlines or control characters. */
@@ -71,6 +74,7 @@ const ERROR_TEXT = {
   'no-app': 'Spotify belum terpasang di laptop ini. Pasang Spotify, atau buka Spotify di HP/PC lain lalu pilih di sini.',
   'launch-timeout': 'Spotify dibuka di laptop tapi belum siap. Tunggu sebentar lalu tekan ▶ lagi.',
   'pick-device': 'Ada beberapa perangkat. Pilih salah satu di ♪ Musik, atau tandai ★ Selalu putar di sini.',
+  'playlist-locked': 'Isi playlist ini tidak bisa dibaca oleh app mode pengembangan Spotify — putar langsung saja.',
   'device-offline': 'Perangkat ini sedang offline — buka Spotify di perangkat itu, atau pilih 💻 Laptop ini.',
 };
 
@@ -216,6 +220,8 @@ export class SpotifyService {
     this.lastLaunchAt = -Infinity;
     this.playlistCache = new Map(); // offset -> { at, page }
     this.playlistIds = new Map(); // id -> at
+    this.itemsCache = new Map(); // `${playlistId}:${offset}` -> { at, page }
+    this.trackIds = new Map(); // track/episode id -> { at, playlistId, kind } (only from playlist-items answers)
     this.volumePending = null;
     this.volumeRun = null;
     this.lastVolumeAt = 0;
@@ -878,6 +884,61 @@ export class SpotifyService {
     return page;
   }
 
+  /**
+   * POST /playlist-items: one page (50) of a listed playlist's items, cached like playlists. Spotify (Feb 2026):
+   * GET /playlists/{id}/items, only for playlists the user owns or collaborates on (403 otherwise): that becomes
+   * 'playlist-locked' with a hint to just play it. Local files and episodes are shown but marked; items that can't
+   * be played are marked `playable: false`. Track/episode ids are kept for control {playlist, trackId}.
+   */
+  async playlistItems({ playlistId, offset = 0 } = {}) {
+    if (!this.#knownPlaylist(playlistId)) throw new SpotifyError('bad-request', { message: 'Playlist tidak dikenal. Muat ulang daftar playlist.' });
+    if (!intIn(offset, 0, MAX_ITEMS_OFFSET) || offset % PLAYLIST_PAGE !== 0) throw new SpotifyError('bad-request', { message: 'offset tidak valid.' });
+    const fresh = (at) => this.now() - at < this.timing.cacheMs;
+    for (const [k, v] of this.itemsCache) if (!fresh(v.at)) this.itemsCache.delete(k);
+    for (const [k, v] of this.trackIds) if (!fresh(v.at)) this.trackIds.delete(k);
+    const key = `${playlistId}:${offset}`;
+    const hit = this.itemsCache.get(key);
+    if (hit) return hit.page;
+    let data;
+    try {
+      data = await this.#api('GET', `/playlists/${encodeURIComponent(playlistId)}/items`, { query: { limit: String(PLAYLIST_PAGE), offset: String(offset), market: 'from_token', additional_types: 'track,episode' }, action: 'isi playlist' });
+    } catch (err) {
+      if (err.code === 'restricted' || err.code === 'not-found') throw new SpotifyError('playlist-locked', { status: err.status });
+      throw err;
+    }
+    const items = [];
+    for (const e of Array.isArray(data?.items) ? data.items : []) {
+      if (!e || typeof e !== 'object') continue;
+      const it = e.item ?? e.track; // Feb 2026: `item` (`track` is deprecated, read as a fallback)
+      const isLocal = Boolean(e.is_local);
+      const isEpisode = it?.type === 'episode';
+      const id = !isLocal && typeof it?.id === 'string' && SPOTIFY_ID.test(it.id) ? it.id : null;
+      const artists = Array.isArray(it?.artists) ? it.artists.map((a) => a?.name).filter(Boolean).join(', ') : '';
+      // is_playable comes with market=from_token (track relinking); restrictions.reason = market/product/explicit
+      const playable = Boolean(id) && it.is_playable !== false && !it.restrictions?.reason;
+      if (id) this.trackIds.set(id, { at: this.now(), playlistId, kind: isEpisode ? 'episode' : 'track' });
+      items.push({
+        id,
+        title: clip(it?.name) || (isLocal ? 'File lokal' : 'Tidak tersedia'),
+        artist: clip(isEpisode ? it?.show?.name : artists),
+        album: clip(isEpisode ? '' : it?.album?.name),
+        durationMs: Number.isFinite(it?.duration_ms) ? it.duration_ms : 0,
+        artId: this.#artIdOf(isEpisode ? (it?.images?.length ? it.images : it?.show?.images) : it?.album?.images),
+        explicit: Boolean(it?.explicit),
+        playable,
+        isLocal,
+        isEpisode,
+      });
+    }
+    const total = Number.isFinite(data?.total) ? data.total : null;
+    const page = { items, next: data?.next && offset + PLAYLIST_PAGE <= MAX_ITEMS_OFFSET ? offset + PLAYLIST_PAGE : null, total };
+    this.itemsCache.set(key, { at: this.now(), page });
+    // Bounded: at most MAX_ITEM_PAGES pages (oldest dropped) and their ids.
+    while (this.itemsCache.size > MAX_ITEM_PAGES) this.itemsCache.delete(this.itemsCache.keys().next().value);
+    while (this.trackIds.size > MAX_ITEM_PAGES * PLAYLIST_PAGE) this.trackIds.delete(this.trackIds.keys().next().value);
+    return page;
+  }
+
   #knownDevice(id) {
     return typeof id === 'string' && DEVICE_ID.test(id) && this.now() - this.deviceCache.at <= this.timing.cacheMs && this.deviceCache.ids.has(id);
   }
@@ -886,6 +947,25 @@ export class SpotifyService {
     if (typeof id !== 'string' || !PLAYLIST_ID.test(id)) return false;
     const at = this.playlistIds.get(id);
     return at !== undefined && this.now() - at <= this.timing.cacheMs;
+  }
+
+  /**
+   * control {playlist}: where to start. trackId must come from a playlist-items answer of this playlist; position is
+   * 0-based (bounded). Neither → from the start (null).
+   */
+  #playOffset(body) {
+    const { trackId, position } = body;
+    if (trackId !== undefined && position !== undefined) throw new SpotifyError('bad-request', { message: 'Pilih trackId atau position, bukan keduanya.' });
+    if (trackId !== undefined) {
+      const known = typeof trackId === 'string' && SPOTIFY_ID.test(trackId) ? this.trackIds.get(trackId) : null;
+      if (!known || known.playlistId !== body.playlistId || this.now() - known.at > this.timing.cacheMs) throw new SpotifyError('bad-request', { message: 'Lagu tidak dikenal. Muat ulang isi playlist.' });
+      return { uri: `spotify:${known.kind}:${trackId}` };
+    }
+    if (position !== undefined) {
+      if (!intIn(position, 0, MAX_ITEMS_OFFSET)) throw new SpotifyError('bad-request', { message: 'position tidak valid.' });
+      return { position };
+    }
+    return null;
   }
 
   /**
@@ -927,10 +1007,11 @@ export class SpotifyService {
         case 'playlist': {
           if (!this.#knownPlaylist(body.playlistId)) throw new SpotifyError('bad-request', { message: 'Playlist tidak dikenal. Muat ulang daftar playlist.' });
           if (body.deviceId !== undefined && !this.#knownDevice(body.deviceId)) throw new SpotifyError('bad-request', { message: 'Perangkat tidak dikenal. Muat ulang daftar perangkat.' });
+          const what = { playlistId: body.playlistId, offset: this.#playOffset(body) };
           if (body.deviceId) {
-            await this.#playOn(body.deviceId, body.playlistId, 0);
+            await this.#playOn(body.deviceId, what, 0);
             played = { id: body.deviceId, explicit: true };
-          } else played = await this.#playSomewhere({ playlistId: body.playlistId, allowLaunch });
+          } else played = await this.#playSomewhere({ what, allowLaunch });
           return;
         }
         case 'launch': {
@@ -984,10 +1065,10 @@ export class SpotifyService {
    * #pickDevice. An auto-picked device that turns out offline falls back to starting Spotify here (if allowed).
    * Returns { id, info, explicit: false } for the device it went to, or null (the active one).
    */
-  async #playSomewhere({ playlistId = null, allowLaunch }) {
+  async #playSomewhere({ what = null, allowLaunch }) {
     if (this.player?.device) {
       try {
-        await this.#playOn(null, playlistId, 0);
+        await this.#playOn(null, what, 0);
         return null;
       } catch (err) {
         if (err.code !== 'no-device') throw err; // the device went away since the last poll: pick one below
@@ -995,30 +1076,33 @@ export class SpotifyService {
     }
     const { target, launched, devices } = await this.#pickDevice({ allowLaunch });
     if (!target) {
-      await this.#playOn(null, playlistId, 0);
+      await this.#playOn(null, what, 0);
       return null;
     }
     try {
-      await this.#playOn(target.id, playlistId, launched ? this.timing.playRetries : 0);
+      await this.#playOn(target.id, what, launched ? this.timing.playRetries : 0);
       return { id: target.id, info: target, explicit: false };
     } catch (err) {
       // A listed device that doesn't answer (a phone with Spotify asleep stays listed for a while): play here instead.
       if (launched || err.code !== 'device-offline' || !this.#mayLaunch(allowLaunch)) throw err;
     }
     const laptop = await this.#launchAndWait(devices.filter((d) => d.id !== target.id));
-    await this.#playOn(laptop.id, playlistId, this.timing.playRetries);
+    await this.#playOn(laptop.id, what, this.timing.playRetries);
     return { id: laptop.id, info: laptop, explicit: false };
   }
 
   /**
    * One play request: on `deviceId` (transfer + play, or the playlist there) or on the active device (null).
+   * `what`: null (resume) or { playlistId, offset? }.
    * `retries`: a device that just appeared may answer 404 for a moment; bounded retries, launchPollMs apart.
    */
-  async #playOn(deviceId, playlistId, retries) {
+  async #playOn(deviceId, what, retries) {
     for (let attempt = 0; ; attempt++) {
       try {
-        if (playlistId) {
-          return await this.#api('PUT', '/me/player/play', { query: deviceId ? { device_id: deviceId } : undefined, json: { context_uri: `spotify:playlist:${playlistId}` }, action: 'putar playlist', target: Boolean(deviceId) });
+        if (what?.playlistId) {
+          // URIs built here from validated, cached ids. offset: start at a track ({ uri }) or a position.
+          const json = { context_uri: `spotify:playlist:${what.playlistId}`, ...(what.offset ? { offset: what.offset } : {}) };
+          return await this.#api('PUT', '/me/player/play', { query: deviceId ? { device_id: deviceId } : undefined, json, action: 'putar playlist', target: Boolean(deviceId) });
         }
         if (deviceId) return await this.#api('PUT', '/me/player', { json: { device_ids: [deviceId], play: true }, action: 'pindah perangkat', target: true });
         return await this.#api('PUT', '/me/player/play', { action: 'play' });

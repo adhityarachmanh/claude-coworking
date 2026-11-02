@@ -1,5 +1,6 @@
 // ---------- Spotify (♪) — docs/design-spotify.md ----------
-// state/art: reads, allowed over WiFi (src/remote.js). devices/playlists/control/settings: laptop + Tailscale phones.
+// state/art: reads, allowed over WiFi (src/remote.js). devices/playlists/playlist-items/control/settings: laptop +
+// Tailscale phones.
 // config/login/logout: laptop only (LOCAL_ONLY in server.js). GET /spotify/callback: laptop only, not under /api/,
 // dispatched by server.js to `callback` below.
 import { SpotifyError } from '../spotify.js';
@@ -15,6 +16,7 @@ const STATUS = {
   'no-device': 404,
   'no-app': 404,
   'device-offline': 404,
+  'playlist-locked': 403,
   'pick-device': 409,
   'launch-timeout': 504,
   'not-found': 404,
@@ -54,6 +56,8 @@ export function register(router) {
   // allowLaunch: whether the list may offer "💻 Laptop ini" (Spotify started here on demand).
   router.post('/api/spotify/devices', guard(async (ctx, req, res) => json(res, 200, await ctx.spotify.devices({ allowLaunch: ctx.canManageAccount?.(req) === true }))));
   router.post('/api/spotify/playlists', guard(async ({ spotify }, req, res, body) => json(res, 200, await spotify.playlists({ offset: body.offset ?? 0 }))));
+  // A playlist's tracks (laptop + Tailscale only, like playlists: not on the WiFi allowlist).
+  router.post('/api/spotify/playlist-items', guard(async ({ spotify }, req, res, body) => json(res, 200, await spotify.playlistItems({ playlistId: body.playlistId, offset: body.offset ?? 0 }))));
   // allowLaunch: ▶ may start the Spotify desktop app on this laptop only for the laptop itself or a Tailscale phone.
   // (Plain WiFi never gets here: server.js refuses /control as read-only. Checked again so a future gate change can't
   // make a sniffable request start programs.)

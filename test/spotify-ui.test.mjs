@@ -1,4 +1,4 @@
-/* global document, window, visible, MessageEvent -- functions passed to page.eval run in the browser */
+/* global document, window, visible, MessageEvent, getComputedStyle -- functions passed to page.eval run in the browser */
 // ♪ Spotify UI (features/spotify.js, office/radio.js) in a headless Chrome/Edge (test-support/cdp.mjs), phone and
 // desktop: the top-bar pill and the office radio for every status, the ♪ dialog's controls (exact POST bodies),
 // album art as blob: URLs (old ones revoked), read-only WiFi (info only, no control requests), the ⚙ section,
@@ -192,7 +192,7 @@ function installSpotifyFake(cfg) {
   };
   const realFetch = window.fetch.bind(window);
   window.fetch = async (url, opts = {}) => {
-    const m = String(url).match(/\/api\/spotify\/([a-z]+)$/);
+    const m = String(url).match(/\/api\/spotify\/([a-z-]+)$/);
     if (!m) return realFetch(url, opts);
     const name = m[1];
     const body = opts.body ? JSON.parse(opts.body) : {};
@@ -214,6 +214,19 @@ function installSpotifyFake(cfg) {
         return new Response(await png(), { headers: { 'Content-Type': 'image/png' } });
       case 'control':
         return json(control(body));
+      case 'playlist-items': {
+        // 'A'*22: 3 pages-worth paged by 2 here (next = offset); 'C'*22: not the user's (Dev-mode 403)
+        if (body.playlistId === 'C'.repeat(22)) return json({ error: 'Isi playlist ini tidak bisa dibaca oleh app mode pengembangan Spotify — putar langsung saja.', code: 'playlist-locked' }, 403);
+        const all = [
+          { id: 'T'.repeat(21) + '1', title: 'Bengawan Solo', artist: 'Gesang', album: 'Keroncong Abadi', durationMs: 200000, artId: 'aaaaaaaaaaaaaaa1', explicit: false, playable: true, isLocal: false, isEpisode: false },
+          { id: 'T'.repeat(21) + '2', title: 'Lagu <i>Dua</i>', artist: 'Artis', album: 'Album', durationMs: 185000, artId: null, explicit: true, playable: true, isLocal: false, isEpisode: false },
+          { id: null, title: 'Lagu Lokal', artist: 'Saya', album: '', durationMs: 120000, artId: null, explicit: false, playable: false, isLocal: true, isEpisode: false },
+          { id: 'T'.repeat(21) + '4', title: 'Lagu Terlarang', artist: 'Artis', album: 'Album', durationMs: 150000, artId: null, explicit: false, playable: false, isLocal: false, isEpisode: false },
+          { id: 'T'.repeat(21) + '5', title: 'Episode Podcast', artist: 'Podcast Ngoding', album: '', durationMs: 1800000, artId: null, explicit: false, playable: true, isLocal: false, isEpisode: true },
+        ];
+        const offset = body.offset ?? 0;
+        return json({ items: offset ? all.slice(3) : all.slice(0, 3), next: offset ? null : 3, total: all.length });
+      }
       case 'devices':
         return json({ devices: fake.devices, thisLaptop: fake.thisLaptop ?? null });
       case 'playlists':
@@ -251,6 +264,9 @@ async function setFake(page, source) {
 /** Navigates with a fresh fake (`cfg` as in installSpotifyFake) and waits for the app to be connected. */
 async function open(page, cfg, hash = '') {
   await setFake(page, `(${installSpotifyFake})(${JSON.stringify(cfg)});`);
+  // Close the previous page's event stream first: a page kept in the back/forward cache can hold its connection,
+  // and after enough navigations Chrome's 6 connections per host are used up (the next load then hangs).
+  await page.eval(() => window.__sp?.es?.close()).catch(() => {});
   page.clearProblems();
   await page.goto(`${BASE}/${hash}`);
   await page.waitFor(() => document.querySelector('#conn')?.classList.contains('ok') && window.__sp?.es, { timeoutMs: 15000, message: 'app connected' });
@@ -589,6 +605,90 @@ for (const vp of VIEWPORTS) {
       await page.waitFor(() => window.__sp.posts.some((p) => p.name === 'config' && p.body.settings), { message: 'autoLaunch saved' });
       assert.deepEqual((await posts(page, 'config')).filter((b) => b.settings), [{ settings: { autoLaunch: false } }]);
       await page.press('Escape');
+      await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+      assertClean(page);
+    });
+
+    test('playlist tracks: drill in, ← back, filter, Muat lagi, ♪ on the current song, greyed unplayable, play from a track; locked playlist', async () => {
+      await open(page, { snap: STATE() });
+      await page.click('#spotify-pill');
+      await page.waitFor(() => visible('#spotify-modal') && document.querySelectorAll('#sp-devices input').length === 3, { message: 'dialog open' });
+      await page.click('#sp-pl-toggle');
+      await page.waitFor(() => document.querySelectorAll('#sp-pl-list li').length === 3, { message: 'playlists listed' });
+      assert.equal(await page.eval(() => document.querySelector('#sp-pl-list [data-open]').getAttribute('aria-label')), 'Lihat isi playlist Fokus Ngoding');
+      await clearPosts(page);
+      // drill in: the list is replaced by the tracks; focus on the heading
+      await page.click('#sp-pl-list [data-open="' + 'A'.repeat(22) + '"]');
+      await page.waitFor(() => visible('#sp-tr-view') && !visible('#sp-pl-browse') && document.querySelectorAll('#sp-tr-list li').length === 3, { message: 'tracks page 1' });
+      assert.equal(await page.eval(() => document.activeElement?.id), 'sp-tr-title');
+      assert.equal(await page.eval(() => document.querySelector('#sp-tr-title').textContent), 'Fokus Ngoding');
+      assert.deepEqual(await posts(page, 'playlist-items'), [{ playlistId: 'A'.repeat(22), offset: 0 }]);
+      // titles are text; ♪ on the song playing now; local file greyed with its reason
+      assert.equal(await page.eval(() => document.querySelectorAll('#sp-tr-list i').length), 0, 'no markup from titles');
+      assert.match(await page.eval(() => document.querySelector('#sp-tr-list li:nth-child(2) b').textContent), /Lagu <i>Dua<\/i>/);
+      const first = await page.eval(() => {
+        const b = document.querySelector('#sp-tr-list li:nth-child(1) .sp-tr');
+        return { now: b.classList.contains('now'), current: b.getAttribute('aria-current'), label: b.getAttribute('aria-label'), mark: getComputedStyle(b.querySelector('.sp-tr-now')).display };
+      });
+      assert.deepEqual(first, { now: true, current: 'true', label: 'Putar Bengawan Solo – Gesang, 3:20, sedang diputar', mark: 'inline' });
+      const local = await page.eval(() => {
+        const b = document.querySelector('#sp-tr-list li:nth-child(3) .sp-tr');
+        return { disabled: b.disabled, label: b.getAttribute('aria-label'), meta: b.querySelector('small').textContent };
+      });
+      assert.equal(local.disabled, true);
+      assert.match(local.label, /file lokal, tidak bisa diputar/);
+      assert.match(local.meta, /File lokal/);
+      await page.waitFor(() => document.querySelector('#sp-tr-list li:nth-child(1) img')?.src.startsWith('blob:'), { message: 'track art via the proxy (blob:)' });
+      // Muat lagi: next offset from the server
+      await page.click('#sp-tr-more');
+      await page.waitFor(() => document.querySelectorAll('#sp-tr-list li').length === 5, { message: 'page 2' });
+      assert.deepEqual((await posts(page, 'playlist-items')).at(-1), { playlistId: 'A'.repeat(22), offset: 3 });
+      assert.equal(await page.eval(() => document.querySelector('#sp-tr-more').hidden), true);
+      assert.equal(await page.eval(() => document.querySelector('#sp-tr-list li:nth-child(4) .sp-tr').disabled), true, 'unplayable greyed');
+      assert.match(await page.eval(() => document.querySelector('#sp-tr-list li:nth-child(5) small').textContent), /Episode/);
+      // filter
+      await page.eval(() => {
+        const f = document.querySelector('#sp-tr-filter');
+        f.value = 'podcast';
+        f.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      assert.deepEqual(await page.eval(() => [...document.querySelectorAll('#sp-tr-list li')].filter((li) => !li.hidden).map((li) => li.querySelector('b').textContent.replace('♪ ', ''))), ['Episode Podcast']);
+      await page.eval(() => {
+        const f = document.querySelector('#sp-tr-filter');
+        f.value = '';
+        f.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      assert.deepEqual(await page.eval(unnamed, '#spotify-modal'), []);
+      assert.equal(await page.eval(horizontalOverflow), null);
+      await shot(page, `${tag}-10-tracks`);
+      // tap a track (and Enter on one): play from it
+      await clearPosts(page);
+      await page.click('#sp-tr-list li:nth-child(2) .sp-tr');
+      await page.waitFor(() => window.__sp.posts.some((p) => p.name === 'control'), { message: 'track played' });
+      await page.waitFor(() => !document.querySelector('#sp-tr-list li:nth-child(5) .sp-tr').disabled, { message: 'not busy' });
+      await page.eval(() => document.querySelector('#sp-tr-list li:nth-child(5) .sp-tr').focus());
+      await page.press('Enter');
+      await page.waitFor(() => window.__sp.posts.filter((p) => p.name === 'control').length === 2, { message: 'Enter plays' });
+      await page.waitFor(() => !document.querySelector('#sp-tr-playall').disabled, { message: 'not busy' });
+      await page.click('#sp-tr-playall');
+      await page.waitFor(() => window.__sp.posts.filter((p) => p.name === 'control').length === 3, { message: 'play all' });
+      assert.deepEqual(await posts(page, 'control'), [
+        { action: 'playlist', playlistId: 'A'.repeat(22), trackId: 'T'.repeat(21) + '2' },
+        { action: 'playlist', playlistId: 'A'.repeat(22), trackId: 'T'.repeat(21) + '5' },
+        { action: 'playlist', playlistId: 'A'.repeat(22) },
+      ]);
+      // ← back (and Esc goes back too, without closing the dialog); focus returns to that playlist
+      await page.click('#sp-tr-back');
+      await page.waitFor(() => visible('#sp-pl-browse') && !visible('#sp-tr-view'), { message: 'back to the playlists' });
+      assert.equal(await page.eval(() => document.activeElement?.dataset.open), 'A'.repeat(22));
+      // a playlist the user doesn't own: the Dev-mode message, ▶ Semua still plays it
+      await page.click('#sp-pl-list [data-open="' + 'C'.repeat(22) + '"]');
+      await page.waitFor(() => /mode pengembangan Spotify — putar langsung saja/.test(document.querySelector('#sp-tr-note').textContent), { message: 'locked playlist note' });
+      assert.equal(await page.eval(() => document.querySelectorAll('#sp-tr-list li').length), 0);
+      await page.press('Escape');
+      await page.waitFor(() => visible('#sp-pl-browse') && visible('#spotify-modal'), { message: 'Esc: back, dialog stays' });
+      await page.press('Escape');
+      await page.waitFor(() => document.querySelector('#spotify-modal').hidden, { message: 'Esc again closes' });
       await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
       assertClean(page);
     });

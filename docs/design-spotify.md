@@ -256,6 +256,21 @@ Membuka aplikasi (`src/spotify-launcher.js`, tanpa shell, argumen tetap):
 - Selama proses, `publicState().launching = true` (SSE). Setelah selesai, nilainya selalu `false`. Error `no-app`/`launch-timeout` juga masuk `publicState().error` sampai poll berikutnya.
 - UI: pill dan dialog menampilkan "Membuka Spotify di latar belakang…" (teks miring, tanpa spinner) dan tombol menunggu. ▶ tetap aktif saat tidak ada perangkat aktif (pill, dialog, 🗂, Ctrl+P). Daftar perangkat menampilkan "★ utama" dan tombol ☆ "Selalu putar di sini". Opsi ⚙ "Buka Spotify otomatis di latar belakang". Kalau balasan error datang tanpa event SSE, klien sendiri yang mematikan `launching`.
 
+
+### 2.9 Isi playlist dan putar dari lagu tertentu
+
+Fakta Spotify (dicek di developer.spotify.com, November 2026):
+- Endpoint: `GET /v1/playlists/{id}/items`. `GET /playlists/{id}/tracks` sudah dihapus pada perubahan Februari 2026. Parameter `limit` 1–50 (default 20), plus `offset`, `market`, `fields`, `additional_types=track,episode`. Respons berupa paging (`items`, `next`, `total`). Setiap elemen punya `item` (Track atau Episode), sedangkan `track` sudah deprecated. Ada juga `is_local`. `is_playable` dan `restrictions.reason` (`market`/`product`/`explicit`) hanya muncul kalau `market` dikirim; kita memakai `market=from_token`.
+- Dokumentasi endpoint: *"This endpoint is only accessible for playlists owned by the current user or playlists the user is a collaborator of."* dan *"A 403 Forbidden status code will be returned if the user is neither the owner nor a collaborator of the playlist."* Panduan migrasi Februari 2026 (Development Mode) menambahkan: *"For other playlists, only metadata is returned and the `items` field will be absent."* Jadi playlist buatan Spotify (editorial) atau milik orang lain **tidak bisa dibaca isinya**, tetapi tetap bisa diputar utuh lewat `context_uri`.
+
+Kontrak:
+- `POST /api/spotify/playlist-items { playlistId, offset? }` (laptop dan Tailscale saja; tidak ada di allowlist WiFi). `playlistId` harus ada di cache playlist. `offset` kelipatan 50, maksimum 10 000.
+- Balasan: `{ items: [{ id, title, artist, album, durationMs, artId, explicit, playable, isLocal, isEpisode }], next, total }`. `id` adalah id track/episode (null untuk file lokal) dan disimpan di cache untuk dipakai saat memutar. Item yang `playable: false` (file lokal, `is_playable: false`, atau ada `restrictions`) tetap ditampilkan tetapi tidak bisa diputar.
+- Cache seperti daftar playlist: per `playlistId:offset` selama `cacheMs`, maksimal 40 halaman (halaman terlama dibuang), id ikut dibuang. Aturan 429 dan timeout sama dengan endpoint lain.
+- 403/404 dari Spotify → `playlist-locked` (403): "Isi playlist ini tidak bisa dibaca oleh app mode pengembangan Spotify — putar langsung saja."
+- `control { action: 'playlist', playlistId, trackId? | position? }` → `PUT /me/player/play { context_uri, offset: { uri: 'spotify:track:<id>' } | { position } }`. URI dibangun di server dari id yang ada di cache, dan id itu harus berasal dari playlist yang sama. `trackId` dan `position` tidak boleh dipakai bersamaan. Pemilihan perangkat dan membuka aplikasi di laptop sama dengan §2.8.
+- UI: di daftar playlist, ketuk nama → tampilan isi playlist dengan tombol ← kembali (Esc juga kembali), judul, tombol ▶ Semua, kotak saring, dan "Muat lagi". Art kecil dimuat lazy lewat proxy. Lagu yang sedang diputar ditandai ♪ dan `aria-current` (dicocokkan lewat judul + artis, karena `publicState` sengaja tidak memuat id). Item yang tidak bisa diputar tampil abu-abu, dengan alasannya di label. Ketuk atau Enter pada sebuah lagu → putar mulai dari lagu itu.
+
 ---
 
 ## 3. Struktur modul

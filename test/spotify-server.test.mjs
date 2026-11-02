@@ -9,7 +9,7 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { ZipReader } from '../src/zip.js';
-import { startFakeSpotify } from '../test-support/fake-spotify.mjs';
+import { FAKE_PLAYLIST_ID, startFakeSpotify } from '../test-support/fake-spotify.mjs';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-spotify-server-'));
@@ -171,6 +171,8 @@ test('API: state, art, devices, playlists, control; refresh after an expired tok
   const { devices } = (await api('/api/spotify/devices')).body;
   assert.equal(devices.length, 2);
   assert.equal((await api('/api/spotify/playlists')).body.items[0].name, 'Fokus Ngoding');
+  const tracks = (await api('/api/spotify/playlist-items', { playlistId: FAKE_PLAYLIST_ID })).body;
+  assert.deepEqual([tracks.total, tracks.items[0].title], [42, 'Lagu 1'], 'laptop: playlist items');
   const paused = await api('/api/spotify/control', { action: 'pause' });
   assert.equal(paused.status, 200);
   assert.equal(paused.body.status, 'paused');
@@ -248,7 +250,7 @@ test('phones: WiFi may read state/art only; settings is refused as read-only (so
     const s = await state.json();
     assert.doesNotMatch(JSON.stringify(s), /fake-|spotify:|Adhit Test/);
     if (s.track?.artId) assert.equal((await phone('/api/spotify/art', { id: s.track.artId })).status, 200);
-    for (const p of ['control', 'devices', 'playlists', 'settings']) {
+    for (const p of ['control', 'devices', 'playlists', 'playlist-items', 'settings']) {
       const r = await phone(`/api/spotify/${p}`, { action: 'next', settings: { duck: 'pause' } });
       assert.equal(r.status, 403, p);
       assert.equal((await r.json()).readOnly, true, `${p}: refused by the WiFi gate only (allowed over Tailscale)`);

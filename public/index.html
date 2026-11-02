@@ -805,10 +805,24 @@
         <section id="sp-playlists-box" class="sp-section" aria-labelledby="sp-pl-toggle">
           <button type="button" id="sp-pl-toggle" class="ghost sp-pl-toggle" aria-expanded="false" aria-controls="sp-pl-panel">▸ Playlist</button>
           <div id="sp-pl-panel" class="sp-pl-panel" hidden>
-            <input id="sp-pl-filter" type="search" class="sp-pl-filter" placeholder="Saring playlist…" aria-label="Saring playlist" autocomplete="off" />
-            <ul id="sp-pl-list" class="sp-pl-list" aria-label="Playlist"></ul>
-            <p id="sp-pl-note" class="muted small" role="status"></p>
-            <button type="button" id="sp-pl-more" class="ghost sp-small" hidden>Muat lagi</button>
+            <div id="sp-pl-browse" class="sp-pl-browse">
+              <input id="sp-pl-filter" type="search" class="sp-pl-filter" placeholder="Saring playlist…" aria-label="Saring playlist" autocomplete="off" />
+              <ul id="sp-pl-list" class="sp-pl-list" aria-label="Playlist"></ul>
+              <p id="sp-pl-note" class="muted small" role="status"></p>
+              <button type="button" id="sp-pl-more" class="ghost sp-small" hidden>Muat lagi</button>
+            </div>
+            <!-- a playlist's tracks (features/spotify.js openTracks): ← back, filter, tap a track to play from it -->
+            <div id="sp-tr-view" class="sp-tr-view" hidden>
+              <div class="sp-tr-head">
+                <button type="button" id="sp-tr-back" class="ghost sp-small" aria-label="Kembali ke daftar playlist">← Playlist</button>
+                <h3 id="sp-tr-title" class="sp-tr-title" tabindex="-1"></h3>
+                <button type="button" id="sp-tr-playall" class="ghost sp-small">▶ Semua</button>
+              </div>
+              <input id="sp-tr-filter" type="search" class="sp-pl-filter" placeholder="Saring lagu…" aria-label="Saring lagu" autocomplete="off" />
+              <ul id="sp-tr-list" class="sp-pl-list sp-tr-list" aria-labelledby="sp-tr-title"></ul>
+              <p id="sp-tr-note" class="muted small" role="status"></p>
+              <button type="button" id="sp-tr-more" class="ghost sp-small" hidden>Muat lagi</button>
+            </div>
           </div>
         </section>
         <div id="sp-duck-row" class="sp-duck-row" hidden>

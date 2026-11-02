@@ -14,7 +14,10 @@
 // listed and accept a transfer), appearAfter { polls, ids } (after that many GET /me/player/devices, those ids become
 // visible: a desktop app that was just started; counted from fake.set), offline [ids] (listed, but a transfer or
 // play?device_id to them fails with offlineStatus, default 500, like a phone whose Spotify went to sleep).
-// fake.devicePolls counts the device list requests.
+// fake.devicePolls counts the device list requests. editorial: /me/playlists also lists a Spotify-made playlist
+// (FAKE_EDITORIAL_ID) whose items answer 403, like a Development-mode app reading a playlist the user doesn't own.
+// Playlist items (GET /v1/playlists/{id}/items): FAKE_PLAYLIST_TRACKS items, 50 per page at most; item 3 is a local
+// file, 5 an episode, 7 not playable (restrictions.reason market).
 //
 // Tokens and codes carry fixed prefixes (fake-access-, fake-refresh-, fake-code-) so tests can scan logs for them.
 import { createHash, randomBytes } from 'node:crypto';
@@ -27,6 +30,10 @@ const rand = () => randomBytes(9).toString('base64url');
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00]), Buffer.alloc(64, 1), Buffer.from([0xff, 0xd9])]);
 export const FAKE_PLAYLIST_ID = '37i9dQZF1DXcBWIGoYBM5M';
 export const FAKE_DEVICE_ID = 'fake-device-laptop-01';
+export const FAKE_EDITORIAL_ID = '37i9dQZF1DX0XUsuxWHRQd';
+export const FAKE_PLAYLIST_TRACKS = 42;
+/** The fake's track id at a playlist position (22 base62 chars). */
+export const fakeTrackId = (i) => `trk${String(i).padStart(19, '0')}`;
 
 export function startFakeSpotify({ scenario = {} } = {}) {
   const s = { ...scenario };
@@ -166,16 +173,39 @@ export function startFakeSpotify({ scenario = {} } = {}) {
     if (req.method === 'GET' && p === '/v1/me/playlists') {
       const offset = Number(url.searchParams.get('offset') ?? 0);
       return send(res, 200, {
-        items: offset === 0 ? [{ id: FAKE_PLAYLIST_ID, name: 'Fokus Ngoding', uri: `spotify:playlist:${FAKE_PLAYLIST_ID}`, items: { total: 42 }, images: [{ url: `${origin}/img/pl.jpg`, width: 300 }] }, { id: 'bad id!', name: 'x' }] : [],
+        items:
+          offset === 0
+            ? [
+                { id: FAKE_PLAYLIST_ID, name: 'Fokus Ngoding', uri: `spotify:playlist:${FAKE_PLAYLIST_ID}`, items: { total: FAKE_PLAYLIST_TRACKS }, images: [{ url: `${origin}/img/pl.jpg`, width: 300 }] },
+                { id: 'bad id!', name: 'x' },
+                ...(s.editorial ? [{ id: FAKE_EDITORIAL_ID, name: 'Today’s Top Hits', uri: `spotify:playlist:${FAKE_EDITORIAL_ID}`, images: [] }] : []), // not the user's: no `items`
+              ]
+            : [],
         next: offset === 0 ? `${origin}/v1/me/playlists?offset=50` : null,
       });
     }
     // A transfer (PUT /me/player) or a play aimed at a device needs no active device, like the real service.
     const targeted = (req.method === 'PUT' && p === '/v1/me/player') || (p === '/v1/me/player/play' && url.searchParams.has('device_id'));
+    const itemsPath = p.match(/^\/v1\/playlists\/([A-Za-z0-9]{22})\/items$/);
+    if (req.method === 'GET' && itemsPath) {
+      if (itemsPath[1] !== FAKE_PLAYLIST_ID) return apiError(res, 403, 'Forbidden');
+      const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') ?? 20)));
+      const offset = Math.max(0, Number(url.searchParams.get('offset') ?? 0));
+      const items = [];
+      for (let i = offset; i < Math.min(FAKE_PLAYLIST_TRACKS, offset + limit); i++) {
+        if (i === 3) items.push({ added_at: null, is_local: true, item: { type: 'track', id: null, uri: 'spotify:local:Artis:Album:Lagu+Lokal:200', name: 'Lagu Lokal', artists: [{ name: 'Saya' }], album: { name: '', images: [] }, duration_ms: 200_000 } });
+        else if (i === 5) items.push({ is_local: false, item: { type: 'episode', id: fakeTrackId(i), name: 'Episode Podcast', show: { name: 'Podcast Ngoding', images: [] }, images: [{ url: `${origin}/img/ep.jpg`, width: 300 }], duration_ms: 1_800_000, explicit: false, is_playable: true } });
+        else items.push({ is_local: false, item: { type: 'track', id: fakeTrackId(i), name: `Lagu ${i + 1}`, artists: [{ name: 'Artis Fake' }, { name: 'Tamu' }], album: { name: 'Album Fake', images: [{ url: `${origin}/img/t${i}.jpg`, width: 300 }] }, duration_ms: 180_000 + i * 1000, explicit: i === 1, ...(i === 7 ? { is_playable: false, restrictions: { reason: 'market' } } : { is_playable: true }) } });
+      }
+      const more = offset + limit < FAKE_PLAYLIST_TRACKS;
+      return send(res, 200, { href: url.href, limit, offset, total: FAKE_PLAYLIST_TRACKS, next: more ? `${origin}${p}?offset=${offset + limit}&limit=${limit}` : null, previous: null, items });
+    }
     if (write && (s.noDevice || (!player.device && !targeted)) && p.startsWith('/v1/me/player')) return apiError(res, 404, 'Player command failed: No active device found', 'NO_ACTIVE_DEVICE');
     if (req.method === 'PUT' && p === '/v1/me/player/play') {
       const body = (await readBody(req)) || '{}';
-      const ctx = JSON.parse(body).context_uri;
+      const parsed = JSON.parse(body);
+      const ctx = parsed.context_uri;
+      player.offset = parsed.offset ?? null;
       const target = url.searchParams.get('device_id');
       if (target && s.offline?.includes(target)) return apiError(res, s.offlineStatus ?? 500, 'Server error');
       if (target) {

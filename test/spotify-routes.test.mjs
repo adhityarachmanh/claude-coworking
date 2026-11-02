@@ -36,9 +36,9 @@ async function call(ctx, p, body = {}, headers = {}) {
   return res;
 }
 
-test('routes: the nine /api/spotify/* routes are POST and registered', () => {
+test('routes: the ten /api/spotify/* routes are POST and registered', () => {
   const spotify = router.routes.filter((r) => r.pattern.startsWith('/api/spotify/')).map((r) => r.pattern);
-  assert.deepEqual(spotify.sort(), ['art', 'config', 'control', 'devices', 'login', 'logout', 'playlists', 'settings', 'state'].map((a) => `/api/spotify/${a}`));
+  assert.deepEqual(spotify.sort(), ['art', 'config', 'control', 'devices', 'login', 'logout', 'playlist-items', 'playlists', 'settings', 'state'].map((a) => `/api/spotify/${a}`));
 });
 
 test('routes: SpotifyError codes map to statuses; 503 carries Retry-After; other errors go to server.js', async () => {

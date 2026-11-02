@@ -17,6 +17,7 @@ const P = {
   art: '/api/spotify/art',
   devices: '/api/spotify/devices',
   playlists: '/api/spotify/playlists',
+  items: '/api/spotify/playlist-items', // a playlist's tracks (laptop + Tailscale)
   control: '/api/spotify/control',
   config: '/api/spotify/config', // laptop only: Client ID, office toggle, duck, autoLaunch
   settings: '/api/spotify/settings', // duck + autoLaunch: laptop and Tailscale phones
@@ -26,6 +27,7 @@ const P = {
 const DEVICE_ID = /^[\w-]{1,128}$/;
 const PLAYLIST_ID = /^[A-Za-z0-9]{22}$/;
 const ART_ID = /^[0-9a-f]{16}$/;
+const TRACK_ID = /^[A-Za-z0-9]{22}$/;
 const VOLUME_DEBOUNCE_MS = 250;
 const PLAYLIST_CACHE_MS = 5 * 60_000;
 
@@ -44,6 +46,7 @@ export const music = {
   plAt: 0,
   plBusy: false,
   plObserver: null,
+  tr: null, // the playlist drilled into: { playlist, items, next, total, busy }
   volTimer: null,
   volTouched: 0,
   volLast: { value: null, at: 0 },
@@ -87,6 +90,7 @@ function renderAll() {
   renderPill();
   renderDashRow();
   if (dialogOpen()) renderDialog();
+  if (dialogOpen() && music.tr) markNowPlaying(); // ♪ follows the song
   loadTrackArt();
   syncTick();
 }
@@ -284,6 +288,11 @@ function renderBusy() {
   $('#spotify-toggle').disabled = music.busy;
   $('#dash-music-toggle').disabled = music.busy;
   if (dialogOpen()) renderControls();
+  if (dialogOpen() && music.tr) {
+    const reason = controlReason();
+    for (const b of document.querySelectorAll('#sp-tr-list .sp-tr')) b.disabled = music.busy || Boolean(reason) || !music.tr.items.some((t) => t.id === b.dataset.track && t.playable);
+    $('#sp-tr-playall').disabled = music.busy || Boolean(reason);
+  }
 }
 
 export function togglePlay() {
@@ -565,6 +574,13 @@ function playlistRow(p, reason) {
   meta.className = 'muted';
   meta.textContent = p.tracks === null ? '' : `${p.tracks} lagu`;
   text.append(name, meta);
+  // Tap the name: see its tracks (and play from one). ▶ still plays the whole playlist.
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'sp-pl-open';
+  open.dataset.open = p.id;
+  open.setAttribute('aria-label', `Lihat isi playlist ${p.name}`);
+  open.append(art, text);
   const play = document.createElement('button');
   play.type = 'button';
   play.className = 'sp-btn sp-pl-play';
@@ -573,7 +589,7 @@ function playlistRow(p, reason) {
   play.setAttribute('aria-label', `Putar playlist ${p.name}`);
   play.disabled = Boolean(reason) || music.busy;
   if (reason) play.title = reason;
-  li.append(art, text, play);
+  li.append(open, play);
   return li;
 }
 
@@ -585,7 +601,11 @@ function renderPlaylists() {
   filterPlaylists();
   $('#sp-pl-more').hidden = !music.plNext;
   if (!music.playlists.length && !music.plBusy && !$('#sp-pl-note').textContent) $('#sp-pl-note').textContent = 'Belum ada playlist.';
-  // Pictures only for rows scrolled into view (up to 50 rows: no 50 downloads at once).
+  observeArt(ul);
+}
+
+/** Pictures only for rows scrolled into view (up to 50 rows: no 50 downloads at once). Playlists and tracks share it. */
+function observeArt(ul) {
   music.plObserver ??= new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
@@ -597,6 +617,185 @@ function renderPlaylists() {
     { root: $('#spotify-modal .modal-card'), rootMargin: '80px' },
   );
   for (const slot of ul.querySelectorAll('.sp-art[data-art]')) music.plObserver.observe(slot);
+}
+
+// ---------- a playlist's tracks (drill-in view inside "Playlist") ----------
+
+function cleanTracks(res) {
+  const items = Array.isArray(res?.items) ? res.items : [];
+  return {
+    items: items
+      .filter((t) => t && typeof t === 'object')
+      .slice(0, 50)
+      .map((t) => ({
+        id: typeof t.id === 'string' && TRACK_ID.test(t.id) ? t.id : null,
+        title: str(t.title) || 'Tanpa judul',
+        artist: str(t.artist),
+        album: str(t.album),
+        durationMs: Number.isFinite(t.durationMs) ? Math.max(0, t.durationMs) : 0,
+        artId: typeof t.artId === 'string' && ART_ID.test(t.artId) ? t.artId : null,
+        explicit: t.explicit === true,
+        playable: t.playable === true && typeof t.id === 'string' && TRACK_ID.test(t.id),
+        isLocal: t.isLocal === true,
+        isEpisode: t.isEpisode === true,
+      })),
+    next: Number.isInteger(res?.next) && res.next > 0 ? res.next : null,
+    total: Number.isInteger(res?.total) && res.total >= 0 ? res.total : null,
+  };
+}
+
+const tracksOpen = () => !$('#sp-tr-view').hidden;
+
+/** The song playing now, matched by title + artists (the public state carries no track id, on purpose). */
+const isNowPlaying = (t) => hasTrack(music.s) && music.s.track.title === t.title && music.s.track.artists === t.artist;
+
+/** Drill into a playlist: its tracks replace the playlist list; ← goes back. */
+function openTracks(playlistId) {
+  const pl = music.playlists.find((p) => p.id === playlistId);
+  if (!pl) return;
+  music.tr = { playlist: pl, items: [], next: null, total: null, busy: false };
+  $('#sp-pl-browse').hidden = true;
+  $('#sp-tr-view').hidden = false;
+  $('#sp-tr-title').textContent = pl.name;
+  $('#sp-tr-filter').value = '';
+  $('#sp-tr-list').replaceChildren();
+  $('#sp-tr-more').hidden = true;
+  $('#sp-tr-playall').setAttribute('aria-label', `Putar playlist ${pl.name} dari awal`);
+  $('#sp-tr-title').focus({ preventScroll: true });
+  loadTracks();
+}
+
+function closeTracks({ focus = true } = {}) {
+  if (!tracksOpen()) return;
+  const id = music.tr?.playlist.id;
+  $('#sp-tr-view').hidden = true;
+  $('#sp-pl-browse').hidden = false;
+  $('#sp-tr-list').replaceChildren();
+  music.tr = null;
+  renderPlaylists();
+  if (focus) ([...document.querySelectorAll('#sp-pl-list [data-open]')].find((b) => b.dataset.open === id) ?? $('#sp-pl-toggle')).focus({ preventScroll: true });
+}
+
+async function loadTracks({ more = false } = {}) {
+  const tr = music.tr;
+  if (!tr || tr.busy) return;
+  tr.busy = true;
+  const note = $('#sp-tr-note');
+  note.textContent = 'Memuat lagu…';
+  $('#sp-tr-more').disabled = true;
+  try {
+    const res = cleanTracks(await api(P.items, { playlistId: tr.playlist.id, offset: more ? (tr.next ?? 0) : 0 }));
+    if (music.tr !== tr) return; // went back meanwhile
+    tr.items = more ? [...tr.items, ...res.items] : res.items;
+    tr.next = res.next;
+    tr.total = res.total;
+    note.textContent = tr.items.length ? '' : 'Playlist ini kosong.';
+  } catch (err) {
+    if (music.tr !== tr) return;
+    // 403 playlist-locked (Dev-mode: not the user's playlist): the server's message says to just play it.
+    note.textContent = err?.data?.code === 'playlist-locked' ? err.message : `Isi playlist gagal dimuat: ${err.message}`;
+  } finally {
+    tr.busy = false;
+    $('#sp-tr-more').disabled = false;
+  }
+  if (music.tr === tr) renderTracks();
+}
+
+function trackRow(t, reason) {
+  const li = document.createElement('li');
+  li.className = 'sp-tr-row';
+  li.dataset.name = `${t.title} ${t.artist}`.toLowerCase();
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'sp-tr';
+  if (t.id) btn.dataset.track = t.id;
+  const art = document.createElement('span');
+  art.className = 'sp-art sp-art-32';
+  art.setAttribute('aria-hidden', 'true');
+  const img = document.createElement('img');
+  img.alt = '';
+  img.hidden = true;
+  const ph = document.createElement('span');
+  ph.className = 'sp-note';
+  ph.textContent = t.isEpisode ? '🎙' : '♪';
+  art.append(img, ph);
+  if (t.artId) art.dataset.art = t.artId;
+  const text = document.createElement('span');
+  text.className = 'sp-pl-text';
+  const title = document.createElement('b');
+  const now = document.createElement('span');
+  now.className = 'sp-tr-now';
+  now.textContent = '♪ ';
+  now.setAttribute('aria-hidden', 'true');
+  title.append(now, t.title);
+  const meta = document.createElement('small');
+  meta.className = 'muted';
+  const why = t.isLocal ? 'File lokal' : !t.playable ? 'Tidak tersedia' : '';
+  meta.textContent = [t.explicit ? '🅴' : '', t.isEpisode ? 'Episode' : '', t.artist, t.album, why].filter(Boolean).join(' · ');
+  text.append(title, meta);
+  const dur = document.createElement('span');
+  dur.className = 'sp-tr-dur muted small';
+  dur.textContent = t.durationMs ? fmtTime(t.durationMs) : '';
+  btn.append(art, text, dur);
+  btn.disabled = !t.playable || Boolean(reason) || music.busy;
+  btn.title = reason ?? (why ? `${why}: tidak bisa diputar` : '');
+  btn.dataset.label = `${t.title}${t.artist ? ` – ${t.artist}` : ''}${t.durationMs ? `, ${fmtTime(t.durationMs)}` : ''}`;
+  li.append(btn);
+  return li;
+}
+
+function renderTracks() {
+  const tr = music.tr;
+  if (!tr) return;
+  const reason = controlReason();
+  const ul = $('#sp-tr-list');
+  ul.replaceChildren(...tr.items.map((t) => trackRow(t, reason)));
+  $('#sp-tr-more').hidden = !tr.next;
+  $('#sp-tr-playall').disabled = Boolean(reason) || music.busy;
+  markNowPlaying();
+  filterTracks();
+  observeArt(ul);
+}
+
+/** ♪ in front of the song playing now (and the accessible names say so). */
+function markNowPlaying() {
+  if (!music.tr) return;
+  const rows = $('#sp-tr-list').children;
+  music.tr.items.forEach((t, i) => {
+    const btn = rows[i]?.querySelector('.sp-tr');
+    if (!btn) return;
+    const now = isNowPlaying(t);
+    btn.classList.toggle('now', now);
+    if (now) btn.setAttribute('aria-current', 'true');
+    else btn.removeAttribute('aria-current');
+    const why = t.isLocal ? ' (file lokal, tidak bisa diputar)' : !t.playable ? ' (tidak tersedia)' : '';
+    btn.setAttribute('aria-label', `${t.playable ? 'Putar ' : ''}${btn.dataset.label}${now ? ', sedang diputar' : ''}${why}`);
+  });
+}
+
+function filterTracks() {
+  const q = $('#sp-tr-filter').value.trim().toLowerCase();
+  let shown = 0;
+  for (const li of $('#sp-tr-list').children) {
+    li.hidden = Boolean(q) && !li.dataset.name.includes(q);
+    if (!li.hidden) shown++;
+  }
+  const note = $('#sp-tr-note');
+  if (q && !shown && music.tr?.items.length) note.textContent = 'Tidak ada lagu yang cocok.';
+  else if (note.textContent === 'Tidak ada lagu yang cocok.') note.textContent = '';
+}
+
+function onTrackClick(e) {
+  const btn = e.target.closest('button[data-track]');
+  const tr = music.tr;
+  if (!btn || btn.disabled || !tr || !tr.items.some((t) => t.id === btn.dataset.track && t.playable)) return;
+  playFromPlaylist(tr.playlist.id, { trackId: btn.dataset.track });
+}
+
+/** control {playlist}: from a track (trackId), or from the start; no active device → the one picked above. */
+function playFromPlaylist(playlistId, from = {}) {
+  const deviceId = !music.s?.device ? pickedDevice() : null;
+  return control({ action: 'playlist', playlistId, ...from, ...(deviceId ? { deviceId } : {}) });
 }
 
 async function loadPlaylistArt(slot) {
@@ -638,13 +837,14 @@ function togglePlaylists() {
 }
 
 function onPlaylistClick(e) {
+  const open = e.target.closest('[data-open]');
+  if (open) return openTracks(open.dataset.open);
   const btn = e.target.closest('[data-playlist]');
   if (!btn) return;
   const playlistId = btn.dataset.playlist;
   if (!music.playlists.some((p) => p.id === playlistId)) return;
   // No active device: start it on the one picked in the list above (the server checks the id against its cache).
-  const deviceId = !music.s?.device ? pickedDevice() : null;
-  control(deviceId ? { action: 'playlist', playlistId, deviceId } : { action: 'playlist', playlistId });
+  playFromPlaylist(playlistId);
 }
 
 /** Dialog closed: playlist pictures are let go (the current song's stays for the pill). */
@@ -654,6 +854,7 @@ function onDialogClosed() {
   for (const url of music.plArt.values()) if (url !== music.trackArt.url) URL.revokeObjectURL(url);
   music.plArt.clear();
   for (const slot of document.querySelectorAll('#sp-pl-list .sp-art')) showArt(slot, null);
+  closeTracks({ focus: false });
 }
 
 // ---------- duck setting from a phone over Tailscale ----------
@@ -909,6 +1110,24 @@ export function initSpotify() {
   $('#sp-pl-filter').addEventListener('input', filterPlaylists);
   $('#sp-pl-more').addEventListener('click', () => loadPlaylists({ more: true }));
   $('#sp-pl-list').addEventListener('click', onPlaylistClick);
+  $('#sp-tr-list').addEventListener('click', onTrackClick);
+  $('#sp-tr-back').addEventListener('click', () => closeTracks());
+  $('#sp-tr-filter').addEventListener('input', filterTracks);
+  $('#sp-tr-more').addEventListener('click', () => loadTracks({ more: true }));
+  $('#sp-tr-playall').addEventListener('click', () => music.tr && playFromPlaylist(music.tr.playlist.id));
+  // Esc in the track view goes back to the playlists first. Window capture: it must run before ui/shortcuts.js
+  // (document capture), which would close the whole dialog.
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key !== 'Escape' || !dialogOpen() || !tracksOpen() || !$('#spotify-modal').contains(document.activeElement)) return;
+      if ([...document.querySelectorAll('.modal')].filter((m) => !m.hidden).at(-1)?.id !== 'spotify-modal') return; // another dialog on top
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeTracks();
+    },
+    true,
+  );
   $('#sp-settings').addEventListener('click', openSpotifySettings);
   $('#sp-duck').addEventListener('change', (e) => {
     const prev = e.target.dataset.prev ?? 'off';
