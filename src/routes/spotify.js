@@ -3,7 +3,7 @@
 // Tailscale phones.
 // config/login/logout: laptop only (LOCAL_ONLY in server.js). GET /spotify/callback: laptop only, not under /api/,
 // dispatched by server.js to `callback` below.
-import { SpotifyError } from '../spotify.js';
+import { SpotifyError, wifiSpotifyState } from '../spotify.js';
 import { json } from './http.js';
 
 /** SpotifyError code → HTTP status for the browser. */
@@ -44,7 +44,15 @@ function returnOriginOf(req, port) {
 }
 
 export function register(router) {
-  router.post('/api/spotify/state', guard(async ({ spotify }, req, res) => json(res, 200, await spotify.refreshState())));
+  // A read-only (plain-HTTP WiFi) client gets the reduced view, like its event stream. Fail closed: a ctx that can't
+  // tell (no isReadOnly) gets the reduced one too.
+  router.post(
+    '/api/spotify/state',
+    guard(async (ctx, req, res) => {
+      const state = await ctx.spotify.refreshState();
+      return json(res, 200, ctx.isReadOnly?.(req) === false ? state : wifiSpotifyState(state));
+    }),
+  );
   router.post(
     '/api/spotify/art',
     guard(async ({ spotify }, req, res, body) => {

@@ -157,6 +157,17 @@ const parseJson = (buf) => {
   }
 };
 
+/**
+ * publicState() for a read-only client on plain-HTTP WiFi (anyone on the network can read it): the device keeps
+ * only its type and volume (its name is often a person's, e.g. "Adhit's iPhone"). The track stays: it is the point
+ * of "now playing". The device fields are allowlisted, so one added to publicState() later is not leaked by default.
+ */
+export function wifiSpotifyState(state) {
+  if (!state || typeof state !== 'object') return state;
+  const d = state.device;
+  return { ...state, device: d ? { type: d.type, volume: d.volume, supportsVolume: d.supportsVolume } : null };
+}
+
 export class SpotifyService {
   /**
    * @param {object} o

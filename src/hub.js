@@ -153,6 +153,10 @@ export class Hub {
     this.approvals = new Map(); // id -> { approval, onResolve }
     this.clients = new Set();
     this.observers = new Set(); // server-side listeners to every broadcast, fn(type, data) (📋 Antrian, src/queue.js)
+    // Per-client redaction: event type -> fn(data), what a redacted client (a plain-HTTP WiFi phone: sniffable) gets
+    // instead of `data`. Streams in `redacted` get that view; everyone else gets `data` unchanged.
+    this.redactors = new Map();
+    this.redacted = new WeakSet();
     this.chatStore = new ChatStore(path.join(dataDir, 'chats'), { limit: CHAT_LIMIT });
     this.storedChats = {}; // project id -> chat read at start (the same array becomes rt(id).chat)
     this.legacyChats = null; // migration failed: the raw `chats` of state.json, written back (old format) this run
@@ -739,10 +743,21 @@ export class Hub {
 
   // ---------- SSE ----------
 
+  /** `data` as one client may see it: the redactor of `type` for a redacted client, else `data` itself. */
+  viewFor(type, data, redacted) {
+    const redact = redacted ? this.redactors.get(type) : null;
+    return redact ? redact(data) : data;
+  }
+
   broadcast(type, data) {
     const frame = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
-    for (const res of this.clients) res.write(frame);
-    for (const fn of this.observers) fn(type, data);
+    const redact = this.redactors.get(type);
+    let reduced = null; // built once per broadcast, only if a redacted client is listening
+    for (const res of this.clients) {
+      if (redact && this.redacted.has(res)) res.write((reduced ??= `event: ${type}\ndata: ${JSON.stringify(redact(data))}\n\n`));
+      else res.write(frame);
+    }
+    for (const fn of this.observers) fn(type, data); // server-side: always the full data
   }
 
   snapshot() {

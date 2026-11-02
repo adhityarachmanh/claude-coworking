@@ -224,6 +224,7 @@ Rincian proxy:
 - **Tidak ada**: token, Client ID, URI/ID track, album, playlist, perangkat, maupun nama akun. Test mengecek ini dengan memindai key dan nilai secara rekursif (§9).
 - Semua string dipotong 200 karakter. Klien merender **hanya lewat `textContent`**, karena judul lagu adalah input yang tidak tepercaya.
 - Snapshot SSE mendapat field `spotify` (satu baris di `openStream`), jadi halaman baru langsung punya state tanpa request.
+- **Klien read-only (HP di WiFi biasa, HTTP yang bisa disadap)** menerima versi tersaring `wifiSpotifyState()` (`src/spotify.js`): `device: null | { type, volume, supportsVolume }`, **tanpa `name`**, karena nama perangkat sering berupa nama orang (mis. "Adhit's iPhone"). Field lain, termasuk `track`, tetap utuh, karena "sedang diputar" memang tujuannya. Berlaku untuk SSE `spotify`, snapshot `.spotify`, dan `POST /state`. Laptop dan Tailscale menerima state lengkap. Mekanismenya generik: `hub.redactors` (tipe event → fungsi) plus `hub.redacted` (stream read-only), yang dipakai `hub.broadcast` per klien dan `openStream` untuk setiap key snapshot. `/state` fail closed: tanpa `ctx.isReadOnly`, yang dikirim versi tersaring. Klien wajib menangani `device.name` yang tidak ada.
 
 ### 2.7 Perangkat utama (★)
 

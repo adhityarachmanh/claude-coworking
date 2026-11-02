@@ -280,3 +280,12 @@ export class RemoteAccess {
     };
   }
 }
+
+/**
+ * The `config` event (and snapshot `.config`) for a read-only client on plain-HTTP WiFi (sniffable): without the
+ * paired devices list (names are often a person's). Only the laptop's 📱 dialog shows that list.
+ */
+export function wifiConfig(config) {
+  if (!config?.remote) return config;
+  return { ...config, remote: { ...config.remote, devices: [] } };
+}

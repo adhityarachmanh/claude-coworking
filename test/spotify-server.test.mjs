@@ -107,7 +107,7 @@ function listen(base = BASE, headers = {}, sink = events) {
 async function waitEvent(pred, ms = 8000, sink = events) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    const hit = sink.find((e) => pred(e.type, e.obj));
+    const hit = sink.find((e, i) => pred(e.type, e.obj, i));
     if (hit) return hit;
     await sleep(25);
   }
@@ -185,6 +185,59 @@ test('API: state, art, devices, playlists, control; refresh after an expired tok
   assert.equal(tokenRequests(), before + 1);
 });
 
+test('privacy: a WiFi phone never gets the device name (snapshot, SSE `spotify`, POST /state); the laptop does', async (t) => {
+  const { lanAddresses } = await import('../src/remote.js');
+  const ip = lanAddresses()[0];
+  if (!ip) return t.skip('no LAN address on this machine');
+  const LAN = `http://${ip}:${PORT}`;
+  const NAME = /Laptop Adhit|HP Adhit/;
+  assert.equal((await api('/api/remote', { enabled: true })).status, 200);
+  const phoneEvents = [];
+  let ctl;
+  try {
+    await sleep(300);
+    const { code } = (await api('/api/remote/pairing')).body;
+    const paired = await fetch(`${LAN}/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+    assert.equal(paired.status, 200);
+    const cookie = paired.headers.get('set-cookie').split(';')[0];
+    const phoneToken = (await (await fetch(`${LAN}/`, { headers: { Cookie: cookie } })).text()).match(/office-token" content="([^"]+)"/)[1];
+
+    // laptop: the full state, name included
+    const laptopState = (await api('/api/spotify/state')).body;
+    assert.equal(laptopState.device?.name, 'Laptop Adhit');
+
+    // phone over plain WiFi: snapshot
+    ctl = listen(LAN, { Cookie: cookie }, phoneEvents);
+    const snap = await waitEvent((type) => type === 'snapshot', 5000, phoneEvents);
+    assert.ok(snap.obj.client.readOnly);
+    assert.equal(snap.obj.spotify.status, 'playing');
+    assert.deepEqual(Object.keys(snap.obj.spotify.device).sort(), ['supportsVolume', 'type', 'volume']);
+    assert.doesNotMatch(snap.raw, NAME);
+
+    // SSE: one change, both streams. The laptop's frame has the name, the phone's never.
+    const mark = events.length;
+    assert.equal((await api('/api/spotify/control', { action: 'pause' })).status, 200);
+    const phoneEvent = await waitEvent((type, o) => type === 'spotify' && o.status === 'paused', 8000, phoneEvents);
+    // the same broadcast wrote the laptop's frame too (bounded wait for it to be read off the socket)
+    const laptopEvent = await waitEvent((type, o, i) => i >= mark && type === 'spotify' && o.status === 'paused', 3000);
+    assert.equal(laptopEvent.obj.device.name, 'Laptop Adhit');
+    assert.equal(phoneEvent.obj.track.title, laptopEvent.obj.track.title, 'now playing stays');
+    assert.equal(phoneEvent.obj.device.type, 'computer');
+
+    // POST /state from the phone
+    const phoneState = await (await fetch(`${LAN}/api/spotify/state`, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', 'X-Office-Token': phoneToken }, body: '{}' })).json();
+    assert.equal(phoneState.status, 'paused');
+    assert.equal(phoneState.device.type, 'computer');
+    assert.doesNotMatch(JSON.stringify(phoneState), NAME);
+
+    for (const e of phoneEvents) if (e.type === 'spotify' || e.type === 'snapshot') assert.doesNotMatch(JSON.stringify(e.type === 'snapshot' ? e.obj.spotify : e.obj), NAME, `${e.type} on WiFi`);
+    assert.equal((await api('/api/spotify/control', { action: 'play' })).body.status, 'playing');
+  } finally {
+    ctl?.abort();
+    await api('/api/remote', { enabled: false });
+  }
+});
+
 test('errors: no device → 404 no-device, Premium → 403 premium, 429 → 503 with Retry-After and no requests while blocked', async () => {
   fake.set({ noDevice: true });
   const none = await api('/api/spotify/control', { action: 'play' });
@@ -248,7 +301,7 @@ test('phones: WiFi may read state/art only; settings is refused as read-only (so
     const state = await phone('/api/spotify/state');
     assert.equal(state.status, 200);
     const s = await state.json();
-    assert.doesNotMatch(JSON.stringify(s), /fake-|spotify:|Adhit Test/);
+    assert.doesNotMatch(JSON.stringify(s), /fake-|spotify:|Adhit Test|Laptop Adhit|HP Adhit/);
     if (s.track?.artId) assert.equal((await phone('/api/spotify/art', { id: s.track.artId })).status, 200);
     for (const p of ['control', 'devices', 'playlists', 'playlist-items', 'settings']) {
       const r = await phone(`/api/spotify/${p}`, { action: 'next', settings: { duck: 'pause' } });
@@ -268,7 +321,7 @@ test('phones: WiFi may read state/art only; settings is refused as read-only (so
     const snap = await waitEvent((type) => type === 'snapshot', 5000, phoneEvents);
     ctl.abort();
     assert.ok(snap.obj.spotify && snap.obj.client.readOnly);
-    assert.doesNotMatch(JSON.stringify(snap.obj.spotify), /fake-|spotify:/);
+    assert.doesNotMatch(JSON.stringify(snap.obj.spotify), /fake-|spotify:|Laptop Adhit|HP Adhit/);
     assert.equal(JSON.parse(readFileSync(path.join(TMP, 'data', 'spotify.json'), 'utf8')).clientId, CLIENT, 'nothing changed');
   } finally {
     await api('/api/remote', { enabled: false });

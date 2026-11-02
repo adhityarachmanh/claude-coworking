@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import { test } from 'node:test';
-import { DEVICE_IDLE_MS, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from '../src/remote.js';
+import { DEVICE_IDLE_MS, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows, wifiConfig } from '../src/remote.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import path from 'node:path';
+import { Hub } from '../src/hub.js';
+import { wifiAccountAlert } from '../src/routes/account.js';
 
 const v4 = (address) => ({ family: 'IPv4', address, internal: false });
 
@@ -189,4 +193,30 @@ test('a device token only works over the transport it was paired on (http vs htt
   const info = remote.publicInfo(4317);
   assert.deepEqual(info.devices.map((d) => d.transport), ['http', 'https', 'http']);
   assert.ok(!JSON.stringify(info).includes('hash'));
+});
+
+test('privacy: plain-WiFi streams get config without paired device names and account-alert without name/email', (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'office-redact-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const hub = new Hub({ dataDir: dir });
+  hub.redactors.set('config', wifiConfig);
+  hub.redactors.set('account-alert', wifiAccountAlert);
+  const laptop = [];
+  const wifi = [];
+  const wifiRes = { write: (f) => wifi.push(f) };
+  hub.clients.add({ write: (f) => laptop.push(f) });
+  hub.clients.add(wifiRes);
+  hub.redacted.add(wifiRes);
+  const config = { roots: ['C:/p'], remote: { enabled: true, urls: ['http://192.168.1.2:4317'], tailscale: false, devices: [{ id: 'd1', name: 'iPhone Adhit', created: 1, lastSeen: 1, transport: 'http' }], idleDays: 30 } };
+  hub.broadcast('config', config);
+  hub.broadcast('account-alert', { action: 'logout', device: 'iPhone Adhit', email: 'adhit@example.com', ts: 5 });
+  assert.match(laptop[0], /iPhone Adhit/);
+  assert.match(laptop[1], /iPhone Adhit.*adhit@example\.com/);
+  for (const f of wifi) assert.doesNotMatch(f, /iPhone Adhit|adhit@example\.com/);
+  const [cfg, alert] = wifi.map((f) => JSON.parse(f.match(/^data: (.*)$/m)[1]));
+  assert.deepEqual(cfg.remote.devices, []);
+  assert.deepEqual(cfg.remote.urls, config.remote.urls, 'the rest of config stays');
+  assert.deepEqual(alert, { action: 'logout', device: 'Perangkat lain', email: null, ts: 5 }, 'the alert itself stays');
+  assert.equal(config.remote.devices.length, 1, 'input not mutated');
+  assert.equal(wifiConfig({ roots: [] }).roots.length, 0, 'no remote block: unchanged');
 });

@@ -16,7 +16,7 @@ import { autostartStatus } from './src/autostart.js';
 import { UsageLedger } from './src/usage.js';
 import { moduleGraph, preloadTags } from './src/modules.js';
 import { TranscriptMirror } from './src/mirror.js';
-import { DEVICE_COOKIE, HTTPS_DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows } from './src/remote.js';
+import { DEVICE_COOKIE, HTTPS_DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows, wifiConfig } from './src/remote.js';
 import { TailscaleCert, httpsPortFrom } from './src/tls.js';
 import { activeAgents, storedEnabled, teamPrompt } from './src/role-catalog.js';
 import { loadAgentDefinitions, setActiveRoles } from './src/roles.js';
@@ -24,9 +24,10 @@ import { SessionManager } from './src/session.js';
 import { TemplateStore } from './src/templates.js';
 import { TaskQueue } from './src/queue.js';
 import { BackupScheduler } from './src/backup-schedule.js';
-import { SpotifyService } from './src/spotify.js';
+import { SpotifyService, wifiSpotifyState } from './src/spotify.js';
 import { createSpotifyLauncher } from './src/spotify-launcher.js';
 import { callback as spotifyCallback } from './src/routes/spotify.js';
+import { wifiAccountAlert } from './src/routes/account.js';
 import { HttpError, json, readJson } from './src/routes/http.js';
 import { buildRouter } from './src/routes/index.js';
 import { teamConfig } from './src/routes/team.js';
@@ -167,6 +168,11 @@ const spotify = new SpotifyService({
 });
 // "Kecilkan saat izin": counted on the server, so it works with no page open.
 hub.observers.add((type, data) => spotify.observeApproval(type, data, hub.approvals.size));
+// Plain-HTTP WiFi can be sniffed: read-only streams get these events (and snapshot keys) without device names or
+// the account email (hub.broadcast per-client view; openStream applies the same to the snapshot).
+hub.redactors.set('spotify', wifiSpotifyState);
+hub.redactors.set('account-alert', wifiAccountAlert);
+hub.redactors.set('config', wifiConfig);
 // 📋 Antrian: prompts sent one by one whenever the project's session is idle (src/queue.js).
 const taskQueue = new TaskQueue({ hub, sessions });
 sessions.onRateLimit = (id, info) => taskQueue.onRateLimit(id, info);
@@ -325,8 +331,13 @@ function dropDeviceStreams(deviceId) {
 function openStream(req, res, local, device = null, token = null) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
   // readOnlyApi: what a read-only phone may still call, so the UI doesn't keep its own copy of wifiAllows.
-  const client = { local, accountAuth: canManageAccount(req), readOnly: isReadOnly(req), readOnlyApi: WIFI_READ_API };
-  res.write(`event: snapshot\ndata: ${JSON.stringify({ ...hub.snapshot(), account: account.publicState(), spotify: spotify.publicState(), client })}\n\n`);
+  const readOnly = isReadOnly(req);
+  const client = { local, accountAuth: canManageAccount(req), readOnly, readOnlyApi: WIFI_READ_API };
+  const snap = { ...hub.snapshot(), account: account.publicState(), spotify: spotify.publicState() };
+  // A snapshot key named like an event (config, spotify, …) gets that event's per-client view.
+  for (const key of Object.keys(snap)) snap[key] = hub.viewFor(key, snap[key], readOnly);
+  res.write(`event: snapshot\ndata: ${JSON.stringify({ ...snap, client })}\n\n`);
+  if (readOnly) hub.redacted.add(res); // before it joins: no broadcast can reach it unredacted
   hub.clients.add(res);
   spotify.wake(); // the poller sleeps while nobody watches
   if (device) deviceStreams.set(res, device.id);
@@ -416,6 +427,7 @@ const ctx = {
   maxBackupBytes: MAX_BACKUP_BYTES,
   isLocal,
   canManageAccount, // laptop or Tailscale (♪ control: may start the Spotify app)
+  isReadOnly, // plain-HTTP WiFi phone (♪ state: reduced view)
   allowForce,
   projectRoots,
   refreshProjects,

@@ -42,6 +42,12 @@ function accountAlert(hub, action, device, email = null) {
   hub.broadcast('account-alert', { action, device: device.name, email, ts: Date.now() });
 }
 
+/**
+ * `account-alert` for a read-only client on plain-HTTP WiFi (sniffable): the alert stays, without the paired
+ * device's name (often a person's) or the account email. Registered in server.js (hub.redactors).
+ */
+export const wifiAccountAlert = ({ action, ts }) => ({ action, device: 'Perangkat lain', email: null, ts });
+
 async function accountState({ account, ledger, allowForce }, req, res, params, body) {
   await account.refreshProfile(allowForce(req, body));
   const id = account.current?.id;

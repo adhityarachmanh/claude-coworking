@@ -5,7 +5,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { SpotifyError, SpotifyService } from '../src/spotify.js';
+import { SpotifyError, SpotifyService, wifiSpotifyState } from '../src/spotify.js';
+import { Hub } from '../src/hub.js';
 import { buildRouter } from '../src/routes/index.js';
 import { callback } from '../src/routes/spotify.js';
 import { startFakeSpotify } from '../test-support/fake-spotify.mjs';
@@ -148,4 +149,52 @@ test('callback: wrong state → 400 without a token request; wrong host → 404;
     console.error = orig;
   }
   assert.deepEqual(errors, ['Spotify: callback gagal (0/Error)', 'Spotify: callback gagal (0/Error)']);
+});
+
+// ---------- privacy: plain-HTTP WiFi never gets the device name (it is often a person's) ----------
+
+const PLAYING = { status: 'playing', error: null, track: { kind: 'track', title: 'Lagu Satu', artists: 'Artis', album: 'Album', artId: 'a1', durationMs: 1 }, progressMs: 5, at: 1, device: { name: "Adhit's iPhone", type: 'smartphone', volume: 40, supportsVolume: true }, office: true, launching: false, updatedAt: 1 };
+
+test('wifiSpotifyState: device keeps type/volume only, the track stays, the input is not mutated', () => {
+  const reduced = wifiSpotifyState(PLAYING);
+  assert.deepEqual(reduced.device, { type: 'smartphone', volume: 40, supportsVolume: true });
+  assert.deepEqual(reduced.track, PLAYING.track);
+  assert.doesNotMatch(JSON.stringify(reduced), /iPhone/);
+  assert.equal(PLAYING.device.name, "Adhit's iPhone");
+  assert.equal(wifiSpotifyState({ ...PLAYING, device: null }).device, null);
+});
+
+test('POST /state: full for laptop/Tailscale (isReadOnly false), reduced for WiFi and when the ctx cannot tell', async () => {
+  const spotify = { refreshState: async () => structuredClone(PLAYING) };
+  const full = (await call({ spotify, isReadOnly: () => false }, '/api/spotify/state')).json();
+  assert.equal(full.device.name, "Adhit's iPhone");
+  for (const ctx of [{ spotify, isReadOnly: () => true }, { spotify }]) {
+    const body = (await call(ctx, '/api/spotify/state')).json();
+    assert.doesNotMatch(JSON.stringify(body), /iPhone/);
+    assert.equal(body.track.title, 'Lagu Satu');
+  }
+});
+
+test('hub.broadcast: a redactor applies to redacted streams only; others and observers get the data as is', () => {
+  const dir = mkdtempSync(path.join(TMP, 'hub-'));
+  const hub = new Hub({ dataDir: dir });
+  hub.redactors.set('spotify', wifiSpotifyState);
+  const laptop = [];
+  const wifi = [];
+  const seen = [];
+  const wifiRes = { write: (f) => wifi.push(f) };
+  hub.clients.add({ write: (f) => laptop.push(f) });
+  hub.clients.add(wifiRes);
+  hub.redacted.add(wifiRes);
+  hub.observers.add((type, data) => seen.push(data));
+  hub.broadcast('spotify', PLAYING);
+  hub.broadcast('pairing-paused', { until: 1 }); // no redactor: same frame for everyone
+  assert.match(laptop[0], /Adhit's iPhone/);
+  assert.match(wifi[0], /^event: spotify\n/);
+  assert.doesNotMatch(wifi[0], /iPhone/);
+  assert.match(wifi[0], /Lagu Satu/);
+  assert.equal(wifi[1], laptop[1]);
+  assert.equal(seen[0], PLAYING, 'server-side observers keep the full state');
+  assert.equal(hub.viewFor('spotify', PLAYING, false), PLAYING);
+  assert.equal(hub.viewFor('spotify', PLAYING, true).device.name, undefined);
 });

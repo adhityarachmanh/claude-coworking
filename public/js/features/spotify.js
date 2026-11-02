@@ -354,7 +354,8 @@ function renderDialog() {
   $('#sp-title').textContent = track ? (track.kind === 'ad' ? 'Iklan' : track.title || 'Sesi pribadi') : connected ? 'Tidak ada yang diputar' : 'Spotify belum terhubung';
   $('#sp-artist').textContent = track?.artists ?? '';
   $('#sp-album').textContent = track?.album ?? '';
-  $('#sp-device').textContent = connected && s.device ? `${deviceIcon(s.device.type)} ${s.device.name}${typeof s.device.volume === 'number' ? ` · ${s.device.volume}%` : ''}` : '';
+  // device.name is absent on a read-only (plain WiFi) phone: the server leaves it out there (privacy).
+  $('#sp-device').textContent = connected && s.device ? `${[deviceIcon(s.device.type), s.device.name].filter(Boolean).join(' ')}${typeof s.device.volume === 'number' ? ` · ${s.device.volume}%` : ''}` : '';
   $('#sp-progress-row').hidden = !track;
   $('#sp-controls').hidden = !connected;
   renderControls();

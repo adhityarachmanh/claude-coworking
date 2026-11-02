@@ -227,7 +227,8 @@ test('pairing over https: __Host- cookie (Secure, HttpOnly, SameSite=Strict), to
   const snap = await tlsSnapshot(cookie);
   assert.equal(snap.client.local, false, 'TLS socket is never the laptop');
   assert.equal(snap.client.readOnly, true, 'not the Tailscale interface: read-only like WiFi');
-  assert.equal(snap.config.remote.devices.find((d) => d.transport === 'https')?.transport, 'https');
+  assert.deepEqual(snap.config.remote.devices, [], 'read-only: no paired device names (privacy)');
+  assert.equal((await remoteInfo()).devices.find((d) => d.transport === 'https')?.transport, 'https', 'the laptop sees it as https');
   const phoneToken = (await tlsRequest('/', { headers: { Cookie: cookie } })).body.match(/office-token" content="([^"]+)"/)[1];
   const post = (p) => tlsRequest(p, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', 'X-Office-Token': phoneToken }, body: JSON.stringify({ enabled: false, roots: [] }) });
   for (const p of ['/api/config', '/api/shutdown', '/api/remote', '/api/remote/pairing', '/api/remote/https-check', '/api/backup/export', '/api/projects']) assert.equal((await post(p)).status, 403, p);

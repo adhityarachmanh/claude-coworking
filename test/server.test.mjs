@@ -426,6 +426,9 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   assert.ok(readOnlyApi.paths.length && readOnlyApi.patterns.length, 'snapshot carries the read-only allowlist');
   const uiAllows = (p) => readOnlyApi.paths.includes(p) || readOnlyApi.patterns.some((source) => new RegExp(source).test(p));
   assert.equal((await snapshot()).client.readOnly, false, 'the laptop is never read-only');
+  // privacy: sniffable WiFi never gets the paired devices list (names); the laptop's 📱 dialog does
+  assert.deepEqual(phoneSnap.config.remote.devices, [], 'no paired device names over WiFi');
+  assert.ok((await snapshot()).config.remote.devices.length >= 1, 'the laptop sees them');
   const reads = ['/api/account', '/api/account/limits', '/api/templates', '/api/team/roster', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/git-branches`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`, `/api/projects/${id}/task-detail`];
   for (const p of reads) assert.notEqual((await phoneApi(p, { taskId: 'x' })).status, 403, `read ${p}`);
   // history search/export and saved permission rules stay off sniffable WiFi
