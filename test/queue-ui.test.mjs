@@ -147,6 +147,13 @@ function installBudgetFake() {
   };
 }
 
+/** Opens the app on the toko project (a full load) and waits until it is connected. */
+async function openApp(page) {
+  page.clearProblems();
+  await page.goto(`${BASE}/#${projectId}`);
+  await page.waitFor(() => document.querySelector('#conn')?.classList.contains('ok') && document.querySelector('#crumb')?.textContent.trim(), { timeoutMs: 10000, message: 'app ready' });
+}
+
 async function altEnter(page) {
   const params = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, modifiers: 1 };
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...params });
@@ -403,16 +410,17 @@ for (const vp of VIEWPORTS) {
     });
 
     test('⚙ → ⏰ Backup otomatis: off by default, invalid folder explained, save, "Jalankan sekarang" writes a backup', async () => {
+      // Self-contained (runs alone / in any order): the schedule back to its defaults, the app freshly opened.
+      await api('/api/backup/schedule/save', { enabled: false, frequency: 'daily', weekday: 1, time: '02:00', folder: '', keep: 7 });
+      await openApp(page);
       page.clearProblems();
       await page.click('#btn-settings').catch(async () => page.eval(() => (document.querySelector('#settings-modal').hidden = false)));
       await page.waitFor(() => !document.querySelector('#settings-modal').hidden && /nonaktif|Berikutnya/.test(document.querySelector('#ba-status').textContent), { message: 'backup schedule loaded' });
       await page.eval(() => document.querySelector('.backup-auto').scrollIntoView({ block: 'center' }));
       const dir = path.join(TMP, `backups-${vp.mobile ? 'm' : 'd'}`);
       mkdirSync(dir, { recursive: true });
-      if (vp.mobile) {
-        assert.equal(await page.eval(() => document.querySelector('#ba-enabled').checked), false, 'off by default');
-        assert.equal(await page.eval(() => document.querySelector('#ba-run').disabled), true, 'no folder yet: nothing to run');
-      }
+      assert.equal(await page.eval(() => document.querySelector('#ba-enabled').checked), false, 'off by default');
+      assert.equal(await page.eval(() => document.querySelector('#ba-run').disabled), true, 'no folder yet: nothing to run');
       await page.eval(() => {
         document.querySelector('#ba-folder').value = '\\\\server\\share';
         document.querySelector('#ba-enabled').checked = true;

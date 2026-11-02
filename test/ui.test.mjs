@@ -181,8 +181,8 @@ function modalState(id) {
     focusInside: modal.contains(active),
     active: describe(active),
     ...(() => {
-      const items = [...modal.querySelectorAll('button, [href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])')].filter((el) => !el.disabled && !el.closest('[hidden]') && el.getClientRects().length);
-      return { focusables: items.length, activeIndex: items.indexOf(active) };
+      const items = [...modal.querySelectorAll('button, [href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])')].filter((el) => !el.disabled && !el.closest('[hidden]') && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+      return { focusables: items.length, activeIndex: items.indexOf(active), items: items.map((el) => `${describe(el)}${el.getAttribute('tabindex') ? `[tabindex=${el.getAttribute('tabindex')}]` : ''}`) };
     })(),
   };
 }
@@ -199,6 +199,38 @@ async function openApp(page, hash = '') {
   await page.waitFor(appReady, { timeoutMs: 10000, message: 'app terhubung (#conn.ok) dan header terisi' });
   await sleep(300); // let late async work (account, usage) surface any errors
 }
+
+/**
+ * Per-test setup: the page shows the app at `hash` and is connected. A page already there is reused as it is
+ * (cheap: dialogs closed, focus dropped, problems cleared); anything else (about:blank, another project, /pair,
+ * a disconnected page) gets a full load. Lets every test run alone (--test-name-pattern) and in any order.
+ */
+async function ensureApp(page, hash = '') {
+  const href = await page.eval('location.href').catch(() => '');
+  if (href !== `${BASE}/${hash}` || !(await page.eval(appReady).catch(() => false))) return openApp(page, hash);
+  page.clearProblems();
+  await page.eval(() => {
+    document.querySelectorAll('.modal').forEach((m) => (m.hidden = true));
+    document.activeElement?.blur?.();
+  });
+}
+
+/** POST to the app's API from the test (the token is read fresh: a restarted server hands out a new one). */
+async function apiPost(p, body = {}) {
+  const token = (await (await fetch(BASE)).text()).match(/office-token" content="([^"]+)"/)[1];
+  return fetch(BASE + p, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify(body) }).then((r) => r.json());
+}
+
+/** A throwaway project outside the projects root (empty chat), for a test that must not touch "toko". Forget it in finally. */
+async function addTempProject(name) {
+  const dir = path.join(TMP, name);
+  mkdirSync(dir, { recursive: true });
+  const { id } = await apiPost('/api/projects', { path: dir });
+  assert.ok(id, `project ${name} dibuat`);
+  return id;
+}
+
+const forgetTempProject = (id) => (id ? apiPost(`/api/projects/${id}/forget`).catch(() => {}) : undefined);
 
 const draftKey = () => `office.draft.${projectId}`;
 
@@ -270,7 +302,8 @@ async function checkModal(page, id) {
     }
   }
   if (st.focusInside && st.focusables >= 2 && visited.size < Math.min(st.focusables, presses)) {
-    fails.push(`Tab hanya mengunjungi ${visited.size} dari ${st.focusables} elemen fokus`);
+    const missed = st.items.filter((_, i) => !visited.has(i));
+    fails.push(`Tab hanya mengunjungi ${visited.size} dari ${st.focusables} elemen fokus (tidak terjangkau: ${missed.join(', ')})`);
   }
   for (let i = 0; i < 2 && st.focusInside; i++) {
     await page.press('Tab', { shift: true });
@@ -302,15 +335,17 @@ for (const vp of VIEWPORTS) {
     after(async () => page?.close());
 
     test('index.html (demo) termuat tanpa error console/exception', async () => {
-      await openApp(page);
+      await openApp(page, '#demo');
       assert.deepEqual(realProblems(page), []);
     });
 
     test('index.html (demo): tidak ada scroll horizontal', async () => {
+      await ensureApp(page, '#demo');
       assert.equal(await page.eval(horizontalOverflow), null);
     });
 
     test('index.html (demo): semua tombol terlihat punya nama aksesibel', async () => {
+      await ensureApp(page, '#demo');
       assert.deepEqual(await page.eval(unnamedButtons), []);
       // Chrome's own accessibility tree agrees: no unignored button with an empty computed name.
       const { nodes } = await page.send('Accessibility.getFullAXTree');
@@ -319,6 +354,7 @@ for (const vp of VIEWPORTS) {
     });
 
     test('button.primary berlatar rgb(184, 90, 60)', async () => {
+      await ensureApp(page, '#demo');
       await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 }); // no :hover
       const colors = await page.eval(() => [...document.querySelectorAll('button.primary')].map((b) => ({ html: b.outerHTML.slice(0, 80), bg: getComputedStyle(b).backgroundColor })));
       assert.ok(colors.length > 0, 'tidak ada button.primary');
@@ -327,6 +363,7 @@ for (const vp of VIEWPORTS) {
 
     if (vp.mobile) {
       test('mobile: #conn titik 10x10, .pill lain tetap terbaca', async (t) => {
+        await ensureApp(page, '#demo');
         const r = await page.eval(() => {
           const box = document.querySelector('#conn').getBoundingClientRect();
           const pills = [...document.querySelectorAll('.pill:not(#conn)')].map((p) => ({ html: p.outerHTML.slice(0, 80), fontSize: getComputedStyle(p).fontSize }));
@@ -347,22 +384,29 @@ for (const vp of VIEWPORTS) {
     });
 
     test('setiap .modal: buka → fokus masuk, Tab terkurung, Esc menutup, fokus kembali', async (t) => {
-      const ids = await page.eval(() => [...document.querySelectorAll('.modal')].map((m) => m.id));
-      assert.ok(ids.length >= 10, `hanya ${ids.length} modal ditemukan`);
-      page.clearProblems();
-      const failures = {};
-      for (const id of ids) {
-        const { fails, via } = await checkModal(page, id);
-        if (fails.length) failures[id] = fails;
-        else t.diagnostic(`${id}: ok (${via})`);
+      // A real project (sessions-modal) with an empty chat: on a phone the welcome card is help-modal's only trigger,
+      // and toko's chat may already have messages from other tests.
+      const pid = await addTempProject(`modal-${vp.mobile ? 'hp' : 'laptop'}`);
+      try {
+        await openApp(page, `#${pid}`);
+        const ids = await page.eval(() => [...document.querySelectorAll('.modal')].map((m) => m.id));
+        assert.ok(ids.length >= 10, `hanya ${ids.length} modal ditemukan`);
+        page.clearProblems();
+        const failures = {};
+        for (const id of ids) {
+          const { fails, via } = await checkModal(page, id);
+          if (fails.length) failures[id] = fails;
+          else t.diagnostic(`${id}: ok (${via})`);
+        }
+        assert.deepEqual(failures, {});
+        assert.deepEqual(realProblems(page), [], 'error console saat membuka modal');
+      } finally {
+        await forgetTempProject(pid);
       }
-      assert.deepEqual(failures, {});
-      assert.deepEqual(realProblems(page), [], 'error console saat membuka modal');
     });
 
     test('⚙ Pengaturan: bagian Cadangkan riwayat tampil, tombol aktif di laptop, export terunduh, tanpa error console', async () => {
-      page.clearProblems();
-      await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+      await ensureApp(page, `#${projectId}`);
       await page.click('#btn-settings');
       await settle(page, 'settings-modal');
       const r = await page.eval(() => ({
@@ -390,7 +434,7 @@ for (const vp of VIEWPORTS) {
 
     // Regression: renderAccount() rebuilds #account-body; focus must survive (↻ "Cek ulang kuota" re-renders it).
     test('account-modal: fokus tetap di dalam modal setelah ↻ Cek ulang kuota', async () => {
-      await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+      await ensureApp(page, `#${projectId}`);
       await page.click('#btn-account');
       await settle(page, 'account-modal');
       await page.eval(() => document.querySelector('#account-body [data-act="limits"]').focus());
@@ -585,8 +629,9 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
-    // After the dialog checks: sending a prompt removes the welcome card (the phone's only way into help-modal).
+    // Sends a prompt to toko (its welcome card goes): the dialog checks above use an empty project of their own.
     test('draf prompt: kembali setelah reload, terhapus setelah server menerima prompt', async () => {
+      await ensureApp(page, `#${projectId}`);
       const text = `draf ${vp.name} ${Date.now()}`;
       await typeInPrompt(page, text);
       await page.waitFor((k, t) => localStorage.getItem(k) === t, { timeoutMs: 3000, message: 'draf tersimpan (debounce)' }, draftKey(), text);
@@ -790,7 +835,15 @@ for (const vp of VIEWPORTS) {
       await forgetProject(other);
     });
 
-    test('⚙ Tema kantor: pilih Halloween → tersimpan, bertahan setelah reload, sprite & avatar berganti; kembali ke Kantor', async () => {
+    test('⚙ Tema kantor: pilih Halloween → tersimpan, bertahan setelah reload, sprite & avatar berganti; kembali ke Kantor', async (t) => {
+      await ensureApp(page, `#${projectId}`);
+      // Starts on the default theme (the palette test, or a failed run of this one, may have left another stored).
+      if ((await page.eval(() => localStorage.getItem('office.theme'))) !== null) {
+        await page.eval(() => localStorage.removeItem('office.theme'));
+        await openApp(page, `#${projectId}`);
+      }
+      // Whatever happens, the next test gets Kantor back.
+      t.after(() => page.eval(() => localStorage.removeItem('office.theme')).catch(() => {}));
       page.clearProblems();
       const openSettings = async () => {
         await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
@@ -1166,8 +1219,12 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
-    test('⚠ deteksi macet: chip di baris tool & delegasi (jam digeser), aksi, kantor, fokus, tanpa auto-stop', async () => {
-      await openApp(page, `#${projectId}`); // self-contained: also runs alone (--test-name-pattern)
+    test('⚠ deteksi macet: chip di baris tool & delegasi (jam digeser), aksi, kantor, fokus, tanpa auto-stop', async (t) => {
+      // An idle project of its own: toko's live status events (e.g. background tasks started by other tests) would
+      // overwrite the busy status faked below in the middle of the test.
+      const tmpId = await addTempProject(`macet-1-${vp.mobile ? 'hp' : 'laptop'}`);
+      t.after(() => forgetTempProject(tmpId));
+      await openApp(page, `#${tmpId}`);
       if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
       await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
       // Client-side only: a busy status and two running rows (no task id: nothing is read from the server).
@@ -1177,6 +1234,8 @@ for (const vp of VIEWPORTS) {
         const { onChatUpdate } = await import('/js/core/stream.js');
         const { checkStuck, stuck, stuckClock } = await import('/js/features/stuck.js');
         const { sceneFor } = await import('/js/core/scenes.js');
+        // A stream resync in flight (stray events of another test's project) pauses the detector: wait for its snapshot.
+        for (let i = 0; i < 100 && !stuck.online; i++) await new Promise((res) => setTimeout(res, 50));
         const frame = () => new Promise((res) => requestAnimationFrame(() => setTimeout(res, 0)));
         // A normal tick at "start + min": the previous tick was 15 s ago (not a sleep/wake jump).
         const tick = (min) => {
@@ -1286,12 +1345,18 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
-    test('⚠ deteksi macet: tidak saat menunggu izin (jam mulai ulang), tidak ada notifikasi beruntun setelah laptop tidur', async () => {
-      await openApp(page, `#${projectId}`);
+    test('⚠ deteksi macet: tidak saat menunggu izin (jam mulai ulang), tidak ada notifikasi beruntun setelah laptop tidur', async (t) => {
+      // An idle project of its own: toko's live status events (e.g. background tasks started by other tests) would
+      // overwrite the busy status faked below in the middle of the test.
+      const tmpId = await addTempProject(`macet-2-${vp.mobile ? 'hp' : 'laptop'}`);
+      t.after(() => forgetTempProject(tmpId));
+      await openApp(page, `#${tmpId}`);
       const r = await page.eval(async () => {
         const { state } = await import('/js/core/state.js');
         const { appendChat } = await import('/js/features/chat.js');
         const { checkStuck, stuck, stuckClock } = await import('/js/features/stuck.js');
+        // A stream resync in flight (stray events of another test's project) pauses the detector: wait for its snapshot.
+        for (let i = 0; i < 100 && !stuck.online; i++) await new Promise((res) => setTimeout(res, 50));
         const tick = (min, { wake = false } = {}) => {
           stuckClock.now = () => Date.now() + min * 60_000;
           if (!wake) stuck.lastTick = stuckClock.now() - 15_000;
@@ -1343,12 +1408,18 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
-    test('⚠ deteksi macet: dua delegasi role sama paralel dicocokkan lewat taskId, lastActivityAt tanpa baca task-detail', async () => {
-      await openApp(page, `#${projectId}`);
+    test('⚠ deteksi macet: dua delegasi role sama paralel dicocokkan lewat taskId, lastActivityAt tanpa baca task-detail', async (t) => {
+      // An idle project of its own: toko's live status events (e.g. background tasks started by other tests) would
+      // overwrite the busy status faked below in the middle of the test.
+      const tmpId = await addTempProject(`macet-3-${vp.mobile ? 'hp' : 'laptop'}`);
+      t.after(() => forgetTempProject(tmpId));
+      await openApp(page, `#${tmpId}`);
       const r = await page.eval(async () => {
         const { state } = await import('/js/core/state.js');
         const { appendChat } = await import('/js/features/chat.js');
         const { checkStuck, stuck, stuckClock } = await import('/js/features/stuck.js');
+        // A stream resync in flight (stray events of another test's project) pauses the detector: wait for its snapshot.
+        for (let i = 0; i < 100 && !stuck.online; i++) await new Promise((res) => setTimeout(res, 50));
         const tick = (min) => {
           stuckClock.now = () => Date.now() + min * 60_000;
           stuck.lastTick = stuckClock.now() - 15_000;
@@ -1425,22 +1496,23 @@ for (const vp of VIEWPORTS) {
     });
 
     test('📄 penampil file: dari path di jawaban (:line disorot), baris tool Read, tab Perubahan; cari, escape, rapi', async () => {
-      page.clearProblems();
+      await ensureApp(page, `#${projectId}`);
       const proj = path.join(TMP, 'projects', 'toko');
       writeFileSync(path.join(proj, 'src', 'app.js'), 'const a = 1;\n/* multi\nbaris */\n<b>tebal</b>\nconst b = "nilai";\n');
       if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
-      await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
-      const before = await page.eval(() => document.querySelectorAll('#chat .msg.assistant').length);
+      // The reply is picked by its message id, not by position (other turns, e.g. background tasks, may add bubbles).
+      const known = await page.eval(() => [...document.querySelectorAll('#chat .msg.assistant')].map((n) => n.dataset.id));
       await page.eval(async (pid) => {
         const token = document.querySelector('meta[name="office-token"]').content;
         await fetch(`/api/projects/${pid}/prompt`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify({ text: 'sebut file' }) });
       }, projectId);
-      await page.waitFor((n) => document.querySelectorAll('#chat .msg.assistant').length > n && [...document.querySelectorAll('#chat .msg.assistant')].at(-1).querySelector('.file-link[data-file="src/app.js"]'), { timeoutMs: 8000, message: 'path di jawaban jadi link' }, before);
-      const links = await page.eval(() => [...[...document.querySelectorAll('#chat .msg.assistant')].at(-1).querySelectorAll('.file-link')].map((b) => [b.dataset.file, b.dataset.line ?? null]));
+      const replyId = await page.waitFor((ids) => [...document.querySelectorAll('#chat .msg.assistant')].find((n) => !ids.includes(n.dataset.id) && n.querySelector('.file-link[data-file="src/app.js"]'))?.dataset.id, { timeoutMs: 8000, message: 'path di jawaban jadi link' }, known);
+      await page.eval((id) => (window.__fileReply = () => document.querySelector(`#chat [data-id="${CSS.escape(id)}"]`)), replyId);
+      const links = await page.eval(() => [...window.__fileReply().querySelectorAll('.file-link')].map((b) => [b.dataset.file, b.dataset.line ?? null]));
       assert.deepEqual(links, [['src/checkout.ts', '2'], ['src/app.js', '3'], ['src/hilang.ts', null]], 'URL tidak ikut jadi link');
 
       // From the answer, with :line
-      await page.eval(() => [...document.querySelectorAll('#chat .msg.assistant')].at(-1).querySelector('.file-link[data-file="src/app.js"]').click());
+      await page.eval(() => window.__fileReply().querySelector('.file-link[data-file="src/app.js"]').click());
       await page.waitFor(() => document.querySelector('#fv-code .fv-l'), { timeoutMs: 5000, message: 'penampil terbuka dengan isi' });
       const view = await page.eval(() => ({
         title: document.querySelector('#fv-title').textContent,
@@ -1476,7 +1548,7 @@ for (const vp of VIEWPORTS) {
       assert.equal(await page.eval(() => document.querySelector('#file-modal').hidden), true, 'Esc menutup');
 
       // A missing file says so
-      await page.eval(() => [...document.querySelectorAll('#chat .msg.assistant')].at(-1).querySelector('.file-link[data-file="src/hilang.ts"]').click());
+      await page.eval(() => window.__fileReply().querySelector('.file-link[data-file="src/hilang.ts"]').click());
       await page.waitFor(() => /tidak ditemukan/.test(document.querySelector('#fv-body .state-error')?.textContent ?? ''), { timeoutMs: 4000, message: 'file hilang: pesan rapi' });
       await page.press('Escape');
       // The 404 itself is the expected answer (logged by the browser as a failed request), nothing else.
@@ -1686,6 +1758,14 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
     await laptopApi(`/api/projects/${projectId}/prompt`, { text: 'minta izin tulis file' });
   });
 
+  /** The LAN page on toko, connected (reused when already there: the first test loads it with a check of its own). */
+  async function ensureLanApp() {
+    const href = await page.eval('location.href').catch(() => '');
+    if (href === `${LAN}/#${projectId}` && (await page.eval(appReady).catch(() => false))) return;
+    await page.goto(`${LAN}/#${projectId}`);
+    await page.waitFor(appReady, { timeoutMs: 10000, message: 'app terhubung lewat LAN' });
+  }
+
   after(async () => {
     await page?.close().catch(() => {});
     if (laptopApi) {
@@ -1733,15 +1813,14 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
 
   test('⚠ chip macet terlihat di HP, tombol aksi nonaktif dengan petunjuk hanya-lihat', async (t) => {
     if (!LAN) return t.skip('laptop ini tidak punya alamat LAN');
-    if (!(await page.eval(() => location.href.includes('#')))) {
-      await page.goto(`${LAN}/#${projectId}`);
-      await page.waitFor(appReady, { timeoutMs: 10000, message: 'app terhubung lewat LAN' });
-    }
+    await ensureLanApp();
     page.clearProblems();
     const r = await page.eval(async () => {
       const { state } = await import('/js/core/state.js');
       const { appendChat } = await import('/js/features/chat.js');
       const { checkStuck, stuck, stuckClock } = await import('/js/features/stuck.js');
+      // A stream resync in flight (stray events of another test's project) pauses the detector: wait for its snapshot.
+      for (let i = 0; i < 100 && !stuck.online; i++) await new Promise((res) => setTimeout(res, 50));
       const pid = state.active;
       const saved = state.statuses[pid];
       state.statuses[pid] = { ...saved, busy: true, pending: 0 };
@@ -1776,6 +1855,7 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
   // The stream really stays up here; the handlers are driven directly (same module instance as the app's).
   test('putus lama di HP: petunjuk laptop/Tailscale (bukan start-office), Kirim tetap hanya-lihat', async (t) => {
     if (!LAN) return t.skip('laptop ini tidak punya alamat LAN');
+    await ensureLanApp();
     const shown = await page.eval(async () => {
       const m = await import('/js/features/connection.js');
       const saved = { ...m.CONN_TIMING };
@@ -1799,7 +1879,6 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
 describe('UI chat live', { skip: SKIP ?? false }, () => {
   let page;
   const OLD = 120; // all within the 150 messages a snapshot carries, so every old bubble is on the page
-  let replyAfterMigration = []; // the assistant bubbles after the first test (old ones + its reply)
   const api = async (p, body = {}) => {
     const token = (await (await fetch(BASE)).text()).match(/office-token" content="([^"]+)"/)[1];
     return fetch(BASE + p, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify(body) }).then((r) => r.json());
@@ -1833,11 +1912,13 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
   after(async () => page?.close());
 
   test('setelah server restart: balasan baru tampil berisi di bubble baru, bubble lama tidak tertimpa', async () => {
+    await ensureApp(page, `#${projectId}`);
+    // Counted first: in another order an earlier turn of this describe already left a result row.
+    const results = await page.eval(() => document.querySelectorAll('#chat .result.ok').length);
     await api(`/api/projects/${projectId}/prompt`, { text: 'halo setelah restart' });
-    await page.waitFor(() => document.querySelector('#chat .result.ok'), { timeoutMs: 10000, message: 'giliran selesai (baris hasil)' });
+    await page.waitFor((n) => document.querySelectorAll('#chat .result.ok').length > n, { timeoutMs: 10000, message: 'giliran selesai (baris hasil)' }, results);
     await sleep(300);
     const all = await bubbles();
-    replyAfterMigration = all;
     assert.deepEqual(await page.eval(() => document.querySelectorAll('#chat .msg.assistant.streaming').length), 0, `masih "mengetik" setelah selesai; 3 bubble terakhir: ${JSON.stringify(all.slice(-3))}`);
     assert.match(all.at(-1), /Halo dari Claude palsu yang sedang mengetik\./, 'bubble terakhir berisi balasan');
     assert.equal(all.filter((t) => !t.trim()).length, 0, 'tidak ada bubble kosong');
@@ -1849,6 +1930,10 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
   });
 
   test('restart lagi (riwayat dari data/chats): riwayat utuh, balasan baru di bubble baru', async () => {
+    // The history as the page shows it now (self-contained: whatever ran before in this describe).
+    await ensureApp(page, `#${projectId}`);
+    const history = await bubbles();
+    assert.ok(history.length >= OLD, `riwayat termuat (${history.length} bubble)`);
     // Clean stop (⚙ → Matikan server): the chat is in data/chats/<id>.jsonl now, not in state.json.
     const exited = new Promise((r) => server.once('exit', r));
     await api('/api/shutdown');
@@ -1856,20 +1941,21 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
     assert.equal(JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8')).chats, undefined);
     await startServer();
     await openApp(page, `#${projectId}`);
-    assert.deepEqual(await bubbles(), replyAfterMigration, 'the same history after a restart from data/chats');
+    assert.deepEqual(await bubbles(), history, 'the same history after a restart from data/chats');
     const results = await page.eval(() => document.querySelectorAll('#chat .result.ok').length);
     await api(`/api/projects/${projectId}/prompt`, { text: 'halo setelah restart kedua' });
     await page.waitFor((n) => document.querySelectorAll('#chat .result.ok').length > n, { timeoutMs: 10000, message: 'giliran kedua selesai' }, results);
     await sleep(300);
     const all = await bubbles();
     assert.equal(await page.eval(() => document.querySelectorAll('#chat .msg.assistant.streaming').length), 0, `masih "mengetik": ${JSON.stringify(all.slice(-3))}`);
-    assert.deepEqual(all.slice(0, -1), replyAfterMigration, 'old bubbles untouched');
+    assert.deepEqual(all.slice(0, -1), history, 'old bubbles untouched');
     assert.match(all.at(-1), /Halo dari Claude palsu yang sedang mengetik\./);
     const ids = await page.eval(() => [...document.querySelectorAll('#chat [data-id]')].map((n) => n.dataset.id));
     assert.equal(new Set(ids).size, ids.length, 'every message id on the page is unique');
   });
 
   test('bubble assistant selesai tapi kosong (atau hanya spasi) tidak ditampilkan', async () => {
+    await ensureApp(page, `#${projectId}`);
     const shown = await page.eval(async () => {
       const { appendChat } = await import('/js/features/chat.js');
       const probe = (msg) => {
@@ -1886,6 +1972,7 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
 
   test('update untuk pesan yang tak dikenal klien → sinkron ulang dari server (tidak dibuang)', async () => {
     // Simulates a missed `chat` event: the newest reply is gone from the page's state and DOM, then an update for it arrives.
+    await ensureApp(page, `#${projectId}`);
     const r = await page.eval(async () => {
       const { state } = await import('/js/core/state.js');
       const { onChatUpdate } = await import('/js/core/stream.js');
@@ -1897,10 +1984,10 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
       const end = Date.now() + 5000;
       while (Date.now() < end && !document.querySelector(`#chat [data-id="${lost.id}"]`)) await new Promise((res) => setTimeout(res, 50));
       const node = document.querySelector(`#chat [data-id="${lost.id}"]`);
-      return { back: Boolean(node), text: node?.textContent ?? '', inState: state.chats[state.active].some((m) => m.id === lost.id) };
+      return { back: Boolean(node), text: node?.textContent ?? '', lost: lost.text, inState: state.chats[state.active].some((m) => m.id === lost.id) };
     });
     assert.equal(r.back, true, 'pesan muncul lagi');
-    assert.match(r.text, /Halo dari Claude palsu/);
+    assert.ok(r.lost && r.text.includes(r.lost), `isi pesan kembali (${JSON.stringify(r.text.slice(0, 80))})`);
     assert.equal(r.inState, true);
     await page.waitFor(appReady, { timeoutMs: 5000, message: 'tetap terhubung' });
     assert.deepEqual(realProblems(page), []);
@@ -1920,6 +2007,8 @@ describe('UI koneksi putus', { skip: SKIP ?? false }, () => {
   after(async () => page?.close());
 
   test('putus sebentar (< ambang): tidak ada banner, tidak ada toast', async () => {
+    // A fresh document: no "Tersambung lagi." toast or shortened CONN_TIMING left by the restart test.
+    await openApp(page, `#${projectId}`);
     const r = await page.eval(async () => {
       const m = await import('/js/features/connection.js');
       m.streamLost();
@@ -1934,6 +2023,7 @@ describe('UI koneksi putus', { skip: SKIP ?? false }, () => {
   });
 
   test('server mati → banner setelah ±2 dtk, Kirim ditahan, draf aman; hidup lagi → banner hilang, kirim jalan', async () => {
+    await ensureApp(page, `#${projectId}`);
     await page.eval(async () => {
       const m = await import('/js/features/connection.js');
       m.CONN_TIMING.longAfterMs = 4500; // instead of 30 s
@@ -2048,8 +2138,16 @@ for (const vp of VIEWPORTS) {
     });
     after(async () => page?.close());
 
+    /** Per-test setup: the app on toko, connected, with saveBlob downloads captured in this document. */
+    async function ready() {
+      await ensureApp(page, `#${projectId}`);
+      if (!(await page.eval(() => Array.isArray(window.__downloads)))) await page.eval(captureDownloads);
+    }
+
     test('Ctrl+P membuka palet (combobox/listbox), ↓ dan Esc; Ctrl+K tetap pemilih project', async () => {
-      page.clearProblems();
+      await ready();
+      // No "Terakhir dipakai" group (the fuzzy test's actions, in another order): the plain groups are checked.
+      await page.eval(() => localStorage.removeItem('office.palette.recent'));
       await paletteType(page, '');
       const a11y = await page.eval(() => {
         const input = document.querySelector('#palette-input');
@@ -2086,7 +2184,7 @@ for (const vp of VIEWPORTS) {
     });
 
     test('fuzzy + Enter: pindah project (#), buka file (@), buka dialog, ganti tema, riwayat aksi', async () => {
-      page.clearProblems();
+      await ready();
       await paletteType(page, '#demo');
       await page.waitFor(() => /Demo/.test((document.querySelector('#palette-list .pal-opt.active .pal-label')?.textContent ?? '')), { timeoutMs: 2000, message: 'Demo terpilih' });
       assert.match((await activeOption(page)).marked, /demo/i, 'huruf yang cocok di-highlight');
@@ -2127,7 +2225,7 @@ for (const vp of VIEWPORTS) {
     });
 
     test('🔎 cari percakapan: cuplikan ber-highlight (teks di-escape), validasi, export .md terunduh', async () => {
-      page.clearProblems();
+      await ready();
       await paletteType(page, 'cari percakapan');
       await page.press('Enter');
       await page.waitFor(() => !document.querySelector('#search-modal').hidden, { timeoutMs: 2000, message: 'dialog cari terbuka' });
@@ -2172,11 +2270,8 @@ for (const vp of VIEWPORTS) {
     });
 
     test('⬇ export dari Riwayat sesi; /export tanpa sesi aktif memberi pesan jelas', async () => {
-      page.clearProblems();
-      await page.eval(() => {
-        document.querySelectorAll('.modal').forEach((m) => (m.hidden = true));
-        window.__downloads = [];
-      });
+      await ready();
+      await page.eval(() => (window.__downloads = []));
       if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
       await page.click('#btn-sessions');
       await page.waitFor((id) => document.querySelector(`#sessions-list [data-export="${id}"]`), { timeoutMs: 4000, message: 'tombol export di riwayat' }, sid);
@@ -2388,8 +2483,7 @@ for (const vp of VIEWPORTS) {
 
     if (vp.mobile) {
       test('HP: tombol 🔎 di navigasi bawah membuka palet, tanpa overflow', async () => {
-        page.clearProblems();
-        await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+        await ready();
         assert.equal(await page.eval(horizontalOverflow), null, 'topbar dengan 🔎 tanpa overflow');
         assert.equal(await page.eval(() => document.querySelector('#btn-palette').getClientRects().length), 0, '🔎 tidak di topbar HP');
         await page.click('#nav-palette');
@@ -2757,7 +2851,7 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
-    test('🎤 hasil final yang datang setelah pindah project tidak masuk ke kotak pesan project lain', async () => {
+    test('🎤 hasil final yang datang setelah pindah project tidak masuk ke kotak pesan project lain', async (t) => {
       await freshApp();
       const dir = path.join(TMP, vp.mobile ? 'kasir-hp' : 'kasir-laptop'); // outside the projects root: only this test sees it
       mkdirSync(dir, { recursive: true });
@@ -2767,6 +2861,7 @@ for (const vp of VIEWPORTS) {
         return (await r.json()).id;
       }, dir);
       assert.ok(other, 'project kedua dibuat');
+      t.after(() => forgetTempProject(other));
       page.clearProblems();
       await page.eval(stubSpeech);
       await page.eval(async () => (await import('/js/features/voice.js')).renderVoice());
@@ -2954,6 +3049,12 @@ describe('UI 🗂 Semua project', { skip: SKIP ?? false }, () => {
       });
 
       test('ketuk kartu → pindah project dan lompat ke kartu izin', async () => {
+        // The dialog the previous test left open is reused; alone (or after another test) it is opened here.
+        if (!(await page.eval(() => Boolean(document.querySelector('#dash-modal') && !document.querySelector('#dash-modal').hidden)).catch(() => false))) {
+          await ensureApp(page, `#${projectId}`);
+          await openDashboardLikeUser(page, vp);
+        }
+        await page.waitFor((g) => document.querySelector(`#dash-list > li[data-id="${g}"] .dash-open`), { timeoutMs: 8000, message: 'kartu gudang' }, ids.gudang);
         await page.click(`#dash-list > li[data-id="${ids.gudang}"] .dash-open`);
         await page.waitFor((g) => document.querySelector('#dash-modal').hidden && location.hash.slice(1) === g, { timeoutMs: 3000, message: 'pindah ke gudang' }, ids.gudang);
         const r = await page.waitFor(
@@ -2970,6 +3071,7 @@ describe('UI 🗂 Semua project', { skip: SKIP ?? false }, () => {
       });
 
       test('Ctrl+P "Semua project", saring, /dashboard dan 🗂 di pemilih project membuka dialog yang sama', async () => {
+        await ensureApp(page, `#${projectId}`);
         await page.click(vp.mobile ? '#nav-palette' : '#btn-palette');
         await page.waitFor(() => !document.querySelector('#palette-modal').hidden, { timeoutMs: 2000, message: 'palet terbuka' });
         await page.send('Input.insertText', { text: 'Semua project' });
@@ -3004,6 +3106,7 @@ describe('UI 🗂 Semua project', { skip: SKIP ?? false }, () => {
       });
 
       test('hanya-lihat (WiFi): dialog tetap bisa dibuka, Lihat izin aktif (hanya navigasi)', async () => {
+        await ensureApp(page, `#${projectId}`);
         const r = await page.eval(async (g) => {
           const { state } = await import('/js/core/state.js');
           const { openDashboard } = await import('/js/features/dashboard.js');
