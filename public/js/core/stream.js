@@ -1,4 +1,5 @@
 // The server event stream (SSE): snapshot on connect, then live updates routed to the features.
+// One stream per browser, shared by every tab of this origin (core/stream-share.js).
 import { onAccountAlert, onAccountState, renderAccountButton } from '../features/account.js';
 import { appendActivity } from '../features/activity.js';
 import { scheduleChanges } from '../features/changes.js';
@@ -17,25 +18,16 @@ import { applyTeamNames, roleName } from '../office/cast.js';
 import { updateTitle } from '../ui/layout.js';
 import { setReadOnlyApi } from './api.js';
 import { $ } from './dom.js';
+import { startStreamShare } from './stream-share.js';
 import { scenes } from './scenes.js';
 import { DEMO_ID, projectName, state } from './state.js';
 
-let source = null;
+let share = null;
 
-export function connect() {
-  source = new EventSource('/stream');
-  const self = source;
-  source.addEventListener('open', streamOpened);
-  source.addEventListener('error', () => {
-    streamLost();
-    setStuckOnline(false); // the stuck detector waits for the fresh snapshot (the chat may be stale)
-    // A network error is retried by the browser itself (readyState CONNECTING). A refused stream (an HTTP error
-    // instead of the event stream) is not: it stays CLOSED for good, so open a new one after a pause.
-    if (self === source && self.readyState === EventSource.CLOSED) setTimeout(connect, retryDelay());
-  });
-  const on = (type, fn) => self.addEventListener(type, (msg) => fn(JSON.parse(msg.data)));
-
-  on('config', (config) => {
+// One handler per server event. `live` is false while a tab that just joined replays what it missed
+// (core/stream-share.js): the state catches up, but old news never chimes or animates again.
+const handlers = {
+  config(config) {
     renderRoots(config);
     applyNames(config);
     applyRoster(config.team); // 👥 Kelola tim saved somewhere: the office gets or loses desks, no reload
@@ -43,8 +35,8 @@ export function connect() {
       phone.pairing = null; // a device just paired (codes are single-use) or settings changed
       refreshPairing();
     }
-  });
-  on('snapshot', (snap) => {
+  },
+  snapshot(snap) {
     // Opened from a paired phone: laptop-only settings are hidden (the server refuses them anyway).
     state.local = snap.client?.local !== false;
     state.accountAuth = snap.client?.accountAuth ?? state.local; // laptop, or a phone over Tailscale
@@ -69,49 +61,55 @@ export function connect() {
     setStuckOnline(true);
     renderAccountButton(); // after the core UI, so a profile quirk can never blank the office
     applySpotify(snap.spotify, { snapshot: true }); // ♪ absent = this server has no Spotify support
-  });
-  on('pairing-reset', () => {
+  },
+  'pairing-reset'() {
     // Too many wrong codes on a phone: the shown code is dead, show the new one right away.
     if ($('#phone-modal').hidden) return;
     phone.pairing = null;
     refreshPairing();
-  });
-  on('account', onAccountState);
-  on('spotify', (s) => applySpotify(s));
-  on('account-alert', onAccountAlert);
-  on('projects', (projects) => {
+  },
+  account(s, live) {
+    if (live) return onAccountState(s);
+    state.account = { ...state.account, ...s }; // replayed: the state only, no "Login berhasil" toast for old news
+    renderAccountButton();
+  },
+  spotify: (s) => applySpotify(s),
+  'account-alert': (alert, live) => live && onAccountAlert(alert),
+  projects(projects) {
     state.projects = projects;
     renderSidebar();
-  });
-  on('status', (status) => {
+  },
+  status(status) {
     state.statuses[status.project] = status;
     scenes.get(status.project)?.setStatus(status);
     renderSidebar();
     if (status.project === state.active) renderComposer();
     updateTitle();
-  });
-  on('office', (evt) => {
+  },
+  office(evt, live) {
     (state.events[evt.project] ??= []).push(evt);
-    scenes.get(evt.project)?.handle(evt, true);
+    scenes.get(evt.project)?.handle(evt, live);
     if (evt.project === state.active) {
       appendActivity(evt, true);
       if (['tool_end', 'stop'].includes(evt.kind)) scheduleChanges();
     }
-  });
-  on('chat', (msg) => {
+  },
+  chat(msg, live) {
     (state.chats[msg.project] ??= []).push(msg);
-    noteLiveMessage(msg); // a sample of the browser/server clock difference (stuck detector)
+    if (live) noteLiveMessage(msg); // a sample of the browser/server clock difference (stuck detector)
     if (msg.project === state.active) appendChat(msg);
-    if (msg.kind === 'result') {
+    if (!live) {
+      // replayed history: no notification for it
+    } else if (msg.kind === 'result') {
       notify(msg.ok ? 'done' : 'error', msg.ok ? `✓ Tugas selesai — ${projectName(msg.project)}` : `■ Tugas berhenti — ${projectName(msg.project)}`, msg.ok ? 'Tim sudah menyelesaikan permintaanmu.' : msg.text || 'Cek chat untuk detailnya.', msg.project);
     } else if (msg.kind === 'error') {
       notify('error', `⚠ Ada kendala — ${projectName(msg.project)}`, msg.text.slice(0, 120), msg.project);
     }
     renderSidebar();
-  });
-  on('chat_update', onChatUpdate);
-  on('approval', (approval) => {
-    if (approval.status === 'pending' && !state.approvals.has(approval.id)) {
+  },
+  chat_update: (update) => onChatUpdate(update),
+  approval(approval, live) {
+    if (live && approval.status === 'pending' && !state.approvals.has(approval.id)) {
       notify('ask', `✋ ${roleName(approval.role)} minta izin — ${projectName(approval.project)}`, approval.label, approval.project);
     }
     state.approvals.set(approval.id, approval);
@@ -121,14 +119,30 @@ export function connect() {
     }
     updateTitle();
     renderSidebar();
+  },
+};
+
+/**
+ * Connects to the server's event stream. Every tab of this origin shares one (core/stream-share.js): the browser's
+ * 6-connections-per-host limit on HTTP/1.1 would otherwise let a few open tabs block every other request.
+ */
+export function connect() {
+  share ??= startStreamShare({
+    url: '/stream',
+    types: Object.keys(handlers),
+    apply: (type, raw, live) => handlers[type](JSON.parse(raw), live),
+    online(on) {
+      if (on) return streamOpened();
+      streamLost();
+      setStuckOnline(false); // the stuck detector waits for the fresh snapshot (the chat may be stale)
+    },
+    retryDelay,
   });
 }
 
 // Server ids count up (`m<n>`): an unknown id newer than the oldest message this page holds falls inside the
 // window the page should have, so the page missed it; an older one simply fell out of the snapshot window.
 const idNumber = (id) => Number(/^m(\d+)$/.exec(id ?? '')?.[1] ?? 0);
-const RESYNC_GAP_MS = 5000;
-let lastResync = 0;
 
 /** A live change to a chat message; one this page never received is fetched again instead of dropped. */
 export function onChatUpdate({ project, id, patch }) {
@@ -143,10 +157,7 @@ export function onChatUpdate({ project, id, patch }) {
   if (idNumber(id) > oldest) resync();
 }
 
-/** Reopens the event stream: its snapshot carries every message as the server has it now. */
+/** A fresh snapshot from the server (the stream's leader tab reopens it; rate-limited there). */
 function resync() {
-  if (Date.now() - lastResync < RESYNC_GAP_MS) return;
-  lastResync = Date.now();
-  source?.close();
-  connect();
+  share?.resync();
 }
