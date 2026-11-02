@@ -11,7 +11,7 @@ import { Hub } from './src/hub.js';
 import { discoverProjects, isDirectory } from './src/projects.js';
 import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { writeBackup } from './src/backup.js';
-import { AccountService } from './src/account.js';
+import { AccountService, accountPrivacyView, accountViewKey } from './src/account.js';
 import { autostartStatus } from './src/autostart.js';
 import { UsageLedger } from './src/usage.js';
 import { moduleGraph, preloadTags } from './src/modules.js';
@@ -173,6 +173,9 @@ hub.observers.add((type, data) => spotify.observeApproval(type, data, hub.approv
 hub.redactors.set('spotify', wifiSpotifyState);
 hub.redactors.set('account-alert', wifiAccountAlert);
 hub.redactors.set('config', wifiConfig);
+// 👤 Akun on WiFi: plan and quota only, never the email/name/org; ids opaque but stable (key in the data dir).
+const accountPrivacy = accountPrivacyView(accountViewKey(path.join(DATA_DIR, 'account-view.key')));
+hub.redactors.set('account', accountPrivacy.state);
 // 📋 Antrian: prompts sent one by one whenever the project's session is idle (src/queue.js).
 const taskQueue = new TaskQueue({ hub, sessions });
 sessions.onRateLimit = (id, info) => taskQueue.onRateLimit(id, info);
@@ -427,7 +430,8 @@ const ctx = {
   maxBackupBytes: MAX_BACKUP_BYTES,
   isLocal,
   canManageAccount, // laptop or Tailscale (♪ control: may start the Spotify app)
-  isReadOnly, // plain-HTTP WiFi phone (♪ state: reduced view)
+  isReadOnly, // plain-HTTP WiFi phone (♪ state, 👤 account, report: reduced view)
+  accountPrivacy, // that reduced account view (src/account.js accountPrivacyView)
   allowForce,
   projectRoots,
   refreshProjects,

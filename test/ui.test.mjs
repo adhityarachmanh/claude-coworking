@@ -499,6 +499,40 @@ for (const vp of VIEWPORTS) {
       assert.ok(st.focusInside, `fokus pindah ke ${st.active} setelah kuota dimuat ulang`);
     });
 
+    // A read-only (plain WiFi) phone gets the profile without email/name/org/ids (server: accountPrivacyView).
+    test('akun tanpa email (HP WiFi): label "Akun Claude (paket)", dialog tanpa undefined/null', async () => {
+      await ensureApp(page, `#${projectId}`);
+      const original = await page.eval(async () => structuredClone((await import('/js/core/state.js')).state.account));
+      const wifiProfile = { loggedIn: true, subscriptionType: 'team', authMethod: 'claude.ai', role: null, seatTier: null, billingType: null, rateLimitTier: null, accountKey: 'acct-0123456789abcdef' };
+      try {
+        // The dialog reloads /api/account when it opens: answer it like the server does for a WiFi phone.
+        await page.eval((p) => {
+          window.__realFetch = window.fetch;
+          window.fetch = async (url, opts) => {
+            const res = await window.__realFetch(url, opts);
+            if (url !== '/api/account') return res;
+            const data = await res.json();
+            return new Response(JSON.stringify({ ...data, profile: p }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          };
+        }, wifiProfile);
+        await page.eval(async (p) => (await import('/js/features/account.js')).onAccountState({ profile: p }), wifiProfile);
+        const r = await page.eval(() => ({ label: document.querySelector('#account-label').textContent, title: document.querySelector('#btn-account').title, avatar: document.querySelector('#account-avatar').textContent }));
+        assert.equal(r.label, 'Akun Claude (team)');
+        assert.match(r.title, /^Akun Claude \(team\) — /);
+        assert.equal(r.avatar, 'A');
+        await tap(page, '#btn-account');
+        await settle(page, 'account-modal');
+        const body = await page.eval(() => document.querySelector('#account-body').textContent);
+        await page.press('Escape');
+        assert.match(body, /Akun Claude/);
+        assert.doesNotMatch(body, /undefined|null|@/);
+        assert.equal(await page.eval(horizontalOverflow), null);
+      } finally {
+        await page.eval(() => window.__realFetch && (window.fetch = window.__realFetch));
+        await page.eval(async (a) => (await import('/js/features/account.js')).onAccountState(a ?? { profile: null }), original);
+      }
+    });
+
     test('⚡ Template: /t membuka pemilih, ↑↓ Enter menyisipkan (tidak terkirim), placeholder terseleksi, Tab ke berikutnya', async () => {
       await openApp(page, `#${projectId}`);
       page.clearProblems();

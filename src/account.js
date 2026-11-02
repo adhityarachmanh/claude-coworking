@@ -1,7 +1,8 @@
 // Claude account: profile (`claude auth status` + ~/.claude.json oauthAccount), plan usage
 // (`/usage`, no tokens spent), and login/logout through the CLI's own flows.
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { createHmac, randomBytes } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -254,4 +255,54 @@ export class AccountService {
   emit() {
     this.onChange?.(this.publicState());
   }
+}
+
+// ---------- privacy: read-only (plain-HTTP WiFi) viewers ----------
+
+// What a sniffable WiFi viewer may see of the profile: plan and tier facts, never who the account is.
+const WIFI_PROFILE_FIELDS = ['loggedIn', 'subscriptionType', 'authMethod', 'role', 'seatTier', 'billingType', 'rateLimitTier'];
+
+/**
+ * The key behind the opaque account ids, kept in the data dir so an id stays the same across restarts (a phone's
+ * quota warnings are remembered per account). Unreadable or missing: a new one (ids change once, nothing breaks).
+ */
+export function accountViewKey(file) {
+  try {
+    const key = readFileSync(file);
+    if (key.length >= 32) return key;
+  } catch {
+    // first start (or unreadable): make one below
+  }
+  const key = randomBytes(32);
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, key, { mode: 0o600 });
+  } catch {
+    // read-only data dir: this run's ids are still stable, only not across restarts
+  }
+  return key;
+}
+
+/**
+ * Views of the account for read-only clients, keyed by `key` (accountViewKey).
+ * - `id(realId)`: an opaque, stable, non-reversible account id (HMAC), the same in every event and route.
+ * - `state(publicState)`: the SSE `account` event / snapshot `.account` / `/api/account` without email, names,
+ *   organisation or ids (`profile.accountKey` replaces them as the client's per-account key) and without the login URL.
+ * - `accounts(list)`: `/api/report/accounts` entries without email/org, ids opaque.
+ */
+export function accountPrivacyView(key) {
+  const id = (realId) => (realId ? `acct-${createHmac('sha256', key).update(String(realId)).digest('hex').slice(0, 16)}` : null);
+  const profile = (p) => {
+    if (!p) return p;
+    const view = Object.fromEntries(WIFI_PROFILE_FIELDS.map((k) => [k, p[k] ?? null]));
+    return { ...view, accountKey: p.loggedIn ? id(p.accountUuid ?? p.email) : null };
+  };
+  const state = (s) => {
+    if (!s || typeof s !== 'object') return s;
+    const view = { ...s, profile: profile(s.profile) };
+    if (s.login) view.login = { state: s.login.state, url: null, error: s.login.error ?? null };
+    return view;
+  };
+  const accounts = (list) => list.map((a) => ({ id: id(a.id), email: null, org: null, tokens: a.tokens ?? 0, ...(a.first ? { first: a.first, last: a.last } : {}) }));
+  return { id, state, accounts };
 }

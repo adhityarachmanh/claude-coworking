@@ -29,8 +29,14 @@ function writeJson(key, value) {
 
 export const quotaSettings = () => cleanThresholds(readJson(QUOTA_SETTINGS_KEY));
 
+/**
+ * The key of an account profile: its uuid or email, or on a read-only (plain WiFi) phone the opaque `accountKey`
+ * the server sends instead (no email/uuid there, for privacy).
+ */
+export const accountKeyOf = (p) => p?.accountUuid ?? p?.email ?? p?.accountKey ?? null;
+
 /** Warnings are remembered per account: another account has its own quota. */
-const accountId = () => state.account?.profile?.accountUuid ?? state.account?.profile?.email ?? null;
+const accountId = () => accountKeyOf(state.account?.profile);
 
 /** Looks at the current numbers: announces new thresholds once, then redraws the indicator. */
 export function checkQuota(now = Date.now()) {

@@ -5,7 +5,7 @@ import { fmtShort } from '../core/format.js';
 import { state } from '../core/state.js';
 import { closeModal, focusablesIn, openModal } from '../ui/modals.js';
 import { chime } from './notify.js';
-import { checkQuota } from './quota.js';
+import { accountKeyOf, checkQuota } from './quota.js';
 import { openReport } from './report.js';
 
 const LOGIN_TEXT = {
@@ -22,14 +22,16 @@ function accountName(p) {
   return [p?.fullName, p?.displayName, p?.email].map((v) => v?.trim()).find(Boolean) ?? 'Akun Claude';
 }
 const accountInitial = (p) => accountName(p)[0].toUpperCase();
+/** The label of a logged-in account: its email, or on a read-only (plain WiFi) phone, which gets none, the plan. */
+const accountLabel = (p) => p.email ?? `Akun Claude${p.subscriptionType ? ` (${p.subscriptionType})` : ''}`;
 
 export function renderAccountButton() {
   const p = state.account?.profile;
   const btn = $('#btn-account');
   btn.classList.toggle('logged-out', !p?.loggedIn);
   $('#account-avatar').textContent = p?.loggedIn ? accountInitial(p) : '!';
-  $('#account-label').textContent = p ? (p.loggedIn ? p.email : 'Belum login') : 'Akun';
-  btn.title = p?.loggedIn ? `${p.email}${p.orgName ? ` · ${p.orgName}` : ''} — profil, kuota & login` : 'Belum login ke Claude — klik untuk login';
+  $('#account-label').textContent = p ? (p.loggedIn ? accountLabel(p) : 'Belum login') : 'Akun';
+  btn.title = p?.loggedIn ? `${accountLabel(p)}${p.orgName ? ` · ${p.orgName}` : ''} — profil, kuota & login` : 'Belum login ke Claude — klik untuk login';
   checkQuota(); // after every account change (snapshot, live rate-limit events): warnings + top-bar indicator
 }
 
@@ -179,10 +181,10 @@ async function loadAccount(force = false) {
 }
 
 export function onAccountState(next) {
-  const prevId = state.account?.profile?.accountUuid ?? state.account?.profile?.email;
+  const prevId = accountKeyOf(state.account?.profile);
   state.account = { ...state.account, ...next };
   renderAccountButton();
-  const id = next.profile?.accountUuid ?? next.profile?.email;
+  const id = accountKeyOf(next.profile);
   if (next.login?.state === 'done' && account.loginState !== 'done') toast(`Login berhasil sebagai ${next.profile?.email ?? 'akun baru'}.`, 'ok');
   if ($('#account-modal').hidden) return;
   if (prevId !== id) return loadAccount(true); // switched account: usage & quota belong to the new one

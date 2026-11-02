@@ -429,6 +429,45 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   // privacy: sniffable WiFi never gets the paired devices list (names); the laptop's 📱 dialog does
   assert.deepEqual(phoneSnap.config.remote.devices, [], 'no paired device names over WiFi');
   assert.ok((await snapshot()).config.remote.devices.length >= 1, 'the laptop sees them');
+  // privacy: nor who the Claude account is (email, org, ids) — snapshot, live `account` event, and the read routes
+  {
+    const IDENTITY = /tester@example\.com|Test Org|org-test/;
+    assert.equal((await api('/api/account', { force: true })).body.profile.email, 'tester@example.com', 'the laptop sees the email');
+    const res = await lan('/stream', { headers: { Cookie: cookie } });
+    const reader = res.body.getReader();
+    const frames = [];
+    let buf = '';
+    const readUntil = async (pred, ms) => {
+      const end = Date.now() + ms;
+      while (!frames.some(pred) && Date.now() < end) {
+        const chunk = await Promise.race([reader.read(), sleep(Math.max(1, end - Date.now())).then(() => null)]);
+        if (!chunk || chunk.done) break;
+        buf += new TextDecoder().decode(chunk.value);
+        for (let i; (i = buf.indexOf('\n\n')) >= 0; buf = buf.slice(i + 2)) frames.push(buf.slice(0, i));
+      }
+      return frames.find(pred);
+    };
+    const snap = await readUntil((f) => f.startsWith('event: snapshot'), 5000);
+    const snapAccount = JSON.parse(snap.match(/^data: (.*)$/m)[1]).account;
+    assert.equal(snapAccount.profile.loggedIn, true);
+    assert.equal(snapAccount.profile.subscriptionType, 'team', 'the plan stays');
+    assert.match(snapAccount.profile.accountKey, /^acct-[0-9a-f]{16}$/);
+    await api('/api/account', { force: true }); // the laptop reloads the profile: an `account` event to every stream
+    const live = await readUntil((f) => f.startsWith('event: account\n'), 8000);
+    reader.cancel();
+    assert.ok(live, 'the phone got the live account event');
+    for (const f of frames) assert.doesNotMatch(f, IDENTITY, f.slice(0, 40));
+    assert.equal(JSON.parse(live.match(/^data: (.*)$/m)[1]).profile.accountKey, snapAccount.profile.accountKey, 'the same opaque id in every event');
+    const acct = await (await phoneApi('/api/account', {})).text();
+    const list = await (await phoneApi('/api/report/accounts', {})).text();
+    for (const body of [acct, list]) assert.doesNotMatch(body, IDENTITY);
+    const { current } = JSON.parse(list);
+    assert.equal(current, snapAccount.profile.accountKey, 'the report uses the same opaque id');
+    const mine = await phoneApi('/api/report/summary', { accountId: current });
+    assert.equal(mine.status, 200);
+    assert.ok((await mine.json()).records > 0, 'the report still works from WiFi');
+    assert.equal((await phoneApi('/api/report/summary', { accountId: 'tester@example.com' })).status, 404, 'real ids are not accepted from WiFi');
+  }
   const reads = ['/api/account', '/api/account/limits', '/api/templates', '/api/team/roster', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/git-branches`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`, `/api/projects/${id}/task-detail`];
   for (const p of reads) assert.notEqual((await phoneApi(p, { taskId: 'x' })).status, 403, `read ${p}`);
   // history search/export and saved permission rules stay off sniffable WiFi

@@ -2,6 +2,8 @@
 // Reading the account, its limits and the report is allowed over WiFi (src/remote.js). Login/logout switch the
 // account of every Claude Code on the laptop: server.js lets a phone call them only over Tailscale (ACCOUNT_AUTH).
 // `ctx.device` is the paired phone making the request (null on the laptop).
+import { randomBytes } from 'node:crypto';
+import { accountPrivacyView } from '../account.js';
 import { renderPdf, reportHtml } from '../report.js';
 import { PERIOD_UNITS, summarize, totals } from '../usage.js';
 import { json } from './http.js';
@@ -10,6 +12,22 @@ const LOGOUT_CONFIRM = 'LOGOUT';
 
 /** One headless browser at a time renders report PDFs (each is a full Chrome/Edge process for up to 60 s). */
 let pdfRendering = false;
+
+// A ctx without the server's view (a test, a future caller) still never shows who the account is to a read-only client.
+const FALLBACK_VIEW = accountPrivacyView(randomBytes(32));
+/**
+ * The read-only (plain-HTTP WiFi) account view for this request (no email, names, org or real ids), or null when the
+ * full one may be sent (laptop, Tailscale). Fail closed: a ctx that can't tell gets the reduced view.
+ */
+const wifiView = (ctx, req) => (ctx.isReadOnly?.(req) === false ? null : (ctx.accountPrivacy ?? FALLBACK_VIEW));
+
+/** The real account id a report asks for: none = the current one; from a WiFi viewer, its opaque id (null = unknown). */
+function requestedAccount({ account, ledger }, view, requested) {
+  const current = account.current?.id ?? '';
+  if (requested === undefined || requested === null || requested === '') return current;
+  if (!view) return String(requested);
+  return [current, ...ledger.accounts().map((a) => a.id)].find((id) => id && view.id(id) === String(requested)) ?? null;
+}
 
 export function register(router) {
   router.post('/api/account', accountState);
@@ -32,8 +50,8 @@ export function register(router) {
   router.post('/api/account/logout', logout);
   // ---------- usage report ----------
   router.post('/api/report/accounts', reportAccounts);
-  router.post('/api/report/summary', (ctx, req, res, params, body) => report(ctx, res, body, { pdf: false }));
-  router.post('/api/report/pdf', (ctx, req, res, params, body) => report(ctx, res, body, { pdf: true }));
+  router.post('/api/report/summary', (ctx, req, res, params, body) => report(ctx, req, res, body, { pdf: false }));
+  router.post('/api/report/pdf', (ctx, req, res, params, body) => report(ctx, req, res, body, { pdf: true }));
 }
 
 /** Tells the laptop that a phone started a login or logged out (shown as a toast + notification). */
@@ -48,13 +66,16 @@ function accountAlert(hub, action, device, email = null) {
  */
 export const wifiAccountAlert = ({ action, ts }) => ({ action, device: 'Perangkat lain', email: null, ts });
 
-async function accountState({ account, ledger, allowForce }, req, res, params, body) {
+async function accountState(ctx, req, res, params, body) {
+  const { account, ledger, allowForce } = ctx;
   await account.refreshProfile(allowForce(req, body));
+  const view = wifiView(ctx, req);
   const id = account.current?.id;
   const since = (ms) => totals(id ? ledger.query({ accountId: id, from: Date.now() - ms }) : []);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return json(res, 200, { ...account.publicState(), usage: { today: totals(id ? ledger.query({ accountId: id, from: today.getTime() }) : []), week: since(7 * 86_400_000) } });
+  const state = view ? view.state(account.publicState()) : account.publicState();
+  return json(res, 200, { ...state, usage: { today: totals(id ? ledger.query({ accountId: id, from: today.getTime() }) : []), week: since(7 * 86_400_000) } });
 }
 
 async function logout({ hub, account, device }, req, res, params, body) {
@@ -66,26 +87,35 @@ async function logout({ hub, account, device }, req, res, params, body) {
   return json(res, 200, { profile });
 }
 
-function reportAccounts({ account, ledger }, req, res) {
+function reportAccounts(ctx, req, res) {
+  const { account, ledger } = ctx;
   const known = ledger.accounts();
   const current = account.current;
   if (current && !known.some((a) => a.id === current.id)) known.unshift({ ...current, tokens: 0 });
+  const view = wifiView(ctx, req);
+  if (view) return json(res, 200, { accounts: view.accounts(known), current: view.id(current?.id) });
   return json(res, 200, { accounts: known, current: current?.id ?? null });
 }
 
 /** POST /api/report/summary (JSON) and /api/report/pdf (a PDF download, or the HTML to print when no browser renders it). */
-async function report({ account, ledger }, res, body, { pdf: wantPdf }) {
-  const accountId = String(body.accountId ?? account.current?.id ?? '');
+async function report(ctx, req, res, body, { pdf: wantPdf }) {
+  const { account, ledger } = ctx;
+  const view = wifiView(ctx, req);
+  const accountId = requestedAccount(ctx, view, body.accountId);
+  if (accountId === null) return json(res, 404, { error: 'Akun tidak dikenal.' });
   const to = Number(body.to) || Date.now();
   const from = Number(body.from) || 0;
   const rows = ledger.query({ accountId, from, to });
   const groupBy = PERIOD_UNITS.includes(body.groupBy) ? body.groupBy : 'day';
   const summary = summarize(rows, { from: from || (rows[0]?.ts ?? to), to, groupBy });
   if (!wantPdf) return json(res, 200, summary);
-  const who = ledger.accounts().find((a) => a.id === accountId) ?? (account.current?.id === accountId ? account.current : null);
-  if (!who) return json(res, 404, { error: 'Akun tidak dikenal.' });
+  const found = ledger.accounts().find((a) => a.id === accountId) ?? (account.current?.id === accountId ? account.current : null);
+  if (!found) return json(res, 404, { error: 'Akun tidak dikenal.' });
   const isCurrent = account.current?.id === accountId;
-  const html = reportHtml({ account: who, profile: isCurrent ? account.profile : null, limits: isCurrent ? account.limits : null, summary });
+  // WiFi: the PDF (and its file name) says "Akun Claude", never the email, name or organisation.
+  const who = view ? { ...found, email: 'Akun Claude', org: null } : found;
+  const profile = isCurrent ? (view ? view.state({ profile: account.profile }).profile : account.profile) : null;
+  const html = reportHtml({ account: who, profile, limits: isCurrent ? account.limits : null, summary });
   if (pdfRendering) return json(res, 429, { error: 'Laporan PDF lain sedang dibuat. Coba lagi sebentar.' });
   pdfRendering = true;
   try {

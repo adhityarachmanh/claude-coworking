@@ -117,7 +117,7 @@ export async function openReport() {
     const select = $('#report-account');
     const keep = select.value;
     select.innerHTML = accounts.length
-      ? accounts.map((a) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.email)}${a.org ? ` — ${escapeHtml(a.org)}` : ''}${a.id === current ? ' (aktif)' : ''}</option>`).join('')
+      ? accounts.map((a, i) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.email ?? `Akun Claude ${i + 1}`)}${a.org ? ` — ${escapeHtml(a.org)}` : ''}${a.id === current ? ' (aktif)' : ''}</option>`).join('')
       : '<option value="">Belum ada data</option>';
     // The logged-in account may have no usage yet: only pick an account that is in the list.
     select.value = [keep, current, accounts[0]?.id].find((id) => accounts.some((a) => a.id === id)) ?? '';
