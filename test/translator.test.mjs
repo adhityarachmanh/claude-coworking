@@ -352,7 +352,7 @@ test('background tasks without tool_use_id still map to the right role', () => {
   assert.equal(last().qa?.agents ?? 0, 0, 'gone from the live list → finished');
 });
 
-test('a running shell row learns its task id (live output), in either order; other tools and agents do not', () => {
+test('a running shell row learns its task id (live output), in either order; an agent task links to its delegation only', () => {
   const { translator, chat } = recorder();
   // foreground command: the call first, then its task
   translator.handle(use('s1', 'Bash', { command: 'npm test' }));
@@ -360,7 +360,7 @@ test('a running shell row learns its task id (live output), in either order; oth
   // the task announced before the call
   translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T2', tool_use_id: 's2', description: 'build', is_backgrounded: false });
   translator.handle(use('s2', 'PowerShell', { command: 'npm run build' }));
-  // a subagent task never links to a tool row
+  // a subagent task links to its delegation row, never to a tool row
   translator.handle(use('a1', 'Agent', { subagent_type: 'qa', description: 'cek', prompt: 'cek' }));
   translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T3', tool_use_id: 'a1', subagent_type: 'qa', description: 'cek', is_backgrounded: false });
   // progress for the same task doesn't send the id again
@@ -368,9 +368,60 @@ test('a running shell row learns its task id (live output), in either order; oth
   const rows = chat();
   assert.equal(rows.find((m) => m.tool === 'Bash').taskId, 'T1');
   assert.equal(rows.find((m) => m.tool === 'PowerShell').taskId, 'T2');
-  assert.equal(rows.find((m) => m.kind === 'delegate').taskId, undefined);
+  assert.equal(rows.find((m) => m.kind === 'delegate').taskId, 'T3');
   translator.handle(done('s1', 'ok'));
   assert.equal(rows.find((m) => m.tool === 'Bash').taskId, 'T1', 'kept after the call returns (the final output comes from the result)');
+});
+
+test('two parallel same-role delegations each get their own task id (by tool_use_id, any order)', () => {
+  const { translator, chat } = recorder();
+  translator.handle(use('a1', 'Agent', { subagent_type: 'backend', description: 'API login', prompt: 'x', run_in_background: true }));
+  translator.handle(use('a2', 'Agent', { subagent_type: 'backend', description: 'API logout', prompt: 'y', run_in_background: true }));
+  // tasks announced in reverse order of the calls
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T-b', tool_use_id: 'a2', subagent_type: 'backend', description: 'API logout', is_backgrounded: true });
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T-a', tool_use_id: 'a1', subagent_type: 'backend', description: 'API login', is_backgrounded: true });
+  // a third one whose task is announced before its call
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T-c', tool_use_id: 'a3', subagent_type: 'backend', description: 'API reset', is_backgrounded: true });
+  translator.handle(use('a3', 'Agent', { subagent_type: 'backend', description: 'API reset', prompt: 'z', run_in_background: true }));
+  const rows = chat().filter((m) => m.kind === 'delegate');
+  assert.deepEqual(rows.map((m) => [m.text, m.toolUseId, m.taskId]), [
+    ['API login', 'a1', 'T-a'],
+    ['API logout', 'a2', 'T-b'],
+    ['API reset', 'a3', 'T-c'],
+  ]);
+  // a subagent's own rows say which delegation they belong to
+  translator.handle(use('s1', 'Bash', { command: 'npm test' }, 'a2'));
+  const sub = chat().find((m) => m.tool === 'Bash');
+  assert.equal(sub.sub, true);
+  assert.equal(sub.parentToolUseId, 'a2');
+});
+
+test('agent tasks carry lastActivityAt: set on start, moved by task_progress and (throttled) by subagent messages', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  const statuses = [];
+  const translator = new StreamTranslator({ office: () => {}, chat: () => 'c', updateChat: () => {}, status: (p) => p.tasks && statuses.push(p.tasks) });
+  const task = (id) => statuses.at(-1).find((x) => x.id === id);
+  translator.handle(use('a1', 'Agent', { subagent_type: 'qa', description: 'cek', prompt: 'cek', run_in_background: true }));
+  translator.handle(use('a2', 'Agent', { subagent_type: 'qa', description: 'cek 2', prompt: 'cek', run_in_background: true }));
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T1', tool_use_id: 'a1', subagent_type: 'qa', is_backgrounded: true });
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T2', tool_use_id: 'a2', subagent_type: 'qa', is_backgrounded: true });
+  assert.equal(task('T1').lastActivityAt, 1_000_000, 'starts at its start');
+  t.mock.timers.tick(60_000);
+  translator.handle({ type: 'system', subtype: 'task_progress', task_id: 'T1', tool_use_id: 'a1', usage: { total_tokens: 10, tool_uses: 1 } });
+  assert.equal(task('T1').lastActivityAt, 1_060_000, 'progress moves it');
+  assert.equal(task('T2').lastActivityAt, 1_000_000, 'the other same-role task is untouched');
+  // the second subagent works: its tool call and its result move its own task
+  t.mock.timers.tick(30_000);
+  translator.handle(use('s1', 'Bash', { command: 'npm test' }, 'a2'));
+  assert.equal(task('T2').lastActivityAt, 1_090_000);
+  assert.equal(task('T1').lastActivityAt, 1_060_000);
+  const sent = statuses.length;
+  t.mock.timers.tick(1000);
+  translator.handle(done('s1', 'ok', false, 'a2'));
+  assert.equal(statuses.length, sent, 'throttled: the task list is not re-sent within a few seconds');
+  t.mock.timers.tick(10_000);
+  translator.handle(text('m9', 'lanjut', 'a2'));
+  assert.equal(task('T2').lastActivityAt, 1_101_000, 'later activity is sent');
 });
 
 test('Read with an offset carries the line to jump to in the file viewer', () => {

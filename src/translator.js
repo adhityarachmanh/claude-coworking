@@ -11,6 +11,8 @@ const ASYNC_LAUNCH = /async agent launched|launched successfully|running in the 
 const THINK_THROTTLE_MS = 4000;
 const STREAM_FLUSH_MS = 80;
 const OUTPUT_LIMIT = 3000;
+// A subagent's own messages (tool calls / results) move its task's `lastActivityAt`; re-sent at most this often.
+const ACTIVITY_EMIT_MS = 5000;
 
 function resultText(content) {
   if (typeof content === 'string') return content;
@@ -263,8 +265,10 @@ export class StreamTranslator {
     const t = this.bgTasks.get(id) ?? { id, status: 'running', startedAt: Date.now() };
     if (msg.subtype === 'task_started') {
       Object.assign(t, { kind: msg.subagent_type ? 'agent' : 'shell', agent: msg.subagent_type ?? null, background: Boolean(msg.is_backgrounded), status: 'running' });
+      t.lastActivityAt ??= t.startedAt;
     } else if (msg.subtype === 'task_progress') {
       Object.assign(t, { summary: msg.summary ?? t.summary, lastTool: msg.last_tool_name ?? t.lastTool, tokens: msg.usage?.total_tokens ?? t.tokens, toolUses: msg.usage?.tool_uses ?? t.toolUses });
+      t.lastActivityAt = Date.now(); // the browser's stuck detector judges idleness from this (no task-detail reads)
     } else if (msg.subtype === 'task_updated') {
       const p = msg.patch ?? {};
       if (p.status) t.status = p.status;
@@ -289,21 +293,39 @@ export class StreamTranslator {
     }
     this.attachCommand(t);
     this.bgTasks.set(id, t);
-    this.linkShellTask(t);
+    this.linkTask(t);
     this.settleTask(t);
     this.emitBgTasks();
   }
 
   /**
-   * A shell task of a Bash/PowerShell call still on screen as a running chat row: the row learns the task id,
-   * so the browser can read its output live (get_task_output) while the command runs.
+   * A task whose tool call is still on screen as a running chat row: the row learns the task id.
+   * - shell task of a Bash/PowerShell call → the browser can read its output live (get_task_output);
+   * - subagent task of an Agent/Task call → the stuck detector and "Lihat detail" use exactly that task, even
+   *   with two agents of the same role running in parallel (no guessing by role + start time).
    */
-  linkShellTask(t) {
-    if (t.kind !== 'shell' || !t.toolUseId) return;
+  linkTask(t) {
+    if (!t.toolUseId) return;
     const info = this.tools.get(t.toolUseId);
-    if (!info || info.agent || info.taskId === t.id) return;
+    if (!info || Boolean(info.agent) !== (t.kind === 'agent') || info.taskId === t.id) return;
     info.taskId = t.id;
     this.sink.updateChat(info.chatId, { taskId: t.id });
+  }
+
+  /**
+   * A subagent did something (a message with `parent_tool_use_id`): its task's `lastActivityAt` moves forward.
+   * Throttled: a busy subagent re-sends the task list at most every ACTIVITY_EMIT_MS (the detector's thresholds are minutes).
+   */
+  touchTask(parentId) {
+    if (!parentId) return;
+    const now = Date.now();
+    for (const t of this.bgTasks.values()) {
+      if (t.toolUseId !== parentId || t.kind !== 'agent' || t.status !== 'running') continue;
+      if (now - (t.lastActivityAt ?? 0) < ACTIVITY_EMIT_MS) return;
+      t.lastActivityAt = now;
+      this.emitBgTasks();
+      return;
+    }
   }
 
   /** tool_use_id -> role, bounded (only recent calls can still have a task running). */
@@ -350,6 +372,7 @@ export class StreamTranslator {
       t.role ??= (t.toolUseId && this.toolRoles.get(t.toolUseId)) || (t.agent ? agentRole(t.agent) : null);
       this.attachCommand(t);
       this.bgTasks.set(x.task_id, t);
+      this.linkTask(t);
     }
     for (const t of this.bgTasks.values()) {
       if (t.background && t.status === 'running' && !live.has(t.id)) {
@@ -418,13 +441,14 @@ export class StreamTranslator {
     const parentId = msg.parent_tool_use_id ?? null;
     const parentRole = this.parentRole(parentId);
     if (!parentId) this.noteContext(msg.message?.usage);
+    this.touchTask(parentId);
     for (const block of msg.message?.content ?? []) {
       if (block.type === 'text' && block.text?.trim()) this.onText(block.text, parentId, parentRole, msg.message.id);
       else if (block.type === 'thinking') {
         this.think(parentId);
         if (!parentId) this.finishThinking(block.thinking);
       }
-      else if (block.type === 'tool_use') this.onToolUse(block, parentRole);
+      else if (block.type === 'tool_use') this.onToolUse(block, parentRole, parentId);
     }
   }
 
@@ -490,7 +514,7 @@ export class StreamTranslator {
 
   // ---------- tools ----------
 
-  onToolUse(block, parentRole) {
+  onToolUse(block, parentRole, parentId = null) {
     const input = block.input ?? {};
     if (IGNORED_TOOLS.has(block.name)) return;
     if (DELEGATE_TOOLS.has(block.name)) {
@@ -499,9 +523,21 @@ export class StreamTranslator {
       const from = parentRole ?? 'claude'; // a subagent can hand work to another specialist
       const label = truncate(input.description ?? input.prompt, 80);
       this.agentRoles.set(block.id, role);
-      const chatId = this.sink.chat({ kind: 'delegate', role, from, agentType, text: label, status: 'running', input: { prompt: clip(input.prompt, 3000) } });
+      const chatId = this.sink.chat({
+        kind: 'delegate',
+        role,
+        from,
+        agentType,
+        text: label,
+        status: 'running',
+        input: { prompt: clip(input.prompt, 3000) },
+        toolUseId: block.id, // the key its task (task_started.tool_use_id) and its subagent's rows point back at
+        ...(parentId ? { parentToolUseId: parentId } : {}),
+      });
       this.tools.set(block.id, { name: block.name, role, from, label, chatId, agent: true, background: Boolean(input.run_in_background) });
       this.rememberRole(block.id, role);
+      // Its task may have been announced before the call itself (order is not guaranteed).
+      for (const t of this.bgTasks.values()) if (t.toolUseId === block.id) this.linkTask(t);
       this.sink.office({ kind: 'delegate', role, from, label, agentType });
       this.emitWorking();
       return;
@@ -522,12 +558,13 @@ export class StreamTranslator {
       status: 'running',
       input: inputDetail(block.name, input),
       ...(parentRole ? { sub: true } : {}),
+      ...(parentId ? { parentToolUseId: parentId } : {}), // which delegation this subagent row belongs to
     });
     this.tools.set(block.id, { name: block.name, input, role, label, screen, chatId });
     this.rememberRole(block.id, role);
     if ((block.name === 'Bash' || block.name === 'PowerShell') && input.command) this.rememberCommand(block.id, input.command);
     // Its task may have been announced before the call itself (order is not guaranteed).
-    for (const t of this.bgTasks.values()) if (t.toolUseId === block.id) this.linkShellTask(t);
+    for (const t of this.bgTasks.values()) if (t.toolUseId === block.id) this.linkTask(t);
     if (input.run_in_background && this.bgShellRoles.push(role) > 50) this.bgShellRoles.shift();
     this.sink.office({ kind: 'tool_start', role, label, tool: block.name, screen, inferred: !parentRole });
     this.emitWorking();
@@ -563,6 +600,7 @@ export class StreamTranslator {
   onUser(msg) {
     const content = msg.message?.content;
     if (!Array.isArray(content)) return;
+    this.touchTask(msg.parent_tool_use_id);
     for (const block of content) {
       if (block.type !== 'tool_result') continue;
       const info = this.tools.get(block.tool_use_id);

@@ -4,10 +4,14 @@
 // notification (per-device settings and quiet hours apply). Nothing is ever stopped automatically.
 //
 // Signals, cheapest first: the chat itself (subagent tool rows appearing/finishing), the status' task counters
-// (tokens / tool uses), the live output live-output.js already reads for rows on screen. Only when those are
-// quiet does it read more: task-output for an off-screen shell row (every 30 s, after 2 min, at most 3 reads per
-// tick over all projects) and task-detail for
-// a delegation (every 30 s, after 1 min quiet, active project, visible page). Rules and thresholds: core/stuck-rules.js.
+// (tokens / tool uses) and its `lastActivityAt`, the live output live-output.js already reads for rows on screen.
+// Only when those are quiet does it read more: task-output for an off-screen shell row (every 30 s, after 2 min, at
+// most 3 reads per tick over all projects) and task-detail for a delegation whose task has no `lastActivityAt`
+// (older server / CLI mirror; every 30 s, after 1 min quiet, active project, visible page).
+//
+// A delegation row is matched to its agent task by the explicit link the server puts on it (`taskId`, or the
+// task's `toolUseId` = the row's), and its subagent's rows by `parentToolUseId`; role + nearest start time is
+// only the fallback for rows without those (history from before the link existed). Rules: core/stuck-rules.js.
 import { api, toast } from '../core/api.js';
 import { escapeHtml } from '../core/dom.js';
 import { scenes } from '../core/scenes.js';
@@ -92,10 +96,30 @@ function countedStart(key, startedAt) {
   return Math.max(startedAt + (stuck.shift.get(key) ?? 0), stuck.floor.get(key) ?? -Infinity);
 }
 
-/** The running agent task behind a delegation row: same role, started closest to the row. */
-function agentTaskFor(project, msg) {
-  const tasks = (state.statuses[project]?.tasks ?? []).filter((t) => t.kind === 'agent' && isRunningTask(t) && t.role === msg.role);
-  return tasks.sort((a, b) => Math.abs((a.startedAt ?? 0) - msg.ts) - Math.abs((b.startedAt ?? 0) - msg.ts))[0] ?? null;
+/**
+ * The agent task behind a delegation row. Explicit links first: the row's `taskId` (set by the server once the
+ * task starts), else a task pointing at the row's `toolUseId`. A linked row never guesses: its task not being in
+ * the list (yet / anymore) means no task. Fallback for unlinked rows: same role, started closest to the row,
+ * skipping tasks explicitly linked to another delegation (two same-role agents in parallel).
+ */
+function agentTaskFor(project, msg, chat) {
+  const tasks = (state.statuses[project]?.tasks ?? []).filter((t) => t.kind === 'agent');
+  if (msg.taskId) return tasks.find((t) => t.id === msg.taskId) ?? null;
+  if (msg.toolUseId) {
+    const byCall = tasks.find((t) => t.toolUseId === msg.toolUseId);
+    if (byCall || tasks.some((t) => t.toolUseId)) return byCall ?? null; // this server links tasks: no guessing
+  }
+  const claimed = new Set();
+  for (const m of chat) if (m.kind === 'delegate' && m !== msg) for (const k of [m.taskId, m.toolUseId]) if (k) claimed.add(k);
+  const free = tasks.filter((t) => isRunningTask(t) && t.role === msg.role && !claimed.has(t.id) && !(t.toolUseId && claimed.has(t.toolUseId)));
+  return free.sort((a, b) => Math.abs((a.startedAt ?? 0) - msg.ts) - Math.abs((b.startedAt ?? 0) - msg.ts))[0] ?? null;
+}
+
+/** Its subagent's own rows after the delegation: by `parentToolUseId` when the rows carry it, else same role. */
+function subRowsOf(chat, index, msg) {
+  const after = chat.slice(index + 1);
+  if (msg.toolUseId && after.some((m) => m.sub && m.parentToolUseId)) return after.filter((m) => m.sub && m.parentToolUseId === msg.toolUseId);
+  return after.filter((m) => m.sub && m.role === msg.role);
 }
 
 const shellTaskFor = (project, msg) => (msg.taskId ? ((state.statuses[project]?.tasks ?? []).find((t) => t.id === msg.taskId) ?? null) : null);
@@ -126,22 +150,25 @@ function evaluateTool(project, msg, key, now, skew) {
 
 function evaluateDelegate(project, msg, key, chat, index, now, skew) {
   const startedAt = countedStart(key, toLocal(msg.ts, skew, now) ?? stuck.seen.get(key));
-  // Its subagent's own tool rows (after the delegation, same role): one appearing or finishing is activity.
-  const subs = chat.slice(index + 1).filter((m) => m.sub && m.role === msg.role);
+  // Its subagent's own tool rows: one appearing or finishing is activity.
+  const subs = subRowsOf(chat, index, msg);
   const subSig = `${subs.length}|${subs.filter((m) => m.status !== 'running').length}|${subs.at(-1)?.id ?? ''}`;
-  const task = agentTaskFor(project, msg);
+  const task = agentTaskFor(project, msg, chat);
   const taskSig = task ? `${task.id}|${task.tokens ?? ''}|${task.toolUses ?? ''}|${task.summary ?? ''}` : '';
+  // The server's own "last did something" for this task (server clock → browser clock); null on older servers.
+  const taskActiveAt = typeof task?.lastActivityAt === 'number' ? toLocal(task.lastActivityAt, skew, now) : null;
   let a = stuck.activity.get(key);
   if (!a) {
     // First look (also after a reload): the newest known moment, not "now" — a long-quiet one shows up right away.
-    a = { subSig, taskSig, detail: null, at: latest(startedAt, ...subs.map((m) => toLocal(m.ts, skew, now))) };
+    a = { subSig, taskSig, detail: null, at: latest(startedAt, taskActiveAt, ...subs.map((m) => toLocal(m.ts, skew, now))) };
     stuck.activity.set(key, a);
   }
   if (a.subSig !== subSig || (a.taskSig !== taskSig && a.taskSig && taskSig)) a.at = now;
-  a.at = Math.max(a.at, stuck.floor.get(key) ?? -Infinity); // waiting for the user counts as activity
+  a.at = latest(a.at, taskActiveAt, stuck.floor.get(key)); // waiting for the user counts as activity
   a.subSig = subSig;
   a.taskSig = taskSig || a.taskSig;
-  if (task && shouldPollDetail({ quietMs: now - a.at, lastPollAt: a.detail?.polledAt, now, visible: project === state.active && !document.hidden })) pollDetail(project, task.id, key);
+  // task-detail only when the task says nothing about its own activity (lastActivityAt makes the read unnecessary).
+  if (task && taskActiveAt === null && shouldPollDetail({ quietMs: now - a.at, lastPollAt: a.detail?.polledAt, now, visible: project === state.active && !document.hidden })) pollDetail(project, task.id, key);
   const v = delegateStuck({ lastActivityAt: a.at, now });
   if (!v) return null;
   return {
