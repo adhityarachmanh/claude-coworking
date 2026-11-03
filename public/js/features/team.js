@@ -73,7 +73,7 @@ export function applyNames(config) {
 
 function renderTeamForm() {
   $('#team-list').innerHTML = teamOrder().map((id) => `<label class="team-row">
-      <img src="${avatarURL(CAST[id].look)}" alt="">
+      <img class="orbable" style="--c:${id === 'claude' ? '#b9a8ff' : CAST[id].color}" src="${avatarURL(CAST[id].look)}" alt="">
       <span class="team-role"><b style="color:${CAST[id].color}">${CAST[id].title}</b><small>bawaan: ${escapeHtml(DEFAULT_NAMES[id] ?? CAST[id].name)}</small></span>
       <input name="${id}" value="${escapeHtml(CAST[id].name === DEFAULT_NAMES[id] ? '' : CAST[id].name)}" placeholder="${escapeHtml(DEFAULT_NAMES[id] ?? CAST[id].name)}" maxlength="24" autocomplete="off" ${state.readOnly ? 'disabled' : ''} />
     </label>`).join('');

@@ -5,6 +5,9 @@ import { open, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 export const MAX_VIEW_BYTES = 512 * 1024;
+// 👁 Pratinjau: images come back whole (base64) up to this size, shown as <img> (never as text)
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif' };
 const MAX_PATH = 1024;
 // A bare file name Claude wrote in prose ("server.test.mjs") is looked up below the project, bounded.
 const FIND_SKIP = new Set(['node_modules', '.git', 'vendor', 'dist', 'build', 'coverage', '.next', '.nuxt', '__pycache__', '.venv', 'venv', 'target']);
@@ -147,6 +150,12 @@ export async function readProjectFile(projectPath, input, { allowSecret = false,
   if (!info.isFile()) throw new FileViewError(400, 'Itu folder, bukan file.');
   const base = { path: rel, size: info.size, mtime: info.mtimeMs, language: languageOf(rel), secret };
   if (secret && !reveal) return { ...base, content: null, truncated: false };
+  const ext = path.extname(rel).slice(1).toLowerCase();
+  if (IMAGE_TYPES[ext]) {
+    if (info.size > MAX_IMAGE_BYTES) throw new FileViewError(413, `Gambar terlalu besar untuk dipratinjau (maks ${MAX_IMAGE_BYTES / 1024 / 1024} MB).`);
+    const { readFile } = await import('node:fs/promises');
+    return { ...base, language: 'image', content: null, image: { mime: IMAGE_TYPES[ext], data: (await readFile(abs)).toString('base64') }, truncated: false };
+  }
 
   const length = Math.min(info.size, MAX_VIEW_BYTES);
   const buf = Buffer.alloc(length);

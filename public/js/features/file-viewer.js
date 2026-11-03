@@ -6,7 +6,7 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { copyText, flashButton } from '../core/util.js';
-import { highlight } from '../markdown.js';
+import { highlight, renderMarkdown } from '../markdown.js';
 import { openModal } from '../ui/modals.js';
 
 const MAX_MARKED = 5000; // search hits marked in the text (the count still covers all of them)
@@ -25,14 +25,91 @@ export const viewer = {
   hit: -1,
   seq: 0, // bumped per open: a late answer for an earlier file is dropped
   searchTimer: null,
+  mode: 'preview', // 👁 Pratinjau | ‹› Kode, for files that have a preview (previewKind)
 };
+
+// ---------- 👁 preview per file type ----------
+
+/** What a file looks like rendered: md → Markdown, csv/tsv → table, json → formatted, svg/image → picture, html → page. */
+export function previewKind(d) {
+  if (!d) return null;
+  if (d.image) return 'image';
+  const ext = String(d.path ?? '').toLowerCase().split('.').pop();
+  if (ext === 'md' || ext === 'markdown') return 'md';
+  if (ext === 'csv' || ext === 'tsv') return 'table';
+  if (ext === 'json' || ext === 'jsonc') return 'json';
+  if (ext === 'svg') return 'svg';
+  if (ext === 'html' || ext === 'htm') return 'html';
+  return null;
+}
+
+/** RFC 4180-ish CSV (quotes, doubled quotes, newlines in quotes); `sep` is , or a tab. At most `max` rows. */
+export function parseCsv(text, sep = ',', max = 1000) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') (cell += '"'), i++;
+      else if (c === '"') quoted = false;
+      else cell += c;
+    } else if (c === '"' && cell === '') quoted = true;
+    else if (c === sep) row.push(cell), (cell = '');
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+      if (rows.length >= max) return { rows, more: true };
+    } else cell += c;
+  }
+  if (cell || row.length) row.push(cell), rows.push(row);
+  return { rows, more: false };
+}
+
+function previewHtml(kind, d) {
+  const text = String(d.content ?? '');
+  switch (kind) {
+    case 'image':
+      return `<div class="fv-preview fv-img"><img src="data:${escapeHtml(d.image.mime)};base64,${d.image.data}" alt="${escapeHtml(d.path)}"></div>`;
+    case 'svg':
+      return `<div class="fv-preview fv-img"><img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}" alt="${escapeHtml(d.path)}"></div>`;
+    case 'md':
+      return `<div class="fv-preview md">${renderMarkdown(text)}</div>`; // the chat's renderer: HTML in the file stays escaped
+    case 'html':
+      // sandbox without allow-scripts: the page's own scripts, forms and navigation never run
+      return `<div class="fv-preview"><iframe class="fv-frame" sandbox="" referrerpolicy="no-referrer" title="Pratinjau ${escapeHtml(d.path)}" srcdoc="${escapeHtml(text)}"></iframe></div>`;
+    case 'json': {
+      let pretty = text;
+      try {
+        pretty = JSON.stringify(JSON.parse(text), null, 2);
+      } catch {
+        return `<div class="fv-preview"><p class="fv-note warn">JSON tidak valid (mungkin JSONC dengan komentar): ditampilkan apa adanya.</p><pre class="fv-pre">${highlight(text, 'json')}</pre></div>`;
+      }
+      return `<div class="fv-preview"><pre class="fv-pre">${highlight(pretty, 'json')}</pre></div>`;
+    }
+    case 'table': {
+      const { rows, more } = parseCsv(text, d.path.toLowerCase().endsWith('.tsv') ? '\t' : ',');
+      if (!rows.length) return '<p class="muted fv-state">(file kosong)</p>';
+      const [head, ...body] = rows;
+      return `<div class="fv-preview fv-table-wrap"><table class="fv-table"><thead><tr>${head.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${body
+        .map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`)
+        .join('')}</tbody></table>${more ? '<p class="fv-note">Hanya 1000 baris pertama yang ditampilkan.</p>' : ''}</div>`;
+    }
+    default:
+      return '';
+  }
+}
 
 const isOpen = () => !$('#file-modal').hidden;
 
 // ---------- paths in text ----------
 
 // What looks like a project file: a known extension, optionally `:line` or `:line-line`.
-const EXT = 'js|mjs|cjs|jsx|ts|tsx|mts|json|jsonc|md|css|scss|less|html|htm|vue|svelte|py|rb|php|java|kt|go|rs|c|h|cc|cpp|hpp|cs|swift|dart|lua|sh|bash|ps1|psm1|bat|cmd|sql|yml|yaml|toml|ini|xml|svg|txt|env|lock|gradle|properties|conf|cfg|csv|log|graphql|prisma|tf';
+const EXT = 'png|jpe?g|gif|webp|bmp|ico|avif|tsv|js|mjs|cjs|jsx|ts|tsx|mts|json|jsonc|md|css|scss|less|html|htm|vue|svelte|py|rb|php|java|kt|go|rs|c|h|cc|cpp|hpp|cs|swift|dart|lua|sh|bash|ps1|psm1|bat|cmd|sql|yml|yaml|toml|ini|xml|svg|txt|env|lock|gradle|properties|conf|cfg|csv|log|graphql|prisma|tf';
 // In running text a path needs at least one folder (`src/x.js`), so plain words like "node.js" stay text.
 const TEXT_PATH = new RegExp(String.raw`(?<![\w@./\\:-])((?:\.{1,2}[\\/])?(?:[\w@.-]+[\\/])+[\w@.-]+\.(?:${EXT}))(?::(\d+)(?:[-–](\d+))?)?(?![\w/\\])`, 'gi');
 // Inline `code` that is exactly a path may also be a bare file name (`server.js`, `package.json:12`).
@@ -109,6 +186,7 @@ export async function openFile(ref, { line = null, lineEnd = null } = {}) {
   const parsed = parseFileRef(ref);
   if (!parsed.path) return toast('Pilih file dulu.');
   Object.assign(viewer, { project: state.active, path: parsed.path, line: line ?? parsed.line, lineEnd: lineEnd ?? parsed.lineEnd, data: null, lines: [], html: [], hits: [], hit: -1 });
+  viewer.mode = viewer.line ? 'code' : 'preview'; // a `:line` link wants the line marked in the code
   viewer.marked.clear();
   const seq = ++viewer.seq;
   renderHead();
@@ -155,6 +233,11 @@ function renderHead() {
     : [];
   $('#fv-meta').textContent = meta.join(' · ');
   const hasText = Boolean(d && d.content != null);
+  const kind = previewKind(d);
+  const toggle = $('#fv-mode');
+  toggle.hidden = !kind || kind === 'image' || (d?.secret && d.content == null);
+  toggle.textContent = viewer.mode === 'preview' ? '‹› Kode' : '👁 Pratinjau';
+  toggle.title = viewer.mode === 'preview' ? 'Lihat sumbernya (nomor baris, cari)' : `Lihat hasilnya (${{ md: 'Markdown', table: 'tabel', json: 'JSON rapi', svg: 'gambar', html: 'halaman' }[kind] ?? 'pratinjau'})`;
   $('#fv-copy').disabled = !hasText;
   $('#fv-q').disabled = !hasText;
   $('#fv-prev').disabled = $('#fv-next').disabled = !hasText;
@@ -192,6 +275,15 @@ function splitHighlighted(html) {
 
 function renderContent() {
   const d = viewer.data;
+  const kind = previewKind(d);
+  if (kind === 'image' || (kind && viewer.mode === 'preview')) {
+    viewer.lines = d.content == null ? [] : String(d.content).replace(/\r\n?/g, '\n').split('\n');
+    renderHead();
+    const notes = d.truncated ? `<p class="fv-note">File besar: pratinjau dari ${fmtBytes(d.content.length)} pertama.</p>` : '';
+    $('#fv-body').innerHTML = notes + previewHtml(kind, d);
+    if (kind === 'md') linkifyPaths($('#fv-body .fv-preview')); // file links inside a README open here too
+    return;
+  }
   const text = String(d.content ?? '').replace(/\r\n?/g, '\n');
   viewer.lines = text.split('\n');
   if (viewer.lines.length > 1 && viewer.lines.at(-1) === '') viewer.lines.pop(); // the final newline is not a line
@@ -291,12 +383,24 @@ export function initFileViewer() {
     openFile(link.dataset.file, { line: Number(link.dataset.line) || null, lineEnd: Number(link.dataset.lineEnd) || null });
   });
 
+  $('#fv-mode').addEventListener('click', () => {
+    viewer.mode = viewer.mode === 'preview' ? 'code' : 'preview';
+    if (viewer.data) renderContent();
+    renderHead();
+  });
   $('#fv-body').addEventListener('click', (e) => {
     if (!e.target.closest('[data-fv-reveal]')) return;
     $('#fv-body').innerHTML = '<p class="muted fv-state"><span class="spinner" aria-hidden="true"></span> Memuat file…</p>';
     load(viewer.seq, true);
   });
 
+  // Searching needs the lines: a preview switches to the code first
+  $('#fv-q').addEventListener('focus', () => {
+    if (viewer.mode !== 'preview' || !previewKind(viewer.data) || previewKind(viewer.data) === 'image') return;
+    viewer.mode = 'code';
+    renderContent();
+    renderHead();
+  });
   $('#fv-q').addEventListener('input', () => {
     clearTimeout(viewer.searchTimer);
     viewer.searchTimer = setTimeout(search, 120);

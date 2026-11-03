@@ -2146,3 +2146,19 @@ body.read-only #composer-hint { color: var(--ask); }
 .stage:not(.brain-mode) .brain-tip { display: none; }
 #chat .approval.flash { animation: ap-flash 1.5s ease-out; }
 @keyframes ap-flash { 0%, 40% { box-shadow: 0 0 0 3px #ffc24a; } 100% { box-shadow: 0 0 0 0 transparent; } }
+/* 🧠 Mode Otak everywhere: a pixel avatar (img.orbable, --c = its role colour) shows as an orb. The image is pushed
+   out of its box and the orb is the background, so layouts and sizes stay exactly as they are. */
+body.brain-on img.orbable { object-position: -9999px 0; border-radius: 50%; background: radial-gradient(circle at 35% 32%, #ffffffcc 0 12%, var(--c) 42%, color-mix(in srgb, var(--c) 30%, transparent) 72%, transparent 76%); box-shadow: 0 0 6px color-mix(in srgb, var(--c) 55%, transparent); image-rendering: auto; }
+body.brain-on .roster-row:not(.on):not(.locked) img.orbable { opacity: .45; }
+/* 👁 File viewer previews (features/file-viewer.js previewKind) */
+.fv-preview { padding: 4px 2px; }
+.fv-preview.md { padding: 6px 14px 14px; font-size: var(--fs-md); line-height: 1.6; }
+.fv-img { display: grid; place-items: center; padding: 12px; background: repeating-conic-gradient(#8881 0 25%, transparent 0 50%) 0 0 / 16px 16px; border-radius: 8px; }
+.fv-img img { max-width: 100%; max-height: 70vh; object-fit: contain; }
+.fv-frame { width: 100%; height: 65vh; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.fv-pre { margin: 0; padding: 10px 12px; overflow: auto; font: var(--fs-sm)/1.5 var(--mono); white-space: pre; }
+.fv-table-wrap { overflow: auto; max-height: 70vh; }
+.fv-table { border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.fv-table th, .fv-table td { padding: 4px 10px; border: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.fv-table thead th { position: sticky; top: 0; background: var(--surface-3); }
+.fv-table tbody tr:nth-child(even) { background: var(--surface-2); }

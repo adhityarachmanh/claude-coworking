@@ -8,6 +8,7 @@ const KEY = 'office.viewMode';
 function apply(on) {
   brain.setOn(on);
   document.querySelector('.office')?.classList.toggle('brain-on', on); // the people grid turns into orbs too
+  document.body.classList.toggle('brain-on', on); // …and every other avatar (chat, edit-names, Kelola tim)
   const btn = $('#view-mode');
   btn.setAttribute('aria-pressed', String(on));
   btn.textContent = on ? '🏢 Mode Kantor' : '🧠 Mode Otak';

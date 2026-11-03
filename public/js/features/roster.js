@@ -78,7 +78,7 @@ function renderRoster() {
   const enabled = draft.enabled;
   const lead = CAST[LEAD];
   const leadRow = `<li class="roster-row locked">
-      <img src="${avatarURL(lead.look)}" alt="">
+      <img class="orbable" style="--c:#b9a8ff" src="${avatarURL(lead.look)}" alt="">
       <span class="roster-text"><b style="color:${lead.color}">${escapeHtml(lead.name)}</b><small>${escapeHtml(lead.title)} · selalu ada di ruang kaca</small></span>
       <span class="roster-state">🔒 Lead</span>
     </li>`;
@@ -92,7 +92,7 @@ function renderRoster() {
         ? role.description
         : `${role.description} Nonaktif → dikerjakan ${nameOf(coverOf(role.id, enabled))}.`;
     return `<li class="roster-row${on ? ' on' : ''}${role.locked ? ' locked' : ''}">
-      <img src="${avatarURL(cast.look)}" alt="">
+      <img class="orbable" style="--c:${cast.color}" src="${avatarURL(cast.look)}" alt="">
       <label class="roster-text" for="${id}"><b style="color:${cast.color}">${escapeHtml(cast.name)}</b><small>${escapeHtml(cast.title)}${role.defaultOff ? ' · <span class="roster-new">opsional</span>' : role.optional ? ' · <span class="roster-new">baru</span>' : ''}</small><span id="${id}-desc" class="roster-desc">${escapeHtml(note)}</span></label>
       <input id="${id}" type="checkbox" role="switch" data-role="${role.id}" aria-describedby="${id}-desc" ${on ? 'checked' : ''} ${role.locked || ro ? 'disabled' : ''} />
     </li>`;

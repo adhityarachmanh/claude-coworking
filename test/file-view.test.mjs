@@ -35,3 +35,26 @@ test('a bare file name from Claude\'s prose is found below the project (once), n
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('👁 images come back whole as base64 for the preview; over the size limit refused; text files unchanged', async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const { readProjectFile, MAX_IMAGE_BYTES } = await import('../src/file-view.js');
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-fv-img-'));
+  try {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP4z8DwHwyBNANDAwMDAwA7HwP9N2RJbQAAAABJRU5ErkJggg==', 'base64');
+    writeFileSync(path.join(dir, 'pixel.png'), png);
+    const r = await readProjectFile(dir, 'pixel.png');
+    assert.equal(r.language, 'image');
+    assert.equal(r.content, null);
+    assert.equal(r.image.mime, 'image/png');
+    assert.deepEqual(Buffer.from(r.image.data, 'base64'), png);
+    writeFileSync(path.join(dir, 'big.jpg'), Buffer.alloc(MAX_IMAGE_BYTES + 1, 1));
+    await assert.rejects(readProjectFile(dir, 'big.jpg'), (err) => err.status === 413);
+    writeFileSync(path.join(dir, 'notes.md'), '# Judul\n');
+    assert.equal((await readProjectFile(dir, 'notes.md')).content, '# Judul\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
