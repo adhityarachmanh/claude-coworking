@@ -2,6 +2,7 @@
 // service the app's `opencode acp` uses. Every few seconds the running sessions are listed (`session.active`); one the
 // app did not start is read (`session.message.list`) and shown in its project's office and chat as a terminal
 // session (source 'cli'), like the Claude Code transcript mirror (src/mirror.js). Read-only: nothing is sent to it.
+import os from 'node:os';
 import path from 'node:path';
 import { openCodeApi } from './opencode-auth.js';
 import { StreamTranslator } from './translator.js';
@@ -107,9 +108,16 @@ export class OpenCodeMirror {
       }
       // finished since the last look: read the rest, then close the turn
       for (const s of this.sessions.values()) {
-        if (!s.turnOpen || running.includes(s.id)) continue;
-        await this.pull(s, false).catch(() => {});
-        this.endTurn(s);
+        if (running.includes(s.id)) {
+          s.lastActiveAt = Date.now();
+          continue;
+        }
+        if (s.turnOpen) {
+          await this.pull(s, false).catch(() => {});
+          this.endTurn(s);
+        }
+        // a session idle for 30 min is forgotten (its next turn starts fresh from its latest prompt)
+        if (Date.now() - (s.lastActiveAt ?? 0) > 30 * 60_000) this.sessions.delete(s.id);
       }
     } finally {
       this.busy = false;
@@ -119,12 +127,16 @@ export class OpenCodeMirror {
   async open(id) {
     const info = await this.api(this.bin, 'session.get', { params: { sessionID: id }, timeout: 15_000 }).catch(() => null);
     const dir = info?.location?.directory;
-    if (!info || info.parentID || !dir || this.skipDir(path.resolve(dir))) {
+    const abs = dir ? path.resolve(dir) : '';
+    // never a home folder or a drive root as a "project" (its files would become browsable in the app)
+    const tooBroad = abs && (abs.toLowerCase() === path.resolve(os.homedir()).toLowerCase() || path.parse(abs).root.toLowerCase() === abs.toLowerCase());
+    if (!info || info.parentID || !dir || tooBroad || this.skipDir(abs)) {
       this.ignored.add(id);
+      if (this.ignored.size > 500) this.ignored.delete(this.ignored.values().next().value);
       return null;
     }
     const pid = this.hub.upsertProject(dir, 'cli').id;
-    const s = { id, pid, dir, seen: new Set(), tools: new Map(), texts: new Map(), turnOpen: false, since: Date.now() - 10 * 60_000 };
+    const s = { id, pid, dir, seen: new Set(), tools: new Map(), texts: new Map(), turnOpen: false, lastActiveAt: Date.now() };
     s.translator = new StreamTranslator(
       {
         office: (evt) => this.hub.office(pid, { source: 'cli', ...evt }),

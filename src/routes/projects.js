@@ -1,7 +1,7 @@
 // ---------- the project list: folders to scan, added folders, per-project settings ----------
 // /api/projects and /api/config point Claude Code (and git, file search) at any path: laptop only (LOCAL_ONLY in
 // server.js). Opening VS Code / Explorer (`open`) is laptop only too (LOCAL_ONLY_ACTION).
-import { openCodeModels } from '../opencode-bin.js';
+import { modelsOffered, openCodeModels } from '../opencode-bin.js';
 import path from 'node:path';
 import { isDirectory, isNetworkPath } from '../projects.js';
 import { openInApp } from '../open.js';
@@ -39,10 +39,14 @@ export function registerProjectActions(router) {
     return json(res, 200, { ok: true });
   }));
   // The model picker of a non-Claude engine (OpenCode: `opencode models` for the providers set up on this laptop).
-  router.post('/api/projects/:id/models', withSession(async ({ hub, opencode }, req, res, { project }) => {
+  router.post('/api/projects/:id/models', withSession(async ({ hub, opencode, sessions }, req, res, { project }) => {
     const s = hub.settingsFor(project.id);
     if (s.engine !== 'opencode') return json(res, 200, { engine: s.engine, models: [], current: s.model, needsStart: false });
-    const models = (await openCodeModels(opencode)).map((value) => ({ value, name: `${value.slice(value.indexOf('/') + 1)}${/free/i.test(value) ? ' (gratis)' : ''}` }));
+    let values = await openCodeModels(opencode);
+    // `opencode models` empty (its service just started, catalog still loading): the models a running ACP session of
+    // any project offers (configOptions "model") are the same list, so the picker isn't left empty meanwhile.
+    if (!values.length) values = modelsOffered(sessions.sessions.values());
+    const models = values.map((value) => ({ value, name: `${value.slice(value.indexOf('/') + 1)}${/free/i.test(value) ? ' (gratis)' : ''}` }));
     // An empty list (OpenCode still starting, or `opencode models` failed): the picker asks again shortly.
     return json(res, 200, { engine: 'opencode', models, current: s.model, needsStart: !models.length });
   }));

@@ -30,14 +30,15 @@ export const REWINDING_MESSAGE = 'Rewind sedang berjalan. Tunggu sebentar, lalu 
  * Rewind = OpenCode's session.revert (conversation, with or without its file snapshots; no "code only").
  * Questions = OpenCode's `question` tool through ACP form elicitation; plan = our own card after a 📋 plan turn.
  * Long shells: found among the service's shells (src/opencode-shells.js) for live output, the stuck detector,
- * ⧗ Pindah ke latar and stop. Not (yet): live MCP status/login, the /tasks panel, session export or mirror.
+ * ⧗ Pindah ke latar, stop and the /tasks panel. /mcp: live status + OAuth login through the service (src/opencode-mcp.js).
+ * Not (yet): full session export.
  */
 export const OPENCODE_CAPS = Object.freeze({
   effort: true,
   team: true,
   rewind: true,
   mcp: true, // the configured servers + ＋ Tambah (opencode mcp add); live status/login stay inside OpenCode
-  bgTasks: false,
+  bgTasks: true, // the service's shells (src/opencode-shells.js): ⧗ Tugas latar, output, stop, Ctrl+B
   askQuestion: true,
   exportSession: false,
   mirror: true, // sessions opened in a terminal, from the shared background service (src/opencode-mirror.js)
@@ -543,6 +544,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         clearTimeout(this.killTimer);
         this.killTimer = setTimeout(() => this.busy && this.kill(), INTERRUPT_GRACE_MS);
       }
+      // ■ Stop also ends this project's shells still running in the background (as it does for Claude Code)
+      for (const id of this.translator?.runningTaskIds?.() ?? []) if (String(id).startsWith('oc:')) this.stopTask(id).catch(() => {});
       this.afterProgress();
     }
 
@@ -633,7 +636,9 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.checkRetries().catch(() => {});
       const t = this.translator;
       const waiting = t?.unlinkedShells?.().filter((s) => Date.now() - s.startedAt >= 8000) ?? [];
-      if (!waiting.length || !this.m.opencode || this.shellLookup) return;
+      // looked at while a turn runs, a bash call waits for its shell, or a shell of ours may still be running
+      const tracking = t?.runningTaskIds?.().some((id) => String(id).startsWith('oc:'));
+      if ((!waiting.length && !this.busy && !tracking) || !this.m.opencode || this.shellLookup) return;
       this.shellLookup = true;
       try {
         const { matchShell, runningShells } = await import('./opencode-shells.js');
@@ -645,23 +650,36 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
           taken.add(sh.id);
           t.linkShellTask(s.toolUseId, `oc:${sh.id}`);
         }
+        // ⧗ Tugas latar: only shells linked to one of this session's bash calls (now or earlier). The service also
+        // runs the shells of OpenCode sessions opened in a terminal in the same folder: never shown, read or stopped.
+        const byTask = new Map([...t.tools.entries()].filter(([, i]) => i.taskId).map(([id, i]) => [i.taskId, id]));
+        const ours = shells.filter((sh) => byTask.has(`oc:${sh.id}`) || t.bgTasks.has(`oc:${sh.id}`));
+        t.syncShellTasks(ours.map((sh) => ({ id: `oc:${sh.id}`, command: sh.command, startedAt: sh.time?.started, toolUseId: byTask.get(`oc:${sh.id}`) ?? null })));
       } finally {
         this.shellLookup = false;
       }
     }
 
-    async taskOutput(taskId) {
-      const { OC_TASK, shellOutput } = await import('./opencode-shells.js');
+    /** The shell of a task id from the browser: only one of this session's own (linked to its bash call). */
+    async ownShell(taskId) {
+      const { OC_TASK } = await import('./opencode-shells.js');
       const m = OC_TASK.exec(String(taskId));
-      if (!m) throw Object.assign(new Error('Tugas tidak ditemukan.'), { status: 404 });
-      return shellOutput(this.m.opencode, this.project.path, m[1]);
+      const t = this.translator;
+      const own = m && t && (t.bgTasks.has(taskId) || t.linkedTaskIds().has(taskId));
+      if (!own) throw Object.assign(new Error('Tugas tidak ditemukan.'), { status: 404 });
+      return m[1];
+    }
+
+    async taskOutput(taskId) {
+      const id = await this.ownShell(taskId);
+      const { shellOutput } = await import('./opencode-shells.js');
+      return shellOutput(this.m.opencode, this.project.path, id);
     }
 
     async stopTask(taskId) {
-      const { OC_TASK, stopShell } = await import('./opencode-shells.js');
-      const m = OC_TASK.exec(String(taskId));
-      if (!m) throw Object.assign(new Error('Tugas tidak ditemukan.'), { status: 404 });
-      await stopShell(this.m.opencode, this.project.path, m[1]);
+      const shell = await this.ownShell(taskId);
+      const { stopShell } = await import('./opencode-shells.js');
+      await stopShell(this.m.opencode, this.project.path, shell);
       return { ok: true };
     }
 
@@ -793,14 +811,16 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       return openCodeRewindPoints({ opencode: this.m.opencode, sessionId, budget });
     }
 
-    /** The servers configured for OpenCode (global + project); their live state is only known inside OpenCode. */
+    /** /mcp: configured servers + their live state from OpenCode's service (src/opencode-mcp.js). */
     async mcpStatus() {
-      const { listOpenCodeMcp } = await import('./mcp-admin.js');
-      return listOpenCodeMcp(this.project.path);
+      const { openCodeMcpStatus } = await import('./opencode-mcp.js');
+      return openCodeMcpStatus(this.m.opencode, this.project.path);
     }
 
-    async mcpAction(name) {
-      throw Object.assign(new Error(`Untuk OpenCode, login/sambung ulang server MCP masih lewat terminal: opencode mcp auth ${name ?? '<nama>'}`), { status: 409 });
+    /** ↻ / ▶ / ⏸ / 🔑 login / pasted callback, through OpenCode's service. */
+    async mcpAction(name, action, callbackUrl) {
+      const { openCodeMcpAction } = await import('./opencode-mcp.js');
+      return openCodeMcpAction(this.m.opencode, this.project.path, name, action, callbackUrl);
     }
 
     refreshContext() {} // usage_update keeps the context meter current
@@ -842,6 +862,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         gitPushed: () => this.hub.ciWatch?.(this.id),
       }, { projectPath: this.project.path });
       this.adapter = new AcpAdapter((msg) => this.translator.handle(msg));
+      this.spawnedAt = Date.now();
       this.watchShells();
 
       let buffer = '';

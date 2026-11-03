@@ -4,9 +4,15 @@ on:
   push:
   pull_request:
 
+# A newer push to the same branch cancels the older run.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,16 +24,29 @@ jobs:
       - name: ESLint
         run: npm run lint
 
-  test:
+  # Unit + server integration tests: fake Claude Code / OpenCode / gh, no account or tokens, no browser.
+  unit:
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # Offline suite: uses a fake Claude Code, so no account or tokens are needed.
-      - run: npm test
+      - run: node test-support/ci-tests.mjs unit
+
+  # Browser tests (headless Chrome over CDP, preinstalled on the runner). A file that fails is retried once and
+  # reported as flaky in the job summary when it passes then.
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node test-support/ci-tests.mjs ui

@@ -95,22 +95,25 @@ async function requestTimes(apiToken) {
 
 // ---------- helpers ----------
 
-async function openTabs(n, { noLocks = false } = {}) {
-  const pages = [];
+/**
+ * Opens `n` tabs of the app into `pages` (the caller's array, filled as they open: a tab that fails to load mid-way
+ * is still closed by the suite's after(), instead of leaking into — and failing — every later test).
+ */
+async function openTabs(n, { noLocks = false, pages = [] } = {}) {
   for (let i = 0; i < n; i++) {
     const page = await browser.newPage();
+    pages.push(page);
     // Fallback election (a phone on plain-HTTP WiFi has no Web Locks): hide navigator.locks before the app runs.
     if (noLocks) await page.send('Page.addScriptToEvaluateOnNewDocument', { source: "Object.defineProperty(navigator, 'locks', { value: undefined, configurable: true });" });
-    await page.goto(`${BASE}/#${projectId}`);
-    pages.push(page);
+    await page.goto(`${BASE}/#${projectId}`, 30000); // several tabs load at once on a busy machine / CI runner
   }
-  for (const page of pages) await page.waitFor(appReady, { timeoutMs: 15000, message: 'tab terhubung' });
+  for (const page of pages) await page.waitFor(appReady, { timeoutMs: 20000, message: 'tab terhubung' });
   return pages;
 }
 
 async function closeTabs(pages) {
-  for (const page of pages) {
-    await page.close();
+  for (const page of pages.splice(0)) {
+    await page.close().catch(() => {});
     forgetPage(page);
   }
 }
@@ -206,11 +209,11 @@ after(async () => {
 });
 
 describe('Banyak tab, satu stream (Web Locks)', { skip: SKIP ?? false }, () => {
-  let pages = [];
+  const pages = [];
   after(async () => closeTabs(pages));
 
   test(`${TABS} tab: semua terhubung, hanya 1 /stream, request tetap cepat, chat live sampai ke semua tab`, async () => {
-    pages = await openTabs(TABS);
+    await openTabs(TABS, { pages });
     await leaderOf(pages);
     await until(() => streamCount() === 1, { timeoutMs: 3000, message: 'hanya satu EventSource terbuka' });
     await assertResponsive(pages);
@@ -266,11 +269,11 @@ describe('Banyak tab, satu stream (Web Locks)', { skip: SKIP ?? false }, () => {
 });
 
 describe('Banyak tab, satu stream (tanpa Web Locks: HTTP biasa lewat WiFi)', { skip: SKIP ?? false }, () => {
-  let pages = [];
+  const pages = [];
   after(async () => closeTabs(pages));
 
   test('4 tab memilih satu leader lewat probe; leader ditutup → diambil alih, event tetap sampai', async () => {
-    pages = await openTabs(4, { noLocks: true });
+    await openTabs(4, { noLocks: true, pages });
     assert.equal(await pages[0].eval('typeof navigator.locks'), 'undefined');
     await leaderOf(pages);
     await until(() => streamCount() === 1, { timeoutMs: 4000, message: 'hanya satu EventSource terbuka' });

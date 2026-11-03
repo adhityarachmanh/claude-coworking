@@ -21,10 +21,11 @@ export function register(router) {
     }
   }), { maxBody: 16 * 1024 });
   router.post('/api/projects/:id/mcp', withSession((ctx, req, res, { session }) => answer(res, session.mcpStatus().then((servers) => ({ servers })))));
-  router.post('/api/projects/:id/mcp-action', withSession((ctx, req, res, { session }, body) => {
+  router.post('/api/projects/:id/mcp-action', withSession(({ hub }, req, res, { session }, body) => {
     const act = String(body.action ?? '');
     const callbackUrl = String(body.callbackUrl ?? '');
-    if (act === 'callback' && !/^https?:\/\//.test(callbackUrl)) return json(res, 400, { error: 'Tempel URL lengkap dari address bar setelah login.' });
+    // Claude Code wants the full redirect URL; OpenCode also takes the bare code some providers show
+    if (act === 'callback' && !/^https?:\/\//.test(callbackUrl) && !(hub.engine === 'opencode' && /^[\w.~-]{4,2048}$/.test(callbackUrl))) return json(res, 400, { error: 'Tempel URL lengkap dari address bar setelah login.' });
     return answer(res, session.mcpAction(String(body.server ?? ''), act, callbackUrl));
   }));
   // /tasks, Ctrl+B

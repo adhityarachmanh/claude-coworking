@@ -79,3 +79,19 @@ test('⏳ provider refusals OpenCode retries read as a usage limit (429) or a pr
   assert.match(retryNote({ attempt: 1, at: 1, error: { type: 'APIError', message: 'Bad gateway', status: 502 } }), /Provider sedang bermasalah \(HTTP 502\)/);
   assert.equal(retryNote(undefined), null);
 });
+
+test('a terminal session in a home folder or a drive root is never shown as a project', async () => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const hub = fakeHub();
+  const dirs = { ses_home: os.homedir(), ses_root: path.parse(process.cwd()).root };
+  const api = async (bin, op, { params = {} } = {}) => {
+    if (op === 'session.active') return { ses_home: { type: 'running' }, ses_root: { type: 'running' } };
+    if (op === 'session.get') return { location: { directory: dirs[params.sessionID] } };
+    return [];
+  };
+  const m = new OpenCodeMirror(hub, { bin: {}, api, ownSessions: () => new Set() });
+  await m.tick();
+  assert.equal(m.sessions.size, 0);
+  assert.ok(m.ignored.has('ses_home') && m.ignored.has('ses_root'));
+});

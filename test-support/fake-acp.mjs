@@ -84,6 +84,26 @@ if (process.argv[2] === 'api') {
       save();
       out(null);
       break;
+    // /mcp (src/opencode-mcp.js): live servers; connect / disconnect are recorded in FAKE_ACP_MCP_LOG
+    case 'mcp.list':
+      out([
+        { name: 'docs', status: { status: 'connected' } },
+        { name: 'notion', status: { status: 'needs_auth', error: 'Unauthorized' }, integrationID: 'mcp-notion' },
+        { name: 'broken', status: { status: 'failed', error: 'spawn ENOENT' } },
+      ]);
+      break;
+    case 'experimental.mcp.connect':
+    case 'experimental.mcp.disconnect':
+      if (process.env.FAKE_ACP_MCP_LOG) appendFileSync(process.env.FAKE_ACP_MCP_LOG, `${op.split('.').pop()} ${params.server} ${params['location[directory]'] ?? ''}\n`);
+      out(null);
+      break;
+    case 'integration.get':
+      out({ id: params.integrationID, methods: params.integrationID === 'mcp-notion' ? [{ id: 'oauth', type: 'oauth', label: 'Login' }] : [] });
+      break;
+    case 'integration.oauth.complete':
+      if (process.env.FAKE_ACP_MCP_LOG) appendFileSync(process.env.FAKE_ACP_MCP_LOG, `complete ${params.integrationID} ${body.code}\n`);
+      out(null);
+      break;
     case 'integration.oauth.connect':
       out({ attemptID: 'con_fake1', url: 'https://example.test/login', instructions: 'Masukkan kode ABCD-1234', mode: 'auto', time: { created: 0, expires: 1 } });
       break;

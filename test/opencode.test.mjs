@@ -412,7 +412,8 @@ test('🔌 MCP without the terminal: OpenCode lists opencode.json servers; ＋ T
   await useEngine('opencode');
   writeFileSync(path.join(TMP, 'projects', 'toko', 'opencode.json'), JSON.stringify({ mcp: { servers: { github: { type: 'remote', url: 'https://api.example.com/mcp' }, lokal: { type: 'local', command: ['npx', 'srv'], enabled: false } } } }));
   const list = (await api(`/api/projects/${id}/mcp`)).body.servers;
-  assert.deepEqual(list.map((s) => [s.name, s.type, s.status]), [['github', 'remote', 'configured'], ['lokal', 'local', 'disabled']]);
+  // configured servers keep their config state unless the service reports them; servers only the service knows join
+  assert.deepEqual(list.map((s) => [s.name, s.type, s.status]), [['github', 'remote', 'configured'], ['lokal', 'local', 'disabled'], ['docs', undefined, 'connected'], ['notion', undefined, 'needs-auth'], ['broken', undefined, 'failed']]);
   rmSync(path.join(TMP, 'projects', 'toko', 'opencode.json'));
 
   const log = () => readFileSync(path.join(TMP, 'mcp-add.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));

@@ -385,7 +385,7 @@ export function engineClassifier({ engine, claude, opencode, dataDir }) {
       r = await run(opencode.command, [...opencode.args, 'run', '--agent', 'plan', prompt], { cwd, timeout: 120_000, env: readOnlyOpenCodeEnv(process.env, readUserPermission(cwd)) });
     } else {
       if (!claude) throw new Error('Claude Code tidak ditemukan.');
-      r = await run(claude.command, [...claude.args, '-p', prompt, '--model', 'haiku', '--output-format', 'text', '--permission-mode', 'plan', '--disallowedTools', 'Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch'], { cwd, timeout: 120_000 });
+      r = await run(claude.command, [...claude.args, '-p', prompt, '--model', 'haiku', '--output-format', 'text', '--permission-mode', 'plan', '--strict-mcp-config', '--disallowedTools', 'Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Read', 'Glob', 'Grep', 'Task', 'Agent'], { cwd, timeout: 120_000 });
     }
     if (!r.ok) throw new Error(r.timedOut ? 'AI tidak menjawab dalam 2 menit.' : (r.err || r.out).trim().split('\n').at(-1)?.slice(0, 200) || 'AI gagal.');
     return parseAnswer(r.out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ''));

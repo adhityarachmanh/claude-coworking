@@ -386,6 +386,32 @@ export class StreamTranslator {
     return [...this.bgTasks.values()].some((t) => t.status === 'running') || [...this.tools.values()].some((i) => i.agent && i.background);
   }
 
+  /**
+   * OpenCode: the service's running shells of this project as tasks (⧗ Tugas latar). Replace semantics for these
+   * ids; a shell whose tool call has ended (or was moved with ⧗ Pindah ke latar) is in the background.
+   * @param {{ id: string, command: string, startedAt?: number, toolUseId?: string|null }[]} shells
+   */
+  syncShellTasks(shells) {
+    const live = new Set();
+    for (const s of shells) {
+      live.add(s.id);
+      const t = this.bgTasks.get(s.id) ?? { id: s.id, status: 'running', startedAt: s.startedAt ?? Date.now(), kind: 'shell' };
+      Object.assign(t, { kind: 'shell', status: 'running', command: truncate(s.command, 500), description: truncate(s.command, 200) });
+      if (s.toolUseId) t.toolUseId = s.toolUseId;
+      t.background = !(t.toolUseId && this.tools.has(t.toolUseId));
+      t.role ??= (t.toolUseId && this.toolRoles.get(t.toolUseId)) || inferRole('Bash', { command: s.command }, this.roleCtx);
+      this.bgTasks.set(s.id, t);
+    }
+    let changed = live.size > 0;
+    for (const t of this.bgTasks.values()) {
+      if (String(t.id).startsWith('oc:') && t.status === 'running' && !live.has(t.id)) {
+        Object.assign(t, { status: 'completed', endedAt: Date.now() });
+        changed = true;
+      }
+    }
+    if (changed) this.emitBgTasks();
+  }
+
   /** The full set of live background tasks (replace semantics). */
   onBackgroundTasks(tasks) {
     const live = new Set();

@@ -30,6 +30,16 @@ export function findOpenCode() {
  * @returns {Promise<string[]>}
  */
 let modelCache = null;
+/**
+ * The models running ACP sessions offer (their configOptions "model"): the same list as `opencode models`, a stand-in
+ * while that comes back empty (OpenCode's service just started and its catalog is still loading).
+ */
+export function modelsOffered(sessions) {
+  const offered = new Set();
+  for (const s of sessions) for (const o of s?.configOptions?.find?.((c) => c.id === 'model')?.options ?? []) if (typeof o?.value === 'string') offered.add(o.value);
+  return [...offered].filter((v) => /^[\w.@-]+\/\S+$/.test(v));
+}
+
 /** After a provider login/logout the model list changes. */
 export function clearModelCache() {
   modelCache = null;

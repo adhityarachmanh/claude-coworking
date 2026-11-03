@@ -16,7 +16,7 @@ export async function openMcp() {
   $('#mcp-add').hidden = true;
   $('#mcp-add-toggle').hidden = !state.local; // adding writes config and runs the server's command: laptop only
   $('#mcp-engine-note').textContent = isOpenCode()
-    ? 'OpenCode: daftar server dari opencode.json (global + project). Status langsung dan login OAuth ada di dalam OpenCode (opencode mcp auth <nama>).'
+    ? 'OpenCode: server dari opencode.json (global + project) dengan status langsung dari OpenCode. ▶ / ⏸ berlaku sampai OpenCode dimulai ulang (config tidak diubah).'
     : 'Status langsung dari Claude Code. ＋ Tambah memakai claude mcp add.';
   openModal('mcp-modal');
   $('#mcp-list').innerHTML = '<li class="muted">Menanyakan status ke Claude Code…</li>';
@@ -50,7 +50,9 @@ function renderMcp() {
   $('#mcp-list').innerHTML = servers
     .map((s) => {
       const [label, tone] = MCP_STATUS[s.status] ?? [s.status, ''];
-      const actions = isOpenCode() ? [] : [
+      // OpenCode: actions only for servers its service reports (a merely configured one has no live state)
+      const live = !isOpenCode() || s.status !== 'configured';
+      const actions = !live ? [] : [
         s.status === 'needs-auth' ? '<button class="primary" data-mcp="login">🔑 Login</button>' : '',
         s.status !== 'disabled' ? '<button data-mcp="reconnect">↻ Sambungkan ulang</button>' : '',
         s.status === 'disabled' ? '<button data-mcp="enable">▶ Aktifkan</button>' : '<button data-mcp="disable">⏸ Nonaktifkan</button>',
@@ -146,7 +148,8 @@ export function initMcp() {
       } else window.open(r.authUrl, '_blank', 'noopener');
       mcpView.login = server;
       // On the laptop the OAuth redirect to localhost reaches Claude Code by itself; on a phone it can't, so paste it.
-      $('#mcp-callback').hidden = !(r.callbackExpected && !state.local);
+      // OpenCode "code" logins always need the code pasted (also on the laptop)
+      $('#mcp-callback').hidden = !(r.callbackExpected && (!state.local || isOpenCode()));
       toast('Selesaikan login di tab yang terbuka. Status diperbarui otomatis.', 'warn');
       pollMcp(server);
     } catch (err) {
