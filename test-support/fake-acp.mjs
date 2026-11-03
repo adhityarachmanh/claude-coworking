@@ -5,6 +5,9 @@
 //   "lama" — streams, then waits until session/cancel                       anything else — text, a read, a plan
 //   "tulis" — writes a file; asks first when permission.edit is "ask" (the edit permission's shape, kind "edit")
 //   "macet" — a shell command that never ends (`tail -f`), no output, until session/cancel (the stuck detector)
+//   "tanya" — the `question` tool: elicitation/create (form) like OpenCode 2.2.5 when the client offered
+//             elicitation.form at initialize, else the "couldn't be shown" fallback; says what came back
+//   "rencana" in the plan agent — a plan as the last answer; "disetujui" — says which agent works on it
 // It honours OPENCODE_CONFIG_CONTENT like the real one (permission.bash / permission.edit: ask | allow | deny).
 // Contract check (src/opencode-contract.js): FAKE_ACP_VERSION = what --version / agentInfo claim; FAKE_ACP_BREAK =
 // comma list of parts to break: version-hang, initialize (never answers), acp-exit, load-session, session-new,
@@ -209,6 +212,7 @@ let options = { model: 'opencode-go/beam-free', mode: 'build', effort: 'default'
 let cost = 0;
 let seq = 0;
 let cancelTurn = null;
+let formElicitation = false; // initialize: clientCapabilities.elicitation.form
 const waiting = new Map(); // our request id -> resolve
 
 const send = (obj) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...obj })}\n`);
@@ -226,6 +230,27 @@ const ask = (params) =>
     send({ id, method: 'session/request_permission', params });
   });
 
+// OpenCode 2.2.5's question tool as a form (src: the ACP agent's FormAsk → elicitation/create)
+const elicit = (params) =>
+  new Promise((resolve) => {
+    const id = `elicit-${++seq}`;
+    waiting.set(id, resolve);
+    send({ id, method: 'elicitation/create', params });
+  });
+const QUESTIONS = [
+  { header: 'Database', question: 'Pakai database apa?', options: [{ label: 'PostgreSQL', description: 'Relasional' }, { label: 'SQLite', description: 'File lokal' }], multiple: false },
+  { header: 'Fitur', question: 'Fitur mana saja?', options: [{ label: 'Login', description: '' }, { label: 'Ekspor, PDF', description: 'Label dengan koma' }], multiple: true },
+];
+const questionSchema = () => {
+  const properties = {};
+  QUESTIONS.forEach((q, i) => {
+    const choices = q.options.map((o) => ({ const: o.label, title: o.label, description: o.description }));
+    properties[`q${i}`] = q.multiple ? { type: 'array', title: q.header, description: q.question, items: { anyOf: choices } } : { type: 'string', title: q.header, description: q.question, oneOf: choices };
+    properties[`q${i}_custom`] = { type: 'string', title: `${q.header} (other)`, description: q.multiple ? 'Add your own answer' : 'Type your own answer' };
+  });
+  return { type: 'object', properties, required: [] };
+};
+
 let links = [];
 async function turn(sessionId, text) {
   const say = async (msgId, ...parts) => {
@@ -240,6 +265,40 @@ async function turn(sessionId, text) {
   }
   if (/agent\?/.test(text)) {
     await say('msg_agent', `agent=${options.mode} bash=${JSON.stringify(config.permission?.bash ?? null)}`);
+    return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+  }
+  if (/tanya/.test(text)) {
+    const call = 'call-question-1';
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'question', kind: 'other', status: 'pending', locations: [], rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, title: 'question', kind: 'other', status: 'in_progress', rawInput: { questions: QUESTIONS } });
+    if (!formElicitation) {
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'failed', content: [{ type: 'content', content: { type: 'text', text: "The question couldn't be shown to the user in this client." } }] });
+      await say('msg_noask', 'pertanyaan tidak bisa ditampilkan');
+      return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+    }
+    const res = await elicit({ mode: 'form', sessionId, toolCallId: call, message: 'Questions', requestedSchema: questionSchema() });
+    if (res?.action !== 'accept') {
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'failed', content: [{ type: 'content', content: { type: 'text', text: 'The user dismissed this question' } }] });
+      await say('msg_skip', `tanpa jawaban (${res?.action})`);
+      return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+    }
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'User has answered your questions' } }] });
+    await say('msg_answers', `jawaban=${JSON.stringify(res.content ?? {})}`);
+    return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+  }
+  if (/disetujui/.test(text)) {
+    await say('msg_build', `Mengerjakan rencana (agent=${options.mode})`);
+    return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+  }
+  if (/rencana|revisi/i.test(text) && options.mode === 'plan') {
+    await say('msg_intro', 'Saya baca dulu.');
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: 'call-plan-read', title: 'read', kind: 'read', status: 'pending', locations: [], rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-plan-read', status: 'in_progress', kind: 'read', title: 'read', rawInput: { path: 'README.md' } });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-plan-read', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: '1: # Toko' } }] });
+    await say('msg_plan', `## Rencana${/revisi/i.test(text) ? ' (revisi)' : ''}
+
+1. Ubah judul README
+2. Tambah bagian Instalasi`);
     return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
   }
   if (/effort/.test(text)) {
@@ -362,6 +421,7 @@ async function handle(msg) {
       if (coldStart) process.exit(3);
       if (BREAK.has('acp-exit')) process.exit(4);
       if (BREAK.has('initialize')) return; // never answers
+      formElicitation = params.clientCapabilities?.elicitation?.form != null;
       return reply({ protocolVersion: 1, agentCapabilities: { loadSession: !BREAK.has('load-session'), promptCapabilities: { image: true, embeddedContext: true } }, authMethods: [], agentInfo: { name: 'OpenCode', version: FAKE_VERSION } });
     case 'session/new': {
       if (BREAK.has('session-new')) return send({ id, error: { code: -32603, message: 'Internal error' } });

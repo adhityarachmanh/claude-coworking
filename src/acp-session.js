@@ -11,6 +11,7 @@ import { mergePermission, readUserPermission } from './opencode-bin.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { attachmentChips } from './attachments.js';
+import { PERMISSION_MODES } from './hub.js';
 import { describeTool, inferRole } from './roles.js';
 import { StreamTranslator } from './translator.js';
 import { clip, truncate } from './util.js';
@@ -24,7 +25,8 @@ const OPENCODE_SESSION = /^ses_[\w-]{1,100}$/;
  * What the UI may offer for an OpenCode project (config.engines.opencode.caps, read by public/js/core/engine-caps.js).
  * Effort = OpenCode's per-model "effort" config option (thought level); Mode tim = the roles as OpenCode subagents.
  * Rewind = OpenCode's session.revert (conversation, with or without its file snapshots; no "code only").
- * Not (yet): live MCP status/login, background tasks, interactive questions, session export or mirror.
+ * Questions = OpenCode's `question` tool through ACP form elicitation; plan = our own card after a 📋 plan turn.
+ * Not (yet): live MCP status/login, background tasks, session export or mirror.
  */
 export const OPENCODE_CAPS = Object.freeze({
   effort: true,
@@ -32,11 +34,105 @@ export const OPENCODE_CAPS = Object.freeze({
   rewind: true,
   mcp: true, // the configured servers + ＋ Tambah (opencode mcp add); live status/login stay inside OpenCode
   bgTasks: false,
-  askQuestion: false,
+  askQuestion: true,
   exportSession: false,
   mirror: false,
   modes: Object.freeze(['manual', 'acceptEdits', 'auto', 'plan']),
 });
+
+/**
+ * What we offer at `initialize`. fs/terminal stay with OpenCode. `elicitation.form`: OpenCode 2.x then sends its
+ * `question` tool (and other simple forms) as `elicitation/create`; without it the question is cancelled and the
+ * model is told to continue without an answer.
+ */
+export const CLIENT_CAPABILITIES = Object.freeze({ fs: Object.freeze({ readTextFile: false, writeTextFile: false }), terminal: false, elicitation: Object.freeze({ form: Object.freeze({}) }) });
+
+/** 📋 Rencana dulu: what "Setujui" sends to OpenCode (now in build) after the plan turn. */
+export const PLAN_APPROVED_PROMPT = 'Rencana disetujui. Kerjakan sekarang sesuai rencana di atas.';
+
+const MAX_FORM_FIELDS = 10;
+const MAX_FORM_OPTIONS = 30;
+const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+
+/**
+ * An `elicitation/create` form schema (flat JSON Schema object, MCP style) → the questions of our question card.
+ * OpenCode's `question` tool: q0, q1… = one question each (string + oneOf = one choice, array + items.anyOf =
+ * several), `<key>_custom` = its "type your own answer" companion. Unknown shapes are left out (unanswered).
+ * @returns {{ key: string, custom: string|null, type: string, question: string, header: string,
+ *   options: { value: string|boolean, label: string, description?: string }[], multiSelect: boolean }[]}
+ */
+export function elicitationFields(schema) {
+  const props = schema?.type === 'object' && schema.properties && typeof schema.properties === 'object' ? schema.properties : null;
+  if (!props) return [];
+  const fields = [];
+  for (const [key, p] of Object.entries(props)) {
+    if (!/^[\w.-]{1,64}$/.test(key) || !p || typeof p !== 'object') continue;
+    if (key.endsWith('_custom') && props[key.slice(0, -'_custom'.length)]) continue; // the card's own typed answer
+    if (!['string', 'array', 'boolean', 'number', 'integer'].includes(p.type)) continue;
+    let options;
+    if (p.type === 'boolean') options = [{ value: true, label: 'Ya' }, { value: false, label: 'Tidak' }];
+    else {
+      const raw = p.type === 'array' ? (p.items?.anyOf ?? p.items?.enum) : (p.oneOf ?? p.enum);
+      options = (Array.isArray(raw) ? raw : []).slice(0, MAX_FORM_OPTIONS).flatMap((c, i) => {
+        if (typeof c === 'string') return [{ value: c, label: str(p.enumNames?.[i], 200) || c.slice(0, 200) }];
+        if (typeof c?.const !== 'string') return [];
+        return [{ value: c.const, label: str(c.title, 200) || c.const.slice(0, 200), description: str(c.description, 500) || undefined }];
+      });
+      if (p.type === 'array' && !options.length) continue; // a list without choices can't be answered on the card
+    }
+    const custom = props[`${key}_custom`]?.type === 'string' ? `${key}_custom` : null;
+    fields.push({ key, custom, type: p.type, question: str(p.description, 2000) || str(p.title, 2000) || key, header: str(p.title, 60), options, multiSelect: p.type === 'array' });
+    if (fields.length >= MAX_FORM_FIELDS) break;
+  }
+  return fields;
+}
+
+/**
+ * The card's answers (question text → the picked labels joined with ", ", a typed answer first) → the form's
+ * `content`: option labels back to their values, a typed answer into `<key>_custom` (or the field itself when
+ * it has no choices). An unanswered or unusable question is left out.
+ */
+export function elicitationContent(fields, answers = {}) {
+  const content = {};
+  for (const f of fields) {
+    const text = typeof answers?.[f.question] === 'string' ? answers[f.question].trim().slice(0, 4000) : '';
+    if (!text) continue;
+    const byLabel = (label) => f.options.find((o) => o.label === label);
+    if (f.type === 'boolean') {
+      if (byLabel(text)) content[f.key] = byLabel(text).value;
+    } else if (f.type === 'number' || f.type === 'integer') {
+      const n = Number(text.replace(',', '.'));
+      if (Number.isFinite(n) && (f.type === 'number' || Number.isInteger(n))) content[f.key] = n;
+    } else if (f.type === 'array') {
+      // labels may contain ", " themselves: the longest run of parts that is a label wins
+      const parts = text.split(', ');
+      const picked = [];
+      const own = [];
+      for (let i = 0; i < parts.length; ) {
+        let j = parts.length;
+        while (j > i && !byLabel(parts.slice(i, j).join(', '))) j--;
+        if (j > i) {
+          picked.push(byLabel(parts.slice(i, j).join(', ')).value);
+          i = j;
+        } else own.push(parts[i++]);
+      }
+      if (picked.length) content[f.key] = [...new Set(picked)];
+      if (own.length && f.custom) content[f.custom] = own.join(', ');
+    } else if (byLabel(text)) content[f.key] = byLabel(text).value;
+    else if (!f.options.length) content[f.key] = text;
+    else if (f.custom) content[f.custom] = text;
+  }
+  return content;
+}
+
+/** OpenCode's `question` tool input ({ question, header, options, multiple }) → AskUserQuestion's questions. */
+const askQuestions = (list) =>
+  (Array.isArray(list) ? list : []).slice(0, MAX_FORM_FIELDS).map((q) => ({
+    question: str(q?.question, 2000),
+    header: str(q?.header, 60),
+    options: (Array.isArray(q?.options) ? q.options : []).slice(0, MAX_FORM_OPTIONS).map((o) => ({ label: str(o?.label, 200), description: str(o?.description, 500) })),
+    multiSelect: q?.multiple === true,
+  }));
 
 /** Ledger account for OpenCode turns: its providers (OpenCode Go, Gemini…) are not a Claude account. */
 export const OPENCODE_ACCOUNT = Object.freeze({ id: 'opencode', email: 'OpenCode', org: null });
@@ -96,6 +192,7 @@ export function mapTool({ kind, title = '', rawInput = {}, locations = [], conte
   const file = input.path ?? input.filePath ?? input.file_path ?? input.files?.[0]?.file ?? locations?.[0]?.path;
   const diff = (Array.isArray(content) ? content : []).find((c) => c?.type === 'diff');
   if (typeof input.command === 'string') return { name: 'Bash', input: { command: input.command, description: input.description } };
+  if (t === 'question') return { name: 'AskUserQuestion', input: { questions: askQuestions(input.questions) } };
   if (t.startsWith('todo')) return { name: 'TodoWrite', input: { todos: Array.isArray(input.todos) ? input.todos : [] } };
   // OpenCode 2.x delegates with `subagent` ({ agent, prompt, description }); 1.x with `task` ({ subagent_type }).
   if (t === 'task' || t === 'agent' || t === 'subagent') return { name: 'Agent', input: { subagent_type: input.subagent_type ?? input.agent ?? 'general', description: input.description ?? title, prompt: input.prompt } };
@@ -121,6 +218,7 @@ export class AcpAdapter {
     // calls into the same session titled "<description>: <tool>"; they become that role's work (parent_tool_use_id).
     this.subagents = new Map(); // description -> [toolCallId, …] (several subagents may share one description)
     this.text = null; // { id, parts } — the assistant message being streamed
+    this.lastText = ''; // the last finished assistant message of the turn (reset per turn by the session)
     this.planSeq = 0;
   }
 
@@ -209,7 +307,9 @@ export class AcpAdapter {
   flushText() {
     const t = this.text;
     this.text = null;
-    if (t?.parts.length) this.emit({ type: 'assistant', message: { id: t.id, content: [{ type: 'text', text: t.parts.join('') }] } });
+    if (!t?.parts.length) return;
+    this.lastText = t.parts.join(''); // the turn's last answer: in 📋 plan mode, the plan on the approval card
+    this.emit({ type: 'assistant', message: { id: t.id, content: [{ type: 'text', text: this.lastText }] } });
   }
 
   /** The turn's result line (what Claude Code's `result` message carries). */
@@ -296,6 +396,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     // ---------- public ----------
 
     prompt(text, attachments = [], extra = {}) {
+      this.dropPlanCard(); // a new prompt instead of an answer: the plan card is stale
       this.hub.clearInterrupted(this.id);
       const uuid = randomUUID();
       const chatId = this.hub.chat(this.id, { kind: 'user', text, source: 'web', attachments: attachments.length ? attachmentChips(attachments) : undefined, queued: this.busy || undefined, uuid, ...extra });
@@ -325,6 +426,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.hub.updateChat(this.id, item.chatId, { queued: false });
       this.announce(item);
       this.rejectedThisTurn = false;
+      if (this.adapter) this.adapter.lastText = '';
       const epoch = this.epoch;
       const started = Date.now();
       const costBefore = this.cost;
@@ -346,14 +448,61 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const costUsd = Number.isFinite(this.cost) ? Math.max(0, this.cost - (Number.isFinite(costBefore) ? costBefore : 0)) : null;
       const stopNote = this.shuttingDown ? 'Server dihentikan — giliran terputus' : 'Dihentikan oleh kamu';
       const msg = { durationMs: Date.now() - started, usage: usage ?? {}, costUsd };
+      const stopped = interrupted || this.interrupting;
       // A turn the user stopped reads "Dihentikan", like Claude's interrupted turns.
-      this.adapter.finish({ ...msg, ok, interrupted: interrupted || this.interrupting, error: interrupted || this.interrupting ? stopNote : error || 'OpenCode gagal menyelesaikan giliran.' });
+      this.adapter.finish({ ...msg, ok, interrupted: stopped, error: stopped ? stopNote : error || 'OpenCode gagal menyelesaikan giliran.' });
       this.recordTurnUsage(usage ?? {}, costUsd);
       this.interrupting = false;
       this.inflight.delete(uuid);
       const next = [...this.inflight.entries()].find(([, i]) => i.state === 'queued');
       if (next) this.runTurn(next[0], next[1]);
       this.afterProgress();
+      // 📋 Rencana dulu: OpenCode's plan agent has no "exit plan" tool, so the finished plan turn gets the
+      // approval card Claude's ExitPlanMode shows (not when more prompts are already waiting).
+      if (ok && !stopped && !next && !this.shuttingDown && this.hub.settingsFor(this.id).mode === 'plan') this.offerPlan(this.adapter.lastText);
+    }
+
+    // ---------- 📋 plan card ----------
+
+    /** The plan approval card for the turn's last answer (the plan); replaces an older card still open. */
+    offerPlan(text) {
+      const plan = String(text ?? '').trim();
+      if (!plan) return;
+      this.dropPlanCard();
+      const id = `acp-plan-${this.id}-${randomUUID()}`;
+      const input = { plan };
+      const role = inferRole('ExitPlanMode', input, { projectPath: this.project.path });
+      const label = describeTool('ExitPlanMode', input);
+      const chatId = this.hub.chat(this.id, { kind: 'approval', role, text: label, approvalId: id, status: 'pending' });
+      this.planCard = id;
+      this.hub.requestApproval(
+        this.id,
+        { id, chatId, role, kind: 'plan', tool: 'ExitPlanMode', label, description: '', input: previewInput('ExitPlanMode', input), canAlways: false },
+        (decision) => this.onPlanDecision(id, role, decision),
+      );
+      this.hub.office(this.id, { kind: 'huddle', role: 'pm', roles: ['pm', 'architect'], label: 'Rencana siap, minta persetujuan' });
+      this.hub.office(this.id, { kind: 'ask', role, label, ask: 'plan' });
+    }
+
+    /**
+     * Setujui = the mode picked on the card (✏️ auto-edit or 🛡️ tanya dulu; never 📋 again), so OpenCode leaves its
+     * plan agent, then PLAN_APPROVED_PROMPT. Minta revisi with a note = that note as the next prompt, still in plan.
+     */
+    onPlanDecision(id, role, decision) {
+      if (this.planCard === id) this.planCard = null;
+      this.hub.office(this.id, { kind: 'ask_done', role, allowed: Boolean(decision.allow) });
+      if (decision.cancelled) return;
+      if (decision.allow) {
+        const mode = PERMISSION_MODES.includes(decision.mode) && decision.mode !== 'plan' ? decision.mode : 'manual';
+        this.hub.updateSettings(this.id, { mode });
+        this.prompt(PLAN_APPROVED_PROMPT); // syncSettings switches the agent (or the process) before it is sent
+      } else if (decision.message?.trim()) this.prompt(`Revisi rencananya: ${decision.message.trim()}`);
+    }
+
+    dropPlanCard() {
+      const id = this.planCard;
+      this.planCard = null;
+      if (id) this.hub.resolveApproval(id, { allow: false, cancelled: true });
     }
 
     /** Esc: queued prompts are dropped, the running turn is cancelled (session/cancel), killed if it won't stop. */
@@ -395,7 +544,10 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (agentMode(s) !== agentMode(a)) {
         a.mode = s.mode;
         a.agent = s.agent;
-        this.ready.then(() => this.setOption('mode', agentMode(s))).catch((err) => this.controlFailed('mode', err));
+        // chained into `ready`: the next session/prompt waits for the switch (an approved plan must reach build)
+        const switched = this.ready.then(() => this.setOption('mode', agentMode(s)).catch((err) => this.controlFailed('mode', err)));
+        switched.catch(() => {}); // a failed start is handled where `ready` was made
+        this.ready = switched;
       } else Object.assign(a, { mode: s.mode, agent: s.agent });
       if (s.model !== a.model) {
         a.model = s.model;
@@ -596,7 +748,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     /** initialize, then continue the project's session (session/load) or start one, then model + mode. */
     async handshake(settings) {
-      await this.rpc('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } }, HANDSHAKE_TIMEOUT_MS);
+      await this.rpc('initialize', { protocolVersion: 1, clientCapabilities: CLIENT_CAPABILITIES }, HANDSHAKE_TIMEOUT_MS);
       const cwd = this.project.path;
       const known = this.hub.sessionIdFor(this.id);
       let res = null;
@@ -741,6 +893,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       }
       if (msg.method === 'session/update') return this.onUpdate(msg.params?.update ?? {});
       if (msg.method === 'session/request_permission' && msg.id != null) return this.onPermission(msg);
+      if (msg.method === 'elicitation/create' && msg.id != null) return this.onElicitation(msg);
       // fs/* and terminal/* are not offered in initialize; anything else gets "method not found".
       if (msg.id != null) this.send({ id: msg.id, error: { code: -32601, message: `Tidak didukung: ${msg.method}` } });
     }
@@ -802,6 +955,38 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         },
       );
       this.hub.office(this.id, { kind: 'ask', role, label: truncate(label, 120), ask: 'tool' });
+    }
+
+    /**
+     * `elicitation/create` (form): OpenCode's `question` tool asking the user. Shown as the same question card as
+     * Claude's AskUserQuestion; Kirim jawaban → accept + content, Lewati → decline, Stop/closed → cancel.
+     * Never auto-answered by "Izinkan semua" (that is for tools only, as with Claude).
+     */
+    onElicitation(msg) {
+      const p = msg.params ?? {};
+      const reply = (result) => this.send({ id: msg.id, result });
+      const fields = (p.mode ?? 'form') === 'form' ? elicitationFields(p.requestedSchema) : [];
+      if (!fields.length) return reply({ action: 'decline' }); // a URL elicitation (never offered) or an empty form
+      if (this.rejectedThisTurn || this.interrupting) return reply({ action: 'cancel' });
+      const input = { questions: fields.map(({ question, header, options, multiSelect }) => ({ question, header, multiSelect, options: options.map(({ label, description }) => ({ label, description })) })) };
+      const toolId = typeof p.toolCallId === 'string' ? p.toolCallId : null;
+      const role = (toolId && this.translator?.roleOf(toolId)) || inferRole('AskUserQuestion', input, { projectPath: this.project.path });
+      const label = describeTool('AskUserQuestion', input);
+      const message = str(p.message, 300);
+      const approvalId = `acp-ask-${this.id}-${randomUUID()}`;
+      const chatId = this.hub.chat(this.id, { kind: 'approval', role, text: label, approvalId, status: 'pending' });
+      this.hub.requestApproval(
+        this.id,
+        // OpenCode's question tool titles every form "Questions": the first question says more
+        { id: approvalId, chatId, role, kind: 'question', tool: 'AskUserQuestion', label, description: message && message !== 'Questions' ? message : '', input: previewInput('AskUserQuestion', input), canAlways: false },
+        (decision) => {
+          if (decision.allow) reply({ action: 'accept', content: elicitationContent(fields, decision.answers) });
+          else reply({ action: decision.cancelled ? 'cancel' : 'decline' });
+          this.hub.office(this.id, { kind: 'ask_done', role, allowed: Boolean(decision.allow) });
+          this.updateStatus();
+        },
+      );
+      this.hub.office(this.id, { kind: 'ask', role, label: truncate(label, 120), ask: 'question' });
     }
 
     // ---------- usage ----------

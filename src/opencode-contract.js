@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync as rmSyncDefault } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { classify as classifyWith, sanitize } from './claude-contract.js';
-import { permissionConfig } from './acp-session.js';
+import { CLIENT_CAPABILITIES, permissionConfig } from './acp-session.js';
 import { execFileTree, killTree } from './proc.js';
 
 export { sanitize };
@@ -51,8 +51,8 @@ const CRITICAL = new Set([CHECKS.version, CHECKS.launch, CHECKS.sessionNew]);
 export const classify = (checks) => classifyWith(checks, CRITICAL);
 
 const SESSION_ID = /^ses_[\w-]{1,100}$/;
-/** What src/acp-session.js sends (it never offers fs/* or terminal/*). */
-export const CLIENT_INIT = Object.freeze({ protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } });
+/** What src/acp-session.js sends (it never offers fs/* or terminal/*; form elicitation = the question card). */
+export const CLIENT_INIT = Object.freeze({ protocolVersion: 1, clientCapabilities: CLIENT_CAPABILITIES });
 
 /** "opencode v2.2.5" / "2.0.18" → "2.2.5"; null when there is no version in the output. */
 export function parseOpenCodeVersion(output) {
