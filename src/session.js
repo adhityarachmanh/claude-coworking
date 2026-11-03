@@ -702,7 +702,7 @@ export class ClaudeSession {
       chat: (msg) => this.hub.chat(this.id, msg),
       updateChat: (chatId, patch) => this.hub.updateChat(this.id, chatId, patch),
       status: (patch) => this.hub.setStatus(this.id, patch),
-    });
+    }, { projectPath: this.project.path });
 
     let buffer = '';
     child.stdout.setEncoding('utf8');
@@ -1032,7 +1032,7 @@ export class ClaudeSession {
       return;
     }
     const kind = req.tool_name === 'AskUserQuestion' ? 'question' : req.tool_name === 'ExitPlanMode' ? 'plan' : 'tool';
-    const role = this.translator.roleOf(req.tool_use_id) ?? inferRole(req.tool_name, req.input ?? {});
+    const role = this.translator.roleOf(req.tool_use_id) ?? inferRole(req.tool_name, req.input ?? {}, { projectPath: this.project.path });
     if (this.autoApprove && kind === 'tool') {
       this.respond(msg.request_id, req, role, { allow: true });
       return;

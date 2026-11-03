@@ -11,6 +11,7 @@ import { brain, scenes, stage } from './core/scenes.js';
 import { initViewMode } from './features/view-mode.js';
 import { initAppUpdate } from './features/app-update.js';
 import { initHandoff } from './features/handoff.js';
+import { initRoleMap } from './features/role-map.js';
 import { connect } from './core/stream.js';
 import { initAccount } from './features/account.js';
 import { initAttachments } from './features/attachments.js';
@@ -75,6 +76,7 @@ initTeam();
 initViewMode(); // 🧠 Mode Otak ↔ 🏢 Kantor
 initAppUpdate(); // ⬆ newer Adhit Office: banner + ⚙
 initHandoff(); // 🔁 /lanjut: context from the other engine
+initRoleMap(); // 🧭 learned role mappings (👥 Kelola tim → 🧭)
 initRoster(); // 👥 Kelola tim (⚙, ⋯, Ctrl+P, /team)
 initStatusline();
 initAttachments();

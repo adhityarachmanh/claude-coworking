@@ -509,7 +509,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         chat: (msg) => this.hub.chat(this.id, msg),
         updateChat: (chatId, patch) => this.hub.updateChat(this.id, chatId, patch),
         status: (patch) => this.hub.setStatus(this.id, patch),
-      });
+      }, { projectPath: this.project.path });
       this.adapter = new AcpAdapter((msg) => this.translator.handle(msg));
 
       let buffer = '';
@@ -739,7 +739,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const id = toolCall.toolCallId ?? `acp-perm-${msg.id}`;
       this.adapter.toolInfo(id, toolCall);
       const { name, input } = this.adapter.start(id);
-      const role = this.translator.roleOf(id) ?? inferRole(name, input);
+      const role = this.translator.roleOf(id) ?? inferRole(name, input, { projectPath: this.project.path });
       const reject = pick('reject_once', 'reject_always');
       // After a "Tolak" OpenCode cancels the turn: its other requests are stale, answering "allow" would fail it.
       if (this.rejectedThisTurn || this.interrupting) return reply(reject ? { outcome: 'selected', optionId: reject.optionId } : { outcome: 'cancelled' });

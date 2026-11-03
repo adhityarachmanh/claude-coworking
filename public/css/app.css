@@ -2124,6 +2124,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .view-mode { position: absolute; top: 10px; right: 10px; z-index: 3; padding: 4px 10px; border-radius: var(--r-pill); border: 1px solid #8fa0ff55; background: #0b0f2acc; color: #dfe4ff; font-size: var(--fs-xs); cursor: pointer; backdrop-filter: blur(4px); }
 .view-mode:hover { border-color: #a9b6ff; }
 .view-mode[aria-pressed='true'] { background: #1b2150e6; }
+@media (pointer: coarse), (max-width: 760px) { .view-mode { min-height: 44px; min-width: 44px; padding: 8px 14px; font-size: var(--fs-sm); } }
 /* ⬆ app update banner (features/app-update.js) */
 .app-update { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .app-update .primary { padding: 3px 12px; font-size: var(--fs-sm); }
@@ -2170,3 +2171,16 @@ body.brain-on .roster-row:not(.on):not(.locked) img.orbable { opacity: .45; }
 .handoff-mode.disabled { opacity: .55; cursor: default; }
 .handoff-mode input { margin-top: 4px; }
 .handoff-mode small.muted { line-height: 1.45; }
+
+/* 🧭 Pemetaan peran (features/role-map.js) */
+.rolemap-card { width: min(760px, 96vw); max-width: 96vw; max-height: 88vh; overflow-y: auto; overflow-x: hidden; }
+#rolemap-body a { color: #8fb4ff; }
+#rolemap-body h4 { margin: 14px 0 6px; }
+.rm-ai span { flex: 1; min-width: 0; white-space: normal; }
+.rm-ai { white-space: normal; display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--line, #8884); border-radius: 10px; }
+.rm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.rm-list li { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 6px 8px; border-radius: 8px; background: var(--panel-2, #8881); }
+.rm-name code { font-size: var(--fs-sm); word-break: break-all; }
+.rm-acts { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rm-acts select { max-width: 200px; }
+@media (pointer: coarse) { .rm-acts select, .rm-acts button { min-height: 44px; } }

@@ -91,8 +91,9 @@ export class StreamTranslator {
    * @param {{ office(evt): void, chat(msg): string, updateChat(id: string, patch: object): void, status?(patch: object): void }} sink
    * `status` (optional) receives live session state: `todos` and `context` ({ used, window }).
    */
-  constructor(sink) {
+  constructor(sink, { projectPath = null } = {}) {
     this.sink = sink;
+    this.roleCtx = { projectPath }; // learned role mappings of this project (src/role-memory.js)
     this.tools = new Map(); // tool_use_id -> { name, input, role, label, screen, chatId, agent?, background? }
     this.toolRoles = new Map(); // tool_use_id -> role, kept after the call returns (background tasks point back at it)
     this.toolCommands = new Map(); // Bash/PowerShell tool_use_id -> command, so a background shell task can show it
@@ -149,7 +150,7 @@ export class StreamTranslator {
 
   /** Lets a caller that knows a subagent's type up front (CLI mirror) attribute its work. */
   registerAgent(toolUseId, agentType) {
-    if (!this.agentRoles.has(toolUseId)) this.agentRoles.set(toolUseId, agentRole(agentType));
+    if (!this.agentRoles.has(toolUseId)) this.agentRoles.set(toolUseId, agentRole(agentType, this.roleCtx));
   }
 
   /** Marks a (background) subagent as done; it walks back to whoever delegated with its report. */
@@ -283,7 +284,7 @@ export class StreamTranslator {
     if (msg.tool_use_id) t.toolUseId = msg.tool_use_id;
     t.role ??=
       (t.toolUseId && this.toolRoles.get(t.toolUseId)) ||
-      (t.agent ? agentRole(t.agent) : null) ||
+      (t.agent ? agentRole(t.agent, this.roleCtx) : null) ||
       // A background shell without a tool_use_id: the oldest `run_in_background` call still waiting for its task.
       (t.kind === 'shell' && t.background && this.bgShellRoles.shift()) ||
       null;
@@ -374,7 +375,7 @@ export class StreamTranslator {
       Object.assign(t, { background: true, kind: x.task_type === 'local_agent' || x.subagent_type ? 'agent' : 'shell', agent: x.subagent_type ?? t.agent ?? null });
       if (x.description) t.description = truncate(x.description, 200);
       if (x.tool_use_id) t.toolUseId = x.tool_use_id;
-      t.role ??= (t.toolUseId && this.toolRoles.get(t.toolUseId)) || (t.agent ? agentRole(t.agent) : null);
+      t.role ??= (t.toolUseId && this.toolRoles.get(t.toolUseId)) || (t.agent ? agentRole(t.agent, this.roleCtx) : null);
       this.attachCommand(t);
       this.bgTasks.set(x.task_id, t);
       this.linkTask(t);
@@ -524,7 +525,7 @@ export class StreamTranslator {
     if (IGNORED_TOOLS.has(block.name)) return;
     if (DELEGATE_TOOLS.has(block.name)) {
       const agentType = input.subagent_type ?? 'general-purpose';
-      const role = agentRole(agentType);
+      const role = agentRole(agentType, this.roleCtx);
       const from = parentRole ?? 'claude'; // a subagent can hand work to another specialist
       const label = truncate(input.description ?? input.prompt, 80);
       this.agentRoles.set(block.id, role);
@@ -548,7 +549,7 @@ export class StreamTranslator {
       return;
     }
 
-    const role = parentRole ?? inferRole(block.name, input);
+    const role = parentRole ?? inferRole(block.name, input, this.roleCtx);
     if (EDIT_TOOLS.has(block.name) && BUILDER_ROLES.has(role)) this.lastBuilder = role;
     // Planning happens around a table: the PM and tech lead meet before work starts / to present it.
     if (block.name === 'EnterPlanMode') this.sink.office({ kind: 'huddle', role: 'pm', roles: ['pm', 'architect', 'ba'], label: 'Susun rencana dulu sebelum eksekusi' });

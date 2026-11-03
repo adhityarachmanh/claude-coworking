@@ -17,6 +17,7 @@ import { applyRoster } from '../features/roster.js';
 import { applySpotify } from '../features/spotify.js';
 import { reloadSoon } from '../features/opencode-account.js';
 import { onGithubLogin } from '../features/pull-request.js';
+import { onRoleMapChanged } from '../features/role-map.js';
 import { noteLiveMessage, setStuckOnline } from '../features/stuck.js';
 import { applyNames } from '../features/team.js';
 import { applyTeamNames, roleName } from '../office/cast.js';
@@ -90,6 +91,7 @@ const handlers = {
   // The app moved to another engine's workspace (Akun, this or another device): its chats come with a fresh page.
   engine: (data, live) => live && reloadSoon(),
   'github-login': (login, live) => live && onGithubLogin(login), // ⇡ PR dialog: gh login finished / failed
+  'role-map': (data, live) => live && onRoleMapChanged(), // 🧭 the AI mapped names / another device changed the map
   projects(projects) {
     state.projects = projects;
     renderSidebar();

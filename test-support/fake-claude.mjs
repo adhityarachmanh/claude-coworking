@@ -70,6 +70,16 @@ if (args[0] === 'plugin') {
   }
   process.exit(0);
 }
+// 🧭 role-map AI (src/role-memory.js): claude -p "OFFICE-ROLE-MAP: …" --model haiku → a JSON object of the names
+// listed ("- mcp:x"): names with "crm" → pm, "nothing" → no answer for it, the rest → backend. Read-only is required.
+if (args.includes('-p') && String(args[args.indexOf('-p') + 1] ?? '').startsWith('OFFICE-ROLE-MAP')) {
+  if (args[args.indexOf('--permission-mode') + 1] !== 'plan' || args[args.indexOf('--model') + 1] !== 'haiku') process.exit(9);
+  const names = [...String(args[args.indexOf('-p') + 1]).matchAll(/^- ([a-z]+:[^\s]+)/gm)].map((m) => m[1]);
+  const out = {};
+  for (const n of names) if (!n.includes('nothing')) out[n] = n.includes('crm') ? 'pm' : 'backend';
+  console.log(`Berikut pemetaannya:\n\`\`\`json\n${JSON.stringify(out)}\n\`\`\``);
+  process.exit(0);
+}
 // 🔁 handoff "Pintar": claude -p <prompt> --resume <id> --fork-session --output-format text (one answer, then exit)
 if (args.includes('-p') && args.includes('--fork-session') && args[args.indexOf('--output-format') + 1] === 'text') {
   if (args.includes('--permission-mode') && args[args.indexOf('--permission-mode') + 1] !== 'plan') process.exit(9); // must be read-only

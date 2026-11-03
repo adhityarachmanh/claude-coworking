@@ -346,10 +346,19 @@
           <p id="roster-error" class="field-error" role="alert"></p>
           <div class="team-actions">
             <button type="button" id="roster-default" class="ghost">↺ Tim bawaan</button>
+            <button type="button" id="roster-map" class="ghost" title="Nama tool, skill, subagent atau skrip yang belum dikenali aturan bawaan: pilih siapa yang mengerjakannya">🧭 Pemetaan peran</button>
             <span class="grow"></span>
             <button id="roster-save" class="primary">Simpan</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- 🧭 Pemetaan peran (features/role-map.js): names no built-in rule knows → a role, for this laptop or the project -->
+    <div id="rolemap-modal" class="modal" hidden>
+      <div class="modal-card rolemap-card" role="dialog" aria-modal="true" aria-labelledby="rolemap-title">
+        <div class="modal-head"><b id="rolemap-title">🧭 Pemetaan peran</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div id="rolemap-body" aria-live="polite"></div>
       </div>
     </div>
 

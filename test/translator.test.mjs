@@ -186,7 +186,7 @@ test('nested delegation knows who delegated, and the report goes back to them', 
 test('generalist and unknown subagent types go to the freelancer, not backend', () => {
   const { translator, office } = recorder();
   translator.handle(use('g1', 'Agent', { subagent_type: 'general-purpose', description: 'Cari' }));
-  translator.handle(use('g2', 'Agent', { subagent_type: 'debugger', description: 'Debug' }));
+  translator.handle(use('g2', 'Agent', { subagent_type: 'wizard', description: 'Bantu' }));
   translator.handle(use('g3', 'Read', { file_path: 'src/a.js' }, 'g2'));
   assert.deepEqual(office.filter((e) => e.kind === 'delegate').map((e) => e.role), ['freelancer', 'freelancer']);
   assert.equal(office.find((e) => e.kind === 'tool_start').role, 'freelancer');

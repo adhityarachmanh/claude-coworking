@@ -1048,6 +1048,7 @@ test('file viewer: reads text inside the project; truncates, refuses binaries, t
   writeFileSync(path.join(root, 'src', 'app.js'), '// app\nconst a = 1;\n<script>alert(1)</script>\n');
   writeFileSync(path.join(root, 'besar.log'), 'x'.repeat(600 * 1024));
   writeFileSync(path.join(root, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0x0d]));
+  writeFileSync(path.join(root, 'tool.bin'), Buffer.from([0x4d, 0x5a, 0, 0, 0x90, 0]));
   writeFileSync(path.join(root, '.env'), 'API_KEY=rahasia\n');
   const read = (p, extra = {}) => api(`/api/projects/${id}/file`, { path: p, ...extra });
 
@@ -1070,7 +1071,11 @@ test('file viewer: reads text inside the project; truncates, refuses binaries, t
   assert.equal(big.body.content.length, 512 * 1024);
   assert.equal(big.body.size, 600 * 1024);
 
-  const bin = await read('logo.png');
+  const png = await read('logo.png'); // 👁 images are previewed, whole, as base64 (never as text)
+  assert.equal(png.status, 200);
+  assert.equal(png.body.image.mime, 'image/png');
+  assert.equal(png.body.content, null);
+  const bin = await read('tool.bin');
   assert.equal(bin.status, 415);
   assert.match(bin.body.error, /biner/);
 

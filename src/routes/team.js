@@ -1,6 +1,7 @@
 // ---------- the active team (👥 Kelola tim) and the team's display names ----------
 import { MAX_ACTIVE_ROLES, TeamConfigError, activeAgents, normalizeEnabled, publicCatalog, teamPrompt } from '../role-catalog.js';
 import { ROLE_IDS, activeRoles, setActiveRoles } from '../roles.js';
+import { RoleMapError } from '../role-memory.js';
 import { appliedOf, json } from './http.js';
 
 export function register(router) {
@@ -15,7 +16,30 @@ export function register(router) {
       throw err;
     }
   });
+  // 🧭 Pemetaan peran (src/role-memory.js): names no rule knows, the user's corrections, the AI's answers.
+  // Not on the WiFi allowlist (src/remote.js): laptop or Tailscale only.
+  router.post('/api/team/role-map', roleMap((m, body, projectPath) => m.list(projectPath)));
+  router.post('/api/team/role-map/set', roleMap((m, body, projectPath) => m.set(body.key, body.role ?? null, { scope: body.scope === 'project' ? 'project' : 'local', projectPath })));
+  router.post('/api/team/role-map/dismiss', roleMap((m, body, projectPath) => (m.dismiss(body.key), m.list(projectPath))));
+  router.post('/api/team/role-map/ai', roleMap((m, body, projectPath) => {
+    m.setAi(body.enabled === true);
+    console.log(`Pemetaan peran AI ${body.enabled === true ? 'dinyalakan' : 'dimatikan'}`);
+    return m.list(projectPath);
+  }));
 }
+
+/** body.project (optional): the project whose .office-roles.json is read / written. */
+const roleMap = (fn) => (ctx, req, res, params, body = {}) => {
+  if (!ctx.roleMemory) return json(res, 404, { error: 'Pemetaan peran tidak tersedia.' });
+  const project = body.project ? ctx.hub.projects.get(String(body.project)) : null;
+  const projectPath = project && project.id !== 'demo' ? project.path : null;
+  try {
+    return json(res, 200, fn(ctx.roleMemory, body, projectPath));
+  } catch (err) {
+    if (err instanceof RoleMapError) return json(res, err.status, { error: err.message });
+    throw err;
+  }
+};
 
 function saveNames({ hub }, req, res, params, body) {
   const names = cleanTeamNames(body.names);

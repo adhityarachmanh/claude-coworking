@@ -24,7 +24,8 @@ import { DEVICE_COOKIE, HTTPS_DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI
 import { TailscaleCert, httpsPortFrom, restrictDir } from './src/tls.js';
 import { PushService, wifiApproval } from './src/push.js';
 import { activeAgents, storedEnabled, teamPrompt } from './src/role-catalog.js';
-import { loadAgentDefinitions, setActiveRoles } from './src/roles.js';
+import { loadAgentDefinitions, setActiveRoles, setRoleMemory } from './src/roles.js';
+import { engineClassifier, RoleMemory } from './src/role-memory.js';
 import { SessionManager } from './src/session.js';
 import { TemplateStore } from './src/templates.js';
 import { TaskQueue } from './src/queue.js';
@@ -123,6 +124,13 @@ let opencodeVersion = ''; // filled shortly after start (opencode --version), th
 const allAgents = loadAgentDefinitions(path.join(APP_DIR, '.claude', 'agents'));
 const initialTeam = storedEnabled(hub.persisted.team);
 setActiveRoles(initialTeam);
+// 🧭 Learned role mappings: corrections, the project's .office-roles.json and (optional) the AI's answers.
+const roleMemory = new RoleMemory({
+  hub,
+  classify: engineClassifier({ engine: () => hub.engine, claude, opencode, dataDir: DATA_DIR }),
+  aiDelayMs: Number(process.env.OFFICE_ROLE_AI_DELAY_MS ?? 20_000),
+});
+setRoleMemory({ lookup: (key, projectPath) => roleMemory.lookup(key, projectPath), unknown: (key, hint, projectPath) => roleMemory.noteUnknown(key, hint, projectPath) });
 
 let lastAccountId;
 const account = new AccountService({
@@ -499,6 +507,7 @@ const ctx = {
   claudeCheck,
   appUpdater,
   allAgents,
+  roleMemory,
   appDir: APP_DIR,
   appVersion: APP_VERSION,
   dataDir: DATA_DIR,

@@ -470,7 +470,7 @@ for (const vp of PHONES) {
     test('Kantor: 🗂 Semua project = aksi utama dan tetap terlihat saat digulir, kartu tim ≥ 44 px', async () => {
       await fresh('office');
       const a = await page.eval(auditView, 'office');
-      assert.deepEqual(a.chrome, ['dash-bar'], `kontrol view: ${a.chrome.join(', ')}`);
+      assert.deepEqual(a.chrome, ['dash-bar', 'view-mode'], `kontrol view: ${a.chrome.join(', ')}`);
       const cards = await page.eval(() => [...document.querySelectorAll('#team .member')].map((m) => Math.round(m.getBoundingClientRect().height)));
       assert.ok(cards.length > 0 && cards.every((h) => h >= 44), `tinggi kartu ${cards.join(',')}`);
       const stage = await page.eval(() => {

@@ -221,6 +221,8 @@ Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude
 
 ### Tim & kantor
 
+Siapa yang mengerjakan setiap langkah (file, perintah shell, MCP, skill, tipe subagent) mengikuti peta tetap di [docs/role-mapping.md](docs/role-mapping.md). Langkah dari subagent yang didelegasikan selalu dikerjakan role itu. Nama yang belum dikenali (MCP, skill, subagent, skrip baru) bisa dipetakan di **👥 Kelola tim → 🧭 Pemetaan peran**: untuk laptop ini, atau untuk project lewat `.office-roles.json` yang bisa di-commit bersama project. Ada juga opsi AI (default mati) yang memetakan nama baru sekali saja dengan sedikit token.
+
 | Orang | Role | Dipakai untuk |
 |---|---|---|
 | Adhit - Lead | Engineering Lead (Claude) | Orkestrasi: memecah pekerjaan dan mendelegasikan |

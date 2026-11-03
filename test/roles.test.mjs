@@ -18,7 +18,7 @@ test('agent types map to office roles', () => {
     'api-docs-writer': 'writer', 'ui-designer': 'ui-ux',
   };
   for (const [agent, role] of Object.entries(cases)) assert.equal(toRole(agent), role, agent);
-  assert.equal(toRole('debugger'), null);
+  assert.equal(toRole('debugger'), 'qa');
   assert.equal(toRole(undefined), null);
 });
 
@@ -49,7 +49,7 @@ test('commands are attributed by intent', () => {
 test('shell lines are judged by what they actually run', () => {
   const cases = {
     'grep -n "test" src/app.js': 'architect', // keyword inside a search is not running tests
-    'cd /c/p && sed -n 1,40p src/db/migrate.js': 'architect',
+    'cd /c/p && sed -n 1,40p src/db/migrate.js': 'backend',
     'S=/tmp/x; grep -rn "migration" app': 'architect',
     'sed -n 1,80p test/server.test.mjs': 'qa', // reading tests
     'sed -i "s/a/b/" src/a.js': 'backend', // editing, not reading
@@ -67,6 +67,15 @@ test('shell lines are judged by what they actually run', () => {
     'git log --oneline -5': 'architect',
     'git ls-files src': 'architect',
     '/c/php83/php.exe -l app/Models/User.php': 'qa',
+    // running the office's own tests, waiting for them, reading their results, restarting the app
+    'cd /c/p && timeout 2400 node --test --test-concurrency=1 test/ui.test.mjs > /tmp/ui.log 2>&1': 'qa',
+    'for i in $(seq 1 240); do powershell -NoProfile -Command "if (Get-Process -Id 25580) { exit 0 } else { exit 1 }" || break; sleep 10; done; grep -E "^ℹ (tests|pass|fail)" /tmp/ui-final.log': 'qa',
+    'sleep 30': 'claude', // just waiting: the Lead
+    'until curl -s localhost:4317/health; do sleep 2; done': 'qa', // waiting for the app to answer = checking it
+    'tail -5 /tmp/build.log': 'devops', // a log without test results: looking around
+    'grep -c "✔" /tmp/ui-final.log': 'qa',
+    'node scripts/restart.mjs': 'devops',
+    'cmd /c update.cmd': 'devops',
   };
   for (const [command, role] of Object.entries(cases)) assert.equal(inferRole('Bash', { command }), role, command);
   assert.equal(screenFor('Bash', { command: 'grep -rn foo src' }), 'search');
@@ -76,7 +85,7 @@ test('shell lines are judged by what they actually run', () => {
 test('MCP servers and Artifact go to the matching specialist', () => {
   const cases = {
     'mcp__claude-in-chrome__computer': 'qa', mcp__playwright__click: 'qa', mcp__postgres__query: 'dba',
-    mcp__figma__get_file: 'ui-ux', mcp__claude_ai_Claude_Docs__update: 'writer', mcp__github__create_issue: 'architect',
+    mcp__figma__get_file: 'ui-ux', mcp__claude_ai_Claude_Docs__update: 'writer', mcp__github__create_issue: 'pm',
     mcp__sentry__issues: 'devops', mcp__linear__create: 'pm', Artifact: 'ui-ux', AskUserQuestion: 'claude', Skill: 'claude',
   };
   for (const [tool, role] of Object.entries(cases)) assert.equal(inferRole(tool, {}), role, tool);

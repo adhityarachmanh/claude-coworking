@@ -343,7 +343,9 @@ async function checkModal(page, id) {
   if (unnamed.length) fails.push(`tombol tanpa nama aksesibel di dalam modal: ${unnamed.join(' | ')}`);
 
   // Enough presses to walk past the last element and wrap; also proves Tab really moves focus.
-  const presses = Math.min(Math.max(st.focusables + 2, 3), 30);
+  // A date/time input is one element but several Tab stops in Chrome (hours, minutes, AM/PM): 2 extra each.
+  const segmented = await page.eval((m) => document.getElementById(m).querySelectorAll('input[type="time"], input[type="date"], input[type="datetime-local"]').length, id);
+  const presses = Math.min(Math.max(st.focusables + 2 + segmented * 2, 3), 80);
   const visited = new Set([st.activeIndex]);
   for (let i = 0; i < presses; i++) {
     await page.press('Tab');

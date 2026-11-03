@@ -193,7 +193,7 @@ export class TranscriptMirror {
           if (patch.todos !== undefined) this.hub.setStatus(pid, { todos: patch.todos });
           if (patch.working !== undefined) this.hub.setStatus(pid, { cliWorking: patch.working });
         },
-      });
+      }, { projectPath: cwd });
       this.sessions.set(id, s);
     }
     s.lastSeen = Date.now();
