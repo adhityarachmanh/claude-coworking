@@ -29,6 +29,10 @@ export function findOpenCode() {
  * @returns {Promise<string[]>}
  */
 let modelCache = null;
+/** After a provider login/logout the model list changes. */
+export function clearModelCache() {
+  modelCache = null;
+}
 export function openCodeModels(bin, { maxAgeMs = 10 * 60_000 } = {}) {
   if (!bin) return Promise.resolve([]);
   if (modelCache && Date.now() - modelCache.at < maxAgeMs) return modelCache.load;
@@ -43,4 +47,38 @@ export function openCodeModels(bin, { maxAgeMs = 10 * 60_000 } = {}) {
   });
   modelCache = { at: Date.now(), load };
   return load;
+}
+
+/**
+ * 🕘 Riwayat sesi with OpenCode: `opencode session list --format json` run in the project folder (its sessions
+ * are per project), in the shape of transcripts.js listSessions. Never throws: [] when OpenCode can't answer.
+ * @returns {Promise<{ id: string, title: string, source: 'opencode', updated: number }[]>}
+ */
+const sessionCache = new Map(); // project folder -> { at, load }: a phone polling the list spawns one process per 15 s
+export function openCodeSessions(bin, cwd, limit = 30) {
+  if (!bin || !cwd) return Promise.resolve([]);
+  const hit = sessionCache.get(cwd);
+  if (hit && Date.now() - hit.at < 15_000) return hit.load;
+  const load = listOpenCodeSessions(bin, cwd, limit);
+  sessionCache.set(cwd, { at: Date.now(), load });
+  return load;
+}
+
+function listOpenCodeSessions(bin, cwd, limit) {
+  return new Promise((resolve) => {
+    execFile(bin.command, [...bin.args, 'session', 'list', '--format', 'json', '-n', String(limit)], { cwd, encoding: 'utf8', timeout: 30_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
+      if (err) return resolve([]);
+      let list;
+      try {
+        list = JSON.parse(String(out));
+      } catch {
+        return resolve([]);
+      }
+      resolve(
+        (Array.isArray(list) ? list : [])
+          .filter((s) => typeof s?.id === 'string' && /^ses_[\w-]{1,100}$/.test(s.id))
+          .map((s) => ({ id: s.id, title: String(s.title ?? '').trim().slice(0, 90) || '(tanpa judul)', source: 'opencode', updated: Number(s.updated ?? s.time?.updated ?? s.created) || 0 })),
+      );
+    });
+  });
 }

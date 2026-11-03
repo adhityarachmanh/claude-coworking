@@ -4,6 +4,7 @@
 // `ctx.device` is the paired phone making the request (null on the laptop).
 import { randomBytes } from 'node:crypto';
 import { accountPrivacyView, billingStatus } from '../account.js';
+import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
 import { renderPdf, reportHtml } from '../report.js';
 import { PERIOD_UNITS, summarize, totals } from '../usage.js';
 import { json } from './http.js';
@@ -48,11 +49,46 @@ export function register(router) {
     return json(res, 200, { ok: true });
   });
   router.post('/api/account/logout', logout);
+  // ---------- engine (Claude Code or OpenCode, app-wide) and OpenCode's provider logins ----------
+  router.post('/api/engine', ({ hub, sessions, taskQueue, device }, req, res, params, body) => {
+    // Projects whose 📋 Antrian still has work (waiting or running items, paused or not).
+    const queuedProjects = Object.entries(taskQueue?.queues ?? {})
+      .filter(([, q]) => q.items.some((i) => i.status === 'waiting' || i.status === 'running'))
+      .map(([id]) => hub.projects.get(id)?.name ?? id);
+    const result = sessions.switchEngine(String(body.engine ?? ''), { queuedProjects });
+    if (!result.ok) return json(res, 409, result);
+    if (hub.config) hub.config.engine = hub.engine;
+    if (device) console.log(`Mesin diganti dari HP "${device.name}"`);
+    return json(res, 200, result);
+  });
+  router.post('/api/opencode/providers', openCode((bin) => openCodeProviders(bin)));
+  router.post('/api/opencode/login/key', openCode((bin, body, ctx) => openCodeConnectKey(bin, body.provider, body).then(loggedIn(ctx))));
+  router.post('/api/opencode/login/oauth', openCode((bin, body) => openCodeOAuthStart(bin, body.provider, body)));
+  router.post('/api/opencode/login/status', openCode((bin, body, ctx) => openCodeOAuthStatus(bin, body.provider, body.attemptID).then((st) => (st.status === 'complete' ? loggedIn(ctx)(st) : st))));
+  router.post('/api/opencode/login/code', openCode((bin, body, ctx) => openCodeOAuthComplete(bin, body.provider, body.attemptID, body.code).then(loggedIn(ctx))));
+  router.post('/api/opencode/login/cancel', openCode((bin, body) => openCodeOAuthCancel(bin, body.provider, body.attemptID)));
+  router.post('/api/opencode/logout', openCode((bin, body, ctx) => openCodeLogout(bin, body.credentialID).then(loggedIn(ctx))));
   // ---------- usage report ----------
   router.post('/api/report/accounts', reportAccounts);
   router.post('/api/report/summary', (ctx, req, res, params, body) => report(ctx, req, res, body, { pdf: false }));
   router.post('/api/report/pdf', (ctx, req, res, params, body) => report(ctx, req, res, body, { pdf: true }));
 }
+
+/** An OpenCode route: the binary from ctx, errors as JSON (400 for bad input, 502 when OpenCode itself fails). */
+const openCode = (fn) => async (ctx, req, res, params, body) => {
+  if (!ctx.opencode) return json(res, 404, { error: 'OpenCode belum terpasang di laptop ini.' });
+  try {
+    return json(res, 200, (await fn(ctx.opencode, body ?? {}, ctx)) ?? { ok: true });
+  } catch (err) {
+    return json(res, err.status ?? 502, { error: err.message });
+  }
+};
+
+/** Credentials changed: idle OpenCode processes restart with them on the next prompt (busy ones after their turn). */
+const loggedIn = (ctx) => (result) => {
+  if (ctx.hub.engine === 'opencode') ctx.sessions.accountChanged();
+  return result;
+};
 
 /** Tells the laptop that a phone started a login or logged out (shown as a toast + notification). */
 function accountAlert(hub, action, device, email = null) {

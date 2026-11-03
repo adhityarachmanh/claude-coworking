@@ -5,6 +5,7 @@ import { AttachmentError, readAttachments } from '../attachments.js';
 import { ConversationError, exportSession, searchSessions } from '../conversation.js';
 import { DEMO_ID } from '../hub.js';
 import { listSessions, sessionHistory } from '../transcripts.js';
+import { openCodeSessions } from '../opencode-bin.js';
 import { answer, json } from './http.js';
 import { withSession } from './project.js';
 
@@ -39,12 +40,18 @@ export function register(router) {
     session.reset();
     return ok(res);
   }));
-  router.post('/api/projects/:id/sessions', withSession(({ hub }, req, res, { project }) => json(res, 200, { sessions: listSessions(project.path), current: hub.sessionIdFor(project.id) })));
-  router.post('/api/projects/:id/resume', withSession((ctx, req, res, { project, session }, body) => {
+  // The active engine's conversations: Claude Code's transcripts, or OpenCode's own session list.
+  router.post('/api/projects/:id/sessions', withSession(async ({ hub, opencode }, req, res, { project }) => {
+    const sessions = hub.engine === 'opencode' ? await openCodeSessions(opencode, project.path) : listSessions(project.path);
+    return json(res, 200, { sessions, engine: hub.engine, current: hub.sessionIdFor(project.id) });
+  })),
+  router.post('/api/projects/:id/resume', withSession(async ({ hub, opencode }, req, res, { project, session }, body) => {
     const sessionId = String(body.sessionId ?? '');
-    const known = listSessions(project.path, 200).some((s) => s.id === sessionId);
+    // Only a conversation of the active engine (a Claude transcript id means nothing to OpenCode and vice versa).
+    const opencodeActive = hub.engine === 'opencode';
+    const known = (opencodeActive ? await openCodeSessions(opencode, project.path, 200) : listSessions(project.path, 200)).some((s) => s.id === sessionId);
     if (!known) return json(res, 404, { error: 'Sesi tidak ditemukan' });
-    session.resume(sessionId, sessionHistory(project.path, sessionId));
+    session.resume(sessionId, opencodeActive ? [] : sessionHistory(project.path, sessionId));
     return ok(res);
   }));
   router.post('/api/projects/:id/continue', withSession(({ hub }, req, res, { project, session }, body) => {

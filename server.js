@@ -248,6 +248,7 @@ function refreshProjects() {
     spotify: { redirectUri: spotify.redirectUri }, // shown (with a copy button) in ⚙ → Spotify
     claudeCheck: claudeCheck.publicView(), // versions + last contract check result (no details)
     // The engines a project can run on (docs/design-opencode.md §6.1): Claude Code's caps are the UI's defaults.
+    engine: hub.engine, // the app-wide engine (Akun): each one is its own workspace (Hub.switchEngine)
     engines: {
       claude: { available: Boolean(claude), version: hub.catalogConfig().version ?? '' },
       opencode: { available: Boolean(opencode), version: '', caps: OPENCODE_CAPS },
@@ -269,7 +270,8 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const LOCAL_ONLY = new Set(['/api/claude-check/run', '/api/claude-check/settings', '/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
-const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout']);
+// The same for switching engines and OpenCode's provider logins (API keys travel in these requests).
+const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout', '/api/engine', '/api/opencode/providers', '/api/opencode/login/key', '/api/opencode/login/oauth', '/api/opencode/login/status', '/api/opencode/login/code', '/api/opencode/login/cancel', '/api/opencode/logout']);
 // Opening VS Code / Explorer only makes sense on the laptop itself.
 // Changing saved permission rules (🛡️ Aturan izin) changes what Claude Code may do unasked: laptop only (phones may look).
 const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit)$/;
@@ -451,7 +453,7 @@ const backupScheduler = new BackupScheduler({
   },
   backup: (out) => {
     hub.save(); // the state file on disk and in the backup agree
-    return writeBackup(out, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.chatStore.dir, appVersion: APP_VERSION });
+    return writeBackup(out, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.backupChatsDir(), appVersion: APP_VERSION });
   },
   lock: () => !backupLock.busy && (backupLock.busy = true),
   unlock: () => (backupLock.busy = false),

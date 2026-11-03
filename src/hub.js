@@ -39,6 +39,8 @@ export const DEMO_ID = 'demo';
 export const DEFAULT_SETTINGS = { mode: 'manual', model: '', effort: '', team: true, engine: 'claude' };
 // Which coding agent runs the project: Claude Code (stream-json) or OpenCode (ACP, src/acp-session.js).
 export const ENGINES = ['claude', 'opencode'];
+// What each engine keeps for itself in state.json (the inactive engine's set waits in persisted.workspaces).
+const WORKSPACE_KEYS = ['settings', 'sessions', 'turns', 'interrupted'];
 // OpenCode models are "provider/model" (optionally #variant), as `opencode models` lists them.
 const OPENCODE_MODEL = /^[\w.-]+\/[\w.:@#/-]{1,120}$/;
 // '' = Claude Code's own default; the rest map to `--effort`.
@@ -161,22 +163,12 @@ export class Hub {
     // instead of `data`. Streams in `redacted` get that view; everyone else gets `data` unchanged.
     this.redactors = new Map();
     this.redacted = new WeakSet();
-    this.chatStore = new ChatStore(path.join(dataDir, 'chats'), { limit: CHAT_LIMIT });
+    this.chatStore = null; // the active engine's chats (chatDir), set in load()
     this.storedChats = {}; // project id -> chat read at start (the same array becomes rt(id).chat)
     this.legacyChats = null; // migration failed: the raw `chats` of state.json, written back (old format) this run
     this.migrationSeq = 0; // highest id handed out by the migration (repeated ids renumbered)
     this.persisted = this.load();
-    for (const [id, list] of Object.entries(this.storedChats)) {
-      // A reply still "typing" when the server died (forced kill: its last update never saved) can't finish
-      // any more: it is closed, or it would show as typing forever (an empty one is then hidden by the page).
-      let closed = 0;
-      for (const m of list) {
-        if (!m?.streaming) continue;
-        m.streaming = false;
-        closed++;
-      }
-      if (relabelShellRows({ [id]: list }) + closed) this.chatStore.rewrite(id);
-    }
+    this.closeStaleReplies();
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
     // chatSeq: the counter at the last save, for chat files that could not be read now.
@@ -188,7 +180,7 @@ export class Hub {
     // turns: the turn running right now per project (written when it starts, removed when it ends); one left
     // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
     // the user continues or dismisses them (see recoverTurns / interruptTurn).
-    const empty = { roots: [], custom: [], favorites: [], settings: {}, sessions: {}, activity: {}, turns: {}, interrupted: {} };
+    const empty = { roots: [], custom: [], favorites: [], settings: {}, sessions: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', workspaces: {} };
     let stored = {};
     let parsedOk = false;
     try {
@@ -201,14 +193,83 @@ export class Hub {
       // none yet, or unreadable: starts empty (as before)
     }
     const { chats: legacy, ...rest } = stored;
+    rest.engine = ENGINES.includes(rest.engine) ? rest.engine : 'claude';
+    this.openChats(rest.engine);
+    if (legacy !== undefined) this.migrateChats(legacy, rest);
+    else if (parsedOk) this.pruneChatBackups();
+    return { ...empty, ...rest };
+  }
+
+  /** The chat files of one engine's workspace: Claude Code keeps data/chats (as before), others their own folder. */
+  chatDir(engine) {
+    return path.join(this.dataDir, engine === 'claude' ? 'chats' : `chats-${engine}`);
+  }
+
+  /** Points the chat store at `engine`'s folder and reads its chats (storedChats). */
+  openChats(engine) {
+    this.chatStore = new ChatStore(this.chatDir(engine), { limit: CHAT_LIMIT });
+    this.storedChats = {};
     for (const id of this.chatStore.list()) {
       if (id === DEMO_ID) continue;
       const list = this.chatStore.load(id);
       if (list.length) this.storedChats[id] = list;
     }
-    if (legacy !== undefined) this.migrateChats(legacy, rest);
-    else if (parsedOk) this.pruneChatBackups();
-    return { ...empty, ...rest };
+  }
+
+  /**
+   * A reply still "typing" when the server died (forced kill: its last update never saved) can't finish
+   * any more: it is closed, or it would show as typing forever (an empty one is then hidden by the page).
+   */
+  closeStaleReplies() {
+    for (const [id, list] of Object.entries(this.storedChats)) {
+      let closed = 0;
+      for (const m of list) {
+        if (!m?.streaming) continue;
+        m.streaming = false;
+        closed++;
+      }
+      if (relabelShellRows({ [id]: list }) + closed) this.chatStore.rewrite(id);
+    }
+  }
+
+  /** The engine every project runs on now (Akun): each engine is its own workspace (switchEngine). */
+  get engine() {
+    return this.persisted.engine;
+  }
+
+  /**
+   * Switches the app to another engine's workspace. Each engine keeps its own chats (data/chats vs
+   * data/chats-<engine>), conversation ids, per-project settings (models differ) and cut-short turns: switching
+   * back shows the other engine's history exactly as it was left. Shared: projects, favourites, activity, team.
+   * The caller (SessionManager.switchEngine) makes sure no turn is running and the processes are closed.
+   */
+  switchEngine(engine) {
+    if (!ENGINES.includes(engine) || engine === this.persisted.engine) return false;
+    // Chats still in state.json (a migration that failed): they belong to Claude Code, nothing may mix with them.
+    if (this.legacyChats) throw Object.assign(new Error('Riwayat chat lama belum selesai dipindahkan (lihat log server). Restart aplikasi dulu, lalu coba lagi.'), { status: 409 });
+    this.save(); // the current chats and state on disk before the store moves
+    // A chat file that could not be written (locked by an antivirus…): its messages only live in this store.
+    if (this.chatStore.dirty) throw Object.assign(new Error('Riwayat chat belum tersimpan ke disk (file sedang dikunci?). Coba lagi sebentar.'), { status: 409 });
+    const from = this.persisted.engine;
+    const workspaces = isObject(this.persisted.workspaces) ? this.persisted.workspaces : {};
+    const parked = {};
+    for (const key of WORKSPACE_KEYS) parked[key] = this.persisted[key] ?? {};
+    const next = isObject(workspaces[engine]) ? workspaces[engine] : {};
+    for (const key of WORKSPACE_KEYS) this.persisted[key] = isObject(next[key]) ? next[key] : {};
+    this.persisted.workspaces = { ...workspaces, [from]: parked };
+    delete this.persisted.workspaces[engine];
+    this.persisted.engine = engine;
+    this.openChats(engine);
+    this.closeStaleReplies();
+    this.seq = Math.max(this.seq, maxStoredSeq(this.storedChats)); // ids stay unique across both workspaces
+    for (const [id, rt] of this.runtime) {
+      rt.chat = this.storedChats[id] ?? [];
+      rt.events = [];
+      Object.assign(rt.status, { activeModel: null, sessionId: this.sessionIdFor(id), interrupted: publicTurn(this.persisted.interrupted[id]), ...this.settingsFor(id) });
+    }
+    this.save();
+    this.broadcast('engine', { engine });
+    return true;
   }
 
   /** Safety copies of state.json from the chat migration: removed once older than 7 days (moved for good by then). */
@@ -370,7 +431,7 @@ export class Hub {
   }
 
   settingsFor(id) {
-    return { ...DEFAULT_SETTINGS, ...this.persisted.settings[id] };
+    return { ...DEFAULT_SETTINGS, ...this.persisted.settings[id], engine: this.persisted.engine };
   }
 
   /** `base` with the valid fields of `patch` (anything unknown or malformed is ignored). */
@@ -378,22 +439,20 @@ export class Hub {
     const next = { ...base };
     if (!isObject(patch)) return next;
     if (PERMISSION_MODES.includes(patch.mode)) next.mode = patch.mode;
-    if (ENGINES.includes(patch.engine) && patch.engine !== next.engine) {
-      next.engine = patch.engine;
-      next.model = ''; // a Claude alias means nothing to OpenCode and vice versa
-    }
+    // The engine is app-wide (switchEngine), not a per-project setting: a patch can't change it.
+    const engine = this.persisted?.engine ?? 'claude';
     if (patch.model === '' || patch.model === 'default') next.model = '';
-    else if (typeof patch.model === 'string' && (next.engine === 'opencode' ? OPENCODE_MODEL.test(patch.model) : this.knownModel(patch.model))) next.model = patch.model;
+    else if (typeof patch.model === 'string' && (engine === 'opencode' ? OPENCODE_MODEL.test(patch.model) : this.knownModel(patch.model))) next.model = patch.model;
     if (EFFORT_LEVELS.includes(patch.effort)) next.effort = patch.effort;
     if (typeof patch.team === 'boolean') next.team = patch.team;
     return next;
   }
 
   updateSettings(id, patch) {
-    const next = this.cleanSettings(this.settingsFor(id), patch);
+    const { engine: _engine, ...next } = this.cleanSettings(this.settingsFor(id), patch);
     this.persisted.settings[id] = next;
     this.scheduleSave();
-    this.setStatus(id, next);
+    this.setStatus(id, this.settingsFor(id));
   }
 
   /** Slash commands reported by Claude Code (skills, custom commands, plugins) for autocomplete. */
@@ -542,8 +601,19 @@ export class Hub {
    * cache. Chats are not in it: the backup takes data/chats/*.jsonl as files (save() first, so they are current).
    */
   exportState() {
-    const { remote: _remote, catalog: _catalog, turns: _turns, interrupted: _interrupted, queues: _queues, backupSchedule: _backupSchedule, backupRuns: _backupRuns, chatSeq: _chatSeq, ...rest } = this.persisted;
+    const { remote: _remote, catalog: _catalog, turns: _turns, interrupted: _interrupted, queues: _queues, backupSchedule: _backupSchedule, backupRuns: _backupRuns, chatSeq: _chatSeq, engine: _engine, workspaces, ...rest } = this.persisted;
+    // A backup holds Claude Code's history (backupChatsDir): with another engine active, Claude's parked settings.
+    if (this.persisted.engine !== 'claude') {
+      const claude = isObject(workspaces?.claude) ? workspaces.claude : {};
+      rest.settings = isObject(claude.settings) ? claude.settings : {};
+      rest.sessions = isObject(claude.sessions) ? claude.sessions : {};
+    }
     return structuredClone(rest);
+  }
+
+  /** The chats a backup carries: Claude Code's (on disk complete: switchEngine flushed them before parking). */
+  backupChatsDir() {
+    return this.chatDir('claude');
   }
 
   /**

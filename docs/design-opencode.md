@@ -432,3 +432,28 @@ Hasilnya dicetak sebagai tabel PASS/FAIL. Tidak dijalankan di CI (membutuhkan ja
 | Q6 | Format update sesi anak (`_meta opencode/child-session-updates`) untuk animasi subagen | Fase 2 |
 | Q7 | Apakah perlu mode tim untuk OpenCode (agent inline lewat `OPENCODE_CONFIG_CONTENT.agent`)? | Keputusan produk, Fase 2 |
 | Q8 | Respon `session/request_permission` saat cancel: `{outcome:{outcome:'cancelled'}}` diterima v2.0.18? | Kontrak langkah 5 |
+
+## 11. Fase 1b: mesin per aplikasi (workspace) dan login provider
+
+Keputusan (permintaan user): mesin bukan lagi pilihan per project di composer, tapi pilihan **seluruh aplikasi** di 👤 Akun.
+Tiap mesin adalah entitas terpisah; pindah mesin tidak menghapus riwayat mesin lain.
+
+- **State** (`src/hub.js`): `persisted.engine` = mesin aktif. Kunci per mesin `WORKSPACE_KEYS = settings, sessions, turns,
+  interrupted` tetap di tempat lamanya untuk mesin aktif (kode lain tidak berubah); milik mesin yang tidak aktif disimpan di
+  `persisted.workspaces[<engine>]` dan ditukar oleh `Hub.switchEngine`. Chat: `data/chats` (Claude Code, tidak berubah) dan
+  `data/chats-<engine>`; id pesan tetap unik lintas workspace (`seq` = max kedua folder). `settingsFor().engine` selalu mesin
+  aktif; `cleanSettings` mengabaikan `engine` dari patch.
+- **Pindah** (`SessionManager.switchEngine`, `POST /api/engine {engine}`): 409 kalau ada giliran berjalan atau prompt antre;
+  semua proses ditutup, hub menukar workspace, event `engine` membuat semua halaman memuat ulang (snapshot baru).
+  Hanya laptop/Tailscale (`ACCOUNT_AUTH`).
+- **Login provider** (`src/opencode-auth.js`, semua `opencode api <operation>`):
+  `integration.list` (provider, metode key/oauth/env, koneksi), `integration.connect.key {key, answer}`,
+  `integration.oauth.connect {methodID, answer}` → `{attemptID, url, instructions, mode: auto|code}`, `integration.oauth.status`
+  (pending/complete/failed/expired, dipoll halaman tiap 2 dtk maks 10 menit), `integration.oauth.complete {code}`,
+  `integration.oauth.cancel`, `credential.remove`. Route: `/api/opencode/providers|login/key|login/oauth|login/status|login/code|
+  login/cancel|logout`. Error dipotong ke baris pertama penyebab; API key/kode tidak pernah dilog. Catatan: body (berisi API key)
+  dikirim sebagai argumen `--data` proses `opencode` berumur pendek di laptop sendiri.
+- **Riwayat sesi**: dengan OpenCode, `/api/projects/:id/sessions` memakai `opencode session list --format json` di folder project.
+- **Backup** (📦) selalu berisi riwayat Claude Code (chat `data/chats` + pengaturan/sesi Claude, juga saat OpenCode aktif). Import hanya saat Claude Code aktif (409 kalau tidak), agar tidak tercampur. Chat OpenCode belum ikut backup.
+- Pindah mesin juga ditolak bila 📋 Antrian masih berisi item, chat belum tersimpan ke disk, atau migrasi chat lama gagal.
+

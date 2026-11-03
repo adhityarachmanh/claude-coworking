@@ -1,4 +1,5 @@
-// Claude account: profile, plan quota, token usage, login/logout.
+// Claude account: profile, plan quota, token usage, login/logout. With OpenCode as the engine (the switch at the
+// top, features/opencode-account.js) the dialog shows OpenCode's provider logins instead.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { fmtShort } from '../core/format.js';
@@ -7,6 +8,7 @@ import { closeModal, focusablesIn, openModal } from '../ui/modals.js';
 import { chime } from './notify.js';
 import { accountKeyOf, checkQuota } from './quota.js';
 import { openReport } from './report.js';
+import { activeEngine, engineSwitchHtml, ensureOpenCodeLoaded, loadOpenCode, onOpenCodeAction, onOpenCodeInput, onOpenCodeSubmit, openCodeBodyHtml, openCodeButton } from './opencode-account.js';
 
 const LOGIN_TEXT = {
   starting: 'Membuka halaman login di browser…',
@@ -28,6 +30,15 @@ const accountLabel = (p) => p.email ?? `Akun Claude${p.subscriptionType ? ` (${p
 export function renderAccountButton() {
   const p = state.account?.profile;
   const btn = $('#btn-account');
+  if (activeEngine() === 'opencode') {
+    const oc = openCodeButton();
+    btn.classList.toggle('logged-out', !oc.loggedIn);
+    $('#account-avatar').textContent = oc.avatar;
+    $('#account-label').textContent = oc.label;
+    btn.title = 'Mesin: OpenCode — provider, login & pindah mesin';
+    ensureOpenCodeLoaded(renderAccountButton);
+    return;
+  }
   btn.classList.toggle('logged-out', !p?.loggedIn);
   $('#account-avatar').textContent = p?.loggedIn ? accountInitial(p) : '!';
   $('#account-label').textContent = p ? (p.loggedIn ? accountLabel(p) : 'Belum login') : 'Akun';
@@ -123,6 +134,18 @@ function renderAccount() {
 }
 
 function renderAccountBody(body) {
+  const engineSwitch = engineSwitchHtml();
+  $('#account-title').textContent = activeEngine() === 'opencode' ? '👤 Akun OpenCode' : '👤 Akun Claude';
+  if (activeEngine() === 'opencode') {
+    body.innerHTML = engineSwitch + openCodeBodyHtml();
+    renderAccountButton();
+    return;
+  }
+  renderClaudeBody(body);
+  if (engineSwitch) body.insertAdjacentHTML('afterbegin', engineSwitch);
+}
+
+function renderClaudeBody(body) {
   const p = state.account?.profile;
   if (!p) {
     body.innerHTML = '<p class="muted">Memeriksa akun Claude Code…</p>';
@@ -181,6 +204,7 @@ function renderAccountBody(body) {
 }
 
 async function loadAccount(force = false) {
+  if (activeEngine() === 'opencode') return loadOpenCode(renderAccount);
   try {
     const data = await api('/api/account', { force });
     account.usage = data.usage;
@@ -206,7 +230,7 @@ export function onAccountState(next) {
   renderAccountButton();
   const id = accountKeyOf(next.profile);
   if (next.login?.state === 'done' && account.loginState !== 'done') toast(`Login berhasil sebagai ${next.profile?.email ?? 'akun baru'}.`, 'ok');
-  if ($('#account-modal').hidden) return;
+  if ($('#account-modal').hidden || activeEngine() === 'opencode') return; // OpenCode's body: Claude events don't redraw it
   if (prevId !== id) return loadAccount(true); // switched account: usage & quota belong to the new one
   // Keep what the user is typing in the code box: only redraw the flow when its state changes.
   if ((next.login?.state ?? null) !== account.loginState) renderLoginFlow();
@@ -220,9 +244,11 @@ export function initAccount() {
     loadAccount();
   });
   $('#account-body').addEventListener('click', async (e) => {
-    const act = e.target.closest('[data-act]')?.dataset.act;
+    const el = e.target.closest('[data-act]');
+    const act = el?.dataset.act;
     if (!act) return;
     try {
+      if (await onOpenCodeAction(act, el, renderAccount)) return;
       if (act === 'login' || act === 'login-console') {
         state.account = { ...state.account, login: await api('/api/account/login', { console: act === 'login-console' }) };
         renderLoginFlow();
@@ -257,7 +283,9 @@ export function initAccount() {
       toast(err.message);
     }
   });
+  for (const type of ['input', 'change']) $('#account-body').addEventListener(type, (e) => onOpenCodeInput(e, renderAccount));
   $('#account-body').addEventListener('submit', async (e) => {
+    if (await onOpenCodeSubmit(e, renderAccount)) return;
     if (e.target.id !== 'login-code') return;
     e.preventDefault();
     const code = $('#login-code-input').value.trim();

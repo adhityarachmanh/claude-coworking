@@ -69,7 +69,7 @@ async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion }, re
     hub.save(); // the state file on disk and in the backup agree
     const name = `adhit-office-backup-${new Date().toLocaleDateString('sv-SE')}.zip`; // local date, YYYY-MM-DD
     res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
-    const result = await writeBackup(res, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.chatStore.dir, appVersion });
+    const result = await writeBackup(res, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.backupChatsDir(), appVersion });
     res.end();
     const skipped = result.skipped.length ? `, ${result.skipped.length} dilewati (symlink/nama tidak valid)` : '';
     console.log(`Backup riwayat diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB${skipped}`);
@@ -110,6 +110,11 @@ async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir,
   if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
   const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
   if (!ZIP_TYPES.has(type)) return json(res, 415, { error: 'Kirim file .zip hasil Export riwayat.' });
+  // A backup is Claude Code's history: imported into another engine's workspace it would mix with that engine's chats.
+  if (hub.engine !== 'claude') {
+    res.on('finish', () => req.destroy());
+    return json(res, 409, { error: 'Import riwayat hanya saat mesin Claude Code aktif. Pindah ke Claude Code di 👤 Akun dulu.' });
+  }
   if (Number(req.headers['content-length']) > maxBackupBytes) throw new HttpError(413, `File backup terlalu besar (maks ${Math.round(maxBackupBytes / 1024 ** 2)} MB).`);
   if (backupLock.busy) {
     res.on('finish', () => req.destroy()); // don't read an upload that is refused

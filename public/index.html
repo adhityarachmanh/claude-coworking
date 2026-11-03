@@ -138,11 +138,6 @@
           <!-- Claude's live todo list (TodoWrite / Task tools), pinned like in the CLI -->
           <div id="todos" class="todos-pinned" hidden></div>
           <div class="controls">
-            <!-- Engine per project (features/engine.js): shown only when the server reports more than one (config.engines) -->
-            <label id="engine-ctl" class="ctl engine-ctl" hidden>
-              <span>Mesin</span>
-              <select id="engine" aria-describedby="engine-note"></select>
-            </label>
             <label class="ctl" title="Kapan Claude harus minta izinmu sebelum mengedit file atau menjalankan perintah">
               <span>Izin</span>
               <select id="mode">
@@ -712,8 +707,8 @@
 
     <!-- Claude account: profile, plan usage, login/logout -->
     <div id="account-modal" class="modal" hidden>
-      <div class="modal-card account-card" role="dialog" aria-modal="true" aria-label="Akun Claude">
-        <div class="modal-head"><b>👤 Akun Claude</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+      <div class="modal-card account-card" role="dialog" aria-modal="true" aria-label="Akun &amp; mesin AI">
+        <div class="modal-head"><b id="account-title">👤 Akun Claude</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div id="account-body"></div>
       </div>
     </div>

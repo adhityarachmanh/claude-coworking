@@ -1,9 +1,9 @@
-// The project's engine (Claude Code / OpenCode, docs/design-opencode.md): the picker next to Model/Effort,
+// The engine (Claude Code / OpenCode, docs/design-opencode.md; chosen app-wide in 👤 Akun, features/opencode-account.js):
 // the per-project model list of a non-Claude engine (searchable, grouped by provider), and the cap guards that
 // every feature asks before opening something the engine can't do. Rules live in core/engine-caps.js.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
-import { capReason, capsFor, cleanModelList, engineChoices, engineLabel, engineOf, groupModels, modelsPerProject } from '../core/engine-caps.js';
+import { capReason, capsFor, cleanModelList, engineLabel, engineOf, groupModels, modelsPerProject } from '../core/engine-caps.js';
 import { auth, DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 
 /** The engine of a project (default: the active one). */
@@ -31,67 +31,6 @@ export function applyCapsToDom(id = state.active) {
     const why = capBlocked(el.dataset.cap, id);
     el.hidden = Boolean(why);
     el.classList.toggle('cap-off', Boolean(why));
-  }
-}
-
-// ---------- the engine picker ----------
-
-const BUSY_HINT = 'Tim sedang bekerja — tekan Stop dan tunggu antrian kosong sebelum mengganti mesin';
-
-/** Shown only when the server reports more than one engine (`config.engines`); off while a turn runs. */
-export function renderEnginePicker(st = {}) {
-  const ctl = $('#engine-ctl');
-  const select = $('#engine');
-  const choices = state.active === DEMO_ID ? [] : engineChoices(state.config);
-  ctl.hidden = !choices.length;
-  if (!choices.length) return;
-  const html = choices
-    .map((c) => `<option value="${escapeHtml(c.id)}"${c.available ? '' : ' disabled'} title="${escapeHtml(c.reason || (c.version ? `${c.label} ${c.version}` : c.label))}">${escapeHtml(c.label)}${c.available ? '' : ' (tidak terpasang)'}</option>`)
-    .join('');
-  if (select.dataset.html !== html) {
-    select.innerHTML = html;
-    select.dataset.html = html;
-  }
-  const engine = engineOf(st);
-  if (document.activeElement !== select || !select.dataset.pending) select.value = engine;
-  const busy = Boolean(st.busy || st.queue || st.taskQueue?.running);
-  if (state.readOnly) return; // applyReadOnly (composer) owns it there
-  select.disabled = busy || Boolean(select.dataset.pending);
-  select.title = busy ? BUSY_HINT : 'Mesin AI untuk project ini. Mengganti mesin memulai percakapan baru.';
-  ctl.classList.toggle('busy', busy);
-}
-
-async function changeEngine() {
-  const select = $('#engine');
-  const project = state.active;
-  const st = state.statuses[project] ?? {};
-  const prev = engineOf(st);
-  const next = select.value;
-  if (!project || project === DEMO_ID || next === prev) return;
-  if (st.busy || st.queue) {
-    select.value = prev;
-    return toast(`${BUSY_HINT}.`, 'warn');
-  }
-  const ok = window.confirm(
-    `Ganti mesin ke ${engineLabel(next)}?\n\nMengganti mesin memulai percakapan baru: ${engineLabel(next)} tidak membawa konteks percakapan ini. ` +
-      `Model dan effort kembali ke default mesin itu. Percakapan lama tetap ada di chat dan 🕘 Riwayat sesi.`,
-  );
-  if (!ok) {
-    select.value = prev;
-    return;
-  }
-  select.dataset.pending = '1';
-  select.disabled = true;
-  try {
-    await api(`/api/projects/${project}/settings`, { engine: next });
-    modelCache.delete(project); // the new engine's list, fetched on the next render
-    toast(`Mesin diganti ke ${engineLabel(next)}. Percakapan baru dimulai.`, 'ok');
-  } catch (err) {
-    select.value = prev;
-    toast(err.status === 409 && err.data?.error === 'busy' ? `${BUSY_HINT}.` : `Gagal mengganti mesin: ${err.message}`);
-  } finally {
-    delete select.dataset.pending;
-    renderEnginePicker(state.statuses[project] ?? {});
   }
 }
 
@@ -163,7 +102,6 @@ export function projectModelOptions(entry, current, query) {
 export const matchCount = (entry, query) => groupModels(entry.models, query).reduce((n, g) => n + g.models.length, 0);
 
 export function initEngine({ onModelPicked, rerender }) {
-  $('#engine').addEventListener('change', changeEngine);
   const search = $('#model-search');
   search.addEventListener('input', rerender);
   // Enter picks the first match (the search is a filter for the select next to it).

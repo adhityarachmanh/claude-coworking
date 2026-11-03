@@ -50,8 +50,8 @@ export function renderSessionBar() {
     title.removeAttribute('tabindex');
   }
   const meta = st.sessionId
-    ? [known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
-    : ['pesan pertamamu memulai sesi Claude Code baru'];
+    ? [st.engine === 'opencode' ? 'sesi OpenCode' : known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
+    : [`pesan pertamamu memulai sesi ${st.engine === 'opencode' ? 'OpenCode' : 'Claude Code'} baru`];
   if (st.cliBusy) meta.push('terminal aktif');
   $('#sb-meta').textContent = meta.filter(Boolean).join(' · ');
   // Phone header: the session bar is hidden there, its title and the turn's state sit under the project name.
@@ -118,7 +118,7 @@ function renderSessionList() {
       return `${head}<div class="s-item ${current ? 'current' : ''}">
         <div class="s-main">
           <span class="s-title">${escapeHtml(s.title)}</span>
-          <span class="s-meta"><span class="src src-${s.source}">${s.source === 'web' ? 'Web' : 'Terminal'}</span>${ago(s.updated)} · <code>${s.id.slice(0, 8)}</code></span>
+          <span class="s-meta"><span class="src src-${s.source}">${s.source === 'web' ? 'Web' : s.source === 'opencode' ? 'OpenCode' : 'Terminal'}</span>${ago(s.updated)} · <code>${s.id.slice(0, 8)}</code></span>
         </div>
         <button type="button" class="ghost s-export" data-export="${escapeHtml(s.id)}" title="Unduh sesi ini sebagai Markdown (.md)" aria-label="Export .md: ${escapeHtml(s.title)}">⬇ .md</button>
         ${action}

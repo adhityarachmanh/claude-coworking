@@ -993,6 +993,23 @@ body.read-only #composer-hint { color: var(--ask); }
 .login-code { display: flex; gap: 6px; }
 .login-code input { flex: 1; min-width: 0; font-family: var(--mono); }
 .login-flow > .ghost { align-self: flex-end; font-size: var(--fs-sm); }
+/* Akun: engine switch (Claude Code / OpenCode, app-wide) and OpenCode's provider logins (features/opencode-account.js) */
+.engine-opts, .oc-methods { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.engine-opt { flex: 1; min-width: 120px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); color: inherit; cursor: pointer; font-weight: 600; }
+.engine-opt.on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-2); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.engine-opt:disabled { cursor: default; opacity: .6; }
+.engine-opt.on:disabled { opacity: 1; }
+.oc-providers, .oc-conns { list-style: none; margin: 0; padding: 0; }
+.oc-provider { padding: 7px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-md); }
+.oc-provider:last-child { border-bottom: 0; }
+.oc-conns li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0 0 10px; font-size: var(--fs-sm); }
+.oc-conns button { font-size: var(--fs-sm); padding: 2px 9px; }
+.danger-text { color: var(--err); }
+.oc-field { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-sm); }
+.oc-field input, .oc-field select, #oc-provider { width: 100%; min-width: 0; }
+#oc-provider { font-size: var(--fs-md); }
+.oc-form { display: flex; flex-direction: column; gap: 8px; }
+.oc-form > .primary { align-self: flex-start; }
 
 /* ---------- team names dialog ---------- */
 .modal-card.team-card { max-width: 560px; }

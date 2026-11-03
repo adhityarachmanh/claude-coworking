@@ -8,7 +8,7 @@ import { attachmentPayload, attachments, attachmentsReady, clearAttachments, rem
 import { localCommand } from './commands.js';
 import { connection } from './connection.js';
 import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
-import { applyCapsToDom, guardCap, initEngine, matchCount, projectCaps, projectModelOptions, projectModels, renderEnginePicker } from './engine.js';
+import { applyCapsToDom, guardCap, initEngine, matchCount, projectCaps, projectModelOptions, projectModels } from './engine.js';
 import { recall, recallPrompt } from './history.js';
 import { renderResumeTurn } from './resume-turn.js';
 import { openRewind } from './rewind.js';
@@ -55,7 +55,6 @@ export function renderComposer() {
   const caps = capsFor(state.config, engine);
   $('#composer').classList.toggle('demo', isDemo);
   $('#btn-stop').hidden = isDemo || !(st.busy || st.queue);
-  renderEnginePicker(st);
   renderModeOptions(caps);
   $('#mode').value = modeFor(st.mode ?? 'manual', caps);
   renderModelOptions(st.model ?? '', engine);
@@ -85,7 +84,7 @@ export function renderComposer() {
 }
 
 // Controls that change something: disabled (with the reason as tooltip) for a phone on plain WiFi.
-const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#engine', '#mode', '#model', '#model-search', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
+const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#model-search', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
 
 function applyReadOnly() {
   if (!state.readOnly) return; // fixed per connection: a laptop / Tailscale page never needs undoing

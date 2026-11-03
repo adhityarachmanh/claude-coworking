@@ -178,12 +178,14 @@ Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhi
 
 ### Mesin: Claude Code atau OpenCode
 
-Tiap project bisa memilih mesin lewat **Mesin** di sebelah Model:
+Mesin dipilih untuk seluruh aplikasi di **👤 Akun → Mesin AI**:
 
 - **Claude Code** (bawaan)
 - **OpenCode**: banyak provider, mis. Gemini dan model gratis OpenCode Go. Pilihan ini muncul kalau `opencode` terpasang (`npm i -g @opencode/cli`, atau set env `OPENCODE_BIN`).
 
-Mengganti mesin memulai percakapan baru, dan tidak bisa dilakukan saat tim sedang bekerja.
+Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude Code, `data/chats-opencode` untuk OpenCode), percakapan yang dilanjutkan, pengaturan model/mode per project, dan giliran yang terpotong. Pindah mesin tidak menghapus apa pun: saat kembali, riwayat mesin itu muncul lagi persis seperti ditinggalkan. Yang dipakai bersama: daftar project, favorit, nama tim. Pindah mesin ditolak selama ada project yang sedang bekerja atau 📋 Antrian masih berisi item, dan semua tab/HP yang terbuka dimuat ulang otomatis.
+
+**Login OpenCode.** OpenCode tidak punya satu akun: tiap provider login sendiri. Dengan mesin OpenCode, 👤 Akun menampilkan provider yang sudah terhubung (kredensial tersimpan atau variabel lingkungan) dengan tombol **Logout** per kredensial, dan **＋ Login provider** (cari provider → API key, atau OAuth lewat browser, termasuk form tambahan seperti GitHub Enterprise). Semuanya lewat `opencode api` (penyimpanan yang sama dengan `opencode auth login|logout|list`); API key tidak dicatat di log. Dari HP hanya lewat Tailscale, sama seperti login Claude. 🕘 Riwayat sesi menampilkan (dan melanjutkan) sesi OpenCode project itu. 📦 Backup riwayat berisi riwayat Claude Code; import hanya saat Claude Code aktif.
 
 | | OpenCode (Fase 1) |
 |---|---|

@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { acpSessionClass } from './acp-session.js';
 import { attachmentChips, contentBlocks } from './attachments.js';
-import { PERMISSION_MODES } from './hub.js';
+import { ENGINES, PERMISSION_MODES } from './hub.js';
 import { describeTool, inferRole } from './roles.js';
 import { promptChain } from './transcripts.js';
 import { StreamTranslator } from './translator.js';
@@ -194,20 +194,49 @@ export class SessionManager {
   get(project) {
     const engine = this.hub.settingsFor(project.id).engine === 'opencode' ? 'opencode' : 'claude';
     let session = this.sessions.get(project.id);
-    if (session && session.engine !== engine) {
-      // The project switched engines: the old process goes, and its session id means nothing to the other engine.
-      if (session.turnActive()) return session; // finish the running turn first; the switch applies to the next prompt
+    if (session && session.engine !== engine && !session.turnActive()) {
+      // Left over from before an engine switch (switchEngine closes them all): replaced, the workspace is the new one.
       session.closeChild();
       this.sessions.delete(project.id);
       session = null;
-      this.hub.setSessionId(project.id, null);
-      this.hub.chat(project.id, { kind: 'divider', text: engine === 'opencode' ? 'Mesin diganti ke OpenCode' : 'Mesin diganti ke Claude Code' });
     }
     if (!session) {
       session = engine === 'opencode' ? new AcpSession(this, project) : new ClaudeSession(this, project);
       this.sessions.set(project.id, session);
     }
     return session;
+  }
+
+  /**
+   * Moves the whole app to another engine (Akun). Each engine is its own workspace (Hub.switchEngine): its own
+   * chats, conversations and settings, so nothing of the other is lost. Refused while any project is working
+   * (a turn running or a prompt queued): the processes are closed first and a turn would be cut off.
+   * @returns {{ ok: true, engine: string } | { ok: false, error: string, busy?: string[] }}
+   */
+  switchEngine(engine, { queuedProjects = [] } = {}) {
+    if (!ENGINES.includes(engine)) return { ok: false, error: 'Mesin tidak dikenal.' };
+    if (engine === 'opencode' && !this.opencode) return { ok: false, error: 'OpenCode belum terpasang di laptop ini.' };
+    if (engine === this.hub.engine) return { ok: true, engine };
+    const busy = [...this.sessions.values()].filter((s) => s.turnActive() || s.inflight?.size).map((s) => s.project.name ?? s.id);
+    if (busy.length) return { ok: false, error: `Masih ada yang bekerja: ${busy.join(', ')}. Tunggu selesai atau hentikan dulu.`, busy };
+    // 📋 Antrian is shared: a waiting item would run on the other engine and land in its chat.
+    if (queuedProjects.length) return { ok: false, error: `📋 Antrian tugas masih berisi item: ${queuedProjects.join(', ')}. Selesaikan atau hapus dulu.`, busy: queuedProjects };
+    try {
+      this.hub.save();
+      if (this.hub.chatStore.dirty) throw Object.assign(new Error('Riwayat chat belum tersimpan ke disk (file sedang dikunci?). Coba lagi sebentar.'), { status: 409 });
+      if (this.hub.legacyChats) throw Object.assign(new Error('Riwayat chat lama belum selesai dipindahkan (lihat log server). Restart aplikasi dulu, lalu coba lagi.'), { status: 409 });
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+    for (const s of this.sessions.values()) s.closeChild();
+    this.sessions.clear();
+    try {
+      if (!this.hub.switchEngine(engine)) return { ok: false, error: 'Mesin tidak dikenal.' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+    console.log(`Mesin diganti ke ${engine === 'opencode' ? 'OpenCode' : 'Claude Code'}`);
+    return { ok: true, engine };
   }
 
   /**

@@ -8,6 +8,64 @@ if (process.argv[2] === 'models') {
   console.log('opencode-go/beam-free\nopencode-go/kimi-k3\ngoogle/gemini-2.5-flash');
   process.exit(0);
 }
+// `opencode api <operation> [--param k=v] [--data json]`: provider logins (src/opencode-auth.js). State in
+// FAKE_ACP_AUTH_FILE, so a login shows up in the next list; secrets are only checked, never echoed back.
+if (process.argv[2] === 'api') {
+  const { existsSync: has, readFileSync, writeFileSync: write } = await import('node:fs');
+  const [, , , op, ...rest] = process.argv;
+  const params = {};
+  let body = {};
+  for (let i = 0; i < rest.length; i += 2) {
+    if (rest[i] === '--param') {
+      const [k, ...v] = rest[i + 1].split('=');
+      params[k] = v.join('=');
+    } else if (rest[i] === '--data') body = JSON.parse(rest[i + 1]);
+  }
+  const file = process.env.FAKE_ACP_AUTH_FILE;
+  const creds = file && has(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
+  const save = () => file && write(file, JSON.stringify(creds));
+  const out = (data) => (console.log(JSON.stringify({ location: { directory: process.cwd() }, data })), process.exit(0));
+  const fail = (msg) => (console.error(`UnknownError: An error occurred\n    at x (B:/~BUN/root/c.js:1:1) {\n  [cause]: Error: ${msg}\n}`), process.exit(1));
+  const integrations = [
+    { id: 'opencode-go', name: 'OpenCode Go', methods: [{ type: 'key' }, { type: 'env', names: ['OPENCODE_API_KEY'] }] },
+    { id: 'github-copilot', name: 'GitHub Copilot', methods: [{ type: 'env', names: ['GITHUB_TOKEN'] }, { id: 'device', type: 'oauth', label: 'Login with GitHub Copilot', form: [{ key: 'deploymentType', title: 'Type', required: true, type: 'string', options: [{ value: 'github.com', label: 'GitHub.com' }] }] }] },
+    { id: 'google', name: 'Google', methods: [{ type: 'key' }, { type: 'env', names: ['GEMINI_API_KEY'] }] },
+  ];
+  switch (op) {
+    case 'integration.list':
+      out(integrations.map((i) => ({ ...i, connections: [...creds.filter((c) => c.integrationID === i.id).map(({ id, label, method }) => ({ type: 'credential', id, label, method })), ...(i.id === 'google' ? [{ type: 'env', name: 'GEMINI_API_KEY' }] : [])] })));
+      break;
+    case 'integration.connect.key':
+      if (!integrations.some((i) => i.id === params.integrationID)) fail(`Integration not found: ${params.integrationID}`);
+      if (body.key !== 'sk-benar') fail('Authentication failed');
+      creds.push({ id: `cred_${creds.length + 1}`, integrationID: params.integrationID, label: 'Default', method: 'key' });
+      save();
+      out(null);
+      break;
+    case 'integration.oauth.connect':
+      out({ attemptID: 'con_fake1', url: 'https://example.test/login', instructions: 'Masukkan kode ABCD-1234', mode: 'auto', time: { created: 0, expires: 1 } });
+      break;
+    case 'integration.oauth.status':
+      creds.push({ id: `cred_${creds.length + 1}`, integrationID: params.integrationID, label: 'Default', method: 'oauth' });
+      save();
+      out({ status: 'complete', time: { created: 0, expires: 1 } });
+      break;
+    case 'credential.remove': {
+      const i = creds.findIndex((c) => c.id === params.credentialID);
+      if (i < 0) fail('Credential not found');
+      creds.splice(i, 1);
+      save();
+      out(null);
+      break;
+    }
+    default:
+      fail(`Operation not found: ${op}`);
+  }
+}
+if (process.argv[2] === 'session' && process.argv[3] === 'list') {
+  console.log(JSON.stringify([{ id: 'ses_fakeold', title: 'Sesi lama OpenCode', updated: 1700000000000, created: 1700000000000, directory: process.cwd() }]));
+  process.exit(0);
+}
 if (process.argv[2] !== 'acp') {
   console.log('opencode 2.0.0-fake');
   process.exit(0);

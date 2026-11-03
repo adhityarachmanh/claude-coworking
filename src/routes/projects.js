@@ -33,8 +33,7 @@ export function register(router) {
 /** Per-project actions; registered with the other /api/projects/:id routes (see index.js). */
 export function registerProjectActions(router) {
   router.post('/api/projects/:id/settings', withSession(({ hub }, req, res, { project, session }, body) => {
-    // Switching engines starts a new conversation: never under a running turn (design §9.3).
-    if (body?.engine && body.engine !== hub.settingsFor(project.id).engine && session.turnActive()) return json(res, 409, { error: 'busy' });
+    // The engine is app-wide (POST /api/engine, Akun): a project's settings never change it.
     hub.updateSettings(project.id, body);
     session.syncSettings(); // switches the running Claude Code live (mid-turn too, like Shift+Tab)
     return json(res, 200, { ok: true });

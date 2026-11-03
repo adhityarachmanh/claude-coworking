@@ -14,6 +14,7 @@ import { onApprovalUpdate, onPushSnapshot, pushProjectsChanged } from '../featur
 import { renderRoots } from '../features/settings.js';
 import { applyRoster } from '../features/roster.js';
 import { applySpotify } from '../features/spotify.js';
+import { reloadSoon } from '../features/opencode-account.js';
 import { noteLiveMessage, setStuckOnline } from '../features/stuck.js';
 import { applyNames } from '../features/team.js';
 import { applyTeamNames, roleName } from '../office/cast.js';
@@ -82,6 +83,8 @@ const handlers = {
   },
   spotify: (s) => applySpotify(s),
   'account-alert': (alert, live) => live && onAccountAlert(alert),
+  // The app moved to another engine's workspace (Akun, this or another device): its chats come with a fresh page.
+  engine: (data, live) => live && reloadSoon(),
   projects(projects) {
     state.projects = projects;
     renderSidebar();
