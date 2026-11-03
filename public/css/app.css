@@ -1863,6 +1863,20 @@ body.read-only #composer-hint { color: var(--ask); }
 /* ---------- 📱 Chat on a phone (≤ 760 px): compact header, two-row composer, sheets (features/phone-sheets.js) ----------
    docs/design-mobile-chat.md. Everything below is phone-only: on a laptop .phone-only never shows and the rest is gated. */
 .phone-only { display: none; }
+/* Pengaturan giliran: one chip opens the dialog with Izin / Model / Effort / Mode tim (laptop and phone) */
+.settings-chip { display: inline-block; align-self: flex-start; max-width: 100%; padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface-3); color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.settings-chip::before { content: '⚙ '; }
+.composer > .settings-chip { margin: 0 0 8px; }
+.composer.demo > .settings-chip { display: none; }
+.settings-chip.warn { background: var(--warn-soft); border-color: var(--warn-line); color: var(--warn-text-strong); }
+#turn-settings-modal .modal-card { max-width: 460px; }
+#turn-settings-modal .controls { flex-direction: column; align-items: stretch; flex-wrap: nowrap; overflow: visible; gap: 14px; margin: 0; }
+#turn-settings-modal .ctl { display: flex; flex-direction: column; align-items: stretch; gap: 4px; white-space: normal; font-size: var(--fs-md); color: var(--text); }
+#turn-settings-modal .ctl[hidden] { display: none; }
+#turn-settings-modal .ctl::after, #turn-settings-modal .switch::after { content: attr(title); font-size: var(--fs-xs); line-height: 1.35; color: var(--muted); }
+#turn-settings-modal select, #turn-settings-modal input[type='search'] { max-width: none; width: 100%; min-height: 34px; }
+#turn-settings-modal .switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); font-size: var(--fs-md); color: var(--text); white-space: normal; }
+#turn-settings-modal .switch::after { flex: 1 0 100%; }
 
 @media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   /* header: [logo] [project / session · status] (♪ in Kantor) [⋯] [●] */

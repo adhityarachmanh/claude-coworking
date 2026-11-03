@@ -42,7 +42,10 @@ export function openCodeModels(bin, { maxAgeMs = 10 * 60_000 } = {}) {
         modelCache = null; // try again next time
         return resolve([]);
       }
-      resolve([...new Set(String(out).split(/\r?\n/).map((l) => l.trim()).filter((l) => /^[\w.-]+\/[\w.:#@-]+$/.test(l)))]);
+      const list = [...new Set(String(out).split(/\r?\n/).map((l) => l.trim()).filter((l) => /^[\w.-]+\/[\w.:#@-]+$/.test(l)))];
+      // An empty answer (OpenCode's background service still starting) is not kept: the next ask runs it again.
+      if (!list.length && modelCache?.load === load) modelCache = null;
+      resolve(list);
     });
   });
   modelCache = { at: Date.now(), load };

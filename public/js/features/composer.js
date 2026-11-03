@@ -51,7 +51,7 @@ export function fillComposer(text) {
 export function renderComposer() {
   const isDemo = state.active === DEMO_ID;
   const st = state.statuses[state.active] ?? {};
-  const engine = engineOf(st);
+  const engine = engineOf(st, state.config);
   const caps = capsFor(state.config, engine);
   $('#composer').classList.toggle('demo', isDemo);
   $('#btn-stop').hidden = isDemo || !(st.busy || st.queue);
@@ -109,7 +109,7 @@ export function renderSendState() {
   if (narrow.matches) renderStatusline(state.statuses[state.active] ?? {}); // phone: the "not connected" chip
 }
 
-/** Phone: the chip in the composer toolbar sums up the turn settings that moved into its sheet. */
+/** The chip above the input (toolbar on a phone) sums up the turn settings that live in its dialog. */
 function renderSettingsChip(st) {
   const chip = $('#settings-chip');
   const mode = $('#mode').value || 'manual';
@@ -118,7 +118,7 @@ function renderSettingsChip(st) {
   const model = label('#model') || 'Default';
   const effort = $('#effort').value && !$('#effort').disabled ? label('#effort') : '';
   const team = $('#team-mode').checked && !$('#team-ctl').classList.contains('cap-off');
-  const engine = engineOf(st);
+  const engine = engineOf(st, state.config);
   const engineName = engine !== DEFAULT_ENGINE ? engineLabel(engine) : ''; // only the non-default engine takes space
   chip.textContent = [engineName, MODE_SHORT[mode] ?? mode, model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
   chip.setAttribute('aria-label', `Pengaturan giliran: ${engineName ? `mesin ${engineName}, ` : ''}mode ${(MODE_SHORT[mode] ?? mode).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);

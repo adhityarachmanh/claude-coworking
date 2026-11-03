@@ -201,7 +201,7 @@
             <!-- 🎤 hidden unless the Web Speech API exists in a secure context (HTTPS / localhost) and the page may act -->
             <!-- Phone only: ＋ (attach, template, queue, voice, ! @ /) and the turn-settings chip, in the toolbar under the text -->
             <button id="btn-plus" class="ghost icon phone-only" type="button" aria-haspopup="dialog" aria-label="Tambahkan: lampiran, template, antrian, suara">＋</button>
-            <button id="settings-chip" class="settings-chip phone-only" type="button" aria-haspopup="dialog" aria-label="Pengaturan giliran"></button>
+            <button id="settings-chip" class="settings-chip" type="button" aria-haspopup="dialog" aria-label="Pengaturan giliran" title="Izin, model, effort & Mode tim"></button>
             <button id="btn-voice" class="ghost icon attach voice-btn" type="button" title="Input suara (Alt+M)" aria-label="Mulai input suara" aria-pressed="false" aria-keyshortcuts="Alt+M" hidden>🎤</button>
             <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)" aria-label="Hentikan giliran">■ Stop</button>
             <button id="btn-queue-add" class="ghost icon attach queue-add" type="button" title="Tambah ke 📋 Antrian, dijalankan saat tim tidak sibuk (Alt+Enter). Kotak kosong: buka antrian" aria-label="Tambah ke antrian">📋</button>
@@ -916,7 +916,7 @@
     <div id="turn-settings-modal" class="modal phone-sheet" hidden>
       <div class="modal-card sheet-card" role="dialog" aria-modal="true" aria-labelledby="turn-settings-title">
         <div class="modal-head"><b id="turn-settings-title">Pengaturan giliran</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <!-- the composer's own .controls (same ids and listeners) are moved in here on a phone -->
+        <!-- the composer's own .controls (same ids and listeners) are moved in here (features/phone-sheets.js) -->
         <div class="sheet-body"></div>
         <p id="effort-note" class="muted small" hidden></p>
         <p id="engine-note" class="muted small" hidden></p>

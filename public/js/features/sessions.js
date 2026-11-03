@@ -50,8 +50,8 @@ export function renderSessionBar() {
     title.removeAttribute('tabindex');
   }
   const meta = st.sessionId
-    ? [st.engine === 'opencode' ? 'sesi OpenCode' : known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
-    : [`pesan pertamamu memulai sesi ${st.engine === 'opencode' ? 'OpenCode' : 'Claude Code'} baru`];
+    ? [(state.config?.engine ?? st.engine) === 'opencode' ? 'sesi OpenCode' : known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
+    : [`pesan pertamamu memulai sesi ${(state.config?.engine ?? st.engine) === 'opencode' ? 'OpenCode' : 'Claude Code'} baru`];
   if (st.cliBusy) meta.push('terminal aktif');
   $('#sb-meta').textContent = meta.filter(Boolean).join(' · ');
   // Phone header: the session bar is hidden there, its title and the turn's state sit under the project name.

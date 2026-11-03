@@ -10,19 +10,24 @@ import { openRewind } from './rewind.js';
 const SHEETS = ['plus-modal', 'turn-settings-modal', 'head-more-modal'];
 const RO_REASON = 'Hanya dari laptop/Tailscale';
 
-/** Where `.controls` lives on a laptop: in the composer, right before the suggestion list. */
-let controlsHome = null;
+/** The chip's place on a phone: in the input toolbar, right after ＋ (on a laptop it sits above the input). */
+let chipHome = null;
 
-/** Phone: the composer's own selects live in the settings sheet; wider: back in the composer (same nodes, same listeners). */
+/**
+ * The composer's own selects (Izin, Model, Effort, Mode tim) always live in the "Pengaturan giliran" dialog (same
+ * nodes, same listeners), opened by the summary chip: a long model list (OpenCode: dozens) fits a dialog, not a row.
+ * Phone: the chip sits in the input toolbar; laptop: on its own line above the input.
+ */
 export function placeControls() {
   const controls = document.querySelector('.controls');
-  if (!controls) return;
+  const body = $('#turn-settings-modal .sheet-body');
+  if (controls && controls.parentElement !== body) body.append(controls);
+  const chip = $('#settings-chip');
   if (narrow.matches) {
-    const body = $('#turn-settings-modal .sheet-body');
-    if (controls.parentElement !== body) body.append(controls);
+    if (chipHome && chip.parentElement !== chipHome.parent) chipHome.parent.insertBefore(chip, chipHome.next);
   } else {
-    if (controls.parentElement !== controlsHome) $('#composer').insertBefore(controls, $('#suggest'));
-    for (const id of SHEETS) if (!$(`#${id}`).hidden) closeModal(id); // a rotated phone: the sheets are phone-only
+    if (chip.parentElement !== $('#composer')) $('#composer').insertBefore(chip, $('#suggest'));
+    for (const id of SHEETS) if (id !== 'turn-settings-modal' && !$(`#${id}`).hidden) closeModal(id); // a rotated phone
   }
 }
 
@@ -119,7 +124,7 @@ function onSheetClick(e) {
 }
 
 export function initPhoneSheets() {
-  controlsHome = $('#composer');
+  chipHome = { parent: $('#settings-chip').parentElement, next: $('#settings-chip').nextElementSibling };
   placeControls();
   narrow.addEventListener('change', placeControls);
 

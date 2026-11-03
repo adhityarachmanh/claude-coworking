@@ -41,9 +41,13 @@ const cleanId = (v) => (typeof v === 'string' && /^[a-z][\w-]{0,31}$/.test(v) ? 
 
 export const engineLabel = (engine) => ENGINE_LABEL[engine] ?? String(engine ?? DEFAULT_ENGINE);
 
-/** The engine of a project status; anything missing or malformed is Claude Code (old servers, old projects). */
-export function engineOf(status) {
-  return cleanId(status?.engine) ?? DEFAULT_ENGINE;
+/**
+ * The engine a project runs on: the app-wide one (`config.engine`, chosen in Akun) when the server sends it, else
+ * the project status' (older servers); anything missing or malformed is Claude Code. A project without a status
+ * yet (never opened this run) must still show the active engine's models and modes.
+ */
+export function engineOf(status, config) {
+  return cleanId(config?.engine) ?? cleanId(status?.engine) ?? DEFAULT_ENGINE;
 }
 
 /**

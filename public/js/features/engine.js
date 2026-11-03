@@ -7,7 +7,7 @@ import { capReason, capsFor, cleanModelList, engineLabel, engineOf, groupModels,
 import { auth, DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 
 /** The engine of a project (default: the active one). */
-export const projectEngine = (id = state.active) => engineOf(state.statuses[id]);
+export const projectEngine = (id = state.active) => engineOf(state.statuses[id], state.config);
 
 /** The caps of a project's engine. */
 export const projectCaps = (id = state.active) => capsFor(state.config, projectEngine(id));
@@ -39,6 +39,7 @@ export function applyCapsToDom(id = state.active) {
 /** project id → { engine, models, current, needsStart, at, loading, error } */
 const modelCache = new Map();
 const RETRY_EMPTY_MS = 4000; // the list appears once the engine has started a session
+const EMPTY_TRIES = 6; // empty answers asked again without a prompt (about 25 s of OpenCode starting up)
 const RETRY_ERROR_MS = 30_000;
 
 /** The server's routes are POST (src/routes/router.js); a plain GET is the fallback for the contract's spelling. */
@@ -56,14 +57,16 @@ async function fetchModels(id) {
 
 /** The cached list for the project's engine (null = not loaded yet); fetches when missing or stale. */
 export function projectModels(id, st = state.statuses[id] ?? {}, onLoaded = () => {}) {
-  const engine = engineOf(st);
+  const engine = engineOf(st, state.config);
   if (!modelsPerProject(engine) || !id || id === DEMO_ID) return null;
   let entry = modelCache.get(id);
   if (entry && entry.engine !== engine) entry = null;
   const now = Date.now();
-  const stale = !entry || (!entry.loading && ((entry.error && now - entry.at > RETRY_ERROR_MS) || (!entry.error && entry.needsStart && (st.sessionId || st.alive) && now - entry.at > RETRY_EMPTY_MS)));
+  // An empty list is asked again shortly (OpenCode may still be starting), a few times before waiting for a prompt.
+  const retryEmpty = entry && !entry.error && entry.needsStart && now - entry.at > RETRY_EMPTY_MS && ((entry.tries ?? 0) < EMPTY_TRIES || st.sessionId || st.alive);
+  const stale = !entry || (!entry.loading && ((entry.error && now - entry.at > RETRY_ERROR_MS) || retryEmpty));
   if (stale && !state.readOnly) {
-    entry = { engine, models: entry?.models ?? [], current: entry?.current ?? '', needsStart: entry?.needsStart ?? true, at: now, loading: true, error: null };
+    entry = { engine, models: entry?.models ?? [], current: entry?.current ?? '', needsStart: entry?.needsStart ?? true, at: now, loading: true, error: null, tries: (entry?.tries ?? 0) + 1 };
     modelCache.set(id, entry);
     const mine = entry;
     fetchModels(id)
@@ -71,7 +74,10 @@ export function projectModels(id, st = state.statuses[id] ?? {}, onLoaded = () =
       .catch((err) => Object.assign(mine, { error: err.message }))
       .finally(() => {
         Object.assign(mine, { loading: false, at: Date.now() });
-        if (modelCache.get(id) === mine) onLoaded();
+        if (modelCache.get(id) !== mine) return;
+        onLoaded();
+        // still empty: render again after the retry delay, which asks once more (up to EMPTY_TRIES)
+        if (!mine.error && mine.needsStart && mine.tries < EMPTY_TRIES) setTimeout(() => modelCache.get(id) === mine && onLoaded(), RETRY_EMPTY_MS + 200);
       });
   }
   return entry ?? { engine, models: [], current: '', needsStart: true, loading: false, error: state.readOnly ? READ_ONLY_HINT : null };
