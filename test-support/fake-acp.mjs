@@ -105,7 +105,7 @@ const update = (sessionId, u) => send({ method: 'session/update', params: { sess
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const configOptions = () => [
   { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: options.model, options: [{ value: 'opencode-go/beam-free', name: 'beam free' }, { value: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' }] },
-  { id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: options.mode, options: [{ value: 'build', name: 'build' }, { value: 'plan', name: 'plan' }] },
+  { id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: options.mode, options: [{ value: 'build', name: 'build' }, { value: 'plan', name: 'plan' }, { value: 'docs', name: 'docs', description: 'Penulis dokumentasi' }] },
   { id: 'effort', name: 'Effort', category: 'thought_level', type: 'select', currentValue: options.effort, options: ['low', 'high', 'max', 'default'].map((value) => ({ value, name: value })) },
 ];
 const ask = (params) =>
@@ -122,6 +122,10 @@ async function turn(sessionId, text) {
       await sleep(20);
     }
   };
+  if (/agent\?/.test(text)) {
+    await say('msg_agent', `agent=${options.mode} bash=${JSON.stringify(config.permission?.bash ?? null)}`);
+    return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+  }
   if (/effort/.test(text)) {
     await say('msg_effort', `effort=${options.effort}`);
     return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
@@ -213,7 +217,7 @@ async function handle(msg) {
     case 'session/new': {
       const sessionId = `ses_fake${++seq}`;
       sessions.add(sessionId);
-      update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'init', description: 'AGENTS.md' }] });
+      update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'init', description: 'AGENTS.md' }, { name: 'rilis', description: 'Command buatan sendiri', input: { hint: '<versi>' } }] });
       return reply({ sessionId, configOptions: configOptions() });
     }
     case 'session/load':

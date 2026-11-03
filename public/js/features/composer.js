@@ -48,14 +48,19 @@ export function fillComposer(text) {
 
 // ---------- composer ----------
 
+/** Something Stop / Esc can end: a turn, queued prompts, or background tasks (shells, subagents) still running. */
+const stoppable = (st) => Boolean(st.busy || st.queue || (st.tasks ?? []).some((t) => t?.status === 'running' || t?.status === 'pending'));
+
 export function renderComposer() {
   const isDemo = state.active === DEMO_ID;
   const st = state.statuses[state.active] ?? {};
   const engine = engineOf(st, state.config);
   const caps = capsFor(state.config, engine);
   $('#composer').classList.toggle('demo', isDemo);
-  $('#btn-stop').hidden = isDemo || !(st.busy || st.queue);
+  $('#btn-stop').hidden = isDemo || !stoppable(st);
+  $('#btn-stop').title = st.busy || st.queue ? 'Hentikan giliran yang sedang berjalan, termasuk tugas latar (Esc)' : 'Hentikan tugas latar yang masih berjalan (Esc)';
   renderModeOptions(caps);
+  renderAgentOptions(st, engine);
   $('#mode').value = modeFor(st.mode ?? 'manual', caps);
   renderModelOptions(st.model ?? '', engine);
   $('#effort').value = st.effort ?? '';
@@ -129,6 +134,28 @@ function renderSettingsChip(st) {
 }
 
 /** Permission modes the engine doesn't offer (🚫 dontAsk on OpenCode) leave the select and the Shift+Tab cycle. */
+/**
+ * OpenCode's primary agents (status.agents from its `mode` option): build and the user's own agents. "plan" stays
+ * under Izin → 📋 Rencana dulu, so it is not offered twice. Hidden for Claude Code or when there is only build.
+ */
+function renderAgentOptions(st, engine) {
+  const ctl = $('#agent-ctl');
+  const agents = engine === 'opencode' ? (st.agents ?? []).filter((a) => a.value !== 'plan') : [];
+  ctl.hidden = agents.length < 2 && !(st.agent && st.agent !== 'build');
+  if (ctl.hidden) return;
+  const select = $('#agent');
+  const current = st.agent || 'build';
+  const list = agents.some((a) => a.value === current) ? agents : [...agents, { value: current, name: `${current} (tidak ada lagi)` }];
+  const html = list.map((a) => `<option value="${escapeHtml(a.value === 'build' ? '' : a.value)}" title="${escapeHtml(a.description ?? '')}">${escapeHtml(a.name)}</option>`).join('');
+  if (select.dataset.html !== html) {
+    select.innerHTML = html;
+    select.dataset.html = html;
+  }
+  if (document.activeElement !== select) select.value = current === 'build' ? '' : current;
+  select.disabled = Boolean(state.readOnly) || st.mode === 'plan';
+  select.title = st.mode === 'plan' ? 'Saat Izin = 📋 Rencana dulu, OpenCode memakai agent plan' : '';
+}
+
 function renderModeOptions(caps) {
   for (const opt of $('#mode').options) {
     const off = !caps.modes.includes(opt.value);
@@ -264,7 +291,8 @@ async function sendPrompt() {
 
 export async function saveSettings() {
   try {
-    await api(`/api/projects/${state.active}/settings`, { mode: $('#mode').value, model: $('#model').value, effort: $('#effort').value, team: $('#team-mode').checked });
+    const agent = $('#agent-ctl').hidden ? undefined : $('#agent').value; // OpenCode only
+    await api(`/api/projects/${state.active}/settings`, { mode: $('#mode').value, model: $('#model').value, effort: $('#effort').value, team: $('#team-mode').checked, ...(agent !== undefined && { agent }) });
   } catch (err) {
     toast(err.message);
   }
@@ -337,7 +365,7 @@ export function initComposerControls() {
     if (e.key !== 'Escape' || suggest.items.length || state.active === DEMO_ID || state.readOnly) return;
     if (document.querySelector('.modal:not([hidden])')) return; // Esc closes the dialog instead
     const st = state.statuses[state.active] ?? {};
-    if (st.busy || st.queue) {
+    if (stoppable(st)) {
       api(`/api/projects/${state.active}/stop`).catch((err) => toast(err.message));
       return;
     }
@@ -374,7 +402,7 @@ export function initComposerControls() {
   $('#btn-demo').addEventListener('click', () => api('/api/demo').catch((err) => toast(err.message)));
   // Engine picker + the searchable per-project model list (features/engine.js).
   initEngine({ onModelPicked: saveSettings, rerender: renderComposer });
-  for (const id of ['#mode', '#model', '#effort', '#team-mode']) {
+  for (const id of ['#mode', '#agent', '#model', '#effort', '#team-mode']) {
     $(id).addEventListener('change', saveSettings);
     $(id).addEventListener('change', () => renderSettingsChip(state.statuses[state.active])); // right away, before the server echoes it
   }

@@ -355,6 +355,11 @@ export class StreamTranslator {
     if (toolUseId) this.finishAgent(toolUseId, t.status === 'failed' || t.status === 'killed', t.summary ?? '');
   }
 
+  /** Ids of the tasks (shells, subagents) still running: Stop ends them with the turn (ClaudeSession.stop). */
+  runningTaskIds() {
+    return [...this.bgTasks.values()].filter((t) => t.status === 'running').map((t) => t.id);
+  }
+
   /** Anything still running in the background (keeps the process from being closed while idle). */
   hasRunningTasks() {
     return [...this.bgTasks.values()].some((t) => t.status === 'running') || [...this.tools.values()].some((i) => i.agent && i.background);

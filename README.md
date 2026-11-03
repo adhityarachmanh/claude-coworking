@@ -176,6 +176,13 @@ Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhi
 
 **Banyak tab:** semua tab di satu browser berbagi **satu koneksi live** ke server (satu tab memimpin, yang lain menerima lewat BroadcastChannel), jadi membuka banyak tab tidak lagi menghabiskan batas koneksi browser.
 
+### Tanpa terminal
+
+- **Izin, Model, Effort, Mode tim** ada di dialog *Pengaturan giliran*: klik chip ⚙ di atas kotak chat (di HP di bawah teks).
+- **■ Stop / Esc** menghentikan giliran yang sedang berjalan, termasuk giliran yang dimulai Claude sendiri setelah tugas latar selesai, dan menghentikan tugas latar itu juga.
+- **🩺 Doctor** dan **⬆ Update Claude Code**: ⚙ → Kompatibilitas Claude Code (sama dengan `claude doctor` / `claude update`, dari laptop).
+- Command yang hanya membuka layar terminal (`/config`, `/hooks`, `/doctor`, `/login`, …) tidak ditawarkan di autocomplete; kalau diketik, aplikasi menunjukkan tempatnya di sini.
+
 ### Mesin: Claude Code atau OpenCode
 
 Mesin dipilih untuk seluruh aplikasi di **👤 Akun → Mesin AI**:
@@ -191,7 +198,9 @@ Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude
 |---|---|
 | Didukung | Chat streaming, tool + animasi kantor, papan todo, **kartu izin** (Izinkan / Selalu / Izinkan semua / Tolak), ■ Stop / `Esc`, antrean, `!` shell, lanjut sesi OpenCode (`ses_…`), ▶ Lanjutkan setelah restart, token + biaya ke 📊 Laporan dan 💰 Batas antrian |
 | Model | Daftar dari `opencode models` (provider yang kamu atur di OpenCode), bisa dicari; *Default* = pilihan OpenCode sendiri |
-| Mode izin | 🛡️ Tanya dulu · ✏️ Auto-edit · ⚡ Auto · 📋 Rencana dulu (agent `plan` OpenCode). Aturannya dikirim per proses lewat `OPENCODE_CONFIG_CONTENT`, jadi config OpenCode milikmu tidak pernah diubah |
+| Mode izin | 🛡️ Tanya dulu · ✏️ Auto-edit · ⚡ Auto · 📋 Rencana dulu (agent `plan` OpenCode). Aturannya dikirim per proses lewat `OPENCODE_CONFIG_CONTENT`, jadi config OpenCode milikmu tidak pernah diubah. Aturan `permission` milikmu di `opencode.json` **digabung, bukan ditimpa**: `deny` tetap `deny` (juga di ⚡ Auto, seperti `--auto` OpenCode), aturan berpola (`"git *": "allow"`) tetap berlaku |
+| Agent | Selain build/plan, **agent buatanmu** (primary agent di `opencode.json`) bisa dipilih di Pengaturan giliran → Agent |
+| Command | `/init`, `/review` dan command buatanmu muncul di autocomplete `/` dengan deskripsinya |
 | Mode tim | Role kantor jadi **subagent OpenCode** (file config `OPENCODE_CONFIG` berisi `agents` + prompt Lead sebagai `instructions`). Lead mendelegasikan lewat tool `subagent`; tool milik subagent dikerjakan role itu di kantor |
 | Effort | Opsi `effort` OpenCode per model (mis. low/high/max): dipilih level terdekat yang ditawarkan model |
 | Belum | Rewind, kelola MCP, tugas latar, mirror sesi terminal OpenCode, ganti nama sesi. Kontrolnya disembunyikan atau diberi alasan |

@@ -384,7 +384,12 @@ export class ClaudeSession {
     for (const msg of history) this.hub.chat(this.id, msg);
   }
 
-  /** Like Esc in the CLI: queued prompts leave Claude Code's queue, then the running turn is interrupted. */
+  /**
+   * Stop / Esc: queued prompts leave Claude Code's queue, the running turn is interrupted — also a turn Claude Code
+   * started by itself (reacting to a finished background task: no prompt of ours in flight) — and the background
+   * tasks (run_in_background shells, background subagents) are stopped too. Otherwise one finishing a moment later
+   * starts yet another turn, and Stop seemed to do nothing until the background was stopped by hand.
+   */
   stop() {
     for (const [uuid, item] of this.inflight) {
       if (item.state === 'started') continue;
@@ -398,12 +403,14 @@ export class ClaudeSession {
         .catch(() => {});
     }
     this.hub.cancelApprovals(this.id);
-    if (this.child && [...this.inflight.values()].some((i) => i.state === 'started')) {
+    const running = [...this.inflight.values()].some((i) => i.state === 'started') || Boolean(this.autoTurn);
+    if (this.child && running) {
       this.interrupting = true;
       this.request({ subtype: 'interrupt' }).catch(() => {});
       clearTimeout(this.killTimer);
-      this.killTimer = setTimeout(() => this.busy && this.kill(), INTERRUPT_GRACE_MS);
+      this.killTimer = setTimeout(() => this.turnActive() && this.kill(), INTERRUPT_GRACE_MS);
     }
+    if (this.child) for (const taskId of this.translator?.runningTaskIds() ?? []) this.stopTask(taskId).catch(() => {});
     this.updateStatus();
   }
 

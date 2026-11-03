@@ -344,6 +344,28 @@ test('📦 Backup carries OpenCode\'s chats (office/chats-opencode/) and restore
   }
 });
 
+test('OpenCode like the real one: its commands, its agents (custom too), the user\'s own permission rules kept', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  writeFileSync(path.join(TMP, 'projects', 'toko', 'opencode.json'), '{\n  // aturan milik user\n  "permission": { "bash": { "rm *": "deny", "git *": "ask" }, "webfetch": "deny", },\n}\n');
+  await api(`/api/projects/${id}/settings`, { mode: 'auto', agent: 'docs' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'agent?' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  assert.equal(lastText(id), 'agent=docs bash={"*":"allow","rm *":"deny","git *":"allow"}', 'custom agent picked; ⚡ Auto keeps the user\'s deny');
+  const st = (await snapshot()).statuses[id];
+  assert.deepEqual(st.commands.map((c) => c.name), ['init', 'rilis'], "OpenCode's commands for the autocomplete");
+  assert.equal(st.commands[1].argumentHint, '<versi>');
+  assert.deepEqual(st.agents.map((a) => a.value), ['build', 'plan', 'docs']);
+  await api(`/api/projects/${id}/settings`, { mode: 'plan' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'agent? lagi' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  assert.match(lastText(id), /^agent=plan /, '📋 Rencana dulu = the plan agent, whatever agent is picked');
+  await api(`/api/projects/${id}/settings`, { mode: 'manual', agent: '' });
+  rmSync(path.join(TMP, 'projects', 'toko', 'opencode.json'));
+});
+
 test('OpenCode provider logins: list, API key, OAuth, logout (through `opencode api`)', async () => {
   let list = (await api('/api/opencode/providers')).body;
   assert.deepEqual(list.connected.map((p) => [p.id, p.connections[0].type]), [['google', 'env']], 'an environment variable counts as connected');

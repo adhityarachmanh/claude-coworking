@@ -148,6 +148,11 @@
                 <option value="dontAsk">🚫 Jangan tanya</option>
               </select>
             </label>
+            <!-- OpenCode: its primary agents (build, the user's own from opencode.json); 📋 Rencana dulu = its plan agent -->
+            <label id="agent-ctl" class="ctl" title="Agent OpenCode yang mengerjakan giliran: build (bawaan) atau agent buatanmu dari opencode.json. Untuk rencana saja, pilih Izin → 📋 Rencana dulu." hidden>
+              <span>Agent</span>
+              <select id="agent"></select>
+            </label>
             <label class="ctl" title="Model untuk project ini">
               <span>Model</span>
               <select id="model">
@@ -633,7 +638,10 @@
             <p id="cc-model-hint" class="muted small">Untuk cek streaming dan pesan init. Tanpa ini hanya pemeriksaan tanpa token (versi, flag peluncuran, initialize, kontrol).</p>
             <div class="backup-actions">
               <button type="button" id="cc-run" class="ghost">▶ Cek kompatibilitas Claude Code</button>
+              <button type="button" id="cc-doctor" class="ghost" title="claude doctor: kesehatan instalasi Claude Code (tanpa model)">🩺 Doctor</button>
+              <button type="button" id="cc-update" class="ghost" title="claude update: pasang versi Claude Code terbaru">⬆ Update Claude Code</button>
             </div>
+            <pre id="cc-output" class="cc-output" hidden></pre>
           </section>
           <hr />
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>

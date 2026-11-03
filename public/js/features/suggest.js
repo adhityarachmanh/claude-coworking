@@ -2,7 +2,7 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, state } from '../core/state.js';
-import { LOCAL_COMMANDS } from './commands.js';
+import { CLI_ONLY, LOCAL_COMMANDS } from './commands.js';
 import { autosize, updateBashMode } from './composer.js';
 import { scheduleDraftSave } from './draft.js';
 import { promptHistory } from './history.js';
@@ -79,12 +79,20 @@ export function applySuggest(i = suggest.index) {
   scheduleDraftSave(); // an edit like typing (a prompt picked from history, like ↑/↓, is not a draft)
 }
 
-/** Every slash command with its description: the app's own first, then Claude Code's (built-in, skills, plugins). */
+/**
+ * Every slash command with its description: the app's own first, then the engine's — Claude Code's (built-in,
+ * skills, plugins; terminal-only screens left out, see CLI_ONLY) or OpenCode's for this project (/init, /review,
+ * the user's custom commands, from available_commands_update).
+ */
 export function slashCatalog() {
   const byName = new Map();
   for (const c of LOCAL_COMMANDS) byName.set(c.name, c);
-  for (const c of state.config?.commands ?? []) if (!byName.has(c.name)) byName.set(c.name, c);
-  for (const name of state.config?.slashCommands ?? []) if (!byName.has(name)) byName.set(name, { name });
+  if (state.config?.engine === 'opencode') {
+    for (const c of state.statuses[state.active]?.commands ?? []) if (!byName.has(c.name)) byName.set(c.name, { ...c, description: c.description || 'Command OpenCode' });
+    return [...byName.values()];
+  }
+  for (const c of state.config?.commands ?? []) if (!byName.has(c.name) && !CLI_ONLY[c.name]) byName.set(c.name, c);
+  for (const name of state.config?.slashCommands ?? []) if (!byName.has(name) && !CLI_ONLY[name]) byName.set(name, { name });
   return [...byName.values()];
 }
 

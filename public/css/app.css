@@ -2086,3 +2086,5 @@ body.read-only #composer-hint { color: var(--ask); }
   .plus-tile { min-height: 64px; }
   #turn-settings-modal .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 }
+/* ⚙ claude doctor / update output (features/claude-check.js) */
+.cc-output { max-height: 240px; overflow: auto; margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font: var(--fs-xs)/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }

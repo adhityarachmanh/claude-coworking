@@ -463,3 +463,11 @@ Tiap mesin adalah entitas terpisah; pindah mesin tidak menghapus riwayat mesin l
 - **Atribusi subagent**: OpenCode mengalirkan tool milik subagent ke sesi yang sama dengan judul `"<description>: <tool>"`. `AcpAdapter` mengingat `description → toolCallId` dari panggilan `subagent` yang berjalan, membuang awalan judul dan mengirim `parent_tool_use_id`, jadi kerja itu tercatat untuk role subagent (seperti subagent Claude).
 - **Effort** (`caps.effort = true`): opsi ACP `effort` (kategori `thought_level`, nilainya per model, mis. `low|medium|high|xhigh|max|default`). `effortValue()` memilih level terdekat yang tersedia; diterapkan setelah handshake, saat effort diganti, dan lagi setelah ganti model.
 - **Versi**: `opencode --version` (15 dtk) setelah start, masuk `config.engines.opencode.version` dan tampil di tombol mesin di Akun.
+
+## 13. Fase 2b: sesuai OpenCode asli
+
+- **Izin digabung** (`permissionConfig(mode, readUserPermission(project))`): `permission` dari `~/.config/opencode/opencode.json(c)`, `<project>/opencode.json(c)` dan `<project>/.opencode/` dibaca (JSONC) tiap spawn. `deny` milik user tidak pernah dilonggarkan; aturan berpola tetap, mode hanya mengatur `"*"`; di ⚡ Auto pola `ask` menjadi `allow` (seperti `--auto`). Aturan v2 `permissions` (daftar berurutan) belum dibaca.
+- **Agent**: nilai opsi ACP `mode` (build, plan, primary agent user) dikirim sebagai `status.agents`; setelan per project `agent` ('' = build). 📋 Rencana dulu selalu memakai `plan`. Agent yang sudah tidak ada jatuh kembali ke build.
+- **Command**: `available_commands_update` → `status.commands` → autocomplete (`slashCatalog`, mesin OpenCode).
+- Claude Code: command layar-terminal (`CLI_ONLY` di public/js/features/commands.js) disaring dari autocomplete; `claude doctor` / `claude update` lewat `/api/claude-check/doctor|update` (laptop saja).
+

@@ -37,13 +37,46 @@ export const LOCAL_COMMANDS = [
   { name: 'template', aliases: ['t'], description: '⚡ Sisipkan template prompt (review, test, perbaiki error, commit…) — /t' },
 ];
 
+/**
+ * Claude Code commands that only open an interactive terminal screen: headless they do nothing useful. Hidden from
+ * the autocomplete; typed anyway, the app says where the same thing lives here (or that it needs the terminal).
+ */
+export const CLI_ONLY = {
+  config: 'Pengaturan ada di ⚙ (kanan atas) dan ⚙ chip di atas kotak chat.',
+  doctor: 'Pakai ⚙ → Kompatibilitas Claude Code → 🩺 Doctor.',
+  upgrade: 'Pakai ⚙ → Kompatibilitas Claude Code → ⬆ Update Claude Code.',
+  login: 'Login/ganti akun ada di 👤 Akun.',
+  logout: 'Logout ada di 👤 Akun.',
+  status: 'Akun, kuota dan model ada di 👤 Akun dan status bar di bawah kotak chat.',
+  agents: 'Role tim ada di /team. Agent buatan sendiri (.claude/agents) masih diatur dari terminal.',
+  hooks: 'Hooks masih diatur dari terminal (claude → /hooks) atau settings.json.',
+  plugin: 'Plugin masih dipasang dari terminal (claude plugin …).',
+  plugins: 'Plugin masih dipasang dari terminal (claude plugin …).',
+  'output-style': 'Output style masih diatur dari terminal.',
+  statusline: 'Status bar aplikasi ini ada di bawah kotak chat.',
+  'terminal-setup': 'Khusus terminal.',
+  vim: 'Khusus terminal.',
+  theme: 'Tema aplikasi ada di ⚙.',
+  ide: 'Buka file di VS Code lewat tombol di tab Perubahan.',
+  'install-github-app': 'Khusus terminal.',
+  'privacy-settings': 'Khusus terminal.',
+  'release-notes': 'Khusus terminal.',
+  exit: 'Tidak perlu: tutup tab ini saja.',
+  quit: 'Tidak perlu: tutup tab ini saja.',
+};
+
 /** Returns true when `text` was one of LOCAL_COMMANDS (handled here, not sent to Claude). */
 export function localCommand(text) {
   const [, name, arg = ''] = text.match(/^\/([\w-]+)\s*(.*)$/s) ?? [];
   const value = arg.trim();
+  if (CLI_ONLY[name] && (state.config?.engine ?? 'claude') === 'claude' && !(state.config?.commands ?? []).some((c) => c.name === name && c.source && c.source !== 'builtin')) {
+    toast(`/${name} hanya ada di terminal Claude Code. ${CLI_ONLY[name]}`, 'warn');
+    return true;
+  }
   const pick = (select, label, allowCustom) => {
     if (!value) {
-      // No argument: show the picker, like the CLI's /model dialog.
+      // No argument: the Pengaturan giliran dialog with that picker focused, like the CLI's /model dialog.
+      openModal('turn-settings-modal');
       $(select).focus();
       $(select).showPicker?.();
       return;

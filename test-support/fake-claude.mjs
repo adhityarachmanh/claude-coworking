@@ -9,6 +9,8 @@
 //   contains "tugas latar" → starts a background subagent (qa) and a background shell; the subagent's transcript
 //                      is written under CLAUDE_PROJECTS_DIR and grows a step every 300 ms until it is stopped
 //   contains "selesaikan latar" → the background subagent hands its report back and its task completes
+//   contains "latar lalu lanjut" → background tasks start, the turn ends, then Claude Code starts a turn by itself
+//     (as when a background task's notification arrives): no prompt of ours, it streams until interrupted
 //   contains "perintah panjang" → a foreground Bash command (task_started, not backgrounded) whose output grows a
 //                      line every 300 ms for ~5 s (readable live with get_task_output), then its tool_result
 //   contains "sebut file" → a Read of src/checkout.ts (absolute path, offset 2), then a reply naming project files
@@ -25,6 +27,11 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 
 const args = process.argv.slice(2);
+// `claude doctor` / `claude update` (⚙ Kompatibilitas): plain text, then exit, like the real CLI without a terminal
+if (args[0] === 'doctor' || args[0] === 'update') {
+  console.log(args[0] === 'doctor' ? 'Claude Code doctor\n\nNo installation issues found.' : 'Claude Code is up to date (9.9.9-fake)');
+  process.exit(0);
+}
 
 // The Claude Code update detector (src/claude-check.js, src/claude-contract.js): which version this fake claims to be
 // and which parts of the protocol it "broke", read per process so a test can change them while a server runs:
@@ -296,6 +303,15 @@ async function handlePrompt(text, content) {
     }
     send({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: decision.behavior === 'allow' ? 'Plan approved' : decision.message, is_error: decision.behavior !== 'allow' }] } });
     await streamText(decision.behavior === 'allow' ? 'Rencana disetujui.' : 'Rencana direvisi.');
+    return result();
+  }
+  if (/latar lalu lanjut/i.test(text)) {
+    startBackground();
+    await streamText('Tugas latar berjalan.', 5);
+    result();
+    await sleep(200);
+    interrupted = false;
+    await streamText(Array.from({ length: 400 }, (_, i) => `lanjut${i}`).join(' '), 25); // the self-started turn
     return result();
   }
   if (/tugas latar/i.test(text)) {

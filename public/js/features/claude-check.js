@@ -87,6 +87,8 @@ function renderSection() {
   $('#cc-model').checked = v.settings.allowModel;
   const laptop = state.local !== false;
   $('#cc-run').disabled = !laptop || !v.available || v.running;
+  $('#cc-doctor').disabled = !laptop || cc.maintaining;
+  $('#cc-update').disabled = !laptop || cc.maintaining || v.running;
   $('#cc-auto').disabled = !laptop;
   $('#cc-model').disabled = !laptop;
 }
@@ -113,7 +115,31 @@ async function saveSetting(key, input) {
   }
 }
 
+/** 🩺 claude doctor / ⬆ claude update, run by the server; the output shows under the buttons. */
+async function maintenance(name) {
+  if (name === 'update' && !window.confirm('Update Claude Code ke versi terbaru?\n\nSama seperti `claude update` di terminal. Sesi yang menganggur memakai versi baru di pesan berikutnya.')) return;
+  const out = $('#cc-output');
+  cc.maintaining = true;
+  renderSection();
+  out.hidden = false;
+  out.textContent = name === 'update' ? 'Memperbarui Claude Code… (bisa beberapa menit)' : 'Menjalankan claude doctor…';
+  try {
+    const r = await api(`/api/claude-check/${name}`);
+    out.textContent = r.output || (r.ok ? 'Selesai.' : 'Gagal tanpa keterangan.');
+    if (r.timedOut) toast(`claude ${name} tidak selesai tepat waktu.`, 'warn');
+    else toast(r.ok ? (name === 'update' ? 'Update Claude Code selesai.' : 'Doctor selesai.') : `claude ${name} gagal.`, r.ok ? 'ok' : 'warn');
+  } catch (err) {
+    out.textContent = err.message;
+    toast(err.message);
+  } finally {
+    cc.maintaining = false;
+    renderSection();
+  }
+}
+
 export function initClaudeCheck() {
+  $('#cc-doctor').addEventListener('click', () => maintenance('doctor'));
+  $('#cc-update').addEventListener('click', () => maintenance('update'));
   $('#cc-auto').addEventListener('change', (e) => saveSetting('autoCheck', e.target));
   $('#cc-model').addEventListener('change', (e) => saveSetting('allowModel', e.target));
   $('#cc-run').addEventListener('click', async () => {

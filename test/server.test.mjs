@@ -872,6 +872,31 @@ test('MCP servers, background tasks and rename are Claude Code control requests'
   assert.equal((await api(`/api/projects/${id}/rename`, { title: 'Sesi uji' })).status, 200);
 });
 
+test('⚙ claude doctor / update run from the app (laptop only)', async () => {
+  const doctor = await api('/api/claude-check/doctor');
+  assert.equal(doctor.status, 200);
+  assert.equal(doctor.body.ok, true);
+  assert.match(doctor.body.output, /No installation issues found/);
+  const update = await api('/api/claude-check/update');
+  assert.match(update.body.output, /up to date/);
+});
+
+test('Stop ends a turn Claude Code started by itself and the background tasks with it', async () => {
+  const id = await projectId();
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'latar lalu lanjut' });
+  await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).filter((x) => x.status === 'running').length === 2);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  // Claude Code reacts on its own: a turn without a prompt of ours (it used to ignore Stop)
+  await waitFor((t, o) => t === 'chat_update' && o.project === id && /lanjut\d/.test(o.patch?.text ?? ''));
+  assert.equal((await api(`/api/projects/${id}/stop`)).status, 200);
+  const stopped = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  assert.equal(stopped.ok, false);
+  assert.match(stopped.text, /Dihentikan/);
+  const st = await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false && (o.tasks ?? []).length && !(o.tasks ?? []).some((x) => x.status === 'running'));
+  assert.ok(st.tasks.every((x) => x.status !== 'running'), 'the background shell and subagent were stopped too');
+});
+
 test('task monitor: background tasks in the status, task-detail reads the live subagent transcript, 404 for unknown ids', async () => {
   const id = await projectId();
   mark = seen.length;

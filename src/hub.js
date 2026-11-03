@@ -444,6 +444,8 @@ export class Hub {
     if (patch.model === '' || patch.model === 'default') next.model = '';
     else if (typeof patch.model === 'string' && (engine === 'opencode' ? OPENCODE_MODEL.test(patch.model) : this.knownModel(patch.model))) next.model = patch.model;
     if (EFFORT_LEVELS.includes(patch.effort)) next.effort = patch.effort;
+    // OpenCode's primary agent (build, or a custom one from the user's opencode.json); '' = build
+    if (patch.agent === '' || (typeof patch.agent === 'string' && /^[\w.-]{1,60}$/.test(patch.agent))) next.agent = patch.agent;
     if (typeof patch.team === 'boolean') next.team = patch.team;
     return next;
   }

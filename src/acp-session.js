@@ -4,6 +4,7 @@
 //
 // The session class is built from ClaudeSession (acpSessionClass below) so the queue bookkeeping, `!` shell,
 // "Lanjutkan" after a restart, idle shutdown and status come along; only the protocol parts are replaced.
+import { readUserPermission } from './opencode-bin.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { attachmentChips } from './attachments.js';
@@ -39,17 +40,52 @@ export const OPENCODE_ACCOUNT = Object.freeze({ id: 'opencode', email: 'OpenCode
  * The app's permission mode → OpenCode `permission` config (passed per process in OPENCODE_CONFIG_CONTENT, so the
  * user's own OpenCode config files are never touched). "ask" makes OpenCode send session/request_permission.
  */
-export function permissionConfig(mode) {
-  if (mode === 'auto') return { edit: 'allow', bash: 'allow', webfetch: 'allow' };
-  if (mode === 'dontAsk') return { edit: 'deny', bash: 'deny', webfetch: 'deny' }; // like Claude: never ask, refuse
-  if (mode === 'acceptEdits') return { edit: 'allow', bash: 'ask', webfetch: 'ask' };
-  return { edit: 'ask', bash: 'ask', webfetch: 'ask' }; // manual, plan
+export function permissionConfig(mode, user = {}) {
+  const base =
+    mode === 'auto' ? { edit: 'allow', bash: 'allow', webfetch: 'allow' }
+    : mode === 'dontAsk' ? { edit: 'deny', bash: 'deny', webfetch: 'deny' } // like Claude: never ask, refuse
+    : mode === 'acceptEdits' ? { edit: 'allow', bash: 'ask', webfetch: 'ask' }
+    : { edit: 'ask', bash: 'ask', webfetch: 'ask' }; // manual, plan
+  return mergeUserPermission(base, user, mode);
 }
 
-/** OpenCode's agent mode: its read-only "plan" agent for 📋 Rencana dulu, "build" otherwise. */
-const agentMode = (mode) => (mode === 'plan' ? 'plan' : 'build');
+/**
+ * The user's own OpenCode rules (opencode.json `permission`) are kept, not flattened by the app's mode:
+ * - a tool the user denies stays denied (also under ⚡ Auto, like OpenCode's own --auto);
+ * - pattern rules ({ "git *": "allow", "rm *": "deny" }) stay; the mode only sets the catch-all "*".
+ *   Under ⚡ Auto an "ask" pattern becomes allow (only explicit denies remain), like --auto.
+ */
+function mergeUserPermission(base, user, mode) {
+  const out = {};
+  for (const [tool, action] of Object.entries(base)) {
+    const mine = user?.[tool];
+    if (mine === 'deny') out[tool] = 'deny';
+    else if (mine && typeof mine === 'object' && !Array.isArray(mine)) {
+      const rules = {};
+      for (const [pattern, a] of Object.entries(mine)) {
+        if (!['allow', 'ask', 'deny'].includes(a) || pattern === '*') continue;
+        rules[pattern] = mode === 'auto' && a === 'ask' ? 'allow' : mode === 'dontAsk' && a !== 'deny' ? 'deny' : a;
+      }
+      out[tool] = { '*': action, ...rules };
+    } else out[tool] = action;
+  }
+  return out;
+}
+
+/**
+ * OpenCode's primary agent: 📋 Rencana dulu = its read-only "plan" agent; otherwise the agent picked in
+ * Pengaturan giliran (build, or a custom primary agent from the user's OpenCode config), "build" by default.
+ */
+const agentMode = (s) => (s.mode === 'plan' ? 'plan' : s.agent || 'build');
 /** Settings that only a fresh process can change (the permission config and the team are read at start). */
 const processKey = (s) => JSON.stringify([permissionConfig(s.mode), Boolean(s.team)]);
+
+/** OpenCode's slash commands (available_commands_update) for the app's autocomplete. */
+const cleanCommands = (list) =>
+  (Array.isArray(list) ? list : [])
+    .filter((c) => typeof c?.name === 'string' && /^[\w:.-]{1,60}$/.test(c.name))
+    .slice(0, 200)
+    .map((c) => ({ name: c.name, description: String(c.description ?? '').slice(0, 200), argumentHint: typeof c.input?.hint === 'string' ? c.input.hint.slice(0, 80) : undefined }));
 
 /**
  * The app's effort → a value of OpenCode's `effort` option for the current model (its values differ per model, e.g.
@@ -320,7 +356,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         this.hub.updateChat(this.id, item.chatId, { queued: false, cancelled: true });
       }
       this.hub.cancelApprovals(this.id);
-      if (this.child && [...this.inflight.values()].some((i) => i.state === 'started')) {
+      // session/cancel ends the whole turn, subagents included (OpenCode runs them inside the turn)
+      if (this.child && (this.busy || [...this.inflight.values()].some((i) => i.state === 'started'))) {
         this.interrupting = true;
         this.notify('session/cancel', { sessionId: this.acpSessionId });
         clearTimeout(this.killTimer);
@@ -347,10 +384,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         else this.closeChild();
         return;
       }
-      if (agentMode(s.mode) !== agentMode(a.mode)) {
+      if (agentMode(s) !== agentMode(a)) {
         a.mode = s.mode;
-        this.ready.then(() => this.setOption('mode', agentMode(s.mode))).catch((err) => this.controlFailed('mode', err));
-      } else a.mode = s.mode;
+        a.agent = s.agent;
+        this.ready.then(() => this.setOption('mode', agentMode(s))).catch((err) => this.controlFailed('mode', err));
+      } else Object.assign(a, { mode: s.mode, agent: s.agent });
       if (s.model !== a.model) {
         a.model = s.model;
         a.effort = s.effort;
@@ -416,7 +454,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
             OFFICE_MANAGED: '1',
             OPENCODE_DISABLE_AUTOUPDATE: '1',
             // Per-process config: the user's ~/.config/opencode stays untouched.
-            OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: permissionConfig(settings.mode) }),
+            // The user's own rules are merged in (a deny stays a deny): see permissionConfig.
+            OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: permissionConfig(settings.mode, readUserPermission(this.project.path)) }),
             // Mode tim: the roles as subagents + the Lead's prompt, from a file (17 prompts pass Windows' 32 KB env limit).
             ...(settings.team && Object.keys(this.m.agents).length ? { OPENCODE_CONFIG: this.m.openCodeTeamConfig() } : {}),
           },
@@ -426,7 +465,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         return false;
       }
       this.child = child;
-      this.applied = { mode: settings.mode, model: settings.model, effort: settings.effort, team: settings.team };
+      this.applied = { mode: settings.mode, agent: settings.agent, model: settings.model, effort: settings.effort, team: settings.team };
       this.stderr = '';
       this.cost = null;
       this.translator = new StreamTranslator({
@@ -513,8 +552,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       let options = res.configOptions ?? [];
       const has = (id, value) => options.some((o) => o.id === id && (o.options ?? []).some((v) => v.value === value));
       if (settings.model && has('model', settings.model)) options = (await this.setOption('model', settings.model)) ?? options;
-      if (has('mode', agentMode(settings.mode))) options = (await this.setOption('mode', agentMode(settings.mode))) ?? options;
+      // a custom agent that is gone (renamed in opencode.json): back to build, never an error at every start
+      const agent = has('mode', agentMode(settings)) ? agentMode(settings) : agentMode({ mode: settings.mode });
+      if (has('mode', agent)) options = (await this.setOption('mode', agent)) ?? options;
       this.configOptions = options;
+      this.publishAgents();
       await this.applyEffort(settings.effort); // '' = OpenCode's default level, same as a later change back to Default
       const model = options.find((o) => o.id === 'model')?.currentValue ?? null;
       this.hub.setStatus(this.id, { activeModel: model });
@@ -525,7 +567,16 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (configId === 'model') this.hub.setStatus(this.id, { activeModel: value });
       if (res?.configOptions) this.configOptions = res.configOptions;
       else if (configId === 'model') this.configOptions = null; // the new model's effort levels are unknown: none sent
+      this.publishAgents();
       return res?.configOptions ?? null;
+    }
+
+    /** OpenCode's primary agents (the `mode` option: build, plan and the user's own) for the Agent picker. */
+    publishAgents() {
+      const opt = (this.configOptions ?? []).find((o) => o.id === 'mode');
+      if (!opt) return;
+      const agents = (opt.options ?? []).filter((o) => typeof o.value === 'string' && /^[\w.-]{1,60}$/.test(o.value)).map((o) => ({ value: o.value, name: String(o.name ?? o.value).slice(0, 60), description: String(o.description ?? '').slice(0, 200) }));
+      this.hub.setStatus(this.id, { agents, activeAgent: opt.currentValue ?? null });
     }
 
     /** The app's effort on the current model (skipped when the model has no effort levels, or already has it). */
@@ -628,13 +679,16 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     }
 
     onUpdate(u) {
-      if (this.loading) return;
+      if (this.loading && u?.sessionUpdate !== 'available_commands_update') return;
       if (u.sessionUpdate === 'usage_update') {
         if (Number.isFinite(u.cost?.amount)) this.cost = u.cost.amount;
         if (Number.isFinite(u.used) && Number.isFinite(u.size) && u.size > 0) this.hub.setStatus(this.id, { context: { used: u.used, window: u.size, autoCompactAt: null } });
         return;
       }
-      if (u.sessionUpdate === 'available_commands_update') return;
+      if (u.sessionUpdate === 'available_commands_update') {
+        this.hub.setStatus(this.id, { commands: cleanCommands(u.availableCommands) }); // autocomplete (suggest.js)
+        return;
+      }
       // Only during one of our turns: a late update after a stop must not reopen it (the office would stay "busy").
       if (!this.busy) return;
       this.adapter.update(u);

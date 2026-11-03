@@ -146,7 +146,7 @@ function visibleControls(rootSel) {
 /** Layout fingerprint of the chrome around the chat (desktop must not change). */
 function layoutFingerprint() {
   const sels = ['.topbar', '#crumb', '#quota-pill', '#spotify-box', '#btn-account', '#btn-dashboard', '#btn-palette', '#btn-report', '#btn-phone', '#btn-notify', '#btn-help', '#btn-settings', '#conn',
-    '.tabs', '#session-bar', '#sb-title', '#sb-tasks', '#sb-queue', '#btn-sessions', '#btn-new', '#btn-more', '#sb-meta', '#chat', '#typing', '#composer', '#todos', '.controls', '#mode', '#model', '#effort', '#team-mode',
+    '.tabs', '#session-bar', '#sb-title', '#sb-tasks', '#sb-queue', '#btn-sessions', '#btn-new', '#btn-more', '#sb-meta', '#chat', '#typing', '#composer', '#todos', '.controls', '#settings-chip', '#mode', '#model', '#effort', '#team-mode',
     '#suggest', '#attachments', '.input', '#btn-attach', '#btn-template', '#prompt', '#btn-voice', '#btn-stop', '#btn-queue-add', '#btn-send', '#statusline', '#composer-hint', '#mobile-nav'];
   const out = {};
   for (const sel of sels) {
@@ -543,7 +543,7 @@ for (const vp of PHONES) {
       assert.deepEqual(page.problems, []);
     });
 
-    test('sheet pengaturan: .controls asli di sheet, ganti Izin → chip & server, lebar > 760 → kembali ke composer', async () => {
+    test('sheet pengaturan: .controls asli di sheet, ganti Izin → chip & server, lebar > 760 → chip pindah ke atas kotak', async () => {
       await fresh();
       assert.equal(await page.eval(() => document.querySelector('.controls').parentElement.matches('#turn-settings-modal .sheet-body')), true);
       await page.click('#settings-chip');
@@ -565,14 +565,14 @@ for (const vp of PHONES) {
       await sleep(80);
       assert.equal(await page.eval(() => document.activeElement?.id), 'settings-chip', 'fokus kembali ke chip');
 
-      // Sheet open, then the window widens past 760 px (rotation): the controls go home, the sheet closes.
-      await page.click('#settings-chip');
+      // The window widens past 760 px (rotation): the controls stay in the dialog (a laptop opens it from the chip too),
+      // the chip moves above the input; narrow again: back in the input toolbar.
       await page.setViewport(DESKTOP);
-      await page.waitFor(() => document.querySelector('.controls').parentElement.id === 'composer', { timeoutMs: 2000, message: '.controls kembali ke composer' });
-      assert.equal(await page.eval(() => document.querySelector('.controls').nextElementSibling.id), 'suggest');
-      assert.equal(await page.eval(() => document.querySelector('#turn-settings-modal').hidden), true);
+      await page.waitFor(() => document.querySelector('#settings-chip').parentElement.id === 'composer', { timeoutMs: 2000, message: 'chip di atas kotak input' });
+      assert.equal(await page.eval(() => document.querySelector('#settings-chip').nextElementSibling.id), 'suggest');
+      assert.equal(await page.eval(() => document.querySelector('.controls').parentElement.matches('#turn-settings-modal .sheet-body')), true);
       await page.setViewport(vp);
-      await page.waitFor(() => document.querySelector('.controls').parentElement.matches('.sheet-body'), { timeoutMs: 2000, message: '.controls kembali ke sheet' });
+      await page.waitFor(() => document.querySelector('#settings-chip').parentElement.classList.contains('input'), { timeoutMs: 2000, message: 'chip kembali ke toolbar input' });
       assert.equal(await page.eval(() => document.querySelector('#mode').value), 'manual');
       assert.deepEqual(page.problems, []);
     });
@@ -713,16 +713,21 @@ describe('HP chat: WiFi hanya-lihat', { skip: SKIP ?? false }, () => {
 });
 
 describe('desktop 1440x900 tidak berubah', { skip: SKIP ?? false }, () => {
-  test('tidak ada .phone-only terlihat, .controls di composer, tombol lama terlihat, session bar tampil', async () => {
+  test('tidak ada .phone-only terlihat, chip ⚙ membuka Izin/Model/Effort, tombol lama terlihat, session bar tampil', async () => {
     const page = await browser.newPage();
     try {
       await page.setViewport(DESKTOP);
       await openApp(page, `#${projectId}`);
       const fp = await page.eval(layoutFingerprint);
       assert.deepEqual(fp.phoneOnlyShown, [], '.phone-only terlihat di desktop');
-      assert.equal(fp['.controls'].parent, 'composer');
-      assert.equal(await page.eval(() => document.querySelector('.controls').nextElementSibling.id), 'suggest');
-      for (const sel of ['#btn-account', '#btn-dashboard', '#btn-palette', '#btn-report', '#btn-phone', '#btn-notify', '#btn-help', '#btn-settings', '#session-bar', '#btn-sessions', '#btn-new', '#btn-more', '.tabs', '#mode', '#model', '#effort', '#btn-attach', '#btn-template', '#btn-queue-add', '#btn-send', '#statusline']) assert.equal(fp[sel]?.shown, true, `${sel} terlihat`);
+      // Izin / Model / Effort live in the Pengaturan giliran dialog, opened by the chip above the input
+      assert.equal(await page.eval(() => document.querySelector('.controls').parentElement.matches('#turn-settings-modal .sheet-body')), true);
+      assert.equal(await page.eval(() => document.querySelector('#settings-chip').nextElementSibling.id), 'suggest');
+      for (const sel of ['#btn-account', '#btn-dashboard', '#btn-palette', '#btn-report', '#btn-phone', '#btn-notify', '#btn-help', '#btn-settings', '#session-bar', '#btn-sessions', '#btn-new', '#btn-more', '.tabs', '#settings-chip', '#btn-attach', '#btn-template', '#btn-queue-add', '#btn-send', '#statusline']) assert.equal(fp[sel]?.shown, true, `${sel} terlihat`);
+      await page.click('#settings-chip');
+      await page.waitFor(() => !document.querySelector('#turn-settings-modal').hidden, { timeoutMs: 2000, message: 'dialog Pengaturan giliran' });
+      assert.deepEqual(await page.eval(() => ['#mode', '#model', '#effort'].map((s) => document.querySelector(s).getClientRects().length > 0)), [true, true, true], 'Izin, Model, Effort di dialog');
+      await page.press('Escape');
       assert.equal(fp['#mobile-nav'].shown, false);
       assert.equal(fp['#btn-send'].text, 'Kirim', 'teks Kirim tetap');
       assert.equal(fp['#btn-send'].font, '14px', 'Kirim tetap berteks (bukan ikon)');

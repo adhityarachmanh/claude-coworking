@@ -1,6 +1,7 @@
 // Locates the installed OpenCode binary so it can be spawned without a shell (same idea as claude-bin.js).
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const WIN = process.platform === 'win32';
@@ -94,4 +95,48 @@ export function openCodeVersion(bin) {
       resolve(err ? '' : (String(out).match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? ''));
     });
   });
+}
+
+/** JSON with comments and trailing commas (opencode.jsonc), parsed without a dependency. */
+function parseJsonc(text) {
+  let out = '';
+  for (let i = 0, inStr = false; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      out += c;
+      if (c === '\\') out += text[++i] ?? '';
+      else if (c === '"') inStr = false;
+    } else if (c === '"') (inStr = true), (out += c);
+    else if (c === '/' && text[i + 1] === '/') while (i < text.length && text[i] !== '\n') i++;
+    else if (c === '/' && text[i + 1] === '*') (i = text.indexOf('*/', i + 2)), (i = i < 0 ? text.length : i + 1);
+    else out += c;
+  }
+  return JSON.parse(out.replace(/,\s*([}\]])/g, '$1'));
+}
+
+/**
+ * The user's own OpenCode `permission` rules (global ~/.config/opencode, then the project's opencode.json and
+ * .opencode/), merged per tool like OpenCode does. Read fresh at every spawn (small files); {} when none.
+ */
+export function readUserPermission(projectPath, home = os.homedir()) {
+  const files = [];
+  for (const dir of [path.join(home, '.config', 'opencode'), projectPath, projectPath && path.join(projectPath, '.opencode')]) {
+    if (!dir) continue;
+    for (const name of ['opencode.json', 'opencode.jsonc', 'config.json']) files.push(path.join(dir, name));
+  }
+  const merged = {};
+  for (const file of files) {
+    let perm;
+    try {
+      perm = parseJsonc(readFileSync(file, 'utf8'))?.permission;
+    } catch {
+      continue; // missing or not JSON: OpenCode itself reports a broken config
+    }
+    if (!perm || typeof perm !== 'object' || Array.isArray(perm)) continue;
+    for (const [tool, rule] of Object.entries(perm)) {
+      if (rule && typeof rule === 'object' && !Array.isArray(rule)) merged[tool] = { ...(typeof merged[tool] === 'object' ? merged[tool] : {}), ...rule };
+      else if (typeof rule === 'string') merged[tool] = rule;
+    }
+  }
+  return merged;
 }
