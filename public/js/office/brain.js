@@ -164,6 +164,19 @@ export class Brain {
         this.ripples.push({ t0: now, color: '#9fb4ff' });
         this.packets.push({ from: '@user', to: 'claude', color: '#c9d4ff', t0: now, dur: 900, size: 4 });
         break;
+      // The Lead (the brain at the centre) briefs the PM: energy flows from the core to the PM's orb
+      case 'huddle': {
+        const [lead, ...others] = evt.roles ?? ['claude', role];
+        for (const to of others) for (let i = 0; i < 4; i++) this.packets.push({ from: lead, to, color: roleColor(to), t0: now + i * 120, dur: 1000, size: 3.6 });
+        if (evt.label) this.thoughts.push({ role, text: short(String(evt.label), 30), t0: now, dur: 2600 });
+        break;
+      }
+      // The PM speaking for the team: its words float up from its orb, like a thought
+      case 'say':
+        if (evt.text) this.thoughts.push({ role, text: short(String(evt.text), 34), t0: now, dur: 3200 });
+        if (this.thoughts.length > 8) this.thoughts.shift();
+        this.pulses.push({ role, color, t0: now, dur: 700 });
+        break;
       case 'delegate': {
         const from = evt.from ?? 'claude';
         this.links.set(role, from);
