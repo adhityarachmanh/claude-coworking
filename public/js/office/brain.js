@@ -6,6 +6,9 @@ import { CAST, roleColor, roleName } from './cast.js';
 import { teamOrder } from './roster.js';
 
 const TAU = Math.PI * 2;
+// The core's hue follows the permission mode: how freely the brain may act (r, g, b)
+const MODE_HUE = { plan: [110, 170, 255], manual: [170, 140, 255], acceptEdits: [90, 220, 200], auto: [255, 150, 70], dontAsk: [255, 90, 110] };
+const MODE_NAME = { plan: 'rencana', manual: 'tanya dulu', acceptEdits: 'auto-edit', auto: 'auto', dontAsk: 'jangan tanya' };
 const ease = (t) => 1 - (1 - t) ** 3;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const short = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -37,6 +40,23 @@ export class Brain {
     this.streams = []; // energy flowing core → working neuron: { from, to, t0, dur, size, hue }
     this.lastEmit = new Map(); // role -> when its stream last emitted a particle
     this.lastScene = null;
+    this.thoughts = []; // tool labels drifting from the core to the worker: { role, text, t0, dur }
+    this.bursts = []; // result explosions: { role, color, t0, n }
+    this.shakes = new Map(); // role -> until (a red shake on failure)
+    this.lastPos = null; // neuron positions of the last frame (hover / click)
+    this.hover = null;
+    this.lastContext = null; // context % of the previous frame: a big drop = compacted
+    this.compactAt = 0;
+    this.tip = document.createElement('div');
+    this.tip.className = 'brain-tip';
+    this.tip.hidden = true;
+    host.append(this.tip);
+    this.canvas.addEventListener('pointermove', (e) => this.onPointer(e));
+    this.canvas.addEventListener('pointerleave', () => this.setHover(null));
+    this.canvas.addEventListener('click', (e) => {
+      const role = this.hit(e);
+      if (role) host.dispatchEvent(new CustomEvent('brain-neuron', { bubbles: true, detail: { role } }));
+    });
     this.dust = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + 0.3, v: Math.random() * 0.02 + 0.005, p: Math.random() * TAU }));
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
@@ -98,10 +118,18 @@ export class Brain {
       }
       case 'tool_start':
         this.pulses.push({ role, color, t0: now, dur: 900 });
+        if (evt.label) this.thoughts.push({ role, text: short(String(evt.label), 30), t0: now, dur: 2200 });
+        if (this.thoughts.length > 8) this.thoughts.shift();
+        if (/git commit/i.test(evt.label ?? '')) this.bursts.push({ role, color: '#ffd56a', t0: now + 400, n: 26 }); // a commit: gold
+        break;
+      case 'tests':
+        this.bursts.push({ role, color: evt.failed ? '#ff5a6a' : '#5dffa8', t0: now, n: evt.failed ? 14 : 34 });
+        if (evt.failed) this.shakes.set(role, now + 700);
         break;
       case 'tool_fail':
       case 'error':
         this.flashes.set(role, { color: '#ff5a6a', until: now + 1400 });
+        this.shakes.set(role, now + 600);
         break;
       case 'ask':
         this.pulses.push({ role, color: '#ffc24a', t0: now, dur: 1400 });
@@ -130,6 +158,11 @@ export class Brain {
     }
     const people = scene?.people ?? {};
     const status = scene?.status ?? {};
+    for (const [role, until] of this.shakes) {
+      if (until < now) this.shakes.delete(role);
+      else if (pos[role]) pos[role] = { ...pos[role], x: pos[role].x + Math.sin(now / 18) * 3 * ((until - now) / 700) };
+    }
+    this.lastPos = pos;
     const state = (role) => {
       const p = people[role];
       if (!p) return 'idle';
@@ -169,8 +202,10 @@ export class Brain {
       }
     }
     this.drawStreams(g, pos, now);
-    // thinking core
-    this.drawCore(g, pos.claude, Boolean(status.busy || status.cliBusy), t);
+    // thinking core, tinted by the permission mode, wrapped in its memory (context) ring
+    const hue = MODE_HUE[status.mode] ?? MODE_HUE.manual;
+    this.drawCore(g, pos.claude, Boolean(status.busy || status.cliBusy), t, hue);
+    this.drawMemory(g, pos.claude, status, now, t);
     // signals, pulses, ripples
     this.packets = this.packets.filter((k) => now < k.t0 + k.dur);
     for (const k of this.packets) {
@@ -208,10 +243,13 @@ export class Brain {
       g.arc(at.x, at.y, at.r + 4 + q * 22, 0, TAU);
       g.stroke();
     }
+    this.drawThoughts(g, pos, now);
+    this.drawBursts(g, pos, now);
     // neurons on top
-    for (const role of roles) if (role !== 'claude') this.drawNeuron(g, role, pos[role], state(role), people[role], t);
-    this.drawLabel(g, pos.claude, roleName('claude'), status.busy ? 'berpikir…' : '', '#e8ecff', true);
+    for (const role of roles) if (role !== 'claude') this.drawNeuron(g, role, pos[role], state(role), people[role], t, this.hover === role);
+    this.drawLabel(g, pos.claude, roleName('claude'), status.busy ? `berpikir · ${MODE_NAME[status.mode] ?? 'tanya dulu'}` : MODE_NAME[status.mode] ?? '', '#e8ecff', true);
     this.drawGoal(g, scene);
+    if (this.hover) this.updateTip(this.hover, people[this.hover], state(this.hover), status);
   }
 
   drawBackground(g, t) {
@@ -316,14 +354,14 @@ export class Brain {
     g.restore();
   }
 
-  drawCore(g, at, thinking, t) {
+  drawCore(g, at, thinking, t, [cr, cg, cb] = MODE_HUE.manual) {
     const beat = 1 + (thinking ? 0.12 : 0.04) * Math.sin(t / (thinking ? 160 : 700));
     const r = at.r * beat;
     g.save();
     const grad = g.createRadialGradient(at.x, at.y, 2, at.x, at.y, r * 2.2);
-    grad.addColorStop(0, thinking ? 'rgba(190,170,255,0.95)' : 'rgba(150,160,255,0.7)');
-    grad.addColorStop(0.45, thinking ? 'rgba(120,90,255,0.45)' : 'rgba(90,100,230,0.25)');
-    grad.addColorStop(1, 'rgba(60,40,200,0)');
+    grad.addColorStop(0, `rgba(${cr},${cg},${cb},${thinking ? 0.95 : 0.7})`);
+    grad.addColorStop(0.45, `rgba(${cr},${cg},${cb},${thinking ? 0.45 : 0.22})`);
+    grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
     g.fillStyle = grad;
     g.beginPath();
     g.arc(at.x, at.y, r * 2.2, 0, TAU);
@@ -344,10 +382,17 @@ export class Brain {
     g.restore();
   }
 
-  drawNeuron(g, role, at, st, person, t) {
+  drawNeuron(g, role, at, st, person, t, hovered = false) {
     const color = st === 'ask' ? '#ffc24a' : st === 'error' ? '#ff5a6a' : roleColor(role);
     const active = st !== 'idle';
     g.save();
+    if (hovered) {
+      g.strokeStyle = rgba('#ffffff', 0.7);
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.arc(at.x, at.y, at.r + 9, 0, TAU);
+      g.stroke();
+    }
     if (active) {
       const glow = g.createRadialGradient(at.x, at.y, 1, at.x, at.y, at.r * 3);
       glow.addColorStop(0, rgba(color, st === 'ask' ? 0.35 + 0.25 * Math.sin(t / 180) : 0.45));
@@ -380,6 +425,123 @@ export class Brain {
     g.restore();
     const sub = st === 'ask' ? 'menunggu izin' : st === 'busy' ? short(person?.task || 'bekerja', 26) : '';
     this.drawLabel(g, at, roleName(role).replace(/^Adhit - /, ''), sub, active ? '#f4f6ff' : 'rgba(200,210,255,0.6)');
+  }
+
+  /**
+   * The memory ring: the conversation's context use around the core (green → amber → red near auto-compact).
+   * A compaction (status.compacting, or a big drop) squeezes it with a bright flash.
+   */
+  drawMemory(g, at, status, now, t) {
+    const c = status.context;
+    if (!c?.used || !c?.window) return;
+    const limit = c.autoCompactAt || c.window;
+    const pct = clamp(c.used / limit, 0, 1);
+    if (this.lastContext != null && this.lastContext - pct > 0.2) this.compactAt = now;
+    this.lastContext = pct;
+    const R = at.r * 2.55;
+    const squeeze = status.compacting || now - this.compactAt < 1200;
+    const color = pct > 0.9 ? '#ff5a6a' : pct > 0.7 ? '#ffc24a' : '#5dffa8';
+    g.save();
+    g.lineCap = 'round';
+    g.strokeStyle = 'rgba(140,160,255,0.14)';
+    g.lineWidth = 4;
+    g.beginPath();
+    g.arc(at.x, at.y, R, 0, TAU);
+    g.stroke();
+    g.strokeStyle = squeeze ? `rgba(255,255,255,${0.6 + 0.4 * Math.sin(t / 60)})` : color;
+    g.shadowColor = color;
+    g.shadowBlur = 10;
+    g.lineWidth = squeeze ? 6 : 4;
+    g.beginPath();
+    g.arc(at.x, at.y, squeeze ? R * (0.9 + 0.05 * Math.sin(t / 80)) : R, -Math.PI / 2, -Math.PI / 2 + pct * TAU);
+    g.stroke();
+    g.shadowBlur = 0;
+    g.fillStyle = 'rgba(200,210,255,0.8)';
+    g.font = '600 10px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.fillText(squeeze ? 'memori dipadatkan…' : `memori ${Math.round(pct * 100)}%`, at.x, at.y - R - 8);
+    g.restore();
+  }
+
+  /** What is being sent: the tool's short label rides from the core toward the worker and fades. */
+  drawThoughts(g, pos, now) {
+    this.thoughts = this.thoughts.filter((k) => now < k.t0 + k.dur);
+    g.save();
+    g.font = '600 10px ui-monospace, monospace';
+    g.textAlign = 'center';
+    for (const k of this.thoughts) {
+      const b = pos[k.role];
+      const a = k.role === 'claude' ? { x: pos.claude.x, y: pos.claude.y - 60 } : pos.claude;
+      if (!b) continue;
+      const q = (now - k.t0) / k.dur;
+      const p = k.role === 'claude' ? { x: b.x, y: b.y - 30 - q * 40 } : this.curvePoint(a, b, 0.78 * ease(Math.min(1, q * 1.4))); // stops short of the neuron: its label stays readable
+      const alpha = q < 0.15 ? q / 0.15 : 1 - Math.max(0, (q - 0.6) / 0.4);
+      const w = g.measureText(k.text).width + 10;
+      g.fillStyle = `rgba(10,14,40,${0.75 * alpha})`;
+      g.fillRect(p.x - w / 2, p.y - 18, w, 15);
+      g.fillStyle = rgba(roleColor(k.role), alpha);
+      g.fillText(k.text, p.x, p.y - 7);
+    }
+    g.restore();
+  }
+
+  /** Results: green burst for passing tests, gold for a commit, a small red one for failures. */
+  drawBursts(g, pos, now) {
+    this.bursts = this.bursts.filter((b) => now < b.t0 + 1300);
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    for (const b of this.bursts) {
+      if (now < b.t0) continue;
+      const at = pos[b.role] ?? pos.claude;
+      const q = (now - b.t0) / 1300;
+      for (let i = 0; i < b.n; i++) {
+        const a = (i / b.n) * TAU + i * 0.37;
+        const d = ease(q) * (40 + (i % 5) * 9);
+        g.fillStyle = rgba(b.color, 1 - q);
+        g.beginPath();
+        g.arc(at.x + Math.cos(a) * d, at.y + Math.sin(a) * d, 2.2 * (1 - q) + 0.6, 0, TAU);
+        g.fill();
+      }
+    }
+    g.restore();
+  }
+
+  // ---------- hover / click ----------
+
+  hit(e) {
+    if (!this.lastPos) return null;
+    const r = this.canvas.getBoundingClientRect();
+    const x = e.clientX - r.left;
+    const y = e.clientY - r.top;
+    let best = null;
+    for (const [role, p] of Object.entries(this.lastPos)) {
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (d <= p.r + 10 && (!best || d < best.d)) best = { role, d };
+    }
+    return best?.role ?? null;
+  }
+
+  onPointer(e) {
+    this.setHover(this.hit(e));
+    if (this.hover) {
+      const r = this.host.getBoundingClientRect();
+      this.tip.style.left = `${Math.min(e.clientX - r.left + 14, r.width - 230)}px`;
+      this.tip.style.top = `${Math.max(e.clientY - r.top - 10, 8)}px`;
+    }
+  }
+
+  setHover(role) {
+    this.hover = role;
+    this.canvas.style.cursor = role ? 'pointer' : '';
+    this.tip.hidden = !role;
+  }
+
+  updateTip(role, person, st, status) {
+    const name = roleName(role);
+    const what = st === 'ask' ? '🔑 Menunggu izinmu: klik untuk membuka kartunya' : st === 'error' ? '⚠ Ada error' : st === 'busy' ? `⚙ ${person?.task || 'Bekerja'}` : 'Siaga';
+    const extra = role === 'claude' && status.context?.used ? `\nMemori ${Math.round((status.context.used / (status.context.autoCompactAt || status.context.window)) * 100)}% · mode ${MODE_NAME[status.mode] ?? '-'}` : person?.agentCount > 1 ? `\n${person.agentCount} subagent paralel` : '';
+    const text = `${name}\n${what}${extra}`;
+    if (this.tip.textContent !== text) this.tip.textContent = text;
   }
 
   drawLabel(g, at, name, sub, color, big = false) {
