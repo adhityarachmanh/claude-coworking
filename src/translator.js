@@ -148,6 +148,15 @@ export class StreamTranslator {
     return this.tools.get(toolUseId)?.role;
   }
 
+  /**
+   * Who speaks and coordinates for the team in the office: the PM while the team has one. The Lead is the boss — it
+   * takes your prompt (the brain at the centre in Mode Otak) and closes the turn — while the PM talks, plans, asks
+   * and hands the work out. Without a PM on the team, the Lead does it itself.
+   */
+  coordinator() {
+    return activeRoles().includes('pm') ? 'pm' : 'claude';
+  }
+
   /** Running Bash / PowerShell calls not linked to a task yet: [{ toolUseId, command, startedAt }] (OpenCode shells). */
   unlinkedShells() {
     return [...this.tools.entries()]
@@ -550,7 +559,7 @@ export class StreamTranslator {
     clearTimeout(this.flushTimer);
     this.flushTimer = null;
     this.sink.updateChat(bubble.chatId, { text: bubble.done, streaming: false });
-    this.sink.office({ kind: 'say', role: 'claude', text: firstSentence(text) });
+    this.sink.office({ kind: 'say', role: this.coordinator(), text: firstSentence(text) });
   }
 
   closeBubble() {
@@ -605,7 +614,8 @@ export class StreamTranslator {
       return;
     }
 
-    const role = parentRole ?? inferRole(block.name, input, this.roleCtx);
+    let role = parentRole ?? inferRole(block.name, input, this.roleCtx);
+    if (role === 'claude') role = this.coordinator(); // asking you, waiting, coordinating: the PM's desk, not the boss's
     if (EDIT_TOOLS.has(block.name) && BUILDER_ROLES.has(role)) this.lastBuilder = role;
     // Planning happens around a table: the PM and tech lead meet before work starts / to present it.
     if (block.name === 'EnterPlanMode') this.sink.office({ kind: 'huddle', role: 'pm', roles: ['pm', 'architect', 'ba'], label: 'Susun rencana dulu sebelum eksekusi' });

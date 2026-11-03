@@ -235,8 +235,8 @@ Siapa yang mengerjakan setiap langkah (file, perintah shell, MCP, skill, tipe su
 
 | Orang | Role | Dipakai untuk |
 |---|---|---|
-| Adhit - Lead | Engineering Lead (Claude) | Orkestrasi: memecah pekerjaan dan mendelegasikan |
-| Adhit - PM | Product Manager | Scope, prioritas, acceptance criteria |
+| Adhit - Lead | Engineering Lead (Claude) | **Atasan**: menerima prompt-mu (di Mode Otak menjadi otak di tengah) dan menutup giliran |
+| Adhit - PM | Product Manager | **Juru bicara & pembagi tugas**: menerima brief dari Lead, memecah pekerjaan di papan task, mengantar tugas ke tiap role dan menerima laporannya, bertanya ke kamu bila perlu. Scope, prioritas, acceptance criteria |
 | Adhit - BA | Business Analyst | Kebutuhan, aturan bisnis, analisis kode/dokumen |
 | Adhit - Tech Lead | Tech Lead / Architect | Desain teknis, arsitektur, review diff |
 | Adhit - UI/UX | UI/UX Designer | Alur pengguna, styling, aksesibilitas |
@@ -477,7 +477,11 @@ npm test             # offline: unit + server sungguhan dengan Claude Code palsu
 npm run test:claude  # kontrak ke Claude Code asli (beberapa request Haiku, memakai akunmu)
 npm run test:opencode  # kontrak ke OpenCode asli: cek tanpa token + giliran singkat dengan model gratis; `-- --light` = tanpa token saja
 npm run lint         # ESLint versi terkunci lewat npx
+node test-support/ci-tests.mjs unit   # seperti CI: semua test tanpa browser
+node test-support/ci-tests.mjs ui     # seperti CI: test browser per file, yang gagal diulang sekali (dilaporkan FLAKY)
 ```
+
+CI GitHub (`.github/workflows/test.yml`) menjalankan tiga job: **lint** (cek sintaks + ESLint), **unit** (Windows + Ubuntu) dan **ui** (Ubuntu, Chrome bawaan runner). Push baru ke branch yang sama membatalkan run lama. File UI yang baru lulus saat diulang ditulis di ringkasan job sebagai *flaky*, supaya diperbaiki, bukan disembunyikan.
 
 | Lapis | Isi |
 |---|---|

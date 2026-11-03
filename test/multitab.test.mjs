@@ -223,7 +223,7 @@ describe('Banyak tab, satu stream (Web Locks)', { skip: SKIP ?? false }, () => {
 
   test('leader ditutup → tab lain mengambil alih (≤ 2 s) dan tetap menerima event', async () => {
     const leader = await leaderOf(pages);
-    pages = pages.filter((p) => p !== leader);
+    pages.splice(pages.indexOf(leader), 1);
     const t0 = Date.now();
     await closeTabs([leader]);
     const next = await leaderOf(pages, 3000);
@@ -281,7 +281,7 @@ describe('Banyak tab, satu stream (tanpa Web Locks: HTTP biasa lewat WiFi)', { s
     await everyTabSeesChat(pages, 'halo tanpa locks');
 
     const leader = await leaderOf(pages);
-    pages = pages.filter((p) => p !== leader);
+    pages.splice(pages.indexOf(leader), 1);
     await closeTabs([leader]);
     await leaderOf(pages, 4000);
     await until(() => streamCount() === 1, { timeoutMs: 4000, message: 'satu stream di leader baru' });
