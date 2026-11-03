@@ -192,6 +192,9 @@ export function teamPrompt(enabled, agentNames = enabled) {
     'Delegate focused work to the specialist subagents with the Agent tool, but only to the roles a task actually needs:',
     'each delegation costs time and tokens, so do small or trivial work yourself.',
     ...roles,
+    ...(on.has('pm') && hasAgent.has('pm')
+      ? ['Planning is the PM\'s job: when a request needs two or more steps or more than one role, first break it into tasks with the task list tool (TodoWrite or TaskCreate; the PM keeps that board), then delegate. A new feature or an unclear scope starts with the pm subagent.']
+      : []),
     'Typical flows:',
     ...flows,
     ...(missing ? ['Only the roles listed above are on this team: when a flow names a role that is not listed, give that step to the closest listed role or do it yourself.'] : []),

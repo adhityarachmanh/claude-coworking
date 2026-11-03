@@ -33,6 +33,27 @@ function gh(bin, args, { cwd, timeout = 60_000 } = {}) {
   });
 }
 
+/**
+ * The GitHub repository of a clone and what this gh login may do in it: { slug: 'owner/name' | null, canPush }.
+ * Without gh (or not logged in) the slug still comes from `git remote get-url origin`; canPush is then false.
+ */
+export async function repoAccess(bin, cwd) {
+  if (bin) {
+    const r = await gh(bin, ['repo', 'view', '--json', 'nameWithOwner,viewerPermission'], { cwd, timeout: 20_000 });
+    try {
+      const j = JSON.parse(r.out);
+      if (r.ok && j.nameWithOwner) return { slug: j.nameWithOwner, canPush: ['ADMIN', 'MAINTAIN', 'WRITE'].includes(j.viewerPermission) };
+    } catch {
+      /* fall back to the remote */
+    }
+  }
+  const url = await new Promise((resolve) =>
+    execFileTree('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf8', timeout: 10_000, windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (err, out) => resolve(err ? '' : String(out).trim())),
+  );
+  const slug = /github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(url)?.[1] ?? null;
+  return { slug, canPush: false };
+}
+
 /** { installed, loggedIn, account } — `gh auth status` prints to stderr. */
 export async function ghStatus(bin) {
   if (!bin) return { installed: false, loggedIn: false, account: null };

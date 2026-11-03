@@ -286,6 +286,11 @@ async function turn(sessionId, text) {
       await sleep(20);
     }
   };
+  // ✕ Tolak's follow-up (src/acp-session.js rejectedPrompt): carries on without the refused step
+  if (/Saya menolak izin untuk/.test(text)) {
+    await say('msg_rejected', 'Baik, saya lanjutkan tanpa langkah itu.');
+    return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 6, totalTokens: 26 } };
+  }
   if (/link\?/.test(text)) {
     await say('msg_link', `links=${links.join(',')}`);
     return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };

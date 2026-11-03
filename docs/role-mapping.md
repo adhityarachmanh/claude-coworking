@@ -173,7 +173,8 @@ Untuk nama yang tidak cocok dengan aturan mana pun (MCP server, skill, tipe suba
 |---|---|---|---|
 | 1 | Pemetaan project | `<project>/.office-roles.json` | Ikut git **project itu** kalau kamu commit, sehingga satu tim project berbagi pemetaan |
 | 2 | Pemetaan laptop ini (pilihanmu ✋ dan jawaban AI 🤖) | `data/state.json` (`roleMap`), ikut 💾 Backup | Tidak |
-| 3 | Aturan bawaan | `src/roles.js` | Ya (repo aplikasi) |
+| 3 | 🌐 Pemetaan bersama | `src/role-map.shared.json` | Ya (repo aplikasi): **semua pengguna** mendapatkannya lewat update |
+| 4 | Aturan bawaan | `src/roles.js` | Ya (repo aplikasi) |
 
 Contoh `.office-roles.json` (kunci `<jenis>:<nama>`, jenisnya `mcp`, `skill`, `agent`, `script`, atau `cmd`):
 
@@ -196,3 +197,12 @@ Cara kerjanya:
 - **Biaya**: beberapa ratus token per nama, dan setiap nama hanya ditanyakan sekali. Jawabannya disimpan dan dipakai seterusnya.
 - **Nama yang belum terjawab** dicoba lagi paling cepat sehari kemudian.
 - **Pilihanmu sendiri** tidak pernah ditimpa AI.
+
+### 🌐 Semua pengguna
+
+Supaya pemetaan berlaku untuk semua orang yang memakai aplikasi, bukan hanya laptop atau project kamu, klik **🌐 Semua pengguna** pada pemetaannya:
+
+- **Pemilik repo aplikasi** (`gh` login dengan izin push): pemetaan ditulis ke `src/role-map.shared.json` di repo aplikasi. Setelah di-commit dan di-push, setiap pengguna mendapatkannya lewat `update.cmd` atau notifikasi update.
+- **Pengguna lain**: terbuka issue GitHub berisi usulannya. Setelah pemilik repo menggabungkannya, semua orang mendapatkannya lewat update.
+
+Tanpa server, tanpa token, dan tanpa data yang dikirim diam-diam: semuanya lewat repo seperti perubahan kode biasa.

@@ -1,5 +1,5 @@
 // Translates Claude Code `--output-format stream-json` messages into office events and chat messages.
-import { agentRole, describeTool, extractTodos, inferRole, screenFor } from './roles.js';
+import { activeRoles, agentRole, describeTool, extractTodos, inferRole, screenFor } from './roles.js';
 import { clip, firstSentence, truncate } from './util.js';
 
 const DELEGATE_TOOLS = new Set(['Agent', 'Task']);
@@ -148,6 +148,26 @@ export class StreamTranslator {
     return this.tools.get(toolUseId)?.role;
   }
 
+  /** Running Bash / PowerShell calls not linked to a task yet: [{ toolUseId, command, startedAt }] (OpenCode shells). */
+  unlinkedShells() {
+    return [...this.tools.entries()]
+      .filter(([, i]) => !i.agent && (i.name === 'Bash' || i.name === 'PowerShell') && !i.taskId && i.input?.command)
+      .map(([toolUseId, i]) => ({ toolUseId, command: i.input.command, startedAt: i.startedAt ?? 0 }));
+  }
+
+  /** Task ids already given to running calls (one shell is never linked to two rows). */
+  linkedTaskIds() {
+    return new Set([...this.tools.values()].map((i) => i.taskId).filter(Boolean));
+  }
+
+  /** Links a running call to its task (live output, stuck detector, stop): the chat row gets `taskId`. */
+  linkShellTask(toolUseId, taskId) {
+    const info = this.tools.get(toolUseId);
+    if (!info || info.taskId) return;
+    info.taskId = taskId;
+    this.sink.updateChat(info.chatId, { taskId });
+  }
+
   /** Lets a caller that knows a subagent's type up front (CLI mirror) attribute its work. */
   registerAgent(toolUseId, agentType) {
     if (!this.agentRoles.has(toolUseId)) this.agentRoles.set(toolUseId, agentRole(agentType, this.roleCtx));
@@ -163,7 +183,7 @@ export class StreamTranslator {
       kind: 'agent_stop',
       role: info.role,
       label: info.label,
-      from: info.from,
+      from: info.officeFrom ?? info.from,
       failed,
       ...(report ? { report: firstSentence(report, 70) } : {}),
     });
@@ -528,6 +548,16 @@ export class StreamTranslator {
       const role = agentRole(agentType, this.roleCtx);
       const from = parentRole ?? 'claude'; // a subagent can hand work to another specialist
       const label = truncate(input.description ?? input.prompt, 80);
+      // In the office the PM hands the Lead's work out (and collects the reports): the Lead briefs the PM once
+      // per turn, at its first delegation. Who really called the tool stays in the chat row (`from`).
+      let officeFrom = from;
+      if (from === 'claude' && activeRoles().includes('pm')) {
+        if (role !== 'pm') {
+          officeFrom = 'pm';
+          if (!this.pmBriefed) this.sink.office({ kind: 'huddle', role: 'pm', roles: ['claude', 'pm'], label: 'Brief dari Lead: PM membagi tugas ke tim' });
+        }
+        this.pmBriefed = true;
+      }
       this.agentRoles.set(block.id, role);
       const chatId = this.sink.chat({
         kind: 'delegate',
@@ -540,11 +570,11 @@ export class StreamTranslator {
         toolUseId: block.id, // the key its task (task_started.tool_use_id) and its subagent's rows point back at
         ...(parentId ? { parentToolUseId: parentId } : {}),
       });
-      this.tools.set(block.id, { name: block.name, role, from, label, chatId, agent: true, background: Boolean(input.run_in_background) });
+      this.tools.set(block.id, { name: block.name, role, from, officeFrom, label, chatId, agent: true, background: Boolean(input.run_in_background) });
       this.rememberRole(block.id, role);
       // Its task may have been announced before the call itself (order is not guaranteed).
       for (const t of this.bgTasks.values()) if (t.toolUseId === block.id) this.linkTask(t);
-      this.sink.office({ kind: 'delegate', role, from, label, agentType });
+      this.sink.office({ kind: 'delegate', role, from: officeFrom, label, agentType });
       this.emitWorking();
       return;
     }
@@ -566,7 +596,7 @@ export class StreamTranslator {
       ...(parentRole ? { sub: true } : {}),
       ...(parentId ? { parentToolUseId: parentId } : {}), // which delegation this subagent row belongs to
     });
-    this.tools.set(block.id, { name: block.name, input, role, label, screen, chatId });
+    this.tools.set(block.id, { name: block.name, input, role, label, screen, chatId, startedAt: Date.now() });
     this.rememberRole(block.id, role);
     if ((block.name === 'Bash' || block.name === 'PowerShell') && input.command) this.rememberCommand(block.id, input.command);
     // Its task may have been announced before the call itself (order is not guaranteed).
@@ -628,6 +658,8 @@ export class StreamTranslator {
       this.sink.updateChat(info.chatId, { status: failed ? 'fail' : 'ok', output: clip(text, OUTPUT_LIMIT) });
       this.sink.office({ kind: failed ? 'tool_fail' : 'tool_end', role: info.role, label: info.label, tool: info.name, screen: info.screen });
       this.emitWorking();
+      // ✅ a push the team ran: GitHub's checks of that commit are followed (src/github-ci.js)
+      if (!failed && (info.name === 'Bash' || info.name === 'PowerShell') && /\bgit\s+push\b/.test(info.input?.command ?? '')) this.sink.gitPushed?.();
 
       // A test run: QA cheers on green, or takes the bug to whoever last touched the code.
       if (info.screen === 'tests') {
@@ -668,6 +700,7 @@ export class StreamTranslator {
         this.tools.delete(id);
       }
     }
+    this.pmBriefed = false; // the next turn's first delegation briefs the PM again
     this.emitWorking(); // only background agents are still at work after the turn
     const ok = !msg.is_error && msg.subtype === 'success';
     if (msg.quiet && ok) {

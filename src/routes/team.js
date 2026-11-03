@@ -1,6 +1,7 @@
 // ---------- the active team (👥 Kelola tim) and the team's display names ----------
 import { MAX_ACTIVE_ROLES, TeamConfigError, activeAgents, normalizeEnabled, publicCatalog, teamPrompt } from '../role-catalog.js';
 import { ROLE_IDS, activeRoles, setActiveRoles } from '../roles.js';
+import { findGh, repoAccess } from '../github-pr.js';
 import { RoleMapError } from '../role-memory.js';
 import { appliedOf, json } from './http.js';
 
@@ -21,12 +22,44 @@ export function register(router) {
   router.post('/api/team/role-map', roleMap((m, body, projectPath) => m.list(projectPath)));
   router.post('/api/team/role-map/set', roleMap((m, body, projectPath) => m.set(body.key, body.role ?? null, { scope: body.scope === 'project' ? 'project' : 'local', projectPath })));
   router.post('/api/team/role-map/dismiss', roleMap((m, body, projectPath) => (m.dismiss(body.key), m.list(projectPath))));
+  router.post('/api/team/role-map/share', shareRoleMap);
   router.post('/api/team/role-map/ai', roleMap((m, body, projectPath) => {
     m.setAi(body.enabled === true);
     console.log(`Pemetaan peran AI ${body.enabled === true ? 'dinyalakan' : 'dimatikan'}`);
     return m.list(projectPath);
   }));
 }
+
+/**
+ * 🌐 Semua pengguna: the app's maintainer (gh may push to the app's repository) writes it into
+ * src/role-map.shared.json of this clone, to commit and push; anyone else gets a prefilled GitHub issue to propose it.
+ */
+async function shareRoleMap(ctx, req, res, params, body = {}) {
+  if (!ctx.isLocal(req)) return json(res, 403, { error: 'Hanya dari laptop.' });
+  if (!ctx.roleMemory) return json(res, 404, { error: 'Pemetaan peran tidak tersedia.' });
+  const key = String(body.key ?? '');
+  const role = String(body.role ?? '');
+  const project = body.project ? ctx.hub.projects.get(String(body.project)) : null;
+  const projectPath = project && project.id !== 'demo' ? project.path : null;
+  try {
+    shareAccess ??= repoAccess(findGh(), ctx.appDir).catch(() => ({ slug: null, canPush: false }));
+    const access = await shareAccess;
+    if (access.canPush) {
+      const list = ctx.roleMemory.share(key, role, projectPath);
+      console.log(`Pemetaan bersama: ${key} → ${role}`);
+      return json(res, 200, { mode: 'file', file: 'src/role-map.shared.json', ...list });
+    }
+    if (!access.slug) return json(res, 409, { error: 'Repo GitHub aplikasi tidak ditemukan (git remote origin).' });
+    const title = `Pemetaan peran: ${key} → ${role}`;
+    const text = `Usulan untuk \`src/role-map.shared.json\` (🧭 Pemetaan peran → 🌐 Semua pengguna):\n\n\`\`\`json\n${JSON.stringify({ [key]: role }, null, 2)}\n\`\`\`\n`;
+    const url = `https://github.com/${access.slug}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(text)}`;
+    return json(res, 200, { mode: 'issue', url, ...ctx.roleMemory.list(projectPath) });
+  } catch (err) {
+    if (err instanceof RoleMapError) return json(res, err.status, { error: err.message });
+    throw err;
+  }
+}
+let shareAccess = null; // checked once per run (gh repo view)
 
 /** body.project (optional): the project whose .office-roles.json is read / written. */
 const roleMap = (fn) => (ctx, req, res, params, body = {}) => {

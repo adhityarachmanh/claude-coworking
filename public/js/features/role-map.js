@@ -10,7 +10,7 @@ import { closeModal, openModal } from '../ui/modals.js';
 
 const rm = { data: null, busy: false };
 const KIND = { mcp: 'MCP', skill: 'Skill', agent: 'Subagent', script: 'Skrip', cmd: 'Program' };
-const BY = { manual: '✋ Kamu', ai: '🤖 AI', project: '📁 Project' };
+const BY = { manual: '✋ Kamu', ai: '🤖 AI', project: '📁 Project', shared: '🌐 Bersama' };
 
 const project = () => (state.active && state.active !== DEMO_ID ? state.active : null);
 const isOpen = () => !$('#rolemap-modal').hidden;
@@ -54,12 +54,13 @@ function render() {
           (e) => `<li data-key="${escapeHtml(e.key)}" data-source="${e.source}">${nameCell(e.key)} <small class="pill">${BY[e.by] ?? e.by}</small>
           <span class="rm-acts"><select data-rm="change" aria-label="Role untuk ${escapeHtml(e.key)}"${dis}>${roleOptions(e.role, d.roles)}</select>
           ${e.source === 'local' && pid ? `<button type="button" class="ghost" data-rm="to-project"${dis} title="Pindahkan ke ${escapeHtml(d.projectFile)} project ini">→ 📁 Project</button>` : ''}
-          <button type="button" class="icon-btn" data-rm="remove"${dis} title="Hapus pemetaan (kembali ke aturan bawaan)" aria-label="Hapus">🗑</button></span></li>`,
+          ${e.source !== 'shared' ? `<button type="button" class="ghost" data-rm="share"${dis} title="Berlaku untuk semua pengguna aplikasi lewat update (pemilik repo: langsung ke file bersama; lainnya: usulan lewat GitHub)">🌐 Semua pengguna</button>
+          <button type="button" class="icon-btn" data-rm="remove"${dis} title="Hapus pemetaan (kembali ke aturan bawaan)" aria-label="Hapus">🗑</button>` : ''}</span></li>`,
         )
         .join('')}</ul>`
     : '<p class="muted small">Belum ada.</p>';
   body.innerHTML = `${ro ? '<p class="ro-note">Lewat WiFi hanya bisa melihat.</p>' : ''}
-    <p class="muted small">Aturan bawaan sudah mengenali sebagian besar pekerjaan (<a href="https://github.com/adhityarachmanh/claude-coworking/blob/main/docs/role-mapping.md" target="_blank" rel="noopener">peta lengkap</a>). Nama di bawah belum dikenali, jadi sementara dikerjakan Lead / Backend / Freelancer. Urutan yang berlaku: 📁 project ini → 💻 laptop ini → aturan bawaan.</p>
+    <p class="muted small">Aturan bawaan sudah mengenali sebagian besar pekerjaan (<a href="https://github.com/adhityarachmanh/claude-coworking/blob/main/docs/role-mapping.md" target="_blank" rel="noopener">peta lengkap</a>). Nama di bawah belum dikenali, jadi sementara dikerjakan Lead / Backend / Freelancer. Urutan yang berlaku: 📁 project ini → 💻 laptop ini → 🌐 bersama (ikut update aplikasi, untuk semua pengguna) → aturan bawaan.</p>
     ${ai}
     <h4>Belum dikenali (${d.unknown.length})</h4>${unknown}
     <h4>Sudah dipetakan (${d.entries.length})${pid ? ` <small class="muted">· project ${escapeHtml(projectName(pid))}</small>` : ''}</h4>${entries}`;
@@ -108,7 +109,23 @@ export function initRoleMap() {
       if (await call('/api/team/role-map/set', { key, role, scope: act })) toast(`${key} → ${roleName(role)} (${act === 'project' ? 'project ini' : 'laptop ini'})`, 'ok');
     } else if (act === 'dismiss') await call('/api/team/role-map/dismiss', { key });
     else if (act === 'remove') await call('/api/team/role-map/set', { key, role: null, scope: li.dataset.source === 'project' ? 'project' : 'local' });
-    else if (act === 'to-project') {
+    else if (act === 'share') {
+      rm.busy = true;
+      render();
+      try {
+        const r = await api('/api/team/role-map/share', { project: project(), key, role: li.querySelector('select').value });
+        rm.data = r;
+        if (r.mode === 'issue') {
+          window.open(r.url, '_blank', 'noopener');
+          toast('Usulan dibuka di GitHub: kirim issue-nya. Setelah digabung pemilik repo, semua pengguna mendapatkannya lewat update.', 'ok');
+        } else toast(`Ditulis ke ${r.file} di repo aplikasi. Commit & push agar semua pengguna mendapatkannya lewat update.`, 'ok');
+      } catch (err) {
+        toast(err.data?.error ?? err.message, 'warn');
+      } finally {
+        rm.busy = false;
+        if (isOpen()) render();
+      }
+    } else if (act === 'to-project') {
       const role = li.querySelector('select').value;
       if (await call('/api/team/role-map/set', { key, role, scope: 'project' })) toast(`${key} dipindah ke file project. Commit file itu agar timmu ikut memakainya.`, 'ok');
     }
@@ -127,6 +144,7 @@ export function initRoleMap() {
     const sel = e.target.closest('select[data-rm="change"]');
     if (!sel) return;
     const li = sel.closest('li[data-key]');
+    // a shared mapping changed here becomes this laptop's own (the shared file is only changed with 🌐)
     await call('/api/team/role-map/set', { key: li.dataset.key, role: sel.value, scope: li.dataset.source === 'project' ? 'project' : 'local' });
   });
 }

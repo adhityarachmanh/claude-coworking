@@ -4,7 +4,9 @@
 //      git (the user decides whether to commit it)
 //   2. this laptop's mappings in state.json (`roleMap.entries`): the user's corrections ("manual") and the AI's
 //      answers ("ai"); never pushed anywhere, carried by 💾 Backup with the rest of state.json
-//   3. the built-in rules (src/roles.js)
+//   3. the shared map shipped with the app (src/role-map.shared.json): mappings proposed with "🌐 Semua pengguna"
+//      and merged into the app's repository; every install gets them with its next update, no tokens
+//   4. the built-in rules (src/roles.js)
 // Names the rules fell back on are listed (`roleMap.unknown`) for the user to map. With 🤖 AI on (off by default)
 // they are also sent in small batches to the active engine's cheapest model: only the names and a tool name as
 // a hint (never code, paths, commands or chat), each name once; the answer is stored and reused for good.
@@ -43,8 +45,10 @@ export class RoleMemory {
    *   classify?: ((items: {key: string, hint: string}[]) => Promise<Record<string, string>|null>) | null,
    *   aiDelayMs?: number, now?: () => number }} options
    */
-  constructor({ hub, classify = null, aiDelayMs = 20_000, now = Date.now }) {
+  constructor({ hub, classify = null, aiDelayMs = 20_000, now = Date.now, sharedFile = null }) {
     this.hub = hub;
+    this.sharedFile = sharedFile;
+    this.shared = sharedFile ? readMapFile(sharedFile) : {};
     this.classify = classify;
     this.aiDelayMs = aiDelayMs;
     this.now = now;
@@ -67,7 +71,7 @@ export class RoleMemory {
   lookup(key, projectPath) {
     const k = cleanKey(key);
     if (!k) return null;
-    return this.projectMap(projectPath)[k] ?? this.state.entries[k]?.role ?? null;
+    return this.projectMap(projectPath)[k] ?? this.state.entries[k]?.role ?? this.shared[k] ?? null;
   }
 
   /** The rules fell back on this name: listed for the user, and queued for the AI when it is on. */
@@ -153,12 +157,34 @@ export class RoleMemory {
     const project = this.projectMap(projectPath);
     const entries = Object.entries(this.state.entries).map(([key, e]) => ({ key, role: e.role, by: e.by, at: e.at, source: 'local' }));
     for (const [key, role] of Object.entries(project)) entries.push({ key, role, by: 'project', at: null, source: 'project' });
+    // the shared map, where neither this project nor this laptop says otherwise
+    for (const [key, role] of Object.entries(this.shared)) if (!project[key] && !this.state.entries[key]) entries.push({ key, role, by: 'shared', at: null, source: 'shared' });
     entries.sort((a, b) => a.key.localeCompare(b.key));
     const unknown = Object.entries(this.state.unknown)
-      .filter(([key]) => !project[key])
+      .filter(([key]) => !project[key] && !this.shared[key])
       .map(([key, u]) => ({ key, hint: u.hint, count: u.count, lastAt: u.lastAt, aiTried: Boolean(u.aiTriedAt) }))
       .sort((a, b) => b.lastAt.localeCompare(a.lastAt));
     return { ai: this.state.ai, aiAvailable: Boolean(this.classify), busy: this.busy, queued: this.queue.size, lastError: this.lastError, entries, unknown, projectFile: projectPath ? PROJECT_FILE : null, roles: [...VALID_ROLES] };
+  }
+
+  /**
+   * 🌐 Semua pengguna (the app's maintainer, on its own clone): writes the mapping into the shared map in the app's
+   * repository; it reaches everyone once committed, pushed and pulled by their update.
+   */
+  share(key, role, projectPath = null) {
+    const k = cleanKey(key);
+    const r = cleanRole(role);
+    if (!k || !r) throw new RoleMapError(400, 'Nama atau role tidak valid.');
+    if (!this.sharedFile) throw new RoleMapError(404, 'Pemetaan bersama tidak tersedia.');
+    const map = { ...readMapFile(this.sharedFile), [k]: r };
+    writeMapFile(this.sharedFile, map);
+    this.shared = readMapFile(this.sharedFile);
+    delete this.state.entries[k];
+    delete this.state.unknown[k];
+    this.queue.delete(k);
+    this.hub.scheduleSave();
+    this.changed();
+    return this.list(projectPath);
   }
 
   // ---- the project's file ----
@@ -181,30 +207,11 @@ export class RoleMemory {
   }
 
   readProjectFile(projectPath) {
-    try {
-      const raw = JSON.parse(readFileSync(path.join(projectPath, PROJECT_FILE), 'utf8'));
-      const map = {};
-      for (const [key, role] of Object.entries(isObject(raw) ? raw : {})) {
-        const k = cleanKey(key);
-        const r = cleanRole(role);
-        if (k && r) map[k] = r;
-      }
-      return map;
-    } catch {
-      return {};
-    }
+    return readMapFile(path.join(projectPath, PROJECT_FILE));
   }
 
   writeProjectFile(projectPath, map) {
-    const file = path.join(projectPath, PROJECT_FILE);
-    const sorted = Object.fromEntries(Object.entries(map).sort(([a], [b]) => a.localeCompare(b)));
-    const tmp = `${file}.tmp-${process.pid}`;
-    try {
-      writeFileSync(tmp, `${JSON.stringify(sorted, null, 2)}\n`);
-      renameSync(tmp, file);
-    } catch (err) {
-      throw new RoleMapError(500, `Gagal menulis ${PROJECT_FILE}: ${err.code ?? err.message}`);
-    }
+    writeMapFile(path.join(projectPath, PROJECT_FILE), map);
     this.projects.delete(projectPath);
   }
 
@@ -262,6 +269,34 @@ export class RoleMemory {
   stop() {
     clearTimeout(this.timer);
     this.timer = null;
+  }
+}
+
+/** A { "<kind>:<name>": "<role>" } file, invalid lines dropped; {} when missing or unreadable. */
+function readMapFile(file) {
+  try {
+    const raw = JSON.parse(readFileSync(file, 'utf8'));
+    const map = {};
+    for (const [key, role] of Object.entries(isObject(raw) ? raw : {})) {
+      const k = cleanKey(key);
+      const r = cleanRole(role);
+      if (k && r) map[k] = r;
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+/** Sorted by name, one per line (easy to review in a pull request), written atomically. */
+function writeMapFile(file, map) {
+  const sorted = Object.fromEntries(Object.entries(map).sort(([a], [b]) => a.localeCompare(b)));
+  const tmp = `${file}.tmp-${process.pid}`;
+  try {
+    writeFileSync(tmp, `${JSON.stringify(sorted, null, 2)}\n`);
+    renameSync(tmp, file);
+  } catch (err) {
+    throw new RoleMapError(500, `Gagal menulis ${path.basename(file)}: ${err.code ?? err.message}`);
   }
 }
 

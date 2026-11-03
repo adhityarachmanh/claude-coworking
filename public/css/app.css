@@ -2190,3 +2190,7 @@ body.brain-on .roster-row:not(.on):not(.locked) img.orbable { opacity: .45; }
 .rm-acts { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .rm-acts select { max-width: 200px; }
 @media (pointer: coarse) { .rm-acts select, .rm-acts button { min-height: 44px; } }
+
+/* ✅ CI chip (features/ci-status.js) */
+.ch-git-ci { font-size: var(--fs-xs); padding: 2px 8px; border-radius: var(--r-pill); border: 1px solid #8884; text-decoration: none; color: inherit; white-space: nowrap; }
+.ch-git-ci.ok { border-color: #3fb95066; } .ch-git-ci.fail { border-color: #f8514966; color: #ff7b72; } .ch-git-ci.run { border-color: #d2992266; }

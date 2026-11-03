@@ -174,7 +174,10 @@ test('nested delegation knows who delegated, and the report goes back to them', 
   translator.handle(use('a1', 'Agent', { subagent_type: 'architect', description: 'Review' }));
   translator.handle(use('a2', 'Agent', { subagent_type: 'qa', description: 'Tes regresi' }, 'a1'));
   const delegations = office.filter((e) => e.kind === 'delegate');
-  assert.deepEqual(delegations.map((e) => [e.from, e.role]), [['claude', 'architect'], ['architect', 'qa']]);
+  // in the office the PM hands the Lead's work out (briefed once per turn); the chat keeps who really called it
+  assert.deepEqual(delegations.map((e) => [e.from, e.role]), [['pm', 'architect'], ['architect', 'qa']]);
+  assert.deepEqual(office.filter((e) => e.kind === 'huddle').map((e) => e.roles), [['claude', 'pm']]);
+  assert.equal(chat()[0].from, 'claude');
   assert.equal(chat()[1].from, 'architect');
   translator.handle(done('a2', 'Semua test lulus. Detail di bawah.', false, 'a1'));
   const stop = office.find((e) => e.kind === 'agent_stop');

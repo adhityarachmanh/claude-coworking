@@ -703,6 +703,7 @@ export class ClaudeSession {
       chat: (msg) => this.hub.chat(this.id, msg),
       updateChat: (chatId, patch) => this.hub.updateChat(this.id, chatId, patch),
       status: (patch) => this.hub.setStatus(this.id, patch),
+      gitPushed: () => this.hub.ciWatch?.(this.id),
     }, { projectPath: this.project.path });
 
     let buffer = '';

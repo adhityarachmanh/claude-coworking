@@ -21,6 +21,9 @@ import { autostartStatus } from './src/autostart.js';
 import { UsageLedger } from './src/usage.js';
 import { moduleGraph, preloadTags } from './src/modules.js';
 import { TranscriptMirror } from './src/mirror.js';
+import { OpenCodeMirror } from './src/opencode-mirror.js';
+import { CiWatcher } from './src/github-ci.js';
+import { findGh } from './src/github-pr.js';
 import { DEVICE_COOKIE, HTTPS_DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows, wifiConfig } from './src/remote.js';
 import { TailscaleCert, httpsPortFrom, restrictDir } from './src/tls.js';
 import { PushService, wifiApproval } from './src/push.js';
@@ -131,6 +134,7 @@ const roleMemory = new RoleMemory({
   hub,
   classify: engineClassifier({ engine: () => hub.engine, claude, opencode, dataDir: DATA_DIR }),
   aiDelayMs: Number(process.env.OFFICE_ROLE_AI_DELAY_MS ?? 20_000),
+  sharedFile: path.join(APP_DIR, 'src', 'role-map.shared.json'), // 🌐 shipped with the app (and its updates)
 });
 setRoleMemory({ lookup: (key, projectPath) => roleMemory.lookup(key, projectPath), unknown: (key, hint, projectPath) => roleMemory.noteUnknown(key, hint, projectPath) });
 
@@ -148,6 +152,13 @@ const account = new AccountService({
 const ledger = new UsageLedger({ file: path.join(DATA_DIR, 'usage.jsonl'), account: () => account.current });
 const sessions = new SessionManager({ hub, claude, opencode, agents: activeAgents(allAgents, initialTeam), teamPrompt: teamPrompt(initialTeam, Object.keys(allAgents)), ledger, account });
 const mirror = new TranscriptMirror(hub, { ledger });
+// 🖥 OpenCode sessions opened in a terminal (same background service): shown like Claude's CLI sessions.
+const openCodeMirror = new OpenCodeMirror(hub, {
+  bin: process.env.CLAUDE_BIN && !process.env.OFFICE_OPENCODE_MIRROR ? null : opencode, // test servers: only when asked
+  ownSessions: () => new Set([...sessions.sessions.values()].map((s) => s.acpSessionId).concat(Object.values(hub.persisted.sessions ?? {})).filter(Boolean)),
+  skipDir: (dir) => dir.toLowerCase().startsWith(path.resolve(DATA_DIR).toLowerCase()), // the app's own helper runs (role AI)
+  pollMs: Number(process.env.OFFICE_OPENCODE_MIRROR_MS ?? 5000),
+});
 // A device unpaired for being idle loses its open event streams at once, like "Cabut".
 const remote = new RemoteAccess(hub, {
   onExpire: (devices) => {
@@ -743,6 +754,10 @@ hub.ready = true;
 taskQueue.start();
 backupScheduler.start();
 const mirroring = mirror.start();
+openCodeMirror.start();
+// ✅ GitHub checks after every push (test servers: only with OFFICE_GH_BIN, i.e. a fake gh)
+const ciWatcher = new CiWatcher({ hub, gh: process.env.CLAUDE_BIN && !process.env.OFFICE_GH_BIN ? null : findGh(), pollMs: Number(process.env.OFFICE_CI_POLL_MS ?? 20_000), firstMs: Number(process.env.OFFICE_CI_FIRST_MS ?? 8000) });
+hub.ciWatch = (projectId) => ciWatcher.watch(projectId);
 // Know who is logged in (usage is tagged with it); notice logins/logouts done in a terminal too.
 account.refreshProfile(true).catch(() => {});
 setInterval(() => account.refreshProfile(true).catch(() => {}), 60_000).unref();
@@ -810,6 +825,8 @@ async function shutdown() {
   for (const { server: lan } of [...lanServers.values(), ...httpsServers.values()]) lan.close();
   tls.stop();
   mirror.stop();
+  openCodeMirror.stop();
+  ciWatcher.stop();
   // A running contract check is aborted (its processes killed, whole tree) and not recorded; waited for ≤ 3 s.
   const checksStopped = Promise.allSettled([claudeCheck.stop(), opencodeCheck.stop()]);
   spotify.stop();

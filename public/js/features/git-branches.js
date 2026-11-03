@@ -8,6 +8,7 @@ import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { loadChanges } from './changes.js';
 import { fillComposer } from './composer.js';
+import { renderCi } from './ci-status.js';
 
 export const gitBar = { project: null, info: null, busy: false, seq: 0 };
 const BUSY_TEXT = { switch: (n) => `Pindah ke ${n}…`, create: (n) => `Membuat branch ${n}…`, fetch: () => 'Fetch dari remote…', pull: () => 'Pull (fast-forward saja)…', push: () => 'Push ke remote…' };
@@ -67,6 +68,7 @@ function render(info) {
     }
   } else if (!info.partial) sync.push(info.remotes.length ? '<span title="Push pertama memasang upstream">belum ada upstream</span>' : '<span title="git remote add origin <url>">tanpa remote</span>');
   $('#ch-git-sync').innerHTML = sync.join(' · ');
+  renderCi();
   const ro = Boolean(state.readOnly);
   for (const sel of ACTIONS) {
     const el = $(sel);

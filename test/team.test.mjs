@@ -155,6 +155,7 @@ each delegation costs time and tokens, so do small or trivial work yourself.
 - security: security review, vulnerabilities, secrets, dependency audit
 - devops: build, CI/CD, Docker, deployment, environment and config issues
 - writer: README, API docs, changelog, user guides
+Planning is the PM's job: when a request needs two or more steps or more than one role, first break it into tasks with the task list tool (TodoWrite or TaskCreate; the PM keeps that board), then delegate. A new feature or an unclear scope starts with the pm subagent.
 Typical flows:
 - New feature: pm → ba → architect → ui-ux → frontend/backend/dba → qa → security (when auth, input or data is touched) → writer.
 - Bug fix: qa reproduces it (ideally a failing test) → the owning frontend/backend/dba fixes the root cause → architect reviews the diff → qa verifies.

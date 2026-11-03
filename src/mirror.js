@@ -193,6 +193,7 @@ export class TranscriptMirror {
           if (patch.todos !== undefined) this.hub.setStatus(pid, { todos: patch.todos });
           if (patch.working !== undefined) this.hub.setStatus(pid, { cliWorking: patch.working });
         },
+        gitPushed: () => this.hub.ciWatch?.(pid),
       }, { projectPath: cwd });
       this.sessions.set(id, s);
     }

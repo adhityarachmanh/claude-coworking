@@ -193,7 +193,7 @@ test('a prompt streams, works in the office, fills the to-do board and ends with
   assert.match(st.sessionId ?? (await snapshot()).statuses[id].sessionId, /^ses_fake/);
 });
 
-test('approvals: OpenCode asks (permission config "ask"), allow runs the tool, reject stops the turn quietly', async () => {
+test('approvals: OpenCode asks (permission config "ask"), allow runs the tool, ✕ Tolak continues with the rejection note', async () => {
   const id = await projectId();
   await useEngine('opencode');
   await api(`/api/projects/${id}/settings`, { mode: 'manual' });
@@ -209,10 +209,14 @@ test('approvals: OpenCode asks (permission config "ask"), allow runs the tool, r
 
   await api(`/api/projects/${id}/prompt`, { text: 'izin lagi' });
   approval = await waitFor((t, o) => t === 'approval' && o.project === id && o.status === 'pending');
-  await api(`/api/approvals/${approval.id}`, { allow: false });
+  await api(`/api/approvals/${approval.id}`, { allow: false, message: 'pakai cara lain' });
+  // OpenCode ends the turn on a rejection; like Claude Code, the work goes on: the note (with the reason) is sent next
   const result = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
-  assert.equal(result.ok, false);
-  assert.match(result.text, /Dihentikan/, 'a refusal stops the turn, it is not an error');
+  assert.doesNotMatch(result.text ?? '', /Dihentikan/, 'a rejection is not a stop');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /Izin ditolak/.test(o.text));
+  const follow = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && /Saya menolak izin untuk/.test(o.text));
+  assert.match(follow.text, /Alasan: pakai cara lain/);
+  assert.ok((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && seen.findIndex((x) => x.obj === o) > seen.findIndex((x) => x.obj === follow))));
 });
 
 test('⚡ Auto: no approval card, the tool just runs (a fresh process gets the new permission config)', async () => {

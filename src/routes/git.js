@@ -22,6 +22,7 @@ export function register(router) {
       const result = await gitAction(project.path, { action: act, name: body.name == null ? undefined : String(body.name), carry: body.carry === true });
       const label = { switch: `Pindah ke branch ${result.branch}`, create: `Branch baru ${result.branch}`, fetch: 'git fetch', pull: 'git pull', push: 'git push' }[act];
       hub.chat(project.id, { kind: 'info', text: `⎇ ${label} berhasil.` });
+      if (act === 'push') hub.ciWatch?.(project.id); // ✅ GitHub's checks of the pushed commit
       return json(res, 200, result);
     }),
   ));

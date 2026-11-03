@@ -287,8 +287,16 @@ async function cliChecks(bin, check, { t, cwd, env, track, budget }) {
     const r = await runCli(bin, args, { cwd, env, timeoutMs: ms, track });
     return { ...r, detail: r.ok ? '' : r.timedOut ? `timeout setelah ${ms} ms` : r.err === ABORTED ? ABORTED : `kode ${r.code}: ${sanitize(r.err, 100)}` };
   };
-  const models = await run(CHECKS.models, ['models']);
-  const lines = String(models.out ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  let models = await run(CHECKS.models, ['models']);
+  let lines = String(models.out ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  // A service that has just started (the app and OpenCode restarting together) can answer before its model catalog
+  // is loaded: success with an empty list. One more look a few seconds later before calling it a failure.
+  if (models.ok && !lines.length && !track?.aborted()) {
+    const wait = Math.min(5000, budget(5000) || 0);
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    models = await run(CHECKS.models, ['models']);
+    lines = String(models.out ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  }
   check(CHECKS.models, models.ok && lines.length > 0 && lines.every((l) => /^[\w.@-]+\/\S+$/.test(l)), models.ok ? `${lines.length} model` : models.detail);
   const list = await run(CHECKS.sessionList, ['session', 'list', '--format', 'json', '-n', '5']);
   let ok = Boolean(list.ok);

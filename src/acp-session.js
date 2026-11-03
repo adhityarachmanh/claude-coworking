@@ -29,7 +29,8 @@ export const REWINDING_MESSAGE = 'Rewind sedang berjalan. Tunggu sebentar, lalu 
  * Effort = OpenCode's per-model "effort" config option (thought level); Mode tim = the roles as OpenCode subagents.
  * Rewind = OpenCode's session.revert (conversation, with or without its file snapshots; no "code only").
  * Questions = OpenCode's `question` tool through ACP form elicitation; plan = our own card after a 📋 plan turn.
- * Not (yet): live MCP status/login, background tasks, session export or mirror.
+ * Long shells: found among the service's shells (src/opencode-shells.js) for live output, the stuck detector,
+ * ⧗ Pindah ke latar and stop. Not (yet): live MCP status/login, the /tasks panel, session export or mirror.
  */
 export const OPENCODE_CAPS = Object.freeze({
   effort: true,
@@ -39,7 +40,7 @@ export const OPENCODE_CAPS = Object.freeze({
   bgTasks: false,
   askQuestion: true,
   exportSession: false,
-  mirror: false,
+  mirror: true, // sessions opened in a terminal, from the shared background service (src/opencode-mirror.js)
   modes: Object.freeze(['manual', 'acceptEdits', 'auto', 'plan']),
 });
 
@@ -52,6 +53,12 @@ export const CLIENT_CAPABILITIES = Object.freeze({ fs: Object.freeze({ readTextF
 
 /** 📋 Rencana dulu: what "Setujui" sends to OpenCode (now in build) after the plan turn. */
 export const PLAN_APPROVED_PROMPT = 'Rencana disetujui. Kerjakan sekarang sesuai rencana di atas.';
+/**
+ * ✕ Tolak: Claude Code tells the model "denied" and the turn goes on; OpenCode ends the whole turn. So the app
+ * continues it with this note (and the user's reason, when given): the model carries on without that step.
+ */
+export const rejectedPrompt = (label, reason) =>
+  `Saya menolak izin untuk: ${label}.${reason ? ` Alasan: ${reason}` : ''} Jangan jalankan langkah itu. Lanjutkan pekerjaannya dengan cara lain, atau tanyakan dulu kalau tidak bisa tanpa langkah itu.`;
 
 const MAX_FORM_FIELDS = 10;
 const MAX_FORM_OPTIONS = 30;
@@ -432,6 +439,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.hub.updateChat(this.id, item.chatId, { queued: false });
       this.announce(item);
       this.rejectedThisTurn = false;
+      this.rejection = null;
       if (this.adapter) this.adapter.lastText = '';
       const epoch = this.epoch;
       const started = Date.now();
@@ -454,9 +462,12 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const costUsd = Number.isFinite(this.cost) ? Math.max(0, this.cost - (Number.isFinite(costBefore) ? costBefore : 0)) : null;
       const stopNote = this.shuttingDown ? 'Server dihentikan — giliran terputus' : 'Dihentikan oleh kamu';
       const msg = { durationMs: Date.now() - started, usage: usage ?? {}, costUsd };
-      const stopped = interrupted || this.interrupting;
+      // ✕ Tolak ended the turn (not ■ Stop): continued below with the rejection note, like Claude Code does.
+      const rejection = this.rejection && !this.interrupting && !this.shuttingDown ? this.rejection : null;
+      this.rejection = null;
+      const stopped = (interrupted || this.interrupting) && !rejection;
       // A turn the user stopped reads "Dihentikan", like Claude's interrupted turns.
-      this.adapter.finish({ ...msg, ok, interrupted: stopped, error: stopped ? stopNote : error || 'OpenCode gagal menyelesaikan giliran.' });
+      this.adapter.finish({ ...msg, ok: ok || Boolean(rejection), interrupted: stopped, error: stopped ? stopNote : error || 'OpenCode gagal menyelesaikan giliran.' });
       this.recordTurnUsage(usage ?? {}, costUsd);
       this.interrupting = false;
       this.inflight.delete(uuid);
@@ -464,6 +475,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const next = [...this.inflight.entries()].find(([, i]) => i.state === 'queued');
       if (next) this.runTurn(next[0], next[1]);
       this.afterProgress();
+      if (rejection && !next) {
+        this.hub.chat(this.id, { kind: 'info', text: '✕ Izin ditolak: OpenCode menghentikan gilirannya, jadi dilanjutkan dengan catatan penolakan (seperti Claude Code).' });
+        // after this turn has fully let go (busy cleared), so the note starts now instead of waiting in the queue
+        setTimeout(() => epoch === this.epoch && !this.shuttingDown && this.prompt(rejectedPrompt(rejection.label, rejection.reason)), 0);
+      }
       // 📋 Rencana dulu: OpenCode's plan agent has no "exit plan" tool, so the finished plan turn gets the
       // approval card Claude's ExitPlanMode shows (not when more prompts are already waiting).
       if (ok && !stopped && !next && !this.shuttingDown && this.hub.settingsFor(this.id).mode === 'plan') this.offerPlan(this.adapter.lastText);
@@ -578,6 +594,84 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     resume(sessionId, history) {
       if (!String(sessionId).startsWith('ses_')) throw Object.assign(new Error('Sesi ini milik Claude Code. Ganti mesin project ke Claude Code untuk melanjutkannya.'), { status: 409 });
       super.resume(sessionId, history);
+    }
+
+    // ---------- shells of a turn (src/opencode-shells.js): live output, stuck detector, ⧗ Pindah ke latar ----------
+
+    /** Every 15 s while a bash call has run 8 s+: finds it among the service's running shells and links it. */
+    watchShells() {
+      if (this.shellTimer) return;
+      this.shellTimer = setInterval(() => this.linkShells().catch(() => {}), 15_000);
+      this.shellTimer.unref?.();
+    }
+
+    /** ⏳ While a turn runs: the provider's refusals OpenCode is retrying (rate limits), once per attempt. */
+    async checkRetries() {
+      const id = this.openCodeSessionId();
+      if (!id || !this.busy || this.retryLookup) return;
+      this.retryLookup = true;
+      try {
+        const { openCodeApi } = await import('./opencode-auth.js');
+        const { retryNote } = await import('./opencode-mirror.js');
+        const list = await openCodeApi(this.m.opencode, 'session.message.list', { params: { sessionID: id, limit: '3', order: 'desc' }, timeout: 15_000 });
+        this.retriesSeen ??= new Set();
+        for (const m of Array.isArray(list) ? list : []) {
+          const note = m?.type === 'assistant' ? retryNote(m.retry) : null;
+          const key = `${m?.id}:${m?.retry?.attempt}`;
+          if (!note || this.retriesSeen.has(key)) continue;
+          this.retriesSeen.add(key);
+          if (this.retriesSeen.size > 200) this.retriesSeen.clear();
+          this.hub.chat(this.id, { kind: 'info', text: note });
+          this.hub.office(this.id, { kind: 'say', role: 'claude', text: 'Provider membatasi, OpenCode mencoba lagi…' });
+        }
+      } finally {
+        this.retryLookup = false;
+      }
+    }
+
+    async linkShells() {
+      this.checkRetries().catch(() => {});
+      const t = this.translator;
+      const waiting = t?.unlinkedShells?.().filter((s) => Date.now() - s.startedAt >= 8000) ?? [];
+      if (!waiting.length || !this.m.opencode || this.shellLookup) return;
+      this.shellLookup = true;
+      try {
+        const { matchShell, runningShells } = await import('./opencode-shells.js');
+        const shells = await runningShells(this.m.opencode, this.project.path);
+        const taken = new Set([...t.linkedTaskIds()].map((id) => String(id).replace(/^oc:/, '')));
+        for (const s of waiting) {
+          const sh = matchShell(shells, s.command, taken);
+          if (!sh) continue;
+          taken.add(sh.id);
+          t.linkShellTask(s.toolUseId, `oc:${sh.id}`);
+        }
+      } finally {
+        this.shellLookup = false;
+      }
+    }
+
+    async taskOutput(taskId) {
+      const { OC_TASK, shellOutput } = await import('./opencode-shells.js');
+      const m = OC_TASK.exec(String(taskId));
+      if (!m) throw Object.assign(new Error('Tugas tidak ditemukan.'), { status: 404 });
+      return shellOutput(this.m.opencode, this.project.path, m[1]);
+    }
+
+    async stopTask(taskId) {
+      const { OC_TASK, stopShell } = await import('./opencode-shells.js');
+      const m = OC_TASK.exec(String(taskId));
+      if (!m) throw Object.assign(new Error('Tugas tidak ditemukan.'), { status: 404 });
+      await stopShell(this.m.opencode, this.project.path, m[1]);
+      return { ok: true };
+    }
+
+    /** ⧗ Pindah ke latar (Ctrl+B): OpenCode's session.background; the turn goes on, the shell keeps running. */
+    async backgroundTasks() {
+      const id = this.openCodeSessionId();
+      if (!id) throw Object.assign(new Error('Belum ada sesi OpenCode.'), { status: 409 });
+      const { backgroundSession } = await import('./opencode-shells.js');
+      await backgroundSession(this.m.opencode, id);
+      return { ok: true };
     }
 
     /** /rename and the session bar title: OpenCode's session.update. */
@@ -745,8 +839,10 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         chat: (msg) => this.hub.chat(this.id, msg),
         updateChat: (chatId, patch) => this.hub.updateChat(this.id, chatId, patch),
         status: (patch) => this.hub.setStatus(this.id, patch),
+        gitPushed: () => this.hub.ciWatch?.(this.id),
       }, { projectPath: this.project.path });
       this.adapter = new AcpAdapter((msg) => this.translator.handle(msg));
+      this.watchShells();
 
       let buffer = '';
       child.stdout.setEncoding('utf8');
@@ -999,6 +1095,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
             option = reject;
             if (!decision.cancelled) {
               this.rejectedThisTurn = true;
+              this.rejection ??= { label: truncate(label, 200), reason: String(decision.message ?? '').trim().slice(0, 1000) };
               this.hub.cancelApprovals(this.id); // the turn ends: close its other cards too
             }
           }

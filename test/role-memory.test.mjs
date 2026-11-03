@@ -122,3 +122,25 @@ test('engine classifier: Claude Code -p on Haiku, read-only, outside any project
   const answer = await classify([{ key: 'mcp:crm', hint: 'x' }, { key: 'cmd:tool', hint: 'tool' }, { key: 'cmd:nothing', hint: '' }]);
   assert.deepEqual(answer, { 'mcp:crm': 'pm', 'cmd:tool': 'backend' });
 });
+
+test('shared map (shipped with the app): below this laptop and the project, above the rules; 🌐 writes it', (t) => {
+  t.after(() => setRoleMemory());
+  const dir = project();
+  const sharedFile = path.join(dir, 'role-map.shared.json');
+  writeFileSync(sharedFile, JSON.stringify({ 'mcp:hubspot': 'pm', 'mcp:bad': 'ceo' }));
+  const hub = { persisted: {}, scheduleSave() {}, broadcast() {} };
+  const m = new RoleMemory({ hub, sharedFile });
+  setRoleMemory({ lookup: (k, p) => m.lookup(k, p), unknown: (k, h, p) => m.noteUnknown(k, h, p) });
+  assert.equal(inferRole('mcp__hubspot__x', {}), 'pm', 'everyone gets the shared mapping');
+  assert.equal(m.list(null).unknown.length, 0, 'not listed as unknown');
+  assert.deepEqual(m.list(null).entries.map((e) => [e.key, e.source]), [['mcp:hubspot', 'shared']]);
+  m.set('mcp:hubspot', 'ba');
+  assert.equal(inferRole('mcp__hubspot__x', {}), 'ba', 'this laptop overrides it');
+  // the maintainer shares a mapping: written sorted, this laptop's copy dropped
+  m.set('skill:zorkify', 'writer');
+  m.share('skill:zorkify', 'writer');
+  assert.deepEqual(JSON.parse(readFileSync(sharedFile, 'utf8')), { 'mcp:hubspot': 'pm', 'skill:zorkify': 'writer' });
+  assert.equal(m.state.entries['skill:zorkify'], undefined);
+  assert.equal(inferRole('Skill', { skill: 'zorkify' }), 'writer');
+  assert.throws(() => m.share('skill:zorkify', 'ceo'), /tidak valid/);
+});

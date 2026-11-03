@@ -19,6 +19,7 @@ import { applySpotify } from '../features/spotify.js';
 import { reloadSoon } from '../features/opencode-account.js';
 import { onGithubLogin } from '../features/pull-request.js';
 import { onRoleMapChanged } from '../features/role-map.js';
+import { renderCi } from '../features/ci-status.js';
 import { noteLiveMessage, setStuckOnline } from '../features/stuck.js';
 import { applyNames } from '../features/team.js';
 import { applyTeamNames, roleName } from '../office/cast.js';
@@ -104,7 +105,10 @@ const handlers = {
     state.statuses[status.project] = status;
     scenes.get(status.project)?.setStatus(status);
     renderSidebar();
-    if (status.project === state.active) renderComposer();
+    if (status.project === state.active) {
+      renderComposer();
+      renderCi();
+    }
     updateTitle();
   },
   office(evt, live) {
