@@ -17,17 +17,31 @@ const MAX_SECRET = 4096;
 
 /**
  * Runs `opencode api <operation>`; resolves the parsed JSON body (`data` unwrapped, or the whole body with `full`, e.g.
- * a paged list's `cursor`), rejects with a short message.
+ * a paged list's `cursor`), rejects with a short message. The error also carries `tag` (OpenCode's error `_tag` from
+ * stdout, e.g. "SessionNotFoundError") and `httpStatus` (from "HTTP 404 Not Found" on stderr) when OpenCode sent them.
+ * `timeout` (ms, default 60 s): the caller's share of its own deadline.
  */
-export function openCodeApi(bin, operation, { params = {}, body, full = false } = {}) {
+export function openCodeApi(bin, operation, { params = {}, body, full = false, timeout = TIMEOUT_MS } = {}) {
   if (!bin) return Promise.reject(new Error('OpenCode belum terpasang di laptop ini.'));
   const args = [...bin.args, 'api', operation];
   for (const [k, v] of Object.entries(params)) args.push('--param', `${k}=${v}`);
   if (body !== undefined) args.push('--data', JSON.stringify(body));
   return new Promise((resolve, reject) => {
-    execFileTree(bin.command, args, { encoding: 'utf8', timeout: TIMEOUT_MS, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, out, errOut) => {
+    execFileTree(bin.command, args, { encoding: 'utf8', timeout: Math.max(1000, Math.min(timeout, TIMEOUT_MS)), windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, out, errOut) => {
       // Never err.message: Node's "Command failed: <bin> … --data {"key":…}" would carry the API key back.
-      if (err) return reject(new Error(errOut || out ? shortError(errOut || out) : err.killed ? 'OpenCode tidak menjawab (timeout).' : `OpenCode gagal (kode ${err.code ?? '?'}).`));
+      if (err) {
+        const error = new Error(errOut || out ? shortError(errOut || out) : err.killed ? 'OpenCode tidak menjawab (timeout).' : `OpenCode gagal (kode ${err.code ?? '?'}).`);
+        error.timedOut = Boolean(err.killed);
+        const status = String(errOut ?? '').match(/\bHTTP (\d{3})\b/);
+        if (status) error.httpStatus = Number(status[1]);
+        try {
+          const tag = JSON.parse(String(out).trim())?._tag;
+          if (typeof tag === 'string' && /^\w{1,80}$/.test(tag)) error.tag = tag;
+        } catch {
+          // not JSON: no tag
+        }
+        return reject(error);
+      }
       const text = String(out).trim();
       if (!text) return resolve(null);
       try {

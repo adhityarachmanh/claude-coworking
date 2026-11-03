@@ -3,6 +3,7 @@
 // `search` / `export-session` read, but expose the whole history: laptop and Tailscale only (src/remote.js).
 import { AttachmentError, readAttachments } from '../attachments.js';
 import { ConversationError, exportSession, searchSessions } from '../conversation.js';
+import { REWINDING_MESSAGE } from '../acp-session.js';
 import { DEMO_ID } from '../hub.js';
 import { listSessions, sessionHistory } from '../transcripts.js';
 import { openCodeSessions } from '../opencode-bin.js';
@@ -42,6 +43,7 @@ export function register(router) {
       throw err;
     }
     if (!text && !attachments.length) return json(res, 400, { error: 'prompt kosong' });
+    if (session.rewinding) return json(res, 409, { error: REWINDING_MESSAGE }); // ⏪ OpenCode rewind running
     session.prompt((text || 'Lihat file terlampir.').slice(0, 50000), attachments);
     return ok(res);
   }));
@@ -49,6 +51,7 @@ export function register(router) {
     // A shell skips Claude's permission checks: plain-HTTP WiFi is already refused in handler() (read-only).
     const command = String(body.command ?? '').trim();
     if (!command) return json(res, 400, { error: 'Perintah kosong' });
+    if (session.rewinding) return json(res, 409, { error: REWINDING_MESSAGE });
     session.shell(command.slice(0, 4000));
     return ok(res);
   }));

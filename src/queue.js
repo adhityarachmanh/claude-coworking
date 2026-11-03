@@ -429,7 +429,7 @@ export class TaskQueue {
   idle(id) {
     const st = this.hub.runtime.get(id)?.status;
     if (!st) return true; // no runtime yet: nobody is working in it
-    return !st.busy && !st.pending && !st.interrupted && !st.cliBusy && !st.queue;
+    return !st.busy && !st.pending && !st.interrupted && !st.cliBusy && !st.queue && !st.rewinding; // ⏪ OpenCode rewind
   }
 
   dispatch(id) {

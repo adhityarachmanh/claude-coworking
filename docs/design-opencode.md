@@ -518,6 +518,15 @@ Tiap mesin adalah entitas terpisah; pindah mesin tidak menghapus riwayat mesin l
 - Semua spawn lewat `openCodeApi` → `execFileTree` (argv array, `windowsHide`, timeout 60 dtk).
 - Fake: `FAKE_ACP_STORE=<dir>` (pesan per sesi ditulis proses acp; prompt "tulis" benar-benar menulis `catatan.md` dengan `before` sebagai snapshot; `api session.message.list | session.revert.stage | session.revert.commit`), `FAKE_ACP_REVERT_BUSY`. Test: `test/opencode-rewind.test.mjs` (unit), `test/opencode.test.mjs` (alur penuh), `test/ui.test.mjs` ("⏪ Rewind OpenCode").
 
+**Perbaikan setelah review** (menggantikan poin di atas bila bertentangan):
+- **Satu rewind sekaligus.** `AcpSession.rewinding` (+ `status.rewinding`) dipasang setelah cek busy dan dilepas di `finally`. Selama itu `/prompt` dan `/shell` → 409 "Rewind sedang berjalan…", `prompt()` sendiri juga menolak (penjaga terakhir), rewind kedua → 409, 📋 Antrian tidak dispatch (`idle()` memeriksa `rewinding`), dan kartu rencana yang terbuka ditutup.
+- **Semua atau tidak sama sekali.** Commit dicoba ulang sekali. Kalau tetap gagal: `session.revert.clear` (best-effort; file kembali seperti sebelum stage) lalu 502, dan chat tidak diredupkan. Stage yang gagal karena alasan selain 409/404 (termasuk timeout, yang mungkin sudah sempat ter-stage) juga di-clear, lalu 502/504 dengan penjelasan.
+- **Entri chat yang tepat.** ACP tidak mengembalikan id `msg_` prompt (respons `session/prompt` hanya `stopReason`/`usage`/`_meta`). `chatEntryFor` mencocokkan urutan: prompt ke-N dari belakang di daftar OpenCode = prompt chat ke-N dari belakang yang sampai ke OpenCode (tidak `cancelled`, tidak `rewound`), selama teks OpenCode memuat teksnya; kalau tidak, dipilih entri cocok yang terdekat. Hasilnya `hub.markRewound(…, chatId)`. Claude kembali ke perilaku sebelum 0672b87 (uuid, lalu teks persis; tanpa fallback substring).
+- **Cakupan pratinjau = titik rewind.** Pemindaian berjalan sampai pesan ditemukan atau sudah melewati 80 prompt (tanpa batas 5 halaman), dibatasi deadline. Cursor 2.2.5 terverifikasi dari binary: `base64url(JSON {id, order, direction})` tanpa padding, tidak boleh digabung dengan `order`. `filesUnknown` → UI minta konfirmasi tambahan sebelum "Kode & percakapan".
+- **Deadline 60 dtk** (`rewindDeadline`) per pratinjau/rewind. Sisa waktu dibagi ke tiap `opencode api`; stage menyisakan 15 dtk untuk commit/clear; < 1 dtk tersisa → 504.
+- **Lainnya.** Prompt kosong disaring dari daftar. `rewind-points` di-cache 5 dtk (dibuang saat ada prompt, giliran selesai, atau rewind). `openCodeApi` kini membawa `tag` (`_tag` dari stdout) dan `httpStatus` (stderr), sehingga `SessionNotFoundError` ("Sesi OpenCode ini tidak ditemukan lagi") dibedakan dari pesan yang tidak ada. Format error ini terverifikasi dengan binary asli (`HTTP 404 Not Found` + `{"_tag":"SessionNotFoundError",…}`).
+- Fake: file saklar `FAKE_ACP_COMMIT_FAIL` / `FAKE_ACP_STAGE_FAIL` / `FAKE_ACP_REVERT_SLOW`, `FAKE_ACP_CLEAR_LOG`, `api session.revert.clear`.
+
 ## 16. Fase 2d: kartu pertanyaan dan kartu rencana
 
 **Bukti (OpenCode 2.2.5, binary asli, tanpa token):**

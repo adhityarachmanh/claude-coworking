@@ -3084,6 +3084,28 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(await page.eval(() => window.__rw), [{ uuid: 'msg_b', code: true, conversation: true }]);
       assert.equal(await page.eval(() => document.querySelector('#prompt').value), 'kedua', 'pesan kembali ke kotak untuk diedit');
 
+      // file list unknown (too far back): "Kode & percakapan" asks once more; Batal sends nothing, OK sends it
+      await page.eval(async () => {
+        document.querySelector('#prompt').value = '';
+        window.__rw = [];
+        window.__confirms = [];
+        window.__answer = false;
+        window.confirm = (msg) => (window.__confirms.push(msg), window.__answer);
+        window.__pv = { canRewind: true, filesChanged: [], filesUnknown: true, codeOnly: false, note: 'OpenCode' };
+        (await import('/js/features/rewind.js')).openRewind();
+      });
+      await page.waitFor(() => document.querySelector('#rewind-list [data-uuid="msg_b"]'), { timeoutMs: 3000, message: 'daftar pesan (2)' });
+      await page.eval(() => document.querySelector('#rewind-list [data-uuid="msg_b"]').click());
+      await page.waitFor(() => document.querySelector('#rewind-detail .rw-note') && !document.querySelector('#rewind-detail [data-rw="both"]').disabled, { timeoutMs: 3000, message: 'pratinjau tanpa daftar file' });
+      await page.eval(() => document.querySelector('#rewind-detail [data-rw="both"]').click());
+      assert.equal(await page.eval(() => window.__confirms.length), 1, 'konfirmasi tambahan');
+      assert.match(await page.eval(() => window.__confirms[0]), /Daftar file untuk pesan ini tidak diketahui/);
+      assert.deepEqual(await page.eval(() => window.__rw), [], 'Batal: tidak ada rewind');
+      await page.eval(() => document.querySelector('#rewind-detail [data-rw="conversation"]').click());
+      await page.waitFor(() => document.querySelector('#rewind-modal').hidden, { timeoutMs: 3000, message: 'modal tertutup (percakapan saja)' });
+      assert.equal(await page.eval(() => window.__confirms.length), 1, '"Percakapan saja" tidak menyentuh file: tanpa konfirmasi');
+      assert.deepEqual(await page.eval(() => window.__rw), [{ uuid: 'msg_b', code: false, conversation: true }]);
+
       // Claude Code's preview (counts, code only) is unchanged
       await page.eval(async () => {
         document.querySelector('#prompt').value = '';

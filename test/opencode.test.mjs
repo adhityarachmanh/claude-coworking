@@ -41,6 +41,10 @@ before(async () => {
       FAKE_ACP_FAIL_ONCE: path.join(TMP, 'acp-cold-start'), // the first OpenCode process dies: the retry must hide it
       FAKE_ACP_AUTH_FILE: path.join(TMP, 'acp-auth.json'),
       FAKE_ACP_STORE: path.join(TMP, 'acp-store'), // the sessions' messages (⏪ Rewind)
+      // ⏪ switch files, off until a test creates them
+      FAKE_ACP_COMMIT_FAIL: path.join(TMP, 'commit-fail'),
+      FAKE_ACP_REVERT_SLOW: path.join(TMP, 'revert-slow'),
+      FAKE_ACP_CLEAR_LOG: path.join(TMP, 'revert-clear.log'),
       FAKE_MCP_LOG: path.join(TMP, 'mcp-add.log'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
@@ -537,4 +541,69 @@ test('⏪ Rewind OpenCode: prompts from session.message.list, preview from the s
   assert.equal((await api(`/api/projects/${id}/rewind`, { uuid: again, conversation: true })).status, 200);
   assert.ok(existsSync(catatan), '💬 Percakapan saja keeps the files');
   await api(`/api/projects/${id}/settings`, { mode: 'manual' });
+});
+
+test('⏪ Rewind OpenCode, review regressions: duplicate prompts, prompt / shell / queue / 2nd rewind while rewinding, a failing commit', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  await api(`/api/projects/${id}/reset`);
+  const send = async (text) => {
+    mark = seen.length;
+    await api(`/api/projects/${id}/prompt`, { text });
+    assert.equal((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result')).ok, true, text);
+    await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false);
+  };
+  const from = seen.length;
+  await send('awal');
+  await send('lanjut');
+  await send('tengah');
+  await send('lanjut');
+  const points = (await api(`/api/projects/${id}/rewind-points`)).body.points;
+  assert.deepEqual(points.map((p) => p.text), ['lanjut', 'tengah', 'lanjut', 'awal']);
+  const users = seen.slice(from).filter((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'user').map((s) => s.obj);
+  const [, firstLanjut, tengah, lastLanjut] = users;
+
+  // the OLDER "lanjut" (same text twice): its own chat entry and everything after it, not the newer one only
+  writeFileSync(path.join(TMP, 'revert-slow'), '1500');
+  mark = seen.length;
+  const rewinding = api(`/api/projects/${id}/rewind`, { uuid: points[2].uuid, conversation: true });
+  await waitFor((t, o) => t === 'status' && o.project === id && o.rewinding === true);
+  const prompt = await api(`/api/projects/${id}/prompt`, { text: 'menyela' });
+  assert.equal(prompt.status, 409, 'no prompt while rewinding');
+  assert.match(prompt.body.error, /Rewind sedang berjalan/);
+  assert.equal((await api(`/api/projects/${id}/shell`, { command: 'echo x' })).status, 409, 'no ! shell either');
+  assert.equal((await api(`/api/projects/${id}/rewind`, { uuid: points[0].uuid, conversation: true })).status, 409, 'a second rewind is refused');
+  assert.equal((await api(`/api/projects/${id}/queue-add`, { text: 'dari antrean' })).status, 200);
+  const done = await rewinding;
+  rmSync(path.join(TMP, 'revert-slow'), { force: true });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.text, 'lanjut');
+  const releasedAt = seen.length;
+  await waitFor((t, o) => t === 'status' && o.project === id && o.rewinding === false);
+  // the 📋 queue waited for the rewind: its item starts only now, on the shortened session
+  const queued = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === 'dari antrean');
+  assert.ok(seen.findIndex((s) => s.obj === queued) > releasedAt, 'dispatched after the rewind');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false);
+  const rewound = new Set(seen.filter((s) => s.type === 'chat_update' && s.obj.project === id && s.obj.patch.rewound === true).map((s) => s.obj.id));
+  assert.ok(rewound.has(firstLanjut.id) && rewound.has(tengah.id) && rewound.has(lastLanjut.id), 'from the older "lanjut" on');
+  assert.ok(!rewound.has(users[0].id), '"awal" stays');
+  assert.ok(!seen.slice(from).some((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'user' && s.obj.text === 'menyela'), 'the refused prompt never reached the chat');
+  assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['dari antrean', 'awal']);
+
+  // a commit that keeps failing: tried twice, cleared again, an error; nothing greyed out, the conversation intact
+  await send('dua');
+  const before = (await api(`/api/projects/${id}/rewind-points`)).body.points;
+  writeFileSync(path.join(TMP, 'commit-fail'), '1');
+  mark = seen.length;
+  const failed = await api(`/api/projects/${id}/rewind`, { uuid: before[0].uuid, conversation: true });
+  rmSync(path.join(TMP, 'commit-fail'), { force: true });
+  assert.equal(failed.status, 502);
+  assert.match(failed.body.error, /commit gagal.*revert dibatalkan/s);
+  assert.equal(readFileSync(path.join(TMP, 'commit-fail.log'), 'utf8').split('\n').filter(Boolean).length, 2, 'commit tried once more');
+  assert.ok(readFileSync(path.join(TMP, 'revert-clear.log'), 'utf8').includes((await snapshot()).statuses[id].sessionId), 'session.revert.clear');
+  await sleep(200);
+  assert.ok(!seen.slice(mark).some((s) => s.type === 'chat_update' && s.obj.project === id && s.obj.patch.rewound === true), 'nothing greyed out');
+  assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['dua', 'dari antrean', 'awal'], 'nothing deleted');
+  await send('masih jalan');
 });

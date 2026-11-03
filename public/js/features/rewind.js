@@ -92,7 +92,9 @@ export function initRewind() {
     const btn = e.target.closest('[data-rw]');
     if (!btn || !rewindView.selected) return;
     const how = btn.dataset.rw;
-    const body = { uuid: rewindView.selected, code: how !== 'conversation', conversation: how !== 'code' };
+    // OpenCode: files not listed (too far back to scan in time) still come back: say so once more before doing it
+    if (how === 'both' && rewindView.preview?.filesUnknown === true && !window.confirm('Daftar file untuk pesan ini tidak diketahui.\n\nSemua file yang diubah OpenCode sejak pesan ini tetap dikembalikan dari snapshot-nya (perubahanmu sendiri di file itu ikut tertimpa), dan pesan ini beserta sesudahnya dihapus dari sesi OpenCode.\n\nLanjutkan?')) return;
+    const body ={ uuid: rewindView.selected, code: how !== 'conversation', conversation: how !== 'code' };
     $('#rewind-detail').querySelectorAll('button').forEach((b) => (b.disabled = true));
     try {
       const { text } = await api(`/api/projects/${rewindView.project}/rewind`, body);

@@ -811,16 +811,14 @@ export class Hub {
   }
 
   /**
-   * After a conversation rewind: the prompt and everything after it are greyed out (still readable). Found by its
-   * uuid, else its text; OpenCode stores the prompt with the `!` shell output / text attachments around it, so last
-   * a prompt whose text is inside `text`. Returns the chat entry's text (what goes back into the box), or null.
+   * After a conversation rewind: the prompt and everything after it are greyed out (still readable). Claude Code:
+   * found by its uuid, else its text. OpenCode passes the chat entry itself (`chatId`, see AcpSession.chatEntryFor).
+   * Returns the chat entry's text (what goes back into the box), or null.
    */
-  markRewound(id, uuid, text) {
+  markRewound(id, uuid, text, chatId = null) {
     const chat = this.rt(id).chat;
-    const want = String(text ?? '').trim();
-    let at = chat.findLastIndex((m) => m.kind === 'user' && m.uuid === uuid);
-    if (at < 0) at = chat.findLastIndex((m) => m.kind === 'user' && m.text?.trim() === want);
-    if (at < 0) at = chat.findLastIndex((m) => m.kind === 'user' && !m.rewound && m.text?.trim() && want.includes(m.text.trim()));
+    let at = chatId ? chat.findLastIndex((m) => m.kind === 'user' && m.id === chatId) : chat.findLastIndex((m) => m.kind === 'user' && m.uuid === uuid);
+    if (at < 0 && !chatId) at = chat.findLastIndex((m) => m.kind === 'user' && m.text?.trim() === text?.trim());
     if (at < 0) return null;
     for (const m of chat.slice(at)) if (!m.rewound && m.kind !== 'divider') this.updateChat(id, m.id, { rewound: true });
     return chat[at].text ?? null;

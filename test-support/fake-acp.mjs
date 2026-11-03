@@ -9,6 +9,9 @@
 //             elicitation.form at initialize, else the "couldn't be shown" fallback; says what came back
 //   "rencana" in the plan agent — a plan as the last answer; "disetujui" — says which agent works on it
 // It honours OPENCODE_CONFIG_CONTENT like the real one (permission.bash / permission.edit: ask | allow | deny).
+// ⏪ Rewind switch files (on while the file exists, so a running server's fake can be steered): FAKE_ACP_COMMIT_FAIL
+// (every commit fails, tries counted in <file>.log), FAKE_ACP_STAGE_FAIL (staged, then the answer is lost),
+// FAKE_ACP_REVERT_SLOW (the stage takes <file content> ms). FAKE_ACP_CLEAR_LOG=<file>: each session.revert.clear.
 // Contract check (src/opencode-contract.js): FAKE_ACP_VERSION = what --version / agentInfo claim; FAKE_ACP_BREAK =
 // comma list of parts to break: version-hang, initialize (never answers), acp-exit, load-session, session-new,
 // mode, commands, load, models, session-list. FAKE_ACP_RPC_LOG=<file>: every incoming request's method, one per line.
@@ -61,6 +64,9 @@ if (process.argv[2] === 'api') {
   const creds = file && has(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
   const save = () => file && write(file, JSON.stringify(creds));
   const out = (data) => (console.log(JSON.stringify({ location: { directory: process.cwd() }, data })), process.exit(0));
+  // switch files (a test turns them on and off while the server runs): FAKE_ACP_<X>=<file>, on while the file exists
+  const flag = (name) => (process.env[name] && has(process.env[name]) ? readFileSync(process.env[name], 'utf8').trim() || '1' : '');
+  const sessionNotFound = (id) => (console.log(JSON.stringify({ _tag: 'SessionNotFoundError', sessionID: id, message: `Session not found: ${id}` })), console.error('HTTP 404 Not Found'), process.exit(1));
   const fail = (msg) => (console.error(`UnknownError: An error occurred\n    at x (B:/~BUN/root/c.js:1:1) {\n  [cause]: Error: ${msg}\n}`), process.exit(1));
   const integrations = [
     { id: 'opencode-go', name: 'OpenCode Go', methods: [{ type: 'key' }, { type: 'env', names: ['OPENCODE_API_KEY'] }] },
@@ -101,7 +107,7 @@ if (process.argv[2] === 'api') {
     // ⏪ Rewind (FAKE_ACP_STORE): the messages the acp processes recorded, OpenCode 2.x's shapes and paging
     case 'session.message.list': {
       const s = loadStore(params.sessionID);
-      if (!s) fail('Session not found');
+      if (!s) sessionNotFound(params.sessionID);
       let list = s.messages.filter((m) => !params.type || m.type === params.type);
       let start = 0;
       let order = params.order ?? 'desc';
@@ -119,24 +125,45 @@ if (process.argv[2] === 'api') {
       const at = s ? s.messages.findIndex((m) => m.id === body.messageID) : -1;
       if (at < 0) (console.log(JSON.stringify({ _tag: 'MessageNotFoundError', message: `Message not found: ${body.messageID}` })), console.error('HTTP 404 Not Found'), process.exit(1));
       if (process.env.FAKE_ACP_REVERT_BUSY) (console.log(JSON.stringify({ _tag: 'BusyError' })), console.error('HTTP 409 Conflict'), process.exit(1));
+      if (flag('FAKE_ACP_REVERT_SLOW')) await new Promise((r) => setTimeout(r, Number(flag('FAKE_ACP_REVERT_SLOW')) || 1000)); // file content = ms
+      const undo = {}; // what clear puts back: the files as they are now
       const restore = new Map(); // file -> content before the earliest later turn (null = did not exist)
       if (body.files !== false) for (const m of s.messages.slice(at + 1)) for (const [f, c] of Object.entries(m.before ?? {})) if (!restore.has(f)) restore.set(f, c);
       for (const [f, c] of restore) {
         const abs = `${s.dir}/${f}`;
+        undo[f] = has(abs) ? readFileSync(abs, 'utf8') : null;
         if (c === null) (await import('node:fs')).rmSync(abs, { force: true });
         else write(abs, c);
       }
-      s.revert = { messageID: body.messageID };
+      s.revert = { messageID: body.messageID, undo };
       saveStore(params.sessionID, s);
+      // FAKE_ACP_STAGE_FAIL: staged, then the call fails anyway (a lost answer / timeout): the app must clear it
+      if (flag('FAKE_ACP_STAGE_FAIL')) (console.error('UnknownError: stage answer lost'), process.exit(1));
       out({ messageID: body.messageID, snapshot: 'snap0', files: [...restore.keys()].map((file) => ({ file, patch: '', additions: 1, deletions: 1, status: 'modified' })) });
       break;
     }
     case 'session.revert.commit': {
       const s = loadStore(params.sessionID);
-      if (!s) fail('Session not found');
+      if (!s) sessionNotFound(params.sessionID);
+      // FAKE_ACP_COMMIT_FAIL (switch file): every commit fails, each try counted in <file>.log
+      if (flag('FAKE_ACP_COMMIT_FAIL')) (appendFileSync(`${process.env.FAKE_ACP_COMMIT_FAIL}.log`, 'commit\n'), console.error('UnknownError: database is locked'), process.exit(1));
       if (s.revert) s.messages = s.messages.slice(0, s.messages.findIndex((m) => m.id === s.revert.messageID));
       delete s.revert;
       saveStore(params.sessionID, s);
+      out(null);
+      break;
+    }
+    case 'session.revert.clear': {
+      const s = loadStore(params.sessionID);
+      if (!s) sessionNotFound(params.sessionID);
+      for (const [f, c] of Object.entries(s.revert?.undo ?? {})) {
+        const abs = `${s.dir}/${f}`;
+        if (c === null) (await import('node:fs')).rmSync(abs, { force: true });
+        else write(abs, c);
+      }
+      delete s.revert;
+      saveStore(params.sessionID, s);
+      if (process.env.FAKE_ACP_CLEAR_LOG) appendFileSync(process.env.FAKE_ACP_CLEAR_LOG, `${params.sessionID}\n`);
       out(null);
       break;
     }

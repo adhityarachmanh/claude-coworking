@@ -21,6 +21,9 @@ const RPC_TIMEOUT_MS = 30_000;
 const INTERRUPT_GRACE_MS = 8000;
 const STDERR_TAIL = 4000;
 const OPENCODE_SESSION = /^ses_[\w-]{1,100}$/;
+const POINTS_CACHE_MS = 5000; // ⏪ the rewind list is reused this long (see rewindPoints)
+/** What a prompt / `!` shell gets while a rewind runs (409 from the routes). */
+export const REWINDING_MESSAGE = 'Rewind sedang berjalan. Tunggu sebentar, lalu kirim lagi.';
 /**
  * What the UI may offer for an OpenCode project (config.engines.opencode.caps, read by public/js/core/engine-caps.js).
  * Effort = OpenCode's per-model "effort" config option (thought level); Mode tim = the roles as OpenCode subagents.
@@ -396,6 +399,9 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     // ---------- public ----------
 
     prompt(text, attachments = [], extra = {}) {
+      // the routes answer 409 first and the queue waits for status.rewinding: this is the last guard
+      if (this.rewinding) throw Object.assign(new Error(REWINDING_MESSAGE), { status: 409 });
+      this.pointsCache = null; // a new prompt joins the rewind list
       this.dropPlanCard(); // a new prompt instead of an answer: the plan card is stale
       this.hub.clearInterrupted(this.id);
       const uuid = randomUUID();
@@ -454,6 +460,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.recordTurnUsage(usage ?? {}, costUsd);
       this.interrupting = false;
       this.inflight.delete(uuid);
+      this.pointsCache = null;
       const next = [...this.inflight.entries()].find(([, i]) => i.state === 'queued');
       if (next) this.runTurn(next[0], next[1]);
       this.afterProgress();
@@ -591,19 +598,26 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       return this.m.opencode && OPENCODE_SESSION.test(String(id ?? '')) ? id : null;
     }
 
-    /** The session's prompts, newest first (`uuid` = OpenCode's message id `msg_…`). */
+    /**
+     * The session's prompts, newest first (`uuid` = OpenCode's message id `msg_…`), without empty ones. Kept for
+     * POINTS_CACHE_MS (a read-only phone reopening the list must not start `opencode` every time); a prompt, a turn's
+     * end or a rewind drops it.
+     */
     async rewindPoints() {
       const sessionId = this.openCodeSessionId();
       if (!sessionId) return [];
-      return (await this.rewindPointsFull(sessionId)).map((p) => ({ ...p, text: truncate(p.text, 400) }));
+      const c = this.pointsCache;
+      const points = c?.sessionId === sessionId && Date.now() - c.at < POINTS_CACHE_MS ? c.points : await this.rewindPointsFull(sessionId);
+      this.pointsCache = { sessionId, at: c?.points === points ? c.at : Date.now(), points };
+      return points.filter((p) => p.text.trim()).map((p) => ({ ...p, text: truncate(p.text, 400) }));
     }
 
     /** Dry run: the files a rewind to just before this prompt would put back. OpenCode has no "code only". */
     async rewindPreview(uuid) {
       const sessionId = this.openCodeSessionId();
       if (!sessionId) throw Object.assign(new Error('Belum ada sesi OpenCode.'), { status: 409 });
-      const { openCodeRevertPlan } = await import('./session-admin.js');
-      const plan = await openCodeRevertPlan({ opencode: this.m.opencode, sessionId, messageId: String(uuid) });
+      const { openCodeRevertPlan, rewindDeadline } = await import('./session-admin.js');
+      const plan = await openCodeRevertPlan({ opencode: this.m.opencode, sessionId, messageId: String(uuid), budget: rewindDeadline() });
       return {
         canRewind: true,
         filesChanged: plan.files,
@@ -615,35 +629,74 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     /**
      * Back to just before one of your prompts: the conversation (OpenCode deletes that prompt and everything after
-     * it), with or without the file changes since (its snapshots). Refused (409) while a turn runs or is queued.
+     * it), with or without the file changes since (its snapshots). Refused (409) while a turn runs or is queued, or
+     * another rewind runs; while it runs, prompts, `!` shell and the queue wait (`rewinding`, see prompt()).
+     * Everything within one deadline (src/session-admin.js rewindDeadline).
      */
     async rewind(uuid, { code = false, conversation = false } = {}) {
       if (!code && !conversation) throw Object.assign(new Error('Pilih kode, percakapan, atau keduanya.'), { status: 400 });
       if (!conversation) throw Object.assign(new Error('OpenCode tidak bisa mengembalikan kode saja. Pilih “Kode & percakapan” atau “Percakapan saja”.'), { status: 400 });
+      if (this.rewinding) throw Object.assign(new Error('Rewind lain sedang berjalan. Tunggu sampai selesai.'), { status: 409 });
       const busy = () => this.turnActive() || this.inflight.size > 0;
       if (busy()) throw Object.assign(new Error('Hentikan dulu pekerjaan yang sedang berjalan (Esc).'), { status: 409 });
-      const { revertOpenCodeSession, validMessageId } = await import('./session-admin.js');
+      const { revertOpenCodeSession, rewindDeadline, validMessageId } = await import('./session-admin.js');
       if (!validMessageId(uuid)) throw Object.assign(new Error('Pesan tidak dikenal.'), { status: 400 });
-      const sessionId = this.openCodeSessionId();
-      const point = sessionId ? (await this.rewindPointsFull(sessionId)).find((p) => p.uuid === uuid) : null;
-      if (!point) throw Object.assign(new Error('Pesan itu tidak ada di percakapan ini.'), { status: 400 });
-      if (busy()) throw Object.assign(new Error('Hentikan dulu pekerjaan yang sedang berjalan (Esc).'), { status: 409 }); // a prompt came in meanwhile
-      // The ACP process holds the old conversation: the next prompt starts a fresh one that loads the shortened session.
-      this.closeChild();
-      const { files } = await revertOpenCodeSession({ opencode: this.m.opencode, projectPath: this.project.path, sessionId, messageId: uuid, files: code });
-      this.hub.clearInterrupted(this.id); // a cut-short turn after this point is gone
-      this.shellContext = [];
-      this.hub.setStatus(this.id, { todos: null, context: null, tasks: null });
-      const text = this.hub.markRewound(this.id, uuid, point.text) ?? point.text;
-      const what = code ? `Kode & percakapan${files.length ? ` (${files.length} file)` : ''}` : 'Percakapan';
-      this.hub.chat(this.id, { kind: 'divider', text: `⏪ ${what} dikembalikan ke sebelum: “${truncate(text, 60)}”` });
-      return { ok: true, text, filesRestored: files };
+      if (this.rewinding) throw Object.assign(new Error('Rewind lain sedang berjalan. Tunggu sampai selesai.'), { status: 409 }); // came in during the import
+      if (busy()) throw Object.assign(new Error('Hentikan dulu pekerjaan yang sedang berjalan (Esc).'), { status: 409 });
+      this.setRewinding(true); // from here on no prompt can slip in between the checks and the revert
+      this.dropPlanCard(); // its Setujui would send a prompt into the rewind
+      try {
+        const budget = rewindDeadline();
+        const sessionId = this.openCodeSessionId();
+        const points = sessionId ? await this.rewindPointsFull(sessionId, budget) : [];
+        const point = points.find((p) => p.uuid === uuid);
+        if (!point) throw Object.assign(new Error('Pesan itu tidak ada di percakapan ini.'), { status: 400 });
+        const chatId = this.chatEntryFor(points, uuid); // before the revert: the chat still matches OpenCode's list
+        // The ACP process holds the old conversation: the next prompt starts a fresh one that loads the shortened session.
+        this.closeChild();
+        const { files } = await revertOpenCodeSession({ opencode: this.m.opencode, projectPath: this.project.path, sessionId, messageId: uuid, files: code, budget });
+        this.hub.clearInterrupted(this.id); // a cut-short turn after this point is gone
+        this.shellContext = [];
+        this.hub.setStatus(this.id, { todos: null, context: null, tasks: null });
+        const text = (chatId && this.hub.markRewound(this.id, null, null, chatId)) ?? point.text;
+        const what = code ? `Kode & percakapan${files.length ? ` (${files.length} file)` : ''}` : 'Percakapan';
+        this.hub.chat(this.id, { kind: 'divider', text: `⏪ ${what} dikembalikan ke sebelum: “${truncate(text, 60)}”` });
+        return { ok: true, text, filesRestored: files };
+      } finally {
+        this.pointsCache = null;
+        this.setRewinding(false);
+      }
+    }
+
+    /** `rewinding` on the session and in the status (the 📋 queue doesn't dispatch while it is set). */
+    setRewinding(on) {
+      this.rewinding = on;
+      this.hub.setStatus(this.id, { rewinding: on });
+    }
+
+    /**
+     * The chat entry of one of OpenCode's prompts. OpenCode's ids are not known when a prompt is sent (ACP returns
+     * none), so: the same place counted from the newest, among the chat prompts that reached OpenCode (not
+     * cancelled, not rewound before), if OpenCode's text contains it (OpenCode keeps `!` output and text attachments
+     * around the prompt); else the nearest entry that fits. null = none fits (nothing is greyed out).
+     */
+    chatEntryFor(points, uuid) {
+      const k = points.findIndex((p) => p.uuid === uuid);
+      const want = String(points[k]?.text ?? '');
+      const prompts = this.hub.rt(this.id).chat.filter((m) => m.kind === 'user' && !m.rewound && !m.cancelled).reverse();
+      const fits = (m) => Boolean(m?.text?.trim()) && want.includes(m.text.trim());
+      if (fits(prompts[k])) return prompts[k].id;
+      let best = null;
+      prompts.forEach((m, i) => {
+        if (fits(m) && (!best || Math.abs(i - k) < Math.abs(best.i - k))) best = { i, id: m.id };
+      });
+      return best?.id ?? null;
     }
 
     /** The prompts with their full text (matching the chat entry needs more than the list's 400 characters). */
-    async rewindPointsFull(sessionId) {
+    async rewindPointsFull(sessionId, budget) {
       const { openCodeRewindPoints } = await import('./session-admin.js');
-      return openCodeRewindPoints({ opencode: this.m.opencode, sessionId });
+      return openCodeRewindPoints({ opencode: this.m.opencode, sessionId, budget });
     }
 
     /** The servers configured for OpenCode (global + project); their live state is only known inside OpenCode. */
