@@ -30,7 +30,7 @@ export function engineSwitchHtml() {
       const on = e === current;
       const off = !engineAvailable(e);
       const title = off ? `${engineLabel(e)} belum terpasang di laptop ini` : on ? `Sedang dipakai` : `Pindah ke ${engineLabel(e)}`;
-      return `<button type="button" class="engine-opt${on ? ' on' : ''}" data-act="engine" data-engine="${escapeHtml(e)}" aria-pressed="${on}" title="${escapeHtml(title)}"${off || !state.accountAuth ? ' disabled' : ''}>${escapeHtml(engineLabel(e))}${off ? ' <small>(tidak terpasang)</small>' : ''}</button>`;
+      return `<button type="button" class="engine-opt${on ? ' on' : ''}" data-act="engine" data-engine="${escapeHtml(e)}" aria-pressed="${on}" title="${escapeHtml(title)}"${off || !state.accountAuth ? ' disabled' : ''}>${escapeHtml(engineLabel(e))}${off ? ' <small>(tidak terpasang)</small>' : state.config?.engines?.[e]?.version ? ` <small class="muted">v${escapeHtml(state.config.engines[e].version)}</small>` : ''}</button>`;
     })
     .join('');
   return `<div class="acct-section engine-switch"><div class="acct-title"><b>Mesin AI</b></div>

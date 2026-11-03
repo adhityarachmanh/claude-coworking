@@ -157,7 +157,7 @@ function applyCaps(caps, engine) {
   const off = Object.keys(CAP_NAMES).filter((c) => !caps[c]);
   const note = $('#engine-note');
   note.hidden = !off.length || state.active === DEMO_ID;
-  note.textContent = off.length ? `${engineLabel(engine)} (Fase 1) belum mendukung: ${off.map((c) => CAP_NAMES[c]).join(', ')}.` : '';
+  note.textContent = off.length ? `${engineLabel(engine)} belum mendukung: ${off.map((c) => CAP_NAMES[c]).join(', ')}.` : '';
   applyCapsToDom();
 }
 

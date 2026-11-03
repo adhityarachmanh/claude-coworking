@@ -454,6 +454,12 @@ Tiap mesin adalah entitas terpisah; pindah mesin tidak menghapus riwayat mesin l
   login/cancel|logout`. Error dipotong ke baris pertama penyebab; API key/kode tidak pernah dilog. Catatan: body (berisi API key)
   dikirim sebagai argumen `--data` proses `opencode` berumur pendek di laptop sendiri.
 - **Riwayat sesi**: dengan OpenCode, `/api/projects/:id/sessions` memakai `opencode session list --format json` di folder project.
-- **Backup** (📦) selalu berisi riwayat Claude Code (chat `data/chats` + pengaturan/sesi Claude, juga saat OpenCode aktif). Import hanya saat Claude Code aktif (409 kalau tidak), agar tidak tercampur. Chat OpenCode belum ikut backup.
+- **Backup** (📦) selalu berisi riwayat Claude Code (chat `data/chats` + pengaturan/sesi Claude, juga saat OpenCode aktif). Import hanya saat Claude Code aktif (409 kalau tidak), agar tidak tercampur. Chat OpenCode ikut sebagai `office/chats-opencode/<id>.jsonl` dan saat import digabung ke folder workspace OpenCode (`Hub.importEngineChats`).
 - Pindah mesin juga ditolak bila 📋 Antrian masih berisi item, chat belum tersimpan ke disk, atau migrasi chat lama gagal.
 
+## 12. Fase 2a: Mode tim, Effort, versi
+
+- **Mode tim** (`caps.team = true`): `SessionManager.openCodeTeamConfig()` menulis `data/team/opencode-<hash>.json` = `{ agents: { <role>: { description, system, mode: "subagent" } }, instructions: [opencode-lead-<hash>.md] }` (skema `Config.Info` OpenCode 2.x) dan diberikan lewat env `OPENCODE_CONFIG` (17 prompt ≈ 34 KB, melebihi batas env Windows 32 KB untuk `OPENCODE_CONFIG_CONTENT`). Prompt Lead ditambah satu kalimat: delegasi lewat tool `subagent` (`agent` = nama role). Terbukti dengan OpenCode asli: Lead memanggil `subagent {agent:"pm"}`.
+- **Atribusi subagent**: OpenCode mengalirkan tool milik subagent ke sesi yang sama dengan judul `"<description>: <tool>"`. `AcpAdapter` mengingat `description → toolCallId` dari panggilan `subagent` yang berjalan, membuang awalan judul dan mengirim `parent_tool_use_id`, jadi kerja itu tercatat untuk role subagent (seperti subagent Claude).
+- **Effort** (`caps.effort = true`): opsi ACP `effort` (kategori `thought_level`, nilainya per model, mis. `low|medium|high|xhigh|max|default`). `effortValue()` memilih level terdekat yang tersedia; diterapkan setelah handshake, saat effort diganti, dan lagi setelah ganti model.
+- **Versi**: `opencode --version` (15 dtk) setelah start, masuk `config.engines.opencode.version` dan tampil di tombol mesin di Akun.

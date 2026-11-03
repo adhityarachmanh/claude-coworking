@@ -69,7 +69,7 @@ async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion }, re
     hub.save(); // the state file on disk and in the backup agree
     const name = `adhit-office-backup-${new Date().toLocaleDateString('sv-SE')}.zip`; // local date, YYYY-MM-DD
     res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
-    const result = await writeBackup(res, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.backupChatsDir(), appVersion });
+    const result = await writeBackup(res, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), appVersion });
     res.end();
     const skipped = result.skipped.length ? `, ${result.skipped.length} dilewati (symlink/nama tidak valid)` : '';
     console.log(`Backup riwayat diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB${skipped}`);
@@ -163,6 +163,7 @@ async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir,
         idMap.set(idOfPath(remap.unmapPath(path.resolve(p.path))), p.id); // the id this folder had on the old machine
       }
       Object.assign(summary.state, hub.mergeProjectData(imported, idMap, result.chats));
+      for (const [engine, chats] of Object.entries(result.engineChats ?? {})) summary.state.chats += hub.importEngineChats(engine, idMap, chats);
       // Team names: only roles this machine has not renamed itself.
       const own = hub.persisted.teamNames ?? {};
       const names = { ...cleanTeamNames(imported.teamNames), ...own };
@@ -179,7 +180,9 @@ async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir,
     if (err instanceof BackupError) return json(res, err.status, { error: err.message });
     throw err;
   } finally {
-    await rm(file, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    // Unlocked first: the answer is already out, and the next import must not see a lock held only by the temp
+    // file's cleanup (Windows retries rm for a while). The file name is unique, so nothing else uses it.
     backupLock.busy = false;
+    await rm(file, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
   }
 }

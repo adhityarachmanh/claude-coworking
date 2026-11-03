@@ -700,6 +700,44 @@ export class Hub {
     return added;
   }
 
+  /**
+   * A backup's chats of another engine's workspace (office/chats-opencode): merged into that engine's chat files
+   * while it is parked (import runs with Claude Code active), by message like importChat. @returns {number} added
+   */
+  importEngineChats(engine, idMap, chats) {
+    if (!ENGINES.includes(engine) || engine === this.persisted.engine || !isObject(chats)) return 0;
+    const store = new ChatStore(this.chatDir(engine), { limit: CHAT_LIMIT });
+    let added = 0;
+    for (const [from, list] of Object.entries(chats)) {
+      const id = idMap.get(from);
+      if (!id || id === DEMO_ID || !isChatId(id) || !Array.isArray(list)) continue;
+      let chat;
+      try {
+        chat = store.read(id).messages;
+      } catch {
+        continue; // unreadable now: never overwritten
+      }
+      const known = new Set(chat.map(messageKey));
+      const fresh = [];
+      for (const raw of list.slice(-CHAT_LIMIT)) {
+        const m = cleanImportedMessage(raw);
+        if (!m || known.has(messageKey(m))) continue;
+        known.add(messageKey(m));
+        fresh.push({ ...m, origId: m.origId ?? m.id, id: `m${++this.seq}`, project: id });
+      }
+      if (!fresh.length) continue;
+      relabelShellRows({ [id]: fresh });
+      store.writeAll(id, interleaveByTime(chat, fresh).slice(-CHAT_LIMIT));
+      added += fresh.length;
+    }
+    return added;
+  }
+
+  /** The other engines' chat folders a backup carries too (by engine). */
+  backupEngineChats() {
+    return Object.fromEntries(ENGINES.filter((e) => e !== 'claude').map((e) => [e, this.chatDir(e)]));
+  }
+
   /** Adds a backup's messages to a project's chat (rules in mergeProjectData). @returns {number} added */
   importChat(id, list) {
     if (this.chatStore.unreadable.has(id)) return 0; // its file can't be read now: it would be overwritten

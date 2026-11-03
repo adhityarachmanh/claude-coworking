@@ -82,3 +82,13 @@ function listOpenCodeSessions(bin, cwd, limit) {
     });
   });
 }
+
+/** `opencode --version` → "2.0.18" ('' when it does not answer within 15 s). */
+export function openCodeVersion(bin) {
+  if (!bin) return Promise.resolve('');
+  return new Promise((resolve) => {
+    execFile(bin.command, [...bin.args, '--version'], { encoding: 'utf8', timeout: 15_000, windowsHide: true }, (err, out) => {
+      resolve(err ? '' : (String(out).match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? ''));
+    });
+  });
+}

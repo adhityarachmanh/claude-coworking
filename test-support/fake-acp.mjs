@@ -72,7 +72,7 @@ if (process.argv[2] !== 'acp') {
 }
 
 // FAKE_ACP_FAIL_ONCE=<file>: the very first `acp` process dies at initialize (a cold start), later ones work.
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 const failOnce = process.env.FAKE_ACP_FAIL_ONCE;
 const coldStart = Boolean(failOnce) && !existsSync(failOnce);
 if (coldStart) writeFileSync(failOnce, 'started');
@@ -85,8 +85,16 @@ const config = (() => {
   }
 })();
 const bash = config.permission?.bash ?? 'allow';
+// Mode tim: OPENCODE_CONFIG points at the app's team file (agents + the Lead's instructions), like the real one.
+const team = (() => {
+  try {
+    return process.env.OPENCODE_CONFIG ? JSON.parse(readFileSync(process.env.OPENCODE_CONFIG, 'utf8')) : null;
+  } catch {
+    return null;
+  }
+})();
 const sessions = new Set(['ses_fakeold']);
-let options = { model: 'opencode-go/beam-free', mode: 'build' };
+let options = { model: 'opencode-go/beam-free', mode: 'build', effort: 'default' };
 let cost = 0;
 let seq = 0;
 let cancelTurn = null;
@@ -98,6 +106,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const configOptions = () => [
   { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: options.model, options: [{ value: 'opencode-go/beam-free', name: 'beam free' }, { value: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' }] },
   { id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: options.mode, options: [{ value: 'build', name: 'build' }, { value: 'plan', name: 'plan' }] },
+  { id: 'effort', name: 'Effort', category: 'thought_level', type: 'select', currentValue: options.effort, options: ['low', 'high', 'max', 'default'].map((value) => ({ value, name: value })) },
 ];
 const ask = (params) =>
   new Promise((resolve) => {
@@ -113,6 +122,27 @@ async function turn(sessionId, text) {
       await sleep(20);
     }
   };
+  if (/effort/.test(text)) {
+    await say('msg_effort', `effort=${options.effort}`);
+    return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+  }
+  if (/tim/.test(text)) {
+    // OpenCode 2.x: the Lead calls `subagent`; the subagent's tools come titled "<description>: <tool>"
+    const agents = Object.keys(team?.agents ?? {});
+    if (!agents.includes('backend') || !team.instructions?.length) {
+      await say('msg_noteam', 'tanpa tim');
+      return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+    }
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: 'call-sub-1', title: 'subagent', kind: 'think', status: 'pending', rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-sub-1', title: 'subagent', kind: 'think', status: 'in_progress', rawInput: { agent: 'backend', description: 'Cek API login', prompt: 'periksa' } });
+    await sleep(20);
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: 'call-sub-read', title: 'Cek API login: read', kind: 'read', status: 'pending', rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-sub-read', title: 'Cek API login: read', kind: 'read', status: 'in_progress', rawInput: { path: 'README.md' } });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-sub-read', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: '1: # Toko' } }] });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-sub-1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'API aman' } }] });
+    await say('msg_team', 'Tim selesai.');
+    return { stopReason: 'end_turn', usage: { inputTokens: 30, outputTokens: 6, totalTokens: 36 } };
+  }
   if (/lama/.test(text)) {
     await say('msg_long', 'Sedang ', 'bekerja lama…');
     await new Promise((r) => (cancelTurn = r));

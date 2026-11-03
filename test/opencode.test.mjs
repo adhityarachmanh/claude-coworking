@@ -124,7 +124,9 @@ test('config.engines announces OpenCode with its caps; the engine is app-wide; m
   assert.equal(snap.config.engine, 'claude', 'Claude Code until OpenCode is chosen in Akun');
   assert.equal(snap.config.engines.claude.available, true);
   assert.equal(snap.config.engines.opencode.available, true);
-  assert.equal(snap.config.engines.opencode.caps.rewind, false, 'Fase 1: no rewind for OpenCode');
+  assert.equal(snap.config.engines.opencode.caps.rewind, false, 'no rewind for OpenCode');
+  assert.equal(snap.config.engines.opencode.caps.team, true);
+  assert.equal(snap.config.engines.opencode.caps.effort, true);
   assert.deepEqual(snap.config.engines.opencode.caps.modes, ['manual', 'acceptEdits', 'auto', 'plan']);
   const id = await projectId();
   await api(`/api/projects/${id}/settings`, { model: 'opus' });
@@ -291,6 +293,55 @@ test('review regressions: resume an OpenCode session, queue and bad engine block
   assert.equal(imp.status, 409, 'a backup (Claude history) is not imported into OpenCode');
   await useEngine('claude');
   await useEngine('opencode');
+});
+
+test('Mode tim: roles as OpenCode subagents (OPENCODE_CONFIG), their tools worked by that role; effort per model', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  await api(`/api/projects/${id}/settings`, { team: true, mode: 'auto' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'kerja tim' });
+  const delegate = await waitFor((t, o) => t === 'office' && o.project === id && o.kind === 'delegate');
+  assert.equal(delegate.role, 'backend', 'the subagent call is a delegation to the Backend role');
+  const read = await waitFor((t, o) => t === 'office' && o.project === id && o.kind === 'tool_start' && o.tool === 'Read');
+  assert.equal(read.role, 'backend', "the subagent's own read is the Backend's work, not the Lead's");
+  assert.equal((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result')).ok, true);
+  assert.ok(readdirSync(path.join(TMP, 'data', 'team')).some((f) => /^opencode-[0-9a-f]{16}\.json$/.test(f)), 'the team config file');
+
+  await api(`/api/projects/${id}/settings`, { effort: 'xhigh' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'cek effort' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  assert.equal(lastText(id), 'effort=max', 'xhigh → the nearest level the model offers');
+  await api(`/api/projects/${id}/settings`, { effort: '', team: false, mode: 'manual' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'kerja tim lagi' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  assert.equal(lastText(id), 'tanpa tim', 'Mode tim off: a fresh process without the team config');
+});
+
+test('📦 Backup carries OpenCode\'s chats (office/chats-opencode/) and restores them into its parked workspace', async () => {
+  await useEngine('claude');
+  const zip = Buffer.from(await (await fetch(`${BASE}/api/backup/export`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: '{}' })).arrayBuffer());
+  assert.ok(zip.includes('office/chats-opencode/'), `OpenCode's chat files are in the backup (${zip.length} B: ${zip.subarray(0, 120).toString('latin1')})`);
+  assert.ok(zip.includes('office/chats/'), "and Claude Code's as before");
+  await useEngine('opencode');
+
+  const { Hub } = await import('../src/hub.js');
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-hub-'));
+  try {
+    const hub = new Hub({ dataDir: dir });
+    const msg = (text, ts) => ({ id: `m${ts}`, ts, project: 'old', kind: 'user', text });
+    const idMap = new Map([['old', 'proj1']]);
+    assert.equal(hub.importEngineChats('opencode', idMap, { old: [msg('dari opencode', 1000), msg('kedua', 2000)] }), 2);
+    assert.equal(hub.importEngineChats('opencode', idMap, { old: [msg('dari opencode', 1000)] }), 0, 'idempotent');
+    assert.equal(hub.chatOf('proj1').length, 0, "Claude Code's workspace untouched");
+    assert.ok(readdirSync(path.join(dir, 'chats-opencode')).includes('proj1.jsonl'));
+    hub.switchEngine('opencode');
+    assert.deepEqual(hub.chatOf('proj1').map((m) => m.text), ['dari opencode', 'kedua'], 'shown once OpenCode is the engine');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('OpenCode provider logins: list, API key, OAuth, logout (through `opencode api`)', async () => {

@@ -185,18 +185,21 @@ Mesin dipilih untuk seluruh aplikasi di **👤 Akun → Mesin AI**:
 
 Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude Code, `data/chats-opencode` untuk OpenCode), percakapan yang dilanjutkan, pengaturan model/mode per project, dan giliran yang terpotong. Pindah mesin tidak menghapus apa pun: saat kembali, riwayat mesin itu muncul lagi persis seperti ditinggalkan. Yang dipakai bersama: daftar project, favorit, nama tim. Pindah mesin ditolak selama ada project yang sedang bekerja atau 📋 Antrian masih berisi item, dan semua tab/HP yang terbuka dimuat ulang otomatis.
 
-**Login OpenCode.** OpenCode tidak punya satu akun: tiap provider login sendiri. Dengan mesin OpenCode, 👤 Akun menampilkan provider yang sudah terhubung (kredensial tersimpan atau variabel lingkungan) dengan tombol **Logout** per kredensial, dan **＋ Login provider** (cari provider → API key, atau OAuth lewat browser, termasuk form tambahan seperti GitHub Enterprise). Semuanya lewat `opencode api` (penyimpanan yang sama dengan `opencode auth login|logout|list`); API key tidak dicatat di log. Dari HP hanya lewat Tailscale, sama seperti login Claude. 🕘 Riwayat sesi menampilkan (dan melanjutkan) sesi OpenCode project itu. 📦 Backup riwayat berisi riwayat Claude Code; import hanya saat Claude Code aktif.
+**Login OpenCode.** OpenCode tidak punya satu akun: tiap provider login sendiri. Dengan mesin OpenCode, 👤 Akun menampilkan provider yang sudah terhubung (kredensial tersimpan atau variabel lingkungan) dengan tombol **Logout** per kredensial, dan **＋ Login provider** (cari provider → API key, atau OAuth lewat browser, termasuk form tambahan seperti GitHub Enterprise). Semuanya lewat `opencode api` (penyimpanan yang sama dengan `opencode auth login|logout|list`); API key tidak dicatat di log. Dari HP hanya lewat Tailscale, sama seperti login Claude. 🕘 Riwayat sesi menampilkan (dan melanjutkan) sesi OpenCode project itu. 📦 Import backup hanya saat Claude Code aktif; chat OpenCode di dalamnya masuk ke workspace OpenCode.
 
-| | OpenCode (Fase 1) |
+| | OpenCode |
 |---|---|
 | Didukung | Chat streaming, tool + animasi kantor, papan todo, **kartu izin** (Izinkan / Selalu / Izinkan semua / Tolak), ■ Stop / `Esc`, antrean, `!` shell, lanjut sesi OpenCode (`ses_…`), ▶ Lanjutkan setelah restart, token + biaya ke 📊 Laporan dan 💰 Batas antrian |
 | Model | Daftar dari `opencode models` (provider yang kamu atur di OpenCode), bisa dicari; *Default* = pilihan OpenCode sendiri |
 | Mode izin | 🛡️ Tanya dulu · ✏️ Auto-edit · ⚡ Auto · 📋 Rencana dulu (agent `plan` OpenCode). Aturannya dikirim per proses lewat `OPENCODE_CONFIG_CONTENT`, jadi config OpenCode milikmu tidak pernah diubah |
-| Belum | Effort, Mode tim, Rewind, kelola MCP, tugas latar, mirror sesi terminal OpenCode. Kontrolnya disembunyikan atau diberi alasan |
+| Mode tim | Role kantor jadi **subagent OpenCode** (file config `OPENCODE_CONFIG` berisi `agents` + prompt Lead sebagai `instructions`). Lead mendelegasikan lewat tool `subagent`; tool milik subagent dikerjakan role itu di kantor |
+| Effort | Opsi `effort` OpenCode per model (mis. low/high/max): dipilih level terdekat yang ditawarkan model |
+| Belum | Rewind, kelola MCP, tugas latar, mirror sesi terminal OpenCode, ganti nama sesi. Kontrolnya disembunyikan atau diberi alasan |
 
 - Token OpenCode tercatat di laporan sebagai akun **OpenCode**, terpisah dari akun Claude.
 - Setelah satu **Tolak**, OpenCode menghentikan gilirannya, sehingga kartu izin lain dari giliran itu ditutup otomatis.
 - Pesan pertama yang menyalakan layanan latar OpenCode dicoba ulang sekali secara otomatis.
+- 📦 Backup riwayat membawa chat kedua mesin (`office/chats/` dan `office/chats-opencode/`).
 - Desain lengkap: [`docs/design-opencode.md`](docs/design-opencode.md).
 
 ### Tim & kantor

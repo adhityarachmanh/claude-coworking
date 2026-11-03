@@ -17,11 +17,12 @@ const INTERRUPT_GRACE_MS = 8000;
 const STDERR_TAIL = 4000;
 /**
  * What the UI may offer for an OpenCode project (config.engines.opencode.caps, read by public/js/core/engine-caps.js).
- * Fase 1: no effort, team, rewind, MCP management, background tasks, interactive questions, session export or mirror.
+ * Effort = OpenCode's per-model "effort" config option (thought level); Mode tim = the roles as OpenCode subagents.
+ * Not (yet): rewind, MCP management, background tasks, interactive questions, session export or mirror.
  */
 export const OPENCODE_CAPS = Object.freeze({
-  effort: false,
-  team: false,
+  effort: true,
+  team: true,
   rewind: false,
   mcp: false,
   bgTasks: false,
@@ -47,8 +48,18 @@ export function permissionConfig(mode) {
 
 /** OpenCode's agent mode: its read-only "plan" agent for 📋 Rencana dulu, "build" otherwise. */
 const agentMode = (mode) => (mode === 'plan' ? 'plan' : 'build');
-/** Settings that only a fresh process can change (the permission config is read at start). */
-const processKey = (s) => JSON.stringify(permissionConfig(s.mode));
+/** Settings that only a fresh process can change (the permission config and the team are read at start). */
+const processKey = (s) => JSON.stringify([permissionConfig(s.mode), Boolean(s.team)]);
+
+/**
+ * The app's effort → a value of OpenCode's `effort` option for the current model (its values differ per model, e.g.
+ * low | high | max | default). Nearest offered level; '' (Default) → "default". null when the model has no effort.
+ */
+const EFFORT_CANDIDATES = { '': ['default'], low: ['low', 'minimal'], medium: ['medium', 'default'], high: ['high'], xhigh: ['xhigh', 'max', 'high'], max: ['max', 'xhigh', 'high'] };
+export function effortValue(effort, configOptions) {
+  const values = (configOptions ?? []).find((o) => o.id === 'effort')?.options?.map((o) => o.value) ?? [];
+  return (EFFORT_CANDIDATES[effort ?? ''] ?? []).find((v) => values.includes(v)) ?? null;
+}
 
 const textOf = (content) =>
   (Array.isArray(content) ? content : [])
@@ -67,7 +78,8 @@ export function mapTool({ kind, title = '', rawInput = {}, locations = [], conte
   const diff = (Array.isArray(content) ? content : []).find((c) => c?.type === 'diff');
   if (typeof input.command === 'string') return { name: 'Bash', input: { command: input.command, description: input.description } };
   if (t.startsWith('todo')) return { name: 'TodoWrite', input: { todos: Array.isArray(input.todos) ? input.todos : [] } };
-  if (t === 'task' || t === 'agent') return { name: 'Agent', input: { subagent_type: input.subagent_type ?? input.agent ?? 'general', description: input.description ?? title, prompt: input.prompt } };
+  // OpenCode 2.x delegates with `subagent` ({ agent, prompt, description }); 1.x with `task` ({ subagent_type }).
+  if (t === 'task' || t === 'agent' || t === 'subagent') return { name: 'Agent', input: { subagent_type: input.subagent_type ?? input.agent ?? 'general', description: input.description ?? title, prompt: input.prompt } };
   if (kind === 'read' || t === 'read') return { name: 'Read', input: { file_path: file } };
   if (kind === 'edit' || ['write', 'edit', 'patch', 'multiedit', 'apply_patch'].includes(t)) {
     const oldText = diff?.oldText ?? input.oldString ?? input.old_string;
@@ -85,7 +97,10 @@ export class AcpAdapter {
   /** @param {(msg: object) => void} emit */
   constructor(emit) {
     this.emit = emit;
-    this.tools = new Map(); // toolCallId -> { kind, title, rawInput, locations, content, started, done }
+    this.tools = new Map(); // toolCallId -> { kind, title, rawInput, locations, content, started, done, parent }
+    // Mode tim: a running `subagent` call's description -> its toolCallId. OpenCode streams the subagent's own tool
+    // calls into the same session titled "<description>: <tool>"; they become that role's work (parent_tool_use_id).
+    this.subagents = new Map(); // description -> [toolCallId, …] (several subagents may share one description)
     this.text = null; // { id, parts } — the assistant message being streamed
     this.planSeq = 0;
   }
@@ -115,7 +130,12 @@ export class AcpAdapter {
         if ((u.status === 'completed' || u.status === 'failed') && !info.done) {
           info.done = true;
           const text = textOf(u.content) || (u.rawOutput?.error ? String(u.rawOutput.error) : u.status === 'completed' ? 'ok' : 'gagal');
-          this.emit({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: u.toolCallId, content: clip(text, 8000), is_error: u.status === 'failed' }] } });
+          this.emit({ type: 'user', parent_tool_use_id: info.parent ?? null, message: { content: [{ type: 'tool_result', tool_use_id: u.toolCallId, content: clip(text, 8000), is_error: u.status === 'failed' }] } });
+          for (const [desc, ids] of this.subagents) {
+            const left = ids.filter((x) => x !== u.toolCallId);
+            if (left.length) this.subagents.set(desc, left);
+            else this.subagents.delete(desc);
+          }
         }
         return;
       }
@@ -135,7 +155,17 @@ export class AcpAdapter {
   toolInfo(id, u = {}) {
     const info = this.tools.get(id) ?? { kind: 'other', title: '', rawInput: {}, locations: [], content: [], started: false, done: false };
     if (u.kind) info.kind = u.kind;
-    if (u.title) info.title = u.title;
+    if (u.title) {
+      // "<subagent description>: <tool>" → the subagent's own call, under its Agent row
+      // the longest running description that prefixes the title (a description may itself contain ": ")
+      const title = String(u.title);
+      const desc = [...this.subagents.keys()].filter((d) => title.startsWith(`${d}: `)).sort((a, b) => b.length - a.length)[0];
+      const parent = desc ? this.subagents.get(desc)[0] : undefined; // the oldest still running with that description
+      if (parent && parent !== id) {
+        info.parent = parent;
+        info.title = title.slice(desc.length + 2);
+      } else if (!info.parent) info.title = title;
+    }
     if (u.rawInput && Object.keys(u.rawInput).length) info.rawInput = u.rawInput;
     if (u.locations?.length) info.locations = u.locations;
     if (u.content?.length) info.content = u.content;
@@ -150,7 +180,10 @@ export class AcpAdapter {
     info.started = true;
     this.flushText(); // the text before a tool call ends there, as in Claude's messages
     const { name, input } = mapTool(info);
-    this.emit({ type: 'assistant', message: { id: `acp-tool-${id}`, content: [{ type: 'tool_use', id, name, input }] } });
+    // only a real description (not the "subagent" title fallback) can prefix the subagent's own calls
+    const desc = info.rawInput?.description;
+    if (name === 'Agent' && typeof desc === 'string' && desc) this.subagents.set(desc, [...(this.subagents.get(desc) ?? []), id]);
+    this.emit({ type: 'assistant', parent_tool_use_id: info.parent ?? null, message: { id: `acp-tool-${id}`, content: [{ type: 'tool_use', id, name, input }] } });
     return { name, input };
   }
 
@@ -177,6 +210,7 @@ export class AcpAdapter {
       permission_denials: [],
     });
     this.tools.clear();
+    this.subagents.clear();
   }
 }
 
@@ -319,8 +353,19 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       } else a.mode = s.mode;
       if (s.model !== a.model) {
         a.model = s.model;
-        if (s.model) this.ready.then(() => this.setOption('model', s.model)).catch((err) => this.controlFailed('model', err));
+        a.effort = s.effort;
+        // a model has its own effort levels: the chosen effort is applied again after the switch
+        if (s.model)
+          this.ready
+            .then(() => this.setOption('model', s.model))
+            .then(
+              () => this.applyEffort(s.effort).catch((err) => this.controlFailed('effort', err)),
+              (err) => this.controlFailed('model', err),
+            );
         else if (!this.busy) this.closeChild(); // back to OpenCode's own default: a fresh session picks it
+      } else if (s.effort !== a.effort) {
+        a.effort = s.effort;
+        this.ready.then(() => this.applyEffort(s.effort)).catch((err) => this.controlFailed('effort', err));
       }
     }
 
@@ -372,6 +417,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
             OPENCODE_DISABLE_AUTOUPDATE: '1',
             // Per-process config: the user's ~/.config/opencode stays untouched.
             OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: permissionConfig(settings.mode) }),
+            // Mode tim: the roles as subagents + the Lead's prompt, from a file (17 prompts pass Windows' 32 KB env limit).
+            ...(settings.team && Object.keys(this.m.agents).length ? { OPENCODE_CONFIG: this.m.openCodeTeamConfig() } : {}),
           },
         });
       } catch (err) {
@@ -379,7 +426,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         return false;
       }
       this.child = child;
-      this.applied = { mode: settings.mode, model: settings.model };
+      this.applied = { mode: settings.mode, model: settings.model, effort: settings.effort, team: settings.team };
       this.stderr = '';
       this.cost = null;
       this.translator = new StreamTranslator({
@@ -467,6 +514,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const has = (id, value) => options.some((o) => o.id === id && (o.options ?? []).some((v) => v.value === value));
       if (settings.model && has('model', settings.model)) options = (await this.setOption('model', settings.model)) ?? options;
       if (has('mode', agentMode(settings.mode))) options = (await this.setOption('mode', agentMode(settings.mode))) ?? options;
+      this.configOptions = options;
+      await this.applyEffort(settings.effort); // '' = OpenCode's default level, same as a later change back to Default
       const model = options.find((o) => o.id === 'model')?.currentValue ?? null;
       this.hub.setStatus(this.id, { activeModel: model });
     }
@@ -474,7 +523,16 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     async setOption(configId, value) {
       const res = await this.rpc('session/set_config_option', { sessionId: this.acpSessionId, configId, value }, RPC_TIMEOUT_MS);
       if (configId === 'model') this.hub.setStatus(this.id, { activeModel: value });
+      if (res?.configOptions) this.configOptions = res.configOptions;
+      else if (configId === 'model') this.configOptions = null; // the new model's effort levels are unknown: none sent
       return res?.configOptions ?? null;
+    }
+
+    /** The app's effort on the current model (skipped when the model has no effort levels, or already has it). */
+    async applyEffort(effort) {
+      const value = effortValue(effort, this.configOptions);
+      const current = (this.configOptions ?? []).find((o) => o.id === 'effort')?.currentValue;
+      if (value && value !== current) await this.setOption('effort', value);
     }
 
     stderrTail() {

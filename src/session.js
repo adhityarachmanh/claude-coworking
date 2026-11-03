@@ -7,7 +7,7 @@
 //     do what the CLI's Shift+Tab, /model, /effort, Esc Esc, /mcp and /tasks do.
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { acpSessionClass } from './acp-session.js';
@@ -109,10 +109,36 @@ export class SessionManager {
     return { agentsFile, promptFile };
   }
 
+  /**
+   * Mode tim for OpenCode: one config file (OPENCODE_CONFIG) with the roles as subagents (`agents`, OpenCode 2.x
+   * schema: description + system prompt, mode subagent) and the Lead's prompt as `instructions`. Same hash and
+   * pruning as teamFiles; the user's own OpenCode config stays as it is (this is one more layer).
+   */
+  openCodeTeamConfig() {
+    const { agentsFile } = this.teamFiles();
+    const hash = path.basename(agentsFile).match(/-([0-9a-f]{16})\./)[1];
+    const dir = path.dirname(agentsFile);
+    const configFile = path.join(dir, `opencode-${hash}.json`);
+    if (!existsSync(configFile)) {
+      const leadFile = path.join(dir, `opencode-lead-${hash}.md`);
+      writeFileSync(leadFile, `${this.teamPrompt ?? ''}\n\nIn OpenCode, delegate with the \`subagent\` tool: \`agent\` = the role name above (pm, ba, backend…), \`prompt\` = the task.\n`, 'utf8');
+      const agents = {};
+      for (const [name, a] of Object.entries(this.agents)) agents[name] = { description: a.description ?? name, system: a.prompt ?? '', mode: 'subagent' };
+      writeFileSync(configFile, JSON.stringify({ agents, instructions: [leadFile] }), 'utf8'); // last: complete once present
+    }
+    return configFile;
+  }
+
   pruneTeamFiles(dir, keep, max = 6) {
     try {
-      const files = readdirSync(dir).filter((f) => /^(agents|lead)-[0-9a-f]{16}.(json|md)$/.test(f) && !f.includes(keep));
-      const hashes = [...new Set(files.map((f) => f.match(/-([0-9a-f]{16})./)[1]))];
+      const files = readdirSync(dir).filter((f) => /^(agents|lead|opencode|opencode-lead)-[0-9a-f]{16}.(json|md)$/.test(f) && !f.includes(keep));
+      // oldest first by modification time (readdir order is by name, i.e. random for hashes)
+      const age = new Map();
+      for (const f of files) {
+        const h = f.match(/-([0-9a-f]{16})./)[1];
+        age.set(h, Math.max(age.get(h) ?? 0, statSync(path.join(dir, f)).mtimeMs));
+      }
+      const hashes = [...age.keys()].sort((a, b) => age.get(a) - age.get(b));
       for (const h of hashes.slice(0, Math.max(0, hashes.length - (max - 1)))) {
         for (const f of files.filter((name) => name.includes(h))) rmSync(path.join(dir, f), { force: true });
       }

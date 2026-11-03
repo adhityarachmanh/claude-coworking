@@ -7,7 +7,7 @@ import https from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findClaude } from './src/claude-bin.js';
-import { findOpenCode } from './src/opencode-bin.js';
+import { findOpenCode, openCodeVersion } from './src/opencode-bin.js';
 import { OPENCODE_CAPS } from './src/acp-session.js';
 import { ClaudeCheckService } from './src/claude-check.js';
 import { Hub } from './src/hub.js';
@@ -117,6 +117,7 @@ const cutShort = hub.recoverTurns();
 rmSync(path.join(DATA_DIR, 'tmp'), { recursive: true, force: true });
 const claude = findClaude();
 const opencode = findOpenCode(); // optional second engine (src/acp-session.js); null when not installed
+let opencodeVersion = ''; // filled shortly after start (opencode --version), then sent with the config
 // Every role's subagent template; only the active team's go to `claude --agents` (saveTeam).
 const allAgents = loadAgentDefinitions(path.join(APP_DIR, '.claude', 'agents'));
 const initialTeam = storedEnabled(hub.persisted.team);
@@ -251,7 +252,7 @@ function refreshProjects() {
     engine: hub.engine, // the app-wide engine (Akun): each one is its own workspace (Hub.switchEngine)
     engines: {
       claude: { available: Boolean(claude), version: hub.catalogConfig().version ?? '' },
-      opencode: { available: Boolean(opencode), version: '', caps: OPENCODE_CAPS },
+      opencode: { available: Boolean(opencode), version: opencodeVersion, caps: OPENCODE_CAPS },
     },
   };
   hub.ready = wasReady;
@@ -453,7 +454,7 @@ const backupScheduler = new BackupScheduler({
   },
   backup: (out) => {
     hub.save(); // the state file on disk and in the backup agree
-    return writeBackup(out, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.backupChatsDir(), appVersion: APP_VERSION });
+    return writeBackup(out, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), appVersion: APP_VERSION });
   },
   lock: () => !backupLock.busy && (backupLock.busy = true),
   unlock: () => (backupLock.busy = false),
@@ -707,7 +708,15 @@ server.listen(PORT, HOST, () => {
   const url = `http://localhost:${PORT}`;
   console.log(`Adhit Office berjalan di ${url}`);
   console.log(claude ? `Claude Code: ${claude.command}` : 'PERINGATAN: Claude Code tidak ditemukan (set env CLAUDE_BIN).');
-  if (opencode) console.log(`OpenCode: ${opencode.command}`);
+  if (opencode) {
+    console.log(`OpenCode: ${opencode.command}`);
+    openCodeVersion(opencode).then((v) => {
+      opencodeVersion = v;
+      if (!v || !hub.config?.engines?.opencode) return;
+      hub.config.engines.opencode.version = v;
+      hub.broadcast('config', hub.config);
+    });
+  }
   console.log(`Folder projects: ${projectRoots().join('; ')}  ·  Role agents: ${Object.keys(sessions.agents).join(', ') || '-'}`);
   console.log(mirroring ? 'Mirror CLI: aktif (membaca ~/.claude/projects)' : 'Mirror CLI: nonaktif (~/.claude/projects tidak ada)');
   if (SYSTEM_CERTS) console.log(`TLS: ${SYSTEM_CERTS} sertifikat dari sistem ikut dipercaya (proxy/antivirus yang memeriksa HTTPS).`);

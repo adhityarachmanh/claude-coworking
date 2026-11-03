@@ -11,6 +11,7 @@
 //   office/state.json          the office's state (folders, favorites, settings…; no paired-device hashes);
 //                              backups made before data/chats existed carry the chats in it (`chats`)
 //   office/chats/<id>.jsonl    each project's chat history (data/chats, see src/chat-store.js)
+//   office/chats-opencode/<id>.jsonl  the same for OpenCode's workspace (data/chats-opencode, Hub.switchEngine)
 //   office/usage.jsonl         token ledger
 // Never included: login credentials (.credentials.json, ~/.claude.json), caches, logs.
 //
@@ -38,12 +39,13 @@ const MAX_DEFAULT_UNPACKED = 64 * 1024 ** 3;
 // usage.jsonl / history.jsonl of a backup are merged in memory: anything larger is skipped (with a warning).
 const MAX_MERGE_BYTES = 64 * 1024 * 1024;
 // A project's chat file in the archive (and in data/chats): the project id is the file name.
-const CHAT_ENTRY = /^office\/chats\/([A-Za-z0-9_-]{1,64})\.jsonl$/;
-/** The project id of a chat entry name, or null (also for Windows device names: con, nul…). */
-const chatEntryId = (name) => {
-  const id = CHAT_ENTRY.exec(name)?.[1];
-  return id && isChatId(id) ? id : null;
+const CHAT_ENTRY = /^office\/chats(?:-(opencode))?\/([A-Za-z0-9_-]{1,64})\.jsonl$/;
+/** { engine, id } of a chat entry name, or null (also for Windows device names: con, nul…). */
+const chatEntryOf = (name) => {
+  const m = CHAT_ENTRY.exec(name);
+  return m && isChatId(m[2]) ? { engine: m[1] ?? 'claude', id: m[2] } : null;
 };
+const chatEntryId = (name) => chatEntryOf(name)?.id ?? null;
 
 /** An import problem with its own HTTP status (ZipError = malformed/unsafe archive = 400). */
 export class BackupError extends Error {
@@ -160,7 +162,7 @@ async function addFile(zip, f) {
  *   chatsDir: data/chats (flushed by the caller first); its *.jsonl go in as office/chats/
  * @returns {Promise<{ files: number, bytes: number, skipped: string[] }>}
  */
-export async function writeBackup(out, { state, usageFile, chatsDir, appVersion = null, homeDir = os.homedir(), locations = claudeLocations(), zip64 = false }) {
+export async function writeBackup(out, { state, usageFile, chatsDir, engineChats = {}, appVersion = null, homeDir = os.homedir(), locations = claudeLocations(), zip64 = false }) {
   const { projectsDir, claudeDir } = locations;
   const files = [];
   const skipped = [];
@@ -197,13 +199,15 @@ export async function writeBackup(out, { state, usageFile, chatsDir, appVersion 
       // no usage recorded yet
     }
   }
-  if (chatsDir) {
-    for (const d of await readdirSafe(chatsDir)) {
-      const name = `office/chats/${d.name}`;
+  // engineChats: { opencode: data/chats-opencode } → office/chats-opencode/ (each engine's workspace)
+  for (const [prefix, dir] of [['chats', chatsDir], ...Object.entries(engineChats).map(([e, d]) => [`chats-${e}`, d])]) {
+    if (!dir) continue;
+    for (const d of await readdirSafe(dir)) {
+      const name = `office/${prefix}/${d.name}`;
       if (!d.isFile() || !chatEntryId(name)) continue; // symlinks, *.tmp of a compaction, anything else
       try {
-        const st = await fs.stat(path.join(chatsDir, d.name));
-        files.push({ name, abs: path.join(chatsDir, d.name), size: st.size, mtime: st.mtimeMs });
+        const st = await fs.stat(path.join(dir, d.name));
+        files.push({ name, abs: path.join(dir, d.name), size: st.size, mtime: st.mtimeMs });
       } catch {
         // vanished (project forgotten meanwhile)
       }
@@ -575,6 +579,7 @@ export async function restoreBackup(zipFile, ctx = {}) {
 
     let state = null;
     const chats = {};
+    const engineChats = {}; // engine -> { project id -> messages }, other workspaces than Claude Code's
     let chatBytes = 0; // every chat file is read into memory: bounded together, like usage/history
     for (const e of entries) {
       const parts = e.name.split('/');
@@ -588,7 +593,10 @@ export async function restoreBackup(zipFile, ctx = {}) {
           continue;
         }
         chatBytes += e.usize;
-        chats[chatEntryId(e.name)] = parseChatFile(await reader.read(e, maxMergeBytes), CHAT_LIMIT);
+        const { engine, id } = chatEntryOf(e.name);
+        const list = parseChatFile(await reader.read(e, maxMergeBytes), CHAT_LIMIT);
+        if (engine === 'claude') chats[id] = list;
+        else (engineChats[engine] ??= {})[id] = list;
       } else if (e.name === 'office/usage.jsonl') {
         if (!ledger || !mergeable(e)) continue;
         const rows = [];
@@ -670,6 +678,7 @@ export async function restoreBackup(zipFile, ctx = {}) {
       summary,
       state,
       chats,
+      engineChats,
       remap,
       projects: [...folders.values()],
     };
