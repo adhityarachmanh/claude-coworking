@@ -4,7 +4,7 @@
 // No network, no tokens, no access to your real OpenCode.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
@@ -38,6 +38,7 @@ before(async () => {
       OPENCODE_BIN: path.join(APP, 'test-support', 'fake-acp.mjs'),
       FAKE_ACP_FAIL_ONCE: path.join(TMP, 'acp-cold-start'), // the first OpenCode process dies: the retry must hide it
       FAKE_ACP_AUTH_FILE: path.join(TMP, 'acp-auth.json'),
+      FAKE_MCP_LOG: path.join(TMP, 'mcp-add.log'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'),
@@ -364,6 +365,54 @@ test('OpenCode like the real one: its commands, its agents (custom too), the use
   assert.match(lastText(id), /^agent=plan /, '📋 Rencana dulu = the plan agent, whatever agent is picked');
   await api(`/api/projects/${id}/settings`, { mode: 'manual', agent: '' });
   rmSync(path.join(TMP, 'projects', 'toko', 'opencode.json'));
+});
+
+test('OpenCode without the CLI: @file as a file reference, sessions forked / renamed / deleted / exported, AGENTS.md memory', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'link? lihat @README.md dan @tidak-ada.md' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  assert.equal(lastText(id), 'links=README.md', 'existing project files only');
+
+  mark = seen.length;
+  const fork = await api(`/api/projects/${id}/session-fork`, { sessionId: 'ses_fakeold' });
+  assert.equal(fork.status, 200);
+  assert.equal(fork.body.sessionId, 'ses_fork_fakeold');
+  assert.equal((await snapshot()).statuses[id].sessionId, 'ses_fork_fakeold', 'continues the copy');
+  assert.equal((await api(`/api/projects/${id}/session-rename`, { sessionId: 'ses_fakeold', title: 'Nama baru' })).status, 200);
+  assert.equal(readFileSync(path.join(TMP, 'acp-auth.json.title'), 'utf8'), 'ses_fakeold=Nama baru');
+  assert.equal((await api(`/api/projects/${id}/session-delete`, { sessionId: 'ses_fork_fakeold' })).status, 409, 'not the open one');
+  assert.equal((await api(`/api/projects/${id}/session-delete`, { sessionId: 'ses_fakeold' })).status, 200);
+  assert.equal(readFileSync(path.join(TMP, 'acp-auth.json.removed'), 'utf8'), 'ses_fakeold');
+  const exp = (await api(`/api/projects/${id}/session-export-json`, { sessionId: 'ses_fakeold' })).body;
+  assert.match(exp.name, /^opencode-toko-fakeold\.json$/);
+  assert.equal(exp.data.info.title, 'Sesi lama OpenCode');
+
+  const mem = (await api(`/api/projects/${id}/memory`)).body;
+  assert.deepEqual(mem.files.map((f) => f.label), ['AGENTS.md (project)', 'AGENTS.md (semua project)'], 'OpenCode reads AGENTS.md');
+  assert.equal((await api(`/api/projects/${id}/memory/save`, { key: 'project', content: '# Aturan\n', mtime: mem.file.mtime })).status, 200);
+  assert.equal(readFileSync(path.join(TMP, 'projects', 'toko', 'AGENTS.md'), 'utf8'), '# Aturan\n');
+  rmSync(path.join(TMP, 'projects', 'toko', 'AGENTS.md'));
+});
+
+test('🔌 MCP without the terminal: OpenCode lists opencode.json servers; ＋ Tambah through each engine\'s own `mcp add`', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  writeFileSync(path.join(TMP, 'projects', 'toko', 'opencode.json'), JSON.stringify({ mcp: { servers: { github: { type: 'remote', url: 'https://api.example.com/mcp' }, lokal: { type: 'local', command: ['npx', 'srv'], enabled: false } } } }));
+  const list = (await api(`/api/projects/${id}/mcp`)).body.servers;
+  assert.deepEqual(list.map((s) => [s.name, s.type, s.status]), [['github', 'remote', 'configured'], ['lokal', 'local', 'disabled']]);
+  rmSync(path.join(TMP, 'projects', 'toko', 'opencode.json'));
+
+  const log = () => readFileSync(path.join(TMP, 'mcp-add.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal((await api(`/api/projects/${id}/mcp-add`, { name: 'sentry', kind: 'remote', url: 'https://mcp.sentry.dev/mcp', scope: 'user' })).status, 200);
+  assert.deepEqual(log().at(-1), ['opencode', '--global', 'sentry', '--url', 'https://mcp.sentry.dev/mcp']);
+  await useEngine('claude');
+  assert.equal((await api(`/api/projects/${id}/mcp-add`, { name: 'pw', kind: 'local', command: 'npx -y "@playwright/mcp@latest"', env: ['TOKEN=a b'] })).status, 200);
+  assert.deepEqual(log().at(-1), ['claude', '-s', 'local', '-e', 'TOKEN=a b', 'pw', '--', 'npx', '-y', '@playwright/mcp@latest']);
+  assert.equal((await api(`/api/projects/${id}/mcp-add`, { name: 'x; rm -rf', kind: 'local', command: 'a' })).status, 400, 'names are checked');
+  assert.equal((await api(`/api/projects/${id}/mcp-add`, { name: 'y', kind: 'remote', url: 'file:///etc/passwd' })).status, 400, 'http(s) only');
+  await useEngine('opencode');
 });
 
 test('OpenCode provider logins: list, API key, OAuth, logout (through `opencode api`)', async () => {

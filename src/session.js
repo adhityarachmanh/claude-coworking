@@ -670,7 +670,9 @@ export class ClaudeSession {
     if (sessionId) {
       args.push('--resume', sessionId);
       if (this.resumeAt) args.push('--resume-session-at', this.resumeAt); // after a conversation rewind
+      if (this.forkNext) args.push('--fork-session'); // ⑂ Cabangkan: a copy under a new id (Claude reports it in init)
     }
+    this.forkNext = false;
     this.resumeAt = null;
 
     let child;

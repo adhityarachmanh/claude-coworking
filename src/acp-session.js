@@ -4,6 +4,9 @@
 //
 // The session class is built from ClaudeSession (acpSessionClass below) so the queue bookkeeping, `!` shell,
 // "Lanjutkan" after a restart, idle shutdown and status come along; only the protocol parts are replaced.
+import path from 'node:path';
+import { statSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { readUserPermission } from './opencode-bin.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -25,7 +28,7 @@ export const OPENCODE_CAPS = Object.freeze({
   effort: true,
   team: true,
   rewind: false,
-  mcp: false,
+  mcp: true, // the configured servers + ＋ Tambah (opencode mcp add); live status/login stay inside OpenCode
   bgTasks: false,
   askQuestion: false,
   exportSession: false,
@@ -251,7 +254,31 @@ export class AcpAdapter {
 }
 
 /** Prompt content for ACP: text plus 📎 images; text files ride along inside the text. */
-function promptBlocks(text, attachments = []) {
+/**
+ * `@path` mentions of files inside the project → ACP resource_link blocks (the text keeps the mention), so OpenCode
+ * knows the real file like in its own TUI. Only existing files below the project folder; at most 20.
+ */
+export function mentionLinks(text, projectPath) {
+  if (!projectPath) return [];
+  const root = path.resolve(projectPath);
+  const links = [];
+  const seen = new Set();
+  for (const m of String(text).matchAll(/(?:^|\s)@([\w./\\:-]+[\w/\\])/g)) {
+    const abs = path.resolve(root, m[1]);
+    if (seen.has(abs) || !(abs + path.sep).startsWith(root + path.sep) || abs === root) continue;
+    try {
+      if (!statSync(abs).isFile()) continue;
+    } catch {
+      continue;
+    }
+    seen.add(abs);
+    links.push({ type: 'resource_link', uri: pathToFileURL(abs).href, name: path.relative(root, abs).replace(/\\/g, '/') });
+    if (links.length >= 20) break;
+  }
+  return links;
+}
+
+function promptBlocks(text, attachments = [], projectPath = null) {
   const blocks = [];
   const extra = [];
   for (const a of attachments) {
@@ -260,6 +287,7 @@ function promptBlocks(text, attachments = []) {
     else extra.push(`(lampiran ${a.name} tidak bisa dikirim ke OpenCode)`);
   }
   blocks.unshift({ type: 'text', text: [text, ...extra].filter(Boolean).join('\n\n') });
+  blocks.push(...mentionLinks(text, projectPath));
   return blocks;
 }
 
@@ -303,7 +331,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       }
       const context = this.shellContext.splice(0).join('\n');
       const body = context ? `${context}\n\n${text}` : text;
-      const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false, blocks: promptBlocks(body, attachments) };
+      const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false, blocks: promptBlocks(body, attachments, this.project.path) };
       this.inflight.set(uuid, item);
       clearTimeout(this.idleTimer);
       if (item.state === 'started') this.runTurn(uuid, item);
@@ -413,8 +441,14 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       super.resume(sessionId, history);
     }
 
-    rename() {
-      return Promise.reject(Object.assign(new Error('Ganti judul sesi belum didukung untuk OpenCode.'), { status: 409 }));
+    /** /rename and the session bar title: OpenCode's session.update. */
+    async rename(title) {
+      const id = this.hub.sessionIdFor(this.id);
+      if (!id) throw Object.assign(new Error('Belum ada sesi. Kirim pesan dulu.'), { status: 409 });
+      const { renameOpenCodeSession } = await import('./session-admin.js');
+      const clean = await renameOpenCodeSession({ opencode: this.m.opencode, projectPath: this.project.path, sessionId: id, title });
+      this.hub.setStatus(this.id, { title: clean });
+      return { title: clean };
     }
 
     rewindPoints() {
@@ -429,12 +463,14 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       throw Object.assign(new Error('Rewind belum didukung untuk OpenCode.'), { status: 409 });
     }
 
+    /** The servers configured for OpenCode (global + project); their live state is only known inside OpenCode. */
     async mcpStatus() {
-      throw Object.assign(new Error('Status MCP belum didukung untuk OpenCode.'), { status: 409 });
+      const { listOpenCodeMcp } = await import('./mcp-admin.js');
+      return listOpenCodeMcp(this.project.path);
     }
 
-    async mcpAction() {
-      throw Object.assign(new Error('Pengaturan MCP belum didukung untuk OpenCode.'), { status: 409 });
+    async mcpAction(name) {
+      throw Object.assign(new Error(`Untuk OpenCode, login/sambung ulang server MCP masih lewat terminal: opencode mcp auth ${name ?? '<nama>'}`), { status: 409 });
     }
 
     refreshContext() {} // usage_update keeps the context meter current

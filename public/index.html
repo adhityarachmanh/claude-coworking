@@ -58,7 +58,10 @@
         <div id="stage" class="stage">
           <canvas aria-label="Kantor tim Claude"></canvas>
           <div class="overlay"></div>
+          <button id="view-mode" class="view-mode" type="button" aria-pressed="false" title="Ganti tampilan: kantor pixel ↔ jaringan otak AI">🧠 Mode Otak</button>
         </div>
+        <!-- Laptop: the people under the office can be folded away (remembered per browser, features/team.js) -->
+        <button id="team-toggle" class="team-toggle" type="button" aria-expanded="true" aria-controls="team"><span>👥 Karyawan</span><span class="team-toggle-chev" aria-hidden="true">▾</span></button>
         <div id="team" class="team"></div>
       </main>
 
@@ -351,13 +354,58 @@
     <div id="sessions-modal" class="modal" hidden>
       <div class="modal-card sessions-card" role="dialog" aria-modal="true" aria-label="Riwayat sesi">
         <div class="modal-head"><b>🕘 Riwayat sesi <small id="sessions-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <p class="muted small">Lanjutkan percakapan Claude Code sebelumnya di project ini, baik dari terminal (CLI) maupun dari web. Isi percakapannya dimuat ke chat dan Claude ingat konteksnya.</p>
+        <p class="muted small">Lanjutkan, cabangkan (⑂ salinan baru, aslinya tetap), unduh atau hapus percakapan sebelumnya di project ini, dari terminal maupun dari web.</p>
         <div class="sessions-tools">
           <input id="sessions-search" type="search" aria-label="Cari sesi" placeholder="Cari judul sesi…" autocomplete="off" />
           <button id="sessions-new" class="ghost">＋ Sesi baru</button>
         </div>
         <label class="switch small export-opt"><input class="export-tools-opt" type="checkbox" /> Export .md: sertakan ringkasan tool calls</label>
         <div id="sessions-list" class="sessions-list"></div>
+      </div>
+    </div>
+
+    <!-- 🧩 Ekstensi (/plugin, /agents, /hooks; features/extensions.js) -->
+    <div id="ext-modal" class="modal" hidden>
+      <div class="modal-card ext-card" role="dialog" aria-modal="true" aria-labelledby="ext-title">
+        <div class="modal-head"><b id="ext-title">🧩 Ekstensi Claude Code <small id="ext-project" class="muted"></small></b><button id="ext-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div id="ext-tabs" class="engine-opts" role="group" aria-label="Jenis ekstensi">
+          <button type="button" class="engine-opt" data-tab="plugins">🧩 Plugin</button>
+          <button type="button" class="engine-opt" data-tab="agents">🤖 Agents</button>
+          <button type="button" class="engine-opt" data-tab="hooks">🪝 Hooks</button>
+        </div>
+        <div id="ext-body" class="ext-body"></div>
+      </div>
+    </div>
+
+    <!-- ⇡ Pull request (features/pull-request.js): gh login + gh pr create -->
+    <div id="pr-modal" class="modal" hidden>
+      <div class="modal-card pr-card" role="dialog" aria-modal="true" aria-labelledby="pr-title-h">
+        <div class="modal-head"><b id="pr-title-h">⇡ Pull request <small id="pr-branch" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div id="pr-gh"></div>
+        <form id="pr-form" class="oc-form" hidden>
+          <label class="oc-field"><span>Judul *</span><input id="pr-title" required maxlength="256" autocomplete="off" /></label>
+          <label class="oc-field"><span>Deskripsi</span><textarea id="pr-body" rows="8" class="memory-text" placeholder="Ringkasan perubahan, cara menguji, risiko"></textarea></label>
+          <label class="oc-field"><span>Ke branch (kosong = branch default repo)</span><input id="pr-base" placeholder="main" autocomplete="off" /></label>
+          <label class="switch"><input id="pr-draft" type="checkbox" /> Draft</label>
+          <p class="muted small">Branch di-push dulu (upstream diatur bila baru, tanpa --force), lalu <code>gh pr create</code>.</p>
+          <div class="acct-actions"><button type="button" id="pr-claude" class="ghost" title="Claude menulis judul & deskripsi dari perubahannya, lalu membuat PR">✳ Biar Claude yang buat</button><button class="primary">⇡ Buat PR</button></div>
+          <p id="pr-result" class="small"></p>
+        </form>
+      </div>
+    </div>
+
+    <!-- 🧠 Memory (/memory, features/memory.js): CLAUDE.md / AGENTS.md editor, laptop or Tailscale -->
+    <div id="memory-modal" class="modal" hidden>
+      <div class="modal-card memory-card" role="dialog" aria-modal="true" aria-labelledby="memory-title">
+        <div class="modal-head"><b id="memory-title">🧠 Memory <small id="memory-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Instruksi yang dibaca setiap sesi (seperti <code>/memory</code> di terminal). Disimpan langsung ke file-nya.</p>
+        <div id="memory-tabs" class="engine-opts" role="group" aria-label="File memory"></div>
+        <p id="memory-hint" class="muted small"></p>
+        <textarea id="memory-text" class="memory-text" spellcheck="false" aria-label="Isi file memory"></textarea>
+        <div class="acct-actions">
+          <button type="button" id="memory-reload" class="ghost">↻ Muat ulang</button>
+          <button type="button" id="memory-save" class="primary">💾 Simpan (Ctrl+S)</button>
+        </div>
       </div>
     </div>
 
@@ -379,7 +427,18 @@
           <p class="small">Setelah login, browser diarahkan ke alamat <code>localhost</code> yang mungkin gagal dibuka di perangkat ini. Salin URL lengkap dari address bar, lalu tempel di sini:</p>
           <form id="mcp-callback-form"><input id="mcp-callback-url" aria-label="URL callback login MCP" placeholder="http://localhost:…/callback?code=…" autocomplete="off" /><button class="primary">Selesaikan login</button></form>
         </div>
+        <p id="mcp-engine-note" class="muted small"></p>
         <ul id="mcp-list" class="mcp-list"></ul>
+        <div class="acct-actions"><button type="button" id="mcp-add-toggle" class="ghost">＋ Tambah server</button></div>
+        <form id="mcp-add" class="oc-form mcp-add" hidden>
+          <label class="oc-field"><span>Nama *</span><input name="name" required pattern="[\w.\-]{1,60}" placeholder="mis. github, sentry, playwright" autocomplete="off" /></label>
+          <label class="oc-field"><span>Jenis</span><select name="kind"><option value="local">Lokal (perintah di laptop ini)</option><option value="remote">Remote (URL http/https)</option></select></label>
+          <label class="oc-field mcp-local"><span>Perintah *</span><input name="command" placeholder="mis. npx -y @playwright/mcp@latest" autocomplete="off" spellcheck="false" /></label>
+          <label class="oc-field mcp-remote" hidden><span>URL *</span><input name="url" type="url" placeholder="https://mcp.example.com/mcp" autocomplete="off" /></label>
+          <label class="oc-field"><span>Variabel lingkungan (satu per baris, NAMA=nilai)</span><textarea name="env" rows="2" spellcheck="false" placeholder="API_KEY=…"></textarea></label>
+          <label class="oc-field"><span>Berlaku untuk</span><select name="scope"><option value="local">Project ini (pribadi)</option><option value="project">Project ini (dibagi lewat file config project)</option><option value="user">Semua project</option></select></label>
+          <button class="primary">Tambah</button>
+        </form>
       </div>
     </div>
 

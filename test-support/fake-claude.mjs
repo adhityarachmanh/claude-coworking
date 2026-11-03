@@ -28,6 +28,48 @@ import { createInterface } from 'node:readline';
 
 const args = process.argv.slice(2);
 // `claude doctor` / `claude update` (⚙ Kompatibilitas): plain text, then exit, like the real CLI without a terminal
+// `claude mcp add …`: the argv is appended to FAKE_MCP_LOG (one JSON line) so a test can check what the app sent
+if (args[0] === 'mcp' && args[1] === 'add') {
+  if (process.env.FAKE_MCP_LOG) appendFileSync(process.env.FAKE_MCP_LOG, `${JSON.stringify(['claude', ...args.slice(2)])}\n`);
+  console.log(`Added MCP server ${args.find((a, i) => i > 1 && !a.startsWith('-') && args[i - 1] !== '-s' && args[i - 1] !== '-e' && args[i - 1] !== '--transport')}`);
+  process.exit(0);
+}
+// `claude plugin …` (🧩 Ekstensi): a tiny marketplace; installs are kept in FAKE_PLUGIN_STATE (JSON list of ids)
+if (args[0] === 'plugin') {
+  const file = process.env.FAKE_PLUGIN_STATE;
+  let installed = [];
+  try {
+    installed = JSON.parse(readFileSync(file, 'utf8'));
+  } catch {}
+  const save = () => file && writeFileSync(file, JSON.stringify(installed));
+  const id = args[2];
+  if (args[1] === 'list') {
+    const mine = installed.map((p) => ({ id: p.id, version: '1.0.0', scope: 'user', enabled: p.enabled }));
+    const catalog = [
+      { pluginId: 'reviewer@official', name: 'reviewer', description: 'Review kode otomatis' },
+      { pluginId: 'risky@community', name: 'risky', description: 'Butuh perintah marketplace' },
+    ];
+    console.log(JSON.stringify(args.includes('--available') ? { installed: mine, available: catalog } : mine));
+  } else if (args[1] === 'install') {
+    const accepted = args.includes('--accept-command');
+    if (id === 'risky@community' && !accepted) {
+      console.log(JSON.stringify({ ok: false, shownCommand: { command: 'npx risky-setup', sha256: 'a'.repeat(64) } }));
+      process.exit(1);
+    }
+    installed.push({ id, enabled: true });
+    save();
+    console.log(JSON.stringify({ ok: true, message: `Installed ${id}` }));
+  } else if (args[1] === 'uninstall') {
+    installed = installed.filter((p) => p.id !== id);
+    save();
+    console.log(JSON.stringify({ ok: true, message: `Uninstalled ${id}` }));
+  } else if (args[1] === 'enable' || args[1] === 'disable') {
+    for (const p of installed) if (p.id === id) p.enabled = args[1] === 'enable';
+    save();
+    console.log(JSON.stringify({ ok: true, message: `${args[1]}d ${id}` }));
+  }
+  process.exit(0);
+}
 if (args[0] === 'doctor' || args[0] === 'update') {
   console.log(args[0] === 'doctor' ? 'Claude Code doctor\n\nNo installation issues found.' : 'Claude Code is up to date (9.9.9-fake)');
   process.exit(0);

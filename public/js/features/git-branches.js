@@ -1,6 +1,8 @@
 // Perubahan tab → ⎇ git bar: current branch + ahead/behind, switch / create branch, fetch, pull (--ff-only),
 // push (sets the upstream the first time, never --force), and "🤖 Minta Claude buat PR" (fills the composer).
 // Reading works everywhere (also a WiFi phone); the actions need the laptop or Tailscale (the server's WiFi gate).
+import { openPullRequest } from './pull-request.js';
+import { closeModal } from '../ui/modals.js';
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
@@ -166,12 +168,18 @@ export function initGitBar() {
   });
   $('#ch-git-out-close').addEventListener('click', () => showOutput(''));
   // Puts the prompt in the composer (not sent): the user reads/edits it first.
+  // ⇡ PR: a form (gh pr create after a push), or let Claude write and open it (the prompt, as before).
   $('#ch-git-pr').addEventListener('click', () => {
     const branch = gitBar.info?.branch;
     if (!branch || state.readOnly) return;
-    const current = $('#prompt').value.trim();
-    fillComposer(current ? `${current}\n\n${PR_PROMPT(branch)}` : PR_PROMPT(branch));
-    document.querySelector('.tabs button[data-tab="chat"]')?.click();
-    toast('Prompt PR ada di kotak pesan. Periksa, lalu kirim.', 'ok');
+    openPullRequest(branch, {
+      fillWithClaude: () => {
+        closeModal('pr-modal');
+        const current = $('#prompt').value.trim();
+        fillComposer(current ? `${current}\n\n${PR_PROMPT(branch)}` : PR_PROMPT(branch));
+        document.querySelector('.tabs button[data-tab="chat"]')?.click();
+        toast('Prompt PR ada di kotak pesan. Periksa, lalu kirim.', 'ok');
+      },
+    });
   });
 }

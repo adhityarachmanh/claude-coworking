@@ -6,6 +6,16 @@ import { ConversationError, exportSession, searchSessions } from '../conversatio
 import { DEMO_ID } from '../hub.js';
 import { listSessions, sessionHistory } from '../transcripts.js';
 import { openCodeSessions } from '../opencode-bin.js';
+import { deleteSession, exportOpenCodeSession, forkOpenCodeSession, renameOpenCodeSession, SessionAdminError, validSessionId } from '../session-admin.js';
+
+/** Runs a 🕘 Riwayat sesi action; SessionAdminError / OpenCode errors become JSON with their status. */
+async function admin(res, fn) {
+  try {
+    return json(res, 200, await fn());
+  } catch (err) {
+    return json(res, err instanceof SessionAdminError ? err.status : (err.status ?? 502), { error: err.message });
+  }
+}
 import { answer, json } from './http.js';
 import { withSession } from './project.js';
 
@@ -54,6 +64,43 @@ export function register(router) {
     session.resume(sessionId, opencodeActive ? [] : sessionHistory(project.path, sessionId));
     return ok(res);
   }));
+  // 🗑 Hapus: never the open conversation (start a new one first), never one running in a terminal.
+  router.post('/api/projects/:id/session-delete', withSession(({ hub, opencode, dataDir }, req, res, { project }, body) => admin(res, async () => {
+    const sessionId = String(body.sessionId ?? '');
+    const st = hub.runtime.get(project.id)?.status ?? {};
+    if (sessionId === hub.sessionIdFor(project.id)) throw new SessionAdminError(409, 'Ini percakapan yang sedang dibuka. Mulai sesi baru dulu, lalu hapus.');
+    if (st.cliBusy && st.cliSession === sessionId) throw new SessionAdminError(409, 'Sesi ini sedang berjalan di terminal.');
+    const result = await deleteSession({ engine: hub.engine, projectPath: project.path, sessionId, dataDir, opencode });
+    console.log(`Sesi ${sessionId.slice(0, 12)} dihapus (${project.name})${result.trashed ? ` → ${result.trashed}` : ''}`);
+    return { ok: true, ...result };
+  })));
+  // ⑂ Cabangkan: continue a copy; the original stays as it was. Claude Code: --fork-session on the next start.
+  router.post('/api/projects/:id/session-fork', withSession(({ hub, opencode }, req, res, { project, session }, body) => admin(res, async () => {
+    const sessionId = String(body.sessionId ?? '');
+    if (!validSessionId(hub.engine, sessionId)) throw new SessionAdminError(400, 'Id sesi tidak valid.');
+    if (session.turnActive()) throw new SessionAdminError(409, 'Tim sedang bekerja. Tunggu selesai atau hentikan dulu.');
+    if (hub.engine === 'opencode') {
+      const forked = await forkOpenCodeSession({ opencode, projectPath: project.path, sessionId });
+      session.resume(forked, []);
+      hub.chat(project.id, { kind: 'divider', text: `Cabang dari sesi ${sessionId.slice(4, 12)}` });
+      return { ok: true, sessionId: forked };
+    }
+    if (!listSessions(project.path, 200).some((s) => s.id === sessionId)) throw new SessionAdminError(404, 'Sesi tidak ditemukan');
+    session.resume(sessionId, sessionHistory(project.path, sessionId));
+    session.forkNext = true; // the next start gets --fork-session: a new id, the original transcript untouched
+    hub.chat(project.id, { kind: 'divider', text: `Cabang dari sesi ${sessionId.slice(0, 8)}: pesan berikutnya memulai salinannya` });
+    return { ok: true, sessionId };
+  })));
+  // ✎ OpenCode: rename any listed session (Claude Code renames the open one with /rename).
+  router.post('/api/projects/:id/session-rename', withSession(({ hub, opencode }, req, res, { project }, body) => admin(res, async () => {
+    if (hub.engine !== 'opencode') throw new SessionAdminError(409, 'Untuk Claude Code, buka sesinya lalu klik judulnya (/rename).');
+    return { ok: true, title: await renameOpenCodeSession({ opencode, projectPath: project.path, sessionId: String(body.sessionId ?? ''), title: body.title }) };
+  })));
+  // ⬇ OpenCode: the session as OpenCode's own JSON (re-import with `opencode session import`).
+  router.post('/api/projects/:id/session-export-json', withSession(({ opencode }, req, res, { project }, body) => admin(res, async () => {
+    const sessionId = String(body.sessionId ?? '');
+    return { name: `opencode-${project.name.replace(/[^\w.-]+/g, '_')}-${sessionId.slice(4, 16)}.json`, data: await exportOpenCodeSession({ opencode, projectPath: project.path, sessionId, sanitize: body.sanitize === true }) };
+  })));
   router.post('/api/projects/:id/continue', withSession(({ hub }, req, res, { project, session }, body) => {
     // A turn cut short by a server restart: continue it in the same session, or just drop the notice.
     if (body.dismiss === true) {

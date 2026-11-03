@@ -5,8 +5,10 @@ import * as account from './account.js';
 import * as approvals from './approvals.js';
 import * as backup from './backup.js';
 import * as claudeCheck from './claude-check.js';
+import * as extensions from './extensions.js';
 import * as files from './files.js';
 import * as git from './git.js';
+import * as memory from './memory.js';
 import * as misc from './misc.js';
 import * as permissions from './permissions.js';
 import * as projects from './projects.js';
@@ -27,7 +29,9 @@ export function buildRouter() {
     projects.registerProjectActions,
     session.register,
     tasks.register,
+    extensions.register,
     files.register,
+    memory.register,
     git.register,
     permissions.register,
     queue.register,

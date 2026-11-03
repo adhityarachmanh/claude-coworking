@@ -50,6 +50,18 @@ if (process.argv[2] === 'api') {
       save();
       out({ status: 'complete', time: { created: 0, expires: 1 } });
       break;
+    case 'session.remove':
+      if (!/^ses_/.test(params.sessionID)) fail('Session not found');
+      write(`${file}.removed`, params.sessionID);
+      out(null);
+      break;
+    case 'session.fork':
+      out({ id: `ses_fork_${params.sessionID.slice(4)}`, title: 'Fork' });
+      break;
+    case 'session.update':
+      write(`${file}.title`, `${params.sessionID}=${body.title}`);
+      out({ id: params.sessionID, title: body.title });
+      break;
     case 'credential.remove': {
       const i = creds.findIndex((c) => c.id === params.credentialID);
       if (i < 0) fail('Credential not found');
@@ -61,6 +73,16 @@ if (process.argv[2] === 'api') {
     default:
       fail(`Operation not found: ${op}`);
   }
+}
+if (process.argv[2] === 'mcp' && process.argv[3] === 'add') {
+  const { appendFileSync } = await import('node:fs');
+  if (process.env.FAKE_MCP_LOG) appendFileSync(process.env.FAKE_MCP_LOG, `${JSON.stringify(['opencode', ...process.argv.slice(4)])}\n`);
+  console.log('MCP server added');
+  process.exit(0);
+}
+if (process.argv[2] === 'session' && process.argv[3] === 'export') {
+  console.log(JSON.stringify({ info: { id: process.argv[4], title: 'Sesi lama OpenCode' }, messages: [{ role: 'user', text: 'halo' }] }));
+  process.exit(0);
 }
 if (process.argv[2] === 'session' && process.argv[3] === 'list') {
   console.log(JSON.stringify([{ id: 'ses_fakeold', title: 'Sesi lama OpenCode', updated: 1700000000000, created: 1700000000000, directory: process.cwd() }]));
@@ -115,6 +137,7 @@ const ask = (params) =>
     send({ id, method: 'session/request_permission', params });
   });
 
+let links = [];
 async function turn(sessionId, text) {
   const say = async (msgId, ...parts) => {
     for (const p of parts) {
@@ -122,6 +145,10 @@ async function turn(sessionId, text) {
       await sleep(20);
     }
   };
+  if (/link\?/.test(text)) {
+    await say('msg_link', `links=${links.join(',')}`);
+    return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+  }
   if (/agent\?/.test(text)) {
     await say('msg_agent', `agent=${options.mode} bash=${JSON.stringify(config.permission?.bash ?? null)}`);
     return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
@@ -221,7 +248,7 @@ async function handle(msg) {
       return reply({ sessionId, configOptions: configOptions() });
     }
     case 'session/load':
-      if (!sessions.has(params.sessionId)) return send({ id, error: { code: -32002, message: 'Session not found' } });
+      if (!sessions.has(params.sessionId) && !params.sessionId.startsWith('ses_fork_')) return send({ id, error: { code: -32002, message: 'Session not found' } });
       // The real agent replays the old conversation: the office must not show it again.
       update(params.sessionId, { sessionUpdate: 'agent_message_chunk', messageId: 'msg_old', content: { type: 'text', text: 'jawaban lama' } });
       return reply({ configOptions: configOptions() });
@@ -230,6 +257,7 @@ async function handle(msg) {
       return reply({ configOptions: configOptions() });
     case 'session/prompt': {
       const text = (params.prompt ?? []).map((b) => b.text ?? '').join(' ');
+      links = (params.prompt ?? []).filter((b) => b.type === 'resource_link').map((b) => b.name);
       return reply(await turn(params.sessionId, text));
     }
     case 'session/cancel':

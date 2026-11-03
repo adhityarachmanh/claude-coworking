@@ -15,6 +15,7 @@ import { renderRoots } from '../features/settings.js';
 import { applyRoster } from '../features/roster.js';
 import { applySpotify } from '../features/spotify.js';
 import { reloadSoon } from '../features/opencode-account.js';
+import { onGithubLogin } from '../features/pull-request.js';
 import { noteLiveMessage, setStuckOnline } from '../features/stuck.js';
 import { applyNames } from '../features/team.js';
 import { applyTeamNames, roleName } from '../office/cast.js';
@@ -22,7 +23,7 @@ import { updateTitle } from '../ui/layout.js';
 import { setReadOnlyApi } from './api.js';
 import { $ } from './dom.js';
 import { startStreamShare } from './stream-share.js';
-import { scenes } from './scenes.js';
+import { brain, scenes } from './scenes.js';
 import { DEMO_ID, projectName, state } from './state.js';
 
 let share = null;
@@ -85,6 +86,7 @@ const handlers = {
   'account-alert': (alert, live) => live && onAccountAlert(alert),
   // The app moved to another engine's workspace (Akun, this or another device): its chats come with a fresh page.
   engine: (data, live) => live && reloadSoon(),
+  'github-login': (login, live) => live && onGithubLogin(login), // ⇡ PR dialog: gh login finished / failed
   projects(projects) {
     state.projects = projects;
     renderSidebar();
@@ -100,6 +102,7 @@ const handlers = {
   office(evt, live) {
     (state.events[evt.project] ??= []).push(evt);
     scenes.get(evt.project)?.handle(evt, live);
+    if (live && evt.project === state.active) brain.event(evt); // 🧠 Mode Otak: signals and pulses
     if (evt.project === state.active) {
       appendActivity(evt, true);
       if (['tool_end', 'stop'].includes(evt.kind)) scheduleChanges();

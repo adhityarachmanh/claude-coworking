@@ -7,6 +7,8 @@ import { saveSettings } from './composer.js';
 import { exportActiveSession, openSearch } from './conversations.js';
 import { openDashboard } from './dashboard.js';
 import { openMcp } from './mcp.js';
+import { openMemory } from './memory.js';
+import { openExtensions } from './extensions.js';
 import { openQueue } from './queue.js';
 import { openPermissions } from './permissions.js';
 import { openRewind } from './rewind.js';
@@ -29,7 +31,10 @@ export const LOCAL_COMMANDS = [
   { name: 'team', aliases: ['tim'], description: '👥 Kelola tim: pilih role bawaan yang punya meja di kantor (Lead selalu ada)' },
   { name: 'antrian', aliases: ['queue'], description: '📋 Antrian prompt: susun beberapa prompt, dijalankan satu per satu saat tim tidak sibuk' },
   { name: 'tasks', description: 'Tugas latar: perintah & agent yang berjalan, output-nya, hentikan' },
-  { name: 'memory', description: 'Buka CLAUDE.md project di VS Code' },
+  { name: 'plugin', aliases: ['plugins'], description: '🧩 Plugin Claude Code: pasang dari marketplace, aktif/nonaktif, hapus' },
+  { name: 'agents', description: '🤖 Subagent buatan sendiri (.claude/agents): buat, edit, hapus' },
+  { name: 'hooks', description: '🪝 Hooks yang aktif (settings.json user/project/pribadi)' },
+  { name: 'memory', description: '🧠 Edit instruksi memory: CLAUDE.md (Claude Code) / AGENTS.md (OpenCode)' },
   { name: 'dashboard', aliases: ['semua'], description: '🗂 Semua project: status setiap project sekaligus (izin, bekerja, antrian, idle)' },
   { name: 'help', description: 'Panduan & shortcut keyboard' },
   { name: 'export', argumentHint: '[tools]', description: 'Unduh sesi ini sebagai Markdown (.md) — /export tools: sertakan ringkasan tool' },
@@ -48,10 +53,6 @@ export const CLI_ONLY = {
   login: 'Login/ganti akun ada di 👤 Akun.',
   logout: 'Logout ada di 👤 Akun.',
   status: 'Akun, kuota dan model ada di 👤 Akun dan status bar di bawah kotak chat.',
-  agents: 'Role tim ada di /team. Agent buatan sendiri (.claude/agents) masih diatur dari terminal.',
-  hooks: 'Hooks masih diatur dari terminal (claude → /hooks) atau settings.json.',
-  plugin: 'Plugin masih dipasang dari terminal (claude plugin …).',
-  plugins: 'Plugin masih dipasang dari terminal (claude plugin …).',
   'output-style': 'Output style masih diatur dari terminal.',
   statusline: 'Status bar aplikasi ini ada di bawah kotak chat.',
   'terminal-setup': 'Khusus terminal.',
@@ -127,8 +128,17 @@ export function localCommand(text) {
       openTasks();
       return true;
     case 'memory':
-      if (!state.local) toast('CLAUDE.md hanya bisa dibuka dari laptop.');
-      else api(`/api/projects/${state.active}/open`, { app: 'code', file: 'CLAUDE.md' }).catch((err) => toast(err.message));
+      openMemory();
+      return true;
+    case 'plugin':
+    case 'plugins':
+      openExtensions('plugins');
+      return true;
+    case 'agents':
+      openExtensions('agents');
+      return true;
+    case 'hooks':
+      openExtensions('hooks');
       return true;
     case 'dashboard':
     case 'semua':

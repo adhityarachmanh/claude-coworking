@@ -182,6 +182,12 @@ Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhi
 - **■ Stop / Esc** menghentikan giliran yang sedang berjalan, termasuk giliran yang dimulai Claude sendiri setelah tugas latar selesai, dan menghentikan tugas latar itu juga.
 - **🩺 Doctor** dan **⬆ Update Claude Code**: ⚙ → Kompatibilitas Claude Code (sama dengan `claude doctor` / `claude update`, dari laptop).
 - Command yang hanya membuka layar terminal (`/config`, `/hooks`, `/doctor`, `/login`, …) tidak ditawarkan di autocomplete; kalau diketik, aplikasi menunjukkan tempatnya di sini.
+- **🧠 /memory**: edit `CLAUDE.md` (project), `CLAUDE.local.md` (pribadi) dan `~/.claude/CLAUDE.md` langsung di aplikasi; dengan OpenCode: `AGENTS.md` (project dan global). File yang diubah di tempat lain sejak dibuka tidak ditimpa. Laptop atau Tailscale.
+- **🕘 Riwayat sesi**: per sesi ⑂ *Cabangkan* (lanjutkan salinannya, aslinya utuh; Claude `--fork-session`, OpenCode `session.fork`), ⬇ export (`.md` untuk Claude, JSON OpenCode yang bisa diimpor lagi), 🗑 hapus (transcript Claude dipindah ke `data/trash`, bisa dikembalikan), ✎ ganti nama (OpenCode).
+- **🔌 /mcp → ＋ Tambah server**: server lokal (perintah) atau remote (URL), untuk project ini atau semua project, lewat `claude mcp add` / `opencode mcp add` (laptop saja). Dengan OpenCode, /mcp menampilkan server dari `opencode.json` (global + project); login OAuth server OpenCode masih `opencode mcp auth <nama>`.
+- **🧩 /plugin · 🤖 /agents · 🪝 /hooks** (dialog *Ekstensi Claude Code*): pasang plugin dari marketplace (perintah yang diminta marketplace selalu ditampilkan dulu untuk dikonfirmasi), aktif/nonaktif, hapus; buat/edit/hapus subagent sendiri (`.claude/agents/*.md`, project atau semua project); lihat hooks dari semua settings.json. Memasang plugin hanya dari laptop.
+- **⇡ Pull request** (tab Perubahan → PR): login GitHub sekali lewat kode perangkat yang tampil di aplikasi (sama dengan `gh auth login --web`), lalu form judul/deskripsi/branch tujuan/draft → push branch → `gh pr create`. Atau *Biar Claude yang buat*.
+- **OpenCode `@file`**: file project yang disebut dengan `@` dikirim juga sebagai referensi file (ACP `resource_link`), seperti di TUI OpenCode.
 
 ### Mesin: Claude Code atau OpenCode
 
@@ -203,7 +209,7 @@ Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude
 | Command | `/init`, `/review` dan command buatanmu muncul di autocomplete `/` dengan deskripsinya |
 | Mode tim | Role kantor jadi **subagent OpenCode** (file config `OPENCODE_CONFIG` berisi `agents` + prompt Lead sebagai `instructions`). Lead mendelegasikan lewat tool `subagent`; tool milik subagent dikerjakan role itu di kantor |
 | Effort | Opsi `effort` OpenCode per model (mis. low/high/max): dipilih level terdekat yang ditawarkan model |
-| Belum | Rewind, kelola MCP, tugas latar, mirror sesi terminal OpenCode, ganti nama sesi. Kontrolnya disembunyikan atau diberi alasan |
+| Belum | Rewind, status langsung + login OAuth server MCP, tugas latar, mirror sesi terminal OpenCode. Kontrolnya disembunyikan atau diberi alasan |
 
 - Token OpenCode tercatat di laporan sebagai akun **OpenCode**, terpisah dari akun Claude.
 - Setelah satu **Tolak**, OpenCode menghentikan gilirannya, sehingga kartu izin lain dari giliran itu ditutup otomatis.

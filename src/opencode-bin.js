@@ -59,6 +59,10 @@ export function openCodeModels(bin, { maxAgeMs = 10 * 60_000 } = {}) {
  * @returns {Promise<{ id: string, title: string, source: 'opencode', updated: number }[]>}
  */
 const sessionCache = new Map(); // project folder -> { at, load }: a phone polling the list spawns one process per 15 s
+/** After a delete/fork/rename the list must be read again. */
+export function clearSessionCache(cwd) {
+  sessionCache.delete(cwd);
+}
 export function openCodeSessions(bin, cwd, limit = 30) {
   if (!bin || !cwd) return Promise.resolve([]);
   const hit = sessionCache.get(cwd);
@@ -98,7 +102,7 @@ export function openCodeVersion(bin) {
 }
 
 /** JSON with comments and trailing commas (opencode.jsonc), parsed without a dependency. */
-function parseJsonc(text) {
+export function parseJsonc(text) {
   let out = '';
   for (let i = 0, inStr = false; i < text.length; i++) {
     const c = text[i];

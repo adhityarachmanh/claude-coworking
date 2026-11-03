@@ -37,6 +37,10 @@ before(async () => {
       PROJECTS_ROOT: projects,
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
+      FAKE_PLUGIN_STATE: path.join(TMP, 'plugins.json'),
+      OFFICE_GH_BIN: path.join(APP, 'test-support', 'fake-gh.mjs'),
+      FAKE_GH_STATE: path.join(TMP, 'gh-login'),
+      FAKE_GH_LOG: path.join(TMP, 'gh.log'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'), // user-level settings.json (🛡️ Aturan izin), never the real ~/.claude
       OFFICE_OPEN_DRY_RUN: '1', // "open in VS Code / folder" reports the command instead of launching it
@@ -870,6 +874,96 @@ test('MCP servers, background tasks and rename are Claude Code control requests'
   assert.match((await api(`/api/projects/${id}/task-output`, { taskId: 't1' })).body.output, /3000/);
   assert.equal((await api(`/api/projects/${id}/rename`, { title: '  ' })).status, 400);
   assert.equal((await api(`/api/projects/${id}/rename`, { title: 'Sesi uji' })).status, 200);
+});
+
+test('🧠 memory: CLAUDE.md / CLAUDE.local.md edited from the app, a file changed elsewhere is never overwritten', async () => {
+  const id = await projectId();
+  const project = (await snapshot()).projects.find((p) => p.id === id);
+  let r = (await api(`/api/projects/${id}/memory`, { key: 'local' })).body;
+  assert.deepEqual(r.files.map((f) => f.key), ['project', 'local', 'user']);
+  assert.equal(r.file.key, 'local');
+  assert.equal(r.file.exists, false);
+  const saved = await api(`/api/projects/${id}/memory/save`, { key: 'local', content: '# Catatan pribadi\n', mtime: r.file.mtime });
+  assert.equal(saved.status, 200);
+  assert.equal(readFileSync(path.join(project.path, 'CLAUDE.local.md'), 'utf8'), '# Catatan pribadi\n');
+  // edited elsewhere since it was opened (VS Code, Claude): 409, nothing overwritten
+  const stale = await api(`/api/projects/${id}/memory/save`, { key: 'local', content: 'TIMPA', mtime: r.file.mtime });
+  assert.equal(stale.status, 409);
+  assert.equal(readFileSync(path.join(project.path, 'CLAUDE.local.md'), 'utf8'), '# Catatan pribadi\n');
+  r = (await api(`/api/projects/${id}/memory`, { key: 'local' })).body;
+  assert.equal(r.file.content, '# Catatan pribadi\n');
+  assert.equal((await api(`/api/projects/${id}/memory/save`, { key: '../../x', content: 'a', mtime: 0 })).status, 400, 'only the fixed files');
+  rmSync(path.join(project.path, 'CLAUDE.local.md'));
+});
+
+test('🕘 Riwayat sesi (Claude Code): ⑂ fork continues a copy (--fork-session), 🗑 delete moves the transcript to data/trash', async () => {
+  const id = await projectId();
+  const project = (await snapshot()).projects.find((p) => p.id === id);
+  const dir = path.join(TMP, 'claude-projects', path.resolve(project.path).replace(/[^a-zA-Z0-9]/g, '-'));
+  mkdirSync(dir, { recursive: true });
+  const sid = randomUUID();
+  const line = (e) => JSON.stringify({ sessionId: sid, uuid: randomUUID(), cwd: project.path, timestamp: new Date().toISOString(), ...e });
+  writeFileSync(path.join(dir, `${sid}.jsonl`), `${line({ type: 'user', promptSource: 'typed', message: { role: 'user', content: 'Sesi untuk dicabangkan' } })}\n`);
+  mark = seen.length;
+  const fork = await api(`/api/projects/${id}/session-fork`, { sessionId: sid });
+  assert.equal(fork.status, 200);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'divider' && /Cabang dari sesi/.test(o.text));
+  assert.equal((await api(`/api/projects/${id}/session-delete`, { sessionId: sid })).status, 409, 'not the open conversation');
+  await api(`/api/projects/${id}/reset`);
+  const del = await api(`/api/projects/${id}/session-delete`, { sessionId: sid });
+  assert.equal(del.status, 200);
+  assert.ok(!readdirSync(dir).includes(`${sid}.jsonl`), 'gone from the history');
+  assert.ok(readdirSync(path.join(TMP, 'data', 'trash', path.basename(dir))).some((f) => f.startsWith(sid)), 'kept in data/trash');
+  assert.equal((await api(`/api/projects/${id}/session-delete`, { sessionId: '../x' })).status, 400);
+});
+
+test('🧩 Ekstensi: plugins (install with a shown marketplace command, enable/disable, uninstall), own agents, hooks', async () => {
+  let p = (await api('/api/claude/plugins')).body;
+  assert.deepEqual(p.available.map((x) => x.id), ['reviewer@official', 'risky@community']);
+  assert.equal((await api('/api/claude/plugins/action', { action: 'install', id: 'reviewer@official' })).body.ok, true);
+  const risky = (await api('/api/claude/plugins/action', { action: 'install', id: 'risky@community' })).body;
+  assert.equal(risky.needsConfirm, true, 'a marketplace command is shown first, never accepted blindly');
+  assert.equal(risky.command, 'npx risky-setup');
+  assert.equal((await api('/api/claude/plugins/action', { action: 'install', id: 'risky@community', acceptCommand: risky.sha256 })).body.ok, true);
+  await api('/api/claude/plugins/action', { action: 'disable', id: 'reviewer@official' });
+  p = (await api('/api/claude/plugins')).body;
+  assert.deepEqual(p.installed.map((x) => [x.id, x.enabled]), [['reviewer@official', false], ['risky@community', true]]);
+  await api('/api/claude/plugins/action', { action: 'uninstall', id: 'risky@community' });
+  assert.equal((await api('/api/claude/plugins/action', { action: 'install', id: 'x; rm -rf /' })).status, 400);
+
+  const id = await projectId();
+  const project = (await snapshot()).projects.find((x) => x.id === id);
+  const saved = await api(`/api/projects/${id}/agents/save`, { scope: 'project', name: 'code-reviewer', description: 'Review kode\nsetelah selesai', tools: 'Read, Grep', prompt: 'Kamu reviewer yang teliti.' });
+  assert.equal(saved.status, 200);
+  const md = readFileSync(path.join(project.path, '.claude', 'agents', 'code-reviewer.md'), 'utf8');
+  assert.match(md, /^---\nname: code-reviewer\ndescription: Review kode setelah selesai\ntools: Read, Grep\n---\n\nKamu reviewer yang teliti\.\n$/);
+  let agents = (await api(`/api/projects/${id}/agents`)).body.agents.filter((a) => a.scope === 'project');
+  assert.deepEqual(agents.map((a) => [a.name, a.tools]), [['code-reviewer', 'Read, Grep']]);
+  await api(`/api/projects/${id}/agents/save`, { scope: 'project', name: 'reviewer-2', previous: 'code-reviewer', description: 'x', prompt: 'y' });
+  agents = (await api(`/api/projects/${id}/agents`)).body.agents.filter((a) => a.scope === 'project');
+  assert.deepEqual(agents.map((a) => a.name), ['reviewer-2'], 'renamed: the old file is gone');
+  assert.equal((await api(`/api/projects/${id}/agents/save`, { scope: 'project', name: '../evil', description: 'x', prompt: 'y' })).status, 400);
+  await api(`/api/projects/${id}/agents/delete`, { scope: 'project', name: 'reviewer-2' });
+  assert.deepEqual((await api(`/api/projects/${id}/agents`)).body.agents.filter((a) => a.scope === 'project'), []);
+
+  mkdirSync(path.join(project.path, '.claude'), { recursive: true });
+  writeFileSync(path.join(project.path, '.claude', 'settings.local.json'), JSON.stringify({ hooks: { PostToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command: 'npx prettier --write' }] }] } }));
+  const hooks = (await api(`/api/projects/${id}/hooks`)).body.hooks;
+  assert.deepEqual(hooks.map((h) => [h.event, h.matcher, h.commands[0]]), [['PostToolUse', 'Edit|Write', 'npx prettier --write']]);
+  rmSync(path.join(project.path, '.claude', 'settings.local.json'));
+});
+
+test('⇡ PR: gh status, browser login with the device code, then refused until logged in', async () => {
+  let st = (await api('/api/github/status')).body;
+  assert.deepEqual([st.installed, st.loggedIn], [true, false]);
+  const id = await projectId();
+  assert.equal((await api(`/api/projects/${id}/pr`, { title: 'x' })).status, 409, 'not logged in yet');
+  const login = (await api('/api/github/login')).body;
+  assert.equal(login.code, 'ABCD-1234');
+  assert.equal(login.url, 'https://github.com/login/device');
+  await waitFor((t, o) => t === 'github-login' && o.state === 'done', 10000);
+  st = (await api('/api/github/status')).body;
+  assert.deepEqual([st.loggedIn, st.account], [true, 'tester']);
 });
 
 test('⚙ claude doctor / update run from the app (laptop only)', async () => {

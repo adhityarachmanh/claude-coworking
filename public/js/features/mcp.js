@@ -5,13 +5,19 @@ import { DEMO_ID, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 
 const mcpView = { project: null, servers: [], login: null, poll: null };
-const MCP_STATUS = { connected: ['✓ tersambung', 'ok'], 'needs-auth': ['🔑 perlu login', 'warn'], failed: ['✗ gagal', 'bad'], pending: ['… menyambung', ''], disabled: ['⏸ nonaktif', ''] };
-const MCP_ORDER = ['needs-auth', 'failed', 'pending', 'connected', 'disabled'];
+const MCP_STATUS = { configured: ['⚙ terdaftar', ''], connected: ['✓ tersambung', 'ok'], 'needs-auth': ['🔑 perlu login', 'warn'], failed: ['✗ gagal', 'bad'], pending: ['… menyambung', ''], disabled: ['⏸ nonaktif', ''] };
+const MCP_ORDER = ['needs-auth', 'failed', 'pending', 'connected', 'configured', 'disabled'];
+const isOpenCode = () => state.config?.engine === 'opencode';
 
 export async function openMcp() {
   if (state.active === DEMO_ID || state.readOnly) return; // asking for the status starts Claude Code
   mcpView.project = state.active;
   $('#mcp-callback').hidden = true;
+  $('#mcp-add').hidden = true;
+  $('#mcp-add-toggle').hidden = !state.local; // adding writes config and runs the server's command: laptop only
+  $('#mcp-engine-note').textContent = isOpenCode()
+    ? 'OpenCode: daftar server dari opencode.json (global + project). Status langsung dan login OAuth ada di dalam OpenCode (opencode mcp auth <nama>).'
+    : 'Status langsung dari Claude Code. ＋ Tambah memakai claude mcp add.';
   openModal('mcp-modal');
   $('#mcp-list').innerHTML = '<li class="muted">Menanyakan status ke Claude Code…</li>';
   await loadMcp();
@@ -38,18 +44,18 @@ function renderMcp() {
     ? `· ${servers.length} server · ${count('connected')} tersambung${count('needs-auth') ? ` · ${count('needs-auth')} perlu login` : ''}${count('failed') ? ` · ${count('failed')} gagal` : ''}`
     : '';
   if (!servers.length) {
-    $('#mcp-list').innerHTML = '<li class="muted">Belum ada server MCP. Tambahkan lewat <code>claude mcp add</code> atau sebuah plugin.</li>';
+    $('#mcp-list').innerHTML = `<li class="muted">Belum ada server MCP. Tambahkan dengan ＋ Tambah server${isOpenCode() ? '' : ' atau sebuah plugin'}.</li>`;
     return;
   }
   $('#mcp-list').innerHTML = servers
     .map((s) => {
       const [label, tone] = MCP_STATUS[s.status] ?? [s.status, ''];
-      const actions = [
+      const actions = isOpenCode() ? [] : [
         s.status === 'needs-auth' ? '<button class="primary" data-mcp="login">🔑 Login</button>' : '',
         s.status !== 'disabled' ? '<button data-mcp="reconnect">↻ Sambungkan ulang</button>' : '',
         s.status === 'disabled' ? '<button data-mcp="enable">▶ Aktifkan</button>' : '<button data-mcp="disable">⏸ Nonaktifkan</button>',
       ].join('');
-      const meta = [s.scope, s.tools != null ? `${s.tools} tool` : '', s.error].filter(Boolean).map(escapeHtml).join(' · ');
+      const meta = [s.scope, s.type, s.tools != null ? `${s.tools} tool` : '', s.detail, s.error].filter(Boolean).map(escapeHtml).join(' · ');
       return `<li data-server="${escapeHtml(s.name)}"><div class="mcp-main"><div class="mcp-row"><b>${escapeHtml(s.name)}</b><span class="pill ${tone}">${label}</span></div>${meta ? `<small class="muted">${meta}</small>` : ''}</div><div class="mcp-actions">${actions}</div></li>`;
     })
     .join('');
@@ -70,7 +76,50 @@ function pollMcp(server) {
   }, 3000);
 }
 
+/** ＋ Tambah server: a local command or a remote URL, through the engine's own `mcp add`. */
+async function addServer(e) {
+  e.preventDefault();
+  const f = e.target;
+  const remote = f.elements.kind.value === 'remote';
+  const body = {
+    name: f.elements.name.value.trim(),
+    kind: remote ? 'remote' : 'local',
+    command: f.elements.command.value.trim(),
+    url: f.elements.url.value.trim(),
+    env: f.elements.env.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean),
+    scope: f.elements.scope.value,
+  };
+  const btn = f.querySelector('button.primary');
+  btn.disabled = true;
+  try {
+    await api(`/api/projects/${mcpView.project}/mcp-add`, body);
+    toast(`Server MCP ${body.name} ditambahkan. Dipakai mulai pesan berikutnya.`, 'ok');
+    f.reset();
+    syncAddForm();
+    $('#mcp-add').hidden = true;
+    loadMcp();
+  } catch (err) {
+    toast(err.message, 'warn');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function syncAddForm() {
+  const f = $('#mcp-add');
+  const remote = f.elements.kind.value === 'remote';
+  f.querySelector('.mcp-local').hidden = remote;
+  f.querySelector('.mcp-remote').hidden = !remote;
+}
+
 export function initMcp() {
+  $('#mcp-add-toggle').addEventListener('click', () => {
+    $('#mcp-add').hidden = !$('#mcp-add').hidden;
+    syncAddForm();
+    if (!$('#mcp-add').hidden) $('#mcp-add').elements.name.focus();
+  });
+  $('#mcp-add').addEventListener('change', syncAddForm);
+  $('#mcp-add').addEventListener('submit', addServer);
   $('#mcp-refresh').addEventListener('click', () => loadMcp());
   $('#mcp-list').addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-mcp]');

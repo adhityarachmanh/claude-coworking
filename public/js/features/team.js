@@ -85,7 +85,32 @@ function openTeam(focusRole) {
   if (focusRole) $(`#team-list input[name="${focusRole}"]`)?.focus();
 }
 
+const TEAM_HIDDEN_KEY = 'office.teamHidden';
+
+/** 👥 Karyawan ▾ under the office (laptop): show or fold the people grid; remembered per browser. */
+function applyTeamHidden(hidden) {
+  document.querySelector('.office').classList.toggle('team-hidden', hidden);
+  const btn = $('#team-toggle');
+  btn.setAttribute('aria-expanded', String(!hidden));
+  btn.title = hidden ? 'Tampilkan daftar karyawan' : 'Sembunyikan daftar karyawan (ilustrasi kantor jadi lebih besar)';
+}
+
 export function initTeam() {
+  const hidden = (() => {
+    try {
+      return localStorage.getItem(TEAM_HIDDEN_KEY) === '1';
+    } catch {
+      return false;
+    }
+  })();
+  applyTeamHidden(hidden);
+  $('#team-toggle').addEventListener('click', () => {
+    const next = !document.querySelector('.office').classList.contains('team-hidden');
+    applyTeamHidden(next);
+    try {
+      localStorage.setItem(TEAM_HIDDEN_KEY, next ? '1' : '0');
+    } catch {}
+  });
   $('#team').addEventListener('click', (e) => {
     const badge = e.target.closest('[data-task-open]');
     if (badge) return openTasks({ taskId: badge.dataset.taskOpen });

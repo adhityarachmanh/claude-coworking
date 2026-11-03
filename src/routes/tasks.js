@@ -6,6 +6,20 @@ import { withSession } from './project.js';
 
 export function register(router) {
   // /mcp
+  // ＋ Tambah server MCP (laptop only: it writes the engine's config and the server's command runs on this laptop)
+  router.post('/api/projects/:id/mcp-add', withSession(async ({ hub, claude, opencode }, req, res, { project, session }, body) => {
+    const { addMcpServer, McpAdminError } = await import('../mcp-admin.js');
+    try {
+      const engine = hub.engine;
+      const result = await addMcpServer({ engine, bin: engine === 'opencode' ? opencode : claude, projectPath: project.path, request: body });
+      console.log(`MCP ditambahkan (${engine}): ${String(body.name).slice(0, 60)} · ${project.name}`);
+      session.reloadSettings?.(); // the next prompt starts with the new server (a running turn finishes first)
+      return json(res, 200, result);
+    } catch (err) {
+      if (err instanceof McpAdminError) return json(res, err.status, { error: err.message });
+      throw err;
+    }
+  }), { maxBody: 16 * 1024 });
   router.post('/api/projects/:id/mcp', withSession((ctx, req, res, { session }) => answer(res, session.mcpStatus().then((servers) => ({ servers })))));
   router.post('/api/projects/:id/mcp-action', withSession((ctx, req, res, { session }, body) => {
     const act = String(body.action ?? '');

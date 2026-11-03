@@ -7,7 +7,8 @@
 // - The init*() calls below run in a fixed order; some listeners depend on it (e.g. the modal Tab trap
 //   must be registered before the composer's Shift+Tab handler, which checks defaultPrevented).
 // - State shared across modules lives in mutable objects (state, changes, phone, …), never `export let`.
-import { scenes, stage } from './core/scenes.js';
+import { brain, scenes, stage } from './core/scenes.js';
+import { initViewMode } from './features/view-mode.js';
 import { connect } from './core/stream.js';
 import { initAccount } from './features/account.js';
 import { initAttachments } from './features/attachments.js';
@@ -40,6 +41,9 @@ import { initRoster } from './features/roster.js';
 import { initResumeTurn } from './features/resume-turn.js';
 import { initRewind } from './features/rewind.js';
 import { initSessions } from './features/sessions.js';
+import { initMemory } from './features/memory.js';
+import { initExtensions } from './features/extensions.js';
+import { initPullRequest } from './features/pull-request.js';
 import { initSettings } from './features/settings.js';
 import { initSpotify } from './features/spotify.js';
 import { initStatusline } from './features/statusline.js';
@@ -66,11 +70,15 @@ initChat();
 initStuck(); // ⚠ stuck detector: chips on running rows (after initChat: #chat exists, its clicks are wired)
 initFileViewer();
 initTeam();
+initViewMode(); // 🧠 Mode Otak ↔ 🏢 Kantor
 initRoster(); // 👥 Kelola tim (⚙, ⋯, Ctrl+P, /team)
 initStatusline();
 initAttachments();
 initSuggest();
 initSessions();
+initMemory(); // 🧠 /memory: CLAUDE.md / AGENTS.md editor
+initExtensions(); // 🧩 /plugin /agents /hooks
+initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initSettings();
 initTheme(); // before the first frame: the saved theme is drawn right away
@@ -113,7 +121,8 @@ function loop(t) {
   const dt = Math.min((t - last) / 1000, 0.05);
   last = t;
   for (const scene of scenes.values()) scene.update(dt, t);
-  stage.frame(t);
+  if (brain.on) brain.frame(t, stage.scene); // 🧠 Mode Otak replaces the pixel office while it is on
+  else stage.frame(t);
   if (t - lastTeam > 500) {
     renderTeam();
     lastTeam = t;

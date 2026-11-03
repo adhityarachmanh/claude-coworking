@@ -90,7 +90,7 @@ test('routes: 🔔 /api/push/* never over plain WiFi; only /api/push/act skips x
 
 test('routes: 🧩 /api/claude-check/* (manual run, settings) never over plain WiFi; small bodies', () => {
   const routes = router.routes.filter((r) => r.pattern.startsWith('/api/claude-check/'));
-  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/claude-check/run', '/api/claude-check/settings']);
+  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/claude-check/doctor', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/update']);
   for (const r of routes) {
     assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
     assert.ok(!WIFI_READS.has(r.pattern));
