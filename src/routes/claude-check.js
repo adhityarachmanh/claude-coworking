@@ -42,6 +42,13 @@ export function register(router) {
     }, { maxBody: 1024 });
   }
 
+  // ⬆ Adhit Office's own update (src/app-update.js): check now / pull + restart. Laptop only (LOCAL_ONLY).
+  router.post('/api/app-update/check', async ({ appUpdater }, req, res) => json(res, 200, await appUpdater.check()), { maxBody: 1024 });
+  router.post('/api/app-update/run', async ({ appUpdater }, req, res) => {
+    const r = await appUpdater.update();
+    return json(res, r.ok ? 200 : 409, r);
+  }, { maxBody: 1024 });
+
   // { autoCheck?: boolean, allowModel?: boolean } → the view.
   router.post('/api/claude-check/settings', ({ claudeCheck }, req, res, params, body) => {
     const patch = {};

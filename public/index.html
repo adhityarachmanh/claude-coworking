@@ -50,6 +50,8 @@
     <div id="conn-banner" class="conn-region" role="status" aria-live="polite"></div>
     <!-- Claude Code updated: the contract check's result (features/claude-check.js). Empty until there is news. -->
     <div id="cc-banner" class="conn-region" role="status" aria-live="polite"></div>
+    <!-- ⬆ A newer Adhit Office on GitHub (features/app-update.js). Empty until there is one. -->
+    <div id="app-update-banner" class="conn-region" role="status" aria-live="polite"></div>
 
     <div class="layout">
       <main class="office">
@@ -684,6 +686,17 @@
               </div>
               <p id="ba-status" class="muted" role="status" aria-live="polite"></p>
               <p id="ba-desc" class="muted small">Isinya sama dengan Export riwayat. Rotasi hanya menghapus file <code>adhit-office-backup-auto-*.zip</code> yang lebih lama di folder itu; file lain tidak disentuh. Saat jadwal terlewat (laptop mati), backup dibuat sekali begitu server menyala.</p>
+            </div>
+          </section>
+          <hr />
+          <!-- ⬆ Update aplikasi (features/app-update.js, server src/app-update.js) -->
+          <section class="claude-check" aria-labelledby="au-title">
+            <b id="au-title">⬆ Update Adhit Office</b>
+            <p class="muted small">Dicek otomatis tiap 30 menit dari GitHub (git fetch, tanpa mengubah apa pun). Update = git pull lalu restart server dengan rapi. Perubahan lokal yang belum di-commit tidak pernah ditimpa.</p>
+            <p id="app-update-status" class="muted" role="status" aria-live="polite"></p>
+            <div class="backup-actions">
+              <button type="button" id="app-update-check" class="ghost">↻ Cek update</button>
+              <button type="button" id="app-update-run" class="primary" hidden>⬆ Update sekarang</button>
             </div>
           </section>
           <hr />

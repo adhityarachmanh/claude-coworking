@@ -9,6 +9,7 @@
 // - State shared across modules lives in mutable objects (state, changes, phone, …), never `export let`.
 import { brain, scenes, stage } from './core/scenes.js';
 import { initViewMode } from './features/view-mode.js';
+import { initAppUpdate } from './features/app-update.js';
 import { connect } from './core/stream.js';
 import { initAccount } from './features/account.js';
 import { initAttachments } from './features/attachments.js';
@@ -71,6 +72,7 @@ initStuck(); // ⚠ stuck detector: chips on running rows (after initChat: #chat
 initFileViewer();
 initTeam();
 initViewMode(); // 🧠 Mode Otak ↔ 🏢 Kantor
+initAppUpdate(); // ⬆ newer Adhit Office: banner + ⚙
 initRoster(); // 👥 Kelola tim (⚙, ⋯, Ctrl+P, /team)
 initStatusline();
 initAttachments();

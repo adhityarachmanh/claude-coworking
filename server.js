@@ -10,6 +10,7 @@ import { findClaude } from './src/claude-bin.js';
 import { findOpenCode, openCodeVersion } from './src/opencode-bin.js';
 import { OPENCODE_CAPS } from './src/acp-session.js';
 import { ClaudeCheckService } from './src/claude-check.js';
+import { AppUpdater } from './src/app-update.js';
 import { Hub } from './src/hub.js';
 import { discoverProjects, isDirectory } from './src/projects.js';
 import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
@@ -215,6 +216,19 @@ hub.redactors.set('approval', wifiApproval); // "answered from <phone name>": no
 // the light contract check in the background once no turn is busy. Its own file (not in history backups).
 // OFFICE_CLAUDE_CHECK_DELAY_MS: tests only, how long after start the first look happens (default 20 s).
 const CHECK_DELAY = Number(process.env.OFFICE_CLAUDE_CHECK_DELAY_MS);
+// ⬆ Adhit Office's own updates (git fetch every 30 min, banner, "Update sekarang"). Off for test servers (a fake
+// CLAUDE_BIN) unless OFFICE_UPDATE_CHECK=1; OFFICE_UPDATE_CHECK=0 turns it off anywhere.
+const updateCheck = process.env.OFFICE_UPDATE_CHECK ? process.env.OFFICE_UPDATE_CHECK !== '0' : !process.env.CLAUDE_BIN;
+const appUpdater = new AppUpdater({
+  appDir: APP_DIR,
+  firstCheckMs: updateCheck ? Number(process.env.OFFICE_UPDATE_FIRST_CHECK_MS ?? 60_000) : -1,
+  busy: () => [...sessions.sessions.values()].some((s) => s.turnActive()),
+  onChange: (view) => {
+    if (!hub.config) return;
+    hub.config.appUpdate = view;
+    hub.broadcast('config', hub.config);
+  },
+});
 const claudeCheck = new ClaudeCheckService({
   file: path.join(DATA_DIR, 'claude-check.json'),
   claude,
@@ -248,6 +262,7 @@ function refreshProjects() {
     team: teamConfig(),
     spotify: { redirectUri: spotify.redirectUri }, // shown (with a copy button) in ⚙ → Spotify
     claudeCheck: claudeCheck.publicView(), // versions + last contract check result (no details)
+    appUpdate: appUpdater.publicView(), // ⬆ a newer Adhit Office on GitHub (src/app-update.js)
     // The engines a project can run on (docs/design-opencode.md §6.1): Claude Code's caps are the UI's defaults.
     engine: hub.engine, // the app-wide engine (Akun): each one is its own workspace (Hub.switchEngine)
     engines: {
@@ -268,7 +283,7 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Backup export/import read and write the whole Claude history: laptop only (Tailscale phones too are refused).
 // Spotify's Client ID, login and logout: laptop only (the redirect URI is the laptop's 127.0.0.1).
 // ⚙ Cek kompatibilitas Claude Code (run, settings): laptop only (it spawns Claude Code, maybe a model call).
-const LOCAL_ONLY = new Set(['/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 // The same for switching engines and OpenCode's provider logins (API keys travel in these requests).
@@ -482,6 +497,7 @@ const ctx = {
   backupScheduler,
   backupLock,
   claudeCheck,
+  appUpdater,
   allAgents,
   appDir: APP_DIR,
   appVersion: APP_VERSION,

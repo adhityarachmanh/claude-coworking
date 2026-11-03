@@ -2124,3 +2124,8 @@ body.read-only #composer-hint { color: var(--ask); }
 .view-mode { position: absolute; top: 10px; right: 10px; z-index: 3; padding: 4px 10px; border-radius: var(--r-pill); border: 1px solid #8fa0ff55; background: #0b0f2acc; color: #dfe4ff; font-size: var(--fs-xs); cursor: pointer; backdrop-filter: blur(4px); }
 .view-mode:hover { border-color: #a9b6ff; }
 .view-mode[aria-pressed='true'] { background: #1b2150e6; }
+/* ⬆ app update banner (features/app-update.js) */
+.app-update { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.app-update .primary { padding: 3px 12px; font-size: var(--fs-sm); }
+.app-update-list summary { cursor: pointer; font-size: var(--fs-sm); }
+.app-update-list ul { margin: 4px 0 0; padding-left: 18px; font-size: var(--fs-sm); max-height: 160px; overflow: auto; }

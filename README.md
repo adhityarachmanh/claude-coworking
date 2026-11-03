@@ -51,6 +51,8 @@ Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server t
 | `npm start` / `npm run dev` | Tanpa membuka browser / dengan `--watch` |
 | ⚙ → *Nyalakan otomatis saat Windows login* | Pasang atau lepas auto-start dari web (file `claude-coworking.vbs` di folder Startup). Log di `data/server.log` |
 | ⚙ → **⏻ Matikan server** | Hentikan server background, misalnya sebelum `git pull` |
+| **`update.cmd`** | Update ke versi terbaru dari GitHub: tampilkan perubahan → tanya (Y/n) → `git pull --ff-only` → restart rapi. Menolak kalau ada perubahan lokal yang belum di-commit. `node scripts/update.mjs --check` hanya mengecek |
+| Banner **⬆ Versi baru tersedia** / ⚙ → *Update Adhit Office* | Server mengecek GitHub tiap 30 menit (hanya `git fetch`). Banner menampilkan daftar perubahan dan **Update sekarang** (dari laptop) = pull + restart otomatis; halaman tersambung lagi sendiri. `OFFICE_UPDATE_CHECK=0` mematikan pengecekan |
 | `node scripts/restart.mjs` | Restart yang rapi (lihat [Test & pengembangan](#test--pengembangan)) |
 | `node scripts\setup.mjs --check` | Cek status semua langkah setup tanpa mengubah apa pun |
 | `uninstall-autostart.cmd` | Lepas auto-start dan penjaga Task Scheduler |
