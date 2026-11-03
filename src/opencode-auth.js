@@ -8,8 +8,8 @@
 //   integration.oauth.status / complete / cancel                       (mode "code": the user pastes a code back)
 //   credential.remove                     → logout of one stored credential
 // Secrets (API keys, OAuth codes) are never logged; error messages are cut to their first line.
-import { execFile } from 'node:child_process';
 import { clearModelCache } from './opencode-bin.js';
+import { execFileTree } from './proc.js';
 
 const TIMEOUT_MS = 60_000;
 const ID = /^[\w.-]{1,100}$/; // integration, method, attempt and credential ids
@@ -22,7 +22,7 @@ export function openCodeApi(bin, operation, { params = {}, body } = {}) {
   for (const [k, v] of Object.entries(params)) args.push('--param', `${k}=${v}`);
   if (body !== undefined) args.push('--data', JSON.stringify(body));
   return new Promise((resolve, reject) => {
-    execFile(bin.command, args, { encoding: 'utf8', timeout: TIMEOUT_MS, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, out, errOut) => {
+    execFileTree(bin.command, args, { encoding: 'utf8', timeout: TIMEOUT_MS, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, out, errOut) => {
       // Never err.message: Node's "Command failed: <bin> … --data {"key":…}" would carry the API key back.
       if (err) return reject(new Error(errOut || out ? shortError(errOut || out) : err.killed ? 'OpenCode tidak menjawab (timeout).' : `OpenCode gagal (kode ${err.code ?? '?'}).`));
       const text = String(out).trim();

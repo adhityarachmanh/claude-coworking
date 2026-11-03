@@ -1,8 +1,8 @@
 // Locates the installed OpenCode binary so it can be spawned without a shell (same idea as claude-bin.js).
-import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileTree } from './proc.js';
 
 const WIN = process.platform === 'win32';
 const EXE = WIN ? 'opencode.exe' : 'opencode';
@@ -38,7 +38,7 @@ export function openCodeModels(bin, { maxAgeMs = 10 * 60_000 } = {}) {
   if (!bin) return Promise.resolve([]);
   if (modelCache && Date.now() - modelCache.at < maxAgeMs) return modelCache.load;
   const load = new Promise((resolve) => {
-    execFile(bin.command, [...bin.args, 'models'], { encoding: 'utf8', timeout: 60_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
+    execFileTree(bin.command, [...bin.args, 'models'], { encoding: 'utf8', timeout: 60_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
       if (err) {
         modelCache = null; // try again next time
         return resolve([]);
@@ -74,7 +74,7 @@ export function openCodeSessions(bin, cwd, limit = 30) {
 
 function listOpenCodeSessions(bin, cwd, limit) {
   return new Promise((resolve) => {
-    execFile(bin.command, [...bin.args, 'session', 'list', '--format', 'json', '-n', String(limit)], { cwd, encoding: 'utf8', timeout: 30_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
+    execFileTree(bin.command, [...bin.args, 'session', 'list', '--format', 'json', '-n', String(limit)], { cwd, encoding: 'utf8', timeout: 30_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
       if (err) return resolve([]);
       let list;
       try {
@@ -95,7 +95,7 @@ function listOpenCodeSessions(bin, cwd, limit) {
 export function openCodeVersion(bin) {
   if (!bin) return Promise.resolve('');
   return new Promise((resolve) => {
-    execFile(bin.command, [...bin.args, '--version'], { encoding: 'utf8', timeout: 15_000, windowsHide: true }, (err, out) => {
+    execFileTree(bin.command, [...bin.args, '--version'], { encoding: 'utf8', timeout: 15_000, windowsHide: true }, (err, out) => {
       resolve(err ? '' : (String(out).match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? ''));
     });
   });
@@ -118,9 +118,65 @@ export function parseJsonc(text) {
   return JSON.parse(out.replace(/,\s*([}\]])/g, '$1'));
 }
 
+// ---------- permission rules (the user's own, merged with the app's mode) ----------
+
+/** OpenCode 2's `permissions` action names → the `permission` tool keys the app writes (others are the same). */
+const V2_ACTION = Object.freeze({ __proto__: null, shell: 'bash', subagent: 'task' });
+const ACTIONS = new Set(['allow', 'ask', 'deny']);
+const isAction = (a) => ACTIONS.has(a);
+/** Keys from a user file never name an object's internals (prototype pollution through "__proto__"…). */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const safeKey = (k) => typeof k === 'string' && k.length > 0 && k.length <= 500 && !FORBIDDEN_KEYS.has(k);
+/** obj[key] only when it is obj's own property (never something inherited from Object.prototype). */
+const ownValue = (obj, key) => (obj && typeof obj === 'object' && Object.hasOwn(obj, key) ? obj[key] : undefined);
+
+/** Sets tool[pattern] = action as the last rule of that tool (OpenCode: the last matching rule wins). */
+function addRule(merged, tool, pattern, action) {
+  if (!isAction(action) || !safeKey(tool) || !safeKey(pattern)) return;
+  // A later rule for every tool ("*") overrides what came before it for each tool: the global catch-all every
+  // earlier rule, a global pattern the same pattern of each tool.
+  if (tool === '*') {
+    for (const other of Object.keys(merged)) {
+      if (other === '*') continue;
+      if (pattern === '*') delete merged[other];
+      else delete merged[other][pattern];
+    }
+  }
+  const rules = ownValue(merged, tool) ?? Object.create(null);
+  if (pattern === '*') for (const key of Object.keys(rules)) delete rules[key]; // a later catch-all overrides them all
+  delete rules[pattern];
+  rules[pattern] = action;
+  merged[tool] = rules;
+}
+
+/** One `permission` value (a string for every tool, or { tool: action | { pattern: action } }) into `merged`. */
+function addPermission(merged, perm) {
+  if (typeof perm === 'string') return addRule(merged, '*', '*', perm);
+  if (!perm || typeof perm !== 'object' || Array.isArray(perm)) return;
+  for (const [tool, rule] of Object.entries(perm)) {
+    if (typeof rule === 'string') addRule(merged, tool, '*', rule);
+    else if (rule && typeof rule === 'object' && !Array.isArray(rule)) for (const [pattern, action] of Object.entries(rule)) addRule(merged, tool, pattern, action);
+  }
+}
+
+/** OpenCode 2's ordered `permissions: [{ action, resource, effect }]` into `merged`. */
+function addPermissions(merged, list) {
+  for (const rule of Array.isArray(list) ? list : []) {
+    if (!rule || typeof rule.action !== 'string') continue;
+    const tool = Object.hasOwn(V2_ACTION, rule.action) ? V2_ACTION[rule.action] : rule.action;
+    addRule(merged, tool, typeof rule.resource === 'string' ? rule.resource : '*', rule.effect);
+  }
+}
+
+/** The null-prototype working copy as plain objects (only safe keys ever got in). */
+const plainRules = (merged) => Object.fromEntries(Object.entries(merged).map(([tool, rules]) => [tool, Object.fromEntries(Object.entries(rules))]));
+
 /**
- * The user's own OpenCode `permission` rules (global ~/.config/opencode, then the project's opencode.json and
- * .opencode/), merged per tool like OpenCode does. Read fresh at every spawn (small files); {} when none.
+ * The user's own OpenCode permission rules (global ~/.config/opencode, then the project's opencode.json and
+ * .opencode/), merged per tool in OpenCode's order. Both forms are read: `"permission"` (a string for every tool,
+ * or { tool: action | { pattern: action } }) and OpenCode 2's ordered `"permissions": [{ action, resource, effect }]`
+ * (action "shell" = bash, "subagent" = task, "*" = every tool). Every tool comes back as { pattern: action } with
+ * "*" for "every tool" under the key "*". Read fresh at every spawn (small files); {} when none.
  */
 export function readUserPermission(projectPath, home = os.homedir()) {
   const files = [];
@@ -128,19 +184,93 @@ export function readUserPermission(projectPath, home = os.homedir()) {
     if (!dir) continue;
     for (const name of ['opencode.json', 'opencode.jsonc', 'config.json']) files.push(path.join(dir, name));
   }
-  const merged = {};
+  const merged = Object.create(null);
   for (const file of files) {
-    let perm;
+    let config;
     try {
-      perm = parseJsonc(readFileSync(file, 'utf8'))?.permission;
+      config = parseJsonc(readFileSync(file, 'utf8'));
     } catch {
       continue; // missing or not JSON: OpenCode itself reports a broken config
     }
-    if (!perm || typeof perm !== 'object' || Array.isArray(perm)) continue;
-    for (const [tool, rule] of Object.entries(perm)) {
-      if (rule && typeof rule === 'object' && !Array.isArray(rule)) merged[tool] = { ...(typeof merged[tool] === 'object' ? merged[tool] : {}), ...rule };
-      else if (typeof rule === 'string') merged[tool] = rule;
-    }
+    addPermission(merged, ownValue(config, 'permission'));
+    addPermissions(merged, ownValue(config, 'permissions'));
   }
-  return merged;
+  return plainRules(merged);
+}
+
+/** deny > ask > allow: a merge never makes a rule looser than the stricter side. */
+const STRICTNESS = { allow: 0, ask: 1, deny: 2 };
+const stricter = (a, b) => (STRICTNESS[a] >= STRICTNESS[b] ? a : b);
+
+/** A user rule (string or { pattern: action }) → its catch-all and its patterns in order (safe keys only). */
+function splitRule(rule) {
+  if (typeof rule === 'string') return { catchAll: rule, patterns: [] };
+  if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return { catchAll: undefined, patterns: [] };
+  const patterns = Object.keys(rule).filter((p) => p !== '*' && safeKey(p) && isAction(rule[p])).map((p) => [p, rule[p]]);
+  return { catchAll: ownValue(rule, '*'), patterns };
+}
+
+/**
+ * The app's mode (`base`: tool → action) merged with the user's own rules (readUserPermission). OpenCode layers
+ * every config source and the last matching rule wins; the result is the LAST layer (OPENCODE_CONFIG_CONTENT), so
+ * whatever is written here overrides the user's files and must never loosen them:
+ * - the user's catch-all for a tool is the tool's own "*" (or plain string rule), else the global one (key "*",
+ *   from `"permission": "deny"` or a v2 rule with action "*"): a tool rule the user wrote beats their global one;
+ * - the written "*" is the stricter of that and the mode (deny > ask > allow): the mode never loosens it;
+ * - patterns: the global ones, then the tool's own (they win), after "*"; a pattern deny always stays deny;
+ * - mode "auto" turns the user's "ask" into allow (only explicit denies remain, like OpenCode's --auto);
+ *   "dontAsk" turns everything that is not deny into deny; "readOnly" (one-shot runs) turns "ask" into deny.
+ * @param {Record<string, 'allow'|'ask'|'deny'>} base
+ */
+export function mergePermission(base, user, mode) {
+  const tune = (a) => (mode === 'auto' && a === 'ask' ? 'allow' : mode === 'dontAsk' && a !== 'deny' ? 'deny' : mode === 'readOnly' && a === 'ask' ? 'deny' : a);
+  const global = splitRule(ownValue(user, '*'));
+  const out = {};
+  for (const [tool, action] of Object.entries(base)) {
+    const mine = splitRule(ownValue(user, tool));
+    const userCatchAll = isAction(mine.catchAll) ? mine.catchAll : global.catchAll;
+    const catchAll = isAction(userCatchAll) ? stricter(action, tune(userCatchAll)) : action;
+    const patterns = {};
+    for (const [pattern, a] of [...global.patterns, ...mine.patterns]) {
+      delete patterns[pattern]; // the tool's own rule comes last (wins)
+      patterns[pattern] = tune(a);
+    }
+    out[tool] = Object.keys(patterns).length ? { '*': catchAll, ...patterns } : catchAll;
+  }
+  return out;
+}
+
+/**
+ * What a one-shot read-only `opencode run --agent plan` may use: reading the project (read, grep, glob, list),
+ * nothing else. Written as `"*": "deny"` first: verified with `opencode debug agents` (2.2.5) that this layer comes
+ * after the user's files (v1 `permission` and v2 `permissions` alike) and the last matching rule wins, so an MCP
+ * tool or shell the user allowed is denied here too. OpenCode's own default asks before reading .env files;
+ * nobody can answer in a one-shot run, so those stay closed (ask → deny).
+ */
+export const READ_ONLY_TOOLS = Object.freeze({ read: 'allow', grep: 'allow', glob: 'allow', list: 'allow' });
+const ENV_FILE_RULES = Object.freeze({ '*.env': 'ask', '*.env.*': 'ask', '*.env.example': 'allow' });
+
+/**
+ * Env for a one-shot read-only `opencode run` (handoff note, role classifier): OPENCODE_CONFIG_CONTENT with
+ * `{ "*": "deny", read/grep/glob/list }` on top of what that variable already holds (its other settings stay). The
+ * user's own rules for the reading tools still apply (a deny stays, see mergePermission). Merged by the caller
+ * over process.env, so no other variable is replaced.
+ * @param {NodeJS.ProcessEnv} [env] the environment the child inherits
+ * @param {object} [user] the user's rules (readUserPermission of the folder the run works in)
+ */
+export function readOnlyOpenCodeEnv(env = process.env, user = {}) {
+  let config = {};
+  try {
+    const parsed = env.OPENCODE_CONFIG_CONTENT ? JSON.parse(env.OPENCODE_CONFIG_CONTENT) : {};
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config = parsed;
+  } catch {
+    // not JSON: OpenCode would refuse it anyway; only the lock is passed
+  }
+  // The variable's own `permission` was the last layer before: it joins the user's rules (OpenCode's .env asks first).
+  const rules = Object.create(null);
+  for (const [pattern, action] of Object.entries(ENV_FILE_RULES)) addRule(rules, 'read', pattern, action);
+  for (const [tool, rule] of Object.entries(user ?? {})) addPermission(rules, { [tool]: rule });
+  addPermission(rules, ownValue(config, 'permission'));
+  const permission = { '*': 'deny', ...mergePermission(READ_ONLY_TOOLS, plainRules(rules), 'readOnly') };
+  return { OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...config, permission }) };
 }

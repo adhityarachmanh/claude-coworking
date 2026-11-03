@@ -1,8 +1,9 @@
 // 🧠 Memory: the instruction files the engine reads every session, editable from the app (no VS Code / terminal).
 // Claude Code: CLAUDE.md (project, in git), CLAUDE.local.md (project, private), ~/.claude/CLAUDE.md (every project).
 // OpenCode: AGENTS.md (project) and ~/.config/opencode/AGENTS.md (every project).
-// Only these fixed paths are ever read or written; writes are atomic and refuse a file changed meanwhile.
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+// Only these fixed paths are ever read or written; writes are atomic and refuse a file changed meanwhile. A symlink
+// at one of these paths is refused (read and write): it could point anywhere on the laptop.
+import { lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -40,7 +41,8 @@ function fileOf(engine, projectPath, key, home) {
 export function readMemory(engine, projectPath, key, home) {
   const file = fileOf(engine, projectPath, key, home);
   try {
-    const st = statSync(file.path);
+    const st = lstatSync(file.path); // lstat: a symlink is seen as one, never followed
+    if (st.isSymbolicLink()) throw new MemoryError(409, `${file.label} adalah symlink; buka file aslinya di editor.`);
     if (!st.isFile()) throw new MemoryError(409, `${file.label} bukan file biasa.`);
     if (st.size > MAX_MEMORY_BYTES) throw new MemoryError(413, `${file.label} terlalu besar untuk diedit di sini (maks 256 KB).`);
     return { ...file, exists: true, content: readFileSync(file.path, 'utf8'), mtime: st.mtimeMs };
@@ -61,7 +63,10 @@ export function writeMemory(engine, projectPath, key, content, baseMtime, home) 
   if (Buffer.byteLength(content) > MAX_MEMORY_BYTES) throw new MemoryError(413, 'Isi terlalu besar (maks 256 KB).');
   let current = 0;
   try {
-    current = statSync(file.path).mtimeMs;
+    const st = lstatSync(file.path);
+    if (st.isSymbolicLink()) throw new MemoryError(409, `${file.label} adalah symlink; buka file aslinya di editor.`);
+    if (!st.isFile()) throw new MemoryError(409, `${file.label} bukan file biasa.`);
+    current = st.mtimeMs;
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
   }

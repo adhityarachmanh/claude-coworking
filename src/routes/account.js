@@ -62,12 +62,12 @@ export function register(router) {
     return json(res, 200, result);
   });
   router.post('/api/opencode/providers', openCode((bin) => openCodeProviders(bin)));
-  router.post('/api/opencode/login/key', openCode((bin, body, ctx) => openCodeConnectKey(bin, body.provider, body).then(loggedIn(ctx))));
-  router.post('/api/opencode/login/oauth', openCode((bin, body) => openCodeOAuthStart(bin, body.provider, body)));
+  router.post('/api/opencode/login/key', openCode((bin, body, ctx) => openCodeConnectKey(bin, body.provider, body).then(loggedIn(ctx)).then(phoneAlert(ctx, 'login', body.provider))));
+  router.post('/api/opencode/login/oauth', openCode((bin, body, ctx) => openCodeOAuthStart(bin, body.provider, body).then(phoneAlert(ctx, 'login', body.provider))));
   router.post('/api/opencode/login/status', openCode((bin, body, ctx) => openCodeOAuthStatus(bin, body.provider, body.attemptID).then((st) => (st.status === 'complete' ? loggedIn(ctx)(st) : st))));
   router.post('/api/opencode/login/code', openCode((bin, body, ctx) => openCodeOAuthComplete(bin, body.provider, body.attemptID, body.code).then(loggedIn(ctx))));
   router.post('/api/opencode/login/cancel', openCode((bin, body) => openCodeOAuthCancel(bin, body.provider, body.attemptID)));
-  router.post('/api/opencode/logout', openCode((bin, body, ctx) => openCodeLogout(bin, body.credentialID).then(loggedIn(ctx))));
+  router.post('/api/opencode/logout', openCode((bin, body, ctx) => openCodeLogout(bin, body.credentialID).then(loggedIn(ctx)).then(phoneAlert(ctx, 'logout'))));
   // ---------- usage report ----------
   router.post('/api/report/accounts', reportAccounts);
   router.post('/api/report/summary', (ctx, req, res, params, body) => report(ctx, req, res, body, { pdf: false }));
@@ -90,17 +90,28 @@ const loggedIn = (ctx) => (result) => {
   return result;
 };
 
-/** Tells the laptop that a phone started a login or logged out (shown as a toast + notification). */
-function accountAlert(hub, action, device, email = null) {
-  console.log(`Akun: ${action} dari HP "${device.name}"${email ? ` (${email})` : ''}`);
-  hub.broadcast('account-alert', { action, device: device.name, email, ts: Date.now() });
+/**
+ * Tells the laptop that a phone started a login or logged out (shown as a toast + notification). `engine`
+ * "opencode": an OpenCode provider (`provider` its id, null when unknown, e.g. a logout); else the Claude account.
+ */
+function accountAlert(hub, action, device, email = null, { engine = 'claude', provider = null } = {}) {
+  const what = engine === 'opencode' ? `OpenCode${provider ? ` (${provider})` : ''} ` : '';
+  console.log(`Akun: ${action} ${what}dari HP "${device.name}"${email ? ` (${email})` : ''}`);
+  hub.broadcast('account-alert', { action, device: device.name, email, engine, provider, ts: Date.now() });
 }
+
+/** After a successful OpenCode provider login (started) or logout from a phone: the same alert as for Claude Code. */
+const PROVIDER_ID = /^[\w.-]{1,100}$/;
+const phoneAlert = (ctx, action, provider = null) => (result) => {
+  if (ctx.device) accountAlert(ctx.hub, action, ctx.device, null, { engine: 'opencode', provider: PROVIDER_ID.test(String(provider ?? '')) ? String(provider) : null });
+  return result;
+};
 
 /**
  * `account-alert` for a read-only client on plain-HTTP WiFi (sniffable): the alert stays, without the paired
  * device's name (often a person's) or the account email. Registered in server.js (hub.redactors).
  */
-export const wifiAccountAlert = ({ action, ts }) => ({ action, device: 'Perangkat lain', email: null, ts });
+export const wifiAccountAlert = ({ action, engine, ts }) => ({ action, device: 'Perangkat lain', email: null, ...(engine ? { engine } : {}), ts });
 
 async function accountState(ctx, req, res, params, body) {
   const { account, ledger, allowForce } = ctx;

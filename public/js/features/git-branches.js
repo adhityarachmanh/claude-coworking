@@ -1,5 +1,5 @@
 // Perubahan tab → ⎇ git bar: current branch + ahead/behind, switch / create branch, fetch, pull (--ff-only),
-// push (sets the upstream the first time, never --force), and "🤖 Minta Claude buat PR" (fills the composer).
+// push (sets the upstream the first time, never --force), and "🔀 Buat PR" (opens the PR dialog: gh pr create or let Claude do it).
 // Reading works everywhere (also a WiFi phone); the actions need the laptop or Tailscale (the server's WiFi gate).
 import { openPullRequest } from './pull-request.js';
 import { closeModal } from '../ui/modals.js';

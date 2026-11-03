@@ -1,9 +1,10 @@
 // Pull request without the terminal: GitHub CLI (`gh`) status, its browser login (one-time device code shown in the
 // app, like `gh auth login --web`) and `gh pr create` after the branch is pushed. Nothing is stored by the app:
 // gh keeps its own credentials.
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { execFileTree } from './proc.js';
 
 export class PrError extends Error {
   constructor(status, message) {
@@ -26,7 +27,7 @@ const asNode = (bin) => (/\.[cm]?js$/.test(bin) ? { command: process.execPath, p
 function gh(bin, args, { cwd, timeout = 60_000 } = {}) {
   const { command, pre } = asNode(bin);
   return new Promise((resolve) => {
-    execFile(command, [...pre, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1', GH_NO_UPDATE_NOTIFIER: '1' } }, (error, out, err) =>
+    execFileTree(command, [...pre, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1', GH_NO_UPDATE_NOTIFIER: '1' } }, (error, out, err) =>
       resolve({ ok: !error, out: String(out ?? ''), err: String(err ?? '') }),
     );
   });
@@ -47,6 +48,9 @@ let login = null; // { child, state: 'starting'|'waiting'|'done'|'error', code, 
 
 /** The running login's public state (never the token: gh stores it itself). */
 export const ghLoginState = () => (login ? { state: login.state, code: login.code ?? null, url: login.url ?? null, error: login.error ?? null } : null);
+
+/** The login as a plain-WiFi (sniffable, read-only) client sees it: the state only, never the device code or link. */
+export const wifiGithubLogin = (state) => (state ? { ...state, code: null, url: null } : state);
 
 export function ghLoginStart(bin, { onChange = () => {} } = {}) {
   if (!bin) throw new PrError(404, 'GitHub CLI (gh) belum terpasang. Pasang dari https://cli.github.com lalu muat ulang.');
@@ -98,6 +102,44 @@ export function ghLoginCancel() {
 
 // ---------- pull request ----------
 
+/** A branch name gh may get as --base: starts with a letter or digit (never an option), git ref characters only. */
+const BASE = /^[A-Za-z0-9][\w./-]{0,199}$/;
+
+/** git in the project; the trimmed stdout, null on failure. */
+function git(cwd, args) {
+  return new Promise((resolve) => {
+    execFileTree('git', args, { cwd, encoding: 'utf8', timeout: 15_000, windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (error, out) =>
+      resolve(error ? null : String(out ?? '').trim()),
+    );
+  });
+}
+
+/** The remote's default branch: <remote>/HEAD as git knows it, else what GitHub says through gh; '' when unknown. */
+async function defaultBranch(bin, cwd, remote) {
+  const ref = await git(cwd, ['symbolic-ref', '--quiet', '--short', `refs/remotes/${remote}/HEAD`]);
+  if (ref?.startsWith(`${remote}/`)) return ref.slice(remote.length + 1);
+  if (!bin) return '';
+  const r = await gh(bin, ['repo', 'view', '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name'], { cwd, timeout: 20_000 });
+  return r.ok ? r.out.trim() : '';
+}
+
+/**
+ * Checked before anything is pushed: no PR from the target branch into itself, none from the repository's default
+ * branch (a PR needs its own branch; pushing main from here would publish its commits right away).
+ * @returns {Promise<{ branch: string, defaultBranch: string|null }>}
+ */
+export async function checkPrBranch(bin, cwd, { base = '' } = {}) {
+  const wanted = String(base ?? '').trim();
+  if (wanted && !BASE.test(wanted)) throw new PrError(400, 'Branch tujuan tidak valid.');
+  const branch = await git(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+  if (!branch) throw new PrError(409, 'Tidak sedang di sebuah branch (detached HEAD). Pindah ke branch fitur dulu.');
+  if (wanted === branch) throw new PrError(409, `Branch saat ini (${branch}) sama dengan branch tujuan. Pindah ke (atau buat) branch fitur dulu, lalu buat PR.`);
+  const remote = (await git(cwd, ['config', '--get', `branch.${branch}.remote`])) || 'origin';
+  const main = /^[\w.-]+$/.test(remote) ? await defaultBranch(bin, cwd, remote) : '';
+  if (main && main === branch) throw new PrError(409, `Kamu sedang di branch utama (${branch}). Pull request harus dari branch lain: buat branch baru dulu (mis. fitur/nama-perubahan), commit di sana, lalu buat PR.`);
+  return { branch, defaultBranch: main || null };
+}
+
 /**
  * `gh pr create` for the current branch (pushed first by the caller). Returns the PR's URL.
  * @param {{ title: string, body?: string, base?: string, draft?: boolean }} pr
@@ -107,9 +149,10 @@ export async function createPr(bin, cwd, { title, body = '', base = '', draft = 
   const t = String(title ?? '').trim();
   if (!t || t.length > 256) throw new PrError(400, 'Judul PR wajib (maks 256 karakter).');
   if (String(body).length > 60_000) throw new PrError(413, 'Deskripsi terlalu panjang.');
-  if (base && !/^[\w./-]{1,200}$/.test(base)) throw new PrError(400, 'Branch tujuan tidak valid.');
-  const args = ['pr', 'create', '--title', t, '--body', String(body ?? '')];
-  if (base) args.push('--base', base);
+  if (base && !BASE.test(base)) throw new PrError(400, 'Branch tujuan tidak valid.');
+  // --flag=value: a title or body starting with "-" is never read as another option.
+  const args = ['pr', 'create', `--title=${t}`, `--body=${String(body ?? '')}`];
+  if (base) args.push(`--base=${base}`);
   if (draft) args.push('--draft');
   const r = await gh(bin, args, { cwd, timeout: 120_000 });
   const url = /https:\/\/\S+\/pull\/\d+/.exec(`${r.out}\n${r.err}`)?.[0];

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A fake GitHub CLI for tests (OFFICE_GH_BIN): auth status / auth login --web (device code) / pr create.
+// A fake GitHub CLI for tests (OFFICE_GH_BIN): auth status / auth login --web (device code) / pr create / repo view.
 // State in FAKE_GH_STATE (a file: present = logged in); `pr create` appends its argv to FAKE_GH_LOG.
 import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 
@@ -25,6 +25,11 @@ if (cmd === 'auth' && sub === 'login') {
 } else if (cmd === 'pr' && sub === 'create') {
   if (process.env.FAKE_GH_LOG) appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify(rest)}\n`);
   console.log('https://github.com/acme/toko/pull/7');
+  process.exit(0);
+} else if (cmd === 'repo' && sub === 'view') {
+  // `gh repo view --json defaultBranchRef --jq …`: FAKE_GH_DEFAULT_BRANCH, or not a GitHub repo (exit 1)
+  if (!process.env.FAKE_GH_DEFAULT_BRANCH) process.exit(1);
+  console.log(process.env.FAKE_GH_DEFAULT_BRANCH);
   process.exit(0);
 } else if (!(cmd === 'auth' && sub === 'login')) {
   process.exit(2);

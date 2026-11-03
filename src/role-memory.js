@@ -8,9 +8,10 @@
 // Names the rules fell back on are listed (`roleMap.unknown`) for the user to map. With 🤖 AI on (off by default)
 // they are also sent in small batches to the active engine's cheapest model: only the names and a tool name as
 // a hint (never code, paths, commands or chat), each name once; the answer is stored and reused for good.
-import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { readOnlyOpenCodeEnv, readUserPermission } from './opencode-bin.js';
+import { execFileTree } from './proc.js';
 import { CATALOG_IDS } from './role-catalog.js';
 
 export const PROJECT_FILE = '.office-roles.json';
@@ -328,7 +329,7 @@ export function parseAnswer(text) {
 
 function run(command, args, { cwd, timeout, env }) {
   return new Promise((resolve) => {
-    execFile(command, args, { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 1024 * 1024, env: { ...process.env, ...env } }, (err, out, errOut) =>
+    execFileTree(command, args, { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 1024 * 1024, env: { ...process.env, ...env } }, (err, out, errOut) =>
       resolve({ ok: !err, out: String(out ?? ''), err: String(errOut ?? ''), timedOut: Boolean(err?.killed) }),
     );
   });
@@ -346,7 +347,7 @@ export function engineClassifier({ engine, claude, opencode, dataDir }) {
     let r;
     if (engine() === 'opencode') {
       if (!opencode) throw new Error('OpenCode tidak ditemukan.');
-      r = await run(opencode.command, [...opencode.args, 'run', '--agent', 'plan', prompt], { cwd, timeout: 120_000, env: { OPENCODE_DISABLE_AUTOUPDATE: '1' } });
+      r = await run(opencode.command, [...opencode.args, 'run', '--agent', 'plan', prompt], { cwd, timeout: 120_000, env: readOnlyOpenCodeEnv(process.env, readUserPermission(cwd)) });
     } else {
       if (!claude) throw new Error('Claude Code tidak ditemukan.');
       r = await run(claude.command, [...claude.args, '-p', prompt, '--model', 'haiku', '--output-format', 'text', '--permission-mode', 'plan', '--disallowedTools', 'Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch'], { cwd, timeout: 120_000 });

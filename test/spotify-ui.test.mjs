@@ -489,9 +489,11 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(await page.eval(() => ['#sp-prev', '#sp-play', '#sp-next', '#sp-volume'].map((s) => document.querySelector(s).disabled)), [true, true, true, true]);
       const until = Date.now() + 3600_000;
       await push(page, STATE({ error: { code: 'rate-limited', message: 'x', until } }));
+      // In the browser's time zone; another day (a run after 23:00) is prefixed "d/m", like clockTime
       const hhmm = await page.eval((u) => {
         const d = new Date(u);
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        return new Date().toDateString() === d.toDateString() ? hm : `${d.getDate()}/${d.getMonth() + 1} ${hm}`;
       }, until);
       await page.waitFor((t) => document.querySelector('#sp-status').textContent.includes(`coba lagi ${t}`), { message: 'rate-limited with time' }, hhmm);
       assert.equal(await page.eval(() => !document.querySelector('#spotify-pill-warn').hidden), true, '⚠ on the pill');

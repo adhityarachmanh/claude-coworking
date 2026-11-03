@@ -1,10 +1,10 @@
 // 🧩 Ekstensi Claude Code without the terminal: plugins (`claude plugin …`), your own subagents (.claude/agents/*.md)
 // and a view of the hooks in the settings files. Plugins go through Claude Code's own CLI (it owns their config);
 // agents are plain Markdown files with front matter, written only at the two fixed agent folders.
-import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileTree } from './proc.js';
 
 export class AdminError extends Error {
   constructor(status, message) {
@@ -17,7 +17,7 @@ export class AdminError extends Error {
 export function runClaude(bin, args, { cwd, timeout = 120_000 } = {}) {
   if (!bin) return Promise.reject(new AdminError(404, 'Claude Code tidak ditemukan.'));
   return new Promise((resolve) => {
-    execFile(bin.command, [...bin.args, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024, env: { ...process.env, CI: '1', NO_COLOR: '1' } }, (error, out, err) => {
+    execFileTree(bin.command, [...bin.args, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024, env: { ...process.env, CI: '1', NO_COLOR: '1' } }, (error, out, err) => {
       const strip = (s) => String(s ?? '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
       resolve({ ok: !error, timedOut: Boolean(error?.killed), out: strip(out), err: strip(err) });
     });
@@ -28,7 +28,8 @@ const firstLine = (r) => `${r.err}\n${r.out}`.split('\n').map((l) => l.trim()).f
 
 // ---------- plugins ----------
 
-const PLUGIN_ID = /^[\w.@/-]{1,200}$/;
+// First character a letter or digit: the id is a CLI argument and must never read as an option ("--x").
+const PLUGIN_ID = /^[A-Za-z0-9][\w.@/-]{0,199}$/;
 let pluginCache = null; // { at, data } — the marketplace list is large (thousands) and changes rarely
 
 /** Installed plugins + the marketplace catalog (cached 5 min; any change clears it). */

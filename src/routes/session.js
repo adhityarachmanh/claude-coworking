@@ -54,7 +54,7 @@ export function register(router) {
   router.post('/api/projects/:id/sessions', withSession(async ({ hub, opencode }, req, res, { project }) => {
     const sessions = hub.engine === 'opencode' ? await openCodeSessions(opencode, project.path) : listSessions(project.path);
     return json(res, 200, { sessions, engine: hub.engine, current: hub.sessionIdFor(project.id) });
-  })),
+  }));
   router.post('/api/projects/:id/resume', withSession(async ({ hub, opencode }, req, res, { project, session }, body) => {
     const sessionId = String(body.sessionId ?? '');
     // Only a conversation of the active engine (a Claude transcript id means nothing to OpenCode and vice versa).

@@ -7,7 +7,7 @@
 import path from 'node:path';
 import { statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { readUserPermission } from './opencode-bin.js';
+import { mergePermission, readUserPermission } from './opencode-bin.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { attachmentChips } from './attachments.js';
@@ -49,30 +49,8 @@ export function permissionConfig(mode, user = {}) {
     : mode === 'dontAsk' ? { edit: 'deny', bash: 'deny', webfetch: 'deny' } // like Claude: never ask, refuse
     : mode === 'acceptEdits' ? { edit: 'allow', bash: 'ask', webfetch: 'ask' }
     : { edit: 'ask', bash: 'ask', webfetch: 'ask' }; // manual, plan
-  return mergeUserPermission(base, user, mode);
-}
-
-/**
- * The user's own OpenCode rules (opencode.json `permission`) are kept, not flattened by the app's mode:
- * - a tool the user denies stays denied (also under ⚡ Auto, like OpenCode's own --auto);
- * - pattern rules ({ "git *": "allow", "rm *": "deny" }) stay; the mode only sets the catch-all "*".
- *   Under ⚡ Auto an "ask" pattern becomes allow (only explicit denies remain), like --auto.
- */
-function mergeUserPermission(base, user, mode) {
-  const out = {};
-  for (const [tool, action] of Object.entries(base)) {
-    const mine = user?.[tool];
-    if (mine === 'deny') out[tool] = 'deny';
-    else if (mine && typeof mine === 'object' && !Array.isArray(mine)) {
-      const rules = {};
-      for (const [pattern, a] of Object.entries(mine)) {
-        if (!['allow', 'ask', 'deny'].includes(a) || pattern === '*') continue;
-        rules[pattern] = mode === 'auto' && a === 'ask' ? 'allow' : mode === 'dontAsk' && a !== 'deny' ? 'deny' : a;
-      }
-      out[tool] = { '*': action, ...rules };
-    } else out[tool] = action;
-  }
-  return out;
+  // The user's own rules are kept, never loosened by the mode: see mergePermission (src/opencode-bin.js).
+  return mergePermission(base, user, mode);
 }
 
 /**

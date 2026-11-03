@@ -1,9 +1,11 @@
 // ---------- 🧩 Ekstensi (plugins, your own subagents, hooks) and ⇡ Pull request (gh) ----------
-// Reading: laptop or Tailscale (never a plain-WiFi phone). Installing/removing plugins and the GitHub login: laptop
-// only (a plugin runs code on this laptop; gh's login opens a device flow for this machine).
+// Reading: laptop or Tailscale (never a plain-WiFi phone). Installing/removing plugins, saving/deleting a user-level
+// subagent (~/.claude/agents: every project) and the GitHub login: laptop only (a plugin runs code on this laptop;
+// a user agent steers every project, like plugins and MCP servers; gh's login opens a device flow for this
+// machine). A project's own agents (.claude/agents) can be edited over Tailscale too.
 import { AdminError, deleteAgent, listAgents, listHooks, listPlugins, pluginAction, saveAgent } from '../claude-admin.js';
 import { gitAction } from '../git.js';
-import { createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
+import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
 import { handoffInfo, HandoffError, otherEngine, quickHandoff, smartHandoff } from '../handoff.js';
 import { json } from './http.js';
 import { withProject, withSession } from './project.js';
@@ -22,9 +24,15 @@ const guard = (fn, { laptop = false } = {}) => async (ctx, req, res, params, bod
   }
 };
 
+/** A user-level agent (scope "user", ~/.claude/agents) is changed from the laptop only. */
+function userScopeFromLaptop(ctx, req, body) {
+  if (body.scope === 'user' && !ctx.isLocal(req)) throw new AdminError(403, 'Agent untuk semua project (scope user) hanya bisa diubah dari laptop.');
+}
+
 export function register(router) {
   // plugins (Claude Code)
-  router.post('/api/claude/plugins', guard(({ claude }, req, res, params, body) => listPlugins(claude, { force: body.force === true })));
+  // force (a fresh `claude plugin list --available`, up to 2 min): laptop only, like the other refresh endpoints.
+  router.post('/api/claude/plugins', guard(({ claude, isLocal, allowForce }, req, res, params, body) => listPlugins(claude, { force: isLocal(req) && allowForce(req, body) })));
   router.post('/api/claude/plugins/action', guard(async ({ claude, sessions }, req, res, params, body) => {
     const result = await pluginAction(claude, { action: String(body.action ?? ''), id: String(body.id ?? ''), scope: body.scope, acceptCommand: body.acceptCommand ?? null });
     if (result.ok) {
@@ -37,11 +45,13 @@ export function register(router) {
   // your own subagents (.claude/agents) and hooks (read-only)
   router.post('/api/projects/:id/agents', withProject(guard((ctx, req, res, { project }) => ({ agents: listAgents(project.path) }))));
   router.post('/api/projects/:id/agents/save', withSession(guard((ctx, req, res, { project, session }, body) => {
+    userScopeFromLaptop(ctx, req, body);
     const saved = saveAgent(project.path, body);
     session.reloadSettings?.(); // read at the next start
     return saved;
   })), { maxBody: 256 * 1024 });
   router.post('/api/projects/:id/agents/delete', withSession(guard((ctx, req, res, { project, session }, body) => {
+    userScopeFromLaptop(ctx, req, body);
     const r = deleteAgent(project.path, body);
     session.reloadSettings?.();
     return r;
@@ -77,6 +87,7 @@ export function register(router) {
     const st = await ghStatus(ghBin);
     if (!st.installed) throw new PrError(404, 'GitHub CLI (gh) belum terpasang. Pasang dari https://cli.github.com.');
     if (!st.loggedIn) throw new PrError(409, 'Belum login GitHub. Klik "Login GitHub" dulu.');
+    await checkPrBranch(ghBin, project.path, body); // never push a PR from main / into itself
     await gitAction(project.path, { action: 'push' }); // the branch must be on the remote first (upstream set if new)
     const pr = await createPr(ghBin, project.path, body);
     hub.chat(project.id, { kind: 'info', text: `⇡ Pull request dibuat: ${pr.url ?? '(lihat GitHub)'}` });

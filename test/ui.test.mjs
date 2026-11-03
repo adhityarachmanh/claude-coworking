@@ -77,6 +77,7 @@ async function startServer() {
       OFFICE_PORT: String(PORT),
       OFFICE_DATA_DIR: path.join(TMP, 'data'),
       OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale.exe'), // never the real Tailscale CLI
+      OFFICE_GH_BIN: path.join(TMP, 'fake-gh.mjs'), // never the real GitHub CLI (or its login): always "not logged in"
       PROJECTS_ROOT: path.join(TMP, 'projects'),
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
@@ -107,6 +108,8 @@ before(async () => {
   mkdirSync(path.join(projects, 'toko', 'src'), { recursive: true });
   writeFileSync(path.join(projects, 'toko', 'src', 'checkout.ts'), 'export {};\n');
   mkdirSync(path.join(TMP, 'claude-projects'));
+  // gh installed but not logged in: `gh auth status` fails (the PR dialog shows its login, the form stays hidden)
+  writeFileSync(path.join(TMP, 'fake-gh.mjs'), "process.stderr.write('You are not logged into any GitHub hosts.\\n');\nprocess.exit(1);\n");
   PORT = await freePort();
   BASE = `http://localhost:${PORT}`;
   await startServer();
@@ -1754,10 +1757,23 @@ for (const vp of VIEWPORTS) {
       await shot('git');
       await page.click('#ch-git-create-cancel');
       await page.click('#ch-git-out-close');
-      // 🤖 PR: the prompt lands in the composer, not sent
+      // ⇡ PR: a dialog (gh status + form). gh not logged in here: the form stays hidden, the login and
+      // "✳ Biar Claude yang buat" are offered; Claude's route puts the prompt in the composer, not sent
       const users = await page.eval(() => document.querySelectorAll('#chat .msg.user, #chat [data-kind="user"]').length);
       await tapChangesAction(page, '#ch-git-pr', vp.mobile);
-      await page.waitFor(() => /pull request/.test(document.querySelector('#prompt').value), { timeoutMs: 2000, message: 'prompt PR di kotak pesan' });
+      await page.waitFor(() => !document.querySelector('#pr-modal').hidden && document.querySelector('#pr-gh [data-pr="claude"]'), { timeoutMs: 6000, message: 'dialog PR: status gh + rute Claude' });
+      const prDialog = await page.eval(() => ({
+        branch: document.querySelector('#pr-branch').textContent,
+        formHidden: document.querySelector('#pr-form').hidden,
+        login: Boolean(document.querySelector('#pr-gh [data-pr="login"]')),
+        prompt: document.querySelector('#prompt').value,
+      }));
+      assert.deepEqual(prDialog, { branch: `· ${bar.branch}`, formHidden: true, login: true, prompt: '' });
+      assert.equal(await page.eval(horizontalOverflow), null, 'dialog PR tanpa scroll horizontal');
+      assert.deepEqual(await page.eval(unnamedButtons, '#pr-modal'), []);
+      await shot('pr');
+      await page.click('#pr-gh [data-pr="claude"]');
+      await page.waitFor(() => /pull request/.test(document.querySelector('#prompt').value) && document.querySelector('#pr-modal').hidden, { timeoutMs: 2000, message: 'prompt PR di kotak pesan, dialog tertutup' });
       assert.match(await page.eval(() => document.querySelector('#prompt').value), new RegExp(`branch \`${bar.branch}\``));
       assert.equal(await page.eval(() => document.querySelectorAll('#chat .msg.user, #chat [data-kind="user"]').length), users, 'tidak terkirim');
       await typeInPrompt(page, '');

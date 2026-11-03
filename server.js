@@ -35,6 +35,7 @@ import { trustSystemCertificates } from './src/system-ca.js';
 import { createSpotifyLauncher } from './src/spotify-launcher.js';
 import { callback as spotifyCallback } from './src/routes/spotify.js';
 import { wifiAccountAlert } from './src/routes/account.js';
+import { wifiGithubLogin } from './src/github-pr.js';
 import { HttpError, json, readJson } from './src/routes/http.js';
 import { buildRouter } from './src/routes/index.js';
 import { teamConfig } from './src/routes/team.js';
@@ -202,6 +203,7 @@ hub.observers.add((type, data) => spotify.observeApproval(type, data, hub.approv
 hub.redactors.set('spotify', wifiSpotifyState);
 hub.redactors.set('account-alert', wifiAccountAlert);
 hub.redactors.set('config', wifiConfig);
+hub.redactors.set('github-login', wifiGithubLogin); // gh's one-time device code: whoever reads it can approve the login
 // 👤 Akun on WiFi: plan and quota only, never the email/name/org; ids opaque but stable (key in the data dir).
 const accountPrivacy = accountPrivacyView(accountViewKey(path.join(DATA_DIR, 'account-view.key')));
 hub.redactors.set('account', accountPrivacy.state);

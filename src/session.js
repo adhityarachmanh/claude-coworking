@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } f
 import os from 'node:os';
 import path from 'node:path';
 import { acpSessionClass } from './acp-session.js';
+import { killTree } from './proc.js';
 import { attachmentChips, contentBlocks } from './attachments.js';
 import { ENGINES, PERMISSION_MODES } from './hub.js';
 import { describeTool, inferRole } from './roles.js';
@@ -805,15 +806,7 @@ export class ClaudeSession {
   }
 
   killTree(pid) {
-    if (!pid) return;
-    if (process.platform === 'win32') {
-      // Kill the whole tree: Claude Code may have shells/test runners running.
-      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
-    } else {
-      try {
-        process.kill(pid, 'SIGTERM');
-      } catch {}
-    }
+    killTree(pid); // the whole tree: Claude Code may have shells/test runners running (src/proc.js)
   }
 
   onExit(child, code) {

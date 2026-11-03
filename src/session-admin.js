@@ -2,11 +2,11 @@
 // Claude Code: transcripts in ~/.claude/projects/<project>/<id>.jsonl; delete moves them to data/trash (never rm).
 // OpenCode: its own store through `opencode api` (session.remove / session.fork / session.update) and
 // `opencode session export`.
-import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { openCodeApi } from './opencode-auth.js';
 import { clearSessionCache } from './opencode-bin.js';
+import { execFileTree } from './proc.js';
 import { transcriptDir } from './transcripts.js';
 
 const CLAUDE_ID = /^[0-9a-f-]{36}$/i;
@@ -70,7 +70,7 @@ export function exportOpenCodeSession({ opencode, projectPath, sessionId, saniti
   if (!opencode) return Promise.reject(new SessionAdminError(404, 'OpenCode belum terpasang.'));
   const args = [...opencode.args, 'session', 'export', sessionId, ...(sanitize ? ['--sanitize'] : [])];
   return new Promise((resolve, reject) => {
-    execFile(opencode.command, args, { cwd: projectPath, encoding: 'utf8', timeout: 60_000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, out) => {
+    execFileTree(opencode.command, args, { cwd: projectPath, encoding: 'utf8', timeout: 60_000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, out) => {
       if (err) return reject(new SessionAdminError(502, 'Export sesi OpenCode gagal.'));
       const start = String(out).indexOf('{');
       try {

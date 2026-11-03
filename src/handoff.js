@@ -5,8 +5,9 @@
 //   smart — the source engine itself writes a handoff note from its full conversation, on a FORK of that session
 //           (Claude --fork-session / opencode run --fork) in read-only mode (plan): the original session is never
 //           changed and nothing in the project is edited. Uses a few thousand tokens of the source engine's account.
-import { execFile } from 'node:child_process';
 import { ChatStore } from './chat-store.js';
+import { readOnlyOpenCodeEnv, readUserPermission } from './opencode-bin.js';
+import { execFileTree } from './proc.js';
 
 const MAX_MESSAGES = 30;
 const MAX_PER_MESSAGE = 700;
@@ -27,7 +28,7 @@ const clip = (s, n) => {
 
 function run(command, args, { cwd, timeout, env }) {
   return new Promise((resolve) => {
-    execFile(command, args, { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, ...env } }, (err, out, errOut) =>
+    execFileTree(command, args, { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, ...env } }, (err, out, errOut) =>
       resolve({ ok: !err, out: String(out ?? ''), err: String(errOut ?? ''), timedOut: Boolean(err?.killed) }),
     );
   });
@@ -93,7 +94,7 @@ export async function smartHandoff({ hub, project, from, claude, opencode }) {
     r = await run(claude.command, [...claude.args, '-p', SMART_PROMPT, '--resume', sessionId, '--fork-session', '--output-format', 'text', '--permission-mode', 'plan', '--disallowedTools', 'Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'], { cwd: project.path, timeout: 240_000 });
   } else {
     if (!opencode) throw new HandoffError(404, 'OpenCode tidak ditemukan.');
-    r = await run(opencode.command, [...opencode.args, 'run', '--session', sessionId, '--fork', '--agent', 'plan', SMART_PROMPT], { cwd: project.path, timeout: 240_000, env: { OPENCODE_DISABLE_AUTOUPDATE: '1' } });
+    r = await run(opencode.command, [...opencode.args, 'run', '--session', sessionId, '--fork', '--agent', 'plan', SMART_PROMPT], { cwd: project.path, timeout: 240_000, env: readOnlyOpenCodeEnv(process.env, readUserPermission(project.path)) });
   }
   const text = r.out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
   if (!r.ok || !text) throw new HandoffError(502, r.timedOut ? `${ENGINE_LABEL[from]} tidak selesai dalam 4 menit.` : `${ENGINE_LABEL[from]} gagal menulis catatan: ${(r.err || r.out).trim().split('\n').at(-1)?.slice(0, 200) ?? ''}`);

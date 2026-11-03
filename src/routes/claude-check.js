@@ -1,13 +1,13 @@
 // ⚙ Cek kompatibilitas Claude Code (src/claude-check.js). Both routes are laptop only (LOCAL_ONLY in server.js):
 // a phone never starts a check (it spawns Claude Code, maybe a model call) nor changes its settings. The status
 // itself reaches every browser through the config (config.claudeCheck).
-import { execFile } from 'node:child_process';
+import { execFileTree } from '../proc.js';
 import { json } from './http.js';
 
 /** `claude doctor` / `claude update` without a terminal (both print and exit); output cut to 20 KB. */
 function runClaude(bin, args, timeout) {
   return new Promise((resolve) => {
-    execFile(bin.command, [...bin.args, ...args], { encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, CI: '1', NO_COLOR: '1' } }, (err, out, errOut) => {
+    execFileTree(bin.command, [...bin.args, ...args], { encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, CI: '1', NO_COLOR: '1' } }, (err, out, errOut) => {
       const text = `${out ?? ''}${errOut ? `\n${errOut}` : ''}`.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim().slice(0, 20_000);
       resolve({ ok: !err, timedOut: Boolean(err?.killed), output: text || (err ? err.message.split('\n')[0] : '') });
     });

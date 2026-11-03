@@ -1,10 +1,10 @@
 // 🔌 MCP servers without the terminal: add one (`claude mcp add` / `opencode mcp add`, the CLIs write their own config)
 // and, for OpenCode, list the configured ones (its live status is only known inside its process).
-import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseJsonc } from './opencode-bin.js';
+import { execFileTree } from './proc.js';
 
 export class McpAdminError extends Error {
   constructor(status, message) {
@@ -13,7 +13,7 @@ export class McpAdminError extends Error {
   }
 }
 
-const NAME = /^[\w.-]{1,60}$/;
+const NAME = /^[A-Za-z0-9][\w.-]{0,59}$/; // never starts with "-": the name is a CLI argument
 const ENV = /^[A-Za-z_][A-Za-z0-9_]{0,60}=.{0,2000}$/;
 
 /** A command line → argv (spaces split, "double" / 'single' quotes group); no shell is ever involved. */
@@ -79,7 +79,7 @@ export function addMcpServer({ engine, bin, projectPath, request }) {
     else args.push(r.name, '--', ...r.argv);
   }
   return new Promise((resolve, reject) => {
-    execFile(bin.command, args, { cwd: projectPath, encoding: 'utf8', timeout: 60_000, windowsHide: true, env: { ...process.env, CI: '1', NO_COLOR: '1' } }, (err, out, errOut) => {
+    execFileTree(bin.command, args, { cwd: projectPath, encoding: 'utf8', timeout: 60_000, windowsHide: true, env: { ...process.env, CI: '1', NO_COLOR: '1' } }, (err, out, errOut) => {
       const text = `${out ?? ''}\n${errOut ?? ''}`.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
       if (err) return reject(new McpAdminError(502, text.split('\n').find((l) => l.trim() && !/^\s+at /.test(l))?.slice(0, 300) || 'Menambah server MCP gagal.'));
       resolve({ ok: true, output: text.slice(0, 2000) });

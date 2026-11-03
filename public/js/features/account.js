@@ -108,12 +108,13 @@ function renderLoginFlow() {
 }
 
 /** The laptop is told whenever a phone starts a login or logs out. */
-export function onAccountAlert({ action, device, email }) {
+export function onAccountAlert({ action, device, email, engine, provider }) {
   if (!state.local) return;
-  const text = action === 'logout' ? `HP "${device}" me-logout Claude Code${email ? ` (${email})` : ''}.` : `HP "${device}" memulai login/ganti akun Claude Code.`;
+  const target = engine === 'opencode' ? `OpenCode${provider ? ` (${provider})` : ''}` : 'Claude Code';
+  const text = action === 'logout' ? `HP "${device}" me-logout ${target}${email ? ` (${email})` : ''}.` : `HP "${device}" memulai login/ganti akun ${target}.`;
   toast(text, 'warn');
   chime('ask', 100); // a security alert: always full volume, whatever the 🔔 volume setting
-  if ('Notification' in window && Notification.permission === 'granted') new Notification('Adhit Office: akun Claude', { body: text, tag: 'account-alert' });
+  if ('Notification' in window && Notification.permission === 'granted') new Notification(`Adhit Office: akun ${engine === 'opencode' ? 'OpenCode' : 'Claude'}`, { body: text, tag: 'account-alert' });
 }
 
 // renderAccount() rebuilds #account-body (up to 3× while account + quota load), which would drop keyboard focus

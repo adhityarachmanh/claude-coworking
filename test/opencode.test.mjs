@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-opencode-'));
-const PORT = 4900 + Math.floor(Math.random() * 300);
+// 4900–5049: stays clear of 5060/5061, which fetch() refuses as "bad port".
+const PORT = 4900 + Math.floor(Math.random() * 150);
 const BASE = `http://localhost:${PORT}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let server;

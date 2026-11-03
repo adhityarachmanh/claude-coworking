@@ -7,6 +7,11 @@ import { openModal } from '../ui/modals.js';
 
 const pr = { status: null, branch: '', fillWithClaude: null };
 
+// The "let Claude do it" route needs no gh login on this page (Claude runs gh itself), so while the form is hidden
+// (gh missing / not logged in) it is offered next to the gh status instead of #pr-claude inside the form.
+const claudeButton = () =>
+  pr.fillWithClaude ? '<button type="button" class="ghost" data-pr="claude" title="Sisipkan prompt ke kotak pesan (tidak langsung terkirim): Claude membuat pull request">✳ Biar Claude yang buat</button>' : '';
+
 function renderStatus() {
   const s = pr.status;
   const box = $('#pr-gh');
@@ -14,7 +19,7 @@ function renderStatus() {
   if (!s) return void (box.innerHTML = '<p class="muted">Memeriksa GitHub CLI…</p>');
   const login = s.login;
   if (!s.installed) {
-    box.innerHTML = '<p>GitHub CLI (<code>gh</code>) belum terpasang. Pasang dari <a href="https://cli.github.com" target="_blank" rel="noopener noreferrer">cli.github.com</a>, lalu buka dialog ini lagi.</p>';
+    box.innerHTML = `<p>GitHub CLI (<code>gh</code>) belum terpasang. Pasang dari <a href="https://cli.github.com" target="_blank" rel="noopener noreferrer">cli.github.com</a>, lalu buka dialog ini lagi.</p>${claudeButton()}`;
     form.hidden = true;
     return;
   }
@@ -32,7 +37,8 @@ function renderStatus() {
   }
   box.innerHTML = `${login?.state === 'error' ? `<p class="warn">Login gagal: ${escapeHtml(login.error ?? '')}</p>` : ''}
     <p>Belum login GitHub. Login sekali di laptop ini (sama seperti <code>gh auth login</code>).</p>
-    ${state.local ? '<button type="button" class="primary" data-pr="login">🔑 Login GitHub</button>' : '<p class="muted small">Login GitHub hanya dari laptop.</p>'}`;
+    ${state.local ? '<button type="button" class="primary" data-pr="login">🔑 Login GitHub</button>' : '<p class="muted small">Login GitHub hanya dari laptop.</p>'}
+    ${claudeButton()}`;
 }
 
 async function refresh() {
@@ -77,6 +83,8 @@ export function initPullRequest() {
         pr.status = { ...pr.status, login };
         renderStatus();
         if (login?.url) window.open(login.url, '_blank', 'noopener');
+      } else if (act === 'claude') {
+        pr.fillWithClaude?.();
       } else if (act === 'cancel') {
         await api('/api/github/login/cancel');
         refresh();

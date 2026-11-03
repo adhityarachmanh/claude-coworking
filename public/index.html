@@ -93,7 +93,7 @@
             <button id="ch-git-fetch" class="ghost" type="button" title="git fetch: ambil info terbaru dari remote">⟳ Fetch</button>
             <button id="ch-git-pull" class="ghost" type="button">⬇ Pull</button>
             <button id="ch-git-push" class="ghost" type="button">⬆ Push</button>
-            <button id="ch-git-pr" class="ghost" type="button" title="Sisipkan prompt ke kotak pesan (tidak langsung terkirim): Claude membuat pull request">🤖 Minta Claude buat PR</button>
+            <button id="ch-git-pr" class="ghost" type="button" title="Buka dialog pull request: buat langsung lewat gh, atau minta Claude yang membuatnya">🔀 Buat PR</button>
           </div>
           <form id="ch-git-create" class="ch-git-create" hidden>
             <input id="ch-git-name" aria-label="Nama branch baru" aria-describedby="ch-git-name-error" placeholder="nama-branch-baru, mis. fitur/login" autocomplete="off" spellcheck="false" maxlength="200" />
@@ -1041,7 +1041,7 @@
           <button type="button" class="sheet-row" data-proxy="#ch-git-fetch" data-reason="Belum ada remote (git remote add origin …)"><span aria-hidden="true">⟳</span><span>Fetch</span></button>
           <button type="button" class="sheet-row" data-proxy="#ch-git-pull" data-reason><span aria-hidden="true">⬇</span><span>Pull</span></button>
           <button type="button" class="sheet-row" data-proxy="#ch-git-push" data-reason="Belum ada remote, atau HEAD detached"><span aria-hidden="true">⬆</span><span>Push</span></button>
-          <button type="button" class="sheet-row" data-proxy="#ch-git-pr" data-reason><span aria-hidden="true">🤖</span><span>Minta Claude buat PR</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-git-pr" data-reason><span aria-hidden="true">🔀</span><span>Buat PR</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-session" data-view="chat" data-needs-project>
           <h3 id="hm-g-session" class="sheet-group-head">Sesi</h3>
