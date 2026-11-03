@@ -50,6 +50,8 @@
     <div id="conn-banner" class="conn-region" role="status" aria-live="polite"></div>
     <!-- Claude Code updated: the contract check's result (features/claude-check.js). Empty until there is news. -->
     <div id="cc-banner" class="conn-region" role="status" aria-live="polite"></div>
+    <!-- OpenCode updated: the same, for OpenCode (features/opencode-check.js). Empty until there is news. -->
+    <div id="oc-banner" class="conn-region" role="status" aria-live="polite"></div>
     <!-- ⬆ A newer Adhit Office on GitHub (features/app-update.js). Empty until there is one. -->
     <div id="app-update-banner" class="conn-region" role="status" aria-live="polite"></div>
 
@@ -735,6 +737,17 @@
             <pre id="cc-output" class="cc-output" hidden></pre>
           </section>
           <hr />
+          <!-- 🧩 OpenCode update detector (features/opencode-check.js, server src/opencode-check.js): only when OpenCode is installed -->
+          <section id="oc-section" class="claude-check" aria-labelledby="oc-title" aria-describedby="oc-desc" hidden>
+            <b id="oc-title">🧩 Kompatibilitas OpenCode</b>
+            <p id="oc-desc" class="muted small">Saat OpenCode diperbarui, cek kontrak ringan (handshake ACP, sesi, opsi model/mode, daftar model dan sesi) dijalankan di latar belakang setelah giliran yang berjalan selesai. Tanpa memanggil model, tanpa token.</p>
+            <p id="oc-status" class="muted" role="status" aria-live="polite"></p>
+            <label class="switch"><input id="oc-auto" type="checkbox" /> Cek otomatis saat OpenCode diperbarui</label>
+            <div class="backup-actions">
+              <button type="button" id="oc-run" class="ghost">▶ Cek kompatibilitas OpenCode</button>
+            </div>
+          </section>
+          <hr id="oc-section-sep" hidden />
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
           <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>
           <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>

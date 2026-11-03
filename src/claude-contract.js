@@ -39,10 +39,10 @@ export const CHECKS = Object.freeze({
 const CRITICAL = new Set([CHECKS.version, CHECKS.launch, CHECKS.catalog]);
 
 /** ok = every check passed; failed = a critical one failed; warning = only non-critical ones failed. */
-export function classify(checks) {
+export function classify(checks, critical = CRITICAL) {
   const failing = checks.filter((c) => !c.ok);
   if (!failing.length) return 'ok';
-  return failing.some((c) => CRITICAL.has(c.name)) ? 'failed' : 'warning';
+  return failing.some((c) => critical.has(c.name)) ? 'failed' : 'warning';
 }
 
 const HOME = os.homedir();
@@ -111,8 +111,13 @@ function killTree(child) {
  * A stream-json Claude Code process with bounded waits. `next(pred, ms)` resolves with the first message (from
  * now on) matching `pred`, and rejects on its timeout, the run's deadline, or the process exiting first.
  */
-function openCli(claude, args, { cwd, env, deadline }) {
+function openCli(claude, args, { cwd, env, deadline, signal }) {
   const child = spawn(claude.command, [...claude.args, ...args], { cwd, env: { ...env, OFFICE_MANAGED: '1' }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  // Server shutdown (src/claude-check.js stop()): the whole tree goes at once; every wait then ends with the exit.
+  const onAbort = () => killTree(child);
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener('abort', onAbort, { once: true });
+  child.once('exit', () => signal?.removeEventListener('abort', onAbort));
   const messages = [];
   const listeners = new Set();
   let stderr = '';
@@ -348,7 +353,7 @@ function appArgs(dir) {
  * @returns {Promise<{ profile: string, version: string|null, checks: {name: string, ok: boolean, detail: string}[],
  *   failing: string[], result: 'ok'|'warning'|'failed', usedModel: boolean, durationMs: number }>}
  */
-export async function runContract({ claude, profile = 'light', allowModel = true, env = process.env, timeouts = {}, onCheck = () => {}, execFileImpl } = {}) {
+export async function runContract({ claude, profile = 'light', allowModel = true, env = process.env, timeouts = {}, onCheck = () => {}, execFileImpl, signal } = {}) {
   const t = { ...DEFAULT_TIMEOUTS, ...(profile === 'full' ? FULL_TIMEOUTS : {}), ...timeouts };
   const started = Date.now();
   const deadline = started + t.total;
@@ -364,20 +369,21 @@ export async function runContract({ claude, profile = 'light', allowModel = true
   const v = await readClaudeVersion(claude, { timeoutMs: t.version, env, execFileImpl });
   check(CHECKS.version, Boolean(v.version), v.version ?? v.error);
   if (!v.version) return report(null); // not Claude Code (or not answering): nothing else can be trusted
+  if (signal?.aborted) return report(v.version); // server stopping: no new process
 
   const dir = mkdtempSync(path.join(os.tmpdir(), 'office-contract-'));
   try {
-    const cli = openCli(claude, appArgs(dir), { cwd: dir, env, deadline });
+    const cli = openCli(claude, appArgs(dir), { cwd: dir, env, deadline, signal });
     try {
       const ready = await tokenFree(cli, check, { version: v.version, t });
-      if (ready && profile === 'light' && allowModel) {
+      if (ready && profile === 'light' && allowModel && !signal?.aborted) {
         usedModel = true;
         await oneTurn(cli, check, { t });
       }
     } finally {
       await cli.close(t.exit);
     }
-    if (profile === 'full' && Date.now() < deadline) {
+    if (profile === 'full' && Date.now() < deadline && !signal?.aborted) {
       usedModel = true;
       await protocolRun(claude, check, { cwd: dir, env, t, deadline });
     }
@@ -388,7 +394,11 @@ export async function runContract({ claude, profile = 'light', allowModel = true
     try {
       rmSync(transcriptDir(dir), { recursive: true, force: true });
     } catch {}
-    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      // Windows EBUSY/EPERM: a temp folder left behind never changes the result
+    }
   }
   return report(v.version);
 }

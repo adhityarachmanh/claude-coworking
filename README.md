@@ -217,6 +217,7 @@ Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude
 - Setelah satu **Tolak**, OpenCode menghentikan gilirannya, sehingga kartu izin lain dari giliran itu ditutup otomatis.
 - Pesan pertama yang menyalakan layanan latar OpenCode dicoba ulang sekali secara otomatis.
 - 📦 Backup riwayat membawa chat kedua mesin (`office/chats/` dan `office/chats-opencode/`).
+- **Saat OpenCode diperbarui**: server membaca `opencode --version` saat menyala (±45 dtk) dan setiap 6 jam. Versi baru → **cek kontrak ringan tanpa token** di latar belakang (setelah giliran yang berjalan selesai): handshake ACP (`initialize`, kemampuan `loadSession`/gambar/@file), `session/new` + opsi model/mode + daftar command, `session/set_config_option`, `session/load`, `opencode models`, `opencode session list`. Tidak pernah mengirim prompt (tidak memanggil model); sesi uji dihapus lagi. Hasilnya muncul sebagai pemberitahuan seperti untuk Claude Code ("OpenCode diperbarui ke vX — semua cek kontrak lulus ✅", atau "⚠ … cek kontrak gagal (…)" + `npm run test:opencode`). **⚙ → 🧩 Kompatibilitas OpenCode** (hanya dari laptop, hanya bila OpenCode terpasang): status, tombol cek manual, dan *Cek otomatis saat OpenCode diperbarui*. Status di `data/opencode-check.json` (tidak ikut backup). Tanpa OpenCode terpasang: tidak ada apa pun.
 - Desain lengkap: [`docs/design-opencode.md`](docs/design-opencode.md).
 
 ### Tim & kantor
@@ -456,6 +457,8 @@ Hasilnya tampil sebagai pemberitahuan di atas kantor: "Claude Code diperbarui ke
 
 **⚙ Pengaturan → 🧩 Kompatibilitas Claude Code** (hanya dari laptop) menampilkan status cek terakhir, tombol **Cek kompatibilitas Claude Code**, serta dua pengaturan: *Cek otomatis saat Claude Code diperbarui* dan *Boleh pakai 1 request kecil (Haiku)* (keduanya aktif secara bawaan). Statusnya disimpan di `data/claude-check.json` dan tidak ikut backup.
 
+OpenCode punya deteksi yang sama (tanpa token sama sekali): lihat [Mesin: Claude Code atau OpenCode](#mesin-claude-code-atau-opencode) dan `npm run test:opencode`.
+
 Untuk detail lengkap, jalankan `npm run test:claude` (23 cek terhadap Claude Code asli, beberapa request Haiku; lihat [Test & pengembangan](#test--pengembangan)).
 
 ## Test & pengembangan
@@ -463,6 +466,7 @@ Untuk detail lengkap, jalankan `npm run test:claude` (23 cek terhadap Claude Cod
 ```bash
 npm test             # offline: unit + server sungguhan dengan Claude Code palsu + UI (Chrome/Edge headless, dilewati bila tidak ada)
 npm run test:claude  # kontrak ke Claude Code asli (beberapa request Haiku, memakai akunmu)
+npm run test:opencode  # kontrak ke OpenCode asli: cek tanpa token + giliran singkat dengan model gratis; `-- --light` = tanpa token saja
 npm run lint         # ESLint versi terkunci lewat npx
 ```
 
@@ -472,6 +476,7 @@ npm run lint         # ESLint versi terkunci lewat npx
 | Integrasi (`test/server.test.mjs`, `https`, `push`, `spotify-server`, …) | `server.js` sungguhan dengan `test-support/fake-claude.mjs`: keamanan API, gerbang WiFi, pairing, HTTPS, izin, stop, antrian, backup |
 | UI (`ui`, `mobile-chat`, `mobile-views`, `multitab`, `queue-ui`, `push-ui`, `spotify-ui`, …) | Browser headless lewat CDP (`test-support/cdp.mjs`), viewport HP dan desktop. `CHROME_PATH=…` untuk memilih browser, `OFFICE_UI_SHOTS=<folder>` untuk menyimpan screenshot |
 | Kontrak (`test-support/claude-contract.mjs`) | Asumsi protokol terhadap Claude Code asli: `init`, streaming, `can_use_tool`, allow/deny, interrupt, `--agents`, format transcript |
+| Kontrak OpenCode (`test-support/opencode-contract.mjs`) | Asumsi ACP terhadap OpenCode asli: `initialize`, `session/new` + configOptions, command, `set_config_option`, `session/load`, `opencode models`/`session list`, lalu (model gratis `opencode-go/beam-free`, atau `OPENCODE_CONTRACT_MODEL=<provider/model>`) streaming + `usage`, bentuk `session/request_permission` + tolak, `session/cancel` |
 
 Test offline juga jalan di GitHub Actions (Windows dan Linux) setiap push, plus lint.
 

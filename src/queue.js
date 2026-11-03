@@ -102,6 +102,7 @@ function cleanItem(raw) {
     resultChatId: typeof raw.resultChatId === 'string' ? raw.resultChatId : null,
     error: typeof raw.error === 'string' ? raw.error.slice(0, 500) : null,
     meta: isObject(raw.meta) ? raw.meta : null,
+    engine: raw.engine === 'opencode' || raw.engine === 'claude' ? raw.engine : null, // the engine it was sent to
   };
 }
 
@@ -204,7 +205,7 @@ export class TaskQueue {
       throw new QueueError(400, `Antrian maksimal ${QUEUE_LIMITS.items} item. Tunggu sebagian selesai atau hapus yang tidak perlu.`);
     }
     const now = this.now();
-    const item = { id: `q_${randomBytes(6).toString('hex')}`, text: clean, status: 'waiting', createdAt: now, updatedAt: now, startedAt: null, endedAt: null, chatId: null, resultChatId: null, error: null, meta: null };
+    const item = { id: `q_${randomBytes(6).toString('hex')}`, text: clean, status: 'waiting', createdAt: now, updatedAt: now, startedAt: null, endedAt: null, chatId: null, resultChatId: null, error: null, meta: null, engine: null };
     q.items.push(item);
     this.trimFinished(q);
     this.changed(id);
@@ -249,7 +250,7 @@ export class TaskQueue {
     if (item.status !== 'failed') throw new QueueError(409, 'Hanya item yang gagal yang bisa diulang.');
     const q = this.queues[id];
     if (q.items.filter((i) => i.status === 'waiting' || i.status === 'running').length >= QUEUE_LIMITS.items) throw new QueueError(400, `Antrian maksimal ${QUEUE_LIMITS.items} item.`);
-    Object.assign(item, { status: 'waiting', startedAt: null, endedAt: null, chatId: null, resultChatId: null, error: null, meta: null, updatedAt: this.now() });
+    Object.assign(item, { status: 'waiting', startedAt: null, endedAt: null, chatId: null, resultChatId: null, error: null, meta: null, engine: null, updatedAt: this.now() });
     q.items = [item, ...q.items.filter((i) => i !== item)];
     this.changed(id);
   }
@@ -290,6 +291,7 @@ export class TaskQueue {
   forget(id) {
     if (!this.queues[id]) return;
     clearTimeout(this.timers.get(id));
+    this.timers.delete(id); // a stale entry would make schedule() skip this project for good (until a restart)
     delete this.queues[id];
     this.changed(id);
   }
@@ -359,7 +361,7 @@ export class TaskQueue {
     const item = this.running(id);
     if (item && !status.busy) {
       // The turn is over without a result: Claude Code exited, the session was reset or the process detached.
-      this.finish(id, item, { status: 'failed', error: 'Giliran berhenti tanpa hasil (Claude Code berhenti atau sesi direset).' });
+      this.finish(id, item, { status: 'failed', error: `Giliran berhenti tanpa hasil (${this.engineName(item)} berhenti atau sesi direset).` });
       this.pauseFor(id, 'failed', 'item berhenti tanpa hasil');
       return;
     }
@@ -415,6 +417,14 @@ export class TaskQueue {
     this.timers.set(id, timer);
   }
 
+  /**
+   * The engine an item ran on (stored at dispatch), else the app-wide one (Hub.engine), for the messages the user
+   * reads: a later engine switch does not rename what a running item was sent to.
+   */
+  engineName(item = null) {
+    return (item?.engine ?? this.hub.engine) === 'opencode' ? 'OpenCode' : 'Claude Code';
+  }
+
   /** True when the project's session can take the next item now. */
   idle(id) {
     const st = this.hub.runtime.get(id)?.status;
@@ -430,7 +440,7 @@ export class TaskQueue {
     const project = this.hub.projects.get(id);
     if (!item || !project || project.virtual || !this.idle(id)) return;
     const session = this.sessions.get(project);
-    Object.assign(item, { status: 'running', startedAt: this.now(), updatedAt: this.now(), error: null });
+    Object.assign(item, { status: 'running', startedAt: this.now(), updatedAt: this.now(), error: null, engine: this.hub.engine === 'opencode' ? 'opencode' : 'claude' });
     this.dispatching = id;
     let sent;
     try {
@@ -444,8 +454,9 @@ export class TaskQueue {
     item.chatId = sent?.chatId ?? null;
     if (!session.busy) {
       // Never reached Claude Code (not installed, failed to start): the reason is already in the chat.
-      this.finish(id, item, { status: 'failed', error: item.error ?? 'Claude Code tidak bisa dijalankan.' });
-      this.pauseFor(id, 'failed', 'Claude Code tidak bisa dijalankan');
+      const name = this.engineName(item);
+      this.finish(id, item, { status: 'failed', error: item.error ?? `${name} tidak bisa dijalankan.` });
+      this.pauseFor(id, 'failed', `${name} tidak bisa dijalankan`);
       return;
     }
     this.changed(id);

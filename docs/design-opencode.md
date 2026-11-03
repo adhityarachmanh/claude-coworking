@@ -338,6 +338,8 @@ Juga: `session/new` mengembalikan `configOptions` kecil (3 model), `session/load
 
 ### 7.3 `test-support/opencode-contract.mjs` (manual, model gratis)
 
+> **Terimplementasi** (lihat §14): `npm run test:opencode` menjalankan profil `full` dari `src/opencode-contract.js` (cek tanpa token + giliran teks, izin `session/request_permission` → tolak, `session/cancel`); `-- --light` hanya profil tanpa token. Daftar di bawah adalah rencana awal; langkah 3, 7 dan 8 belum diotomatiskan.
+
 Dijalankan manual: `node test-support/opencode-contract.mjs` (memakai `findOpencode()`, model `opencode-go/beam-free`, cwd = direktori temp baru). Setiap langkah punya timeout (maks 120 dtk) dan skrip selalu `killTree` di `finally`. Yang diverifikasi:
 1. Bentuk `initialize`, `session/new`, `configOptions`.
 2. Prompt teks → chunk + `end_turn` + bentuk `usage`.
@@ -472,3 +474,28 @@ Tiap mesin adalah entitas terpisah; pindah mesin tidak menghapus riwayat mesin l
 - **Command**: `available_commands_update` → `status.commands` → autocomplete (`slashCatalog`, mesin OpenCode).
 - Claude Code: command layar-terminal (`CLI_ONLY` di public/js/features/commands.js) disaring dari autocomplete; `claude doctor` / `claude update` lewat `/api/claude-check/doctor|update` (laptop saja).
 
+## 14. Deteksi update OpenCode + cek kontrak (setara Claude Code)
+
+- **Service** (`src/opencode-check.js`, `OpenCodeCheckService`): subclass `ClaudeCheckService` (`src/claude-check.js`, kini dengan opsi `name`/`modelLabel`). `opencode --version` (15 dtk, `execFileTree`) ±45 dtk setelah start lalu tiap 6 jam; bila berbeda dari versi terakhir yang lulus dan belum dicek → cek kontrak **ringan** di latar belakang, menunggu sampai tidak ada giliran berjalan (maks 10 menit, lalu dicoba lagi 30 menit kemudian). OpenCode tidak terpasang → `start()` tidak melakukan apa pun, view `available:false`, UI tidak menampilkan apa pun. State: `data/opencode-check.json` (bentuk sama dengan `claude-check.json`; tidak ikut backup). Env test: `OFFICE_OPENCODE_CHECK_DELAY_MS`; `OPENCODE_BIN` berupa file `.js/.mjs` (fake) tidak memicu cek otomatis kecuali env itu di-set.
+- **Kontrak** (`src/opencode-contract.js`, `runOpenCodeContract({ bin, profile: 'light'|'full' })`), cwd = direktori temp baru, env seperti `AcpSession` (`OPENCODE_DISABLE_AUTOUPDATE=1`, `OPENCODE_CONFIG_CONTENT` = izin mode manual):
+
+  | Cek | Kritis | Profil |
+  |---|---|---|
+  | `versi (opencode --version)` | ya | light |
+  | `acp: initialize` (protocolVersion 1; satu kali coba ulang bila proses mati = cold start) | ya | light |
+  | `initialize: loadSession`, `initialize: promptCapabilities (image, embeddedContext)` | – | light |
+  | `session/new: sessionId ses_…` | ya | light |
+  | `configOptions: model`, `configOptions: mode (build, plan)`, `available_commands_update` | – | light |
+  | `session/set_config_option (mode)`, `session/load` | – | light |
+  | `opencode models`, `opencode session list --format json` | – | light |
+  | `prompt: agent_message_chunk + end_turn + usage`, `session/request_permission: toolCall + opsi allow/reject`, `tolak izin → giliran berhenti`, `session/cancel → cancelled` | – | full (model) |
+
+  Hasil: `ok` (semua lulus), `warning` (hanya cek non-kritis gagal), `failed` (cek kritis gagal). Profil light **tidak pernah** mengirim `session/prompt` (tanpa model/token); bentuk permission request hanya bisa dipicu lewat giliran model, jadi hanya diperiksa di profil full. Sesi uji dihapus lagi (`opencode api session.remove`). Semua proses: argv array, `windowsHide`, timeout per langkah + total (light 180 dtk, full 600 dtk), `killTree`/`execFileTree` (`src/proc.js`). Teks detail disanitasi (`sanitize`) dan hanya masuk log server; browser hanya menerima nama cek.
+- **API** (keduanya `LOCAL_ONLY`: hanya laptop, ditolak untuk HP lewat Tailscale maupun WiFi; WiFi read-only juga ditolak allowlist default-deny):
+  - `POST /api/opencode-check/run` → `202` + view (`running: true`); `409` bila cek sedang berjalan atau ada giliran berjalan; `503` bila OpenCode tidak terpasang.
+  - `POST /api/opencode-check/settings` `{ autoCheck: boolean }` → `200` + view; `400` untuk kunci lain, nilai bukan boolean, atau body kosong.
+- **Config** (snapshot + event `config`, dibaca semua klien termasuk Tailscale): `config.opencodeCheck` = `{ available, version, lastGoodVersion, checkedVersion, previousVersion, lastCheckedAt, result: ok|warning|failed|skipped|null, failing: [nama cek], reason, trigger: auto|manual, usedModel: false, running, waiting, settings: { autoCheck } }`. Versi yang terbaca juga memperbarui `config.engines.opencode.version`.
+- **UI** (`public/js/features/opencode-check.js`; aturan di `core/claude-check-rules.js`: `openCodeCheckBanner`/`openCodeCheckStatus`): banner `#oc-banner` (lulus: hilang sendiri; gagal: nama cek + `npm run test:opencode`, tutup ✕; WiFi read-only: pemberitahuan pasif) dan ⚙ → 🧩 Kompatibilitas OpenCode (`#oc-section`, tersembunyi bila tidak terpasang).
+- **Fake** (`test-support/fake-acp.mjs`): `FAKE_ACP_VERSION`, `FAKE_ACP_BREAK` (`version-hang, initialize, acp-exit, load-session, session-new, mode, commands, load, models, session-list`), `FAKE_ACP_RPC_LOG`. Test: `test/opencode-check.test.mjs` (unit), `test/opencode-check-ui.test.mjs` (banner + ⚙), `test/routes.test.mjs`.
+- **Berhenti dan batas**: `runOpenCodeContract({ signal })` mencatat setiap proses (`processTracker`); saat server berhenti, `stop()` (juga `ClaudeCheckService`, lewat `runContract({ signal })`) membatalkan cek yang berjalan, `killTree` semua proses (acp + CLI), menunggu ≤ 3 dtk (`STOP_WAIT_MS`), dan **tidak mencatat** hasil yang dibatalkan; `shutdown()` di `server.js` menunggunya. Pembersihan sesi `ses_…` dilewati setelah batal. `opencode models` / `session list` mendapat timeout `min(cli, sisa total)` (habis → cek gagal "batas waktu total habis" tanpa spawn); `session.remove` tetap minimal 5 dtk. Run CLI memakai cwd `os.tmpdir()` (bukan folder sementara cek), dan gagal menghapus folder sementara (EBUSY/EPERM di Windows) tidak mengubah hasil.
+- Terverifikasi terhadap OpenCode asli 2.2.5: light 12/12 lulus (±3 dtk), full 16/16 lulus dengan `opencode-go/beam-free` (±7 dtk).

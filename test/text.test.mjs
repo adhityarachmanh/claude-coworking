@@ -38,3 +38,29 @@ test('markdown tables, lists and highlighted code', () => {
   assert.match(code, /<span class="hl-n">42<\/span>/);
   assert.match(renderMarkdown('```sql\nselect 1 -- note\n```'), /hl-c">-- note/);
 });
+
+test('markdown blockquote holds paragraphs and lists (not a literal "> -")', () => {
+  const html = renderMarkdown('> **Catatan** (beda):\n> - **D3/D4:** satu\n> - **D7:** dua\n\nsetelah');
+  assert.equal(html, '<blockquote><p><strong>Catatan</strong> (beda):</p><ul><li><strong>D3/D4:</strong> satu</li><li><strong>D7:</strong> dua</li></ul></blockquote><p>setelah</p>');
+  assert.equal(renderMarkdown('> satu\n>\n> dua'), '<blockquote><p>satu</p><p>dua</p></blockquote>');
+  assert.equal(renderMarkdown('> <img src=x onerror=alert(1)>'), '<blockquote><p>&#60;img src=x onerror=alert(1)&#62;</p></blockquote>', 'isi kutipan tetap di-escape');
+  // A crafted `>>>>…` line has a bounded depth (no runaway recursion); the rest stays text.
+  const deep = renderMarkdown(`${'>'.repeat(5000)} x`);
+  assert.equal(deep.match(/<blockquote>/g).length, 8);
+  assert.ok(deep.includes('&#62;'));
+});
+
+test('markdown tables: \\| is a literal pipe (also in code), rows never get extra columns', () => {
+  const html = renderMarkdown("| ID | Keputusan | Alasan |\n|---|---|---|\n| D1 | Setting **`engine: 'claude' \\| 'opencode'`**, default `'claude'` | a \\| b |\n| D2 | x | y | z | w |\n| D3 | kurang |");
+  const rows = [...html.matchAll(/<tr>(.*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd]>(.*?)<\/t[hd]>/g)].map((c) => c[1]));
+  assert.equal(rows[1][1], 'Setting <strong><code>engine: &#39;claude&#39; | &#39;opencode&#39;</code></strong>, default <code>&#39;claude&#39;</code>');
+  assert.equal(rows[1][2], 'a | b');
+  assert.deepEqual(rows.map((r) => r.length), [3, 3, 3, 3], 'semua baris selebar header');
+  assert.deepEqual(rows[2], ['D2', 'x', 'y']);
+  assert.deepEqual(rows[3], ['D3', 'kurang', '']);
+  assert.ok(!html.includes('**'));
+});
+
+test('markdown inline code stays literal and escaped', () => {
+  assert.equal(renderMarkdown('a `**x** <b>` **b**'), '<p>a <code>**x** &#60;b&#62;</code> <strong>b</strong></p>');
+});

@@ -1679,6 +1679,103 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
+    test('📄 penampil file panjang: pratinjau & kode bisa di-scroll (wheel, PageDown), cari menggulir ke hasil, markdown rapi', async (t) => {
+      await ensureApp(page, `#${projectId}`);
+      page.clearProblems();
+      const proj = path.join(TMP, 'projects', 'toko');
+      mkdirSync(path.join(proj, 'docs'), { recursive: true });
+      const md = path.join(proj, 'docs', 'panjang.md');
+      const json = path.join(proj, 'docs', 'panjang.json');
+      t.after(() => {
+        rmSync(md, { force: true });
+        rmSync(json, { force: true });
+      });
+      const body = Array.from({ length: 400 }, (_, i) => `Paragraf ${i + 1}${i === 40 || i === 360 ? ' TANDA' : ''} dengan teks yang cukup panjang untuk mengisi baris.\n`).join('\n');
+      writeFileSync(
+        md,
+        '# Judul\n\n> **Catatan** (kutipan):\n> - **D3/D4:** satu\n> - **D7:** dua\n\n' +
+          "| ID | Keputusan | Alasan |\n|---|---|---|\n| D1 | Setting **`engine: 'claude' \\| 'opencode'`**, default `'claude'` | Satu tempat \\| aman |\n\n" +
+          body,
+      );
+      writeFileSync(json, JSON.stringify(Array.from({ length: 300 }, (_, i) => ({ id: i, nama: `item ${i}` }))));
+      const wheelAndPage = async (sel) => {
+        const box = await page.eval((s) => {
+          const el = document.querySelector(s);
+          const r = el.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + Math.min(r.height / 2, 200), sh: el.scrollHeight, ch: el.clientHeight, focused: document.activeElement === el };
+        }, sel);
+        assert.ok(box.sh > box.ch, `${sel}: isi lebih tinggi dari kotaknya (${box.sh} > ${box.ch})`);
+        assert.equal(box.focused, true, `${sel}: kotak scroll difokus, keyboard langsung menggulir`);
+        await page.eval((s) => (document.querySelector(s).scrollTop = 0), sel);
+        await page.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: box.x, y: box.y, deltaX: 0, deltaY: 300 });
+        const afterWheel = await page.waitFor((s) => document.querySelector(s).scrollTop > 0 && document.querySelector(s).scrollTop, { timeoutMs: 3000, message: `${sel}: wheel menggulir` }, sel);
+        const key = { key: 'PageDown', code: 'PageDown', windowsVirtualKeyCode: 34, nativeVirtualKeyCode: 34 };
+        await page.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...key });
+        await page.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key });
+        await page.waitFor((s, from) => document.querySelector(s).scrollTop > from, { timeoutMs: 3000, message: `${sel}: PageDown menggulir` }, sel, afterWheel);
+      };
+
+      // 👁 Markdown preview
+      await page.eval(() => import('/js/features/file-viewer.js').then((m) => m.openFile('docs/panjang.md')));
+      await page.waitFor(() => document.querySelector('#fv-body .fv-preview.md'), { timeoutMs: 5000, message: 'pratinjau markdown' });
+      const r = await page.eval(() => {
+        const box = document.querySelector('#fv-body .fv-preview.md');
+        const row = box.querySelector('tbody tr');
+        return {
+          quoteItems: [...box.querySelectorAll('blockquote ul li')].map((li) => li.textContent),
+          literalQuote: /&gt;|^>/m.test(box.textContent) || box.textContent.includes('> -'),
+          heads: box.querySelectorAll('thead th').length,
+          cells: [...row.children].map((td) => td.textContent),
+          code: row.querySelector('strong code')?.textContent,
+          literalStars: box.querySelector('table').textContent.includes('**'),
+          role: box.getAttribute('role'),
+        };
+      });
+      assert.deepEqual(r.quoteItems, ['D3/D4: satu', 'D7: dua'], 'kutipan berisi list');
+      assert.equal(r.literalQuote, false, 'tanda > tidak tampil literal');
+      assert.equal(r.heads, 3);
+      assert.deepEqual(r.cells, ['D1', "Setting engine: 'claude' | 'opencode', default 'claude'", 'Satu tempat | aman'], '\\| = pipe literal, tanpa kolom ekstra');
+      assert.equal(r.code, "engine: 'claude' | 'opencode'");
+      assert.equal(r.literalStars, false, '** tidak tampil literal');
+      assert.equal(r.role, 'region');
+      await wheelAndPage('#fv-body .fv-preview.md');
+      assert.equal(await page.eval(horizontalOverflow), null);
+
+      // ‹› Kode: the search steps scroll the hit into view
+      await page.click('#fv-mode');
+      await page.waitFor(() => document.querySelectorAll('#fv-code .fv-l').length > 400, { timeoutMs: 3000, message: 'mode kode' });
+      await page.eval(() => document.querySelector('#fv-code').focus());
+      await wheelAndPage('#fv-code');
+      const visible = () => {
+        const box = document.querySelector('#fv-code').getBoundingClientRect();
+        const el = document.querySelector('#fv-code .fv-l.cur');
+        if (!el) return null;
+        const r2 = el.getBoundingClientRect();
+        return { n: el.dataset.n, inView: r2.top >= box.top && r2.bottom <= box.bottom };
+      };
+      await page.eval(() => document.querySelector('#fv-q').focus());
+      await page.send('Input.insertText', { text: 'TANDA' });
+      await page.waitFor(() => document.querySelector('#fv-count').textContent === '1/2', { timeoutMs: 2000, message: 'hasil cari pertama' });
+      const first = await page.eval(visible);
+      assert.equal(first.inView, true, 'hasil pertama terlihat');
+      await page.click('#fv-next');
+      await page.waitFor(() => document.querySelector('#fv-count').textContent === '2/2', { timeoutMs: 2000, message: '↓ ke hasil kedua' });
+      const second = await page.eval(visible);
+      assert.notEqual(second.n, first.n);
+      assert.equal(second.inView, true, '↓ menggulir ke hasil kedua (jauh di bawah)');
+      await page.click('#fv-prev');
+      await page.waitFor(() => document.querySelector('#fv-count').textContent === '1/2', { timeoutMs: 2000, message: '↑ kembali' });
+      assert.deepEqual(await page.eval(visible), first, '↑ menggulir kembali ke hasil pertama');
+      await page.press('Escape');
+
+      // 👁 JSON preview (another preview kind) scrolls the same way
+      await page.eval(() => import('/js/features/file-viewer.js').then((m) => m.openFile('docs/panjang.json')));
+      await page.waitFor(() => document.querySelector('#fv-body .fv-preview .fv-pre'), { timeoutMs: 5000, message: 'pratinjau JSON' });
+      await wheelAndPage('#fv-body .fv-preview');
+      await page.press('Escape');
+      assert.deepEqual(realProblems(page), []);
+    });
+
     test('🛡️ Aturan izin + ⎇ git di tab Perubahan: tampil rapi, validasi, tanpa error console/overflow', async (t) => {
       await openApp(page, `#${projectId}`);
       page.clearProblems();

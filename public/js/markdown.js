@@ -38,24 +38,58 @@ export function highlight(code, lang) {
   return out + escapeHtml(code.slice(last));
 }
 
+// Private-use placeholders for code spans (never typed in normal text, untouched by escapeHtml).
+const CODE_OPEN = '\uE000';
+const CODE_CLOSE = '\uE001';
+const CODE_SLOT = /\uE000(\d+)\uE001/g;
+
 function inline(text) {
-  return escapeHtml(text)
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
+  // Code spans first, kept aside so their content stays literal (no bold/italic/link inside `code`).
+  const spans = [];
+  const marked = String(text ?? '')
+    .replace(/[\uE000\uE001]/g, '')
+    .replace(/`([^`]+)`/g, (_, code) => `${CODE_OPEN}${spans.push(code) - 1}${CODE_CLOSE}`);
+  return escapeHtml(marked)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(CODE_SLOT, (_, n) => `<code>${escapeHtml(spans[Number(n)])}</code>`);
+}
+
+/**
+ * One table row → its cells. `\|` is a literal pipe (GFM; also inside `code`), an escaped backslash `\\` is kept
+ * as is, so an escaped pipe never splits a cell.
+ */
+export function tableCells(line) {
+  const src = line.trim().replace(/^\|/, '');
+  const cells = [];
+  let cell = '';
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === '\\' && src[i + 1] === '|') (cell += '|'), i++;
+    else if (c === '\\' && src[i + 1] === '\\') (cell += '\\\\'), i++;
+    else if (c === '|') cells.push(cell.trim()), (cell = '');
+    else cell += c;
+  }
+  if (cell.trim()) cells.push(cell.trim()); // no closing pipe: the last cell still counts
+  return cells;
 }
 
 function table(lines) {
-  const cells = (line) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
   const [head, , ...body] = lines;
+  const headCells = tableCells(head);
+  const width = headCells.length;
+  // Every row gets exactly the header's columns: extra cells are dropped, missing ones left empty (as GFM does).
+  const fit = (row) => Array.from({ length: width }, (_, i) => row[i] ?? '');
   // Wrapped so a wide table scrolls sideways inside the bubble instead of being squeezed.
-  return `<div class="table-wrap"><table><thead><tr>${cells(head).map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${body
-    .map((row) => `<tr>${cells(row).map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`)
+  return `<div class="table-wrap"><table><thead><tr>${headCells.map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${body
+    .map((row) => `<tr>${fit(tableCells(row)).map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`)
     .join('')}</tbody></table></div>`;
 }
 
-export function renderMarkdown(src) {
+const MAX_QUOTE_DEPTH = 8; // deeper `>>>>…` stays text (no unbounded recursion on crafted input)
+
+export function renderMarkdown(src, depth = 0) {
   const lines = String(src ?? '').replace(/\r\n/g, '\n').split('\n');
   const out = [];
   let list = null;
@@ -79,6 +113,15 @@ export function renderMarkdown(src) {
       const rows = [line];
       while (i + 1 < lines.length && /^\s*\|.*\|\s*$/.test(lines[i + 1])) rows.push(lines[++i]);
       out.push(table(rows));
+      continue;
+    }
+    // > quote: consecutive `>` lines rendered as markdown of their own (lists, paragraphs, code inside a quote)
+    if (depth < MAX_QUOTE_DEPTH && /^\s*>/.test(line)) {
+      closeList();
+      const quoted = [];
+      for (; i < lines.length && /^\s*>/.test(lines[i]); i++) quoted.push(lines[i].replace(/^\s*>\s?/, ''));
+      i--;
+      out.push(`<blockquote>${renderMarkdown(quoted.join('\n'), depth + 1)}</blockquote>`);
       continue;
     }
     const heading = line.match(/^(#{1,4})\s+(.*)$/);

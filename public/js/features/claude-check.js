@@ -2,7 +2,7 @@
 // Claude Code version, and ⚙ → 🧩 Cek kompatibilitas Claude Code (status, manual run, two settings; laptop only).
 // The view arrives with the config (snapshot + `config` events): applyClaudeCheck is called from core/stream.js.
 import { api, toast } from '../core/api.js';
-import { claudeCheckBanner, claudeCheckStatus } from '../core/claude-check-rules.js';
+import { claudeCheckBanner, claudeCheckStatus, staleRunReply } from '../core/claude-check-rules.js';
 import { $ } from '../core/dom.js';
 import { shortDate } from '../core/format.js';
 import { state } from '../core/state.js';
@@ -146,7 +146,11 @@ export function initClaudeCheck() {
     $('#cc-run').disabled = true;
     try {
       cc.manual = true;
-      applyClaudeCheck(await api('/api/claude-check/run'));
+      const reply = await api('/api/claude-check/run');
+      if (staleRunReply(cc.view, reply)) {
+        cc.manual = false; // finished already (its config events came first): the toast was shown then
+        renderSection();
+      } else applyClaudeCheck(reply);
     } catch (err) {
       cc.manual = false;
       toast(err.message);

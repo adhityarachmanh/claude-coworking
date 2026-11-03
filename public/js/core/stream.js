@@ -5,6 +5,7 @@ import { appendActivity } from '../features/activity.js';
 import { scheduleChanges } from '../features/changes.js';
 import { appendChat, replaceChat, scheduleReplace } from '../features/chat.js';
 import { applyClaudeCheck } from '../features/claude-check.js';
+import { applyOpenCodeCheck } from '../features/opencode-check.js';
 import { applyAppUpdate } from '../features/app-update.js';
 import { renderComposer } from '../features/composer.js';
 import { retryDelay, streamLost, streamOpened } from '../features/connection.js';
@@ -38,6 +39,7 @@ const handlers = {
     applyNames(config);
     applyRoster(config.team); // 👥 Kelola tim saved somewhere: the office gets or loses desks, no reload
     applyClaudeCheck(config.claudeCheck); // Claude Code updated: contract check result (banner + ⚙)
+    applyOpenCodeCheck(config.opencodeCheck); // the same for OpenCode (silent when not installed)
     applyAppUpdate(config.appUpdate); // ⬆ a newer Adhit Office: banner + ⚙
     if (!$('#phone-modal').hidden) {
       phone.pairing = null; // a device just paired (codes are single-use) or settings changed
@@ -73,6 +75,7 @@ const handlers = {
     renderAccountButton(); // after the core UI, so a profile quirk can never blank the office
     applySpotify(snap.spotify, { snapshot: true }); // ♪ absent = this server has no Spotify support
     applyClaudeCheck(snap.config?.claudeCheck); // after state.readOnly: WiFi gets the passive notice
+    applyOpenCodeCheck(snap.config?.opencodeCheck);
     applyAppUpdate(snap.config?.appUpdate); // ⬆ a newer Adhit Office (banner)
   },
   'pairing-reset'() {

@@ -102,3 +102,18 @@ test('routes: 🧩 /api/claude-check/* (manual run, settings) never over plain W
   const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
   for (const r of routes) assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
 });
+
+test('routes: 🧩 /api/opencode-check/* (manual run, settings) laptop only, never over plain WiFi; small bodies', () => {
+  const routes = router.routes.filter((r) => r.pattern.startsWith('/api/opencode-check/'));
+  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/opencode-check/run', '/api/opencode-check/settings']);
+  const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  for (const r of routes) {
+    assert.equal(r.method, 'POST');
+    assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
+    assert.ok(!WIFI_READS.has(r.pattern));
+    assert.ok(r.maxBody > 0 && r.maxBody <= 1024, `${r.pattern} maxBody ${r.maxBody}`);
+    assert.equal(r.noToken, false);
+    assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
+  }
+});

@@ -212,6 +212,13 @@ async function load(seq, reveal) {
   renderHead();
   if (data.secret && data.content == null) return renderSecretGate();
   renderContent();
+  focusScrollBox();
+}
+
+/** The scroll box (preview or code) gets focus, so PgUp/PgDn/Space/arrows scroll it right away. */
+function focusScrollBox() {
+  if (document.activeElement === $('#fv-q')) return; // never steal the search field
+  $('#fv-body .fv-preview, #fv-code')?.focus({ preventScroll: true });
 }
 
 // ---------- rendering ----------
@@ -281,6 +288,13 @@ function renderContent() {
     renderHead();
     const notes = d.truncated ? `<p class="fv-note">File besar: pratinjau dari ${fmtBytes(d.content.length)} pertama.</p>` : '';
     $('#fv-body').innerHTML = notes + previewHtml(kind, d);
+    const box = $('#fv-body .fv-preview');
+    if (box) {
+      // its own scroll box (CSS): focusable and named, so the keyboard and screen readers reach it
+      box.tabIndex = 0;
+      box.setAttribute('role', 'region');
+      box.setAttribute('aria-label', `Pratinjau ${d.path}`);
+    }
     if (kind === 'md') linkifyPaths($('#fv-body .fv-preview')); // file links inside a README open here too
     return;
   }

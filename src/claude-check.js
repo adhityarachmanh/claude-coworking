@@ -17,6 +17,7 @@ export const START_DELAY_MS = 20_000; // after start-up work (catalog probe, acc
 export const IDLE_POLL_MS = 15_000;
 export const IDLE_WAIT_MS = 10 * 60 * 1000; // a busy office defers the check at most this long, then retries later
 export const RETRY_MS = 30 * 60 * 1000;
+export const STOP_WAIT_MS = 3000; // stop(): how long a running check may take to end after its processes were killed
 const RESULTS = new Set(['ok', 'warning', 'failed', 'skipped']);
 const DONE = new Set(['ok', 'warning', 'failed']); // a check that actually ran (skipped = not checked)
 const VERSION = /^[0-9A-Za-z.+-]{1,40}$/;
@@ -45,14 +46,15 @@ function cleanCheck(c) {
 
 export class ClaudeCheckService {
   /**
-   * @param {{ file: string, claude: {command: string, args: string[]}|null, isBusy?: () => boolean,
+   * @param {{ file: string, claude: {command: string, args: string[]}|null, name?: string, modelLabel?: string, isBusy?: () => boolean,
    *   onChange?: (view: object) => void, log?: (line: string) => void, env?: object,
    *   readVersion?: typeof readVersionDefault, runContract?: typeof runContractDefault,
    *   timing?: Partial<{ startDelayMs: number, intervalMs: number, idlePollMs: number, idleWaitMs: number, retryMs: number }>,
    *   contractTimeouts?: object, now?: () => number }} options
    */
-  constructor({ file, claude, isBusy = () => false, onChange = () => {}, log = (line) => console.log(line), env = process.env, readVersion = readVersionDefault, runContract = runContractDefault, timing = {}, contractTimeouts = {}, now = Date.now }) {
-    Object.assign(this, { file, claude, isBusy, onChange, log, env, readVersion, runContract, contractTimeouts, now });
+  constructor({ file, claude, name = 'Claude Code', modelLabel = '1 request Haiku', isBusy = () => false, onChange = () => {}, log = (line) => console.log(line), env = process.env, readVersion = readVersionDefault, runContract = runContractDefault, timing = {}, contractTimeouts = {}, now = Date.now }) {
+    // name/modelLabel: the same service watches OpenCode too (src/opencode-check.js), with its own readVersion/runContract.
+    Object.assign(this, { file, claude, name, modelLabel, isBusy, onChange, log, env, readVersion, runContract, contractTimeouts, now });
     this.timing = { startDelayMs: START_DELAY_MS, intervalMs: CHECK_INTERVAL_MS, idlePollMs: IDLE_POLL_MS, idleWaitMs: IDLE_WAIT_MS, retryMs: RETRY_MS, ...timing };
     this.state = this.load();
     this.running = false; // a contract check is running
@@ -85,7 +87,7 @@ export class ClaudeCheckService {
       writeFileSync(tmp, `${JSON.stringify(this.state, null, 2)}\n`, 'utf8');
       renameSync(tmp, this.file);
     } catch (err) {
-      this.log(`Cek Claude Code: gagal menyimpan status (${sanitize(err.message)})`);
+      this.log(`Cek ${this.name}: gagal menyimpan status (${sanitize(err.message)})`);
     }
   }
 
@@ -114,7 +116,7 @@ export class ClaudeCheckService {
     try {
       this.onChange(this.publicView());
     } catch (err) {
-      this.log(`Cek Claude Code: onChange gagal (${sanitize(err?.message)})`);
+      this.log(`Cek ${this.name}: onChange gagal (${sanitize(err?.message)})`);
     }
   }
 
@@ -136,10 +138,18 @@ export class ClaudeCheckService {
     this.interval.unref?.();
   }
 
+  /**
+   * Server shutdown: no more ticks, and a running check is aborted (its processes killed, whole tree). Resolves once
+   * that check ended, at most STOP_WAIT_MS later. An aborted check is not recorded (it says nothing about the CLI).
+   */
   stop() {
+    this.stopped = true;
     clearInterval(this.interval);
     for (const t of this.timers) clearTimeout(t);
     this.timers.clear();
+    this.abort?.abort();
+    if (!this.current) return Promise.resolve();
+    return Promise.race([this.current.then(() => {}, () => {}), new Promise((r) => setTimeout(r, STOP_WAIT_MS).unref?.())]);
   }
 
   /** Not checked yet: differs from the last version that passed, and no finished check for exactly this version. */
@@ -152,22 +162,22 @@ export class ClaudeCheckService {
   /** Reads the version and, when it is new, runs the light check (or records "skipped"). Never throws. */
   tick() {
     this.ticking ??= this.doTick()
-      .catch((err) => this.log(`Cek Claude Code: ${sanitize(err?.message ?? err)}`))
+      .catch((err) => this.log(`Cek ${this.name}: ${sanitize(err?.message ?? err)}`))
       .finally(() => (this.ticking = null));
     return this.ticking;
   }
 
   async doTick() {
-    if (!this.claude || this.running || this.waiting) return;
+    if (!this.claude || this.running || this.waiting || this.stopped) return;
     const { version, error } = await this.readVersion(this.claude, { env: this.env });
     if (!version) {
-      this.log(`Cek Claude Code: versi tidak terbaca (${sanitize(error)})`);
+      this.log(`Cek ${this.name}: versi tidak terbaca (${sanitize(error)})`);
       return;
     }
     const was = this.state.version;
     this.state.version = version;
     this.state.versionAt = this.now();
-    if (was !== version) this.log(was ? `Claude Code berubah: v${was} → v${version}` : `Claude Code v${version}`);
+    if (was !== version) this.log(was ? `${this.name} berubah: v${was} → v${version}` : `${this.name} v${version}`);
     if (!this.needsCheck(version)) {
       this.save();
       if (was !== version) this.changed();
@@ -177,7 +187,7 @@ export class ClaudeCheckService {
       const c = this.state.check;
       if (!(c?.version === version && c.result === 'skipped')) {
         this.record({ version, result: 'skipped', failing: [], reason: 'Cek otomatis dimatikan', trigger: 'auto', usedModel: false, durationMs: 0 });
-        this.log(`Cek Claude Code v${version}: dilewati (cek otomatis dimatikan)`);
+        this.log(`Cek ${this.name} v${version}: dilewati (cek otomatis dimatikan)`);
       }
       this.save();
       this.changed();
@@ -196,7 +206,7 @@ export class ClaudeCheckService {
       while (this.isBusy() && this.now() < until) await new Promise((r) => this.timer(r, this.timing.idlePollMs));
       this.waiting = false;
       if (this.isBusy()) {
-        this.log(`Cek Claude Code: ditunda (ada giliran berjalan), dicoba lagi dalam ${Math.round(this.timing.retryMs / 60000)} menit`);
+        this.log(`Cek ${this.name}: ditunda (ada giliran berjalan), dicoba lagi dalam ${Math.round(this.timing.retryMs / 60000)} menit`);
         this.timer(() => this.tick(), this.timing.retryMs);
         this.changed();
         return { deferred: true };
@@ -213,14 +223,23 @@ export class ClaudeCheckService {
   /** Runs the light contract now. One at a time; the caller made sure no turn is busy. */
   async run(trigger) {
     if (this.running) return { running: true };
+    if (this.stopped) return { stopped: true };
     this.running = true;
     this.changed();
     const allowModel = this.state.settings.allowModel;
     let report;
     try {
-      report = await this.runContract({ claude: this.claude, profile: 'light', allowModel, env: this.env, timeouts: this.contractTimeouts });
+      this.abort = new AbortController();
+      this.current = this.runContract({ claude: this.claude, profile: 'light', allowModel, env: this.env, timeouts: this.contractTimeouts, signal: this.abort.signal });
+      report = await this.current;
     } catch (err) {
       report = { version: null, result: 'failed', failing: ['cek tidak selesai'], checks: [{ name: 'cek tidak selesai', ok: false, detail: sanitize(err?.message ?? err) }], usedModel: false, durationMs: null };
+    }
+    this.current = null;
+    if (this.abort?.signal.aborted) {
+      this.running = false;
+      this.log(`Cek kontrak ${this.name}: dibatalkan (server berhenti), tidak dicatat`);
+      return { aborted: true };
     }
     const version = cleanVersion(report.version) ?? this.state.version;
     if (cleanVersion(report.version)) {
@@ -232,7 +251,7 @@ export class ClaudeCheckService {
     this.save();
     // Log lines: names and sanitised details only (src/claude-contract.js sanitize).
     const n = report.checks?.length ?? 0;
-    this.log(`Cek kontrak Claude Code v${version ?? '?'} (${trigger}${report.usedModel ? ', 1 request Haiku' : ', tanpa token'}): ${report.result} — ${n - report.failing.length}/${n} lulus`);
+    this.log(`Cek kontrak ${this.name} v${version ?? '?'} (${trigger}${report.usedModel ? `, ${this.modelLabel}` : ', tanpa token'}): ${report.result} — ${n - report.failing.length}/${n} lulus`);
     for (const c of report.checks ?? []) if (!c.ok) this.log(`  GAGAL ${cleanName(c.name)}${c.detail ? ` — ${sanitize(c.detail)}` : ''}`);
     this.changed();
     return { report };
@@ -243,10 +262,11 @@ export class ClaudeCheckService {
    * @returns {{ started: boolean, error?: string, status?: number }}
    */
   runManual() {
-    if (!this.claude) return { started: false, status: 503, error: 'Claude Code tidak ditemukan.' };
+    if (!this.claude) return { started: false, status: 503, error: `${this.name} tidak ditemukan.` };
+    if (this.stopped) return { started: false, status: 503, error: 'Server sedang berhenti.' };
     if (this.running) return { started: false, status: 409, error: 'Cek kompatibilitas sedang berjalan.' };
     if (this.isBusy()) return { started: false, status: 409, error: 'Ada giliran yang sedang berjalan — coba lagi setelah selesai.' };
-    this.run('manual').catch((err) => this.log(`Cek Claude Code: ${sanitize(err?.message ?? err)}`));
+    this.run('manual').catch((err) => this.log(`Cek ${this.name}: ${sanitize(err?.message ?? err)}`));
     return { started: true };
   }
 

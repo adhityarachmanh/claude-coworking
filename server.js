@@ -10,6 +10,7 @@ import { findClaude } from './src/claude-bin.js';
 import { findOpenCode, openCodeVersion } from './src/opencode-bin.js';
 import { OPENCODE_CAPS } from './src/acp-session.js';
 import { ClaudeCheckService } from './src/claude-check.js';
+import { OpenCodeCheckService } from './src/opencode-check.js';
 import { AppUpdater } from './src/app-update.js';
 import { Hub } from './src/hub.js';
 import { discoverProjects, isDirectory } from './src/projects.js';
@@ -249,6 +250,26 @@ const claudeCheck = new ClaudeCheckService({
   },
   ...(Number.isInteger(CHECK_DELAY) && CHECK_DELAY >= 0 && CHECK_DELAY <= 600_000 ? { timing: { startDelayMs: CHECK_DELAY } } : {}),
 });
+// OpenCode update detector (src/opencode-check.js): the same, for `opencode --version`; its light contract never calls
+// a model. Silent when OpenCode is not installed. OFFICE_OPENCODE_CHECK_DELAY_MS: first look after start (default
+// 45 s). A fake OPENCODE_BIN (a .js/.mjs file: tests) gets no automatic check unless that delay is set.
+const OC_CHECK_DELAY_RAW = process.env.OFFICE_OPENCODE_CHECK_DELAY_MS;
+const OC_CHECK_DELAY = Number(OC_CHECK_DELAY_RAW);
+const OC_CHECK_AUTO = OC_CHECK_DELAY_RAW !== undefined || !/\.[cm]?js$/.test(process.env.OPENCODE_BIN ?? '');
+const opencodeCheck = new OpenCodeCheckService({
+  file: path.join(DATA_DIR, 'opencode-check.json'),
+  opencode,
+  isBusy: () => [...hub.runtime.values()].some((rt) => rt.status.busy),
+  onChange: (view) => {
+    hub.config = { ...hub.config, opencodeCheck: view };
+    // The version the check read is the installed one: the engine button in Akun shows it too.
+    // opencodeVersion too: refreshProjects rebuilds the config from it and must not bring back the old version.
+    if (view.version) opencodeVersion = view.version;
+    if (view.version && hub.config.engines?.opencode) hub.config.engines.opencode.version = view.version;
+    hub.broadcast('config', hub.config);
+  },
+  ...(Number.isInteger(OC_CHECK_DELAY) && OC_CHECK_DELAY >= 0 && OC_CHECK_DELAY <= 600_000 ? { timing: { startDelayMs: OC_CHECK_DELAY } } : {}),
+});
 
 const projectRoots = () => (hub.persisted.roots.length ? hub.persisted.roots : [DEFAULT_ROOT]);
 
@@ -272,6 +293,7 @@ function refreshProjects() {
     team: teamConfig(),
     spotify: { redirectUri: spotify.redirectUri }, // shown (with a copy button) in ⚙ → Spotify
     claudeCheck: claudeCheck.publicView(), // versions + last contract check result (no details)
+    opencodeCheck: opencodeCheck.publicView(), // the same for OpenCode (available: false when not installed)
     appUpdate: appUpdater.publicView(), // ⬆ a newer Adhit Office on GitHub (src/app-update.js)
     // The engines a project can run on (docs/design-opencode.md §6.1): Claude Code's caps are the UI's defaults.
     engine: hub.engine, // the app-wide engine (Akun): each one is its own workspace (Hub.switchEngine)
@@ -293,7 +315,8 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Backup export/import read and write the whole Claude history: laptop only (Tailscale phones too are refused).
 // Spotify's Client ID, login and logout: laptop only (the redirect URI is the laptop's 127.0.0.1).
 // ⚙ Cek kompatibilitas Claude Code (run, settings): laptop only (it spawns Claude Code, maybe a model call).
-const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+// ⚙ Kompatibilitas OpenCode (run, settings): laptop only too (it spawns `opencode acp`).
+const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 // The same for switching engines and OpenCode's provider logins (API keys travel in these requests).
@@ -507,6 +530,7 @@ const ctx = {
   backupScheduler,
   backupLock,
   claudeCheck,
+  opencodeCheck,
   appUpdater,
   allAgents,
   roleMemory,
@@ -760,6 +784,7 @@ server.listen(PORT, HOST, () => {
   tls.start(); // a certificate on disk is used at once; Tailscale is asked in the background
   sessions.probeCatalog(); // what /model offers and the slash commands' descriptions (no model call)
   claudeCheck.start(); // Claude Code updated? First look after a delay, in the background
+  if (OC_CHECK_AUTO) opencodeCheck.start(); // OpenCode updated? Same, later (no-op when OpenCode is not installed)
   if (process.argv.includes('--open')) {
     const opener = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]];
     spawn(opener[0], opener[1], { stdio: 'ignore', detached: true, windowsHide: true }).unref();
@@ -785,13 +810,15 @@ async function shutdown() {
   for (const { server: lan } of [...lanServers.values(), ...httpsServers.values()]) lan.close();
   tls.stop();
   mirror.stop();
-  claudeCheck.stop();
+  // A running contract check is aborted (its processes killed, whole tree) and not recorded; waited for ≤ 3 s.
+  const checksStopped = Promise.allSettled([claudeCheck.stop(), opencodeCheck.stop()]);
   spotify.stop();
   try {
     await sessions.shutdown();
   } catch (err) {
     console.error('Shutdown:', err?.stack ?? err);
   }
+  await checksStopped; // each stop() is itself bounded (STOP_WAIT_MS)
   hub.save();
   process.exit(0);
 }

@@ -497,6 +497,8 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .md th, .md td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
 .md th { background: var(--surface-3); }
 .md a { color: var(--accent-2); }
+.md blockquote { margin: 6px 0; padding: 4px 0 4px 12px; border-left: 3px solid var(--border); color: var(--text-2); }
+.md blockquote > :last-child { margin-bottom: 0; }
 
 .line { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); color: var(--text-2); padding: 3px 6px; border-radius: var(--r-sm); flex-wrap: wrap; }
 .line .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: var(--fs-sm); }
@@ -2152,7 +2154,10 @@ body.read-only #composer-hint { color: var(--ask); }
 body.brain-on img.orbable { object-position: -9999px 0; border-radius: 50%; background: radial-gradient(circle at 35% 32%, #ffffffcc 0 12%, var(--c) 42%, color-mix(in srgb, var(--c) 30%, transparent) 72%, transparent 76%); box-shadow: 0 0 6px color-mix(in srgb, var(--c) 55%, transparent); image-rendering: auto; }
 body.brain-on .roster-row:not(.on):not(.locked) img.orbable { opacity: .45; }
 /* 👁 File viewer previews (features/file-viewer.js previewKind) */
-.fv-preview { padding: 4px 2px; }
+/* .fv-body is a flex column with min-height:0 inside a fixed-height card (overflow:hidden): the preview must be its
+   own scroll box, otherwise everything below the fold is clipped and wheel/keys/touch have nothing to scroll. */
+.fv-preview { padding: 4px 2px; flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.fv-preview:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .fv-preview.md { padding: 6px 14px 14px; font-size: var(--fs-md); line-height: 1.6; }
 .fv-img { display: grid; place-items: center; padding: 12px; background: repeating-conic-gradient(#8881 0 25%, transparent 0 50%) 0 0 / 16px 16px; border-radius: 8px; }
 .fv-img img { max-width: 100%; max-height: 70vh; object-fit: contain; }

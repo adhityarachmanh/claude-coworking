@@ -3,8 +3,26 @@
 // with the shapes the real OpenCode 2.x sends (see docs/design-opencode.md). Scenarios by prompt text:
 //   "izin" — runs a shell command; asks first when the permission config says "ask" (allow → done, reject → cancelled)
 //   "lama" — streams, then waits until session/cancel                       anything else — text, a read, a plan
-// It honours OPENCODE_CONFIG_CONTENT like the real one (permission.bash: ask | allow | deny).
+//   "tulis" — writes a file; asks first when permission.edit is "ask" (the edit permission's shape, kind "edit")
+//   "macet" — a shell command that never ends (`tail -f`), no output, until session/cancel (the stuck detector)
+// It honours OPENCODE_CONFIG_CONTENT like the real one (permission.bash / permission.edit: ask | allow | deny).
+// Contract check (src/opencode-contract.js): FAKE_ACP_VERSION = what --version / agentInfo claim; FAKE_ACP_BREAK =
+// comma list of parts to break: version-hang, initialize (never answers), acp-exit, load-session, session-new,
+// mode, commands, load, models, session-list. FAKE_ACP_RPC_LOG=<file>: every incoming request's method, one per line.
+const BREAK = new Set((process.env.FAKE_ACP_BREAK ?? '').split(',').filter(Boolean));
+// FAKE_ACP_VERSION_FILE: the version read from a file at every start (an "update" while the server runs).
+const versionFromFile = () => {
+  try {
+    return process.env.FAKE_ACP_VERSION_FILE ? readFileSync(process.env.FAKE_ACP_VERSION_FILE, 'utf8').trim() : '';
+  } catch {
+    return '';
+  }
+};
+const FAKE_VERSION = versionFromFile() || process.env.FAKE_ACP_VERSION || '2.0.0-fake';
+// FAKE_ACP_CLI_LOG=<file>: every non-acp invocation as "<args>	<cwd>" (where the CLI runs were started).
+if (process.env.FAKE_ACP_CLI_LOG && process.argv[2] !== 'acp') appendFileSync(process.env.FAKE_ACP_CLI_LOG, `${process.argv.slice(2).join(' ')}\t${process.cwd()}\n`);
 if (process.argv[2] === 'models') {
+  if (BREAK.has('models')) process.exit(1);
   console.log('opencode-go/beam-free\nopencode-go/kimi-k3\ngoogle/gemini-2.5-flash');
   process.exit(0);
 }
@@ -92,16 +110,22 @@ if (process.argv[2] === 'session' && process.argv[3] === 'export') {
   process.exit(0);
 }
 if (process.argv[2] === 'session' && process.argv[3] === 'list') {
+  if (BREAK.has('session-list')) (console.log('Error: database locked'), process.exit(0));
   console.log(JSON.stringify([{ id: 'ses_fakeold', title: 'Sesi lama OpenCode', updated: 1700000000000, created: 1700000000000, directory: process.cwd() }]));
   process.exit(0);
 }
 if (process.argv[2] !== 'acp') {
-  console.log('opencode 2.0.0-fake');
-  process.exit(0);
+  if (BREAK.has('version-hang')) {
+    setInterval(() => {}, 60_000);
+    await new Promise(() => {}); // never answers (killed by the caller's timeout)
+  } else {
+    console.log(`opencode v${FAKE_VERSION}`);
+    process.exit(0);
+  }
 }
 
 // FAKE_ACP_FAIL_ONCE=<file>: the very first `acp` process dies at initialize (a cold start), later ones work.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 const failOnce = process.env.FAKE_ACP_FAIL_ONCE;
 const coldStart = Boolean(failOnce) && !existsSync(failOnce);
 if (coldStart) writeFileSync(failOnce, 'started');
@@ -114,6 +138,7 @@ const config = (() => {
   }
 })();
 const bash = config.permission?.bash ?? 'allow';
+const edit = config.permission?.edit ?? 'allow';
 // Mode tim: OPENCODE_CONFIG points at the app's team file (agents + the Lead's instructions), like the real one.
 const team = (() => {
   try {
@@ -181,6 +206,35 @@ async function turn(sessionId, text) {
     await say('msg_team', 'Tim selesai.');
     return { stopReason: 'end_turn', usage: { inputTokens: 30, outputTokens: 6, totalTokens: 36 } };
   }
+  if (/macet/.test(text)) {
+    const call = 'call-hang-1';
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'bash', kind: 'execute', status: 'pending', locations: [], rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'in_progress', kind: 'execute', title: 'tail -f app.log', rawInput: { command: 'tail -f app.log', description: 'Menunggu log' } });
+    await new Promise((r) => (cancelTurn = r));
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'failed', content: [{ type: 'content', content: { type: 'text', text: 'Tool execution aborted' } }] });
+    return { stopReason: 'cancelled', usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 } };
+  }
+  if (/tulis/.test(text)) {
+    const call = 'call-write-1';
+    const rawInput = { filePath: 'catatan.md', content: 'isi catatan' };
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'write', kind: 'edit', status: 'pending', locations: [], rawInput: {} });
+    if (edit === 'ask') {
+      // OpenCode's edit permission: kind from the permission type, the file in locations/metadata
+      const res = await ask({
+        sessionId,
+        toolCall: { toolCallId: call, title: 'write', kind: 'edit', status: 'pending', locations: [{ path: 'catatan.md' }], rawInput },
+        options: [{ optionId: 'once', kind: 'allow_once', name: 'Allow once' }, { optionId: 'always', kind: 'allow_always', name: 'Always allow' }, { optionId: 'reject', kind: 'reject_once', name: 'Reject' }],
+      });
+      if (!(res?.outcome?.outcome === 'selected' && res.outcome.optionId !== 'reject')) {
+        update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'failed', content: [{ type: 'content', content: { type: 'text', text: 'The user declined this tool call' } }] });
+        return { stopReason: 'cancelled', usage: { inputTokens: 40, outputTokens: 4, totalTokens: 44 } };
+      }
+    }
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'in_progress', kind: 'edit', title: 'write', rawInput });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'Wrote file successfully.' } }] });
+    await say('msg_write', 'Catatan ditulis.');
+    return { stopReason: 'end_turn', usage: { inputTokens: 60, outputTokens: 8, totalTokens: 68 } };
+  }
   if (/lama/.test(text)) {
     await say('msg_long', 'Sedang ', 'bekerja lama…');
     await new Promise((r) => (cancelTurn = r));
@@ -244,17 +298,23 @@ async function handle(msg) {
   }
   const { id, method, params = {} } = msg;
   const reply = (result) => send({ id, result });
+  if (process.env.FAKE_ACP_RPC_LOG) appendFileSync(process.env.FAKE_ACP_RPC_LOG, `${method}
+`); // which requests came in
   switch (method) {
     case 'initialize':
       if (coldStart) process.exit(3);
-      return reply({ protocolVersion: 1, agentCapabilities: { loadSession: true, promptCapabilities: { image: true, embeddedContext: true } }, authMethods: [], agentInfo: { name: 'OpenCode', version: '2.0.0-fake' } });
+      if (BREAK.has('acp-exit')) process.exit(4);
+      if (BREAK.has('initialize')) return; // never answers
+      return reply({ protocolVersion: 1, agentCapabilities: { loadSession: !BREAK.has('load-session'), promptCapabilities: { image: true, embeddedContext: true } }, authMethods: [], agentInfo: { name: 'OpenCode', version: FAKE_VERSION } });
     case 'session/new': {
+      if (BREAK.has('session-new')) return send({ id, error: { code: -32603, message: 'Internal error' } });
       const sessionId = `ses_fake${++seq}`;
       sessions.add(sessionId);
-      update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'init', description: 'AGENTS.md' }, { name: 'rilis', description: 'Command buatan sendiri', input: { hint: '<versi>' } }] });
-      return reply({ sessionId, configOptions: configOptions() });
+      if (!BREAK.has('commands')) update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'init', description: 'AGENTS.md' }, { name: 'rilis', description: 'Command buatan sendiri', input: { hint: '<versi>' } }] });
+      return reply({ sessionId, configOptions: BREAK.has('mode') ? configOptions().filter((o) => o.id !== 'mode') : configOptions() });
     }
     case 'session/load':
+      if (BREAK.has('load')) return send({ id, error: { code: -32603, message: 'Internal error' } });
       if (!sessions.has(params.sessionId) && !params.sessionId.startsWith('ses_fork_')) return send({ id, error: { code: -32002, message: 'Session not found' } });
       // The real agent replays the old conversation: the office must not show it again.
       update(params.sessionId, { sessionUpdate: 'agent_message_chunk', messageId: 'msg_old', content: { type: 'text', text: 'jawaban lama' } });
