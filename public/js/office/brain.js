@@ -58,6 +58,14 @@ export class Brain {
       if (role) host.dispatchEvent(new CustomEvent('brain-neuron', { bubbles: true, detail: { role } }));
     });
     this.dust = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + 0.3, v: Math.random() * 0.02 + 0.005, p: Math.random() * TAU }));
+    // 🌌 deep space: three star layers (far ones small and slow), drifting nebulae, orbits with moons, meteors
+    this.stars = [0, 1, 2].flatMap((layer) =>
+      Array.from({ length: [160, 70, 25][layer] }, () => ({ x: Math.random(), y: Math.random(), layer, r: [0.5, 0.9, 1.5][layer] * (0.6 + Math.random() * 0.8), p: Math.random() * TAU, tw: 600 + Math.random() * 2400, hue: Math.random() < 0.18 ? (Math.random() < 0.5 ? '255,210,170' : '170,200,255') : '235,240,255' })),
+    );
+    this.moons = Array.from({ length: 5 }, (_, i) => ({ orbit: i, a: Math.random() * TAU, speed: (0.00006 + Math.random() * 0.00008) * (i % 2 ? -1 : 1), r: 1.6 + Math.random() * 2.2, color: ['#9fd8ff', '#ffb38a', '#c8a8ff', '#8affd8', '#ffe08a'][i] }));
+    this.meteors = [];
+    this.nextMeteor = performance.now() + 4000;
+    this.nebula = null; // offscreen canvas, rebuilt on resize
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
   }
@@ -75,6 +83,58 @@ export class Brain {
     this.h = Math.max(1, r.height);
     this.canvas.width = Math.round(this.w * this.dpr);
     this.canvas.height = Math.round(this.h * this.dpr);
+    this.nebula = null; // the nebula layer is painted again at the new size
+  }
+
+  /** The static part of space (deep gradient + coloured nebula clouds), painted once per size, a bit larger than the
+   *  stage so it can drift. */
+  paintNebula() {
+    const pad = 80;
+    const c = document.createElement('canvas');
+    c.width = Math.round(this.w + pad * 2);
+    c.height = Math.round(this.h + pad * 2);
+    const g = c.getContext('2d');
+    const deep = g.createRadialGradient(c.width / 2, c.height / 2, 10, c.width / 2, c.height / 2, Math.max(c.width, c.height) * 0.75);
+    deep.addColorStop(0, '#0d1230');
+    deep.addColorStop(0.6, '#060819');
+    deep.addColorStop(1, '#020309');
+    g.fillStyle = deep;
+    g.fillRect(0, 0, c.width, c.height);
+    g.globalCompositeOperation = 'lighter';
+    const clouds = [
+      [0.18, 0.25, 0.45, '120,60,200', 0.22],
+      [0.82, 0.3, 0.4, '30,150,170', 0.18],
+      [0.7, 0.85, 0.5, '200,50,140', 0.14],
+      [0.25, 0.8, 0.35, '60,90,220', 0.16],
+      [0.5, 0.5, 0.3, '140,90,255', 0.1],
+    ];
+    for (const [x, y, r, rgb, a] of clouds) {
+      // a cloud = several soft blobs, so it is irregular rather than a perfect disc
+      for (let i = 0; i < 6; i++) {
+        const cx = (x + (Math.random() - 0.5) * 0.12) * c.width;
+        const cy = (y + (Math.random() - 0.5) * 0.12) * c.height;
+        const rr = r * Math.max(c.width, c.height) * (0.35 + Math.random() * 0.35);
+        const grad = g.createRadialGradient(cx, cy, 0, cx, cy, rr);
+        // kept soft: the network on top must stay readable
+        grad.addColorStop(0, `rgba(${rgb},${a * 0.68})`);
+        grad.addColorStop(0.5, `rgba(${rgb},${a * 0.24})`);
+        grad.addColorStop(1, `rgba(${rgb},0)`);
+        g.fillStyle = grad;
+        g.fillRect(0, 0, c.width, c.height);
+      }
+    }
+    // a faint galaxy band across the sky
+    g.save();
+    g.translate(c.width / 2, c.height / 2);
+    g.rotate(-0.35);
+    const band = g.createLinearGradient(0, -c.height * 0.12, 0, c.height * 0.12);
+    band.addColorStop(0, 'rgba(180,170,255,0)');
+    band.addColorStop(0.5, 'rgba(180,170,255,0.06)');
+    band.addColorStop(1, 'rgba(180,170,255,0)');
+    g.fillStyle = band;
+    g.fillRect(-c.width, -c.height * 0.12, c.width * 2, c.height * 0.24);
+    g.restore();
+    this.nebula = { canvas: c, pad };
   }
 
   /** Where each neuron sits: the Lead in the middle, the others on one ring (two rings for a big team). */
@@ -253,12 +313,34 @@ export class Brain {
   }
 
   drawBackground(g, t) {
-    const grad = g.createRadialGradient(this.w / 2, this.h / 2, 10, this.w / 2, this.h / 2, Math.max(this.w, this.h) * 0.75);
-    grad.addColorStop(0, '#141a3a');
-    grad.addColorStop(0.55, '#0a0d22');
-    grad.addColorStop(1, '#04050d');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, this.w, this.h);
+    if (!this.nebula) this.paintNebula();
+    const { canvas: neb, pad } = this.nebula;
+    // the nebula drifts in a slow circle (≈ 3 minutes per turn)
+    g.drawImage(neb, -pad + Math.sin(t / 30000) * pad * 0.6, -pad + Math.cos(t / 34000) * pad * 0.6);
+    // stars: far layers barely move, near ones drift more (parallax) and twinkle
+    for (const s of this.stars) {
+      const drift = [0.000004, 0.00001, 0.00002][s.layer] * t;
+      const x = ((s.x + drift) % 1) * this.w;
+      const y = s.y * this.h;
+      const a = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t / s.tw + s.p));
+      g.fillStyle = `rgba(${s.hue},${a * [0.5, 0.75, 1][s.layer]})`;
+      g.beginPath();
+      g.arc(x, y, s.r, 0, TAU);
+      g.fill();
+      if (s.layer === 2 && a > 0.9) {
+        // the brightest twinkle with a small cross flare
+        g.strokeStyle = `rgba(${s.hue},${(a - 0.9) * 4})`;
+        g.lineWidth = 0.6;
+        g.beginPath();
+        g.moveTo(x - 5, y);
+        g.lineTo(x + 5, y);
+        g.moveTo(x, y - 5);
+        g.lineTo(x, y + 5);
+        g.stroke();
+      }
+    }
+    this.drawOrbits(g, t);
+    this.drawMeteors(g);
     // drifting dust: the "thought field"
     for (const d of this.dust) {
       const y = (d.y + (t / 1000) * d.v) % 1;
@@ -268,6 +350,79 @@ export class Brain {
       g.arc(d.x * this.w, y * this.h, d.r, 0, TAU);
       g.fill();
     }
+  }
+
+  /** Orbit rings around the core (tilted ellipses, slowly turning) with small moons travelling on them. */
+  drawOrbits(g, t) {
+    const cx = this.w / 2;
+    const cy = this.h / 2 + 10;
+    const base = Math.min(this.w * 0.4, (this.h - 90) * 0.42);
+    const radii = [0.32, 0.55, 0.78, 1.08, 1.3];
+    g.save();
+    for (let i = 0; i < radii.length; i++) {
+      const rx = base * radii[i] * (this.w > this.h ? 1.35 : 1);
+      const ry = base * radii[i] * 0.42;
+      const tilt = -0.18 + i * 0.05 + Math.sin(t / 40000 + i) * 0.02;
+      g.strokeStyle = `rgba(150,170,255,${0.07 + (i % 2) * 0.03})`;
+      g.lineWidth = 1;
+      g.setLineDash(i % 2 ? [2, 6] : []);
+      g.lineDashOffset = -t / (60 + i * 30);
+      g.beginPath();
+      g.ellipse(cx, cy, rx, ry, tilt, 0, TAU);
+      g.stroke();
+      const m = this.moons[i];
+      if (m) {
+        const a = m.a + t * m.speed;
+        // the point on the tilted ellipse
+        const px = Math.cos(a) * rx;
+        const py = Math.sin(a) * ry;
+        const x = cx + px * Math.cos(tilt) - py * Math.sin(tilt);
+        const y = cy + px * Math.sin(tilt) + py * Math.cos(tilt);
+        const behind = Math.sin(a) < 0; // on the far side of the orbit: dimmer
+        g.setLineDash([]);
+        const glow = g.createRadialGradient(x, y, 0, x, y, m.r * 5);
+        glow.addColorStop(0, rgba(m.color, behind ? 0.25 : 0.55));
+        glow.addColorStop(1, rgba(m.color, 0));
+        g.fillStyle = glow;
+        g.beginPath();
+        g.arc(x, y, m.r * 5, 0, TAU);
+        g.fill();
+        g.fillStyle = rgba(m.color, behind ? 0.5 : 1);
+        g.beginPath();
+        g.arc(x, y, m.r, 0, TAU);
+        g.fill();
+      }
+    }
+    g.restore();
+  }
+
+  /** Now and then a shooting star crosses the sky. */
+  drawMeteors(g) {
+    const now = performance.now();
+    if (now > this.nextMeteor) {
+      const fromLeft = Math.random() < 0.5;
+      this.meteors.push({ x: fromLeft ? Math.random() * this.w * 0.5 : this.w * (0.5 + Math.random() * 0.5), y: Math.random() * this.h * 0.35, dx: (fromLeft ? 1 : -1) * (0.5 + Math.random() * 0.3), dy: 0.28 + Math.random() * 0.15, t0: now, dur: 900 + Math.random() * 500 });
+      this.nextMeteor = now + 5000 + Math.random() * 9000;
+    }
+    this.meteors = this.meteors.filter((m) => now < m.t0 + m.dur);
+    g.save();
+    g.lineCap = 'round';
+    for (const m of this.meteors) {
+      const q = (now - m.t0) / m.dur;
+      const len = 260 * q;
+      const x = m.x + m.dx * len * 2;
+      const y = m.y + m.dy * len * 2;
+      const tail = g.createLinearGradient(x, y, x - m.dx * 90, y - m.dy * 90);
+      tail.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - q)})`);
+      tail.addColorStop(1, 'rgba(160,190,255,0)');
+      g.strokeStyle = tail;
+      g.lineWidth = 1.6;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x - m.dx * 90, y - m.dy * 90);
+      g.stroke();
+    }
+    g.restore();
   }
 
   /** A gentle curve between two neurons (bent toward the centre side), so synapses don't all overlap. */
