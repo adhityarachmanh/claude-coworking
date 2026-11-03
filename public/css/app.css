@@ -2162,3 +2162,11 @@ body.brain-on .roster-row:not(.on):not(.locked) img.orbable { opacity: .45; }
 .fv-table th, .fv-table td { padding: 4px 10px; border: 1px solid var(--border); text-align: left; white-space: nowrap; }
 .fv-table thead th { position: sticky; top: 0; background: var(--surface-3); }
 .fv-table tbody tr:nth-child(even) { background: var(--surface-2); }
+/* 🔁 Lanjutkan dari mesin lain (features/handoff.js) */
+.handoff-card { max-width: 680px; width: min(680px, 96vw); }
+.handoff-modes { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.handoff-mode { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); cursor: pointer; }
+.handoff-mode:has(input:checked) { border-color: var(--accent-line); background: var(--accent-soft); }
+.handoff-mode.disabled { opacity: .55; cursor: default; }
+.handoff-mode input { margin-top: 4px; }
+.handoff-mode small.muted { line-height: 1.45; }

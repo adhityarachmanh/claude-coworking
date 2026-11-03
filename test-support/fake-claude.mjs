@@ -70,6 +70,12 @@ if (args[0] === 'plugin') {
   }
   process.exit(0);
 }
+// 🔁 handoff "Pintar": claude -p <prompt> --resume <id> --fork-session --output-format text (one answer, then exit)
+if (args.includes('-p') && args.includes('--fork-session') && args[args.indexOf('--output-format') + 1] === 'text') {
+  if (args.includes('--permission-mode') && args[args.indexOf('--permission-mode') + 1] !== 'plan') process.exit(9); // must be read-only
+  console.log(`## Tujuan\nHandoff palsu dari Claude (sesi ${args[args.indexOf('--resume') + 1]})`);
+  process.exit(0);
+}
 if (args[0] === 'doctor' || args[0] === 'update') {
   console.log(args[0] === 'doctor' ? 'Claude Code doctor\n\nNo installation issues found.' : 'Claude Code is up to date (9.9.9-fake)');
   process.exit(0);

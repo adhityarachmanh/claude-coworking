@@ -4,6 +4,7 @@
 import { AdminError, deleteAgent, listAgents, listHooks, listPlugins, pluginAction, saveAgent } from '../claude-admin.js';
 import { gitAction } from '../git.js';
 import { createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
+import { handoffInfo, HandoffError, otherEngine, quickHandoff, smartHandoff } from '../handoff.js';
 import { json } from './http.js';
 import { withProject, withSession } from './project.js';
 
@@ -46,6 +47,27 @@ export function register(router) {
     return r;
   })));
   router.post('/api/projects/:id/hooks', withProject(guard((ctx, req, res, { project }) => ({ hooks: listHooks(project.path) }))));
+
+  // 🔁 Lanjutkan dari mesin lain: the other workspace's context as an opening message (src/handoff.js)
+  router.post('/api/projects/:id/handoff/info', withProject(guard(({ hub }, req, res, { project }) => handoffInfo(hub, project, otherEngine(hub.engine)))));
+  let smartBusy = false;
+  router.post('/api/projects/:id/handoff', withProject(guard(async ({ hub, claude, opencode }, req, res, { project }, body) => {
+    const from = otherEngine(hub.engine);
+    try {
+      if (body.mode !== 'smart') return { mode: 'quick', from, text: await quickHandoff({ hub, project, from }) };
+      if (smartBusy) throw new HandoffError(409, 'Catatan handoff lain sedang dibuat. Tunggu sebentar.');
+      smartBusy = true;
+      try {
+        console.log(`Handoff pintar: ${from} → ${hub.engine} (${project.name})`);
+        return { mode: 'smart', from, text: await smartHandoff({ hub, project, from, claude, opencode }) };
+      } finally {
+        smartBusy = false;
+      }
+    } catch (err) {
+      if (err instanceof HandoffError) throw Object.assign(err, { status: err.status });
+      throw err;
+    }
+  })), { maxBody: 1024 });
 
   // ⇡ Pull request
   router.post('/api/github/status', guard(async () => ({ ...(await ghStatus(ghBin)), login: ghLoginState() })));

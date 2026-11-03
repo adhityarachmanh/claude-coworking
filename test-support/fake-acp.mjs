@@ -74,6 +74,13 @@ if (process.argv[2] === 'api') {
       fail(`Operation not found: ${op}`);
   }
 }
+// 🔁 handoff "Pintar": opencode run --session <id> --fork --agent plan <prompt>
+if (process.argv[2] === 'run') {
+  const a = process.argv.slice(3);
+  if (!a.includes('--fork') || a[a.indexOf('--agent') + 1] !== 'plan') process.exit(9);
+  console.log(`## Tujuan\nHandoff palsu dari OpenCode (sesi ${a[a.indexOf('--session') + 1]})`);
+  process.exit(0);
+}
 if (process.argv[2] === 'mcp' && process.argv[3] === 'add') {
   const { appendFileSync } = await import('node:fs');
   if (process.env.FAKE_MCP_LOG) appendFileSync(process.env.FAKE_MCP_LOG, `${JSON.stringify(['opencode', ...process.argv.slice(4)])}\n`);

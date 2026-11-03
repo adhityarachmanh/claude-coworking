@@ -1,4 +1,5 @@
 // ⋯ menu: export the chat, continue in a terminal, open in VS Code / Explorer.
+import { openHandoff } from './handoff.js';
 import { api, toast } from '../core/api.js';
 import { $ } from '../core/dom.js';
 import { APP_NAME, state } from '../core/state.js';
@@ -57,6 +58,7 @@ export function initMoreMenu() {
       if (item.dataset.more === 'export') exportChat();
       else if (item.dataset.more === 'permissions') openPermissions();
       else if (item.dataset.more === 'roster') openRoster();
+      else if (item.dataset.more === 'handoff') openHandoff(); // 🔁 context from the other engine
       else if (item.dataset.more === 'export-session') await exportActiveSession();
       else if (item.dataset.more === 'terminal') {
         if (!st.sessionId) return toast('Belum ada sesi web. Kirim pesan dulu, lalu sesinya bisa dilanjutkan di terminal.');

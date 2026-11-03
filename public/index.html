@@ -127,6 +127,7 @@
               <button role="menuitem" data-more="export">⬇ Export percakapan (.md)</button>
               <button role="menuitem" data-more="export-session" data-cap="exportSession" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">⬇ Export sesi lengkap (.md)</button>
               <button role="menuitem" data-more="permissions">🛡️ Aturan izin (/permissions)</button>
+              <button role="menuitem" data-more="handoff" title="Bawa konteks percakapan Claude Code ↔ OpenCode project ini">🔁 Lanjutkan dari mesin lain</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
               <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
@@ -363,6 +364,14 @@
         </div>
         <label class="switch small export-opt"><input class="export-tools-opt" type="checkbox" /> Export .md: sertakan ringkasan tool calls</label>
         <div id="sessions-list" class="sessions-list"></div>
+      </div>
+    </div>
+
+    <!-- 🔁 Lanjutkan dari mesin lain (/lanjut; features/handoff.js) -->
+    <div id="handoff-modal" class="modal" hidden>
+      <div class="modal-card handoff-card" role="dialog" aria-modal="true" aria-labelledby="handoff-title">
+        <div class="modal-head"><b id="handoff-title">🔁 Lanjutkan dari mesin lain <small id="handoff-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div id="handoff-body"></div>
       </div>
     </div>
 

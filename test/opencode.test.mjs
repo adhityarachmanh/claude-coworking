@@ -415,6 +415,31 @@ test('🔌 MCP without the terminal: OpenCode lists opencode.json servers; ＋ T
   await useEngine('opencode');
 });
 
+test('🔁 Lanjutkan dari mesin lain: Cepat (from the stored chat) and Pintar (the other engine\'s read-only fork), both ways', async () => {
+  const id = await projectId();
+  await useEngine('claude');
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'halo dari claude untuk handoff' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  await useEngine('opencode');
+  const info = (await api(`/api/projects/${id}/handoff/info`)).body;
+  assert.equal(info.from, 'claude');
+  assert.ok(info.messages >= 2);
+  assert.equal(info.hasSession, true);
+  const quick = (await api(`/api/projects/${id}/handoff`, { mode: 'quick' })).body;
+  assert.match(quick.text, /^🔁 Konteks dari Claude Code/);
+  assert.match(quick.text, /halo dari claude untuk handoff/, "the other workspace's own messages");
+  const smart = (await api(`/api/projects/${id}/handoff`, { mode: 'smart' })).body;
+  assert.match(smart.text, /Handoff palsu dari Claude \(sesi [0-9a-f-]{36}\)/, 'Claude wrote it on its own session (fork, plan)');
+
+  await useEngine('claude');
+  const back = (await api(`/api/projects/${id}/handoff/info`)).body;
+  assert.equal(back.from, 'opencode');
+  assert.match((await api(`/api/projects/${id}/handoff`, { mode: 'quick' })).body.text, /^🔁 Konteks dari OpenCode/);
+  assert.match((await api(`/api/projects/${id}/handoff`, { mode: 'smart' })).body.text, /Handoff palsu dari OpenCode \(sesi ses_/);
+  await useEngine('opencode');
+});
+
 test('OpenCode provider logins: list, API key, OAuth, logout (through `opencode api`)', async () => {
   let list = (await api('/api/opencode/providers')).body;
   assert.deepEqual(list.connected.map((p) => [p.id, p.connections[0].type]), [['google', 'env']], 'an environment variable counts as connected');
