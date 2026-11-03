@@ -3050,6 +3050,56 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
+    test('⏪ Rewind OpenCode: catatan apa yang dikembalikan, "Kode saja" mati, tanpa +/−; Claude tetap +/− dan "Kode saja"', async () => {
+      await freshApp();
+      page.clearProblems();
+      // The server's answers as OpenCode / Claude give them (fetch stubbed only for the three rewind routes).
+      await page.eval(async () => {
+        window.__rw = [];
+        const orig = window.fetch;
+        const reply = (obj) => Promise.resolve(new Response(JSON.stringify(obj), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+        window.__pv = { canRewind: true, filesChanged: ['src/a.js', '<img src=x onerror="window.__xss=1">.md'], codeOnly: false, note: 'OpenCode: pesan ini dan semua sesudahnya dihapus <b>x</b>' };
+        window.fetch = (url, opts) => {
+          const u = String(url);
+          if (/\/rewind-points$/.test(u)) return reply({ points: [{ uuid: 'msg_b', text: 'kedua', ts: Date.now() }, { uuid: 'msg_a', text: 'pertama', ts: Date.now() }] });
+          if (/\/rewind-preview$/.test(u)) return reply(window.__pv);
+          if (/\/rewind$/.test(u)) return (window.__rw.push(JSON.parse(opts.body)), reply({ ok: true, text: 'kedua' }));
+          return orig(url, opts);
+        };
+        (await import('/js/features/rewind.js')).openRewind();
+      });
+      await page.waitFor(() => document.querySelector('#rewind-list [data-uuid="msg_b"]'), { timeoutMs: 3000, message: 'daftar pesan' });
+      await page.eval(() => document.querySelector('#rewind-list [data-uuid="msg_b"]').click());
+      await page.waitFor(() => document.querySelector('#rewind-detail .rw-note'), { timeoutMs: 3000, message: 'catatan OpenCode' });
+      const oc = await page.eval(() => {
+        const box = document.querySelector('#rewind-detail');
+        const btn = (k) => box.querySelector(`[data-rw="${k}"]`);
+        return { note: box.querySelector('.rw-note').textContent, files: box.querySelectorAll('.rw-files li').length, counts: Boolean(box.querySelector('.add, .del')), both: btn('both').disabled, conv: btn('conversation').disabled, code: btn('code').disabled, codeTitle: btn('code').title };
+      });
+      assert.match(oc.note, /dihapus <b>x<\/b>/, 'catatan dari server tampil sebagai teks');
+      assert.deepEqual([oc.files, oc.counts, oc.both, oc.conv, oc.code], [2, false, false, false, true]);
+      assert.match(oc.codeTitle, /bersama percakapannya/);
+      await page.eval(() => document.querySelector('#rewind-detail [data-rw="both"]').click());
+      await page.waitFor(() => document.querySelector('#rewind-modal').hidden, { timeoutMs: 3000, message: 'modal tertutup' });
+      assert.deepEqual(await page.eval(() => window.__rw), [{ uuid: 'msg_b', code: true, conversation: true }]);
+      assert.equal(await page.eval(() => document.querySelector('#prompt').value), 'kedua', 'pesan kembali ke kotak untuk diedit');
+
+      // Claude Code's preview (counts, code only) is unchanged
+      await page.eval(async () => {
+        document.querySelector('#prompt').value = '';
+        window.__pv = { canRewind: true, filesChanged: ['catatan.txt'], insertions: 3, deletions: 1 };
+        (await import('/js/features/rewind.js')).openRewind();
+      });
+      await page.waitFor(() => document.querySelector('#rewind-list [data-uuid="msg_a"]'), { timeoutMs: 3000, message: 'daftar pesan Claude' });
+      await page.eval(() => document.querySelector('#rewind-list [data-uuid="msg_a"]').click());
+      await page.waitFor(() => document.querySelector('#rewind-detail .add'), { timeoutMs: 3000, message: '+/− Claude' });
+      const cl = await page.eval(() => ({ add: document.querySelector('#rewind-detail .add').textContent, note: Boolean(document.querySelector('#rewind-detail .rw-note')), code: document.querySelector('#rewind-detail [data-rw="code"]').disabled }));
+      assert.deepEqual(cl, { add: '+3', note: false, code: false });
+      await page.eval(async () => (await import('/js/ui/modals.js')).closeModal('rewind-modal'));
+      assert.equal(await page.eval(() => window.__xss), undefined);
+      assert.deepEqual(realProblems(page), []);
+    });
+
     test('🎤 hasil final yang datang setelah pindah project tidak masuk ke kotak pesan project lain', async (t) => {
       await freshApp();
       const dir = path.join(TMP, vp.mobile ? 'kasir-hp' : 'kasir-laptop'); // outside the projects root: only this test sees it

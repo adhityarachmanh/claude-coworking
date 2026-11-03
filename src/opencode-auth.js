@@ -15,8 +15,11 @@ const TIMEOUT_MS = 60_000;
 const ID = /^[\w.-]{1,100}$/; // integration, method, attempt and credential ids
 const MAX_SECRET = 4096;
 
-/** Runs `opencode api <operation>`; resolves the parsed JSON body (`data` unwrapped), rejects with a short message. */
-export function openCodeApi(bin, operation, { params = {}, body } = {}) {
+/**
+ * Runs `opencode api <operation>`; resolves the parsed JSON body (`data` unwrapped, or the whole body with `full`, e.g.
+ * a paged list's `cursor`), rejects with a short message.
+ */
+export function openCodeApi(bin, operation, { params = {}, body, full = false } = {}) {
   if (!bin) return Promise.reject(new Error('OpenCode belum terpasang di laptop ini.'));
   const args = [...bin.args, 'api', operation];
   for (const [k, v] of Object.entries(params)) args.push('--param', `${k}=${v}`);
@@ -29,7 +32,7 @@ export function openCodeApi(bin, operation, { params = {}, body } = {}) {
       if (!text) return resolve(null);
       try {
         const parsed = JSON.parse(text);
-        resolve(parsed && typeof parsed === 'object' && 'data' in parsed ? parsed.data : parsed);
+        resolve(!full && parsed && typeof parsed === 'object' && 'data' in parsed ? parsed.data : parsed);
       } catch {
         reject(new Error('Jawaban OpenCode tidak terbaca.'));
       }

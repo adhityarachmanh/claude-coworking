@@ -659,6 +659,7 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .rw-head { margin-bottom: 6px; }
 .rw-summary .add { color: var(--ok); }
 .rw-summary .del { color: var(--err); }
+.rw-note { margin-top: 6px; font-size: var(--fs-sm); }
 .rw-files { margin: 4px 0 0; padding-left: 18px; font: var(--fs-sm) var(--mono); color: var(--text-2); max-height: 96px; overflow-y: auto; }
 .rw-actions, .mcp-actions, .task-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .rw-actions button, .mcp-actions button, .task-actions button { font-size: var(--fs-sm); padding: 5px 10px; }

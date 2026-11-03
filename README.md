@@ -155,7 +155,7 @@ Batasan: izin untuk sesi CLI tetap dijawab di terminal, dan prompt dari web memb
 | **🛡️ Aturan izin** (`/permissions`, menu ⋯) | Aturan allow/ask/deny yang tersimpan, per file settings (project lokal, project bersama, user). Mengubah hanya dari laptop |
 | **Model · Effort · Mode tim** | Daftar model dari Claude Code sendiri (`/model`, termasuk alias seperti `opusplan`). Effort Default/Low/Medium/High/X-High/Max. Mode tim mendelegasikan ke subagent (lebih hidup, lebih banyak token). Semua per project, berlaku tanpa restart |
 | **■ Stop** / `Esc` | Hentikan giliran dan batalkan pesan yang antre. Sesi tetap bisa dilanjutkan |
-| **⏪ Rewind** (`Esc Esc`, `/rewind`) | Kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu (checkpoint Claude Code), dengan pratinjau file |
+| **⏪ Rewind** (`Esc Esc`, `/rewind`) | Kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu (checkpoint Claude Code, atau revert sesi OpenCode), dengan pratinjau file. Pesan yang di-rewind tetap terlihat di chat tapi diredupkan, dan pesanmu kembali ke kotak pesan untuk diedit |
 | **▶ Lanjutkan setelah restart** | Kalau server berhenti di tengah giliran, chat menampilkan *"… giliran terputus"* dengan **▶ Lanjutkan** (ke sesi yang sama) dan **Tutup**. Tidak ada yang dikirim otomatis |
 | **⚠ Deteksi macet** | Tool tanpa output baru **3 mnt** atau berjalan **10+ mnt**, dan delegasi tanpa aktivitas **5 mnt**, mendapat chip *⚠ … mungkin macet* dengan **■ Hentikan giliran**, **⧗ Pindah ke latar** (perintah shell), atau **Lihat detail** (delegasi). Satu notifikasi *Berhenti / error* per kejadian. Hanya peringatan: tidak pernah menghentikan apa pun sendiri |
 | **Output live** | Perintah Bash/PowerShell yang berjalan menampilkan baris terakhir; dibuka (▸) menampilkan output lengkap (8 KB terakhir) |
@@ -211,7 +211,8 @@ Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude
 | Command | `/init`, `/review` dan command buatanmu muncul di autocomplete `/` dengan deskripsinya |
 | Mode tim | Role kantor jadi **subagent OpenCode** (file config `OPENCODE_CONFIG` berisi `agents` + prompt Lead sebagai `instructions`). Lead mendelegasikan lewat tool `subagent`; tool milik subagent dikerjakan role itu di kantor |
 | Effort | Opsi `effort` OpenCode per model (mis. low/high/max): dipilih level terdekat yang ditawarkan model |
-| Belum | Rewind, status langsung + login OAuth server MCP, tugas latar, mirror sesi terminal OpenCode. Kontrolnya disembunyikan atau diberi alasan |
+| ⏪ Rewind | Lewat revert sesi OpenCode sendiri (`session.revert.stage` + `commit`). **Pesan yang dipilih dan semua sesudahnya dihapus dari sesi OpenCode** (tidak bisa di-redo dari aplikasi). *Kode & percakapan* juga mengembalikan file yang diubah OpenCode sejak pesan itu dari snapshot-nya (perubahanmu sendiri di file yang sama ikut tertimpa); *Percakapan saja* tidak menyentuh file. *Kode saja* tidak ada di OpenCode (tombolnya mati). Pratinjau = daftar file dari snapshot giliran sesudahnya (tanpa hitungan +/−). Ditolak (409) selama giliran berjalan. Akses sama dengan Rewind Claude: daftar pesan boleh dibaca dari WiFi, pratinjau dan rewind hanya laptop/Tailscale |
+| Belum | Status langsung + login OAuth server MCP, tugas latar, mirror sesi terminal OpenCode. Kontrolnya disembunyikan atau diberi alasan |
 
 - Token OpenCode tercatat di laporan sebagai akun **OpenCode**, terpisah dari akun Claude.
 - Setelah satu **Tolak**, OpenCode menghentikan gilirannya, sehingga kartu izin lain dari giliran itu ditutup otomatis.

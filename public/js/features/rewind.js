@@ -1,4 +1,4 @@
-// Rewind (Esc Esc, /rewind): Claude Code's checkpoints.
+// Rewind (Esc Esc, /rewind): Claude Code's checkpoints, or OpenCode's session revert (conversation ± its file snapshots).
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { shortDate } from '../core/format.js';
@@ -55,22 +55,30 @@ function renderRewindDetail() {
   box.hidden = !point;
   if (!point) return;
   const pv = rewindView.preview;
-  const files = pv?.filesChanged ?? [];
-  const codeOk = Boolean(pv?.canRewind && files.length);
-  const short = (f) => f.split(/[\\/]/).slice(-2).join('/');
+  const files = Array.isArray(pv?.filesChanged) ? pv.filesChanged : [];
+  // OpenCode: a prompt older than the scanned messages has an unknown file list, its files still come back
+  const unknown = pv?.filesUnknown === true;
+  const codeOk = Boolean(pv?.canRewind && (files.length || unknown));
+  const codeOnlyOk = codeOk && pv?.codeOnly !== false; // OpenCode reverts files only together with the conversation
+  const short = (f) => String(f).split(/[\\/]/).slice(-2).join('/');
+  // +/− only when the engine counts them (Claude's checkpoints do, OpenCode's preview doesn't)
+  const counts = Number.isFinite(pv?.insertions) || Number.isFinite(pv?.deletions) ? ` <span class="add">+${pv.insertions ?? 0}</span> <span class="del">−${pv.deletions ?? 0}</span>` : '';
   let summary;
   if (!pv) summary = '<span class="muted">Memeriksa perubahan file…</span>';
-  else if (codeOk) {
-    summary = `<b>${files.length} file</b> kembali seperti sebelum pesan ini <span class="add">+${pv.insertions ?? 0}</span> <span class="del">−${pv.deletions ?? 0}</span><ul class="rw-files">${files
+  else if (codeOk && files.length) {
+    summary = `<b>${files.length} file</b> kembali seperti sebelum pesan ini${counts}<ul class="rw-files">${files
       .slice(0, 8)
       .map((f) => `<li title="${escapeHtml(f)}">${escapeHtml(short(f))}</li>`)
       .join('')}${files.length > 8 ? `<li class="muted">+${files.length - 8} lainnya</li>` : ''}</ul>`;
-  } else summary = `<span class="muted">${pv.canRewind ? 'Tidak ada file yang diubah sejak pesan ini.' : `Kode tidak bisa dikembalikan: ${escapeHtml(pv.error ?? 'tidak ada checkpoint untuk pesan ini')}`}</span>`;
-  box.innerHTML = `<div class="rw-head">Kembali ke sebelum: <i>“${escapeHtml(point.text.slice(0, 200))}”</i></div><div class="rw-summary">${summary}</div>
+  } else if (codeOk) summary = '<span class="muted">Pesan ini terlalu lama untuk dilihat daftar filenya; file yang diubah sejak pesan ini tetap dikembalikan.</span>';
+  else summary = `<span class="muted">${pv.canRewind ? 'Tidak ada file yang diubah sejak pesan ini.' : `Kode tidak bisa dikembalikan: ${escapeHtml(pv.error ?? 'tidak ada checkpoint untuk pesan ini')}`}</span>`;
+  const note = typeof pv?.note === 'string' && pv.note ? `<div class="rw-note muted">${escapeHtml(pv.note.slice(0, 400))}</div>` : '';
+  const codeOnlyTitle = pv?.codeOnly === false ? ' title="Mesin ini hanya bisa mengembalikan kode bersama percakapannya"' : '';
+  box.innerHTML = `<div class="rw-head">Kembali ke sebelum: <i>“${escapeHtml(point.text.slice(0, 200))}”</i></div><div class="rw-summary">${summary}</div>${note}
     <div class="rw-actions">
       <button class="primary" data-rw="both" ${codeOk ? '' : 'disabled'}>⏪ Kode &amp; percakapan</button>
       <button data-rw="conversation">💬 Percakapan saja</button>
-      <button data-rw="code" ${codeOk ? '' : 'disabled'}>📄 Kode saja</button>
+      <button data-rw="code" ${codeOnlyOk ? '' : 'disabled'}${codeOnlyTitle}>📄 Kode saja</button>
     </div>`;
 }
 

@@ -17,6 +17,16 @@ async function admin(res, fn) {
   }
 }
 import { answer, json } from './http.js';
+
+/** Like answer(), but an error's own HTTP status (4xx/5xx) is kept; anything else stays 400. */
+async function rewindAnswer(res, promise) {
+  try {
+    return json(res, 200, (await promise) ?? {});
+  } catch (err) {
+    const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600 ? err.status : 400;
+    return json(res, status, { error: err.message });
+  }
+}
 import { withSession } from './project.js';
 
 const ok = (res) => json(res, 200, { ok: true });
@@ -119,12 +129,13 @@ export function register(router) {
     if (!title) return json(res, 400, { error: 'Nama sesi kosong' });
     return answer(res, session.rename(title));
   }));
-  // Esc Esc / /rewind
-  router.post('/api/projects/:id/rewind-points', withSession((ctx, req, res, { session }) => json(res, 200, { points: session.rewindPoints() })));
-  router.post('/api/projects/:id/rewind-preview', withSession((ctx, req, res, { session }, body) => answer(res, session.rewindPreview(String(body.uuid ?? '')))));
+  // Esc Esc / /rewind. `uuid` = Claude Code's prompt uuid, or OpenCode's message id (msg_…). OpenCode reads its
+  // store through `opencode api` (async); its errors carry a status (409 while a turn runs), Claude's stay 400.
+  router.post('/api/projects/:id/rewind-points', withSession((ctx, req, res, { session }) => rewindAnswer(res, Promise.resolve(session.rewindPoints()).then((points) => ({ points })))));
+  router.post('/api/projects/:id/rewind-preview', withSession((ctx, req, res, { session }, body) => rewindAnswer(res, session.rewindPreview(String(body.uuid ?? '')))));
   router.post('/api/projects/:id/rewind', withSession((ctx, req, res, { session }, body) => {
     const options = { code: Boolean(body.code), conversation: Boolean(body.conversation) };
-    return answer(res, session.rewind(String(body.uuid ?? ''), options));
+    return rewindAnswer(res, session.rewind(String(body.uuid ?? ''), options));
   }));
   // 🔎 Cari percakapan / ⬇ Export .md: read-only, bounded reads of this project's transcripts (src/conversation.js).
   router.post('/api/projects/:id/search', withSession(({ hub }, req, res, { project }, body) =>

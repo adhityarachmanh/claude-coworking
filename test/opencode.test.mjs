@@ -28,6 +28,7 @@ before(async () => {
   mkdirSync(path.join(projects, 'toko'), { recursive: true });
   writeFileSync(path.join(projects, 'toko', 'README.md'), '# Toko\n');
   mkdirSync(path.join(TMP, 'claude-projects'));
+  mkdirSync(path.join(TMP, 'acp-store'));
   server = spawn(process.execPath, [path.join(APP, 'server.js')], {
     windowsHide: true,
     env: {
@@ -39,6 +40,7 @@ before(async () => {
       OPENCODE_BIN: path.join(APP, 'test-support', 'fake-acp.mjs'),
       FAKE_ACP_FAIL_ONCE: path.join(TMP, 'acp-cold-start'), // the first OpenCode process dies: the retry must hide it
       FAKE_ACP_AUTH_FILE: path.join(TMP, 'acp-auth.json'),
+      FAKE_ACP_STORE: path.join(TMP, 'acp-store'), // the sessions' messages (⏪ Rewind)
       FAKE_MCP_LOG: path.join(TMP, 'mcp-add.log'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
@@ -126,7 +128,7 @@ test('config.engines announces OpenCode with its caps; the engine is app-wide; m
   assert.equal(snap.config.engine, 'claude', 'Claude Code until OpenCode is chosen in Akun');
   assert.equal(snap.config.engines.claude.available, true);
   assert.equal(snap.config.engines.opencode.available, true);
-  assert.equal(snap.config.engines.opencode.caps.rewind, false, 'no rewind for OpenCode');
+  assert.equal(snap.config.engines.opencode.caps.rewind, true, 'rewind through the session revert of OpenCode');
   assert.equal(snap.config.engines.opencode.caps.team, true);
   assert.equal(snap.config.engines.opencode.caps.effort, true);
   assert.deepEqual(snap.config.engines.opencode.caps.modes, ['manual', 'acceptEdits', 'auto', 'plan']);
@@ -466,4 +468,73 @@ test('OpenCode provider logins: list, API key, OAuth, logout (through `opencode 
   assert.equal((await api('/api/opencode/logout', { credentialID: go.connections[0].id })).status, 200);
   list = (await api('/api/opencode/providers')).body;
   assert.ok(!list.connected.some((p) => p.id === 'opencode-go'), 'logged out');
+});
+
+test('⏪ Rewind OpenCode: prompts from session.message.list, preview from the snapshots, revert + commit, chat greyed, 409 while busy', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  await api(`/api/projects/${id}/reset`);
+  await api(`/api/projects/${id}/settings`, { mode: 'auto' }); // "tulis" writes without an approval card
+  const catatan = path.join(TMP, 'projects', 'toko', 'catatan.md');
+  rmSync(catatan, { force: true });
+  const send = async (text) => {
+    mark = seen.length;
+    await api(`/api/projects/${id}/prompt`, { text });
+    assert.equal((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result')).ok, true, text);
+    await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false);
+  };
+  const from = seen.length;
+  await send('pertama');
+  await send('tulis catatan');
+  assert.ok(existsSync(catatan), 'the fake really wrote the file');
+  await send('ketiga');
+
+  const points = (await api(`/api/projects/${id}/rewind-points`)).body.points;
+  assert.deepEqual(points.map((p) => p.text), ['ketiga', 'tulis catatan', 'pertama'], 'newest first');
+  assert.ok(points.every((p) => /^msg_[\w-]+$/.test(p.uuid)), 'OpenCode message ids');
+  const target = points[1].uuid;
+  const pv = (await api(`/api/projects/${id}/rewind-preview`, { uuid: target })).body;
+  assert.deepEqual(pv.filesChanged, ['catatan.md'], 'the files of the later turns');
+  assert.equal(pv.codeOnly, false, 'OpenCode reverts files only with the conversation');
+  assert.match(pv.note, /dihapus dari sesi OpenCode/);
+  assert.deepEqual((await api(`/api/projects/${id}/rewind-preview`, { uuid: points[0].uuid })).body.filesChanged, [], 'nothing changed after the last prompt');
+
+  assert.equal((await api(`/api/projects/${id}/rewind-preview`, { uuid: 'msg_../../x' })).status, 400, 'message ids are checked');
+  assert.equal((await api(`/api/projects/${id}/rewind`, { uuid: target, code: true })).status, 400, 'no "code only"');
+  assert.equal((await api(`/api/projects/${id}/rewind`, { uuid: 'msg_bukan_di_sini', code: true, conversation: true })).status, 400, 'only prompts of this conversation');
+
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'tugas lama' });
+  await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch.streaming === true);
+  assert.equal((await api(`/api/projects/${id}/rewind`, { uuid: target, conversation: true })).status, 409, 'refused while a turn runs');
+  await api(`/api/projects/${id}/stop`);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false);
+
+  mark = seen.length;
+  const done = await api(`/api/projects/${id}/rewind`, { uuid: target, code: true, conversation: true });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.text, 'tulis catatan', 'the prompt comes back to edit');
+  assert.deepEqual(done.body.filesRestored, ['catatan.md']);
+  assert.ok(!existsSync(catatan), 'the file is as before the prompt (it did not exist)');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'divider' && /Kode & percakapan \(1 file\)/.test(o.text));
+  assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['pertama'], 'deleted from the OpenCode session');
+
+  // the chat: "tulis catatan" and everything after it greyed out, "pertama" untouched
+  const users = seen.slice(from).filter((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'user');
+  const chatId = (text) => users.find((s) => s.obj.text === text).obj.id;
+  const rewound = new Set(seen.filter((s) => s.type === 'chat_update' && s.obj.project === id && s.obj.patch.rewound === true).map((s) => s.obj.id));
+  assert.ok(rewound.has(chatId('tulis catatan')) && rewound.has(chatId('ketiga')) && rewound.has(chatId('tugas lama')));
+  assert.ok(!rewound.has(chatId('pertama')));
+
+  // the next prompt continues the shortened session (a fresh process loads it)
+  await send('lanjut');
+  assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['lanjut', 'pertama']);
+  // conversation only: the file stays
+  await send('tulis lagi');
+  assert.ok(existsSync(catatan));
+  const again = (await api(`/api/projects/${id}/rewind-points`)).body.points[0].uuid;
+  assert.equal((await api(`/api/projects/${id}/rewind`, { uuid: again, conversation: true })).status, 200);
+  assert.ok(existsSync(catatan), '💬 Percakapan saja keeps the files');
+  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
 });

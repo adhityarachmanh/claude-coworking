@@ -19,6 +19,21 @@ const versionFromFile = () => {
   }
 };
 const FAKE_VERSION = versionFromFile() || process.env.FAKE_ACP_VERSION || '2.0.0-fake';
+// FAKE_ACP_STORE=<dir>: the sessions' messages as OpenCode 2.x projects them (session.message.list), one JSON per
+// session { dir, messages }, written by the acp processes and read/cut by `api session.revert.*` (⏪ Rewind).
+// An assistant message keeps `before` (file -> content before the turn, null = absent): its "snapshot".
+const STORE = process.env.FAKE_ACP_STORE;
+const storePath = (sid) => `${STORE}/${String(sid).replace(/[^\w-]/g, '')}.json`;
+function loadStore(sid) {
+  try {
+    return STORE ? JSON.parse(readFileSync(storePath(sid), 'utf8')) : null;
+  } catch {
+    return null;
+  }
+}
+function saveStore(sid, s) {
+  if (STORE) writeFileSync(storePath(sid), JSON.stringify(s));
+}
 // FAKE_ACP_CLI_LOG=<file>: every non-acp invocation as "<args>	<cwd>" (where the CLI runs were started).
 if (process.env.FAKE_ACP_CLI_LOG && process.argv[2] !== 'acp') appendFileSync(process.env.FAKE_ACP_CLI_LOG, `${process.argv.slice(2).join(' ')}\t${process.cwd()}\n`);
 if (process.argv[2] === 'models') {
@@ -80,6 +95,48 @@ if (process.argv[2] === 'api') {
       write(`${file}.title`, `${params.sessionID}=${body.title}`);
       out({ id: params.sessionID, title: body.title });
       break;
+    // ⏪ Rewind (FAKE_ACP_STORE): the messages the acp processes recorded, OpenCode 2.x's shapes and paging
+    case 'session.message.list': {
+      const s = loadStore(params.sessionID);
+      if (!s) fail('Session not found');
+      let list = s.messages.filter((m) => !params.type || m.type === params.type);
+      let start = 0;
+      let order = params.order ?? 'desc';
+      if (params.cursor) ({ start, order } = JSON.parse(Buffer.from(params.cursor, 'base64url').toString()));
+      if (order === 'desc') list = list.reverse();
+      const limit = Number(params.limit) || 50;
+      const page = list.slice(start, start + limit);
+      const next = Buffer.from(JSON.stringify({ start: start + limit, order })).toString('base64url');
+      console.log(JSON.stringify({ data: page.map(({ before, ...m }) => m), cursor: { previous: null, next } }));
+      process.exit(0);
+      break;
+    }
+    case 'session.revert.stage': {
+      const s = loadStore(params.sessionID);
+      const at = s ? s.messages.findIndex((m) => m.id === body.messageID) : -1;
+      if (at < 0) (console.log(JSON.stringify({ _tag: 'MessageNotFoundError', message: `Message not found: ${body.messageID}` })), console.error('HTTP 404 Not Found'), process.exit(1));
+      if (process.env.FAKE_ACP_REVERT_BUSY) (console.log(JSON.stringify({ _tag: 'BusyError' })), console.error('HTTP 409 Conflict'), process.exit(1));
+      const restore = new Map(); // file -> content before the earliest later turn (null = did not exist)
+      if (body.files !== false) for (const m of s.messages.slice(at + 1)) for (const [f, c] of Object.entries(m.before ?? {})) if (!restore.has(f)) restore.set(f, c);
+      for (const [f, c] of restore) {
+        const abs = `${s.dir}/${f}`;
+        if (c === null) (await import('node:fs')).rmSync(abs, { force: true });
+        else write(abs, c);
+      }
+      s.revert = { messageID: body.messageID };
+      saveStore(params.sessionID, s);
+      out({ messageID: body.messageID, snapshot: 'snap0', files: [...restore.keys()].map((file) => ({ file, patch: '', additions: 1, deletions: 1, status: 'modified' })) });
+      break;
+    }
+    case 'session.revert.commit': {
+      const s = loadStore(params.sessionID);
+      if (!s) fail('Session not found');
+      if (s.revert) s.messages = s.messages.slice(0, s.messages.findIndex((m) => m.id === s.revert.messageID));
+      delete s.revert;
+      saveStore(params.sessionID, s);
+      out(null);
+      break;
+    }
     case 'credential.remove': {
       const i = creds.findIndex((c) => c.id === params.credentialID);
       if (i < 0) fail('Credential not found');
@@ -308,14 +365,15 @@ async function handle(msg) {
       return reply({ protocolVersion: 1, agentCapabilities: { loadSession: !BREAK.has('load-session'), promptCapabilities: { image: true, embeddedContext: true } }, authMethods: [], agentInfo: { name: 'OpenCode', version: FAKE_VERSION } });
     case 'session/new': {
       if (BREAK.has('session-new')) return send({ id, error: { code: -32603, message: 'Internal error' } });
-      const sessionId = `ses_fake${++seq}`;
+      // with a store, unique across processes (a later process must not pick up an older session's messages)
+      const sessionId = STORE ? `ses_fake${Date.now().toString(36)}${process.pid.toString(36)}${++seq}` : `ses_fake${++seq}`;
       sessions.add(sessionId);
       if (!BREAK.has('commands')) update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'init', description: 'AGENTS.md' }, { name: 'rilis', description: 'Command buatan sendiri', input: { hint: '<versi>' } }] });
       return reply({ sessionId, configOptions: BREAK.has('mode') ? configOptions().filter((o) => o.id !== 'mode') : configOptions() });
     }
     case 'session/load':
       if (BREAK.has('load')) return send({ id, error: { code: -32603, message: 'Internal error' } });
-      if (!sessions.has(params.sessionId) && !params.sessionId.startsWith('ses_fork_')) return send({ id, error: { code: -32002, message: 'Session not found' } });
+      if (!sessions.has(params.sessionId) && !params.sessionId.startsWith('ses_fork_') && !loadStore(params.sessionId)) return send({ id, error: { code: -32002, message: 'Session not found' } });
       // The real agent replays the old conversation: the office must not show it again.
       update(params.sessionId, { sessionUpdate: 'agent_message_chunk', messageId: 'msg_old', content: { type: 'text', text: 'jawaban lama' } });
       return reply({ configOptions: configOptions() });
@@ -325,7 +383,25 @@ async function handle(msg) {
     case 'session/prompt': {
       const text = (params.prompt ?? []).map((b) => b.text ?? '').join(' ');
       links = (params.prompt ?? []).filter((b) => b.type === 'resource_link').map((b) => b.name);
-      return reply(await turn(params.sessionId, text));
+      const s = STORE ? (loadStore(params.sessionId) ?? { dir: process.cwd(), messages: [] }) : null;
+      const msgId = () => `msg_${Date.now().toString(36)}${process.pid.toString(36)}_${++seq}`;
+      if (s) {
+        if (s.revert) s.messages = s.messages.slice(0, s.messages.findIndex((m) => m.id === s.revert.messageID)); // a staged revert is committed first
+        delete s.revert;
+        s.messages.push({ id: msgId(), time: { created: Date.now() }, text, type: 'user' });
+        saveStore(params.sessionId, s);
+      }
+      // "tulis" really writes catatan.md when the store is on, so a rewind has a file to put back
+      const file = `${process.cwd()}/catatan.md`;
+      const before = s && /tulis/.test(text) ? { 'catatan.md': existsSync(file) ? readFileSync(file, 'utf8') : null } : {};
+      const result = await turn(params.sessionId, text);
+      if (s) {
+        if (Object.keys(before).length && result.stopReason === 'end_turn') writeFileSync(file, `isi catatan ${seq}\n`);
+        const files = result.stopReason === 'end_turn' ? Object.keys(before) : [];
+        s.messages.push({ id: msgId(), time: { created: Date.now() }, type: 'assistant', snapshot: { start: 'snap0', files }, before: result.stopReason === 'end_turn' ? before : {} });
+        saveStore(params.sessionId, s);
+      }
+      return reply(result);
     }
     case 'session/cancel':
       cancelTurn?.();

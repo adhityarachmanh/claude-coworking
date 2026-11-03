@@ -810,13 +810,20 @@ export class Hub {
     this.scheduleSave();
   }
 
-  /** After a conversation rewind: the prompt and everything after it are greyed out (still readable). */
+  /**
+   * After a conversation rewind: the prompt and everything after it are greyed out (still readable). Found by its
+   * uuid, else its text; OpenCode stores the prompt with the `!` shell output / text attachments around it, so last
+   * a prompt whose text is inside `text`. Returns the chat entry's text (what goes back into the box), or null.
+   */
   markRewound(id, uuid, text) {
     const chat = this.rt(id).chat;
+    const want = String(text ?? '').trim();
     let at = chat.findLastIndex((m) => m.kind === 'user' && m.uuid === uuid);
-    if (at < 0) at = chat.findLastIndex((m) => m.kind === 'user' && m.text?.trim() === text?.trim());
-    if (at < 0) return;
+    if (at < 0) at = chat.findLastIndex((m) => m.kind === 'user' && m.text?.trim() === want);
+    if (at < 0) at = chat.findLastIndex((m) => m.kind === 'user' && !m.rewound && m.text?.trim() && want.includes(m.text.trim()));
+    if (at < 0) return null;
     for (const m of chat.slice(at)) if (!m.rewound && m.kind !== 'divider') this.updateChat(id, m.id, { rewound: true });
+    return chat[at].text ?? null;
   }
 
   setStatus(id, patch) {
