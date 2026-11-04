@@ -13,7 +13,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 ### Diperbaiki
 
 - **Kantor di HP landscape.** Empat baris banner (koneksi, Claude, OpenCode, update) kini punya baris grid sendiri; sebelumnya satu banner yang tidak ditempatkan membuat tinggi area kantor menjadi 0, sehingga ilustrasi, Mode Otak, dan daftar karyawan tidak terlihat.
-- **Handoff Pintar memakai mesin aktif.** Mode Pintar di *Lanjutkan dari mesin lain* sekarang memakai token mesin yang sedang aktif, bukan mesin sumber yang sedang parkir, jadi kuota/langganan mesin lain tidak terpakai.
+- **Handoff Pintar memakai mesin & model aktif.** Mode Pintar di *Lanjutkan dari mesin lain* memakai token dan model yang sedang aktif di sesi chat, bukan mesin sumber yang parkir atau model yang dipatok dari setting, jadi kuota/langganan mesin lain tidak terpakai.
 - **Status Effort Auto terlihat.** Saat Auto sedang menentukan effort, chat menampilkan indikator **Menentukan effort...** dengan animasi, jadi prompt tidak terkesan belum terkirim.
 - **Pengaturan desktop lebih ringkas.** Dialog ⚙ Pengaturan di laptop kini dibagi menjadi tab **Umum, Tim & izin, Notifikasi, Spotify, Cadangan, dan Sistem**; hanya isi tab yang bergulir. Di HP tampilannya tetap satu daftar panjang seperti sebelumnya.
 - **Batas mesin lebih jelas.** Saat mesin OpenCode aktif, dialog khusus Claude Code—aturan izin, plugin/agent/hooks, cari percakapan, dan export sesi lengkap—disembunyikan. Route-nya juga menolak (409), jadi tidak ada lagi perubahan config Claude yang tidak sengaja dari mode OpenCode. OpenCode memakai `opencode.json` dan export JSON di Riwayat Sesi.

@@ -448,18 +448,25 @@ test('🔁 Lanjutkan dari mesin lain: Cepat from the stored chat, Pintar on the 
   const quick = (await api(`/api/projects/${id}/handoff`, { mode: 'quick' })).body;
   assert.match(quick.text, /^🔁 Konteks dari Claude Code/);
   assert.match(quick.text, /halo dari claude untuk handoff/, "the other workspace's own messages");
-  const smart = (await api(`/api/projects/${id}/handoff`, { mode: 'smart' })).body;
-  assert.match(smart.text, /Handoff palsu dari OpenCode/, 'the ACTIVE engine (OpenCode) writes it, not Claude');
-
-  // A real OpenCode turn, so the reverse handoff has a source chat of its own (this test can run alone).
+  // A real OpenCode turn with an explicit model, so the reverse handoff has a source chat and an active model.
+  await api(`/api/projects/${id}/settings`, { model: 'google/gemini-2.5-flash' });
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'halo dari opencode untuk handoff' });
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  const ocActive = (await snapshot()).statuses[id].activeModel;
+  assert.equal(ocActive, 'google/gemini-2.5-flash');
+  const smart = (await api(`/api/projects/${id}/handoff`, { mode: 'smart' })).body;
+  assert.match(smart.text, /Handoff palsu dari OpenCode/, 'the ACTIVE engine (OpenCode) writes it, not Claude');
+  assert.ok(smart.text.includes(ocActive), `smart handoff uses the chat's active model (${ocActive}): ${smart.text}`);
+
   await useEngine('claude');
   const back = (await api(`/api/projects/${id}/handoff/info`)).body;
   assert.equal(back.from, 'opencode');
   assert.match((await api(`/api/projects/${id}/handoff`, { mode: 'quick' })).body.text, /^🔁 Konteks dari OpenCode/);
-  assert.match((await api(`/api/projects/${id}/handoff`, { mode: 'smart' })).body.text, /Handoff palsu dari Claude/, 'the ACTIVE engine (Claude) writes it, not OpenCode');
+  const claudeActive = (await snapshot()).statuses[id].activeModel;
+  const backSmart = (await api(`/api/projects/${id}/handoff`, { mode: 'smart' })).body;
+  assert.match(backSmart.text, /Handoff palsu dari Claude/, 'the ACTIVE engine (Claude) writes it, not OpenCode');
+  assert.ok(!claudeActive || backSmart.text.includes(claudeActive), `smart handoff uses the chat's active Claude model (${claudeActive}): ${backSmart.text}`);
   await useEngine('opencode');
 });
 

@@ -239,7 +239,8 @@ if (process.argv[2] === 'run') {
   const a = process.argv.slice(3);
   const handoff = a.some((x) => /CATATAN HANDOFF/.test(x));
   if (handoff && !a.includes('--fork')) {
-    console.log('## Tujuan\nHandoff palsu dari OpenCode');
+    const mi = a.indexOf('--model');
+    console.log(`## Tujuan\nHandoff palsu dari OpenCode (model ${mi >= 0 ? a[mi + 1] : 'default'})`);
     process.exit(0);
   }
   if (!a.includes('--fork') || a[a.indexOf('--agent') + 1] !== 'plan') process.exit(9);
