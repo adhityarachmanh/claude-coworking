@@ -12,6 +12,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { attachmentChips } from './attachments.js';
 import { PERMISSION_MODES } from './hub.js';
+import { OPENCODE_ACCOUNT } from './opencode-account.js';
 import { describeTool, inferRole } from './roles.js';
 import { StreamTranslator } from './translator.js';
 import { clip, truncate } from './util.js';
@@ -152,8 +153,8 @@ const askQuestions = (list) =>
     multiSelect: q?.multiple === true,
   }));
 
-/** Ledger account for OpenCode turns: its providers (OpenCode Go, Gemini…) are not a Claude account. */
-export const OPENCODE_ACCOUNT = Object.freeze({ id: 'opencode', email: 'OpenCode', org: null });
+/** Ledger account for OpenCode turns; kept exported here for tests and the parity helper. */
+export { OPENCODE_ACCOUNT };
 
 /**
  * The app's permission mode → OpenCode `permission` config (passed per process in OPENCODE_CONFIG_CONTENT, so the

@@ -4,12 +4,23 @@
 // `ctx.device` is the paired phone making the request (null on the laptop).
 import { randomBytes } from 'node:crypto';
 import { accountPrivacyView, billingStatus } from '../account.js';
+import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
 import { renderPdf, reportHtml } from '../report.js';
 import { PERIOD_UNITS, summarize, totals } from '../usage.js';
 import { json } from './http.js';
 
 const LOGOUT_CONFIRM = 'LOGOUT';
+const DAY_MS = 86_400_000;
+
+/** Local OpenCode usage: the ledger rows from web turns and the terminal mirror. Provider quota is not known. */
+function openCodeUsage(ledger) {
+  if (!ledger) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const at = (from) => totals(ledger.query({ accountId: OPENCODE_ACCOUNT.id, from }));
+  return { today: at(today.getTime()), week: at(Date.now() - 7 * DAY_MS) };
+}
 
 /** One headless browser at a time renders report PDFs (each is a full Chrome/Edge process for up to 60 s). */
 let pdfRendering = false;
@@ -61,7 +72,7 @@ export function register(router) {
     if (device) console.log(`Mesin diganti dari HP "${device.name}"`);
     return json(res, 200, result);
   });
-  router.post('/api/opencode/providers', openCode((bin) => openCodeProviders(bin)));
+  router.post('/api/opencode/providers', openCode((bin, body, ctx) => openCodeProviders(bin).then((view) => ({ ...view, usage: openCodeUsage(ctx.ledger) }))));
   router.post('/api/opencode/login/key', openCode((bin, body, ctx) => openCodeConnectKey(bin, body.provider, body).then(loggedIn(ctx)).then(phoneAlert(ctx, 'login', body.provider))));
   router.post('/api/opencode/login/oauth', openCode((bin, body, ctx) => openCodeOAuthStart(bin, body.provider, body).then(phoneAlert(ctx, 'login', body.provider))));
   router.post('/api/opencode/login/status', openCode((bin, body, ctx) => openCodeOAuthStatus(bin, body.provider, body.attemptID).then((st) => (st.status === 'complete' ? loggedIn(ctx)(st) : st))));

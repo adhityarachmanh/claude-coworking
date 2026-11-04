@@ -1,9 +1,11 @@
 // 🖥 Sesi OpenCode dari terminal: OpenCode opened in a terminal (TUI, `opencode run`) works through the same background
 // service the app's `opencode acp` uses. Every few seconds the running sessions are listed (`session.active`); one the
 // app did not start is read (`session.message.list`) and shown in its project's office and chat as a terminal
-// session (source 'cli'), like the Claude Code transcript mirror (src/mirror.js). Read-only: nothing is sent to it.
+// session (source 'cli'), like the Claude Code transcript mirror (src/mirror.js). It also records each assistant
+// message's token/cost usage in the ledger, under the opaque OpenCode account. Read-only: nothing is sent to it.
 import os from 'node:os';
 import path from 'node:path';
+import { OPENCODE_ACCOUNT } from './opencode-account.js';
 import { openCodeApi } from './opencode-auth.js';
 import { StreamTranslator } from './translator.js';
 import { truncate } from './util.js';
@@ -69,17 +71,20 @@ const textOf = (content) =>
 export class OpenCodeMirror {
   /**
    * @param {object} hub
-   * @param {{ bin: object|null, ownSessions: () => Set<string>, skipDir?: (dir: string) => boolean, pollMs?: number }} options
-   *   ownSessions: the app's own OpenCode sessions (never mirrored); skipDir: folders whose sessions are internal
+   * @param {{ bin: object|null, ownSessions: () => Set<string>, skipDir?: (dir: string) => boolean, pollMs?: number,
+   *           api?: Function, ledger?: object|null }} options
+   *   ownSessions: the app's own OpenCode sessions (never mirrored); skipDir: folders whose sessions are internal;
+   *   ledger: UsageLedger for token/cost rows of terminal sessions
    */
-  constructor(hub, { bin, ownSessions, skipDir = () => false, pollMs = POLL_MS, api = openCodeApi }) {
+  constructor(hub, { bin, ownSessions, skipDir = () => false, pollMs = POLL_MS, api = openCodeApi, ledger = null }) {
     this.hub = hub;
     this.api = api;
     this.bin = bin;
     this.ownSessions = ownSessions;
     this.skipDir = skipDir;
     this.pollMs = pollMs;
-    this.sessions = new Map(); // ses id -> { id, pid, dir, translator, seen: Set, tools: Map, turnOpen }
+    this.ledger = ledger;
+    this.sessions = new Map(); // ses id -> { id, pid, dir, translator, seen: Set, tools: Map, turnOpen, recorded }
     this.ignored = new Set(); // sessions looked at and not shown (internal, a subagent's child session, outside projects)
     this.busy = false;
   }
@@ -136,7 +141,7 @@ export class OpenCodeMirror {
       return null;
     }
     const pid = this.hub.upsertProject(dir, 'cli').id;
-    const s = { id, pid, dir, seen: new Set(), tools: new Map(), texts: new Map(), turnOpen: false, lastActiveAt: Date.now() };
+    const s = { id, pid, dir, seen: new Set(), recorded: new Set(), tools: new Map(), texts: new Map(), turnOpen: false, lastActiveAt: Date.now() };
     s.translator = new StreamTranslator(
       {
         office: (evt) => this.hub.office(pid, { source: 'cli', ...evt }),
@@ -159,9 +164,12 @@ export class OpenCodeMirror {
     const list = await this.api(this.bin, 'session.message.list', { params: { sessionID: s.id, limit: MESSAGES, order: 'desc' }, timeout: 15_000 });
     const msgs = (Array.isArray(list) ? list : []).slice().reverse();
     if (!s.started) {
-      // first look: start at the prompt this running turn answers (older history is not replayed)
+      // first look: start at the prompt this running turn answers (older history is not replayed, usage included)
       const last = msgs.findLastIndex((m) => m.type === 'user');
-      for (const m of msgs.slice(0, Math.max(0, last))) s.seen.add(m.id);
+      for (const m of msgs.slice(0, Math.max(0, last))) {
+        s.seen.add(m.id);
+        if (m.type === 'assistant') s.recorded.add(m.id);
+      }
       s.started = true;
     }
     for (const m of msgs) this.ingest(s, m);
@@ -175,7 +183,9 @@ export class OpenCodeMirror {
       this.startTurn(s, String(m.text ?? ''));
       return;
     }
-    if (m.type !== 'assistant' || !Array.isArray(m.content)) return;
+    if (m.type !== 'assistant') return;
+    this.recordUsage(s, m);
+    if (!Array.isArray(m.content)) return;
     this.ensureTurn(s);
     const note = retryNote(m.retry);
     const retryKey = `${m.id}:retry:${m.retry?.attempt}`;
@@ -206,6 +216,39 @@ export class OpenCodeMirror {
         }
       }
     }
+  }
+
+  /**
+   * One assistant message = one usage row. OpenCode writes final `tokens` (input/output/reasoning/cache) and its
+   * own `cost` per message; an incomplete message is read again on the next poll instead of being counted early.
+   */
+  recordUsage(s, m) {
+    if (!this.ledger || !m?.tokens || !m.id || s.recorded.has(m.id)) return;
+    if (m.time && !m.time.completed) return;
+    const t = m.tokens;
+    const input = Number(t.input) || 0;
+    const output = (Number(t.output) || 0) + (Number(t.reasoning) || 0);
+    const cacheRead = Number(t.cache?.read) || 0;
+    const cacheWrite = Number(t.cache?.write) || 0;
+    if (!input && !output && !cacheRead && !cacheWrite) return;
+    s.recorded.add(m.id);
+    if (s.recorded.size > 5000) s.recorded = new Set([...s.recorded].slice(-2000));
+    const project = this.hub.projects.get(s.pid);
+    const provider = m.model?.providerID;
+    const model = typeof m.model === 'string' ? m.model : provider ? `${provider}/${m.model.id ?? m.model.modelID ?? 'unknown'}` : (m.model?.id ?? m.model?.modelID ?? 'opencode');
+    this.ledger.record({
+      account: OPENCODE_ACCOUNT,
+      source: 'cli',
+      project: project ? { id: project.id, name: project.name } : { id: s.pid, name: null },
+      sessionId: s.id,
+      model,
+      input,
+      output,
+      cacheRead,
+      cacheWrite,
+      costUsd: Number.isFinite(m.cost) ? m.cost : null,
+      requests: 1,
+    });
   }
 
   startTurn(s, text) {

@@ -80,6 +80,7 @@ function periodTable(summary) {
 /** @param {{ account, profile, limits, summary, generatedAt }} data */
 export function reportHtml({ account, profile, limits, billing = null, summary }) {
   const t = summary.totals;
+  const isOpenCode = account.id === 'opencode' || account.email === 'OpenCode';
   const kpis = [
     ['Total token', short(t.total), `${num(t.total)} token`],
     ['Input', short(t.input), 'token baru yang dikirim'],
@@ -160,9 +161,9 @@ export function reportHtml({ account, profile, limits, billing = null, summary }
 
   <div class="notes"><b>Catatan</b><ul>
     <li>Hanya pemakaian akun <b>${esc(account.email)}</b>. Setiap catatan menyimpan akun yang sedang login saat token dipakai, jadi akun lain tidak ikut terhitung.</li>
-    <li>Sumber: sesi dari web Adhit Office (per giliran, termasuk subagent) dan sesi Claude Code di terminal yang terbaca oleh mirror (per API request), sejak pencatatan aktif.</li>
+    <li>Sumber: sesi dari web Adhit Office (per giliran, termasuk subagent) dan ${isOpenCode ? 'sesi OpenCode di terminal yang terbaca oleh mirror (per pesan)' : 'sesi Claude Code di terminal yang terbaca oleh mirror (per API request)'}, sejak pencatatan aktif.</li>
     <li><b>Cache read</b> = konteks yang dipakai ulang dari cache (jauh lebih murah); <b>cache write</b> = konteks yang baru disimpan ke cache. Cache hit rate tinggi berarti sesi efisien.</li>
-    <li>Biaya adalah estimasi harga list dari Claude Code (hanya tersedia untuk sesi web). Untuk langganan Pro/Max/Team, yang membatasi adalah kuota, bukan biaya.</li>
+    ${isOpenCode ? '<li>Biaya berasal dari data OpenCode bila provider menyediakannya. OpenCode tidak menyediakan sisa kuota provider; laporan ini hanya pemakaian lokal.</li>' : '<li>Biaya adalah estimasi harga list dari Claude Code (hanya tersedia untuk sesi web). Untuk langganan Pro/Max/Team, yang membatasi adalah kuota, bukan biaya.</li>'}
   </ul></div>
 </body></html>`;
 }

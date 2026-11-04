@@ -126,6 +126,14 @@ test('a 7-day range with usage only today still shows all 7 days (the empty ones
   assert.equal(byPeriod(rows, { from, to: now, unit: 'month' }).length, 1, 'still one month: the UI disables "per bulan" here');
 });
 
+test('an OpenCode report labels local usage and says provider quota is unavailable', () => {
+  const summary = summarize([], { from: 0, to: Date.now() });
+  const html = reportHtml({ account: { id: 'opencode', email: 'OpenCode', org: null }, profile: null, limits: null, summary });
+  assert.match(html, /pemakaian lokal/);
+  assert.match(html, /sisa kuota provider/);
+  assert.doesNotMatch(html, /Estimasi harga list dari Claude Code/);
+});
+
 test('report HTML shows only the chosen account and escapes text', async (t) => {
   const ledger = ledgerWithTwoAccounts();
   const summary = summarize(ledger.query({ accountId: A.id }), { from: 0, to: Date.now() });

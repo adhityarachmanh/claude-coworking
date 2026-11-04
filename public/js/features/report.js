@@ -209,6 +209,7 @@ function renderReportScope(q, range) {
   if (!q.accountId) return void (scope.textContent = '');
   const account = $('#report-account').selectedOptions[0]?.textContent.replace(/ \(aktif\)$/, '') ?? '';
   scope.innerHTML = `PDF berisi persis yang tampil di atas: <b>${escapeHtml(account)}</b> · <b>${escapeHtml(rangeText(range))}</b> · per <b>${UNIT_NAME[q.groupBy]}</b>. Ditambah rincian per project, sumber (web/CLI) dan sesi teratas.`;
+  if (q.accountId === 'opencode') scope.innerHTML += ' <span class="muted">Pemakaian lokal OpenCode (web + terminal); sisa kuota provider tidak tersedia.</span>';
 }
 
 async function previewReport() {

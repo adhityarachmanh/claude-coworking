@@ -461,6 +461,9 @@ test('OpenCode provider logins: list, API key, OAuth, logout (through `opencode 
   let list = (await api('/api/opencode/providers')).body;
   assert.deepEqual(list.connected.map((p) => [p.id, p.connections[0].type]), [['google', 'env']], 'an environment variable counts as connected');
   assert.deepEqual(list.available.map((p) => p.id), ['opencode-go', 'github-copilot', 'google']);
+  assert.ok(list.usage?.today, 'the provider response carries local OpenCode usage');
+  assert.ok(list.usage.today.total > 0, 'web turns are counted in the local usage');
+  assert.ok(list.usage.week.total >= list.usage.today.total);
   assert.equal(list.available[1].methods[0].type, 'oauth');
   assert.equal(list.available[1].methods[0].form[0].options[0].value, 'github.com');
 

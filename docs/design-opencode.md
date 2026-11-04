@@ -158,6 +158,7 @@ this.m.ledger?.record({
 - `inputTokens` di OpenCode sudah termasuk cache atau belum: **Q5**, diverifikasi di kontrak. Rumus di atas mengasumsikan "termasuk".
 - Hasil giliran ke translator: `{ ok, interrupted, usage, costUsd, durationMs }` → chat `result` dengan `meta { durationMs, tokensIn, tokensOut, costUsd }`, sehingga **batas biaya antrean** (`src/queue.js`, membaca `meta.costUsd`) bekerja tanpa perubahan.
 - `src/usage.js` / laporan: field `engine` baru bersifat opsional (default `claude`). Laporan bisa dikelompokkan per model; model `provider/model` tampil apa adanya.
+- Mirror sesi terminal (`src/opencode-mirror.js`) mencatat `tokens`/`cost` tiap pesan assistant dengan `source: 'cli'` ke akun `OpenCode`; pesan lama yang sudah ada sebelum mirror mulai tidak diputar ulang.
 
 ---
 

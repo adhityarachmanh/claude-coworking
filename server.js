@@ -158,6 +158,7 @@ const openCodeMirror = new OpenCodeMirror(hub, {
   ownSessions: () => new Set([...sessions.sessions.values()].map((s) => s.acpSessionId).concat(Object.values(hub.persisted.sessions ?? {})).filter(Boolean)),
   skipDir: (dir) => dir.toLowerCase().startsWith(path.resolve(DATA_DIR).toLowerCase()), // the app's own helper runs (role AI)
   pollMs: Number(process.env.OFFICE_OPENCODE_MIRROR_MS ?? 5000),
+  ledger,
 });
 // A device unpaired for being idle loses its open event streams at once, like "Cabut".
 const remote = new RemoteAccess(hub, {

@@ -1010,6 +1010,11 @@ body.read-only #composer-hint { color: var(--ask); }
 .engine-opt.on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-2); box-shadow: inset 0 0 0 1px var(--accent-line); }
 .engine-opt:disabled { cursor: default; opacity: .6; }
 .engine-opt.on:disabled { opacity: 1; }
+.oc-usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 8px; }
+.oc-usage-grid > div { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.oc-usage-grid small { display: block; color: var(--muted); }
+.oc-usage-grid b { display: block; font-size: var(--fs-lg); margin: 2px 0; }
+.oc-usage-grid span { color: var(--muted); font-size: var(--fs-sm); }
 .oc-providers, .oc-conns { list-style: none; margin: 0; padding: 0; }
 .oc-provider { padding: 7px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-md); }
 .oc-provider:last-child { border-bottom: 0; }

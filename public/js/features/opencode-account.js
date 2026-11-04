@@ -6,6 +6,7 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { engineLabel } from '../core/engine-caps.js';
+import { fmtShort, fmtUsd } from '../core/format.js';
 import { state } from '../core/state.js';
 
 const POLL_MS = 2000;
@@ -109,6 +110,22 @@ const connectionHtml = (p, c) =>
     ? `<li><span>${escapeHtml(c.label)} <small class="muted">${c.method === 'oauth' ? 'OAuth' : 'API key'}</small></span><button class="ghost danger-text" data-act="oc-logout" data-cred="${escapeHtml(c.id)}" data-name="${escapeHtml(p.name)}">Logout</button></li>`
     : `<li><span>${escapeHtml(c.label)} <small class="muted">variabel lingkungan</small></span><small class="muted" title="Diatur di environment Windows, bukan dari aplikasi">diatur di luar app</small></li>`;
 
+/** Token/cost rows recorded for OpenCode (web turns + terminal mirror); not a provider quota. */
+function localUsageHtml() {
+  const u = oc.providers?.usage;
+  if (!u) return '';
+  const cost = (x) => (x.costUsd == null ? 'biaya belum tersedia' : fmtUsd(x.costUsd));
+  const coverage = u.week.costCoverage;
+  return `<div class="acct-section oc-usage"><div class="acct-title"><b>Pemakaian lokal OpenCode</b></div>
+    <p class="muted small">Dari sesi web dan terminal OpenCode yang tercatat di aplikasi. OpenCode tidak menyediakan sisa kuota provider; angka ini bukan batas langganan.</p>
+    <div class="oc-usage-grid">
+      <div><small>Hari ini</small><b>${fmtShort(u.today.total)} token</b><span>${cost(u.today)}</span></div>
+      <div><small>7 hari</small><b>${fmtShort(u.week.total)} token</b><span>${cost(u.week)}</span></div>
+    </div>
+    ${coverage > 0 && coverage < 1 ? `<p class="muted small">Biaya tercatat untuk ${Math.round(coverage * 100)}% pemakaian; sisanya provider tidak memberi biaya.</p>` : ''}
+  </div>`;
+}
+
 function connectedHtml() {
   if (oc.error && !oc.providers) return `<p class="warn">${escapeHtml(oc.error)}</p>`;
   if (!oc.providers) return '<p class="muted small">Memeriksa provider OpenCode…</p>';
@@ -177,7 +194,7 @@ function loginHtml() {
 
 /** Akun's body for OpenCode. */
 export function openCodeBodyHtml() {
-  return `<div class="acct-section"><div class="acct-title"><b>Provider OpenCode</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
+  return `${localUsageHtml()}<div class="acct-section"><div class="acct-title"><b>Provider OpenCode</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
     ${connectedHtml()}${oc.error && oc.providers ? `<p class="warn small">${escapeHtml(oc.error)}</p>` : ''}</div>
     ${state.accountAuth ? loginHtml() : '<p class="muted small">Login/logout provider dari HP hanya lewat Tailscale (koneksi terenkripsi), atau lakukan dari laptop.</p>'}`;
 }

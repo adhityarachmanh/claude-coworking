@@ -222,7 +222,7 @@ Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude
 | 🔌 MCP | Server dari `opencode.json` (global + project) dengan **status langsung** dari *background service* OpenCode (`mcp.list`: tersambung / menyambung / gagal / perlu login / nonaktif). **↻ Sambungkan ulang**, **▶ / ⏸** (berlaku sampai OpenCode dimulai ulang; config tidak diubah) dan **🔑 Login** lewat OAuth integrasi OpenCode. Kalau provider memberi kode, tempel di kolom yang muncul |
 | ⧗ Tugas latar | Shell yang berjalan dari giliran OpenCode project ini tampil di panel ⧗ Tugas latar (`/tasks`): output, ■ hentikan, dan *di latar* saat tool-nya sudah selesai atau dipindah dengan Ctrl+B. **■ Stop** ikut menghentikannya |
 
-- Token OpenCode tercatat di laporan sebagai akun **OpenCode**, terpisah dari akun Claude.
+- Token OpenCode tercatat di laporan sebagai akun **OpenCode**, terpisah dari akun Claude—termasuk sesi web dan sesi terminal yang dibaca mirror. Akun OpenCode menampilkan pemakaian lokal hari ini/7 hari; sisa kuota provider tidak disediakan OpenCode.
 - Setelah satu **Tolak**, OpenCode menghentikan gilirannya, sehingga kartu izin lain dari giliran itu ditutup otomatis.
 - Pesan pertama yang menyalakan layanan latar OpenCode dicoba ulang sekali secara otomatis.
 - 📦 Backup riwayat membawa chat kedua mesin (`office/chats/` dan `office/chats-opencode/`).
