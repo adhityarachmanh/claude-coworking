@@ -41,6 +41,8 @@ export function register(router) {
   }));
   router.post('/api/projects/:id/queue-update', withProject(async (ctx, req, res, { id }, body) =>
     queueChange(res, async () => {
+      const files = (Array.isArray(body.attachments) ? body.attachments.length : 0) + (Array.isArray(body.images) ? body.images.length : 0);
+      if (files) throw new QueueError(400, 'Lampiran item antrian hanya bisa ditambahkan saat membuat item. Hapus item lalu tambahkan ulang untuk mengganti lampirannya.');
       const effort = await autoEffort(ctx, id, String(body.text ?? ''));
       ctx.taskQueue.update(id, body.itemId, body.text, effort);
       return json(res, 200, { queue: ctx.taskQueue.view(id) });

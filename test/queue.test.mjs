@@ -132,10 +132,14 @@ test('queue: add, edit, reorder, remove while paused; validated; nothing runs wh
   assert.deepEqual(withFile.body.item.attachments.map((x) => [x.kind, x.name, x.size]), [['text', 'error.log', 5]]);
   assert.ok(existsSync(path.join(DATA, 'queue-files', id, withFile.body.item.id, 'a-0')), 'attachment bytes on disk');
   assert.equal((await q('add', { text: 'gambar lama', images: [{ mediaType: 'image/png', data: 'eA==' }] })).status, 400, 'invalid legacy image still refused');
-  assert.equal((await q('update', { itemId: a, text: 'satu', attachments: [LOG] })).status, 200, 'editing text keeps the item valid');
+  assert.equal((await q('update', { itemId: a, text: 'satu', attachments: [LOG] })).status, 400, 'files cannot be swapped by a text edit');
   assert.deepEqual(texts((await queue()).items), ['satu', 'dua diubah', 'lihat log'], 'attachment item is queued');
   assert.ok(!readFileSync(path.join(DATA, 'state.json'), 'utf8').includes(LOG.data), 'no file contents in state.json');
   const fileItem = withFile.body.item.id;
+  assert.equal((await q('update', { itemId: fileItem, text: 'lihat log lagi' })).status, 200, 'text edit keeps the attachments');
+  const edited = (await queue()).items.find((i) => i.id === fileItem);
+  assert.deepEqual(edited.attachments.map((x) => x.name), ['error.log']);
+  assert.ok(existsSync(path.join(DATA, 'queue-files', id, fileItem, 'a-0')), 'bytes survive a text edit');
   assert.equal((await q('remove', { itemId: fileItem })).status, 200);
   assert.equal(existsSync(path.join(DATA, 'queue-files', id, fileItem)), false, 'removing an item removes its files');
   for (let i = (await queue()).items.length; i < QUEUE_LIMITS.items; i++) assert.equal((await q('add', { text: `isi ${i}` })).status, 200);
