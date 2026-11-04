@@ -301,13 +301,13 @@ Lampirkan lewat 📎, drag & drop, atau paste.
 Maks **10 lampiran / 20 MB** per pesan. Jenis lain (zip, exe, docx, …) ditolak; server memeriksa ulang jenis dari isi file. File teks yang lebih besar: taruh di project lalu sebut dengan `@file`.
 
 - **↻ Ulangi** dan **Edit** ikut membawa lampiran 5 prompt terakhir per project (di memori browser saja; hilang saat halaman dimuat ulang). Chip draf tetap milik project-nya saat pindah project.
-- **📋 Antrian tidak menerima lampiran**: kirim langsung.
+- **📋 Antrian ikut membawa lampiran**: file disimpan di `data/queue-files/` (bukan di `state.json`), ditampilkan sebagai chip di item, dan dikirim bersama prompt saat item berjalan. File dihapus saat item dihapus, daftar selesai dibersihkan, atau project dilupakan. Batas jenis/ukuran sama dengan lampiran chat.
 - Isi lampiran masuk konteks percakapan (memakai token sampai di-compact) dan tersimpan di transcript Claude Code, jadi ikut ke backup.
 - Tidak tersedia lewat WiFi hanya-lihat.
 
 ### Antrian & batas
 
-**📋 Antrian** (`Alt+Enter`, tombol 📋, `/antrian`): susun beberapa prompt; server mengirim satu per satu setiap kali sesi project itu **idle** (tidak bekerja, tidak ada izin menunggu, tidak ada giliran terputus). Di dialog: ubah urutan (seret atau ↑↓), edit/hapus, **⏸ Jeda / Lanjutkan**, **Ulangi** item gagal, **💬 Lihat hasil**. Maks 30 item belum selesai, 20.000 karakter per item.
+**📋 Antrian** (`Alt+Enter`, tombol 📋, `/antrian`): susun beberapa prompt (dengan lampiran); server mengirim satu per satu setiap kali sesi project itu **idle** (tidak bekerja, tidak ada izin menunggu, tidak ada giliran terputus). Di dialog: ubah urutan (seret atau ↑↓), edit/hapus, **⏸ Jeda / Lanjutkan**, **Ulangi** item gagal, **💬 Lihat hasil**. Maks 30 item belum selesai, 20.000 karakter per item.
 
 Antrian **berhenti sendiri** bila item gagal atau dihentikan, kuota akun habis, atau batas tercapai. Setelah server restart, antrian **tetap dijeda** sampai kamu melanjutkan.
 

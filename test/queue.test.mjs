@@ -3,7 +3,7 @@
 // restart, and the WiFi gate (reading is allowed, every change is refused).
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
@@ -125,15 +125,19 @@ test('queue: add, edit, reorder, remove while paused; validated; nothing runs wh
   assert.equal((await q('remove', { itemId: 'nope' })).status, 404);
   assert.equal((await api('/api/projects/nope/queue-add', { text: 'x' })).status, 404);
   assert.equal((await api('/api/projects/demo/queue')).status, 404, 'the demo has no queue');
-  // 📎 attachments never go into the queue (state.json): refused with a clear reason, nothing stored
+  // 📎 attachments go to data/queue-files: metadata in state.json, bytes on disk, cleaned with the item
   const LOG = { name: 'error.log', mediaType: 'text/plain', data: Buffer.from('boom\n').toString('base64') };
   const withFile = await q('add', { text: 'lihat log', attachments: [LOG] });
-  assert.equal(withFile.status, 400);
-  assert.match(withFile.body.error, /Lampiran belum bisa masuk antrian; kirim langsung/);
-  assert.equal((await q('add', { text: 'gambar lama', images: [{ mediaType: 'image/png', data: 'eA==' }] })).status, 400, 'the older images field too');
-  assert.equal((await q('update', { itemId: a, text: 'x', attachments: [LOG] })).status, 400);
-  assert.deepEqual(texts((await queue()).items), ['satu', 'dua diubah'], 'nothing added or changed');
+  assert.equal(withFile.status, 200, JSON.stringify(withFile.body));
+  assert.deepEqual(withFile.body.item.attachments.map((x) => [x.kind, x.name, x.size]), [['text', 'error.log', 5]]);
+  assert.ok(existsSync(path.join(DATA, 'queue-files', id, withFile.body.item.id, 'a-0')), 'attachment bytes on disk');
+  assert.equal((await q('add', { text: 'gambar lama', images: [{ mediaType: 'image/png', data: 'eA==' }] })).status, 400, 'invalid legacy image still refused');
+  assert.equal((await q('update', { itemId: a, text: 'satu', attachments: [LOG] })).status, 200, 'editing text keeps the item valid');
+  assert.deepEqual(texts((await queue()).items), ['satu', 'dua diubah', 'lihat log'], 'attachment item is queued');
   assert.ok(!readFileSync(path.join(DATA, 'state.json'), 'utf8').includes(LOG.data), 'no file contents in state.json');
+  const fileItem = withFile.body.item.id;
+  assert.equal((await q('remove', { itemId: fileItem })).status, 200);
+  assert.equal(existsSync(path.join(DATA, 'queue-files', id, fileItem)), false, 'removing an item removes its files');
   for (let i = (await queue()).items.length; i < QUEUE_LIMITS.items; i++) assert.equal((await q('add', { text: `isi ${i}` })).status, 200);
   const full = await q('add', { text: 'satu lagi' });
   assert.equal(full.status, 400);
@@ -176,6 +180,28 @@ test('queue: resumed, items run one at a time in order, each after the previous 
   // finished items can be cleared
   assert.equal((await q('clear')).status, 200);
   assert.deepEqual((await queue()).items, []);
+});
+
+test('queue: an item runs with its attachment (bytes from data/queue-files, not state.json)', async () => {
+  await q('pause', { paused: false });
+  const LOG = { name: 'queue.log', mediaType: 'text/plain', data: Buffer.from('boom\n').toString('base64') };
+  const added = await q('add', { text: 'lampiran?', attachments: [LOG] });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  const itemId = added.body.item.id;
+  const dir = path.join(DATA, 'queue-files', id, itemId);
+  assert.deepEqual(added.body.item.attachments.map((a) => [a.kind, a.name, a.size]), [['text', 'queue.log', 5]]);
+  assert.ok(existsSync(path.join(dir, 'a-0')), 'bytes on disk before the item runs');
+  const done = await until(async () => {
+    const list = await queue();
+    return list.items.length === 1 && list.items[0].status === 'done' && list;
+  }, 'attachment item done');
+  const chat = (await snapshot()).chats[id];
+  const promptAt = chat.findIndex((m) => m.id === done.items[0].chatId);
+  const reply = chat.slice(promptAt).find((m) => m.kind === 'assistant');
+  assert.match(reply.text, /^blocks=text,text /, 'prompt + attachment text block');
+  assert.match(reply.text, /boom/, 'the actual file content reached Claude');
+  assert.equal((await q('clear')).status, 200);
+  assert.equal(existsSync(dir), false, 'clearing finished items removes their files');
 });
 
 test('queue: a failed item pauses the queue (the rest waits) and tells the user; retry puts it back in front', async () => {

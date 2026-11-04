@@ -8,7 +8,7 @@ import { ago, fmtShort } from '../core/format.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { setMobileView } from '../ui/layout.js';
-import { attachments } from './attachments.js';
+import { attachmentChip, attachmentPayload, attachmentsReady, clearAttachments } from './attachments.js';
 import { autosize, updateBashMode } from './composer.js';
 import { scheduleDraftSave } from './draft.js';
 
@@ -29,8 +29,6 @@ export const queueView = { project: null, data: null, editing: null, rev: -1, lo
 const lastReason = new Map(); // project -> pause reason last seen (a new failure/limit pause gets a toast)
 
 const canEdit = () => !state.readOnly;
-/** Same wording as the server's refusal (src/queue.js). */
-const QUEUE_NO_ATTACHMENTS = 'Lampiran belum bisa masuk antrian; kirim langsung (tombol Kirim), atau hapus lampirannya dulu.';
 
 // ---------- session bar chip ----------
 
@@ -301,10 +299,11 @@ function itemHtml(item, waiting, edit) {
     ? `<textarea class="queue-edit" rows="4" maxlength="${queueView.data.limits.text}" aria-label="Ubah prompt">${escapeHtml(item.text)}</textarea>
        <div class="queue-edit-actions"><button type="button" class="ghost" data-act="cancel">Batal</button><button type="button" class="primary" data-act="save">Simpan</button></div>`
     : `<div class="queue-text">${escapeHtml(item.text)}</div>`;
+  const files = Array.isArray(item.attachments) && item.attachments.length ? `<div class="msg-attachments">${item.attachments.map((a) => attachmentChip(a)).join('')}</div>` : '';
   return `<li class="queue-item ${item.status}" data-id="${item.id}"${isWaiting && edit && !editing && !narrow.matches ? ' draggable="true"' : ''}>
     <span class="queue-pos" aria-hidden="true">${isWaiting ? pos + 1 : item.status === 'running' ? '▶' : item.status === 'done' ? '✓' : '✕'}</span>
     <div class="queue-main">
-      ${body}
+      ${body}${files}
       <div class="queue-meta"><span class="queue-badge ${item.status}">${STATUS_LABEL[item.status]}</span>${meta.length ? ` <span class="muted">${escapeHtml(meta.join(' · '))}</span>` : ''}${item.error ? ` <span class="queue-error">${escapeHtml(item.error)}</span>` : ''}</div>
     </div>
     <div class="queue-actions">${actions.join('')}</div>
@@ -337,15 +336,16 @@ async function addNew() {
 /** 📋 next to Kirim / Alt+Enter: what is typed goes into the queue instead of being sent now. Empty box: open the list. */
 export async function queueFromComposer() {
   if (state.readOnly || state.active === DEMO_ID) return;
+  await attachmentsReady();
   const input = $('#prompt');
   const text = input.value.trim();
-  // 📎 Queue items live in state.json: file contents (big, possibly secret) never go there. The chips stay in the box.
-  if (attachments.length) return toast(QUEUE_NO_ATTACHMENTS, 'warn');
-  if (!text) return openQueue({ focusAdd: true });
+  const files = attachmentPayload();
+  if (!text && !files.length) return openQueue({ focusAdd: true });
   if (text.startsWith('!') || /^\/[\w-]+/.test(text)) return toast('Perintah ! dan /command tidak bisa diantrekan — kirim langsung saja.');
   try {
-    const { queue } = await api(`/api/projects/${state.active}/queue-add`, { text });
+    const { queue } = await api(`/api/projects/${state.active}/queue-add`, { text: text || 'Lihat file terlampir.', attachments: files });
     input.value = '';
+    clearAttachments();
     autosize();
     updateBashMode();
     scheduleDraftSave();

@@ -3,13 +3,17 @@
 // Claude Code's own queue (a prompt sent mid-turn, src/session.js): an item is only sent once the previous turn
 // has fully ended, so each item gets a turn of its own and its own result.
 //
-// Stored with the office state (state.json → persisted.queues), so it survives a restart. After a restart a queue
-// that was running is paused ("dijeda karena restart"): nothing is sent until the user resumes it.
+// Stored with the office state (state.json → persisted.queues), so it survives a restart. An item's attachment bytes
+// live next to it in data/queue-files/<project>/<item>/ (only their name/kind/size are in state.json), so they survive
+// a restart too. After a restart a queue that was running is paused ("dijeda karena restart"): nothing runs until the
+// user resumes it.
 // The queue also pauses itself when an item fails (error, stopped with Esc, Claude Code exited) or the account
 // hits its usage limit (rate_limit_event with status "rejected"), and tells the user in the project's chat.
 // A queue can also have a budget (output tokens and/or cost in USD, counted from each finished item's result):
 // once it is used up the queue pauses ('budget'). It is only checked between items: a running turn is never cut.
 import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { cleanAutoLevel } from './effort.js';
 
 export const QUEUE_LIMITS = Object.freeze({ items: 30, text: 20000, finished: 20 });
@@ -28,15 +32,6 @@ export class QueueError extends Error {
     super(message);
     this.status = status;
   }
-}
-
-/**
- * 📎 Queue items are stored in state.json, so attachments (size, and logs/screenshots can hold secrets) are refused
- * rather than stored or silently dropped. Throws QueueError when the request carries any.
- */
-export function refuseAttachments(body) {
-  const listed = (key) => (Array.isArray(body?.[key]) ? body[key].length : 0);
-  if (listed('attachments') + listed('images') > 0) throw new QueueError(400, 'Lampiran belum bisa masuk antrian; kirim langsung (tombol Kirim), atau hapus lampirannya dulu.');
 }
 
 /** Validates a prompt for the queue; throws QueueError with a user-facing reason. */
@@ -87,6 +82,20 @@ function restoreBudget(raw) {
   return hasBudget(budget) ? budget : emptyBudget();
 }
 
+const ATTACHMENT_KIND = new Set(['image', 'text', 'pdf']);
+const ATTACHMENT_FILE = /^a-\d{1,3}$/;
+function cleanAttachmentMeta(raw) {
+  if (!isObject(raw) || !ATTACHMENT_KIND.has(raw.kind) || typeof raw.name !== 'string' || typeof raw.file !== 'string' || !ATTACHMENT_FILE.test(raw.file)) return null;
+  const size = Number(raw.size);
+  return {
+    kind: raw.kind,
+    name: raw.name.slice(0, 200),
+    size: Number.isFinite(size) && size >= 0 ? size : 0,
+    mediaType: typeof raw.mediaType === 'string' ? raw.mediaType.slice(0, 100) : '',
+    file: raw.file,
+  };
+}
+
 /** A stored item that still looks right (a hand-edited or older state.json never breaks the queue). */
 function cleanItem(raw) {
   if (!isObject(raw) || !ID.test(String(raw.id)) || typeof raw.text !== 'string' || !raw.text.trim() || !STATUSES.has(raw.status)) return null;
@@ -108,6 +117,7 @@ function cleanItem(raw) {
     effortReason: typeof raw.effortReason === 'string' ? raw.effortReason.slice(0, 300) : null,
     effortSource: raw.effortSource === 'llm' || raw.effortSource === 'fallback' ? raw.effortSource : null,
     effortModel: typeof raw.effortModel === 'string' ? raw.effortModel.slice(0, 120) : null,
+    attachments: (Array.isArray(raw.attachments) ? raw.attachments : []).map(cleanAttachmentMeta).filter(Boolean).slice(0, 20),
   };
 }
 
@@ -203,15 +213,72 @@ export class TaskQueue {
     return item;
   }
 
-  add(id, text, effort = null) {
+  /** Where one item's attachment bytes live: data/queue-files/<project>/<item>/. */
+  attachmentDir(id, itemId) {
+    if (!/^[\w-]{1,64}$/.test(String(id)) || !ID.test(String(itemId))) throw new QueueError(400, 'Item antrian tidak valid.');
+    return path.join(this.hub.dataDir, 'queue-files', id, itemId);
+  }
+
+  saveAttachments(id, itemId, items) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return [];
+    const dir = this.attachmentDir(id, itemId);
+    mkdirSync(dir, { recursive: true });
+    try {
+      return list.map((a, i) => {
+        const file = `a-${i}`;
+        writeFileSync(path.join(dir, file), a.kind === 'text' ? String(a.text ?? '') : Buffer.from(String(a.data ?? ''), 'base64'));
+        return { kind: a.kind, name: String(a.name ?? file).slice(0, 200), size: Number(a.size) || 0, mediaType: String(a.mediaType ?? '').slice(0, 100), file };
+      });
+    } catch {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {}
+      throw new QueueError(500, 'Lampiran antrian gagal disimpan. Coba lagi.');
+    }
+  }
+
+  loadAttachments(id, item) {
+    const list = Array.isArray(item.attachments) ? item.attachments : [];
+    if (!list.length) return [];
+    const dir = this.attachmentDir(id, item.id);
+    return list.map((a) => {
+      const file = path.join(dir, a.file);
+      if (!existsSync(file)) throw new QueueError(409, `Lampiran "${a.name}" untuk item antrian ini sudah tidak ada. Hapus item atau tambahkan ulang.`);
+      const bytes = readFileSync(file);
+      return {
+        kind: a.kind,
+        name: a.name,
+        size: a.size,
+        mediaType: a.mediaType,
+        ...(a.kind === 'text' ? { text: bytes.toString('utf8') } : { data: bytes.toString('base64') }),
+      };
+    });
+  }
+
+  dropAttachments(id, itemId) {
+    try {
+      rmSync(this.attachmentDir(id, itemId), { recursive: true, force: true });
+    } catch {}
+  }
+
+  dropProjectAttachments(id) {
+    try {
+      rmSync(path.join(this.hub.dataDir, 'queue-files', id), { recursive: true, force: true });
+    } catch {}
+  }
+
+  add(id, text, effort = null, attachmentItems = []) {
     const clean = cleanText(text);
     const q = this.q(id);
     if (q.items.filter((i) => i.status === 'waiting' || i.status === 'running').length >= QUEUE_LIMITS.items) {
       throw new QueueError(400, `Antrian maksimal ${QUEUE_LIMITS.items} item. Tunggu sebagian selesai atau hapus yang tidak perlu.`);
     }
     const now = this.now();
+    const itemId = `q_${randomBytes(6).toString('hex')}`;
+    const attachments = this.saveAttachments(id, itemId, attachmentItems);
     const item = {
-      id: `q_${randomBytes(6).toString('hex')}`,
+      id: itemId,
       text: clean,
       status: 'waiting',
       createdAt: now,
@@ -227,6 +294,7 @@ export class TaskQueue {
       effortReason: typeof effort?.reason === 'string' ? effort.reason.slice(0, 300) : null,
       effortSource: effort?.source === 'llm' || effort?.source === 'fallback' ? effort.source : null,
       effortModel: typeof effort?.model === 'string' ? effort.model.slice(0, 120) : null,
+      attachments,
     };
     q.items.push(item);
     this.trimFinished(q);
@@ -253,6 +321,7 @@ export class TaskQueue {
     const item = this.item(id, itemId);
     if (item.status === 'running') throw new QueueError(409, 'Item ini sedang berjalan. Hentikan dulu (Stop / Esc), lalu hapus.');
     const q = this.queues[id];
+    this.dropAttachments(id, item.id);
     q.items = q.items.filter((i) => i !== item);
     this.changed(id);
   }
@@ -287,6 +356,7 @@ export class TaskQueue {
   clearFinished(id) {
     const q = this.queues[id];
     if (!q) return;
+    for (const item of q.items) if (item.status === 'done' || item.status === 'failed') this.dropAttachments(id, item.id);
     q.items = q.items.filter((i) => i.status === 'waiting' || i.status === 'running');
     this.changed(id);
   }
@@ -320,6 +390,7 @@ export class TaskQueue {
     if (!this.queues[id]) return;
     clearTimeout(this.timers.get(id));
     this.timers.delete(id); // a stale entry would make schedule() skip this project for good (until a restart)
+    this.dropProjectAttachments(id);
     delete this.queues[id];
     this.changed(id);
   }
@@ -328,7 +399,11 @@ export class TaskQueue {
   trimFinished(q) {
     const finished = q.items.filter((i) => i.status === 'done' || i.status === 'failed');
     const drop = new Set(finished.slice(0, Math.max(0, finished.length - QUEUE_LIMITS.finished)));
-    if (drop.size) q.items = q.items.filter((i) => !drop.has(i));
+    if (drop.size) {
+      const projectId = Object.keys(this.queues).find((pid) => this.queues[pid] === q);
+      if (projectId) for (const item of drop) this.dropAttachments(projectId, item.id);
+      q.items = q.items.filter((i) => !drop.has(i));
+    }
   }
 
   /** Saved at once (small, and a queue must not lose items to a crash), published, and maybe the next item sent. */
@@ -479,7 +554,8 @@ export class TaskQueue {
         this.hub.updateSettings(id, { effort: autoEffort.level, effortAuto: true });
         session.syncSettings();
       }
-      sent = session.prompt(item.text, [], { queueItem: item.id, ...(autoEffort ? { autoEffort } : {}) });
+      const files = this.loadAttachments(id, item);
+      sent = session.prompt(item.text, files, { queueItem: item.id, ...(autoEffort ? { autoEffort } : {}) });
     } catch (err) {
       sent = null;
       item.error = err.message;
