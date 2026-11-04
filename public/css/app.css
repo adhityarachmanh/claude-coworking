@@ -1034,6 +1034,15 @@ body.read-only #composer-hint { color: var(--ask); }
 .oc-provider:last-child { border-bottom: 0; }
 .oc-conns li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0 0 10px; font-size: var(--fs-sm); }
 .oc-conns button { font-size: var(--fs-sm); padding: 2px 9px; }
+.oc-plugins { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.oc-plugin-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.oc-plugin-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-md); }
+.oc-plugin-row:last-child { border-bottom: 0; }
+.oc-plugin-row > div { min-width: 0; }
+.oc-plugin-row small { display: block; color: var(--muted); overflow-wrap: anywhere; }
+.oc-plugin-row button { flex: none; font-size: var(--fs-sm); padding: 3px 9px; }
+.oc-plugin-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.oc-plugin-add input { flex: 1 1 180px; min-width: 0; }
 .danger-text { color: var(--err); }
 .oc-field { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-sm); }
 .oc-field input, .oc-field select, #oc-provider { width: 100%; min-width: 0; }

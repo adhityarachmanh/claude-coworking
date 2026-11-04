@@ -772,6 +772,19 @@
               <button type="button" id="oc-restart" class="ghost" title="Jalankan opencode service restart (laptop saja)">↻ Restart layanan OpenCode</button>
             </div>
             <pre id="oc-output" class="cc-output" hidden></pre>
+            <div class="oc-plugins" role="group" aria-labelledby="oc-plugins-title">
+              <b id="oc-plugins-title">🧩 Plugin OpenCode</b>
+              <p class="muted small">Plugin dari config OpenCode global. Memasang plugin menjalankan kode dari paket itu: hanya tambahkan dari sumber yang kamu percaya. Restart layanan OpenCode agar plugin baru aktif.</p>
+              <div id="oc-plugin-list" class="oc-plugin-list" aria-live="polite"><p class="muted small">Buka Pengaturan untuk memuat plugin…</p></div>
+              <div class="oc-plugin-add">
+                <input id="oc-plugin-spec" type="text" autocomplete="off" spellcheck="false" maxlength="300" placeholder="paket npm atau URL Git" aria-label="Paket plugin OpenCode" />
+                <button type="button" id="oc-plugin-add" class="ghost">＋ Tambah</button>
+                <button type="button" id="oc-plugin-check" class="ghost">↻ Cek update</button>
+                <button type="button" id="oc-plugin-update-all" class="ghost">⬆ Update semua</button>
+              </div>
+              <p id="oc-plugin-status" class="muted small" role="status" aria-live="polite"></p>
+              <pre id="oc-plugin-output" class="cc-output" hidden></pre>
+            </div>
           </section>
           <hr id="oc-section-sep" hidden />
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>

@@ -3,7 +3,7 @@
 // The status itself reaches every browser through the config (config.opencodeCheck); WiFi read-only phones are refused
 // by the default-deny allowlist.
 import { OPENCODE_SETTING_KEYS } from '../opencode-check.js';
-import { restartOpenCodeService, updateOpenCode } from '../opencode-admin.js';
+import { addOpenCodePlugin, checkOpenCodePlugins, listOpenCodePlugins, OpenCodeAdminError, removeOpenCodePlugin, restartOpenCodeService, updateOpenCode, updateOpenCodePlugins } from '../opencode-admin.js';
 import { json } from './http.js';
 
 let maintenanceBusy = false;
@@ -37,6 +37,38 @@ export function register(router) {
       }
     }, { maxBody: 1024 });
   }
+
+  // 🧩 Plugin OpenCode: list is read-only; add/remove/update/check are maintenance actions (one at a time).
+  router.post('/api/opencode-plugins/list', async ({ opencode }, req, res) => {
+    if (!opencode) return json(res, 404, { error: 'OpenCode tidak ditemukan.' });
+    try {
+      return json(res, 200, { plugins: await listOpenCodePlugins(opencode) });
+    } catch (err) {
+      if (err instanceof OpenCodeAdminError) return json(res, err.status, { error: err.message });
+      throw err;
+    }
+  }, { maxBody: 1024 });
+
+  const pluginAction = async (ctx, res, fn) => {
+    if (!ctx.opencode) return json(res, 404, { error: 'OpenCode tidak ditemukan.' });
+    if (maintenanceBusy) return json(res, 409, { error: 'Maintenance OpenCode lain sedang berjalan.' });
+    if (ctx.opencodeCheck.publicView().running) return json(res, 409, { error: 'Cek kompatibilitas OpenCode sedang berjalan. Tunggu sebentar.' });
+    if (hasRunningTurn(ctx.sessions)) return json(res, 409, { error: 'Tidak bisa mengubah plugin saat masih ada giliran yang berjalan.' });
+    maintenanceBusy = true;
+    try {
+      return json(res, 200, await fn(ctx.opencode));
+    } catch (err) {
+      if (err instanceof OpenCodeAdminError) return json(res, err.status, { error: err.message });
+      throw err;
+    } finally {
+      maintenanceBusy = false;
+    }
+  };
+
+  router.post('/api/opencode-plugins/add', (ctx, req, res, params, body) => pluginAction(ctx, res, (bin) => addOpenCodePlugin(bin, body.spec)), { maxBody: 1024 });
+  router.post('/api/opencode-plugins/remove', (ctx, req, res, params, body) => pluginAction(ctx, res, (bin) => removeOpenCodePlugin(bin, body.spec)), { maxBody: 1024 });
+  router.post('/api/opencode-plugins/update', (ctx, req, res, params, body) => pluginAction(ctx, res, (bin) => updateOpenCodePlugins(bin, body.spec)), { maxBody: 1024 });
+  router.post('/api/opencode-plugins/check', (ctx, req, res) => pluginAction(ctx, res, (bin) => checkOpenCodePlugins(bin)), { maxBody: 1024 });
 
   // { autoCheck: boolean } → the view.
   router.post('/api/opencode-check/settings', ({ opencodeCheck }, req, res, params, body) => {

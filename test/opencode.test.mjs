@@ -660,6 +660,36 @@ test('OpenCode admin: update, restart service, import a session JSON; import is 
   assert.equal(r.status, 409, 'Claude Code does not import OpenCode JSON');
 });
 
+test('OpenCode plugin manager: list, add, remove, update, and check through its CLI', async () => {
+  await useEngine('opencode');
+  const cli = () => readFileSync(path.join(TMP, 'acp-cli.log'), 'utf8');
+  let r = await api('/api/opencode-plugins/list');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.plugins.map((p) => [p.id, p.version, p.source]), [
+    ['superpowers', '5bf4e78', 'superpowers@git+https://github.com/obra/superpowers.git'],
+  ]);
+  assert.match(cli(), /(^|\n)plugin list\t/m);
+
+  r = await api('/api/opencode-plugins/add', { spec: 'foo@1.2.3' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(cli(), /(^|\n)plugin add foo@1\.2\.3\t/m);
+
+  r = await api('/api/opencode-plugins/remove', { spec: 'foo@1.2.3' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(cli(), /(^|\n)plugin remove foo@1\.2\.3\t/m);
+
+  r = await api('/api/opencode-plugins/update', { spec: 'foo@1.2.3' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(cli(), /(^|\n)plugin update foo@1\.2\.3\t/m);
+
+  r = await api('/api/opencode-plugins/check');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(cli(), /(^|\n)plugin check\t/m);
+
+  assert.equal((await api('/api/opencode-plugins/add', { spec: '--bad' })).status, 400);
+  assert.equal((await api('/api/opencode-plugins/add', { spec: 'nama dengan spasi' })).status, 400);
+});
+
 test('Effort Auto: one classification per prompt, manual stays manual, queue items keep their level', async () => {
   const id = await projectId();
   await useEngine('opencode');

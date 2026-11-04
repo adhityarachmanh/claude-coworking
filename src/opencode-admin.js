@@ -7,6 +7,13 @@ import { clearSessionCache } from './opencode-bin.js';
 import { execFileTree } from './proc.js';
 
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
+const PLUGIN_SPEC = /^[A-Za-z0-9@][^\s\u0000-\u001f]{0,299}$/;
+
+const cleanPluginSpec = (value) => {
+  const spec = String(value ?? '').trim();
+  if (!PLUGIN_SPEC.test(spec)) throw new OpenCodeAdminError(400, 'Nama paket plugin tidak valid (tanpa spasi/opsi).');
+  return spec;
+};
 
 export class OpenCodeAdminError extends Error {
   constructor(status, message) {
@@ -36,6 +43,54 @@ export function updateOpenCode(bin, { timeout = 300_000 } = {}) {
 /** `opencode service restart`: the background service the ACP sessions and terminal share. */
 export function restartOpenCodeService(bin, { timeout = 60_000 } = {}) {
   return runOpenCode(bin, ['service', 'restart'], { timeout });
+}
+
+/** `opencode plugin list` is a small text table; parse its ID / VERSION / SOURCE columns. */
+export function parsePluginList(output) {
+  const rows = [];
+  for (const line of String(output ?? '').split(/\r?\n/)) {
+    const text = line.trim();
+    if (!text || /^ID\s+VERSION\s+SOURCE$/i.test(text)) continue;
+    const match = text.match(/^(\S+)\s+(\S+)\s+(.+)$/);
+    if (!match) continue;
+    rows.push({ id: match[1].slice(0, 200), version: match[2].slice(0, 100), source: match[3].trim().slice(0, 300) });
+  }
+  return rows;
+}
+
+/** The configured plugins (`opencode plugin list`), laptop-only. */
+export async function listOpenCodePlugins(bin) {
+  const r = await runOpenCode(bin, ['plugin', 'list'], { timeout: 60_000 });
+  if (!r.ok) throw new OpenCodeAdminError(r.timedOut ? 504 : 502, `Daftar plugin OpenCode gagal: ${firstLine(r)}`);
+  return parsePluginList(r.output);
+}
+
+export async function addOpenCodePlugin(bin, spec) {
+  const clean = cleanPluginSpec(spec);
+  const r = await runOpenCode(bin, ['plugin', 'add', clean], { timeout: 300_000 });
+  if (!r.ok) throw new OpenCodeAdminError(r.timedOut ? 504 : 502, `Pasang plugin gagal: ${firstLine(r)}`);
+  return { ok: true, spec: clean, output: r.output };
+}
+
+export async function removeOpenCodePlugin(bin, spec) {
+  const clean = cleanPluginSpec(spec);
+  const r = await runOpenCode(bin, ['plugin', 'remove', clean], { timeout: 120_000 });
+  if (!r.ok) throw new OpenCodeAdminError(r.timedOut ? 504 : 502, `Hapus plugin gagal: ${firstLine(r)}`);
+  return { ok: true, spec: clean, output: r.output };
+}
+
+export async function updateOpenCodePlugins(bin, spec = '') {
+  const clean = spec ? cleanPluginSpec(spec) : '';
+  const args = ['plugin', 'update', ...(clean ? [clean] : [])];
+  const r = await runOpenCode(bin, args, { timeout: 300_000 });
+  if (!r.ok) throw new OpenCodeAdminError(r.timedOut ? 504 : 502, `Update plugin gagal: ${firstLine(r)}`);
+  return { ok: true, spec: clean || null, output: r.output };
+}
+
+export async function checkOpenCodePlugins(bin) {
+  const r = await runOpenCode(bin, ['plugin', 'check'], { timeout: 120_000 });
+  if (!r.ok) throw new OpenCodeAdminError(r.timedOut ? 504 : 502, `Cek plugin gagal: ${firstLine(r)}`);
+  return { ok: true, output: r.output };
 }
 
 /**

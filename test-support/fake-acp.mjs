@@ -56,6 +56,20 @@ if (process.argv[2] === 'service' && process.argv[3] === 'restart') {
   console.log('OpenCode background service restarted.');
   process.exit(0);
 }
+if (process.argv[2] === 'plugin') {
+  const action = process.argv[3];
+  const spec = process.argv[4] ?? '';
+  if (action === 'list') {
+    console.log('ID           VERSION  SOURCE');
+    console.log('superpowers  5bf4e78  superpowers@git+https://github.com/obra/superpowers.git');
+    process.exit(0);
+  }
+  if (action === 'add' || action === 'remove' || action === 'update' || action === 'check') {
+    console.log(`${action} ${spec} ok`);
+    process.exit(0);
+  }
+  process.exit(9);
+}
 if (process.argv[2] === 'session' && process.argv[3] === 'import') {
   console.log(`Imported ${process.argv[4]} as ses_imported`);
   process.exit(0);

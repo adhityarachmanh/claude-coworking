@@ -218,6 +218,8 @@ describe('🧩 OpenCode banner when contract checks fail', { skip: SKIP ?? false
         [true, true],
         'Update OpenCode + restart layanan tampil di tab Sistem',
       );
+      await page.waitFor(() => /superpowers/.test(document.querySelector('#oc-plugin-list')?.textContent ?? ''), { message: 'daftar plugin OpenCode' });
+      assert.equal(await page.eval(() => document.querySelectorAll('#oc-plugin-list .oc-plugin-row').length), 1);
       await page.eval(() => document.querySelector('#oc-run').scrollIntoView({ block: 'center' }));
       await page.click('#oc-run');
       await page.waitFor(() => /\(manual, tanpa token\)/.test(document.querySelector('#oc-status').textContent) && !document.querySelector('#oc-run').disabled, { timeoutMs: 30000, message: 'manual run finished' });
