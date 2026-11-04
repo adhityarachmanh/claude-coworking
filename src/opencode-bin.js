@@ -30,6 +30,27 @@ export function findOpenCode() {
  * @returns {Promise<string[]>}
  */
 let modelCache = null;
+let variantCache = null; // { at, map: Map<'provider/model', string[]> }
+export const EFFORT_ID = /^[a-z][\w-]{0,20}$/;
+
+/**
+ * Each model's own effort levels (OpenCode's `model.list` → `variants`, e.g. kimi-k3: [max], gemini: [minimal, low,
+ * medium, high]; [] = the model has none). Cached like the model list; an empty or failed read is not cached.
+ * @returns {Promise<Map<string, string[]>>}
+ */
+export async function openCodeModelEfforts(bin, { maxAgeMs = 10 * 60_000 } = {}) {
+  if (variantCache && Date.now() - variantCache.at < maxAgeMs) return variantCache.map;
+  const { openCodeApi } = await import('./opencode-auth.js');
+  const list = await openCodeApi(bin, 'model.list', { timeout: 30_000 }).catch(() => null);
+  const map = new Map();
+  for (const m of Array.isArray(list) ? list : []) {
+    const id = `${m?.providerID}/${m?.modelID ?? m?.id}`;
+    if (!/^[\w.@-]+\/\S+$/.test(id)) continue;
+    map.set(id, (Array.isArray(m.variants) ? m.variants : []).map((v) => v?.id).filter((v) => typeof v === 'string' && EFFORT_ID.test(v)));
+  }
+  if (map.size) variantCache = { at: Date.now(), map };
+  return map;
+}
 /**
  * The models running ACP sessions offer (their configOptions "model"): the same list as `opencode models`, a stand-in
  * while that comes back empty (OpenCode's service just started and its catalog is still loading).
@@ -43,6 +64,7 @@ export function modelsOffered(sessions) {
 /** After a provider login/logout the model list changes. */
 export function clearModelCache() {
   modelCache = null;
+  variantCache = null;
 }
 export function openCodeModels(bin, { maxAgeMs = 10 * 60_000 } = {}) {
   if (!bin) return Promise.resolve([]);

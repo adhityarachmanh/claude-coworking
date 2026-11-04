@@ -204,10 +204,15 @@ function renderModelOptions(current, engine) {
     select.title = entry.models.length ? `${entry.models.length} model dari config ${engineLabel(engine)}` : 'Daftar model muncul setelah pesan pertama';
     $('#model-search-ctl').hidden = entry.models.length < 8; // a short list needs no search box
     $('#model-search-count').textContent = query ? `${matchCount(entry, query)} model cocok` : '';
-    $('#effort').disabled = Boolean(state.readOnly); // caps decide (applyCaps), not Claude's model list
-    $('#effort').title = '';
+    // OpenCode: the chosen model's own effort levels (model.list); unknown (Default model, older OpenCode) → generic
+    const efforts = entry.models.find((m) => m.value === current)?.efforts;
+    setEffortOptions(Array.isArray(efforts) ? efforts : null);
+    const none = Array.isArray(efforts) && !efforts.length;
+    $('#effort').disabled = none || Boolean(state.readOnly);
+    $('#effort').title = none ? 'Model ini tidak punya level effort' : Array.isArray(efforts) ? `Level effort model ini: ${efforts.join(', ')}` : '';
     return;
   }
+  setEffortOptions(null);
   $('#model-search-ctl').hidden = true;
   if (search.value) search.value = '';
   select.title = '';
@@ -233,6 +238,21 @@ function renderModelOptions(current, engine) {
   const noEffort = Boolean(chosen && !chosen.efforts?.length);
   $('#effort').disabled = noEffort || Boolean(state.readOnly);
   $('#effort').title = noEffort ? 'Model ini tidak mendukung pengaturan effort' : '';
+}
+
+// Effort picker options. `levels` null = the generic list (Claude Code's levels); else one model's own levels.
+const EFFORT_LABEL = { none: 'None (tanpa berpikir)', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
+const GENERIC_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+function setEffortOptions(levels) {
+  const select = $('#effort');
+  const list = levels ?? GENERIC_EFFORTS;
+  const html = ['<option value="">Default</option>', ...list.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(EFFORT_LABEL[v] ?? v)}</option>`)].join('');
+  if (select.dataset.html === html) return;
+  const want = state.statuses[state.active]?.effort ?? select.value;
+  select.innerHTML = html;
+  select.dataset.html = html;
+  // a level the new model doesn't have shows as Default (the server also falls back to the nearest it offers)
+  select.value = list.includes(want) ? want : '';
 }
 
 function cycleMode() {

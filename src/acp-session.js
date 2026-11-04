@@ -181,9 +181,10 @@ const cleanCommands = (list) =>
  * The app's effort → a value of OpenCode's `effort` option for the current model (its values differ per model, e.g.
  * low | high | max | default). Nearest offered level; '' (Default) → "default". null when the model has no effort.
  */
-const EFFORT_CANDIDATES = { '': ['default'], low: ['low', 'minimal'], medium: ['medium', 'default'], high: ['high'], xhigh: ['xhigh', 'max', 'high'], max: ['max', 'xhigh', 'high'] };
+const EFFORT_CANDIDATES = { '': ['default'], none: ['none', 'minimal', 'low'], minimal: ['minimal', 'low', 'none'], low: ['low', 'minimal'], medium: ['medium', 'default'], high: ['high'], xhigh: ['xhigh', 'max', 'high'], max: ['max', 'xhigh', 'high'] };
 export function effortValue(effort, configOptions) {
   const values = (configOptions ?? []).find((o) => o.id === 'effort')?.options?.map((o) => o.value) ?? [];
+  if (effort && values.includes(effort)) return effort; // the model's own level, picked from its list
   return (EFFORT_CANDIDATES[effort ?? ''] ?? []).find((v) => values.includes(v)) ?? null;
 }
 

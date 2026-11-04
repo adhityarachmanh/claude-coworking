@@ -84,6 +84,14 @@ if (process.argv[2] === 'api') {
       save();
       out(null);
       break;
+    // each model's own effort levels (src/opencode-bin.js openCodeModelEfforts)
+    case 'model.list':
+      out([
+        { providerID: 'opencode-go', modelID: 'beam-free', variants: [{ id: 'low' }, { id: 'high' }, { id: 'max' }] },
+        { providerID: 'opencode-go', modelID: 'kimi-k3', variants: [] },
+        { providerID: 'google', modelID: 'gemini-2.5-flash', variants: [{ id: 'minimal' }, { id: 'low' }, { id: 'bad level!' }] },
+      ]);
+      break;
     // /mcp (src/opencode-mcp.js): live servers; connect / disconnect are recorded in FAKE_ACP_MCP_LOG
     case 'mcp.list':
       out([

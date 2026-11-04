@@ -1,7 +1,7 @@
 // ---------- the project list: folders to scan, added folders, per-project settings ----------
 // /api/projects and /api/config point Claude Code (and git, file search) at any path: laptop only (LOCAL_ONLY in
 // server.js). Opening VS Code / Explorer (`open`) is laptop only too (LOCAL_ONLY_ACTION).
-import { modelsOffered, openCodeModels } from '../opencode-bin.js';
+import { modelsOffered, openCodeModelEfforts, openCodeModels } from '../opencode-bin.js';
 import path from 'node:path';
 import { isDirectory, isNetworkPath } from '../projects.js';
 import { openInApp } from '../open.js';
@@ -46,7 +46,9 @@ export function registerProjectActions(router) {
     // `opencode models` empty (its service just started, catalog still loading): the models a running ACP session of
     // any project offers (configOptions "model") are the same list, so the picker isn't left empty meanwhile.
     if (!values.length) values = modelsOffered(sessions.sessions.values());
-    const models = values.map((value) => ({ value, name: `${value.slice(value.indexOf('/') + 1)}${/free/i.test(value) ? ' (gratis)' : ''}` }));
+    // each model's own effort levels (null = unknown: the picker offers the generic list and the nearest is used)
+    const efforts = await openCodeModelEfforts(opencode);
+    const models = values.map((value) => ({ value, name: `${value.slice(value.indexOf('/') + 1)}${/free/i.test(value) ? ' (gratis)' : ''}`, efforts: efforts.has(value) ? efforts.get(value) : null }));
     // An empty list (OpenCode still starting, or `opencode models` failed): the picker asks again shortly.
     return json(res, 200, { engine: 'opencode', models, current: s.model, needsStart: !models.length });
   }));

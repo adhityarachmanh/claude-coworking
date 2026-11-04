@@ -44,7 +44,8 @@ const WORKSPACE_KEYS = ['settings', 'sessions', 'turns', 'interrupted'];
 // OpenCode models are "provider/model" (optionally #variant), as `opencode models` lists them.
 const OPENCODE_MODEL = /^[\w.-]+\/[\w.:@#/-]{1,120}$/;
 // '' = Claude Code's own default; the rest map to `--effort`.
-export const EFFORT_LEVELS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
+// '' = Default. none / minimal: offered by some OpenCode models (their own levels, from `model.list`)
+export const EFFORT_LEVELS = ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 // Claude Code's permission modes ('manual' is the app's name for its 'default'); bypassPermissions is left out on purpose.
 export const PERMISSION_MODES = ['manual', 'acceptEdits', 'auto', 'plan', 'dontAsk'];
 // '' = default; otherwise what `--model` / /model take: an alias (fable, opus[1m], opusplan…), a full

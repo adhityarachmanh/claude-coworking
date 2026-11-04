@@ -150,6 +150,8 @@ test('config.engines announces OpenCode with its caps; the engine is app-wide; m
   assert.equal(list.engine, 'opencode');
   assert.deepEqual(list.models.map((m) => m.value), ['opencode-go/beam-free', 'opencode-go/kimi-k3', 'google/gemini-2.5-flash']);
   assert.equal(list.models[0].name, 'beam-free (gratis)');
+  // each model's own effort levels (OpenCode model.list): [] = none, invalid ids dropped
+  assert.deepEqual(list.models.map((m) => m.efforts), [['low', 'high', 'max'], [], ['minimal', 'low']]);
   await api(`/api/projects/${id}/settings`, { model: 'opencode-go/beam-free; rm -rf /' });
   assert.equal((await snapshot()).statuses[id].model, '', 'only provider/model ids');
   await api(`/api/projects/${id}/settings`, { model: 'opencode-go/beam-free' });
