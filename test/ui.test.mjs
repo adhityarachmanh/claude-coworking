@@ -84,6 +84,7 @@ async function startServer() {
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'), // user-level settings.json (🛡️ Aturan izin), never the real ~/.claude
       OFFICE_OPEN_DRY_RUN: '1',
+      OFFICE_EFFORT_FAKE: 'high', // Effort Auto tests never spawn a real classifier
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -522,6 +523,42 @@ for (const vp of VIEWPORTS) {
         select.dispatchEvent(new Event('change', { bubbles: true }));
       });
       await page.waitFor(async (id) => (await import('/js/core/state.js')).state.statuses[id]?.effortAuto === false, { timeoutMs: 5000, message: 'kembali manual' }, projectId);
+    });
+
+    test('⚙ Effort Auto: indikator Menentukan effort tampil saat prompt menunggu klasifikasi', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(() => {
+        const select = document.querySelector('#effort');
+        select.value = 'auto';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.waitFor(async (id) => (await import('/js/core/state.js')).state.statuses[id]?.effortAuto === true, { timeoutMs: 5000, message: 'Auto aktif' }, projectId);
+      await page.eval(() => {
+        const real = window.fetch;
+        window.__effortRealFetch = real;
+        window.fetch = async (url, opts) => {
+          if (String(url).endsWith('/prompt')) await new Promise((r) => setTimeout(r, 400));
+          return real(url, opts);
+        };
+      });
+      await typeInPrompt(page, 'halo');
+      await page.press('Enter');
+      await page.waitFor(
+        () => {
+          const typing = document.querySelector('#typing');
+          return typing && !typing.hidden && /Menentukan effort/.test(document.querySelector('#typing-text').textContent);
+        },
+        { timeoutMs: 2000, message: 'indikator Menentukan effort' },
+      );
+      await page.waitFor(() => [...document.querySelectorAll('.msg.user .body')].some((n) => n.textContent === 'halo'), { timeoutMs: 6000, message: 'bubble prompt muncul' });
+      await page.eval(() => {
+        if (window.__effortRealFetch) window.fetch = window.__effortRealFetch;
+      });
+      await page.eval(() => {
+        const select = document.querySelector('#effort');
+        select.value = '';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
     });
 
     test('📱 HP: Lanjutkan dari mesin lain ada di sheet ⋯', { skip: !vp.mobile }, async () => {

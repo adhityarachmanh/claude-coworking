@@ -51,9 +51,14 @@ export function fillComposer(text) {
 /** Something Stop / Esc can end: a turn, queued prompts, or background tasks (shells, subagents) still running. */
 const stoppable = (st) => Boolean(st.busy || st.queue || (st.tasks ?? []).some((t) => t?.status === 'running' || t?.status === 'pending'));
 
+// Sending an Auto prompt waits for the classifier before the server creates the chat bubble. Keep a visible
+// "Menentukan effort..." row so an empty chat does not look like the prompt was lost.
+const effortPending = { project: null };
+
 export function renderComposer() {
   const isDemo = state.active === DEMO_ID;
   const st = state.statuses[state.active] ?? {};
+  const classifying = effortPending.project === state.active;
   const engine = engineOf(st, state.config);
   const caps = capsFor(state.config, engine);
   $('#composer').classList.toggle('demo', isDemo);
@@ -73,8 +78,8 @@ export function renderComposer() {
   if (st.autoApprove) hint.push('⚠ Semua izin otomatis di sesi ini.');
   if (state.readOnly) hint.unshift(`👁 ${READ_ONLY_HINT}.`);
   $('#composer-hint').textContent = hint.join('  ·  ');
-  $('#typing').hidden = !(st.busy || st.cliBusy || st.compacting);
-  $('#typing-text').textContent = st.compacting ? '✻ Memadatkan konteks percakapan…' : st.busy ? 'Tim sedang bekerja…' : 'Claude Code (terminal) sedang bekerja…';
+  $('#typing').hidden = !(classifying || st.busy || st.cliBusy || st.compacting);
+  $('#typing-text').textContent = classifying ? 'Menentukan effort…' : st.compacting ? '⏳ Memadatkan konteks percakapan…' : st.busy ? 'Tim sedang bekerja…' : 'Claude Code (terminal) sedang bekerja…';
   renderResumeTurn(st);
   renderTodos(st);
   renderStatusline(st);
@@ -303,7 +308,10 @@ async function sendPrompt() {
   clearAttachments();
   closeSuggest();
   const autoEffort = Boolean(state.statuses[project]?.effortAuto);
-  if (autoEffort) $('#composer-hint').textContent = 'Menentukan effort…';
+  if (autoEffort) {
+    effortPending.project = project;
+    renderComposer();
+  }
   try {
     await api(`/api/projects/${project}/prompt`, { text, attachments: files });
     draftSent(project, text);
@@ -313,6 +321,7 @@ async function sendPrompt() {
     restoreAttachments(kept, project);
     toast(`Gagal mengirim: ${err.message}`);
   } finally {
+    effortPending.project = null;
     if (autoEffort) renderComposer();
   }
 }
