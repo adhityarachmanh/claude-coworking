@@ -610,9 +610,19 @@
 
     <!-- Settings (laptop only) -->
     <div id="settings-modal" class="modal" hidden>
-      <div class="modal-card" role="dialog" aria-modal="true" aria-label="Pengaturan">
+      <div class="modal-card settings-card" role="dialog" aria-modal="true" aria-label="Pengaturan">
         <div class="modal-head"><b>⚙ Pengaturan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <form id="roots-form" class="roots">
+        <!-- Desktop: sections in tabs (the phone keeps one long sheet; CSS hides this bar under 760 px). -->
+        <div id="settings-tabs" class="settings-tabs" role="tablist" aria-label="Bagian pengaturan">
+          <button type="button" class="settings-tab on" id="settings-tab-umum" role="tab" aria-selected="true" aria-controls="settings-panel-umum" data-settings-tab="umum">📁 Umum</button>
+          <button type="button" class="settings-tab" id="settings-tab-tim" role="tab" aria-selected="false" aria-controls="settings-panel-tim" data-settings-tab="tim">👥 Tim &amp; izin</button>
+          <button type="button" class="settings-tab" id="settings-tab-notifikasi" role="tab" aria-selected="false" aria-controls="settings-panel-notifikasi" data-settings-tab="notifikasi">🔔 Notifikasi</button>
+          <button type="button" class="settings-tab" id="settings-tab-spotify" role="tab" aria-selected="false" aria-controls="settings-panel-spotify" data-settings-tab="spotify" hidden>♪ Spotify</button>
+          <button type="button" class="settings-tab" id="settings-tab-cadangan" role="tab" aria-selected="false" aria-controls="settings-panel-cadangan" data-settings-tab="cadangan">💾 Cadangan</button>
+          <button type="button" class="settings-tab" id="settings-tab-sistem" role="tab" aria-selected="false" aria-controls="settings-panel-sistem" data-settings-tab="sistem">⚙ Sistem</button>
+        </div>
+        <form id="roots-form" class="roots settings-body">
+          <div class="settings-panel on" id="settings-panel-umum" data-settings-panel="umum" role="tabpanel" aria-labelledby="settings-tab-umum">
           <label for="roots-input">Folder induk projects <small>(satu per baris — semua subfolder-nya jadi project)</small></label>
           <textarea id="roots-input" rows="3" spellcheck="false" placeholder="C:\Users\nama\projects"></textarea>
           <p id="roots-hint" class="muted"></p>
@@ -625,9 +635,13 @@
             <div id="theme-seg" class="seg" role="group" aria-labelledby="theme-title"></div>
             <p id="theme-desc" class="muted">Ganti tampilan kantor pixel dan kostum tim. Disimpan di browser ini.</p>
           </section>
+          </div>
+          <div class="settings-panel" id="settings-panel-tim" data-settings-panel="tim" role="tabpanel" aria-labelledby="settings-tab-tim">
           <button type="button" id="btn-roster" class="ghost team-names-btn" title="Pilih role bawaan yang punya meja di kantor">👥 Kelola tim (role aktif)</button>
           <button type="button" id="btn-team-names" class="ghost team-names-btn">✏️ Ganti nama anggota tim</button>
           <button type="button" id="btn-permissions" class="ghost team-names-btn" data-cap="permissions" title="Aturan allow / ask / deny Claude Code untuk project yang sedang dibuka">🛡️ Aturan izin project ini</button>
+          </div>
+          <div class="settings-panel" id="settings-panel-notifikasi" data-settings-panel="notifikasi" role="tabpanel" aria-labelledby="settings-tab-notifikasi">
           <button type="button" id="btn-notify-settings" class="ghost team-names-btn" aria-haspopup="dialog" title="Per jenis kejadian, jam tenang, hanya project favorit, volume (disimpan di browser ini)">🔔 Pengaturan notifikasi</button>
           <hr />
           <section class="quota-alerts" aria-labelledby="quota-title" aria-describedby="quota-desc">
@@ -642,7 +656,8 @@
             <p id="quota-error" class="field-error" role="alert"></p>
             <p id="quota-desc" class="muted">Per jendela kuota (sesi 5 jam, mingguan): toast dan notifikasi (bila 🔔 aktif) sekali per ambang tiap periode reset, plus penanda berwarna di atas. Dibaca dari sesi yang berjalan, tanpa request tambahan. Disimpan di browser ini.</p>
           </section>
-          <hr />
+          </div>
+          <div class="settings-panel" id="settings-panel-spotify" data-settings-panel="spotify" role="tabpanel" aria-labelledby="settings-tab-spotify">
           <!-- ♪ Spotify (features/spotify.js; laptop only, like this whole dialog). Hidden while the server has no Spotify support. -->
           <section id="sps" class="spotify-settings" aria-labelledby="sps-title" hidden>
             <b id="sps-title">♪ Spotify</b>
@@ -675,6 +690,8 @@
             </div>
           </section>
           <hr id="sps-rule" hidden />
+          </div>
+          <div class="settings-panel" id="settings-panel-cadangan" data-settings-panel="cadangan" role="tabpanel" aria-labelledby="settings-tab-cadangan">
           <section class="backup" aria-labelledby="backup-title" aria-describedby="backup-desc">
             <b id="backup-title">💾 Cadangkan riwayat</b>
             <p id="backup-desc" class="muted">Untuk pindah laptop atau install ulang: <b>Export</b> di sini, lalu <b>Import</b> di laptop baru dan lanjutkan percakapan lama (Riwayat sesi di app maupun <code>claude --resume</code>). Ikut: semua sesi Claude Code di semua project (termasuk subagent, memori, checkpoint, rencana, riwayat prompt) plus data kantor ini (folder, favorit, nama tim, laporan token). <b>Login tidak ikut</b>: login ulang dengan <code>claude</code> di laptop baru.</p>
@@ -711,7 +728,8 @@
               <p id="ba-desc" class="muted small">Isinya sama dengan Export riwayat. Rotasi hanya menghapus file <code>adhit-office-backup-auto-*.zip</code> yang lebih lama di folder itu; file lain tidak disentuh. Saat jadwal terlewat (laptop mati), backup dibuat sekali begitu server menyala.</p>
             </div>
           </section>
-          <hr />
+          </div>
+          <div class="settings-panel" id="settings-panel-sistem" data-settings-panel="sistem" role="tabpanel" aria-labelledby="settings-tab-sistem">
           <!-- ⬆ Update aplikasi (features/app-update.js, server src/app-update.js) -->
           <section class="claude-check" aria-labelledby="au-title">
             <b id="au-title">⬆ Update Adhit Office</b>
@@ -753,6 +771,7 @@
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
           <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>
           <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
+          </div>
         </form>
       </div>
     </div>

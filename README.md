@@ -182,7 +182,7 @@ Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhi
 
 - **Izin, Model, Effort, Mode tim** ada di dialog *Pengaturan giliran*: klik chip ⚙ di atas kotak chat (di HP di bawah teks).
 - **■ Stop / Esc** menghentikan giliran yang sedang berjalan, termasuk giliran yang dimulai Claude sendiri setelah tugas latar selesai, dan menghentikan tugas latar itu juga.
-- **🩺 Doctor** dan **⬆ Update Claude Code**: ⚙ → Kompatibilitas Claude Code (sama dengan `claude doctor` / `claude update`, dari laptop).
+- **🩺 Doctor** dan **⬆ Update Claude Code**: ⚙ → tab **Sistem** → Kompatibilitas Claude Code (sama dengan `claude doctor` / `claude update`, dari laptop).
 - Command yang hanya membuka layar terminal (`/config`, `/hooks`, `/doctor`, `/login`, …) tidak ditawarkan di autocomplete; kalau diketik, aplikasi menunjukkan tempatnya di sini.
 - **🧠 /memory**: edit `CLAUDE.md` (project), `CLAUDE.local.md` (pribadi) dan `~/.claude/CLAUDE.md` langsung di aplikasi; dengan OpenCode: `AGENTS.md` (project dan global). File yang diubah di tempat lain sejak dibuka tidak ditimpa. Laptop atau Tailscale.
 - **🕘 Riwayat sesi**: per sesi ⑂ *Cabangkan* (lanjutkan salinannya, aslinya utuh; Claude `--fork-session`, OpenCode `session.fork`), ⬇ export (`.md` untuk Claude, JSON OpenCode yang bisa diimpor lagi), 🗑 hapus (transcript Claude dipindah ke `data/trash`, bisa dikembalikan), ✎ ganti nama (OpenCode).
@@ -227,7 +227,7 @@ Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude
 - Pesan pertama yang menyalakan layanan latar OpenCode dicoba ulang sekali secara otomatis.
 - 📦 Backup riwayat membawa chat kedua mesin (`office/chats/` dan `office/chats-opencode/`).
 - Saat mesin OpenCode aktif, dialog khusus Claude Code (aturan izin, plugin/agent/hooks, cari percakapan, export sesi lengkap) disembunyikan dan route-nya menolak. OpenCode memakai `opencode.json` untuk aturan/agent/plugin, serta export JSON di Riwayat Sesi.
-- **Saat OpenCode diperbarui**: server membaca `opencode --version` saat menyala (±45 dtk) dan setiap 6 jam. Versi baru → **cek kontrak ringan tanpa token** di latar belakang (setelah giliran yang berjalan selesai): handshake ACP (`initialize`, kemampuan `loadSession`/gambar/@file), `session/new` + opsi model/mode + daftar command, `session/set_config_option`, `session/load`, `opencode models`, `opencode session list`. Tidak pernah mengirim prompt (tidak memanggil model); sesi uji dihapus lagi. Hasilnya muncul sebagai pemberitahuan seperti untuk Claude Code ("OpenCode diperbarui ke vX — semua cek kontrak lulus ✅", atau "⚠ … cek kontrak gagal (…)" + `npm run test:opencode`). **⚙ → 🧩 Kompatibilitas OpenCode** (hanya dari laptop, hanya bila OpenCode terpasang): status, tombol cek manual, dan *Cek otomatis saat OpenCode diperbarui*. Status di `data/opencode-check.json` (tidak ikut backup). Tanpa OpenCode terpasang: tidak ada apa pun.
+- **Saat OpenCode diperbarui**: server membaca `opencode --version` saat menyala (±45 dtk) dan setiap 6 jam. Versi baru → **cek kontrak ringan tanpa token** di latar belakang (setelah giliran yang berjalan selesai): handshake ACP (`initialize`, kemampuan `loadSession`/gambar/@file), `session/new` + opsi model/mode + daftar command, `session/set_config_option`, `session/load`, `opencode models`, `opencode session list`. Tidak pernah mengirim prompt (tidak memanggil model); sesi uji dihapus lagi. Hasilnya muncul sebagai pemberitahuan seperti untuk Claude Code ("OpenCode diperbarui ke vX — semua cek kontrak lulus ✅", atau "⚠ … cek kontrak gagal (…)" + `npm run test:opencode`). **⚙ → tab Sistem → 🧩 Kompatibilitas OpenCode** (hanya dari laptop, hanya bila OpenCode terpasang): status, tombol cek manual, dan *Cek otomatis saat OpenCode diperbarui*. Status di `data/opencode-check.json` (tidak ikut backup). Tanpa OpenCode terpasang: tidak ada apa pun.
 - Desain lengkap: [`docs/design-opencode.md`](docs/design-opencode.md).
 
 ### Tim & kantor
@@ -465,7 +465,7 @@ Adhit Office memakai protokol internal Claude Code, sedangkan Claude Code memper
 
 Hasilnya tampil sebagai pemberitahuan di atas kantor: "Claude Code diperbarui ke vX — semua cek kontrak lulus ✅" (hilang sendiri), atau "⚠ … cek kontrak gagal (…)" beserta nama cek yang gagal (tetap tampil sampai ditutup). HP lewat WiFi biasa hanya melihat pemberitahuan pasif.
 
-**⚙ Pengaturan → 🧩 Kompatibilitas Claude Code** (hanya dari laptop) menampilkan status cek terakhir, tombol **Cek kompatibilitas Claude Code**, serta dua pengaturan: *Cek otomatis saat Claude Code diperbarui* dan *Boleh pakai 1 request kecil (Haiku)* (keduanya aktif secara bawaan). Statusnya disimpan di `data/claude-check.json` dan tidak ikut backup.
+**⚙ Pengaturan → tab Sistem → 🧩 Kompatibilitas Claude Code** (hanya dari laptop) menampilkan status cek terakhir, tombol **Cek kompatibilitas Claude Code**, serta dua pengaturan: *Cek otomatis saat Claude Code diperbarui* dan *Boleh pakai 1 request kecil (Haiku)* (keduanya aktif secara bawaan). Statusnya disimpan di `data/claude-check.json` dan tidak ikut backup.
 
 OpenCode punya deteksi yang sama (tanpa token sama sekali): lihat [Mesin: Claude Code atau OpenCode](#mesin-claude-code-atau-opencode) dan `npm run test:opencode`.
 

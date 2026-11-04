@@ -614,6 +614,7 @@ for (const vp of VIEWPORTS) {
 
       // ⚙: "Buka Spotify otomatis di latar belakang" (default on) is saved through /config
       await tapHeader(page, '#btn-settings');
+      if (!vp.mobile) await page.click('[data-settings-tab="spotify"]');
       await page.waitFor(() => visible('#sps-autolaunch') && document.querySelector('#sps-autolaunch').checked, { message: 'autoLaunch on by default' });
       await clearPosts(page);
       await page.click('#sps-autolaunch');
@@ -767,6 +768,7 @@ for (const vp of VIEWPORTS) {
     test('⚙ Spotify (laptop): Client ID validation, Hubungkan opens the login URL, Putuskan, settings', async () => {
       await open(page, { snap: { status: 'unconfigured', error: null, track: null, progressMs: 0, at: 0, device: null, office: true, updatedAt: 0 } });
       await tapHeader(page, '#btn-settings');
+      if (!vp.mobile) await page.click('[data-settings-tab="spotify"]');
       await page.waitFor(() => visible('#sps') && document.querySelector('#sps-redirect').textContent.startsWith('http://127.0.0.1'), { message: 'Spotify section' });
       assert.equal(await page.eval(() => document.querySelector('#sps-connect').disabled), true, 'no Client ID yet: Hubungkan off');
       await page.eval(() => {

@@ -11,6 +11,7 @@ import { READ_ONLY_HINT, state } from '../core/state.js';
 import { CLIENT_ID_RE, DUCK_MODES, LAUNCHING_TEXT, SETTINGS_HINT, canStart, clockTime, cleanState, controlBlock, deviceIcon, fmtTime, hasTrack, isConnected, progressAt, radioLabel, statusText, trackLine } from '../core/spotify-rules.js';
 import { radio } from '../office/radio.js';
 import { closeModal, openModal } from '../ui/modals.js';
+import { selectSettingsTab } from './settings.js';
 
 const P = {
   state: '/api/spotify/state',
@@ -965,6 +966,7 @@ export function openSpotifySettings() {
   }
   closeModal('spotify-modal');
   $('#btn-settings').click();
+  selectSettingsTab('spotify');
   requestAnimationFrame(() => {
     $('#sps').scrollIntoView({ block: 'start' });
     const target = music.config?.clientIdSet ? $('#sps-connect:not([hidden])') ?? $('#sps-office') : $('#sps-client');

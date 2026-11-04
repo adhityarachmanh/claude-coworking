@@ -245,7 +245,10 @@ export class Page {
     const loaded = this.waitForEvent('Page.loadEventFired', timeoutMs);
     const { errorText } = await this.send('Page.navigate', { url });
     if (errorText) throw new Error(`navigasi gagal ${url}: ${errorText}`);
-    await loaded;
+    // A slow disk/antivirus can make the event arrive after the timeout even though the page is already complete.
+    await loaded.catch(async (err) => {
+      if ((await this.eval('document.readyState').catch(() => '')) !== 'complete') throw err;
+    });
   }
 
   /** Evaluates an expression (or `(${fn})(...args)`) in the page and returns its JSON value. */

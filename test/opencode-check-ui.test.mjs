@@ -208,6 +208,7 @@ describe('🧩 OpenCode banner when contract checks fail', { skip: SKIP ?? false
       await page.setViewport(VIEWPORTS[1]);
       await openApp(page);
       await tap(page, '#btn-settings');
+      await page.click('[data-settings-tab="sistem"]');
       await page.waitFor(() => !document.querySelector('#settings-modal').hidden && !document.querySelector('#oc-section').hidden && /v2\.0\.1/.test(document.querySelector('#oc-status').textContent), { message: '⚙ OpenCode status' });
       assert.match(await page.eval(() => document.querySelector('#oc-status').textContent), /^Terpasang: v2\.0\.1\. Cek terakhir \(otomatis, tanpa token\) .*, v2\.0\.1: ⚠ 2 cek gagal: /);
       assert.equal(await page.eval(() => document.querySelector('#oc-status').classList.contains('warn')), true);

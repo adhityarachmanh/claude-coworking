@@ -6,6 +6,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ### Diperbaiki
 
+- **Pengaturan desktop lebih ringkas.** Dialog ⚙ Pengaturan di laptop kini dibagi menjadi tab **Umum, Tim & izin, Notifikasi, Spotify, Cadangan, dan Sistem**; hanya isi tab yang bergulir. Di HP tampilannya tetap satu daftar panjang seperti sebelumnya.
 - **Batas mesin lebih jelas.** Saat mesin OpenCode aktif, dialog khusus Claude Code—aturan izin, plugin/agent/hooks, cari percakapan, dan export sesi lengkap—disembunyikan. Route-nya juga menolak (409), jadi tidak ada lagi perubahan config Claude yang tidak sengaja dari mode OpenCode. OpenCode memakai `opencode.json` dan export JSON di Riwayat Sesi.
 - **Mode OpenCode disederhanakan.** Pilihan Izin di mesin OpenCode kini hanya **Build** dan **Plan**, mengikuti dua mode native OpenCode. Build tetap memakai kartu izin app; Plan memakai agent plan yang read-only.
 - **Usage OpenCode lebih lengkap.** Token dan biaya sesi terminal OpenCode ikut dicatat ke laporan. Akun OpenCode menampilkan pemakaian lokal hari ini/7 hari dengan catatan bahwa sisa kuota provider tidak tersedia dari OpenCode.

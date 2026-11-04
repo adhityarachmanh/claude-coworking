@@ -433,6 +433,7 @@ for (const vp of VIEWPORTS) {
       page.clearProblems();
       await tap(page, '#btn-settings');
       await page.waitFor(() => !document.querySelector('#settings-modal').hidden && /nonaktif|Berikutnya/.test(document.querySelector('#ba-status').textContent), { message: 'backup schedule loaded' });
+      if (!vp.mobile) await page.click('[data-settings-tab="cadangan"]');
       await page.eval(() => document.querySelector('.backup-auto').scrollIntoView({ block: 'center' }));
       const dir = path.join(TMP, `backups-${vp.mobile ? 'm' : 'd'}`);
       mkdirSync(dir, { recursive: true });

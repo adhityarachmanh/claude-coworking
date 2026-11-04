@@ -199,7 +199,7 @@ function realProblems(page) {
 async function openApp(page, hash = '') {
   page.clearProblems();
   await page.goto(`${BASE}/${hash}`);
-  await page.waitFor(appReady, { timeoutMs: 10000, message: 'app terhubung (#conn.ok) dan header terisi' });
+  await page.waitFor(appReady, { timeoutMs: 30000, message: 'app terhubung (#conn.ok) dan header terisi' });
   await sleep(300); // let late async work (account, usage) surface any errors
 }
 
@@ -463,10 +463,51 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('⚙ Pengaturan: bagian jadi tab di desktop, tetap satu daftar panjang di HP', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await tap(page, '#btn-settings');
+      await settle(page, 'settings-modal');
+      const tabs = await page.eval(() =>
+        [...document.querySelectorAll('#settings-tabs [data-settings-tab]')].map((b) => ({
+          tab: b.dataset.settingsTab,
+          hidden: b.hidden,
+          shown: Boolean(b.getClientRects().length),
+          selected: b.getAttribute('aria-selected'),
+        })),
+      );
+      const panels = await page.eval(() =>
+        [...document.querySelectorAll('#settings-modal [data-settings-panel]')].map((p) => ({
+          panel: p.dataset.settingsPanel,
+          shown: Boolean(p.getClientRects().length),
+          on: p.classList.contains('on'),
+        })),
+      );
+      if (vp.mobile) {
+        assert.equal(await shownInPage(page, '#settings-tabs'), false, 'bar tab tidak tampil di HP');
+        assert.deepEqual(panels.map((p) => p.shown), [true, true, true, true, true, true], 'semua bagian tetap tampil memanjang');
+      } else {
+        assert.equal(await shownInPage(page, '#settings-tabs'), true, 'bar tab tampil di desktop');
+        assert.deepEqual(tabs.filter((t) => t.shown).map((t) => t.tab), ['umum', 'tim', 'notifikasi', 'spotify', 'cadangan', 'sistem'], 'semua bagian punya tab');
+        assert.deepEqual(panels.filter((p) => p.shown).map((p) => p.panel), ['umum'], 'hanya bagian tab aktif yang tampil');
+        await page.click('[data-settings-tab="cadangan"]');
+        assert.equal(await shownInPage(page, '#settings-modal .backup'), true, 'tab Cadangan menampilkan backup');
+        assert.equal(await shownInPage(page, '[data-settings-panel="umum"]'), false, 'bagian tab lama disembunyikan');
+        await page.click('[data-settings-tab="notifikasi"]');
+        assert.equal(await shownInPage(page, '#quota-on'), true, 'tab Notifikasi menampilkan kuota');
+        await page.click('[data-settings-tab="sistem"]');
+        assert.equal(await shownInPage(page, '#cc-status'), true, 'tab Sistem menampilkan kompatibilitas');
+        await page.click('[data-settings-tab="umum"]');
+        await page.press('ArrowRight');
+        assert.equal(await page.eval(() => document.activeElement?.dataset.settingsTab), 'tim', 'panah kanan pindah tab');
+      }
+      await page.press('Escape');
+    });
+
     test('⚙ Pengaturan: bagian Cadangkan riwayat tampil, tombol aktif di laptop, export terunduh, tanpa error console', async () => {
       await ensureApp(page, `#${projectId}`);
       await tap(page, '#btn-settings');
       await settle(page, 'settings-modal');
+      if (!vp.mobile) await page.click('[data-settings-tab="cadangan"]');
       const r = await page.eval(() => ({
         visible: Boolean(document.querySelector('#settings-modal .backup')?.getClientRects().length),
         title: document.querySelector('#backup-title')?.textContent,
@@ -689,6 +730,7 @@ for (const vp of VIEWPORTS) {
       await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
       await tap(page, '#btn-settings');
       await settle(page, 'settings-modal');
+      if (!vp.mobile) await page.click('[data-settings-tab="notifikasi"]');
       assert.deepEqual(await page.eval(() => ({ on: document.querySelector('#quota-on').checked, warn: document.querySelector('#quota-warn').value, crit: document.querySelector('#quota-crit').value })), { on: true, warn: '70', crit: '90' });
       const setField = (sel, v) =>
         page.eval(
@@ -941,6 +983,7 @@ for (const vp of VIEWPORTS) {
         await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
         await tap(page, '#btn-settings');
         await settle(page, 'settings-modal');
+        if (!vp.mobile) await page.click('[data-settings-tab="umum"]');
       };
       const themeState = () => ({
         stored: localStorage.getItem('office.theme'),

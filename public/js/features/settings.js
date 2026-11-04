@@ -5,6 +5,43 @@ import { APP_NAME, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { selectProject } from './picker.js';
 
+// The laptop dialog shows one section at a time; the phone keeps every panel stacked (CSS).
+let settingsTab = (() => {
+  try {
+    return sessionStorage.getItem('office.settingsTab') || 'umum';
+  } catch {
+    return 'umum';
+  }
+})();
+
+function syncSpotifyTab() {
+  const sps = $('#sps');
+  const tab = $('#settings-tab-spotify');
+  if (sps && tab) tab.hidden = sps.hidden;
+}
+
+/** Shows one settings panel and remembers it for this browser session. */
+export function selectSettingsTab(tab = settingsTab) {
+  syncSpotifyTab();
+  const tabs = [...document.querySelectorAll('#settings-tabs [data-settings-tab]')].filter((b) => !b.hidden);
+  if (!tabs.some((b) => b.dataset.settingsTab === tab)) tab = 'umum';
+  settingsTab = tab;
+  try {
+    sessionStorage.setItem('office.settingsTab', tab);
+  } catch {
+    // private mode: the tab still switches, just isn't remembered
+  }
+  for (const b of tabs) {
+    const on = b.dataset.settingsTab === tab;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+  }
+  for (const panel of document.querySelectorAll('#settings-modal [data-settings-panel]')) panel.classList.toggle('on', panel.dataset.settingsPanel === tab);
+  const body = document.querySelector('#settings-modal .settings-body');
+  if (body) body.scrollTop = 0;
+}
+
 export function renderRoots(config) {
   if (!config) return;
   state.config = config;
@@ -38,6 +75,23 @@ export function initSettings() {
   $('#btn-settings').addEventListener('click', () => {
     $('#roots-input').value = state.config?.roots.join('\n') ?? '';
     openModal('settings-modal');
+    // After the other #btn-settings listeners (Spotify shows/hides its section): pick a tab that is available.
+    requestAnimationFrame(() => selectSettingsTab());
+  });
+
+  $('#settings-tabs').addEventListener('click', (e) => {
+    const tab = e.target.closest('[data-settings-tab]');
+    if (tab) selectSettingsTab(tab.dataset.settingsTab);
+  });
+  $('#settings-tabs').addEventListener('keydown', (e) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    const tabs = [...document.querySelectorAll('#settings-tabs [data-settings-tab]')].filter((b) => !b.hidden);
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const next = e.key === 'Home' ? tabs[0] : e.key === 'End' ? tabs.at(-1) : tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+    next.focus();
+    selectSettingsTab(next.dataset.settingsTab);
   });
   $('#roots-form').addEventListener('submit', async (e) => {
     e.preventDefault();
