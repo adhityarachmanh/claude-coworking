@@ -2,7 +2,8 @@
 // Reads allowed over WiFi: sessions, rewind-points. Everything else acts (refused there by the gate in server.js);
 // `search` / `export-session` read, but expose the whole history: laptop and Tailscale only (src/remote.js).
 import { AttachmentError, readAttachments } from '../attachments.js';
-import { ConversationError, exportSession, searchSessions } from '../conversation.js';
+import { ConversationError, exportSession, SEARCH_LIMITS, searchSessions } from '../conversation.js';
+import { searchOpenCodeSessions } from '../opencode-search.js';
 import { REWINDING_MESSAGE } from '../acp-session.js';
 import { classifyEffort } from '../effort-classifier.js';
 import { DEMO_ID } from '../hub.js';
@@ -161,12 +162,26 @@ export function register(router) {
     return rewindAnswer(res, session.rewind(String(body.uuid ?? ''), options));
   }));
   // 🔎 Cari percakapan / ⬇ Export .md: read-only, bounded reads of this project's transcripts (src/conversation.js).
-  router.post('/api/projects/:id/search', withProject(claudeOnly(({ hub }, req, res, { project }, body) =>
-    conversation(res, () => {
+  router.post('/api/projects/:id/search', withProject(async ({ hub, opencode }, req, res, { project }, body) => {
+    try {
       // all: every listed project, the active one first.
       const scope = body.all === true ? [project, ...[...hub.projects.values()].filter((p) => p.id !== project.id && p.id !== DEMO_ID && p.path)] : [project];
-      return json(res, 200, searchSessions(scope, body.q, { limit: body.limit }));
-    }), 'Pencarian percakapan')));
+      const limit = Number(body.limit) || SEARCH_LIMITS.defaultResults;
+      const claude = searchSessions(scope, body.q, { limit });
+      const opencodeResults = await searchOpenCodeSessions(scope, body.q, { opencode, limit });
+      const max = Math.min(Math.max(1, limit), SEARCH_LIMITS.maxResults);
+      const results = [...claude.results, ...opencodeResults.results].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, max);
+      return json(res, 200, {
+        query: claude.query,
+        results,
+        truncated: claude.truncated || opencodeResults.truncated || claude.results.length + opencodeResults.results.length > max,
+        sessions: claude.sessions + opencodeResults.sessions,
+      });
+    } catch (err) {
+      if (err instanceof ConversationError) return json(res, err.status, { error: err.message });
+      throw err;
+    }
+  }));
   router.post('/api/projects/:id/export-session', withProject(claudeOnly((ctx, req, res, { project }, body) =>
     conversation(res, () => json(res, 200, exportSession(project.path, body.sessionId, { tools: body.tools === true, projectName: project.name }))), 'Export sesi')));
 }

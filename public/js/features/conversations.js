@@ -10,10 +10,11 @@ import { saveBlob } from '../core/util.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { guardCap } from './engine.js';
 import { selectProject } from './picker.js';
-import { resumeSession } from './sessions.js';
+import { exportOpenCodeJson, resumeSession } from './sessions.js';
 
 const TOOLS_KEY = 'office.exportTools';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SESSION_ID = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|ses_[\w-]{1,100})$/i;
 const MIN_QUERY = 2;
 const MAX_QUERY = 200;
 
@@ -98,11 +99,11 @@ async function runSearch() {
   const seq = ++finder.seq;
   const list = $('#search-results');
   list.setAttribute('aria-busy', 'true');
-  $('#search-status').textContent = 'Mencari…';
+  $('#search-status').textContent = 'Mencari Claude + OpenCode…';
   try {
     const data = await api(`/api/projects/${finder.project}/search`, { q, all });
     if (seq !== finder.seq) return; // a newer search is on its way
-    finder.results = (Array.isArray(data.results) ? data.results : []).filter((r) => UUID.test(String(r?.sessionId ?? '')) && typeof r.projectId === 'string');
+    finder.results = (Array.isArray(data.results) ? data.results : []).filter((r) => SESSION_ID.test(String(r?.sessionId ?? '')) && typeof r.projectId === 'string');
     const n = finder.results.length;
     const where = all ? 'semua project' : 'project ini';
     $('#search-status').textContent = n
@@ -128,20 +129,27 @@ function renderResults(all) {
   list.innerHTML = finder.results
     .map((r, i) => {
       const snip = r.snippet ?? {};
+      const engine = r.engine === 'opencode' ? 'opencode' : 'claude';
       const current = r.sessionId === state.statuses[r.projectId]?.sessionId;
       const title = String(r.title ?? `Sesi ${r.sessionId.slice(0, 8)}`);
       const action = current
         ? '<span class="s-current">● Sedang dibuka</span>'
         : `<button type="button" class="primary s-resume" data-resume="${i}" aria-label="Lanjutkan sesi ${escapeHtml(title)}" ${state.readOnly ? `disabled title="${READ_ONLY_HINT}"` : ''}>Lanjutkan</button>`;
       const ts = Number(r.ts);
+      const source = engine === 'opencode' ? (r.source === 'cli' ? 'OpenCode (terminal)' : 'OpenCode') : r.source === 'web' ? 'Web' : 'Terminal';
+      const sourceClass = engine === 'opencode' ? 'opencode' : r.source === 'web' ? 'web' : 'cli';
+      const role = r.role === 'assistant' ? (engine === 'opencode' ? 'OpenCode' : 'Claude') : 'Kamu';
+      const exportBtn = engine === 'opencode'
+        ? `<button type="button" class="ghost s-export" data-export-json="${i}" title="Unduh sesi ini sebagai JSON OpenCode" aria-label="Export JSON: ${escapeHtml(title)}">⬇ .json</button>`
+        : `<button type="button" class="ghost s-export" data-export="${i}" title="Unduh sesi ini sebagai Markdown (.md)" aria-label="Export .md: ${escapeHtml(title)}">⬇ .md</button>`;
       return `<li class="s-item sr-item ${current ? 'current' : ''}">
         <div class="s-main">
           <span class="s-title">${escapeHtml(title)}</span>
-          <p class="sr-snippet"><span class="sr-role">${r.role === 'assistant' ? 'Claude' : 'Kamu'}:</span> ${escapeHtml(snip.before)}<mark>${escapeHtml(snip.match)}</mark>${escapeHtml(snip.after)}</p>
-          <span class="s-meta">${all ? `<span class="sr-project">${escapeHtml(projectName(r.projectId))}</span>` : ''}<span class="src src-${r.source === 'web' ? 'web' : 'cli'}">${r.source === 'web' ? 'Web' : 'Terminal'}</span>${Number.isFinite(ts) && ts > 0 ? ago(ts) : ''} · <code>${escapeHtml(r.sessionId.slice(0, 8))}</code></span>
+          <p class="sr-snippet"><span class="sr-role">${role}:</span> ${escapeHtml(snip.before)}<mark>${escapeHtml(snip.match)}</mark>${escapeHtml(snip.after)}</p>
+          <span class="s-meta">${all ? `<span class="sr-project">${escapeHtml(projectName(r.projectId))}</span>` : ''}<span class="src src-${sourceClass}">${source}</span>${Number.isFinite(ts) && ts > 0 ? ago(ts) : ''} · <code>${escapeHtml(r.sessionId.slice(0, 8))}</code></span>
         </div>
         <div class="sr-actions">
-          <button type="button" class="ghost s-export" data-export="${i}" title="Unduh sesi ini sebagai Markdown (.md)" aria-label="Export .md: ${escapeHtml(title)}">⬇ .md</button>
+          ${exportBtn}
           ${action}
         </div>
       </li>`;
@@ -150,10 +158,19 @@ function renderResults(all) {
 }
 
 async function resumeResult(r, btn) {
-  if (r.projectId !== state.active) {
-    if (!state.projects.some((p) => p.id === r.projectId)) return toast('Project hasil ini sudah tidak ada di daftar.');
-    selectProject(r.projectId);
+  if (!state.projects.some((p) => p.id === r.projectId)) return toast('Project hasil ini sudah tidak ada di daftar.');
+  const engine = r.engine === 'opencode' ? 'opencode' : 'claude';
+  const currentEngine = state.config?.engine === 'opencode' ? 'opencode' : 'claude';
+  if (engine !== currentEngine) {
+    const label = engine === 'opencode' ? 'OpenCode' : 'Claude Code';
+    if (!window.confirm(`Hasil ini dari ${label}. Pindah mesin ke ${label} untuk melanjutkan sesi?`)) return;
+    try {
+      await api('/api/engine', { engine });
+    } catch (err) {
+      return toast(err.message, 'warn');
+    }
   }
+  if (r.projectId !== state.active) selectProject(r.projectId);
   if (await resumeSession(r.projectId, r.sessionId, btn)) closeModal('search-modal');
 }
 
@@ -172,10 +189,11 @@ export function initConversations() {
     if ($('#search-q').value.trim().length >= MIN_QUERY) runSearch();
   });
   $('#search-results').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-export], [data-resume]');
-    const r = btn && finder.results[Number(btn.dataset.export ?? btn.dataset.resume)];
+    const btn = e.target.closest('[data-export], [data-export-json], [data-resume]');
+    const r = btn && finder.results[Number(btn.dataset.export ?? btn.dataset.exportJson ?? btn.dataset.resume)];
     if (!r) return;
     if (btn.dataset.export !== undefined) exportSessionMarkdown(r.projectId, r.sessionId);
+    else if (btn.dataset.exportJson !== undefined) exportOpenCodeJson(r.projectId, r.sessionId);
     else resumeResult(r, btn);
   });
   for (const box of document.querySelectorAll('.export-tools-opt')) {

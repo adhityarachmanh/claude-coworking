@@ -902,6 +902,7 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .src { padding: 1px 7px; border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .02em; }
 .src-cli { background: var(--cli-soft); color: var(--cli-text); }
 .src-web { background: var(--accent-tint); color: var(--accent-2); }
+.src-opencode { background: var(--ok-soft); color: var(--ok-text-strong); }
 .s-resume { flex: none; font-size: var(--fs-md); padding: 6px 14px; }
 .s-current { flex: none; font-size: var(--fs-sm); color: var(--ok-text); white-space: nowrap; }
 .s-live { flex: none; font-size: var(--fs-sm); color: var(--cli-text); white-space: nowrap; cursor: help; }

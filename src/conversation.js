@@ -123,7 +123,7 @@ const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const oneLine = (s) => s.replace(/\s+/g, ' ');
 
 /** A hit with up to `context` characters around it, cut at word edges where possible. */
-function snippet(text, index, length, context) {
+export function snippet(text, index, length, context) {
   let from = Math.max(0, index - context);
   let to = Math.min(text.length, index + length + context);
   if (from > 0) {
@@ -196,6 +196,7 @@ export function searchSessions(projects, q, { limit = SEARCH_LIMITS.defaultResul
           sessionId: s.id,
           title: s.title,
           source: s.source,
+          engine: 'claude',
           role: m.role,
           ts: m.ts || s.updated,
           snippet: snippet(m.text, found.index, found[0].length, SEARCH_LIMITS.context),

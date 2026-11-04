@@ -23,11 +23,11 @@ test('Claude Code keeps the Claude-only surfaces', () => {
   assert.equal(caps.search, true);
 });
 
-test('OpenCode turns off Claude-only permissions, extensions and transcript search', () => {
+test('OpenCode turns off Claude-only permissions/extensions, but keeps conversation search', () => {
   const caps = capsFor(CONFIG, 'opencode');
   assert.equal(caps.permissions, false, 'Claude permission files are not OpenCode rules');
   assert.equal(caps.extensions, false, 'plugins/agents/hooks are Claude Code files');
-  assert.equal(caps.search, false, 'conversation search reads Claude transcripts');
+  assert.equal(caps.search, true, 'conversation search covers OpenCode sessions too');
   assert.equal(caps.exportSession, false, 'full session export reads Claude transcripts');
   assert.deepEqual(caps.modes, ['manual', 'plan'], 'OpenCode shows only Build and Plan');
 });
@@ -41,7 +41,6 @@ test('caps without an engines entry fall back to Claude (older servers)', () => 
 test('the reason is clear and no longer says Fase 1', () => {
   assert.match(capReason('permissions', 'opencode'), /opencode\.json/i);
   assert.match(capReason('extensions', 'opencode'), /Claude Code/i);
-  assert.match(capReason('search', 'opencode'), /Claude Code/i);
   assert.match(capReason('rewind', 'opencode'), /OpenCode belum mendukung Rewind/);
   for (const cap of ['permissions', 'extensions', 'search', 'exportSession']) assert.doesNotMatch(capReason(cap, 'opencode'), /Fase 1/);
 });

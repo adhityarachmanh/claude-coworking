@@ -139,7 +139,7 @@ test('config.engines announces OpenCode with its caps; the engine is app-wide; m
   assert.equal(snap.config.engines.opencode.caps.effort, true);
   assert.equal(snap.config.engines.opencode.caps.permissions, false, 'Claude permission files are Claude-only');
   assert.equal(snap.config.engines.opencode.caps.extensions, false, 'Claude plugins/agents/hooks are Claude-only');
-  assert.equal(snap.config.engines.opencode.caps.search, false, 'conversation search reads Claude transcripts');
+  assert.equal(snap.config.engines.opencode.caps.search, true, 'conversation search covers Claude and OpenCode sessions');
   assert.deepEqual(snap.config.engines.opencode.caps.modes, ['manual', 'plan'], 'OpenCode shows only Build and Plan');
   const id = await projectId();
   await api(`/api/projects/${id}/settings`, { model: 'opus' });
@@ -665,6 +665,32 @@ test('OpenCode admin: update, restart service, import a session JSON; import is 
   await useEngine('claude');
   r = await api(`/api/projects/${id}/session-import-json`, { data });
   assert.equal(r.status, 409, 'Claude Code does not import OpenCode JSON');
+});
+
+test('Global search includes OpenCode session messages (Claude + OpenCode)', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  const store = path.join(TMP, 'acp-store', 'ses_fakeold.json');
+  writeFileSync(store, JSON.stringify({
+    dir: path.join(TMP, 'projects', 'toko'),
+    messages: [
+      { id: 'msg_search_user', type: 'user', text: 'cari kata ajaib di sesi lama', time: { created: 1000 } },
+      { id: 'msg_search_asst', type: 'assistant', content: [{ type: 'text', text: 'kata ajaib ditemukan di checkout' }], time: { created: 1001 } },
+    ],
+  }));
+  try {
+    const r = await api(`/api/projects/${id}/search`, { q: 'ajaib', all: true });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.results.length, 2);
+    assert.deepEqual(r.body.results.map((x) => [x.engine, x.source, x.sessionId, x.role]), [
+      ['opencode', 'opencode', 'ses_fakeold', 'assistant'],
+      ['opencode', 'opencode', 'ses_fakeold', 'user'],
+    ]);
+    assert.match(r.body.results[0].title, /Sesi lama OpenCode/);
+    assert.ok(r.body.sessions >= 1);
+  } finally {
+    rmSync(store, { force: true });
+  }
 });
 
 test('OpenCode plugin manager: list, add, remove, update, and check through its CLI', async () => {

@@ -38,7 +38,7 @@ const CAP_FEATURE = {
   exportSession: 'export sesi lengkap Claude Code (pakai Export percakapan)',
   permissions: 'aturan izin Claude Code',
   extensions: 'pengelolaan ekstensi Claude Code',
-  search: 'pencarian percakapan Claude Code',
+  search: 'pencarian percakapan',
   mirror: 'mirror sesi terminal',
 };
 
@@ -49,7 +49,6 @@ const CAP_FEATURE = {
 const CAP_REASON = {
   permissions: 'Aturan izin Claude Code hanya tersedia saat mesin Claude Code aktif; OpenCode memakai aturan di opencode.json',
   extensions: 'Ekstensi Claude Code hanya tersedia saat mesin Claude Code aktif; OpenCode memakai plugin dan agent di opencode.json',
-  search: 'Pencarian percakapan Claude Code hanya tersedia saat mesin Claude Code aktif',
   exportSession: 'Export sesi lengkap Claude Code hanya tersedia saat mesin Claude Code aktif; pakai Export percakapan atau export JSON di Riwayat Sesi',
 };
 

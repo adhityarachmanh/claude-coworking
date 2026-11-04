@@ -177,7 +177,7 @@ Percakapan berlanjut di salinan baru; sesi aslinya tidak berubah.`)) return;
 }
 
 /** ⬇ .json: an OpenCode session as OpenCode's own export (re-import with `opencode session import`). */
-async function exportOpenCodeJson(projectId, sessionId) {
+export async function exportOpenCodeJson(projectId, sessionId) {
   try {
     const { name, data } = await api(`/api/projects/${projectId}/session-export-json`, { sessionId });
     saveBlob(String(name).replace(/[^\w.-]+/g, '_'), new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
