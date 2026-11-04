@@ -223,6 +223,11 @@ if (process.argv[2] === 'api') {
 // 🔁 handoff "Pintar": opencode run --session <id> --fork --agent plan <prompt>
 if (process.argv[2] === 'run') {
   const a = process.argv.slice(3);
+  const handoff = a.some((x) => /CATATAN HANDOFF/.test(x));
+  if (handoff && !a.includes('--fork')) {
+    console.log('## Tujuan\nHandoff palsu dari OpenCode');
+    process.exit(0);
+  }
   if (!a.includes('--fork') || a[a.indexOf('--agent') + 1] !== 'plan') process.exit(9);
   console.log(`## Tujuan\nHandoff palsu dari OpenCode (sesi ${a[a.indexOf('--session') + 1]})`);
   process.exit(0);

@@ -5,6 +5,9 @@
 //   smart — the source engine itself writes a handoff note from its full conversation, on a FORK of that session
 //           (Claude --fork-session / opencode run --fork) in read-only mode (plan): the original session is never
 //           changed and nothing in the project is edited. Uses a few thousand tokens of the source engine's account.
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { ChatStore } from './chat-store.js';
 import { readOnlyOpenCodeEnv, readUserPermission } from './opencode-bin.js';
 import { execFileTree } from './proc.js';
@@ -84,20 +87,59 @@ const SMART_PROMPT =
   '## Keputusan & alasannya, ## Status saat ini (apa yang belum selesai / masalah terbuka), ## Langkah berikutnya (urut). ' +
   'Jangan mengubah file apa pun dan jangan menjalankan perintah; cukup tulis catatannya.';
 
-/** smart: the source engine writes the note on a read-only fork of its own session. */
+/**
+ * smart: the project's ACTIVE engine writes the note from the stored other-workspace transcript. The source
+ * engine's process/session is never started, so its subscription/tokens are not charged for a handoff.
+ */
 export async function smartHandoff({ hub, project, from, claude, opencode }) {
-  const sessionId = hub.persisted.workspaces?.[from]?.sessions?.[project.id];
-  if (!sessionId) throw new HandoffError(404, `Belum ada sesi ${ENGINE_LABEL[from]} untuk project ini (atau sudah direset). Pakai mode Cepat.`);
+  const chat = otherChat(hub, from, project.id);
+  const talk = chat.filter((m) => (m.kind === 'user' || m.kind === 'assistant') && String(m.text ?? '').trim());
+  if (!talk.length) throw new HandoffError(404, `Belum ada percakapan ${ENGINE_LABEL[from]} di project ini. Pakai mode Cepat setelah ada percakapan.`);
+  const lines = [];
+  let total = 0;
+  for (const m of talk.slice(-60)) {
+    const who = m.kind === 'user' ? 'Saya' : ENGINE_LABEL[from];
+    const line = `**${who}:** ${clip(m.text, 1600)}`;
+    if (total + line.length > 36_000) break;
+    lines.push(line);
+    total += line.length;
+  }
+  const tools = chat.filter((m) => m.kind === 'tool' && m.text && !m.sub).slice(-20).map((m) => `- ${clip(m.text, 180)}`);
+  const prompt = `${SMART_PROMPT}
+
+## Percakapan ${ENGINE_LABEL[from]} yang harus diringkas
+<transcript>
+${lines.join('\n\n')}
+${tools.length ? `\n\nLangkah terakhir:\n${tools.join('\n')}` : ''}
+</transcript>`;
+
+  const to = hub.engine;
+  const settings = hub.settingsFor(project.id);
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'office-handoff-'));
   let r;
-  if (from === 'claude') {
-    if (!claude) throw new HandoffError(404, 'Claude Code tidak ditemukan.');
-    r = await run(claude.command, [...claude.args, '-p', SMART_PROMPT, '--resume', sessionId, '--fork-session', '--output-format', 'text', '--permission-mode', 'plan', '--disallowedTools', 'Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'], { cwd: project.path, timeout: 240_000 });
-  } else {
-    if (!opencode) throw new HandoffError(404, 'OpenCode tidak ditemukan.');
-    r = await run(opencode.command, [...opencode.args, 'run', '--session', sessionId, '--fork', '--agent', 'plan', SMART_PROMPT], { cwd: project.path, timeout: 240_000, env: readOnlyOpenCodeEnv(process.env, readUserPermission(project.path)) });
+  try {
+    if (to === 'claude') {
+      if (!claude) throw new HandoffError(404, 'Claude Code tidak ditemukan.');
+      const args = [...claude.args, '-p', prompt, '--output-format', 'text', '--permission-mode', 'plan', '--tools', '', '--strict-mcp-config'];
+      if (settings.model) args.push('--model', settings.model);
+      if (settings.effort) args.push('--effort', settings.effort);
+      r = await run(claude.command, args, { cwd: dir, timeout: 240_000 });
+    } else {
+      if (!opencode) throw new HandoffError(404, 'OpenCode tidak ditemukan.');
+      const args = [...opencode.args, 'run', '--agent', 'plan'];
+      if (settings.model) args.push('--model', settings.model);
+      args.push(prompt);
+      r = await run(opencode.command, args, { cwd: dir, timeout: 240_000, env: readOnlyOpenCodeEnv(process.env, readUserPermission(project.path)) });
+    }
+  } finally {
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch {
+      // Windows may hold the temp folder for a moment; it is harmless.
+    }
   }
   const text = r.out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
-  if (!r.ok || !text) throw new HandoffError(502, r.timedOut ? `${ENGINE_LABEL[from]} tidak selesai dalam 4 menit.` : `${ENGINE_LABEL[from]} gagal menulis catatan: ${(r.err || r.out).trim().split('\n').at(-1)?.slice(0, 200) ?? ''}`);
+  if (!r.ok || !text) throw new HandoffError(502, r.timedOut ? `${ENGINE_LABEL[to]} tidak selesai dalam 4 menit.` : `${ENGINE_LABEL[to]} gagal menulis catatan: ${(r.err || r.out).trim().split('\n').at(-1)?.slice(0, 200) ?? ''}`);
   return `${HEADER(from)}\n\n${clip(text, 20_000)}`;
 }
 
@@ -105,9 +147,8 @@ export async function smartHandoff({ hub, project, from, claude, opencode }) {
 export function handoffInfo(hub, project, from) {
   const chat = otherChat(hub, from, project.id);
   const messages = chat.filter((m) => m.kind === 'user' || m.kind === 'assistant').length;
-  const sessionId = hub.persisted.workspaces?.[from]?.sessions?.[project.id] ?? null;
   const last = chat.findLast?.((m) => m.ts)?.ts ?? null;
-  return { from, label: ENGINE_LABEL[from], messages, hasSession: Boolean(sessionId), lastAt: last };
+  return { from, label: ENGINE_LABEL[from], messages, hasSession: messages > 0, to: hub.engine, toLabel: ENGINE_LABEL[hub.engine], lastAt: last };
 }
 
 export const otherEngine = (engine) => (engine === 'opencode' ? 'claude' : 'opencode');

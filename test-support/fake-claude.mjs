@@ -81,6 +81,10 @@ if (args.includes('-p') && String(args[args.indexOf('-p') + 1] ?? '').startsWith
   process.exit(0);
 }
 // 🔁 handoff "Pintar": claude -p <prompt> --resume <id> --fork-session --output-format text (one answer, then exit)
+if (args.includes('-p') && !args.includes('--fork-session') && args.some((a) => /CATATAN HANDOFF/.test(a))) {
+  console.log('## Tujuan\nHandoff palsu dari Claude');
+  process.exit(0);
+}
 if (args.includes('-p') && args.includes('--fork-session') && args[args.indexOf('--output-format') + 1] === 'text') {
   if (args.includes('--permission-mode') && args[args.indexOf('--permission-mode') + 1] !== 'plan') process.exit(9); // must be read-only
   console.log(`## Tujuan\nHandoff palsu dari Claude (sesi ${args[args.indexOf('--resume') + 1]})`);

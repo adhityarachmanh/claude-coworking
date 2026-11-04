@@ -1,7 +1,7 @@
 // 🔁 Lanjutkan dari mesin lain (/lanjut, ⋯ menu): carries a project's context from the other engine's workspace
 // (Claude Code ↔ OpenCode) into this one as an opening message the user reviews first (server: src/handoff.js).
-// Two modes the user chooses between: Cepat (free, from the stored chat) and Pintar (the other engine writes a
-// handoff note on a read-only fork of its session; costs a few thousand of its tokens).
+// Two modes: Cepat (free, from the stored chat) and Pintar (the ACTIVE engine writes the note from that stored
+// transcript; costs a few thousand tokens of the active engine, never the parked source engine).
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
@@ -25,7 +25,7 @@ function render() {
       <label class="handoff-mode"><input type="radio" name="ho-mode" value="quick" checked>
         <span><b>⚡ Cepat</b> <small class="pill ok">gratis</small><br><small class="muted">Disusun aplikasi dari riwayat chat: tujuan awal, ${Math.min(i.messages, 30)} pesan terakhir (dipadatkan), langkah terakhir, dan file yang berubah (git). Instan, tanpa token. Detail yang hanya ada di kepala ${escapeHtml(i.label)} (alasan keputusan, isi file yang dibaca) tidak ikut.</small></span></label>
       <label class="handoff-mode${i.hasSession ? '' : ' disabled'}"><input type="radio" name="ho-mode" value="smart"${i.hasSession ? '' : ' disabled'}>
-        <span><b>🧠 Pintar</b> <small class="pill warn">pakai token</small><br><small class="muted">${escapeHtml(i.label)} sendiri menulis catatan handoff dari seluruh percakapannya: tujuan, yang sudah dikerjakan, keputusan & alasannya, status, langkah berikutnya. Paling lengkap. <b>Memakai token akun ${escapeHtml(i.label)}</b> (biasanya beberapa ribu token, sekitar 30–90 detik). Dijalankan di salinan sesinya dalam mode baca saja: sesi asli dan file project tidak diubah.${i.hasSession ? '' : ' <i>Tidak tersedia: sesi ' + escapeHtml(i.label) + ' project ini tidak ada lagi.</i>'}</small></span></label>
+        <span><b>🧠 Pintar</b> <small class="pill warn">pakai token mesin aktif</small><br><small class="muted">${escapeHtml(i.toLabel)} menulis catatan handoff dari riwayat percakapan ${escapeHtml(i.label)}: tujuan, yang sudah dikerjakan, keputusan & alasannya, status, langkah berikutnya. Paling lengkap. <b>Memakai token akun ${escapeHtml(i.toLabel)}</b> — mesin yang sedang aktif, bukan ${escapeHtml(i.label)} (biasanya beberapa ribu token, sekitar 30–90 detik). File project tidak diubah.</small></span></label>
     </div>
     <div class="acct-actions"><button type="button" class="primary" data-ho="make"${ho.busy ? ' disabled' : ''}>${ho.busy ? '<span class="spinner"></span> Menyusun…' : 'Susun konteks'}</button></div>
     <div id="handoff-preview" hidden>
@@ -52,7 +52,7 @@ export async function openHandoff() {
 
 async function make() {
   const mode = document.querySelector('input[name="ho-mode"]:checked')?.value ?? 'quick';
-  if (mode === 'smart' && !window.confirm(`Mode Pintar memakai token akun ${ho.info.label} (biasanya beberapa ribu token). Lanjutkan?`)) return;
+  if (mode === 'smart' && !window.confirm(`Mode Pintar memakai token akun ${ho.info.toLabel} (mesin aktif; biasanya beberapa ribu token). Lanjutkan?`)) return;
   ho.busy = true;
   render();
   document.querySelector(`input[name="ho-mode"][value="${mode}"]`).checked = true;

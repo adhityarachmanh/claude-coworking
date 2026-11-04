@@ -78,13 +78,11 @@ export function register(router) {
       if (body.mode !== 'smart') return { mode: 'quick', from, text: await quickHandoff({ hub, project, from }) };
       if (smartBusy) throw new HandoffError(409, 'Catatan handoff lain sedang dibuat. Tunggu sebentar.');
       smartBusy = true;
-      hub.mirrorPaused = from === 'opencode'; // its fork runs on the service like a terminal session: not mirrored
       try {
         console.log(`Handoff pintar: ${from} → ${hub.engine} (${project.name})`);
         return { mode: 'smart', from, text: await smartHandoff({ hub, project, from, claude, opencode }) };
       } finally {
         smartBusy = false;
-        hub.mirrorPaused = false;
       }
     } catch (err) {
       if (err instanceof HandoffError) throw Object.assign(err, { status: err.status });

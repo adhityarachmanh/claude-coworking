@@ -434,7 +434,7 @@ test('🔌 MCP without the terminal: OpenCode lists opencode.json servers; ＋ T
   await useEngine('opencode');
 });
 
-test('🔁 Lanjutkan dari mesin lain: Cepat (from the stored chat) and Pintar (the other engine\'s read-only fork), both ways', async () => {
+test('🔁 Lanjutkan dari mesin lain: Cepat from the stored chat, Pintar on the ACTIVE engine, both ways', async () => {
   const id = await projectId();
   await useEngine('claude');
   mark = seen.length;
@@ -449,13 +449,17 @@ test('🔁 Lanjutkan dari mesin lain: Cepat (from the stored chat) and Pintar (t
   assert.match(quick.text, /^🔁 Konteks dari Claude Code/);
   assert.match(quick.text, /halo dari claude untuk handoff/, "the other workspace's own messages");
   const smart = (await api(`/api/projects/${id}/handoff`, { mode: 'smart' })).body;
-  assert.match(smart.text, /Handoff palsu dari Claude \(sesi [0-9a-f-]{36}\)/, 'Claude wrote it on its own session (fork, plan)');
+  assert.match(smart.text, /Handoff palsu dari OpenCode/, 'the ACTIVE engine (OpenCode) writes it, not Claude');
 
+  // A real OpenCode turn, so the reverse handoff has a source chat of its own (this test can run alone).
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'halo dari opencode untuk handoff' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
   await useEngine('claude');
   const back = (await api(`/api/projects/${id}/handoff/info`)).body;
   assert.equal(back.from, 'opencode');
   assert.match((await api(`/api/projects/${id}/handoff`, { mode: 'quick' })).body.text, /^🔁 Konteks dari OpenCode/);
-  assert.match((await api(`/api/projects/${id}/handoff`, { mode: 'smart' })).body.text, /Handoff palsu dari OpenCode \(sesi ses_/);
+  assert.match((await api(`/api/projects/${id}/handoff`, { mode: 'smart' })).body.text, /Handoff palsu dari Claude/, 'the ACTIVE engine (Claude) writes it, not OpenCode');
   await useEngine('opencode');
 });
 
