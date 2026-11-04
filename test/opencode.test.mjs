@@ -50,6 +50,7 @@ before(async () => {
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'),
+      OFFICE_OPENCODE_CONFIG_HOME: path.join(TMP, 'xdg'),
       OFFICE_OPEN_DRY_RUN: '1',
       OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale'),
       OFFICE_CLAUDE_CHECK_DELAY_MS: '0',
@@ -721,6 +722,67 @@ test('OpenCode plugin manager: list, add, remove, update, and check through its 
 
   assert.equal((await api('/api/opencode-plugins/add', { spec: '--bad' })).status, 400);
   assert.equal((await api('/api/opencode-plugins/add', { spec: 'nama dengan spasi' })).status, 400);
+});
+
+test('OpenCode config editor: global/project read + save, JSON comments kept, backup, invalid and busy refused', async () => {
+  const id = await projectId();
+  const projectFile = path.join(TMP, 'projects', 'toko', 'opencode.json');
+  const globalFile = path.join(TMP, 'xdg', 'opencode', 'opencode.jsonc');
+  rmSync(projectFile, { force: true });
+  rmSync(globalFile, { force: true });
+
+  let r = await api('/api/opencode-config', { scope: 'project', projectId: id });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.exists, false);
+  assert.equal(r.body.path, projectFile);
+
+  r = await api('/api/opencode-config/save', {
+    scope: 'project',
+    projectId: id,
+    mode: 'form',
+    form: {
+      model: 'anthropic/claude-opus-4',
+      smallModel: '',
+      agents: [{ name: 'reviewer', mode: 'subagent', model: 'openai/gpt-5', description: 'Review', prompt: 'Be strict' }],
+    },
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.config.model, 'anthropic/claude-opus-4');
+  assert.deepEqual(r.body.agents, [{ name: 'reviewer', mode: 'subagent', model: 'openai/gpt-5', description: 'Review', prompt: 'Be strict' }]);
+  assert.ok(r.body.backup === null, 'a new file has no backup');
+  assert.equal(JSON.parse(readFileSync(projectFile, 'utf8')).agent.reviewer.system, 'Be strict');
+
+  mkdirSync(path.dirname(globalFile), { recursive: true });
+  writeFileSync(globalFile, '{\n  // komentar global\n  "model": "lama",\n}\n');
+  r = await api('/api/opencode-config', { scope: 'global' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.path, globalFile);
+  r = await api('/api/opencode-config', { scope: 'global' });
+  assert.equal(r.body.format, 'jsonc');
+  assert.equal(r.body.config.model, 'lama');
+  r = await api('/api/opencode-config/save', { scope: 'global', mode: 'json', text: '{\n  // komentar global\n  "model": "baru",\n}\n' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(readFileSync(globalFile, 'utf8'), /komentar global/);
+  assert.match(r.body.backup, /opencode\.jsonc\.bak-/);
+
+  const before = readFileSync(projectFile, 'utf8');
+  assert.equal((await api('/api/opencode-config/save', { scope: 'project', projectId: id, mode: 'json', text: '{broken' })).status, 400);
+  assert.equal(readFileSync(projectFile, 'utf8'), before, 'a refused save changes nothing');
+  assert.equal((await api('/api/opencode-config', { scope: 'nope' })).status, 400);
+  assert.equal((await api('/api/opencode-config', { scope: 'project', projectId: 'nope' })).status, 404);
+
+  await useEngine('opencode');
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'lama sekali' });
+  await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch.streaming === true);
+  assert.equal((await api('/api/opencode-config/save', { scope: 'project', projectId: id, mode: 'form', form: { model: 'x' } })).status, 409);
+  await api(`/api/projects/${id}/stop`);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  const restarted = await api('/api/opencode-config/save', { scope: 'project', projectId: id, mode: 'form', form: { model: 'anthropic/claude-opus-4' } });
+  assert.equal(restarted.status, 200, JSON.stringify(restarted.body));
+  assert.equal(restarted.body.restarted, 1, 'the idle OpenCode process is let go for the next turn');
+  rmSync(projectFile, { force: true });
+  rmSync(globalFile, { force: true });
 });
 
 test('Effort Auto: one classification per prompt, manual stays manual, queue items keep their level', async () => {

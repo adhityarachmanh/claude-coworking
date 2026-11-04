@@ -9,7 +9,7 @@ Status: **Fase 1 diimplementasikan** · Penulis: Tech Lead · 2026-11-03
 > - **Start dingin:** proses yang mati saat handshake dicoba ulang sekali dengan antrean tetap utuh.
 > - **Test:** `test/opencode.test.mjs` dengan `test-support/fake-acp.mjs`, termasuk simulasi start dingin. Uji end-to-end manual dengan OpenCode asli (`opencode-go/beam-free`) lulus: kartu izin Write, file dibuat, token dan biaya tercatat.
 Lingkup: satu project bisa memakai **OpenCode** (lewat Agent Client Protocol, `opencode.exe acp`) sebagai pengganti Claude Code. Chat, kantor pixel-art, kartu izin, Stop/Esc, antrean, laporan token, dan pemulihan setelah restart tetap bekerja dengan UI yang sama.
-Batasan tetap: Node ≥ 20 ESM, **nol dependensi npm**, Windows sebagai platform utama, frontend vanilla. **Config OpenCode milik user tidak pernah diubah.** Semua perintah punya timeout (maksimal 120 detik), tanpa loop tunggu tanpa batas, dan `windowsHide: true`.
+Batasan tetap: Node ≥ 20 ESM, **nol dependensi npm**, Windows sebagai platform utama, frontend vanilla. **Config OpenCode milik user tidak diubah oleh operasi biasa**; satu-satunya pengecualian adalah editor eksplisit **⚙ → Sistem → Config & Agent OpenCode**, yang memvalidasi, membuat backup `.bak-<waktu>`, dan hanya berjalan dari laptop. Semua perintah punya timeout (maksimal 120 detik), tanpa loop tunggu tanpa batas, dan `windowsHide: true`.
 
 Fakta protokol di dokumen ini berasal dari probe OpenCode v2.0.18 (lihat §0.1). Bagian yang hanya bersumber dari spesifikasi ACP ditandai *(spek)* dan harus diverifikasi lewat `test-support/opencode-contract.mjs`.
 

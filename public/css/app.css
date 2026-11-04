@@ -1044,6 +1044,28 @@ body.read-only #composer-hint { color: var(--ask); }
 .oc-plugin-row button { flex: none; font-size: var(--fs-sm); padding: 3px 9px; }
 .oc-plugin-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .oc-plugin-add input { flex: 1 1 180px; min-width: 0; }
+.oc-config { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.oc-config p { margin: 0; }
+.modal-card.oc-config-card { max-width: 760px; height: min(800px, calc(100vh - 32px)); display: flex; flex-direction: column; }
+.oc-config-kicker { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+.oc-config-tabs { display: flex; gap: 4px; margin: 0 0 8px; overflow-x: auto; scrollbar-width: thin; }
+.oc-tab { flex: none; padding: 6px 10px; border: 1px solid transparent; border-radius: var(--r-md); background: none; color: var(--muted); font-family: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.oc-tab:hover { color: var(--text); background: var(--surface-2); }
+.oc-tab.on { color: var(--accent-2); background: var(--accent-soft); border-color: var(--accent-line); }
+.oc-config-path { margin: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: var(--fs-xs); }
+.oc-form-panel, .oc-json-panel { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
+.oc-form-panel { display: flex; flex-direction: column; gap: 10px; }
+.oc-form-grid, .oc-agent-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.oc-agents-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px; border-top: 1px solid var(--border); }
+.oc-agent-list { display: flex; flex-direction: column; gap: 8px; }
+.oc-agent { display: flex; flex-direction: column; gap: 7px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); }
+.oc-agent-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.oc-agent-head button { font-size: var(--fs-sm); padding: 2px 7px; }
+.oc-field-wide { grid-column: 1 / -1; }
+.oc-json-panel { display: flex; flex-direction: column; gap: 8px; }
+.oc-json-panel .oc-field { flex: 1; min-height: 0; }
+#oc-json-text { flex: 1; min-height: 280px; resize: vertical; font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.45; }
+.oc-config-actions { justify-content: flex-end; margin-top: 8px; }
 .danger-text { color: var(--err); }
 .oc-field { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-sm); }
 .oc-field input, .oc-field select, #oc-provider { width: 100%; min-width: 0; }
@@ -1311,6 +1333,10 @@ body.read-only #composer-hint { color: var(--ask); }
   .settings-tabs { display: none; }
   .settings-body { display: flex; flex: none; flex-direction: column; gap: 8px; overflow: visible; padding: 0; }
   .settings-panel, .settings-panel:not(.on) { display: flex; }
+  .modal-card.oc-config-card { height: 92dvh; max-height: 92dvh; }
+  .oc-form-grid, .oc-agent-grid { grid-template-columns: minmax(0, 1fr); }
+  .oc-config-actions { position: sticky; bottom: 0; padding-top: 6px; background: var(--surface); }
+  #oc-json-text, .oc-agent input, .oc-agent textarea, #oc-model, #oc-small-model { font-size: var(--fs-input-touch); }
   .modal-card.project-card { height: 85dvh; padding-bottom: env(safe-area-inset-bottom); }
   /* --fs-input-touch (16px): iOS zooms into any smaller input on focus */
   .side-head input, .add-project input, .login-code input,

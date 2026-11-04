@@ -11,6 +11,7 @@ import * as git from './git.js';
 import * as memory from './memory.js';
 import * as misc from './misc.js';
 import * as opencodeCheck from './opencode-check.js';
+import * as opencodeConfig from './opencode-config.js';
 import * as permissions from './permissions.js';
 import * as projects from './projects.js';
 import * as push from './push.js';
@@ -46,6 +47,7 @@ export function buildRouter() {
     spotify.register,
     claudeCheck.register,
     opencodeCheck.register,
+    opencodeConfig.register,
     misc.register,
   ])
     register(router);

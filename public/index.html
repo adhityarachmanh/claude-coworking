@@ -785,6 +785,11 @@
               <p id="oc-plugin-status" class="muted small" role="status" aria-live="polite"></p>
               <pre id="oc-plugin-output" class="cc-output" hidden></pre>
             </div>
+            <div class="oc-config" role="group" aria-labelledby="oc-config-title">
+              <b id="oc-config-title">🧩 Config &amp; Agent OpenCode</b>
+              <p class="muted small">Ubah model, small model, dan agent di <code>opencode.json</code> global atau project. File lama dibackup otomatis; hanya dari laptop.</p>
+              <button type="button" id="oc-config-open" class="ghost">✏️ Buka editor config</button>
+            </div>
           </section>
           <hr id="oc-section-sep" hidden />
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
@@ -792,6 +797,43 @@
           <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- 🧩 OpenCode config/agent editor (features/opencode-config.js): global or the active project; laptop only -->
+    <div id="oc-config-modal" class="modal" hidden>
+      <div class="modal-card oc-config-card" role="dialog" aria-modal="true" aria-labelledby="oc-config-modal-title" aria-describedby="oc-config-note">
+        <div class="modal-head"><b id="oc-config-modal-title">🧩 Config &amp; Agent OpenCode</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="oc-config-kicker">
+          <div class="oc-config-tabs" role="tablist" aria-label="Cakupan config">
+            <button type="button" id="oc-scope-project" class="oc-tab" role="tab" aria-selected="true">Project ini</button>
+            <button type="button" id="oc-scope-global" class="oc-tab" role="tab" aria-selected="false">Global</button>
+          </div>
+          <p id="oc-config-path" class="muted small oc-config-path" role="status" aria-live="polite">Memuat config…</p>
+        </div>
+        <div class="oc-config-tabs" role="tablist" aria-label="Mode editor">
+          <button type="button" id="oc-mode-form" class="oc-tab on" role="tab" aria-selected="true">Form</button>
+          <button type="button" id="oc-mode-json" class="oc-tab" role="tab" aria-selected="false">JSON</button>
+        </div>
+        <div id="oc-form-panel" class="oc-form-panel">
+          <div class="oc-form-grid">
+            <label class="oc-field"><span>Model</span><input id="oc-model" type="text" autocomplete="off" spellcheck="false" maxlength="200" placeholder="provider/model" /></label>
+            <label class="oc-field"><span>Small model</span><input id="oc-small-model" type="text" autocomplete="off" spellcheck="false" maxlength="200" placeholder="opsional" /></label>
+          </div>
+          <div class="oc-agents-head"><b>Agent</b><button type="button" id="oc-agent-add" class="ghost">＋ Agent</button></div>
+          <div id="oc-agent-list" class="oc-agent-list"></div>
+          <p class="muted small">Kosongkan prompt untuk menghapusnya. Agent bawaan OpenCode tidak perlu ditambahkan di sini.</p>
+        </div>
+        <div id="oc-json-panel" class="oc-json-panel" hidden>
+          <label class="oc-field"><span>Isi file</span><textarea id="oc-json-text" rows="16" spellcheck="false" aria-label="Isi config OpenCode"></textarea></label>
+          <p class="muted small">Tab JSON menulis teks apa adanya, jadi komentar JSONC tetap. Form yang disimpan menulis JSON biasa.</p>
+        </div>
+        <p id="oc-config-error" class="field-error" role="alert"></p>
+        <p id="oc-config-note" class="muted small">File lama disimpan sebagai <code>.bak-&lt;waktu&gt;</code> sebelum ditimpa.</p>
+        <div class="backup-actions oc-config-actions">
+          <button type="button" id="oc-config-reload" class="ghost">↻ Muat ulang</button>
+          <button type="button" id="oc-config-save" class="primary">Simpan</button>
+        </div>
       </div>
     </div>
 

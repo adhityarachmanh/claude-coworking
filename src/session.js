@@ -161,6 +161,21 @@ export class SessionManager {
   }
 
   /**
+   * opencode.json changed: idle OpenCode processes are let go so the next turn reads the new agents/config. Busy
+   * ones get a pending restart (the caller normally refuses while a turn runs). Returns how many were touched.
+   */
+  openCodeConfigChanged(projectId = null) {
+    let changed = 0;
+    for (const session of this.sessions.values()) {
+      if (session.engine !== 'opencode' || (projectId && session.id !== projectId)) continue;
+      changed++;
+      if (session.busy) session.restartPending = true;
+      else session.closeChild();
+    }
+    return changed;
+  }
+
+  /**
    * Asks Claude Code what it offers — the models of its /model picker and the slash commands with
    * their descriptions — without a model call: a short-lived process answers `initialize` and exits.
    */

@@ -105,7 +105,7 @@ test('routes: 🧩 /api/claude-check/* (manual run, settings) never over plain W
 
 test('routes: 🧩 /api/opencode-check/* (manual run, settings) laptop only, never over plain WiFi; small bodies', () => {
   const routes = router.routes.filter((r) => r.pattern.startsWith('/api/opencode-check/'));
-  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/opencode-check/run', '/api/opencode-check/settings']);
+  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/opencode-check/restart-service', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update']);
   const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
   const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
   for (const r of routes) {
@@ -113,6 +113,21 @@ test('routes: 🧩 /api/opencode-check/* (manual run, settings) laptop only, nev
     assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
     assert.ok(!WIFI_READS.has(r.pattern));
     assert.ok(r.maxBody > 0 && r.maxBody <= 1024, `${r.pattern} maxBody ${r.maxBody}`);
+    assert.equal(r.noToken, false);
+    assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
+  }
+});
+
+test('routes: 🧩 OpenCode config editor is laptop only, with a bounded JSON body', () => {
+  const routes = router.routes.filter((r) => r.pattern.startsWith('/api/opencode-config'));
+  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/opencode-config', '/api/opencode-config/save']);
+  const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  for (const r of routes) {
+    assert.equal(r.method, 'POST');
+    assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
+    assert.ok(!WIFI_READS.has(r.pattern));
+    assert.ok(r.maxBody > 0 && r.maxBody <= 1024 * 1024, `${r.pattern} maxBody ${r.maxBody}`);
     assert.equal(r.noToken, false);
     assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
   }

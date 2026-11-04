@@ -155,6 +155,7 @@ function renderSection() {
   $('#oc-auto').disabled = !laptop;
   $('#oc-update').disabled = blocked;
   $('#oc-restart').disabled = blocked;
+  $('#oc-config-open').disabled = !laptop;
   for (const id of ['#oc-plugin-spec', '#oc-plugin-add', '#oc-plugin-check', '#oc-plugin-update-all']) {
     const el = $(id);
     if (el) el.disabled = !laptop || oc.busy;

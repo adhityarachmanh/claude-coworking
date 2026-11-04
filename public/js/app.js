@@ -21,6 +21,7 @@ import { initChanges } from './features/changes.js';
 import { initChat } from './features/chat.js';
 import { initClaudeCheck } from './features/claude-check.js';
 import { initOpenCodeCheck } from './features/opencode-check.js';
+import { initOpenCodeConfig } from './features/opencode-config.js';
 import { initComposerControls, initComposerInput } from './features/composer.js';
 import { initConversations } from './features/conversations.js';
 import { initDashboard } from './features/dashboard.js';
@@ -93,6 +94,7 @@ initBackup(); // after initSettings: its #btn-settings listener runs after the d
 initBackupAuto(); // ⏰ Backup otomatis in the same ⚙ section
 initClaudeCheck(); // 🧩 Claude Code update detector: banner + ⚙ section
 initOpenCodeCheck(); // 🧩 the same for OpenCode (only shown when it is installed)
+initOpenCodeConfig(); // 🧩 OpenCode config/agent editor (laptop only)
 initNotify();
 initPush(); // 📱 Notifikasi HP (push): https only; the ?p=&ap= deep link runs after the first snapshot
 initQuota(); // after initSettings: refreshes its ⚙ fields when the dialog opens
