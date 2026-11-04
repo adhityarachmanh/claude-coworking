@@ -4,11 +4,13 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
+import { guardCap } from './engine.js';
 
 const ext = { tab: 'plugins', project: null, plugins: null, filter: '', agents: [], editing: null, hooks: [] };
 const MAX_LIST = 60;
 
 export function openExtensions(tab = 'plugins') {
+  if (guardCap('extensions')) return;
   if (state.readOnly) return toast('Ekstensi hanya bisa dibuka dari laptop atau lewat Tailscale.', 'warn');
   ext.project = state.active && state.active !== DEMO_ID ? state.active : null;
   ext.tab = tab;

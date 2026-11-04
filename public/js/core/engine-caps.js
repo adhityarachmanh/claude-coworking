@@ -18,6 +18,9 @@ export const CLAUDE_CAPS = Object.freeze({
   bgTasks: true,
   askQuestion: true,
   exportSession: true,
+  permissions: true,
+  extensions: true,
+  search: true,
   mirror: true,
   modes: Object.freeze([...ALL_MODES]),
 });
@@ -32,8 +35,22 @@ const CAP_FEATURE = {
   mcp: 'pengelolaan server MCP dari sini (atur di config OpenCode)',
   bgTasks: 'tugas latar',
   askQuestion: 'pertanyaan/rencana interaktif',
-  exportSession: 'export sesi lengkap (pakai Export percakapan)',
+  exportSession: 'export sesi lengkap Claude Code (pakai Export percakapan)',
+  permissions: 'aturan izin Claude Code',
+  extensions: 'pengelolaan ekstensi Claude Code',
+  search: 'pencarian percakapan Claude Code',
   mirror: 'mirror sesi terminal',
+};
+
+/**
+ * Claude-only surfaces get a message that says where the same thing lives for the active engine.
+ * No trailing period: callers (guardCap) add one.
+ */
+const CAP_REASON = {
+  permissions: 'Aturan izin Claude Code hanya tersedia saat mesin Claude Code aktif; OpenCode memakai aturan di opencode.json',
+  extensions: 'Ekstensi Claude Code hanya tersedia saat mesin Claude Code aktif; OpenCode memakai plugin dan agent di opencode.json',
+  search: 'Pencarian percakapan Claude Code hanya tersedia saat mesin Claude Code aktif',
+  exportSession: 'Export sesi lengkap Claude Code hanya tersedia saat mesin Claude Code aktif; pakai Export percakapan atau export JSON di Riwayat Sesi',
 };
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -88,12 +105,12 @@ export function engineChoices(config) {
   return list.length > 1 ? list : [];
 }
 
-/** Why a control is off: "OpenCode belum mendukung Rewind (Fase 1)". */
+/** Why a control is off: a Claude-only feature gets its own hint, other caps the generic reason. */
 export function capReason(cap, engine) {
-  return `${engineLabel(engine)} belum mendukung ${CAP_FEATURE[cap] ?? cap} (Fase 1)`;
+  return CAP_REASON[cap] ?? `${engineLabel(engine)} belum mendukung ${CAP_FEATURE[cap] ?? cap}`;
 }
 
-/** A stored mode the engine doesn't offer (dontAsk on OpenCode) is shown and used as 🛡️ manual, as the server does. */
+/** A stored mode the engine doesn't offer (e.g. an old auto/acceptEdits on OpenCode) is shown as the first mode it does offer. */
 export function modeFor(mode, caps) {
   const modes = caps?.modes ?? CLAUDE_CAPS.modes;
   return modes.includes(mode) ? mode : modes.includes('manual') ? 'manual' : modes[0];

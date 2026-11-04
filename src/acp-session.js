@@ -30,19 +30,26 @@ export const REWINDING_MESSAGE = 'Rewind sedang berjalan. Tunggu sebentar, lalu 
  * Rewind = OpenCode's session.revert (conversation, with or without its file snapshots; no "code only").
  * Questions = OpenCode's `question` tool through ACP form elicitation; plan = our own card after a 📋 plan turn.
  * Long shells: found among the service's shells (src/opencode-shells.js) for live output, the stuck detector,
- * ⧗ Pindah ke latar, stop and the /tasks panel. /mcp: live status + OAuth login through the service (src/opencode-mcp.js).
- * Not (yet): full session export.
+ * ⧗ Pindah ke latar, stop and the /tasks panel. /mcp: configured servers + live status/OAuth through the service
+ * (src/opencode-mcp.js).
+ * Not (yet): full session export, Claude transcript search, and Claude Code's permission/extension dialogs. Those
+ * are Claude-only surfaces: the UI hides them and their routes refuse an OpenCode workspace.
  */
 export const OPENCODE_CAPS = Object.freeze({
   effort: true,
   team: true,
   rewind: true,
-  mcp: true, // the configured servers + ＋ Tambah (opencode mcp add); live status/login stay inside OpenCode
+  mcp: true, // configured servers + ＋ Tambah (opencode mcp add); live status/login through the service
   bgTasks: true, // the service's shells (src/opencode-shells.js): ⧗ Tugas latar, output, stop, Ctrl+B
   askQuestion: true,
-  exportSession: false,
+  exportSession: false, // Claude transcripts only; OpenCode has its own JSON export in Riwayat Sesi
+  permissions: false, // Claude settings files; OpenCode uses opencode.json
+  extensions: false, // Claude plugins/agents/hooks; OpenCode manages its own
+  search: false, // src/conversation.js reads Claude transcripts only
   mirror: true, // sessions opened in a terminal, from the shared background service (src/opencode-mirror.js)
-  modes: Object.freeze(['manual', 'acceptEdits', 'auto', 'plan']),
+  // The two native OpenCode modes: Build (normal work) and Plan (read-only planning). The app maps Build to its
+  // manual permission mode, so permission cards still follow the app's "ask" rules.
+  modes: Object.freeze(['manual', 'plan']),
 });
 
 /**
@@ -518,7 +525,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.hub.office(this.id, { kind: 'ask_done', role, allowed: Boolean(decision.allow) });
       if (decision.cancelled) return;
       if (decision.allow) {
-        const mode = PERMISSION_MODES.includes(decision.mode) && decision.mode !== 'plan' ? decision.mode : 'manual';
+        const mode = this.engine === 'opencode' ? 'manual' : PERMISSION_MODES.includes(decision.mode) && decision.mode !== 'plan' ? decision.mode : 'manual';
         this.hub.updateSettings(this.id, { mode });
         this.prompt(PLAN_APPROVED_PROMPT); // syncSettings switches the agent (or the process) before it is sent
       } else if (decision.message?.trim()) this.prompt(`Revisi rencananya: ${decision.message.trim()}`);

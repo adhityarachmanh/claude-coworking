@@ -13,7 +13,8 @@ import { withProject, withSession } from './project.js';
 const ghBin = findGh();
 
 /** Refuses a read-only (plain WiFi) client; `laptop` also refuses Tailscale phones. Errors → their status. */
-const guard = (fn, { laptop = false } = {}) => async (ctx, req, res, params, body) => {
+const guard = (fn, { laptop = false, claude = false } = {}) => async (ctx, req, res, params, body) => {
+  if (claude && (ctx.hub?.engine ?? 'claude') !== 'claude') return json(res, 409, { error: 'Ekstensi hanya tersedia saat mesin Claude Code aktif.' });
   if (laptop ? !ctx.isLocal(req) : ctx.isReadOnly?.(req) !== false) return json(res, 403, { error: laptop ? 'Hanya dari laptop.' : 'Hanya dari laptop atau lewat Tailscale.' });
   try {
     return json(res, 200, await fn(ctx, req, res, params, body ?? {}));
@@ -32,31 +33,41 @@ function userScopeFromLaptop(ctx, req, body) {
 export function register(router) {
   // plugins (Claude Code)
   // force (a fresh `claude plugin list --available`, up to 2 min): laptop only, like the other refresh endpoints.
-  router.post('/api/claude/plugins', guard(({ claude, isLocal, allowForce }, req, res, params, body) => listPlugins(claude, { force: isLocal(req) && allowForce(req, body) })));
-  router.post('/api/claude/plugins/action', guard(async ({ claude, sessions }, req, res, params, body) => {
-    const result = await pluginAction(claude, { action: String(body.action ?? ''), id: String(body.id ?? ''), scope: body.scope, acceptCommand: body.acceptCommand ?? null });
-    if (result.ok) {
-      console.log(`Plugin ${body.action}: ${String(body.id).slice(0, 120)}`);
-      sessions.accountChanged(); // idle Claude Code processes restart with the new plugin set; busy ones after their turn
-    }
-    return result;
-  }, { laptop: true }), { maxBody: 4096 });
+  router.post(
+    '/api/claude/plugins',
+    guard(({ claude, isLocal, allowForce }, req, res, params, body) => listPlugins(claude, { force: isLocal(req) && allowForce(req, body) }), { claude: true }),
+  );
+  router.post(
+    '/api/claude/plugins/action',
+    guard(
+      async ({ claude, sessions }, req, res, params, body) => {
+        const result = await pluginAction(claude, { action: String(body.action ?? ''), id: String(body.id ?? ''), scope: body.scope, acceptCommand: body.acceptCommand ?? null });
+        if (result.ok) {
+          console.log(`Plugin ${body.action}: ${String(body.id).slice(0, 120)}`);
+          sessions.accountChanged(); // idle Claude Code processes restart with the new plugin set; busy ones after their turn
+        }
+        return result;
+      },
+      { laptop: true, claude: true },
+    ),
+    { maxBody: 4096 },
+  );
 
   // your own subagents (.claude/agents) and hooks (read-only)
-  router.post('/api/projects/:id/agents', withProject(guard((ctx, req, res, { project }) => ({ agents: listAgents(project.path) }))));
+  router.post('/api/projects/:id/agents', withProject(guard((ctx, req, res, { project }) => ({ agents: listAgents(project.path) }), { claude: true })));
   router.post('/api/projects/:id/agents/save', withSession(guard((ctx, req, res, { project, session }, body) => {
     userScopeFromLaptop(ctx, req, body);
     const saved = saveAgent(project.path, body);
     session.reloadSettings?.(); // read at the next start
     return saved;
-  })), { maxBody: 256 * 1024 });
+  }, { claude: true })), { maxBody: 256 * 1024 });
   router.post('/api/projects/:id/agents/delete', withSession(guard((ctx, req, res, { project, session }, body) => {
     userScopeFromLaptop(ctx, req, body);
     const r = deleteAgent(project.path, body);
     session.reloadSettings?.();
     return r;
-  })));
-  router.post('/api/projects/:id/hooks', withProject(guard((ctx, req, res, { project }) => ({ hooks: listHooks(project.path) }))));
+  }, { claude: true })));
+  router.post('/api/projects/:id/hooks', withProject(guard((ctx, req, res, { project }) => ({ hooks: listHooks(project.path) }), { claude: true })));
 
   // 🔁 Lanjutkan dari mesin lain: the other workspace's context as an opening message (src/handoff.js)
   router.post('/api/projects/:id/handoff/info', withProject(guard(({ hub }, req, res, { project }) => handoffInfo(hub, project, otherEngine(hub.engine)))));

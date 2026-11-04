@@ -32,7 +32,9 @@ export function fillApproval(node, msg) {
     // The CLI's plan dialog: approve and choose how edits are handled, or keep planning with feedback.
     body = `<div class="plan md">${renderMarkdown(input.plan ?? '')}</div><input class="feedback" placeholder="Catatan revisi (untuk Minta revisi)" aria-label="Catatan revisi rencana">`;
     actions =
-      '<button class="primary" data-act="allow" data-mode="acceptEdits" title="Mode berubah ke ✏️ Auto-edit file">✓ Setujui, auto-edit</button><button data-act="allow" data-mode="manual" title="Mode berubah ke 🛡️ Tanya dulu">✓ Setujui, tanya tiap edit</button><button data-act="deny">Minta revisi</button>';
+      state.config?.engine === 'opencode'
+        ? '<button class="primary" data-act="allow" data-mode="manual" title="Lanjut dengan Build">✓ Setujui, Build</button><button data-act="deny">Minta revisi</button>'
+        : '<button class="primary" data-act="allow" data-mode="acceptEdits" title="Mode berubah ke ✏️ Auto-edit file">✓ Setujui, auto-edit</button><button data-act="allow" data-mode="manual" title="Mode berubah ke 🛡️ Tanya dulu">✓ Setujui, tanya tiap edit</button><button data-act="deny">Minta revisi</button>';
   } else {
     if (input.command) body = `<pre>${escapeHtml(input.command)}</pre>${input.description ? `<p class="muted">${escapeHtml(input.description)}</p>` : ''}`;
     else if (input.content != null) body = `<p class="path">${escapeHtml(input.file_path)}</p><pre>${escapeHtml(input.content)}</pre>`;

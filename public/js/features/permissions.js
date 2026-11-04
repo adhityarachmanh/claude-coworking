@@ -5,6 +5,7 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
+import { guardCap } from './engine.js';
 
 const perm = { project: null, scopes: [], busy: false };
 const LISTS = [
@@ -22,6 +23,7 @@ const APPLIED = {
 };
 
 export function openPermissions() {
+  if (guardCap('permissions')) return;
   if (state.active === DEMO_ID) return toast('Demo tidak punya aturan izin. Pilih project sungguhan.');
   perm.project = state.active;
   const name = state.projects.find((p) => p.id === perm.project)?.name ?? '';

@@ -264,3 +264,25 @@ test('👤 OpenCode provider login/logout from a phone raises the same account a
   await call('/api/opencode/logout', { ...ctx, device: null }, LAPTOP, { credentialID: 'cred_1' });
   assert.equal(alerts.length, 3, 'from the laptop itself: no alert');
 });
+
+test('Claude-only surfaces are closed while OpenCode is the app engine', async () => {
+  const { ctx } = projectCtx();
+  ctx.hub.engine = 'opencode';
+  const requests = [
+    ['/api/projects/:id/permissions', {}],
+    ['/api/projects/:id/permissions-edit', {}],
+    ['/api/projects/:id/agents', {}],
+    ['/api/projects/:id/agents/save', {}],
+    ['/api/projects/:id/agents/delete', {}],
+    ['/api/projects/:id/hooks', {}],
+    ['/api/projects/:id/search', { q: 'abc' }],
+    ['/api/projects/:id/export-session', { sessionId: '00000000-0000-0000-0000-000000000000' }],
+    ['/api/claude/plugins', {}],
+    ['/api/claude/plugins/action', {}],
+  ];
+  for (const [pattern, body] of requests) {
+    const res = await call(pattern, ctx, LAPTOP, body, { id: 'p1' });
+    assert.equal(res.status, 409, `${pattern} is Claude-only`);
+    assert.match(res.body.error, /Claude Code/, `${pattern} says why`);
+  }
+});

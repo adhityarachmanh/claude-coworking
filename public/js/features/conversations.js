@@ -8,6 +8,7 @@ import { ago } from '../core/format.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { saveBlob } from '../core/util.js';
 import { closeModal, openModal } from '../ui/modals.js';
+import { guardCap } from './engine.js';
 import { selectProject } from './picker.js';
 import { resumeSession } from './sessions.js';
 
@@ -56,6 +57,7 @@ export async function exportSessionMarkdown(projectId, sessionId, { tools = expo
 
 /** `/export [tools]`, ⋯ menu, palette: the session the chat is continuing. */
 export function exportActiveSession(arg = '') {
+  if (guardCap('exportSession')) return;
   const st = state.statuses[state.active] ?? {};
   const tools = /\btools?\b|\balat\b/i.test(arg) || (!arg.trim() && exportTools());
   return exportSessionMarkdown(state.active, st.sessionId, { tools });
@@ -64,6 +66,7 @@ export function exportActiveSession(arg = '') {
 // ---------- search ----------
 
 export function openSearch(query = '') {
+  if (guardCap('search')) return;
   if (!state.active || state.active === DEMO_ID) return toast('Pilih project dulu untuk mencari percakapan.');
   finder.project = state.active;
   $('#search-project').textContent = `· ${projectName(state.active)}`;

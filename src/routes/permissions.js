@@ -3,11 +3,14 @@
 // `permissions-edit` changes what Claude Code may do unasked: laptop only (LOCAL_ONLY_ACTION in server.js).
 import { PermissionError, editPermission, readPermissions } from '../permissions.js';
 import { appliedOf, json } from './http.js';
-import { withProject } from './project.js';
+import { claudeOnly, withProject } from './project.js';
+
+/** The permission dialog edits Claude Code settings; OpenCode has its own rules in opencode.json. */
+const withClaudeProject = (fn) => withProject(claudeOnly(fn, 'Aturan izin'));
 
 export function register(router) {
-  router.post('/api/projects/:id/permissions', withProject((ctx, req, res, { project }) => permissionTool(res, async () => json(res, 200, await readPermissions(project.path)))));
-  router.post('/api/projects/:id/permissions-edit', withProject(({ hub, sessions }, req, res, { project }, body) =>
+  router.post('/api/projects/:id/permissions', withClaudeProject((ctx, req, res, { project }) => permissionTool(res, async () => json(res, 200, await readPermissions(project.path)))));
+  router.post('/api/projects/:id/permissions-edit', withClaudeProject(({ hub, sessions }, req, res, { project }, body) =>
     permissionTool(res, async () => {
       const edit = { scope: String(body.scope ?? ''), action: String(body.action ?? ''), list: String(body.list ?? ''), rule: body.rule, to: body.to == null ? undefined : String(body.to) };
       const result = await editPermission(project.path, edit);

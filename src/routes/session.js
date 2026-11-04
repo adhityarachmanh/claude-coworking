@@ -28,7 +28,7 @@ async function rewindAnswer(res, promise) {
     return json(res, status, { error: err.message });
   }
 }
-import { withSession } from './project.js';
+import { claudeOnly, withProject, withSession } from './project.js';
 
 const ok = (res) => json(res, 200, { ok: true });
 
@@ -141,16 +141,14 @@ export function register(router) {
     return rewindAnswer(res, session.rewind(String(body.uuid ?? ''), options));
   }));
   // 🔎 Cari percakapan / ⬇ Export .md: read-only, bounded reads of this project's transcripts (src/conversation.js).
-  router.post('/api/projects/:id/search', withSession(({ hub }, req, res, { project }, body) =>
+  router.post('/api/projects/:id/search', withProject(claudeOnly(({ hub }, req, res, { project }, body) =>
     conversation(res, () => {
       // all: every listed project, the active one first.
       const scope = body.all === true ? [project, ...[...hub.projects.values()].filter((p) => p.id !== project.id && p.id !== DEMO_ID && p.path)] : [project];
       return json(res, 200, searchSessions(scope, body.q, { limit: body.limit }));
-    }),
-  ));
-  router.post('/api/projects/:id/export-session', withSession((ctx, req, res, { project }, body) =>
-    conversation(res, () => json(res, 200, exportSession(project.path, body.sessionId, { tools: body.tools === true, projectName: project.name }))),
-  ));
+    }), 'Pencarian percakapan')));
+  router.post('/api/projects/:id/export-session', withProject(claudeOnly((ctx, req, res, { project }, body) =>
+    conversation(res, () => json(res, 200, exportSession(project.path, body.sessionId, { tools: body.tools === true, projectName: project.name }))), 'Export sesi')));
 }
 
 /** A ConversationError (bad query, unknown session, too large) goes back with its own status. */

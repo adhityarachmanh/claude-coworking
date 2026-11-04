@@ -12,6 +12,7 @@ import { LOCAL_COMMANDS, localCommand } from './commands.js';
 import { fillComposer } from './composer.js';
 import { exportActiveSession, openSearch } from './conversations.js';
 import { openDashboard } from './dashboard.js';
+import { capBlocked } from './engine.js';
 import { openFile } from './file-viewer.js';
 import { openMcp } from './mcp.js';
 import { openNotifySettings } from './notify.js';
@@ -165,9 +166,9 @@ function buildItems() {
 
   add({ id: 'chat:new', group: 'chat', icon: '＋', label: 'Sesi baru', hint: 'Mulai percakapan baru', kbd: '/clear', disabled: needProject ?? ro, keywords: 'new clear reset', run: () => localCommand('/clear') });
   add({ id: 'chat:stop', group: 'chat', icon: '■', label: 'Hentikan giliran', hint: 'Stop yang sedang berjalan', kbd: 'Esc', disabled: needProject ?? ro ?? (st.busy || st.queue ? null : 'Tidak ada yang sedang berjalan'), keywords: 'stop interrupt batal', run: click('#btn-stop') });
-  add({ id: 'chat:export-session', group: 'chat', icon: '⬇', label: 'Export sesi ke Markdown (.md)', hint: 'Dari transcript Claude Code', kbd: '/export', disabled: needProject ?? (st.sessionId ? null : 'Belum ada sesi'), keywords: 'export download unduh markdown', run: () => exportActiveSession() });
+  add({ id: 'chat:export-session', group: 'chat', icon: '⬇', label: 'Export sesi ke Markdown (.md)', hint: 'Dari transcript Claude Code', kbd: '/export', disabled: needProject ?? capBlocked('exportSession') ?? (st.sessionId ? null : 'Belum ada sesi'), keywords: 'export download unduh markdown', run: () => exportActiveSession() });
   add({ id: 'chat:export-chat', group: 'chat', icon: '⬇', label: 'Export chat yang tampil (.md)', disabled: (state.chats[state.active] ?? []).length ? null : 'Belum ada percakapan', keywords: 'export download unduh', run: click('#more-menu [data-more="export"]') });
-  add({ id: 'chat:search', group: 'chat', icon: '🔎', label: 'Cari percakapan', hint: 'Di semua sesi project', kbd: '/search', disabled: needProject, keywords: 'search find cari riwayat transcript', run: () => openSearch() });
+  add({ id: 'chat:search', group: 'chat', icon: '🔎', label: 'Cari percakapan', hint: 'Di semua sesi project', kbd: '/search', disabled: needProject ?? capBlocked('search'), keywords: 'search find cari riwayat transcript', run: () => openSearch() });
   const noVoice = state.active === DEMO_ID ? 'Input suara tidak tersedia di demo' : !window.isSecureContext ? 'Butuh HTTPS atau localhost' : 'Browser ini tidak mendukung input suara';
   add({ id: 'chat:voice', group: 'chat', icon: '🎤', label: voiceRecording() ? 'Hentikan input suara' : 'Input suara', hint: 'Ketik dengan suara di kotak pesan', kbd: 'Alt M', disabled: state.active === DEMO_ID ? noVoice : (needProject ?? ro ?? (voiceAvailable() ? null : noVoice)), keywords: 'voice mic mikrofon suara dikte speech', run: () => toggleVoice() });
 

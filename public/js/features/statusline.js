@@ -1,5 +1,6 @@
 // Above and below the composer: Claude's todo list and the status line (mode, model, context).
 import { $, escapeHtml, narrow } from '../core/dom.js';
+import { engineOf } from '../core/engine-caps.js';
 import { fmtTokens } from '../core/format.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { connection } from './connection.js';
@@ -38,6 +39,12 @@ export const MODE_SHORT = { manual: '🛡️ Tanya dulu', acceptEdits: '✏️ A
 
 const MODE_LABEL = { manual: '🛡️ tanya dulu', acceptEdits: '✏️ auto-edit file', plan: '📋 rencana dulu', auto: '⚡ auto', dontAsk: '🚫 jangan tanya' };
 export const MODE_CYCLE = ['manual', 'acceptEdits', 'plan', 'auto']; // Shift+Tab order, as in the CLI
+const OPENCODE_MODE_SHORT = { manual: 'Build', plan: 'Plan' };
+const OPENCODE_MODE_LABEL = { manual: 'build', plan: 'plan' };
+/** OpenCode's two native modes; an old stored auto/acceptEdits setting is shown as Build. */
+const openCodeMode = (mode) => (mode === 'plan' ? 'plan' : 'manual');
+export const modeShort = (mode, engine) => (engine === 'opencode' ? OPENCODE_MODE_SHORT[openCodeMode(mode)] : MODE_SHORT[mode]) ?? mode;
+export const modeLabel = (mode, engine) => (engine === 'opencode' ? OPENCODE_MODE_LABEL[openCodeMode(mode)] : MODE_LABEL[mode]) ?? mode;
 
 /** Status line under the composer: permission mode, model, and how full the context is. */
 export function renderStatusline(st) {
@@ -47,7 +54,7 @@ export function renderStatusline(st) {
     line.classList.remove('has-chips');
     return;
   }
-  const parts = [`<span class="sl-mode" title="Ganti dengan Shift+Tab">${MODE_LABEL[st.mode ?? 'manual']} <kbd>⇧Tab</kbd></span>`];
+  const parts = [`<span class="sl-mode" title="Ganti dengan Shift+Tab">${modeLabel(st.mode ?? 'manual', engineOf(st, state.config))} <kbd>⇧Tab</kbd></span>`];
   const model = st.activeModel || st.model;
   if (model) parts.push(`<span class="sl-model">${escapeHtml(model)}</span>`);
   if (st.context?.used && !st.context.window) {

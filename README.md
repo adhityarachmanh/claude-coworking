@@ -207,8 +207,8 @@ Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude
 |---|---|
 | Didukung | Chat streaming, tool + animasi kantor, papan todo, **kartu izin** (Izinkan / Selalu / Izinkan semua / Tolak), ■ Stop / `Esc`, antrean, `!` shell, lanjut sesi OpenCode (`ses_…`), ▶ Lanjutkan setelah restart, token + biaya ke 📊 Laporan dan 💰 Batas antrian |
 | Model | Daftar dari `opencode models` (provider yang kamu atur di OpenCode), bisa dicari; *Default* = pilihan OpenCode sendiri |
-| Mode izin | 🛡️ Tanya dulu · ✏️ Auto-edit · ⚡ Auto · 📋 Rencana dulu (agent `plan` OpenCode). Aturannya dikirim per proses lewat `OPENCODE_CONFIG_CONTENT`, jadi config OpenCode milikmu tidak pernah diubah. Aturan `permission` milikmu di `opencode.json` **digabung, bukan ditimpa**: `deny` tetap `deny` (juga di ⚡ Auto, seperti `--auto` OpenCode), aturan berpola (`"git *": "allow"`) tetap berlaku |
-| Agent | Selain build/plan, **agent buatanmu** (primary agent di `opencode.json`) bisa dipilih di Pengaturan giliran → Agent |
+| Mode izin | **Build** (kerja normal, kartu izin tetap mengikuti aturan app) · **Plan** (agent `plan` OpenCode, read-only). Aturannya dikirim per proses lewat `OPENCODE_CONFIG_CONTENT`, jadi config OpenCode milikmu tidak pernah diubah. Aturan `permission` milikmu di `opencode.json` **digabung, bukan ditimpa**: `deny` tetap `deny`, aturan berpola (`"git *": "allow"`) tetap berlaku |
+| Agent | Agent buatanmu (primary agent di `opencode.json`) untuk Build; Plan selalu memakai agent `plan` |
 | Command | `/init`, `/review` dan command buatanmu muncul di autocomplete `/` dengan deskripsinya |
 | Mode tim | Role kantor jadi **subagent OpenCode** (file config `OPENCODE_CONFIG` berisi `agents` + prompt Lead sebagai `instructions`). Lead mendelegasikan lewat tool `subagent`; tool milik subagent dikerjakan role itu di kantor |
 | Effort | Opsi `effort` OpenCode per model (mis. low/high/max): dipilih level terdekat yang ditawarkan model |
@@ -226,6 +226,7 @@ Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude
 - Setelah satu **Tolak**, OpenCode menghentikan gilirannya, sehingga kartu izin lain dari giliran itu ditutup otomatis.
 - Pesan pertama yang menyalakan layanan latar OpenCode dicoba ulang sekali secara otomatis.
 - 📦 Backup riwayat membawa chat kedua mesin (`office/chats/` dan `office/chats-opencode/`).
+- Saat mesin OpenCode aktif, dialog khusus Claude Code (aturan izin, plugin/agent/hooks, cari percakapan, export sesi lengkap) disembunyikan dan route-nya menolak. OpenCode memakai `opencode.json` untuk aturan/agent/plugin, serta export JSON di Riwayat Sesi.
 - **Saat OpenCode diperbarui**: server membaca `opencode --version` saat menyala (±45 dtk) dan setiap 6 jam. Versi baru → **cek kontrak ringan tanpa token** di latar belakang (setelah giliran yang berjalan selesai): handshake ACP (`initialize`, kemampuan `loadSession`/gambar/@file), `session/new` + opsi model/mode + daftar command, `session/set_config_option`, `session/load`, `opencode models`, `opencode session list`. Tidak pernah mengirim prompt (tidak memanggil model); sesi uji dihapus lagi. Hasilnya muncul sebagai pemberitahuan seperti untuk Claude Code ("OpenCode diperbarui ke vX — semua cek kontrak lulus ✅", atau "⚠ … cek kontrak gagal (…)" + `npm run test:opencode`). **⚙ → 🧩 Kompatibilitas OpenCode** (hanya dari laptop, hanya bila OpenCode terpasang): status, tombol cek manual, dan *Cek otomatis saat OpenCode diperbarui*. Status di `data/opencode-check.json` (tidak ikut backup). Tanpa OpenCode terpasang: tidak ada apa pun.
 - Desain lengkap: [`docs/design-opencode.md`](docs/design-opencode.md).
 

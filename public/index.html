@@ -130,7 +130,7 @@
             <div id="more-menu" class="menu" role="menu" hidden>
               <button role="menuitem" data-more="export">⬇ Export percakapan (.md)</button>
               <button role="menuitem" data-more="export-session" data-cap="exportSession" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">⬇ Export sesi lengkap (.md)</button>
-              <button role="menuitem" data-more="permissions">🛡️ Aturan izin (/permissions)</button>
+              <button role="menuitem" data-more="permissions" data-cap="permissions">🛡️ Aturan izin (/permissions)</button>
               <button role="menuitem" data-more="handoff" title="Bawa konteks percakapan Claude Code ↔ OpenCode project ini">🔁 Lanjutkan dari mesin lain</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
@@ -627,7 +627,7 @@
           </section>
           <button type="button" id="btn-roster" class="ghost team-names-btn" title="Pilih role bawaan yang punya meja di kantor">👥 Kelola tim (role aktif)</button>
           <button type="button" id="btn-team-names" class="ghost team-names-btn">✏️ Ganti nama anggota tim</button>
-          <button type="button" id="btn-permissions" class="ghost team-names-btn" title="Aturan allow / ask / deny Claude Code untuk project yang sedang dibuka">🛡️ Aturan izin project ini</button>
+          <button type="button" id="btn-permissions" class="ghost team-names-btn" data-cap="permissions" title="Aturan allow / ask / deny Claude Code untuk project yang sedang dibuka">🛡️ Aturan izin project ini</button>
           <button type="button" id="btn-notify-settings" class="ghost team-names-btn" aria-haspopup="dialog" title="Per jenis kejadian, jam tenang, hanya project favorit, volume (disimpan di browser ini)">🔔 Pengaturan notifikasi</button>
           <hr />
           <section class="quota-alerts" aria-labelledby="quota-title" aria-describedby="quota-desc">
@@ -1070,7 +1070,7 @@
           <button type="button" class="sheet-row" data-proxy="[data-more='export']"><span aria-hidden="true">⬇</span><span>Export percakapan (.md)</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='export-session']" data-cap="exportSession"><span aria-hidden="true">⬇</span><span>Export sesi lengkap (.md)</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='terminal']"><span aria-hidden="true">⌨</span><span>Salin perintah lanjut di terminal</span></button>
-          <button type="button" class="sheet-row" data-proxy="[data-more='permissions']"><span aria-hidden="true">🛡️</span><span>Aturan izin</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='permissions']" data-cap="permissions"><span aria-hidden="true">🛡️</span><span>Aturan izin</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='roster']"><span aria-hidden="true">👥</span><span>Kelola tim</span></button>
           <button type="button" class="sheet-row local-only" data-proxy="[data-more='code']"><span aria-hidden="true">🧭</span><span>Buka project di VS Code</span></button>
           <button type="button" class="sheet-row local-only" data-proxy="[data-more='folder']"><span aria-hidden="true">📁</span><span>Buka folder project</span></button>

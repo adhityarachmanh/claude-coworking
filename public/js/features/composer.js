@@ -13,7 +13,7 @@ import { recall, recallPrompt } from './history.js';
 import { renderResumeTurn } from './resume-turn.js';
 import { openRewind } from './rewind.js';
 import { confirmNew, renderSessionBar } from './sessions.js';
-import { MODE_CYCLE, MODE_SHORT, renderStatusline, renderTodos } from './statusline.js';
+import { modeShort, MODE_CYCLE, renderStatusline, renderTodos } from './statusline.js';
 import { applySuggest, closeSuggest, renderSuggest, searchHistory, suggest } from './suggest.js';
 import { backgroundRunning, renderTaskChip, renderTasks, tasksView } from './tasks.js';
 import { placeholders, tabToPlaceholder } from './templates.js';
@@ -59,7 +59,7 @@ export function renderComposer() {
   $('#composer').classList.toggle('demo', isDemo);
   $('#btn-stop').hidden = isDemo || !stoppable(st);
   $('#btn-stop').title = st.busy || st.queue ? 'Hentikan giliran yang sedang berjalan, termasuk tugas latar (Esc)' : 'Hentikan tugas latar yang masih berjalan (Esc)';
-  renderModeOptions(caps);
+  renderModeOptions(caps, engine);
   renderAgentOptions(st, engine);
   $('#mode').value = modeFor(st.mode ?? 'manual', caps);
   renderModelOptions(st.model ?? '', engine);
@@ -125,8 +125,8 @@ function renderSettingsChip(st) {
   const team = $('#team-mode').checked && !$('#team-ctl').classList.contains('cap-off');
   const engine = engineOf(st, state.config);
   const engineName = engine !== DEFAULT_ENGINE ? engineLabel(engine) : ''; // only the non-default engine takes space
-  chip.textContent = [engineName, MODE_SHORT[mode] ?? mode, model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
-  chip.setAttribute('aria-label', `Pengaturan giliran: ${engineName ? `mesin ${engineName}, ` : ''}mode ${(MODE_SHORT[mode] ?? mode).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
+  chip.textContent = [engineName, modeShort(mode, engine), model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
+  chip.setAttribute('aria-label', `Pengaturan giliran: ${engineName ? `mesin ${engineName}, ` : ''}mode ${modeShort(mode, engine).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
   chip.classList.toggle('warn', mode === 'dontAsk' || Boolean(st?.autoApprove));
   const note = $('#effort-note');
   note.hidden = !$('#effort').disabled || Boolean(state.readOnly) || !$('#effort').title;
@@ -156,11 +156,14 @@ function renderAgentOptions(st, engine) {
   select.title = st.mode === 'plan' ? 'Saat Izin = 📋 Rencana dulu, OpenCode memakai agent plan' : '';
 }
 
-function renderModeOptions(caps) {
+function renderModeOptions(caps, engine) {
   for (const opt of $('#mode').options) {
     const off = !caps.modes.includes(opt.value);
     opt.hidden = off;
     opt.disabled = off;
+    // Claude Code keeps the full set of labels; OpenCode shows its two native modes as Build and Plan.
+    if (!opt.dataset.label) opt.dataset.label = opt.textContent;
+    opt.textContent = engine === 'opencode' ? (opt.value === 'manual' ? 'Build' : opt.value === 'plan' ? 'Plan' : opt.dataset.label) : opt.dataset.label;
   }
 }
 
@@ -402,7 +405,7 @@ export function initComposerControls() {
       updateBashMode();
       scheduleDraftSave();
       input.focus();
-    } else if (!guardCap('rewind')) openRewind(); // OpenCode (Fase 1) has no rewind: say so instead
+    } else if (!guardCap('rewind')) openRewind(); // an engine without rewind gets the guard's reason instead
   });
 
   // Shift+Tab cycles the permission mode, like in the CLI (only from the prompt box, so Tab navigation still works elsewhere).

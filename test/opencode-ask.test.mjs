@@ -257,17 +257,17 @@ test('📋 plan: the plan turn ends with the plan card; Minta revisi (with a not
   assert.equal(seen.slice(mark).filter((s) => s.type === 'approval' && s.obj.project === id && s.obj.status === 'pending').length, 0, 'no plan card outside plan mode');
 });
 
-test('📋 plan: Setujui, auto-edit restarts OpenCode with the new permission config and continues in the same session', async () => {
+test('📋 plan: Setujui continues in Build and keeps the same OpenCode session', async () => {
   await openCodeProject('plan');
   const sessionId = (await snapshot()).statuses[id].sessionId;
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'rencana lain' });
   const card = await pendingCard();
-  await api(`/api/approvals/${card.id}`, { allow: true, mode: 'acceptEdits' });
+  await api(`/api/approvals/${card.id}`, { allow: true, mode: 'manual' });
   await finalText(/^Mengerjakan rencana \(agent=build\)$/);
   await result();
   const st = (await snapshot()).statuses[id];
-  assert.equal(st.mode, 'acceptEdits');
+  assert.equal(st.mode, 'manual', 'Build');
   assert.equal(st.sessionId, sessionId, 'session/load: the same OpenCode conversation');
 });
 

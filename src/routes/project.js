@@ -12,3 +12,12 @@ export const withProject = (fn) => (ctx, req, res, params, body) => {
 /** Like withProject, plus params.session: the project's Claude Code session (created on first use). */
 export const withSession = (fn) =>
   withProject((ctx, req, res, params, body) => fn(ctx, req, res, { ...params, session: ctx.sessions.get(params.project) }, body));
+
+/**
+ * Claude-only routes: refused while the app's engine is OpenCode. The UI hides these surfaces with the same cap;
+ * this is the server-side last line, so a direct API call can never read or change Claude config by accident.
+ */
+export const claudeOnly = (fn, feature = 'Fitur ini') => (ctx, req, res, params, body) => {
+  if ((ctx.hub?.engine ?? 'claude') !== 'claude') return json(res, 409, { error: `${feature} hanya tersedia saat mesin Claude Code aktif.` });
+  return fn(ctx, req, res, params, body);
+};
