@@ -1,7 +1,7 @@
 // Effort Auto: the pure routing/parsing rules and the local fallback (no model call here).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { AUTO_EFFORT_LEVELS, classifyEffortLocally, classifierPrompt, parseEffortClassification, pickClassifierModel } from '../src/effort.js';
+import { AUTO_EFFORT_LEVELS, classifyEffortLocally, classifierPrompt, parseEffortClassification } from '../src/effort.js';
 
 test('auto levels and the prompt: the task is data, never instructions', () => {
   assert.deepEqual(AUTO_EFFORT_LEVELS, ['low', 'medium', 'high', 'xhigh', 'max']);
@@ -43,12 +43,4 @@ test('local fallback: attachments and several @files raise the estimate', () => 
   const plain = classifyEffortLocally({ text: 'periksa ini' }).level;
   const attached = classifyEffortLocally({ text: 'periksa ini', attachments: [{ kind: 'text', name: 'a.log' }, { kind: 'image', name: 'b.png' }], mentions: ['a.js', 'b.js', 'c.js'] }).level;
   assert.ok(AUTO_EFFORT_LEVELS.indexOf(attached) > AUTO_EFFORT_LEVELS.indexOf(plain));
-});
-
-test('classifier model: prefer a free/small model, otherwise the current one, otherwise the first', () => {
-  assert.equal(pickClassifierModel(['openai/gpt-5', 'google/gemini-2.5-flash', 'opencode-go/beam-free'], 'openai/gpt-5'), 'opencode-go/beam-free');
-  assert.equal(pickClassifierModel(['openai/gpt-5', 'google/gemini-2.5-flash'], 'openai/gpt-5'), 'google/gemini-2.5-flash');
-  assert.equal(pickClassifierModel(['vendor/current', 'vendor/other'], 'vendor/current'), 'vendor/current');
-  assert.equal(pickClassifierModel([], 'vendor/current'), 'vendor/current');
-  assert.equal(pickClassifierModel([], ''), null);
 });

@@ -4,8 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileTree } from './proc.js';
-import { openCodeModels } from './opencode-bin.js';
-import { classifierPrompt, classifyEffortLocally, cleanAutoLevel, parseEffortClassification, pickClassifierModel } from './effort.js';
+import { classifierPrompt, classifyEffortLocally, cleanAutoLevel, parseEffortClassification } from './effort.js';
 
 const DEFAULT_TIMEOUT_MS = 25_000;
 const MAX_OUTPUT = 32 * 1024;
@@ -29,11 +28,14 @@ function run(bin, args, { cwd, timeout = DEFAULT_TIMEOUT_MS } = {}) {
   });
 }
 
-/** Claude Code: `claude -p` with Haiku, no tools, in a throwaway folder (no project context). */
-export async function runClaudeClassifier(bin, prompt, timeout = DEFAULT_TIMEOUT_MS) {
+/** Claude Code: `claude -p` with the project's active model, no tools, in a throwaway folder. */
+export async function runClaudeClassifier(bin, model, prompt, timeout = DEFAULT_TIMEOUT_MS) {
   const dir = tempDir('claude');
   try {
-    const r = await run(bin, ['-p', '--model', 'haiku', '--output-format', 'json', '--tools', '', '--restricted', '--permission-mode', 'manual', '--strict-mcp-config', prompt], { cwd: dir, timeout });
+    const args = ['-p', '--output-format', 'json', '--tools', '', '--restricted', '--permission-mode', 'manual', '--strict-mcp-config'];
+    if (model) args.push('--model', model);
+    args.push(prompt);
+    const r = await run(bin, args, { cwd: dir, timeout });
     return r.text;
   } finally {
     rmDir(dir);
@@ -60,7 +62,10 @@ async function cleanupOpenCode(bin, dir) {
 export async function runOpenCodeClassifier(bin, model, prompt, timeout = DEFAULT_TIMEOUT_MS) {
   const dir = tempDir('opencode');
   try {
-    const r = await run(bin, ['run', '--format', 'json', '--model', model, '--agent', 'plan', '--title', 'Adhit effort classifier', prompt], { cwd: dir, timeout });
+    const args = ['run', '--format', 'json', '--agent', 'plan', '--title', 'Adhit effort classifier'];
+    if (model) args.push('--model', model);
+    args.push(prompt);
+    const r = await run(bin, args, { cwd: dir, timeout });
     await cleanupOpenCode(bin, dir);
     return r.text;
   } finally {
@@ -80,7 +85,6 @@ export async function classifyEffort({
   text = '',
   attachments = [],
   mentions = mentionsOf(text),
-  models = null,
   timeout = DEFAULT_TIMEOUT_MS,
   runClaude = runClaudeClassifier,
   runOpenCode = runOpenCodeClassifier,
@@ -91,21 +95,19 @@ export async function classifyEffort({
   if (fake) return { level: fake, reason: 'classifier palsu (test)', source: 'llm', model: 'fake' };
 
   const prompt = classifierPrompt({ text, attachments, mentions });
+  // Never pick a catalog model: the user's active model (or the engine's own default) is the only classifier.
+  const model = currentModel || '';
   try {
     let answer = '';
-    let model = 'haiku';
     if (engine === 'opencode') {
       if (!opencode) return fallback();
-      const list = models ?? (await openCodeModels(opencode));
-      model = pickClassifierModel(list, currentModel);
-      if (!model) return fallback();
       answer = await runOpenCode(opencode, model, prompt, timeout);
     } else {
       if (!claude) return fallback();
-      answer = await runClaude(claude, prompt, timeout);
+      answer = await runClaude(claude, model, prompt, timeout);
     }
     const parsed = parseEffortClassification(answer);
-    if (parsed) return { ...parsed, source: 'llm', model };
+    if (parsed) return { ...parsed, source: 'llm', model: model || 'default' };
   } catch {
     // fall through: a failed classifier must never block the prompt
   }

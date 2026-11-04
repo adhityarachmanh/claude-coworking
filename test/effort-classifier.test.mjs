@@ -5,42 +5,60 @@ import { classifyEffort } from '../src/effort-classifier.js';
 
 const bin = { command: 'fake', args: [] };
 
-test('Claude: uses Haiku, reads the JSON result envelope, and reports the chosen level', async () => {
+test('Claude: uses the active model, reads the JSON result envelope, and reports the chosen level', async () => {
   let seen = null;
   const r = await classifyEffort({
     engine: 'claude',
     claude: bin,
+    currentModel: 'sonnet',
     text: 'refactor modul auth di beberapa file',
-    runClaude: async (gotBin, prompt, timeout) => {
-      seen = { gotBin, prompt, timeout };
+    runClaude: async (gotBin, gotModel, prompt, timeout) => {
+      seen = { gotBin, gotModel, prompt, timeout };
       return JSON.stringify({ result: '{"level":"high","reason":"multi-file refactor"}' });
     },
   });
   assert.equal(seen.gotBin, bin);
+  assert.equal(seen.gotModel, 'sonnet');
   assert.match(seen.prompt, /refactor modul auth/);
   assert.equal(r.level, 'high');
   assert.equal(r.reason, 'multi-file refactor');
   assert.equal(r.source, 'llm');
-  assert.equal(r.model, 'haiku');
+  assert.equal(r.model, 'sonnet');
 });
 
-test('OpenCode: prefers a free/small model, sends the task, and accepts a fenced answer', async () => {
+test('OpenCode: uses the active model (never a model picked from the catalog), sends the task, and accepts a fenced answer', async () => {
   let model = null;
   const r = await classifyEffort({
     engine: 'opencode',
     opencode: bin,
     currentModel: 'openai/gpt-5',
     text: 'perbaiki bug checkout',
-    models: ['openai/gpt-5', 'google/gemini-2.5-flash', 'opencode-go/beam-free'],
     runOpenCode: async (gotBin, gotModel, prompt) => {
       model = gotModel;
       assert.match(prompt, /perbaiki bug checkout/);
       return '```json\n{"level":"medium","reason":"bug fix"}\n```';
     },
   });
-  assert.equal(model, 'opencode-go/beam-free');
+  assert.equal(model, 'openai/gpt-5');
   assert.equal(r.level, 'medium');
   assert.equal(r.source, 'llm');
+});
+
+test('an empty current model means the engine default, not a catalog pick', async () => {
+  let model = null;
+  const r = await classifyEffort({
+    engine: 'opencode',
+    opencode: bin,
+    currentModel: '',
+    text: 'halo',
+    runOpenCode: async (gotBin, gotModel) => {
+      model = gotModel;
+      return '{"level":"low","reason":"halo"}';
+    },
+  });
+  assert.equal(model, '');
+  assert.equal(r.level, 'low');
+  assert.equal(r.model, 'default');
 });
 
 test('a failed or empty classifier falls back to the local estimate (no throw)', async () => {
@@ -59,7 +77,6 @@ test('a failed or empty classifier falls back to the local estimate (no throw)',
     engine: 'opencode',
     opencode: bin,
     currentModel: 'x/y',
-    models: ['x/y'],
     runOpenCode: async () => 'no json here',
   });
   assert.equal(empty.source, 'fallback');

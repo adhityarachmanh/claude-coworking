@@ -176,14 +176,3 @@ export function parseEffortClassification(output) {
   }
   return null;
 }
-
-/** Cheapest useful classifier model: a free/small model when the catalog offers one, else the current model. */
-export function pickClassifierModel(models, current = '') {
-  const list = (Array.isArray(models) ? models : []).filter((m) => typeof m === 'string' && m);
-  const free = list.find((m) => /free/i.test(m));
-  if (free) return free;
-  const cheap = list.find((m) => /(mini|flash|nano|small|haiku|air)/i.test(m));
-  if (cheap) return cheap;
-  if (current && list.includes(current)) return current;
-  return list[0] ?? (current || null);
-}
