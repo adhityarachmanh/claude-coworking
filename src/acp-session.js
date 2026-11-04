@@ -598,7 +598,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         else if (!this.busy) this.closeChild(); // back to OpenCode's own default: a fresh session picks it
       } else if (s.effort !== a.effort) {
         a.effort = s.effort;
-        this.ready.then(() => this.applyEffort(s.effort)).catch((err) => this.controlFailed('effort', err));
+        // Chain it into `ready`: the next session/prompt must wait for the effort switch, not race it.
+        this.ready = this.ready.then(() => this.applyEffort(s.effort)).catch((err) => this.controlFailed('effort', err));
       }
     }
 

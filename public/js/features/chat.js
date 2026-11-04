@@ -246,6 +246,13 @@ function fillChatBody(node, msg) {
         msg.queued ? 'antre' : '',
         msg.cancelled ? 'dibatalkan' : '',
       ].filter(Boolean);
+      const effortName = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
+      const auto = msg.autoEffort;
+      const autoTag = auto?.skipped
+        ? `<span class="tag auto-effort" title="${escapeHtml(auto.reason ?? '')}">Auto: turn berjalan</span>`
+        : auto?.level
+          ? `<span class="tag auto-effort${auto.source === 'fallback' ? ' fallback' : ''}" title="${escapeHtml(auto.reason ?? '')}">Auto: ${escapeHtml(effortName[auto.level] ?? auto.level)}${auto.source === 'fallback' ? ' (fallback)' : ''}</span>`
+          : '';
       // Re-sending a prompt typed in the terminal would run it in the web session, so only web prompts offer it.
       const actions = msg.source === 'demo'
         ? ''
@@ -253,7 +260,7 @@ function fillChatBody(node, msg) {
       node.className = `msg user ${msg.source === 'cli' ? 'cli' : ''} ${msg.history ? 'history' : ''}`;
       // 📎 Name + size chips only: the files' content went to Claude, not into the bubble.
       const files = Array.isArray(msg.attachments) && msg.attachments.length ? `<div class="msg-attachments">${msg.attachments.map((a) => attachmentChip(a)).join('')}</div>` : '';
-      node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>${files}<div class="meta">${actions}${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
+      node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>${files}<div class="meta">${actions}${autoTag}${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
       break;
     }
     case 'assistant':

@@ -213,6 +213,11 @@ describe('🧩 OpenCode banner when contract checks fail', { skip: SKIP ?? false
       assert.match(await page.eval(() => document.querySelector('#oc-status').textContent), /^Terpasang: v2\.0\.1\. Cek terakhir \(otomatis, tanpa token\) .*, v2\.0\.1: ⚠ 2 cek gagal: /);
       assert.equal(await page.eval(() => document.querySelector('#oc-status').classList.contains('warn')), true);
       assert.equal(await page.eval(() => document.querySelector('#oc-auto').checked), true);
+      assert.deepEqual(
+        await page.eval(() => ['#oc-update', '#oc-restart'].map((s) => Boolean(document.querySelector(s)?.getClientRects().length))),
+        [true, true],
+        'Update OpenCode + restart layanan tampil di tab Sistem',
+      );
       await page.eval(() => document.querySelector('#oc-run').scrollIntoView({ block: 'center' }));
       await page.click('#oc-run');
       await page.waitFor(() => /\(manual, tanpa token\)/.test(document.querySelector('#oc-status').textContent) && !document.querySelector('#oc-run').disabled, { timeoutMs: 30000, message: 'manual run finished' });

@@ -9,7 +9,7 @@ import { shortDate } from '../core/format.js';
 import { state } from '../core/state.js';
 
 const SEEN_KEY = 'office.opencodeCheck.seen'; // the banner this browser already dismissed or saw auto-hide
-const oc = { view: null, shown: null, timer: null, manual: false };
+const oc = { view: null, shown: null, timer: null, manual: false, busy: false };
 
 const seen = () => {
   try {
@@ -88,8 +88,11 @@ function renderSection() {
   $('#oc-status').classList.toggle('warn', v.result === 'warning' || v.result === 'failed');
   $('#oc-auto').checked = v.settings?.autoCheck !== false;
   const laptop = state.local !== false;
-  $('#oc-run').disabled = !laptop || v.running;
+  const blocked = !laptop || v.running || oc.busy;
+  $('#oc-run').disabled = blocked;
   $('#oc-auto').disabled = !laptop;
+  $('#oc-update').disabled = blocked;
+  $('#oc-restart').disabled = blocked;
 }
 
 /** The server's config.opencodeCheck (snapshot or live `config` event). */
@@ -105,7 +108,36 @@ export function applyOpenCodeCheck(view) {
   else if (view.result) toast(`OpenCode v${view.checkedVersion}: ${view.failing.length} cek kontrak gagal.`, view.result === 'failed' ? 'error' : 'warn');
 }
 
+async function runMaintenance(kind) {
+  if (oc.busy) return;
+  const update = kind === 'update';
+  const question = update
+    ? 'Update OpenCode sekarang?\n\nMenjalankan "opencode upgrade". Giliran yang sedang berjalan harus selesai dulu.'
+    : 'Restart layanan OpenCode sekarang?\n\nMenjalankan "opencode service restart". Sesi terminal OpenCode yang sedang berjalan bisa terputus.';
+  if (!window.confirm(question)) return;
+  oc.busy = true;
+  renderSection();
+  try {
+    const r = await api(`/api/opencode-check/${update ? 'update' : 'restart-service'}`);
+    const out = $('#oc-output');
+    out.hidden = !r.output;
+    out.textContent = r.output ?? '';
+    toast(update ? (r.ok ? 'Update OpenCode selesai. Cek kompatibilitas dimulai.' : 'Update OpenCode gagal — lihat output.') : r.ok ? 'Layanan OpenCode direstart.' : 'Restart layanan OpenCode gagal — lihat output.', r.ok ? 'ok' : 'warn');
+    if (update && r.ok) {
+      oc.manual = true;
+      applyOpenCodeCheck(await api('/api/opencode-check/run'));
+    }
+  } catch (err) {
+    toast(err.message, 'warn');
+  } finally {
+    oc.busy = false;
+    renderSection();
+  }
+}
+
 export function initOpenCodeCheck() {
+  $('#oc-update').addEventListener('click', () => runMaintenance('update'));
+  $('#oc-restart').addEventListener('click', () => runMaintenance('restart-service'));
   $('#oc-auto').addEventListener('change', async (e) => {
     const input = e.target;
     try {

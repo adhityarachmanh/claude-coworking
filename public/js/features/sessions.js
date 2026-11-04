@@ -76,6 +76,7 @@ export async function openSessions() {
   $('#sessions-project').textContent = `· ${projectName(state.active)}`;
   $('#sessions-search').value = '';
   $('#sessions-list').innerHTML = '<p class="muted">Memuat riwayat…</p>';
+  $('#sessions-import').hidden = state.config?.engine !== 'opencode' || !state.local || state.readOnly;
   openModal('sessions-modal');
   try {
     const { sessions, current } = await api(`/api/projects/${sessionsView.project}/sessions`);
@@ -220,7 +221,32 @@ export function confirmNew() {
   return window.confirm(`Mulai sesi baru?\n\nClaude tidak membawa konteks percakapan ini. Percakapan ini tetap bisa dilanjutkan lagi lewat 🕘 Riwayat sesi.${busy}`);
 }
 
+async function importOpenCodeJson(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    toast('File JSON tidak valid.', 'warn');
+    return;
+  }
+  if (!window.confirm(`Import sesi OpenCode dari "${file.name}"?\n\nSesi baru ditambahkan ke Riwayat sesi; sesi yang ada tidak diubah.`)) return;
+  try {
+    const r = await api(`/api/projects/${sessionsView.project}/session-import-json`, { data });
+    toast(r.sessionId ? `Sesi OpenCode diimpor (${r.sessionId.slice(0, 8)}).` : 'Sesi OpenCode diimpor.', 'ok');
+    await openSessions();
+  } catch (err) {
+    toast(err.message, 'warn');
+  }
+}
+
 export function initSessions() {
+  $('#sessions-import').addEventListener('click', () => $('#sessions-import-file').click());
+  $('#sessions-import-file').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) await importOpenCodeJson(file);
+  });
+
   $('#sb-title').addEventListener('click', async () => {
     const st = state.statuses[state.active] ?? {};
     if (!st.sessionId || state.active === DEMO_ID || state.readOnly) return;

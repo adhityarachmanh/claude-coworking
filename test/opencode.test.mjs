@@ -45,6 +45,7 @@ before(async () => {
       FAKE_ACP_COMMIT_FAIL: path.join(TMP, 'commit-fail'),
       FAKE_ACP_REVERT_SLOW: path.join(TMP, 'revert-slow'),
       FAKE_ACP_CLEAR_LOG: path.join(TMP, 'revert-clear.log'),
+      FAKE_ACP_CLI_LOG: path.join(TMP, 'acp-cli.log'),
       FAKE_MCP_LOG: path.join(TMP, 'mcp-add.log'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
@@ -52,6 +53,7 @@ before(async () => {
       OFFICE_OPEN_DRY_RUN: '1',
       OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale'),
       OFFICE_CLAUDE_CHECK_DELAY_MS: '0',
+      OFFICE_EFFORT_FAKE: 'high', // Effort Auto is tested without spawning a real classifier model
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -619,4 +621,69 @@ test('⏪ Rewind OpenCode, review regressions: duplicate prompts, prompt / shell
   assert.ok(!seen.slice(mark).some((s) => s.type === 'chat_update' && s.obj.project === id && s.obj.patch.rewound === true), 'nothing greyed out');
   assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['dua', 'dari antrean', 'awal'], 'nothing deleted');
   await send('masih jalan');
+});
+
+test('OpenCode admin: update, restart service, import a session JSON; import is OpenCode-only', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false, 20_000).catch(() => {});
+  const cli = () => {
+    try {
+      return readFileSync(path.join(TMP, 'acp-cli.log'), 'utf8');
+    } catch {
+      return '';
+    }
+  };
+
+  let r = await api('/api/opencode-check/update');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  assert.match(cli(), /(^|\n)upgrade(\t|$)/m);
+
+  r = await api('/api/opencode-check/restart-service');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  assert.match(cli(), /(^|\n)service restart\t/m);
+
+  const data = { info: { id: 'ses_imported', title: 'Sesi impor' }, messages: [{ role: 'user', text: 'halo' }] };
+  r = await api(`/api/projects/${id}/session-import-json`, { data });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.sessionId, 'ses_imported');
+  assert.match(cli(), /(^|\n)session import .*--directory /m);
+
+  await useEngine('claude');
+  r = await api(`/api/projects/${id}/session-import-json`, { data });
+  assert.equal(r.status, 409, 'Claude Code does not import OpenCode JSON');
+});
+
+test('Effort Auto: one classification per prompt, manual stays manual, queue items keep their level', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false, 20_000).catch(() => {});
+
+  assert.equal((await api(`/api/projects/${id}/settings`, { effortAuto: true })).status, 200);
+  assert.equal((await snapshot()).statuses[id].effortAuto, true);
+  mark = seen.length;
+  assert.equal((await api(`/api/projects/${id}/prompt`, { text: 'perbaiki bug kecil' })).status, 200);
+  const auto = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.autoEffort?.level === 'high');
+  assert.equal(auto.autoEffort.source, 'llm');
+  assert.equal((await snapshot()).statuses[id].effort, 'high', 'the classified level is what the engine applies');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+
+  assert.equal((await api(`/api/projects/${id}/settings`, { effort: 'low', effortAuto: false })).status, 200);
+  mark = seen.length;
+  assert.equal((await api(`/api/projects/${id}/prompt`, { text: 'halo manual' })).status, 200);
+  const manual = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === 'halo manual');
+  assert.equal(manual.autoEffort, undefined, 'manual effort: no classifier badge');
+  assert.equal((await snapshot()).statuses[id].effort, 'low');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+
+  await api(`/api/projects/${id}/settings`, { effortAuto: true });
+  await api(`/api/projects/${id}/queue-pause`, { paused: true });
+  const q = await api(`/api/projects/${id}/queue-add`, { text: 'refactor beberapa file dan tambahkan test' });
+  assert.equal(q.status, 200, JSON.stringify(q.body));
+  assert.equal(q.body.item.effort, 'high');
+  assert.equal(q.body.item.effortSource, 'llm');
+  await api(`/api/projects/${id}/queue-remove`, { itemId: q.body.item.id });
+  await api(`/api/projects/${id}/queue-pause`, { paused: false });
 });

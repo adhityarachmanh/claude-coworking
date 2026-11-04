@@ -503,6 +503,38 @@ for (const vp of VIEWPORTS) {
       await page.press('Escape');
     });
 
+    test('⚙ Effort Auto (LLM) ada di picker dan tersimpan sebagai auto', async () => {
+      await ensureApp(page, `#${projectId}`);
+      assert.equal(
+        await page.eval(() => [...document.querySelectorAll('#effort option')].some((o) => o.value === 'auto')),
+        true,
+        'opsi Auto (LLM) tersedia',
+      );
+      await page.eval(() => {
+        const select = document.querySelector('#effort');
+        select.value = 'auto';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.waitFor(async (id) => (await import('/js/core/state.js')).state.statuses[id]?.effortAuto === true, { timeoutMs: 5000, message: 'effortAuto tersimpan' }, projectId);
+      await page.eval(() => {
+        const select = document.querySelector('#effort');
+        select.value = '';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.waitFor(async (id) => (await import('/js/core/state.js')).state.statuses[id]?.effortAuto === false, { timeoutMs: 5000, message: 'kembali manual' }, projectId);
+    });
+
+    test('📱 HP: Lanjutkan dari mesin lain ada di sheet ⋯', { skip: !vp.mobile }, async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.click('#btn-head-more');
+      await page.waitFor(() => !document.querySelector('#head-more-modal').hidden, { timeoutMs: 2000, message: 'sheet ⋯ terbuka' });
+      const row = '#head-more-modal [data-proxy*="handoff"]';
+      assert.equal(await shownInPage(page, row), true, 'baris handoff ada di sheet HP');
+      await page.eval((sel) => document.querySelector(sel).click(), row);
+      await page.waitFor(() => !document.querySelector('#handoff-modal').hidden, { timeoutMs: 3000, message: 'dialog handoff terbuka' });
+      await page.press('Escape');
+    });
+
     test('⚙ Pengaturan: bagian Cadangkan riwayat tampil, tombol aktif di laptop, export terunduh, tanpa error console', async () => {
       await ensureApp(page, `#${projectId}`);
       await tap(page, '#btn-settings');

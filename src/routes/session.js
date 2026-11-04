@@ -4,9 +4,11 @@
 import { AttachmentError, readAttachments } from '../attachments.js';
 import { ConversationError, exportSession, searchSessions } from '../conversation.js';
 import { REWINDING_MESSAGE } from '../acp-session.js';
+import { classifyEffort } from '../effort-classifier.js';
 import { DEMO_ID } from '../hub.js';
 import { listSessions, sessionHistory } from '../transcripts.js';
 import { openCodeSessions } from '../opencode-bin.js';
+import { importOpenCodeSession, OpenCodeAdminError } from '../opencode-admin.js';
 import { deleteSession, exportOpenCodeSession, forkOpenCodeSession, renameOpenCodeSession, SessionAdminError, validSessionId } from '../session-admin.js';
 
 /** Runs a 🕘 Riwayat sesi action; SessionAdminError / OpenCode errors become JSON with their status. */
@@ -14,7 +16,8 @@ async function admin(res, fn) {
   try {
     return json(res, 200, await fn());
   } catch (err) {
-    return json(res, err instanceof SessionAdminError ? err.status : (err.status ?? 502), { error: err.message });
+    const status = err instanceof SessionAdminError || err instanceof OpenCodeAdminError ? err.status : (err.status ?? 502);
+    return json(res, status, { error: err.message });
   }
 }
 import { answer, json } from './http.js';
@@ -33,7 +36,7 @@ import { claudeOnly, withProject, withSession } from './project.js';
 const ok = (res) => json(res, 200, { ok: true });
 
 export function register(router) {
-  router.post('/api/projects/:id/prompt', withSession((ctx, req, res, { session }, body) => {
+  router.post('/api/projects/:id/prompt', withSession(async ({ hub, claude, opencode }, req, res, { project, session }, body) => {
     const text = String(body.text ?? '').trim();
     let attachments;
     try {
@@ -44,8 +47,20 @@ export function register(router) {
     }
     if (!text && !attachments.length) return json(res, 400, { error: 'prompt kosong' });
     if (session.rewinding) return json(res, 409, { error: REWINDING_MESSAGE }); // ⏪ OpenCode rewind running
-    session.prompt((text || 'Lihat file terlampir.').slice(0, 50000), attachments);
-    return ok(res);
+    const settings = hub.settingsFor(project.id);
+    let autoEffort = null;
+    if (settings.effortAuto) {
+      if (session.busy) {
+        // A message sent mid-turn joins the running turn; changing the process effort now would change that turn.
+        autoEffort = { skipped: 'busy', reason: 'Mengikuti effort turn yang sedang berjalan' };
+      } else {
+        autoEffort = await classifyEffort({ engine: hub.engine, claude, opencode, currentModel: settings.model, text, attachments });
+        hub.updateSettings(project.id, { effort: autoEffort.level, effortAuto: true });
+        session.syncSettings();
+      }
+    }
+    session.prompt((text || 'Lihat file terlampir.').slice(0, 50000), attachments, autoEffort ? { autoEffort } : {});
+    return json(res, 200, { ok: true, autoEffort });
   }));
   router.post('/api/projects/:id/shell', withSession((ctx, req, res, { session }, body) => {
     // A shell skips Claude's permission checks: plain-HTTP WiFi is already refused in handler() (read-only).
@@ -113,6 +128,11 @@ export function register(router) {
   router.post('/api/projects/:id/session-export-json', withSession(({ opencode }, req, res, { project }, body) => admin(res, async () => {
     const sessionId = String(body.sessionId ?? '');
     return { name: `opencode-${project.name.replace(/[^\w.-]+/g, '_')}-${sessionId.slice(4, 16)}.json`, data: await exportOpenCodeSession({ opencode, projectPath: project.path, sessionId, sanitize: body.sanitize === true }) };
+  })));
+  // ⬆ OpenCode: `opencode session import` a JSON this app (or the CLI) exported. Laptop only and OpenCode-only.
+  router.post('/api/projects/:id/session-import-json', withProject(({ hub, opencode }, req, res, { project }, body) => admin(res, async () => {
+    if (hub.engine !== 'opencode') throw new SessionAdminError(409, 'Import JSON hanya untuk sesi OpenCode. Pindah mesin ke OpenCode dulu.');
+    return importOpenCodeSession({ opencode, projectPath: project.path, data: body.data });
   })));
   router.post('/api/projects/:id/continue', withSession(({ hub }, req, res, { project, session }, body) => {
     // A turn cut short by a server restart: continue it in the same session, or just drop the notice.

@@ -10,6 +10,7 @@
 // A queue can also have a budget (output tokens and/or cost in USD, counted from each finished item's result):
 // once it is used up the queue pauses ('budget'). It is only checked between items: a running turn is never cut.
 import { randomBytes } from 'node:crypto';
+import { cleanAutoLevel } from './effort.js';
 
 export const QUEUE_LIMITS = Object.freeze({ items: 30, text: 20000, finished: 20 });
 /** Why a queue is paused: by the user, by a server restart, after a failed item, by the usage limit, by its budget. */
@@ -103,6 +104,10 @@ function cleanItem(raw) {
     error: typeof raw.error === 'string' ? raw.error.slice(0, 500) : null,
     meta: isObject(raw.meta) ? raw.meta : null,
     engine: raw.engine === 'opencode' || raw.engine === 'claude' ? raw.engine : null, // the engine it was sent to
+    effort: cleanAutoLevel(raw.effort),
+    effortReason: typeof raw.effortReason === 'string' ? raw.effortReason.slice(0, 300) : null,
+    effortSource: raw.effortSource === 'llm' || raw.effortSource === 'fallback' ? raw.effortSource : null,
+    effortModel: typeof raw.effortModel === 'string' ? raw.effortModel.slice(0, 120) : null,
   };
 }
 
@@ -198,24 +203,47 @@ export class TaskQueue {
     return item;
   }
 
-  add(id, text) {
+  add(id, text, effort = null) {
     const clean = cleanText(text);
     const q = this.q(id);
     if (q.items.filter((i) => i.status === 'waiting' || i.status === 'running').length >= QUEUE_LIMITS.items) {
       throw new QueueError(400, `Antrian maksimal ${QUEUE_LIMITS.items} item. Tunggu sebagian selesai atau hapus yang tidak perlu.`);
     }
     const now = this.now();
-    const item = { id: `q_${randomBytes(6).toString('hex')}`, text: clean, status: 'waiting', createdAt: now, updatedAt: now, startedAt: null, endedAt: null, chatId: null, resultChatId: null, error: null, meta: null, engine: null };
+    const item = {
+      id: `q_${randomBytes(6).toString('hex')}`,
+      text: clean,
+      status: 'waiting',
+      createdAt: now,
+      updatedAt: now,
+      startedAt: null,
+      endedAt: null,
+      chatId: null,
+      resultChatId: null,
+      error: null,
+      meta: null,
+      engine: null,
+      effort: cleanAutoLevel(effort?.level),
+      effortReason: typeof effort?.reason === 'string' ? effort.reason.slice(0, 300) : null,
+      effortSource: effort?.source === 'llm' || effort?.source === 'fallback' ? effort.source : null,
+      effortModel: typeof effort?.model === 'string' ? effort.model.slice(0, 120) : null,
+    };
     q.items.push(item);
     this.trimFinished(q);
     this.changed(id);
     return item;
   }
 
-  update(id, itemId, text) {
+  update(id, itemId, text, effort = null) {
     const item = this.item(id, itemId);
     if (item.status !== 'waiting') throw new QueueError(409, 'Hanya item yang masih menunggu yang bisa diubah.');
     item.text = cleanText(text);
+    if (effort) {
+      item.effort = cleanAutoLevel(effort.level);
+      item.effortReason = typeof effort.reason === 'string' ? effort.reason.slice(0, 300) : null;
+      item.effortSource = effort.source === 'llm' || effort.source === 'fallback' ? effort.source : null;
+      item.effortModel = typeof effort.model === 'string' ? effort.model.slice(0, 120) : null;
+    }
     item.updatedAt = this.now();
     this.changed(id);
     return item;
@@ -443,8 +471,15 @@ export class TaskQueue {
     Object.assign(item, { status: 'running', startedAt: this.now(), updatedAt: this.now(), error: null, engine: this.hub.engine === 'opencode' ? 'opencode' : 'claude' });
     this.dispatching = id;
     let sent;
+    const autoEffort = item.effort && this.hub.settingsFor(id).effortAuto
+      ? { level: item.effort, reason: item.effortReason, source: item.effortSource, model: item.effortModel }
+      : null;
     try {
-      sent = session.prompt(item.text, [], { queueItem: item.id });
+      if (autoEffort) {
+        this.hub.updateSettings(id, { effort: autoEffort.level, effortAuto: true });
+        session.syncSettings();
+      }
+      sent = session.prompt(item.text, [], { queueItem: item.id, ...(autoEffort ? { autoEffort } : {}) });
     } catch (err) {
       sent = null;
       item.error = err.message;

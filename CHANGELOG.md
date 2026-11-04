@@ -4,6 +4,11 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## 2026-11-04
 
+### Baru
+
+- **Effort Auto (LLM).** Pilihan Effort baru menilai kompleksitas setiap prompt dengan model kecil sebelum giliran mulai (Claude Haiku, atau model gratis/termurah OpenCode). Badge `Auto: High` muncul di prompt, antrian menyimpan levelnya, dan effort manual tidak memakai token classifier.
+- **OpenCode tanpa CLI.** Dari ⚙ → tab **Sistem** → Kompatibilitas OpenCode ada **⬆ Update OpenCode** (`opencode upgrade`) dan **↻ Restart layanan OpenCode** (`opencode service restart`). Di **🕘 Riwayat sesi**, OpenCode punya **⬆ Import JSON** untuk file hasil export. Di HP, **🔁 Lanjutkan dari mesin lain** kini muncul di sheet ⋯.
+
 ### Diperbaiki
 
 - **Pengaturan desktop lebih ringkas.** Dialog ⚙ Pengaturan di laptop kini dibagi menjadi tab **Umum, Tim & izin, Notifikasi, Spotify, Cadangan, dan Sistem**; hanya isi tab yang bergulir. Di HP tampilannya tetap satu daftar panjang seperti sebelumnya.

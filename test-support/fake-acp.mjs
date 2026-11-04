@@ -47,6 +47,19 @@ if (process.argv[2] === 'models') {
   console.log('opencode-go/beam-free\nopencode-go/kimi-k3\ngoogle/gemini-2.5-flash');
   process.exit(0);
 }
+// Package A: the admin commands the app runs for the user (update / restart the background service / import).
+if (process.argv[2] === 'upgrade') {
+  console.log('OpenCode upgraded to v9.9.9');
+  process.exit(0);
+}
+if (process.argv[2] === 'service' && process.argv[3] === 'restart') {
+  console.log('OpenCode background service restarted.');
+  process.exit(0);
+}
+if (process.argv[2] === 'session' && process.argv[3] === 'import') {
+  console.log(`Imported ${process.argv[4]} as ses_imported`);
+  process.exit(0);
+}
 // `opencode api <operation> [--param k=v] [--data json]`: provider logins (src/opencode-auth.js). State in
 // FAKE_ACP_AUTH_FILE, so a login shows up in the next list; secrets are only checked, never echoed back.
 if (process.argv[2] === 'api') {

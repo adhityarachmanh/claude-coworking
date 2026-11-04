@@ -178,9 +178,10 @@
               <input id="model-search" type="search" placeholder="mis. claude, gpt, free…" autocomplete="off" spellcheck="false" aria-controls="model" aria-describedby="model-search-count" />
               <small id="model-search-count" class="sr-only" aria-live="polite"></small>
             </label>
-            <label class="ctl" title="Seberapa dalam Claude berpikir. Lebih tinggi: lebih teliti untuk tugas sulit, tapi lebih lambat dan lebih banyak token.">
+            <label class="ctl" title="Seberapa dalam model berpikir. Lebih tinggi: lebih teliti untuk tugas sulit, tapi lebih lambat dan lebih banyak token. Auto memakai model kecil untuk menilai tiap prompt.">
               <span>Effort</span>
               <select id="effort">
+                <option value="auto">Auto (LLM)</option>
                 <option value="">Default</option>
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
@@ -373,6 +374,8 @@
         <p class="muted small">Lanjutkan, cabangkan (⑂ salinan baru, aslinya tetap), unduh atau hapus percakapan sebelumnya di project ini, dari terminal maupun dari web.</p>
         <div class="sessions-tools">
           <input id="sessions-search" type="search" aria-label="Cari sesi" placeholder="Cari judul sesi…" autocomplete="off" />
+          <button id="sessions-import" class="ghost" hidden title="Import sesi OpenCode dari file JSON (laptop saja)">⬆ Import JSON</button>
+          <input id="sessions-import-file" type="file" accept=".json,application/json" hidden />
           <button id="sessions-new" class="ghost">＋ Sesi baru</button>
         </div>
         <label class="switch small export-opt"><input class="export-tools-opt" type="checkbox" /> Export .md: sertakan ringkasan tool calls</label>
@@ -765,7 +768,10 @@
             <label class="switch"><input id="oc-auto" type="checkbox" /> Cek otomatis saat OpenCode diperbarui</label>
             <div class="backup-actions">
               <button type="button" id="oc-run" class="ghost">▶ Cek kompatibilitas OpenCode</button>
+              <button type="button" id="oc-update" class="ghost" title="Jalankan opencode upgrade (laptop saja)">⬆ Update OpenCode</button>
+              <button type="button" id="oc-restart" class="ghost" title="Jalankan opencode service restart (laptop saja)">↻ Restart layanan OpenCode</button>
             </div>
+            <pre id="oc-output" class="cc-output" hidden></pre>
           </section>
           <hr id="oc-section-sep" hidden />
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
@@ -1089,6 +1095,7 @@
           <button type="button" class="sheet-row" data-proxy="[data-more='export']"><span aria-hidden="true">⬇</span><span>Export percakapan (.md)</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='export-session']" data-cap="exportSession"><span aria-hidden="true">⬇</span><span>Export sesi lengkap (.md)</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='terminal']"><span aria-hidden="true">⌨</span><span>Salin perintah lanjut di terminal</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='handoff']"><span aria-hidden="true">🔁</span><span>Lanjutkan dari mesin lain</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='permissions']" data-cap="permissions"><span aria-hidden="true">🛡️</span><span>Aturan izin</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='roster']"><span aria-hidden="true">👥</span><span>Kelola tim</span></button>
           <button type="button" class="sheet-row local-only" data-proxy="[data-more='code']"><span aria-hidden="true">🧭</span><span>Buka project di VS Code</span></button>

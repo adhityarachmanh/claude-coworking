@@ -489,6 +489,8 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .msg-copy { flex: none; margin-left: 2px; color: var(--muted); opacity: 0; transition: opacity .15s; }
 .msg:hover .msg-copy, .msg:focus-within .msg-copy { opacity: 1; }
 .tag { display: inline-block; padding: 0 6px; margin-right: 6px; border-radius: var(--r-pill); background: var(--wash-3); }
+.tag.auto-effort { background: var(--accent-soft); color: var(--accent-2); }
+.tag.auto-effort.fallback { background: var(--warn-soft); color: var(--warn-text-strong); }
 .msg.assistant { background: var(--surface-2); border: 1px solid var(--border); margin-top: 4px; }
 .who { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: var(--fs-sm); }
 .who span { color: var(--muted); font-size: var(--fs-xs); margin-left: auto; }

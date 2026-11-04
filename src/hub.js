@@ -2,6 +2,7 @@
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { CHAT_LIMIT, ChatStore, isChatId } from './chat-store.js';
+import { EFFORT_LEVELS } from './effort.js';
 import { describeTool } from './roles.js';
 import { basename, normalizePath, projectId } from './util.js';
 
@@ -35,17 +36,17 @@ const MAX_IMPORTED_MESSAGE = 512 * 1024;
 //   running the migration again recognise it).
 //   When writing fails, the app stays on the old format for this run: chats are shown, kept in state.json
 //   (not in data/chats) and the move is tried again at the next start.
+
 export const DEMO_ID = 'demo';
-export const DEFAULT_SETTINGS = { mode: 'manual', model: '', effort: '', team: true, engine: 'claude' };
+export const DEFAULT_SETTINGS = { mode: 'manual', model: '', effort: '', effortAuto: false, team: true, engine: 'claude' };
 // Which coding agent runs the project: Claude Code (stream-json) or OpenCode (ACP, src/acp-session.js).
 export const ENGINES = ['claude', 'opencode'];
 // What each engine keeps for itself in state.json (the inactive engine's set waits in persisted.workspaces).
 const WORKSPACE_KEYS = ['settings', 'sessions', 'turns', 'interrupted'];
 // OpenCode models are "provider/model" (optionally #variant), as `opencode models` lists them.
 const OPENCODE_MODEL = /^[\w.-]+\/[\w.:@#/-]{1,120}$/;
-// '' = Claude Code's own default; the rest map to `--effort`.
-// '' = Default. none / minimal: offered by some OpenCode models (their own levels, from `model.list`)
-export const EFFORT_LEVELS = ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+// '' = Default. none / minimal: offered by some OpenCode models (their own levels, from `model.list`).
+// Auto is a separate boolean (`effortAuto`): a generated level must never be sent as `--effort auto`.
 // Claude Code's permission modes ('manual' is the app's name for its 'default'); bypassPermissions is left out on purpose.
 export const PERMISSION_MODES = ['manual', 'acceptEdits', 'auto', 'plan', 'dontAsk'];
 // '' = default; otherwise what `--model` / /model take: an alias (fable, opus[1m], opusplan…), a full
@@ -444,7 +445,12 @@ export class Hub {
     const engine = this.persisted?.engine ?? 'claude';
     if (patch.model === '' || patch.model === 'default') next.model = '';
     else if (typeof patch.model === 'string' && (engine === 'opencode' ? OPENCODE_MODEL.test(patch.model) : this.knownModel(patch.model))) next.model = patch.model;
-    if (EFFORT_LEVELS.includes(patch.effort)) next.effort = patch.effort;
+    if (EFFORT_LEVELS.includes(patch.effort)) {
+      next.effort = patch.effort;
+      // Picking a level is a manual choice; only an explicit effortAuto keeps Auto on.
+      if (patch.effortAuto !== true) next.effortAuto = false;
+    }
+    if (typeof patch.effortAuto === 'boolean') next.effortAuto = patch.effortAuto;
     // OpenCode's primary agent (build, or a custom one from the user's opencode.json); '' = build
     if (patch.agent === '' || (typeof patch.agent === 'string' && /^[\w.-]{1,60}$/.test(patch.agent))) next.agent = patch.agent;
     if (typeof patch.team === 'boolean') next.team = patch.team;

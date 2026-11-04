@@ -63,7 +63,7 @@ export function renderComposer() {
   renderAgentOptions(st, engine);
   $('#mode').value = modeFor(st.mode ?? 'manual', caps);
   renderModelOptions(st.model ?? '', engine);
-  $('#effort').value = st.effort ?? '';
+  $('#effort').value = st.effortAuto ? 'auto' : (st.effort ?? '');
   $('#team-mode').checked = st.team ?? true;
   applyCaps(caps, engine);
   const hint = [];
@@ -249,13 +249,14 @@ const GENERIC_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 function setEffortOptions(levels) {
   const select = $('#effort');
   const list = levels ?? GENERIC_EFFORTS;
-  const html = ['<option value="">Default</option>', ...list.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(EFFORT_LABEL[v] ?? v)}</option>`)].join('');
+  const html = ['<option value="auto">Auto (LLM)</option>', '<option value="">Default</option>', ...list.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(EFFORT_LABEL[v] ?? v)}</option>`)].join('');
   if (select.dataset.html === html) return;
-  const want = state.statuses[state.active]?.effort ?? select.value;
+  const st = state.statuses[state.active] ?? {};
+  const want = st.effortAuto ? 'auto' : (st.effort ?? select.value);
   select.innerHTML = html;
   select.dataset.html = html;
   // a level the new model doesn't have shows as Default (the server also falls back to the nearest it offers)
-  select.value = list.includes(want) ? want : '';
+  select.value = want === 'auto' || list.includes(want) ? want : '';
 }
 
 function cycleMode() {
@@ -301,6 +302,8 @@ async function sendPrompt() {
   autosize();
   clearAttachments();
   closeSuggest();
+  const autoEffort = Boolean(state.statuses[project]?.effortAuto);
+  if (autoEffort) $('#composer-hint').textContent = 'Menentukan effort…';
   try {
     await api(`/api/projects/${project}/prompt`, { text, attachments: files });
     draftSent(project, text);
@@ -309,13 +312,23 @@ async function sendPrompt() {
     input.value = text;
     restoreAttachments(kept, project);
     toast(`Gagal mengirim: ${err.message}`);
+  } finally {
+    if (autoEffort) renderComposer();
   }
 }
 
 export async function saveSettings() {
   try {
     const agent = $('#agent-ctl').hidden ? undefined : $('#agent').value; // OpenCode only
-    await api(`/api/projects/${state.active}/settings`, { mode: $('#mode').value, model: $('#model').value, effort: $('#effort').value, team: $('#team-mode').checked, ...(agent !== undefined && { agent }) });
+    const effort = $('#effort').value;
+    const auto = effort === 'auto';
+    await api(`/api/projects/${state.active}/settings`, {
+      mode: $('#mode').value,
+      model: $('#model').value,
+      ...(auto ? { effortAuto: true } : { effort, effortAuto: false }),
+      team: $('#team-mode').checked,
+      ...(agent !== undefined && { agent }),
+    });
   } catch (err) {
     toast(err.message);
   }

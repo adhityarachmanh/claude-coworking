@@ -288,6 +288,7 @@ function itemHtml(item, waiting, edit) {
   if ((item.status === 'done' || item.status === 'failed') && item.endedAt) meta.push(ago(item.endedAt));
   if (item.meta?.durationMs) meta.push(`${Math.max(1, Math.round(item.meta.durationMs / 1000))} dtk`);
   if (item.meta?.costUsd) meta.push(`$${item.meta.costUsd.toFixed(2)}`);
+  if (item.effort) meta.push(`Auto: ${{ low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' }[item.effort] ?? item.effort}${item.effortSource === 'fallback' ? ' (fallback)' : ''}`);
   const act = (name, label, title, extra = '') => `<button type="button" class="ghost icon" data-act="${name}" title="${title}" aria-label="${title}"${extra}>${label}</button>`;
   const actions = [];
   if (isWaiting && edit && !editing) {
