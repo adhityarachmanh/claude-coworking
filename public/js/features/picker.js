@@ -54,12 +54,19 @@ export function renderSidebar() {
       const engineTag = engine
         ? `<span class="engine-badge" data-engine="${engine}" title="Mesin project: ${escapeHtml(engineLabel(engine))}" aria-label="Mesin: ${escapeHtml(engineLabel(engine))}">${escapeHtml(engineBadge(engine))}</span>`
         : '';
+      // A project whose folder is gone can be purged safely: the action never deletes a folder, only the app's data.
+      const missingTag = p.missing ? '<span class="badge missing" title="Folder project tidak ditemukan">folder hilang</span>' : '';
+      const purge = p.missing && p.id !== DEMO_ID
+        ? `<button class="purge" title="${state.readOnly ? READ_ONLY_HINT : 'Hapus data project ini (foldernya sudah tidak ada)'}" aria-label="Hapus data project ${escapeHtml(p.name)}" ${state.readOnly ? 'disabled' : ''}>🗑</button>`
+        : '';
       return `${head}<li class="${p.id === state.active ? 'active' : ''} ${i === picker.cursor ? 'cursor' : ''}" data-id="${p.id}" title="${escapeHtml(p.path ?? 'Simulasi tanpa Claude Code')}">
         <span class="p-icon">${icon}</span>
         <span class="p-text"><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.path ? p.path.replace(/^.*\/projects\//, '…/') : 'simulasi')}</small></span>
         ${engineTag}
+        ${missingTag}
         ${badge}
         ${star}
+        ${purge}
         ${p.sources.includes('custom') ? '<button class="forget" title="Hapus dari daftar" aria-label="Hapus dari daftar">×</button>' : ''}
       </li>`;
     })
@@ -145,6 +152,20 @@ export function initPicker() {
       if (state.readOnly) return;
       const project = state.projects.find((p) => p.id === li.dataset.id);
       api(`/api/projects/${li.dataset.id}/favorite`, { on: !project?.favorite }).catch((err) => toast(err.message));
+      return;
+    }
+    if (e.target.closest('.purge')) {
+      if (state.readOnly) return;
+      const project = state.projects.find((p) => p.id === li.dataset.id);
+      if (!project?.missing) return;
+      if (window.confirm(`Folder project "${project.name}" sudah tidak ada. Hapus data project ini dari aplikasi?\n\nPengaturan, riwayat chat, antrian, dan baris laporan token project ini ikut dihapus. File backup di folder cadangan tidak terhapus, dan folder di disk tidak disentuh (memang sudah tidak ada).`)) {
+        api(`/api/projects/${li.dataset.id}/purge`, { confirm: li.dataset.id })
+          .then(() => {
+            toast('Data project dihapus.', 'ok');
+            if (li.dataset.id === state.active) selectProject(DEMO_ID);
+          })
+          .catch((err) => toast(err.message));
+      }
       return;
     }
     if (e.target.closest('.forget')) {

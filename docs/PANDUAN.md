@@ -1,6 +1,6 @@
 # Panduan harian Adhit Office
 
-Panduan singkat untuk pemakaian sehari-hari, di laptop dan HP. Detail lengkap ada di [README](../README.md).
+Panduan singkat untuk pemakaian sehari-hari, di laptop dan HP. Detail tiap fitur ada di [FITUR](FITUR.md); cara menjalankan dan keamanan ada di [README](../README.md).
 
 Belum terpasang? Ikuti [Mulai cepat](../README.md#mulai-cepat) dulu.
 
@@ -16,7 +16,7 @@ Tips:
 
 - Tekan `?` untuk daftar shortcut, atau `Ctrl+P` untuk mencari aksi apa saja.
 - Ingin Claude bekerja tanpa ditunggui? Ganti mode izin (`Shift+Tab`). Mode paling aman tetap **🛡️ Tanya dulu**.
-- Pekerjaan berurutan? Masukkan ke **📋 Antrian** (`Alt+Enter`). Lihat [Antrian & batas](../README.md#antrian--batas).
+- Pekerjaan berurutan? Masukkan ke **📋 Antrian** (`Alt+Enter`). Lihat [Antrian & batas](FITUR.md#antrian--batas).
 
 ## Menjawab izin dari HP
 
@@ -38,7 +38,7 @@ Lewat WiFi rumah biasa (tanpa Tailscale), HP **hanya bisa melihat**. Itu disenga
 
 ## Memutar musik
 
-**Sekali saja, di laptop:** ⚙ → **♪ Spotify**. Ikuti 4 langkah di sana (buat app di developer.spotify.com, salin Redirect URI, tambahkan email Spotify-mu, tempel Client ID), lalu **🔗 Hubungkan**. Butuh Spotify Premium. Detail: [Musik (Spotify)](../README.md#musik-spotify).
+**Sekali saja, di laptop:** ⚙ → **♪ Spotify**. Ikuti 4 langkah di sana (buat app di developer.spotify.com, salin Redirect URI, tambahkan email Spotify-mu, tempel Client ID), lalu **🔗 Hubungkan**. Butuh Spotify Premium. Detail: [Musik (Spotify)](FITUR.md#musik-spotify).
 
 **Setiap hari:**
 
@@ -53,7 +53,9 @@ Lewat WiFi rumah biasa (tanpa Tailscale), HP **hanya bisa melihat**. Itu disenga
 - Laptop: klik **🗂 Semua project** di header (atau `Ctrl+P` → *Semua project*).
 - HP: ketuk bar **🗂 Semua project** di atas tampilan **Kantor**. Ringkasannya, misalnya *1 butuh kamu · 2 bekerja*, langsung terlihat.
 
-Yang **butuh kamu** selalu di atas: izin yang menunggu, giliran terputus, atau yang mungkin macet. Ketuk **✋ Lihat izin** untuk langsung ke kartu izinnya. Detail: [Project & dashboard](../README.md#project--dashboard).
+Yang **butuh kamu** selalu di atas: izin yang menunggu, giliran terputus, atau yang mungkin macet. Ketuk **✋ Lihat izin** untuk langsung ke kartu izinnya. Detail: [Project & dashboard](FITUR.md#project--dashboard).
+
+Project yang foldernya sudah dipindah/dihapus ditandai **folder hilang** dan bisa dibersihkan lewat 🗑 di daftar project (project custom tetap terdaftar setelah restart/refresh). Yang dihapus hanya data aplikasi (pengaturan, riwayat chat kedua mesin, antrian, baris laporan token); folder di disk dan file backup tidak disentuh. Project yang foldernya masih ada ditolak, dan HP yang hanya-lihat tidak bisa menghapus.
 
 ## Melihat pemakaian per mesin
 
@@ -66,7 +68,7 @@ Yang **butuh kamu** selalu di atas: izin yang menunggu, giliran terputus, atau y
    - Angka dalam tanda kurung, misalnya `$1.20 (87%)`, berarti hanya 87% catatan di kelompok itu yang punya biaya.
 5. **⬇ Unduh PDF** memuat tabel yang sama dengan rincian lebih lengkap (per mesin × sumber, per project, sesi teratas).
 
-Rincian **per role** belum tersedia: pemakaian subagent digabung ke sesi induknya. Detail: [Akun & laporan](../README.md#akun--laporan).
+Rincian **per role** belum tersedia: pemakaian subagent digabung ke sesi induknya. Detail: [Akun & laporan](FITUR.md#akun--laporan).
 
 ## Meringkas konteks percakapan
 
@@ -77,7 +79,7 @@ Kalau percakapan makin panjang dan status konteks mendekati batas:
 3. Klik **Ringkas**. Tunggu indikator *Memadatkan konteks percakapan…* sampai selesai.
 4. Percakapan di panel chat tetap utuh; yang diringkas adalah konteks yang dikirim ke mesin.
 
-Tombol ini tidak bisa dipakai saat tim sedang bekerja, ada izin yang menunggu jawaban, atau rewind berjalan. Dengan OpenCode, tombol hanya jalan kalau sesinya menyediakan `/compact`; kalau tidak, muncul penjelasan. Detail: [Tanpa terminal](../README.md#tanpa-terminal).
+Tombol ini tidak bisa dipakai saat tim sedang bekerja, ada izin yang menunggu jawaban, atau rewind berjalan. Dengan OpenCode, tombol hanya jalan kalau sesinya menyediakan `/compact`; kalau tidak, muncul penjelasan. Detail: [Tanpa terminal](FITUR.md#tanpa-terminal).
 
 ## Melihat harga saat memilih model
 
@@ -88,7 +90,7 @@ Tombol ini tidak bisa dipakai saat tim sedang bekerja, ada izin yang menunggu ja
    - `— gratis` untuk model gratis.
 3. Baris kecil di bawah daftar menjelaskan sumber angkanya. Kalau tertulis *Belum ada data harga*, model itu belum pernah dipakai dan tidak punya harga list.
 
-Harga OpenCode Go diambil dari katalog resmi `opencode.ai` dan disimpan di folder data aplikasi; pembaruan gagal (offline) tidak mengganggu pemilihan model. Detail: [Tanpa terminal](../README.md#tanpa-terminal).
+Harga OpenCode Go diambil dari katalog resmi `opencode.ai` dan disimpan di folder data aplikasi; pembaruan gagal (offline) tidak mengganggu pemilihan model. Detail: [Tanpa terminal](FITUR.md#tanpa-terminal).
 
 ## Memakai Model Auto
 
@@ -103,7 +105,7 @@ Harga OpenCode Go diambil dari katalog resmi `opencode.ai` dan disimpan di folde
 5. **Atur tangga…** (di bawah pilihan model saat Auto aktif): pilih model untuk **Hemat / Seimbang / Kuat / Maks** per mesin, atau **Bawaan** untuk kembali ke default. Berlaku untuk Claude Code dan OpenCode.
 6. Alasan pilihan Auto muncul di chat (`🤖 Model Auto: Kuat → kimi-k3.1-pro — multi-file bug fix`) dan pada badge Effort Auto. Baris `±$…` di atas kotak pesan adalah estimasi biaya prompt (konteks + teks + asumsi output), bukan tagihan pasti.
 
-- **Model Auto** kini menilai setiap prompt **bersama konteks rencana terakhir**: percakapan terakhir dan daftar todo/plan ikut dikirim ke classifier, jadi prompt lanjutan singkat seperti *“kerjakan”* atau *“lanjut”* dinilai dari rencana yang baru muncul, bukan dari satu kata. Detail: [Tanpa terminal](../README.md#tanpa-terminal).
+- **Model Auto** kini menilai setiap prompt **bersama konteks rencana terakhir**: percakapan terakhir dan daftar todo/plan ikut dikirim ke classifier, jadi prompt lanjutan singkat seperti *“kerjakan”* atau *“lanjut”* dinilai dari rencana yang baru muncul, bukan dari satu kata. Detail: [Tanpa terminal](FITUR.md#tanpa-terminal).
 
 ## Mengulangi perubahan setelah rewind
 
@@ -121,13 +123,13 @@ Batasan: redo kode hanya untuk **perubahan kode yang belum di-commit** di **repo
 ## Melihat sisa kuota OpenCode Go
 
 1. Buka **👤 Akun** saat mesin OpenCode aktif.
-2. Gulir ke **Kuota OpenCode Go**.
+2. Gulir ke **Kuota OpenCode Go**, lalu pilih paketmu: **Go ($10/bulan)**, **Go Plus ($40/bulan)**, atau **Go Teams ($20/anggota/bulan)**.
 3. Tiap model menampilkan **terpakai / batas**, **sisa**, dan tiga bar: **5 jam**, **7 hari**, **30 hari**.
    - Hijau < 70%, kuning 70–90%, merah > 90%.
-   - `tak terbatas` untuk model gratis; `batas belum diketahui` untuk model yang tidak ada di tabel paket Go.
-4. Angka ini **perkiraan**: token tercatat × harga list katalog resmi, dibandingkan batas paket **Go ($10/bulan)**. Plus/Teams punya batas lebih tinggi dan belum dihitung terpisah. Kuota resmi tetap di console OpenCode.
+   - `tak terbatas` untuk model gratis; `batas belum diketahui` untuk model yang tidak ada di tabel paket itu.
+4. Angka ini **perkiraan**: token tercatat × harga list katalog resmi, dibandingkan batas paket yang dipilih. Go Teams dihitung **per anggota**. Kuota resmi tetap di console OpenCode.
 
-Detail: [Akun & laporan](../README.md#akun--laporan).
+Detail: [Akun & laporan](FITUR.md#akun--laporan).
 
 ## Mengatur budget pemakaian
 
@@ -161,7 +163,7 @@ Di **👤 Akun**, **Mesin bawaan untuk project baru** hanya berlaku untuk projec
 4. **Persiapan**: checklist login, folder project, backup otomatis, HTTPS, OpenCode — lengkapi yang masih kosong.
 5. Klik **↻ Periksa ulang** setelah memperbaiki sesuatu. Laporan terakhir tetap terlihat bila refresh gagal.
 
-Hanya dari laptop atau Tailscale; di HP WiFi biasa tombol ini tidak muncul. Detail: [Pengaturan](../README.md#tanpa-terminal).
+Hanya dari laptop atau Tailscale; di HP WiFi biasa tombol ini tidak muncul. Detail: [Pengaturan](FITUR.md#tanpa-terminal).
 
 ## Mengganti akun dengan aman
 
@@ -202,7 +204,7 @@ Hanya dari laptop. Dari HP (termasuk lewat Tailscale) editor ini tidak terbuka.
 4. Baris bertanda *tidak valid* (file rusak) tidak bisa dipulihkan; tombolnya mati.
 5. Aplikasi menyimpan **10 backup terakhir per file** selama **90 hari** di folder data aplikasi. File `.bak-*` lama tetap muncul dengan tanda *format lama* dan tidak pernah dihapus aplikasi.
 
-**Kalau muncul *"File berubah di luar aplikasi…"*** (saat menyimpan, memulihkan, atau menggabungkan): file config diubah di luar aplikasi—atau editor sudah lama terbuka—jadi tidak ada yang ditulis. Klik **↻ Muat ulang**, cek perubahannya, lalu ulangi. Detail: [Mesin: Claude Code atau OpenCode](../README.md#mesin-claude-code-atau-opencode).
+**Kalau muncul *"File berubah di luar aplikasi…"*** (saat menyimpan, memulihkan, atau menggabungkan): file config diubah di luar aplikasi—atau editor sudah lama terbuka—jadi tidak ada yang ditulis. Klik **↻ Muat ulang**, cek perubahannya, lalu ulangi. Detail: [Mesin: Claude Code atau OpenCode](FITUR.md#mesin-claude-code-atau-opencode).
 
 ## Kalau terasa macet
 
@@ -233,4 +235,4 @@ Yang ikut kembali: riwayat chat kedua mesin, **mesin tiap project**, pengaturan 
 
 Yang perlu diulang di laptop baru: login Claude, pairing HP (termasuk notifikasi push), dan menghubungkan Spotify. Mode izin tiap project kembali ke **Tanya dulu**.
 
-> Backup adalah **data pribadi tanpa enkripsi**. Simpan di folder yang hanya kamu akses dan hapus bila tidak perlu. Import hanya menambah, tidak menghapus. Detail: [Backup & riwayat](../README.md#backup--riwayat).
+> Backup adalah **data pribadi tanpa enkripsi**. Simpan di folder yang hanya kamu akses dan hapus bila tidak perlu. Import hanya menambah, tidak menghapus. Detail: [Backup & riwayat](FITUR.md#backup--riwayat).

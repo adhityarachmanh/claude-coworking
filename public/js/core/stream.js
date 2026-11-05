@@ -101,6 +101,8 @@ const handlers = {
   'role-map': (data, live) => live && onRoleMapChanged(), // 🧭 the AI mapped names / another device changed the map
   projects(projects) {
     state.projects = projects;
+    // Another tab may have purged/forgotten the project this tab is showing: do not stay on a dead page.
+    if (state.active !== DEMO_ID && !projects.some((p) => p.id === state.active)) selectProject(DEMO_ID);
     renderSidebar();
     pushProjectsChanged(); // favourites changed: a phone with push tells the server
   },

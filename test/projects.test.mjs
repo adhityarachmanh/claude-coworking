@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { discoverProjects, isDirectory, isNetworkPath } from '../src/projects.js';
+import { discoverProjects, isDirectory, isMissing, isNetworkPath } from '../src/projects.js';
 
 test('UNC and device paths are recognised (stat-ing them would leak an NTLM hash over SMB)', () => {
   const network = ['\\\\server\\share', '//server/share', '\\\\?\\C:\\Windows', '\\\\.\\PhysicalDrive0', '\\??\\UNC\\server\\share', '\\/server/share', '  \\\\server\\share'];
@@ -22,6 +22,21 @@ test('isDirectory refuses network paths without touching them; local folders sti
     assert.equal(isDirectory('//192.0.2.1/share'), false);
     assert.ok(Date.now() - started < 200, 'no network round trip');
     assert.deepEqual(discoverProjects({ roots: ['\\\\192.0.2.1\\share'] }).filter(([, src]) => src === 'folder'), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('isMissing only counts ENOENT/ENOTDIR as gone: a file or an unreadable path is not an orphan', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-projects-missing-'));
+  try {
+    const file = path.join(dir, 'catatan.txt');
+    writeFileSync(file, 'x');
+    assert.equal(isMissing(dir), false, 'an existing folder is not missing');
+    assert.equal(isMissing(file), false, 'a file is not a missing folder');
+    assert.equal(isMissing(path.join(file, 'anak')), true, 'ENOTDIR from a path below a file');
+    assert.equal(isMissing(path.join(dir, 'sudah-pindah')), true, 'ENOENT');
+    assert.equal(isMissing('\\\\192.0.2.1\\share'), false, 'network paths are never probed');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

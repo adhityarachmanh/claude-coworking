@@ -21,6 +21,21 @@ export function isDirectory(p) {
 }
 
 /**
+ * The folder is really gone (ENOENT/ENOTDIR), not merely unreadable. A permission error, a busy drive or a network
+ * timeout must not count as "missing": the purge action would throw the project's data away while the folder is
+ * still there. Network paths are never probed (an SMB stat can leak an NTLM hash).
+ */
+export function isMissing(p) {
+  if (!p || isNetworkPath(p)) return false;
+  try {
+    statSync(p);
+    return false;
+  } catch (err) {
+    return err?.code === 'ENOENT' || err?.code === 'ENOTDIR';
+  }
+}
+
+/**
  * Is `dir` a strict subfolder of one of `roots`? Windows compares case-insensitively (path.relative does), and the
  * root itself is not "inside" itself. Used to keep the project list inside the folders the user chose.
  */

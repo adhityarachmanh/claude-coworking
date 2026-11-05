@@ -253,6 +253,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .p-text small { color: var(--muted); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--r-pill); display: grid; place-items: center; font-size: var(--fs-xs); font-weight: 700; }
 .badge.ask { background: var(--ask); color: var(--on-ask); animation: pulse 1.2s infinite; }
+.badge.missing { background: var(--surface-2); color: var(--warn-text); white-space: nowrap; }
 /* 🔀 which engine a project runs on (session bar, project picker row): one compact pill, never wraps */
 .engine-badge { flex: none; display: inline-block; padding: 1px 7px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; line-height: 1.5; white-space: nowrap; }
 .engine-badge[data-engine='opencode'] { color: var(--accent-2); border-color: var(--accent-line); background: var(--accent-soft); }
@@ -262,8 +263,9 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .dot.live { background: var(--ok); box-shadow: 0 0 0 3px #3fb95026; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 15%, transparent); }
 /* visibility (not display): row layout stays stable; shown on hover, on the keyboard-cursor row, and always on touch */
 .projects .forget { visibility: hidden; padding: 0 6px; border: 0; background: none; color: var(--muted); font-size: var(--fs-lg); line-height: 1; }
-.projects li:hover .forget, .projects li.cursor .forget { visibility: visible; }
-.projects .forget:hover { color: var(--err); }
+.projects .purge { visibility: hidden; padding: 0 5px; border: 0; background: none; color: var(--muted); font-size: var(--fs-base); line-height: 1; }
+.projects li:hover .forget, .projects li.cursor .forget, .projects li:hover .purge, .projects li.cursor .purge { visibility: visible; }
+.projects .forget:hover, .projects .purge:hover { color: var(--err); }
 .add-project { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); }
 .add-project input { flex: 1; min-width: 0; font-size: var(--fs-sm); }
 
@@ -891,7 +893,7 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 @media (hover: none) {
   .msg-actions, .msg-copy { opacity: .85; }
   .code-bar .copy { opacity: 1; }
-  .projects .fav, .projects .forget { visibility: visible; }
+  .projects .fav, .projects .forget, .projects .purge { visibility: visible; }
 }
 /* syntax palette (Material-like), intentionally not tokenized */
 .hl-k { color: #c792ea; }

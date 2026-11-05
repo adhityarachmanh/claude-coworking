@@ -5,8 +5,10 @@ import { BUDGET_KEYS, BUDGET_MAX_USD, cents, cleanLimits } from './budget.js';
 import { CHAT_LIMIT, ChatStore, isChatId } from './chat-store.js';
 import { EFFORT_LEVELS } from './effort.js';
 import { MODEL_TIERS } from './model-auto.js';
+import { GO_PLANS } from './opencode-go.js';
 import { describeTool } from './roles.js';
 import { basename, normalizePath, projectId } from './util.js';
+import { isMissing } from './projects.js';
 
 const EVENT_LIMIT = 80;
 // Biggest message taken from a backup (tool output is clipped long before this).
@@ -214,7 +216,7 @@ export class Hub {
     // turns: the turn running right now per project (written when it starts, removed when it ends); one left
     // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
     // the user continues or dismisses them (see recoverTurns / interruptTurn).
-    const empty = { roots: [], custom: [], favorites: [], settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null } };
+    const empty = { roots: [], custom: [], favorites: [], settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null } };
     let stored = {};
     let parsedOk = false;
     try {
@@ -228,6 +230,7 @@ export class Hub {
     }
     const { chats: legacy, ...rest } = stored;
     rest.engine = ENGINES.includes(rest.engine) ? rest.engine : 'claude';
+    rest.opencodeGoPlan = Object.hasOwn(GO_PLANS, rest.opencodeGoPlan) ? rest.opencodeGoPlan : 'go';
     this.openChats();
     if (legacy !== undefined) this.migrateChats(legacy, rest);
     else if (parsedOk) this.pruneChatBackups();
@@ -460,6 +463,18 @@ export class Hub {
     return true;
   }
 
+  /** The OpenCode Go plan the user picked (OpenCode does not report it): go | plus | teams. */
+  goPlan() {
+    return Object.hasOwn(GO_PLANS, this.persisted.opencodeGoPlan) ? this.persisted.opencodeGoPlan : 'go';
+  }
+
+  setGoPlan(plan) {
+    if (!Object.hasOwn(GO_PLANS, plan)) return false;
+    this.persisted.opencodeGoPlan = plan;
+    this.save();
+    return true;
+  }
+
   /** Safety copies of state.json from the chat migration: removed once older than 7 days (moved for good by then). */
   pruneChatBackups(now = Date.now()) {
     let names = [];
@@ -668,7 +683,14 @@ export class Hub {
   }
 
   listProjects() {
-    return [...this.projects.values()].map((p) => ({ ...p, lastActivity: this.persisted.activity[p.id] ?? 0, favorite: this.persisted.favorites.includes(p.id) }));
+    return [...this.projects.values()].map((p) => ({
+      ...p,
+      lastActivity: this.persisted.activity[p.id] ?? 0,
+      favorite: this.persisted.favorites.includes(p.id),
+      // The folder is gone (moved, deleted, a temp folder from an old CLI session): the picker may offer a safe purge.
+      // Only ENOENT/ENOTDIR: an unreadable or temporarily offline folder is not an orphan.
+      missing: Boolean(p.path) && isMissing(p.path),
+    }));
   }
 
   /** Starred projects stay on top of the picker on every device (stored server-side). */

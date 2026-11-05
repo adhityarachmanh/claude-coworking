@@ -2,7 +2,7 @@
 // unknown and free models, and the empty ledger. No server, no network.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { costOf, GO_LIMITS, goAllowance, inPeakHours, modelIdOf } from '../src/opencode-go.js';
+import { costOf, GO_LIMITS, GO_PLAN_LIMITS, GO_PLANS, goAllowance, inPeakHours, modelIdOf } from '../src/opencode-go.js';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -131,6 +131,40 @@ test('sorted by the share of the month used, then by spend', () => {
     ['mimo-v2.6-flash', 0.5],
     ['glm-5.3', 0.2],
   ]);
+});
+
+test('Go Plus and Go Teams use their own monthly table, with Teams limits per member', () => {
+  assert.deepEqual(Object.keys(GO_PLANS), ['go', 'plus', 'teams']);
+  assert.equal(GO_PLANS.teams.perMember, true);
+  assert.equal(GO_PLAN_LIMITS.plus['glm-5.3'], 120);
+  assert.equal(GO_PLAN_LIMITS.teams['glm-5.3'], 20);
+  assert.equal(GO_PLAN_LIMITS.plus['kimi-k2.5'], null, 'an older model has no Plus/Teams row, not a guessed limit');
+  const rows = [
+    row('opencode-go/glm-5.3', NOW - HOUR, { input: 1_000_000 }),
+    row('opencode-go/glm-5.3', NOW - 6 * HOUR, { input: 1_000_000 }),
+    row('opencode-go/glm-5.3', NOW - 3 * DAY, { input: 2_000_000 }),
+  ];
+  const plus = goAllowance({ rows, prices: { 'glm-5.3': GLM }, now: NOW, plan: 'plus' });
+  assert.equal(plus.plan, 'plus');
+  assert.match(plus.note, /Go Plus/);
+  assert.match(plus.note, /\$40\/bulan/);
+  assert.deepEqual([plus.models[0].limit, plus.models[0].used30d, plus.models[0].remaining, plus.models[0].percent30d], [120, 4, 116, 0.0333]);
+  const teams = goAllowance({ rows, prices: { 'glm-5.3': GLM }, now: NOW, plan: 'teams' });
+  assert.equal(teams.plan, 'teams');
+  assert.match(teams.note, /Go Teams/);
+  assert.match(teams.note, /per anggota/);
+  assert.deepEqual([teams.models[0].limit, teams.models[0].remaining, teams.models[0].percent30d], [20, 16, 0.2]);
+});
+
+test('an unknown plan falls back to Go; a plan without a model leaves the limit unknown, not zero', () => {
+  const rows = [row('opencode-go/kimi-k2.5', NOW - HOUR, { input: 1_000_000 })];
+  const fallback = goAllowance({ rows, prices: { 'kimi-k2.5': GLM }, now: NOW, plan: 'enterprise' });
+  assert.equal(fallback.plan, 'go');
+  assert.equal(fallback.models[0].limit, 60);
+  const plus = goAllowance({ rows, prices: { 'kimi-k2.5': GLM }, now: NOW, plan: 'plus' });
+  assert.equal(plus.plan, 'plus');
+  assert.equal(plus.models[0].limit, null);
+  assert.equal(plus.models[0].remaining, null);
 });
 
 test('no rows → an empty estimate, never a throw', () => {

@@ -14,7 +14,7 @@ import { OpenCodeCheckService } from './src/opencode-check.js';
 import { AppUpdater } from './src/app-update.js';
 import { Hub } from './src/hub.js';
 import { pruneAuth } from './src/auth-audit.js';
-import { discoverProjects, isDirectory, isInside } from './src/projects.js';
+import { discoverProjects, isDirectory, isInside, isMissing } from './src/projects.js';
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { writeBackup } from './src/backup.js';
 import { AccountService, accountPrivacyView, accountViewKey } from './src/account.js';
@@ -316,7 +316,9 @@ function refreshProjects() {
   hub.ready = false; // one broadcast at the end instead of one per folder
   for (const project of hub.projects.values()) project.sources = project.sources.filter((s) => s !== 'folder' && s !== 'claude');
   for (const [dir, source] of discoverProjects({ roots: projectRoots(), extra: hub.persisted.custom })) hub.upsertProject(dir, source);
-  for (const dir of hub.persisted.custom) if (isDirectory(dir)) hub.upsertProject(dir, 'custom');
+  // A custom folder that is gone stays listed as an orphan (missing: true) so its app data can be purged. A folder
+  // that is merely unreadable/offline is not missing: isMissing only accepts ENOENT/ENOTDIR.
+  for (const dir of hub.persisted.custom) if (isDirectory(dir) || isMissing(dir)) hub.upsertProject(dir, 'custom');
   for (const [id, project] of hub.projects) if (!project.sources.length && !hub.runtime.get(id)?.status.busy) hub.projects.delete(id);
   hub.config = {
     roots: projectRoots(),

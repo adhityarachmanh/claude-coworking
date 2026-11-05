@@ -5,7 +5,7 @@ import { modelsOffered, openCodeModelEfforts, openCodeModels } from '../opencode
 import path from 'node:path';
 import { ENGINES } from '../hub.js';
 import { readModelPrices } from '../model-prices.js';
-import { isDirectory, isNetworkPath } from '../projects.js';
+import { isDirectory, isMissing, isNetworkPath } from '../projects.js';
 import { openInApp } from '../open.js';
 import { observedPrices } from '../usage.js';import { json } from './http.js';
 import { withProject, withSession } from './project.js';
@@ -104,6 +104,12 @@ export function registerProjectActions(router) {
     const id = String(params.id ?? '');
     if (!/^[0-9a-f]{8,32}$/.test(id)) return json(res, 400, { error: 'Project tidak valid.' });
     if (body?.confirm !== id) return json(res, 400, { error: 'Kirim confirm berisi project id untuk menghapus project ini.' });
+    // Safety beyond the picker: only an orphan (folder gone, or no row at all) may be purged. Purging a project whose
+    // folder still exists would throw away its settings/chat for no reason; the UI never offers it.
+    const known = hub.projects.get(id);
+    if (known && (!known.path || !isMissing(known.path))) {
+      return json(res, 409, { error: 'Project ini masih punya folder. Purge hanya untuk project yang foldernya sudah tidak ditemukan.' });
+    }
     const session = sessions.sessions.get(id);
     try {
       taskQueue.forget(id);

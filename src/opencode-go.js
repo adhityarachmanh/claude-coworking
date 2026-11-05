@@ -15,43 +15,56 @@ const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
 /**
- * Monthly USD allowance per OpenCode Go model id, from the official plan table. `Infinity` = free (no monthly limit).
- * A model that is not listed here has no known limit (null), but its usage is still estimated.
+ * The three Go plans and their prices. The app cannot read a plan from OpenCode, so the user picks one in 👤 Akun;
+ * the limits below are the official per-model monthly allowances from opencode.ai/docs/go.
  */
-export const GO_LIMITS = Object.freeze({
-  'glm-5.3-flash': 60,
-  'glm-5.3': 15,
-  'glm-5.2': 60,
-  'kimi-k3.1-pro': 15,
-  'kimi-k3': 15,
-  'kimi-k2.7-code': 60,
-  'kimi-k2.5': 60,
-  'longcat-2.0': 60,
-  'step-5-preview': 15,
-  'beam-free': Infinity,
-  'iceman-contributor-free': Infinity,
-  'mimo-v2.6-flash': 60,
-  'mimo-v2.6-pro': 15,
-  'mimo-v2.5': 60,
-  'mimo-v2.5-pro': 15,
-  'minimax-m3.1-flash': 20,
-  'minimax-m3': 60,
-  'muse-spark-1.3-contributor': 60,
-  'muse-spark-1.2-contributor': 60,
-  'qwen3.8-max': 15,
-  'qwen3.8-flash': 30,
-  'qwen3.7-plus': 60,
-  'deepseek-v4.1-flash': 100,
-  'deepseek-v4-pro': 15,
-  hy4: 60,
-  'hy4-preview': 30,
-  hy3: 60,
-  'grok-4.7': 15,
-  'gpt-6-luna': 15,
-  'gpt-5.6-luna': 15,
-  'claude-haiku-5-5': 15,
-  'gemini-4-argon': 30,
+export const GO_PLANS = Object.freeze({
+  go: { label: 'Go', price: '$10/bulan', perMember: false },
+  plus: { label: 'Go Plus', price: '$40/bulan', perMember: false },
+  teams: { label: 'Go Teams', price: '$20/anggota/bulan', perMember: true },
 });
+
+// [Go, Go Plus, Go Teams] monthly USD per model id. Infinity = free (no monthly limit); null = not in that plan's
+// table (usage is still estimated, but no limit is shown). Keep one row per model so the three plans cannot drift.
+const PLAN_TABLE = Object.freeze({
+  'glm-5.3-flash': [60, 180, 65],
+  'glm-5.3': [15, 120, 20],
+  'glm-5.2': [60, 180, 65],
+  'kimi-k3.1-pro': [15, 60, 20],
+  'kimi-k3': [15, 60, 20],
+  'kimi-k2.7-code': [60, 180, 65],
+  'kimi-k2.5': [60, null, null], // older Go model: not in the current Plus/Teams table
+  'longcat-2.0': [60, 240, 65],
+  'step-5-preview': [15, 60, 20],
+  'beam-free': [Infinity, Infinity, Infinity],
+  'iceman-contributor-free': [Infinity, Infinity, Infinity],
+  'mimo-v2.6-flash': [60, 120, 65],
+  'mimo-v2.6-pro': [15, 60, 20],
+  'mimo-v2.5': [60, 120, 65],
+  'mimo-v2.5-pro': [15, 60, 20],
+  'minimax-m3.1-flash': [20, 80, 25],
+  'minimax-m3': [60, 180, 65],
+  'muse-spark-1.3-contributor': [60, 120, 65],
+  'muse-spark-1.2-contributor': [60, 120, 65],
+  'qwen3.8-max': [15, 60, 20],
+  'qwen3.8-flash': [30, 90, 35],
+  'qwen3.7-plus': [60, 180, 65],
+  'deepseek-v4.1-flash': [100, 200, 105],
+  'deepseek-v4-pro': [15, 60, 20],
+  hy4: [60, 240, 65],
+  'hy4-preview': [30, 120, 35],
+  hy3: [60, 240, 65],
+  'grok-4.7': [15, 60, 20],
+  'gpt-6-luna': [15, 60, 20],
+  'gpt-5.6-luna': [15, 60, 20],
+  'claude-haiku-5-5': [15, 60, 20],
+  'gemini-4-argon': [30, 120, 35],
+});
+
+const limitsAt = (index) => Object.freeze(Object.fromEntries(Object.entries(PLAN_TABLE).map(([model, values]) => [model, values[index]])));
+/** Monthly USD allowance per model for the default Go plan (kept exported for callers and tests). */
+export const GO_LIMITS = limitsAt(0);
+export const GO_PLAN_LIMITS = Object.freeze({ go: GO_LIMITS, plus: limitsAt(1), teams: limitsAt(2) });
 
 /** The windows the plan measures usage in (a rolling 5 hours / 7 days / 30 days). */
 const WINDOWS = [
@@ -60,7 +73,11 @@ const WINDOWS = [
   { key: 'used30d', ms: 30 * DAY_MS },
 ];
 
-const NOTE = 'Perkiraan dari token di ledger × harga list Go. Batas 5 jam = 20% dan 7 hari = 50% dari batas bulanan; Go tidak melaporkan biaya, jadi angka ini bukan tagihan.';
+const noteFor = (plan) => {
+  const info = GO_PLANS[plan];
+  const member = info.perMember ? ' Batas ini per anggota; anggota lain punya kuotanya sendiri.' : '';
+  return `Perkiraan dari token di ledger × harga list Go, dibandingkan batas bulanan paket ${info.label} (${info.price}). Batas 5 jam = 20% dan 7 hari = 50%; Go tidak melaporkan biaya, jadi angka ini bukan tagihan.${member}`;
+};
 
 const DEEPSEEK = /^deepseek/i;
 // A row/catalog value that is not a usable number counts as 0 (never NaN in a sum).
@@ -113,10 +130,13 @@ export function costOf(row, price) {
  * model's monthly limit. `percent*` is the share of that window's allowance used (0..1+, 1 = 100%). Only rows of the
  * OpenCode engine/account count; a model with no plan limit keeps its usage with `limit: null`, and a free model is
  * reported as `limit: null` + `unlimited: true`. The models with the most of their month used come first.
- * @param {{ rows?: object[], prices?: object, now?: number }} options prices = the catalog's `models` map
- * @returns {{ plan: 'go', models: object[], note: string }}
+ * @param {{ rows?: object[], prices?: object, now?: number, plan?: 'go'|'plus'|'teams' }} options prices = the
+ *   catalog's `models` map; plan = the user's selected Go plan (unknown/missing falls back to Go)
+ * @returns {{ plan: 'go'|'plus'|'teams', models: object[], note: string }}
  */
-export function goAllowance({ rows = [], prices = {}, now = Date.now() } = {}) {
+export function goAllowance({ rows = [], prices = {}, now = Date.now(), plan = 'go' } = {}) {
+  const selected = Object.hasOwn(GO_PLANS, plan) ? plan : 'go';
+  const limits = GO_PLAN_LIMITS[selected];
   const seen = new Map();
   for (const row of rows) {
     if (!row || engineOf(row) !== 'opencode') continue;
@@ -133,7 +153,7 @@ export function goAllowance({ rows = [], prices = {}, now = Date.now() } = {}) {
 
   const models = [...seen.values()]
     .map(({ model, cost }) => {
-      const monthly = Object.hasOwn(GO_LIMITS, model) ? GO_LIMITS[model] : null;
+      const monthly = Object.hasOwn(limits, model) ? limits[model] : null;
       const unlimited = monthly === Infinity;
       const used30d = round(cost.used30d);
       return {
@@ -153,5 +173,5 @@ export function goAllowance({ rows = [], prices = {}, now = Date.now() } = {}) {
     .filter((m) => m.limit != null || m.unlimited || m.used5h || m.used7d || m.used30d)
     .sort((a, b) => (b.percent30d ?? 0) - (a.percent30d ?? 0) || b.used30d - a.used30d || a.model.localeCompare(b.model));
 
-  return { plan: 'go', models, note: NOTE };
+  return { plan: selected, models, note: noteFor(selected) };
 }

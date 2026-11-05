@@ -304,6 +304,11 @@ test('purge removes the project from BOTH chat stores, its per-engine settings a
   assert.ok(existsSync(path.join(DATA, 'chats', `${alfa}.jsonl`)));
   assert.ok(existsSync(path.join(DATA, 'chats-opencode', `${alfa}.jsonl`)));
 
+  assert.equal((await api(`/api/projects/${alfa}/purge`, { confirm: alfa })).status, 409, 'folder still there: purging a live project is refused');
+  // Close the OpenCode child (it keeps the folder as its cwd), then the folder can go: the project is now an orphan.
+  await switchProject(alfa, 'claude');
+  await sleep(600);
+  rmSync(path.join(TMP, 'projects', 'alfa'), { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   assert.equal((await api(`/api/projects/${alfa}/purge`, { confirm: alfa })).status, 200);
   assert.ok(!existsSync(path.join(DATA, 'chats', `${alfa}.jsonl`)), "Claude's chat file is gone");
   assert.ok(!existsSync(path.join(DATA, 'chats-opencode', `${alfa}.jsonl`)), "OpenCode's chat file is gone");
@@ -403,4 +408,21 @@ test('a terminal Claude Code session only mirrors into a project that runs on Cl
   assert.doesNotMatch(read(path.join(DATA, 'chats', `${openId}.jsonl`)), /terminal claude di project opencode/, "never written into the project's Claude store");
   assert.doesNotMatch(read(path.join(DATA, 'chats-opencode', `${openId}.jsonl`)), /terminal claude di project opencode/, 'nor into its OpenCode store');
   assert.match(read(path.join(DATA, 'chats', `${claudeId}.jsonl`)), /terminal claude di project claude/, 'the Claude project does keep its own');
+});
+
+test('listProjects marks a project whose folder is gone (safe purge offer)', async () => {
+  const { Hub } = await import('../src/hub.js');
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-hub-missing-'));
+  try {
+    const hub = new Hub({ dataDir: dir });
+    const present = path.join(dir, 'present');
+    mkdirSync(present, { recursive: true });
+    const a = hub.upsertProject(present, 'custom');
+    const b = hub.upsertProject(path.join(dir, 'gone-away'), 'custom');
+    const list = hub.listProjects();
+    assert.equal(list.find((p) => p.id === a.id).missing, false, 'an existing folder is not flagged');
+    assert.equal(list.find((p) => p.id === b.id).missing, true, 'a missing folder is flagged');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

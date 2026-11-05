@@ -915,6 +915,10 @@ async function stubOpenCodeAccount(page, { go = null, usage = null } = {}) {
         if (go) body.go = go;
         return json(body);
       }
+      if (path === '/api/account/go-plan') {
+        window.__ocAcct.calls.push({ path, body: JSON.parse(opts?.body ?? '{}') });
+        return json({ ok: true });
+      }
       if (path === '/api/opencode/logout') {
         window.__ocAcct.calls.push(JSON.parse(opts?.body ?? '{}'));
         return json({ error: 'Ketik LOGOUT untuk konfirmasi logout provider.' }, 400);
@@ -968,7 +972,7 @@ const GO_USAGE = { today: { total: 1200, costUsd: 0.12 }, week: { total: 8400, c
 const GO_QUOTA = {
   plan: 'go',
   available: true,
-  note: 'estimasi dari token tercatat × harga list',
+  note: 'Perkiraan dari token di ledger × harga list Go, dibandingkan batas bulanan paket Go ($10/bulan). Batas 5 jam = 20% dan 7 hari = 50%; Go tidak melaporkan biaya, jadi angka ini bukan tagihan.',
   models: [
     { model: 'DeepSeek V4.1 Flash', limit: 10, used5h: 0.24, used7d: 4, used30d: 9.6, remaining: 0.4, percent5h: 12, percent7d: 80, percent30d: 96 },
     { model: 'GLM 5.3', limit: 10, used5h: 0.15, used7d: 2.5, used30d: 8.1, remaining: 1.9, percent5h: 7.5, percent7d: 50, percent30d: 81 },
@@ -2138,6 +2142,90 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('🧹 project yatim: badge "folder hilang", purge hanya untuk yang hilang, konfirmasi & hanya-lihat', async () => {
+      await ensureApp(page, `#${projectId}`);
+      const view = await page.eval(async (active) => {
+        const { state } = await import('/js/core/state.js');
+        const { renderSidebar } = await import('/js/features/picker.js');
+        const prev = {
+          projects: state.projects,
+          statuses: state.statuses,
+          active: state.active,
+          readOnly: state.readOnly,
+          confirm: window.confirm,
+          fetch: window.fetch,
+        };
+        const calls = [];
+        const confirms = [];
+        const row = (id) => document.querySelector(`#project-list li[data-id="${id}"]`);
+        const read = () => ({
+          badge: row('missing-1')?.querySelector('.badge.missing')?.textContent ?? null,
+          purge: Boolean(row('missing-1')?.querySelector('.purge')),
+          purgeNormal: Boolean(row('normal-1')?.querySelector('.purge')),
+          purgeDemo: Boolean(row('demo')?.querySelector('.purge')),
+          disabled: row('missing-1')?.querySelector('.purge')?.disabled ?? null,
+          title: row('missing-1')?.querySelector('.purge')?.title ?? '',
+          toast: [...document.querySelectorAll('.toast')].map((t) => t.textContent),
+        });
+        try {
+          const base = { sources: ['custom'], favorite: false, lastActivity: 0, path: 'C:/tmp/project' };
+          state.projects = [
+            { ...base, id: 'missing-1', name: 'project hilang', missing: true },
+            { ...base, id: 'normal-1', name: 'project ada', missing: false },
+            { ...base, id: 'demo', name: 'Demo kantor', path: null, virtual: true, sources: ['demo'] },
+          ];
+          state.active = active;
+          state.statuses = {};
+          renderSidebar();
+          const initial = read();
+
+          window.confirm = (text) => {
+            confirms.push(text);
+            return false; // Batal: tidak boleh ada request
+          };
+          row('missing-1').querySelector('.purge').click();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const afterCancel = calls.length;
+
+          window.fetch = async (url, opts) => {
+            calls.push({ url: String(url), method: opts?.method, body: opts?.body });
+            return { ok: true, json: async () => ({ ok: true }) };
+          };
+          window.confirm = (text) => {
+            confirms.push(text);
+            return true;
+          };
+          row('missing-1').querySelector('.purge').click();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const afterPurge = read();
+
+          state.readOnly = true;
+          renderSidebar();
+          const readOnly = read();
+          return { initial, afterCancel, afterPurge, readOnly, calls, confirms };
+        } finally {
+          state.readOnly = prev.readOnly;
+          state.projects = prev.projects;
+          state.statuses = prev.statuses;
+          state.active = prev.active;
+          window.confirm = prev.confirm;
+          window.fetch = prev.fetch;
+          renderSidebar();
+        }
+      }, projectId);
+      assert.equal(view.initial.badge, 'folder hilang', 'folder yang hilang diberi badge');
+      assert.equal(view.initial.purge, true, 'project yatim punya tombol purge');
+      assert.equal(view.initial.purgeNormal, false, 'project yang foldernya ada tidak punya purge');
+      assert.equal(view.initial.purgeDemo, false, 'demo tidak punya purge');
+      assert.equal(view.afterCancel, 0, 'Batal tidak mengirim request');
+      assert.match(view.confirms[0], /sudah tidak ada/, 'konfirmasi menyebut folder yang hilang');
+      assert.deepEqual(view.calls, [{ url: '/api/projects/missing-1/purge', method: 'POST', body: JSON.stringify({ confirm: 'missing-1' }) }], 'kirim confirm berisi id');
+      assert.ok(view.afterPurge.toast.some((t) => /Data project dihapus/.test(t)), 'toast sukses');
+      assert.equal(view.readOnly.disabled, true, 'hanya-lihat: purge mati');
+      assert.match(view.readOnly.title, /Hanya lihat lewat WiFi/, 'hanya-lihat: tooltip menjelaskan alasannya');
+      assert.deepEqual(realProblems(page), [], 'tanpa error console');
+    });
+
     test('🔀 fitur mengikuti mesin project: Claude-only hilang di project OpenCode, rewind tetap ada', async () => {
       await ensureApp(page, `#${projectId}`);
       const caps = await page.eval(async (id) => {
@@ -2825,7 +2913,7 @@ for (const vp of VIEWPORTS) {
         assert.match(r.note, /Perkiraan/, 'disebut perkiraan, bukan kuota resmi');
         assert.match(r.note, /harga list/);
         assert.match(r.note, /\$10\/bulan/);
-        assert.match(r.note, /Plus\/Teams lebih tinggi/);
+        assert.match(r.note, /paket Go/);
         assert.equal(r.afterLocalUsage, true, 'seksi Go tepat setelah pemakaian lokal');
         assert.deepEqual(r.rows.map((x) => x.model), ['DeepSeek V4.1 Flash', 'GLM 5.3', 'Kimi K3', 'Model Gratis', 'Model Tanpa Tabel'], 'urutan kiriman (30 hari tertinggi dulu) tidak diacak');
         assert.equal(r.rows[0].money, 'terpakai $9.60 / $10.00 · sisa $0.40');
@@ -2844,6 +2932,37 @@ for (const vp of VIEWPORTS) {
         assert.equal(r.toggle, false, 'lima model: tanpa tombol Tampilkan semua');
         assert.doesNotMatch(r.page, /undefined|NaN|null/);
         assert.equal(await page.eval(horizontalOverflow), null);
+
+        // The plan is unknowable from OpenCode: the user picks it, the server re-estimates with that plan's limits.
+        const plans = await page.eval(() => ({
+          labels: [...document.querySelectorAll('#account-body .oc-go-plan [data-act="oc-go-plan"]')].map((b) => b.textContent),
+          pressed: [...document.querySelectorAll('#account-body .oc-go-plan [data-act="oc-go-plan"]')].map((b) => b.getAttribute('aria-pressed')),
+        }));
+        assert.deepEqual(plans.labels, ['Go', 'Go Plus', 'Go Teams'], 'tiga paket resmi');
+        assert.deepEqual(plans.pressed, ['true', 'false', 'false'], 'Go aktif');
+        await page.eval(() => {
+          const go = window.__ocAcct.go;
+          window.__ocAcct.go = {
+            ...go,
+            plan: 'plus',
+            note: 'Perkiraan dari token × harga list paket Go Plus ($40/bulan).',
+            models: [{ model: 'GLM 5.3', limit: 120, used5h: 1, used7d: 3, used30d: 4, remaining: 116 }, ...go.models.slice(1)],
+          };
+        });
+        const before = await page.eval(() => window.__ocAcct.providerCalls);
+        await page.click('#account-body .oc-go-plan [data-plan="plus"]');
+        await page.waitFor(() => window.__ocAcct.calls.some((c) => c?.path === '/api/account/go-plan'), { timeoutMs: 4000, message: 'POST paket Go' });
+        await page.waitFor(() => /Go Plus/.test(document.querySelector('#account-body .oc-go-note')?.textContent ?? ''), { timeoutMs: 4000, message: 'catatan Go Plus' });
+        const switched = await page.eval(() => ({
+          calls: window.__ocAcct.calls.filter((c) => c?.path === '/api/account/go-plan'),
+          pressed: document.querySelector('#account-body .oc-go-plan [data-plan="plus"]')?.getAttribute('aria-pressed'),
+          money: document.querySelector('#account-body .oc-go-row .oc-go-money')?.textContent,
+          providerCalls: window.__ocAcct.providerCalls,
+        }));
+        assert.deepEqual(switched.calls, [{ path: '/api/account/go-plan', body: { plan: 'plus' } }], 'hanya paket yang dikirim');
+        assert.equal(switched.pressed, 'true', 'tombol Plus aktif');
+        assert.match(switched.money, /\$120\.00/, 'batas Plus dipakai, bukan batas Go');
+        assert.equal(switched.providerCalls, before + 1, 'satu muat ulang, bukan dua');
         await page.press('Escape');
       } finally {
         await restoreOpenCodeAccount(page);

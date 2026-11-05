@@ -143,6 +143,12 @@ const GO_WINDOWS = [
   { key: '30d', label: '30 hari', share: 1 },
 ];
 const GO_ROWS = 8; // the list stays short; "Tampilkan semua" reveals the rest
+// The server validates the same ids; the price only fills the tooltip (the note says it in full).
+const GO_PLAN_OPTIONS = [
+  { id: 'go', label: 'Go', price: '$10/bulan' },
+  { id: 'plus', label: 'Go Plus', price: '$40/bulan' },
+  { id: 'teams', label: 'Go Teams', price: '$20/anggota/bulan' },
+];
 
 const goNumber = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const goTone = (ratio) => (ratio > 0.9 ? 'bad' : ratio >= 0.7 ? 'warn' : 'ok');
@@ -193,12 +199,18 @@ function goQuotaHtml() {
   if (!go || typeof go !== 'object' || go.available === false) return '';
   const rows = (Array.isArray(go.models) ? go.models : []).map(goRow).filter(Boolean); // server order: highest 30d first
   const visible = oc.showAllGo ? rows : rows.slice(0, GO_ROWS);
+  const plan = GO_PLAN_OPTIONS.some((p) => p.id === go.plan) ? go.plan : 'go';
+  const planButtons = GO_PLAN_OPTIONS.map(
+    (p) => `<button type="button" class="engine-opt${p.id === plan ? ' on' : ''}" data-act="oc-go-plan" data-plan="${p.id}" aria-pressed="${p.id === plan}" title="${escapeHtml(`Paket ${p.label}: ${p.price}`)}"${state.accountAuth ? '' : ' disabled'}>${escapeHtml(p.label)}</button>`,
+  ).join('');
+  const note = typeof go.note === 'string' && go.note.trim() ? go.note : 'Perkiraan dari pemakaian yang tercatat × harga list model.';
   const body = rows.length
     ? `<ul class="oc-go-list" id="oc-go-models">${visible.map(goRowHtml).join('')}</ul>
       ${rows.length > GO_ROWS ? `<button type="button" class="ghost oc-go-toggle" data-act="oc-go-all" aria-expanded="${oc.showAllGo}" aria-controls="oc-go-models">${oc.showAllGo ? 'Tampilkan lebih sedikit' : `Tampilkan semua (${rows.length})`}</button>` : ''}`
     : '<p class="muted small">Belum ada pemakaian OpenCode Go yang tercatat.</p>';
   return `<div class="acct-section oc-go"><div class="acct-title"><b>Kuota OpenCode Go</b></div>
-    <p class="muted small oc-go-note">Perkiraan dari pemakaian yang tercatat × harga list model, dibandingkan kuota resmi paket Go ($10/bulan). Batas paket Plus/Teams lebih tinggi.</p>
+    <div class="engine-opts oc-go-plan" role="group" aria-label="Paket OpenCode Go"><span class="muted small">Paket</span>${planButtons}</div>
+    <p class="muted small oc-go-note">${escapeHtml(note)}</p>
     ${body}</div>`;
 }
 
@@ -333,6 +345,17 @@ export async function onOpenCodeAction(act, el, rerender) {
       oc.showAllGo = !oc.showAllGo;
       rerender();
       return true;
+    case 'oc-go-plan': {
+      const plan = el.dataset.plan;
+      if (!plan || plan === (oc.providers?.go?.plan ?? 'go')) return true;
+      try {
+        await api('/api/account/go-plan', { plan });
+        await loadOpenCode(rerender);
+      } catch (err) {
+        toast(err.message, 'warn');
+      }
+      return true;
+    }
     case 'oc-pick':
       oc.picking = true;
       rerender();

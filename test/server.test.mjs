@@ -1047,9 +1047,23 @@ test('OpenCode Go allowance: the providers answer carries an estimate from the l
   assert.ok(hy4.used5h > 0 && hy4.used30d > 0, 'the tokens spent are estimated, not reported by OpenCode (cost 0)');
   assert.ok(hy4.remaining < 60 && hy4.remaining > 59, `remaining ${hy4.remaining}`);
   assert.ok(!JSON.stringify(go).includes('tester@example.com'), 'no account identity in the estimate');
+
+  // The plan cannot be detected: the user picks it, and the estimate uses that plan's limits (Teams is per member).
+  assert.equal((await api('/api/account/go-plan', { plan: 'enterprise' })).status, 400, 'unknown plan refused');
+  assert.equal((await api('/api/account/go-plan', { plan: 'plus' })).status, 200);
+  const plus = (await api('/api/opencode/providers', {})).body.go;
+  assert.equal(plus.plan, 'plus');
+  assert.equal(plus.models.find((m) => m.model === 'hy4').limit, 240);
+  assert.match(plus.note, /Go Plus/);
+  await api('/api/account/go-plan', { plan: 'go' }); // leave the next tests on the default
 });
 
 test('purge removes a project that should never have been listed, but only with its id as confirmation', async () => {
+  const toko = await projectId();
+  const refuse = await api(`/api/projects/${toko}/purge`, { confirm: toko });
+  assert.equal(refuse.status, 409, 'a project whose folder still exists cannot be purged');
+  assert.match(refuse.body.error, /folder/i);
+  assert.ok((await snapshot()).projects.some((p) => p.id === toko), 'and it stays listed');
   const orphan = '0123456789';
   assert.equal((await api(`/api/projects/${orphan}/purge`, {})).status, 400, 'no confirmation: refused');
   assert.equal((await api(`/api/projects/${orphan}/purge`, { confirm: 'other' })).status, 400, 'the wrong id: refused');
@@ -1057,6 +1071,22 @@ test('purge removes a project that should never have been listed, but only with 
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
   assert.equal(ok.body.ok, true);
   assert.equal(ok.body.usage, 0, 'no ledger rows for an id that never existed');
+});
+
+test('a custom project whose folder is gone is re-listed after refresh (missing) and can be purged', async () => {
+  const dir = path.join(TMP, 'folder-yang-hilang');
+  mkdirSync(dir, { recursive: true });
+  const added = await api('/api/projects', { path: dir });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  const id = added.body.id;
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal((await api('/api/projects/refresh')).status, 200);
+  const project = (await snapshot()).projects.find((p) => p.id === id);
+  assert.ok(project, 'still listed so its data can be cleaned up');
+  assert.equal(project.missing, true, 'the picker can offer a purge');
+  const purged = await api(`/api/projects/${id}/purge`, { confirm: id });
+  assert.equal(purged.status, 200, JSON.stringify(purged.body));
+  assert.ok(!(await snapshot()).projects.some((p) => p.id === id), 'gone after purge');
 });
 
 test('team names: validated, shared through the config, empty = default', async () => {
