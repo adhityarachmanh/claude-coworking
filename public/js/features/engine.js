@@ -139,9 +139,9 @@ export const DEFAULT_MODEL_TIERS = Object.freeze({
   claude: Object.freeze({ hemat: 'haiku', seimbang: 'sonnet', kuat: 'opus', maks: 'fable' }),
   opencode: Object.freeze({
     hemat: 'opencode-go/deepseek-v4.1-flash',
-    seimbang: 'opencode-go/glm-5.3',
-    kuat: 'opencode-go/kimi-k3.1-pro',
-    maks: 'opencode-go/kimi-k3',
+    seimbang: 'opencode-go/glm-5.3-flash',
+    kuat: 'opencode-go/deepseek-v4-pro',
+    maks: 'opencode-go/glm-5.3',
   }),
 });
 

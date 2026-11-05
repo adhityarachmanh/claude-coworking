@@ -17,17 +17,18 @@ const hub = new Hub({ dataDir });
 /** settings.modelTiers after one settings patch, validated the same way the settings route stores it. */
 const cleaned = (patch, base = DEFAULT_SETTINGS) => hub.cleanSettings(base, patch).modelTiers;
 
-test('Model Auto: the default ladders per engine are unchanged', () => {
+test('Model Auto: the default ladders per engine are cheap but still tiered', () => {
   assert.deepEqual(DEFAULT_TIERS.claude, { hemat: 'haiku', seimbang: 'sonnet', kuat: 'opus', maks: 'fable' });
   assert.deepEqual(DEFAULT_TIERS.opencode, {
     hemat: 'opencode-go/deepseek-v4.1-flash',
-    seimbang: 'opencode-go/glm-5.3',
-    kuat: 'opencode-go/kimi-k3.1-pro',
-    maks: 'opencode-go/kimi-k3',
+    seimbang: 'opencode-go/glm-5.3-flash',
+    kuat: 'opencode-go/deepseek-v4-pro',
+    maks: 'opencode-go/glm-5.3',
   });
+  for (const model of Object.values(DEFAULT_TIERS.opencode)) assert.ok(!/kimi/i.test(model), `${model} bukan Kimi mahal`);
   assert.equal(tierFor('low').model, 'haiku');
-  assert.equal(tierFor('high', 'opencode').model, 'opencode-go/kimi-k3.1-pro');
-  assert.equal(tierFor('bogus', 'opencode').model, 'opencode-go/glm-5.3', 'an unknown level is Seimbang');
+  assert.equal(tierFor('high', 'opencode').model, 'opencode-go/deepseek-v4-pro');
+  assert.equal(tierFor('bogus', 'opencode').model, 'opencode-go/glm-5.3-flash', 'an unknown level is Seimbang');
   assert.equal(tierFor('high', 'mesin-lain').model, 'opus', 'an unknown engine uses the Claude ladder');
   assert.deepEqual(tiersFor('opencode', null), DEFAULT_TIERS.opencode, 'no ladder = the defaults');
   assert.deepEqual(tiersFor('opencode', {}), DEFAULT_TIERS.opencode);
@@ -37,7 +38,7 @@ test('Model Auto: a custom tier changes the applied model for a classified level
   const modelTiers = { opencode: { hemat: 'opencode-go/mimo-v2.6-flash' } };
   assert.deepEqual(tierFor('low', 'opencode', modelTiers), { key: 'hemat', label: 'Hemat', model: 'opencode-go/mimo-v2.6-flash', engine: 'opencode' });
   assert.equal(autoModelFor('opencode', 'low', modelTiers), 'opencode-go/mimo-v2.6-flash');
-  assert.equal(autoModelFor('opencode', 'high', modelTiers), 'opencode-go/kimi-k3.1-pro', 'other tiers keep their default');
+  assert.equal(autoModelFor('opencode', 'high', modelTiers), 'opencode-go/deepseek-v4-pro', 'other tiers keep their default');
   assert.equal(autoModelFor('claude', 'low', modelTiers), 'haiku', "one engine's ladder never leaks into the other");
   assert.equal(autoModelFor('bogus', 'low', modelTiers), 'haiku', 'an unknown engine still reads the Claude ladder');
   assert.equal(shortModelLabel(autoModelFor('opencode', 'low', modelTiers)), 'mimo-v2.6-flash');
@@ -55,8 +56,8 @@ test('Model Auto: both engines keep separate ladders; unknown keys are ignored',
   assert.equal(autoModelFor('opencode', 'max', modelTiers), 'opencode-go/kimi-k3');
   const merged = tiersFor('opencode', { opencode: { hemat: 'opencode-go/kimi-k3', hemat2: 'x/y', maks: '' } });
   assert.equal(merged.hemat, 'opencode-go/kimi-k3');
-  assert.equal(merged.maks, 'opencode-go/kimi-k3', 'an empty value is no value');
-  assert.equal(merged.seimbang, 'opencode-go/glm-5.3');
+  assert.equal(merged.maks, 'opencode-go/glm-5.3', 'an empty value is no value');
+  assert.equal(merged.seimbang, 'opencode-go/glm-5.3-flash');
   assert.deepEqual(Object.keys(merged).sort(), ['hemat', 'kuat', 'maks', 'seimbang'], 'unknown keys are never part of a ladder');
 });
 

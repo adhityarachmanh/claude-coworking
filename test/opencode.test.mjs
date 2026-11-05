@@ -1213,7 +1213,7 @@ test('✂ Ringkas konteks (OpenCode): only an advertised /compact runs; absent a
 });
 
 // ---------- Model Auto (task-based model selection) ----------
-// OFFICE_EFFORT_FAKE=high: every prompt classifies as "high" → tier Kuat → opencode-go/kimi-k3.1-pro.
+// OFFICE_EFFORT_FAKE=high: every prompt classifies as "high" → tier Kuat → opencode-go/deepseek-v4-pro.
 
 /** Idle again before the next prompt (polled: an engine switch broadcasts no status event of its own). */
 async function settle(id) {
@@ -1231,17 +1231,17 @@ test('Model Auto tiers: default per engine, xhigh/max share Maks, an unknown lev
   assert.deepEqual(tierFor('max'), tierFor('xhigh'), 'xhigh and max are the same tier');
 
   assert.equal(tierFor('low', 'opencode').model, 'opencode-go/deepseek-v4.1-flash');
-  assert.equal(tierFor('medium', 'opencode').model, 'opencode-go/glm-5.3');
-  assert.equal(tierFor('high', 'opencode').model, 'opencode-go/kimi-k3.1-pro');
-  assert.equal(tierFor('xhigh', 'opencode').model, 'opencode-go/kimi-k3');
-  assert.equal(tierFor('max', 'opencode').model, 'opencode-go/kimi-k3');
+  assert.equal(tierFor('medium', 'opencode').model, 'opencode-go/glm-5.3-flash');
+  assert.equal(tierFor('high', 'opencode').model, 'opencode-go/deepseek-v4-pro');
+  assert.equal(tierFor('xhigh', 'opencode').model, 'opencode-go/glm-5.3');
+  assert.equal(tierFor('max', 'opencode').model, 'opencode-go/glm-5.3');
 
   for (const level of ['', null, undefined, 'bogus', 'AUTO']) {
     const tier = tierFor(level, 'opencode');
     assert.equal(tier.key, 'seimbang', `unknown level ${String(level)} → Seimbang`);
-    assert.equal(tier.model, 'opencode-go/glm-5.3');
+    assert.equal(tier.model, 'opencode-go/glm-5.3-flash');
   }
-  assert.equal(autoModelFor('opencode', 'unknown'), 'opencode-go/glm-5.3');
+  assert.equal(autoModelFor('opencode', 'unknown'), 'opencode-go/glm-5.3-flash');
   assert.equal(autoModelFor('claude', 'unknown'), 'sonnet', 'unknown level never picks a big model');
   assert.equal(autoModelFor('mesin-lain', 'high'), 'opus', 'an unknown engine falls back to Claude model aliases');
   assert.equal(shortModelLabel('opencode-go/kimi-k3.1-pro'), 'kimi-k3.1-pro');
@@ -1266,12 +1266,12 @@ test('Model Auto: the classified tier becomes the applied model; a manual pick e
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.autoEffort, null, 'Effort Auto is off: no level applied');
   assert.equal(res.body.autoModel.tier, 'kuat');
-  assert.equal(res.body.autoModel.model, 'opencode-go/kimi-k3.1-pro');
+  assert.equal(res.body.autoModel.model, 'opencode-go/deepseek-v4-pro');
   assert.ok(res.body.autoModel.reason, 'the classifier reason rides along');
   const note = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && o.modelAuto === true);
-  assert.match(note.text, /^🤖 Model Auto: Kuat → kimi-k3\.1-pro/);
+  assert.match(note.text, /^🤖 Model Auto: Kuat → deepseek-v4-pro/);
   st = (await snapshot()).statuses[id];
-  assert.equal(st.model, 'opencode-go/kimi-k3.1-pro', 'the tier model is what the session applies');
+  assert.equal(st.model, 'opencode-go/deepseek-v4-pro', 'the tier model is what the session applies');
   assert.equal(st.modelAuto, true, 'Auto stays on after its own switch');
   assert.equal(st.effort, '', 'Model Auto never touches the effort');
   await settle(id); // the turn is over
@@ -1334,9 +1334,9 @@ test('Model Auto: a custom ladder replaces a tier, an invalid model is dropped, 
   await api(`/api/projects/${id}/settings`, { modelTiers: { opencode: { kuat: '' } } });
   const back = await api(`/api/projects/${id}/prompt`, { text: 'perbaiki bug lain' });
   assert.equal(back.body.autoModel.tier, 'kuat');
-  assert.equal(back.body.autoModel.model, 'opencode-go/kimi-k3.1-pro', 'cleared slot → the default');
+  assert.equal(back.body.autoModel.model, 'opencode-go/deepseek-v4-pro', 'cleared slot → the default');
   await settle(id);
-  assert.equal((await snapshot()).statuses[id].model, 'opencode-go/kimi-k3.1-pro');
+  assert.equal((await snapshot()).statuses[id].model, 'opencode-go/deepseek-v4-pro');
 
   await api(`/api/projects/${id}/settings`, { model: 'opencode-go/beam-free', modelAuto: false, modelTiers: { opencode: { hemat: '' } } });
   assert.deepEqual((await snapshot()).statuses[id].modelTiers, {}, 'an empty ladder leaves no key in the status');
@@ -1358,7 +1358,7 @@ test('Model Auto: a slow model switch finishes before the prompt is sent (no stu
     assert.equal((await api(`/api/projects/${id}/prompt`, { text: 'model?' })).status, 200);
     const result = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result', 15_000);
     assert.equal(result.ok, true, 'the turn finishes instead of hanging');
-    assert.equal(lastText(id), 'model=opencode-go/kimi-k3.1-pro', 'the prompt ran after the model switch, not during it');
+    assert.equal(lastText(id), 'model=opencode-go/deepseek-v4-pro', 'the prompt ran after the model switch, not during it');
     assert.ok(Date.now() - started < 15_000);
   } finally {
     rmSync(path.join(TMP, 'slow-model'), { force: true });
@@ -1376,9 +1376,9 @@ test('Model Auto: a prompt sent mid-turn keeps the model of the running turn (no
   mark = seen.length;
   const first = await api(`/api/projects/${id}/prompt`, { text: 'tugas lama' });
   assert.equal(first.body.autoModel.tier, 'kuat');
-  assert.equal(first.body.autoModel.model, 'opencode-go/kimi-k3.1-pro', JSON.stringify(first.body));
+  assert.equal(first.body.autoModel.model, 'opencode-go/deepseek-v4-pro', JSON.stringify(first.body));
   const note = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && o.modelAuto === true);
-  assert.match(note.text, /^🤖 Model Auto: Kuat → kimi-k3\.1-pro/);
+  assert.match(note.text, /^🤖 Model Auto: Kuat → deepseek-v4-pro/);
   assert.equal((await snapshot()).statuses[id].busy, true, 'the turn is still running');
 
   const before = seen.filter((s) => s.type === 'chat' && s.obj.modelAuto === true).length;
@@ -1388,7 +1388,7 @@ test('Model Auto: a prompt sent mid-turn keeps the model of the running turn (no
   assert.deepEqual(mid.body.autoModel, { skipped: 'busy', reason: 'Mengikuti model turn yang sedang berjalan' });
   assert.equal(mid.body.autoEffort, null);
   const st = (await snapshot()).statuses[id];
-  assert.equal(st.model, 'opencode-go/kimi-k3.1-pro', 'the running turn keeps its model');
+  assert.equal(st.model, 'opencode-go/deepseek-v4-pro', 'the running turn keeps its model');
   assert.equal(st.modelAuto, true);
   assert.equal(seen.filter((s) => s.type === 'chat' && s.obj.modelAuto === true).length, before, 'no switch, no extra note');
   await api(`/api/projects/${id}/stop`);
@@ -1421,7 +1421,7 @@ test('Model Auto on a queue item: classified at enqueue, tier applied at dispatc
   }
   assert.equal(item?.status, 'done', JSON.stringify(item));
   const st = (await snapshot()).statuses[id];
-  assert.equal(st.model, 'opencode-go/kimi-k3.1-pro', 'dispatch applied the tier for the item\'s level');
+  assert.equal(st.model, 'opencode-go/deepseek-v4-pro', 'dispatch applied the tier for the item\'s level');
   assert.equal(st.modelAuto, true);
   assert.equal(st.effort, '', 'the level never becomes an effort while Effort Auto is off');
   assert.equal((await api(`/api/projects/${id}/settings`, { modelAuto: false, model: 'opencode-go/beam-free' })).status, 200);

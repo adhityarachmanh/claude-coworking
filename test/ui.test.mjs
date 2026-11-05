@@ -793,9 +793,11 @@ const restoreSettings = (page) =>
     })
     .catch(() => {});
 
-/** The OpenCode models the ladder/note tests use: the four defaults plus one alternative for Hemat. */
+/** The OpenCode models the ladder/note tests use: the four cheap defaults, Kimi for custom-ladder tests, and one alternative. */
 const OC_MODELS = [
   { value: 'opencode-go/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash' },
+  { value: 'opencode-go/glm-5.3-flash', name: 'GLM 5.3 Flash' },
+  { value: 'opencode-go/deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
   { value: 'opencode-go/glm-5.3', name: 'GLM 5.3' },
   { value: 'opencode-go/kimi-k3.1-pro', name: 'Kimi K3.1 Pro' },
   { value: 'opencode-go/kimi-k3', name: 'Kimi K3' },
@@ -1673,17 +1675,17 @@ for (const vp of VIEWPORTS) {
           toasts: [...document.querySelectorAll('.toast')].map((t) => t.textContent),
         }));
         assert.deepEqual(saved.body, {
-          modelTiers: { opencode: { hemat: 'opencode-go/hemat-lain', seimbang: 'opencode-go/glm-5.3', kuat: '', maks: 'opencode-go/kimi-k3' } },
+          modelTiers: { opencode: { hemat: 'opencode-go/hemat-lain', seimbang: 'opencode-go/glm-5.3-flash', kuat: '', maks: 'opencode-go/glm-5.3' } },
         }, 'badan: hanya mesin aktif, slot yang dikosongkan = ""');
         assert.equal(saved.open, false, 'dialog tertutup setelah tersimpan');
         assert.ok(saved.toasts.some((t) => /Tangga model Auto disimpan/.test(t)), saved.toasts.join(' | '));
-        assert.equal(saved.note, 'Model dipilih otomatis: Hemat hemat-lain · Seimbang glm-5.3 · Kuat kimi-k3.1-pro · Maks kimi-k3.', 'catatan memakai tangga tersimpan (slot kosong = bawaan)');
+        assert.equal(saved.note, 'Model dipilih otomatis: Hemat hemat-lain · Seimbang glm-5.3-flash · Kuat deepseek-v4-pro · Maks glm-5.3.', 'catatan memakai tangga tersimpan (slot kosong = bawaan)');
 
         // Reopening shows the saved ladder; a cleared slot shows the default again.
         await openLadder(page);
         assert.deepEqual(
           await page.eval(() => ['hemat', 'seimbang', 'kuat', 'maks'].map((t) => document.querySelector(`#tier-${t}`).value)),
-          ['opencode-go/hemat-lain', 'opencode-go/glm-5.3', 'opencode-go/kimi-k3.1-pro', 'opencode-go/kimi-k3'],
+          ['opencode-go/hemat-lain', 'opencode-go/glm-5.3-flash', 'opencode-go/deepseek-v4-pro', 'opencode-go/glm-5.3'],
           'tangga tersimpan dipilih ulang',
         );
 
@@ -5821,7 +5823,7 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test('tier mengikuti tangga project di engine OpenCode (/kuat → kimi-k3.1-pro)', async () => {
+    test('tier mengikuti tangga project di engine OpenCode (/kuat → deepseek-v4-pro)', async () => {
       await ensureApp(page, `#${projectId}`);
       await stubSettings(page);
       await stubModels(page);
@@ -5843,9 +5845,9 @@ for (const vp of VIEWPORTS) {
             toasts: [...document.querySelectorAll('.toast')].map((t) => t.textContent),
           };
         });
-        assert.deepEqual(view.bodies[0], { model: 'opencode-go/kimi-k3.1-pro', modelAuto: false }, 'model tier dari tangga OpenCode');
-        assert.deepEqual({ model: view.model, modelAuto: view.modelAuto }, { model: 'opencode-go/kimi-k3.1-pro', modelAuto: false });
-        assert.match(view.toasts.join('\n'), /Model: Kuat → kimi-k3\.1-pro \(Auto dimatikan\)/, 'nama pendek di toast');
+        assert.deepEqual(view.bodies[0], { model: 'opencode-go/deepseek-v4-pro', modelAuto: false }, 'model tier dari tangga OpenCode');
+        assert.deepEqual({ model: view.model, modelAuto: view.modelAuto }, { model: 'opencode-go/deepseek-v4-pro', modelAuto: false });
+        assert.match(view.toasts.join('\n'), /Model: Kuat → deepseek-v4-pro \(Auto dimatikan\)/, 'nama pendek di toast');
         assert.deepEqual(realProblems(page), []);
       } finally {
         await restoreModels(page);
