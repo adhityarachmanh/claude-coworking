@@ -1,7 +1,7 @@
 // Effort Auto's model router with injected model runners: no real CLI and no tokens in these tests.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { classifyEffort } from '../src/effort-classifier.js';
+import { autoContext, classifyEffort } from '../src/effort-classifier.js';
 
 const bin = { command: 'fake', args: [] };
 
@@ -42,6 +42,40 @@ test('OpenCode: uses the active model (never a model picked from the catalog), s
   assert.equal(model, 'openai/gpt-5');
   assert.equal(r.level, 'medium');
   assert.equal(r.source, 'llm');
+});
+
+test('a short follow-up is classified against the plan that came before it', async () => {
+  let prompt = '';
+  const r = await classifyEffort({
+    engine: 'claude',
+    claude: bin,
+    text: 'kerjakan',
+    context: 'Agen: Rencana: 1) perbaiki 3 file 2) tambah test 3) update docs\nRencana/todo: pending perbaiki 3 file',
+    runClaude: async (_bin, _model, seen) => {
+      prompt = seen;
+      return '{"level":"high"}';
+    },
+  });
+  assert.match(prompt, /<context>[\s\S]*perbaiki 3 file[\s\S]*<\/context>/, 'the plan rides along with the short prompt');
+  assert.match(prompt, /<task>\nkerjakan\n<\/task>/);
+  assert.equal(r.level, 'high');
+});
+
+test('autoContext: the recent conversation plus the current todo list, bounded', () => {
+  const hub = {
+    chatOf: () => [
+      { kind: 'user', text: 'apakah aplikasi ini masih kurang?' },
+      { kind: 'assistant', text: 'Rencana: perbaiki A, B, C' },
+      { kind: 'tool', text: 'ignored' },
+    ],
+    statusFor: () => ({ todos: [{ status: 'pending', content: 'perbaiki A' }, { status: 'in_progress', content: 'perbaiki B' }] }),
+  };
+  const context = autoContext(hub, 'p1');
+  assert.match(context, /Saya: apakah aplikasi ini masih kurang/);
+  assert.match(context, /Agen: Rencana: perbaiki A, B, C/);
+  assert.match(context, /Rencana\/todo: pending perbaiki A; in_progress perbaiki B/);
+  assert.ok(!context.includes('ignored'), 'tool rows are not plan context');
+  assert.ok(autoContext({ chatOf: () => [], statusFor: () => ({}) }, 'p1') === '');
 });
 
 test('an empty current model means the engine default, not a catalog pick', async () => {

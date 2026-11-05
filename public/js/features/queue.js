@@ -19,9 +19,10 @@ const REASON_LABEL = {
   failed: 'dijeda karena item terakhir gagal / dihentikan',
   rate_limit: 'dijeda karena batas pemakaian akun Claude tercapai',
   budget: 'dijeda karena batas token/biaya antrian tercapai',
+  account: 'dijeda karena akun berubah — periksa model lalu lanjutkan',
 };
 /** Pauses the user didn't ask for: announced once with a toast. */
-const WARN_REASONS = new Set(['failed', 'rate_limit', 'budget']);
+const WARN_REASONS = new Set(['failed', 'rate_limit', 'budget', 'account']);
 /** Budget ranges, same as the server's (src/queue.js); the server stays the judge. */
 const BUDGET_RANGE = { tokensOut: [1000, 100_000_000], costUsd: [0.01, 10_000] };
 /** The open dialog: which project, its queue as last fetched, the item being edited, the budget the fields show. */
@@ -44,7 +45,7 @@ export function renderQueueChip(st) {
     const left = s.waiting + s.running;
     $('#sb-queue-n').textContent = s.paused ? `⏸ ${left}` : String(left);
     chip.classList.toggle('paused', Boolean(s.paused));
-    const paused = !s.paused ? '' : s.reason === 'budget' ? ', dijeda karena batas token/biaya tercapai' : ', dijeda';
+    const paused = !s.paused ? '' : s.reason === 'account' ? ', dijeda karena akun berubah' : s.reason === 'budget' ? ', dijeda karena batas token/biaya tercapai' : ', dijeda';
     chip.setAttribute('aria-label', `Antrian: ${left} belum selesai${paused} — buka antrian`);
   }
   // The dialog follows the server: a new revision (an item finished, someone reordered) is fetched again.

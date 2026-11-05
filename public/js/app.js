@@ -20,6 +20,7 @@ import { initBackupAuto } from './features/backup-auto.js';
 import { initChanges } from './features/changes.js';
 import { initChat } from './features/chat.js';
 import { initClaudeCheck } from './features/claude-check.js';
+import { initCompact } from './features/compact.js';
 import { initOpenCodeCheck } from './features/opencode-check.js';
 import { initOpenCodeConfig } from './features/opencode-config.js';
 import { initComposerControls, initComposerInput } from './features/composer.js';
@@ -81,6 +82,7 @@ initHandoff(); // 🔁 /lanjut: context from the other engine
 initRoleMap(); // 🧭 learned role mappings (👥 Kelola tim → 🧭)
 initRoster(); // 👥 Kelola tim (⚙, ⋯, Ctrl+P, /team)
 initStatusline();
+initCompact(); // 🧹 /ringkas: the dialog behind the status-line action and the slash command
 initAttachments();
 initSuggest();
 initSessions();

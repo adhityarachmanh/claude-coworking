@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileTree } from './proc.js';
+import { childOpenCodeEnv } from './opencode-bin.js';
 import { classifierPrompt, classifyEffortLocally, cleanAutoLevel, parseEffortClassification } from './effort.js';
 
 const DEFAULT_TIMEOUT_MS = 25_000;
@@ -22,7 +23,7 @@ const rmDir = (dir) => {
 
 function run(bin, args, { cwd, timeout = DEFAULT_TIMEOUT_MS } = {}) {
   return new Promise((resolve) => {
-    execFileTree(bin.command, [...bin.args, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: MAX_OUTPUT, env: { ...process.env, CI: '1', NO_COLOR: '1', OPENCODE_DISABLE_AUTOUPDATE: '1' } }, (error, out, err) => {
+    execFileTree(bin.command, [...bin.args, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: MAX_OUTPUT, env: { ...childOpenCodeEnv(process.env), CI: '1', NO_COLOR: '1', OPENCODE_DISABLE_AUTOUPDATE: '1' } }, (error, out, err) => {
       resolve({ ok: !error, timedOut: Boolean(error?.killed), text: strip(`${out ?? ''}\n${err ?? ''}`).slice(0, MAX_OUTPUT) });
     });
   });
@@ -74,6 +75,24 @@ export async function runOpenCodeClassifier(bin, model, prompt, timeout = DEFAUL
 }
 
 /**
+ * Recent conversation + the current plan/todo list, for the classifier: a short follow-up ("kerjakan", "lanjut")
+ * must be judged against the plan the agent just wrote, not by its own few words.
+ */
+export function autoContext(hub, projectId) {
+  const messages = (hub?.chatOf?.(projectId) ?? []).filter((m) => (m.kind === 'user' || m.kind === 'assistant') && String(m.text ?? '').trim()).slice(-8);
+  const todos = hub?.statusFor?.(projectId)?.todos ?? [];
+  const lines = messages.map((m) => `${m.kind === 'user' ? 'Saya' : 'Agen'}: ${String(m.text).slice(0, 600)}`);
+  if (Array.isArray(todos) && todos.length) {
+    const items = todos
+      .slice(0, 12)
+      .map((t) => `${t.status ?? ''} ${t.content ?? t.text ?? t.activeForm ?? ''}`.trim())
+      .filter(Boolean);
+    if (items.length) lines.push(`Rencana/todo: ${items.join('; ')}`);
+  }
+  return lines.join('\n').slice(-3500);
+}
+
+/**
  * Classifies one prompt. Always resolves: an unavailable/broken model returns the local fallback instead of blocking
  * the user's turn. `runClaude` / `runOpenCode` are injectable for tests (no real model calls there).
  */
@@ -85,6 +104,7 @@ export async function classifyEffort({
   text = '',
   attachments = [],
   mentions = mentionsOf(text),
+  context = '',
   timeout = DEFAULT_TIMEOUT_MS,
   runClaude = runClaudeClassifier,
   runOpenCode = runOpenCodeClassifier,
@@ -94,7 +114,7 @@ export async function classifyEffort({
   const fake = cleanAutoLevel(process.env.OFFICE_EFFORT_FAKE);
   if (fake) return { level: fake, reason: 'classifier palsu (test)', source: 'llm', model: 'fake' };
 
-  const prompt = classifierPrompt({ text, attachments, mentions });
+  const prompt = classifierPrompt({ text, attachments, mentions, context });
   // Never pick a catalog model: the user's active model (or the engine's own default) is the only classifier.
   const model = currentModel || '';
   try {

@@ -1,10 +1,15 @@
 // Renders the active Scene: low-res pixel canvas scaled up, plus an HTML overlay for crisp text.
+import { activeModelOf, drawModelLogo, logoIndex } from '../core/model-logo.js';
 import { roleColor } from './cast.js';
 import { RADIO, drawRadioLive, grooving, radio } from './radio.js';
 import { fitLabels, labelVariants, sharedPrefix } from './tags.js';
 import { BOARD, DESKS, SIGNS, W, buildFurniture, drawDoor, drawLighting, drawThemeOverlay, drawWallLive, renderBackground, room } from './world.js';
 
 const STATUS_MARK = { completed: '✔', in_progress: '▶', pending: '○' };
+
+// The Lead's corner office has free wall between the Claude poster (x 514-536) and its window (x 584): a small framed
+// plaque with the active model's logo. Like the poster next to it, it hangs across the wainscot's top edge at y 26.
+const PLAQUE = { x: 548, y: 8, w: 34, h: 28 };
 
 export class Stage {
   constructor(host) {
@@ -19,6 +24,9 @@ export class Stage {
     this.background = renderBackground();
     this.furniture = buildFurniture();
     this.scene = null;
+    this.model = { model: '', label: '', file: null }; // the plaque's model, cached until the status changes
+    this.modelKey = '';
+    logoIndex(); // warm the logo names now, so the first frame already shows the real logo (not a monogram)
     this.scale = 2;
     this.tags = new Map();
     this.tagsDirty = true; // labels must be fitted again (resize, rename, team or ×N change)
@@ -124,6 +132,7 @@ export class Stage {
     g.drawImage(this.background, 0, 0);
     const light = drawWallLive(g, t, new Date(), scene ? scene.activity(now) : { busy: false, bars: [] });
     this.markMusic();
+    this.drawModelPlaque(g, scene ? scene.status : null); // on the wall, before the furniture and the people
     if (!scene) {
       this.blit();
       return;
@@ -158,6 +167,47 @@ export class Stage {
   blit() {
     this.vg.imageSmoothingEnabled = false;
     this.vg.drawImage(this.world, 0, 0, this.view.width, this.view.height);
+  }
+
+  // ---------- the active model ----------
+
+  /**
+   * The active model of a project: its logo file and short label, cached until the status or the logo index changes.
+   * Also mirrored on the stage element (data-model-logo / data-model-name): what the UI tests read without pixels.
+   */
+  modelFor(status) {
+    const key = `${status?.activeModel ?? ''}|${status?.model ?? ''}|${status?.engine ?? ''}|${logoIndex().length}`;
+    if (key !== this.modelKey) {
+      this.modelKey = key;
+      this.model = activeModelOf(status, status?.engine);
+      this.host.dataset.modelLogo = this.model.file ?? '';
+      this.host.dataset.modelName = this.model.label;
+    }
+    return this.model;
+  }
+
+  /**
+   * The plaque on the Lead's wall: a dark frame, a cream panel, the active model's logo, and a dot that says whether
+   * the Lead is busy (green) or idle (amber). Integer coordinates and hard edges keep it crisp at the pixel scale.
+   */
+  drawModelPlaque(g, status) {
+    const model = this.modelFor(status);
+    const { x, y, w, h } = PLAQUE;
+    const busy = Boolean(status?.busy || status?.cliBusy);
+    g.save();
+    g.fillStyle = '#2b2320'; // frame
+    g.fillRect(x, y, w, h);
+    g.fillStyle = '#f3ead6'; // panel
+    g.fillRect(x + 2, y + 2, w - 4, h - 4);
+    g.fillStyle = '#cbbfa6'; // inner bevel
+    g.fillRect(x + 2, y + h - 3, w - 4, 1);
+    drawModelLogo(g, model.file, x + w / 2, y + h / 2 + 1, 18, {
+      font: 'bold 8px ui-monospace, monospace',
+      label: model.label,
+    });
+    g.fillStyle = busy ? '#3ddc84' : '#ffc24a';
+    g.fillRect(x + w - 6, y + 4, 3, 3);
+    g.restore();
   }
 
   // ---------- HTML overlay ----------

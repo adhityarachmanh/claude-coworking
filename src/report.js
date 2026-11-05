@@ -24,6 +24,34 @@ function table(title, rows, label) {
 }
 
 const UNIT_TITLE = { day: 'hari', week: 'minggu', month: 'bulan' };
+// Engine and source labels for the per-engine section (the data keys stay claude/opencode, web/cli).
+const ENGINE_LABEL = { claude: 'Claude', opencode: 'OpenCode', unknown: 'Tidak diketahui' };
+const SOURCE_LABEL = { web: 'Web', cli: 'Terminal', unknown: 'Tidak diketahui' };
+const costCell = (r) => `${usd(r.costUsd)}${r.costUsd != null && r.costCoverage < 1 ? ` (${Math.floor(r.costCoverage * 100)}%)` : ''}`;
+
+/** Table with a cost column; requests/turns are not broken down per engine. */
+function costTable(rows, label) {
+  if (!rows.length) return '';
+  return `<table class="sub">
+    <thead><tr><th>${esc(label)}</th><th>Input</th><th>Output</th><th>Cache read</th><th>Cache write</th><th>Total</th><th>Cache hit</th><th>Biaya</th></tr></thead>
+    <tbody>${rows
+      .map((r) => `<tr><td>${esc(r.key)}</td><td>${num(r.input)}</td><td>${num(r.output)}</td><td>${num(r.cacheRead)}</td><td>${num(r.cacheWrite)}</td><td><b>${num(r.total)}</b></td><td>${pct(r.cacheHitRate)}</td><td>${esc(costCell(r))}</td></tr>`)
+      .join('')}</tbody>
+  </table>`;
+}
+
+/** "Per mesin": which engine spent the tokens, then engine × source (web or terminal). */
+function engineSection(summary) {
+  const engines = (summary.byEngine ?? []).filter((r) => r.total > 0).map((r) => ({ ...r, key: ENGINE_LABEL[r.key] ?? r.key }));
+  const combos = (summary.byEngineSource ?? [])
+    .filter((r) => r.total > 0) // empty buckets stay out of the report
+    .map((r) => ({ ...r, key: `${ENGINE_LABEL[r.engine] ?? r.engine} · ${SOURCE_LABEL[r.source] ?? r.source}` }));
+  if (!engines.length && !combos.length) return '';
+  return `<h2>Per mesin</h2>
+  ${costTable(engines, 'Mesin')}
+  ${costTable(combos, 'Mesin · sumber')}`;
+}
+
 // Usage-based seats (Enterprise): the organisation's limit status from the rate-limit events (src/account.js billingStatus).
 const BILLING_TEXT = {
   allowed: 'Masih dalam batas organisasi',
@@ -80,7 +108,10 @@ function periodTable(summary) {
 /** @param {{ account, profile, limits, summary, generatedAt }} data */
 export function reportHtml({ account, profile, limits, billing = null, summary }) {
   const t = summary.totals;
-  const isOpenCode = account.id === 'opencode' || account.email === 'OpenCode';
+  // Three scopes: one Claude account, one OpenCode account, or every account (the combined report).
+  const scope = account.email === 'Semua akun' ? 'all' : account.id === 'opencode' || account.email === 'OpenCode' ? 'opencode' : 'claude';
+  const isOpenCode = scope === 'opencode';
+  const isAll = scope === 'all';
   const kpis = [
     ['Total token', short(t.total), `${num(t.total)} token`],
     ['Input', short(t.input), 'token baru yang dikirim'],
@@ -112,6 +143,7 @@ export function reportHtml({ account, profile, limits, billing = null, summary }
   .kpi b { display: block; font-size: 17px; margin: 2px 0; }
   .kpi span { color: #6b7280; font-size: 9px; }
   table { width: 100%; border-collapse: collapse; break-inside: auto; }
+  table.sub { margin-top: 6px; }
   th, td { padding: 4px 6px; border-bottom: 1px solid #eef0f3; text-align: right; }
   th:first-child, td:first-child { text-align: left; }
   th { background: #f6f7f9; font-size: 9.5px; text-transform: uppercase; color: #4b5563; }
@@ -140,7 +172,7 @@ export function reportHtml({ account, profile, limits, billing = null, summary }
     </div>
     <div class="who">
       <b>${esc(profile?.fullName || profile?.displayName || account.email)}</b><br>
-      ${esc(account.email)}<br>
+      ${profile?.fullName || profile?.displayName ? `${esc(account.email)}<br>` : ''}
       <span class="muted">${esc(account.org ?? '')}</span> ${profile?.subscriptionType ? `<span class="badge">${esc(profile.subscriptionType)}</span>` : ''}
     </div>
   </header>
@@ -152,18 +184,20 @@ export function reportHtml({ account, profile, limits, billing = null, summary }
   ${table('Per model', summary.byModel, 'Model')}
   ${table('Per project', summary.byProject, 'Project')}
   ${table('Per sumber', summary.bySource, 'Sumber')}
+  ${engineSection(summary)}
   ${table('10 sesi teratas', summary.topSessions.map((s) => ({ ...s, key: `${s.key.split('|')[0]} · ${s.key.split('|')[1].slice(0, 8)}` })), 'Project · sesi')}
-  ` : '<div class="empty">Belum ada pemakaian tercatat untuk akun ini pada periode tersebut.</div>'}
+  ` : `<div class="empty">Belum ada pemakaian tercatat ${isAll ? '' : 'untuk akun ini '}pada periode tersebut.</div>`}
 
   ${limitRows ? `<h2>Kuota langganan saat laporan dibuat</h2><table><thead><tr><th>Jendela</th><th style="width:45%">Terpakai</th><th>%</th><th>Reset</th></tr></thead><tbody>${limitRows}</tbody></table>` : ''}
   ${!limitRows && billing ? `<h2>Batas pemakaian organisasi saat laporan dibuat</h2><p><b>${esc(BILLING_TEXT[billing.status] ?? 'Status belum diketahui')}</b>${billing.resetsAt ? ` · periode tagihan reset ${esc(dateFmt(billing.resetsAt * 1000, { dateStyle: 'medium', timeStyle: 'short' }))}` : ''}</p><p class="muted">Paket berbasis pemakaian (usage-based): tidak ada kuota sesi/mingguan dalam persen. Pemakaian ditagih ke organisasi dengan batas yang diatur admin.</p>` : ''}
   ${!limitRows && !billing && limits?.note ? `<h2>Kuota langganan saat laporan dibuat</h2><p style="white-space:pre-line">${esc(limits.note)}</p><p class="muted">Akun ini tidak melaporkan kuota dalam persen. Teks di atas adalah pesan asli dari <code>/usage</code>.</p>` : ''}
 
   <div class="notes"><b>Catatan</b><ul>
-    <li>Hanya pemakaian akun <b>${esc(account.email)}</b>. Setiap catatan menyimpan akun yang sedang login saat token dipakai, jadi akun lain tidak ikut terhitung.</li>
-    <li>Sumber: sesi dari web Adhit Office (per giliran, termasuk subagent) dan ${isOpenCode ? 'sesi OpenCode di terminal yang terbaca oleh mirror (per pesan)' : 'sesi Claude Code di terminal yang terbaca oleh mirror (per API request)'}, sejak pencatatan aktif.</li>
+    <li>${isAll ? 'Hanya pemakaian <b>semua akun</b> yang tercatat. Setiap catatan menyimpan akun yang sedang login saat token dipakai, dan laporan ini menjumlahkan semuanya.' : `Hanya pemakaian akun <b>${esc(account.email)}</b>. Setiap catatan menyimpan akun yang sedang login saat token dipakai, jadi akun lain tidak ikut terhitung.`}</li>
+    <li>Sumber: sesi dari web Adhit Office (per giliran, termasuk subagent) dan ${isAll ? 'sesi Claude Code maupun OpenCode di terminal yang terbaca oleh mirror (per request/pesan)' : isOpenCode ? 'sesi OpenCode di terminal yang terbaca oleh mirror (per pesan)' : 'sesi Claude Code di terminal yang terbaca oleh mirror (per API request)'}, sejak pencatatan aktif.</li>
     <li><b>Cache read</b> = konteks yang dipakai ulang dari cache (jauh lebih murah); <b>cache write</b> = konteks yang baru disimpan ke cache. Cache hit rate tinggi berarti sesi efisien.</li>
-    ${isOpenCode ? '<li>Biaya berasal dari data OpenCode bila provider menyediakannya. OpenCode tidak menyediakan sisa kuota provider; laporan ini hanya pemakaian lokal.</li>' : '<li>Biaya adalah estimasi harga list dari Claude Code (hanya tersedia untuk sesi web). Untuk langganan Pro/Max/Team, yang membatasi adalah kuota, bukan biaya.</li>'}
+    <li>Rincian per role belum tersedia; pemakaian subagent digabung ke sesi induknya.</li>
+    ${isAll ? '<li>Biaya adalah estimasi: harga list Claude Code untuk sesi web Claude, dan data biaya OpenCode bila provider menyediakannya. Kuota dan sisa pemakaian tidak digabung di sini.</li>' : isOpenCode ? '<li>Biaya berasal dari data OpenCode bila provider menyediakannya. OpenCode tidak menyediakan sisa kuota provider; laporan ini hanya pemakaian lokal.</li>' : '<li>Biaya adalah estimasi harga list dari Claude Code (hanya tersedia untuk sesi web). Untuk langganan Pro/Max/Team, yang membatasi adalah kuota, bukan biaya.</li>'}
   </ul></div>
 </body></html>`;
 }

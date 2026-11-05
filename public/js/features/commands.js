@@ -4,6 +4,7 @@ import { $ } from '../core/dom.js';
 import { state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { saveSettings } from './composer.js';
+import { openCompact } from './compact.js';
 import { exportActiveSession, openSearch } from './conversations.js';
 import { openDashboard } from './dashboard.js';
 import { openMcp } from './mcp.js';
@@ -27,6 +28,7 @@ export const LOCAL_COMMANDS = [
   { name: 'effort', argumentHint: '<low|medium|high|xhigh|max|default>', description: 'Ganti effort (seberapa dalam Claude berpikir)' },
   { name: 'resume', description: 'Lanjutkan sesi Claude Code sebelumnya' },
   { name: 'rewind', description: 'Kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu (Esc Esc)' },
+  { name: 'ringkas', aliases: ['compact'], argumentHint: '[fokus]', description: '🧹 Ringkas konteks percakapan (memakai token; riwayat chat di app tidak berubah)' },
   { name: 'mcp', description: 'Server MCP: status, sambungkan ulang, aktif/nonaktif, login' },
   { name: 'permissions', aliases: ['allowed-tools'], description: '🛡️ Aturan izin tersimpan (allow / ask / deny): lihat, tambah, hapus, pindah' },
   { name: 'team', aliases: ['tim'], description: '👥 Kelola tim: pilih role bawaan yang punya meja di kantor (Lead selalu ada)' },
@@ -109,6 +111,10 @@ export function localCommand(text) {
     case 'rewind':
     case 'checkpoint':
       openRewind();
+      return true;
+    case 'ringkas':
+    case 'compact':
+      openCompact(value);
       return true;
     case 'mcp':
       openMcp();

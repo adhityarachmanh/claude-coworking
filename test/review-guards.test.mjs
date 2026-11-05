@@ -14,6 +14,7 @@ import { Hub } from '../src/hub.js';
 import { addMcpServer } from '../src/mcp-admin.js';
 import { readMemory, writeMemory } from '../src/memory-files.js';
 import { execFileTree } from '../src/proc.js';
+import { WIFI_READ_API, wifiAllows } from '../src/remote.js';
 import { buildRouter } from '../src/routes/index.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -242,6 +243,18 @@ test('execFileTree: a normal run keeps its normal result (no timeout error), and
   assert.ok(!failed.err.killed, 'an ordinary failure is not a timeout');
 });
 
+test('execFileTree: stdin is closed at once, so a CLI that reads stdin (opencode run, claude -p) does not wait forever', async () => {
+  // A non-TTY stdin is a pipe: `opencode run` and `claude -p` read it as prompt input and wait for EOF. Left open,
+  // the one-shot never starts (handoff Pintar hit its 4-minute timeout, the Effort Auto classifier its 25 s one).
+  const out = await new Promise((resolve) =>
+    execFileTree(process.execPath, ['-e', 'process.stdin.resume(); process.stdin.on("end", () => console.log("eof"))'], { timeout: 10_000, encoding: 'utf8', windowsHide: true }, (err, stdout) =>
+      resolve({ err, stdout }),
+    ),
+  );
+  assert.equal(out.err, null, 'no timeout: stdin reached EOF');
+  assert.equal(out.stdout.trim(), 'eof');
+});
+
 test('👤 OpenCode provider login/logout from a phone raises the same account alert as Claude Code', async () => {
   const fake = path.join(TMP, 'fake-opencode-api.mjs');
   writeFileSync(fake, "console.log(JSON.stringify({ data: { attemptID: 'a1', url: 'https://example.com/login', mode: 'auto' } }));\n");
@@ -265,6 +278,29 @@ test('👤 OpenCode provider login/logout from a phone raises the same account a
   assert.equal(alerts.length, 3, 'from the laptop itself: no alert');
 });
 
+test('⚙ OpenCode config editor: backups/restore/consolidate are laptop only (LOCAL_ONLY) and never over plain WiFi', () => {
+  const endpoints = ['/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate'];
+  const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  const patterns = buildRouter().routes.map((r) => r.pattern);
+  for (const p of endpoints) {
+    assert.ok(patterns.includes(p), `${p} is registered`);
+    assert.equal(wifiAllows(p), false, `${p} is refused over plain WiFi (default deny)`);
+    assert.ok(!WIFI_READ_API.paths.includes(p), `${p} is not on the read-only allowlist`);
+    assert.ok(!WIFI_READ_API.patterns.some((source) => new RegExp(source).test(p)), `${p} matches no read-only pattern`);
+    assert.ok(localOnly.includes(`'${p}'`), `${p} is in LOCAL_ONLY (refused for every phone, Tailscale too)`);
+  }
+  // The editor's read and save are just as laptop only: no phone may pick a config path or write one.
+  for (const p of ['/api/opencode-config', '/api/opencode-config/save']) {
+    assert.equal(wifiAllows(p), false, `${p} is refused over plain WiFi`);
+    assert.ok(localOnly.includes(`'${p}'`), `${p} is in LOCAL_ONLY`);
+  }
+  // End-to-end over plain WiFi lives in test/server.test.mjs ("phone access: off by default, pairing required…"):
+  // it calls every registered non-read route from a paired plain-HTTP device and expects 403. The four endpoints are
+  // registered non-reads (asserted above), so that loop covers them; the fact it relies on is pinned here:
+  assert.match(server, /isReadOnly\(req\) && !wifiAllows\(pathname\)/, 'the one plain-WiFi gate really uses wifiAllows');
+});
+
 test('Claude-only surfaces are closed while OpenCode is the app engine', async () => {
   const { ctx } = projectCtx();
   ctx.hub.engine = 'opencode';
@@ -275,7 +311,6 @@ test('Claude-only surfaces are closed while OpenCode is the app engine', async (
     ['/api/projects/:id/agents/save', {}],
     ['/api/projects/:id/agents/delete', {}],
     ['/api/projects/:id/hooks', {}],
-    ['/api/projects/:id/search', { q: 'abc' }],
     ['/api/projects/:id/export-session', { sessionId: '00000000-0000-0000-0000-000000000000' }],
     ['/api/claude/plugins', {}],
     ['/api/claude/plugins/action', {}],

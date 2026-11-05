@@ -5,6 +5,7 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { capReason, capsFor, cleanModelList, engineLabel, engineOf, groupModels, modelsPerProject } from '../core/engine-caps.js';
 import { auth, DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
+import { priceDetail, priceSuffix } from './model-prices.js';
 
 /** The engine of a project (default: the active one). */
 export const projectEngine = (id = state.active) => engineOf(state.statuses[id], state.config);
@@ -83,29 +84,119 @@ export function projectModels(id, st = state.statuses[id] ?? {}, onLoaded = () =
   return entry ?? { engine, models: [], current: '', needsStart: true, loading: false, error: state.readOnly ? READ_ONLY_HINT : null };
 }
 
+// "Model Auto": the classifier picks the tier per prompt (server side). The picker value is a sentinel, not a model.
+export const AUTO_MODEL = 'auto';
+export const AUTO_MODEL_LABEL = 'Auto — sesuaikan task';
+const AUTO_MODEL_TITLE = 'Model dipilih otomatis sesuai tingkat kesulitan tiap prompt: Hemat / Seimbang / Kuat / Maks.';
+
+/** The "Auto" entry every engine's model select starts with (same label and value on both engines). */
+export const autoModelOption = () => `<option value="${AUTO_MODEL}" title="${escapeHtml(AUTO_MODEL_TITLE)}">${AUTO_MODEL_LABEL}</option>`;
+
 /**
- * Options for the #model select from a per-project list: "Default (dari config <Engine>)", one <optgroup> per
- * provider, the search filter applied; the current model always stays (selected, even when filtered out).
+ * Options for the #model select from a per-project list: "Auto — sesuaikan task", "Default (dari config <Engine>)",
+ * one <optgroup> per provider, the search filter applied; the current model always stays (selected, even when filtered out).
  */
 export function projectModelOptions(entry, current, query) {
   const label = engineLabel(entry.engine);
-  const opts = [`<option value="">Default (dari config ${escapeHtml(label)})</option>`];
+  const opts = [autoModelOption(), `<option value="">Default (dari config ${escapeHtml(label)})</option>`];
   if (entry.loading && !entry.models.length) opts.push('<option value="" disabled data-info>Memuat daftar model…</option>');
   else if (entry.error && !entry.models.length) opts.push(`<option value="" disabled data-info>Daftar model gagal dimuat: ${escapeHtml(entry.error)}</option>`);
   else if (!entry.models.length) opts.push('<option value="" disabled data-info>Daftar model muncul setelah pesan pertama</option>');
   const groups = groupModels(entry.models, query);
   let shown = false;
+  // Price hints come from features/model-prices.js (already fetched by the composer; absent data = no suffix).
+  const option = (m) => {
+    const detail = priceDetail(m.value); // starts with the model id, then the numbers, source, peak and records
+    const title = detail || m.value;
+    return `<option value="${escapeHtml(m.value)}" title="${escapeHtml(title)}">${escapeHtml(`${m.name}${priceSuffix(m.value)}`)}</option>`;
+  };
   for (const g of groups) {
-    opts.push(`<optgroup label="${escapeHtml(g.provider)}">${g.models.map((m) => `<option value="${escapeHtml(m.value)}" title="${escapeHtml(m.value)}">${escapeHtml(m.name)}</option>`).join('')}</optgroup>`);
+    opts.push(`<optgroup label="${escapeHtml(g.provider)}">${g.models.map(option).join('')}</optgroup>`);
     shown ||= g.models.some((m) => m.value === current);
   }
   if (query && entry.models.length && !groups.length) opts.push('<option value="" disabled data-info>Tidak ada model yang cocok</option>');
-  if (current && !shown) opts.push(`<option value="${escapeHtml(current)}">${escapeHtml(entry.models.find((m) => m.value === current)?.name ?? current)}</option>`);
+  if (current && !shown) {
+    const name = entry.models.find((m) => m.value === current)?.name ?? current;
+    opts.push(option({ value: current, name }));
+  }
   return opts.join('');
 }
 
 /** Number of models matching the search box (for its live count). */
 export const matchCount = (entry, query) => groupModels(entry.models, query).reduce((n, g) => n + g.models.length, 0);
+
+// ---------- Model Auto ladder (per-project tiers, edited in #model-tiers-modal) ----------
+
+/** From cheapest to strongest, in the order the dialog lists them (mirrors src/model-auto.js). */
+export const MODEL_TIERS = ['hemat', 'seimbang', 'kuat', 'maks'];
+export const MODEL_TIER_LABELS = { hemat: 'Hemat', seimbang: 'Seimbang', kuat: 'Kuat', maks: 'Maks' };
+
+/**
+ * What each tier runs until the project sets its own ladder (the same defaults as src/model-auto.js). The server
+ * ignores a model the project's engine cannot run, so the note never promises something the turn won't do.
+ */
+export const DEFAULT_MODEL_TIERS = Object.freeze({
+  claude: Object.freeze({ hemat: 'haiku', seimbang: 'sonnet', kuat: 'opus', maks: 'fable' }),
+  opencode: Object.freeze({
+    hemat: 'opencode-go/deepseek-v4.1-flash',
+    seimbang: 'opencode-go/glm-5.3',
+    kuat: 'opencode-go/kimi-k3.1-pro',
+    maks: 'opencode-go/kimi-k3',
+  }),
+});
+
+const isMap = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const cleanValue = (v) => (typeof v === 'string' ? v.trim().slice(0, 200) : '');
+
+/** A model id the dialog may send: '' clears the slot, anything else has no spaces/controls and fits an id. */
+export const isModelValue = (v) => v === '' || (typeof v === 'string' && v.length <= 200 && /^[\w][\w.:@/+-]*$/.test(v));
+
+/** The defaults of an engine; an unknown engine falls back to Claude's (never to an id the engine cannot run). */
+export const defaultModelTiers = (engine) => ({ ...(DEFAULT_MODEL_TIERS[engine] ?? DEFAULT_MODEL_TIERS.claude) });
+
+/**
+ * A project's ladder, validated: `status.modelTiers[engine]` merged over the defaults. Only string values are kept
+ * (never trust the server blindly), and an empty/unknown slot shows the default — which is exactly what the server
+ * applies, so the row and the note always agree with the model a turn will really use.
+ */
+export function modelTiersFor(st, engine) {
+  const stored = isMap(st?.modelTiers) && isMap(st.modelTiers[engine]) ? st.modelTiers[engine] : {};
+  const tiers = defaultModelTiers(engine);
+  for (const key of MODEL_TIERS) {
+    const value = cleanValue(stored[key]);
+    if (value) tiers[key] = value;
+  }
+  return tiers;
+}
+
+/** "opencode-go/glm-5.3" → "glm-5.3": the provider prefix says nothing in the one-line Auto note (src/model-auto.js). */
+export function shortModelName(model) {
+  const raw = cleanValue(model);
+  const bare = raw.includes('/') ? raw.slice(raw.lastIndexOf('/') + 1) : raw;
+  return bare.length > 40 ? `${bare.slice(0, 39)}…` : bare;
+}
+
+/** The ladder in one compact line: "Hemat haiku · Seimbang sonnet · Kuat opus · Maks fable". */
+export const tierLadder = (tiers) => MODEL_TIERS.map((key) => `${MODEL_TIER_LABELS[key]} ${shortModelName(tiers?.[key])}`).join(' · ');
+
+/** The muted line under the Model control while Auto is on: the ladder, then the model the classifier last picked. */
+export const autoModelNote = (tiers, model) =>
+  [`Model dipilih otomatis: ${tierLadder(tiers)}.`, model ? `Sekarang: ${shortModelName(model)}.` : ''].filter(Boolean).join(' ');
+
+/**
+ * The <option>s of one tier row: "Bawaan (<default>)" (value '') first, then the models the engine offers — grouped
+ * per provider for a per-project list (OpenCode) — and the row's own model when the list doesn't hold it.
+ */
+export function tierOptionsHtml(tier, engine, models, current, { grouped = false } = {}) {
+  const list = Array.isArray(models) ? models : [];
+  const fallback = (DEFAULT_MODEL_TIERS[engine] ?? DEFAULT_MODEL_TIERS.claude)[tier] ?? '';
+  const option = (m) => `<option value="${escapeHtml(m.value)}" title="${escapeHtml(m.value)}">${escapeHtml(m.name || shortModelName(m.value))}</option>`;
+  const opts = [`<option value="">Bawaan${fallback ? ` (${escapeHtml(shortModelName(fallback))})` : ''}</option>`];
+  if (grouped) for (const g of groupModels(list)) opts.push(`<optgroup label="${escapeHtml(g.provider)}">${g.models.map(option).join('')}</optgroup>`);
+  else for (const m of list) opts.push(option(m));
+  if (current && !list.some((m) => m.value === current)) opts.push(option({ value: current, name: current }));
+  return opts.join('');
+}
 
 export function initEngine({ onModelPicked, rerender }) {
   const search = $('#model-search');

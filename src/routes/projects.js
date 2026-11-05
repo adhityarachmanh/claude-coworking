@@ -3,12 +3,30 @@
 // server.js). Opening VS Code / Explorer (`open`) is laptop only too (LOCAL_ONLY_ACTION).
 import { modelsOffered, openCodeModelEfforts, openCodeModels } from '../opencode-bin.js';
 import path from 'node:path';
+import { readModelPrices } from '../model-prices.js';
 import { isDirectory, isNetworkPath } from '../projects.js';
 import { openInApp } from '../open.js';
-import { json } from './http.js';
+import { observedPrices } from '../usage.js';import { json } from './http.js';
 import { withSession } from './project.js';
 
+// The turn settings picker's cost per model: list prices for OpenCode Go, a blended effective price from the
+// usage ledger for everything else. Not on the plain-WiFi read allowlist (src/remote.js): laptop + Tailscale only.
+const PRICE_DAYS = 90;
+
 export function register(router) {
+  router.post('/api/models/prices', async ({ dataDir, ledger }, req, res, params, body) => {
+    const to = Date.now();
+    const from = body.from == null ? to - PRICE_DAYS * 86_400_000 : Number(body.from);
+    if (!Number.isFinite(from) || from < 0 || from > to) return json(res, 400, { error: 'from harus waktu (epoch ms) yang tidak di masa depan.' });
+    const catalog = await readModelPrices({ dataDir });
+    // The picker's ids are the engine's model ids: OpenCode Go models are `opencode-go/<id>`.
+    const prices = Object.entries(catalog.models)
+      .map(([id, m]) => ({ model: `opencode-go/${id}`, name: m.name, input: m.input, output: m.output, cacheRead: m.cacheRead, cacheWrite: m.cacheWrite, peakFactor: m.peakFactor }))
+      .sort((a, b) => a.model.localeCompare(b.model));
+    // Aggregated only: no account identity is part of an observed price.
+    const observed = observedPrices(ledger ? ledger.query({ accountId: 'all', from, to }) : []);
+    return json(res, 200, { fetchedAt: catalog.fetchedAt, source: catalog.source || 'opencode.ai', stale: Boolean(catalog.stale), prices, observed });
+  });
   router.post('/api/projects', ({ hub }, req, res, params, body) => {
     const dir = String(body.path ?? '').trim();
     if (isNetworkPath(dir)) return json(res, 400, { error: 'Folder jaringan (\\server\share) tidak didukung. Pakai folder di laptop ini.' });
@@ -35,6 +53,9 @@ export function registerProjectActions(router) {
   router.post('/api/projects/:id/settings', withSession(({ hub }, req, res, { project, session }, body) => {
     // The engine is app-wide (POST /api/engine, Akun): a project's settings never change it.
     hub.updateSettings(project.id, body);
+    // Picking a model (or Default) answers the "provider logged out" warning (routes/account.js modelStale):
+    // the same field clears it, so the next prompt is let through even when the model is unchanged.
+    if (body?.model !== undefined || body?.modelAuto !== undefined) hub.setStatus(project.id, { modelStale: false });
     session.syncSettings(); // switches the running Claude Code live (mid-turn too, like Shift+Tab)
     return json(res, 200, { ok: true });
   }));
@@ -63,6 +84,25 @@ export function registerProjectActions(router) {
     sessions.sessions.delete(project.id);
     return json(res, hub.forgetProject(project.id) ? 200 : 400, { ok: true });
   }));
+  // Removes a project that should never have been listed (e.g. a temp folder an old CLI session created): settings,
+  // sessions, chat and its usage rows. Needs the exact id as confirmation; works even when the folder is already gone.
+  router.post('/api/projects/:id/purge', ({ hub, ledger, sessions, taskQueue }, req, res, params, body) => {
+    const id = String(params.id ?? '');
+    if (!/^[0-9a-f]{8,32}$/.test(id)) return json(res, 400, { error: 'Project tidak valid.' });
+    if (body?.confirm !== id) return json(res, 400, { error: 'Kirim confirm berisi project id untuk menghapus project ini.' });
+    const session = sessions.sessions.get(id);
+    try {
+      taskQueue.forget(id);
+      session?.reset?.();
+      session?.kill?.();
+      sessions.sessions.delete(id);
+    } catch {
+      // the process may already be gone; the data below is what matters
+    }
+    const usage = ledger?.removeProject?.(id) ?? 0;
+    hub.purgeProject(id);
+    return json(res, 200, { ok: true, usage });
+  });
   router.post('/api/projects/:id/open', withSession((ctx, req, res, { project }, body) => {
     const app = body.app === 'folder' ? 'folder' : 'code';
     // A file must resolve inside the project: never open arbitrary paths sent by a client.

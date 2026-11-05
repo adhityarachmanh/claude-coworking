@@ -33,7 +33,8 @@ const PIPE_GRACE_MS = 5000;
 /**
  * execFile with `timeout` enforced by killTree instead of Node's single-process kill. Same callback shape as
  * execFile; on a timeout `err.killed` is true (as with execFile's own timeout), so callers need no change. A run
- * that finished normally just as the timer fired keeps its normal result.
+ * that finished normally just as the timer fired keeps its normal result. The child's stdin is closed at once (see
+ * below), so this helper is for commands whose input is in argv — not for feeding a CLI through stdin.
  */
 export function execFileTree(command, args, { timeout = 0, ...options } = {}, callback = () => {}) {
   let timedOut = false;
@@ -47,6 +48,11 @@ export function execFileTree(command, args, { timeout = 0, ...options } = {}, ca
     if (err && timedOut) err.killed = true;
     callback(err, out, errOut);
   });
+  // Close stdin at once: it is a pipe (not a TTY), and `opencode run` / `claude -p` read a piped stdin as prompt
+  // input, so an open pipe makes them wait for EOF that never comes (handoff Pintar hit its 4-minute timeout and
+  // the Effort Auto classifier silently fell back after 25 s). No caller writes to this stdin.
+  child.stdin?.on('error', () => {}); // EPIPE when the process is gone already: reported through the callback
+  child.stdin?.end();
   if (timeout > 0) {
     timer = setTimeout(() => {
       timedOut = true;

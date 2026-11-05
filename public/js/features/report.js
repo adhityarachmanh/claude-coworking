@@ -10,31 +10,43 @@ const UNIT_NAME = { day: 'hari', week: 'minggu', month: 'bulan' };
 // What the dialog shows; the preview and the PDF always use this same state.
 const report = { period: '7', unit: 'day', accounts: [], seq: 0, last: null, allRows: false };
 const REPORT_ROWS = 7; // newest periods shown before "Tampilkan semua"
+// A scope, not an account: one report with every account (Claude + OpenCode), so "Per mesin" can show both engines.
+const ALL_ACCOUNTS = 'all';
+const ALL_SCOPE = 'Semua akun · Claude + OpenCode';
 
 const startOfDay = (ts) => new Date(ts).setHours(0, 0, 0, 0);
 const fmtDay = (ts, opts = { day: 'numeric', month: 'short', year: 'numeric' }) => new Date(ts).toLocaleDateString('id-ID', opts);
 const capitalize = (s) => s[0].toUpperCase() + s.slice(1);
-const reportAccount = () => report.accounts.find((a) => a.id === $('#report-account').value) ?? null;
+const selectedAccountId = () => $('#report-account').value;
+const isAllAccounts = () => selectedAccountId() === ALL_ACCOUNTS;
+const reportAccount = () => report.accounts.find((a) => a.id === selectedAccountId()) ?? null;
+
+/** First record of the selection: the account's own, or the oldest across accounts for "Semua akun". */
+function reportFirst() {
+  if (!isAllAccounts()) return reportAccount()?.first ?? 0;
+  const firsts = report.accounts.map((a) => a.first).filter((t) => Number.isFinite(t));
+  return firsts.length ? Math.min(...firsts) : 0;
+}
 
 function reportRange() {
   const now = Date.now();
   const today = startOfDay(now);
   if (report.period === 'today') return { from: today, to: now };
   if (report.period === 'month') return { from: new Date(today).setDate(1), to: now };
-  // "Semua" starts at this account's first record, so the chart doesn't begin in 1970.
-  if (report.period === 'all') return { from: reportAccount()?.first ?? 0, to: now };
+  // "Semua" starts at the first record of the selection, so the chart doesn't begin in 1970.
+  if (report.period === 'all') return { from: reportFirst(), to: now };
   if (report.period === 'custom') {
     const from = $('#report-from').valueAsDate;
     const to = $('#report-to').valueAsDate;
     // <input type=date> gives UTC midnight: shift to local day bounds.
     const local = (d) => d.getTime() + d.getTimezoneOffset() * 60_000;
-    return { from: from ? local(from) : (reportAccount()?.first ?? 0), to: to ? local(to) + DAY - 1 : now };
+    return { from: from ? local(from) : reportFirst(), to: to ? local(to) + DAY - 1 : now };
   }
   return { from: today - (Number(report.period) - 1) * DAY, to: now };
 }
 
 function reportQuery() {
-  return { accountId: $('#report-account').value, groupBy: report.unit, ...reportRange() };
+  return { accountId: selectedAccountId(), groupBy: report.unit, ...reportRange() };
 }
 
 // Same calendar rules as src/usage.js (periodStart/nextPeriod): local day, Monday week, calendar month.
@@ -116,11 +128,14 @@ export async function openReport() {
     report.accounts = accounts;
     const select = $('#report-account');
     const keep = select.value;
-    select.innerHTML = accounts.length
-      ? accounts.map((a, i) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.email ?? `Akun Claude ${i + 1}`)}${a.org ? ` — ${escapeHtml(a.org)}` : ''}${a.id === current ? ' (aktif)' : ''}</option>`).join('')
-      : '<option value="">Belum ada data</option>';
-    // The logged-in account may have no usage yet: only pick an account that is in the list.
-    select.value = [keep, current, accounts[0]?.id].find((id) => accounts.some((a) => a.id === id)) ?? '';
+    // "Semua akun" is always available: a report with Claude + OpenCode together, also before any usage exists.
+    select.innerHTML =
+      `<option value="${ALL_ACCOUNTS}">Semua akun (Claude + OpenCode)</option>` +
+      (accounts.length
+        ? accounts.map((a, i) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.email ?? `Akun Claude ${i + 1}`)}${a.org ? ` — ${escapeHtml(a.org)}` : ''}${a.id === current ? ' (aktif)' : ''}</option>`).join('')
+        : '<option value="">Belum ada data</option>');
+    // The logged-in account may have no usage yet: only pick an account that is in the list (default: the current one).
+    select.value = [keep, current, accounts[0]?.id].find((id) => id === ALL_ACCOUNTS || accounts.some((a) => a.id === id)) ?? '';
     choosePeriod(report.period);
   } catch (err) {
     showReportMessage(err.message, true);
@@ -151,20 +166,31 @@ function showReportMessage(message, isError = false) {
 
 /** Says why the start of the chart is empty: the ledger only exists since the feature was turned on. */
 function renderReportNote(range) {
-  const first = reportAccount()?.first;
+  const first = reportFirst();
   const note = $('#report-note');
   note.hidden = !(first && startOfDay(first) > range.from);
-  if (!note.hidden) note.innerHTML = `ℹ Pencatatan token akun ini baru dimulai <b>${escapeHtml(fmtDay(first))}</b>. Sebelum tanggal itu grafik kosong karena belum tercatat, bukan karena tidak dipakai.`;
+  if (note.hidden) return;
+  // "Semua akun" has no single start: the note then explains the earliest record of the selection.
+  const start = isAllAccounts()
+    ? `Catatan terlama dimulai <b>${escapeHtml(fmtDay(first))}</b>`
+    : `Pencatatan token akun ini baru dimulai <b>${escapeHtml(fmtDay(first))}</b>`;
+  note.innerHTML = `ℹ ${start}. Sebelum tanggal itu grafik kosong karena belum tercatat, bukan karena tidak dipakai.`;
 }
 
 function renderReportKpis(t, records) {
+  // Only part of the records may carry a cost: the estimate would otherwise look like the whole bill.
+  // The hint stays inside the same card (a 5th card would change the 4×1 / 2×2 layout).
+  const coverage = Number.isFinite(t.costCoverage) ? Math.min(1, Math.max(0, t.costCoverage)) : null;
+  const costHint = coverage == null || coverage >= 1 ? '' : coverage ? `${Math.floor(coverage * 100)}% catatan punya biaya` : 'belum ada biaya tercatat';
   const main = [
-    ['Total token', fmtShort(t.total)],
-    ['Output', fmtShort(t.output)],
-    ['Cache hit', `${Math.round(t.cacheHitRate * 100)}%`],
-    ['Estimasi biaya', fmtUsd(t.costUsd)],
+    ['Total token', fmtShort(t.total), ''],
+    ['Output', fmtShort(t.output), ''],
+    ['Cache hit', `${Math.round(t.cacheHitRate * 100)}%`, ''],
+    ['Estimasi biaya', fmtUsd(t.costUsd), costHint],
   ];
-  $('#report-kpis').innerHTML = main.map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
+  $('#report-kpis').innerHTML = main
+    .map(([k, v, hint]) => `<div><small>${k}</small><b>${v}</b>${hint ? `<span class="kpi-hint">${hint}</span>` : ''}</div>`)
+    .join('');
   $('#report-kpi-more').textContent = `Input ${fmtShort(t.input)} · Cache read ${fmtShort(t.cacheRead)} · Cache write ${fmtShort(t.cacheWrite)} · ${fmtNum(t.requests)} request API · ${fmtNum(records)} catatan`;
 }
 
@@ -198,25 +224,96 @@ function renderTrend(s) {
 function renderReportModels(byModel) {
   const rows = byModel
     .slice(0, 5)
-    .map((m) => `<tr><td>${escapeHtml(m.key ?? '-')}</td><td>${fmtShort(m.input)}</td><td>${fmtShort(m.output)}</td><td>${fmtShort(m.cacheRead)}</td><td><b>${fmtShort(m.total)}</b></td></tr>`)
+    .map((m) => `<tr><td>${escapeHtml(m.key ?? '-')}</td><td>${fmtShort(m.input)}</td><td>${fmtShort(m.output)}</td><td>${fmtShort(m.cacheRead)}</td><td><b>${fmtShort(m.total)}</b></td><td>${engineCostText(m)}</td></tr>`)
     .join('');
-  $('#report-models').innerHTML = `<table class="usage-table"><thead><tr><th>Model</th><th>Input</th><th>Output</th><th>Cache read</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>`;
+  $('#report-models').innerHTML = `<table class="usage-table"><thead><tr><th>Model</th><th>Input</th><th>Output</th><th>Cache read</th><th>Total</th><th>Biaya</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// "Per mesin" labels: the same words as the PDF (the data keys stay claude/opencode, web/cli).
+const ENGINE_LABEL = { claude: 'Claude', opencode: 'OpenCode' };
+const SOURCE_LABEL = { web: 'Web', cli: 'Terminal' };
+const UNKNOWN_LABEL = 'Tidak diketahui';
+const ENGINE_ORDER = ['claude:web', 'claude:cli', 'opencode:web', 'opencode:cli'];
+
+/** Share of the report total: "50%", and "<1%" instead of a 0% that would read as nothing. */
+function reportShare(part, whole) {
+  if (!(whole > 0)) return '—';
+  const pct = ((Number(part) || 0) / whole) * 100;
+  if (pct <= 0) return '0%';
+  return `${pct < 1 ? '&lt;1' : Math.round(pct)}%`;
+}
+
+/** Same cost rules as the PDF: "—" without a cost, plus "(N%)" when only part of the records has one. */
+function engineCostText({ costUsd, costCoverage }) {
+  if (costUsd == null && !costCoverage) return '— (belum ada biaya)';
+  const usd = fmtUsd(costUsd);
+  return Number.isFinite(costCoverage) && costCoverage < 1 ? `${usd} (${Math.floor(costCoverage * 100)}%)` : usd;
+}
+
+/**
+ * "Per mesin" below the models: one row per engine × source (4 at most), from `byEngineSource`.
+ * Rows with `records: 0` are dropped (a summary without `records` falls back to `total > 0`), a fixed
+ * order keeps the labels from jumping between periods, and a server that doesn't send `byEngineSource`
+ * at all hides the block. Requests/turns stay out on purpose: they are only recorded on one surface
+ * each, so a per-engine split would look like missing data.
+ */
+function renderReportEngines(rows, total) {
+  let box = $('#report-engines');
+  if (!box) {
+    // The dialog markup is static: the block is created next to the model list the first time it renders.
+    box = document.createElement('div');
+    box.id = 'report-engines';
+    $('#report-models').after(box);
+  }
+  const list = (Array.isArray(rows) ? rows : [])
+    .map((r, i) => {
+      const [keyEngine, keySource] = String(r.key ?? '').split(':');
+      const engine = r.engine ?? keyEngine;
+      const source = r.source ?? keySource;
+      const order = ENGINE_ORDER.indexOf(`${engine}:${source}`);
+      return {
+        i,
+        label: `${ENGINE_LABEL[engine] ?? UNKNOWN_LABEL} · ${SOURCE_LABEL[source] ?? UNKNOWN_LABEL}`,
+        order: order === -1 ? ENGINE_ORDER.length : order,
+        total: r.total,
+        costUsd: r.costUsd,
+        costCoverage: r.costCoverage,
+        used: r.records == null ? Number(r.total) > 0 : Number(r.records) > 0,
+      };
+    })
+    .filter((r) => r.used)
+    .sort((a, b) => a.order - b.order || a.i - b.i);
+  box.hidden = !list.length;
+  if (!list.length) {
+    box.innerHTML = '';
+    return;
+  }
+  const body = list
+    .map((r) => `<tr><td>${escapeHtml(r.label)}</td><td><b>${fmtShort(r.total)}</b></td><td>${reportShare(r.total, total)}</td><td>${escapeHtml(engineCostText(r))}</td></tr>`)
+    .join('');
+  box.innerHTML = `<h4 class="report-sub">Per mesin</h4><table class="usage-table"><thead><tr><th>Mesin · sumber</th><th>Total</th><th>%</th><th>Biaya</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
 /** Footer line next to the PDF button: exactly what the PDF will contain. */
 function renderReportScope(q, range) {
   const scope = $('#report-scope');
   if (!q.accountId) return void (scope.textContent = '');
+  const all = q.accountId === ALL_ACCOUNTS;
   const account = $('#report-account').selectedOptions[0]?.textContent.replace(/ \(aktif\)$/, '') ?? '';
-  scope.innerHTML = `PDF berisi persis yang tampil di atas: <b>${escapeHtml(account)}</b> · <b>${escapeHtml(rangeText(range))}</b> · per <b>${UNIT_NAME[q.groupBy]}</b>. Ditambah rincian per project, sumber (web/CLI) dan sesi teratas.`;
-  if (q.accountId === 'opencode') scope.innerHTML += ' <span class="muted">Pemakaian lokal OpenCode (web + terminal); sisa kuota provider tidak tersedia.</span>';
+  // "Semua akun" has no email to show: the scope names both engines instead.
+  const who = all ? `<b>Semua akun</b> · <b>Claude + OpenCode</b>` : `<b>${escapeHtml(account)}</b>`;
+  scope.innerHTML = `PDF berisi persis yang tampil di atas: ${who} · <b>${escapeHtml(rangeText(range))}</b> · per <b>${UNIT_NAME[q.groupBy]}</b>. Ditambah rincian per mesin, per project, sumber (web/CLI) dan sesi teratas.`;
+  if (all || q.accountId === 'opencode') scope.innerHTML += ' <span class="muted">Pemakaian lokal OpenCode (web + terminal); sisa kuota provider tidak tersedia.</span>';
 }
 
 async function previewReport() {
   const range = reportRange();
   syncUnits(range);
   const q = reportQuery();
-  $('#report-range').textContent = `📅 ${rangeText(range)}${report.period === 'all' && range.from ? ' (sejak catatan pertama)' : ''}`;
+  // The scope above the preview: for "Semua akun" it replaces the email with both engines.
+  const scopeName = isAllAccounts() ? `${ALL_SCOPE} · ` : '';
+  const perUnit = isAllAccounts() ? ` · per ${UNIT_NAME[report.unit]}` : '';
+  $('#report-range').textContent = `📅 ${scopeName}${rangeText(range)}${perUnit}${report.period === 'all' && range.from ? ' (sejak catatan pertama)' : ''}`;
   renderReportNote(range);
   renderReportScope(q, range);
   if (!q.accountId) {
@@ -237,6 +334,7 @@ async function previewReport() {
     renderReportKpis(s.totals, s.records);
     renderTrend(s);
     renderReportModels(s.byModel);
+    renderReportEngines(s.byEngineSource, s.totals?.total ?? 0);
   } catch (err) {
     if (seq === report.seq) showReportMessage(err.message, true);
   } finally {

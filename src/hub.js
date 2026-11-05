@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync,
 import path from 'node:path';
 import { CHAT_LIMIT, ChatStore, isChatId } from './chat-store.js';
 import { EFFORT_LEVELS } from './effort.js';
+import { MODEL_TIERS } from './model-auto.js';
 import { describeTool } from './roles.js';
 import { basename, normalizePath, projectId } from './util.js';
 
@@ -38,7 +39,7 @@ const MAX_IMPORTED_MESSAGE = 512 * 1024;
 //   (not in data/chats) and the move is tried again at the next start.
 
 export const DEMO_ID = 'demo';
-export const DEFAULT_SETTINGS = { mode: 'manual', model: '', effort: '', effortAuto: false, team: true, engine: 'claude' };
+export const DEFAULT_SETTINGS = { mode: 'manual', model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {} };
 // Which coding agent runs the project: Claude Code (stream-json) or OpenCode (ACP, src/acp-session.js).
 export const ENGINES = ['claude', 'opencode'];
 // What each engine keeps for itself in state.json (the inactive engine's set waits in persisted.workspaces).
@@ -398,6 +399,33 @@ export class Hub {
     return project;
   }
 
+  /**
+   * Forgets a project completely: its settings, sessions, activity, turns, queue and chat, plus its entry in the
+   * list. Used for a folder the user never wanted (e.g. a temp folder an old CLI session created), so it works even
+   * when the folder is gone or was never in `custom`. The usage ledger is cleaned by the caller (src/routes/projects.js).
+   */
+  purgeProject(id) {
+    const project = this.projects.get(id);
+    this.persisted.custom = (this.persisted.custom ?? []).filter((p) => projectId(p) !== id);
+    this.persisted.favorites = this.persisted.favorites.filter((f) => f !== id);
+    for (const key of ['settings', 'sessions', 'activity', 'turns', 'interrupted', 'queues']) if (this.persisted[key]) delete this.persisted[key][id];
+    for (const ws of Object.values(this.persisted.workspaces ?? {})) {
+      for (const key of ['settings', 'sessions', 'turns', 'interrupted']) if (ws?.[key]) delete ws[key][id];
+    }
+    if (this.legacyChats) delete this.legacyChats[id];
+    delete this.storedChats[id];
+    try {
+      this.chatStore.remove(id);
+    } catch (err) {
+      console.error(`Menghapus riwayat chat ${id} gagal: ${err.message}`);
+    }
+    this.runtime.delete(id);
+    this.projects.delete(id);
+    this.save();
+    this.broadcast('projects', this.listProjects());
+    return Boolean(project) || true;
+  }
+
   /** Removes a manually added folder and its stored chat/settings. Discovered folders stay listed. */
   forgetProject(id) {
     const project = this.projects.get(id);
@@ -433,7 +461,41 @@ export class Hub {
   }
 
   settingsFor(id) {
-    return { ...DEFAULT_SETTINGS, ...this.persisted.settings[id], engine: this.persisted.engine };
+    const settings = { ...DEFAULT_SETTINGS, ...this.persisted.settings[id], engine: this.persisted.engine };
+    // A hand-edited state.json could hold anything here; ladders are validated when they are written instead.
+    if (!isObject(settings.modelTiers)) settings.modelTiers = {};
+    return settings;
+  }
+
+  /**
+   * settings.modelTiers after `patch`: one Model Auto ladder per engine, only the four tier names, each a model
+   * the engine accepts. '' clears a slot (the default model returns); an invalid entry is dropped and the
+   * previous value stays, so a bad model never reaches the command line. Unknown engines and keys are ignored.
+   */
+  cleanModelTiers(base, patch) {
+    const next = isObject(base) ? { ...base } : {};
+    if (!isObject(patch)) return next;
+    for (const engine of ENGINES) {
+      const tiers = patch[engine];
+      if (!isObject(tiers)) continue;
+      const ladder = { ...(isObject(next[engine]) ? next[engine] : {}) };
+      let changed = false;
+      for (const tier of MODEL_TIERS) {
+        const raw = tiers[tier];
+        if (typeof raw !== 'string') continue;
+        const model = raw.trim();
+        if (model.length > 200) continue; // dropped: the previous value stays
+        // The same rules the model picker is held to: an alias/id Claude Code knows, or provider/model.
+        if (model && !(engine === 'opencode' ? OPENCODE_MODEL.test(model) : this.knownModel(model))) continue;
+        if (model) ladder[tier] = model;
+        else delete ladder[tier];
+        changed = true;
+      }
+      if (!changed) continue;
+      if (Object.keys(ladder).length) next[engine] = ladder;
+      else delete next[engine];
+    }
+    return next;
   }
 
   /** `base` with the valid fields of `patch` (anything unknown or malformed is ignored). */
@@ -443,14 +505,24 @@ export class Hub {
     if (PERMISSION_MODES.includes(patch.mode)) next.mode = patch.mode;
     // The engine is app-wide (switchEngine), not a per-project setting: a patch can't change it.
     const engine = this.persisted?.engine ?? 'claude';
-    if (patch.model === '' || patch.model === 'default') next.model = '';
-    else if (typeof patch.model === 'string' && (engine === 'opencode' ? OPENCODE_MODEL.test(patch.model) : this.knownModel(patch.model))) next.model = patch.model;
+    // Picking a model by hand (or Default) is a manual choice: only an explicit modelAuto: true keeps Auto on.
+    // 'auto' is never stored as a model: Model Auto keeps the concrete model in `model` and its flag in `modelAuto`.
+    if (patch.model === '' || patch.model === 'default') {
+      next.model = '';
+      if (patch.modelAuto !== true) next.modelAuto = false;
+    } else if (typeof patch.model === 'string' && patch.model !== 'auto' && (engine === 'opencode' ? OPENCODE_MODEL.test(patch.model) : this.knownModel(patch.model))) {
+      next.model = patch.model;
+      if (patch.modelAuto !== true) next.modelAuto = false;
+    }
+    if (typeof patch.modelAuto === 'boolean') next.modelAuto = patch.modelAuto;
     if (EFFORT_LEVELS.includes(patch.effort)) {
       next.effort = patch.effort;
       // Picking a level is a manual choice; only an explicit effortAuto keeps Auto on.
       if (patch.effortAuto !== true) next.effortAuto = false;
     }
     if (typeof patch.effortAuto === 'boolean') next.effortAuto = patch.effortAuto;
+    // Model Auto's own ladder (🎚️): models the running engine accepts, so a saved tier is always usable.
+    if (patch.modelTiers !== undefined) next.modelTiers = this.cleanModelTiers(base.modelTiers, patch.modelTiers);
     // OpenCode's primary agent (build, or a custom one from the user's opencode.json); '' = build
     if (patch.agent === '' || (typeof patch.agent === 'string' && /^[\w.-]{1,60}$/.test(patch.agent))) next.agent = patch.agent;
     if (typeof patch.team === 'boolean') next.team = patch.team;
@@ -835,6 +907,11 @@ export class Hub {
     const status = this.rt(id).status;
     Object.assign(status, patch);
     this.broadcast('status', status);
+  }
+
+  /** A project's live status as last sent to the browser (the same object, not a copy). */
+  statusFor(id) {
+    return this.rt(id).status;
   }
 
   // ---------- approvals ----------

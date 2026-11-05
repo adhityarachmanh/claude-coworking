@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { permissionConfig } from '../src/acp-session.js';
-import { mergePermission, readOnlyOpenCodeEnv, readUserPermission } from '../src/opencode-bin.js';
+import { mergePermission, readOnlyOpenCodeEnv, readUserPermission, childOpenCodeEnv } from '../src/opencode-bin.js';
 
 const MODES = ['manual', 'acceptEdits', 'auto', 'dontAsk', 'plan'];
 
@@ -158,4 +158,21 @@ test('readOnlyOpenCodeEnv: "*" deny, only the reading tools, the user\'s read ru
   assert.deepEqual(lock({ OPENCODE_CONFIG_CONTENT: '{"permission":"deny"}' }).permission, { '*': 'deny', read: 'deny', grep: 'deny', glob: 'deny', list: 'deny' });
   assert.deepEqual(lock({ OPENCODE_CONFIG_CONTENT: 'not json' }), base);
   assert.deepEqual(Object.keys(readOnlyOpenCodeEnv({ PATH: 'x', OPENCODE_CONFIG_CONTENT: '{}' })).sort(), ['OPENCODE_CONFIG_CONTENT', 'OPENCODE_DISABLE_AUTOUPDATE'], 'only these two: merged over process.env by the caller');
+});
+
+test('childOpenCodeEnv: a parent OpenCode session marker never reaches a child opencode', () => {
+  const nested = {
+    PATH: 'x',
+    OPENCODE: '1',
+    OPENCODE_CLIENT: 'acp',
+    OPENCODE_SESSION_ID: 'ses_e56e18152ffe',
+    OPENCODE_TERMINAL: '1',
+    OPENCODE_CONFIG_CONTENT: '{}',
+    OPENCODE_CONFIG: 'C:/app/data/team/opencode-0123456789abcdef.json',
+  };
+  assert.deepEqual(childOpenCodeEnv(nested), { PATH: 'x', OPENCODE_CONFIG_CONTENT: '{}' }, 'our Mode tim file is dropped too');
+  // a config path the user set themselves stays: it is not one of our team files
+  const own = 'C:/Users/me/opencode.json';
+  assert.equal(childOpenCodeEnv({ OPENCODE_CONFIG: own }).OPENCODE_CONFIG, own);
+  assert.equal(childOpenCodeEnv({ OPENCODE_CONFIG: 'D:/work/data/team/notes.json' }).OPENCODE_CONFIG, 'D:/work/data/team/notes.json');
 });

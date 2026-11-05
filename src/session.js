@@ -1006,6 +1006,7 @@ export class ClaudeSession {
     Object.entries(perTurn).forEach(([model, u], i) => {
       this.m.ledger.record({
         account: this.childAccount,
+        engine: 'claude',
         source: 'web',
         project: this.project,
         sessionId: msg.session_id ?? this.hub.sessionIdFor(this.id),

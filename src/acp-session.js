@@ -7,7 +7,7 @@
 import path from 'node:path';
 import { statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { mergePermission, readUserPermission } from './opencode-bin.js';
+import { mergePermission, readUserPermission, childOpenCodeEnv } from './opencode-bin.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { attachmentChips } from './attachments.js';
@@ -587,14 +587,18 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (s.model !== a.model) {
         a.model = s.model;
         a.effort = s.effort;
-        // a model has its own effort levels: the chosen effort is applied again after the switch
+        // a model has its own effort levels: the chosen effort is applied again after the switch, and BOTH are
+        // chained into `ready` so the next session/prompt waits for them (a prompt sent while the model is still
+        // switching hangs on a real provider, e.g. Auto → kimi-k3.1-pro).
         if (s.model)
-          this.ready
-            .then(() => this.setOption('model', s.model))
-            .then(
-              () => this.applyEffort(s.effort).catch((err) => this.controlFailed('effort', err)),
-              (err) => this.controlFailed('model', err),
-            );
+          this.ready = this.ready.then(async () => {
+            try {
+              await this.setOption('model', s.model);
+              await this.applyEffort(s.effort);
+            } catch (err) {
+              this.controlFailed('model', err);
+            }
+          });
         else if (!this.busy) this.closeChild(); // back to OpenCode's own default: a fresh session picks it
       } else if (s.effort !== a.effort) {
         a.effort = s.effort;
@@ -846,7 +850,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
           cwd: this.project.path,
           windowsHide: true,
           env: {
-            ...process.env,
+            ...childOpenCodeEnv(process.env),
             OFFICE_MANAGED: '1',
             OPENCODE_DISABLE_AUTOUPDATE: '1',
             // Per-process config: the user's ~/.config/opencode stays untouched.
@@ -1180,6 +1184,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (!input && !output && !cacheRead) return;
       this.m.ledger.record({
         account: OPENCODE_ACCOUNT,
+        engine: 'opencode',
         source: 'web',
         project: this.project,
         sessionId: this.hub.sessionIdFor(this.id),

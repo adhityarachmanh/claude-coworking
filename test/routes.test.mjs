@@ -51,6 +51,11 @@ test('routes over plain WiFi: every non-read route is refused (default deny), th
   assert.ok(actions.length > 40 && actions.every((p) => pathsOf(p).every((path) => !wifiAllows(path))));
 });
 
+test('routes: 🎛️ /api/models/prices is registered but never allowed over plain WiFi', () => {
+  assert.ok(patterns.includes('/api/models/prices'), 'registered');
+  assert.equal(wifiAllows('/api/models/prices'), false, 'laptop + Tailscale only: it carries prices, not a read model');
+});
+
 test('routes: an unregistered path matches nothing (server.js answers 404) and is refused over WiFi', () => {
   for (const p of ['/api/nope', '/api/projects/x', '/api/projects/x/nope', '/api/projects/x/queue-nope', '/api/projects/x/queue-', '/api/remote/nope', '/api/templates/', '/api/projects/a/b/files']) {
     assert.equal(router.match('POST', p), null, p);
@@ -120,7 +125,14 @@ test('routes: 🧩 /api/opencode-check/* (manual run, settings) laptop only, nev
 
 test('routes: 🧩 OpenCode config editor is laptop only, with a bounded JSON body', () => {
   const routes = router.routes.filter((r) => r.pattern.startsWith('/api/opencode-config'));
-  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/opencode-config', '/api/opencode-config/save']);
+  assert.deepEqual(routes.map((r) => r.pattern).sort(), [
+    '/api/opencode-config',
+    '/api/opencode-config/backup',
+    '/api/opencode-config/backups',
+    '/api/opencode-config/consolidate',
+    '/api/opencode-config/restore',
+    '/api/opencode-config/save',
+  ]);
   const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
   const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
   for (const r of routes) {

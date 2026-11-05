@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -24,5 +24,28 @@ test('isDirectory refuses network paths without touching them; local folders sti
     assert.deepEqual(discoverProjects({ roots: ['\\\\192.0.2.1\\share'] }).filter(([, src]) => src === 'folder'), []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Claude Code folders outside the roots never join the project list (a temp folder is not a project)', () => {
+  const base = mkdtempSync(path.join(tmpdir(), 'office-discover-'));
+  const root = path.join(base, 'projects');
+  const inside = path.join(root, 'toko');
+  const outside = path.join(base, 'oc-spike-proj');
+  const config = path.join(base, 'claude.json');
+  const before = process.env.CLAUDE_CONFIG_FILE;
+  try {
+    mkdirSync(inside, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(config, JSON.stringify({ projects: { [inside]: {}, [outside]: {} } }));
+    process.env.CLAUDE_CONFIG_FILE = config;
+    const claude = (extra) => discoverProjects({ roots: [root], extra }).filter(([, src]) => src === 'claude').map(([dir]) => path.resolve(dir));
+    assert.deepEqual(claude(), [path.resolve(inside)], 'only the folder under the root');
+    assert.deepEqual(claude([outside]), [path.resolve(inside), path.resolve(outside)], 'an explicitly added folder is kept');
+    assert.deepEqual(discoverProjects({ roots: [root] }).filter(([, src]) => src === 'folder').map(([dir]) => path.resolve(dir)), [path.resolve(inside)]);
+  } finally {
+    if (before === undefined) delete process.env.CLAUDE_CONFIG_FILE;
+    else process.env.CLAUDE_CONFIG_FILE = before;
+    rmSync(base, { recursive: true, force: true });
   }
 });

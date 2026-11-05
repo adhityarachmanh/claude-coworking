@@ -447,6 +447,13 @@ test('duck on approval: lower then restore; user changed volume → no restore; 
   await sleep(250);
   assert.equal(fake.player.device.volume_percent, 45, 'user change wins');
 
+  // a volume that drifted slightly below the ducked one is not left near silent
+  svc.observeApproval('approval', {}, 1);
+  await until(() => fake.player.device.volume_percent === 20, 2000, 'ducked again for the drift case');
+  fake.player.device.volume_percent = 19;
+  svc.observeApproval('approval', {}, 0);
+  await until(() => fake.player.device.volume_percent === 45, 2000, 'drifted volume restored');
+
   svc.setConfig({ settings: { duck: 'pause' } }, { settingsOnly: true });
   await svc.refreshState();
   svc.observeApproval('approval', {}, 1);

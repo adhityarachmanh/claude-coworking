@@ -13,8 +13,8 @@ import { ClaudeCheckService } from './src/claude-check.js';
 import { OpenCodeCheckService } from './src/opencode-check.js';
 import { AppUpdater } from './src/app-update.js';
 import { Hub } from './src/hub.js';
-import { discoverProjects, isDirectory } from './src/projects.js';
-import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { discoverProjects, isDirectory, isInside } from './src/projects.js';
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { writeBackup } from './src/backup.js';
 import { AccountService, accountPrivacyView, accountViewKey } from './src/account.js';
 import { autostartStatus } from './src/autostart.js';
@@ -59,6 +59,7 @@ const SPOTIFY_TEST_ORIGIN = /^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(process.env.O
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_VERSION = JSON.parse(readFileSync(path.join(APP_DIR, 'package.json'), 'utf8')).version;
 const PUBLIC_DIR = path.join(APP_DIR, 'public');
+const AI_LOGOS_DIR = path.join(APP_DIR, 'ai_logos'); // model logos shown in the office/brain (public, no data)
 // Used until roots are set in the web UI: env, else the folder this app lives in.
 const DEFAULT_ROOT = path.resolve(process.env.PROJECTS_ROOT ?? path.dirname(APP_DIR));
 const MAX_BODY = 30 * 1024 * 1024; // prompts may carry 📎 attachments (max 20 MB, base64 in JSON)
@@ -151,12 +152,12 @@ const account = new AccountService({
 });
 const ledger = new UsageLedger({ file: path.join(DATA_DIR, 'usage.jsonl'), account: () => account.current });
 const sessions = new SessionManager({ hub, claude, opencode, agents: activeAgents(allAgents, initialTeam), teamPrompt: teamPrompt(initialTeam, Object.keys(allAgents)), ledger, account });
-const mirror = new TranscriptMirror(hub, { ledger });
+const mirror = new TranscriptMirror(hub, { ledger, skipDir: (dir) => !insideKnownProjectDir(dir) });
 // 🖥 OpenCode sessions opened in a terminal (same background service): shown like Claude's CLI sessions.
 const openCodeMirror = new OpenCodeMirror(hub, {
   bin: process.env.CLAUDE_BIN && !process.env.OFFICE_OPENCODE_MIRROR ? null : opencode, // test servers: only when asked
   ownSessions: () => new Set([...sessions.sessions.values()].map((s) => s.acpSessionId).concat(Object.values(hub.persisted.sessions ?? {})).filter(Boolean)),
-  skipDir: (dir) => dir.toLowerCase().startsWith(path.resolve(DATA_DIR).toLowerCase()), // the app's own helper runs (role AI)
+  skipDir: (dir) => dir.toLowerCase().startsWith(path.resolve(DATA_DIR).toLowerCase()) || !insideKnownProjectDir(dir), // the app's own helper runs / a foreign folder
   pollMs: Number(process.env.OFFICE_OPENCODE_MIRROR_MS ?? 5000),
   ledger,
 });
@@ -285,12 +286,17 @@ const opencodeCheck = new OpenCodeCheckService({
 
 const projectRoots = () => (hub.persisted.roots.length ? hub.persisted.roots : [DEFAULT_ROOT]);
 
+/** Folders that may appear as projects: under a configured root, or explicitly added via "Tambah project". */
+function insideKnownProjectDir(dir) {
+  return isInside(dir, [...projectRoots(), ...(hub.persisted.custom ?? [])]);
+}
+
 /** Rescans all sources. Folders no longer under any root drop out (unless Claude Code or the user added them). */
 function refreshProjects() {
   const wasReady = hub.ready;
   hub.ready = false; // one broadcast at the end instead of one per folder
   for (const project of hub.projects.values()) project.sources = project.sources.filter((s) => s !== 'folder' && s !== 'claude');
-  for (const [dir, source] of discoverProjects({ roots: projectRoots() })) hub.upsertProject(dir, source);
+  for (const [dir, source] of discoverProjects({ roots: projectRoots(), extra: hub.persisted.custom })) hub.upsertProject(dir, source);
   for (const dir of hub.persisted.custom) if (isDirectory(dir)) hub.upsertProject(dir, 'custom');
   for (const [id, project] of hub.projects) if (!project.sources.length && !hub.runtime.get(id)?.status.busy) hub.projects.delete(id);
   hub.config = {
@@ -328,11 +334,12 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Spotify's Client ID, login and logout: laptop only (the redirect URI is the laptop's 127.0.0.1).
 // ⚙ Cek kompatibilitas Claude Code (run, settings): laptop only (it spawns Claude Code, maybe a model call).
 // ⚙ Kompatibilitas OpenCode (run, settings): laptop only too (it spawns `opencode acp`).
-const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 // The same for switching engines and OpenCode's provider logins (API keys travel in these requests).
-const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout', '/api/engine', '/api/opencode/providers', '/api/opencode/login/key', '/api/opencode/login/oauth', '/api/opencode/login/status', '/api/opencode/login/code', '/api/opencode/login/cancel', '/api/opencode/logout']);
+// 📜 /api/account/audit names the devices that changed an account (personal data): never over plain WiFi.
+const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout', '/api/account/audit', '/api/engine', '/api/opencode/providers', '/api/opencode/login/key', '/api/opencode/login/oauth', '/api/opencode/login/status', '/api/opencode/login/code', '/api/opencode/login/cancel', '/api/opencode/logout']);
 // Opening VS Code / Explorer only makes sense on the laptop itself.
 // Changing saved permission rules (🛡️ Aturan izin) changes what Claude Code may do unasked: laptop only (phones may look).
 const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit|mcp-add|session-import-json)$/;
@@ -402,8 +409,33 @@ function notModified(req, etag) {
   return header.trim() === '*' || header.split(',').some((v) => v.trim().replace(/^W\//, '') === etag);
 }
 
-async function serveStatic(pathname, res, req, extraHeaders = {}) {
-  const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.slice(1));
+/**
+ * `/ai-logos/index.json` (the SVG names) and `/ai-logos/<name>.svg` from the repo's ai_logos folder. Public: a logo
+ * says which model is active, never project data. The name pattern is the whole path check (no traversal).
+ */
+async function serveAiLogos(pathname, res) {
+  const rel = pathname.slice('/ai-logos/'.length);
+  if (rel === 'index.json') {
+    let logos = [];
+    try {
+      logos = readdirSync(AI_LOGOS_DIR).filter((name) => /^[a-z0-9][a-z0-9._-]{0,80}\.svg$/i.test(name)).sort();
+    } catch {
+      // no folder: an empty list, the UI falls back to a monogram
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ logos }));
+  }
+  if (!/^[a-z0-9][a-z0-9._-]{0,80}\.svg$/i.test(rel)) return json(res, 404, { error: 'not found' });
+  try {
+    const body = await readFile(path.join(AI_LOGOS_DIR, rel));
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+    return res.end(body);
+  } catch {
+    return json(res, 404, { error: 'not found' });
+  }
+}
+
+async function serveStatic(pathname, res, req, extraHeaders = {}) {  const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.slice(1));
   const file = path.resolve(PUBLIC_DIR, rel);
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return json(res, 404, { error: 'not found' });
   try {
@@ -634,6 +666,8 @@ async function handler(req, res) {
     return json(res, 400, { error: 'bad request' });
   }
   const local = isLocal(req);
+  // Model logos (🧠 Mode Otak / ruangan Lead): plain public images, so a paired phone can load them too.
+  if (req.method === 'GET' && pathname.startsWith('/ai-logos/')) return serveAiLogos(pathname, res);
   let device = null; // the paired phone making this request (null on the laptop)
   // The push service worker exists only on the https origin; http (laptop included) answers 404. A 404 on the update
   // check does NOT unregister an installed worker (the browser keeps the old one): a real kill switch would serve an

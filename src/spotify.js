@@ -1372,7 +1372,9 @@ export class SpotifyService {
     const p = this.player;
     if (!p?.device || p.device.name !== saved.deviceName) return;
     if (saved.mode === 'duck') {
-      if (p.device.volume === this.data.settings.duckVolume) await this.#setVolume(saved.prevVolume);
+      // Still at (or below) the ducked volume: put the music back. A volume the user changed to something higher is
+      // left alone, and a volume that drifted slightly (device rounding) is never left stuck near silent.
+      if (p.device.volume != null && p.device.volume <= this.data.settings.duckVolume) await this.#setVolume(saved.prevVolume);
     } else if (!p.isPlaying && (p.track?.title ?? null) === saved.title) {
       await this.#api('PUT', '/me/player/play', { action: 'lanjut musik' });
       p.isPlaying = true;

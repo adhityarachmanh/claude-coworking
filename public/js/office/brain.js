@@ -2,6 +2,7 @@
 // around it; a delegation is a signal travelling down the synapse (and the report travelling back), a tool call a
 // pulse, a pending approval an amber halo, an error a red flash. Same data as the pixel office: the active Scene's
 // people (who is busy / asking / stuck) and the live office events (stream.js → brain.event), nothing server-side.
+import { activeModelOf, drawModelLogo, logoIndex } from '../core/model-logo.js';
 import { CAST, roleColor, roleName } from './cast.js';
 import { teamOrder } from './roster.js';
 
@@ -40,6 +41,8 @@ export class Brain {
     this.streams = []; // energy flowing core → working neuron: { from, to, t0, dur, size, hue }
     this.lastEmit = new Map(); // role -> when its stream last emitted a particle
     this.lastScene = null;
+    this.logo = { model: '', label: '', file: null }; // the active model's logo, recomputed only when it changes
+    this.logoKey = '';
     this.thoughts = []; // tool labels drifting from the core to the worker: { role, text, t0, dur }
     this.bursts = []; // result explosions: { role, color, t0, n }
     this.shakes = new Map(); // role -> until (a red shake on failure)
@@ -215,7 +218,9 @@ export class Brain {
   }
 
   frame(t, scene) {
-    if (!this.on) return;
+    // A hidden office pane (a phone on another view) leaves the canvas 1x1: the layout would get negative radii and
+    // throw, which kills the whole animation loop. Nothing is visible there anyway; resize() redraws once it shows.
+    if (!this.on || this.w < 60 || this.h < 100) return;
     const g = this.g;
     const now = performance.now();
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -275,9 +280,10 @@ export class Brain {
       }
     }
     this.drawStreams(g, pos, now);
-    // thinking core, tinted by the permission mode, wrapped in its memory (context) ring
+    // thinking core, tinted by the permission mode, wrapped in its memory (context) ring; the active model's logo
+    // sits on it (the core keeps pulsing around the logo: its glow, its beat and its orbit of thoughts stay visible)
     const hue = MODE_HUE[status.mode] ?? MODE_HUE.manual;
-    this.drawCore(g, pos.claude, Boolean(status.busy || status.cliBusy), t, hue);
+    this.drawCore(g, pos.claude, Boolean(status.busy || status.cliBusy), t, hue, this.activeLogo(status));
     this.drawMemory(g, pos.claude, status, now, t);
     // signals, pulses, ripples
     this.packets = this.packets.filter((k) => now < k.t0 + k.dur);
@@ -522,7 +528,17 @@ export class Brain {
     g.restore();
   }
 
-  drawCore(g, at, thinking, t, [cr, cg, cb] = MODE_HUE.manual) {
+  /** The active model (logo file + short label), cached until the status or the logo index changes. */
+  activeLogo(status) {
+    const key = `${status?.activeModel ?? ''}|${status?.model ?? ''}|${status?.engine ?? ''}|${logoIndex().length}`;
+    if (key !== this.logoKey) {
+      this.logoKey = key;
+      this.logo = activeModelOf(status, status?.engine);
+    }
+    return this.logo;
+  }
+
+  drawCore(g, at, thinking, t, [cr, cg, cb] = MODE_HUE.manual, logo = null) {
     const beat = 1 + (thinking ? 0.12 : 0.04) * Math.sin(t / (thinking ? 160 : 700));
     const r = at.r * beat;
     g.save();
@@ -538,6 +554,13 @@ export class Brain {
     g.beginPath();
     g.arc(at.x, at.y, r * 0.55, 0, TAU);
     g.fill();
+    // The model that is thinking: its logo on the core, in the core's own hue (a monogram until the index/logos load).
+    drawModelLogo(g, logo?.file ?? null, at.x, at.y, r * 1.5, {
+      alpha: 0.85,
+      ring: [cr, cg, cb],
+      font: `bold ${Math.max(8, Math.round(at.r * 0.62))}px ui-monospace, monospace`,
+      label: logo?.label ?? '',
+    });
     // orbiting thoughts while it thinks
     const n = thinking ? 6 : 2;
     for (let i = 0; i < n; i++) {

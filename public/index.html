@@ -208,6 +208,8 @@
           <div id="attachments" class="attachments" hidden></div>
           <!-- Phone on plain WiFi: one clear banner instead of a greyed-out composer -->
           <div id="ro-banner" class="ro-banner phone-only" role="status" hidden>👁 Hanya lihat lewat WiFi. Kirim perintah dari laptop atau lewat Tailscale.</div>
+          <!-- Project model gone after a provider logout (status.modelStale): prompts are refused until a model is picked -->
+          <div id="model-stale" class="model-stale" role="alert" hidden></div>
           <div class="input">
             <button id="btn-attach" class="ghost icon attach" title="Lampirkan file: gambar, PDF, log/teks/kode (atau paste / drag ke kotak ini)" aria-label="Lampirkan file">📎</button>
             <!-- accept is filled from core/attachment-rules.js (ATTACH_ACCEPT) at start -->
@@ -443,6 +445,28 @@
         <p class="muted small">Pilih pesanmu. Kode dan/atau percakapan dikembalikan ke keadaan <i>sebelum</i> pesan itu dikirim, seperti Esc Esc di Claude Code.</p>
         <ol id="rewind-list" class="rewind-list"></ol>
         <div id="rewind-detail" class="rewind-detail" hidden></div>
+        <p id="rewind-error" class="field-error rewind-error" role="alert"></p>
+        <div id="rewind-redo" class="rewind-redo" hidden></div>
+      </div>
+    </div>
+
+    <!-- 🧹 Ringkas konteks (/ringkas, alias /compact): the engine compacts its context; the app's chat is unchanged -->
+    <div id="compact-modal" class="modal" hidden>
+      <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="compact-title">
+        <div class="modal-head"><b id="compact-title">🧹 Ringkas konteks</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="compact-summary" class="compact-summary"></p>
+        <form id="compact-form">
+          <label class="oc-field" for="compact-focus"><span>Fokus (opsional)</span>
+            <input id="compact-focus" maxlength="300" autocomplete="off" placeholder="pertahankan keputusan API dan file yang diubah" aria-describedby="compact-opencode-note compact-note" />
+          </label>
+          <p id="compact-opencode-note" class="compact-note muted small" hidden>OpenCode mengabaikan teks fokus untuk sekarang — hanya Claude Code yang memakainya.</p>
+          <p id="compact-note" class="compact-note muted small">Ringkas konteks memakai token mesin ini. Riwayat percakapan di aplikasi tidak berubah: tetap bisa dibaca, dicari, dan diekspor.</p>
+          <p id="compact-error" class="field-error" role="alert"></p>
+          <div class="acct-actions">
+            <button id="compact-cancel" type="button" class="ghost" data-close>Batal</button>
+            <button id="compact-send" type="submit" class="primary">Ringkas</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -809,7 +833,15 @@
             <button type="button" id="oc-scope-project" class="oc-tab" role="tab" aria-selected="true">Project ini</button>
             <button type="button" id="oc-scope-global" class="oc-tab" role="tab" aria-selected="false">Global</button>
           </div>
-          <p id="oc-config-path" class="muted small oc-config-path" role="status" aria-live="polite">Memuat config…</p>
+          <p id="oc-config-path" class="muted small oc-config-path" role="status" aria-live="polite" tabindex="-1">Memuat config…</p>
+          <div id="oc-conflict" class="oc-conflict" role="alert" hidden>
+            <p id="oc-conflict-message"></p>
+            <ul id="oc-conflict-paths" class="oc-conflict-paths" aria-label="File config OpenCode yang ditemukan"></ul>
+            <div class="oc-conflict-actions backup-actions">
+              <button type="button" id="oc-conflict-consolidate" class="ghost">Konsolidasi ke file ini</button>
+              <button type="button" id="oc-conflict-close" class="ghost" aria-label="Tutup peringatan">Tutup</button>
+            </div>
+          </div>
         </div>
         <div class="oc-config-tabs" role="tablist" aria-label="Mode editor">
           <button type="button" id="oc-mode-form" class="oc-tab on" role="tab" aria-selected="true">Form</button>
@@ -829,7 +861,16 @@
           <p class="muted small">Tab JSON menulis teks apa adanya, jadi komentar JSONC tetap. Form yang disimpan menulis JSON biasa.</p>
         </div>
         <p id="oc-config-error" class="field-error" role="alert"></p>
-        <p id="oc-config-note" class="muted small">File lama disimpan sebagai <code>.bak-&lt;waktu&gt;</code> sebelum ditimpa.</p>
+        <p id="oc-config-note" class="muted small">Backup file ini disimpan di folder data aplikasi (bukan <code>.bak</code> di sebelah file) dan bisa dipulihkan dari <b>Riwayat backup</b>. File <code>.bak-*</code> lama tetap muncul di riwayat dengan tanda <b>format lama</b>. Hasil konsolidasi menyimpan file <code>.opencode</code> di folder backup yang sama dengan awalan <code>dot--</code>, untuk pemulihan manual — tidak muncul di Riwayat backup file ini. Project yang punya <code>opencode.json</code> dan <code>.opencode/opencode.json</code> sekaligus juga dideteksi.</p>
+        <details id="oc-history" class="oc-backups">
+          <summary>🕘 Riwayat backup</summary>
+          <p id="oc-backup-error" class="field-error" role="alert"></p>
+          <div id="oc-backup-list" class="oc-backup-list" aria-live="polite"></div>
+          <div id="oc-backup-preview-wrap" class="oc-backup-preview-wrap" hidden>
+            <p id="oc-backup-preview-meta" class="muted small"></p>
+            <textarea id="oc-backup-preview" class="oc-backup-preview" rows="8" readonly spellcheck="false" aria-label="Isi backup"></textarea>
+          </div>
+        </details>
         <div class="backup-actions oc-config-actions">
           <button type="button" id="oc-config-reload" class="ghost">↻ Muat ulang</button>
           <button type="button" id="oc-config-save" class="primary">Simpan</button>
@@ -1115,6 +1156,20 @@
         <p id="effort-note" class="muted small" hidden></p>
         <p id="engine-note" class="muted small" hidden></p>
         <p class="muted small sheet-help">Berlaku untuk project ini. Tersimpan otomatis.</p>
+      </div>
+    </div>
+
+    <!-- Model Auto ladder: the model each tier uses on the project's engine (features/composer.js, "Atur tangga…") -->
+    <div id="model-tiers-modal" class="modal" hidden>
+      <div class="modal-card tiers-card" role="dialog" aria-modal="true" aria-labelledby="tiers-title" aria-describedby="tiers-intro">
+        <div class="modal-head"><b id="tiers-title">Tangga Model Auto</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="tiers-intro" class="muted small tiers-intro">Model yang dipakai tiap tingkat saat Model = Auto. Pilih Bawaan untuk kembali ke model bawaan mesin ini.</p>
+        <div id="tiers-rows" class="tiers-rows"></div>
+        <p id="tiers-error" class="tiers-error small" role="alert" hidden></p>
+        <div class="tiers-actions">
+          <button type="button" class="ghost" data-close>Tutup</button>
+          <button type="button" id="tiers-save" class="primary">Simpan</button>
+        </div>
       </div>
     </div>
 

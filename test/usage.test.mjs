@@ -1,12 +1,12 @@
 // Account usage: `/usage` parsing, the per-account token ledger, and the PDF report.
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { billingStatus, parseUsageText, usageNote } from '../src/account.js';
 import { findBrowser, periodLabel, renderPdf, reportHtml } from '../src/report.js';
-import { byPeriod, periodStart, summarize, totals, UsageLedger } from '../src/usage.js';
+import { byPeriod, ENGINES, engineOf, periodStart, summarize, totals, UsageLedger } from '../src/usage.js';
 
 const A = { id: 'uuid-a', email: 'kantor@example.com', org: 'Kantor' };
 const B = { id: 'uuid-b', email: 'pribadi@example.com', org: null };
@@ -71,6 +71,98 @@ test('ledger keeps accounts apart', () => {
   assert.equal(ledger.query({ accountId: A.id, from: Date.now() + 1000 }).length, 0, 'period filter');
 });
 
+/** One row per engine × source, so every bucket exists: claude:web, claude:cli, opencode:web, opencode:cli. */
+function ledgerWithEngines() {
+  const ledger = new UsageLedger({ file: path.join(mkdtempSync(path.join(tmpdir(), 'usage-')), 'usage.jsonl'), account: () => A });
+  const row = (engine, source, input, output, extra = {}) =>
+    ledger.record({ engine, source, project: { id: 'p1', name: 'toko' }, sessionId: 's1', model: 'm', input, output, cacheRead: 0, cacheWrite: 0, ...extra });
+  row('claude', 'web', 100, 10, { turns: 1, costUsd: 0.5 });
+  row('claude', 'cli', 20, 2, { requests: 1 });
+  row('opencode', 'web', 30, 3, { turns: 1, costUsd: 0 });
+  row('opencode', 'cli', 4, 1, { requests: 1 });
+  return ledger;
+}
+
+test('engine: an explicit value is stored, otherwise the account decides (legacy rows too)', () => {
+  assert.deepEqual(ENGINES, ['claude', 'opencode']);
+  assert.equal(engineOf({ engine: 'opencode', account: A }), 'opencode');
+  assert.equal(engineOf({ engine: 'claude', account: { id: 'opencode' } }), 'claude', 'the stored engine wins');
+  assert.equal(engineOf({ account: { id: 'opencode' } }), 'opencode', 'legacy OpenCode rows have no engine field');
+  assert.equal(engineOf({ account: A }), 'claude', 'every other legacy row was Claude');
+  assert.equal(engineOf({}), 'unknown', 'no engine and no account is never guessed');
+
+  const ledger = new UsageLedger({ file: path.join(mkdtempSync(path.join(tmpdir(), 'usage-')), 'usage.jsonl'), account: () => A });
+  ledger.record({ source: 'web', project: { id: 'p1', name: 'toko' }, model: 'm', input: 1, output: 0, cacheRead: 0, cacheWrite: 0 });
+  ledger.record({ engine: 'opencode', source: 'web', project: { id: 'p1', name: 'toko' }, model: 'm', input: 2, output: 0, cacheRead: 0, cacheWrite: 0 });
+  assert.deepEqual(ledger.rows().map((r) => r.engine), ['claude', 'opencode']);
+
+  // a row written before `engine` existed (old file or restored backup) keeps merging; engine is derived on read
+  const legacy = { ts: Date.now(), account: { id: 'opencode', email: 'OpenCode', org: null }, source: 'cli', project: null, projectId: null, sessionId: 'old', model: 'oc', input: 7, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: null, requests: 1, turns: 0 };
+  assert.equal(ledger.importRows([legacy]), 1, 'legacy rows are still valid');
+  const s = summarize(ledger.query({ accountId: 'opencode' }), { from: 0, to: Date.now() });
+  assert.deepEqual(s.byEngine.map((e) => e.key), ['opencode']);
+  assert.deepEqual(s.byEngineSource.map((e) => e.key), ['opencode:cli']);
+
+  const missingAccount = summarize([{ input: 1, output: 0, cacheRead: 0, cacheWrite: 0 }], { from: 0, to: Date.now() });
+  assert.deepEqual(missingAccount.byEngine.map((e) => e.key), ['unknown'], 'nothing to attribute it to');
+});
+
+test('summarize adds per-engine totals (and engine × source) that add up to the overall totals', () => {
+  const ledger = ledgerWithEngines();
+  const s = summarize(ledger.query({ accountId: A.id }), { from: 0, to: Date.now() });
+  const totalOf = (items) => items.reduce((n, i) => n + i.total, 0);
+
+  assert.deepEqual(s.byEngine.map((e) => e.key).sort(), [...ENGINES].sort());
+  assert.equal(totalOf(s.byEngine), s.totals.total, 'no token lost or counted twice');
+  assert.equal(s.byEngine.reduce((n, e) => n + e.requests, 0), s.totals.requests);
+
+  assert.deepEqual(s.byEngineSource.map((e) => e.key).sort(), ['claude:cli', 'claude:web', 'opencode:cli', 'opencode:web']);
+  for (const item of s.byEngineSource) {
+    assert.ok(ENGINES.includes(item.engine));
+    assert.ok(['web', 'cli'].includes(item.source));
+    assert.ok(Number.isFinite(item.total), 'group fields are kept');
+  }
+  assert.equal(totalOf(s.byEngineSource), s.totals.total);
+  assert.equal(totalOf(s.bySource), s.totals.total, 'the source breakdown stays a separate dimension');
+});
+
+test('removeProject deletes only that project\'s rows, with a backup', () => {
+  const ledger = ledgerWithTwoAccounts();
+  const before = ledger.rows().length;
+  const removed = ledger.removeProject('p1');
+  assert.equal(removed, 2, 'only the rows of project p1');
+  assert.equal(ledger.rows().length, before - 2);
+  // an unknown project changes nothing
+  assert.equal(ledger.removeProject('nope'), 0);
+  assert.ok(readdirSync(path.dirname(ledger.file)).some((f) => f.startsWith('usage.jsonl.bak-purge-')), 'a backup was written');
+});
+
+test('query("all") covers every account; one report can show Claude and OpenCode together', () => {
+  const ledger = ledgerWithTwoAccounts();
+  const all = ledger.query({ accountId: 'all' });
+  assert.equal(all.length, 3, 'both accounts');
+  assert.equal(totals(all).total, totals(ledger.query({ accountId: A.id })).total + totals(ledger.query({ accountId: B.id })).total);
+  assert.equal(ledger.query({ accountId: 'all', from: Date.now() + 1000 }).length, 0, 'the period still filters');
+  assert.equal(ledger.query({}).length, 0, 'a missing account id is strict: no silent all-account sum');
+  assert.equal(ledger.query({ accountId: null }).length, 0, 'null is strict too');
+  assert.equal(ledger.query({ accountId: A.id }).length, 2, 'an exact id is unchanged');
+
+  // an OpenCode account next to the Claude one: the combined summary has both engines, no token lost
+  ledger.record({ account: { id: 'opencode', email: 'OpenCode', org: null }, engine: 'opencode', source: 'web', project: { id: 'p1', name: 'toko' }, sessionId: 's2', model: 'oc', input: 40, output: 4, cacheRead: 0, cacheWrite: 0 });
+  const s = summarize(ledger.query({ accountId: 'all' }), { from: 0, to: Date.now() });
+  assert.equal(s.byEngine.length, 2);
+  assert.deepEqual(s.byEngine.map((e) => e.key).sort(), ['claude', 'opencode']);
+  assert.equal(s.byEngine.reduce((n, e) => n + e.total, 0), s.totals.total);
+  assert.equal(s.byEngineSource.reduce((n, e) => n + e.total, 0), s.totals.total);
+
+  const html = reportHtml({ account: { email: 'Semua akun', org: null }, profile: null, limits: null, summary: s });
+  assert.match(html, /Semua akun/);
+  assert.match(html, /Claude · Web/);
+  assert.match(html, /OpenCode · Web/);
+  assert.doesNotMatch(html, /kantor@example\.com|pribadi@example\.com/, 'the combined report names no account');
+  assert.doesNotMatch(html, /Kuota langganan|Batas pemakaian organisasi/, 'no profile, limits or billing for a combined report');
+});
+
 test('summarize groups by model, project, source and period', () => {
   const ledger = ledgerWithTwoAccounts();
   const rows = ledger.query({ accountId: A.id });
@@ -132,6 +224,23 @@ test('an OpenCode report labels local usage and says provider quota is unavailab
   assert.match(html, /pemakaian lokal/);
   assert.match(html, /sisa kuota provider/);
   assert.doesNotMatch(html, /Estimasi harga list dari Claude Code/);
+});
+
+test('report shows usage per engine and engine × source, and notes that roles are not split', () => {
+  const ledger = ledgerWithEngines();
+  const summary = summarize(ledger.query({ accountId: A.id }), { from: 0, to: Date.now() });
+  const html = reportHtml({ account: A, profile: null, limits: null, summary });
+  assert.match(html, /<h2>Per mesin<\/h2>/);
+  assert.match(html, /<th>Mesin<\/th>/, 'the engine table');
+  assert.match(html, /<th>Mesin · sumber<\/th>/, 'the engine × source table');
+  for (const label of ['Claude', 'OpenCode', 'Claude · Web', 'Claude · Terminal', 'OpenCode · Web', 'OpenCode · Terminal']) {
+    assert.ok(html.includes(label), `shows ${label}`);
+  }
+  assert.match(html, /Per sumber/, 'the per-source table stays');
+  assert.match(html, /Rincian per role belum tersedia; pemakaian subagent digabung ke sesi induknya\./);
+  assert.match(html, /\$0\.00/, 'a zero cost is spelled out');
+  assert.match(html, /\(50%\)/, 'partial cost coverage is shown');
+  assert.match(html, /<td>—<\/td>/, 'no cost on record reads as a dash');
 });
 
 test('report HTML shows only the chosen account and escapes text', async (t) => {

@@ -238,6 +238,7 @@ export class OpenCodeMirror {
     const model = typeof m.model === 'string' ? m.model : provider ? `${provider}/${m.model.id ?? m.model.modelID ?? 'unknown'}` : (m.model?.id ?? m.model?.modelID ?? 'opencode');
     this.ledger.record({
       account: OPENCODE_ACCOUNT,
+      engine: 'opencode',
       source: 'cli',
       project: project ? { id: project.id, name: project.name } : { id: s.pid, name: null },
       sessionId: s.id,

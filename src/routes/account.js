@@ -4,6 +4,7 @@
 // `ctx.device` is the paired phone making the request (null on the laptop).
 import { randomBytes } from 'node:crypto';
 import { accountPrivacyView, billingStatus } from '../account.js';
+import { recordAuth, recentAuth } from '../auth-audit.js';
 import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
 import { renderPdf, reportHtml } from '../report.js';
@@ -33,9 +34,13 @@ const FALLBACK_VIEW = accountPrivacyView(randomBytes(32));
  */
 const wifiView = (ctx, req) => (ctx.isReadOnly?.(req) === false ? null : (ctx.accountPrivacy ?? FALLBACK_VIEW));
 
-/** The real account id a report asks for: none = the current one; from a WiFi viewer, its opaque id (null = unknown). */
+/**
+ * The real account id a report asks for: none = the current one; `'all'` = every account (the combined report,
+ * for both the laptop and a WiFi viewer — it carries no identity); from a WiFi viewer, its opaque id (null = unknown).
+ */
 function requestedAccount({ account, ledger }, view, requested) {
   const current = account.current?.id ?? '';
+  if (requested === 'all') return 'all'; // never mapped through the opaque WiFi ids
   if (requested === undefined || requested === null || requested === '') return current;
   if (!view) return String(requested);
   return [current, ...ledger.accounts().map((a) => a.id)].find((id) => id && view.id(id) === String(requested)) ?? null;
@@ -44,22 +49,16 @@ function requestedAccount({ account, ledger }, view, requested) {
 export function register(router) {
   router.post('/api/account', accountState);
   router.post('/api/account/limits', async ({ account, allowForce }, req, res, params, body) => json(res, 200, (await account.refreshLimits(allowForce(req, body))) ?? {}));
-  router.post('/api/account/login', ({ hub, account, device }, req, res, params, body) => {
-    const flow = account.startLogin({ console: Boolean(body.console) });
-    if (device) accountAlert(hub, 'login', device);
-    return json(res, 200, flow);
-  });
-  router.post('/api/account/login/code', ({ account }, req, res, params, body) => {
-    const code = String(body.code ?? '').trim();
-    if (!code) return json(res, 400, { error: 'Kode kosong.' });
-    account.submitCode(code);
-    return json(res, 200, { ok: true });
-  });
-  router.post('/api/account/login/cancel', ({ account }, req, res) => {
-    account.cancelLogin();
-    return json(res, 200, { ok: true });
-  });
+  router.post('/api/account/login', loginStart);
+  router.post('/api/account/login/code', loginCode);
+  router.post('/api/account/login/cancel', loginCancel);
   router.post('/api/account/logout', logout);
+  // 📜 Riwayat perubahan akun: the last auth actions, newest first (laptop + Tailscale, never plain WiFi).
+  router.post('/api/account/audit', ({ dataDir }, req, res, params, body) => {
+    const raw = Number(body?.limit);
+    const limit = Number.isFinite(raw) ? Math.min(100, Math.max(1, Math.trunc(raw))) : 50;
+    return json(res, 200, { entries: recentAuth(limit, { dataDir }) });
+  });
   // ---------- engine (Claude Code or OpenCode, app-wide) and OpenCode's provider logins ----------
   router.post('/api/engine', ({ hub, sessions, taskQueue, device }, req, res, params, body) => {
     // Projects whose 📋 Antrian still has work (waiting or running items, paused or not).
@@ -73,12 +72,12 @@ export function register(router) {
     return json(res, 200, result);
   });
   router.post('/api/opencode/providers', openCode((bin, body, ctx) => openCodeProviders(bin).then((view) => ({ ...view, usage: openCodeUsage(ctx.ledger) }))));
-  router.post('/api/opencode/login/key', openCode((bin, body, ctx) => openCodeConnectKey(bin, body.provider, body).then(loggedIn(ctx)).then(phoneAlert(ctx, 'login', body.provider))));
-  router.post('/api/opencode/login/oauth', openCode((bin, body, ctx) => openCodeOAuthStart(bin, body.provider, body).then(phoneAlert(ctx, 'login', body.provider))));
-  router.post('/api/opencode/login/status', openCode((bin, body, ctx) => openCodeOAuthStatus(bin, body.provider, body.attemptID).then((st) => (st.status === 'complete' ? loggedIn(ctx)(st) : st))));
-  router.post('/api/opencode/login/code', openCode((bin, body, ctx) => openCodeOAuthComplete(bin, body.provider, body.attemptID, body.code).then(loggedIn(ctx))));
-  router.post('/api/opencode/login/cancel', openCode((bin, body) => openCodeOAuthCancel(bin, body.provider, body.attemptID)));
-  router.post('/api/opencode/logout', openCode((bin, body, ctx) => openCodeLogout(bin, body.credentialID).then(loggedIn(ctx)).then(phoneAlert(ctx, 'logout'))));
+  router.post('/api/opencode/login/key', audited('login-key', (body) => body.provider, (bin, body, ctx) => openCodeConnectKey(bin, body.provider, body).then(loggedIn(ctx)).then(phoneAlert(ctx, 'login', body.provider))));
+  router.post('/api/opencode/login/oauth', audited('oauth-start', (body) => body.provider, (bin, body, ctx) => openCodeOAuthStart(bin, body.provider, body).then(phoneAlert(ctx, 'login', body.provider))));
+  router.post('/api/opencode/login/status', openCode(oAuthStatus));
+  router.post('/api/opencode/login/code', audited('oauth-complete', (body) => body.provider, (bin, body, ctx) => openCodeOAuthComplete(bin, body.provider, body.attemptID, body.code).then(loggedIn(ctx))));
+  router.post('/api/opencode/login/cancel', audited('cancel', (body) => body.provider, (bin, body) => openCodeOAuthCancel(bin, body.provider, body.attemptID)));
+  router.post('/api/opencode/logout', openCode(openCodeLogoutRoute));
   // ---------- usage report ----------
   router.post('/api/report/accounts', reportAccounts);
   router.post('/api/report/summary', (ctx, req, res, params, body) => report(ctx, req, res, body, { pdf: false }));
@@ -95,9 +94,101 @@ const openCode = (fn) => async (ctx, req, res, params, body) => {
   }
 };
 
+/** Who did it, for the audit: the paired phone's name, or the laptop itself. */
+const actorOf = (device) => (device?.name ? String(device.name) : 'laptop');
+/** The provider an audit line names: only a real provider id (the request body is untrusted). */
+const auditProvider = (value) => (PROVIDER_ID.test(String(value ?? '')) ? String(value) : null);
+/** One audit line (data/auth-audit.jsonl); a bad entry only logs, it never changes the answer to the client. */
+const audit = (ctx, entry) => recordAuth(entry, { dataDir: ctx.dataDir });
+
+/**
+ * An OpenCode route that records the attempt (ok or not) and then answers exactly as before. The provider in the
+ * entry is the one the body names, so a failed login still says which provider it was for.
+ */
+const audited = (action, providerOf, fn) => openCode(async (bin, body, ctx) => {
+  const actor = actorOf(ctx.device);
+  const provider = auditProvider(providerOf(body));
+  try {
+    const result = await fn(bin, body, ctx);
+    audit(ctx, { action, engine: 'opencode', provider, actor, ok: true, detail: null });
+    return result;
+  } catch (err) {
+    audit(ctx, { action, engine: 'opencode', provider, actor, ok: false, detail: err.message });
+    throw err; // openCode() turns it into the same JSON status as before
+  }
+});
+
+/** The OAuth attempt's state; only the moment it completes is an auth action worth an audit line. */
+async function oAuthStatus(bin, body, ctx) {
+  const st = await openCodeOAuthStatus(bin, body.provider, body.attemptID);
+  if (st.status !== 'complete') return st;
+  audit(ctx, { action: 'oauth-complete', engine: 'opencode', provider: auditProvider(body.provider), actor: actorOf(ctx.device), ok: true, detail: null });
+  return loggedIn(ctx)(st);
+}
+
+const OPENCODE_LOGOUT_CONFIRM = 'LOGOUT';
+const CREDENTIAL_ID = /^[\w.-]{1,100}$/;
+
+/** The provider a stored credential belongs to, from the providers list; null when unknown or already gone. */
+async function providerOfCredential(bin, credentialID) {
+  if (!CREDENTIAL_ID.test(credentialID)) return null;
+  try {
+    const { connected } = await openCodeProviders(bin);
+    return connected.find((p) => p.connections.some((c) => c.type === 'credential' && c.id === credentialID))?.id ?? null;
+  } catch {
+    return null; // the logout itself reports what is wrong
+  }
+}
+
+const MODEL_STALE_TEXT = (model, provider) => `⚠ Model aktif (${model}) berasal dari provider ${provider} yang baru logout. Pilih model lain atau Default.`;
+
+/**
+ * A provider was logged out: every OpenCode project with one of its models active is marked stale (and told in its
+ * chat). The model is deliberately left as it is: the next prompt is refused (routes/session.js) until the user
+ * picks another model or Default, so a dead provider is never replaced silently.
+ */
+function markModelStale(hub, provider) {
+  if (!provider) return;
+  for (const project of hub.projects.values()) {
+    if (project.virtual) continue;
+    if (hub.settingsFor(project.id).engine !== 'opencode') continue;
+    // Only a project whose session is (or was) running has an active model; reading it never opens a runtime.
+    const model = String(hub.runtime.get(project.id)?.status?.activeModel ?? '');
+    if (!model.startsWith(`${provider}/`)) continue;
+    hub.setStatus(project.id, { modelStale: true });
+    hub.chat(project.id, { kind: 'info', level: 'warning', modelStale: true, text: MODEL_STALE_TEXT(model, provider) });
+  }
+}
+
+/**
+ * POST /api/opencode/logout: drops one stored provider credential. `confirm: "LOGOUT"` is required from every
+ * client (the laptop too): a single tap must never leave the projects without a provider.
+ */
+async function openCodeLogoutRoute(bin, body, ctx) {
+  const actor = actorOf(ctx.device);
+  if (body.confirm !== OPENCODE_LOGOUT_CONFIRM) {
+    audit(ctx, { action: 'logout', engine: 'opencode', provider: null, actor, ok: false, detail: `butuh konfirmasi ${OPENCODE_LOGOUT_CONFIRM}` });
+    throw Object.assign(new Error(`Ketik ${OPENCODE_LOGOUT_CONFIRM} untuk konfirmasi logout provider dari HP.`), { status: 400 });
+  }
+  const credentialID = String(body.credentialID ?? '');
+  // Which provider it was: only known before the logout (afterwards the credential is gone from the list).
+  const provider = await providerOfCredential(bin, credentialID);
+  try {
+    await openCodeLogout(bin, credentialID);
+  } catch (err) {
+    audit(ctx, { action: 'logout', engine: 'opencode', provider, actor, ok: false, detail: err.message });
+    throw err;
+  }
+  audit(ctx, { action: 'logout', engine: 'opencode', provider, actor, ok: true, detail: null });
+  markModelStale(ctx.hub, provider);
+  return phoneAlert(ctx, 'logout')(loggedIn(ctx)({ ok: true }));
+}
+
 /** Credentials changed: idle OpenCode processes restart with them on the next prompt (busy ones after their turn). */
 const loggedIn = (ctx) => (result) => {
   if (ctx.hub.engine === 'opencode') ctx.sessions.accountChanged();
+  // A provider came or went: every queue pauses until the user has checked the model (never a silent replacement).
+  ctx.taskQueue?.pauseAll('account');
   return result;
 };
 
@@ -136,11 +227,70 @@ async function accountState(ctx, req, res, params, body) {
   return json(res, 200, { ...state, usage: { today: totals(id ? ledger.query({ accountId: id, from: today.getTime() }) : []), week: since(7 * 86_400_000) } });
 }
 
-async function logout({ hub, account, device }, req, res, params, body) {
+/** POST /api/account/login: the login flow starts; a phone is announced on the laptop; every queue pauses. */
+function loginStart({ hub, account, device, taskQueue, dataDir }, req, res, params, body) {
+  const actor = actorOf(device);
+  let flow;
+  try {
+    flow = account.startLogin({ console: Boolean(body.console) });
+    recordAuth({ action: 'login-start', engine: 'claude', provider: null, actor, ok: true, detail: null }, { dataDir });
+  } catch (err) {
+    recordAuth({ action: 'login-start', engine: 'claude', provider: null, actor, ok: false, detail: err.message }, { dataDir });
+    throw err; // the same 500 as before
+  }
+  taskQueue?.pauseAll('account'); // the account (and so the model) is about to change: nothing runs meanwhile
+  if (device) accountAlert(hub, 'login', device);
+  return json(res, 200, flow);
+}
+
+/** POST /api/account/login/code: the pasted code goes to the running login; the code itself is never audited. */
+function loginCode({ account, device, dataDir }, req, res, params, body) {
+  const actor = actorOf(device);
+  const code = String(body.code ?? '').trim();
+  if (!code) {
+    recordAuth({ action: 'login-code', engine: 'claude', provider: null, actor, ok: false, detail: 'Kode kosong.' }, { dataDir });
+    return json(res, 400, { error: 'Kode kosong.' });
+  }
+  try {
+    account.submitCode(code);
+    recordAuth({ action: 'login-code', engine: 'claude', provider: null, actor, ok: true, detail: null }, { dataDir });
+    return json(res, 200, { ok: true });
+  } catch (err) {
+    recordAuth({ action: 'login-code', engine: 'claude', provider: null, actor, ok: false, detail: err.message }, { dataDir });
+    throw err;
+  }
+}
+
+/** POST /api/account/login/cancel: the login the user started is dropped (nothing is signed in). */
+function loginCancel({ account, device, dataDir }, req, res) {
+  const actor = actorOf(device);
+  try {
+    account.cancelLogin();
+    recordAuth({ action: 'login-cancel', engine: 'claude', provider: null, actor, ok: true, detail: null }, { dataDir });
+    return json(res, 200, { ok: true });
+  } catch (err) {
+    recordAuth({ action: 'login-cancel', engine: 'claude', provider: null, actor, ok: false, detail: err.message }, { dataDir });
+    throw err;
+  }
+}
+
+async function logout({ hub, account, device, taskQueue, dataDir }, req, res, params, body) {
+  const actor = actorOf(device);
   // Second step for phones: the user must type LOGOUT, so a stray tap can't sign the laptop out.
-  if (device && body.confirm !== LOGOUT_CONFIRM) return json(res, 400, { error: `Ketik ${LOGOUT_CONFIRM} untuk konfirmasi logout dari HP.` });
+  if (device && body.confirm !== LOGOUT_CONFIRM) {
+    recordAuth({ action: 'logout', engine: 'claude', provider: null, actor, ok: false, detail: `butuh konfirmasi ${LOGOUT_CONFIRM}` }, { dataDir });
+    return json(res, 400, { error: `Ketik ${LOGOUT_CONFIRM} untuk konfirmasi logout dari HP.` });
+  }
   const email = account.current?.email ?? null;
-  const profile = await account.logout();
+  let profile;
+  try {
+    profile = await account.logout();
+    recordAuth({ action: 'logout', engine: 'claude', provider: null, actor, ok: true, detail: null }, { dataDir });
+  } catch (err) {
+    recordAuth({ action: 'logout', engine: 'claude', provider: null, actor, ok: false, detail: err.message }, { dataDir });
+    throw err;
+  }
+  taskQueue?.pauseAll('account'); // every queue stops: the account that ran them just left
   if (device) accountAlert(hub, 'logout', device, email);
   return json(res, 200, { profile });
 }
@@ -161,17 +311,22 @@ async function report(ctx, req, res, body, { pdf: wantPdf }) {
   const view = wifiView(ctx, req);
   const accountId = requestedAccount(ctx, view, body.accountId);
   if (accountId === null) return json(res, 404, { error: 'Akun tidak dikenal.' });
+  const all = accountId === 'all';
   const to = Number(body.to) || Date.now();
   const from = Number(body.from) || 0;
   const rows = ledger.query({ accountId, from, to });
   const groupBy = PERIOD_UNITS.includes(body.groupBy) ? body.groupBy : 'day';
   const summary = summarize(rows, { from: from || (rows[0]?.ts ?? to), to, groupBy });
+  // The summary is aggregated only (engine/model/project/source/period/sessions): no email, org or account id.
   if (!wantPdf) return json(res, 200, summary);
-  const found = ledger.accounts().find((a) => a.id === accountId) ?? (account.current?.id === accountId ? account.current : null);
+  // Combined report: a fixed label without personal data, and no per-account profile, limits or billing.
+  const found = all
+    ? { email: 'Semua akun', org: null }
+    : (ledger.accounts().find((a) => a.id === accountId) ?? (account.current?.id === accountId ? account.current : null));
   if (!found) return json(res, 404, { error: 'Akun tidak dikenal.' });
-  const isCurrent = account.current?.id === accountId;
+  const isCurrent = !all && account.current?.id === accountId;
   // WiFi: the PDF (and its file name) says "Akun Claude", never the email, name or organisation.
-  const who = view ? { ...found, email: 'Akun Claude', org: null } : found;
+  const who = all || !view ? found : { ...found, email: 'Akun Claude', org: null };
   const profile = isCurrent ? (view ? view.state({ profile: account.profile }).profile : account.profile) : null;
   // billing (usage-based seats): only a limit status and a reset date, nothing personal, so WiFi gets it too
   const billing = isCurrent ? billingStatus(account.profile, account.rateLimit) : null;

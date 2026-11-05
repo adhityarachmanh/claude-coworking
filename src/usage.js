@@ -1,6 +1,6 @@
 // Token usage ledger (data/usage.jsonl). Every record carries the account that was logged in
 // when the tokens were spent, so reports for different accounts never mix.
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export class UsageLedger {
@@ -11,8 +11,8 @@ export class UsageLedger {
   }
 
   /**
-   * @param {{ source: 'web'|'cli', project: {id,name}, sessionId?: string, model: string,
-   *           input: number, output: number, cacheRead: number, cacheWrite: number,
+   * @param {{ engine?: 'claude'|'opencode', source: 'web'|'cli', project: {id,name}, sessionId?: string,
+   *           model: string, input: number, output: number, cacheRead: number, cacheWrite: number,
    *           costUsd?: number|null, requests?: number, turns?: number,
    *           account?: {id,email,org}|null }} entry  account defaults to whoever is logged in now
    */
@@ -24,6 +24,7 @@ export class UsageLedger {
     const row = {
       ts: Date.now(),
       account,
+      engine: engineOf({ engine: entry.engine, account }), // an explicit engine wins; else the account tells
       source: entry.source,
       project: entry.project?.name ?? null,
       projectId: entry.project?.id ?? null,
@@ -85,10 +86,62 @@ export class UsageLedger {
     return [...seen.values()].sort((a, b) => b.last - a.last);
   }
 
-  query({ accountId, from = 0, to = Date.now() }) {
-    return this.rows().filter((r) => r.account.id === accountId && r.ts >= from && r.ts <= to);
+  /**
+   * Rows of one account in [from, to]. The explicit `'all'` means every account (the combined report, so one PDF
+   * can show Claude and OpenCode side by side); a missing id stays strict (no rows), so a caller that forgets it can
+   * never sum every account by accident.
+   */
+  /** Deletes every ledger row of one project (a purged folder). The file is backed up first. */
+  removeProject(projectId) {
+    const file = this.file;
+    if (!existsSync(file)) return 0;
+    const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
+    const keep = lines.filter((line) => {
+      try {
+        return JSON.parse(line).projectId !== projectId;
+      } catch {
+        return true; // an unreadable line is kept: never lose data over a cleanup
+      }
+    });
+    if (keep.length === lines.length) return 0;
+    try {
+      copyFileSync(file, `${file}.bak-purge-${Date.now()}`);
+    } catch {
+      // the backup is best-effort; the rows are still removed below
+    }
+    writeFileSync(file, keep.length ? `${keep.join('\n')}\n` : '');
+    return lines.length - keep.length;
+  }
+
+  query({ accountId, from = 0, to = Date.now() } = {}) {
+    const all = accountId === 'all';
+    return this.rows().filter((r) => (all || r.account.id === accountId) && r.ts >= from && r.ts <= to);
   }
 }
+
+/** The engines a row can be attributed to. `source` (web/cli) is a separate dimension. */
+export const ENGINES = ['claude', 'opencode'];
+
+const isEngine = (value) => ENGINES.includes(value);
+
+/**
+ * Engine that spent the tokens: the stored `engine` when it is one we know, otherwise the account it
+ * was recorded under. Rows written before `engine` existed have no field, so their engine is derived
+ * here instead of rewriting data/usage.jsonl (the account is the fallback). A row without either is
+ * `unknown` rather than a guessed engine.
+ */
+export function engineOf(row) {
+  if (isEngine(row?.engine)) return row.engine;
+  if (row?.account?.id === 'opencode') return 'opencode';
+  if (row?.account?.id) return 'claude';
+  return 'unknown';
+}
+
+/** Engine bucket for a summary. `engineOf` already keeps an unattributable row in its own `unknown` bucket. */
+const engineKey = engineOf;
+
+/** web/cli, or unknown for a row imported without a source (so the engine × source table still reconciles). */
+const sourceKey = (row) => (row.source === 'cli' ? 'cli' : row.source === 'web' ? 'web' : 'unknown');
 
 const COUNTS = ['input', 'output', 'cacheRead', 'cacheWrite'];
 /** The shape record() writes: a time, an account id and non-negative token counts. */
@@ -127,6 +180,31 @@ export function totals(rows) {
     costCoverage: rows.length ? known.length / rows.length : 0,
     cacheHitRate: contextIn ? cacheRead / contextIn : 0,
   };
+}
+
+/**
+ * What a model actually cost in this ledger: recorded cost / recorded tokens × 1,000,000. Used for models
+ * with no list price (Claude, or an OpenCode model missing from the catalog), as a blended effective price.
+ * Only rows that carry a cost count, and a group without tokens has no usable price and is left out.
+ * @param {object[]} rows ledger rows (see UsageLedger.query)
+ * @returns {{ model: string, perMillion: number, records: number, tokens: number }[]}
+ */
+export function observedPrices(rows) {
+  const groups = new Map();
+  for (const r of rows) {
+    if (typeof r.costUsd !== 'number' || !Number.isFinite(r.costUsd)) continue;
+    const tokens = (r.input ?? 0) + (r.output ?? 0) + (r.cacheRead ?? 0) + (r.cacheWrite ?? 0);
+    if (!tokens) continue;
+    const model = r.model || 'unknown';
+    const g = groups.get(model) ?? { cost: 0, tokens: 0, records: 0 };
+    g.cost += r.costUsd;
+    g.tokens += tokens;
+    g.records++;
+    groups.set(model, g);
+  }
+  return [...groups.entries()]
+    .map(([model, g]) => ({ model, perMillion: Math.round((g.cost / g.tokens) * 1e6 * 1e6) / 1e6, records: g.records, tokens: g.tokens }))
+    .sort((a, b) => a.model.localeCompare(b.model));
 }
 
 export const PERIOD_UNITS = ['day', 'week', 'month'];
@@ -175,6 +253,8 @@ export function byPeriod(rows, { from, to, unit = 'day' }) {
 /** Everything the report shows, for one account and period. */
 export function summarize(rows, { from, to, groupBy = 'day' }) {
   const sessions = group(rows.filter((r) => r.sessionId), (r) => `${r.project ?? '-'}|${r.sessionId}`).slice(0, 10);
+  // source is on every record the app writes; engine falls back to the account for rows written before it existed
+  const engineSource = group(rows, (r) => `${engineKey(r)}:${sourceKey(r)}`);
   return {
     from,
     to,
@@ -183,6 +263,11 @@ export function summarize(rows, { from, to, groupBy = 'day' }) {
     byModel: group(rows, (r) => r.model),
     byProject: group(rows, (r) => r.project ?? '(tanpa project)'),
     bySource: group(rows, (r) => (r.source === 'cli' ? 'CLI (terminal)' : 'Web')),
+    byEngine: group(rows, engineKey),
+    byEngineSource: engineSource.map(({ key, ...rest }) => {
+      const at = key.indexOf(':');
+      return { key, engine: key.slice(0, at), source: key.slice(at + 1), ...rest };
+    }),
     groupBy,
     byPeriod: byPeriod(rows, { from, to, unit: groupBy }),
     topSessions: sessions,

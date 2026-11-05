@@ -571,6 +571,14 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .controls select { font-size: var(--fs-sm); padding: 4px 6px; min-width: 0; max-width: 150px; }
 .controls button { font-size: var(--fs-sm); padding: 5px 10px; flex: none; }
 .controls button.icon { width: 30px; height: 30px; padding: 0; font-size: var(--fs-lg); }
+/* Price hint under the Model control (features/model-prices.js): one muted line, wrapped inside the composer. */
+#model-price-note { margin: -2px 0 8px; overflow-wrap: anywhere; }
+#model-price-note[hidden] { display: none; }
+#turn-settings-modal #model-price-note { margin: 0; }
+/* "Atur tangga…" next to the Auto note: the Model Auto ladder dialog's opener (same line under the note). */
+.tiers-open { align-self: flex-start; margin: -8px 0 10px; padding: 2px 0; border: 0; background: none; color: var(--accent-2); font: inherit; font-size: var(--fs-sm); text-decoration: underline; cursor: pointer; }
+.tiers-open[hidden] { display: none; }
+#turn-settings-modal .tiers-open { margin: 0; }
 .switch { display: flex; align-items: center; gap: 5px; font-size: var(--fs-md); color: var(--muted); cursor: pointer; white-space: nowrap; }
 .switch input { accent-color: var(--accent); }
 .grow { flex: 1; }
@@ -645,6 +653,9 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .sl-ctx.mid .bar i { background: var(--ask); }
 .sl-ctx.high { color: var(--err); }
 .sl-ctx.high .bar i { background: var(--err); }
+/* 🧹 Ringkas konteks: the action sits in the status line, next to the context chip (a chip of its own on a phone) */
+.sl-compact { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.sl-compact:hover { color: var(--accent-2); }
 /* the textarea has no border of its own: the shared .input box shows bash mode */
 .composer.bash-mode .input, .composer.bash-mode .input:focus-within { border-color: var(--shell); box-shadow: 0 0 0 1px #e879a855; box-shadow: 0 0 0 1px color-mix(in srgb, var(--shell) 33%, transparent); }
 
@@ -679,6 +690,29 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .rw-actions button, .mcp-actions button, .task-actions button { font-size: var(--fs-sm); padding: 5px 10px; }
 .mcp-list li { padding: 9px 10px; margin: 0 0 6px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
 .mcp-list li.muted, .rewind-list li.muted { border: 0; background: none; padding: 6px 0; }
+.rewind-card > .rewind-error { margin: 6px 0 0; }
+/* Redo (↩): the uncommitted code changes a rewind just restored can be re-applied from its bundle */
+.rewind-redo { flex: none; min-width: 0; border-top: 1px solid var(--border); margin-top: 8px; padding-top: 10px; font-size: var(--fs-md); overflow-y: auto; }
+.rw-redo-recent { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; padding: 8px 10px; border: 1px dashed var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); cursor: pointer; }
+.rw-redo-recent:hover { border-color: var(--accent); }
+.rw-redo-recent small { color: var(--muted); font-size: var(--fs-xs); }
+.rw-redo-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-bottom: 4px; }
+.rw-redo-head small { color: var(--muted); font-size: var(--fs-xs); }
+.rw-redo-note { margin: 0 0 6px; font-size: var(--fs-sm); }
+.rw-redo-loading { margin: 0; }
+.rw-redo-files { list-style: none; margin: 4px 0; padding: 0; max-height: 120px; overflow-y: auto; font: var(--fs-sm) var(--mono); color: var(--text-2); }
+.rw-redo-files li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; padding: 2px 0; min-width: 0; overflow-wrap: anywhere; }
+.rw-redo-files .rw-path { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.rw-mk { flex: none; font-family: inherit; font-size: var(--fs-xs); padding: 1px 6px; border-radius: var(--r-pill); }
+.rw-mk.restore { color: var(--ok-text); background: var(--ok-soft); }
+.rw-mk.delete { color: var(--err-text); background: var(--err-soft); }
+.rw-conflict { flex: none; color: var(--warn-text); font-size: var(--fs-xs); }
+.rw-redo-conflicts { margin: 4px 0 0; color: var(--warn-text); font-size: var(--fs-sm); }
+.rw-redo-unsupported { margin: 4px 0 0; }
+.rw-redo-overwrite { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; font-size: var(--fs-sm); color: var(--text-2); cursor: pointer; }
+.rw-redo-overwrite input { flex: none; width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent); cursor: pointer; }
+.rw-redo-overwrite input:disabled { cursor: default; }
+.rw-redo-error { margin-top: 6px; }
 .mcp-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); }
 .mcp-row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mcp-list small { display: block; margin-top: 2px; font-size: var(--fs-xs); overflow-wrap: anywhere; }
@@ -944,6 +978,15 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .modal { position: fixed; inset: 0; background: #000b; display: grid; place-items: center; z-index: var(--z-modal); padding: 16px; }
 .modal-card { width: 100%; max-width: 560px; max-height: calc(100vh - 32px); overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-2xl); padding: 16px 18px; box-shadow: 0 20px 60px #000c; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: var(--fs-lg); }
+
+/* ---------- 🧹 Ringkas konteks (features/compact.js) ---------- */
+.modal-card.compact-card { max-width: 480px; display: flex; flex-direction: column; gap: 10px; }
+.compact-card .modal-head { margin-bottom: 0; }
+.compact-summary { margin: 0; padding: 8px 10px; font-size: var(--fs-md); line-height: 1.5; overflow-wrap: anywhere; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); }
+.compact-summary b { color: var(--text); font-variant-numeric: tabular-nums; }
+.compact-card form { display: flex; flex-direction: column; gap: 8px; }
+.compact-card .compact-note { margin: 0; line-height: 1.45; }
+.compact-card .acct-actions { padding-top: 8px; }
 .switch.big { color: var(--text); font-size: var(--fs-base); margin-bottom: 10px; white-space: normal; }
 .pair { display: flex; gap: 16px; align-items: center; margin: 6px 0 4px; }
 .pair .qr { flex: none; width: 200px; height: 200px; padding: 6px; background: #fff; border-radius: var(--r-lg); } /* QR needs a pure white quiet zone */
@@ -980,6 +1023,8 @@ body.read-only .starters, body.read-only [data-msg-act="edit"], body.read-only [
 body.read-only #prompt:disabled { cursor: not-allowed; opacity: .7; }
 body.read-only #composer-hint { color: var(--ask); }
 .ro-note { font-size: var(--fs-sm); color: var(--ask); margin: 8px 0 0; }
+/* The project's model is unusable after a provider logout (status.modelStale): the prompt is refused until a model is picked */
+.model-stale { margin: 0 0 6px; padding: 7px 10px; font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; color: var(--warn-text-strong); background: var(--warn-soft); border: 1px solid var(--warn-line); border-radius: var(--r-md); }
 
 /* ---------- account dialog ---------- */
 .acct-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
@@ -1035,6 +1080,15 @@ body.read-only #composer-hint { color: var(--ask); }
 .oc-provider:last-child { border-bottom: 0; }
 .oc-conns li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0 0 10px; font-size: var(--fs-sm); }
 .oc-conns button { font-size: var(--fs-sm); padding: 2px 9px; }
+/* Akun → "Riwayat perubahan akun": newest first, local time / action / engine·provider / actor */
+.audit-list { list-style: none; margin: 0; padding: 0; }
+.audit-item { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 1px 10px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); }
+.audit-item:last-child { border-bottom: 0; }
+.audit-when { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.audit-main { min-width: 0; overflow-wrap: anywhere; }
+.audit-actor { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
+.audit-item.bad .audit-when { color: var(--err); }
+.audit-bad { color: var(--err); font-weight: 600; }
 .oc-plugins { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .oc-plugin-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .oc-plugin-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-md); }
@@ -1066,6 +1120,29 @@ body.read-only #composer-hint { color: var(--ask); }
 .oc-json-panel .oc-field { flex: 1; min-height: 0; }
 #oc-json-text { flex: 1; min-height: 280px; resize: vertical; font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.45; }
 .oc-config-actions { justify-content: flex-end; margin-top: 8px; }
+.oc-config-actions button.needs-reload { color: var(--warn-text); border-color: var(--warn-line); }
+/* 🧩 conflict: more than one config file for the project (root + .opencode) */
+.oc-conflict { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--warn-line); border-radius: var(--r-lg); background: var(--warn-soft); color: var(--warn-text-strong); font-size: var(--fs-sm); }
+.oc-conflict p { margin: 0; }
+.oc-conflict-paths { display: flex; flex-direction: column; gap: 2px; margin: 0; padding-left: 18px; font-family: var(--mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.oc-conflict-paths li { min-width: 0; }
+.oc-conflict-paths code { font-family: inherit; overflow-wrap: anywhere; }
+.oc-conflict-paths .muted { color: var(--warn-text); }
+.oc-conflict-paths .oc-conflict-effective code { font-weight: 700; }
+.oc-conflict-actions button { font-size: var(--fs-sm); padding: 4px 9px; }
+/* 🕘 backup history (server keeps them in its data folder, not next to the file) */
+.oc-backups { flex: none; margin-top: 6px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); font-size: var(--fs-sm); }
+.oc-backups > summary { cursor: pointer; font-weight: 600; }
+.oc-backups > summary:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.oc-backups[open] > summary { margin-bottom: 6px; }
+.oc-backup-list { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; overflow-x: hidden; }
+.oc-backup-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); min-width: 0; }
+.oc-backup-row:last-child { border-bottom: 0; }
+.oc-backup-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; font-size: var(--fs-sm); }
+.oc-backup-meta b { font-weight: 600; }
+.oc-backup-row .backup-actions { flex: none; }
+.oc-backup-preview-wrap { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.oc-backup-preview { width: 100%; min-height: 120px; max-height: 220px; resize: vertical; padding: 8px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--text); font: var(--fs-xs)/1.45 var(--mono); }
 .danger-text { color: var(--err); }
 .oc-field { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-sm); }
 .oc-field input, .oc-field select, #oc-provider { width: 100%; min-width: 0; }
@@ -1140,6 +1217,8 @@ body.read-only #composer-hint { color: var(--ask); }
 .kpis div { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); }
 .kpis small { display: block; color: var(--muted); font-size: var(--fs-xs); }
 .kpis b { font-size: var(--fs-xl); font-variant-numeric: tabular-nums; }
+/* "60% catatan punya biaya": a hint inside the cost card, so the 4-card layout stays as it is. */
+.kpis .kpi-hint { display: block; margin-top: 2px; font-size: var(--fs-2xs); line-height: 1.25; color: var(--muted); }
 .kpi-more { margin: 6px 0 0; }
 .trend { margin-top: 14px; padding: 10px 12px 8px; border: 1px solid var(--border); border-radius: var(--r-lg); }
 .trend-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; font-size: var(--fs-md); }
@@ -1336,12 +1415,14 @@ body.read-only #composer-hint { color: var(--ask); }
   .modal-card.oc-config-card { height: 92dvh; max-height: 92dvh; }
   .oc-form-grid, .oc-agent-grid { grid-template-columns: minmax(0, 1fr); }
   .oc-config-actions { position: sticky; bottom: 0; padding-top: 6px; background: var(--surface); }
-  #oc-json-text, .oc-agent input, .oc-agent textarea, #oc-model, #oc-small-model { font-size: var(--fs-input-touch); }
+  .oc-backup-list { max-height: 140px; }
+  .oc-backup-row { align-items: flex-start; }
+  #oc-json-text, .oc-agent input, .oc-agent textarea, #oc-model, #oc-small-model, #oc-backup-preview { font-size: var(--fs-input-touch); }
   .modal-card.project-card { height: 85dvh; padding-bottom: env(safe-area-inset-bottom); }
   /* --fs-input-touch (16px): iOS zooms into any smaller input on focus */
   .side-head input, .add-project input, .login-code input,
   .ch-commit input, .approval .feedback, .approval .other-text, .mcp-callback input,
-  #report-account, #report-from, #report-to, #roots-input { font-size: var(--fs-input-touch); }
+  #compact-focus, #report-account, #report-from, #report-to, #roots-input { font-size: var(--fs-input-touch); }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .report-actions { flex-direction: column; align-items: stretch; }
   .usage-table { display: block; overflow-x: auto; }
@@ -1352,7 +1433,7 @@ body.read-only #composer-hint { color: var(--ask); }
 /* ---------- touch: finger-sized targets ---------- */
 @media (pointer: coarse) {
   .topbar .icon-btn, .modal-head .icon-btn { min-width: 44px; min-height: 44px; }
-  .sb-btn, .msg-actions button, .msg-copy, .code-bar .copy, .todos-head, .sl-tasks { min-height: 36px; }
+  .sb-btn, .msg-actions button, .msg-copy, .code-bar .copy, .todos-head, .sl-tasks, .sl-compact { min-height: 36px; }
   .md pre.code { padding-top: 42px; } /* room for the taller Salin button above the code */
   .att-chip { height: 40px; }
   .att-chip button { width: 32px; height: 32px; }
@@ -1949,6 +2030,21 @@ body.read-only #composer-hint { color: var(--ask); }
 #turn-settings-modal .switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); font-size: var(--fs-md); color: var(--text); white-space: normal; }
 #turn-settings-modal .switch::after { flex: 1 0 100%; }
 
+/* Tangga Model Auto: one row per tier (label + model select), small enough for 390 px */
+.modal-card.tiers-card { max-width: 520px; display: flex; flex-direction: column; gap: 12px; }
+.tiers-card .modal-head { margin-bottom: 0; }
+.tiers-intro { margin: 0; }
+.tiers-rows { display: flex; flex-direction: column; gap: 10px; }
+.tiers-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: center; gap: 10px; }
+.tiers-name { font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+.tiers-row select, .tiers-row input { width: 100%; min-width: 0; max-width: none; }
+.tiers-error { margin: 0; color: var(--err-text-strong); }
+.tiers-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
+  .tiers-row { grid-template-columns: 80px minmax(0, 1fr); gap: 8px; }
+  .tiers-row select, .tiers-row input { font-size: var(--fs-input-touch); } /* 16px: no zoom-on-focus on iOS */
+}
+
 @media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   /* header: [logo] [project / session · status] (♪ in Kantor) [⋯] [●] */
   .topbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; column-gap: 8px; }
@@ -1980,7 +2076,7 @@ body.read-only #composer-hint { color: var(--ask); }
   #suggest { order: 3; }
   #voice-live { order: 4; }
   #attachments { order: 5; }
-  .input, #ro-banner { order: 6; }
+  .input, #ro-banner, #model-stale { order: 6; }
   #btn-demo { order: 7; }
   .composer > .controls, #composer-hint { display: none; } /* .controls lives in the settings sheet; this is the fallback */
 

@@ -20,12 +20,30 @@ export function isDirectory(p) {
   }
 }
 
-/** Every subfolder of each root, plus every folder Claude Code has opened on this device. */
-export function discoverProjects({ roots }) {
+/**
+ * Is `dir` a strict subfolder of one of `roots`? Windows compares case-insensitively (path.relative does), and the
+ * root itself is not "inside" itself. Used to keep the project list inside the folders the user chose.
+ */
+export function isInside(dir, roots = []) {
+  if (!dir) return false;
+  const target = path.resolve(dir);
+  return roots.some((root) => {
+    if (!root) return false;
+    const rel = path.relative(path.resolve(root), target);
+    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  });
+}
+
+/**
+ * Every subfolder of each root, plus folders Claude Code has opened **that live under those roots** (or under an
+ * explicitly added folder, `extra`). A temp folder opened once by Claude Code must never join the project list.
+ */
+export function discoverProjects({ roots, extra = [] }) {
+  const allowed = [...roots, ...extra].filter(Boolean);
   const found = [];
   try {
     const config = JSON.parse(readFileSync(process.env.CLAUDE_CONFIG_FILE ?? path.join(os.homedir(), '.claude.json'), 'utf8'));
-    for (const dir of Object.keys(config.projects ?? {})) if (isDirectory(dir)) found.push([dir, 'claude']);
+    for (const dir of Object.keys(config.projects ?? {})) if (isDirectory(dir) && (isInside(dir, allowed) || allowed.some((r) => path.resolve(r) === path.resolve(dir)))) found.push([dir, 'claude']);
   } catch {
     // No Claude Code config yet.
   }

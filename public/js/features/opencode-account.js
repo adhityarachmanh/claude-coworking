@@ -3,6 +3,7 @@
 // conversations; the other's stay on disk and come back when switching back. OpenCode has no single account:
 // every model provider (OpenCode Zen/Go, Anthropic, OpenAI, GitHub Copilot…) logs in on its own (API key or OAuth),
 // the same store `opencode auth login|logout|list` uses (src/opencode-auth.js).
+import { accountImpactText } from '../core/account-impact.js';
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { engineLabel } from '../core/engine-caps.js';
@@ -13,7 +14,7 @@ const POLL_MS = 2000;
 const POLL_LIMIT_MS = 10 * 60_000; // an OAuth attempt the user never finishes stops being watched
 
 /** OpenCode's Akun state: providers (null = not loaded), the provider/method being logged in, a running OAuth attempt. */
-const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false };
+const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false, logoutError: null };
 let pollTimer = null;
 
 /** The app-wide engine (config.engine; old servers: Claude Code). */
@@ -195,7 +196,8 @@ function loginHtml() {
 /** Akun's body for OpenCode. */
 export function openCodeBodyHtml() {
   return `${localUsageHtml()}<div class="acct-section"><div class="acct-title"><b>Provider OpenCode</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
-    ${connectedHtml()}${oc.error && oc.providers ? `<p class="warn small">${escapeHtml(oc.error)}</p>` : ''}</div>
+    ${connectedHtml()}${oc.error && oc.providers ? `<p class="warn small">${escapeHtml(oc.error)}</p>` : ''}
+    ${oc.logoutError ? `<p class="warn small" role="alert">${escapeHtml(oc.logoutError)}</p>` : ''}</div>
     ${state.accountAuth ? loginHtml() : '<p class="muted small">Login/logout provider dari HP hanya lewat Tailscale (koneksi terenkripsi), atau lakukan dari laptop.</p>'}`;
 }
 
@@ -248,6 +250,7 @@ export async function onOpenCodeAction(act, el, rerender) {
       await switchEngine(el.dataset.engine);
       return true;
     case 'oc-refresh':
+      oc.logoutError = null;
       await loadOpenCode(rerender);
       return true;
     case 'oc-pick':
@@ -274,8 +277,18 @@ export async function onOpenCodeAction(act, el, rerender) {
     }
     case 'oc-logout': {
       const name = el.dataset.name;
-      if (!window.confirm(`Logout dari ${name}?\n\nOpenCode di laptop ini (termasuk terminal) tidak bisa lagi memakai provider ini sampai login lagi.`)) return true;
-      await api('/api/opencode/logout', { credentialID: el.dataset.cred });
+      const credentialID = el.dataset.cred;
+      if (!credentialID) return true; // never send a logout without the credential it targets
+      if (!window.confirm(accountImpactText('opencode-logout', name))) return true;
+      oc.logoutError = null;
+      try {
+        // The server demands the confirmation word: a stray tap must not sign the laptop out.
+        await api('/api/opencode/logout', { credentialID, confirm: 'LOGOUT' });
+      } catch (err) {
+        oc.logoutError = err.data?.error ?? err.message; // inline, next to the provider list
+        rerender();
+        return true;
+      }
       toast(`Sudah logout dari ${name}.`, 'ok');
       await loadOpenCode(rerender);
       return true;

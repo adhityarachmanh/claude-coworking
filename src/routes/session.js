@@ -5,12 +5,14 @@ import { AttachmentError, readAttachments } from '../attachments.js';
 import { ConversationError, exportSession, SEARCH_LIMITS, searchSessions } from '../conversation.js';
 import { searchOpenCodeSessions } from '../opencode-search.js';
 import { REWINDING_MESSAGE } from '../acp-session.js';
-import { classifyEffort } from '../effort-classifier.js';
+import { autoContext, classifyEffort } from '../effort-classifier.js';
 import { DEMO_ID } from '../hub.js';
+import { shortModelLabel, tierFor } from '../model-auto.js';
 import { listSessions, sessionHistory } from '../transcripts.js';
 import { openCodeSessions } from '../opencode-bin.js';
 import { importOpenCodeSession, OpenCodeAdminError } from '../opencode-admin.js';
 import { deleteSession, exportOpenCodeSession, forkOpenCodeSession, renameOpenCodeSession, SessionAdminError, validSessionId } from '../session-admin.js';
+import { applyRedo, captureRedo, listRedo, previewRedo, RedoError, sealRedo } from '../redo.js';
 
 /** Runs a 🕘 Riwayat sesi action; SessionAdminError / OpenCode errors become JSON with their status. */
 async function admin(res, fn) {
@@ -34,10 +36,24 @@ async function rewindAnswer(res, promise) {
 }
 import { claudeOnly, withProject, withSession } from './project.js';
 
+/** Like rewindAnswer(), for the undo/redo of a code rewind (src/redo.js): its own status, else 500. */
+async function redoAnswer(res, promise) {
+  try {
+    return json(res, 200, await promise);
+  } catch (err) {
+    const status = err instanceof RedoError ? err.status : (Number.isInteger(err.status) ? err.status : 500);
+    return json(res, status, { error: err.message });
+  }
+}
+
 const ok = (res) => json(res, 200, { ok: true });
 
 export function register(router) {
   router.post('/api/projects/:id/prompt', withSession(async ({ hub, claude, opencode }, req, res, { project, session }, body) => {
+    // The provider of the active model was logged out (👤 Akun, routes/account.js): no silent replacement.
+    if (hub.statusFor(project.id)?.modelStale) {
+      return json(res, 409, { error: 'Model aktif tidak tersedia (provider sudah logout). Pilih model lain atau Default dulu.' });
+    }
     const text = String(body.text ?? '').trim();
     let attachments;
     try {
@@ -50,18 +66,68 @@ export function register(router) {
     if (session.rewinding) return json(res, 409, { error: REWINDING_MESSAGE }); // ⏪ OpenCode rewind running
     const settings = hub.settingsFor(project.id);
     let autoEffort = null;
-    if (settings.effortAuto) {
+    let autoModel = null;
+    // Effort Auto and Model Auto share one classification per prompt: one extra call, whichever is on.
+    if (settings.effortAuto || settings.modelAuto) {
       if (session.busy) {
-        // A message sent mid-turn joins the running turn; changing the process effort now would change that turn.
-        autoEffort = { skipped: 'busy', reason: 'Mengikuti effort turn yang sedang berjalan' };
+        // A message sent mid-turn joins the running turn; changing the effort/model now would change that turn.
+        if (settings.effortAuto) autoEffort = { skipped: 'busy', reason: 'Mengikuti effort turn yang sedang berjalan' };
+        if (settings.modelAuto) autoModel = { skipped: 'busy', reason: 'Mengikuti model turn yang sedang berjalan' };
       } else {
-        autoEffort = await classifyEffort({ engine: hub.engine, claude, opencode, currentModel: settings.model, text, attachments });
-        hub.updateSettings(project.id, { effort: autoEffort.level, effortAuto: true });
-        session.syncSettings();
+        const auto = await classifyEffort({ engine: hub.engine, claude, opencode, currentModel: settings.model, text, attachments, context: autoContext(hub, project.id) });
+        const patch = {};
+        if (settings.effortAuto) {
+          autoEffort = auto;
+          patch.effort = auto.level;
+          patch.effortAuto = true;
+        }
+        if (settings.modelAuto) {
+          const tier = tierFor(auto.level, hub.engine, settings.modelTiers);
+          if (tier.model !== settings.model) {
+            patch.model = tier.model;
+            patch.modelAuto = true;
+            autoModel = { tier: tier.key, label: tier.label, model: tier.model };
+          }
+        }
+        if (Object.keys(patch).length) {
+          hub.updateSettings(project.id, patch);
+          session.syncSettings();
+        }
       }
     }
-    session.prompt((text || 'Lihat file terlampir.').slice(0, 50000), attachments, autoEffort ? { autoEffort } : {});
-    return json(res, 200, { ok: true, autoEffort });
+    session.prompt((text || 'Lihat file terlampir.').slice(0, 50000), attachments, autoEffort || autoModel ? { ...(autoEffort && { autoEffort }), ...(autoModel && { autoModel }) } : {});
+    // After the user's bubble, before the reply: one line saying which model Auto picked.
+    if (autoModel && !autoModel.skipped) hub.chat(project.id, { kind: 'info', modelAuto: true, text: `🤖 Model Auto: ${autoModel.label} → ${shortModelLabel(autoModel.model)}` });
+    return json(res, 200, { ok: true, autoEffort, autoModel });
+  }));
+  // ✂ Ringkas konteks: the engine's own /compact as a normal prompt, so Claude Code's compact_boundary/auto-compact
+  // status keeps working. Refused while anything runs, waits or asks: nothing is stopped to make room for it.
+  router.post('/api/projects/:id/compact', withSession(({ hub, claude, opencode }, req, res, { project, session }, body) => {
+    if (body.focus !== undefined && body.focus !== null && typeof body.focus !== 'string') return json(res, 400, { error: 'Fokus ringkasan harus berupa teks.' });
+    const focus = String(body.focus ?? '').trim();
+    if (focus.length > 300) return json(res, 400, { error: 'Fokus ringkasan maksimal 300 karakter.' });
+    if (!session) return json(res, 404, { error: 'Sesi tidak ditemukan' });
+    // Nothing to compact yet: no conversation and no process (a fresh project would only open an empty one).
+    if (!hub.sessionIdFor(project.id) && !session.child) return json(res, 409, { error: 'Belum ada sesi untuk diringkas. Kirim pesan dulu.' });
+    if (session.rewinding) return json(res, 409, { error: REWINDING_MESSAGE });
+    if (session.turnActive?.() || session.busy || session.inflight?.size) return json(res, 409, { error: 'Tim sedang bekerja. Tunggu selesai atau hentikan dulu.' });
+    if ([...hub.approvals.values()].some(({ approval }) => approval.project === project.id)) {
+      return json(res, 409, { error: 'Masih ada permintaan izin yang menunggu jawaban. Jawab dulu, lalu ringkas konteks.' });
+    }
+    if (session.engine === 'opencode') {
+      if (!opencode) return json(res, 409, { error: 'OpenCode tidak ditemukan di laptop ini. Pasang dengan `npm i -g @opencode/cli`, atau set env OPENCODE_BIN.' });
+      // Only a command the agent itself advertises (available_commands_update): never a guess sent into a turn.
+      const commands = hub.statusFor(project.id)?.commands ?? [];
+      if (!commands.some((c) => c?.name === 'compact' || c?.value === 'compact')) {
+        return json(res, 409, { error: 'Mesin OpenCode di sesi ini tidak menyediakan perintah /compact.' });
+      }
+      session.prompt('/compact');
+      return json(res, 200, { ok: true, engine: 'opencode', command: '/compact', ...(focus ? { ignoredFocus: true } : {}) });
+    }
+    if (!claude) return json(res, 409, { error: 'Claude Code tidak ditemukan di laptop ini. Pastikan `claude` terpasang, atau set env CLAUDE_BIN.' });
+    const command = focus ? `/compact ${focus}` : '/compact';
+    session.prompt(command); // the CLI's own slash command, through the same queue and status as any prompt
+    return json(res, 200, { ok: true, engine: 'claude', command });
   }));
   router.post('/api/projects/:id/shell', withSession((ctx, req, res, { session }, body) => {
     // A shell skips Claude's permission checks: plain-HTTP WiFi is already refused in handler() (read-only).
@@ -157,10 +223,40 @@ export function register(router) {
   // store through `opencode api` (async); its errors carry a status (409 while a turn runs), Claude's stay 400.
   router.post('/api/projects/:id/rewind-points', withSession((ctx, req, res, { session }) => rewindAnswer(res, Promise.resolve(session.rewindPoints()).then((points) => ({ points })))));
   router.post('/api/projects/:id/rewind-preview', withSession((ctx, req, res, { session }, body) => rewindAnswer(res, session.rewindPreview(String(body.uuid ?? '')))));
-  router.post('/api/projects/:id/rewind', withSession((ctx, req, res, { session }, body) => {
+  // ⏪↩ A code rewind overwrites the uncommitted worktree: snapshot it first (src/redo.js), so the response can
+  // carry the undo bundle. A folder without git (or a failed snapshot) refuses the code rewind before anything moves.
+  router.post('/api/projects/:id/rewind', withSession(async ({ hub, dataDir }, req, res, { project, session }, body) => {
+    const uuid = String(body.uuid ?? '');
     const options = { code: Boolean(body.code), conversation: Boolean(body.conversation) };
-    return rewindAnswer(res, session.rewind(String(body.uuid ?? ''), options));
+    if (!options.code) return rewindAnswer(res, session.rewind(uuid, options));
+    const capture = await captureRedo({ projectPath: project.path, dataDir, projectId: project.id, engine: hub.engine });
+    if (!capture.ok) return json(res, 409, { error: `Tidak bisa menyiapkan undo untuk rewind ini (${capture.reason}).` });
+    let result;
+    try {
+      result = await session.rewind(uuid, options);
+    } catch (err) {
+      // Nothing was rewound (or only part): the bundle stays 'captured' and is pruned later, never applied blindly.
+      const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600 ? err.status : 400;
+      return json(res, status, { error: err.message });
+    }
+    try {
+      const sealed = await sealRedo({ dataDir, projectId: project.id, id: capture.id, projectPath: project.path });
+      return json(res, 200, { ...(result ?? {}), redo: { id: sealed.id, files: sealed.files } });
+    } catch (err) {
+      // The codes were rewound already: report that success, just without a redo entry (the bundle is not listed).
+      console.error(`Undo rewind ${capture.id} gagal disegel: ${err.message}`);
+      return json(res, 200, { ...(result ?? {}) });
+    }
   }));
+  // ↩ Undo/redo of a code rewind: the list, a dry run, and the apply. Laptop/Tailscale only (no WiFi read).
+  router.post('/api/projects/:id/redo-list', withProject(({ dataDir }, req, res, { project }) => redoAnswer(res, listRedo({ dataDir, projectId: project.id }))));
+  router.post('/api/projects/:id/redo-preview', withProject(({ dataDir }, req, res, { project }, body) =>
+    redoAnswer(res, previewRedo({ dataDir, projectId: project.id, id: String(body.id ?? ''), projectPath: project.path }))));
+  router.post('/api/projects/:id/redo', withSession(({ dataDir }, req, res, { project, session }, body) => {
+    if (session?.rewinding) return json(res, 409, { error: REWINDING_MESSAGE }); // file writes in flight
+    return redoAnswer(res, applyRedo({ dataDir, projectId: project.id, id: String(body.id ?? ''), projectPath: project.path, overwrite: body.overwrite === true }));
+  }));
+
   // 🔎 Cari percakapan / ⬇ Export .md: read-only, bounded reads of this project's transcripts (src/conversation.js).
   router.post('/api/projects/:id/search', withProject(async ({ hub, opencode }, req, res, { project }, body) => {
     try {

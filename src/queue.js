@@ -15,10 +15,12 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { cleanAutoLevel } from './effort.js';
+import { tierFor } from './model-auto.js';
 
 export const QUEUE_LIMITS = Object.freeze({ items: 30, text: 20000, finished: 20 });
-/** Why a queue is paused: by the user, by a server restart, after a failed item, by the usage limit, by its budget. */
-export const PAUSE_REASONS = ['user', 'restart', 'failed', 'rate_limit', 'budget'];
+/** Why a queue is paused: by the user, by a server restart, after a failed item, by the usage limit, by its budget,
+ *  or because the account/provider under it changed (👤 Akun). */
+export const PAUSE_REASONS = ['user', 'restart', 'failed', 'rate_limit', 'budget', 'account'];
 /** Allowed budget limits (both inclusive): output tokens (integer) and cost in USD (rounded to cents). */
 export const BUDGET_LIMITS = Object.freeze({ tokensOut: Object.freeze({ min: 1000, max: 100_000_000 }), costUsd: Object.freeze({ min: 0.01, max: 10000 }) });
 const STATUSES = new Set(['waiting', 'running', 'done', 'failed']);
@@ -375,6 +377,22 @@ export class TaskQueue {
     this.changed(id);
   }
 
+  /**
+   * An account or provider changed (👤 Akun): every queue that still has work pauses, so nothing runs on a model
+   * that may no longer exist. A running item is not cut short — it finishes, and the paused queue holds the rest.
+   * Nothing resumes by itself: the user checks the model in 📋 Antrian and continues. Each affected project's chat
+   * gets one line, so the pause is never a mystery.
+   */
+  pauseAll(reason = 'account') {
+    const why = PAUSE_REASONS.includes(reason) ? reason : 'account';
+    for (const [id, q] of Object.entries(this.queues)) {
+      if (!q.items.some((i) => i.status === 'waiting' || i.status === 'running')) continue;
+      Object.assign(q, { paused: true, reason: why, pausedAt: this.now() });
+      this.changed(id); // saved + published at once (no dispatch: the queue is paused now)
+      this.hub.chat(id, { kind: 'info', level: 'warning', queue: true, text: '📋 Antrian dijeda: akun berubah. Periksa model lalu lanjutkan.' });
+    }
+  }
+
   /** Sets the budget limits (validated); spending starts again from 0. Both null = no budget. */
   setBudget(id, input) {
     const { tokensOut, costUsd } = cleanBudget(input);
@@ -546,16 +564,23 @@ export class TaskQueue {
     Object.assign(item, { status: 'running', startedAt: this.now(), updatedAt: this.now(), error: null, engine: this.hub.engine === 'opencode' ? 'opencode' : 'claude' });
     this.dispatching = id;
     let sent;
-    const autoEffort = item.effort && this.hub.settingsFor(id).effortAuto
+    const settings = this.hub.settingsFor(id);
+    const autoEffort = item.effort && settings.effortAuto
       ? { level: item.effort, reason: item.effortReason, source: item.effortSource, model: item.effortModel }
       : null;
+    // Model Auto: the item was classified (routes/queue.js) and its level picks the tier here, so a queue keeps
+    // switching models per task with no classifier call at dispatch.
+    const autoModel = item.effort && settings.modelAuto ? tierFor(item.effort, this.hub.engine, settings.modelTiers) : null;
     try {
-      if (autoEffort) {
-        this.hub.updateSettings(id, { effort: autoEffort.level, effortAuto: true });
+      const patch = {};
+      if (autoEffort) Object.assign(patch, { effort: autoEffort.level, effortAuto: true });
+      if (autoModel) Object.assign(patch, { model: autoModel.model, modelAuto: true });
+      if (Object.keys(patch).length) {
+        this.hub.updateSettings(id, patch);
         session.syncSettings();
       }
       const files = this.loadAttachments(id, item);
-      sent = session.prompt(item.text, files, { queueItem: item.id, ...(autoEffort ? { autoEffort } : {}) });
+      sent = session.prompt(item.text, files, { queueItem: item.id, ...(autoEffort ? { autoEffort } : {}), ...(autoModel ? { autoModel: { tier: autoModel.key, label: autoModel.label, model: autoModel.model } } : {}) });
     } catch (err) {
       sent = null;
       item.error = err.message;

@@ -90,6 +90,9 @@ if (process.argv[2] === 'api') {
   const file = process.env.FAKE_ACP_AUTH_FILE;
   const creds = file && has(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
   const save = () => file && write(file, JSON.stringify(creds));
+  // OpenCode's credential ids are unique for good: never reuse the number of one that was logged out, or a later
+  // `credential.remove` could drop another provider's credential (a count-based id does exactly that).
+  const newCredentialID = () => `cred_${Math.max(0, ...creds.map((c) => Number(/^cred_(\d+)$/.exec(String(c.id))?.[1]) || 0)) + 1}`;
   const out = (data) => (console.log(JSON.stringify({ location: { directory: process.cwd() }, data })), process.exit(0));
   // switch files (a test turns them on and off while the server runs): FAKE_ACP_<X>=<file>, on while the file exists
   const flag = (name) => (process.env[name] && has(process.env[name]) ? readFileSync(process.env[name], 'utf8').trim() || '1' : '');
@@ -107,7 +110,7 @@ if (process.argv[2] === 'api') {
     case 'integration.connect.key':
       if (!integrations.some((i) => i.id === params.integrationID)) fail(`Integration not found: ${params.integrationID}`);
       if (body.key !== 'sk-benar') fail('Authentication failed');
-      creds.push({ id: `cred_${creds.length + 1}`, integrationID: params.integrationID, label: 'Default', method: 'key' });
+      creds.push({ id: newCredentialID(), integrationID: params.integrationID, label: 'Default', method: 'key' });
       save();
       out(null);
       break;
@@ -143,7 +146,7 @@ if (process.argv[2] === 'api') {
       out({ attemptID: 'con_fake1', url: 'https://example.test/login', instructions: 'Masukkan kode ABCD-1234', mode: 'auto', time: { created: 0, expires: 1 } });
       break;
     case 'integration.oauth.status':
-      creds.push({ id: `cred_${creds.length + 1}`, integrationID: params.integrationID, label: 'Default', method: 'oauth' });
+      creds.push({ id: newCredentialID(), integrationID: params.integrationID, label: 'Default', method: 'oauth' });
       save();
       out({ status: 'complete', time: { created: 0, expires: 1 } });
       break;
@@ -352,12 +355,20 @@ async function turn(sessionId, text) {
     await say('msg_rejected', 'Baik, saya lanjutkan tanpa langkah itu.');
     return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 6, totalTokens: 26 } };
   }
+  if (/^\/compact\b/.test(text)) {
+    await say('msg_compact', 'Konteks diringkas.');
+    return { stopReason: 'end_turn', usage: { inputTokens: 30, outputTokens: 4, totalTokens: 34 } };
+  }
   if (/link\?/.test(text)) {
     await say('msg_link', `links=${links.join(',')}`);
     return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
   }
   if (/agent\?/.test(text)) {
     await say('msg_agent', `agent=${options.mode} bash=${JSON.stringify(config.permission?.bash ?? null)}`);
+    return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+  }
+  if (/^model\?/.test(text)) {
+    await say('msg_model', `model=${options.model}`);
     return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
   }
   if (/tanya/.test(text)) {
@@ -521,7 +532,16 @@ async function handle(msg) {
       // with a store, unique across processes (a later process must not pick up an older session's messages)
       const sessionId = STORE ? `ses_fake${Date.now().toString(36)}${process.pid.toString(36)}${++seq}` : `ses_fake${++seq}`;
       sessions.add(sessionId);
-      if (!BREAK.has('commands')) update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'init', description: 'AGENTS.md' }, { name: 'rilis', description: 'Command buatan sendiri', input: { hint: '<versi>' } }] });
+      if (!BREAK.has('commands')) {
+        const availableCommands = [
+          { name: 'init', description: 'AGENTS.md' },
+          { name: 'rilis', description: 'Command buatan sendiri', input: { hint: '<versi>' } },
+        ];
+        // FAKE_ACP_COMPACT=<file>: advertise OpenCode's /compact while the file exists (a test can switch it on
+        // and start a fresh session). Off by default: the autocomplete assertions see only init + rilis.
+        if (process.env.FAKE_ACP_COMPACT && existsSync(process.env.FAKE_ACP_COMPACT)) availableCommands.push({ name: 'compact', description: 'Ringkas konteks sesi' });
+        update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands });
+      }
       return reply({ sessionId, configOptions: BREAK.has('mode') ? configOptions().filter((o) => o.id !== 'mode') : configOptions() });
     }
     case 'session/load':
@@ -531,6 +551,8 @@ async function handle(msg) {
       update(params.sessionId, { sessionUpdate: 'agent_message_chunk', messageId: 'msg_old', content: { type: 'text', text: 'jawaban lama' } });
       return reply({ configOptions: configOptions() });
     case 'session/set_config_option':
+      // A model switch is slow on a real provider (the next prompt must wait for it): FAKE_ACP_SLOW_MODEL=<file>.
+      if (params.configId === 'model' && process.env.FAKE_ACP_SLOW_MODEL && existsSync(process.env.FAKE_ACP_SLOW_MODEL)) await sleep(1200);
       options = { ...options, [params.configId]: params.value };
       return reply({ configOptions: configOptions() });
     case 'session/prompt': {

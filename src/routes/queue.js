@@ -1,16 +1,17 @@
 // Queue: prompts sent one by one whenever the project's session is idle (src/queue.js).
 // `queue` reads (allowed over WiFi); every queue-* is a change (refused there by the gate in server.js).
 import { AttachmentError, readAttachments } from '../attachments.js';
-import { classifyEffort } from '../effort-classifier.js';
+import { autoContext, classifyEffort } from '../effort-classifier.js';
 import { QueueError } from '../queue.js';
 import { json } from './http.js';
 import { withProject } from './project.js';
 
-/** Auto runs before a queue item is stored, so its level is visible and ready when the item starts. */
+/** Auto runs before a queue item is stored, so its level is visible and ready when the item starts.
+ *  The level is needed when either Auto is on: Model Auto applies it at dispatch (src/queue.js). */
 async function autoEffort(ctx, id, text, attachments = []) {
   const settings = ctx.hub.settingsFor(id);
-  if (!settings.effortAuto) return null;
-  return classifyEffort({ engine: ctx.hub.engine, claude: ctx.claude, opencode: ctx.opencode, currentModel: settings.model, text, attachments });
+  if (!settings.effortAuto && !settings.modelAuto) return null;
+  return classifyEffort({ engine: ctx.hub.engine, claude: ctx.claude, opencode: ctx.opencode, currentModel: settings.model, text, attachments, context: autoContext(ctx.hub, id) });
 }
 
 /** op → the change it makes; each answers with the queue's new view. */

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
@@ -46,6 +46,7 @@ before(async () => {
       OFFICE_OPEN_DRY_RUN: '1', // "open in VS Code / folder" reports the command instead of launching it
       OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale'), // phone access on: never ask the real Tailscale for a certificate
       OFFICE_CLAUDE_CHECK_DELAY_MS: '0', // 🧩 the update detector looks at the (fake) Claude Code version right away
+      OFFICE_EFFORT_FAKE: 'high', // Effort/Model Auto are tested without spawning a real classifier model
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -61,7 +62,9 @@ after(async () => {
   stream?.abort();
   server?.kill();
   await sleep(500);
-  rmSync(TMP, { recursive: true, force: true });
+  // Windows may still hold a file for a moment after the server is killed (as in test/opencode.test.mjs):
+  // rmSync retries EPERM/EBUSY, so a teardown race never fails an otherwise green run.
+  rmSync(TMP, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
 function listen() {
@@ -216,6 +219,27 @@ test('static assets revalidate with ETag (304); index.html with its token is nev
   assert.equal((await fetch(`${BASE}/health`)).headers.get('cache-control'), 'no-store');
 });
 
+test('/ai-logos: the index and the SVGs are public; traversal and unknown names are 404', async () => {
+  const index = await fetch(`${BASE}/ai-logos/index.json`);
+  assert.equal(index.status, 200);
+  assert.match(index.headers.get('content-type'), /^application\/json/);
+  const { logos } = await index.json();
+  assert.ok(Array.isArray(logos) && logos.length > 0, 'daftar logo tidak kosong');
+  assert.ok(logos.every((name) => /^[a-z0-9][a-z0-9._-]{0,80}\.svg$/i.test(name)), 'hanya nama .svg');
+  assert.ok(logos.includes('claude-opus-5-5.svg'));
+  const svg = await fetch(`${BASE}/ai-logos/claude-opus-5-5.svg`);
+  assert.equal(svg.status, 200);
+  assert.equal(svg.headers.get('content-type'), 'image/svg+xml');
+  assert.match(svg.headers.get('cache-control'), /max-age=86400/);
+  assert.match(await svg.text(), /<svg[\s>]/, 'isi SVG');
+  // The name pattern is the whole path check: no encoded slash, no traversal, no unknown name ever reaches the disk.
+  for (const target of ['/ai-logos/..%2Fsecret.svg', '/ai-logos/..%2F..%2Fserver.js', '/ai-logos/no-such-model.svg']) {
+    const res = await fetch(BASE + target);
+    assert.equal(res.status, 404, target);
+    assert.deepEqual(await res.json(), { error: 'not found' }, target);
+  }
+});
+
 test('errors: a request target the URL parser refuses is a 400, and the server keeps running', async () => {
   /** Sends a raw request line (fetch/http.request would refuse these targets) and returns the status code. */
   const rawLine = (target) =>
@@ -268,6 +292,39 @@ test('a prompt streams a reply and finishes with token stats', async () => {
   assert.equal(final.obj.patch.text, 'Halo dari Claude palsu yang sedang mengetik.');
   const status = await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false);
   assert.ok(status.sessionId, 'session id remembered for --resume');
+});
+
+test('✂ Ringkas konteks: /compact through the normal prompt path with a focus; too-long focus and a busy turn refused', async () => {
+  const id = await projectId();
+  assert.ok((await snapshot()).statuses[id].sessionId, 'a conversation to compact (from the previous test)');
+  assert.equal((await api(`/api/projects/${id}/compact`, { focus: 'x'.repeat(301) })).status, 400, 'focus max 300 chars');
+  assert.equal((await api(`/api/projects/${id}/compact`, { focus: 42 })).status, 400, 'focus must be text');
+  mark = seen.length;
+  const res = await api(`/api/projects/${id}/compact`, { focus: '  fokus ke checkout  ' });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(res.body, { ok: true, engine: 'claude', command: '/compact fokus ke checkout' });
+  const user = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user');
+  assert.equal(user.text, '/compact fokus ke checkout', 'the CLI slash command is a normal prompt');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false);
+
+  mark = seen.length;
+  const plain = await api(`/api/projects/${id}/compact`);
+  assert.deepEqual(plain.body, { ok: true, engine: 'claude', command: '/compact' });
+  assert.equal((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user')).text, '/compact');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false);
+
+  // A running turn: 409, no bubble, the turn keeps going.
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'tugas lama' });
+  await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch.streaming === true);
+  const busy = await api(`/api/projects/${id}/compact`);
+  assert.equal(busy.status, 409);
+  assert.match(busy.body.error, /sedang bekerja/);
+  assert.ok(!seen.slice(mark).some((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'user' && s.obj.text === '/compact'));
+  await api(`/api/projects/${id}/stop`);
+  await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false);
 });
 
 test('📎 attachments: text and PDF reach Claude as text/document blocks; the bubble keeps only chips; bad files are refused', async () => {
@@ -414,6 +471,10 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   const wifiLogout = await phoneApi('/api/account/logout', { confirm: 'LOGOUT' });
   assert.equal(wifiLogout.status, 403);
   assert.match((await wifiLogout.json()).error, /Tailscale/);
+  // 📜 the account audit names the devices that changed an account: never over plain WiFi either
+  const wifiAudit = await phoneApi('/api/account/audit', {});
+  assert.equal(wifiAudit.status, 403);
+  assert.match((await wifiAudit.json()).error, /Tailscale/);
 
   // plain WiFi (this test connects from a LAN address, not Tailscale) is read-only:
   // the snapshot says so, reading works, every action is refused by the one gate in handler()
@@ -472,6 +533,34 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     assert.equal(mine.status, 200);
     assert.ok((await mine.json()).records > 0, 'the report still works from WiFi');
     assert.equal((await phoneApi('/api/report/summary', { accountId: 'tester@example.com' })).status, 404, 'real ids are not accepted from WiFi');
+    // the combined scope works over WiFi too and stays aggregated: no email, org or account id
+    // A second, OpenCode account: the combined report must add its engine without naming it.
+    appendFileSync(
+      path.join(TMP, 'data', 'usage.jsonl'),
+      `${JSON.stringify({ ts: Date.now(), account: { id: 'opencode', email: 'OpenCode', org: null }, engine: 'opencode', source: 'web', project: 'toko', projectId: id, sessionId: 'ses_phone_all', model: 'opencode-go/hy4', input: 10, output: 2, cacheRead: 0, cacheWrite: 0, costUsd: 0, requests: 0, turns: 1 })}\n`,
+    );
+    const allPhone = await phoneApi('/api/report/summary', { accountId: 'all' });
+    assert.equal(allPhone.status, 200, '"all" is a literal, never an opaque id');
+    const allPhoneText = await allPhone.text();
+    assert.doesNotMatch(allPhoneText, IDENTITY);
+    assert.doesNotMatch(allPhoneText, /"account"\s*:/);
+    const allPhoneBody = JSON.parse(allPhoneText);
+    assert.ok(allPhoneBody.records > 0, '"all" covers the accounts on record');
+    assert.deepEqual(allPhoneBody.byEngine.map((e) => e.key).sort(), ['claude', 'opencode'], 'both engines in one report');
+    assert.equal(allPhoneBody.byEngine.reduce((n, e) => n + e.total, 0), allPhoneBody.totals.total, 'the per-engine totals add up');
+    assert.ok(allPhoneBody.byEngineSource.some((e) => e.key === 'opencode:web'));
+    assert.doesNotMatch(JSON.stringify(allPhoneBody.byEngine), /tester@example\.com|OpenCode"?\s*,\s*"org"/, 'an engine count is not an account profile');
+    const allPhonePdf = await phoneApi('/api/report/pdf', { accountId: 'all' });
+    if (allPhonePdf.status === 200) {
+      assert.match(allPhonePdf.headers.get('content-disposition'), /Semua_akun/);
+      assert.equal(Buffer.from(await allPhonePdf.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
+    } else {
+      assert.equal(allPhonePdf.status, 501, 'no headless browser is the only other answer');
+      const html = (await allPhonePdf.json()).html ?? '';
+      assert.match(html, /Semua akun/);
+      assert.match(html, /OpenCode · Web/, 'the combined PDF shows the OpenCode engine');
+      assert.doesNotMatch(html, IDENTITY);
+    }
   }
   const reads = ['/api/account', '/api/account/limits', '/api/templates', '/api/team/roster', '/api/report/accounts', '/api/report/summary', `/api/projects/${id}/changes`, `/api/projects/${id}/diff`, `/api/projects/${id}/git-branches`, `/api/projects/${id}/sessions`, `/api/projects/${id}/rewind-points`, `/api/projects/${id}/task-output`, `/api/projects/${id}/task-detail`];
   for (const p of reads) assert.notEqual((await phoneApi(p, { taskId: 'x' })).status, 403, `read ${p}`);
@@ -496,7 +585,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   await new Promise((r) => setTimeout(r, 5)); // a fresh CLI run would get a later `at`
   assert.equal((await (await phoneApi('/api/account/limits', { force: true })).json()).at, cachedLimits.at, 'force from WiFi reuses the cache');
   const actions = [
-    ...['prompt', 'shell', 'settings', 'commit', 'git-action', 'rewind', 'rewind-preview', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'favorite', 'rename'].map((a) => `/api/projects/${id}/${a}`),
+    ...['prompt', 'shell', 'settings', 'commit', 'git-action', 'rewind', 'rewind-preview', 'redo', 'redo-preview', 'redo-list', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'purge', 'favorite', 'rename'].map((a) => `/api/projects/${id}/${a}`),
     '/api/approvals/abc',
     '/api/team',
     '/api/team/roster/save', // 👥 Kelola tim: the team is readable, changing it is an action
@@ -657,9 +746,158 @@ test('account: profile, plan usage and per-account token report', async () => {
   assert.ok(mine.records > 0);
   assert.equal(mine.byModel[0].key, 'fake-model');
   assert.equal(mine.totals.cacheRead, mine.records * 90);
+  assert.ok(mine.byEngine.length > 0, 'the per-engine breakdown is part of the summary');
+  assert.equal(mine.byEngine.reduce((n, g) => n + g.total, 0), mine.totals.total);
   const other = (await api('/api/report/summary', { accountId: 'someone-else@example.com' })).body;
   assert.equal(other.records, 0, 'another account never sees these tokens');
   assert.equal((await api('/api/report/pdf', { accountId: 'someone-else@example.com' })).status, 404);
+
+  // "all" is the combined scope: every account's rows, one PDF. The OpenCode account seeded in the WiFi test joins.
+  const combined = (await api('/api/report/summary', { accountId: 'all' })).body;
+  assert.ok(combined.records > mine.records, 'the second account is included');
+  assert.deepEqual(combined.byEngine.map((e) => e.key).sort(), ['claude', 'opencode']);
+  assert.equal(combined.byEngine.reduce((n, g) => n + g.total, 0), combined.totals.total);
+  const combinedPdf = await fetch(`${BASE}/api/report/pdf`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify({ accountId: 'all' }) });
+  if (combinedPdf.status === 200) {
+    assert.match(combinedPdf.headers.get('content-disposition'), /Semua_akun/);
+    assert.equal(Buffer.from(await combinedPdf.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
+  } else {
+    assert.equal(combinedPdf.status, 501, 'no headless browser is the only other answer');
+    const html = (await combinedPdf.json()).html;
+    assert.match(html, /Semua akun/);
+    assert.match(html, /OpenCode · Web/);
+    assert.match(html, /semua akun/i, 'the notes describe the combined scope, not a single account');
+  }
+});
+
+test('audit akun: the module never writes an email or a key, skips a torn line, keeps the contract', async () => {
+  const { recordAuth, recentAuth, AUDIT_FILE } = await import('../src/auth-audit.js');
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-audit-'));
+  try {
+    const written = recordAuth({ action: 'login-start', engine: 'claude', actor: 'HP Adhit', ok: false, detail: 'gagal untuk tester@example.com (sk-rahasia-123456789)' }, { dataDir: dir });
+    assert.equal(written.detail, 'gagal untuk [email] ([rahasia])');
+    recordAuth({ action: 'logout', engine: 'opencode', provider: 'opencode-go', actor: 'laptop', ok: true, detail: null }, { dataDir: dir });
+    appendFileSync(path.join(dir, AUDIT_FILE), '{"ts":1,"action":"torn'); // a crash mid-append: no newline, no JSON
+    const entries = recentAuth(10, { dataDir: dir });
+    assert.deepEqual(entries.map((e) => e.action), ['logout', 'login-start'], 'newest first, the torn line skipped');
+    assert.deepEqual(Object.keys(entries[1]).sort(), ['action', 'actor', 'detail', 'engine', 'ok', 'provider', 'ts']);
+    assert.equal(entries[1].ok, false, 'a failed action is kept');
+    assert.doesNotMatch(JSON.stringify(entries), /tester@example\.com|rahasia-123456789/);
+    assert.equal(recordAuth({ action: 'Bukan Aksi', engine: 'claude' }, { dataDir: dir }), null, 'an unknown action is refused');
+    assert.deepEqual(recentAuth(5, { dataDir: path.join(dir, 'no-such-folder') }), [], 'no file, no crash');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('akun: every change is audited (no secrets) and pauses every queue until the model has been checked', async () => {
+  const id = await projectId();
+  const auditFile = path.join(TMP, 'data', 'auth-audit.jsonl');
+  const auditLines = () => (existsSync(auditFile) ? readFileSync(auditFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+  // A queue with one item, paused by the user: it must not run while the account changes.
+  assert.equal((await api(`/api/projects/${id}/queue-pause`, { paused: true })).status, 200);
+  assert.equal((await api(`/api/projects/${id}/queue-add`, { text: 'tugas yang menunggu' })).status, 200);
+
+  // Logout (laptop): one audit line, every queue paused with reason "account", the chat says why.
+  const before = auditLines().length;
+  mark = seen.length;
+  assert.equal((await api('/api/account/logout')).status, 200);
+  const pausedChat = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /Antrian dijeda: akun berubah/.test(o.text ?? ''));
+  assert.equal(pausedChat.text, '📋 Antrian dijeda: akun berubah. Periksa model lalu lanjutkan.');
+  const after = auditLines();
+  assert.equal(after.length, before + 1, 'one line for one action');
+  assert.deepEqual(
+    { action: after.at(-1).action, engine: after.at(-1).engine, provider: after.at(-1).provider, actor: after.at(-1).actor, ok: after.at(-1).ok },
+    { action: 'logout', engine: 'claude', provider: null, actor: 'laptop', ok: true },
+  );
+  let st = (await snapshot()).statuses[id];
+  assert.equal(st.taskQueue.paused, true);
+  assert.equal(st.taskQueue.reason, 'account');
+  assert.equal(st.taskQueue.waiting, 1);
+
+  // Login start: an account switch begins, so every queue pauses again (and says so once more).
+  mark = seen.length;
+  assert.equal((await api('/api/account/login')).status, 200);
+  await waitFor((t, o) => t === 'chat' && o.project === id && /Antrian dijeda: akun berubah/.test(o.text ?? ''));
+  st = (await snapshot()).statuses[id];
+  assert.equal(st.taskQueue.reason, 'account');
+  // Nothing runs after the pause: the item is still waiting a second later.
+  await sleep(700);
+  const queue = (await api(`/api/projects/${id}/queue`)).body.queue;
+  assert.deepEqual(queue.items.map((i) => i.status), ['waiting']);
+
+  // Cancel and a refused code are audited too (a failed action is a line, not silence).
+  assert.equal((await api('/api/account/login/cancel')).status, 200);
+  assert.equal((await api('/api/account/login/code', { code: '  ' })).status, 400);
+  const lines = auditLines();
+  assert.deepEqual(lines.slice(-2).map((e) => [e.action, e.ok]), [['login-cancel', true], ['login-code', false]]);
+  for (const line of lines) {
+    assert.deepEqual(Object.keys(line).sort(), ['action', 'actor', 'detail', 'engine', 'ok', 'provider', 'ts']);
+    assert.ok(['claude', 'opencode'].includes(line.engine));
+    assert.equal(line.actor, 'laptop');
+    assert.doesNotMatch(JSON.stringify(line), /@|sk-|ghp_|xox|Bearer/i, 'never an email or a token');
+  }
+
+  // The API: newest first, clamped 1–100.
+  const recent = await api('/api/account/audit', { limit: 100 });
+  assert.equal(recent.status, 200);
+  assert.equal(recent.body.entries.length, Math.min(100, lines.length));
+  for (let i = 1; i < recent.body.entries.length; i++) assert.ok(recent.body.entries[i - 1].ts >= recent.body.entries[i].ts, 'newest first');
+  assert.equal(recent.body.entries[0].action, 'login-code', 'the last action comes first');
+  assert.equal((await api('/api/account/audit', { limit: 1 })).body.entries.length, 1);
+  assert.equal((await api('/api/account/audit', { limit: 0 })).body.entries.length, 1, 'clamped up to 1');
+  assert.equal((await api('/api/account/audit', { limit: 9999 })).body.entries.length, Math.min(100, lines.length), 'clamped down to 100');
+  assert.equal((await api('/api/account/audit', {})).body.entries.length, Math.min(50, lines.length), 'default 50');
+
+  // Cleanup: the queue would otherwise stay paused for the later tests.
+  await api(`/api/projects/${id}/queue-remove`, { itemId: queue.items[0].id });
+  await api(`/api/projects/${id}/queue-pause`, { paused: false });
+});
+
+test('model prices: Go list prices from the catalog cache + observed prices from the ledger', async () => {
+  // The catalog is served from the same daily cache file the route writes (no network in tests).
+  const fetchedAt = Date.now();
+  writeFileSync(
+    path.join(TMP, 'data', 'model-prices.json'),
+    JSON.stringify({
+      fetchedAt,
+      source: 'opencode.ai',
+      models: {
+        hy4: { name: 'HY4', input: 0.5, output: 2, cacheRead: 0.05, cacheWrite: 0.1, peakFactor: 1.5, hasPeak: true },
+        'no-write': { name: 'No Write', input: 1, output: 3, cacheRead: 0.2, cacheWrite: 0, peakFactor: 1, hasPeak: false },
+      },
+    }),
+  );
+  // A model with no list price: its blended effective price comes from the ledger (every account, 90 days).
+  appendFileSync(
+    path.join(TMP, 'data', 'usage.jsonl'),
+    `${JSON.stringify({ ts: Date.now(), account: { id: 'tester@example.com', email: 'tester@example.com', org: null }, engine: 'claude', source: 'web', project: 'toko', projectId: 'prices', sessionId: 'ses_prices', model: 'claude-sonnet-4-5', input: 400_000, output: 100_000, cacheRead: 500_000, cacheWrite: 0, costUsd: 0.75, requests: 0, turns: 1 })}\n`,
+  );
+  const res = await api('/api/models/prices', {});
+  assert.equal(res.status, 200);
+  assert.equal(res.body.source, 'opencode.ai');
+  assert.equal(res.body.fetchedAt, fetchedAt);
+  assert.equal(res.body.stale, false);
+  assert.deepEqual(res.body.prices, [
+    { model: 'opencode-go/hy4', name: 'HY4', input: 0.5, output: 2, cacheRead: 0.05, cacheWrite: 0.1, peakFactor: 1.5 },
+    { model: 'opencode-go/no-write', name: 'No Write', input: 1, output: 3, cacheRead: 0.2, cacheWrite: 0, peakFactor: 1 },
+  ]);
+  const observed = res.body.observed.find((o) => o.model === 'claude-sonnet-4-5');
+  assert.deepEqual(observed, { model: 'claude-sonnet-4-5', perMillion: 0.75, records: 1, tokens: 1_000_000 });
+  assert.ok(!JSON.stringify(res.body).includes('tester@example.com'), 'an observed price carries no account identity');
+  assert.ok(Array.isArray(res.body.observed) && res.body.observed.every((o) => o.tokens > 0));
+  assert.equal((await api('/api/models/prices', { from: 'kemarin' })).status, 400);
+  assert.equal((await api('/api/models/prices', { from: Date.now() + 60_000 })).status, 400, 'from never points into the future');
+});
+
+test('purge removes a project that should never have been listed, but only with its id as confirmation', async () => {
+  const orphan = '0123456789';
+  assert.equal((await api(`/api/projects/${orphan}/purge`, {})).status, 400, 'no confirmation: refused');
+  assert.equal((await api(`/api/projects/${orphan}/purge`, { confirm: 'other' })).status, 400, 'the wrong id: refused');
+  const ok = await api(`/api/projects/${orphan}/purge`, { confirm: orphan });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.ok, true);
+  assert.equal(ok.body.usage, 0, 'no ledger rows for an id that never existed');
 });
 
 test('team names: validated, shared through the config, empty = default', async () => {
@@ -836,7 +1074,7 @@ test('approving a plan picks the mode the work continues in, like the CLI plan d
   assert.equal((await snapshot()).statuses[id].mode, 'acceptEdits');
 });
 
-test('rewind: points from the transcript chain, code via checkpoints, conversation via --resume-session-at', async () => {
+test('rewind: points from the transcript chain, conversation via --resume-session-at; a code rewind needs git (409)', async () => {
   const id = await projectId();
   const snap = await snapshot();
   const sessionId = snap.statuses[id].sessionId;
@@ -852,12 +1090,22 @@ test('rewind: points from the transcript chain, code via checkpoints, conversati
   const { points } = (await api(`/api/projects/${id}/rewind-points`)).body;
   assert.deepEqual(points.map((p) => p.text), ['kedua', 'pertama'], 'newest first');
   assert.deepEqual((await api(`/api/projects/${id}/rewind-preview`, { uuid: u2 })).body.filesChanged, ['catatan.txt']);
-  assert.equal((await api(`/api/projects/${id}/rewind`, { uuid: randomUUID(), code: true })).status, 400, 'only prompts of this conversation');
+  assert.equal((await api(`/api/projects/${id}/rewind`, { uuid: randomUUID(), conversation: true })).status, 400, 'only prompts of this conversation');
 
+  // A code rewind in a project that is not a git repository: 409 before anything changes (no undo to prepare).
   mark = seen.length;
-  const done = (await api(`/api/projects/${id}/rewind`, { uuid: u2, code: true, conversation: true })).body;
+  const refused = await api(`/api/projects/${id}/rewind`, { uuid: u2, code: true, conversation: true });
+  assert.equal(refused.status, 409);
+  assert.match(refused.body.error, /^Tidak bisa menyiapkan undo untuk rewind ini \(bukan repo git\)\.$/);
+  assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['kedua', 'pertama'], 'nothing was rewound');
+  assert.ok(!seen.slice(mark).some((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'divider'), 'no divider either');
+
+  // 💬 Conversation only still works without git (the files are untouched).
+  mark = seen.length;
+  const done = (await api(`/api/projects/${id}/rewind`, { uuid: u2, conversation: true })).body;
   assert.equal(done.text, 'kedua', 'the prompt comes back to edit');
-  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'divider' && /Kode & percakapan/.test(o.text));
+  assert.equal(done.redo, undefined, 'no undo bundle for a conversation-only rewind');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'divider' && /Percakapan dikembalikan/.test(o.text));
   assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['pertama'], 'the conversation now ends before "kedua"');
   await api(`/api/projects/${id}/prompt`, { text: 'status?' });
   assert.match((await nextReply(id, /resumeAt=/)).patch.text, new RegExp(`resumeAt=${a1}`), 'resumed at the entry before the prompt');
@@ -1150,9 +1398,14 @@ test('search & export-session: transcript text only, bounded, safe paths', async
   const found = (await api(`/api/projects/${id}/search`, { q: 'PEMBAYARAN' })).body;
   assert.ok(found.results.length >= 2, JSON.stringify(found));
   assert.ok(found.results.every((r) => r.sessionId === sid && r.projectId === id && r.title === 'Bug pembayaran'));
-  assert.deepEqual(found.results.map((r) => r.role), ['user', 'assistant']);
-  assert.deepEqual(found.results[0].snippet, { before: 'Tolong perbaiki Bug ', match: 'Pembayaran', after: ' di checkout' });
-  assert.equal(found.results[0].ts, t0);
+  // The route merges Claude + OpenCode hits and sorts newest first (src/routes/session.js:173).
+  assert.deepEqual(found.results.map((r) => r.role), ['assistant', 'user'], 'newest first');
+  assert.equal(found.results[0].ts, t0 + 60_000, 'the assistant reply is the newest hit');
+  // The snippet and timestamp still describe the matched line of the older hit (the user prompt).
+  const promptHit = found.results.find((r) => r.role === 'user');
+  assert.deepEqual(promptHit.snippet, { before: 'Tolong perbaiki Bug ', match: 'Pembayaran', after: ' di checkout' });
+  assert.equal(promptHit.ts, t0);
+  assert.ok(found.results.every((r, i, all) => i === 0 || (all[i - 1].ts ?? 0) >= (r.ts ?? 0)), 'every hit comes newest first');
   const raw = JSON.stringify(found);
   for (const hidden of ['RAHASIA-PIKIRAN', 'OUTPUT-MENTAH', 'subagent']) assert.ok(!raw.includes(hidden), `${hidden} is not searched`);
   // quotes/backslashes skip the raw-line prefilter but still match
@@ -1279,4 +1532,48 @@ test('⎇ git from the Changes tab: branches, create/switch, validation, unknown
   assert.equal(push.status, 409);
   assert.equal(push.body.code, 'no-remote');
   assert.equal((await api(`/api/projects/${id}/git-action`, { action: 'reset --hard' })).status, 400);
+});
+
+// ---------- Model Auto (Claude Code) ----------
+// OFFICE_EFFORT_FAKE=high: every prompt classifies as "high" → tier Kuat → opus.
+
+test('Model Auto (Claude Code): the tier model reaches the running process; a manual pick ends Auto', async () => {
+  const id = await projectId();
+  await api(`/api/projects/${id}/settings`, { effortAuto: false, effort: '', model: 'haiku', modelAuto: true });
+  let st = (await snapshot()).statuses[id];
+  assert.equal(st.modelAuto, true, 'Auto on keeps the concrete model until the next prompt');
+  assert.equal(st.model, 'haiku');
+
+  mark = seen.length;
+  const res = await api(`/api/projects/${id}/prompt`, { text: 'perbaiki bug kecil' });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.autoEffort, null, 'Effort Auto is off: no level applied');
+  assert.deepEqual(res.body.autoModel, { tier: 'kuat', label: 'Kuat', model: 'opus' });
+  const note = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && o.modelAuto === true);
+  assert.equal(note.text, '🤖 Model Auto: Kuat → opus');
+  st = (await snapshot()).statuses[id];
+  assert.equal(st.model, 'opus');
+  assert.equal(st.modelAuto, true, 'Auto stays on after its own switch');
+  assert.equal(st.effort, '', 'Model Auto never touches the effort');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+
+  // The live process really switched: `status?` is answered with the model that process has.
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'status?' });
+  const reply = (await nextReply(id, /pid=\d+/)).patch.text;
+  assert.match(reply, /model=opus/, reply);
+
+  // A manual model pick is a manual choice: Model Auto ends and the next prompt does not override it.
+  assert.equal((await api(`/api/projects/${id}/settings`, { model: 'haiku' })).status, 200);
+  st = (await snapshot()).statuses[id];
+  assert.equal(st.modelAuto, false, 'picking a model by hand clears Model Auto');
+  assert.equal(st.model, 'haiku');
+  mark = seen.length;
+  const manual = await api(`/api/projects/${id}/prompt`, { text: 'status?' });
+  assert.equal(manual.body.autoModel, null, 'no classifier ran: the pick stays');
+  const manualReply = (await nextReply(id, /pid=\d+/)).patch.text;
+  assert.match(manualReply, /model=haiku/, manualReply);
+  st = (await snapshot()).statuses[id];
+  assert.equal(st.model, 'haiku');
+  assert.equal(st.modelAuto, false);
 });

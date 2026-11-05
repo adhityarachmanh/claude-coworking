@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ChatStore } from './chat-store.js';
-import { readOnlyOpenCodeEnv, readUserPermission } from './opencode-bin.js';
+import { readOnlyOpenCodeEnv, readUserPermission, childOpenCodeEnv } from './opencode-bin.js';
 import { execFileTree } from './proc.js';
 
 const MAX_MESSAGES = 30;
@@ -31,7 +31,7 @@ const clip = (s, n) => {
 
 function run(command, args, { cwd, timeout, env }) {
   return new Promise((resolve) => {
-    execFileTree(command, args, { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, ...env } }, (err, out, errOut) =>
+    execFileTree(command, args, { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env: childOpenCodeEnv({ ...process.env, ...env }) }, (err, out, errOut) =>
       resolve({ ok: !err, out: String(out ?? ''), err: String(errOut ?? ''), timedOut: Boolean(err?.killed) }),
     );
   });

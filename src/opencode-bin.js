@@ -306,3 +306,20 @@ export function readOnlyOpenCodeEnv(env = process.env, user = {}) {
   const permission = { '*': 'deny', ...mergePermission(READ_ONLY_TOOLS, plainRules(rules), 'readOnly') };
   return { OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...config, permission }) };
 }
+
+/** The app's own Mode tim file: `data/team/opencode-<hash>.json` (session.js openCodeTeamConfig). */
+const TEAM_CONFIG = /[\\/]team[\\/]opencode-[0-9a-f]{16}\.json$/i;
+
+/**
+ * The environment for a child `opencode` (the ACP session, or a one-shot `opencode run`). A terminal that itself
+ * runs inside OpenCode exports OPENCODE_CONFIG (another project's team file), OPENCODE_SESSION_ID and friends; passed
+ * on, they would make "Mode tim off" load that team, attach the child to the wrong session, and confuse its client.
+ * A config path the user set themselves is kept: OPENCODE_CONFIG is dropped only when it points at one of our own
+ * team files. The caller adds what this child needs on top (OPENCODE_CONFIG_CONTENT, OPENCODE_CONFIG for its team).
+ */
+export function childOpenCodeEnv(env = process.env) {
+  const out = { ...env };
+  for (const key of ['OPENCODE', 'OPENCODE_CLIENT', 'OPENCODE_SESSION_ID', 'OPENCODE_TERMINAL']) delete out[key];
+  if (TEAM_CONFIG.test(String(out.OPENCODE_CONFIG ?? ''))) delete out.OPENCODE_CONFIG;
+  return out;
+}

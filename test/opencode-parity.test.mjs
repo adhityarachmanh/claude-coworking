@@ -191,18 +191,25 @@ test('🔔 push: an OpenCode shell permission → "ask" with a single-use token;
   assert.equal(push.act({ device: phones.allow.device, t: ask.payload.t, a: 'deny', ip: '1' }).status, 410, 'single use: the token is spent');
   const denied = push.act({ device: phones.closed.device, t: askClosed.payload.t, a: 'deny', ip: '2' });
   assert.equal(denied.status, 200);
+  // ✕ Tolak is not a stop (since the "Tolak" feature): OpenCode ends that turn and the app sends the note next,
+  // exactly like Claude Code — so the turn result is not an error and its push is "done", not "error".
   const result = await resultAfter(from);
-  assert.equal(result.ok, false);
-  assert.match(result.text, /Dihentikan/, 'a refusal from the phone stops the OpenCode turn quietly');
+  assert.equal(result.ok, true, 'a rejection from the phone is not an error');
+  assert.equal(result.text, '', 'a successful turn carries no error text');
+  await nextEvent(from, (t, d) => t === 'chat' && d.project === project.id && d.kind === 'info' && /Izin ditolak/.test(d.text), 'rejection note');
+  const follow = await nextEvent(from, (t, d) => t === 'chat' && d.project === project.id && d.kind === 'user' && /Saya menolak izin untuk/.test(d.text), 'follow-up prompt');
+  const followAt = events.findIndex((e) => e.type === 'chat' && e.data === follow);
+  const followResult = await nextEvent(followAt, (t, d) => t === 'chat' && d.project === project.id && d.kind === 'result', 'follow-up result');
+  assert.equal(followResult.ok, true, 'the note turn finishes normally');
 
   const answered = events.slice(from).find((e) => e.type === 'approval' && e.data.id === approval.id && e.data.status === 'denied').data;
   assert.deepEqual(answered.answeredBy, { via: 'push', device: 'HP closed' }, 'the laptop sees who answered');
   assert.deepEqual(hub.viewFor('approval', answered, true).answeredBy, { via: 'push' }, 'plain WiFi: no phone name');
   await settle();
-  // The other phone hears it was answered; then, because OpenCode cancels the whole turn after a Tolak (unlike
-  // Claude Code, which carries on), the turn's end comes as an "error" push (Berhenti / error).
-  assert.deepEqual(inbox('allow').slice(before.allow).map((m) => m.payload.type), ['ask', 'answered', 'error']);
-  assert.deepEqual(inbox('closed').slice(before.closed).map((m) => m.payload.type), ['ask', 'error'], 'the phone that answered gets no "answered"');
+  // The other phone hears it was answered; then the continued turn ends as "done" (not "error"). Two turns run
+  // (the rejected one, then the note's), so two "done" pushes arrive.
+  assert.deepEqual(inbox('allow').slice(before.allow).map((m) => m.payload.type), ['ask', 'answered', 'done', 'done']);
+  assert.deepEqual(inbox('closed').slice(before.closed).map((m) => m.payload.type), ['ask', 'done', 'done'], 'the phone that answered gets no "answered"');
 });
 
 test('🔔 push: an OpenCode file write permission → Izinkan from the lock screen only where opted in (fail-closed); allow runs the tool', async () => {

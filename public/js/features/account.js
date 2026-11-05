@@ -1,7 +1,9 @@
 // Claude account: profile, plan quota, token usage, login/logout. With OpenCode as the engine (the switch at the
 // top, features/opencode-account.js) the dialog shows OpenCode's provider logins instead.
+import { accountImpactText } from '../core/account-impact.js';
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
+import { engineLabel } from '../core/engine-caps.js';
 import { fmtShort } from '../core/format.js';
 import { state } from '../core/state.js';
 import { closeModal, focusablesIn, openModal } from '../ui/modals.js';
@@ -18,6 +20,8 @@ const LOGIN_TEXT = {
   cancelled: 'Login dibatalkan.',
 };
 const account = { usage: null, loading: false, loginState: null };
+/** "Riwayat perubahan akun" (laptop/Tailscale only): whether it is open, what the server last sent, its error. */
+const audit = { open: false, loading: false, entries: null, error: null };
 
 function accountName(p) {
   // Profiles can hold blank names (a full name of " "), so take the first field with real text.
@@ -117,6 +121,92 @@ export function onAccountAlert({ action, device, email, engine, provider }) {
   if ('Notification' in window && Notification.permission === 'granted') new Notification(`Adhit Office: akun ${engine === 'opencode' ? 'OpenCode' : 'Claude'}`, { body: text, tag: 'account-alert' });
 }
 
+/** Laptop or a phone over Tailscale only: a plain-WiFi phone never sees the audit (the server refuses it too). */
+const auditVisible = () => Boolean(state.accountAuth) && !state.readOnly;
+
+/** The server sends an ISO time or epoch (seconds or ms); anything else is shown as a dash, never as "Invalid Date". */
+function auditMs(ts) {
+  const raw = typeof ts === 'number' ? ts : typeof ts === 'string' && ts.trim() ? (/^\d+$/.test(ts.trim()) ? Number(ts.trim()) : Date.parse(ts)) : NaN;
+  const ms = raw < 1e11 ? raw * 1000 : raw; // epoch seconds (before 1973 in ms) vs milliseconds
+  return Number.isFinite(ms) && ms <= 8.64e15 ? ms : NaN; // outside Date's range: show a dash, not "Invalid Date"
+}
+
+const AUDIT_ACTION = (action) => {
+  const text = typeof action === 'string' ? action.trim().slice(0, 60) : '';
+  const a = text.toLowerCase();
+  if (!a) return '—';
+  if (a.includes('logout') || a.includes('keluar')) return 'Keluar';
+  if (a.includes('login') || a.includes('masuk')) return 'Masuk';
+  return text; // a future action still shows, escaped
+};
+
+/** Only the fields the list shows, validated and newest first (the server's order is not trusted). */
+function auditRows() {
+  return (Array.isArray(audit.entries) ? audit.entries : [])
+    .filter((e) => e && typeof e === 'object')
+    .map((e) => {
+      const ms = auditMs(e.ts);
+      return {
+        ms: Number.isFinite(ms) ? ms : 0,
+        time: Number.isFinite(ms) ? new Date(ms).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '',
+        action: AUDIT_ACTION(e.action),
+        engine: typeof e.engine === 'string' ? e.engine.trim().slice(0, 40) : '',
+        provider: typeof e.provider === 'string' ? e.provider.trim().slice(0, 120) : '',
+        actor: typeof e.actor === 'string' ? e.actor.trim().slice(0, 120) : '',
+        ok: e.ok !== false,
+      };
+    })
+    .sort((a, b) => b.ms - a.ms);
+}
+
+function auditRowHtml(e) {
+  const where = [e.engine ? engineLabel(e.engine) : '', e.provider].filter(Boolean).join(' · ');
+  const actor = e.actor === 'laptop' ? 'laptop ini' : e.actor;
+  return `<li class="audit-item${e.ok ? '' : ' bad'}">
+    <time class="audit-when">${escapeHtml(e.time || '—')}</time>
+    <div class="audit-main"><b>${escapeHtml(e.action)}</b>${where ? ` <span>${escapeHtml(where)}</span>` : ''}${e.ok ? '' : ' <span class="audit-bad">⚠ gagal</span>'}</div>
+    ${actor ? `<small class="audit-actor">${escapeHtml(actor)}</small>` : ''}
+  </li>`;
+}
+
+function auditBodyHtml() {
+  if (audit.error) return `<p class="warn small" role="alert">${escapeHtml(audit.error)}</p>`;
+  if (audit.entries === null) return '<p class="muted small">Memuat riwayat…</p>';
+  const rows = auditRows();
+  if (!rows.length) return '<p class="muted small">Belum ada perubahan akun.</p>';
+  return `<ol class="audit-list">${rows.map(auditRowHtml).join('')}</ol>`;
+}
+
+/** A disclosure with `hidden` (not <details>: the modal Tab trap skips [hidden] content while closed). */
+function auditHtml() {
+  if (!auditVisible()) return '';
+  return `<div class="acct-section audit-section">
+    <div class="acct-title"><b>Riwayat perubahan akun</b><button type="button" class="ghost" data-act="audit-toggle" aria-expanded="${audit.open}" aria-controls="audit-body">${audit.open ? 'Tutup' : 'Lihat'}</button></div>
+    <div id="audit-body"${audit.open ? '' : ' hidden'}>${audit.open ? auditBodyHtml() : ''}</div>
+  </div>`;
+}
+
+async function toggleAudit() {
+  audit.open = !audit.open;
+  renderAccount();
+  if (!audit.open) return;
+  if (audit.loading) return;
+  audit.loading = true;
+  audit.error = null;
+  audit.entries = null; // a fresh answer, never mixed with an older one
+  renderAccount();
+  try {
+    const data = await api('/api/account/audit', { limit: 20 });
+    audit.entries = Array.isArray(data?.entries) ? data.entries : [];
+  } catch (err) {
+    audit.entries = null;
+    audit.error = err?.status === 404 ? 'Server ini belum punya riwayat perubahan akun.' : `Gagal memuat riwayat: ${err.message}`;
+  } finally {
+    audit.loading = false;
+    if (!$('#account-modal').hidden) renderAccount();
+  }
+}
+
 // renderAccount() rebuilds #account-body (up to 3× while account + quota load), which would drop keyboard focus
 // to <body>. Remember the focused action button and put focus back on its replacement — or keep it in the dialog.
 function renderAccount() {
@@ -138,7 +228,7 @@ function renderAccountBody(body) {
   const engineSwitch = engineSwitchHtml();
   $('#account-title').textContent = activeEngine() === 'opencode' ? '👤 Akun OpenCode' : '👤 Akun Claude';
   if (activeEngine() === 'opencode') {
-    body.innerHTML = engineSwitch + openCodeBodyHtml();
+    body.innerHTML = engineSwitch + openCodeBodyHtml() + auditHtml();
     renderAccountButton();
     return;
   }
@@ -159,7 +249,7 @@ function renderClaudeBody(body) {
     : '<p class="muted small">Login/logout dari HP hanya lewat Tailscale (koneksi terenkripsi). Buka kantor lewat alamat Tailscale, atau lakukan dari laptop.</p>';
   if (!p.loggedIn) {
     body.innerHTML = `<div class="acct-empty"><p>Claude Code di laptop ini <b>belum login</b>. Login membuka halaman claude.ai di browser, sama seperti <code>claude auth login</code>.</p></div>
-      <div class="acct-actions">${actions}</div><div id="acct-login"></div>`;
+      <div class="acct-actions">${actions}</div><div id="acct-login"></div>${auditHtml()}`;
     renderLoginFlow();
     return;
   }
@@ -200,7 +290,7 @@ function renderClaudeBody(body) {
     <div class="acct-section"><div class="acct-title"><b>Pemakaian token akun ini</b><button class="ghost" data-act="report">📊 Laporan</button></div>${usageTable(account.usage)}
       <p class="muted small">Dihitung dari sesi web & CLI sejak fitur ini aktif, hanya untuk akun yang sedang login.</p></div>
     <div class="acct-actions">${actions}</div>
-    <div id="acct-login"></div>`;
+    <div id="acct-login"></div>${auditHtml()}`;
   renderLoginFlow();
 }
 
@@ -249,15 +339,17 @@ export function initAccount() {
     const act = el?.dataset.act;
     if (!act) return;
     try {
+      if (act === 'audit-toggle') return toggleAudit();
       if (await onOpenCodeAction(act, el, renderAccount)) return;
       if (act === 'login' || act === 'login-console') {
+        if (!window.confirm(accountImpactText('claude-login'))) return;
         state.account = { ...state.account, login: await api('/api/account/login', { console: act === 'login-console' }) };
         renderLoginFlow();
       } else if (act === 'cancel-login') {
         await api('/api/account/login/cancel');
       } else if (act === 'logout') {
         const email = state.account?.profile?.email ?? 'akun ini';
-        if (!window.confirm(`Logout dari ${email}?\n\nClaude Code di laptop ini (termasuk terminal/CLI) ikut logout. Giliran yang sedang berjalan di web dibiarkan selesai dulu.`)) return;
+        if (!window.confirm(accountImpactText('claude-logout', email))) return;
         // From a phone, a second step: type LOGOUT (the server checks it too).
         let confirm;
         if (!state.local) {

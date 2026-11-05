@@ -33,10 +33,11 @@ function readMeta(file) {
 }
 
 export class TranscriptMirror {
-  constructor(hub, { root = DEFAULT_ROOT, ledger = null } = {}) {
+  constructor(hub, { root = DEFAULT_ROOT, ledger = null, skipDir = () => false } = {}) {
     this.hub = hub;
     this.root = root;
     this.ledger = ledger;
+    this.skipDir = skipDir; // sessions from folders outside the user's project roots are never listed
     this.files = new Map(); // file -> { offset, rest: Buffer, mtime }
     this.sessions = new Map(); // CLI session id -> mirror state
     this.timers = new Map(); // file -> debounce timer
@@ -171,6 +172,7 @@ export class TranscriptMirror {
     if (!['user', 'assistant', 'system'].includes(entry.type)) return;
     // Sessions started from the web ("sdk-cli") are already shown by their own runner.
     if (entry.entrypoint !== 'cli' || !entry.sessionId || !entry.cwd) return;
+    if (this.skipDir(entry.cwd)) return; // a temp/foreign folder: never becomes a project
     const session = this.session(entry.sessionId, entry.cwd);
     if (entry.type === 'assistant') this.recordUsage(session, entry);
     const sub = SUBAGENT_FILE.exec(file);
@@ -210,6 +212,7 @@ export class TranscriptMirror {
     if (s.recorded.size > 5000) s.recorded = new Set([...s.recorded].slice(-2000));
     const project = this.hub.projects.get(s.pid);
     this.ledger.record({
+      engine: 'claude',
       source: 'cli',
       project: { id: s.pid, name: project?.name },
       sessionId: s.id,

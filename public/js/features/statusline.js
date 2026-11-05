@@ -3,6 +3,7 @@ import { $, escapeHtml, narrow } from '../core/dom.js';
 import { engineOf } from '../core/engine-caps.js';
 import { fmtTokens } from '../core/format.js';
 import { DEMO_ID, state } from '../core/state.js';
+import { openCompact } from './compact.js';
 import { connection } from './connection.js';
 import { openQueue } from './queue.js';
 import { openTasks, runningCount } from './tasks.js';
@@ -46,6 +47,9 @@ const openCodeMode = (mode) => (mode === 'plan' ? 'plan' : 'manual');
 export const modeShort = (mode, engine) => (engine === 'opencode' ? OPENCODE_MODE_SHORT[openCodeMode(mode)] : MODE_SHORT[mode]) ?? mode;
 export const modeLabel = (mode, engine) => (engine === 'opencode' ? OPENCODE_MODE_LABEL[openCodeMode(mode)] : MODE_LABEL[mode]) ?? mode;
 
+/** 🧹 Ringkas konteks: only with a real project that has a session, never only-lihat (the dialog itself re-checks). */
+const compactReady = (st) => Boolean(state.active) && state.active !== DEMO_ID && !state.readOnly && Boolean(st?.sessionId || st?.context?.used);
+
 /** Status line under the composer: permission mode, model, and how full the context is. */
 export function renderStatusline(st) {
   const line = $('#statusline');
@@ -72,6 +76,7 @@ export function renderStatusline(st) {
       `<span class="sl-ctx ${level}" title="Konteks terpakai: ${st.context.used.toLocaleString('id-ID')} dari ${win.toLocaleString('id-ID')} token${compactNote}${level ? ' · pertimbangkan /compact' : ''}"><span class="bar"><i style="width:${pct}%"></i></span>konteks ${pct}% · ${fmtTokens(st.context.used)}/${fmtTokens(win)}</span>`,
     );
   }
+  if (compactReady(st)) parts.push('<button type="button" class="sl-compact" data-compact title="Ringkas konteks percakapan untuk menghemat token (memakai token; riwayat app tidak berubah) — /ringkas">🧹 Ringkas konteks</button>');
   const running = runningCount(st); // same count as the ⧗ chip in the session bar
   if (running) parts.push(`<button type="button" class="sl-tasks" data-open-tasks title="Buka monitor tugas latar (/tasks)">⧗ ${running} tugas berjalan</button>`);
   if (narrow.matches) return renderStrip(line, st, running);
@@ -95,6 +100,7 @@ function renderStrip(line, st, running) {
     const pct = Math.min(100, Math.round((ctx.used / ctx.window) * 100));
     if (near >= 0.7) chips.push(`<span class="sl-chip sl-ctx ${near >= 0.9 ? 'high' : 'mid'}" title="Konteks terpakai ${pct}% · pertimbangkan /compact">konteks ${pct}%</span>`);
   }
+  if (compactReady(st)) chips.push('<button type="button" class="sl-chip sl-compact" data-compact aria-label="Ringkas konteks percakapan" title="/ringkas">🧹 Ringkas</button>');
   line.classList.toggle('has-chips', chips.length > 0);
   line.innerHTML = chips.join('');
 }
@@ -126,5 +132,6 @@ export function initStatusline() {
     if (e.target.closest('[data-open-tasks]')) openTasks();
     else if (e.target.closest('[data-open-queue]')) openQueue();
     else if (e.target.closest('[data-jump-approval]')) jumpToApproval();
+    else if (e.target.closest('[data-compact]')) openCompact();
   });
 }
