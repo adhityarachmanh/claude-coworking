@@ -65,11 +65,11 @@ test('a running terminal session is shown (prompt, tools with roles, answer, end
   await m.tick();
   assert.ok(hub.ev.chat.some((c) => c.kind === 'assistant' && /Semua test lulus/.test(c.text ?? '')) || hub.ev.office.some((e) => e.kind === 'say'));
   assert.equal(hub.ev.status.at(-1).cliBusy, false);
-  // not while another engine is in use
-  hub.engine = 'claude';
-  const before = calls.length;
+  // not while the project runs on Claude Code (Stage 1: the OpenCode mirror skips it)
+  hub.engineOf = () => 'claude';
+  const before = hub.ev.chat.length;
   await m.tick();
-  assert.equal(calls.length, before);
+  assert.equal(hub.ev.chat.length, before);
 });
 
 test('⏳ provider refusals OpenCode retries read as a usage limit (429) or a provider problem', async () => {

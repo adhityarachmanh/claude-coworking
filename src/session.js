@@ -14,6 +14,7 @@ import { acpSessionClass } from './acp-session.js';
 import { killTree } from './proc.js';
 import { attachmentChips, contentBlocks } from './attachments.js';
 import { ENGINES, PERMISSION_MODES } from './hub.js';
+import { HttpError } from './routes/http.js';
 import { describeTool, inferRole } from './roles.js';
 import { promptChain } from './transcripts.js';
 import { StreamTranslator } from './translator.js';
@@ -88,6 +89,7 @@ export class SessionManager {
     this.ledger = ledger;
     this.account = account;
     this.sessions = new Map();
+    this.taskQueue = null; // 📋 Antrian, set by server.js: a waiting item blocks a project's engine switch
   }
 
   /**
@@ -149,15 +151,26 @@ export class SessionManager {
   }
 
   /**
-   * After a login/logout every running process still holds the old credentials: idle ones
-   * respawn on the next prompt, busy ones finish their turn first (see becameIdle).
+   * After a Claude Code login/logout every running Claude process still holds the old credentials: idle ones
+   * respawn on the next prompt, busy ones finish their turn first (see becameIdle). OpenCode sessions are left
+   * alone (their provider credentials are separate: openCodeAccountChanged).
    */
   accountChanged() {
     for (const session of this.sessions.values()) {
+      if (session.engine !== 'claude') continue;
       if (session.busy) session.staleAccount = true;
       else session.closeChild();
     }
     this.probeCatalog(); // which models are offered depends on the account
+  }
+
+  /** After an OpenCode provider login/logout: idle OpenCode processes restart with the new credentials. */
+  openCodeAccountChanged() {
+    for (const session of this.sessions.values()) {
+      if (session.engine !== 'opencode') continue;
+      if (session.busy) session.restartPending = true;
+      else session.closeChild();
+    }
   }
 
   /**
@@ -234,10 +247,13 @@ export class SessionManager {
   }
 
   get(project) {
-    const engine = this.hub.settingsFor(project.id).engine === 'opencode' ? 'opencode' : 'claude';
+    const engine = this.hub.engineOf(project.id);
     let session = this.sessions.get(project.id);
-    if (session && session.engine !== engine && !session.turnActive()) {
-      // Left over from before an engine switch (switchEngine closes them all): replaced, the workspace is the new one.
+    if (session && session.engine !== engine) {
+      // One engine per project (Stage 1): never reuse the other engine's process for this history.
+      if (session.turnActive() || session.busy || session.inflight?.size) {
+        throw new HttpError(409, `Sesi ${session.engine === 'opencode' ? 'OpenCode' : 'Claude Code'} masih berjalan di project ini. Tunggu selesai atau hentikan dulu.`);
+      }
       session.closeChild();
       this.sessions.delete(project.id);
       session = null;
@@ -250,34 +266,45 @@ export class SessionManager {
   }
 
   /**
-   * Moves the whole app to another engine (Akun). Each engine is its own workspace (Hub.switchEngine): its own
-   * chats, conversations and settings, so nothing of the other is lost. Refused while any project is working
-   * (a turn running or a prompt queued): the processes are closed first and a turn would be cut off.
-   * @returns {{ ok: true, engine: string } | { ok: false, error: string, busy?: string[] }}
+   * Stage 1: switches ONE project to another engine. The app default and the other projects are untouched, and
+   * both engines' histories stay (only which one is shown changes: Hub.setProjectEngine never copies messages).
+   * Refused while that project is working, has a waiting queue item, an open approval, or a cut-short turn
+   * ("Lanjutkan"): switching would mix the two workspaces or lose that.
+   * @returns {{ ok: true, engine: string } | { ok: false, status: number, error: string, busy?: string[] }}
    */
-  switchEngine(engine, { queuedProjects = [] } = {}) {
-    if (!ENGINES.includes(engine)) return { ok: false, error: 'Mesin tidak dikenal.' };
-    if (engine === 'opencode' && !this.opencode) return { ok: false, error: 'OpenCode belum terpasang di laptop ini.' };
-    if (engine === this.hub.engine) return { ok: true, engine };
-    const busy = [...this.sessions.values()].filter((s) => s.turnActive() || s.inflight?.size).map((s) => s.project.name ?? s.id);
-    if (busy.length) return { ok: false, error: `Masih ada yang bekerja: ${busy.join(', ')}. Tunggu selesai atau hentikan dulu.`, busy };
-    // 📋 Antrian is shared: a waiting item would run on the other engine and land in its chat.
-    if (queuedProjects.length) return { ok: false, error: `📋 Antrian tugas masih berisi item: ${queuedProjects.join(', ')}. Selesaikan atau hapus dulu.`, busy: queuedProjects };
-    try {
-      this.hub.save();
-      if (this.hub.chatStore.dirty) throw Object.assign(new Error('Riwayat chat belum tersimpan ke disk (file sedang dikunci?). Coba lagi sebentar.'), { status: 409 });
-      if (this.hub.legacyChats) throw Object.assign(new Error('Riwayat chat lama belum selesai dipindahkan (lihat log server). Restart aplikasi dulu, lalu coba lagi.'), { status: 409 });
-    } catch (err) {
-      return { ok: false, error: err.message };
+  setProjectEngine(project, engine) {
+    const id = project.id;
+    if (!ENGINES.includes(engine)) return { ok: false, status: 400, error: 'Mesin tidak dikenal.' };
+    if (engine === this.hub.engineOf(id)) return { ok: true, engine };
+    if (engine === 'opencode' && !this.opencode) return { ok: false, status: 409, error: 'OpenCode belum terpasang di laptop ini.' };
+    if (this.hub.legacyChats) return { ok: false, status: 409, error: 'Riwayat chat lama belum selesai dipindahkan (lihat log server). Restart aplikasi dulu, lalu coba lagi.' };
+    const session = this.sessions.get(id);
+    // An open permission card first: its reason is the one the user can act on (a turn runs behind it anyway).
+    if ([...this.hub.approvals.values()].some(({ approval }) => approval.project === id)) {
+      return { ok: false, status: 409, error: 'Masih ada permintaan izin yang menunggu jawaban. Jawab dulu, lalu ganti mesin.' };
     }
-    for (const s of this.sessions.values()) s.closeChild();
-    this.sessions.clear();
-    try {
-      if (!this.hub.switchEngine(engine)) return { ok: false, error: 'Mesin tidak dikenal.' };
-    } catch (err) {
-      return { ok: false, error: err.message };
+    if (session && (session.turnActive() || session.busy || session.inflight?.size || session.rewinding)) {
+      const name = project.name ?? id;
+      return { ok: false, status: 409, error: `Masih ada yang bekerja: ${name}. Tunggu selesai atau hentikan dulu.`, busy: [name] };
     }
-    console.log(`Mesin diganti ke ${engine === 'opencode' ? 'OpenCode' : 'Claude Code'}`);
+    if (this.hub.persisted.turns?.[id] || this.hub.persisted.interrupted?.[id]) {
+      return { ok: false, status: 409, error: 'Ada giliran terputus ("Lanjutkan") di project ini. Lanjutkan atau abaikan dulu, lalu ganti mesin.' };
+    }
+    const queue = this.taskQueue?.queues?.[id];
+    if (queue?.items?.some((i) => i.status === 'waiting' || i.status === 'running')) {
+      const name = project.name ?? id;
+      return { ok: false, status: 409, error: `📋 Antrian tugas masih berisi item: ${name}. Selesaikan atau hapus dulu.`, busy: [name] };
+    }
+    // The old engine's process is closed first: the next turn starts the other engine's class (SessionManager.get).
+    session?.closeChild();
+    if (session) this.sessions.delete(id);
+    try {
+      this.hub.setProjectEngine(id, engine);
+    } catch (err) {
+      return { ok: false, status: err.status ?? 409, error: err.message };
+    }
+    console.log(`Mesin project ${project.name ?? id} diganti ke ${engine === 'opencode' ? 'OpenCode' : 'Claude Code'}`);
+    this.onProjectEngineChange?.(id, engine);
     return { ok: true, engine };
   }
 

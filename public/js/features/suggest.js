@@ -1,6 +1,7 @@
 // Composer autocomplete: /commands, @files and Ctrl+R history search.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
+import { engineOf } from '../core/engine-caps.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { CLI_ONLY, LOCAL_COMMANDS } from './commands.js';
 import { autosize, updateBashMode } from './composer.js';
@@ -87,7 +88,8 @@ export function applySuggest(i = suggest.index) {
 export function slashCatalog() {
   const byName = new Map();
   for (const c of LOCAL_COMMANDS) byName.set(c.name, c);
-  if (state.config?.engine === 'opencode') {
+  // The project's engine, not the app-wide default (Akun): each engine has its own slash commands.
+  if (engineOf(state.statuses[state.active] ?? {}, state.config) === 'opencode') {
     for (const c of state.statuses[state.active]?.commands ?? []) if (!byName.has(c.name)) byName.set(c.name, { ...c, description: c.description || 'Command OpenCode' });
     return [...byName.values()];
   }

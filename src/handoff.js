@@ -113,7 +113,7 @@ ${lines.join('\n\n')}
 ${tools.length ? `\n\nLangkah terakhir:\n${tools.join('\n')}` : ''}
 </transcript>`;
 
-  const to = hub.engine;
+  const to = hub.engineOf ? hub.engineOf(project.id) : hub.engine;
   // Follow the model that is actually running in this chat. Do not pin a model from settings: the session may
   // have been switched (or be using the engine default) since the project settings were last read.
   const status = hub.runtime.get(project.id)?.status ?? {};
@@ -152,7 +152,8 @@ export function handoffInfo(hub, project, from) {
   const chat = otherChat(hub, from, project.id);
   const messages = chat.filter((m) => m.kind === 'user' || m.kind === 'assistant').length;
   const last = chat.findLast?.((m) => m.ts)?.ts ?? null;
-  return { from, label: ENGINE_LABEL[from], messages, hasSession: messages > 0, to: hub.engine, toLabel: ENGINE_LABEL[hub.engine], lastAt: last };
+  const to = hub.engineOf ? hub.engineOf(project.id) : hub.engine;
+  return { from, label: ENGINE_LABEL[from], messages, hasSession: messages > 0, to, toLabel: ENGINE_LABEL[to], lastAt: last };
 }
 
 export const otherEngine = (engine) => (engine === 'opencode' ? 'claude' : 'opencode');

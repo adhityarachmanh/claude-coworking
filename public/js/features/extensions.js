@@ -2,6 +2,7 @@
 // the settings files, without the terminal (server: src/routes/extensions.js, src/claude-admin.js).
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
+import { engineOf } from '../core/engine-caps.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { guardCap } from './engine.js';
@@ -46,7 +47,8 @@ function render() {
   }
   $('#ext-project').textContent = ext.project ? `· ${projectName(ext.project)}` : '';
   const body = $('#ext-body');
-  if (state.config?.engine === 'opencode' && ext.tab !== 'plugins') body.innerHTML = '<p class="muted small">Mesin aktif OpenCode: agent OpenCode diatur di opencode.json (dipilih di Pengaturan giliran → Agent). Tab ini mengelola milik Claude Code.</p>';
+  const opencode = engineOf(state.statuses[ext.project ?? state.active] ?? {}, state.config) === 'opencode';
+  if (opencode && ext.tab !== 'plugins') body.innerHTML = '<p class="muted small">Project ini memakai OpenCode: agent OpenCode diatur di opencode.json (dipilih di Pengaturan giliran → Agent). Tab ini mengelola milik Claude Code.</p>';
   else body.innerHTML = '';
   if (ext.tab === 'plugins') body.insertAdjacentHTML('beforeend', pluginsHtml());
   else if (!ext.project) body.insertAdjacentHTML('beforeend', '<p class="muted">Pilih project dulu.</p>');

@@ -11,7 +11,7 @@
 //   office/state.json          the office's state (folders, favorites, settings…; no paired-device hashes);
 //                              backups made before data/chats existed carry the chats in it (`chats`)
 //   office/chats/<id>.jsonl    each project's chat history (data/chats, see src/chat-store.js)
-//   office/chats-opencode/<id>.jsonl  the same for OpenCode's workspace (data/chats-opencode, Hub.switchEngine)
+//   office/chats-opencode/<id>.jsonl  the same for OpenCode's workspace (data/chats-opencode, per-project engine)
 //   office/usage.jsonl         token ledger
 // Never included: login credentials (.credentials.json, ~/.claude.json), caches, logs.
 //

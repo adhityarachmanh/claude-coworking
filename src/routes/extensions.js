@@ -12,9 +12,11 @@ import { withProject, withSession } from './project.js';
 
 const ghBin = findGh();
 
-/** Refuses a read-only (plain WiFi) client; `laptop` also refuses Tailscale phones. Errors → their status. */
+/** Refuses a read-only (plain WiFi) client; `laptop` also refuses Tailscale phones. `claude` follows the project's
+ *  engine (a route without a project falls back to the app-wide default). Errors → their status. */
 const guard = (fn, { laptop = false, claude = false } = {}) => async (ctx, req, res, params, body) => {
-  if (claude && (ctx.hub?.engine ?? 'claude') !== 'claude') return json(res, 409, { error: 'Ekstensi hanya tersedia saat mesin Claude Code aktif.' });
+  const engine = params?.project && ctx.hub?.engineOf ? ctx.hub.engineOf(params.project.id) : (ctx.hub?.engine ?? 'claude');
+  if (claude && engine !== 'claude') return json(res, 409, { error: 'Ekstensi hanya tersedia saat mesin Claude Code aktif.' });
   if (laptop ? !ctx.isLocal(req) : ctx.isReadOnly?.(req) !== false) return json(res, 403, { error: laptop ? 'Hanya dari laptop.' : 'Hanya dari laptop atau lewat Tailscale.' });
   try {
     return json(res, 200, await fn(ctx, req, res, params, body ?? {}));
@@ -70,16 +72,17 @@ export function register(router) {
   router.post('/api/projects/:id/hooks', withProject(guard((ctx, req, res, { project }) => ({ hooks: listHooks(project.path) }), { claude: true })));
 
   // 🔁 Lanjutkan dari mesin lain: the other workspace's context as an opening message (src/handoff.js)
-  router.post('/api/projects/:id/handoff/info', withProject(guard(({ hub }, req, res, { project }) => handoffInfo(hub, project, otherEngine(hub.engine)))));
+  router.post('/api/projects/:id/handoff/info', withProject(guard(({ hub }, req, res, { project }) => handoffInfo(hub, project, otherEngine(hub.engineOf(project.id))))));
   let smartBusy = false;
   router.post('/api/projects/:id/handoff', withProject(guard(async ({ hub, claude, opencode }, req, res, { project }, body) => {
-    const from = otherEngine(hub.engine);
+    const to = hub.engineOf(project.id);
+    const from = otherEngine(to);
     try {
       if (body.mode !== 'smart') return { mode: 'quick', from, text: await quickHandoff({ hub, project, from }) };
       if (smartBusy) throw new HandoffError(409, 'Catatan handoff lain sedang dibuat. Tunggu sebentar.');
       smartBusy = true;
       try {
-        console.log(`Handoff pintar: ${from} → ${hub.engine} (${project.name})`);
+        console.log(`Handoff pintar: ${from} → ${to} (${project.name})`);
         return { mode: 'smart', from, text: await smartHandoff({ hub, project, from, claude, opencode }) };
       } finally {
         smartBusy = false;

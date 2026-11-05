@@ -88,7 +88,8 @@ before(() => {
   hub.ready = true;
   hub.observers.add((type, data) => events.push({ type, data: structuredClone(data) }));
   sessions = new SessionManager({ hub, claude: null, opencode: { command: process.execPath, args: [FAKE_ACP] }, agents: {}, teamPrompt: '' });
-  assert.deepEqual(sessions.switchEngine('opencode'), { ok: true, engine: 'opencode' });
+  hub.updateSettings(project.id, { engine: 'opencode' }); // Stage 1: the project's own engine, not the app-wide one
+  assert.equal(hub.engineOf(project.id), 'opencode');
   queue = new TaskQueue({ hub, sessions, delayMs: 50 });
   const remote = new RemoteAccess(hub);
   remote.state.enabled = true;

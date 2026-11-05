@@ -4,6 +4,7 @@
 // transcript; costs a few thousand tokens of the active engine, never the parked source engine).
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
+import { engineLabel, engineOf } from '../core/engine-caps.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { fillComposer } from './composer.js';
@@ -14,7 +15,8 @@ function render() {
   const i = ho.info;
   const body = $('#handoff-body');
   if (!i) return void (body.innerHTML = '<p class="muted">Memeriksa riwayat…</p>');
-  const target = state.config?.engine === 'opencode' ? 'OpenCode' : 'Claude Code';
+  // The project's engine receives the note: the answer's `to` when it is a known engine, else the project's status.
+  const target = engineLabel(engineOf({ engine: i.to ?? state.statuses[state.active]?.engine }, state.config));
   if (!i.messages) {
     body.innerHTML = `<p>Belum ada percakapan <b>${escapeHtml(i.label)}</b> di project ini, jadi tidak ada konteks untuk dibawa.</p>`;
     return;

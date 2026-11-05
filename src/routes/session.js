@@ -1,6 +1,7 @@
 // ---------- a project's Claude Code session: prompts, shell, stop/reset, history, rewind ----------
 // Reads allowed over WiFi: sessions, rewind-points. Everything else acts (refused there by the gate in server.js);
 // `search` / `export-session` read, but expose the whole history: laptop and Tailscale only (src/remote.js).
+// `redo-conversation` acts too (it moves the conversation / imports a session): refused over WiFi by the same gate.
 import { AttachmentError, readAttachments } from '../attachments.js';
 import { ConversationError, exportSession, SEARCH_LIMITS, searchSessions } from '../conversation.js';
 import { searchOpenCodeSessions } from '../opencode-search.js';
@@ -12,7 +13,7 @@ import { listSessions, sessionHistory } from '../transcripts.js';
 import { openCodeSessions } from '../opencode-bin.js';
 import { importOpenCodeSession, OpenCodeAdminError } from '../opencode-admin.js';
 import { deleteSession, exportOpenCodeSession, forkOpenCodeSession, renameOpenCodeSession, SessionAdminError, validSessionId } from '../session-admin.js';
-import { applyRedo, captureRedo, listRedo, previewRedo, RedoError, sealRedo } from '../redo.js';
+import { applyRedo, captureRedo, conversationOf, listRedo, previewRedo, RedoError, sealRedo } from '../redo.js';
 
 /** Runs a 🕘 Riwayat sesi action; SessionAdminError / OpenCode errors become JSON with their status. */
 async function admin(res, fn) {
@@ -46,6 +47,28 @@ async function redoAnswer(res, promise) {
   }
 }
 
+/**
+ * What the conversation half of a redo bundle needs, read BEFORE the rewind: Claude Code keeps its transcript (only
+ * the resume position moves), OpenCode's commit deletes the messages, so its session JSON is exported first.
+ * null = nothing to come back to (no conversation yet) or the export failed: the rewind still runs, just without a
+ * conversation redo.
+ */
+async function conversationRedo({ hub, opencode, project, session }) {
+  const engine = hub.engineOf(project.id);
+  const sessionId = hub.sessionIdFor(project.id);
+  if (!sessionId) return null;
+  if (engine === 'claude') return { engine, sessionId, leaf: session?.chainLeaf ?? null };
+  if (!opencode) return null;
+  const title = hub.statusFor(project.id)?.title ?? null;
+  try {
+    const data = await exportOpenCodeSession({ opencode, projectPath: project.path, sessionId, sanitize: false });
+    return { engine, sessionId, data, title };
+  } catch (err) {
+    console.error(`Percakapan ${sessionId} tidak bisa diekspor sebelum rewind (${project.name}): ${err.message}`);
+    return null;
+  }
+}
+
 const ok = (res) => json(res, 200, { ok: true });
 
 export function register(router) {
@@ -74,7 +97,7 @@ export function register(router) {
         if (settings.effortAuto) autoEffort = { skipped: 'busy', reason: 'Mengikuti effort turn yang sedang berjalan' };
         if (settings.modelAuto) autoModel = { skipped: 'busy', reason: 'Mengikuti model turn yang sedang berjalan' };
       } else {
-        const auto = await classifyEffort({ engine: hub.engine, claude, opencode, currentModel: settings.model, text, attachments, context: autoContext(hub, project.id) });
+        const auto = await classifyEffort({ engine: hub.engineOf(project.id), claude, opencode, currentModel: settings.model, text, attachments, context: autoContext(hub, project.id) });
         const patch = {};
         if (settings.effortAuto) {
           autoEffort = auto;
@@ -82,7 +105,7 @@ export function register(router) {
           patch.effortAuto = true;
         }
         if (settings.modelAuto) {
-          const tier = tierFor(auto.level, hub.engine, settings.modelTiers);
+          const tier = tierFor(auto.level, hub.engineOf(project.id), settings.modelTiers);
           if (tier.model !== settings.model) {
             patch.model = tier.model;
             patch.modelAuto = true;
@@ -150,13 +173,14 @@ export function register(router) {
   }));
   // The active engine's conversations: Claude Code's transcripts, or OpenCode's own session list.
   router.post('/api/projects/:id/sessions', withSession(async ({ hub, opencode }, req, res, { project }) => {
-    const sessions = hub.engine === 'opencode' ? await openCodeSessions(opencode, project.path) : listSessions(project.path);
-    return json(res, 200, { sessions, engine: hub.engine, current: hub.sessionIdFor(project.id) });
+    const engine = hub.engineOf(project.id);
+    const sessions = engine === 'opencode' ? await openCodeSessions(opencode, project.path) : listSessions(project.path);
+    return json(res, 200, { sessions, engine, current: hub.sessionIdFor(project.id) });
   }));
   router.post('/api/projects/:id/resume', withSession(async ({ hub, opencode }, req, res, { project, session }, body) => {
     const sessionId = String(body.sessionId ?? '');
-    // Only a conversation of the active engine (a Claude transcript id means nothing to OpenCode and vice versa).
-    const opencodeActive = hub.engine === 'opencode';
+    // Only a conversation of the project's engine (a Claude transcript id means nothing to OpenCode and vice versa).
+    const opencodeActive = hub.engineOf(project.id) === 'opencode';
     const known = (opencodeActive ? await openCodeSessions(opencode, project.path, 200) : listSessions(project.path, 200)).some((s) => s.id === sessionId);
     if (!known) return json(res, 404, { error: 'Sesi tidak ditemukan' });
     session.resume(sessionId, opencodeActive ? [] : sessionHistory(project.path, sessionId));
@@ -168,16 +192,16 @@ export function register(router) {
     const st = hub.runtime.get(project.id)?.status ?? {};
     if (sessionId === hub.sessionIdFor(project.id)) throw new SessionAdminError(409, 'Ini percakapan yang sedang dibuka. Mulai sesi baru dulu, lalu hapus.');
     if (st.cliBusy && st.cliSession === sessionId) throw new SessionAdminError(409, 'Sesi ini sedang berjalan di terminal.');
-    const result = await deleteSession({ engine: hub.engine, projectPath: project.path, sessionId, dataDir, opencode });
+    const result = await deleteSession({ engine: hub.engineOf(project.id), projectPath: project.path, sessionId, dataDir, opencode });
     console.log(`Sesi ${sessionId.slice(0, 12)} dihapus (${project.name})${result.trashed ? ` → ${result.trashed}` : ''}`);
     return { ok: true, ...result };
   })));
   // ⑂ Cabangkan: continue a copy; the original stays as it was. Claude Code: --fork-session on the next start.
   router.post('/api/projects/:id/session-fork', withSession(({ hub, opencode }, req, res, { project, session }, body) => admin(res, async () => {
     const sessionId = String(body.sessionId ?? '');
-    if (!validSessionId(hub.engine, sessionId)) throw new SessionAdminError(400, 'Id sesi tidak valid.');
+    if (!validSessionId(hub.engineOf(project.id), sessionId)) throw new SessionAdminError(400, 'Id sesi tidak valid.');
     if (session.turnActive()) throw new SessionAdminError(409, 'Tim sedang bekerja. Tunggu selesai atau hentikan dulu.');
-    if (hub.engine === 'opencode') {
+    if (hub.engineOf(project.id) === 'opencode') {
       const forked = await forkOpenCodeSession({ opencode, projectPath: project.path, sessionId });
       session.resume(forked, []);
       hub.chat(project.id, { kind: 'divider', text: `Cabang dari sesi ${sessionId.slice(4, 12)}` });
@@ -191,7 +215,7 @@ export function register(router) {
   })));
   // ✎ OpenCode: rename any listed session (Claude Code renames the open one with /rename).
   router.post('/api/projects/:id/session-rename', withSession(({ hub, opencode }, req, res, { project }, body) => admin(res, async () => {
-    if (hub.engine !== 'opencode') throw new SessionAdminError(409, 'Untuk Claude Code, buka sesinya lalu klik judulnya (/rename).');
+    if (hub.engineOf(project.id) !== 'opencode') throw new SessionAdminError(409, 'Untuk Claude Code, buka sesinya lalu klik judulnya (/rename).');
     return { ok: true, title: await renameOpenCodeSession({ opencode, projectPath: project.path, sessionId: String(body.sessionId ?? ''), title: body.title }) };
   })));
   // ⬇ OpenCode: the session as OpenCode's own JSON (re-import with `opencode session import`).
@@ -201,7 +225,7 @@ export function register(router) {
   })));
   // ⬆ OpenCode: `opencode session import` a JSON this app (or the CLI) exported. Laptop only and OpenCode-only.
   router.post('/api/projects/:id/session-import-json', withProject(({ hub, opencode }, req, res, { project }, body) => admin(res, async () => {
-    if (hub.engine !== 'opencode') throw new SessionAdminError(409, 'Import JSON hanya untuk sesi OpenCode. Pindah mesin ke OpenCode dulu.');
+    if (hub.engineOf(project.id) !== 'opencode') throw new SessionAdminError(409, 'Import JSON hanya untuk sesi OpenCode. Pindah mesin project ke OpenCode dulu.');
     return importOpenCodeSession({ opencode, projectPath: project.path, data: body.data });
   })));
   router.post('/api/projects/:id/continue', withSession(({ hub }, req, res, { project, session }, body) => {
@@ -226,14 +250,23 @@ export function register(router) {
   // store through `opencode api` (async); its errors carry a status (409 while a turn runs), Claude's stay 400.
   router.post('/api/projects/:id/rewind-points', withSession((ctx, req, res, { session }) => rewindAnswer(res, Promise.resolve(session.rewindPoints()).then((points) => ({ points })))));
   router.post('/api/projects/:id/rewind-preview', withSession((ctx, req, res, { session }, body) => rewindAnswer(res, session.rewindPreview(String(body.uuid ?? '')))));
-  // ⏪↩ A code rewind overwrites the uncommitted worktree: snapshot it first (src/redo.js), so the response can
-  // carry the undo bundle. A folder without git (or a failed snapshot) refuses the code rewind before anything moves.
-  router.post('/api/projects/:id/rewind', withSession(async ({ hub, dataDir }, req, res, { project, session }, body) => {
+  // ⏪↩ A rewind overwrites the uncommitted worktree and/or the conversation: snapshot what it throws away
+  // (src/redo.js) first, so the response can carry the undo bundle. A folder without git (or a failed snapshot)
+  // refuses the code rewind before anything moves; the conversation half is best effort (the rewind still runs).
+  router.post('/api/projects/:id/rewind', withSession(async ({ hub, opencode, dataDir }, req, res, { project, session }, body) => {
     const uuid = String(body.uuid ?? '');
     const options = { code: Boolean(body.code), conversation: Boolean(body.conversation) };
-    if (!options.code) return rewindAnswer(res, session.rewind(uuid, options));
-    const capture = await captureRedo({ projectPath: project.path, dataDir, projectId: project.id, engine: hub.engine });
-    if (!capture.ok) return json(res, 409, { error: `Tidak bisa menyiapkan undo untuk rewind ini (${capture.reason}).` });
+    // 💬 Read before the rewind moves the position (Claude) or deletes the messages (OpenCode).
+    const conversation = options.conversation ? await conversationRedo({ hub, opencode, project, session }) : null;
+    let capture = null;
+    if (options.code || conversation) {
+      capture = await captureRedo({ projectPath: project.path, dataDir, projectId: project.id, engine: hub.engineOf(project.id), code: options.code, conversation });
+      if (!capture.ok) {
+        if (options.code) return json(res, 409, { error: `Tidak bisa menyiapkan undo untuk rewind ini (${capture.reason}).` });
+        console.error(`Undo percakapan project ${project.id} tidak siap (${capture.reason}): rewind tetap dijalankan.`);
+        capture = null;
+      }
+    }
     let result;
     try {
       result = await session.rewind(uuid, options);
@@ -242,11 +275,12 @@ export function register(router) {
       const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600 ? err.status : 400;
       return json(res, status, { error: err.message });
     }
+    if (!capture) return json(res, 200, { ...(result ?? {}) });
     try {
       const sealed = await sealRedo({ dataDir, projectId: project.id, id: capture.id, projectPath: project.path });
-      return json(res, 200, { ...(result ?? {}), redo: { id: sealed.id, files: sealed.files } });
+      return json(res, 200, { ...(result ?? {}), redo: { id: sealed.id, files: sealed.files, conversation: Boolean(capture.conversation) } });
     } catch (err) {
-      // The codes were rewound already: report that success, just without a redo entry (the bundle is not listed).
+      // The rewind is done already: report that success, just without a redo entry (the bundle is not listed).
       console.error(`Undo rewind ${capture.id} gagal disegel: ${err.message}`);
       return json(res, 200, { ...(result ?? {}) });
     }
@@ -258,6 +292,48 @@ export function register(router) {
   router.post('/api/projects/:id/redo', withSession(({ dataDir }, req, res, { project, session }, body) => {
     if (session?.rewinding) return json(res, 409, { error: REWINDING_MESSAGE }); // file writes in flight
     return redoAnswer(res, applyRedo({ dataDir, projectId: project.id, id: String(body.id ?? ''), projectPath: project.path, overwrite: body.overwrite === true }));
+  }));
+  // 🔄 Redo the conversation half of a rewind. Claude Code: the transcript was never deleted, so going back to its
+  // newest leaf and clearing the greyed-out chat is enough. OpenCode: the rewind deleted the messages, so the JSON
+  // exported before it is imported as a NEW session and the conversation continues from that copy.
+  // Laptop/Tailscale only (no WiFi read; server.js refuses it there by the read allowlist).
+  router.post('/api/projects/:id/redo-conversation', withSession(async ({ hub, opencode, dataDir }, req, res, { project, session }, body) => {
+    if (session?.rewinding) return json(res, 409, { error: REWINDING_MESSAGE });
+    if (session?.turnActive()) return json(res, 409, { error: 'Tim sedang bekerja. Tunggu selesai atau hentikan dulu.' });
+    try {
+      const { conversation, data } = await conversationOf({ dataDir, projectId: project.id, id: String(body.id ?? '') });
+      // Another conversation was opened since the rewind: this bundle no longer describes where the app is.
+      const current = hub.sessionIdFor(project.id);
+      if (current && current !== conversation.sessionId) {
+        return json(res, 409, { error: 'Percakapan sudah berganti sejak rewind ini, jadi undo ini tidak bisa lagi mengembalikannya.' });
+      }
+      if (conversation.engine === 'claude') {
+        // The transcript still has everything: only the position moved back, so the newest leaf is the way back.
+        if (session) {
+          session.resumeAt = null;
+          session.chainLeaf = null;
+          session.closeChild();
+        }
+        // A rewind to before the very first prompt forgot the session id (the transcript is still there).
+        if (conversation.sessionId && !hub.sessionIdFor(project.id)) hub.setSessionId(project.id, conversation.sessionId);
+        hub.unmarkRewound(project.id);
+        hub.chat(project.id, { kind: 'info', text: '🔄 Percakapan dikembalikan ke posisi terakhir' });
+        return json(res, 200, { ok: true, engine: 'claude', sessionId: hub.sessionIdFor(project.id) });
+      }
+      if (!opencode) return json(res, 502, { error: 'OpenCode tidak ditemukan di laptop ini. Pasang dengan `npm i -g @opencode/cli`, atau set env OPENCODE_BIN.' });
+      // Nothing changes before the import succeeds: a failure is a 502 and the current session stays.
+      const imported = await importOpenCodeSession({ opencode, projectPath: project.path, data });
+      if (imported.sessionId) {
+        hub.setSessionId(project.id, imported.sessionId);
+        session?.closeChild(); // the next prompt starts a fresh process on the imported copy
+      }
+      hub.unmarkRewound(project.id);
+      hub.chat(project.id, { kind: 'divider', text: '🔄 Percakapan dipulihkan sebagai salinan (sesi baru)' });
+      return json(res, 200, { ok: true, engine: 'opencode', sessionId: hub.sessionIdFor(project.id) });
+    } catch (err) {
+      const status = err instanceof RedoError ? err.status : err instanceof OpenCodeAdminError ? 502 : (Number.isInteger(err.status) ? err.status : 502);
+      return json(res, status, { error: err.message });
+    }
   }));
 
   // 🔎 Cari percakapan / ⬇ Export .md: read-only, bounded reads of this project's transcripts (src/conversation.js).

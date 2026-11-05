@@ -438,19 +438,21 @@ Hasilnya dicetak sebagai tabel PASS/FAIL. Tidak dijalankan di CI (membutuhkan ja
 | Q7 | Apakah perlu mode tim untuk OpenCode (agent inline lewat `OPENCODE_CONFIG_CONTENT.agent`)? | Keputusan produk, Fase 2 |
 | Q8 | Respon `session/request_permission` saat cancel: `{outcome:{outcome:'cancelled'}}` diterima v2.0.18? | Kontrak langkah 5 |
 
-## 11. Fase 1b: mesin per aplikasi (workspace) dan login provider
+## 11. Mesin per project dan login provider
 
-Keputusan (permintaan user): mesin bukan lagi pilihan per project di composer, tapi pilihan **seluruh aplikasi** di 👤 Akun.
-Tiap mesin adalah entitas terpisah; pindah mesin tidak menghapus riwayat mesin lain.
+**Mesin dipilih per project** (⚙ Pengaturan → Mesin project), bukan lagi seluruh aplikasi. `persisted.engine` tinggal
+**default untuk project baru**; project yang sudah ada menyimpan `settings[id].engine`. Dua project boleh memakai mesin
+berbeda bersamaan.
 
-- **State** (`src/hub.js`): `persisted.engine` = mesin aktif. Kunci per mesin `WORKSPACE_KEYS = settings, sessions, turns,
-  interrupted` tetap di tempat lamanya untuk mesin aktif (kode lain tidak berubah); milik mesin yang tidak aktif disimpan di
-  `persisted.workspaces[<engine>]` dan ditukar oleh `Hub.switchEngine`. Chat: `data/chats` (Claude Code, tidak berubah) dan
-  `data/chats-<engine>`; id pesan tetap unik lintas workspace (`seq` = max kedua folder). `settingsFor().engine` selalu mesin
-  aktif; `cleanSettings` mengabaikan `engine` dari patch.
-- **Pindah** (`SessionManager.switchEngine`, `POST /api/engine {engine}`): 409 kalau ada giliran berjalan atau prompt antre;
-  semua proses ditutup, hub menukar workspace, event `engine` membuat semua halaman memuat ulang (snapshot baru).
-  Hanya laptop/Tailscale (`ACCOUNT_AUTH`).
+- **State** (`src/hub.js`): `settings[id].engine` (fallback ke `persisted.engine`), `engineSettings[id][engine] =
+  { model, effort, agent }` (pilihan diingat per mesin), `sessionsByEngine[id][engine]` (id sesi per mesin; `sessions[id]`
+  tetap ditulis sebagai cermin untuk kompatibilitas). Chat: `data/chats` (Claude Code) dan `data/chats-<engine>`; id pesan
+  tetap unik lintas store (`seq` = maksimum kedua folder). `settingsFor().engine` mengikuti project.
+- **Ganti mesin satu project** (`SessionManager.setProjectEngine`, `POST /api/projects/:id/engine`): 409 bila project itu
+  sedang bekerja, punya izin menunggu, antrean berisi item, ada giliran terputus, atau chat lama belum dimigrasi; hanya
+  proses project itu yang ditutup. Riwayat kedua mesin **disimpan terpisah** dan tidak disalin.
+- **Migrasi satu arah (Stage 2)**: `workspaces` lama di-flatten ke `engineSettings`/`sessionsByEngine` saat start, dengan
+  salinan `data/state.json.pre-per-project-<waktu>` lebih dulu; `workspaces` lalu dihapus. Migrasi idempoten.
 - **Login provider** (`src/opencode-auth.js`, semua `opencode api <operation>`):
   `integration.list` (provider, metode key/oauth/env, koneksi), `integration.connect.key {key, answer}`,
   `integration.oauth.connect {methodID, answer}` → `{attemptID, url, instructions, mode: auto|code}`, `integration.oauth.status`
@@ -458,9 +460,12 @@ Tiap mesin adalah entitas terpisah; pindah mesin tidak menghapus riwayat mesin l
   `integration.oauth.cancel`, `credential.remove`. Route: `/api/opencode/providers|login/key|login/oauth|login/status|login/code|
   login/cancel|logout`. Error dipotong ke baris pertama penyebab; API key/kode tidak pernah dilog. Catatan: body (berisi API key)
   dikirim sebagai argumen `--data` proses `opencode` berumur pendek di laptop sendiri.
-- **Riwayat sesi**: dengan OpenCode, `/api/projects/:id/sessions` memakai `opencode session list --format json` di folder project.
-- **Backup** (📦) selalu berisi riwayat Claude Code (chat `data/chats` + pengaturan/sesi Claude, juga saat OpenCode aktif). Import hanya saat Claude Code aktif (409 kalau tidak), agar tidak tercampur. Chat OpenCode ikut sebagai `office/chats-opencode/<id>.jsonl` dan saat import digabung ke folder workspace OpenCode (`Hub.importEngineChats`).
-- Pindah mesin juga ditolak bila 📋 Antrian masih berisi item, chat belum tersimpan ke disk, atau migrasi chat lama gagal.
+- **Riwayat sesi**: `/api/projects/:id/sessions` memakai mesin project (`opencode session list` atau transcript Claude).
+- **Backup** (📦): membawa kedua store chat, `settings[id].engine`, `engineSettings`, dan `sessionsByEngine` (dipetakan lewat
+  id project saat import). Bila OpenCode tidak terpasang di laptop tujuan, project dari backup diturunkan ke Claude Code dan
+  data OpenCode-nya tidak dipulihkan; mode izin tidak pernah dipulihkan.
+- **Mirror terminal**: sesi Claude dari folder project yang mesinnya OpenCode diabaikan (dan sebaliknya), agar tidak menulis
+  ke store project yang salah.
 
 ## 12. Fase 2a: Mode tim, Effort, versi
 

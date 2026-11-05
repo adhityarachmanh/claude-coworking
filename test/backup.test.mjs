@@ -37,6 +37,17 @@ const line = (sessionId, cwd, text, ts) => JSON.stringify({ type: 'user', messag
 const transcript = (sessionId, cwd, texts) => `${texts.map((t, i) => line(sessionId, cwd, t, Date.parse('2024-03-01T10:00:00Z') + i * 1000)).join('\n')}\n`;
 const usageRow = (n) => JSON.stringify({ ts: 1_700_000_000_000 + n, account: { id: 'acc-1', email: 'a@b.c', org: null }, source: 'cli', project: 'toko', projectId: 'x', sessionId: S(1), model: 'claude-x', input: n, output: 1, cacheRead: 0, cacheWrite: 0, costUsd: null, requests: 1, turns: 0 });
 
+/** Waits until a chat row of `kind` shows up in `id`'s chat (a prompt's result, usually). */
+async function untilChat(server, id, kind, ms = 20_000) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const chat = (await server.snapshot()).chats[id] ?? [];
+    if (chat.some((m) => m.kind === kind)) return;
+    if (Date.now() > deadline) throw new Error(`timeout: no ${kind} in the chat of ${id}`);
+    await sleep(100);
+  }
+}
+
 /** Writes a file with an old mtime (so it is not treated as a session being written right now). */
 function put(file, content, mtime = DAY_AGO) {
   mkdirSync(path.dirname(file), { recursive: true });
@@ -115,6 +126,8 @@ const S3_MTIME = new Date('2024-03-02T08:09:10Z');
 let a;
 let b;
 let zipFile;
+/** The Claude Code conversation id A's project `toko` had when its backup was made (sessionsByEngine). */
+let exportedSession;
 
 before(async () => {
   for (const dir of [cwdA.toko, cwdA.kasir, cwdA.hilang, cwdB.toko, cwdB.kasir]) mkdirSync(dir, { recursive: true });
@@ -152,7 +165,11 @@ before(async () => {
   put(path.join(B.data, 'usage.jsonl'), `${usageRow(1)}\n${usageRow(3)}\n`);
 
   a = await start(A);
-  b = await start(B, { OFFICE_BACKUP_MAX_BYTES: String(LIMIT) });
+  // B has no OpenCode (PATH points at an empty folder, so no global node_modules either): the per-project engine
+  // import has a deterministic downgrade path (a machine WITH OpenCode is covered in-process below).
+  const noOpenCodePath = path.join(TMP, 'no-opencode-path');
+  mkdirSync(noOpenCodePath, { recursive: true });
+  b = await start(B, { OFFICE_BACKUP_MAX_BYTES: String(LIMIT), PATH: noOpenCodePath });
 });
 
 after(async () => {
@@ -189,6 +206,9 @@ test('export: a streamed .zip with every project, history, checkpoints, plans, s
   assert.equal((await a.api(`/api/projects/${fav}/favorite`, { on: true })).status, 200);
   assert.equal((await a.api('/api/team', { names: { qa: 'Budi QA' } })).status, 200);
   assert.equal((await a.api(`/api/projects/${fav}/settings`, { mode: 'acceptEdits', effort: 'high' })).status, 200);
+  // One real turn: the project gets a Claude Code conversation id (sessionsByEngine), so the backup can carry it.
+  assert.equal((await a.api(`/api/projects/${fav}/prompt`, { text: 'halo dari A' })).status, 200);
+  await untilChat(a, fav, 'result');
 
   const res = await fetch(`${a.base}/api/backup/export`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': a.token }, body: '{}' });
   assert.equal(res.status, 200);
@@ -216,6 +236,12 @@ test('export: a streamed .zip with every project, history, checkpoints, plans, s
   assert.equal(manifest.projects.find((p) => p.folder === enc).cwd, cwdA.toko, 'project path read from the transcript');
   assert.equal(manifest.projects.find((p) => p.folder === enc).sessions, 4);
   assert.ok(!('remote' in state), 'no paired-device hashes (nor the VAPID key, persisted.remote.vapid) in the backup');
+  assert.ok(!('workspaces' in state), 'the old app-wide parking lot never comes back');
+  assert.equal(state.settings[fav].engine, 'claude', "the project's own engine travels with it");
+  assert.deepEqual(state.engineSettings[fav].claude, { model: '', effort: 'high', agent: '' }, 'what each engine remembers for the project');
+  assert.ok('sessionsByEngine' in state, 'the conversation id per engine travels too');
+  exportedSession = state.sessionsByEngine[fav].claude;
+  assert.match(exportedSession, /^[0-9a-f-]{36}$/i, 'a Claude Code conversation id');
   assert.deepEqual(state.favorites, [fav]);
 });
 
@@ -274,10 +300,10 @@ test('import: folders remapped to the new home, merge rules, usage and prompt hi
   assert.equal(history[0].project, cwdB.toko);
   assert.equal(summary.history.added, 2);
 
-  // usage: one shared row, one from each side plus the rotated archive (merged through the ledger)
+  // usage: one shared row, one from each side plus the rotated archive, and A's own turn (merged through the ledger)
   const usage = readFileSync(path.join(B.data, 'usage.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).input);
-  assert.deepEqual(usage.sort(), [1, 2, 3, 4]);
-  assert.equal(summary.usage.added, 2);
+  assert.deepEqual(usage.sort((x, y) => x - y), [1, 2, 3, 4, 10]);
+  assert.equal(summary.usage.added, 3);
 
   // the app lists the history right away: toko (under the root) and kasir (added as its folder exists)
   assert.deepEqual(summary.projectsAdded, [cwdB.kasir]);
@@ -298,6 +324,11 @@ test('import: folders remapped to the new home, merge rules, usage and prompt hi
   // settings come along, the permission mode never does (a backup can't switch a project to auto-accept)
   const saved = JSON.parse(readFileSync(path.join(B.data, 'state.json'), 'utf8'));
   assert.deepEqual({ mode: saved.settings[toko.id].mode, effort: saved.settings[toko.id].effort }, { mode: 'manual', effort: 'high' });
+  // ...and so does the project's machine setup: its engine, what that engine remembered, and the conversation.
+  assert.equal(saved.settings[toko.id].engine, 'claude', "the project's engine is restored (machine-local no more)");
+  assert.deepEqual(saved.engineSettings?.[toko.id]?.claude, { model: '', effort: 'high', agent: '' }, 'per-engine settings mapped to this machine\'s id');
+  assert.equal(saved.sessionsByEngine?.[toko.id]?.claude, exportedSession, 'the conversation id is mapped and restored');
+  assert.equal(saved.sessions?.[toko.id], exportedSession, 'the compatibility mirror follows the current engine');
 
   // restored transcripts are history, not live activity: the mirror does not replay them into the chat
   await sleep(2500);
@@ -313,7 +344,7 @@ test('import again: idempotent (nothing added twice)', async () => {
   assert.equal(body.files.added + body.files.copies, 0, 'a .from-backup copy already holding these bytes is not made again');
   assert.equal(body.history.added, 0);
   assert.equal(body.usage.added, 0);
-  assert.equal(readFileSync(path.join(B.data, 'usage.jsonl'), 'utf8').trim().split('\n').length, 4);
+  assert.equal(readFileSync(path.join(B.data, 'usage.jsonl'), 'utf8').trim().split('\n').length, 5);
 });
 
 test('uploads over the limit are refused with 413 (declared size and streamed size)', async () => {
@@ -391,17 +422,97 @@ async function craftBackup(entries, manifest = {}) {
   return file;
 }
 
-test('untrusted state.json: no permission mode, no session planted to resume', async () => {
+test('untrusted state.json: no permission mode; the legacy single session map is not restored', async () => {
   const kasir = (await b.snapshot()).projects.find((p) => p.name === 'kasir');
   const oldId = projectIdOf(cwdA.kasir); // the id kasir had on A
+  // `sessions` is the old single map (pre-per-project); only `sessionsByEngine` is per engine and validated.
   const state = { settings: { [oldId]: { mode: 'dontAsk', effort: 'high', model: 'sonnet' } }, sessions: { [oldId]: S(3) } };
   const { status, body } = await b.upload(readFileSync(await craftBackup([['office/state.json', state]])));
   assert.equal(status, 200, JSON.stringify(body));
   const saved = JSON.parse(readFileSync(path.join(B.data, 'state.json'), 'utf8'));
   assert.equal(saved.settings[kasir.id].mode, 'manual', 'the permission mode is never restored');
   assert.equal(saved.settings[kasir.id].effort, 'high', 'validated model/effort/team still are');
-  assert.equal(saved.sessions[kasir.id], undefined, 'no session is set to continue with the next prompt');
+  assert.equal(saved.sessions[kasir.id], undefined, 'the legacy map is not set to continue with the next prompt');
   assert.equal((await b.snapshot()).statuses[kasir.id]?.sessionId ?? null, null);
+});
+
+test('per-project engine and per-engine data are mapped; OpenCode missing downgrades and drops its data', async () => {
+  const kasir = (await b.snapshot()).projects.find((p) => p.name === 'kasir');
+  const oldId = projectIdOf(cwdA.kasir);
+  const state = {
+    settings: { [oldId]: { engine: 'opencode', model: 'opencode-go/beam-free', effort: 'xhigh' } },
+    engineSettings: {
+      [oldId]: {
+        opencode: { model: 'opencode-go/beam-free', effort: 'xhigh', agent: 'docs' },
+        claude: { model: 'opus', effort: 'high', agent: '' },
+        robots: { model: 'x/y' }, // unknown engine: ignored
+      },
+    },
+    sessionsByEngine: { [oldId]: { opencode: 'ses_dari_laptop_lain', claude: S(9), robots: 'zzz' } },
+  };
+  const { status, body } = await b.upload(readFileSync(await craftBackup([['office/state.json', state]])));
+  assert.equal(status, 200, JSON.stringify(body));
+  const saved = JSON.parse(readFileSync(path.join(B.data, 'state.json'), 'utf8'));
+  assert.equal(saved.settings[kasir.id].engine, 'claude', 'OpenCode is not installed here: the project falls back');
+  assert.equal(saved.engineSettings[kasir.id].opencode, undefined, "the backup's OpenCode model is not restored");
+  assert.equal(saved.engineSettings[kasir.id].robots, undefined, 'an unknown engine is ignored');
+  assert.deepEqual(saved.engineSettings[kasir.id].claude, { model: 'opus', effort: 'high', agent: '' }, "Claude Code's values are mapped");
+  assert.equal(saved.sessionsByEngine[kasir.id].opencode, undefined, "the backup's OpenCode conversation is dropped");
+  assert.equal(saved.sessionsByEngine[kasir.id].robots, undefined);
+  assert.equal(saved.sessionsByEngine[kasir.id].claude, S(9), 'the Claude Code conversation is mapped and restored');
+  assert.equal(saved.sessions[kasir.id], S(9), 'the compatibility mirror follows the current engine');
+  assert.equal(body.state.engines, 0, "nothing to switch: the backup's OpenCode engine was not usable");
+  assert.equal(body.state.engineSettings, 1, 'one engine kept');
+  assert.equal(body.state.sessions, 1, 'one conversation kept');
+});
+
+test('with OpenCode installed: the engine and remembered values are restored, but OpenCode session ids are not', async () => {
+  const { Hub } = await import('../src/hub.js');
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-hub-engines-'));
+  try {
+    const hub = new Hub({ dataDir: dir });
+    hub.config = { engines: { opencode: { available: true } } };
+    const added = hub.mergeProjectData(
+      {
+        settings: { old: { engine: 'opencode', model: 'opencode-go/beam-free', effort: 'high', mode: 'dontAsk' } },
+        engineSettings: { old: { opencode: { model: 'opencode-go/kimi-k3', effort: 'max', agent: 'docs' }, claude: { model: 'opus', effort: 'high', agent: '' } } },
+        sessionsByEngine: { old: { opencode: 'ses_restored', claude: S(9) } },
+      },
+      new Map([['old', 'proj1']]),
+    );
+    assert.equal(hub.engineOf('proj1'), 'opencode');
+    const st = hub.settingsFor('proj1');
+    assert.equal(st.engine, 'opencode');
+    assert.equal(st.mode, 'manual', 'the permission mode still never comes from a backup');
+    assert.equal(st.model, 'opencode-go/beam-free');
+    assert.equal(st.effort, 'high');
+    assert.equal(hub.persisted.sessionsByEngine.proj1.opencode, undefined, "OpenCode's own session store is not in a backup: its id would dangle");
+    assert.equal(hub.persisted.sessionsByEngine.proj1.claude, S(9), "Claude's transcript is in the backup, so its id is kept");
+    assert.equal(hub.persisted.sessions.proj1 ?? null, null, 'no OpenCode id is mirrored');
+    assert.deepEqual({ ...added }, { favorites: 0, settings: 1, engines: 1, engineSettings: 2, sessions: 1, chats: 0 });
+
+    // Export carries all of it and never the old parking lot.
+    const exported = hub.exportState();
+    assert.equal(exported.settings.proj1.engine, 'opencode');
+    assert.equal(exported.sessionsByEngine.proj1.opencode, undefined);
+    assert.deepEqual(exported.engineSettings.proj1.claude, { model: 'opus', effort: 'high', agent: '' });
+    assert.ok(!('workspaces' in exported));
+
+    // A project that already has settings keeps them; only its engine (and what that engine remembered) returns.
+    hub.persisted.settings.proj2 = { engine: 'claude', model: 'opus', effort: '' };
+    const second = hub.mergeProjectData(
+      { settings: { other: { engine: 'opencode' } }, engineSettings: { other: { opencode: { model: 'opencode-go/beam-free', effort: 'low' } } } },
+      new Map([['other', 'proj2']]),
+    );
+    assert.equal(hub.settingsFor('proj2').engine, 'opencode');
+    assert.equal(hub.settingsFor('proj2').model, 'opencode-go/beam-free', 'from the engine the backup chose');
+    assert.equal(hub.settingsFor('proj2').effort, 'low');
+    assert.equal(hub.persisted.engineSettings.proj2.claude.model, 'opus', "this machine's Claude model is remembered");
+    assert.equal(second.engines, 1);
+    clearTimeout(hub.saveTimer);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('untrusted folders: roots, added folders and project paths outside this home are skipped with a warning', async () => {

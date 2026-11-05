@@ -5,6 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import { accountPrivacyView, billingStatus } from '../account.js';
 import { recordAuth, recentAuth } from '../auth-audit.js';
+import { ENGINES } from '../hub.js';
 import { readModelPrices } from '../model-prices.js';
 import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
@@ -76,17 +77,20 @@ export function register(router) {
     const limit = Number.isFinite(raw) ? Math.min(100, Math.max(1, Math.trunc(raw))) : 50;
     return json(res, 200, { entries: recentAuth(limit, { dataDir }) });
   });
-  // ---------- engine (Claude Code or OpenCode, app-wide) and OpenCode's provider logins ----------
-  router.post('/api/engine', ({ hub, sessions, taskQueue, device }, req, res, params, body) => {
-    // Projects whose 📋 Antrian still has work (waiting or running items, paused or not).
-    const queuedProjects = Object.entries(taskQueue?.queues ?? {})
-      .filter(([, q]) => q.items.some((i) => i.status === 'waiting' || i.status === 'running'))
-      .map(([id]) => hub.projects.get(id)?.name ?? id);
-    const result = sessions.switchEngine(String(body.engine ?? ''), { queuedProjects });
-    if (!result.ok) return json(res, 409, result);
-    if (hub.config) hub.config.engine = hub.engine;
-    if (device) console.log(`Mesin diganti dari HP "${device.name}"`);
-    return json(res, 200, result);
+  // ---------- engine (the DEFAULT for new projects) and OpenCode's provider logins ----------
+  // Stage 1: this no longer switches anything. Every project keeps its own engine (POST
+  // /api/projects/:id/engine); this only decides which engine a project seen for the first time starts on.
+  router.post('/api/engine', ({ hub, device }, req, res, params, body) => {
+    const engine = String(body.engine ?? '');
+    if (!ENGINES.includes(engine)) return json(res, 400, { error: 'Mesin tidak dikenal.' });
+    if (engine === 'opencode' && !hub.config?.engines?.opencode?.available) return json(res, 409, { error: 'OpenCode belum terpasang di laptop ini.' });
+    hub.setDefaultEngine(engine);
+    if (hub.config) {
+      hub.config.engine = hub.engine;
+      hub.broadcast('config', hub.config);
+    }
+    if (device) console.log(`Mesin default diganti dari HP "${device.name}"`);
+    return json(res, 200, { ok: true, engine: hub.engine });
   });
   // Providers plus the estimated Go allowance (the catalog fetch and the provider list run side by side).
   router.post('/api/opencode/providers', openCode(async (bin, body, ctx) => {
@@ -207,7 +211,7 @@ async function openCodeLogoutRoute(bin, body, ctx) {
 
 /** Credentials changed: idle OpenCode processes restart with them on the next prompt (busy ones after their turn). */
 const loggedIn = (ctx) => (result) => {
-  if (ctx.hub.engine === 'opencode') ctx.sessions.accountChanged();
+  ctx.sessions.openCodeAccountChanged?.(); // only OpenCode sessions: an ACP process is unchanged by a Claude login
   // A provider came or went: every queue pauses until the user has checked the model (never a silent replacement).
   ctx.taskQueue?.pauseAll('account');
   return result;

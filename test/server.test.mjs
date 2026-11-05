@@ -689,7 +689,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   await new Promise((r) => setTimeout(r, 5)); // a fresh CLI run would get a later `at`
   assert.equal((await (await phoneApi('/api/account/limits', { force: true })).json()).at, cachedLimits.at, 'force from WiFi reuses the cache');
   const actions = [
-    ...['prompt', 'shell', 'settings', 'commit', 'git-action', 'rewind', 'rewind-preview', 'redo', 'redo-preview', 'redo-list', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'purge', 'favorite', 'rename'].map((a) => `/api/projects/${id}/${a}`),
+    ...['prompt', 'shell', 'settings', 'commit', 'git-action', 'rewind', 'rewind-preview', 'redo', 'redo-preview', 'redo-list', 'redo-conversation', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'purge', 'favorite', 'rename'].map((a) => `/api/projects/${id}/${a}`),
     '/api/approvals/abc',
     '/api/team',
     '/api/team/roster/save', // 👥 Kelola tim: the team is readable, changing it is an action
@@ -1259,15 +1259,57 @@ test('rewind: points from the transcript chain, conversation via --resume-sessio
   assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['kedua', 'pertama'], 'nothing was rewound');
   assert.ok(!seen.slice(mark).some((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'divider'), 'no divider either');
 
-  // 💬 Conversation only still works without git (the files are untouched).
+  // 💬 Conversation only still works without git (the files are untouched), and it keeps a redo bundle too.
   mark = seen.length;
   const done = (await api(`/api/projects/${id}/rewind`, { uuid: u2, conversation: true })).body;
   assert.equal(done.text, 'kedua', 'the prompt comes back to edit');
-  assert.equal(done.redo, undefined, 'no undo bundle for a conversation-only rewind');
+  assert.match(done.redo.id, /^rd_[a-z0-9]{8,40}$/, 'even a conversation-only rewind keeps a redo bundle (no git needed)');
+  assert.deepEqual([done.redo.files, done.redo.conversation], [0, true], 'zero code paths, the conversation only');
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'divider' && /Percakapan dikembalikan/.test(o.text));
   assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['pertama'], 'the conversation now ends before "kedua"');
   await api(`/api/projects/${id}/prompt`, { text: 'status?' });
   assert.match((await nextReply(id, /resumeAt=/)).patch.text, new RegExp(`resumeAt=${a1}`), 'resumed at the entry before the prompt');
+});
+
+test('🔄 Redo percakapan (Claude Code): kembali ke daun transkrip terakhir dan tanda rewound dibersihkan', async () => {
+  const id = await projectId();
+  const project = (await snapshot()).projects.find((p) => p.id === id);
+  const dir = path.join(TMP, 'claude-projects', path.resolve(project.path).replace(/[^a-zA-Z0-9]/g, '-'));
+  mkdirSync(dir, { recursive: true });
+  const sid = randomUUID();
+  const [u1, a1, u2] = [randomUUID(), randomUUID(), randomUUID()];
+  const entry = (type, uuid, parentUuid, content) => JSON.stringify({ type, uuid, parentUuid, sessionId: sid, timestamp: new Date().toISOString(), message: { role: type, content } });
+  writeFileSync(
+    path.join(dir, `${sid}.jsonl`),
+    `${[entry('user', u1, null, 'awal redo'), entry('assistant', a1, u1, [{ type: 'text', text: 'ok' }]), entry('user', u2, a1, 'kedua redo'), entry('assistant', randomUUID(), u2, [{ type: 'text', text: 'ok' }])].join('\n')}\n`,
+  );
+  // Reopening a session fills the chat from the transcript (no prompt yet: the fake keeps this session id).
+  await api(`/api/projects/${id}/resume`, { sessionId: sid });
+  assert.equal((await snapshot()).statuses[id].sessionId, sid);
+
+  const from = seen.length;
+  const rewound = (await api(`/api/projects/${id}/rewind`, { uuid: u2, conversation: true })).body;
+  assert.equal(rewound.text, 'kedua redo');
+  assert.deepEqual([rewound.redo.files, rewound.redo.conversation], [0, true]);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'divider' && /Percakapan dikembalikan/.test(o.text));
+  const greyed = seen.slice(from).filter((s) => s.type === 'chat_update' && s.obj.project === id && s.obj.patch.rewound === true).map((s) => s.obj.id);
+  assert.ok(greyed.length >= 2, `pesan setelah titik rewind ikut diredupkan (${greyed.length})`);
+  assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['awal redo']);
+
+  // ↩ The conversation redo: the transcript was never deleted, only the position moved.
+  const before = seen.length;
+  const redo = await api(`/api/projects/${id}/redo-conversation`, { id: rewound.redo.id });
+  assert.equal(redo.status, 200, JSON.stringify(redo.body));
+  assert.deepEqual([redo.body.ok, redo.body.engine, redo.body.sessionId], [true, 'claude', sid]);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /Percakapan dikembalikan ke posisi terakhir/.test(o.text));
+  const cleared = seen.slice(before).filter((s) => s.type === 'chat_update' && s.obj.project === id && s.obj.patch.rewound === false).map((s) => s.obj.id);
+  assert.ok(greyed.every((g) => cleared.includes(g)), 'every greyed-out message is readable again');
+  assert.deepEqual((await api(`/api/projects/${id}/rewind-points`)).body.points.map((p) => p.text), ['kedua redo', 'awal redo'], 'back at the newest transcript leaf');
+
+  // Unknown / malformed bundles answer like the code redo does.
+  assert.equal((await api(`/api/projects/${id}/redo-conversation`, { id: 'rd_zzzzzzzz' })).status, 404);
+  assert.equal((await api(`/api/projects/${id}/redo-conversation`, { id: 'bukan-id' })).status, 400);
+  assert.equal((await api(`/api/projects/${id}/redo-conversation`, {})).status, 400, 'no id at all is 400, never a path');
 });
 
 test('MCP servers, background tasks and rename are Claude Code control requests', async () => {

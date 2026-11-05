@@ -1,6 +1,7 @@
 // Permission cards in the chat: questions, plans, tool approvals.
 import { api, toast } from '../core/api.js';
 import { escapeHtml } from '../core/dom.js';
+import { engineOf } from '../core/engine-caps.js';
 import { READ_ONLY_HINT, state } from '../core/state.js';
 import { renderMarkdown } from '../markdown.js';
 import { who } from './chat.js';
@@ -31,8 +32,9 @@ export function fillApproval(node, msg) {
   } else if (approval.kind === 'plan') {
     // The CLI's plan dialog: approve and choose how edits are handled, or keep planning with feedback.
     body = `<div class="plan md">${renderMarkdown(input.plan ?? '')}</div><input class="feedback" placeholder="Catatan revisi (untuk Minta revisi)" aria-label="Catatan revisi rencana">`;
+    // The plan belongs to one project, so its engine (not the app-wide default) decides how it is approved.
     actions =
-      state.config?.engine === 'opencode'
+      engineOf(state.statuses[msg.project] ?? {}, state.config) === 'opencode'
         ? '<button class="primary" data-act="allow" data-mode="manual" title="Lanjut dengan Build">✓ Setujui, Build</button><button data-act="deny">Minta revisi</button>'
         : '<button class="primary" data-act="allow" data-mode="acceptEdits" title="Mode berubah ke ✏️ Auto-edit file">✓ Setujui, auto-edit</button><button data-act="allow" data-mode="manual" title="Mode berubah ke 🛡️ Tanya dulu">✓ Setujui, tanya tiap edit</button><button data-act="deny">Minta revisi</button>';
   } else {

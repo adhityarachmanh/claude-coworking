@@ -7,6 +7,9 @@ export const DEFAULT_ENGINE = 'claude';
 /** Display names; an engine the server adds later still shows (its id) without a code change. */
 export const ENGINE_LABEL = { claude: 'Claude Code', opencode: 'OpenCode' };
 
+/** Short badge labels (header, project picker, composer chip): compact enough for a phone. */
+export const ENGINE_BADGE = { claude: '✳ Claude', opencode: '⌘ OpenCode' };
+
 export const ALL_MODES = ['manual', 'acceptEdits', 'auto', 'plan', 'dontAsk'];
 
 /** Everything on: what Claude Code supports, and the safe default for a server without `config.engines`. */
@@ -57,13 +60,17 @@ const cleanId = (v) => (typeof v === 'string' && /^[a-z][\w-]{0,31}$/.test(v) ? 
 
 export const engineLabel = (engine) => ENGINE_LABEL[engine] ?? String(engine ?? DEFAULT_ENGINE);
 
+/** A compact badge label: "✳ Claude" / "⌘ OpenCode"; an engine the server adds later shows its own name. */
+export const engineBadge = (engine) => ENGINE_BADGE[engine] ?? engineLabel(engine);
+
 /**
- * The engine a project runs on: the app-wide one (`config.engine`, chosen in Akun) when the server sends it, else
- * the project status' (older servers); anything missing or malformed is Claude Code. A project without a status
- * yet (never opened this run) must still show the active engine's models and modes.
+ * The engine a project runs on (Stage 1: one engine per project). The project status wins (`status.engine`, set in
+ * ⚙ → Mesin project); `config.engine` is only the DEFAULT for new projects, so it is the fallback for older servers
+ * (and for a project without a status yet: never opened this run — it must still show the default engine's models
+ * and modes). Anything missing or malformed is Claude Code.
  */
 export function engineOf(status, config) {
-  return cleanId(config?.engine) ?? cleanId(status?.engine) ?? DEFAULT_ENGINE;
+  return cleanId(status?.engine) ?? cleanId(config?.engine) ?? DEFAULT_ENGINE;
 }
 
 /**

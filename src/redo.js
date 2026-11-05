@@ -1,11 +1,16 @@
-// ---------- ⏪↩ Redo after a code rewind: the uncommitted working-tree changes a rewind threw away ----------
-// A code rewind (Claude Code's file checkpoints, OpenCode's revert) overwrites the worktree. Before it runs, the
+// ---------- ⏪↩ Redo after a rewind: what a rewind threw away, code and conversation ----------
+// Code: a rewind (Claude Code's file checkpoints, OpenCode's revert) overwrites the worktree. Before it runs, the
 // routes snapshot the uncommitted changes here: a `git stash create` commit for the tracked files plus a copy of
 // every untracked file. After the rewind the bundle is sealed with the new hashes, and "redo" puts the changes
 // back (writing the current bytes to <bundle>/undo/ first, so an overwrite is never a blind one).
 //
-// Only git repositories: a non-git folder has no HEAD to compare with, so a code rewind there is refused by the
-// route (409) before anything changes. Conversation-only rewinds never touch this module. No new dependencies.
+// Conversation: Claude Code never deletes a transcript, a conversation rewind only moves the resume position, so
+// the bundle keeps `{ sessionId, leaf }` and a redo goes back to the newest transcript leaf. OpenCode's
+// `session.revert.commit` deletes the messages, so the routes export the session JSON before the rewind and the
+// bundle carries it in <bundle>/conversation.json; a redo imports it as a NEW session.
+//
+// Code bundles need a git repository (no HEAD = nothing to compare with, the route refuses the code rewind with
+// 409). A conversation-only bundle has zero code paths and needs no git. No new dependencies.
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
@@ -15,6 +20,11 @@ const ID = /^rd_[a-z0-9]{8,40}$/;
 const PROJECT_ID = /^[\w-]{1,64}$/;
 const MAX_FILE = 5 * 1024 * 1024; // one untracked file copied into the bundle
 const MAX_TOTAL = 50 * 1024 * 1024; // all untracked copies together
+const MAX_CONVERSATION = 20 * 1024 * 1024; // <bundle>/conversation.json (the same limit as an OpenCode import)
+const CONVERSATION_FILE = 'conversation.json';
+// A session id is never a path: only its shape is checked (a Claude uuid or an OpenCode ses_…).
+const SESSION_ID = /^[\w-]{1,200}$/;
+const UUID = /^[0-9a-f-]{36}$/i;
 const KEEP = 5; // newest bundles per project
 const TTL_MS = 7 * 24 * 60 * 60 * 1000; // older than this: dropped on capture/list
 const GIT_BUFFER = 64 * 1024 * 1024; // `git show` of one file
@@ -30,7 +40,7 @@ const STASH_ENV = {
   LC_ALL: 'C',
 };
 
-/** A redo request that cannot be served; `status` is the HTTP answer (400 bad id, 404 unknown, 409 not ready). */
+/** A redo request that cannot be served; `status` is the HTTP answer (400 bad id, 404 unknown, 409 not ready/corrupt, 413 too large). */
 export class RedoError extends Error {
   constructor(status, message) {
     super(message);
@@ -51,6 +61,36 @@ function git(cwd, args, { timeout = 15000, encoding = 'utf8' } = {}) {
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const isSha = (value) => /^[0-9a-f]{40}([0-9a-f]{24})?$/i.test(String(value ?? '').trim());
+
+/**
+ * The conversation half of a capture, cleaned: `{ engine, sessionId, leaf, title, data }` or null when it cannot
+ * be used. `data` is OpenCode's exported session JSON (Claude keeps its transcript, so no data is needed).
+ */
+function cleanConversation(conversation) {
+  if (!conversation || typeof conversation !== 'object' || Array.isArray(conversation)) return null;
+  const engine = conversation.engine === 'opencode' ? 'opencode' : conversation.engine === 'claude' ? 'claude' : null;
+  if (!engine) return null;
+  const sessionId = String(conversation.sessionId ?? '');
+  if (!SESSION_ID.test(sessionId)) return null;
+  const leaf = typeof conversation.leaf === 'string' && UUID.test(conversation.leaf) ? conversation.leaf : null;
+  const title = typeof conversation.title === 'string' ? conversation.title.trim().slice(0, 200) || null : null;
+  const data = conversation.data && typeof conversation.data === 'object' && !Array.isArray(conversation.data) ? conversation.data : null;
+  return { engine, sessionId, leaf, title, data };
+}
+
+/** What a bundle's conversation offers, without its data: `{ engine, sessionId, title, available }` or null. */
+function conversationSummary(bundle) {
+  const c = bundle?.conversation;
+  if (!c || typeof c !== 'object') return null;
+  const engine = c.engine === 'opencode' ? 'opencode' : 'claude';
+  // Claude needs no file (its transcript is the store); OpenCode's copy is only redoable while the JSON is there.
+  return {
+    engine,
+    sessionId: String(c.sessionId ?? ''),
+    title: typeof c.title === 'string' ? c.title : null,
+    available: Boolean(engine === 'claude' ? c.sessionId : c.file === CONVERSATION_FILE),
+  };
+}
 
 /** The data folder of one project's bundles; the id is validated before it ever reaches a path. */
 function projectDir(dataDir, projectId) {
@@ -135,6 +175,9 @@ async function readBundle({ dataDir, projectId, id }) {
   if (bundle?.v !== 1 || bundle.id !== id || bundle.projectId !== projectId || !Array.isArray(bundle.paths)) {
     throw new RedoError(409, 'Data undo rusak.');
   }
+  if (bundle.conversation != null && (typeof bundle.conversation !== 'object' || Array.isArray(bundle.conversation))) {
+    throw new RedoError(409, 'Data undo rusak.');
+  }
   return { bundle, dir };
 }
 
@@ -145,6 +188,7 @@ const summaryOf = (bundle) => ({
   files: bundle.paths.length,
   status: bundle.status,
   unsupported: bundle.unsupported?.length ?? 0,
+  conversation: conversationSummary(bundle),
 });
 
 async function saveBundle(dir, bundle) {
@@ -178,81 +222,92 @@ export async function pruneRedo({ dataDir, projectId }) {
 }
 
 /**
- * Snapshots the uncommitted changes of a git project before a code rewind. `{ ok:false, reason }` when the folder
- * is not a repository or the snapshot itself failed — the route then refuses the code rewind before anything moves.
+ * Snapshots what a rewind is about to throw away: the uncommitted changes of a git project (`code`, default true)
+ * and/or the conversation (`conversation`). `{ ok:false, reason }` when nothing could be captured — with `code` the
+ * route then refuses the rewind before anything moves; a conversation-only capture needs no git.
+ *
+ * @param conversation `{ engine, sessionId, leaf?, title?, data? }`; `data` (OpenCode) is stored as conversation.json.
+ * @returns {{ ok: true, id: string, files: number, unsupported: array, conversation: boolean } | { ok: false, reason: string }}
  */
-export async function captureRedo({ projectPath, dataDir, projectId, engine }) {
-  const repo = await git(projectPath, ['rev-parse', '--show-toplevel']);
-  if (!repo.ok) return { ok: false, reason: 'bukan repo git' };
-
-  const status = await git(projectPath, ['status', '--porcelain', '-z', '--untracked-files=all']);
-  if (!status.ok) return { ok: false, reason: 'status git gagal' };
-
-  // The tracked changes as a commit object (no ref, nothing stored in the user's stash list); empty when clean.
-  const stash = await git(projectPath, ['stash', 'create']);
-  const stashSha = stash.ok && isSha(stash.out) ? stash.out.trim() : null;
+export async function captureRedo({ projectPath, dataDir, projectId, engine, code = true, conversation: conversationInput = null }) {
+  const conversation = cleanConversation(conversationInput);
+  const repo = code ? await git(projectPath, ['rev-parse', '--show-toplevel']) : { ok: false };
+  // A code rewind in a folder without git has no HEAD to compare with: refused before anything moves.
+  if (code && !repo.ok) return { ok: false, reason: 'bukan repo git' };
+  if (!repo.ok && !conversation) return { ok: false, reason: 'tidak ada percakapan' };
 
   const id = `rd_${randomBytes(6).toString('hex')}`;
   const dir = bundleDir(dataDir, projectId, id);
   const paths = [];
   const unsupported = [];
-  const seen = new Set();
-  const add = (rel, before, existed) => {
-    if (!rel || seen.has(rel)) return;
-    seen.add(rel);
-    paths.push({ path: rel, before, beforeHash: null, existed });
-  };
-  for (const entry of parseStatus(status.out)) {
-    if (entry.code === '??') add(entry.path, 'untracked', true);
-    else if (/D/.test(entry.code)) add(entry.path, 'absent', false);
-    else add(entry.path, 'tracked', true);
-    // A rename: the new path is the change, the old one did not exist before the rewind (redo deletes it again).
-    if (/R/.test(entry.code) && entry.from) add(entry.from, 'absent', false);
-  }
+  let stashSha = null;
 
-  let copied = 0;
-  for (const entry of paths) {
-    if (!entry.existed) continue;
-    const full = resolveInside(projectPath, entry.path);
-    if (!full) {
-      entry.skip = 'path tidak aman';
-      continue;
+  if (repo.ok) {
+    const status = await git(projectPath, ['status', '--porcelain', '-z', '--untracked-files=all']);
+    if (!status.ok) return { ok: false, reason: 'status git gagal' };
+
+    // The tracked changes as a commit object (no ref, nothing stored in the user's stash list); empty when clean.
+    const stash = await git(projectPath, ['stash', 'create']);
+    stashSha = stash.ok && isSha(stash.out) ? stash.out.trim() : null;
+
+    const seen = new Set();
+    const add = (rel, before, existed) => {
+      if (!rel || seen.has(rel)) return;
+      seen.add(rel);
+      paths.push({ path: rel, before, beforeHash: null, existed });
+    };
+    for (const entry of parseStatus(status.out)) {
+      if (entry.code === '??') add(entry.path, 'untracked', true);
+      else if (/D/.test(entry.code)) add(entry.path, 'absent', false);
+      else add(entry.path, 'tracked', true);
+      // A rename: the new path is the change, the old one did not exist before the rewind (redo deletes it again).
+      if (/R/.test(entry.code) && entry.from) add(entry.from, 'absent', false);
     }
-    const st = await lstat(full).catch(() => null);
-    if (!st) {
-      entry.existed = false;
-      entry.before = 'absent';
-      continue;
-    }
-    if (st.isSymbolicLink()) {
-      entry.skip = 'symlink';
-      continue;
-    }
-    if (!st.isFile()) {
-      entry.skip = 'bukan file biasa';
-      continue;
-    }
-    if (entry.before === 'untracked') {
-      if (st.size > MAX_FILE) {
-        entry.skip = 'lebih dari 5 MB';
-        continue;
-      }
-      const bytes = await readFile(full);
-      if (copied + bytes.length > MAX_TOTAL) {
-        entry.skip = 'batas 50 MB';
-        continue;
-      }
-      const dest = resolveInside(path.join(dir, 'untracked'), entry.path);
-      if (!dest) {
+
+    let copied = 0;
+    for (const entry of paths) {
+      if (!entry.existed) continue;
+      const full = resolveInside(projectPath, entry.path);
+      if (!full) {
         entry.skip = 'path tidak aman';
         continue;
       }
-      await writeAtomic(dest, bytes);
-      copied += bytes.length;
-      entry.beforeHash = sha256(bytes);
-      continue;
+      const st = await lstat(full).catch(() => null);
+      if (!st) {
+        entry.existed = false;
+        entry.before = 'absent';
+        continue;
+      }
+      if (st.isSymbolicLink()) {
+        entry.skip = 'symlink';
+        continue;
+      }
+      if (!st.isFile()) {
+        entry.skip = 'bukan file biasa';
+        continue;
+      }
+      if (entry.before === 'untracked') {
+        if (st.size > MAX_FILE) {
+          entry.skip = 'lebih dari 5 MB';
+          continue;
+        }
+        const bytes = await readFile(full);
+        if (copied + bytes.length > MAX_TOTAL) {
+          entry.skip = 'batas 50 MB';
+          continue;
+        }
+        const dest = resolveInside(path.join(dir, 'untracked'), entry.path);
+        if (!dest) {
+          entry.skip = 'path tidak aman';
+          continue;
+        }
+        await writeAtomic(dest, bytes);
+        copied += bytes.length;
+        entry.beforeHash = sha256(bytes);
+        continue;
+      }
+      entry.beforeHash = sha256(await readFile(full));
     }
-    entry.beforeHash = sha256(await readFile(full));
   }
 
   const kept = [];
@@ -266,6 +321,28 @@ export async function captureRedo({ projectPath, dataDir, projectId, engine }) {
     return { ok: false, reason: 'snapshot git gagal' };
   }
 
+  // The conversation, written first: bundle.json is saved last and its presence means the bundle is complete.
+  let stored = null;
+  if (conversation) {
+    let tooLarge = false;
+    if (conversation.data) {
+      const json = JSON.stringify(conversation.data, null, 2);
+      if (Buffer.byteLength(json) > MAX_CONVERSATION) tooLarge = true;
+      else {
+        await writeAtomic(path.join(dir, CONVERSATION_FILE), json);
+        stored = { engine: conversation.engine, sessionId: conversation.sessionId, leaf: conversation.leaf, title: conversation.title, file: CONVERSATION_FILE };
+      }
+    }
+    if (tooLarge && !kept.length) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+      return { ok: false, reason: 'percakapan lebih dari 20 MB' };
+    }
+    if (!stored && !tooLarge) {
+      stored = { engine: conversation.engine, sessionId: conversation.sessionId, leaf: conversation.leaf, title: conversation.title, file: null };
+    }
+    if (tooLarge) console.error(`Percakapan project ${projectId} lebih dari 20 MB: hanya kodenya yang bisa di-redo.`);
+  }
+
   const bundle = {
     v: 1,
     id,
@@ -276,10 +353,11 @@ export async function captureRedo({ projectPath, dataDir, projectId, engine }) {
     paths: kept,
     unsupported,
     status: 'captured',
+    ...(stored && { conversation: stored }),
   };
   await saveBundle(dir, bundle);
   await pruneRedo({ dataDir, projectId });
-  return { ok: true, id, files: kept.length, unsupported };
+  return { ok: true, id, files: kept.length, unsupported, conversation: Boolean(stored) };
 }
 
 /** After the rewind: every path's content now, so a later user change can be recognised as a conflict. */
@@ -303,7 +381,39 @@ export async function previewRedo({ dataDir, projectId, id, projectPath }) {
     if (conflict) conflicts++;
     files.push({ path: entry.path, action: entry.existed ? 'restore' : 'delete', conflict });
   }
-  return { id: bundle.id, createdAt: bundle.createdAt, files, conflicts, unsupported: bundle.unsupported ?? [] };
+  return {
+    id: bundle.id,
+    createdAt: bundle.createdAt,
+    files,
+    conflicts,
+    unsupported: bundle.unsupported ?? [],
+    conversation: conversationSummary(bundle),
+  };
+}
+
+/**
+ * The conversation a redo bundle carries: `{ conversation, data }`.
+ * `data` is OpenCode's exported session JSON (null for Claude, whose transcript is still on disk). The file is read
+ * only from the bundle folder, capped at 20 MB — the same limit as an OpenCode import.
+ */
+export async function conversationOf({ dataDir, projectId, id }) {
+  const { bundle, dir } = await readBundle({ dataDir, projectId, id });
+  const conversation = conversationSummary(bundle);
+  if (!conversation) throw new RedoError(409, 'Undo ini tidak membawa percakapan.');
+  if (bundle.conversation.file !== CONVERSATION_FILE) return { conversation, data: null };
+  const file = resolveInside(dir, CONVERSATION_FILE);
+  if (!file) throw new RedoError(409, 'Data undo rusak.');
+  const st = await lstat(file).catch(() => null);
+  if (!st?.isFile()) throw new RedoError(409, 'Data percakapan di undo ini tidak ada lagi.');
+  if (st.size > MAX_CONVERSATION) throw new RedoError(413, 'Data percakapan di undo ini lebih dari 20 MB.');
+  let data;
+  try {
+    data = JSON.parse(await readFile(file, 'utf8'));
+  } catch {
+    throw new RedoError(409, 'Data percakapan di undo ini rusak.');
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new RedoError(409, 'Data percakapan di undo ini rusak.');
+  return { conversation, data };
 }
 
 /** The bytes a path had before the rewind: the stash commit for a tracked file, the copy for an untracked one. */

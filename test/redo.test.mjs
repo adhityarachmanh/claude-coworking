@@ -2,11 +2,12 @@
 // lalu dipulihkan byte-identik — termasuk konflik, file yang harus dihapus lagi, retensi, dan symlink.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { applyRedo, captureRedo, listRedo, previewRedo, sealRedo } from '../src/redo.js';
+import { applyRedo, captureRedo, conversationOf, listRedo, previewRedo, sealRedo } from '../src/redo.js';
 
 let hasGit = true;
 try {
@@ -178,4 +179,87 @@ test('redo: a symlink is never captured, and never written through', { skip: !ha
   const applied = await applyRedo({ dataDir: DATA, projectId: 'toko-7', id: cap2.id, projectPath: two.dir, overwrite: true });
   assert.deepEqual(applied, { restored: 0, skipped: 1, deleted: 0, conflicts: 1 });
   assert.equal(readFileSync(outside, 'utf8'), 'RAHASIA-JANGAN-DITULIS\n', 'never written through the link');
+});
+
+test('redo: a Claude conversation rewind is redone from the bundle metadata alone (no file, no git)', async () => {
+  const dir = path.join(TMP, 'bukan-repo-percakapan');
+  mkdirSync(dir, { recursive: true });
+  const projectId = 'toko-8';
+  const sessionId = randomUUID();
+  const leaf = randomUUID();
+  const cap = await captureRedo({ projectPath: dir, dataDir: DATA, projectId, engine: 'claude', code: false, conversation: { engine: 'claude', sessionId, leaf } });
+  assert.equal(cap.ok, true, 'a conversation-only bundle needs no git repository');
+  assert.deepEqual([cap.files, cap.conversation], [0, true]);
+
+  const bundle = JSON.parse(readFileSync(path.join(DATA, 'redo', projectId, cap.id, 'bundle.json'), 'utf8'));
+  assert.deepEqual(bundle.conversation, { engine: 'claude', sessionId, leaf, title: null, file: null }, 'Claude: no JSON, only where the conversation stood');
+  assert.deepEqual(bundle.paths, [], 'zero code paths');
+
+  const sealed = await sealRedo({ dataDir: DATA, projectId, id: cap.id, projectPath: dir });
+  assert.deepEqual([sealed.files, sealed.id], [0, cap.id], 'sealing a conversation-only bundle works');
+
+  const pv = await previewRedo({ dataDir: DATA, projectId, id: cap.id, projectPath: dir });
+  assert.deepEqual(pv.files, []);
+  assert.deepEqual(pv.conversation, { engine: 'claude', sessionId, title: null, available: true }, 'no data is exposed');
+
+  const { bundles } = await listRedo({ dataDir: DATA, projectId });
+  assert.equal(bundles.length, 1);
+  assert.deepEqual([bundles[0].files, bundles[0].conversation], [0, pv.conversation], 'a conversation-only bundle is listed and kept');
+
+  const found = await conversationOf({ dataDir: DATA, projectId, id: cap.id });
+  assert.deepEqual(found.conversation, pv.conversation);
+  assert.equal(found.data, null, 'Claude needs no exported JSON');
+});
+
+test('redo: an OpenCode conversation is stored as pretty conversation.json and read back', async () => {
+  const dir = path.join(TMP, 'opencode-percakapan');
+  mkdirSync(dir, { recursive: true });
+  const projectId = 'toko-9';
+  const sessionId = 'ses_abc123';
+  const data = { info: { id: sessionId, title: 'Sesi uji' }, messages: [{ id: 'msg_1', role: 'user', text: 'halo' }] };
+  const cap = await captureRedo({ projectPath: dir, dataDir: DATA, projectId, engine: 'opencode', code: false, conversation: { engine: 'opencode', sessionId, data, title: ' Sesi uji ' } });
+  assert.deepEqual([cap.ok, cap.files, cap.conversation], [true, 0, true]);
+
+  await sealRedo({ dataDir: DATA, projectId, id: cap.id, projectPath: dir });
+  const bundleDir = path.join(DATA, 'redo', projectId, cap.id);
+  const bundle = JSON.parse(readFileSync(path.join(bundleDir, 'bundle.json'), 'utf8'));
+  assert.deepEqual(
+    { engine: bundle.conversation.engine, sessionId: bundle.conversation.sessionId, title: bundle.conversation.title, file: bundle.conversation.file },
+    { engine: 'opencode', sessionId, title: 'Sesi uji', file: 'conversation.json' },
+  );
+  const raw = readFileSync(path.join(bundleDir, 'conversation.json'), 'utf8');
+  assert.deepEqual(JSON.parse(raw), data, 'the exported session JSON is kept byte for byte as JSON');
+  assert.match(raw, /\n {2}"info"/, 'written pretty (readable by hand)');
+
+  const pv = await previewRedo({ dataDir: DATA, projectId, id: cap.id, projectPath: dir });
+  assert.deepEqual(pv.conversation, { engine: 'opencode', sessionId, title: 'Sesi uji', available: true });
+  assert.equal('data' in pv, false, 'no session data in a preview');
+
+  const found = await conversationOf({ dataDir: DATA, projectId, id: cap.id });
+  assert.deepEqual(found.data, data, 'the whole export comes back for the import');
+});
+
+test('redo: conversation bundles are validated like the code ones (400 bad id, 404 unknown, 409 corrupt/missing)', async () => {
+  const dir = path.join(TMP, 'validasi-percakapan');
+  mkdirSync(dir, { recursive: true });
+  const projectId = 'toko-10';
+  const cap = await captureRedo({ projectPath: dir, dataDir: DATA, projectId, engine: 'opencode', code: false, conversation: { engine: 'opencode', sessionId: 'ses_ok', data: { info: { id: 'ses_ok' } } } });
+
+  for (const id of ['', '../' + cap.id, 'rd_', 'rd_ABCDEFGH', 'rd_../x', 'x'.repeat(60)]) {
+    await assert.rejects(conversationOf({ dataDir: DATA, projectId, id }), (err) => err.status === 400, `id ${id}`);
+  }
+  await assert.rejects(conversationOf({ dataDir: DATA, projectId, id: 'rd_zzzzzzzz' }), (err) => err.status === 404);
+  await assert.rejects(conversationOf({ dataDir: DATA, projectId: 'x'.repeat(80), id: cap.id }), (err) => err.status === 400);
+
+  // A bundle the route captured for the code only: nothing to redo the conversation with.
+  const { dir: repoDir } = repo('repo11', { 'a.txt': 'x\n' });
+  writeFileSync(path.join(repoDir, 'a.txt'), 'y\n');
+  const codeOnly = await captureRedo({ projectPath: repoDir, dataDir: DATA, projectId, engine: 'claude' });
+  assert.equal(codeOnly.conversation, false);
+  await sealRedo({ dataDir: DATA, projectId, id: codeOnly.id, projectPath: repoDir });
+  await assert.rejects(conversationOf({ dataDir: DATA, projectId, id: codeOnly.id }), (err) => err.status === 409 && /tidak membawa percakapan/.test(err.message));
+
+  // conversation.json gone (a half-restored backup): reported, never imported blindly
+  rmSync(path.join(DATA, 'redo', projectId, cap.id, 'conversation.json'), { force: true });
+  await assert.rejects(conversationOf({ dataDir: DATA, projectId, id: cap.id }), (err) => err.status === 409 && /tidak ada lagi/.test(err.message));
 });

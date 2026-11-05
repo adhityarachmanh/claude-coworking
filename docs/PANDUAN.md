@@ -114,7 +114,9 @@ Kalau salah rewind (kode):
 3. File yang kamu ubah setelah rewind ditandai **bentrok** dan **dilewati**. Centang **“Timpa file yang sudah saya ubah”** hanya jika kamu yakin.
 4. Klik **↩ Ulangi**. Salinan file saat ini disimpan dulu di `data/redo/` sebelum ditimpa.
 
-Batasan: redo hanya untuk **perubahan kode yang belum di-commit** di **repo git**; percakapan yang sudah di-rewind tidak dikembalikan, dan rewind kode di folder non-git ditolak sejak awal (tidak ada yang berubah).
+Batasan: redo kode hanya untuk **perubahan kode yang belum di-commit** di **repo git**; rewind kode di folder non-git ditolak sejak awal (tidak ada yang berubah).
+
+**Pulihkan percakapan**: di bagian redo yang sama, klik **🔄 Pulihkan percakapan**. Untuk Claude Code, percakapan kembali ke posisi terakhir (transkripnya memang tidak dihapus). Untuk OpenCode, app memulihkan **salinan** percakapan sebagai **sesi baru** — sesi lama yang sudah dihapus tidak kembali, tetapi isi percakapannya tersedia lagi.
 
 ## Melihat sisa kuota OpenCode Go
 
@@ -135,6 +137,21 @@ Detail: [Akun & laporan](../README.md#akun--laporan).
 4. Angka ini juga muncul di 🩺 **Kesehatan sistem**.
 
 Catatan: dihitung dari **biaya yang tercatat** (harga list untuk Claude). OpenCode Go adalah langganan, jadi biayanya umumnya tercatat $0 dan tidak banyak memengaruhi budget. Budget ini **hanya peringatan**, tidak menghentikan giliran atau antrian.
+
+## Perintah cepat & mode fokus
+
+- Ketik `/hemat`, `/seimbang`, `/kuat`, atau `/maks` untuk langsung memakai model tier itu (untuk mesin yang aktif). Auto dimatikan agar pilihan tidak berubah; `/auto` menyalakannya lagi.
+- Ketik `/fokus` untuk menyembunyikan dan menghentikan animasi kantor. Chat dan panel memakai seluruh layar; tombol **Keluar mode fokus** mengembalikannya. Pilihan diingat di perangkat itu.
+
+## Memilih mesin per project
+
+1. Buka project yang diinginkan → ⚙ Pengaturan → **🔀 Mesin project**.
+2. Pilih **Claude Code** atau **OpenCode**, lalu konfirmasi.
+3. Project lain tidak terpengaruh; keduanya boleh berjalan bersamaan.
+4. Riwayat tiap mesin disimpan terpisah. Berganti mesin hanya menampilkan riwayat mesin itu; kembali ke mesin sebelumnya akan memunculkan riwayat lamanya.
+5. Pergantian ditolak bila project sedang bekerja, ada izin menunggu, antrean berisi item, atau ada giliran terputus yang ditawarkan untuk dilanjutkan — selesaikan/hentikan dulu.
+
+Di **👤 Akun**, **Mesin bawaan untuk project baru** hanya berlaku untuk project yang baru ditambahkan.
 
 ## Memeriksa kesehatan aplikasi
 
@@ -212,4 +229,8 @@ Hanya dari laptop. Dari HP (termasuk lewat Tailscale) editor ini tidak terbuka.
 3. ⚙ → Cadangkan riwayat → **⬆ Import riwayat**, pilih file `.zip`.
 4. Buka project → **🕘 Riwayat sesi** → **Lanjutkan**.
 
-Yang perlu diulang di laptop baru: login Claude, pairing HP (termasuk notifikasi push), dan menghubungkan Spotify. Mode izin tiap project kembali ke **Tanya dulu**. Detail: [Backup & riwayat](../README.md#backup--riwayat).
+Yang ikut kembali: riwayat chat kedua mesin, **mesin tiap project**, pengaturan model/effort per mesin, dan percakapan **Claude** yang tersimpan di backup. Sesi OpenCode tidak dipulihkan (penyimpanannya tidak ikut backup); bila OpenCode tidak terpasang, project dari backup memakai Claude Code.
+
+Yang perlu diulang di laptop baru: login Claude, pairing HP (termasuk notifikasi push), dan menghubungkan Spotify. Mode izin tiap project kembali ke **Tanya dulu**.
+
+> Backup adalah **data pribadi tanpa enkripsi**. Simpan di folder yang hanya kamu akses dan hapus bila tidak perlu. Import hanya menambah, tidak menghapus. Detail: [Backup & riwayat](../README.md#backup--riwayat).

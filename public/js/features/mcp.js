@@ -1,13 +1,15 @@
 // MCP servers (/mcp): headless Claude Code has no /mcp dialog, so it lives here.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
+import { engineOf } from '../core/engine-caps.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 
 const mcpView = { project: null, servers: [], login: null, poll: null };
 const MCP_STATUS = { configured: ['⚙ terdaftar', ''], connected: ['✓ tersambung', 'ok'], 'needs-auth': ['🔑 perlu login', 'warn'], failed: ['✗ gagal', 'bad'], pending: ['… menyambung', ''], disabled: ['⏸ nonaktif', ''] };
 const MCP_ORDER = ['needs-auth', 'failed', 'pending', 'connected', 'configured', 'disabled'];
-const isOpenCode = () => state.config?.engine === 'opencode';
+// The engine of the project whose dialog is open (before openMcp assigns it: the active project).
+const isOpenCode = () => engineOf(state.statuses[mcpView.project ?? state.active] ?? {}, state.config) === 'opencode';
 
 export async function openMcp() {
   if (state.active === DEMO_ID || state.readOnly) return; // asking for the status starts Claude Code

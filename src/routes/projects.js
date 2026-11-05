@@ -3,11 +3,12 @@
 // server.js). Opening VS Code / Explorer (`open`) is laptop only too (LOCAL_ONLY_ACTION).
 import { modelsOffered, openCodeModelEfforts, openCodeModels } from '../opencode-bin.js';
 import path from 'node:path';
+import { ENGINES } from '../hub.js';
 import { readModelPrices } from '../model-prices.js';
 import { isDirectory, isNetworkPath } from '../projects.js';
 import { openInApp } from '../open.js';
 import { observedPrices } from '../usage.js';import { json } from './http.js';
-import { withSession } from './project.js';
+import { withProject, withSession } from './project.js';
 
 // The turn settings picker's cost per model: list prices for OpenCode Go, a blended effective price from the
 // usage ledger for everything else. Not on the plain-WiFi read allowlist (src/remote.js): laptop + Tailscale only.
@@ -51,13 +52,26 @@ export function register(router) {
 /** Per-project actions; registered with the other /api/projects/:id routes (see index.js). */
 export function registerProjectActions(router) {
   router.post('/api/projects/:id/settings', withSession(({ hub }, req, res, { project, session }, body) => {
-    // The engine is app-wide (POST /api/engine, Akun): a project's settings never change it.
-    hub.updateSettings(project.id, body);
+    // The engine has its own guarded route (POST /api/projects/:id/engine, below): switching starts another
+    // engine's process and shows its history, which a settings patch must never do silently.
+    const { engine: _engine, ...patch } = body ?? {};
+    hub.updateSettings(project.id, patch);
     // Picking a model (or Default) answers the "provider logged out" warning (routes/account.js modelStale):
     // the same field clears it, so the next prompt is let through even when the model is unchanged.
-    if (body?.model !== undefined || body?.modelAuto !== undefined) hub.setStatus(project.id, { modelStale: false });
+    if (patch.model !== undefined || patch.modelAuto !== undefined) hub.setStatus(project.id, { modelStale: false });
     session.syncSettings(); // switches the running Claude Code live (mid-turn too, like Shift+Tab)
     return json(res, 200, { ok: true });
+  }));
+  // 🔀 Stage 1: this project changes engine. Both engines' histories stay; only the shown one changes. Refused
+  // (409) while the project works, waits in 📋 Antrian, has an open approval, or a cut-short turn to continue.
+  // Laptop/Tailscale only: it starts another agent process on this machine.
+  router.post('/api/projects/:id/engine', withProject((ctx, req, res, { project }, body) => {
+    if (!ctx.canManageAccount?.(req)) return json(res, 403, { error: 'Ganti mesin hanya dari laptop atau lewat Tailscale.' });
+    const engine = String(body?.engine ?? '');
+    if (!ENGINES.includes(engine)) return json(res, 400, { error: 'Mesin tidak dikenal.' });
+    const result = ctx.sessions.setProjectEngine(project, engine);
+    if (!result.ok) return json(res, result.status ?? 409, { error: result.error, ...(result.busy && { busy: result.busy }) });
+    return json(res, 200, { ok: true, engine: result.engine });
   }));
   // The model picker of a non-Claude engine (OpenCode: `opencode models` for the providers set up on this laptop).
   router.post('/api/projects/:id/models', withSession(async ({ hub, opencode, sessions }, req, res, { project }) => {

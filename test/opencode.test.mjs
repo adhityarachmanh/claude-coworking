@@ -149,17 +149,20 @@ async function snapshot() {
 }
 const projectId = async () => (await snapshot()).projects.find((p) => p.name === 'toko').id;
 
-/** Moves the whole app to `engine` (Akun) and checks it took. */
+/** Switches the `toko` PROJECT to `engine` (Stage 1: one engine per project) and checks it took. */
 async function useEngine(engine) {
-  const res = await api('/api/engine', { engine });
-  assert.equal(res.status, 200, JSON.stringify(res.body));
-  assert.equal((await snapshot()).config.engine, engine);
+  const id = await projectId();
+  if ((await snapshot()).statuses[id]?.engine !== engine) {
+    const res = await api(`/api/projects/${id}/engine`, { engine });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+  }
+  assert.equal((await snapshot()).statuses[id].engine, engine);
 }
 const lastText = (id) => seen.filter((s) => s.type === 'chat_update' && s.obj.project === id && s.obj.patch.streaming === false).at(-1)?.obj.patch.text;
 
-test('config.engines announces OpenCode with its caps; the engine is app-wide; models per project are validated', async () => {
+test('config.engines announces OpenCode with its caps; the engine is per project; models per project are validated', async () => {
   const snap = await snapshot();
-  assert.equal(snap.config.engine, 'claude', 'Claude Code until OpenCode is chosen in Akun');
+  assert.equal(snap.config.engine, 'claude', 'Claude Code stays the DEFAULT until another is chosen in Akun');
   assert.equal(snap.config.engines.claude.available, true);
   assert.equal(snap.config.engines.opencode.available, true);
   assert.equal(snap.config.engines.opencode.caps.rewind, true, 'rewind through the session revert of OpenCode');
@@ -173,12 +176,12 @@ test('config.engines announces OpenCode with its caps; the engine is app-wide; m
   await api(`/api/projects/${id}/settings`, { model: 'opus' });
   assert.deepEqual((await api(`/api/projects/${id}/models`)).body.models, [], 'Claude models come with the app config');
   await api(`/api/projects/${id}/settings`, { engine: 'opencode' });
-  assert.equal((await snapshot()).statuses[id].engine, 'claude', "a project's settings can't change the engine");
-  assert.equal((await api('/api/engine', { engine: 'nope' })).status, 409, 'unknown engines are refused');
+  assert.equal((await snapshot()).statuses[id].engine, 'claude', "a settings patch can't switch the engine (POST /engine does)");
+  assert.equal((await api('/api/engine', { engine: 'nope' })).status, 400, 'unknown default engines are refused');
   await useEngine('opencode');
   let st = (await snapshot()).statuses[id];
   assert.equal(st.engine, 'opencode');
-  assert.equal(st.model, '', "OpenCode's workspace has its own settings: the Claude alias stays with Claude");
+  assert.equal(st.model, '', "each engine keeps its own model for the project: the Claude alias stays with Claude");
   const list = (await api(`/api/projects/${id}/models`)).body;
   assert.equal(list.engine, 'opencode');
   assert.deepEqual(list.models.map((m) => m.value), ['opencode-go/beam-free', 'opencode-go/kimi-k3', 'google/gemini-2.5-flash']);
@@ -192,18 +195,34 @@ test('config.engines announces OpenCode with its caps; the engine is app-wide; m
   assert.equal(st.model, 'opencode-go/beam-free');
 });
 
-test('switching engines is refused (409) while a turn runs', async () => {
+test('POST /api/engine only changes the default for NEW projects: a running project keeps its own engine and session', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'halo' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  const before = (await snapshot()).statuses[id].sessionId;
+  assert.match(before, /^ses_fake/);
+  assert.equal((await api('/api/engine', { engine: 'claude' })).status, 200);
+  assert.equal((await snapshot()).config.engine, 'claude', 'the default moved');
+  const st = (await snapshot()).statuses[id];
+  assert.equal(st.engine, 'opencode', 'the existing project did not move');
+  assert.equal(st.sessionId, before, 'and its OpenCode conversation was not closed');
+  assert.equal((await api('/api/engine', { engine: 'opencode' })).status, 200, 'restore the default for the rest of the suite');
+});
+
+test('switching a project\'s engine is refused (409) while its turn runs', async () => {
   const id = await projectId();
   await useEngine('opencode');
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'tugas lama' });
   await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch.streaming === true);
-  const res = await api('/api/engine', { engine: 'claude' });
+  const res = await api(`/api/projects/${id}/engine`, { engine: 'claude' });
   assert.equal(res.status, 409);
   assert.deepEqual(res.body.busy, ['toko']);
   await api(`/api/projects/${id}/stop`);
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
-  assert.equal((await snapshot()).config.engine, 'opencode');
+  assert.equal((await snapshot()).statuses[id].engine, 'opencode');
 });
 
 test('a prompt streams, works in the office, fills the to-do board and ends with tokens and cost', async () => {
@@ -321,23 +340,24 @@ test('each engine is its own workspace: chats, conversation and settings come ba
   assert.match((await snapshot()).statuses[id].sessionId, /^ses_fake/, 'OpenCode keeps answering in its workspace');
 });
 
-test('review regressions: resume an OpenCode session, queue and bad engine block a switch, import only under Claude', async () => {
+test('review regressions: resume an OpenCode session, queue and bad engine block a switch, a backup import is not mixed in', async () => {
   const id = await projectId();
   await useEngine('opencode');
   assert.equal((await api(`/api/projects/${id}/resume`, { sessionId: 'ses_fakeold' })).status, 200, "an OpenCode session from 🕘 resumes");
   assert.equal((await snapshot()).statuses[id].sessionId, 'ses_fakeold');
   assert.equal((await api(`/api/projects/${id}/resume`, { sessionId: '11111111-2222-3333-4444-555555555555' })).status, 404, 'a Claude id is not an OpenCode session');
-  assert.equal((await api('/api/engine', { engine: '' })).status, 409);
+  assert.equal((await api(`/api/projects/${id}/engine`, { engine: '' })).status, 400, 'an unknown engine is a bad request');
   // 📋 Antrian with a waiting item: the item would run on the other engine
   await api(`/api/projects/${id}/queue-pause`, { paused: true });
   const added = (await api(`/api/projects/${id}/queue-add`, { text: 'tugas antre' })).body;
-  const refused = await api('/api/engine', { engine: 'claude' });
+  const refused = await api(`/api/projects/${id}/engine`, { engine: 'claude' });
   assert.equal(refused.status, 409);
   assert.match(refused.body.error, /Antrian/);
   await api(`/api/projects/${id}/queue-remove`, { itemId: added.item.id });
   await api(`/api/projects/${id}/queue-pause`, { paused: false });
+  // Claude Code's history folder is kept whatever a project runs on: its backup is imported there, never mixed
   const imp = await fetch(`${BASE}/api/backup/import`, { method: 'POST', headers: { 'Content-Type': 'application/zip', 'X-Office-Token': token }, body: new Uint8Array([80, 75, 3, 4]) });
-  assert.equal(imp.status, 409, 'a backup (Claude history) is not imported into OpenCode');
+  assert.equal(imp.status, 400, 'a broken .zip is refused as invalid, not for the engine');
   await useEngine('claude');
   await useEngine('opencode');
 });
@@ -367,7 +387,7 @@ test('Mode tim: roles as OpenCode subagents (OPENCODE_CONFIG), their tools worke
   assert.equal(lastText(id), 'tanpa tim', 'Mode tim off: a fresh process without the team config');
 });
 
-test('📦 Backup carries OpenCode\'s chats (office/chats-opencode/) and restores them into its parked workspace', async () => {
+test('📦 Backup carries OpenCode\'s chats (office/chats-opencode/) and restores them into its own store', async () => {
   await useEngine('claude');
   const zip = Buffer.from(await (await fetch(`${BASE}/api/backup/export`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: '{}' })).arrayBuffer());
   assert.ok(zip.includes('office/chats-opencode/'), `OpenCode's chat files are in the backup (${zip.length} B: ${zip.subarray(0, 120).toString('latin1')})`);
@@ -382,10 +402,11 @@ test('📦 Backup carries OpenCode\'s chats (office/chats-opencode/) and restore
     const idMap = new Map([['old', 'proj1']]);
     assert.equal(hub.importEngineChats('opencode', idMap, { old: [msg('dari opencode', 1000), msg('kedua', 2000)] }), 2);
     assert.equal(hub.importEngineChats('opencode', idMap, { old: [msg('dari opencode', 1000)] }), 0, 'idempotent');
-    assert.equal(hub.chatOf('proj1').length, 0, "Claude Code's workspace untouched");
+    assert.equal(hub.chatOf('proj1').length, 0, "Claude Code's store untouched");
+    hub.save(); // the import lands in the store's file at the next flush
     assert.ok(readdirSync(path.join(dir, 'chats-opencode')).includes('proj1.jsonl'));
-    hub.switchEngine('opencode');
-    assert.deepEqual(hub.chatOf('proj1').map((m) => m.text), ['dari opencode', 'kedua'], 'shown once OpenCode is the engine');
+    hub.setDefaultEngine('opencode'); // the default decides which store a project without its own engine shows
+    assert.deepEqual(hub.chatOf('proj1').map((m) => m.text), ['dari opencode', 'kedua'], 'shown once the project is on OpenCode');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -609,6 +630,49 @@ test('⏪ Rewind OpenCode: prompts from session.message.list, preview from the s
   await api(`/api/projects/${id}/settings`, { mode: 'manual' });
 });
 
+test('🔄 Redo percakapan OpenCode: sesi diekspor sebelum revert, lalu diimpor sebagai sesi baru', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  await api(`/api/projects/${id}/reset`);
+  await api(`/api/projects/${id}/settings`, { mode: 'auto' });
+  const send = async (text) => {
+    mark = seen.length;
+    await api(`/api/projects/${id}/prompt`, { text });
+    assert.equal((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result')).ok, true, text);
+    await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false);
+  };
+  await send('awal redo');
+  await send('kedua redo');
+  const sessionId = (await snapshot()).statuses[id].sessionId;
+  const target = (await api(`/api/projects/${id}/rewind-points`)).body.points[0].uuid;
+
+  const before = seen.length;
+  const done = await api(`/api/projects/${id}/rewind`, { uuid: target, conversation: true });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.redo.conversation, true, 'the session JSON was exported before the revert deleted the messages');
+  const bundle = path.join(TMP, 'data', 'redo', id, done.body.redo.id);
+  const exported = JSON.parse(readFileSync(path.join(bundle, 'conversation.json'), 'utf8'));
+  assert.equal(exported.info.id, sessionId, 'the exported session is the one that was rewound');
+  assert.ok(Array.isArray(exported.messages) && exported.messages.length > 0);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'divider' && /Percakapan dikembalikan/.test(o.text));
+  const greyed = seen.slice(before).filter((s) => s.type === 'chat_update' && s.obj.project === id && s.obj.patch.rewound === true).map((s) => s.obj.id);
+  assert.ok(greyed.length > 0, 'the messages after the rewind point are greyed out');
+
+  // ↩ The redo: an import, because those messages are gone from OpenCode's own store.
+  const from = seen.length;
+  const redo = await api(`/api/projects/${id}/redo-conversation`, { id: done.body.redo.id });
+  assert.equal(redo.status, 200, JSON.stringify(redo.body));
+  assert.deepEqual([redo.body.ok, redo.body.engine, redo.body.sessionId], [true, 'opencode', 'ses_imported'], 'a NEW session from the export');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'divider' && /dipulihkan sebagai salinan \(sesi baru\)/.test(o.text));
+  const cleared = seen.slice(from).filter((s) => s.type === 'chat_update' && s.obj.project === id && s.obj.patch.rewound === false).map((s) => s.obj.id);
+  assert.ok(greyed.every((g) => cleared.includes(g)), 'every greyed-out message is readable again');
+  assert.equal((await snapshot()).statuses[id].sessionId, 'ses_imported', 'the app continues from the imported copy');
+  const cli = readFileSync(path.join(TMP, 'acp-cli.log'), 'utf8');
+  assert.match(cli, /(^|\n)session export ses_/m, 'exported first (the messages were still there)');
+  assert.match(cli, /(^|\n)session import .*--directory /m, 'then imported as a new session');
+  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
+});
+
 test('⏪ Rewind OpenCode, review regressions: duplicate prompts, prompt / shell / queue / 2nd rewind while rewinding, a failing commit', async () => {
   const id = await projectId();
   await useEngine('opencode');
@@ -644,11 +708,12 @@ test('⏪ Rewind OpenCode, review regressions: duplicate prompts, prompt / shell
   rmSync(path.join(TMP, 'revert-slow'), { force: true });
   assert.equal(done.status, 200, JSON.stringify(done.body));
   assert.equal(done.body.text, 'lanjut');
-  const releasedAt = seen.length;
-  await waitFor((t, o) => t === 'status' && o.project === id && o.rewinding === false);
+  const released = await waitFor((t, o) => t === 'status' && o.project === id && o.rewinding === false);
   // the 📋 queue waited for the rewind: its item starts only now, on the shortened session
   const queued = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === 'dari antrean');
-  assert.ok(seen.findIndex((s) => s.obj === queued) > releasedAt, 'dispatched after the rewind');
+  // Measured from the rewind's own release (not from the response, which now also seals the redo bundle).
+  const releaseIdx = seen.findIndex((s) => s.obj === released);
+  assert.ok(releaseIdx >= 0 && seen.findIndex((s) => s.obj === queued) > releaseIdx, 'dispatched after the rewind');
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
   await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false);
   const rewound = new Set(seen.filter((s) => s.type === 'chat_update' && s.obj.project === id && s.obj.patch.rewound === true).map((s) => s.obj.id));

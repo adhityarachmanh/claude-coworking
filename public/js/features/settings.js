@@ -1,7 +1,8 @@
-// Help, laptop settings (auto-start, shutdown), project folders and adding a project.
+// Help, laptop settings (auto-start, shutdown), project folders, the project's engine and adding a project.
 import { api, toast } from '../core/api.js';
-import { $, narrow } from '../core/dom.js';
-import { APP_NAME, state } from '../core/state.js';
+import { $, escapeHtml, narrow } from '../core/dom.js';
+import { engineLabel, engineOf } from '../core/engine-caps.js';
+import { APP_NAME, DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { loadBudgetView, syncBudgetSection } from './budget.js';
 import { syncHealthButton } from './health.js';
@@ -46,6 +47,106 @@ export function selectSettingsTab(tab = settingsTab) {
   if (!$('#settings-modal')?.hidden && (tab === 'umum' || narrow.matches)) loadBudgetView();
 }
 
+// ---------- 🔀 Mesin project (Stage 1: one engine per project) ----------
+
+// Engines the selector offers. The server validates too (400 for anything else): never send an id we don't know.
+const PROJECT_ENGINES = ['claude', 'opencode'];
+const ENGINE_SWITCH_NOTE = 'Riwayat tiap mesin disimpan terpisah; berganti mesin hanya menampilkan riwayat mesin itu.';
+
+/** Last engine drawn + the inline 409 message, so a status tick never wipes the reason the user just got. */
+let engineShown = { key: '', error: '' };
+/** One request at a time: both buttons are disabled (and drawn disabled) until the server answers. */
+let engineSwitching = false;
+
+function setEngineError(message = '') {
+  engineShown.error = message;
+  const box = $('#project-engine-error');
+  if (box) box.textContent = message;
+}
+
+/** Why the project's engine cannot be switched right now (demo, read-only, older server), or ''. */
+function engineLockReason(id) {
+  if (!state.config?.engines) return 'Server ini belum bisa mengganti mesin per project.';
+  if (!id || id === DEMO_ID) return 'Pilih project nyata dulu untuk mengatur mesinnya.';
+  if (state.readOnly) return `${READ_ONLY_HINT}.`;
+  if (!state.projects.some((p) => p.id === id)) return 'Project ini tidak ada lagi di daftar.';
+  return '';
+}
+
+/**
+ * Draws the "Mesin project" section from the active project's status (statuses[id].engine). Called when ⚙ opens and
+ * on every status/config event while it is open; it never writes state itself (the SSE status does, after a switch).
+ */
+export function syncProjectEngine() {
+  const box = $('#project-engine');
+  const rule = $('#project-engine-rule');
+  if (!box) return;
+  const config = state.config;
+  const id = state.active;
+  const hidden = !config?.engines; // older server: the per-project route may not exist
+  box.hidden = hidden;
+  if (rule) rule.hidden = hidden;
+  if (hidden) return;
+  const engine = engineOf(state.statuses[id] ?? {}, config);
+  const key = `${id}|${engine}`;
+  if (engineShown.key !== key) {
+    engineShown = { key, error: '' };
+    $('#project-engine-error').textContent = '';
+  }
+  const locked = engineLockReason(id);
+  const hint = $('#project-engine-hint');
+  const current = engineLabel(engine);
+  const currentMissing = engine !== 'claude' && config.engines?.[engine]?.available === false;
+  if (locked) hint.textContent = locked;
+  else if (currentMissing) hint.textContent = `${current} tidak terpasang di laptop ini. Pasang lalu restart server (README: Memakai OpenCode), atau pilih Claude Code untuk project ini.`;
+  else hint.textContent = `Project ini memakai ${current}. Mesin dipilih per project; project lain tidak terpengaruh.`;
+  hint.title = hint.textContent;
+  $('#project-engine-desc').textContent = ENGINE_SWITCH_NOTE;
+  const html = PROJECT_ENGINES.map((e) => {
+    const on = e === engine;
+    const available = e === 'claude' || config.engines?.[e]?.available !== false;
+    const version = typeof config.engines?.[e]?.version === 'string' ? config.engines[e].version.slice(0, 40) : '';
+    const off = e !== 'claude' && !available;
+    const title = off
+      ? `${engineLabel(e)} belum terpasang di laptop ini. Pasang lalu restart server (lihat README: Memakai OpenCode).`
+      : locked || (on ? 'Sedang dipakai project ini' : `Pakai ${engineLabel(e)} untuk project ini`);
+    return `<button type="button" class="engine-opt${on ? ' on' : ''}" data-project-engine="${e}" aria-pressed="${on}" title="${escapeHtml(title)}"${locked || off || engineSwitching ? ' disabled' : ''}>${escapeHtml(engineLabel(e))}${
+      off ? ' <small>(tidak terpasang)</small>' : version ? ` <small class="muted">v${escapeHtml(version)}</small>` : ''
+    }</button>`;
+  }).join('');
+  const opts = $('#project-engine-opts');
+  opts.setAttribute('aria-busy', String(engineSwitching));
+  if (opts.dataset.html !== html) {
+    opts.innerHTML = html;
+    opts.dataset.html = html;
+  }
+}
+
+/** Confirms, then switches ONLY this project's engine; a 409 stays inline and the shown value does not move. */
+async function switchProjectEngine(engine) {
+  const id = state.active;
+  if (!PROJECT_ENGINES.includes(engine)) return;
+  const locked = engineLockReason(id);
+  if (locked) return setEngineError(locked);
+  const config = state.config;
+  if (engine === engineOf(state.statuses[id] ?? {}, config)) return;
+  if (engine !== 'claude' && config?.engines?.[engine]?.available === false) return setEngineError(`${engineLabel(engine)} belum terpasang di laptop ini.`);
+  const ok = window.confirm(`Ganti mesin project ini ke ${engineLabel(engine)}?\n\n${ENGINE_SWITCH_NOTE} Project lain tidak terpengaruh.`);
+  if (!ok) return;
+  setEngineError('');
+  engineSwitching = true;
+  syncProjectEngine(); // draws both buttons disabled until the answer
+  try {
+    await api(`/api/projects/${encodeURIComponent(id)}/engine`, { engine });
+    toast(`Project ini sekarang memakai ${engineLabel(engine)}.`, 'ok');
+  } catch (err) {
+    setEngineError(err?.message || 'Gagal mengganti mesin project.');
+  } finally {
+    engineSwitching = false;
+    syncProjectEngine(); // still the old value until the server's status arrives (a 409 changes nothing)
+  }
+}
+
 export function renderRoots(config) {
   if (!config) return;
   state.config = config;
@@ -80,6 +181,7 @@ export function initSettings() {
     $('#roots-input').value = state.config?.roots.join('\n') ?? '';
     syncHealthButton(); // a WiFi phone may not call /api/health: the opener is hidden, not broken
     syncBudgetSection(); // same for the 💰 budget section (read-only page: hidden)
+    syncProjectEngine(); // 🔀 the active project's engine, before the dialog is painted
     openModal('settings-modal');
     // After the other #btn-settings listeners (Spotify shows/hides its section): pick a tab that is available.
     requestAnimationFrame(() => selectSettingsTab());
@@ -109,6 +211,11 @@ export function initSettings() {
     } catch (err) {
       toast(err.message);
     }
+  });
+
+  $('#project-engine-opts').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-project-engine]');
+    if (btn && !btn.disabled) switchProjectEngine(btn.dataset.projectEngine);
   });
 
   $('#refresh-projects').addEventListener('click', () => api('/api/projects/refresh').catch((err) => toast(err.message)));

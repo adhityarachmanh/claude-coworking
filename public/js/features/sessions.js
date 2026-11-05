@@ -1,6 +1,7 @@
 // Sessions: the session bar above the chat, the history dialog (/resume), starting a new session.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
+import { engineBadge, engineLabel, engineOf } from '../core/engine-caps.js';
 import { ago, DAY } from '../core/format.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
@@ -26,7 +27,7 @@ function lookupSessionTitle(projectId, sessionId) {
     .catch(() => {});
 }
 
-/** Which Claude Code conversation the chat continues: shown above the messages. */
+/** Which conversation the chat continues (Claude Code or OpenCode, per project): shown above the messages. */
 export function renderSessionBar() {
   const isDemo = state.active === DEMO_ID;
   $('#session-bar').hidden = isDemo;
@@ -35,6 +36,7 @@ export function renderSessionBar() {
     return;
   }
   const st = state.statuses[state.active] ?? {};
+  const engine = engineOf(st, state.config);
   const known = st.sessionId ? sessionTitles.get(st.sessionId) : null;
   if (st.sessionId && !known) lookupSessionTitle(state.active, st.sessionId);
   // A name set with /rename (or by clicking the title) wins, as in the CLI's /resume list.
@@ -51,10 +53,12 @@ export function renderSessionBar() {
     title.removeAttribute('tabindex');
   }
   const meta = st.sessionId
-    ? [(state.config?.engine ?? st.engine) === 'opencode' ? 'sesi OpenCode' : known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
-    : [`pesan pertamamu memulai sesi ${(state.config?.engine ?? st.engine) === 'opencode' ? 'OpenCode' : 'Claude Code'} baru`];
+    ? [engine === 'opencode' ? 'sesi OpenCode' : known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
+    : [`pesan pertamamu memulai sesi ${engine === 'opencode' ? 'OpenCode' : 'Claude Code'} baru`];
   if (st.cliBusy) meta.push('terminal aktif');
-  $('#sb-meta').textContent = meta.filter(Boolean).join(' · ');
+  // 🔀 The project's engine first on the meta line: visible before a prompt is sent (its picker row has the same badge).
+  const badge = `<span id="sb-engine" class="engine-badge" data-engine="${escapeHtml(engine)}" title="Mesin project ini: ${escapeHtml(engineLabel(engine))} — ganti di ⚙ Pengaturan → Mesin project" aria-label="Mesin project: ${escapeHtml(engineLabel(engine))}">${escapeHtml(engineBadge(engine))}</span>`;
+  $('#sb-meta').innerHTML = badge + escapeHtml(meta.filter(Boolean).join(' · '));
   // Phone header: the session bar is hidden there, its title and the turn's state sit under the project name.
   const status = st.pending ? 'menunggu izin' : st.busy || st.cliBusy ? 'bekerja…' : '';
   $('#head-sub').textContent = [$('#sb-title').textContent, status].filter(Boolean).join(' · ');
@@ -76,7 +80,8 @@ export async function openSessions() {
   $('#sessions-project').textContent = `· ${projectName(state.active)}`;
   $('#sessions-search').value = '';
   $('#sessions-list').innerHTML = '<p class="muted">Memuat riwayat…</p>';
-  $('#sessions-import').hidden = state.config?.engine !== 'opencode' || !state.local || state.readOnly;
+  // Import is OpenCode-only, but of THIS project's engine (an OpenCode project under a Claude default still gets it).
+  $('#sessions-import').hidden = engineOf(state.statuses[state.active] ?? {}, state.config) !== 'opencode' || !state.local || state.readOnly;
   openModal('sessions-modal');
   try {
     const { sessions, current } = await api(`/api/projects/${sessionsView.project}/sessions`);
@@ -92,8 +97,9 @@ export async function openSessions() {
 
 function renderSessionList() {
   const box = $('#sessions-list');
+  const opencode = engineOf(state.statuses[sessionsView.project] ?? {}, state.config) === 'opencode';
   if (!sessionsView.list.length) {
-    box.innerHTML = '<div class="s-empty"><b>Belum ada sesi</b><p class="muted">Sesi Claude Code dari terminal atau web untuk project ini akan muncul di sini.</p></div>';
+    box.innerHTML = `<div class="s-empty"><b>Belum ada sesi</b><p class="muted">Sesi ${opencode ? 'OpenCode' : 'Claude Code'} dari terminal atau web untuk project ini akan muncul di sini.</p></div>`;
     return;
   }
   const q = $('#sessions-search').value.trim().toLowerCase();
@@ -106,7 +112,7 @@ function renderSessionList() {
   const st = state.statuses[sessionsView.project] ?? {};
   const liveInTerminal = st.cliBusy ? st.cliSession : null;
   let group = null;
-  const opencode = state.config?.engine === 'opencode';
+  // OpenCode exports its own JSON (no Claude tool-summary option).
   const opt = document.querySelector('#sessions-modal .export-opt');
   if (opt) opt.hidden = opencode; // OpenCode exports its own JSON (no tool-summary option)
   const ro = state.readOnly ? `disabled title="${READ_ONLY_HINT}"` : '';
@@ -146,7 +152,10 @@ async function sessionAction(btn) {
   try {
     if (btn.dataset.delete) {
       const id = btn.dataset.delete;
-      const where = state.config?.engine === 'opencode' ? 'dari OpenCode (sama seperti opencode session delete)' : 'ke folder data/trash aplikasi (bisa dikembalikan manual)';
+      const where =
+        engineOf(state.statuses[project] ?? {}, state.config) === 'opencode'
+          ? 'dari OpenCode (sama seperti opencode session delete)'
+          : 'ke folder data/trash aplikasi (bisa dikembalikan manual)';
       if (!window.confirm(`Hapus sesi "${titleOf(id)}"?
 
 Sesi dipindahkan/dihapus ${where}.`)) return;
@@ -265,7 +274,11 @@ export function initSessions() {
   $('#sessions-search').addEventListener('input', renderSessionList);
   $('#sessions-list').addEventListener('click', async (e) => {
     const exp = e.target.closest('[data-export]');
-    if (exp) return state.config?.engine === 'opencode' ? exportOpenCodeJson(sessionsView.project, exp.dataset.export) : exportSessionMarkdown(sessionsView.project, exp.dataset.export);
+    if (exp) {
+      // Each session belongs to its project's engine: export its own format, whatever the app-wide default is.
+      const opencode = engineOf(state.statuses[sessionsView.project] ?? {}, state.config) === 'opencode';
+      return opencode ? exportOpenCodeJson(sessionsView.project, exp.dataset.export) : exportSessionMarkdown(sessionsView.project, exp.dataset.export);
+    }
     const act = e.target.closest('[data-fork], [data-delete], [data-rename]');
     if (act) return sessionAction(act);
     const btn = e.target.closest('[data-resume]');

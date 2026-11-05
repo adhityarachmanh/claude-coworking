@@ -13,6 +13,7 @@ import { ClaudeCheckService } from './src/claude-check.js';
 import { OpenCodeCheckService } from './src/opencode-check.js';
 import { AppUpdater } from './src/app-update.js';
 import { Hub } from './src/hub.js';
+import { pruneAuth } from './src/auth-audit.js';
 import { discoverProjects, isDirectory, isInside } from './src/projects.js';
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { writeBackup } from './src/backup.js';
@@ -43,6 +44,7 @@ import { wifiGithubLogin } from './src/github-pr.js';
 import { HttpError, json, readJson } from './src/routes/http.js';
 import { buildRouter } from './src/routes/index.js';
 import { teamConfig } from './src/routes/team.js';
+import { projectId } from './src/util.js';
 
 const PORT = Number(process.env.OFFICE_PORT ?? 4317);
 const HOST = '127.0.0.1';
@@ -119,6 +121,8 @@ const hub = new Hub({ dataDir: DATA_DIR });
 // in the background; a failure is only logged).
 mkdirSync(DATA_DIR, { recursive: true });
 restrictDir(DATA_DIR, (msg) => console.error(`Folder data: ${msg}`));
+// The audit's documented retention holds even on a quiet install (recordAuth only compacts on a new action).
+pruneAuth(DATA_DIR, Date.now(), { force: true });
 // Turns the last run left unfinished (stopped mid-turn, cleanly or not): a notice + "Lanjutkan" in their chat.
 const cutShort = hub.recoverTurns();
 // Leftovers of an import cut short by a crash or shutdown (uploaded .zip files): only this app writes there.
@@ -152,15 +156,29 @@ const account = new AccountService({
 });
 const ledger = new UsageLedger({ file: path.join(DATA_DIR, 'usage.jsonl'), account: () => account.current });
 const sessions = new SessionManager({ hub, claude, opencode, agents: activeAgents(allAgents, initialTeam), teamPrompt: teamPrompt(initialTeam, Object.keys(allAgents)), ledger, account });
-const mirror = new TranscriptMirror(hub, { ledger, skipDir: (dir) => !insideKnownProjectDir(dir) });
+// 📜 A terminal Claude Code session in a project that runs on OpenCode has no place in that project's Claude
+// workspace: the mirror skips it (the project is listed from its folder, and OpenCode's terminal sessions are
+// shown by openCodeMirror instead).
+const onClaudeCode = (dir) => hub.engineOf(projectId(dir)) === 'claude';
+const mirror = new TranscriptMirror(hub, { ledger, skipDir: (dir) => !insideKnownProjectDir(dir) || !onClaudeCode(dir) });
 // 🖥 OpenCode sessions opened in a terminal (same background service): shown like Claude's CLI sessions.
 const openCodeMirror = new OpenCodeMirror(hub, {
   bin: process.env.CLAUDE_BIN && !process.env.OFFICE_OPENCODE_MIRROR ? null : opencode, // test servers: only when asked
-  ownSessions: () => new Set([...sessions.sessions.values()].map((s) => s.acpSessionId).concat(Object.values(hub.persisted.sessions ?? {})).filter(Boolean)),
+  ownSessions: () =>
+    new Set(
+      [
+        ...[...sessions.sessions.values()].map((s) => s.acpSessionId),
+        ...Object.values(hub.persisted.sessions ?? {}), // compatibility mirror
+        ...Object.values(hub.persisted.sessionsByEngine ?? {}).flatMap((per) => Object.values(per ?? {})), // per engine
+      ].filter(Boolean),
+    ),
   skipDir: (dir) => dir.toLowerCase().startsWith(path.resolve(DATA_DIR).toLowerCase()) || !insideKnownProjectDir(dir), // the app's own helper runs / a foreign folder
   pollMs: Number(process.env.OFFICE_OPENCODE_MIRROR_MS ?? 5000),
   ledger,
 });
+// A project that moves to OpenCode may have sessions the mirror ignored earlier (its folder was a Claude project):
+// clear that cache so those terminal sessions are picked up on the next poll.
+sessions.onProjectEngineChange = () => openCodeMirror.clearIgnored();
 // A device unpaired for being idle loses its open event streams at once, like "Cabut".
 const remote = new RemoteAccess(hub, {
   onExpire: (devices) => {
@@ -223,6 +241,7 @@ const accountPrivacy = accountPrivacyView(accountViewKey(path.join(DATA_DIR, 'ac
 hub.redactors.set('account', accountPrivacy.state);
 // 📋 Antrian: prompts sent one by one whenever the project's session is idle (src/queue.js).
 const taskQueue = new TaskQueue({ hub, sessions });
+sessions.taskQueue = taskQueue; // a project's waiting queue item blocks its engine switch (Stage 1)
 sessions.onRateLimit = (id, info) => taskQueue.onRateLimit(id, info);
 // 🔔 Web Push to paired https phones (src/push.js): permission requests, turn done/error, queue paused.
 const push = new PushService({
@@ -314,7 +333,7 @@ function refreshProjects() {
     opencodeCheck: opencodeCheck.publicView(), // the same for OpenCode (available: false when not installed)
     appUpdate: appUpdater.publicView(), // ⬆ a newer Adhit Office on GitHub (src/app-update.js)
     // The engines a project can run on (docs/design-opencode.md §6.1): Claude Code's caps are the UI's defaults.
-    engine: hub.engine, // the app-wide engine (Akun): each one is its own workspace (Hub.switchEngine)
+    engine: hub.engine, // the app-wide DEFAULT (Akun) for new projects; each project carries its own `settings.engine`
     engines: {
       claude: { available: Boolean(claude), version: hub.catalogConfig().version ?? '' },
       opencode: { available: Boolean(opencode), version: opencodeVersion, caps: OPENCODE_CAPS },

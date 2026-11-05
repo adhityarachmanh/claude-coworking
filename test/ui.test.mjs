@@ -1616,7 +1616,8 @@ for (const vp of VIEWPORTS) {
         await page.eval(async () => {
           const { state } = await import('/js/core/state.js');
           state.config = { ...state.config, engine: 'opencode' };
-          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), model: '', modelAuto: true, modelTiers: undefined };
+          // Stage 1: the PROJECT's engine decides (status.engine); config.engine is only the default for new projects.
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: '', modelAuto: true, modelTiers: undefined };
           document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
         });
         await page.waitFor(() => document.querySelectorAll('#model optgroup option').length >= 5, { timeoutMs: 3000, message: 'daftar model OpenCode termuat' });
@@ -1643,7 +1644,7 @@ for (const vp of VIEWPORTS) {
         await page.eval(async () => {
           const { state } = await import('/js/core/state.js');
           state.config = { ...state.config, engine: 'opencode' };
-          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), model: '', modelAuto: true, modelTiers: undefined };
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: '', modelAuto: true, modelTiers: undefined };
           document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
         });
         await page.waitFor(() => document.querySelectorAll('#model optgroup option').length >= 5, { timeoutMs: 3000, message: 'daftar model OpenCode termuat' });
@@ -1689,6 +1690,7 @@ for (const vp of VIEWPORTS) {
           state.config = { ...state.config, engine: 'opencode' };
           state.statuses[state.active] = {
             ...(state.statuses[state.active] ?? {}),
+            engine: 'opencode',
             modelAuto: true,
             modelTiers: { opencode: { hemat: 'opencode-go/hemat-lain', seimbang: 'opencode-go/glm-5.3', maks: 'opencode-go/kimi-k3' } },
           };
@@ -1728,7 +1730,7 @@ for (const vp of VIEWPORTS) {
         await page.eval(async () => {
           const { state } = await import('/js/core/state.js');
           state.config = { ...state.config, engine: 'opencode' };
-          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), model: '', modelAuto: true, modelTiers: undefined };
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: '', modelAuto: true, modelTiers: undefined };
           document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
         });
         await page.waitFor(() => /Daftar model muncul/.test(document.querySelector('#model')?.innerHTML ?? ''), { timeoutMs: 3000, message: 'daftar model kosong' });
@@ -1954,6 +1956,253 @@ for (const vp of VIEWPORTS) {
         await page.press('ArrowRight');
         assert.equal(await page.eval(() => document.activeElement?.dataset.settingsTab), 'tim', 'panah kanan pindah tab');
       }
+      await page.press('Escape');
+    });
+
+    test('🔀 Mesin project: nilai dari status project, konfirmasi, route baru, 409 inline', async () => {
+      await ensureApp(page, `#${projectId}`);
+      // This laptop has no OpenCode: pretend it is installed, and answer the new route from the test (409 once).
+      await page.eval(async (id) => {
+        const { state } = await import('/js/core/state.js');
+        window.__pe = { prevConfig: state.config, prevEngine: state.statuses[id]?.engine, calls: [], confirms: [] };
+        state.config = {
+          ...state.config,
+          engine: 'claude',
+          engines: { ...state.config.engines, opencode: { ...(state.config.engines?.opencode ?? {}), available: true, caps: state.config.engines?.opencode?.caps } },
+        };
+        state.statuses[id] = { ...(state.statuses[id] ?? {}), engine: 'claude' };
+        window.__peConfirm = window.confirm;
+        window.confirm = (text) => {
+          window.__pe.confirms.push(String(text));
+          return true;
+        };
+        window.__officeFetch ??= window.fetch;
+        const prev = window.fetch;
+        window.fetch = (url, opts) => {
+          if (String(url) === `/api/projects/${id}/engine` && String(opts?.method ?? '').toUpperCase() === 'POST') {
+            window.__pe.calls.push(JSON.parse(opts.body ?? '{}'));
+            const fail = window.__pe.calls.length === 1;
+            const body = fail ? { error: 'Masih ada permintaan izin yang menunggu jawaban. Jawab dulu, lalu ganti mesin.' } : { ok: true, engine: 'opencode' };
+            return Promise.resolve(new Response(JSON.stringify(body), { status: fail ? 409 : 200, headers: { 'Content-Type': 'application/json' } }));
+          }
+          return prev(url, opts);
+        };
+        const { syncProjectEngine } = await import('/js/features/settings.js');
+        syncProjectEngine();
+      }, projectId);
+      try {
+        await tap(page, '#btn-settings');
+        await settle(page, 'settings-modal');
+        if (!vp.mobile) await page.click('[data-settings-tab="tim"]');
+        await page.waitFor(() => document.querySelector('#project-engine-opts [data-project-engine="claude"]'), { timeoutMs: 3000, message: 'pilihan mesin project' });
+        const before = await page.eval(() => ({
+          pressed: [...document.querySelectorAll('#project-engine-opts [data-project-engine]')].map((b) => [b.dataset.projectEngine, b.getAttribute('aria-pressed'), b.disabled]),
+          desc: document.querySelector('#project-engine-desc').textContent,
+          hint: document.querySelector('#project-engine-hint').textContent,
+        }));
+        assert.deepEqual(before.pressed, [['claude', 'true', false], ['opencode', 'false', false]], 'status project = Claude Code');
+        assert.match(before.desc, /Riwayat tiap mesin disimpan terpisah; berganti mesin hanya menampilkan riwayat mesin itu/);
+        assert.match(before.hint, /Project ini memakai Claude Code/);
+        assert.deepEqual(await page.eval(unnamedButtons, '#project-engine'), [], 'pilihan mesin punya nama aksesibel');
+        assert.equal(await page.eval(horizontalOverflow), null, 'tanpa scroll horizontal di 390px');
+
+        // 1st try: the server refuses (open approval) — the message is inline and the old value stays.
+        await page.click('#project-engine-opts [data-project-engine="opencode"]');
+        await page.waitFor(() => document.querySelector('#project-engine-error').textContent.includes('permintaan izin'), { timeoutMs: 3000, message: 'galat 409 inline' });
+        const refused = await page.eval(() => ({
+          calls: window.__pe.calls,
+          confirms: window.__pe.confirms,
+          error: document.querySelector('#project-engine-error').textContent,
+          role: document.querySelector('#project-engine-error').getAttribute('role'),
+          pressed: [...document.querySelectorAll('#project-engine-opts [data-project-engine]')].map((b) => [b.dataset.projectEngine, b.getAttribute('aria-pressed')]),
+          enabled: [...document.querySelectorAll('#project-engine-opts [data-project-engine]')].every((b) => !b.disabled),
+        }));
+        assert.deepEqual(refused.calls, [{ engine: 'opencode' }], 'POST ke route project, bukan /api/engine');
+        assert.match(refused.confirms[0], /Riwayat tiap mesin disimpan terpisah/);
+        assert.match(refused.confirms[0], /Project lain tidak terpengaruh/);
+        assert.equal(refused.role, 'alert');
+        assert.match(refused.error, /permintaan izin/);
+        assert.deepEqual(refused.pressed, [['claude', 'true'], ['opencode', 'false']], 'nilai lama tetap setelah 409');
+        assert.equal(refused.enabled, true, 'tombol bisa dicoba lagi');
+
+        // 2nd try: accepted — the toast names the engine (the SSE status then redraws the selector).
+        await page.click('#project-engine-opts [data-project-engine="opencode"]');
+        await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => /Project ini sekarang memakai OpenCode\./.test(t.textContent)), { timeoutMs: 3000, message: 'toast sukses' });
+        const accepted = await page.eval(() => ({ calls: window.__pe.calls.length, error: document.querySelector('#project-engine-error').textContent }));
+        assert.equal(accepted.calls, 2);
+        assert.equal(accepted.error, '', 'galat lama dibersihkan sebelum percobaan berikutnya');
+        assert.deepEqual(realProblems(page), [], 'tanpa error console');
+      } finally {
+        await page.eval(async (id) => {
+          const { state } = await import('/js/core/state.js');
+          if (window.__officeFetch) window.fetch = window.__officeFetch;
+          if (window.__peConfirm) window.confirm = window.__peConfirm;
+          if (window.__pe) {
+            state.config = window.__pe.prevConfig;
+            state.statuses[id] = { ...(state.statuses[id] ?? {}), engine: window.__pe.prevEngine };
+          }
+          delete window.__pe;
+          delete window.__peConfirm;
+          (await import('/js/features/settings.js')).syncProjectEngine();
+        }, projectId).catch(() => {});
+        await page.press('Escape').catch(() => {});
+      }
+    });
+
+    test('🔀 Mesin project: demo dan halaman hanya-lihat dinonaktifkan dengan alasan', async () => {
+      await ensureApp(page, '#demo');
+      await tap(page, '#btn-settings');
+      await settle(page, 'settings-modal');
+      if (!vp.mobile) await page.click('[data-settings-tab="tim"]');
+      const demo = await page.eval(() => ({
+        disabled: [...document.querySelectorAll('#project-engine-opts [data-project-engine]')].map((b) => b.disabled),
+        hint: document.querySelector('#project-engine-hint').textContent,
+      }));
+      assert.deepEqual(demo.disabled, [true, true], 'demo: tidak bisa mengganti mesin');
+      assert.match(demo.hint, /Pilih project nyata/);
+      await page.press('Escape');
+
+      await ensureApp(page, `#${projectId}`);
+      const ro = await page.eval(async (id) => {
+        const { state } = await import('/js/core/state.js');
+        const { syncProjectEngine } = await import('/js/features/settings.js');
+        window.__roPrev = state.readOnly;
+        state.readOnly = true;
+        syncProjectEngine();
+        const out = {
+          disabled: [...document.querySelectorAll('#project-engine-opts [data-project-engine]')].map((b) => b.disabled),
+          hint: document.querySelector('#project-engine-hint').textContent,
+        };
+        state.readOnly = window.__roPrev;
+        delete window.__roPrev;
+        syncProjectEngine();
+        return { ...out, id };
+      }, projectId);
+      assert.deepEqual(ro.disabled, [true, true], 'WiFi hanya-lihat: tombol mati');
+      assert.match(ro.hint, /Hanya lihat lewat WiFi/);
+      assert.deepEqual(realProblems(page), [], 'tanpa error console');
+    });
+
+    test('🔀 badge mesin: tiap baris picker dan header sesi menyebut mesin project', async () => {
+      const other = await addTempProject('dua-mesin');
+      try {
+        await ensureApp(page, `#${projectId}`);
+        await page.waitFor(async (id) => (await import('/js/core/state.js')).state.projects.some((p) => p.id === id), { timeoutMs: 5000, message: 'project kedua terdaftar' }, other);
+        const view = await page.eval(async (ids) => {
+          const { state } = await import('/js/core/state.js');
+          const { renderSidebar } = await import('/js/features/picker.js');
+          const { renderSessionBar } = await import('/js/features/sessions.js');
+          window.__badgePrev = { config: state.config, active: state.active, a: state.statuses[ids.a]?.engine, b: state.statuses[ids.b]?.engine };
+          state.config = { ...state.config, engine: 'claude' };
+          state.statuses[ids.a] = { ...(state.statuses[ids.a] ?? {}), engine: 'opencode' };
+          state.statuses[ids.b] = { ...(state.statuses[ids.b] ?? {}), engine: 'claude' };
+          state.active = ids.a;
+          renderSidebar();
+          renderSessionBar();
+          const read = () => ({
+            a: document.querySelector(`#project-list li[data-id="${ids.a}"] .engine-badge`)?.textContent ?? null,
+            b: document.querySelector(`#project-list li[data-id="${ids.b}"] .engine-badge`)?.textContent ?? null,
+            header: document.querySelector('#sb-engine')?.textContent ?? null,
+            engine: document.querySelector('#sb-engine')?.dataset.engine ?? null,
+            title: document.querySelector('#sb-engine')?.title ?? '',
+            aria: document.querySelector('#sb-engine')?.getAttribute('aria-label') ?? '',
+          });
+          const first = read();
+          state.statuses[ids.a] = { ...state.statuses[ids.a], engine: 'claude' };
+          state.statuses[ids.b] = { ...state.statuses[ids.b], engine: 'opencode' };
+          renderSidebar();
+          renderSessionBar();
+          const second = read();
+          state.config = window.__badgePrev.config;
+          state.active = window.__badgePrev.active;
+          state.statuses[ids.a] = { ...state.statuses[ids.a], engine: window.__badgePrev.a };
+          state.statuses[ids.b] = { ...state.statuses[ids.b], engine: window.__badgePrev.b };
+          delete window.__badgePrev;
+          renderSidebar();
+          renderSessionBar();
+          return { first, second };
+        }, { a: projectId, b: other });
+        assert.equal(view.first.a, '⌘ OpenCode', 'project OpenCode');
+        assert.equal(view.first.b, '✳ Claude', 'project Claude');
+        assert.equal(view.first.header, '⌘ OpenCode');
+        assert.equal(view.first.engine, 'opencode');
+        assert.equal(view.first.aria, 'Mesin project: OpenCode');
+        assert.match(view.first.title, /ganti di ⚙ Pengaturan/);
+        assert.equal(view.second.a, '✳ Claude', 'status berubah: badge ikut');
+        assert.equal(view.second.b, '⌘ OpenCode');
+        assert.equal(view.second.header, '✳ Claude');
+        assert.equal(await page.eval(horizontalOverflow), null, 'badge tidak membuat scroll horizontal');
+        assert.deepEqual(realProblems(page), [], 'tanpa error console');
+      } finally {
+        await forgetTempProject(other);
+      }
+    });
+
+    test('🔀 fitur mengikuti mesin project: Claude-only hilang di project OpenCode, rewind tetap ada', async () => {
+      await ensureApp(page, `#${projectId}`);
+      const caps = await page.eval(async (id) => {
+        const { state } = await import('/js/core/state.js');
+        const { renderComposer } = await import('/js/features/composer.js');
+        const { capBlocked } = await import('/js/features/engine.js');
+        const prev = { config: state.config, engine: state.statuses[id]?.engine };
+        state.config = { ...state.config, engine: 'claude' }; // the default stays Claude: the PROJECT decides
+        const read = () => ({
+          permissions: document.querySelector('#more-menu [data-more="permissions"]').hidden,
+          exportSession: document.querySelector('#more-menu [data-more="export-session"]').hidden,
+          permissionsBtn: document.querySelector('#btn-permissions').hidden,
+          plugins: capBlocked('extensions'),
+          rewind: capBlocked('rewind'),
+          modes: [...document.querySelectorAll('#mode option')].filter((o) => !o.hidden).map((o) => o.value),
+          note: document.querySelector('#engine-note').textContent,
+        });
+        state.statuses[id] = { ...(state.statuses[id] ?? {}), engine: 'opencode' };
+        renderComposer();
+        const opencode = read();
+        state.statuses[id] = { ...state.statuses[id], engine: 'claude' };
+        renderComposer();
+        const claude = read();
+        state.statuses[id] = { ...state.statuses[id], engine: prev.engine };
+        state.config = prev.config;
+        renderComposer();
+        return { opencode, claude };
+      }, projectId);
+      assert.equal(caps.opencode.permissions, true, 'Aturan izin Claude Code disembunyikan');
+      assert.equal(caps.opencode.exportSession, true, 'Export sesi lengkap Claude disembunyikan');
+      assert.equal(caps.opencode.permissionsBtn, true, 'tombol di ⚙ ikut tersembunyi');
+      assert.match(caps.opencode.plugins, /opencode\.json/i, 'plugin/agent Claude diarahkan ke opencode.json');
+      assert.equal(caps.opencode.rewind, null, 'OpenCode project tetap boleh rewind');
+      assert.deepEqual(caps.opencode.modes, ['manual', 'plan'], 'hanya Build & Plan');
+      assert.equal(caps.opencode.note, '', 'OpenCode mendukung effort/team/rewind/MCP/tugas latar: tanpa catatan "belum mendukung"');
+      assert.equal(caps.claude.permissions, false, 'project Claude menampilkan entri Claude-only');
+      assert.equal(caps.claude.exportSession, false);
+      assert.equal(caps.claude.permissionsBtn, false);
+      assert.equal(caps.claude.plugins, null);
+      assert.deepEqual(caps.claude.modes, ['manual', 'acceptEdits', 'auto', 'plan', 'dontAsk']);
+      assert.deepEqual(realProblems(page), [], 'tanpa error console');
+    });
+
+    test('👤 Akun: sakelar mesin kini "Mesin bawaan untuk project baru"', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await tap(page, '#btn-account');
+      await page.waitFor(() => document.querySelector('#account-body .engine-switch'), { timeoutMs: 4000, message: 'sakelar mesin di Akun' });
+      const label = await page.eval(() => {
+        const box = document.querySelector('#account-body .engine-switch');
+        return {
+          title: box.querySelector('.acct-title')?.textContent.trim(),
+          group: box.querySelector('.engine-opts')?.getAttribute('aria-label'),
+          note: box.querySelector('p')?.textContent ?? '',
+          buttons: [...box.querySelectorAll('[data-act="engine"]')].map((b) => ({ engine: b.dataset.engine, pressed: b.getAttribute('aria-pressed') })),
+        };
+      });
+      assert.equal(label.title, 'Mesin bawaan untuk project baru');
+      assert.equal(label.group, 'Mesin bawaan untuk project baru');
+      assert.match(label.note, /Hanya untuk project yang baru ditambahkan/);
+      assert.match(label.note, /tetap memakai mesinnya sendiri/);
+      assert.match(label.note, /tidak memindahkan project mana pun/);
+      assert.doesNotMatch(label.note, /Semua project memakai/);
+      assert.deepEqual(label.buttons.map((b) => b.engine).sort(), ['claude', 'opencode']);
+      assert.deepEqual(label.buttons.filter((b) => b.pressed === 'true').map((b) => b.engine), ['claude'], 'bawaan sekarang ditandai');
+      assert.deepEqual(realProblems(page), [], 'tanpa error console');
       await page.press('Escape');
     });
 
@@ -2861,6 +3110,8 @@ for (const vp of VIEWPORTS) {
         assert.equal(r.avatar, 'A');
         await tap(page, '#btn-account');
         await settle(page, 'account-modal');
+        // The dialog paints the cached state first and replaces it after /api/account answers: wait for that answer.
+        await page.waitFor(() => !document.querySelector('#account-body').textContent.includes('@'), { timeoutMs: 3000, message: 'akun WiFi teredaksi' });
         const body = await page.eval(() => document.querySelector('#account-body').textContent);
         await page.press('Escape');
         assert.match(body, /Akun Claude/);
@@ -5370,6 +5621,262 @@ function stubSpeech() {
   window.__speak = (text, isFinal) => window.__rec.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: text }], { isFinal })] });
 }
 
+// ---------- quick tier commands (/hemat…/maks, /auto) + 🎯 focus mode ----------
+
+for (const vp of VIEWPORTS) {
+  describe(`UI perintah tier & mode fokus — ${vp.name}`, { skip: SKIP ?? false }, () => {
+    let page;
+    before(async () => {
+      if (SKIP) return;
+      page = await browser.newPage();
+      await page.setViewport(vp);
+      await openApp(page, `#${projectId}`);
+    });
+    after(async () => {
+      await page?.eval(() => localStorage.removeItem('office.focus')).catch(() => {});
+      await page?.close();
+    });
+
+    /** Types a local slash command and runs it (first Enter picks the autocomplete row, second sends). */
+    async function runCommand(text) {
+      await typeInPrompt(page, text);
+      await page.press('Enter');
+      await page.press('Enter');
+    }
+
+    const status = () =>
+      page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        const st = state.statuses[state.active] ?? {};
+        return { model: st.model, modelAuto: st.modelAuto, select: document.querySelector('#model').value };
+      });
+
+    test('tier (/hemat /seimbang /kuat /maks) muncul di autocomplete & mengirim model tier + Auto mati (Claude)', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await stubSettings(page);
+      try {
+        const catalog = await page.eval(async (models) => {
+          const { state } = await import('/js/core/state.js');
+          state.config = { ...state.config, engine: 'claude', models };
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'claude', model: '', modelAuto: true, modelTiers: {} };
+          document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
+          const { slashCatalog } = await import('/js/features/suggest.js');
+          return slashCatalog()
+            .filter((c) => ['hemat', 'seimbang', 'kuat', 'maks', 'auto', 'fokus'].includes(c.name))
+            .map((c) => ({ name: c.name, description: c.description ?? '' }));
+        }, CLAUDE_CATALOG);
+        assert.deepEqual(catalog.map((c) => c.name), ['hemat', 'seimbang', 'kuat', 'maks', 'auto', 'fokus'], 'LOCAL_COMMANDS mengisi autocomplete/palet');
+        assert.ok(catalog.every((c) => c.description.trim().length >= 20), `deskripsi jelas: ${JSON.stringify(catalog)}`);
+
+        for (const command of ['/hemat', '/seimbang', '/kuat', '/maks']) await runCommand(command);
+        await page.waitFor(() => window.__settingsBodies.length === 4, { timeoutMs: 3000, message: 'empat POST model tier' });
+        const view = await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          return {
+            bodies: window.__settingsBodies,
+            model: state.statuses[state.active]?.model,
+            modelAuto: state.statuses[state.active]?.modelAuto,
+            select: document.querySelector('#model').value,
+            prompt: document.querySelector('#prompt').value,
+            toasts: [...document.querySelectorAll('.toast')].map((t) => t.textContent),
+          };
+        });
+        assert.deepEqual(
+          view.bodies,
+          [
+            { model: 'haiku', modelAuto: false },
+            { model: 'sonnet', modelAuto: false },
+            { model: 'opus', modelAuto: false },
+            { model: 'fable', modelAuto: false },
+          ],
+          'tiap perintah: model tier + Auto dimatikan',
+        );
+        assert.deepEqual({ model: view.model, modelAuto: view.modelAuto }, { model: 'fable', modelAuto: false }, 'status optimistis');
+        assert.equal(view.select, 'fable', 'composer menampilkan model tier');
+        assert.equal(view.prompt, '', 'kotak pesan dikosongkan');
+        assert.match(view.toasts.join('\n'), /Model: Maks → fable \(Auto dimatikan\)/, 'toast menyebut tier dan model');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreSettings(page);
+        await openApp(page, `#${projectId}`);
+      }
+    });
+
+    test('tier mengikuti tangga project di engine OpenCode (/kuat → kimi-k3.1-pro)', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await stubSettings(page);
+      await stubModels(page);
+      try {
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.config = { ...state.config, engine: 'opencode' };
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: '', modelAuto: true, modelTiers: undefined };
+          document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await runCommand('/kuat');
+        await page.waitFor(() => window.__settingsBodies.length === 1, { timeoutMs: 3000, message: 'POST /kuat' });
+        const view = await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          return {
+            bodies: window.__settingsBodies,
+            model: state.statuses[state.active]?.model,
+            modelAuto: state.statuses[state.active]?.modelAuto,
+            toasts: [...document.querySelectorAll('.toast')].map((t) => t.textContent),
+          };
+        });
+        assert.deepEqual(view.bodies[0], { model: 'opencode-go/kimi-k3.1-pro', modelAuto: false }, 'model tier dari tangga OpenCode');
+        assert.deepEqual({ model: view.model, modelAuto: view.modelAuto }, { model: 'opencode-go/kimi-k3.1-pro', modelAuto: false });
+        assert.match(view.toasts.join('\n'), /Model: Kuat → kimi-k3\.1-pro \(Auto dimatikan\)/, 'nama pendek di toast');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreModels(page);
+        await restoreSettings(page);
+        await openApp(page, `#${projectId}`);
+      }
+    });
+
+    test('/auto menyalakan Model Auto; tier tidak valid → peringatan tanpa POST & status tetap', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await stubSettings(page);
+      try {
+        await page.eval(async (models) => {
+          const { state } = await import('/js/core/state.js');
+          state.config = { ...state.config, engine: 'claude', models };
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'claude', model: 'sonnet', modelAuto: false, modelTiers: { claude: { kuat: 'dua kata' } } };
+          document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
+        }, CLAUDE_CATALOG);
+
+        await runCommand('/kuat');
+        await page.waitFor(() => [...document.querySelectorAll('.toast.warn')].some((t) => /Model tingkat Kuat/.test(t.textContent)), { timeoutMs: 2000, message: 'peringatan tier tidak valid' });
+        assert.deepEqual(await status(), { model: 'sonnet', modelAuto: false, select: 'sonnet' }, 'tier tidak valid tidak mengubah apa pun');
+        assert.equal(await page.eval(() => window.__settingsBodies.length), 0, 'tidak ada POST');
+
+        await runCommand('/auto');
+        await page.waitFor(() => window.__settingsBodies.length === 1, { timeoutMs: 3000, message: 'POST /auto' });
+        const view = await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          return {
+            bodies: window.__settingsBodies,
+            modelAuto: state.statuses[state.active]?.modelAuto,
+            select: document.querySelector('#model').value,
+            toasts: [...document.querySelectorAll('.toast')].map((t) => t.textContent),
+          };
+        });
+        assert.deepEqual(view.bodies, [{ modelAuto: true }], '/auto hanya mengirim flag Auto');
+        assert.equal(view.modelAuto, true, 'status optimistis');
+        assert.equal(view.select, 'auto', 'composer menampilkan Auto');
+        assert.match(view.toasts.join('\n'), /Model Auto aktif/, 'toast /auto');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreSettings(page);
+        await openApp(page, `#${projectId}`);
+      }
+    });
+
+    test('/fokus: kelas body, localStorage, kantor tersembunyi + animasi jeda, chip keluar, bertahan setelah muat ulang', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await page.eval(async () => {
+          localStorage.removeItem('office.focus');
+          localStorage.setItem('office.viewMode', 'office'); // measure the office, not 🧠 Mode Otak from an earlier test
+          document.querySelectorAll('.toast').forEach((t) => t.remove());
+          (await import('/js/features/focus.js')).setFocus(false);
+          const { brain } = await import('/js/core/scenes.js');
+          if (brain.on) brain.setOn(false);
+        });
+        // Count real stage frames: the app loop must run none while focus mode is on.
+        await page.eval(async () => {
+          const { stage } = await import('/js/core/scenes.js');
+          window.__realStageFrame = stage.frame;
+          window.__frames = 0;
+          stage.frame = function (t) {
+            window.__frames += 1;
+            return window.__realStageFrame.call(this, t);
+          };
+        });
+        await runCommand('/fokus');
+        await page.waitFor(() => document.body.classList.contains('focus-mode'), { timeoutMs: 2000, message: 'mode fokus aktif' });
+        const frames0 = await page.eval(() => window.__frames);
+        await sleep(300);
+        const on = await page.eval(() => ({
+          frames: window.__frames,
+          stored: localStorage.getItem('office.focus'),
+          toasts: [...document.querySelectorAll('.toast')].map((t) => t.textContent),
+          office: getComputedStyle(document.querySelector('.office')).display,
+          stageRects: document.querySelector('#stage').getClientRects().length,
+          chip: (() => {
+            const b = document.querySelector('#focus-exit');
+            return { hidden: b.hidden, visible: Boolean(b.getClientRects().length), label: b.getAttribute('aria-label') ?? '' };
+          })(),
+        }));
+        assert.equal(on.frames, frames0, 'tidak ada frame kantor selagi mode fokus');
+        assert.equal(on.stored, '1', 'tersimpan di localStorage');
+        assert.equal(on.office, 'none', 'wadah kantor disembunyikan');
+        assert.equal(on.stageRects, 0, '#stage tidak tampil');
+        assert.deepEqual({ hidden: on.chip.hidden, visible: on.chip.visible }, { hidden: false, visible: true }, 'chip keluar terlihat');
+        assert.match(on.chip.label, /keluar dari mode fokus/i, 'chip punya aria-label');
+        assert.ok(on.toasts.includes('Mode fokus aktif — animasi kantor disembunyikan'), on.toasts.join(' | '));
+        assert.equal(await page.eval(horizontalOverflow), null, 'tanpa scroll horizontal di mode fokus');
+
+        // the chip brings the office back and the animation resumes
+        await page.click('#focus-exit');
+        await page.waitFor(() => !document.body.classList.contains('focus-mode'), { timeoutMs: 2000, message: 'mode fokus mati' });
+        const framesOff = await page.eval(() => window.__frames);
+        await sleep(250);
+        const off = await page.eval(() => ({ frames: window.__frames, stored: localStorage.getItem('office.focus'), chip: document.querySelector('#focus-exit').hidden }));
+        assert.ok(off.frames > framesOff, 'frame kantor jalan lagi');
+        assert.deepEqual({ stored: off.stored, chip: off.chip }, { stored: '0', chip: true }, 'mode fokus mati & chip hilang');
+        await page.eval(async () => {
+          const { stage } = await import('/js/core/scenes.js');
+          if (window.__realStageFrame) stage.frame = window.__realStageFrame;
+          delete window.__realStageFrame;
+          delete window.__frames;
+        });
+
+        // a reload keeps the setting, before the first frame
+        await runCommand('/fokus');
+        await page.waitFor(() => document.body.classList.contains('focus-mode'), { timeoutMs: 2000, message: 'fokus aktif lagi' });
+        await openApp(page, `#${projectId}`);
+        const reloaded = await page.eval(() => {
+          if (document.body.dataset.view !== 'office') document.body.dataset.view = 'office'; // phone: prove the office is hidden by focus, not by the view
+          return {
+            cls: document.body.classList.contains('focus-mode'),
+            stored: localStorage.getItem('office.focus'),
+            office: getComputedStyle(document.querySelector('.office')).display,
+            chip: !document.querySelector('#focus-exit').hidden,
+          };
+        });
+        assert.deepEqual(reloaded, { cls: true, stored: '1', office: 'none', chip: true }, 'setelan bertahan setelah muat ulang (termasuk HP)');
+
+        // and the chip still restores the office on the reloaded page
+        await page.click('#focus-exit');
+        await page.waitFor(() => !document.body.classList.contains('focus-mode'), { timeoutMs: 2000, message: 'keluar setelah muat ulang' });
+        await sleep(250); // the stage's ResizeObserver measures the shown host again
+        const back = await page.eval(() => ({
+          stored: localStorage.getItem('office.focus'),
+          office: getComputedStyle(document.querySelector('.office')).display,
+          stageRects: document.querySelector('#stage').getClientRects().length,
+          canvas: document.querySelector('#stage canvas').width,
+        }));
+        assert.equal(back.stored, '0');
+        assert.notEqual(back.office, 'none', 'kantor kembali tampil');
+        assert.ok(back.stageRects > 0, 'kanvas kantor kembali');
+        assert.ok(back.canvas > 0, 'kanvas digambar ulang setelah mode fokus');
+        assert.equal(await page.eval(horizontalOverflow), null, 'tanpa scroll horizontal setelah keluar');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await page
+          .eval(async () => {
+            localStorage.removeItem('office.focus');
+            (await import('/js/features/focus.js')).setFocus(false);
+          })
+          .catch(() => {});
+        await openApp(page, `#${projectId}`).catch(() => {});
+      }
+    });
+  });
+}
+
 for (const vp of VIEWPORTS) {
   describe(`UI notifikasi & input suara — ${vp.name}`, { skip: SKIP ?? false }, () => {
     let page;
@@ -5954,6 +6461,287 @@ for (const vp of VIEWPORTS) {
         'tidak ada isi dialog yang lebih lebar dari kotaknya',
       );
       assert.deepEqual(await page.eval(unnamedButtons, '#rewind-redo'), [], 'tombol redo punya nama aksesibel');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⏪ Pulihkan percakapan: blok tampil untuk Claude & OpenCode dengan teks dan tombol sekunder yang tepat', async () => {
+      await freshApp();
+      page.clearProblems();
+      await page.eval(async () => {
+        window.__calls = [];
+        window.__conv = { engine: 'claude', sessionId: 'c1a2b3c4-1111-2222-3333-444455556666', title: 'Rapikan checkout', available: true };
+        const orig = window.fetch;
+        const reply = (obj, status = 200) => Promise.resolve(new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } }));
+        const now = Date.now();
+        window.fetch = (url, opts) => {
+          const u = String(url);
+          window.__calls.push({ url: u, body: opts?.body ? JSON.parse(opts.body) : null });
+          if (/\/rewind-points$/.test(u)) return reply({ points: [] });
+          if (/\/redo-list$/.test(u)) return reply({ bundles: [{ id: 'rb_conv', createdAt: now, files: ['src/a.js'], status: 'ready', conversation: window.__conv }] });
+          if (/\/redo-preview$/.test(u))
+            return reply({ id: 'rb_conv', createdAt: now, files: [{ path: 'src/a.js', action: 'restore', conflict: false }], conflicts: 0, unsupported: [], conversation: window.__conv });
+          return orig(url, opts);
+        };
+        (await import('/js/features/rewind.js')).openRewind();
+      });
+      await page.waitFor(() => document.querySelector('#rewind-redo [data-redo-recent]'), { timeoutMs: 3000, message: 'entri redo-list' });
+      assert.match(await page.eval(() => document.querySelector('#rewind-redo [data-redo-recent]').textContent), /1 file \+ percakapan/, 'entri menyebut percakapan yang bisa dipulihkan');
+
+      await page.eval(() => document.querySelector('#rewind-redo [data-redo-recent]').click());
+      await page.waitFor(() => /transkrip tidak dihapus/.test(document.querySelector('#rewind-redo .rw-redo-conv-note')?.textContent ?? ''), { timeoutMs: 3000, message: 'blok percakapan Claude' });
+      const claude = await page.eval(() => {
+        const box = document.querySelector('#rewind-redo');
+        const btn = box.querySelector('[data-redo="conversation"]');
+        return {
+          heading: box.querySelector('#rw-redo-conv-title')?.textContent,
+          note: box.querySelector('.rw-redo-conv-note')?.textContent,
+          session: box.querySelector('.rw-redo-conv-session')?.textContent,
+          label: btn?.textContent.trim(),
+          primary: btn?.classList.contains('primary'),
+          described: btn?.getAttribute('aria-describedby'),
+          disabled: btn?.disabled,
+          files: [...box.querySelectorAll('.rw-path')].map((s) => s.textContent),
+        };
+      });
+      assert.equal(claude.heading, '🔄 Pulihkan percakapan');
+      assert.equal(claude.note, 'Percakapan kembali ke posisi terakhir (transkrip tidak dihapus).');
+      assert.match(claude.session, /Rapikan checkout/);
+      assert.deepEqual([claude.label, claude.primary, claude.described, claude.disabled], ['Pulihkan percakapan', false, 'rw-redo-conv-note', false], 'tombol sekunder, bernama, dan dijelaskan oleh catatan mesin');
+      assert.deepEqual(claude.files, ['src/a.js'], 'daftar file kode tetap seperti sebelumnya');
+
+      // OpenCode: the same bundle says the restore is a COPY, in a new session.
+      await page.eval(async () => {
+        window.__conv = { engine: 'opencode', sessionId: 'ses_lama', title: 'Sesi OpenCode', available: true };
+        (await import('/js/features/rewind.js')).openRewind();
+      });
+      await page.waitFor(() => document.querySelector('#rewind-redo [data-redo-recent]'), { timeoutMs: 3000, message: 'entri redo-list (2)' });
+      await page.eval(() => document.querySelector('#rewind-redo [data-redo-recent]').click());
+      await page.waitFor(() => /SALINAN/.test(document.querySelector('#rewind-redo .rw-redo-conv-note')?.textContent ?? ''), { timeoutMs: 3000, message: 'blok percakapan OpenCode' });
+      assert.equal(
+        await page.eval(() => document.querySelector('#rewind-redo .rw-redo-conv-note').textContent),
+        'Percakapan dipulihkan sebagai SALINAN (sesi baru); sesi lama yang terhapus tidak kembali.',
+      );
+      assert.equal(await page.eval(() => window.__calls.filter((c) => /\/redo-conversation$/.test(c.url)).length), 0, 'menampilkan blok tidak memulihkan apa pun');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⏪ Pulihkan percakapan: Batal di konfirmasi tidak mengirim apa pun', async () => {
+      await freshApp();
+      page.clearProblems();
+      await page.eval(async () => {
+        window.__calls = [];
+        window.__confirms = [];
+        window.__answer = false;
+        window.confirm = (msg) => (window.__confirms.push(msg), window.__answer);
+        const orig = window.fetch;
+        const reply = (obj, status = 200) => Promise.resolve(new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } }));
+        const now = Date.now();
+        const conv = { engine: 'claude', sessionId: 'c1a2b3c4-1111-2222-3333-444455556666', title: 'Rapikan checkout', available: true };
+        window.fetch = (url, opts) => {
+          const u = String(url);
+          window.__calls.push({ url: u, body: opts?.body ? JSON.parse(opts.body) : null });
+          if (/\/rewind-points$/.test(u)) return reply({ points: [] });
+          if (/\/redo-list$/.test(u)) return reply({ bundles: [{ id: 'rb_conv', createdAt: now, files: ['src/a.js'], status: 'ready', conversation: conv }] });
+          if (/\/redo-preview$/.test(u)) return reply({ id: 'rb_conv', createdAt: now, files: [{ path: 'src/a.js', action: 'restore', conflict: false }], conflicts: 0, unsupported: [], conversation: conv });
+          if (/\/redo-conversation$/.test(u)) return reply({ ok: true, engine: 'claude' });
+          return orig(url, opts);
+        };
+        (await import('/js/features/rewind.js')).openRewind();
+      });
+      await page.waitFor(() => document.querySelector('#rewind-redo [data-redo-recent]'), { timeoutMs: 3000, message: 'entri redo-list' });
+      await page.eval(() => document.querySelector('#rewind-redo [data-redo-recent]').click());
+      await page.waitFor(() => document.querySelector('#rewind-redo [data-redo="conversation"]') && !document.querySelector('#rewind-redo [data-redo="conversation"]').disabled, { timeoutMs: 3000, message: 'tombol Pulihkan percakapan siap' });
+      await page.eval(() => document.querySelector('#rewind-redo [data-redo="conversation"]').click());
+      await sleep(250);
+      const after = await page.eval(() => ({
+        calls: window.__calls.filter((c) => /\/redo-conversation$/.test(c.url)).length,
+        open: !document.querySelector('#rewind-modal').hidden,
+        disabled: document.querySelector('#rewind-redo [data-redo="conversation"]').disabled,
+        confirms: window.__confirms,
+      }));
+      assert.equal(after.calls, 0, 'Batal: tidak ada permintaan');
+      assert.equal(after.open, true, 'dialog tetap terbuka');
+      assert.equal(after.disabled, false, 'tombol tetap bisa dipakai');
+      assert.equal(after.confirms.length, 1);
+      assert.match(after.confirms[0], /Rapikan checkout/, 'konfirmasi menyebut sesinya');
+      assert.match(after.confirms[0], /transkrip tidak dihapus/, 'konfirmasi menjelaskan efek khas Claude Code');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⏪ Pulihkan percakapan: konfirmasi mengirim {id} ke redo-conversation, toast (dengan sesi baru untuk OpenCode), dialog tertutup', async () => {
+      await freshApp();
+      page.clearProblems();
+      await page.eval(async () => {
+        window.__calls = [];
+        window.__confirms = [];
+        window.__answer = true;
+        window.confirm = (msg) => (window.__confirms.push(msg), window.__answer);
+        window.__conv = { engine: 'opencode', sessionId: 'ses_lama', title: 'Sesi OpenCode', available: true };
+        window.__resp = { ok: true, engine: 'opencode', sessionId: 'ses_baru' };
+        const orig = window.fetch;
+        const reply = (obj, status = 200) => Promise.resolve(new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } }));
+        const now = Date.now();
+        window.fetch = (url, opts) => {
+          const u = String(url);
+          window.__calls.push({ url: u, body: opts?.body ? JSON.parse(opts.body) : null });
+          if (/\/rewind-points$/.test(u)) return reply({ points: [] });
+          if (/\/redo-list$/.test(u)) return reply({ bundles: [{ id: 'rb_conv', createdAt: now, files: ['src/a.js'], status: 'ready', conversation: window.__conv }] });
+          if (/\/redo-preview$/.test(u)) return reply({ id: 'rb_conv', createdAt: now, files: [{ path: 'src/a.js', action: 'restore', conflict: false }], conflicts: 0, unsupported: [], conversation: window.__conv });
+          if (/\/redo-conversation$/.test(u)) return reply(window.__resp);
+          return orig(url, opts);
+        };
+        (await import('/js/features/rewind.js')).openRewind();
+      });
+      await page.waitFor(() => document.querySelector('#rewind-redo [data-redo-recent]'), { timeoutMs: 3000, message: 'entri redo-list' });
+      await page.eval(() => document.querySelector('#rewind-redo [data-redo-recent]').click());
+      await page.waitFor(() => document.querySelector('#rewind-redo [data-redo="conversation"]') && !document.querySelector('#rewind-redo [data-redo="conversation"]').disabled, { timeoutMs: 3000, message: 'tombol Pulihkan percakapan siap' });
+      await page.eval(() => document.querySelector('#rewind-redo [data-redo="conversation"]').click());
+      await page.waitFor(() => document.querySelector('#rewind-modal').hidden, { timeoutMs: 3000, message: 'dialog tertutup setelah pemulihan' });
+      const sent = await page.eval(() => window.__calls.filter((c) => /\/redo-conversation$/.test(c.url)).at(-1));
+      assert.deepEqual(sent.body, { id: 'rb_conv' }, 'hanya id bundel yang dikirim');
+      assert.match(await page.eval(() => window.__confirms[0]), /SALINAN \(sesi baru\)/, 'konfirmasi menjelaskan efek khas OpenCode');
+      await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => t.textContent === 'Percakapan dipulihkan. Sesi baru: ses_baru'), { timeoutMs: 2000, message: 'toast percakapan + sesi baru' });
+
+      // Claude Code: the same call, a toast without a new session.
+      await page.eval(async () => {
+        window.__conv = { engine: 'claude', sessionId: 'c1a2b3c4-1111-2222-3333-444455556666', title: 'Sesi Claude', available: true };
+        window.__resp = { ok: true, engine: 'claude' };
+        window.__calls = [];
+        (await import('/js/features/rewind.js')).openRewind();
+      });
+      await page.waitFor(() => document.querySelector('#rewind-redo [data-redo-recent]'), { timeoutMs: 3000, message: 'entri redo-list (2)' });
+      await page.eval(() => document.querySelector('#rewind-redo [data-redo-recent]').click());
+      await page.waitFor(() => document.querySelector('#rewind-redo [data-redo="conversation"]') && !document.querySelector('#rewind-redo [data-redo="conversation"]').disabled, { timeoutMs: 3000, message: 'tombol Pulihkan percakapan siap (2)' });
+      await page.eval(() => document.querySelector('#rewind-redo [data-redo="conversation"]').click());
+      await page.waitFor(() => document.querySelector('#rewind-modal').hidden, { timeoutMs: 3000, message: 'dialog tertutup (Claude)' });
+      assert.deepEqual(await page.eval(() => window.__calls.filter((c) => /\/redo-conversation$/.test(c.url)).map((c) => c.body)), [{ id: 'rb_conv' }]);
+      await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => t.textContent === 'Percakapan dipulihkan.'), { timeoutMs: 2000, message: 'toast Claude tanpa sesi baru' });
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⏪ Pulihkan percakapan: 502 tampil inline di area error redo, tanpa retry otomatis', async () => {
+      await freshApp();
+      page.clearProblems();
+      await page.eval(async () => {
+        window.__calls = [];
+        window.confirm = () => true;
+        const orig = window.fetch;
+        const reply = (obj, status = 200) => Promise.resolve(new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } }));
+        const now = Date.now();
+        const conv = { engine: 'opencode', sessionId: 'ses_lama', title: 'Sesi OpenCode', available: true };
+        window.fetch = (url, opts) => {
+          const u = String(url);
+          window.__calls.push({ url: u, body: opts?.body ? JSON.parse(opts.body) : null });
+          if (/\/rewind-points$/.test(u)) return reply({ points: [] });
+          if (/\/redo-list$/.test(u)) return reply({ bundles: [{ id: 'rb_conv', createdAt: now, files: ['src/a.js'], status: 'ready', conversation: conv }] });
+          if (/\/redo-preview$/.test(u)) return reply({ id: 'rb_conv', createdAt: now, files: [{ path: 'src/a.js', action: 'restore', conflict: false }], conflicts: 0, unsupported: [], conversation: conv });
+          if (/\/redo-conversation$/.test(u)) return reply({ error: 'Import percakapan gagal: sesi OpenCode tidak bisa diimpor.' }, 502);
+          return orig(url, opts);
+        };
+        (await import('/js/features/rewind.js')).openRewind();
+      });
+      await page.waitFor(() => document.querySelector('#rewind-redo [data-redo-recent]'), { timeoutMs: 3000, message: 'entri redo-list' });
+      await page.eval(() => document.querySelector('#rewind-redo [data-redo-recent]').click());
+      await page.waitFor(() => document.querySelector('#rewind-redo [data-redo="conversation"]') && !document.querySelector('#rewind-redo [data-redo="conversation"]').disabled, { timeoutMs: 3000, message: 'tombol Pulihkan percakapan siap' });
+      await page.eval(() => document.querySelector('#rewind-redo [data-redo="conversation"]').click());
+      await page.waitFor(() => /Import percakapan gagal/.test(document.querySelector('#rewind-redo .rw-redo-error')?.textContent ?? ''), { timeoutMs: 3000, message: '502 inline di area error redo' });
+      const failed = await page.eval(() => ({
+        open: !document.querySelector('#rewind-modal').hidden,
+        error: document.querySelector('#rewind-redo .rw-redo-error').textContent,
+        role: document.querySelector('#rewind-redo .rw-redo-error').getAttribute('role'),
+        conv: Boolean(document.querySelector('#rewind-redo .rw-redo-conv')),
+        disabled: document.querySelector('#rewind-redo [data-redo="conversation"]').disabled,
+        calls: window.__calls.filter((c) => /\/redo-conversation$/.test(c.url)).length,
+      }));
+      assert.equal(failed.open, true, 'dialog tetap terbuka');
+      assert.equal(failed.error, 'Import percakapan gagal: sesi OpenCode tidak bisa diimpor.');
+      assert.equal(failed.role, 'alert', 'pesan dibacakan sebagai peringatan');
+      assert.equal(failed.conv, true, 'blok percakapan tetap tampil');
+      assert.equal(failed.disabled, false, 'tombol bisa dicoba lagi oleh user');
+      assert.equal(failed.calls, 1);
+      await sleep(400);
+      assert.equal(await page.eval(() => window.__calls.filter((c) => /\/redo-conversation$/.test(c.url)).length), 1, 'tidak ada retry otomatis');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⏪ Pulihkan percakapan: rewind percakapan saja (file 0) tetap menampilkan bagian redo, tanpa daftar file', async () => {
+      await freshApp();
+      page.clearProblems();
+      await page.eval(async () => {
+        window.__calls = [];
+        const orig = window.fetch;
+        const reply = (obj, status = 200) => Promise.resolve(new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } }));
+        const now = Date.now();
+        window.fetch = (url, opts) => {
+          const u = String(url);
+          window.__calls.push({ url: u, body: opts?.body ? JSON.parse(opts.body) : null });
+          if (/\/rewind-points$/.test(u)) return reply({ points: [{ uuid: 'msg_a', text: 'pertama', ts: now }] });
+          if (/\/rewind-preview$/.test(u)) return reply({ canRewind: true, filesChanged: ['src/a.js'], insertions: 1, deletions: 0 });
+          if (/\/redo-list$/.test(u)) return reply({ bundles: [] });
+          if (/\/rewind$/.test(u)) return reply({ ok: true, text: '', redo: { id: 'rd_conv', files: [], conversation: true } });
+          if (/\/redo-preview$/.test(u))
+            return reply({ id: 'rd_conv', createdAt: now, files: [], conversation: { engine: 'opencode', sessionId: 'ses_a', title: 'Sesi A', available: true } });
+          return orig(url, opts);
+        };
+        (await import('/js/features/rewind.js')).openRewind();
+      });
+      await page.waitFor(() => document.querySelector('#rewind-list [data-uuid="msg_a"]'), { timeoutMs: 3000, message: 'daftar pesan' });
+      await page.eval(() => document.querySelector('#rewind-list [data-uuid="msg_a"]').click());
+      await page.waitFor(() => document.querySelector('#rewind-detail [data-rw="conversation"]') && !document.querySelector('#rewind-detail [data-rw="both"]').disabled, { timeoutMs: 3000, message: 'pratinjau siap' });
+      await page.eval(() => document.querySelector('#rewind-detail [data-rw="conversation"]').click());
+      await page.waitFor(
+        () => /SALINAN \(sesi baru\)/.test(document.querySelector('#rewind-redo .rw-redo-conv-note')?.textContent ?? ''),
+        { timeoutMs: 3000, message: 'bagian redo dengan blok percakapan' },
+      );
+      const after = await page.eval(() => {
+        const box = document.querySelector('#rewind-redo');
+        return {
+          open: !document.querySelector('#rewind-modal').hidden,
+          files: box.querySelectorAll('.rw-redo-files').length,
+          run: Boolean(box.querySelector('[data-redo="run"]')),
+          conv: box.querySelector('.rw-redo-conv-note')?.textContent,
+          empty: /Tidak ada file kode/.test(box.textContent),
+          rewind: window.__calls.filter((c) => /\/rewind$/.test(c.url)).at(-1)?.body,
+        };
+      });
+      assert.deepEqual(after.rewind, { uuid: 'msg_a', code: false, conversation: true }, 'rewind percakapan saja');
+      assert.equal(after.open, true, 'dialog tetap terbuka: redo masih ditawarkan');
+      assert.equal(after.files, 0, 'tanpa daftar file saat file 0');
+      assert.equal(after.run, false, 'tanpa tombol Ulangi kode yang tidak ada');
+      assert.equal(after.empty, false, 'tanpa pesan "tidak ada file" saat percakapan bisa dipulihkan');
+      assert.match(after.conv, /SALINAN \(sesi baru\)/, 'blok percakapan tetap tampil');
+      assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⏪ Pulihkan percakapan: tanpa scroll horizontal di 390px (judul sesi panjang, tombol bernama)', { skip: !vp.mobile }, async () => {
+      await freshApp();
+      page.clearProblems();
+      await page.eval(async () => {
+        const orig = window.fetch;
+        const reply = (obj, status = 200) => Promise.resolve(new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } }));
+        const long = `Sesi ${'dengan-judul-yang-sangat-panjang '.repeat(6)}sekali`;
+        const now = Date.now();
+        const conv = { engine: 'opencode', sessionId: `ses_${'a'.repeat(90)}`, title: long, available: true };
+        window.fetch = (url, opts) => {
+          const u = String(url);
+          if (/\/rewind-points$/.test(u)) return reply({ points: [] });
+          if (/\/redo-list$/.test(u)) return reply({ bundles: [{ id: 'rb_long', createdAt: now, files: ['src/a.js'], status: 'ready', conversation: conv }] });
+          if (/\/redo-preview$/.test(u))
+            return reply({ id: 'rb_long', createdAt: now, files: [{ path: 'src/a.js', action: 'restore', conflict: false }], conflicts: 0, unsupported: [], conversation: conv });
+          return orig(url, opts);
+        };
+        (await import('/js/features/rewind.js')).openRewind();
+      });
+      await page.waitFor(() => document.querySelector('#rewind-redo [data-redo-recent]'), { timeoutMs: 3000, message: 'entri redo-list' });
+      await page.eval(() => document.querySelector('#rewind-redo [data-redo-recent]').click());
+      await page.waitFor(() => document.querySelector('#rewind-redo .rw-redo-conv-session'), { timeoutMs: 3000, message: 'blok percakapan' });
+      assert.equal(await page.eval(horizontalOverflow), null, 'dialog redo tidak membuat overflow');
+      assert.equal(
+        await page.eval(() => [...document.querySelectorAll('#rewind-redo, #rewind-redo *')].every((el) => el.scrollWidth <= el.clientWidth + 1)),
+        true,
+        'tidak ada isi dialog yang lebih lebar dari kotaknya',
+      );
+      assert.deepEqual(await page.eval(unnamedButtons, '#rewind-redo'), [], 'tombol redo dan Pulihkan percakapan punya nama aksesibel');
       assert.deepEqual(realProblems(page), []);
     });
 

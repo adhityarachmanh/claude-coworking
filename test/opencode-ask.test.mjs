@@ -169,7 +169,7 @@ async function snapshot() {
 let id;
 async function openCodeProject(mode) {
   id ??= (await snapshot()).projects.find((p) => p.name === 'toko').id;
-  if ((await snapshot()).config.engine !== 'opencode') assert.equal((await api('/api/engine', { engine: 'opencode' })).status, 200);
+  if ((await snapshot()).statuses[id]?.engine !== 'opencode') assert.equal((await api(`/api/projects/${id}/engine`, { engine: 'opencode' })).status, 200);
   await api(`/api/projects/${id}/settings`, { mode });
   return id;
 }

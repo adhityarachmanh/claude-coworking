@@ -482,7 +482,7 @@ export class TaskQueue {
     const item = this.running(id);
     if (item && !status.busy) {
       // The turn is over without a result: Claude Code exited, the session was reset or the process detached.
-      this.finish(id, item, { status: 'failed', error: `Giliran berhenti tanpa hasil (${this.engineName(item)} berhenti atau sesi direset).` });
+      this.finish(id, item, { status: 'failed', error: `Giliran berhenti tanpa hasil (${this.engineName(item, id)} berhenti atau sesi direset).` });
       this.pauseFor(id, 'failed', 'item berhenti tanpa hasil');
       return;
     }
@@ -490,14 +490,16 @@ export class TaskQueue {
   }
 
   /**
-   * Called for every rate_limit_event of a session. "rejected" = the account is out of quota: every queue that
-   * is still going pauses (the limit is per account, not per project).
+   * Called for every rate_limit_event of a session. "rejected" = that engine's account is out of quota: every
+   * queue still going on the SAME engine pauses (a Claude limit says nothing about OpenCode's providers).
    */
   onRateLimit(id, info) {
     if (info?.status !== 'rejected') return;
+    const engine = this.hub.engineOf ? this.hub.engineOf(id) : this.hub.engine;
     for (const [pid, q] of Object.entries(this.queues)) {
+      if (this.hub.engineOf && this.hub.engineOf(pid) !== engine) continue;
       if (q.paused || !(q.items.some((i) => i.status === 'waiting') || this.running(pid))) continue;
-      this.pauseFor(pid, 'rate_limit', 'batas pemakaian akun Claude tercapai');
+      this.pauseFor(pid, 'rate_limit', engine === 'opencode' ? 'batas pemakaian provider OpenCode tercapai' : 'batas pemakaian akun Claude tercapai');
     }
   }
 
@@ -539,11 +541,12 @@ export class TaskQueue {
   }
 
   /**
-   * The engine an item ran on (stored at dispatch), else the app-wide one (Hub.engine), for the messages the user
-   * reads: a later engine switch does not rename what a running item was sent to.
+   * The engine an item ran on (stored at dispatch), else the project's engine, for the messages the user reads:
+   * switching a project's engine later does not rename what a running item was sent to.
    */
-  engineName(item = null) {
-    return (item?.engine ?? this.hub.engine) === 'opencode' ? 'OpenCode' : 'Claude Code';
+  engineName(item = null, id = null) {
+    const engine = item?.engine ?? (id && this.hub.engineOf ? this.hub.engineOf(id) : this.hub.engine);
+    return engine === 'opencode' ? 'OpenCode' : 'Claude Code';
   }
 
   /** True when the project's session can take the next item now. */
@@ -561,7 +564,8 @@ export class TaskQueue {
     const project = this.hub.projects.get(id);
     if (!item || !project || project.virtual || !this.idle(id)) return;
     const session = this.sessions.get(project);
-    Object.assign(item, { status: 'running', startedAt: this.now(), updatedAt: this.now(), error: null, engine: this.hub.engine === 'opencode' ? 'opencode' : 'claude' });
+    const engine = this.hub.engineOf(id);
+    Object.assign(item, { status: 'running', startedAt: this.now(), updatedAt: this.now(), error: null, engine });
     this.dispatching = id;
     let sent;
     const settings = this.hub.settingsFor(id);
@@ -570,7 +574,7 @@ export class TaskQueue {
       : null;
     // Model Auto: the item was classified (routes/queue.js) and its level picks the tier here, so a queue keeps
     // switching models per task with no classifier call at dispatch.
-    const autoModel = item.effort && settings.modelAuto ? tierFor(item.effort, this.hub.engine, settings.modelTiers) : null;
+    const autoModel = item.effort && settings.modelAuto ? tierFor(item.effort, engine, settings.modelTiers) : null;
     try {
       const patch = {};
       if (autoEffort) Object.assign(patch, { effort: autoEffort.level, effortAuto: true });
@@ -590,7 +594,7 @@ export class TaskQueue {
     item.chatId = sent?.chatId ?? null;
     if (!session.busy) {
       // Never reached Claude Code (not installed, failed to start): the reason is already in the chat.
-      const name = this.engineName(item);
+      const name = this.engineName(item, id);
       this.finish(id, item, { status: 'failed', error: item.error ?? `${name} tidak bisa dijalankan.` });
       this.pauseFor(id, 'failed', `${name} tidak bisa dijalankan`);
       return;

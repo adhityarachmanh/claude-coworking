@@ -4,6 +4,7 @@
 // Everything the server sends is checked and escaped before it reaches the page.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
+import { engineLabel, engineOf } from '../core/engine-caps.js';
 import { ago } from '../core/format.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { saveBlob } from '../core/util.js';
@@ -160,12 +161,14 @@ function renderResults(all) {
 async function resumeResult(r, btn) {
   if (!state.projects.some((p) => p.id === r.projectId)) return toast('Project hasil ini sudah tidak ada di daftar.');
   const engine = r.engine === 'opencode' ? 'opencode' : 'claude';
-  const currentEngine = state.config?.engine === 'opencode' ? 'opencode' : 'claude';
+  // Stage 1: the result belongs to a project whose engine may differ. Switch THAT project only (never the default).
+  const currentEngine = engineOf(state.statuses[r.projectId] ?? {}, state.config);
   if (engine !== currentEngine) {
-    const label = engine === 'opencode' ? 'OpenCode' : 'Claude Code';
-    if (!window.confirm(`Hasil ini dari ${label}. Pindah mesin ke ${label} untuk melanjutkan sesi?`)) return;
+    const label = engineLabel(engine);
+    if (!window.confirm(`Hasil ini dari ${label}. Project ${projectName(r.projectId)} sekarang memakai ${engineLabel(currentEngine)}.\n\nGanti mesin project itu ke ${label} untuk melanjutkan sesi? Project lain tidak terpengaruh.`)) return;
     try {
-      await api('/api/engine', { engine });
+      await api(`/api/projects/${encodeURIComponent(r.projectId)}/engine`, { engine });
+      toast(`Project ini sekarang memakai ${label}.`, 'ok');
     } catch (err) {
       return toast(err.message, 'warn');
     }

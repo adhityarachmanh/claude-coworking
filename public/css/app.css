@@ -253,6 +253,11 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .p-text small { color: var(--muted); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--r-pill); display: grid; place-items: center; font-size: var(--fs-xs); font-weight: 700; }
 .badge.ask { background: var(--ask); color: var(--on-ask); animation: pulse 1.2s infinite; }
+/* 🔀 which engine a project runs on (session bar, project picker row): one compact pill, never wraps */
+.engine-badge { flex: none; display: inline-block; padding: 1px 7px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; line-height: 1.5; white-space: nowrap; }
+.engine-badge[data-engine='opencode'] { color: var(--accent-2); border-color: var(--accent-line); background: var(--accent-soft); }
+#sb-meta .engine-badge { margin-right: 6px; vertical-align: 1px; }
+.project-engine { display: flex; flex-direction: column; gap: 6px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
 .dot.live { background: var(--ok); box-shadow: 0 0 0 3px #3fb95026; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 15%, transparent); }
 /* visibility (not display): row layout stays stable; shown on hover, on the keyboard-cursor row, and always on touch */
@@ -718,6 +723,12 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .rw-redo-overwrite input { flex: none; width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent); cursor: pointer; }
 .rw-redo-overwrite input:disabled { cursor: default; }
 .rw-redo-error { margin-top: 6px; }
+/* 🔄 Pulihkan percakapan: the bundle's conversation, restored separately from its code changes */
+.rw-redo-conv { min-width: 0; margin-top: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
+.rw-redo-conv > b { display: block; font-size: var(--fs-md); }
+.rw-redo-conv-note { margin: 2px 0 0; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.rw-redo-conv-session { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.rw-redo-conv .rw-actions { margin-top: 6px; }
 .mcp-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); }
 .mcp-row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mcp-list small { display: block; margin-top: 2px; font-size: var(--fs-xs); overflow-wrap: anywhere; }
@@ -2438,4 +2449,32 @@ body.read-only #budget-section { display: none !important; }
 @media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   .health-actions { flex-direction: column-reverse; align-items: stretch; }
   .health-actions button { min-height: 44px; }
+}
+
+/* ---------- 🎯 mode fokus (features/focus.js) ---------- */
+/* The office (and 🧠 Mode Otak) is hidden and its animation paused (public/js/app.js), so the chat panel takes the
+   whole window. Nothing here touches the office itself: turning the mode off just shows it again. */
+body.focus-mode .office { display: none !important; }
+body.focus-mode .layout { grid-template-columns: minmax(0, 1fr); }
+body.focus-mode .panel { display: flex; grid-column: 1 / -1; height: auto; border-left: 0; }
+body.focus-mode .panel-resizer { display: none; } /* one column: there is nothing to resize */
+.focus-exit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  margin: 8px 12px 0;
+  padding: 6px 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: 600 var(--fs-sm)/1.2 var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.focus-exit:hover { color: var(--text); border-color: var(--accent); }
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
+  .focus-exit { min-height: 44px; margin: 6px 8px 0; font-size: var(--fs-sm); } /* a real tap target on a phone */
 }

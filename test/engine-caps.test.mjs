@@ -2,7 +2,7 @@
 // The server sends OPENCODE_CAPS in config.engines.opencode.caps; these tests keep the server and UI in sync.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CLAUDE_CAPS, capReason, capsFor } from '../public/js/core/engine-caps.js';
+import { CLAUDE_CAPS, capReason, capsFor, engineBadge, engineOf } from '../public/js/core/engine-caps.js';
 import { OPENCODE_CAPS } from '../src/acp-session.js';
 
 const CONFIG = Object.freeze({
@@ -36,6 +36,36 @@ test('caps without an engines entry fall back to Claude (older servers)', () => 
   const caps = capsFor({}, 'opencode');
   assert.equal(caps.permissions, true);
   assert.equal(caps.search, true);
+});
+
+test('engineOf: the project status wins over the app-wide default (Stage 1)', () => {
+  // A project that chose OpenCode keeps it even while Akun's default (new projects) is Claude Code.
+  assert.equal(engineOf({ engine: 'opencode' }, CONFIG), 'opencode');
+  // And the other way: a Claude project is not dragged along by an OpenCode default.
+  assert.equal(engineOf({ engine: 'claude' }, CONFIG), 'claude');
+  // Older servers (no per-project engine) and a project not opened yet fall back to the default.
+  assert.equal(engineOf({}, CONFIG), 'opencode');
+  assert.equal(engineOf(undefined, CONFIG), 'opencode');
+  assert.equal(engineOf({}, {}), 'claude', 'nothing known: Claude Code');
+});
+
+test('engineOf: a malformed status engine is ignored, never shown as a choice', () => {
+  assert.equal(engineOf({ engine: 'Open Code!' }, { engine: 'opencode' }), 'opencode');
+  assert.equal(engineOf({ engine: '' }, { engine: 'claude' }), 'claude');
+  assert.equal(engineOf({ engine: 42 }, undefined), 'claude');
+});
+
+test('caps follow the project engine, not the default', () => {
+  const config = { engine: 'claude', engines: CONFIG.engines };
+  assert.equal(capsFor(config, engineOf({ engine: 'opencode' }, config)).permissions, false);
+  assert.equal(capsFor(config, engineOf({ engine: 'claude' }, config)).permissions, true);
+});
+
+test('the badge is short and still names an engine the server adds later', () => {
+  assert.equal(engineBadge('claude'), '✳ Claude');
+  assert.equal(engineBadge('opencode'), '⌘ OpenCode');
+  assert.equal(engineBadge('cursor'), 'cursor');
+  assert.equal(engineBadge(undefined), 'claude', 'like engineLabel: the default engine id, never "undefined"');
 });
 
 test('the reason is clear and no longer says Fase 1', () => {

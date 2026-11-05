@@ -93,11 +93,13 @@ export function recordAuth(entry, { dataDir = defaultDataDir() } = {}) {
  * Compact the audit file once it grows past PRUNE_BYTES: keep the last PRUNE_DAYS days (at most PRUNE_MAX actions),
  * written to a temp file and renamed over it. Best effort: any failure leaves the old file untouched.
  */
-export function pruneAuth(dataDir = defaultDataDir(), now = Date.now()) {
+export function pruneAuth(dataDir = defaultDataDir(), now = Date.now(), { force = false } = {}) {
   const file = path.join(dataDir, AUDIT_FILE);
   try {
-    if (statSync(file).size < PRUNE_BYTES) return false;
-    const lines = readFileSync(file, 'utf8').split('\n');
+    if (!force && statSync(file).size < PRUNE_BYTES) return false;
+    const raw = readFileSync(file, 'utf8');
+    if (!raw.trim()) return false;
+    const lines = raw.split('\n');
     const cutoff = now - PRUNE_DAYS * 24 * 60 * 60 * 1000;
     const kept = [];
     for (const line of lines) {

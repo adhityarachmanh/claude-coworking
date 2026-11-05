@@ -110,11 +110,9 @@ async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir,
   if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
   const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
   if (!ZIP_TYPES.has(type)) return json(res, 415, { error: 'Kirim file .zip hasil Export riwayat.' });
-  // A backup is Claude Code's history: imported into another engine's workspace it would mix with that engine's chats.
-  if (hub.engine !== 'claude') {
-    res.on('finish', () => req.destroy());
-    return json(res, 409, { error: 'Import riwayat hanya saat mesin Claude Code aktif. Pindah ke Claude Code di 👤 Akun dulu.' });
-  }
+  // A backup is Claude Code's history plus the office state: that store is always kept (data/chats), whatever
+  // engine a project runs on. Each engine's chats come back into their own store (data/chats-opencode too), and
+  // mergeProjectData restores the project's engine + what each engine remembered, for engines installed here.
   if (Number(req.headers['content-length']) > maxBackupBytes) throw new HttpError(413, `File backup terlalu besar (maks ${Math.round(maxBackupBytes / 1024 ** 2)} MB).`);
   if (backupLock.busy) {
     res.on('finish', () => req.destroy()); // don't read an upload that is refused
@@ -135,7 +133,7 @@ async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir,
     // A backup names folders (roots, added folders, project paths): only ones below this home are used.
     const home = os.homedir();
     const outside = (p) => `Folder dari backup dilewati (di luar folder home ${home}, atau tidak ada): ${p}. Tambahkan manual bila perlu.`;
-    summary.state = { roots: 0, custom: 0, favorites: 0, settings: 0, chats: 0, teamNames: 0 };
+    summary.state = { roots: 0, custom: 0, favorites: 0, settings: 0, engines: 0, engineSettings: 0, sessions: 0, chats: 0, teamNames: 0 };
     if (imported) {
       const { skipped, ...added } = hub.mergeFolders(imported, { mapPath: remap.mapPath, roots: projectRoots(), accept: (p) => isUnderHome(p, home) && isDirectory(p) });
       Object.assign(summary.state, added);

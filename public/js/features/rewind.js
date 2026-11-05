@@ -2,6 +2,7 @@
 // A code rewind also keeps a redo bundle: the uncommitted code changes it just restored can be re-applied from there.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
+import { engineOf } from '../core/engine-caps.js';
 import { shortDate } from '../core/format.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
@@ -14,12 +15,18 @@ const rewindView = {
   selected: null,
   preview: null,
   bundles: [], // ready redo bundles from redo-list (newest first)
-  redoBundle: null, // the bundle on offer: { id, createdAt, files }
+  redoBundle: null, // the bundle on offer: { id, createdAt, files, conversation }
   redoPreview: null, // redo-preview answer for redoBundle
   redoLoading: false,
   redoBusy: false,
   redoError: '',
   overwrite: false,
+};
+
+// What "Pulihkan percakapan" does, per engine. The same sentence is shown in the block and in the confirm().
+const CONVERSATION_TEXT = {
+  claude: 'Percakapan kembali ke posisi terakhir (transkrip tidak dihapus).',
+  opencode: 'Percakapan dipulihkan sebagai SALINAN (sesi baru); sesi lama yang terhapus tidak kembali.',
 };
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
@@ -33,6 +40,47 @@ const asTime = (value) => {
   return Number.isFinite(n) ? n : 0;
 };
 const shortPath = (f) => String(f).split(/[\\/]/).slice(-2).join('/');
+const asText = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
+
+/** `{ engine, sessionId, title, available }`; `true` is the rewind answer's short form (it names only the bundle). */
+function normalizeConversation(raw) {
+  if (raw === true) return { engine: '', sessionId: '', title: '', available: true };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.available !== true) return null;
+  return {
+    engine: raw.engine === 'opencode' || raw.engine === 'claude' ? raw.engine : '',
+    sessionId: asText(raw.sessionId, 100),
+    title: asText(raw.title, 200),
+    available: true,
+  };
+}
+
+/** The bundle's conversation, unless the preview answered on its own (it is the fresher answer). */
+function conversationOf(bundle, preview) {
+  const source = preview && Object.hasOwn(preview, 'conversation') ? preview.conversation : bundle?.conversation;
+  return normalizeConversation(source);
+}
+
+/** The engine named by the bundle, else the project's: anything missing or malformed falls back to Claude Code. */
+function conversationEngine(conversation) {
+  return conversation?.engine || engineOf(state.statuses[rewindView.project] ?? {}, state.config);
+}
+
+const conversationText = (engine) => (engine === 'opencode' ? CONVERSATION_TEXT.opencode : CONVERSATION_TEXT.claude);
+
+/** The "🔄 Pulihkan percakapan" block: engine-specific effect, which session, and one secondary button. */
+function conversationBlock(conversation, busy) {
+  const engine = conversationEngine(conversation);
+  const session = conversation.title
+    ? `<p class="rw-redo-conv-session" title="${escapeHtml(conversation.title)}">Sesi: ${escapeHtml(conversation.title)}</p>`
+    : conversation.sessionId
+      ? `<p class="rw-redo-conv-session">Sesi: <code>${escapeHtml(conversation.sessionId)}</code></p>`
+      : '';
+  return `<div class="rw-redo-conv" role="group" aria-labelledby="rw-redo-conv-title">
+    <b id="rw-redo-conv-title">🔄 Pulihkan percakapan</b>
+    <p id="rw-redo-conv-note" class="rw-redo-conv-note muted">${escapeHtml(conversationText(engine))}</p>${session}
+    <div class="rw-actions"><button type="button" data-redo="conversation" aria-describedby="rw-redo-conv-note" ${busy ? 'disabled' : ''}>Pulihkan percakapan</button></div>
+  </div>`;
+}
 
 function setRewindError(message = '') {
   $('#rewind-error').textContent = message;
@@ -44,7 +92,13 @@ function normalizeBundles(res) {
     .filter((b) => b && typeof b.id === 'string' && b.id && b.status === 'ready')
     .map((b) => {
       const files = asArray(b.files).filter((f) => typeof f === 'string');
-      return { id: b.id, createdAt: asTime(b.createdAt), files, count: Array.isArray(b.files) ? files.length : asCount(b.files) };
+      return {
+        id: b.id,
+        createdAt: asTime(b.createdAt),
+        files,
+        count: Array.isArray(b.files) ? files.length : asCount(b.files),
+        conversation: normalizeConversation(b.conversation),
+      };
     })
     .sort((a, b) => b.createdAt - a.createdAt);
 }
@@ -188,15 +242,20 @@ function renderRedo() {
       return;
     }
     box.hidden = false;
+    const parts = [];
+    if (recent.count) parts.push(`${recent.count} file`);
+    if (recent.conversation) parts.push('percakapan');
+    if (!parts.length) parts.push('0 file');
     box.innerHTML = `<button type="button" class="rw-redo-recent" data-redo-recent="${escapeHtml(recent.id)}">
       <span>↩ Ulangi rewind terakhir</span>
-      <small>${recent.count} file · ${escapeHtml(shortDate(recent.createdAt))}</small>
+      <small>${parts.join(' + ')} · ${escapeHtml(shortDate(recent.createdAt))}</small>
     </button>`;
     return;
   }
 
   const pv = rewindView.redoPreview;
   const files = normalizeRedoFiles(pv ?? { files: bundle.files });
+  const conversation = conversationOf(bundle, pv);
   const conflicts = conflictCount(pv, files);
   const unsupported = unsupportedFiles(pv);
   const busy = rewindView.redoBusy;
@@ -209,7 +268,9 @@ function renderRedo() {
             `<li><span class="rw-mk ${f.action}">${f.action === 'delete' ? '✕ hapus' : '↩ kembalikan'}</span><span class="rw-path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}</span>${f.conflict ? '<span class="rw-conflict">⚠ bentrok</span>' : ''}</li>`,
         )
         .join('')}${files.length > shown.length ? `<li class="muted">+${files.length - shown.length} file lainnya</li>` : ''}</ul>`
-    : '<p class="muted">Tidak ada file kode yang bisa dikembalikan dari rewind ini.</p>';
+    : conversation
+      ? '' // a conversation-only bundle has no file list to show
+      : '<p class="muted">Tidak ada file kode yang bisa dikembalikan dari rewind ini.</p>';
   const loading = rewindView.redoLoading ? '<p class="muted small rw-redo-loading">Memeriksa file…</p>' : '';
   const overwrite = conflicts
     ? `<p class="rw-redo-conflicts">${conflicts} file sudah kamu ubah setelah rewind dan akan dilewati.</p>
@@ -217,20 +278,31 @@ function renderRedo() {
     : '';
   const unsupportedNote = unsupported.length ? `<p class="muted small rw-redo-unsupported">${unsupported.length} file tidak didukung redo dan tidak akan diubah.</p>` : '';
   const error = rewindView.redoError ? `<p class="field-error rw-redo-error" role="alert">${escapeHtml(rewindView.redoError)}</p>` : '';
+  const note = !conversation
+    ? '<p class="muted rw-redo-note">Redo hanya mengembalikan perubahan kode yang belum di-commit — percakapan tidak berubah. File yang kamu ubah setelah rewind dilewati, kecuali kamu mencentang “Timpa file yang sudah saya ubah”. Cadangan rewind tetap disimpan.</p>'
+    : files.length
+      ? '<p class="muted rw-redo-note">Redo hanya mengembalikan perubahan kode yang belum di-commit; percakapan dipulihkan terpisah dengan tombol di bawah. Cadangan rewind tetap disimpan.</p>'
+      : '<p class="muted rw-redo-note">Rewind ini tidak membawa perubahan kode. Percakapan bisa dipulihkan lewat tombol di bawah; cadangan rewind tetap disimpan.</p>';
+  const runButton = files.length ? `<button type="button" class="primary" data-redo="run" ${canRun ? '' : 'disabled'}>↩ Ulangi</button>` : '';
   box.hidden = false;
   box.innerHTML = `<div class="rw-redo-head"><b id="rewind-redo-title">↩ Ulangi perubahan (redo)</b><small>${escapeHtml(shortDate(bundle.createdAt))}</small></div>
-    <p class="muted rw-redo-note">Redo hanya mengembalikan perubahan kode yang belum di-commit — percakapan tidak berubah. File yang kamu ubah setelah rewind dilewati, kecuali kamu mencentang “Timpa file yang sudah saya ubah”. Cadangan rewind tetap disimpan.</p>
-    ${loading}${list}${overwrite}${unsupportedNote}${error}
+    ${note}
+    ${loading}${list}${overwrite}${unsupportedNote}${conversation ? conversationBlock(conversation, busy || rewindView.redoLoading) : ''}${error}
     <div class="rw-actions">
       <button type="button" data-redo="cancel" ${busy ? 'disabled' : ''}>Batal</button>
-      <button type="button" class="primary" data-redo="run" ${canRun ? '' : 'disabled'}>↩ Ulangi</button>
+      ${runButton}
     </div>`;
 }
 
 /** Shows one bundle and asks the server what it would do, so the confirmation names the real files and conflicts. */
 async function offerRedo(bundle) {
   Object.assign(rewindView, {
-    redoBundle: { id: bundle.id, createdAt: asTime(bundle.createdAt), files: asArray(bundle.files).filter((f) => typeof f === 'string') },
+    redoBundle: {
+      id: bundle.id,
+      createdAt: asTime(bundle.createdAt),
+      files: asArray(bundle.files).filter((f) => typeof f === 'string'),
+      conversation: normalizeConversation(bundle.conversation),
+    },
     redoPreview: null,
     redoLoading: true,
     redoBusy: false,
@@ -280,6 +352,36 @@ function closeRedo() {
   closeModal('rewind-modal');
 }
 
+/**
+ * 🔄 Pulihkan percakapan: the same bundle's conversation. Claude Code points the session back at its latest
+ * transcript; OpenCode imports a COPY as a new session. Nothing here touches files, so there is no overwrite step.
+ */
+async function runRedoConversation() {
+  const bundle = rewindView.redoBundle;
+  if (!bundle || rewindView.redoBusy) return;
+  const conversation = conversationOf(bundle, rewindView.redoPreview);
+  if (!conversation) return;
+  const engine = conversationEngine(conversation);
+  const what = conversation.title ? `“${conversation.title}”` : 'dari rewind ini';
+  // The confirm names the engine's real effect: Claude Code keeps the transcript, OpenCode starts a copy.
+  if (!window.confirm(`Pulihkan percakapan ${what}?\n\n${conversationText(engine)}\n\nLanjutkan?`)) return;
+  rewindView.redoError = '';
+  setRedoBusy(true);
+  try {
+    const res = await api(`/api/projects/${rewindView.project}/redo-conversation`, { id: bundle.id });
+    // Never show a malformed answer as a session name: only a short string reaches the toast.
+    const engineAfter = res?.engine === 'opencode' || res?.engine === 'claude' ? res.engine : engine;
+    const sessionId = asText(res?.sessionId, 100);
+    closeModal('rewind-modal'); // the server pushes the restored status/chat on the stream, as it does for /resume
+    toast(`Percakapan dipulihkan.${engineAfter === 'opencode' && sessionId ? ` Sesi baru: ${sessionId}` : ''}`, 'ok');
+  } catch (err) {
+    // 404 (unknown bundle), 409 (no conversation, turn running) and 502 (import failed) stay inline: no retry.
+    setRedoBusy(false);
+    rewindView.redoError = err?.message || 'Pulihkan percakapan gagal.';
+    renderRedo();
+  }
+}
+
 export function initRewind() {
   $('#rewind-list').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-uuid]');
@@ -303,9 +405,10 @@ export function initRewind() {
       if (body.code) loadChanges(); // the working tree changed: the Changes tab and ⎇ git bar follow
       toast(body.conversation ? 'Dikembalikan. Pesanmu ada di kotak pesan untuk diedit.' : 'Kode dikembalikan.', 'ok');
       const redo = res?.redo;
-      if (body.code && redo && typeof redo.id === 'string' && redo.id) {
-        // Keep the dialog open: the code changes this rewind restored can still be undone from its bundle.
-        await offerRedo({ id: redo.id, createdAt: Date.now(), files: asArray(redo.files) });
+      if (redo && typeof redo.id === 'string' && redo.id) {
+        // Keep the dialog open: the code changes this rewind restored can still be undone from its bundle, and a
+        // conversation-only rewind still offers "Pulihkan percakapan" (files 0).
+        await offerRedo({ id: redo.id, createdAt: Date.now(), files: asArray(redo.files), conversation: redo.conversation });
       } else {
         closeModal('rewind-modal');
       }
@@ -331,5 +434,6 @@ export function initRewind() {
     if (!btn || btn.disabled) return;
     if (btn.dataset.redo === 'cancel') closeRedo();
     else if (btn.dataset.redo === 'run') runRedo();
+    else if (btn.dataset.redo === 'conversation') runRedoConversation();
   });
 }

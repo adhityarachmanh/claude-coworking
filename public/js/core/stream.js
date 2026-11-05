@@ -13,7 +13,7 @@ import { notify } from '../features/notify.js';
 import { phone, refreshPairing } from '../features/phone.js';
 import { renderSidebar, selectProject } from '../features/picker.js';
 import { onApprovalUpdate, onPushSnapshot, pushProjectsChanged } from '../features/push.js';
-import { renderRoots } from '../features/settings.js';
+import { renderRoots, syncProjectEngine } from '../features/settings.js';
 import { applyRoster } from '../features/roster.js';
 import { applySpotify } from '../features/spotify.js';
 import { reloadSoon } from '../features/opencode-account.js';
@@ -42,6 +42,7 @@ const handlers = {
     applyClaudeCheck(config.claudeCheck); // Claude Code updated: contract check result (banner + ⚙)
     applyOpenCodeCheck(config.opencodeCheck); // the same for OpenCode (silent when not installed)
     applyAppUpdate(config.appUpdate); // ⬆ a newer Adhit Office: banner + ⚙
+    if (!$('#settings-modal').hidden) syncProjectEngine(); // 🔀 engine availability/versions may have changed
     if (!$('#phone-modal').hidden) {
       phone.pairing = null; // a device just paired (codes are single-use) or settings changed
       refreshPairing();
@@ -92,8 +93,10 @@ const handlers = {
   },
   spotify: (s) => applySpotify(s),
   'account-alert': (alert, live) => live && onAccountAlert(alert),
-  // The app moved to another engine's workspace (Akun, this or another device): its chats come with a fresh page.
-  engine: (data, live) => live && reloadSoon(),
+  // Akun changed the DEFAULT engine (this or another device): a fresh page shows the new default.
+  // Stage 1: ONE project changing engine also emits `engine`, but carries its id — that is applied in place by the
+  // `status`/`projects` events (the chat is swapped server-side), so it must NOT reload the page.
+  engine: (data, live) => live && !(data && typeof data === 'object' && data.project) && reloadSoon(),
   'github-login': (login, live) => live && onGithubLogin(login), // ⇡ PR dialog: gh login finished / failed
   'role-map': (data, live) => live && onRoleMapChanged(), // 🧭 the AI mapped names / another device changed the map
   projects(projects) {
@@ -109,6 +112,8 @@ const handlers = {
       renderComposer();
       renderCi();
     }
+    // A project engine changed (⚙ → Mesin project, this or another device): redraw the selector in place.
+    if (!$('#settings-modal').hidden) syncProjectEngine();
     updateTitle();
   },
   office(evt, live) {

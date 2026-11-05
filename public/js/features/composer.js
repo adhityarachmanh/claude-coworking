@@ -2,7 +2,7 @@
 import { api, toast } from '../core/api.js';
 import { estimateUsd, formatEstimate, isPeak } from '../core/cost-estimate.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
-import { capReason, capsFor, DEFAULT_ENGINE, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
+import { capReason, capsFor, engineBadge, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
 import { fmtNum } from '../core/format.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
@@ -158,9 +158,10 @@ function renderSettingsChip(st) {  const chip = $('#settings-chip');
   const effort = $('#effort').value && !$('#effort').disabled ? label('#effort') : '';
   const team = $('#team-mode').checked && !$('#team-ctl').classList.contains('cap-off');
   const engine = engineOf(st, state.config);
-  const engineName = engine !== DEFAULT_ENGINE ? engineLabel(engine) : ''; // only the non-default engine takes space
+  // The project's engine names itself on the chip (short badge label): a phone has no session bar to show it.
+  const engineName = engineBadge(engine);
   chip.textContent = [engineName, modeShort(mode, engine), model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
-  chip.setAttribute('aria-label', `Pengaturan giliran: ${engineName ? `mesin ${engineName}, ` : ''}mode ${modeShort(mode, engine).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
+  chip.setAttribute('aria-label', `Pengaturan giliran: mesin ${engineLabel(engine)}, mode ${modeShort(mode, engine).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
   chip.classList.toggle('warn', mode === 'dontAsk' || Boolean(st?.autoApprove));
   const note = $('#effort-note');
   note.hidden = !$('#effort').disabled || Boolean(state.readOnly) || !$('#effort').title;

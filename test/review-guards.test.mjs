@@ -267,14 +267,14 @@ test('👤 OpenCode provider login/logout from a phone raises the same account a
   };
   assert.equal((await call('/api/opencode/login/key', ctx, TAILSCALE, { provider: 'anthropic', key: 'sk-test' })).status, 200);
   assert.equal((await call('/api/opencode/login/oauth', ctx, TAILSCALE, { provider: 'openai', methodID: 'oauth' })).status, 200);
-  assert.equal((await call('/api/opencode/logout', ctx, TAILSCALE, { credentialID: 'cred_1' })).status, 200);
+  assert.equal((await call('/api/opencode/logout', ctx, TAILSCALE, { credentialID: 'cred_1', confirm: 'LOGOUT' })).status, 200);
   assert.deepEqual(alerts.map((a) => [a.action, a.engine, a.provider, a.device]), [
     ['login', 'opencode', 'anthropic', 'iPhone Adhit'],
     ['login', 'opencode', 'openai', 'iPhone Adhit'],
     ['logout', 'opencode', null, 'iPhone Adhit'],
   ]);
   assert.ok(!JSON.stringify(alerts).includes('sk-test'), 'never the key');
-  await call('/api/opencode/logout', { ...ctx, device: null }, LAPTOP, { credentialID: 'cred_1' });
+  await call('/api/opencode/logout', { ...ctx, device: null }, LAPTOP, { credentialID: 'cred_1', confirm: 'LOGOUT' });
   assert.equal(alerts.length, 3, 'from the laptop itself: no alert');
 });
 

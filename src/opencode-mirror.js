@@ -89,6 +89,11 @@ export class OpenCodeMirror {
     this.busy = false;
   }
 
+  /** Sessions looked at but not shown are remembered; a project switching to OpenCode must clear that cache. */
+  clearIgnored() {
+    this.ignored.clear();
+  }
+
   start() {
     if (!this.bin || this.timer) return;
     this.timer = setInterval(() => this.tick().catch(() => {}), this.pollMs);
@@ -101,7 +106,9 @@ export class OpenCodeMirror {
   }
 
   async tick() {
-    if (this.busy || this.hub.engine !== 'opencode' || this.hub.mirrorPaused) return;
+    // Stage 1: OpenCode may run for some projects while others are on Claude Code, so this does not wait for the
+    // app-wide engine. It runs whenever OpenCode is installed; open() skips folders whose project is not on it.
+    if (this.busy || !this.bin || this.hub.mirrorPaused) return;
     this.busy = true;
     try {
       const active = await this.api(this.bin, 'session.active', { timeout: 15_000 });
@@ -141,6 +148,12 @@ export class OpenCodeMirror {
       return null;
     }
     const pid = this.hub.upsertProject(dir, 'cli').id;
+    // A project that runs on Claude Code has no OpenCode workspace to show here (the histories stay apart).
+    const engine = this.hub.engineOf ? this.hub.engineOf(pid) : this.hub.engine;
+    if (engine !== 'opencode') {
+      this.ignored.add(id);
+      return null;
+    }
     const s = { id, pid, dir, seen: new Set(), recorded: new Set(), tools: new Map(), texts: new Map(), turnOpen: false, lastActiveAt: Date.now() };
     s.translator = new StreamTranslator(
       {

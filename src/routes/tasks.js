@@ -4,13 +4,16 @@ import { taskDetail } from '../task-detail.js';
 import { answer, json } from './http.js';
 import { withSession } from './project.js';
 
+/** The project's engine (a fake hub in a test may only carry the app-wide one). */
+const engineOf = (hub, id) => (hub.engineOf ? hub.engineOf(id) : (hub.engine ?? 'claude'));
+
 export function register(router) {
   // /mcp
   // ＋ Tambah server MCP (laptop only: it writes the engine's config and the server's command runs on this laptop)
   router.post('/api/projects/:id/mcp-add', withSession(async ({ hub, claude, opencode }, req, res, { project, session }, body) => {
     const { addMcpServer, McpAdminError } = await import('../mcp-admin.js');
     try {
-      const engine = hub.engine;
+      const engine = engineOf(hub, project.id);
       const result = await addMcpServer({ engine, bin: engine === 'opencode' ? opencode : claude, projectPath: project.path, request: body });
       console.log(`MCP ditambahkan (${engine}): ${String(body.name).slice(0, 60)} · ${project.name}`);
       session.reloadSettings?.(); // the next prompt starts with the new server (a running turn finishes first)
@@ -21,11 +24,11 @@ export function register(router) {
     }
   }), { maxBody: 16 * 1024 });
   router.post('/api/projects/:id/mcp', withSession((ctx, req, res, { session }) => answer(res, session.mcpStatus().then((servers) => ({ servers })))));
-  router.post('/api/projects/:id/mcp-action', withSession(({ hub }, req, res, { session }, body) => {
+  router.post('/api/projects/:id/mcp-action', withSession(({ hub }, req, res, { project, session }, body) => {
     const act = String(body.action ?? '');
     const callbackUrl = String(body.callbackUrl ?? '');
     // Claude Code wants the full redirect URL; OpenCode also takes the bare code some providers show
-    if (act === 'callback' && !/^https?:\/\//.test(callbackUrl) && !(hub.engine === 'opencode' && /^[\w.~-]{4,2048}$/.test(callbackUrl))) return json(res, 400, { error: 'Tempel URL lengkap dari address bar setelah login.' });
+    if (act === 'callback' && !/^https?:\/\//.test(callbackUrl) && !(engineOf(hub, project.id) === 'opencode' && /^[\w.~-]{4,2048}$/.test(callbackUrl))) return json(res, 400, { error: 'Tempel URL lengkap dari address bar setelah login.' });
     return answer(res, session.mcpAction(String(body.server ?? ''), act, callbackUrl));
   }));
   // /tasks, Ctrl+B

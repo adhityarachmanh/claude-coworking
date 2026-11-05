@@ -155,7 +155,7 @@ Batasan: izin untuk sesi CLI tetap dijawab di terminal, dan prompt dari web memb
 | **🛡️ Aturan izin** (`/permissions`, menu ⋯) | Aturan allow/ask/deny yang tersimpan, per file settings (project lokal, project bersama, user). Mengubah hanya dari laptop |
 | **Model · Effort · Mode tim** | Daftar model dari Claude Code sendiri (`/model`, termasuk alias seperti `opusplan`). Effort Default/Low/Medium/High/X-High/Max, plus **Auto (LLM)** yang menilai setiap prompt. Mode tim mendelegasikan ke subagent (lebih hidup, lebih banyak token). Semua per project, berlaku tanpa restart |
 | **■ Stop** / `Esc` | Hentikan giliran dan batalkan pesan yang antre. Sesi tetap bisa dilanjutkan |
-| **⏪ Rewind** (`Esc Esc`, `/rewind`) | Kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu (checkpoint Claude Code, atau revert sesi OpenCode), dengan pratinjau file. Pesan yang di-rewind tetap terlihat di chat tapi diredupkan, dan pesanmu kembali ke kotak pesan untuk diedit. Setelah rewind kode, dialog menawarkan **↩ Ulangi perubahan (redo)** untuk perubahan yang belum di-commit (repo git): file dikembalikan byte-identik, file yang kamu ubah setelah rewind dilewati kecuali dicentang “Timpa”, dan backup disimpan di `data/redo/` |
+| **⏪ Rewind** (`Esc Esc`, `/rewind`) | Kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu (checkpoint Claude Code, atau revert sesi OpenCode), dengan pratinjau file. Pesan yang di-rewind tetap terlihat di chat tapi diredupkan, dan pesanmu kembali ke kotak pesan untuk diedit. Setelah rewind, dialog menawarkan **↩ Ulangi perubahan (redo)** untuk perubahan belum di-commit (repo git, file byte-identik, konflik dilewati, backup di `data/redo/`) dan **🔄 Pulihkan percakapan** — Claude kembali ke posisi terakhir; OpenCode memulihkan **salinan** sebagai sesi baru (sesi lama yang terhapus tidak kembali) |
 | **▶ Lanjutkan setelah restart** | Kalau server berhenti di tengah giliran, chat menampilkan *"… giliran terputus"* dengan **▶ Lanjutkan** (ke sesi yang sama) dan **Tutup**. Tidak ada yang dikirim otomatis |
 | **⚠ Deteksi macet** | Tool tanpa output baru **3 mnt** atau berjalan **10+ mnt**, dan delegasi tanpa aktivitas **5 mnt**, mendapat chip *⚠ … mungkin macet* dengan **■ Hentikan giliran**, **⧗ Pindah ke latar** (perintah shell), atau **Lihat detail** (delegasi). Satu notifikasi *Berhenti / error* per kejadian. Hanya peringatan: tidak pernah menghentikan apa pun sendiri |
 | **Output live** | Perintah Bash/PowerShell yang berjalan menampilkan baris terakhir; dibuka (▸) menampilkan output lengkap (8 KB terakhir) |
@@ -186,6 +186,7 @@ Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhi
   - OpenCode Go: `deepseek-v4.1-flash` → `glm-5.3` → `kimi-k3.1-pro` → `kimi-k3`.
   Level `low` → Hemat, `medium` → Seimbang, `high` → Kuat, `xhigh`/`max` → Maks. Pergantian diumumkan di chat beserta **alasannya** (`🤖 Model Auto: Kuat → kimi-k3.1-pro — multi-file bug fix`), dan badge **Effort Auto** juga menampilkan alasan. Tidak pernah di tengah giliran; memilih model konkret atau Default mematikan Auto. **Atur tangga…** membuka 4 pilihan model per mesin. Classifier ikut membaca **percakapan dan rencana/todo terakhir**.
 - **💵 Estimasi biaya sebelum kirim**: baris kecil di atas kotak pesan menampilkan `±$0.02` untuk prompt yang sedang diketik — konteks terpakai + teks prompt + asumsi output 600 token, memakai harga list OpenCode Go atau harga efektif Claude. Arahkan kursor untuk rincian; angka ini perkiraan dan tidak menghalangi pengiriman.
+- **⚡ Perintah cepat**: `/hemat`, `/seimbang`, `/kuat`, `/maks` langsung memilih model tier itu untuk mesin aktif (Auto dimatikan agar pilihan pasti), `/auto` menyalakan Model Auto lagi. **Focus mode** (`/fokus`) menyembunyikan dan menghentikan animasi kantor supaya chat/panel lega; pengaturan diingat per perangkat dan ada tombol keluar.
 - **💲 Harga di daftar model**: pilihan model menampilkan biaya per 1 juta token. Untuk model **OpenCode Go** harganya diambil dari katalog resmi `opencode.ai` (input/output/cache, ditandai `±` bila ada tarif jam sibuk; diperbarui otomatis maksimal sehari sekali). Untuk model **Claude** (atau model tanpa harga list) ditampilkan **harga efektif dari catatan pemakaian** 90 hari terakhir (`≈$…/1M tercatat`). Tanpa data: tidak ada angka, dan baris di bawah pilihan menjelaskan alasannya.
 - **■ Stop / Esc** menghentikan giliran yang sedang berjalan, termasuk giliran yang dimulai Claude sendiri setelah tugas latar selesai, dan menghentikan tugas latar itu juga.
 - **🩺 Doctor** dan **⬆ Update Claude Code**: ⚙ → tab **Sistem** → Kompatibilitas Claude Code (sama dengan `claude doctor` / `claude update`, dari laptop).
@@ -204,14 +205,14 @@ Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhi
 
 ### Mesin: Claude Code atau OpenCode
 
-Mesin dipilih untuk seluruh aplikasi di **👤 Akun → Mesin AI**:
+**Mesin dipilih per project** di ⚙ Pengaturan → **🔀 Mesin project**. Dua project boleh memakai mesin berbeda **pada saat yang sama** (Claude Code di satu project, OpenCode di project lain). Di **👤 Akun**, pilihan **Mesin bawaan untuk project baru** hanya menentukan mesin untuk project yang baru ditambahkan; project lama tetap memakai mesinnya sendiri dan tidak ikut dipindah.
 
 - **Claude Code** (bawaan)
 - **OpenCode**: banyak provider, mis. Gemini dan model gratis OpenCode Go. Pilihan ini muncul kalau `opencode` terpasang (`npm i -g @opencode/cli`, atau set env `OPENCODE_BIN`).
 
-Tiap mesin adalah **workspace sendiri**: riwayat chat (`data/chats` untuk Claude Code, `data/chats-opencode` untuk OpenCode), percakapan yang dilanjutkan, pengaturan model/mode per project, dan giliran yang terpotong. Pindah mesin tidak menghapus apa pun: saat kembali, riwayat mesin itu muncul lagi persis seperti ditinggalkan. Yang dipakai bersama: daftar project, favorit, nama tim. Pindah mesin ditolak selama ada project yang sedang bekerja atau 📋 Antrian masih berisi item, dan semua tab/HP yang terbuka dimuat ulang otomatis.
+Riwayat chat **disimpan terpisah per mesin** (`data/chats` untuk Claude Code, `data/chats-opencode` untuk OpenCode). Mengganti mesin satu project hanya mengganti riwayat yang ditampilkan: riwayat mesin sebelumnya tetap di disk dan muncul lagi saat project itu dikembalikan. Pengaturan model/effort/agent diingat **per mesin** untuk project itu. Pergantian ditolak (409) selama project itu sedang bekerja, punya izin menunggu, antrean berisi item, atau ada giliran terputus yang ditawarkan untuk dilanjutkan.
 
-**Login OpenCode.** OpenCode tidak punya satu akun: tiap provider login sendiri. Dengan mesin OpenCode, 👤 Akun menampilkan provider yang sudah terhubung (kredensial tersimpan atau variabel lingkungan) dengan tombol **Logout** per kredensial, dan **＋ Login provider** (cari provider → API key, atau OAuth lewat browser, termasuk form tambahan seperti GitHub Enterprise). Semuanya lewat `opencode api` (penyimpanan yang sama dengan `opencode auth login|logout|list`); API key tidak dicatat di log. Dari HP hanya lewat Tailscale, sama seperti login Claude. 🕘 Riwayat sesi menampilkan (dan melanjutkan) sesi OpenCode project itu. 📦 Import backup hanya saat Claude Code aktif; chat OpenCode di dalamnya masuk ke workspace OpenCode.
+**Login OpenCode.** OpenCode tidak punya satu akun: tiap provider login sendiri. 👤 Akun menampilkan provider yang sudah terhubung (kredensial tersimpan atau variabel lingkungan) dengan tombol **Logout** per kredensial, dan **＋ Login provider** (cari provider → API key, atau OAuth lewat browser, termasuk form tambahan seperti GitHub Enterprise). Semuanya lewat `opencode api` (penyimpanan yang sama dengan `opencode auth login|logout|list`); API key tidak dicatat di log. Dari HP hanya lewat Tailscale, sama seperti login Claude. 🕘 Riwayat sesi menampilkan (dan melanjutkan) sesi OpenCode project itu. 📦 Import backup selalu masuk ke riwayat Claude Code; chat OpenCode di dalamnya masuk ke store OpenCode.
 
 | | OpenCode |
 |---|---|
@@ -402,7 +403,7 @@ Kontrol Spotify yang sudah kamu pakai (Spotify Connect) lewat Spotify Web API. B
 - **Per role belum tersedia**: pemakaian subagent digabung ke sesi induknya, jadi tidak ada angka per role yang bisa ditampilkan. Rincian per mesin memakai akun yang tercatat (baris lama sebelum fitur ini ikut diatribusikan lewat akunnya, tanpa menulis ulang data).
 
 - Catatan token disimpan bersama akun yang login saat itu (`data/usage.jsonl`), jadi dua akun tidak tercampur. Data mulai terkumpul sejak fitur ini aktif; transcript lama tidak dihitung. File ini **dirotasi otomatis** ke `data/usage-archive/` saat besar, dan semua arsip tetap dibaca laporan serta ikut backup.
-- **Audit akun** (`data/auth-audit.jsonl`) dipadatkan otomatis: menyimpan 180 hari terakhir (maks 2.000 aksi).
+- **Audit akun** (`data/auth-audit.jsonl`) dipadatkan saat file melewati 256 KB atau saat server mulai: menyimpan **180 hari terakhir** (maks 2.000 aksi).
 - Sesi CLI ikut tercatat ke akun yang sedang login. Setelah ganti akun, buka ulang sesi CLI yang masih terbuka. Estimasi biaya (USD, harga list) hanya untuk sesi web.
 
 ### Backup & riwayat
@@ -412,12 +413,12 @@ Ganti SSD, install ulang Windows, atau pindah laptop tanpa kehilangan percakapan
 1. Laptop lama: **⚙ → 💾 Cadangkan riwayat → ⬇ Export riwayat** → `adhit-office-backup-YYYY-MM-DD.zip`. Simpan di tempat aman (isinya seluruh riwayat percakapan).
 2. Laptop baru: [Mulai cepat](#mulai-cepat), login dengan `claude`, clone/salin folder project-mu.
 3. **⚙ → Cadangkan riwayat → ⬆ Import riwayat**, pilih `.zip`, konfirmasi. Daftar project/sesi langsung ter-update.
-4. Lanjutkan lewat **🕘 Riwayat sesi** atau `claude --resume`. Sesi lama tidak dilanjutkan otomatis, dan mode izin tiap project kembali ke **Tanya dulu**.
+4. Lanjutkan lewat **🕘 Riwayat sesi**. Project dari backup membawa **mesinnya** (bila OpenCode terpasang) dan percakapan **Claude** yang tersimpan di arsip; sesi OpenCode tidak dipulihkan karena penyimpanannya tidak ikut backup. Mode izin tiap project kembali ke **Tanya dulu**.
 
 | Ikut di backup | Tidak ikut |
 |---|---|
 | `~/.claude/projects/**` (sesi, subagent, `memory/`), `history.jsonl`, `file-history/` (checkpoint rewind), `plans/` | Login & kredensial Claude (`.credentials.json`, `~/.claude.json`) |
-| `data/state.json` (folder, favorit, pengaturan per project, nama tim, template), `data/usage.jsonl` + `data/usage-archive/` (ledger, dirotasi otomatis), `data/chats/*.jsonl` (riwayat chat panel) | HP yang dipasangkan dan langganan push, kunci VAPID, `data/tls/`, `data/spotify.json`, cache, `server.log` |
+| `data/state.json` (folder, favorit, pengaturan project, **mesin per project**, model/effort per mesin, nama tim, template), `data/usage.jsonl` + `data/usage-archive/` (ledger, dirotasi otomatis), `data/chats/*.jsonl` dan `data/chats-opencode/*.jsonl` (riwayat chat panel) | HP yang dipasangkan dan langganan push, kunci VAPID, `data/tls/`, `data/spotify.json`, cache, `server.log`, salinan `data/state.json.pre-per-project-*` |
 
 **Import menggabungkan, tidak menimpa:**
 
@@ -427,11 +428,13 @@ Ganti SSD, install ulang Windows, atau pindah laptop tanpa kehilangan percakapan
 | File lain (memori, checkpoint, rencana) | Belum ada → ditulis. Identik → dilewati. Berbeda → **tidak pernah ditimpa**: disimpan sebagai `<nama>.from-backup` dengan peringatan |
 | `history.jsonl`, `usage.jsonl` | Digabung tanpa duplikat (maks 64 MB) |
 | Chat panel | Digabung per pesan (yang sudah ada dilewati), 250 pesan terbaru disimpan. Izin/tool yang dulu menunggu tampil sebagai dibatalkan |
-| `state.json` | Folder hanya ditambah kalau berada **di bawah folder home** laptop ini dan ada. Favorit ditambah; pengaturan per project hanya mengisi yang kosong. **Mode izin tidak pernah dipulihkan**, **sesi yang dilanjutkan tidak dipilih otomatis** |
+| `state.json` | Folder hanya ditambah kalau berada **di bawah folder home** laptop ini dan ada. Favorit ditambah; pengaturan per project hanya mengisi yang kosong. **Mesin tiap project** dan pengaturan model/effort per mesin dipulihkan bila mesinnya tersedia (OpenCode tidak terpasang → Claude Code). **Mode izin tidak pernah dipulihkan**; id percakapan Claude boleh dipulihkan (transkripnya ikut), id OpenCode tidak (penyimpanannya tidak ikut). Import tidak pernah menghapus apa pun |
 
 **Folder home berbeda** (mis. `C:\Users\lama` → `C:\Users\baru`): folder transcript diganti nama mengikuti aturan Claude Code supaya `claude --resume` di folder baru menemukannya. Import yang sama boleh diulang; tidak ada yang ditambahkan dua kali.
 
-> **Hanya import backup milikmu sendiri.** Import memperlakukan backup sebagai data yang belum tentu tepercaya, tetapi isi transcript dan memori project tetap dibaca Claude saat sesi dilanjutkan.
+> **Hanya import backup milikmu sendiri.** Import memperlakukan backup sebagai data yang belum tentu tepercaya, tetapi isi transcript dan memori project tetap dibaca Claude saat sesi dilanjutkan. Backup adalah **data pribadi tanpa enkripsi** (transcript, email akun, id percakapan): simpan di folder yang hanya kamu akses, dan hapus bila tidak diperlukan. Import hanya menambah, tidak pernah menghapus.
+
+**Hapus data:** export zip adalah jawaban akses/portabilitas. Untuk menghapus, hapus zip backup, folder `data/chats*`, `data/usage*.jsonl`, `data/auth-audit.jsonl`, `data/redo/`, `data/trash/`, dan `~/.claude/projects` sesuai kebutuhan. Salinan `data/state.json.pre-per-project-*` (paling banyak 5, maks 30 hari, **tanpa** data HP/VAPID) juga aman dihapus setelah aplikasi berjalan normal.
 
 **⏰ Backup otomatis** (⚙ → Cadangkan riwayat, laptop, nonaktif secara default): **Harian** atau **Mingguan** + hari, **jam**, **folder tujuan** (path lengkap di laptop ini; folder jaringan dan path relatif ditolak), dan **simpan N backup terakhir** (1–100). Nama file `adhit-office-backup-auto-YYYYMMDD-HHmmss.zip`. Jadwal yang terlewat saat laptop mati dijalankan sekali begitu server menyala. Rotasi hanya menghapus file `adhit-office-backup-auto-*.zip`. Ada **▶ Jalankan sekarang** dan status hasil terakhir.
 

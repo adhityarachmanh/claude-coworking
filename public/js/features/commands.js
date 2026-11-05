@@ -1,9 +1,11 @@
 // Slash commands the app runs itself (/clear, /model, /resume, /rewind, /mcp, /tasks…).
 import { api, toast } from '../core/api.js';
 import { $ } from '../core/dom.js';
-import { state } from '../core/state.js';
+import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
-import { saveSettings } from './composer.js';
+import { renderComposer, saveSettings } from './composer.js';
+import { MODEL_TIER_LABELS, isModelValue, modelTiersFor, projectEngine, shortModelName } from './engine.js';
+import { toggleFocus } from './focus.js';
 import { openCompact } from './compact.js';
 import { exportActiveSession, openSearch } from './conversations.js';
 import { openDashboard } from './dashboard.js';
@@ -25,6 +27,11 @@ import { openTemplates } from './templates.js';
 export const LOCAL_COMMANDS = [
   { name: 'clear', description: 'Mulai percakapan baru (sesi baru)' },
   { name: 'model', argumentHint: '<model>', description: 'Ganti model, misalnya /model fable, /model opus[1m], /model default' },
+  { name: 'hemat', description: '🪙 Pakai model tingkat Hemat dari tangga Model Auto (Auto dimatikan)' },
+  { name: 'seimbang', description: '⚖️ Pakai model tingkat Seimbang dari tangga Model Auto (Auto dimatikan)' },
+  { name: 'kuat', description: '💪 Pakai model tingkat Kuat dari tangga Model Auto (Auto dimatikan)' },
+  { name: 'maks', description: '🚀 Pakai model tingkat Maks dari tangga Model Auto (Auto dimatikan)' },
+  { name: 'auto', description: '🤖 Nyalakan Model Auto: model dipilih sesuai tingkat kesulitan tiap prompt' },
   { name: 'effort', argumentHint: '<low|medium|high|xhigh|max|default>', description: 'Ganti effort (seberapa dalam Claude berpikir)' },
   { name: 'resume', description: 'Lanjutkan sesi Claude Code sebelumnya' },
   { name: 'rewind', description: 'Kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu (Esc Esc)' },
@@ -44,6 +51,7 @@ export const LOCAL_COMMANDS = [
   { name: 'export', argumentHint: '[tools]', description: 'Unduh sesi ini sebagai Markdown (.md) — /export tools: sertakan ringkasan tool' },
   { name: 'search', aliases: ['find'], argumentHint: '<kata kunci>', description: '🔎 Cari di semua percakapan project ini' },
   { name: 'template', aliases: ['t'], description: '⚡ Sisipkan template prompt (review, test, perbaiki error, commit…) — /t' },
+  { name: 'fokus', description: '🎯 Mode fokus: sembunyikan & jeda animasi kantor (ingat di browser ini)' },
 ];
 
 /**
@@ -70,11 +78,67 @@ export const CLI_ONLY = {
   quit: 'Tidak perlu: tutup tab ini saja.',
 };
 
+/**
+ * The project a command may change: a real selected project, on a page that is allowed to write. Toasts the reason
+ * and returns null otherwise, so the command does nothing.
+ */
+function writableProject(what) {
+  const id = state.active;
+  if (!id || id === DEMO_ID) {
+    toast(`Pilih project dulu: ${what} mengubah pengaturan project ini.`, 'warn');
+    return null;
+  }
+  if (state.readOnly) {
+    toast(`${READ_ONLY_HINT}.`, 'warn');
+    return null;
+  }
+  return id;
+}
+
+/** Sends only the model fields; the composer shows the choice before the server answers and goes back on failure. */
+async function saveProjectModel(project, patch, message) {
+  const before = state.statuses[project] ?? {};
+  state.statuses[project] = { ...before, ...patch };
+  renderComposer();
+  toast(message, 'ok');
+  try {
+    await api(`/api/projects/${project}/settings`, patch);
+  } catch (err) {
+    state.statuses[project] = { ...(state.statuses[project] ?? {}), model: before.model, modelAuto: before.modelAuto };
+    renderComposer();
+    toast(`Gagal menyimpan: ${err.message}`);
+  }
+}
+
+/**
+ * /hemat /seimbang /kuat /maks: the project's ladder model for one tier (features/engine.js, the same ladder the
+ * Auto UI edits), as a deliberate manual pick — so Auto goes off with it.
+ */
+async function setTierModel(tier) {
+  const label = MODEL_TIER_LABELS[tier];
+  const project = writableProject(`/${tier}`);
+  if (!project) return;
+  const before = state.statuses[project] ?? {};
+  const model = modelTiersFor(before, projectEngine(project))[tier];
+  if (!model || !isModelValue(model)) {
+    return toast(`Model tingkat ${label} belum diatur dengan benar. Buka ⚙ → Pengaturan giliran → Atur tangga…`, 'warn');
+  }
+  await saveProjectModel(project, { model, modelAuto: false }, `Model: ${label} → ${shortModelName(model)} (Auto dimatikan)`);
+}
+
+/** /auto: back to Model Auto (the classifier picks the tier per prompt). */
+async function enableModelAuto() {
+  const project = writableProject('/auto');
+  if (!project) return;
+  await saveProjectModel(project, { modelAuto: true }, 'Model Auto aktif — model dipilih sesuai tingkat kesulitan tiap prompt');
+}
+
 /** Returns true when `text` was one of LOCAL_COMMANDS (handled here, not sent to Claude). */
 export function localCommand(text) {
   const [, name, arg = ''] = text.match(/^\/([\w-]+)\s*(.*)$/s) ?? [];
   const value = arg.trim();
-  if (CLI_ONLY[name] && (state.config?.engine ?? 'claude') === 'claude' && !(state.config?.commands ?? []).some((c) => c.name === name && c.source && c.source !== 'builtin')) {
+  // Terminal-only Claude screens exist for a Claude project; the app-wide default (Akun) is not what runs here.
+  if (CLI_ONLY[name] && projectEngine() === 'claude' && !(state.config?.commands ?? []).some((c) => c.name === name && c.source && c.source !== 'builtin')) {
     toast(`/${name} hanya ada di terminal Claude Code. ${CLI_ONLY[name]}`, 'warn');
     return true;
   }
@@ -101,6 +165,15 @@ export function localCommand(text) {
       return true;
     case 'model':
       pick('#model', 'Model', true);
+      return true;
+    case 'hemat':
+    case 'seimbang':
+    case 'kuat':
+    case 'maks':
+      setTierModel(name);
+      return true;
+    case 'auto':
+      enableModelAuto();
       return true;
     case 'effort':
       pick('#effort', 'Effort', false);
@@ -169,6 +242,9 @@ export function localCommand(text) {
     case 'template':
     case 't':
       openTemplates({ start: 0, end: 0 }); // the box is emptied of "/t" right after this
+      return true;
+    case 'fokus':
+      toast(toggleFocus() ? 'Mode fokus aktif — animasi kantor disembunyikan' : 'Mode fokus mati', 'ok');
       return true;
     default:
       return false;

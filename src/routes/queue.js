@@ -11,7 +11,7 @@ import { withProject } from './project.js';
 async function autoEffort(ctx, id, text, attachments = []) {
   const settings = ctx.hub.settingsFor(id);
   if (!settings.effortAuto && !settings.modelAuto) return null;
-  return classifyEffort({ engine: ctx.hub.engine, claude: ctx.claude, opencode: ctx.opencode, currentModel: settings.model, text, attachments, context: autoContext(ctx.hub, id) });
+  return classifyEffort({ engine: ctx.hub.engineOf(id), claude: ctx.claude, opencode: ctx.opencode, currentModel: settings.model, text, attachments, context: autoContext(ctx.hub, id) });
 }
 
 /** op → the change it makes; each answers with the queue's new view. */

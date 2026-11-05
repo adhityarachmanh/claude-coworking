@@ -30,6 +30,7 @@ import { initConversations } from './features/conversations.js';
 import { initDashboard } from './features/dashboard.js';
 import { initDraft } from './features/draft.js';
 import { initFileViewer } from './features/file-viewer.js';
+import { focusMode, initFocus } from './features/focus.js';
 import { initGitBar } from './features/git-branches.js';
 import { initPromptHistory } from './features/history.js';
 import { initLiveOutput } from './features/live-output.js';
@@ -79,6 +80,7 @@ initStuck(); // ⚠ stuck detector: chips on running rows (after initChat: #chat
 initFileViewer();
 initTeam();
 initViewMode(); // 🧠 Mode Otak ↔ 🏢 Kantor
+initFocus(); // 🎯 Mode fokus: the office is hidden and its animation paused (/fokus)
 initAppUpdate(); // ⬆ newer Adhit Office: banner + ⚙
 initHandoff(); // 🔁 /lanjut: context from the other engine
 initHealth(); // 🩺 Kesehatan sistem (⚙ → Sistem; laptop/Tailscale only)
@@ -136,12 +138,16 @@ let lastTeam = 0;
 function loop(t) {
   const dt = Math.min((t - last) / 1000, 0.05);
   last = t;
-  for (const scene of scenes.values()) scene.update(dt, t);
-  if (brain.on) brain.frame(t, stage.scene); // 🧠 Mode Otak replaces the pixel office while it is on
-  else stage.frame(t);
-  if (t - lastTeam > 500) {
-    renderTeam();
-    lastTeam = t;
+  // 🎯 Mode fokus: the office is hidden and paused — no scene/stage/brain frame at all (still scheduling, so turning
+  // it off just resumes on the next frame; `last` stays current, so dt never jumps).
+  if (!focusMode.on) {
+    for (const scene of scenes.values()) scene.update(dt, t);
+    if (brain.on) brain.frame(t, stage.scene); // 🧠 Mode Otak replaces the pixel office while it is on
+    else stage.frame(t);
+    if (t - lastTeam > 500) {
+      renderTeam();
+      lastTeam = t;
+    }
   }
   requestAnimationFrame(loop);
 }
