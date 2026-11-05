@@ -32,7 +32,11 @@ function render() {
     <div class="acct-actions"><button type="button" class="primary" data-ho="make"${ho.busy ? ' disabled' : ''}>${ho.busy ? '<span class="spinner"></span> Menyusun…' : 'Susun konteks'}</button></div>
     <div id="handoff-preview" hidden>
       <label class="oc-field"><span>Pratinjau (bisa diedit)</span><textarea id="handoff-text" rows="12" class="memory-text"></textarea></label>
-      <div class="acct-actions"><button type="button" class="primary" data-ho="use">Masukkan ke kotak pesan</button></div>
+      <div class="acct-actions">
+        <button type="button" class="primary" data-ho="context">Jadikan konteks sesi</button>
+        <button type="button" class="ghost" data-ho="use">Masukkan ke kotak pesan</button>
+      </div>
+      <p class="muted small">Konteks sesi dipakai pada pesan berikutnya tanpa mengirim apa pun sekarang. “Masukkan ke kotak pesan” tetap mengirim sebagai prompt seperti biasa.</p>
     </div>`;
 }
 
@@ -77,6 +81,16 @@ export function initHandoff() {
   $('#handoff-body').addEventListener('click', (e) => {
     const act = e.target.closest('[data-ho]')?.dataset.ho;
     if (act === 'make') return make();
+    if (act === 'context') {
+      const text = $('#handoff-text').value.trim();
+      if (!text) return;
+      return api(`/api/projects/${state.active}/handoff/context`, { text })
+        .then(() => {
+          closeModal('handoff-modal');
+          toast('Konteks sesi siap. Akan dipakai pada pesan berikutnya.', 'ok');
+        })
+        .catch((err) => toast(err.message, 'warn'));
+    }
     if (act === 'use') {
       const text = $('#handoff-text').value.trim();
       if (!text) return;

@@ -108,9 +108,10 @@ function renderHeader() {
     : working
       ? `<span class="crumb-busy" title="${working} project lain sedang bekerja"><span class="spinner"></span>${working}</span>`
       : '';
-  const current = p
-    ? `<span class="p-icon">${icon}</span><span class="crumb-text"><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.path ?? 'Demo — tidak menjalankan Claude Code')}</small></span>`
-    : '<span class="crumb-text"><b>Pilih project</b></span>';
+  // The folder path lives in the tooltip: a long path in the header is the opposite of a quiet top bar.
+  const current = p ? `<span class="p-icon">${icon}</span><span class="crumb-text"><b>${escapeHtml(p.name)}</b></span>` : '<span class="crumb-text"><b>Pilih project</b></span>';
+  const crumb = $('#crumb');
+  if (crumb) crumb.title = `Ganti project (Ctrl+K)${p?.path ? ` — ${p.path}` : ''}`;
   const html = `${current}${badge}<kbd>Ctrl K</kbd><svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   // Runs on every status/chat event: only touch the DOM when something changed (keeps the spinner smooth).
   if (html !== crumbHtml) $('#crumb').innerHTML = crumbHtml = html;

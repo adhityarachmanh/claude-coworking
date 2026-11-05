@@ -160,7 +160,8 @@ function renderSettingsChip(st) {  const chip = $('#settings-chip');
   const engine = engineOf(st, state.config);
   // The project's engine names itself on the chip (short badge label): a phone has no session bar to show it.
   const engineName = engineBadge(engine);
-  chip.textContent = [engineName, modeShort(mode, engine), model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
+  // Laptop already shows the engine in the header/picker: keep the chip to mode · model · effort · tim.
+  chip.textContent = [narrow.matches ? engineName : '', modeShort(mode, engine), model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
   chip.setAttribute('aria-label', `Pengaturan giliran: mesin ${engineLabel(engine)}, mode ${modeShort(mode, engine).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
   chip.classList.toggle('warn', mode === 'dontAsk' || Boolean(st?.autoApprove));
   const note = $('#effort-note');
@@ -202,7 +203,7 @@ function renderModeOptions(caps, engine) {
   }
 }
 
-const TEAM_TITLE = 'Claude mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.';
+const TEAM_TITLE = (engine) => `${engineLabel(engine)} mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.`;
 const CAP_NAMES = { effort: 'effort', team: 'Mode tim', rewind: 'Rewind', mcp: 'Server MCP', bgTasks: 'tugas latar' };
 
 /**
@@ -217,7 +218,7 @@ function applyCaps(caps, engine) {
   $('#effort').closest('.ctl').classList.toggle('cap-off', !caps.effort);
   const team = $('#team-ctl');
   $('#team-mode').disabled = !caps.team || Boolean(state.readOnly);
-  team.title = caps.team ? TEAM_TITLE : capReason('team', engine);
+  team.title = caps.team ? TEAM_TITLE(engine) : capReason('team', engine);
   team.classList.toggle('cap-off', !caps.team);
   const off = Object.keys(CAP_NAMES).filter((c) => !caps[c]);
   const note = $('#engine-note');

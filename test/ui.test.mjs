@@ -2228,6 +2228,33 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), [], 'tanpa error console');
     });
 
+    test('🏷️ empty state menyebut mesin project, bukan selalu Claude', async () => {
+      await ensureApp(page, `#${projectId}`);
+      const r = await page.eval(async (id) => {
+        const { state } = await import('/js/core/state.js');
+        const { renderChat } = await import('/js/features/chat.js');
+        const prev = { chats: state.chats[id], status: state.statuses[id], active: state.active };
+        state.active = id;
+        state.chats[id] = [];
+        const read = () => document.querySelector('#chat .empty p')?.textContent ?? '';
+        state.statuses[id] = { ...(state.statuses[id] ?? {}), engine: 'opencode' };
+        renderChat();
+        const opencode = read();
+        state.statuses[id] = { ...(state.statuses[id] ?? {}), engine: 'claude' };
+        renderChat();
+        const claude = read();
+        state.chats[id] = prev.chats;
+        state.statuses[id] = prev.status;
+        state.active = prev.active;
+        renderChat();
+        return { opencode, claude };
+      }, projectId);
+      assert.match(r.opencode, /OpenCode/);
+      assert.doesNotMatch(r.opencode, /Claude/);
+      assert.match(r.claude, /Claude Code/);
+      assert.deepEqual(realProblems(page), []);
+    });
+
     test('🔀 fitur mengikuti mesin project: Claude-only hilang di project OpenCode, rewind tetap ada', async () => {
       await ensureApp(page, `#${projectId}`);
       const caps = await page.eval(async (id) => {

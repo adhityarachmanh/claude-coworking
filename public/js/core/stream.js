@@ -3,7 +3,7 @@
 import { onAccountAlert, onAccountState, renderAccountButton } from '../features/account.js';
 import { appendActivity } from '../features/activity.js';
 import { scheduleChanges } from '../features/changes.js';
-import { appendChat, replaceChat, scheduleReplace } from '../features/chat.js';
+import { appendChat, renderChat, replaceChat, scheduleReplace } from '../features/chat.js';
 import { applyClaudeCheck } from '../features/claude-check.js';
 import { applyOpenCodeCheck } from '../features/opencode-check.js';
 import { applyAppUpdate } from '../features/app-update.js';
@@ -141,6 +141,10 @@ const handlers = {
     renderSidebar();
   },
   chat_update: (update) => onChatUpdate(update),
+  chat_reset({ project }) {
+    state.chats[project] = [];
+    if (project === state.active) renderChat();
+  },
   approval(approval, live) {
     if (live && approval.status === 'pending' && !state.approvals.has(approval.id)) {
       notify('ask', `✋ ${roleName(approval.role)} minta izin — ${projectName(approval.project)}`, approval.label, approval.project);

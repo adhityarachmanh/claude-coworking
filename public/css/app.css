@@ -149,7 +149,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .crumb b { font-size: var(--fs-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crumb small { color: var(--muted); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crumb .chev { width: 12px; height: 12px; color: var(--muted); flex: none; }
-.crumb kbd { flex: none; font: var(--fs-xs)/1.4 var(--mono); color: var(--muted); padding: 1px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: var(--r-xs); background: var(--surface); }
+.crumb kbd { display: none; } /* shortcut stays in the tooltip/help; the header stays quiet */
 .crumb .badge { flex: none; }
 .crumb-busy { display: flex; align-items: center; gap: 5px; flex: none; font-size: var(--fs-xs); color: var(--muted); }
 .icon-btn.labeled { display: flex; align-items: center; gap: 6px; padding: 5px 8px; font-size: var(--fs-md); color: var(--muted); white-space: nowrap; }
@@ -157,6 +157,14 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .icon-btn.labeled .ico { font-size: var(--fs-base); line-height: 1; }
 /* The top bar carries many actions: labels stay as the accessible name + tooltip, not as visible text. */
 .icon-btn.labeled .lbl { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.header-more { display: none; position: relative; }
+.header-more-menu { top: calc(100% + 6px); right: 0; min-width: 220px; }
+@media (min-width: 761px) {
+  .header-more { display: block; }
+  #btn-header-more { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; font-size: var(--fs-xl); line-height: 1; }
+  /* Still in the DOM (tests, shortcuts, proxies); desktop reaches them through the ⋯ menu. */
+  #btn-notify, #btn-help { display: none !important; }
+}
 #btn-notify.on { color: var(--text); border-color: var(--accent-line); }
 #btn-notify { -webkit-touch-callout: none; user-select: none; } /* long press opens the settings, not a callout */
 .account-btn { display: flex; align-items: center; gap: 8px; max-width: 260px; padding: 4px; border-radius: var(--r-pill); background: var(--surface-2); }
@@ -204,7 +212,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--panel-w, 410px); /* --panel-w: set by the resizer */
+  grid-template-columns: minmax(0, 1fr) var(--panel-w, 430px); /* --panel-w: set by the resizer */
 }
 
 /* ---------- project picker dialog ---------- */
@@ -414,7 +422,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .member img { width: 26px; height: 30px; image-rendering: pixelated; flex: none; }
 .member div { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 .member b { font-size: var(--fs-sm); }
-.member small { color: var(--muted); font-size: var(--fs-2xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.member small { display: none; } /* role title is in the office name tag/tooltip and the team dialog */
 .member .st { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .member.idle .st { display: none; } /* "Standby/Istirahat" on every idle card is noise; the tooltip still has it */
 .member.work { background: var(--surface-2); background: color-mix(in srgb, var(--c) 12%, var(--surface)); }
@@ -481,7 +489,7 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .empty b { color: var(--text); font-size: var(--fs-lg); }
 .empty p { margin: 6px 0 0; font-size: var(--fs-md); }
 .empty-icon { width: 44px; height: 44px; margin: 0 auto 10px; display: grid; place-items: center; border-radius: var(--r-xl); background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent); font-size: var(--fs-2xl); }
-.starters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 16px; text-align: left; }
+.starters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; text-align: left; }
 .starters button { display: flex; align-items: center; gap: 8px; padding: 9px 10px; font-size: var(--fs-md); color: var(--text); background: var(--surface-2); border-radius: var(--r-lg); }
 .starters button:hover { border-color: var(--accent); background: var(--accent-soft); }
 .starters button span { font-size: var(--fs-lg); flex: none; }
@@ -664,7 +672,7 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 @media (min-width: 761px) {
   /* Mode and model already sit on the settings chip; the status line only speaks up when something needs attention. */
   .statusline .sl-mode, .statusline .sl-model, .statusline .sep, .statusline .sl-ctx:not(.mid):not(.high) { display: none; }
-  .statusline:not(:has(.sl-ctx.mid, .sl-ctx.high, .sl-compact, .sl-tasks)) { display: none; }
+  .statusline:not(:has(.sl-ctx.mid, .sl-ctx.high, .sl-compact, .sl-tasks, .sl-handoff)) { display: none; }
   /* A connected laptop is the normal state: show a dot, not another word in the header. */
   #conn.ok { width: 10px; height: 10px; padding: 0; border: 0; border-radius: 50%; background: var(--ok); font-size: 0; }
 }
@@ -681,6 +689,8 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 /* 🧹 Ringkas konteks: the action sits in the status line, next to the context chip (a chip of its own on a phone) */
 .sl-compact { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
 .sl-compact:hover { color: var(--accent-2); }
+.sl-handoff { padding: 0; border: 0; background: none; color: var(--accent-2); font: inherit; cursor: pointer; }
+.sl-handoff:hover { text-decoration: underline; }
 /* the textarea has no border of its own: the shared .input box shows bash mode */
 .composer.bash-mode .input, .composer.bash-mode .input:focus-within { border-color: var(--shell); box-shadow: 0 0 0 1px #e879a855; box-shadow: 0 0 0 1px color-mix(in srgb, var(--shell) 33%, transparent); }
 
@@ -1295,7 +1305,7 @@ body.read-only #composer-hint { color: var(--ask); }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1500px) {
-  .layout { grid-template-columns: minmax(0, 1fr) var(--panel-w, 380px); }
+  .layout { grid-template-columns: minmax(0, 1fr) var(--panel-w, 420px); }
 }
 @media (max-width: 1360px) {
   .icon-btn.labeled .lbl { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; } /* visually hidden, still the button's name */
@@ -1403,6 +1413,7 @@ body.read-only #composer-hint { color: var(--ask); }
   .sb-btn { padding: 6px 8px; font-size: var(--fs-sm); }
   .starters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 12px; }
   .starters button { padding: 8px 6px; font-size: var(--fs-sm); }
+  .starters button:last-child:nth-child(odd) { grid-column: 1 / -1; } /* three starters: the last one gets the full row */
   .empty { margin: 4px 0 auto; padding: 16px 12px; }
   .empty-icon { width: 38px; height: 38px; font-size: var(--fs-xl); margin-bottom: 8px; }
   .s-item { padding: 10px; gap: 8px; }

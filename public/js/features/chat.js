@@ -2,6 +2,7 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { fmtTokens, time } from '../core/format.js';
+import { engineLabel, engineOf } from '../core/engine-caps.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { copyText, flashButton } from '../core/util.js';
 import { renderMarkdown } from '../markdown.js';
@@ -24,7 +25,6 @@ const chatEl = $('#chat');
 const STARTERS = [
   ['🧭', 'Jelaskan', 'Jelaskan struktur, teknologi, dan alur utama project ini secara singkat.'],
   ['🐞', 'Cari bug', 'Cari bug atau potensi masalah di project ini, urutkan dari yang paling berisiko, lalu usulkan perbaikannya.'],
-  ['🧪', 'Tambah test', 'Tulis test untuk bagian penting yang belum punya test, lalu jalankan.'],
   ['🔍', 'Review', 'Review perubahan yang belum di-commit: cari bug, risiko keamanan, dan bagian yang bisa dirapikan.'],
 ];
 
@@ -40,12 +40,13 @@ export function renderChat() {
   pendingReplace.clear();
   const messages = state.chats[state.active] ?? [];
   if (!messages.length) {
+    const engine = engineLabel(engineOf(state.statuses[state.active] ?? {}, state.config));
     chatEl.innerHTML = state.active === DEMO_ID
-      ? '<div class="empty"><div class="empty-icon">🎬</div><b>Demo kantor</b><p>Klik <b>▶ Jalankan demo</b> untuk melihat tim bekerja. Demo tidak menjalankan Claude Code.</p></div>'
+      ? '<div class="empty"><div class="empty-icon">🎬</div><b>Demo kantor</b><p>Klik <b>▶ Jalankan demo</b> untuk melihat tim bekerja. Demo tidak menjalankan mesin AI.</p></div>'
       : `<div class="empty">
           <div class="empty-icon">✳</div>
           <b>Mulai kerja di ${escapeHtml(projectName(state.active))}</b>
-          <p>Claude Code berjalan di folder ini. Izin muncul sebagai kartu di chat.</p>
+          <p>${escapeHtml(engine)} berjalan di folder ini. Izin muncul sebagai kartu di chat.</p>
           <div class="starters">${STARTERS.map(([icon, label, text]) => `<button data-starter="${escapeHtml(text)}" title="${escapeHtml(text)}"><span>${icon}</span>${label}</button>`).join('')}</div>
           <div class="empty-links"><button class="text-btn" data-open-history>🕘 Lanjutkan sesi sebelumnya</button><button class="text-btn" data-open-help>❓ Panduan &amp; shortcut</button></div>
         </div>`;

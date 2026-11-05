@@ -3,6 +3,7 @@
 // holds, so it works on a phone over plain WiFi too. Cards are updated in place (no full re-render per event);
 // tapping one switches project like the picker does and jumps to its pending permission card.
 // Rules (summary, order, counts): core/dashboard-rules.js.
+import { engineLabel, engineOf } from '../core/engine-caps.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { announcement, countGroups, countsText, matchesQuery, relTime, sortSummaries, summarize } from '../core/dashboard-rules.js';
@@ -77,7 +78,8 @@ function cardParts(s, now) {
     const who = s.roles.map((r) => escapeHtml(roleName(r))).join(', ');
     line = `<p class="dash-line dash-work">${who ? `<b>${who}</b>` : ''}${who && s.task ? ' · ' : ''}${s.task ? escapeHtml(s.task) : ''}</p>`;
   }
-  const snippet = s.snippet ? `<p class="dash-snip"><span class="dash-who">${s.snippet.who === 'user' ? 'Kamu' : 'Claude'}:</span> ${escapeHtml(s.snippet.text)}</p>` : '<p class="dash-snip muted">Belum ada percakapan.</p>';
+  const snippetEngine = engineLabel(engineOf({ engine: s.engine }, state.config));
+  const snippet = s.snippet ? `<p class="dash-snip"><span class="dash-who">${s.snippet.who === 'user' ? 'Kamu' : escapeHtml(snippetEngine)}:</span> ${escapeHtml(s.snippet.text)}</p>` : '<p class="dash-snip muted">Belum ada percakapan.</p>';
   const body = `${meta.length ? `<p class="dash-meta">${meta.join('')}</p>` : ''}${line}${snippet}`;
 
   const actions = s.approvalChatId ? `<button type="button" class="dash-act" data-dash-approval="${escapeHtml(s.approvalChatId)}">✋ Lihat izin</button>` : '';

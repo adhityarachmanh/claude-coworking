@@ -519,6 +519,47 @@ test('🔁 Lanjutkan dari mesin lain: Cepat from the stored chat, Pintar on the 
   await useEngine('opencode');
 });
 
+test('Handoff context is session memory: no chat bubble, ready until the next prompt, then cleared', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  await settle(id);
+  const before = (await snapshot()).chats[id]?.length ?? 0;
+  const saved = await api(`/api/projects/${id}/handoff/context`, { text: 'Konteks sesi uji: pekerjaan terakhir selesai di file A.' });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal((await snapshot()).statuses[id].handoffReady, true);
+  assert.equal((await snapshot()).chats[id]?.length ?? 0, before, 'tidak ada bubble prompt');
+  assert.equal((await api(`/api/projects/${id}/handoff/context`, { clear: true })).status, 200);
+  assert.equal((await snapshot()).statuses[id].handoffReady, false);
+
+  await api(`/api/projects/${id}/handoff/context`, { text: 'Konteks sesi uji sekali pakai.' });
+  mark = seen.length;
+  assert.equal((await api(`/api/projects/${id}/prompt`, { text: 'lanjut setelah konteks' })).status, 200);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  const st = (await snapshot()).statuses[id];
+  assert.equal(st.handoffReady, false, 'konteks dipakai sekali, lalu status bersih');
+  const lastUser = [...((await snapshot()).chats[id] ?? [])].reverse().find((m) => m.kind === 'user');
+  assert.equal(lastUser.text, 'lanjut setelah konteks', 'bubble tetap hanya berisi pesan user');
+  await settle(id);
+});
+
+test('Sesi baru mengosongkan kolom chat, tetapi sesi lama tetap ada di Riwayat sesi', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  await api(`/api/projects/${id}/reset`);
+  await settle(id);
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'pesan sebelum sesi baru' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  const oldSession = (await snapshot()).statuses[id].sessionId;
+  assert.ok(oldSession);
+  assert.ok(((await snapshot()).chats[id] ?? []).length > 0);
+  assert.equal((await api(`/api/projects/${id}/reset`)).status, 200);
+  const after = await snapshot();
+  assert.equal(after.chats[id]?.length ?? 0, 0, 'kolom chat bersih');
+  assert.equal(after.statuses[id].sessionId, null, 'sesi baru');
+  assert.ok(oldSession, 'sesi sebelumnya tetap punya id untuk Riwayat sesi');
+});
+
 test('OpenCode provider logins: list, API key, OAuth, logout (through `opencode api`)', async () => {
   let list = (await api('/api/opencode/providers')).body;
   assert.deepEqual(list.connected.map((p) => [p.id, p.connections[0].type]), [['google', 'env']], 'an environment variable counts as connected');

@@ -254,6 +254,7 @@ export class SessionManager {
       if (session.turnActive() || session.busy || session.inflight?.size) {
         throw new HttpError(409, `Sesi ${session.engine === 'opencode' ? 'OpenCode' : 'Claude Code'} masih berjalan di project ini. Tunggu selesai atau hentikan dulu.`);
       }
+      session.clearHandoffContext();
       session.closeChild();
       this.sessions.delete(project.id);
       session = null;
@@ -296,6 +297,7 @@ export class SessionManager {
       return { ok: false, status: 409, error: `📋 Antrian tugas masih berisi item: ${name}. Selesaikan atau hapus dulu.`, busy: [name] };
     }
     // The old engine's process is closed first: the next turn starts the other engine's class (SessionManager.get).
+    session?.clearHandoffContext();
     session?.closeChild();
     if (session) this.sessions.delete(id);
     try {
@@ -342,9 +344,31 @@ export class ClaudeSession {
     this.restartPending = false;
     this.stderr = '';
     this.shellContext = []; // `!command` results not yet sent to Claude
+    this.pendingHandoff = ''; // session-only handoff memory: attached once to the next prompt, never written to a file
   }
 
   // ---------- public ----------
+
+  /** Save a handoff note as session memory. It is sent once with the next prompt, never as its own turn. */
+  setHandoffContext(text) {
+    this.pendingHandoff = String(text ?? '').trim().slice(0, 20_000);
+    this.hub.setStatus(this.id, { handoffReady: Boolean(this.pendingHandoff) });
+    return this.pendingHandoff;
+  }
+
+  clearHandoffContext() {
+    this.pendingHandoff = '';
+    this.hub.setStatus(this.id, { handoffReady: false });
+  }
+
+  /** The pending note goes with this prompt; after that it lives in the session's own conversation history. */
+  takeHandoffContext() {
+    const text = this.pendingHandoff;
+    if (!text) return '';
+    this.pendingHandoff = '';
+    this.hub.setStatus(this.id, { handoffReady: false });
+    return text;
+  }
 
   /**
    * @param attachments 📎 files checked by src/attachments.js readAttachments(): [{ kind, name, size, mediaType, data?, text? }]
@@ -365,9 +389,11 @@ export class ClaudeSession {
       this.hub.updateChat(this.id, chatId, { queued: false, cancelled: true });
       return { chatId };
     }
+    // Session memory from a handoff rides with this one prompt; the bubble still shows only what the user typed.
+    const handoff = this.takeHandoffContext();
     // Shell output the user ran with `!` goes to Claude ahead of the prompt, not into the bubble.
     const context = this.shellContext.splice(0).join('\n');
-    const body = context ? `${context}\n\n${text}` : text;
+    const body = [handoff ? `[KONTEKS SESI — INFORMASI, BUKAN PERMINTAAN BARU]\n${handoff}\n[/KONTEKS SESI]` : '', context, text].filter(Boolean).join('\n\n');
     const content = attachments.length ? contentBlocks(attachments, body) : body;
     // files: how many 📎 attachments rode along (only the count is ever kept, see Hub.beginTurn).
     const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false };
@@ -420,6 +446,7 @@ export class ClaudeSession {
     this.autoApprove = false;
     this.resumeAt = null;
     this.chainLeaf = null;
+    this.clearHandoffContext();
     this.hub.clearInterrupted(this.id);
     this.hub.setSessionId(this.id, sessionId);
     this.hub.setStatus(this.id, { todos: null, context: null, tasks: null, title: null }); // known again after the first turn
@@ -467,7 +494,8 @@ export class ClaudeSession {
     this.resumeAt = null;
     this.chainLeaf = null;
     this.autoApprove = false;
-    this.hub.chat(this.id, { kind: 'divider', text: 'Sesi baru' });
+    this.clearHandoffContext();
+    this.hub.clearChat(this.id); // a new session starts with an empty chat column; engine history stays in Riwayat sesi
   }
 
   // ---------- a turn cut short by a server stop ----------
@@ -614,6 +642,7 @@ export class ClaudeSession {
     }
     if (conversation) {
       this.closeChild();
+      this.clearHandoffContext(); // the conversation moved: session memory for the old position is stale
       this.hub.clearInterrupted(this.id); // the conversation moved: a cut-short turn after this point is gone
       if (point.parentUuid) {
         this.resumeAt = point.parentUuid;

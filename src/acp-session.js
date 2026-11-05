@@ -433,8 +433,10 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         this.hub.updateChat(this.id, chatId, { queued: false, cancelled: true });
         return { chatId };
       }
+      // Session memory from a handoff rides with this one prompt; the bubble still shows only what the user typed.
+      const handoff = this.takeHandoffContext();
       const context = this.shellContext.splice(0).join('\n');
-      const body = context ? `${context}\n\n${text}` : text;
+      const body = [handoff ? `[KONTEKS SESI — INFORMASI, BUKAN PERMINTAAN BARU]\n${handoff}\n[/KONTEKS SESI]` : '', context, text].filter(Boolean).join('\n\n');
       const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false, blocks: promptBlocks(body, attachments, this.project.path) };
       this.inflight.set(uuid, item);
       clearTimeout(this.idleTimer);

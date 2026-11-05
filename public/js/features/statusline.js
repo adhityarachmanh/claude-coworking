@@ -1,4 +1,5 @@
 // Above and below the composer: Claude's todo list and the status line (mode, model, context).
+import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { engineOf } from '../core/engine-caps.js';
 import { fmtTokens } from '../core/format.js';
@@ -61,6 +62,7 @@ export function renderStatusline(st) {
   const parts = [`<span class="sl-mode" title="Ganti dengan Shift+Tab">${modeLabel(st.mode ?? 'manual', engineOf(st, state.config))} <kbd>⇧Tab</kbd></span>`];
   const model = st.activeModel || st.model;
   if (model) parts.push(`<span class="sl-model">${escapeHtml(model)}</span>`);
+  if (st.handoffReady) parts.push('<button type="button" class="sl-handoff" data-clear-handoff title="Konteks handoff akan dipakai pada pesan berikutnya — klik untuk hapus">🧠 Konteks sesi siap</button>');
   if (st.context?.used && !st.context.window) {
     // Window not reported yet (Claude Code tells it once the session runs): no guessed percentage.
     parts.push(`<span class="sl-ctx" title="Konteks terpakai: ${st.context.used.toLocaleString('id-ID')} token">konteks ${fmtTokens(st.context.used)}</span>`);
@@ -86,6 +88,7 @@ export function renderStatusline(st) {
 /** Phone: a strip of chips above the box, only with something to say (mode and model are on the settings chip). */
 function renderStrip(line, st, running) {
   const chips = [];
+  if (st.handoffReady) chips.push('<button type="button" class="sl-chip sl-handoff" data-clear-handoff aria-label="Konteks handoff siap untuk pesan berikutnya — hapus" title="Konteks handoff siap — ketuk untuk hapus">🧠 Konteks siap</button>');
   if (running) chips.push(`<button type="button" class="sl-chip sl-tasks" data-open-tasks aria-label="${running} tugas berjalan — buka monitor tugas latar">⧗ ${running}</button>`);
   const q = st.taskQueue;
   const waiting = q ? q.waiting + q.running : 0;
@@ -128,7 +131,15 @@ export function initStatusline() {
     renderTodos(state.statuses[state.active] ?? {});
   });
 
-  $('#statusline').addEventListener('click', (e) => {
+  $('#statusline').addEventListener('click', async (e) => {
+    if (e.target.closest('[data-clear-handoff]')) {
+      try {
+        await api(`/api/projects/${state.active}/handoff/context`, { clear: true });
+      } catch (err) {
+        toast(err.message, 'warn');
+      }
+      return;
+    }
     if (e.target.closest('[data-open-tasks]')) openTasks();
     else if (e.target.closest('[data-open-queue]')) openQueue();
     else if (e.target.closest('[data-jump-approval]')) jumpToApproval();

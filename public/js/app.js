@@ -35,7 +35,7 @@ import { initGitBar } from './features/git-branches.js';
 import { initPromptHistory } from './features/history.js';
 import { initLiveOutput } from './features/live-output.js';
 import { initMcp } from './features/mcp.js';
-import { initMoreMenu } from './features/more-menu.js';
+import { initHeaderMore, initMoreMenu } from './features/more-menu.js';
 import { initNotify } from './features/notify.js';
 import { initPalette } from './features/palette.js';
 import { initPermissions } from './features/permissions.js';
@@ -95,6 +95,7 @@ initMemory(); // 🧠 /memory: CLAUDE.md / AGENTS.md editor
 initExtensions(); // 🧩 /plugin /agents /hooks
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
+initHeaderMore();
 initSettings();
 initBudget(); // 💰 budget pemakaian global (⚙ → Umum + 🩺 Kesehatan; laptop/Tailscale only)
 initTheme(); // before the first frame: the saved theme is drawn right away

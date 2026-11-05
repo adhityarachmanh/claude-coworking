@@ -39,6 +39,14 @@
       <button id="btn-notify" class="icon-btn labeled" title="Notifikasi & suara"><span class="ico" aria-hidden="true">🔕</span><span class="lbl">Notifikasi</span></button>
       <button id="btn-help" class="icon-btn labeled" title="Panduan & shortcut keyboard (?)"><span class="ico" aria-hidden="true">❓</span><span class="lbl">Bantuan</span></button>
       <button id="btn-settings" class="icon-btn labeled" title="Pengaturan"><span class="ico" aria-hidden="true">⚙</span><span class="lbl">Pengaturan</span></button>
+      <!-- Desktop: the three rarer header actions live in one ⋯ menu; the phone keeps its own ⋯ sheet. -->
+      <div id="header-more" class="header-more">
+        <button id="btn-header-more" class="icon-btn" type="button" title="Lainnya: notifikasi, bantuan, buka di HP" aria-label="Lainnya" aria-haspopup="menu" aria-expanded="false">⋯</button>
+        <div id="header-more-menu" class="menu header-more-menu" role="menu" hidden>
+          <button role="menuitem" data-header-act="notify">🔔 Notifikasi &amp; suara</button>
+          <button role="menuitem" data-header-act="help">❓ Panduan &amp; shortcut</button>
+        </div>
+      </div>
       <!-- Phone only: session title · status under the project name (features/phone-sheets.js) -->
       <small id="head-sub" class="head-sub phone-only"></small>
       <!-- Phone only: one ⋯ for session, export, account, report, music, settings (sheet #head-more-modal) -->
@@ -60,7 +68,7 @@
         <!-- Phone only: 🗂 Semua project from the Kantor view, with a one-line summary (features/dashboard.js) -->
         <button id="dash-bar" class="dash-bar" type="button" aria-haspopup="dialog"><span class="dash-bar-title"><span aria-hidden="true">🗂</span> Semua project</span><span id="dash-bar-sum" class="dash-bar-sum"></span><span class="dash-bar-chev" aria-hidden="true">›</span></button>
         <div id="stage" class="stage">
-          <canvas aria-label="Kantor tim Claude"></canvas>
+          <canvas aria-label="Kantor tim"></canvas>
           <div class="overlay"></div>
           <button id="view-mode" class="view-mode" type="button" aria-pressed="false" title="Ganti tampilan: kantor pixel ↔ jaringan otak AI">🧠 Mode Otak</button>
         </div>
@@ -270,7 +278,7 @@
             <h3>Mulai dalam 4 langkah</h3>
             <ol class="steps">
               <li><b>Pilih project</b>: klik nama project di kiri atas, atau tekan <kbd>Ctrl</kbd> <kbd>K</kbd>.</li>
-              <li><b>Ketik permintaan</b> di chat, atau klik salah satu ide di layar sambutan. Claude Code bekerja langsung di folder project itu.</li>
+              <li><b>Ketik permintaan</b> di chat, atau klik salah satu ide di layar sambutan. Mesin AI bekerja langsung di folder project itu.</li>
               <li><b>Setujui izin</b>: saat tim mau mengedit file atau menjalankan perintah, kartu izin muncul di chat.</li>
               <li><b>Cek hasilnya</b> di tab <b>Perubahan</b> (diff per file), lalu commit.</li>
             </ol>
@@ -296,8 +304,8 @@
               <tr><td><kbd>Ctrl</kbd> <kbd>B</kbd></td><td>Pindahkan perintah/agent yang sedang jalan ke latar belakang</td></tr>
               <tr><td><kbd>Alt</kbd> <kbd>M</kbd></td><td>🎤 Input suara: mulai / berhenti (juga tombol 🎤 di kotak pesan; <kbd>Esc</kbd> berhenti). Teks masuk di posisi kursor. Butuh HTTPS atau localhost</td></tr>
               <tr><td><code>/clear</code> <code>/model</code> <code>/effort</code> <code>/resume</code></td><td>Sesi baru · ganti model · ganti effort · riwayat sesi</td></tr>
-              <tr><td><code>/rewind</code> <code>/mcp</code> <code>/tasks</code> <code>/memory</code></td><td>Rewind · server MCP (status, login) · tugas latar · buka CLAUDE.md</td></tr>
-              <tr><td><code>/usage</code> <code>/context</code> <code>/compact</code> <code>/rename</code> …</td><td>Command Claude Code lain jalan seperti di terminal; ketik <kbd>/</kbd> untuk daftar lengkapnya</td></tr>
+              <tr><td><code>/rewind</code> <code>/mcp</code> <code>/tasks</code> <code>/memory</code></td><td>Rewind · server MCP (status, login) · tugas latar · buka memory (CLAUDE.md/AGENTS.md)</td></tr>
+              <tr><td><code>/usage</code> <code>/context</code> <code>/compact</code> <code>/rename</code> …</td><td>Command mesin lain jalan seperti di terminal; ketik <kbd>/</kbd> untuk daftar lengkapnya</td></tr>
               <tr><td><kbd>?</kbd></td><td>Buka panduan ini</td></tr>
             </table>
           </section>
@@ -307,14 +315,14 @@
               <tr><td>🛡️ Tanya dulu</td><td>Setiap edit file dan perintah menunggu izinmu. Paling aman.</td></tr>
               <tr><td>✏️ Auto-edit file</td><td>Edit file langsung jalan, perintah terminal tetap minta izin.</td></tr>
               <tr><td>⚡ Auto</td><td>Aksi yang dinilai aman langsung jalan, yang berisiko diblokir.</td></tr>
-              <tr><td>📋 Rencana dulu</td><td>Claude menyusun rencana dulu, dan baru dikerjakan setelah kamu setujui.</td></tr>
+              <tr><td>📋 Rencana dulu</td><td>Mesin menyusun rencana dulu, dan baru dikerjakan setelah kamu setujui.</td></tr>
               <tr><td>🚫 Jangan tanya</td><td>Tidak ada kartu izin: yang belum diizinkan lewat aturan langsung ditolak. Untuk kerja tanpa ditunggui.</td></tr>
             </table>
           </section>
           <section>
             <h3>Tips</h3>
             <ul>
-              <li><b>Mode tim</b>: Claude mendelegasikan ke PM, BA, developer, QA, dan lainnya. Kantor lebih hidup, tapi token lebih banyak.</li>
+              <li><b>Mode tim</b>: mesin mendelegasikan ke PM, BA, developer, QA, dan lainnya. Kantor lebih hidup, tapi token lebih banyak.</li>
               <li><b>🕘 Riwayat sesi</b> melanjutkan percakapan lama, termasuk yang dimulai di terminal. Menu <b>⋯</b> menyalin perintah untuk melanjutkan sesi web di terminal.</li>
               <li>Sesi yang kamu jalankan di terminal (CLI) ikut tampil live di sini.</li>
               <li>Tandai project yang sering dipakai dengan <b>★</b> di daftar project supaya selalu di atas.</li>

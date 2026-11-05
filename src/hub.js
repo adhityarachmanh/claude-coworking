@@ -543,6 +543,24 @@ export class Hub {
     return this.chatFor(this.engineOf(id), id);
   }
 
+  /**
+   * Starts a clean chat column for the project's current engine. The engine's own transcript/session history is
+   * untouched (Riwayat sesi still lists it); this only drops the panel history and its file.
+   */
+  clearChat(id, engine = this.engineOf(id)) {
+    const rt = this.runtime.get(id);
+    if (rt && this.engineOf(id) === engine) rt.chat.splice(0);
+    delete this.storedChats[this.chatKey(engine, id)];
+    if (this.legacyChats) delete this.legacyChats[id];
+    try {
+      this.chatStoreFor(engine).remove(id);
+    } catch (err) {
+      console.error(`Mengosongkan riwayat chat ${engine} ${id} gagal: ${err.message}`);
+    }
+    this.broadcast('chat_reset', { project: id });
+    this.scheduleSave();
+  }
+
   scheduleSave() {
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.save(), 800);

@@ -37,6 +37,8 @@ export function renderSessionBar() {
   }
   const st = state.statuses[state.active] ?? {};
   const engine = engineOf(st, state.config);
+  $('#btn-sessions').title = `Lihat dan lanjutkan sesi ${engineLabel(engine)} sebelumnya (dari terminal maupun web)`;
+  $('#btn-new').title = `Mulai percakapan baru — ${engineLabel(engine)} tidak membawa konteks percakapan ini`;
   const known = st.sessionId ? sessionTitles.get(st.sessionId) : null;
   if (st.sessionId && !known) lookupSessionTitle(state.active, st.sessionId);
   // A name set with /rename (or by clicking the title) wins, as in the CLI's /resume list.

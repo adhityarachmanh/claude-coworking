@@ -93,6 +93,19 @@ export function register(router) {
     }
   })), { maxBody: 1024 });
 
+  // Session-only handoff memory: no turn, no file, no prompt. It rides with the next prompt once.
+  router.post('/api/projects/:id/handoff/context', withSession(guard((ctx, req, res, { project, session }, body) => {
+    if (body?.clear === true) {
+      session.clearHandoffContext();
+      return { ok: true, ready: false };
+    }
+    const text = typeof body?.text === 'string' ? body.text.trim() : '';
+    if (!text) throw new HandoffError(400, 'Catatan handoff kosong.');
+    if (text.length > 20_000) throw new HandoffError(413, 'Catatan handoff terlalu panjang.');
+    session.setHandoffContext(text);
+    return { ok: true, ready: true };
+  })));
+
   // ⇡ Pull request
   router.post('/api/github/status', guard(async () => ({ ...(await ghStatus(ghBin)), login: ghLoginState() })));
   router.post('/api/github/login', guard(({ hub }) => ghLoginStart(ghBin, { onChange: () => hub.broadcast('github-login', ghLoginState()) }), { laptop: true }));

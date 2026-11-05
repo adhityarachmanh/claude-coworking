@@ -5,6 +5,7 @@ import { $ } from '../core/dom.js';
 import { APP_NAME, state } from '../core/state.js';
 import { copyText, saveBlob } from '../core/util.js';
 import { roleName } from '../office/cast.js';
+import { openNotifySettings } from './notify.js';
 import { openPermissions } from './permissions.js';
 import { exportActiveSession } from './conversations.js';
 import { openRoster } from './roster.js';
@@ -38,6 +39,38 @@ function exportChat() {
   // sv-SE formats as YYYY-MM-DD in local time (toISOString would give yesterday's date before 07:00 in Jakarta).
   saveBlob(`${slug}-${new Date().toLocaleDateString('sv-SE')}.md`, new Blob([`${lines.join('\n')}\n`], { type: 'text/markdown' }));
   toast('Percakapan diekspor ke Markdown.', 'ok');
+}
+
+/** Desktop ⋯: the rarer header actions, so the top bar stays short. The phone keeps its own ⋯ sheet. */
+export function initHeaderMore() {
+  const btn = $('#btn-header-more');
+  const menu = $('#header-more-menu');
+  if (!btn || !menu) return;
+  const close = () => {
+    menu.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+  };
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = menu.hidden;
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && !e.target.closest('#header-more')) close();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menu.hidden) close();
+  });
+  menu.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-header-act]');
+    if (!item) return;
+    close();
+    const act = item.dataset.headerAct;
+    if (act === 'notify') openNotifySettings();
+    else if (act === 'help') $('#btn-help').click();
+    else if (act === 'phone') $('#btn-phone').click();
+  });
 }
 
 export function initMoreMenu() {

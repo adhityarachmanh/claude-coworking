@@ -115,6 +115,7 @@ export function summarize(project, st = {}, { chat = [], events = [], approvals 
     approvalChatId: waiting[0]?.chatId ?? null,
     snippet: snippetOf(chat),
     model: st.activeModel || st.model || null,
+    engine: st.engine ?? null,
     contextPct: contextPct(st),
     lastActivity,
   };
