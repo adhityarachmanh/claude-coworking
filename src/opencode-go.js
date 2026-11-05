@@ -75,8 +75,8 @@ const WINDOWS = [
 
 const noteFor = (plan) => {
   const info = GO_PLANS[plan];
-  const member = info.perMember ? ' Batas ini per anggota; anggota lain punya kuotanya sendiri.' : '';
-  return `Perkiraan dari token di ledger × harga list Go, dibandingkan batas bulanan paket ${info.label} (${info.price}). Batas 5 jam = 20% dan 7 hari = 50%; Go tidak melaporkan biaya, jadi angka ini bukan tagihan.${member}`;
+  const member = info.perMember ? ' Batas per anggota.' : '';
+  return `Perkiraan dari token di ledger × harga list, dibandingkan batas paket ${info.label} (${info.price}).${member} Angka ini bukan tagihan.`;
 };
 
 const DEEPSEEK = /^deepseek/i;

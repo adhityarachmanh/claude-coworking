@@ -15,6 +15,7 @@ const PLAIN = new Set(['text', 'md']); // no highlighter for prose
 export const viewer = {
   project: null,
   path: null, // as asked for (relative or absolute); the server answers with the project-relative path
+  outside: false, // an absolute path outside the project, confirmed by the user (laptop only)
   line: null,
   lineEnd: null,
   data: null, // the server's answer
@@ -111,9 +112,10 @@ const isOpen = () => !$('#file-modal').hidden;
 // What looks like a project file: a known extension, optionally `:line` or `:line-line`.
 const EXT = 'png|jpe?g|gif|webp|bmp|ico|avif|tsv|js|mjs|cjs|jsx|ts|tsx|mts|json|jsonc|md|css|scss|less|html|htm|vue|svelte|py|rb|php|java|kt|go|rs|c|h|cc|cpp|hpp|cs|swift|dart|lua|sh|bash|ps1|psm1|bat|cmd|sql|yml|yaml|toml|ini|xml|svg|txt|env|lock|gradle|properties|conf|cfg|csv|log|graphql|prisma|tf';
 // In running text a path needs at least one folder (`src/x.js`), so plain words like "node.js" stay text.
-const TEXT_PATH = new RegExp(String.raw`(?<![\w@./\\:-])((?:\.{1,2}[\\/])?(?:[\w@.-]+[\\/])+[\w@.-]+\.(?:${EXT}))(?::(\d+)(?:[-–](\d+))?)?(?![\w/\\])`, 'gi');
+// Absolute paths (C:\… or /home/…) are allowed too: chat links to screenshots/temp files live outside the project.
+const TEXT_PATH = new RegExp(String.raw`(?<![\w@./\\:-])((?:[A-Za-z]:[\\/]|\/)?(?:\.{1,2}[\\/])?(?:[\w@.-]+[\\/])+[\w@.-]+\.(?:${EXT}))(?::(\d+)(?:[-–](\d+))?)?(?![\w/\\])`, 'gi');
 // Inline `code` that is exactly a path may also be a bare file name (`server.js`, `package.json:12`).
-const CODE_PATH = new RegExp(String.raw`^((?:\.{1,2}[\\/])?(?:[\w@.-]+[\\/])*[\w@.-]+\.(?:${EXT}))(?::(\d+)(?:[-–](\d+))?)?$`, 'i');
+const CODE_PATH = new RegExp(String.raw`^((?:[A-Za-z]:[\\/]|\/)?(?:\.{1,2}[\\/])?(?:[\w@.-]+[\\/])*[\w@.-]+\.(?:${EXT}))(?::(\d+)(?:[-–](\d+))?)?$`, 'i');
 
 /** "src/app.js:120-130" → { path, line, lineEnd }. A Windows drive colon (C:\…) is part of the path. */
 export function parseFileRef(ref) {
@@ -180,12 +182,31 @@ export function linkifyPaths(root) {
 
 // ---------- open ----------
 
+/** True for an absolute path that is not below the active project (Windows drive or POSIX root). */
+function isOutsideProject(ref) {
+  const project = state.projects.find((p) => p.id === state.active);
+  const root = String(project?.path ?? '')
+    .replace(/\\/g, '/')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+  const target = String(ref ?? '')
+    .replace(/\\/g, '/')
+    .toLowerCase();
+  if (!root || !/^(?:[a-z]:\/|\/)/i.test(target)) return false;
+  return target !== root && !target.startsWith(`${root}/`);
+}
+
 /** Opens `ref` ("src/x.js", "src/x.js:120", an absolute path inside the project) in the viewer. */
 export async function openFile(ref, { line = null, lineEnd = null } = {}) {
   if (!state.active || state.active === DEMO_ID) return toast('Pilih project dulu untuk melihat file.');
   const parsed = parseFileRef(ref);
   if (!parsed.path) return toast('Pilih file dulu.');
-  Object.assign(viewer, { project: state.active, path: parsed.path, line: line ?? parsed.line, lineEnd: lineEnd ?? parsed.lineEnd, data: null, lines: [], html: [], hits: [], hit: -1 });
+  const outside = isOutsideProject(parsed.path);
+  if (outside) {
+    const ok = window.confirm(`File ini di luar folder project:\n${parsed.path}\n\nBuka read-only? Hanya path di folder Temp, Desktop, Documents, Downloads, atau Pictures yang diizinkan.`);
+    if (!ok) return;
+  }
+  Object.assign(viewer, { project: state.active, path: parsed.path, outside, line: line ?? parsed.line, lineEnd: lineEnd ?? parsed.lineEnd, data: null, lines: [], html: [], hits: [], hit: -1 });
   viewer.mode = viewer.line ? 'code' : 'preview'; // a `:line` link wants the line marked in the code
   viewer.marked.clear();
   const seq = ++viewer.seq;
@@ -200,7 +221,7 @@ export async function openFile(ref, { line = null, lineEnd = null } = {}) {
 async function load(seq, reveal) {
   let data;
   try {
-    data = await api(`/api/projects/${viewer.project}/file`, { path: viewer.path, ...(reveal ? { reveal: true } : {}) });
+    data = await api(`/api/projects/${viewer.project}/file`, { path: viewer.path, ...(viewer.outside ? { outside: true } : {}), ...(reveal ? { reveal: true } : {}) });
   } catch (err) {
     if (seq !== viewer.seq) return;
     $('#fv-body').innerHTML = `<div class="state-error fv-state" role="alert">${escapeHtml(err.message)}</div>`;
@@ -248,7 +269,9 @@ function renderHead() {
   $('#fv-copy').disabled = !hasText;
   $('#fv-q').disabled = !hasText;
   $('#fv-prev').disabled = $('#fv-next').disabled = !hasText;
-  $('#fv-open').disabled = !d;
+  // The open route resolves paths inside the project: an outside file stays view-only here.
+  $('#fv-open').disabled = !d || viewer.outside;
+  $('#fv-open').title = viewer.outside ? 'Hanya file di dalam project yang bisa dibuka di VS Code' : 'Buka file ini di VS Code';
 }
 
 function renderSecretGate() {

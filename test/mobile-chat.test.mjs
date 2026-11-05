@@ -629,7 +629,7 @@ for (const vp of PHONES) {
       assert.equal(strip.collapsed, true, 'todo terlipat di HP');
       assert.ok(strip.todoH <= 44, `todo 1 baris (${strip.todoH} px)`);
       assert.equal(strip.todoText, '◼ 2/5 Menulis test ▸');
-      assert.deepEqual(strip.chips, ['⧗ 1', '📋 2', 'konteks 78%']);
+      assert.deepEqual(strip.chips, ['⧗ 1', '📋 2', 'konteks 78%', '🧹 Ringkas']);
       assert.equal(strip.sameRow, true, 'todo dan chip satu baris');
       assert.equal(await page.eval(horizontalOverflow), null);
       await page.click('#todos .todos-head');
@@ -723,7 +723,8 @@ describe('desktop 1440x900 tidak berubah', { skip: SKIP ?? false }, () => {
       // Izin / Model / Effort live in the Pengaturan giliran dialog, opened by the chip above the input
       assert.equal(await page.eval(() => document.querySelector('.controls').parentElement.matches('#turn-settings-modal .sheet-body')), true);
       assert.equal(await page.eval(() => document.querySelector('#settings-chip').nextElementSibling.id), 'suggest');
-      for (const sel of ['#btn-account', '#btn-dashboard', '#btn-palette', '#btn-report', '#btn-phone', '#btn-notify', '#btn-help', '#btn-settings', '#session-bar', '#btn-sessions', '#btn-new', '#btn-more', '.tabs', '#settings-chip', '#btn-attach', '#btn-template', '#btn-queue-add', '#btn-send', '#statusline']) assert.equal(fp[sel]?.shown, true, `${sel} terlihat`);
+      for (const sel of ['#btn-account', '#btn-dashboard', '#btn-palette', '#btn-report', '#btn-phone', '#btn-notify', '#btn-help', '#btn-settings', '#session-bar', '#btn-sessions', '#btn-new', '#btn-more', '.tabs', '#settings-chip', '#btn-attach', '#btn-template', '#btn-queue-add', '#btn-send']) assert.equal(fp[sel]?.shown, true, `${sel} terlihat`);
+      assert.equal(fp['#statusline'].shown, false, 'idle: tidak ada info status yang perlu ditampilkan');
       await page.click('#settings-chip');
       await page.waitFor(() => !document.querySelector('#turn-settings-modal').hidden, { timeoutMs: 2000, message: 'dialog Pengaturan giliran' });
       assert.deepEqual(await page.eval(() => ['#mode', '#model', '#effort'].map((s) => document.querySelector(s).getClientRects().length > 0)), [true, true, true], 'Izin, Model, Effort di dialog');
@@ -732,7 +733,7 @@ describe('desktop 1440x900 tidak berubah', { skip: SKIP ?? false }, () => {
       assert.equal(fp['#btn-send'].text, 'Kirim', 'teks Kirim tetap');
       assert.equal(fp['#btn-send'].font, '14px', 'Kirim tetap berteks (bukan ikon)');
       assert.deepEqual(await page.eval(visibleControls, '.input'), ['btn-attach', 'btn-template', 'prompt', 'btn-voice', 'btn-queue-add', 'btn-send'].filter((id) => id !== 'btn-voice' || fp['#btn-voice'].shown));
-      // The status line keeps mode · model on a laptop (no phone chips); the todo list stays open.
+      // Mode/model stay in the DOM (compatibility), but the line only shows when something needs attention.
       await patchStatus(page, BUSY);
       assert.equal(await page.eval(() => document.querySelector('#statusline .sl-mode') !== null && !document.querySelector('#statusline .sl-chip')), true);
       assert.equal(await page.eval(() => document.querySelector('#todos').classList.contains('collapsed')), false, 'daftar tugas tetap terbuka di desktop');

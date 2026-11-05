@@ -4356,6 +4356,33 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page).filter((p) => !/\/file\b/.test(p.text)), []);
       page.clearProblems();
 
+      // A link outside the project (e.g. a screenshot in temp): confirmed once, read-only, no VS Code.
+      const outsideFile = path.join(TMP, 'screenshot-di-luar.txt');
+      writeFileSync(outsideFile, 'isi di luar project\n');
+      await page.eval(async (file) => {
+        const prev = window.confirm;
+        window.confirm = () => true;
+        try {
+          const { openFile } = await import('/js/features/file-viewer.js');
+          await openFile(file);
+        } finally {
+          window.confirm = prev;
+        }
+      }, outsideFile);
+      await page.waitFor(() => /screenshot-di-luar\.txt/.test(document.querySelector('#fv-title')?.textContent ?? '') && /isi di luar project/.test(document.querySelector('#file-modal')?.textContent ?? ''), { timeoutMs: 5000, message: 'file di luar project terbuka' });
+      const outside = await page.eval(() => ({ open: document.querySelector('#fv-open').disabled, title: document.querySelector('#fv-open').title }));
+      assert.equal(outside.open, true, 'VS Code hanya untuk file di dalam project');
+      assert.match(outside.title, /di dalam project/);
+      const linked = await page.eval(async (file) => {
+        const { linkifyPaths } = await import('/js/features/file-viewer.js');
+        const div = document.createElement('div');
+        div.textContent = `Lihat ${file} untuk detail.`;
+        linkifyPaths(div);
+        return [...div.querySelectorAll('.file-link')].map((b) => b.dataset.file);
+      }, outsideFile);
+      assert.deepEqual(linked, [outsideFile], 'path absolut di chat juga menjadi link');
+      await page.press('Escape');
+
       // From a Read row (absolute path in the tool input)
       await page.eval(() => [...document.querySelectorAll('#chat .line.tool')].reverse().find((r) => /checkout\.ts/.test(r.textContent)).querySelector('.row').click());
       await page.waitFor(() => [...document.querySelectorAll('#chat .line.tool.open .file-link')].some((b) => /checkout\.ts$/.test(b.dataset.file)), { timeoutMs: 3000, message: 'path di baris Read' });

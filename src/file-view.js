@@ -1,7 +1,9 @@
-// Read-only file viewer (📄 Lihat file): one text file inside a project folder, never anything outside it.
-// Every path is checked twice: lexically (resolve) and on disk (realpath), so `..`, absolute paths, symlinks
-// and junctions that lead out of the project, UNC/device paths and NTFS streams are all refused.
+// Read-only file viewer (📄 Lihat file): one text file, normally inside a project folder. A laptop-confirmed path
+// outside the project is allowed only under temp or the user's Desktop/Documents/Downloads/Pictures (see
+// resolveOutsideFile). Every path is checked twice:
+// lexically (resolve) and on disk (realpath), so `..`, symlinks/junctions, UNC/device paths and NTFS streams are refused.
 import { open, readdir, realpath, stat } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 
 export const MAX_VIEW_BYTES = 512 * 1024;
@@ -138,12 +140,57 @@ async function resolveExact(projectPath, input) {
 }
 
 /**
- * Reads a text file of the project for the viewer.
- * @param {{ allowSecret?: boolean, reveal?: boolean }} opts allowSecret: false refuses secret files (phones);
- *   true returns them only with `reveal` (the laptop confirms with a click first), else without content.
+ * A local absolute file outside the project, but only under the user's home or the OS temp folder. The client asks
+ * first; the server still enforces it so a stray request cannot read arbitrary files. Secrets keep the same gate.
  */
-export async function readProjectFile(projectPath, input, { allowSecret = false, reveal = false } = {}) {
-  const { abs, rel } = await resolveProjectFile(projectPath, input);
+async function resolveOutsideFile(input) {
+  const raw = typeof input === 'string' ? input.trim() : '';
+  if (!raw || raw.length > MAX_PATH || raw.includes('\0')) throw new FileViewError(400, 'Path file tidak valid.');
+  if (/^([\\/]{2}|\\\?\?\\)/.test(raw)) throw new FileViewError(400, 'Path jaringan/perangkat tidak diizinkan.');
+  if (!path.isAbsolute(raw)) throw new FileViewError(403, 'File di luar project harus memakai path lengkap.');
+  if (raw.replace(/^[A-Za-z]:(?=[\\/])/, '').includes(':')) throw new FileViewError(400, 'Path file tidak valid.');
+  if (raw.split(/[\\/]+/).some((part) => DEVICE_NAME.test(part.replace(/[. ]+$/, '')))) throw new FileViewError(400, 'Path file tidak valid.');
+
+  let real;
+  try {
+    real = await realpath(path.resolve(raw));
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') throw new FileViewError(404, 'File tidak ditemukan (mungkin sudah dihapus atau dipindah).');
+    throw new FileViewError(400, 'File tidak bisa dibaca.');
+  }
+  // Not all of home: AppData/.config hold the app's own keys and shell history. Keep the user-facing folders and temp.
+  const home = homedir();
+  const candidates = [tmpdir(), ...['Desktop', 'Documents', 'Downloads', 'Pictures'].map((name) => (home ? path.join(home, name) : null))];
+  const roots = await Promise.all(
+    candidates.filter(Boolean).map(async (root) => {
+      try {
+        return await realpath(root);
+      } catch {
+        return null;
+      }
+    }),
+  );
+  if (!roots.filter(Boolean).some((root) => inside(root, real))) {
+    throw new FileViewError(403, 'File di luar project hanya bisa dibuka dari folder Temp, Desktop, Documents, Downloads, atau Pictures.');
+  }
+  return { abs: real, rel: real.split(path.sep).join('/') };
+}
+
+/**
+ * Reads a text file of the project for the viewer.
+ * @param {{ allowSecret?: boolean, reveal?: boolean, allowOutside?: boolean }} opts allowSecret: false refuses
+ *   secret files (phones); true returns them only with `reveal` (the laptop confirms with a click first), else
+ *   without content. allowOutside: the laptop already confirmed a path outside the project (temp/user folders only).
+ */
+export async function readProjectFile(projectPath, input, { allowSecret = false, reveal = false, allowOutside = false } = {}) {
+  let resolved;
+  try {
+    resolved = await resolveProjectFile(projectPath, input);
+  } catch (err) {
+    if (!allowOutside || !(err instanceof FileViewError) || err.status !== 403) throw err;
+    resolved = await resolveOutsideFile(input);
+  }
+  const { abs, rel } = resolved;
   const secret = isSecretPath(rel) || isSecretPath(String(input));
   if (secret && !allowSecret) throw new FileViewError(403, 'File ini mungkin berisi rahasia (kunci/kredensial) dan hanya bisa dilihat dari laptop.');
   const info = await stat(abs);

@@ -31,6 +31,10 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ### Diperbaiki
 
+- **Header dan composer lebih lega.** Label teks di header diganti ikon + tooltip, meta sesi yang berulang dihapus, status koneksi menjadi titik saat tersambung, dan status line hanya muncul saat ada hal yang perlu diperhatikan.
+- **Catatan di modal lebih ringkas.** Penjelasan panjang di Pengaturan, backup, kuota, antrian, izin, dan config OpenCode dipersingkat; detail lengkap tetap tersedia di dokumentasi.
+- **Buka file di luar project dari chat.** Path absolut di chat (mis. screenshot di folder temp) kini bisa dibuka read-only dari laptop setelah konfirmasi. Server membatasinya ke folder Temp, Desktop, Documents, Downloads, atau Pictures, menolak path relatif/UNC/perangkat, dan tetap memakai gerbang file rahasia. Di HP hanya-lihat/Tailscale tetap ditolak untuk path luar project.
+- **Empty state & banner lebih tenang.** Teks sambutan dan placeholder dipersingkat, starter jadi grid 2×2, status “Standby” di kartu karyawan yang idle disembunyikan, label akun menjadi avatar saja, dan banner status dibuat lebih tipis.
 - **Ledger pemakaian & audit tidak tumbuh tanpa batas.** `data/usage.jsonl` dirotasi otomatis ke `data/usage-archive/` (tetap dibaca laporan dan ikut backup, termasuk saat import), dan `auth-audit.jsonl` dipadatkan ke 180 hari/maks 2.000 aksi. Query laporan memakai cache yang diperbarui saat file berubah.
 - **Model Auto tidak macet saat berganti model.** Pergantian model (mis. Auto → `kimi-k3.1-pro` + effort high) sekarang **ditunggu selesai sebelum prompt dikirim**; sebelumnya prompt berjalan bersamaan dengan switch model sehingga giliran bisa diam tanpa jawaban. Ada test regresi dengan switch model yang sengaja diperlambat.
 - **Volume Spotify tidak tertinggal pelan.** Setelah izin dijawab, volume dikembalikan juga bila nilainya sempat bergeser sedikit di bawah batas duck (sebelumnya harus sama persis, jadi musik bisa tertinggal nyaris mati). Fitur *kecilkan saat izin* tetap opsional dan **default mati**; setelan kamu sekarang dimatikan.

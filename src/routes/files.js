@@ -10,8 +10,11 @@ export function register(router) {
   router.post('/api/projects/:id/file', withSession(async ({ isLocal }, req, res, { project }, body) => {
     // 📄 Lihat file: read-only, inside the project only. Likely secrets (.env, keys, credentials) need a click
     // on the laptop (`reveal`) and are never sent to another device, whatever the connection.
+    // A link to a screenshot/temp file outside the project: laptop only, explicit `outside` from the confirmed UI,
+    // and file-view still limits it to home/temp (never an arbitrary drive or UNC path).
+    if (body.outside === true && !isLocal(req)) return json(res, 403, { error: 'File di luar project hanya bisa dibuka dari laptop.' });
     try {
-      return json(res, 200, await readProjectFile(project.path, body.path, { allowSecret: isLocal(req), reveal: body.reveal === true }));
+      return json(res, 200, await readProjectFile(project.path, body.path, { allowSecret: isLocal(req), reveal: body.reveal === true, allowOutside: isLocal(req) && body.outside === true }));
     } catch (err) {
       if (err instanceof FileViewError) return json(res, err.status, { error: err.message });
       throw err;

@@ -683,6 +683,24 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     assert.doesNotMatch(await secret.text(), /isi-pribadi-123/);
   }
   assert.equal((await phoneApi(`/api/projects/${id}/file`, { path: '.env.local', reveal: true })).status, 403);
+  // A file outside the project is laptop-only: the phone cannot ask for it even with outside:true. The laptop can,
+  // after its confirm (temp/user folders only), and the secret gate still applies.
+  const outsideFile = path.join(TMP, 'outside-view.txt');
+  writeFileSync(outsideFile, 'di luar project\n');
+  const phoneOutside = await phoneApi(`/api/projects/${id}/file`, { path: outsideFile, outside: true });
+  assert.equal(phoneOutside.status, 403);
+  assert.match((await phoneOutside.json()).error, /laptop/i);
+  const localOutside = await api(`/api/projects/${id}/file`, { path: outsideFile, outside: true });
+  assert.equal(localOutside.status, 200);
+  assert.equal(localOutside.body.content, 'di luar project\n');
+  const outsideSecretDir = path.join(TMP, 'outside-secret');
+  mkdirSync(outsideSecretDir, { recursive: true });
+  const outsideEnv = path.join(outsideSecretDir, '.env');
+  writeFileSync(outsideEnv, 'RAHASIA-LUAR\n');
+  const secretOutside = await api(`/api/projects/${id}/file`, { path: outsideEnv, outside: true });
+  assert.equal(secretOutside.status, 200);
+  assert.equal(secretOutside.body.secret, true);
+  assert.equal(secretOutside.body.content, null, 'secret outside file stays behind the reveal gate');
   // a read-only phone can't make the laptop re-run the Claude CLI: `force` is ignored, the cached answer comes back
   const cachedLimits = await (await phoneApi('/api/account/limits', {})).json();
   assert.ok(cachedLimits.at, 'limits were loaded');

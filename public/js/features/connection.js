@@ -53,6 +53,7 @@ function setPill(ok) {
   conn.textContent = ok ? 'terhubung' : 'terputus';
   conn.className = ok ? 'pill ok' : 'pill bad';
   conn.title = ok ? 'Tersambung ke laptop' : 'Terputus dari laptop — menyambung lagi';
+  conn.setAttribute('aria-label', conn.title);
 }
 
 function clearTimers() {

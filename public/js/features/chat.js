@@ -22,10 +22,10 @@ const chatEl = $('#chat');
 
 // One click fills the composer with a ready-made request (still editable before sending).
 const STARTERS = [
-  ['🧭', 'Jelaskan project ini', 'Jelaskan struktur, teknologi, dan alur utama project ini secara singkat.'],
+  ['🧭', 'Jelaskan', 'Jelaskan struktur, teknologi, dan alur utama project ini secara singkat.'],
   ['🐞', 'Cari bug', 'Cari bug atau potensi masalah di project ini, urutkan dari yang paling berisiko, lalu usulkan perbaikannya.'],
   ['🧪', 'Tambah test', 'Tulis test untuk bagian penting yang belum punya test, lalu jalankan.'],
-  ['🔍', 'Review perubahan', 'Review perubahan yang belum di-commit: cari bug, risiko keamanan, dan bagian yang bisa dirapikan.'],
+  ['🔍', 'Review', 'Review perubahan yang belum di-commit: cari bug, risiko keamanan, dan bagian yang bisa dirapikan.'],
 ];
 
 // The row shown for each message id (the newest wins: chats stored before ids were unique across server
@@ -41,12 +41,12 @@ export function renderChat() {
   const messages = state.chats[state.active] ?? [];
   if (!messages.length) {
     chatEl.innerHTML = state.active === DEMO_ID
-      ? '<div class="empty"><div class="empty-icon">🎬</div><b>Demo kantor</b><p>Klik <b>▶ Jalankan demo</b> untuk melihat tim bekerja: delegasi, layar monitor, error, sampai minta izin. Demo tidak menjalankan Claude Code.</p></div>'
+      ? '<div class="empty"><div class="empty-icon">🎬</div><b>Demo kantor</b><p>Klik <b>▶ Jalankan demo</b> untuk melihat tim bekerja. Demo tidak menjalankan Claude Code.</p></div>'
       : `<div class="empty">
           <div class="empty-icon">✳</div>
           <b>Mulai kerja di ${escapeHtml(projectName(state.active))}</b>
-          <p>Claude Code berjalan langsung di folder project ini. Setiap aksi yang butuh izin muncul sebagai kartu di chat.</p>
-          <div class="starters">${STARTERS.map(([icon, label, text]) => `<button data-starter="${escapeHtml(text)}"><span>${icon}</span>${label}</button>`).join('')}</div>
+          <p>Claude Code berjalan di folder ini. Izin muncul sebagai kartu di chat.</p>
+          <div class="starters">${STARTERS.map(([icon, label, text]) => `<button data-starter="${escapeHtml(text)}" title="${escapeHtml(text)}"><span>${icon}</span>${label}</button>`).join('')}</div>
           <div class="empty-links"><button class="text-btn" data-open-history>🕘 Lanjutkan sesi sebelumnya</button><button class="text-btn" data-open-help>❓ Panduan &amp; shortcut</button></div>
         </div>`;
   }

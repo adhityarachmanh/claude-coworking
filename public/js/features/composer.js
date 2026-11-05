@@ -26,7 +26,7 @@ import { closeModal, openModal } from '../ui/modals.js';
 
 // A shorter hint fits a phone-width composer on one line.
 const applyPlaceholder = () => {
-  $('#prompt').placeholder = state.readOnly ? READ_ONLY_HINT : narrow.matches ? 'Ketik pesan…  ( / command · @file )' : 'Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )';
+  $('#prompt').placeholder = state.readOnly ? READ_ONLY_HINT : narrow.matches ? 'Ketik pesan…' : 'Minta sesuatu ke tim…';
   $('#prompt').rows = narrow.matches ? 1 : 3;
   autosize();
 };
@@ -78,8 +78,8 @@ export function renderComposer() {
   applyCaps(caps, engine);
   const hint = [];
   // As in the CLI, a message sent mid-turn reaches Claude at its next step instead of waiting for the end.
-  if (st.busy) hint.push(st.queue ? `Tim sedang bekerja — ${st.queue} pesan antre, dibaca Claude di langkah berikutnya.` : 'Tim sedang bekerja — pesan baru dibaca Claude di langkah berikutnya.');
-  if (st.cliBusy) hint.push('Sesi di terminal sedang berjalan (izinnya dijawab di terminal).');
+  if (st.busy) hint.push(st.queue ? `Tim bekerja — ${st.queue} pesan antre, dibaca di langkah berikutnya.` : 'Tim bekerja — pesan baru dibaca di langkah berikutnya.');
+  if (st.cliBusy) hint.push('Sesi terminal berjalan (izin dijawab di terminal).');
   if (st.autoApprove) hint.push('⚠ Semua izin otomatis di sesi ini.');
   if (state.readOnly) hint.unshift(`👁 ${READ_ONLY_HINT}.`);
   $('#composer-hint').textContent = hint.join('  ·  ');

@@ -135,7 +135,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .topbar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   height: 52px;
   padding: 0 16px;
   border-bottom: 1px solid var(--border);
@@ -152,13 +152,15 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .crumb kbd { flex: none; font: var(--fs-xs)/1.4 var(--mono); color: var(--muted); padding: 1px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: var(--r-xs); background: var(--surface); }
 .crumb .badge { flex: none; }
 .crumb-busy { display: flex; align-items: center; gap: 5px; flex: none; font-size: var(--fs-xs); color: var(--muted); }
-.icon-btn.labeled { display: flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: var(--fs-md); color: var(--muted); white-space: nowrap; }
+.icon-btn.labeled { display: flex; align-items: center; gap: 6px; padding: 5px 8px; font-size: var(--fs-md); color: var(--muted); white-space: nowrap; }
 .icon-btn.labeled:hover { color: var(--text); }
 .icon-btn.labeled .ico { font-size: var(--fs-base); line-height: 1; }
+/* The top bar carries many actions: labels stay as the accessible name + tooltip, not as visible text. */
+.icon-btn.labeled .lbl { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 #btn-notify.on { color: var(--text); border-color: var(--accent-line); }
 #btn-notify { -webkit-touch-callout: none; user-select: none; } /* long press opens the settings, not a callout */
-.account-btn { display: flex; align-items: center; gap: 8px; max-width: 260px; padding: 4px 10px 4px 4px; border-radius: var(--r-pill); background: var(--surface-2); }
-.account-label { font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-btn { display: flex; align-items: center; gap: 8px; max-width: 260px; padding: 4px; border-radius: var(--r-pill); background: var(--surface-2); }
+.account-label { display: none; } /* avatar + tooltip is enough; the full identity lives in Akun */
 .account-btn.logged-out { border-color: var(--warn-line); color: var(--warn-text); }
 .avatar { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--accent-solid); color: var(--on-accent); font-weight: 700; font-size: var(--fs-md); }
 .account-btn.logged-out .avatar { background: var(--warn-line); }
@@ -171,8 +173,8 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .conn-region { flex: none; min-width: 0; }
 .conn-banner {
   display: flex; align-items: center; gap: 8px; min-width: 0;
-  padding: 6px max(16px, env(safe-area-inset-right)) 6px max(16px, env(safe-area-inset-left));
-  font-size: var(--fs-md); line-height: 1.35;
+  padding: 4px max(16px, env(safe-area-inset-right)) 4px max(16px, env(safe-area-inset-left));
+  font-size: var(--fs-sm); line-height: 1.35;
   background: var(--warn-soft); color: var(--warn-text-strong); border-bottom: 1px solid var(--warn-line);
 }
 .conn-banner.long { background: var(--err-soft); color: var(--err-text-strong); border-bottom-color: var(--err-line); }
@@ -182,8 +184,8 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 /* Claude Code updated (features/claude-check.js): same thin bar, ok / warning / failed; passive on read-only WiFi */
 .cc-banner {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0;
-  padding: 6px max(16px, env(safe-area-inset-right)) 6px max(16px, env(safe-area-inset-left));
-  font-size: var(--fs-md); line-height: 1.35;
+  padding: 4px max(16px, env(safe-area-inset-right)) 4px max(16px, env(safe-area-inset-left));
+  font-size: var(--fs-sm); line-height: 1.35;
   background: var(--warn-soft); color: var(--warn-text-strong); border-bottom: 1px solid var(--warn-line);
 }
 .cc-banner.ok { background: var(--ok-soft); color: var(--ok-text-strong); border-bottom-color: var(--ok-line); }
@@ -414,6 +416,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .member b { font-size: var(--fs-sm); }
 .member small { color: var(--muted); font-size: var(--fs-2xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .member .st { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.member.idle .st { display: none; } /* "Standby/Istirahat" on every idle card is noise; the tooltip still has it */
 .member.work { background: var(--surface-2); background: color-mix(in srgb, var(--c) 12%, var(--surface)); }
 .member.work .st { color: var(--work-text); font-family: var(--mono); }
 .member.ask { border-color: var(--ask); }
@@ -449,9 +452,12 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .session-bar { position: relative; flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 3px 6px; padding: 7px 12px 8px; border-bottom: 1px solid var(--border); background: var(--chrome-hi); }
 #sb-title { font-size: var(--fs-md); font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #sb-title::before { content: '💬 ' / ''; } /* decorative: empty alt text for screen readers */
-#sb-meta { grid-column: 1 / -1; font-size: var(--fs-xs); line-height: 1.3; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#sb-meta:empty { display: none; }
+/* Session id/source/model were duplicated in the chip and status line: keep the title and actions, drop the meta line. */
+#sb-meta { display: none; }
 .sb-btn { flex: none; display: flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: var(--fs-sm); white-space: nowrap; }
+/* The title needs the room: icons + tooltips for the two session actions, names stay for screen readers. */
+#btn-sessions > span, #btn-new > span { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+#btn-sessions, #btn-new { padding: 5px 8px; }
 .sb-more { padding: 3px 9px; font-size: var(--fs-lg); line-height: 1; letter-spacing: 1px; }
 .menu { position: absolute; top: calc(100% - 4px); right: 10px; z-index: var(--z-dropdown); display: flex; flex-direction: column; min-width: 260px; padding: 5px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: 0 12px 32px #000a; }
 .menu button { border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: var(--r-sm); font-size: var(--fs-md); }
@@ -655,6 +661,13 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 
 .statusline { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; margin-top: 6px; font-size: var(--fs-xs); color: var(--muted); }
 .statusline:empty { display: none; }
+@media (min-width: 761px) {
+  /* Mode and model already sit on the settings chip; the status line only speaks up when something needs attention. */
+  .statusline .sl-mode, .statusline .sl-model, .statusline .sep, .statusline .sl-ctx:not(.mid):not(.high) { display: none; }
+  .statusline:not(:has(.sl-ctx.mid, .sl-ctx.high, .sl-compact, .sl-tasks)) { display: none; }
+  /* A connected laptop is the normal state: show a dot, not another word in the header. */
+  #conn.ok { width: 10px; height: 10px; padding: 0; border: 0; border-radius: 50%; background: var(--ok); font-size: 0; }
+}
 .statusline .sep { opacity: .5; }
 .statusline kbd { font-size: var(--fs-2xs); padding: 0 4px; opacity: .7; }
 @media (hover: none) { .statusline kbd { display: none; } } /* no Shift+Tab on a touch screen */
@@ -1388,7 +1401,8 @@ body.read-only #composer-hint { color: var(--ask); }
   .task-detail { border-radius: var(--r-md); }
   .member-task { min-width: 28px; height: 24px; line-height: 22px; font-size: var(--fs-xs); }
   .sb-btn { padding: 6px 8px; font-size: var(--fs-sm); }
-  .starters { grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 12px; }
+  .starters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 12px; }
+  .starters button { padding: 8px 6px; font-size: var(--fs-sm); }
   .empty { margin: 4px 0 auto; padding: 16px 12px; }
   .empty-icon { width: 38px; height: 38px; font-size: var(--fs-xl); margin-bottom: 8px; }
   .s-item { padding: 10px; gap: 8px; }

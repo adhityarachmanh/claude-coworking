@@ -26,7 +26,7 @@ Detail tiap fitur, termasuk batasan dan perilakunya. Kembali ke [README](../READ
 | **🔎 Cari percakapan** (`/search`, `Ctrl+P`) | Cari teks di sesi Claude **dan** OpenCode, untuk project ini atau semua project; hasil bisa langsung dilanjutkan (mesin ikut berpindah bila perlu) |
 | **🔎 Palet perintah** (`Ctrl+P`) | Semua aksi, file (`@`), project (`#`), perintah (`>`) |
 | **Riwayat prompt** | `↑`/`↓` di kotak pesan, `Ctrl+R` untuk mencari |
-| **📄 Lihat file** | Klik path di chat atau tab Perubahan: isi file read-only, nomor baris, cari, salin, **Buka di VS Code** (laptop). File rahasia (`.env*`, `*.pem`, `id_*`, kredensial) butuh konfirmasi di laptop dan tidak pernah dikirim ke HP |
+| **📄 Lihat file** | Klik path di chat atau tab Perubahan: isi file read-only, nomor baris, cari, salin, **Buka di VS Code** (laptop). Path di luar project (mis. screenshot di folder temp) bisa dibuka dari laptop setelah konfirmasi, hanya di bawah folder Temp, Desktop, Documents, Downloads, atau Pictures. File rahasia (`.env*`, `*.pem`, `id_*`, kredensial) butuh konfirmasi di laptop dan tidak pernah dikirim ke HP |
 | **❓ Bantuan** (`?`) · **🎬 Demo** | Panduan singkat dan shortcut · simulasi kantor tanpa Claude Code |
 
 Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhir). Pengaturan per project ada di `data/state.json`.

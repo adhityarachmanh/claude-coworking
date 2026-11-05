@@ -36,6 +36,29 @@ test('a bare file name from Claude\'s prose is found below the project (once), n
   }
 });
 
+test('a file outside the project needs allowOutside, an absolute path under temp/user folders, and is never a secret shortcut', async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const path = (await import('node:path')).default;
+  const { readProjectFile } = await import('../src/file-view.js');
+  const root = mkdtempSync(path.join(tmpdir(), 'office-fv-project-'));
+  const outside = mkdtempSync(path.join(tmpdir(), 'office-fv-outside-'));
+  try {
+    const file = path.join(outside, 'catatan.txt');
+    writeFileSync(file, 'di luar project\n');
+    await assert.rejects(readProjectFile(root, file), (err) => err.status === 403, 'without the confirmation flag');
+    const read = await readProjectFile(root, file, { allowOutside: true });
+    assert.equal(read.content, 'di luar project\n');
+    assert.equal(read.path, file.split(path.sep).join('/'));
+    await assert.rejects(readProjectFile(root, '../catatan.txt', { allowOutside: true }), (err) => err.status === 403, 'still needs the full path');
+    writeFileSync(path.join(outside, '.env'), 'RAHASIA');
+    await assert.rejects(readProjectFile(root, path.join(outside, '.env'), { allowOutside: true }), (err) => err.status === 403 && /rahasia/i.test(err.message), 'secret gate still applies');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
 test('👁 images come back whole as base64 for the preview; over the size limit refused; text files unchanged', async () => {
   const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');

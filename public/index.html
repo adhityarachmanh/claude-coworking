@@ -216,7 +216,7 @@
             <!-- accept is filled from core/attachment-rules.js (ATTACH_ACCEPT) at start -->
             <input id="file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,.pdf,text/*" multiple hidden />
             <button id="btn-template" class="ghost icon attach" type="button" title="Template prompt (/t)" aria-label="Template prompt" aria-haspopup="dialog">⚡</button>
-            <textarea id="prompt" rows="3" aria-label="Pesan untuk tim" placeholder="Minta sesuatu ke tim…   ( / command · @file · ! shell · Shift+Enter baris baru )"></textarea>
+            <textarea id="prompt" rows="3" aria-label="Pesan untuk tim" title=" / command · @file · ! shell · Shift+Enter baris baru" placeholder="Minta sesuatu ke tim…"></textarea>
             <!-- 🎤 hidden unless the Web Speech API exists in a secure context (HTTPS / localhost) and the page may act -->
             <!-- Phone only: ＋ (attach, template, queue, voice, ! @ /) and the turn-settings chip, in the toolbar under the text -->
             <button id="btn-plus" class="ghost icon phone-only" type="button" aria-haspopup="dialog" aria-label="Tambahkan: lampiran, template, antrian, suara">＋</button>
@@ -347,7 +347,7 @@
     <div id="roster-modal" class="modal" hidden>
       <div class="modal-card roster-card" role="dialog" aria-modal="true" aria-labelledby="roster-title" aria-describedby="roster-intro">
         <div class="modal-head"><b id="roster-title">👥 Kelola tim <small id="roster-count" class="muted" aria-live="polite"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <p id="roster-intro" class="muted small">Pilih role bawaan yang punya meja di kantor. Role nonaktif tidak dipakai: pekerjaannya dialihkan ke role aktif terdekat. Berlaku untuk proses Claude Code berikutnya (sesi yang diam dimulai ulang otomatis) dan di semua perangkat.</p>
+        <p id="roster-intro" class="muted small">Pilih role yang punya meja. Role nonaktif dialihkan ke role aktif terdekat dan berlaku untuk sesi Claude Code berikutnya.</p>
         <p id="roster-ro" class="ro-note" hidden>Lewat WiFi hanya bisa melihat. Pakai laptop atau Tailscale untuk mengubah tim.</p>
         <form id="roster-form">
           <ul id="roster-list" class="roster-list" aria-label="Katalog role"></ul>
@@ -498,7 +498,7 @@
     <div id="perm-modal" class="modal" hidden>
       <div class="modal-card perm-card" role="dialog" aria-modal="true" aria-labelledby="perm-title">
         <div class="modal-head"><b id="perm-title">🛡️ Aturan izin <small id="perm-project" class="muted"></small> <small id="perm-count" class="muted"></small></b><button id="perm-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <p class="muted small perm-intro">Aturan yang disimpan "Izinkan selalu" (seperti <code>/permissions</code> di Claude Code). <b>allow</b> jalan tanpa bertanya · <b>ask</b> selalu tanya · <b>deny</b> selalu ditolak (deny menang). Berlaku untuk proses Claude Code berikutnya: sesi web yang diam dimulai ulang otomatis; sesi di terminal setelah dibuka ulang.</p>
+        <p class="muted small perm-intro">Aturan "Izinkan selalu": <b>allow</b> tanpa tanya · <b>ask</b> selalu tanya · <b>deny</b> selalu tolak. Berlaku untuk sesi Claude Code berikutnya.</p>
         <p id="perm-ro" class="ro-note" hidden>Hanya bisa diubah dari laptop (aturan ini menentukan apa yang boleh dijalankan Claude tanpa bertanya).</p>
         <form id="perm-add" class="perm-add">
           <select id="perm-add-list" aria-label="Jenis aturan"><option value="allow">allow</option><option value="ask">ask</option><option value="deny">deny</option></select>
@@ -632,7 +632,7 @@
           <p class="muted small qb-note">Dicek setelah tiap item selesai; giliran yang berjalan tidak dipotong. Biaya hanya estimasi (harga list).</p>
           </div>
         </section>
-        <p class="muted small queue-help">Satu item dikirim setiap kali giliran sebelumnya selesai (tidak ada izin yang menunggu). Antrian berhenti sendiri bila item gagal/dihentikan, kuota habis, atau batas antrian tercapai, dan tetap dijeda setelah server di-restart sampai kamu melanjutkan. Seret atau ↑↓ untuk mengubah urutan.</p>
+        <p class="muted small queue-help">Satu item per giliran. Antrian berhenti bila item gagal/dihentikan, kuota habis, atau penuh; tetap dijeda setelah restart. Seret untuk mengubah urutan.</p>
       </div>
     </div>
 
@@ -676,7 +676,7 @@
             </div>
             <p id="budget-error" class="field-error" role="alert"></p>
             <p id="budget-coverage" class="muted small" hidden></p>
-            <p id="budget-note" class="muted small">Batas biaya tercatat untuk semua project di laptop ini. Biaya dihitung dari harga list, bukan tagihan. OpenCode Go itu langganan: biaya tercatatnya sering $0, jadi budget ini terutama menghitung biaya Claude.</p>
+            <p id="budget-note" class="muted small">Batas biaya tercatat (harga list, bukan tagihan). OpenCode Go itu langganan: biayanya sering $0, jadi budget ini terutama menghitung Claude.</p>
           </section>
           </div>
           <div class="settings-panel" id="settings-panel-tim" data-settings-panel="tim" role="tabpanel" aria-labelledby="settings-tab-tim">
@@ -706,7 +706,7 @@
               <span class="quota-num"><input id="quota-crit" type="number" min="2" max="100" step="1" inputmode="numeric" aria-describedby="quota-error" /> %</span>
             </div>
             <p id="quota-error" class="field-error" role="alert"></p>
-            <p id="quota-desc" class="muted">Per jendela kuota (sesi 5 jam, mingguan): toast dan notifikasi (bila 🔔 aktif) sekali per ambang tiap periode reset, plus penanda berwarna di atas. Dibaca dari sesi yang berjalan, tanpa request tambahan. Disimpan di browser ini.</p>
+            <p id="quota-desc" class="muted">Peringatan sekali per ambang untuk sesi 5 jam dan mingguan, dari sesi yang berjalan. Disimpan di browser ini.</p>
           </section>
           </div>
           <div class="settings-panel" id="settings-panel-spotify" data-settings-panel="spotify" role="tabpanel" aria-labelledby="settings-tab-spotify">
@@ -735,7 +735,7 @@
             <p id="sps-revoke" class="muted small" hidden>Untuk mencabut akses sepenuhnya, buka <a href="https://www.spotify.com/account/apps/" target="_blank" rel="noopener noreferrer">spotify.com/account/apps</a>.</p>
             <label class="switch"><input id="sps-office" type="checkbox" /> Tampilkan radio musik di kantor</label>
             <label class="switch"><input id="sps-autolaunch" type="checkbox" aria-describedby="sps-autolaunch-hint" /> Buka Spotify otomatis di latar belakang</label>
-            <p id="sps-autolaunch-hint" class="muted small">Saat ▶ ditekan dan tidak ada perangkat aktif: buka aplikasi Spotify di laptop ini (diperkecil, tanpa mencuri fokus), lalu putar di sana.</p>
+            <p id="sps-autolaunch-hint" class="muted small">Saat ▶ ditekan dan tidak ada perangkat aktif: buka Spotify di laptop (diperkecil), lalu putar di sana.</p>
             <div class="sps-row">
               <label for="sps-duck">Saat ada permintaan izin</label>
               <select id="sps-duck"><option value="off">Mati</option><option value="duck">Kecilkan</option><option value="pause">Jeda</option></select>
@@ -746,7 +746,7 @@
           <div class="settings-panel" id="settings-panel-cadangan" data-settings-panel="cadangan" role="tabpanel" aria-labelledby="settings-tab-cadangan">
           <section class="backup" aria-labelledby="backup-title" aria-describedby="backup-desc">
             <b id="backup-title">💾 Cadangkan riwayat</b>
-            <p id="backup-desc" class="muted">Untuk pindah laptop atau install ulang: <b>Export</b> di sini, lalu <b>Import</b> di laptop baru dan lanjutkan percakapan lama (Riwayat sesi di app maupun <code>claude --resume</code>). Ikut: semua sesi Claude Code di semua project (termasuk subagent, memori, checkpoint, rencana, riwayat prompt) plus data kantor ini (folder, favorit, nama tim, laporan token). <b>Login tidak ikut</b>: login ulang dengan <code>claude</code> di laptop baru.</p>
+            <p id="backup-desc" class="muted">Export di sini, Import di laptop baru, lalu lanjutkan percakapan lama. Login tidak ikut: login ulang dengan <code>claude</code>.</p>
             <p id="backup-remote" class="muted" hidden>Hanya dari laptop.</p>
             <div class="backup-actions">
               <button type="button" id="btn-backup-export" class="ghost">⬇ Export riwayat</button>
@@ -777,7 +777,7 @@
                 <button type="button" id="ba-run" class="ghost">▶ Jalankan sekarang</button>
               </div>
               <p id="ba-status" class="muted" role="status" aria-live="polite"></p>
-              <p id="ba-desc" class="muted small">Isinya sama dengan Export riwayat. Rotasi hanya menghapus file <code>adhit-office-backup-auto-*.zip</code> yang lebih lama di folder itu; file lain tidak disentuh. Saat jadwal terlewat (laptop mati), backup dibuat sekali begitu server menyala.</p>
+              <p id="ba-desc" class="muted small">Sama seperti Export. Rotasi hanya menghapus backup otomatis lama di folder itu; file lain aman. Jadwal yang terlewat dijalankan sekali saat server menyala.</p>
             </div>
           </section>
           </div>
@@ -785,7 +785,7 @@
           <!-- ⬆ Update aplikasi (features/app-update.js, server src/app-update.js) -->
           <section class="claude-check" aria-labelledby="au-title">
             <b id="au-title">⬆ Update Adhit Office</b>
-            <p class="muted small">Dicek otomatis tiap 30 menit dari GitHub (git fetch, tanpa mengubah apa pun). Update = git pull lalu restart server dengan rapi. Perubahan lokal yang belum di-commit tidak pernah ditimpa.</p>
+            <p class="muted small">Dicek tiap 30 menit dari GitHub. Update = git pull + restart; perubahan lokal yang belum di-commit tidak ditimpa.</p>
             <p id="app-update-status" class="muted" role="status" aria-live="polite"></p>
             <div class="backup-actions">
               <button type="button" id="app-update-check" class="ghost">↻ Cek update</button>
@@ -805,11 +805,11 @@
           <!-- 🧩 Claude Code update detector (features/claude-check.js, server src/claude-check.js; laptop only like this dialog) -->
           <section class="claude-check" aria-labelledby="cc-title" aria-describedby="cc-desc">
             <b id="cc-title">🧩 Kompatibilitas Claude Code</b>
-            <p id="cc-desc" class="muted small">Adhit Office memakai protokol internal Claude Code. Saat Claude Code memperbarui dirinya, cek kontrak ringan dijalankan di latar belakang (setelah giliran yang berjalan selesai), dan hasilnya muncul sebagai pemberitahuan.</p>
+            <p id="cc-desc" class="muted small">Cek kontrak ringan berjalan di latar belakang setelah Claude Code diperbarui; hasilnya muncul sebagai pemberitahuan.</p>
             <p id="cc-status" class="muted" role="status" aria-live="polite"></p>
             <label class="switch"><input id="cc-auto" type="checkbox" /> Cek otomatis saat Claude Code diperbarui</label>
             <label class="switch"><input id="cc-model" type="checkbox" aria-describedby="cc-model-hint" /> Boleh pakai 1 request kecil (Haiku)</label>
-            <p id="cc-model-hint" class="muted small">Untuk cek streaming dan pesan init. Tanpa ini hanya pemeriksaan tanpa token (versi, flag peluncuran, initialize, kontrol).</p>
+            <p id="cc-model-hint" class="muted small">Untuk cek streaming dan pesan init. Tanpa ini: pemeriksaan tanpa token.</p>
             <div class="backup-actions">
               <button type="button" id="cc-run" class="ghost">▶ Cek kompatibilitas Claude Code</button>
               <button type="button" id="cc-doctor" class="ghost" title="claude doctor: kesehatan instalasi Claude Code (tanpa model)">🩺 Doctor</button>
@@ -821,7 +821,7 @@
           <!-- 🧩 OpenCode update detector (features/opencode-check.js, server src/opencode-check.js): only when OpenCode is installed -->
           <section id="oc-section" class="claude-check" aria-labelledby="oc-title" aria-describedby="oc-desc" hidden>
             <b id="oc-title">🧩 Kompatibilitas OpenCode</b>
-            <p id="oc-desc" class="muted small">Saat OpenCode diperbarui, cek kontrak ringan (handshake ACP, sesi, opsi model/mode, daftar model dan sesi) dijalankan di latar belakang setelah giliran yang berjalan selesai. Tanpa memanggil model, tanpa token.</p>
+            <p id="oc-desc" class="muted small">Cek kontrak ringan berjalan di latar belakang setelah OpenCode diperbarui, tanpa memanggil model.</p>
             <p id="oc-status" class="muted" role="status" aria-live="polite"></p>
             <label class="switch"><input id="oc-auto" type="checkbox" /> Cek otomatis saat OpenCode diperbarui</label>
             <div class="backup-actions">
@@ -832,7 +832,7 @@
             <pre id="oc-output" class="cc-output" hidden></pre>
             <div class="oc-plugins" role="group" aria-labelledby="oc-plugins-title">
               <b id="oc-plugins-title">🧩 Plugin OpenCode</b>
-              <p class="muted small">Plugin dari config OpenCode global. Memasang plugin menjalankan kode dari paket itu: hanya tambahkan dari sumber yang kamu percaya. Restart layanan OpenCode agar plugin baru aktif.</p>
+              <p class="muted small">Plugin config global menjalankan kode pihak ketiga. Tambahkan hanya dari sumber tepercaya; restart layanan setelahnya.</p>
               <div id="oc-plugin-list" class="oc-plugin-list" aria-live="polite"><p class="muted small">Buka Pengaturan untuk memuat plugin…</p></div>
               <div class="oc-plugin-add">
                 <input id="oc-plugin-spec" type="text" autocomplete="off" spellcheck="false" maxlength="300" placeholder="paket npm atau URL Git" aria-label="Paket plugin OpenCode" />
@@ -907,7 +907,7 @@
           <p class="muted small">Tab JSON menulis teks apa adanya, jadi komentar JSONC tetap. Form yang disimpan menulis JSON biasa.</p>
         </div>
         <p id="oc-config-error" class="field-error" role="alert"></p>
-        <p id="oc-config-note" class="muted small">Backup file ini disimpan di folder data aplikasi (bukan <code>.bak</code> di sebelah file) dan bisa dipulihkan dari <b>Riwayat backup</b>. File <code>.bak-*</code> lama tetap muncul di riwayat dengan tanda <b>format lama</b>. Hasil konsolidasi menyimpan file <code>.opencode</code> di folder backup yang sama dengan awalan <code>dot--</code>, untuk pemulihan manual — tidak muncul di Riwayat backup file ini. Project yang punya <code>opencode.json</code> dan <code>.opencode/opencode.json</code> sekaligus juga dideteksi.</p>
+        <p id="oc-config-note" class="muted small">Backup config ada di folder data aplikasi (bukan <code>.bak</code> di sebelah file) dan bisa dipulihkan dari Riwayat backup. Konsolidasi menyimpan <code>.opencode</code> dengan awalan <code>dot--</code>.</p>
         <details id="oc-history" class="oc-backups">
           <summary>🕘 Riwayat backup</summary>
           <p id="oc-backup-error" class="field-error" role="alert"></p>
@@ -930,7 +930,7 @@
         <div class="modal-head"><b id="notify-title">🔔 Pengaturan notifikasi</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <form id="notify-form" class="notify-form" novalidate>
           <label class="switch big"><input id="ns-on" type="checkbox" /> Aktifkan notifikasi &amp; suara di perangkat ini</label>
-          <p id="notify-desc" class="muted small">Muncul saat kamu di tab/aplikasi lain atau di project lain; permintaan izin tetap berbunyi walau sedang kamu lihat. Disimpan di browser ini.</p>
+          <p id="notify-desc" class="muted small">Muncul saat kamu di tab atau project lain; permintaan izin tetap berbunyi. Disimpan di browser ini.</p>
           <p id="ns-perm" class="muted small"></p>
           <fieldset class="ns-group">
             <legend>Per jenis kejadian</legend>
@@ -954,7 +954,7 @@
             </div>
             <p id="ns-quiet-error" class="field-error" role="alert"></p>
             <label class="switch wrap"><input id="ns-quiet-ask" type="checkbox" /> Izin tetap diberitahu saat jam tenang</label>
-            <p id="ns-quiet-desc" class="muted small">Tanpa suara dan tanpa pop-up selama jam tenang. Jam lokal perangkat ini, boleh melewati tengah malam (misalnya 22:00–07:00).</p>
+            <p id="ns-quiet-desc" class="muted small">Tanpa suara dan pop-up selama jam tenang. Jam perangkat ini, boleh melewati tengah malam.</p>
           </fieldset>
           <label class="switch wrap"><input id="ns-fav" type="checkbox" /> Hanya project favorit ★</label>
           <div class="ns-volume">
