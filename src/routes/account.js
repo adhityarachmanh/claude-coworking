@@ -5,8 +5,10 @@
 import { randomBytes } from 'node:crypto';
 import { accountPrivacyView, billingStatus } from '../account.js';
 import { recordAuth, recentAuth } from '../auth-audit.js';
+import { readModelPrices } from '../model-prices.js';
 import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
+import { goAllowance } from '../opencode-go.js';
 import { renderPdf, reportHtml } from '../report.js';
 import { PERIOD_UNITS, summarize, totals } from '../usage.js';
 import { json } from './http.js';
@@ -21,6 +23,21 @@ function openCodeUsage(ledger) {
   today.setHours(0, 0, 0, 0);
   const at = (from) => totals(ledger.query({ accountId: OPENCODE_ACCOUNT.id, from }));
   return { today: at(today.getTime()), week: at(Date.now() - 7 * DAY_MS) };
+}
+
+/** The Go plan has no cost in the session messages, so its allowance is estimated from the ledger and the catalog. */
+const GO_PRICES_DAYS = 30;
+
+/**
+ * The estimated Go allowance for 👤 Akun: ledger rows of the OpenCode engine (every account, last 30 days) priced with
+ * the catalog's Go list prices, compared to the published monthly limits. Without a catalog (no cache, fetch failed)
+ * the answer says so instead of pretending the plan is untouched. Never throws: readModelPrices never does either.
+ */
+async function goView({ hub, ledger, dataDir }, now = Date.now()) {
+  const catalog = await readModelPrices({ dataDir: hub?.dataDir ?? dataDir });
+  if (!catalog || !Object.keys(catalog.models ?? {}).length) return { plan: 'go', available: false, models: [], note: 'Harga model belum tersedia.' };
+  const rows = ledger ? ledger.query({ accountId: 'all', from: now - GO_PRICES_DAYS * DAY_MS }) : [];
+  return { available: true, ...goAllowance({ rows, prices: catalog.models, now }) };
 }
 
 /** One headless browser at a time renders report PDFs (each is a full Chrome/Edge process for up to 60 s). */
@@ -71,7 +88,11 @@ export function register(router) {
     if (device) console.log(`Mesin diganti dari HP "${device.name}"`);
     return json(res, 200, result);
   });
-  router.post('/api/opencode/providers', openCode((bin, body, ctx) => openCodeProviders(bin).then((view) => ({ ...view, usage: openCodeUsage(ctx.ledger) }))));
+  // Providers plus the estimated Go allowance (the catalog fetch and the provider list run side by side).
+  router.post('/api/opencode/providers', openCode(async (bin, body, ctx) => {
+    const [view, go] = await Promise.all([openCodeProviders(bin), goView(ctx)]);
+    return { ...view, usage: openCodeUsage(ctx.ledger), go };
+  }));
   router.post('/api/opencode/login/key', audited('login-key', (body) => body.provider, (bin, body, ctx) => openCodeConnectKey(bin, body.provider, body).then(loggedIn(ctx)).then(phoneAlert(ctx, 'login', body.provider))));
   router.post('/api/opencode/login/oauth', audited('oauth-start', (body) => body.provider, (bin, body, ctx) => openCodeOAuthStart(bin, body.provider, body).then(phoneAlert(ctx, 'login', body.provider))));
   router.post('/api/opencode/login/status', openCode(oAuthStatus));

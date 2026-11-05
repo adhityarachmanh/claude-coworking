@@ -489,7 +489,9 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .msg-copy { flex: none; margin-left: 2px; color: var(--muted); opacity: 0; transition: opacity .15s; }
 .msg:hover .msg-copy, .msg:focus-within .msg-copy { opacity: 1; }
 .tag { display: inline-block; padding: 0 6px; margin-right: 6px; border-radius: var(--r-pill); background: var(--wash-3); }
-.tag.auto-effort { background: var(--accent-soft); color: var(--accent-2); }
+.tag.auto-effort { background: var(--accent-soft); color: var(--accent-2); max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The reason Effort Auto gave, visible next to the level: small and muted so the row keeps its normal height. */
+.tag.auto-effort .auto-why { margin-left: 4px; font-size: var(--fs-2xs); font-style: italic; color: var(--muted); }
 .tag.auto-effort.fallback { background: var(--warn-soft); color: var(--warn-text-strong); }
 .msg.assistant { background: var(--surface-2); border: 1px solid var(--border); margin-top: 4px; }
 .who { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: var(--fs-sm); }
@@ -547,7 +549,7 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .result { align-self: center; font-size: var(--fs-sm); color: var(--muted); padding: 3px 12px; border-radius: var(--r-pill); background: var(--surface-2); margin: 4px 0 8px; }
 .result.ok { color: var(--ok-text); }
 .result.fail { color: var(--err-text); }
-.info { align-self: center; font-size: var(--fs-sm); color: var(--muted); }
+.info { align-self: center; max-width: 100%; overflow-wrap: anywhere; text-align: center; line-height: 1.4; font-size: var(--fs-sm); color: var(--muted); }
 .divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: var(--fs-xs); margin: 10px 0; }
 .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
@@ -574,6 +576,9 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 /* Price hint under the Model control (features/model-prices.js): one muted line, wrapped inside the composer. */
 #model-price-note { margin: -2px 0 8px; overflow-wrap: anywhere; }
 #model-price-note[hidden] { display: none; }
+/* Estimated cost of the next prompt (core/cost-estimate.js): one muted line, never wider than the composer. */
+.cost-estimate { margin: 2px 0 0; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cost-estimate[hidden] { display: none; }
 #turn-settings-modal #model-price-note { margin: 0; }
 /* "Atur tangga…" next to the Auto note: the Model Auto ladder dialog's opener (same line under the note). */
 .tiers-open { align-self: flex-start; margin: -8px 0 10px; padding: 2px 0; border: 0; background: none; color: var(--accent-2); font: inherit; font-size: var(--fs-sm); text-decoration: underline; cursor: pointer; }
@@ -1075,6 +1080,23 @@ body.read-only #composer-hint { color: var(--ask); }
 .oc-usage-grid small { display: block; color: var(--muted); }
 .oc-usage-grid b { display: block; font-size: var(--fs-lg); margin: 2px 0; }
 .oc-usage-grid span { color: var(--muted); font-size: var(--fs-sm); }
+.oc-go-note { margin: 0 0 8px; }
+.oc-go-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.oc-go-row { min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.oc-go-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 1px 10px; min-width: 0; }
+.oc-go-model, .oc-go-money { min-width: 0; overflow-wrap: anywhere; }
+.oc-go-model { font-size: var(--fs-md); }
+.oc-go-money { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.oc-go-wins { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.oc-go-win { display: grid; grid-template-columns: 42px minmax(0, 1fr) 38px; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--muted); }
+.oc-go-win-label { white-space: nowrap; }
+.oc-go-bar { height: 5px; }
+.oc-go-pct { text-align: right; font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.oc-go-toggle { margin-top: 8px; font-size: var(--fs-sm); padding: 3px 9px; }
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
+  .oc-go-row { padding: 6px 8px; }
+  .oc-go-win { grid-template-columns: 38px minmax(0, 1fr) 32px; gap: 5px; }
+}
 .oc-providers, .oc-conns { list-style: none; margin: 0; padding: 0; }
 .oc-provider { padding: 7px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-md); }
 .oc-provider:last-child { border-bottom: 0; }
@@ -2073,6 +2095,7 @@ body.read-only #composer-hint { color: var(--ask); }
   .composer > * { flex: 1 0 100%; min-width: 0; }
   #todos { order: 1; }
   #statusline { order: 2; }
+  #cost-estimate { order: 2; margin: 0 0 6px; font-size: var(--fs-sm); }
   #suggest { order: 3; }
   #voice-live { order: 4; }
   #attachments { order: 5; }
@@ -2353,3 +2376,66 @@ body.brain-on .roster-row:not(.on):not(.locked) img.orbable { opacity: .45; }
 /* ✅ CI chip (features/ci-status.js) */
 .ch-git-ci { font-size: var(--fs-xs); padding: 2px 8px; border-radius: var(--r-pill); border: 1px solid #8884; text-decoration: none; color: inherit; white-space: nowrap; }
 .ch-git-ci.ok { border-color: #3fb95066; } .ch-git-ci.fail { border-color: #f8514966; color: #ff7b72; } .ch-git-ci.run { border-color: #d2992266; }
+
+/* ---------- ?? Kesehatan sistem (features/health.js) ---------- */
+.modal-card.health-card { max-width: 620px; }
+.health-body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.health-summary { min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--ok); border-radius: 8px; background: var(--surface-2); }
+.health-summary.warn { border-left-color: var(--ask); }
+.health-summary b { font-size: var(--fs-lg); }
+.health-summary p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.health-section { min-width: 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.health-section h3 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 6px; font-size: var(--fs-md); }
+.health-section h3 .muted { font-weight: 400; }
+.health-checks, .health-todos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.health-check { display: grid; grid-template-columns: 9px minmax(0, 1fr); align-items: start; gap: 8px; font-size: var(--fs-md); }
+.health-dot { width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--muted); }
+.health-check.ok .health-dot { background: var(--ok); }
+.health-check.warn .health-dot { background: var(--ask); }
+.health-check.bad .health-dot { background: var(--err); }
+.health-check-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.health-check-main small, .health-detail { overflow-wrap: anywhere; }
+.health-detail { color: var(--text-2); font-size: var(--fs-sm); }
+.health-todo { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 8px; font-size: var(--fs-md); }
+.health-mark { color: var(--muted); font-weight: 700; text-align: center; }
+.health-todo.done .health-mark { color: var(--ok); }
+.health-todo div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.health-todo small { overflow-wrap: anywhere; }
+.health-size { margin: 0; font-size: var(--fs-md); }
+.health-path { margin: 2px 0 0; overflow-wrap: anywhere; font-family: var(--mono); }
+.health-last { display: block; max-height: 96px; overflow: auto; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font: var(--fs-xs)/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.health-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+body.read-only #health-section { display: none !important; }
+/* 💰 Budget pemakaian global (features/budget.js): ⚙ → Umum and the compact copy in 🩺 Kesehatan */
+.budget-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
+.budget-block > b { font-size: var(--fs-md); }
+.budget-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.budget-rows > li { min-width: 0; }
+.budget-row { display: grid; grid-template-columns: 4.8em minmax(0, 1fr); align-items: center; gap: 2px 8px; font-size: var(--fs-sm); }
+.budget-window { color: var(--text-2); }
+.budget-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.budget-amount { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.budget-pct, .budget-rest { color: var(--muted); }
+.budget-bar { width: 100%; height: 6px; border-radius: var(--r-pill); background: var(--border); overflow: hidden; }
+.budget-fill { display: block; height: 100%; width: 0; background: var(--ok); transition: width .3s; }
+.budget-bar.warn .budget-fill { background: var(--ask); }
+.budget-bar.over .budget-fill { background: var(--err); }
+.budget-row.warn .budget-amount, .budget-row.warn .budget-rest, .budget-row.warn .budget-pct { color: var(--warn-text); }
+.budget-row.over .budget-amount, .budget-row.over .budget-rest, .budget-row.over .budget-pct { color: var(--err-text); }
+.budget-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; min-width: 0; }
+.budget-field { display: flex; flex-direction: column; gap: 2px; flex: 1 1 120px; min-width: 0; font-size: var(--fs-sm); color: var(--text-2); }
+.budget-field input { width: 100%; min-width: 0; }
+#budget-save { flex: none; }
+.budget-block .muted { margin: 0; }
+.health-budget .budget-rows { margin: 4px 0 6px; }
+.health-budget .muted { margin: 0; }
+body.read-only #budget-section { display: none !important; }
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
+  .budget-form { flex-direction: column; align-items: stretch; }
+  .budget-field input { font-size: var(--fs-input-touch); }
+  #budget-save { min-height: 44px; }
+}
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
+  .health-actions { flex-direction: column-reverse; align-items: stretch; }
+  .health-actions button { min-height: 44px; }
+}

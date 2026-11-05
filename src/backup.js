@@ -198,6 +198,17 @@ export async function writeBackup(out, { state, usageFile, chatsDir, engineChats
     } catch {
       // no usage recorded yet
     }
+    // Rotated ledgers (src/usage.js): every archive is part of the history.
+    const archiveDir = path.join(path.dirname(usageFile), 'usage-archive');
+    for (const d of await readdirSafe(archiveDir)) {
+      if (!d.isFile() || !/^usage-[\w-]+\.jsonl$/.test(d.name)) continue;
+      try {
+        const st = await fs.stat(path.join(archiveDir, d.name));
+        files.push({ name: `office/usage-archive/${d.name}`, abs: path.join(archiveDir, d.name), size: st.size, mtime: st.mtimeMs });
+      } catch {
+        // vanished meanwhile
+      }
+    }
   }
   // engineChats: { opencode: data/chats-opencode } → office/chats-opencode/ (each engine's workspace)
   for (const [prefix, dir] of [['chats', chatsDir], ...Object.entries(engineChats).map(([e, d]) => [`chats-${e}`, d])]) {
@@ -294,7 +305,8 @@ export function makeRemap(oldHome, newHome, oldPlatform = process.platform) {
 
 const KNOWN_FILES = new Set(['manifest.json', 'office/state.json', 'office/usage.jsonl', 'claude/history.jsonl']);
 const KNOWN_DIRS = /^claude\/(projects|file-history|plans)\/./;
-const isKnownEntry = (name) => KNOWN_FILES.has(name) || KNOWN_DIRS.test(name) || Boolean(chatEntryId(name));
+const USAGE_ARCHIVE = /^office\/usage-archive\/usage-[\w-]+\.jsonl$/; // rotated ledgers (src/usage.js)
+const isKnownEntry = (name) => KNOWN_FILES.has(name) || KNOWN_DIRS.test(name) || USAGE_ARCHIVE.test(name) || Boolean(chatEntryId(name));
 
 function parseJson(buf, what) {
   try {
@@ -597,7 +609,7 @@ export async function restoreBackup(zipFile, ctx = {}) {
         const list = parseChatFile(await reader.read(e, maxMergeBytes), CHAT_LIMIT);
         if (engine === 'claude') chats[id] = list;
         else (engineChats[engine] ??= {})[id] = list;
-      } else if (e.name === 'office/usage.jsonl') {
+      } else if (e.name === 'office/usage.jsonl' || /^office\/usage-archive\/usage-[\w-]+\.jsonl$/.test(e.name)) {
         if (!ledger || !mergeable(e)) continue;
         const rows = [];
         for (const line of jsonLines(await reader.read(e, maxMergeBytes))) {
@@ -607,7 +619,7 @@ export async function restoreBackup(zipFile, ctx = {}) {
             // broken line
           }
         }
-        summary.usage.added = ledger.importRows(rows);
+        summary.usage.added = (summary.usage.added ?? 0) + ledger.importRows(rows);
       } else if (e.name === 'claude/history.jsonl') {
         if (mergeable(e)) summary.history.added = await mergeHistory(e);
       } else if (parts[1] === 'projects') {

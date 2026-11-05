@@ -211,6 +211,29 @@ function toolDetail(msg) {
 
 const STATUS_ICON = { running: '<span class="spinner"></span>', ok: '<span class="ok">✓</span>', fail: '<span class="fail">✗</span>', cancel: '<span class="muted">–</span>' };
 
+const AUTO_EFFORT_LABEL = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
+
+/** ~70 characters of the classifier's answer: the badge stays one line (the full text stays in the tooltip). */
+const autoReasonShort = (reason) => {
+  const text = String(reason ?? '').replace(/\s+/g, ' ').trim();
+  return text.length > 70 ? `${text.slice(0, 69)}…` : text;
+};
+
+/**
+ * The Effort Auto tag on a prompt: the level, and — when the classifier explained itself — the reason as small muted
+ * text too (not only in the tooltip). `source` is 'llm' or 'fallback'; `fallback: true` marks a level with no real
+ * reason behind it. Everything from the server is escaped, and the tag truncates instead of overflowing its row.
+ */
+function autoEffortTag(auto) {
+  if (auto?.skipped) return `<span class="tag auto-effort" title="${escapeHtml(auto.reason ?? '')}">Auto: turn berjalan</span>`;
+  if (!auto?.level) return '';
+  const label = `Auto: ${AUTO_EFFORT_LABEL[auto.level] ?? String(auto.level)}${auto.source === 'fallback' ? ' (fallback)' : ''}`;
+  const reason = auto.source && auto.fallback !== true ? autoReasonShort(auto.reason) : '';
+  const full = reason ? `${label} — ${reason}` : label;
+  const why = reason ? ` <span class="auto-why">· ${escapeHtml(reason)}</span>` : '';
+  return `<span class="tag auto-effort${auto.source === 'fallback' ? ' fallback' : ''}" title="${escapeHtml(full)}" aria-label="${escapeHtml(full)}">${escapeHtml(label)}${why}</span>`;
+}
+
 export function who(role) {
   const look = CAST[role]?.look ?? CAST.claude.look;
   return `<img class="ava orbable" style="--c:${role === 'claude' ? '#b9a8ff' : roleColor(role)}" src="${avatarURL(look)}" alt=""><b style="color:${roleColor(role)}">${escapeHtml(roleName(role))}</b>`;
@@ -246,13 +269,7 @@ function fillChatBody(node, msg) {
         msg.queued ? 'antre' : '',
         msg.cancelled ? 'dibatalkan' : '',
       ].filter(Boolean);
-      const effortName = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
-      const auto = msg.autoEffort;
-      const autoTag = auto?.skipped
-        ? `<span class="tag auto-effort" title="${escapeHtml(auto.reason ?? '')}">Auto: turn berjalan</span>`
-        : auto?.level
-          ? `<span class="tag auto-effort${auto.source === 'fallback' ? ' fallback' : ''}" title="${escapeHtml(auto.reason ?? '')}">Auto: ${escapeHtml(effortName[auto.level] ?? auto.level)}${auto.source === 'fallback' ? ' (fallback)' : ''}</span>`
-          : '';
+      const autoTag = autoEffortTag(msg.autoEffort);
       // Re-sending a prompt typed in the terminal would run it in the web session, so only web prompts offer it.
       const actions = msg.source === 'demo'
         ? ''

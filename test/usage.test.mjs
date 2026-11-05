@@ -1,6 +1,6 @@
 // Account usage: `/usage` parsing, the per-account token ledger, and the PDF report.
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -135,6 +135,22 @@ test('removeProject deletes only that project\'s rows, with a backup', () => {
   // an unknown project changes nothing
   assert.equal(ledger.removeProject('nope'), 0);
   assert.ok(readdirSync(path.dirname(ledger.file)).some((f) => f.startsWith('usage.jsonl.bak-purge-')), 'a backup was written');
+});
+
+test('usage ledger rotation: archives keep every row, the active file restarts, and queries stay complete', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'usage-rot-'));
+  const ledger = new UsageLedger({ file: path.join(dir, 'usage.jsonl'), account: () => A, maxBytes: 700 });
+  for (let i = 0; i < 20; i++) ledger.record({ source: 'web', project: { id: 'p1', name: 'toko' }, model: 'm', input: 10, output: 1, cacheRead: 0, cacheWrite: 0 });
+  assert.ok(readdirSync(path.join(dir, 'usage-archive')).some((n) => /^usage-[\w-]+\.jsonl$/.test(n)), 'an archive was written');
+  assert.ok(statSync(path.join(dir, 'usage.jsonl')).size < 700, 'the active file stays small');
+  assert.equal(ledger.rows().length, 20, 'every row is read back across the active file and its archives');
+  assert.equal(ledger.accounts().length, 1);
+  const totalsAll = ledger.query({ accountId: A.id }).reduce((n, r) => n + r.input, 0);
+  assert.equal(totalsAll, 200, 'queries cover the archives too');
+  // A restored backup of an archived row is not added twice.
+  const archived = ledger.rows()[0];
+  assert.equal(ledger.importRows([archived]), 0, 'dedup spans the archives');
+  assert.equal(ledger.rows().length, 20);
 });
 
 test('query("all") covers every account; one report can show Claude and OpenCode together', () => {

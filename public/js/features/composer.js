@@ -1,7 +1,9 @@
 // The composer: prompt box, send, mode/model/effort controls, read-only state, composer keyboard.
 import { api, toast } from '../core/api.js';
+import { estimateUsd, formatEstimate, isPeak } from '../core/cost-estimate.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { capReason, capsFor, DEFAULT_ENGINE, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
+import { fmtNum } from '../core/format.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
 import { attachmentPayload, attachments, attachmentsReady, clearAttachments, rememberSent, restoreAttachments } from './attachments.js';
@@ -10,7 +12,7 @@ import { connection } from './connection.js';
 import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
 import { applyCapsToDom, autoModelNote, AUTO_MODEL, autoModelOption, guardCap, initEngine, isModelValue, matchCount, MODEL_TIER_LABELS, MODEL_TIERS, modelTiersFor, projectCaps, projectModelOptions, projectModels, tierOptionsHtml } from './engine.js';
 import { recall, recallPrompt } from './history.js';
-import { modelPrices, priceDetail, priceNote, priceSuffix } from './model-prices.js';
+import { modelPrices, priceDetail, priceFor, priceNote, priceSuffix } from './model-prices.js';
 import { renderResumeTurn } from './resume-turn.js';
 import { openRewind } from './rewind.js';
 import { confirmNew, renderSessionBar } from './sessions.js';
@@ -33,6 +35,7 @@ export function autosize() {
   const input = $('#prompt');
   input.style.height = '';
   if (narrow.matches) input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+  scheduleCostEstimate(); // every way the text changes ends here (typing, paste, template, history, voice)
 }
 
 /** Puts text in the composer to edit before sending (starters, "Edit" on a sent prompt). */
@@ -85,6 +88,7 @@ export function renderComposer() {
   renderResumeTurn(st);
   renderTodos(st);
   renderStatusline(st);
+  renderCostEstimate();
   renderSessionBar();
   renderTaskChip(st);
   renderQueueChip(st);
@@ -267,6 +271,77 @@ function renderTiersOpen(note, show) {
   }
   if (note.nextElementSibling !== open) note.after(open);
   open.hidden = !show;
+}
+
+// ---------- cost estimate before send (#cost-estimate) ----------
+
+const COST_DEBOUNCE_MS = 280;
+let costTimer = null;
+
+/** Recomputes the line shortly after the box settles: one debounce for every keystroke, no request, no send. */
+export function scheduleCostEstimate() {
+  clearTimeout(costTimer);
+  costTimer = setTimeout(renderCostEstimate, COST_DEBOUNCE_MS);
+}
+
+/** "2" / "1,5": a peak factor as shown next to "×" (Indonesian decimal comma). */
+const factorText = (n) => String(Number(n.toFixed(2))).replace('.', ',');
+
+/** The model whose price applies: the concrete one Model Auto picked, else the project's own model. */
+function costModel(st) {
+  for (const value of [st.activeModel, st.model]) if (typeof value === 'string' && value.trim()) return value.trim();
+  return '';
+}
+
+/** The line lives right under the statusline, created on first use (same pattern as #model-price-note). */
+function costNode() {
+  let el = $('#cost-estimate');
+  const line = $('#statusline');
+  if (!el) {
+    el = document.createElement('p');
+    el.id = 'cost-estimate';
+    el.className = 'cost-estimate';
+    el.hidden = true;
+  }
+  if (line?.parentElement && line.nextElementSibling !== el) line.after(el);
+  return el;
+}
+
+/**
+ * What the next prompt will roughly cost: the context the turn already carries plus the box's text (≈ 4 characters
+ * per token) and an assumed 600-token answer. The value is hidden without a real project, a usable price, or on a
+ * read-only page; the tooltip carries the breakdown (tokens, price source, peak assumption). Reads the price cache
+ * only — features/model-prices.js loads it lazily and re-renders the composer when the answer arrives.
+ */
+export function renderCostEstimate() {
+  clearTimeout(costTimer); // a pending debounce would only repeat this exact pass
+  costTimer = null;
+  const el = costNode();
+  const st = state.statuses[state.active] ?? {};
+  const text = $('#prompt')?.value ?? '';
+  const model = costModel(st);
+  // `!command` runs in the shell, not through the model: no estimate to give.
+  const price = state.active && state.active !== DEMO_ID && !state.readOnly && !text.startsWith('!') ? priceFor(model) : null;
+  const at = Date.now();
+  const est = price ? estimateUsd(price, { contextTokens: st.context?.used ?? 0, promptChars: text.length, at }) : null;
+  const value = formatEstimate(est);
+  if (!value) {
+    el.hidden = true; // no price (or no estimate): never a made-up number
+    return;
+  }
+  const peak = price.kind === 'list' && price.peakFactor > 1;
+  const source = price.kind === 'list' ? 'harga list OpenCode Go' : `harga efektif tercatat${price.records ? ` (${fmtNum(price.records)} catatan)` : ''}`;
+  const title = [
+    `Perkiraan prompt berikutnya: konteks ${fmtNum(est.contextTokens)} token`,
+    `prompt ±${fmtNum(est.promptTokens)} token`,
+    `asumsi ${fmtNum(est.outputTokens)} token output`,
+    source,
+    peak ? (isPeak(at) ? `jam sibuk ${factorText(price.peakFactor)}× sudah dihitung` : `di luar jam sibuk (hingga ${factorText(price.peakFactor)}×)`) : '',
+  ].filter(Boolean).join(' · ');
+  const line = `Perkiraan biaya: ${value}`;
+  if (el.textContent !== line) el.textContent = line;
+  if (el.title !== title) el.title = title;
+  el.hidden = false;
 }
 
 // ---------- Model Auto ladder dialog (#model-tiers-modal) ----------

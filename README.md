@@ -184,10 +184,12 @@ Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhi
 - **🤖 Model Auto**: pilihan **Auto — sesuaikan task** di daftar Model. Klasifikasi task yang sama dengan Effort Auto (satu panggilan, tanpa token tambahan bila Effort Auto juga aktif) memilih model dari tangga **Hemat / Seimbang / Kuat / Maks**:
   - Claude Code: `haiku` → `sonnet` → `opus` → `fable`.
   - OpenCode Go: `deepseek-v4.1-flash` → `glm-5.3` → `kimi-k3.1-pro` → `kimi-k3`.
-  Level `low` → Hemat, `medium` → Seimbang, `high` → Kuat, `xhigh`/`max` → Maks. Pergantian diumumkan di chat (`🤖 Model Auto: Kuat → kimi-k3.1-pro`), tidak pernah di tengah giliran; memilih model konkret atau Default mematikan Auto. **Atur tangga…** membuka 4 pilihan model per mesin (Hemat/Seimbang/Kuat/Maks), dengan opsi **Bawaan** untuk kembali ke default. Classifier ikut membaca **percakapan dan rencana/todo terakhir**, jadi prompt lanjutan singkat (“kerjakan”, “lanjut”) dinilai dari rencana yang sedang berjalan, bukan dari kata itu saja.
+  Level `low` → Hemat, `medium` → Seimbang, `high` → Kuat, `xhigh`/`max` → Maks. Pergantian diumumkan di chat beserta **alasannya** (`🤖 Model Auto: Kuat → kimi-k3.1-pro — multi-file bug fix`), dan badge **Effort Auto** juga menampilkan alasan. Tidak pernah di tengah giliran; memilih model konkret atau Default mematikan Auto. **Atur tangga…** membuka 4 pilihan model per mesin. Classifier ikut membaca **percakapan dan rencana/todo terakhir**.
+- **💵 Estimasi biaya sebelum kirim**: baris kecil di atas kotak pesan menampilkan `±$0.02` untuk prompt yang sedang diketik — konteks terpakai + teks prompt + asumsi output 600 token, memakai harga list OpenCode Go atau harga efektif Claude. Arahkan kursor untuk rincian; angka ini perkiraan dan tidak menghalangi pengiriman.
 - **💲 Harga di daftar model**: pilihan model menampilkan biaya per 1 juta token. Untuk model **OpenCode Go** harganya diambil dari katalog resmi `opencode.ai` (input/output/cache, ditandai `±` bila ada tarif jam sibuk; diperbarui otomatis maksimal sehari sekali). Untuk model **Claude** (atau model tanpa harga list) ditampilkan **harga efektif dari catatan pemakaian** 90 hari terakhir (`≈$…/1M tercatat`). Tanpa data: tidak ada angka, dan baris di bawah pilihan menjelaskan alasannya.
 - **■ Stop / Esc** menghentikan giliran yang sedang berjalan, termasuk giliran yang dimulai Claude sendiri setelah tugas latar selesai, dan menghentikan tugas latar itu juga.
 - **🩺 Doctor** dan **⬆ Update Claude Code**: ⚙ → tab **Sistem** → Kompatibilitas Claude Code (sama dengan `claude doctor` / `claude update`, dari laptop).
+- **🩺 Kesehatan sistem**: ⚙ → **Sistem** → **Kesehatan sistem** menampilkan satu layar: akun Claude, OpenCode, folder project, backup otomatis, akses HP + HTTPS, jumlah error server 24 jam, dan ukuran data aplikasi. Ada **Persiapan** (checklist login, project, backup, HTTPS, OpenCode) dan tombol **↻ Periksa ulang**. Hanya laptop/Tailscale; tidak ada polling.
 - Command yang hanya membuka layar terminal (`/config`, `/hooks`, `/doctor`, `/login`, …) tidak ditawarkan di autocomplete; kalau diketik, aplikasi menunjukkan tempatnya di sini.
 - **🧠 /memory**: edit `CLAUDE.md` (project), `CLAUDE.local.md` (pribadi) dan `~/.claude/CLAUDE.md` langsung di aplikasi; dengan OpenCode: `AGENTS.md` (project dan global). File yang diubah di tempat lain sejak dibuka tidak ditimpa. Laptop atau Tailscale.
 - **🕘 Riwayat sesi**: per sesi ⑂ *Cabangkan* (lanjutkan salinannya, aslinya utuh; Claude `--fork-session`, OpenCode `session.fork`), ⬇ export (`.md` untuk Claude, JSON OpenCode yang bisa diimpor lagi), 🗑 hapus (transcript Claude dipindah ke `data/trash`, bisa dikembalikan), ✎ ganti nama (OpenCode). Dengan OpenCode, **⬆ Import JSON** memanggil `opencode session import` (laptop saja).
@@ -390,12 +392,17 @@ Kontrol Spotify yang sudah kamu pakai (Spotify Connect) lewat Spotify Web API. B
 
 **📊 Laporan**: pemakaian token per akun atau **Semua akun (Claude + OpenCode)** dan periode (Hari ini, 7 hari, 30 hari, Bulan ini, Semua, atau 📅 tanggal). Pratinjau berisi KPI, **📈 Tren** per hari/minggu/bulan, rincian per model, dan blok **Per mesin**; **⬇ Unduh PDF** menambah rincian per mesin × sumber, per project, sumber (web/CLI), sesi teratas, dan kuota. PDF dibuat Edge/Chrome headless (env `OFFICE_BROWSER` untuk path lain); tanpa keduanya, laporan dibuka di tab baru untuk dicetak.
 
+- **Budget pemakaian global**: di ⚙ → **Umum** → **Budget pemakaian global** isi batas **harian / mingguan / bulanan** (USD, atau kosong = tanpa batas). Baris `$12,30 / $20 (62%)` berubah hijau/kuning (≥80%)/merah (≥100%), dengan **sisa** dolar. Ringkasan yang sama muncul di 🩺 Kesehatan. Dihitung dari biaya tercatat (harga list Claude; OpenCode Go umumnya tercatat $0 karena langganan), dan **tidak memblokir** pekerjaan — hanya peringatan.
+
+- **Kuota OpenCode Go**: di 👤 Akun (OpenCode) ada perkiraan sisa kuota paket Go per model untuk jendela **5 jam / 7 hari / 30 hari**, dihitung dari token tercatat × harga list katalog resmi. Batas paket **Go $10/bulan**; Plus/Teams lebih tinggi (belum dihitung terpisah). Angka ini perkiraan — limit resmi bisa berubah.
+
 - **Per mesin**: baris **Claude · Web**, **Claude · Terminal**, **OpenCode · Web**, dan **OpenCode · Terminal** (yang kosong disembunyikan) dengan total token, persentase dari total laporan, dan biaya. Pilih **Semua akun** untuk melihat Claude dan OpenCode dalam satu laporan; pilihan per akun tetap ada.
 - **Biaya per model**: daftar model di laporan juga menampilkan biaya dari catatan pemakaian (bukan harga list). `—` berarti belum ada catatan biaya untuk model itu, `$0.00` untuk model gratis.
 - **Biaya**: `—` bila tidak ada catatan biaya untuk kelompok itu, `$0.00` untuk model gratis (OpenCode), dan `(N%)` bila hanya sebagian catatan punya biaya. Kartu **Estimasi biaya** menampilkan berapa persen catatan yang punya biaya.
 - **Per role belum tersedia**: pemakaian subagent digabung ke sesi induknya, jadi tidak ada angka per role yang bisa ditampilkan. Rincian per mesin memakai akun yang tercatat (baris lama sebelum fitur ini ikut diatribusikan lewat akunnya, tanpa menulis ulang data).
 
-- Catatan token disimpan bersama akun yang login saat itu (`data/usage.jsonl`), jadi dua akun tidak tercampur. Data mulai terkumpul sejak fitur ini aktif; transcript lama tidak dihitung.
+- Catatan token disimpan bersama akun yang login saat itu (`data/usage.jsonl`), jadi dua akun tidak tercampur. Data mulai terkumpul sejak fitur ini aktif; transcript lama tidak dihitung. File ini **dirotasi otomatis** ke `data/usage-archive/` saat besar, dan semua arsip tetap dibaca laporan serta ikut backup.
+- **Audit akun** (`data/auth-audit.jsonl`) dipadatkan otomatis: menyimpan 180 hari terakhir (maks 2.000 aksi).
 - Sesi CLI ikut tercatat ke akun yang sedang login. Setelah ganti akun, buka ulang sesi CLI yang masih terbuka. Estimasi biaya (USD, harga list) hanya untuk sesi web.
 
 ### Backup & riwayat
@@ -410,7 +417,7 @@ Ganti SSD, install ulang Windows, atau pindah laptop tanpa kehilangan percakapan
 | Ikut di backup | Tidak ikut |
 |---|---|
 | `~/.claude/projects/**` (sesi, subagent, `memory/`), `history.jsonl`, `file-history/` (checkpoint rewind), `plans/` | Login & kredensial Claude (`.credentials.json`, `~/.claude.json`) |
-| `data/state.json` (folder, favorit, pengaturan per project, nama tim, template), `data/usage.jsonl`, `data/chats/*.jsonl` (riwayat chat panel) | HP yang dipasangkan dan langganan push, kunci VAPID, `data/tls/`, `data/spotify.json`, cache, `server.log` |
+| `data/state.json` (folder, favorit, pengaturan per project, nama tim, template), `data/usage.jsonl` + `data/usage-archive/` (ledger, dirotasi otomatis), `data/chats/*.jsonl` (riwayat chat panel) | HP yang dipasangkan dan langganan push, kunci VAPID, `data/tls/`, `data/spotify.json`, cache, `server.log` |
 
 **Import menggabungkan, tidak menimpa:**
 

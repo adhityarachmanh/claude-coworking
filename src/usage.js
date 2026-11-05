@@ -1,12 +1,15 @@
 // Token usage ledger (data/usage.jsonl). Every record carries the account that was logged in
 // when the tokens were spent, so reports for different accounts never mix.
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export class UsageLedger {
-  constructor({ file, account }) {
+  constructor({ file, account, maxBytes = 8 * 1024 * 1024, archiveDir }) {
     this.file = file;
     this.account = account; // () => { id, email, org } | null
+    this.maxBytes = maxBytes; // rotate the active file once it grows past this (kept reports fast to read)
+    this.archiveDir = archiveDir ?? path.join(path.dirname(file), 'usage-archive');
+    this.cache = { sig: '', rows: [] }; // parsed rows, rebuilt when a file changes
     mkdirSync(path.dirname(file), { recursive: true });
   }
 
@@ -39,6 +42,49 @@ export class UsageLedger {
       turns: entry.turns ?? 0,
     };
     appendFileSync(this.file, `${JSON.stringify(row)}\n`);
+    this.cache.sig = '';
+    this.maybeRotate();
+  }
+
+  /** Archive files first, then the active file: names carry a timestamp, so sorting is chronological. */
+  files() {
+    const out = [];
+    try {
+      for (const name of readdirSync(this.archiveDir)) if (/^usage-[\w-]+\.jsonl$/.test(name)) out.push(path.join(this.archiveDir, name));
+    } catch {
+      // no archive yet
+    }
+    out.sort();
+    if (existsSync(this.file)) out.push(this.file);
+    return out;
+  }
+
+  signature(files) {
+    return files.map((file) => {
+      const st = statSync(file);
+      return `${path.basename(file)}:${st.size}:${st.mtimeMs}`;
+    }).join('|');
+  }
+
+  /**
+   * Moves the active file into data/usage-archive/ when it passes maxBytes and starts a fresh one. Reports read every
+   * archive, so nothing is lost; the active file stays small for the common case. A failure is harmless (it is tried
+   * again on the next record).
+   */
+  maybeRotate() {
+    try {
+      if (statSync(this.file).size < this.maxBytes) return false;
+      mkdirSync(this.archiveDir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
+      let dest = path.join(this.archiveDir, `usage-${stamp}.jsonl`);
+      for (let i = 2; existsSync(dest); i++) dest = path.join(this.archiveDir, `usage-${stamp}-${i}.jsonl`);
+      renameSync(this.file, dest);
+      writeFileSync(this.file, '');
+      this.cache.sig = '';
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -55,23 +101,41 @@ export class UsageLedger {
       seen.add(key(r));
       fresh.push(r);
     }
-    if (fresh.length) appendFileSync(this.file, fresh.map((r) => `${JSON.stringify(r)}\n`).join(''));
+    if (fresh.length) {
+      appendFileSync(this.file, fresh.map((r) => `${JSON.stringify(r)}\n`).join(''));
+      this.cache.sig = '';
+      this.maybeRotate();
+    }
     return fresh.length;
   }
 
   rows() {
-    if (!existsSync(this.file)) return [];
-    return readFileSync(this.file, 'utf8')
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => {
-        try {
-          return JSON.parse(line);
-        } catch {
-          return null;
+    const files = this.files();
+    let sig = '';
+    try {
+      sig = this.signature(files);
+    } catch {
+      // a file vanished while listing: read what is there (no cache)
+    }
+    if (sig && sig === this.cache.sig) return this.cache.rows;
+    const rows = [];
+    for (const file of files) {
+      try {
+        for (const line of readFileSync(file, 'utf8').split('\n')) {
+          if (!line) continue;
+          try {
+            rows.push(JSON.parse(line));
+          } catch {
+            // a torn line (a crash mid-append): skipped, never a crash
+          }
         }
-      })
-      .filter(Boolean);
+      } catch {
+        // unreadable right now: the other files still count
+      }
+    }
+    rows.sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
+    this.cache = { sig, rows };
+    return rows;
   }
 
   /** Accounts that have usage on record (for the report's account picker). */
@@ -91,26 +155,34 @@ export class UsageLedger {
    * can show Claude and OpenCode side by side); a missing id stays strict (no rows), so a caller that forgets it can
    * never sum every account by accident.
    */
-  /** Deletes every ledger row of one project (a purged folder). The file is backed up first. */
+  /** Deletes every ledger row of one project (a purged folder), from the active file and the archives. Backed up first. */
   removeProject(projectId) {
-    const file = this.file;
-    if (!existsSync(file)) return 0;
-    const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
-    const keep = lines.filter((line) => {
+    let removed = 0;
+    for (const file of this.files()) {
+      let lines;
       try {
-        return JSON.parse(line).projectId !== projectId;
+        lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
       } catch {
-        return true; // an unreadable line is kept: never lose data over a cleanup
+        continue;
       }
-    });
-    if (keep.length === lines.length) return 0;
-    try {
-      copyFileSync(file, `${file}.bak-purge-${Date.now()}`);
-    } catch {
-      // the backup is best-effort; the rows are still removed below
+      const keep = lines.filter((line) => {
+        try {
+          return JSON.parse(line).projectId !== projectId;
+        } catch {
+          return true; // an unreadable line is kept: never lose data over a cleanup
+        }
+      });
+      if (keep.length === lines.length) continue;
+      try {
+        copyFileSync(file, `${file}.bak-purge-${Date.now()}`);
+      } catch {
+        // the backup is best-effort; the rows are still removed below
+      }
+      writeFileSync(file, keep.length ? `${keep.join('\n')}\n` : '');
+      removed += lines.length - keep.length;
     }
-    writeFileSync(file, keep.length ? `${keep.join('\n')}\n` : '');
-    return lines.length - keep.length;
+    if (removed) this.cache.sig = '';
+    return removed;
   }
 
   query({ accountId, from = 0, to = Date.now() } = {}) {

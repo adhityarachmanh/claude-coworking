@@ -516,6 +516,185 @@ async function restoreReport(page) {
     .catch(() => {});
 }
 
+/**
+ * A canned /api/health answer (⚙ → Sistem → 🩺): green / amber / red (non-essential) checks, a 5-of-6
+ * checklist, a long data path that must wrap, and a last error that must stay text (escaped).
+ */
+const HEALTH_ANSWER = () => ({
+  at: '2026-11-05T10:00:00.000Z',
+  app: { version: '0.2.0', pid: 4321, uptimeSec: 3 * 3600 + 5 * 60, engine: 'claude', port: 4317 },
+  checks: [
+    { id: 'node', label: 'Node.js', ok: true, detail: 'v22.11.0' },
+    { id: 'agents', label: 'Folder sesi Claude', ok: false, warn: true, detail: 'folder lama', hint: 'Folder baru dibuat otomatis.' },
+    { id: 'data-dir', label: 'Data aplikasi bisa ditulis', ok: false, essential: false, detail: 'hanya baca', hint: 'Periksa izin folder data.' },
+  ],
+  checklist: [
+    { id: 'login', label: 'Login Claude Code', done: true, hint: 'Jalankan claude di terminal.' },
+    { id: 'roots', label: 'Folder project', done: true },
+    { id: 'team', label: 'Nama anggota tim', done: true },
+    { id: 'notify', label: 'Notifikasi HP', done: true },
+    { id: 'backup', label: 'Backup otomatis', done: true },
+    { id: 'tailscale', label: 'Tailscale', done: false, hint: 'Pasang Tailscale untuk membuka kantor dari HP.' },
+  ],
+  errors: { count24h: 2, last: '<script>alert("x")</script> ENOENT: data/sesi/panjang/sekali/berkas-yang-tidak-ada.json' },
+  data: { bytes: 12_900_000, files: 123, dir: `C:\\Users\\adhit\\AppData\\Local\\adhit-office\\data\\${'folder-panjang-'.repeat(6)}` },
+});
+
+/**
+ * Stubs POST /api/health (everything else still goes to the real API) and counts its calls, so a test can prove
+ * that one ↻ is exactly one request. `delayMs` keeps a request in flight long enough to see the cached report.
+ */
+async function stubHealth(page, answer = HEALTH_ANSWER(), { fail = false, delayMs = 0 } = {}) {
+  await page.eval(
+    (payload, shouldFail, delay) => {
+      window.__officeFetch ??= window.fetch;
+      window.__healthAnswer = payload;
+      window.__healthFail = shouldFail;
+      window.__healthDelay = delay;
+      window.__healthCalls = 0;
+      window.fetch = (url, opts) => {
+        if (!String(url).includes('/api/health')) return window.__officeFetch(url, opts);
+        window.__healthCalls += 1;
+        const body = window.__healthFail ? { error: 'Server sibuk' } : { health: window.__healthAnswer };
+        const status = window.__healthFail ? 500 : 200;
+        return new Promise((resolve) => setTimeout(() => resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })), window.__healthDelay));
+      };
+    },
+    answer,
+    fail,
+    delayMs,
+  );
+}
+
+const healthCalls = (page) => page.eval(() => window.__healthCalls ?? 0);
+
+/** Puts the real fetch back and closes both dialogs (a failed test must not leave the stub behind). */
+async function restoreHealth(page) {
+  await page
+    .eval(() => {
+      if (window.__officeFetch) window.fetch = window.__officeFetch;
+      delete window.__officeFetch;
+      delete window.__healthAnswer;
+      delete window.__healthFail;
+      delete window.__healthDelay;
+      delete window.__healthCalls;
+      document.querySelector('#health-modal').hidden = true;
+      document.querySelector('#settings-modal').hidden = true;
+    })
+    .catch(() => {});
+}
+
+/**
+ * A canned /api/budget view: a daily limit under the warn line, a weekly one above it and a monthly window with no
+ * limit (its spend is still recorded). The server's percent/state are deliberately wrong: the UI recomputes them.
+ */
+const BUDGET_ANSWER = () => ({
+  budget: { dailyUsd: 20, weeklyUsd: 50, monthlyUsd: 0 },
+  spend: {
+    day: { usd: 12.3, rows: 4, known: true },
+    week: { usd: 45, rows: 9, known: true },
+    month: { usd: 3, rows: 2, known: false },
+  },
+  windows: {
+    day: { limit: 20, usd: 12.3, percent: 0.01, state: 'off' },
+    week: { limit: 50, usd: 45, percent: 0.02, state: 'ok' },
+    month: { limit: 0, usd: 3, percent: 0, state: 'ok' },
+  },
+  note: 'Dihitung dari biaya yang tercatat di ledger (9 dari 9 catatan punya biaya); OpenCode Go umumnya tercatat $0.',
+});
+
+/**
+ * Stubs POST /api/budget and /api/budget/save (everything else still goes to the real API), counts the view reads
+ * and keeps every save body. `window.__budgetSave = {status, error}` makes the next save fail like the server does.
+ */
+async function stubBudget(page, answer = BUDGET_ANSWER()) {
+  await page.eval((payload) => {
+    window.__budgetPreviousFetch ??= window.fetch;
+    window.__budgetAnswer = payload;
+    window.__budgetSave = { status: 200, error: '' };
+    window.__budgetCalls = 0;
+    window.__budgetSaves = [];
+    window.fetch = (url, opts) => {
+      const path = String(url);
+      if (!path.includes('/api/budget')) return window.__budgetPreviousFetch(url, opts);
+      const json = (body, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
+      if (path.includes('/api/budget/save')) {
+        let body = {};
+        try {
+          body = JSON.parse(opts?.body ?? '{}');
+        } catch {
+          body = {};
+        }
+        window.__budgetSaves.push(body);
+        return window.__budgetSave.error ? json({ error: window.__budgetSave.error }, window.__budgetSave.status) : json({ budget: window.__budgetAnswer });
+      }
+      window.__budgetCalls += 1;
+      return json({ budget: window.__budgetAnswer });
+    };
+  }, answer);
+}
+
+const budgetCalls = (page) => page.eval(() => window.__budgetCalls ?? 0);
+const budgetSaves = (page) => page.eval(() => window.__budgetSaves ?? []);
+
+/** Forgets the module's in-memory view, so the next open really asks the stub (also when run alone). */
+const resetBudget = (page) =>
+  page.eval(async () => {
+    const { budgetView } = await import('/js/features/budget.js');
+    Object.assign(budgetView, { data: null, error: null, loading: false, promise: null, fieldsKey: null, saving: false });
+  });
+
+/** Puts the previous fetch back, forgets the module's cached view (the page is reused between tests) and resets the fields. */
+async function restoreBudget(page) {
+  await page
+    .eval(async () => {
+      if (window.__budgetPreviousFetch) window.fetch = window.__budgetPreviousFetch;
+      delete window.__budgetPreviousFetch;
+      delete window.__budgetAnswer;
+      delete window.__budgetSave;
+      delete window.__budgetCalls;
+      delete window.__budgetSaves;
+      const { budgetView } = await import('/js/features/budget.js');
+      Object.assign(budgetView, { data: null, error: null, loading: false, promise: null, fieldsKey: null, saving: false });
+      for (const id of ['#budget-daily', '#budget-weekly', '#budget-monthly']) {
+        const input = document.querySelector(id);
+        if (!input) continue;
+        input.value = '';
+        input.setAttribute('aria-invalid', 'false');
+      }
+      const error = document.querySelector('#budget-error');
+      if (error) error.textContent = '';
+      document.querySelector('#settings-modal').hidden = true;
+      document.querySelector('#health-modal').hidden = true;
+    })
+    .catch(() => {});
+}
+
+/** The budget rows as drawn (⚙ and 🩺): labels, amounts, remaining text, tones and the computed bar colours. */
+function budgetRows(rootSel = '#budget-rows') {
+  return [...document.querySelectorAll(`${rootSel} .budget-row`)].map((li) => {
+    const bar = li.querySelector('.budget-bar');
+    const fill = li.querySelector('.budget-fill');
+    return {
+      cls: li.className,
+      window: li.querySelector('.budget-window')?.textContent ?? '',
+      amount: (li.querySelector('.budget-amount')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      rest: li.querySelector('.budget-rest')?.textContent ?? null,
+      pct: li.querySelector('.budget-pct')?.textContent ?? null,
+      bar: bar
+        ? {
+            role: bar.getAttribute('role'),
+            now: bar.getAttribute('aria-valuenow'),
+            text: bar.getAttribute('aria-valuetext'),
+            width: fill?.style.width ?? '',
+            color: fill ? getComputedStyle(fill).backgroundColor : '',
+          }
+        : null,
+    };
+  });
+}
+
+
 /** A canned /api/models/prices answer: one OpenCode Go model with a peak factor, one free, and observed Claude prices. */
 const PRICE_ANSWER = {
   fetchedAt: '2026-11-05T00:00:00.000Z',
@@ -548,7 +727,11 @@ async function stubPrices(page, answer, fail = false) {
         }
         return window.__officeFetch(url, opts);
       };
-      (await import('/js/features/model-prices.js')).resetModelPrices();
+      const prices = await import('/js/features/model-prices.js');
+      // A load that started before the stub was up can still answer after the reset and replace the canned cache:
+      // let the module's in-flight request settle first, then forget whatever it brought.
+      for (let i = 0; i < 40 && prices.modelPrices(() => {}) === null; i++) await new Promise((resolve) => setTimeout(resolve, 50));
+      prices.resetModelPrices();
     },
     answer,
     fail,
@@ -707,22 +890,30 @@ const restoreAccount = (page) =>
     })
     .catch(() => {});
 
-/** OpenCode's Akun with one provider credential; logout is answered with a 400. Switches the app to OpenCode. */
-async function stubOpenCodeAccount(page) {
-  await page.eval(async () => {
+/** OpenCode's Akun with one provider credential; logout is answered with a 400. Switches the app to OpenCode.
+ *  `go` is passed through as the providers response's Go quota (omitted entirely when null); `usage` feeds the local
+ *  summary above it. */
+async function stubOpenCodeAccount(page, { go = null, usage = null } = {}) {
+  await page.eval(async (payload) => {
     window.__officeFetch ??= window.fetch;
     const prev = window.fetch;
     window.__realConfirm = window.confirm;
-    window.__ocAcct = { calls: [], confirms: [] };
+    window.__ocAcct = { calls: [], confirms: [], providerCalls: 0, providerDone: 0, go: payload.go, usage: payload.usage };
     window.confirm = (text) => {
       window.__ocAcct.confirms.push(String(text));
       return true; // the user confirms; the point of this test is what goes out afterwards
     };
     const json = (body, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
-    window.fetch = (url, opts) => {
+    window.fetch = async (url, opts) => {
       const path = String(url);
       if (path === '/api/opencode/providers') {
-        return json({ connected: [{ id: 'anthropic', name: 'Anthropic', connections: [{ id: 'cred-1', type: 'credential', label: 'Claude Pro', method: 'oauth' }] }], available: [], usage: null });
+        window.__ocAcct.providerCalls += 1;
+        await new Promise((r) => setTimeout(r, 120)); // a slow answer: a second click must not start a second call
+        window.__ocAcct.providerDone += 1;
+        const body = { connected: [{ id: 'anthropic', name: 'Anthropic', connections: [{ id: 'cred-1', type: 'credential', label: 'Claude Pro', method: 'oauth' }] }], available: [], usage: window.__ocAcct.usage };
+        const go = window.__ocAcct.go;
+        if (go) body.go = go;
+        return json(body);
       }
       if (path === '/api/opencode/logout') {
         window.__ocAcct.calls.push(JSON.parse(opts?.body ?? '{}'));
@@ -745,7 +936,7 @@ async function stubOpenCodeAccount(page) {
       },
     });
     (await import('/js/features/account.js')).renderAccountButton();
-  });
+  }, { go, usage });
 }
 
 const restoreOpenCodeAccount = (page) =>
@@ -768,6 +959,42 @@ const restoreOpenCodeAccount = (page) =>
     .catch(() => {});
 
 // ---------- tests ----------
+
+/** The local token summary above the Go section (drawn only when the server records usage). */
+const GO_USAGE = { today: { total: 1200, costUsd: 0.12 }, week: { total: 8400, costUsd: 0.84, costCoverage: 1 } };
+
+/** Go quota as the server sends it: already sorted (highest 30d first), one green, one amber, one red, one unlimited.
+ *  `percent*` are the server's own 0..100 fields; the bars read used/limit, so those stay honest either way. */
+const GO_QUOTA = {
+  plan: 'go',
+  available: true,
+  note: 'estimasi dari token tercatat × harga list',
+  models: [
+    { model: 'DeepSeek V4.1 Flash', limit: 10, used5h: 0.24, used7d: 4, used30d: 9.6, remaining: 0.4, percent5h: 12, percent7d: 80, percent30d: 96 },
+    { model: 'GLM 5.3', limit: 10, used5h: 0.15, used7d: 2.5, used30d: 8.1, remaining: 1.9, percent5h: 7.5, percent7d: 50, percent30d: 81 },
+    { model: 'Kimi K3', limit: 10, used5h: 0.04, used7d: 1, used30d: 4.2, remaining: 5.8, percent5h: 2, percent7d: 20, percent30d: 42 },
+    { model: 'Model Gratis', limit: null, unlimited: true, used5h: 0, used7d: 0.2, used30d: 0.5, remaining: null, percent5h: null, percent7d: null, percent30d: null },
+    { model: 'Model Tanpa Tabel', limit: null, used5h: 0.1, used7d: 0.3, used30d: 0.6, remaining: null, percent5h: null, percent7d: null, percent30d: null },
+  ],
+};
+
+/** Ten models (top-8 + toggle) with an unbreakable long name and one over the allowance (bar capped at 100%). */
+const GO_MANY = {
+  plan: 'go',
+  available: true,
+  note: '',
+  models: Array.from({ length: 10 }, (_, i) => ({
+    model: i === 0 ? `opencode-go/${'x'.repeat(72)}` : `Model ${i + 1}`,
+    limit: 10,
+    used5h: 0.02,
+    used7d: 0.25,
+    used30d: i === 0 ? 12 : 10 - i,
+    remaining: i,
+    percent5h: 1,
+    percent7d: 5,
+    percent30d: i === 0 ? 120 : (10 - i) * 10,
+  })),
+};
 
 
 for (const vp of VIEWPORTS) {
@@ -830,11 +1057,13 @@ for (const vp of VIEWPORTS) {
     });
 
     test('💲 harga model: label harga list OpenCode Go (± jam sibuk), gratis, optgroup & saring tetap', async () => {
+      await apiPost(`/api/projects/${projectId}/settings`, { model: '', modelAuto: false }); // no leftover Auto from another test
       await ensureApp(page, `#${projectId}`);
       await stubPrices(page, PRICE_ANSWER);
       try {
         const view = await page.eval(async () => {
-          const { modelPrices } = await import('/js/features/model-prices.js');
+          const { modelPrices, resetModelPrices } = await import('/js/features/model-prices.js');
+          resetModelPrices(); // no cached answer from an earlier test
           await new Promise((resolve) => modelPrices(resolve)); // the composer's own lazy load, once the stub is up
           const { projectModelOptions } = await import('/js/features/engine.js');
           const entry = {
@@ -876,10 +1105,18 @@ for (const vp of VIEWPORTS) {
     test('💲 harga model: ≈ harga tercatat alias Claude, catatan di bawah select, demo tanpa catatan', async () => {
       await ensureApp(page, `#${projectId}`);
       await stubPrices(page, PRICE_ANSWER);
+      await stubSettings(page); // model picks below must not send a real settings POST (its status broadcast would flip the engine)
       try {
+        // This test drives the Claude catalog (state.config.models): make the engine deterministic.
         await page.eval(async () => {
           const { state } = await import('/js/core/state.js');
-          const { modelPrices } = await import('/js/features/model-prices.js');
+          state.config = { ...state.config, engine: 'claude' };
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'claude', model: '', modelAuto: false };
+        });
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          const { modelPrices, resetModelPrices } = await import('/js/features/model-prices.js');
+          resetModelPrices(); // no cached answer from an earlier test
           await new Promise((resolve) => modelPrices(resolve));
           state.config = {
             ...state.config,
@@ -950,6 +1187,7 @@ for (const vp of VIEWPORTS) {
         assert.deepEqual(realProblems(page), []);
       } finally {
         await restorePrices(page);
+        await restoreSettings(page);
         await openApp(page, `#${projectId}`); // the mutated model list must not leak into later tests
       }
     });
@@ -994,6 +1232,174 @@ for (const vp of VIEWPORTS) {
       } finally {
         await restorePrices(page);
         await openApp(page, `#${projectId}`);
+      }
+    });
+
+    test('💲 estimasi biaya: tampil setelah harga dimuat, ikut isi kotak & ganti model, sembunyi tanpa harga/demo', async () => {
+      await ensureApp(page, `#${projectId}`);
+      // A previous run may have left 400 characters in this project's draft: start from a clean box.
+      await page.eval((k) => {
+        localStorage.removeItem(k);
+        const input = document.querySelector('#prompt');
+        input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }, draftKey());
+      await stubPrices(page, PRICE_ANSWER);
+      try {
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.config = {
+            ...state.config,
+            models: [
+              { value: 'default', displayName: 'Default', description: 'bawaan' },
+              { value: 'opencode-go/kimi-k2', displayName: 'Kimi K2', description: 'Murah' },
+              { value: 'opencode-go/free', displayName: 'Free Model', description: '' },
+              { value: 'tanpa-harga', displayName: 'Tanpa Harga', description: '' },
+            ],
+          };
+          const prices = await import('/js/features/model-prices.js');
+          // The page starts its own price load before the stub is up; that answer can land right after the stub's and
+          // replace it. Load the canned answer until it sticks (one stale response at most).
+          for (let attempt = 0; attempt < 6; attempt++) {
+            prices.resetModelPrices();
+            await new Promise((resolve) => prices.modelPrices(resolve)); // the same lazy load the composer asks for
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            if (prices.priceFor('opencode-go/kimi-k2')) return;
+          }
+          throw new Error('harga stub tidak bertahan');
+        });
+        // A model the project does not actually run, plus a context the turn already carries. The injection and the
+        // render happen in ONE page task: a status push from the server cannot land between them and replace it.
+        const probe = (model, extra = {}) =>
+          page.eval(
+            async (value, more) => {
+              const { state } = await import('/js/core/state.js');
+              const { renderComposer } = await import('/js/features/composer.js');
+              state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), model: value, activeModel: null, context: { used: 20_000, window: 200_000 }, ...more };
+              renderComposer();
+              const el = document.querySelector('#cost-estimate');
+              return { hidden: el.hidden, visible: el.getClientRects().length > 0, text: el.textContent.trim(), title: el.title };
+            },
+            model,
+            extra,
+          );
+        let view = await probe('opencode-go/kimi-k2');
+        assert.equal(view.hidden, false, 'estimasi tampil');
+        assert.equal(view.visible, true, 'estimasi terlihat di composer');
+        assert.match(view.text, /^Perkiraan biaya: ±<?\$[0-9<]/, `teks ringkas: ${view.text}`);
+        assert.match(view.title, /konteks 20\.000 token/, 'tooltip: token konteks');
+        assert.match(view.title, /prompt ±0 token/, 'tooltip: prompt kosong');
+        assert.match(view.title, /asumsi 600 token output/, 'tooltip: asumsi jawaban');
+        assert.match(view.title, /harga list OpenCode Go/, 'tooltip: sumber harga');
+        assert.match(view.title, /hingga 2×|jam sibuk 2×/, 'tooltip: asumsi jam sibuk');
+
+        // Typing: the estimate follows the box (≤ 4 characters per token).
+        await typeInPrompt(page, 'x'.repeat(400));
+        view = await probe('opencode-go/kimi-k2');
+        assert.match(view.title, /prompt ±100 token/, `estimasi ikut isi kotak: ${view.title}`);
+
+        // Another model: an observed price changes the source line (no request: the cache is used).
+        view = await probe('sonnet');
+        assert.match(view.title, /harga efektif tercatat/, `estimasi ikut model: ${view.title}`);
+        assert.match(view.title, /7 catatan/, 'tooltip: jumlah catatan harga tercatat');
+
+        // Model Auto with no applied model yet: the project's own model is estimated (status.activeModel wins once set).
+        view = await probe('opencode-go/kimi-k2', { modelAuto: true });
+        assert.match(view.title, /harga list OpenCode Go/, 'Auto memakai status.model selama activeModel kosong');
+        assert.match(view.title, /konteks 20\.000 token/, 'Auto: konteks tetap dihitung');
+
+        // A model without any price: no number at all.
+        view = await probe('tanpa-harga', { modelAuto: false });
+        assert.equal(view.hidden, true, 'tanpa harga: estimasi disembunyikan');
+
+        if (vp.mobile) {
+          // 390 px: back on a priced model, one line that never sticks out sideways.
+          view = await probe('opencode-go/kimi-k2');
+          assert.equal(view.visible, true, 'estimasi tampil lagi di HP');
+          assert.equal(await page.eval(horizontalOverflow), null, 'tanpa scroll horizontal dengan estimasi biaya');
+          const box = await page.eval(() => {
+            const el = document.querySelector('#cost-estimate');
+            const r = el.getBoundingClientRect();
+            const style = getComputedStyle(el);
+            const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.4;
+            return { width: r.width, right: r.right, viewport: document.documentElement.clientWidth, lines: Math.round(r.height / lineHeight) };
+          });
+          assert.ok(box.width <= box.viewport && box.right <= box.viewport + 0.5, JSON.stringify(box));
+          assert.ok(box.lines <= 1, `satu baris: ${JSON.stringify(box)}`);
+        }
+
+        await ensureApp(page, '#demo');
+        assert.equal(await page.eval(() => document.querySelector('#cost-estimate')?.hidden ?? true), true, 'project demo tanpa estimasi biaya');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restorePrices(page);
+        await page
+          .eval((k) => {
+            localStorage.removeItem(k);
+            const input = document.querySelector('#prompt');
+            if (input) {
+              input.value = '';
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          }, draftKey())
+          .catch(() => {});
+        await openApp(page, `#${projectId}`); // the mutated model list/status must not leak into later tests
+      }
+    });
+
+    test('🤖 Effort Auto: alasan klasifikasi tampil kecil di badge (bukan hanya tooltip), aman & ringkas', async () => {
+      await ensureApp(page, `#${projectId}`);
+      const prefix = 'uji-auto-why';
+      try {
+        const view = await page.eval(async (mark) => {
+          const { appendChat } = await import('/js/features/chat.js');
+          const long = 'prompt menyentuh migrasi database dan seluruh codebase tanpa downtime tanpa regresi apa pun '.repeat(3);
+          const add = (suffix, autoEffort) =>
+            appendChat({ id: `${mark}-${suffix}`, kind: 'user', text: 'halo', source: 'web', ts: Date.now(), autoEffort }, false);
+          add('panjang', { level: 'high', reason: long, source: 'llm' });
+          add('html', { level: 'medium', reason: '<b>aman</b> & cepat', source: 'llm' });
+          add('fallback', { level: 'low', reason: 'pertanyaan singkat', source: 'fallback' });
+          add('tanpa-sumber', { level: 'low', reason: 'tanpa sumber', source: '' });
+          const tagOf = (suffix) => document.querySelector(`[data-id="${mark}-${suffix}"] .tag.auto-effort`);
+          const read = (suffix) => {
+            const tag = tagOf(suffix);
+            const why = tag?.querySelector('.auto-why');
+            return tag && {
+              text: tag.textContent,
+              reason: why?.textContent ?? '',
+              reasonSize: why ? parseFloat(getComputedStyle(why).fontSize) : null,
+              tagSize: parseFloat(getComputedStyle(tag).fontSize),
+              title: tag.title,
+              aria: tag.getAttribute('aria-label'),
+              hasHtml: Boolean(tag.querySelector('b')),
+              fallback: tag.classList.contains('fallback'),
+            };
+          };
+          return { long: read('panjang'), html: read('html'), fallback: read('fallback'), none: read('tanpa-sumber'), overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+        }, prefix);
+
+        assert.match(view.long.text, /^Auto: High/, 'level tetap terbaca');
+        assert.ok(view.long.reason.startsWith('· '), 'alasan terlihat, bukan hanya di title');
+        const reasonText = view.long.reason.replace(/^·\s*/, '');
+        assert.ok(reasonText.length <= 70, `alasan dipotong ~70 karakter (${reasonText.length})`);
+        assert.ok(reasonText.endsWith('…'), 'potongan diberi elipsis');
+        assert.match(view.long.title, /^Auto: High — prompt menyentuh migrasi/);
+        assert.equal(view.long.aria, view.long.title, 'aria-label memuat alasan yang sama');
+        assert.ok(view.long.reasonSize < view.long.tagSize, 'teks alasan lebih kecil dari badge-nya');
+
+        assert.equal(view.html.hasHtml, false, 'HTML dari alasan tidak dieksekusi');
+        assert.match(view.html.reason, /<b>aman<\/b> & cepat/, 'teks alasan di-escape');
+
+        assert.equal(view.fallback.fallback, true, 'sumber fallback tetap ditandai');
+        assert.match(view.fallback.text, /Auto: Low \(fallback\)/);
+        assert.match(view.fallback.reason, /pertanyaan singkat/);
+
+        assert.equal(view.none.reason, '', 'tanpa sumber: tanpa alasan');
+        assert.equal(view.none.title, 'Auto: Low', 'tanpa sumber: title hanya level');
+        assert.equal(view.overflow, 0, 'alasan panjang tidak melebarkan halaman');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await page.eval((mark) => document.querySelectorAll(`[data-id^="${mark}-"]`).forEach((n) => n.remove()), prefix);
       }
     });
 
@@ -1278,6 +1684,14 @@ for (const vp of VIEWPORTS) {
 
         // The server refuses: the dialog stays open with the reason, the note goes back.
         await page.eval(async () => {
+          // keep the engine/ladder deterministic: another test's broadcast must not flip this project to Claude
+          const { state } = await import('/js/core/state.js');
+          state.config = { ...state.config, engine: 'opencode' };
+          state.statuses[state.active] = {
+            ...(state.statuses[state.active] ?? {}),
+            modelAuto: true,
+            modelTiers: { opencode: { hemat: 'opencode-go/hemat-lain', seimbang: 'opencode-go/glm-5.3', maks: 'opencode-go/kimi-k3' } },
+          };
           window.__settingsFail = true;
           const el = document.querySelector('#tier-maks');
           el.value = 'opencode-go/hemat-lain';
@@ -1543,6 +1957,419 @@ for (const vp of VIEWPORTS) {
       await page.press('Escape');
     });
 
+    test('🩺 Kesehatan sistem: ringkasan, pemeriksaan, persiapan, data & error; ↻ satu request; galat inline', async () => {
+      await ensureApp(page, '#demo');
+      await stubHealth(page);
+      // The settings sheet is scrollable on a phone: bring the opener into view before the trusted click.
+      const reveal = (sel) => page.eval((s) => document.querySelector(s)?.scrollIntoView({ block: 'center' }), sel);
+      try {
+        await tap(page, '#btn-settings');
+        await settle(page, 'settings-modal');
+        if (!(await shownInPage(page, '#health-open'))) await page.click('[data-settings-tab="sistem"]');
+        assert.equal(await shownInPage(page, '#health-open'), true, 'tombol 🩺 tampil di tab Sistem');
+        await reveal('#health-open');
+        await page.click('#health-open');
+        await page.waitFor(() => !document.querySelector('#health-modal').hidden && Boolean(document.querySelector('#health-verdict')), { timeoutMs: 4000, message: 'laporan kesehatan tampil' });
+        assert.equal(await healthCalls(page), 1, 'satu request saat modal dibuka');
+
+        const view = await page.eval(() => ({
+          verdict: document.querySelector('#health-verdict').textContent.trim(),
+          meta: document.querySelector('#health-meta').textContent,
+          checks: [...document.querySelectorAll('#health-modal .health-check')].map((li) => ({
+            cls: li.className,
+            label: li.querySelector('b').textContent,
+            detail: li.querySelector('.health-detail')?.textContent ?? '',
+            hint: li.querySelector('small')?.textContent ?? '',
+            tone: li.querySelector('.sr-only')?.textContent ?? '',
+            dot: getComputedStyle(li.querySelector('.health-dot')).backgroundColor,
+          })),
+          todos: [...document.querySelectorAll('#health-modal .health-todo')].map((li) => ({ cls: li.className, mark: li.querySelector('.health-mark').textContent })),
+          progress: document.querySelector('#health-todos-title').textContent.trim(),
+          size: document.querySelector('#health-size').textContent,
+          path: document.querySelector('#health-path')?.textContent ?? document.querySelector('.health-path')?.textContent ?? '',
+          errors: document.querySelector('#health-errors').textContent,
+          last: document.querySelector('#health-last').textContent,
+          lastTitle: document.querySelector('#health-last').getAttribute('title'),
+          scripts: document.querySelectorAll('#health-modal script').length,
+          refresh: document.querySelector('#health-refresh').disabled,
+          pathOverflow: (() => {
+            const el = document.querySelector('.health-path');
+            return el ? el.scrollWidth - el.clientWidth : 0;
+          })(),
+        }));
+
+        // Header: enough of the checklist done and no failing *essential* check → "Siap dipakai (5/6)".
+        assert.equal(view.verdict, 'Siap dipakai (5/6)');
+        assert.match(view.meta, /v0\.2\.0/);
+        assert.match(view.meta, /Claude Code/);
+        assert.match(view.meta, /aktif 3 jam 5 mnt/);
+        assert.match(view.meta, /port 4317/);
+
+        // Pemeriksaan: green / amber / red dot, label, detail, hint, and a spoken tone (colour is not the only cue).
+        assert.deepEqual(view.checks.map((c) => c.cls), ['health-check ok', 'health-check warn', 'health-check bad']);
+        assert.deepEqual(view.checks.map((c) => c.tone), ['lulus', 'peringatan', 'gagal']);
+        assert.deepEqual(view.checks.map((c) => c.dot), ['rgb(63, 185, 80)', 'rgb(245, 165, 36)', 'rgb(240, 82, 74)']);
+        assert.equal(view.checks[1].detail, 'folder lama');
+        assert.equal(view.checks[1].hint, 'Folder baru dibuat otomatis.');
+
+        // Persiapan: checkmarks for done, empty circles otherwise, progress X/N.
+        assert.equal(view.todos.length, 6);
+        assert.deepEqual(view.todos.map((t) => t.mark), ['✓', '✓', '✓', '✓', '✓', '○']);
+        assert.equal(view.todos.filter((t) => t.cls.includes('done')).length, 5);
+        assert.match(view.progress, /5\/6/);
+
+        // Data aplikasi + error 24 jam (monospace, text only: the server's message is escaped, not markup).
+        assert.equal(view.size, '12,3 MB · 123 file');
+        assert.match(view.path, /folder-panjang/);
+        assert.equal(view.pathOverflow <= 1, true, 'path panjang tidak melebar');
+        assert.equal(view.errors, '2 error');
+        assert.match(view.last, /^<script>alert\("x"\)<\/script> ENOENT: /);
+        assert.equal(view.lastTitle, view.last, 'judul = pesan utuh');
+        assert.equal(view.scripts, 0, 'pesan error di-escape');
+        assert.equal(view.refresh, false);
+
+        if (vp.mobile) assert.deepEqual(await page.eval(horizontalOverflow), null, 'tidak ada scroll horizontal di 390px');
+
+        // ↻ = exactly one more request (and nothing afterwards: no polling).
+        const before = await healthCalls(page);
+        await reveal('#health-refresh');
+        await page.click('#health-refresh');
+        await page.waitFor((n) => window.__healthCalls === n + 1, { timeoutMs: 4000, message: 'satu request dari ↻' }, before);
+        await settle(page, 'health-modal');
+        assert.equal(await healthCalls(page), before + 1, 'tidak ada request tambahan');
+        assert.equal(await page.eval(() => Boolean(document.querySelector('#health-verdict'))), true);
+
+        // A failed refresh shows the error inline (role=alert) and keeps the last good report on screen.
+        await page.eval(() => {
+          window.__healthFail = true;
+        });
+        await reveal('#health-refresh');
+        await page.click('#health-refresh');
+        await page.waitFor(() => document.querySelector('#health-error')?.textContent.includes('Gagal memeriksa'), { timeoutMs: 4000, message: 'galat inline' });
+        const failed = await page.eval(() => ({
+          role: document.querySelector('#health-error')?.getAttribute('role'),
+          verdict: document.querySelector('#health-verdict')?.textContent.trim(),
+          checks: document.querySelectorAll('#health-modal .health-check').length,
+          last: document.querySelector('#health-last')?.textContent,
+          refresh: document.querySelector('#health-refresh').disabled,
+          text: document.querySelector('#health-error')?.textContent,
+        }));
+        assert.equal(failed.role, 'alert');
+        assert.match(failed.text, /Server sibuk/);
+        assert.equal(failed.verdict, 'Siap dipakai (5/6)', 'laporan lama tetap tampil');
+        assert.equal(failed.checks, 3);
+        assert.match(failed.last, /ENOENT/);
+        assert.equal(failed.refresh, false, '↻ bisa dicoba lagi');
+
+        // A failing *essential* check flips the verdict (an amber warning or a non-essential failure does not).
+        await page.eval(() => {
+          window.__healthFail = false;
+          window.__healthAnswer = {
+            ...window.__healthAnswer,
+            checks: window.__healthAnswer.checks.map((c) => (c.id === 'node' ? { ...c, ok: false, warn: false } : c)),
+          };
+        });
+        await reveal('#health-refresh');
+        await page.click('#health-refresh');
+        await page.waitFor(() => document.querySelector('#health-verdict')?.textContent.includes('Perlu perhatian'), { timeoutMs: 4000, message: 'perlu perhatian' });
+        assert.equal(await page.eval(() => document.querySelector('#health-verdict').textContent.trim()), 'Perlu perhatian (5/6)');
+
+        // Reopening shows the last report at once and refreshes it in the background.
+        await page.eval(() => {
+          window.__healthDelay = 400;
+        });
+        const callsBeforeReopen = await healthCalls(page);
+        await page.click('#health-close');
+        await page.waitFor(() => document.querySelector('#health-modal').hidden, { timeoutMs: 2000, message: 'modal tertutup' });
+        await reveal('#health-open');
+        await page.click('#health-open');
+        const instant = await page.eval(() => ({
+          verdict: document.querySelector('#health-verdict')?.textContent ?? null,
+          refresh: document.querySelector('#health-refresh').disabled,
+        }));
+        assert.equal(instant.verdict, 'Perlu perhatian (5/6)', 'laporan tersimpan tampil langsung');
+        assert.equal(instant.refresh, true, '↻ nonaktif selama request berjalan');
+        await page.waitFor((n) => window.__healthCalls > n, { timeoutMs: 4000, message: 'refresh latar belakang' }, callsBeforeReopen);
+        await page.waitFor(() => document.querySelector('#health-refresh').disabled === false, { timeoutMs: 4000, message: '↻ aktif lagi' });
+        assert.deepEqual(realProblems(page), [], 'tanpa error console');
+      } finally {
+        await restoreHealth(page);
+      }
+    });
+
+    test('🩺 Kesehatan sistem: tersembunyi & tidak membuka modal saat hanya-lihat (WiFi)', async () => {
+      await ensureApp(page, '#demo');
+      try {
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.readOnly = true;
+          document.body.classList.add('read-only');
+        });
+        await tap(page, '#btn-settings');
+        await settle(page, 'settings-modal');
+        const ro = await page.eval(() => {
+          const btn = document.querySelector('#health-open');
+          return {
+            shown: Boolean(btn.getClientRects().length),
+            hidden: btn.hidden,
+            disabled: btn.disabled,
+            section: document.querySelector('#health-section').hidden,
+            styleShown: getComputedStyle(document.querySelector('#health-section')).display !== 'none',
+          };
+        });
+        assert.equal(ro.shown, false, 'tombol tidak tampil di halaman hanya-lihat');
+        assert.equal(ro.hidden, true, 'tombol hidden');
+        assert.equal(ro.disabled, true, 'tombol nonaktif');
+        assert.equal(ro.section, true, 'bagian kesehatan ikut disembunyikan');
+        assert.equal(ro.styleShown, false, 'CSS hanya-lihat juga menyembunyikannya');
+        // Even a forced click (a stale page that still shows it) must not open a dialog the server would refuse.
+        await page.eval(() => document.querySelector('#health-open').click());
+        await sleep(100);
+        assert.equal(await page.eval(() => document.querySelector('#health-modal').hidden), true, 'modal tidak dibuka');
+      } finally {
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.readOnly = false;
+          document.body.classList.remove('read-only');
+          document.querySelector('#settings-modal').hidden = true;
+        }).catch(() => {});
+      }
+    });
+
+    test('💰 Budget pemakaian global: batas, pemakaian, bar berwarna & sisa; tanpa batas bila 0', async () => {
+      await ensureApp(page, '#demo');
+      await stubBudget(page);
+      try {
+        await resetBudget(page);
+        await tap(page, '#btn-settings');
+        await settle(page, 'settings-modal');
+        // Desktop keeps one panel at a time (the remembered tab may be another one); a phone stacks them all.
+        if (!(await shownInPage(page, '#budget-section'))) await page.click('[data-settings-tab="umum"]');
+        await page.waitFor(() => document.querySelectorAll('#budget-rows .budget-row').length === 3, { timeoutMs: 4000, message: 'tiga baris budget tampil' });
+
+        const view = await page.eval(budgetRows);
+        assert.deepEqual(view.map((r) => r.window), ['Harian', 'Mingguan', 'Bulanan']);
+        assert.deepEqual(view.map((r) => r.cls), ['budget-row ok', 'budget-row warn', 'budget-row off']);
+        assert.deepEqual(view.map((r) => r.amount), ['$12,30 / $20 (62%)', '$45,00 / $50 (90%)', '$3,00 tercatat · tanpa batas']);
+        assert.deepEqual(view.map((r) => r.rest), ['sisa $7,70', 'sisa $5,00', null]);
+        assert.deepEqual(view.map((r) => r.pct), ['(62%)', '(90%)', null]);
+        // Green under 80%, amber from 80%, red at 100% (the server's wrong percent/state are ignored).
+        assert.deepEqual(view.map((r) => r.bar?.color ?? null), ['rgb(63, 185, 80)', 'rgb(245, 165, 36)', null]);
+        assert.equal(view[0].bar.role, 'progressbar');
+        assert.equal(view[0].bar.now, '62');
+        assert.equal(view[0].bar.width, '62%');
+        assert.match(view[0].bar.text, /62% dari batas harian, sisa \$7,70/);
+        assert.equal(view[1].bar.now, '90');
+
+        const fields = await page.eval(() => ({
+          daily: document.querySelector('#budget-daily').value,
+          weekly: document.querySelector('#budget-weekly').value,
+          monthly: document.querySelector('#budget-monthly').value,
+          placeholders: [...document.querySelectorAll('#budget-form input')].map((i) => i.placeholder),
+          step: [...document.querySelectorAll('#budget-form input')].map((i) => i.step),
+          error: document.querySelector('#budget-error').textContent,
+          coverage: document.querySelector('#budget-coverage').textContent,
+          coverageShown: Boolean(document.querySelector('#budget-coverage').getClientRects().length),
+          saveDisabled: document.querySelector('#budget-save').disabled,
+          note: document.querySelector('#budget-note').textContent,
+        }));
+        assert.deepEqual({ daily: fields.daily, weekly: fields.weekly, monthly: fields.monthly }, { daily: '20', weekly: '50', monthly: '' });
+        assert.deepEqual(fields.placeholders, ['tanpa batas', 'tanpa batas', 'tanpa batas']);
+        assert.deepEqual(fields.step, ['0.01', '0.01', '0.01']);
+        assert.equal(fields.error, '');
+        assert.equal(fields.coverageShown, true);
+        assert.match(fields.coverage, /ledger/);
+        assert.equal(fields.saveDisabled, false);
+        assert.match(fields.note, /OpenCode Go/);
+        assert.match(fields.note, /langganan/);
+
+        assert.equal(await budgetCalls(page), 1, 'satu request saat panel dibuka');
+        if (vp.mobile) {
+          assert.equal(await page.eval(horizontalOverflow), null, 'tidak ada scroll horizontal di 390px');
+          assert.equal(await page.eval(() => document.querySelector('#budget-section').scrollWidth - document.querySelector('#budget-section').clientWidth <= 1), true, 'bagian budget tidak melebar');
+        }
+
+        // The view is cached in memory: reopening the dialog (or switching tabs) asks nothing again.
+        await page.press('Escape');
+        await page.waitFor(() => document.querySelector('#settings-modal').hidden, { timeoutMs: 2000, message: 'pengaturan tertutup' });
+        await tap(page, '#btn-settings');
+        await settle(page, 'settings-modal');
+        await sleep(300);
+        assert.equal(await budgetCalls(page), 1, 'tanpa polling/request berulang');
+        assert.deepEqual(realProblems(page), [], 'tanpa error console');
+      } finally {
+        await restoreBudget(page);
+      }
+    });
+
+    test('💰 Budget: Simpan mengirim tiga angka (kosong/0 = tanpa batas), galat inline, ringkasan ikut jawaban server', async () => {
+      await ensureApp(page, '#demo');
+      await stubBudget(page);
+      try {
+        await resetBudget(page);
+        await tap(page, '#btn-settings');
+        await settle(page, 'settings-modal');
+        if (!(await shownInPage(page, '#budget-section'))) await page.click('[data-settings-tab="umum"]');
+        await page.waitFor(() => document.querySelectorAll('#budget-rows .budget-row').length === 3, { timeoutMs: 4000, message: 'tiga baris budget tampil' });
+
+        // New limits: daily 25.50, weekly empty (= tanpa batas), monthly 0 (also tanpa batas). The answer shows the result.
+        await page.eval(() => {
+          window.__budgetAnswer = {
+            ...window.__budgetAnswer,
+            budget: { dailyUsd: 25.5, weeklyUsd: 0, monthlyUsd: 0 },
+            windows: { day: { limit: 25.5, usd: 12.3 }, week: { limit: 0, usd: 45 }, month: { limit: 0, usd: 3 } },
+          };
+          document.querySelector('#budget-daily').value = '25.5';
+          document.querySelector('#budget-weekly').value = '';
+          document.querySelector('#budget-monthly').value = '0';
+        });
+        await page.click('#budget-save');
+        await page.waitFor(() => (window.__budgetSaves ?? []).length === 1, { timeoutMs: 4000, message: 'satu kiriman simpan' });
+        assert.deepEqual(await budgetSaves(page), [{ dailyUsd: 25.5, weeklyUsd: 0, monthlyUsd: 0 }], 'tiga angka, kosong & 0 = tanpa batas');
+        await page.waitFor(() => document.querySelector('#budget-rows .budget-row .budget-amount')?.textContent.includes('(48%)'), { timeoutMs: 4000, message: 'ringkasan ikut jawaban simpan' });
+        const saved = await page.eval(budgetRows);
+        assert.equal(saved[0].amount, '$12,30 / $25,50 (48%)');
+        assert.equal(saved[1].amount, '$45,00 tercatat · tanpa batas');
+        assert.equal(saved[2].amount, '$3,00 tercatat · tanpa batas');
+        assert.equal(await page.eval(() => document.querySelector('.toast.ok')?.textContent ?? ''), '💰 Budget pemakaian global disimpan.');
+
+        // A field the browser/UI cannot accept never leaves: inline error (role=alert), no POST.
+        await page.eval(() => {
+          document.querySelector('#budget-daily').value = '20000';
+        });
+        await page.click('#budget-save');
+        await page.waitFor(() => document.querySelector('#budget-error').textContent.includes('Harian'), { timeoutMs: 2000, message: 'galat inline' });
+        const invalid = await page.eval(() => ({
+          role: document.querySelector('#budget-error').getAttribute('role'),
+          text: document.querySelector('#budget-error').textContent,
+          invalid: document.querySelector('#budget-daily').getAttribute('aria-invalid'),
+          saves: (window.__budgetSaves ?? []).length,
+        }));
+        assert.equal(invalid.role, 'alert');
+        assert.match(invalid.text, /\$0–\$10\.000/);
+        assert.equal(invalid.invalid, 'true');
+        assert.equal(invalid.saves, 1, 'tidak ada kiriman untuk isian tidak valid');
+
+        // A 400 from the server shows its reason inline and keeps the form (the numbers can be fixed).
+        await page.eval(() => {
+          window.__budgetSave = { status: 400, error: 'Batas harian maksimal $10.000.' };
+          document.querySelector('#budget-daily').value = '5';
+        });
+        await page.click('#budget-save');
+        await page.waitFor(() => document.querySelector('#budget-error').textContent.includes('maksimal'), { timeoutMs: 4000, message: 'pesan 400 inline' });
+        const refused = await page.eval(() => ({
+          text: document.querySelector('#budget-error').textContent,
+          saves: (window.__budgetSaves ?? []).length,
+          daily: document.querySelector('#budget-daily').value,
+        }));
+        assert.equal(refused.text, 'Batas harian maksimal $10.000.');
+        assert.equal(refused.saves, 2);
+        assert.equal(refused.daily, '5', 'isian tetap, bisa diperbaiki');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreBudget(page);
+      }
+    });
+
+    test('🩺 Kesehatan sistem: ringkasan budget tampil di atas laporan, tanpa kolom isian', async () => {
+      await ensureApp(page, '#demo');
+      await stubHealth(page);
+      await stubBudget(page);
+      try {
+        await resetBudget(page);
+        await tap(page, '#btn-settings');
+        await settle(page, 'settings-modal');
+        // The settings sheet is scrollable on a phone: bring the opener into view before the trusted click.
+        const reveal = (sel) => page.eval((s) => document.querySelector(s)?.scrollIntoView({ block: 'center' }), sel);
+        if (!(await shownInPage(page, '#health-open'))) await page.click('[data-settings-tab="sistem"]');
+        await reveal('#health-open');
+        await page.click('#health-open');
+        await page.waitFor(
+          () =>
+            !document.querySelector('#health-modal').hidden &&
+            document.querySelectorAll('#health-modal .health-budget .budget-row').length === 3 &&
+            document.querySelector('#health-verdict')?.textContent.trim() === 'Siap dipakai (5/6)',
+          { timeoutMs: 4000, message: 'laporan + budget tampil' },
+        );
+
+        const health = await page.eval(() => {
+          const body = document.querySelector('#health-body');
+          const section = document.querySelector('#health-modal .health-budget');
+          return {
+            atTop: body.firstElementChild === section,
+            title: section.querySelector('h3')?.textContent.trim(),
+            fields: section.querySelectorAll('input, select, textarea, button').length,
+            verdict: document.querySelector('#health-verdict')?.textContent.trim(),
+            checks: document.querySelectorAll('#health-modal .health-check').length,
+            note: section.querySelector('.muted.small')?.textContent ?? '',
+          };
+        });
+        const healthRows = await page.eval(budgetRows, '#health-modal .health-budget .budget-rows');
+        assert.equal(health.atTop, true, 'di atas ringkasan kesehatan');
+        assert.equal(health.title, 'Budget pemakaian');
+        assert.deepEqual(healthRows.map((r) => r.window), ['Harian', 'Mingguan', 'Bulanan']);
+        assert.deepEqual(healthRows.map((r) => r.amount), ['$12,30 / $20 (62%)', '$45,00 / $50 (90%)', '$3,00 tercatat · tanpa batas']);
+        assert.deepEqual(healthRows.map((r) => r.bar?.color ?? null), ['rgb(63, 185, 80)', 'rgb(245, 165, 36)', null]);
+        assert.equal(health.fields, 0, 'tidak ada kolom isian di kesehatan');
+        assert.equal(health.verdict, 'Siap dipakai (5/6)', 'laporan kesehatan tetap tampil');
+        assert.equal(health.checks, 3);
+        assert.match(health.note, /OpenCode Go/);
+        assert.equal(await budgetCalls(page), 1, 'satu request budget, tidak dobel dengan ⚙');
+        if (vp.mobile) assert.equal(await page.eval(horizontalOverflow), null, 'tidak ada scroll horizontal di 390px');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreBudget(page); // installed last: restored first (LIFO), then the health stub
+        await restoreHealth(page);
+      }
+    });
+
+    test('💰 Budget: tersembunyi di halaman hanya-lihat (WiFi) dan tidak mengirim request', async () => {
+      await ensureApp(page, '#demo');
+      await stubBudget(page);
+      try {
+        await resetBudget(page);
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.readOnly = true;
+          document.body.classList.add('read-only');
+        });
+        await tap(page, '#btn-settings');
+        await settle(page, 'settings-modal');
+        const ro = await page.eval(() => {
+          const section = document.querySelector('#budget-section');
+          return {
+            hidden: section.hidden,
+            shown: Boolean(section.getClientRects().length),
+            display: getComputedStyle(section).display,
+            inputs: [...section.querySelectorAll('input')].map((i) => i.disabled),
+            save: document.querySelector('#budget-save').disabled,
+          };
+        });
+        assert.equal(ro.hidden, true, 'bagian disembunyikan');
+        assert.equal(ro.shown, false, 'tidak tampil di halaman hanya-lihat');
+        assert.equal(ro.display, 'none', 'CSS hanya-lihat juga menyembunyikannya');
+        assert.deepEqual(ro.inputs, [true, true, true]);
+        assert.equal(ro.save, true);
+        // Even a forced click and a stray call must not reach the route.
+        await page.eval(() => document.querySelector('#budget-save').click());
+        await page.eval(async () => {
+          const { loadBudgetView } = await import('/js/features/budget.js');
+          await loadBudgetView({ force: true });
+        });
+        await sleep(150);
+        assert.equal(await budgetCalls(page), 0, 'tidak ada request dari halaman hanya-lihat');
+        assert.deepEqual(await budgetSaves(page), [], 'tidak ada kiriman');
+      } finally {
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.readOnly = false;
+          document.body.classList.remove('read-only');
+        }).catch(() => {});
+        await restoreBudget(page);
+      }
+    });
+
+
     test('⚙ Effort Auto (LLM) ada di picker dan tersimpan sebagai auto', async () => {
       await ensureApp(page, `#${projectId}`);
       assert.equal(
@@ -1713,6 +2540,167 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    // Estimated Go quota: the note, per-model used/remaining money, three bars each, colors, server order, unlimited.
+    test('kuota OpenCode Go: catatan estimasi, bar 5 jam/7 hari/30 hari, warna, urutan kiriman', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubOpenCodeAccount(page, { go: GO_QUOTA, usage: GO_USAGE });
+        await tap(page, '#btn-account');
+        await page.waitFor(() => document.querySelectorAll('#account-body .oc-go-row').length === 5, { timeoutMs: 8000, message: 'lima baris kuota Go' });
+        await settle(page, 'account-modal');
+        const r = await page.eval(() => {
+          const body = document.querySelector('#account-body');
+          const text = body.textContent;
+          return {
+            title: body.querySelector('.oc-go .acct-title b')?.textContent ?? '',
+            note: body.querySelector('.oc-go-note')?.textContent ?? '',
+            afterLocalUsage: text.indexOf('Pemakaian lokal OpenCode') >= 0 && text.indexOf('Pemakaian lokal OpenCode') < text.indexOf('Kuota OpenCode Go'),
+            rows: [...body.querySelectorAll('.oc-go-row')].map((li) => ({
+              model: li.querySelector('.oc-go-model').textContent,
+              money: li.querySelector('.oc-go-money').textContent,
+              wins: [...li.querySelectorAll('.oc-go-win')].map((w) => ({
+                label: w.querySelector('.oc-go-win-label').textContent,
+                pct: w.querySelector('.oc-go-pct').textContent,
+                tone: w.querySelector('.oc-go-bar i').className,
+                width: w.querySelector('.oc-go-bar i').style.width,
+                aria: w.querySelector('.oc-go-bar').getAttribute('aria-label'),
+                now: w.querySelector('.oc-go-bar').getAttribute('aria-valuenow'),
+                height: getComputedStyle(w.querySelector('.oc-go-bar')).height,
+              })),
+            })),
+            toggle: Boolean(body.querySelector('[data-act="oc-go-all"]')),
+            page: text,
+          };
+        });
+        assert.equal(r.title, 'Kuota OpenCode Go');
+        assert.match(r.note, /Perkiraan/, 'disebut perkiraan, bukan kuota resmi');
+        assert.match(r.note, /harga list/);
+        assert.match(r.note, /\$10\/bulan/);
+        assert.match(r.note, /Plus\/Teams lebih tinggi/);
+        assert.equal(r.afterLocalUsage, true, 'seksi Go tepat setelah pemakaian lokal');
+        assert.deepEqual(r.rows.map((x) => x.model), ['DeepSeek V4.1 Flash', 'GLM 5.3', 'Kimi K3', 'Model Gratis', 'Model Tanpa Tabel'], 'urutan kiriman (30 hari tertinggi dulu) tidak diacak');
+        assert.equal(r.rows[0].money, 'terpakai $9.60 / $10.00 · sisa $0.40');
+        assert.equal(r.rows[1].money, 'terpakai $8.10 / $10.00 · sisa $1.90');
+        assert.deepEqual(r.rows[0].wins.map((w) => w.label), ['5 jam', '7 hari', '30 hari']);
+        assert.deepEqual(r.rows[0].wins.map((w) => w.pct), ['12%', '80%', '96%'], 'persen dibulatkan');
+        assert.deepEqual(r.rows[0].wins.map((w) => w.tone), ['ok', 'warn', 'bad'], 'hijau <70%, kuning 70–90%, merah >90%');
+        assert.deepEqual(r.rows[0].wins.map((w) => w.width), ['12%', '80%', '96%']);
+        assert.equal(r.rows[0].wins[2].aria, 'DeepSeek V4.1 Flash · 30 hari · 96%', 'label aksesibel: model + jendela + persen');
+        assert.equal(r.rows[0].wins[2].now, '96');
+        assert.deepEqual(r.rows[0].wins.map((w) => w.height), ['5px', '5px', '5px'], 'bar tipis');
+        assert.deepEqual(r.rows[1].wins.map((w) => w.tone), ['ok', 'ok', 'warn'], '81% masih kuning');
+        assert.match(r.rows[3].money, /tak terbatas/, 'model tanpa limit: tak terbatas');
+        assert.equal(r.rows[3].money, 'terpakai $0.50 / tak terbatas · sisa tak terbatas');
+        assert.equal(r.rows[4].money, 'terpakai $0.60 / batas belum diketahui', 'limit tak dikenal bukan "tak terbatas"');
+        assert.equal(r.toggle, false, 'lima model: tanpa tombol Tampilkan semua');
+        assert.doesNotMatch(r.page, /undefined|NaN|null/);
+        assert.equal(await page.eval(horizontalOverflow), null);
+        await page.press('Escape');
+      } finally {
+        await restoreOpenCodeAccount(page);
+      }
+    });
+
+    // Ten models: the list stops at 8 behind "Tampilkan semua", bars cap at 100%, long names never widen the dialog.
+    test('kuota OpenCode Go: top 8 + Tampilkan semua, bar dibatasi 100%, nama panjang tidak melebar', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubOpenCodeAccount(page, { go: GO_MANY, usage: GO_USAGE });
+        await tap(page, '#btn-account');
+        await page.waitFor(() => document.querySelectorAll('#account-body .oc-go-row').length === 8, { timeoutMs: 8000, message: 'delapan baris pertama' });
+        const collapsed = await page.eval(() => {
+          const body = document.querySelector('#account-body');
+          const first = body.querySelector('.oc-go-row');
+          const win30 = first.querySelectorAll('.oc-go-win')[2];
+          const card = document.querySelector('#account-modal .modal-card');
+          const list = body.querySelector('.oc-go');
+          return {
+            models: [...body.querySelectorAll('.oc-go-model')].map((b) => b.textContent),
+            pct: win30.querySelector('.oc-go-pct').textContent,
+            width: win30.querySelector('.oc-go-bar i').style.width,
+            toggle: body.querySelector('[data-act="oc-go-all"]')?.textContent ?? '',
+            expanded: body.querySelector('[data-act="oc-go-all"]')?.getAttribute('aria-expanded'),
+            wrap: getComputedStyle(body.querySelector('.oc-go-model')).overflowWrap,
+            cardX: card.scrollWidth <= card.clientWidth,
+            listX: list.scrollWidth <= list.clientWidth,
+          };
+        });
+        assert.equal(collapsed.models.length, 8);
+        assert.equal(collapsed.toggle, 'Tampilkan semua (10)');
+        assert.equal(collapsed.expanded, 'false');
+        assert.equal(collapsed.pct, '120%', 'persen asli tetap tampil');
+        assert.equal(collapsed.width, '100%', 'lebar bar dibatasi 100%');
+        assert.equal(collapsed.wrap, 'anywhere', 'nama panjang boleh patah di mana saja');
+        assert.equal(collapsed.cardX, true, 'dialog tidak melebar');
+        assert.equal(collapsed.listX, true, 'daftar tidak melebar');
+        assert.equal(await page.eval(horizontalOverflow), null);
+
+        await page.click('#account-body [data-act="oc-go-all"]');
+        await page.waitFor(() => document.querySelectorAll('#account-body .oc-go-row').length === 10, { timeoutMs: 4000, message: 'sepuluh baris setelah Tampilkan semua' });
+        assert.equal(await page.eval(() => document.querySelector('#account-body [data-act="oc-go-all"]').getAttribute('aria-expanded')), 'true');
+        assert.match(await page.eval(() => document.querySelector('#account-body [data-act="oc-go-all"]').textContent), /Tampilkan lebih sedikit/);
+        await page.click('#account-body [data-act="oc-go-all"]');
+        await page.waitFor(() => document.querySelectorAll('#account-body .oc-go-row').length === 8, { timeoutMs: 4000, message: 'kembali delapan baris' });
+        assert.equal(await page.eval(horizontalOverflow), null);
+        await page.press('Escape');
+      } finally {
+        await restoreOpenCodeAccount(page);
+      }
+    });
+
+    // Hidden without Go (missing/false), the empty state when available, and one providers call for open + double refresh.
+    test('kuota OpenCode Go: tersembunyi tanpa Go, state kosong, buka panel & refresh tidak dobel', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubOpenCodeAccount(page, { go: GO_QUOTA, usage: GO_USAGE });
+        // First open loads the panel; closing and reopening must fetch once more (fresh quota, not the cached body).
+        await tap(page, '#btn-account');
+        await page.waitFor((name) => window.__ocAcct.providerDone >= 1 && [...document.querySelectorAll('#account-body .oc-go-model')].some((b) => b.textContent === name), { timeoutMs: 8000, message: 'kuota Go saat panel dibuka' }, 'DeepSeek V4.1 Flash');
+        assert.match(await page.eval(() => document.querySelector('#account-body').textContent), /Kuota OpenCode Go/);
+        await page.press('Escape');
+        await page.waitFor(() => document.querySelector('#account-modal').hidden, { timeoutMs: 2000, message: 'panel tertutup' });
+        const quiet = await page.eval(() => ({ done: window.__ocAcct.providerDone, calls: window.__ocAcct.providerCalls }));
+        await tap(page, '#btn-account');
+        await page.waitFor((n) => window.__ocAcct.providerDone === n + 1, { timeoutMs: 8000, message: 'satu permintaan providers saat panel dibuka ulang' }, quiet.done);
+        await page.waitFor((name) => [...document.querySelectorAll('#account-body .oc-go-model')].some((b) => b.textContent === name), { timeoutMs: 4000, message: 'kuota segar setelah panel dibuka ulang' }, 'DeepSeek V4.1 Flash');
+        assert.equal(await page.eval(() => window.__ocAcct.providerCalls), quiet.calls + 1, 'membuka panel menyegarkan kuota sekali');
+
+        // available:false → the whole section is gone, the provider list stays.
+        await page.eval(() => (window.__ocAcct.go = { ...window.__ocAcct.go, available: false }));
+        await page.click('#account-body [data-act="oc-refresh"]');
+        await page.waitFor(() => !document.querySelector('#account-body .oc-go'), { timeoutMs: 4000, message: 'seksi Go tersembunyi (available:false)' });
+        assert.match(await page.eval(() => document.querySelector('#account-body').textContent), /Provider OpenCode/);
+        assert.equal(await page.eval(() => Boolean(document.querySelector('#account-body [data-act="oc-refresh"]'))), true);
+
+        // available but no models → its own message.
+        await page.eval(() => (window.__ocAcct.go = { plan: 'go', available: true, note: '', models: [] }));
+        await page.click('#account-body [data-act="oc-refresh"]');
+        await page.waitFor(() => /Belum ada pemakaian OpenCode Go yang tercatat\./.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 4000, message: 'state kosong Go' });
+        const empty = await page.eval(() => ({ rows: document.querySelectorAll('#account-body .oc-go-row').length, toggle: Boolean(document.querySelector('[data-act="oc-go-all"]')) }));
+        assert.deepEqual(empty, { rows: 0, toggle: false });
+
+        // A server without `go` at all: still no section (and no leftover markup).
+        await page.eval(() => (window.__ocAcct.go = null));
+        await page.click('#account-body [data-act="oc-refresh"]');
+        await page.waitFor(() => !document.querySelector('#account-body .oc-go'), { timeoutMs: 4000, message: 'seksi Go tersembunyi (go tidak ada)' });
+        assert.doesNotMatch(await page.eval(() => document.querySelector('#account-body').textContent), /Kuota OpenCode Go/);
+
+        // Two quick refresh clicks, one providers request: single-flight.
+        await page.eval(() => {
+          window.__ocAcct.providerCalls = 0;
+          window.__ocAcct.providerDone = 0;
+          const btn = () => document.querySelector('#account-body [data-act="oc-refresh"]');
+          btn().click();
+          btn().click();
+        });
+        await page.waitFor(() => window.__ocAcct.providerDone >= 1, { timeoutMs: 4000, message: 'refresh selesai' });
+        assert.deepEqual(await page.eval(() => ({ calls: window.__ocAcct.providerCalls, done: window.__ocAcct.providerDone })), { calls: 1, done: 1 }, 'klik ganda → satu permintaan providers');
+        await page.press('Escape');
+      } finally {
+        await restoreOpenCodeAccount(page);
+      }
+    });
+
     test('antrian: alasan "akun berubah" punya label dan satu toast', async () => {
       await ensureApp(page, `#${projectId}`);
       try {
@@ -1758,7 +2746,7 @@ for (const vp of VIEWPORTS) {
           const { renderComposer } = await import('/js/features/composer.js');
           const project = state.active;
           window.__stPrev = { had: project in state.statuses, value: state.statuses[project] };
-          const base = { ...(state.statuses[project] ?? {}), model: 'opencode-go/kimi-k3' };
+          const base = { ...(state.statuses[project] ?? {}), model: 'opencode-go/kimi-k3', activeModel: null };
           state.statuses[project] = { ...base, modelStale: true };
           renderComposer();
           const box = document.querySelector('#model-stale');

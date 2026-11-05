@@ -1,6 +1,7 @@
 // Central state: project registry, per-project chat/events/status, approvals, SSE broadcast, persistence.
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { BUDGET_KEYS, BUDGET_MAX_USD, cents, cleanLimits } from './budget.js';
 import { CHAT_LIMIT, ChatStore, isChatId } from './chat-store.js';
 import { EFFORT_LEVELS } from './effort.js';
 import { MODEL_TIERS } from './model-auto.js';
@@ -171,6 +172,8 @@ export class Hub {
     this.legacyChats = null; // migration failed: the raw `chats` of state.json, written back (old format) this run
     this.migrationSeq = 0; // highest id handed out by the migration (repeated ids renumbered)
     this.persisted = this.load();
+    // A hand-edited or older state.json can hold anything in the budget: only a valid limit survives (else off).
+    this.persisted.budget = cleanLimits(this.persisted.budget);
     this.closeStaleReplies();
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
@@ -183,7 +186,7 @@ export class Hub {
     // turns: the turn running right now per project (written when it starts, removed when it ends); one left
     // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
     // the user continues or dismisses them (see recoverTurns / interruptTurn).
-    const empty = { roots: [], custom: [], favorites: [], settings: {}, sessions: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', workspaces: {} };
+    const empty = { roots: [], custom: [], favorites: [], settings: {}, sessions: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', workspaces: {}, budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null } };
     let stored = {};
     let parsedOk = false;
     try {
@@ -527,6 +530,41 @@ export class Hub {
     if (patch.agent === '' || (typeof patch.agent === 'string' && /^[\w.-]{1,60}$/.test(patch.agent))) next.agent = patch.agent;
     if (typeof patch.team === 'boolean') next.team = patch.team;
     return next;
+  }
+
+  /**
+   * The stored global usage budget with the valid fields of `patch` applied (💰 Batas pemakaian): only dailyUsd /
+   * weeklyUsd / monthlyUsd, each a dollar amount 0.01…10000 rounded to cents; null, '' or 0 turns a limit off.
+   * A malformed value is ignored (the stored one stays), so a hand-edited state.json can never put a limit out of
+   * range; the route validates first and answers 400 (src/budget.js cleanBudgetPatch).
+   */
+  cleanBudget(patch) {
+    const next = cleanLimits(this.persisted?.budget);
+    if (!isObject(patch)) return next;
+    for (const key of BUDGET_KEYS) {
+      if (!(key in patch)) continue;
+      const raw = patch[key];
+      if (raw === null || raw === '' || raw === 0) {
+        next[key] = null;
+        continue;
+      }
+      const value = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() ? Number(raw.trim().replace(',', '.')) : NaN;
+      if (!Number.isFinite(value) || value < 0 || value > BUDGET_MAX_USD) continue; // the stored value stays
+      next[key] = value > 0 ? cents(value) : null;
+    }
+    return next;
+  }
+
+  /**
+   * Saves the global usage budget and tells open pages (`budget` event; a client fetches the spending itself with
+   * POST /api/budget). Written at once: a limit someone just set must survive a crash right after it.
+   * @returns {{ dailyUsd: number|null, weeklyUsd: number|null, monthlyUsd: number|null }} the budget now stored
+   */
+  setBudget(patch) {
+    this.persisted.budget = this.cleanBudget(patch);
+    this.save();
+    this.broadcast('budget', this.persisted.budget);
+    return this.persisted.budget;
   }
 
   updateSettings(id, patch) {

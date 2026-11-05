@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
@@ -37,6 +37,9 @@ before(async () => {
       PROJECTS_ROOT: projects,
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
+      // A fake OpenCode: no `acp` turn is ever started here, it only answers the provider list (/api/opencode/providers)
+      // and `--version`. A `.mjs` bin keeps the automatic OpenCode contract check off (server.js OC_CHECK_AUTO).
+      OPENCODE_BIN: path.join(APP, 'test-support', 'fake-acp.mjs'),
       FAKE_PLUGIN_STATE: path.join(TMP, 'plugins.json'),
       OFFICE_GH_BIN: path.join(APP, 'test-support', 'fake-gh.mjs'),
       FAKE_GH_STATE: path.join(TMP, 'gh-login'),
@@ -164,6 +167,107 @@ test('security headers: strict CSP (no inline script), no referrer, isolated ope
     assert.doesNotMatch(html, /\son[a-z]+\s*=/i, `${p}: inline event handler`);
   }
   assert.equal((await fetch(`${BASE}/js/pair.js`)).status, 200);
+});
+
+test('🩺 health: /api/health on the laptop returns the report (checks + checklist), never on plain WiFi', async () => {
+  await api('/api/account', { force: true }); // the profile is loaded lazily: make sure the account check has an answer
+  const res = await api('/api/health', {});
+  assert.equal(res.status, 200);
+  const health = res.body.health;
+  assert.deepEqual(Object.keys(health).sort(), ['app', 'at', 'checklist', 'checks', 'data', 'errors']);
+  assert.equal(health.app.version, JSON.parse(readFileSync(path.join(APP, 'package.json'), 'utf8')).version);
+  assert.equal(health.app.pid, (await (await fetch(`${BASE}/health`)).json()).pid);
+  assert.equal(health.app.engine, 'claude');
+  assert.equal(health.app.port, PORT);
+  assert.deepEqual(health.checks.map((c) => c.id), ['claude', 'opencode', 'projects', 'backup', 'remote', 'errors', 'data']);
+  for (const check of health.checks) {
+    assert.equal(typeof check.ok, 'boolean', check.id);
+    assert.equal(typeof check.label, 'string', check.id);
+    assert.equal(typeof check.detail, 'string', check.id);
+    assert.doesNotMatch(check.detail, /\n/, `${check.id}: one line`);
+  }
+  const claude = health.checks.find((c) => c.id === 'claude');
+  assert.equal(claude.ok, true, claude.detail);
+  assert.match(claude.detail, /tester@example\.com/);
+  assert.equal(health.checks.find((c) => c.id === 'opencode').ok, true, 'the fake OpenCode is installed');
+  const projects = health.checks.find((c) => c.id === 'projects');
+  assert.equal(projects.ok, true, projects.detail);
+  assert.match(projects.detail, /1 project/, 'toko counts, the demo does not');
+  assert.deepEqual(health.checklist.map((c) => c.id), ['login', 'project', 'backup', 'https', 'opencode']);
+  assert.equal(health.checklist.find((c) => c.id === 'login').done, true);
+  assert.equal(health.checklist.find((c) => c.id === 'project').done, true);
+  assert.deepEqual(Object.keys(health.data).sort(), ['bytes', 'dir', 'files']);
+  assert.equal(path.resolve(health.data.dir), path.join(TMP, 'data'));
+  assert.ok(health.data.bytes >= 0 && health.data.files >= 0);
+  assert.equal(typeof health.errors.count24h, 'number');
+  assert.equal(typeof health.errors.last === 'string' || health.errors.last === null, true);
+  // Laptop + Tailscale only: a paired phone on plain WiFi is refused by the default-deny gate (not on the allowlist).
+  const { wifiAllows } = await import('../src/remote.js');
+  assert.equal(wifiAllows('/api/health'), false);
+});
+
+test('💰 batas pemakaian: /api/budget shape, save validation + persistence, health line, refused over plain WiFi', async () => {
+  const storedBudget = () => {
+    try {
+      return JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8')).budget ?? null;
+    } catch {
+      return null; // nothing saved yet
+    }
+  };
+  const view = (await api('/api/budget', {})).body.budget;
+  assert.deepEqual(Object.keys(view).sort(), ['budget', 'note', 'spend', 'windows']);
+  assert.deepEqual(view.budget, { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, 'no limit yet');
+  for (const unit of ['day', 'week', 'month']) {
+    assert.deepEqual(Object.keys(view.spend[unit]).sort(), ['known', 'rows', 'usd'], unit);
+    assert.deepEqual(Object.keys(view.windows[unit]).sort(), ['limit', 'percent', 'state', 'usd'], unit);
+    assert.deepEqual([view.windows[unit].limit, view.windows[unit].percent, view.windows[unit].state], [null, 0, 'off'], unit);
+  }
+  assert.match(view.note, /OpenCode Go/);
+
+  // validation: a bad limit is a 400 with an Indonesian message, and nothing is stored
+  for (const [body, message] of [[{ dailyUsd: 'abc' }, /angka dolar/], [{ weeklyUsd: -1 }, /antara \$0/], [{ monthlyUsd: 10001 }, /antara \$0/]]) {
+    const res = await api('/api/budget/save', body);
+    assert.equal(res.status, 400, JSON.stringify(body));
+    assert.match(res.body.error, message);
+  }
+  assert.equal(storedBudget()?.dailyUsd ?? null, null, 'a refused save changes nothing');
+
+  // save: only the keys sent change; the answer is the fresh view; state.json is written at once
+  mark = seen.length;
+  const saved = await api('/api/budget/save', { dailyUsd: 20, monthlyUsd: 100 });
+  assert.equal(saved.status, 200);
+  await waitFor((t) => t === 'budget', 3000); // open pages are told (a client refreshes itself)
+  const b = saved.body.budget;
+  assert.deepEqual(b.budget, { dailyUsd: 20, weeklyUsd: null, monthlyUsd: 100 });
+  assert.equal(b.windows.day.limit, 20);
+  assert.deepEqual([b.windows.week.limit, b.windows.week.state], [null, 'off']);
+  // the percentage always matches the ledger behind it (earlier fake turns may have left costs)
+  for (const unit of ['day', 'week', 'month']) {
+    const w = b.windows[unit];
+    assert.ok(w.usd >= 0, unit);
+    if (!w.limit) continue;
+    assert.ok(Math.abs(w.percent - w.usd / w.limit) < 1e-3, `${unit}: ${w.percent} vs ${w.usd}/${w.limit}`);
+    assert.equal(w.state, w.usd / w.limit >= 1 ? 'over' : w.usd / w.limit >= 0.8 ? 'warn' : 'ok', unit);
+  }
+  assert.deepEqual(storedBudget(), { dailyUsd: 20, weeklyUsd: null, monthlyUsd: 100 }, 'written right away');
+
+  // an absent key keeps its limit, an empty one clears it, 0 is off
+  assert.deepEqual((await api('/api/budget/save', { weeklyUsd: '' })).body.budget.budget, { dailyUsd: 20, weeklyUsd: null, monthlyUsd: 100 });
+  assert.deepEqual((await api('/api/budget/save', { dailyUsd: 0 })).body.budget.budget, { dailyUsd: null, weeklyUsd: null, monthlyUsd: 100 });
+  assert.deepEqual(storedBudget(), { dailyUsd: null, weeklyUsd: null, monthlyUsd: 100 });
+
+  // 🩺 health: the budget line appears exactly while a limit is set
+  const withLimit = (await api('/api/health', {})).body.health;
+  const check = withLimit.checks.find((c) => c.id === 'budget');
+  assert.ok(check, 'a set limit adds the budget check');
+  assert.equal(check.label, 'Batas pemakaian');
+  assert.match(check.detail, /bulan ini \$\d+,\d{2} \/ \$100,00 \(\d+%\)/);
+  await api('/api/budget/save', { monthlyUsd: null });
+  assert.equal((await api('/api/health', {})).body.health.checks.some((c) => c.id === 'budget'), false, 'no limit, no line');
+
+  // laptop + Tailscale only: not on the plain-WiFi read allowlist (server.js refuses a read-only phone first)
+  const { wifiAllows } = await import('../src/remote.js');
+  for (const p of ['/api/budget', '/api/budget/save']) assert.equal(wifiAllows(p), false, `${p}: refused over sniffable WiFi`);
 });
 
 test('index.html preloads every module app.js imports (no waterfall on a phone)', async () => {
@@ -590,6 +694,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     '/api/team',
     '/api/team/roster/save', // 👥 Kelola tim: the team is readable, changing it is an action
     '/api/demo',
+    '/api/health', // 🩺 the report names the account and folders: laptop + Tailscale only
     '/api/projects/refresh',
     '/api/account/login/code',
     '/api/account/login/cancel',
@@ -770,6 +875,31 @@ test('account: profile, plan usage and per-account token report', async () => {
   }
 });
 
+test('audit akun: the file is compacted once it grows (old actions dropped, recent kept, torn lines skipped)', async () => {
+  const { pruneAuth, recentAuth, AUDIT_FILE } = await import('../src/auth-audit.js');
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-audit-prune-'));
+  const now = Date.UTC(2026, 10, 5, 12, 0, 0);
+  try {
+    const lines = [];
+    for (let i = 0; i < 900; i++) {
+      const old = i < 400;
+      lines.push(JSON.stringify({ ts: old ? now - 200 * 86400000 : now - i * 1000, action: 'logout', engine: 'claude', actor: 'laptop', ok: true, detail: 'x'.repeat(200) }));
+    }
+    lines.splice(500, 0, '{"ts":1,"action":"torn');
+    writeFileSync(path.join(dir, AUDIT_FILE), `${lines.join('\n')}\n`);
+    assert.ok(statSync(path.join(dir, AUDIT_FILE)).size > 256 * 1024, 'the fixture is over the compaction threshold');
+    assert.equal(pruneAuth(dir, now), true, 'compacted');
+    const after = statSync(path.join(dir, AUDIT_FILE)).size;
+    assert.ok(after < 256 * 1024, `smaller after compaction (${after} B)`);
+    const kept = recentAuth(100, { dataDir: dir });
+    assert.ok(kept.length > 0 && kept.length <= 100);
+    assert.ok(kept.every((e) => e.ts >= now - 180 * 86400000), 'actions older than 180 days are gone');
+    assert.doesNotMatch(readFileSync(path.join(dir, AUDIT_FILE), 'utf8'), /"action":"torn/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('audit akun: the module never writes an email or a key, skips a torn line, keeps the contract', async () => {
   const { recordAuth, recentAuth, AUDIT_FILE } = await import('../src/auth-audit.js');
   const dir = mkdtempSync(path.join(tmpdir(), 'office-audit-'));
@@ -888,6 +1018,35 @@ test('model prices: Go list prices from the catalog cache + observed prices from
   assert.ok(Array.isArray(res.body.observed) && res.body.observed.every((o) => o.tokens > 0));
   assert.equal((await api('/api/models/prices', { from: 'kemarin' })).status, 400);
   assert.equal((await api('/api/models/prices', { from: Date.now() + 60_000 })).status, 400, 'from never points into the future');
+});
+
+test('OpenCode Go allowance: the providers answer carries an estimate from the ledger × the catalog cache', async () => {
+  // The same daily cache the route reads (no network in tests). Its hy4 price is what the seeded OpenCode row pays.
+  writeFileSync(
+    path.join(TMP, 'data', 'model-prices.json'),
+    JSON.stringify({
+      fetchedAt: Date.now(),
+      source: 'opencode.ai',
+      models: { hy4: { name: 'HY4', input: 1, output: 2, cacheRead: 0, cacheWrite: 0, peakFactor: 1, hasPeak: false } },
+    }),
+  );
+  const res = await api('/api/opencode/providers', {});
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.ok(Array.isArray(res.body.connected) && Array.isArray(res.body.available), 'the provider list is still there');
+  assert.equal(typeof res.body.usage.week.total, 'number', 'the local usage rows are still there too');
+  const go = res.body.go;
+  assert.deepEqual(Object.keys(go).sort(), ['available', 'models', 'note', 'plan']);
+  assert.equal(go.plan, 'go');
+  assert.equal(go.available, true);
+  assert.ok(Array.isArray(go.models));
+  assert.match(go.note, /Perkiraan/);
+  // The OpenCode row seeded in the phone test (model opencode-go/hy4) is priced from its tokens.
+  const hy4 = go.models.find((m) => m.model === 'hy4');
+  assert.ok(hy4, JSON.stringify(go.models));
+  assert.equal(hy4.limit, 60);
+  assert.ok(hy4.used5h > 0 && hy4.used30d > 0, 'the tokens spent are estimated, not reported by OpenCode (cost 0)');
+  assert.ok(hy4.remaining < 60 && hy4.remaining > 59, `remaining ${hy4.remaining}`);
+  assert.ok(!JSON.stringify(go).includes('tester@example.com'), 'no account identity in the estimate');
 });
 
 test('purge removes a project that should never have been listed, but only with its id as confirmation', async () => {
@@ -1548,9 +1707,11 @@ test('Model Auto (Claude Code): the tier model reaches the running process; a ma
   const res = await api(`/api/projects/${id}/prompt`, { text: 'perbaiki bug kecil' });
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.autoEffort, null, 'Effort Auto is off: no level applied');
-  assert.deepEqual(res.body.autoModel, { tier: 'kuat', label: 'Kuat', model: 'opus' });
+  assert.equal(res.body.autoModel.tier, 'kuat');
+  assert.equal(res.body.autoModel.model, 'opus');
+  assert.ok(res.body.autoModel.reason, 'the classifier reason rides along');
   const note = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && o.modelAuto === true);
-  assert.equal(note.text, '🤖 Model Auto: Kuat → opus');
+  assert.match(note.text, /^🤖 Model Auto: Kuat → opus/);
   st = (await snapshot()).statuses[id];
   assert.equal(st.model, 'opus');
   assert.equal(st.modelAuto, true, 'Auto stays on after its own switch');

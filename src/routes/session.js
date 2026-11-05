@@ -86,7 +86,7 @@ export function register(router) {
           if (tier.model !== settings.model) {
             patch.model = tier.model;
             patch.modelAuto = true;
-            autoModel = { tier: tier.key, label: tier.label, model: tier.model };
+            autoModel = { tier: tier.key, label: tier.label, model: tier.model, reason: auto.reason ?? '' };
           }
         }
         if (Object.keys(patch).length) {
@@ -96,8 +96,11 @@ export function register(router) {
       }
     }
     session.prompt((text || 'Lihat file terlampir.').slice(0, 50000), attachments, autoEffort || autoModel ? { ...(autoEffort && { autoEffort }), ...(autoModel && { autoModel }) } : {});
-    // After the user's bubble, before the reply: one line saying which model Auto picked.
-    if (autoModel && !autoModel.skipped) hub.chat(project.id, { kind: 'info', modelAuto: true, text: `🤖 Model Auto: ${autoModel.label} → ${shortModelLabel(autoModel.model)}` });
+    // After the user's bubble, before the reply: one line saying which model Auto picked and why.
+    if (autoModel && !autoModel.skipped) {
+      const why = String(autoModel.reason ?? '').trim().slice(0, 80);
+      hub.chat(project.id, { kind: 'info', modelAuto: true, text: `🤖 Model Auto: ${autoModel.label} → ${shortModelLabel(autoModel.model)}${why ? ` — ${why}` : ''}` });
+    }
     return json(res, 200, { ok: true, autoEffort, autoModel });
   }));
   // ✂ Ringkas konteks: the engine's own /compact as a normal prompt, so Claude Code's compact_boundary/auto-compact

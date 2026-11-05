@@ -4,10 +4,12 @@ import { Router } from './router.js';
 import * as account from './account.js';
 import * as approvals from './approvals.js';
 import * as backup from './backup.js';
+import * as budget from './budget.js';
 import * as claudeCheck from './claude-check.js';
 import * as extensions from './extensions.js';
 import * as files from './files.js';
 import * as git from './git.js';
+import * as health from './health.js';
 import * as memory from './memory.js';
 import * as misc from './misc.js';
 import * as opencodeCheck from './opencode-check.js';
@@ -35,12 +37,14 @@ export function buildRouter() {
     files.register,
     memory.register,
     git.register,
+    health.register,
     permissions.register,
     queue.register,
     approvals.register,
     templates.register,
     team.register,
     account.register,
+    budget.register,
     remote.register,
     push.register,
     backup.register,

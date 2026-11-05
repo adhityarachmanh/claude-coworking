@@ -85,6 +85,12 @@ before(async () => {
   });
   token = (await (await fetch(BASE)).text()).match(/office-token" content="([^"]+)"/)[1];
   stream = listen();
+  // The Go allowance in /api/opencode/providers prices the ledger with this daily cache (src/model-prices.js):
+  // a fresh fixture keeps every providers call off the network.
+  writeFileSync(
+    path.join(TMP, 'data', 'model-prices.json'),
+    JSON.stringify({ fetchedAt: Date.now(), source: 'opencode.ai', models: { hy4: { name: 'HY4', input: 0.5, output: 2, cacheRead: 0.05, cacheWrite: 0.1, peakFactor: 1, hasPeak: false } } }),
+  );
 });
 
 after(async () => {
@@ -1194,9 +1200,11 @@ test('Model Auto: the classified tier becomes the applied model; a manual pick e
   const res = await api(`/api/projects/${id}/prompt`, { text: 'perbaiki bug kecil' });
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.autoEffort, null, 'Effort Auto is off: no level applied');
-  assert.deepEqual(res.body.autoModel, { tier: 'kuat', label: 'Kuat', model: 'opencode-go/kimi-k3.1-pro' });
+  assert.equal(res.body.autoModel.tier, 'kuat');
+  assert.equal(res.body.autoModel.model, 'opencode-go/kimi-k3.1-pro');
+  assert.ok(res.body.autoModel.reason, 'the classifier reason rides along');
   const note = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && o.modelAuto === true);
-  assert.equal(note.text, '🤖 Model Auto: Kuat → kimi-k3.1-pro');
+  assert.match(note.text, /^🤖 Model Auto: Kuat → kimi-k3\.1-pro/);
   st = (await snapshot()).statuses[id];
   assert.equal(st.model, 'opencode-go/kimi-k3.1-pro', 'the tier model is what the session applies');
   assert.equal(st.modelAuto, true, 'Auto stays on after its own switch');
@@ -1252,14 +1260,16 @@ test('Model Auto: a custom ladder replaces a tier, an invalid model is dropped, 
 
   const res = await api(`/api/projects/${id}/prompt`, { text: 'perbaiki bug kecil' });
   assert.equal(res.status, 200, JSON.stringify(res.body));
-  assert.deepEqual(res.body.autoModel, { tier: 'kuat', label: 'Kuat', model: 'opencode-go/kimi-k3' }, 'the classified tier uses the custom model');
+  assert.equal(res.body.autoModel.tier, 'kuat');
+  assert.equal(res.body.autoModel.model, 'opencode-go/kimi-k3', 'the classified tier uses the custom model');
   assert.equal((await snapshot()).statuses[id].model, 'opencode-go/kimi-k3', 'the custom model is what the session applies');
   await settle(id);
 
   // '' clears the slot: the default model of that tier comes back on the next prompt.
   await api(`/api/projects/${id}/settings`, { modelTiers: { opencode: { kuat: '' } } });
   const back = await api(`/api/projects/${id}/prompt`, { text: 'perbaiki bug lain' });
-  assert.deepEqual(back.body.autoModel, { tier: 'kuat', label: 'Kuat', model: 'opencode-go/kimi-k3.1-pro' }, 'cleared slot → the default');
+  assert.equal(back.body.autoModel.tier, 'kuat');
+  assert.equal(back.body.autoModel.model, 'opencode-go/kimi-k3.1-pro', 'cleared slot → the default');
   await settle(id);
   assert.equal((await snapshot()).statuses[id].model, 'opencode-go/kimi-k3.1-pro');
 
@@ -1300,9 +1310,10 @@ test('Model Auto: a prompt sent mid-turn keeps the model of the running turn (no
   await api(`/api/projects/${id}/settings`, { effortAuto: false, modelAuto: true, model: 'opencode-go/beam-free' });
   mark = seen.length;
   const first = await api(`/api/projects/${id}/prompt`, { text: 'tugas lama' });
-  assert.deepEqual(first.body.autoModel, { tier: 'kuat', label: 'Kuat', model: 'opencode-go/kimi-k3.1-pro' }, JSON.stringify(first.body));
+  assert.equal(first.body.autoModel.tier, 'kuat');
+  assert.equal(first.body.autoModel.model, 'opencode-go/kimi-k3.1-pro', JSON.stringify(first.body));
   const note = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && o.modelAuto === true);
-  assert.equal(note.text, '🤖 Model Auto: Kuat → kimi-k3.1-pro');
+  assert.match(note.text, /^🤖 Model Auto: Kuat → kimi-k3\.1-pro/);
   assert.equal((await snapshot()).statuses[id].busy, true, 'the turn is still running');
 
   const before = seen.filter((s) => s.type === 'chat' && s.obj.modelAuto === true).length;

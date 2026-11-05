@@ -1,8 +1,10 @@
 // Help, laptop settings (auto-start, shutdown), project folders and adding a project.
 import { api, toast } from '../core/api.js';
-import { $ } from '../core/dom.js';
+import { $, narrow } from '../core/dom.js';
 import { APP_NAME, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
+import { loadBudgetView, syncBudgetSection } from './budget.js';
+import { syncHealthButton } from './health.js';
 import { selectProject } from './picker.js';
 
 // The laptop dialog shows one section at a time; the phone keeps every panel stacked (CSS).
@@ -40,6 +42,8 @@ export function selectSettingsTab(tab = settingsTab) {
   for (const panel of document.querySelectorAll('#settings-modal [data-settings-panel]')) panel.classList.toggle('on', panel.dataset.settingsPanel === tab);
   const body = document.querySelector('#settings-modal .settings-body');
   if (body) body.scrollTop = 0;
+  // 💰 One request when the budget panel is shown (a phone shows every panel at once); the view is cached.
+  if (!$('#settings-modal')?.hidden && (tab === 'umum' || narrow.matches)) loadBudgetView();
 }
 
 export function renderRoots(config) {
@@ -74,6 +78,8 @@ export function initSettings() {
 
   $('#btn-settings').addEventListener('click', () => {
     $('#roots-input').value = state.config?.roots.join('\n') ?? '';
+    syncHealthButton(); // a WiFi phone may not call /api/health: the opener is hidden, not broken
+    syncBudgetSection(); // same for the 💰 budget section (read-only page: hidden)
     openModal('settings-modal');
     // After the other #btn-settings listeners (Spotify shows/hides its section): pick a tab that is available.
     requestAnimationFrame(() => selectSettingsTab());

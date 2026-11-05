@@ -134,6 +134,7 @@ before(async () => {
   put(path.join(A.claude, '.credentials.json'), '{"secret":"JANGAN-DIEKSPOR"}');
   put(path.join(A.claude, 'cache', 'x.json'), '{}');
   put(path.join(A.data, 'usage.jsonl'), `${usageRow(1)}\n${usageRow(2)}\n`);
+  put(path.join(A.data, 'usage-archive', 'usage-20260101-000000.jsonl'), `${usageRow(4)}\n`);
   // HTTPS certificate + key from `tailscale cert` (src/tls.js): machine-bound secrets, never in a backup
   put(path.join(A.data, 'tls', 'office.test.crt'), 'CERT-JANGAN-DIEKSPOR');
   put(path.join(A.data, 'tls', 'office.test.key'), 'KEY-JANGAN-DIEKSPOR');
@@ -205,7 +206,7 @@ test('export: a streamed .zip with every project, history, checkpoints, plans, s
   const state = JSON.parse(await zip.read(zip.entries.find((e) => e.name === 'office/state.json')));
   await zip.close();
   const enc = encodeProjectPath(cwdA.toko);
-  for (const want of [`claude/projects/${enc}/${S(1)}.jsonl`, `claude/projects/${enc}/${S(1)}/subagents/agent-x1.jsonl`, `claude/projects/${enc}/memory/MEMORY.md`, 'claude/history.jsonl', `claude/file-history/${S(1)}/abc123@v1`, 'claude/plans/rencana.md', 'office/state.json', 'office/usage.jsonl']) {
+  for (const want of [`claude/projects/${enc}/${S(1)}.jsonl`, `claude/projects/${enc}/${S(1)}/subagents/agent-x1.jsonl`, `claude/projects/${enc}/memory/MEMORY.md`, 'claude/history.jsonl', `claude/file-history/${S(1)}/abc123@v1`, 'claude/plans/rencana.md', 'office/state.json', 'office/usage.jsonl', 'office/usage-archive/usage-20260101-000000.jsonl']) {
     assert.ok(names.includes(want), `missing ${want}`);
   }
   assert.ok(!names.some((n) => /credentials|cache\//.test(n)), 'no credentials or caches');
@@ -273,10 +274,10 @@ test('import: folders remapped to the new home, merge rules, usage and prompt hi
   assert.equal(history[0].project, cwdB.toko);
   assert.equal(summary.history.added, 2);
 
-  // usage: one shared row, one from each side
+  // usage: one shared row, one from each side plus the rotated archive (merged through the ledger)
   const usage = readFileSync(path.join(B.data, 'usage.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).input);
-  assert.deepEqual(usage.sort(), [1, 2, 3]);
-  assert.equal(summary.usage.added, 1);
+  assert.deepEqual(usage.sort(), [1, 2, 3, 4]);
+  assert.equal(summary.usage.added, 2);
 
   // the app lists the history right away: toko (under the root) and kasir (added as its folder exists)
   assert.deepEqual(summary.projectsAdded, [cwdB.kasir]);
@@ -312,7 +313,7 @@ test('import again: idempotent (nothing added twice)', async () => {
   assert.equal(body.files.added + body.files.copies, 0, 'a .from-backup copy already holding these bytes is not made again');
   assert.equal(body.history.added, 0);
   assert.equal(body.usage.added, 0);
-  assert.equal(readFileSync(path.join(B.data, 'usage.jsonl'), 'utf8').trim().split('\n').length, 3);
+  assert.equal(readFileSync(path.join(B.data, 'usage.jsonl'), 'utf8').trim().split('\n').length, 4);
 });
 
 test('uploads over the limit are refused with 413 (declared size and streamed size)', async () => {

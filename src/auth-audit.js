@@ -6,7 +6,7 @@
 // A failed action is written too (ok: false), so the user can see a login that did not work.
 // Never a token, an API key, an OAuth code or an email: the detail is scrubbed and cut, and a caller must not pass
 // secrets in at all. A torn last line (a crash mid-append) is skipped when reading back, never a crash.
-import { appendFileSync, closeSync, mkdirSync, openSync, readSync, statSync } from 'node:fs';
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export const AUDIT_FILE = 'auth-audit.jsonl';
@@ -16,6 +16,10 @@ const PROVIDER = /^[\w.-]{1,100}$/;
 const ENGINES = new Set(['claude', 'opencode']);
 /** Only the tail is read: showing the last actions never means loading a file that grows forever. */
 const READ_MAX_BYTES = 256 * 1024;
+/** Retention: the audit is compacted once it passes this size, keeping 180 days / 2 000 newest actions. */
+const PRUNE_BYTES = 256 * 1024;
+const PRUNE_DAYS = 180;
+const PRUNE_MAX = 2000;
 
 const CONTROL = /[\u0000-\u001f\u007f]+/g;
 const EMAIL = /[^\s@<>()"']+@[^\s@<>()"']+\.[^\s@<>()"']{2,}/g;
@@ -75,11 +79,44 @@ export function recordAuth(entry, { dataDir = defaultDataDir() } = {}) {
   }
   try {
     mkdirSync(dataDir, { recursive: true });
-    appendFileSync(path.join(dataDir, AUDIT_FILE), `${JSON.stringify(clean)}\n`);
+    const file = path.join(dataDir, AUDIT_FILE);
+    appendFileSync(file, `${JSON.stringify(clean)}\n`);
+    pruneAuth(dataDir);
     return clean;
   } catch (err) {
     console.error(`Menulis audit akun gagal: ${err.message}`);
     return null;
+  }
+}
+
+/**
+ * Compact the audit file once it grows past PRUNE_BYTES: keep the last PRUNE_DAYS days (at most PRUNE_MAX actions),
+ * written to a temp file and renamed over it. Best effort: any failure leaves the old file untouched.
+ */
+export function pruneAuth(dataDir = defaultDataDir(), now = Date.now()) {
+  const file = path.join(dataDir, AUDIT_FILE);
+  try {
+    if (statSync(file).size < PRUNE_BYTES) return false;
+    const lines = readFileSync(file, 'utf8').split('\n');
+    const cutoff = now - PRUNE_DAYS * 24 * 60 * 60 * 1000;
+    const kept = [];
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if (!cleanAuthEntry(entry) || entry.ts < cutoff) continue;
+        kept.push(line);
+      } catch {
+        // torn/hand-edited line: dropped during compaction
+      }
+    }
+    const out = kept.slice(-PRUNE_MAX).join('\n');
+    const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+    writeFileSync(tmp, out ? `${out}\n` : '');
+    renameSync(tmp, file);
+    return true;
+  } catch {
+    return false;
   }
 }
 

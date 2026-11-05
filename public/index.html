@@ -662,6 +662,21 @@
             <div id="theme-seg" class="seg" role="group" aria-labelledby="theme-title"></div>
             <p id="theme-desc" class="muted">Ganti tampilan kantor pixel dan kostum tim. Disimpan di browser ini.</p>
           </section>
+          <hr />
+          <!-- 💰 Budget pemakaian global (features/budget.js, server POST /api/budget & /api/budget/save): laptop/Tailscale only -->
+          <section id="budget-section" class="budget-block" aria-labelledby="budget-title">
+            <b id="budget-title">💰 Budget pemakaian global</b>
+            <ul id="budget-rows" class="budget-rows" aria-live="polite" aria-busy="false"><li class="muted small">Memuat budget…</li></ul>
+            <div id="budget-form" class="budget-form">
+              <label class="budget-field"><span>Harian (USD)</span><input id="budget-daily" type="number" inputmode="decimal" min="0" max="10000" step="0.01" placeholder="tanpa batas" aria-describedby="budget-note budget-error" /></label>
+              <label class="budget-field"><span>Mingguan (USD)</span><input id="budget-weekly" type="number" inputmode="decimal" min="0" max="10000" step="0.01" placeholder="tanpa batas" aria-describedby="budget-note budget-error" /></label>
+              <label class="budget-field"><span>Bulanan (USD)</span><input id="budget-monthly" type="number" inputmode="decimal" min="0" max="10000" step="0.01" placeholder="tanpa batas" aria-describedby="budget-note budget-error" /></label>
+              <button type="button" id="budget-save" class="primary">Simpan</button>
+            </div>
+            <p id="budget-error" class="field-error" role="alert"></p>
+            <p id="budget-coverage" class="muted small" hidden></p>
+            <p id="budget-note" class="muted small">Batas biaya tercatat untuk semua project di laptop ini. Biaya dihitung dari harga list, bukan tagihan. OpenCode Go itu langganan: biaya tercatatnya sering $0, jadi budget ini terutama menghitung biaya Claude.</p>
+          </section>
           </div>
           <div class="settings-panel" id="settings-panel-tim" data-settings-panel="tim" role="tabpanel" aria-labelledby="settings-tab-tim">
           <button type="button" id="btn-roster" class="ghost team-names-btn" title="Pilih role bawaan yang punya meja di kantor">👥 Kelola tim (role aktif)</button>
@@ -768,6 +783,15 @@
             </div>
           </section>
           <hr />
+          <!-- 🩺 Kesehatan sistem (features/health.js, server POST /api/health): laptop/Tailscale only, a WiFi phone is refused -->
+          <section id="health-section" class="claude-check" aria-labelledby="health-section-title">
+            <b id="health-section-title">🩺 Kesehatan sistem</b>
+            <p class="muted small">Satu laporan: pemeriksaan server &amp; mesin, persiapan awal, ukuran data aplikasi, dan error 24 jam terakhir.</p>
+            <div class="backup-actions">
+              <button type="button" id="health-open" class="ghost" aria-haspopup="dialog">🩺 Kesehatan sistem</button>
+            </div>
+          </section>
+          <hr />
           <!-- 🧩 Claude Code update detector (features/claude-check.js, server src/claude-check.js; laptop only like this dialog) -->
           <section class="claude-check" aria-labelledby="cc-title" aria-describedby="cc-desc">
             <b id="cc-title">🧩 Kompatibilitas Claude Code</b>
@@ -821,6 +845,18 @@
           <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- 🩺 Kesehatan sistem (features/health.js): checks, onboarding checklist, app data size, 24h errors. Laptop/Tailscale only. -->
+    <div id="health-modal" class="modal" hidden>
+      <div class="modal-card health-card" role="dialog" aria-modal="true" aria-labelledby="health-title">
+        <div class="modal-head"><b id="health-title">🩺 Kesehatan sistem</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div id="health-body" class="health-body"></div>
+        <div class="health-actions">
+          <button type="button" id="health-refresh" class="ghost">↻ Periksa ulang</button>
+          <button type="button" id="health-close" class="ghost" data-close>Tutup</button>
+        </div>
       </div>
     </div>
 

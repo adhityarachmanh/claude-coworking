@@ -11,12 +11,14 @@ import { brain, scenes, stage } from './core/scenes.js';
 import { initViewMode } from './features/view-mode.js';
 import { initAppUpdate } from './features/app-update.js';
 import { initHandoff } from './features/handoff.js';
+import { initHealth } from './features/health.js';
 import { initRoleMap } from './features/role-map.js';
 import { connect } from './core/stream.js';
 import { initAccount } from './features/account.js';
 import { initAttachments } from './features/attachments.js';
 import { initBackup } from './features/backup.js';
 import { initBackupAuto } from './features/backup-auto.js';
+import { initBudget } from './features/budget.js';
 import { initChanges } from './features/changes.js';
 import { initChat } from './features/chat.js';
 import { initClaudeCheck } from './features/claude-check.js';
@@ -79,6 +81,7 @@ initTeam();
 initViewMode(); // 🧠 Mode Otak ↔ 🏢 Kantor
 initAppUpdate(); // ⬆ newer Adhit Office: banner + ⚙
 initHandoff(); // 🔁 /lanjut: context from the other engine
+initHealth(); // 🩺 Kesehatan sistem (⚙ → Sistem; laptop/Tailscale only)
 initRoleMap(); // 🧭 learned role mappings (👥 Kelola tim → 🧭)
 initRoster(); // 👥 Kelola tim (⚙, ⋯, Ctrl+P, /team)
 initStatusline();
@@ -91,6 +94,7 @@ initExtensions(); // 🧩 /plugin /agents /hooks
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initSettings();
+initBudget(); // 💰 budget pemakaian global (⚙ → Umum + 🩺 Kesehatan; laptop/Tailscale only)
 initTheme(); // before the first frame: the saved theme is drawn right away
 initBackup(); // after initSettings: its #btn-settings listener runs after the dialog's own
 initBackupAuto(); // ⏰ Backup otomatis in the same ⚙ section

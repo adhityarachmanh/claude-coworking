@@ -101,6 +101,7 @@ Harga OpenCode Go diambil dari katalog resmi `opencode.ai` dan disimpan di folde
 3. Di chat muncul `🤖 Model Auto: Seimbang → sonnet` saat model berganti. Pilihan model di daftar ikut berubah.
 4. Memilih model tertentu (atau **Default**) mematikan Auto. Saat tim sedang bekerja, model tidak diganti di tengah giliran.
 5. **Atur tangga…** (di bawah pilihan model saat Auto aktif): pilih model untuk **Hemat / Seimbang / Kuat / Maks** per mesin, atau **Bawaan** untuk kembali ke default. Berlaku untuk Claude Code dan OpenCode.
+6. Alasan pilihan Auto muncul di chat (`🤖 Model Auto: Kuat → kimi-k3.1-pro — multi-file bug fix`) dan pada badge Effort Auto. Baris `±$…` di atas kotak pesan adalah estimasi biaya prompt (konteks + teks + asumsi output), bukan tagihan pasti.
 
 - **Model Auto** kini menilai setiap prompt **bersama konteks rencana terakhir**: percakapan terakhir dan daftar todo/plan ikut dikirim ke classifier, jadi prompt lanjutan singkat seperti *“kerjakan”* atau *“lanjut”* dinilai dari rencana yang baru muncul, bukan dari satu kata. Detail: [Tanpa terminal](../README.md#tanpa-terminal).
 
@@ -114,6 +115,36 @@ Kalau salah rewind (kode):
 4. Klik **↩ Ulangi**. Salinan file saat ini disimpan dulu di `data/redo/` sebelum ditimpa.
 
 Batasan: redo hanya untuk **perubahan kode yang belum di-commit** di **repo git**; percakapan yang sudah di-rewind tidak dikembalikan, dan rewind kode di folder non-git ditolak sejak awal (tidak ada yang berubah).
+
+## Melihat sisa kuota OpenCode Go
+
+1. Buka **👤 Akun** saat mesin OpenCode aktif.
+2. Gulir ke **Kuota OpenCode Go**.
+3. Tiap model menampilkan **terpakai / batas**, **sisa**, dan tiga bar: **5 jam**, **7 hari**, **30 hari**.
+   - Hijau < 70%, kuning 70–90%, merah > 90%.
+   - `tak terbatas` untuk model gratis; `batas belum diketahui` untuk model yang tidak ada di tabel paket Go.
+4. Angka ini **perkiraan**: token tercatat × harga list katalog resmi, dibandingkan batas paket **Go ($10/bulan)**. Plus/Teams punya batas lebih tinggi dan belum dihitung terpisah. Kuota resmi tetap di console OpenCode.
+
+Detail: [Akun & laporan](../README.md#akun--laporan).
+
+## Mengatur budget pemakaian
+
+1. Buka ⚙ → tab **Umum** → **Budget pemakaian global**.
+2. Isi batas **Harian**, **Mingguan**, dan/atau **Bulanan** dalam USD. Kosongkan (atau isi 0) untuk mematikan batas itu.
+3. Klik **Simpan**. Ringkasan menampilkan `$12,30 / $20 (62%)`, bar hijau/kuning/merah (≥80% kuning, ≥100% merah), dan **sisa** dolar.
+4. Angka ini juga muncul di 🩺 **Kesehatan sistem**.
+
+Catatan: dihitung dari **biaya yang tercatat** (harga list untuk Claude). OpenCode Go adalah langganan, jadi biayanya umumnya tercatat $0 dan tidak banyak memengaruhi budget. Budget ini **hanya peringatan**, tidak menghentikan giliran atau antrian.
+
+## Memeriksa kesehatan aplikasi
+
+1. Buka ⚙ → tab **Sistem** → **🩺 Kesehatan sistem**.
+2. Baca ringkasan di atas: **Siap dipakai (X/N)** atau **Perlu perhatian**.
+3. **Pemeriksaan**: akun Claude, OpenCode, folder project, backup otomatis, akses HP + HTTPS, error server 24 jam, ukuran data. Hijau = aman, kuning = perlu perhatian, merah = gagal.
+4. **Persiapan**: checklist login, folder project, backup otomatis, HTTPS, OpenCode — lengkapi yang masih kosong.
+5. Klik **↻ Periksa ulang** setelah memperbaiki sesuatu. Laporan terakhir tetap terlihat bila refresh gagal.
+
+Hanya dari laptop atau Tailscale; di HP WiFi biasa tombol ini tidak muncul. Detail: [Pengaturan](../README.md#tanpa-terminal).
 
 ## Mengganti akun dengan aman
 

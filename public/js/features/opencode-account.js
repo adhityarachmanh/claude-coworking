@@ -14,7 +14,7 @@ const POLL_MS = 2000;
 const POLL_LIMIT_MS = 10 * 60_000; // an OAuth attempt the user never finishes stops being watched
 
 /** OpenCode's Akun state: providers (null = not loaded), the provider/method being logged in, a running OAuth attempt. */
-const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false, logoutError: null };
+const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false, logoutError: null, showAllGo: false };
 let pollTimer = null;
 
 /** The app-wide engine (config.engine; old servers: Claude Code). */
@@ -127,6 +127,79 @@ function localUsageHtml() {
   </div>`;
 }
 
+// ---------- OpenCode Go quota ----------
+// The server estimates usage from recorded tokens × list prices and compares it to the Go plan's official allowance
+// (5h = 20% of the monthly limit, 7d = 50%, 30d = 100%); limits are per model, so the numbers are an estimate, never
+// a provider quota. The ratios are derived from used/limit here instead of the payload's `percent*` fields: the same
+// numbers, but independent of whether those fields carry a 0..1 ratio or a 0..100 percentage. Every field is
+// re-validated: a bad payload must degrade, not print "NaN"/"undefined".
+
+/** The three official Go windows, in row order, with each window's share of the monthly limit. */
+const GO_WINDOWS = [
+  { key: '5h', label: '5 jam', share: 0.2 },
+  { key: '7d', label: '7 hari', share: 0.5 },
+  { key: '30d', label: '30 hari', share: 1 },
+];
+const GO_ROWS = 8; // the list stays short; "Tampilkan semua" reveals the rest
+
+const goNumber = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const goTone = (ratio) => (ratio > 0.9 ? 'bad' : ratio >= 0.7 ? 'warn' : 'ok');
+
+/** One model row: a name, a monthly used/limit pair and the three ratios (0..1+), computed from what was spent. */
+function goRow(m) {
+  if (!m || typeof m !== 'object') return null;
+  const model = typeof m.model === 'string' ? m.model.trim().slice(0, 120) : '';
+  if (!model) return null;
+  const limit = goNumber(m.limit);
+  const unlimited = m.unlimited === true; // a free model: nothing to spend (no limit to show)
+  const used30d = goNumber(m.used30d);
+  const remaining = goNumber(m.remaining) ?? (limit != null && limit > 0 && used30d != null ? Math.max(0, limit - used30d) : null);
+  const windows = GO_WINDOWS.map((w) => {
+    const used = goNumber(m[`used${w.key}`]) ?? 0;
+    return { label: w.label, ratio: limit != null && limit > 0 ? Math.max(0, used / (limit * w.share)) : 0 };
+  });
+  return { model, unlimited, limit, used30d, remaining, windows };
+}
+
+function goWindowHtml(row, w) {
+  const pct = Math.round(w.ratio * 100);
+  const width = Math.round(Math.min(100, w.ratio * 100));
+  const label = `${row.model} · ${w.label} · ${pct}%`;
+  return `<div class="oc-go-win">
+      <span class="oc-go-win-label">${w.label}</span>
+      <div class="bar oc-go-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, pct)}" aria-valuetext="${pct}%" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><i class="${goTone(w.ratio)}" style="width:${width}%"></i></div>
+      <b class="oc-go-pct">${pct}%</b>
+    </div>`;
+}
+
+function goRowHtml(row) {
+  const used = fmtUsd(row.used30d);
+  const money = row.unlimited
+    ? `terpakai ${used} / tak terbatas · sisa tak terbatas`
+    : row.limit == null
+      ? `terpakai ${used} / batas belum diketahui`
+      : `terpakai ${used} / ${fmtUsd(row.limit)} · sisa ${fmtUsd(row.remaining)}`;
+  return `<li class="oc-go-row">
+    <div class="oc-go-head"><b class="oc-go-model">${escapeHtml(row.model)}</b><span class="oc-go-money">${escapeHtml(money)}</span></div>
+    <div class="oc-go-wins">${row.windows.map((w) => goWindowHtml(row, w)).join('')}</div>
+  </li>`;
+}
+
+/** "Kuota OpenCode Go": hidden unless the server offers it, empty-but-available gets its own message. */
+function goQuotaHtml() {
+  const go = oc.providers?.go;
+  if (!go || typeof go !== 'object' || go.available === false) return '';
+  const rows = (Array.isArray(go.models) ? go.models : []).map(goRow).filter(Boolean); // server order: highest 30d first
+  const visible = oc.showAllGo ? rows : rows.slice(0, GO_ROWS);
+  const body = rows.length
+    ? `<ul class="oc-go-list" id="oc-go-models">${visible.map(goRowHtml).join('')}</ul>
+      ${rows.length > GO_ROWS ? `<button type="button" class="ghost oc-go-toggle" data-act="oc-go-all" aria-expanded="${oc.showAllGo}" aria-controls="oc-go-models">${oc.showAllGo ? 'Tampilkan lebih sedikit' : `Tampilkan semua (${rows.length})`}</button>` : ''}`
+    : '<p class="muted small">Belum ada pemakaian OpenCode Go yang tercatat.</p>';
+  return `<div class="acct-section oc-go"><div class="acct-title"><b>Kuota OpenCode Go</b></div>
+    <p class="muted small oc-go-note">Perkiraan dari pemakaian yang tercatat × harga list model, dibandingkan kuota resmi paket Go ($10/bulan). Batas paket Plus/Teams lebih tinggi.</p>
+    ${body}</div>`;
+}
+
 function connectedHtml() {
   if (oc.error && !oc.providers) return `<p class="warn">${escapeHtml(oc.error)}</p>`;
   if (!oc.providers) return '<p class="muted small">Memeriksa provider OpenCode…</p>';
@@ -195,7 +268,7 @@ function loginHtml() {
 
 /** Akun's body for OpenCode. */
 export function openCodeBodyHtml() {
-  return `${localUsageHtml()}<div class="acct-section"><div class="acct-title"><b>Provider OpenCode</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
+  return `${localUsageHtml()}${goQuotaHtml()}<div class="acct-section"><div class="acct-title"><b>Provider OpenCode</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
     ${connectedHtml()}${oc.error && oc.providers ? `<p class="warn small">${escapeHtml(oc.error)}</p>` : ''}
     ${oc.logoutError ? `<p class="warn small" role="alert">${escapeHtml(oc.logoutError)}</p>` : ''}</div>
     ${state.accountAuth ? loginHtml() : '<p class="muted small">Login/logout provider dari HP hanya lewat Tailscale (koneksi terenkripsi), atau lakukan dari laptop.</p>'}`;
@@ -252,6 +325,10 @@ export async function onOpenCodeAction(act, el, rerender) {
     case 'oc-refresh':
       oc.logoutError = null;
       await loadOpenCode(rerender);
+      return true;
+    case 'oc-go-all':
+      oc.showAllGo = !oc.showAllGo;
+      rerender();
       return true;
     case 'oc-pick':
       oc.picking = true;
