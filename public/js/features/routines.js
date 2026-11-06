@@ -12,8 +12,19 @@ const TOGGLE = '/api/routines/toggle';
 const view = { list: [], loading: false, error: null, promise: null };
 let editingId = null;
 
+const scheduleText = (r) => {
+  if (r.when) return r.when;
+  if (r.frequency === 'daily') return `Harian ${r.time}`;
+  if (r.frequency === 'weekly') return `Mingguan ${['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'][r.weekday] ?? ''} ${r.time}`;
+  return `Sekali ${r.date ?? ''} ${r.time}`;
+};
 const whenText = (r) => `Berikutnya ${new Date(r.nextRun).toLocaleString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
 const disabledText = (r) => (r.enabled ? whenText(r) : 'Dijeda');
+const lastText = (r) => {
+  if (!r.lastStatus) return '';
+  const at = r.lastEndedAt ? ` ${new Date(r.lastEndedAt).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : '';
+  return ` · terakhir ${r.lastStatus === 'done' ? 'selesai' : 'gagal'}${at}${r.lastError ? ` (${r.lastError})` : ''}`;
+};
 
 function projectOptions() {
   const select = $('#routine-project');
@@ -44,9 +55,9 @@ function renderList() {
     .map(
       (r) => `<li class="routine-item${r.enabled ? '' : ' off'}" data-routine="${escapeHtml(r.id)}">
         <div class="routine-main">
-          <b>${escapeHtml(r.when ?? '')}</b>
+          <b>${escapeHtml(scheduleText(r))}</b>
           <span class="routine-prompt" title="${escapeHtml(r.prompt)}">${escapeHtml(r.prompt)}</span>
-          <small class="muted">${escapeHtml(disabledText(r))}${r.error ? ` · ${escapeHtml(r.error)}` : ''}</small>
+          <small class="muted">${escapeHtml(disabledText(r) + lastText(r))}${r.error ? ` · ${escapeHtml(r.error)}` : ''}</small>
         </div>
         <button type="button" class="ghost routine-run" data-routine-run title="Jalankan sekarang" aria-label="Jalankan sekarang">▶</button>
         <button type="button" class="ghost routine-edit" data-routine-edit title="Ubah jadwal" aria-label="Ubah jadwal">✎</button>
@@ -218,6 +229,13 @@ export function openRoutines() {
   syncFields();
   renderList();
   loadRoutines();
+}
+
+/** A `routines` event (another tab, the scheduler, or a finished queue item): update the visible list. */
+export function applyRoutines(list) {
+  if (!Array.isArray(list)) return;
+  view.list = list;
+  if (!$('#settings-modal')?.hidden && $('#settings-panel-jadwal')?.classList.contains('on')) renderList();
 }
 
 export { loadRoutines };

@@ -1993,6 +1993,7 @@ for (const vp of VIEWPORTS) {
       // Jalankan sekarang: the prompt goes into the queue and the chat says so.
       await page.click('.routine-item [data-routine-run]');
       await page.waitFor(() => [...document.querySelectorAll('.info')].some((n) => /dijalankan manual/.test(n.textContent)), { timeoutMs: 4000, message: 'jadwal dijalankan manual' });
+      await page.waitFor(() => /terakhir selesai/.test(document.querySelector('.routine-item')?.textContent ?? ''), { timeoutMs: 10000, message: 'riwayat hasil jadwal' });
 
       await page.click('.routine-item [data-routine-toggle]');
       await page.waitFor(() => document.querySelector('.routine-item')?.classList.contains('off'), { timeoutMs: 4000, message: 'jadwal dijeda' });

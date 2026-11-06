@@ -267,6 +267,9 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
   assert.equal((await api('/api/budget', {})).body.budget.budget.dailyUsd, null, 'global stays off');
   await api('/api/budget/save', { projectId: id, dailyUsd: 0 });
   assert.equal((await api('/api/budget', { projectId: id })).body.budget.budget.dailyUsd, null);
+  const budgetAudit = readFileSync(path.join(TMP, 'data', 'budget-audit.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  assert.ok(budgetAudit.some((e) => e.action === 'save' && e.scope === 'global'));
+  assert.ok(budgetAudit.some((e) => e.action === 'save' && e.scope === 'project' && e.projectId === id));
 
   // 🩺 health: the budget line appears exactly while a limit is set
   const withLimit = (await api('/api/health', {})).body.health;
@@ -300,6 +303,9 @@ test('⏰ tugas terjadwal: save/list/toggle/delete, validation, and state.json p
   assert.equal(run.status, 200);
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /dijalankan manual/.test(o.text), 5_000);
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /Tugas terjadwal selesai/.test(o.text), 10_000);
+  const afterRun = JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8')).routines[0];
+  assert.equal(afterRun.lastStatus, 'done');
+  assert.ok(afterRun.lastEndedAt > 0);
   const toggled = await api('/api/routines/toggle', { id: routine.id, enabled: false });
   assert.equal(toggled.body.routines[0].enabled, false);
   assert.equal(toggled.body.routines[0].nextRun, null);
@@ -334,6 +340,7 @@ test('💰 hard stop: prompt, compact, and handoff apply are refused while a win
     const override = await api('/api/budget/override', {});
     assert.equal(override.status, 200);
     assert.ok(override.body.until > Date.now());
+    assert.ok(readFileSync(path.join(TMP, 'data', 'budget-audit.jsonl'), 'utf8').includes('"action":"override"'));
     const allowed = await api(`/api/projects/${id}/prompt`, { text: 'tes override budget' });
     assert.equal(allowed.status, 200);
     await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result', 10_000);

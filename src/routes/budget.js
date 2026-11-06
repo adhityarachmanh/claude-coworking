@@ -4,6 +4,7 @@
 // Laptop + Tailscale only: there is deliberately no entry for these paths in the plain-HTTP WiFi read allowlist
 // (src/remote.js wifiAllows), so server.js refuses a read-only phone with 403 before a handler runs. The numbers
 // say what the account spends, and a sniffable device must not be able to change a limit (default deny).
+import { recordBudget } from '../budget-audit.js';
 import { budgetView, cleanBudgetPatch, grantBudgetOverride } from '../budget.js';
 import { json } from './http.js';
 
@@ -36,7 +37,7 @@ function state({ hub, ledger }, req, res, params, body) {
  * Saves the limits named in the body (any of dailyUsd / weeklyUsd / monthlyUsd; an absent key keeps its stored
  * value, null / '' / 0 turns one off) and answers with the fresh view.
  */
-function save({ hub, ledger, device }, req, res, params, body) {
+function save({ hub, ledger, device, dataDir }, req, res, params, body) {
   let patch;
   let projectId = null;
   try {
@@ -48,10 +49,16 @@ function save({ hub, ledger, device }, req, res, params, body) {
   if (projectId) hub.setProjectBudget(projectId, patch);
   else hub.setBudget(patch);
   if (device) console.log(`Batas pemakaian diubah dari HP "${device.name}"`);
+  recordBudget(
+    { action: 'save', scope: projectId ? 'project' : 'global', projectId, actor: device?.name ?? 'laptop', detail: Object.entries(patch).map(([key, value]) => `${key}=${value ?? 'off'}`).join(' · ') },
+    { dataDir: dataDir ?? hub.dataDir },
+  );
   return json(res, 200, { budget: { ...budgetView(hub, ledger, Date.now(), projectId), projectId } });
 }
 
 /** Allows exactly one turn despite the hard stop; expires on its own after 5 minutes. */
-function override({ hub }, req, res) {
-  return json(res, 200, { ok: true, until: grantBudgetOverride(hub) });
+function override({ hub, device, dataDir }, req, res) {
+  const until = grantBudgetOverride(hub);
+  recordBudget({ action: 'override', scope: 'global', actor: device?.name ?? 'laptop', detail: 'satu giliran' }, { dataDir: dataDir ?? hub.dataDir });
+  return json(res, 200, { ok: true, until });
 }

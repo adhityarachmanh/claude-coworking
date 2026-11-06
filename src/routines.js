@@ -64,6 +64,11 @@ export function cleanRoutine(raw, now = Date.now()) {
     enabled: raw.enabled !== false,
     lastRun: Number.isFinite(raw.lastRun) ? raw.lastRun : null,
     nextRun: Number.isFinite(raw.nextRun) ? raw.nextRun : null,
+    lastStatus: raw.lastStatus === 'done' || raw.lastStatus === 'failed' ? raw.lastStatus : null,
+    lastEndedAt: Number.isFinite(raw.lastEndedAt) ? raw.lastEndedAt : null,
+    lastDurationMs: Number.isFinite(raw.lastDurationMs) ? raw.lastDurationMs : null,
+    lastCostUsd: Number.isFinite(raw.lastCostUsd) ? raw.lastCostUsd : null,
+    lastError: text(raw.lastError, 300) || null,
     error: text(raw.error, 300) || null,
   };
   if (routine.enabled && routine.nextRun == null) routine.nextRun = nextRunAt(routine, now);

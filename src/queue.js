@@ -514,6 +514,18 @@ export class TaskQueue {
     Object.assign(item, { error: null, ...patch, endedAt: this.now(), updatedAt: this.now(), resultChatId: msg?.id ?? null, meta });
     if (item.routineId) {
       this.hub.chat(id, { kind: 'info', ...(item.status === 'failed' ? { level: 'warning' } : {}), text: `⏰ Tugas terjadwal ${item.status === 'failed' ? 'gagal' : 'selesai'}: ${item.text.slice(0, 80)}` });
+      const routine = this.hub.persisted?.routines?.find((r) => r.id === item.routineId);
+      if (routine) {
+        Object.assign(routine, {
+          lastStatus: item.status === 'failed' ? 'failed' : 'done',
+          lastEndedAt: item.endedAt,
+          lastDurationMs: meta?.durationMs ?? null,
+          lastCostUsd: meta?.costUsd ?? null,
+          lastError: item.status === 'failed' ? (item.error ?? 'Gagal') : null,
+        });
+        this.hub.save?.();
+        this.hub.broadcast?.('routines', this.hub.persisted.routines);
+      }
     }
     const b = this.queues[id].budget;
     if (msg && hasBudget(b)) {

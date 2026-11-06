@@ -13,6 +13,7 @@ import { notify } from '../features/notify.js';
 import { phone, refreshPairing } from '../features/phone.js';
 import { renderSidebar, selectProject } from '../features/picker.js';
 import { onApprovalUpdate, onPushSnapshot, pushProjectsChanged } from '../features/push.js';
+import { applyRoutines } from '../features/routines.js';
 import { renderRoots, syncProjectEngine } from '../features/settings.js';
 import { applyRoster } from '../features/roster.js';
 import { applySpotify } from '../features/spotify.js';
@@ -35,6 +36,7 @@ let share = null;
 // One handler per server event. `live` is false while a tab that just joined replays what it missed
 // (core/stream-share.js): the state catches up, but old news never chimes or animates again.
 const handlers = {
+  routines: (list) => applyRoutines(list),
   config(config) {
     renderRoots(config);
     applyNames(config);
