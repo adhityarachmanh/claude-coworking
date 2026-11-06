@@ -99,6 +99,7 @@ before(async () => {
       OFFICE_OPEN_DRY_RUN: '1',
       OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale'),
       OFFICE_CLAUDE_CHECK_DELAY_MS: '0',
+      OFFICE_EFFORT_FAKE: 'high', // plan build re-analysis is tested without a real classifier model
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -178,6 +179,7 @@ const result = () => waitFor((t, o) => t === 'chat' && o.project === id && o.kin
 const finalText = (re) => waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch.streaming === false && re.test(o.patch.text ?? ''));
 
 test('caps: OpenCode now offers the interactive question / plan cards', async () => {
+  assert.equal(PLAN_APPROVED_PROMPT, 'Rencana disetujui. Kerjakan sekarang sesuai rencana di atas.');
   assert.equal((await snapshot()).config.engines.opencode.caps.askQuestion, true);
 });
 
@@ -269,6 +271,41 @@ test('📋 plan: Setujui continues in Build and keeps the same OpenCode session'
   const st = (await snapshot()).statuses[id];
   assert.equal(st.mode, 'manual', 'Build');
   assert.equal(st.sessionId, sessionId, 'session/load: the same OpenCode conversation');
+});
+
+test('📋 plan: build re-runs Model/Effort Auto on the plan; Selesai closes it without building', async () => {
+  await openCodeProject('plan');
+  await api(`/api/projects/${id}/settings`, { modelAuto: false, effortAuto: false, model: 'opencode-go/deepseek-v4.1-flash', effort: 'low' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'buat rencana auto' });
+  assert.equal((await result()).ok, true);
+  let card = await pendingCard();
+  await api(`/api/projects/${id}/settings`, { modelAuto: true, effortAuto: true });
+  await api(`/api/approvals/${card.id}`, { allow: true, mode: 'manual' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === PLAN_APPROVED_PROMPT);
+  await result();
+  let st = (await snapshot()).statuses[id];
+  assert.equal(st.effort, 'high', 'the approved plan is classified again for Effort Auto');
+  assert.equal(st.effortAuto, true);
+  assert.equal(st.modelAuto, true);
+  assert.match(st.model, /deepseek-v4-pro$/, 'high maps to the Kuat tier for OpenCode');
+  assert.ok(seen.some((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'info' && /Model Auto: Kuat/.test(s.obj.text)));
+
+  // Selesai: the card closes, no prompt, and plan mode stays for another analysis.
+  await api(`/api/projects/${id}/settings`, { mode: 'plan', modelAuto: false, effortAuto: false });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'rencana selesai' });
+  await result();
+  card = await pendingCard();
+  mark = seen.length;
+  await api(`/api/approvals/${card.id}`, { allow: false, cancelled: true });
+  const done = await waitFor((t, o) => t === 'approval' && o.id === card.id && o.status === 'cancelled');
+  assert.equal(done.status, 'cancelled');
+  await sleep(300);
+  assert.equal(seen.slice(mark).filter((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'user').length, 0, 'nothing sent');
+  st = (await snapshot()).statuses[id];
+  assert.equal(st.mode, 'plan', 'still in plan mode');
+  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
 });
 
 test('📋 plan: a new prompt instead of an answer closes the card; Tolak without a note just closes it', async () => {

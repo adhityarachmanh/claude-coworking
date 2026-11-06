@@ -1281,6 +1281,37 @@ test('approving a plan picks the mode the work continues in, like the CLI plan d
   assert.equal((await snapshot()).statuses[id].mode, 'acceptEdits');
 });
 
+test('plan approval re-runs Model/Effort Auto on the plan; Selesai cancels without building', async () => {
+  const id = await projectId();
+  await api(`/api/projects/${id}/settings`, { mode: 'plan', modelAuto: false, effortAuto: false, model: 'sonnet', effort: 'low' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'buat rencana' });
+  let approval = await waitFor((t, o) => t === 'approval' && o.project === id && o.kind === 'plan' && o.status === 'pending');
+  await api(`/api/projects/${id}/settings`, { modelAuto: true, effortAuto: true });
+  await api(`/api/approvals/${approval.id}`, { allow: true, mode: 'acceptEdits' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  let st = (await snapshot()).statuses[id];
+  assert.equal(st.effort, 'high', 'the approved plan is classified again for Effort Auto');
+  assert.equal(st.model, 'opus', 'high maps to the Kuat tier for Claude');
+  assert.equal(st.modelAuto, true);
+  assert.ok(seen.some((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'info' && /Model Auto: Kuat/.test(s.obj.text)));
+
+  // Selesai: the plan is not approved, the mode stays plan, and no prompt is sent.
+  await api(`/api/projects/${id}/settings`, { mode: 'plan', modelAuto: false, effortAuto: false });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'buat rencana lagi' });
+  approval = await waitFor((t, o) => t === 'approval' && o.project === id && o.kind === 'plan' && o.status === 'pending');
+  mark = seen.length;
+  await api(`/api/approvals/${approval.id}`, { allow: false, cancelled: true });
+  const cancelled = await waitFor((t, o) => t === 'approval' && o.id === approval.id && o.status === 'cancelled');
+  assert.equal(cancelled.status, 'cancelled');
+  await sleep(300);
+  assert.equal(seen.slice(mark).filter((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'user').length, 0, 'nothing sent');
+  st = (await snapshot()).statuses[id];
+  assert.equal(st.mode, 'plan', 'still in plan mode');
+  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
+});
+
 test('rewind: points from the transcript chain, conversation via --resume-session-at; a code rewind needs git (409)', async () => {
   const id = await projectId();
   const snap = await snapshot();

@@ -11,6 +11,8 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } f
 import os from 'node:os';
 import path from 'node:path';
 import { acpSessionClass } from './acp-session.js';
+import { autoContext, classifyEffort } from './effort-classifier.js';
+import { shortModelLabel, tierFor } from './model-auto.js';
 import { killTree } from './proc.js';
 import { attachmentChips, contentBlocks } from './attachments.js';
 import { ENGINES, PERMISSION_MODES } from './hub.js';
@@ -171,6 +173,49 @@ export class SessionManager {
       if (session.busy) session.restartPending = true;
       else session.closeChild();
     }
+  }
+
+  /**
+   * A plan was approved: if Model Auto / Effort Auto is on, classify the APPROVED plan (not the short "kerjakan"
+   * that started it) and apply the result before the build turn begins. Returns null when both are manual.
+   */
+  async preparePlanBuild(projectId, plan = '') {
+    const settings = this.hub.settingsFor(projectId);
+    if (!settings.effortAuto && !settings.modelAuto) return null;
+    const engine = this.hub.engineOf(projectId);
+    const auto = await classifyEffort({
+      engine,
+      claude: this.claude,
+      opencode: this.opencode,
+      currentModel: settings.model,
+      text: String(plan ?? ''),
+      context: autoContext(this.hub, projectId),
+    });
+    const patch = {};
+    let autoEffort = null;
+    let autoModel = null;
+    if (settings.effortAuto) {
+      patch.effort = auto.level;
+      patch.effortAuto = true;
+      autoEffort = auto;
+    }
+    if (settings.modelAuto) {
+      const tier = tierFor(auto.level, engine, settings.modelTiers);
+      if (tier.model !== settings.model) {
+        patch.model = tier.model;
+        patch.modelAuto = true;
+        autoModel = { tier: tier.key, label: tier.label, model: tier.model, reason: auto.reason ?? '' };
+      }
+    }
+    if (!Object.keys(patch).length) return { autoEffort, autoModel };
+    this.hub.updateSettings(projectId, patch);
+    const session = this.sessions.get(projectId);
+    if (session?.applyAutoSettings) await session.applyAutoSettings(patch);
+    if (autoModel) {
+      const why = String(autoModel.reason ?? '').trim().slice(0, 80);
+      this.hub.chat(projectId, { kind: 'info', modelAuto: true, text: `⚙️ Model Auto: ${autoModel.label} → ${shortModelLabel(autoModel.model)}${why ? ` — ${why}` : ''}` });
+    }
+    return { autoEffort, autoModel };
   }
 
   /**
@@ -602,6 +647,33 @@ export class ClaudeSession {
     if (s.effort !== a.effort) {
       a.effort = s.effort;
       this.request({ subtype: 'apply_flag_settings', settings: { effortLevel: s.effort } }).catch((err) => this.controlFailed('effort', err));
+    }
+  }
+
+  /** Apply Auto's model/effort to the running process and wait, so a plan's build turn starts with them. */
+  async applyAutoSettings({ model, effort } = {}) {
+    if (!this.child || !this.applied) return;
+    const a = this.applied;
+    if (typeof model === 'string' && model && model !== a.model) {
+      const previous = a.model;
+      a.model = model;
+      try {
+        const r = await this.request({ subtype: 'set_model', model });
+        this.hub.setStatus(this.id, { activeModel: r?.model ?? null });
+        this.refreshContext();
+      } catch (err) {
+        a.model = previous;
+        this.hub.updateSettings(this.id, { model: previous, modelAuto: true });
+        this.controlFailed('model', err);
+      }
+    }
+    if (typeof effort === 'string' && effort && effort !== a.effort) {
+      a.effort = effort;
+      try {
+        await this.request({ subtype: 'apply_flag_settings', settings: { effortLevel: effort } });
+      } catch (err) {
+        this.controlFailed('effort', err);
+      }
     }
   }
 
@@ -1136,7 +1208,10 @@ export class ClaudeSession {
         this.hub.updateSettings(this.id, { mode: decision.mode });
       }
     } else {
-      response = { behavior: 'deny', message: decision.message || 'Ditolak oleh user dari web Adhit Office.' };
+      response = {
+        behavior: 'deny',
+        message: decision.cancelled && req.tool_name === 'ExitPlanMode' ? 'Selesai tanpa build; jangan lanjutkan rencana ini.' : decision.message || 'Ditolak oleh user dari web Adhit Office.',
+      };
     }
     this.write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } });
     this.hub.office(this.id, { kind: 'ask_done', role, allowed: Boolean(decision.allow) });

@@ -566,6 +566,9 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .approval .opts label { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-md); cursor: pointer; font-size: var(--fs-md); }
 .approval .plan { max-height: 320px; overflow: auto; background: var(--surface); border-radius: var(--r-md); padding: 8px 10px; margin: 6px 0; }
 .approval .feedback { width: 100%; margin-top: 4px; font-size: var(--fs-md); }
+.approval .plan-mode { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: var(--fs-sm); color: var(--muted); }
+.approval .plan-mode select { font-size: var(--fs-sm); padding: 3px 6px; }
+.plan-preparing { margin: 6px 0 0; }
 
 .result { align-self: center; font-size: var(--fs-sm); color: var(--muted); padding: 3px 12px; border-radius: var(--r-pill); background: var(--surface-2); margin: 4px 0 8px; }
 .result.ok { color: var(--ok-text); }

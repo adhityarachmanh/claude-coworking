@@ -513,21 +513,27 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.hub.requestApproval(
         this.id,
         { id, chatId, role, kind: 'plan', tool: 'ExitPlanMode', label, description: '', input: previewInput('ExitPlanMode', input), canAlways: false },
-        (decision) => this.onPlanDecision(id, role, decision),
+        (decision) => this.onPlanDecision(id, role, decision, plan),
       );
       this.hub.office(this.id, { kind: 'huddle', role: 'pm', roles: ['pm', 'architect'], label: 'Rencana siap, minta persetujuan' });
       this.hub.office(this.id, { kind: 'ask', role, label, ask: 'plan' });
     }
 
     /**
-     * Setujui = the mode picked on the card (✏️ auto-edit or 🛡️ tanya dulu; never 📋 again), so OpenCode leaves its
-     * plan agent, then PLAN_APPROVED_PROMPT. Minta revisi with a note = that note as the next prompt, still in plan.
+     * Lanjut build = re-classify Model/Effort Auto on the approved plan, leave the plan agent, then
+     * PLAN_APPROVED_PROMPT. Minta revisi with a note = that note as the next prompt, still in plan. Selesai =
+     * cancelled: keep the plan, send nothing.
      */
-    onPlanDecision(id, role, decision) {
+    async onPlanDecision(id, role, decision, plan = '') {
       if (this.planCard === id) this.planCard = null;
       this.hub.office(this.id, { kind: 'ask_done', role, allowed: Boolean(decision.allow) });
       if (decision.cancelled) return;
       if (decision.allow) {
+        try {
+          await this.m.preparePlanBuild(this.id, plan);
+        } catch {
+          // A classifier/apply failure must never block the approved build: keep the old model/effort.
+        }
         const mode = this.engine === 'opencode' ? 'manual' : PERMISSION_MODES.includes(decision.mode) && decision.mode !== 'plan' ? decision.mode : 'manual';
         this.hub.updateSettings(this.id, { mode });
         this.prompt(PLAN_APPROVED_PROMPT); // syncSettings switches the agent (or the process) before it is sent
@@ -965,6 +971,13 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       await this.applyEffort(settings.effort); // '' = OpenCode's default level, same as a later change back to Default
       const model = options.find((o) => o.id === 'model')?.currentValue ?? null;
       this.hub.setStatus(this.id, { activeModel: model });
+    }
+
+    /** Apply Auto's model/effort now; `ready` is chained, so the next prompt waits for both switches. */
+    async applyAutoSettings() {
+      if (!this.child || !this.applied) return;
+      this.syncSettings();
+      await this.ready.catch(() => {});
     }
 
     async setOption(configId, value) {

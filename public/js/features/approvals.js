@@ -30,13 +30,12 @@ export function fillApproval(node, msg) {
       .join('');
     actions = '<button class="primary" data-act="answer">Kirim jawaban</button><button data-act="deny">Lewati</button>';
   } else if (approval.kind === 'plan') {
-    // The CLI's plan dialog: approve and choose how edits are handled, or keep planning with feedback.
-    body = `<div class="plan md">${renderMarkdown(input.plan ?? '')}</div><input class="feedback" placeholder="Catatan revisi (untuk Minta revisi)" aria-label="Catatan revisi rencana">`;
-    // The plan belongs to one project, so its engine (not the app-wide default) decides how it is approved.
-    actions =
-      engineOf(state.statuses[msg.project] ?? {}, state.config) === 'opencode'
-        ? '<button class="primary" data-act="allow" data-mode="manual" title="Lanjut dengan Build">✓ Setujui, Build</button><button data-act="deny">Minta revisi</button>'
-        : '<button class="primary" data-act="allow" data-mode="acceptEdits" title="Mode berubah ke ✏️ Auto-edit file">✓ Setujui, auto-edit</button><button data-act="allow" data-mode="manual" title="Mode berubah ke 🛡️ Tanya dulu">✓ Setujui, tanya tiap edit</button><button data-act="deny">Minta revisi</button>';
+    // Three actions: build, keep planning with feedback, or finish this analysis without building.
+    const opencode = engineOf(state.statuses[msg.project] ?? {}, state.config) === 'opencode';
+    body = `<div class="plan md">${renderMarkdown(input.plan ?? '')}</div>
+      <input class="feedback" placeholder="Catatan revisi (untuk Minta revisi)" aria-label="Catatan revisi rencana">
+      ${opencode ? '' : '<label class="plan-mode">Build sebagai <select aria-label="Mode kerja setelah rencana disetujui"><option value="acceptEdits">Auto-edit</option><option value="manual">Tanya tiap edit</option></select></label>'}`;
+    actions = '<button class="primary" data-act="build" title="Setujui rencana dan mulai build">▶ Lanjut build</button><button data-act="deny">Minta revisi</button><button data-act="finish" title="Simpan rencana tanpa menjalankan build">Selesai</button>';
   } else {
     if (input.command) body = `<pre>${escapeHtml(input.command)}</pre>${input.description ? `<p class="muted">${escapeHtml(input.description)}</p>` : ''}`;
     else if (input.content != null) body = `<p class="path">${escapeHtml(input.file_path)}</p><pre>${escapeHtml(input.content)}</pre>`;
@@ -50,7 +49,7 @@ export function fillApproval(node, msg) {
   node.innerHTML = `${head}<div class="ap-label">${escapeHtml(approval.description || msg.text)}</div>${body}<div class="ap-actions">${actions}</div>`;
   if (state.readOnly) {
     // Visible, so the phone knows the team is waiting; answered from the laptop or over Tailscale.
-    node.querySelectorAll('button, input').forEach((el) => (el.disabled = true));
+    node.querySelectorAll('button, input, select').forEach((el) => (el.disabled = true));
     node.insertAdjacentHTML('beforeend', `<p class="ro-note">👁 ${READ_ONLY_HINT}: jawab izin ini dari laptop atau HP lewat Tailscale.</p>`);
     return;
   }
@@ -60,10 +59,18 @@ export function fillApproval(node, msg) {
 }
 
 async function decide(approval, act, node, mode) {
-  const body = { allow: act !== 'deny' };
+  const body = {};
+  if (act === 'build') {
+    body.allow = true;
+    body.mode = node.querySelector('.plan-mode select')?.value || mode;
+  } else if (act === 'finish') {
+    body.cancelled = true;
+  } else {
+    body.allow = act !== 'deny';
+  }
   if (act === 'always') body.always = true;
   if (act === 'all') body.allowAll = true;
-  if (mode) body.mode = mode; // plan approved: the mode the work continues in
+  if (mode) body.mode = mode; // non-plan approval actions keep their explicit mode
   if (act === 'deny') body.message = node.querySelector('.feedback')?.value || undefined;
   if (act === 'answer') {
     const answers = {};
@@ -76,11 +83,18 @@ async function decide(approval, act, node, mode) {
     });
     body.answers = answers;
   }
-  node.querySelectorAll('button').forEach((b) => (b.disabled = true));
+  if (act === 'build') {
+    const note = document.createElement('p');
+    note.className = 'muted small plan-preparing';
+    note.textContent = 'Menyiapkan build…';
+    node.querySelector('.ap-actions')?.before(note);
+  }
+  node.querySelectorAll('button, input, select').forEach((b) => (b.disabled = true));
   try {
     await api(`/api/approvals/${approval.id}`, body);
   } catch (err) {
     toast(`Gagal mengirim keputusan: ${err.message}`);
-    node.querySelectorAll('button').forEach((b) => (b.disabled = false));
+    node.querySelector('.plan-preparing')?.remove();
+    node.querySelectorAll('button, input, select').forEach((b) => (b.disabled = false));
   }
 }
