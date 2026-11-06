@@ -546,6 +546,8 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .chat-search .icon-btn { flex: none; }
 body:not([data-tab='chat']) #chat-search { display: none; }
 #chat .search-hidden { display: none !important; }
+#chat .search-active { outline: 2px solid var(--accent-2); outline-offset: -2px; border-radius: var(--r-md); }
+::highlight(chat-search) { background-color: #f4c542; color: #201c12; } /* the matched text inside the visible rows */
 
 .chat-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
 /* title + buttons on the first row, details across the full width below */
@@ -1418,7 +1420,8 @@ body.read-only #composer-hint { color: var(--ask); }
 
 .toast.ok { background: var(--ok-soft); color: var(--ok-text-strong); border-color: var(--ok-line); }
 .toast.warn { font-size: inherit; background: var(--warn-soft); color: var(--warn-text-strong); border-color: var(--warn-line); }
-.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 16px; border-radius: var(--r-lg); background: var(--err-soft); color: var(--err-text-strong); border: 1px solid var(--err-line); z-index: var(--z-toast); box-shadow: 0 8px 24px #0008; pointer-events: none; } /* informational only: a toast must never swallow a click on the button underneath */
+.toasts { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: calc(100vw - 32px); pointer-events: none; } /* informational layer: never swallow a click on the button underneath */
+.toast { padding: 10px 16px; border-radius: var(--r-lg); background: var(--err-soft); color: var(--err-text-strong); border: 1px solid var(--err-line); box-shadow: 0 8px 24px #0008; max-width: 100%; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1500px) {
@@ -1608,7 +1611,8 @@ body.read-only #composer-hint { color: var(--ask); }
   .report-actions { flex-direction: column; align-items: stretch; }
   .usage-table { display: block; overflow-x: auto; }
   .pair { flex-direction: column; }
-  .toast { bottom: calc(64px + env(safe-area-inset-bottom)); width: calc(100vw - 32px); text-align: center; } /* just above the ~54px bottom nav */
+  .toasts { bottom: calc(64px + env(safe-area-inset-bottom)); width: calc(100vw - 32px); } /* just above the ~54px bottom nav */
+  .toasts .toast { width: 100%; text-align: center; }
 }
 
 /* ---------- touch: finger-sized targets ---------- */
@@ -2325,8 +2329,8 @@ body.read-only #composer-hint { color: var(--ask); }
   body.kb-open { height: var(--vv-h, 100dvh); }
   body.kb-open .mobile-nav { display: none; }
   body.kb-open .input textarea { max-height: 30dvh; }
-  body.kb-open .toast { bottom: 12px; }
-  body:has(.phone-sheet:not([hidden])) .toast { top: calc(12px + env(safe-area-inset-top)); bottom: auto; } /* never over a sheet's rows */
+  body.kb-open .toasts { bottom: 12px; }
+  body:has(.phone-sheet:not([hidden])) .toasts { top: calc(12px + env(safe-area-inset-top)); bottom: auto; } /* never over a sheet's rows */
 
   /* permission card: Izinkan + Tolak on the first row, 44 px tall */
   .approval .ap-actions [data-act='deny'] { order: 1; }
@@ -2421,7 +2425,7 @@ body.read-only #composer-hint { color: var(--ask); }
   /* typing: the keyboard takes half the screen, so the header and the rail step aside */
   body.kb-open { grid-template-columns: 0 minmax(0, 1fr); }
   body.kb-open .topbar { display: none; }
-  .toast { bottom: 12px; }
+  .toasts { bottom: 12px; }
 
   /* Chat: one-row composer [＋][text…][chip][↑] */
   .input { flex-wrap: nowrap; }

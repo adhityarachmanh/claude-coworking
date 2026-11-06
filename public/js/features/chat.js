@@ -41,13 +41,6 @@ export function renderChat() {
   lastDay = '';
   newMarker = null;
   newCount = 0;
-  if (chatSearch) {
-    chatSearch = '';
-    const input = $('#chat-search-input');
-    if (input) input.value = '';
-    $('#chat-search').hidden = true;
-    $('#chat-search-count').textContent = '';
-  }
   syncJumpLabel();
   resetLiveOutput();
   pendingReplace.clear();
@@ -65,8 +58,9 @@ export function renderChat() {
         </div>`;
   }
   for (const msg of messages) appendChat(msg, false);
-  if (messages.length) scrollChat(true);
-  else {
+  if (chatSearch) applyChatSearch(chatSearch, { reset: false }); // a rebuild (reconnect) keeps the query and its marks
+  if (messages.length && !chatSearch) scrollChat(true);
+  else if (!messages.length) {
     chatEl.scrollTop = 0; // the welcome card reads from the top
     pinnedTop = Infinity; // nothing pinned: a scroll here is judged by position alone
     $('#jump-latest').hidden = true;
@@ -83,7 +77,6 @@ let pinnedTop = 0;
 let lastDay = '';
 let newMarker = null;
 let newCount = 0;
-let chatSearch = '';
 const distanceFromBottom = () => chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight;
 const dayLabel = (ts) => new Date(ts || Date.now()).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -111,14 +104,45 @@ function markNew(node) {
   syncJumpLabel();
 }
 
-/** Filters the rows of the open chat by text. Date/new dividers step aside while a query is active. */
-function applyChatSearch(query) {
+let chatSearch = '';
+let searchIndex = 0;
+
+/** Visible rows that match the active query (the ones search navigation steps through). */
+const searchMatches = () => [...chatEl.children].filter((node) => node.dataset?.id && !node.classList.contains('search-hidden'));
+
+/** Marks every occurrence of `query` inside the visible rows through the CSS Custom Highlight API (no DOM change). */
+function paintChatSearch(query) {
+  const registry = window.CSS?.highlights;
+  registry?.delete('chat-search');
+  if (!query || !registry || typeof window.Highlight !== 'function') return;
+  const ranges = [];
+  for (const row of chatEl.querySelectorAll('[data-id]')) {
+    if (row.classList.contains('search-hidden')) continue;
+    const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.nodeValue.toLowerCase();
+      for (let at = text.indexOf(query); at !== -1; at = text.indexOf(query, at + query.length)) {
+        const range = new Range();
+        range.setStart(node, at);
+        range.setEnd(node, at + query.length);
+        ranges.push(range);
+      }
+    }
+  }
+  if (ranges.length) registry.set('chat-search', new window.Highlight(...ranges));
+}
+
+/**
+ * Filters the rows of the open chat by text, marks the matches and puts one of them in focus.
+ * Date/new dividers step aside while a query is active; the count reads "2/5" (or "0 hasil").
+ */
+function applyChatSearch(query, { reset = true } = {}) {
   chatSearch = query.trim().toLowerCase();
   const count = $('#chat-search-count');
-  let matches = 0;
   for (const node of chatEl.children) {
     if (node.classList.contains('empty')) continue;
     const decorative = node.classList.contains('day') || node.classList.contains('new-marker');
+    node.classList.remove('search-active');
     if (chatSearch && decorative) {
       node.classList.add('search-hidden');
       continue;
@@ -126,31 +150,44 @@ function applyChatSearch(query) {
     node.classList.remove('search-hidden');
     if (!chatSearch || !node.dataset?.id) continue;
     node.classList.toggle('search-hidden', !node.textContent.toLowerCase().includes(chatSearch));
-    if (!node.classList.contains('search-hidden')) matches += 1;
   }
-  if (count) count.textContent = chatSearch ? `${matches} pesan` : '';
+  if (reset) searchIndex = 0;
+  const matches = searchMatches();
+  if (chatSearch && matches.length) {
+    searchIndex = ((searchIndex % matches.length) + matches.length) % matches.length;
+    matches[searchIndex].classList.add('search-active');
+    chatEl.scrollTop = Math.max(0, matches[searchIndex].offsetTop - 8);
+  } else {
+    searchIndex = 0;
+  }
+  if (count) count.textContent = chatSearch ? (matches.length ? `${searchIndex + 1}/${matches.length}` : '0 hasil') : '';
+  paintChatSearch(chatSearch);
   if (chatSearch) {
     followChat = false;
     $('#jump-latest').hidden = true;
-    const first = [...chatEl.children].find((node) => node.dataset?.id && !node.classList.contains('search-hidden'));
-    if (first) chatEl.scrollTop = Math.max(0, first.offsetTop - 8);
   }
+}
+
+/** Enter / Shift+Enter: the next / previous match, wrapping around. */
+function stepChatSearch(delta) {
+  if (!searchMatches().length) return;
+  searchIndex += delta;
+  applyChatSearch(chatSearch, { reset: false });
 }
 
 function clearChatSearch() {
   chatSearch = '';
+  searchIndex = 0;
   const input = $('#chat-search-input');
   if (input) input.value = '';
   $('#chat-search').hidden = true;
   applyChatSearch('');
-  for (const node of chatEl.children) node.classList.remove('search-hidden');
-  $('#chat-search-count').textContent = '';
   scrollChat(true);
 }
 
 function openChatSearch() {
   $('#chat-search').hidden = false;
-  applyChatSearch($('#chat-search-input').value);
+  applyChatSearch($('#chat-search-input').value, { reset: false });
   $('#chat-search-input').focus();
   $('#chat-search-input').select();
 }
@@ -200,7 +237,7 @@ export function appendChat(msg, scroll = true) {
   // Your own prompt, anything waiting for your decision, and the first message always come into view.
   const mustSee = msg.kind === 'approval' || (msg.kind === 'user' && msg.source === 'web') || Boolean(welcome);
   if (scroll && !followChat && !mustSee) markNew(node);
-  if (chatSearch) applyChatSearch(chatSearch);
+  if (chatSearch) applyChatSearch(chatSearch, { reset: false });
   if (scroll) scrollChat(mustSee && !chatSearch);
 }
 
@@ -486,6 +523,11 @@ export function initChat() {
   $('#btn-chat-search-mobile')?.addEventListener('click', openChatSearch);
   $('#chat-search-input').addEventListener('input', (e) => applyChatSearch(e.target.value));
   $('#chat-search-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      stepChatSearch(e.shiftKey ? -1 : 1);
+      return;
+    }
     if (e.key !== 'Escape') return;
     e.stopPropagation();
     clearChatSearch();

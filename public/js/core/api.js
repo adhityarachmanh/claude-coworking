@@ -44,11 +44,37 @@ export async function api(path, body = {}, { raw = false } = {}) {
   return data;
 }
 
+const TOAST_MS = 4000;
+const TOAST_MAX = 3;
+
+/** The stack that holds toasts (created on first use): newest at the bottom, never more than three. */
+function toastStack() {
+  let box = document.getElementById('toasts');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'toasts';
+    box.className = 'toasts';
+    document.body.append(box);
+  }
+  return box;
+}
+
 export function toast(message, tone = 'error') {
+  const box = toastStack();
+  // The same message already on screen moves to the newest slot instead of stacking twice: "Tersambung lagi"
+  // after a short reconnect reads as one event, not three.
+  for (const old of box.querySelectorAll('.toast')) {
+    if (old.dataset.tone === tone && old.textContent === message) old.remove();
+  }
   const node = document.createElement('div');
   node.className = `toast ${tone}`;
+  node.dataset.tone = tone;
   node.setAttribute('role', tone === 'error' ? 'alert' : 'status'); // errors interrupt a screen reader, the rest wait
   node.textContent = message;
-  document.body.append(node);
-  setTimeout(() => node.remove(), 4000);
+  box.append(node);
+  while (box.children.length > TOAST_MAX) box.firstElementChild.remove();
+  setTimeout(() => {
+    node.remove();
+    if (!box.children.length) box.remove(); // no empty fixed layer left over the page
+  }, TOAST_MS);
 }

@@ -7,6 +7,7 @@ Detail tiap fitur, termasuk batasan dan perilakunya. Kembali ke [README](../READ
 | Bagian | Fungsi |
 |---|---|
 | **Chat** | Prompt ke Claude Code di folder project. Pesan yang dikirim saat tim bekerja masuk antrean Claude Code sendiri, seperti di CLI. Balasan streaming, code block di-highlight, tiap giliran ditutup dengan durasi, langkah, konteks, dan token output. Lebar panel bisa digeser (klik dua kali untuk ukuran bawaan) |
+| **🔍 Cari di percakapan** (`Ctrl+F`) | Kotak cari di tab Chat menyaring pesan yang cocok, menandai teksnya, dan menampilkan **2/5**. **Enter** / **Shift+Enter** pindah antar hasil (membungkus di ujung); `Esc` menutup. Kueri tetap aktif saat chat dimuat ulang |
 | **Kartu izin** | **Izinkan**, **Izinkan selalu** (simpan aturan), **Izinkan semua (sesi ini)**, atau **Tolak** (bisa dengan instruksi). `AskUserQuestion` dijawab dengan pilihan atau jawaban sendiri. Kartu rencana punya tiga aksi: **Lanjut build**, **Minta revisi**, dan **Selesai** (tanpa build) |
 | **Mode izin** | 🛡️ Tanya dulu (default) · ✏️ Auto-edit file · ⚡ Auto · 📋 Rencana dulu · 🚫 Jangan tanya. `Shift+Tab` berganti mode, langsung berlaku juga di tengah giliran |
 | **🛡️ Aturan izin** (`/permissions`, menu ⋯) | Aturan allow/ask/deny yang tersimpan, per file settings (project lokal, project bersama, user). Mengubah hanya dari laptop |

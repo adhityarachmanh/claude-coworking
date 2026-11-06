@@ -28,10 +28,11 @@ export function initMobileNav() {
 }
 
 export function initTabs() {
-  document.querySelectorAll('.tabs button').forEach((btn) =>
+  // Only the tab buttons themselves: the bar also holds a tab-action (🔍 search) that must not switch tabs.
+  document.querySelectorAll('.tabs button[data-tab]').forEach((btn) =>
     btn.addEventListener('click', () => {
       state.tab = btn.dataset.tab;
-      document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b === btn));
+      document.querySelectorAll('.tabs button[data-tab]').forEach((b) => b.classList.toggle('active', b === btn));
       document.body.dataset.tab = state.tab; // phone layout shows the composer only on the chat tab
       // A tab switched from code (🔍 Minta review → Chat) moves the phone's bottom-nav highlight along.
       if (document.body.dataset.view !== 'office') document.querySelectorAll('#mobile-nav button[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === state.tab));

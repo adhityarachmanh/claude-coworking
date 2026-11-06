@@ -7,6 +7,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 ### Baru
 
 - **👋 Tur singkat & pencarian pengaturan.** Tur 4 langkah dari Panduan/layar kosong; kotak cari di ⚙ langsung menampilkan panel yang cocok.
+- **🔍 Pencarian chat bisa dilompati.** Kotak cari di tab Chat menyaring pesan yang cocok, menandai teksnya, dan menghitung **2/5**; **Enter** / **Shift+Enter** pindah ke hasil berikutnya/sebelumnya (membungkus di ujung), dan kueri tetap aktif saat chat dimuat ulang (mis. setelah tersambung lagi).
 - **✅ Penanda pesan baru.** Chat memberi pemisah tanggal dan penanda **“Pesan baru”** saat kamu membaca pesan lama; tombol **↓ N pesan baru** membawa kembali ke bawah.
 - **🎛️ Tampilan yang bisa disesuaikan.** Pilih tema **Terang / Gelap / Ikuti sistem**, ukuran teks **Kecil / Normal / Besar**, kepadatan **Nyaman / Padat**, dan animasi **Ikuti sistem / Kurangi / Penuh**. Tersimpan per perangkat.
 - **⚠ Perlu perhatian.** Badge di **🗂 Semua project** dan daftar di dashboard mengumpulkan izin yang menunggu, antrian dijeda, budget tercapai, giliran terputus, dan jadwal gagal; klik item untuk langsung ke project/panel terkait.
@@ -16,6 +17,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 ### Diperbaiki
 
 - **Notifikasi tidak lagi menghalangi klik.** Toast seperti *"Jadwal diperbarui"* tampil di atas tombol selama 4 detik dan sempat menelan klik berikutnya (mis. saat menyimpan lalu langsung menekan tombol yang sama); toast sekarang hanya informasi dan klik diteruskan ke tombol di bawahnya.
+- **Toast bertumpuk rapi.** Beberapa notifikasi tidak lagi saling menimpa: tampil berurutan (maksimal 3, yang terlama dibuang) dan pesan yang sama tidak dobel.
+- **Klik 🔍 cari di chat tidak lagi menyembunyikan chat.** Tombol aksi di bar tab sempat dianggap tombol tab sehingga ikut berpindah tab, mengosongkan fokus, dan menyembunyikan panel chat; sekarang hanya tombol tab yang berpindah.
 - **UI lebih sedikit tulisan.** Dialog **⚙ Pengaturan** kini memakai tab juga di HP (satu bagian sekaligus, bukan satu lembar panjang), penjelasan panjang dipersingkat, baris hint di atas kotak pesan dibatasi 2 pesan terpenting (sisanya di tooltip), kartu rencana menampilkan ringkasan dulu dengan **Lihat rencana lengkap**, empty state/laporan memakai kalimat lebih pendek, dan detail **Kesehatan sistem** serta **Laporan** dilipat sampai dibuka.
 - **Kartu rencana tidak lagi terasa macet.** Klik **▶ Lanjut build** atau **Minta revisi** kini menampilkan loading beranimasi di kartu (**“Menentukan model & effort…”** / **“Mengirim revisi…”**) dan baris typing di chat, lalu satu baris info `⚙️ Auto build: Effort High · Model Kuat → deepseek-v4-pro — alasan`. Bubble build/revisi ikut membawa tag **Auto** (effort) dan **Model**. Saat Auto mati, hanya ada loading singkat tanpa klasifikasi; tombol dikunci selama proses agar tidak terkirim dua kali.
 

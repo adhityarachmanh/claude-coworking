@@ -1978,24 +1978,110 @@ for (const vp of VIEWPORTS) {
       assert.equal(await page.eval(() => localStorage.getItem('office.tourDone')), '1');
     });
 
-    test('🔍 Cari di chat: menyaring pesan dan menampilkan jumlahnya', async () => {
+    test('🔔 Toast menumpuk rapi, maksimal 3, dan pesan yang sama tidak dobel', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(async () => {
+        document.querySelector('#toasts')?.remove();
+        const { toast } = await import('/js/core/api.js');
+        toast('satu', 'ok');
+        toast('dua', 'ok');
+        toast('tiga', 'warn');
+        toast('empat', 'ok');
+      });
+      const view = await page.eval(() => {
+        const box = document.querySelector('#toasts');
+        const items = [...document.querySelectorAll('.toast')];
+        return {
+          box: Boolean(box),
+          count: items.length,
+          texts: items.map((t) => t.textContent),
+          pointer: box ? getComputedStyle(box).pointerEvents : null,
+          rects: items.map((t) => {
+            const r = t.getBoundingClientRect();
+            return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right) };
+          }),
+        };
+      });
+      assert.equal(view.box, true, 'satu wadah toast');
+      assert.equal(view.count, 3, 'maksimal 3 toast tampil');
+      assert.deepEqual(view.texts, ['dua', 'tiga', 'empat'], 'yang terlama dibuang');
+      assert.equal(view.pointer, 'none', 'wadah toast tidak menelan klik');
+      for (let i = 1; i < view.rects.length; i++) {
+        assert.ok(view.rects[i].top >= view.rects[i - 1].bottom, `toast ${i} tidak menimpa toast sebelumnya (${JSON.stringify(view.rects)})`);
+      }
+
+      // The same message again is moved to the newest slot, not shown twice.
+      await page.eval(async () => (await import('/js/core/api.js')).toast('empat', 'ok'));
+      const again = await page.eval(() => ({ count: document.querySelectorAll('.toast').length, texts: [...document.querySelectorAll('.toast')].map((t) => t.textContent) }));
+      assert.equal(again.count, 3, 'pesan yang sama tidak menambah toast');
+      assert.deepEqual(again.texts, ['dua', 'tiga', 'empat'], 'pesan yang sama pindah ke urutan terbaru');
+      await page.eval(() => document.querySelector('#toasts')?.remove());
+    });
+
+    test('🔍 Cari di chat: saring, sorot, lompat antar hasil, dan tahan render ulang', async () => {
       await ensureApp(page, `#${projectId}`);
       await page.eval(async (pid) => {
-        const { appendChat } = await import('/js/features/chat.js');
-        appendChat({ id: 'cari-1', project: pid, kind: 'assistant', text: 'apel jeruk', ts: Date.now() }, false);
-        appendChat({ id: 'cari-2', project: pid, kind: 'assistant', text: 'durian manis', ts: Date.now() }, false);
+        const { state } = await import('/js/core/state.js');
+        const chat = await import('/js/features/chat.js');
+        window.__searchSaved = state.chats[pid];
+        state.chats[pid] = [
+          { id: 'cari-1', project: pid, kind: 'assistant', text: 'apel jeruk', ts: Date.now() },
+          { id: 'cari-2', project: pid, kind: 'assistant', text: 'durian manis', ts: Date.now() },
+          { id: 'cari-3', project: pid, kind: 'assistant', text: 'durian hijau', ts: Date.now() },
+        ];
+        chat.renderChat();
       }, projectId);
-      await page.eval(() => document.querySelector('#btn-chat-search').click());
-      await page.eval(() => {
-        const input = document.querySelector('#chat-search-input');
-        input.value = 'durian';
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-      assert.equal(await page.eval(() => [...document.querySelectorAll('#chat > [data-id]')].filter((n) => !n.classList.contains('search-hidden')).map((n) => n.dataset.id).sort().join(',')), 'cari-2');
-      assert.equal(await page.eval(() => document.querySelector('#chat-search-count').textContent), '1 pesan');
-      await page.eval(() => document.querySelector('#chat-search-close').click());
-      assert.equal(await page.eval(() => document.querySelector('#chat-search').hidden), true);
-      assert.equal(await page.eval(() => document.querySelectorAll('#chat > .search-hidden').length), 0);
+      try {
+        await page.eval(() => document.querySelector('#btn-chat-search').click());
+        assert.deepEqual(await page.eval(() => ({ chat: document.querySelector('.chat-wrap').hidden, tab: document.body.dataset.tab, focus: document.activeElement?.id })), { chat: false, tab: 'chat', focus: 'chat-search-input' }, 'membuka pencarian tidak berpindah/menyembunyikan tab chat');
+        await page.eval(() => {
+          const input = document.querySelector('#chat-search-input');
+          input.value = 'durian';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        const stateOfSearch = () => page.eval(() => ({
+          visible: [...document.querySelectorAll('#chat > [data-id]')].filter((n) => !n.classList.contains('search-hidden')).map((n) => n.dataset.id),
+          count: document.querySelector('#chat-search-count').textContent,
+          active: document.querySelector('#chat > [data-id].search-active')?.dataset.id ?? null,
+          highlight: CSS.highlights?.get('chat-search')?.size ?? -1,
+        }));
+
+        let found = await stateOfSearch();
+        assert.deepEqual(found.visible, ['cari-2', 'cari-3'], 'hanya pesan yang cocok');
+        assert.equal(found.count, '1/2', 'hasil pertama dari dua');
+        assert.equal(found.active, 'cari-2', 'hasil pertama disorot');
+        assert.equal(found.highlight, 2, 'teks yang cocok ditandai di kedua pesan');
+
+        await page.press('Enter');
+        found = await stateOfSearch();
+        assert.equal(found.count, '2/2', 'Enter ke hasil berikutnya');
+        assert.equal(found.active, 'cari-3');
+        await page.press('Enter');
+        assert.equal((await stateOfSearch()).count, '1/2', 'Enter membungkus ke hasil pertama');
+        await page.press('Enter', { shift: true });
+        found = await stateOfSearch();
+        assert.equal(found.count, '2/2', 'Shift+Enter kembali ke hasil sebelumnya');
+        assert.equal(found.active, 'cari-3');
+
+        // A full re-render (reconnect, project event) keeps the query, the filter and the highlight.
+        await page.eval(async () => (await import('/js/features/chat.js')).renderChat());
+        const kept = await stateOfSearch();
+        assert.equal(await page.eval(() => document.querySelector('#chat-search-input').value), 'durian', 'kueri tetap ada');
+        assert.deepEqual(kept.visible, ['cari-2', 'cari-3'], 'saringan tetap ada');
+        assert.equal(kept.count, '1/2');
+        assert.equal(kept.highlight, 2, 'sorotan dipasang ulang');
+
+        await page.eval(() => document.querySelector('#chat-search-close').click());
+        assert.equal(await page.eval(() => document.querySelector('#chat-search').hidden), true);
+        assert.equal(await page.eval(() => document.querySelectorAll('#chat > .search-hidden').length), 0, 'semua pesan tampil lagi');
+        assert.equal(await page.eval(() => CSS.highlights?.has('chat-search') ?? false), false, 'sorotan dibersihkan');
+      } finally {
+        await page.eval(async (pid) => {
+          const { state } = await import('/js/core/state.js');
+          state.chats[pid] = window.__searchSaved;
+          (await import('/js/features/chat.js')).renderChat();
+        }, projectId);
+      }
     });
 
     test('🔎 Cari pengaturan: panel yang cocok tampil, yang lain disembunyikan', async () => {
