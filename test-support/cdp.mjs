@@ -239,12 +239,21 @@ export class Page {
   }
 
   /** Full navigation (a hash-only change fires no load event, so leave the document first). */
-  async goto(url, timeoutMs = 15000) {
-    const current = await this.eval('location.href');
+  async goto(url, timeoutMs = 15000, attempt = 1) {
+    const current = await this.eval('location.href').catch(() => 'about:blank');
     if (current !== 'about:blank' && current.split('#')[0] === url.split('#')[0]) await this.goto('about:blank', timeoutMs);
     const loaded = this.waitForEvent('Page.loadEventFired', timeoutMs);
     const { errorText } = await this.send('Page.navigate', { url });
-    if (errorText) throw new Error(`navigasi gagal ${url}: ${errorText}`);
+    if (errorText) {
+      await loaded.catch(() => {}); // a failed navigation will never fire the event: never leak the rejection
+      // ERR_ABORTED is Chrome refusing a navigation it raced with the target/page committing (new tab, about:blank):
+      // transient, so one clean retry beats a flaky suite.
+      if (/ERR_ABORTED/.test(errorText) && attempt < 3) {
+        await sleep(250 * attempt);
+        return this.goto(url, timeoutMs, attempt + 1);
+      }
+      throw new Error(`navigasi gagal ${url}: ${errorText}`);
+    }
     // A slow disk/antivirus can make the event arrive after the timeout even though the page is already complete.
     await loaded.catch(async (err) => {
       if ((await this.eval('document.readyState').catch(() => '')) !== 'complete') throw err;

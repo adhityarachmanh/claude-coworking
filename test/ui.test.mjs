@@ -2096,6 +2096,8 @@ for (const vp of VIEWPORTS) {
       await page.click('#routine-add');
       await page.waitFor(() => document.querySelectorAll('.routine-item').length === 1, { timeoutMs: 4000, message: 'jadwal tersimpan' });
       assert.match(await page.eval(() => document.querySelector('.routine-item').textContent), /Harian 09:00/);
+      // The success toast sits above the form: it must never swallow the next click on the button underneath.
+      assert.equal(await page.eval(() => getComputedStyle(document.querySelector('.toast.ok')).pointerEvents), 'none', 'toast tidak menghalangi klik');
 
       // Edit: the form is filled, the save button switches, the prompt is replaced.
       await page.click('.routine-item [data-routine-edit]');

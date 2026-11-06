@@ -1418,7 +1418,7 @@ body.read-only #composer-hint { color: var(--ask); }
 
 .toast.ok { background: var(--ok-soft); color: var(--ok-text-strong); border-color: var(--ok-line); }
 .toast.warn { font-size: inherit; background: var(--warn-soft); color: var(--warn-text-strong); border-color: var(--warn-line); }
-.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 16px; border-radius: var(--r-lg); background: var(--err-soft); color: var(--err-text-strong); border: 1px solid var(--err-line); z-index: var(--z-toast); box-shadow: 0 8px 24px #0008; }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 16px; border-radius: var(--r-lg); background: var(--err-soft); color: var(--err-text-strong); border: 1px solid var(--err-line); z-index: var(--z-toast); box-shadow: 0 8px 24px #0008; pointer-events: none; } /* informational only: a toast must never swallow a click on the button underneath */
 
 /* ---------- responsive ---------- */
 @media (max-width: 1500px) {

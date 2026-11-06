@@ -15,6 +15,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ### Diperbaiki
 
+- **Notifikasi tidak lagi menghalangi klik.** Toast seperti *"Jadwal diperbarui"* tampil di atas tombol selama 4 detik dan sempat menelan klik berikutnya (mis. saat menyimpan lalu langsung menekan tombol yang sama); toast sekarang hanya informasi dan klik diteruskan ke tombol di bawahnya.
 - **UI lebih sedikit tulisan.** Dialog **⚙ Pengaturan** kini memakai tab juga di HP (satu bagian sekaligus, bukan satu lembar panjang), penjelasan panjang dipersingkat, baris hint di atas kotak pesan dibatasi 2 pesan terpenting (sisanya di tooltip), kartu rencana menampilkan ringkasan dulu dengan **Lihat rencana lengkap**, empty state/laporan memakai kalimat lebih pendek, dan detail **Kesehatan sistem** serta **Laporan** dilipat sampai dibuka.
 - **Kartu rencana tidak lagi terasa macet.** Klik **▶ Lanjut build** atau **Minta revisi** kini menampilkan loading beranimasi di kartu (**“Menentukan model & effort…”** / **“Mengirim revisi…”**) dan baris typing di chat, lalu satu baris info `⚙️ Auto build: Effort High · Model Kuat → deepseek-v4-pro — alasan`. Bubble build/revisi ikut membawa tag **Auto** (effort) dan **Model**. Saat Auto mati, hanya ada loading singkat tanpa klasifikasi; tombol dikunci selama proses agar tidak terkirim dua kali.
 
