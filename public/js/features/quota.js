@@ -49,7 +49,7 @@ export function checkQuota(now = Date.now()) {
     const { alerts, memory: next } = evaluateQuota(windows, memory, th, now);
     if (alerts.length || JSON.stringify(next) !== JSON.stringify(memory ?? {})) writeJson(QUOTA_MEMORY_KEY, { account: id, windows: next });
     if (alerts.length) {
-      // One toast for all windows at once (toasts share a spot on screen, a second one would hide the first).
+      // One toast for all windows at once (one message reads better than a stack of near-identical alerts).
       alerts.sort((a, b) => b.level - a.level);
       const text = alerts.map((a) => alertText(a, now)).join(' ');
       toast(text, alerts[0].level >= th.crit ? 'error' : 'warn');

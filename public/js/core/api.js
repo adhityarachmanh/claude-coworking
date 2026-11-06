@@ -64,7 +64,10 @@ export function toast(message, tone = 'error') {
   // The same message already on screen moves to the newest slot instead of stacking twice: "Tersambung lagi"
   // after a short reconnect reads as one event, not three.
   for (const old of box.querySelectorAll('.toast')) {
-    if (old.dataset.tone === tone && old.textContent === message) old.remove();
+    if (old.dataset.tone === tone && old.textContent === message) {
+      clearTimeout(old.toastTimer);
+      old.remove();
+    }
   }
   const node = document.createElement('div');
   node.className = `toast ${tone}`;
@@ -72,8 +75,11 @@ export function toast(message, tone = 'error') {
   node.setAttribute('role', tone === 'error' ? 'alert' : 'status'); // errors interrupt a screen reader, the rest wait
   node.textContent = message;
   box.append(node);
-  while (box.children.length > TOAST_MAX) box.firstElementChild.remove();
-  setTimeout(() => {
+  while (box.children.length > TOAST_MAX) {
+    clearTimeout(box.firstElementChild.toastTimer);
+    box.firstElementChild.remove();
+  }
+  node.toastTimer = setTimeout(() => {
     node.remove();
     if (!box.children.length) box.remove(); // no empty fixed layer left over the page
   }, TOAST_MS);

@@ -1421,7 +1421,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .toast.ok { background: var(--ok-soft); color: var(--ok-text-strong); border-color: var(--ok-line); }
 .toast.warn { font-size: inherit; background: var(--warn-soft); color: var(--warn-text-strong); border-color: var(--warn-line); }
 .toasts { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: calc(100vw - 32px); pointer-events: none; } /* informational layer: never swallow a click on the button underneath */
-.toast { padding: 10px 16px; border-radius: var(--r-lg); background: var(--err-soft); color: var(--err-text-strong); border: 1px solid var(--err-line); box-shadow: 0 8px 24px #0008; max-width: 100%; }
+.toast { padding: 10px 16px; border-radius: var(--r-lg); background: var(--err-soft); color: var(--err-text-strong); border: 1px solid var(--err-line); box-shadow: 0 8px 24px #0008; max-width: 100%; overflow-wrap: anywhere; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1500px) {

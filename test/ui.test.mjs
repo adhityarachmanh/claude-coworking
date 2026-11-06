@@ -1985,7 +1985,7 @@ for (const vp of VIEWPORTS) {
         const { toast } = await import('/js/core/api.js');
         toast('satu', 'ok');
         toast('dua', 'ok');
-        toast('tiga', 'warn');
+        toast('tiga', 'error');
         toast('empat', 'ok');
       });
       const view = await page.eval(() => {
@@ -2009,12 +2009,14 @@ for (const vp of VIEWPORTS) {
       for (let i = 1; i < view.rects.length; i++) {
         assert.ok(view.rects[i].top >= view.rects[i - 1].bottom, `toast ${i} tidak menimpa toast sebelumnya (${JSON.stringify(view.rects)})`);
       }
+      const roles = await page.eval(() => [...document.querySelectorAll('.toast')].map((t) => [t.textContent, t.getAttribute('role'), getComputedStyle(t).pointerEvents]));
+      assert.deepEqual(roles, [['dua', 'status', 'none'], ['tiga', 'alert', 'none'], ['empat', 'status', 'none']], 'peran ARIA tetap dan toast anak juga tembus klik');
 
       // The same message again is moved to the newest slot, not shown twice.
-      await page.eval(async () => (await import('/js/core/api.js')).toast('empat', 'ok'));
+      await page.eval(async () => (await import('/js/core/api.js')).toast('dua', 'ok'));
       const again = await page.eval(() => ({ count: document.querySelectorAll('.toast').length, texts: [...document.querySelectorAll('.toast')].map((t) => t.textContent) }));
       assert.equal(again.count, 3, 'pesan yang sama tidak menambah toast');
-      assert.deepEqual(again.texts, ['dua', 'tiga', 'empat'], 'pesan yang sama pindah ke urutan terbaru');
+      assert.deepEqual(again.texts, ['tiga', 'empat', 'dua'], 'pesan yang sama pindah ke urutan terbaru');
       await page.eval(() => document.querySelector('#toasts')?.remove());
     });
 
@@ -2043,7 +2045,7 @@ for (const vp of VIEWPORTS) {
           visible: [...document.querySelectorAll('#chat > [data-id]')].filter((n) => !n.classList.contains('search-hidden')).map((n) => n.dataset.id),
           count: document.querySelector('#chat-search-count').textContent,
           active: document.querySelector('#chat > [data-id].search-active')?.dataset.id ?? null,
-          highlight: CSS.highlights?.get('chat-search')?.size ?? -1,
+          highlight: CSS.highlights?.has('chat-search') ? CSS.highlights.get('chat-search').size : 0,
         }));
 
         let found = await stateOfSearch();
@@ -2051,6 +2053,28 @@ for (const vp of VIEWPORTS) {
         assert.equal(found.count, '1/2', 'hasil pertama dari dua');
         assert.equal(found.active, 'cari-2', 'hasil pertama disorot');
         assert.equal(found.highlight, 2, 'teks yang cocok ditandai di kedua pesan');
+
+        // Case-insensitive, and a query with no match says so instead of showing a stale count.
+        await page.eval(() => {
+          const input = document.querySelector('#chat-search-input');
+          input.value = 'DURIAN';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        assert.equal((await stateOfSearch()).count, '1/2', 'tidak beda huruf besar');
+        await page.eval(() => {
+          const input = document.querySelector('#chat-search-input');
+          input.value = 'zzz';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        found = await stateOfSearch();
+        assert.equal(found.count, '0 hasil', 'tanpa hasil');
+        assert.equal(found.active, null, 'tanpa baris aktif');
+        assert.equal(found.highlight, 0, 'tanpa sorotan');
+        await page.eval(() => {
+          const input = document.querySelector('#chat-search-input');
+          input.value = 'durian';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
 
         await page.press('Enter');
         found = await stateOfSearch();
@@ -2063,19 +2087,43 @@ for (const vp of VIEWPORTS) {
         assert.equal(found.count, '2/2', 'Shift+Enter kembali ke hasil sebelumnya');
         assert.equal(found.active, 'cari-3');
 
-        // A full re-render (reconnect, project event) keeps the query, the filter and the highlight.
+        // A full re-render (reconnect, project event) keeps the query, the filter, the highlight and the position.
         await page.eval(async () => (await import('/js/features/chat.js')).renderChat());
         const kept = await stateOfSearch();
         assert.equal(await page.eval(() => document.querySelector('#chat-search-input').value), 'durian', 'kueri tetap ada');
         assert.deepEqual(kept.visible, ['cari-2', 'cari-3'], 'saringan tetap ada');
-        assert.equal(kept.count, '1/2');
+        assert.equal(kept.count, '2/2', 'posisi hasil tidak melompat');
+        assert.equal(kept.active, 'cari-3');
         assert.equal(kept.highlight, 2, 'sorotan dipasang ulang');
 
+        // Switching project closes the search: the query belongs to the conversation it was typed in.
+        const afterSwitch = await page.eval(async (pid) => {
+          const { state } = await import('/js/core/state.js');
+          state.active = 'demo';
+          (await import('/js/features/chat.js')).renderChat();
+          const out = { hidden: document.querySelector('#chat-search').hidden, value: document.querySelector('#chat-search-input').value };
+          state.active = pid;
+          (await import('/js/features/chat.js')).renderChat();
+          return out;
+        }, projectId);
+        assert.deepEqual(afterSwitch, { hidden: true, value: '' }, 'pindah project menutup pencarian');
+
+        // Open it again for the close check (the project re-render above emptied it).
+        await page.eval(() => document.querySelector('#btn-chat-search').click());
+        await page.eval(() => {
+          const input = document.querySelector('#chat-search-input');
+          input.value = 'durian';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
         await page.eval(() => document.querySelector('#chat-search-close').click());
         assert.equal(await page.eval(() => document.querySelector('#chat-search').hidden), true);
         assert.equal(await page.eval(() => document.querySelectorAll('#chat > .search-hidden').length), 0, 'semua pesan tampil lagi');
         assert.equal(await page.eval(() => CSS.highlights?.has('chat-search') ?? false), false, 'sorotan dibersihkan');
       } finally {
+        await page.eval(() => {
+          const close = document.querySelector('#chat-search-close');
+          if (close && !document.querySelector('#chat-search').hidden) close.click();
+        });
         await page.eval(async (pid) => {
           const { state } = await import('/js/core/state.js');
           state.chats[pid] = window.__searchSaved;

@@ -41,6 +41,16 @@ export function renderChat() {
   lastDay = '';
   newMarker = null;
   newCount = 0;
+  // The query belongs to the conversation it was typed in: a project switch starts clean (a reconnect keeps it).
+  if (chatSearch && searchProject !== state.active) {
+    chatSearch = '';
+    searchIndex = 0;
+    const input = $('#chat-search-input');
+    if (input) input.value = '';
+    $('#chat-search').hidden = true;
+    $('#chat-search-count').textContent = '';
+    paintChatSearch('');
+  }
   syncJumpLabel();
   resetLiveOutput();
   pendingReplace.clear();
@@ -57,8 +67,13 @@ export function renderChat() {
           <div class="empty-links"><button class="text-btn" data-open-history>🕘 Sesi sebelumnya</button><button class="text-btn" data-open-help>❓ Panduan</button><button class="text-btn" data-open-tour>👋 Tur singkat</button></div>
         </div>`;
   }
-  for (const msg of messages) appendChat(msg, false);
-  if (chatSearch) applyChatSearch(chatSearch, { reset: false }); // a rebuild (reconnect) keeps the query and its marks
+  renderingChat = true;
+  try {
+    for (const msg of messages) appendChat(msg, false);
+  } finally {
+    renderingChat = false;
+  }
+  if (chatSearch) applyChatSearch(chatSearch, { reset: false }); // a rebuild (reconnect) keeps the query, its marks and the position
   if (messages.length && !chatSearch) scrollChat(true);
   else if (!messages.length) {
     chatEl.scrollTop = 0; // the welcome card reads from the top
@@ -77,6 +92,7 @@ let pinnedTop = 0;
 let lastDay = '';
 let newMarker = null;
 let newCount = 0;
+let renderingChat = false; // set while renderChat rebuilds: the search runs once at the end, not once per row
 const distanceFromBottom = () => chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight;
 const dayLabel = (ts) => new Date(ts || Date.now()).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -106,6 +122,8 @@ function markNew(node) {
 
 let chatSearch = '';
 let searchIndex = 0;
+let searchProject = null; // the project the query belongs to
+let searchOpener = null; // focus goes back here when the bar closes
 
 /** Visible rows that match the active query (the ones search navigation steps through). */
 const searchMatches = () => [...chatEl.children].filter((node) => node.dataset?.id && !node.classList.contains('search-hidden'));
@@ -137,7 +155,9 @@ function paintChatSearch(query) {
  * Date/new dividers step aside while a query is active; the count reads "2/5" (or "0 hasil").
  */
 function applyChatSearch(query, { reset = true } = {}) {
+  const wasSearching = Boolean(chatSearch);
   chatSearch = query.trim().toLowerCase();
+  if (chatSearch) searchProject = state.active;
   const count = $('#chat-search-count');
   for (const node of chatEl.children) {
     if (node.classList.contains('empty')) continue;
@@ -155,8 +175,10 @@ function applyChatSearch(query, { reset = true } = {}) {
   const matches = searchMatches();
   if (chatSearch && matches.length) {
     searchIndex = ((searchIndex % matches.length) + matches.length) % matches.length;
-    matches[searchIndex].classList.add('search-active');
-    chatEl.scrollTop = Math.max(0, matches[searchIndex].offsetTop - 8);
+    const row = matches[searchIndex];
+    row.classList.add('search-active');
+    // offsetTop is relative to the wrapper while scrollTop belongs to #chat: use the measured distance instead.
+    chatEl.scrollTop = Math.max(0, chatEl.scrollTop + (row.getBoundingClientRect().top - chatEl.getBoundingClientRect().top) - 8);
   } else {
     searchIndex = 0;
   }
@@ -165,6 +187,8 @@ function applyChatSearch(query, { reset = true } = {}) {
   if (chatSearch) {
     followChat = false;
     $('#jump-latest').hidden = true;
+  } else if (wasSearching) {
+    scrollChat(true); // clearing the query (backspace or close) resumes following the newest message
   }
 }
 
@@ -176,16 +200,20 @@ function stepChatSearch(delta) {
 }
 
 function clearChatSearch() {
-  chatSearch = '';
   searchIndex = 0;
   const input = $('#chat-search-input');
   if (input) input.value = '';
   $('#chat-search').hidden = true;
-  applyChatSearch('');
-  scrollChat(true);
+  applyChatSearch(''); // resumes following the newest message
+  searchProject = null;
+  const opener = searchOpener;
+  searchOpener = null;
+  if (opener?.isConnected && opener !== document.body && opener.getClientRects().length) opener.focus(); // keyboard users land back where they were
 }
 
 function openChatSearch() {
+  searchProject = state.active;
+  searchOpener = document.activeElement;
   $('#chat-search').hidden = false;
   applyChatSearch($('#chat-search-input').value, { reset: false });
   $('#chat-search-input').focus();
@@ -205,7 +233,7 @@ export function keepChatPinned() {
 export function scrollChat(force) {
   if (force) followChat = true;
   if (!followChat) {
-    $('#jump-latest').hidden = false;
+    if (!chatSearch) $('#jump-latest').hidden = false; // while filtering, the search bar owns the position
     syncJumpLabel();
     return;
   }
@@ -237,7 +265,7 @@ export function appendChat(msg, scroll = true) {
   // Your own prompt, anything waiting for your decision, and the first message always come into view.
   const mustSee = msg.kind === 'approval' || (msg.kind === 'user' && msg.source === 'web') || Boolean(welcome);
   if (scroll && !followChat && !mustSee) markNew(node);
-  if (chatSearch) applyChatSearch(chatSearch, { reset: false });
+  if (chatSearch && !renderingChat) applyChatSearch(chatSearch, { reset: false });
   if (scroll) scrollChat(mustSee && !chatSearch);
 }
 
