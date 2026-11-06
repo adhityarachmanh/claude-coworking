@@ -146,20 +146,23 @@ function reportHtml(report) {
       <h3 id="health-checks-title">Pemeriksaan</h3>
       ${checks}
     </section>
-    <section class="health-section" aria-labelledby="health-todos-title">
-      <h3 id="health-todos-title">Persiapan${summary.total ? ` <span class="muted small">${summary.done}/${summary.total}</span>` : ''}</h3>
-      ${todos}
-    </section>
-    <section class="health-section" aria-labelledby="health-data-title">
-      <h3 id="health-data-title">Data aplikasi</h3>
-      <p id="health-size" class="health-size">${escapeHtml(size)}</p>
-      ${report.data.dir ? `<p class="muted small health-path">${escapeHtml(report.data.dir)}</p>` : ''}
-    </section>
-    <section class="health-section" aria-labelledby="health-errors-title">
-      <h3 id="health-errors-title">Error 24 jam</h3>
-      <p id="health-errors" class="health-size">${escapeHtml(errorText)}</p>
-      ${shownLast ? `<code id="health-last" class="health-last" title="${escapeHtml(last)}">${escapeHtml(shownLast)}</code>` : ''}
-    </section>`;
+    <details class="health-more">
+      <summary>Detail &amp; persiapan${summary.total ? ` · ${summary.done}/${summary.total}` : ''}</summary>
+      <section class="health-section" aria-labelledby="health-todos-title">
+        <h3 id="health-todos-title">Persiapan${summary.total ? ` <span class="muted small">${summary.done}/${summary.total}</span>` : ''}</h3>
+        ${todos}
+      </section>
+      <section class="health-section" aria-labelledby="health-data-title">
+        <h3 id="health-data-title">Data aplikasi</h3>
+        <p id="health-size" class="health-size">${escapeHtml(size)}</p>
+        ${report.data.dir ? `<p class="muted small health-path">${escapeHtml(report.data.dir)}</p>` : ''}
+      </section>
+      <section class="health-section" aria-labelledby="health-errors-title">
+        <h3 id="health-errors-title">Error 24 jam</h3>
+        <p id="health-errors" class="health-size">${escapeHtml(errorText)}</p>
+        ${shownLast ? `<code id="health-last" class="health-last" title="${escapeHtml(last)}">${escapeHtml(shownLast)}</code>` : ''}
+      </section>
+    </details>`;
 }
 
 function bodyHtml() {

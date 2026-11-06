@@ -1300,6 +1300,9 @@ body.read-only #composer-hint { color: var(--ask); }
 .tb small { display: flex; justify-content: center; height: 16px; padding-top: 4px; font-size: var(--fs-2xs); line-height: 1; color: var(--muted); white-space: nowrap; }
 .trend-caption { margin: 6px 0 8px; }
 .report-sub { margin: 14px 0 6px; font-size: var(--fs-md); }
+.report-more { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.report-more > summary, .health-more > summary { cursor: pointer; font-size: var(--fs-sm); color: var(--accent-2); }
+.report-more[open] > summary, .health-more[open] > summary { margin-bottom: 8px; }
 .usage-table tr.muted td { color: var(--muted); }
 .report-preview .usage-table { margin-bottom: 4px; }
 #report-period-table .text-btn { margin: 4px 0 0; padding: 4px 6px; }
@@ -2434,6 +2437,9 @@ body.brain-on .roster-row:not(.on):not(.locked) img.orbable { opacity: .45; }
 .health-summary b { font-size: var(--fs-lg); }
 .health-summary p { margin: 2px 0 0; overflow-wrap: anywhere; }
 .health-section { min-width: 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.health-more { min-width: 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.health-more .health-section { padding-top: 0; border-top: 0; }
+.health-more[open] { display: flex; flex-direction: column; gap: 12px; }
 .health-section h3 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 6px; font-size: var(--fs-md); }
 .health-section h3 .muted { font-weight: 400; }
 .health-checks, .health-todos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

@@ -1783,6 +1783,8 @@ for (const vp of VIEWPORTS) {
       try {
         await tap(page, '#btn-report');
         await page.waitFor(() => document.querySelectorAll('#report-engines tbody tr').length === 4, { timeoutMs: 4000, message: 'blok Per mesin dengan 4 baris' });
+        assert.equal(await page.eval(() => document.querySelector('#report-modal .report-more')?.open), false, 'rincian laporan dilipat dulu');
+        await page.eval(() => (document.querySelector('#report-modal .report-more').open = true));
         const view = await page.eval(() => {
           const box = document.querySelector('#report-engines');
           const kpis = [...document.querySelectorAll('#report-kpis > div')];
@@ -2333,6 +2335,8 @@ for (const vp of VIEWPORTS) {
         await page.waitFor(() => !document.querySelector('#health-modal').hidden && Boolean(document.querySelector('#health-verdict')), { timeoutMs: 4000, message: 'laporan kesehatan tampil' });
         assert.equal(await healthCalls(page), 1, 'satu request saat modal dibuka');
 
+        assert.equal(await page.eval(() => document.querySelector('#health-modal .health-more')?.open), false, 'detail kesehatan dilipat dulu');
+        await page.eval(() => (document.querySelector('#health-modal .health-more').open = true));
         const view = await page.eval(() => ({
           verdict: document.querySelector('#health-verdict').textContent.trim(),
           meta: document.querySelector('#health-meta').textContent,
