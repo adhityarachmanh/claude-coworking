@@ -315,6 +315,35 @@ test('⏰ tugas terjadwal: save/list/toggle/delete, validation, and state.json p
   for (const item of (await api(`/api/projects/${id}/queue`)).body.queue.items) await api(`/api/projects/${id}/queue-remove`, { itemId: item.id });
 });
 
+test('⚠ perlu perhatian: a paused queue and a budget stop show up in one list', async () => {
+  const id = await projectId();
+  const usageFile = path.join(TMP, 'data', 'usage.jsonl');
+  const beforeUsage = existsSync(usageFile) ? readFileSync(usageFile, 'utf8') : '';
+  const beforeBudget = (await api('/api/budget', {})).body.budget.budget;
+  try {
+    await api(`/api/projects/${id}/queue-pause`, { paused: true });
+    await api(`/api/projects/${id}/queue-add`, { text: 'tunggu perhatian' });
+    const attentionResponse = await api('/api/attention', {});
+    assert.equal(attentionResponse.status, 200, JSON.stringify(attentionResponse.body));
+    let attention = attentionResponse.body;
+    assert.ok(attention.items.some((item) => item.kind === 'queue' && item.project === id));
+    assert.ok(attention.count >= 1);
+
+    appendFileSync(
+      usageFile,
+      `${JSON.stringify({ ts: Date.now(), account: { id: 'attention', email: 'Attention', org: null }, engine: 'claude', source: 'web', project: 'toko', projectId: id, sessionId: null, model: 'm', input: 1, output: 1, cacheRead: 0, cacheWrite: 0, costUsd: 99, requests: 0, turns: 0 })}\n`,
+    );
+    await api('/api/budget/save', { dailyUsd: 1, weeklyUsd: null, monthlyUsd: null });
+    attention = (await api('/api/attention', {})).body;
+    assert.ok(attention.items.some((item) => item.kind === 'budget'));
+  } finally {
+    for (const item of (await api(`/api/projects/${id}/queue`)).body.queue.items) await api(`/api/projects/${id}/queue-remove`, { itemId: item.id });
+    await api(`/api/projects/${id}/queue-pause`, { paused: false });
+    writeFileSync(usageFile, beforeUsage);
+    await api('/api/budget/save', beforeBudget);
+  }
+});
+
 test('💰 hard stop: prompt, compact, and handoff apply are refused while a window is over', async () => {
   const id = await projectId();
   const usageFile = path.join(TMP, 'data', 'usage.jsonl');

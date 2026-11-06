@@ -2,6 +2,7 @@
 // One stream per browser, shared by every tab of this origin (core/stream-share.js).
 import { onAccountAlert, onAccountState, renderAccountButton } from '../features/account.js';
 import { appendActivity } from '../features/activity.js';
+import { scheduleAttention } from '../features/attention.js';
 import { scheduleChanges } from '../features/changes.js';
 import { appendChat, renderChat, replaceChat, scheduleReplace } from '../features/chat.js';
 import { applyClaudeCheck } from '../features/claude-check.js';
@@ -36,7 +37,10 @@ let share = null;
 // One handler per server event. `live` is false while a tab that just joined replays what it missed
 // (core/stream-share.js): the state catches up, but old news never chimes or animates again.
 const handlers = {
-  routines: (list) => applyRoutines(list),
+  routines: (list) => {
+    applyRoutines(list);
+    scheduleAttention();
+  },
   config(config) {
     renderRoots(config);
     applyNames(config);
@@ -119,6 +123,7 @@ const handlers = {
     // A project engine changed (⚙ → Mesin project, this or another device): redraw the selector in place.
     if (!$('#settings-modal').hidden) syncProjectEngine();
     updateTitle();
+    scheduleAttention();
   },
   office(evt, live) {
     (state.events[evt.project] ??= []).push(evt);
@@ -141,6 +146,7 @@ const handlers = {
       notify('error', `⚠ Ada kendala — ${projectName(msg.project)}`, msg.text.slice(0, 120), msg.project);
     }
     renderSidebar();
+    if (live) scheduleAttention();
   },
   chat_update: (update) => onChatUpdate(update),
   chat_reset({ project }) {
@@ -159,6 +165,7 @@ const handlers = {
     }
     updateTitle();
     renderSidebar();
+    scheduleAttention();
   },
 };
 

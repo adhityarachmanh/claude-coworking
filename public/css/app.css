@@ -91,6 +91,71 @@
   --mono: "Cascadia Code", Consolas, ui-monospace, monospace;
 }
 
+/* 🎛️ Tampilan: the app chrome only (the pixel office keeps its own theme). */
+:root[data-app-theme='light'] {
+  --bg: #f4f2ee;
+  --surface: #fffefb;
+  --surface-2: #f2f0eb;
+  --surface-3: #e7e4de;
+  --border: #d8d4cc;
+  --border-strong: #c3beb4;
+  --text: #25231f;
+  --text-2: #4b4740;
+  --muted: #6c675f;
+  --accent: #b85a3c;
+  --accent-2: #9a452c;
+  --accent-solid: #a84e32;
+  --accent-solid-hover: #91422a;
+  --on-accent: #fff;
+  --accent-soft: #f7e6dc;
+  --accent-tint: #f2d8cb;
+  --accent-line: #e2b7a5;
+  --accent-meta: #7a4a38;
+  --ok-soft: #e5f4e8;
+  --ok-line: #b7dfc0;
+  --ok-text: #1f6b33;
+  --ok-text-strong: #145026;
+  --err-surface: #fbe9e7;
+  --err-soft: #f7dcd9;
+  --err-line: #e7b3ad;
+  --err-text: #a3271f;
+  --err-text-strong: #7f1a14;
+  --warn-soft: #fbf0d8;
+  --warn-line: #e8ce93;
+  --warn-text: #7a5500;
+  --warn-text-strong: #5f4200;
+  --cli-soft: #e8eef7;
+  --cli-text: #3b5a7a;
+  --cli-msg: #edf2f9;
+  --cli-line: #c9d6e6;
+  --work-text: #1f5f99;
+  --shell: #a13b6a;
+  --code-bg: #f2f0eb;
+  --chrome-hi: #fbfaf7;
+  --chrome: #f7f5f1;
+  --office-glow: #e9e5de;
+  --wash-1: #00000008;
+  --wash-2: #0000000d;
+  --wash-3: #00000014;
+  --wash-4: #0000001c;
+  --on-ask: #fff;
+  --ask: #a86b00;
+}
+:root[data-app-size='small'] { --fs-2xs: 9px; --fs-xs: 10px; --fs-sm: 11px; --fs-md: 12px; --fs-base: 13px; --fs-lg: 14px; --fs-xl: 17px; --fs-2xl: 22px; --fs-3xl: 28px; }
+:root[data-app-size='large'] { --fs-2xs: 11px; --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-base: 16px; --fs-lg: 17px; --fs-xl: 20px; --fs-2xl: 26px; --fs-3xl: 32px; }
+:root[data-app-density='compact'] .chat { padding: 8px 10px 4px; gap: 4px; }
+:root[data-app-density='compact'] .msg { padding: 6px 9px; }
+:root[data-app-density='compact'] .line { padding: 1px 4px; }
+:root[data-app-density='compact'] .approval { padding: 7px 9px; }
+:root[data-app-density='compact'] .settings-panel { gap: 5px; }
+:root[data-app-density='compact'] .dash-card { padding: 7px 9px; }
+:root[data-app-motion='reduce'] *, :root[data-app-motion='reduce'] *::before, :root[data-app-motion='reduce'] *::after {
+  animation-duration: .001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .001ms !important;
+  scroll-behavior: auto !important;
+}
+
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
@@ -1536,6 +1601,10 @@ body.read-only #composer-hint { color: var(--ask); }
 
 /* ---------- ⚙ → Cadangkan riwayat (export / import) ---------- */
 .backup { display: flex; flex-direction: column; gap: 6px; }
+.appearance { display: flex; flex-direction: column; gap: 8px; }
+.appearance-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: var(--fs-md); }
+.appearance-row > span { color: var(--muted); }
+.appearance-row .seg { flex-wrap: wrap; }
 .theme-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .theme-pick p { margin: 0; }
 .theme-pick .seg { flex-wrap: wrap; max-width: 100%; border-radius: var(--r-lg); }
@@ -1900,6 +1969,16 @@ body.read-only #composer-hint { color: var(--ask); }
 .dash-modal-card .modal-head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash-modal-card .modal-head small { font-weight: 400; font-size: var(--fs-sm); }
 .dash-search { width: 100%; flex: none; }
+.attention-count { margin-left: 2px; padding: 0 5px; border-radius: var(--r-pill); background: var(--ask); color: var(--on-ask); font-size: var(--fs-xs); font-weight: 700; line-height: 1.5; }
+.dash-attention { flex: none; min-width: 0; padding: 8px 10px; border: 1px solid var(--warn-line); border-radius: var(--r-lg); background: var(--warn-soft); }
+.dash-attention > b { display: block; margin-bottom: 6px; font-size: var(--fs-md); color: var(--warn-text-strong); }
+.dash-attention ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; }
+.dash-attention button { width: 100%; display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border: 1px solid transparent; border-radius: var(--r-md); background: var(--surface); color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.dash-attention button:hover { border-color: var(--warn-line); background: var(--surface-2); }
+.dash-attention .att-ico { flex: none; }
+.dash-attention .att-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dash-attention .att-main span { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-attention .att-main small { font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash-list { list-style: none; margin: 0; padding: 0 2px 4px; flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-content: start; gap: 8px; }
 .dash-card { min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--border-strong); border-radius: var(--r-lg); background: var(--surface-2); cursor: pointer; }
 .dash-card:hover { background: var(--surface-3); }

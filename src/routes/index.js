@@ -3,6 +3,7 @@
 import { Router } from './router.js';
 import * as account from './account.js';
 import * as approvals from './approvals.js';
+import * as attention from './attention.js';
 import * as backup from './backup.js';
 import * as budget from './budget.js';
 import * as claudeCheck from './claude-check.js';
@@ -43,6 +44,7 @@ export function buildRouter() {
     queue.register,
     routines.register,
     approvals.register,
+    attention.register,
     templates.register,
     team.register,
     account.register,

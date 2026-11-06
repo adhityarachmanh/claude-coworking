@@ -19,6 +19,7 @@ function planPreview(text) {
 }
 
 export function fillApproval(node, msg) {
+  if (msg.approvalId) node.dataset.approvalId = msg.approvalId;
   const approval = state.approvals.get(msg.approvalId);
   const status = approval?.status ?? msg.status;
   node.className = `approval ${status}`;

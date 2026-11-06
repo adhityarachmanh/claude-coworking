@@ -10,6 +10,7 @@ import { announcement, countGroups, countsText, matchesQuery, relTime, sortSumma
 import { roleName } from '../office/cast.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { setMobileView } from '../ui/layout.js';
+import { loadAttention, renderAttention } from './attention.js';
 import { selectProject } from './picker.js';
 import { stuck } from './stuck.js';
 
@@ -202,6 +203,8 @@ function startTick() {
 export function openDashboard() {
   closeModal('project-modal');
   openModal('dash-modal');
+  renderAttention();
+  loadAttention({ force: true });
   renderDashboard();
   startTick();
   // Laptop: type to filter right away. Phone: no keyboard popping up; the dialog focuses its first control.

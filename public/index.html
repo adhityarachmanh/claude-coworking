@@ -32,7 +32,7 @@
       </span>
       <button id="btn-account" class="account-btn" title="Akun Claude, kuota & login"><span id="account-avatar" class="avatar">?</span><span id="account-label" class="account-label">Akun</span></button>
       <!-- 🗂 Semua project (features/dashboard.js); phone: the Kantor bar and the 🗂 in the project picker -->
-      <button id="btn-dashboard" class="icon-btn labeled" title="Semua project: status setiap project sekaligus" aria-haspopup="dialog"><span class="ico" aria-hidden="true">🗂</span><span class="lbl">Semua project</span></button>
+      <button id="btn-dashboard" class="icon-btn labeled" title="Semua project: status setiap project sekaligus" aria-haspopup="dialog"><span class="ico" aria-hidden="true">🗂</span><span class="lbl">Semua project</span><span id="attention-count" class="attention-count" hidden></span></button>
       <button id="btn-palette" class="icon-btn labeled" title="Palet perintah: cari aksi, file, project (Ctrl+P)" aria-haspopup="dialog" aria-keyshortcuts="Control+P"><span class="ico" aria-hidden="true">🔎</span><span class="lbl">Cari</span></button>
       <button id="btn-report" class="icon-btn labeled" title="Laporan penggunaan token (PDF)"><span class="ico" aria-hidden="true">📊</span><span class="lbl">Laporan</span></button>
       <button id="btn-phone" class="icon-btn labeled" title="Buka dari HP (scan QR)" hidden><span class="ico" aria-hidden="true">📱</span><span class="lbl">Buka di HP</span></button>
@@ -673,6 +673,15 @@
             <p id="theme-desc" class="muted">Ganti tampilan kantor pixel dan kostum tim. Disimpan di browser ini.</p>
           </section>
           <hr />
+          <section class="appearance" aria-labelledby="appearance-title">
+            <b id="appearance-title">🖥️ Tampilan</b>
+            <div class="appearance-row"><span>Tema</span><div class="seg" data-appearance="theme" role="group" aria-label="Tema aplikasi"><button type="button" data-value="light" aria-pressed="false">Terang</button><button type="button" data-value="dark" aria-pressed="false">Gelap</button><button type="button" data-value="system" aria-pressed="false">Sistem</button></div></div>
+            <div class="appearance-row"><span>Ukuran teks</span><div class="seg" data-appearance="size" role="group" aria-label="Ukuran teks"><button type="button" data-value="small" aria-pressed="false">Kecil</button><button type="button" data-value="normal" aria-pressed="false">Normal</button><button type="button" data-value="large" aria-pressed="false">Besar</button></div></div>
+            <div class="appearance-row"><span>Kepadatan</span><div class="seg" data-appearance="density" role="group" aria-label="Kepadatan tampilan"><button type="button" data-value="comfortable" aria-pressed="false">Nyaman</button><button type="button" data-value="compact" aria-pressed="false">Padat</button></div></div>
+            <div class="appearance-row"><span>Animasi</span><div class="seg" data-appearance="motion" role="group" aria-label="Animasi"><button type="button" data-value="system" aria-pressed="false">Ikuti sistem</button><button type="button" data-value="reduce" aria-pressed="false">Kurangi</button><button type="button" data-value="full" aria-pressed="false">Penuh</button></div></div>
+            <p class="muted small">Disimpan di perangkat ini. Tema kantor tetap diatur terpisah di atas.</p>
+          </section>
+          <hr />
           <!-- 💰 Budget pemakaian global (features/budget.js, server POST /api/budget & /api/budget/save): laptop/Tailscale only -->
           <section id="budget-section" class="budget-block" aria-labelledby="budget-title">
             <b id="budget-title">💰 Budget pemakaian</b>
@@ -1128,6 +1137,10 @@
           <button type="button" id="dash-music-toggle" class="ghost dash-music-btn" aria-label="Putar musik" hidden>▶</button>
           <button type="button" id="dash-music-more" class="ghost dash-music-btn" aria-haspopup="dialog">Lainnya…</button>
         </div>
+        <section id="dash-attention" class="dash-attention" aria-labelledby="dash-attention-title" hidden>
+          <b id="dash-attention-title">⚠ Perlu perhatian <span id="dash-attention-count" class="count"></span></b>
+          <ul id="dash-attention-list"></ul>
+        </section>
         <input id="dash-search" class="dash-search" type="search" aria-label="Saring project" aria-controls="dash-list" placeholder="Saring project…  (Enter buka yang pertama)" autocomplete="off" />
         <ul id="dash-list" class="dash-list" aria-label="Status semua project"></ul>
         <p id="dash-empty" class="dash-empty muted" hidden></p>

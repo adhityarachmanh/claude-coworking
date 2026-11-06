@@ -1962,6 +1962,65 @@ for (const vp of VIEWPORTS) {
       await page.press('Escape');
     });
 
+    test('⚠ Perlu perhatian: badge dan daftar di dashboard', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval((pid) => {
+        window.__attentionFetch ??= window.fetch;
+        window.fetch = (url, opts) =>
+          String(url).includes('/api/attention')
+            ? Promise.resolve(
+                new Response(
+                  JSON.stringify({
+                    count: 2,
+                    items: [
+                      { kind: 'budget', project: null, projectName: 'Global', label: 'Budget harian tercapai', detail: 'Prompt dihentikan' },
+                      { kind: 'routine', project: pid, projectName: 'toko', label: 'Jadwal gagal', detail: 'Cek CI' },
+                    ],
+                  }),
+                  { status: 200, headers: { 'Content-Type': 'application/json' } },
+                ),
+              )
+            : window.__attentionFetch(url, opts);
+      }, projectId);
+      try {
+        await page.eval(async () => (await import('/js/features/attention.js')).loadAttention({ force: true }));
+        await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
+        await page.waitFor(() => !document.querySelector('#dash-attention').hidden, { timeoutMs: 4000, message: 'daftar perhatian' });
+        assert.equal(await page.eval(() => document.querySelectorAll('#dash-attention-list li').length), 2);
+        assert.equal(await page.eval(() => document.querySelector('#attention-count').textContent), '2');
+        assert.match(await page.eval(() => document.querySelector('#dash-attention').textContent), /Budget harian tercapai/);
+        await page.press('Escape');
+      } finally {
+        await page.eval(async () => {
+          window.fetch = window.__attentionFetch;
+          await (await import('/js/features/attention.js')).loadAttention({ force: true });
+        });
+      }
+    });
+
+    test('🎛️ Tampilan: tema, ukuran teks, kepadatan, dan animasi tersimpan per perangkat', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await tap(page, '#btn-settings');
+      await settle(page, 'settings-modal');
+      if (!(await shownInPage(page, '[data-appearance="theme"]'))) await page.click('[data-settings-tab="umum"]');
+      const pick = (kind, value) => page.click(`[data-appearance="${kind}"] [data-value="${value}"]`);
+      await pick('theme', 'light');
+      assert.equal(await page.eval(() => document.documentElement.dataset.appTheme), 'light');
+      assert.equal(await page.eval(() => localStorage.getItem('office.appTheme')), 'light');
+      await pick('size', 'large');
+      assert.equal(await page.eval(() => getComputedStyle(document.documentElement).getPropertyValue('--fs-base').trim()), '16px');
+      await pick('density', 'compact');
+      assert.equal(await page.eval(() => document.documentElement.dataset.appDensity), 'compact');
+      await pick('motion', 'reduce');
+      assert.equal(await page.eval(() => document.documentElement.dataset.appMotion), 'reduce');
+      // Back to the dark look the older tests assume (the product default stays "system").
+      await pick('theme', 'dark');
+      await pick('size', 'normal');
+      await pick('density', 'comfortable');
+      await pick('motion', 'system');
+      await page.press('Escape');
+    });
+
     test('⏰ Tugas terjadwal: validasi, tambah, ubah, jalankan sekarang, jeda, hapus', async () => {
       await ensureApp(page, `#${projectId}`);
       await tap(page, '#btn-settings');
