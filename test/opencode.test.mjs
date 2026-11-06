@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { HANDOFF_TRIGGER_PROMPT } from '../src/handoff.js';
 import { autoModelFor, shortModelLabel, tierFor } from '../src/model-auto.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -156,6 +157,7 @@ async function useEngine(engine) {
     const res = await api(`/api/projects/${id}/engine`, { engine });
     assert.equal(res.status, 200, JSON.stringify(res.body));
   }
+  for (let i = 0; i < 100 && !(await snapshot()).statuses[id]; i++) await sleep(50);
   assert.equal((await snapshot()).statuses[id].engine, engine);
 }
 const lastText = (id) => seen.filter((s) => s.type === 'chat_update' && s.obj.project === id && s.obj.patch.streaming === false).at(-1)?.obj.patch.text;
@@ -517,6 +519,35 @@ test('🔁 Lanjutkan dari mesin lain: Cepat from the stored chat, Pintar on the 
   assert.match(backSmart.text, /Handoff palsu dari Claude/, 'the ACTIVE engine (Claude) writes it, not OpenCode');
   assert.ok(!claudeActive || backSmart.text.includes(claudeActive), `smart handoff uses the chat's active Claude model (${claudeActive}): ${backSmart.text}`);
   await useEngine('opencode');
+});
+
+test('Handoff Apply: one action sends a context-only prompt, stores it in the chat, and shows no plan card', async () => {
+  const id = await projectId();
+  if ((await snapshot()).statuses[id]?.engine !== 'claude') assert.equal((await api(`/api/projects/${id}/engine`, { engine: 'claude' })).status, 200);
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'sumber konteks apply' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  await useEngine('opencode');
+  await settle(id);
+  await api(`/api/projects/${id}/settings`, { mode: 'plan' });
+  mark = seen.length;
+  const applied = await api(`/api/projects/${id}/handoff/apply`);
+  assert.equal(applied.status, 200, JSON.stringify(applied.body));
+  const user = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === HANDOFF_TRIGGER_PROMPT);
+  assert.ok(user);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  await sleep(250);
+  assert.equal(seen.slice(mark).filter((s) => s.type === 'approval' && s.obj.project === id && s.obj.kind === 'plan').length, 0, 'no plan card for the context-only turn');
+  assert.equal((await snapshot()).statuses[id].handoffReady, false, 'consumed by the trigger prompt');
+
+  // A running turn is refused instead of queueing a context trigger behind it.
+  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'lama sekali' });
+  await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch.streaming === true);
+  assert.equal((await api(`/api/projects/${id}/handoff/apply`)).status, 409);
+  await api(`/api/projects/${id}/stop`);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
 });
 
 test('Handoff context is session memory: no chat bubble, ready until the next prompt, then cleared', async () => {

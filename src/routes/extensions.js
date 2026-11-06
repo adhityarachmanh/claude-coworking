@@ -6,7 +6,7 @@
 import { AdminError, deleteAgent, listAgents, listHooks, listPlugins, pluginAction, saveAgent } from '../claude-admin.js';
 import { gitAction } from '../git.js';
 import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
-import { handoffInfo, HandoffError, otherEngine, quickHandoff, smartHandoff } from '../handoff.js';
+import { HANDOFF_TRIGGER_PROMPT, handoffInfo, HandoffError, otherEngine, quickHandoff, smartHandoff } from '../handoff.js';
 import { json } from './http.js';
 import { withProject, withSession } from './project.js';
 
@@ -92,6 +92,29 @@ export function register(router) {
       throw err;
     }
   })), { maxBody: 1024 });
+
+  // One-button handoff: put the free context into the session and immediately send a context-only trigger prompt.
+  router.post(
+    '/api/projects/:id/handoff/apply',
+    withSession(
+      guard(async ({ hub }, req, res, { project, session }) => {
+        if (session.turnActive?.() || session.busy || session.inflight?.size || session.rewinding) throw new HandoffError(409, 'Tunggu giliran yang sedang berjalan selesai dulu.');
+        if ([...hub.approvals.values()].some(({ approval }) => approval.project === project.id)) throw new HandoffError(409, 'Jawab permintaan izin yang masih terbuka dulu.');
+        const to = hub.engineOf(project.id);
+        const from = otherEngine(to);
+        const text = await quickHandoff({ hub, project, from });
+        session.setHandoffContext(text);
+        try {
+          session.prompt(HANDOFF_TRIGGER_PROMPT, [], { handoffTrigger: true });
+        } catch (err) {
+          session.clearHandoffContext();
+          throw err;
+        }
+        return { ok: true, from, to };
+      }),
+    ),
+    { maxBody: 1024 },
+  );
 
   // Session-only handoff memory: no turn, no file, no prompt. It rides with the next prompt once.
   router.post('/api/projects/:id/handoff/context', withSession(guard((ctx, req, res, { project, session }, body) => {

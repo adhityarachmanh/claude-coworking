@@ -16,6 +16,9 @@ const MAX_MESSAGES = 30;
 const MAX_PER_MESSAGE = 700;
 const MAX_TOTAL = 14_000;
 export const ENGINE_LABEL = { claude: 'Claude Code', opencode: 'OpenCode' };
+/** The one-shot prompt that puts the handoff context into the session and asks the AI to remember it. */
+export const HANDOFF_TRIGGER_PROMPT =
+  'Konteks sesi dari mesin lain sudah dilampirkan. Ini hanya konteks agar kamu mengingat pekerjaan sebelumnya; jangan menjalankan alat atau mengubah file, jangan membuat usulan kerja, dan jangan meminta persetujuan. Balas singkat: "Konteks diterima."';
 
 export class HandoffError extends Error {
   constructor(status, message) {
@@ -47,7 +50,7 @@ export function otherChat(hub, from, projectId) {
   }
 }
 
-const HEADER = (from) => `🔁 Konteks dari ${ENGINE_LABEL[from]} (sesi sebelumnya di project ini). Lanjutkan pekerjaan dari sini; tanyakan dulu kalau ada yang belum jelas.`;
+const HEADER = (from) => `🔁 Konteks dari ${ENGINE_LABEL[from]} (sesi sebelumnya di project ini). Teruskan pekerjaan dari sini; minta klarifikasi kalau ada yang belum jelas.`;
 
 /** quick: the conversation's gist from the stored chat + the working tree's changes. */
 export async function quickHandoff({ hub, project, from }) {

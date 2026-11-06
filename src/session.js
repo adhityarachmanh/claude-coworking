@@ -441,7 +441,7 @@ export class ClaudeSession {
     const body = [handoff ? `[KONTEKS SESI — INFORMASI, BUKAN PERMINTAAN BARU]\n${handoff}\n[/KONTEKS SESI]` : '', context, text].filter(Boolean).join('\n\n');
     const content = attachments.length ? contentBlocks(attachments, body) : body;
     // files: how many 📎 attachments rode along (only the count is ever kept, see Hub.beginTurn).
-    const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false };
+    const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false, handoffTrigger: extra.handoffTrigger === true };
     this.inflight.set(uuid, item);
     if (item.state === 'started') this.announce(item);
     this.chainLeaf = null;
@@ -1171,6 +1171,11 @@ export class ClaudeSession {
     }
     const kind = req.tool_name === 'AskUserQuestion' ? 'question' : req.tool_name === 'ExitPlanMode' ? 'plan' : 'tool';
     const role = this.translator.roleOf(req.tool_use_id) ?? inferRole(req.tool_name, req.input ?? {}, { projectPath: this.project.path });
+    // A handoff trigger is context-only: if the model tries to end plan mode, close it without a card.
+    if (req.tool_name === 'ExitPlanMode' && [...this.inflight.values()].some((i) => i.state === 'started' && i.handoffTrigger)) {
+      this.respond(msg.request_id, req, role, { allow: false, cancelled: true, message: 'Hanya konteks; jangan membuat rencana.' });
+      return;
+    }
     if (this.autoApprove && kind === 'tool') {
       this.respond(msg.request_id, req, role, { allow: true });
       return;
