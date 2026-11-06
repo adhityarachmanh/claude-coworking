@@ -270,6 +270,53 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
   for (const p of ['/api/budget', '/api/budget/save']) assert.equal(wifiAllows(p), false, `${p}: refused over sniffable WiFi`);
 });
 
+test('⏰ tugas terjadwal: save/list/toggle/delete, validation, and state.json persistence', async () => {
+  const id = await projectId();
+  assert.deepEqual((await api('/api/routines', {})).body.routines, []);
+  const bad = await api('/api/routines/save', { projectId: id, prompt: 'cek', frequency: 'daily', time: '25:00' });
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /Jadwal belum lengkap/);
+  const saved = await api('/api/routines/save', { projectId: id, prompt: 'cek CI', frequency: 'daily', time: '09:00' });
+  assert.equal(saved.status, 200);
+  const routine = saved.body.routines[0];
+  assert.equal(routine.when, 'Harian 09:00');
+  assert.ok(routine.nextRun > Date.now(), 'nextRun is in the future');
+  const stored = JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8'));
+  assert.equal(stored.routines[0].prompt, 'cek CI');
+  const toggled = await api('/api/routines/toggle', { id: routine.id, enabled: false });
+  assert.equal(toggled.body.routines[0].enabled, false);
+  assert.equal(toggled.body.routines[0].nextRun, null);
+  assert.deepEqual((await api('/api/routines/delete', { id: routine.id })).body.routines, []);
+  assert.deepEqual((await api('/api/routines', {})).body.routines, []);
+});
+
+test('💰 hard stop: prompt, compact, and handoff apply are refused while a window is over', async () => {
+  const id = await projectId();
+  const usageFile = path.join(TMP, 'data', 'usage.jsonl');
+  const beforeUsage = existsSync(usageFile) ? readFileSync(usageFile, 'utf8') : '';
+  const beforeBudget = (await api('/api/budget', {})).body.budget.budget;
+  try {
+    appendFileSync(
+      usageFile,
+      `${JSON.stringify({ ts: Date.now(), account: { id: 'budget-stop', email: 'Budget Stop', org: null }, engine: 'claude', source: 'web', project: 'toko', projectId: id, sessionId: null, model: 'm', input: 1, output: 1, cacheRead: 0, cacheWrite: 0, costUsd: 99, requests: 0, turns: 0 })}\n`,
+    );
+    await api('/api/budget/save', { dailyUsd: 1, weeklyUsd: null, monthlyUsd: null });
+    const prompt = await api(`/api/projects/${id}/prompt`, { text: 'tes hard stop' });
+    assert.equal(prompt.status, 409);
+    assert.equal(prompt.body.code, 'budget');
+    assert.match(prompt.body.error, /Budget harian/);
+    const compact = await api(`/api/projects/${id}/compact`, {});
+    assert.equal(compact.status, 409);
+    assert.equal(compact.body.code, 'budget');
+    const handoff = await api(`/api/projects/${id}/handoff/apply`, {});
+    assert.equal(handoff.status, 409);
+    assert.match(handoff.body.error, /Budget/);
+  } finally {
+    writeFileSync(usageFile, beforeUsage);
+    await api('/api/budget/save', beforeBudget);
+  }
+});
+
 test('index.html preloads every module app.js imports (no waterfall on a phone)', async () => {
   const html = await (await fetch(BASE)).text();
   const preloaded = [...html.matchAll(/<link rel="modulepreload" href="([^"]+)"/g)].map((m) => m[1]);

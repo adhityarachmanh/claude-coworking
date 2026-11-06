@@ -19,6 +19,7 @@ import * as projects from './projects.js';
 import * as push from './push.js';
 import * as queue from './queue.js';
 import * as remote from './remote.js';
+import * as routines from './routines.js';
 import * as session from './session.js';
 import * as spotify from './spotify.js';
 import * as tasks from './tasks.js';
@@ -40,6 +41,7 @@ export function buildRouter() {
     health.register,
     permissions.register,
     queue.register,
+    routines.register,
     approvals.register,
     templates.register,
     team.register,

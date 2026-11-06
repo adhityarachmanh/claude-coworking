@@ -652,6 +652,7 @@
         <div id="settings-tabs" class="settings-tabs" role="tablist" aria-label="Bagian pengaturan">
           <button type="button" class="settings-tab on" id="settings-tab-umum" role="tab" aria-selected="true" aria-controls="settings-panel-umum" data-settings-tab="umum">📁 Umum</button>
           <button type="button" class="settings-tab" id="settings-tab-tim" role="tab" aria-selected="false" aria-controls="settings-panel-tim" data-settings-tab="tim">👥 Tim &amp; izin</button>
+          <button type="button" class="settings-tab" id="settings-tab-jadwal" role="tab" aria-selected="false" aria-controls="settings-panel-jadwal" data-settings-tab="jadwal">⏰ Jadwal</button>
           <button type="button" class="settings-tab" id="settings-tab-notifikasi" role="tab" aria-selected="false" aria-controls="settings-panel-notifikasi" data-settings-tab="notifikasi">🔔 Notifikasi</button>
           <button type="button" class="settings-tab" id="settings-tab-spotify" role="tab" aria-selected="false" aria-controls="settings-panel-spotify" data-settings-tab="spotify" hidden>♪ Spotify</button>
           <button type="button" class="settings-tab" id="settings-tab-cadangan" role="tab" aria-selected="false" aria-controls="settings-panel-cadangan" data-settings-tab="cadangan">💾 Cadangan</button>
@@ -684,6 +685,7 @@
             </div>
             <p id="budget-error" class="field-error" role="alert"></p>
             <p id="budget-coverage" class="muted small" hidden></p>
+            <p id="budget-stop" class="field-error" role="alert" hidden></p>
             <p id="budget-note" class="muted small">Batas biaya tercatat, bukan tagihan. OpenCode Go berlangganan, jadi budget ini terutama untuk Claude.</p>
           </section>
           </div>
@@ -700,6 +702,25 @@
           <button type="button" id="btn-roster" class="ghost team-names-btn" title="Pilih role bawaan yang punya meja di kantor">👥 Kelola tim (role aktif)</button>
           <button type="button" id="btn-team-names" class="ghost team-names-btn">✏️ Ganti nama anggota tim</button>
           <button type="button" id="btn-permissions" class="ghost team-names-btn" data-cap="permissions" title="Aturan allow / ask / deny Claude Code untuk project yang sedang dibuka">🛡️ Aturan izin project ini</button>
+          </div>
+          <div class="settings-panel" id="settings-panel-jadwal" data-settings-panel="jadwal" role="tabpanel" aria-labelledby="settings-tab-jadwal">
+          <section class="routines" aria-labelledby="routines-title">
+            <b id="routines-title">⏰ Tugas terjadwal</b>
+            <p class="muted small">Prompt otomatis masuk antrian saat waktunya tiba: sekali, harian, atau mingguan.</p>
+            <div id="routine-list" class="routine-list" aria-live="polite"><p class="muted small">Memuat jadwal…</p></div>
+            <div class="routine-form">
+              <label class="routine-field">Project<select id="routine-project"></select></label>
+              <label class="routine-field">Prompt<textarea id="routine-prompt" rows="2" maxlength="4000" placeholder="mis. Cek CI lalu laporkan hasilnya."></textarea></label>
+              <div class="routine-grid">
+                <label class="routine-field">Ulangi<select id="routine-frequency"><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="once">Sekali</option></select></label>
+                <label class="routine-field">Jam<input id="routine-time" type="time" step="60" value="09:00" /></label>
+                <label class="routine-field" id="routine-weekday-wrap">Hari<select id="routine-weekday"><option value="1">Senin</option><option value="2">Selasa</option><option value="3">Rabu</option><option value="4">Kamis</option><option value="5">Jumat</option><option value="6">Sabtu</option><option value="0">Minggu</option></select></label>
+                <label class="routine-field" id="routine-date-wrap" hidden>Tanggal<input id="routine-date" type="date" /></label>
+              </div>
+              <p id="routine-error" class="field-error" role="alert"></p>
+              <button type="button" id="routine-add" class="primary">＋ Tambah jadwal</button>
+            </div>
+          </section>
           </div>
           <div class="settings-panel" id="settings-panel-notifikasi" data-settings-panel="notifikasi" role="tabpanel" aria-labelledby="settings-tab-notifikasi">
           <button type="button" id="btn-notify-settings" class="ghost team-names-btn" aria-haspopup="dialog" title="Per jenis kejadian, jam tenang, hanya project favorit, volume (disimpan di browser ini)">🔔 Pengaturan notifikasi</button>

@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { BudgetError, budgetView, cleanBudgetPatch, cleanLimits, hasBudget, spend, WARN_RATIO } from '../src/budget.js';
+import { BudgetError, budgetStop, budgetView, cleanBudgetPatch, cleanLimits, hasBudget, spend, WARN_RATIO } from '../src/budget.js';
 import { Hub } from '../src/hub.js';
 import { periodStart, UsageLedger } from '../src/usage.js';
 
@@ -120,6 +120,16 @@ test('budgetView: one window per limit with its share and state (off / ok / warn
   const bad = budgetView(hubOf({ dailyUsd: -1, weeklyUsd: '10', monthlyUsd: 10001 }), ledger, NOW);
   assert.deepEqual(bad.budget, { dailyUsd: null, weeklyUsd: null, monthlyUsd: null });
   assert.deepEqual(bad.windows.month, { limit: null, usd: 17, percent: 0, state: 'off' });
+});
+
+test('budgetStop: null while under every limit, one clear message naming the window once over', () => {
+  const ledger = ledgerWith(ROWS);
+  assert.equal(budgetStop(hubOf({ dailyUsd: 6, weeklyUsd: null, monthlyUsd: null }), ledger, NOW), null, 'today $2 / $6');
+  const stop = budgetStop(hubOf({ dailyUsd: 2, weeklyUsd: null, monthlyUsd: null }), ledger, NOW); // exactly at the limit
+  assert.deepEqual(stop.windows, ['day']);
+  assert.match(stop.label, /^harian \$2,00 \/ \$2,00$/);
+  assert.match(stop.message, /Budget harian/);
+  assert.match(stop.message, /Pengaturan → Umum → Budget pemakaian global/);
 });
 
 test('cleanLimits: only a real amount 0.01…10000 survives, rounded to cents (anything else is off)', () => {

@@ -4,6 +4,11 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## 2026-11-06
 
+### Baru
+
+- **Budget jadi penghenti, bukan hanya peringatan.** Saat pemakaian harian/mingguan/bulanan mencapai batas, prompt baru, ringkas konteks, lanjutkan giliran, handoff, dan build dari kartu rencana ditolak sampai batas dinaikkan atau dikosongkan. Antrian ikut dijeda dengan alasan budget; turn yang sedang berjalan tidak dipotong.
+- **⏰ Tugas terjadwal.** Di ⚙ → **Jadwal** kamu bisa menyimpan prompt per project: sekali, harian, atau mingguan. Saat waktunya tiba prompt masuk antrian, jadi tetap mengikuti aturan antrian, budget, dan izin yang sama. Daftar jadwal bisa dijeda, dilanjutkan, atau dihapus.
+
 ### Diperbaiki
 
 - **UI lebih sedikit tulisan.** Dialog **⚙ Pengaturan** kini memakai tab juga di HP (satu bagian sekaligus, bukan satu lembar panjang), penjelasan panjang dipersingkat, baris hint di atas kotak pesan dibatasi 2 pesan terpenting (sisanya di tooltip), kartu rencana menampilkan ringkasan dulu dengan **Lihat rencana lengkap**, empty state/laporan memakai kalimat lebih pendek, dan detail **Kesehatan sistem** serta **Laporan** dilipat sampai dibuka.

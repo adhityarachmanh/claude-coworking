@@ -14,6 +14,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { budgetStop } from './budget.js';
 import { cleanAutoLevel } from './effort.js';
 import { tierFor } from './model-auto.js';
 
@@ -129,9 +130,10 @@ export class TaskQueue {
    *           delayMs?: number, now?: () => number }} options
    *   delayMs: how long after the session went idle the next item is sent (never from inside a session callback)
    */
-  constructor({ hub, sessions, delayMs = 400, now = () => Date.now() }) {
+  constructor({ hub, sessions, ledger = null, delayMs = 400, now = () => Date.now() }) {
     this.hub = hub;
     this.sessions = sessions;
+    this.ledger = ledger;
     this.delayMs = delayMs;
     this.now = now;
     this.timers = new Map(); // project id -> pending dispatch check
@@ -560,9 +562,13 @@ export class TaskQueue {
     const q = this.queues[id];
     if (!q || q.paused || this.running(id) || this.sessions.stopping) return;
     const item = q.items.find((i) => i.status === 'waiting');
-    if (item && budgetExceeded(q.budget)) return this.checkBudget(id); // used up while the queue was empty or paused
+    if (!item) return;
+    // 💰 The global budget is a hard stop too: hold the queue (and say why) instead of spending past the limit.
+    const stop = budgetStop(this.hub, this.ledger, this.now());
+    if (stop) return this.pauseFor(id, 'budget', `budget ${stop.label} tercapai`);
+    if (budgetExceeded(q.budget)) return this.checkBudget(id); // used up while the queue was empty or paused
     const project = this.hub.projects.get(id);
-    if (!item || !project || project.virtual || !this.idle(id)) return;
+    if (!project || project.virtual || !this.idle(id)) return;
     const session = this.sessions.get(project);
     const engine = this.hub.engineOf(id);
     Object.assign(item, { status: 'running', startedAt: this.now(), updatedAt: this.now(), error: null, engine });

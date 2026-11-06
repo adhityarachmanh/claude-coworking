@@ -1947,7 +1947,7 @@ for (const vp of VIEWPORTS) {
         })),
       );
       assert.equal(await shownInPage(page, '#settings-tabs'), true, 'bar tab tampil di desktop dan HP');
-      assert.deepEqual(tabs.filter((t) => t.shown).map((t) => t.tab), ['umum', 'tim', 'notifikasi', 'spotify', 'cadangan', 'sistem'], 'semua bagian punya tab');
+      assert.deepEqual(tabs.filter((t) => t.shown).map((t) => t.tab), ['umum', 'tim', 'jadwal', 'notifikasi', 'spotify', 'cadangan', 'sistem'], 'semua bagian punya tab');
       assert.deepEqual(panels.filter((p) => p.shown).map((p) => p.panel), ['umum'], 'hanya bagian tab aktif yang tampil');
       await page.click('[data-settings-tab="cadangan"]');
       assert.equal(await shownInPage(page, '#settings-modal .backup'), true, 'tab Cadangan menampilkan backup');
@@ -1959,6 +1959,33 @@ for (const vp of VIEWPORTS) {
       await page.click('[data-settings-tab="umum"]');
       await page.press('ArrowRight');
       assert.equal(await page.eval(() => document.activeElement?.dataset.settingsTab), 'tim', 'panah kanan pindah tab');
+      await page.press('Escape');
+    });
+
+    test('⏰ Tugas terjadwal: validasi, tambah, jeda, hapus', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await tap(page, '#btn-settings');
+      await settle(page, 'settings-modal');
+      await page.click('[data-settings-tab="jadwal"]');
+      await page.waitFor(() => document.querySelector('#routine-project')?.options.length > 0 && !/Memuat jadwal/.test(document.querySelector('#routine-list')?.textContent ?? ''), { timeoutMs: 4000, message: 'tab jadwal siap' });
+
+      await page.click('#routine-add');
+      assert.match(await page.eval(() => document.querySelector('#routine-error').textContent), /Prompt jadwal masih kosong/);
+
+      await page.eval(() => {
+        document.querySelector('#routine-prompt').value = 'cek CI lalu laporkan';
+        document.querySelector('#routine-frequency').value = 'daily';
+        document.querySelector('#routine-frequency').dispatchEvent(new Event('change', { bubbles: true }));
+        document.querySelector('#routine-time').value = '09:00';
+      });
+      await page.click('#routine-add');
+      await page.waitFor(() => document.querySelectorAll('.routine-item').length === 1, { timeoutMs: 4000, message: 'jadwal tersimpan' });
+      assert.match(await page.eval(() => document.querySelector('.routine-item').textContent), /Harian 09:00/);
+
+      await page.click('.routine-item [data-routine-toggle]');
+      await page.waitFor(() => document.querySelector('.routine-item')?.classList.contains('off'), { timeoutMs: 4000, message: 'jadwal dijeda' });
+      await page.click('.routine-item [data-routine-delete]');
+      await page.waitFor(() => document.querySelectorAll('.routine-item').length === 0, { timeoutMs: 4000, message: 'jadwal dihapus' });
       await page.press('Escape');
     });
 
@@ -2563,6 +2590,25 @@ for (const vp of VIEWPORTS) {
         await sleep(300);
         assert.equal(await budgetCalls(page), 1, 'tanpa polling/request berulang');
         assert.deepEqual(realProblems(page), [], 'tanpa error console');
+      } finally {
+        await restoreBudget(page);
+      }
+    });
+
+    test('💰 Budget: batas terlampaui menampilkan peringatan hard stop', async () => {
+      await ensureApp(page, '#demo');
+      const answer = BUDGET_ANSWER();
+      answer.budget.dailyUsd = 10;
+      answer.spend.day.usd = 12.3;
+      answer.windows.day = { limit: 10, usd: 12.3, percent: 1.23, state: 'over' };
+      await stubBudget(page, answer);
+      try {
+        await resetBudget(page);
+        await tap(page, '#btn-settings');
+        await settle(page, 'settings-modal');
+        if (!(await shownInPage(page, '#budget-stop'))) await page.click('[data-settings-tab="umum"]');
+        await page.waitFor(() => !document.querySelector('#budget-stop').hidden, { timeoutMs: 4000, message: 'peringatan hard stop' });
+        assert.match(await page.eval(() => document.querySelector('#budget-stop').textContent), /Pengiriman prompt dihentikan/);
       } finally {
         await restoreBudget(page);
       }

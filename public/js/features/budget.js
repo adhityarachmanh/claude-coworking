@@ -60,6 +60,14 @@ function restText(row) {
   return left >= 0 ? `sisa ${usdText(left)}` : `lewat ${usdText(-left)}`;
 }
 
+/** The windows at/over their limit, and the one line that explains the hard stop. */
+function stopState(view = budgetView.data) {
+  const over = WINDOWS.filter((w) => view?.rows[w.key]?.tone === 'over');
+  if (!over.length) return { over, text: '' };
+  const detail = over.map((w) => `${w.label.toLowerCase()} ${usdText(view.rows[w.key].usd)} / ${limitText(view.rows[w.key].limit)}`).join(' · ');
+  return { over, text: `⛔ Pengiriman prompt dihentikan: budget ${detail} sudah tercapai. Naikkan atau kosongkan batasnya untuk melanjutkan.` };
+}
+
 /** The summary rows (also used by 🩺): a thin green/amber/red bar, the amounts, the percent and what is left. */
 export function budgetRowsHtml(view = budgetView.data) {
   if (!view) return '';
@@ -87,8 +95,10 @@ export function budgetRowsHtml(view = budgetView.data) {
 export function budgetHealthHtml() {
   if (!budgetAvailable()) return '';
   const error = budgetView.error ? `<p class="field-error" role="alert">${escapeHtml(budgetView.error)}</p>` : '';
+  const stop = stopState();
+  const stopLine = stop.text ? `<p class="field-error" role="alert">${escapeHtml(stop.text)}</p>` : '';
   const body = budgetView.data
-    ? `${budgetRowsHtml()}<p class="muted small">Biaya tercatat memakai harga list; OpenCode Go itu langganan, jadi biayanya sering tercatat $0.</p>`
+    ? `${stopLine}${budgetRowsHtml()}<p class="muted small">Biaya tercatat memakai harga list; OpenCode Go itu langganan, jadi biayanya sering tercatat $0.</p>`
     : `<p class="muted small">${budgetView.loading ? 'Memuat budget…' : 'Belum ada data budget.'}</p>`;
   return `<section class="health-section health-budget" aria-labelledby="health-budget-title">
     <h3 id="health-budget-title">Budget pemakaian</h3>
@@ -139,6 +149,12 @@ function renderBudget() {
   if (coverage) {
     coverage.textContent = budgetView.data?.note ?? '';
     coverage.hidden = !coverage.textContent;
+  }
+  const stop = $('#budget-stop');
+  if (stop) {
+    const state = stopState();
+    stop.textContent = state.text;
+    stop.hidden = !state.text;
   }
   // Fill the fields with the saved limits once per view (and after a save), never while the user is typing.
   const key = budgetView.data ? WINDOWS.map((w) => budgetView.data.rows[w.key].limit).join('|') : '';

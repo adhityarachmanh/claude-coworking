@@ -18,6 +18,9 @@ export const WARN_RATIO = 0.8;
 
 /** "harian" / "mingguan" / "bulanan", for the validation messages. */
 const LIMIT_LABEL = Object.freeze({ dailyUsd: 'harian', weeklyUsd: 'mingguan', monthlyUsd: 'bulanan' });
+const WINDOW_LABEL = Object.freeze({ day: 'harian', week: 'mingguan', month: 'bulanan' });
+const USD = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const usdText = (v) => `$${USD.format(v)}`;
 
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 /** Rounded to cents (the stored precision of every limit). */
@@ -143,4 +146,21 @@ export function budgetView(hub, ledger, now = Date.now()) {
     };
   }
   return { budget, spend: spent, windows, note: budgetNote(spent) };
+}
+
+/**
+ * The hard stop: null while every configured window is under its limit, else the windows that are at/over it and one
+ * message for the user. A running turn is never cut; the next prompt, plan build, or queue item is refused.
+ * @returns {{ windows: string[], label: string, message: string }|null}
+ */
+export function budgetStop(hub, ledger, now = Date.now()) {
+  const view = budgetView(hub, ledger, now);
+  const over = WINDOW_UNITS.filter((unit) => view.windows[unit].state === 'over');
+  if (!over.length) return null;
+  const label = over.map((unit) => `${WINDOW_LABEL[unit]} ${usdText(view.windows[unit].usd)} / ${usdText(view.windows[unit].limit)}`).join(' · ');
+  return {
+    windows: over,
+    label,
+    message: `⛔ Budget ${label} sudah tercapai. Pengiriman prompt dihentikan sampai batas dinaikkan atau dikosongkan di ⚙ Pengaturan → Umum → Budget pemakaian global.`,
+  };
 }

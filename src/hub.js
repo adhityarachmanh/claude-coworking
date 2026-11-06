@@ -2,6 +2,7 @@
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { BUDGET_KEYS, BUDGET_MAX_USD, cents, cleanLimits } from './budget.js';
+import { cleanRoutines } from './routines.js';
 import { CHAT_LIMIT, ChatStore, isChatId } from './chat-store.js';
 import { EFFORT_LEVELS } from './effort.js';
 import { MODEL_TIERS } from './model-auto.js';
@@ -200,6 +201,8 @@ export class Hub {
     this.persisted = this.load();
     // A hand-edited or older state.json can hold anything in the budget: only a valid limit survives (else off).
     this.persisted.budget = cleanLimits(this.persisted.budget);
+    // ⏰ Tugas terjadwal: only valid routines survive; a missing list is fine for older state files.
+    this.persisted.routines = cleanRoutines(this.persisted.routines);
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
     // chatSeq: the counter at the last save, for chat files that could not be read now.
@@ -216,7 +219,7 @@ export class Hub {
     // turns: the turn running right now per project (written when it starts, removed when it ends); one left
     // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
     // the user continues or dismisses them (see recoverTurns / interruptTurn).
-    const empty = { roots: [], custom: [], favorites: [], settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null } };
+    const empty = { roots: [], custom: [], favorites: [], settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, routines: [] };
     let stored = {};
     let parsedOk = false;
     try {

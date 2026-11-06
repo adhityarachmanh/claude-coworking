@@ -7,6 +7,7 @@ import { closeModal, openModal } from '../ui/modals.js';
 import { loadBudgetView, syncBudgetSection } from './budget.js';
 import { syncHealthButton } from './health.js';
 import { selectProject } from './picker.js';
+import { openRoutines } from './routines.js';
 
 // The dialog shows one section at a time on both laptop and phone (the phone scrolls the tab bar sideways).
 let settingsTab = (() => {
@@ -45,6 +46,8 @@ export function selectSettingsTab(tab = settingsTab) {
   if (body) body.scrollTop = 0;
   // 💰 One request when the budget panel is shown; the view is cached.
   if (!$('#settings-modal')?.hidden && tab === 'umum') loadBudgetView();
+  // ⏰ Tugas terjadwal: refresh the project list and the stored schedules when its tab is shown.
+  if (!$('#settings-modal')?.hidden && tab === 'jadwal') openRoutines();
 }
 
 // ---------- 🔀 Mesin project (Stage 1: one engine per project) ----------
