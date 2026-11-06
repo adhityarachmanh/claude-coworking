@@ -1,4 +1,4 @@
-/* global document -- functions passed to page.eval run in the browser */
+/* global document, location, window -- functions passed to page.eval run in the browser */
 // Plan card UI on phone and desktop: Lanjut build / Minta revisi / Selesai, including "finish without build".
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -15,7 +15,7 @@ const SKIP = cdpUnavailableReason();
 const VIEWPORTS = [
   { name: 'mobile 390x844', width: 390, height: 844, mobile: true },
   { name: 'desktop 1440x900', width: 1440, height: 900, mobile: false },
-];
+].filter((vp) => !process.env.OFFICE_PLAN_UI_VIEWPORT || vp.name.includes(process.env.OFFICE_PLAN_UI_VIEWPORT));
 
 let TMP;
 let BASE;
@@ -55,6 +55,7 @@ before(async () => {
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'),
       OFFICE_OPEN_DRY_RUN: '1',
+      OFFICE_EFFORT_FAKE: 'high', // Auto is tested without spawning a real classifier
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -87,7 +88,60 @@ const send = (page, text) =>
     document.querySelector('#btn-send').click();
   }, text);
 
-const card = (page) => page.waitFor(() => document.querySelector('.approval.pending'), { timeoutMs: 10000, message: 'kartu rencana' });
+/** Remembers which approval cards were already on screen, so a later wait only matches the new one. */
+const markPending = (page) => page.eval(() => document.querySelectorAll('.approval.pending').forEach((n) => (n.dataset.old = '1')));
+
+/** Marks the next newly arrived pending card as `[data-target]`, so later queries cannot touch an older one. */
+const newCard = (page) =>
+  page.waitFor(
+    () => {
+      const card = [...document.querySelectorAll('.approval.pending')].find((n) => !n.dataset.old);
+      if (!card) return false;
+      document.querySelectorAll('.approval [data-target]').forEach((n) => delete n.dataset.target);
+      card.dataset.target = '1';
+      return true;
+    },
+    { timeoutMs: 10000, message: 'kartu rencana baru' },
+  );
+
+/** Clicks an action on the card this test just received (never an older card from another viewport). */
+const clickCard = (page, act, feedback = '') =>
+  page.eval(
+    (action, note) => {
+      const card = document.querySelector('.approval.pending[data-target="1"]');
+      if (!card) throw new Error('kartu target tidak ada');
+      if (note) card.querySelector('.feedback').value = note;
+      card.querySelector(`[data-act="${action}"]`).click();
+      return { loading: card.querySelector('.plan-preparing')?.textContent ?? '', disabled: [...card.querySelectorAll('button, input, select')].every((b) => b.disabled) };
+    },
+    act,
+    feedback,
+  );
+
+/** Settings through the page itself, so it carries the same token the app uses. */
+const setSettings = (page, patch) =>
+  page.eval(
+    async (body) => {
+      const token = document.querySelector('meta[name="office-token"]')?.content ?? '';
+      const res = await fetch(`/api/projects/${location.hash.slice(1)}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Office-Token': token },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`settings ${res.status}`);
+    },
+    patch,
+  );
+
+/** Holds an approval response long enough for the loading row to be observable. */
+const slowApprovals = (page) =>
+  page.eval(() => {
+    const orig = window.fetch;
+    window.fetch = async (...args) => {
+      if (String(args[0]).includes('/api/approvals/')) await new Promise((r) => setTimeout(r, 700));
+      return orig(...args);
+    };
+  });
 
 for (const vp of VIEWPORTS) {
   describe(`Rencana — ${vp.name}`, () => {
@@ -97,29 +151,48 @@ for (const vp of VIEWPORTS) {
         page.clearProblems();
         await page.goto(`${BASE}/#${projectId}`);
         await page.waitFor(() => document.querySelector('#conn')?.classList.contains('ok') && document.querySelector('#prompt'), { timeoutMs: 10000, message: 'app ready' });
+        // Each viewport starts from the same manual model/effort: the previous one leaves Auto on.
+        await setSettings(page, { modelAuto: false, effortAuto: false, model: 'sonnet', effort: '' });
+        await markPending(page);
         await send(page, 'buat rencana');
-        await card(page);
-        assert.deepEqual(await page.eval(() => [...document.querySelectorAll('.approval.pending .ap-actions [data-act]')].map((b) => b.textContent.trim())), ['▶ Lanjut build', 'Minta revisi', 'Selesai']);
-        assert.equal(await page.eval(() => Boolean(document.querySelector('.approval.pending .plan-mode select'))), true, 'Claude picks the work mode');
+        await newCard(page);
+        assert.deepEqual(await page.eval(() => [...document.querySelectorAll('.approval.pending[data-target="1"] .ap-actions [data-act]')].map((b) => b.textContent.trim())), ['▶ Lanjut build', 'Minta revisi', 'Selesai']);
+        assert.equal(await page.eval(() => Boolean(document.querySelector('.approval.pending[data-target="1"] .plan-mode select'))), true, 'Claude picks the work mode');
 
         const users = await page.eval(() => document.querySelectorAll('.msg.user').length);
-        await page.eval(() => document.querySelector('.approval.pending [data-act="finish"]').click());
-        await page.waitFor(() => document.querySelector('.approval.cancelled'), { timeoutMs: 8000, message: 'kartu dibatalkan' });
+        await clickCard(page, 'finish');
+        await page.waitFor(() => document.querySelector('.approval.cancelled[data-target="1"]'), { timeoutMs: 8000, message: 'kartu dibatalkan' });
         await sleep(400);
         assert.equal(await page.eval(() => document.querySelectorAll('.msg.user').length), users, 'Selesai sends no prompt');
 
+        await markPending(page);
         await send(page, 'buat rencana revisi');
-        await card(page);
-        await page.eval(() => {
-          document.querySelector('.approval.pending .feedback').value = 'tambahkan lisensi';
-          document.querySelector('.approval.pending [data-act="deny"]').click();
-        });
-        await page.waitFor(() => document.querySelector('.approval.denied'), { timeoutMs: 8000, message: 'revisi dikirim (plan ditolak)' });
+        await newCard(page);
+        await slowApprovals(page);
+        assert.match((await clickCard(page, 'deny', 'tambahkan lisensi')).loading, /Mengirim revisi/, 'the revision card shows an animated loading row');
+        await page.waitFor(() => document.querySelector('.approval.denied[data-target="1"]'), { timeoutMs: 8000, message: 'revisi dikirim (plan ditolak)' });
 
+        // Auto on: the build card uses the same loading row, and the bubble says which model/effort was picked.
+        await setSettings(page, { modelAuto: true, effortAuto: true });
+        await markPending(page);
         await send(page, 'buat rencana build');
-        await card(page);
-        await page.eval(() => document.querySelector('.approval.pending [data-act="build"]').click());
-        await page.waitFor(() => document.querySelector('.approval.allowed'), { timeoutMs: 8000, message: 'rencana disetujui' });
+        await newCard(page);
+        const buildClick = await clickCard(page, 'build');
+        assert.match(buildClick.loading, /Menentukan model & effort/, 'the build card shows the Auto classifier is running');
+        assert.equal(buildClick.disabled, true, 'no double submit while preparing');
+        await page.waitFor(() => document.querySelector('.approval.allowed[data-target="1"]'), { timeoutMs: 8000, message: 'rencana disetujui' });
+        const tags = await page.waitFor(
+          () => {
+            const meta = [...document.querySelectorAll('.msg.user .meta')].at(-1);
+            return meta && /Model: Kuat/.test(meta.textContent) && /Auto: High/.test(meta.textContent) ? meta.textContent : null;
+          },
+          { timeoutMs: 8000, message: 'tag Auto di bubble build' },
+        );
+        assert.match(tags, /Model: Kuat → opus/, 'Claude’s Kuat tier is opus');
+        assert.ok(
+          await page.waitFor(() => [...document.querySelectorAll('.info')].some((n) => /Auto build: Effort High · Model Kuat → opus/.test(n.textContent)), { timeoutMs: 8000, message: 'info Auto build' }),
+          'the chat also has a line with the chosen effort and model',
+        );
         assert.equal(await page.eval(horizontalOverflow), false);
         assert.deepEqual(page.problems, [], 'no console errors');
       } finally {

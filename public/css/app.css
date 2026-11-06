@@ -510,7 +510,7 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .msg-copy { flex: none; margin-left: 2px; color: var(--muted); opacity: 0; transition: opacity .15s; }
 .msg:hover .msg-copy, .msg:focus-within .msg-copy { opacity: 1; }
 .tag { display: inline-block; padding: 0 6px; margin-right: 6px; border-radius: var(--r-pill); background: var(--wash-3); }
-.tag.auto-effort { background: var(--accent-soft); color: var(--accent-2); max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag.auto-effort, .tag.auto-model { background: var(--accent-soft); color: var(--accent-2); max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The reason Effort Auto gave, visible next to the level: small and muted so the row keeps its normal height. */
 .tag.auto-effort .auto-why { margin-left: 4px; font-size: var(--fs-2xs); font-style: italic; color: var(--muted); }
 .tag.auto-effort.fallback { background: var(--warn-soft); color: var(--warn-text-strong); }
@@ -568,7 +568,11 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .approval .feedback { width: 100%; margin-top: 4px; font-size: var(--fs-md); }
 .approval .plan-mode { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: var(--fs-sm); color: var(--muted); }
 .approval .plan-mode select { font-size: var(--fs-sm); padding: 3px 6px; }
-.plan-preparing { margin: 6px 0 0; }
+.plan-preparing { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: var(--fs-sm); color: var(--muted); }
+.plan-preparing .dots { display: inline-flex; gap: 3px; }
+.plan-preparing .dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-2); animation: bounce 1s infinite; }
+.plan-preparing .dots span:nth-child(2) { animation-delay: .15s; }
+.plan-preparing .dots span:nth-child(3) { animation-delay: .3s; }
 
 .result { align-self: center; font-size: var(--fs-sm); color: var(--muted); padding: 3px 12px; border-radius: var(--r-pill); background: var(--surface-2); margin: 4px 0 8px; }
 .result.ok { color: var(--ok-text); }

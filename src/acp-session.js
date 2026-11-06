@@ -62,6 +62,8 @@ export const CLIENT_CAPABILITIES = Object.freeze({ fs: Object.freeze({ readTextF
 
 /** 📋 Rencana dulu: what "Setujui" sends to OpenCode (now in build) after the plan turn. */
 export const PLAN_APPROVED_PROMPT = 'Rencana disetujui. Kerjakan sekarang sesuai rencana di atas.';
+/** The Auto tags that ride on a plan build/revision bubble (only the settings that were actually classified). */
+const autoExtra = (auto) => ({ ...(auto?.autoEffort && { autoEffort: auto.autoEffort }), ...(auto?.autoModel && { autoModel: auto.autoModel }) });
 /**
  * ✕ Tolak: Claude Code tells the model "denied" and the turn goes on; OpenCode ends the whole turn. So the app
  * continues it with this note (and the user's reason, when given): the model carries on without that step.
@@ -530,15 +532,30 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.hub.office(this.id, { kind: 'ask_done', role, allowed: Boolean(decision.allow) });
       if (decision.cancelled) return;
       if (decision.allow) {
-        try {
-          await this.m.preparePlanBuild(this.id, plan);
-        } catch {
-          // A classifier/apply failure must never block the approved build: keep the old model/effort.
+        // The web route already classified this plan (preparedAuto); a phone notification answers directly, so only
+        // then does this path classify. Never both: that would cost two classifier calls and print two info lines.
+        let auto = decision.preparedAuto ?? null;
+        if (!decision.autoPrepared) {
+          try {
+            auto = await this.m.preparePlanTurn(this.id, plan, 'build');
+          } catch {
+            // A classifier/apply failure must never block the approved build: keep the old model/effort.
+          }
         }
         const mode = this.engine === 'opencode' ? 'manual' : PERMISSION_MODES.includes(decision.mode) && decision.mode !== 'plan' ? decision.mode : 'manual';
         this.hub.updateSettings(this.id, { mode });
-        this.prompt(PLAN_APPROVED_PROMPT); // syncSettings switches the agent (or the process) before it is sent
-      } else if (decision.message?.trim()) this.prompt(`Revisi rencananya: ${decision.message.trim()}`);
+        this.prompt(PLAN_APPROVED_PROMPT, [], autoExtra(auto)); // syncSettings switches the agent (or the process) before it is sent
+      } else if (decision.message?.trim()) {
+        // A revision is a new prompt to the plan agent: classify it too, so the bubble carries the same Auto tags.
+        const note = `Revisi rencananya: ${decision.message.trim()}`;
+        let auto = null;
+        try {
+          auto = await this.m.preparePlanTurn(this.id, note, 'revisi');
+        } catch {
+          // Same as build: a classifier failure leaves the old model/effort and never blocks the revision.
+        }
+        this.prompt(note, [], autoExtra(auto));
+      }
     }
 
     dropPlanCard() {

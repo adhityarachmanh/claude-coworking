@@ -1294,7 +1294,7 @@ test('plan approval re-runs Model/Effort Auto on the plan; Selesai cancels witho
   assert.equal(st.effort, 'high', 'the approved plan is classified again for Effort Auto');
   assert.equal(st.model, 'opus', 'high maps to the Kuat tier for Claude');
   assert.equal(st.modelAuto, true);
-  assert.ok(seen.some((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'info' && /Model Auto: Kuat/.test(s.obj.text)));
+  assert.ok(seen.some((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'info' && /Auto build: Effort High · Model Kuat → opus/.test(s.obj.text)));
 
   // Selesai: the plan is not approved, the mode stays plan, and no prompt is sent.
   await api(`/api/projects/${id}/settings`, { mode: 'plan', modelAuto: false, effortAuto: false });

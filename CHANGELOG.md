@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 2026-11-06
+
+### Diperbaiki
+
+- **Kartu rencana tidak lagi terasa macet.** Klik **▶ Lanjut build** atau **Minta revisi** kini menampilkan loading beranimasi di kartu (**“Menentukan model & effort…”** / **“Mengirim revisi…”**) dan baris typing di chat, lalu satu baris info `⚙️ Auto build: Effort High · Model Kuat → deepseek-v4-pro — alasan`. Bubble build/revisi ikut membawa tag **Auto** (effort) dan **Model**. Saat Auto mati, hanya ada loading singkat tanpa klasifikasi; tombol dikunci selama proses agar tidak terkirim dua kali.
+
 ## 2026-11-05
 
 ### Baru

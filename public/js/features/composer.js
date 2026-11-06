@@ -83,8 +83,19 @@ export function renderComposer() {
   if (st.autoApprove) hint.push('⚠ Semua izin otomatis di sesi ini.');
   if (state.readOnly) hint.unshift(`👁 ${READ_ONLY_HINT}.`);
   $('#composer-hint').textContent = hint.join('  ·  ');
-  $('#typing').hidden = !(classifying || st.busy || st.cliBusy || st.compacting);
-  $('#typing-text').textContent = classifying ? 'Menentukan effort…' : st.compacting ? '⏳ Memadatkan konteks percakapan…' : st.busy ? 'Tim sedang bekerja…' : 'Claude Code (terminal) sedang bekerja…';
+  const planPreparing = st.planPreparing;
+  $('#typing').hidden = !(classifying || planPreparing || st.busy || st.cliBusy || st.compacting);
+  $('#typing-text').textContent = classifying
+    ? 'Menentukan effort…'
+    : planPreparing === 'build'
+      ? 'Menentukan model & effort…'
+      : planPreparing === 'revisi'
+        ? 'Menyiapkan revisi…'
+        : st.compacting
+          ? '⏳ Memadatkan konteks percakapan…'
+          : st.busy
+            ? 'Tim sedang bekerja…'
+            : 'Claude Code (terminal) sedang bekerja…';
   renderResumeTurn(st);
   renderTodos(st);
   renderStatusline(st);

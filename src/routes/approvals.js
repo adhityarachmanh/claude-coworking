@@ -10,12 +10,16 @@ async function resolveApproval({ hub, sessions }, req, res, { id }, body) {
   const entry = hub.approvals.get(id);
   const plan = entry?.approval?.kind === 'plan' ? entry.approval : null;
   const cancelled = body.cancelled === true;
+  // A plan's build may need a fresh Model/Effort Auto decision, judged on the plan itself. The result rides on the
+  // decision as `preparedAuto` so the OpenCode path does not classify the same plan a second time.
+  let autoPrepared = false;
+  let preparedAuto = null;
   if (plan && !cancelled && Boolean(body.allow)) {
-    // A plan's build may need a fresh Model/Effort Auto decision, judged on the plan itself.
     try {
-      await sessions.preparePlanBuild(plan.project, plan.input?.plan ?? '');
+      preparedAuto = await sessions.preparePlanTurn(plan.project, plan.input?.plan ?? '', 'build');
+      autoPrepared = true;
     } catch {
-      // Never block an approved plan because the classifier was unavailable.
+      autoPrepared = true; // attempted: never classify twice because this call failed
     }
   }
   if (plan && cancelled) hub.chat(plan.project, { kind: 'info', text: 'Rencana disimpan tanpa build.' });
@@ -27,6 +31,8 @@ async function resolveApproval({ hub, sessions }, req, res, { id }, body) {
     message: typeof body.message === 'string' ? body.message.slice(0, 2000) : undefined,
     mode: PERMISSION_MODES.includes(body.mode) ? body.mode : undefined, // plan approved: how the work continues
     cancelled,
+    autoPrepared,
+    preparedAuto,
   });
   return json(res, ok ? 200 : 409, { ok });
 }

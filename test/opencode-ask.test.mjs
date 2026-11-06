@@ -281,15 +281,33 @@ test('📋 plan: build re-runs Model/Effort Auto on the plan; Selesai closes it 
   assert.equal((await result()).ok, true);
   let card = await pendingCard();
   await api(`/api/projects/${id}/settings`, { modelAuto: true, effortAuto: true });
+  const beforeBuild = seen.length;
   await api(`/api/approvals/${card.id}`, { allow: true, mode: 'manual' });
-  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === PLAN_APPROVED_PROMPT);
+  const buildBubble = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === PLAN_APPROVED_PROMPT);
+  assert.equal(buildBubble.autoEffort?.level, 'high', 'the build bubble carries the Auto effort');
+  assert.equal(buildBubble.autoModel?.label, 'Kuat', 'and the Auto model');
   await result();
   let st = (await snapshot()).statuses[id];
   assert.equal(st.effort, 'high', 'the approved plan is classified again for Effort Auto');
   assert.equal(st.effortAuto, true);
   assert.equal(st.modelAuto, true);
   assert.match(st.model, /deepseek-v4-pro$/, 'high maps to the Kuat tier for OpenCode');
-  assert.ok(seen.some((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'info' && /Model Auto: Kuat/.test(s.obj.text)));
+  const buildInfos = seen.slice(beforeBuild).filter((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'info' && /Auto build: Effort High · Model Kuat → deepseek-v4-pro/.test(s.obj.text));
+  assert.equal(buildInfos.length, 1, 'one build = one Auto classification (no duplicate line)');
+
+  // Minta revisi is a new plan prompt: the same Auto info rides on the revision bubble, still in plan.
+  await api(`/api/projects/${id}/settings`, { mode: 'plan' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'buat rencana auto lagi' });
+  await result();
+  card = await pendingCard();
+  const beforeRevision = seen.length;
+  await api(`/api/approvals/${card.id}`, { allow: false, message: 'tambahkan lisensi' });
+  const revision = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === 'Revisi rencananya: tambahkan lisensi');
+  assert.equal(revision.autoEffort?.level, 'high', 'the revision bubble carries the Auto effort');
+  assert.equal(revision.autoModel?.label, 'Kuat', 'and the Auto model');
+  assert.ok(seen.slice(beforeRevision).some((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'info' && /Auto revisi: Effort High · Model Kuat/.test(s.obj.text)));
+  await result();
 
   // Selesai: the card closes, no prompt, and plan mode stays for another analysis.
   await api(`/api/projects/${id}/settings`, { mode: 'plan', modelAuto: false, effortAuto: false });

@@ -3,6 +3,7 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { fmtTokens, time } from '../core/format.js';
 import { engineLabel, engineOf } from '../core/engine-caps.js';
+import { MODEL_TIER_LABELS, shortModelName } from './engine.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { copyText, flashButton } from '../core/util.js';
 import { renderMarkdown } from '../markdown.js';
@@ -235,6 +236,18 @@ function autoEffortTag(auto) {
   return `<span class="tag auto-effort${auto.source === 'fallback' ? ' fallback' : ''}" title="${escapeHtml(full)}" aria-label="${escapeHtml(full)}">${escapeHtml(label)}${why}</span>`;
 }
 
+/**
+ * The Model Auto tag on a prompt: which tier/model the classifier picked. The reason stays in the tooltip (the
+ * Effort tag already carries the visible reason), and the tag truncates instead of overflowing its row.
+ */
+function autoModelTag(auto) {
+  if (!auto?.model) return '';
+  const tier = auto.label ?? MODEL_TIER_LABELS[auto.tier] ?? String(auto.tier ?? 'Auto');
+  const label = `Model: ${tier} → ${shortModelName(auto.model)}`;
+  const full = auto.reason ? `${label} — ${auto.reason}` : label;
+  return `<span class="tag auto-model" title="${escapeHtml(full)}" aria-label="${escapeHtml(full)}">${escapeHtml(label)}</span>`;
+}
+
 export function who(role) {
   const look = CAST[role]?.look ?? CAST.claude.look;
   return `<img class="ava orbable" style="--c:${role === 'claude' ? '#b9a8ff' : roleColor(role)}" src="${avatarURL(look)}" alt=""><b style="color:${roleColor(role)}">${escapeHtml(roleName(role))}</b>`;
@@ -271,6 +284,7 @@ function fillChatBody(node, msg) {
         msg.cancelled ? 'dibatalkan' : '',
       ].filter(Boolean);
       const autoTag = autoEffortTag(msg.autoEffort);
+      const autoModel = autoModelTag(msg.autoModel);
       // Re-sending a prompt typed in the terminal would run it in the web session, so only web prompts offer it.
       const actions = msg.source === 'demo'
         ? ''
@@ -278,7 +292,7 @@ function fillChatBody(node, msg) {
       node.className = `msg user ${msg.source === 'cli' ? 'cli' : ''} ${msg.history ? 'history' : ''}`;
       // 📎 Name + size chips only: the files' content went to Claude, not into the bubble.
       const files = Array.isArray(msg.attachments) && msg.attachments.length ? `<div class="msg-attachments">${msg.attachments.map((a) => attachmentChip(a)).join('')}</div>` : '';
-      node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>${files}<div class="meta">${actions}${autoTag}${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
+      node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>${files}<div class="meta">${actions}${autoModel}${autoTag}${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
       break;
     }
     case 'assistant':

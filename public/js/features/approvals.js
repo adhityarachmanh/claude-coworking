@@ -83,10 +83,14 @@ async function decide(approval, act, node, mode) {
     });
     body.answers = answers;
   }
-  if (act === 'build') {
+  // The Auto classifier can take a moment: the same animated row as a normal build, with what is happening.
+  const preparing = act === 'build' ? 'Menentukan model & effort…' : act === 'deny' && body.message ? 'Mengirim revisi…' : '';
+  if (preparing) {
     const note = document.createElement('p');
-    note.className = 'muted small plan-preparing';
-    note.textContent = 'Menyiapkan build…';
+    note.className = 'plan-preparing';
+    note.setAttribute('role', 'status');
+    note.innerHTML = '<span class="dots" aria-hidden="true"><span></span><span></span><span></span></span>';
+    note.append(document.createTextNode(preparing));
     node.querySelector('.ap-actions')?.before(note);
   }
   node.querySelectorAll('button, input, select').forEach((b) => (b.disabled = true));
