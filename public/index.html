@@ -273,6 +273,7 @@
     <div id="help-modal" class="modal" hidden>
       <div class="modal-card help-card" role="dialog" aria-modal="true" aria-label="Panduan">
         <div class="modal-head"><b>❓ Panduan Adhit Office</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <button type="button" id="btn-tour" class="ghost help-tour">👋 Tur singkat (4 langkah)</button>
         <div class="help">
           <section>
             <h3>Mulai dalam 4 langkah</h3>
@@ -331,6 +332,19 @@
               <li><b>📱 Buka di HP</b>: scan QR-nya, lalu pilih <i>Add to Home Screen</i> agar Adhit Office tampil seperti aplikasi. Lewat WiFi HP hanya bisa melihat; lewat Tailscale bisa mengirim perintah.</li>
             </ul>
           </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- 👋 Tur singkat: a four-step welcome, opened from Panduan or the empty state -->
+    <div id="tour-modal" class="modal" hidden>
+      <div class="modal-card tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title">
+        <div class="modal-head"><b id="tour-title">👋 Tur singkat</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div id="tour-body" class="tour-body"></div>
+        <div class="tour-actions">
+          <button type="button" id="tour-skip" class="ghost">Lewati</button>
+          <span id="tour-progress" class="muted small"></span>
+          <button type="button" id="tour-next" class="primary">Lanjut</button>
         </div>
       </div>
     </div>
@@ -659,6 +673,7 @@
           <button type="button" class="settings-tab" id="settings-tab-sistem" role="tab" aria-selected="false" aria-controls="settings-panel-sistem" data-settings-tab="sistem">⚙ Sistem</button>
         </div>
         <form id="roots-form" class="roots settings-body">
+          <input id="settings-search" class="settings-search" type="search" placeholder="Cari pengaturan…" aria-label="Cari pengaturan" autocomplete="off" />
           <div class="settings-panel on" id="settings-panel-umum" data-settings-panel="umum" role="tabpanel" aria-labelledby="settings-tab-umum">
           <label for="roots-input">Folder induk projects <small>(satu per baris — semua subfolder-nya jadi project)</small></label>
           <textarea id="roots-input" rows="3" spellcheck="false" placeholder="C:\Users\nama\projects"></textarea>

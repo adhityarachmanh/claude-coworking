@@ -18,6 +18,36 @@ let settingsTab = (() => {
   }
 })();
 
+let settingsQuery = '';
+
+/** Clears the search presentation (inline display + hit outlines) without changing the active tab. */
+function resetSearchView() {
+  for (const panel of document.querySelectorAll('#settings-modal [data-settings-panel]')) {
+    panel.style.display = '';
+    panel.classList.remove('search-hit');
+  }
+}
+
+/** Shows every panel that contains `query` and scrolls to the first one; empty restores the normal tabs. */
+function applySettingsSearch(query) {
+  settingsQuery = query.trim().toLowerCase();
+  if (!settingsQuery) {
+    resetSearchView();
+    selectSettingsTab();
+    return;
+  }
+  const body = document.querySelector('#settings-modal .settings-body');
+  let first = null;
+  for (const panel of document.querySelectorAll('#settings-modal [data-settings-panel]')) {
+    const fields = [...panel.querySelectorAll('input, select, textarea')].map((el) => `${el.placeholder ?? ''} ${el.getAttribute('aria-label') ?? ''}`).join(' ');
+    const hit = `${panel.textContent} ${fields}`.toLowerCase().includes(settingsQuery);
+    panel.style.display = hit ? 'flex' : 'none';
+    panel.classList.toggle('search-hit', hit);
+    if (hit && !first) first = panel;
+  }
+  if (first && body) body.scrollTop = Math.max(0, first.offsetTop - 8);
+}
+
 function syncSpotifyTab() {
   const sps = $('#sps');
   const tab = $('#settings-tab-spotify');
@@ -26,6 +56,12 @@ function syncSpotifyTab() {
 
 /** Shows one settings panel and remembers it for this browser session. */
 export function selectSettingsTab(tab = settingsTab) {
+  if (settingsQuery) {
+    settingsQuery = '';
+    const search = $('#settings-search');
+    if (search) search.value = '';
+    resetSearchView();
+  }
   syncSpotifyTab();
   const tabs = [...document.querySelectorAll('#settings-tabs [data-settings-tab]')].filter((b) => !b.hidden);
   if (!tabs.some((b) => b.dataset.settingsTab === tab)) tab = 'umum';
@@ -164,6 +200,15 @@ export function renderRoots(config) {
 
 export function initSettings() {
   $('#btn-help').addEventListener('click', () => openModal('help-modal'));
+  $('#settings-search').addEventListener('input', (e) => applySettingsSearch(e.target.value));
+  $('#settings-search').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') e.preventDefault();
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.target.value = '';
+      applySettingsSearch('');
+    }
+  });
 
   $('#autostart').addEventListener('change', async (e) => {
     try {
@@ -182,6 +227,9 @@ export function initSettings() {
 
   $('#btn-settings').addEventListener('click', () => {
     $('#roots-input').value = state.config?.roots.join('\n') ?? '';
+    settingsQuery = '';
+    $('#settings-search').value = '';
+    resetSearchView();
     syncHealthButton(); // a WiFi phone may not call /api/health: the opener is hidden, not broken
     syncBudgetSection(); // same for the 💰 budget section (read-only page: hidden)
     syncProjectEngine(); // 🔀 the active project's engine, before the dialog is painted

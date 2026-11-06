@@ -20,6 +20,7 @@ import { initBackup } from './features/backup.js';
 import { initBackupAuto } from './features/backup-auto.js';
 import { initAppearance } from './features/appearance.js';
 import { initAttention } from './features/attention.js';
+import { initTour } from './features/tour.js';
 import { initBudget } from './features/budget.js';
 import { initRoutines } from './features/routines.js';
 import { initChanges } from './features/changes.js';
@@ -104,6 +105,7 @@ initBudget(); // 💰 budget pemakaian global (⚙ → Umum + 🩺 Kesehatan; la
 initRoutines(); // ⏰ tugas terjadwal (⚙ → Jadwal; laptop/Tailscale only)
 initAppearance(); // 🎛️ app theme, text size, density, motion (per device)
 initAttention(); // ⚠ badge + "Perlu perhatian" in the dashboard
+initTour(); // 👋 tur singkat from Panduan / the empty chat
 initTheme(); // before the first frame: the saved theme is drawn right away
 initBackup(); // after initSettings: its #btn-settings listener runs after the dialog's own
 initBackupAuto(); // ⏰ Backup otomatis in the same ⚙ section

@@ -37,6 +37,9 @@ Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhi
 
 ## Tanpa terminal
 
+- **👋 Tur singkat**: dari **❓ Panduan** atau layar chat kosong. Empat langkah: pilih project, kirim permintaan, jawab izin, lalu pantau antrian/jadwal/budget.
+- **🔎 Cari pengaturan**: kotak cari di atas dialog ⚙ menampilkan panel yang cocok dan menyembunyikan sisanya; kosongkan untuk kembali ke tab.
+- **✅ Penanda pesan**: chat memberi pemisah tanggal dan **“Pesan baru”** saat kamu sedang membaca pesan lama; tombol **↓ N pesan baru** membawa kembali ke bawah.
 - **🎛️ Tampilan**: ⚙ → **Umum** → **Tampilan** mengatur **terang/gelap/ikuti sistem**, ukuran teks, kepadatan, dan animasi. Tersimpan per perangkat; tema kantor pixel tetap diatur terpisah.
 - **⚠ Perlu perhatian**: badge di tombol **🗂 Semua project** dan daftar di atas dashboard: izin menunggu, antrian dijeda, budget tercapai, giliran terputus, dan jadwal gagal. Klik item untuk pindah ke project/panel yang tepat.
 - **Izin, Model, Effort, Mode tim** ada di dialog *Pengaturan giliran*: klik chip ⚙ di atas kotak chat (di HP di bawah teks). **Effort Auto (LLM)** menilai kompleksitas tiap prompt dengan **model yang sedang aktif** (Default mengikuti default mesin) sebelum giliran mulai; hasilnya tampil sebagai badge `Auto: High` di chat. Manual tetap tersedia dan tidak memakai token classifier.

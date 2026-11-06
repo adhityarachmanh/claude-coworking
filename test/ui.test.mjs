@@ -1962,6 +1962,39 @@ for (const vp of VIEWPORTS) {
       await page.press('Escape');
     });
 
+    test('👋 Tur singkat: empat langkah, selesai menandai perangkat', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(async () => (await import('/js/features/tour.js')).openTour());
+      await page.waitFor(() => !document.querySelector('#tour-modal').hidden, { timeoutMs: 3000, message: 'tur terbuka' });
+      assert.match(await page.eval(() => document.querySelector('#tour-progress').textContent), /^1 \/ 4$/);
+      for (let i = 0; i < 3; i += 1) await page.click('#tour-next');
+      assert.match(await page.eval(() => document.querySelector('#tour-progress').textContent), /^4 \/ 4$/);
+      assert.equal(await page.eval(() => document.querySelector('#tour-next').textContent), 'Selesai');
+      await page.click('#tour-next');
+      await page.waitFor(() => document.querySelector('#tour-modal').hidden, { timeoutMs: 3000, message: 'tur selesai' });
+      assert.equal(await page.eval(() => localStorage.getItem('office.tourDone')), '1');
+    });
+
+    test('🔎 Cari pengaturan: panel yang cocok tampil, yang lain disembunyikan', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await tap(page, '#btn-settings');
+      await settle(page, 'settings-modal');
+      const type = (text) => page.eval((value) => {
+        const input = document.querySelector('#settings-search');
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }, text);
+      await type('budget');
+      assert.equal(await shownInPage(page, '#budget-section'), true, 'budget found');
+      assert.equal(await shownInPage(page, '[data-settings-panel="cadangan"]'), false, 'backup hidden');
+      await type('jadwal');
+      assert.equal(await shownInPage(page, '[data-settings-panel="jadwal"]'), true, 'the schedule panel is shown');
+      assert.equal(await shownInPage(page, '#routine-list'), true);
+      await type('');
+      assert.equal(await shownInPage(page, '[data-settings-panel="umum"]'), true, 'clearing restores the remembered tab');
+      await page.press('Escape');
+    });
+
     test('⚠ Perlu perhatian: badge dan daftar di dashboard', async () => {
       await ensureApp(page, `#${projectId}`);
       await page.eval((pid) => {

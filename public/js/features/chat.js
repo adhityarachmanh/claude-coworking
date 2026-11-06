@@ -10,6 +10,7 @@ import { renderMarkdown } from '../markdown.js';
 import { CAST, roleColor, roleName } from '../office/cast.js';
 import { avatarURL } from '../office/sprites.js';
 import { openModal } from '../ui/modals.js';
+import { openTour } from './tour.js';
 import { fillApproval } from './approvals.js';
 import { attachmentChip, attachmentPayload, putBackAttachments, recallSent, rememberSent } from './attachments.js';
 import { fillComposer } from './composer.js';
@@ -37,6 +38,10 @@ const rowMsg = new WeakMap();
 export function renderChat() {
   chatEl.innerHTML = '';
   rows.clear();
+  lastDay = '';
+  newMarker = null;
+  newCount = 0;
+  syncJumpLabel();
   resetLiveOutput();
   pendingReplace.clear();
   const messages = state.chats[state.active] ?? [];
@@ -49,7 +54,7 @@ export function renderChat() {
           <b>Mulai di ${escapeHtml(projectName(state.active))}</b>
           <p>${escapeHtml(engine)} · izin muncul sebagai kartu di chat.</p>
           <div class="starters">${STARTERS.map(([icon, label, text]) => `<button data-starter="${escapeHtml(text)}" title="${escapeHtml(text)}"><span>${icon}</span>${label}</button>`).join('')}</div>
-          <div class="empty-links"><button class="text-btn" data-open-history>🕘 Sesi sebelumnya</button><button class="text-btn" data-open-help>❓ Panduan</button></div>
+          <div class="empty-links"><button class="text-btn" data-open-history>🕘 Sesi sebelumnya</button><button class="text-btn" data-open-help>❓ Panduan</button><button class="text-btn" data-open-tour>👋 Tur singkat</button></div>
         </div>`;
   }
   for (const msg of messages) appendChat(msg, false);
@@ -68,7 +73,35 @@ let followChat = true;
 // every renderChat (project switch): the rebuild resets scrollTop, and rows with `content-visibility: auto` are
 // laid out at an 80px estimate first, so "bottom" grows a frame later and the scroll event lands mid-chat.
 let pinnedTop = 0;
+let lastDay = '';
+let newMarker = null;
+let newCount = 0;
 const distanceFromBottom = () => chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight;
+const dayLabel = (ts) => new Date(ts || Date.now()).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+function syncJumpLabel() {
+  const jump = $('#jump-latest');
+  if (!jump) return;
+  jump.textContent = newCount ? `↓ ${newCount} pesan baru` : '↓ Terbaru';
+}
+
+function clearNewMarker() {
+  newMarker?.remove();
+  newMarker = null;
+  newCount = 0;
+  syncJumpLabel();
+}
+
+function markNew(node) {
+  if (!newMarker) {
+    newMarker = document.createElement('div');
+    newMarker.className = 'divider new-marker';
+    newMarker.textContent = 'Pesan baru';
+    node.before(newMarker);
+  }
+  newCount += 1;
+  syncJumpLabel();
+}
 
 function pinToBottom() {
   chatEl.scrollTop = chatEl.scrollHeight;
@@ -84,8 +117,10 @@ export function scrollChat(force) {
   if (force) followChat = true;
   if (!followChat) {
     $('#jump-latest').hidden = false;
+    syncJumpLabel();
     return;
   }
+  clearNewMarker();
   pinToBottom();
   // Again after layout settles (markdown, images, expanded details).
   requestAnimationFrame(() => followChat && pinToBottom());
@@ -95,6 +130,14 @@ export function scrollChat(force) {
 export function appendChat(msg, scroll = true) {
   const welcome = chatEl.querySelector('.empty');
   welcome?.remove();
+  const day = dayLabel(msg.ts);
+  if (day && day !== lastDay) {
+    const stamp = document.createElement('div');
+    stamp.className = 'divider day';
+    stamp.textContent = day;
+    chatEl.append(stamp);
+    lastDay = day;
+  }
   const node = document.createElement('div');
   node.dataset.id = msg.id;
   fillChat(node, msg);
@@ -104,6 +147,7 @@ export function appendChat(msg, scroll = true) {
   if (msg.kind === 'user') markLatestUser();
   // Your own prompt, anything waiting for your decision, and the first message always come into view.
   const mustSee = msg.kind === 'approval' || (msg.kind === 'user' && msg.source === 'web') || Boolean(welcome);
+  if (scroll && !followChat && !mustSee) markNew(node);
   if (scroll) scrollChat(mustSee);
 }
 
@@ -377,7 +421,10 @@ export function initChat() {
       pinToBottom(); // the content moved, not the user (see pinnedTop): keep following
     } else {
       followChat = atBottom;
-      if (atBottom) pinnedTop = chatEl.scrollTop;
+      if (atBottom) {
+        pinnedTop = chatEl.scrollTop;
+        clearNewMarker();
+      }
     }
     $('#jump-latest').hidden = followChat;
   });
@@ -387,6 +434,7 @@ export function initChat() {
     if (starter) return fillComposer(starter.dataset.starter);
     if (e.target.closest('[data-open-history]')) return openSessions();
     if (e.target.closest('[data-open-help]')) return openModal('help-modal');
+    if (e.target.closest('[data-open-tour]')) return openTour();
     const codeBtn = e.target.closest('[data-copy-code]');
     if (codeBtn) return flashButton(codeBtn, (await copyText(codeBtn.closest('pre').querySelector('code').textContent)) ? '✓ Tersalin' : 'Gagal');
     const act = e.target.closest('[data-msg-act]');

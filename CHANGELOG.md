@@ -6,6 +6,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ### Baru
 
+- **👋 Tur singkat & pencarian pengaturan.** Tur 4 langkah dari Panduan/layar kosong; kotak cari di ⚙ langsung menampilkan panel yang cocok.
+- **✅ Penanda pesan baru.** Chat memberi pemisah tanggal dan penanda **“Pesan baru”** saat kamu membaca pesan lama; tombol **↓ N pesan baru** membawa kembali ke bawah.
 - **🎛️ Tampilan yang bisa disesuaikan.** Pilih tema **Terang / Gelap / Ikuti sistem**, ukuran teks **Kecil / Normal / Besar**, kepadatan **Nyaman / Padat**, dan animasi **Ikuti sistem / Kurangi / Penuh**. Tersimpan per perangkat.
 - **⚠ Perlu perhatian.** Badge di **🗂 Semua project** dan daftar di dashboard mengumpulkan izin yang menunggu, antrian dijeda, budget tercapai, giliran terputus, dan jadwal gagal; klik item untuk langsung ke project/panel terkait.
 - **Budget jadi penghenti, bukan hanya peringatan.** Saat pemakaian harian/mingguan/bulanan mencapai batas, prompt baru, ringkas konteks, lanjutkan giliran, handoff, dan build dari kartu rencana ditolak sampai batas dinaikkan atau dikosongkan. Batas bisa **global atau per project**, dan tombol **Izinkan 1 giliran** memberi satu giliran lewat (berlaku 5 menit). Antrian ikut dijeda dengan alasan budget; turn yang sedang berjalan tidak dipotong.
