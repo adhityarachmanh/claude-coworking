@@ -19,6 +19,7 @@ import { confirmNew, renderSessionBar } from './sessions.js';
 import { modeShort, MODE_CYCLE, renderStatusline, renderTodos } from './statusline.js';
 import { applySuggest, closeSuggest, renderSuggest, searchHistory, suggest } from './suggest.js';
 import { backgroundRunning, renderTaskChip, renderTasks, tasksView } from './tasks.js';
+import { composerHints, hintLine } from './hints.js';
 import { placeholders, tabToPlaceholder } from './templates.js';
 import { renderQueueChip } from './queue.js';
 import { renderVoice } from './voice.js';
@@ -76,13 +77,10 @@ export function renderComposer() {
   $('#effort').value = st.effortAuto ? 'auto' : (st.effort ?? '');
   $('#team-mode').checked = st.team ?? true;
   applyCaps(caps, engine);
-  const hint = [];
   // As in the CLI, a message sent mid-turn reaches Claude at its next step instead of waiting for the end.
-  if (st.busy) hint.push(st.queue ? `Tim bekerja — ${st.queue} pesan antre, dibaca di langkah berikutnya.` : 'Tim bekerja — pesan baru dibaca di langkah berikutnya.');
-  if (st.cliBusy) hint.push('Sesi terminal berjalan (izin dijawab di terminal).');
-  if (st.autoApprove) hint.push('⚠ Semua izin otomatis di sesi ini.');
-  if (state.readOnly) hint.unshift(`👁 ${READ_ONLY_HINT}.`);
-  $('#composer-hint').textContent = hint.join('  ·  ');
+  const line = hintLine(composerHints(st, { readOnly: state.readOnly, readOnlyHint: READ_ONLY_HINT }));
+  $('#composer-hint').textContent = line.text;
+  $('#composer-hint').title = line.title; // every hint stays available, even when only the first two fit
   const planPreparing = st.planPreparing;
   $('#typing').hidden = !(classifying || planPreparing || st.busy || st.cliBusy || st.compacting);
   $('#typing-text').textContent = classifying

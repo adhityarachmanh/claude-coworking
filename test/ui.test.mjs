@@ -1925,7 +1925,7 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test('⚙ Pengaturan: bagian jadi tab di desktop, tetap satu daftar panjang di HP', async () => {
+    test('⚙ Pengaturan: bagian jadi tab di desktop dan HP', async () => {
       await ensureApp(page, `#${projectId}`);
       await tap(page, '#btn-settings');
       await settle(page, 'settings-modal');
@@ -1944,24 +1944,19 @@ for (const vp of VIEWPORTS) {
           on: p.classList.contains('on'),
         })),
       );
-      if (vp.mobile) {
-        assert.equal(await shownInPage(page, '#settings-tabs'), false, 'bar tab tidak tampil di HP');
-        assert.deepEqual(panels.map((p) => p.shown), [true, true, true, true, true, true], 'semua bagian tetap tampil memanjang');
-      } else {
-        assert.equal(await shownInPage(page, '#settings-tabs'), true, 'bar tab tampil di desktop');
-        assert.deepEqual(tabs.filter((t) => t.shown).map((t) => t.tab), ['umum', 'tim', 'notifikasi', 'spotify', 'cadangan', 'sistem'], 'semua bagian punya tab');
-        assert.deepEqual(panels.filter((p) => p.shown).map((p) => p.panel), ['umum'], 'hanya bagian tab aktif yang tampil');
-        await page.click('[data-settings-tab="cadangan"]');
-        assert.equal(await shownInPage(page, '#settings-modal .backup'), true, 'tab Cadangan menampilkan backup');
-        assert.equal(await shownInPage(page, '[data-settings-panel="umum"]'), false, 'bagian tab lama disembunyikan');
-        await page.click('[data-settings-tab="notifikasi"]');
-        assert.equal(await shownInPage(page, '#quota-on'), true, 'tab Notifikasi menampilkan kuota');
-        await page.click('[data-settings-tab="sistem"]');
-        assert.equal(await shownInPage(page, '#cc-status'), true, 'tab Sistem menampilkan kompatibilitas');
-        await page.click('[data-settings-tab="umum"]');
-        await page.press('ArrowRight');
-        assert.equal(await page.eval(() => document.activeElement?.dataset.settingsTab), 'tim', 'panah kanan pindah tab');
-      }
+      assert.equal(await shownInPage(page, '#settings-tabs'), true, 'bar tab tampil di desktop dan HP');
+      assert.deepEqual(tabs.filter((t) => t.shown).map((t) => t.tab), ['umum', 'tim', 'notifikasi', 'spotify', 'cadangan', 'sistem'], 'semua bagian punya tab');
+      assert.deepEqual(panels.filter((p) => p.shown).map((p) => p.panel), ['umum'], 'hanya bagian tab aktif yang tampil');
+      await page.click('[data-settings-tab="cadangan"]');
+      assert.equal(await shownInPage(page, '#settings-modal .backup'), true, 'tab Cadangan menampilkan backup');
+      assert.equal(await shownInPage(page, '[data-settings-panel="umum"]'), false, 'bagian tab lama disembunyikan');
+      await page.click('[data-settings-tab="notifikasi"]');
+      assert.equal(await shownInPage(page, '#quota-on'), true, 'tab Notifikasi menampilkan kuota');
+      await page.click('[data-settings-tab="sistem"]');
+      assert.equal(await shownInPage(page, '#cc-status'), true, 'tab Sistem menampilkan kompatibilitas');
+      await page.click('[data-settings-tab="umum"]');
+      await page.press('ArrowRight');
+      assert.equal(await page.eval(() => document.activeElement?.dataset.settingsTab), 'tim', 'panah kanan pindah tab');
       await page.press('Escape');
     });
 
@@ -1999,7 +1994,7 @@ for (const vp of VIEWPORTS) {
       try {
         await tap(page, '#btn-settings');
         await settle(page, 'settings-modal');
-        if (!vp.mobile) await page.click('[data-settings-tab="tim"]');
+        await page.click('[data-settings-tab="tim"]');
         await page.waitFor(() => document.querySelector('#project-engine-opts [data-project-engine="claude"]'), { timeoutMs: 3000, message: 'pilihan mesin project' });
         const before = await page.eval(() => ({
           pressed: [...document.querySelectorAll('#project-engine-opts [data-project-engine]')].map((b) => [b.dataset.projectEngine, b.getAttribute('aria-pressed'), b.disabled]),
@@ -2007,7 +2002,7 @@ for (const vp of VIEWPORTS) {
           hint: document.querySelector('#project-engine-hint').textContent,
         }));
         assert.deepEqual(before.pressed, [['claude', 'true', false], ['opencode', 'false', false]], 'status project = Claude Code');
-        assert.match(before.desc, /Riwayat tiap mesin disimpan terpisah; berganti mesin hanya menampilkan riwayat mesin itu/);
+        assert.match(before.desc, /Riwayat tiap mesin disimpan terpisah\. Berganti mesin hanya menampilkan riwayat mesin itu/);
         assert.match(before.hint, /Project ini memakai Claude Code/);
         assert.deepEqual(await page.eval(unnamedButtons, '#project-engine'), [], 'pilihan mesin punya nama aksesibel');
         assert.equal(await page.eval(horizontalOverflow), null, 'tanpa scroll horizontal di 390px');
@@ -2059,7 +2054,7 @@ for (const vp of VIEWPORTS) {
       await ensureApp(page, '#demo');
       await tap(page, '#btn-settings');
       await settle(page, 'settings-modal');
-      if (!vp.mobile) await page.click('[data-settings-tab="tim"]');
+      await page.click('[data-settings-tab="tim"]');
       const demo = await page.eval(() => ({
         disabled: [...document.querySelectorAll('#project-engine-opts [data-project-engine]')].map((b) => b.disabled),
         hint: document.querySelector('#project-engine-hint').textContent,
@@ -2473,6 +2468,7 @@ for (const vp of VIEWPORTS) {
         });
         await tap(page, '#btn-settings');
         await settle(page, 'settings-modal');
+        await page.click('[data-settings-tab="sistem"]');
         const ro = await page.eval(() => {
           const btn = document.querySelector('#health-open');
           return {
@@ -2808,7 +2804,7 @@ for (const vp of VIEWPORTS) {
       await ensureApp(page, `#${projectId}`);
       await tap(page, '#btn-settings');
       await settle(page, 'settings-modal');
-      if (!vp.mobile) await page.click('[data-settings-tab="cadangan"]');
+      await page.click('[data-settings-tab="cadangan"]'); // one tab at a time on the phone too
       const r = await page.eval(() => ({
         visible: Boolean(document.querySelector('#settings-modal .backup')?.getClientRects().length),
         title: document.querySelector('#backup-title')?.textContent,
@@ -3422,7 +3418,7 @@ for (const vp of VIEWPORTS) {
       await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
       await tap(page, '#btn-settings');
       await settle(page, 'settings-modal');
-      if (!vp.mobile) await page.click('[data-settings-tab="notifikasi"]');
+      await page.click('[data-settings-tab="notifikasi"]');
       assert.deepEqual(await page.eval(() => ({ on: document.querySelector('#quota-on').checked, warn: document.querySelector('#quota-warn').value, crit: document.querySelector('#quota-crit').value })), { on: true, warn: '70', crit: '90' });
       const setField = (sel, v) =>
         page.eval(
@@ -3675,7 +3671,7 @@ for (const vp of VIEWPORTS) {
         await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
         await tap(page, '#btn-settings');
         await settle(page, 'settings-modal');
-        if (!vp.mobile) await page.click('[data-settings-tab="umum"]');
+        await page.click('[data-settings-tab="umum"]');
       };
       const themeState = () => ({
         stored: localStorage.getItem('office.theme'),

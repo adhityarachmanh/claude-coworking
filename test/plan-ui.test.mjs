@@ -133,6 +133,16 @@ const setSettings = (page, patch) =>
     patch,
   );
 
+/** Waits until the project has no running turn, so the next prompt gets its own Auto classification. */
+const idle = (page) =>
+  page.waitFor(
+    async () => {
+      const { state } = await import('/js/core/state.js');
+      return !state.statuses[state.active]?.busy;
+    },
+    { timeoutMs: 10000, message: 'giliran selesai' },
+  );
+
 /** Holds an approval response long enough for the loading row to be observable. */
 const slowApprovals = (page) =>
   page.eval(() => {
@@ -158,6 +168,7 @@ for (const vp of VIEWPORTS) {
         await newCard(page);
         assert.deepEqual(await page.eval(() => [...document.querySelectorAll('.approval.pending[data-target="1"] .ap-actions [data-act]')].map((b) => b.textContent.trim())), ['▶ Lanjut build', 'Minta revisi', 'Selesai']);
         assert.equal(await page.eval(() => Boolean(document.querySelector('.approval.pending[data-target="1"] .plan-mode select'))), true, 'Claude picks the work mode');
+        assert.match(await page.eval(() => document.querySelector('.approval.pending[data-target="1"] .plan-preview')?.textContent ?? ''), /Ubah validasi/, 'the card leads with a short summary');
 
         const users = await page.eval(() => document.querySelectorAll('.msg.user').length);
         await clickCard(page, 'finish');
@@ -171,6 +182,7 @@ for (const vp of VIEWPORTS) {
         await slowApprovals(page);
         assert.match((await clickCard(page, 'deny', 'tambahkan lisensi')).loading, /Mengirim revisi/, 'the revision card shows an animated loading row');
         await page.waitFor(() => document.querySelector('.approval.denied[data-target="1"]'), { timeoutMs: 8000, message: 'revisi dikirim (plan ditolak)' });
+        await idle(page); // the revision turn finished: the next prompt is classified, not marked "turn berjalan"
 
         // Auto on: the build card uses the same loading row, and the bubble says which model/effort was picked.
         await setSettings(page, { modelAuto: true, effortAuto: true });

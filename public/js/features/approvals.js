@@ -8,6 +8,16 @@ import { who } from './chat.js';
 
 // ---------- approvals ----------
 
+/** The first 3 bullets (or 3 lines) of a plan: enough to decide, without pushing the actions off screen. */
+function planPreview(text) {
+  const lines = String(text ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const bullets = lines.filter((line) => /^([-*+]|\d+[.)])\s+/.test(line)).slice(0, 3);
+  return (bullets.length ? bullets : lines.slice(0, 3)).join('\n');
+}
+
 export function fillApproval(node, msg) {
   const approval = state.approvals.get(msg.approvalId);
   const status = approval?.status ?? msg.status;
@@ -30,9 +40,12 @@ export function fillApproval(node, msg) {
       .join('');
     actions = '<button class="primary" data-act="answer">Kirim jawaban</button><button data-act="deny">Lewati</button>';
   } else if (approval.kind === 'plan') {
-    // Three actions: build, keep planning with feedback, or finish this analysis without building.
+    // Summary first, full plan behind "Lihat rencana lengkap": the three actions stay visible.
+    const plan = String(input.plan ?? '').trim();
+    const long = plan.length > 240 || plan.split(/\r?\n/).filter((line) => line.trim()).length > 3;
     const opencode = engineOf(state.statuses[msg.project] ?? {}, state.config) === 'opencode';
-    body = `<div class="plan md">${renderMarkdown(input.plan ?? '')}</div>
+    body = `<div class="plan-preview md">${renderMarkdown(long ? planPreview(plan) : plan)}</div>
+      ${long ? `<details class="plan-more"><summary>Lihat rencana lengkap</summary><div class="plan md">${renderMarkdown(plan)}</div></details>` : ''}
       <input class="feedback" placeholder="Catatan revisi (untuk Minta revisi)" aria-label="Catatan revisi rencana">
       ${opencode ? '' : '<label class="plan-mode">Build sebagai <select aria-label="Mode kerja setelah rencana disetujui"><option value="acceptEdits">Auto-edit</option><option value="manual">Tanya tiap edit</option></select></label>'}`;
     actions = '<button class="primary" data-act="build" title="Setujui rencana dan mulai build">▶ Lanjut build</button><button data-act="deny">Minta revisi</button><button data-act="finish" title="Simpan rencana tanpa menjalankan build">Selesai</button>';

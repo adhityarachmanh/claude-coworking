@@ -304,7 +304,7 @@ describe('🧩 ⚙ Kompatibilitas Claude Code (laptop)', { skip: SKIP ?? false }
         await page.setViewport(vp);
         await openApp(page);
         await tap(page, '#btn-settings');
-        if (!vp.mobile) await page.click('[data-settings-tab="sistem"]');
+        await page.click('[data-settings-tab="sistem"]');
         await page.waitFor(() => !document.querySelector('#settings-modal').hidden && /v2\.0\.\d/.test(document.querySelector('#cc-status').textContent), { message: '⚙ status' });
         assert.match(await page.eval(() => document.querySelector('#cc-status').textContent), /^Terpasang: v2\.0\.1\. Cek terakhir \(manual, (1 request Haiku|tanpa token)\) .*, v2\.0\.1: (⚠ 2 cek gagal|✓ semua cek lulus)/);
         assert.equal(await page.eval(() => document.querySelector('#cc-auto').checked), true);

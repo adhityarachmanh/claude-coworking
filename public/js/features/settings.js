@@ -1,6 +1,6 @@
 // Help, laptop settings (auto-start, shutdown), project folders, the project's engine and adding a project.
 import { api, toast } from '../core/api.js';
-import { $, escapeHtml, narrow } from '../core/dom.js';
+import { $, escapeHtml } from '../core/dom.js';
 import { engineLabel, engineOf } from '../core/engine-caps.js';
 import { APP_NAME, DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
@@ -8,7 +8,7 @@ import { loadBudgetView, syncBudgetSection } from './budget.js';
 import { syncHealthButton } from './health.js';
 import { selectProject } from './picker.js';
 
-// The laptop dialog shows one section at a time; the phone keeps every panel stacked (CSS).
+// The dialog shows one section at a time on both laptop and phone (the phone scrolls the tab bar sideways).
 let settingsTab = (() => {
   try {
     return sessionStorage.getItem('office.settingsTab') || 'umum';
@@ -43,15 +43,15 @@ export function selectSettingsTab(tab = settingsTab) {
   for (const panel of document.querySelectorAll('#settings-modal [data-settings-panel]')) panel.classList.toggle('on', panel.dataset.settingsPanel === tab);
   const body = document.querySelector('#settings-modal .settings-body');
   if (body) body.scrollTop = 0;
-  // 💰 One request when the budget panel is shown (a phone shows every panel at once); the view is cached.
-  if (!$('#settings-modal')?.hidden && (tab === 'umum' || narrow.matches)) loadBudgetView();
+  // 💰 One request when the budget panel is shown; the view is cached.
+  if (!$('#settings-modal')?.hidden && tab === 'umum') loadBudgetView();
 }
 
 // ---------- 🔀 Mesin project (Stage 1: one engine per project) ----------
 
 // Engines the selector offers. The server validates too (400 for anything else): never send an id we don't know.
 const PROJECT_ENGINES = ['claude', 'opencode'];
-const ENGINE_SWITCH_NOTE = 'Riwayat tiap mesin disimpan terpisah; berganti mesin hanya menampilkan riwayat mesin itu.';
+const ENGINE_SWITCH_NOTE = 'Riwayat tiap mesin disimpan terpisah. Berganti mesin hanya menampilkan riwayat mesin itu.';
 
 /** Last engine drawn + the inline 409 message, so a status tick never wipes the reason the user just got. */
 let engineShown = { key: '', error: '' };

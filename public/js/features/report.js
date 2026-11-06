@@ -210,7 +210,7 @@ function renderTrend(s) {
     })
     .join('');
   const used = periods.filter((p) => p.total);
-  $('#report-chart-caption').textContent = `${periods.length} ${name} · ${used.length} ada pemakaian · tertinggi ${fmtShort(max)} token per ${name}. ${capitalize(name)} tanpa pemakaian tidak masuk tabel.`;
+  $('#report-chart-caption').textContent = `${periods.length} ${name} · ${used.length} terpakai · tertinggi ${fmtShort(max)} token/${name}.`;
   const newest = [...used].reverse();
   const rows = (report.allRows ? newest : newest.slice(0, REPORT_ROWS))
     .map((p) => `<tr><td>${escapeHtml(periodLabel(p, unit))}</td><td>${fmtShort(p.input)}</td><td>${fmtShort(p.output)}</td><td>${fmtShort(p.cacheRead)}</td><td><b>${fmtShort(p.total)}</b></td><td>${fmtUsd(p.costUsd)}</td></tr>`)

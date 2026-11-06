@@ -684,7 +684,7 @@
             </div>
             <p id="budget-error" class="field-error" role="alert"></p>
             <p id="budget-coverage" class="muted small" hidden></p>
-            <p id="budget-note" class="muted small">Batas biaya tercatat (harga list, bukan tagihan). OpenCode Go itu langganan: biayanya sering $0, jadi budget ini terutama menghitung Claude.</p>
+            <p id="budget-note" class="muted small">Batas biaya tercatat, bukan tagihan. OpenCode Go berlangganan, jadi budget ini terutama untuk Claude.</p>
           </section>
           </div>
           <div class="settings-panel" id="settings-panel-tim" data-settings-panel="tim" role="tabpanel" aria-labelledby="settings-tab-tim">
@@ -692,7 +692,7 @@
           <section id="project-engine" class="project-engine" aria-labelledby="project-engine-title" aria-describedby="project-engine-desc">
             <b id="project-engine-title">🔀 Mesin project</b>
             <div id="project-engine-opts" class="engine-opts" role="group" aria-labelledby="project-engine-title"></div>
-            <p id="project-engine-desc" class="muted small">Riwayat tiap mesin disimpan terpisah; berganti mesin hanya menampilkan riwayat mesin itu.</p>
+            <p id="project-engine-desc" class="muted small">Riwayat tiap mesin disimpan terpisah. Berganti mesin hanya menampilkan riwayat mesin itu.</p>
             <p id="project-engine-hint" class="muted small" role="status" aria-live="polite"></p>
             <p id="project-engine-error" class="field-error" role="alert"></p>
           </section>
@@ -714,7 +714,7 @@
               <span class="quota-num"><input id="quota-crit" type="number" min="2" max="100" step="1" inputmode="numeric" aria-describedby="quota-error" /> %</span>
             </div>
             <p id="quota-error" class="field-error" role="alert"></p>
-            <p id="quota-desc" class="muted">Peringatan sekali per ambang untuk sesi 5 jam dan mingguan, dari sesi yang berjalan. Disimpan di browser ini.</p>
+            <p id="quota-desc" class="muted">Sekali per ambang untuk sesi 5 jam dan mingguan. Disimpan di browser ini.</p>
           </section>
           </div>
           <div class="settings-panel" id="settings-panel-spotify" data-settings-panel="spotify" role="tabpanel" aria-labelledby="settings-tab-spotify">
@@ -754,7 +754,7 @@
           <div class="settings-panel" id="settings-panel-cadangan" data-settings-panel="cadangan" role="tabpanel" aria-labelledby="settings-tab-cadangan">
           <section class="backup" aria-labelledby="backup-title" aria-describedby="backup-desc">
             <b id="backup-title">💾 Cadangkan riwayat</b>
-            <p id="backup-desc" class="muted">Export di sini, Import di laptop baru, lalu lanjutkan percakapan lama. Login tidak ikut: login ulang dengan <code>claude</code>.</p>
+            <p id="backup-desc" class="muted">Export di sini, Import di laptop baru, lalu lanjutkan percakapan. Login tidak ikut.</p>
             <p id="backup-remote" class="muted" hidden>Hanya dari laptop.</p>
             <div class="backup-actions">
               <button type="button" id="btn-backup-export" class="ghost">⬇ Export riwayat</button>
@@ -785,7 +785,7 @@
                 <button type="button" id="ba-run" class="ghost">▶ Jalankan sekarang</button>
               </div>
               <p id="ba-status" class="muted" role="status" aria-live="polite"></p>
-              <p id="ba-desc" class="muted small">Sama seperti Export. Rotasi hanya menghapus backup otomatis lama di folder itu; file lain aman. Jadwal yang terlewat dijalankan sekali saat server menyala.</p>
+              <p id="ba-desc" class="muted small">Sama seperti Export. Rotasi hanya menghapus backup otomatis lama; file lain aman.</p>
             </div>
           </section>
           </div>
@@ -793,7 +793,7 @@
           <!-- ⬆ Update aplikasi (features/app-update.js, server src/app-update.js) -->
           <section class="claude-check" aria-labelledby="au-title">
             <b id="au-title">⬆ Update Adhit Office</b>
-            <p class="muted small">Dicek tiap 30 menit dari GitHub. Update = git pull + restart; perubahan lokal yang belum di-commit tidak ditimpa.</p>
+            <p class="muted small">Dicek tiap 30 menit dari GitHub. Perubahan lokal yang belum di-commit tidak ditimpa.</p>
             <p id="app-update-status" class="muted" role="status" aria-live="polite"></p>
             <div class="backup-actions">
               <button type="button" id="app-update-check" class="ghost">↻ Cek update</button>
@@ -804,7 +804,7 @@
           <!-- 🩺 Kesehatan sistem (features/health.js, server POST /api/health): laptop/Tailscale only, a WiFi phone is refused -->
           <section id="health-section" class="claude-check" aria-labelledby="health-section-title">
             <b id="health-section-title">🩺 Kesehatan sistem</b>
-            <p class="muted small">Satu laporan: pemeriksaan server &amp; mesin, persiapan awal, ukuran data aplikasi, dan error 24 jam terakhir.</p>
+            <p class="muted small">Pemeriksaan server &amp; mesin, persiapan, ukuran data, dan error 24 jam.</p>
             <div class="backup-actions">
               <button type="button" id="health-open" class="ghost" aria-haspopup="dialog">🩺 Kesehatan sistem</button>
             </div>
@@ -813,7 +813,7 @@
           <!-- 🧩 Claude Code update detector (features/claude-check.js, server src/claude-check.js; laptop only like this dialog) -->
           <section class="claude-check" aria-labelledby="cc-title" aria-describedby="cc-desc">
             <b id="cc-title">🧩 Kompatibilitas Claude Code</b>
-            <p id="cc-desc" class="muted small">Cek kontrak ringan berjalan di latar belakang setelah Claude Code diperbarui; hasilnya muncul sebagai pemberitahuan.</p>
+            <p id="cc-desc" class="muted small">Cek kontrak ringan setelah Claude Code diperbarui; hasilnya muncul sebagai pemberitahuan.</p>
             <p id="cc-status" class="muted" role="status" aria-live="polite"></p>
             <label class="switch"><input id="cc-auto" type="checkbox" /> Cek otomatis saat Claude Code diperbarui</label>
             <label class="switch"><input id="cc-model" type="checkbox" aria-describedby="cc-model-hint" /> Boleh pakai 1 request kecil (Haiku)</label>
@@ -829,7 +829,7 @@
           <!-- 🧩 OpenCode update detector (features/opencode-check.js, server src/opencode-check.js): only when OpenCode is installed -->
           <section id="oc-section" class="claude-check" aria-labelledby="oc-title" aria-describedby="oc-desc" hidden>
             <b id="oc-title">🧩 Kompatibilitas OpenCode</b>
-            <p id="oc-desc" class="muted small">Cek kontrak ringan berjalan di latar belakang setelah OpenCode diperbarui, tanpa memanggil model.</p>
+            <p id="oc-desc" class="muted small">Cek kontrak ringan setelah OpenCode diperbarui, tanpa memanggil model.</p>
             <p id="oc-status" class="muted" role="status" aria-live="polite"></p>
             <label class="switch"><input id="oc-auto" type="checkbox" /> Cek otomatis saat OpenCode diperbarui</label>
             <div class="backup-actions">
@@ -840,7 +840,7 @@
             <pre id="oc-output" class="cc-output" hidden></pre>
             <div class="oc-plugins" role="group" aria-labelledby="oc-plugins-title">
               <b id="oc-plugins-title">🧩 Plugin OpenCode</b>
-              <p class="muted small">Plugin config global menjalankan kode pihak ketiga. Tambahkan hanya dari sumber tepercaya; restart layanan setelahnya.</p>
+              <p class="muted small">Plugin menjalankan kode pihak ketiga. Tambahkan hanya dari sumber tepercaya.</p>
               <div id="oc-plugin-list" class="oc-plugin-list" aria-live="polite"><p class="muted small">Buka Pengaturan untuk memuat plugin…</p></div>
               <div class="oc-plugin-add">
                 <input id="oc-plugin-spec" type="text" autocomplete="off" spellcheck="false" maxlength="300" placeholder="paket npm atau URL Git" aria-label="Paket plugin OpenCode" />
@@ -853,7 +853,7 @@
             </div>
             <div class="oc-config" role="group" aria-labelledby="oc-config-title">
               <b id="oc-config-title">🧩 Config &amp; Agent OpenCode</b>
-              <p class="muted small">Ubah model, small model, dan agent di <code>opencode.json</code> global atau project. File lama dibackup otomatis; hanya dari laptop.</p>
+              <p class="muted small">Ubah model dan agent di <code>opencode.json</code>. File lama dibackup otomatis.</p>
               <button type="button" id="oc-config-open" class="ghost">✏️ Buka editor config</button>
             </div>
           </section>
@@ -938,7 +938,7 @@
         <div class="modal-head"><b id="notify-title">🔔 Pengaturan notifikasi</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <form id="notify-form" class="notify-form" novalidate>
           <label class="switch big"><input id="ns-on" type="checkbox" /> Aktifkan notifikasi &amp; suara di perangkat ini</label>
-          <p id="notify-desc" class="muted small">Muncul saat kamu di tab atau project lain; permintaan izin tetap berbunyi. Disimpan di browser ini.</p>
+          <p id="notify-desc" class="muted small">Muncul saat kamu di tab atau project lain; izin tetap berbunyi. Disimpan di browser ini.</p>
           <p id="ns-perm" class="muted small"></p>
           <fieldset class="ns-group">
             <legend>Per jenis kejadian</legend>
@@ -962,7 +962,7 @@
             </div>
             <p id="ns-quiet-error" class="field-error" role="alert"></p>
             <label class="switch wrap"><input id="ns-quiet-ask" type="checkbox" /> Izin tetap diberitahu saat jam tenang</label>
-            <p id="ns-quiet-desc" class="muted small">Tanpa suara dan pop-up selama jam tenang. Jam perangkat ini, boleh melewati tengah malam.</p>
+            <p id="ns-quiet-desc" class="muted small">Tanpa suara dan pop-up selama jam tenang. Jam perangkat ini.</p>
           </fieldset>
           <label class="switch wrap"><input id="ns-fav" type="checkbox" /> Hanya project favorit ★</label>
           <div class="ns-volume">
@@ -974,7 +974,7 @@
           <!-- 📱 Web Push (features/push.js): only on a phone; the buttons only on the https Tailscale origin -->
           <fieldset id="ns-push" class="ns-group" hidden>
             <legend>📱 Notifikasi HP (push)</legend>
-            <p class="muted small">Tetap muncul saat aplikasi tertutup atau HP terkunci. Pengaturan di atas ikut berlaku; jam tenang memakai jam HP ini.</p>
+            <p class="muted small">Tetap muncul saat aplikasi tertutup atau HP terkunci. Pengaturan di atas ikut berlaku.</p>
             <p id="ns-push-hint" class="ns-push-hint small" hidden></p>
             <p id="ns-push-status" class="small" role="status" aria-live="polite"></p>
             <div class="ns-push-actions">
@@ -984,7 +984,7 @@
             </div>
             <div id="ns-push-lock-row" hidden>
               <label class="switch wrap"><input id="ns-push-lock" type="checkbox" aria-describedby="ns-push-lock-desc" /> Tombol Izinkan di layar kunci</label>
-              <p id="ns-push-lock-desc" class="muted small">Mati: notifikasi izin hanya punya tombol Tolak; Izinkan dari dalam aplikasi.</p>
+              <p id="ns-push-lock-desc" class="muted small">Mati: izin hanya punya tombol Tolak; Izinkan dari aplikasi.</p>
             </div>
           </fieldset>
           <div class="ns-actions">

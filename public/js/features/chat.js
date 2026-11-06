@@ -46,10 +46,10 @@ export function renderChat() {
       ? '<div class="empty"><div class="empty-icon">🎬</div><b>Demo kantor</b><p>Klik <b>▶ Jalankan demo</b> untuk melihat tim bekerja. Demo tidak menjalankan mesin AI.</p></div>'
       : `<div class="empty">
           <div class="empty-icon">✳</div>
-          <b>Mulai kerja di ${escapeHtml(projectName(state.active))}</b>
-          <p>${escapeHtml(engine)} berjalan di folder ini. Izin muncul sebagai kartu di chat.</p>
+          <b>Mulai di ${escapeHtml(projectName(state.active))}</b>
+          <p>${escapeHtml(engine)} · izin muncul sebagai kartu di chat.</p>
           <div class="starters">${STARTERS.map(([icon, label, text]) => `<button data-starter="${escapeHtml(text)}" title="${escapeHtml(text)}"><span>${icon}</span>${label}</button>`).join('')}</div>
-          <div class="empty-links"><button class="text-btn" data-open-history>🕘 Lanjutkan sesi sebelumnya</button><button class="text-btn" data-open-help>❓ Panduan &amp; shortcut</button></div>
+          <div class="empty-links"><button class="text-btn" data-open-history>🕘 Sesi sebelumnya</button><button class="text-btn" data-open-help>❓ Panduan</button></div>
         </div>`;
   }
   for (const msg of messages) appendChat(msg, false);

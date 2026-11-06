@@ -31,7 +31,7 @@ Detail tiap fitur, termasuk batasan dan perilakunya. Kembali ke [README](../READ
 
 Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhir). Pengaturan per project ada di `data/state.json`.
 
-**Di HP:** tampilan Chat ringkas: header = nama project + subjudul sesi + **⋯** (sesi, export, **🔁 Lanjutkan dari mesin lain**, akun, laporan, musik, notifikasi, pengaturan); kotak pesan lebar penuh dengan **＋** (lampiran, template, antrian, suara, `!`, `@`, `/`) dan chip pengaturan giliran (izin, model, effort, mode tim). Satu tombol berganti fungsi: 🎤 → ↑ Kirim → ■ Stop. Tab Perubahan menyisakan ⎇, pesan commit, dan Commit; sisanya di ⋯. Mode **landscape** memakai rail navigasi kiri dan dua kolom. Saat keyboard terbuka, navigasi bawah disembunyikan.
+**Di HP:** tampilan Chat ringkas: header = nama project + subjudul sesi + **⋯** (sesi, export, **🔁 Lanjutkan dari mesin lain**, akun, laporan, musik, notifikasi, pengaturan); kotak pesan lebar penuh dengan **＋** (lampiran, template, antrian, suara, `!`, `@`, `/`) dan chip pengaturan giliran (izin, model, effort, mode tim). Dialog **⚙ Pengaturan** juga memakai tab di HP (satu bagian sekaligus), jadi tidak lagi satu lembar panjang. Satu tombol berganti fungsi: 🎤 → ↑ Kirim → ■ Stop. Tab Perubahan menyisakan ⎇, pesan commit, dan Commit; sisanya di ⋯. Mode **landscape** memakai rail navigasi kiri dan dua kolom. Saat keyboard terbuka, navigasi bawah disembunyikan.
 
 **Banyak tab:** semua tab di satu browser berbagi **satu koneksi live** ke server (satu tab memimpin, yang lain menerima lewat BroadcastChannel), jadi membuka banyak tab tidak lagi menghabiskan batas koneksi browser.
 
