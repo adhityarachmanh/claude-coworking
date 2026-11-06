@@ -207,6 +207,7 @@ test('🩺 health: /api/health on the laptop returns the report (checks + checkl
 });
 
 test('💰 batas pemakaian: /api/budget shape, save validation + persistence, health line, refused over plain WiFi', async () => {
+  const id = await projectId();
   const storedBudget = () => {
     try {
       return JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8')).budget ?? null;
@@ -215,7 +216,7 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
     }
   };
   const view = (await api('/api/budget', {})).body.budget;
-  assert.deepEqual(Object.keys(view).sort(), ['budget', 'note', 'spend', 'windows']);
+  assert.deepEqual(Object.keys(view).sort(), ['budget', 'note', 'projectId', 'spend', 'windows']);
   assert.deepEqual(view.budget, { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, 'no limit yet');
   for (const unit of ['day', 'week', 'month']) {
     assert.deepEqual(Object.keys(view.spend[unit]).sort(), ['known', 'rows', 'usd'], unit);
@@ -256,6 +257,17 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
   assert.deepEqual((await api('/api/budget/save', { dailyUsd: 0 })).body.budget.budget, { dailyUsd: null, weeklyUsd: null, monthlyUsd: 100 });
   assert.deepEqual(storedBudget(), { dailyUsd: null, weeklyUsd: null, monthlyUsd: 100 });
 
+  // per project: its own limits and spend, separate from the global view; clearing removes the entry
+  const projectSaved = await api('/api/budget/save', { projectId: id, dailyUsd: 3 });
+  assert.equal(projectSaved.status, 200);
+  assert.equal(projectSaved.body.budget.budget.dailyUsd, 3);
+  assert.equal(projectSaved.body.budget.projectId, id);
+  const projectView = await api('/api/budget', { projectId: id });
+  assert.equal(projectView.body.budget.budget.dailyUsd, 3);
+  assert.equal((await api('/api/budget', {})).body.budget.budget.dailyUsd, null, 'global stays off');
+  await api('/api/budget/save', { projectId: id, dailyUsd: 0 });
+  assert.equal((await api('/api/budget', { projectId: id })).body.budget.budget.dailyUsd, null);
+
   // 🩺 health: the budget line appears exactly while a limit is set
   const withLimit = (await api('/api/health', {})).body.health;
   const check = withLimit.checks.find((c) => c.id === 'budget');
@@ -283,11 +295,18 @@ test('⏰ tugas terjadwal: save/list/toggle/delete, validation, and state.json p
   assert.ok(routine.nextRun > Date.now(), 'nextRun is in the future');
   const stored = JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8'));
   assert.equal(stored.routines[0].prompt, 'cek CI');
+  // Jalankan sekarang: it goes through the queue and later reports its result.
+  const run = await api('/api/routines/run', { id: routine.id });
+  assert.equal(run.status, 200);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /dijalankan manual/.test(o.text), 5_000);
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /Tugas terjadwal selesai/.test(o.text), 10_000);
   const toggled = await api('/api/routines/toggle', { id: routine.id, enabled: false });
   assert.equal(toggled.body.routines[0].enabled, false);
   assert.equal(toggled.body.routines[0].nextRun, null);
   assert.deepEqual((await api('/api/routines/delete', { id: routine.id })).body.routines, []);
   assert.deepEqual((await api('/api/routines', {})).body.routines, []);
+  // Leave the project's queue clean for the tests that follow (the finished routine item stays in the list).
+  for (const item of (await api(`/api/projects/${id}/queue`)).body.queue.items) await api(`/api/projects/${id}/queue-remove`, { itemId: item.id });
 });
 
 test('💰 hard stop: prompt, compact, and handoff apply are refused while a window is over', async () => {
@@ -311,6 +330,15 @@ test('💰 hard stop: prompt, compact, and handoff apply are refused while a win
     const handoff = await api(`/api/projects/${id}/handoff/apply`, {});
     assert.equal(handoff.status, 409);
     assert.match(handoff.body.error, /Budget/);
+    // "Izinkan 1 giliran": the next prompt passes, and the override is used up.
+    const override = await api('/api/budget/override', {});
+    assert.equal(override.status, 200);
+    assert.ok(override.body.until > Date.now());
+    const allowed = await api(`/api/projects/${id}/prompt`, { text: 'tes override budget' });
+    assert.equal(allowed.status, 200);
+    await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result', 10_000);
+    const again = await api(`/api/projects/${id}/prompt`, { text: 'tes setelah override' });
+    assert.equal(again.status, 409, 'one turn only');
   } finally {
     writeFileSync(usageFile, beforeUsage);
     await api('/api/budget/save', beforeBudget);

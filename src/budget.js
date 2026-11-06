@@ -89,11 +89,11 @@ export function cleanBudgetPatch(input) {
  * @param {number} [now] epoch ms (the windows are local calendar periods, see periodStart)
  * @returns {Record<'day'|'week'|'month', { usd: number, rows: number, known: number }>}
  */
-export function spend(ledger, now = Date.now()) {
+export function spend(ledger, now = Date.now(), projectId = null) {
   const at = isNumber(now) ? now : Date.now();
   const out = {};
   for (const unit of WINDOW_UNITS) {
-    const rows = typeof ledger?.query === 'function' ? ledger.query({ accountId: 'all', from: periodStart(at, unit), to: at }) : [];
+    const rows = typeof ledger?.query === 'function' ? ledger.query({ accountId: 'all', projectId, from: periodStart(at, unit), to: at }) : [];
     let usd = 0;
     let known = 0;
     for (const row of rows) {
@@ -106,16 +106,28 @@ export function spend(ledger, now = Date.now()) {
   return out;
 }
 
-/** The limits currently stored in state.json (invalid values read as off). */
-export function limitsOf(hub) {
-  return cleanLimits(hub?.persisted?.budget);
+/** The limits currently stored in state.json (invalid values read as off). Per project when `projectId` is given. */
+export function limitsOf(hub, projectId = null) {
+  return cleanLimits(projectId ? hub?.persisted?.projectBudgets?.[projectId] : hub?.persisted?.budget);
+}
+
+/** The per-project budget map from a stored/hand-edited value: valid ids and at least one real limit survive. */
+export function cleanProjectBudgets(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [id, value] of Object.entries(raw).slice(0, 200)) {
+    if (!/^[\w-]{1,80}$/.test(id)) continue;
+    const limits = cleanLimits(value);
+    if (hasBudget(limits)) out[id] = limits;
+  }
+  return out;
 }
 
 /** The note shown with the numbers: the coverage, and why OpenCode Go is usually missing from it. */
-export function budgetNote(spent) {
+export function budgetNote(spent, projectId = null) {
   const { rows, known } = spent?.month ?? { rows: 0, known: 0 };
   const coverage = rows ? `${known} dari ${rows} catatan punya biaya` : 'belum ada catatan biaya';
-  return `Dihitung dari biaya yang tercatat di ledger (${coverage}); OpenCode Go umumnya tercatat $0, jadi angkanya bisa lebih rendah dari tagihan sebenarnya.`;
+  return `Dihitung dari biaya ${projectId ? 'project ini ' : ''}yang tercatat di ledger (${coverage}); OpenCode Go umumnya tercatat $0, jadi angkanya bisa lebih rendah dari tagihan sebenarnya.`;
 }
 
 /**
@@ -130,9 +142,9 @@ export function budgetNote(spent) {
  *   note: string }}
  *   `percent` is usd / limit (0 when off), so it can pass 1; `state` is computed from the exact ratio.
  */
-export function budgetView(hub, ledger, now = Date.now()) {
-  const budget = limitsOf(hub);
-  const spent = spend(ledger, now);
+export function budgetView(hub, ledger, now = Date.now(), projectId = null) {
+  const budget = limitsOf(hub, projectId);
+  const spent = spend(ledger, now, projectId);
   const windows = {};
   for (const unit of WINDOW_UNITS) {
     const limit = budget[WINDOW_LIMITS[unit]];
@@ -145,7 +157,7 @@ export function budgetView(hub, ledger, now = Date.now()) {
       state: !limit ? 'off' : ratio >= 1 ? 'over' : ratio >= WARN_RATIO ? 'warn' : 'ok',
     };
   }
-  return { budget, spend: spent, windows, note: budgetNote(spent) };
+  return { budget, spend: spent, windows, note: budgetNote(spent, projectId) };
 }
 
 /**
@@ -153,14 +165,39 @@ export function budgetView(hub, ledger, now = Date.now()) {
  * message for the user. A running turn is never cut; the next prompt, plan build, or queue item is refused.
  * @returns {{ windows: string[], label: string, message: string }|null}
  */
-export function budgetStop(hub, ledger, now = Date.now()) {
-  const view = budgetView(hub, ledger, now);
-  const over = WINDOW_UNITS.filter((unit) => view.windows[unit].state === 'over');
+export function budgetStop(hub, ledger, now = Date.now(), projectId = null) {
+  const scopes = [{ project: false, view: budgetView(hub, ledger, now) }];
+  if (projectId) scopes.push({ project: true, view: budgetView(hub, ledger, now, projectId) });
+  const over = [];
+  for (const { project, view } of scopes) {
+    for (const unit of WINDOW_UNITS) {
+      if (view.windows[unit].state !== 'over') continue;
+      over.push({ project, unit, label: `${project ? 'project ' : ''}${WINDOW_LABEL[unit]} ${usdText(view.windows[unit].usd)} / ${usdText(view.windows[unit].limit)}` });
+    }
+  }
   if (!over.length) return null;
-  const label = over.map((unit) => `${WINDOW_LABEL[unit]} ${usdText(view.windows[unit].usd)} / ${usdText(view.windows[unit].limit)}`).join(' · ');
+  const label = over.map((item) => item.label).join(' · ');
   return {
-    windows: over,
+    windows: over.filter((item) => !item.project).map((item) => item.unit),
+    projectWindows: over.filter((item) => item.project).map((item) => item.unit),
     label,
-    message: `⛔ Budget ${label} sudah tercapai. Pengiriman prompt dihentikan sampai batas dinaikkan atau dikosongkan di ⚙ Pengaturan → Umum → Budget pemakaian global.`,
+    message: `⛔ Budget ${label} sudah tercapai. Pengiriman prompt dihentikan sampai batas dinaikkan atau dikosongkan di ⚙ Pengaturan → Umum → Budget pemakaian.`,
   };
+}
+
+/** A one-shot override after the user explicitly allows one turn despite the budget. */
+export function budgetOverridden(hub, now = Date.now()) {
+  return Number.isFinite(hub?.budgetOverrideUntil) && hub.budgetOverrideUntil > now;
+}
+
+/** Consumes the one-shot override; false when there was none (the caller then refuses the turn). */
+export function consumeBudgetOverride(hub, now = Date.now()) {
+  if (!budgetOverridden(hub, now)) return false;
+  hub.budgetOverrideUntil = 0;
+  return true;
+}
+
+export function grantBudgetOverride(hub, ms = 5 * 60 * 1000, now = Date.now()) {
+  hub.budgetOverrideUntil = now + ms;
+  return hub.budgetOverrideUntil;
 }

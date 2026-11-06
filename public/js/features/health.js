@@ -226,7 +226,7 @@ export function initHealth() {
     openModal('health-modal');
     renderHealth(); // the cached report shows at once; loadHealth refreshes it in the background
     // 💰 the cached budget shows at once; a first open asks /api/budget once and redraws the dialog with its answer
-    loadBudgetView().then(() => {
+    loadBudgetView({ force: true, scope: '' }).then(() => {
       if (!$('#health-modal')?.hidden) renderHealth();
     });
     loadHealth();

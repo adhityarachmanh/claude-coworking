@@ -14,7 +14,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { budgetStop } from './budget.js';
+import { budgetStop, consumeBudgetOverride } from './budget.js';
 import { cleanAutoLevel } from './effort.js';
 import { tierFor } from './model-auto.js';
 
@@ -115,6 +115,7 @@ function cleanItem(raw) {
     resultChatId: typeof raw.resultChatId === 'string' ? raw.resultChatId : null,
     error: typeof raw.error === 'string' ? raw.error.slice(0, 500) : null,
     meta: isObject(raw.meta) ? raw.meta : null,
+    routineId: typeof raw.routineId === 'string' ? raw.routineId.slice(0, 40) : null,
     engine: raw.engine === 'opencode' || raw.engine === 'claude' ? raw.engine : null, // the engine it was sent to
     effort: cleanAutoLevel(raw.effort),
     effortReason: typeof raw.effortReason === 'string' ? raw.effortReason.slice(0, 300) : null,
@@ -272,7 +273,7 @@ export class TaskQueue {
     } catch {}
   }
 
-  add(id, text, effort = null, attachmentItems = []) {
+  add(id, text, effort = null, attachmentItems = [], extra = {}) {
     const clean = cleanText(text);
     const q = this.q(id);
     if (q.items.filter((i) => i.status === 'waiting' || i.status === 'running').length >= QUEUE_LIMITS.items) {
@@ -293,6 +294,7 @@ export class TaskQueue {
       resultChatId: null,
       error: null,
       meta: null,
+      routineId: typeof extra?.routineId === 'string' ? extra.routineId.slice(0, 40) : null,
       engine: null,
       effort: cleanAutoLevel(effort?.level),
       effortReason: typeof effort?.reason === 'string' ? effort.reason.slice(0, 300) : null,
@@ -510,6 +512,9 @@ export class TaskQueue {
       ? { durationMs: msg.meta.durationMs ?? null, costUsd: msg.meta.costUsd ?? null, turns: msg.meta.turns ?? null, tokensOut: msg.meta.tokensOut ?? null }
       : null;
     Object.assign(item, { error: null, ...patch, endedAt: this.now(), updatedAt: this.now(), resultChatId: msg?.id ?? null, meta });
+    if (item.routineId) {
+      this.hub.chat(id, { kind: 'info', ...(item.status === 'failed' ? { level: 'warning' } : {}), text: `⏰ Tugas terjadwal ${item.status === 'failed' ? 'gagal' : 'selesai'}: ${item.text.slice(0, 80)}` });
+    }
     const b = this.queues[id].budget;
     if (msg && hasBudget(b)) {
       // Every finished turn counts (done or failed): it was spent either way.
@@ -564,8 +569,8 @@ export class TaskQueue {
     const item = q.items.find((i) => i.status === 'waiting');
     if (!item) return;
     // 💰 The global budget is a hard stop too: hold the queue (and say why) instead of spending past the limit.
-    const stop = budgetStop(this.hub, this.ledger, this.now());
-    if (stop) return this.pauseFor(id, 'budget', `budget ${stop.label} tercapai`);
+    const stop = budgetStop(this.hub, this.ledger, this.now(), id);
+    if (stop && !consumeBudgetOverride(this.hub, this.now())) return this.pauseFor(id, 'budget', `budget ${stop.label} tercapai`);
     if (budgetExceeded(q.budget)) return this.checkBudget(id); // used up while the queue was empty or paused
     const project = this.hub.projects.get(id);
     if (!project || project.virtual || !this.idle(id)) return;

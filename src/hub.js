@@ -1,7 +1,7 @@
 // Central state: project registry, per-project chat/events/status, approvals, SSE broadcast, persistence.
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { BUDGET_KEYS, BUDGET_MAX_USD, cents, cleanLimits } from './budget.js';
+import { BUDGET_KEYS, BUDGET_MAX_USD, cents, cleanLimits, cleanProjectBudgets } from './budget.js';
 import { cleanRoutines } from './routines.js';
 import { CHAT_LIMIT, ChatStore, isChatId } from './chat-store.js';
 import { EFFORT_LEVELS } from './effort.js';
@@ -203,6 +203,9 @@ export class Hub {
     this.persisted.budget = cleanLimits(this.persisted.budget);
     // ⏰ Tugas terjadwal: only valid routines survive; a missing list is fine for older state files.
     this.persisted.routines = cleanRoutines(this.persisted.routines);
+    // 💰 Per-project budgets: only valid limits survive.
+    this.persisted.projectBudgets = cleanProjectBudgets(this.persisted.projectBudgets);
+    this.budgetOverrideUntil = 0; // one-shot "allow one turn" after a hard stop (memory only)
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
     // chatSeq: the counter at the last save, for chat files that could not be read now.
@@ -219,7 +222,7 @@ export class Hub {
     // turns: the turn running right now per project (written when it starts, removed when it ends); one left
     // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
     // the user continues or dismisses them (see recoverTurns / interruptTurn).
-    const empty = { roots: [], custom: [], favorites: [], settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, routines: [] };
+    const empty = { roots: [], custom: [], favorites: [], settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, routines: [] };
     let stored = {};
     let parsedOk = false;
     try {
@@ -851,6 +854,35 @@ export class Hub {
     this.save();
     this.broadcast('budget', this.persisted.budget);
     return this.persisted.budget;
+  }
+
+  /** The per-project budget now stored (all off when nothing real was saved). */
+  projectBudgetFor(id) {
+    return cleanLimits(this.persisted?.projectBudgets?.[id]);
+  }
+
+  /** Saves one project's own limits; clearing every field removes the entry. */
+  setProjectBudget(id, patch) {
+    const next = cleanLimits(this.persisted?.projectBudgets?.[id]);
+    if (isObject(patch)) {
+      for (const key of BUDGET_KEYS) {
+        if (!(key in patch)) continue;
+        const raw = patch[key];
+        if (raw === null || raw === '' || raw === 0) {
+          next[key] = null;
+          continue;
+        }
+        const value = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() ? Number(raw.trim().replace(',', '.')) : NaN;
+        if (!Number.isFinite(value) || value < 0 || value > BUDGET_MAX_USD) continue;
+        next[key] = value > 0 ? cents(value) : null;
+      }
+    }
+    this.persisted.projectBudgets ??= {};
+    if (BUDGET_KEYS.some((key) => next[key] > 0)) this.persisted.projectBudgets[id] = next;
+    else delete this.persisted.projectBudgets[id];
+    this.save();
+    this.broadcast('budget', this.persisted.budget);
+    return next;
   }
 
   updateSettings(id, patch) {

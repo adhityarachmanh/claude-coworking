@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { BudgetError, budgetStop, budgetView, cleanBudgetPatch, cleanLimits, hasBudget, spend, WARN_RATIO } from '../src/budget.js';
+import { BudgetError, budgetOverridden, budgetStop, budgetView, cleanBudgetPatch, cleanLimits, consumeBudgetOverride, grantBudgetOverride, hasBudget, spend, WARN_RATIO } from '../src/budget.js';
 import { Hub } from '../src/hub.js';
 import { periodStart, UsageLedger } from '../src/usage.js';
 
@@ -129,7 +129,25 @@ test('budgetStop: null while under every limit, one clear message naming the win
   assert.deepEqual(stop.windows, ['day']);
   assert.match(stop.label, /^harian \$2,00 \/ \$2,00$/);
   assert.match(stop.message, /Budget harian/);
-  assert.match(stop.message, /Pengaturan → Umum → Budget pemakaian global/);
+  assert.match(stop.message, /Pengaturan → Umum → Budget pemakaian/);
+  // A per-project limit is checked against that project's rows only; the global view stays clean.
+  const projectHub = { persisted: { budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: { p1: { dailyUsd: 1, weeklyUsd: null, monthlyUsd: null } } } };
+  const scoped = budgetStop(projectHub, ledger, NOW, 'p1');
+  assert.deepEqual(scoped.projectWindows, ['day']);
+  assert.match(scoped.label, /^project harian \$2,00 \/ \$1,00$/);
+  assert.equal(budgetStop(projectHub, ledger, NOW, 'p2'), null, 'another project is untouched');
+});
+
+test('budget override: one turn, expires on its own, never consumed twice', () => {
+  const hub = {};
+  assert.equal(consumeBudgetOverride(hub, NOW), false, 'nothing granted');
+  const until = grantBudgetOverride(hub, 5 * 60 * 1000, NOW);
+  assert.equal(until, NOW + 300_000);
+  assert.equal(budgetOverridden(hub, NOW + 1), true);
+  assert.equal(consumeBudgetOverride(hub, NOW + 1), true);
+  assert.equal(budgetOverridden(hub, NOW + 2), false, 'one prompt only');
+  grantBudgetOverride(hub, 1000, NOW);
+  assert.equal(budgetOverridden(hub, NOW + 1001), false, 'expired');
 });
 
 test('cleanLimits: only a real amount 0.01…10000 survives, rounded to cents (anything else is off)', () => {

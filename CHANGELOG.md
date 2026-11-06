@@ -6,8 +6,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ### Baru
 
-- **Budget jadi penghenti, bukan hanya peringatan.** Saat pemakaian harian/mingguan/bulanan mencapai batas, prompt baru, ringkas konteks, lanjutkan giliran, handoff, dan build dari kartu rencana ditolak sampai batas dinaikkan atau dikosongkan. Antrian ikut dijeda dengan alasan budget; turn yang sedang berjalan tidak dipotong.
-- **⏰ Tugas terjadwal.** Di ⚙ → **Jadwal** kamu bisa menyimpan prompt per project: sekali, harian, atau mingguan. Saat waktunya tiba prompt masuk antrian, jadi tetap mengikuti aturan antrian, budget, dan izin yang sama. Daftar jadwal bisa dijeda, dilanjutkan, atau dihapus.
+- **Budget jadi penghenti, bukan hanya peringatan.** Saat pemakaian harian/mingguan/bulanan mencapai batas, prompt baru, ringkas konteks, lanjutkan giliran, handoff, dan build dari kartu rencana ditolak sampai batas dinaikkan atau dikosongkan. Batas bisa **global atau per project**, dan tombol **Izinkan 1 giliran** memberi satu giliran lewat (berlaku 5 menit). Antrian ikut dijeda dengan alasan budget; turn yang sedang berjalan tidak dipotong.
+- **⏰ Tugas terjadwal.** Di ⚙ → **Jadwal** kamu bisa menyimpan prompt per project: sekali, harian, atau mingguan. Saat waktunya tiba prompt masuk antrian, jadi tetap mengikuti aturan antrian, budget, dan izin yang sama. Jadwal bisa **diubah**, **dijalankan sekarang**, dijeda, dilanjutkan, atau dihapus, dan hasilnya muncul di chat.
 
 ### Diperbaiki
 

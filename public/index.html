@@ -675,7 +675,8 @@
           <hr />
           <!-- 💰 Budget pemakaian global (features/budget.js, server POST /api/budget & /api/budget/save): laptop/Tailscale only -->
           <section id="budget-section" class="budget-block" aria-labelledby="budget-title">
-            <b id="budget-title">💰 Budget pemakaian global</b>
+            <b id="budget-title">💰 Budget pemakaian</b>
+            <label class="budget-field budget-scope">Berlaku untuk<select id="budget-project"><option value="">Global (semua project)</option></select></label>
             <ul id="budget-rows" class="budget-rows" aria-live="polite" aria-busy="false"><li class="muted small">Memuat budget…</li></ul>
             <div id="budget-form" class="budget-form">
               <label class="budget-field"><span>Harian (USD)</span><input id="budget-daily" type="number" inputmode="decimal" min="0" max="10000" step="0.01" placeholder="tanpa batas" aria-describedby="budget-note budget-error" /></label>
@@ -686,6 +687,7 @@
             <p id="budget-error" class="field-error" role="alert"></p>
             <p id="budget-coverage" class="muted small" hidden></p>
             <p id="budget-stop" class="field-error" role="alert" hidden></p>
+            <button type="button" id="budget-override" class="ghost" hidden>Izinkan 1 giliran</button>
             <p id="budget-note" class="muted small">Batas biaya tercatat, bukan tagihan. OpenCode Go berlangganan, jadi budget ini terutama untuk Claude.</p>
           </section>
           </div>
@@ -718,7 +720,7 @@
                 <label class="routine-field" id="routine-date-wrap" hidden>Tanggal<input id="routine-date" type="date" /></label>
               </div>
               <p id="routine-error" class="field-error" role="alert"></p>
-              <button type="button" id="routine-add" class="primary">＋ Tambah jadwal</button>
+              <div class="routine-actions"><button type="button" id="routine-add" class="primary">＋ Tambah jadwal</button><button type="button" id="routine-cancel" class="ghost" hidden>Batal</button></div>
             </div>
           </section>
           </div>

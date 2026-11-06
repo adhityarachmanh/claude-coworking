@@ -251,6 +251,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .routine-field { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-sm); color: var(--muted); }
 .routine-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .routine-form input, .routine-form select, .routine-form textarea { font-size: var(--fs-md); }
+.routine-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .projects { list-style: none; margin: 0; padding: 0 8px 8px; overflow-y: auto; flex: 1; min-height: 0; }
 .projects li {
   display: flex;

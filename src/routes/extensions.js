@@ -4,7 +4,7 @@
 // a user agent steers every project, like plugins and MCP servers; gh's login opens a device flow for this
 // machine). A project's own agents (.claude/agents) can be edited over Tailscale too.
 import { AdminError, deleteAgent, listAgents, listHooks, listPlugins, pluginAction, saveAgent } from '../claude-admin.js';
-import { budgetStop } from '../budget.js';
+import { budgetStop, consumeBudgetOverride } from '../budget.js';
 import { gitAction } from '../git.js';
 import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
 import { HANDOFF_TRIGGER_PROMPT, handoffInfo, HandoffError, otherEngine, quickHandoff, smartHandoff } from '../handoff.js';
@@ -99,8 +99,8 @@ export function register(router) {
     '/api/projects/:id/handoff/apply',
     withSession(
       guard(async ({ hub, ledger }, req, res, { project, session }) => {
-        const stop = budgetStop(hub, ledger);
-        if (stop) throw new HandoffError(409, stop.message);
+        const stop = budgetStop(hub, ledger, Date.now(), project.id);
+        if (stop && !consumeBudgetOverride(hub)) throw new HandoffError(409, stop.message);
         if (session.turnActive?.() || session.busy || session.inflight?.size || session.rewinding) throw new HandoffError(409, 'Tunggu giliran yang sedang berjalan selesai dulu.');
         if ([...hub.approvals.values()].some(({ approval }) => approval.project === project.id)) throw new HandoffError(409, 'Jawab permintaan izin yang masih terbuka dulu.');
         const to = hub.engineOf(project.id);

@@ -27,7 +27,7 @@ const usdText = (n) => `$${AMOUNT.format(n)}`;
 const limitText = (n) => (Number.isInteger(n) ? `$${WHOLE.format(n)}` : usdText(n));
 
 /** The last good view (memory only), the inline error, the in-flight request, and the limits last drawn. */
-export const budgetView = { data: null, error: null, loading: false, promise: null, fieldsKey: null, saving: false };
+export const budgetView = { data: null, global: null, scope: '', error: null, loading: false, promise: null, fieldsKey: null, saving: false };
 
 const budgetAvailable = () => !state.readOnly && canCall(VIEW);
 
@@ -94,11 +94,12 @@ export function budgetRowsHtml(view = budgetView.data) {
 /** The compact copy at the top of the health dialog: the same rows, no editable fields. */
 export function budgetHealthHtml() {
   if (!budgetAvailable()) return '';
+  const view = budgetView.global;
   const error = budgetView.error ? `<p class="field-error" role="alert">${escapeHtml(budgetView.error)}</p>` : '';
-  const stop = stopState();
+  const stop = stopState(view);
   const stopLine = stop.text ? `<p class="field-error" role="alert">${escapeHtml(stop.text)}</p>` : '';
-  const body = budgetView.data
-    ? `${stopLine}${budgetRowsHtml()}<p class="muted small">Biaya tercatat memakai harga list; OpenCode Go itu langganan, jadi biayanya sering tercatat $0.</p>`
+  const body = view
+    ? `${stopLine}${budgetRowsHtml(view)}<p class="muted small">Biaya tercatat memakai harga list; OpenCode Go itu langganan, jadi biayanya sering tercatat $0.</p>`
     : `<p class="muted small">${budgetView.loading ? 'Memuat budget…' : 'Belum ada data budget.'}</p>`;
   return `<section class="health-section health-budget" aria-labelledby="health-budget-title">
     <h3 id="health-budget-title">Budget pemakaian</h3>
@@ -117,6 +118,14 @@ function showBudgetError(message, field = null) {
 export function syncBudgetSection() {
   const section = $('#budget-section');
   if (!section) return;
+  const scope = $('#budget-project');
+  if (scope) {
+    const projects = (state.projects ?? []).filter((p) => p && p.id !== 'demo');
+    const keep = budgetView.scope;
+    scope.innerHTML = `<option value="">Global (semua project)</option>${projects.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')}`;
+    scope.value = projects.some((p) => p.id === keep) ? keep : '';
+    budgetView.scope = scope.value;
+  }
   const blocked = !budgetAvailable();
   section.hidden = blocked;
   const disabled = blocked || budgetView.saving;
@@ -151,11 +160,13 @@ function renderBudget() {
     coverage.hidden = !coverage.textContent;
   }
   const stop = $('#budget-stop');
+  const stopInfo = stopState();
   if (stop) {
-    const state = stopState();
-    stop.textContent = state.text;
-    stop.hidden = !state.text;
+    stop.textContent = stopInfo.text;
+    stop.hidden = !stopInfo.text;
   }
+  const override = $('#budget-override');
+  if (override) override.hidden = !stopInfo.text;
   // Fill the fields with the saved limits once per view (and after a save), never while the user is typing.
   const key = budgetView.data ? WINDOWS.map((w) => budgetView.data.rows[w.key].limit).join('|') : '';
   if (budgetView.data && key !== budgetView.fieldsKey && !document.activeElement?.matches?.('#budget-form input')) {
@@ -169,8 +180,14 @@ function renderBudget() {
 }
 
 /** One request at a time; the in-memory view is reused unless `force` (a first open with no data asks once). */
-export function loadBudgetView({ force = false } = {}) {
+export function loadBudgetView({ force = false, scope = budgetView.scope } = {}) {
   if (budgetView.promise) return budgetView.promise;
+  if (budgetView.scope !== scope) {
+    budgetView.scope = scope;
+    budgetView.data = null;
+    budgetView.fieldsKey = null;
+    force = true;
+  }
   if (!force && budgetView.data && !budgetView.error) {
     renderBudget();
     return Promise.resolve();
@@ -183,9 +200,10 @@ export function loadBudgetView({ force = false } = {}) {
   budgetView.loading = true;
   budgetView.error = null;
   renderBudget();
-  const task = api(VIEW)
+  const task = api(VIEW, scope ? { projectId: scope } : {})
     .then((data) => {
       budgetView.data = normalizeBudgetView(data?.budget);
+      if (!scope) budgetView.global = budgetView.data;
       budgetView.fieldsKey = null;
     })
     .catch((err) => {
@@ -235,10 +253,11 @@ export async function saveBudget() {
   showBudgetError('');
   syncBudgetSection();
   try {
-    const data = await api(SAVE, body);
+    const data = await api(SAVE, budgetView.scope ? { ...body, projectId: budgetView.scope } : body);
     budgetView.data = normalizeBudgetView(data?.budget);
+    if (!budgetView.scope) budgetView.global = budgetView.data;
     budgetView.fieldsKey = null; // take the saved values back from the server
-    toast('💰 Budget pemakaian global disimpan.', 'ok');
+    toast(budgetView.scope ? '💰 Budget project disimpan.' : '💰 Budget pemakaian global disimpan.', 'ok');
   } catch (err) {
     showBudgetError(err?.status === 400 ? err.message : `Gagal menyimpan budget: ${err?.message ?? 'tidak diketahui'}`);
   } finally {
@@ -251,6 +270,18 @@ export function initBudget() {
   const save = $('#budget-save');
   if (!save) return;
   save.addEventListener('click', () => saveBudget());
+  $('#budget-project')?.addEventListener('change', (e) => {
+    loadBudgetView({ force: true, scope: e.target.value });
+  });
+  $('#budget-override')?.addEventListener('click', async () => {
+    try {
+      await api('/api/budget/override', {});
+      toast('Satu giliran diizinkan meski budget tercapai.', 'ok');
+      loadBudgetView({ force: true });
+    } catch (err) {
+      showBudgetError(`Gagal memberi izin satu giliran: ${err?.message ?? 'tidak diketahui'}`);
+    }
+  });
   for (const w of WINDOWS) {
     const el = $(w.input);
     if (!el) continue;

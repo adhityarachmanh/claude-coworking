@@ -1962,7 +1962,7 @@ for (const vp of VIEWPORTS) {
       await page.press('Escape');
     });
 
-    test('⏰ Tugas terjadwal: validasi, tambah, jeda, hapus', async () => {
+    test('⏰ Tugas terjadwal: validasi, tambah, ubah, jalankan sekarang, jeda, hapus', async () => {
       await ensureApp(page, `#${projectId}`);
       await tap(page, '#btn-settings');
       await settle(page, 'settings-modal');
@@ -1981,6 +1981,18 @@ for (const vp of VIEWPORTS) {
       await page.click('#routine-add');
       await page.waitFor(() => document.querySelectorAll('.routine-item').length === 1, { timeoutMs: 4000, message: 'jadwal tersimpan' });
       assert.match(await page.eval(() => document.querySelector('.routine-item').textContent), /Harian 09:00/);
+
+      // Edit: the form is filled, the save button switches, the prompt is replaced.
+      await page.click('.routine-item [data-routine-edit]');
+      assert.equal(await page.eval(() => document.querySelector('#routine-prompt').value), 'cek CI lalu laporkan');
+      assert.match(await page.eval(() => document.querySelector('#routine-add').textContent), /Simpan perubahan/);
+      await page.eval(() => (document.querySelector('#routine-prompt').value = 'cek CI versi 2'));
+      await page.click('#routine-add');
+      await page.waitFor(() => /cek CI versi 2/.test(document.querySelector('.routine-item')?.textContent ?? ''), { timeoutMs: 4000, message: 'jadwal diperbarui' });
+
+      // Jalankan sekarang: the prompt goes into the queue and the chat says so.
+      await page.click('.routine-item [data-routine-run]');
+      await page.waitFor(() => [...document.querySelectorAll('.info')].some((n) => /dijalankan manual/.test(n.textContent)), { timeoutMs: 4000, message: 'jadwal dijalankan manual' });
 
       await page.click('.routine-item [data-routine-toggle]');
       await page.waitFor(() => document.querySelector('.routine-item')?.classList.contains('off'), { timeoutMs: 4000, message: 'jadwal dijeda' });
@@ -2609,6 +2621,8 @@ for (const vp of VIEWPORTS) {
         if (!(await shownInPage(page, '#budget-stop'))) await page.click('[data-settings-tab="umum"]');
         await page.waitFor(() => !document.querySelector('#budget-stop').hidden, { timeoutMs: 4000, message: 'peringatan hard stop' });
         assert.match(await page.eval(() => document.querySelector('#budget-stop').textContent), /Pengiriman prompt dihentikan/);
+        assert.equal(await page.eval(() => document.querySelector('#budget-project').options.length > 1), true, 'bisa pilih global atau project');
+        assert.equal(await page.eval(() => document.querySelector('#budget-override').hidden), false, 'tombol izinkan satu giliran tampil');
       } finally {
         await restoreBudget(page);
       }

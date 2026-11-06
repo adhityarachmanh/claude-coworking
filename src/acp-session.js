@@ -11,6 +11,7 @@ import { mergePermission, readUserPermission, childOpenCodeEnv } from './opencod
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { attachmentChips } from './attachments.js';
+import { budgetStop, consumeBudgetOverride } from './budget.js';
 import { PERMISSION_MODES } from './hub.js';
 import { OPENCODE_ACCOUNT } from './opencode-account.js';
 import { describeTool, inferRole } from './roles.js';
@@ -532,6 +533,14 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.hub.office(this.id, { kind: 'ask_done', role, allowed: Boolean(decision.allow) });
       if (decision.cancelled) return;
       if (decision.allow) {
+        // The web route checked the budget before resolving; a phone notification answers directly, so check here.
+        if (!decision.autoPrepared) {
+          const stop = budgetStop(this.m.hub, this.m.ledger, Date.now(), this.id);
+          if (stop && !consumeBudgetOverride(this.m.hub)) {
+            this.hub.chat(this.id, { kind: 'info', level: 'warning', text: stop.message });
+            return;
+          }
+        }
         // The web route already classified this plan (preparedAuto); a phone notification answers directly, so only
         // then does this path classify. Never both: that would cost two classifier calls and print two info lines.
         let auto = decision.preparedAuto ?? null;
@@ -547,6 +556,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         this.prompt(PLAN_APPROVED_PROMPT, [], autoExtra(auto)); // syncSettings switches the agent (or the process) before it is sent
       } else if (decision.message?.trim()) {
         // A revision is a new prompt to the plan agent: classify it too, so the bubble carries the same Auto tags.
+        const stop = budgetStop(this.m.hub, this.m.ledger, Date.now(), this.id);
+        if (stop && !consumeBudgetOverride(this.m.hub)) {
+          this.hub.chat(this.id, { kind: 'info', level: 'warning', text: stop.message });
+          return;
+        }
         const note = `Revisi rencananya: ${decision.message.trim()}`;
         let auto = null;
         try {

@@ -1,5 +1,5 @@
 // Permission prompts / questions / plans waiting for an answer (POST /api/approvals/:id).
-import { budgetStop } from '../budget.js';
+import { budgetStop, consumeBudgetOverride } from '../budget.js';
 import { PERMISSION_MODES } from '../hub.js';
 import { json } from './http.js';
 
@@ -13,8 +13,8 @@ async function resolveApproval({ hub, sessions, ledger }, req, res, { id }, body
   const cancelled = body.cancelled === true;
   // 💰 A plan build is a new paid turn too: leave the card pending when the budget is already over.
   if (plan && !cancelled && Boolean(body.allow)) {
-    const stop = budgetStop(hub, ledger);
-    if (stop) return json(res, 409, { error: stop.message, code: 'budget' });
+    const stop = budgetStop(hub, ledger, Date.now(), plan.project);
+    if (stop && !consumeBudgetOverride(hub)) return json(res, 409, { error: stop.message, code: 'budget' });
   }
   // A plan's build may need a fresh Model/Effort Auto decision, judged on the plan itself. The result rides on the
   // decision as `preparedAuto` so the OpenCode path does not classify the same plan a second time.

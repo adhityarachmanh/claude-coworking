@@ -147,7 +147,7 @@ export class RoutineScheduler {
       return;
     }
     try {
-      this.taskQueue.add(routine.projectId, routine.prompt);
+      this.taskQueue.add(routine.projectId, routine.prompt, null, [], { routineId: routine.id });
       Object.assign(routine, { lastRun: now, error: null });
       this.hub.chat?.(routine.projectId, { kind: 'info', text: `⏰ Tugas terjadwal masuk antrian: ${routine.prompt.slice(0, 80)}` });
     } catch (err) {

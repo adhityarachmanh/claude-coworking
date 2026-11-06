@@ -3,7 +3,7 @@
 // `search` / `export-session` read, but expose the whole history: laptop and Tailscale only (src/remote.js).
 // `redo-conversation` acts too (it moves the conversation / imports a session): refused over WiFi by the same gate.
 import { AttachmentError, readAttachments } from '../attachments.js';
-import { budgetStop } from '../budget.js';
+import { budgetStop, consumeBudgetOverride } from '../budget.js';
 import { ConversationError, exportSession, SEARCH_LIMITS, searchSessions } from '../conversation.js';
 import { searchOpenCodeSessions } from '../opencode-search.js';
 import { REWINDING_MESSAGE } from '../acp-session.js';
@@ -75,8 +75,8 @@ const ok = (res) => json(res, 200, { ok: true });
 export function register(router) {
   router.post('/api/projects/:id/prompt', withSession(async ({ hub, claude, opencode, ledger }, req, res, { project, session }, body) => {
     // 💰 Hard stop: never start a paid turn while a configured window is at/over its limit. A running turn is not cut.
-    const stop = budgetStop(hub, ledger);
-    if (stop) return json(res, 409, { error: stop.message, code: 'budget' });
+    const stop = budgetStop(hub, ledger, Date.now(), project.id);
+    if (stop && !consumeBudgetOverride(hub)) return json(res, 409, { error: stop.message, code: 'budget' });
     // The provider of the active model was logged out (👤 Akun, routes/account.js): no silent replacement.
     if (hub.statusFor(project.id)?.modelStale) {
       return json(res, 409, { error: 'Model aktif tidak tersedia (provider sudah logout). Pilih model lain atau Default dulu.' });
@@ -133,8 +133,8 @@ export function register(router) {
   // ✂ Ringkas konteks: the engine's own /compact as a normal prompt, so Claude Code's compact_boundary/auto-compact
   // status keeps working. Refused while anything runs, waits or asks: nothing is stopped to make room for it.
   router.post('/api/projects/:id/compact', withSession(({ hub, claude, opencode, ledger }, req, res, { project, session }, body) => {
-    const stop = budgetStop(hub, ledger);
-    if (stop) return json(res, 409, { error: stop.message, code: 'budget' });
+    const stop = budgetStop(hub, ledger, Date.now(), project.id);
+    if (stop && !consumeBudgetOverride(hub)) return json(res, 409, { error: stop.message, code: 'budget' });
     if (body.focus !== undefined && body.focus !== null && typeof body.focus !== 'string') return json(res, 400, { error: 'Fokus ringkasan harus berupa teks.' });
     const focus = String(body.focus ?? '').trim();
     if (focus.length > 300) return json(res, 400, { error: 'Fokus ringkasan maksimal 300 karakter.' });
@@ -240,8 +240,8 @@ export function register(router) {
       hub.clearInterrupted(project.id);
       return ok(res);
     }
-    const stop = budgetStop(hub, ledger);
-    if (stop) return json(res, 409, { error: stop.message, code: 'budget' });
+    const stop = budgetStop(hub, ledger, Date.now(), project.id);
+    if (stop && !consumeBudgetOverride(hub)) return json(res, 409, { error: stop.message, code: 'budget' });
     try {
       return json(res, 200, session.continueInterrupted());
     } catch (err) {

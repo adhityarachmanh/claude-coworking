@@ -185,9 +185,9 @@ export class UsageLedger {
     return removed;
   }
 
-  query({ accountId, from = 0, to = Date.now() } = {}) {
+  query({ accountId, projectId = null, from = 0, to = Date.now() } = {}) {
     const all = accountId === 'all';
-    return this.rows().filter((r) => (all || r.account.id === accountId) && r.ts >= from && r.ts <= to);
+    return this.rows().filter((r) => (all || r.account.id === accountId) && (!projectId || r.projectId === projectId) && r.ts >= from && r.ts <= to);
   }
 }
 

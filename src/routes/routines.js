@@ -8,6 +8,7 @@ export function register(router) {
   router.post('/api/routines/save', save, { maxBody: 8192 });
   router.post('/api/routines/delete', remove, { maxBody: 1024 });
   router.post('/api/routines/toggle', toggle, { maxBody: 1024 });
+  router.post('/api/routines/run', run, { maxBody: 1024 });
 }
 
 const all = (hub) => (Array.isArray(hub.persisted?.routines) ? hub.persisted.routines : []);
@@ -64,6 +65,20 @@ function remove({ hub }, req, res, params, body) {
   hub.save();
   hub.broadcast('routines', list.map((r) => ({ ...r, when: routineWhen(r) })));
   return json(res, 200, { routines: list.map((r) => ({ ...r, when: routineWhen(r) })) });
+}
+
+function run({ hub, taskQueue }, req, res, params, body) {
+  const routine = all(hub).find((r) => r.id === body.id);
+  if (!routine) return json(res, 404, { error: 'Jadwal tidak ditemukan.' });
+  const project = hub.projects.get(routine.projectId);
+  if (!project || project.virtual) return json(res, 404, { error: 'Project jadwal tidak ditemukan.' });
+  try {
+    taskQueue.add(routine.projectId, routine.prompt, null, [], { routineId: routine.id });
+  } catch (err) {
+    return json(res, err.status ?? 400, { error: err.message });
+  }
+  hub.chat(routine.projectId, { kind: 'info', text: `⏰ Tugas terjadwal dijalankan manual: ${routine.prompt.slice(0, 80)}` });
+  return json(res, 200, { ok: true });
 }
 
 function toggle({ hub }, req, res, params, body) {

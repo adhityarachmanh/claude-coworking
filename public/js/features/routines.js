@@ -10,6 +10,7 @@ const DELETE = '/api/routines/delete';
 const TOGGLE = '/api/routines/toggle';
 
 const view = { list: [], loading: false, error: null, promise: null };
+let editingId = null;
 
 const whenText = (r) => `Berikutnya ${new Date(r.nextRun).toLocaleString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
 const disabledText = (r) => (r.enabled ? whenText(r) : 'Dijeda');
@@ -47,6 +48,8 @@ function renderList() {
           <span class="routine-prompt" title="${escapeHtml(r.prompt)}">${escapeHtml(r.prompt)}</span>
           <small class="muted">${escapeHtml(disabledText(r))}${r.error ? ` · ${escapeHtml(r.error)}` : ''}</small>
         </div>
+        <button type="button" class="ghost routine-run" data-routine-run title="Jalankan sekarang" aria-label="Jalankan sekarang">▶</button>
+        <button type="button" class="ghost routine-edit" data-routine-edit title="Ubah jadwal" aria-label="Ubah jadwal">✎</button>
         <button type="button" class="ghost routine-toggle" data-routine-toggle aria-pressed="${r.enabled}">${r.enabled ? 'Jeda' : 'Lanjutkan'}</button>
         <button type="button" class="ghost routine-delete" data-routine-delete aria-label="Hapus jadwal">🗑</button>
       </li>`,
@@ -106,6 +109,7 @@ async function saveRoutine() {
   let body;
   try {
     body = readForm();
+    if (editingId) body.id = editingId;
   } catch (err) {
     setError(err.message);
     return;
@@ -115,15 +119,54 @@ async function saveRoutine() {
   if (button) button.disabled = true;
   try {
     const data = await api(SAVE, body);
+    const edited = Boolean(editingId);
     view.list = Array.isArray(data?.routines) ? data.routines : [];
     view.error = null;
-    $('#routine-prompt').value = '';
+    resetForm();
     renderList();
-    toast('⏰ Jadwal ditambahkan.', 'ok');
+    toast(edited ? '⏰ Jadwal diperbarui.' : '⏰ Jadwal ditambahkan.', 'ok');
   } catch (err) {
     setError(err?.status === 400 || err?.status === 404 ? err.message : `Gagal menyimpan jadwal: ${err?.message ?? 'tidak diketahui'}`);
   } finally {
     if (button) button.disabled = false;
+  }
+}
+
+function resetForm() {
+  editingId = null;
+  const prompt = $('#routine-prompt');
+  if (prompt) prompt.value = '';
+  const add = $('#routine-add');
+  if (add) add.textContent = '＋ Tambah jadwal';
+  const cancel = $('#routine-cancel');
+  if (cancel) cancel.hidden = true;
+  setError('');
+}
+
+function beginEdit(id) {
+  const routine = view.list.find((r) => r.id === id);
+  if (!routine) return;
+  editingId = id;
+  $('#routine-project').value = routine.projectId;
+  $('#routine-prompt').value = routine.prompt;
+  $('#routine-frequency').value = routine.frequency;
+  $('#routine-time').value = routine.time;
+  if (routine.frequency === 'weekly') $('#routine-weekday').value = String(routine.weekday);
+  if (routine.frequency === 'once') $('#routine-date').value = routine.date ?? '';
+  syncFields();
+  const add = $('#routine-add');
+  if (add) add.textContent = '💾 Simpan perubahan';
+  const cancel = $('#routine-cancel');
+  if (cancel) cancel.hidden = false;
+  $('#routine-prompt').focus();
+}
+
+async function runNow(id) {
+  try {
+    await api('/api/routines/run', { id });
+    toast('⏰ Jadwal dimasukkan ke antrian.', 'ok');
+  } catch (err) {
+    setError(err?.message ?? 'Jadwal tidak bisa dijalankan.');
   }
 }
 
@@ -162,8 +205,11 @@ export function initRoutines() {
     const item = e.target.closest('[data-routine]');
     if (!item) return;
     if (e.target.closest('[data-routine-delete]')) change(item.dataset.routine, 'delete');
+    else if (e.target.closest('[data-routine-run]')) runNow(item.dataset.routine);
+    else if (e.target.closest('[data-routine-edit]')) beginEdit(item.dataset.routine);
     else if (e.target.closest('[data-routine-toggle]')) change(item.dataset.routine, item.classList.contains('off') ? 'enable' : 'disable');
   });
+  $('#routine-cancel')?.addEventListener('click', resetForm);
 }
 
 /** Called when ⚙ → Jadwal is opened: refresh the project list and the stored schedules. */

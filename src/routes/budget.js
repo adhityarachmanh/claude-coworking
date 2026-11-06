@@ -4,17 +4,32 @@
 // Laptop + Tailscale only: there is deliberately no entry for these paths in the plain-HTTP WiFi read allowlist
 // (src/remote.js wifiAllows), so server.js refuses a read-only phone with 403 before a handler runs. The numbers
 // say what the account spends, and a sniffable device must not be able to change a limit (default deny).
-import { budgetView, cleanBudgetPatch } from '../budget.js';
+import { budgetView, cleanBudgetPatch, grantBudgetOverride } from '../budget.js';
 import { json } from './http.js';
 
 export function register(router) {
   router.post('/api/budget', state, { maxBody: 1024 });
   router.post('/api/budget/save', save, { maxBody: 1024 });
+  router.post('/api/budget/override', override, { maxBody: 1024 });
+}
+
+/** A project id from the body, or null for the global budget; refused for an unknown/demo project. */
+function projectOf(hub, body) {
+  const id = typeof body?.projectId === 'string' ? body.projectId : '';
+  if (!id) return null;
+  const project = hub.projects.get(id);
+  if (!project || project.virtual) throw Object.assign(new Error('Project tidak ditemukan.'), { status: 404 });
+  return id;
 }
 
 /** The view now: the limits, the spending of every local window and the note about the ledger's coverage. */
-function state({ hub, ledger }, req, res) {
-  return json(res, 200, { budget: budgetView(hub, ledger) });
+function state({ hub, ledger }, req, res, params, body) {
+  try {
+    const projectId = projectOf(hub, body);
+    return json(res, 200, { budget: { ...budgetView(hub, ledger, Date.now(), projectId), projectId } });
+  } catch (err) {
+    return json(res, err.status ?? 400, { error: err.message });
+  }
 }
 
 /**
@@ -23,12 +38,20 @@ function state({ hub, ledger }, req, res) {
  */
 function save({ hub, ledger, device }, req, res, params, body) {
   let patch;
+  let projectId = null;
   try {
+    projectId = projectOf(hub, body);
     patch = cleanBudgetPatch(body);
   } catch (err) {
     return json(res, err.status ?? 400, { error: err.message });
   }
-  hub.setBudget(patch);
+  if (projectId) hub.setProjectBudget(projectId, patch);
+  else hub.setBudget(patch);
   if (device) console.log(`Batas pemakaian diubah dari HP "${device.name}"`);
-  return json(res, 200, { budget: budgetView(hub, ledger) });
+  return json(res, 200, { budget: { ...budgetView(hub, ledger, Date.now(), projectId), projectId } });
+}
+
+/** Allows exactly one turn despite the hard stop; expires on its own after 5 minutes. */
+function override({ hub }, req, res) {
+  return json(res, 200, { ok: true, until: grantBudgetOverride(hub) });
 }
