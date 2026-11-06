@@ -270,6 +270,10 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
   const budgetAudit = readFileSync(path.join(TMP, 'data', 'budget-audit.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
   assert.ok(budgetAudit.some((e) => e.action === 'save' && e.scope === 'global'));
   assert.ok(budgetAudit.some((e) => e.action === 'save' && e.scope === 'project' && e.projectId === id));
+  const auditView = await api('/api/budget/audit', { limit: 5 });
+  assert.equal(auditView.status, 200);
+  assert.ok(auditView.body.entries.length >= 2);
+  assert.ok(auditView.body.entries.every((e) => e.action === 'save' || e.action === 'override'));
 
   // 🩺 health: the budget line appears exactly while a limit is set
   const withLimit = (await api('/api/health', {})).body.health;
@@ -306,6 +310,8 @@ test('⏰ tugas terjadwal: save/list/toggle/delete, validation, and state.json p
   const afterRun = JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8')).routines[0];
   assert.equal(afterRun.lastStatus, 'done');
   assert.ok(afterRun.lastEndedAt > 0);
+  assert.equal(afterRun.history.length, 1);
+  assert.equal(afterRun.history[0].status, 'done');
   const toggled = await api('/api/routines/toggle', { id: routine.id, enabled: false });
   assert.equal(toggled.body.routines[0].enabled, false);
   assert.equal(toggled.body.routines[0].nextRun, null);

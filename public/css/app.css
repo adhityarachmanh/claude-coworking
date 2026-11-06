@@ -314,11 +314,18 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .routine-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .routine-prompt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .routine-toggle, .routine-delete { flex: none; font-size: var(--fs-sm); padding: 3px 6px; }
+.routine-history { margin-top: 2px; font-size: var(--fs-xs); color: var(--muted); }
+.routine-history summary { cursor: pointer; color: var(--accent-2); }
+.routine-history ul { margin: 4px 0 0; padding-left: 18px; }
 .routine-form { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
 .routine-field { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-sm); color: var(--muted); }
 .routine-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .routine-form input, .routine-form select, .routine-form textarea { font-size: var(--fs-md); }
 .routine-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.budget-audit { margin-top: 6px; font-size: var(--fs-sm); color: var(--muted); }
+.budget-audit summary { cursor: pointer; color: var(--accent-2); }
+.budget-audit ul { margin: 6px 0 0; padding-left: 18px; max-height: 160px; overflow-y: auto; }
+.budget-audit li { margin: 2px 0; }
 .projects { list-style: none; margin: 0; padding: 0 8px 8px; overflow-y: auto; flex: 1; min-height: 0; }
 .projects li {
   display: flex;
@@ -533,6 +540,12 @@ body.resizing .stage, body.resizing iframe { pointer-events: none; }
 .tabs { display: flex; gap: 4px; padding: 10px 12px 0; border-bottom: 1px solid var(--border); }
 .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 8px 12px; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+.tabs .tab-action { margin-left: auto; padding: 8px 10px; }
+.chat-search { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.chat-search input { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-md); }
+.chat-search .icon-btn { flex: none; }
+body:not([data-tab='chat']) #chat-search { display: none; }
+#chat .search-hidden { display: none !important; }
 
 .chat-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
 /* title + buttons on the first row, details across the full width below */

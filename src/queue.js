@@ -516,12 +516,20 @@ export class TaskQueue {
       this.hub.chat(id, { kind: 'info', ...(item.status === 'failed' ? { level: 'warning' } : {}), text: `⏰ Tugas terjadwal ${item.status === 'failed' ? 'gagal' : 'selesai'}: ${item.text.slice(0, 80)}` });
       const routine = this.hub.persisted?.routines?.find((r) => r.id === item.routineId);
       if (routine) {
+        const entry = {
+          status: item.status === 'failed' ? 'failed' : 'done',
+          at: item.endedAt,
+          durationMs: meta?.durationMs ?? null,
+          costUsd: meta?.costUsd ?? null,
+          error: item.status === 'failed' ? (item.error ?? 'Gagal') : null,
+        };
         Object.assign(routine, {
-          lastStatus: item.status === 'failed' ? 'failed' : 'done',
-          lastEndedAt: item.endedAt,
-          lastDurationMs: meta?.durationMs ?? null,
-          lastCostUsd: meta?.costUsd ?? null,
-          lastError: item.status === 'failed' ? (item.error ?? 'Gagal') : null,
+          lastStatus: entry.status,
+          lastEndedAt: entry.at,
+          lastDurationMs: entry.durationMs,
+          lastCostUsd: entry.costUsd,
+          lastError: entry.error,
+          history: [entry, ...(Array.isArray(routine.history) ? routine.history : [])].slice(0, 5),
         });
         this.hub.save?.();
         this.hub.broadcast?.('routines', this.hub.persisted.routines);

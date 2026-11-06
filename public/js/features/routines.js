@@ -25,6 +25,12 @@ const lastText = (r) => {
   const at = r.lastEndedAt ? ` ${new Date(r.lastEndedAt).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : '';
   return ` · terakhir ${r.lastStatus === 'done' ? 'selesai' : 'gagal'}${at}${r.lastError ? ` (${r.lastError})` : ''}`;
 };
+const historyText = (h) => {
+  const at = new Date(h.at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const time = h.durationMs ? ` · ${Math.round(h.durationMs / 1000)} dtk` : '';
+  const cost = h.costUsd ? ` · $${Number(h.costUsd).toFixed(2)}` : '';
+  return `${at} · ${h.status === 'done' ? 'selesai' : 'gagal'}${time}${cost}${h.error ? ` · ${h.error}` : ''}`;
+};
 
 function projectOptions() {
   const select = $('#routine-project');
@@ -58,6 +64,7 @@ function renderList() {
           <b>${escapeHtml(scheduleText(r))}</b>
           <span class="routine-prompt" title="${escapeHtml(r.prompt)}">${escapeHtml(r.prompt)}</span>
           <small class="muted">${escapeHtml(disabledText(r) + lastText(r))}${r.error ? ` · ${escapeHtml(r.error)}` : ''}</small>
+          ${Array.isArray(r.history) && r.history.length ? `<details class="routine-history"><summary>Riwayat (${r.history.length})</summary><ul>${r.history.map((h) => `<li>${escapeHtml(historyText(h))}</li>`).join('')}</ul></details>` : ''}
         </div>
         <button type="button" class="ghost routine-run" data-routine-run title="Jalankan sekarang" aria-label="Jalankan sekarang">▶</button>
         <button type="button" class="ghost routine-edit" data-routine-edit title="Ubah jadwal" aria-label="Ubah jadwal">✎</button>

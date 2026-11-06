@@ -4,7 +4,7 @@
 // Laptop + Tailscale only: there is deliberately no entry for these paths in the plain-HTTP WiFi read allowlist
 // (src/remote.js wifiAllows), so server.js refuses a read-only phone with 403 before a handler runs. The numbers
 // say what the account spends, and a sniffable device must not be able to change a limit (default deny).
-import { recordBudget } from '../budget-audit.js';
+import { recentBudget, recordBudget } from '../budget-audit.js';
 import { budgetView, cleanBudgetPatch, grantBudgetOverride } from '../budget.js';
 import { json } from './http.js';
 
@@ -12,6 +12,7 @@ export function register(router) {
   router.post('/api/budget', state, { maxBody: 1024 });
   router.post('/api/budget/save', save, { maxBody: 1024 });
   router.post('/api/budget/override', override, { maxBody: 1024 });
+  router.post('/api/budget/audit', audit, { maxBody: 1024 });
 }
 
 /** A project id from the body, or null for the global budget; refused for an unknown/demo project. */
@@ -54,6 +55,10 @@ function save({ hub, ledger, device, dataDir }, req, res, params, body) {
     { dataDir: dataDir ?? hub.dataDir },
   );
   return json(res, 200, { budget: { ...budgetView(hub, ledger, Date.now(), projectId), projectId } });
+}
+
+function audit({ hub, dataDir }, req, res, params, body) {
+  return json(res, 200, { entries: recentBudget(body?.limit, { dataDir: dataDir ?? hub.dataDir }) });
 }
 
 /** Allows exactly one turn despite the hard stop; expires on its own after 5 minutes. */

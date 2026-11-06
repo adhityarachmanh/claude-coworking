@@ -618,6 +618,9 @@ async function stubBudget(page, answer = BUDGET_ANSWER()) {
       const path = String(url);
       if (!path.includes('/api/budget')) return window.__budgetPreviousFetch(url, opts);
       const json = (body, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
+      if (path.includes('/api/budget/audit')) {
+        return json({ entries: [{ ts: Date.now(), action: 'save', scope: 'global', projectId: null, actor: 'laptop', detail: 'dailyUsd=20' }] });
+      }
       if (path.includes('/api/budget/save')) {
         let body = {};
         try {
@@ -1975,6 +1978,26 @@ for (const vp of VIEWPORTS) {
       assert.equal(await page.eval(() => localStorage.getItem('office.tourDone')), '1');
     });
 
+    test('🔍 Cari di chat: menyaring pesan dan menampilkan jumlahnya', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(async (pid) => {
+        const { appendChat } = await import('/js/features/chat.js');
+        appendChat({ id: 'cari-1', project: pid, kind: 'assistant', text: 'apel jeruk', ts: Date.now() }, false);
+        appendChat({ id: 'cari-2', project: pid, kind: 'assistant', text: 'durian manis', ts: Date.now() }, false);
+      }, projectId);
+      await page.eval(() => document.querySelector('#btn-chat-search').click());
+      await page.eval(() => {
+        const input = document.querySelector('#chat-search-input');
+        input.value = 'durian';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      assert.equal(await page.eval(() => [...document.querySelectorAll('#chat > [data-id]')].filter((n) => !n.classList.contains('search-hidden')).map((n) => n.dataset.id).sort().join(',')), 'cari-2');
+      assert.equal(await page.eval(() => document.querySelector('#chat-search-count').textContent), '1 pesan');
+      await page.eval(() => document.querySelector('#chat-search-close').click());
+      assert.equal(await page.eval(() => document.querySelector('#chat-search').hidden), true);
+      assert.equal(await page.eval(() => document.querySelectorAll('#chat > .search-hidden').length), 0);
+    });
+
     test('🔎 Cari pengaturan: panel yang cocok tampil, yang lain disembunyikan', async () => {
       await ensureApp(page, `#${projectId}`);
       await tap(page, '#btn-settings');
@@ -2086,6 +2109,7 @@ for (const vp of VIEWPORTS) {
       await page.click('.routine-item [data-routine-run]');
       await page.waitFor(() => [...document.querySelectorAll('.info')].some((n) => /dijalankan manual/.test(n.textContent)), { timeoutMs: 4000, message: 'jadwal dijalankan manual' });
       await page.waitFor(() => /terakhir selesai/.test(document.querySelector('.routine-item')?.textContent ?? ''), { timeoutMs: 10000, message: 'riwayat hasil jadwal' });
+
 
       await page.click('.routine-item [data-routine-toggle]');
       await page.waitFor(() => document.querySelector('.routine-item')?.classList.contains('off'), { timeoutMs: 4000, message: 'jadwal dijeda' });
@@ -2644,6 +2668,8 @@ for (const vp of VIEWPORTS) {
         // Desktop keeps one panel at a time (the remembered tab may be another one); a phone stacks them all.
         if (!(await shownInPage(page, '#budget-section'))) await page.click('[data-settings-tab="umum"]');
         await page.waitFor(() => document.querySelectorAll('#budget-rows .budget-row').length === 3, { timeoutMs: 4000, message: 'tiga baris budget tampil' });
+        await page.eval(() => (document.querySelector('#budget-audit').open = true));
+        await page.waitFor(() => /Budget global/.test(document.querySelector('#budget-audit-list').textContent), { timeoutMs: 4000, message: 'riwayat budget' });
 
         const view = await page.eval(budgetRows);
         assert.deepEqual(view.map((r) => r.window), ['Harian', 'Mingguan', 'Bulanan']);

@@ -11,6 +11,7 @@ import { READ_ONLY_HINT, state } from '../core/state.js';
 
 const VIEW = '/api/budget';
 const SAVE = '/api/budget/save';
+const AUDIT = '/api/budget/audit';
 const MAX_USD = 10_000;
 const WARN_AT = 0.8; // 80% of the limit: amber; 100%: red
 
@@ -27,7 +28,7 @@ const usdText = (n) => `$${AMOUNT.format(n)}`;
 const limitText = (n) => (Number.isInteger(n) ? `$${WHOLE.format(n)}` : usdText(n));
 
 /** The last good view (memory only), the inline error, the in-flight request, and the limits last drawn. */
-export const budgetView = { data: null, global: null, scope: '', error: null, loading: false, promise: null, fieldsKey: null, saving: false };
+export const budgetView = { data: null, global: null, scope: '', error: null, loading: false, promise: null, fieldsKey: null, saving: false, auditLoaded: false };
 
 const budgetAvailable = () => !state.readOnly && canCall(VIEW);
 
@@ -257,6 +258,8 @@ export async function saveBudget() {
     budgetView.data = normalizeBudgetView(data?.budget);
     if (!budgetView.scope) budgetView.global = budgetView.data;
     budgetView.fieldsKey = null; // take the saved values back from the server
+    budgetView.auditLoaded = false;
+    if ($('#budget-audit')?.open) loadBudgetAudit();
     toast(budgetView.scope ? '💰 Budget project disimpan.' : '💰 Budget pemakaian global disimpan.', 'ok');
   } catch (err) {
     showBudgetError(err?.status === 400 ? err.message : `Gagal menyimpan budget: ${err?.message ?? 'tidak diketahui'}`);
@@ -266,10 +269,35 @@ export async function saveBudget() {
   }
 }
 
+async function loadBudgetAudit() {
+  if (!budgetAvailable() || budgetView.auditLoaded) return;
+  const list = $('#budget-audit-list');
+  if (!list) return;
+  try {
+    const data = await api(AUDIT, { limit: 20 });
+    const entries = Array.isArray(data?.entries) ? data.entries : [];
+    list.innerHTML = entries.length
+      ? entries
+          .map((e) => {
+            const at = new Date(e.ts).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+            const what = e.action === 'override' ? 'Izinkan 1 giliran' : `${e.scope === 'project' ? 'Budget project' : 'Budget global'}`;
+            return `<li><b>${escapeHtml(what)}</b> · ${escapeHtml(at)} · ${escapeHtml(e.actor ?? 'laptop')}${e.detail ? ` · ${escapeHtml(e.detail)}` : ''}</li>`;
+          })
+          .join('')
+      : '<li class="muted small">Belum ada perubahan.</li>';
+    budgetView.auditLoaded = true;
+  } catch (err) {
+    list.innerHTML = `<li class="field-error" role="alert">Gagal memuat riwayat: ${escapeHtml(err?.message ?? 'tidak diketahui')}</li>`;
+  }
+}
+
 export function initBudget() {
   const save = $('#budget-save');
   if (!save) return;
   save.addEventListener('click', () => saveBudget());
+  $('#budget-audit')?.addEventListener('toggle', (e) => {
+    if (e.target.open) loadBudgetAudit();
+  });
   $('#budget-project')?.addEventListener('change', (e) => {
     loadBudgetView({ force: true, scope: e.target.value });
   });
@@ -277,6 +305,8 @@ export function initBudget() {
     try {
       await api('/api/budget/override', {});
       toast('Satu giliran diizinkan meski budget tercapai.', 'ok');
+      budgetView.auditLoaded = false;
+      if ($('#budget-audit')?.open) loadBudgetAudit();
       loadBudgetView({ force: true });
     } catch (err) {
       showBudgetError(`Gagal memberi izin satu giliran: ${err?.message ?? 'tidak diketahui'}`);

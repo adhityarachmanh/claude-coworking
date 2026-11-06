@@ -16,6 +16,7 @@ import { renderSidebar, selectProject } from '../features/picker.js';
 import { onApprovalUpdate, onPushSnapshot, pushProjectsChanged } from '../features/push.js';
 import { applyRoutines } from '../features/routines.js';
 import { renderRoots, syncProjectEngine } from '../features/settings.js';
+import { maybeAutoTour } from '../features/tour.js';
 import { applyRoster } from '../features/roster.js';
 import { applySpotify } from '../features/spotify.js';
 import { reloadSoon } from '../features/opencode-account.js';
@@ -71,6 +72,7 @@ const handlers = {
     applyTeamNames(snap.config?.teamNames); // before the first render, so nothing shows the old names
     applyRoster(snap.config?.team, { rebuild: false }); // desks for the active team; the scenes are rebuilt below
     state.projects = snap.projects;
+    maybeAutoTour(); // a truly fresh install (no projects) gets the four-step tour once
     state.statuses = snap.statuses;
     state.chats = snap.chats;
     state.events = snap.events;

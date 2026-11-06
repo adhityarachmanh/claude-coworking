@@ -69,6 +69,10 @@ export function cleanRoutine(raw, now = Date.now()) {
     lastDurationMs: Number.isFinite(raw.lastDurationMs) ? raw.lastDurationMs : null,
     lastCostUsd: Number.isFinite(raw.lastCostUsd) ? raw.lastCostUsd : null,
     lastError: text(raw.lastError, 300) || null,
+    history: (Array.isArray(raw.history) ? raw.history : [])
+      .filter((h) => h && (h.status === 'done' || h.status === 'failed') && Number.isFinite(h.at))
+      .slice(0, 5)
+      .map((h) => ({ status: h.status, at: h.at, durationMs: Number.isFinite(h.durationMs) ? h.durationMs : null, costUsd: Number.isFinite(h.costUsd) ? h.costUsd : null, error: text(h.error, 300) || null })),
     error: text(raw.error, 300) || null,
   };
   if (routine.enabled && routine.nextRun == null) routine.nextRun = nextRunAt(routine, now);

@@ -86,7 +86,13 @@
           <button data-tab="chat" class="active">Chat</button>
           <button data-tab="changes">Perubahan <span id="changes-count" class="count" hidden></span></button>
           <button data-tab="activity">Aktivitas</button>
+          <button id="btn-chat-search" class="tab-action" type="button" title="Cari di percakapan (Ctrl+F)" aria-label="Cari di percakapan">🔍</button>
         </nav>
+        <div id="chat-search" class="chat-search" hidden>
+          <input id="chat-search-input" type="search" placeholder="Cari di percakapan ini…" aria-label="Cari di percakapan" autocomplete="off" />
+          <span id="chat-search-count" class="muted small" role="status" aria-live="polite"></span>
+          <button type="button" id="chat-search-close" class="icon-btn" title="Tutup pencarian" aria-label="Tutup pencarian">✕</button>
+        </div>
         <div id="changes" class="changes" hidden>
           <div class="ch-head">
             <span id="ch-branch" class="muted"></span>
@@ -227,6 +233,7 @@
             <textarea id="prompt" rows="3" aria-label="Pesan untuk tim" title=" / command · @file · ! shell · Shift+Enter baris baru" placeholder="Minta sesuatu ke tim…"></textarea>
             <!-- 🎤 hidden unless the Web Speech API exists in a secure context (HTTPS / localhost) and the page may act -->
             <!-- Phone only: ＋ (attach, template, queue, voice, ! @ /) and the turn-settings chip, in the toolbar under the text -->
+            <button id="btn-chat-search-mobile" class="ghost icon phone-only" type="button" title="Cari di percakapan" aria-label="Cari di percakapan">🔍</button>
             <button id="btn-plus" class="ghost icon phone-only" type="button" aria-haspopup="dialog" aria-label="Tambahkan: lampiran, template, antrian, suara">＋</button>
             <button id="settings-chip" class="settings-chip" type="button" aria-haspopup="dialog" aria-label="Pengaturan giliran" title="Izin, model, effort & Mode tim"></button>
             <button id="btn-voice" class="ghost icon attach voice-btn" type="button" title="Input suara (Alt+M)" aria-label="Mulai input suara" aria-pressed="false" aria-keyshortcuts="Alt+M" hidden>🎤</button>
@@ -713,6 +720,10 @@
             <p id="budget-stop" class="field-error" role="alert" hidden></p>
             <button type="button" id="budget-override" class="ghost" hidden>Izinkan 1 giliran</button>
             <p id="budget-note" class="muted small">Batas biaya tercatat, bukan tagihan. OpenCode Go berlangganan, jadi budget ini terutama untuk Claude.</p>
+            <details id="budget-audit" class="budget-audit">
+              <summary>Riwayat perubahan budget</summary>
+              <ul id="budget-audit-list"><li class="muted small">Buka untuk memuat riwayat…</li></ul>
+            </details>
           </section>
           </div>
           <div class="settings-panel" id="settings-panel-tim" data-settings-panel="tim" role="tabpanel" aria-labelledby="settings-tab-tim">

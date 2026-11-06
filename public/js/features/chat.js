@@ -41,6 +41,13 @@ export function renderChat() {
   lastDay = '';
   newMarker = null;
   newCount = 0;
+  if (chatSearch) {
+    chatSearch = '';
+    const input = $('#chat-search-input');
+    if (input) input.value = '';
+    $('#chat-search').hidden = true;
+    $('#chat-search-count').textContent = '';
+  }
   syncJumpLabel();
   resetLiveOutput();
   pendingReplace.clear();
@@ -76,6 +83,7 @@ let pinnedTop = 0;
 let lastDay = '';
 let newMarker = null;
 let newCount = 0;
+let chatSearch = '';
 const distanceFromBottom = () => chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight;
 const dayLabel = (ts) => new Date(ts || Date.now()).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -101,6 +109,50 @@ function markNew(node) {
   }
   newCount += 1;
   syncJumpLabel();
+}
+
+/** Filters the rows of the open chat by text. Date/new dividers step aside while a query is active. */
+function applyChatSearch(query) {
+  chatSearch = query.trim().toLowerCase();
+  const count = $('#chat-search-count');
+  let matches = 0;
+  for (const node of chatEl.children) {
+    if (node.classList.contains('empty')) continue;
+    const decorative = node.classList.contains('day') || node.classList.contains('new-marker');
+    if (chatSearch && decorative) {
+      node.classList.add('search-hidden');
+      continue;
+    }
+    node.classList.remove('search-hidden');
+    if (!chatSearch || !node.dataset?.id) continue;
+    node.classList.toggle('search-hidden', !node.textContent.toLowerCase().includes(chatSearch));
+    if (!node.classList.contains('search-hidden')) matches += 1;
+  }
+  if (count) count.textContent = chatSearch ? `${matches} pesan` : '';
+  if (chatSearch) {
+    followChat = false;
+    $('#jump-latest').hidden = true;
+    const first = [...chatEl.children].find((node) => node.dataset?.id && !node.classList.contains('search-hidden'));
+    if (first) chatEl.scrollTop = Math.max(0, first.offsetTop - 8);
+  }
+}
+
+function clearChatSearch() {
+  chatSearch = '';
+  const input = $('#chat-search-input');
+  if (input) input.value = '';
+  $('#chat-search').hidden = true;
+  applyChatSearch('');
+  for (const node of chatEl.children) node.classList.remove('search-hidden');
+  $('#chat-search-count').textContent = '';
+  scrollChat(true);
+}
+
+function openChatSearch() {
+  $('#chat-search').hidden = false;
+  applyChatSearch($('#chat-search-input').value);
+  $('#chat-search-input').focus();
+  $('#chat-search-input').select();
 }
 
 function pinToBottom() {
@@ -148,7 +200,8 @@ export function appendChat(msg, scroll = true) {
   // Your own prompt, anything waiting for your decision, and the first message always come into view.
   const mustSee = msg.kind === 'approval' || (msg.kind === 'user' && msg.source === 'web') || Boolean(welcome);
   if (scroll && !followChat && !mustSee) markNew(node);
-  if (scroll) scrollChat(mustSee);
+  if (chatSearch) applyChatSearch(chatSearch);
+  if (scroll) scrollChat(mustSee && !chatSearch);
 }
 
 export function replaceChat(msg) {
@@ -427,6 +480,22 @@ export function initChat() {
       }
     }
     $('#jump-latest').hidden = followChat;
+  });
+
+  $('#btn-chat-search').addEventListener('click', openChatSearch);
+  $('#btn-chat-search-mobile')?.addEventListener('click', openChatSearch);
+  $('#chat-search-input').addEventListener('input', (e) => applyChatSearch(e.target.value));
+  $('#chat-search-input').addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    clearChatSearch();
+  });
+  $('#chat-search-close').addEventListener('click', clearChatSearch);
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && document.body.dataset.tab === 'chat' && !e.altKey) {
+      e.preventDefault();
+      openChatSearch();
+    }
   });
 
   chatEl.addEventListener('click', async (e) => {

@@ -52,6 +52,30 @@ function prune(file, now = Date.now()) {
   }
 }
 
+/** The newest `limit` entries, newest first (an unreadable file is an empty list). */
+export function recentBudget(limit = 20, { dataDir = defaultDataDir() } = {}) {
+  const n = Number.isFinite(limit) ? Math.min(100, Math.max(1, Math.trunc(limit))) : 20;
+  try {
+    const file = path.join(dataDir, BUDGET_AUDIT_FILE);
+    return readFileSync(file, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .slice(-n * 3)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter((row) => row && ACTIONS.has(row.action) && Number.isFinite(row.ts))
+      .slice(-n)
+      .reverse();
+  } catch {
+    return [];
+  }
+}
+
 export function recordBudget(entry, { dataDir = defaultDataDir(), now = Date.now() } = {}) {
   const clean = cleanEntry({ ts: now, ...entry });
   if (!clean) return null;
