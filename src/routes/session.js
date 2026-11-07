@@ -199,13 +199,19 @@ export function register(router) {
       const u = usage.get(s.id);
       if (u) s.usage = { usd: Math.round(u.usd * 100) / 100, tokens: u.tokens, rows: u.rows, known: u.known };
     }
-    // 🏷/📦 What the user tagged or archived (persisted per project + session id).
+    // 🏷/📦 What the user tagged or archived (persisted per project + session id), plus 📦 auto-archive by age.
     const meta = hub.sessionMetaMap(project.id);
+    const autoDays = hub.sessionAutoArchiveDays(project.id);
+    const cutoff = autoDays ? Date.now() - autoDays * 86_400_000 : 0;
     for (const s of sessions) {
-      const m = meta[s.id];
-      if (m) Object.assign(s, m);
+      const m = meta[s.id] ?? {};
+      if (m.tag) s.tag = m.tag;
+      if (m.pinned) s.pinned = true;
+      const auto = cutoff > 0 && s.updated < cutoff && m.pinned !== true;
+      if (auto) s.autoArchived = true;
+      if (m.archived === true || auto) s.archived = true;
     }
-    return json(res, 200, { sessions, engine, current: hub.sessionIdFor(project.id) });
+    return json(res, 200, { sessions, engine, current: hub.sessionIdFor(project.id), autoArchiveDays: autoDays });
   }));
   router.post('/api/projects/:id/resume', withSession(async ({ hub, opencode }, req, res, { project, session }, body) => {
     const sessionId = String(body.sessionId ?? '');
@@ -273,9 +279,19 @@ export function register(router) {
     const patch = {};
     if (Object.hasOwn(body, 'tag')) patch.tag = String(body.tag ?? '');
     if (Object.hasOwn(body, 'archived')) patch.archived = body.archived === true;
+    if (Object.hasOwn(body, 'pinned')) patch.pinned = body.pinned === true;
     if (!Object.keys(patch).length) return json(res, 400, { error: 'Tidak ada yang diubah.' });
     const meta = hub.setSessionMeta(project.id, sessionId, patch);
     return json(res, 200, { ok: true, meta });
+  }));
+  // 📦 Auto-archive: sessions unused for N days show under 📦 Diarsipkan (0 = off). Per project, app-side.
+  router.post('/api/projects/:id/session-auto-archive', withSession(({ hub }, req, res, { project }, body) => {
+    try {
+      return json(res, 200, { ok: true, days: hub.setSessionAutoArchive(project.id, body.days ?? 0) });
+    } catch (err) {
+      if (err.status) return json(res, err.status, { error: err.message });
+      throw err;
+    }
   }));
   // ⬇ OpenCode: the session as OpenCode's own JSON (re-import with `opencode session import`).
   router.post('/api/projects/:id/session-export-json', withSession(({ opencode }, req, res, { project }, body) => admin(res, async () => {

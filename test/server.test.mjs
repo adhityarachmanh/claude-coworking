@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
@@ -224,7 +224,9 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
   assert.ok(view.trend.every((d) => Number.isFinite(d.start) && Number.isFinite(d.usd)));
   const today = await api('/api/summary/today', {});
   assert.equal(today.status, 200, JSON.stringify(today.body));
-  assert.deepEqual(Object.keys(today.body.today).sort(), ['costCoverage', 'costUsd', 'from', 'projects', 'rows', 'sessions', 'tokens', 'top', 'turns']);
+  assert.deepEqual(Object.keys(today.body.today).sort(), ['costCoverage', 'costUsd', 'from', 'projects', 'rows', 'sessions', 'tokens', 'top', 'trend', 'turns']);
+  assert.equal(today.body.today.trend.length, 7, 'tren tujuh hari');
+  assert.ok(today.body.today.trend.every((d) => Number.isFinite(d.start) && Number.isFinite(d.tokens) && Number.isFinite(d.turns)));
   assert.deepEqual(view.budget, { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, 'no limit yet');
   for (const unit of ['day', 'week', 'month']) {
     assert.deepEqual(Object.keys(view.spend[unit]).sort(), ['known', 'rows', 'usd'], unit);
@@ -1626,6 +1628,27 @@ test('🕘 Riwayat sesi (Claude Code): ⑂ fork continues a copy (--fork-session
   assert.equal(tagged.tag, undefined);
   assert.equal((await api(`/api/projects/${id}/session-meta`, { sessionId: '../x', tag: 'x' })).status, 400);
   assert.equal((await api(`/api/projects/${id}/session-meta`, { sessionId: sid })).status, 400, 'tidak ada yang diubah');
+
+  // 📦 Auto-archive: an unused session moves to the archive by age; pinning keeps one in the main list.
+  const old = new Date(Date.now() - 120 * 86_400_000);
+  utimesSync(path.join(dir, `${sid2}.jsonl`), old, old);
+  const auto = await api(`/api/projects/${id}/session-auto-archive`, { days: 30 });
+  assert.equal(auto.status, 200);
+  assert.equal(auto.body.days, 30);
+  let listed = (await api(`/api/projects/${id}/sessions`)).body;
+  assert.equal(listed.autoArchiveDays, 30);
+  let aged = listed.sessions.find((s) => s.id === sid2);
+  assert.equal(aged.archived, true);
+  assert.equal(aged.autoArchived, true);
+  await api(`/api/projects/${id}/session-meta`, { sessionId: sid2, archived: false, pinned: true });
+  aged = (await api(`/api/projects/${id}/sessions`)).body.sessions.find((s) => s.id === sid2);
+  assert.equal(aged.archived, undefined, 'disematkan: tidak ikut arsip otomatis');
+  assert.equal(aged.pinned, true);
+  assert.equal((await api(`/api/projects/${id}/session-auto-archive`, { days: -1 })).status, 400);
+  assert.equal((await api(`/api/projects/${id}/session-auto-archive`, { days: 'x' })).status, 400);
+  assert.equal((await api(`/api/projects/${id}/session-auto-archive`, { days: 0 })).body.days, 0);
+  aged = (await api(`/api/projects/${id}/sessions`)).body.sessions.find((s) => s.id === sid2);
+  assert.equal(aged.archived, undefined, 'arsip otomatis dimatikan');
 
   // ⬇ Export some sessions at once: one .zip with one .md per session.
   const zipRes = await fetch(`${BASE}/api/projects/${id}/sessions-export`, {

@@ -1165,6 +1165,11 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .src-web { background: var(--accent-tint); color: var(--accent-2); }
 .src-opencode { background: var(--ok-soft); color: var(--ok-text-strong); }
 .s-tag { padding: 1px 7px; border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 600; background: var(--surface-3, var(--surface-2)); color: var(--text-2); border: 1px solid var(--border); }
+.sessions-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.s-tag-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: var(--r-pill); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; }
+.s-tag-chip:hover { border-color: var(--accent); color: var(--text); }
+.s-tag-chip.active { background: var(--accent-tint); border-color: var(--accent); color: var(--accent-2); font-weight: 600; }
+.s-tag-chip .count { font-size: var(--fs-xs); color: var(--muted); }
 .s-resume { flex: none; font-size: var(--fs-md); padding: 6px 14px; }
 .s-current { flex: none; font-size: var(--fs-sm); color: var(--ok-text); white-space: nowrap; }
 .s-live { flex: none; font-size: var(--fs-sm); color: var(--cli-text); white-space: nowrap; cursor: help; }
@@ -2111,6 +2116,9 @@ body.read-only #composer-hint { color: var(--ask); }
 .attention-count { margin-left: 2px; padding: 0 5px; border-radius: var(--r-pill); background: var(--ask); color: var(--on-ask); font-size: var(--fs-xs); font-weight: 700; line-height: 1.5; }
 .dash-today { flex: none; min-width: 0; margin: 0 0 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); font-size: var(--fs-sm); color: var(--text-2); }
 .dash-today b { margin-right: 6px; color: var(--text); }
+.dash-spark { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; vertical-align: middle; color: var(--accent); }
+.dash-spark small { color: var(--muted); font-size: var(--fs-xs); }
+.dash-spark .spark { display: block; overflow: visible; }
 .dash-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
 .dash-chip { min-height: 26px; padding: 2px 10px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; }
 .dash-chip span { color: var(--muted); }

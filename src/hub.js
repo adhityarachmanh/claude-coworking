@@ -83,7 +83,7 @@ function storedEngineValues(raw) {
 }
 /** The engine that state.json's `settings` give a project, else its app-wide default (`state.engine`). */
 const stateEngineOf = (state, id) => (ENGINES.includes(state?.settings?.[id]?.engine) ? state.settings[id].engine : state?.engine ?? 'claude');
-/** 🏷/📦 A hand-edited or older state.json must not inject junk: only a short tag and a boolean archive flag. */
+/** 🏷/📦 A hand-edited or older state.json must not inject junk: only a short tag, booleans, auto-archive days. */
 function cleanSessionMeta(raw) {
   if (!isObject(raw)) return {};
   const out = {};
@@ -94,9 +94,21 @@ function cleanSessionMeta(raw) {
       if (!sessionId || sessionId.length > 200 || !isObject(meta)) continue;
       const tag = typeof meta.tag === 'string' ? meta.tag.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
       const archived = meta.archived === true;
-      if (tag || archived) sessions[sessionId] = { ...(tag ? { tag } : {}), ...(archived ? { archived: true } : {}) };
+      const pinned = meta.pinned === true; // explicitly kept out of the automatic archive
+      if (tag || archived || pinned) sessions[sessionId] = { ...(tag ? { tag } : {}), ...(archived ? { archived: true } : {}), ...(pinned ? { pinned: true } : {}) };
     }
     if (Object.keys(sessions).length) out[projectId] = sessions;
+  }
+  return out;
+}
+
+/** 📦 Only a whole number of days (0 = off) survives in state.json. */
+function cleanSessionAutoArchive(raw) {
+  if (!isObject(raw)) return {};
+  const out = {};
+  for (const [id, days] of Object.entries(raw)) {
+    const n = Number(days);
+    if (id && Number.isInteger(n) && n > 0 && n <= 3650) out[id] = n;
   }
   return out;
 }
@@ -224,6 +236,7 @@ export class Hub {
     this.persisted.projectBudgets = cleanProjectBudgets(this.persisted.projectBudgets);
     // 🏷/📦 Session tags and archive flags: only valid entries survive.
     this.persisted.sessionMeta = cleanSessionMeta(this.persisted.sessionMeta);
+    this.persisted.sessionAutoArchive = cleanSessionAutoArchive(this.persisted.sessionAutoArchive);
     this.budgetOverrideUntil = 0; // one-shot "allow one turn" after a hard stop (memory only)
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
@@ -1057,11 +1070,32 @@ export class Hub {
       if (patch.archived === true) next.archived = true;
       else delete next.archived;
     }
-    if (next.tag || next.archived) per[sessionId] = next;
+    if (Object.hasOwn(patch, 'pinned')) {
+      if (patch.pinned === true) next.pinned = true;
+      else delete next.pinned;
+    }
+    if (next.tag || next.archived || next.pinned) per[sessionId] = next;
     else delete per[sessionId];
     if (!Object.keys(per).length) delete all[id];
     this.scheduleSave();
     return next;
+  }
+
+  /** 📦 Days after which an unused session is shown as archived (0 = off). */
+  sessionAutoArchiveDays(id) {
+    const n = Number(this.persisted.sessionAutoArchive?.[id]);
+    return Number.isInteger(n) && n > 0 ? n : 0;
+  }
+
+  setSessionAutoArchive(id, days) {
+    const n = Number(days);
+    if (!Number.isInteger(n) || n < 0 || n > 3650) throw Object.assign(new Error('Jumlah hari tidak valid.'), { status: 400 });
+    const map = (this.persisted.sessionAutoArchive ??= {});
+    if (n > 0) map[id] = n;
+    else delete map[id];
+    if (!Object.keys(map).length) delete this.persisted.sessionAutoArchive;
+    this.scheduleSave();
+    return n;
   }
 
   // ---------- turns cut short by a server stop ----------

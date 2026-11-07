@@ -10,7 +10,7 @@ import { saveBlob } from '../core/util.js';
 
 const sessionTitles = new Map(); // Claude Code session id -> { title, source }
 const titleTried = new Map(); // session id -> last lookup (a brand-new transcript may not exist yet)
-const sessionsView = { project: null, list: [], current: null, selected: new Set(), trash: [], trashDays: 0 }; // the open history dialog
+const sessionsView = { project: null, list: [], current: null, selected: new Set(), tag: null, autoDays: 0, trash: [], trashDays: 0 }; // the open history dialog
 
 function rememberSessions(sessions) {
   for (const s of sessions) sessionTitles.set(s.id, { title: s.title, source: s.source });
@@ -80,6 +80,7 @@ export async function openSessions() {
   if (state.active === DEMO_ID) return;
   sessionsView.project = state.active;
   sessionsView.selected.clear();
+  sessionsView.tag = null;
   $('#sessions-project').textContent = `· ${projectName(state.active)}`;
   $('#sessions-search').value = '';
   $('#sessions-range').value = 'all';
@@ -89,9 +90,15 @@ export async function openSessions() {
   $('#sessions-import').hidden = engineOf(state.statuses[state.active] ?? {}, state.config) !== 'opencode' || !state.local || state.readOnly;
   openModal('sessions-modal');
   try {
-    const { sessions, current } = await api(`/api/projects/${sessionsView.project}/sessions`);
+    const { sessions, current, autoArchiveDays } = await api(`/api/projects/${sessionsView.project}/sessions`);
     rememberSessions(sessions);
-    Object.assign(sessionsView, { list: sessions, current });
+    Object.assign(sessionsView, { list: sessions, current, autoDays: Number(autoArchiveDays) || 0 });
+    const auto = $('#sessions-auto-archive');
+    if (auto) {
+      auto.value = String(sessionsView.autoDays);
+      auto.disabled = state.readOnly;
+      auto.title = state.readOnly ? READ_ONLY_HINT : 'Sesi yang tidak dipakai lebih dari waktu ini masuk arsip (masih bisa dibuka)';
+    }
     renderSessionList();
     renderSessionBar();
     loadTrash(); // 🗑 what was deleted (Claude Code keeps it in data/trash), separately from the list
@@ -110,11 +117,35 @@ function usageText(usage) {
   return parts.length ? ` · ${parts.join(' · ')}` : '';
 }
 
+/** 🏷 The tags in use, as chips: one click narrows the list (and "Semua" clears it). */
+function renderTagChips() {
+  const box = $('#sessions-tags');
+  if (!box) return;
+  const counts = new Map();
+  for (const s of sessionsView.list) if (s.tag) counts.set(s.tag, (counts.get(s.tag) ?? 0) + 1);
+  if (!counts.size) {
+    sessionsView.tag = null;
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  if (sessionsView.tag && !counts.has(sessionsView.tag)) sessionsView.tag = null;
+  const active = sessionsView.tag;
+  const chip = (value, label, count) =>
+    `<button type="button" class="s-tag-chip${active === value ? ' active' : ''}" data-filter-tag="${escapeHtml(value)}" aria-pressed="${active === value}">${label}${count ? ` <span class="count">${count}</span>` : ''}</button>`;
+  box.hidden = false;
+  box.innerHTML = [
+    chip('', 'Semua', 0),
+    ...[...counts].sort((a, b) => a[0].localeCompare(b[0])).map(([tag, n]) => chip(tag, `🏷 ${escapeHtml(tag)}`, n)),
+  ].join('');
+}
+
 function renderSessionList() {
   const box = $('#sessions-list');
   const bulk = $('#sessions-bulk');
   if (bulk) bulk.hidden = true; // shown again only when there is something to pick
   const opencode = engineOf(state.statuses[sessionsView.project] ?? {}, state.config) === 'opencode';
+  renderTagChips();
   if (!sessionsView.list.length) {
     box.innerHTML = `<div class="s-empty"><b>Belum ada sesi</b><p class="muted">Sesi ${opencode ? 'OpenCode' : 'Claude Code'} dari terminal atau web untuk project ini akan muncul di sini.</p></div>`;
     return;
@@ -126,6 +157,7 @@ function renderSessionList() {
   const since = days ? Date.now() - days * 86_400_000 : 0;
   const list = sessionsView.list.filter(
     (s) =>
+      (!sessionsView.tag || s.tag === sessionsView.tag) &&
       (showArchived ? s.archived === true : !s.archived) &&
       (!since || s.updated >= since) &&
       (!q || s.title.toLowerCase().includes(q) || (s.tag ?? '').toLowerCase().includes(q) || s.id.startsWith(q)),
@@ -172,7 +204,7 @@ function renderSessionList() {
         </div>
         <span class="s-tools">
           ${`<button type="button" class="ghost icon" data-tag="${escapeHtml(s.id)}" title="${s.tag ? 'Ganti tag' : 'Beri tag'}" aria-label="Beri tag: ${escapeHtml(s.title)}" ${ro}>🏷</button>`}
-          ${`<button type="button" class="ghost icon" data-archive="${escapeHtml(s.id)}" data-on="${s.archived ? '1' : '0'}" title="${s.archived ? 'Keluarkan dari arsip' : 'Arsipkan: sembunyikan dari daftar utama'}" aria-label="${s.archived ? 'Keluarkan dari arsip' : 'Arsipkan'}: ${escapeHtml(s.title)}" ${ro}>${s.archived ? '↩' : '📦'}</button>`}
+          ${`<button type="button" class="ghost icon" data-archive="${escapeHtml(s.id)}" data-on="${s.archived ? '1' : '0'}" data-auto="${s.autoArchived ? '1' : '0'}" title="${s.archived ? (s.autoArchived ? `Diarsipkan otomatis setelah ${sessionsView.autoDays} hari — klik untuk menyimpannya di daftar utama` : 'Keluarkan dari arsip') : 'Arsipkan: sembunyikan dari daftar utama'}" aria-label="${s.archived ? 'Keluarkan dari arsip' : 'Arsipkan'}: ${escapeHtml(s.title)}" ${ro}>${s.archived ? '↩' : '📦'}</button>`}
           ${`<button type="button" class="ghost icon" data-rename="${escapeHtml(s.id)}" title="Ganti nama" aria-label="Ganti nama: ${escapeHtml(s.title)}" ${ro}>✎</button>`}
           <button type="button" class="ghost icon" data-fork="${escapeHtml(s.id)}" title="Cabangkan: lanjutkan salinannya, sesi asli tetap utuh" aria-label="Cabangkan: ${escapeHtml(s.title)}" ${ro}>⑂</button>
           <button type="button" class="ghost s-export" data-export="${escapeHtml(s.id)}" title="${opencode ? 'Unduh sesi ini (JSON OpenCode, bisa diimpor lagi)' : 'Unduh sesi ini sebagai Markdown (.md)'}" aria-label="Export: ${escapeHtml(s.title)}">⬇ ${opencode ? '.json' : '.md'}</button>
@@ -357,7 +389,9 @@ Percakapan berlanjut di salinan baru; sesi aslinya tidak berubah.`)) return;
     if (btn.dataset.tag !== undefined) {
       const id = btn.dataset.tag;
       const current = sessionsView.list.find((s) => s.id === id)?.tag ?? '';
-      const tag = window.prompt('Tag sesi (kosongkan untuk menghapus):', current);
+      const known = [...new Set(sessionsView.list.map((s) => s.tag).filter(Boolean))];
+      const hint = known.length ? `\nTag yang sudah dipakai: ${known.slice(0, 8).join(', ')}` : '';
+      const tag = window.prompt(`Tag sesi (kosongkan untuk menghapus):${hint}`, current);
       if (tag === null) return;
       await api(`/api/projects/${project}/session-meta`, { sessionId: id, tag });
       toast(tag.trim() ? 'Tag sesi disimpan.' : 'Tag sesi dihapus.', 'ok');
@@ -366,7 +400,9 @@ Percakapan berlanjut di salinan baru; sesi aslinya tidak berubah.`)) return;
     if (btn.dataset.archive !== undefined) {
       const id = btn.dataset.archive;
       const archived = btn.dataset.on !== '1';
-      await api(`/api/projects/${project}/session-meta`, { sessionId: id, archived });
+      // Un-archiving an automatically archived session pins it, so age alone does not archive it again.
+      const patch = archived ? { archived: true, pinned: false } : { archived: false, ...(btn.dataset.auto === '1' ? { pinned: true } : {}) };
+      await api(`/api/projects/${project}/session-meta`, { sessionId: id, ...patch });
       toast(archived ? 'Sesi diarsipkan.' : 'Sesi dikeluarkan dari arsip.', 'ok');
       return openSessions();
     }
@@ -463,6 +499,23 @@ export function initSessions() {
   $('#btn-sessions').addEventListener('click', openSessions);
   $('#sessions-search').addEventListener('input', renderSessionList);
   $('#sessions-range').addEventListener('change', renderSessionList);
+  $('#sessions-tags').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-filter-tag]');
+    if (!chip) return;
+    sessionsView.tag = chip.dataset.filterTag || null;
+    renderSessionList();
+  });
+  $('#sessions-auto-archive').addEventListener('change', async (e) => {
+    e.target.disabled = true;
+    try {
+      await api(`/api/projects/${sessionsView.project}/session-auto-archive`, { days: Number(e.target.value) || 0 });
+      toast(Number(e.target.value) ? `Arsip otomatis: ${e.target.value} hari.` : 'Arsip otomatis dimatikan.', 'ok');
+      await openSessions();
+    } catch (err) {
+      e.target.disabled = false;
+      toast(err.message, 'warn');
+    }
+  });
   $('#sessions-list').addEventListener('click', async (e) => {
     const exp = e.target.closest('[data-export]');
     if (exp) {

@@ -3036,7 +3036,7 @@ for (const vp of VIEWPORTS) {
           String(url).endsWith('/api/summary/today')
             ? Promise.resolve(
                 new Response(
-                  JSON.stringify({ today: { from: Date.now(), rows: 9, costUsd: 2.5, costCoverage: 0.75, turns: 3, tokens: 12345, projects: 2, sessions: 4, top: [{ projectId: pid, turns: 3, tokens: 12345, costUsd: 2.5 }] } }),
+                  JSON.stringify({ today: { from: Date.now(), rows: 9, costUsd: 2.5, costCoverage: 0.75, turns: 3, tokens: 12345, projects: 2, sessions: 4, top: [{ projectId: pid, turns: 3, tokens: 12345, costUsd: 2.5 }], trend: [0.5, 0, 1, 2.5, 0.5, 1, 2.5].map((costUsd, i) => ({ start: Date.now() - (6 - i) * 86_400_000, costUsd, tokens: 1000 * (i + 1), turns: i + 1 })) } }),
                   { status: 200, headers: { 'Content-Type': 'application/json' } },
                 ),
               )
@@ -3059,6 +3059,10 @@ for (const vp of VIEWPORTS) {
         assert.match(text, /2 project/);
         assert.match(text, /teratas: /);
         assert.doesNotMatch(text, /teratas: project/);
+        // 📈 Seven-day sparkline (cost) with the week's total next to it.
+        assert.equal(await page.eval(() => document.querySelectorAll('#dash-today .spark').length), 1, 'sparkline 7 hari');
+        assert.equal(await page.eval(() => document.querySelector('#dash-today .spark').getAttribute('aria-label')), 'Biaya 7 hari terakhir');
+        assert.match(text, /\$8,00/, 'total biaya tujuh hari');
         await page.press('Escape');
       } finally {
         await page.eval(() => {
@@ -7047,6 +7051,7 @@ for (const vp of VIEWPORTS) {
         window.__delCalls = [];
         window.__exportCalls = [];
         window.__metaCalls = [];
+        window.__autoCalls = [];
         window.__sessionsFetch = window.fetch;
         window.__sessionsConfirm = window.confirm;
         window.confirm = () => true;
@@ -7057,16 +7062,21 @@ for (const vp of VIEWPORTS) {
             return new Response(
               JSON.stringify({
                 current: 'sess-current',
+                autoArchiveDays: 30,
                 sessions: [
                   { id: 'sess-current', title: 'Sedang dibuka', source: 'web', updated: now },
                   { id: 'sess-bulk-1', title: 'Sesi satu', source: 'web', updated: now - 86_400_000, usage: { usd: 0.5, tokens: 1200, rows: 1, known: 1 }, tag: 'riset' },
                   { id: 'sess-bulk-2', title: 'Sesi dua', source: 'cli', updated: now - 172_800_000 },
                   { id: 'sess-bulk-3', title: 'Sesi tiga', source: 'web', updated: now - 259_200_000 },
-                  { id: 'sess-arch-1', title: 'Sesi lama', source: 'web', updated: now - 864_000_000, archived: true },
+                  { id: 'sess-arch-1', title: 'Sesi lama', source: 'web', updated: now - 864_000_000, archived: true, autoArchived: true },
                 ],
               }),
               { status: 200, headers: { 'Content-Type': 'application/json' } },
             );
+          }
+          if (/\/api\/projects\/[^/?]+\/session-auto-archive(?:\?|$)/.test(u)) {
+            window.__autoCalls.push(JSON.parse(opts?.body ?? '{}'));
+            return new Response(JSON.stringify({ ok: true, days: JSON.parse(opts?.body ?? '{}').days }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           }
           if (/\/api\/projects\/[^/?]+\/session-meta(?:\?|$)/.test(u)) {
             window.__metaCalls.push(JSON.parse(opts?.body ?? '{}'));
@@ -7097,6 +7107,17 @@ for (const vp of VIEWPORTS) {
         assert.match(meta, /🏷 riset/, 'tag sesi tampil');
         assert.ok(!/Sesi lama/.test(meta), 'sesi arsip disembunyikan dari daftar utama');
 
+        // 📦 Auto-archive setting: shown per project and saved when changed.
+        assert.equal(await page.eval(() => document.querySelector('#sessions-auto-archive').value), '30');
+        await page.eval(() => {
+          const sel = document.querySelector('#sessions-auto-archive');
+          sel.value = '90';
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await page.waitFor(() => window.__autoCalls.length === 1, { timeoutMs: 4000, message: 'setelan arsip otomatis' });
+        assert.deepEqual(await page.eval(() => window.__autoCalls[0]), { days: 90 });
+        await page.waitFor(() => document.querySelectorAll('#sessions-list [data-pick]').length === 3, { timeoutMs: 4000, message: 'daftar dimuat ulang' });
+
         // 📦 The archive filter lists only archived sessions.
         await page.eval(() => {
           const range = document.querySelector('#sessions-range');
@@ -7105,16 +7126,30 @@ for (const vp of VIEWPORTS) {
         });
         assert.equal(await page.eval(() => document.querySelectorAll('#sessions-list .s-item').length), 1, 'hanya sesi arsip');
         assert.match(await page.eval(() => document.querySelector('#sessions-list').textContent), /Sesi lama/);
+        // ↩ Un-archiving an automatically archived session pins it (so age alone will not archive it again).
+        assert.equal(await page.eval(() => document.querySelector('#sessions-list [data-archive="sess-arch-1"]').dataset.auto), '1');
+        await page.eval(() => document.querySelector('#sessions-list [data-archive="sess-arch-1"]').click());
+        await page.waitFor(() => window.__metaCalls.length === 1, { timeoutMs: 4000, message: 'panggilan sematkan' });
+        assert.deepEqual(await page.eval(() => window.__metaCalls[0]), { sessionId: 'sess-arch-1', archived: false, pinned: true });
+        await page.waitFor(() => document.querySelectorAll('#sessions-list [data-pick]').length === 3, { timeoutMs: 4000, message: 'daftar dimuat ulang' });
         await page.eval(() => {
           const range = document.querySelector('#sessions-range');
           range.value = 'all';
           range.dispatchEvent(new Event('change', { bubbles: true }));
         });
 
+        // 🏷 Tag chips: one click filters to that tag, "Semua" clears it.
+        assert.equal(await page.eval(() => document.querySelectorAll('#sessions-tags [data-filter-tag]').length), 2, 'chip Semua + riset');
+        await page.eval(() => document.querySelector('#sessions-tags [data-filter-tag="riset"]').click());
+        assert.equal(await page.eval(() => document.querySelectorAll('#sessions-list .s-item').length), 1, 'hanya sesi bertag');
+        assert.match(await page.eval(() => document.querySelector('#sessions-list').textContent), /Sesi satu/);
+        await page.eval(() => document.querySelector('#sessions-tags [data-filter-tag=""]').click());
+        assert.equal(await page.eval(() => document.querySelectorAll('#sessions-list .s-item').length), 4, 'kembali ke semua sesi');
+
         // 📦 Archive a session: the route gets { sessionId, archived: true }.
         await page.eval(() => document.querySelector('#sessions-list [data-archive="sess-bulk-1"]').click());
-        await page.waitFor(() => window.__metaCalls.length === 1, { timeoutMs: 4000, message: 'panggilan arsip' });
-        assert.deepEqual(await page.eval(() => window.__metaCalls[0]), { sessionId: 'sess-bulk-1', archived: true });
+        await page.waitFor(() => window.__metaCalls.length === 2, { timeoutMs: 4000, message: 'panggilan arsip' });
+        assert.deepEqual(await page.eval(() => window.__metaCalls[1]), { sessionId: 'sess-bulk-1', archived: true, pinned: false });
         await page.waitFor(() => document.querySelectorAll('#sessions-list [data-pick]').length === 3, { timeoutMs: 4000, message: 'daftar dimuat ulang' });
 
         await page.eval(() => {

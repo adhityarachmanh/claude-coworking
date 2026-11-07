@@ -321,6 +321,17 @@ export function daySummary(ledger, now = Date.now()) {
     .map((p) => ({ ...p, costUsd: Math.round(p.costUsd * 100) / 100 }))
     .sort((a, b) => b.turns - a.turns || b.tokens - a.tokens)
     .slice(0, 3);
+  // 📈 Seven local days (today included) for the dashboard's sparkline: holes are kept so gaps show.
+  const trendFrom = new Date(now);
+  trendFrom.setHours(0, 0, 0, 0);
+  trendFrom.setDate(trendFrom.getDate() - 6);
+  const trendRows = typeof ledger?.query === 'function' ? ledger.query({ accountId: 'all', from: trendFrom.getTime(), to: now }) : [];
+  const trend = byPeriod(trendRows, { from: trendFrom.getTime(), to: now, unit: 'day' }).map((p) => ({
+    start: p.start,
+    costUsd: p.costUsd == null ? null : Math.round(p.costUsd * 100) / 100,
+    tokens: p.total,
+    turns: p.turns,
+  }));
   return {
     from,
     rows: rows.length,
@@ -331,6 +342,7 @@ export function daySummary(ledger, now = Date.now()) {
     projects: projects.size,
     sessions: sessions.size,
     top,
+    trend,
   };
 }
 

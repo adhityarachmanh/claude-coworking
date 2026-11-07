@@ -266,6 +266,28 @@ async function loadToday() {
 
 const money = (n) => `$${Number(n).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/** A tiny SVG line for the last days' values (no axes: the caption carries the number). */
+function sparkline(values, label) {
+  const w = 104;
+  const h = 24;
+  const pad = 2;
+  const max = Math.max(...values, 1e-9);
+  const step = (w - pad * 2) / Math.max(values.length - 1, 1);
+  const points = values.map((v, i) => [pad + i * step, h - pad - (v / max) * (h - pad * 2)]);
+  const line = points.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+  const [lx, ly] = points.at(-1);
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${escapeHtml(label)}"><path d="${line}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.2" fill="currentColor"/></svg>`;
+}
+
+/** "Hari ini" + 📈 the last 7 days' cost (the Ministry's trend, from the same ledger read). */
+function todaySpark(t) {
+  const trend = Array.isArray(t.trend) ? t.trend : [];
+  const costs = trend.map((p) => Number(p.costUsd) || 0);
+  if (trend.length < 2 || !costs.some((v) => v > 0)) return '';
+  const week = costs.reduce((sum, v) => sum + v, 0);
+  return `<span class="dash-spark">${sparkline(costs, `Biaya ${trend.length} hari terakhir`)}<small>${money(week)}</small></span>`;
+}
+
 function renderToday() {
   const box = $('#dash-today');
   if (!box) return;
@@ -274,8 +296,9 @@ function renderToday() {
     box.hidden = true;
     return;
   }
+  const spark = todaySpark(t);
   if (!t.rows) {
-    box.innerHTML = '<b>Hari ini</b> <span>belum ada aktivitas.</span>';
+    box.innerHTML = `<b>Hari ini</b> <span>belum ada aktivitas.</span>${spark}`;
     box.hidden = false;
     return;
   }
@@ -294,7 +317,7 @@ function renderToday() {
     const names = t.top.slice(0, 2).map((p) => projectName(p.projectId));
     parts.push(`teratas: ${names.join(', ')}`);
   }
-  box.innerHTML = `<b>Hari ini</b> <span>${escapeHtml(parts.join(' · '))}</span>`;
+  box.innerHTML = `<b>Hari ini</b> <span>${escapeHtml(parts.join(' · '))}</span>${spark}`;
   box.hidden = false;
 }
 

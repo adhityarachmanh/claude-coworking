@@ -439,11 +439,18 @@
             <option value="90">90 hari terakhir</option>
             <option value="archived">📦 Diarsipkan</option>
           </select>
+          <select id="sessions-auto-archive" aria-label="Arsip otomatis sesi lama" title="Sesi yang tidak dipakai lebih dari waktu ini masuk arsip (masih bisa dibuka)">
+            <option value="0">Arsip otomatis: mati</option>
+            <option value="30">Arsip otomatis: 30 hari</option>
+            <option value="90">Arsip otomatis: 90 hari</option>
+            <option value="180">Arsip otomatis: 180 hari</option>
+          </select>
           <button id="sessions-import" class="ghost" hidden title="Import sesi OpenCode dari file JSON (laptop saja)">⬆ Import JSON</button>
           <input id="sessions-import-file" type="file" accept=".json,application/json" hidden />
           <button id="sessions-new" class="ghost">＋ Sesi baru</button>
         </div>
         <label class="switch small export-opt"><input class="export-tools-opt" type="checkbox" /> Export .md: sertakan ringkasan tool calls</label>
+        <div id="sessions-tags" class="sessions-tags" role="group" aria-label="Saring sesi berdasarkan tag" hidden></div>
         <div id="sessions-bulk" class="sessions-bulk" hidden>
           <label class="switch small"><input id="sessions-select-all" type="checkbox" /> Pilih semua</label>
           <span class="sessions-bulk-actions">
