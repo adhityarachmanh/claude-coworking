@@ -49,6 +49,13 @@ export function renderTeam() {
       <div><b>${escapeHtml(CAST[id].name)}</b><small>${CAST[id].title}</small><span class="st">${p.task && cls !== 'idle' ? escapeHtml(p.task) : text}</span></div>
     </div>${badge}</div>`;
   }).join('');
+  // The folded strip still says how many people are at work; the full grid is one click away.
+  const activeCount = members.filter((id) => {
+    const p = scene.people[id];
+    return p.asking || p.isBusy(now) || now < p.flashUntil;
+  }).length;
+  const sum = $('#team-toggle-sum');
+  if (sum) sum.textContent = activeCount ? `${members.length} · ${activeCount} aktif` : `${members.length}`;
   // Runs every 500 ms: only touch the DOM on a change, and keep keyboard focus on the same card.
   if (html === teamHtml) return;
   const active = document.activeElement;
@@ -98,9 +105,10 @@ function applyTeamHidden(hidden) {
 export function initTeam() {
   const hidden = (() => {
     try {
-      return localStorage.getItem(TEAM_HIDDEN_KEY) === '1';
+      const saved = localStorage.getItem(TEAM_HIDDEN_KEY);
+      return saved == null ? true : saved === '1'; // first visit: keep the office breathable; the toggle remembers a choice
     } catch {
-      return false;
+      return true;
     }
   })();
   applyTeamHidden(hidden);

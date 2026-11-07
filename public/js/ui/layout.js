@@ -20,6 +20,70 @@ export function setMobileView(view) {
   document.querySelectorAll('#mobile-nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
 }
 
+// ---------- phone: swipe left/right between the full-screen views ----------
+
+const SWIPE_ORDER = ['office', 'chat', 'changes', 'activity'];
+const SWIPE_X = 60; // horizontal travel that counts as a swipe (not a tap or a small wobble)
+const SWIPE_Y = 50; // …and the finger must stay this close vertically (a diagonal drag is a scroll)
+const SWIPE_EDGE = 24; // the screen edges belong to the browser (back gesture, system bars)
+
+/**
+ * Swipe sideways on a phone to move between Kantor → Chat → Perubahan → Aktivitas (and back). A gesture that
+ * starts in a field, a dialog, or a horizontally scrolling pane (diff, table, code) keeps its own meaning.
+ */
+export function initSwipeViews() {
+  let start = null;
+  const blocked = (target) => {
+    if (!target || !(target instanceof Element)) return true;
+    if (target.closest('dialog, .modal, input, textarea, select, [contenteditable="true"]')) return true;
+    for (let el = target; el && el !== document.body; el = el.parentElement) {
+      const style = getComputedStyle(el);
+      if ((style.overflowX === 'auto' || style.overflowX === 'scroll') && el.scrollWidth > el.clientWidth + 1) return true;
+    }
+    return false;
+  };
+  document.addEventListener(
+    'touchstart',
+    (e) => {
+      start = null;
+      if (!narrow.matches || e.touches.length !== 1 || blocked(e.target)) return;
+      const t = e.touches[0];
+      if (t.clientX < SWIPE_EDGE || t.clientX > window.innerWidth - SWIPE_EDGE) return;
+      start = { x: t.clientX, y: t.clientY, view: document.body.dataset.view === 'office' ? 'office' : (state.tab ?? 'chat') };
+    },
+    { passive: true },
+  );
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      if (!start || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const dx = t.clientX - start.x;
+      const dy = t.clientY - start.y;
+      // Once the drag is clearly sideways it is ours: stop the browser's own back/forward swipe.
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2) e.preventDefault();
+    },
+    { passive: false },
+  );
+  document.addEventListener(
+    'touchend',
+    (e) => {
+      const from = start;
+      start = null;
+      if (!from || e.changedTouches.length !== 1) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - from.x;
+      const dy = t.clientY - from.y;
+      if (Math.abs(dx) < SWIPE_X || Math.abs(dy) > SWIPE_Y || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      const at = SWIPE_ORDER.indexOf(from.view);
+      const next = at < 0 ? -1 : at + (dx < 0 ? 1 : -1); // swipe left: the view that lives on the right
+      if (next < 0 || next >= SWIPE_ORDER.length) return;
+      setMobileView(SWIPE_ORDER[next]);
+    },
+    { passive: true },
+  );
+}
+
 export function initMobileNav() {
   $('#mobile-nav').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-view]');

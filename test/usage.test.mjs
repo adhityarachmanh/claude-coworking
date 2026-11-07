@@ -57,6 +57,21 @@ test('usage-based Enterprise seats get the organisation-limit status instead of 
   assert.doesNotMatch(html, /pesan asli dari/, 'the /usage note is only the last resort');
 });
 
+test('daySummary: today’s totals, coverage, projects and sessions from every account', async () => {
+  const { daySummary } = await import('../src/usage.js');
+  const ledger = ledgerWithEngines();
+  const now = Date.now() + 1000;
+  const t = daySummary(ledger, now);
+  assert.equal(t.rows, 4);
+  assert.equal(t.turns, 2);
+  assert.equal(t.tokens, 110 + 22 + 33 + 5);
+  assert.equal(t.costUsd, 0.5, '0 counts as priced, missing cost does not');
+  assert.equal(t.costCoverage, 0.5);
+  assert.deepEqual([t.projects, t.sessions], [1, 1]);
+  assert.equal(daySummary(ledger, now + 86_400_000).rows, 0, 'a new day starts empty');
+  assert.deepEqual(daySummary(null, now), { from: periodStart(now, 'day'), rows: 0, costUsd: null, costCoverage: 0, turns: 0, tokens: 0, projects: 0, sessions: 0 });
+});
+
 test('ledger keeps accounts apart', () => {
   const ledger = ledgerWithTwoAccounts();
   assert.equal(ledger.rows().length, 3, 'logged-out usage is skipped');

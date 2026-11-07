@@ -15,6 +15,7 @@ export const BUDGET_KEYS = Object.freeze(Object.values(WINDOW_LIMITS));
 export const BUDGET_MAX_USD = 10000;
 /** At or above this share of a limit the window warns; at 100 % it is over. */
 export const WARN_RATIO = 0.8;
+const DAY_MS = 86_400_000;
 
 /** "harian" / "mingguan" / "bulanan", for the validation messages. */
 const LIMIT_LABEL = Object.freeze({ dailyUsd: 'harian', weeklyUsd: 'mingguan', monthlyUsd: 'bulanan' });
@@ -131,6 +132,60 @@ export function budgetNote(spent, projectId = null) {
 }
 
 /**
+ * A deliberately simple end-of-month estimate: this month's recorded spend divided by the days already elapsed,
+ * multiplied by the number of days in the month. It is a pacing aid, not a bill (the ledger can be incomplete).
+ */
+export function monthForecast(spentUsd, now = Date.now()) {
+  const start = periodStart(now, 'month');
+  const next = new Date(start);
+  next.setMonth(next.getMonth() + 1);
+  const elapsedDays = Math.max(1, Math.ceil((now - start + 1) / DAY_MS));
+  const daysInMonth = Math.max(1, Math.round((next.getTime() - start) / DAY_MS));
+  const monthUsd = isNumber(spentUsd) && spentUsd >= 0 ? spentUsd : 0;
+  const dailyUsd = monthUsd / elapsedDays;
+  return {
+    monthUsd: Math.round(monthUsd * 100) / 100,
+    elapsedDays,
+    daysInMonth,
+    dailyUsd: Math.round(dailyUsd * 1000) / 1000,
+    projectedUsd: Math.round(dailyUsd * daysInMonth * 100) / 100,
+  };
+}
+
+/**
+ * The last `days` local days ending today: recorded USD, rows and priced rows per day (empty days kept).
+ * Same ledger rules as spend(); a missing ledger is all zeros.
+ */
+export function dailyTrend(ledger, now = Date.now(), projectId = null, days = 7) {
+  const count = Math.max(1, Math.min(31, Math.floor(Number(days) || 7)));
+  const today = periodStart(now, 'day');
+  const first = new Date(today);
+  first.setDate(first.getDate() - (count - 1));
+  const from = first.getTime();
+  const rows = typeof ledger?.query === 'function' ? ledger.query({ accountId: 'all', projectId, from, to: now }) : [];
+  const buckets = new Map();
+  for (const row of rows) {
+    const key = periodStart(row.ts, 'day');
+    const b = buckets.get(key) ?? { usd: 0, rows: 0, known: 0 };
+    b.rows += 1;
+    if (isNumber(row?.costUsd)) {
+      b.usd += row.costUsd;
+      b.known += 1;
+    }
+    buckets.set(key, b);
+  }
+  const out = [];
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const start = d.getTime();
+    const b = buckets.get(start) ?? { usd: 0, rows: 0, known: 0 };
+    out.push({ start, usd: Math.round(b.usd * 100) / 100, rows: b.rows, known: b.known });
+  }
+  return out;
+}
+
+/**
  * Everything the 💰 budget screen and 🩺 health need: the limits, the spending they are measured against, and one
  * window per limit with its share and state.
  * @param {object} hub
@@ -139,6 +194,7 @@ export function budgetNote(spent, projectId = null) {
  * @returns {{ budget: ReturnType<typeof cleanLimits>,
  *   spend: ReturnType<typeof spend>,
  *   windows: Record<'day'|'week'|'month', { limit: number|null, usd: number, percent: number, state: 'off'|'ok'|'warn'|'over' }>,
+ *   forecast: ReturnType<typeof monthForecast>,
  *   note: string }}
  *   `percent` is usd / limit (0 when off), so it can pass 1; `state` is computed from the exact ratio.
  */
@@ -157,7 +213,7 @@ export function budgetView(hub, ledger, now = Date.now(), projectId = null) {
       state: !limit ? 'off' : ratio >= 1 ? 'over' : ratio >= WARN_RATIO ? 'warn' : 'ok',
     };
   }
-  return { budget, spend: spent, windows, note: budgetNote(spent, projectId) };
+  return { budget, spend: spent, windows, forecast: monthForecast(spent.month.usd, now), trend: dailyTrend(ledger, now, projectId), note: budgetNote(spent, projectId) };
 }
 
 /**

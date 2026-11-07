@@ -2,6 +2,42 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 2026-11-07
+
+### Baru
+
+- **Proyeksi budget akhir bulan.** Bagian Budget menampilkan perkiraan `±$X` akhir bulan dari laju pemakaian bulan ini, plus peringatan bila proyeksinya melewati batas bulanan. Tetap perkiraan, bukan tagihan.
+- **📜 Chat panjang tetap ringan.** Tab Chat hanya menggambar 80 pesan terakhir; tombol **Muat N pesan lama** menambah sebelumnya tanpa menggeser pesan yang sedang dibaca. Pencarian `Ctrl+F` tetap menjangkau seluruh percakapan, dan lompatan dari ⚠ Perlu perhatian, 📋 Antrian, atau notifikasi otomatis membuka pesan lama yang dituju.
+- **⏰ Tunda pengingat di Perlu perhatian.** Setiap item punya tombol **⏰** untuk menyembunyikannya (beserta badge) selama 1 jam; **Tampilkan** mengembalikannya lebih cepat. Tersimpan per browser dan tidak mengubah antrian atau izin yang menunggu.
+- **👆 Geser antar view di HP.** Geser kiri/kanan untuk pindah **Kantor ↔ Chat ↔ Perubahan ↔ Aktivitas**. Geser vertikal tetap scroll; gesture yang mulai di kotak pesan, dialog, atau panel yang bisa digeser menyamping tidak ikut berpindah.
+- **🔎 Ctrl+P mencari isi percakapan.** Ketik 2+ huruf dan palet menampilkan grup **Percakapan** dari semua project, lengkap dengan cuplikan dan nama project; pilih hasilnya untuk melanjutkan sesi itu. Prefix `>`/`@`/`#` tetap mempersempit ke perintah/file/project.
+- **🗑 Hapus beberapa sesi sekaligus.** Di 🕘 Riwayat sesi, centang beberapa sesi (atau **Pilih semua**) lalu **Hapus N sesi**; satu konfirmasi untuk semuanya, dan sesi yang sedang dibuka atau berjalan di terminal tidak ikut terhapus.
+- **⬆ Pratinjau sebelum restore backup.** Memilih `.zip` di **Import riwayat** sekarang menampilkan isinya dulu — jumlah project dan sesi, chat per mesin, ukuran, waktu pembuatan, serta data kantor yang ikut — lalu tombol **Pulihkan semua**. Server hanya membaca arsip saat pratinjau; belum ada yang ditulis.
+- **☑️ Restore selektif per project.** Di pratinjau, setiap project punya checkbox (default semua). Project yang tidak dicentang tidak ikut dipulihkan — transkrip dan chat-nya dilewati; pengaturan, laporan token, dan riwayat prompt tetap digabung.
+- **↩️ Pulihkan sesi terhapus.** Sesi Claude yang dihapus muncul di **🗑 Sesi terhapus** pada 🕘 Riwayat sesi; **↩ Pulihkan** mengembalikan transkrip (dan subagent-nya) ke riwayat. Sesi yang sudah ada lagi dengan id yang sama tidak ditimpa.
+- **📅 Saring Riwayat sesi.** Pilih **Semua waktu / 7 / 30 / 90 hari terakhir**; filter digabung dengan kotak pencarian.
+- **🔁 HTTPS/Tailscale menyambung sendiri.** Kalau Tailscale belum tersambung saat aplikasi menyala, sertifikat HTTPS dicoba ulang tiap menit sampai berhasil (tanpa restart); log hanya mencatat perubahan, bukan setiap percobaan.
+- **🧹 Retensi trash sesi.** Sesi terhapus disimpan di `data/trash` dan dibersihkan otomatis setelah **30 hari** (dicek saat start lalu tiap hari); jumlahnya tampil di Riwayat sesi. File asing di folder trash tidak pernah disentuh. `OFFICE_TRASH_DAYS` bisa mengubah batasnya (0 = simpan selamanya).
+- **📊 Grafik biaya 7 hari.** Bagian Budget menampilkan batang biaya per hari (Sen–Min/Minggu ini), termasuk hari kosong; arahkan kursor untuk tanggal dan nominal. Ikut tampil di ringkasan 🩺 Kesehatan.
+- **📈 Ringkasan “Hari ini” di dashboard.** Di atas daftar 🗂 Semua project: biaya tercatat hari ini (dengan cakupan baris berbiaya), jumlah giliran, token, sesi, dan project yang tersentuh — satu request per menit, dan tidak diminta di halaman hanya-lihat.
+- **⚖ Audit kontras warna.** Test baru menghitung kontras WCAG (4,5:1 teks normal, 3:1 teks besar) untuk halaman, dashboard, Pengaturan, dan palet perintah di **tema terang dan gelap**; hasilnya bersih dan akan menangkap regresi styling.
+- **★ Pesan tersimpan.** Tandai pesan atau jawaban dengan **☆**, lalu buka **Ctrl+P → Pesan tersimpan** untuk melihat daftarnya; **Buka di chat** menyorot barisnya (memuat halaman chat lama bila perlu) dan **Hapus** melepas tanda. Tersimpan di browser per project.
+- **✎ Ganti nama sesi lama (Claude Code).** Tombol **✎** di 🕘 Riwayat sesi sekarang juga muncul untuk sesi Claude: judul baru ditulis sebagai `custom-title` (tipe yang sama dengan `/rename`), jadi muncul di daftar dan saat melanjutkan sesi. Sesi yang sedang dibuka atau berjalan di terminal tetap harus diganti dari tempatnya.
+- **☑️ Pilih data kantor saat restore.** Di pratinjau import, selain per project, kamu bisa melepas **Pengaturan & folder project**, **Laporan token**, atau **Riwayat prompt (↑)**. Yang tidak dicentang tidak digabung; transkrip dan file project tetap mengikuti pilihan project.
+- **⚡ Aksi cepat di kartu dashboard.** Kartu project di 🗂 Semua project punya tombol **📋 Antrian** (membuka antrian project itu tanpa berpindah project) dan **■ Hentikan** saat project sedang bekerja.
+- **📦 Export beberapa sesi sekaligus.** Pilih sesi di 🕘 Riwayat sesi lalu **⬇ Export N**: satu `.zip` berisi `.md` per sesi (Claude) atau `.json` (OpenCode), maksimal 25 sesi.
+- **🔎 Filter pencarian transkrip.** Prefix **`?`** membatasi Ctrl+P ke isi percakapan, dengan token filter di depan: `claude`/`opencode` dan `7d`/`30d`/`90d` (mis. `?opencode 7d checkout`). Token filter tidak ikut dikirim sebagai kata kunci.
+- **🧭 Chip status di dashboard.** Di atas daftar 🗂 Semua project ada chip **Semua / Butuh kamu / Bekerja / Antrian / Idle** beserta hitungannya; klik untuk menyaring kartu, klik lagi untuk kembali ke semua. Pencarian tetap bekerja di atas filter.
+- **🕘 Riwayat backup otomatis.** Di ⚙ → Cadangan, daftar backup terjadwal di folder tujuan (nama, waktu, ukuran) dengan tombol **↩ Pulihkan**; file backup tidak dipindahkan atau dihapus, dan hasil pemulihan memakai jalur merge yang sama dengan import.
+- **📲 Pasang sebagai aplikasi.** Bagian baru di ❓ Panduan menjelaskan install di Android/iPhone; tombol **Pasang sekarang** muncul saat browser menawarkan PWA (Chrome/Edge). Tidak ada cache offline — halaman memuat token sesi per-start, jadi sengaja tidak disimpan di cache browser.
+
+### Diperbaiki
+
+- **♿ Audit aksesibilitas.** Kontrol tanpa nama, field tanpa label, gambar tanpa `alt`, id ganda, dan referensi ARIA yang menggantung kini diperiksa otomatis di halaman utama, tab Perubahan/Aktivitas, serta dialog Pengaturan, Semua project, palet perintah, dan Antrian. Target sentuh yang terlalu kecil (tombol sesi, toggle karyawan, kartu dashboard, toggle batas antrian) dinaikkan ke minimal 24×24 px.
+
+- **Kantor lebih lega.** Kartu karyawan default terlipat dengan ringkasan jumlah orang/aktif; tombol **Mode Otak** pindah dari atas panggung ke baris kontrol di bawah kantor.
+- **Pencarian global lebih luas.** **Ctrl+P** kini juga menemukan panel Pengaturan (Umum, Tim & izin, Jadwal, Notifikasi, Spotify, Cadangan, Sistem) dan aksi **Cari di chat ini**, bukan hanya project, file, dan perintah.
+
 ## 2026-11-06
 
 ### Baru

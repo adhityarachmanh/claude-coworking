@@ -177,6 +177,10 @@ async function resumeResult(r, btn) {
   if (await resumeSession(r.projectId, r.sessionId, btn)) closeModal('search-modal');
 }
 
+export async function resumeSearchResult(r) {
+  return resumeResult(r, null);
+}
+
 export function initConversations() {
   $('#search-form').addEventListener('submit', (e) => {
     e.preventDefault();

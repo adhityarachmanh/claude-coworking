@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { ZipReader } from '../src/zip.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-server-'));
@@ -216,7 +217,14 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
     }
   };
   const view = (await api('/api/budget', {})).body.budget;
-  assert.deepEqual(Object.keys(view).sort(), ['budget', 'note', 'projectId', 'spend', 'windows']);
+  assert.deepEqual(Object.keys(view).sort(), ['budget', 'forecast', 'note', 'projectId', 'spend', 'trend', 'windows']);
+  assert.deepEqual(Object.keys(view.forecast).sort(), ['dailyUsd', 'daysInMonth', 'elapsedDays', 'monthUsd', 'projectedUsd']);
+  assert.ok(view.forecast.projectedUsd >= 0);
+  assert.equal(view.trend.length, 7, 'tujuh hari terakhir');
+  assert.ok(view.trend.every((d) => Number.isFinite(d.start) && Number.isFinite(d.usd)));
+  const today = await api('/api/summary/today', {});
+  assert.equal(today.status, 200, JSON.stringify(today.body));
+  assert.deepEqual(Object.keys(today.body.today).sort(), ['costCoverage', 'costUsd', 'from', 'projects', 'rows', 'sessions', 'tokens', 'turns']);
   assert.deepEqual(view.budget, { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, 'no limit yet');
   for (const unit of ['day', 'week', 'month']) {
     assert.deepEqual(Object.keys(view.spend[unit]).sort(), ['known', 'rows', 'usd'], unit);
@@ -334,6 +342,10 @@ test('⚠ perlu perhatian: a paused queue and a budget stop show up in one list'
     let attention = attentionResponse.body;
     assert.ok(attention.items.some((item) => item.kind === 'queue' && item.project === id));
     assert.ok(attention.count >= 1);
+    // A stable id lets the UI snooze one item without hiding the others.
+    const ids = attention.items.map((item) => item.id);
+    assert.ok(ids.every((itemId) => typeof itemId === 'string' && itemId.length > 0), `setiap item punya id: ${JSON.stringify(ids)}`);
+    assert.equal(new Set(ids).size, ids.length, 'id item unik');
 
     appendFileSync(
       usageFile,
@@ -1549,6 +1561,8 @@ test('🕘 Riwayat sesi (Claude Code): ⑂ fork continues a copy (--fork-session
   const sid = randomUUID();
   const line = (e) => JSON.stringify({ sessionId: sid, uuid: randomUUID(), cwd: project.path, timestamp: new Date().toISOString(), ...e });
   writeFileSync(path.join(dir, `${sid}.jsonl`), `${line({ type: 'user', promptSource: 'typed', message: { role: 'user', content: 'Sesi untuk dicabangkan' } })}\n`);
+  const sid2 = randomUUID();
+  writeFileSync(path.join(dir, `${sid2}.jsonl`), `${JSON.stringify({ sessionId: sid2, uuid: randomUUID(), cwd: project.path, timestamp: new Date().toISOString(), type: 'user', promptSource: 'typed', message: { role: 'user', content: 'Sesi kedua untuk export' } })}\n`);
   mark = seen.length;
   const fork = await api(`/api/projects/${id}/session-fork`, { sessionId: sid });
   assert.equal(fork.status, 200);
@@ -1560,6 +1574,46 @@ test('🕘 Riwayat sesi (Claude Code): ⑂ fork continues a copy (--fork-session
   assert.ok(!readdirSync(dir).includes(`${sid}.jsonl`), 'gone from the history');
   assert.ok(readdirSync(path.join(TMP, 'data', 'trash', path.basename(dir))).some((f) => f.startsWith(sid)), 'kept in data/trash');
   assert.equal((await api(`/api/projects/${id}/session-delete`, { sessionId: '../x' })).status, 400);
+
+  // ↩ Sesi terhapus: listed with its title, restorable once, and the file comes back.
+  const trash = await api(`/api/projects/${id}/session-trash`, {});
+  assert.equal(trash.status, 200);
+  assert.equal(trash.body.retentionDays, 30, 'retensi dilaporkan ke UI');
+  const item = trash.body.sessions.find((s) => s.sessionId === sid);
+  assert.ok(item, 'sesi terhapus terdaftar');
+  assert.equal(item.title, 'Sesi untuk dicabangkan');
+  assert.ok(item.trashedAt > 0 && item.size > 0);
+  const back = await api(`/api/projects/${id}/session-restore`, { sessionId: sid });
+  assert.equal(back.status, 200);
+  assert.ok(readdirSync(dir).includes(`${sid}.jsonl`), 'kembali ke riwayat');
+  assert.ok(!readdirSync(path.join(TMP, 'data', 'trash', path.basename(dir))).some((f) => f.startsWith(sid)), 'keluar dari trash');
+  assert.equal((await api(`/api/projects/${id}/session-restore`, { sessionId: sid })).status, 404, 'tidak bisa dipulihkan dua kali');
+  assert.equal((await api(`/api/projects/${id}/session-restore`, { sessionId: '../x' })).status, 400);
+
+  // ✎ Rename an old Claude session from the list (a custom-title line, like /rename in the CLI).
+  assert.equal((await api(`/api/projects/${id}/session-rename`, { sessionId: sid, title: 'Sesi setelah dipulihkan' })).status, 200);
+  const renamed = (await api(`/api/projects/${id}/sessions`)).body.sessions.find((s) => s.id === sid);
+  assert.equal(renamed.title, 'Sesi setelah dipulihkan');
+  assert.equal((await api(`/api/projects/${id}/session-rename`, { sessionId: sid, title: '   ' })).status, 400, 'judul kosong');
+  assert.equal((await api(`/api/projects/${id}/session-rename`, { sessionId: '../x', title: 'x' })).status, 400, 'id tidak valid');
+
+  // ⬇ Export some sessions at once: one .zip with one .md per session.
+  const zipRes = await fetch(`${BASE}/api/projects/${id}/sessions-export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Office-Token': token },
+    body: JSON.stringify({ sessionIds: [sid, sid2] }),
+  });
+  assert.equal(zipRes.status, 200);
+  assert.match(zipRes.headers.get('content-disposition'), /^attachment; filename="sesi-.*\.zip"$/);
+  const zipPath = path.join(TMP, 'sessions-export.zip');
+  writeFileSync(zipPath, Buffer.from(await zipRes.arrayBuffer()));
+  const zip = await ZipReader.open(zipPath);
+  const names = zip.entries.map((e) => e.name);
+  const first = String(await zip.read(zip.entries.find((e) => e.name.includes(sid.slice(0, 8)))));
+  await zip.close();
+  assert.equal(names.length, 2, `dua file: ${names}`);
+  assert.ok(names.every((n) => n.endsWith('.md')), 'Markdown per sesi');
+  assert.match(first, /Sesi untuk dicabangkan/);
 });
 
 test('🧩 Ekstensi: plugins (install with a shown marketplace command, enable/disable, uninstall), own agents, hooks', async () => {

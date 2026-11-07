@@ -9,6 +9,11 @@ const MB = 1024 * 1024;
 const MAX_WARNINGS_SHOWN = 20;
 const backup = { busy: false };
 
+let pendingImport = null; // the file whose preview is on screen, waiting for "Pulihkan semua"
+let previewProjects = []; // folder keys of the projects in the preview
+/** base64url of a short ASCII JSON payload (project folder keys) for the X-Backup-Only header. */
+const b64url = (text) => btoa(text).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
 /** "12,3 MB" / "840 KB" */
 const fmtSize = (bytes) => (bytes >= MB ? `${(bytes / MB).toLocaleString('id-ID', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
@@ -117,23 +122,157 @@ function renderResult(r) {
   box.hidden = false;
 }
 
-async function importHistory(file) {
+/** Keeps "Semua project" and the restore button in sync with the checkboxes. */
+function syncPick() {
+  const boxes = [...document.querySelectorAll('#backup-result .backup-pick-box')];
+  const picked = boxes.filter((b) => b.checked).length;
+  const all = $('#backup-pick-all');
+  if (all) {
+    all.checked = boxes.length > 0 && picked === boxes.length;
+    all.indeterminate = picked > 0 && picked < boxes.length;
+  }
+  const btn = $('#backup-restore');
+  if (btn) {
+    btn.disabled = boxes.length > 0 && !picked;
+    btn.textContent = boxes.length === 0 || picked === boxes.length ? 'Pulihkan semua' : `Pulihkan ${picked} project`;
+  }
+}
+
+/** Shows what the archive holds, so the restore below is a decision, not a blind upload. */
+function renderPreview(p, file) {
+  const box = $('#backup-result');
+  previewProjects = Array.isArray(p.projects) ? p.projects : [];
+  box.replaceChildren(el('b', `Isi ${file.name}`));
+  box.append(el('p', `${p.projects.length} project · ${p.sessions} sesi Claude · ${p.chatSessions} riwayat chat · ${fmtSize(p.unpackedBytes)}`, 'muted'));
+  if (previewProjects.length) {
+    const pick = el('fieldset', null, 'backup-pick');
+    pick.append(el('legend', 'Project yang dipulihkan'));
+    const allLabel = document.createElement('label');
+    const allBox = document.createElement('input');
+    allBox.type = 'checkbox';
+    allBox.id = 'backup-pick-all';
+    allBox.checked = true;
+    allLabel.append(allBox, document.createTextNode(' Semua project'));
+    pick.append(allLabel);
+    allBox.addEventListener('change', () => {
+      for (const b of document.querySelectorAll('#backup-result .backup-pick-box')) b.checked = allBox.checked;
+      syncPick();
+    });
+    for (const proj of previewProjects) {
+      const row = document.createElement('label');
+      const pickBox = document.createElement('input');
+      pickBox.type = 'checkbox';
+      pickBox.className = 'backup-pick-box';
+      pickBox.dataset.folder = proj.folder;
+      pickBox.checked = true;
+      pickBox.addEventListener('change', syncPick);
+      row.append(pickBox, document.createTextNode(` ${proj.cwd ?? proj.folder} — ${proj.sessions} sesi`));
+      pick.append(row);
+    }
+    box.append(pick);
+  } else {
+    box.append(el('p', 'Backup ini tidak berisi transkrip project (hanya data kantor).', 'muted'));
+  }
+  const partsBox = el('fieldset', null, 'backup-pick backup-parts');
+  partsBox.append(el('legend', 'Data kantor yang ikut'));
+  for (const [key, label] of [
+    ['state', 'Pengaturan & folder project'],
+    ['usage', 'Laporan token'],
+    ['history', 'Riwayat prompt (↑)'],
+  ]) {
+    const row = document.createElement('label');
+    const partBox = document.createElement('input');
+    partBox.type = 'checkbox';
+    partBox.className = 'backup-part-box';
+    partBox.dataset.part = key;
+    partBox.checked = true;
+    row.append(partBox, document.createTextNode(` ${label}`));
+    partsBox.append(row);
+  }
+  box.append(partsBox);
+  const extra = [
+    p.includes.state && 'pengaturan & folder',
+    p.includes.usage && 'pemakaian token',
+    p.includes.history && 'riwayat prompt',
+    p.includes.fileHistory && `${p.includes.fileHistory} checkpoint`,
+    p.includes.plans && `${p.includes.plans} rencana`,
+    p.chats.opencode && 'chat OpenCode',
+  ].filter(Boolean);
+  if (extra.length) box.append(el('p', `Ikut: ${extra.join(', ')}.`, 'muted'));
+  if (p.createdAt) box.append(el('p', `Dibuat ${new Date(p.createdAt).toLocaleString('id-ID')}${p.source?.appVersion ? ` · versi ${p.source.appVersion}` : ''}.`, 'muted'));
+  const actions = el('div', null, 'backup-actions');
+  const restore = el('button', 'Pulihkan semua', 'primary');
+  restore.type = 'button';
+  restore.id = 'backup-restore';
+  restore.addEventListener('click', () => restorePending());
+  const cancel = el('button', 'Batal', 'ghost');
+  cancel.type = 'button';
+  cancel.id = 'backup-cancel';
+  cancel.addEventListener('click', () => {
+    pendingImport = null;
+    box.hidden = true;
+    setStatus('');
+  });
+  actions.append(restore, cancel);
+  box.append(actions);
+  box.append(el('p', 'Riwayat digabung dengan yang sudah ada: sesi dan file yang belum ada ditambahkan, tidak ada yang dihapus. Hanya import file backup milikmu sendiri.', 'muted'));
+  box.hidden = false;
+  syncPick();
+}
+
+/** Step 1: read the .zip (server writes nothing) and show it. */
+async function previewHistory(file) {
   if (!/\.zip$/i.test(file.name)) {
     toast('Pilih file .zip hasil Export riwayat.');
     return;
   }
-  const ok = window.confirm(
-    `Import riwayat dari "${file.name}" (${fmtSize(file.size)})?\n\n` +
-      'Riwayat digabung dengan yang sudah ada di laptop ini: sesi dan file yang belum ada ditambahkan, file yang sudah ada tidak ditimpa (kecuali lanjutan sesi yang sama), dan tidak ada yang dihapus. Hanya import file backup milikmu sendiri.',
-  );
-  if (!ok) return;
+  pendingImport = null;
+  $('#backup-result').hidden = true;
+  setBusy(true);
+  setStatus(`Membaca isi ${file.name} (${fmtSize(file.size)})…`);
+  try {
+    const res = await fetch('/api/backup/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip', 'X-Office-Token': auth.token },
+      body: file,
+    });
+    if (!res.ok) throw new Error(await errorOf(res));
+    pendingImport = file;
+    renderPreview(await res.json(), file);
+    setStatus(`Pratinjau ${file.name}: periksa isinya, lalu pilih Pulihkan semua.`);
+  } catch (err) {
+    setStatus(`Tidak bisa membaca backup: ${err.message}`);
+    toast(`Backup tidak bisa dibaca: ${err.message}`);
+  } finally {
+    setBusy(false);
+    $('#backup-file').value = ''; // the same file can be picked again after cancel
+  }
+}
+
+/** Step 2: the button in the preview; the unchecked projects stay behind. */
+async function restorePending() {
+  const file = pendingImport;
+  if (!file || backup.busy) return;
+  const boxes = [...document.querySelectorAll('#backup-result .backup-pick-box')];
+  const picked = boxes.filter((b) => b.checked).map((b) => b.dataset.folder);
+  if (boxes.length && !picked.length) return; // nothing chosen: the button is disabled anyway
+  const partBoxes = [...document.querySelectorAll('#backup-result .backup-part-box')];
+  const parts = Object.fromEntries(partBoxes.map((b) => [b.dataset.part, b.checked]));
+  pendingImport = null;
+  await importHistory(file, boxes.length && picked.length < boxes.length ? picked : null, partBoxes.some((b) => !b.checked) ? parts : null);
+}
+
+async function importHistory(file, only = null, parts = null) {
   setBusy(true);
   $('#backup-result').hidden = true;
   setStatus(`Mengunggah dan memulihkan ${fmtSize(file.size)}… (bisa beberapa menit, jangan tutup halaman ini)`);
   try {
+    const headers = { 'Content-Type': 'application/zip', 'X-Office-Token': auth.token };
+    if (only?.length) headers['X-Backup-Only'] = b64url(JSON.stringify(only));
+    if (parts) headers['X-Backup-Parts'] = b64url(JSON.stringify(parts));
     const res = await fetch('/api/backup/import', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/zip', 'X-Office-Token': auth.token },
+      headers,
       body: file,
     });
     if (!res.ok) throw new Error(await errorOf(res));
@@ -147,7 +286,7 @@ async function importHistory(file) {
     toast(`Import riwayat gagal: ${err.message}`);
   } finally {
     setBusy(false);
-    $('#backup-file').value = ''; // the same file can be picked again
+    $('#backup-file').value = '';
   }
 }
 
@@ -163,6 +302,6 @@ export function initBackup() {
   });
   $('#backup-file').addEventListener('change', (e) => {
     const file = e.target.files?.[0];
-    if (file) importHistory(file);
+    if (file) previewHistory(file);
   });
 }

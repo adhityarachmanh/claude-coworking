@@ -102,6 +102,23 @@ function makeScheduler({ now, backup, busy = () => false } = {}) {
 }
 
 describe('scheduler', () => {
+  test('history: the newest scheduled backups in the folder, with sizes; other files are ignored', async () => {
+    const dir = freshDir();
+    const { scheduler, store } = makeScheduler({ now: local(2026, 11, 5, 10, 0) });
+    await scheduler.save({ enabled: false, folder: dir });
+    const older = autoName(local(2026, 11, 4, 2, 0));
+    const newer = autoName(local(2026, 11, 5, 2, 0));
+    writeFileSync(path.join(dir, older), Buffer.alloc(10));
+    writeFileSync(path.join(dir, newer), Buffer.alloc(20));
+    writeFileSync(path.join(dir, 'manual.zip'), Buffer.alloc(5));
+    const { backups } = await scheduler.history();
+    assert.deepEqual(backups.map((b) => b.name), [newer, older]);
+    assert.equal(backups[0].bytes, 20);
+    assert.ok(backups[0].at > 0);
+    store.schedule = { ...store.schedule, folder: '' };
+    assert.deepEqual(await scheduler.history(), { backups: [] }, 'no folder: empty, never a throw');
+  });
+
   test('runs once per slot, only after the slot passed and never for a slot before the schedule was saved', async () => {
     const dir = freshDir();
     const { scheduler, store, clock } = makeScheduler({ now: local(2026, 11, 5, 10, 0) });

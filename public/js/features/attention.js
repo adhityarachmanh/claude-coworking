@@ -6,6 +6,7 @@ import { state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { budgetView, loadBudgetView } from './budget.js';
+import { revealChatMessage } from './chat.js';
 import { selectProject } from './picker.js';
 import { openQueue } from './queue.js';
 import { selectSettingsTab } from './settings.js';
@@ -17,22 +18,77 @@ let timer = null;
 const projectName = (id) => state.projects.find((p) => p.id === id)?.name ?? 'project';
 const ICON = { approval: '✋', plan: '📋', question: '❓', budget: '💰', queue: '📋', interrupted: '▶', routine: '⏰' };
 
+// ⏰ Tunda: hide one item for an hour without touching the server. The list only reflects it; the state behind
+// it (a pending approval, a paused queue) is unchanged. Stored per browser, so a reload keeps the quiet.
+const SNOOZE_KEY = 'office.attention.snooze';
+const SNOOZE_MS = 60 * 60 * 1000;
+
+/** What identifies an item across polls (the server sends `id`; an older server: derive one from the item). */
+const itemKey = (item) => item.id || `${item.kind}:${item.project ?? item.scope ?? 'global'}:${item.chatId ?? item.label ?? ''}`;
+
+/** Stored snoozes that have not expired yet (expired ones are dropped). */
+function loadSnoozes() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SNOOZE_KEY) ?? '{}');
+    if (!raw || typeof raw !== 'object') return {};
+    const now = Date.now();
+    return Object.fromEntries(Object.entries(raw).filter(([, until]) => Number.isFinite(until) && until > now));
+  } catch {
+    return {};
+  }
+}
+
+function saveSnoozes(list) {
+  try {
+    localStorage.setItem(SNOOZE_KEY, JSON.stringify(list));
+  } catch {
+    // storage unavailable (private mode): the click still hides it until the next render
+  }
+}
+
+/** ⏰: one hour without this item in the list or the badge. */
+function snoozeItem(item) {
+  saveSnoozes({ ...loadSnoozes(), [itemKey(item)]: Date.now() + SNOOZE_MS });
+  renderAttention();
+}
+
+/** "Tampilkan": every snoozed item comes back at once. */
+function restoreSnoozes() {
+  try {
+    localStorage.removeItem(SNOOZE_KEY);
+  } catch {
+    // nothing stored
+  }
+  renderAttention();
+}
+
 export function renderAttention() {
   const box = $('#dash-attention');
   if (!box) return;
-  const items = attention.items;
-  box.hidden = !items.length;
-  $('#attention-count').hidden = !attention.count;
-  $('#attention-count').textContent = attention.count > 99 ? '99+' : String(attention.count);
-  $('#dash-attention-count').textContent = items.length ? `(${items.length})` : '';
-  $('#dash-attention-list').innerHTML = items
+  const now = Date.now();
+  const snoozes = loadSnoozes();
+  const visible = attention.items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => !(snoozes[itemKey(item)] > now));
+  const snoozed = attention.items.length - visible.length;
+  const count = Math.max(0, attention.count - snoozed);
+  box.hidden = !visible.length && !snoozed; // all snoozed: still show the way back
+  $('#attention-count').hidden = !count;
+  $('#attention-count').textContent = count > 99 ? '99+' : String(count);
+  $('#dash-attention-count').textContent = visible.length ? `(${visible.length})` : '';
+  $('#dash-attention-list').innerHTML = visible
     .map(
-      (item, i) => `<li><button type="button" data-attention="${i}">
+      ({ item, index }) => `<li class="att-row"><button type="button" class="att-open" data-attention="${index}">
         <span class="att-ico" aria-hidden="true">${ICON[item.kind] ?? '⚠'}</span>
         <span class="att-main"><b>${escapeHtml(projectName(item.project) === 'project' && item.projectName ? item.projectName : projectName(item.project))}</b><span>${escapeHtml(item.label)}</span><small>${escapeHtml(item.detail ?? '')}</small></span>
-      </button></li>`,
+      </button><button type="button" class="att-snooze" data-snooze="${index}" title="Tunda 1 jam" aria-label="Tunda 1 jam: ${escapeHtml(item.label)}">⏰</button></li>`,
     )
     .join('');
+  const note = $('#dash-attention-note');
+  if (note) {
+    note.hidden = !snoozed;
+    note.innerHTML = snoozed ? `${snoozed} ditunda 1 jam · <button type="button" data-attention-restore>Tampilkan</button>` : '';
+  }
 }
 
 export async function loadAttention({ force = false } = {}) {
@@ -80,7 +136,7 @@ function go(item) {
   if (!item.chatId) return;
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      const node = document.querySelector(`#chat > [data-id="${CSS.escape(item.chatId)}"]`);
+      const node = revealChatMessage(item.chatId);
       node?.scrollIntoView({ block: 'center' });
       node?.setAttribute('tabindex', '-1');
       node?.focus({ preventScroll: true });
@@ -90,8 +146,17 @@ function go(item) {
 
 export function initAttention() {
   $('#dash-attention-list')?.addEventListener('click', (e) => {
+    const snooze = e.target.closest('[data-snooze]');
+    if (snooze) {
+      const item = attention.items[Number(snooze.dataset.snooze)];
+      if (item) snoozeItem(item);
+      return;
+    }
     const btn = e.target.closest('[data-attention]');
     if (btn) go(attention.items[Number(btn.dataset.attention)]);
+  });
+  $('#dash-attention-note')?.addEventListener('click', (e) => {
+    if (e.target.closest('[data-attention-restore]')) restoreSnoozes();
   });
   loadAttention();
   setInterval(() => loadAttention(), 60_000).unref?.();

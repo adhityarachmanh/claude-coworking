@@ -97,35 +97,41 @@ export function listSessions(projectPath, limit = 30) {
     .sort((a, b) => b.mtime - a.mtime)
     .slice(0, limit)
     .map(({ id, file, mtime, size }) => {
-      let first = null;
-      let entrypoint = null;
-      for (const line of readSlice(file, false, HEAD_BYTES)) {
-        const e = parse(line);
-        if (!e) continue;
-        entrypoint ??= e.entrypoint ?? null;
-        if (isPrompt(e)) {
-          first = promptText(e);
-          break;
-        }
-      }
-      let title = null;
-      let customTitle = null; // set with /rename: wins over the generated title, as in the CLI
-      let prompts = 0;
-      for (const line of readSlice(file, true, HEAD_BYTES)) {
-        const e = parse(line);
-        if (e?.type === 'ai-title' && (e.title || e.aiTitle)) title = e.title ?? e.aiTitle;
-        if (e?.type === 'custom-title' && e.customTitle) customTitle = e.customTitle;
-        if (isPrompt(e)) prompts++;
-      }
+      const meta = sessionMeta(file);
       return {
         id,
-        title: truncate(customTitle ?? title ?? first ?? '(tanpa judul)', 90),
-        source: entrypoint === 'sdk-cli' ? 'web' : 'cli',
+        title: meta.title,
+        source: meta.entrypoint === 'sdk-cli' ? 'web' : 'cli',
         updated: mtime,
         sizeKb: Math.round(size / 1024),
-        recentPrompts: prompts,
+        recentPrompts: meta.prompts,
       };
     });
+}
+
+/** Title and first-entrypoint of one transcript file (a custom title wins, as in the CLI). */
+export function sessionMeta(file) {
+  let first = null;
+  let entrypoint = null;
+  for (const line of readSlice(file, false, HEAD_BYTES)) {
+    const e = parse(line);
+    if (!e) continue;
+    entrypoint ??= e.entrypoint ?? null;
+    if (isPrompt(e)) {
+      first = promptText(e);
+      break;
+    }
+  }
+  let title = null;
+  let customTitle = null; // set with /rename: wins over the generated title, as in the CLI
+  let prompts = 0;
+  for (const line of readSlice(file, true, HEAD_BYTES)) {
+    const e = parse(line);
+    if (e?.type === 'ai-title' && (e.title || e.aiTitle)) title = e.title ?? e.aiTitle;
+    if (e?.type === 'custom-title' && e.customTitle) customTitle = e.customTitle;
+    if (isPrompt(e)) prompts++;
+  }
+  return { entrypoint, prompts, title: truncate(customTitle ?? title ?? first ?? '(tanpa judul)', 90) };
 }
 
 const CHAIN_BYTES = 64 * 1024 * 1024;

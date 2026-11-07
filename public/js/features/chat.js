@@ -13,6 +13,8 @@ import { openModal } from '../ui/modals.js';
 import { openTour } from './tour.js';
 import { fillApproval } from './approvals.js';
 import { attachmentChip, attachmentPayload, putBackAttachments, recallSent, rememberSent } from './attachments.js';
+import { isBookmarked, toggleBookmark } from '../core/bookmarks.js';
+
 import { fillComposer } from './composer.js';
 import { fileLinkHtml, linkifyPaths } from './file-viewer.js';
 import { afterRowRender, isLiveShell, liveBlock, liveTail, resetLiveOutput, saveLiveScroll } from './live-output.js';
@@ -35,12 +37,13 @@ const STARTERS = [
 const rows = new Map();
 const rowMsg = new WeakMap();
 
+// A long conversation is drawn newest-first: only the last page becomes DOM. "Muat pesan lama" prepends the
+// previous page, a search opens the whole list (it must count every match), and a jump from attention/queue/push
+// reveals the message it targets. The messages themselves are already in state.chats; this is a drawing window.
+const CHAT_PAGE = 80;
+let chatStart = 0; // index in state.chats[active] of the first drawn message
+
 export function renderChat() {
-  chatEl.innerHTML = '';
-  rows.clear();
-  lastDay = '';
-  newMarker = null;
-  newCount = 0;
   // The query belongs to the conversation it was typed in: a project switch starts clean (a reconnect keeps it).
   if (chatSearch && searchProject !== state.active) {
     chatSearch = '';
@@ -52,10 +55,16 @@ export function renderChat() {
     paintChatSearch('');
   }
   syncJumpLabel();
-  resetLiveOutput();
-  pendingReplace.clear();
   const messages = state.chats[state.active] ?? [];
   if (!messages.length) {
+    chatEl.innerHTML = '';
+    rows.clear();
+    lastDay = '';
+    newMarker = null;
+    newCount = 0;
+    chatStart = 0;
+    resetLiveOutput();
+    pendingReplace.clear();
     const engine = engineLabel(engineOf(state.statuses[state.active] ?? {}, state.config));
     chatEl.innerHTML = state.active === DEMO_ID
       ? '<div class="empty"><div class="empty-icon">🎬</div><b>Demo kantor</b><p>Klik <b>▶ Jalankan demo</b> untuk melihat tim bekerja. Demo tidak menjalankan mesin AI.</p></div>'
@@ -66,20 +75,129 @@ export function renderChat() {
           <div class="starters">${STARTERS.map(([icon, label, text]) => `<button data-starter="${escapeHtml(text)}" title="${escapeHtml(text)}"><span>${icon}</span>${label}</button>`).join('')}</div>
           <div class="empty-links"><button class="text-btn" data-open-history>🕘 Sesi sebelumnya</button><button class="text-btn" data-open-help>❓ Panduan</button><button class="text-btn" data-open-tour>👋 Tur singkat</button></div>
         </div>`;
-  }
-  renderingChat = true;
-  try {
-    for (const msg of messages) appendChat(msg, false);
-  } finally {
-    renderingChat = false;
-  }
-  if (chatSearch) applyChatSearch(chatSearch, { reset: false }); // a rebuild (reconnect) keeps the query, its marks and the position
-  if (messages.length && !chatSearch) scrollChat(true);
-  else if (!messages.length) {
     chatEl.scrollTop = 0; // the welcome card reads from the top
     pinnedTop = Infinity; // nothing pinned: a scroll here is judged by position alone
     $('#jump-latest').hidden = true;
+    return;
   }
+  paintChat(messages, chatSearch ? 0 : Math.max(0, messages.length - CHAT_PAGE));
+  if (chatSearch) applyChatSearch(chatSearch, { reset: false }); // a rebuild (reconnect) keeps the query, its marks and the position
+  else scrollChat(true);
+}
+
+/** The "Muat N pesan lama" button above the rendered page. */
+function olderButton(hidden) {
+  const btn = document.createElement('button');
+  btn.id = 'chat-load-older';
+  btn.className = 'chat-load-older';
+  btn.type = 'button';
+  btn.textContent = `Muat ${hidden} pesan lama`;
+  return btn;
+}
+
+/** Draws messages[start…] and, when older ones are hidden, the "load older" button above them. */
+function paintChat(messages, start) {
+  chatEl.innerHTML = '';
+  rows.clear();
+  lastDay = '';
+  newMarker = null;
+  newCount = 0;
+  resetLiveOutput();
+  pendingReplace.clear();
+  chatStart = start;
+  if (start > 0) chatEl.append(olderButton(start));
+  renderingChat = true;
+  try {
+    for (let i = start; i < messages.length; i += 1) appendChat(messages[i], false);
+  } finally {
+    renderingChat = false;
+  }
+}
+
+/**
+ * Builds one message row (plus the date divider when the day changes) into `out`.
+ * `keepNewest` leaves an existing row registered when the id repeats (old chats stored before ids were unique),
+ * so the newest row keeps receiving live updates.
+ * @returns the day now shown, for the next row
+ */
+function buildRow(msg, prevDay, out, keepNewest = false) {
+  const day = dayLabel(msg.ts);
+  if (day && day !== prevDay) {
+    const stamp = document.createElement('div');
+    stamp.className = 'divider day';
+    stamp.textContent = day;
+    out.append(stamp);
+  }
+  const node = document.createElement('div');
+  node.dataset.id = msg.id;
+  fillChat(node, msg);
+  out.append(node);
+  if (!keepNewest || !rows.has(msg.id)) rows.set(msg.id, node);
+  rowMsg.set(node, msg);
+  return day || prevDay;
+}
+
+/**
+ * Draws the messages [target, chatStart) above the current page, keeping the row being read where it was.
+ * Everything newer is already in the DOM, so "load older", a search over the whole chat, and a jump to an old
+ * message (attention/queue/push) all use this instead of rebuilding the list.
+ */
+function loadOlderTo(target) {
+  const messages = state.chats[state.active] ?? [];
+  const from = Math.max(0, Math.min(target, chatStart));
+  if (from >= chatStart) return null;
+  const firstIndex = chatStart;
+  const firstRow = [...chatEl.children].find((n) => n.dataset?.id) ?? null;
+  const before = firstRow?.getBoundingClientRect().top ?? null;
+  const frag = document.createDocumentFragment();
+  let day = from > 0 ? dayLabel(messages[from - 1].ts) : '';
+  for (let i = from; i < firstIndex; i += 1) day = buildRow(messages[i], day, frag, true);
+  // The divider above the old first row stays only when the day really changes there.
+  const boundary = firstRow?.previousElementSibling;
+  if (boundary?.classList.contains('divider') && boundary.classList.contains('day') && dayLabel(messages[firstIndex].ts) === day) boundary.remove();
+  chatEl.querySelector('#chat-load-older')?.remove();
+  chatEl.prepend(frag);
+  chatStart = from;
+  if (from > 0) chatEl.prepend(olderButton(from));
+  /** Puts the row that was at the top back where the reader saw it (rows above it may settle a frame later). */
+  const keep = () => {
+    if (!firstRow?.isConnected || before == null) return;
+    const delta = firstRow.getBoundingClientRect().top - before;
+    if (Math.abs(delta) > 0.5) chatEl.scrollTop += delta;
+    pinnedTop = chatEl.scrollTop;
+  };
+  keep();
+  pinnedTop = chatEl.scrollTop;
+  followChat = false;
+  scrollChat(false); // the bar says "↓ Terbaru"
+  return keep; // the caller may re-run it after layout settles
+}
+
+/** "Muat pesan lama": one more page above, without moving the row being read. */
+function loadOlder() {
+  const keep = loadOlderTo(chatStart - CHAT_PAGE);
+  if (!keep) return;
+  // A skipped row above may get its real height a frame later: re-anchor for a couple of frames.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    keep();
+    scrollChat(false);
+  }));
+}
+
+/**
+ * The row for `id`, opening older messages when it sits outside the rendered window (attention, queue, push).
+ * Returns null when that message is not in this chat at all.
+ */
+export function revealChatMessage(id) {
+  const wanted = String(id);
+  const find = () => [...chatEl.children].find((n) => n.dataset?.id === wanted) ?? null;
+  const existing = find();
+  if (existing) return existing;
+  const messages = state.chats[state.active] ?? [];
+  const index = messages.findIndex((m) => String(m.id) === wanted);
+  if (index < 0 || index >= chatStart) return null;
+  loadOlderTo(index);
+  return find();
 }
 
 // Chat follows the newest message unless the user scrolls up to read; "↓ Terbaru" resumes following.
@@ -158,6 +276,8 @@ function applyChatSearch(query, { reset = true } = {}) {
   const wasSearching = Boolean(chatSearch);
   chatSearch = query.trim().toLowerCase();
   if (chatSearch) searchProject = state.active;
+  // A query must see the whole conversation, not only the rendered page (the reader keeps their place).
+  if (chatSearch && chatStart > 0) loadOlderTo(0);
   const count = $('#chat-search-count');
   for (const node of chatEl.children) {
     if (node.classList.contains('empty')) continue;
@@ -247,20 +367,10 @@ export function scrollChat(force) {
 export function appendChat(msg, scroll = true) {
   const welcome = chatEl.querySelector('.empty');
   welcome?.remove();
-  const day = dayLabel(msg.ts);
-  if (day && day !== lastDay) {
-    const stamp = document.createElement('div');
-    stamp.className = 'divider day';
-    stamp.textContent = day;
-    chatEl.append(stamp);
-    lastDay = day;
-  }
-  const node = document.createElement('div');
-  node.dataset.id = msg.id;
-  fillChat(node, msg);
-  chatEl.append(node);
-  rows.set(msg.id, node);
-  rowMsg.set(node, msg);
+  const frag = document.createDocumentFragment();
+  lastDay = buildRow(msg, lastDay, frag);
+  chatEl.append(frag);
+  const node = chatEl.lastElementChild;
   if (msg.kind === 'user') markLatestUser();
   // Your own prompt, anything waiting for your decision, and the first message always come into view.
   const mustSee = msg.kind === 'approval' || (msg.kind === 'user' && msg.source === 'web') || Boolean(welcome);
@@ -447,17 +557,19 @@ function fillChatBody(node, msg) {
       ].filter(Boolean);
       const autoTag = autoEffortTag(msg.autoEffort);
       const autoModel = autoModelTag(msg.autoModel);
+      const starred = isBookmarked(state.active, msg.id);
+      const star = (label) => `<button data-msg-act="star" aria-pressed="${starred}" aria-label="${starred ? 'Hapus pesan dari simpanan' : 'Simpan pesan ini'}" title="${starred ? 'Hapus dari pesan tersimpan' : 'Simpan pesan ini'}">${starred ? '★' : '☆'} ${label}</button>`;
       // Re-sending a prompt typed in the terminal would run it in the web session, so only web prompts offer it.
       const actions = msg.source === 'demo'
         ? ''
-        : `<span class="msg-actions"><button data-msg-act="copy" title="Salin teks prompt">Salin</button><button data-msg-act="edit" title="Salin ke kotak pesan untuk diedit lalu dikirim">Edit</button>${msg.source === 'cli' ? '' : '<button class="resend" data-msg-act="resend" title="Kirim prompt ini sekali lagi">↻ Ulangi</button>'}</span>`;
+        : `<span class="msg-actions"><button data-msg-act="copy" title="Salin teks prompt">Salin</button><button data-msg-act="edit" title="Salin ke kotak pesan untuk diedit lalu dikirim">Edit</button>${msg.source === 'cli' ? '' : '<button class="resend" data-msg-act="resend" title="Kirim prompt ini sekali lagi">↻ Ulangi</button>'}${star('Simpan')}</span>`;
       node.className = `msg user ${msg.source === 'cli' ? 'cli' : ''} ${msg.history ? 'history' : ''}`;
       // 📎 Name + size chips only: the files' content went to Claude, not into the bubble.
       const files = Array.isArray(msg.attachments) && msg.attachments.length ? `<div class="msg-attachments">${msg.attachments.map((a) => attachmentChip(a)).join('')}</div>` : '';
       node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>${files}<div class="meta">${actions}${autoModel}${autoTag}${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
       break;
     }
-    case 'assistant':
+    case 'assistant': {
       // A finished reply with no text (only whitespace, or a block that turned out empty) is not shown.
       if (!String(msg.text ?? '').trim() && !msg.streaming) {
         node.className = 'hidden-msg';
@@ -465,10 +577,12 @@ function fillChatBody(node, msg) {
         break;
       }
       node.className = `msg assistant ${msg.streaming ? 'streaming' : ''} ${msg.history ? 'history' : ''}`;
-      node.innerHTML = `<div class="who">${who('claude')}${msg.source === 'cli' ? '<span class="cli-tag">CLI</span>' : ''}${msg.history ? '<span class="tag">riwayat</span>' : ''}<span>${time(msg.ts)}</span>${msg.streaming ? '' : '<button class="msg-copy" data-msg-act="copy" title="Salin jawaban (Markdown)">Salin</button>'}</div><div class="body md">${renderMarkdown(msg.text)}</div>`;
+      const bm = isBookmarked(state.active, msg.id);
+      node.innerHTML = `<div class="who">${who('claude')}${msg.source === 'cli' ? '<span class="cli-tag">CLI</span>' : ''}${msg.history ? '<span class="tag">riwayat</span>' : ''}<span>${time(msg.ts)}</span>${msg.streaming ? '' : `<button class="msg-copy" data-msg-act="copy" title="Salin jawaban (Markdown)">Salin</button><button class="msg-copy msg-star" data-msg-act="star" aria-pressed="${bm}" aria-label="${bm ? 'Hapus jawaban dari simpanan' : 'Simpan jawaban ini'}" title="${bm ? 'Hapus dari pesan tersimpan' : 'Simpan jawaban ini'}">${bm ? '★' : '☆'}</button>`}</div><div class="body md">${renderMarkdown(msg.text)}</div>`;
       // Paths to project files (`src/x.js`, public/js/app.js:120) open the file viewer; not while streaming.
       if (!msg.streaming) linkifyPaths(node.querySelector('.body'));
       break;
+    }
     case 'tool': {
       const open = expanded.has(msg.id);
       node.className = `line tool expandable st-${msg.status} ${open ? 'open' : ''} ${msg.sub ? 'sub' : ''}`;
@@ -569,6 +683,7 @@ export function initChat() {
   });
 
   chatEl.addEventListener('click', async (e) => {
+    if (e.target.closest('#chat-load-older')) return loadOlder();
     const starter = e.target.closest('[data-starter]');
     if (starter) return fillComposer(starter.dataset.starter);
     if (e.target.closest('[data-open-history]')) return openSessions();
@@ -581,7 +696,11 @@ export function initChat() {
     const msg = rowMsg.get(act.closest('[data-id]')); // the row's own message (ids of old chats may repeat)
     if (!msg) return;
     if (act.dataset.msgAct === 'copy') flashButton(act, (await copyText(msg.text)) ? '✓ Tersalin' : 'Gagal');
-    else if (act.dataset.msgAct === 'edit') editPrompt(msg);
+    else if (act.dataset.msgAct === 'star') {
+      const on = toggleBookmark(state.active, msg);
+      toast(on ? 'Pesan disimpan. Buka lewat Ctrl+P → “Pesan tersimpan”.' : 'Simpanan dihapus.', 'ok');
+      replaceChat(msg); // the same row is rebuilt with the new star state
+    } else if (act.dataset.msgAct === 'edit') editPrompt(msg);
     else if (act.dataset.msgAct === 'resend') resendPrompt(msg);
   });
 

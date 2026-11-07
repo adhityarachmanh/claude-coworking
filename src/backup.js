@@ -401,6 +401,65 @@ async function safeTarget(base, parts) {
 const LOCKED = new Set(['EPERM', 'EBUSY', 'EACCES']);
 
 /**
+ * What `restoreBackup` would find in the archive, without writing anything: projects (with their session count),
+ * chat history files per engine, and which shared data travels with it. Used by the import dialog's preview.
+ * @param {string} zipFile
+ * @param {{ maxUnpacked?: number }} [ctx]
+ */
+export async function previewBackup(zipFile, ctx = {}) {
+  const { maxUnpacked = MAX_DEFAULT_UNPACKED } = ctx;
+  const reader = await ZipReader.open(zipFile);
+  try {
+    const entries = reader.entries.filter((e) => !e.isDir);
+    for (const e of entries) if (!isKnownEntry(e.name)) throw new ZipError(`Entri "${e.name}" bukan bagian dari backup Adhit Office.`);
+    const byName = new Map(entries.map((e) => [e.name, e]));
+    const manifestEntry = byName.get('manifest.json');
+    if (!manifestEntry) throw new ZipError('Ini bukan backup Adhit Office (manifest.json tidak ada).');
+    const manifest = parseJson(await reader.read(manifestEntry, 16 * 1024 * 1024), 'manifest.json');
+    if (manifest.format !== BACKUP_FORMAT) throw new ZipError('Ini bukan backup Adhit Office (format tidak dikenal).');
+    if (!(Number(manifest.version) <= BACKUP_VERSION)) throw new BackupError(400, 'Backup dibuat oleh versi Adhit Office yang lebih baru. Perbarui app ini dulu.');
+    const unpacked = entries.reduce((sum, e) => sum + e.usize, 0);
+    if (unpacked > maxUnpacked) throw new BackupError(413, 'Isi backup terlalu besar untuk dipulihkan.');
+
+    const cwdOf = new Map((Array.isArray(manifest.projects) ? manifest.projects : []).filter((p) => typeof p?.folder === 'string').map((p) => [p.folder, typeof p.cwd === 'string' ? p.cwd : null]));
+    const projects = new Map();
+    const chats = { claude: 0, opencode: 0 };
+    let fileHistory = 0;
+    let plans = 0;
+    for (const e of entries) {
+      const parts = e.name.split('/');
+      if (parts[0] === 'claude' && parts[1] === 'projects' && parts[2]) {
+        const p = projects.get(parts[2]) ?? { folder: parts[2], cwd: cwdOf.get(parts[2]) ?? null, sessions: 0, files: 0 };
+        if (parts.length === 4 && SESSION_FILE.test(parts[3])) p.sessions += 1;
+        else p.files += 1;
+        projects.set(parts[2], p);
+      } else if (parts[0] === 'claude' && parts[1] === 'file-history') {
+        fileHistory += 1;
+      } else if (parts[0] === 'claude' && parts[1] === 'plans') {
+        plans += 1;
+      }
+      const chat = chatEntryOf(e.name);
+      if (chat) chats[chat.engine] += 1;
+    }
+    return {
+      format: manifest.format,
+      version: Number(manifest.version) || 1,
+      createdAt: typeof manifest.createdAt === 'string' ? manifest.createdAt : null,
+      source: { homeDir: typeof manifest.homeDir === 'string' ? manifest.homeDir : null, platform: typeof manifest.platform === 'string' ? manifest.platform : null, appVersion: manifest.app?.version ?? null },
+      entries: entries.length,
+      unpackedBytes: unpacked,
+      projects: [...projects.values()].sort((a, b) => b.sessions - a.sessions),
+      sessions: [...projects.values()].reduce((sum, p) => sum + p.sessions, 0),
+      chats,
+      chatSessions: chats.claude + chats.opencode,
+      includes: { state: byName.has('office/state.json'), usage: byName.has('office/usage.jsonl'), history: byName.has('claude/history.jsonl'), fileHistory, plans },
+    };
+  } finally {
+    await reader.close();
+  }
+}
+
+/**
  * Restores a backup archive into this machine's Claude folder; the office state is returned for the hub to merge.
  *
  * The archive is untrusted (it may come from someone else): it can add, never take over what is here.
@@ -422,8 +481,11 @@ const LOCKED = new Set(['EPERM', 'EBUSY', 'EACCES']);
  *
  * @param {string} zipFile
  * @param {{ locations?: { projectsDir: string, claudeDir: string }, homeDir?: string, activeSessions?: Set<string>,
+ *           only?: Iterable<string>, parts?: { state?: boolean, usage?: boolean, history?: boolean },
  *           onFileWritten?: (file: string) => void, ledger?: { importRows(rows: object[]): number },
  *           maxUnpacked?: number, now?: number }} [ctx]
+ *   `only`: project folder keys (from `previewBackup`) to restore; absent = every project.
+ *   `parts`: which shared data merges (office state, token ledger, prompt history); absent = all three.
  */
 export async function restoreBackup(zipFile, ctx = {}) {
   const {
@@ -437,6 +499,8 @@ export async function restoreBackup(zipFile, ctx = {}) {
     now = Date.now(),
   } = ctx;
   const { projectsDir, claudeDir } = locations;
+  // Which shared data comes back (the UI's checkboxes); transcripts/files always follow `only`.
+  const keep = { state: ctx.parts?.state !== false, usage: ctx.parts?.usage !== false, history: ctx.parts?.history !== false };
   const reader = await ZipReader.open(zipFile);
   try {
     const entries = reader.entries.filter((e) => !e.isDir);
@@ -462,6 +526,15 @@ export async function restoreBackup(zipFile, ctx = {}) {
 
     const remap = makeRemap(manifest.homeDir, homeDir, manifest.platform);
     const cwdOf = new Map((Array.isArray(manifest.projects) ? manifest.projects : []).filter((p) => typeof p?.folder === 'string').map((p) => [p.folder, typeof p.cwd === 'string' ? p.cwd : null]));
+    // Selective restore: only these project folders (and their chat files) come back; shared data still merges.
+    const only = ctx.only == null ? null : new Set([...ctx.only].filter((f) => typeof f === 'string' && f));
+    // Chat files are named with the project id the SOURCE machine gave the folder: compute it the same way.
+    const sourceId = (p) => {
+      let key = String(p).replace(/\\/g, '/').replace(/\/+$/, '');
+      if (manifest.platform === 'win32') key = key.toLowerCase();
+      return createHash('sha1').update(key).digest('hex').slice(0, 10);
+    };
+    const selectedChatIds = only ? new Set([...only].map((f) => cwdOf.get(f)).filter(Boolean).map(sourceId)) : null;
     const summary = {
       projects: 0,
       sessions: { added: 0, updated: 0, skipped: 0 },
@@ -481,6 +554,7 @@ export async function restoreBackup(zipFile, ctx = {}) {
     for (const e of entries) {
       const parts = e.name.split('/');
       if (parts[1] !== 'projects' || parts.length < 4 || folders.has(parts[2])) continue;
+      if (only && !only.has(parts[2])) continue; // not selected in the import preview
       const from = parts[2];
       const cwd = cwdOf.get(from) ?? null;
       let to = remap.mapFolder(from, cwd);
@@ -597,20 +671,21 @@ export async function restoreBackup(zipFile, ctx = {}) {
       const parts = e.name.split('/');
       if (e.name === 'manifest.json') continue;
       if (e.name === 'office/state.json') {
-        state = parseJson(await reader.read(e, 64 * 1024 * 1024), 'office/state.json');
+        if (keep.state) state = parseJson(await reader.read(e, 64 * 1024 * 1024), 'office/state.json');
       } else if (chatEntryId(e.name)) {
+        const { engine, id } = chatEntryOf(e.name);
+        if (selectedChatIds && !selectedChatIds.has(id)) continue; // chat of a project the user did not pick
         if (!mergeable(e)) continue;
         if (chatBytes + e.usize > maxMergeBytes) {
           warn(`Dilewati, riwayat chat di backup terlalu besar secara total: ${e.name}`);
           continue;
         }
         chatBytes += e.usize;
-        const { engine, id } = chatEntryOf(e.name);
         const list = parseChatFile(await reader.read(e, maxMergeBytes), CHAT_LIMIT);
         if (engine === 'claude') chats[id] = list;
         else (engineChats[engine] ??= {})[id] = list;
       } else if (e.name === 'office/usage.jsonl' || /^office\/usage-archive\/usage-[\w-]+\.jsonl$/.test(e.name)) {
-        if (!ledger || !mergeable(e)) continue;
+        if (!keep.usage || !ledger || !mergeable(e)) continue;
         const rows = [];
         for (const line of jsonLines(await reader.read(e, maxMergeBytes))) {
           try {
@@ -621,8 +696,9 @@ export async function restoreBackup(zipFile, ctx = {}) {
         }
         summary.usage.added = (summary.usage.added ?? 0) + ledger.importRows(rows);
       } else if (e.name === 'claude/history.jsonl') {
-        if (mergeable(e)) summary.history.added = await mergeHistory(e);
+        if (keep.history && mergeable(e)) summary.history.added = await mergeHistory(e);
       } else if (parts[1] === 'projects') {
+        if (only && !only.has(parts[2])) continue; // not selected in the import preview
         const target = parts.length >= 4 ? folders.get(parts[2]) : null;
         const rest = target ? [target.folder, ...parts.slice(3)] : parts.slice(2);
         const isSession = parts.length === 4 && SESSION_FILE.test(parts[3]);

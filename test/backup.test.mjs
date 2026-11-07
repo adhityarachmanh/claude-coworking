@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { encodeProjectPath, makeRemap } from '../src/backup.js';
+import { encodeProjectPath, makeRemap, previewBackup, restoreBackup } from '../src/backup.js';
 import { projectId as projectIdOf } from '../src/util.js';
 import { ZipReader, ZipWriter } from '../src/zip.js';
 
@@ -245,16 +245,78 @@ test('export: a streamed .zip with every project, history, checkpoints, plans, s
   assert.deepEqual(state.favorites, [fav]);
 });
 
+test('preview: what is inside the backup, before anything is written', async () => {
+  const preview = await previewBackup(zipFile);
+  assert.equal(preview.format, 'adhit-office-backup');
+  assert.equal(preview.version, 1);
+  const toko = preview.projects.find((p) => p.folder === encodeProjectPath(cwdA.toko));
+  assert.equal(toko.cwd, cwdA.toko, 'the project path from the manifest');
+  assert.equal(toko.sessions, 4);
+  assert.equal(preview.projects.length, 3);
+  assert.ok(preview.sessions >= 4, 'session count summed from the archive');
+  assert.equal(preview.includes.state, true);
+  assert.equal(preview.includes.usage, true);
+  assert.equal(preview.includes.history, true);
+  assert.equal(preview.source.homeDir, homeA);
+  assert.ok(preview.entries > 0 && preview.unpackedBytes > 0);
+  // It only reads: B's tree is untouched (the import test below still starts from "kasir not known").
+  assert.equal(existsSync(dirB('kasir')), false);
+});
+
+test('selective restore: only the chosen project is written', async () => {
+  const projectsDir = path.join(TMP, 'only-projects');
+  const claudeDir = path.join(TMP, 'only-claude');
+  const result = await restoreBackup(zipFile, {
+    locations: { projectsDir, claudeDir },
+    homeDir: homeB,
+    only: new Set([encodeProjectPath(cwdA.toko)]),
+  });
+  assert.equal(result.summary.projects, 1, 'only the selected folder');
+  assert.ok(existsSync(path.join(projectsDir, encodeProjectPath(cwdB.toko))), 'toko restored');
+  assert.equal(existsSync(path.join(projectsDir, encodeProjectPath(cwdB.kasir))), false, 'kasir not written');
+  assert.deepEqual(result.projects.map((p) => p.cwd), [cwdB.toko]);
+  assert.ok(!Object.hasOwn(result.chats, projectIdOf(cwdA.kasir)), 'no chat of the unselected project');
+});
+
+test('restore parts: transcripts only, leaving state/usage/history out when asked', async () => {
+  const projectsDir = path.join(TMP, 'parts-projects');
+  const claudeDir = path.join(TMP, 'parts-claude');
+  let usageRows = 0;
+  const result = await restoreBackup(zipFile, {
+    locations: { projectsDir, claudeDir },
+    homeDir: homeB,
+    parts: { state: false, usage: false, history: false },
+    ledger: {
+      importRows: (rows) => {
+        usageRows += rows.length;
+        return rows.length;
+      },
+    },
+  });
+  assert.equal(result.state, null, 'office state left out');
+  assert.equal(result.summary.usage.added, 0);
+  assert.equal(usageRows, 0, 'the ledger route was never asked to merge');
+  assert.equal(result.summary.history.added, 0);
+  assert.equal(existsSync(path.join(claudeDir, 'history.jsonl')), false, 'no prompt history written');
+  assert.ok(existsSync(path.join(projectsDir, encodeProjectPath(cwdB.toko))), 'transcripts still restored');
+});
+
 test('import endpoints: token, content type and laptop-only checks', async () => {
   const body = readFileSync(zipFile);
   const noToken = await fetch(`${b.base}/api/backup/import`, { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body });
   assert.equal(noToken.status, 403);
   assert.equal((await b.upload(body, { 'Content-Type': 'text/plain' })).status, 415);
   assert.equal((await b.upload(body, { Origin: 'https://evil.example' })).status, 403);
+  const previewNoToken = await fetch(`${b.base}/api/backup/preview`, { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body });
+  assert.equal(previewNoToken.status, 403);
+  const preview = await fetch(`${b.base}/api/backup/preview`, { method: 'POST', headers: { 'Content-Type': 'application/zip', 'X-Office-Token': b.token }, body });
+  assert.equal(preview.status, 200);
+  assert.equal((await preview.json()).projects.length, 3);
+  assert.equal((await b.api('/api/backup/schedule/restore', { name: '../x' })).status, 400, 'nama backup otomatis tidak valid');
   const exportNoToken = await fetch(`${b.base}/api/backup/export`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   assert.equal(exportNoToken.status, 403);
   const { wifiAllows } = await import('../src/remote.js');
-  assert.ok(!wifiAllows('/api/backup/export') && !wifiAllows('/api/backup/import'), 'never allowed over WiFi');
+  assert.ok(!wifiAllows('/api/backup/export') && !wifiAllows('/api/backup/import') && !wifiAllows('/api/backup/preview'), 'never allowed over WiFi');
 });
 
 test('import: folders remapped to the new home, merge rules, usage and prompt history merged, sessions listed', async () => {

@@ -104,7 +104,7 @@ Untuk Tailscale: pasang **Tailscale** di laptop dan HP (`tailscale.com/download`
 Notifikasi tetap muncul walau aplikasi ditutup atau HP terkunci. Hanya lewat jalur **🔒 Tailscale (HTTPS)**.
 
 1. **Sekali di Tailscale:** buka admin console Tailscale → **DNS**, pastikan MagicDNS aktif, lalu nyalakan **HTTPS Certificates**. Nama laptop + tailnet akan tercatat di log publik Certificate Transparency (bukan akses: alamatnya tetap hanya bisa dijangkau dari dalam tailnet).
-2. **Di laptop:** 📱 → klik **Periksa lagi** sampai muncul *"🔒 HTTPS aktif: https://…:4318"*. Sertifikat diambil lewat `tailscale cert` (di Windows berjalan tanpa hak Administrator), disimpan di `data/tls/`, dan diperbarui otomatis (dicek tiap 12 jam).
+2. **Di laptop:** 📱 → klik **Periksa lagi** sampai muncul *"🔒 HTTPS aktif: https://…:4318"*. Sertifikat diambil lewat `tailscale cert` (di Windows berjalan tanpa hak Administrator), disimpan di `data/tls/`, dan diperbarui otomatis (dicek tiap 12 jam). Kalau Tailscale belum tersambung saat aplikasi menyala, HTTPS **dicoba ulang otomatis tiap menit** sampai berhasil — tidak perlu restart.
 3. **Di HP:** pairing lewat **🔒 Tailscale (HTTPS)** (lihat di atas).
 4. **Di HP:** buka **🔔 Pengaturan notifikasi** (tombol **🔎 Cari** di navigasi bawah → *Pengaturan notifikasi*, atau **⋯** → 🔔) → bagian **📱 Notifikasi HP (push)** → **Aktifkan**, izinkan notifikasi, lalu **Kirim tes**.
 

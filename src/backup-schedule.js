@@ -229,6 +229,28 @@ export class BackupScheduler {
     };
   }
 
+  /** The newest scheduled backups in the folder (name, size, local time), for the ⚙ history list. */
+  async history(limit = 20) {
+    const folder = this.schedule.folder;
+    if (!folder) return { backups: [] };
+    let list;
+    try {
+      list = await listAutoBackups(folder);
+    } catch {
+      return { backups: [] };
+    }
+    const backups = [];
+    for (const f of list.slice(0, Math.min(Math.max(1, limit), 50))) {
+      try {
+        const st = await fs.stat(path.join(folder, f.name));
+        backups.push({ name: f.name, bytes: st.size, at: st.mtimeMs });
+      } catch {
+        // vanished (rotated by another run)
+      }
+    }
+    return { backups };
+  }
+
   async save(patch, platform) {
     const next = await cleanSchedule(this.schedule, patch, platform);
     next.updatedAt = this.now(); // slots before this moment never run (no backup right after switching on)

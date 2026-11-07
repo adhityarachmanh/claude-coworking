@@ -70,10 +70,13 @@
         <div id="stage" class="stage">
           <canvas aria-label="Kantor tim"></canvas>
           <div class="overlay"></div>
-          <button id="view-mode" class="view-mode" type="button" aria-pressed="false" title="Ganti tampilan: kantor pixel ↔ jaringan otak AI">🧠 Mode Otak</button>
         </div>
-        <!-- Laptop: the people under the office can be folded away (remembered per browser, features/team.js) -->
-        <button id="team-toggle" class="team-toggle" type="button" aria-expanded="true" aria-controls="team"><span>👥 Karyawan</span><span class="team-toggle-chev" aria-hidden="true">▾</span></button>
+        <!-- Office controls sit under the stage instead of floating over the pixel art. -->
+        <div class="office-tools">
+          <button id="view-mode" class="view-mode" type="button" aria-pressed="false" title="Ganti tampilan: kantor pixel ↔ jaringan otak AI">🧠 Mode Otak</button>
+          <!-- Laptop: the people under the office can be folded away (remembered per browser, features/team.js) -->
+          <button id="team-toggle" class="team-toggle" type="button" aria-expanded="true" aria-controls="team"><span>👥 Karyawan</span><small id="team-toggle-sum"></small><span class="team-toggle-chev" aria-hidden="true">▾</span></button>
+        </div>
         <div id="team" class="team"></div>
       </main>
 
@@ -283,6 +286,12 @@
         <button type="button" id="btn-tour" class="ghost help-tour">👋 Tur singkat (4 langkah)</button>
         <div class="help">
           <section>
+            <h3>📲 Pasang sebagai aplikasi</h3>
+            <p>Android (Chrome/Edge): menu <b>⋮</b> → <b>Install app</b> / <b>Tambahkan ke layar utama</b>. iPhone/iPad (Safari): <b>Bagikan</b> → <b>Tambahkan ke Layar Utama</b>.</p>
+            <p class="muted small">Aplikasi dari layar utama punya penyimpanan sendiri: masukkan kode pairing sekali lagi di sana. Halaman tidak di-cache untuk offline (token sesi tidak boleh tersimpan di cache browser).</p>
+            <button type="button" id="install-app" class="primary" hidden>📲 Pasang sekarang</button>
+          </section>
+          <section>
             <h3>Mulai dalam 4 langkah</h3>
             <ol class="steps">
               <li><b>Pilih project</b>: klik nama project di kiri atas, atau tekan <kbd>Ctrl</kbd> <kbd>K</kbd>.</li>
@@ -406,12 +415,29 @@
         <p class="muted small">Lanjutkan, cabangkan (⑂ salinan baru, aslinya tetap), unduh atau hapus percakapan sebelumnya di project ini, dari terminal maupun dari web.</p>
         <div class="sessions-tools">
           <input id="sessions-search" type="search" aria-label="Cari sesi" placeholder="Cari judul sesi…" autocomplete="off" />
+          <select id="sessions-range" aria-label="Rentang waktu sesi" title="Saring sesi berdasarkan kapan terakhir dipakai">
+            <option value="all">Semua waktu</option>
+            <option value="7">7 hari terakhir</option>
+            <option value="30">30 hari terakhir</option>
+            <option value="90">90 hari terakhir</option>
+          </select>
           <button id="sessions-import" class="ghost" hidden title="Import sesi OpenCode dari file JSON (laptop saja)">⬆ Import JSON</button>
           <input id="sessions-import-file" type="file" accept=".json,application/json" hidden />
           <button id="sessions-new" class="ghost">＋ Sesi baru</button>
         </div>
         <label class="switch small export-opt"><input class="export-tools-opt" type="checkbox" /> Export .md: sertakan ringkasan tool calls</label>
+        <div id="sessions-bulk" class="sessions-bulk" hidden>
+          <label class="switch small"><input id="sessions-select-all" type="checkbox" /> Pilih semua</label>
+          <span class="sessions-bulk-actions">
+            <button id="sessions-export-selected" class="ghost" type="button" disabled>⬇ Export</button>
+            <button id="sessions-delete-selected" class="ghost danger-text" type="button" disabled>Hapus sesi</button>
+          </span>
+        </div>
         <div id="sessions-list" class="sessions-list"></div>
+        <details id="sessions-trash" class="sessions-trash" hidden>
+          <summary>🗑 Sesi terhapus <span id="sessions-trash-count" class="count"></span> <small id="sessions-trash-retention" class="muted"></small></summary>
+          <div id="sessions-trash-list" class="sessions-list"></div>
+        </details>
       </div>
     </div>
 
@@ -843,6 +869,11 @@
                 <button type="button" id="ba-run" class="ghost">▶ Jalankan sekarang</button>
               </div>
               <p id="ba-status" class="muted" role="status" aria-live="polite"></p>
+              <div id="ba-history" class="ba-history" hidden>
+                <b>🕘 Riwayat backup otomatis</b>
+                <ul id="ba-history-list" class="ba-history-list"></ul>
+                <p id="ba-restore-status" class="muted small" role="status" aria-live="polite"></p>
+              </div>
               <p id="ba-desc" class="muted small">Sama seperti Export. Rotasi hanya menghapus backup otomatis lama; file lain aman.</p>
             </div>
           </section>
@@ -1135,6 +1166,14 @@
     </div>
 
     <!-- 🔎 Search conversations (features/conversations.js): every session of the project, or every project -->
+    <!-- ★ Pesan tersimpan (features/bookmarks.js): starred in this browser, opened from Ctrl+P -->
+    <div id="bookmarks-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="bookmarks-title">
+        <div class="modal-head"><b id="bookmarks-title">★ Pesan tersimpan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="bookmarks-note" class="muted small"></p>
+        <div id="bookmarks-list" class="bookmarks-list"></div>
+      </div>
+    </div>
     <div id="search-modal" class="modal" hidden>
       <div class="modal-card sessions-card search-card" role="dialog" aria-modal="true" aria-labelledby="search-title">
         <div class="modal-head"><b id="search-title">🔎 Cari percakapan <small id="search-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
@@ -1157,6 +1196,7 @@
       <div class="modal-card dash-modal-card" role="dialog" aria-modal="true" aria-labelledby="dash-title">
         <div class="modal-head"><b id="dash-title">🗂 Semua project <small id="dash-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <!-- ♪ one music row (features/spotify.js): read-only info, ⏯ when this device may control it -->
+        <div id="dash-today" class="dash-today" hidden></div>
         <div id="dash-music" class="dash-music" hidden>
           <span class="sp-art sp-art-32" aria-hidden="true"><img alt="" hidden /><span class="sp-note">♪</span></span>
           <span class="dash-music-text"><b id="dash-music-title"></b><small id="dash-music-sub" class="muted"></small></span>
@@ -1166,8 +1206,10 @@
         <section id="dash-attention" class="dash-attention" aria-labelledby="dash-attention-title" hidden>
           <b id="dash-attention-title">⚠ Perlu perhatian <span id="dash-attention-count" class="count"></span></b>
           <ul id="dash-attention-list"></ul>
+          <p id="dash-attention-note" class="att-note" hidden></p>
         </section>
         <input id="dash-search" class="dash-search" type="search" aria-label="Saring project" aria-controls="dash-list" placeholder="Saring project…  (Enter buka yang pertama)" autocomplete="off" />
+        <div id="dash-filters" class="dash-filters" role="group" aria-label="Saring project per status"></div>
         <ul id="dash-list" class="dash-list" aria-label="Status semua project"></ul>
         <p id="dash-empty" class="dash-empty muted" hidden></p>
         <p id="dash-live" class="sr-only" role="status" aria-live="polite"></p>

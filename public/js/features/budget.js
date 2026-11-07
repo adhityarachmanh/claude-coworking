@@ -52,7 +52,21 @@ export function normalizeBudgetView(raw) {
     const tone = limit <= 0 ? 'off' : percent >= 1 ? 'over' : percent >= WARN_AT ? 'warn' : 'ok';
     rows[w.key] = { label: w.label, limit, usd: used, percent, tone, records: count(win.rows ?? spentWindow.rows) };
   }
-  return { rows, note: typeof view.note === 'string' ? view.note.trim().slice(0, 300) : '' };
+  const rawForecast = view.forecast && typeof view.forecast === 'object' ? view.forecast : {};
+  const projected = amount(rawForecast.projectedUsd);
+  const forecast = projected == null ? null : {
+    monthUsd: amount(rawForecast.monthUsd) ?? 0,
+    dailyUsd: amount(rawForecast.dailyUsd) ?? 0,
+    elapsedDays: count(rawForecast.elapsedDays),
+    daysInMonth: count(rawForecast.daysInMonth),
+    projectedUsd: projected,
+  };
+  const rawTrend = Array.isArray(view.trend) ? view.trend : [];
+  const trend = rawTrend
+    .filter((d) => d && Number.isFinite(Number(d.start)))
+    .slice(-7)
+    .map((d) => ({ start: Number(d.start), usd: amount(d.usd) ?? 0, rows: count(d.rows), known: count(d.known) }));
+  return { rows, forecast, trend, note: typeof view.note === 'string' ? view.note.trim().slice(0, 300) : '' };
 }
 
 /** "sisa $7,70" while there is room, "lewat $2,40" once the limit is passed. */
@@ -89,7 +103,32 @@ export function budgetRowsHtml(view = budgetView.data) {
       </span>
     </li>`;
   });
-  return `<ul class="budget-rows">${items.join('')}</ul>`;
+  const forecast = view.forecast && view.forecast.projectedUsd > 0
+    ? (() => {
+        const monthly = view.rows.month.limit;
+        const over = monthly > 0 && view.forecast.projectedUsd > monthly;
+        return `<p class="budget-forecast ${over ? 'warn' : ''}">Perkiraan akhir bulan ±${usdText(view.forecast.projectedUsd)} · rata-rata ${usdText(view.forecast.dailyUsd)}/hari${over ? ` · proyeksi melewati batas bulanan ${limitText(monthly)}` : ''}</p>`;
+      })()
+    : '';
+  return `<ul class="budget-rows">${items.join('')}</ul>${forecast}${trendHtml(view)}`;
+}
+
+/** Seven little bars (local days): spend recorded per day, empty days kept so the gaps are visible. */
+function trendHtml(view) {
+  const days = view.trend ?? [];
+  if (!days.length || !days.some((d) => d.usd > 0)) return '';
+  const max = Math.max(...days.map((d) => d.usd), 0.01);
+  const total = days.reduce((sum, d) => sum + d.usd, 0);
+  const bars = days
+    .map((d) => {
+      const date = new Date(d.start);
+      const label = date.toLocaleDateString('id-ID', { weekday: 'short' });
+      const full = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      const height = d.usd > 0 ? Math.max(6, Math.round((d.usd / max) * 100)) : 2;
+      return `<span class="bt-day" title="${escapeHtml(full)} · ${escapeHtml(usdText(d.usd))}"><span class="bt-bar" style="height:${height}%"></span><small>${escapeHtml(label)}</small></span>`;
+    })
+    .join('');
+  return `<div class="budget-trend" role="img" aria-label="Biaya ${days.length} hari terakhir: ${escapeHtml(usdText(total))} tercatat">${bars}</div>`;
 }
 
 /** The compact copy at the top of the health dialog: the same rows, no editable fields. */

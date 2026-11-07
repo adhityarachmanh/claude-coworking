@@ -5,12 +5,13 @@
 // Accessible as a combobox (the input) driving a listbox (aria-activedescendant); no focusable options.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
-import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
+import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { THEME_IDS, THEMES, theme } from '../office/themes.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { LOCAL_COMMANDS, localCommand } from './commands.js';
 import { fillComposer } from './composer.js';
-import { exportActiveSession, openSearch } from './conversations.js';
+import { exportActiveSession, openSearch, resumeSearchResult } from './conversations.js';
+import { openBookmarks } from './bookmarks.js';
 import { openDashboard } from './dashboard.js';
 import { capBlocked } from './engine.js';
 import { openFile } from './file-viewer.js';
@@ -19,6 +20,7 @@ import { openNotifySettings } from './notify.js';
 import { openProjects, selectProject } from './picker.js';
 import { openRewind } from './rewind.js';
 import { openRoster } from './roster.js';
+import { selectSettingsTab } from './settings.js';
 import { openSessions } from './sessions.js';
 import { musicPaletteItems } from './spotify.js';
 import { slashCatalog } from './suggest.js';
@@ -30,7 +32,7 @@ const RECENT_KEY = 'office.palette.recent';
 // Slash commands that only open something to look at: usable in the demo and over read-only WiFi too.
 const ALWAYS_COMMANDS = new Set(['help', 'dashboard']);
 const RECENT_MAX = 6;
-const MAX_PER_GROUP = { project: 12, file: 12, command: 12 };
+const MAX_PER_GROUP = { project: 12, file: 12, command: 12, settings: 10, transcript: 6 };
 const MAX_ITEMS = 80;
 
 // Group order (also the order with an empty query) and headers.
@@ -38,8 +40,10 @@ const GROUPS = [
   ['recent', 'Terakhir dipakai'],
   ['project', 'Project'],
   ['file', 'File'],
+  ['transcript', 'Percakapan'],
   ['chat', 'Chat'],
   ['dialog', 'Buka'],
+  ['settings', 'Pengaturan'],
   ['music', 'Musik'],
   ['setting', 'Izin, model & effort'],
   ['theme', 'Tema'],
@@ -48,12 +52,13 @@ const GROUPS = [
 const GROUP_LABEL = Object.fromEntries(GROUPS);
 
 const PREFIXES = {
-  '>': { label: 'Perintah & aksi', groups: ['chat', 'dialog', 'music', 'setting', 'theme', 'command'] },
+  '>': { label: 'Perintah & aksi', groups: ['chat', 'dialog', 'settings', 'music', 'setting', 'theme', 'command'] },
   '@': { label: 'File project', groups: ['file'] },
   '#': { label: 'Project', groups: ['project'] },
+  '?': { label: 'Isi percakapan', groups: ['transcript'] },
 };
 
-export const palette = { items: [], shown: [], cursor: 0, files: [], filesFor: null, fileSeq: 0, fileTimer: null, loadingFiles: false };
+export const palette = { items: [], shown: [], cursor: 0, files: [], filesFor: null, fileSeq: 0, fileTimer: null, loadingFiles: false, transcripts: [], transcriptsFor: null, transcriptsQuery: '', transcriptFilters: null, transcriptSeq: 0, transcriptTimer: null, loadingTranscripts: false };
 
 const isOpen = () => !$('#palette-modal').hidden;
 
@@ -169,6 +174,8 @@ function buildItems() {
   add({ id: 'chat:export-session', group: 'chat', icon: '⬇', label: 'Export sesi ke Markdown (.md)', hint: 'Dari transcript Claude Code', kbd: '/export', disabled: needProject ?? capBlocked('exportSession') ?? (st.sessionId ? null : 'Belum ada sesi'), keywords: 'export download unduh markdown', run: () => exportActiveSession() });
   add({ id: 'chat:export-chat', group: 'chat', icon: '⬇', label: 'Export chat yang tampil (.md)', disabled: (state.chats[state.active] ?? []).length ? null : 'Belum ada percakapan', keywords: 'export download unduh', run: click('#more-menu [data-more="export"]') });
   add({ id: 'chat:search', group: 'chat', icon: '🔎', label: 'Cari percakapan', hint: 'Di semua sesi project', kbd: '/search', disabled: needProject ?? capBlocked('search'), keywords: 'search find cari riwayat transcript', run: () => openSearch() });
+  add({ id: 'chat:find', group: 'chat', icon: '🔍', label: 'Cari di chat ini', hint: 'Saring pesan yang tampil', kbd: 'Ctrl F', disabled: needProject ?? ((state.chats[state.active] ?? []).length ? null : 'Belum ada percakapan'), keywords: 'search find cari pesan chat filter saring', run: click('#btn-chat-search') });
+  add({ id: 'chat:bookmarks', group: 'chat', icon: '★', label: 'Pesan tersimpan', hint: 'Yang kamu tandai di project ini', disabled: needProject, keywords: 'bookmark simpan bintang starred saved', run: () => openBookmarks() });
   const noVoice = state.active === DEMO_ID ? 'Input suara tidak tersedia di demo' : !window.isSecureContext ? 'Butuh HTTPS atau localhost' : 'Browser ini tidak mendukung input suara';
   add({ id: 'chat:voice', group: 'chat', icon: '🎤', label: voiceRecording() ? 'Hentikan input suara' : 'Input suara', hint: 'Ketik dengan suara di kotak pesan', kbd: 'Alt M', disabled: state.active === DEMO_ID ? noVoice : (needProject ?? ro ?? (voiceAvailable() ? null : noVoice)), keywords: 'voice mic mikrofon suara dikte speech', run: () => toggleVoice() });
 
@@ -189,6 +196,33 @@ function buildItems() {
     ['help', '❓', 'Bantuan & shortcut', '?', null, () => openModal('help-modal'), 'help shortcut panduan keyboard'],
   ];
   for (const [id, icon, label, kbd, disabled, run, keywords] of dialogs) add({ id: `dialog:${id}`, group: 'dialog', icon, label, kbd, disabled, run, keywords });
+
+  // One search box for the settings panels too: type "backup", "budget", "jadwal", "mesin", …
+  const settingsTabs = [
+    ['umum', '📁', 'Umum', 'folder project budget tema tampilan'],
+    ['tim', '👥', 'Tim & izin', 'mesin project role aturan izin'],
+    ['jadwal', '⏰', 'Jadwal', 'tugas terjadwal rutin jadwal'],
+    ['notifikasi', '🔔', 'Notifikasi', 'suara notifikasi jam tenang push'],
+    ['spotify', '♪', 'Spotify', 'musik player'],
+    ['cadangan', '💾', 'Cadangan', 'backup export import riwayat'],
+    ['sistem', '⚙', 'Sistem', 'update kesehatan sistem config opencode'],
+  ];
+  for (const [tab, icon, label, keywords] of settingsTabs) {
+    if ($(`#settings-tab-${tab}`)?.hidden) continue;
+    add({
+      id: `settings:${tab}`,
+      group: 'settings',
+      icon,
+      label: `Pengaturan: ${label}`,
+      hint: 'Buka bagian ini',
+      disabled: laptopOnly,
+      keywords,
+      run: () => {
+        $('#btn-settings').click();
+        selectSettingsTab(tab);
+      },
+    });
+  }
   for (const item of musicPaletteItems()) add(item); // ♪ Spotify: putar/jeda, berikutnya, buka pemutar
 
   // The composer's own selects: their options are the source of truth (the model list grows with the catalog).
@@ -241,6 +275,26 @@ function buildItems() {
   }
 
   for (const f of palette.filesFor === state.active ? palette.files : []) add(fileItem(f));
+
+  // 🔎 Transcript hits (queueTranscripts): picking one continues that session, like "Lanjutkan" in the search dialog.
+  {
+    const { q: tq, filters } = transcriptQuery(parseQuery($('#palette-input').value).q);
+    if (palette.transcriptsFor === state.active && palette.transcriptsQuery === tq && sameFilters(palette.transcriptFilters, filters)) {
+      for (const [i, r] of palette.transcripts.entries()) {
+        const snip = r.snippet ?? {};
+        const snippet = `${snip.before ?? ''}${snip.match ?? ''}${snip.after ?? ''}`.replace(/\s+/g, ' ').trim();
+        add({
+          id: `transcript:${r.projectId}:${r.sessionId}:${i}`,
+          group: 'transcript',
+          icon: r.engine === 'opencode' ? '▢' : '✳',
+          label: String(r.title ?? `Sesi ${String(r.sessionId).slice(0, 8)}`),
+          hint: `${projectName(r.projectId)}${snippet ? ` · ${snippet.slice(0, 110)}` : ''}`,
+          keywords: snippet,
+          run: () => resumeSearchResult(r),
+        });
+      }
+    }
+  }
   return items;
 }
 
@@ -252,7 +306,8 @@ function parseQuery(raw) {
 }
 
 function filterItems() {
-  const { prefix, q } = parseQuery($('#palette-input').value);
+  const { prefix, q: raw } = parseQuery($('#palette-input').value);
+  const q = prefix === '?' ? transcriptQuery(raw).q : raw;
   const allowed = prefix ? new Set(PREFIXES[prefix].groups) : null;
   const all = buildItems().filter((it) => !allowed || allowed.has(it.group));
   if (!q) {
@@ -289,11 +344,18 @@ function render() {
   palette.shown = filterItems();
   palette.cursor = Math.min(palette.cursor, Math.max(0, palette.shown.length - 1));
   const { prefix, q } = parseQuery(input.value);
-  $('#palette-scope').textContent = prefix ? PREFIXES[prefix].label : '';
+  const transcript = transcriptQuery(q);
+  if (prefix === '?') {
+    const bits = [transcript.filters.engine === 'opencode' ? 'OpenCode' : transcript.filters.engine === 'claude' ? 'Claude' : '', transcript.filters.days ? `${transcript.filters.days} hari` : ''].filter(Boolean);
+    $('#palette-scope').textContent = bits.length ? `Isi percakapan · ${bits.join(' · ')}` : 'Isi percakapan';
+  } else {
+    $('#palette-scope').textContent = prefix ? PREFIXES[prefix].label : '';
+  }
   $('#palette-scope').hidden = !prefix;
   if (!palette.shown.length) {
-    const waiting = palette.loadingFiles && (!prefix || prefix === '@');
-    list.innerHTML = `<div class="pal-empty" role="presentation">${waiting ? 'Mencari file…' : q ? `Tidak ada yang cocok dengan “${escapeHtml(q)}”.` : 'Tidak ada aksi di sini.'}</div>`;
+    const waiting = (palette.loadingFiles && (!prefix || prefix === '@')) || ((!prefix && q.length >= 2) || prefix === '?') && palette.loadingTranscripts;
+    const needText = prefix === '?' && transcript.q.length < 2;
+    list.innerHTML = `<div class="pal-empty" role="presentation">${waiting ? 'Mencari…' : needText ? 'Ketik kata kunci (2+ huruf) — filter: claude/opencode, 7d/30d/90d.' : q ? `Tidak ada yang cocok dengan “${escapeHtml(q)}”.` : 'Tidak ada aksi di sini.'}</div>`;
     input.removeAttribute('aria-activedescendant');
     $('#palette-count').textContent = waiting ? '' : 'Tidak ada hasil';
     return;
@@ -361,6 +423,69 @@ function queueFiles() {
   }, 120);
 }
 
+// ---------- transcripts (POST /api/projects/:id/search, every project) ----------
+
+const TRANSCRIPT_MIN = 2;
+const TRANSCRIPT_LIMIT = 6;
+// Leading tokens narrow the results, e.g. `?opencode 7d checkout` (order-free, repeated tokens are harmless).
+const TRANSCRIPT_FILTER = /^(claude|cc|opencode|oc|7d|30d|90d)\b\s*/i;
+
+/** Splits "?opencode 7d checkout" into its filters and "checkout". */
+export function transcriptQuery(raw) {
+  let q = String(raw ?? '');
+  const filters = { engine: null, days: 0 };
+  for (let m; (m = TRANSCRIPT_FILTER.exec(q)); ) {
+    const token = m[1].toLowerCase();
+    if (token === 'claude' || token === 'cc') filters.engine = 'claude';
+    else if (token === 'opencode' || token === 'oc') filters.engine = 'opencode';
+    else filters.days = Number(token.slice(0, -1));
+    q = q.slice(m[0].length);
+  }
+  return { q: q.trim(), filters };
+}
+
+const sameFilters = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+function queueTranscripts() {
+  clearTimeout(palette.transcriptTimer);
+  const { prefix, q: raw } = parseQuery($('#palette-input').value);
+  const { q, filters } = transcriptQuery(raw);
+  // Plain queries and the `?` scope; `>` `@` `#` are narrower searches. The engine must support transcripts.
+  if ((prefix && prefix !== '?') || q.length < TRANSCRIPT_MIN || isDemo() || capBlocked('search')) {
+    palette.transcripts = [];
+    palette.transcriptsFor = null;
+    palette.transcriptsQuery = '';
+    palette.transcriptFilters = null;
+    palette.loadingTranscripts = false;
+    return;
+  }
+  palette.loadingTranscripts = true;
+  const seq = ++palette.transcriptSeq;
+  const project = state.active;
+  palette.transcriptTimer = setTimeout(async () => {
+    try {
+      const data = await api(`/api/projects/${project}/search`, { q, all: true, limit: TRANSCRIPT_LIMIT });
+      if (seq !== palette.transcriptSeq || !isOpen()) return;
+      palette.transcripts = (Array.isArray(data.results) ? data.results : [])
+        .filter((r) => r && typeof r.sessionId === 'string' && typeof r.projectId === 'string')
+        .filter((r) => !filters.engine || (r.engine === 'opencode' ? 'opencode' : 'claude') === filters.engine)
+        .filter((r) => !filters.days || Number(r.ts) >= Date.now() - filters.days * 86_400_000)
+        .slice(0, TRANSCRIPT_LIMIT);
+      palette.transcriptsFor = project;
+      palette.transcriptsQuery = q;
+      palette.transcriptFilters = filters;
+    } catch {
+      if (seq !== palette.transcriptSeq) return;
+      palette.transcripts = [];
+      palette.transcriptsFor = project;
+      palette.transcriptsQuery = q;
+      palette.transcriptFilters = filters;
+    }
+    palette.loadingTranscripts = false;
+    render();
+  }, 200);
+}
+
 // ---------- open / run ----------
 
 export function openPalette(prefill = '') {
@@ -369,8 +494,13 @@ export function openPalette(prefill = '') {
   palette.cursor = 0;
   palette.files = [];
   palette.filesFor = null;
+  palette.transcripts = [];
+  palette.transcriptsFor = null;
+  palette.transcriptsQuery = '';
+  palette.transcriptFilters = null;
   render();
   queueFiles();
+  queueTranscripts();
   openModal('palette-modal');
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
@@ -378,7 +508,9 @@ export function openPalette(prefill = '') {
 
 export function closePalette() {
   clearTimeout(palette.fileTimer);
+  clearTimeout(palette.transcriptTimer);
   palette.fileSeq++;
+  palette.transcriptSeq++;
   closeModal('palette-modal');
 }
 
@@ -389,7 +521,7 @@ function runAt(i) {
   if (it.disabled) return toast(it.disabled, 'warn');
   closePalette();
   // Actions that open a dialog or switch project start from a clean slate (no dialog left underneath).
-  if (['dialog', 'project', 'file', 'chat'].includes(it.group) || it.id.startsWith('command:')) {
+  if (['dialog', 'project', 'file', 'chat', 'transcript'].includes(it.group) || it.id.startsWith('command:')) {
     for (const m of document.querySelectorAll('.modal')) if (!m.hidden) m.hidden = true;
   }
   remember(it.id);
@@ -406,6 +538,7 @@ export function initPalette() {
   input.addEventListener('input', () => {
     palette.cursor = 0;
     queueFiles();
+    queueTranscripts();
     render();
   });
   input.addEventListener('keydown', (e) => {

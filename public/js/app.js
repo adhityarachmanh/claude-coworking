@@ -12,6 +12,7 @@ import { initViewMode } from './features/view-mode.js';
 import { initAppUpdate } from './features/app-update.js';
 import { initHandoff } from './features/handoff.js';
 import { initHealth } from './features/health.js';
+import { initInstall } from './features/install.js';
 import { initRoleMap } from './features/role-map.js';
 import { connect } from './core/stream.js';
 import { initAccount } from './features/account.js';
@@ -67,7 +68,7 @@ import { initTeam, renderTeam } from './features/team.js';
 import { initTemplates } from './features/templates.js';
 import { initTheme } from './features/theme.js';
 import { initVoice } from './features/voice.js';
-import { initKeyboardInset, initMobileNav, initPanelResizer, initTabs } from './ui/layout.js';
+import { initKeyboardInset, initMobileNav, initPanelResizer, initSwipeViews, initTabs } from './ui/layout.js';
 import { initModals } from './ui/modals.js';
 import { initShortcuts } from './ui/shortcuts.js';
 
@@ -77,6 +78,7 @@ initModals();
 initPicker();
 initShortcuts();
 initMobileNav();
+initSwipeViews(); // 👆 swipe between Kantor/Chat/Perubahan/Aktivitas on a phone
 initComposerInput();
 initLiveOutput(); // before initChat / the first render: rows register with its observer as they are drawn
 initChat();
@@ -88,6 +90,7 @@ initFocus(); // 🎯 Mode fokus: the office is hidden and its animation paused (
 initAppUpdate(); // ⬆ newer Adhit Office: banner + ⚙
 initHandoff(); // 🔁 /lanjut: context from the other engine
 initHealth(); // 🩺 Kesehatan sistem (⚙ → Sistem; laptop/Tailscale only)
+initInstall(); // 📲 pasang sebagai aplikasi (PWA), hint in ❓ Panduan
 initRoleMap(); // 🧭 learned role mappings (👥 Kelola tim → 🧭)
 initRoster(); // 👥 Kelola tim (⚙, ⋯, Ctrl+P, /team)
 initStatusline();

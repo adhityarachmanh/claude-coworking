@@ -3,29 +3,36 @@
 // holds, so it works on a phone over plain WiFi too. Cards are updated in place (no full re-render per event);
 // tapping one switches project like the picker does and jumps to its pending permission card.
 // Rules (summary, order, counts): core/dashboard-rules.js.
+import { api, toast } from '../core/api.js';
 import { engineLabel, engineOf } from '../core/engine-caps.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
-import { DEMO_ID, state } from '../core/state.js';
-import { announcement, countGroups, countsText, matchesQuery, relTime, sortSummaries, summarize } from '../core/dashboard-rules.js';
+import { fmtTokens } from '../core/format.js';
+import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
+import { announcement, countGroups, countsText, GROUP, matchesQuery, relTime, sortSummaries, summarize } from '../core/dashboard-rules.js';
 import { roleName } from '../office/cast.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { setMobileView } from '../ui/layout.js';
 import { loadAttention, renderAttention } from './attention.js';
+import { revealChatMessage } from './chat.js';
 import { selectProject } from './picker.js';
+import { openQueue } from './queue.js';
 import { stuck } from './stuck.js';
 
 const TICK_MS = 30_000; // "2 mnt lalu" and stuck verdicts (no event of their own) while the dialog is open
 const ANNOUNCE_GAP_MS = 3000; // aria-live: at most one announcement per gap, several changes merged
+const TODAY_GAP_MS = 60_000; // "Hari ini" is a ledger read: one request per minute at most
 
 export const dashboard = {
   cards: new Map(), // project id -> { node, parts: { main, body, actions, cls }, summary }
   query: '',
   frame: 0,
+  filter: null, // GROUP value or null (all)
   timer: null,
   barText: '',
   pendingNotes: [],
   lastAnnounce: 0,
   announceTimer: null,
+  today: { at: 0, data: null, loading: false },
 };
 
 const isOpen = () => !$('#dash-modal').hidden;
@@ -83,7 +90,13 @@ function cardParts(s, now) {
   const snippet = s.snippet ? `<p class="dash-snip"><span class="dash-who">${s.snippet.who === 'user' ? 'Kamu' : escapeHtml(snippetEngine)}:</span> ${escapeHtml(s.snippet.text)}</p>` : '<p class="dash-snip muted">Belum ada percakapan.</p>';
   const body = `${meta.length ? `<p class="dash-meta">${meta.join('')}</p>` : ''}${line}${snippet}`;
 
-  const actions = s.approvalChatId ? `<button type="button" class="dash-act" data-dash-approval="${escapeHtml(s.approvalChatId)}">✋ Lihat izin</button>` : '';
+  const acts = [];
+  if (s.approvalChatId) acts.push(`<button type="button" class="dash-act" data-dash-approval="${escapeHtml(s.approvalChatId)}">✋ Lihat izin</button>`);
+  if (!s.demo && s.queue.open) acts.push(`<button type="button" class="dash-act" data-dash-queue="${escapeHtml(s.id)}">📋 Antrian ${s.queue.open}${s.queue.paused ? ' ⏸' : ''}</button>`);
+  if (!s.demo && s.busy) {
+    acts.push(`<button type="button" class="dash-act dash-stop" data-dash-stop="${escapeHtml(s.id)}" ${state.readOnly ? `disabled title="${READ_ONLY_HINT}"` : ''}>■ Hentikan</button>`);
+  }
+  const actions = acts.join('');
   const cls = `dash-card g-${s.group} k-${s.pill.kind}${s.id === state.active ? ' is-active' : ''}`;
   return { main, body, actions, cls };
 }
@@ -108,6 +121,27 @@ function renderBar(list) {
   bar.classList.toggle('needs', c.needs > 0);
 }
 
+/** The status chips above the list: counts always reflect every project, the filter narrows the cards. */
+function renderFilters(all) {
+  const box = $('#dash-filters');
+  if (!box) return;
+  const c = countGroups(all);
+  const chips = [
+    ['all', 'Semua', all.length, null],
+    ['needs', 'Butuh kamu', c.needs, GROUP.NEEDS],
+    ['working', 'Bekerja', c.working, GROUP.WORKING],
+    ['queue', 'Antrian', c.queue, GROUP.QUEUE],
+    ['idle', 'Idle', c.idle, GROUP.IDLE],
+  ];
+  box.hidden = !all.length;
+  box.innerHTML = chips
+    .map(([key, label, n, group]) => {
+      const on = dashboard.filter === group;
+      return `<button type="button" class="dash-chip ${on ? 'on' : ''}" data-dash-filter="${key}" aria-pressed="${on}">${label} <span>${n}</span></button>`;
+    })
+    .join('');
+}
+
 function announce(notes) {
   if (!notes.length) return;
   dashboard.pendingNotes.push(...notes);
@@ -126,8 +160,10 @@ function announce(notes) {
 
 /** Draws (or updates in place) the cards; only parts that changed touch the DOM. */
 export function renderDashboard() {
-  const list = summaries();
-  renderBar(list);
+  const all = summaries();
+  const list = dashboard.filter == null ? all : all.filter((s) => s.group === dashboard.filter);
+  renderFilters(all);
+  renderBar(all);
   if (!isOpen()) return;
   const ul = $('#dash-list');
   const now = Date.now();
@@ -173,9 +209,11 @@ export function renderDashboard() {
       ? '<span class="spinner" aria-hidden="true"></span> Memuat project…'
       : list.length
         ? `Tidak ada project yang cocok dengan “${escapeHtml(dashboard.query.trim())}”.`
-        : 'Belum ada project. Tambahkan folder lewat pemilih project (<kbd>Ctrl K</kbd>).';
+        : dashboard.filter == null
+          ? 'Belum ada project. Tambahkan folder lewat pemilih project (<kbd>Ctrl K</kbd>).'
+          : 'Tidak ada project di bagian ini.';
   }
-  $('#dash-summary').textContent = loading ? '' : `${list.length} project · ${countsText(countGroups(list))}`;
+  $('#dash-summary').textContent = loading ? '' : `${list.length}${dashboard.filter == null ? '' : ` dari ${all.length}`} project · ${countsText(countGroups(list))}`;
   announce(notes);
 }
 
@@ -200,11 +238,58 @@ function startTick() {
   }, TICK_MS);
 }
 
+/** "Hari ini" from the ledger: cost (and how complete it is), turns, tokens, sessions and projects. */
+async function loadToday() {
+  if (state.readOnly || dashboard.today.loading || Date.now() - dashboard.today.at < TODAY_GAP_MS) return;
+  dashboard.today.loading = true;
+  dashboard.today.at = Date.now();
+  try {
+    const data = await api('/api/summary/today');
+    dashboard.today.data = data?.today && typeof data.today === 'object' ? data.today : null;
+  } catch {
+    dashboard.today.data = null; // read-only phone or an older server: no section
+  } finally {
+    dashboard.today.loading = false;
+    renderToday();
+  }
+}
+
+const money = (n) => `$${Number(n).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function renderToday() {
+  const box = $('#dash-today');
+  if (!box) return;
+  const t = dashboard.today.data;
+  if (!t) {
+    box.hidden = true;
+    return;
+  }
+  if (!t.rows) {
+    box.innerHTML = '<b>Hari ini</b> <span>belum ada aktivitas.</span>';
+    box.hidden = false;
+    return;
+  }
+  const parts = [];
+  if (Number.isFinite(t.costUsd)) {
+    const coverage = Number(t.costCoverage);
+    parts.push(`${money(t.costUsd)} tercatat${coverage > 0 && coverage < 1 ? ` (${Math.round(coverage * 100)}% berbiaya)` : ''}`);
+  } else {
+    parts.push('biaya belum tercatat');
+  }
+  if (t.turns > 0) parts.push(`${t.turns} giliran`);
+  if (t.tokens > 0) parts.push(`${fmtTokens(t.tokens)} token`);
+  if (t.sessions > 0) parts.push(`${t.sessions} sesi`);
+  if (t.projects > 0) parts.push(`${t.projects} project`);
+  box.innerHTML = `<b>Hari ini</b> <span>${escapeHtml(parts.join(' · '))}</span>`;
+  box.hidden = false;
+}
+
 export function openDashboard() {
   closeModal('project-modal');
   openModal('dash-modal');
   renderAttention();
   loadAttention({ force: true });
+  loadToday();
   renderDashboard();
   startTick();
   // Laptop: type to filter right away. Phone: no keyboard popping up; the dialog focuses its first control.
@@ -222,7 +307,7 @@ export function openFromDashboard(id, approvalChatId = null) {
   // After the chat's own scroll-to-bottom (renderChat schedules it for the next frame).
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      const node = document.querySelector(`#chat > [data-id="${CSS.escape(chatId)}"]`);
+      const node = revealChatMessage(chatId);
       if (!node) return;
       node.scrollIntoView({ block: 'center' });
       node.setAttribute('tabindex', '-1');
@@ -245,10 +330,29 @@ export function initDashboard() {
     const first = [...$('#dash-list').children].find((li) => !li.hidden);
     if (first) openFromDashboard(first.dataset.id);
   });
+  $('#dash-filters').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-dash-filter]');
+    if (!chip) return;
+    const key = { all: null, needs: GROUP.NEEDS, working: GROUP.WORKING, queue: GROUP.QUEUE, idle: GROUP.IDLE }[chip.dataset.dashFilter];
+    dashboard.filter = dashboard.filter === key ? null : key; // clicking the active chip clears it
+    renderDashboard();
+  });
   // The whole card is a target (the button carries the name for keyboards and screen readers).
   $('#dash-list').addEventListener('click', (e) => {
     const li = e.target.closest('li[data-id]');
     if (!li) return;
+    const queue = e.target.closest('[data-dash-queue]');
+    if (queue) {
+      closeModal('dash-modal');
+      return openQueue({ project: li.dataset.id });
+    }
+    const stop = e.target.closest('[data-dash-stop]');
+    if (stop) {
+      if (state.readOnly) return toast(READ_ONLY_HINT, 'warn');
+      stop.disabled = true;
+      stop.textContent = '■ Menghentikan…';
+      return api(`/api/projects/${li.dataset.id}/stop`).catch((err) => toast(err.message));
+    }
     const act = e.target.closest('[data-dash-approval]');
     openFromDashboard(li.dataset.id, act ? act.dataset.dashApproval : null);
   });

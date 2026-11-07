@@ -9,6 +9,7 @@ import { answeredByText, approvalMessageId, httpsHint, isIos, parseDeepLink, pus
 import { state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
 import { isNotifyOn, notifySettings, setNotifyOn } from './notify.js';
+import { revealChatMessage } from './chat.js';
 import { selectProject } from './picker.js';
 
 const LOCKSCREEN_KEY = 'office.pushLockscreen'; // "Tombol Izinkan di layar kunci" (per device, default on)
@@ -185,7 +186,7 @@ export function openApproval(project, approvalId) {
   setMobileView('chat');
   if (!approvalId) return true;
   const msgId = approvalMessageId(state.chats[project], approvalId);
-  const node = msgId ? document.querySelector(`#chat [data-id="${CSS.escape(String(msgId))}"]`) : null;
+  const node = msgId ? revealChatMessage(msgId) : null;
   if (!node) {
     toast('Permintaan izin itu sudah tidak ada.', 'ok');
     return true;

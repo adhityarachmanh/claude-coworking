@@ -122,6 +122,23 @@ test('budgetView: one window per limit with its share and state (off / ok / warn
   assert.deepEqual(bad.windows.month, { limit: null, usd: 17, percent: 0, state: 'off' });
 });
 
+test('budgetView: a simple end-of-month forecast from this month’s pace', () => {
+  const ledger = ledgerWith(ROWS);
+  const view = budgetView(hubOf({ monthlyUsd: 100 }), ledger, NOW);
+  assert.deepEqual(view.forecast, { monthUsd: 17, elapsedDays: 5, daysInMonth: 30, dailyUsd: 3.4, projectedUsd: 102 });
+  const empty = budgetView(hubOf({}), ledgerWith([]), NOW);
+  assert.equal(empty.forecast.projectedUsd, 0, 'no spending: no forecast line');
+});
+
+test('budgetView: a 7-day spend trend keeps empty days and today’s coverage', () => {
+  const view = budgetView(hubOf({}), ledgerWith(ROWS), NOW);
+  assert.equal(view.trend.length, 7);
+  assert.deepEqual(view.trend.map((d) => new Date(d.start).getDate()), [30, 31, 1, 2, 3, 4, 5], '30 Okt … 5 Nov');
+  assert.deepEqual(view.trend.map((d) => d.usd), [0, 11, 7, 5, 0, 3, 2]);
+  assert.deepEqual([view.trend.at(-1).rows, view.trend.at(-1).known], [3, 2], 'today: 3 rows, 2 priced');
+  assert.equal(view.trend.some((d) => d.start === at(5, 0)), true, 'today is the last bucket');
+});
+
 test('budgetStop: null while under every limit, one clear message naming the window once over', () => {
   const ledger = ledgerWith(ROWS);
   assert.equal(budgetStop(hubOf({ dailyUsd: 6, weeklyUsd: null, monthlyUsd: null }), ledger, NOW), null, 'today $2 / $6');

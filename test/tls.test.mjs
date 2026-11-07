@@ -289,6 +289,34 @@ test('several names on disk: last-host is preferred at start; a successful fetch
   assert.equal(secured, 1, 'folder permissions restricted before the key is written');
 });
 
+test('not connected at start: it retries on its own until Tailscale comes up', async () => {
+  const issue = certFor(HOST, 30);
+  const calls = [];
+  let up = false;
+  const run = async (args) => {
+    calls.push(args);
+    if (args[0] === 'status') {
+      if (!up) throw Object.assign(new Error('exit 1'), { stderr: 'Tailscale is stopped.' });
+      return JSON.stringify({ BackendState: 'Running', Self: { DNSName: `${HOST}.` }, CertDomains: [HOST] });
+    }
+    const at = (flag) => args[args.indexOf(flag) + 1];
+    writeFileSync(at('--cert-file'), issue.cert);
+    writeFileSync(at('--key-file'), issue.key);
+    return '';
+  };
+  const tls = new TailscaleCert({ dir: freshDir(), run, retryMs: 15, log: quiet, info: quiet, secureDir: noop });
+  await tls.start();
+  const first = Date.now() + 1000;
+  while (Date.now() < first && !tls.checkedAt) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(tls.state, 'no-tailscale', 'the first try failed');
+  up = true;
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline && tls.state !== 'ok') await new Promise((r) => setTimeout(r, 20));
+  assert.equal(tls.state, 'ok', 'a later retry brought the certificate, without a restart');
+  assert.ok(calls.filter((a) => a[0] === 'status').length >= 2, `status dicoba ulang (${calls.length} panggilan)`);
+  tls.stop();
+});
+
 test('splitPem: key and chain from one file, in any order', () => {
   const c = certFor(HOST, 80);
   const other = certFor('intermediate.example', 400);

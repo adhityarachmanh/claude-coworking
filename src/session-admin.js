@@ -2,12 +2,13 @@
 // Claude Code: transcripts in ~/.claude/projects/<project>/<id>.jsonl; delete moves them to data/trash (never rm).
 // OpenCode: its own store through `opencode api` (session.remove / session.fork / session.update, and for ⏪ Rewind
 // session.message.list / session.revert.stage / commit / clear) and `opencode session export`.
-import { existsSync, mkdirSync, renameSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync, statSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { openCodeApi } from './opencode-auth.js';
 import { clearSessionCache } from './opencode-bin.js';
 import { execFileTree } from './proc.js';
-import { transcriptDir } from './transcripts.js';
+import { sessionMeta, transcriptDir } from './transcripts.js';
 
 const CLAUDE_ID = /^[0-9a-f-]{36}$/i;
 const OPENCODE_ID = /^ses_[\w-]{1,100}$/;
@@ -42,6 +43,126 @@ export async function deleteSession({ engine, projectPath, sessionId, dataDir, o
   const sub = path.join(dir, sessionId); // subagent transcripts of that session
   if (existsSync(sub)) renameSync(sub, path.join(trash, `${sessionId}-${stamp}`));
   return { trashed: trash };
+}
+
+/** How long a deleted Claude Code session stays in data/trash before the daily purge removes it. */
+export const TRASH_RETENTION_DAYS = 30;
+
+/** Claude Code sessions in <data>/trash/<project>/, newest first (subagent folders travel with their transcript). */
+export function listTrashedSessions({ projectPath, dataDir, limit = 200 }) {
+  const trash = path.join(dataDir, 'trash', path.basename(transcriptDir(projectPath)));
+  let names;
+  try {
+    names = readdirSync(trash);
+  } catch {
+    return [];
+  }
+  const items = [];
+  for (const name of names) {
+    const m = /^([0-9a-f-]{36})-(\d{13})\.jsonl$/i.exec(name);
+    if (!m) continue; // a subagent folder or a stray file
+    const file = path.join(trash, name);
+    let st;
+    try {
+      st = statSync(file);
+    } catch {
+      continue;
+    }
+    const meta = sessionMeta(file);
+    items.push({ sessionId: m[1], title: meta.title, source: meta.entrypoint === 'sdk-cli' ? 'web' : 'cli', trashedAt: Number(m[2]), size: st.size });
+  }
+  return items.sort((a, b) => b.trashedAt - a.trashedAt).slice(0, limit);
+}
+
+/**
+ * 🗑 Retention: transcripts in data/trash older than `days` (default 30, 0/negative = keep forever) are removed,
+ * with their subagent folder; a project folder left empty goes too. Stray files are never touched.
+ */
+export function purgeTrash({ dataDir, days = TRASH_RETENTION_DAYS, now = Date.now() }) {
+  if (!(days > 0)) return { removed: 0 };
+  const root = path.join(dataDir, 'trash');
+  let projects;
+  try {
+    projects = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return { removed: 0 };
+  }
+  const cutoff = now - days * 86_400_000;
+  let removed = 0;
+  for (const entry of projects) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(root, entry.name);
+    let names;
+    try {
+      names = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const m = /^([0-9a-f-]{36})-(\d{13})\.jsonl$/i.exec(name);
+      if (!m || Number(m[2]) >= cutoff) continue;
+      const file = path.join(dir, name);
+      try {
+        if (!statSync(file).isFile()) continue;
+      } catch {
+        continue;
+      }
+      rmSync(file, { force: true });
+      rmSync(path.join(dir, `${m[1]}-${m[2]}`), { recursive: true, force: true });
+      removed += 1;
+    }
+    try {
+      if (!readdirSync(dir).length) rmdirSync(dir);
+    } catch {
+      // still has entries, or already gone
+    }
+  }
+  return { removed };
+}
+
+/** ↩ Moves a trashed transcript (and its subagent folder) back; refuses when that id exists again. */
+export function restoreTrashedSession({ projectPath, dataDir, sessionId }) {
+  if (!validSessionId('claude', sessionId)) throw new SessionAdminError(400, 'Id sesi tidak valid.');
+  const dir = transcriptDir(projectPath);
+  const trash = path.join(dataDir, 'trash', path.basename(dir));
+  let names;
+  try {
+    names = readdirSync(trash);
+  } catch {
+    names = [];
+  }
+  const match = names
+    .filter((n) => n.startsWith(`${sessionId}-`) && n.endsWith('.jsonl'))
+    .sort()
+    .at(-1); // the newest copy, if the id was deleted twice
+  if (!match) throw new SessionAdminError(404, 'Sesi terhapus tidak ditemukan.');
+  const dest = path.join(dir, `${sessionId}.jsonl`);
+  const subDest = path.join(dir, sessionId);
+  if (existsSync(dest) || existsSync(subDest)) {
+    throw new SessionAdminError(409, 'Sesi dengan id ini sudah ada lagi di riwayat. Hapus dulu sebelum memulihkannya.');
+  }
+  mkdirSync(dir, { recursive: true });
+  renameSync(path.join(trash, match), dest);
+  const stamp = match.slice(sessionId.length + 1, -'.jsonl'.length);
+  const sub = path.join(trash, `${sessionId}-${stamp}`);
+  if (existsSync(sub)) renameSync(sub, subDest);
+  return { sessionId, restored: dest };
+}
+
+/** ✎ Claude Code: renames a past session by appending a `custom-title` entry (the type /rename itself writes). */
+export function renameClaudeSession({ projectPath, sessionId, title }) {
+  if (!validSessionId('claude', sessionId)) throw new SessionAdminError(400, 'Id sesi tidak valid.');
+  const clean = String(title ?? '').trim().replace(/\s+/g, ' ').slice(0, 200);
+  if (!clean) throw new SessionAdminError(400, 'Nama sesi kosong.');
+  const file = path.join(transcriptDir(projectPath), `${sessionId}.jsonl`);
+  if (!existsSync(file)) throw new SessionAdminError(404, 'Sesi tidak ditemukan.');
+  const line = JSON.stringify({ type: 'custom-title', customTitle: clean, sessionId, uuid: randomUUID(), timestamp: new Date().toISOString() });
+  try {
+    appendFileSync(file, `${line}\n`);
+  } catch (err) {
+    throw new SessionAdminError(500, `Nama sesi tidak bisa disimpan: ${err.message}`);
+  }
+  return clean;
 }
 
 /** OpenCode: a copy of the session (session.fork) to continue on its own; returns the new id. */

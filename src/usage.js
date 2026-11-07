@@ -298,6 +298,29 @@ function nextPeriod(start, unit) {
   return d.getTime();
 }
 
+/** Today (local) across every account: recorded cost + coverage, turns, tokens, projects and sessions. */
+export function daySummary(ledger, now = Date.now()) {
+  const from = periodStart(now, 'day');
+  const rows = typeof ledger?.query === 'function' ? ledger.query({ accountId: 'all', from, to: now }) : [];
+  const t = totals(rows);
+  const projects = new Set();
+  const sessions = new Set();
+  for (const r of rows) {
+    if (r.projectId) projects.add(r.projectId);
+    if (r.sessionId) sessions.add(r.sessionId);
+  }
+  return {
+    from,
+    rows: rows.length,
+    costUsd: t.costUsd == null ? null : Math.round(t.costUsd * 100) / 100,
+    costCoverage: t.costCoverage,
+    turns: t.turns,
+    tokens: t.total,
+    projects: projects.size,
+    sessions: sessions.size,
+  };
+}
+
 const MAX_PERIODS = 400;
 
 /**

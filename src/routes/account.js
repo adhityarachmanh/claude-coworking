@@ -11,7 +11,7 @@ import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
 import { GO_PLANS, goAllowance } from '../opencode-go.js';
 import { renderPdf, reportHtml } from '../report.js';
-import { PERIOD_UNITS, summarize, totals } from '../usage.js';
+import { daySummary, PERIOD_UNITS, summarize, totals } from '../usage.js';
 import { json } from './http.js';
 
 const LOGOUT_CONFIRM = 'LOGOUT';
@@ -114,6 +114,7 @@ export function register(router) {
   router.post('/api/opencode/login/cancel', audited('cancel', (body) => body.provider, (bin, body) => openCodeOAuthCancel(bin, body.provider, body.attemptID)));
   router.post('/api/opencode/logout', openCode(openCodeLogoutRoute));
   // ---------- usage report ----------
+  router.post('/api/summary/today', ({ ledger }, req, res) => json(res, 200, { today: daySummary(ledger) }));
   router.post('/api/report/accounts', reportAccounts);
   router.post('/api/report/summary', (ctx, req, res, params, body) => report(ctx, req, res, body, { pdf: false }));
   router.post('/api/report/pdf', (ctx, req, res, params, body) => report(ctx, req, res, body, { pdf: true }));

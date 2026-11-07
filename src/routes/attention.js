@@ -16,6 +16,7 @@ function list({ hub, ledger, taskQueue }, req, res) {
   for (const { approval } of hub.approvals?.values?.() ?? []) {
     if (approval.status !== 'pending') continue;
     items.push({
+      id: `approval:${approval.id}`,
       kind: approval.kind === 'plan' ? 'plan' : approval.kind === 'question' ? 'question' : 'approval',
       project: approval.project,
       projectName: projectName(hub, approval.project),
@@ -26,27 +27,27 @@ function list({ hub, ledger, taskQueue }, req, res) {
   }
 
   const globalStop = budgetStop(hub, ledger, now);
-  if (globalStop) items.push({ kind: 'budget', project: null, projectName: 'Global', label: `Budget ${globalStop.label}`, detail: 'Pengiriman prompt dihentikan', scope: 'global' });
+  if (globalStop) items.push({ id: 'budget:global', kind: 'budget', project: null, projectName: 'Global', label: `Budget ${globalStop.label}`, detail: 'Pengiriman prompt dihentikan', scope: 'global' });
   for (const id of Object.keys(hub.persisted?.projectBudgets ?? {})) {
     if (!hub.projects?.has?.(id)) continue;
     const view = budgetView(hub, ledger, now, id);
     if (!WINDOW_UNITS.some((unit) => view.windows[unit].state === 'over')) continue;
-    items.push({ kind: 'budget', project: id, projectName: projectName(hub, id), label: 'Budget project tercapai', detail: 'Pengiriman prompt project ini dihentikan', scope: 'project' });
+    items.push({ id: `budget:${id}`, kind: 'budget', project: id, projectName: projectName(hub, id), label: 'Budget project tercapai', detail: 'Pengiriman prompt project ini dihentikan', scope: 'project' });
   }
 
   for (const [id, q] of Object.entries(taskQueue?.queues ?? {})) {
     const waiting = q.items?.filter((i) => i.status === 'waiting').length ?? 0;
     if (!q.paused || !waiting) continue;
-    items.push({ kind: 'queue', project: id, projectName: projectName(hub, id), label: `Antrian dijeda · ${waiting} item`, detail: q.reason === 'budget' ? 'Menunggu budget dinaikkan' : q.reason === 'account' ? 'Akun berubah' : q.reason === 'rate_limit' ? 'Batas pemakaian tercapai' : 'Perlu dilanjutkan' });
+    items.push({ id: `queue:${id}`, kind: 'queue', project: id, projectName: projectName(hub, id), label: `Antrian dijeda · ${waiting} item`, detail: q.reason === 'budget' ? 'Menunggu budget dinaikkan' : q.reason === 'account' ? 'Akun berubah' : q.reason === 'rate_limit' ? 'Batas pemakaian tercapai' : 'Perlu dilanjutkan' });
   }
 
   for (const id of Object.keys(hub.persisted?.interrupted ?? {})) {
-    items.push({ kind: 'interrupted', project: id, projectName: projectName(hub, id), label: 'Giliran terputus', detail: 'Server berhenti di tengah giliran — lanjutkan atau abaikan' });
+    items.push({ id: `interrupted:${id}`, kind: 'interrupted', project: id, projectName: projectName(hub, id), label: 'Giliran terputus', detail: 'Server berhenti di tengah giliran — lanjutkan atau abaikan' });
   }
 
   for (const routine of hub.persisted?.routines ?? []) {
     if (routine.lastStatus !== 'failed' && !routine.error) continue;
-    items.push({ kind: 'routine', project: routine.projectId, projectName: projectName(hub, routine.projectId), label: 'Jadwal gagal', detail: routine.lastError || routine.error || routine.prompt?.slice(0, 80) || '' });
+    items.push({ id: `routine:${routine.id}`, kind: 'routine', project: routine.projectId, projectName: projectName(hub, routine.projectId), label: 'Jadwal gagal', detail: routine.lastError || routine.error || routine.prompt?.slice(0, 80) || '' });
   }
 
   const order = { approval: 0, plan: 0, question: 0, budget: 1, queue: 2, interrupted: 3, routine: 4 };

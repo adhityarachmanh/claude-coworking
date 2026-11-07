@@ -176,6 +176,125 @@ function unnamedButtons(rootSel) {
     .map((el) => el.outerHTML.slice(0, 160));
 }
 
+/**
+ * ♿ Audit of what is visible right now: unnamed controls, unlabeled fields, images without `alt`, duplicate ids,
+ * ARIA references to missing ids and targets smaller than 24×24 px. Returns one line per problem (empty = clean).
+ */
+function a11yAudit() {
+  const problems = [];
+  const visible = (el) => el.getClientRects().length > 0 && !el.closest('[hidden]') && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none';
+  const text = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  const refText = (el, attr) => (el.getAttribute(attr) ?? '').split(/\s+/).filter(Boolean).map((id) => document.getElementById(id)?.textContent ?? '').join(' ');
+  const label = (el) => el.getAttribute('aria-label') || refText(el, 'aria-labelledby') || el.getAttribute('title') || '';
+  const describe = (el) => `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${el.className && typeof el.className === 'string' ? `.${String(el.className).trim().split(/\s+/)[0]}` : ''} "${text(el).slice(0, 40)}"`;
+
+  for (const el of document.querySelectorAll('button, a[href], [role="button"], [role="tab"], [role="option"], [role="checkbox"]')) {
+    if (!visible(el)) continue;
+    if (!(label(el) || text(el)).trim()) problems.push(`kontrol tanpa nama: ${describe(el)}`);
+  }
+
+  for (const el of document.querySelectorAll('input:not([type="hidden"]), select, textarea')) {
+    if (!visible(el)) continue;
+    const byFor = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
+    const named = label(el) || (byFor && text(byFor)) || (el.closest('label') && text(el.closest('label')));
+    if (!(named ?? '').trim()) problems.push(`field tanpa label: ${describe(el)}`);
+  }
+
+  for (const img of document.querySelectorAll('img')) {
+    if (visible(img) && !img.hasAttribute('alt')) problems.push(`img tanpa alt: ${img.getAttribute('src')}`);
+  }
+
+  const ids = new Map();
+  for (const el of document.querySelectorAll('[id]')) {
+    if (!visible(el)) continue;
+    if (ids.has(el.id)) problems.push(`id ganda: #${el.id}`);
+    ids.set(el.id, el);
+  }
+
+  for (const el of document.querySelectorAll('[aria-controls], [aria-labelledby], [aria-describedby], [aria-owns]')) {
+    if (!visible(el)) continue;
+    for (const attr of ['aria-controls', 'aria-labelledby', 'aria-describedby', 'aria-owns']) {
+      for (const id of (el.getAttribute(attr) ?? '').split(/\s+/).filter(Boolean)) {
+        if (!document.getElementById(id)) problems.push(`${attr} → #${id} tidak ada: ${describe(el)}`);
+      }
+    }
+  }
+
+  // WCAG 2.2 target size (minimum): 24×24 CSS px. A checkbox/radio inside its label is hit through the label;
+  // an inline text link/button is exempt (the "inline" exception), and its padding would break the line flow.
+  for (const el of document.querySelectorAll('button, input:not([type="hidden"]), select, textarea, [role="button"]')) {
+    if (!visible(el) || (el.tagName === 'INPUT' && el.closest('label'))) continue;
+    if (el.matches('.file-link') || getComputedStyle(el).display === 'inline') continue; // inline text link: WCAG exception
+    const r = el.getBoundingClientRect();
+    if (r.width < 24 || r.height < 24) problems.push(`target < 24px: ${describe(el)} ${Math.round(r.width)}×${Math.round(r.height)}`);
+  }
+  return problems;
+}
+
+/**
+ * ⚖ WCAG contrast of the visible text: each element with its own text node, its computed color and the effective
+ * background from its ancestors (images/gradients/zero-opacity are skipped: not measurable). 4.5:1, or 3:1 for
+ * large text (≥24 px, or ≥18.66 px bold). Returns "…ratio:1" lines for everything below the bar.
+ */
+function contrastProblems() {
+  const parse = (c) => {
+    const m = /^rgba?\(([^)]+)\)$/.exec(String(c).trim());
+    if (!m) return null;
+    const p = m[1].split(/[,/]\s*/).map((x) => Number(x.trim()));
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 && Number.isFinite(p[3]) ? p[3] : 1 };
+  };
+  const channel = (v) => {
+    const x = v / 255;
+    return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+  };
+  const lum = (c) => 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
+  const over = (fg, bg) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a), a: 1 });
+  const rootBg = parse(getComputedStyle(document.documentElement).backgroundColor) ?? { r: 255, g: 255, b: 255, a: 1 };
+  const base = rootBg.a > 0 ? over(rootBg, { r: 255, g: 255, b: 255, a: 1 }) : { r: 255, g: 255, b: 255, a: 1 };
+  const backgroundOf = (el) => {
+    const chain = [];
+    for (let n = el; n; n = n.parentElement) {
+      const style = getComputedStyle(n);
+      if (style.backgroundImage && style.backgroundImage !== 'none') return null;
+      const c = parse(style.backgroundColor);
+      if (c && c.a > 0) chain.push(c);
+      if (c && c.a >= 1) break;
+    }
+    let bg = base;
+    for (let i = chain.length - 1; i >= 0; i -= 1) bg = over(chain[i], bg);
+    return bg;
+  };
+  const visible = (el) => {
+    if (!el.getClientRects().length || el.closest('[hidden]') || el.closest('[aria-hidden="true"]')) return false;
+    for (let n = el; n; n = n.parentElement) {
+      const s = getComputedStyle(n);
+      if (s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) < 0.05) return false;
+    }
+    return true;
+  };
+  const label = (el) => `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/)[0]}` : ''} "${(el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 32)}"`;
+  const problems = [];
+  for (const el of document.querySelectorAll('body *')) {
+    if (![...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim())) continue;
+    if (!visible(el)) continue;
+    const style = getComputedStyle(el);
+    const size = parseFloat(style.fontSize) || 0;
+    if (size < 1) continue; // text hidden with font-size: 0 (the #conn dot, icon-only pills)
+    const fg = parse(style.color);
+    const bg = backgroundOf(el);
+    if (!fg || !bg) continue;
+    const fgOver = over(fg, bg);
+    const l1 = lum(fgOver);
+    const l2 = lum(bg);
+    const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    const weight = Number(style.fontWeight) || 400;
+    const large = size >= 24 || (size >= 18.66 && weight >= 700);
+    const need = large ? 3 : 4.5;
+    if (ratio + 0.01 < need) problems.push(`${label(el)} ${ratio.toFixed(2)}:1 (butuh ${need})`);
+  }
+  return problems;
+}
+
 function modalState(id) {
   const modal = document.getElementById(id);
   const active = document.activeElement;
@@ -600,6 +719,8 @@ const BUDGET_ANSWER = () => ({
     week: { limit: 50, usd: 45, percent: 0.02, state: 'ok' },
     month: { limit: 0, usd: 3, percent: 0, state: 'ok' },
   },
+  forecast: { monthUsd: 3, elapsedDays: 5, daysInMonth: 30, dailyUsd: 0.6, projectedUsd: 18 },
+  trend: [0, 1.5, 0, 2.25, 0.5, 0, 3].map((usd, i) => ({ start: Date.now() - (6 - i) * 86_400_000, usd, rows: usd ? 1 : 0, known: usd ? 1 : 0 })),
   note: 'Dihitung dari biaya yang tercatat di ledger (9 dari 9 catatan punya biaya); OpenCode Go umumnya tercatat $0.',
 });
 
@@ -1055,6 +1176,52 @@ for (const vp of VIEWPORTS) {
         if (!r.pills.length) t.diagnostic('tidak ada .pill lain di DOM saat ini (hanya #conn)');
         assert.deepEqual(r.pills.filter((p) => p.fontSize === '0px'), []);
       });
+
+      test('👆 geser kiri/kanan antar view: tidak saat vertikal atau mulai di kotak pesan', async () => {
+        await ensureApp(page, `#${projectId}`);
+        const lane = () => page.eval(() => ({
+          view: document.body.dataset.view,
+          tab: document.body.dataset.tab,
+          nav: document.querySelector('#mobile-nav button.active')?.dataset.view ?? null,
+        }));
+        const swipe = async (from, to, steps = 6) => {
+          await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from.x, y: from.y }] });
+          for (let i = 1; i <= steps; i += 1) {
+            await page.send('Input.dispatchTouchEvent', {
+              type: 'touchMove',
+              touchPoints: [{ x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps }],
+            });
+          }
+          await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+          await sleep(150);
+        };
+        await page.click('#mobile-nav [data-view="chat"]');
+        await swipe({ x: 320, y: 300 }, { x: 80, y: 300 });
+        assert.deepEqual(await lane(), { view: 'panel', tab: 'changes', nav: 'changes' }, 'geser kiri → Perubahan');
+        await swipe({ x: 320, y: 300 }, { x: 80, y: 300 });
+        assert.equal((await lane()).tab, 'activity', 'geser kiri lagi → Aktivitas');
+        await swipe({ x: 320, y: 300 }, { x: 80, y: 300 });
+        assert.equal((await lane()).tab, 'activity', 'di ujung kanan tidak berpindah');
+        await swipe({ x: 80, y: 300 }, { x: 320, y: 300 });
+        assert.equal((await lane()).tab, 'changes', 'geser kanan → kembali');
+        await swipe({ x: 80, y: 300 }, { x: 320, y: 300 });
+        assert.equal((await lane()).tab, 'chat', 'geser kanan lagi → Chat');
+        await swipe({ x: 80, y: 300 }, { x: 320, y: 300 });
+        assert.deepEqual(await lane(), { view: 'office', tab: 'chat', nav: 'office' }, 'geser kanan sampai Kantor');
+
+        // Vertical movement is scrolling, not navigation.
+        await page.click('#mobile-nav [data-view="chat"]');
+        await swipe({ x: 200, y: 300 }, { x: 210, y: 460 });
+        assert.equal((await lane()).tab, 'chat', 'geser vertikal tidak berpindah');
+
+        // A gesture that starts in the composer belongs to the text field.
+        const box = await page.eval(() => {
+          const r = document.querySelector('#prompt').getBoundingClientRect();
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        });
+        await swipe({ x: box.x + 60, y: box.y }, { x: box.x - 60, y: box.y });
+        assert.equal((await lane()).tab, 'chat', 'mulai di kotak pesan tidak berpindah');
+      });
     }
 
     test('index.html (project): termuat tanpa error, tanpa scroll horizontal, tombol bernama', async () => {
@@ -1063,6 +1230,72 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
       assert.equal(await page.eval(horizontalOverflow), null);
       assert.deepEqual(await page.eval(unnamedButtons), []);
+    });
+
+    test('♿ audit aksesibilitas: kontrol bernama, field berlabel, alt, id unik, referensi ARIA, target ≥24px', async () => {
+      await ensureApp(page, `#${projectId}`);
+      const audit = async (where) => {
+        const problems = await page.eval(a11yAudit);
+        assert.deepEqual(problems, [], `audit ${where}`);
+      };
+      // Representative rows (a tool row too), so the message actions are audited even on a fresh chat.
+      await page.eval(async (pid) => {
+        const { appendChat } = await import('/js/features/chat.js');
+        const now = Date.now();
+        appendChat({ id: 'a11y-user', project: pid, kind: 'user', text: 'halo', source: 'web', ts: now }, false);
+        appendChat({ id: 'a11y-tool', project: pid, kind: 'tool', text: 'Bash', status: 'done', input: { command: 'npm test', file: 'src/checkout.ts', line: 2 }, output: 'ok', ts: now }, false);
+        appendChat({ id: 'a11y-assistant', project: pid, kind: 'assistant', text: 'balasan', ts: now }, false);
+      }, projectId);
+      try {
+        await audit('halaman project');
+
+      // The other main tabs.
+      const tab = async (name) => {
+        if (vp.mobile) await page.click(`#mobile-nav [data-view="${name}"]`);
+        else await page.click(`.tabs button[data-tab="${name}"]`);
+        await sleep(300);
+      };
+      await tab('changes');
+      await audit('perubahan');
+      await tab('activity');
+      await audit('aktivitas');
+      await tab('chat');
+
+      // 📋 Antrian.
+      await page.eval(async () => (await import('/js/features/queue.js')).openQueue());
+      await page.waitFor(() => !document.querySelector('#queue-modal').hidden, { timeoutMs: 4000, message: 'antrian terbuka' });
+      await sleep(300);
+      await audit('antrian');
+      await page.press('Escape');
+      await sleep(100);
+
+      // ⚙ Pengaturan: the biggest dialog.
+      await page.eval(async () => (await import('/js/ui/modals.js')).openModal('settings-modal'));
+      await page.waitFor(() => !document.querySelector('#settings-modal').hidden, { timeoutMs: 4000, message: 'pengaturan terbuka' });
+      await sleep(300);
+      await audit('pengaturan');
+      await page.press('Escape');
+      await sleep(100);
+
+      // 🗂 Semua project, including ⚠ Perlu perhatian.
+      await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
+      await page.waitFor(() => !document.querySelector('#dash-modal').hidden, { timeoutMs: 4000, message: 'dashboard terbuka' });
+      await sleep(300);
+      await audit('semua project');
+      await page.press('Escape');
+      await sleep(100);
+
+      // Ctrl+P palette.
+      await page.eval(async () => (await import('/js/features/palette.js')).openPalette());
+      await page.waitFor(() => !document.querySelector('#palette-modal').hidden, { timeoutMs: 4000, message: 'palet terbuka' });
+      await sleep(200);
+      await audit('palet perintah');
+      await page.press('Escape');
+      await sleep(100);
+      } finally {
+        // The synthetic rows are not in state.chats: drawing the chat again removes them.
+        await page.eval(async () => (await import('/js/features/chat.js')).renderChat());
+      }
     });
 
     test('💲 harga model: label harga list OpenCode Go (± jam sibuk), gratis, optgroup & saring tetap', async () => {
@@ -2132,6 +2365,92 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('📜 Chat panjang: 80 pesan terakhir dulu, "Muat pesan lama" menjaga posisi, pencarian menjangkau semua', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(async (pid) => {
+        const { state } = await import('/js/core/state.js');
+        window.__longSaved = state.chats[pid];
+        state.chats[pid] = Array.from({ length: 200 }, (_, i) => ({
+          id: `panjang-${i}`,
+          project: pid,
+          kind: 'assistant',
+          text: `pesan ${i}`,
+          ts: Date.now() - (200 - i) * 60_000,
+        }));
+        (await import('/js/features/chat.js')).renderChat();
+      }, projectId);
+      try {
+        const first = await page.eval(() => ({
+          count: document.querySelectorAll('#chat > [data-id]').length,
+          first: document.querySelector('#chat > [data-id]')?.dataset.id ?? null,
+          last: [...document.querySelectorAll('#chat > [data-id]')].at(-1)?.dataset.id ?? null,
+          btn: document.querySelector('#chat-load-older')?.textContent ?? '',
+        }));
+        assert.equal(first.count, 80, 'hanya 80 pesan terakhir yang dirender');
+        assert.equal(first.first, 'panjang-120');
+        assert.equal(first.last, 'panjang-199');
+        assert.match(first.btn, /Muat 120 pesan lama/);
+
+        // The row being read keeps its place when 80 older messages are prepended.
+        await page.eval(() => (document.querySelector('#chat').scrollTop = 0));
+        const anchor = await page.eval(() => document.querySelector('#chat > [data-id="panjang-120"]').getBoundingClientRect().top);
+        await page.eval(() => document.querySelector('#chat-load-older').click());
+        await sleep(60); // the page settles its anchors in the next couple of frames
+        const after = await page.eval(() => ({
+          count: document.querySelectorAll('#chat > [data-id]').length,
+          first: document.querySelector('#chat > [data-id]')?.dataset.id ?? null,
+          btn: document.querySelector('#chat-load-older')?.textContent ?? '',
+          top: document.querySelector('#chat > [data-id="panjang-120"]').getBoundingClientRect().top,
+          jumpHidden: document.querySelector('#jump-latest').hidden,
+        }));
+        assert.equal(after.count, 160);
+        assert.equal(after.first, 'panjang-40');
+        assert.match(after.btn, /Muat 40 pesan lama/);
+        assert.ok(Math.abs(after.top - anchor) <= 4, `baris yang dibaca tidak melompat (${anchor} → ${after.top})`);
+        assert.equal(after.jumpHidden, false, 'tombol ↓ Terbaru tampil setelah membaca pesan lama');
+
+        await page.eval(() => document.querySelector('#chat-load-older').click());
+        assert.equal(await page.eval(() => document.querySelectorAll('#chat > [data-id]').length), 200, 'semua pesan termuat');
+        assert.equal(await page.eval(() => document.querySelectorAll('#chat-load-older').length), 0, 'tombol hilang saat semua termuat');
+
+        // Search spans the whole conversation, not only the rendered window.
+        await page.eval(async () => (await import('/js/features/chat.js')).renderChat());
+        assert.equal(await page.eval(() => document.querySelectorAll('#chat > [data-id]').length), 80, 'render ulang kembali ke jendela terbaru');
+        await page.eval(() => document.querySelector('#btn-chat-search').click());
+        await page.eval(() => {
+          const input = document.querySelector('#chat-search-input');
+          input.value = 'pesan 0';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        assert.deepEqual(
+          await page.eval(() => ({
+            rows: document.querySelectorAll('#chat > [data-id]').length,
+            count: document.querySelector('#chat-search-count').textContent,
+            active: document.querySelector('#chat > [data-id].search-active')?.dataset.id ?? null,
+          })),
+          { rows: 200, count: '1/1', active: 'panjang-0' },
+          'pesan lama di luar jendela ikut dicari',
+        );
+        await page.eval(() => document.querySelector('#chat-search-close').click());
+
+        // A message opened from elsewhere (attention/queue/push) is revealed even when older than the window.
+        await page.eval(async () => {
+          const chat = await import('/js/features/chat.js');
+          chat.renderChat();
+          window.__revealed = chat.revealChatMessage('panjang-3')?.dataset.id ?? null;
+        });
+        assert.equal(await page.eval(() => window.__revealed), 'panjang-3', 'revealChatMessage mengembalikan barisnya');
+        assert.equal(await page.eval(() => document.querySelectorAll('#chat > [data-id="panjang-3"]').length), 1);
+      } finally {
+        await page.eval(async (pid) => {
+          if (!document.querySelector('#chat-search').hidden) document.querySelector('#chat-search-close').click();
+          const { state } = await import('/js/core/state.js');
+          state.chats[pid] = window.__longSaved;
+          (await import('/js/features/chat.js')).renderChat();
+        }, projectId);
+      }
+    });
+
     test('🔎 Cari pengaturan: panel yang cocok tampil, yang lain disembunyikan', async () => {
       await ensureApp(page, `#${projectId}`);
       await tap(page, '#btn-settings');
@@ -2184,6 +2503,344 @@ for (const vp of VIEWPORTS) {
         await page.eval(async () => {
           window.fetch = window.__attentionFetch;
           await (await import('/js/features/attention.js')).loadAttention({ force: true });
+        });
+      }
+    });
+
+    test('⏰ Perlu perhatian: tunda 1 jam, badge ikut, bertahan saat muat ulang, bisa ditampilkan lagi', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval((pid) => {
+        localStorage.removeItem('office.attention.snooze');
+        window.__attCalls = 0;
+        window.__attentionFetch2 ??= window.fetch;
+        window.fetch = (url, opts) => {
+          if (!String(url).includes('/api/attention')) return window.__attentionFetch2(url, opts);
+          window.__attCalls += 1;
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                count: 2,
+                items: [
+                  { id: 'budget:global', kind: 'budget', project: null, projectName: 'Global', label: 'Budget harian tercapai', detail: 'Prompt dihentikan' },
+                  { id: 'routine:r1', kind: 'routine', project: pid, projectName: 'toko', label: 'Jadwal gagal', detail: 'Cek CI' },
+                ],
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            ),
+          );
+        };
+      }, projectId);
+      const view = () =>
+        page.eval(() => ({
+          rows: [...document.querySelectorAll('#dash-attention-list li')].map((li) => li.textContent.replace(/\s+/g, ' ').trim()),
+          badge: document.querySelector('#attention-count').textContent,
+          note: document.querySelector('#dash-attention-note')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+          calls: window.__attCalls,
+        }));
+      try {
+        await page.eval(async () => (await import('/js/features/attention.js')).loadAttention({ force: true }));
+        await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
+        await page.waitFor(() => !document.querySelector('#dash-attention').hidden, { timeoutMs: 4000, message: 'daftar perhatian' });
+        let shown = await view();
+        assert.equal(shown.rows.length, 2);
+        assert.equal(shown.badge, '2');
+
+        // Tunda the first item: it leaves the list and the badge, without another server round-trip.
+        const before = shown.calls;
+        await page.eval(() => document.querySelector('#dash-attention-list [data-snooze]').click());
+        shown = await view();
+        assert.equal(shown.rows.length, 1, 'satu item disembunyikan');
+        assert.match(shown.rows[0], /Jadwal gagal/, 'item lain tetap tampil');
+        assert.equal(shown.badge, '1', 'badge ikut berkurang');
+        assert.equal(shown.calls, before, 'menunda tidak memanggil server');
+        assert.match(shown.note, /1 ditunda/, 'jumlah yang ditunda terlihat');
+        const stored = await page.eval(() => JSON.parse(localStorage.getItem('office.attention.snooze')));
+        assert.ok(stored['budget:global'] > Date.now(), 'tenggat tunda tersimpan');
+
+        // A reload of the list keeps it snoozed.
+        await page.eval(async () => (await import('/js/features/attention.js')).loadAttention({ force: true }));
+        assert.equal((await view()).rows.length, 1, 'tetap ditunda setelah muat ulang');
+
+        // "Tampilkan" brings it back.
+        await page.eval(() => document.querySelector('[data-attention-restore]').click());
+        shown = await view();
+        assert.equal(shown.rows.length, 2);
+        assert.equal(shown.badge, '2');
+        assert.equal(shown.note, '', 'catatan tunda hilang');
+
+        // An expired snooze is ignored.
+        await page.eval(() => localStorage.setItem('office.attention.snooze', JSON.stringify({ 'budget:global': Date.now() - 1000 })));
+        await page.eval(async () => (await import('/js/features/attention.js')).loadAttention({ force: true }));
+        assert.equal((await view()).rows.length, 2, 'tunda kedaluwarsa diabaikan');
+        await page.press('Escape');
+      } finally {
+        await page.eval(async () => {
+          localStorage.removeItem('office.attention.snooze');
+          window.fetch = window.__attentionFetch2;
+          await (await import('/js/features/attention.js')).loadAttention({ force: true });
+        });
+      }
+    });
+
+    test('⚖ audit kontras: teks memenuhi WCAG AA di tema terang dan gelap', async () => {
+      await ensureApp(page, `#${projectId}`);
+      const before = await page.eval(async () => (await import('/js/office/themes.js')).theme.current);
+      const audit = async (where) => {
+        const problems = await page.eval(contrastProblems);
+        assert.deepEqual(problems, [], `kontras ${where}`);
+      };
+      try {
+        for (const id of ['light', 'dark']) {
+          await page.eval((themeId) => import('/js/features/theme.js').then((m) => m.applyTheme(themeId)), id);
+          await sleep(120);
+          await audit(`${id} halaman`);
+          await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
+          await sleep(200);
+          await audit(`${id} dashboard`);
+          await page.press('Escape');
+          await sleep(80);
+          await page.eval(async () => (await import('/js/ui/modals.js')).openModal('settings-modal'));
+          await sleep(350);
+          await audit(`${id} pengaturan`);
+          await page.press('Escape');
+          await sleep(80);
+          await page.eval(async () => (await import('/js/features/palette.js')).openPalette());
+          await sleep(180);
+          await audit(`${id} palet`);
+          await page.press('Escape');
+          await sleep(80);
+        }
+      } finally {
+        await page.eval((themeId) => import('/js/features/theme.js').then((m) => m.applyTheme(themeId)), before);
+      }
+    });
+
+    test('★ Pesan tersimpan: bintang di chat, daftar di Ctrl+P, buka & hapus', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(async (pid) => {
+        const { state } = await import('/js/core/state.js');
+        localStorage.removeItem('office.bookmarks');
+        window.__bmSaved = state.chats[pid];
+        const now = Date.now();
+        state.chats[pid] = [
+          { id: 'bm-user', project: pid, kind: 'user', text: 'tolong cek checkout', source: 'web', ts: now - 60_000 },
+          { id: 'bm-a', project: pid, kind: 'assistant', text: 'Checkout sudah diperbaiki di src/checkout.ts', ts: now - 30_000 },
+        ];
+        (await import('/js/features/chat.js')).renderChat();
+      }, projectId);
+      try {
+        assert.equal(await page.eval(() => document.querySelectorAll('#chat [data-id="bm-user"] [data-msg-act="star"]').length), 1, 'bintang di pesan user');
+        await page.eval(() => document.querySelector('#chat [data-id="bm-a"] [data-msg-act="star"]').click());
+        const saved = await page.eval(() => ({
+          stored: JSON.parse(localStorage.getItem('office.bookmarks')),
+          pressed: document.querySelector('#chat [data-id="bm-a"] [data-msg-act="star"]').getAttribute('aria-pressed'),
+          text: document.querySelector('#chat [data-id="bm-a"] [data-msg-act="star"]').textContent,
+        }));
+        assert.equal(saved.pressed, 'true');
+        assert.equal(saved.text, '★');
+        assert.equal(saved.stored[projectId].length, 1);
+        assert.match(saved.stored[projectId][0].text, /Checkout sudah diperbaiki/);
+
+        // A rebuild of the chat (reconnect/project event) keeps it starred.
+        await page.eval(async () => (await import('/js/features/chat.js')).renderChat());
+        assert.equal(await page.eval(() => document.querySelector('#chat [data-id="bm-a"] [data-msg-act="star"]').getAttribute('aria-pressed')), 'true', 'tetap berbintang setelah render ulang');
+
+        await page.eval(async () => (await import('/js/features/bookmarks.js')).openBookmarks());
+        const list = await page.eval(() => ({
+          note: document.querySelector('#bookmarks-note').textContent,
+          text: document.querySelector('#bookmarks-list').textContent.replace(/\s+/g, ' ').trim(),
+        }));
+        assert.match(list.note, /1 pesan di/);
+        assert.match(list.text, /Claude/);
+        assert.match(list.text, /Checkout sudah diperbaiki/);
+
+        await page.eval(() => document.querySelector('#bookmarks-list [data-open="bm-a"]').click());
+        assert.equal(await page.eval(() => document.querySelector('#bookmarks-modal').hidden), true, 'dialog menutup');
+        assert.equal(await page.eval(() => document.querySelectorAll('#chat [data-id="bm-a"].bm-flash').length), 1, 'baris disorot');
+
+        await page.eval(async () => (await import('/js/features/bookmarks.js')).openBookmarks());
+        await page.eval(() => document.querySelector('#bookmarks-list [data-remove="bm-a"]').click());
+        assert.match(await page.eval(() => document.querySelector('#bookmarks-list').textContent), /Belum ada pesan tersimpan/);
+        assert.deepEqual(await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          return JSON.parse(localStorage.getItem('office.bookmarks'))[state.active];
+        }), []);
+        assert.equal(await page.eval(() => document.querySelector('#chat [data-id="bm-a"] [data-msg-act="star"]').getAttribute('aria-pressed')), 'false', 'bintang kembali kosong di baris');
+        await page.press('Escape');
+      } finally {
+        await page.eval(async (pid) => {
+          localStorage.removeItem('office.bookmarks');
+          const { state } = await import('/js/core/state.js');
+          state.chats[pid] = window.__bmSaved;
+          (await import('/js/features/chat.js')).renderChat();
+        }, projectId);
+      }
+    });
+
+    test('⚡ Dashboard: tombol Antrian & Hentikan di kartu project', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(async (pid) => {
+        const { state } = await import('/js/core/state.js');
+        window.__dashSaved = { status: state.statuses[pid], projects: state.projects };
+        state.statuses[pid] = { ...(state.statuses[pid] ?? {}), busy: true, taskQueue: { waiting: 2, running: 0, paused: false, rev: 99 } };
+        window.__stopCalls = [];
+        window.__queueCalls = [];
+        window.__dashFetch = window.fetch;
+        window.fetch = async (url, opts) => {
+          const u = String(url);
+          if (u.endsWith('/stop')) {
+            window.__stopCalls.push(u);
+            return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          if (u.endsWith(`/api/projects/${pid}/queue`)) {
+            window.__queueCalls.push(u);
+            return new Response(JSON.stringify({ queue: { project: pid, paused: false, rev: 1, items: [] } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          return window.__dashFetch(url, opts);
+        };
+      }, projectId);
+      try {
+        await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
+        await page.waitFor(() => Boolean(document.querySelector('#dash-list [data-dash-stop]')), { timeoutMs: 4000, message: 'tombol hentikan di kartu' });
+        const acts = await page.eval((pid) => ({
+          queue: document.querySelector(`#dash-list li[data-id="${pid}"] [data-dash-queue]`)?.textContent ?? '',
+          stop: document.querySelector(`#dash-list li[data-id="${pid}"] [data-dash-stop]`)?.textContent ?? '',
+        }), projectId);
+        assert.match(acts.queue, /Antrian 2/);
+        assert.equal(acts.stop, '■ Hentikan');
+
+        // Antrian: closes the dashboard and opens the queue of that project (not necessarily the active one).
+        await page.eval((pid) => document.querySelector(`#dash-list li[data-id="${pid}"] [data-dash-queue]`).click(), projectId);
+        await page.waitFor(() => !document.querySelector('#queue-modal').hidden, { timeoutMs: 4000, message: 'antrian terbuka' });
+        assert.equal(await page.eval(() => document.querySelector('#dash-modal').hidden), true, 'dashboard menutup');
+        assert.equal(await page.eval(() => window.__queueCalls.length), 1);
+        await page.press('Escape');
+        await sleep(80);
+
+        // Hentikan: calls that project's stop route and keeps the dashboard open.
+        await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
+        await page.waitFor(() => Boolean(document.querySelector('#dash-list [data-dash-stop]')), { timeoutMs: 4000, message: 'tombol hentikan kembali' });
+        await page.eval((pid) => document.querySelector(`#dash-list li[data-id="${pid}"] [data-dash-stop]`).click(), projectId);
+        await page.waitFor(() => window.__stopCalls.length === 1, { timeoutMs: 4000, message: 'panggilan stop' });
+        assert.equal(await page.eval((pid) => window.__stopCalls[0].endsWith(`/api/projects/${pid}/stop`), projectId), true);
+        assert.equal(await page.eval(() => document.querySelector('#dash-modal').hidden), false, 'dashboard tetap terbuka');
+        await page.press('Escape');
+      } finally {
+        await page.eval(async (pid) => {
+          window.fetch = window.__dashFetch;
+          const { state } = await import('/js/core/state.js');
+          state.statuses[pid] = window.__dashSaved.status;
+          state.projects = window.__dashSaved.projects;
+          (await import('/js/features/dashboard.js')).renderDashboard();
+        }, projectId);
+      }
+    });
+
+    test('🧭 Dashboard: chip status menyaring kartu dan menghitung semua project', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
+      await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        const now = Date.now();
+        window.__chipsSaved = { projects: state.projects, statuses: state.statuses, chats: state.chats, events: state.events, approval: null };
+        const mk = (id, name) => ({ id, name, favorite: false, lastActivity: now, path: `C:\\fake\\${id}` });
+        state.projects = [mk('f-needs', 'Butuh Izin'), mk('f-work', 'Sedang Kerja'), mk('f-queue', 'Antri'), mk('f-idle', 'Menganggur')];
+        state.statuses = { 'f-work': { busy: true }, 'f-queue': { taskQueue: { waiting: 2, running: 0, paused: false, rev: 1 } } };
+        state.chats = {};
+        state.events = {};
+        const approval = { project: 'f-needs', status: 'pending', label: 'Izin bash', ts: now, chatId: 'c1' };
+        window.__chipsSaved.approval = approval;
+        state.approvals.set('f-needs-1', approval);
+        (await import('/js/features/dashboard.js')).renderDashboard();
+      });
+      const visible = () => page.eval(() => [...document.querySelectorAll('#dash-list li[data-id]')].filter((li) => !li.hidden).map((li) => li.dataset.id).sort());
+      try {
+        await page.waitFor(() => document.querySelectorAll('#dash-list li[data-id]').length === 4, { timeoutMs: 4000, message: 'empat kartu' });
+        assert.deepEqual(await visible(), ['f-idle', 'f-needs', 'f-queue', 'f-work']);
+        const chips = await page.eval(() => document.querySelector('#dash-filters').textContent.replace(/\s+/g, ' ').trim());
+        assert.match(chips, /Semua 4/);
+        assert.match(chips, /Butuh kamu 1/);
+        assert.match(chips, /Bekerja 1/);
+        assert.match(chips, /Antrian 1/);
+        assert.match(chips, /Idle 1/);
+
+        await page.eval(() => document.querySelector('[data-dash-filter="working"]').click());
+        assert.deepEqual(await visible(), ['f-work'], 'chip Bekerja');
+        assert.equal(await page.eval(() => document.querySelector('[data-dash-filter="working"]').getAttribute('aria-pressed')), 'true');
+        await page.eval(() => document.querySelector('[data-dash-filter="needs"]').click());
+        assert.deepEqual(await visible(), ['f-needs'], 'chip Butuh kamu');
+        await page.eval(() => document.querySelector('[data-dash-filter="all"]').click());
+        assert.deepEqual(await visible(), ['f-idle', 'f-needs', 'f-queue', 'f-work'], 'kembali ke semua');
+      } finally {
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          const saved = window.__chipsSaved;
+          state.projects = saved.projects;
+          state.statuses = saved.statuses;
+          state.chats = saved.chats;
+          state.events = saved.events;
+          state.approvals.delete('f-needs-1');
+          (await import('/js/features/dashboard.js')).renderDashboard();
+        });
+        await page.press('Escape');
+      }
+    });
+
+    test('📲 Panduan: tombol pasang muncul saat browser menawarkan PWA', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(async () => (await import('/js/ui/modals.js')).openModal('help-modal'));
+      await page.waitFor(() => !document.querySelector('#help-modal').hidden, { timeoutMs: 3000, message: 'panduan terbuka' });
+      await page.eval(() => {
+        const event = new Event('beforeinstallprompt');
+        event.prompt = () => {
+          window.__installPrompted = true;
+        };
+        event.userChoice = Promise.resolve({ outcome: 'accepted' });
+        window.dispatchEvent(event);
+      });
+      assert.equal(await page.eval(() => document.querySelector('#install-app').hidden), false, 'tawaran datang: tombol tampil');
+      await page.eval(() => {
+        window.__installPrompted = false;
+        document.querySelector('#install-app').click();
+      });
+      await page.waitFor(() => window.__installPrompted === true, { timeoutMs: 2000, message: 'dialog pasang dipanggil' });
+      await page.waitFor(() => document.querySelector('#install-app').hidden, { timeoutMs: 2000, message: 'tombol hilang setelah dipasang' });
+      await page.press('Escape');
+    });
+
+    test('📊 Dashboard: ringkasan hari ini dari ledger (biaya, giliran, token, sesi, project)', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(() => {
+        window.__todayFetch = window.fetch;
+        window.fetch = (url, opts) =>
+          String(url).endsWith('/api/summary/today')
+            ? Promise.resolve(
+                new Response(
+                  JSON.stringify({ today: { from: Date.now(), rows: 9, costUsd: 2.5, costCoverage: 0.75, turns: 3, tokens: 12345, projects: 2, sessions: 4 } }),
+                  { status: 200, headers: { 'Content-Type': 'application/json' } },
+                ),
+              )
+            : window.__todayFetch(url, opts);
+      });
+      try {
+        await page.eval(async () => {
+          const { dashboard } = await import('/js/features/dashboard.js');
+          dashboard.today = { at: 0, data: null, loading: false }; // no cached answer from an earlier test
+        });
+        await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
+        await page.waitFor(() => !document.querySelector('#dash-today').hidden, { timeoutMs: 4000, message: 'ringkasan hari ini' });
+        const text = await page.eval(() => document.querySelector('#dash-today').textContent.replace(/\s+/g, ' ').trim());
+        assert.match(text, /Hari ini/);
+        assert.match(text, /\$2,50/, 'biaya hari ini');
+        assert.match(text, /75% berbiaya/, 'cakupan biaya');
+        assert.match(text, /3 giliran/);
+        assert.match(text, /12k token/);
+        assert.match(text, /4 sesi/);
+        assert.match(text, /2 project/);
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__todayFetch;
         });
       }
     });
@@ -2832,6 +3489,9 @@ for (const vp of VIEWPORTS) {
           coverageShown: Boolean(document.querySelector('#budget-coverage').getClientRects().length),
           saveDisabled: document.querySelector('#budget-save').disabled,
           note: document.querySelector('#budget-note').textContent,
+          forecast: document.querySelector('#budget-section .budget-forecast')?.textContent ?? '',
+          trendDays: document.querySelectorAll('#budget-section .budget-trend .bt-day').length,
+          trendLabel: document.querySelector('#budget-section .budget-trend')?.getAttribute('aria-label') ?? '',
         }));
         assert.deepEqual({ daily: fields.daily, weekly: fields.weekly, monthly: fields.monthly }, { daily: '20', weekly: '50', monthly: '' });
         assert.deepEqual(fields.placeholders, ['tanpa batas', 'tanpa batas', 'tanpa batas']);
@@ -2842,6 +3502,9 @@ for (const vp of VIEWPORTS) {
         assert.equal(fields.saveDisabled, false);
         assert.match(fields.note, /OpenCode Go/);
         assert.match(fields.note, /langganan/);
+        assert.match(fields.forecast, /Perkiraan akhir bulan ±\$/, 'proyeksi akhir bulan tampil');
+        assert.equal(fields.trendDays, 7, 'tujuh batang harian');
+        assert.match(fields.trendLabel, /Biaya 7 hari terakhir/);
 
         assert.equal(await budgetCalls(page), 1, 'satu request saat panel dibuka');
         if (vp.mobile) {
@@ -3145,6 +3808,174 @@ for (const vp of VIEWPORTS) {
       assert.equal(overflow, null);
       assert.deepEqual(download, { status: 200, type: 'application/zip', zip: true });
       assert.deepEqual(realProblems(page), []);
+    });
+
+    test('⬆ Import riwayat menampilkan pratinjau isi backup dulu, baru memulihkan', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await tap(page, '#btn-settings');
+      await settle(page, 'settings-modal');
+      await page.click('[data-settings-tab="cadangan"]');
+      await page.eval(() => {
+        window.__previewCalls = 0;
+        window.__importCalls = 0;
+        window.__importOnly = [];
+        window.__importParts = [];
+        window.__backupFetch = window.fetch;
+        window.fetch = async (url, opts) => {
+          const u = String(url);
+          if (u.endsWith('/api/backup/preview')) {
+            window.__previewCalls += 1;
+            return new Response(
+              JSON.stringify({
+                format: 'adhit-office-backup',
+                version: 1,
+                createdAt: '2026-11-01T03:00:00.000Z',
+                source: { homeDir: 'C:\\Users\\lama', platform: 'win32', appVersion: '0.2.0' },
+                entries: 42,
+                unpackedBytes: 5 * 1024 * 1024,
+                projects: [
+                  { folder: 'C--Users-lama-toko', cwd: 'C:\\Users\\lama\\toko', sessions: 12, files: 3 },
+                  { folder: 'C--Users-lama-kasir', cwd: 'C:\\Users\\lama\\kasir', sessions: 4, files: 1 },
+                ],
+                sessions: 16,
+                chats: { claude: 2, opencode: 1 },
+                chatSessions: 3,
+                includes: { state: true, usage: true, history: true, fileHistory: 5, plans: 2 },
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (u.endsWith('/api/backup/import')) {
+            window.__importCalls += 1;
+            window.__importOnly.push(opts?.headers?.['X-Backup-Only'] ?? null);
+            window.__importParts.push(opts?.headers?.['X-Backup-Parts'] ?? null);
+            return new Response(
+              JSON.stringify({
+                projects: 2,
+                sessions: { added: 16, updated: 0, skipped: 0 },
+                files: { added: 4, copies: 0, skipped: 0 },
+                history: { added: 3 },
+                usage: { added: 2 },
+                state: { roots: 1, custom: 0, favorites: 0, settings: 2, engines: 2, engineSettings: 1, sessions: 0, chats: 3, teamNames: 0 },
+                remapped: [],
+                warnings: [],
+                projectsAdded: [],
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          return window.__backupFetch(url, opts);
+        };
+      });
+      try {
+        await page.eval(() => {
+          const input = document.querySelector('#backup-file');
+          const dt = new DataTransfer();
+          dt.items.add(new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], 'backup.zip', { type: 'application/zip' }));
+          input.files = dt.files;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await page.waitFor(() => Boolean(document.querySelector('#backup-restore')), { timeoutMs: 4000, message: 'pratinjau backup' });
+        const preview = await page.eval(() => ({
+          calls: [window.__previewCalls, window.__importCalls],
+          hidden: document.querySelector('#backup-result').hidden,
+          text: document.querySelector('#backup-result').textContent.replace(/\s+/g, ' ').trim(),
+        }));
+        assert.deepEqual(preview.calls, [1, 0], 'pratinjau hanya membaca, belum memulihkan');
+        assert.equal(preview.hidden, false);
+        assert.match(preview.text, /2 project · 16 sesi Claude/);
+        assert.match(preview.text, /toko/);
+        assert.match(preview.text, /12 sesi/);
+        assert.match(preview.text, /Dibuat/);
+        assert.equal(await page.eval(() => document.querySelectorAll('#backup-result .backup-pick-box').length), 2, 'satu kotak per project');
+        assert.equal(await page.eval(() => document.querySelector('#backup-restore').textContent), 'Pulihkan semua', 'semua terpilih awalnya');
+
+        // Unchecking a project leaves it out of the restore (the header names the chosen folder).
+        await page.eval(() => {
+          document.querySelector('#backup-result .backup-pick-box[data-folder="C--Users-lama-kasir"]').click();
+          document.querySelector('#backup-result .backup-part-box[data-part="usage"]').click();
+        });
+        assert.equal(await page.eval(() => document.querySelector('#backup-restore').textContent), 'Pulihkan 1 project');
+        await page.click('#backup-restore');
+        await page.waitFor(() => window.__importCalls === 1, { timeoutMs: 4000, message: 'import setelah konfirmasi' });
+        const only = await page.eval(() => {
+          const raw = window.__importOnly[0];
+          if (!raw) return null;
+          const padded = raw.replace(/-/g, '+').replace(/_/g, '/');
+          return JSON.parse(atob(padded + '='.repeat((4 - (padded.length % 4)) % 4)));
+        });
+        assert.deepEqual(only, ['C--Users-lama-toko'], 'project yang tidak dicentang tidak ikut');
+        const parts = await page.eval(() => {
+          const raw = window.__importParts[0];
+          if (!raw) return null;
+          const padded = raw.replace(/-/g, '+').replace(/_/g, '/');
+          return JSON.parse(atob(padded + '='.repeat((4 - (padded.length % 4)) % 4)));
+        });
+        assert.deepEqual(parts, { state: true, usage: false, history: true }, 'laporan token tidak ikut');
+        await page.waitFor(() => /Hasil import/.test(document.querySelector('#backup-result').textContent), { timeoutMs: 4000, message: 'ringkasan import' });
+        assert.equal(await page.eval(() => document.querySelectorAll('#backup-restore').length), 0, 'tombol pratinjau diganti hasil');
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__backupFetch;
+        });
+      }
+    });
+
+    test('🕘 Backup otomatis: riwayat di folder tujuan bisa dipulihkan', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(() => {
+        window.__restoreCalls = [];
+        window.__baFetch = window.fetch;
+        window.__baConfirm = window.confirm;
+        window.confirm = () => true;
+        const now = Date.now();
+        window.fetch = async (url, opts) => {
+          const u = String(url);
+          if (u.endsWith('/api/backup/schedule/history')) {
+            return new Response(
+              JSON.stringify({
+                backups: [
+                  { name: 'adhit-office-backup-auto-20261107-020000.zip', bytes: 3 * 1024 * 1024, at: now - 3_600_000 },
+                  { name: 'adhit-office-backup-auto-20261106-020000.zip', bytes: 2 * 1024 * 1024, at: now - 86_400_000 },
+                ],
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (u.endsWith('/api/backup/schedule/restore')) {
+            window.__restoreCalls.push(JSON.parse(opts?.body ?? '{}'));
+            return new Response(JSON.stringify({ projects: 2, sessions: { added: 5, updated: 1, skipped: 0 }, warnings: [], projectsAdded: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          if (u.endsWith('/api/backup/schedule')) {
+            return new Response(JSON.stringify({ schedule: { enabled: true, frequency: 'daily', weekday: 1, time: '02:00', folder: 'D:\\Backup', keep: 3 }, last: null, running: false, nextAt: now + 86_400_000, keepMax: 100 }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          return window.__baFetch(url, opts);
+        };
+      });
+      try {
+        await tap(page, '#btn-settings');
+        await settle(page, 'settings-modal');
+        await page.click('[data-settings-tab="cadangan"]');
+        await page.waitFor(() => !document.querySelector('#ba-history').hidden && document.querySelectorAll('#ba-history-list [data-ba-restore]').length === 2, { timeoutMs: 4000, message: 'riwayat backup otomatis' });
+        const text = await page.eval(() => document.querySelector('#ba-history').textContent.replace(/\s+/g, ' ').trim());
+        assert.match(text, /20261107-020000/);
+        assert.match(text, /3 MB/);
+
+        await page.eval(() => document.querySelector('#ba-history-list [data-ba-restore]').click());
+        await page.waitFor(() => /Dipulihkan/.test(document.querySelector('#ba-restore-status').textContent), { timeoutMs: 4000, message: 'hasil pemulihan' });
+        assert.deepEqual(await page.eval(() => window.__restoreCalls[0]), { name: 'adhit-office-backup-auto-20261107-020000.zip' });
+        assert.match(await page.eval(() => document.querySelector('#ba-restore-status').textContent), /Dipulihkan: 2 project, 5 sesi ditambahkan/);
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__baFetch;
+          window.confirm = window.__baConfirm;
+        });
+      }
     });
 
     // Regression: renderAccount() rebuilds #account-body; focus must survive (↻ "Cek ulang kuota" re-renders it).
@@ -4202,6 +5033,7 @@ for (const vp of VIEWPORTS) {
 
       // From the office: the ⧗ badge on the QA card (the card itself still renames).
       if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
+      if (!vp.mobile && (await page.eval(() => document.querySelector('.office').classList.contains('team-hidden')))) await page.click('#team-toggle');
       await page.waitFor(() => Boolean(document.querySelector('#team .member[data-role="qa"] + .member-task')), { timeoutMs: 3000, message: 'badge ⧗ di kartu QA' });
       await page.click('#team .member[data-role="qa"] + .member-task');
       await page.waitFor(() => !document.querySelector('#tasks-modal').hidden && /Uji regresi/.test(document.querySelector('#td-title').textContent), { timeoutMs: 3000, message: 'monitor terbuka dengan tugas QA' });
@@ -5098,6 +5930,148 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('🔎 Ctrl+P mencari isi percakapan dan membuka sesinya', async () => {
+      await ready();
+      await page.eval((pid) => {
+        window.__transcriptBodies = [];
+        window.__resumeCalls = [];
+        window.__palFetch2 = window.fetch;
+        window.__palConfirm = window.confirm;
+        window.confirm = () => true; // a busy project would ask first; the test only checks the call
+        window.fetch = async (url, opts) => {
+          const u = String(url);
+          const search = u.match(/\/api\/projects\/([^/?]+)\/search(?:\?|$)/);
+          if (search) {
+            const body = JSON.parse(opts?.body ?? '{}');
+            window.__transcriptBodies.push(body);
+            const project = decodeURIComponent(search[1]);
+            return new Response(
+              JSON.stringify({
+                query: body.q,
+                truncated: false,
+                results: [
+                  {
+                    projectId: project,
+                    sessionId: 'sess-checkout-001',
+                    title: 'Perbaikan checkout',
+                    engine: 'claude',
+                    source: 'web',
+                    role: 'assistant',
+                    ts: Date.now(),
+                    snippet: { before: 'sudah selesai di ', match: body.q, after: ' baris 42' },
+                  },
+                ],
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (/\/api\/projects\/[^/?]+\/resume(?:\?|$)/.test(u)) {
+            window.__resumeCalls.push(JSON.parse(opts?.body ?? '{}'));
+            return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          return window.__palFetch2(url, opts);
+        };
+      }, projectId);
+      const transcriptOption = () =>
+        page.eval(() => {
+          const hit = [...document.querySelectorAll('#palette-list .pal-opt')].find((o) => o.textContent.includes('Perbaikan checkout'));
+          return hit ? { label: hit.querySelector('.pal-label').textContent, hint: hit.querySelector('.pal-text small')?.textContent ?? '' } : null;
+        });
+      try {
+        await paletteType(page, 'checkout');
+        await page.waitFor(() => [...document.querySelectorAll('#palette-list .pal-group-head')].some((g) => g.textContent === 'Percakapan'), { timeoutMs: 4000, message: 'grup Percakapan' });
+        const hit = await transcriptOption();
+        assert.ok(hit, 'hasil transkrip tampil di palet');
+        assert.equal(hit.label, 'Perbaikan checkout');
+        assert.match(hit.hint, /sudah selesai di checkout baris 42/);
+        assert.deepEqual(await page.eval(() => {
+          const b = window.__transcriptBodies.at(-1);
+          return { q: b.q, all: b.all };
+        }), { q: 'checkout', all: true }, 'kueri dikirim ke semua project');
+
+        // A prefix means another search: `>` is commands, so no transcript request.
+        const before = await page.eval(() => window.__transcriptBodies.length);
+        await paletteType(page, '>checkout');
+        await sleep(450);
+        assert.equal(await page.eval(() => window.__transcriptBodies.length), before, 'prefix > tidak mencari transkrip');
+
+        // Picking the hit opens that session.
+        await paletteType(page, 'checkout');
+        await page.waitFor(() => [...document.querySelectorAll('#palette-list .pal-opt')].some((o) => o.textContent.includes('Perbaikan checkout')), { timeoutMs: 4000, message: 'hasil transkrip kembali' });
+        await page.eval(() => [...document.querySelectorAll('#palette-list .pal-opt')].find((o) => o.textContent.includes('Perbaikan checkout')).click());
+        await page.waitFor(() => window.__resumeCalls.length === 1, { timeoutMs: 4000, message: 'sesi dilanjutkan' });
+        assert.deepEqual(await page.eval(() => window.__resumeCalls[0]), { sessionId: 'sess-checkout-001' });
+        assert.equal(await page.eval(() => document.querySelector('#palette-modal').hidden), true, 'palet menutup');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__palFetch2;
+          window.confirm = window.__palConfirm;
+        });
+      }
+    });
+
+    test('🔎 ?opencode 7d memfilter hasil transkrip di palet', async () => {
+      await ready();
+      await page.eval(() => {
+        window.__qBodies = [];
+        window.__qFetch = window.fetch;
+        const now = Date.now();
+        const day = 86_400_000;
+        const result = (sessionId, title, engine, ts) => ({
+          projectId: 'p1',
+          sessionId,
+          title,
+          engine,
+          source: 'web',
+          role: 'assistant',
+          ts,
+          snippet: { before: 'selesai ', match: 'checkout', after: ' baris 42' },
+        });
+        window.fetch = async (url, opts) => {
+          if (/\/api\/projects\/[^/?]+\/search(?:\?|$)/.test(String(url))) {
+            const body = JSON.parse(opts?.body ?? '{}');
+            window.__qBodies.push(body);
+            return new Response(
+              JSON.stringify({
+                query: body.q,
+                truncated: false,
+                results: [result('s-claude-new', 'Claude baru', 'claude', now - day), result('s-oc-new', 'OpenCode baru', 'opencode', now - day), result('s-oc-old', 'OpenCode lama', 'opencode', now - 40 * day)],
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          return window.__qFetch(url, opts);
+        };
+      });
+      const labels = () => page.eval(() => [...document.querySelectorAll('#palette-list .pal-group')].flatMap((g) => (g.querySelector('.pal-group-head')?.textContent === 'Percakapan' ? [...g.querySelectorAll('.pal-label')].map((n) => n.textContent) : [])));
+      try {
+        await paletteType(page, '?opencode 7d checkout');
+        await page.waitFor(() => [...document.querySelectorAll('#palette-list .pal-label')].some((n) => n.textContent === 'OpenCode baru'), { timeoutMs: 4000, message: 'hasil transkrip terfilter' });
+        assert.deepEqual(await labels(), ['OpenCode baru'], 'hanya OpenCode dalam 7 hari');
+        assert.deepEqual(await page.eval(() => {
+          const b = window.__qBodies.at(-1);
+          return { q: b.q, all: b.all };
+        }), { q: 'checkout', all: true }, 'filter tidak ikut terkirim sebagai kata kunci');
+        assert.equal(await page.eval(() => document.querySelector('#palette-scope').textContent), 'Isi percakapan · OpenCode · 7 hari');
+
+        await paletteType(page, '?claude checkout');
+        await page.waitFor(() => [...document.querySelectorAll('#palette-list .pal-label')].some((n) => n.textContent === 'Claude baru'), { timeoutMs: 4000, message: 'hasil Claude' });
+        assert.deepEqual(await labels(), ['Claude baru'], 'hanya Claude');
+
+        // Filters alone are not a query: no request, with a hint about what to type.
+        const before = await page.eval(() => window.__qBodies.length);
+        await paletteType(page, '?opencode 7d');
+        await sleep(450);
+        assert.equal(await page.eval(() => window.__qBodies.length), before, 'tanpa kata kunci tidak mencari');
+        assert.match(await page.eval(() => document.querySelector('#palette-list').textContent), /Ketik kata kunci/);
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__qFetch;
+        });
+      }
+    });
+
     test('Ringkas: /ringkas dari palet perintah, fokus kosong mengirim {}', async () => {
       await ready();
       await stubCompact(page, 200, { ok: true, engine: 'claude', command: '/compact' });
@@ -5385,12 +6359,19 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
 
 describe('UI chat live', { skip: SKIP ?? false }, () => {
   let page;
-  const OLD = 120; // all within the 150 messages a snapshot carries, so every old bubble is on the page
+  const OLD = 120; // within the 150 messages a snapshot carries, so one "Muat pesan lama" brings all of them back
   const api = async (p, body = {}) => {
     const token = (await (await fetch(BASE)).text()).match(/office-token" content="([^"]+)"/)[1];
     return fetch(BASE + p, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: JSON.stringify(body) }).then((r) => r.json());
   };
   const bubbles = () => page.eval(() => [...document.querySelectorAll('#chat .msg.assistant')].map((n) => n.querySelector('.body').textContent));
+  /** 📜 Chat lazy-load: expand "Muat pesan lama" until the whole stored history is in the DOM. */
+  const loadAllOlder = async () => {
+    for (let i = 0; i < 20 && (await page.eval(() => document.querySelectorAll('#chat-load-older').length)); i += 1) {
+      await page.eval(() => document.querySelector('#chat-load-older').click());
+      await sleep(20);
+    }
+  };
 
   before(async () => {
     if (SKIP) return;
@@ -5425,6 +6406,7 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
     await api(`/api/projects/${projectId}/prompt`, { text: 'halo setelah restart' });
     await page.waitFor((n) => document.querySelectorAll('#chat .result.ok').length > n, { timeoutMs: 10000, message: 'giliran selesai (baris hasil)' }, results);
     await sleep(300);
+    await loadAllOlder(); // the page draws the newest page first (📜 chat lazy-load)
     const all = await bubbles();
     assert.deepEqual(await page.eval(() => document.querySelectorAll('#chat .msg.assistant.streaming').length), 0, `masih "mengetik" setelah selesai; 3 bubble terakhir: ${JSON.stringify(all.slice(-3))}`);
     assert.match(all.at(-1), /Halo dari Claude palsu yang sedang mengetik\./, 'bubble terakhir berisi balasan');
@@ -5433,12 +6415,14 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
     assert.deepEqual(oldShown, Array.from({ length: OLD }, (_, i) => `jawaban lama ${i + 1}`), 'bubble lama tetap utuh');
     // What the page shows equals what a fresh load shows.
     await openApp(page, `#${projectId}`);
+    await loadAllOlder();
     assert.deepEqual(await bubbles(), all);
   });
 
   test('restart lagi (riwayat dari data/chats): riwayat utuh, balasan baru di bubble baru', async () => {
     // The history as the page shows it now (self-contained: whatever ran before in this describe).
     await ensureApp(page, `#${projectId}`);
+    await loadAllOlder();
     const history = await bubbles();
     assert.ok(history.length >= OLD, `riwayat termuat (${history.length} bubble)`);
     // Clean stop (⚙ → Matikan server): the chat is in data/chats/<id>.jsonl now, not in state.json.
@@ -5448,6 +6432,7 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
     assert.equal(JSON.parse(readFileSync(path.join(TMP, 'data', 'state.json'), 'utf8')).chats, undefined);
     await startServer();
     await openApp(page, `#${projectId}`);
+    await loadAllOlder();
     assert.deepEqual(await bubbles(), history, 'the same history after a restart from data/chats');
     const results = await page.eval(() => document.querySelectorAll('#chat .result.ok').length);
     await api(`/api/projects/${projectId}/prompt`, { text: 'halo setelah restart kedua' });
@@ -5668,7 +6653,7 @@ for (const vp of VIEWPORTS) {
       });
       const { groups, ...roles } = a11y;
       assert.deepEqual(roles, { role: 'combobox', controls: 'palette-list', listRole: 'listbox', active: true });
-      for (const g of ['Project', 'Chat', 'Buka', 'Tema', 'Perintah']) assert.ok(groups.includes(g), `grup ${g}: ${groups.join(', ')}`);
+      for (const g of ['Project', 'Chat', 'Buka', 'Pengaturan', 'Tema', 'Perintah']) assert.ok(groups.includes(g), `grup ${g}: ${groups.join(', ')}`);
       assert.equal(await page.eval(horizontalOverflow), null, 'palet tanpa scroll horizontal');
       assert.deepEqual(await page.eval(unnamedButtons, '#palette-modal'), []);
       const first = await activeOption(page);
@@ -5807,6 +6792,230 @@ for (const vp of VIEWPORTS) {
         assert.equal(await page.eval(() => window.__downloads.length), 1);
       }
       assert.deepEqual(realProblems(page), []);
+    });
+
+    test('🗑 Hapus beberapa sesi sekaligus dari Riwayat sesi', async () => {
+      await ready();
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      await page.eval(() => {
+        window.__delCalls = [];
+        window.__exportCalls = [];
+        window.__sessionsFetch = window.fetch;
+        window.__sessionsConfirm = window.confirm;
+        window.confirm = () => true;
+        const now = Date.now();
+        window.fetch = async (url, opts) => {
+          const u = String(url);
+          if (/\/api\/projects\/[^/?]+\/sessions(?:\?|$)/.test(u)) {
+            return new Response(
+              JSON.stringify({
+                current: 'sess-current',
+                sessions: [
+                  { id: 'sess-current', title: 'Sedang dibuka', source: 'web', updated: now },
+                  { id: 'sess-bulk-1', title: 'Sesi satu', source: 'web', updated: now - 86_400_000 },
+                  { id: 'sess-bulk-2', title: 'Sesi dua', source: 'cli', updated: now - 172_800_000 },
+                  { id: 'sess-bulk-3', title: 'Sesi tiga', source: 'web', updated: now - 259_200_000 },
+                ],
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (/\/api\/projects\/[^/?]+\/session-delete(?:\?|$)/.test(u)) {
+            window.__delCalls.push(JSON.parse(opts?.body ?? '{}'));
+            return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          if (/\/api\/projects\/[^/?]+\/sessions-export(?:\?|$)/.test(u)) {
+            window.__exportCalls.push(JSON.parse(opts?.body ?? '{}'));
+            return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
+              status: 200,
+              headers: { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="sesi-toko-2026-11-07.zip"' },
+            });
+          }
+          return window.__sessionsFetch(url, opts);
+        };
+      });
+      try {
+        await page.eval(async () => (await import('/js/features/sessions.js')).openSessions());
+        await page.waitFor(() => document.querySelectorAll('#sessions-list [data-pick]').length === 3, { timeoutMs: 4000, message: 'tiga sesi bisa dipilih' });
+        assert.equal(await page.eval(() => document.querySelector('#sessions-bulk').hidden), false, 'bar pilih tampil');
+        assert.equal(await page.eval(() => document.querySelectorAll('#sessions-list .s-item').length), 4, 'sesi yang sedang dibuka tetap tampil');
+
+        await page.eval(() => {
+          for (const id of ['sess-bulk-1', 'sess-bulk-2']) document.querySelector(`#sessions-list [data-pick="${id}"]`).click();
+        });
+        assert.equal(await page.eval(() => document.querySelector('#sessions-delete-selected').textContent), 'Hapus 2 sesi', 'hitungan pilihan');
+        assert.equal(await page.eval(() => document.querySelector('#sessions-export-selected').textContent), '⬇ Export 2', 'tombol export ikut hitungan');
+
+        // ⬇ Export the two selected sessions: one .zip download.
+        await page.eval(() => {
+          window.__downloads = [];
+          document.querySelector('#sessions-export-selected').click();
+        });
+        await page.waitFor(() => window.__downloads.length === 1, { timeoutMs: 4000, message: 'unduhan export' });
+        assert.equal(await page.eval(() => window.__downloads[0].name), 'sesi-toko-2026-11-07.zip');
+        assert.deepEqual(await page.eval(() => window.__exportCalls[0].sessionIds.slice().sort()), ['sess-bulk-1', 'sess-bulk-2']);
+
+        await page.eval(() => document.querySelector('#sessions-select-all').click());
+        assert.equal(await page.eval(() => document.querySelector('#sessions-delete-selected').textContent), 'Hapus 3 sesi', 'pilih semua');
+
+        await page.eval(() => document.querySelector('#sessions-delete-selected').click());
+        await page.waitFor(() => window.__delCalls.length === 3, { timeoutMs: 4000, message: 'tiga sesi dihapus' });
+        assert.deepEqual(await page.eval(() => window.__delCalls.map((c) => c.sessionId).sort()), ['sess-bulk-1', 'sess-bulk-2', 'sess-bulk-3']);
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__sessionsFetch;
+          window.confirm = window.__sessionsConfirm;
+        });
+      }
+    });
+
+    test('↩ Sesi terhapus tampil di Riwayat sesi dan bisa dipulihkan', async () => {
+      await ready();
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      await page.eval(() => {
+        window.__restoreCalls = [];
+        window.__trashFetch = window.fetch;
+        const now = Date.now();
+        window.fetch = async (url, opts) => {
+          const u = String(url);
+          if (/\/api\/projects\/[^/?]+\/sessions(?:\?|$)/.test(u)) {
+            return new Response(
+              JSON.stringify({ current: 'sess-current', sessions: [{ id: 'sess-current', title: 'Sedang dibuka', source: 'web', updated: now }] }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (/\/api\/projects\/[^/?]+\/session-trash(?:\?|$)/.test(u)) {
+            return new Response(
+              JSON.stringify({ retentionDays: 30, sessions: [{ sessionId: 'sess-trashed-1', title: 'Sesi yang salah terhapus', source: 'web', trashedAt: now - 3_600_000, size: 4096 }] }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (/\/api\/projects\/[^/?]+\/session-restore(?:\?|$)/.test(u)) {
+            window.__restoreCalls.push(JSON.parse(opts?.body ?? '{}'));
+            return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          return window.__trashFetch(url, opts);
+        };
+      });
+      try {
+        await page.eval(async () => (await import('/js/features/sessions.js')).openSessions());
+        await page.waitFor(
+          () => !document.querySelector('#sessions-trash').hidden && document.querySelectorAll('#sessions-trash-list [data-restore]').length === 1,
+          { timeoutMs: 4000, message: 'bagian sesi terhapus' },
+        );
+        const box = await page.eval(() => document.querySelector('#sessions-trash').textContent.replace(/\s+/g, ' ').trim());
+        assert.match(box, /Sesi yang salah terhapus/);
+        assert.match(box, /Dihapus/);
+        assert.match(box, /otomatis dibersihkan setelah 30 hari/);
+        await page.eval(() => document.querySelector('#sessions-trash [data-restore]').click());
+        await page.waitFor(() => window.__restoreCalls.length === 1, { timeoutMs: 4000, message: 'panggilan pulihkan' });
+        assert.deepEqual(await page.eval(() => window.__restoreCalls[0]), { sessionId: 'sess-trashed-1' });
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__trashFetch;
+        });
+      }
+    });
+
+    test('📅 Riwayat sesi: saring 7/30/90 hari dan gabung dengan pencarian', async () => {
+      await ready();
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      await page.eval(() => {
+        window.__rangeFetch = window.fetch;
+        const now = Date.now();
+        const day = 86_400_000;
+        window.fetch = async (url, opts) => {
+          const u = String(url);
+          if (/\/api\/projects\/[^/?]+\/sessions(?:\?|$)/.test(u)) {
+            return new Response(
+              JSON.stringify({
+                current: null,
+                sessions: [
+                  { id: 'sess-a', title: 'Alpha baru', source: 'web', updated: now - 2 * day },
+                  { id: 'sess-b', title: 'Beta sepuluh', source: 'cli', updated: now - 10 * day },
+                  { id: 'sess-c', title: 'Gamma enam puluh', source: 'web', updated: now - 60 * day },
+                  { id: 'sess-d', title: 'Delta lama', source: 'cli', updated: now - 200 * day },
+                ],
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (/\/api\/projects\/[^/?]+\/session-trash(?:\?|$)/.test(u)) {
+            return new Response(JSON.stringify({ sessions: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          return window.__rangeFetch(url, opts);
+        };
+      });
+      const titles = () => page.eval(() => [...document.querySelectorAll('#sessions-list .s-title')].map((n) => n.textContent));
+      const pick = (value) =>
+        page.eval((v) => {
+          const box = document.querySelector('#sessions-range');
+          box.value = v;
+          box.dispatchEvent(new Event('change', { bubbles: true }));
+        }, value);
+      try {
+        await page.eval(async () => (await import('/js/features/sessions.js')).openSessions());
+        await page.waitFor(() => document.querySelectorAll('#sessions-list .s-item').length === 4, { timeoutMs: 4000, message: 'empat sesi' });
+        await pick('7');
+        assert.deepEqual(await titles(), ['Alpha baru'], '7 hari');
+        await pick('30');
+        assert.deepEqual(await titles(), ['Alpha baru', 'Beta sepuluh'], '30 hari');
+        await pick('90');
+        assert.equal((await titles()).length, 3, '90 hari');
+        // Search and range combine.
+        await pick('30');
+        await page.eval(() => {
+          const q = document.querySelector('#sessions-search');
+          q.value = 'beta';
+          q.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        assert.deepEqual(await titles(), ['Beta sepuluh'], 'cari di dalam rentang');
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__rangeFetch;
+        });
+      }
+    });
+
+    test('✎ Riwayat sesi: ganti nama sesi Claude dari daftar', async () => {
+      await ready();
+      if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
+      await page.eval(() => {
+        window.__renameCalls = [];
+        window.__renameFetch = window.fetch;
+        window.__renamePrompt = window.prompt;
+        window.prompt = () => 'Judul dari daftar';
+        window.fetch = async (url, opts) => {
+          const u = String(url);
+          if (/\/api\/projects\/[^/?]+\/sessions(?:\?|$)/.test(u)) {
+            return new Response(JSON.stringify({ current: null, sessions: [{ id: 'sess-rename-1', title: 'Judul lama', source: 'cli', updated: Date.now() }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          if (/\/api\/projects\/[^/?]+\/session-trash(?:\?|$)/.test(u)) {
+            return new Response(JSON.stringify({ sessions: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          if (/\/api\/projects\/[^/?]+\/session-rename(?:\?|$)/.test(u)) {
+            window.__renameCalls.push(JSON.parse(opts?.body ?? '{}'));
+            return new Response(JSON.stringify({ ok: true, title: 'Judul dari daftar' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          return window.__renameFetch(url, opts);
+        };
+      });
+      try {
+        await page.eval(async () => (await import('/js/features/sessions.js')).openSessions());
+        await page.waitFor(() => Boolean(document.querySelector('#sessions-list [data-rename]')), { timeoutMs: 4000, message: 'tombol ganti nama' });
+        await page.eval(() => document.querySelector('#sessions-list [data-rename]').click());
+        await page.waitFor(() => window.__renameCalls.length === 1, { timeoutMs: 4000, message: 'panggilan ganti nama' });
+        assert.deepEqual(await page.eval(() => window.__renameCalls[0]), { sessionId: 'sess-rename-1', title: 'Judul dari daftar' });
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__renameFetch;
+          window.prompt = window.__renamePrompt;
+        });
+      }
     });
 
     test('👥 Kelola tim: dialog, toggle, kantor bertambah meja tanpa reload, read-only di WiFi, tanpa error console/overflow', async (t) => {

@@ -3,14 +3,14 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { engineBadge, engineLabel, engineOf } from '../core/engine-caps.js';
 import { ago, DAY } from '../core/format.js';
-import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
+import { DEMO_ID, auth, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
-import { exportSessionMarkdown } from './conversations.js';
+import { exportSessionMarkdown, exportTools } from './conversations.js';
 import { saveBlob } from '../core/util.js';
 
 const sessionTitles = new Map(); // Claude Code session id -> { title, source }
 const titleTried = new Map(); // session id -> last lookup (a brand-new transcript may not exist yet)
-const sessionsView = { project: null, list: [], current: null }; // the open history dialog
+const sessionsView = { project: null, list: [], current: null, selected: new Set(), trash: [], trashDays: 0 }; // the open history dialog
 
 function rememberSessions(sessions) {
   for (const s of sessions) sessionTitles.set(s.id, { title: s.title, source: s.source });
@@ -79,9 +79,12 @@ function dayGroup(ts) {
 export async function openSessions() {
   if (state.active === DEMO_ID) return;
   sessionsView.project = state.active;
+  sessionsView.selected.clear();
   $('#sessions-project').textContent = `· ${projectName(state.active)}`;
   $('#sessions-search').value = '';
+  $('#sessions-range').value = 'all';
   $('#sessions-list').innerHTML = '<p class="muted">Memuat riwayat…</p>';
+  $('#sessions-bulk').hidden = true;
   // Import is OpenCode-only, but of THIS project's engine (an OpenCode project under a Claude default still gets it).
   $('#sessions-import').hidden = engineOf(state.statuses[state.active] ?? {}, state.config) !== 'opencode' || !state.local || state.readOnly;
   openModal('sessions-modal');
@@ -91,6 +94,7 @@ export async function openSessions() {
     Object.assign(sessionsView, { list: sessions, current });
     renderSessionList();
     renderSessionBar();
+    loadTrash(); // 🗑 what was deleted (Claude Code keeps it in data/trash), separately from the list
     if (!narrow.matches) $('#sessions-search').focus();
   } catch (err) {
     $('#sessions-list').innerHTML = `<p class="state-error">Gagal memuat riwayat: ${escapeHtml(err.message)}</p>`;
@@ -99,20 +103,29 @@ export async function openSessions() {
 
 function renderSessionList() {
   const box = $('#sessions-list');
+  const bulk = $('#sessions-bulk');
+  if (bulk) bulk.hidden = true; // shown again only when there is something to pick
   const opencode = engineOf(state.statuses[sessionsView.project] ?? {}, state.config) === 'opencode';
   if (!sessionsView.list.length) {
     box.innerHTML = `<div class="s-empty"><b>Belum ada sesi</b><p class="muted">Sesi ${opencode ? 'OpenCode' : 'Claude Code'} dari terminal atau web untuk project ini akan muncul di sini.</p></div>`;
     return;
   }
   const q = $('#sessions-search').value.trim().toLowerCase();
-  const list = sessionsView.list.filter((s) => !q || s.title.toLowerCase().includes(q) || s.id.startsWith(q));
+  const days = Number($('#sessions-range').value) || 0;
+  const since = days ? Date.now() - days * 86_400_000 : 0;
+  const list = sessionsView.list.filter((s) => (!since || s.updated >= since) && (!q || s.title.toLowerCase().includes(q) || s.id.startsWith(q)));
   if (!list.length) {
-    box.innerHTML = '<div class="s-empty"><p class="muted">Tidak ada sesi yang cocok.</p></div>';
+    box.innerHTML = `<div class="s-empty"><p class="muted">Tidak ada sesi yang cocok${days ? ' dalam rentang ini' : ''}.</p></div>`;
     return;
   }
   // A session still running in a terminal must not be continued here too: both would write one transcript.
   const st = state.statuses[sessionsView.project] ?? {};
   const liveInTerminal = st.cliBusy ? st.cliSession : null;
+  const deletable = (s) => s.id !== sessionsView.current && s.id !== liveInTerminal;
+  // Only the rows on screen can be picked; a filter change drops whatever scrolled out of the selection.
+  const pickable = new Set(list.filter(deletable).map((s) => s.id));
+  for (const id of sessionsView.selected) if (!pickable.has(id)) sessionsView.selected.delete(id);
+  if (bulk) bulk.hidden = state.readOnly || !pickable.size; // read-only gets no checkboxes either
   let group = null;
   // OpenCode exports its own JSON (no Claude tool-summary option).
   const opt = document.querySelector('#sessions-modal .export-opt');
@@ -129,13 +142,18 @@ function renderSessionList() {
         : s.id === liveInTerminal
           ? '<span class="s-live" title="Selesaikan atau tutup dulu di terminal sebelum melanjutkannya di sini">● Berjalan di terminal</span>'
           : `<button class="primary s-resume" data-resume="${escapeHtml(s.id)}" ${state.readOnly ? `disabled title="${READ_ONLY_HINT}"` : ''}>Lanjutkan</button>`;
-      return `${head}<div class="s-item ${current ? 'current' : ''}">
+      const pick =
+        state.readOnly || !deletable(s)
+          ? ''
+          : `<label class="s-pick"><input type="checkbox" data-pick="${escapeHtml(s.id)}" ${sessionsView.selected.has(s.id) ? 'checked' : ''} aria-label="Pilih sesi: ${escapeHtml(s.title)}" /></label>`;
+      return `${head}<div class="s-item ${current ? 'current' : ''} ${sessionsView.selected.has(s.id) ? 'picked' : ''}">
+        ${pick}
         <div class="s-main">
           <span class="s-title">${escapeHtml(s.title)}</span>
           <span class="s-meta"><span class="src src-${s.source}">${s.source === 'web' ? 'Web' : s.source === 'opencode' ? 'OpenCode' : 'Terminal'}</span>${ago(s.updated)} · <code>${s.id.slice(0, 8)}</code></span>
         </div>
         <span class="s-tools">
-          ${opencode ? `<button type="button" class="ghost icon" data-rename="${escapeHtml(s.id)}" title="Ganti nama" aria-label="Ganti nama: ${escapeHtml(s.title)}" ${ro}>✎</button>` : ''}
+          ${`<button type="button" class="ghost icon" data-rename="${escapeHtml(s.id)}" title="Ganti nama" aria-label="Ganti nama: ${escapeHtml(s.title)}" ${ro}>✎</button>`}
           <button type="button" class="ghost icon" data-fork="${escapeHtml(s.id)}" title="Cabangkan: lanjutkan salinannya, sesi asli tetap utuh" aria-label="Cabangkan: ${escapeHtml(s.title)}" ${ro}>⑂</button>
           <button type="button" class="ghost s-export" data-export="${escapeHtml(s.id)}" title="${opencode ? 'Unduh sesi ini (JSON OpenCode, bisa diimpor lagi)' : 'Unduh sesi ini sebagai Markdown (.md)'}" aria-label="Export: ${escapeHtml(s.title)}">⬇ ${opencode ? '.json' : '.md'}</button>
           ${current || s.id === liveInTerminal ? '' : `<button type="button" class="ghost icon danger-text" data-delete="${escapeHtml(s.id)}" title="Hapus sesi ini" aria-label="Hapus: ${escapeHtml(s.title)}" ${ro}>🗑</button>`}
@@ -144,9 +162,143 @@ function renderSessionList() {
       </div>`;
     })
     .join('');
+  syncBulk();
+}
+
+/** Keeps "Pilih semua", the count on the delete button and the picked row tint in sync with the checkboxes. */
+function syncBulk() {
+  const boxes = [...document.querySelectorAll('#sessions-list [data-pick]')];
+  const picked = boxes.filter((b) => b.checked).length;
+  const all = $('#sessions-select-all');
+  if (all) {
+    all.checked = boxes.length > 0 && picked === boxes.length;
+    all.indeterminate = picked > 0 && picked < boxes.length;
+  }
+  const btn = $('#sessions-delete-selected');
+  if (btn) {
+    btn.disabled = !picked;
+    btn.textContent = picked ? `Hapus ${picked} sesi` : 'Hapus sesi';
+  }
+  const exp = $('#sessions-export-selected');
+  if (exp) {
+    exp.disabled = !picked;
+    exp.textContent = picked ? `⬇ Export ${picked}` : '⬇ Export';
+  }
+  for (const b of boxes) b.closest('.s-item')?.classList.toggle('picked', b.checked);
+}
+
+/** ⬇ Export N sesi: one .zip with the selected transcripts (Claude .md, OpenCode .json). */
+async function exportSelected() {
+  const ids = [...sessionsView.selected].slice(0, 25);
+  if (!ids.length) return;
+  if (sessionsView.selected.size > 25) toast('Maksimal 25 sesi per export; sisanya dilewati.', 'warn');
+  const btn = $('#sessions-export-selected');
+  const label = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = `Menyiapkan ${ids.length}…`;
+  }
+  try {
+    const res = await fetch(`/api/projects/${sessionsView.project}/sessions-export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Office-Token': auth.token },
+      body: JSON.stringify({ sessionIds: ids, tools: exportTools() }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? `HTTP ${res.status}`);
+    }
+    const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'sesi.zip';
+    saveBlob(name, await res.blob());
+    toast(`${ids.length} sesi diekspor.`, 'ok');
+  } catch (err) {
+    toast(`Export gagal: ${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = !sessionsView.selected.size;
+      btn.textContent = label;
+    }
+  }
+}
+
+/** 🗑 Hapus N sesi: one confirmation, then the same per-session route as the row button (skips failures). */
+async function deleteSelected() {
+  const ids = [...sessionsView.selected];
+  if (!ids.length) return;
+  const project = sessionsView.project;
+  const opencode = engineOf(state.statuses[project] ?? {}, state.config) === 'opencode';
+  const where = opencode
+    ? 'dari OpenCode (sama seperti opencode session delete)'
+    : 'ke folder data/trash aplikasi (bisa dikembalikan manual)';
+  if (!window.confirm(`Hapus ${ids.length} sesi?\n\nSesi dipindahkan/dihapus ${where}. Sesi yang sedang dibuka tidak ikut.`)) return;
+  const btn = $('#sessions-delete-selected');
+  let done = 0;
+  let failed = 0;
+  for (const [i, id] of ids.entries()) {
+    if (btn) btn.textContent = `Menghapus ${i + 1}/${ids.length}…`;
+    try {
+      await api(`/api/projects/${project}/session-delete`, { sessionId: id });
+      sessionsView.selected.delete(id);
+      done += 1;
+    } catch (err) {
+      failed += 1;
+      toast(`Gagal menghapus ${titleOf(id)}: ${err.message}`, 'warn');
+    }
+  }
+  toast(failed ? `${done} sesi dihapus, ${failed} gagal.` : `${done} sesi dihapus.`, failed ? 'warn' : 'ok');
+  await openSessions();
 }
 
 const titleOf = (id) => sessionsView.list?.find((s) => s.id === id)?.title ?? id.slice(0, 8);
+
+/** ↘ Trashed sessions of a Claude project: loaded with the history, hidden when empty/read-only/OpenCode. */
+async function loadTrash() {
+  const box = $('#sessions-trash');
+  sessionsView.trash = [];
+  if (state.readOnly || engineOf(state.statuses[sessionsView.project] ?? {}, state.config) === 'opencode') {
+    box.hidden = true;
+    return;
+  }
+  try {
+    const data = await api(`/api/projects/${sessionsView.project}/session-trash`);
+    sessionsView.trash = Array.isArray(data?.sessions) ? data.sessions : [];
+    sessionsView.trashDays = Number(data?.retentionDays) || 0;
+  } catch {
+    sessionsView.trash = []; // an older server or a transient error: no trash section
+  }
+  renderTrash();
+}
+
+function renderTrash() {
+  const box = $('#sessions-trash');
+  const items = sessionsView.trash ?? [];
+  box.hidden = !items.length || state.readOnly;
+  $('#sessions-trash-count').textContent = items.length ? `(${items.length})` : '';
+  $('#sessions-trash-retention').textContent = sessionsView.trashDays ? `· otomatis dibersihkan setelah ${sessionsView.trashDays} hari` : '';
+  $('#sessions-trash-list').innerHTML = items
+    .map(
+      (s) => `<div class="s-item">
+        <div class="s-main">
+          <span class="s-title">${escapeHtml(s.title)}</span>
+          <span class="s-meta"><span class="src src-${s.source === 'web' ? 'web' : 'cli'}">${s.source === 'web' ? 'Web' : 'Terminal'}</span>Dihapus ${ago(s.trashedAt)} · ${Math.max(1, Math.round(s.size / 1024))} KB</span>
+        </div>
+        <button type="button" class="primary s-restore" data-restore="${escapeHtml(s.sessionId)}" aria-label="Pulihkan: ${escapeHtml(s.title)}">↩ Pulihkan</button>
+      </div>`,
+    )
+    .join('');
+}
+
+/** ↩ Puts a trashed transcript back in the history. */
+async function restoreTrash(id) {
+  try {
+    await api(`/api/projects/${sessionsView.project}/session-restore`, { sessionId: id });
+    toast('Sesi dipulihkan.', 'ok');
+    await openSessions();
+    $('#sessions-trash').open = true; // stay in the section the reader is using
+  } catch (err) {
+    toast(err.message, 'warn');
+  }
+}
 
 /** ⑂ Cabangkan, 🗑 Hapus, ✎ Ganti nama (OpenCode) from Riwayat sesi. */
 async function sessionAction(btn) {
@@ -274,6 +426,7 @@ export function initSessions() {
 
   $('#btn-sessions').addEventListener('click', openSessions);
   $('#sessions-search').addEventListener('input', renderSessionList);
+  $('#sessions-range').addEventListener('change', renderSessionList);
   $('#sessions-list').addEventListener('click', async (e) => {
     const exp = e.target.closest('[data-export]');
     if (exp) {
@@ -285,6 +438,28 @@ export function initSessions() {
     if (act) return sessionAction(act);
     const btn = e.target.closest('[data-resume]');
     if (btn && (await resumeSession(sessionsView.project, btn.dataset.resume, btn))) closeModal('sessions-modal');
+  });
+  $('#sessions-list').addEventListener('change', (e) => {
+    const box = e.target.closest('[data-pick]');
+    if (!box) return;
+    if (box.checked) sessionsView.selected.add(box.dataset.pick);
+    else sessionsView.selected.delete(box.dataset.pick);
+    syncBulk();
+  });
+  $('#sessions-select-all').addEventListener('change', (e) => {
+    const on = e.target.checked;
+    for (const box of document.querySelectorAll('#sessions-list [data-pick]')) {
+      box.checked = on;
+      if (on) sessionsView.selected.add(box.dataset.pick);
+      else sessionsView.selected.delete(box.dataset.pick);
+    }
+    syncBulk();
+  });
+  $('#sessions-delete-selected').addEventListener('click', deleteSelected);
+  $('#sessions-export-selected').addEventListener('click', exportSelected);
+  $('#sessions-trash-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-restore]');
+    if (btn) restoreTrash(btn.dataset.restore);
   });
   $('#sessions-new').addEventListener('click', () => {
     if (!confirmNew()) return;

@@ -27,6 +27,7 @@ import { CiWatcher } from './src/github-ci.js';
 import { findGh } from './src/github-pr.js';
 import { DEVICE_COOKIE, HTTPS_DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows, wifiConfig } from './src/remote.js';
 import { TailscaleCert, httpsPortFrom, restrictDir } from './src/tls.js';
+import { purgeTrash, TRASH_RETENTION_DAYS } from './src/session-admin.js';
 import { PushService, wifiApproval } from './src/push.js';
 import { activeAgents, storedEnabled, teamPrompt } from './src/role-catalog.js';
 import { loadAgentDefinitions, setActiveRoles, setRoleMemory } from './src/roles.js';
@@ -206,6 +207,23 @@ const tls = new TailscaleCert({
   },
 });
 
+// 🗑 Trash retention (data/trash): sessions deleted from Riwayat sesi stay for a while, then a daily purge removes
+// them. OFFICE_TRASH_DAYS overrides the 30 days (0 = keep forever). Never touches files that are not transcripts.
+const TRASH_DAYS = (() => {
+  const n = Number(process.env.OFFICE_TRASH_DAYS);
+  return Number.isInteger(n) && n >= 0 ? n : TRASH_RETENTION_DAYS;
+})();
+function purgeOldTrash() {
+  try {
+    const { removed } = purgeTrash({ dataDir: DATA_DIR, days: TRASH_DAYS });
+    if (removed) console.log(`Retensi trash: ${removed} sesi lebih lama dari ${TRASH_DAYS} hari dihapus.`);
+  } catch (err) {
+    console.error('Retensi trash gagal:', err?.message ?? err);
+  }
+}
+purgeOldTrash();
+setInterval(purgeOldTrash, 24 * 60 * 60 * 1000).unref?.();
+
 /** The HTTPS status for browsers (no key, no paths); "error" when HTTPS is off by configuration. */
 function httpsInfo() {
   if (HTTPS_PORT === null) return { ...tls.publicInfo(0), state: remote.enabled ? 'error' : 'off', host: null, url: null, validTo: null, error: remote.enabled ? 'OFFICE_HTTPS_PORT bentrok dengan OFFICE_PORT; HTTPS dimatikan.' : null };
@@ -357,7 +375,7 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Spotify's Client ID, login and logout: laptop only (the redirect URI is the laptop's 127.0.0.1).
 // ⚙ Cek kompatibilitas Claude Code (run, settings): laptop only (it spawns Claude Code, maybe a model call).
 // ⚙ Kompatibilitas OpenCode (run, settings): laptop only too (it spawns `opencode acp`).
-const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 // The same for switching engines and OpenCode's provider logins (API keys travel in these requests).

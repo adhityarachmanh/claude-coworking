@@ -13,8 +13,9 @@ import { shortModelLabel, tierFor } from '../model-auto.js';
 import { listSessions, sessionHistory } from '../transcripts.js';
 import { openCodeSessions } from '../opencode-bin.js';
 import { importOpenCodeSession, OpenCodeAdminError } from '../opencode-admin.js';
-import { deleteSession, exportOpenCodeSession, forkOpenCodeSession, renameOpenCodeSession, SessionAdminError, validSessionId } from '../session-admin.js';
+import { deleteSession, exportOpenCodeSession, forkOpenCodeSession, listTrashedSessions, renameClaudeSession, renameOpenCodeSession, restoreTrashedSession, SessionAdminError, TRASH_RETENTION_DAYS, validSessionId } from '../session-admin.js';
 import { applyRedo, captureRedo, conversationOf, listRedo, previewRedo, RedoError, sealRedo } from '../redo.js';
+import { ZipWriter } from '../zip.js';
 
 /** Runs a 🕘 Riwayat sesi action; SessionAdminError / OpenCode errors become JSON with their status. */
 async function admin(res, fn) {
@@ -202,6 +203,17 @@ export function register(router) {
     console.log(`Sesi ${sessionId.slice(0, 12)} dihapus (${project.name})${result.trashed ? ` → ${result.trashed}` : ''}`);
     return { ok: true, ...result };
   })));
+  // ↩ Sesi terhapus (Claude Code): what 🗑 moved to data/trash, with its title, and putting it back.
+  router.post('/api/projects/:id/session-trash', withSession(({ hub, dataDir }, req, res, { project }) => admin(res, async () => {
+    if (hub.engineOf(project.id) !== 'claude') return { sessions: [] };
+    return { sessions: listTrashedSessions({ projectPath: project.path, dataDir }), retentionDays: TRASH_RETENTION_DAYS };
+  })));
+  router.post('/api/projects/:id/session-restore', withSession(({ hub, dataDir }, req, res, { project }, body) => admin(res, async () => {
+    if (hub.engineOf(project.id) !== 'claude') throw new SessionAdminError(409, 'Pemulihan sesi hanya untuk Claude Code.');
+    const result = restoreTrashedSession({ projectPath: project.path, dataDir, sessionId: String(body.sessionId ?? '') });
+    console.log(`Sesi ${result.sessionId.slice(0, 12)} dipulihkan dari trash (${project.name})`);
+    return { ok: true, ...result };
+  })));
   // ⑂ Cabangkan: continue a copy; the original stays as it was. Claude Code: --fork-session on the next start.
   router.post('/api/projects/:id/session-fork', withSession(({ hub, opencode }, req, res, { project, session }, body) => admin(res, async () => {
     const sessionId = String(body.sessionId ?? '');
@@ -219,10 +231,17 @@ export function register(router) {
     hub.chat(project.id, { kind: 'divider', text: `Cabang dari sesi ${sessionId.slice(0, 8)}: pesan berikutnya memulai salinannya` });
     return { ok: true, sessionId };
   })));
-  // ✎ OpenCode: rename any listed session (Claude Code renames the open one with /rename).
+  // ✎ Rename a listed session: OpenCode's own title, or a custom-title entry for Claude Code (the open one
+  // keeps its title in the session bar, like /rename in the CLI).
   router.post('/api/projects/:id/session-rename', withSession(({ hub, opencode }, req, res, { project }, body) => admin(res, async () => {
-    if (hub.engineOf(project.id) !== 'opencode') throw new SessionAdminError(409, 'Untuk Claude Code, buka sesinya lalu klik judulnya (/rename).');
-    return { ok: true, title: await renameOpenCodeSession({ opencode, projectPath: project.path, sessionId: String(body.sessionId ?? ''), title: body.title }) };
+    const sessionId = String(body.sessionId ?? '');
+    if (hub.engineOf(project.id) === 'opencode') {
+      return { ok: true, title: await renameOpenCodeSession({ opencode, projectPath: project.path, sessionId, title: body.title }) };
+    }
+    const st = hub.runtime.get(project.id)?.status ?? {};
+    if (sessionId === hub.sessionIdFor(project.id)) throw new SessionAdminError(409, 'Ini percakapan yang sedang dibuka: klik judulnya di bar sesi untuk mengganti nama.');
+    if (st.cliBusy && st.cliSession === sessionId) throw new SessionAdminError(409, 'Sesi ini sedang berjalan di terminal.');
+    return { ok: true, title: renameClaudeSession({ projectPath: project.path, sessionId, title: body.title }) };
   })));
   // ⬇ OpenCode: the session as OpenCode's own JSON (re-import with `opencode session import`).
   router.post('/api/projects/:id/session-export-json', withSession(({ opencode }, req, res, { project }, body) => admin(res, async () => {
@@ -367,7 +386,44 @@ export function register(router) {
   }));
   router.post('/api/projects/:id/export-session', withProject(claudeOnly((ctx, req, res, { project }, body) =>
     conversation(res, () => json(res, 200, exportSession(project.path, body.sessionId, { tools: body.tools === true, projectName: project.name }))), 'Export sesi')));
+  // ⬇ Export some sessions at once: one .zip (Claude .md files, OpenCode .json files). Reads only.
+  router.post('/api/projects/:id/sessions-export', withSession(async ({ hub, opencode }, req, res, { project }, body) => {
+    const engine = hub.engineOf(project.id);
+    const ids = [...new Set((Array.isArray(body.sessionIds) ? body.sessionIds : []).map((x) => String(x)))].slice(0, 25);
+    if (!ids.length || ids.some((id) => !validSessionId(engine, id))) return json(res, 400, { error: 'Pilih sesi yang valid.' });
+    try {
+      const existing = engine === 'opencode' ? await openCodeSessions(opencode, project.path, 200) : listSessions(project.path, 200);
+      const byId = new Map(existing.map((s) => [s.id, s]));
+      const chosen = ids.filter((id) => byId.has(id));
+      if (!chosen.length) return json(res, 404, { error: 'Sesi tidak ditemukan.' });
+      const files = [];
+      for (const id of chosen) {
+        const name = `${safeFile(byId.get(id)?.title)}-${id.slice(0, 8)}`;
+        if (engine === 'claude') {
+          const out = exportSession(project.path, id, { tools: body.tools === true, projectName: project.name });
+          files.push({ name: `${name}.md`, buf: Buffer.from(out.markdown) });
+        } else {
+          const data = await exportOpenCodeSession({ opencode, projectPath: project.path, sessionId: id });
+          files.push({ name: `${name}.json`, buf: Buffer.from(JSON.stringify(data, null, 2)) });
+        }
+      }
+      const zipName = `sesi-${safeFile(project.name)}-${new Date().toLocaleDateString('sv-SE')}.zip`;
+      res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${zipName}"`, 'Cache-Control': 'no-store' });
+      const zip = new ZipWriter(res, { zip64: files.reduce((sum, f) => sum + f.buf.length, 0) > 0xffffffff });
+      for (const f of files) await zip.add(f.name, f.buf);
+      await zip.finish();
+      res.end();
+      return undefined;
+    } catch (err) {
+      if (res.headersSent) return res.destroy();
+      const status = err instanceof ConversationError || err instanceof SessionAdminError ? err.status : (err.status ?? 502);
+      return json(res, status, { error: err.message });
+    }
+  }));
 }
+
+/** A file name that is safe on every platform (Windows included), never empty. */
+const safeFile = (s) => String(s ?? '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 80) || 'sesi';
 
 /** A ConversationError (bad query, unknown session, too large) goes back with its own status. */
 function conversation(res, fn) {

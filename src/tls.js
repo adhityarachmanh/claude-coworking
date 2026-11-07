@@ -17,6 +17,8 @@ export const HTTPS_STATES = Object.freeze(['off', 'no-tailscale', 'certs-disable
 export const EXPIRING_MS = 14 * 86_400_000;
 // tailscaled only re-issues near expiry, so asking twice a day costs nothing (and suits 45-day certificates).
 export const REFRESH_MS = 12 * 60 * 60 * 1000;
+// Without a usable certificate the CLI is asked again this soon: Tailscale may connect a minute after the app starts.
+export const RETRY_MS = 60_000;
 const CLI_TIMEOUT_MS = 90_000;
 // A MagicDNS name (`arh-3.taild0f8a1.ts.net`): also used as a file name and in the Host check, so strict.
 const HOST_NAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
@@ -157,7 +159,7 @@ export class TailscaleCert {
    * @param {(...args: any[]) => void} [options.info]  good news, e.g. a certificate loaded (server.log INFO)
    * @param {(dir: string) => Promise<void>} [options.secureDir]  restricts the folder's permissions (tests inject a no-op)
    */
-  constructor({ dir, enabled = () => true, bin, run, now = Date.now, onChange = () => {}, log = console.error, info = console.log, secureDir }) {
+  constructor({ dir, enabled = () => true, bin, run, now = Date.now, onChange = () => {}, log = console.error, info = console.log, secureDir, retryMs = RETRY_MS }) {
     this.dir = dir;
     this.secureDir = secureDir ?? ((d) => restrictDir(d, log));
     this.enabled = enabled;
@@ -174,6 +176,8 @@ export class TailscaleCert {
     this.checkedAt = 0;
     this.inFlight = null;
     this.timer = null;
+    this.retryMs = retryMs;
+    this.retryTimer = null;
   }
 
   /** The MagicDNS name the https listener answers to, or null (no usable certificate). */
@@ -212,7 +216,10 @@ export class TailscaleCert {
   tick() {
     const state = this.state;
     if (state === this.lastTickState) return;
-    if (state === 'expired' && this.lastTickState) this.log(`HTTPS: sertifikat ${this.material.host} kedaluwarsa`);
+    if (state === 'expired' && this.lastTickState) {
+      this.log(`HTTPS: sertifikat ${this.material.host} kedaluwarsa`);
+      this.refresh(); // renew soon instead of waiting for the 12-hour check
+    }
     const changed = this.lastTickState !== undefined;
     this.lastTickState = state;
     if (changed) this.onChange(this.publicInfo());
@@ -231,7 +238,9 @@ export class TailscaleCert {
 
   stop() {
     clearInterval(this.timer);
+    clearTimeout(this.retryTimer);
     this.timer = null;
+    this.retryTimer = null;
   }
 
   /**
@@ -269,8 +278,18 @@ export class TailscaleCert {
   refresh() {
     this.inFlight ??= this.#refresh().finally(() => {
       this.inFlight = null;
+      this.#scheduleRetry();
     });
     return this.inFlight;
+  }
+
+  /** Without a certificate, try again soon (Tailscale often connects a moment after the app starts). */
+  #scheduleRetry() {
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    if (!this.enabled() || this.usable) return;
+    this.retryTimer = setTimeout(() => this.refresh(), this.retryMs);
+    this.retryTimer.unref?.();
   }
 
   async #refresh() {
@@ -287,8 +306,12 @@ export class TailscaleCert {
     } catch (err) {
       const state = err instanceof CertError ? err.state : 'error';
       const error = err instanceof CertError ? err.message : 'Tailscale CLI gagal.';
-      if (!(err instanceof CertError)) this.log(`HTTPS: tailscale gagal: ${err.stderr || err.message}`);
-      else this.log(`HTTPS: ${err.message}`);
+      const sameProblem = this.problem?.state === state && this.lastError === error;
+      if (!(err instanceof CertError)) {
+        if (!sameProblem) this.log(`HTTPS: tailscale gagal: ${err.stderr || err.message}`);
+      } else if (!sameProblem) {
+        this.log(`HTTPS: ${err.message}`);
+      }
       this.problem = { state, error };
       this.lastError = error;
       // A renamed machine/tailnet: the old certificate no longer names us, stop serving it.

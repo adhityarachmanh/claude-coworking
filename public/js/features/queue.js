@@ -10,6 +10,7 @@ import { openModal } from '../ui/modals.js';
 import { setMobileView } from '../ui/layout.js';
 import { attachmentChip, attachmentPayload, attachmentsReady, clearAttachments } from './attachments.js';
 import { autosize, updateBashMode } from './composer.js';
+import { revealChatMessage } from './chat.js';
 import { scheduleDraftSave } from './draft.js';
 
 const STATUS_LABEL = { waiting: 'Menunggu', running: 'Berjalan', done: 'Selesai', failed: 'Gagal' };
@@ -63,15 +64,15 @@ function noticePause(project, s) {
 
 // ---------- dialog ----------
 
-export async function openQueue({ focusAdd = false } = {}) {
-  if (state.active === DEMO_ID) return toast('Pilih project dulu — demo tidak punya antrian.');
-  queueView.project = state.active;
+export async function openQueue({ focusAdd = false, project = state.active } = {}) {
+  if (project === DEMO_ID) return toast('Pilih project dulu — demo tidak punya antrian.');
+  queueView.project = project;
   queueView.editing = null;
   queueView.budgetKey = null; // prefill the budget fields again
   queueView.budgetOpened = false;
   setBudgetOpen(false);
   showBudgetError('');
-  $('#queue-project').textContent = `· ${projectName(state.active)}`;
+  $('#queue-project').textContent = `· ${projectName(project)}`;
   openModal('queue-modal');
   await loadQueue();
   if (focusAdd && canEdit()) $('#queue-new').focus();
@@ -315,7 +316,7 @@ function itemHtml(item, waiting, edit) {
 function openInChat(item) {
   $('#queue-modal').hidden = true;
   if (narrow.matches) setMobileView('chat');
-  const node = [...document.querySelectorAll('#chat [data-id]')].find((n) => n.dataset.id === item.chatId);
+  const node = revealChatMessage(item.chatId);
   if (!node) return toast('Pesan itu sudah di luar jendela chat. Lihat lewat 🕘 Riwayat sesi.', 'warn');
   node.scrollIntoView({ block: 'start', behavior: 'smooth' });
   node.classList.add('queue-flash');
