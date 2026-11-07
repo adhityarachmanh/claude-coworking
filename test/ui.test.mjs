@@ -2718,21 +2718,17 @@ for (const vp of VIEWPORTS) {
         assert.match(acts.queue, /Antrian 2/);
         assert.equal(acts.stop, '■ Hentikan');
 
+        // Hentikan: calls that project's stop route and keeps the dashboard open.
+        await page.eval((pid) => document.querySelector(`#dash-list li[data-id="${pid}"] [data-dash-stop]`).click(), projectId);
+        await page.waitFor(() => window.__stopCalls.length === 1, { timeoutMs: 4000, message: 'panggilan stop' });
+        assert.equal(await page.eval((pid) => window.__stopCalls[0].endsWith(`/api/projects/${pid}/stop`), projectId), true);
+        assert.equal(await page.eval(() => document.querySelector('#dash-modal').hidden), false, 'dashboard tetap terbuka');
+
         // Antrian: closes the dashboard and opens the queue of that project (not necessarily the active one).
         await page.eval((pid) => document.querySelector(`#dash-list li[data-id="${pid}"] [data-dash-queue]`).click(), projectId);
         await page.waitFor(() => !document.querySelector('#queue-modal').hidden, { timeoutMs: 4000, message: 'antrian terbuka' });
         assert.equal(await page.eval(() => document.querySelector('#dash-modal').hidden), true, 'dashboard menutup');
         assert.equal(await page.eval(() => window.__queueCalls.length), 1);
-        await page.press('Escape');
-        await sleep(80);
-
-        // Hentikan: calls that project's stop route and keeps the dashboard open.
-        await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
-        await page.waitFor(() => Boolean(document.querySelector('#dash-list [data-dash-stop]')), { timeoutMs: 4000, message: 'tombol hentikan kembali' });
-        await page.eval((pid) => document.querySelector(`#dash-list li[data-id="${pid}"] [data-dash-stop]`).click(), projectId);
-        await page.waitFor(() => window.__stopCalls.length === 1, { timeoutMs: 4000, message: 'panggilan stop' });
-        assert.equal(await page.eval((pid) => window.__stopCalls[0].endsWith(`/api/projects/${pid}/stop`), projectId), true);
-        assert.equal(await page.eval(() => document.querySelector('#dash-modal').hidden), false, 'dashboard tetap terbuka');
         await page.press('Escape');
       } finally {
         await page.eval(async (pid) => {
@@ -2814,6 +2810,21 @@ for (const vp of VIEWPORTS) {
       });
       await page.waitFor(() => window.__installPrompted === true, { timeoutMs: 2000, message: 'dialog pasang dipanggil' });
       await page.waitFor(() => document.querySelector('#install-app').hidden, { timeoutMs: 2000, message: 'tombol hilang setelah dipasang' });
+      await page.eval(async () => {
+        window.__badges = [];
+        navigator.setAppBadge = (n) => {
+          window.__badges.push(['set', n]);
+          return Promise.resolve();
+        };
+        navigator.clearAppBadge = () => {
+          window.__badges.push(['clear']);
+          return Promise.resolve();
+        };
+        const { syncAppBadge } = await import('/js/features/install.js');
+        syncAppBadge(3);
+        syncAppBadge(0);
+      });
+      assert.deepEqual(await page.eval(() => window.__badges), [['set', 3], ['clear']], 'badge ikon: angka lalu dibersihkan');
       await page.press('Escape');
     });
 
@@ -2848,6 +2859,42 @@ for (const vp of VIEWPORTS) {
       } finally {
         await page.eval(() => {
           window.fetch = window.__phFetch;
+        });
+      }
+    });
+
+    test('💰 Dashboard: badge budget per project dari batasnya', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval((pid) => {
+        window.__budgetFetch = window.fetch;
+        window.fetch = (url, opts) =>
+          String(url).endsWith('/api/budget')
+            ? Promise.resolve(
+                new Response(JSON.stringify({ budget: { projects: [{ projectId: pid, usd: 15, limit: 20, window: 'month', state: 'warn' }] } }), {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/json' },
+                }),
+              )
+            : window.__budgetFetch(url, opts);
+        return import('/js/features/dashboard.js').then((m) => {
+          m.dashboard.budgetAt = 0;
+          m.dashboard.budgets = new Map();
+        });
+      }, projectId);
+      try {
+        await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
+        await page.waitFor((pid) => Boolean(document.querySelector(`#dash-list li[data-id="${pid}"] .dash-budget`)), { timeoutMs: 4000, message: 'badge budget di kartu' }, projectId);
+        const badge = await page.eval((pid) => {
+          const el = document.querySelector(`#dash-list li[data-id="${pid}"] .dash-budget`);
+          return { text: el.textContent, cls: el.className, title: el.title };
+        }, projectId);
+        assert.match(badge.text, /💰 \$15,00 \/ \$20,00/);
+        assert.match(badge.cls, /warn/);
+        assert.match(badge.title, /bulanan/);
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__budgetFetch;
         });
       }
     });

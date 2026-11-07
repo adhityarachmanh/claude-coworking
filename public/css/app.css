@@ -2105,6 +2105,9 @@ body.read-only #composer-hint { color: var(--ask); }
 .dash-chip span { color: var(--muted); }
 .dash-chip:hover { border-color: var(--border-strong); color: var(--text); }
 .dash-chip.on { border-color: var(--accent); color: var(--text); background: var(--surface-3); }
+.dash-budget { color: var(--text-2); }
+.dash-budget.warn { color: var(--warn-text-strong); }
+.dash-budget.over { color: var(--err-text-strong); font-weight: 600; }
 .dash-attention { flex: none; min-width: 0; padding: 8px 10px; border: 1px solid var(--warn-line); border-radius: var(--r-lg); background: var(--warn-soft); }
 .dash-attention > b { display: block; margin-bottom: 6px; font-size: var(--fs-md); color: var(--warn-text-strong); }
 .dash-attention ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; }

@@ -3,6 +3,7 @@ import { $, isTyping, narrow } from '../core/dom.js';
 import { APP_NAME, state } from '../core/state.js';
 import { loadChanges } from '../features/changes.js';
 import { keepChatPinned, scrollChat } from '../features/chat.js';
+import { syncAppBadge } from '../features/install.js';
 
 export function updateTitle() {
   const pending = [...state.approvals.values()].filter((a) => a.status === 'pending').length;
@@ -10,6 +11,7 @@ export function updateTitle() {
   const badge = $('#nav-badge-chat');
   badge.hidden = !pending;
   badge.textContent = pending;
+  syncAppBadge(pending);
 }
 
 // ---------- phone layout: bottom navigation between full-screen views ----------

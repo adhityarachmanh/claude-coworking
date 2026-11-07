@@ -267,6 +267,7 @@ sessions.onRateLimit = (id, info) => taskQueue.onRateLimit(id, info);
 const push = new PushService({
   hub,
   remote,
+  dataDir: DATA_DIR,
   queueSummary: (id) => taskQueue.summary(id),
   hasStream: (deviceId) => [...deviceStreams.values()].includes(deviceId),
   onChange: () => publishConfig(),

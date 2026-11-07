@@ -44,7 +44,7 @@ export function register(router) {
   router.post('/api/push/history', ({ push, isLocal }, req, res) => {
     if (!isLocal(req)) return json(res, 403, { error: 'Riwayat notifikasi hanya dari laptop.' });
     return json(res, 200, { entries: push.historyView() });
-  });
+  }, { maxBody: MAX_SMALL_BODY });
   router.post('/api/push/act', act, { maxBody: MAX_SMALL_BODY, noToken: true });
 }
 

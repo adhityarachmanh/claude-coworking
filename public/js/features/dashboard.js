@@ -33,6 +33,9 @@ export const dashboard = {
   lastAnnounce: 0,
   announceTimer: null,
   today: { at: 0, data: null, loading: false },
+  budgets: new Map(), // project id -> { usd, limit, window, state } when that project has its own limit
+  budgetAt: 0,
+  budgetLoading: false,
 };
 
 const isOpen = () => !$('#dash-modal').hidden;
@@ -57,12 +60,15 @@ export function summaries() {
   const stuckBy = stuckCounts();
   return sortSummaries(
     state.projects.map((p) =>
-      summarize(p, state.statuses[p.id] ?? {}, {
-        chat: state.chats[p.id] ?? [],
-        events: state.events[p.id] ?? [],
-        approvals: byProject.get(p.id) ?? [],
-        stuck: stuckBy.get(p.id) ?? 0,
-        demo: p.id === DEMO_ID,
+      ({
+        ...summarize(p, state.statuses[p.id] ?? {}, {
+          chat: state.chats[p.id] ?? [],
+          events: state.events[p.id] ?? [],
+          approvals: byProject.get(p.id) ?? [],
+          stuck: stuckBy.get(p.id) ?? 0,
+          demo: p.id === DEMO_ID,
+        }),
+        budget: dashboard.budgets.get(p.id) ?? null,
       }),
     ),
   );
@@ -80,6 +86,10 @@ function cardParts(s, now) {
   if (when) meta.push(`<span>🕘 ${escapeHtml(when)}</span>`);
   if (s.model) meta.push(`<span>🧠 ${escapeHtml(s.model)}</span>`);
   if (s.contextPct != null) meta.push(`<span class="${s.contextPct >= 80 ? 'dash-warn' : ''}">konteks ${s.contextPct}%</span>`);
+  if (s.budget) {
+    const when = { day: 'harian', week: 'mingguan', month: 'bulanan' }[s.budget.window] ?? '';
+    meta.push(`<span class="dash-budget ${escapeHtml(s.budget.state)}" title="Budget ${escapeHtml(when)}">💰 ${money(s.budget.usd)} / ${money(s.budget.limit)}</span>`);
+  }
   let line = '';
   if (s.waitingLabel) line = `<p class="dash-line dash-wait">Menunggu: ${escapeHtml(s.waitingLabel)}</p>`;
   else if (s.busy && (s.roles.length || s.task)) {
@@ -288,12 +298,34 @@ function renderToday() {
   box.hidden = false;
 }
 
+/** The budget badge data for every project that set its own limit (one request per minute at most). */
+async function loadBudgets() {
+  if (state.readOnly || dashboard.budgetLoading || Date.now() - dashboard.budgetAt < TODAY_GAP_MS) return;
+  dashboard.budgetLoading = true;
+  dashboard.budgetAt = Date.now();
+  try {
+    const data = await api('/api/budget');
+    const list = data?.budget?.projects;
+    dashboard.budgets = new Map(
+      (Array.isArray(list) ? list : [])
+        .filter((p) => p && typeof p.projectId === 'string')
+        .map((p) => [p.projectId, { usd: Number(p.usd) || 0, limit: Number(p.limit) || 0, window: p.window, state: p.state }]),
+    );
+  } catch {
+    dashboard.budgets = new Map(); // read-only phone or an older server
+  } finally {
+    dashboard.budgetLoading = false;
+    renderDashboard();
+  }
+}
+
 export function openDashboard() {
   closeModal('project-modal');
   openModal('dash-modal');
   renderAttention();
   loadAttention({ force: true });
   loadToday();
+  loadBudgets();
   renderDashboard();
   startTick();
   // Laptop: type to filter right away. Phone: no keyboard popping up; the dialog focuses its first control.

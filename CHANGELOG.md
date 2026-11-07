@@ -33,6 +33,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **📈 Top project “Hari ini”.** Ringkasan harian kini menyebut satu–dua project paling aktif hari ini (berdasarkan giliran/token), di samping biaya, giliran, token, sesi, dan jumlah project.
 - **🔔 Riwayat notifikasi.** Di ⚙ → Notifikasi (laptop) ada daftar 30 notifikasi terakhir yang dikirim ke HP: waktu, project, jenis (minta izin/selesai/berhenti/antrian/tes), role, dan perangkat tujuan. Disimpan di memori server sejak aplikasi menyala.
 - **🎨 Tema kontras tinggi.** Pilihan **Tampilan → Kontras tinggi**: latar hitam, teks putih, aksen kuning, dan garis putih. Diaudit otomatis dengan target WCAG AA seperti tema lain.
+- **💾 Riwayat notifikasi bertahan setelah restart.** Log 30 notifikasi terakhir disimpan di `data/push-history.json` (tidak ikut backup) dan dimuat lagi saat server menyala.
+- **🔢 Badge ikon aplikasi.** Saat dipasang sebagai PWA, ikon aplikasi menampilkan jumlah izin yang menunggu (Badging API); badge hilang saat tidak ada izin tertunda.
+- **💰 Badge budget per project.** Kartu di 🗂 Semua project menampilkan `💰 $terpakai / $batas` untuk project yang punya batas sendiri, dengan warna kuning ≥80% dan merah ≥100%.
 
 ### Diperbaiki
 

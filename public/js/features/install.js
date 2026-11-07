@@ -32,6 +32,17 @@ export async function installApp() {
   return choice?.outcome === 'accepted';
 }
 
+/** 🔢 The installed app's icon badge (Chromium, Android): pending approvals. Silently ignored elsewhere. */
+export function syncAppBadge(count) {
+  try {
+    const n = Number(count);
+    const pending = Number.isFinite(n) && n > 0 ? navigator.setAppBadge?.(n) : navigator.clearAppBadge?.();
+    pending?.catch?.(() => {});
+  } catch {
+    // unsupported or not installed as an app
+  }
+}
+
 export function initInstall() {
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault(); // show our own button in Panduan instead of the browser's mini-infobar

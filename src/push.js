@@ -9,6 +9,8 @@
 // - Izinkan / Tolak from the notification: a single-use action token per (approval, device), 256-bit, kept only as
 //   a SHA-256 hash in memory, 15 minutes (POST /api/push/act, src/routes/push.js).
 import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { NOTIFY_KINDS, cleanNotifySettings, isTime, notifyPlan } from '../public/js/core/notify-rules.js';
 import { CATALOG } from './role-catalog.js';
 import { DEVICE_IDLE_MS } from './remote.js';
@@ -164,6 +166,38 @@ export function phoneClock(settings, now = Date.now()) {
 
 // ---------- the service ----------
 
+/** The persisted log is bounded and untrusted (a hand-edited file must not break startup). */
+function loadHistory(file) {
+  if (!file) return [];
+  try {
+    const list = JSON.parse(readFileSync(file, 'utf8'));
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((e) => e && Number.isFinite(e.at) && typeof e.type === 'string')
+      .slice(-30)
+      .map((e) => ({
+        at: e.at,
+        type: e.type,
+        project: typeof e.project === 'string' ? e.project.slice(0, 200) : '',
+        projectName: typeof e.projectName === 'string' ? e.projectName.slice(0, 40) : 'project',
+        role: typeof e.role === 'string' ? e.role.slice(0, 40) : '',
+        devices: Array.isArray(e.devices) ? e.devices.filter((d) => typeof d === 'string').slice(0, 20) : [],
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/** Best effort: the log is a convenience, never worth failing a send for. */
+function persistHistory(file, history) {
+  if (!file) return;
+  try {
+    writeFileSync(file, `${JSON.stringify(history)}\n`);
+  } catch {
+    // disk full / read-only: the in-memory log keeps working for this run
+  }
+}
+
 export class PushService {
   /**
    * @param {object} options
@@ -178,7 +212,7 @@ export class PushService {
    * @param {(msg: string) => void} [options.log]  info
    * @param {(msg: string) => void} [options.warn]  failures (sanitised: no endpoint, key or payload)
    */
-  constructor({ hub, remote, queueSummary = () => null, hasStream = () => false, fetch, allowedHosts = PUSH_SERVICE_HOSTS, now = Date.now, onChange = () => {}, log = console.log, warn = console.error }) {
+  constructor({ hub, remote, queueSummary = () => null, hasStream = () => false, fetch, allowedHosts = PUSH_SERVICE_HOSTS, dataDir = null, now = Date.now, onChange = () => {}, log = console.log, warn = console.error }) {
     this.hub = hub;
     this.remote = remote;
     this.queueSummary = queueSummary;
@@ -198,7 +232,9 @@ export class PushService {
     this.lastTest = new Map(); // deviceId -> time of the last test push
     this.backoff = new Map(); // deviceId -> epoch ms until which nothing is sent (429/503)
     this.queuePauses = new Map(); // projectId -> pause reason already announced
-    this.history = []; // newest notifications sent (in memory; laptop-only view)
+    // The laptop's notification log (data/push-history.json, never in a backup): what was sent, to which devices.
+    this.historyFile = dataDir ? path.join(dataDir, 'push-history.json') : null;
+    this.history = loadHistory(this.historyFile);
     this.actFailures = new Map(); // ip -> [timestamps]
     this.inFlight = 0;
     this.waiting = [];
@@ -454,6 +490,7 @@ export class PushService {
   record(entry) {
     this.history.push({ at: this.now(), ...entry });
     if (this.history.length > 30) this.history.splice(0, this.history.length - 30);
+    persistHistory(this.historyFile, this.history);
   }
 
   /** Newest first, for ⚙ → Notifikasi. */

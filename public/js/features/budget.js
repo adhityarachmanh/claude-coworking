@@ -66,7 +66,17 @@ export function normalizeBudgetView(raw) {
     .filter((d) => d && Number.isFinite(Number(d.start)))
     .slice(-7)
     .map((d) => ({ start: Number(d.start), usd: amount(d.usd) ?? 0, rows: count(d.rows), known: count(d.known) }));
-  return { rows, forecast, trend, note: typeof view.note === 'string' ? view.note.trim().slice(0, 300) : '' };
+  const projects = (Array.isArray(view.projects) ? view.projects : [])
+    .filter((p) => p && typeof p.projectId === 'string')
+    .slice(0, 100)
+    .map((p) => ({
+      projectId: p.projectId,
+      usd: amount(p.usd) ?? 0,
+      limit: amount(p.limit) ?? 0,
+      window: ['day', 'week', 'month'].includes(p.window) ? p.window : 'month',
+      state: ['ok', 'warn', 'over'].includes(p.state) ? p.state : 'ok',
+    }));
+  return { rows, forecast, trend, projects, note: typeof view.note === 'string' ? view.note.trim().slice(0, 300) : '' };
 }
 
 /** "sisa $7,70" while there is room, "lewat $2,40" once the limit is passed. */

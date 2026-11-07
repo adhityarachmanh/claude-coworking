@@ -3,7 +3,7 @@
 // private key to check what a phone would actually show. No network, no server process.
 import assert from 'node:assert/strict';
 import { createDecipheriv, createECDH, hkdfSync } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
@@ -59,6 +59,26 @@ function fakePushService() {
   };
   return { sent, reply, fetch };
 }
+
+test('history: recent sends are persisted in data/push-history.json and survive a restart', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-push-'));
+  dirs.push(dir);
+  const hub = new Hub({ dataDir: dir });
+  const make = () => new PushService({ hub, remote: new RemoteAccess(hub), dataDir: dir, log: () => {}, warn: () => {} });
+  const a = make();
+  a.record({ type: 'ask', project: 'p1', projectName: 'toko', role: 'QA', devices: ['Pixel'] });
+  const b = make();
+  assert.deepEqual(
+    b.historyView().map((e) => [e.type, e.projectName, e.role, e.devices]),
+    [['ask', 'toko', 'QA', ['Pixel']]],
+    'loaded from disk after a restart',
+  );
+  for (let i = 0; i < 40; i += 1) b.record({ type: 'done', project: 'p1', projectName: 'toko', role: 'Lead', devices: [] });
+  const c = make();
+  assert.equal(c.historyView().length, 30, 'capped at 30, newest first');
+  assert.equal(c.historyView()[0].type, 'done');
+  assert.equal(existsSync(path.join(dir, 'push-history.json')), true);
+});
 
 const SETTINGS = Object.freeze({ events: { ask: { popup: true, sound: true }, done: { popup: true, sound: true }, error: { popup: true, sound: false } }, quiet: { enabled: false, from: '22:00', to: '07:00', allowAsk: true }, favoritesOnly: false, tzOffsetMin: 420, lockscreenAllow: true });
 
@@ -430,14 +450,14 @@ test('routes: TLS + Tailscale + https device for every /api/push/*; act also nee
   const { push, hub, addDevice, inbox } = setup();
   const router = buildRouter();
   const pushRoutes = router.routes.filter((r) => r.pattern.startsWith('/api/push/'));
-  assert.deepEqual(pushRoutes.map((r) => r.pattern).sort(), ['/api/push/act', '/api/push/settings', '/api/push/subscribe', '/api/push/test', '/api/push/unsubscribe', '/api/push/vapid', '/api/push/visible']);
+  assert.deepEqual(pushRoutes.map((r) => r.pattern).sort(), ['/api/push/act', '/api/push/history', '/api/push/settings', '/api/push/subscribe', '/api/push/test', '/api/push/unsubscribe', '/api/push/vapid', '/api/push/visible']);
   assert.deepEqual(router.routes.filter((r) => r.noToken).map((r) => r.pattern), ['/api/push/act'], 'the only path without x-office-token');
   assert.ok(pushRoutes.every((r) => r.maxBody && r.maxBody <= 4096), 'small bodies only');
 
   const phone = addDevice('Android · Chrome', { settings: null });
   const httpPhone = { id: 'h', name: 'http', transport: 'http' };
   const ORIGIN = 'https://office.test:4318';
-  const ctx = (device, tailscale = true) => ({ hub, push, device, isTailscale: () => tailscale, httpsInfo: () => ({ url: ORIGIN }) });
+  const ctx = (device, tailscale = true) => ({ hub, push, device, isTailscale: () => tailscale, httpsInfo: () => ({ url: ORIGIN }), isLocal: () => false });
   const req = ({ encrypted = true, origin = ORIGIN } = {}) => ({ socket: { encrypted, remoteAddress: '100.100.1.2' }, headers: origin ? { origin } : {} });
   const call = async (p, body, c, r) => {
     const res = fakeRes();
@@ -445,12 +465,15 @@ test('routes: TLS + Tailscale + https device for every /api/push/*; act also nee
     return res;
   };
 
-  for (const p of pushRoutes.map((r) => r.pattern)) {
+  for (const p of pushRoutes.filter((r) => r.pattern !== '/api/push/history').map((r) => r.pattern)) {
     assert.equal((await call(p, {}, ctx(phone.device), req({ encrypted: false }))).status, 403, `${p} over plain http`);
     assert.equal((await call(p, {}, ctx(phone.device, false), req())).status, 403, `${p} not over Tailscale`);
     assert.equal((await call(p, {}, ctx(httpPhone), req())).status, 401, `${p} with an http-paired device`);
     assert.equal((await call(p, {}, ctx(null), req())).status, 401, `${p} unpaired`);
   }
+  // 📜 History is laptop-only (LOCAL_ONLY in server.js): a phone is refused, the laptop reads it.
+  assert.equal((await call('/api/push/history', {}, ctx(phone.device), req())).status, 403, 'history: phone refused');
+  assert.deepEqual((await call('/api/push/history', {}, { ...ctx(null), isLocal: () => true }, req())).body, { entries: [] });
 
   const vapid = await call('/api/push/vapid', {}, ctx(phone.device), req());
   assert.match(vapid.body.publicKey, /^B[\w-]{86}$/);

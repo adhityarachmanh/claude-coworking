@@ -213,7 +213,34 @@ export function budgetView(hub, ledger, now = Date.now(), projectId = null) {
       state: !limit ? 'off' : ratio >= 1 ? 'over' : ratio >= WARN_RATIO ? 'warn' : 'ok',
     };
   }
-  return { budget, spend: spent, windows, forecast: monthForecast(spent.month.usd, now), trend: dailyTrend(ledger, now, projectId), note: budgetNote(spent, projectId) };
+  const forecast = monthForecast(spent.month.usd, now);
+  // The global view also carries the projects that have their own limit, for the dashboard badge (most urgent window).
+  const projects = [];
+  if (!projectId) {
+    for (const id of Object.keys(hub.persisted?.projectBudgets ?? {})) {
+      if (!hub.projects?.has?.(id)) continue;
+      const limits = cleanLimits(hub.persisted.projectBudgets[id]);
+      if (!hasBudget(limits)) continue;
+      const perProject = spend(ledger, now, id);
+      let worst = null;
+      for (const unit of WINDOW_UNITS) {
+        const limit = limits[WINDOW_LIMITS[unit]];
+        if (!limit) continue;
+        const usd = perProject[unit].usd;
+        const ratio = usd / limit;
+        if (!worst || ratio > worst.ratio) worst = { unit, usd, limit, ratio };
+      }
+      if (!worst) continue;
+      projects.push({
+        projectId: id,
+        usd: Math.round(worst.usd * 100) / 100,
+        limit: worst.limit,
+        window: worst.unit,
+        state: worst.ratio >= 1 ? 'over' : worst.ratio >= WARN_RATIO ? 'warn' : 'ok',
+      });
+    }
+  }
+  return { budget, spend: spent, windows, forecast, trend: dailyTrend(ledger, now, projectId), projects, note: budgetNote(spent, projectId) };
 }
 
 /**

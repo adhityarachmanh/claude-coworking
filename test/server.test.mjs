@@ -217,7 +217,7 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
     }
   };
   const view = (await api('/api/budget', {})).body.budget;
-  assert.deepEqual(Object.keys(view).sort(), ['budget', 'forecast', 'note', 'projectId', 'spend', 'trend', 'windows']);
+  assert.deepEqual(Object.keys(view).sort(), ['budget', 'forecast', 'note', 'projectId', 'projects', 'spend', 'trend', 'windows']);
   assert.deepEqual(Object.keys(view.forecast).sort(), ['dailyUsd', 'daysInMonth', 'elapsedDays', 'monthUsd', 'projectedUsd']);
   assert.ok(view.forecast.projectedUsd >= 0);
   assert.equal(view.trend.length, 7, 'tujuh hari terakhir');
@@ -273,6 +273,8 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
   const projectView = await api('/api/budget', { projectId: id });
   assert.equal(projectView.body.budget.budget.dailyUsd, 3);
   assert.equal((await api('/api/budget', {})).body.budget.budget.dailyUsd, null, 'global stays off');
+  const globalProjects = (await api('/api/budget', {})).body.budget.projects;
+  assert.deepEqual(globalProjects.map((p) => [p.projectId, p.limit, p.window]), [[id, 3, 'day']], 'badge dashboard: batas project');
   await api('/api/budget/save', { projectId: id, dailyUsd: 0 });
   assert.equal((await api('/api/budget', { projectId: id })).body.budget.budget.dailyUsd, null);
   const budgetAudit = readFileSync(path.join(TMP, 'data', 'budget-audit.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
