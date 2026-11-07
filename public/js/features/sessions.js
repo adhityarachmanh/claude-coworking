@@ -120,10 +120,20 @@ function renderSessionList() {
     return;
   }
   const q = $('#sessions-search').value.trim().toLowerCase();
-  const days = Number($('#sessions-range').value) || 0;
+  const range = $('#sessions-range').value;
+  const showArchived = range === 'archived';
+  const days = showArchived ? 0 : Number(range) || 0;
   const since = days ? Date.now() - days * 86_400_000 : 0;
-  const list = sessionsView.list.filter((s) => (!since || s.updated >= since) && (!q || s.title.toLowerCase().includes(q) || s.id.startsWith(q)));  if (!list.length) {
-    box.innerHTML = `<div class="s-empty"><p class="muted">Tidak ada sesi yang cocok${days ? ' dalam rentang ini' : ''}.</p></div>`;
+  const list = sessionsView.list.filter(
+    (s) =>
+      (showArchived ? s.archived === true : !s.archived) &&
+      (!since || s.updated >= since) &&
+      (!q || s.title.toLowerCase().includes(q) || (s.tag ?? '').toLowerCase().includes(q) || s.id.startsWith(q)),
+  );
+  if (!list.length) {
+    box.innerHTML = showArchived
+      ? '<div class="s-empty"><p class="muted">Belum ada sesi diarsipkan. Pakai 📦 pada sesi untuk menyembunyikannya dari daftar.</p></div>'
+      : `<div class="s-empty"><p class="muted">Tidak ada sesi yang cocok${days ? ' dalam rentang ini' : ''}.</p></div>`;
     return;
   }
   // A session still running in a terminal must not be continued here too: both would write one transcript.
@@ -158,9 +168,11 @@ function renderSessionList() {
         ${pick}
         <div class="s-main">
           <span class="s-title">${escapeHtml(s.title)}</span>
-          <span class="s-meta"><span class="src src-${s.source}">${s.source === 'web' ? 'Web' : s.source === 'opencode' ? 'OpenCode' : 'Terminal'}</span>${ago(s.updated)} · <code>${s.id.slice(0, 8)}</code>${usageText(s.usage)}</span>
+          <span class="s-meta"><span class="src src-${s.source}">${s.source === 'web' ? 'Web' : s.source === 'opencode' ? 'OpenCode' : 'Terminal'}</span>${s.tag ? `<span class="s-tag" title="Tag sesi">🏷 ${escapeHtml(s.tag)}</span>` : ''}${ago(s.updated)} · <code>${s.id.slice(0, 8)}</code>${usageText(s.usage)}</span>
         </div>
         <span class="s-tools">
+          ${`<button type="button" class="ghost icon" data-tag="${escapeHtml(s.id)}" title="${s.tag ? 'Ganti tag' : 'Beri tag'}" aria-label="Beri tag: ${escapeHtml(s.title)}" ${ro}>🏷</button>`}
+          ${`<button type="button" class="ghost icon" data-archive="${escapeHtml(s.id)}" data-on="${s.archived ? '1' : '0'}" title="${s.archived ? 'Keluarkan dari arsip' : 'Arsipkan: sembunyikan dari daftar utama'}" aria-label="${s.archived ? 'Keluarkan dari arsip' : 'Arsipkan'}: ${escapeHtml(s.title)}" ${ro}>${s.archived ? '↩' : '📦'}</button>`}
           ${`<button type="button" class="ghost icon" data-rename="${escapeHtml(s.id)}" title="Ganti nama" aria-label="Ganti nama: ${escapeHtml(s.title)}" ${ro}>✎</button>`}
           <button type="button" class="ghost icon" data-fork="${escapeHtml(s.id)}" title="Cabangkan: lanjutkan salinannya, sesi asli tetap utuh" aria-label="Cabangkan: ${escapeHtml(s.title)}" ${ro}>⑂</button>
           <button type="button" class="ghost s-export" data-export="${escapeHtml(s.id)}" title="${opencode ? 'Unduh sesi ini (JSON OpenCode, bisa diimpor lagi)' : 'Unduh sesi ini sebagai Markdown (.md)'}" aria-label="Export: ${escapeHtml(s.title)}">⬇ ${opencode ? '.json' : '.md'}</button>
@@ -342,6 +354,22 @@ Percakapan berlanjut di salinan baru; sesi aslinya tidak berubah.`)) return;
       toast('Nama sesi diganti.', 'ok');
       return openSessions();
     }
+    if (btn.dataset.tag !== undefined) {
+      const id = btn.dataset.tag;
+      const current = sessionsView.list.find((s) => s.id === id)?.tag ?? '';
+      const tag = window.prompt('Tag sesi (kosongkan untuk menghapus):', current);
+      if (tag === null) return;
+      await api(`/api/projects/${project}/session-meta`, { sessionId: id, tag });
+      toast(tag.trim() ? 'Tag sesi disimpan.' : 'Tag sesi dihapus.', 'ok');
+      return openSessions();
+    }
+    if (btn.dataset.archive !== undefined) {
+      const id = btn.dataset.archive;
+      const archived = btn.dataset.on !== '1';
+      await api(`/api/projects/${project}/session-meta`, { sessionId: id, archived });
+      toast(archived ? 'Sesi diarsipkan.' : 'Sesi dikeluarkan dari arsip.', 'ok');
+      return openSessions();
+    }
   } catch (err) {
     toast(err.message, 'warn');
   }
@@ -442,7 +470,7 @@ export function initSessions() {
       const opencode = engineOf(state.statuses[sessionsView.project] ?? {}, state.config) === 'opencode';
       return opencode ? exportOpenCodeJson(sessionsView.project, exp.dataset.export) : exportSessionMarkdown(sessionsView.project, exp.dataset.export);
     }
-    const act = e.target.closest('[data-fork], [data-delete], [data-rename]');
+    const act = e.target.closest('[data-fork], [data-delete], [data-rename], [data-tag], [data-archive]');
     if (act) return sessionAction(act);
     const btn = e.target.closest('[data-resume]');
     if (btn && (await resumeSession(sessionsView.project, btn.dataset.resume, btn))) closeModal('sessions-modal');

@@ -6913,6 +6913,30 @@ for (const vp of VIEWPORTS) {
       // @ file: the project's file index → the file viewer
       await paletteType(page, '@checkout');
       await page.waitFor(() => (document.querySelector('#palette-list .pal-opt.active .pal-label')?.textContent ?? '') === 'src/checkout.ts', { timeoutMs: 4000, message: 'file ditemukan' });
+      // 🔎 the same query also lists files from other projects (name + project, never contents)
+      await page.eval(() => {
+        window.__paletteFetch = window.fetch;
+        const reply = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        window.fetch = async (url, opts) => {
+          if (/\/api\/files\/search(?:\?|$)/.test(String(url))) {
+            return reply({ files: [{ projectId: 'project-kasir', projectName: 'kasir', path: 'src/checkout-kasir.ts' }] });
+          }
+          return window.__paletteFetch(url, opts);
+        };
+      });
+      try {
+        await paletteType(page, '@checkout');
+        await page.waitFor(() => /kasir/.test(document.querySelector('#palette-list').textContent), { timeoutMs: 4000, message: 'file project lain tampil' });
+        const rows = await page.eval(() => [...document.querySelectorAll('#palette-list .pal-opt')].map((o) => o.textContent));
+        assert.ok(rows.some((t) => /src\/checkout-kasir\.ts/.test(t) && /kasir/.test(t)), 'file lintas project dengan nama projectnya');
+        assert.ok(rows.some((t) => /src\/checkout\.ts/.test(t)), 'file project aktif tetap ada');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__paletteFetch;
+        });
+      }
+      await paletteType(page, '@checkout');
+      await page.waitFor(() => (document.querySelector('#palette-list .pal-opt.active .pal-label')?.textContent ?? '') === 'src/checkout.ts', { timeoutMs: 4000, message: 'file aktif terpilih lagi' });
       await page.press('Enter');
       await page.waitFor(() => !document.querySelector('#file-modal').hidden && /checkout\.ts/.test(document.querySelector('#fv-title').textContent), { timeoutMs: 4000, message: 'penampil file terbuka' });
       await page.press('Escape');
@@ -7022,6 +7046,7 @@ for (const vp of VIEWPORTS) {
       await page.eval(() => {
         window.__delCalls = [];
         window.__exportCalls = [];
+        window.__metaCalls = [];
         window.__sessionsFetch = window.fetch;
         window.__sessionsConfirm = window.confirm;
         window.confirm = () => true;
@@ -7034,13 +7059,18 @@ for (const vp of VIEWPORTS) {
                 current: 'sess-current',
                 sessions: [
                   { id: 'sess-current', title: 'Sedang dibuka', source: 'web', updated: now },
-                  { id: 'sess-bulk-1', title: 'Sesi satu', source: 'web', updated: now - 86_400_000, usage: { usd: 0.5, tokens: 1200, rows: 1, known: 1 } },
+                  { id: 'sess-bulk-1', title: 'Sesi satu', source: 'web', updated: now - 86_400_000, usage: { usd: 0.5, tokens: 1200, rows: 1, known: 1 }, tag: 'riset' },
                   { id: 'sess-bulk-2', title: 'Sesi dua', source: 'cli', updated: now - 172_800_000 },
                   { id: 'sess-bulk-3', title: 'Sesi tiga', source: 'web', updated: now - 259_200_000 },
+                  { id: 'sess-arch-1', title: 'Sesi lama', source: 'web', updated: now - 864_000_000, archived: true },
                 ],
               }),
               { status: 200, headers: { 'Content-Type': 'application/json' } },
             );
+          }
+          if (/\/api\/projects\/[^/?]+\/session-meta(?:\?|$)/.test(u)) {
+            window.__metaCalls.push(JSON.parse(opts?.body ?? '{}'));
+            return new Response(JSON.stringify({ ok: true, meta: {} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           }
           if (/\/api\/projects\/[^/?]+\/session-delete(?:\?|$)/.test(u)) {
             window.__delCalls.push(JSON.parse(opts?.body ?? '{}'));
@@ -7064,6 +7094,28 @@ for (const vp of VIEWPORTS) {
         const meta = await page.eval(() => document.querySelector('#sessions-list').textContent);
         assert.match(meta, /1\.2k token/, 'token sesi');
         assert.match(meta, /\$0,50/, 'biaya sesi');
+        assert.match(meta, /🏷 riset/, 'tag sesi tampil');
+        assert.ok(!/Sesi lama/.test(meta), 'sesi arsip disembunyikan dari daftar utama');
+
+        // 📦 The archive filter lists only archived sessions.
+        await page.eval(() => {
+          const range = document.querySelector('#sessions-range');
+          range.value = 'archived';
+          range.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        assert.equal(await page.eval(() => document.querySelectorAll('#sessions-list .s-item').length), 1, 'hanya sesi arsip');
+        assert.match(await page.eval(() => document.querySelector('#sessions-list').textContent), /Sesi lama/);
+        await page.eval(() => {
+          const range = document.querySelector('#sessions-range');
+          range.value = 'all';
+          range.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        // 📦 Archive a session: the route gets { sessionId, archived: true }.
+        await page.eval(() => document.querySelector('#sessions-list [data-archive="sess-bulk-1"]').click());
+        await page.waitFor(() => window.__metaCalls.length === 1, { timeoutMs: 4000, message: 'panggilan arsip' });
+        assert.deepEqual(await page.eval(() => window.__metaCalls[0]), { sessionId: 'sess-bulk-1', archived: true });
+        await page.waitFor(() => document.querySelectorAll('#sessions-list [data-pick]').length === 3, { timeoutMs: 4000, message: 'daftar dimuat ulang' });
 
         await page.eval(() => {
           for (const id of ['sess-bulk-1', 'sess-bulk-2']) document.querySelector(`#sessions-list [data-pick="${id}"]`).click();
@@ -7948,8 +8000,22 @@ for (const vp of VIEWPORTS) {
       });
       assert.deepEqual(restored, { doneSound: false, askSound: true, fav: true, allowAsk: false, volume: '50' });
 
+      // 🔇 the current project muted: even a permission request from it stays silent.
+      const mutedNow = await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        document.querySelector('#ns-fav').click(); // favourites off: only the mute can silence it now
+        document.querySelector(`#ns-muted-list [data-muted="${state.active}"]`).click();
+        return JSON.parse(localStorage.getItem('office.notifySettings')).muted;
+      });
+      const activeId = await page.eval(async () => (await import('/js/core/state.js')).state.active);
+      assert.deepEqual(mutedNow, { [activeId]: true }, 'project aktif tercatat dibisukan');
+      await page.eval(stubSoundAndNotifications); // the reload above dropped the stub
+      await fire('ask', 'here');
+      assert.deepEqual(await counts(), { osc: 0, notes: 0, peak: 0 }, 'project dibisukan: izin pun diam');
+
       // ↺ back to the defaults
       await page.eval(() => document.querySelector('#ns-reset').click());
+      assert.deepEqual(await page.eval(() => JSON.parse(localStorage.getItem('office.notifySettings')).muted), {}, 'reset menghapus bisukan');
       assert.equal(await page.eval(() => document.querySelector('#ns-done-sound').checked && !document.querySelector('#ns-fav').checked && document.querySelector('#ns-volume').value === '100'), true);
       await page.press('Escape');
       assert.deepEqual(realProblems(page), []);

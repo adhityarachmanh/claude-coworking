@@ -1164,6 +1164,7 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .src-cli { background: var(--cli-soft); color: var(--cli-text); }
 .src-web { background: var(--accent-tint); color: var(--accent-2); }
 .src-opencode { background: var(--ok-soft); color: var(--ok-text-strong); }
+.s-tag { padding: 1px 7px; border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 600; background: var(--surface-3, var(--surface-2)); color: var(--text-2); border: 1px solid var(--border); }
 .s-resume { flex: none; font-size: var(--fs-md); padding: 6px 14px; }
 .s-current { flex: none; font-size: var(--fs-sm); color: var(--ok-text); white-space: nowrap; }
 .s-live { flex: none; font-size: var(--fs-sm); color: var(--cli-text); white-space: nowrap; cursor: help; }
@@ -2076,6 +2077,10 @@ body.read-only #composer-hint { color: var(--ask); }
 .ns-volume button, .ns-actions button { font-size: var(--fs-sm); padding: 5px 10px; }
 .ns-actions { display: flex; justify-content: flex-end; }
 .ns-push-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ns-muted-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; max-height: 160px; overflow-y: auto; }
+.ns-muted-row { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-2); min-width: 0; }
+.ns-muted-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ns-muted-row input { width: 16px; height: 16px; accent-color: var(--accent); }
 .ns-push-actions button { font-size: var(--fs-sm); padding: 5px 10px; }
 .ns-push-actions:not(:has(button:not([hidden]))) { display: none; }
 .ns-push-hint { margin: 0; color: var(--text-2); overflow-wrap: anywhere; }

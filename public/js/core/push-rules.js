@@ -65,6 +65,7 @@ export function pushSettings(notify, { on = true, favorites = [], tzOffsetMin = 
     events,
     quiet: { enabled: Boolean(q.enabled), from: q.from ?? '22:00', to: q.to ?? '07:00', allowAsk: q.allowAsk !== false },
     favoritesOnly: Boolean(notify?.favoritesOnly),
+    muted: Object.fromEntries(Object.entries(notify?.muted ?? {}).filter(([id, on]) => on === true && typeof id === 'string' && id).slice(0, 500)),
     favorites: [...new Set((favorites ?? []).filter((id) => typeof id === 'string' && id))].sort(),
     volume: Number.isFinite(notify?.volume) ? notify.volume : 100,
     tzOffsetMin: Number.isFinite(tzOffsetMin) ? Math.round(tzOffsetMin) : 0,

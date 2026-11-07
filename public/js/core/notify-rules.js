@@ -15,8 +15,24 @@ export const NOTIFY_DEFAULTS = Object.freeze({
   }),
   quiet: Object.freeze({ enabled: false, from: '22:00', to: '07:00', allowAsk: true }),
   favoritesOnly: false,
+  muted: Object.freeze({}), // projectId → true: no sound and no popup from that project
   volume: 100,
 });
+
+const MAX_MUTED = 500;
+
+/** Only `{ projectId: true }` entries survive (a hand-edited localStorage must not mute by accident). */
+function cleanMuted(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  let n = 0;
+  for (const [id, on] of Object.entries(raw)) {
+    if (on !== true || !id || id.length > 200) continue;
+    out[id] = true;
+    if (++n >= MAX_MUTED) break;
+  }
+  return out;
+}
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -60,6 +76,7 @@ export function cleanNotifySettings(raw) {
       allowAsk: bool(q.allowAsk, d.allowAsk),
     },
     favoritesOnly: bool(src.favoritesOnly, false),
+    muted: cleanMuted(src.muted),
     volume: volume === null ? NOTIFY_DEFAULTS.volume : Math.min(100, Math.max(0, Math.round(volume))),
   };
 }
@@ -88,11 +105,13 @@ const NOTHING = Object.freeze({ sound: false, popup: false });
 /**
  * What one event does. `kind`: 'ask' | 'done' | 'error' | 'notice' (an app-wide notice such as a quota warning:
  * no per-type toggle, not tied to a project). `away`: the user is in another tab/app or another project.
- * `favorite`: the event's project is a favourite. The popup still needs the browser's permission (caller checks).
+ * `favorite`: the event's project is a favourite. `muted`: that project is silenced (nothing at all: not even a
+ * permission request). The popup still needs the browser's permission (caller checks).
  */
-export function notifyPlan(kind, settings, { away, favorite = false, now = new Date() }) {
+export function notifyPlan(kind, settings, { away, favorite = false, muted = false, now = new Date() }) {
   const s = cleanNotifySettings(settings); // raw objects welcome (localStorage, a server-side caller)
   const notice = kind === 'notice';
+  if (!notice && muted) return NOTHING;
   if (!notice && !away && kind !== 'ask') return NOTHING; // already looking at it (a permission request still chimes)
   if (!notice && s.favoritesOnly && !favorite) return NOTHING;
   if (s.quiet.enabled && inQuietHours(now, s.quiet.from, s.quiet.to) && !(kind === 'ask' && s.quiet.allowAsk)) return NOTHING;

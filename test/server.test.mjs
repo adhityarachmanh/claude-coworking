@@ -511,6 +511,12 @@ test('projects come from the configured root; bad roots are rejected', async () 
   assert.equal((await api('/api/config', { roots: ['Z:/tidak/ada'] })).status, 400);
   const files = await api(`/api/projects/${await projectId()}/files`, { q: 'check' });
   assert.deepEqual(files.body.files, ['src/checkout.ts']);
+  // 🔎 Ctrl+P: the same index across every project (paths only).
+  const cross = await api('/api/files/search', { q: 'check' });
+  assert.equal(cross.status, 200);
+  assert.deepEqual(cross.body.files, [{ projectId: await projectId(), projectName: 'toko', path: 'src/checkout.ts' }]);
+  assert.deepEqual((await api('/api/files/search', { q: 'c' })).body.files, [], 'query terlalu pendek');
+  assert.deepEqual((await api('/api/files/search', { q: 'zzz' })).body.files, []);
 });
 
 test('a prompt streams a reply and finishes with token stats', async () => {
@@ -700,6 +706,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   const phoneApi = (p, body = {}) => lan(p, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json', 'X-Office-Token': phoneToken }, body: JSON.stringify(body) });
   const id = await projectId();
   assert.equal((await phoneApi(`/api/projects/${id}/files`, { q: 'check' })).status, 200);
+  assert.equal((await phoneApi('/api/files/search', { q: 'check' })).status, 200, 'cari file lintas project juga boleh dilihat');
   const laptopOnly = ['/api/claude-check/run', '/api/claude-check/settings', '/api/config', '/api/autostart', '/api/shutdown', '/api/remote', '/api/remote/pairing', '/api/account/login', '/api/account/logout', '/api/projects', `/api/projects/${id}/open`, `/api/projects/${id}/permissions-edit`, '/api/backup/export', '/api/backup/import'];
   for (const p of laptopOnly) assert.equal((await phoneApi(p, { enabled: false, roots: [] })).status, 403, p);
   // login/logout from a phone needs Tailscale; over plain WiFi it is refused with a clear reason
@@ -1598,6 +1605,27 @@ test('🕘 Riwayat sesi (Claude Code): ⑂ fork continues a copy (--fork-session
   assert.equal(renamed.title, 'Sesi setelah dipulihkan');
   assert.equal((await api(`/api/projects/${id}/session-rename`, { sessionId: sid, title: '   ' })).status, 400, 'judul kosong');
   assert.equal((await api(`/api/projects/${id}/session-rename`, { sessionId: '../x', title: 'x' })).status, 400, 'id tidak valid');
+
+  // 🏷/📦 Tag and archive a listed session: app-side metadata, listed with it.
+  const metaRes = await api(`/api/projects/${id}/session-meta`, { sessionId: sid, tag: '  riset  penting ' });
+  assert.equal(metaRes.status, 200);
+  assert.equal(metaRes.body.meta.tag, 'riset penting');
+  let tagged = (await api(`/api/projects/${id}/sessions`)).body.sessions.find((s) => s.id === sid);
+  assert.equal(tagged.tag, 'riset penting');
+  await api(`/api/projects/${id}/session-meta`, { sessionId: sid, archived: true });
+  tagged = (await api(`/api/projects/${id}/sessions`)).body.sessions.find((s) => s.id === sid);
+  assert.equal(tagged.archived, true);
+  assert.equal(tagged.tag, 'riset penting', 'arsip tidak menghapus tag');
+  await api(`/api/projects/${id}/session-meta`, { sessionId: sid, tag: '' });
+  tagged = (await api(`/api/projects/${id}/sessions`)).body.sessions.find((s) => s.id === sid);
+  assert.equal(tagged.tag, undefined, 'tag dihapus');
+  assert.equal(tagged.archived, true, 'arsip tetap');
+  await api(`/api/projects/${id}/session-meta`, { sessionId: sid, archived: false });
+  tagged = (await api(`/api/projects/${id}/sessions`)).body.sessions.find((s) => s.id === sid);
+  assert.equal(tagged.archived, undefined);
+  assert.equal(tagged.tag, undefined);
+  assert.equal((await api(`/api/projects/${id}/session-meta`, { sessionId: '../x', tag: 'x' })).status, 400);
+  assert.equal((await api(`/api/projects/${id}/session-meta`, { sessionId: sid })).status, 400, 'tidak ada yang diubah');
 
   // ⬇ Export some sessions at once: one .zip with one .md per session.
   const zipRes = await fetch(`${BASE}/api/projects/${id}/sessions-export`, {

@@ -2,7 +2,7 @@
 // 🔔 turns them on/off; 🔔 Pengaturan notifikasi (Ctrl+P / 🔎 on a phone, right-click / long-press 🔔, ⚙) tunes them per device:
 // per event type, quiet hours, favourites only, volume. Rules live in core/notify-rules.js.
 import { toast } from '../core/api.js';
-import { $ } from '../core/dom.js';
+import { $, escapeHtml } from '../core/dom.js';
 import { NOTIFY_KINDS, cleanNotifySettings, notifyPlan, quietError } from '../core/notify-rules.js';
 import { state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
@@ -92,7 +92,7 @@ export function notify(kind, title, body, projectId) {
   const away = document.hidden || projectId !== state.active;
   const favorite = Boolean(state.projects.find((p) => p.id === projectId)?.favorite);
   const settings = notifySettings();
-  const plan = notifyPlan(kind, settings, { away, favorite });
+  const plan = notifyPlan(kind, settings, { away, favorite, muted: settings.muted[projectId] === true });
   if (plan.sound) chime(kind, settings.volume);
   // With push active on this device and the page out of view, the service worker shows it (one notification, not two).
   if (plan.popup && canPopup() && !(isPushActive() && document.hidden)) {
@@ -152,6 +152,7 @@ export function syncNotifyForm() {
   $('#ns-to').value = s.quiet.to;
   $('#ns-quiet-ask').checked = s.quiet.allowAsk;
   $('#ns-fav').checked = s.favoritesOnly;
+  renderMutedList(s.muted);
   $('#ns-volume').value = String(s.volume);
   setQuietError(null);
   renderFormState(s.volume);
@@ -174,6 +175,20 @@ function setQuietError(text) {
   for (const id of ['#ns-from', '#ns-to']) $(id).setAttribute('aria-invalid', String(Boolean(text)));
 }
 
+/** 🔇 One checkbox per project (not the demo): a checked project sends no sound and no popup on this device. */
+function renderMutedList(muted) {
+  const box = $('#ns-muted-list');
+  if (!box) return;
+  const projects = state.projects.filter((p) => p.id !== 'demo');
+  const note = $('#ns-muted-none');
+  if (note) note.hidden = projects.length > 0;
+  box.innerHTML = projects
+    .map(
+      (p) => `<label class="ns-muted-row"><input type="checkbox" data-muted="${escapeHtml(p.id)}" ${muted[p.id] ? 'checked' : ''} /> <span>${escapeHtml(p.name)}</span></label>`,
+    )
+    .join('');
+}
+
 /** Saves every field at once; an invalid quiet-hours range keeps the stored times (and says why). */
 function saveNotifyForm(target) {
   const prev = notifySettings();
@@ -188,10 +203,13 @@ function saveNotifyForm(target) {
   // Switching quiet hours on with bad times: the switch goes back (the times stay editable, see renderFormState).
   if (error && target?.id === 'ns-quiet') $('#ns-quiet').checked = prev.quiet.enabled;
   const volume = Number($('#ns-volume').value);
+  const muted = {};
+  for (const input of document.querySelectorAll('#ns-muted-list [data-muted]')) if (input.checked) muted[input.dataset.muted] = true;
   saveNotifySettings({
     events,
     quiet: error ? { ...prev.quiet, allowAsk } : { enabled, from: from || prev.quiet.from, to: to || prev.quiet.to, allowAsk },
     favoritesOnly: $('#ns-fav').checked,
+    muted,
     volume,
   });
   renderFormState(volume);

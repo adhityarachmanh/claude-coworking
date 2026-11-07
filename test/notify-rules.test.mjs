@@ -32,6 +32,17 @@ test('notifyPlan cleans what it is given (raw / partial / missing settings)', ()
   assert.deepEqual(notifyPlan('error', { events: { error: { sound: false } } }, { away: true }), { sound: false, popup: true });
 });
 
+test('🔇 muted projects: cleaned to only true entries, and nothing at all from that project', () => {
+  const clean = cleanNotifySettings({ muted: { p1: true, p2: false, p3: 'yes', '': true, p4: 1 } });
+  assert.deepEqual(clean.muted, { p1: true }, 'hanya projectId → true');
+  assert.deepEqual(cleanNotifySettings({ muted: 'p1' }).muted, {});
+  assert.deepEqual(cleanNotifySettings({ muted: [] }).muted, {});
+  const s = cleanNotifySettings({ muted: { p1: true } });
+  for (const kind of ['ask', 'done', 'error']) assert.deepEqual(notifyPlan(kind, s, { away: true, muted: true }), { sound: false, popup: false }, `${kind} dibisukan`);
+  assert.deepEqual(notifyPlan('done', s, { away: true, muted: false }), { sound: true, popup: true }, 'project lain tetap');
+  assert.deepEqual(notifyPlan('notice', s, { away: true }), { sound: true, popup: true }, 'pemberitahuan aplikasi tidak ikut');
+});
+
 test('inQuietHours: same-day and across-midnight ranges, end exclusive, empty range never quiet', () => {
   assert.equal(inQuietHours(at('13:00'), '12:00', '14:00'), true);
   assert.equal(inQuietHours(at('14:00'), '12:00', '14:00'), false);

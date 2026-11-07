@@ -137,9 +137,10 @@ test('subscribe validation: endpoint allowlist, key sizes, settings shape', () =
   assert.equal(s.tz, 'Asia/Jakarta');
   assert.equal(s.lockscreenAllow, true);
   assert.equal('favorites' in s, false, 'the server uses its own favourites list');
+  assert.deepEqual(parseSettings({ ...SETTINGS, muted: { p1: true, p2: false } }).muted, { p1: true }, 'muted kept as projectId → true');
   assert.equal(parseSettings({ ...SETTINGS, tz: 'Mars/Olympus' }).tz, undefined, 'unknown zone: offset only');
   assert.deepEqual(parseSettings({ tzOffsetMin: 0, events: { done: false } }).events.done, { popup: false, sound: false }, 'boolean shorthand');
-  for (const bad of [null, [], 'x', { ...SETTINGS, tzOffsetMin: undefined }, { ...SETTINGS, tzOffsetMin: 7.5 }, { ...SETTINGS, tzOffsetMin: 900 }, { ...SETTINGS, quiet: { from: '25:00' } }, { ...SETTINGS, lockscreenAllow: 'yes' }, { ...SETTINGS, events: [] }, { ...SETTINGS, favorites: 'p1' }, { ...SETTINGS, enabled: 1 }]) {
+  for (const bad of [null, [], 'x', { ...SETTINGS, tzOffsetMin: undefined }, { ...SETTINGS, tzOffsetMin: 7.5 }, { ...SETTINGS, tzOffsetMin: 900 }, { ...SETTINGS, quiet: { from: '25:00' } }, { ...SETTINGS, lockscreenAllow: 'yes' }, { ...SETTINGS, events: [] }, { ...SETTINGS, favorites: 'p1' }, { ...SETTINGS, muted: ['p1'] }, { ...SETTINGS, muted: { p1: 'yes' } }, { ...SETTINGS, enabled: 1 }]) {
     assert.throws(() => parseSettings(bad), { status: 400 }, JSON.stringify(bad));
   }
 });
@@ -286,6 +287,16 @@ test('favorites only (the server\'s favourites), 🔔 off on the phone, phone ac
   hub.chat('p2', { kind: 'result', ok: true });
   await push.idle();
   assert.equal(inbox(fav).length, 1, 'nothing is pushed while phone access is off');
+});
+
+test('🔇 a muted project gets no push on that phone (other projects still do)', async () => {
+  const { hub, push, addDevice, inbox } = setup();
+  const phone = addDevice('Phone', { settings: { ...SETTINGS, muted: { p1: true } } });
+  hub.chat('p1', { kind: 'result', ok: true });
+  hub.chat('p2', { kind: 'result', ok: true });
+  ask(hub); // a permission request in p1 is silenced too
+  await push.idle();
+  assert.deepEqual(inbox(phone).map((m) => m.payload.project), ['p2'], 'hanya p2');
 });
 
 test('no push to a device while one of its pages is visible (open stream + recent report)', async () => {

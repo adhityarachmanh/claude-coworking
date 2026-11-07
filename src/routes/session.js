@@ -199,6 +199,12 @@ export function register(router) {
       const u = usage.get(s.id);
       if (u) s.usage = { usd: Math.round(u.usd * 100) / 100, tokens: u.tokens, rows: u.rows, known: u.known };
     }
+    // 🏷/📦 What the user tagged or archived (persisted per project + session id).
+    const meta = hub.sessionMetaMap(project.id);
+    for (const s of sessions) {
+      const m = meta[s.id];
+      if (m) Object.assign(s, m);
+    }
     return json(res, 200, { sessions, engine, current: hub.sessionIdFor(project.id) });
   }));
   router.post('/api/projects/:id/resume', withSession(async ({ hub, opencode }, req, res, { project, session }, body) => {
@@ -260,6 +266,17 @@ export function register(router) {
     if (st.cliBusy && st.cliSession === sessionId) throw new SessionAdminError(409, 'Sesi ini sedang berjalan di terminal.');
     return { ok: true, title: renameClaudeSession({ projectPath: project.path, sessionId, title: body.title }) };
   })));
+  // 🏷 Tag / 📦 archive a listed session: app-side metadata (state.json), not the transcript itself.
+  router.post('/api/projects/:id/session-meta', withSession(({ hub }, req, res, { project }, body) => {
+    const sessionId = String(body.sessionId ?? '');
+    if (!validSessionId(hub.engineOf(project.id), sessionId)) return json(res, 400, { error: 'Id sesi tidak valid.' });
+    const patch = {};
+    if (Object.hasOwn(body, 'tag')) patch.tag = String(body.tag ?? '');
+    if (Object.hasOwn(body, 'archived')) patch.archived = body.archived === true;
+    if (!Object.keys(patch).length) return json(res, 400, { error: 'Tidak ada yang diubah.' });
+    const meta = hub.setSessionMeta(project.id, sessionId, patch);
+    return json(res, 200, { ok: true, meta });
+  }));
   // ⬇ OpenCode: the session as OpenCode's own JSON (re-import with `opencode session import`).
   router.post('/api/projects/:id/session-export-json', withSession(({ opencode }, req, res, { project }, body) => admin(res, async () => {
     const sessionId = String(body.sessionId ?? '');

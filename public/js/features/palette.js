@@ -142,9 +142,21 @@ function remember(id) {
 
 const click = (sel) => () => $(sel)?.click();
 
-function fileItem(path) {
+function fileItem(path, projectId = state.active, projectLabel = '') {
   const slash = path.lastIndexOf('/');
-  return { id: `file:${path}`, group: 'file', icon: '📄', label: path, hint: slash > -1 ? path.slice(0, slash) : '', run: () => openFile(path), match: path };
+  const other = projectId !== state.active;
+  return {
+    id: other ? `xfile:${projectId}:${path}` : `file:${path}`,
+    group: 'file',
+    icon: '📄',
+    label: path,
+    hint: other ? `${projectLabel || projectId}${slash > -1 ? ` · ${path.slice(0, slash)}` : ''}` : slash > -1 ? path.slice(0, slash) : '',
+    run: () => {
+      if (other) selectProject(projectId);
+      return openFile(path);
+    },
+    match: path,
+  };
 }
 
 /** Every action for the current state (built on open and on each keystroke: cheap, and never stale). */
@@ -286,7 +298,7 @@ function buildItems() {
     });
   }
 
-  for (const f of palette.filesFor === state.active ? palette.files : []) add(fileItem(f));
+  for (const f of palette.filesFor === state.active ? palette.files : []) add(fileItem(f.path, f.projectId, f.projectName));
 
   // 🔎 Transcript hits (queueTranscripts): picking one continues that session, like "Lanjutkan" in the search dialog.
   {
@@ -421,15 +433,36 @@ function queueFiles() {
   const seq = ++palette.fileSeq;
   const project = state.active;
   palette.fileTimer = setTimeout(async () => {
+    const found = [];
+    const push = (list) => {
+      for (const f of list) {
+        if (!f?.path) continue;
+        if (found.some((x) => x.projectId === f.projectId && x.path === f.path)) continue;
+        found.push(f);
+      }
+    };
     try {
       const { files } = await api(`/api/projects/${project}/files`, { q });
-      if (seq !== palette.fileSeq || !isOpen()) return;
-      palette.files = (Array.isArray(files) ? files : []).filter((f) => typeof f === 'string').slice(0, 30);
-      palette.filesFor = project;
+      push((Array.isArray(files) ? files : []).filter((f) => typeof f === 'string').map((path) => ({ path, projectId: project })));
     } catch {
-      if (seq !== palette.fileSeq) return;
-      palette.files = [];
+      // the active project's index failed: the cross-project search below may still answer
     }
+    // A typed query also searches the other projects (Ctrl+P: find a file wherever it lives).
+    if (q.length >= 2 && (!prefix || prefix === '@')) {
+      try {
+        const { files } = await api('/api/files/search', { q });
+        push(
+          (Array.isArray(files) ? files : [])
+            .filter((f) => f && typeof f.path === 'string' && typeof f.projectId === 'string')
+            .map((f) => ({ path: f.path, projectId: f.projectId, projectName: typeof f.projectName === 'string' ? f.projectName : '' })),
+        );
+      } catch {
+        // an older server has no cross-project search: the active project's list still shows
+      }
+    }
+    if (seq !== palette.fileSeq || !isOpen()) return;
+    palette.files = found.slice(0, 30);
+    palette.filesFor = project;
     palette.loadingFiles = false;
     render();
   }, 120);

@@ -83,6 +83,23 @@ function storedEngineValues(raw) {
 }
 /** The engine that state.json's `settings` give a project, else its app-wide default (`state.engine`). */
 const stateEngineOf = (state, id) => (ENGINES.includes(state?.settings?.[id]?.engine) ? state.settings[id].engine : state?.engine ?? 'claude');
+/** 🏷/📦 A hand-edited or older state.json must not inject junk: only a short tag and a boolean archive flag. */
+function cleanSessionMeta(raw) {
+  if (!isObject(raw)) return {};
+  const out = {};
+  for (const [projectId, per] of Object.entries(raw)) {
+    if (!projectId || !isObject(per)) continue;
+    const sessions = {};
+    for (const [sessionId, meta] of Object.entries(per)) {
+      if (!sessionId || sessionId.length > 200 || !isObject(meta)) continue;
+      const tag = typeof meta.tag === 'string' ? meta.tag.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+      const archived = meta.archived === true;
+      if (tag || archived) sessions[sessionId] = { ...(tag ? { tag } : {}), ...(archived ? { archived: true } : {}) };
+    }
+    if (Object.keys(sessions).length) out[projectId] = sessions;
+  }
+  return out;
+}
 /** Highest counter behind the stored chat ids (`m<seq>`), so a restarted server never hands one out again. */
 /**
  * Shell rows stored before the human labels existed ("$ cat > /tmp/x <<EOF …") get today's label from their
@@ -205,6 +222,8 @@ export class Hub {
     this.persisted.routines = cleanRoutines(this.persisted.routines);
     // 💰 Per-project budgets: only valid limits survive.
     this.persisted.projectBudgets = cleanProjectBudgets(this.persisted.projectBudgets);
+    // 🏷/📦 Session tags and archive flags: only valid entries survive.
+    this.persisted.sessionMeta = cleanSessionMeta(this.persisted.sessionMeta);
     this.budgetOverrideUntil = 0; // one-shot "allow one turn" after a hard stop (memory only)
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
@@ -1005,6 +1024,44 @@ export class Hub {
       this.save();
     } else this.scheduleSave();
     this.setStatus(id, { sessionId: sessionId ?? null });
+  }
+
+  // ---------- 🏷 tags / 📦 archive of a listed session (persisted per project + session id) ----------
+
+  /** `{ tag?, archived? }` of one session, or null. */
+  sessionMetaFor(id, sessionId) {
+    const m = this.persisted.sessionMeta?.[id]?.[sessionId];
+    return m && typeof m === 'object' ? m : null;
+  }
+
+  /** The whole project's map (sessionId → meta), safe to read while listing. */
+  sessionMetaMap(id) {
+    const m = this.persisted.sessionMeta?.[id];
+    return m && typeof m === 'object' ? m : {};
+  }
+
+  /**
+   * Sets (or clears) a session's 🏷 tag and/or 📦 archive flag. `tag: ''` and `archived: false` remove the field;
+   * an entry with neither is dropped. @returns the stored meta (`{}` when nothing is left)
+   */
+  setSessionMeta(id, sessionId, patch) {
+    const all = (this.persisted.sessionMeta ??= {});
+    const per = (all[id] ??= {});
+    const next = { ...(per[sessionId] ?? {}) };
+    if (Object.hasOwn(patch, 'tag')) {
+      const tag = typeof patch.tag === 'string' ? patch.tag.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+      if (tag) next.tag = tag;
+      else delete next.tag;
+    }
+    if (Object.hasOwn(patch, 'archived')) {
+      if (patch.archived === true) next.archived = true;
+      else delete next.archived;
+    }
+    if (next.tag || next.archived) per[sessionId] = next;
+    else delete per[sessionId];
+    if (!Object.keys(per).length) delete all[id];
+    this.scheduleSave();
+    return next;
   }
 
   // ---------- turns cut short by a server stop ----------

@@ -14,7 +14,8 @@ Belum terpasang? Ikuti [Mulai cepat](../README.md#mulai-cepat) dulu.
 
 Tips:
 
-- Tekan `?` untuk daftar shortcut, atau `Ctrl+P` untuk mencari aksi apa saja.
+- Tekan `?` untuk daftar shortcut, atau `Ctrl+P` untuk mencari aksi apa saja. Di palet, `@kata` mencari file di project ini **dan** project lain (nama project tampil di keterangan).
+- Riwayat sesi bisa dirapikan dengan **🏷 tag** (ikut tercari) dan **📦 arsip** (disembunyikan dari daftar utama, tetap bisa dilanjutkan).
 - Ingin Claude bekerja tanpa ditunggui? Ganti mode izin (`Shift+Tab`). Mode paling aman tetap **🛡️ Tanya dulu**.
 - Pekerjaan berurutan? Masukkan ke **📋 Antrian** (`Alt+Enter`). Lihat [Antrian & batas](FITUR.md#antrian--batas).
 
@@ -31,6 +32,7 @@ Tips:
 
 - Notifikasi *minta izin* muncul walau aplikasi ditutup.
 - **Android:** tekan **Tolak** langsung dari notifikasi. **Izinkan** dari notifikasi hanya ada untuk baca/edit file; perintah terminal selalu dibuka di aplikasi dulu.
+- Tidak ingin diganggu project tertentu? Di 🔔 Pengaturan notifikasi centang project itu pada **🔇 Project dibisukan**; suara dan pop-up-nya diam, termasuk di HP.
 - **iPhone:** ketuk notifikasinya. Aplikasi terbuka tepat di kartu izinnya.
 - Di aplikasi, jawab lewat kartu izin seperti di laptop.
 

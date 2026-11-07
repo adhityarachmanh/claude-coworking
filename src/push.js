@@ -116,6 +116,7 @@ export function parseSettings(raw) {
   if (!Number.isInteger(raw.tzOffsetMin) || raw.tzOffsetMin < -720 || raw.tzOffsetMin > 840) throw bad('tzOffsetMin (bilangan bulat menit, -720..840)');
   if (raw.lockscreenAllow !== undefined && typeof raw.lockscreenAllow !== 'boolean') throw bad('lockscreenAllow');
   if (raw.favoritesOnly !== undefined && typeof raw.favoritesOnly !== 'boolean') throw bad('favoritesOnly');
+  if (raw.muted !== undefined && (!plainObject(raw.muted) || Object.entries(raw.muted).some(([id, on]) => !id || id.length > 200 || typeof on !== 'boolean'))) throw bad('muted');
   if (raw.favorites !== undefined && (!Array.isArray(raw.favorites) || raw.favorites.length > 1000 || raw.favorites.some((f) => typeof f !== 'string' || f.length > 200))) throw bad('favorites');
   const clean = cleanNotifySettings({ ...raw, events });
   const tz = validTimeZone(raw.tz);
@@ -124,6 +125,7 @@ export function parseSettings(raw) {
     events: clean.events,
     quiet: clean.quiet,
     favoritesOnly: clean.favoritesOnly,
+    muted: clean.muted,
     volume: clean.volume,
     tzOffsetMin: raw.tzOffsetMin,
     ...(tz ? { tz } : {}),
@@ -466,6 +468,7 @@ export class PushService {
     for (const device of this.targets()) {
       const settings = device.push.settings ?? {};
       if (settings.enabled === false) continue;
+      if (settings.muted?.[projectId] === true) continue; // 🔇 this project is silenced on that phone
       if (this.isVisible(device.id)) continue;
       const plan = notifyPlan(planKind, settings, { away: true, favorite, now: phoneClock(settings, this.now()) });
       if (!plan.popup) continue;

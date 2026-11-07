@@ -321,6 +321,7 @@ describe('push-rules', () => {
     assert.deepEqual(s.quiet, { enabled: true, from: '23:00', to: '06:30', allowAsk: false });
     assert.equal(s.favoritesOnly, true);
     assert.deepEqual(s.favorites, ['a', 'b']);
+    assert.deepEqual(pushSettings(cleanNotifySettings({ muted: { p1: true, p2: false } })).muted, { p1: true }, '🔇 ikut terkirim');
     assert.equal(s.tzOffsetMin, 420);
     assert.equal(s.tz, 'Asia/Jakarta');
     assert.equal(s.lockscreenAllow, false);
