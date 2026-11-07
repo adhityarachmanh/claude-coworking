@@ -2959,7 +2959,7 @@ for (const vp of VIEWPORTS) {
                     to: 2,
                     groupBy: 'day',
                     totals: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, total: 150, requests: 2, turns: 2, costUsd: 1.5, costCoverage: 1, cacheHitRate: 0 },
-                    byPeriod: [],
+                    byPeriod: [{ start: Date.now() - 86_400_000, end: Date.now(), input: 100, output: 50, cacheRead: 0, total: 150, costUsd: 1.5 }],
                     byModel: [],
                     byEngineSource: [],
                     previous: { input: 50, output: 50, cacheRead: 0, cacheWrite: 0, total: 100, requests: 1, turns: 1, costUsd: 1, costCoverage: 1, cacheHitRate: 0 },
@@ -2975,11 +2975,56 @@ for (const vp of VIEWPORTS) {
         const text = await page.eval(() => document.querySelector('#report-compare').textContent);
         assert.match(text, /token \+50%/);
         assert.match(text, /biaya \+50%/);
+
+        // ⬇ CSV: the per-period numbers, downloaded as one file.
+        await page.eval(captureDownloads);
+        await page.eval(() => document.querySelector('#report-csv').click());
+        await page.waitFor(() => window.__downloads.length === 1, { timeoutMs: 3000, message: 'unduhan CSV' });
+        const csv = await page.eval(() => window.__downloads[0]);
+        assert.match(csv.name, /^laporan-token-.*\.csv$/);
+        assert.match(csv.text, /Periode/);
+        assert.match(csv.text, /Total token/);
+        assert.match(csv.text, /150/);
         await page.press('Escape');
       } finally {
         await page.eval(() => {
           window.fetch = window.__reportFetch;
         });
+      }
+    });
+
+    test('🔖 Pesan tersimpan: saring dengan kotak cari', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval((pid) => {
+        localStorage.setItem(
+          'office.bookmarks',
+          JSON.stringify({
+            [pid]: [
+              { id: 'b1', role: 'claude', text: 'checkout sudah diperbaiki di src/checkout.ts', ts: Date.now() },
+              { id: 'b2', role: 'user', text: 'tolong cek login', ts: Date.now() },
+            ],
+          }),
+        );
+        return import('/js/features/bookmarks.js').then((m) => m.openBookmarks());
+      }, projectId);
+      try {
+        await page.waitFor(() => document.querySelectorAll('#bookmarks-list .bm-item').length === 2, { timeoutMs: 4000, message: 'dua simpanan' });
+        await page.eval(() => {
+          const input = document.querySelector('#bookmarks-search');
+          input.value = 'checkout';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        assert.equal(await page.eval(() => document.querySelectorAll('#bookmarks-list .bm-item').length), 1, 'hanya yang cocok');
+        assert.match(await page.eval(() => document.querySelector('#bookmarks-list').textContent), /checkout sudah diperbaiki/);
+        await page.eval(() => {
+          const input = document.querySelector('#bookmarks-search');
+          input.value = 'zzz';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        assert.match(await page.eval(() => document.querySelector('#bookmarks-list').textContent), /Tidak ada yang cocok/);
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => localStorage.removeItem('office.bookmarks'));
       }
     });
 
@@ -6989,7 +7034,7 @@ for (const vp of VIEWPORTS) {
                 current: 'sess-current',
                 sessions: [
                   { id: 'sess-current', title: 'Sedang dibuka', source: 'web', updated: now },
-                  { id: 'sess-bulk-1', title: 'Sesi satu', source: 'web', updated: now - 86_400_000 },
+                  { id: 'sess-bulk-1', title: 'Sesi satu', source: 'web', updated: now - 86_400_000, usage: { usd: 0.5, tokens: 1200, rows: 1, known: 1 } },
                   { id: 'sess-bulk-2', title: 'Sesi dua', source: 'cli', updated: now - 172_800_000 },
                   { id: 'sess-bulk-3', title: 'Sesi tiga', source: 'web', updated: now - 259_200_000 },
                 ],
@@ -7016,6 +7061,9 @@ for (const vp of VIEWPORTS) {
         await page.waitFor(() => document.querySelectorAll('#sessions-list [data-pick]').length === 3, { timeoutMs: 4000, message: 'tiga sesi bisa dipilih' });
         assert.equal(await page.eval(() => document.querySelector('#sessions-bulk').hidden), false, 'bar pilih tampil');
         assert.equal(await page.eval(() => document.querySelectorAll('#sessions-list .s-item').length), 4, 'sesi yang sedang dibuka tetap tampil');
+        const meta = await page.eval(() => document.querySelector('#sessions-list').textContent);
+        assert.match(meta, /1\.2k token/, 'token sesi');
+        assert.match(meta, /\$0,50/, 'biaya sesi');
 
         await page.eval(() => {
           for (const id of ['sess-bulk-1', 'sess-bulk-2']) document.querySelector(`#sessions-list [data-pick="${id}"]`).click();

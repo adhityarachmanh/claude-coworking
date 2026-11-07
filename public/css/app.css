@@ -603,6 +603,7 @@ body:not([data-tab='chat']) #chat-search { display: none; }
 #chat .bm-flash { outline: 2px solid var(--accent-2); outline-offset: 2px; border-radius: var(--r-md); }
 .msg-star { min-width: 24px; font-size: var(--fs-md); line-height: 1; text-align: center; }
 .bookmarks-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
+.bookmarks-search { margin: 0 0 6px; }
 .bm-item { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
 .bm-head { display: flex; justify-content: space-between; gap: 8px; font-size: var(--fs-xs); color: var(--muted); }
 .bm-role { font-weight: 600; color: var(--text-2); }

@@ -2,7 +2,7 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { engineBadge, engineLabel, engineOf } from '../core/engine-caps.js';
-import { ago, DAY } from '../core/format.js';
+import { ago, DAY, fmtTokens } from '../core/format.js';
 import { DEMO_ID, auth, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { exportSessionMarkdown, exportTools } from './conversations.js';
@@ -101,6 +101,15 @@ export async function openSessions() {
   }
 }
 
+/** " · 1.2k token · $0.50" under a session (only what the ledger recorded for that session id). */
+function usageText(usage) {
+  if (!usage || (!usage.tokens && !usage.usd)) return '';
+  const parts = [];
+  if (usage.tokens) parts.push(`${fmtTokens(usage.tokens)} token`);
+  if (usage.usd) parts.push(`$${usage.usd.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  return parts.length ? ` · ${parts.join(' · ')}` : '';
+}
+
 function renderSessionList() {
   const box = $('#sessions-list');
   const bulk = $('#sessions-bulk');
@@ -113,8 +122,7 @@ function renderSessionList() {
   const q = $('#sessions-search').value.trim().toLowerCase();
   const days = Number($('#sessions-range').value) || 0;
   const since = days ? Date.now() - days * 86_400_000 : 0;
-  const list = sessionsView.list.filter((s) => (!since || s.updated >= since) && (!q || s.title.toLowerCase().includes(q) || s.id.startsWith(q)));
-  if (!list.length) {
+  const list = sessionsView.list.filter((s) => (!since || s.updated >= since) && (!q || s.title.toLowerCase().includes(q) || s.id.startsWith(q)));  if (!list.length) {
     box.innerHTML = `<div class="s-empty"><p class="muted">Tidak ada sesi yang cocok${days ? ' dalam rentang ini' : ''}.</p></div>`;
     return;
   }
@@ -150,7 +158,7 @@ function renderSessionList() {
         ${pick}
         <div class="s-main">
           <span class="s-title">${escapeHtml(s.title)}</span>
-          <span class="s-meta"><span class="src src-${s.source}">${s.source === 'web' ? 'Web' : s.source === 'opencode' ? 'OpenCode' : 'Terminal'}</span>${ago(s.updated)} · <code>${s.id.slice(0, 8)}</code></span>
+          <span class="s-meta"><span class="src src-${s.source}">${s.source === 'web' ? 'Web' : s.source === 'opencode' ? 'OpenCode' : 'Terminal'}</span>${ago(s.updated)} · <code>${s.id.slice(0, 8)}</code>${usageText(s.usage)}</span>
         </div>
         <span class="s-tools">
           ${`<button type="button" class="ghost icon" data-rename="${escapeHtml(s.id)}" title="Ganti nama" aria-label="Ganti nama: ${escapeHtml(s.title)}" ${ro}>✎</button>`}

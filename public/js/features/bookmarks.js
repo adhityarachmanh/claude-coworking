@@ -12,11 +12,15 @@ import { replaceChat, revealChatMessage } from './chat.js';
 let wired = false;
 
 function render() {
-  const list = bookmarksOf(state.active);
-  $('#bookmarks-note').textContent = `${list.length} pesan di ${projectName(state.active)} · tersimpan di browser ini`;
+  const all = bookmarksOf(state.active);
+  const query = ($('#bookmarks-search')?.value ?? '').trim().toLowerCase();
+  const list = query ? all.filter((b) => b.text.toLowerCase().includes(query) || (b.role === 'user' ? 'kamu' : 'claude').includes(query)) : all;
+  $('#bookmarks-note').textContent = `${all.length} pesan di ${projectName(state.active)} · tersimpan di browser ini`;
   const box = $('#bookmarks-list');
   if (!list.length) {
-    box.innerHTML = '<div class="empty"><div class="empty-icon">☆</div><b>Belum ada pesan tersimpan</b><p>Klik <b>☆ Simpan</b> pada pesan (atau <b>☆</b> di jawaban Claude) untuk menandainya, lalu buka lagi lewat Ctrl+P.</p></div>';
+    box.innerHTML = query
+      ? `<div class="empty"><div class="empty-icon">🔍</div><b>Tidak ada yang cocok</b><p>Tidak ada pesan tersimpan dengan “${escapeHtml(query)}”.</p></div>`
+      : '<div class="empty"><div class="empty-icon">☆</div><b>Belum ada pesan tersimpan</b><p>Klik <b>☆ Simpan</b> pada pesan (atau <b>☆</b> di jawaban Claude) untuk menandainya, lalu buka lagi lewat Ctrl+P.</p></div>';
     return;
   }
   box.innerHTML = list
@@ -58,8 +62,10 @@ export function openBookmarks() {
   if (!state.active || state.active === DEMO_ID) return toast('Pilih project dulu untuk melihat pesan tersimpan.');
   if (!wired) {
     $('#bookmarks-list').addEventListener('click', onListClick);
+    $('#bookmarks-search').addEventListener('input', render);
     wired = true;
   }
+  $('#bookmarks-search').value = '';
   render();
   openModal('bookmarks-modal');
 }

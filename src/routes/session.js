@@ -179,9 +179,26 @@ export function register(router) {
     return ok(res);
   }));
   // The active engine's conversations: Claude Code's transcripts, or OpenCode's own session list.
-  router.post('/api/projects/:id/sessions', withSession(async ({ hub, opencode }, req, res, { project }) => {
+  router.post('/api/projects/:id/sessions', withSession(async ({ hub, opencode, ledger }, req, res, { project }) => {
     const engine = hub.engineOf(project.id);
     const sessions = engine === 'opencode' ? await openCodeSessions(opencode, project.path) : listSessions(project.path);
+    // What each session actually used (the token ledger is keyed by sessionId): shown next to its date.
+    const usage = new Map();
+    for (const row of ledger?.query?.({ accountId: 'all', projectId: project.id }) ?? []) {
+      if (!row?.sessionId) continue;
+      const u = usage.get(row.sessionId) ?? { usd: 0, tokens: 0, known: 0, rows: 0 };
+      u.rows += 1;
+      u.tokens += positive(row.input) + positive(row.output) + positive(row.cacheRead) + positive(row.cacheWrite);
+      if (typeof row.costUsd === 'number') {
+        u.usd += row.costUsd;
+        u.known += 1;
+      }
+      usage.set(row.sessionId, u);
+    }
+    for (const s of sessions) {
+      const u = usage.get(s.id);
+      if (u) s.usage = { usd: Math.round(u.usd * 100) / 100, tokens: u.tokens, rows: u.rows, known: u.known };
+    }
     return json(res, 200, { sessions, engine, current: hub.sessionIdFor(project.id) });
   }));
   router.post('/api/projects/:id/resume', withSession(async ({ hub, opencode }, req, res, { project, session }, body) => {
@@ -424,6 +441,8 @@ export function register(router) {
 
 /** A file name that is safe on every platform (Windows included), never empty. */
 const safeFile = (s) => String(s ?? '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 80) || 'sesi';
+/** A non-negative number from an untrusted ledger row. */
+const positive = (n) => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0);
 
 /** A ConversationError (bad query, unknown session, too large) goes back with its own status. */
 function conversation(res, fn) {

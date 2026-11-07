@@ -1616,6 +1616,20 @@ test('🕘 Riwayat sesi (Claude Code): ⑂ fork continues a copy (--fork-session
   assert.equal(names.length, 2, `dua file: ${names}`);
   assert.ok(names.every((n) => n.endsWith('.md')), 'Markdown per sesi');
   assert.match(first, /Sesi untuk dicabangkan/);
+
+  // 💵 The ledger rows of a session are shown next to it (token + recorded cost).
+  const usageFile = path.join(TMP, 'data', 'usage.jsonl');
+  const usageBefore = existsSync(usageFile) ? readFileSync(usageFile, 'utf8') : '';
+  try {
+    appendFileSync(
+      usageFile,
+      `${JSON.stringify({ ts: Date.now(), account: { id: 'session-usage', email: 'Usage', org: null }, engine: 'claude', source: 'web', project: 'toko', projectId: id, sessionId: sid, model: 'm', input: 100, output: 20, cacheRead: 0, cacheWrite: 0, costUsd: 0.5, requests: 1, turns: 1 })}\n`,
+    );
+    const withUsage = (await api(`/api/projects/${id}/sessions`)).body.sessions.find((s) => s.id === sid);
+    assert.deepEqual(withUsage.usage, { usd: 0.5, tokens: 120, rows: 1, known: 1 });
+  } finally {
+    writeFileSync(usageFile, usageBefore);
+  }
 });
 
 test('🧩 Ekstensi: plugins (install with a shown marketplace command, enable/disable, uninstall), own agents, hooks', async () => {

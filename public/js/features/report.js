@@ -340,6 +340,7 @@ async function previewReport() {
   if (!q.accountId) {
     showReportMessage('Belum ada pemakaian yang tercatat. Data mulai dikumpulkan sejak fitur ini aktif.');
     $('#report-pdf').disabled = true;
+    $('#report-csv').disabled = true;
     return;
   }
   const seq = ++report.seq; // a slow answer must not overwrite a newer choice
@@ -349,6 +350,7 @@ async function previewReport() {
     const s = await api('/api/report/summary', q);
     if (seq !== report.seq) return;
     $('#report-pdf').disabled = false;
+    $('#report-csv').disabled = false;
     if (!s.records) return showReportMessage('Tidak ada pemakaian di periode ini untuk akun tersebut.');
     showReportMessage(null);
     report.last = s;
@@ -362,6 +364,35 @@ async function previewReport() {
   } finally {
     if (seq === report.seq) box.classList.remove('loading');
   }
+}
+
+/** One CSV field: quoted only when it contains a comma, quote or newline. */
+const csvCell = (v) => {
+  const s = String(v ?? '');
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+/** ⬇ CSV: the same per-period numbers, for a spreadsheet (BOM so Excel reads the Indonesian commas). */
+function downloadCsv() {
+  const s = report.last;
+  if (!s) return;
+  const periods = (s.byPeriod ?? []).filter((p) => p.total);
+  const head = ['Periode', 'Input', 'Output', 'Cache read', 'Total token', 'Biaya USD'];
+  const meta = [
+    ['Laporan', 'Adhit Office'],
+    ['Dari', new Date(s.from).toLocaleString('id-ID')],
+    ['Sampai', new Date(s.to).toLocaleString('id-ID')],
+    ['Total token', s.totals?.total ?? 0],
+    ['Estimasi biaya USD', s.totals?.costUsd == null ? '' : s.totals.costUsd.toFixed(6)],
+  ];
+  const lines = [
+    ...meta.map((r) => r.map(csvCell).join(',')),
+    '',
+    head.map(csvCell).join(','),
+    ...periods.map((p) => [periodLabel(p, s.groupBy), p.input, p.output, p.cacheRead, p.total, p.costUsd == null ? '' : p.costUsd.toFixed(6)].map(csvCell).join(',')),
+  ];
+  const name = `laporan-token-${new Date(s.from).toLocaleDateString('sv-SE')}-${new Date(s.to).toLocaleDateString('sv-SE')}.csv`;
+  saveBlob(name, new Blob([`\uFEFF${lines.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' }));
 }
 
 async function downloadReport() {
@@ -419,4 +450,5 @@ export function initReport() {
   });
   for (const id of ['#report-from', '#report-to']) $(id).addEventListener('change', previewReport);
   $('#report-pdf').addEventListener('click', downloadReport);
+  $('#report-csv').addEventListener('click', downloadCsv);
 }

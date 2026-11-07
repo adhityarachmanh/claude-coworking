@@ -39,6 +39,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **⌨️ Daftar shortcut di Panduan.** Tekan **?** (atau Ctrl+P → *Daftar shortcut keyboard*) untuk melihat semua tombol: project, palet, cari chat, riwayat prompt, latar belakang, Enter/Alt+Enter, Shift+Tab, Alt+M, Esc, dan Esc Esc.
 - **🔗 Shortcut PWA.** Menu cepat ikon aplikasi: **Semua project** (`/?open=dashboard`) dan **Riwayat sesi** (`/?open=sessions`); parameter dibersihkan setelah dialog terbuka.
 - **📊 Banding periode di laporan.** Ringkasan laporan menampilkan delta **token** dan **biaya** terhadap periode sebelumnya yang sama panjang.
+- **💵 Token & biaya per sesi.** Baris di 🕘 Riwayat sesi menampilkan `1,2k token · $0,50` bila ledger punya catatan untuk sesi itu; biaya berasal dari baris berbiaya (baris $0 OpenCode tidak menambah angka).
+- **🔖 Cari di pesan tersimpan.** Kotak cari di **Ctrl+P → Pesan tersimpan** menyaring berdasarkan teks dan peran; query dikosongkan setiap dialog dibuka.
+- **📤 Export CSV laporan.** Tombol **⬇ CSV** di laporan mengunduh angka per periode (input, output, cache, total token, biaya) dengan BOM agar Excel membaca format Indonesia.
 
 ### Diperbaiki
 
