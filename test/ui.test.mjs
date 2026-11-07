@@ -2710,22 +2710,38 @@ for (const vp of VIEWPORTS) {
       }, projectId);
       try {
         await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
-        await page.waitFor(() => Boolean(document.querySelector('#dash-list [data-dash-stop]')), { timeoutMs: 4000, message: 'tombol hentikan di kartu' });
-        const acts = await page.eval((pid) => ({
-          queue: document.querySelector(`#dash-list li[data-id="${pid}"] [data-dash-queue]`)?.textContent ?? '',
-          stop: document.querySelector(`#dash-list li[data-id="${pid}"] [data-dash-stop]`)?.textContent ?? '',
-        }), projectId);
+        // Re-inject the status and act in the same synchronous step: a live status event may arrive between two
+        // wire calls (especially now that the dashboard also loads budgets/today).
+        const act = (selector, clickIt) =>
+          page.eval(
+            async (p, sel, doClick) => {
+              const { state } = await import('/js/core/state.js');
+              state.statuses[p] = { ...(state.statuses[p] ?? {}), busy: true, taskQueue: { waiting: 2, running: 0, paused: false, rev: 300 } };
+              (await import('/js/features/dashboard.js')).renderDashboard();
+              const btn = document.querySelector(sel);
+              if (!btn) return null;
+              const label = btn.textContent;
+              if (doClick) btn.click();
+              return label;
+            },
+            projectId,
+            selector,
+            clickIt,
+          );
+        const queueSel = `#dash-list li[data-id="${projectId}"] [data-dash-queue]`;
+        const stopSel = `#dash-list li[data-id="${projectId}"] [data-dash-stop]`;
+        const acts = { queue: await act(queueSel, false), stop: await act(stopSel, false) };
         assert.match(acts.queue, /Antrian 2/);
         assert.equal(acts.stop, '■ Hentikan');
 
         // Hentikan: calls that project's stop route and keeps the dashboard open.
-        await page.eval((pid) => document.querySelector(`#dash-list li[data-id="${pid}"] [data-dash-stop]`).click(), projectId);
+        assert.equal(await act(stopSel, true), '■ Hentikan');
         await page.waitFor(() => window.__stopCalls.length === 1, { timeoutMs: 4000, message: 'panggilan stop' });
         assert.equal(await page.eval((pid) => window.__stopCalls[0].endsWith(`/api/projects/${pid}/stop`), projectId), true);
         assert.equal(await page.eval(() => document.querySelector('#dash-modal').hidden), false, 'dashboard tetap terbuka');
 
         // Antrian: closes the dashboard and opens the queue of that project (not necessarily the active one).
-        await page.eval((pid) => document.querySelector(`#dash-list li[data-id="${pid}"] [data-dash-queue]`).click(), projectId);
+        assert.match(await act(queueSel, true), /Antrian 2/);
         await page.waitFor(() => !document.querySelector('#queue-modal').hidden, { timeoutMs: 4000, message: 'antrian terbuka' });
         assert.equal(await page.eval(() => document.querySelector('#dash-modal').hidden), true, 'dashboard menutup');
         assert.equal(await page.eval(() => window.__queueCalls.length), 1);
@@ -2895,6 +2911,74 @@ for (const vp of VIEWPORTS) {
       } finally {
         await page.eval(() => {
           window.fetch = window.__budgetFetch;
+        });
+      }
+    });
+
+    test('⌨️ Panduan: daftar shortcut keyboard dan item paletnya', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true })));
+      await page.waitFor(() => !document.querySelector('#help-modal').hidden, { timeoutMs: 3000, message: 'panduan lewat ?' });
+      const keys = await page.eval(() => document.querySelector('#help-keys').textContent.replace(/\s+/g, ' ').trim());
+      assert.match(keys, /Ctrl K/);
+      assert.match(keys, /Pilih project/);
+      assert.match(keys, /Ctrl P/);
+      assert.match(keys, /Shift Tab/);
+      await page.press('Escape');
+
+      await paletteType(page, 'shortcut');
+      await page.waitFor(() => [...document.querySelectorAll('#palette-list .pal-label')].some((n) => n.textContent === 'Daftar shortcut keyboard'), { timeoutMs: 3000, message: 'item shortcut di palet' });
+      await page.eval(() => [...document.querySelectorAll('#palette-list .pal-opt')].find((o) => o.textContent.includes('Daftar shortcut keyboard')).click());
+      await page.waitFor(() => !document.querySelector('#help-modal').hidden, { timeoutMs: 3000, message: 'panduan dari palet' });
+      assert.equal(await page.eval(() => document.querySelector('#palette-modal').hidden), true, 'palet menutup');
+      await page.press('Escape');
+    });
+
+    test('🔗 PWA shortcut: /?open=dashboard dan /?open=sessions membuka dialognya', async () => {
+      await page.goto(`${BASE}/?open=dashboard#${projectId}`);
+      await page.waitFor(() => !document.querySelector('#dash-modal').hidden, { timeoutMs: 8000, message: 'dashboard dari shortcut' });
+      assert.equal(await page.eval(() => location.search), '', 'parameter dibersihkan dari URL');
+      await page.press('Escape');
+      await page.goto(`${BASE}/?open=sessions#${projectId}`);
+      await page.waitFor(() => !document.querySelector('#sessions-modal').hidden, { timeoutMs: 8000, message: 'riwayat sesi dari shortcut' });
+      assert.equal(await page.eval(() => location.search), '');
+      await page.press('Escape');
+    });
+
+    test('📊 Laporan: membandingkan dengan periode sebelumnya', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(() => {
+        window.__reportFetch = window.fetch;
+        window.fetch = (url, opts) =>
+          String(url).endsWith('/api/report/summary')
+            ? Promise.resolve(
+                new Response(
+                  JSON.stringify({
+                    records: 3,
+                    from: 1,
+                    to: 2,
+                    groupBy: 'day',
+                    totals: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, total: 150, requests: 2, turns: 2, costUsd: 1.5, costCoverage: 1, cacheHitRate: 0 },
+                    byPeriod: [],
+                    byModel: [],
+                    byEngineSource: [],
+                    previous: { input: 50, output: 50, cacheRead: 0, cacheWrite: 0, total: 100, requests: 1, turns: 1, costUsd: 1, costCoverage: 1, cacheHitRate: 0 },
+                  }),
+                  { status: 200, headers: { 'Content-Type': 'application/json' } },
+                ),
+              )
+            : window.__reportFetch(url, opts);
+      });
+      try {
+        await page.eval(async () => (await import('/js/features/report.js')).openReport());
+        await page.waitFor(() => !document.querySelector('#report-compare').hidden, { timeoutMs: 4000, message: 'perbandingan periode' });
+        const text = await page.eval(() => document.querySelector('#report-compare').textContent);
+        assert.match(text, /token \+50%/);
+        assert.match(text, /biaya \+50%/);
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__reportFetch;
         });
       }
     });

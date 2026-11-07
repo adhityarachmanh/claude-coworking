@@ -55,6 +55,7 @@ import { initRoster } from './features/roster.js';
 import { initResumeTurn } from './features/resume-turn.js';
 import { initRewind } from './features/rewind.js';
 import { initSessions } from './features/sessions.js';
+import { initShortcutLinks } from './features/shortcut-links.js';
 import { initMemory } from './features/memory.js';
 import { initExtensions } from './features/extensions.js';
 import { initPullRequest } from './features/pull-request.js';
@@ -91,6 +92,7 @@ initAppUpdate(); // ⬆ newer Adhit Office: banner + ⚙
 initHandoff(); // 🔁 /lanjut: context from the other engine
 initHealth(); // 🩺 Kesehatan sistem (⚙ → Sistem; laptop/Tailscale only)
 initInstall(); // 📲 pasang sebagai aplikasi (PWA), hint in ❓ Panduan
+initShortcutLinks(); // 🔗 PWA shortcut: /?open=dashboard or /?open=sessions
 initRoleMap(); // 🧭 learned role mappings (👥 Kelola tim → 🧭)
 initRoster(); // 👥 Kelola tim (⚙, ⋯, Ctrl+P, /team)
 initStatusline();

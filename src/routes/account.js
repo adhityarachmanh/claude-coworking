@@ -353,8 +353,11 @@ async function report(ctx, req, res, body, { pdf: wantPdf }) {
   const rows = ledger.query({ accountId, from, to });
   const groupBy = PERIOD_UNITS.includes(body.groupBy) ? body.groupBy : 'day';
   const summary = summarize(rows, { from: from || (rows[0]?.ts ?? to), to, groupBy });
+  // The same-length window right before this one, for the "vs previous period" line (only with a real start).
+  const span = to - from;
+  const previous = from > 0 && span > 0 ? totals(ledger.query({ accountId, from: from - span, to: from - 1 })) : null;
   // The summary is aggregated only (engine/model/project/source/period/sessions): no email, org or account id.
-  if (!wantPdf) return json(res, 200, summary);
+  if (!wantPdf) return json(res, 200, { ...summary, ...(previous ? { previous, previousRange: { from: from - span, to: from - 1 } } : {}) });
   // Combined report: a fixed label without personal data, and no per-account profile, limits or billing.
   const found = all
     ? { email: 'Semua akun', org: null }

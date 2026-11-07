@@ -177,6 +177,27 @@ function renderReportNote(range) {
   note.innerHTML = `ℹ ${start}. Sebelum tanggal itu grafik kosong karena belum tercatat, bukan karena tidak dipakai.`;
 }
 
+/** "vs the previous, equally long period": token and cost deltas in percent (hidden without a previous period). */
+function renderReportCompare(previous, current = {}) {
+  const box = $('#report-compare');
+  if (!box) return;
+  const before = previous && Number.isFinite(previous.total) ? previous : null;
+  if (!before || !before.total) {
+    box.hidden = true;
+    return;
+  }
+  const delta = (now, old) => (old > 0 ? Math.round(((now - old) / old) * 100) : null);
+  const parts = [];
+  const tokens = delta(current.total ?? 0, before.total);
+  if (tokens != null) parts.push(`token ${tokens >= 0 ? '+' : ''}${tokens}%`);
+  if (current.costUsd != null && before.costUsd != null) {
+    const cost = delta(current.costUsd, before.costUsd);
+    if (cost != null) parts.push(`biaya ${cost >= 0 ? '+' : ''}${cost}%`);
+  }
+  box.textContent = parts.length ? `Dibanding periode sebelumnya (sama panjang): ${parts.join(' · ')}.` : '';
+  box.hidden = !parts.length;
+}
+
 function renderReportKpis(t, records) {
   // Only part of the records may carry a cost: the estimate would otherwise look like the whole bill.
   // The hint stays inside the same card (a 5th card would change the 4×1 / 2×2 layout).
@@ -332,6 +353,7 @@ async function previewReport() {
     showReportMessage(null);
     report.last = s;
     renderReportKpis(s.totals, s.records);
+    renderReportCompare(s.previous, s.totals);
     renderTrend(s);
     renderReportModels(s.byModel);
     renderReportEngines(s.byEngineSource, s.totals?.total ?? 0);

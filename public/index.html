@@ -291,6 +291,23 @@
             <p class="muted small">Aplikasi dari layar utama punya penyimpanan sendiri: masukkan kode pairing sekali lagi di sana. Halaman tidak di-cache untuk offline (token sesi tidak boleh tersimpan di cache browser).</p>
             <button type="button" id="install-app" class="primary" hidden>📲 Pasang sekarang</button>
           </section>
+          <section id="help-keys">
+            <h3>⌨️ Shortcut keyboard</h3>
+            <dl class="help-keys-list">
+              <div><dt><kbd>Ctrl</kbd> <kbd>K</kbd></dt><dd>Pilih project</dd></div>
+              <div><dt><kbd>Ctrl</kbd> <kbd>P</kbd></dt><dd>Palet perintah (semua aksi); <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> langsung ke perintah</dd></div>
+              <div><dt><kbd>Ctrl</kbd> <kbd>F</kbd></dt><dd>Cari di percakapan ini</dd></div>
+              <div><dt><kbd>Ctrl</kbd> <kbd>R</kbd></dt><dd>Cari riwayat prompt (di kotak pesan)</dd></div>
+              <div><dt><kbd>Ctrl</kbd> <kbd>B</kbd></dt><dd>Lanjutkan perintah/subagent di latar belakang</dd></div>
+              <div><dt><kbd>Enter</kbd> / <kbd>Shift</kbd> <kbd>Enter</kbd></dt><dd>Kirim / baris baru</dd></div>
+              <div><dt><kbd>Alt</kbd> <kbd>Enter</kbd></dt><dd>Masukkan prompt ke antrian (tidak langsung dikirim)</dd></div>
+              <div><dt><kbd>Shift</kbd> <kbd>Tab</kbd></dt><dd>Ganti mode izin</dd></div>
+              <div><dt><kbd>Alt</kbd> <kbd>M</kbd></dt><dd>Input suara</dd></div>
+              <div><dt><kbd>Esc</kbd></dt><dd>Tutup dialog/menu teratas; tanpa dialog, hentikan giliran</dd></div>
+              <div><dt><kbd>Esc</kbd> <kbd>Esc</kbd></dt><dd>Rewind percakapan/kode saat tidak ada yang berjalan</dd></div>
+              <div><dt><kbd>?</kbd></dt><dd>Buka Panduan ini (juga dari mana saja, kecuali saat mengetik)</dd></div>
+            </dl>
+          </section>
           <section>
             <h3>Mulai dalam 4 langkah</h3>
             <ol class="steps">
@@ -1130,6 +1147,7 @@
           <div id="report-body">
             <div id="report-kpis" class="kpis"></div>
             <p id="report-kpi-more" class="kpi-more muted small"></p>
+        <p id="report-compare" class="muted small" hidden></p>
             <section class="trend" aria-labelledby="trend-title">
               <div class="trend-head">
                 <b id="trend-title">📈 Tren pemakaian</b>

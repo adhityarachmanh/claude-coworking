@@ -196,6 +196,18 @@ function buildItems() {
     ['help', '❓', 'Bantuan & shortcut', '?', null, () => openModal('help-modal'), 'help shortcut panduan keyboard'],
   ];
   for (const [id, icon, label, kbd, disabled, run, keywords] of dialogs) add({ id: `dialog:${id}`, group: 'dialog', icon, label, kbd, disabled, run, keywords });
+  add({
+    id: 'dialog:shortcuts',
+    group: 'dialog',
+    icon: '⌨️',
+    label: 'Daftar shortcut keyboard',
+    hint: 'Tekan ? kapan saja',
+    keywords: 'keyboard shortcut keys tombol panduan',
+    run: () => {
+      openModal('help-modal');
+      document.getElementById('help-keys')?.scrollIntoView({ block: 'start' });
+    },
+  });
 
   // One search box for the settings panels too: type "backup", "budget", "jadwal", "mesin", …
   const settingsTabs = [

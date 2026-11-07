@@ -62,11 +62,12 @@ Project yang foldernya sudah dipindah/dihapus ditandai **folder hilang** dan bis
 1. Buka **📊 Laporan** (avatar akun, atau `Ctrl+P` → *Laporan*).
 2. Pilih **Semua akun (Claude + OpenCode)** untuk melihat kedua mesin sekaligus, atau satu akun saja.
 3. Pilih periode: Hari ini, 7 hari, 30 hari, Bulan ini, Semua, atau tanggal sendiri.
-4. Di bagian **Per mesin** lihat baris **Claude · Web**, **Claude · Terminal**, **OpenCode · Web**, dan **OpenCode · Terminal**.
+4. Di atas kartu ringkasan ada **“Dibanding periode sebelumnya (sama panjang)”**: persentase naik/turun **token** dan **biaya** dibanding rentang tepat sebelum periode yang dipilih (muncul saat rentang mulai jelas, bukan “Semua”).
+5. Di bagian **Per mesin** lihat baris **Claude · Web**, **Claude · Terminal**, **OpenCode · Web**, dan **OpenCode · Terminal**.
    - **Total** = token untuk kelompok itu, **%** = bagiannya dari seluruh laporan.
    - **Biaya** `—` berarti belum ada catatan biaya untuk kelompok itu; `$0.00` berarti model gratis (biasanya OpenCode).
    - Angka dalam tanda kurung, misalnya `$1.20 (87%)`, berarti hanya 87% catatan di kelompok itu yang punya biaya.
-5. **⬇ Unduh PDF** memuat tabel yang sama dengan rincian lebih lengkap (per mesin × sumber, per project, sesi teratas).
+6. **⬇ Unduh PDF** memuat tabel yang sama dengan rincian lebih lengkap (per mesin × sumber, per project, sesi teratas).
 
 Rincian **per role** belum tersedia: pemakaian subagent digabung ke sesi induknya. Detail: [Akun & laporan](FITUR.md#akun--laporan).
 

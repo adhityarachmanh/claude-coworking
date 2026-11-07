@@ -36,6 +36,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **💾 Riwayat notifikasi bertahan setelah restart.** Log 30 notifikasi terakhir disimpan di `data/push-history.json` (tidak ikut backup) dan dimuat lagi saat server menyala.
 - **🔢 Badge ikon aplikasi.** Saat dipasang sebagai PWA, ikon aplikasi menampilkan jumlah izin yang menunggu (Badging API); badge hilang saat tidak ada izin tertunda.
 - **💰 Badge budget per project.** Kartu di 🗂 Semua project menampilkan `💰 $terpakai / $batas` untuk project yang punya batas sendiri, dengan warna kuning ≥80% dan merah ≥100%.
+- **⌨️ Daftar shortcut di Panduan.** Tekan **?** (atau Ctrl+P → *Daftar shortcut keyboard*) untuk melihat semua tombol: project, palet, cari chat, riwayat prompt, latar belakang, Enter/Alt+Enter, Shift+Tab, Alt+M, Esc, dan Esc Esc.
+- **🔗 Shortcut PWA.** Menu cepat ikon aplikasi: **Semua project** (`/?open=dashboard`) dan **Riwayat sesi** (`/?open=sessions`); parameter dibersihkan setelah dialog terbuka.
+- **📊 Banding periode di laporan.** Ringkasan laporan menampilkan delta **token** dan **biaya** terhadap periode sebelumnya yang sama panjang.
 
 ### Diperbaiki
 

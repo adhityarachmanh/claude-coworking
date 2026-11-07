@@ -1425,6 +1425,11 @@ body.read-only #composer-hint { color: var(--ask); }
 /* ---------- help dialog ---------- */
 .modal-card.help-card { max-width: 640px; }
 .help-tour { margin: 0 0 10px; }
+.help-keys-list { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 6px 0 0; }
+.help-keys-list > div { display: contents; }
+.help-keys-list dt { white-space: nowrap; }
+.help-keys-list dd { margin: 0; color: var(--text-2); }
+.help-keys-list kbd, .help kbd { font: var(--fs-xs) var(--mono); padding: 1px 5px; border: 1px solid var(--border); border-radius: var(--r-xs); background: var(--surface-2); }
 .modal-card.tour-card { max-width: 480px; display: flex; flex-direction: column; gap: 12px; }
 .tour-body { min-height: 150px; }
 .tour-step { text-align: center; padding: 8px 4px; }
