@@ -7,7 +7,7 @@ import { api, toast } from '../core/api.js';
 import { engineLabel, engineOf } from '../core/engine-caps.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { fmtTokens } from '../core/format.js';
-import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
+import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { announcement, countGroups, countsText, GROUP, matchesQuery, relTime, sortSummaries, summarize } from '../core/dashboard-rules.js';
 import { roleName } from '../office/cast.js';
 import { closeModal, openModal } from '../ui/modals.js';
@@ -280,6 +280,10 @@ function renderToday() {
   if (t.tokens > 0) parts.push(`${fmtTokens(t.tokens)} token`);
   if (t.sessions > 0) parts.push(`${t.sessions} sesi`);
   if (t.projects > 0) parts.push(`${t.projects} project`);
+  if (Array.isArray(t.top) && t.top.length && t.top[0].projectId) {
+    const names = t.top.slice(0, 2).map((p) => projectName(p.projectId));
+    parts.push(`teratas: ${names.join(', ')}`);
+  }
   box.innerHTML = `<b>Hari ini</b> <span>${escapeHtml(parts.join(' · '))}</span>`;
   box.hidden = false;
 }

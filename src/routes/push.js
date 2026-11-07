@@ -40,6 +40,11 @@ export function register(router) {
   router.post('/api/push/unsubscribe', gated(({ push, device }) => push.unsubscribe(device)), { maxBody: MAX_SMALL_BODY });
   router.post('/api/push/visible', gated(({ push, device }, body) => push.setVisible(device.id, body.tab, body.visible)), { maxBody: MAX_SMALL_BODY });
   router.post('/api/push/test', gated(({ push, device }) => push.test(device)), { maxBody: MAX_SMALL_BODY });
+  // The laptop's view of what was sent (in-memory); LOCAL_ONLY in server.js, so no paired phone sees it.
+  router.post('/api/push/history', ({ push, isLocal }, req, res) => {
+    if (!isLocal(req)) return json(res, 403, { error: 'Riwayat notifikasi hanya dari laptop.' });
+    return json(res, 200, { entries: push.historyView() });
+  });
   router.post('/api/push/act', act, { maxBody: MAX_SMALL_BODY, noToken: true });
 }
 

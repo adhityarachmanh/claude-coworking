@@ -141,6 +141,57 @@
   --on-ask: #fff;
   --ask: #a86b00;
 }
+:root[data-app-theme='contrast'] {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #151515;
+  --surface-3: #222222;
+  --border: #ffffff;
+  --border-strong: #ffffff;
+  --text: #ffffff;
+  --text-2: #f0f0f0;
+  --muted: #d0d0d0;
+  --accent: #ffd24a;
+  --accent-2: #ffe680;
+  --accent-solid: #ffd24a;
+  --accent-solid-hover: #ffe680;
+  --on-accent: #000000;
+  --accent-soft: #2a2400;
+  --accent-tint: #3a3200;
+  --accent-line: #ffe680;
+  --accent-meta: #ffe680;
+  --ok: #6bff8b;
+  --err: #ff6b63;
+  --ask: #ffd24a;
+  --on-ask: #000000;
+  --ok-soft: #062b10;
+  --ok-line: #6bff8b;
+  --ok-text: #b6ffc8;
+  --ok-text-strong: #d8ffe2;
+  --err-surface: #2a0000;
+  --err-soft: #3a0000;
+  --err-line: #ff6b63;
+  --err-text: #ffc9c4;
+  --err-text-strong: #ffe2de;
+  --warn-soft: #2a2400;
+  --warn-line: #ffd24a;
+  --warn-text: #ffe680;
+  --warn-text-strong: #fff2b8;
+  --cli-soft: #0a1a2a;
+  --cli-text: #b8dcff;
+  --cli-msg: #0a1a2a;
+  --cli-line: #7fc4ff;
+  --work-text: #b8dcff;
+  --shell: #ff9ec4;
+  --code-bg: #000000;
+  --chrome-hi: #0a0a0a;
+  --chrome: #000000;
+  --office-glow: #222222;
+  --wash-1: #ffffff1a;
+  --wash-2: #ffffff26;
+  --wash-3: #ffffff33;
+  --wash-4: #ffffff44;
+}
 :root[data-app-size='small'] { --fs-2xs: 9px; --fs-xs: 10px; --fs-sm: 11px; --fs-md: 12px; --fs-base: 13px; --fs-lg: 14px; --fs-xl: 17px; --fs-2xl: 22px; --fs-3xl: 28px; }
 :root[data-app-size='large'] { --fs-2xs: 11px; --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-base: 16px; --fs-lg: 17px; --fs-xl: 20px; --fs-2xl: 26px; --fs-3xl: 32px; }
 :root[data-app-density='compact'] .chat { padding: 8px 10px 4px; gap: 4px; }
@@ -1975,6 +2026,10 @@ body.read-only #composer-hint { color: var(--ask); }
 .ba-h-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ba-h-meta { flex: none; color: var(--muted); }
 .ba-history-row button { flex: none; min-height: 24px; }
+.push-history-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; }
+.push-history-row { display: flex; justify-content: space-between; gap: 8px; font-size: var(--fs-xs); }
+.ph-main { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ph-meta { flex: none; color: var(--muted); }
 .ba-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 10px; }
 .ba-grid select, .ba-grid input { max-width: 220px; }
 .ba-grid [hidden] { display: none; }

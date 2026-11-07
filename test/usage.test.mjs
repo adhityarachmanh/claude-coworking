@@ -68,8 +68,9 @@ test('daySummary: today’s totals, coverage, projects and sessions from every a
   assert.equal(t.costUsd, 0.5, '0 counts as priced, missing cost does not');
   assert.equal(t.costCoverage, 0.5);
   assert.deepEqual([t.projects, t.sessions], [1, 1]);
+  assert.deepEqual(t.top, [{ projectId: 'p1', turns: 2, tokens: 170, costUsd: 0.5 }]);
   assert.equal(daySummary(ledger, now + 86_400_000).rows, 0, 'a new day starts empty');
-  assert.deepEqual(daySummary(null, now), { from: periodStart(now, 'day'), rows: 0, costUsd: null, costCoverage: 0, turns: 0, tokens: 0, projects: 0, sessions: 0 });
+  assert.deepEqual(daySummary(null, now), { from: periodStart(now, 'day'), rows: 0, costUsd: null, costCoverage: 0, turns: 0, tokens: 0, projects: 0, sessions: 0, top: [] });
 });
 
 test('ledger keeps accounts apart', () => {

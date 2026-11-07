@@ -305,10 +305,22 @@ export function daySummary(ledger, now = Date.now()) {
   const t = totals(rows);
   const projects = new Set();
   const sessions = new Set();
+  const byProject = new Map();
+  const n = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
   for (const r of rows) {
     if (r.projectId) projects.add(r.projectId);
     if (r.sessionId) sessions.add(r.sessionId);
+    if (!r.projectId) continue;
+    const p = byProject.get(r.projectId) ?? { projectId: r.projectId, turns: 0, tokens: 0, costUsd: 0 };
+    p.turns += n(r.turns);
+    p.tokens += n(r.input) + n(r.output) + n(r.cacheRead) + n(r.cacheWrite);
+    if (typeof r.costUsd === 'number') p.costUsd += r.costUsd;
+    byProject.set(r.projectId, p);
   }
+  const top = [...byProject.values()]
+    .map((p) => ({ ...p, costUsd: Math.round(p.costUsd * 100) / 100 }))
+    .sort((a, b) => b.turns - a.turns || b.tokens - a.tokens)
+    .slice(0, 3);
   return {
     from,
     rows: rows.length,
@@ -318,6 +330,7 @@ export function daySummary(ledger, now = Date.now()) {
     tokens: t.total,
     projects: projects.size,
     sessions: sessions.size,
+    top,
   };
 }
 

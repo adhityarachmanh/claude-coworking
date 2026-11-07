@@ -2582,16 +2582,21 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test('⚖ audit kontras: teks memenuhi WCAG AA di tema terang dan gelap', async () => {
+    test('⚖ audit kontras: teks memenuhi WCAG AA di terang, gelap, dan kontras tinggi', async () => {
       await ensureApp(page, `#${projectId}`);
-      const before = await page.eval(async () => (await import('/js/office/themes.js')).theme.current);
+      const before = await page.eval(() => localStorage.getItem('office.appTheme'));
+      const setTheme = (id) =>
+        page.eval((themeId) => {
+          localStorage.setItem('office.appTheme', themeId);
+          return import('/js/features/appearance.js').then((m) => m.applyAppearance());
+        }, id);
       const audit = async (where) => {
         const problems = await page.eval(contrastProblems);
         assert.deepEqual(problems, [], `kontras ${where}`);
       };
       try {
-        for (const id of ['light', 'dark']) {
-          await page.eval((themeId) => import('/js/features/theme.js').then((m) => m.applyTheme(themeId)), id);
+        for (const id of ['light', 'dark', 'contrast']) {
+          await setTheme(id);
           await sleep(120);
           await audit(`${id} halaman`);
           await page.eval(async () => (await import('/js/features/dashboard.js')).openDashboard());
@@ -2611,7 +2616,11 @@ for (const vp of VIEWPORTS) {
           await sleep(80);
         }
       } finally {
-        await page.eval((themeId) => import('/js/features/theme.js').then((m) => m.applyTheme(themeId)), before);
+        await page.eval((saved) => {
+          if (saved == null) localStorage.removeItem('office.appTheme');
+          else localStorage.setItem('office.appTheme', saved);
+          return import('/js/features/appearance.js').then((m) => m.applyAppearance());
+        }, before);
       }
     });
 
@@ -2808,20 +2817,55 @@ for (const vp of VIEWPORTS) {
       await page.press('Escape');
     });
 
-    test('📊 Dashboard: ringkasan hari ini dari ledger (biaya, giliran, token, sesi, project)', async () => {
+    test('🕘 Notifikasi: riwayat pengiriman tampil di pengaturan', async () => {
       await ensureApp(page, `#${projectId}`);
       await page.eval(() => {
+        window.__phFetch = window.fetch;
+        const now = Date.now();
+        window.fetch = (url, opts) =>
+          String(url).endsWith('/api/push/history')
+            ? Promise.resolve(
+                new Response(
+                  JSON.stringify({
+                    entries: [
+                      { at: now - 60_000, type: 'ask', project: 'p1', projectName: 'toko', role: 'Budi QA', devices: ['Pixel'] },
+                      { at: now - 3_600_000, type: 'done', project: 'p1', projectName: 'toko', role: 'Lead', devices: [] },
+                    ],
+                  }),
+                  { status: 200, headers: { 'Content-Type': 'application/json' } },
+                ),
+              )
+            : window.__phFetch(url, opts);
+      });
+      try {
+        await page.eval(async () => (await import('/js/features/notify.js')).openNotifySettings());
+        await page.waitFor(() => !document.querySelector('#ns-history').hidden && document.querySelectorAll('#ns-history-list li').length === 2, { timeoutMs: 4000, message: 'riwayat notifikasi' });
+        const text = await page.eval(() => document.querySelector('#ns-history-list').textContent.replace(/\s+/g, ' ').trim());
+        assert.match(text, /toko · minta izin · Budi QA/);
+        assert.match(text, /Pixel/);
+        assert.match(text, /selesai/);
+        await page.press('Escape');
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__phFetch;
+        });
+      }
+    });
+
+    test('📊 Dashboard: ringkasan hari ini dari ledger (biaya, giliran, token, sesi, project)', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval((pid) => {
         window.__todayFetch = window.fetch;
         window.fetch = (url, opts) =>
           String(url).endsWith('/api/summary/today')
             ? Promise.resolve(
                 new Response(
-                  JSON.stringify({ today: { from: Date.now(), rows: 9, costUsd: 2.5, costCoverage: 0.75, turns: 3, tokens: 12345, projects: 2, sessions: 4 } }),
+                  JSON.stringify({ today: { from: Date.now(), rows: 9, costUsd: 2.5, costCoverage: 0.75, turns: 3, tokens: 12345, projects: 2, sessions: 4, top: [{ projectId: pid, turns: 3, tokens: 12345, costUsd: 2.5 }] } }),
                   { status: 200, headers: { 'Content-Type': 'application/json' } },
                 ),
               )
             : window.__todayFetch(url, opts);
-      });
+      }, projectId);
       try {
         await page.eval(async () => {
           const { dashboard } = await import('/js/features/dashboard.js');
@@ -2837,6 +2881,8 @@ for (const vp of VIEWPORTS) {
         assert.match(text, /12k token/);
         assert.match(text, /4 sesi/);
         assert.match(text, /2 project/);
+        assert.match(text, /teratas: /);
+        assert.doesNotMatch(text, /teratas: project/);
         await page.press('Escape');
       } finally {
         await page.eval(() => {

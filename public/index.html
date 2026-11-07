@@ -723,7 +723,7 @@
           <hr />
           <section class="appearance" aria-labelledby="appearance-title">
             <b id="appearance-title">🖥️ Tampilan</b>
-            <div class="appearance-row"><span>Tema</span><div class="seg" data-appearance="theme" role="group" aria-label="Tema aplikasi"><button type="button" data-value="light" aria-pressed="false">Terang</button><button type="button" data-value="dark" aria-pressed="false">Gelap</button><button type="button" data-value="system" aria-pressed="false">Sistem</button></div></div>
+            <div class="appearance-row"><span>Tema</span><div class="seg" data-appearance="theme" role="group" aria-label="Tema aplikasi"><button type="button" data-value="light" aria-pressed="false">Terang</button><button type="button" data-value="dark" aria-pressed="false">Gelap</button><button type="button" data-value="contrast" aria-pressed="false">Kontras tinggi</button><button type="button" data-value="system" aria-pressed="false">Sistem</button></div></div>
             <div class="appearance-row"><span>Ukuran teks</span><div class="seg" data-appearance="size" role="group" aria-label="Ukuran teks"><button type="button" data-value="small" aria-pressed="false">Kecil</button><button type="button" data-value="normal" aria-pressed="false">Normal</button><button type="button" data-value="large" aria-pressed="false">Besar</button></div></div>
             <div class="appearance-row"><span>Kepadatan</span><div class="seg" data-appearance="density" role="group" aria-label="Kepadatan tampilan"><button type="button" data-value="comfortable" aria-pressed="false">Nyaman</button><button type="button" data-value="compact" aria-pressed="false">Padat</button></div></div>
             <div class="appearance-row"><span>Animasi</span><div class="seg" data-appearance="motion" role="group" aria-label="Animasi"><button type="button" data-value="system" aria-pressed="false">Ikuti sistem</button><button type="button" data-value="reduce" aria-pressed="false">Kurangi</button><button type="button" data-value="full" aria-pressed="false">Penuh</button></div></div>
@@ -1075,6 +1075,11 @@
               <label class="switch wrap"><input id="ns-push-lock" type="checkbox" aria-describedby="ns-push-lock-desc" /> Tombol Izinkan di layar kunci</label>
               <p id="ns-push-lock-desc" class="muted small">Mati: izin hanya punya tombol Tolak; Izinkan dari aplikasi.</p>
             </div>
+          </fieldset>
+          <fieldset id="ns-history" class="ns-group" hidden>
+            <legend>🕘 Riwayat notifikasi</legend>
+            <p class="muted small">Yang dikirim server ke HP sejak aplikasi menyala (maksimal 30 terakhir).</p>
+            <ul id="ns-history-list" class="push-history-list"></ul>
           </fieldset>
           <div class="ns-actions">
             <button type="button" id="ns-reset" class="ghost">↺ Kembalikan bawaan</button>

@@ -3,7 +3,8 @@
 // to show and what to send is core/push-rules.js. On http (WiFi, Tailscale-http) and on the laptop nothing
 // here touches the service worker or /api/push/*: the section only says where push works.
 import { api, toast } from '../core/api.js';
-import { $ } from '../core/dom.js';
+import { $, escapeHtml } from '../core/dom.js';
+import { ago } from '../core/format.js';
 import { createPushClient } from '../core/push-client.js';
 import { answeredByText, approvalMessageId, httpsHint, isIos, parseDeepLink, pushSettings, pushStatusText, stripDeepLink } from '../core/push-rules.js';
 import { state } from '../core/state.js';
@@ -89,12 +90,38 @@ function show(id, visible) {
   $(id).hidden = !visible;
 }
 
+const TYPE_LABEL = { ask: 'minta izin', answered: 'jawaban', done: 'selesai', error: 'berhenti', queue: 'antrian', test: 'tes' };
+
+/** 🕘 The laptop's in-memory notification log; hidden on phones and when nothing was sent yet. */
+async function loadPushHistory() {
+  const box = $('#ns-history');
+  if (!box) return;
+  if (state.local === false) {
+    box.hidden = true;
+    return;
+  }
+  try {
+    const data = await api('/api/push/history');
+    const entries = Array.isArray(data?.entries) ? data.entries : [];
+    box.hidden = !entries.length;
+    $('#ns-history-list').innerHTML = entries
+      .map((e) => {
+        const devices = Array.isArray(e.devices) && e.devices.length ? ` · ${e.devices.join(', ')}` : '';
+        return `<li class="push-history-row"><span class="ph-main"><b>${escapeHtml(e.projectName || 'Adhit Office')}</b> · ${escapeHtml(TYPE_LABEL[e.type] ?? e.type)}${e.role ? ` · ${escapeHtml(e.role)}` : ''}</span><span class="ph-meta">${escapeHtml(ago(e.at))}${escapeHtml(devices)}</span></li>`;
+      })
+      .join('');
+  } catch {
+    box.hidden = true; // an older server or a phone: no history section
+  }
+}
+
 /** Draws the section for this page; async because the subscription is looked up in the service worker. */
 export async function renderPushSection() {
   const section = $('#ns-push');
   if (!section || !push.client) return;
   const avail = push.client.availability();
   section.hidden = avail === 'laptop';
+  loadPushHistory();
   if (avail === 'laptop') return;
   const hint = $('#ns-push-hint');
   if (avail === 'http') {

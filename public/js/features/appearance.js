@@ -8,7 +8,7 @@ const KEYS = {
   density: 'office.appDensity',
   motion: 'office.appMotion',
 };
-const THEMES = ['light', 'dark', 'system'];
+const THEMES = ['light', 'dark', 'contrast', 'system'];
 const SIZES = ['small', 'normal', 'large'];
 const DENSITIES = ['comfortable', 'compact'];
 const MOTIONS = ['system', 'reduce', 'full'];
@@ -63,7 +63,7 @@ export function applyAppearance() {
   root.dataset.appSize = appearance.size;
   root.dataset.appDensity = appearance.density;
   root.dataset.appMotion = resolvedMotion();
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolvedTheme() === 'light' ? '#f7f5f1' : '#16171c');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolvedTheme() === 'light' ? '#f7f5f1' : resolvedTheme() === 'contrast' ? '#000000' : '#16171c');
   syncControl('theme');
   syncControl('size');
   syncControl('density');

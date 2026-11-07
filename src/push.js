@@ -198,6 +198,7 @@ export class PushService {
     this.lastTest = new Map(); // deviceId -> time of the last test push
     this.backoff = new Map(); // deviceId -> epoch ms until which nothing is sent (429/503)
     this.queuePauses = new Map(); // projectId -> pause reason already announced
+    this.history = []; // newest notifications sent (in memory; laptop-only view)
     this.actFailures = new Map(); // ip -> [timestamps]
     this.inFlight = 0;
     this.waiting = [];
@@ -306,6 +307,7 @@ export class PushService {
     this.lastTest.set(device.id, this.now());
     const payload = this.payload('test', { project: '', projectName: 'Adhit Office', role: 'Adhit Office', label: 'Tes notifikasi', silent: false, title: '🔔 Tes notifikasi', body: 'Notifikasi dari Adhit Office berfungsi.' });
     const result = await this.enqueue(device.id, payload, PUSH_SPEC.test);
+    this.record({ type: 'test', project: '', projectName: 'Adhit Office', role: 'Adhit Office', devices: [device.name] });
     return { ok: Boolean(result?.ok), status: result?.status ?? null };
   }
 
@@ -423,15 +425,40 @@ export class PushService {
     const spec = PUSH_SPEC[type];
     const favorite = (this.hub.persisted.favorites ?? []).includes(projectId);
     const topic = spec.topic ? this.topic(spec.topic, projectId) : undefined;
+    const sent = [];
+    let sample = null;
     for (const device of this.targets()) {
       const settings = device.push.settings ?? {};
       if (settings.enabled === false) continue;
       if (this.isVisible(device.id)) continue;
       const plan = notifyPlan(planKind, settings, { away: true, favorite, now: phoneClock(settings, this.now()) });
       if (!plan.popup) continue;
-      const payload = this.payload(type, { silent: !plan.sound, ...build(device, plan) });
+      const fields = build(device, plan);
+      sample ??= fields;
+      const payload = this.payload(type, { silent: !plan.sound, ...fields });
       this.enqueue(device.id, payload, spec, topic);
+      sent.push(device.name);
     }
+    if (sent.length) {
+      this.record({
+        type,
+        project: sample?.project ?? projectId ?? '',
+        projectName: sample?.projectName ?? this.hub.projects.get(projectId)?.name ?? 'project',
+        role: sample?.role ?? '',
+        devices: sent.slice(0, 20),
+      });
+    }
+  }
+
+  /** One line of the laptop's notification history (the payload carries only what the lock screen shows). */
+  record(entry) {
+    this.history.push({ at: this.now(), ...entry });
+    if (this.history.length > 30) this.history.splice(0, this.history.length - 30);
+  }
+
+  /** Newest first, for ⚙ → Notifikasi. */
+  historyView() {
+    return [...this.history].reverse();
   }
 
   // ---------- payload, tokens ----------

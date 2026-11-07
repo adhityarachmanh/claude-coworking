@@ -224,7 +224,7 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
   assert.ok(view.trend.every((d) => Number.isFinite(d.start) && Number.isFinite(d.usd)));
   const today = await api('/api/summary/today', {});
   assert.equal(today.status, 200, JSON.stringify(today.body));
-  assert.deepEqual(Object.keys(today.body.today).sort(), ['costCoverage', 'costUsd', 'from', 'projects', 'rows', 'sessions', 'tokens', 'turns']);
+  assert.deepEqual(Object.keys(today.body.today).sort(), ['costCoverage', 'costUsd', 'from', 'projects', 'rows', 'sessions', 'tokens', 'top', 'turns']);
   assert.deepEqual(view.budget, { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, 'no limit yet');
   for (const unit of ['day', 'week', 'month']) {
     assert.deepEqual(Object.keys(view.spend[unit]).sort(), ['known', 'rows', 'usd'], unit);

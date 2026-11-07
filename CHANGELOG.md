@@ -30,6 +30,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **🧭 Chip status di dashboard.** Di atas daftar 🗂 Semua project ada chip **Semua / Butuh kamu / Bekerja / Antrian / Idle** beserta hitungannya; klik untuk menyaring kartu, klik lagi untuk kembali ke semua. Pencarian tetap bekerja di atas filter.
 - **🕘 Riwayat backup otomatis.** Di ⚙ → Cadangan, daftar backup terjadwal di folder tujuan (nama, waktu, ukuran) dengan tombol **↩ Pulihkan**; file backup tidak dipindahkan atau dihapus, dan hasil pemulihan memakai jalur merge yang sama dengan import.
 - **📲 Pasang sebagai aplikasi.** Bagian baru di ❓ Panduan menjelaskan install di Android/iPhone; tombol **Pasang sekarang** muncul saat browser menawarkan PWA (Chrome/Edge). Tidak ada cache offline — halaman memuat token sesi per-start, jadi sengaja tidak disimpan di cache browser.
+- **📈 Top project “Hari ini”.** Ringkasan harian kini menyebut satu–dua project paling aktif hari ini (berdasarkan giliran/token), di samping biaya, giliran, token, sesi, dan jumlah project.
+- **🔔 Riwayat notifikasi.** Di ⚙ → Notifikasi (laptop) ada daftar 30 notifikasi terakhir yang dikirim ke HP: waktu, project, jenis (minta izin/selesai/berhenti/antrian/tes), role, dan perangkat tujuan. Disimpan di memori server sejak aplikasi menyala.
+- **🎨 Tema kontras tinggi.** Pilihan **Tampilan → Kontras tinggi**: latar hitam, teks putih, aksen kuning, dan garis putih. Diaudit otomatis dengan target WCAG AA seperti tema lain.
 
 ### Diperbaiki
 
