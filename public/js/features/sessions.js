@@ -134,10 +134,11 @@ function renderTagChips() {
   const chip = (value, label, count) =>
     `<button type="button" class="s-tag-chip${active === value ? ' active' : ''}" data-filter-tag="${escapeHtml(value)}" aria-pressed="${active === value}">${label}${count ? ` <span class="count">${count}</span>` : ''}</button>`;
   box.hidden = false;
-  box.innerHTML = [
-    chip('', 'Semua', 0),
-    ...[...counts].sort((a, b) => a[0].localeCompare(b[0])).map(([tag, n]) => chip(tag, `🏷 ${escapeHtml(tag)}`, n)),
-  ].join('');
+  box.innerHTML =
+    [
+      chip('', 'Semua', 0),
+      ...[...counts].sort((a, b) => a[0].localeCompare(b[0])).map(([tag, n]) => chip(tag, `🏷 ${escapeHtml(tag)}`, n)),
+    ].join('') + (state.readOnly ? '' : '<button type="button" class="s-tag-chip manage" data-tag-manage="1" title="Ganti nama atau hapus tag">✎ Kelola tag</button>');
 }
 
 function renderSessionList() {
@@ -236,6 +237,18 @@ function syncBulk() {
     exp.disabled = !picked;
     exp.textContent = picked ? `⬇ Export ${picked}` : '⬇ Export';
   }
+  const tagBtn = $('#sessions-tag-selected');
+  if (tagBtn) {
+    tagBtn.disabled = !picked;
+    tagBtn.textContent = picked ? `🏷 Tag ${picked}` : '🏷 Tag';
+  }
+  const arch = $('#sessions-archive-selected');
+  if (arch) {
+    const ids = [...sessionsView.selected];
+    const allArchived = ids.length > 0 && ids.every((id) => sessionsView.list.find((s) => s.id === id)?.archived);
+    arch.disabled = !picked;
+    arch.textContent = picked ? (allArchived ? `↩ Keluarkan ${picked}` : `📦 Arsipkan ${picked}`) : '📦 Arsipkan';
+  }
   for (const b of boxes) b.closest('.s-item')?.classList.toggle('picked', b.checked);
 }
 
@@ -298,6 +311,75 @@ async function deleteSelected() {
     }
   }
   toast(failed ? `${done} sesi dihapus, ${failed} gagal.` : `${done} sesi dihapus.`, failed ? 'warn' : 'ok');
+  await openSessions();
+}
+
+/** 🏷 Give every selected session the same tag (empty removes it). */
+async function tagSelected() {
+  const ids = [...sessionsView.selected];
+  if (!ids.length) return;
+  const known = [...new Set(sessionsView.list.map((s) => s.tag).filter(Boolean))];
+  const hint = known.length ? `\nTag yang sudah dipakai: ${known.slice(0, 8).join(', ')}` : '';
+  const tag = window.prompt(`Tag untuk ${ids.length} sesi (kosongkan untuk menghapus):${hint}`, '');
+  if (tag === null) return;
+  const project = sessionsView.project;
+  const btn = $('#sessions-tag-selected');
+  if (btn) btn.disabled = true;
+  let done = 0;
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      await api(`/api/projects/${project}/session-meta`, { sessionId: id, tag });
+      done += 1;
+    } catch (err) {
+      failed += 1;
+      toast(`Gagal menandai ${titleOf(id)}: ${err.message}`, 'warn');
+    }
+  }
+  toast(failed ? `${done} sesi ditandai, ${failed} gagal.` : `${done} sesi ditandai.`, failed ? 'warn' : 'ok');
+  await openSessions();
+}
+
+/** ✎ Rename (or remove) one tag everywhere in this project. */
+async function manageTags() {
+  const known = [...new Set(sessionsView.list.map((s) => s.tag).filter(Boolean))].sort();
+  const from = window.prompt(`Tag yang diubah (${known.join(', ')}):`, known[0] ?? '');
+  if (!from) return;
+  const to = window.prompt(`Nama baru untuk "${from}" (kosongkan untuk menghapus tag):`, from);
+  if (to === null) return;
+  try {
+    const { changed } = await api(`/api/projects/${sessionsView.project}/session-tags`, { from, to });
+    toast(to.trim() ? `Tag diganti di ${changed} sesi.` : `Tag dihapus dari ${changed} sesi.`, 'ok');
+    await openSessions();
+  } catch (err) {
+    toast(err.message, 'warn');
+  }
+}
+
+/** 📦 Archive (or un-archive) every selected session in one go. */
+async function archiveSelected() {
+  const ids = [...sessionsView.selected];
+  if (!ids.length) return;
+  const allArchived = ids.every((id) => sessionsView.list.find((s) => s.id === id)?.archived);
+  const target = !allArchived;
+  const project = sessionsView.project;
+  const btn = $('#sessions-archive-selected');
+  if (btn) btn.disabled = true;
+  let done = 0;
+  let failed = 0;
+  for (const id of ids) {
+    // Un-archiving an automatically archived session pins it (age alone will not archive it again).
+    const auto = sessionsView.list.find((s) => s.id === id)?.autoArchived;
+    const patch = target ? { archived: true, pinned: false } : { archived: false, ...(auto ? { pinned: true } : {}) };
+    try {
+      await api(`/api/projects/${project}/session-meta`, { sessionId: id, ...patch });
+      done += 1;
+    } catch (err) {
+      failed += 1;
+      toast(`Gagal mengarsipkan ${titleOf(id)}: ${err.message}`, 'warn');
+    }
+  }
+  toast(failed ? `${done} sesi diubah, ${failed} gagal.` : target ? `${done} sesi diarsipkan.` : `${done} sesi dikeluarkan dari arsip.`, failed ? 'warn' : 'ok');
   await openSessions();
 }
 
@@ -500,6 +582,7 @@ export function initSessions() {
   $('#sessions-search').addEventListener('input', renderSessionList);
   $('#sessions-range').addEventListener('change', renderSessionList);
   $('#sessions-tags').addEventListener('click', (e) => {
+    if (e.target.closest('[data-tag-manage]')) return manageTags();
     const chip = e.target.closest('[data-filter-tag]');
     if (!chip) return;
     sessionsView.tag = chip.dataset.filterTag || null;
@@ -545,6 +628,8 @@ export function initSessions() {
     syncBulk();
   });
   $('#sessions-delete-selected').addEventListener('click', deleteSelected);
+  $('#sessions-tag-selected').addEventListener('click', tagSelected);
+  $('#sessions-archive-selected').addEventListener('click', archiveSelected);
   $('#sessions-export-selected').addEventListener('click', exportSelected);
   $('#sessions-trash-list').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-restore]');

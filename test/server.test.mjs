@@ -1650,6 +1650,22 @@ test('🕘 Riwayat sesi (Claude Code): ⑂ fork continues a copy (--fork-session
   aged = (await api(`/api/projects/${id}/sessions`)).body.sessions.find((s) => s.id === sid2);
   assert.equal(aged.archived, undefined, 'arsip otomatis dimatikan');
 
+  // 🏷 Rename a tag across every session of the project (empty = remove it everywhere).
+  await api(`/api/projects/${id}/session-meta`, { sessionId: sid, tag: 'riset' });
+  await api(`/api/projects/${id}/session-meta`, { sessionId: sid2, tag: 'riset' });
+  const tagRename = await api(`/api/projects/${id}/session-tags`, { from: 'riset', to: 'prioritas' });
+  assert.equal(tagRename.status, 200);
+  assert.equal(tagRename.body.changed, 2);
+  listed = (await api(`/api/projects/${id}/sessions`)).body;
+  assert.equal(listed.sessions.find((s) => s.id === sid).tag, 'prioritas');
+  assert.equal(listed.sessions.find((s) => s.id === sid2).tag, 'prioritas');
+  assert.equal((await api(`/api/projects/${id}/session-tags`, { from: 'prioritas', to: '' })).body.changed, 2);
+  listed = (await api(`/api/projects/${id}/sessions`)).body;
+  assert.equal(listed.sessions.find((s) => s.id === sid).tag, undefined, 'tag dihapus dari semua sesi');
+  assert.equal(listed.sessions.find((s) => s.id === sid2).tag, undefined);
+  assert.equal((await api(`/api/projects/${id}/session-tags`, { from: '', to: 'x' })).status, 400);
+  assert.equal((await api(`/api/projects/${id}/session-tags`, { from: 'x', to: 'y'.repeat(41) })).status, 400);
+
   // ⬇ Export some sessions at once: one .zip with one .md per session.
   const zipRes = await fetch(`${BASE}/api/projects/${id}/sessions-export`, {
     method: 'POST',
@@ -1785,6 +1801,8 @@ test('task monitor: background tasks in the status, task-detail reads the live s
 
   assert.equal((await api(`/api/projects/${id}/task-detail`, { taskId: shell.id })).body.command, 'npm run dev -- --port 3000');
   assert.match((await api(`/api/projects/${id}/task-output`, { taskId: shell.id })).body.output, /GET \/checkout/, 'live shell output');
+  // ⧗ OpenCode's folder shells are not offered on a Claude project (nothing to list, never a spawn).
+  assert.deepEqual((await api(`/api/projects/${id}/shells`)).body, { available: false, shells: [] });
 
   const unknown = await api(`/api/projects/${id}/task-detail`, { taskId: '../../etc/passwd' });
   assert.equal(unknown.status, 404);

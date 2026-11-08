@@ -5287,6 +5287,49 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), []);
     });
 
+    test('⧗ monitor: shell OpenCode sesi lain di folder tampil hanya-lihat', async () => {
+      await openApp(page, `#${projectId}`);
+      page.clearProblems();
+      await page.eval(async () => {
+        window.__origTasksFetch = window.fetch;
+        const reply = (obj) => new Response(JSON.stringify(obj), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        window.fetch = (url, opts) => {
+          const u = String(url);
+          if (/\/shells$/.test(u)) {
+            return reply({
+              available: true,
+              shells: [
+                { id: 'sh_1', command: 'npm run dev -- --port 4000', status: 'running', startedAt: Date.now() - 5000, tracked: false },
+                { id: 'sh_2', command: 'npm test', status: 'running', startedAt: Date.now(), tracked: true },
+              ],
+            });
+          }
+          return window.__origTasksFetch(url, opts);
+        };
+        (await import('/js/features/tasks.js')).openTasks();
+      });
+      try {
+        await page.waitFor(() => /Shell lain di folder ini/.test(document.querySelector('#tasks-list').textContent), { timeoutMs: 4000, message: 'shell sesi lain tampil' });
+        const info = await page.eval(() => ({
+          text: document.querySelector('#tasks-list').textContent.replace(/\s+/g, ' '),
+          others: document.querySelectorAll('#tasks-list .task-other').length,
+          clickable: [...document.querySelectorAll('#tasks-list .task-other')].some((n) => n.closest('[data-task]')),
+          buttons: document.querySelectorAll('#tasks-list .task-other button').length,
+        }));
+        assert.match(info.text, /npm run dev -- --port 4000/);
+        assert.doesNotMatch(info.text, /npm test/, 'shell yang sudah dilacak app tidak diduplikasi');
+        assert.equal(info.others, 1);
+        assert.equal(info.clickable, false, 'hanya lihat: tidak bisa dipilih');
+        assert.equal(info.buttons, 0, 'tanpa tombol hentikan');
+        await page.press('Escape');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__origTasksFetch;
+        });
+      }
+    });
+
     test('output live perintah di chat: ekor ringkas & blok terbuka bertambah, polling berhenti setelah selesai', async () => {
       await openApp(page, `#${projectId}`); // self-contained: also runs alone (--test-name-pattern)
       if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
@@ -7052,8 +7095,10 @@ for (const vp of VIEWPORTS) {
         window.__exportCalls = [];
         window.__metaCalls = [];
         window.__autoCalls = [];
+        window.__tagCalls = [];
         window.__sessionsFetch = window.fetch;
         window.__sessionsConfirm = window.confirm;
+        window.__sessionsPrompt = window.prompt;
         window.confirm = () => true;
         const now = Date.now();
         window.fetch = async (url, opts) => {
@@ -7077,6 +7122,10 @@ for (const vp of VIEWPORTS) {
           if (/\/api\/projects\/[^/?]+\/session-auto-archive(?:\?|$)/.test(u)) {
             window.__autoCalls.push(JSON.parse(opts?.body ?? '{}'));
             return new Response(JSON.stringify({ ok: true, days: JSON.parse(opts?.body ?? '{}').days }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          if (/\/api\/projects\/[^/?]+\/session-tags(?:\?|$)/.test(u)) {
+            window.__tagCalls.push(JSON.parse(opts?.body ?? '{}'));
+            return new Response(JSON.stringify({ ok: true, changed: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           }
           if (/\/api\/projects\/[^/?]+\/session-meta(?:\?|$)/.test(u)) {
             window.__metaCalls.push(JSON.parse(opts?.body ?? '{}'));
@@ -7152,6 +7201,43 @@ for (const vp of VIEWPORTS) {
         assert.deepEqual(await page.eval(() => window.__metaCalls[1]), { sessionId: 'sess-bulk-1', archived: true, pinned: false });
         await page.waitFor(() => document.querySelectorAll('#sessions-list [data-pick]').length === 3, { timeoutMs: 4000, message: 'daftar dimuat ulang' });
 
+        // 🏷/📦 Bulk: one tag for two sessions, then archive the two.
+        await page.eval(() => {
+          window.__metaCalls = [];
+          window.prompt = () => 'prioritas';
+          for (const id of ['sess-bulk-1', 'sess-bulk-2']) document.querySelector(`#sessions-list [data-pick="${id}"]`).click();
+        });
+        assert.equal(await page.eval(() => document.querySelector('#sessions-tag-selected').textContent), '🏷 Tag 2', 'tombol tag ikut hitungan');
+        await page.eval(() => document.querySelector('#sessions-tag-selected').click());
+        await page.waitFor(() => window.__metaCalls.filter((c) => c.tag !== undefined).length === 2, { timeoutMs: 4000, message: 'tag massal' });
+        assert.deepEqual(await page.eval(() => window.__metaCalls.filter((c) => c.tag !== undefined)), [
+          { sessionId: 'sess-bulk-1', tag: 'prioritas' },
+          { sessionId: 'sess-bulk-2', tag: 'prioritas' },
+        ]);
+        await page.waitFor(() => document.querySelectorAll('#sessions-list [data-pick]').length === 3, { timeoutMs: 4000, message: 'daftar dimuat ulang' });
+        await page.eval(() => {
+          window.__metaCalls = [];
+          for (const id of ['sess-bulk-1', 'sess-bulk-2']) document.querySelector(`#sessions-list [data-pick="${id}"]`).click();
+        });
+        assert.equal(await page.eval(() => document.querySelector('#sessions-archive-selected').textContent), '📦 Arsipkan 2', 'tombol arsip ikut hitungan');
+        await page.eval(() => document.querySelector('#sessions-archive-selected').click());
+        await page.waitFor(() => window.__metaCalls.filter((c) => c.archived === true).length === 2, { timeoutMs: 4000, message: 'arsip massal' });
+        assert.deepEqual(await page.eval(() => window.__metaCalls.filter((c) => c.archived === true)), [
+          { sessionId: 'sess-bulk-1', archived: true, pinned: false },
+          { sessionId: 'sess-bulk-2', archived: true, pinned: false },
+        ]);
+        await page.waitFor(() => document.querySelectorAll('#sessions-list [data-pick]').length === 3, { timeoutMs: 4000, message: 'daftar dimuat ulang' });
+
+        // ✎ Manage a tag: rename it across the project (one route call with from/to).
+        await page.eval(() => {
+          window.__prompts = ['riset', 'riset-baru'];
+          window.prompt = () => window.__prompts.shift() ?? '';
+          document.querySelector('#sessions-tags [data-tag-manage]').click();
+        });
+        await page.waitFor(() => window.__tagCalls.length === 1, { timeoutMs: 4000, message: 'kelola tag' });
+        assert.deepEqual(await page.eval(() => window.__tagCalls[0]), { from: 'riset', to: 'riset-baru' });
+        await page.waitFor(() => document.querySelectorAll('#sessions-list [data-pick]').length === 3, { timeoutMs: 4000, message: 'daftar dimuat ulang' });
+
         await page.eval(() => {
           for (const id of ['sess-bulk-1', 'sess-bulk-2']) document.querySelector(`#sessions-list [data-pick="${id}"]`).click();
         });
@@ -7178,6 +7264,7 @@ for (const vp of VIEWPORTS) {
         await page.eval(() => {
           window.fetch = window.__sessionsFetch;
           window.confirm = window.__sessionsConfirm;
+          window.prompt = window.__sessionsPrompt;
         });
       }
     });

@@ -454,6 +454,8 @@
         <div id="sessions-bulk" class="sessions-bulk" hidden>
           <label class="switch small"><input id="sessions-select-all" type="checkbox" /> Pilih semua</label>
           <span class="sessions-bulk-actions">
+            <button id="sessions-tag-selected" class="ghost" type="button" disabled>🏷 Tag</button>
+            <button id="sessions-archive-selected" class="ghost" type="button" disabled>📦 Arsipkan</button>
             <button id="sessions-export-selected" class="ghost" type="button" disabled>⬇ Export</button>
             <button id="sessions-delete-selected" class="ghost danger-text" type="button" disabled>Hapus sesi</button>
           </span>
@@ -617,7 +619,7 @@
       <div class="modal-card tasks-card" role="dialog" aria-modal="true" aria-labelledby="tasks-title">
         <div class="modal-head"><b id="tasks-title">⧗ Tugas latar <small id="tasks-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div class="tasks-tools">
-          <p class="muted small">Perintah dan agent yang dijalankan Claude Code di sesi ini. <kbd>Ctrl</kbd> <kbd>B</kbd> memindahkan yang sedang jalan ke latar belakang supaya kamu bisa lanjut chat.</p>
+          <p class="muted small">Perintah dan agent yang dijalankan mesin AI di sesi ini. <kbd>Ctrl</kbd> <kbd>B</kbd> memindahkan yang sedang jalan ke latar belakang supaya kamu bisa lanjut chat. Shell OpenCode dari sesi lain di folder ini tampil hanya-lihat.</p>
           <button id="tasks-background" class="ghost" title="Ctrl+B">⏬ Pindahkan ke latar</button>
         </div>
         <div id="tasks-body" class="tasks-body">

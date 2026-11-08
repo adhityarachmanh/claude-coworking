@@ -293,6 +293,14 @@ export function register(router) {
       throw err;
     }
   }));
+  // 🏷 Rename (or remove, with an empty `to`) one tag across every session of the project.
+  router.post('/api/projects/:id/session-tags', withSession(({ hub }, req, res, { project }, body) => {
+    const from = String(body.from ?? '').replace(/\s+/g, ' ').trim();
+    const to = String(body.to ?? '').replace(/\s+/g, ' ').trim();
+    if (!from || from.length > 40) return json(res, 400, { error: 'Tag yang diubah tidak valid.' });
+    if (to.length > 40) return json(res, 400, { error: 'Nama tag baru terlalu panjang.' });
+    return json(res, 200, { ok: true, changed: hub.renameSessionTag(project.id, from, to) });
+  }));
   // ⬇ OpenCode: the session as OpenCode's own JSON (re-import with `opencode session import`).
   router.post('/api/projects/:id/session-export-json', withSession(({ opencode }, req, res, { project }, body) => admin(res, async () => {
     const sessionId = String(body.sessionId ?? '');

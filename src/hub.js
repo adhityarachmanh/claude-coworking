@@ -1098,6 +1098,26 @@ export class Hub {
     return n;
   }
 
+  /** 🏷 Rename (or remove, with an empty `to`) one tag across every session of a project. @returns how many changed */
+  renameSessionTag(id, from, to) {
+    const tag = typeof from === 'string' ? from.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    if (!tag) return 0;
+    const next = typeof to === 'string' ? to.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    const per = this.persisted.sessionMeta?.[id];
+    if (!per) return 0;
+    let changed = 0;
+    for (const meta of Object.values(per)) {
+      if (meta.tag !== tag) continue;
+      if (next) meta.tag = next;
+      else delete meta.tag;
+      changed += 1;
+    }
+    for (const [sessionId, meta] of Object.entries(per)) if (!meta.tag && !meta.archived && !meta.pinned) delete per[sessionId];
+    if (!Object.keys(per).length) delete this.persisted.sessionMeta[id];
+    if (changed) this.scheduleSave();
+    return changed;
+  }
+
   // ---------- turns cut short by a server stop ----------
 
   /**

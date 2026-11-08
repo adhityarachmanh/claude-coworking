@@ -25,6 +25,8 @@ export const tasksView = {
   errors: new Map(), // task id -> last fetch error
   pollTimer: null,
   tickTimer: null,
+  othersTimer: null, // ⧗ OpenCode shells of other sessions in this folder (read-only, every 15 s)
+  others: [],
   inflight: false,
   gen: 0, // bumped on every selection change / close: late answers for an old selection are dropped
   stick: true, // keep the detail scrolled to the newest line (off while the user reads further up)
@@ -83,14 +85,40 @@ export function openTasks({ taskId = null, role = null } = {}) {
   select(pick?.id ?? (narrow.matches ? null : (tasks[0]?.id ?? null)), { focus: false });
   openModal('tasks-modal');
   startTicker();
+  startOthers();
   if (pick && narrow.matches) $('#td-back').focus({ preventScroll: true });
 }
 
 function stopAll() {
   clearTimeout(tasksView.pollTimer);
   clearInterval(tasksView.tickTimer);
-  tasksView.pollTimer = tasksView.tickTimer = null;
+  clearInterval(tasksView.othersTimer);
+  tasksView.pollTimer = tasksView.tickTimer = tasksView.othersTimer = null;
   tasksView.gen++;
+}
+
+/** ⧗ OpenCode shells of other sessions in the project folder: visible (read-only), never selectable or stoppable. */
+async function loadOtherShells() {
+  if (!isOpen() || state.readOnly) return;
+  const project = tasksView.project;
+  try {
+    const data = await api(`/api/projects/${project}/shells`);
+    if (project !== tasksView.project || !isOpen()) return;
+    tasksView.others = (Array.isArray(data?.shells) ? data.shells : []).filter((s) => s && !s.tracked);
+  } catch {
+    tasksView.others = []; // an older server or a read-only device: no extra section
+  }
+  renderTasks();
+}
+
+function startOthers() {
+  clearInterval(tasksView.othersTimer);
+  tasksView.others = [];
+  loadOtherShells();
+  tasksView.othersTimer = setInterval(() => {
+    if (!isOpen()) return stopAll();
+    loadOtherShells();
+  }, 15_000);
 }
 
 function select(taskId, { focus = true } = {}) {
@@ -175,12 +203,18 @@ export function renderTasks() {
 }
 
 function renderList(tasks) {
-  const key = JSON.stringify([tasks.map((t) => [t.id, t.status, t.background, t.description, t.role, t.tokens, t.toolUses, t.endedAt]), tasksView.selected, Object.values(CAST).map((c) => c.name)]);
+  const others = tasksView.others ?? [];
+  const key = JSON.stringify([
+    tasks.map((t) => [t.id, t.status, t.background, t.description, t.role, t.tokens, t.toolUses, t.endedAt]),
+    others.map((s) => [s.id, s.status, s.command, s.startedAt]),
+    tasksView.selected,
+    Object.values(CAST).map((c) => c.name),
+  ]);
   if (key === tasksView.keys.list) return;
   tasksView.keys.list = key;
   const list = $('#tasks-list');
-  if (!tasks.length) {
-    list.innerHTML = '<li class="tasks-empty muted">Belum ada tugas di sesi ini. Tugas muncul saat Claude menjalankan perintah atau agent, misalnya dev server atau agent di latar belakang.</li>';
+  if (!tasks.length && !others.length) {
+    list.innerHTML = '<li class="tasks-empty muted">Belum ada tugas di sesi ini. Tugas muncul saat mesin AI menjalankan perintah atau agent, misalnya dev server atau agent di latar belakang.</li>';
     return;
   }
   const focused = document.activeElement?.closest?.('#tasks-list [data-task]')?.dataset.task;
@@ -198,9 +232,20 @@ function renderList(tasks) {
   };
   const running = tasks.filter(isRunning);
   const done = tasks.filter((t) => !isRunning(t));
+  // Shell of another OpenCode session in the same folder: shown for awareness only (no row to click, no Stop).
+  const otherItem = (s) =>
+    `<li><div class="task-item task-other st-${escapeHtml(s.status ?? 'running')}" title="Shell sesi OpenCode lain di folder ini — hanya lihat">
+      <span class="ti-ico" aria-hidden="true">🖥</span>
+      <span class="ti-main">
+        <span class="ti-title">${escapeHtml(s.command || 'perintah')}</span>
+        <span class="ti-meta"><span>sesi lain · ${escapeHtml(TASK_STATE[s.status] ?? s.status ?? 'berjalan')}</span>${s.startedAt ? `<span class="ti-dur">${fmtDuration(Date.now() - s.startedAt)}</span>` : ''}</span>
+      </span>
+      ${s.status === 'running' ? '<span class="spinner" aria-hidden="true"></span>' : ''}
+    </div></li>`;
   list.innerHTML = [
     running.length ? `<li class="tasks-group">Berjalan (${running.length})</li>${running.map(item).join('')}` : '',
     done.length ? `<li class="tasks-group">Selesai</li>${done.map(item).join('')}` : '',
+    others.length ? `<li class="tasks-group">Shell lain di folder ini (${others.length}, hanya lihat)</li>${others.map(otherItem).join('')}` : '',
   ].join('');
   if (focused) list.querySelector(`[data-task="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
 }

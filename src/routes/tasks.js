@@ -33,6 +33,27 @@ export function register(router) {
   }));
   // /tasks, Ctrl+B
   router.post('/api/projects/:id/task-output', withSession((ctx, req, res, { session }, body) => answer(res, session.taskOutput(String(body.taskId ?? '')))));
+  // ⧗ OpenCode shells of OTHER sessions in this folder (read-only): visible, never read or stopped here.
+  router.post('/api/projects/:id/shells', withSession(async ({ hub, opencode }, req, res, { project, session }) => {
+    if (engineOf(hub, project.id) !== 'opencode' || !opencode) return json(res, 200, { available: false, shells: [] });
+    try {
+      const { runningShells } = await import('../opencode-shells.js');
+      const shells = await runningShells(opencode, project.path);
+      const tracked = new Set((session?.translator?.linkedTaskIds?.() ?? []).map((id) => String(id).replace(/^oc:/, '')));
+      return json(res, 200, {
+        available: true,
+        shells: shells.slice(0, 20).map((s) => ({
+          id: String(s.id ?? '').slice(0, 100),
+          command: String(s.command ?? '').replace(/\s+/g, ' ').trim().slice(0, 300),
+          status: typeof s.status === 'string' ? s.status.slice(0, 20) : 'running',
+          startedAt: Number(s.time?.started) || null,
+          tracked: tracked.has(s.id),
+        })),
+      });
+    } catch {
+      return json(res, 200, { available: true, shells: [] }); // shell service down: the section simply stays empty
+    }
+  }));
   router.post('/api/projects/:id/task-detail', withSession(({ hub }, req, res, { project }, body) => {
     // Read-only monitor (⧗ Tugas latar): the task must be one of this session's own; files are found server-side.
     const taskId = String(body.taskId ?? '');

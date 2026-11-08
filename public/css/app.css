@@ -959,6 +959,8 @@ body:not([data-tab='chat']) #chat-search { display: none; }
 .tasks-empty { padding: 6px 2px; font-size: var(--fs-md); }
 .task-item { width: 100%; display: flex; align-items: flex-start; gap: 8px; text-align: left; padding: 8px 10px; margin: 0 0 5px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); font-weight: 400; }
 .task-item:hover { border-color: var(--border-strong); }
+.task-item.task-other { cursor: default; border-style: dashed; color: var(--text-2); }
+.task-item.task-other:hover { border-color: var(--border); }
 .task-item[aria-current="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .task-item .spinner { flex: none; margin-top: 3px; }
 .ti-ico { flex: none; font-size: var(--fs-lg); line-height: 1.2; }
@@ -1170,6 +1172,7 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .s-tag-chip:hover { border-color: var(--accent); color: var(--text); }
 .s-tag-chip.active { background: var(--accent-tint); border-color: var(--accent); color: var(--accent-2); font-weight: 600; }
 .s-tag-chip .count { font-size: var(--fs-xs); color: var(--muted); }
+.s-tag-chip.manage { margin-left: auto; border-style: dashed; background: transparent; color: var(--muted); }
 .s-resume { flex: none; font-size: var(--fs-md); padding: 6px 14px; }
 .s-current { flex: none; font-size: var(--fs-sm); color: var(--ok-text); white-space: nowrap; }
 .s-live { flex: none; font-size: var(--fs-sm); color: var(--cli-text); white-space: nowrap; cursor: help; }
