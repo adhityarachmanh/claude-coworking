@@ -1,0 +1,13 @@
+{
+  "name": "Adhit Office Bridge",
+  "id": "adhit-office-figma-bridge",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["http://127.0.0.1:3939"],
+    "reasoning": "Bridge lokal Adhit Office: plugin mengambil perintah dari 127.0.0.1 dan mengirim hasilnya kembali. Tidak ada data yang dikirim ke internet."
+  }
+}

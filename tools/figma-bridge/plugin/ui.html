@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { margin: 0; padding: 14px; font: 12px/1.45 Inter, system-ui, sans-serif; color: #1e1b18; background: #faf8f4; }
+      b { font-size: 13px; }
+      #dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #999; margin-right: 6px; }
+      #dot.on { background: #2e9d63; }
+      #dot.off { background: #c0392b; }
+      p { margin: 8px 0 0; color: #6b6459; }
+      code { background: #efeae1; padding: 1px 4px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <b><span id="dot"></span>Adhit Office Bridge</b>
+    <p id="status">Menghubungkan ke bridge lokal…</p>
+    <p>Biarkan plugin ini terbuka selama agent bekerja. Server: <code>http://127.0.0.1:3939</code></p>
+    <script>
+      const BASE = 'http://127.0.0.1:3939';
+      const dot = document.getElementById('dot');
+      const status = document.getElementById('status');
+      let failures = 0;
+      let file = '';
+      let page = '';
+
+      parent.postMessage({ pluginMessage: { type: 'status' } }, '*');
+
+      async function poll() {
+        try {
+          const res = await fetch(`${BASE}/poll?file=${encodeURIComponent(file)}&page=${encodeURIComponent(page)}`, { cache: 'no-store' });
+          if (!res.ok) throw new Error(String(res.status));
+          const { commands } = await res.json();
+          failures = 0;
+          dot.className = 'on';
+          status.textContent = 'Terhubung. Menunggu perintah dari agent…';
+          for (const command of commands || []) parent.postMessage({ pluginMessage: { type: 'cmd', ...command } }, '*');
+        } catch (err) {
+          failures++;
+          dot.className = 'off';
+          status.textContent = `Bridge lokal belum aktif (${err.message}). Jalankan: node tools/figma-bridge/server.mjs`;
+        }
+        setTimeout(poll, failures ? 1500 : 250);
+      }
+
+      window.onmessage = async (event) => {
+        const msg = event.data && event.data.pluginMessage;
+        if (!msg) return;
+        if (msg.type === 'status') {
+          file = String(msg.file || '');
+          page = String(msg.page || '');
+          return;
+        }
+        if (msg.type !== 'result') return;
+        try {
+          await fetch(`${BASE}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msg) });
+        } catch {
+          // the bridge went away; the next poll will show it
+        }
+      };
+
+      poll();
+    </script>
+  </body>
+</html>

@@ -275,6 +275,16 @@ Kontrol Spotify yang sudah kamu pakai (Spotify Connect) lewat Spotify Web API. B
 - **Audit akun** (`data/auth-audit.jsonl`) dipadatkan saat file melewati 256 KB atau saat server mulai: menyimpan **180 hari terakhir** (maks 2.000 aksi).
 - Sesi CLI ikut tercatat ke akun yang sedang login. Setelah ganti akun, buka ulang sesi CLI yang masih terbuka. Estimasi biaya (USD, harga list) hanya untuk sesi web.
 
+## Figma (bridge lokal)
+
+`tools/figma-bridge/` menghubungkan agent AI ke **Figma desktop** lewat plugin, tanpa token Figma dan tanpa internet:
+
+- Jalankan bridge: `node tools/figma-bridge/server.mjs` (HTTP lokal `127.0.0.1:3939` + MCP stdio).
+- Di Figma desktop: **Plugins → Development → Import plugin from manifest…** → pilih `tools/figma-bridge/plugin/manifest.json`, lalu jalankan **Adhit Office Bridge** di file yang ingin dikerjakan. Biarkan jendela plugin terbuka.
+- Daftarkan MCP di Adhit Office (**🔌 Server MCP**) dengan command `node <path repo>\tools\figma-bridge\server.mjs`.
+- Tool: `figma_status`, `figma_selection`, `figma_page`, `figma_node`, `figma_export` (SVG/PNG), `figma_create_frame`, `figma_create_rect`, `figma_create_text`, `figma_set_fill`, `figma_move`.
+- Perintah hanya masuk lewat MCP; plugin memakai izin akun Figma kamu dan hanya file yang sedang terbuka. Detail & troubleshooting: [`tools/figma-bridge/README.md`](../tools/figma-bridge/README.md).
+
 ## Backup & riwayat
 
 Ganti SSD, install ulang Windows, atau pindah laptop tanpa kehilangan percakapan lama.
