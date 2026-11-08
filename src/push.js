@@ -501,6 +501,12 @@ export class PushService {
     return [...this.history].reverse();
   }
 
+  /** 🕵️ Data saya: clear the laptop's notification log (the file is rewritten empty). */
+  clearHistory() {
+    this.history = [];
+    persistHistory(this.historyFile, []);
+  }
+
   // ---------- payload, tokens ----------
 
   roleName(role) {

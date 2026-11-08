@@ -18,6 +18,7 @@ import { connect } from './core/stream.js';
 import { initAccount } from './features/account.js';
 import { initAttachments } from './features/attachments.js';
 import { initBackup } from './features/backup.js';
+import { initData } from './features/data.js';
 import { initBackupAuto } from './features/backup-auto.js';
 import { initAppearance } from './features/appearance.js';
 import { initAttention } from './features/attention.js';
@@ -113,6 +114,7 @@ initAttention(); // ⚠ badge + "Perlu perhatian" in the dashboard
 initTour(); // 👋 tur singkat from Panduan / the empty chat
 initTheme(); // before the first frame: the saved theme is drawn right away
 initBackup(); // after initSettings: its #btn-settings listener runs after the dialog's own
+initData(); // 🕵️ Data saya in the same ⚙ section (laptop only)
 initBackupAuto(); // ⏰ Backup otomatis in the same ⚙ section
 initClaudeCheck(); // 🧩 Claude Code update detector: banner + ⚙ section
 initOpenCodeCheck(); // 🧩 the same for OpenCode (only shown when it is installed)

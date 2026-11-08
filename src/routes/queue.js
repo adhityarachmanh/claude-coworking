@@ -26,6 +26,11 @@ const CHANGES = {
 
 export function register(router) {
   router.post('/api/projects/:id/queue', withProject(({ taskQueue }, req, res, { id }) => json(res, 200, { queue: taskQueue.view(id) })));
+  // 🔁 Retry a failed item once, automatically (per project).
+  router.post('/api/projects/:id/queue-retry-once', withProject((ctx, req, res, { id }, body) => {
+    const retryOnce = ctx.hub.setQueueRetryOnce(id, body.on === true);
+    return json(res, 200, { ok: true, retryOnce, queue: ctx.taskQueue.view(id) });
+  }));
   router.post('/api/projects/:id/queue-add', withProject(async (ctx, req, res, { id }, body) => {
     let attachments;
     try {

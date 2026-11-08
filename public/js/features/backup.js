@@ -37,17 +37,29 @@ async function errorOf(res) {
   return data.error ?? `HTTP ${res.status}`;
 }
 
+/** The password typed for an encrypted backup (never sent when empty). */
+function backupPasswordHeader() {
+  const password = $('#backup-password')?.value ?? '';
+  return password ? { 'X-Backup-Password': password } : {};
+}
+
 async function exportHistory() {
   setBusy(true);
-  setStatus('Menyiapkan backup…');
+  const password = $('#backup-password')?.value ?? '';
+  if (password && password.length < 8) {
+    setBusy(false);
+    setStatus('Kata sandi backup minimal 8 karakter (atau kosongkan untuk .zip biasa).');
+    return;
+  }
+  setStatus(password ? 'Menyiapkan backup terenkripsi…' : 'Menyiapkan backup…');
   try {
     const res = await fetch('/api/backup/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Office-Token': auth.token },
-      body: '{}',
+      body: JSON.stringify(password ? { password } : {}),
     });
     if (!res.ok) throw new Error(await errorOf(res));
-    const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'adhit-office-backup.zip';
+    const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? (password ? 'adhit-office-backup.aob' : 'adhit-office-backup.zip');
     // Read it ourselves (instead of res.blob()) to show how much has arrived.
     const reader = res.body.getReader();
     const chunks = [];
@@ -63,8 +75,8 @@ async function exportHistory() {
         setStatus(`Mengunduh backup… ${fmtSize(received)}`);
       }
     }
-    saveBlob(name, new Blob(chunks, { type: 'application/zip' }));
-    setStatus(`Backup tersimpan: ${name} (${fmtSize(received)}). Simpan di tempat aman: isinya seluruh riwayat percakapanmu.`);
+    saveBlob(name, new Blob(chunks, { type: password ? 'application/octet-stream' : 'application/zip' }));
+    setStatus(`Backup tersimpan: ${name} (${fmtSize(received)}).${password ? ' Terenkripsi dengan kata sandimu.' : ''} Simpan di tempat aman: isinya seluruh riwayat percakapanmu.`);
   } catch (err) {
     setStatus(`Export gagal: ${err.message}`);
     toast(`Export riwayat gagal: ${err.message}`);
@@ -222,8 +234,8 @@ function renderPreview(p, file) {
 
 /** Step 1: read the .zip (server writes nothing) and show it. */
 async function previewHistory(file) {
-  if (!/\.zip$/i.test(file.name)) {
-    toast('Pilih file .zip hasil Export riwayat.');
+  if (!/\.(zip|aob)$/i.test(file.name)) {
+    toast('Pilih file .zip atau .aob hasil Export riwayat.');
     return;
   }
   pendingImport = null;
@@ -233,7 +245,7 @@ async function previewHistory(file) {
   try {
     const res = await fetch('/api/backup/preview', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/zip', 'X-Office-Token': auth.token },
+      headers: { 'Content-Type': 'application/zip', 'X-Office-Token': auth.token, ...backupPasswordHeader() },
       body: file,
     });
     if (!res.ok) throw new Error(await errorOf(res));
@@ -267,7 +279,7 @@ async function importHistory(file, only = null, parts = null) {
   $('#backup-result').hidden = true;
   setStatus(`Mengunggah dan memulihkan ${fmtSize(file.size)}… (bisa beberapa menit, jangan tutup halaman ini)`);
   try {
-    const headers = { 'Content-Type': 'application/zip', 'X-Office-Token': auth.token };
+    const headers = { 'Content-Type': 'application/zip', 'X-Office-Token': auth.token, ...backupPasswordHeader() };
     if (only?.length) headers['X-Backup-Only'] = b64url(JSON.stringify(only));
     if (parts) headers['X-Backup-Parts'] = b64url(JSON.stringify(parts));
     const res = await fetch('/api/backup/import', {

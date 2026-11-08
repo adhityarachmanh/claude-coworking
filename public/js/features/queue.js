@@ -320,6 +320,12 @@ function renderQueue() {
   toggle.textContent = q.paused ? '▶ Lanjutkan' : '⏸ Jeda';
   toggle.hidden = !q.paused && !waiting.length && !running;
   toggle.disabled = !edit;
+  const retry = $('#queue-retry-once');
+  if (retry) {
+    retry.checked = q.retryOnce === true;
+    retry.disabled = !edit;
+    retry.closest('label').title = edit ? 'Item yang gagal dicoba sekali lagi sebelum antrian dijeda' : READ_ONLY_HINT;
+  }
   $('#queue-clear').hidden = !q.items.some((i) => i.status === 'done' || i.status === 'failed');
   $('#queue-clear').disabled = !edit;
   $('#queue-count').textContent = `${waiting.length + (running ? 1 : 0)}/${q.limits.items} belum selesai`;
@@ -555,6 +561,15 @@ export function initQueue() {
     }
   });
   $('#queue-toggle').addEventListener('click', () => change('pause', { paused: !queueView.data?.paused }));
+  $('#queue-retry-once').addEventListener('change', async (e) => {
+    try {
+      const { queue } = await api(`/api/projects/${queueView.project}/queue-retry-once`, { on: e.target.checked });
+      show(queue);
+    } catch (err) {
+      e.target.checked = !e.target.checked;
+      toast(err.message);
+    }
+  });
   $('#queue-clear').addEventListener('click', () => change('clear'));
   $('#runbook-save').addEventListener('click', saveRunbook);
   $('#runbook-submit').addEventListener('click', submitRunbook);

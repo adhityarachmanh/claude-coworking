@@ -3,13 +3,14 @@
 // every paired phone (LOCAL_ONLY, Tailscale too) and each handler checks isLocal again on its own.
 // One export, import or scheduled backup at a time: ctx.backupLock (shared with the BackupScheduler in server.js).
 import { randomBytes } from 'node:crypto';
-import { createWriteStream, existsSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Transform } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+import { finished, pipeline } from 'node:stream/promises';
 import { BackupError, isUnderHome, previewBackup, restoreBackup, writeBackup } from '../backup.js';
+import { BackupCryptoError, MIN_BACKUP_PASSWORD, decryptBackupFile, encryptBackupFile, isEncryptedBackup } from '../backup-crypto.js';
 import { AUTO_NAME, ScheduleError } from '../backup-schedule.js';
 import { isDirectory } from '../projects.js';
 import { projectId as idOfPath } from '../util.js';
@@ -64,19 +65,44 @@ function activeSessionIds(hub) {
   return ids;
 }
 
-/** POST /api/backup/export: the backup .zip, streamed (never held in memory). */
-async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion }, req, res) {
+/** POST /api/backup/export: the backup .zip (or an encrypted .aob), streamed (never held in memory). */
+async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, dataDir }, req, res, params, body) {
   if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
   if (backupLock.busy) return json(res, 409, { error: 'Export/import riwayat lain sedang berjalan. Tunggu sampai selesai.' });
+  const password = typeof body?.password === 'string' ? body.password : '';
+  if (password && password.length < MIN_BACKUP_PASSWORD) return json(res, 400, { error: `Kata sandi backup minimal ${MIN_BACKUP_PASSWORD} karakter.` });
   backupLock.busy = true;
   try {
     hub.save(); // the state file on disk and in the backup agree
-    const name = `adhit-office-backup-${new Date().toLocaleDateString('sv-SE')}.zip`; // local date, YYYY-MM-DD
-    res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
-    const result = await writeBackup(res, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), appVersion });
-    res.end();
-    const skipped = result.skipped.length ? `, ${result.skipped.length} dilewati (symlink/nama tidak valid)` : '';
-    console.log(`Backup riwayat diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB${skipped}`);
+    const day = new Date().toLocaleDateString('sv-SE'); // local date, YYYY-MM-DD
+    if (!password) {
+      const name = `adhit-office-backup-${day}.zip`;
+      res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
+      const result = await writeBackup(res, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), appVersion });
+      res.end();
+      const skipped = result.skipped.length ? `, ${result.skipped.length} dilewati (symlink/nama tidak valid)` : '';
+      console.log(`Backup riwayat diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB${skipped}`);
+      return;
+    }
+    // 🔐 Encrypted: build the .zip in a temp file, seal it, then stream the .aob (the password is never stored).
+    const tmpDir = path.join(dataDir, 'tmp');
+    await mkdir(tmpDir, { recursive: true });
+    const zipFile = path.join(tmpDir, `export-${Date.now()}-${randomBytes(4).toString('hex')}.zip`);
+    const sealed = `${zipFile}.aob`;
+    try {
+      const out = createWriteStream(zipFile);
+      const result = await writeBackup(out, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), appVersion });
+      out.end();
+      await finished(out);
+      await encryptBackupFile(zipFile, sealed, password);
+      const name = `adhit-office-backup-${day}.aob`;
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
+      await pipeline(createReadStream(sealed), res);
+      console.log(`Backup riwayat terenkripsi diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB`);
+    } finally {
+      await rm(zipFile, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+      await rm(sealed, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    }
   } catch (err) {
     console.error('Export backup gagal:', err?.stack ?? err);
     // Headers are out: cut the connection so the browser reports a failed download, not a broken .zip.
@@ -85,6 +111,21 @@ async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion }, re
   } finally {
     backupLock.busy = false;
   }
+}
+
+/** The uploaded backup, decrypted to a plain .zip when it starts with the encrypted-backup magic. */
+async function openUpload(file, req, tmpDir) {
+  if (!isEncryptedBackup(file)) return { source: file, decrypted: null };
+  const password = String(req.headers['x-backup-password'] ?? '');
+  if (!password) throw new BackupCryptoError('Backup ini terenkripsi: isi kata sandi backup dulu.');
+  const decrypted = path.join(tmpDir, `dec-${Date.now()}-${randomBytes(4).toString('hex')}.zip`);
+  try {
+    await decryptBackupFile(file, decrypted, password);
+  } catch (err) {
+    await rm(decrypted, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    throw err;
+  }
+  return { source: decrypted, decrypted };
 }
 
 /** Streams the request body to `file`, refusing it (413) once it passes `limit` bytes. */
@@ -113,7 +154,7 @@ async function receiveUpload(req, file, limit) {
 async function previewUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, req, res) {
   if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
   const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
-  if (!ZIP_TYPES.has(type)) return json(res, 415, { error: 'Kirim file .zip hasil Export riwayat.' });
+  if (!ZIP_TYPES.has(type)) return json(res, 415, { error: 'Kirim file .zip atau .aob hasil Export riwayat.' });
   if (Number(req.headers['content-length']) > maxBackupBytes) throw new HttpError(413, `File backup terlalu besar (maks ${Math.round(maxBackupBytes / 1024 ** 2)} MB).`);
   if (backupLock.busy) {
     res.on('finish', () => req.destroy()); // don't read an upload that is refused
@@ -122,16 +163,21 @@ async function previewUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, r
   backupLock.busy = true;
   const tmpDir = path.join(dataDir, 'tmp');
   const file = path.join(tmpDir, `preview-${Date.now()}-${randomBytes(4).toString('hex')}.zip`);
+  let decrypted = null;
   try {
     await mkdir(tmpDir, { recursive: true });
     await receiveUpload(req, file, maxBackupBytes);
-    return json(res, 200, await previewBackup(file));
+    const prepared = await openUpload(file, req, tmpDir);
+    decrypted = prepared.decrypted;
+    return json(res, 200, await previewBackup(prepared.source));
   } catch (err) {
+    if (err instanceof BackupCryptoError) return json(res, err.status, { error: err.message });
     if (err instanceof ZipError) return json(res, 400, { error: `File backup tidak valid: ${err.message}` });
     if (err instanceof BackupError) return json(res, err.status, { error: err.message });
     throw err;
   } finally {
     backupLock.busy = false;
+    if (decrypted) await rm(decrypted, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
     await rm(file, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
   }
 }
@@ -140,7 +186,7 @@ async function previewUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, r
 async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir, maxBackupBytes, projectRoots, refreshProjects }, req, res) {
   if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
   const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
-  if (!ZIP_TYPES.has(type)) return json(res, 415, { error: 'Kirim file .zip hasil Export riwayat.' });
+  if (!ZIP_TYPES.has(type)) return json(res, 415, { error: 'Kirim file .zip atau .aob hasil Export riwayat.' });
   // A backup is Claude Code's history plus the office state: that store is always kept (data/chats), whatever
   // engine a project runs on. Each engine's chats come back into their own store (data/chats-opencode too), and
   // mergeProjectData restores the project's engine + what each engine remembered, for engines installed here.
@@ -179,12 +225,16 @@ async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir,
   backupLock.busy = true;
   const tmpDir = path.join(dataDir, 'tmp');
   const file = path.join(tmpDir, `import-${Date.now()}-${randomBytes(4).toString('hex')}.zip`);
+  let decrypted = null;
   try {
     await mkdir(tmpDir, { recursive: true });
     await receiveUpload(req, file, maxBackupBytes);
-    const summary = await applyRestored({ hub, ledger, mirror, projectRoots, refreshProjects }, file, { only, parts });
+    const prepared = await openUpload(file, req, tmpDir);
+    decrypted = prepared.decrypted;
+    const summary = await applyRestored({ hub, ledger, mirror, projectRoots, refreshProjects }, prepared.source, { only, parts });
     return json(res, 200, summary);
   } catch (err) {
+    if (err instanceof BackupCryptoError) return json(res, err.status, { error: err.message });
     if (err instanceof ZipError) return json(res, 400, { error: `File backup tidak valid: ${err.message}` });
     if (err instanceof BackupError) return json(res, err.status, { error: err.message });
     throw err;
@@ -192,6 +242,7 @@ async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir,
     // Unlocked first: the answer is already out, and the next import must not see a lock held only by the temp
     // file's cleanup (Windows retries rm for a while). The file name is unique, so nothing else uses it.
     backupLock.busy = false;
+    if (decrypted) await rm(decrypted, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
     await rm(file, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
   }
 }

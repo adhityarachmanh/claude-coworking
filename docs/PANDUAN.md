@@ -240,4 +240,4 @@ Yang ikut kembali: riwayat chat kedua mesin, **mesin tiap project**, pengaturan 
 
 Yang perlu diulang di laptop baru: login Claude, pairing HP (termasuk notifikasi push), dan menghubungkan Spotify. Mode izin tiap project kembali ke **Tanya dulu**.
 
-> Backup adalah **data pribadi tanpa enkripsi**. Simpan di folder yang hanya kamu akses dan hapus bila tidak perlu. Import hanya menambah, tidak menghapus. Detail: [Backup & riwayat](FITUR.md#backup--riwayat).
+> Backup adalah **data pribadi**. Pilih enkripsi kata sandi (`.aob`) bila file akan disimpan di tempat yang kurang aman; tanpa kata sandi file `.zip` tidak terenkripsi. Simpan di folder yang hanya kamu akses dan hapus bila tidak perlu. Import hanya menambah, tidak menghapus. Detail: [Backup & riwayat](FITUR.md#backup--riwayat).

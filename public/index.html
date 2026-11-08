@@ -692,6 +692,18 @@
     </div>
 
     <!-- 📋 Antrian (features/queue.js, server src/queue.js): prompts run one by one when the session is idle -->
+    <div id="data-modal" class="modal" hidden>
+      <div class="modal-card data-card" role="dialog" aria-modal="true" aria-labelledby="data-title">
+        <div class="modal-head"><b id="data-title">🕵️ Data saya</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="data-note" class="muted small"></p>
+        <ul id="data-list" class="data-list" aria-label="Data yang disimpan"></ul>
+        <div class="data-actions">
+          <button type="button" id="data-purge-push" class="ghost" title="Hapus log notifikasi yang dikirim ke HP">🧹 Hapus riwayat notifikasi</button>
+          <button type="button" id="data-purge-trash" class="ghost danger-text" title="Hapus permanen semua sesi di folder trash">🗑 Kosongkan trash sesi</button>
+        </div>
+      </div>
+    </div>
+
     <div id="checklist-modal" class="modal" hidden>
       <div class="modal-card checklist-card" role="dialog" aria-modal="true" aria-labelledby="checklist-title">
         <div class="modal-head"><b id="checklist-title">✅ Checklist project <small id="checklist-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
@@ -710,6 +722,7 @@
         <div class="queue-bar">
           <p id="queue-state" class="queue-state" role="status" aria-live="polite"></p>
           <button id="queue-toggle" type="button" class="ghost">⏸ Jeda</button>
+          <label class="switch small" title="Item yang gagal dicoba sekali lagi sebelum antrian dijeda"><input id="queue-retry-once" type="checkbox" /> ↻ Ulangi sekali bila gagal</label>
         </div>
         <ol id="queue-list" class="queue-list" aria-label="Item antrian"></ol>
         <div class="queue-new">
@@ -906,9 +919,13 @@
             <div class="backup-actions">
               <button type="button" id="btn-backup-export" class="ghost">⬇ Export riwayat</button>
               <button type="button" id="btn-backup-import" class="ghost">⬆ Import riwayat</button>
-              <input type="file" id="backup-file" accept=".zip,application/zip" aria-label="File backup riwayat (.zip)" hidden />
+              <input type="file" id="backup-file" accept=".zip,.aob,application/zip,application/octet-stream" aria-label="File backup riwayat (.zip atau .aob)" hidden />
             </div>
+            <label class="backup-password-label" for="backup-password">🔐 Kata sandi backup <small>(opsional saat export; wajib untuk file .aob)</small></label>
+            <input id="backup-password" type="password" minlength="8" maxlength="200" placeholder="Minimal 8 karakter untuk mengenkripsi" aria-label="Kata sandi backup" autocomplete="new-password" />
+            <p id="backup-encrypt-note" class="muted small">Backup terenkripsi tidak bisa dibuka tanpa kata sandi ini; tidak ada pemulihan. Kosongkan saat export untuk file .zip biasa.</p>
             <p id="backup-status" class="muted" role="status" aria-live="polite"></p>
+            <button type="button" id="btn-data-panel" class="ghost team-names-btn" title="Apa saja yang disimpan aplikasi di laptop ini, dan bersihkan yang aman">🕵️ Data saya</button>
             <div id="backup-result" class="backup-result" hidden></div>
             <!-- ⏰ Backup otomatis (features/backup-auto.js, server src/backup-schedule.js) -->
             <div class="backup-auto" role="group" aria-labelledby="ba-title">

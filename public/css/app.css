@@ -1195,6 +1195,10 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .runbook-versions { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .runbook-versions li { display: flex; align-items: center; gap: 8px; }
 .runbook-versions .rb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.data-card { max-width: 620px; }
+.data-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.data-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); font-size: var(--fs-sm); }
+.data-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .routine-calendar { display: flex; flex-direction: column; gap: 3px; margin: 0 0 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
 .cal-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; align-items: start; padding: 2px 0; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
 .cal-row:first-child { border-top: 0; }

@@ -7,6 +7,7 @@ import * as attention from './attention.js';
 import * as backup from './backup.js';
 import * as budget from './budget.js';
 import * as checklist from './checklist.js';
+import * as data from './data.js';
 import * as claudeCheck from './claude-check.js';
 import * as diagnostics from './diagnostics.js';
 import * as extensions from './extensions.js';
@@ -52,6 +53,7 @@ export function buildRouter() {
     account.register,
     budget.register,
     checklist.register,
+    data.register,
     remote.register,
     push.register,
     backup.register,

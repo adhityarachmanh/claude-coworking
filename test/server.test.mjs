@@ -465,6 +465,18 @@ test('📚 runbook, ✅ checklist, dan 🩺 bundel diagnostik', async () => {
   }
 });
 
+test('🕵️ Data saya: ringkasan ukuran dan hapus riwayat notifikasi', async () => {
+  const answer = await api('/api/data');
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  const d = answer.body.data;
+  for (const key of ['state', 'chats', 'usage', 'pushHistory', 'trash', 'backups']) assert.ok(d[key] && Number.isFinite(d[key].bytes), key);
+  assert.ok(Number.isFinite(d.chats.files) && Number.isFinite(d.trash.retentionDays));
+  const clear = await api('/api/data/purge', { target: 'push-history' });
+  assert.equal(clear.status, 200);
+  assert.equal((await api('/api/data')).body.data.pushHistory.entries, 0);
+  assert.equal((await api('/api/data/purge', { target: 'lainnya' })).status, 400);
+});
+
 test('💰 hard stop: prompt, compact, and handoff apply are refused while a window is over', async () => {
   const id = await projectId();
   const usageFile = path.join(TMP, 'data', 'usage.jsonl');

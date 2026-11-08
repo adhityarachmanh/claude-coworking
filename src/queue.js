@@ -116,6 +116,7 @@ function cleanItem(raw) {
     error: typeof raw.error === 'string' ? raw.error.slice(0, 500) : null,
     meta: isObject(raw.meta) ? raw.meta : null,
     routineId: typeof raw.routineId === 'string' ? raw.routineId.slice(0, 40) : null,
+    retried: raw.retried === true,
     runbookId: /^rb_[A-Za-z0-9_-]{1,40}$/.test(String(raw.runbookId ?? '')) ? raw.runbookId : null,
     runbookIndex: Number.isInteger(raw.runbookIndex) && raw.runbookIndex >= 0 ? raw.runbookIndex : null,
     engine: raw.engine === 'opencode' || raw.engine === 'claude' ? raw.engine : null, // the engine it was sent to
@@ -195,6 +196,7 @@ export class TaskQueue {
       items: structuredClone(q?.items ?? []),
       limits: QUEUE_LIMITS,
       budget: { ...(q?.budget ?? emptyBudget()) },
+      retryOnce: Boolean(this.hub.queueRetryOnceFor?.(id)),
     };
   }
 
@@ -297,6 +299,7 @@ export class TaskQueue {
       error: null,
       meta: null,
       routineId: typeof extra?.routineId === 'string' ? extra.routineId.slice(0, 40) : null,
+      retried: false,
       runbookId: /^rb_[A-Za-z0-9_-]{1,40}$/.test(String(extra?.runbookId ?? '')) ? extra.runbookId : null,
       runbookIndex: Number.isInteger(extra?.runbookIndex) && extra.runbookIndex >= 0 ? extra.runbookIndex : null,
       engine: null,
@@ -466,7 +469,7 @@ export class TaskQueue {
     if (!item) return;
     const stopped = !msg.ok && /dihentikan/i.test(msg.text ?? '');
     this.finish(id, item, msg.ok ? { status: 'done' } : { status: 'failed', error: msg.text || 'Giliran berakhir dengan error.' }, msg);
-    if (!msg.ok) this.pauseFor(id, 'failed', stopped ? 'item dihentikan' : 'item gagal');
+    if (!msg.ok) this.retryOrPause(id, item, stopped ? 'item dihentikan' : 'item gagal');
     this.checkBudget(id); // no-op when the failure above already paused it
   }
 
@@ -491,7 +494,7 @@ export class TaskQueue {
     if (item && !status.busy) {
       // The turn is over without a result: Claude Code exited, the session was reset or the process detached.
       this.finish(id, item, { status: 'failed', error: `Giliran berhenti tanpa hasil (${this.engineName(item, id)} berhenti atau sesi direset).` });
-      this.pauseFor(id, 'failed', 'item berhenti tanpa hasil');
+      this.retryOrPause(id, item, 'item berhenti tanpa hasil');
       return;
     }
     if (!item) this.schedule(id);
@@ -557,6 +560,22 @@ export class TaskQueue {
     Object.assign(q, { paused: true, reason, pausedAt: this.now() });
     this.changed(id);
     if (waiting) this.hub.chat(id, { kind: 'info', level: 'warning', queue: true, text: `📋 Antrian dijeda: ${why}. ${waiting} item masih menunggu — buka 📋 Antrian untuk melanjutkan.` });
+  }
+
+  /**
+   * 🔁 A failed item with "retry once" on this project goes back to waiting exactly once (the next failure pauses).
+   * Never for an item the user stopped: repeating a deliberate stop would be surprising.
+   */
+  retryOrPause(id, item, why) {
+    const q = this.queues[id];
+    if (q && this.hub.queueRetryOnceFor?.(id) && !item.retried && !/dihentikan/i.test(why)) {
+      Object.assign(item, { status: 'waiting', retried: true, startedAt: null, endedAt: null, updatedAt: this.now() });
+      this.changed(id);
+      this.hub.chat?.(id, { kind: 'info', queue: true, text: `📋 Item antrian gagal (${why}) — dicoba ulang sekali.` });
+      this.schedule(id);
+      return;
+    }
+    this.pauseFor(id, 'failed', why);
   }
 
   /** Looks again shortly (never synchronously: status updates arrive from inside session callbacks). */

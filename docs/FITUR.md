@@ -201,7 +201,7 @@ Maks **10 lampiran / 20 MB** per pesan. Jenis lain (zip, exe, docx, …) ditolak
 
 ## Antrian & batas
 
-**📋 Antrian** (`Alt+Enter`, tombol 📋, `/antrian`): susun beberapa prompt (dengan lampiran); server mengirim satu per satu setiap kali sesi project itu **idle** (tidak bekerja, tidak ada izin menunggu, tidak ada giliran terputus). Di dialog: ubah urutan (seret atau ↑↓), edit/hapus, **⏸ Jeda / Lanjutkan**, **Ulangi** item gagal, **💬 Lihat hasil**. Maks 30 item belum selesai, 20.000 karakter per item. **📚 Runbook** menyimpan item yang masih menunggu sebagai rangkaian bernama (maks 50 runbook × 20 prompt per project); **✎** membuka editor nama + prompt (pisahkan prompt dengan baris `---`, ada contoh Rilis/Bugfix/Review/Cek CI dan riwayat 5 versi yang bisa dipulihkan), **▶ Jalankan** menambahkannya kembali ke antrian, **⏰** menjadikannya jadwal harian, dan **↻ Lanjutkan** mengulang item runbook yang gagal lalu melanjutkan antrian.
+**📋 Antrian** (`Alt+Enter`, tombol 📋, `/antrian`): susun beberapa prompt (dengan lampiran); server mengirim satu per satu setiap kali sesi project itu **idle** (tidak bekerja, tidak ada izin menunggu, tidak ada giliran terputus). Di dialog: ubah urutan (seret atau ↑↓), edit/hapus, **⏸ Jeda / Lanjutkan**, **↻ Ulangi sekali bila gagal** (per project), **Ulangi** item gagal, **💬 Lihat hasil**. Maks 30 item belum selesai, 20.000 karakter per item. **📚 Runbook** menyimpan item yang masih menunggu sebagai rangkaian bernama (maks 50 runbook × 20 prompt per project); **✎** membuka editor nama + prompt (pisahkan prompt dengan baris `---`, ada contoh Rilis/Bugfix/Review/Cek CI dan riwayat 5 versi yang bisa dipulihkan), **▶ Jalankan** menambahkannya kembali ke antrian, **⏰** menjadikannya jadwal harian, dan **↻ Lanjutkan** mengulang item runbook yang gagal lalu melanjutkan antrian.
 
 Antrian **berhenti sendiri** bila item gagal atau dihentikan, kuota akun habis, atau batas tercapai. Setelah server restart, antrian **tetap dijeda** sampai kamu melanjutkan.
 
@@ -279,9 +279,9 @@ Kontrol Spotify yang sudah kamu pakai (Spotify Connect) lewat Spotify Web API. B
 
 Ganti SSD, install ulang Windows, atau pindah laptop tanpa kehilangan percakapan lama.
 
-1. Laptop lama: **⚙ → 💾 Cadangkan riwayat → ⬇ Export riwayat** → `adhit-office-backup-YYYY-MM-DD.zip`. Simpan di tempat aman (isinya seluruh riwayat percakapan).
+1. Laptop lama: **⚙ → 💾 Cadangkan riwayat → ⬇ Export riwayat** → `adhit-office-backup-YYYY-MM-DD.zip`. Isi **🔐 Kata sandi backup** (min. 8 karakter) bila ingin file **`.aob` terenkripsi** (AES-256-GCM); kosongkan untuk `.zip` biasa. Simpan di tempat aman (isinya seluruh riwayat percakapan).
 2. Laptop baru: [Mulai cepat](../README.md#mulai-cepat), login dengan `claude`, clone/salin folder project-mu.
-3. **⚙ → Cadangkan riwayat → ⬆ Import riwayat**, pilih `.zip`, lihat **pratinjau** (jumlah project, sesi, chat, ukuran, tanggal dibuat), centang project yang ingin dipulihkan (default semua) dan **data kantor** yang ikut (pengaturan & folder, laporan token, riwayat prompt), lalu **Pulihkan**. Daftar project/sesi langsung ter-update. Project yang tidak dicentang tidak ikut (transkrip dan chat-nya).
+3. **⚙ → Cadangkan riwayat → ⬆ Import riwayat**, pilih `.zip`/`.aob` (isi kata sandi di kolom yang sama untuk `.aob`), lihat **pratinjau** (jumlah project, sesi, chat, ukuran, tanggal dibuat), centang project yang ingin dipulihkan (default semua) dan **data kantor** yang ikut (pengaturan & folder, laporan token, riwayat prompt), lalu **Pulihkan**. Daftar project/sesi langsung ter-update. Project yang tidak dicentang tidak ikut (transkrip dan chat-nya).
 4. Lanjutkan lewat **🕘 Riwayat sesi**. Project dari backup membawa **mesinnya** (bila OpenCode terpasang) dan percakapan **Claude** yang tersimpan di arsip; sesi OpenCode tidak dipulihkan karena penyimpanannya tidak ikut backup. Mode izin tiap project kembali ke **Tanya dulu**.
 
 | Ikut di backup | Tidak ikut |
@@ -301,11 +301,13 @@ Ganti SSD, install ulang Windows, atau pindah laptop tanpa kehilangan percakapan
 
 **Folder home berbeda** (mis. `C:\Users\lama` → `C:\Users\baru`): folder transcript diganti nama mengikuti aturan Claude Code supaya `claude --resume` di folder baru menemukannya. Import yang sama boleh diulang; tidak ada yang ditambahkan dua kali.
 
-> **Hanya import backup milikmu sendiri.** Import memperlakukan backup sebagai data yang belum tentu tepercaya, tetapi isi transcript dan memori project tetap dibaca Claude saat sesi dilanjutkan. Backup adalah **data pribadi tanpa enkripsi** (transcript, email akun, id percakapan): simpan di folder yang hanya kamu akses, dan hapus bila tidak diperlukan. Import hanya menambah, tidak pernah menghapus.
+> **Hanya import backup milikmu sendiri.** Import memperlakukan backup sebagai data yang belum tentu tepercaya, tetapi isi transcript dan memori project tetap dibaca Claude saat sesi dilanjutkan. Backup adalah **data pribadi**: pilih enkripsi kata sandi (`.aob`) bila file akan disimpan di tempat yang kurang aman; tanpa kata sandi file `.zip` tidak terenkripsi (transcript, email akun, id percakapan). Simpan di folder yang hanya kamu akses, dan hapus bila tidak diperlukan. Import hanya menambah, tidak pernah menghapus.
 
 **Hapus data:** export zip adalah jawaban akses/portabilitas. Untuk menghapus, hapus zip backup, folder `data/chats*`, `data/usage*.jsonl`, `data/auth-audit.jsonl`, `data/redo/`, `data/trash/`, dan `~/.claude/projects` sesuai kebutuhan. Salinan `data/state.json.pre-per-project-*` (paling banyak 5, maks 30 hari, **tanpa** data HP/VAPID) juga aman dihapus setelah aplikasi berjalan normal.
 
 **⏰ Backup otomatis** (⚙ → Cadangkan riwayat, laptop, nonaktif secara default): **Harian** atau **Mingguan** + hari, **jam**, **folder tujuan** (path lengkap di laptop ini; folder jaringan dan path relatif ditolak), dan **simpan N backup terakhir** (1–100). Nama file `adhit-office-backup-auto-YYYYMMDD-HHmmss.zip`. Jadwal yang terlewat saat laptop mati dijalankan sekali begitu server menyala. Rotasi hanya menghapus file `adhit-office-backup-auto-*.zip`. Ada **▶ Jalankan sekarang** dan status hasil terakhir.
+
+**🕵️ Data saya** (⚙ → Cadangkan riwayat, laptop): ukuran `state.json`, riwayat chat kedua mesin, ledger pemakaian, riwayat notifikasi, trash sesi (dengan retensi 30 hari), dan backup otomatis. Dua pembersihan aman: **🧹 Hapus riwayat notifikasi** dan **🗑 Kosongkan trash sesi** (permanen; cadangkan dulu bila perlu). Riwayat chat dan laporan pemakaian tidak dihapus dari sini.
 
 **Format:** ZIP standar (bisa dibuka Explorer / `Expand-Archive`), ditulis tanpa dependency oleh `src/zip.js` (deflate streaming, CRC-32, ZIP64 otomatis). Upload import maks 4 GB (`OFFICE_BACKUP_MAX_BYTES`).
 

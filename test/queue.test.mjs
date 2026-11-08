@@ -233,6 +233,23 @@ test('queue: a failed item pauses the queue (the rest waits) and tells the user;
   for (const item of retried.items) await q('remove', { itemId: item.id });
 });
 
+test('queue: retry-once runs the failed item again once, then pauses', async () => {
+  await q('pause', { paused: false });
+  assert.equal((await api(`/api/projects/${id}/queue-retry-once`, { on: true })).status, 200);
+  assert.equal((await queue()).retryOnce, true);
+  await q('add', { text: 'gagal sengaja' });
+  const paused = await until(async () => {
+    const list = await queue();
+    return list.paused && list;
+  }, 'queue paused after the automatic retry');
+  assert.equal(paused.reason, 'failed');
+  assert.equal(paused.items[0].status, 'failed');
+  assert.equal(paused.items[0].retried, true, 'the item was retried once');
+  assert.ok((await snapshot()).chats[id].some((m) => /dicoba ulang sekali/.test(m.text ?? '')), 'the automatic retry is announced');
+  for (const item of paused.items) await q('remove', { itemId: item.id });
+  await api(`/api/projects/${id}/queue-retry-once`, { on: false });
+});
+
 test('queue: the account hitting its usage limit (rate_limit_event rejected) pauses it', async () => {
   await q('pause', { paused: false });
   await q('add', { text: 'kuota habis' });

@@ -16,6 +16,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **🏷/📦 Tag & arsip massal + kelola tag.** Centang beberapa sesi untuk memberi satu tag atau mengarsipkan sekaligus; **✎ Kelola tag** mengganti nama/menghapus satu tag di semua sesi project.
 - **📚 Runbook antrian.** Dialog 📋 Antrian bisa menyimpan item yang masih menunggu sebagai runbook bernama (per project); **▶ Jalankan** menambahkannya kembali ke antrian. Tersimpan di state aplikasi dan ikut backup.
 - **🩺 Bundel diagnostik.** Tombol di Kesehatan sistem (dan Ctrl+P) mengunduh `.zip` berisi info versi, hasil health, dan 512 KB log terakhir; folder home disamarkan dan tidak ada isi percakapan.
+- **🔐 Backup terenkripsi.** Isi kata sandi (min. 8 karakter) saat Export untuk mendapat `.aob` terenkripsi AES-256-GCM; Import menerima `.zip` maupun `.aob` (kata sandi diminta lewat kolom yang sama). Tidak ada pemulihan kata sandi.
+- **🕵️ Panel “Data saya”.** ⚙ → Cadangkan riwayat menampilkan ukuran state, chat, ledger, riwayat notifikasi, trash, dan backup otomatis; tombol aman untuk menghapus riwayat notifikasi dan mengosongkan trash.
+- **↻ Ulangi sekali bila gagal.** Opsi per project di dialog 📋 Antrian: item yang gagal dicoba ulang otomatis satu kali sebelum antrian dijeda.
 - **↻ Lanjutkan runbook dari item gagal.** Item antrian dari runbook ditandai; bila salah satu gagal, tombol **↻ Lanjutkan** mengulang item itu dan melanjutkan antrian tanpa mengulang prompt yang sudah sukses.
 - **📚 Pustaka runbook bawaan.** Editor runbook punya contoh siap pakai (Rilis, Perbaikan bug, Review PR, Cek CI) yang bisa diubah sebelum disimpan.
 - **🕘 Riwayat versi runbook.** Lima versi terakhir nama + prompt disimpan; **Pulihkan** memuat versi lama ke editor untuk disimpan lagi.

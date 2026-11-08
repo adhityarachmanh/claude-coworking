@@ -272,6 +272,7 @@ export class Hub {
     this.persisted.runbooks = cleanRunbooks(this.persisted.runbooks);
     // 🗂 Archived projects: an id list; a hand-edited file cannot break the picker.
     this.persisted.archivedProjects = Array.isArray(this.persisted.archivedProjects) ? [...new Set(this.persisted.archivedProjects.filter((p) => typeof p === 'string' && p).slice(0, 500))] : [];
+    this.persisted.queueRetryOnce = isObject(this.persisted.queueRetryOnce) ? Object.fromEntries(Object.entries(this.persisted.queueRetryOnce).filter(([id, on]) => id && on === true).slice(0, 500)) : {};
     this.budgetOverrideUntil = 0; // one-shot "allow one turn" after a hard stop (memory only)
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
@@ -794,6 +795,20 @@ export class Hub {
     this.save();
     this.broadcast('projects', this.listProjects());
     return on;
+  }
+
+  /** 🔁 Retry a failed queue item once, automatically, on this project. */
+  queueRetryOnceFor(id) {
+    return this.persisted.queueRetryOnce?.[id] === true;
+  }
+
+  setQueueRetryOnce(id, on) {
+    const map = (this.persisted.queueRetryOnce ??= {});
+    if (on) map[id] = true;
+    else delete map[id];
+    if (!Object.keys(map).length) delete this.persisted.queueRetryOnce;
+    this.scheduleSave();
+    return Boolean(on);
   }
 
   /** Starred projects stay on top of the picker on every device (stored server-side). */

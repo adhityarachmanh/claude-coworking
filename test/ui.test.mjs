@@ -3246,6 +3246,46 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('🕵️ Data saya: ukuran kategori tampil dan bersihkan riwayat notifikasi', async () => {
+      await openApp(page, `#${projectId}`);
+      page.clearProblems();
+      await page.eval(async () => {
+        window.__dataFetch = window.fetch;
+        window.__dataCalls = [];
+        window.__dataConfirm = window.confirm;
+        window.confirm = () => true;
+        const data = { state: { bytes: 2048 }, chats: { files: 4, bytes: 4096 }, usage: { bytes: 1024 }, pushHistory: { entries: 3, bytes: 512 }, trash: { files: 2, bytes: 700, retentionDays: 30 }, backups: { files: 1, bytes: 900 } };
+        const reply = (o) => new Response(JSON.stringify(o), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        window.fetch = (url, opts) => {
+          const u = String(url);
+          if (/\/api\/data\/purge$/.test(u)) {
+            window.__dataCalls.push(JSON.parse(opts?.body ?? '{}'));
+            data.pushHistory = { entries: 0, bytes: 0 };
+            return Promise.resolve(reply({ ok: true }));
+          }
+          if (/\/api\/data$/.test(u)) return Promise.resolve(reply({ data, note: 'x' }));
+          return window.__dataFetch(url, opts);
+        };
+        (await import('/js/features/data.js')).openDataPanel();
+      });
+      try {
+        await page.waitFor(() => document.querySelectorAll('#data-list .data-row').length === 6, { timeoutMs: 4000, message: 'enam baris data' });
+        assert.match(await page.eval(() => document.querySelector('#data-list').textContent), /Riwayat chat.*4 file.*4\.0 KB/);
+        assert.match(await page.eval(() => document.querySelector('#data-list').textContent), /Trash sesi.*30 hari/);
+        await page.eval(() => document.querySelector('#data-purge-push').click());
+        await page.waitFor(() => window.__dataCalls.length === 1, { timeoutMs: 4000, message: 'panggilan hapus riwayat' });
+        assert.deepEqual(await page.eval(() => window.__dataCalls[0]), { target: 'push-history' });
+        await page.waitFor(() => /0 entri/.test(document.querySelector('#data-list').textContent), { timeoutMs: 4000, message: 'riwayat notifikasi kosong' });
+        await page.press('Escape');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__dataFetch;
+          window.confirm = window.__dataConfirm;
+        });
+      }
+    });
+
     test('📊 Dashboard: ringkasan hari ini dari ledger (biaya, giliran, token, sesi, project)', async () => {
       await ensureApp(page, `#${projectId}`);
       await page.eval((pid) => {

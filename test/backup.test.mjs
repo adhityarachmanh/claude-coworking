@@ -8,9 +8,11 @@ import http from 'node:http';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { finished } from 'node:stream/promises';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { encodeProjectPath, makeRemap, previewBackup, restoreBackup } from '../src/backup.js';
+import { decryptBackupFile, encryptBackupFile, isEncryptedBackup } from '../src/backup-crypto.js';
 import { projectId as projectIdOf } from '../src/util.js';
 import { ZipReader, ZipWriter } from '../src/zip.js';
 
@@ -245,8 +247,30 @@ test('export: a streamed .zip with every project, history, checkpoints, plans, s
   assert.deepEqual(state.favorites, [fav]);
 });
 
-test('preview: what is inside the backup, before anything is written', async () => {
-  const preview = await previewBackup(zipFile);
+test('🔐 encrypted backup: .aob round-trip, magic header, wrong password rejected', async () => {
+  const zipFile = path.join(TMP, 'plain.zip');
+  const sealed = path.join(TMP, 'sealed.aob');
+  const out = path.join(TMP, 'sealed-roundtrip.zip');
+  const stream = createWriteStream(zipFile);
+  const zip = new ZipWriter(stream);
+  await zip.add('manifest.json', Buffer.from('{"format":1}'));
+  await zip.add('office/state.json', Buffer.from('{"projects":[]}'));
+  await zip.finish();
+  stream.end();
+  await finished(stream);
+  await encryptBackupFile(zipFile, sealed, 'rahasia123');
+  assert.equal(isEncryptedBackup(sealed), true);
+  assert.equal(isEncryptedBackup(zipFile), false);
+  assert.equal(readFileSync(sealed).subarray(0, 7).toString('latin1'), 'AOEBK1\0', 'magic header');
+  await decryptBackupFile(sealed, out, 'rahasia123');
+  const reader = await ZipReader.open(out);
+  assert.deepEqual(reader.entries.map((e) => e.name), ['manifest.json', 'office/state.json']);
+  assert.match(String(await reader.read(reader.entries[0])), /format/);
+  await reader.close();
+  await assert.rejects(decryptBackupFile(sealed, path.join(TMP, 'wrong.zip'), 'salah-sekali'), /Kata sandi salah|tidak lengkap/);
+});
+
+test('preview: what is inside the backup, before anything is written', async () => {  const preview = await previewBackup(zipFile);
   assert.equal(preview.format, 'adhit-office-backup');
   assert.equal(preview.version, 1);
   const toko = preview.projects.find((p) => p.folder === encodeProjectPath(cwdA.toko));
