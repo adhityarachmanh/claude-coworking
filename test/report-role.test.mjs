@@ -23,10 +23,12 @@ test('reportHtml: per-role table shows labels, tokens, share, cost and delegatio
     byRole: {
       totalTokens: 100,
       estimated: true,
+      coverage: { percent: 0.8, knownTokens: 80, unknownTokens: 20, sessionsWithTranscript: 3, sessions: 4 },
       note: 'Perkiraan dari proporsi transcript.',
       roles: [
         { role: 'backend', label: 'Backend Developer', tokens: 60, share: 0.6, costUsd: 0.6, costCoverage: 1, delegations: 2 },
-        { role: 'claude', label: 'Lead (utama)', tokens: 40, share: 0.4, costUsd: 0.4, costCoverage: 1, delegations: 0 },
+        { role: 'claude', label: 'Lead (utama)', tokens: 20, share: 0.2, costUsd: 0.2, costCoverage: 1, delegations: 0 },
+        { role: 'unknown', label: 'Tanpa rincian role', tokens: 20, share: 0.2, costUsd: 0.2, costCoverage: 1, delegations: 0 },
       ],
     },
   };
@@ -34,6 +36,7 @@ test('reportHtml: per-role table shows labels, tokens, share, cost and delegatio
   assert.match(html, /Per role/);
   assert.match(html, /Backend Developer/);
   assert.match(html, /Lead \(utama\)/);
+  assert.match(html, /Tanpa rincian role/);
   assert.match(html, /60\.0%/);
   assert.match(html, /Perkiraan dari proporsi transcript/);
   assert.match(html, />2<\/td>/, 'delegations column');

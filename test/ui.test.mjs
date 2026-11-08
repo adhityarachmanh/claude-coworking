@@ -590,6 +590,7 @@ function reportSummary(overrides = {}) {
     byRole: {
       totalTokens: 1000,
       estimated: true,
+      coverage: { percent: 0.8, knownTokens: 800, unknownTokens: 200, sessionsWithTranscript: 3, sessions: 4 },
       note: 'Perkiraan: total token/biaya laporan dibagi menurut proporsi token di transcript (main thread vs subagent).',
       roles: [
         { role: 'backend', label: 'Backend Developer', tokens: 600, share: 0.6, costUsd: 0.45, costCoverage: 0.6, delegations: 3 },
@@ -2975,6 +2976,7 @@ for (const vp of VIEWPORTS) {
                     byRole: {
                       totalTokens: 150,
                       estimated: true,
+                      coverage: { percent: 0.8, knownTokens: 120, unknownTokens: 30, sessionsWithTranscript: 2, sessions: 3 },
                       note: 'Perkiraan: total dibagi menurut proporsi transcript.',
                       roles: [
                         { role: 'backend', label: 'Backend Developer', tokens: 90, share: 0.6, costUsd: 0.9, costCoverage: 1, delegations: 1 },
@@ -2996,6 +2998,7 @@ for (const vp of VIEWPORTS) {
         assert.match(roleText, /Backend Developer/);
         assert.match(roleText, /Lead \(utama\)/);
         assert.match(roleText, /60%/, 'pangsa Backend 60%');
+        assert.match(roleText, /Cakupan: 80% token/, 'coverage line');
         const text = await page.eval(() => document.querySelector('#report-compare').textContent);
         assert.match(text, /token \+50%/);
         assert.match(text, /biaya \+50%/);

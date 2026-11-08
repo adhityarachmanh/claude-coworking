@@ -53,19 +53,38 @@ test('roleUsage: splits the ledger by transcript proportions, Lead gets the main
   assert.equal(byRole.qa.costUsd, 0.4);
   assert.equal(byRole.claude.costUsd, 0.4);
   assert.equal(result.roles.reduce((n, r) => n + r.tokens, 0), 1000, 'the table adds up to the ledger total');
+  assert.equal(result.coverage.percent, 1, 'all tokens have a transcript');
+  assert.equal(result.coverage.sessionsWithTranscript, 1);
   assert.doesNotMatch(JSON.stringify(result), /bocor|rahasia|percakapan/, 'no prompt or answer text is returned');
 });
 
-test('roleUsage: no transcript, or a session without a project, goes entirely to the Lead', async () => {
+test('roleUsage: a session without a transcript is "no detail", never silently the Lead', async () => {
   const { roleUsage } = await import('../src/role-usage.js');
   const missing = roleUsage([{ ...row, sessionId: '22222222-2222-4222-8222-222222222222' }], { hub, from: 0, to: Date.now() + 1000 });
   assert.equal(missing.roles.length, 1);
-  assert.equal(missing.roles[0].role, 'claude');
+  assert.equal(missing.roles[0].role, 'unknown');
+  assert.equal(missing.roles[0].label, 'Tanpa rincian role');
   assert.equal(missing.roles[0].tokens, 1000);
+  assert.equal(missing.coverage.percent, 0);
+  assert.equal(missing.coverage.sessionsWithTranscript, 0);
 
   const noProject = roleUsage([{ ...row, projectId: 'other', sessionId }], { hub, from: 0, to: Date.now() + 1000 });
-  assert.equal(noProject.roles[0].role, 'claude');
+  assert.equal(noProject.roles[0].role, 'unknown');
   assert.equal(noProject.roles[0].tokens, 1000);
+});
+
+test('roleUsage: OpenCode sessions without a transcript get their own honest row', async () => {
+  const { roleUsage } = await import('../src/role-usage.js');
+  const result = roleUsage([{ ...row, engine: 'opencode', sessionId: '44444444-4444-4444-8444-444444444444' }], {
+    hub,
+    from: 0,
+    to: Date.now() + 1000,
+  });
+  assert.equal(result.roles.length, 1);
+  assert.equal(result.roles[0].role, 'opencode-unknown');
+  assert.equal(result.roles[0].label, 'OpenCode (tanpa rincian role)');
+  assert.equal(result.coverage.percent, 0);
+  assert.equal(result.coverage.unknownTokens, 1000);
 });
 
 test('roleUsage: an unknown agent type is the freelancer, never silently a specialist', async () => {

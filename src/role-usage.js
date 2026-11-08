@@ -12,16 +12,26 @@ import path from 'node:path';
 import { CATALOG, GENERALIST, LEAD_ID } from './role-catalog.js';
 import { toRole } from './roles.js';
 import { transcriptDir } from './transcripts.js';
+import { engineOf } from './usage.js';
 
 const MAX_FILE_BYTES = 64 * 1024 * 1024; // a huge transcript is skipped, not loaded into the server
 const MAX_CACHED = 240;
-const MAX_SESSIONS = 120; // pathological reports fall back to Lead for the smallest sessions
-const cache = new Map(); // file + mtime + size + range -> { tokens }
+const MAX_SESSIONS = 120; // pathological reports fall back to "no detail" for the smallest sessions
+const UNKNOWN_ROLE = 'unknown';
+const OPENCODE_UNKNOWN_ROLE = 'opencode-unknown';
+const cache = new Map(); // file + mtime + size -> [{ ts, tokens }] (parsed once per file version)
 
 const usageTokens = (u) =>
   (u?.input_tokens ?? 0) + (u?.output_tokens ?? 0) + (u?.cache_creation_input_tokens ?? 0) + (u?.cache_read_input_tokens ?? 0);
 
-const roleLabel = (role) => (role === LEAD_ID ? 'Lead (utama)' : (CATALOG[role]?.title ?? role));
+const roleLabel = (role) =>
+  role === OPENCODE_UNKNOWN_ROLE
+    ? 'OpenCode (tanpa rincian role)'
+    : role === UNKNOWN_ROLE
+      ? 'Tanpa rincian role'
+      : role === LEAD_ID
+        ? 'Lead (utama)'
+        : (CATALOG[role]?.title ?? role);
 
 /** A subagent's agentType → an office role, without recording unknown names (a report must not change role memory). */
 function roleFor(agentType) {
@@ -32,11 +42,12 @@ function roleFor(agentType) {
 }
 
 /**
- * Assistant tokens in one transcript file within [from, to]. A line without a parseable timestamp is included (it
- * cannot be placed, and dropping it would distort the share). Cached by mtime/size/range; a live session invalidates
- * its old entry on the next append.
+ * Assistant tokens per line in one transcript file, with timestamps, cached by file version. Range filtering happens
+ * on every call, so repeated reports with a different `to` reuse the parse. A line without a parseable timestamp is
+ * kept with `ts: null` (it cannot be placed, and dropping it would distort the share).
+ * @returns {{ ts: number|null, tokens: number }[] | null}
  */
-function fileTokens(file, from, to) {
+function fileEntries(file) {
   let st;
   try {
     st = statSync(file);
@@ -44,7 +55,7 @@ function fileTokens(file, from, to) {
     return null;
   }
   if (!st.isFile() || st.size > MAX_FILE_BYTES) return null;
-  const key = `${file}|${st.mtimeMs}|${st.size}|${from}|${to}`;
+  const key = `${file}|${st.mtimeMs}|${st.size}`;
   if (cache.has(key)) return cache.get(key);
   let text;
   try {
@@ -52,7 +63,7 @@ function fileTokens(file, from, to) {
   } catch {
     return null;
   }
-  let tokens = 0;
+  const entries = [];
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     let row;
@@ -62,14 +73,23 @@ function fileTokens(file, from, to) {
       continue; // a torn line is skipped, like the other transcript readers
     }
     if (row.type !== 'assistant') continue;
+    const tokens = usageTokens(row.message?.usage);
+    if (!tokens) continue;
     const ts = Date.parse(row.timestamp ?? row.ts ?? '');
-    if (Number.isFinite(ts) && (ts < from || ts > to)) continue;
-    tokens += usageTokens(row.message?.usage);
+    entries.push({ ts: Number.isFinite(ts) ? ts : null, tokens });
   }
-  const out = { tokens };
-  cache.set(key, out);
+  cache.set(key, entries);
   if (cache.size > MAX_CACHED) cache.delete(cache.keys().next().value);
-  return out;
+  return entries;
+}
+
+/** Tokens in one file within [from, to]; untimestamped lines always count. */
+function fileTokens(file, from, to) {
+  const entries = fileEntries(file);
+  if (!entries) return null;
+  let tokens = 0;
+  for (const entry of entries) if (entry.ts == null || (entry.ts >= from && entry.ts <= to)) tokens += entry.tokens;
+  return { tokens };
 }
 
 function metaOf(file) {
@@ -129,46 +149,58 @@ const add = (map, role, tokens, costUsd, priced, delegations = 0) => {
 
 /**
  * Split the report's ledger rows per role. Rows are grouped by (project, session); each group's tokens and cost are
- * divided by the raw transcript proportions. Sessions without a readable transcript go entirely to the Lead.
+ * divided by the raw transcript proportions. A session without a readable transcript (OpenCode's own store, a deleted
+ * transcript, a session the mirror never saw) goes to the explicit **"Tanpa rincian role"** row — not to the Lead.
  * @param {object[]} rows ledger rows already filtered by account and period
  * @param {{ hub?: object, from?: number, to?: number }} options
- * @returns {{ roles: object[], totalTokens: number, note: string, estimated: true }}
+ * @returns {{ roles: object[], totalTokens: number, coverage: object, note: string, estimated: true }}
  */
 export function roleUsage(rows, { hub = null, from = 0, to = Date.now() } = {}) {
   const n = (v) => (Number.isFinite(v) ? v : 0);
   const groups = new Map();
   for (const row of rows) {
     const key = `${row.projectId ?? ''}|${row.sessionId ?? ''}`;
-    const g = groups.get(key) ?? { projectId: row.projectId ?? null, sessionId: row.sessionId ?? null, tokens: 0, costUsd: null };
+    const g = groups.get(key) ?? { projectId: row.projectId ?? null, sessionId: row.sessionId ?? null, tokens: 0, costUsd: null, engine: null };
     g.tokens += n(row.input) + n(row.output) + n(row.cacheRead) + n(row.cacheWrite);
     if (typeof row.costUsd === 'number') g.costUsd = (g.costUsd ?? 0) + row.costUsd;
+    const engine = engineOf(row);
+    if (!g.engine) g.engine = engine;
+    else if (g.engine !== engine) g.engine = 'mixed';
     groups.set(key, g);
   }
-  // Pathological report: keep the biggest sessions, the rest is Lead-only.
+  // Pathological report: keep the biggest sessions, the rest is explicitly "no detail" (never guessed).
   const list = [...groups.values()].sort((a, b) => b.tokens - a.tokens);
   const used = list.slice(0, MAX_SESSIONS);
   const skipped = list.slice(MAX_SESSIONS);
   const totals = new Map();
   let totalTokens = 0;
-  for (const g of [...used, ...skipped]) {
+  let knownTokens = 0;
+  let unknownTokens = 0;
+  let sessionsKnown = 0;
+  for (const g of used) {
     totalTokens += g.tokens;
     if (g.tokens <= 0) continue;
     const projectPath = g.projectId ? hub?.projects?.get?.(g.projectId)?.path ?? null : null;
     const shares = g.sessionId ? sharesForSession(projectPath, g.sessionId, from, to) : null;
-    if (!shares) {
-      add(totals, LEAD_ID, g.tokens, g.costUsd, g.costUsd != null);
+    const rawTotal = shares ? shares.lead + [...shares.sub.values()].reduce((sum, x) => sum + x.tokens, 0) : 0;
+    if (!shares || !(rawTotal > 0)) {
+      add(totals, g.engine === 'opencode' ? OPENCODE_UNKNOWN_ROLE : UNKNOWN_ROLE, g.tokens, g.costUsd, g.costUsd != null);
+      unknownTokens += g.tokens;
       continue;
     }
-    const rawTotal = shares.lead + [...shares.sub.values()].reduce((sum, x) => sum + x.tokens, 0);
-    if (!(rawTotal > 0)) {
-      add(totals, LEAD_ID, g.tokens, g.costUsd, g.costUsd != null);
-      continue;
-    }
+    sessionsKnown += 1;
+    knownTokens += g.tokens;
     add(totals, LEAD_ID, (g.tokens * shares.lead) / rawTotal, g.costUsd == null ? null : (g.costUsd * shares.lead) / rawTotal, g.costUsd != null);
     for (const [role, x] of shares.sub) {
       const share = x.tokens / rawTotal;
       add(totals, role, g.tokens * share, g.costUsd == null ? null : g.costUsd * share, g.costUsd != null, x.agents);
     }
+  }
+  for (const g of skipped) {
+    totalTokens += g.tokens;
+    if (g.tokens <= 0) continue;
+    add(totals, g.engine === 'opencode' ? OPENCODE_UNKNOWN_ROLE : UNKNOWN_ROLE, g.tokens, g.costUsd, g.costUsd != null);
+    unknownTokens += g.tokens;
   }
   const roles = [...totals.values()]
     .filter((r) => r.tokens > 0)
@@ -182,12 +214,22 @@ export function roleUsage(rows, { hub = null, from = 0, to = Date.now() } = {}) 
       delegations: r.delegations,
     }))
     .sort((a, b) => b.tokens - a.tokens);
+  const sessions = list.filter((g) => g.tokens > 0).length;
+  const percent = totalTokens > 0 ? knownTokens / totalTokens : 0;
   return {
     roles,
     totalTokens: Math.round(totalTokens),
+    coverage: {
+      percent,
+      knownTokens: Math.round(knownTokens),
+      unknownTokens: Math.round(unknownTokens),
+      sessionsWithTranscript: sessionsKnown,
+      sessions,
+    },
     estimated: true,
     note:
-      'Perkiraan: total token/biaya laporan dibagi menurut proporsi token di transcript (main thread vs subagent). ' +
-      'Cache read dan sesi tanpa transcript bisa membuat angka per role tidak presisi; jumlah tabel tetap sama dengan total laporan.',
+      `Rincian role tersedia untuk ${Math.round(percent * 100)}% token (${sessionsKnown} dari ${sessions} sesi). ` +
+      'Sisanya masuk "OpenCode (tanpa rincian role)" atau "Tanpa rincian role"—transcript subagent-nya tidak tersedia. ' +
+      'Total tabel tetap sama dengan total laporan; cache read membuat pembagiannya perkiraan.',
   };
 }

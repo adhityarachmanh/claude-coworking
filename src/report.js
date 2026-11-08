@@ -118,7 +118,12 @@ function roleSection(summary) {
         `<tr><td>${esc(r.label ?? r.role)}</td><td><b>${num(r.tokens)}</b></td><td>${pct(r.share ?? 0)}</td><td>${esc(costCell(r))}</td><td>${num(r.delegations ?? 0)}</td></tr>`,
     )
     .join('');
+  const cov = summary.byRole?.coverage;
+  const coverage = cov
+    ? `<p class="muted">Cakupan: ${pct(cov.percent ?? 0)} token (${num(cov.sessionsWithTranscript ?? 0)} dari ${num(cov.sessions ?? 0)} sesi) punya rincian transcript. "OpenCode (tanpa rincian role)" dan "Tanpa rincian role" mencakup sesi yang transcript subagent-nya tidak tersedia.</p>`
+    : '';
   return `<h2>Per role <span class="muted">(perkiraan)</span></h2>
+  ${coverage}
   <table class="sub">
     <thead><tr><th>Role</th><th>Total</th><th>%</th><th>Biaya</th><th>Delegasi</th></tr></thead>
     <tbody>${rows}</tbody>

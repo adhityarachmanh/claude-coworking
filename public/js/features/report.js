@@ -261,6 +261,9 @@ function renderReportRoles(byRole) {
     return;
   }
   const total = Number(byRole.totalTokens) || roles.reduce((n, r) => n + (Number(r.tokens) || 0), 0);
+  const coverage = byRole.coverage
+    ? `<p class="muted small">Cakupan: ${Math.round((Number(byRole.coverage.percent) || 0) * 100)}% token (${fmtNum(byRole.coverage.sessionsWithTranscript ?? 0)} dari ${fmtNum(byRole.coverage.sessions ?? 0)} sesi) punya rincian transcript. "OpenCode (tanpa rincian role)" dan "Tanpa rincian role" mencakup sesi yang transcript subagent-nya tidak tersedia.</p>`
+    : '';
   const rows = roles
     .slice(0, 12)
     .map(
@@ -269,6 +272,7 @@ function renderReportRoles(byRole) {
     )
     .join('');
   box.innerHTML = `<h4 class="report-sub">Per role <span class="muted">(perkiraan)</span></h4>
+    ${coverage}
     <table class="usage-table"><thead><tr><th>Role</th><th>Token</th><th>%</th><th>Biaya</th><th>Delegasi</th></tr></thead><tbody>${rows}</tbody></table>
     <p class="muted small">${escapeHtml(byRole.note ?? '')}</p>`;
   box.hidden = false;
