@@ -120,11 +120,55 @@ function createCard(s) {
 
 // ---------- drawing ----------
 
+/** The saved turn limit (0 = unbounded); anything malformed reads as no limit. */
+function concurrencyLimit() {
+  const n = Number(state.config?.concurrency?.maxConcurrent ?? 0);
+  return Number.isInteger(n) && n >= 0 && n <= 8 ? n : 0;
+}
+
+/** The real projects working right now (the demo office never counts, and nothing is asked of the server). */
+function busyProjects() {
+  // Only server-run turns count: a CLI turn in a terminal is not limited by the governor (src/concurrency.js).
+  return state.projects.filter((p) => p && p.id !== DEMO_ID && state.statuses[p.id]?.busy);
+}
+
+/**
+ * The ⚡ badge in the dialog title: "2/3" of the turn limit in use, red when it is full, with the working projects in
+ * the tooltip/screen-reader label. Returns the short text for the phone bar, or '' when there is no limit.
+ */
+function renderCapacity() {
+  const badge = $('#dash-capacity');
+  if (!badge) return '';
+  const limit = concurrencyLimit();
+  if (limit <= 0) {
+    if (!badge.hidden) badge.hidden = true;
+    if (badge.textContent) badge.textContent = '';
+    if (badge.hasAttribute('title')) badge.removeAttribute('title');
+    if (badge.hasAttribute('aria-label')) badge.removeAttribute('aria-label');
+    badge.classList.remove('full');
+    return '';
+  }
+  const busy = busyProjects();
+  const text = `⚡ ${busy.length}/${limit}`;
+  const names = busy.slice(0, 3).map((p) => String(p.name || projectName(p.id)));
+  const more = busy.length > names.length ? ` +${busy.length - names.length} lain` : '';
+  const label = names.length ? `${busy.length} dari ${limit} project sedang bekerja: ${names.join(', ')}${more}.` : `Belum ada project yang bekerja. Batas ${limit} project bersamaan.`;
+  if (badge.textContent !== text) badge.textContent = text;
+  if (badge.title !== label) {
+    badge.title = label;
+    badge.setAttribute('aria-label', label);
+  }
+  badge.classList.toggle('full', busy.length >= limit);
+  if (badge.hidden) badge.hidden = false;
+  return text;
+}
+
 function renderBar(list) {
   const bar = $('#dash-bar');
   if (!bar) return;
   const c = countGroups(list);
-  const text = countsText(c);
+  const cap = renderCapacity();
+  const text = cap ? `${countsText(c)} · ${cap}` : countsText(c);
   if (text === dashboard.barText) return;
   dashboard.barText = text;
   $('#dash-bar-sum').textContent = text;

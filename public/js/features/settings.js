@@ -2,7 +2,7 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { engineLabel, engineOf } from '../core/engine-caps.js';
-import { APP_NAME, DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
+import { APP_NAME, DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { loadBudgetView, syncBudgetSection } from './budget.js';
 import { syncHealthButton } from './health.js';
@@ -84,6 +84,96 @@ export function selectSettingsTab(tab = settingsTab) {
   if (!$('#settings-modal')?.hidden && tab === 'umum') loadBudgetView();
   // ⏰ Tugas terjadwal: refresh the project list and the stored schedules when its tab is shown.
   if (!$('#settings-modal')?.hidden && tab === 'jadwal') openRoutines();
+}
+
+// ---------- ⚡ Batas giliran bersamaan (POST /api/concurrency/save, laptop only) ----------
+
+let concurrencySaving = false;
+let concurrencyDirty = false; // the user typed here: a config push must not overwrite it before Simpan
+
+/** The saved turn limit; anything malformed reads as the server default (3). */
+function configConcurrencyLimit() {
+  const n = Number(state.config?.concurrency?.maxConcurrent ?? 3);
+  return Number.isInteger(n) && n >= 0 && n <= 8 ? n : 3;
+}
+
+/** Names of the projects working right now (the demo office never counts; CLI-only turns are not limited). */
+function busyProjectNames() {
+  return state.projects
+    .filter((p) => p && p.id !== DEMO_ID && state.statuses[p.id]?.busy)
+    .map((p) => String(p.name || projectName(p.id)));
+}
+
+/** "Saat ini 2 dari 3 project sedang bekerja." — the queue still waits when the limit is reached. */
+function syncConcurrencyHint() {
+  const hint = $('#max-concurrent-hint');
+  if (!hint || $('#settings-modal')?.hidden) return;
+  const limit = configConcurrencyLimit();
+  const text = limit > 0 ? `Saat ini ${busyProjectNames().length} dari ${limit} project sedang bekerja.` : 'Tanpa batas — semua project boleh bekerja bersamaan.';
+  if (hint.textContent !== text) hint.textContent = text; // only touch the DOM when the sentence really changed
+}
+
+/** Writes the saved limit into the field, never over what the user is typing. */
+function fillConcurrencyInput() {
+  const input = $('#max-concurrent');
+  if (!input || concurrencyDirty || document.activeElement === input) return;
+  const value = String(configConcurrencyLimit());
+  if (input.value !== value) input.value = value;
+}
+
+/**
+ * Shows/hides the section (a phone on plain WiFi may not save it) and refreshes the hint. `fill` also writes the
+ * saved value into the field: only when the config arrives or the dialog opens, not on every status tick.
+ */
+export function syncConcurrencySection({ fill = false } = {}) {
+  const section = $('#concurrency-section');
+  if (!section) return;
+  const blocked = Boolean(state.readOnly);
+  section.hidden = blocked;
+  const input = $('#max-concurrent');
+  if (input) {
+    input.disabled = blocked || concurrencySaving;
+    input.title = blocked ? READ_ONLY_HINT : '';
+  }
+  const btn = $('#max-concurrent-save');
+  if (btn) {
+    btn.disabled = blocked || concurrencySaving;
+    const label = concurrencySaving ? '⏳ Menyimpan…' : 'Simpan';
+    if (btn.textContent !== label) btn.textContent = label;
+    btn.title = blocked ? READ_ONLY_HINT : '';
+  }
+  if (fill) fillConcurrencyInput();
+  syncConcurrencyHint();
+}
+
+/** The field as an integer 0..8, or null when it is empty, fractional or out of range. */
+function readConcurrencyLimit() {
+  const raw = String($('#max-concurrent')?.value ?? '').trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  return n <= 8 ? n : null;
+}
+
+async function saveConcurrencyLimit() {
+  if (state.readOnly) return toast(READ_ONLY_HINT, 'warn');
+  if (concurrencySaving) return;
+  const n = readConcurrencyLimit();
+  if (n == null) return toast('Maksimal giliran harus angka bulat 0 sampai 8.', 'warn');
+  concurrencySaving = true;
+  syncConcurrencySection();
+  try {
+    const res = await api('/api/concurrency/save', { maxConcurrent: n });
+    const saved = Number(res?.maxConcurrent);
+    const value = Number.isInteger(saved) && saved >= 0 && saved <= 8 ? saved : n;
+    state.config = { ...(state.config ?? {}), concurrency: { ...(state.config?.concurrency ?? {}), maxConcurrent: value } };
+    concurrencyDirty = false;
+    toast(value > 0 ? `Batas giliran bersamaan disimpan: ${value} project.` : 'Batas giliran bersamaan disimpan: tanpa batas.', 'ok');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    concurrencySaving = false;
+    syncConcurrencySection({ fill: true });
+  }
 }
 
 // ---------- 🔀 Mesin project (Stage 1: one engine per project) ----------
@@ -191,6 +281,7 @@ export function renderRoots(config) {
   state.config = config;
   $('#autostart-row').hidden = !config.autostart?.supported;
   $('#autostart').checked = Boolean(config.autostart?.enabled);
+  syncConcurrencySection({ fill: true }); // ⚡ a config push (this or another device) shows the saved limit
   if (!$('#settings-modal').hidden) return; // don't clobber what the user is typing
   $('#roots-input').value = config.roots.join('\n');
   $('#roots-hint').textContent = config.usingDefault
@@ -234,6 +325,8 @@ export function initSettings() {
     syncBudgetSection(); // same for the 💰 budget section (read-only page: hidden)
     syncProjectEngine(); // 🔀 the active project's engine, before the dialog is painted
     openModal('settings-modal');
+    concurrencyDirty = false; // a fresh open shows the saved limit, not a leftover draft
+    syncConcurrencySection({ fill: true }); // ⚡ the saved turn limit + who is working right now (needs the dialog open)
     // After the other #btn-settings listeners (Spotify shows/hides its section): pick a tab that is available.
     requestAnimationFrame(() => selectSettingsTab());
   });
@@ -263,6 +356,17 @@ export function initSettings() {
       toast(err.message);
     }
   });
+
+  $('#max-concurrent').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveConcurrencyLimit();
+    }
+  });
+  $('#max-concurrent').addEventListener('input', () => {
+    concurrencyDirty = true;
+  });
+  $('#max-concurrent-save').addEventListener('click', saveConcurrencyLimit);
 
   $('#project-engine-opts').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-project-engine]');

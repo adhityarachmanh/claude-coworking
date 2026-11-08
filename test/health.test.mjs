@@ -1,7 +1,7 @@
 // src/health.js: the system-health report (🩺 /api/health) against a fake ctx and a throwaway data dir.
 // No server, no CLI: the log tail, the data size, every warn path and the "never throws" promise.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, truncateSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
@@ -9,6 +9,7 @@ import { buildHealth } from '../src/health.js';
 
 const NOW = Date.parse('2026-11-05T03:00:00.000Z');
 const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 const MAX_BYTES = 1024 ** 3;
 
 const temps = [];
@@ -77,7 +78,21 @@ test('health: a healthy office is all green', () => {
   const files = { 'state.json': 'a'.repeat(2048), 'chats/toko.jsonl': 'b'.repeat(1024) };
   const log = [infoLine(NOW - 2 * HOUR, 'mulai'), infoLine(NOW - 10 * 60_000, 'siap')];
   const dataDir = makeData({ files, log });
-  const health = buildHealth(fakeCtx({ dataDir }), { now: NOW });
+  // A real scheduled backup: the check now verifies the file still exists and is not older than the schedule.
+  const backupDir = tempDir();
+  const backupName = 'adhit-office-backup-auto-20261105-020000.zip';
+  const backupFile = path.join(backupDir, backupName);
+  writeFileSync(backupFile, 'x'.repeat(2048));
+  utimesSync(backupFile, new Date(NOW - HOUR), new Date(NOW - HOUR));
+  const backupScheduler = {
+    view: () => ({
+      schedule: { enabled: true, frequency: 'daily', weekday: 1, time: '02:00', folder: backupDir, keep: 7 },
+      last: { at: NOW - HOUR, ok: true, name: backupName },
+      running: false,
+      nextAt: NOW + HOUR,
+    }),
+  };
+  const health = buildHealth(fakeCtx({ dataDir, backupScheduler }), { now: NOW });
 
   assert.equal(health.at, NOW);
   assert.equal(health.app.version, '9.9.9');
@@ -97,7 +112,7 @@ test('health: a healthy office is all green', () => {
   assert.equal(checkOf(health, 'claude').detail, 'tester@example.com · paket team');
   assert.equal(checkOf(health, 'opencode').detail, 'Terpasang · v1.2.3');
   assert.equal(checkOf(health, 'projects').detail, '1 folder root · 1 project');
-  assert.equal(checkOf(health, 'backup').detail, 'Terakhir 1 jam lalu · adhit-office-backup-auto-20261105-020000.zip');
+  assert.equal(checkOf(health, 'backup').detail, 'Terakhir 1 jam lalu · adhit-office-backup-auto-20261105-020000.zip · 2,0 KB');
   assert.equal(checkOf(health, 'remote').detail, 'Menyala · 2 perangkat · HTTPS laptop.tail.ts.net');
   assert.equal(checkOf(health, 'errors').detail, 'Tidak ada error dalam 24 jam terakhir');
 
@@ -332,4 +347,81 @@ test('💰 budget: only a set limit adds the check; ok below 80 %, warn 80–100
   // ctx.ledger missing: the report still comes back, the window simply spends $0 (never a throw)
   const missing = checkOf(buildHealth(ctxWith({ dailyUsd: 20 }, { ledger: undefined }), { now: NOW }), 'budget');
   assert.deepEqual([missing.ok, missing.detail], [true, 'hari ini $0,00 / $20,00 (0%)']);
+});
+
+test('health: the backup file must still exist and be fresh', () => {
+  const dataDir = makeData({ files: { 'state.json': 'x' } });
+  const backupDir = tempDir();
+  const name = 'adhit-office-backup-auto-20261102-020000.zip';
+  const file = path.join(backupDir, name);
+  writeFileSync(file, 'x'.repeat(64));
+  utimesSync(file, new Date(NOW - 3 * HOUR), new Date(NOW - 3 * HOUR));
+  const scheduler = (last, folder = backupDir) => ({
+    view: () => ({ schedule: { enabled: true, frequency: 'daily', weekday: 1, time: '02:00', folder, keep: 7 }, last, running: false, nextAt: NOW + HOUR }),
+  });
+
+  const fresh = checkOf(buildHealth(fakeCtx({ dataDir, backupScheduler: scheduler({ at: NOW - 3 * HOUR, ok: true, name }) }), { now: NOW }), 'backup');
+  assert.equal(fresh.ok, true, fresh.detail);
+
+  utimesSync(file, new Date(NOW - 3 * DAY), new Date(NOW - 3 * DAY));
+  const stale = checkOf(buildHealth(fakeCtx({ dataDir, backupScheduler: scheduler({ at: NOW - 3 * DAY, ok: true, name }) }), { now: NOW }), 'backup');
+  assert.equal(stale.ok, false);
+  assert.equal(stale.warn, true);
+  assert.match(stale.detail, /3 hari lalu/);
+  assert.match(stale.hint, /harian/);
+
+  const missing = checkOf(buildHealth(fakeCtx({ dataDir, backupScheduler: scheduler({ at: NOW - HOUR, ok: true, name }, tempDir()) }), { now: NOW }), 'backup');
+  assert.equal(missing.ok, false);
+  assert.match(missing.detail, /tidak ditemukan/);
+});
+
+test('health: backup freshness follows the schedule (daily 36 h, weekly 8 days)', () => {
+  const dataDir = makeData({ files: { 'state.json': 'x' } });
+  const backupDir = tempDir();
+  const name = 'adhit-office-backup-auto-20261103-020000.zip';
+  const file = path.join(backupDir, name);
+  writeFileSync(file, 'x'.repeat(64));
+  const at = (ms) => utimesSync(file, new Date(ms), new Date(ms));
+  const check = (frequency, ageMs) => {
+    at(NOW - ageMs);
+    const scheduler = {
+      view: () => ({ schedule: { enabled: true, frequency, weekday: 1, time: '02:00', folder: backupDir, keep: 7 }, last: { at: NOW - ageMs, ok: true, name }, running: false, nextAt: NOW + HOUR }),
+    };
+    return checkOf(buildHealth(fakeCtx({ dataDir, backupScheduler: scheduler }), { now: NOW }), 'backup');
+  };
+
+  // A daily backup is allowed up to 36 h (a missed 02:00 slot still runs at the next check); older is a warning.
+  assert.equal(check('daily', 35 * HOUR).ok, true, '35 jam masih segar untuk jadwal harian');
+  const dailyStale = check('daily', 37 * HOUR);
+  assert.deepEqual([dailyStale.ok, dailyStale.warn], [false, true], '37 jam sudah lewat jadwal harian');
+  assert.match(dailyStale.hint, /harian/);
+
+  // Weekly: 8 days is the limit, 7 days is still fine.
+  assert.equal(check('weekly', 7 * DAY).ok, true, '7 hari masih segar untuk jadwal mingguan');
+  const weeklyStale = check('weekly', 9 * DAY);
+  assert.deepEqual([weeklyStale.ok, weeklyStale.warn], [false, true], '9 hari sudah lewat jadwal mingguan');
+  assert.match(weeklyStale.hint, /mingguan/);
+  assert.doesNotMatch(weeklyStale.hint, /harian/);
+});
+
+test('health: the 7-day metrics are part of the report', () => {
+  const dataDir = makeData({ files: { 'state.json': 'x' } });
+  const metrics = {
+    view: () => ({
+      today: { turns: 2, ok: 1, failed: 1, avgTurnMs: 2000, queueStarted: 3, waitP50Ms: 100, waitP95Ms: 900, waitSamples: 2, capacityQueued: 1, capacityRefused: 0 },
+      days: [],
+      restarts: { count: 3, lastAt: NOW - HOUR },
+    }),
+  };
+  const health = buildHealth(fakeCtx({ dataDir, metrics }), { now: NOW });
+  assert.equal(health.metrics.today.turns, 2);
+  assert.equal(health.metrics.today.waitP95Ms, 900);
+  assert.equal(health.metrics.restarts.count, 3);
+});
+
+test('health: a broken metrics service is null, never a failed report', () => {
+  const dataDir = makeData({ files: { 'state.json': 'x' } });
+  const health = buildHealth(fakeCtx({ dataDir, metrics: { view: () => { throw new Error('rusak'); } } }), { now: NOW });
+  assert.equal(health.metrics, null);
+  assert.equal(Array.isArray(health.checks), true);
 });

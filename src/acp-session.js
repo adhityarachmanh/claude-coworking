@@ -12,6 +12,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { attachmentChips } from './attachments.js';
 import { budgetStop, consumeBudgetOverride } from './budget.js';
+import { checkTurn, overCapacity } from './concurrency.js';
 import { PERMISSION_MODES } from './hub.js';
 import { OPENCODE_ACCOUNT } from './opencode-account.js';
 import { describeTool, inferRole } from './roles.js';
@@ -425,7 +426,22 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.dropPlanCard(); // a new prompt instead of an answer: the plan card is stale
       this.hub.clearInterrupted(this.id);
       const uuid = randomUUID();
-      const chatId = this.hub.chat(this.id, { kind: 'user', text, source: 'web', attachments: attachments.length ? attachmentChips(attachments) : undefined, queued: this.busy || undefined, uuid, ...extra });
+      const { queueChatId, ...fields } = extra ?? {};
+      // A prompt queued at the global turn limit already has its bubble: fill that one in, never a second one.
+      const queued = typeof queueChatId === 'string' ? this.hub.rt(this.id).chat.findLast((m) => m.id === queueChatId) : null;
+      let chatId;
+      if (queued) {
+        chatId = queued.id;
+        this.hub.updateChat(this.id, chatId, {
+          queued: false,
+          queuePosition: null,
+          uuid,
+          ...(fields.autoEffort && { autoEffort: fields.autoEffort }),
+          ...(fields.autoModel && { autoModel: fields.autoModel }),
+        });
+      } else {
+        chatId = this.hub.chat(this.id, { kind: 'user', text, source: 'web', attachments: attachments.length ? attachmentChips(attachments) : undefined, queued: this.busy || undefined, uuid, ...fields });
+      }
       if (!this.m.opencode) {
         this.hub.updateChat(this.id, chatId, { queued: false, cancelled: true });
         this.hub.chat(this.id, { kind: 'error', text: 'OpenCode tidak ditemukan. Pasang dengan `npm i -g @opencode/cli`, atau set env OPENCODE_BIN.' });
@@ -494,7 +510,14 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (rejection && !next) {
         this.hub.chat(this.id, { kind: 'info', text: '✕ Izin ditolak: OpenCode menghentikan gilirannya, jadi dilanjutkan dengan catatan penolakan (seperti Claude Code).' });
         // after this turn has fully let go (busy cleared), so the note starts now instead of waiting in the queue
-        setTimeout(() => epoch === this.epoch && !this.shuttingDown && this.prompt(rejectedPrompt(rejection.label, rejection.reason)), 0);
+        setTimeout(() => {
+          if (epoch !== this.epoch || this.shuttingDown) return;
+          if (overCapacity(this.hub)) {
+            this.hub.chat(this.id, { kind: 'info', level: 'warning', text: '⏸ Batas giliran bersamaan tercapai — catatan penolakan tidak dikirim otomatis. Kirim pesan lagi setelah satu giliran selesai.' });
+            return;
+          }
+          this.prompt(rejectedPrompt(rejection.label, rejection.reason));
+        }, 0);
       }
       // 📋 Rencana dulu: OpenCode's plan agent has no "exit plan" tool, so the finished plan turn gets the
       // approval card Claude's ExitPlanMode shows (not when more prompts are already waiting).
@@ -541,6 +564,13 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
             return;
           }
         }
+        // Defence in depth for a decision that arrives outside the web route (the concurrency limit still applies).
+        const gate = checkTurn(this.hub, this.id, this);
+        if (gate) {
+          this.hub.chat(this.id, { kind: 'info', level: 'warning', text: gate.body.error });
+          if (plan) this.offerPlan(plan); // keep the card, so the build is not lost
+          return;
+        }
         // The web route already classified this plan (preparedAuto); a phone notification answers directly, so only
         // then does this path classify. Never both: that would cost two classifier calls and print two info lines.
         let auto = decision.preparedAuto ?? null;
@@ -559,6 +589,12 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         const stop = budgetStop(this.m.hub, this.m.ledger, Date.now(), this.id);
         if (stop && !consumeBudgetOverride(this.m.hub)) {
           this.hub.chat(this.id, { kind: 'info', level: 'warning', text: stop.message });
+          return;
+        }
+        const gate = checkTurn(this.hub, this.id, this);
+        if (gate) {
+          this.hub.chat(this.id, { kind: 'info', level: 'warning', text: gate.body.error });
+          if (plan) this.offerPlan(plan);
           return;
         }
         const note = `Revisi rencananya: ${decision.message.trim()}`;

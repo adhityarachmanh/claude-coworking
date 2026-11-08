@@ -11,6 +11,7 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { budgetView, cleanLimits, hasBudget, WINDOW_UNITS } from './budget.js';
+import { latestAutoBackupSync } from './backup-schedule.js';
 
 const DAY_MS = 86_400_000;
 const LOG_TAIL_BYTES = 256 * 1024;
@@ -152,7 +153,8 @@ function dataUsage(dir) {
  * @returns {{ at: number, app: { version: string, pid: number, uptimeSec: number, engine: string, port: number|null },
  *   checks: { id: string, label: string, ok: boolean, warn?: boolean, detail: string, hint?: string }[],
  *   checklist: { id: string, label: string, done: boolean, hint: string }[],
- *   errors: { count24h: number, last: string|null }, data: { bytes: number, files: number, dir: string } }}
+ *   errors: { count24h: number, last: string|null }, data: { bytes: number, files: number, dir: string },
+ *   metrics: object|null }}
  */
 export function buildHealth(ctx = {}, { now = Date.now() } = {}) {
   const c = ctx ?? {};
@@ -235,8 +237,26 @@ export function buildHealth(ctx = {}, { now = Date.now() } = {}) {
         const reason = clip(last.error, 120);
         return { ok: false, warn: true, detail: `Gagal ${agoLabel(at, last.at)}${reason ? `: ${reason}` : ''}`, hint: 'Periksa folder tujuan, lalu jalankan lagi dari ⚙ → Cadangkan riwayat.' };
       }
-      const name = oneLine(last.name);
-      return { ok: true, detail: [`Terakhir ${agoLabel(at, last.at)}`, name].filter(Boolean).join(' · ') };
+      // A successful last run is not enough: the file itself must still be there and not older than the schedule.
+      const fresh = safe(() => latestAutoBackupSync(schedule.folder), null);
+      if (!fresh) {
+        return {
+          ok: false,
+          warn: true,
+          detail: 'File backup tidak ditemukan di folder tujuan',
+          hint: 'Folder mungkin dipindah atau file dihapus. Jalankan "Jalankan sekarang" dari ⚙ → Cadangkan riwayat.',
+        };
+      }
+      const maxAge = schedule.frequency === 'weekly' ? 8 * DAY_MS : 36 * 3_600_000;
+      if (at - fresh.at > maxAge) {
+        return {
+          ok: false,
+          warn: true,
+          detail: `Terakhir ${agoLabel(at, fresh.at)} · ${oneLine(fresh.name)}`,
+          hint: `Lebih lama dari jadwal ${schedule.frequency === 'weekly' ? 'mingguan' : 'harian'}. Periksa folder tujuan, lalu jalankan lagi dari ⚙ → Cadangkan riwayat.`,
+        };
+      }
+      return { ok: true, detail: [`Terakhir ${agoLabel(at, fresh.at)}`, oneLine(fresh.name), sizeLabel(fresh.bytes)].filter(Boolean).join(' · ') };
     }),
 
     run('remote', 'Akses HP', () => {
@@ -287,5 +307,6 @@ export function buildHealth(ctx = {}, { now = Date.now() } = {}) {
     checklist,
     errors,
     data: { bytes: data.bytes, files: data.files, dir: dataDir },
+    metrics: safe(() => c.metrics?.view?.(at) ?? null),
   };
 }

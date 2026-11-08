@@ -70,7 +70,15 @@ test('daySummary: today’s totals, coverage, projects and sessions from every a
   assert.deepEqual([t.projects, t.sessions], [1, 1]);
   assert.deepEqual(t.top, [{ projectId: 'p1', turns: 2, tokens: 170, costUsd: 0.5 }]);
   assert.equal(daySummary(ledger, now + 86_400_000).rows, 0, 'a new day starts empty');
-  assert.deepEqual(daySummary(null, now), { from: periodStart(now, 'day'), rows: 0, costUsd: null, costCoverage: 0, turns: 0, tokens: 0, projects: 0, sessions: 0, top: [] });
+  // An empty ledger still carries the 7-day trend (the dashboard sparkline); assert its shape, not a brittle full object.
+  const empty = daySummary(null, now);
+  assert.deepEqual(
+    [empty.from, empty.rows, empty.costUsd, empty.costCoverage, empty.turns, empty.tokens, empty.projects, empty.sessions],
+    [periodStart(now, 'day'), 0, null, 0, 0, 0, 0, 0],
+  );
+  assert.deepEqual(empty.top, []);
+  assert.equal(empty.trend.length, 7, 'the empty 7-day trend is still there');
+  assert.equal(empty.trend.every((d) => d.turns === 0 && d.tokens === 0 && d.costUsd === null), true);
 });
 
 test('ledger keeps accounts apart', () => {

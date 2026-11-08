@@ -43,9 +43,10 @@ export const READ_ONLY_ERROR = 'Lewat WiFi hanya bisa melihat. Pakai laptop atau
 // `permissions` can hold exact commands (tokens included) — over sniffable HTTP that is too much; Tailscale only.
 // `/api/team/roster` reads the active team + role catalog (👥 Kelola tim); saving it (`/api/team/roster/save`) is an action.
 // `/api/files/search` is the same project file-name index as `.../files`, across projects (Ctrl+P); names only.
+// `/api/queues` is the read-only global queue view (the same prompt texts each project's queue read already exposes).
 // ♪ Spotify: only the now-playing state and its album art (already audible in the room). Devices and playlist names
 // (personal data) and every control stay off sniffable WiFi (docs/design-spotify.md §2.1).
-const WIFI_READ_GLOBAL = new Set(['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', '/api/report/pdf', '/api/templates', '/api/team/roster', '/api/spotify/state', '/api/spotify/art', '/api/files/search']);
+const WIFI_READ_GLOBAL = new Set(['/api/account', '/api/account/limits', '/api/report/accounts', '/api/report/summary', '/api/report/pdf', '/api/templates', '/api/team/roster', '/api/spotify/state', '/api/spotify/art', '/api/files/search', '/api/queues']);
 const WIFI_READ_PROJECT = /^\/api\/projects\/[\w-]+\/(changes|diff|git-branches|file|files|sessions|rewind-points|task-output|task-detail|queue)$/;
 
 /** True when a paired device on plain WiFi (read-only) may call this API path. */

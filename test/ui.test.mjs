@@ -587,6 +587,16 @@ function reportSummary(overrides = {}) {
     ],
     byPeriod: [period],
     topSessions: [],
+    byRole: {
+      totalTokens: 1000,
+      estimated: true,
+      note: 'Perkiraan: total token/biaya laporan dibagi menurut proporsi token di transcript (main thread vs subagent).',
+      roles: [
+        { role: 'backend', label: 'Backend Developer', tokens: 600, share: 0.6, costUsd: 0.45, costCoverage: 0.6, delegations: 3 },
+        { role: 'claude', label: 'Lead (utama)', tokens: 300, share: 0.3, costUsd: 0.225, costCoverage: 0.6, delegations: 0 },
+        { role: 'qa', label: 'QA Engineer', tokens: 100, share: 0.1, costUsd: 0.075, costCoverage: 0.6, delegations: 1 },
+      ],
+    },
     ...overrides,
   };
 }
@@ -2062,12 +2072,12 @@ for (const vp of VIEWPORTS) {
         const labels = await page.eval(() => [...document.querySelectorAll('#report-engines tbody tr td:first-child')].map((td) => td.textContent));
         assert.deepEqual(labels, ['Claude · Web', 'OpenCode · Web', 'OpenCode · Terminal'], 'baris records 0 tidak tampil');
 
-        // An older server sends no byEngineSource at all: the block disappears, the rest stays.
-        await page.eval((p) => (window.__reportPayload = p), reportSummary({ byEngineSource: undefined, totals: { ...reportSummary().totals, costUsd: null, costCoverage: 0 } }));
+        // An older server sends no byEngineSource at all: that block disappears, the rest (including the role table) stays.
+        await page.eval((p) => (window.__reportPayload = p), reportSummary({ byEngineSource: undefined, byRole: undefined, totals: { ...reportSummary().totals, costUsd: null, costCoverage: 0 } }));
         await page.click('#report-periods [data-period="30"]');
         await page.waitFor(
-          () => document.querySelector('#report-engines').hidden && document.querySelector('#report-kpis .kpi-hint')?.textContent === 'belum ada biaya tercatat',
-          { timeoutMs: 4000, message: 'tanpa byEngineSource: blok hilang, petunjuk biaya muncul' },
+          () => document.querySelector('#report-engines').hidden && document.querySelector('#report-roles').hidden && document.querySelector('#report-kpis .kpi-hint')?.textContent === 'belum ada biaya tercatat',
+          { timeoutMs: 4000, message: 'tanpa byEngineSource/byRole: blok hilang, petunjuk biaya muncul' },
         );
         const old = await page.eval(() => ({
           empty: document.querySelector('#report-engines').innerHTML,
@@ -2962,6 +2972,15 @@ for (const vp of VIEWPORTS) {
                     byPeriod: [{ start: Date.now() - 86_400_000, end: Date.now(), input: 100, output: 50, cacheRead: 0, total: 150, costUsd: 1.5 }],
                     byModel: [],
                     byEngineSource: [],
+                    byRole: {
+                      totalTokens: 150,
+                      estimated: true,
+                      note: 'Perkiraan: total dibagi menurut proporsi transcript.',
+                      roles: [
+                        { role: 'backend', label: 'Backend Developer', tokens: 90, share: 0.6, costUsd: 0.9, costCoverage: 1, delegations: 1 },
+                        { role: 'claude', label: 'Lead (utama)', tokens: 60, share: 0.4, costUsd: 0.6, costCoverage: 1, delegations: 0 },
+                      ],
+                    },
                     previous: { input: 50, output: 50, cacheRead: 0, cacheWrite: 0, total: 100, requests: 1, turns: 1, costUsd: 1, costCoverage: 1, cacheHitRate: 0 },
                   }),
                   { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -2972,11 +2991,33 @@ for (const vp of VIEWPORTS) {
       try {
         await page.eval(async () => (await import('/js/features/report.js')).openReport());
         await page.waitFor(() => !document.querySelector('#report-compare').hidden, { timeoutMs: 4000, message: 'perbandingan periode' });
+        const roleText = await page.eval(() => document.querySelector('#report-roles')?.textContent ?? '');
+        assert.match(roleText, /Per role/, 'tabel per role tampil');
+        assert.match(roleText, /Backend Developer/);
+        assert.match(roleText, /Lead \(utama\)/);
+        assert.match(roleText, /60%/, 'pangsa Backend 60%');
         const text = await page.eval(() => document.querySelector('#report-compare').textContent);
         assert.match(text, /token \+50%/);
         assert.match(text, /biaya \+50%/);
 
         // ⬇ CSV: the per-period numbers, downloaded as one file.
+        const csvBox = await page.eval(() => {
+          const b = document.querySelector('#report-csv');
+          const r = b.getBoundingClientRect();
+          return { text: b.textContent.trim(), w: r.width, h: r.height };
+        });
+        assert.match(csvBox.text, /Unduh CSV/, 'tombol CSV punya label lengkap');
+        assert.ok(csvBox.w >= 75, `tombol CSV tidak gepeng (${Math.round(csvBox.w)}px)`);
+        // Every visible button in the report keeps a real label and a usable hit area.
+        const reportButtons = await page.eval(() =>
+          [...document.querySelectorAll('#report-modal button')]
+            .filter((b) => b.getClientRects().length)
+            .map((b) => ({ text: b.textContent.trim(), label: b.getAttribute('aria-label') || '', w: b.getBoundingClientRect().width })),
+        );
+        for (const button of reportButtons) {
+          assert.ok(button.text || button.label, 'tombol laporan tanpa teks/label');
+          assert.ok(button.w >= 24, `tombol laporan gepeng (${Math.round(button.w)}px)`);
+        }
         await page.eval(captureDownloads);
         await page.eval(() => document.querySelector('#report-csv').click());
         await page.waitFor(() => window.__downloads.length === 1, { timeoutMs: 3000, message: 'unduhan CSV' });
@@ -7321,6 +7362,9 @@ for (const vp of VIEWPORTS) {
       if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
       await tap(page, '#btn-sessions');
       await page.waitFor((id) => document.querySelector(`#sessions-list [data-export="${id}"]`), { timeoutMs: 4000, message: 'tombol export di riwayat' }, sid);
+      // The history toolbar has filters/actions; the search field must keep a real width instead of collapsing.
+      const searchWidth = await page.eval(() => document.querySelector('#sessions-search').getBoundingClientRect().width);
+      assert.ok(searchWidth >= 200, `field pencarian Riwayat sesi tidak gepeng (${Math.round(searchWidth)}px)`);
       assert.equal(await page.eval(horizontalOverflow), null);
       assert.deepEqual(await page.eval(unnamedButtons, '#sessions-modal'), []);
       await page.eval((id) => document.querySelector(`#sessions-list [data-export="${id}"]`).click(), sid);

@@ -371,7 +371,7 @@ test('📋 Antrian uses the PROJECT engine (dispatch tier + item engine) and a r
   queue.onRateLimit('a', { status: 'rejected' }); // now an OpenCode provider limit
   assert.equal(queue.queues.a.paused, true);
   assert.equal(queue.queues.a.reason, 'rate_limit');
-  for (const timer of queue.timers.values()) clearTimeout(timer);
+  if (queue.fairTimer) clearTimeout(queue.fairTimer);
 });
 
 test('a terminal Claude Code session only mirrors into a project that runs on Claude Code', async () => {

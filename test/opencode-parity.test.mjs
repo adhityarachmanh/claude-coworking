@@ -116,7 +116,7 @@ after(async () => {
     clearTimeout(s.killTimer);
     s.closeChild();
   }
-  for (const t of queue?.timers.values() ?? []) clearTimeout(t);
+  if (queue?.fairTimer) clearTimeout(queue.fairTimer);
   hub?.save();
   clearTimeout(hub?.saveTimer);
   await sleep(300);
@@ -306,13 +306,13 @@ test('📋 queue: OpenCode items run one by one; the cost budget counts OpenCode
 test('📋 queue: a queue forgotten while its dispatch check was pending runs again when items come back (timer not leaked)', async () => {
   queue.setPaused(project.id, true);
   queue.add(project.id, 'halo dilupakan');
-  queue.setPaused(project.id, false); // schedules a dispatch check (delayMs later)…
-  assert.equal(queue.timers.has(project.id), true);
+  queue.setPaused(project.id, false); // schedules a global dispatch check (delayMs later)…
+  assert.equal(Boolean(queue.fairTimer), true);
   queue.forget(project.id); // …the project is removed before it fires (routes/projects.js)
-  assert.equal(queue.timers.has(project.id), false, 'the cancelled check is gone from the map too');
+  assert.equal(queue.queues[project.id], undefined, 'the forgotten queue is gone');
   const from = events.length;
   queue.add(project.id, 'halo kembali');
-  await resultAfter(from); // without the fix: never sent (schedule() sees the stale entry), until a restart
+  await resultAfter(from); // a stale per-project entry could otherwise block schedule() until a restart
   await until(() => queue.summary(project.id)?.done === 1, 'item done');
   await settle();
   queue.forget(project.id);

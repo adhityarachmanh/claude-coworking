@@ -18,6 +18,7 @@ import { isBookmarked, toggleBookmark } from '../core/bookmarks.js';
 import { fillComposer } from './composer.js';
 import { fileLinkHtml, linkifyPaths } from './file-viewer.js';
 import { afterRowRender, isLiveShell, liveBlock, liveTail, resetLiveOutput, saveLiveScroll } from './live-output.js';
+import { openQueueEdit } from './queue-edit.js';
 import { openSessions } from './sessions.js';
 import { stuckChip } from './stuck.js';
 
@@ -520,6 +521,17 @@ function autoModelTag(auto) {
   return `<span class="tag auto-model" title="${escapeHtml(full)}" aria-label="${escapeHtml(full)}">${escapeHtml(label)}</span>`;
 }
 
+/**
+ * The tag on a prompt still waiting in 📋 Antrian: its place, then the server's estimate when there is one
+ * (`queueEtaMs` null = no estimate yet, 0 = very soon). Kept short: it sits on the bubble's meta line.
+ */
+function queueTag(msg) {
+  const label = Number.isInteger(msg.queuePosition) ? `antre #${msg.queuePosition}` : 'antre';
+  if (!Number.isFinite(msg.queueEtaMs)) return label; // null / not sent: no ETA
+  if (msg.queueEtaMs >= 60000) return `${label} · ±${Math.round(msg.queueEtaMs / 60000)} mnt`;
+  return msg.queueEtaMs >= 0 ? `${label} · sebentar` : label;
+}
+
 export function who(role) {
   const look = CAST[role]?.look ?? CAST.claude.look;
   return `<img class="ava orbable" style="--c:${role === 'claude' ? '#b9a8ff' : roleColor(role)}" src="${avatarURL(look)}" alt=""><b style="color:${roleColor(role)}">${escapeHtml(roleName(role))}</b>`;
@@ -552,7 +564,8 @@ function fillChatBody(node, msg) {
         msg.source === 'cli' ? 'dari terminal' : '',
         msg.history ? 'riwayat' : '',
         msg.images && !msg.attachments ? `🖼 ${msg.images} gambar` : '', // bubbles stored before 📎 Lampiran
-        msg.queued ? 'antre' : '',
+        // A prompt waiting for a free turn shows its place in the queue and, when the server knows it, the wait.
+        msg.queued ? queueTag(msg) : '',
         msg.cancelled ? 'dibatalkan' : '',
       ].filter(Boolean);
       const autoTag = autoEffortTag(msg.autoEffort);
@@ -560,10 +573,16 @@ function fillChatBody(node, msg) {
       const starred = isBookmarked(state.active, msg.id);
       const star = (label) => `<button data-msg-act="star" aria-pressed="${starred}" aria-label="${starred ? 'Hapus pesan dari simpanan' : 'Simpan pesan ini'}" title="${starred ? 'Hapus dari pesan tersimpan' : 'Simpan pesan ini'}">${starred ? '★' : '☆'} ${label}</button>`;
       // Re-sending a prompt typed in the terminal would run it in the web session, so only web prompts offer it.
+      // A prompt still waiting in the 📋 Antrian can be dropped here: the server then patches this same bubble.
+      const cancel = !state.readOnly && msg.queued && msg.queueItem
+        ? '<button class="queue-cancel" data-msg-act="queue-cancel" title="Batalkan item antrian ini" aria-label="Batalkan item antrian ini">✕ Batal</button>'
+        : '';
+      // A queued prompt edits the item in place (the server patches this bubble); anything else goes back to the box.
+      const editTitle = msg.queued && msg.queueItem ? 'Ubah prompt ini di antrian' : 'Salin ke kotak pesan untuk diedit lalu dikirim';
       const actions = msg.source === 'demo'
         ? ''
-        : `<span class="msg-actions"><button data-msg-act="copy" title="Salin teks prompt">Salin</button><button data-msg-act="edit" title="Salin ke kotak pesan untuk diedit lalu dikirim">Edit</button>${msg.source === 'cli' ? '' : '<button class="resend" data-msg-act="resend" title="Kirim prompt ini sekali lagi">↻ Ulangi</button>'}${star('Simpan')}</span>`;
-      node.className = `msg user ${msg.source === 'cli' ? 'cli' : ''} ${msg.history ? 'history' : ''}`;
+        : `<span class="msg-actions">${cancel}<button data-msg-act="copy" title="Salin teks prompt">Salin</button><button data-msg-act="edit" title="${escapeHtml(editTitle)}">Edit</button>${msg.source === 'cli' ? '' : '<button class="resend" data-msg-act="resend" title="Kirim prompt ini sekali lagi">↻ Ulangi</button>'}${star('Simpan')}</span>`;
+      node.className = `msg user ${msg.source === 'cli' ? 'cli' : ''} ${msg.history ? 'history' : ''} ${msg.queued ? 'queued' : ''} ${msg.cancelled ? 'cancelled' : ''}`;
       // 📎 Name + size chips only: the files' content went to Claude, not into the bubble.
       const files = Array.isArray(msg.attachments) && msg.attachments.length ? `<div class="msg-attachments">${msg.attachments.map((a) => attachmentChip(a)).join('')}</div>` : '';
       node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>${files}<div class="meta">${actions}${autoModel}${autoTag}${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
@@ -700,8 +719,24 @@ export function initChat() {
       const on = toggleBookmark(state.active, msg);
       toast(on ? 'Pesan disimpan. Buka lewat Ctrl+P → “Pesan tersimpan”.' : 'Simpanan dihapus.', 'ok');
       replaceChat(msg); // the same row is rebuilt with the new star state
-    } else if (act.dataset.msgAct === 'edit') editPrompt(msg);
-    else if (act.dataset.msgAct === 'resend') resendPrompt(msg);
+    } else if (act.dataset.msgAct === 'edit') {
+      // Still in 📋 Antrian: change the item itself (server: queue-update patches this same bubble).
+      if (msg.queued && msg.queueItem) openQueueEdit(msg.project ?? state.active, msg.queueItem, msg.text);
+      else editPrompt(msg);
+    } else if (act.dataset.msgAct === 'resend') resendPrompt(msg);
+    else if (act.dataset.msgAct === 'queue-cancel') {
+      // The bubble is dropped by the server's chat_update (`queued:false, cancelled:true`): never remove the row here.
+      const project = msg.project ?? state.active;
+      if (!msg.queueItem) return;
+      act.disabled = true; // one request per click; the row redraws itself once the server answers
+      try {
+        await api(`/api/projects/${encodeURIComponent(project)}/queue-remove`, { itemId: msg.queueItem });
+        toast('Item antrian dibatalkan.', 'ok');
+      } catch (err) {
+        toast(err.message);
+        if (act.isConnected) act.disabled = false;
+      }
+    }
   });
 
   chatEl.addEventListener('click', (e) => {

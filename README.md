@@ -18,7 +18,7 @@ Panduan harian yang lebih santai: [docs/PANDUAN.md](docs/PANDUAN.md). Detail tia
 
 - [Mulai cepat](#mulai-cepat)
 - [Dari HP](#dari-hp)
-- [Fitur](docs/FITUR.md): [Chat & izin](docs/FITUR.md#chat--izin) · [Tim & kantor](docs/FITUR.md#tim--kantor) · [Project & dashboard](docs/FITUR.md#project--dashboard) · [Git](docs/FITUR.md#git) · [Lampiran](docs/FITUR.md#lampiran) · [Antrian & batas](docs/FITUR.md#antrian--batas) · [Notifikasi](docs/FITUR.md#notifikasi) · [Musik (Spotify)](docs/FITUR.md#musik-spotify) · [Akun & laporan](docs/FITUR.md#akun--laporan) · [Backup & riwayat](docs/FITUR.md#backup--riwayat)
+- [Fitur](docs/FITUR.md): [Chat & izin](docs/FITUR.md#chat--izin) · [Tim & kantor](docs/FITUR.md#tim--kantor) · [Project & dashboard](docs/FITUR.md#project--dashboard) · [Git](docs/FITUR.md#git) · [Lampiran](docs/FITUR.md#lampiran) · [Antrian & batas](docs/FITUR.md#antrian--batas) · [Notifikasi](docs/FITUR.md#notifikasi) · [Musik (Spotify)](docs/FITUR.md#musik-spotify) · [Akun & laporan](docs/FITUR.md#akun--laporan) · [Backup & riwayat](docs/FITUR.md#backup--riwayat) · [Retensi data](docs/FITUR.md#retensi-data)
 - [Keamanan & privasi](#keamanan--privasi)
 - [Saat Claude Code diperbarui](#saat-claude-code-diperbarui)
 - [Test & pengembangan](#test--pengembangan)
@@ -71,6 +71,7 @@ Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server t
 | `Claude Code tidak ditemukan` di log | Set env `CLAUDE_BIN` ke path `claude` |
 | HP tidak tersambung | Lihat [Dari HP → Kalau HP tidak tersambung](#kalau-hp-tidak-tersambung) |
 | Chat terasa macet | Lihat chip ⚠ di [Chat & izin](docs/FITUR.md#chat--izin) dan [PANDUAN: Kalau terasa macet](docs/PANDUAN.md#kalau-terasa-macet) |
+| Prompt masuk **📋 Antrian** karena **⚡ batas giliran bersamaan** | Batas global sedang penuh (default 3). Prompt ke project lain otomatis antri dan jalan sendiri saat ada slot; tunggu, atau ubah batas di ⚙ → Umum |
 | Server mati setelah laptop sleep | Penjaga Task Scheduler menyalakannya lagi dalam ±5 menit. Jalankan `node scripts\setup.mjs --check` untuk memastikan penjaga terpasang |
 
 ## Dari HP
@@ -146,6 +147,12 @@ Batasan: izin untuk sesi CLI tetap dijawab di terminal, dan prompt dari web memb
 ## Fitur
 
 Detail tiap fitur—termasuk batasan dan perilakunya—ada di **[docs/FITUR.md](docs/FITUR.md)**. README ini fokus pada cara menjalankan, akses HP, keamanan, pengembangan, dan struktur.
+
+- **⚡ Batas giliran bersamaan** (⚙ → Umum, default 3, 0 = tanpa batas, diubah dari laptop): batasi berapa project yang boleh bekerja serentak dari aplikasi. Prompt ke project lain otomatis masuk 📋 Antrian saat penuh, tampil sebagai bubble **antre #N** dengan tombol **✕ Batal**, dan dijalankan FIFO lintas project. Badge `⚡ 2/3` tampil di 🗂 Semua project dan di bar HP. Detail: [Antrian & batas](docs/FITUR.md#antrian--batas).
+- **🌐 Semua antrian + ETA + edit prompt antre**: dialog 📋 Antrian punya tombol **🌐 Semua** (juga `Ctrl+P` → *Semua antrian*) untuk melihat antrian semua project dalam urutan giliran yang adil—**berjalan** dulu, lalu menunggu `#N`, lalu yang **dijeda** ⏸—dengan **Buka** dan **Batal**. Bubble **antre #N** menampilkan perkiraan `±X mnt` / `sebentar` dari durasi giliran sebelumnya (tanpa data: tanpa ETA), dan **Edit** pada bubble yang masih antre mengubah item itu langsung. Ini perkiraan, bukan janji. Detail: [Antrian & batas](docs/FITUR.md#antrian--batas).
+- **⏳ Retensi otomatis** (⚙ → Cadangkan riwayat → 🕵️ Data saya, default simpan selamanya): hapus pesan panel chat dan baris laporan pemakaian yang lebih lama dari batas. Transkrip sesi, riwayat sesi, dan backup tidak disentuh. Detail: [Retensi data](docs/FITUR.md#retensi-data).
+- **🧩 Laporan per role (perkiraan)** (📊 Laporan): tabel token, persentase, biaya, dan delegasi per role—Lead serta subagent. Totalnya membagi total laporan menurut proporsi transcript; cache dan sesi tanpa transcript membuatnya perkiraan. Tersedia di pratinjau, PDF, dan CSV. Detail: [Akun & laporan](docs/FITUR.md#akun--laporan).
+- **📈 Riwayat kesehatan 7 hari + alarm backup**: 🩺 Kesehatan sistem menampilkan ringkasan **Hari ini** dan tabel **Aktivitas 7 hari** — giliran selesai/gagal, antrian yang mulai, waktu tunggu p95, berapa kali kena ⚡ batas giliran, dan restart server — dari agregat angka di `data/metrics.json` (tanpa isi percakapan atau nama project, rolling 7 hari lokal, bukan bagian backup). Cek **Backup otomatis** kini memastikan file `adhit-office-backup-auto-*.zip` terbaru benar-benar ada dan tidak basi (>36 jam untuk harian, >8 hari untuk mingguan). Detail: [Kesehatan & diagnostik](docs/FITUR.md#kesehatan--diagnostik).
 
 ## Keamanan & privasi
 
@@ -311,10 +318,14 @@ src/push.js            kebijakan push: event, pengaturan per HP, token aksi Izin
 src/spotify.js         ♪ Spotify: OAuth PKCE, polling, kontrol, album art proxy
 src/spotify-launcher.js  buka aplikasi Spotify di latar belakang
 src/queue.js           📋 antrian + batas antrian
+src/concurrency.js     ⚡ batas giliran bersamaan (global, lintas project)
 src/attachments.js     📎 validasi lampiran di server
 src/git.js · files.js · file-view.js · permissions.js · templates.js · task-detail.js
 src/account.js · usage.js · report.js   akun, ledger token, laporan PDF
+src/role-usage.js      🧩 perkiraan token/biaya per role dari transcript subagent
 src/backup.js · backup-schedule.js · zip.js   export/import riwayat, backup otomatis, ZIP
+src/retention.js       ⏳ retensi otomatis chat panel + ledger pemakaian
+src/metrics.js         📈 agregat aktivitas 7 hari untuk 🩺 (tanpa isi percakapan)
 src/open.js · autostart.js · claude-bin.js · modules.js
 public/index.html      satu halaman; public/js/app.js = entry point (ES module native, tanpa build)
 public/js/core/        state, api, stream (+ stream-share: satu koneksi untuk semua tab), aturan murni (*-rules.js)

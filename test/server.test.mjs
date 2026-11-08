@@ -175,7 +175,7 @@ test('🩺 health: /api/health on the laptop returns the report (checks + checkl
   const res = await api('/api/health', {});
   assert.equal(res.status, 200);
   const health = res.body.health;
-  assert.deepEqual(Object.keys(health).sort(), ['app', 'at', 'checklist', 'checks', 'data', 'errors']);
+  assert.deepEqual(Object.keys(health).sort(), ['app', 'at', 'checklist', 'checks', 'data', 'errors', 'metrics']);
   assert.equal(health.app.version, JSON.parse(readFileSync(path.join(APP, 'package.json'), 'utf8')).version);
   assert.equal(health.app.pid, (await (await fetch(`${BASE}/health`)).json()).pid);
   assert.equal(health.app.engine, 'claude');
@@ -934,6 +934,9 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     assert.deepEqual(allPhoneBody.byEngine.map((e) => e.key).sort(), ['claude', 'opencode'], 'both engines in one report');
     assert.equal(allPhoneBody.byEngine.reduce((n, e) => n + e.total, 0), allPhoneBody.totals.total, 'the per-engine totals add up');
     assert.ok(allPhoneBody.byEngineSource.some((e) => e.key === 'opencode:web'));
+    assert.equal(Array.isArray(allPhoneBody.byRole?.roles), true, 'per-role estimate is part of the report');
+    assert.equal(allPhoneBody.byRole.roles.reduce((n, r) => n + r.tokens, 0), allPhoneBody.totals.total, 'per-role tokens add up to the report total');
+    assert.equal(allPhoneBody.byRole.roles.some((r) => r.role === 'claude'), true, 'the Lead owns the part with no transcript');
     assert.doesNotMatch(JSON.stringify(allPhoneBody.byEngine), /tester@example\.com|OpenCode"?\s*,\s*"org"/, 'an engine count is not an account profile');
     const allPhonePdf = await phoneApi('/api/report/pdf', { accountId: 'all' });
     if (allPhonePdf.status === 200) {

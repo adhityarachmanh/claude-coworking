@@ -14,6 +14,7 @@ import { OpenCodeCheckService } from './src/opencode-check.js';
 import { AppUpdater } from './src/app-update.js';
 import { Hub } from './src/hub.js';
 import { pruneAuth } from './src/auth-audit.js';
+import { recordAudit } from './src/audit-log.js';
 import { discoverProjects, isDirectory, isInside, isMissing } from './src/projects.js';
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { writeBackup } from './src/backup.js';
@@ -35,6 +36,10 @@ import { engineClassifier, RoleMemory } from './src/role-memory.js';
 import { SessionManager } from './src/session.js';
 import { TemplateStore } from './src/templates.js';
 import { TaskQueue } from './src/queue.js';
+import { autoContext, classifyEffort } from './src/effort-classifier.js';
+import { maxConcurrentOf } from './src/concurrency.js';
+import { applyRetention, retentionOf } from './src/retention.js';
+import { Metrics } from './src/metrics.js';
 import { RoutineScheduler } from './src/routines.js';
 import { BackupScheduler } from './src/backup-schedule.js';
 import { SpotifyService, wifiSpotifyState } from './src/spotify.js';
@@ -119,6 +124,10 @@ const SYSTEM_CERTS = trustSystemCertificates();
 // OFFICE_DATA_DIR lets tests run against a throwaway state file.
 const DATA_DIR = process.env.OFFICE_DATA_DIR ?? path.join(APP_DIR, 'data');
 const hub = new Hub({ dataDir: DATA_DIR });
+// 📈 Operational history for 🩺 Kesehatan (aggregate only, never conversation content). Counts this start, then the
+// rolling seven days from data/metrics.json.
+const metrics = new Metrics({ file: path.join(DATA_DIR, 'metrics.json') });
+metrics.restart();
 // state.json holds the VAPID private key and push subscriptions: owner-only folder, like data/tls (best effort,
 // in the background; a failure is only logged).
 mkdirSync(DATA_DIR, { recursive: true });
@@ -224,6 +233,26 @@ function purgeOldTrash() {
 purgeOldTrash();
 setInterval(purgeOldTrash, 24 * 60 * 60 * 1000).unref?.();
 
+// 🗓 Chat/ledger retention (state.json → persisted.retention). 0 = keep forever, so nothing is deleted until the
+// user picks days in Data saya. Runs once at start and then daily; a failure is logged and never stops the server.
+function runRetention() {
+  try {
+    const { chatsDays, usageDays } = retentionOf(hub);
+    if (!chatsDays && !usageDays) return;
+    const result = applyRetention(hub, ledger, Date.now());
+    const chats = result.chats.removed;
+    const rows = result.usage.removed;
+    if (chats || rows) {
+      recordAudit(DATA_DIR, { action: 'retention-run', detail: `otomatis: chat ${chats} pesan (${result.chats.projects} project), ledger ${rows} baris (${result.usage.files} file)` });
+      console.log(`Retensi data: ${chats} pesan chat (${result.chats.projects} project) dan ${rows} baris ledger (${result.usage.files} file) dihapus.`);
+    }
+  } catch (err) {
+    console.error('Retensi data gagal:', err?.message ?? err);
+  }
+}
+runRetention();
+setInterval(runRetention, 24 * 60 * 60 * 1000).unref?.();
+
 /** The HTTPS status for browsers (no key, no paths); "error" when HTTPS is off by configuration. */
 function httpsInfo() {
   if (HTTPS_PORT === null) return { ...tls.publicInfo(0), state: remote.enabled ? 'error' : 'off', host: null, url: null, validTo: null, error: remote.enabled ? 'OFFICE_HTTPS_PORT bentrok dengan OFFICE_PORT; HTTPS dimatikan.' : null };
@@ -259,7 +288,17 @@ hub.redactors.set('github-login', wifiGithubLogin); // gh's one-time device code
 const accountPrivacy = accountPrivacyView(accountViewKey(path.join(DATA_DIR, 'account-view.key')));
 hub.redactors.set('account', accountPrivacy.state);
 // 📋 Antrian: prompts sent one by one whenever the project's session is idle (src/queue.js).
-const taskQueue = new TaskQueue({ hub, sessions, ledger });
+// `classify` is Effort/Model Auto for a prompt queued at the global turn limit: it runs once, at dispatch.
+const taskQueue = new TaskQueue({
+  hub,
+  sessions,
+  ledger,
+  metrics,
+  classify: (id, text, attachments) => {
+    const settings = hub.settingsFor(id);
+    return classifyEffort({ engine: hub.engineOf(id), claude, opencode, currentModel: settings.model, text, attachments, context: autoContext(hub, id) });
+  },
+});
 const routines = new RoutineScheduler({ hub, taskQueue });
 sessions.taskQueue = taskQueue; // a project's waiting queue item blocks its engine switch (Stage 1)
 sessions.onRateLimit = (id, info) => taskQueue.onRateLimit(id, info);
@@ -274,6 +313,12 @@ const push = new PushService({
 });
 push.seedQueues(Object.keys(taskQueue.queues)); // a pause from before this start is not news
 hub.observers.add((type, data) => push.observe(type, data));
+// Every finished app turn feeds the health history (CLI mirrors are not run by this server).
+hub.observers.add((type, data) => {
+  if (type === 'chat' && data?.kind === 'result' && data.source !== 'cli' && data.source !== 'demo') {
+    metrics.turn({ ok: data.ok !== false, durationMs: data.meta?.durationMs });
+  }
+});
 hub.redactors.set('approval', wifiApproval); // "answered from <phone name>": not over sniffable WiFi
 
 // Claude Code update detector (src/claude-check.js): `claude --version` at start and every 6 h; a new version gets
@@ -357,6 +402,7 @@ function refreshProjects() {
     appUpdate: appUpdater.publicView(), // ⬆ a newer Adhit Office on GitHub (src/app-update.js)
     // The engines a project can run on (docs/design-opencode.md §6.1): Claude Code's caps are the UI's defaults.
     engine: hub.engine, // the app-wide DEFAULT (Akun) for new projects; each project carries its own `settings.engine`
+    concurrency: { maxConcurrent: maxConcurrentOf(hub) }, // global turn limit (src/concurrency.js)
     engines: {
       claude: { available: Boolean(claude), version: hub.catalogConfig().version ?? '' },
       opencode: { available: Boolean(opencode), version: opencodeVersion, caps: OPENCODE_CAPS },
@@ -376,7 +422,7 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Spotify's Client ID, login and logout: laptop only (the redirect URI is the laptop's 127.0.0.1).
 // ⚙ Cek kompatibilitas Claude Code (run, settings): laptop only (it spawns Claude Code, maybe a model call).
 // ⚙ Kompatibilitas OpenCode (run, settings): laptop only too (it spawns `opencode acp`).
-const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/autostart', '/api/shutdown', '/api/config', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/autostart', '/api/shutdown', '/api/config', '/api/concurrency/save', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 // The same for switching engines and OpenCode's provider logins (API keys travel in these requests).
@@ -611,6 +657,7 @@ const ctx = {
   tls,
   templates,
   taskQueue,
+  metrics,
   push,
   spotify,
   backupScheduler,
@@ -897,11 +944,13 @@ let stopping = false;
 async function shutdown() {
   if (stopping) {
     hub.save();
+    metrics.flush();
     process.exit(1);
   }
   stopping = true;
   setTimeout(() => {
     hub.save();
+    metrics.flush();
     process.exit(1);
   }, SHUTDOWN_HARD_LIMIT_MS).unref();
   server.close(); // no new connections; open event streams end with the process
@@ -921,6 +970,7 @@ async function shutdown() {
   }
   await checksStopped; // each stop() is itself bounded (STOP_WAIT_MS)
   hub.save();
+  metrics.flush();
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

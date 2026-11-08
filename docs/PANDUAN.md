@@ -20,6 +20,7 @@ Tips:
 - Riwayat sesi bisa dirapikan dengan **🏷 tag** (ikut tercari, ada chip penyaring) dan **📦 arsip** (disembunyikan dari daftar utama, tetap bisa dilanjutkan); **Arsip otomatis** bisa menyembunyikan sesi yang tidak dipakai 30/90/180 hari. Centang beberapa sesi untuk memberi tag atau mengarsipkan sekaligus.
 - Ingin Claude bekerja tanpa ditunggui? Ganti mode izin (`Shift+Tab`). Mode paling aman tetap **🛡️ Tanya dulu**.
 - Pekerjaan berurutan? Masukkan ke **📋 Antrian** (`Alt+Enter`). Lihat [Antrian & batas](FITUR.md#antrian--batas).
+- Mau melihat antrian semua project sekaligus? Buka **🌐 Semua** di dialog 📋 Antrian (atau `Ctrl+P` → *Semua antrian*): **Buka** melompat ke antrian project itu, **Batal** membatalkan item yang masih menunggu. ETA `±X mnt` / `sebentar` di bubble **antre #N** hanya perkiraan, dan **Edit** pada bubble itu mengubah prompt yang masih antre di tempat, tanpa item kedua.
 
 ## Menjawab izin dari HP
 
@@ -168,6 +169,8 @@ Di **👤 Akun**, **Mesin bawaan untuk project baru** hanya berlaku untuk projec
 4. **Persiapan**: checklist login, folder project, backup otomatis, HTTPS, OpenCode — lengkapi yang masih kosong.
 5. Klik **↻ Periksa ulang** setelah memperbaiki sesuatu. Laporan terakhir tetap terlihat bila refresh gagal.
 
+Di bagian **Aktivitas 7 hari** kamu bisa melihat tren giliran, antrian, dan berapa kali kena batas selama sepekan; baris **Hari ini** merangkumnya dalam satu kalimat, dan hari tanpa sampel tunggu ditulis `—`.
+
 Hanya dari laptop atau Tailscale; di HP WiFi biasa tombol ini tidak muncul. Detail: [Pengaturan](FITUR.md#tanpa-terminal).
 
 ## Mengganti akun dengan aman
@@ -220,6 +223,7 @@ Hanya dari laptop. Dari HP (termasuk lewat Tailscale) editor ini tidak terbuka.
 | Tim diam, tidak ada chip | Cek kartu izin yang menunggu (gulir chat, atau 🗂 Semua project) |
 | *"… giliran terputus"* setelah restart | **▶ Lanjutkan** meneruskan di sesi yang sama. Tidak ada yang dikirim otomatis |
 | Antrian tidak jalan | Buka 📋 Antrian: mungkin dijeda (setelah restart, item gagal, kuota habis, atau batas tercapai). Tekan **Lanjutkan** |
+| Laptop terasa berat saat banyak project bekerja | Turunkan **⚙ → Umum → ⚡ Batas giliran bersamaan** (0–8; 0 = tanpa batas). Prompt ke project lain tampil sebagai bubble **antre #N** (bisa **✕ Batal**) dan jalan FIFO; giliran yang sedang berjalan tidak dipotong |
 | Halaman tidak update / banyak tab terbuka | Muat ulang halaman. Semua tab berbagi satu koneksi, jadi menutup tab lain tidak perlu |
 | HP tidak tersambung | Lihat [Kalau HP tidak tersambung](../README.md#kalau-hp-tidak-tersambung) |
 
@@ -228,6 +232,10 @@ Hanya dari laptop. Dari HP (termasuk lewat Tailscale) editor ini tidak terbuka.
 ## Pindah laptop atau backup
 
 **Rutin:** ⚙ → **💾 Cadangkan riwayat** → **⏰ Backup otomatis**. Pilih Harian/Mingguan, jam, folder tujuan (mis. `D:\Backup\adhit-office`), dan berapa backup yang disimpan, lalu **💾 Simpan jadwal**.
+
+Kalau pemeriksaan **Backup otomatis** di 🩺 berwarna kuning, buka ⚙ → Cadangkan riwayat, pastikan folder tujuan masih ada, lalu klik **▶ Jalankan sekarang**.
+
+Kalau folder `data/` terasa makin besar, atur **⚙ → Cadangkan riwayat → 🕵️ Data saya → ⏳ Retensi otomatis**: pilih batas chat dan laporan pemakaian (default simpan selamanya), klik **Pratinjau**, lalu **Simpan**. Transkrip sesi dan backup tidak ikut dihapus. Detail: [Retensi data](FITUR.md#retensi-data).
 
 **Pindah laptop:**
 

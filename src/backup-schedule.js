@@ -10,6 +10,7 @@
 //   manual export or anything else the user keeps there.
 // - Checked every minute (unref'd timer). A slot missed while the laptop was off runs once at the next check;
 //   a slot before the schedule was saved never runs. A failure waits for the next slot ("Jalankan sekarang" retries).
+import { readdirSync, statSync } from 'node:fs';
 import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -124,6 +125,34 @@ export const autoName = (ms, n = 1) => {
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   return `adhit-office-backup-auto-${stamp}${n > 1 ? `-${n}` : ''}.zip`;
 };
+
+/**
+ * The newest scheduled backup in `folder`, synchronously, for the health check (the async history() reads sizes in
+ * bulk and may wait on a slow disk). Regular files matching AUTO_NAME only; null when the folder is missing,
+ * unreadable, or holds no scheduled backup. This never touches manually exported files.
+ * @returns {{ name: string, bytes: number, at: number } | null}
+ */
+export function latestAutoBackupSync(folder) {
+  if (!folder) return null;
+  let names;
+  try {
+    names = readdirSync(folder);
+  } catch {
+    return null;
+  }
+  let best = null;
+  for (const name of names) {
+    if (!AUTO_NAME.test(name)) continue;
+    try {
+      const st = statSync(path.join(folder, name));
+      if (!st.isFile()) continue; // a link/folder with a backup name is not a backup
+      if (!best || st.mtimeMs > best.at) best = { name, bytes: st.size, at: st.mtimeMs };
+    } catch {
+      // vanished while listing: the other files still count
+    }
+  }
+  return best;
+}
 
 // ---------- writing ----------
 

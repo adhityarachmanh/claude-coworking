@@ -21,6 +21,8 @@ const WIFI_READS = new Set([
   '/api/team/roster',
   '/api/spotify/state', // ♪ now-playing (already audible in the room) and its album art; never devices/playlists/control
   '/api/spotify/art',
+  '/api/files/search', // project file-name index across projects (Ctrl+P); names only
+  '/api/queues', // global queue view: the same prompt texts each project's queue read already exposes
   ...['changes', 'diff', 'git-branches', 'file', 'files', 'sessions', 'rewind-points', 'task-output', 'task-detail', 'queue'].map((a) => `/api/projects/:id/${a}`),
 ]);
 
@@ -80,8 +82,8 @@ test('router: literal paths, :params of [\\w-]+, a trailing * prefix, first matc
   assert.equal(samplePath('/api/s*'), '/api/s');
 });
 
-test('routes: only the backup import reads its own (non-JSON) body', () => {
-  assert.deepEqual(router.routes.filter((r) => r.rawBody).map((r) => r.pattern), ['/api/backup/import']);
+test('routes: backup import/preview/verify/rekey read their own (non-JSON) body', () => {
+  assert.deepEqual(router.routes.filter((r) => r.rawBody).map((r) => r.pattern).sort(), ['/api/backup/import', '/api/backup/preview', '/api/backup/rekey', '/api/backup/verify']);
 });
 
 test('routes: 🔔 /api/push/* never over plain WiFi; only /api/push/act skips x-office-token; push bodies are small', () => {

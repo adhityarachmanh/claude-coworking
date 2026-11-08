@@ -635,6 +635,110 @@ export class Hub {
     this.scheduleSave();
   }
 
+  /**
+   * Retention for chat history: removes messages older than `cutoff` (ms) from BOTH engines' chat files.
+   * Pending records are flushed first (save()); an engine whose writes still fail is skipped, so a file that is
+   * not in sync is never rewritten. The engine's own transcript/session is never touched: only the panel history
+   * (data/chats*, this app's own file). Messages without a valid `ts` are kept. Only projects that actually lost
+   * something get a `chat_reset`, so open pages reload that chat.
+   * @returns {{ removed: number, projects: number }} messages removed and projects changed
+   */
+  pruneChatsBefore(cutoff) {
+    const result = { removed: 0, projects: 0 };
+    if (!Number.isFinite(cutoff) || cutoff <= 0) return result;
+    this.save(); // pending appends/patches land before any file is rewritten
+    const touched = new Set();
+    const droppedIds = new Map(); // project id -> message ids the open pages must drop
+    const drop = (id, messages) => {
+      const old = messages.filter((m) => Number.isFinite(m?.ts) && m.ts < cutoff);
+      if (!old.length) return { old, kept: messages };
+      const ids = droppedIds.get(id) ?? [];
+      for (const m of old) if (m?.id) ids.push(m.id);
+      droppedIds.set(id, ids);
+      return { old, kept: messages.filter((m) => !Number.isFinite(m?.ts) || m.ts >= cutoff) };
+    };
+    for (const engine of ENGINES) {
+      const store = this.chatStoreFor(engine);
+      for (const id of store.list()) {
+        if (id === DEMO_ID || store.unreadable.has(id)) continue; // an unreadable file is never rewritten
+        // A write still pending for THIS project (a failed flush): never rewrite that file under it. Other projects
+        // in the same engine are still pruned — one locked file must not stop the whole cleanup.
+        if (store.pending?.has?.(id) || store.rewrites?.has?.(id)) {
+          console.error(`Retensi chat ${engine} ${id} dilewati: masih ada perubahan yang belum tersimpan.`);
+          continue;
+        }
+        let messages;
+        try {
+          const rt = this.runtime.get(id);
+          messages = rt && this.engineOf(id) === engine ? rt.chat : store.read(id).messages;
+        } catch (err) {
+          console.error(`Retensi chat ${engine} ${id} dilewati: ${err.message}`);
+          continue;
+        }
+        const { old, kept } = drop(id, messages);
+        if (!old.length) continue;
+        try {
+          store.writeAll(id, kept); // atomic, and capped at CHAT_LIMIT
+        } catch (err) {
+          console.error(`Retensi chat ${engine} ${id} gagal: ${err.message}`);
+          continue;
+        }
+        // The running chat and the copy read at start are the same array in the common case; replacing both is safe.
+        const rt = this.runtime.get(id);
+        if (rt && this.engineOf(id) === engine) rt.chat.splice(0, rt.chat.length, ...kept);
+        const key = this.chatKey(engine, id);
+        if (this.storedChats[key]) this.storedChats[key].splice(0, this.storedChats[key].length, ...kept);
+        result.removed += old.length;
+        touched.add(id);
+      }
+    }
+    // A failed legacy migration keeps Claude's chats in state.json instead of the chat files: prune those too, so a
+    // retention promise is not silently skipped forever. (Rare, transitional state.)
+    if (this.legacyChats) {
+      for (const [id, list] of Object.entries(this.legacyChats)) {
+        if (id === DEMO_ID || !Array.isArray(list)) continue;
+        const { old, kept } = drop(id, list);
+        if (!old.length) continue;
+        this.legacyChats[id] = kept.slice(-CHAT_LIMIT);
+        const key = this.chatKey('claude', id);
+        const stored = this.storedChats[key];
+        if (stored) stored.splice(0, stored.length, ...this.legacyChats[id]);
+        result.removed += old.length;
+        touched.add(id);
+      }
+      if (touched.size) this.scheduleSave();
+    }
+    for (const [id, ids] of droppedIds) this.broadcast('chat_prune', { project: id, ids });
+    result.projects = touched.size;
+    return result;
+  }
+
+  /** How much `pruneChatsBefore(cutoff)` would remove, without writing anything. */
+  chatRetentionCount(cutoff) {
+    const result = { messages: 0, projects: 0 };
+    if (!Number.isFinite(cutoff) || cutoff <= 0) return result;
+    const projects = new Set();
+    for (const engine of ENGINES) {
+      const store = this.chatStoreFor(engine);
+      for (const id of store.list()) {
+        if (id === DEMO_ID || store.unreadable.has(id)) continue;
+        let messages;
+        try {
+          const rt = this.runtime.get(id);
+          messages = rt && this.engineOf(id) === engine ? rt.chat : store.read(id).messages;
+        } catch {
+          continue;
+        }
+        const old = messages.filter((m) => Number.isFinite(m?.ts) && m.ts < cutoff).length;
+        if (!old) continue;
+        result.messages += old;
+        projects.add(id);
+      }
+    }
+    result.projects = projects.size;
+    return result;
+  }
+
   scheduleSave() {
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.save(), 800);

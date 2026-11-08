@@ -21,6 +21,25 @@ const health = { report: null, loading: false, error: null };
 
 const text = (v, max = MAX_TEXT) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const num = (v) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.floor(Number(v)) : 0);
+// null/undefined must stay "unknown" (shown as "—"), never become 0: Number(null) is finite.
+const metricMs = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+
+/** One day of the 7-day activity table, with only the fields the dialog shows. */
+function normalizeDay(raw) {
+  const d = raw && typeof raw === 'object' ? raw : {};
+  return {
+    day: text(d.day, 10),
+    turns: num(d.turns),
+    ok: num(d.ok),
+    failed: num(d.failed),
+    avgTurnMs: metricMs(d.avgTurnMs),
+    queueStarted: num(d.queueStarted),
+    waitP50Ms: metricMs(d.waitP50Ms),
+    waitP95Ms: metricMs(d.waitP95Ms),
+    capacityQueued: num(d.capacityQueued),
+    capacityRefused: num(d.capacityRefused),
+  };
+}
 
 /** Only the fields the dialog shows, the way it shows them (the server's answer is not trusted). */
 export function normalizeHealth(raw) {
@@ -59,6 +78,16 @@ export function normalizeHealth(raw) {
       })),
     errors: { count24h: num(errors.count24h), last: text(errors.last, 600) },
     data: { bytes: num(data.bytes), files: num(data.files), dir: text(data.dir) },
+    metrics: r.metrics && typeof r.metrics === 'object'
+      ? {
+          today: normalizeDay(r.metrics.today),
+          days: (Array.isArray(r.metrics.days) ? r.metrics.days : []).slice(-7).map(normalizeDay),
+          restarts: {
+            count: num(r.metrics.restarts?.count),
+            lastAt: typeof r.metrics.restarts?.lastAt === 'number' && Number.isFinite(r.metrics.restarts.lastAt) ? r.metrics.restarts.lastAt : null,
+          },
+        }
+      : null,
   };
 }
 
@@ -131,6 +160,58 @@ function metaLine(app) {
   return parts.map(escapeHtml).join(' · ');
 }
 
+const fmtDuration = (ms) => {
+  if (ms == null) return '—';
+  if (ms < 60_000) return `${Math.max(0, Math.round(ms / 1000))} dtk`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)} mnt`;
+  return `${(ms / 3_600_000).toFixed(1).replace('.', ',')} jam`;
+};
+const dayLabel = (day) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  return m ? `${m[3]}/${m[2]}` : '—';
+};
+const fmtWhen = (at) =>
+  new Date(at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+/** 📈 The 7-day activity table: turns, failures, queue starts, wait p95 and how often the turn limit was hit. */
+function metricsHtml(metrics) {
+  if (!metrics) return '';
+  const t = metrics.today ?? {};
+  const hasToday = (t.turns ?? 0) + (t.queueStarted ?? 0) + (t.capacityQueued ?? 0) + (t.capacityRefused ?? 0) > 0;
+  const parts = [];
+  if (hasToday) {
+    parts.push(`${NUM.format(t.turns ?? 0)} giliran${t.failed ? ` (${NUM.format(t.failed)} gagal)` : ''}`);
+    if (t.queueStarted) parts.push(`${NUM.format(t.queueStarted)} dari antrian`);
+    if (t.avgTurnMs != null) parts.push(`rata-rata ${fmtDuration(t.avgTurnMs)}`);
+    if (t.waitP95Ms != null) parts.push(`tunggu p95 ${fmtDuration(t.waitP95Ms)}`);
+    const hits = (t.capacityQueued ?? 0) + (t.capacityRefused ?? 0);
+    if (hits) parts.push(`${NUM.format(hits)}× kena batas`);
+  }
+  const todayLine = hasToday ? `Hari ini: ${parts.join(' · ')}.` : 'Belum ada aktivitas hari ini.';
+  const days = metrics.days ?? [];
+  const rows = days
+    .map((d, i) => {
+      const today = i === days.length - 1 ? ' class="today"' : '';
+      const hits = (d.capacityQueued ?? 0) + (d.capacityRefused ?? 0);
+      return `<tr${today}><td>${escapeHtml(dayLabel(d.day))}</td><td>${NUM.format(d.turns ?? 0)}</td><td>${NUM.format(d.failed ?? 0)}</td><td>${NUM.format(d.queueStarted ?? 0)}</td><td>${fmtDuration(d.waitP95Ms)}</td><td>${NUM.format(hits)}</td></tr>`;
+    })
+    .join('');
+  const restarts = metrics.restarts?.lastAt
+    ? `Server mulai ulang ${NUM.format(metrics.restarts.count ?? 0)} kali · terakhir ${escapeHtml(fmtWhen(metrics.restarts.lastAt))}.`
+    : `Server mulai ulang ${NUM.format(metrics.restarts?.count ?? 0)} kali.`;
+  return `<section class="health-section health-activity" aria-labelledby="health-activity-title">
+      <h3 id="health-activity-title">Aktivitas 7 hari</h3>
+      <p class="health-size">${escapeHtml(todayLine)}</p>
+      <div class="health-table-wrap">
+        <table class="health-days">
+          <thead><tr><th scope="col">Hari</th><th scope="col">Giliran</th><th scope="col">Gagal</th><th scope="col">Antrian</th><th scope="col">Tunggu p95</th><th scope="col">Kena batas</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <p class="muted small">${escapeHtml(restarts)}</p>
+    </section>`;
+}
+
 function reportHtml(report) {
   const summary = healthSummary(report);
   const checks = report.checks.length ? `<ul class="health-checks">${report.checks.map(checkHtml).join('')}</ul>` : '<p class="muted small">Tidak ada pemeriksaan.</p>';
@@ -147,6 +228,7 @@ function reportHtml(report) {
       <h3 id="health-checks-title">Pemeriksaan</h3>
       ${checks}
     </section>
+    ${metricsHtml(report.metrics)}
     <details class="health-more">
       <summary>Detail &amp; persiapan${summary.total ? ` · ${summary.done}/${summary.total}` : ''}</summary>
       <section class="health-section" aria-labelledby="health-todos-title">

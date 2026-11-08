@@ -15,12 +15,13 @@ import { phone, refreshPairing } from '../features/phone.js';
 import { renderSidebar, selectProject } from '../features/picker.js';
 import { onApprovalUpdate, onPushSnapshot, pushProjectsChanged } from '../features/push.js';
 import { applyRoutines } from '../features/routines.js';
-import { renderRoots, syncProjectEngine } from '../features/settings.js';
+import { renderRoots, syncConcurrencySection, syncProjectEngine } from '../features/settings.js';
 import { maybeAutoTour } from '../features/tour.js';
 import { applyRoster } from '../features/roster.js';
 import { applySpotify } from '../features/spotify.js';
 import { reloadSoon } from '../features/opencode-account.js';
 import { onGithubLogin } from '../features/pull-request.js';
+import { onQueueEvent } from '../features/queue-all.js';
 import { onRoleMapChanged } from '../features/role-map.js';
 import { renderCi } from '../features/ci-status.js';
 import { noteLiveMessage, setStuckOnline } from '../features/stuck.js';
@@ -123,7 +124,10 @@ const handlers = {
       renderCi();
     }
     // A project engine changed (⚙ → Mesin project, this or another device): redraw the selector in place.
-    if (!$('#settings-modal').hidden) syncProjectEngine();
+    if (!$('#settings-modal').hidden) {
+      syncProjectEngine();
+      syncConcurrencySection(); // ⚡ "Saat ini X dari Y project sedang bekerja."
+    }
     updateTitle();
     scheduleAttention();
   },
@@ -151,8 +155,18 @@ const handlers = {
     if (live) scheduleAttention();
   },
   chat_update: (update) => onChatUpdate(update),
+  // Any project's queue changed: 🌐 Semua antrian redraws itself while it is open (debounced there).
+  queue: () => onQueueEvent(),
   chat_reset({ project }) {
     state.chats[project] = [];
+    if (project === state.active) renderChat();
+  },
+  // Retention pruned old messages: drop exactly those ids, keeping everything else the page already shows.
+  chat_prune({ project, ids }) {
+    const list = state.chats[project];
+    if (!Array.isArray(list) || !Array.isArray(ids) || !ids.length) return;
+    const drop = new Set(ids);
+    for (let i = list.length - 1; i >= 0; i -= 1) if (drop.has(list[i]?.id)) list.splice(i, 1);
     if (project === state.active) renderChat();
   },
   approval(approval, live) {

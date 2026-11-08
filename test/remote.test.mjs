@@ -51,6 +51,9 @@ test('plain WiFi is read-only: only listed read actions pass, everything else is
   const act = ['/api/approvals/abc', '/api/team', '/api/demo', '/api/projects', '/api/projects/refresh', '/api/config', '/api/remote', '/api/account/login', '/api/account/logout', '/api/something-new', '/api/templates/save', '/api/templates/delete'];
   for (const a of ['prompt', 'shell', 'settings', 'commit', 'rewind', 'rewind-preview', 'mcp', 'mcp-action', 'task-stop', 'background', 'stop', 'reset', 'resume', 'forget', 'favorite', 'rename', 'open']) act.push(`/api/projects/toko/${a}`);
   act.push('/api/projects/toko/changes/../prompt', '/api/projects/toko/diffx', '/api/projects/a/b/changes');
+  // The concurrency limit and retention settings are laptop-only settings (LOCAL_ONLY in server.js): never over
+  // plain WiFi, where the request could be replayed by anyone on the network.
+  act.push('/api/concurrency/save', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run');
   // whole conversation history / saved permission rules: not over sniffable WiFi (laptop + Tailscale only)
   act.push('/api/projects/toko/search', '/api/projects/toko/export-session', '/api/projects/toko/permissions');
   for (const p of act) assert.ok(!wifiAllows(p), p);

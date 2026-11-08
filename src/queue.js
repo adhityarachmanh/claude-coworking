@@ -15,6 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { budgetStop, consumeBudgetOverride } from './budget.js';
+import { activeCount, activeProjects, maxConcurrentOf } from './concurrency.js';
 import { cleanAutoLevel } from './effort.js';
 import { tierFor } from './model-auto.js';
 
@@ -120,6 +121,7 @@ function cleanItem(raw) {
     runbookId: /^rb_[A-Za-z0-9_-]{1,40}$/.test(String(raw.runbookId ?? '')) ? raw.runbookId : null,
     runbookIndex: Number.isInteger(raw.runbookIndex) && raw.runbookIndex >= 0 ? raw.runbookIndex : null,
     engine: raw.engine === 'opencode' || raw.engine === 'claude' ? raw.engine : null, // the engine it was sent to
+    autoDeferred: raw.autoDeferred === true, // Effort/Model Auto is classified at dispatch (queued at the turn limit)
     effort: cleanAutoLevel(raw.effort),
     effortReason: typeof raw.effortReason === 'string' ? raw.effortReason.slice(0, 300) : null,
     effortSource: raw.effortSource === 'llm' || raw.effortSource === 'fallback' ? raw.effortSource : null,
@@ -131,17 +133,24 @@ function cleanItem(raw) {
 export class TaskQueue {
   /**
    * @param {{ hub: import('./hub.js').Hub, sessions: { get(project): any, stopping?: boolean },
-   *           delayMs?: number, now?: () => number }} options
+   *           delayMs?: number, now?: () => number,
+   *           classify?: (projectId: string, text: string, attachments: any[]) => Promise<{level: string, reason?: string,
+   *             source?: string, model?: string}|null>|null }} options
    *   delayMs: how long after the session went idle the next item is sent (never from inside a session callback)
+   *   classify: Effort/Model Auto for an item that was queued at the global turn limit (run at dispatch, once)
    */
-  constructor({ hub, sessions, ledger = null, delayMs = 400, now = () => Date.now() }) {
+  constructor({ hub, sessions, ledger = null, delayMs = 400, now = () => Date.now(), classify = null, metrics = null }) {
     this.hub = hub;
     this.sessions = sessions;
     this.ledger = ledger;
     this.delayMs = delayMs;
     this.now = now;
-    this.timers = new Map(); // project id -> pending dispatch check
-    this.dispatching = null; // project id while session.prompt() runs (its own status updates are ignored)
+    this.classify = typeof classify === 'function' ? classify : null;
+    this.metrics = metrics && typeof metrics.queueStart === 'function' ? metrics : null;
+    this.fairTimer = null; // one global timer that picks the oldest waiting item across projects (fair order)
+    this.classifying = new Set(); // item ids whose deferred Auto classification is in flight (never twice at once)
+    this.durations = new Map(); // project id -> recent turn durations (ms), for the waiting estimate
+    this.dispatching = new Set(); // project ids whose prompt is being taken (own status updates ignored) or classified
     this.rev = 0;
     this.queues = this.restore(hub.persisted.queues);
     hub.persisted.queues = this.queues;
@@ -151,6 +160,7 @@ export class TaskQueue {
   /** After the projects are known: every page gets each queue's numbers (status.taskQueue) from the snapshot. */
   start() {
     for (const id of Object.keys(this.queues)) this.publish(id, { save: false });
+    this.refreshQueuePositions();
   }
 
   /**
@@ -303,6 +313,7 @@ export class TaskQueue {
       runbookId: /^rb_[A-Za-z0-9_-]{1,40}$/.test(String(extra?.runbookId ?? '')) ? extra.runbookId : null,
       runbookIndex: Number.isInteger(extra?.runbookIndex) && extra.runbookIndex >= 0 ? extra.runbookIndex : null,
       engine: null,
+      autoDeferred: extra?.autoDeferred === true,
       effort: cleanAutoLevel(effort?.level),
       effortReason: typeof effort?.reason === 'string' ? effort.reason.slice(0, 300) : null,
       effortSource: effort?.source === 'llm' || effort?.source === 'fallback' ? effort.source : null,
@@ -326,13 +337,97 @@ export class TaskQueue {
       item.effortModel = typeof effort.model === 'string' ? effort.model.slice(0, 120) : null;
     }
     item.updatedAt = this.now();
+    // The bubble made when the prompt joined the queue must show the edited text too.
+    if (item.chatId) this.hub.updateChat(id, item.chatId, { text: item.text });
     this.changed(id);
     return item;
+  }
+
+  /**
+   * Links a waiting item to the chat bubble the route already made for it (a prompt that joined 📋 Antrian at the
+   * global turn limit). The same bubble starts its turn later, so it is never shown twice in the chat.
+   */
+  attachChat(id, itemId, chatId) {
+    const item = this.item(id, itemId);
+    item.chatId = typeof chatId === 'string' ? chatId : null;
+    this.changed(id);
+    return item;
+  }
+
+  /**
+   * Every waiting item, in the exact order the fair scheduler would start them: interactive prompts before scheduled
+   * routines/runbooks, then oldest first; a project's next item only becomes eligible after its previous one runs.
+   * Paused and missing projects are left out (their items cannot start, so they must not take a position).
+   */
+  orderedWaiting() {
+    const lists = new Map();
+    for (const [pid, q] of Object.entries(this.queues)) {
+      if (!q || q.paused) continue;
+      if (this.running(pid) || this.dispatching.has(pid)) continue; // its turn/classification is already using a slot
+      if (!this.idle(pid)) continue; // busy, waiting for an approval, rewinding…
+      const project = this.hub.projects?.get?.(pid);
+      if (!project || project.virtual) continue;
+      const waiting = q.items.filter((i) => i.status === 'waiting');
+      if (waiting.length) lists.set(pid, [...waiting]);
+    }
+    const out = [];
+    while (lists.size) {
+      let best = null;
+      for (const [pid, list] of lists) {
+        const item = list[0];
+        const interactive = !item.routineId && !item.runbookId;
+        if (
+          !best ||
+          (interactive && !best.interactive) ||
+          (interactive === best.interactive && (item.createdAt ?? 0) < (best.item.createdAt ?? 0))
+        ) {
+          best = { projectId: pid, item, interactive };
+        }
+      }
+      out.push({ projectId: best.projectId, item: best.item });
+      const list = lists.get(best.projectId);
+      list.shift();
+      if (!list.length) lists.delete(best.projectId);
+    }
+    return out;
+  }
+
+  /** The global queue position (1…N) of one waiting item, or null when it cannot start (paused/missing project). */
+  positionFor(itemId) {
+    const index = this.orderedWaiting().findIndex((entry) => entry.item.id === itemId);
+    return index >= 0 ? index + 1 : null;
+  }
+
+  /**
+   * The global queue position (1…N) of every waiting item, shown in its chat bubble. Only changes are written, and
+   * only for items that have a bubble. Called on every change and at start, so a removed/finished item shifts the
+   * rest — across projects too, matching the fair scheduler.
+   */
+  refreshQueuePositions() {
+    const order = this.orderedWaiting();
+    const positions = new Map();
+    order.forEach((entry, i) =>
+      positions.set(entry.item.id, { position: i + 1, etaMs: this.estimateWaitMs(entry.item, order) }),
+    );
+    for (const [pid, q] of Object.entries(this.queues)) {
+      for (const item of q.items) {
+        if (item.status !== 'waiting' || !item.chatId) continue;
+        const next = positions.get(item.id) ?? null;
+        const message = this.hub.rt?.(pid)?.chat?.findLast?.((m) => m.id === item.chatId);
+        if (!message) continue;
+        const patch = {};
+        if (message.queuePosition !== (next?.position ?? null)) patch.queuePosition = next?.position ?? null;
+        if ((message.queueEtaMs ?? null) !== (next?.etaMs ?? null)) patch.queueEtaMs = next?.etaMs ?? null;
+        if (Object.keys(patch).length) this.hub.updateChat(pid, item.chatId, patch);
+      }
+    }
   }
 
   remove(id, itemId) {
     const item = this.item(id, itemId);
     if (item.status === 'running') throw new QueueError(409, 'Item ini sedang berjalan. Hentikan dulu (Stop / Esc), lalu hapus.');
+    // The bubble says it was cancelled instead of keeping a position for an item that no longer waits.
+    if (item.status === 'waiting' && item.chatId) this.hub.updateChat(id, item.chatId, { queued: false, cancelled: true, queuePosition: null });
     const q = this.queues[id];
     this.dropAttachments(id, item.id);
     q.items = q.items.filter((i) => i !== item);
@@ -417,8 +512,6 @@ export class TaskQueue {
   /** The project was forgotten (⚙ → hapus folder): its queue goes too. */
   forget(id) {
     if (!this.queues[id]) return;
-    clearTimeout(this.timers.get(id));
-    this.timers.delete(id); // a stale entry would make schedule() skip this project for good (until a restart)
     this.dropProjectAttachments(id);
     delete this.queues[id];
     this.changed(id);
@@ -439,6 +532,7 @@ export class TaskQueue {
   changed(id) {
     const q = this.queues[id];
     if (q && !q.items.length && !q.paused && !hasBudget(q.budget)) delete this.queues[id];
+    this.refreshQueuePositions(); // before the publish: the bubbles and the numbers stay in step
     this.publish(id);
     this.schedule(id);
   }
@@ -456,12 +550,27 @@ export class TaskQueue {
   observe(type, data) {
     // Server stopping: its turns end as "interrupted"; restore() at the next start records them (paused: restart).
     if (this.sessions.stopping) return;
-    if (type === 'chat' && data?.kind === 'result' && data.source !== 'cli') return this.onResult(data.project, data);
-    if (type === 'status' && data?.project && this.queues[data.project]) this.onStatus(data);
+    if (type === 'chat' && data?.kind === 'result' && data.source !== 'cli') {
+      this.noteTurnDuration(data.project, data.meta?.durationMs);
+      return this.onResult(data.project, data);
+    }
+    // Every project status matters: a project without a queue can still hold the only concurrency slot, and the
+    // queue waiting on that slot must be woken when it goes idle (scheduleAll in onStatus).
+    if (type === 'status' && data?.project) this.onStatus(data);
   }
 
   running(id) {
     return this.queues[id]?.items.find((i) => i.status === 'running') ?? null;
+  }
+
+  /** Keeps the last ten turn durations of a project (memory only; the queue's finished items survive a restart). */
+  noteTurnDuration(id, durationMs) {
+    const value = Number(durationMs);
+    if (!id || !Number.isFinite(value) || value <= 0 || value > 24 * 60 * 60 * 1000) return;
+    const list = this.durations.get(id) ?? [];
+    list.push(value);
+    if (list.length > 10) list.shift();
+    this.durations.set(id, list);
   }
 
   onResult(id, msg) {
@@ -488,16 +597,96 @@ export class TaskQueue {
   }
 
   onStatus(status) {
-    const id = status.project;
-    if (this.dispatching === id) return; // the session's own updates while it takes the prompt
-    const item = this.running(id);
-    if (item && !status.busy) {
-      // The turn is over without a result: Claude Code exited, the session was reset or the process detached.
-      this.finish(id, item, { status: 'failed', error: `Giliran berhenti tanpa hasil (${this.engineName(item, id)} berhenti atau sesi direset).` });
-      this.retryOrPause(id, item, 'item berhenti tanpa hasil');
-      return;
+    try {
+      const id = status.project;
+      if (this.dispatching.has(id)) return; // the session's own updates while it takes the prompt
+      const item = this.running(id);
+      if (item && !status.busy) {
+        // The turn is over without a result: Claude Code exited, the session was reset or the process detached.
+        this.finish(id, item, { status: 'failed', error: `Giliran berhenti tanpa hasil (${this.engineName(item, id)} berhenti atau sesi direset).` });
+        this.retryOrPause(id, item, 'item berhenti tanpa hasil');
+        return;
+      }
+      if (!item) this.schedule(id);
+    } finally {
+      // A project going idle frees a concurrency slot for queues waiting on the global limit (src/concurrency.js).
+      // A project that just started a turn may have queued items whose position is no longer "next".
+      if (!status?.busy || this.queues[status?.project]?.items.some((i) => i.status === 'waiting' && i.chatId)) this.refreshQueuePositions();
+      if (!status?.busy) this.scheduleAll();
     }
-    if (!item) this.schedule(id);
+  }
+
+  /**
+   * Re-check every project's queue (a concurrency slot may have opened). One global timer picks the oldest waiting
+   * item across all projects (`nextFair`), instead of every project racing its own timer: a busy project the user has
+   * been waiting on must not lose the freed slot to a newer queue just because its timer fired first.
+   */
+  scheduleAll() {
+    if (this.fairTimer || this.sessions?.stopping) return;
+    if (this.nextFair() === null) return; // nothing waiting / no free slot: a status event will call us again
+    this.armFair();
+  }
+
+  /** Arms the global timer (once); its tick sends one item and re-arms only if another candidate may fit. */
+  armFair() {
+    if (this.fairTimer) return;
+    const timer = setTimeout(() => {
+      this.fairTimer = null;
+      const id = this.nextFair();
+      if (id === null) return;
+      this.runDispatch(id);
+      // A project that just started is skipped by nextFair; an item that could not start (paused, budget, a full
+      // limit) makes nextFair return null here, so this never polls without work to do.
+      if (this.nextFair() !== null) this.armFair();
+    }, this.delayMs);
+    timer.unref?.();
+    this.fairTimer = timer;
+  }
+
+  /**
+   * The project whose waiting item should go next, or null when nothing can run now. Interactive prompts (typed by
+   * the user) go before scheduled routines/runbooks; otherwise the oldest item wins across projects (FIFO).
+   */
+  nextFair() {
+    if (this.sessions?.stopping) return null;
+    if (!this.hasRoom()) return null;
+    const candidates = [];
+    for (const [id, q] of Object.entries(this.queues)) {
+      if (q.paused) continue;
+      if (this.running(id) || this.dispatching.has(id)) continue;
+      if (!this.idle(id)) continue;
+      const project = this.hub.projects?.get?.(id);
+      if (!project || project.virtual) continue;
+      const item = q.items.find((i) => i.status === 'waiting');
+      if (!item) continue;
+      const interactive = !item.routineId && !item.runbookId;
+      candidates.push({ id, interactive, createdAt: item.createdAt ?? 0 });
+    }
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => (a.interactive === b.interactive ? a.createdAt - b.createdAt : a.interactive ? -1 : 1));
+    return candidates[0].id;
+  }
+
+  /**
+   * Whether a new turn fits now, counting the projects already being dispatched/classified that are not `busy` yet.
+   * Without that reservation, two deferred-Auto dispatches could both start while one slot is free.
+   */
+  hasRoom(exceptId = null) {
+    const limit = maxConcurrentOf(this.hub);
+    if (limit <= 0) return true;
+    let active = activeCount(this.hub);
+    for (const pid of this.dispatching) {
+      if (pid === exceptId) continue;
+      if (this.hub.runtime.get(pid)?.status?.busy) continue; // already counted by activeProjects
+      active += 1;
+    }
+    return active < limit;
+  }
+
+  /** dispatch() is async (a deferred Auto classification); its promise is never awaited by a timer. */
+  runDispatch(id) {
+    const run = this.dispatch(id);
+    if (run && typeof run.catch === 'function') run.catch((err) => console.error(`Antrian ${id}: pengiriman gagal (${err?.message ?? err})`));
   }
 
   /**
@@ -581,13 +770,9 @@ export class TaskQueue {
   /** Looks again shortly (never synchronously: status updates arrive from inside session callbacks). */
   schedule(id) {
     const q = this.queues[id];
-    if (!q || q.paused || this.timers.has(id) || !q.items.some((i) => i.status === 'waiting')) return;
-    const timer = setTimeout(() => {
-      this.timers.delete(id);
-      this.dispatch(id);
-    }, this.delayMs);
-    timer.unref?.();
-    this.timers.set(id, timer);
+    if (!q || q.paused || !q.items.some((i) => i.status === 'waiting')) return;
+    // One global timer picks the oldest runnable item: a project's own timer must never jump the fair order.
+    this.scheduleAll();
   }
 
   /**
@@ -606,54 +791,173 @@ export class TaskQueue {
     return !st.busy && !st.pending && !st.interrupted && !st.cliBusy && !st.queue && !st.rewinding; // ⏪ OpenCode rewind
   }
 
-  dispatch(id) {
-    const q = this.queues[id];
+  /**
+   * Sends the project's next waiting item. Async only for an item queued at the global turn limit whose Effort/Model
+   * Auto was deferred (`autoDeferred`): its classifier runs here, once. Every other item runs synchronously up to
+   * session.prompt(), exactly as before (the callers never await).
+   */
+  async dispatch(id) {
+    if (this.dispatching.has(id)) return; // already taking this project's prompt (e.g. classifying for it)
+    let q = this.queues[id];
     if (!q || q.paused || this.running(id) || this.sessions.stopping) return;
     const item = q.items.find((i) => i.status === 'waiting');
     if (!item) return;
+    // Effort/Model Auto for a prompt that was queued while every slot was taken: classify now, not while it waited.
+    // A failed classifier keeps the project's settings (level null) and never blocks the item.
+    if (item.autoDeferred && this.classify && !this.classifying.has(item.id)) {
+      // Nothing to classify yet if the turn cannot start: wait for a slot/idle session, then classify once.
+      if (!this.hasRoom(id) || !this.idle(id)) return;
+      this.classifying.add(item.id);
+      this.dispatching.add(id);
+      let auto = null;
+      try {
+        auto = await this.classify(id, item.text, this.loadAttachments(id, item));
+      } catch (err) {
+        console.error(`Klasifikasi Auto item antrian ${item.id} gagal: ${err?.message ?? err}`);
+      } finally {
+        this.classifying.delete(item.id);
+        this.dispatching.delete(id);
+        // The slot reservation is released here: another project must be able to take it even if this item was
+        // cancelled/paused while the classifier ran (the caller's early returns must not strand the queue).
+        this.scheduleAll();
+      }
+      Object.assign(item, {
+        effort: cleanAutoLevel(auto?.level),
+        effortReason: typeof auto?.reason === 'string' ? auto.reason.slice(0, 300) : null,
+        effortSource: auto?.source === 'llm' || auto?.source === 'fallback' ? auto.source : null,
+        effortModel: typeof auto?.model === 'string' ? auto.model.slice(0, 120) : null,
+        autoDeferred: false,
+        updatedAt: this.now(),
+      });
+      // The slot, the session or the queue can change while the classifier runs: never mark a turn running then.
+      // `q.items.includes(item)` is the identity check: remove() during classification must really cancel it.
+      q = this.queues[id];
+      if (!q || q.paused || this.sessions.stopping) return;
+      if (!q.items.includes(item) || item.status !== 'waiting' || this.running(id) || !this.idle(id) || !this.hasRoom(id)) return;
+      this.scheduleAll(); // another project may use the slot while this one was only classifying
+    }
     // 💰 The global budget is a hard stop too: hold the queue (and say why) instead of spending past the limit.
     const stop = budgetStop(this.hub, this.ledger, this.now(), id);
     if (stop && !consumeBudgetOverride(this.hub, this.now())) return this.pauseFor(id, 'budget', `budget ${stop.label} tercapai`);
     if (budgetExceeded(q.budget)) return this.checkBudget(id); // used up while the queue was empty or paused
     const project = this.hub.projects.get(id);
     if (!project || project.virtual || !this.idle(id)) return;
+    // Global concurrency limit: do not even mark the item running. The next status event (a turn ending) wakes us.
+    if (!this.hasRoom(id)) return;
     const session = this.sessions.get(project);
     const engine = this.hub.engineOf(id);
     Object.assign(item, { status: 'running', startedAt: this.now(), updatedAt: this.now(), error: null, engine });
-    this.dispatching = id;
+    this.metrics?.queueStart?.({ waitMs: Number.isFinite(item.createdAt) ? Math.max(0, this.now() - item.createdAt) : 0 });
     let sent;
-    const settings = this.hub.settingsFor(id);
-    const autoEffort = item.effort && settings.effortAuto
-      ? { level: item.effort, reason: item.effortReason, source: item.effortSource, model: item.effortModel }
-      : null;
-    // Model Auto: the item was classified (routes/queue.js) and its level picks the tier here, so a queue keeps
-    // switching models per task with no classifier call at dispatch.
-    const autoModel = item.effort && settings.modelAuto ? tierFor(item.effort, engine, settings.modelTiers) : null;
     try {
-      const patch = {};
-      if (autoEffort) Object.assign(patch, { effort: autoEffort.level, effortAuto: true });
-      if (autoModel) Object.assign(patch, { model: autoModel.model, modelAuto: true });
-      if (Object.keys(patch).length) {
-        this.hub.updateSettings(id, patch);
-        session.syncSettings();
+      this.dispatching.add(id);
+      const settings = this.hub.settingsFor(id);
+      const autoEffort = item.effort && settings.effortAuto
+        ? { level: item.effort, reason: item.effortReason, source: item.effortSource, model: item.effortModel }
+        : null;
+      // Model Auto: the item was classified (routes/queue.js, or at dispatch above) and its level picks the tier here,
+      // so a queue keeps switching models per task with no classifier call at dispatch.
+      const autoModel = item.effort && settings.modelAuto ? tierFor(item.effort, engine, settings.modelTiers) : null;
+      // A prompt queued at the turn limit already has its bubble: the session fills that one in instead of adding one.
+      const queueChatId = typeof item.chatId === 'string' && item.chatId ? item.chatId : null;
+      try {
+        const patch = {};
+        if (autoEffort) Object.assign(patch, { effort: autoEffort.level, effortAuto: true });
+        if (autoModel) Object.assign(patch, { model: autoModel.model, modelAuto: true });
+        if (Object.keys(patch).length) {
+          this.hub.updateSettings(id, patch);
+          session.syncSettings();
+        }
+        const files = this.loadAttachments(id, item);
+        sent = session.prompt(item.text, files, { queueItem: item.id, ...(queueChatId ? { queueChatId } : {}), ...(autoEffort ? { autoEffort } : {}), ...(autoModel ? { autoModel: { tier: autoModel.key, label: autoModel.label, model: autoModel.model } } : {}) });
+      } catch (err) {
+        sent = null;
+        item.error = err.message;
       }
-      const files = this.loadAttachments(id, item);
-      sent = session.prompt(item.text, files, { queueItem: item.id, ...(autoEffort ? { autoEffort } : {}), ...(autoModel ? { autoModel: { tier: autoModel.key, label: autoModel.label, model: autoModel.model } } : {}) });
-    } catch (err) {
-      sent = null;
-      item.error = err.message;
     } finally {
-      this.dispatching = null;
+      this.dispatching.delete(id);
+      this.scheduleAll(); // a free slot may remain for another project after this dispatch
     }
-    item.chatId = sent?.chatId ?? null;
+    item.chatId = sent?.chatId ?? item.chatId; // never forget the bubble of a prompt that was already queued
     if (!session.busy) {
-      // Never reached Claude Code (not installed, failed to start): the reason is already in the chat.
+      // Never reached Claude Code (not installed, failed to start): the reason is already in the chat. A queued
+      // bubble must not keep saying "antre" for a turn that never started.
+      if (item.chatId) this.hub.updateChat(id, item.chatId, { queued: false, cancelled: true, queuePosition: null });
       const name = this.engineName(item, id);
       this.finish(id, item, { status: 'failed', error: item.error ?? `${name} tidak bisa dijalankan.` });
       this.pauseFor(id, 'failed', `${name} tidak bisa dijalankan`);
       return;
     }
     this.changed(id);
+  }
+
+  /**
+   * The median turn duration of a project (or of all projects when it has no history yet), from the results seen
+   * this run and the finished queue items stored with the queue. Null means "no idea yet" (no ETA shown).
+   */
+  typicalTurnMs(id = null) {
+    const median = (list) => {
+      const sorted = [...list].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return Math.round(sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2);
+    };
+    const finished = (pid) =>
+      (this.queues[pid]?.items ?? [])
+        .filter((i) => i.status === 'done' && Number.isFinite(i.meta?.durationMs) && i.meta.durationMs > 0)
+        .map((i) => i.meta.durationMs)
+        .slice(-10);
+    if (id) {
+      const own = this.durations.get(id) ?? [];
+      if (own.length) return median(own);
+      const stored = finished(id);
+      if (stored.length) return median(stored);
+    }
+    const all = [];
+    for (const pid of Object.keys(this.queues)) all.push(...finished(pid));
+    for (const list of this.durations.values()) all.push(...list);
+    return all.length ? median(all) : null;
+  }
+
+  /**
+   * Rough time until `item` can start (ms), from the durations of the turns ahead. A free slot means ~0. Unknown
+   * durations give null (the UI shows no estimate). Slots are simulated: the soonest running turn frees first,
+   * each item ahead occupies it for that project's typical turn.
+   */
+  estimateWaitMs(item, order = this.orderedWaiting()) {
+    const index = order.findIndex((entry) => entry.item.id === item.id);
+    if (index < 0) return null;
+    if (this.hasRoom()) return 0;
+    const limit = maxConcurrentOf(this.hub);
+    if (limit <= 0) return 0;
+    const now = this.now();
+    const slots = [];
+    const withItem = new Set();
+    for (const [pid, q] of Object.entries(this.queues)) {
+      for (const it of q.items) {
+        if (it.status !== 'running') continue;
+        withItem.add(pid);
+        const typical = this.typicalTurnMs(pid);
+        if (typical == null) return null;
+        const elapsed = Number.isFinite(it.startedAt) ? Math.max(0, now - it.startedAt) : 0;
+        slots.push(Math.max(0, typical - elapsed));
+      }
+    }
+    // A direct prompt can hold a slot without a queue item: use its project's typical time as the remainder.
+    for (const pid of activeProjects(this.hub)) {
+      if (withItem.has(pid)) continue;
+      const typical = this.typicalTurnMs(pid);
+      if (typical == null) return null;
+      slots.push(typical);
+    }
+    while (slots.length < limit) slots.push(0);
+    slots.sort((a, b) => a - b);
+    for (let i = 0; i < index; i += 1) {
+      const typical = this.typicalTurnMs(order[i].projectId);
+      if (typical == null) return null;
+      slots[0] += typical;
+      slots.sort((a, b) => a - b);
+    }
+    return Math.round(Math.min(...slots));
   }
 
   /** One line for the log. */

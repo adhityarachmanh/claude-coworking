@@ -25,6 +25,51 @@ const CHANGES = {
 };
 
 export function register(router) {
+  // 🌐 Every project's live queue in the fair dispatch order (read-only; WiFi may look too). The chat bubbles get
+  // the same numbers/ETA from src/queue.js refreshQueuePositions(), so both views agree.
+  router.post('/api/queues', ({ hub, taskQueue }, req, res) => {
+    const order = taskQueue.orderedWaiting();
+    const positions = new Map(
+      order.map((entry, i) => [entry.item.id, { position: i + 1, etaMs: taskQueue.estimateWaitMs(entry.item, order) }]),
+    );
+    const queues = [];
+    let waiting = 0;
+    let running = 0;
+    for (const [id, q] of Object.entries(taskQueue.queues)) {
+      const project = hub.projects.get(id);
+      if (!project || project.virtual) continue;
+      const items = q.items
+        .filter((item) => item.status === 'waiting' || item.status === 'running')
+        .map((item) => {
+          if (item.status === 'waiting') waiting += 1;
+          else running += 1;
+          const spot = positions.get(item.id);
+          return {
+            id: item.id,
+            text: item.text,
+            status: item.status,
+            createdAt: item.createdAt ?? null,
+            startedAt: item.startedAt ?? null,
+            error: item.error ?? null,
+            routineId: item.routineId ?? null,
+            runbookId: item.runbookId ?? null,
+            queuePosition: spot?.position ?? null,
+            etaMs: spot?.etaMs ?? null,
+          };
+        });
+      if (!items.length && !q.paused) continue;
+      queues.push({ project: id, name: project.name, paused: q.paused === true, reason: q.reason ?? null, items });
+    }
+    queues.sort((a, b) => {
+      const first = (queue) => queue.items.reduce((min, item) => (item.queuePosition != null ? Math.min(min, item.queuePosition) : min), Infinity);
+      const ap = first(a);
+      const bp = first(b);
+      if (ap !== bp) return ap - bp;
+      return a.name.localeCompare(b.name);
+    });
+    return json(res, 200, { queues, waiting, running });
+  }, { maxBody: 1024 });
+
   router.post('/api/projects/:id/queue', withProject(({ taskQueue }, req, res, { id }) => json(res, 200, { queue: taskQueue.view(id) })));
   // 🔁 Retry a failed item once, automatically (per project).
   router.post('/api/projects/:id/queue-retry-once', withProject((ctx, req, res, { id }, body) => {

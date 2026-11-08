@@ -701,6 +701,35 @@
           <button type="button" id="data-purge-push" class="ghost" title="Hapus log notifikasi yang dikirim ke HP">🧹 Hapus riwayat notifikasi</button>
           <button type="button" id="data-purge-trash" class="ghost danger-text" title="Hapus permanen semua sesi di folder trash">🗑 Kosongkan trash sesi</button>
         </div>
+        <!-- ⏳ Retensi otomatis (features/data.js, server POST /api/data/retention/*): laptop/Tailscale only -->
+        <section class="data-retention" aria-labelledby="data-retention-title">
+          <b id="data-retention-title">⏳ Retensi otomatis</b>
+          <p class="muted small">Pesan chat dan laporan pemakaian yang lebih lama dari batas ini dihapus otomatis tiap hari. Transkrip sesi dan backup tidak disentuh; 0 = simpan selamanya.</p>
+          <div class="data-retention-row">
+            <label for="data-ret-chats">Chat</label>
+            <select id="data-ret-chats" aria-label="Batas retensi pesan chat">
+              <option value="0">Simpan selamanya</option>
+              <option value="30">30 hari</option>
+              <option value="90">90 hari</option>
+              <option value="180">180 hari</option>
+              <option value="365">365 hari</option>
+            </select>
+            <label for="data-ret-usage">Laporan pemakaian</label>
+            <select id="data-ret-usage" aria-label="Batas retensi laporan pemakaian">
+              <option value="0">Simpan selamanya</option>
+              <option value="30">30 hari</option>
+              <option value="90">90 hari</option>
+              <option value="180">180 hari</option>
+              <option value="365">365 hari</option>
+            </select>
+          </div>
+          <p id="data-ret-preview" class="muted small" aria-live="polite"></p>
+          <div class="data-actions">
+            <button type="button" id="data-ret-preview-btn" class="ghost">Pratinjau</button>
+            <button type="button" id="data-ret-save" class="primary">Simpan</button>
+            <button type="button" id="data-ret-run" class="ghost danger-text">Bersihkan sekarang</button>
+          </div>
+        </section>
         <div class="data-project-row">
           <label for="data-project" class="muted small">Hapus data satu project (chat, ledger, pengaturan)</label>
           <div class="data-project-controls">
@@ -719,6 +748,7 @@
                 <option value="backup-verify">Verifikasi backup</option>
                 <option value="backup-rekey">Ganti sandi backup</option>
                 <option value="data-purge">Hapus data</option>
+                <option value="retention-run">Retensi data</option>
               </select>
               <button type="button" id="data-audit-export" class="ghost" title="Unduh seluruh audit sebagai CSV">⬇ CSV</button>
             </span>
@@ -742,7 +772,7 @@
 
     <div id="queue-modal" class="modal" hidden>
       <div class="modal-card queue-card" role="dialog" aria-modal="true" aria-labelledby="queue-title">
-        <div class="modal-head"><b id="queue-title">📋 Antrian <small id="queue-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="queue-title">📋 Antrian <small id="queue-project" class="muted"></small></b><button type="button" id="queue-all-open" class="ghost" title="Lihat antrian semua project">🌐 Semua</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div class="queue-bar">
           <p id="queue-state" class="queue-state" role="status" aria-live="polite"></p>
           <button id="queue-toggle" type="button" class="ghost">⏸ Jeda</button>
@@ -788,6 +818,32 @@
           <ul id="runbook-list" class="runbook-list"></ul>
         </section>
         <p class="muted small queue-help">Satu item per giliran. Antrian berhenti bila item gagal/dihentikan, kuota habis, atau penuh; tetap dijeda setelah restart. Seret untuk mengubah urutan.</p>
+      </div>
+    </div>
+
+    <!-- 🌐 Semua antrian (features/queue-all.js): the global order across projects, read-only from the server -->
+    <div id="queue-all-modal" class="modal" hidden>
+      <div class="modal-card queue-card queue-all-card" role="dialog" aria-modal="true" aria-labelledby="queue-all-title">
+        <div class="modal-head"><b id="queue-all-title">🌐 Semua antrian <small id="queue-all-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Urutan global lintas project. Prompt interaktif didahulukan dari runbook/tugas terjadwal, lalu yang paling lama menunggu.</p>
+        <div class="queue-all-tools"><button type="button" id="queue-all-refresh" class="ghost">↻ Muat ulang</button></div>
+        <ol id="queue-all-list" class="queue-all-list" aria-label="Semua item antrian"></ol>
+        <p id="queue-all-empty" class="muted" hidden>Tidak ada item antrian.</p>
+      </div>
+    </div>
+
+    <!-- ✎ Edit a prompt that is still in 📋 Antrian (features/queue-edit.js): POST queue-update patches the same bubble -->
+    <div id="queue-edit-modal" class="modal" hidden>
+      <div class="modal-card queue-edit-card" role="dialog" aria-modal="true" aria-labelledby="queue-edit-title">
+        <div class="modal-head"><b id="queue-edit-title">✎ Ubah prompt antrian</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <label class="queue-edit-field" for="queue-edit-text">Prompt</label>
+        <textarea id="queue-edit-text" class="queue-edit-input" rows="5" maxlength="20000" spellcheck="false" aria-describedby="queue-edit-error"></textarea>
+        <p class="muted small">Tersimpan untuk item antrian ini saja; bubble di chat ikut diperbarui.</p>
+        <p id="queue-edit-error" class="queue-edit-error" role="alert" hidden></p>
+        <div class="queue-edit-actions">
+          <button type="button" id="queue-edit-cancel" class="ghost">Batal</button>
+          <button type="button" id="queue-edit-save" class="primary">Simpan</button>
+        </div>
       </div>
     </div>
 
@@ -850,6 +906,18 @@
               <summary>Riwayat perubahan budget</summary>
               <ul id="budget-audit-list"><li class="muted small">Buka untuk memuat riwayat…</li></ul>
             </details>
+          </section>
+          <hr />
+          <!-- ⚡ Batas giliran bersamaan (features/settings.js, server POST /api/concurrency/save): laptop/Tailscale only -->
+          <section id="concurrency-section" class="concurrency-block" aria-labelledby="concurrency-title">
+            <b id="concurrency-title">⚡ Batas giliran bersamaan</b>
+            <p class="muted small">Berapa project yang boleh bekerja pada saat yang sama di laptop ini. Prompt ke project lain otomatis masuk 📋 Antrian saat batas tercapai dan jalan begitu ada slot kosong; 0 = tanpa batas.</p>
+            <div class="concurrency-row">
+              <label for="max-concurrent">Maksimal giliran</label>
+              <input id="max-concurrent" type="number" inputmode="numeric" min="0" max="8" step="1" value="3" aria-describedby="max-concurrent-hint" />
+              <button type="button" id="max-concurrent-save" class="primary">Simpan</button>
+            </div>
+            <p id="max-concurrent-hint" class="muted small" role="status" aria-live="polite"></p>
           </section>
           </div>
           <div class="settings-panel" id="settings-panel-tim" data-settings-panel="tim" role="tabpanel" aria-labelledby="settings-tab-tim">
@@ -1268,12 +1336,13 @@
               <div id="report-period-table"></div>
               <h4 class="report-sub">Per model</h4>
               <div id="report-models"></div>
+              <div id="report-roles"></div>
             </details>
           </div>
         </div>
         <div class="report-actions">
           <div id="report-scope" class="report-scope muted small"></div>
-          <button id="report-csv" class="ghost" disabled>⬇ CSV</button>
+          <button id="report-csv" class="ghost" disabled>⬇ Unduh CSV</button>
           <button id="report-pdf" class="primary">⬇ Unduh PDF</button>
         </div>
       </div>
@@ -1322,7 +1391,7 @@
     <!-- 🗂 Semua project (features/dashboard.js, rules in core/dashboard-rules.js): read-only, live from the stream -->
     <div id="dash-modal" class="modal" hidden>
       <div class="modal-card dash-modal-card" role="dialog" aria-modal="true" aria-labelledby="dash-title">
-        <div class="modal-head"><b id="dash-title">🗂 Semua project <small id="dash-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="dash-title">🗂 Semua project <span id="dash-capacity" class="dash-capacity" hidden></span> <small id="dash-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <!-- ♪ one music row (features/spotify.js): read-only info, ⏯ when this device may control it -->
         <div id="dash-today" class="dash-today" hidden></div>
         <div id="dash-music" class="dash-music" hidden>

@@ -430,13 +430,30 @@ export class ClaudeSession {
 
   /**
    * @param attachments 📎 files checked by src/attachments.js readAttachments(): [{ kind, name, size, mediaType, data?, text? }]
-   * @param extra more fields for the prompt's chat bubble (`queueItem`: sent from 📋 Antrian, src/queue.js)
+   * @param extra more fields for the prompt's chat bubble (`queueItem`: sent from 📋 Antrian, src/queue.js).
+   *   `queueChatId`: the bubble that was already made when the prompt joined the queue at the global turn limit —
+   *   that same bubble starts the turn (never a second one next to it).
    * @returns {{ chatId: string }} the prompt's chat bubble
    */
   prompt(text, attachments = [], extra = {}) {
     this.hub.clearInterrupted(this.id); // the user carries on (or starts over): the cut-short notice is done
     const uuid = randomUUID();
-    const chatId = this.hub.chat(this.id, { kind: 'user', text, source: 'web', attachments: attachments.length ? attachmentChips(attachments) : undefined, queued: this.busy || undefined, uuid, ...extra });
+    const { queueChatId, ...fields } = extra ?? {};
+    // Only a bubble that is still in this project's chat can be reused: a trimmed/deleted one gets a fresh bubble.
+    const queued = typeof queueChatId === 'string' ? this.hub.rt(this.id).chat.findLast((m) => m.id === queueChatId) : null;
+    let chatId;
+    if (queued) {
+      chatId = queued.id;
+      this.hub.updateChat(this.id, chatId, {
+        queued: false,
+        queuePosition: null,
+        uuid,
+        ...(fields.autoEffort && { autoEffort: fields.autoEffort }),
+        ...(fields.autoModel && { autoModel: fields.autoModel }),
+      });
+    } else {
+      chatId = this.hub.chat(this.id, { kind: 'user', text, source: 'web', attachments: attachments.length ? attachmentChips(attachments) : undefined, queued: this.busy || undefined, uuid, ...fields });
+    }
     if (!this.m.claude) {
       this.hub.updateChat(this.id, chatId, { queued: false, cancelled: true });
       this.hub.chat(this.id, { kind: 'error', text: 'Claude Code tidak ditemukan. Pastikan `claude` terpasang, atau set env CLAUDE_BIN.' });

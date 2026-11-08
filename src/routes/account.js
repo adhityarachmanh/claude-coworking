@@ -11,6 +11,7 @@ import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
 import { GO_PLANS, goAllowance } from '../opencode-go.js';
 import { renderPdf, reportHtml } from '../report.js';
+import { roleUsage } from '../role-usage.js';
 import { daySummary, PERIOD_UNITS, summarize, totals } from '../usage.js';
 import { json } from './http.js';
 
@@ -353,6 +354,12 @@ async function report(ctx, req, res, body, { pdf: wantPdf }) {
   const rows = ledger.query({ accountId, from, to });
   const groupBy = PERIOD_UNITS.includes(body.groupBy) ? body.groupBy : 'day';
   const summary = summarize(rows, { from: from || (rows[0]?.ts ?? to), to, groupBy });
+  // 🧩 Per-role estimate from the subagent transcripts (never fails the report: a missing transcript is Lead-only).
+  try {
+    summary.byRole = roleUsage(rows, { hub: ctx.hub, from, to });
+  } catch (err) {
+    console.error(`Per-role usage tidak bisa dihitung: ${err?.message ?? err}`);
+  }
   // The same-length window right before this one, for the "vs previous period" line (only with a real start).
   const span = to - from;
   const previous = from > 0 && span > 0 ? totals(ledger.query({ accountId, from: from - span, to: from - 1 })) : null;

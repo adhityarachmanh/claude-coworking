@@ -20,6 +20,7 @@ import { openFile } from './file-viewer.js';
 import { openMcp } from './mcp.js';
 import { openNotifySettings } from './notify.js';
 import { openProjects, selectProject } from './picker.js';
+import { openQueueAll } from './queue-all.js';
 import { openRewind } from './rewind.js';
 import { openRoster } from './roster.js';
 import { selectSettingsTab } from './settings.js';
@@ -196,6 +197,7 @@ function buildItems() {
   const dialogs = [
     ['projects', '📁', 'Ganti project', 'Ctrl K', null, () => openProjects(), 'switch project picker'],
     ['dashboard', '🗂', 'Semua project', '/dashboard', null, () => openDashboard(), 'dashboard overview ringkasan status semua project izin bekerja antrian'],
+    ['queues', '📋', 'Semua antrian', '', null, () => openQueueAll(), 'queue antrian semua project'],
     ['sessions', '🕘', 'Riwayat sesi', '/resume', needProject, () => openSessions(), 'history resume lanjutkan'],
     ['tasks', '⧗', 'Tugas latar', '/tasks', needProject, () => openTasks(), 'background tasks agent'],
     ['rewind', '⏪', 'Rewind', 'Esc Esc', needProject, () => openRewind(), 'checkpoint undo kembalikan'],

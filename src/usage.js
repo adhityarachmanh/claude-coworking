@@ -1,7 +1,10 @@
 // Token usage ledger (data/usage.jsonl). Every record carries the account that was logged in
 // when the tokens were spent, so reports for different accounts never mix.
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+/** Daily safety copies made by retention are themselves pruned after this many days. */
+export const RETENTION_BACKUP_DAYS = 30;
 
 export class UsageLedger {
   constructor({ file, account, maxBytes = 8 * 1024 * 1024, archiveDir }) {
@@ -183,6 +186,84 @@ export class UsageLedger {
     }
     if (removed) this.cache.sig = '';
     return removed;
+  }
+
+  /**
+   * Deletes rows older than `cutoff` (ms) from every ledger file: the archives and the active file. A line that
+   * cannot be parsed, or a row without a usable `ts`, is kept (never lose data over a cleanup). Before a file is
+   * rewritten it gets a once-a-day copy `${file}.bak-retention-YYYYMMDD`; an existing copy for that day is kept
+   * as it is. The rewrite is atomic (tmp + rename) and the parse cache is dropped.
+   * @returns {{ removed: number, files: number }} rows deleted and files changed
+   */
+  pruneBefore(cutoff) {
+    if (!Number.isFinite(cutoff) || cutoff <= 0) return { removed: 0, files: 0 };
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    let removed = 0;
+    let files = 0;
+    for (const file of this.files()) {
+      let lines;
+      try {
+        lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
+      } catch {
+        continue; // unreadable right now: the other files are still cleaned
+      }
+      const keep = lines.filter((line) => {
+        try {
+          const row = JSON.parse(line);
+          return !(Number.isFinite(row?.ts) && row.ts < cutoff);
+        } catch {
+          return true; // a torn/hand-edited line is kept, never dropped by a retention run
+        }
+      });
+      if (keep.length === lines.length) continue;
+      const backup = `${file}.bak-retention-${stamp}`;
+      try {
+        if (!existsSync(backup)) copyFileSync(file, backup); // one copy per day; an earlier one is the older state
+      } catch {
+        // the backup is best-effort; the rows are still removed below
+      }
+      try {
+        const tmp = `${file}.tmp`;
+        writeFileSync(tmp, keep.length ? `${keep.join('\n')}\n` : '');
+        renameSync(tmp, file);
+      } catch (err) {
+        console.error(`Retensi ledger ${path.basename(file)} gagal: ${err.message}`);
+        continue; // the original file is untouched and is tried again next time
+      }
+      removed += lines.length - keep.length;
+      files++;
+    }
+    if (removed) this.cache.sig = '';
+    this.pruneRetentionBackups();
+    return { removed, files };
+  }
+
+  /**
+   * Drops the `.bak-retention-YYYYMMDD` copies older than RETENTION_BACKUP_DAYS. They are this app's own safety
+   * copies, so they must not grow forever; a user backup (📦 Export) is never touched.
+   */
+  pruneRetentionBackups(now = Date.now()) {
+    const cutoff = now - RETENTION_BACKUP_DAYS * 86_400_000;
+    const dirs = new Set([path.dirname(this.file), this.archiveDir]);
+    for (const dir of dirs) {
+      let names;
+      try {
+        names = readdirSync(dir);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        const match = /\.bak-retention-(\d{4})(\d{2})(\d{2})$/.exec(name);
+        if (!match) continue;
+        const at = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+        if (!Number.isFinite(at) || at >= cutoff) continue;
+        try {
+          rmSync(path.join(dir, name), { force: true });
+        } catch {
+          // locked right now: tried again on the next retention run
+        }
+      }
+    }
   }
 
   query({ accountId, projectId = null, from = 0, to = Date.now() } = {}) {

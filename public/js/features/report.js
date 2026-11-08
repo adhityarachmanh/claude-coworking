@@ -250,6 +250,30 @@ function renderReportModels(byModel) {
   $('#report-models').innerHTML = `<table class="usage-table"><thead><tr><th>Model</th><th>Input</th><th>Output</th><th>Cache read</th><th>Total</th><th>Biaya</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+/** 🧩 Per role (estimate) below the models; a server without byRole (or no transcript) hides the block. */
+function renderReportRoles(byRole) {
+  const box = $('#report-roles');
+  if (!box) return;
+  const roles = Array.isArray(byRole?.roles) ? byRole.roles.filter((r) => Number(r?.tokens) > 0) : [];
+  if (!roles.length) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  const total = Number(byRole.totalTokens) || roles.reduce((n, r) => n + (Number(r.tokens) || 0), 0);
+  const rows = roles
+    .slice(0, 12)
+    .map(
+      (r) =>
+        `<tr><td>${escapeHtml(r.label ?? r.role ?? '-')}</td><td><b>${fmtShort(r.tokens)}</b></td><td>${reportShare(r.tokens, total)}</td><td>${engineCostText(r)}</td><td>${fmtNum(r.delegations ?? 0)}</td></tr>`,
+    )
+    .join('');
+  box.innerHTML = `<h4 class="report-sub">Per role <span class="muted">(perkiraan)</span></h4>
+    <table class="usage-table"><thead><tr><th>Role</th><th>Token</th><th>%</th><th>Biaya</th><th>Delegasi</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="muted small">${escapeHtml(byRole.note ?? '')}</p>`;
+  box.hidden = false;
+}
+
 // "Per mesin" labels: the same words as the PDF (the data keys stay claude/opencode, web/cli).
 const ENGINE_LABEL = { claude: 'Claude', opencode: 'OpenCode' };
 const SOURCE_LABEL = { web: 'Web', cli: 'Terminal' };
@@ -359,6 +383,7 @@ async function previewReport() {
     renderTrend(s);
     renderReportModels(s.byModel);
     renderReportEngines(s.byEngineSource, s.totals?.total ?? 0);
+    renderReportRoles(s.byRole);
   } catch (err) {
     if (seq === report.seq) showReportMessage(err.message, true);
   } finally {
@@ -391,6 +416,14 @@ function downloadCsv() {
     head.map(csvCell).join(','),
     ...periods.map((p) => [periodLabel(p, s.groupBy), p.input, p.output, p.cacheRead, p.total, p.costUsd == null ? '' : p.costUsd.toFixed(6)].map(csvCell).join(',')),
   ];
+  // 🧩 The same per-role estimate the preview/PDF show, at the end of the spreadsheet.
+  const roles = Array.isArray(s.byRole?.roles) ? s.byRole.roles.filter((r) => Number(r.tokens) > 0) : [];
+  if (roles.length) {
+    lines.push('', ['Per role (perkiraan)', 'Token', '%', 'Biaya USD', 'Delegasi'].map(csvCell).join(','));
+    for (const r of roles) {
+      lines.push([r.label ?? r.role ?? '', r.tokens ?? 0, r.share == null ? '' : (r.share * 100).toFixed(1), r.costUsd == null ? '' : Number(r.costUsd).toFixed(6), r.delegations ?? 0].map(csvCell).join(','));
+    }
+  }
   const name = `laporan-token-${new Date(s.from).toLocaleDateString('sv-SE')}-${new Date(s.to).toLocaleDateString('sv-SE')}.csv`;
   saveBlob(name, new Blob([`\uFEFF${lines.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' }));
 }

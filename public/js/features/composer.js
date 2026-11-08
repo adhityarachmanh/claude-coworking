@@ -600,9 +600,11 @@ async function sendPrompt() {
     renderComposer();
   }
   try {
-    await api(`/api/projects/${project}/prompt`, { text, attachments: files });
+    const answer = await api(`/api/projects/${project}/prompt`, { text, attachments: files });
     draftSent(project, text);
     rememberSent(project, kept); // memory only: ↻ Ulangi / Edit can send them again until a reload
+    // ⚡ The global turn limit was full: the server put the prompt in 📋 Antrian instead of refusing it.
+    if (answer?.queued) toast('Batas giliran penuh — prompt masuk 📋 Antrian dan akan jalan saat ada slot kosong.', 'ok');
   } catch (err) {
     input.value = text;
     restoreAttachments(kept, project);

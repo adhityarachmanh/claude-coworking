@@ -207,6 +207,25 @@ Antrian **berhenti sendiri** bila item gagal atau dihentikan, kuota akun habis, 
 
 **💰 Batas antrian** (di dialog): maks token output dan/atau maks biaya (USD, estimasi harga list) per project, dengan bar progres. Dicek setiap kali satu item selesai, jadi giliran yang berjalan tidak pernah dipotong. Menyimpan batas baru atau melanjutkan setelah berhenti karena batas memulai hitungan dari nol.
 
+**⚡ Batas giliran bersamaan** (⚙ → **Umum**, hanya dari laptop): berapa banyak project yang boleh bekerja serentak. Default **3**, rentang **0–8**, dan **0 = tanpa batas** (tersimpan sebagai `maxConcurrent` di `state.json`).
+
+- Hanya giliran yang dijalankan server yang dihitung. Sesi CLI di terminal tidak dihitung dan tidak dibatasi.
+- Saat batas penuh, prompt baru ke project lain **otomatis masuk 📋 Antrian** dan berjalan sendiri saat ada slot kosong (tidak ada prompt yang hilang). Prompt itu langsung tampil sebagai bubble **“antre #N”** dengan tombol **✕ Batal**; giliran yang sama memakai bubble tersebut (tidak dobel). Pesan susulan ke project yang sedang bekerja tetap diterima karena bergabung ke giliran yang sama.
+- Slot diberikan secara **FIFO lintas project**: prompt interaktif didahulukan dari tugas terjadwal/runbook, lalu yang paling lama menunggu. Nomor `#N` mengikuti urutan itu.
+- Effort/Model Auto untuk prompt yang antri diputuskan **saat giliran mulai**, bukan saat menunggu, jadi tidak ada panggilan klasifikasi tambahan saat laptop penuh.
+- `/compact`, `/continue`, dan handoff tetap ditolak dengan **429** beserta penjelasan (menyebut project yang sedang bekerja); kartu rencana yang menunggu persetujuan tetap terbuka.
+- Item 📋 Antrian **tidak gagal**: tetap menunggu lalu berjalan otomatis saat ada slot kosong. Bila antrian project sedang dijeda, prompt yang datang saat batas penuh ditolak dengan penjelasan agar tidak menumpuk diam-diam.
+- Di 🗂 Semua project ada badge `⚡ 2/3` (jumlah yang bekerja / batas; disembunyikan bila 0, berwarna peringatan saat penuh), dengan ringkasan yang sama di bar HP.
+- Menurunkan batas tidak pernah memotong giliran yang sedang berjalan; batas baru berlaku untuk giliran berikutnya. Mengubah batas hanya bisa dari laptop (dari HP, termasuk Tailscale, bagian ini tidak tersedia).
+
+**🌐 Semua antrian** (tombol **🌐 Semua** di header dialog 📋 Antrian, atau `Ctrl+P` → *Semua antrian*): semua item antrian lintas project dalam urutan penjadwalan yang sama dengan pemberian slot—item **berjalan** dulu (paling lama mulai), lalu **menunggu** menurut posisi global `#N`, lalu antrian yang **dijeda** (⏸). Judulnya meringkas `N menunggu · M berjalan`, ditambah `· K antrian dijeda` bila ada. Tiap baris punya **Buka** (membuka dialog 📋 Antrian project itu) dan **Batal** untuk item yang menunggu. Panel mengikuti event `queue`, jadi menyegar sendiri selama terbuka. Hanya-lihat: boleh dibuka dari HP WiFi, tetapi Batal (dan semua perubahan) ditolak dari sana. Datanya dari `POST /api/queues` (read-only) yang mengembalikan `queues`, `waiting`, `running`, plus `queuePosition` dan `etaMs` per item.
+
+**⏳ Perkiraan tunggu di bubble:** bubble **antre #N** menampilkan `· ±X mnt` bila tunggunya ≥60 detik, atau `· sebentar` bila kurang. Angkanya dari median durasi giliran terakhir project itu (maks 10 terakhir; bila belum ada, dipakai durasi lintas project), lalu slot yang sedang berjalan disimulasikan. Tanpa data durasi sama sekali, ETA tidak ditampilkan—bubble tetap `antre #N`. Ini perkiraan, bukan janji.
+
+**✎ Edit prompt antre** (tombol **Edit** pada bubble yang masih `antre`): mengubah item antrian itu sendiri, bukan menyalin teksnya ke kotak pesan. Server menulis ulang item dan memperbarui **bubble yang sama**, jadi tidak ada item atau bubble kedua. Item yang sudah berjalan tidak bisa diedit (ditolak **409**).
+
+**Batasan:** item pada antrian project yang dijeda tetap dihitung **menunggu** di ringkasan dan diberi penanda **dijeda**, walau belum punya posisi `#N` dan tidak akan mulai sampai antrian dilanjutkan.
+
 **⏳ Peringatan kuota** (⚙): toast, notifikasi, dan penanda berwarna saat kuota sesi 5 jam atau mingguan melewati ambang kuning/merah (ambang diatur di ⚙, disimpan per browser). Dibaca dari sesi yang berjalan, tanpa request tambahan.
 
 ## Notifikasi
@@ -258,7 +277,7 @@ Kontrol Spotify yang sudah kamu pakai (Spotify Connect) lewat Spotify Web API. B
 - Dari HP **hanya lewat Tailscale**. Logout dari HP butuh konfirmasi + ketik `LOGOUT`. Setiap login/logout dari HP memunculkan peringatan di laptop dan dicatat di `data/server.log` serta riwayat perubahan akun.
 - OpenCode: logout provider juga butuh konfirmasi `LOGOUT`. Kalau model yang sedang dipakai berasal dari provider itu, model **tidak diganti diam-diam**; muncul peringatan dan prompt berikutnya menunggu sampai kamu memilih model lain atau Default.
 
-**📊 Laporan**: pemakaian token per akun atau **Semua akun (Claude + OpenCode)** dan periode (Hari ini, 7 hari, 30 hari, Bulan ini, Semua, atau 📅 tanggal). Pratinjau berisi KPI dan **📈 Tren** per hari/minggu/bulan; rincian per periode, per model, dan blok **Per mesin** ada di **Rincian per periode & model** yang bisa dibuka. **⬇ Unduh PDF** menambah rincian per mesin × sumber, per project, sumber (web/CLI), sesi teratas, dan kuota. PDF dibuat Edge/Chrome headless (env `OFFICE_BROWSER` untuk path lain); tanpa keduanya, laporan dibuka di tab baru untuk dicetak.
+**📊 Laporan**: pemakaian token per akun atau **Semua akun (Claude + OpenCode)** dan periode (Hari ini, 7 hari, 30 hari, Bulan ini, Semua, atau 📅 tanggal). Pratinjau berisi KPI dan **📈 Tren** per hari/minggu/bulan; rincian per periode, per model, blok **Per mesin**, dan **Per role (perkiraan)** ada di **Rincian per periode & model** yang bisa dibuka. **⬇ Unduh PDF** menambah rincian per mesin × sumber, per project, sumber (web/CLI), sesi teratas, per role, dan kuota. PDF dibuat Edge/Chrome headless (env `OFFICE_BROWSER` untuk path lain); tanpa keduanya, laporan dibuka di tab baru untuk dicetak.
 
 - **Budget pemakaian**: di ⚙ → **Umum** → **Budget pemakaian** pilih **Global (semua project)** atau satu project, lalu isi batas **harian / mingguan / bulanan** (USD, atau kosong = tanpa batas). Baris `$12,30 / $20 (62%)` berubah hijau/kuning (≥80%)/merah (≥100%), dengan **sisa** dolar, plus **proyeksi akhir bulan** `±$X` dari laju bulan ini (peringatan bila proyeksinya melewati batas bulanan) dan **grafik 7 hari terakhir** (batang per hari, hari kosong tetap tampil; arahkan kursor untuk tanggal dan nominalnya). Ringkasan global muncul di 🩺 Kesehatan. Saat sebuah batas tercapai, **pengiriman prompt dihentikan** (prompt, ringkas konteks, lanjutkan giliran, handoff, dan build dari kartu rencana ditolak) dan antrian dijeda. Tombol **Izinkan 1 giliran** memberi satu giliran lewat dengan konfirmasi (berlaku 5 menit), lalu hard stop aktif lagi. Perubahan batas dan override dicatat di `data/budget-audit.jsonl` (180 hari terakhir) dan bisa dilihat di **Riwayat perubahan budget** pada bagian yang sama. Dihitung dari biaya tercatat (harga list Claude; OpenCode Go umumnya tercatat $0 karena langganan).
 
@@ -269,7 +288,7 @@ Kontrol Spotify yang sudah kamu pakai (Spotify Connect) lewat Spotify Web API. B
 - **Per mesin**: baris **Claude · Web**, **Claude · Terminal**, **OpenCode · Web**, dan **OpenCode · Terminal** (yang kosong disembunyikan) dengan total token, persentase dari total laporan, dan biaya. Pilih **Semua akun** untuk melihat Claude dan OpenCode dalam satu laporan; pilihan per akun tetap ada.
 - **Biaya per model**: daftar model di laporan juga menampilkan biaya dari catatan pemakaian (bukan harga list). `—` berarti belum ada catatan biaya untuk model itu, `$0.00` untuk model gratis.
 - **Biaya**: `—` bila tidak ada catatan biaya untuk kelompok itu, `$0.00` untuk model gratis (OpenCode), dan `(N%)` bila hanya sebagian catatan punya biaya. Kartu **Estimasi biaya** menampilkan berapa persen catatan yang punya biaya.
-- **Per role belum tersedia**: pemakaian subagent digabung ke sesi induknya, jadi tidak ada angka per role yang bisa ditampilkan. Rincian per mesin memakai akun yang tercatat (baris lama sebelum fitur ini ikut diatribusikan lewat akunnya, tanpa menulis ulang data).
+- **🧩 Per role (perkiraan)**: tabel **Backend Developer**, **Frontend Developer**, **QA**, **Lead (utama)**, dan role lain dengan token, persentase dari total laporan, biaya, serta jumlah delegasi. Angkanya dihitung dari **proporsi token di transcript**: main thread = Lead, setiap `agent-*.jsonl` = role dari `agentType`-nya. Total tabel **selalu sama dengan total laporan**; cache read dan sesi tanpa transcript membuat pembagiannya tidak presisi, jadi ini perkiraan, bukan pengukuran kedua. Sesi tanpa transcript masuk ke **Lead (utama)**. CSV juga memuat bagian ini.
 
 - Catatan token disimpan bersama akun yang login saat itu (`data/usage.jsonl`), jadi dua akun tidak tercampur. Data mulai terkumpul sejak fitur ini aktif; transcript lama tidak dihitung. File ini **dirotasi otomatis** ke `data/usage-archive/` saat besar, dan semua arsip tetap dibaca laporan serta ikut backup.
 - **Audit akun** (`data/auth-audit.jsonl`) dipadatkan saat file melewati 256 KB atau saat server mulai: menyimpan **180 hari terakhir** (maks 2.000 aksi).
@@ -285,6 +304,65 @@ Kontrol Spotify yang sudah kamu pakai (Spotify Connect) lewat Spotify Web API. B
 - Tool: `figma_status`, `figma_selection`, `figma_page`, `figma_node`, `figma_export` (SVG/PNG), `figma_create_frame`, `figma_create_rect`, `figma_create_text`, `figma_set_fill`, `figma_move`.
 - Perintah hanya masuk lewat MCP; plugin memakai izin akun Figma kamu dan hanya file yang sedang terbuka. Detail & troubleshooting: [`tools/figma-bridge/README.md`](../tools/figma-bridge/README.md).
 
+## Kesehatan & diagnostik
+
+🩺 **Kesehatan sistem** (⚙ → tab **Sistem**, hanya laptop/Tailscale) merangkum server, akun, folder project, backup, akses HP, error 24 jam, dan ukuran data. Bagian di bawah menjelaskan angka aktivitas dan arti peringatan backup; pemeriksaan lain ada di [Tanpa terminal](#tanpa-terminal).
+
+**📈 Aktivitas 7 hari**
+
+Di bawah **Pemeriksaan**, 🩺 menampilkan baris **Hari ini** dan tabel 7 hari terakhir (waktu lokal, hari tertua di atas):
+
+| Kolom | Isi |
+|---|---|
+| Hari | Tanggal `DD/MM` |
+| Giliran | Giliran web yang selesai (berhasil + gagal) |
+| Gagal | Giliran yang berakhir gagal |
+| Antrian | Item 📋 Antrian yang mulai dijalankan |
+| Tunggu p95 | Waktu tunggu item antrian, persentil 95; `—` bila hari itu tidak ada sampel |
+| Kena batas | Berapa kali ⚡ batas giliran bersamaan tercapai: prompt yang masuk antrian + command/handoff/approval yang ditolak |
+
+Yang dicatat hanya **angka agregat** di `data/metrics.json`, rolling **7 hari** lokal (hari yang lebih lama dibuang otomatis):
+
+- jumlah giliran selesai/gagal dan rata-rata durasinya,
+- jumlah item antrian yang mulai, plus p50/p95 waktu tunggunya,
+- `capacityQueued`: prompt masuk antrian karena batas giliran,
+- `capacityRefused`: command, handoff, atau approval ditolak karena batas,
+- jumlah restart server dan waktu terakhirnya.
+
+Contoh: `Hari ini: 12 giliran (1 gagal) · 3 dari antrian · rata-rata 2 mnt · tunggu p95 45 dtk · 2× kena batas.` Tabelnya bisa berisi:
+
+| Hari | Giliran | Gagal | Antrian | Tunggu p95 | Kena batas |
+|---|---|---|---|---|---|
+| 02/11 | 8 | 0 | 1 | 30 dtk | 0 |
+| 03/11 | 0 | 0 | 0 | — | 0 |
+| 04/11 | 14 | 1 | 4 | 1 mnt | 3 |
+| 05/11 | 11 | 0 | 2 | 0 dtk | 1 |
+
+- Hari tanpa sampel tunggu menampilkan `—`, bukan `0`; hari tanpa aktivitas tetap tampil dengan angka `0`.
+- Restart dihitung setiap server menyala dan tidak ikut dibuang bersama jendela 7 hari; baris di bawah tabel menulis `Server mulai ulang N kali · terakhir …`.
+- Kalau server belum mengirim data metrics (versi lama), bagian ini tidak muncul sama sekali.
+
+**Alarm backup**
+
+Pemeriksaan **Backup otomatis** di 🩺 tidak berhenti di status jadwal terakhir: server juga melihat folder tujuan dan mencari file `adhit-office-backup-auto-*.zip` terbaru.
+
+| Kondisi | Hasil di 🩺 |
+|---|---|
+| File auto terbaru ada dan masih segar | ✅ `Terakhir … · nama file · ukuran` |
+| Harian: file lebih tua dari **36 jam**; mingguan: lebih tua dari **8 hari** | ⚠ warning, ingatkan untuk memeriksa folder lalu menjalankan lagi |
+| File tidak ditemukan (folder pindah, file dihapus, atau folder tidak terbaca) | ⚠ *File backup tidak ditemukan di folder tujuan* |
+| Jadwal mati, folder belum diatur, belum pernah jalan, atau run terakhir gagal | ⚠ warning, tanpa cek file |
+
+- Hanya file hasil ⏰ backup otomatis yang dihitung. Export manual `adhit-office-backup-YYYY-MM-DD.zip` (tanpa `-auto-`) tidak dihitung, jadi menyimpan export manual tidak mematikan alarm.
+- Umur file dibandingkan dengan jadwal yang aktif: harian memberi toleransi 36 jam (satu jadwal terlewat), mingguan 8 hari.
+- Perbaiki dengan memastikan folder tujuan ada dan bisa ditulis, lalu **▶ Jalankan sekarang** di ⚙ → Cadangkan riwayat.
+
+**Batasan**
+
+- Angka hanya dari giliran **web yang dijalankan server**. Sesi CLI yang dipantulkan ke kantor (mirror) dan demo kantor tidak dihitung, karena server tidak menjalankan gilirannya.
+- p95 dihitung dari maksimal 200 sampel tunggu terakhir per hari, jadi angka ini perkiraan.
+- `data/metrics.json` adalah **diagnostik, bukan backup**: tidak ikut export/import, tidak memuat teks percakapan/prompt/nama project, dan aman dihapus (server mulai dari kosong).
+
 ## Backup & riwayat
 
 Ganti SSD, install ulang Windows, atau pindah laptop tanpa kehilangan percakapan lama.
@@ -297,7 +375,7 @@ Ganti SSD, install ulang Windows, atau pindah laptop tanpa kehilangan percakapan
 | Ikut di backup | Tidak ikut |
 |---|---|
 | `~/.claude/projects/**` (sesi, subagent, `memory/`), `history.jsonl`, `file-history/` (checkpoint rewind), `plans/` | Login & kredensial Claude (`.credentials.json`, `~/.claude.json`) |
-| `data/state.json` (folder, favorit, pengaturan project, **mesin per project**, model/effort per mesin, nama tim, template), `data/usage.jsonl` + `data/usage-archive/` (ledger, dirotasi otomatis), `data/chats/*.jsonl` dan `data/chats-opencode/*.jsonl` (riwayat chat panel) | HP yang dipasangkan dan langganan push, kunci VAPID, `data/tls/`, `data/spotify.json`, cache, `server.log`, salinan `data/state.json.pre-per-project-*` |
+| `data/state.json` (folder, favorit, pengaturan project, **mesin per project**, model/effort per mesin, nama tim, template), `data/usage.jsonl` + `data/usage-archive/` (ledger, dirotasi otomatis), `data/chats/*.jsonl` dan `data/chats-opencode/*.jsonl` (riwayat chat panel) | HP yang dipasangkan dan langganan push, kunci VAPID, `data/tls/`, `data/spotify.json`, `data/metrics.json`, cache, `server.log`, salinan `data/state.json.pre-per-project-*` |
 
 **Import menggabungkan, tidak menimpa:**
 
@@ -315,10 +393,33 @@ Ganti SSD, install ulang Windows, atau pindah laptop tanpa kehilangan percakapan
 
 **Hapus data:** export zip adalah jawaban akses/portabilitas. Untuk menghapus, hapus zip backup, folder `data/chats*`, `data/usage*.jsonl`, `data/auth-audit.jsonl`, `data/redo/`, `data/trash/`, dan `~/.claude/projects` sesuai kebutuhan. Salinan `data/state.json.pre-per-project-*` (paling banyak 5, maks 30 hari, **tanpa** data HP/VAPID) juga aman dihapus setelah aplikasi berjalan normal.
 
-**⏰ Backup otomatis** (⚙ → Cadangkan riwayat, laptop, nonaktif secara default): **Harian** atau **Mingguan** + hari, **jam**, **folder tujuan** (path lengkap di laptop ini; folder jaringan dan path relatif ditolak), dan **simpan N backup terakhir** (1–100). Nama file `adhit-office-backup-auto-YYYYMMDD-HHmmss.zip`. Jadwal yang terlewat saat laptop mati dijalankan sekali begitu server menyala. Rotasi hanya menghapus file `adhit-office-backup-auto-*.zip`. Ada **▶ Jalankan sekarang** dan status hasil terakhir.
+**⏰ Backup otomatis** (⚙ → Cadangkan riwayat, laptop, nonaktif secara default): **Harian** atau **Mingguan** + hari, **jam**, **folder tujuan** (path lengkap di laptop ini; folder jaringan dan path relatif ditolak), dan **simpan N backup terakhir** (1–100). Nama file `adhit-office-backup-auto-YYYYMMDD-HHmmss.zip`. Jadwal yang terlewat saat laptop mati dijalankan sekali begitu server menyala. Rotasi hanya menghapus file `adhit-office-backup-auto-*.zip`. Ada **▶ Jalankan sekarang** dan status hasil terakhir. File terbaru juga dicek ada dan tidak basi di 🩺 (lihat [Kesehatan & diagnostik](#kesehatan--diagnostik)).
 
 **🕵️ Data saya** (⚙ → Cadangkan riwayat, laptop): ukuran `state.json`, riwayat chat kedua mesin, ledger pemakaian, riwayat notifikasi, trash sesi (dengan retensi 30 hari), dan backup otomatis. Dua pembersihan aman: **🧹 Hapus riwayat notifikasi** dan **🗑 Kosongkan trash sesi** (permanen; cadangkan dulu bila perlu). **Hapus data project** menghapus chat kedua mesin, ledger, pengaturan, sesi, antrian, dan runbook satu project tanpa menghapus project/folder-nya. Riwayat chat dan laporan pemakaian tidak dihapus dari tombol lain. Bagian **📜 Aktivitas data terakhir** menampilkan audit ekspor/impor/verifikasi/ganti sandi backup dan pembersihan data (tanpa isi percakapan), bisa disaring dan diunduh CSV.
 
 **Format:** ZIP standar (bisa dibuka Explorer / `Expand-Archive`), ditulis tanpa dependency oleh `src/zip.js` (deflate streaming, CRC-32, ZIP64 otomatis). Upload import maks 4 GB (`OFFICE_BACKUP_MAX_BYTES`).
 
 Batasan: lokasi Claude mengikuti `~/.claude` (atau `CLAUDE_PROJECTS_DIR`). Pindah antar-OS belum diuji. Nama folder transcript yang dipotong Claude Code (path > 200 karakter) tidak di-remap.
+
+## Retensi data
+
+**⏳ Retensi otomatis** (⚙ → **💾 Cadangkan riwayat** → **🕵️ Data saya**, hanya dari laptop) membersihkan dua hal yang tumbuh terus: riwayat chat panel dan ledger pemakaian. Default keduanya **0 = simpan selamanya**, jadi tidak ada yang terhapus sampai kamu mengaturnya.
+
+| Pengaturan | Default | Pilihan |
+|---|---|---|
+| Batas pesan chat | `0` (simpan selamanya) | 0/30/90/180/365 hari di UI; server menerima 0–3650 |
+| Batas laporan pemakaian | `0` (simpan selamanya) | sama |
+
+Nilainya tersimpan sebagai `retention` `{ chatsDays, usageDays }` di `state.json`.
+
+**Yang dihapus:** pesan panel chat aplikasi (`data/chats`, `data/chats-opencode`) dan baris ledger pemakaian (`data/usage.jsonl` serta `data/usage-archive/*.jsonl`) yang lebih lama dari batas. Pesan/baris tanpa timestamp valid dan baris rusak selalu dipertahankan.
+
+**Yang tidak disentuh:** transkrip sesi Claude/OpenCode, riwayat sesi, backup, dan file project. Retensi ini juga terpisah dari retensi trash sesi (30 hari) dan **Hapus data project**.
+
+**Di panel:** pilih batas **Chat** dan **Laporan pemakaian**, lalu:
+
+- **Pratinjau** menghitung berapa yang akan terhapus tanpa menyentuh file.
+- **Simpan** hanya menyimpan pilihan; pembersihan ikut jadwal otomatis.
+- **Bersihkan sekarang** menyimpan pilihan yang ada di layar lalu langsung menjalankan. Ada konfirmasi berisi hasil pratinjau terakhir, dan tindakan ini tidak bisa dibatalkan.
+
+Retensi berjalan otomatis saat server start dan tiap **24 jam**. Sebelum file ledger ditulis ulang, dibuat backup harian `.bak-retention-YYYYMMDD` (satu per file per hari; salinan ini sendiri dibersihkan setelah 30 hari). Setiap run dicatat di audit **`retention-run`** pada 📜 Aktivitas data, bisa disaring per jenis dan diunduh CSV.

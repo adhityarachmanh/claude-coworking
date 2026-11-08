@@ -2,13 +2,15 @@
 // Reads allowed over WiFi: sessions, rewind-points. Everything else acts (refused there by the gate in server.js);
 // `search` / `export-session` read, but expose the whole history: laptop and Tailscale only (src/remote.js).
 // `redo-conversation` acts too (it moves the conversation / imports a session): refused over WiFi by the same gate.
-import { AttachmentError, readAttachments } from '../attachments.js';
+import { AttachmentError, attachmentChips, readAttachments } from '../attachments.js';
 import { budgetStop, consumeBudgetOverride } from '../budget.js';
 import { ConversationError, exportSession, SEARCH_LIMITS, searchSessions } from '../conversation.js';
 import { searchOpenCodeSessions } from '../opencode-search.js';
 import { REWINDING_MESSAGE } from '../acp-session.js';
+import { checkTurn } from '../concurrency.js';
 import { autoContext, classifyEffort } from '../effort-classifier.js';
 import { DEMO_ID } from '../hub.js';
+import { QUEUE_LIMITS } from '../queue.js';
 import { shortModelLabel, tierFor } from '../model-auto.js';
 import { listSessions, sessionHistory } from '../transcripts.js';
 import { openCodeSessions } from '../opencode-bin.js';
@@ -73,8 +75,44 @@ async function conversationRedo({ hub, opencode, project, session }) {
 
 const ok = (res) => json(res, 200, { ok: true });
 
+/**
+ * A prompt that arrives while the global turn limit is full joins 📋 Antrian instead of being refused: the queue's
+ * own dispatch waits for the same limit, so it runs as soon as a slot frees. A paused queue is never filled
+ * silently (the user would see nothing happen), and a full queue keeps the old refusal.
+ * The prompt's chat bubble is made here, once (`queued`, its position): the queue reuses it when the turn starts.
+ * `deferAuto`: Effort/Model Auto is classified at dispatch (src/queue.js), not while the prompt waits.
+ */
+function queueAtCapacity(hub, taskQueue, project, text, attachments, effort, gate, { deferAuto = false, metrics = null } = {}) {
+  if (taskQueue.view(project.id).paused) {
+    metrics?.capacityRefused?.();
+    return { status: 429, body: { ...gate.body, error: `${gate.body.error} Antrian project ini sedang dijeda — lanjutkan dulu, lalu kirim lagi.` } };
+  }
+  try {
+    // A queued item is capped at the queue's own text limit (20k); the direct path allows 50k. Truncating here keeps
+    // a prompt that merely waits for a slot from failing with a queue validation error.
+    const queueText = text.slice(0, QUEUE_LIMITS.text);
+    const item = taskQueue.add(project.id, queueText, effort, attachments, deferAuto ? { autoDeferred: true } : {});
+    metrics?.capacityQueued?.();
+    const chatId = hub.chat(project.id, {
+      kind: 'user',
+      text: queueText,
+      source: 'web',
+      attachments: attachments.length ? attachmentChips(attachments) : undefined,
+      queued: true,
+      queueItem: item.id,
+      queuePosition: taskQueue.positionFor(item.id),
+    });
+    taskQueue.attachChat(project.id, item.id, chatId);
+    taskQueue.schedule(project.id);
+    return { status: 200, body: { ok: true, queued: true, queueItem: item.id, chatId, queue: taskQueue.view(project.id) } };
+  } catch (err) {
+    metrics?.capacityRefused?.();
+    return { status: 429, body: { ...gate.body, error: `${gate.body.error} ${err.message}` } };
+  }
+}
+
 export function register(router) {
-  router.post('/api/projects/:id/prompt', withSession(async ({ hub, claude, opencode, ledger }, req, res, { project, session }, body) => {
+  router.post('/api/projects/:id/prompt', withSession(async ({ hub, claude, opencode, ledger, taskQueue, metrics }, req, res, { project, session }, body) => {
     // 💰 Hard stop: never start a paid turn while a configured window is at/over its limit. A running turn is not cut.
     const stop = budgetStop(hub, ledger, Date.now(), project.id);
     if (stop && !consumeBudgetOverride(hub)) return json(res, 409, { error: stop.message, code: 'budget' });
@@ -92,9 +130,18 @@ export function register(router) {
     }
     if (!text && !attachments.length) return json(res, 400, { error: 'prompt kosong' });
     if (session.rewinding) return json(res, 409, { error: REWINDING_MESSAGE }); // ⏪ OpenCode rewind running
+    const promptText = (text || 'Lihat file terlampir.').slice(0, 50000);
     const settings = hub.settingsFor(project.id);
+    // Decided BEFORE the classifier runs: a prompt that must wait for a turn slot costs no model call — it joins
+    // 📋 Antrian and Effort/Model Auto is classified at dispatch (src/queue.js). A paused/full queue keeps the 429.
+    const preGate = checkTurn(hub, project.id, session);
+    if (preGate) {
+      const result = queueAtCapacity(hub, taskQueue, project, promptText, attachments, null, preGate, { deferAuto: settings.effortAuto || settings.modelAuto, metrics });
+      return json(res, result.status, result.body);
+    }
     let autoEffort = null;
     let autoModel = null;
+    let autoPick = null; // the shared classification, also what a queued item runs with (Model Auto tiers at dispatch)
     // Effort Auto and Model Auto share one classification per prompt: one extra call, whichever is on.
     if (settings.effortAuto || settings.modelAuto) {
       if (session.busy) {
@@ -103,6 +150,7 @@ export function register(router) {
         if (settings.modelAuto) autoModel = { skipped: 'busy', reason: 'Mengikuti model turn yang sedang berjalan' };
       } else {
         const auto = await classifyEffort({ engine: hub.engineOf(project.id), claude, opencode, currentModel: settings.model, text, attachments, context: autoContext(hub, project.id) });
+        autoPick = auto;
         const patch = {};
         if (settings.effortAuto) {
           autoEffort = auto;
@@ -123,7 +171,14 @@ export function register(router) {
         }
       }
     }
-    session.prompt((text || 'Lihat file terlampir.').slice(0, 50000), attachments, autoEffort || autoModel ? { ...(autoEffort && { autoEffort }), ...(autoModel && { autoModel }) } : {});
+    // Authoritative check, with no await between it and prompt(): the slot cannot change under us. When the limit is
+    // full the prompt is queued (never lost), and the queue waits for the same slot before it sends.
+    const lastGate = checkTurn(hub, project.id, session);
+    if (lastGate) {
+      const result = queueAtCapacity(hub, taskQueue, project, promptText, attachments, autoPick, lastGate, { metrics });
+      return json(res, result.status, result.body);
+    }
+    session.prompt(promptText, attachments, autoEffort || autoModel ? { ...(autoEffort && { autoEffort }), ...(autoModel && { autoModel }) } : {});
     // After the user's bubble, before the reply: one line saying which model Auto picked and why.
     if (autoModel && !autoModel.skipped) {
       const why = String(autoModel.reason ?? '').trim().slice(0, 80);
@@ -133,7 +188,7 @@ export function register(router) {
   }));
   // ✂ Ringkas konteks: the engine's own /compact as a normal prompt, so Claude Code's compact_boundary/auto-compact
   // status keeps working. Refused while anything runs, waits or asks: nothing is stopped to make room for it.
-  router.post('/api/projects/:id/compact', withSession(({ hub, claude, opencode, ledger }, req, res, { project, session }, body) => {
+  router.post('/api/projects/:id/compact', withSession(({ hub, claude, opencode, ledger, metrics }, req, res, { project, session }, body) => {
     const stop = budgetStop(hub, ledger, Date.now(), project.id);
     if (stop && !consumeBudgetOverride(hub)) return json(res, 409, { error: stop.message, code: 'budget' });
     if (body.focus !== undefined && body.focus !== null && typeof body.focus !== 'string') return json(res, 400, { error: 'Fokus ringkasan harus berupa teks.' });
@@ -154,10 +209,20 @@ export function register(router) {
       if (!commands.some((c) => c?.name === 'compact' || c?.value === 'compact')) {
         return json(res, 409, { error: 'Mesin OpenCode di sesi ini tidak menyediakan perintah /compact.' });
       }
+      const gate = checkTurn(hub, project.id, session);
+      if (gate) {
+        metrics?.capacityRefused?.();
+        return json(res, gate.status, gate.body);
+      }
       session.prompt('/compact');
       return json(res, 200, { ok: true, engine: 'opencode', command: '/compact', ...(focus ? { ignoredFocus: true } : {}) });
     }
     if (!claude) return json(res, 409, { error: 'Claude Code tidak ditemukan di laptop ini. Pastikan `claude` terpasang, atau set env CLAUDE_BIN.' });
+    const gate = checkTurn(hub, project.id, session);
+    if (gate) {
+      metrics?.capacityRefused?.();
+      return json(res, gate.status, gate.body);
+    }
     const command = focus ? `/compact ${focus}` : '/compact';
     session.prompt(command); // the CLI's own slash command, through the same queue and status as any prompt
     return json(res, 200, { ok: true, engine: 'claude', command });
@@ -311,7 +376,7 @@ export function register(router) {
     if (hub.engineOf(project.id) !== 'opencode') throw new SessionAdminError(409, 'Import JSON hanya untuk sesi OpenCode. Pindah mesin project ke OpenCode dulu.');
     return importOpenCodeSession({ opencode, projectPath: project.path, data: body.data });
   })));
-  router.post('/api/projects/:id/continue', withSession(({ hub, ledger }, req, res, { project, session }, body) => {
+  router.post('/api/projects/:id/continue', withSession(({ hub, ledger, metrics }, req, res, { project, session }, body) => {
     // A turn cut short by a server restart: continue it in the same session, or just drop the notice.
     if (body.dismiss === true) {
       hub.clearInterrupted(project.id);
@@ -319,6 +384,11 @@ export function register(router) {
     }
     const stop = budgetStop(hub, ledger, Date.now(), project.id);
     if (stop && !consumeBudgetOverride(hub)) return json(res, 409, { error: stop.message, code: 'budget' });
+    const gate = checkTurn(hub, project.id, session);
+    if (gate) {
+      metrics?.capacityRefused?.();
+      return json(res, gate.status, gate.body);
+    }
     try {
       return json(res, 200, session.continueInterrupted());
     } catch (err) {

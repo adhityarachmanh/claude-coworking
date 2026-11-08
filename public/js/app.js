@@ -51,6 +51,8 @@ import { initPicker } from './features/picker.js';
 import { initPush } from './features/push.js';
 import { initQuota } from './features/quota.js';
 import { initQueue } from './features/queue.js';
+import { initQueueAll } from './features/queue-all.js';
+import { initQueueEdit } from './features/queue-edit.js';
 import { initReport } from './features/report.js';
 import { initRoster } from './features/roster.js';
 import { initResumeTurn } from './features/resume-turn.js';
@@ -130,6 +132,8 @@ initReport();
 initPromptHistory();
 initDraft();
 initQueue(); // 📋 Antrian; before initComposerControls: its Alt+Enter on #prompt must win over Enter = send
+initQueueAll(); // 🌐 Semua antrian (header of the Antrian dialog, Ctrl+P): read-only, follows the `queue` event
+initQueueEdit(); // ✎ Ubah prompt yang masih antre, from its chat bubble (queue-update)
 initComposerControls();
 initVoice(); // 🎤 Input suara; its capture-phase Esc (while recording) runs after ui/shortcuts.js closes dialogs
 initTemplates(); // ⚡ Template picker (also opened by /t from the composer)
