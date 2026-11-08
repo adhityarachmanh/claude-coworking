@@ -13,6 +13,7 @@ import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { encodeProjectPath, makeRemap, previewBackup, restoreBackup } from '../src/backup.js';
 import { decryptBackupFile, encryptBackupFile, isEncryptedBackup } from '../src/backup-crypto.js';
+import { readAudit } from '../src/audit-log.js';
 import { projectId as projectIdOf } from '../src/util.js';
 import { ZipReader, ZipWriter } from '../src/zip.js';
 
@@ -268,6 +269,34 @@ test('🔐 encrypted backup: .aob round-trip, magic header, wrong password rejec
   assert.match(String(await reader.read(reader.entries[0])), /format/);
   await reader.close();
   await assert.rejects(decryptBackupFile(sealed, path.join(TMP, 'wrong.zip'), 'salah-sekali'), /Kata sandi salah|tidak lengkap/);
+});
+
+test('🔎 verify + 🔑 rekey an encrypted backup (wrong password is refused)', async () => {
+  const exported = await fetch(`${a.base}/api/backup/export`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': a.token }, body: JSON.stringify({ password: 'rahasia123' }) });
+  assert.equal(exported.status, 200, 'encrypted export');
+  const bytes = Buffer.from(await exported.arrayBuffer());
+  await sleep(150); // the export's cleanup (and the lock release) finishes just after the last byte
+  assert.equal(bytes.subarray(0, 7).toString('latin1'), 'AOEBK1\0');
+  const verify = (headers = {}) => fetch(`${a.base}/api/backup/verify`, { method: 'POST', headers: { 'Content-Type': 'application/zip', 'X-Office-Token': a.token, ...headers }, body: bytes }).then(async (r) => ({ status: r.status, body: await r.json() }));
+  assert.equal((await verify()).status, 400, 'password is required');
+  assert.equal((await verify({ 'X-Backup-Password': 'salah-sekali' })).status, 400, 'wrong password');
+  const ok = await verify({ 'X-Backup-Password': 'rahasia123' });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.ok, true);
+  assert.equal(ok.body.encrypted, true);
+  assert.ok(ok.body.projects >= 1, 'projects counted');
+
+  const rekey = await fetch(`${a.base}/api/backup/rekey`, { method: 'POST', headers: { 'Content-Type': 'application/zip', 'X-Office-Token': a.token, 'X-Backup-Password': 'rahasia123', 'X-Backup-New-Password': 'sandi-baru-456' }, body: bytes });
+  assert.equal(rekey.status, 200);
+  const renewed = Buffer.from(await rekey.arrayBuffer());
+  const verifyNew = await fetch(`${a.base}/api/backup/verify`, { method: 'POST', headers: { 'Content-Type': 'application/zip', 'X-Office-Token': a.token, 'X-Backup-Password': 'sandi-baru-456' }, body: renewed });
+  assert.equal(verifyNew.status, 200, 'new password works');
+  const verifyOld = await fetch(`${a.base}/api/backup/verify`, { method: 'POST', headers: { 'Content-Type': 'application/zip', 'X-Office-Token': a.token, 'X-Backup-Password': 'rahasia123' }, body: renewed });
+  assert.equal(verifyOld.status, 400, 'old password does not');
+  const badNew = await fetch(`${a.base}/api/backup/rekey`, { method: 'POST', headers: { 'Content-Type': 'application/zip', 'X-Office-Token': a.token, 'X-Backup-Password': 'rahasia123', 'X-Backup-New-Password': 'x' }, body: bytes });
+  assert.equal(badNew.status, 400, 'short new password refused');
+  const audit = readAudit(A.data, 20);
+  assert.ok(audit.some((e) => e.action === 'backup-rekey'), 'rekey is audited');
 });
 
 test('preview: what is inside the backup, before anything is written', async () => {  const preview = await previewBackup(zipFile);

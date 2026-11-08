@@ -4,6 +4,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { TRASH_RETENTION_DAYS } from '../session-admin.js';
+import { readAudit, recordAudit } from '../audit-log.js';
 import { json } from './http.js';
 
 /** Recursive byte count of a file or folder (missing = 0). */
@@ -59,13 +60,14 @@ export function register(router) {
         backups: { bytes: sizeOf(path.join(dataDir, 'backup-schedule')), files: countFiles(path.join(dataDir, 'backup-schedule')) },
       },
       note: 'Riwayat chat dan laporan pemakaian tidak dihapus dari sini. Mengosongkan trash bersifat permanen; cadangkan dulu bila perlu.',
-    });
-  }, { maxBody: 1024 });
+      audit: readAudit(dataDir, 20),
+    });  }, { maxBody: 1024 });
 
   router.post('/api/data/purge', async ({ push, dataDir }, req, res, params, body) => {
     const target = String(body?.target ?? '');
     if (target === 'push-history') {
       push?.clearHistory?.();
+      recordAudit(dataDir, { action: 'data-purge', detail: 'riwayat notifikasi' });
       return json(res, 200, { ok: true, target });
     }
     if (target === 'trash') {
@@ -74,6 +76,7 @@ export function register(router) {
       } catch (err) {
         return json(res, 500, { error: `Gagal mengosongkan trash: ${err.message}` });
       }
+      recordAudit(dataDir, { action: 'data-purge', detail: 'trash sesi' });
       return json(res, 200, { ok: true, target });
     }
     return json(res, 400, { error: 'Target pembersihan tidak dikenal.' });

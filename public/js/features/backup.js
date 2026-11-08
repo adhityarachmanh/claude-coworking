@@ -43,6 +43,57 @@ function backupPasswordHeader() {
   return password ? { 'X-Backup-Password': password } : {};
 }
 
+/** 🔎 Check a backup file (and its password) without restoring anything. */
+async function verifyBackupFile(file) {
+  setBusy(true);
+  setStatus(`Memeriksa ${file.name} (${fmtSize(file.size)})…`);
+  try {
+    const res = await fetch('/api/backup/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip', 'X-Office-Token': auth.token, ...backupPasswordHeader() },
+      body: file,
+    });
+    if (!res.ok) throw new Error(await errorOf(res));
+    const info = await res.json();
+    setStatus(`Backup valid${info.encrypted ? ' (terenkripsi)' : ''}: ${info.projects} project, ${info.sessions} sesi${info.createdAt ? ` · dibuat ${new Date(info.createdAt).toLocaleDateString('id-ID')}` : ''}.`);
+    toast('File backup valid.', 'ok');
+  } catch (err) {
+    setStatus(`Verifikasi gagal: ${err.message}`);
+    toast(`Backup tidak valid: ${err.message}`);
+  } finally {
+    setBusy(false);
+    $('#backup-verify-file').value = '';
+  }
+}
+
+/** 🔑 Re-encrypt a .aob with a new password and download the new file. */
+async function rekeyBackupFile(file) {
+  const oldPassword = $('#backup-password').value;
+  if (!oldPassword) return setStatus('Isi kata sandi lama di kolom Kata sandi backup dulu.');
+  const next = window.prompt('Kata sandi baru untuk backup ini (min. 8 karakter):', '') ?? '';
+  if (!next) return;
+  if (next.length < 8) return setStatus('Kata sandi baru minimal 8 karakter.');
+  setBusy(true);
+  setStatus(`Mengenkripsi ulang ${file.name}…`);
+  try {
+    const res = await fetch('/api/backup/rekey', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip', 'X-Office-Token': auth.token, 'X-Backup-Password': oldPassword, 'X-Backup-New-Password': next },
+      body: file,
+    });
+    if (!res.ok) throw new Error(await errorOf(res));
+    const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'adhit-office-backup.aob';
+    saveBlob(name, await res.blob());
+    setStatus(`Backup dienkripsi ulang: ${name}. Kata sandi baru berlaku untuk file ini.`);
+    toast('Kata sandi backup diganti.', 'ok');
+  } catch (err) {
+    setStatus(`Ganti sandi gagal: ${err.message}`);
+  } finally {
+    setBusy(false);
+    $('#backup-rekey-file').value = '';
+  }
+}
+
 async function exportHistory() {
   setBusy(true);
   const password = $('#backup-password')?.value ?? '';
@@ -315,5 +366,19 @@ export function initBackup() {
   $('#backup-file').addEventListener('change', (e) => {
     const file = e.target.files?.[0];
     if (file) previewHistory(file);
+  });
+  $('#btn-backup-verify').addEventListener('click', () => {
+    if (!backup.busy) $('#backup-verify-file').click();
+  });
+  $('#backup-verify-file').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) verifyBackupFile(file);
+  });
+  $('#btn-backup-rekey').addEventListener('click', () => {
+    if (!backup.busy) $('#backup-rekey-file').click();
+  });
+  $('#backup-rekey-file').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) rekeyBackupFile(file);
   });
 }

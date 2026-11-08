@@ -701,6 +701,10 @@
           <button type="button" id="data-purge-push" class="ghost" title="Hapus log notifikasi yang dikirim ke HP">🧹 Hapus riwayat notifikasi</button>
           <button type="button" id="data-purge-trash" class="ghost danger-text" title="Hapus permanen semua sesi di folder trash">🗑 Kosongkan trash sesi</button>
         </div>
+        <section class="data-audit" aria-labelledby="data-audit-title">
+          <b id="data-audit-title">📜 Aktivitas data terakhir</b>
+          <ul id="data-audit" class="data-audit-list"><li class="muted small">Belum ada aktivitas.</li></ul>
+        </section>
       </div>
     </div>
 
@@ -919,7 +923,11 @@
             <div class="backup-actions">
               <button type="button" id="btn-backup-export" class="ghost">⬇ Export riwayat</button>
               <button type="button" id="btn-backup-import" class="ghost">⬆ Import riwayat</button>
+              <button type="button" id="btn-backup-verify" class="ghost" title="Periksa file dan kata sandinya tanpa memulihkan apa pun">🔎 Verifikasi file</button>
+              <button type="button" id="btn-backup-rekey" class="ghost" title="Ganti kata sandi file .aob (unduh ulang dengan sandi baru)">🔑 Ganti sandi</button>
               <input type="file" id="backup-file" accept=".zip,.aob,application/zip,application/octet-stream" aria-label="File backup riwayat (.zip atau .aob)" hidden />
+              <input type="file" id="backup-verify-file" accept=".zip,.aob" aria-label="File backup untuk diverifikasi" hidden />
+              <input type="file" id="backup-rekey-file" accept=".aob" aria-label="File backup terenkripsi untuk diganti sandinya" hidden />
             </div>
             <label class="backup-password-label" for="backup-password">🔐 Kata sandi backup <small>(opsional saat export; wajib untuk file .aob)</small></label>
             <input id="backup-password" type="password" minlength="8" maxlength="200" placeholder="Minimal 8 karakter untuk mengenkripsi" aria-label="Kata sandi backup" autocomplete="new-password" />

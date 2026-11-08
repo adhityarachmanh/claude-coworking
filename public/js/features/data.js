@@ -21,6 +21,13 @@ function render(data) {
     ['Backup otomatis', `${data.backups.files} file · ${fmt(data.backups.bytes)}`],
   ];
   $('#data-list').innerHTML = rows.map(([label, value]) => `<li class="data-row"><span>${escapeHtml(label)}</span><small class="muted">${escapeHtml(value)}</small></li>`).join('');
+  const actions = { 'backup-export': 'Ekspor backup', 'backup-import': 'Impor backup', 'backup-verify': 'Verifikasi backup', 'backup-rekey': 'Ganti sandi backup', 'data-purge': 'Hapus data' };
+  const audit = Array.isArray(data.audit) ? data.audit : [];
+  $('#data-audit').innerHTML = audit.length
+    ? audit
+        .map((entry) => `<li class="data-row"><span>${escapeHtml(actions[entry.action] ?? entry.action)}</span><small class="muted">${escapeHtml(new Date(entry.at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}${entry.detail ? ` · ${escapeHtml(entry.detail)}` : ''}</small></li>`)
+        .join('')
+    : '<li class="muted small">Belum ada aktivitas.</li>';
   $('#data-note').textContent = 'Semua data ini ada di folder data aplikasi di laptop. Tidak ada yang dikirim ke luar.';
 }
 

@@ -10,6 +10,7 @@ import path from 'node:path';
 import { Transform } from 'node:stream';
 import { finished, pipeline } from 'node:stream/promises';
 import { BackupError, isUnderHome, previewBackup, restoreBackup, writeBackup } from '../backup.js';
+import { recordAudit } from '../audit-log.js';
 import { BackupCryptoError, MIN_BACKUP_PASSWORD, decryptBackupFile, encryptBackupFile, isEncryptedBackup } from '../backup-crypto.js';
 import { AUTO_NAME, ScheduleError } from '../backup-schedule.js';
 import { isDirectory } from '../projects.js';
@@ -26,6 +27,10 @@ export function register(router) {
   router.post('/api/backup/import', importBackup, { rawBody: true });
   // What is inside a .zip, before restoring it: same raw body, nothing written.
   router.post('/api/backup/preview', previewUpload, { rawBody: true });
+  // 🔎 Validate an upload (including the password of an encrypted one) without restoring anything.
+  router.post('/api/backup/verify', verifyUpload, { rawBody: true });
+  // 🔑 Change the password of an encrypted backup: decrypt → re-encrypt → download the new .aob.
+  router.post('/api/backup/rekey', rekeyUpload, { rawBody: true });
   // POST /api/backup/schedule (read), /save (settings), /run (now, in the background). Laptop only (LOCAL_ONLY).
   router.post('/api/backup/schedule', laptopOnly(({ backupScheduler }, req, res) => json(res, 200, backupScheduler.view())));
   router.post('/api/backup/schedule/save', laptopOnly(async ({ backupScheduler }, req, res, params, body) => {
@@ -82,6 +87,7 @@ async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, data
       res.end();
       const skipped = result.skipped.length ? `, ${result.skipped.length} dilewati (symlink/nama tidak valid)` : '';
       console.log(`Backup riwayat diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB${skipped}`);
+      recordAudit(dataDir, { action: 'backup-export', detail: `${result.files} file · ${(result.bytes / 1024 ** 2).toFixed(1)} MB` });
       return;
     }
     // 🔐 Encrypted: build the .zip in a temp file, seal it, then stream the .aob (the password is never stored).
@@ -99,6 +105,7 @@ async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, data
       res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
       await pipeline(createReadStream(sealed), res);
       console.log(`Backup riwayat terenkripsi diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB`);
+      recordAudit(dataDir, { action: 'backup-export', detail: `terenkripsi · ${result.files} file · ${(result.bytes / 1024 ** 2).toFixed(1)} MB` });
     } finally {
       await rm(zipFile, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
       await rm(sealed, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
@@ -126,6 +133,91 @@ async function openUpload(file, req, tmpDir) {
     throw err;
   }
   return { source: decrypted, decrypted };
+}
+
+const TMP_NAME = (kind) => path.join('tmp', `${kind}-${Date.now()}-${randomBytes(4).toString('hex')}`);
+
+/** Shared setup for the three raw-upload backup routes. */
+function uploadGuard({ isLocal, backupLock }, req, res) {
+  if (!isLocal(req)) {
+    json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
+    return false;
+  }
+  const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+  if (!ZIP_TYPES.has(type)) {
+    json(res, 415, { error: 'Kirim file .zip atau .aob hasil Export riwayat.' });
+    return false;
+  }
+  if (backupLock.busy) {
+    res.on('finish', () => req.destroy());
+    json(res, 409, { error: 'Export/import riwayat lain sedang berjalan. Tunggu sampai selesai.' });
+    return false;
+  }
+  return true;
+}
+
+/** POST /api/backup/verify: is this a valid backup, and does the password open it? Nothing is restored. */
+async function verifyUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, req, res) {
+  if (!uploadGuard({ isLocal, backupLock }, req, res)) return;
+  if (Number(req.headers['content-length']) > maxBackupBytes) throw new HttpError(413, `File backup terlalu besar (maks ${Math.round(maxBackupBytes / 1024 ** 2)} MB).`);
+  backupLock.busy = true;
+  const tmpDir = path.join(dataDir, 'tmp');
+  const file = path.join(tmpDir, path.basename(TMP_NAME('verify')));
+  let decrypted = null;
+  try {
+    await mkdir(tmpDir, { recursive: true });
+    await receiveUpload(req, file, maxBackupBytes);
+    const prepared = await openUpload(file, req, tmpDir);
+    decrypted = prepared.decrypted;
+    const preview = await previewBackup(prepared.source);
+    recordAudit(dataDir, { action: 'backup-verify', detail: `${prepared.decrypted ? 'terenkripsi' : 'zip'} · ${preview.projects?.length ?? 0} project · ${preview.sessions ?? 0} sesi` });
+    return json(res, 200, { ok: true, encrypted: Boolean(prepared.decrypted), projects: preview.projects?.length ?? 0, sessions: preview.sessions ?? 0, createdAt: preview.createdAt ?? null });
+  } catch (err) {
+    if (err instanceof BackupCryptoError) return json(res, err.status, { error: err.message });
+    if (err instanceof ZipError) return json(res, 400, { error: `File backup tidak valid: ${err.message}` });
+    if (err instanceof BackupError) return json(res, err.status, { error: err.message });
+    throw err;
+  } finally {
+    backupLock.busy = false;
+    if (decrypted) await rm(decrypted, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    await rm(file, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+  }
+}
+
+/** POST /api/backup/rekey: decrypt with the old password, seal with the new one, stream the new .aob. */
+async function rekeyUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, req, res) {
+  if (!uploadGuard({ isLocal, backupLock }, req, res)) return;
+  const next = String(req.headers['x-backup-new-password'] ?? '');
+  if (next.length < MIN_BACKUP_PASSWORD) return json(res, 400, { error: `Kata sandi baru minimal ${MIN_BACKUP_PASSWORD} karakter.` });
+  if (Number(req.headers['content-length']) > maxBackupBytes) throw new HttpError(413, `File backup terlalu besar (maks ${Math.round(maxBackupBytes / 1024 ** 2)} MB).`);
+  backupLock.busy = true;
+  const tmpDir = path.join(dataDir, 'tmp');
+  const file = path.join(tmpDir, path.basename(TMP_NAME('rekey')));
+  let decrypted = null;
+  let sealed = null;
+  try {
+    await mkdir(tmpDir, { recursive: true });
+    await receiveUpload(req, file, maxBackupBytes);
+    if (!isEncryptedBackup(file)) return json(res, 400, { error: 'File ini bukan backup terenkripsi (.aob).' });
+    const prepared = await openUpload(file, req, tmpDir);
+    decrypted = prepared.decrypted;
+    sealed = path.join(tmpDir, `${path.basename(TMP_NAME('rekey'))}.aob`);
+    await encryptBackupFile(decrypted, sealed, next);
+    const day = new Date().toLocaleDateString('sv-SE');
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="adhit-office-backup-${day}.aob"`, 'Cache-Control': 'no-store' });
+    await pipeline(createReadStream(sealed), res);
+    recordAudit(dataDir, { action: 'backup-rekey', detail: 'kata sandi diganti' });
+  } catch (err) {
+    if (res.headersSent) res.destroy();
+    else if (err instanceof BackupCryptoError) return json(res, err.status, { error: err.message });
+    else if (err instanceof ZipError) return json(res, 400, { error: `File backup tidak valid: ${err.message}` });
+    else throw err;
+  } finally {
+    backupLock.busy = false;
+    if (decrypted) await rm(decrypted, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    if (sealed) await rm(sealed, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    await rm(file, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+  }
 }
 
 /** Streams the request body to `file`, refusing it (413) once it passes `limit` bytes. */
@@ -232,6 +324,7 @@ async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir,
     const prepared = await openUpload(file, req, tmpDir);
     decrypted = prepared.decrypted;
     const summary = await applyRestored({ hub, ledger, mirror, projectRoots, refreshProjects }, prepared.source, { only, parts });
+    recordAudit(dataDir, { action: 'backup-import', detail: `${summary.sessions?.added ?? 0} sesi ditambah · ${summary.sessions?.updated ?? 0} diperbarui` });
     return json(res, 200, summary);
   } catch (err) {
     if (err instanceof BackupCryptoError) return json(res, err.status, { error: err.message });
