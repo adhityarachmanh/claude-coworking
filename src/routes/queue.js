@@ -76,9 +76,9 @@ export function register(router) {
     const book = ctx.hub.runbooksFor(id).find((b) => b.id === String(body.runbookId ?? ''));
     if (!book) return json(res, 404, { error: 'Runbook tidak ditemukan.' });
     return queueChange(res, async () => {
-      for (const text of book.prompts) {
+      for (const [index, text] of book.prompts.entries()) {
         const effort = await autoEffort(ctx, id, text);
-        ctx.taskQueue.add(id, text, effort);
+        ctx.taskQueue.add(id, text, effort, [], { runbookId: book.id, runbookIndex: index });
       }
       return json(res, 200, { added: book.prompts.length, queue: ctx.taskQueue.view(id) });
     });

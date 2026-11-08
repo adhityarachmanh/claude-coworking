@@ -1191,6 +1191,10 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .runbook-field input, .runbook-field textarea { width: 100%; font: inherit; }
 .runbook-field textarea { font-family: var(--mono); resize: vertical; }
 .runbook-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.runbook-history { margin-top: 8px; padding: 6px 8px; border: 1px dashed var(--border); border-radius: var(--r-md); background: var(--surface-2); font-size: var(--fs-sm); }
+.runbook-versions { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.runbook-versions li { display: flex; align-items: center; gap: 8px; }
+.runbook-versions .rb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .routine-calendar { display: flex; flex-direction: column; gap: 3px; margin: 0 0 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
 .cal-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; align-items: start; padding: 2px 0; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
 .cal-row:first-child { border-top: 0; }
@@ -2615,7 +2619,7 @@ body.read-only #composer-hint { color: var(--ask); }
 
   /* sheets: centred, never wider than a phone in portrait, as tall as the screen allows */
   .modal { place-items: end center; }
-  .modal-card { max-width: min(640px, 100%); max-height: calc(100dvh - 8px); }
+  .modal-card { max-width: min(640px, 100%); max-height: calc(100dvh - 32px); }
   .plus-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .plus-tile { min-height: 64px; }
   #turn-settings-modal .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }

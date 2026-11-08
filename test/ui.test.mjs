@@ -3093,18 +3093,23 @@ for (const vp of VIEWPORTS) {
       await page.eval(async () => {
         window.__rbFetch = window.fetch;
         window.__rbPrompt = window.prompt;
+        window.__rbConfirm = window.confirm;
         window.__rbCalls = [];
         window.prompt = () => 'Rilis baru';
+        window.confirm = () => true;
         const reply = (o) => new Response(JSON.stringify(o), { status: 200, headers: { 'Content-Type': 'application/json' } });        const queue = {
           project: location.hash.slice(1),
-          paused: false,
-          reason: null,
-          items: [{ id: 'q_1', text: 'jalankan test', status: 'waiting', attachments: [] }],
+          paused: true,
+          reason: 'failed',
+          items: [
+            { id: 'q_1', text: 'jalankan test', status: 'waiting', attachments: [] },
+            { id: 'q_f', text: 'commit', status: 'failed', runbookId: 'rb_1', runbookIndex: 1, attachments: [] },
+          ],
           limits: { items: 50 },
           budget: { tokensOut: null, costUsd: null, spentTokensOut: 0, spentCostUsd: 0 },
           rev: 1,
         };
-        window.__rb = { runbooks: [{ id: 'rb_1', name: 'Rilis', prompts: ['a', 'b'] }] };
+        window.__rb = { runbooks: [{ id: 'rb_1', name: 'Rilis', prompts: ['a', 'b'], history: [{ name: 'Rilis lama', prompts: ['a'], savedAt: Date.now() - 3600_000 }] }] };
         window.fetch = (url, opts) => {
           const u = String(url);
           const body = opts?.body ? JSON.parse(opts.body) : {};
@@ -3123,6 +3128,14 @@ for (const vp of VIEWPORTS) {
             window.__rbCalls.push({ op: 'schedule', ...body });
             return Promise.resolve(reply({ routines: [] }));
           }
+          if (/\/queue-retry$/.test(u)) {
+            window.__rbCalls.push({ op: 'retry', ...body });
+            return Promise.resolve(reply({ queue }));
+          }
+          if (/\/queue-pause$/.test(u)) {
+            window.__rbCalls.push({ op: 'pause', ...body });
+            return Promise.resolve(reply({ queue }));
+          }
           return window.__rbFetch(url, opts);
         };
         (await import('/js/features/queue.js')).openQueue();
@@ -3130,12 +3143,39 @@ for (const vp of VIEWPORTS) {
       try {
         await page.waitFor(() => document.querySelectorAll('#runbook-list .runbook-item').length === 1, { timeoutMs: 4000, message: 'runbook tampil' });
         assert.match(await page.eval(() => document.querySelector('#runbook-list').textContent), /Rilis.*2 prompt/);
+        // ↻ Continue: the failed item of this runbook is retried and the queue is resumed.
+        assert.match(await page.eval(() => document.querySelector('#runbook-list [data-rb-continue]').textContent), /Lanjutkan \(1\)/);
+        await page.eval(() => document.querySelector('#runbook-list [data-rb-continue]').click());
+        await page.waitFor(() => window.__rbCalls.some((c) => c.op === 'retry') && window.__rbCalls.some((c) => c.op === 'pause'), { timeoutMs: 4000, message: 'lanjutkan runbook' });
+        assert.deepEqual(await page.eval(() => window.__rbCalls.find((c) => c.op === 'retry')), { op: 'retry', itemId: 'q_f' });
+        assert.deepEqual(await page.eval(() => window.__rbCalls.find((c) => c.op === 'pause')), { op: 'pause', paused: false });
+        // 🕘 Version history: restoring an older version fills the editor (Simpan applies it).
+        await page.eval(() => document.querySelector('#runbook-list [data-rb-edit]').click());
+        await page.waitFor(() => !document.querySelector('#runbook-modal').hidden, { timeoutMs: 4000, message: 'editor runbook' });
+        assert.equal(await page.eval(() => document.querySelector('#runbook-history').hidden), false, 'riwayat versi tampil');
+        await page.eval(() => document.querySelector('#runbook-history [data-rb-restore]').click());
+        assert.deepEqual(
+          await page.eval(() => ({ name: document.querySelector('#runbook-name').value, prompts: document.querySelector('#runbook-prompts').value })),
+          { name: 'Rilis lama', prompts: 'a' },
+          'versi lama dimuat ke editor',
+        );
+        await page.eval(() => document.querySelector('#runbook-cancel').click());
+        await page.waitFor(() => document.querySelector('#runbook-modal').hidden, { timeoutMs: 4000, message: 'editor ditutup' });
         // ＋ Simpan antrian ini opens the editor prefilled with the waiting prompts.
         await page.eval(() => document.querySelector('#runbook-save').click());
         await page.waitFor(() => !document.querySelector('#runbook-modal').hidden, { timeoutMs: 4000, message: 'editor runbook terbuka' });
         assert.equal(await page.eval(() => document.querySelector('#runbook-prompts').value), 'jalankan test');
+        // 📚 Built-in library fills name + prompts (still editable before saving).
+        await page.eval(() => {
+          const t = document.querySelector('#runbook-template');
+          t.value = 'rilis';
+          t.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        assert.equal(await page.eval(() => document.querySelector('#runbook-name').value), 'Rilis');
+        assert.match(await page.eval(() => document.querySelector('#runbook-prompts').value), /CHANGELOG/);
         await page.eval(() => {
           document.querySelector('#runbook-name').value = 'Rilis baru';
+          document.querySelector('#runbook-prompts').value = 'jalankan test';
           document.querySelector('#runbook-submit').click();
         });
         await page.waitFor(() => window.__rbCalls.some((c) => c.op === 'save'), { timeoutMs: 4000, message: 'simpan runbook' });
@@ -3172,6 +3212,7 @@ for (const vp of VIEWPORTS) {
         await page.eval(() => {
           window.fetch = window.__rbFetch;
           window.prompt = window.__rbPrompt;
+          window.confirm = window.__rbConfirm;
         });
       }
     });

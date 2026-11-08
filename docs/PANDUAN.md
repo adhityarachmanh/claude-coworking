@@ -15,7 +15,7 @@ Belum terpasang? Ikuti [Mulai cepat](../README.md#mulai-cepat) dulu.
 Tips:
 
 - Tekan `?` untuk daftar shortcut, atau `Ctrl+P` untuk mencari aksi apa saja. Di palet, `@kata` mencari file di project ini **dan** project lain (nama project tampil di keterangan). Cari juga **Checklist project** dan **Bundel diagnostik** di sana.
-- Antrian 📋 bisa disimpan sebagai **📚 Runbook** lalu diedit (nama + prompt) dan dijalankan lagi kapan saja; dari daftar runbook bisa diganti nama atau dijadwalkan harian (⏰). Tab ⚙ → Jadwal menampilkan kalender 7 hari.
+- Antrian 📋 bisa disimpan sebagai **📚 Runbook** lalu diedit (nama + prompt, ada contoh siap pakai dan riwayat versi) dan dijalankan lagi kapan saja; dari daftar runbook bisa diganti nama, dijadwalkan harian (⏰), atau **↻ Lanjutkan** bila ada item yang gagal. Tab ⚙ → Jadwal menampilkan kalender 7 hari.
 - Project yang jarang dipakai bisa diarsipkan lewat **📦** di daftar project; toggle 📦 di judul dialog menampilkannya lagi.
 - Riwayat sesi bisa dirapikan dengan **🏷 tag** (ikut tercari, ada chip penyaring) dan **📦 arsip** (disembunyikan dari daftar utama, tetap bisa dilanjutkan); **Arsip otomatis** bisa menyembunyikan sesi yang tidak dipakai 30/90/180 hari. Centang beberapa sesi untuk memberi tag atau mengarsipkan sekaligus.
 - Ingin Claude bekerja tanpa ditunggui? Ganti mode izin (`Shift+Tab`). Mode paling aman tetap **🛡️ Tanya dulu**.

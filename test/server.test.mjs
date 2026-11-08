@@ -388,6 +388,8 @@ test('📚 runbook, ✅ checklist, dan 🩺 bundel diagnostik', async () => {
     assert.equal(ran.status, 200, JSON.stringify(ran.body));
     assert.equal(ran.body.added, 2);
     assert.deepEqual(ran.body.queue.items.filter((i) => i.status === 'waiting').map((i) => i.text), ['jalankan test', 'commit']);
+    assert.equal(ran.body.queue.items.find((i) => i.text === 'commit').runbookId, runbookId, 'item antrian menunjuk runbook');
+    assert.equal(ran.body.queue.items.find((i) => i.text === 'commit').runbookIndex, 1);
     assert.equal((await api(`/api/projects/${id}/runbook-run`, { runbookId: 'rb_tidakada' })).status, 404);
 
     // ⏰ A scheduled runbook: the routine stores its id and a label; running it enqueues every prompt.
@@ -435,6 +437,13 @@ test('📚 runbook, ✅ checklist, dan 🩺 bundel diagnostik', async () => {
     assert.ok(Array.isArray(info.projects));
     assert.ok(!String(await zip.read(zip.entries.find((e) => e.name === 'server.log'))).includes(process.env.USERPROFILE ?? '\\Users\\'), 'folder home disamarkan');
     await zip.close();
+
+    // 🕘 Version history: saving over a runbook keeps its previous name + prompts (max 5).
+    const updated = await api(`/api/projects/${id}/runbook-save`, { id: runbookId, name: 'Rilis 2', prompts: ['a'] });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.runbook.history.length, 1);
+    assert.equal(updated.body.runbook.history[0].name, 'Rilis');
+    assert.deepEqual(updated.body.runbook.history[0].prompts, ['jalankan test', 'commit']);
 
     assert.equal((await api(`/api/projects/${id}/runbook-delete`, { runbookId })).status, 200);
     assert.deepEqual((await api(`/api/projects/${id}/runbooks`)).body.runbooks, []);

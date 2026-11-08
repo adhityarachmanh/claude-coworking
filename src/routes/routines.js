@@ -80,7 +80,7 @@ function run({ hub, taskQueue }, req, res, params, body) {
   const book = routine.runbookId ? hub.runbooksFor(routine.projectId).find((b) => b.id === routine.runbookId) : null;
   if (routine.runbookId && !book) return json(res, 404, { error: 'Runbook jadwal ini sudah tidak ada.' });
   try {
-    for (const prompt of book ? book.prompts : [routine.prompt]) taskQueue.add(routine.projectId, prompt, null, [], { routineId: routine.id });
+    for (const [index, prompt] of (book ? book.prompts : [routine.prompt]).entries()) taskQueue.add(routine.projectId, prompt, null, [], { routineId: routine.id, ...(book ? { runbookId: book.id, runbookIndex: index } : {}) });
   } catch (err) {
     return json(res, err.status ?? 400, { error: err.message });
   }

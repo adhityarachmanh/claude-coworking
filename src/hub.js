@@ -118,7 +118,15 @@ function cleanRunbooks(raw) {
         .map((p) => p.trim().slice(0, 4000));
       if (!name || !prompts.length) continue;
       const id = typeof book.id === 'string' && /^rb_[A-Za-z0-9_-]{1,40}$/.test(book.id) ? book.id : `rb_${Math.random().toString(36).slice(2, 12)}`;
-      books.push({ id, name, prompts, createdAt: Number(book.createdAt) || Date.now(), updatedAt: Number(book.updatedAt) || Date.now() });
+      const history = (Array.isArray(book.history) ? book.history : [])
+        .slice(-5)
+        .map((v) => ({
+          name: typeof v?.name === 'string' ? v.name.replace(/\s+/g, ' ').trim().slice(0, 80) : '',
+          prompts: (Array.isArray(v?.prompts) ? v.prompts : []).filter((p) => typeof p === 'string' && p.trim()).slice(0, 20).map((p) => p.trim().slice(0, 4000)),
+          savedAt: Number(v?.savedAt) || 0,
+        }))
+        .filter((v) => v.name && v.prompts.length);
+      books.push({ id, name, prompts, createdAt: Number(book.createdAt) || Date.now(), updatedAt: Number(book.updatedAt) || Date.now(), history });
     }
     if (books.length) out[projectId] = books;
   }
@@ -1155,14 +1163,16 @@ export class Hub {
     const list = (all[id] ??= []);
     let book = bookId ? list.find((b) => b.id === bookId) : null;
     if (book) {
+      // 🕘 Keep the last 5 versions (name + prompts) before overwriting.
+      book.history = [...(book.history ?? []), { name: book.name, prompts: [...book.prompts], savedAt: Date.now() }].slice(-5);
       Object.assign(book, { name: cleanName, prompts: cleanPrompts, updatedAt: Date.now() });
     } else {
       if (list.length >= 50) throw Object.assign(new Error('Maksimal 50 runbook per project.'), { status: 400 });
-      book = { id: `rb_${Math.random().toString(36).slice(2, 12)}`, name: cleanName, prompts: cleanPrompts, createdAt: Date.now(), updatedAt: Date.now() };
+      book = { id: `rb_${Math.random().toString(36).slice(2, 12)}`, name: cleanName, prompts: cleanPrompts, createdAt: Date.now(), updatedAt: Date.now(), history: [] };
       list.push(book);
     }
     this.scheduleSave();
-    return { ...book, prompts: [...book.prompts] };
+    return { ...book, prompts: [...book.prompts], history: (book.history ?? []).map((v) => ({ ...v, prompts: [...v.prompts] })) };
   }
 
   /** 🗑 Deletes a runbook of this project. @returns whether it existed */

@@ -16,7 +16,10 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **🏷/📦 Tag & arsip massal + kelola tag.** Centang beberapa sesi untuk memberi satu tag atau mengarsipkan sekaligus; **✎ Kelola tag** mengganti nama/menghapus satu tag di semua sesi project.
 - **📚 Runbook antrian.** Dialog 📋 Antrian bisa menyimpan item yang masih menunggu sebagai runbook bernama (per project); **▶ Jalankan** menambahkannya kembali ke antrian. Tersimpan di state aplikasi dan ikut backup.
 - **🩺 Bundel diagnostik.** Tombol di Kesehatan sistem (dan Ctrl+P) mengunduh `.zip` berisi info versi, hasil health, dan 512 KB log terakhir; folder home disamarkan dan tidak ada isi percakapan.
-- **✎ Editor runbook.** Runbook sekarang punya editor nama + prompt (pisahkan prompt dengan baris `---`), bukan hanya ganti nama.
+- **↻ Lanjutkan runbook dari item gagal.** Item antrian dari runbook ditandai; bila salah satu gagal, tombol **↻ Lanjutkan** mengulang item itu dan melanjutkan antrian tanpa mengulang prompt yang sudah sukses.
+- **📚 Pustaka runbook bawaan.** Editor runbook punya contoh siap pakai (Rilis, Perbaikan bug, Review PR, Cek CI) yang bisa diubah sebelum disimpan.
+- **🕘 Riwayat versi runbook.** Lima versi terakhir nama + prompt disimpan; **Pulihkan** memuat versi lama ke editor untuk disimpan lagi.
+- **✎ Editor runbook.** Runbook punya editor nama + prompt (pisahkan prompt dengan baris `---`), bukan hanya ganti nama.
 - **📅 Kalender jadwal 7 hari.** Tab ⚙ → Jadwal menampilkan jadwal 7 hari ke depan (jam dan potongan prompt per hari).
 - **🗂 Arsip project.** Tombol 📦 di daftar project menyembunyikannya tanpa menghapus data; toggle 📦 di judul dialog menampilkan project yang diarsipkan.
 - **🛠 Checklist “Buat kerangka”.** Dari checklist project, satu tombol (setelah konfirmasi) membuat README.md, AGENTS.md, .env.example, dan docs/README.md yang belum ada; file yang sudah ada tidak pernah ditimpa.
@@ -61,6 +64,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 - **♿ Audit aksesibilitas.** Kontrol tanpa nama, field tanpa label, gambar tanpa `alt`, id ganda, dan referensi ARIA yang menggantung kini diperiksa otomatis di halaman utama, tab Perubahan/Aktivitas, serta dialog Pengaturan, Semua project, palet perintah, dan Antrian. Target sentuh yang terlalu kecil (tombol sesi, toggle karyawan, kartu dashboard, toggle batas antrian) dinaikkan ke minimal 24×24 px.
 
+- **📱 Sheet HP di layar pendek.** Tinggi maksimum sheet sekarang mengikuti padding modal, jadi tidak lagi melewati tepi layar saat kontennya panjang (mis. Pengaturan giliran di 844×390).
 - **Kantor lebih lega.** Kartu karyawan default terlipat dengan ringkasan jumlah orang/aktif; tombol **Mode Otak** pindah dari atas panggung ke baris kontrol di bawah kantor.
 - **Pencarian global lebih luas.** **Ctrl+P** kini juga menemukan panel Pengaturan (Umum, Tim & izin, Jadwal, Notifikasi, Spotify, Cadangan, Sistem) dan aksi **Cari di chat ini**, bukan hanya project, file, dan perintah.
 

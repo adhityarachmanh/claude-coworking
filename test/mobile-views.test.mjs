@@ -218,6 +218,7 @@ function sheetFit(modalSel) {
     clipped,
     h: Math.round(r.height),
     vh: window.innerHeight,
+    rect: [Math.round(r.top * 10) / 10, Math.round(r.bottom * 10) / 10, Math.round(r.left * 10) / 10, Math.round(r.right * 10) / 10, Math.round(window.innerWidth * 10) / 10],
   };
 }
 
@@ -570,7 +571,7 @@ for (const vp of PHONES) {
           await fresh('chat');
           await page.click(trigger);
           await page.waitFor((m) => !document.querySelector(m).hidden, { timeoutMs: 3000, message: `${modal} terbuka` }, modal);
-          await sleep(220); // slide-up animation
+          await sleep(400); // slide-up animation: the card must be at rest before measuring
           const fit = await page.eval(sheetFit, modal);
           if (!fit.inView || !fit.closeInView || fit.clipped) bad.push(`${modal}: ${JSON.stringify(fit)}`);
           if (await page.eval(horizontalOverflow)) bad.push(`${modal}: overflow`);

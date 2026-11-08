@@ -116,6 +116,8 @@ function cleanItem(raw) {
     error: typeof raw.error === 'string' ? raw.error.slice(0, 500) : null,
     meta: isObject(raw.meta) ? raw.meta : null,
     routineId: typeof raw.routineId === 'string' ? raw.routineId.slice(0, 40) : null,
+    runbookId: /^rb_[A-Za-z0-9_-]{1,40}$/.test(String(raw.runbookId ?? '')) ? raw.runbookId : null,
+    runbookIndex: Number.isInteger(raw.runbookIndex) && raw.runbookIndex >= 0 ? raw.runbookIndex : null,
     engine: raw.engine === 'opencode' || raw.engine === 'claude' ? raw.engine : null, // the engine it was sent to
     effort: cleanAutoLevel(raw.effort),
     effortReason: typeof raw.effortReason === 'string' ? raw.effortReason.slice(0, 300) : null,
@@ -295,6 +297,8 @@ export class TaskQueue {
       error: null,
       meta: null,
       routineId: typeof extra?.routineId === 'string' ? extra.routineId.slice(0, 40) : null,
+      runbookId: /^rb_[A-Za-z0-9_-]{1,40}$/.test(String(extra?.runbookId ?? '')) ? extra.runbookId : null,
+      runbookIndex: Number.isInteger(extra?.runbookIndex) && extra.runbookIndex >= 0 ? extra.runbookIndex : null,
       engine: null,
       effort: cleanAutoLevel(effort?.level),
       effortReason: typeof effort?.reason === 'string' ? effort.reason.slice(0, 300) : null,

@@ -643,8 +643,10 @@
       <div class="modal-card runbook-card" role="dialog" aria-modal="true" aria-labelledby="runbook-title">
         <div class="modal-head"><b id="runbook-title">📚 Runbook</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <label class="runbook-field"><span>Nama</span><input id="runbook-name" maxlength="80" autocomplete="off" /></label>
+        <label class="runbook-field"><span>Mulai dari pustaka (opsional)</span><select id="runbook-template"></select></label>
         <label class="runbook-field"><span>Prompt</span><textarea id="runbook-prompts" rows="10" spellcheck="false" placeholder="Prompt pertama&#10;---&#10;Prompt kedua"></textarea></label>
         <p class="muted small">Pisahkan tiap prompt dengan baris berisi <code>---</code>.</p>
+        <div id="runbook-history" class="runbook-history" hidden></div>
         <div class="runbook-actions">
           <button type="button" id="runbook-cancel" class="ghost" data-close>Batal</button>
           <button type="button" id="runbook-submit" class="primary">Simpan</button>

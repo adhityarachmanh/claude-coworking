@@ -115,7 +115,7 @@ function renderRunbooks() {
     ? books
         .map(
           (b) =>
-            `<li class="runbook-item"><span class="rb-name">${escapeHtml(b.name)}</span><small class="muted">${b.prompts.length} prompt</small><span class="rb-actions"><button type="button" class="ghost" data-rb-run="${escapeHtml(b.id)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>▶ Jalankan</button><button type="button" class="ghost icon" data-rb-edit="${escapeHtml(b.id)}" title="Ganti nama runbook" aria-label="Ganti nama runbook: ${escapeHtml(b.name)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>✎</button><button type="button" class="ghost icon" data-rb-sched="${escapeHtml(b.id)}" title="Jadwalkan harian (⏰ Tugas terjadwal)" aria-label="Jadwalkan runbook: ${escapeHtml(b.name)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>⏰</button><button type="button" class="ghost icon" data-rb-del="${escapeHtml(b.id)}" title="Hapus runbook" aria-label="Hapus runbook: ${escapeHtml(b.name)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>🗑</button></span></li>`,
+            `<li class="runbook-item"><span class="rb-name">${escapeHtml(b.name)}</span><small class="muted">${b.prompts.length} prompt</small><span class="rb-actions">${failedRunbookItems(b.id) ? `<button type="button" class="ghost" data-rb-continue="${escapeHtml(b.id)}" title="Ulangi item yang gagal lalu lanjutkan antrian">↻ Lanjutkan (${failedRunbookItems(b.id)})</button>` : ''}<button type="button" class="ghost" data-rb-run="${escapeHtml(b.id)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>▶ Jalankan</button><button type="button" class="ghost icon" data-rb-edit="${escapeHtml(b.id)}" title="Ubah nama & prompt runbook" aria-label="Ubah runbook: ${escapeHtml(b.name)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>✎</button><button type="button" class="ghost icon" data-rb-sched="${escapeHtml(b.id)}" title="Jadwalkan harian (⏰ Tugas terjadwal)" aria-label="Jadwalkan runbook: ${escapeHtml(b.name)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>⏰</button><button type="button" class="ghost icon" data-rb-del="${escapeHtml(b.id)}" title="Hapus runbook" aria-label="Hapus runbook: ${escapeHtml(b.name)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>🗑</button></span></li>`,
         )
         .join('')
     : '<li class="muted small">Belum ada runbook.</li>';
@@ -129,14 +129,63 @@ function renderRunbooks() {
 
 let editingRunbookId = null;
 
+/** 📚 Ready-to-use prompt sequences in the editor (the user may edit them before saving). */
+const RUNBOOK_TEMPLATES = {
+  rilis: {
+    name: 'Rilis',
+    prompts: ['Jalankan test dan lint; perbaiki yang gagal.', 'Perbarui CHANGELOG untuk perubahan ini.', 'Commit dengan pesan yang jelas dan buat ringkasan rilis.'],
+  },
+  bugfix: {
+    name: 'Perbaikan bug',
+    prompts: ['Reproduksi bug dan tulis langkah reproduksinya.', 'Cari akar masalah, lalu perbaiki dengan perubahan terkecil.', 'Tambahkan test regresi dan jalankan suite terkait.'],
+  },
+  review: {
+    name: 'Review PR',
+    prompts: ['Periksa diff terakhir: kebenaran, edge case, dan konsistensi.', 'Jalankan test/lint yang relevan.', 'Tulis temuan: blocker, saran, dan pertanyaan.'],
+  },
+  ci: {
+    name: 'Cek CI',
+    prompts: ['Periksa status CI terakhir dan log kegagalan.', 'Perbaiki penyebab kegagalan tanpa mengubah perilaku.', 'Jalankan ulang test yang relevan dan laporkan.'],
+  },
+};
+
+/** Fills the template picker once (the editor is a simple dialog, no extra state). */
+function fillRunbookTemplates() {
+  const select = $('#runbook-template');
+  if (!select || select.options.length) return;
+  select.innerHTML = '<option value="">Pilih contoh…</option>' + Object.entries(RUNBOOK_TEMPLATES).map(([id, t]) => `<option value="${id}">${escapeHtml(t.name)}</option>`).join('');
+}
+
 /** Opens the runbook editor: a new one (optionally from the queue's waiting items) or an existing one. */
 function openRunbookEditor(book = null, prompts = null) {
   editingRunbookId = book?.id ?? null;
+  fillRunbookTemplates();
   $('#runbook-title').textContent = book ? '📚 Ubah runbook' : '📚 Runbook baru';
   $('#runbook-name').value = book?.name ?? '';
   $('#runbook-prompts').value = (book?.prompts ?? prompts ?? []).join('\n---\n');
+  const template = $('#runbook-template');
+  if (template) template.value = '';
+  renderRunbookHistory(book);
   openModal('runbook-modal');
   $('#runbook-name').focus();
+}
+
+/** 🕘 The last saved versions of an existing runbook, each one restorable into the fields. */
+function renderRunbookHistory(book) {
+  const box = $('#runbook-history');
+  if (!box) return;
+  const history = Array.isArray(book?.history) ? book.history : [];
+  box.hidden = !history.length;
+  if (!history.length) {
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = `<b>🕘 Versi sebelumnya</b><ul class="runbook-versions">${history
+    .map(
+      (v, i) =>
+        `<li><span class="muted small">${escapeHtml(new Date(v.savedAt || Date.now()).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span> <span class="rb-name">${escapeHtml(v.name)} · ${v.prompts.length} prompt</span><button type="button" class="ghost" data-rb-restore="${i}">Pulihkan</button></li>`,
+    )
+    .join('')}</ul>`;
 }
 
 /** Saves the editor: prompts are separated by a line containing only `---` (so a prompt may be multi-line). */
@@ -185,6 +234,25 @@ async function scheduleRunbook(runbookId) {
   try {
     await api('/api/routines/save', { projectId: queueView.project, runbookId, frequency: 'daily', time, enabled: true });
     toast(`Runbook "${book.name}" dijadwalkan harian ${time}.`, 'ok');
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+/** Failed queue items that came from this runbook (the "↻ Lanjutkan" button). */
+function failedRunbookItems(runbookId) {
+  return (queueView.data?.items ?? []).filter((i) => i.status === 'failed' && i.runbookId === runbookId).length;
+}
+
+/** ↻ Retry the failed items of this runbook, then resume a paused queue. */
+async function continueRunbook(runbookId) {
+  const items = (queueView.data?.items ?? []).filter((i) => i.status === 'failed' && i.runbookId === runbookId);
+  if (!items.length) return;
+  try {
+    for (const item of items) await api(`/api/projects/${queueView.project}/queue-retry`, { itemId: item.id });
+    if (queueView.data?.paused) await api(`/api/projects/${queueView.project}/queue-pause`, { paused: false });
+    toast(`${items.length} item runbook diulang; antrian dilanjutkan.`, 'ok');
+    await loadQueue();
   } catch (err) {
     toast(err.message);
   }
@@ -490,6 +558,29 @@ export function initQueue() {
   $('#queue-clear').addEventListener('click', () => change('clear'));
   $('#runbook-save').addEventListener('click', saveRunbook);
   $('#runbook-submit').addEventListener('click', submitRunbook);
+  $('#runbook-template').addEventListener('change', (e) => {
+    const t = RUNBOOK_TEMPLATES[e.target.value];
+    if (!t) return;
+    const name = $('#runbook-name');
+    const prompts = $('#runbook-prompts');
+    if (!name.value.trim()) name.value = t.name;
+    if (prompts.value.trim() && !window.confirm('Ganti prompt yang sudah ada dengan contoh ini?')) {
+      e.target.value = '';
+      return;
+    }
+    prompts.value = t.prompts.join('\n---\n');
+    e.target.value = '';
+  });
+  $('#runbook-history').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-rb-restore]');
+    if (!btn) return;
+    const book = (queueView.runbooks ?? []).find((b) => b.id === editingRunbookId);
+    const version = book?.history?.[Number(btn.dataset.rbRestore)];
+    if (!version) return;
+    $('#runbook-name').value = version.name;
+    $('#runbook-prompts').value = version.prompts.join('\n---\n');
+    toast('Versi lama dimuat — klik Simpan untuk menerapkan.', 'ok');
+  });
   $('#runbook-prompts').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
@@ -499,6 +590,8 @@ export function initQueue() {
   $('#runbook-list').addEventListener('click', async (e) => {
     const run = e.target.closest('[data-rb-run]');
     if (run) return runRunbook(run.dataset.rbRun);
+    const cont = e.target.closest('[data-rb-continue]');
+    if (cont) return continueRunbook(cont.dataset.rbContinue);
     const edit = e.target.closest('[data-rb-edit]');
     if (edit) return editRunbook(edit.dataset.rbEdit);
     const sched = e.target.closest('[data-rb-sched]');

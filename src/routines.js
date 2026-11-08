@@ -164,7 +164,7 @@ export class RoutineScheduler {
     }
     const prompts = book ? book.prompts : [routine.prompt];
     try {
-      for (const prompt of prompts) this.taskQueue.add(routine.projectId, prompt, null, [], { routineId: routine.id });
+      for (const [index, prompt] of prompts.entries()) this.taskQueue.add(routine.projectId, prompt, null, [], { routineId: routine.id, ...(book ? { runbookId: book.id, runbookIndex: index } : {}) });
       Object.assign(routine, { lastRun: now, error: null });
       const label = book ? `📚 ${book.name} (${prompts.length} prompt)` : routine.prompt.slice(0, 80);
       this.hub.chat?.(routine.projectId, { kind: 'info', text: `⏰ Tugas terjadwal masuk antrian: ${label}` });

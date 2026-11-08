@@ -593,6 +593,7 @@ for (const vp of PHONES) {
         await closeModals(page);
         await page.click('#btn-head-more');
         await page.waitFor(() => !document.querySelector('#head-more-modal').hidden, { timeoutMs: 2000, message: 'sheet ⋯ terbuka' });
+        await sleep(250); // the slide-up animation: clicking a row while it moves can miss
         assert.equal(await page.eval(horizontalOverflow), null);
         await page.click(`#head-more-modal [data-proxy="${proxy}"]`);
         await page.waitFor((m) => !document.getElementById(m).hidden && document.querySelector('#head-more-modal').hidden, { timeoutMs: 3000, message: `${proxy} → ${modal}` }, modal);
