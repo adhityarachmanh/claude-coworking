@@ -19,6 +19,7 @@ const MAX_CACHED = 240;
 const MAX_SESSIONS = 120; // pathological reports fall back to "no detail" for the smallest sessions
 const UNKNOWN_ROLE = 'unknown';
 const OPENCODE_UNKNOWN_ROLE = 'opencode-unknown';
+const OPENCODE_LEAD_AGENTS = new Set(['', 'build', 'plan', 'default']);
 const cache = new Map(); // file + mtime + size -> [{ ts, tokens }] (parsed once per file version)
 
 const usageTokens = (u) =>
@@ -37,6 +38,15 @@ const roleLabel = (role) =>
 function roleFor(agentType) {
   const key = String(agentType ?? '').toLowerCase().trim();
   if (!key) return GENERALIST;
+  if (CATALOG[key]) return key;
+  return toRole(key) ?? GENERALIST;
+}
+
+/** OpenCode's session agent: build/plan = main thread (Lead); role names = Mode tim subagents. */
+function roleForOpenCode(agent) {
+  const key = String(agent ?? '').toLowerCase().trim();
+  if (OPENCODE_LEAD_AGENTS.has(key)) return LEAD_ID;
+  if (!key || key === '(none)') return UNKNOWN_ROLE;
   if (CATALOG[key]) return key;
   return toRole(key) ?? GENERALIST;
 }
@@ -152,10 +162,11 @@ const add = (map, role, tokens, costUsd, priced, delegations = 0) => {
  * divided by the raw transcript proportions. A session without a readable transcript (OpenCode's own store, a deleted
  * transcript, a session the mirror never saw) goes to the explicit **"Tanpa rincian role"** row — not to the Lead.
  * @param {object[]} rows ledger rows already filtered by account and period
- * @param {{ hub?: object, from?: number, to?: number }} options
+ * @param {{ hub?: object, from?: number, to?: number, opencodeSessions?: Map<string, { agent: string }> }} options
+ *   opencodeSessions: `opencode api session.list` mapped by session id (src/opencode-role-usage.js)
  * @returns {{ roles: object[], totalTokens: number, coverage: object, note: string, estimated: true }}
  */
-export function roleUsage(rows, { hub = null, from = 0, to = Date.now() } = {}) {
+export function roleUsage(rows, { hub = null, from = 0, to = Date.now(), opencodeSessions = null } = {}) {
   const n = (v) => (Number.isFinite(v) ? v : 0);
   const groups = new Map();
   for (const row of rows) {
@@ -184,6 +195,20 @@ export function roleUsage(rows, { hub = null, from = 0, to = Date.now() } = {}) 
     const shares = g.sessionId ? sharesForSession(projectPath, g.sessionId, from, to) : null;
     const rawTotal = shares ? shares.lead + [...shares.sub.values()].reduce((sum, x) => sum + x.tokens, 0) : 0;
     if (!shares || !(rawTotal > 0)) {
+      // OpenCode keeps its own session list: a session's agent is its role (no transcript needed).
+      const oc = g.engine === 'opencode' && g.sessionId ? opencodeSessions?.get?.(g.sessionId) ?? null : null;
+      if (oc) {
+        const role = roleForOpenCode(oc.agent);
+        if (role === UNKNOWN_ROLE) {
+          add(totals, OPENCODE_UNKNOWN_ROLE, g.tokens, g.costUsd, g.costUsd != null);
+          unknownTokens += g.tokens;
+        } else {
+          sessionsKnown += 1;
+          knownTokens += g.tokens;
+          add(totals, role, g.tokens, g.costUsd, g.costUsd != null, role === LEAD_ID ? 0 : 1);
+        }
+        continue;
+      }
       add(totals, g.engine === 'opencode' ? OPENCODE_UNKNOWN_ROLE : UNKNOWN_ROLE, g.tokens, g.costUsd, g.costUsd != null);
       unknownTokens += g.tokens;
       continue;
@@ -229,7 +254,8 @@ export function roleUsage(rows, { hub = null, from = 0, to = Date.now() } = {}) 
     estimated: true,
     note:
       `Rincian role tersedia untuk ${Math.round(percent * 100)}% token (${sessionsKnown} dari ${sessions} sesi). ` +
-      'Sisanya masuk "OpenCode (tanpa rincian role)" atau "Tanpa rincian role"—transcript subagent-nya tidak tersedia. ' +
+      'Sesi OpenCode memakai agent dari session list (build/plan = Lead, nama role = subagent). ' +
+      'Sisanya masuk "OpenCode (tanpa rincian role)" atau "Tanpa rincian role" karena tidak ditemukan di store/transcript. ' +
       'Total tabel tetap sama dengan total laporan; cache read membuat pembagiannya perkiraan.',
   };
 }

@@ -262,7 +262,7 @@ function renderReportRoles(byRole) {
   }
   const total = Number(byRole.totalTokens) || roles.reduce((n, r) => n + (Number(r.tokens) || 0), 0);
   const coverage = byRole.coverage
-    ? `<p class="muted small">Cakupan: ${Math.round((Number(byRole.coverage.percent) || 0) * 100)}% token (${fmtNum(byRole.coverage.sessionsWithTranscript ?? 0)} dari ${fmtNum(byRole.coverage.sessions ?? 0)} sesi) punya rincian transcript. "OpenCode (tanpa rincian role)" dan "Tanpa rincian role" mencakup sesi yang transcript subagent-nya tidak tersedia.</p>`
+    ? `<p class="muted small">Cakupan: ${Math.round((Number(byRole.coverage.percent) || 0) * 100)}% token (${fmtNum(byRole.coverage.sessionsWithTranscript ?? 0)} dari ${fmtNum(byRole.coverage.sessions ?? 0)} sesi) punya rincian role. "OpenCode (tanpa rincian role)" dan "Tanpa rincian role" mencakup sesi yang tidak ditemukan di store OpenCode atau transcript Claude.</p>`
     : '';
   const rows = roles
     .slice(0, 12)

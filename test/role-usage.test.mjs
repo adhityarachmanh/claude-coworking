@@ -87,6 +87,30 @@ test('roleUsage: OpenCode sessions without a transcript get their own honest row
   assert.equal(result.coverage.unknownTokens, 1000);
 });
 
+test('roleUsage: an OpenCode session agent becomes the role (build = Lead)', async () => {
+  const { roleUsage } = await import('../src/role-usage.js');
+  const opencodeSessions = new Map([
+    ['ses_qa', { agent: 'qa' }],
+    ['ses_build', { agent: 'build' }],
+    ['ses_none', { agent: '(none)' }],
+  ]);
+  const rows = [
+    { ...row, engine: 'opencode', sessionId: 'ses_qa' },
+    { ...row, engine: 'opencode', sessionId: 'ses_build' },
+    { ...row, engine: 'opencode', sessionId: 'ses_none' },
+  ];
+  const result = roleUsage(rows, { hub, from: 0, to: Date.now() + 1000, opencodeSessions });
+  const byRole = Object.fromEntries(result.roles.map((r) => [r.role, r]));
+  assert.equal(byRole.qa.tokens, 1000);
+  assert.equal(byRole.qa.delegations, 1);
+  assert.equal(byRole.claude.tokens, 1000);
+  assert.equal(byRole.claude.delegations, 0);
+  assert.equal(byRole['opencode-unknown'].tokens, 1000);
+  assert.equal(result.coverage.sessionsWithTranscript, 2);
+  assert.equal(result.coverage.sessions, 3);
+  assert.equal(result.roles.reduce((n, r) => n + r.tokens, 0), 3000);
+});
+
 test('roleUsage: an unknown agent type is the freelancer, never silently a specialist', async () => {
   const session = '33333333-3333-4333-8333-333333333333';
   writeSession({ session, agents: [{ type: 'agent-tanpa-peta', input: 100, output: 0 }] });

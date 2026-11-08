@@ -12,7 +12,8 @@ import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthC
 import { GO_PLANS, goAllowance } from '../opencode-go.js';
 import { renderPdf, reportHtml } from '../report.js';
 import { roleUsage } from '../role-usage.js';
-import { daySummary, PERIOD_UNITS, summarize, totals } from '../usage.js';
+import { openCodeRoleSessions } from '../opencode-role-usage.js';
+import { daySummary, engineOf, PERIOD_UNITS, summarize, totals } from '../usage.js';
 import { json } from './http.js';
 
 const LOGOUT_CONFIRM = 'LOGOUT';
@@ -354,9 +355,11 @@ async function report(ctx, req, res, body, { pdf: wantPdf }) {
   const rows = ledger.query({ accountId, from, to });
   const groupBy = PERIOD_UNITS.includes(body.groupBy) ? body.groupBy : 'day';
   const summary = summarize(rows, { from: from || (rows[0]?.ts ?? to), to, groupBy });
-  // 🧩 Per-role estimate from the subagent transcripts (never fails the report: a missing transcript is Lead-only).
+  // 🧩 Per-role estimate: Claude from the subagent transcripts; OpenCode from its own session list (agent per
+  // session). Never fails the report: a missing transcript/session is an explicit "no detail" row.
   try {
-    summary.byRole = roleUsage(rows, { hub: ctx.hub, from, to });
+    const opencodeSessions = ctx.opencode && rows.some((row) => engineOf(row) === 'opencode') ? await openCodeRoleSessions(ctx.opencode) : null;
+    summary.byRole = roleUsage(rows, { hub: ctx.hub, from, to, opencodeSessions });
   } catch (err) {
     console.error(`Per-role usage tidak bisa dihitung: ${err?.message ?? err}`);
   }

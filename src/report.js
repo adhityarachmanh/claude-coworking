@@ -120,7 +120,7 @@ function roleSection(summary) {
     .join('');
   const cov = summary.byRole?.coverage;
   const coverage = cov
-    ? `<p class="muted">Cakupan: ${pct(cov.percent ?? 0)} token (${num(cov.sessionsWithTranscript ?? 0)} dari ${num(cov.sessions ?? 0)} sesi) punya rincian transcript. "OpenCode (tanpa rincian role)" dan "Tanpa rincian role" mencakup sesi yang transcript subagent-nya tidak tersedia.</p>`
+    ? `<p class="muted">Cakupan: ${pct(cov.percent ?? 0)} token (${num(cov.sessionsWithTranscript ?? 0)} dari ${num(cov.sessions ?? 0)} sesi) punya rincian role. "OpenCode (tanpa rincian role)" dan "Tanpa rincian role" mencakup sesi yang tidak ditemukan di store OpenCode atau transcript Claude.</p>`
     : '';
   return `<h2>Per role <span class="muted">(perkiraan)</span></h2>
   ${coverage}
