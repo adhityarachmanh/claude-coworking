@@ -3028,6 +3028,108 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('✅ Checklist project: butir siap/belum dan skor tampil', async () => {
+      await openApp(page, `#${projectId}`);
+      page.clearProblems();
+      await page.eval(async () => {
+        window.__checklistFetch = window.fetch;
+        const reply = (obj) => new Response(JSON.stringify(obj), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        window.fetch = (url, opts) => {
+          if (/\/checklist$/.test(String(url))) {
+            return Promise.resolve(
+              reply({
+                score: { done: 2, total: 3 },
+                engine: 'claude',
+                model: 'claude-sonnet-5',
+                checks: [
+                  { id: 'readme', label: 'README', ok: true, hint: 'x' },
+                  { id: 'test', label: 'Perintah test', ok: false, hint: 'Tambahkan "test" di scripts package.json.' },
+                  { id: 'git', label: 'Repositori git', ok: true, hint: 'x' },
+                ],
+              }),
+            );
+          }
+          return window.__checklistFetch(url, opts);
+        };
+        (await import('/js/features/checklist.js')).openChecklist();
+      });
+      try {
+        await page.waitFor(() => document.querySelectorAll('#checklist-list .checklist-item').length === 3, { timeoutMs: 4000, message: 'tiga butir checklist' });
+        const info = await page.eval(() => ({
+          sum: document.querySelector('#checklist-sum').textContent,
+          done: document.querySelectorAll('#checklist-list .checklist-item.ok').length,
+          todo: document.querySelectorAll('#checklist-list .checklist-item.todo').length,
+          hint: document.querySelector('#checklist-list .checklist-item.todo').textContent,
+        }));
+        assert.match(info.sum, /2\/3 siap/);
+        assert.match(info.sum, /model claude-sonnet-5/);
+        assert.deepEqual([info.done, info.todo], [2, 1]);
+        assert.match(info.hint, /Tambahkan "test"/);
+        await page.press('Escape');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__checklistFetch;
+        });
+      }
+    });
+
+    test('📚 Runbook: daftar, simpan antrian, dan jalankan', async () => {
+      await openApp(page, `#${projectId}`);
+      page.clearProblems();
+      await page.eval(async () => {
+        window.__rbFetch = window.fetch;
+        window.__rbPrompt = window.prompt;
+        window.__rbCalls = [];
+        window.prompt = () => 'Rilis baru';
+        const reply = (o) => new Response(JSON.stringify(o), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        const queue = {
+          project: location.hash.slice(1),
+          paused: false,
+          reason: null,
+          items: [{ id: 'q_1', text: 'jalankan test', status: 'waiting', attachments: [] }],
+          limits: { items: 50 },
+          budget: { tokensOut: null, costUsd: null, spentTokensOut: 0, spentCostUsd: 0 },
+          rev: 1,
+        };
+        window.__rb = { runbooks: [{ id: 'rb_1', name: 'Rilis', prompts: ['a', 'b'] }] };
+        window.fetch = (url, opts) => {
+          const u = String(url);
+          const body = opts?.body ? JSON.parse(opts.body) : {};
+          if (/\/queue$/.test(u)) return Promise.resolve(reply({ queue }));
+          if (/\/runbooks$/.test(u)) return Promise.resolve(reply(window.__rb));
+          if (/\/runbook-save$/.test(u)) {
+            window.__rbCalls.push({ op: 'save', ...body });
+            window.__rb = { runbooks: [{ id: 'rb_2', name: body.name, prompts: body.prompts }] };
+            return Promise.resolve(reply({ runbook: { id: 'rb_2', ...body }, runbooks: window.__rb.runbooks }));
+          }
+          if (/\/runbook-run$/.test(u)) {
+            window.__rbCalls.push({ op: 'run', ...body });
+            return Promise.resolve(reply({ added: 2, queue }));
+          }
+          return window.__rbFetch(url, opts);
+        };
+        (await import('/js/features/queue.js')).openQueue();
+      });
+      try {
+        await page.waitFor(() => document.querySelectorAll('#runbook-list .runbook-item').length === 1, { timeoutMs: 4000, message: 'runbook tampil' });
+        assert.match(await page.eval(() => document.querySelector('#runbook-list').textContent), /Rilis.*2 prompt/);
+        await page.eval(() => document.querySelector('#runbook-save').click());
+        await page.waitFor(() => window.__rbCalls.some((c) => c.op === 'save'), { timeoutMs: 4000, message: 'simpan runbook' });
+        assert.deepEqual(await page.eval(() => window.__rbCalls.find((c) => c.op === 'save')), { op: 'save', name: 'Rilis baru', prompts: ['jalankan test'] });
+        await page.eval(() => document.querySelector('#runbook-list [data-rb-run]').click());
+        await page.waitFor(() => window.__rbCalls.some((c) => c.op === 'run'), { timeoutMs: 4000, message: 'jalankan runbook' });
+        assert.deepEqual(await page.eval(() => window.__rbCalls.find((c) => c.op === 'run')), { op: 'run', runbookId: 'rb_2' });
+        await page.press('Escape');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__rbFetch;
+          window.prompt = window.__rbPrompt;
+        });
+      }
+    });
+
     test('📊 Dashboard: ringkasan hari ini dari ledger (biaya, giliran, token, sesi, project)', async () => {
       await ensureApp(page, `#${projectId}`);
       await page.eval((pid) => {

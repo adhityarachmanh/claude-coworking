@@ -366,6 +366,59 @@ test('⚠ perlu perhatian: a paused queue and a budget stop show up in one list'
   }
 });
 
+test('📚 runbook, ✅ checklist, dan 🩺 bundel diagnostik', async () => {
+  const id = await projectId();
+  try {
+    // 📚 Runbook: save waiting prompts as a named sequence, run it back into the queue, then delete it.
+    assert.deepEqual((await api(`/api/projects/${id}/runbooks`)).body.runbooks, []);
+    const saved = await api(`/api/projects/${id}/runbook-save`, { name: 'Rilis', prompts: ['jalankan test', '   ', 'commit'] });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.deepEqual(saved.body.runbook.prompts, ['jalankan test', 'commit']);
+    assert.equal(saved.body.runbooks.length, 1);
+    const runbookId = saved.body.runbook.id;
+    assert.equal((await api(`/api/projects/${id}/runbook-save`, { name: '', prompts: ['x'] })).status, 400);
+    assert.equal((await api(`/api/projects/${id}/runbook-save`, { name: 'x', prompts: [] })).status, 400);
+
+    for (const item of (await api(`/api/projects/${id}/queue`)).body.queue.items) await api(`/api/projects/${id}/queue-remove`, { itemId: item.id });
+    await api(`/api/projects/${id}/queue-pause`, { paused: true }); // stays waiting: nothing runs while the fake model is busy
+    const ran = await api(`/api/projects/${id}/runbook-run`, { runbookId });
+    assert.equal(ran.status, 200, JSON.stringify(ran.body));
+    assert.equal(ran.body.added, 2);
+    assert.deepEqual(ran.body.queue.items.filter((i) => i.status === 'waiting').map((i) => i.text), ['jalankan test', 'commit']);
+    assert.equal((await api(`/api/projects/${id}/runbook-run`, { runbookId: 'rb_tidakada' })).status, 404);
+
+    // ✅ Checklist: a stable shape whatever the fixture contains.
+    const checklist = await api(`/api/projects/${id}/checklist`);
+    assert.equal(checklist.status, 200);
+    assert.ok(checklist.body.checks.length >= 8);
+    assert.ok(checklist.body.checks.every((c) => typeof c.id === 'string' && typeof c.label === 'string' && typeof c.ok === 'boolean' && typeof c.hint === 'string'));
+    assert.equal(checklist.body.score.total, checklist.body.checks.length);
+    assert.equal(checklist.body.score.done, checklist.body.checks.filter((c) => c.ok).length);
+    assert.ok(['claude', 'opencode'].includes(checklist.body.engine));
+
+    // 🩺 Diagnostics: a .zip with info, health, the log tail and a README; no chat content.
+    const zipRes = await fetch(`${BASE}/api/diagnostics/export`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: '{}' });
+    assert.equal(zipRes.status, 200);
+    assert.match(zipRes.headers.get('content-type'), /application\/zip/);
+    const zipPath = path.join(TMP, 'diagnostics.zip');
+    writeFileSync(zipPath, Buffer.from(await zipRes.arrayBuffer()));
+    const zip = await ZipReader.open(zipPath);
+    assert.deepEqual(zip.entries.map((e) => e.name).sort(), ['README.txt', 'health.json', 'info.json', 'server.log']);
+    const info = JSON.parse(String(await zip.read(zip.entries.find((e) => e.name === 'info.json'))));
+    assert.equal(info.node, process.version);
+    assert.ok(Array.isArray(info.projects));
+    assert.ok(!String(await zip.read(zip.entries.find((e) => e.name === 'server.log'))).includes(process.env.USERPROFILE ?? '\\Users\\'), 'folder home disamarkan');
+    await zip.close();
+
+    assert.equal((await api(`/api/projects/${id}/runbook-delete`, { runbookId })).status, 200);
+    assert.deepEqual((await api(`/api/projects/${id}/runbooks`)).body.runbooks, []);
+    assert.equal((await api(`/api/projects/${id}/runbook-delete`, { runbookId })).status, 404);
+  } finally {
+    for (const item of (await api(`/api/projects/${id}/queue`)).body.queue.items) await api(`/api/projects/${id}/queue-remove`, { itemId: item.id });
+    await api(`/api/projects/${id}/queue-pause`, { paused: false });
+  }
+});
+
 test('💰 hard stop: prompt, compact, and handoff apply are refused while a window is over', async () => {
   const id = await projectId();
   const usageFile = path.join(TMP, 'data', 'usage.jsonl');

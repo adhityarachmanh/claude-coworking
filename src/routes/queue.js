@@ -57,6 +57,32 @@ export function register(router) {
       }),
     ));
   }
+  // 📚 Runbooks: named prompt sequences stored with the office state; ▶ adds them to the same queue.
+  router.post('/api/projects/:id/runbooks', withProject(({ hub }, req, res, { id }) => json(res, 200, { runbooks: hub.runbooksFor(id) })));
+  router.post('/api/projects/:id/runbook-save', withProject(({ hub }, req, res, { id }, body) => {
+    try {
+      const runbook = hub.saveRunbook(id, body);
+      return json(res, 200, { runbook, runbooks: hub.runbooksFor(id) });
+    } catch (err) {
+      if (err.status) return json(res, err.status, { error: err.message });
+      throw err;
+    }
+  }));
+  router.post('/api/projects/:id/runbook-delete', withProject(({ hub }, req, res, { id }, body) => {
+    if (!hub.deleteRunbook(id, String(body.runbookId ?? ''))) return json(res, 404, { error: 'Runbook tidak ditemukan.' });
+    return json(res, 200, { runbooks: hub.runbooksFor(id) });
+  }));
+  router.post('/api/projects/:id/runbook-run', withProject(async (ctx, req, res, { id }, body) => {
+    const book = ctx.hub.runbooksFor(id).find((b) => b.id === String(body.runbookId ?? ''));
+    if (!book) return json(res, 404, { error: 'Runbook tidak ditemukan.' });
+    return queueChange(res, async () => {
+      for (const text of book.prompts) {
+        const effort = await autoEffort(ctx, id, text);
+        ctx.taskQueue.add(id, text, effort);
+      }
+      return json(res, 200, { added: book.prompts.length, queue: ctx.taskQueue.view(id) });
+    });
+  }));
 }
 
 /** A QueueError is the user's mistake (unknown item, limits, a paused queue…): its own status and message. */

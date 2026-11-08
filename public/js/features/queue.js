@@ -27,7 +27,7 @@ const WARN_REASONS = new Set(['failed', 'rate_limit', 'budget', 'account']);
 /** Budget ranges, same as the server's (src/queue.js); the server stays the judge. */
 const BUDGET_RANGE = { tokensOut: [1000, 100_000_000], costUsd: [0.01, 10_000] };
 /** The open dialog: which project, its queue as last fetched, the item being edited, the budget the fields show. */
-export const queueView = { project: null, data: null, editing: null, rev: -1, loading: false, budgetKey: null, budgetOpened: false };
+export const queueView = { project: null, data: null, editing: null, rev: -1, loading: false, budgetKey: null, budgetOpened: false, runbooks: [] };
 const lastReason = new Map(); // project -> pause reason last seen (a new failure/limit pause gets a toast)
 
 const canEdit = () => !state.readOnly;
@@ -85,10 +85,73 @@ async function loadQueue() {
     const { queue } = await api(`/api/projects/${project}/queue`);
     if (project !== queueView.project) return;
     show(queue);
+    loadRunbooks(project);
   } catch (err) {
     $('#queue-list').innerHTML = `<li class="state-error">Gagal memuat antrian: ${escapeHtml(err.message)}</li>`;
   } finally {
     queueView.loading = false;
+  }
+}
+
+// ---------- 📚 runbooks (saved prompt sequences) ----------
+
+async function loadRunbooks(project = queueView.project) {
+  try {
+    const { runbooks } = await api(`/api/projects/${project}/runbooks`);
+    if (project !== queueView.project) return;
+    queueView.runbooks = Array.isArray(runbooks) ? runbooks : [];
+  } catch {
+    queueView.runbooks = [];
+  }
+  renderRunbooks();
+}
+
+function renderRunbooks() {
+  const list = $('#runbook-list');
+  if (!list) return;
+  const books = queueView.runbooks ?? [];
+  const edit = canEdit();
+  list.innerHTML = books.length
+    ? books
+        .map(
+          (b) =>
+            `<li class="runbook-item"><span class="rb-name">${escapeHtml(b.name)}</span><small class="muted">${b.prompts.length} prompt</small><span class="rb-actions"><button type="button" class="ghost" data-rb-run="${escapeHtml(b.id)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>▶ Jalankan</button><button type="button" class="ghost icon" data-rb-del="${escapeHtml(b.id)}" title="Hapus runbook" aria-label="Hapus runbook: ${escapeHtml(b.name)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>🗑</button></span></li>`,
+        )
+        .join('')
+    : '<li class="muted small">Belum ada runbook.</li>';
+  const save = $('#runbook-save');
+  if (save) {
+    const waiting = (queueView.data?.items ?? []).filter((i) => i.status === 'waiting').length;
+    save.disabled = !edit || !waiting;
+    save.title = edit ? (waiting ? 'Simpan item antrian yang masih menunggu sebagai runbook' : 'Tidak ada item menunggu untuk disimpan') : READ_ONLY_HINT;
+  }
+}
+
+/** ＋ Simpan antrian ini: the waiting items become a named runbook. */
+async function saveRunbook() {
+  if (!canEdit()) return toast(`${READ_ONLY_HINT}.`);
+  const prompts = (queueView.data?.items ?? []).filter((i) => i.status === 'waiting').map((i) => i.text);
+  if (!prompts.length) return toast('Tidak ada item menunggu untuk disimpan.', 'ok');
+  const name = window.prompt('Nama runbook:', '')?.trim();
+  if (!name) return;
+  try {
+    const { runbooks } = await api(`/api/projects/${queueView.project}/runbook-save`, { name, prompts });
+    queueView.runbooks = runbooks;
+    renderRunbooks();
+    toast('Runbook disimpan.', 'ok');
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+/** ▶ Jalankan: every prompt of the runbook goes to the queue. */
+async function runRunbook(runbookId) {
+  try {
+    const { added, queue } = await api(`/api/projects/${queueView.project}/runbook-run`, { runbookId });
+    show(queue);
+    toast(`${added} prompt ditambahkan ke antrian.`, 'ok');
+  } catch (err) {
+    toast(err.message);
   }
 }
 
@@ -158,6 +221,7 @@ function renderQueue() {
     $(id).title = edit ? '' : READ_ONLY_HINT;
   }
   renderBudget(q, edit);
+  renderRunbooks();
 }
 
 // ---------- budget (Batas antrian) ----------
@@ -378,6 +442,21 @@ export function initQueue() {
   });
   $('#queue-toggle').addEventListener('click', () => change('pause', { paused: !queueView.data?.paused }));
   $('#queue-clear').addEventListener('click', () => change('clear'));
+  $('#runbook-save').addEventListener('click', saveRunbook);
+  $('#runbook-list').addEventListener('click', async (e) => {
+    const run = e.target.closest('[data-rb-run]');
+    if (run) return runRunbook(run.dataset.rbRun);
+    const del = e.target.closest('[data-rb-del]');
+    if (!del || !window.confirm('Hapus runbook ini?')) return;
+    try {
+      const { runbooks } = await api(`/api/projects/${queueView.project}/runbook-delete`, { runbookId: del.dataset.rbDel });
+      queueView.runbooks = runbooks;
+      renderRunbooks();
+      toast('Runbook dihapus.', 'ok');
+    } catch (err) {
+      toast(err.message);
+    }
+  });
   $('#qb-toggle').addEventListener('click', () => setBudgetOpen($('#qb-body').hidden));
   $('#qb-form').addEventListener('submit', saveBudget);
   $('#qb-clear').addEventListener('click', clearBudget);

@@ -676,6 +676,15 @@
     </div>
 
     <!-- 📋 Antrian (features/queue.js, server src/queue.js): prompts run one by one when the session is idle -->
+    <div id="checklist-modal" class="modal" hidden>
+      <div class="modal-card checklist-card" role="dialog" aria-modal="true" aria-labelledby="checklist-title">
+        <div class="modal-head"><b id="checklist-title">✅ Checklist project <small id="checklist-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="checklist-sum" class="muted small" role="status" aria-live="polite"></p>
+        <p class="muted small">Hal-hal yang membuat project lebih mudah dikerjakan mesin AI. Tidak ada yang diubah dari sini.</p>
+        <ul id="checklist-list" class="checklist-list" aria-label="Butir checklist"></ul>
+      </div>
+    </div>
+
     <div id="queue-modal" class="modal" hidden>
       <div class="modal-card queue-card" role="dialog" aria-modal="true" aria-labelledby="queue-title">
         <div class="modal-head"><b id="queue-title">📋 Antrian <small id="queue-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
@@ -713,6 +722,14 @@
           <p id="qb-error" class="qb-error" role="alert" hidden></p>
           <p class="muted small qb-note">Dicek setelah tiap item selesai; giliran yang berjalan tidak dipotong. Biaya hanya estimasi (harga list).</p>
           </div>
+        </section>
+        <section id="runbooks" class="queue-runbooks" aria-label="Runbook antrian">
+          <div class="rb-head">
+            <b>📚 Runbook</b>
+            <button id="runbook-save" type="button" class="ghost" title="Simpan item antrian yang masih menunggu sebagai runbook">＋ Simpan antrian ini</button>
+          </div>
+          <p class="muted small">Rangkaian prompt tersimpan untuk project ini. ▶ menambahkannya ke antrian.</p>
+          <ul id="runbook-list" class="runbook-list"></ul>
         </section>
         <p class="muted small queue-help">Satu item per giliran. Antrian berhenti bila item gagal/dihentikan, kuota habis, atau penuh; tetap dijeda setelah restart. Seret untuk mengubah urutan.</p>
       </div>
@@ -988,6 +1005,7 @@
         <div class="modal-head"><b id="health-title">🩺 Kesehatan sistem</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div id="health-body" class="health-body"></div>
         <div class="health-actions">
+          <button type="button" id="health-diagnostics" class="ghost" title="Unduh .zip berisi versi, kesehatan, dan log terakhir (tanpa isi percakapan)">🩺 Bundel diagnostik</button>
           <button type="button" id="health-refresh" class="ghost">↻ Periksa ulang</button>
           <button type="button" id="health-close" class="ghost" data-close>Tutup</button>
         </div>

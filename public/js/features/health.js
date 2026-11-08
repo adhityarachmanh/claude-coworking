@@ -9,6 +9,7 @@ import { engineLabel } from '../core/engine-caps.js';
 import { state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { budgetHealthHtml, loadBudgetView } from './budget.js';
+import { downloadDiagnostics } from './diagnostics.js';
 
 const PATH = '/api/health';
 const MAX_TEXT = 300; // one line of a check/detail/hint
@@ -232,4 +233,5 @@ export function initHealth() {
     loadHealth();
   });
   $('#health-refresh')?.addEventListener('click', () => loadHealth());
+  $('#health-diagnostics')?.addEventListener('click', () => downloadDiagnostics());
 }

@@ -1173,6 +1173,18 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .s-tag-chip.active { background: var(--accent-tint); border-color: var(--accent); color: var(--accent-2); font-weight: 600; }
 .s-tag-chip .count { font-size: var(--fs-xs); color: var(--muted); }
 .s-tag-chip.manage { margin-left: auto; border-style: dashed; background: transparent; color: var(--muted); }
+.queue-runbooks { margin: 10px 0 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
+.queue-runbooks .rb-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.runbook-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; max-height: 150px; overflow-y: auto; }
+.runbook-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid var(--border); }
+.runbook-item:first-child { border-top: 0; }
+.runbook-item .rb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runbook-item .rb-actions { display: inline-flex; gap: 4px; flex: none; }
+.checklist-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; }
+.checklist-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
+.checklist-item.ok { opacity: .8; }
+.checklist-item.todo { border-style: dashed; }
+.checklist-item .cl-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .s-resume { flex: none; font-size: var(--fs-md); padding: 6px 14px; }
 .s-current { flex: none; font-size: var(--fs-sm); color: var(--ok-text); white-space: nowrap; }
 .s-live { flex: none; font-size: var(--fs-sm); color: var(--cli-text); white-space: nowrap; cursor: help; }

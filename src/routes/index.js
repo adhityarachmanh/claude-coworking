@@ -6,7 +6,9 @@ import * as approvals from './approvals.js';
 import * as attention from './attention.js';
 import * as backup from './backup.js';
 import * as budget from './budget.js';
+import * as checklist from './checklist.js';
 import * as claudeCheck from './claude-check.js';
+import * as diagnostics from './diagnostics.js';
 import * as extensions from './extensions.js';
 import * as files from './files.js';
 import * as git from './git.js';
@@ -49,11 +51,13 @@ export function buildRouter() {
     team.register,
     account.register,
     budget.register,
+    checklist.register,
     remote.register,
     push.register,
     backup.register,
     spotify.register,
     claudeCheck.register,
+    diagnostics.register,
     opencodeCheck.register,
     opencodeConfig.register,
     misc.register,

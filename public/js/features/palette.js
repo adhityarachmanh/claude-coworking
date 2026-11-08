@@ -13,6 +13,8 @@ import { fillComposer } from './composer.js';
 import { exportActiveSession, openSearch, resumeSearchResult } from './conversations.js';
 import { openBookmarks } from './bookmarks.js';
 import { openDashboard } from './dashboard.js';
+import { downloadDiagnostics } from './diagnostics.js';
+import { openChecklist } from './checklist.js';
 import { capBlocked } from './engine.js';
 import { openFile } from './file-viewer.js';
 import { openMcp } from './mcp.js';
@@ -202,6 +204,8 @@ function buildItems() {
     ['roster', '👥', 'Kelola tim', '/team', null, () => openRoster(), 'team tim role roster anggota meja kelola'],
     ['settings', '⚙', 'Pengaturan', '', laptopOnly, click('#btn-settings'), 'settings config preferences'],
     ['notify', '🔔', 'Pengaturan notifikasi', '', null, () => openNotifySettings(), 'notification notifikasi suara sound jam tenang quiet volume favorit'],
+    ['diagnostics', '🩺', 'Bundel diagnostik', '', laptopOnly, () => downloadDiagnostics(), 'diagnostic diagnostik log bug laporan dukungan support'],
+    ['checklist', '✅', 'Checklist project', '', needProject, () => openChecklist(), 'checklist siap readme test build git docs onboarding kesiapan'],
     ['account', '👤', 'Akun Claude', '', null, click('#btn-account'), 'account login kuota quota'],
     ['report', '📊', 'Laporan penggunaan token', '', null, click('#btn-report'), 'report usage token pdf'],
     ['phone', '📱', 'Buka di HP', '', $('#btn-phone')?.hidden ? laptopOnly ?? 'Tidak tersedia' : null, click('#btn-phone'), 'phone mobile qr hp'],

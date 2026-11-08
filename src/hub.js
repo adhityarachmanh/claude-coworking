@@ -102,6 +102,29 @@ function cleanSessionMeta(raw) {
   return out;
 }
 
+/** 📚 Runbooks: saved prompt sequences; only valid entries survive a hand-edited state.json. */
+function cleanRunbooks(raw) {
+  if (!isObject(raw)) return {};
+  const out = {};
+  for (const [projectId, list] of Object.entries(raw)) {
+    if (!projectId || !Array.isArray(list)) continue;
+    const books = [];
+    for (const book of list.slice(0, 50)) {
+      if (!isObject(book)) continue;
+      const name = typeof book.name === 'string' ? book.name.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+      const prompts = (Array.isArray(book.prompts) ? book.prompts : [])
+        .filter((p) => typeof p === 'string' && p.trim())
+        .slice(0, 20)
+        .map((p) => p.trim().slice(0, 4000));
+      if (!name || !prompts.length) continue;
+      const id = typeof book.id === 'string' && /^rb_[A-Za-z0-9_-]{1,40}$/.test(book.id) ? book.id : `rb_${Math.random().toString(36).slice(2, 12)}`;
+      books.push({ id, name, prompts, createdAt: Number(book.createdAt) || Date.now(), updatedAt: Number(book.updatedAt) || Date.now() });
+    }
+    if (books.length) out[projectId] = books;
+  }
+  return out;
+}
+
 /** 📦 Only a whole number of days (0 = off) survives in state.json. */
 function cleanSessionAutoArchive(raw) {
   if (!isObject(raw)) return {};
@@ -237,6 +260,8 @@ export class Hub {
     // 🏷/📦 Session tags and archive flags: only valid entries survive.
     this.persisted.sessionMeta = cleanSessionMeta(this.persisted.sessionMeta);
     this.persisted.sessionAutoArchive = cleanSessionAutoArchive(this.persisted.sessionAutoArchive);
+    // 📚 Runbooks per project: valid prompt sequences only.
+    this.persisted.runbooks = cleanRunbooks(this.persisted.runbooks);
     this.budgetOverrideUntil = 0; // one-shot "allow one turn" after a hard stop (memory only)
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
@@ -1096,6 +1121,46 @@ export class Hub {
     if (!Object.keys(map).length) delete this.persisted.sessionAutoArchive;
     this.scheduleSave();
     return n;
+  }
+
+  /** 📚 The project's saved runbooks (a copy, newest last). */
+  runbooksFor(id) {
+    return [...(this.persisted.runbooks?.[id] ?? [])];
+  }
+
+  /** Creates (no `book.id`) or updates a runbook; throws a 400-status error with a user-facing reason. */
+  saveRunbook(id, { id: bookId, name, prompts }) {
+    const cleanName = typeof name === 'string' ? name.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+    const cleanPrompts = (Array.isArray(prompts) ? prompts : [])
+      .filter((p) => typeof p === 'string' && p.trim())
+      .slice(0, 20)
+      .map((p) => p.trim().slice(0, 4000));
+    if (!cleanName) throw Object.assign(new Error('Nama runbook kosong.'), { status: 400 });
+    if (!cleanPrompts.length) throw Object.assign(new Error('Runbook butuh minimal satu prompt.'), { status: 400 });
+    const all = (this.persisted.runbooks ??= {});
+    const list = (all[id] ??= []);
+    let book = bookId ? list.find((b) => b.id === bookId) : null;
+    if (book) {
+      Object.assign(book, { name: cleanName, prompts: cleanPrompts, updatedAt: Date.now() });
+    } else {
+      if (list.length >= 50) throw Object.assign(new Error('Maksimal 50 runbook per project.'), { status: 400 });
+      book = { id: `rb_${Math.random().toString(36).slice(2, 12)}`, name: cleanName, prompts: cleanPrompts, createdAt: Date.now(), updatedAt: Date.now() };
+      list.push(book);
+    }
+    this.scheduleSave();
+    return { ...book, prompts: [...book.prompts] };
+  }
+
+  /** 🗑 Deletes a runbook of this project. @returns whether it existed */
+  deleteRunbook(id, bookId) {
+    const list = this.persisted.runbooks?.[id];
+    if (!Array.isArray(list)) return false;
+    const at = list.findIndex((b) => b.id === bookId);
+    if (at < 0) return false;
+    list.splice(at, 1);
+    if (!list.length) delete this.persisted.runbooks[id];
+    this.scheduleSave();
+    return true;
   }
 
   /** 🏷 Rename (or remove, with an empty `to`) one tag across every session of a project. @returns how many changed */

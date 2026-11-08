@@ -14,6 +14,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **🏷 Chip filter tag + 📦 arsip otomatis.** Riwayat sesi menampilkan chip tag yang bisa diklik untuk menyaring. Setiap project bisa memilih **Arsip otomatis 30/90/180 hari**; sesi tua masuk 📦 Diarsipkan, dan tombol ↩ menyematkannya agar tidak terarsip lagi karena umur.
 - **⧗ Shell OpenCode sesi lain ikut terlihat.** Panel Tugas latar sekarang juga menampilkan shell OpenCode dari sesi lain di folder project yang sama, sebagai daftar **hanya lihat** (tanpa output dan tanpa Hentikan).
 - **🏷/📦 Tag & arsip massal + kelola tag.** Centang beberapa sesi untuk memberi satu tag atau mengarsipkan sekaligus; **✎ Kelola tag** mengganti nama/menghapus satu tag di semua sesi project.
+- **📚 Runbook antrian.** Dialog 📋 Antrian bisa menyimpan item yang masih menunggu sebagai runbook bernama (per project); **▶ Jalankan** menambahkannya kembali ke antrian. Tersimpan di state aplikasi dan ikut backup.
+- **🩺 Bundel diagnostik.** Tombol di Kesehatan sistem (dan Ctrl+P) mengunduh `.zip` berisi info versi, hasil health, dan 512 KB log terakhir; folder home disamarkan dan tidak ada isi percakapan.
+- **✅ Checklist project.** Ctrl+P → *Checklist project* menunjukkan butir kesiapan (README, AGENTS/CLAUDE.md, package.json, test/build, git, docs, .env.example, model) beserta saran singkat.
 - **📈 Sparkline biaya 7 hari.** Baris **Hari ini** di 🗂 Semua project menampilkan grafik kecil biaya tujuh hari terakhir beserta totalnya, dari pembacaan ledger yang sama.
 - **🔎 Ctrl+P mencari file lintas project.** `@kata` mencari di project aktif lalu di project lain; hasil dari project lain menampilkan nama projectnya, dan memilihnya pindah project lalu membuka file.
 - **🏷 Tag & 📦 arsip sesi.** Riwayat sesi bisa diberi tag (ikut tercari) dan diarsipkan tanpa dihapus; filter **📦 Diarsipkan** menampilkan yang disembunyikan. Tersimpan di state aplikasi, jadi konsisten antar perangkat.
