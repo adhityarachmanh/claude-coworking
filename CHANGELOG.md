@@ -17,6 +17,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **📚 Runbook antrian.** Dialog 📋 Antrian bisa menyimpan item yang masih menunggu sebagai runbook bernama (per project); **▶ Jalankan** menambahkannya kembali ke antrian. Tersimpan di state aplikasi dan ikut backup.
 - **🩺 Bundel diagnostik.** Tombol di Kesehatan sistem (dan Ctrl+P) mengunduh `.zip` berisi info versi, hasil health, dan 512 KB log terakhir; folder home disamarkan dan tidak ada isi percakapan.
 - **🔎 Verifikasi & 🔑 ganti sandi backup.** Tombol **Verifikasi file** memeriksa `.zip`/`.aob` beserta kata sandinya tanpa memulihkan apa pun; **Ganti sandi** mengenkripsi ulang `.aob` dengan kata sandi baru lalu mengunduh file barunya.
+- **🎲 Recovery key & kekuatan sandi.** Tombol **Buat** mengisi kata sandi acak 20 karakter (format berkelompok) dan indikator kekuatan; **📋** menyalinnya. Tidak ada pemulihan bila hilang.
+- **🧹 Hapus data per project.** Di panel **Data saya**: pilih project lalu hapus chat kedua mesin, ledger, pengaturan, sesi, antrian, dan runbook project itu. Project dan folder tetap ada.
+- **📜 Audit: filter & CSV.** Aktivitas data bisa disaring per jenis dan diunduh sebagai CSV.
 - **📜 Audit aksi data.** Ekspor/impor/verifikasi/ganti sandi backup dan pembersihan data dicatat di `data/audit.log` (tanpa isi percakapan) dan tampil di panel **Data saya**.
 - **🔐 Backup terenkripsi.** Isi kata sandi (min. 8 karakter) saat Export untuk mendapat `.aob` terenkripsi AES-256-GCM; Import menerima `.zip` maupun `.aob` (kata sandi diminta lewat kolom yang sama). Tidak ada pemulihan kata sandi.
 - **🕵️ Panel “Data saya”.** ⚙ → Cadangkan riwayat menampilkan ukuran state, chat, ledger, riwayat notifikasi, trash, dan backup otomatis; tombol aman untuk menghapus riwayat notifikasi dan mengosongkan trash.

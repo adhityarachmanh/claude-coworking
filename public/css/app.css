@@ -1200,7 +1200,15 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .data-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); font-size: var(--fs-sm); }
 .data-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .data-audit { margin-top: 14px; }
+.data-audit-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.data-audit-tools { display: inline-flex; align-items: center; gap: 6px; }
+.data-project-row { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
+.data-project-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.data-project-controls select { flex: 1; min-width: 0; }
 .data-audit-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; }
+.backup-password-row { display: flex; gap: 6px; align-items: center; }
+.backup-password-row input { flex: 1; min-width: 0; }
+.backup-password-row button { flex: none; }
 .routine-calendar { display: flex; flex-direction: column; gap: 3px; margin: 0 0 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
 .cal-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; align-items: start; padding: 2px 0; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
 .cal-row:first-child { border-top: 0; }

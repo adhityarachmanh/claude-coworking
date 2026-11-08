@@ -797,6 +797,37 @@ export class Hub {
     return on;
   }
 
+  /**
+   * 🧹 Clears one project's app-side data (chat history both engines, settings→engine only, activity, sessions,
+   * turns, queue, session meta, runbooks) but keeps the project listed. Transcripts on disk are untouched.
+   */
+  clearProjectData(id) {
+    const project = this.projects.get(id);
+    if (!project) return false;
+    const engine = this.engineOf(id);
+    for (const e of ENGINES) {
+      delete this.storedChats[this.chatKey(e, id)];
+      try {
+        this.chatStoreFor(e).remove(id);
+      } catch {
+        // a locked or already gone chat file must not block the rest
+      }
+    }
+    const rt = this.runtime.get(id);
+    if (rt) {
+      rt.chat = [];
+      rt.events = [];
+      if (rt.status) rt.status.sessionId = null;
+    }
+    for (const key of ['sessions', 'sessionsByEngine', 'activity', 'turns', 'interrupted', 'queues', 'engineSettings', 'sessionMeta', 'runbooks', 'sessionAutoArchive', 'queueRetryOnce']) {
+      if (this.persisted[key]) delete this.persisted[key][id];
+    }
+    this.persisted.settings[id] = { engine };
+    this.save();
+    this.broadcast('projects', this.listProjects());
+    return true;
+  }
+
   /** 🔁 Retry a failed queue item once, automatically, on this project. */
   queueRetryOnceFor(id) {
     return this.persisted.queueRetryOnce?.[id] === true;

@@ -465,7 +465,7 @@ test('📚 runbook, ✅ checklist, dan 🩺 bundel diagnostik', async () => {
   }
 });
 
-test('🕵️ Data saya: ringkasan ukuran dan hapus riwayat notifikasi', async () => {
+test('🕵️ Data saya: ringkasan ukuran, hapus data per project, filter & ekspor audit', async () => {
   const answer = await api('/api/data');
   assert.equal(answer.status, 200, JSON.stringify(answer.body));
   const d = answer.body.data;
@@ -475,6 +475,30 @@ test('🕵️ Data saya: ringkasan ukuran dan hapus riwayat notifikasi', async (
   assert.equal(clear.status, 200);
   assert.equal((await api('/api/data')).body.data.pushHistory.entries, 0);
   assert.equal((await api('/api/data/purge', { target: 'lainnya' })).status, 400);
+
+  // A throwaway project: its chat/queue/settings go, the project stays listed.
+  const dir = path.join(TMP, 'purge-project');
+  mkdirSync(dir, { recursive: true });
+  const created = await api('/api/projects', { path: dir });
+  assert.equal(created.status, 200, JSON.stringify(created.body));
+  const pid = created.body.id;
+  try {
+    await api(`/api/projects/${pid}/queue-add`, { text: 'item untuk dihapus' });
+    assert.equal((await api('/api/data/project', { projectId: pid, confirm: 'salah' })).status, 400, 'butuh konfirmasi HAPUS');
+    assert.equal((await api('/api/data/project', { projectId: pid, confirm: 'HAPUS' })).status, 200);
+    assert.deepEqual((await api(`/api/projects/${pid}/queue`)).body.queue.items, [], 'antrian project dibersihkan');
+    assert.ok((await snapshot()).projects.some((p) => p.id === pid), 'project tetap terdaftar');
+    const filtered = await api('/api/data', { auditAction: 'data-purge' });
+    assert.ok(filtered.body.audit.every((e) => e.action === 'data-purge'));
+    assert.ok(filtered.body.audit.some((e) => /project/.test(e.detail)), 'purge project tercatat');
+    const csv = await fetch(`${BASE}/api/data/audit-export`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: '{}' });
+    assert.equal(csv.status, 200);
+    assert.match(csv.headers.get('content-type'), /text\/csv/);
+    assert.match(await csv.text(), /waktu,aksi,detail/);
+  } finally {
+    await api(`/api/projects/${pid}/forget`);
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('💰 hard stop: prompt, compact, and handoff apply are refused while a window is over', async () => {

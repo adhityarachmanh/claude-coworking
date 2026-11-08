@@ -5,6 +5,7 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { TRASH_RETENTION_DAYS } from '../session-admin.js';
 import { readAudit, recordAudit } from '../audit-log.js';
+import { DEMO_ID } from '../hub.js';
 import { json } from './http.js';
 
 /** Recursive byte count of a file or folder (missing = 0). */
@@ -46,10 +47,12 @@ function fileBytes(file) {
 }
 
 export function register(router) {
-  router.post('/api/data', ({ hub, ledger, push, dataDir }, req, res) => {
+  router.post('/api/data', ({ hub, ledger, push, dataDir }, req, res, params, body) => {
     const chats = sizeOf(path.join(dataDir, 'chats'));
     const chatsOpenCode = sizeOf(path.join(dataDir, 'chats-opencode'));
     const trash = path.join(dataDir, 'trash');
+    const wanted = typeof body?.auditAction === 'string' ? body.auditAction : '';
+    const audit = readAudit(dataDir, 200).filter((e) => !wanted || e.action === wanted).slice(0, 30);
     return json(res, 200, {
       data: {
         state: { bytes: fileBytes(hub.file ?? path.join(dataDir, 'state.json')) },
@@ -60,8 +63,30 @@ export function register(router) {
         backups: { bytes: sizeOf(path.join(dataDir, 'backup-schedule')), files: countFiles(path.join(dataDir, 'backup-schedule')) },
       },
       note: 'Riwayat chat dan laporan pemakaian tidak dihapus dari sini. Mengosongkan trash bersifat permanen; cadangkan dulu bila perlu.',
-      audit: readAudit(dataDir, 20),
-    });  }, { maxBody: 1024 });
+      audit,
+    });
+  }, { maxBody: 1024 });
+
+  // 🧹 Hapus data satu project (chat, ledger, pengaturan project) tanpa menghapus project/folder-nya.
+  router.post('/api/data/project', ({ hub, ledger, taskQueue, dataDir }, req, res, params, body) => {
+    if (body?.confirm !== 'HAPUS') return json(res, 400, { error: 'Konfirmasi tidak cocok. Ketik HAPUS untuk melanjutkan.' });
+    const id = String(body?.projectId ?? '');
+    const project = hub.projects.get(id);
+    if (!project || id === DEMO_ID || project.virtual) return json(res, 404, { error: 'Project tidak ditemukan.' });
+    taskQueue?.forget?.(id);
+    ledger?.removeProject?.(id);
+    hub.clearProjectData(id);
+    recordAudit(dataDir, { action: 'data-purge', detail: `project ${project.name}` });
+    return json(res, 200, { ok: true });
+  }, { maxBody: 1024 });
+
+  // ⬇ CSV of the audit trail (laptop only, no conversation content).
+  router.post('/api/data/audit-export', ({ dataDir }, req, res) => {
+    const rows = readAudit(dataDir, 500).reverse();
+    const csv = ['waktu,aksi,detail', ...rows.map((e) => [new Date(e.at).toISOString(), e.action, String(e.detail ?? '').replace(/"/g, '""')].map((v) => `"${v}"`).join(','))].join('\r\n');
+    res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="adhit-office-audit-${new Date().toLocaleDateString('sv-SE')}.csv"`, 'Cache-Control': 'no-store' });
+    res.end(`\uFEFF${csv}\r\n`);
+  }, { maxBody: 1024 });
 
   router.post('/api/data/purge', async ({ push, dataDir }, req, res, params, body) => {
     const target = String(body?.target ?? '');

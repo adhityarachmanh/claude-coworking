@@ -43,6 +43,32 @@ function backupPasswordHeader() {
   return password ? { 'X-Backup-Password': password } : {};
 }
 
+/** 🎲 A 20-character recovery key in groups (unambiguous alphabet), plus a simple strength line. */
+function generateRecoveryKey() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = new Uint8Array(20);
+  crypto.getRandomValues(bytes);
+  const key = [...bytes].map((b) => alphabet[b % alphabet.length]).join('');
+  const grouped = key.match(/.{1,4}/g).join('-');
+  $('#backup-password').value = grouped;
+  updatePasswordStrength();
+  setStatus('Kata sandi acak dibuat. Simpan sekarang — tidak ada pemulihan bila hilang.');
+  return grouped;
+}
+
+function updatePasswordStrength() {
+  const value = $('#backup-password')?.value ?? '';
+  const el = $('#backup-strength');
+  if (!el) return;
+  if (!value) {
+    el.textContent = 'Kosong: export menghasilkan .zip tanpa enkripsi.';
+    return;
+  }
+  const classes = [/[a-z]/.test(value), /[A-Z]/.test(value), /\d/.test(value), /[^A-Za-z0-9]/.test(value)].filter(Boolean).length;
+  const level = value.length >= 20 && classes >= 3 ? 'sangat kuat' : value.length >= 12 && classes >= 2 ? 'kuat' : value.length >= 8 ? 'cukup' : 'terlalu pendek (min. 8)';
+  el.textContent = `Kekuatan kata sandi: ${level}. Simpan di tempat aman; tidak ada pemulihan.`;
+}
+
 /** 🔎 Check a backup file (and its password) without restoring anything. */
 async function verifyBackupFile(file) {
   setBusy(true);
@@ -381,4 +407,17 @@ export function initBackup() {
     const file = e.target.files?.[0];
     if (file) rekeyBackupFile(file);
   });
+  $('#backup-generate').addEventListener('click', generateRecoveryKey);
+  $('#backup-copy-password').addEventListener('click', async () => {
+    const value = $('#backup-password').value;
+    if (!value) return setStatus('Isi atau buat kata sandi dulu.');
+    try {
+      await navigator.clipboard.writeText(value);
+      setStatus('Kata sandi disalin. Simpan di tempat aman.');
+    } catch {
+      setStatus('Gagal menyalin; salin manual dari kolom kata sandi.');
+    }
+  });
+  $('#backup-password').addEventListener('input', updatePasswordStrength);
+  updatePasswordStrength();
 }

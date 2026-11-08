@@ -701,8 +701,28 @@
           <button type="button" id="data-purge-push" class="ghost" title="Hapus log notifikasi yang dikirim ke HP">🧹 Hapus riwayat notifikasi</button>
           <button type="button" id="data-purge-trash" class="ghost danger-text" title="Hapus permanen semua sesi di folder trash">🗑 Kosongkan trash sesi</button>
         </div>
+        <div class="data-project-row">
+          <label for="data-project" class="muted small">Hapus data satu project (chat, ledger, pengaturan)</label>
+          <div class="data-project-controls">
+            <select id="data-project" aria-label="Project yang datanya dihapus"></select>
+            <button type="button" id="data-purge-project" class="ghost danger-text">Hapus data project</button>
+          </div>
+        </div>
         <section class="data-audit" aria-labelledby="data-audit-title">
-          <b id="data-audit-title">📜 Aktivitas data terakhir</b>
+          <div class="data-audit-head">
+            <b id="data-audit-title">📜 Aktivitas data terakhir</b>
+            <span class="data-audit-tools">
+              <select id="data-audit-filter" aria-label="Saring aktivitas data">
+                <option value="">Semua</option>
+                <option value="backup-export">Ekspor backup</option>
+                <option value="backup-import">Impor backup</option>
+                <option value="backup-verify">Verifikasi backup</option>
+                <option value="backup-rekey">Ganti sandi backup</option>
+                <option value="data-purge">Hapus data</option>
+              </select>
+              <button type="button" id="data-audit-export" class="ghost" title="Unduh seluruh audit sebagai CSV">⬇ CSV</button>
+            </span>
+          </div>
           <ul id="data-audit" class="data-audit-list"><li class="muted small">Belum ada aktivitas.</li></ul>
         </section>
       </div>
@@ -930,7 +950,12 @@
               <input type="file" id="backup-rekey-file" accept=".aob" aria-label="File backup terenkripsi untuk diganti sandinya" hidden />
             </div>
             <label class="backup-password-label" for="backup-password">🔐 Kata sandi backup <small>(opsional saat export; wajib untuk file .aob)</small></label>
-            <input id="backup-password" type="password" minlength="8" maxlength="200" placeholder="Minimal 8 karakter untuk mengenkripsi" aria-label="Kata sandi backup" autocomplete="new-password" />
+            <div class="backup-password-row">
+              <input id="backup-password" type="password" minlength="8" maxlength="200" placeholder="Minimal 8 karakter untuk mengenkripsi" aria-label="Kata sandi backup" autocomplete="new-password" />
+              <button type="button" id="backup-generate" class="ghost" title="Buat kata sandi acak kuat (recovery key)">🎲 Buat</button>
+              <button type="button" id="backup-copy-password" class="ghost" title="Salin kata sandi ke clipboard">📋</button>
+            </div>
+            <p id="backup-strength" class="muted small" role="status" aria-live="polite"></p>
             <p id="backup-encrypt-note" class="muted small">Backup terenkripsi tidak bisa dibuka tanpa kata sandi ini; tidak ada pemulihan. Kosongkan saat export untuk file .zip biasa.</p>
             <p id="backup-status" class="muted" role="status" aria-live="polite"></p>
             <button type="button" id="btn-data-panel" class="ghost team-names-btn" title="Apa saja yang disimpan aplikasi di laptop ini, dan bersihkan yang aman">🕵️ Data saya</button>
