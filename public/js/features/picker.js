@@ -24,11 +24,12 @@ function projectRank(p) {
 
 // ---------- project picker (Ctrl+K) ----------
 
-const picker = { cursor: 0, visible: [] };
+const picker = { cursor: 0, visible: [], showArchived: false };
 
 export function renderSidebar() {
   const q = state.search.toLowerCase();
   const list = state.projects
+    .filter((p) => picker.showArchived || !p.archived || p.id === state.active)
     .filter((p) => !q || p.name.toLowerCase().includes(q) || (p.path ?? '').toLowerCase().includes(q))
     .sort((a, b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || projectRank(b) - projectRank(a) || (b.lastActivity ?? 0) - (a.lastActivity ?? 0) || Number(b.sources.includes('claude')) - Number(a.sources.includes('claude')) || a.name.localeCompare(b.name));
   picker.visible = list.map((p) => p.id);
@@ -40,6 +41,11 @@ export function renderSidebar() {
       const head = !grouped ? '' : i === 0 ? '<li class="group">★ Favorit</li>' : !p.favorite && list[i - 1].favorite ? '<li class="group">Semua project</li>' : '';
       const favTitle = state.readOnly ? READ_ONLY_HINT : p.favorite ? 'Hapus dari favorit' : 'Jadikan favorit (selalu di atas)';
       const star = p.id === DEMO_ID ? '' : `<button class="fav ${p.favorite ? 'on' : ''}" title="${favTitle}" aria-pressed="${Boolean(p.favorite)}" ${state.readOnly ? 'disabled' : ''}>${p.favorite ? '★' : '☆'}</button>`;
+      // 🗂 Archived projects are hidden unless "tampilkan arsip" is on (the active one always stays).
+      const archive =
+        p.id === DEMO_ID
+          ? ''
+          : `<button class="arch ${p.archived ? 'on' : ''}" data-archive-project title="${state.readOnly ? READ_ONLY_HINT : p.archived ? 'Keluarkan dari arsip' : 'Arsipkan: sembunyikan dari daftar tanpa menghapus'}" aria-pressed="${Boolean(p.archived)}" aria-label="${p.archived ? 'Keluarkan dari arsip' : 'Arsipkan'}: ${escapeHtml(p.name)}" ${state.readOnly ? 'disabled' : ''}>${p.archived ? '↩' : '📦'}</button>`;
       const st = state.statuses[p.id] ?? {};
       const badge = st.pending
         ? `<span class="badge ask">${st.pending}</span>`
@@ -66,6 +72,7 @@ export function renderSidebar() {
         ${missingTag}
         ${badge}
         ${star}
+        ${archive}
         ${purge}
         ${p.sources.includes('custom') ? '<button class="forget" title="Hapus dari daftar" aria-label="Hapus dari daftar">×</button>' : ''}
       </li>`;
@@ -135,6 +142,14 @@ function moveCursor(delta) {
 
 export function initPicker() {
   $('#crumb').addEventListener('click', openProjects);
+  $('#project-archived')?.addEventListener('click', () => {
+    picker.showArchived = !picker.showArchived;
+    const btn = $('#project-archived');
+    btn.setAttribute('aria-pressed', String(picker.showArchived));
+    btn.classList.toggle('on', picker.showArchived);
+    btn.title = picker.showArchived ? 'Sembunyikan project diarsipkan' : 'Tampilkan project diarsipkan';
+    renderSidebar();
+  });
   $('#project-search').addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
@@ -153,6 +168,14 @@ export function initPicker() {
       if (state.readOnly) return;
       const project = state.projects.find((p) => p.id === li.dataset.id);
       api(`/api/projects/${li.dataset.id}/favorite`, { on: !project?.favorite }).catch((err) => toast(err.message));
+      return;
+    }
+    if (e.target.closest('.arch')) {
+      if (state.readOnly) return;
+      const project = state.projects.find((p) => p.id === li.dataset.id);
+      api(`/api/projects/${li.dataset.id}/archive`, { archived: !project?.archived })
+        .then((r) => toast(r.archived ? 'Project diarsipkan — buka 📦 untuk melihatnya lagi.' : 'Project dikeluarkan dari arsip.', 'ok'))
+        .catch((err) => toast(err.message));
       return;
     }
     if (e.target.closest('.purge')) {

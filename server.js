@@ -384,7 +384,7 @@ const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/ap
 const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout', '/api/account/audit', '/api/engine', '/api/opencode/providers', '/api/opencode/login/key', '/api/opencode/login/oauth', '/api/opencode/login/status', '/api/opencode/login/code', '/api/opencode/login/cancel', '/api/opencode/logout']);
 // Opening VS Code / Explorer only makes sense on the laptop itself.
 // Changing saved permission rules (🛡️ Aturan izin) changes what Claude Code may do unasked: laptop only (phones may look).
-const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit|mcp-add|session-import-json)$/;
+const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit|mcp-add|session-import-json|checklist-scaffold|archive)$/;
 const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+|js\/pair\.js)$/;
 
 // A TLS socket is never the laptop, even from loopback (e.g. someone puts `tailscale serve` in front of it):

@@ -262,6 +262,8 @@ export class Hub {
     this.persisted.sessionAutoArchive = cleanSessionAutoArchive(this.persisted.sessionAutoArchive);
     // 📚 Runbooks per project: valid prompt sequences only.
     this.persisted.runbooks = cleanRunbooks(this.persisted.runbooks);
+    // 🗂 Archived projects: an id list; a hand-edited file cannot break the picker.
+    this.persisted.archivedProjects = Array.isArray(this.persisted.archivedProjects) ? [...new Set(this.persisted.archivedProjects.filter((p) => typeof p === 'string' && p).slice(0, 500))] : [];
     this.budgetOverrideUntil = 0; // one-shot "allow one turn" after a hard stop (memory only)
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
@@ -721,6 +723,7 @@ export class Hub {
     const project = this.projects.get(id);
     this.persisted.custom = (this.persisted.custom ?? []).filter((p) => projectId(p) !== id);
     this.persisted.favorites = this.persisted.favorites.filter((f) => f !== id);
+    this.persisted.archivedProjects = this.persisted.archivedProjects.filter((p) => p !== id);
     for (const key of ['settings', 'sessions', 'activity', 'turns', 'interrupted', 'queues', 'sessionsByEngine', 'engineSettings']) if (this.persisted[key]) delete this.persisted[key][id];
     if (this.legacyChats) delete this.legacyChats[id];
     // Both engines' histories are removed (switching never copied anything, so one may live in each store).
@@ -745,6 +748,7 @@ export class Hub {
     if (!project?.sources.includes('custom')) return false;
     this.persisted.custom = this.persisted.custom.filter((p) => projectId(p) !== id);
     this.persisted.favorites = this.persisted.favorites.filter((f) => f !== id);
+    this.persisted.archivedProjects = this.persisted.archivedProjects.filter((p) => p !== id);
     for (const key of ['settings', 'sessions', 'activity', 'turns', 'interrupted', 'queues', 'sessionsByEngine', 'engineSettings']) if (this.persisted[key]) delete this.persisted[key][id];
     if (this.legacyChats) delete this.legacyChats[id];
     for (const engine of ENGINES) {
@@ -768,10 +772,20 @@ export class Hub {
       ...p,
       lastActivity: this.persisted.activity[p.id] ?? 0,
       favorite: this.persisted.favorites.includes(p.id),
+      archived: this.persisted.archivedProjects.includes(p.id),
       // The folder is gone (moved, deleted, a temp folder from an old CLI session): the picker may offer a safe purge.
       // Only ENOENT/ENOTDIR: an unreadable or temporarily offline folder is not an orphan.
       missing: Boolean(p.path) && isMissing(p.path),
     }));
+  }
+
+  /** 🗂 Archive (hide from the picker) or show a project again; nothing is deleted. */
+  setProjectArchived(id, on) {
+    const rest = this.persisted.archivedProjects.filter((p) => p !== id);
+    this.persisted.archivedProjects = on ? [...rest, id] : rest;
+    this.save();
+    this.broadcast('projects', this.listProjects());
+    return on;
   }
 
   /** Starred projects stay on top of the picker on every device (stored server-side). */

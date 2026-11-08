@@ -42,6 +42,33 @@ function projectOptions() {
   if (!projects.length) select.innerHTML = '<option value="">Belum ada project</option>';
 }
 
+/** 📅 The next 7 days: which routines fire on each (enabled ones only), oldest day first. */
+function calendarHtml() {
+  const pad = (n) => String(n).padStart(2, '0');
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const rows = [];
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(start);
+    day.setDate(start.getDate() + i);
+    const iso = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+    const weekday = day.getDay();
+    const items = view.list
+      .filter((r) => r.enabled)
+      .filter((r) => r.frequency === 'daily' || (r.frequency === 'weekly' && r.weekday === weekday) || (r.frequency === 'once' && r.date === iso))
+      .sort((a, b) => String(a.time).localeCompare(String(b.time)));
+    const label = day.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+    rows.push(
+      `<div class="cal-row${items.length ? '' : ' empty'}"><span class="cal-day">${escapeHtml(label)}</span><span class="cal-items">${
+        items.length
+          ? items.map((r) => `<span class="cal-item" title="${escapeHtml(r.prompt)}"><b>${escapeHtml(r.time)}</b> ${escapeHtml(r.prompt.slice(0, 44))}</span>`).join('')
+          : '<span class="muted small">—</span>'
+      }</span></div>`,
+    );
+  }
+  return `<div class="routine-calendar" role="group" aria-label="Jadwal 7 hari ke depan">${rows.join('')}</div>`;
+}
+
 function renderList() {
   const box = $('#routine-list');
   if (!box) return;
@@ -57,7 +84,7 @@ function renderList() {
     box.innerHTML = '<p class="muted small">Belum ada jadwal. Prompt yang kamu tambahkan akan masuk antrian otomatis.</p>';
     return;
   }
-  box.innerHTML = `<ul class="routine-items">${view.list
+  box.innerHTML = `${calendarHtml()}<ul class="routine-items">${view.list
     .map(
       (r) => `<li class="routine-item${r.enabled ? '' : ' off'}" data-routine="${escapeHtml(r.id)}">
         <div class="routine-main">

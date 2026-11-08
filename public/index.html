@@ -268,6 +268,7 @@
         <div class="side-head">
           <input id="project-search" type="search" aria-label="Cari project" placeholder="Cari project…  (↑↓ pilih · Enter buka · Esc tutup)" autocomplete="off" />
           <button id="project-dash" class="icon-btn" type="button" title="Semua project: status setiap project sekaligus" aria-label="Semua project">🗂</button>
+          <button id="project-archived" class="icon-btn" type="button" aria-pressed="false" title="Tampilkan project diarsipkan" aria-label="Tampilkan project diarsipkan">📦</button>
           <button id="refresh-projects" class="icon-btn" title="Pindai ulang folder" aria-label="Pindai ulang folder">↻</button>
           <button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button>
         </div>
@@ -638,6 +639,19 @@
       </div>
     </div>
 
+    <div id="runbook-modal" class="modal" hidden>
+      <div class="modal-card runbook-card" role="dialog" aria-modal="true" aria-labelledby="runbook-title">
+        <div class="modal-head"><b id="runbook-title">📚 Runbook</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <label class="runbook-field"><span>Nama</span><input id="runbook-name" maxlength="80" autocomplete="off" /></label>
+        <label class="runbook-field"><span>Prompt</span><textarea id="runbook-prompts" rows="10" spellcheck="false" placeholder="Prompt pertama&#10;---&#10;Prompt kedua"></textarea></label>
+        <p class="muted small">Pisahkan tiap prompt dengan baris berisi <code>---</code>.</p>
+        <div class="runbook-actions">
+          <button type="button" id="runbook-cancel" class="ghost" data-close>Batal</button>
+          <button type="button" id="runbook-submit" class="primary">Simpan</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ⚡ Prompt templates (features/templates.js): pick one into the composer; the user's own are stored on the server -->
     <div id="templates-modal" class="modal" hidden>
       <div class="modal-card templates-card" role="dialog" aria-modal="true" aria-labelledby="tpl-heading">
@@ -682,6 +696,9 @@
         <p id="checklist-sum" class="muted small" role="status" aria-live="polite"></p>
         <p class="muted small">Hal-hal yang membuat project lebih mudah dikerjakan mesin AI. Tidak ada yang diubah dari sini.</p>
         <ul id="checklist-list" class="checklist-list" aria-label="Butir checklist"></ul>
+        <div class="checklist-actions">
+          <button type="button" id="checklist-scaffold" class="ghost" title="Buat README/AGENTS.md/.env.example/docs yang belum ada; file yang sudah ada tidak ditimpa">🛠 Buat kerangka yang belum ada</button>
+        </div>
       </div>
     </div>
 

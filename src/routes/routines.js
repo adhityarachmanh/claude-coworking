@@ -24,11 +24,16 @@ function save({ hub }, req, res, params, body) {
     const now = Date.now();
     const stored = body.id ? all(hub).find((r) => r.id === body.id) : null;
     if (body.id && !stored) throw new RoutineError('Jadwal tidak ditemukan.', 404);
+    // 📚 A scheduled runbook: the prompt shown is its name; the scheduler enqueues every prompt in it.
+    const wantedBook = body.runbookId ? String(body.runbookId) : stored?.runbookId && body.runbookId === undefined && String(body.prompt ?? '') === stored.prompt ? stored.runbookId : null;
+    const book = wantedBook ? hub.runbooksFor(project.id).find((b) => b.id === wantedBook) : null;
+    if (wantedBook && !book) throw new RoutineError('Runbook tidak ditemukan. Pilih runbook project ini.');
     const routine = cleanRoutine(
       {
         ...(stored ?? {}),
         projectId: project.id,
-        prompt: body.prompt,
+        prompt: book ? `📚 ${book.name}` : body.prompt,
+        runbookId: book ? book.id : null,
         frequency: body.frequency,
         time: body.time,
         weekday: body.weekday,
@@ -72,12 +77,15 @@ function run({ hub, taskQueue }, req, res, params, body) {
   if (!routine) return json(res, 404, { error: 'Jadwal tidak ditemukan.' });
   const project = hub.projects.get(routine.projectId);
   if (!project || project.virtual) return json(res, 404, { error: 'Project jadwal tidak ditemukan.' });
+  const book = routine.runbookId ? hub.runbooksFor(routine.projectId).find((b) => b.id === routine.runbookId) : null;
+  if (routine.runbookId && !book) return json(res, 404, { error: 'Runbook jadwal ini sudah tidak ada.' });
   try {
-    taskQueue.add(routine.projectId, routine.prompt, null, [], { routineId: routine.id });
+    for (const prompt of book ? book.prompts : [routine.prompt]) taskQueue.add(routine.projectId, prompt, null, [], { routineId: routine.id });
   } catch (err) {
     return json(res, err.status ?? 400, { error: err.message });
   }
-  hub.chat(routine.projectId, { kind: 'info', text: `⏰ Tugas terjadwal dijalankan manual: ${routine.prompt.slice(0, 80)}` });
+  const label = book ? `📚 ${book.name} (${book.prompts.length} prompt)` : routine.prompt.slice(0, 80);
+  hub.chat(routine.projectId, { kind: 'info', text: `⏰ Tugas terjadwal dijalankan manual: ${label}` });
   return json(res, 200, { ok: true });
 }
 

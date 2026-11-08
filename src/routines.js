@@ -57,6 +57,7 @@ export function cleanRoutine(raw, now = Date.now()) {
     id: /^[A-Za-z0-9_-]{1,40}$/.test(String(raw.id ?? '')) ? raw.id : `rt_${randomUUID().replace(/-/g, '').slice(0, 12)}`,
     projectId,
     prompt,
+    runbookId: /^rb_[A-Za-z0-9_-]{1,40}$/.test(String(raw.runbookId ?? '')) ? raw.runbookId : null,
     frequency,
     time,
     weekday,
@@ -155,10 +156,18 @@ export class RoutineScheduler {
       Object.assign(routine, { enabled: false, nextRun: null, error: 'Project tidak ditemukan atau tidak bisa dijalankan.' });
       return;
     }
+    // 📚 A runbook routine enqueues every prompt of the saved sequence (if it still exists).
+    const book = routine.runbookId ? this.hub.runbooksFor?.(routine.projectId)?.find((b) => b.id === routine.runbookId) : null;
+    if (routine.runbookId && !book) {
+      Object.assign(routine, { enabled: false, nextRun: null, error: 'Runbook jadwal ini sudah tidak ada.' });
+      return;
+    }
+    const prompts = book ? book.prompts : [routine.prompt];
     try {
-      this.taskQueue.add(routine.projectId, routine.prompt, null, [], { routineId: routine.id });
+      for (const prompt of prompts) this.taskQueue.add(routine.projectId, prompt, null, [], { routineId: routine.id });
       Object.assign(routine, { lastRun: now, error: null });
-      this.hub.chat?.(routine.projectId, { kind: 'info', text: `⏰ Tugas terjadwal masuk antrian: ${routine.prompt.slice(0, 80)}` });
+      const label = book ? `📚 ${book.name} (${prompts.length} prompt)` : routine.prompt.slice(0, 80);
+      this.hub.chat?.(routine.projectId, { kind: 'info', text: `⏰ Tugas terjadwal masuk antrian: ${label}` });
     } catch (err) {
       Object.assign(routine, { lastRun: now, error: String(err?.message ?? err).slice(0, 300) });
       this.hub.chat?.(routine.projectId, { kind: 'info', level: 'warning', text: `⏰ Tugas terjadwal gagal masuk antrian: ${routine.error}` });

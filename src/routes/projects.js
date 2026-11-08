@@ -91,6 +91,11 @@ export function registerProjectActions(router) {
     hub.setFavorite(project.id, Boolean(body.on));
     return json(res, 200, { ok: true, favorite: Boolean(body.on) });
   }));
+  // 🗂 Archive hides a project from the picker without touching its data or folder.
+  router.post('/api/projects/:id/archive', withSession(({ hub }, req, res, { project }, body) => {
+    const archived = hub.setProjectArchived(project.id, body.archived === true);
+    return json(res, 200, { ok: true, archived });
+  }));
   router.post('/api/projects/:id/forget', withSession(({ hub, sessions, taskQueue }, req, res, { project, session }) => {
     taskQueue.forget(project.id);
     session.reset();

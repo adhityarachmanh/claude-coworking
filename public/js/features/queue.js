@@ -6,7 +6,7 @@ import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { ago, fmtShort } from '../core/format.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
-import { openModal } from '../ui/modals.js';
+import { openModal, closeModal } from '../ui/modals.js';
 import { setMobileView } from '../ui/layout.js';
 import { attachmentChip, attachmentPayload, attachmentsReady, clearAttachments } from './attachments.js';
 import { autosize, updateBashMode } from './composer.js';
@@ -115,7 +115,7 @@ function renderRunbooks() {
     ? books
         .map(
           (b) =>
-            `<li class="runbook-item"><span class="rb-name">${escapeHtml(b.name)}</span><small class="muted">${b.prompts.length} prompt</small><span class="rb-actions"><button type="button" class="ghost" data-rb-run="${escapeHtml(b.id)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>▶ Jalankan</button><button type="button" class="ghost icon" data-rb-del="${escapeHtml(b.id)}" title="Hapus runbook" aria-label="Hapus runbook: ${escapeHtml(b.name)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>🗑</button></span></li>`,
+            `<li class="runbook-item"><span class="rb-name">${escapeHtml(b.name)}</span><small class="muted">${b.prompts.length} prompt</small><span class="rb-actions"><button type="button" class="ghost" data-rb-run="${escapeHtml(b.id)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>▶ Jalankan</button><button type="button" class="ghost icon" data-rb-edit="${escapeHtml(b.id)}" title="Ganti nama runbook" aria-label="Ganti nama runbook: ${escapeHtml(b.name)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>✎</button><button type="button" class="ghost icon" data-rb-sched="${escapeHtml(b.id)}" title="Jadwalkan harian (⏰ Tugas terjadwal)" aria-label="Jadwalkan runbook: ${escapeHtml(b.name)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>⏰</button><button type="button" class="ghost icon" data-rb-del="${escapeHtml(b.id)}" title="Hapus runbook" aria-label="Hapus runbook: ${escapeHtml(b.name)}" ${edit ? '' : `disabled title="${READ_ONLY_HINT}"`}>🗑</button></span></li>`,
         )
         .join('')
     : '<li class="muted small">Belum ada runbook.</li>';
@@ -127,18 +127,64 @@ function renderRunbooks() {
   }
 }
 
-/** ＋ Simpan antrian ini: the waiting items become a named runbook. */
-async function saveRunbook() {
+let editingRunbookId = null;
+
+/** Opens the runbook editor: a new one (optionally from the queue's waiting items) or an existing one. */
+function openRunbookEditor(book = null, prompts = null) {
+  editingRunbookId = book?.id ?? null;
+  $('#runbook-title').textContent = book ? '📚 Ubah runbook' : '📚 Runbook baru';
+  $('#runbook-name').value = book?.name ?? '';
+  $('#runbook-prompts').value = (book?.prompts ?? prompts ?? []).join('\n---\n');
+  openModal('runbook-modal');
+  $('#runbook-name').focus();
+}
+
+/** Saves the editor: prompts are separated by a line containing only `---` (so a prompt may be multi-line). */
+async function submitRunbook() {
+  const name = $('#runbook-name').value.replace(/\s+/g, ' ').trim();
+  const prompts = $('#runbook-prompts')
+    .value.split(/^\s*---\s*$/m)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  if (!name) return toast('Nama runbook belum diisi.', 'warn');
+  if (!prompts.length) return toast('Isi minimal satu prompt.', 'warn');
+  try {
+    const { runbooks } = await api(`/api/projects/${queueView.project}/runbook-save`, { name, prompts, ...(editingRunbookId ? { id: editingRunbookId } : {}) });
+    queueView.runbooks = runbooks;
+    editingRunbookId = null;
+    closeModal('runbook-modal');
+    renderRunbooks();
+    toast('Runbook disimpan.', 'ok');
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+/** ＋ Simpan antrian ini: the waiting items open the editor as a new runbook. */
+function saveRunbook() {
   if (!canEdit()) return toast(`${READ_ONLY_HINT}.`);
   const prompts = (queueView.data?.items ?? []).filter((i) => i.status === 'waiting').map((i) => i.text);
   if (!prompts.length) return toast('Tidak ada item menunggu untuk disimpan.', 'ok');
-  const name = window.prompt('Nama runbook:', '')?.trim();
-  if (!name) return;
+  openRunbookEditor(null, prompts);
+}
+
+/** ✎ Open the editor for an existing runbook (name and prompts). */
+function editRunbook(runbookId) {
+  const book = (queueView.runbooks ?? []).find((b) => b.id === runbookId);
+  if (book) openRunbookEditor(book);
+}
+
+/** ⏰ Schedule a runbook as a daily routine (the ⏰ dialog can change it to weekly/once later). */
+async function scheduleRunbook(runbookId) {
+  const book = (queueView.runbooks ?? []).find((b) => b.id === runbookId);
+  if (!book) return;
+  const time = window.prompt(`Jam harian untuk menjalankan "${book.name}" (JJ:MM):`, '09:00')?.trim();
+  if (!time) return;
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return toast('Jam harus dalam format JJ:MM.', 'warn');
   try {
-    const { runbooks } = await api(`/api/projects/${queueView.project}/runbook-save`, { name, prompts });
-    queueView.runbooks = runbooks;
-    renderRunbooks();
-    toast('Runbook disimpan.', 'ok');
+    await api('/api/routines/save', { projectId: queueView.project, runbookId, frequency: 'daily', time, enabled: true });
+    toast(`Runbook "${book.name}" dijadwalkan harian ${time}.`, 'ok');
   } catch (err) {
     toast(err.message);
   }
@@ -443,9 +489,20 @@ export function initQueue() {
   $('#queue-toggle').addEventListener('click', () => change('pause', { paused: !queueView.data?.paused }));
   $('#queue-clear').addEventListener('click', () => change('clear'));
   $('#runbook-save').addEventListener('click', saveRunbook);
+  $('#runbook-submit').addEventListener('click', submitRunbook);
+  $('#runbook-prompts').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      submitRunbook();
+    }
+  });
   $('#runbook-list').addEventListener('click', async (e) => {
     const run = e.target.closest('[data-rb-run]');
     if (run) return runRunbook(run.dataset.rbRun);
+    const edit = e.target.closest('[data-rb-edit]');
+    if (edit) return editRunbook(edit.dataset.rbEdit);
+    const sched = e.target.closest('[data-rb-sched]');
+    if (sched) return scheduleRunbook(sched.dataset.rbSched);
     const del = e.target.closest('[data-rb-del]');
     if (!del || !window.confirm('Hapus runbook ini?')) return;
     try {

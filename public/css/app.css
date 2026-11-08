@@ -1185,6 +1185,23 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .checklist-item.ok { opacity: .8; }
 .checklist-item.todo { border-style: dashed; }
 .checklist-item .cl-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.checklist-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.runbook-card { max-width: 640px; }
+.runbook-field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; font-size: var(--fs-sm); color: var(--text-2); }
+.runbook-field input, .runbook-field textarea { width: 100%; font: inherit; }
+.runbook-field textarea { font-family: var(--mono); resize: vertical; }
+.runbook-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.routine-calendar { display: flex; flex-direction: column; gap: 3px; margin: 0 0 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
+.cal-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; align-items: start; padding: 2px 0; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
+.cal-row:first-child { border-top: 0; }
+.cal-row.empty { opacity: .55; }
+.cal-day { color: var(--muted); font-weight: 600; }
+.cal-items { display: flex; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+.cal-item { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.cal-item b { color: var(--accent-2); font-variant-numeric: tabular-nums; }
+.projects .arch { flex: none; padding: 0 4px; background: none; border: 0; color: var(--muted); cursor: pointer; }
+.projects .arch.on { color: var(--accent-2); }
+.projects .arch:disabled { opacity: .5; cursor: default; }
 .s-resume { flex: none; font-size: var(--fs-md); padding: 6px 14px; }
 .s-current { flex: none; font-size: var(--fs-sm); color: var(--ok-text); white-space: nowrap; }
 .s-live { flex: none; font-size: var(--fs-sm); color: var(--cli-text); white-space: nowrap; cursor: help; }

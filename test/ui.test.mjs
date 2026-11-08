@@ -3033,8 +3033,15 @@ for (const vp of VIEWPORTS) {
       page.clearProblems();
       await page.eval(async () => {
         window.__checklistFetch = window.fetch;
+        window.__checklistConfirm = window.confirm;
+        window.__scaffoldCalls = [];
+        window.confirm = () => true;
         const reply = (obj) => new Response(JSON.stringify(obj), { status: 200, headers: { 'Content-Type': 'application/json' } });
         window.fetch = (url, opts) => {
+          if (/\/checklist-scaffold$/.test(String(url))) {
+            window.__scaffoldCalls.push(opts?.body ? JSON.parse(opts.body) : {});
+            return Promise.resolve(reply({ ok: true, created: ['README.md'], skipped: [], failed: [] }));
+          }
           if (/\/checklist$/.test(String(url))) {
             return Promise.resolve(
               reply({
@@ -3065,11 +3072,17 @@ for (const vp of VIEWPORTS) {
         assert.match(info.sum, /model claude-sonnet-5/);
         assert.deepEqual([info.done, info.todo], [2, 1]);
         assert.match(info.hint, /Tambahkan "test"/);
+        // 🛠 Kerangka creates the missing files (after a confirmation).
+        await page.eval(() => document.querySelector('#checklist-scaffold').click());
+        await page.waitFor(() => window.__scaffoldCalls.length === 1, { timeoutMs: 4000, message: 'panggilan buat kerangka' });
+        assert.deepEqual(await page.eval(() => window.__scaffoldCalls[0]), {});
+        await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => /Kerangka dibuat: README\.md/.test(t.textContent)), { timeoutMs: 2000, message: 'toast kerangka dibuat' });
         await page.press('Escape');
         assert.deepEqual(realProblems(page), []);
       } finally {
         await page.eval(() => {
           window.fetch = window.__checklistFetch;
+          window.confirm = window.__checklistConfirm;
         });
       }
     });
@@ -3082,8 +3095,7 @@ for (const vp of VIEWPORTS) {
         window.__rbPrompt = window.prompt;
         window.__rbCalls = [];
         window.prompt = () => 'Rilis baru';
-        const reply = (o) => new Response(JSON.stringify(o), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        const queue = {
+        const reply = (o) => new Response(JSON.stringify(o), { status: 200, headers: { 'Content-Type': 'application/json' } });        const queue = {
           project: location.hash.slice(1),
           paused: false,
           reason: null,
@@ -3107,6 +3119,10 @@ for (const vp of VIEWPORTS) {
             window.__rbCalls.push({ op: 'run', ...body });
             return Promise.resolve(reply({ added: 2, queue }));
           }
+          if (/\/routines\/save$/.test(u)) {
+            window.__rbCalls.push({ op: 'schedule', ...body });
+            return Promise.resolve(reply({ routines: [] }));
+          }
           return window.__rbFetch(url, opts);
         };
         (await import('/js/features/queue.js')).openQueue();
@@ -3114,18 +3130,77 @@ for (const vp of VIEWPORTS) {
       try {
         await page.waitFor(() => document.querySelectorAll('#runbook-list .runbook-item').length === 1, { timeoutMs: 4000, message: 'runbook tampil' });
         assert.match(await page.eval(() => document.querySelector('#runbook-list').textContent), /Rilis.*2 prompt/);
+        // ＋ Simpan antrian ini opens the editor prefilled with the waiting prompts.
         await page.eval(() => document.querySelector('#runbook-save').click());
+        await page.waitFor(() => !document.querySelector('#runbook-modal').hidden, { timeoutMs: 4000, message: 'editor runbook terbuka' });
+        assert.equal(await page.eval(() => document.querySelector('#runbook-prompts').value), 'jalankan test');
+        await page.eval(() => {
+          document.querySelector('#runbook-name').value = 'Rilis baru';
+          document.querySelector('#runbook-submit').click();
+        });
         await page.waitFor(() => window.__rbCalls.some((c) => c.op === 'save'), { timeoutMs: 4000, message: 'simpan runbook' });
         assert.deepEqual(await page.eval(() => window.__rbCalls.find((c) => c.op === 'save')), { op: 'save', name: 'Rilis baru', prompts: ['jalankan test'] });
         await page.eval(() => document.querySelector('#runbook-list [data-rb-run]').click());
         await page.waitFor(() => window.__rbCalls.some((c) => c.op === 'run'), { timeoutMs: 4000, message: 'jalankan runbook' });
         assert.deepEqual(await page.eval(() => window.__rbCalls.find((c) => c.op === 'run')), { op: 'run', runbookId: 'rb_2' });
+        // ✎ The same editor edits the saved runbook; ⏰ schedules it as a daily routine.
+        await page.eval(() => document.querySelector('#runbook-list [data-rb-edit]').click());
+        await page.waitFor(() => !document.querySelector('#runbook-modal').hidden, { timeoutMs: 4000, message: 'editor runbook (ubah)' });
+        await page.eval(() => {
+          document.querySelector('#runbook-name').value = 'Rilis v2';
+          document.querySelector('#runbook-prompts').value = 'jalankan test\n---\ncommit';
+          document.querySelector('#runbook-submit').click();
+        });
+        await page.waitFor(() => window.__rbCalls.some((c) => c.op === 'save' && c.id === 'rb_2'), { timeoutMs: 4000, message: 'ubah runbook' });
+        assert.deepEqual(await page.eval(() => window.__rbCalls.find((c) => c.op === 'save' && c.id === 'rb_2')), { op: 'save', id: 'rb_2', name: 'Rilis v2', prompts: ['jalankan test', 'commit'] });
+        await page.eval(() => {
+          window.prompt = () => '09:00';
+          document.querySelector('#runbook-list [data-rb-sched]').click();
+        });
+        await page.waitFor(() => window.__rbCalls.some((c) => c.op === 'schedule'), { timeoutMs: 4000, message: 'jadwalkan runbook' });
+        assert.deepEqual(await page.eval(() => window.__rbCalls.find((c) => c.op === 'schedule')), {
+          op: 'schedule',
+          projectId: await page.eval(() => location.hash.slice(1)),
+          runbookId: 'rb_2',
+          frequency: 'daily',
+          time: '09:00',
+          enabled: true,
+        });
         await page.press('Escape');
         assert.deepEqual(realProblems(page), []);
       } finally {
         await page.eval(() => {
           window.fetch = window.__rbFetch;
           window.prompt = window.__rbPrompt;
+        });
+      }
+    });
+
+    test('🗂 Arsip project: tombol mengirim {archived:true}, toggle 📦 menampilkan daftar', async () => {
+      await openApp(page, `#${projectId}`);
+      page.clearProblems();
+      await page.eval(async () => {
+        window.__archFetch = window.fetch;
+        window.__archCalls = [];
+        window.fetch = (url, opts) =>
+          /\/archive$/.test(String(url))
+            ? (window.__archCalls.push(JSON.parse(opts?.body ?? '{}')), Promise.resolve(new Response(JSON.stringify({ ok: true, archived: true }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+            : window.__archFetch(url, opts);
+        (await import('/js/features/picker.js')).openProjects();
+      });
+      try {
+        await page.waitFor(() => document.querySelectorAll('#project-list [data-archive-project]').length > 0, { timeoutMs: 4000, message: 'tombol arsip project' });
+        await page.eval(() => document.querySelector('#project-list li[data-id]:not([data-id="demo"]) [data-archive-project]').click());
+        await page.waitFor(() => window.__archCalls.length === 1, { timeoutMs: 4000, message: 'panggilan arsip project' });
+        assert.deepEqual(await page.eval(() => window.__archCalls[0]), { archived: true });
+        assert.equal(await page.eval(() => document.querySelector('#project-archived').getAttribute('aria-pressed')), 'false');
+        await page.eval(() => document.querySelector('#project-archived').click());
+        assert.equal(await page.eval(() => document.querySelector('#project-archived').getAttribute('aria-pressed')), 'true', 'toggle arsip aktif');
+        await page.press('Escape');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__archFetch;
         });
       }
     });
@@ -3215,6 +3290,9 @@ for (const vp of VIEWPORTS) {
       await page.click('#routine-add');
       await page.waitFor(() => document.querySelectorAll('.routine-item').length === 1, { timeoutMs: 4000, message: 'jadwal tersimpan' });
       assert.match(await page.eval(() => document.querySelector('.routine-item').textContent), /Harian 09:00/);
+      // 📅 The 7-day calendar shows the daily routine on today's row.
+      assert.equal(await page.eval(() => document.querySelectorAll('.routine-calendar .cal-row').length), 7, 'tujuh hari');
+      assert.match(await page.eval(() => document.querySelector('.routine-calendar').textContent), /09:00/);
       // The success toast sits above the form: it must never swallow the next click on the button underneath.
       assert.equal(await page.eval(() => getComputedStyle(document.querySelector('.toast.ok')).pointerEvents), 'none', 'toast tidak menghalangi klik');
 

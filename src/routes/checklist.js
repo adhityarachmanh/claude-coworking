@@ -1,5 +1,5 @@
 // ✅ Checklist project: what a project still misses to be comfortable to work in (read-only, file names only).
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { json } from './http.js';
 import { withProject } from './project.js';
@@ -36,6 +36,45 @@ export function register(router) {
       ];
       const done = checks.filter((c) => c.ok).length;
       return json(res, 200, { checks, score: { done, total: checks.length }, engine: hub.engineOf(project.id), model: settings.model || (settings.modelAuto ? 'auto' : '') });
+    }),
+  );
+
+  // 🛠 Buat kerangka: only creates what is missing (never overwrites); the UI asks for confirmation first.
+  router.post(
+    '/api/projects/:id/checklist-scaffold',
+    withProject(({ hub }, req, res, { project }, body) => {
+      const dir = project.path;
+      const wanted = new Set((Array.isArray(body.files) ? body.files : ['readme', 'agents', 'env', 'docs']).map(String));
+      const created = [];
+      const skipped = [];
+      const failed = [];
+      const write = (rel, text) => {
+        try {
+          writeFileSync(path.join(dir, rel), text, { flag: 'wx' });
+          created.push(rel);
+        } catch (err) {
+          if (err?.code === 'EEXIST') skipped.push(rel);
+          else failed.push(rel);
+        }
+      };
+      if (wanted.has('readme') && !has(dir, 'README.md', 'README.MD', 'readme.md', 'Readme.md')) {
+        write('README.md', `# ${project.name}\n\nProject ini dikelola dari Adhit Office.\n\n## Menjalankan\n\nIsi perintah untuk memasang dependensi dan menjalankan project di sini.\n\n## Test\n\nIsi perintah test di sini.\n`);
+      }
+      if (wanted.has('agents') && !has(dir, 'AGENTS.md', 'CLAUDE.md', 'CLAUDE.local.md')) {
+        write('AGENTS.md', `# Panduan untuk AI\n\n- Jelaskan perubahan yang akan dibuat sebelum mengedit banyak file.\n- Jalankan test/lint yang relevan sebelum menyatakan pekerjaan selesai.\n- Jangan menyimpan rahasia (token, kunci, kata sandi) di dalam repo.\n`);
+      }
+      if (wanted.has('env') && !existsSync(path.join(dir, '.env.example'))) {
+        write('.env.example', '# Salin file ini menjadi .env lalu isi nilainya (jangan commit .env).\n# NAMA_VARIABEL=\n');
+      }
+      if (wanted.has('docs') && !existsSync(path.join(dir, 'docs'))) {
+        try {
+          mkdirSync(path.join(dir, 'docs'), { recursive: true });
+        } catch {
+          failed.push('docs/');
+        }
+        write('docs/README.md', `# Dokumentasi ${project.name}\n\nCatatan desain, keputusan, dan panduan operasional project ini.\n`);
+      }
+      return json(res, 200, { ok: !failed.length, created, skipped, failed, engine: hub.engineOf(project.id) });
     }),
   );
 }

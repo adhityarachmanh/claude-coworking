@@ -16,6 +16,10 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **🏷/📦 Tag & arsip massal + kelola tag.** Centang beberapa sesi untuk memberi satu tag atau mengarsipkan sekaligus; **✎ Kelola tag** mengganti nama/menghapus satu tag di semua sesi project.
 - **📚 Runbook antrian.** Dialog 📋 Antrian bisa menyimpan item yang masih menunggu sebagai runbook bernama (per project); **▶ Jalankan** menambahkannya kembali ke antrian. Tersimpan di state aplikasi dan ikut backup.
 - **🩺 Bundel diagnostik.** Tombol di Kesehatan sistem (dan Ctrl+P) mengunduh `.zip` berisi info versi, hasil health, dan 512 KB log terakhir; folder home disamarkan dan tidak ada isi percakapan.
+- **✎ Editor runbook.** Runbook sekarang punya editor nama + prompt (pisahkan prompt dengan baris `---`), bukan hanya ganti nama.
+- **📅 Kalender jadwal 7 hari.** Tab ⚙ → Jadwal menampilkan jadwal 7 hari ke depan (jam dan potongan prompt per hari).
+- **🗂 Arsip project.** Tombol 📦 di daftar project menyembunyikannya tanpa menghapus data; toggle 📦 di judul dialog menampilkan project yang diarsipkan.
+- **🛠 Checklist “Buat kerangka”.** Dari checklist project, satu tombol (setelah konfirmasi) membuat README.md, AGENTS.md, .env.example, dan docs/README.md yang belum ada; file yang sudah ada tidak pernah ditimpa.
 - **✅ Checklist project.** Ctrl+P → *Checklist project* menunjukkan butir kesiapan (README, AGENTS/CLAUDE.md, package.json, test/build, git, docs, .env.example, model) beserta saran singkat.
 - **📈 Sparkline biaya 7 hari.** Baris **Hari ini** di 🗂 Semua project menampilkan grafik kecil biaya tujuh hari terakhir beserta totalnya, dari pembacaan ledger yang sama.
 - **🔎 Ctrl+P mencari file lintas project.** `@kata` mencari di project aktif lalu di project lain; hasil dari project lain menampilkan nama projectnya, dan memilihnya pindah project lalu membuka file.

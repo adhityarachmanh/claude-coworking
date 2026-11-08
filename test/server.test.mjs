@@ -368,6 +368,9 @@ test('⚠ perlu perhatian: a paused queue and a budget stop show up in one list'
 
 test('📚 runbook, ✅ checklist, dan 🩺 bundel diagnostik', async () => {
   const id = await projectId();
+  const projectDir = (await snapshot()).projects.find((p) => p.id === id).path;
+  const docsExisted = existsSync(path.join(projectDir, 'docs'));
+  let scaffoldCreated = [];
   try {
     // 📚 Runbook: save waiting prompts as a named sequence, run it back into the queue, then delete it.
     assert.deepEqual((await api(`/api/projects/${id}/runbooks`)).body.runbooks, []);
@@ -387,6 +390,19 @@ test('📚 runbook, ✅ checklist, dan 🩺 bundel diagnostik', async () => {
     assert.deepEqual(ran.body.queue.items.filter((i) => i.status === 'waiting').map((i) => i.text), ['jalankan test', 'commit']);
     assert.equal((await api(`/api/projects/${id}/runbook-run`, { runbookId: 'rb_tidakada' })).status, 404);
 
+    // ⏰ A scheduled runbook: the routine stores its id and a label; running it enqueues every prompt.
+    const daily = await api('/api/routines/save', { projectId: id, runbookId, frequency: 'daily', time: '09:00', enabled: true });
+    assert.equal(daily.status, 200, JSON.stringify(daily.body));
+    const routine = daily.body.routines.find((r) => r.runbookId === runbookId);
+    assert.ok(routine, 'jadwal runbook tersimpan');
+    assert.equal(routine.prompt, '📚 Rilis');
+    for (const item of (await api(`/api/projects/${id}/queue`)).body.queue.items) await api(`/api/projects/${id}/queue-remove`, { itemId: item.id });
+    assert.equal((await api('/api/routines/run', { id: routine.id })).status, 200);
+    const scheduled = (await api(`/api/projects/${id}/queue`)).body.queue;
+    assert.deepEqual(scheduled.items.filter((i) => i.status === 'waiting').map((i) => i.text), ['jalankan test', 'commit']);
+    await api('/api/routines/delete', { id: routine.id });
+    assert.equal((await api('/api/routines/save', { projectId: id, runbookId: 'rb_tidakada', frequency: 'daily', time: '09:00' })).status, 400);
+
     // ✅ Checklist: a stable shape whatever the fixture contains.
     const checklist = await api(`/api/projects/${id}/checklist`);
     assert.equal(checklist.status, 200);
@@ -395,6 +411,16 @@ test('📚 runbook, ✅ checklist, dan 🩺 bundel diagnostik', async () => {
     assert.equal(checklist.body.score.total, checklist.body.checks.length);
     assert.equal(checklist.body.score.done, checklist.body.checks.filter((c) => c.ok).length);
     assert.ok(['claude', 'opencode'].includes(checklist.body.engine));
+
+    // 🛠 Kerangka: creates only the missing files; a second call changes nothing.
+    const scaffold = await api(`/api/projects/${id}/checklist-scaffold`, {});
+    assert.equal(scaffold.status, 200, JSON.stringify(scaffold.body));
+    assert.ok(Array.isArray(scaffold.body.created));
+    scaffoldCreated = scaffold.body.created;
+    const project = (await api(`/api/projects/${id}/checklist`)).body; // still readable after the write
+    assert.ok(project.checks.some((c) => c.id === 'readme' && c.ok), 'README dibuat');
+    const again = await api(`/api/projects/${id}/checklist-scaffold`, {});
+    assert.deepEqual(again.body.created, [], 'tidak menimpa file yang sudah ada');
 
     // 🩺 Diagnostics: a .zip with info, health, the log tail and a README; no chat content.
     const zipRes = await fetch(`${BASE}/api/diagnostics/export`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: '{}' });
@@ -416,6 +442,17 @@ test('📚 runbook, ✅ checklist, dan 🩺 bundel diagnostik', async () => {
   } finally {
     for (const item of (await api(`/api/projects/${id}/queue`)).body.queue.items) await api(`/api/projects/${id}/queue-remove`, { itemId: item.id });
     await api(`/api/projects/${id}/queue-pause`, { paused: false });
+    // Leave the shared fixture exactly as it was (the scaffold test wrote into it).
+    for (const rel of scaffoldCreated) {
+      try {
+        rmSync(path.join(projectDir, rel), { force: true });
+      } catch {}
+    }
+    if (!docsExisted) {
+      try {
+        rmSync(path.join(projectDir, 'docs'), { recursive: true, force: true });
+      } catch {}
+    }
   }
 });
 
@@ -572,6 +609,12 @@ test('projects come from the configured root; bad roots are rejected', async () 
   assert.deepEqual(cross.body.files, [{ projectId: await projectId(), projectName: 'toko', path: 'src/checkout.ts' }]);
   assert.deepEqual((await api('/api/files/search', { q: 'c' })).body.files, [], 'query terlalu pendek');
   assert.deepEqual((await api('/api/files/search', { q: 'zzz' })).body.files, []);
+  // 🗂 Archive hides a project from the picker but keeps it listed (and the active project stays visible).
+  const id = await projectId();
+  assert.equal((await api(`/api/projects/${id}/archive`, { archived: true })).body.archived, true);
+  assert.equal((await snapshot()).projects.find((p) => p.id === id).archived, true);
+  assert.equal((await api(`/api/projects/${id}/archive`, { archived: false })).body.archived, false);
+  assert.equal((await snapshot()).projects.find((p) => p.id === id).archived, false);
 });
 
 test('a prompt streams a reply and finishes with token stats', async () => {
