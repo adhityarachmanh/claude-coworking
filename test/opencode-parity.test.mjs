@@ -83,6 +83,7 @@ before(() => {
   const dir = path.join(TMP, 'projects', 'toko');
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, 'README.md'), '# Toko\n');
+  process.env.FAKE_ACP_SHELL_FILE = path.join(TMP, 'fake-shell.json'); // the "macet" shell the linker finds
   hub = new Hub({ dataDir: path.join(TMP, 'data') });
   project = hub.upsertProject(dir, 'folder');
   hub.ready = true;
@@ -258,12 +259,19 @@ test('⚠ stuck: a never-ending OpenCode shell command is a running tool row the
   await settle();
 });
 
-test('⚠ stuck: an OpenCode shell row gets a readable output (taskId) so "no output for 3 min" can fire like for Claude', { todo: 'OpenCode shell rows have no taskId / task-output (AcpSession has no taskOutput, ACP terminal not offered): only the 10-min rule applies' }, async () => {
+test('⚠ stuck: an OpenCode shell row gets a readable output (taskId) so "no output for 3 min" can fire like for Claude', async () => {
   const from = events.length;
   session().prompt('perintah macet lagi');
   const row = await until(() => hub.chatOf(project.id).findLast((m) => m.kind === 'tool' && m.tool === 'Bash' && m.status === 'running'), 'running Bash row');
   try {
-    assert.ok(row.taskId, 'a task id for /task-output');
+    // linkShells runs on its 15 s timer; the shell must have been running for 8 s before it is matched.
+    const linked = await until(() => {
+      const current = hub.chatOf(project.id).findLast((m) => m.id === row.id);
+      return current?.taskId ? current : null;
+    }, 'task id dari shell yang cocok', 25_000);
+    assert.match(linked.taskId, /^oc:sh_/, 'a task id for /task-output');
+    const out = await session().taskOutput(linked.taskId);
+    assert.match(out.output, /menunggu log/, 'the linked shell has readable output');
   } finally {
     session().stop();
     await resultAfter(from);

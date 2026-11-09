@@ -29,6 +29,9 @@ const FAKE_VERSION = versionFromFile() || process.env.FAKE_ACP_VERSION || '2.0.0
 // session { dir, messages }, written by the acp processes and read/cut by `api session.revert.*` (⏪ Rewind).
 // An assistant message keeps `before` (file -> content before the turn, null = absent): its "snapshot".
 const STORE = process.env.FAKE_ACP_STORE;
+// FAKE_ACP_SHELL_FILE: the running shell the fake service would list (`api shell.list`), so the app's shell linker
+// can be tested. Written by the "macet" scenario and removed when that turn is cancelled.
+const SHELL_FILE = process.env.FAKE_ACP_SHELL_FILE;
 const storePath = (sid) => `${STORE}/${String(sid).replace(/[^\w-]/g, '')}.json`;
 function loadStore(sid) {
   try {
@@ -77,7 +80,7 @@ if (process.argv[2] === 'session' && process.argv[3] === 'import') {
 // `opencode api <operation> [--param k=v] [--data json]`: provider logins (src/opencode-auth.js). State in
 // FAKE_ACP_AUTH_FILE, so a login shows up in the next list; secrets are only checked, never echoed back.
 if (process.argv[2] === 'api') {
-  const { existsSync: has, readFileSync, writeFileSync: write } = await import('node:fs');
+  const { existsSync: has, readFileSync, rmSync: remove, writeFileSync: write } = await import('node:fs');
   const [, , , op, ...rest] = process.argv;
   const params = {};
   let body = {};
@@ -157,6 +160,24 @@ if (process.argv[2] === 'api') {
       break;
     case 'session.fork':
       out({ id: `ses_fork_${params.sessionID.slice(4)}`, title: 'Fork' });
+      break;
+    // 🐚 Shells of a turn (src/opencode-shells.js): the "macet" scenario writes one running shell.
+    case 'shell.list': {
+      let shell = null;
+      try {
+        shell = SHELL_FILE && has(SHELL_FILE) ? JSON.parse(readFileSync(SHELL_FILE, 'utf8')) : null;
+      } catch {
+        shell = null;
+      }
+      out(shell ? [shell] : []);
+      break;
+    }
+    case 'shell.output':
+      out({ output: 'menunggu log\n', truncated: false });
+      break;
+    case 'shell.remove':
+      if (SHELL_FILE && has(SHELL_FILE)) remove(SHELL_FILE, { force: true });
+      out(null);
       break;
     case 'session.update':
       write(`${file}.title`, `${params.sessionID}=${body.title}`);
@@ -276,7 +297,7 @@ if (process.argv[2] !== 'acp') {
 }
 
 // FAKE_ACP_FAIL_ONCE=<file>: the very first `acp` process dies at initialize (a cold start), later ones work.
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 const failOnce = process.env.FAKE_ACP_FAIL_ONCE;
 const coldStart = Boolean(failOnce) && !existsSync(failOnce);
 if (coldStart) writeFileSync(failOnce, 'started');
@@ -428,9 +449,11 @@ async function turn(sessionId, text) {
   }
   if (/macet/.test(text)) {
     const call = 'call-hang-1';
+    if (SHELL_FILE) writeFileSync(SHELL_FILE, JSON.stringify({ id: 'sh_macet1', command: 'tail -f app.log', status: 'running', time: { started: Date.now() } }));
     update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'bash', kind: 'execute', status: 'pending', locations: [], rawInput: {} });
     update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'in_progress', kind: 'execute', title: 'tail -f app.log', rawInput: { command: 'tail -f app.log', description: 'Menunggu log' } });
     await new Promise((r) => (cancelTurn = r));
+    if (SHELL_FILE) rmSync(SHELL_FILE, { force: true });
     update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'failed', content: [{ type: 'content', content: { type: 'text', text: 'Tool execution aborted' } }] });
     return { stopReason: 'cancelled', usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 } };
   }
