@@ -86,6 +86,74 @@ async function load(more = false) {
   }
 }
 
+/** Inline request log inside the 👤 Akun dialog (global, not per session). */
+const inline = { cursor: null, loading: false, count: 0 };
+
+function setInlineMeta(text) {
+  const el = $('#account-requests-meta');
+  if (el) el.textContent = text;
+}
+
+function setInlineMore(show) {
+  const btn = $('#account-requests-more');
+  if (btn) btn.hidden = !show;
+}
+
+async function loadInline(more = false) {
+  if (inline.loading) return;
+  if (more && !inline.cursor) return;
+  inline.loading = true;
+  const btn = $('#account-requests-more');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Memuat…';
+  }
+  const list = $('#account-requests-list');
+  try {
+    const body = { limit: 50 };
+    if (inline.cursor) body.cursor = inline.cursor;
+    const res = await api('/api/opencode/requests', body);
+    if (!res?.available) {
+      list.innerHTML = `<tr><td colspan="8" class="muted small">${escapeHtml(res?.state === 'expired' ? 'Sesi OpenCode Console kedaluwarsa. Login ulang untuk melihat request.' : 'Data request OpenCode belum tersedia.')}</td></tr>`;
+      setInlineMore(false);
+      setInlineMeta('Request terbaru OpenCode');
+      return;
+    }
+    const items = Array.isArray(res.items) ? res.items : [];
+    const rows = items.map(rowHtml).join('');
+    if (more) list.insertAdjacentHTML('beforeend', rows);
+    else list.innerHTML = rows || '<tr><td colspan="8" class="muted small">Tidak ada request pada periode ini.</td></tr>';
+    inline.count = more ? inline.count + items.length : items.length;
+    inline.cursor = res.nextCursor ?? null;
+    setInlineMore(Boolean(inline.cursor));
+    const retention = res.retentionDays ? ` · retensi ${res.retentionDays} hari` : '';
+    setInlineMeta(`Semua sesi · ${inline.count} request · 7 hari terakhir${retention}`);
+  } catch (err) {
+    list.innerHTML = `<tr><td colspan="8" class="state-error">Gagal memuat request: ${escapeHtml(err.message)}</td></tr>`;
+    setInlineMore(false);
+    toast(err.message);
+  } finally {
+    inline.loading = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Muat lebih banyak';
+    }
+  }
+}
+
+function openInlineRequests() {
+  const box = $('#account-requests');
+  if (!box) return;
+  box.hidden = false;
+  inline.cursor = null;
+  inline.count = 0;
+  inline.loading = false;
+  $('#account-requests-list').innerHTML = '';
+  setInlineMeta('Memuat request terbaru…');
+  setInlineMore(false);
+  loadInline(false);
+}
+
 /** Opens the request log; sessionId filters to one OpenCode session, title is shown in the header. */
 export function openOpenCodeRequests({ sessionId = null, title = '' } = {}) {
   view.sessionId = sessionId && /^ses_[A-Za-z0-9_-]{1,100}$/.test(sessionId) ? sessionId : null;
@@ -103,10 +171,22 @@ export function openOpenCodeRequests({ sessionId = null, title = '' } = {}) {
 
 export function initOpenCodeRequests() {
   document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-request-close]')) {
+      const box = $('#account-requests');
+      if (box) box.hidden = true;
+      return;
+    }
+    if (e.target.closest('[data-request-more]')) {
+      e.preventDefault();
+      loadInline(true);
+      return;
+    }
     const open = e.target.closest('[data-oc-requests]');
     if (open) {
       e.preventDefault();
-      openOpenCodeRequests({ sessionId: open.dataset.ocRequests || null, title: open.dataset.requestTitle || '' });
+      const sessionId = open.dataset.ocRequests || '';
+      if (sessionId) openOpenCodeRequests({ sessionId, title: open.dataset.requestTitle || '' });
+      else openInlineRequests();
     }
   });
   $('#requests-more')?.addEventListener('click', () => load(true));

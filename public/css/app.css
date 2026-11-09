@@ -2961,6 +2961,9 @@ body.read-only #concurrency-section { display: none !important; }
 .msg-actions .queue-cancel:disabled { opacity: .55; }
 
 /* ---------- 📡 OpenCode request log ---------- */
+.acct-requests { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+.acct-requests-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.acct-requests .requests-table-wrap { max-height: 320px; margin-top: 6px; }
 .requests-card { max-width: 920px; height: min(680px, calc(100vh - 32px)); display: flex; flex-direction: column; gap: 8px; }
 .requests-card #requests-meta { margin: 0; flex: none; }
 .requests-table-wrap { flex: 1; min-height: 100px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); }

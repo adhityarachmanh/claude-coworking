@@ -141,6 +141,17 @@ function usageHtml() {
       ${usageCards('Hari ini', usage.today)}
       ${usageCards('7 hari', usage.week)}
       <div class="acct-actions"><button type="button" class="ghost" data-oc-requests title="Lihat request OpenCode terbaru">📡 Request terbaru</button></div>
+      <div id="account-requests" class="acct-requests" hidden>
+        <div class="acct-requests-head"><b>📡 Request terbaru</b><button type="button" class="icon-btn" data-request-close title="Tutup request" aria-label="Tutup request">✕</button></div>
+        <p id="account-requests-meta" class="muted small" aria-live="polite"></p>
+        <div class="requests-table-wrap">
+          <table class="usage-table requests-table">
+            <thead><tr><th>Waktu</th><th>Model</th><th>App</th><th>Durasi</th><th>TTFT</th><th>Token</th><th>Biaya</th><th>Status</th></tr></thead>
+            <tbody id="account-requests-list"></tbody>
+          </table>
+        </div>
+        <div class="requests-actions"><button type="button" id="account-requests-more" class="ghost" data-request-more hidden>Muat lebih banyak</button></div>
+      </div>
     </div>`;
   }
   return localUsageHtml();

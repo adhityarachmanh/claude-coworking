@@ -4949,28 +4949,32 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test('📡 request terbaru: tombol di Pemakaian OpenCode membuka tabel request aman', async () => {
+    test('📡 request terbaru: tombol di Pemakaian OpenCode membuka tabel di dalam dialog Akun', async () => {
       await ensureApp(page, `#${projectId}`);
       try {
         await stubOpenCodeAccount(page, { go: GO_CONSOLE, usage: GO_USAGE });
         await tap(page, '#btn-account');
         await page.waitFor(() => document.querySelector('#account-body [data-oc-requests]'), { timeoutMs: 8000, message: 'tombol request resmi' });
         await page.eval(() => document.querySelector('#account-body [data-oc-requests]').click());
-        await page.waitFor(() => !document.querySelector('#requests-modal').hidden && document.querySelectorAll('#requests-list tr').length === 1, { timeoutMs: 8000, message: 'tabel request terbuka' });
+        await page.waitFor(() => !document.querySelector('#account-requests').hidden && document.querySelectorAll('#account-requests-list tr').length === 1, { timeoutMs: 8000, message: 'tabel request inline terbuka' });
         const r = await page.eval(() => ({
-          title: document.querySelector('#requests-title').textContent,
-          meta: document.querySelector('#requests-meta').textContent,
-          text: document.querySelector('#requests-list').textContent,
+          inline: !document.querySelector('#account-requests').hidden,
+          modalHidden: document.querySelector('#requests-modal').hidden,
+          heading: document.querySelector('#account-requests .acct-requests-head b').textContent,
+          meta: document.querySelector('#account-requests-meta').textContent,
+          text: document.querySelector('#account-requests-list').textContent,
           calls: window.__ocAcct.requestCalls,
         }));
-        assert.match(r.title, /Request OpenCode/);
+        assert.equal(r.inline, true);
+        assert.equal(r.modalHidden, true, 'tidak membuka modal baru');
+        assert.match(r.heading, /Request terbaru/);
         assert.match(r.meta, /Semua sesi/);
         assert.match(r.meta, /retensi 30 hari/);
         assert.match(r.text, /deepseek-v4\.1-flash/);
         assert.match(r.text, /6\.4 dtk/);
         assert.match(r.text, /0\.00502/);
         assert.equal(r.calls, 1);
-        await page.press('Escape');
+        await page.eval(() => document.querySelector('#account-requests [data-request-close]').click());
         await page.press('Escape');
       } finally {
         await restoreOpenCodeAccount(page);
