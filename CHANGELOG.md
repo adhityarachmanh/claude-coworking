@@ -2,6 +2,13 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.3
+
+- **💾 Backup sesi OpenCode.** Export/import kini menyertakan sesi OpenCode melalui `opencode session export/import` (bukan salinan DB saat service hidup). Sesi yang sudah ada dilewati; bila OpenCode tidak terpasang, sesi dilewati dengan peringatan. Format backup naik ke versi 2. Pratinjau import menyebut jumlah sesi OpenCode dan memperingatkan backup lama yang tidak menyimpan path project.
+- **🔀 Jadwal ganti mesin bertahan dan bisa dibatalkan.** Ganti mesin yang dijadwalkan saat project bekerja kini diingat setelah server restart, tetap diterapkan otomatis, dan bisa dibatalkan dari dialog mesin project.
+- **🌉 Figma bridge: perintah dari terminal.** `tools/figma-bridge/cli.mjs` mengirim perintah (status, selection, node, export, create_*, set_fill, move, resize, delete, batch) lewat endpoint `/exec` yang hanya aktif bila `FIGMA_BRIDGE_TOKEN` diatur.
+- **🧾 Log server dibatasi.** `server.log` diputar ke `server.log.1` saat melewati 5 MB agar folder data tidak membengkak.
+
 ## 1.0.2
 
 - **🔀 Ganti mesin saat project bekerja.** Memilih mesin lain saat giliran berjalan kini **dijadwalkan** dan diterapkan otomatis setelah giliran selesai; antrian/izin/giliran terputus tetap harus diselesaikan dulu.
