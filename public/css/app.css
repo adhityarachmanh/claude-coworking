@@ -1359,6 +1359,8 @@ body.read-only #composer-hint { color: var(--ask); }
 .engine-opt:disabled { cursor: default; opacity: .6; }
 .engine-opt.on:disabled { opacity: 1; }
 .oc-usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 8px; }
+.oc-usage-period { display: block; margin: 12px 0 0; color: var(--muted); font-size: var(--fs-sm); }
+.oc-usage-period:first-of-type { margin-top: 8px; }
 .oc-usage-grid > div { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 .oc-usage-grid small { display: block; color: var(--muted); }
 .oc-usage-grid b { display: block; font-size: var(--fs-lg); margin: 2px 0; }

@@ -6,7 +6,7 @@ import { accountImpactText } from '../core/account-impact.js';
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { engineLabel } from '../core/engine-caps.js';
-import { fmtShort, fmtUsd } from '../core/format.js';
+import { fmtNum, fmtShort, fmtUsd } from '../core/format.js';
 import { state } from '../core/state.js';
 
 const POLL_MS = 2000;
@@ -113,7 +113,34 @@ const connectionHtml = (p, c) =>
     ? `<li><span>${escapeHtml(c.label)} <small class="muted">${c.method === 'oauth' ? 'OAuth' : 'API key'}</small></span><button class="ghost danger-text" data-act="oc-logout" data-cred="${escapeHtml(c.id)}" data-name="${escapeHtml(p.name)}">Logout</button></li>`
     : `<li><span>${escapeHtml(c.label)} <small class="muted">variabel lingkungan</small></span><small class="muted" title="Diatur di environment Windows, bukan dari aplikasi">diatur di luar app</small></li>`;
 
-/** Token/cost rows recorded for OpenCode (web turns + terminal mirror); not a provider quota. */
+/** Three cards for one range, from the official console summary. */
+function usageCards(label, u) {
+  if (!u) return '';
+  const full = `${fmtNum(u.tokens)} token · input ${fmtNum(u.inputTokens)} · output ${fmtNum(u.outputTokens)} · cache read ${fmtNum(u.cacheReadTokens)} · cache write ${fmtNum(u.cacheWriteTokens)}`;
+  return `<b class="oc-usage-period">${escapeHtml(label)}</b>
+    <div class="oc-usage-grid">
+      <div><small>Biaya</small><b>${fmtUsd(u.costUsd)}</b><span>estimasi provider</span></div>
+      <div><small>Request</small><b>${fmtNum(u.requests)}</b><span>API request</span></div>
+      <div><small>Token</small><b title="${escapeHtml(full)}">${fmtShort(u.tokens)}</b><span title="${escapeHtml(full)}">input + output + cache</span></div>
+    </div>`;
+}
+
+/** Official OpenCode usage (usage/summary); falls back to the local ledger cards when it is unavailable. */
+function usageHtml() {
+  const go = oc.providers?.go;
+  const usage = go?.console?.usage;
+  if (usage && (usage.today || usage.week)) {
+    const fetched = go.console?.fetchedAt ? new Date(go.console.fetchedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '';
+    return `<div class="acct-section oc-usage"><div class="acct-title"><b>Pemakaian OpenCode</b><span class="badge">Data resmi OpenCode</span></div>
+      <p class="muted small">Dari OpenCode Console${fetched ? ` · diperbarui ${escapeHtml(fetched)}` : ''}. Angka provider, bukan perkiraan ledger.</p>
+      ${usageCards('Hari ini', usage.today)}
+      ${usageCards('7 hari', usage.week)}
+    </div>`;
+  }
+  return localUsageHtml();
+}
+
+/** Token/cost rows recorded for OpenCode (web turns + terminal mirror); the fallback when console usage is unavailable. */
 function localUsageHtml() {
   const u = oc.providers?.usage;
   if (!u) return '';
@@ -340,7 +367,7 @@ function loginHtml() {
 
 /** Akun's body for OpenCode. */
 export function openCodeBodyHtml() {
-  return `${localUsageHtml()}${goQuotaHtml()}<div class="acct-section"><div class="acct-title"><b>Provider OpenCode</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
+  return `${usageHtml()}${goQuotaHtml()}<div class="acct-section"><div class="acct-title"><b>Provider OpenCode</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
     ${connectedHtml()}${oc.error && oc.providers ? `<p class="warn small">${escapeHtml(oc.error)}</p>` : ''}
     ${oc.logoutError ? `<p class="warn small" role="alert">${escapeHtml(oc.logoutError)}</p>` : ''}
     <p class="muted small">Provider ini dipakai project yang mesinnya OpenCode. Project dengan mesin Claude Code memakai akun Claude (bukan provider di sini); mesin tiap project dipilih di ⚙ Pengaturan → 🔀 Mesin project.</p></div>

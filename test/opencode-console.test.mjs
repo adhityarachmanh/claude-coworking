@@ -2,7 +2,7 @@
 // the fallback when the console/token is unavailable. No real network and no real OpenCode here.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { consoleForPeriod, goConsoleSnapshot, normalizeConsoleActivity, normalizeConsoleStatus, planOf } from '../src/opencode-console.js';
+import { consoleForPeriod, goConsoleSnapshot, normalizeConsoleActivity, normalizeConsoleStatus, normalizeUsageSummary, planOf } from '../src/opencode-console.js';
 
 const status = {
   subscriberUserId: 'acc_secret',
@@ -32,6 +32,27 @@ const activity = {
     { provider: 'opencode-go', model: 'glm-5.3-flash', totalRequests: '244' },
     { provider: 'opencode-go', model: 'deepseek-v4.1-flash', totalRequests: '17406' },
   ],
+};
+
+const usageToday = {
+  totalRequests: '512',
+  totalInputTokens: '5300677',
+  totalOutputTokens: '326582',
+  totalCacheReadTokens: '181586432',
+  totalCacheWrite5mTokens: '0',
+  totalCacheWrite1hTokens: '0',
+  totalCostMicroCents: '191237541',
+  services: [],
+};
+
+const usageWeek = {
+  totalRequests: '13274',
+  totalInputTokens: '3000000',
+  totalOutputTokens: '500000',
+  totalCacheReadTokens: '3926443307',
+  totalCacheWrite5mTokens: '0',
+  totalCacheWrite1hTokens: '0',
+  totalCostMicroCents: '3732473719',
 };
 
 const bin = { command: 'fake-opencode', args: [] };
@@ -75,23 +96,43 @@ test('consoleForPeriod: only daily rows in the selected UTC dates', () => {
   assert.equal(consoleForPeriod({ available: false }, 0, Date.now()), null);
 });
 
-test('goConsoleSnapshot: exact status + activity, cached for the next call', async () => {
+test('normalizeUsageSummary: cost, requests and the full token total', () => {
+  const view = normalizeUsageSummary(usageToday);
+  assert.equal(view.requests, 512);
+  assert.equal(view.costUsd, 1.912375);
+  assert.equal(view.tokens, 187213691);
+  assert.equal(view.inputTokens, 5300677);
+  assert.equal(view.outputTokens, 326582);
+  assert.equal(view.cacheReadTokens, 181586432);
+  assert.equal(view.cacheWriteTokens, 0);
+  assert.equal(normalizeUsageSummary(null), null);
+});
+
+test('goConsoleSnapshot: exact status + activity + today/week usage, cached for the next call', async () => {
   let calls = 0;
   const fetch = async (url) => {
     calls += 1;
-    return { ok: true, json: async () => (String(url).endsWith('/go/status') ? status : activity) };
+    const u = String(url);
+    if (u.endsWith('/go/status')) return { ok: true, json: async () => status };
+    if (u.includes('/usage/summary')) return { ok: true, json: async () => (u.includes('range=24h') ? usageToday : usageWeek) };
+    return { ok: true, json: async () => activity };
   };
   const cache = new Map();
   const first = await goConsoleSnapshot(bin, { readToken: async () => 'tok_secret_123', fetch, cache, now: () => 1000 });
   assert.equal(first.available, true);
   assert.equal(first.plan, 'plus');
   assert.equal(first.activity.totals.requests, 2661);
+  assert.equal(first.usage.today.requests, 512);
+  assert.equal(first.usage.today.costUsd, 1.912375);
+  assert.equal(first.usage.today.tokens, 187213691);
+  assert.equal(first.usage.week.requests, 13274);
   assert.equal(first.fetchedAt, 1000);
-  assert.equal(calls, 2, 'one request for status and one for activity');
+  assert.equal(calls, 4, 'status + activity + today usage + week usage');
+  assert.equal(JSON.stringify(first).includes('acc_secret'), false, 'the userId stays server-side');
 
   const second = await goConsoleSnapshot(bin, { readToken: async () => 'tok_secret_123', fetch, cache, now: () => 2000 });
   assert.equal(second, first, 'the cached snapshot is reused for a minute');
-  assert.equal(calls, 2);
+  assert.equal(calls, 4);
 });
 
 test('goConsoleSnapshot: missing token / 401 / network / bad shape fall back without throwing', async () => {

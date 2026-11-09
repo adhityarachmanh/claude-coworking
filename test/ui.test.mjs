@@ -1161,6 +1161,10 @@ const GO_CONSOLE = {
       models: [{ provider: 'opencode-go', model: 'deepseek-v4.1-flash', requests: 17406 }],
       totals: { costUsd: 6.52, tokens: 730729017, requests: 2661 },
     },
+    usage: {
+      today: { costUsd: 1.87, requests: 520, tokens: 191000000, inputTokens: 5300677, outputTokens: 326582, cacheReadTokens: 181586432, cacheWriteTokens: 0 },
+      week: { costUsd: 37.32, requests: 13274, tokens: 3929943307, inputTokens: 3000000, outputTokens: 500000, cacheReadTokens: 3926443307, cacheWriteTokens: 0 },
+    },
     fetchedAt: 1,
   },
   estimate: GO_QUOTA,
@@ -4881,9 +4885,13 @@ for (const vp of VIEWPORTS) {
         const r = await page.eval(() => {
           const body = document.querySelector('#account-body');
           const go = body.querySelector('.oc-go');
+          const usage = body.querySelector('.oc-usage');
           return {
             badge: go.querySelector('.acct-title .badge')?.textContent ?? '',
             text: go.textContent,
+            usageText: usage?.textContent ?? '',
+            usagePeriods: [...(usage?.querySelectorAll('.oc-usage-period') ?? [])].map((n) => n.textContent),
+            usageCards: usage?.querySelectorAll('.oc-usage-grid > div').length ?? 0,
             meters: [...go.querySelectorAll('.oc-go-meter-main b')].map((n) => n.textContent),
             planButtons: go.querySelectorAll('.oc-go-plan [data-plan]').length,
             modelRows: go.querySelectorAll('.oc-go-row').length,
@@ -4898,6 +4906,14 @@ for (const vp of VIEWPORTS) {
         assert.equal(r.planButtons, 0, 'paket dari console tidak bisa ditimpa manual');
         assert.equal(r.modelRows, 0, 'tidak ada daftar model di panel kuota');
         assert.equal(r.estimate, false, 'estimasi lokal tidak lagi masuk panel kuota');
+        assert.match(r.usageText, /Pemakaian OpenCode/);
+        assert.match(r.usageText, /Data resmi OpenCode/);
+        assert.match(r.usageText, /\$1\.87/);
+        assert.match(r.usageText, /520/);
+        assert.match(r.usageText, /191/);
+        assert.deepEqual(r.usagePeriods, ['Hari ini', '7 hari']);
+        assert.equal(r.usageCards, 6, 'tiga kartu untuk Hari ini dan tiga untuk 7 hari');
+        assert.doesNotMatch(r.usageText, /Pemakaian lokal OpenCode/);
         await page.press('Escape');
       } finally {
         await restoreOpenCodeAccount(page);

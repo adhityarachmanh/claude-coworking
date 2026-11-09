@@ -9,6 +9,7 @@ import { execFileTree } from './proc.js';
 export const CONSOLE_ORIGIN = 'https://opencode.ai';
 const STATUS_PATH = '/console/api/go/status';
 const ACTIVITY_PATH = '/console/api/activity/go';
+const USAGE_PATH = '/console/api/usage/summary';
 const TIMEOUT_MS = 8_000;
 const SNAPSHOT_MS = 60_000;
 const FAILURE_MS = 15_000;
@@ -121,6 +122,38 @@ export function normalizeConsoleActivity(raw) {
   return { startsAt: iso(raw.startsAt), daily, models, totals };
 }
 
+/**
+ * `usage/summary` → the exact cards for one range. Cost is micro-cents; tokens are the sum of input, output, cache
+ * read and both cache writes. `services` is provider-internal and not needed here.
+ */
+export function normalizeUsageSummary(raw) {
+  if (!isObject(raw)) return null;
+  const inputTokens = num(raw.totalInputTokens) ?? 0;
+  const outputTokens = num(raw.totalOutputTokens) ?? 0;
+  const cacheReadTokens = num(raw.totalCacheReadTokens) ?? 0;
+  const cacheWrite5mTokens = num(raw.totalCacheWrite5mTokens) ?? 0;
+  const cacheWrite1hTokens = num(raw.totalCacheWrite1hTokens) ?? 0;
+  return {
+    requests: num(raw.totalRequests) ?? 0,
+    costUsd: usd(raw.totalCostMicroCents) ?? 0,
+    tokens: inputTokens + outputTokens + cacheReadTokens + cacheWrite5mTokens + cacheWrite1hTokens,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens: cacheWrite5mTokens + cacheWrite1hTokens,
+  };
+}
+
+/** The URL for one console usage range; userId stays server-side and is never sent to the browser. */
+function usageUrl(userId, range, { since = null } = {}) {
+  const url = new URL(USAGE_PATH, CONSOLE_ORIGIN);
+  url.searchParams.set('range', range);
+  if (since) url.searchParams.set('since', since);
+  url.searchParams.set('userId', userId);
+  url.searchParams.set('includeLegacyKeys', 'true');
+  return url.toString();
+}
+
 /** One JSON request; a non-2xx is a status, never a thrown error with a body that could carry a secret. */
 async function getJson(fetchImpl, url, token) {
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(TIMEOUT_MS) : undefined;
@@ -199,13 +232,20 @@ export async function goConsoleSnapshot(bin, { now = Date.now, fetch: fetchImpl 
   const normalized = normalizeConsoleStatus(status.data);
   if (!normalized) return cacheSnapshot(cache, key, at, { available: false, state: 'shape' });
   let activity = null;
-  try {
-    const a = await getJson(fetchImpl, `${CONSOLE_ORIGIN}${ACTIVITY_PATH}`, token);
-    activity = a.status ? null : normalizeConsoleActivity(a.data);
-  } catch {
-    activity = null;
-  }
-  return cacheSnapshot(cache, key, at, { available: true, ...normalized, activity, fetchedAt: at });
+  let usage = null;
+  const userId = typeof status.data?.subscriberUserId === 'string' && /^acc_[A-Za-z0-9_-]{1,100}$/.test(status.data.subscriberUserId) ? status.data.subscriberUserId : null;
+  const dayStart = new Date(at);
+  dayStart.setHours(0, 0, 0, 0);
+  const [aResult, todayResult, weekResult] = await Promise.all([
+    getJson(fetchImpl, `${CONSOLE_ORIGIN}${ACTIVITY_PATH}`, token).catch(() => ({ status: 'network' })),
+    userId ? getJson(fetchImpl, usageUrl(userId, '24h', { since: dayStart.toISOString() }), token).catch(() => ({ status: 'network' })) : null,
+    userId ? getJson(fetchImpl, usageUrl(userId, '7d'), token).catch(() => ({ status: 'network' })) : null,
+  ]);
+  if (aResult && !aResult.status) activity = normalizeConsoleActivity(aResult.data);
+  const today = todayResult && !todayResult.status ? normalizeUsageSummary(todayResult.data) : null;
+  const week = weekResult && !weekResult.status ? normalizeUsageSummary(weekResult.data) : null;
+  if (today || week) usage = { today, week };
+  return cacheSnapshot(cache, key, at, { available: true, ...normalized, activity, usage, fetchedAt: at });
 }
 
 function cacheSnapshot(cache, key, at, snapshot) {
