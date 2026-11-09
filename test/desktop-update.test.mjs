@@ -112,7 +112,8 @@ test('update: refuses while a turn is running, and old installers are pruned on 
   await updater.check();
   const result = await updater.update();
   assert.equal(result.ok, false);
-  assert.match(result.error, /giliran/);
+  // Windows checks the running turn first; elsewhere the installer is refused as Windows-only before that.
+  assert.match(result.error, process.platform === 'win32' ? /giliran/ : /Windows/);
   updater.stop();
 });
 
