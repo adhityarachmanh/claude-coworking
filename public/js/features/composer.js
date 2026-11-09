@@ -181,7 +181,7 @@ function renderSettingsChip(st) {  const chip = $('#settings-chip');
 /** Permission modes the engine doesn't offer (🚫 dontAsk on OpenCode) leave the select and the Shift+Tab cycle. */
 /**
  * OpenCode's primary agents (status.agents from its `mode` option): build and the user's own agents. "plan" stays
- * under Izin → 📋 Rencana dulu, so it is not offered twice. Hidden for Claude Code or when there is only build.
+ * under Mode → Plan (the Izin control on OpenCode), so it is not offered twice. Hidden for Claude Code or when there is only build.
  */
 function renderAgentOptions(st, engine) {
   const ctl = $('#agent-ctl');
@@ -198,10 +198,23 @@ function renderAgentOptions(st, engine) {
   }
   if (document.activeElement !== select) select.value = current === 'build' ? '' : current;
   select.disabled = Boolean(state.readOnly) || st.mode === 'plan';
-  select.title = st.mode === 'plan' ? 'Saat Izin = 📋 Rencana dulu, OpenCode memakai agent plan' : '';
+  select.title = st.mode === 'plan' ? 'Saat Mode = Plan, OpenCode memakai agent plan' : '';
 }
 
+// The Izin control's label and description (shown under it in the Pengaturan giliran dialog) per engine: OpenCode
+// offers its own two modes, so the Claude-only "Kapan Claude harus minta izinmu…" must not stay after a switch.
+const MODE_CTL = {
+  claude: { label: 'Izin', title: 'Kapan Claude harus minta izinmu sebelum mengedit file atau menjalankan perintah' },
+  opencode: { label: 'Mode', title: 'Build: OpenCode mengerjakan tugas (edit file dan perintah tetap minta izinmu). Plan: hanya menyusun rencana, tanpa mengubah file.' },
+};
+
 function renderModeOptions(caps, engine) {
+  const ctl = MODE_CTL[engine] ?? MODE_CTL.claude;
+  if ($('#mode-label').textContent !== ctl.label) $('#mode-label').textContent = ctl.label;
+  $('#mode-ctl').title = ctl.title;
+  // The dialog names the engine it configures: on a laptop the chip itself doesn't show it.
+  const name = state.active === DEMO_ID ? '' : `· ${engineLabel(engine)}`;
+  if ($('#turn-settings-engine').textContent !== name) $('#turn-settings-engine').textContent = name;
   for (const opt of $('#mode').options) {
     const off = !caps.modes.includes(opt.value);
     opt.hidden = off;

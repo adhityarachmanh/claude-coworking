@@ -166,8 +166,9 @@
           <!-- Claude's live todo list (TodoWrite / Task tools), pinned like in the CLI -->
           <div id="todos" class="todos-pinned" hidden></div>
           <div class="controls">
-            <label class="ctl" title="Kapan Claude harus minta izinmu sebelum mengedit file atau menjalankan perintah">
-              <span>Izin</span>
+            <!-- Label and description follow the project's engine (composer.js renderModeOptions): Izin / Mode -->
+            <label id="mode-ctl" class="ctl" title="Kapan Claude harus minta izinmu sebelum mengedit file atau menjalankan perintah">
+              <span id="mode-label">Izin</span>
               <select id="mode">
                 <option value="manual">🛡️ Tanya dulu</option>
                 <option value="acceptEdits">✏️ Auto-edit file</option>
@@ -177,7 +178,7 @@
               </select>
             </label>
             <!-- OpenCode: its primary agents (build, the user's own from opencode.json); 📋 Rencana dulu = its plan agent -->
-            <label id="agent-ctl" class="ctl" title="Agent OpenCode yang mengerjakan giliran: build (bawaan) atau agent buatanmu dari opencode.json. Untuk rencana saja, pilih Izin → 📋 Rencana dulu." hidden>
+            <label id="agent-ctl" class="ctl" title="Agent OpenCode yang mengerjakan giliran: build (bawaan) atau agent buatanmu dari opencode.json. Untuk rencana saja, pilih Mode → Plan." hidden>
               <span>Agent</span>
               <select id="agent"></select>
             </label>
@@ -1537,7 +1538,7 @@
 
     <div id="turn-settings-modal" class="modal phone-sheet" hidden>
       <div class="modal-card sheet-card" role="dialog" aria-modal="true" aria-labelledby="turn-settings-title">
-        <div class="modal-head"><b id="turn-settings-title">Pengaturan giliran</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="turn-settings-title">Pengaturan giliran <small id="turn-settings-engine" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <!-- the composer's own .controls (same ids and listeners) are moved in here (features/phone-sheets.js) -->
         <div class="sheet-body"></div>
         <p id="effort-note" class="muted small" hidden></p>
