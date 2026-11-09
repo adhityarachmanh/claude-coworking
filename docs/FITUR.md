@@ -329,11 +329,11 @@ Detail build dan alur rilis: [packaging-desktop.md](packaging-desktop.md).
 
 `tools/figma-bridge/` menghubungkan agent AI ke **Figma desktop** lewat plugin, tanpa token Figma dan tanpa internet:
 
-- Jalankan bridge: `node tools/figma-bridge/server.mjs` (HTTP lokal `127.0.0.1:3939` + MCP stdio).
-- Di Figma desktop: **Plugins → Development → Import plugin from manifest…** → pilih `tools/figma-bridge/plugin/manifest.json`, lalu jalankan **Adhit Office Bridge** di file yang ingin dikerjakan. Biarkan jendela plugin terbuka.
+- Jalankan bridge: `node tools/figma-bridge/server.mjs` (HTTP lokal `127.0.0.1:3939` + MCP stdio). Terminal mencetak **token bridge**; tempel sekali di plugin.
+- Di Figma desktop: **Plugins → Development → Import plugin from manifest…** → pilih `tools/figma-bridge/plugin/manifest.json`, lalu jalankan **Adhit Office Bridge** di file yang ingin dikerjakan. Isi token bridge, lalu biarkan jendela plugin terbuka.
 - Daftarkan MCP di Adhit Office (**🔌 Server MCP**) dengan command `node <path repo>\tools\figma-bridge\server.mjs`.
 - Tool: `figma_status`, `figma_selection`, `figma_page`, `figma_node`, `figma_export` (SVG/PNG), `figma_create_frame`, `figma_create_rect`, `figma_create_text`, `figma_set_fill`, `figma_move`.
-- Perintah hanya masuk lewat MCP; plugin memakai izin akun Figma kamu dan hanya file yang sedang terbuka. Detail & troubleshooting: [`tools/figma-bridge/README.md`](../tools/figma-bridge/README.md).
+- Perintah masuk lewat MCP atau CLI lokal (`cli.mjs`); `/poll`, `/result`, dan `/exec` mewajibkan token, CORS hanya untuk origin plugin, dan `delete`/`batch` tidak diekspos lewat HTTP. Plugin memakai izin akun Figma kamu dan hanya file yang sedang terbuka. Detail & troubleshooting: [`tools/figma-bridge/README.md`](../tools/figma-bridge/README.md).
 
 ## Kesehatan & diagnostik
 

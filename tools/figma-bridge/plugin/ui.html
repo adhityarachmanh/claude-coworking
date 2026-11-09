@@ -10,25 +10,53 @@
       #dot.off { background: #c0392b; }
       p { margin: 8px 0 0; color: #6b6459; }
       code { background: #efeae1; padding: 1px 4px; border-radius: 4px; }
+      #token-row { display: flex; gap: 6px; margin-top: 10px; }
+      #token { flex: 1; min-width: 0; padding: 5px 6px; border: 1px solid #d8d1c5; border-radius: 6px; font: inherit; }
+      #save-token { padding: 5px 8px; border: 1px solid #d8d1c5; border-radius: 6px; background: #fff; font: inherit; cursor: pointer; }
     </style>
   </head>
   <body>
     <b><span id="dot"></span>Adhit Office Bridge</b>
     <p id="status">Menghubungkan ke bridge lokal…</p>
+    <form id="token-row">
+      <input id="token" placeholder="Token dari terminal bridge" autocomplete="off" spellcheck="false" />
+      <button id="save-token" type="submit">Simpan</button>
+    </form>
     <p>Biarkan plugin ini terbuka selama agent bekerja. Server: <code>http://127.0.0.1:3939</code></p>
     <script>
       const BASE = 'http://localhost:3939';
       const dot = document.getElementById('dot');
       const status = document.getElementById('status');
+      const tokenInput = document.getElementById('token');
+      let token = '';
       let failures = 0;
       let file = '';
       let page = '';
 
       parent.postMessage({ pluginMessage: { type: 'status' } }, '*');
+      parent.postMessage({ pluginMessage: { type: 'get-token' } }, '*');
+
+      document.getElementById('token-row').addEventListener('submit', (event) => {
+        event.preventDefault();
+        token = tokenInput.value.trim();
+        parent.postMessage({ pluginMessage: { type: 'set-token', token } }, '*');
+        status.textContent = token ? 'Token disimpan. Menghubungkan…' : 'Token dikosongkan.';
+        failures = 0;
+      });
 
       async function poll() {
+        if (!token) {
+          dot.className = 'off';
+          status.textContent = 'Tempel token bridge dari terminal, lalu tekan Simpan.';
+          setTimeout(poll, 1500);
+          return;
+        }
         try {
-          const res = await fetch(`${BASE}/poll?file=${encodeURIComponent(file)}&page=${encodeURIComponent(page)}`, { cache: 'no-store' });
+          const res = await fetch(`${BASE}/poll?file=${encodeURIComponent(file)}&page=${encodeURIComponent(page)}`, {
+            cache: 'no-store',
+            headers: { 'X-Bridge-Token': token },
+          });
+          if (res.status === 401 || res.status === 403) throw new Error('token salah/kedaluwarsa — salin ulang dari terminal bridge');
           if (!res.ok) throw new Error(String(res.status));
           const { commands } = await res.json();
           failures = 0;
@@ -38,7 +66,7 @@
         } catch (err) {
           failures++;
           dot.className = 'off';
-          status.textContent = `Bridge lokal belum aktif (${err.message}). Jalankan: node tools/figma-bridge/server.mjs`;
+          status.textContent = `Belum terhubung (${err.message}). Jalankan: node tools/figma-bridge/server.mjs`;
         }
         setTimeout(poll, failures ? 1500 : 250);
       }
@@ -46,6 +74,11 @@
       window.onmessage = async (event) => {
         const msg = event.data && event.data.pluginMessage;
         if (!msg) return;
+        if (msg.type === 'token') {
+          token = String(msg.token || '');
+          tokenInput.value = token;
+          return;
+        }
         if (msg.type === 'status') {
           file = String(msg.file || '');
           page = String(msg.page || '');
@@ -53,7 +86,11 @@
         }
         if (msg.type !== 'result') return;
         try {
-          await fetch(`${BASE}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msg) });
+          await fetch(`${BASE}/result`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Bridge-Token': token },
+            body: JSON.stringify(msg),
+          });
         } catch {
           // the bridge went away; the next poll will show it
         }

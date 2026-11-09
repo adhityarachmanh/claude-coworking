@@ -175,6 +175,14 @@ figma.ui.onmessage = async (msg) => {
     figma.ui.postMessage({ type: 'status', file: figma.root.name, page: figma.currentPage.name });
     return;
   }
+  if (msg.type === 'get-token') {
+    figma.clientStorage.getAsync('bridgeToken').then((token) => figma.ui.postMessage({ type: 'token', token: String(token ?? '') })).catch(() => {});
+    return;
+  }
+  if (msg.type === 'set-token') {
+    await figma.clientStorage.setAsync('bridgeToken', String(msg.token ?? '')).catch(() => {});
+    return;
+  }
   if (msg.type !== 'cmd') return;
   try {
     const data = await run(String(msg.cmd), msg.args && typeof msg.args === 'object' ? msg.args : {});

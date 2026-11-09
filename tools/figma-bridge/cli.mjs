@@ -6,6 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 const PORT = Number(process.env.FIGMA_BRIDGE_PORT || 3939);
 const token = process.env.FIGMA_BRIDGE_TOKEN || readToken();
+if (!token) {
+  console.error('Token bridge tidak ditemukan. Jalankan server bridge (token dicetak di terminal) atau set FIGMA_BRIDGE_TOKEN.');
+  process.exit(2);
+}
 const [cmd, ...rest] = process.argv.slice(2);
 if (!cmd) {
   console.error('Pakai: node tools/figma-bridge/cli.mjs <status|selection|page|node|export|create_frame|create_rect|create_text|set_fill|move> [key=value ... | JSON]');

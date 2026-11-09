@@ -3,17 +3,40 @@
 // One local process with two sides:
 //   - MCP over stdio (newline-delimited JSON-RPC), so an AI agent can call the figma_* tools;
 //   - a tiny HTTP server on 127.0.0.1:3939 that the companion Figma plugin polls for commands.
-// Commands only come from MCP (the HTTP side never enqueues anything), and the plugin runs with the user's own
-// Figma permissions. Nothing leaves this laptop.
-import { randomUUID } from 'node:crypto';
+// Commands only come from MCP or the token-guarded local CLI (/exec); every plugin endpoint needs the same token,
+// so a random web page cannot read commands or forge results. Nothing leaves this laptop.
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import readline from 'node:readline';
 
 const PORT = Number(process.env.FIGMA_BRIDGE_PORT || 3939);
 const HOST = '127.0.0.1';
 const COMMAND_TIMEOUT_MS = Number(process.env.FIGMA_BRIDGE_TIMEOUT_MS || 30_000);
 const PLUGIN_FRESH_MS = 6_000;
-const CONTROL_TOKEN = String(process.env.FIGMA_BRIDGE_TOKEN || ''); // enables POST /exec (local CLI only)
+const MAX_URL = 2048;
+
+// One token per run: set FIGMA_BRIDGE_TOKEN to keep it, otherwise a strong one is generated and written to
+// %TEMP%/figma-bridge-token.txt for tools/figma-bridge/cli.mjs. The plugin UI stores it (figma.clientStorage).
+const TOKEN = String(process.env.FIGMA_BRIDGE_TOKEN || randomBytes(24).toString('hex'));
+if (TOKEN.length < 16) {
+  console.error('Figma bridge: FIGMA_BRIDGE_TOKEN minimal 16 karakter.');
+  process.exit(2);
+}
+const TOKEN_FILE = path.join(os.tmpdir(), 'figma-bridge-token.txt');
+try {
+  writeFileSync(TOKEN_FILE, TOKEN, { mode: 0o600 });
+} catch {
+  // the CLI can still use FIGMA_BRIDGE_TOKEN
+}
+
+// A page that is allowed to talk to the plugin: Figma's own UI (opaque or figma.com). Everything else gets no CORS.
+const ORIGINS = new Set(['null', 'https://www.figma.com', 'https://figma.com']);
+const authFails = new Map(); // ip -> { count, resetAt }
+const AUTH_WINDOW_MS = 60_000;
+const AUTH_MAX_FAILS = 20;
 
 const queue = []; // commands waiting for the plugin's next poll
 const inflight = new Map(); // id -> { resolve, reject, timer, cmd }
@@ -36,13 +59,40 @@ const pluginFresh = () => Date.now() - bridge.pluginAt < PLUGIN_FRESH_MS;
 
 // ---------- HTTP side (the plugin polls this) ----------
 
-function cors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*'); // the Figma plugin UI posts from an opaque origin
+function cors(req, res) {
+  const origin = String(req.headers.origin ?? '');
+  if (!ORIGINS.has(origin)) return; // any other web page gets no CORS: the browser cannot read the response
+  res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Allow-Private-Network', 'true'); // Chrome PNA: a public page (Figma) may reach loopback
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Bridge-Token');
+  res.setHeader('Access-Control-Allow-Private-Network', 'true'); // Chrome PNA, only for the Figma plugin's origin
   res.setHeader('Access-Control-Max-Age', '600');
-  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Vary', 'Origin');
+}
+
+function tokenOk(req) {
+  const given = Buffer.from(String(req.headers['x-bridge-token'] ?? ''));
+  const want = Buffer.from(TOKEN);
+  return given.length === want.length && timingSafeEqual(given, want);
+}
+
+/** Every plugin/CLI endpoint needs the token; repeated failures from one IP are throttled. */
+function authorize(req, res) {
+  const ip = req.socket.remoteAddress ?? '?';
+  const now = Date.now();
+  const entry = authFails.get(ip);
+  if (entry && entry.resetAt > now && entry.count >= AUTH_MAX_FAILS) {
+    json(res, 429, { error: 'terlalu banyak percobaan token' });
+    return false;
+  }
+  if (tokenOk(req)) {
+    authFails.delete(ip);
+    return true;
+  }
+  if (!entry || entry.resetAt <= now) authFails.set(ip, { count: 1, resetAt: now + AUTH_WINDOW_MS });
+  else entry.count += 1;
+  json(res, 403, { error: 'token bridge tidak valid' });
+  return false;
 }
 
 function readBody(req, limit = 8 * 1024 * 1024) {
@@ -51,7 +101,10 @@ function readBody(req, limit = 8 * 1024 * 1024) {
     let size = 0;
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size > limit) return reject(new Error('body terlalu besar'));
+      if (size > limit) {
+        req.destroy();
+        return reject(new Error('body terlalu besar'));
+      }
       chunks.push(chunk);
     });
     req.on('end', () => {
@@ -66,8 +119,14 @@ function readBody(req, limit = 8 * 1024 * 1024) {
 }
 
 const server = http.createServer(async (req, res) => {
-  cors(res);
-  const url = new URL(req.url, `http://${HOST}:${PORT}`);
+  cors(req, res);
+  if ((req.url ?? '').length > MAX_URL) return json(res, 414, { error: 'URL terlalu panjang' });
+  let url;
+  try {
+    url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
+  } catch {
+    return json(res, 400, { error: 'URL tidak valid' }); // a malformed request-target must never kill the bridge
+  }
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     return res.end();
@@ -77,6 +136,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, plugin: pluginFresh(), port: PORT });
     }
     if (req.method === 'GET' && url.pathname === '/poll') {
+      if (!authorize(req, res)) return;
       bridge.pluginAt = Date.now();
       bridge.info = {
         file: typeof url.searchParams.get('file') === 'string' ? url.searchParams.get('file').slice(0, 200) : null,
@@ -86,6 +146,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { commands: commands.map(({ id, cmd, args }) => ({ id, cmd, args })) });
     }
     if (req.method === 'POST' && url.pathname === '/result') {
+      if (!authorize(req, res)) return;
       bridge.pluginAt = Date.now();
       const body = await readBody(req);
       const pending = inflight.get(String(body.id ?? ''));
@@ -96,13 +157,13 @@ const server = http.createServer(async (req, res) => {
       else pending.reject(new Error(String(body.error ?? 'plugin gagal')));
       return json(res, 200, { ok: true });
     }
-    // Local CLI (tools/figma-bridge/cli.mjs) only: guarded by a token, never enabled without one.
+    // Local CLI (tools/figma-bridge/cli.mjs): same token as the plugin. Destructive commands (delete/batch) are
+    // not exposed over HTTP at all; they stay inside the plugin (agent tools do not include them either).
     if (req.method === 'POST' && url.pathname === '/exec') {
-      if (!CONTROL_TOKEN) return json(res, 404, { error: 'tidak ditemukan' });
-      if (String(req.headers['x-bridge-token'] ?? '') !== CONTROL_TOKEN) return json(res, 403, { error: 'token bridge tidak valid' });
+      if (!authorize(req, res)) return;
       const body = await readBody(req);
       if (!pluginFresh()) return json(res, 409, { error: 'Plugin Figma belum terhubung.' });
-      const known = new Set(['status', 'selection', 'page', 'node', 'export', 'create_frame', 'create_rect', 'create_text', 'set_fill', 'move', 'resize', 'delete', 'batch']);
+      const known = new Set(['status', 'selection', 'page', 'node', 'export', 'create_frame', 'create_rect', 'create_text', 'set_fill', 'move', 'resize']);
       if (!known.has(body.cmd)) return json(res, 400, { error: 'perintah tidak dikenal' });
       try {
         const data = await enqueue(String(body.cmd), body.args && typeof body.args === 'object' ? body.args : {});
@@ -124,6 +185,8 @@ function json(res, status, body) {
 
 server.listen(PORT, HOST, () => {
   console.error(`Figma bridge: http://${HOST}:${PORT} (MCP di stdio)`);
+  console.error(`Token bridge: ${TOKEN}`);
+  console.error('Tempel token itu di plugin Adhit Office Bridge (disimpan di Figma). CLI memakai token yang sama.');
 });
 
 // ---------- MCP side (stdio) ----------
@@ -266,6 +329,7 @@ rl.on('line', async (line) => {
 });
 
 function shutdown() {
+  rmSync(TOKEN_FILE, { force: true });
   server.close();
   process.exit(0);
 }
