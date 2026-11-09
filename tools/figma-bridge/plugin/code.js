@@ -140,6 +140,30 @@ async function run(cmd, args) {
       if (typeof args.y === 'number') node.y = args.y;
       return { id: node.id, x: node.x, y: node.y };
     }
+    case 'resize': {
+      const node = await nodeById(args.id);
+      if (!('resize' in node)) throw new Error('Node ini tidak bisa di-resize.');
+      node.resize(Math.max(1, Number(args.width) || node.width), Math.max(1, Number(args.height) || node.height));
+      return { id: node.id, width: node.width, height: node.height };
+    }
+    case 'delete': {
+      const node = await nodeById(args.id);
+      const id = node.id;
+      node.remove();
+      return { id, deleted: true };
+    }
+    case 'batch': {
+      const ops = Array.isArray(args.ops) ? args.ops.slice(0, 500) : [];
+      const out = [];
+      for (const op of ops) {
+        try {
+          out.push({ ok: true, data: await run(String(op?.cmd ?? ''), op?.args && typeof op.args === 'object' ? op.args : {}) });
+        } catch (err) {
+          out.push({ ok: false, error: String(err?.message ?? err).slice(0, 300), cmd: String(op?.cmd ?? '') });
+        }
+      }
+      return out;
+    }
     default:
       throw new Error(`Perintah tidak dikenal: ${cmd}`);
   }

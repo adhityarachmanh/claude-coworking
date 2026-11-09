@@ -13,6 +13,7 @@ const PORT = Number(process.env.FIGMA_BRIDGE_PORT || 3939);
 const HOST = '127.0.0.1';
 const COMMAND_TIMEOUT_MS = Number(process.env.FIGMA_BRIDGE_TIMEOUT_MS || 30_000);
 const PLUGIN_FRESH_MS = 6_000;
+const CONTROL_TOKEN = String(process.env.FIGMA_BRIDGE_TOKEN || ''); // enables POST /exec (local CLI only)
 
 const queue = []; // commands waiting for the plugin's next poll
 const inflight = new Map(); // id -> { resolve, reject, timer, cmd }
@@ -39,6 +40,9 @@ function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*'); // the Figma plugin UI posts from an opaque origin
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Private-Network', 'true'); // Chrome PNA: a public page (Figma) may reach loopback
+  res.setHeader('Access-Control-Max-Age', '600');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 }
 
 function readBody(req, limit = 8 * 1024 * 1024) {
@@ -91,6 +95,21 @@ const server = http.createServer(async (req, res) => {
       if (body.ok) pending.resolve(body.data ?? null);
       else pending.reject(new Error(String(body.error ?? 'plugin gagal')));
       return json(res, 200, { ok: true });
+    }
+    // Local CLI (tools/figma-bridge/cli.mjs) only: guarded by a token, never enabled without one.
+    if (req.method === 'POST' && url.pathname === '/exec') {
+      if (!CONTROL_TOKEN) return json(res, 404, { error: 'tidak ditemukan' });
+      if (String(req.headers['x-bridge-token'] ?? '') !== CONTROL_TOKEN) return json(res, 403, { error: 'token bridge tidak valid' });
+      const body = await readBody(req);
+      if (!pluginFresh()) return json(res, 409, { error: 'Plugin Figma belum terhubung.' });
+      const known = new Set(['status', 'selection', 'page', 'node', 'export', 'create_frame', 'create_rect', 'create_text', 'set_fill', 'move', 'resize', 'delete', 'batch']);
+      if (!known.has(body.cmd)) return json(res, 400, { error: 'perintah tidak dikenal' });
+      try {
+        const data = await enqueue(String(body.cmd), body.args && typeof body.args === 'object' ? body.args : {});
+        return json(res, 200, { ok: true, data });
+      } catch (err) {
+        return json(res, 502, { error: String(err?.message ?? err) });
+      }
     }
     return json(res, 404, { error: 'tidak ditemukan' });
   } catch (err) {

@@ -7,7 +7,8 @@
   "editorType": ["figma"],
   "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": ["http://127.0.0.1:3939"],
-    "reasoning": "Bridge lokal Adhit Office: plugin mengambil perintah dari 127.0.0.1 dan mengirim hasilnya kembali. Tidak ada data yang dikirim ke internet."
+    "allowedDomains": ["http://localhost:3939"],
+    "devAllowedDomains": ["http://localhost:3939"],
+    "reasoning": "Bridge lokal Adhit Office: plugin mengambil perintah dari localhost dan mengirim hasilnya kembali. Tidak ada data yang dikirim ke internet."
   }
 }
