@@ -861,7 +861,9 @@ async function handler(req, res) {
     return await serveStatic(pathname, res, req);
   } catch (err) {
     if (err instanceof HttpError) {
-      if (err.status === 413) res.on('finish', () => req.destroy()); // stop reading the rest of an oversized body
+      // Stop reading the rest of an oversized body, but let the 413 response leave first: a hard destroy here
+      // sends RST while the client is still uploading, which can discard the response and hide the rejection.
+      if (err.status === 413) res.on('finish', () => (typeof req.socket?.destroySoon === 'function' ? req.socket.destroySoon() : req.destroy()));
       if (!res.headersSent) return json(res, err.status, { error: err.message });
       return res.end();
     }

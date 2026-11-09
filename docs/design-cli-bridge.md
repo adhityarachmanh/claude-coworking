@@ -1,6 +1,6 @@
 # Desain: CLI bridge opt-in (izin sesi terminal dari kantor/HP)
 
-Status: **prototipe diimplementasikan, belum dirilis.** Dokumen ini mencatat hasil uji nyata dengan Claude Code 2.1.316 (Windows) dan rencana implementasi yang aman. Rilis menunggu **uji TUI manual** (fallback prompt terminal saat hook gagal/timeout) dan security review atas kode prototipe.
+Status: **prototipe diimplementasikan, belum dirilis.** Dokumen ini mencatat hasil uji nyata dengan Claude Code 2.1.316 (Windows) dan rencana implementasi yang aman. Rilis menunggu **uji TUI manual** (fallback prompt terminal saat hook gagal/timeout); security review prototipe sudah selesai (langkah 3) dan diulang bila kode bridge berubah. Prosedur uji dan tabel hasil: **[uji-manual-cli-bridge.md](uji-manual-cli-bridge.md)**.
 
 ## Masalah
 
@@ -117,7 +117,9 @@ Komponen:
 3. ✅ **Keamanan**: review endpoint, token/origin, audit, payload push, dan launcher oleh security. Temuan
    utama sudah diperbaiki: token tidak lewat environment, preview diberi penanda pemotongan, izin CLI tidak
    bisa di-allow dari layar kunci, timeout menjadi fallback (bukan deny), kartu memakai chat/deep-link,
-   sanitasi C1/bidi/zero-width, guard duplikat, dan batas antrean 3/project + 10 global.
+   sanitasi C1/bidi/zero-width, guard duplikat, dan batas antrean 3/project + 10 global. Bukti di riwayat:
+   commit `1c1d404` (token CLI dibatasi ke route izin), `b8cf1a3` (kartu izin CLI), `1b57fb2` (perbaikan
+   keamanan bridge).
 4. 🟡 **Rilis opt-in**: dokumentasi eksperimental sudah ada di README/FITUR/PANDUAN/CHANGELOG. Status
    “siap” dan tombol “CLI bridge” di ⚙ Sistem menunggu uji TUI manual (langkah 2).
 5. ⏳ **Baru setelah itu**: pertimbangkan integrasi ke sesi CLI yang sudah berjalan (di luar cakupan desain ini).

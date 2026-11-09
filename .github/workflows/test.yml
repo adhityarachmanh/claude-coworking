@@ -1,7 +1,8 @@
 name: test
 
-# Fast checks on every push/PR: syntax, ESLint, and the pure-logic suite (~40 s). Browser/server tests stay
-# local (`npm run test:unit` / `test:ui`); the old workflow that ran them here was slow and flaky.
+# On every push/PR: syntax, ESLint, the pure-logic suite (~40 s), and a small release-critical integration smoke
+# (real server, queue/concurrency, backup, CLI bridge). The full server/UI suites stay nightly/weekly so this job
+# stays fast enough to gate every push.
 on:
   push:
   pull_request:
@@ -28,3 +29,15 @@ jobs:
       - name: Locate failing fast test
         if: failure()
         run: node test-support/ci-fast-files.mjs
+
+  # The release-critical integration half (~1–2 min): real server, approvals, queue/concurrency, backup, CLI bridge.
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Integration smoke
+        run: npm run test:smoke

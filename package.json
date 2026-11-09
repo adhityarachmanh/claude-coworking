@@ -21,6 +21,7 @@
     "build:electron": "electron-builder --win --dir --config desktop/electron-builder.yml",
     "test": "node --test --test-concurrency=1",
     "test:fast": "node test-support/ci-tests.mjs fast",
+    "test:smoke": "node test-support/ci-tests.mjs smoke",
     "test:unit": "node test-support/ci-tests.mjs unit",
     "test:ui": "node test-support/ci-tests.mjs ui",
     "test:claude": "node test-support/claude-contract.mjs",

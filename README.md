@@ -261,6 +261,7 @@ Untuk detail lengkap, jalankan `npm run test:claude` (23 cek terhadap Claude Cod
 
 ```bash
 npm run test:fast    # harian: hanya logika murni, tanpa browser/server (~35 dtk, 500+ test)
+npm run test:smoke   # gerbang rilis: server, izin, antrian, backup, CLI bridge (~1–2 mnt)
 npm run test:unit    # semua test tanpa browser (termasuk server sungguhan + Claude palsu)
 npm run test:ui      # test browser per file; yang gagal diulang sekali dan dilaporkan FLAKY
 npm test             # semuanya (unit + UI), paling lambat
@@ -269,9 +270,12 @@ npm run test:opencode  # kontrak ke OpenCode asli: cek tanpa token + giliran sin
 npm run lint         # ESLint versi terkunci (diambil lewat npm exec)
 ```
 
-`test:fast` memilih otomatis file yang tidak mengimpor browser (`test-support/cdp.mjs`) atau memulai server/proses, jadi aman dijalankan setiap kali menyimpan. Untuk perubahan yang menyentuh server, backup, antrian, atau mesin project, jalankan file test terkait saja, misalnya `node --test --test-concurrency=1 test/engine-per-project.test.mjs`.
+`test:fast` memilih otomatis file yang tidak mengimpor browser (`test-support/cdp.mjs`) atau memulai server/proses, jadi aman dijalankan setiap kali menyimpan. Untuk perubahan yang menyentuh server, backup, antrian, atau mesin project, jalankan `npm run test:smoke` atau file test terkait saja, misalnya `node --test --test-concurrency=1 test/engine-per-project.test.mjs`.
 
-CI GitHub menjalankan **cek sintaks + ESLint + `test:fast`** di setiap push dan pull request (`.github/workflows/test.yml`). Test integrasi yang lebih berat (`test:unit`) berjalan **tiap malam** di Windows dan Ubuntu (`.github/workflows/nightly.yml`), dan test browser (`test:ui`) **tiap Sabtu** di Ubuntu (`.github/workflows/weekly.yml`); keduanya bisa dipicu manual dari tab Actions. Rilis `v*` dibuat sebagai **draft** dan baru dipublikasikan setelah installer Windows, Linux, serta macOS (arm64 + x64) beserta checksum/signature-nya lengkap; catatan rilis diambil dari `CHANGELOG.md`. Draft yang terbengkalai lebih dari 14 hari (beserta tag-nya) dihapus otomatis oleh workflow mingguan.
+CI GitHub menjalankan **cek sintaks + ESLint + `test:fast` + `test:smoke`** di setiap push dan pull request (`.github/workflows/test.yml`). Sisanya berjalan **tiap malam** (`test:unit`, Windows dan Ubuntu, `.github/workflows/nightly.yml`) dan **tiap Sabtu** (`test:ui`, Ubuntu, `.github/workflows/weekly.yml`); keduanya bisa dipicu manual dari tab Actions. Rilis `v*` dibuat sebagai **draft** dan baru dipublikasikan setelah installer Windows, Linux, serta macOS (arm64 + x64) beserta checksum/signature-nya lengkap; catatan rilis diambil dari `CHANGELOG.md`. Draft yang terbengkalai lebih dari 14 hari (beserta tag-nya) dihapus otomatis oleh workflow mingguan.
+
+Dua hal yang hanya bisa diuji di perangkat asli punya checklist sendiri: **CLI bridge** ([docs/uji-manual-cli-bridge.md](docs/uji-manual-cli-bridge.md)) dan **HP** ([docs/uji-manual-hp.md](docs/uji-manual-hp.md)).
+
 
 | Lapis | Isi |
 |---|---|
@@ -281,7 +285,7 @@ CI GitHub menjalankan **cek sintaks + ESLint + `test:fast`** di setiap push dan 
 | Kontrak (`test-support/claude-contract.mjs`) | Asumsi protokol terhadap Claude Code asli: `init`, streaming, `can_use_tool`, allow/deny, interrupt, `--agents`, format transcript |
 | Kontrak OpenCode (`test-support/opencode-contract.mjs`) | Asumsi ACP terhadap OpenCode asli: `initialize`, `session/new` + configOptions, command, `set_config_option`, `session/load`, `opencode models`/`session list`, lalu (model gratis `opencode-go/beam-free`, atau `OPENCODE_CONTRACT_MODEL=<provider/model>`) streaming + `usage`, bentuk `session/request_permission` + tolak, `session/cancel` |
 
-Test offline dijalankan lokal; CI GitHub hanya membangun dan merilis aplikasi.
+Test offline dijalankan lokal; CI push hanya menjalankan cek cepat + smoke, bukan seluruh suite.
 
 **Isolasi.** Semua test memakai folder sementara dan port acak (`OFFICE_DATA_DIR`, `CLAUDE_PROJECTS_DIR`, `CLAUDE_CONFIG_FILE`, `CLAUDE_CONFIG_DIR`, `OFFICE_TAILSCALE_BIN`, `OFFICE_OPEN_DRY_RUN`), jadi tidak menyentuh riwayat, settings, Tailscale, atau Spotify aslimu, dan aman dijalankan saat server background menyala. Tips:
 

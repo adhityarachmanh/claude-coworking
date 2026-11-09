@@ -1,8 +1,8 @@
 name: nightly
 
-# The push workflow only runs the fast logic tests. This nightly run covers the real server, ports, backup,
-# queues, approvals, HTTPS and CLI lifecycle on both platforms, so integration regressions surface within a day
-# without slowing every push.
+# The push workflow runs the fast suite plus a small release-critical smoke (server, queue, backup, CLI bridge).
+# This nightly run still covers the whole integration half — HTTPS, spotify, OpenCode, metrics, retention, and the
+# rest — so regressions surface within a day without slowing every push.
 on:
   schedule:
     - cron: '0 16 * * *' # 23:00 WIB

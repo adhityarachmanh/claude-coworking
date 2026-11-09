@@ -6,6 +6,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 - **📋 Pencarian & filter antrian.** Dialog antrian punya pencarian teks dan filter status (Menunggu/Berjalan/Selesai/Gagal); item yang tidak cocok disembunyikan dengan empty state yang jelas.
 - **🧪 Test browser mingguan + pembersihan draft rilis.** Alur chat/HP/dialog diuji di Chrome headless setiap Sabtu di CI (file yang gagal diulang sekali dan dilaporkan flaky). Draft rilis yang terbengkalai lebih dari 14 hari dihapus otomatis beserta tag-nya.
+- **🛡️ Smoke integrasi di setiap PR.** Selain cek sintaks, ESLint, dan `test:fast`, CI kini menjalankan `npm run test:smoke`: server sungguhan, izin, antrian/batas giliran, backup, dan CLI bridge (~1–2 mnt). Regresi jalur rilis tertangkap sebelum merge, bukan baru di nightly.
+- **📝 Checklist uji manual pra-rilis.** Dua gerbang yang tidak bisa diotomatiskan kini punya prosedur dan tabel hasil: **CLI bridge** (`docs/uji-manual-cli-bridge.md`, termasuk fallback prompt terminal saat server mati/timeout, plus preflight `node scripts/uji-cli-bridge.mjs`) dan **HP** (`docs/uji-manual-hp.md`, keyboard, push, layar kunci, PWA). Status rilis mengikuti hasil kedua checklist ini.
+- **📦 Upload terlalu besar kini menjelaskan penolakannya.** Setelah menjawab **413**, server tidak lagi langsung memutus koneksi secara paksa saat klien masih mengirim; respons dibiarkan terkirim lebih dulu. Sebelumnya klien bisa hanya melihat `ECONNRESET` dan tidak tahu upload-nya ditolak.
 
 ## 1.0.8
 

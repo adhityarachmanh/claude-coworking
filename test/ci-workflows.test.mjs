@@ -57,3 +57,12 @@ test('nightly runs the integration suite on Windows and Linux', () => {
   assert.match(workflow, /windows-latest/);
   assert.match(workflow, /ubuntu-latest/);
 });
+
+test('push workflow runs the release-critical smoke suite', () => {
+  const workflow = read('test.yml');
+  const smoke = workflow.slice(workflow.indexOf('  smoke:'));
+  assert.ok(smoke.startsWith('  smoke:'), 'there is a smoke job');
+  assert.match(smoke, /runs-on: ubuntu-latest/, 'smoke runs on the Linux runner');
+  assert.match(smoke, /node-version: 22/);
+  assert.match(smoke, /run: npm run test:smoke/, 'the smoke job runs the curated integration files');
+});
