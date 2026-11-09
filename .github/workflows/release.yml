@@ -71,7 +71,7 @@ jobs:
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $notes = Join-Path $env:RUNNER_TEMP 'notes.md'
           node scripts/release-notes.mjs "$version" --out "$notes"
-          gh release view $tag 2>$null; if ($LASTEXITCODE -ne 0) { gh release create $tag --title "Adhit Office $version" --notes-file "$notes" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Host 'Release sudah dibuat oleh job lain.' } }
+          gh release view $tag 2>$null; if ($LASTEXITCODE -ne 0) { gh release create $tag --draft --title "Adhit Office $version" --notes-file "$notes" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Host 'Release sudah dibuat oleh job lain.' } }
           gh release edit $tag --notes-file "$notes"; if ($LASTEXITCODE -ne 0) { Write-Host 'Catatan rilis tidak diperbarui; aset tetap diunggah.' }
           gh release upload $tag dist/installer/*.exe dist/installer/*.sha256 dist/installer/*.sig --clobber
 
@@ -100,6 +100,86 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           VERSION=$(node -p "require('./package.json').version")
           node scripts/release-notes.mjs "$VERSION" --out "$RUNNER_TEMP/notes.md"
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Adhit Office $VERSION" --notes-file "$RUNNER_TEMP/notes.md" || true
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "Adhit Office $VERSION" --notes-file "$RUNNER_TEMP/notes.md" || true
           gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md" || true
           gh release upload "$TAG" dist/linux/*.tar.gz dist/linux/*.deb dist/linux/*.sha256 dist/linux/*.sig --clobber
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Build .app
+        run: npm run build:mac
+      - name: Checksum
+        run: |
+          cd dist/macos
+          for f in *.zip; do shasum -a 256 "$f" > "$f.sha256"; done
+          ls -lh
+      - name: Sign assets
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          printf '%s' "$UPDATE_SIGNING_KEY" > "$RUNNER_TEMP/update-key.pem"
+          for f in dist/macos/*.zip; do node scripts/sign-release.mjs "$f" "$RUNNER_TEMP/update-key.pem"; done
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION=$(node -p "require('./package.json').version")
+          node scripts/release-notes.mjs "$VERSION" --out "$RUNNER_TEMP/notes.md"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "Adhit Office $VERSION" --notes-file "$RUNNER_TEMP/notes.md" || true
+          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md" || true
+          gh release upload "$TAG" dist/macos/*.zip dist/macos/*.sha256 dist/macos/*.sig --clobber
+
+  # The release stays a draft until every platform has uploaded: nobody downloads a half-finished release.
+  publish:
+    needs: [windows, linux, macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check every platform is there
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          missing=0
+          check() {
+            echo "$ASSETS" | grep -qE "$1" || { echo "::error::aset rilis hilang: $1"; missing=1; }
+          }
+          check '^AdhitOffice-Setup-[0-9.]+\.exe$'
+          check '^AdhitOffice-Setup-[0-9.]+\.exe\.sha256$'
+          check '^AdhitOffice-Setup-[0-9.]+\.exe\.sig$'
+          check '^AdhitOffice-[0-9.]+-linux-x64\.tar\.gz$'
+          check '^AdhitOffice-[0-9.]+-linux-x64\.tar\.gz\.sha256$'
+          check '^AdhitOffice-[0-9.]+-linux-x64\.tar\.gz\.sig$'
+          check '^adhit-office_[0-9.]+_amd64\.deb$'
+          check '^adhit-office_[0-9.]+_amd64\.deb\.sha256$'
+          check '^adhit-office_[0-9.]+_amd64\.deb\.sig$'
+          check '^AdhitOffice-[0-9.]+-macos-arm64-unsigned\.zip$'
+          check '^AdhitOffice-[0-9.]+-macos-arm64-unsigned\.zip\.sha256$'
+          check '^AdhitOffice-[0-9.]+-macos-arm64-unsigned\.zip\.sig$'
+          check '^AdhitOffice-[0-9.]+-macos-x64-unsigned\.zip$'
+          check '^AdhitOffice-[0-9.]+-macos-x64-unsigned\.zip\.sha256$'
+          check '^AdhitOffice-[0-9.]+-macos-x64-unsigned\.zip\.sig$'
+          exit $missing
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --latest

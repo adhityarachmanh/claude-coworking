@@ -2,6 +2,11 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.6
+
+- **🚦 Rilis tidak lagi setengah jadi.** GitHub Release dibuat sebagai **draft** dan baru dipublikasikan setelah aset Windows, Linux, dan macOS (arm64 + x64) beserta checksum/signature lengkap. Kalau satu platform gagal atau asetnya hilang, rilis tetap draft dan job publish gagal dengan nama aset yang kurang.
+- **🌙 Test integrasi tiap malam.** Workflow `nightly` menjalankan `test:unit` (server sungguhan, backup, antrian, izin, HTTPS, CLI) di Windows dan Ubuntu; bisa dipicu manual dari tab Actions tanpa memperlambat CI push.
+
 ## 1.0.5
 
 - **🧪 CI menjalankan test cepat.** Setiap push dan pull request kini menjalankan cek sintaks, ESLint, dan `test:fast` (~40 dtk) di Ubuntu. Test browser/server tetap lokal supaya CI tidak lambat dan flaky.

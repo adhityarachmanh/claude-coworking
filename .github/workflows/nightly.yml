@@ -1,0 +1,29 @@
+name: nightly
+
+# The push workflow only runs the fast logic tests. This nightly run covers the real server, ports, backup,
+# queues, approvals, HTTPS and CLI lifecycle on both platforms, so integration regressions surface within a day
+# without slowing every push.
+on:
+  schedule:
+    - cron: '0 16 * * *' # 23:00 WIB
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit + server tests
+        run: node test-support/ci-tests.mjs unit

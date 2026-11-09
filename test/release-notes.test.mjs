@@ -34,13 +34,11 @@ test('notesFrom falls back to a short line for an unknown version', () => {
   assert.equal(notesFrom(CHANGELOG, ''), '');
 });
 
-test('every release workflow publishes the changelog section, not a generic line', () => {
-  for (const name of ['release.yml', 'build-macos.yml']) {
-    const workflow = readFileSync(path.join(APP, '.github', 'workflows', name), 'utf8');
-    assert.match(workflow, /release-notes\.mjs/, name);
-    assert.match(workflow, /--notes-file/, name);
-    assert.doesNotMatch(workflow, /--notes "Rilis/, name);
-  }
+test('the release workflow publishes the changelog section, not a generic line', () => {
+  const workflow = readFileSync(path.join(APP, '.github', 'workflows', 'release.yml'), 'utf8');
+  assert.match(workflow, /release-notes\.mjs/);
+  assert.match(workflow, /--notes-file/);
+  assert.doesNotMatch(workflow, /--notes "Rilis/);
 });
 
 test('the test workflow runs the fast suite on every push', () => {
