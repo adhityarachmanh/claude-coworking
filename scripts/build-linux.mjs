@@ -7,6 +7,7 @@ import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, read
 import { gzipSync } from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUILD = path.join(ROOT, '.build');
@@ -18,20 +19,21 @@ const NODE_VERSION = process.version.replace(/^v/, '');
 const NODE_DIR = `node-v${NODE_VERSION}-linux-x64`;
 const ARCHIVE = `${NODE_DIR}.tar.gz`;
 const DOWNLOAD = path.join(BUILD, 'downloads', ARCHIVE);
-const ESBUILD = 'esbuild@0.25.12';
-const POSTJECT = 'postject@1.0.0-alpha.6';
+const POSTJECT = path.join(ROOT, 'node_modules', 'postject', 'dist', 'cli.js');
 const FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
 
 const step = (text) => process.stdout.write(`\n▶ ${text}\n`);
 
 function run(command, args, options = {}) {
-  if (process.platform === 'win32' && (command === 'npx' || /\.(cmd|bat)$/i.test(command))) {
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
     execSync([command, ...args].map((arg) => `"${String(arg).replace(/"/g, '""')}"`).join(' '), { cwd: ROOT, stdio: 'inherit', ...options });
   } else {
     execFileSync(command, args, { cwd: ROOT, stdio: 'inherit', ...options });
   }
 }
-/** True for the files that must be executable in the Linux package. */const isExecutable = (rel) => /(^|\/)(AdhitOffice|jalankan\.sh|adhit-office|postinst|prerm)$/.test(rel);
+
+/** True for the files that must be executable in the Linux package. */
+const isExecutable = (rel) => /(^|\/)(AdhitOffice|jalankan\.sh|adhit-office)$/.test(rel);
 
 /** Minimal ustar writer (Windows tar here has no --mode): modes are explicit, mtimes fixed, sorted entries. */
 function tarBuffer(root, { base = '' } = {}) {
@@ -137,7 +139,7 @@ mkdirSync(DIST, { recursive: true });
 mkdirSync(APP, { recursive: true });
 
 step('Bundle server.js → CommonJS');
-run('npx', [ESBUILD, 'server.js', '--bundle', '--platform=node', '--format=cjs', '--target=node20', `--outfile=${path.join(BUILD, 'server-linux.cjs')}`, '--log-level=warning']);
+await build({ entryPoints: [path.join(ROOT, 'server.js')], bundle: true, platform: 'node', format: 'cjs', target: 'node20', outfile: path.join(BUILD, 'server-linux.cjs'), logLevel: 'warning' });
 
 step('Siapkan blob SEA');
 const seaConfig = path.join(BUILD, 'sea-linux.json');
@@ -157,7 +159,7 @@ run('tar', ['-xzf', DOWNLOAD, '-C', BUILD, `${NODE_DIR}/bin/node`]);
 const linuxNode = path.join(BUILD, NODE_DIR, 'bin', 'node');
 if (!existsSync(linuxNode)) throw new Error(`Node Linux tidak ditemukan: ${linuxNode}`);
 copyFileSync(linuxNode, path.join(APP, 'AdhitOffice'));
-run('npx', [POSTJECT, path.join(APP, 'AdhitOffice'), 'NODE_SEA_BLOB', blob, '--sentinel-fuse', FUSE]);
+execFileSync(process.execPath, [POSTJECT, path.join(APP, 'AdhitOffice'), 'NODE_SEA_BLOB', blob, '--sentinel-fuse', FUSE], { cwd: ROOT, stdio: 'inherit' });
 
 step('Salin aset web');
 for (const name of ['public', 'ai_logos', 'docs']) assertNoSymlinks(path.join(ROOT, name));

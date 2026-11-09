@@ -8,16 +8,14 @@ import { execFileSync, execSync } from 'node:child_process';
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUILD = path.join(ROOT, '.build');
 const DIST = path.join(ROOT, 'dist', 'AdhitOffice');
 const EXE = path.join(DIST, 'AdhitOffice.exe');
-const ESBUILD = 'esbuild@0.25.12';
-const POSTJECT = 'postject@1.0.0-alpha.6';
+const POSTJECT = path.join(ROOT, 'node_modules', 'postject', 'dist', 'cli.js');
 const FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
-
-const npx = (args) => run('npx', ['--yes', ...args]);
 
 /** Windows cannot spawn .cmd files directly (Node 26); go through cmd.exe with every argument quoted. */
 function run(command, args) {
@@ -39,7 +37,7 @@ mkdirSync(BUILD, { recursive: true });
 mkdirSync(DIST, { recursive: true });
 
 step('Bundle server.js → satu file CommonJS');
-npx([ESBUILD, 'server.js', '--bundle', '--platform=node', '--format=cjs', '--target=node20', `--outfile=${path.join(BUILD, 'server.cjs')}`, '--log-level=warning']);
+await build({ entryPoints: [path.join(ROOT, 'server.js')], bundle: true, platform: 'node', format: 'cjs', target: 'node20', outfile: path.join(BUILD, 'server.cjs'), logLevel: 'warning' });
 // `import.meta` is empty in CJS; server.js falls back to process.execPath in that case (see APP_DIR).
 
 step('Siapkan konfigurasi SEA');
@@ -53,7 +51,7 @@ step('Salin runtime Node ke executable aplikasi');
 copyFileSync(process.execPath, EXE);
 
 step('Suntikkan blob SEA');
-npx([POSTJECT, EXE, 'NODE_SEA_BLOB', blob, '--sentinel-fuse', FUSE]);
+execFileSync(process.execPath, [POSTJECT, EXE, 'NODE_SEA_BLOB', blob, '--sentinel-fuse', FUSE], { cwd: ROOT, stdio: 'inherit' });
 
 step('Salin aset web dan metadata');
 for (const name of ['public', 'ai_logos']) cpSync(path.join(ROOT, name), path.join(DIST, name), { recursive: true });

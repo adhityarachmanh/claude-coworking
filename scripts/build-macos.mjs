@@ -5,14 +5,14 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUILD = path.join(ROOT, '.build');
 const DIST = path.join(ROOT, 'dist', 'macos');
 const VERSION = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
-const ESBUILD = 'esbuild@0.25.12';
-const POSTJECT = 'postject@1.0.0-alpha.6';
+const POSTJECT = path.join(ROOT, 'node_modules', 'postject', 'dist', 'cli.js');
 const FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
 
 const step = (text) => process.stdout.write(`\n▶ ${text}\n`);
@@ -28,7 +28,7 @@ rmSync(DIST, { recursive: true, force: true });
 mkdirSync(DIST, { recursive: true });
 
 step('Bundle server.js → CommonJS');
-run('npx', ['--yes', ESBUILD, 'server.js', '--bundle', '--platform=node', '--format=cjs', '--target=node20', `--outfile=${path.join(BUILD, 'server-mac.cjs')}`, '--log-level=warning']);
+await build({ entryPoints: [path.join(ROOT, 'server.js')], bundle: true, platform: 'node', format: 'cjs', target: 'node20', outfile: path.join(BUILD, 'server-mac.cjs'), logLevel: 'warning' });
 
 step('Siapkan blob SEA');
 const seaConfig = path.join(BUILD, 'sea-mac.json');
@@ -44,7 +44,7 @@ const bin = path.join(macos, 'AdhitOffice-bin');
 mkdirSync(macos, { recursive: true });
 mkdirSync(resources, { recursive: true });
 copyFileSync(process.execPath, bin);
-run('npx', ['--yes', POSTJECT, bin, 'NODE_SEA_BLOB', blob, '--sentinel-fuse', FUSE, '--macho-segment-name', 'NODE_SEA']);
+execFileSync(process.execPath, [POSTJECT, bin, 'NODE_SEA_BLOB', blob, '--sentinel-fuse', FUSE, '--macho-segment-name', 'NODE_SEA'], { cwd: ROOT, stdio: 'inherit' });
 
 for (const name of ['public', 'ai_logos', 'docs']) cpSync(path.join(ROOT, name), path.join(resources, name), { recursive: true });
 cpSync(path.join(ROOT, '.claude', 'agents'), path.join(resources, '.claude', 'agents'), { recursive: true });

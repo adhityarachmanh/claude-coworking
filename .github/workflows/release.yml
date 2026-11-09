@@ -55,6 +55,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: npm ci --ignore-scripts
       - name: Build Linux (tar.gz + deb)
         run: npm run build:linux
       - name: Sign assets
