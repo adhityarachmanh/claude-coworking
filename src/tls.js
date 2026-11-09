@@ -84,12 +84,20 @@ export function findTailscale(env = process.env, platform = process.platform, ex
  */
 export function restrictDir(dir, log = console.error, platform = process.platform) {
   if (platform !== 'win32') return fs.chmod(dir, 0o700).catch((err) => log(`HTTPS: chmod ${dir} gagal: ${err.message}`));
-  const user = process.env.USERNAME;
+  const user = process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}` : process.env.USERNAME;
   if (!user) return Promise.resolve(log('HTTPS: USERNAME tidak diketahui; izin folder tls tidak dibatasi'));
   return new Promise((resolve) => {
-    execFile('icacls', [dir, '/inheritance:r', '/grant:r', `${user}:(OI)(CI)F`], { windowsHide: true, timeout: 15_000 }, (err, _stdout, stderr) => {
-      if (err) log(`HTTPS: icacls gagal (izin folder tls tidak dibatasi): ${String(stderr || err.message).trim()}`);
-      resolve();
+    // Grant first, remove inheritance second: if the account lookup fails the folder keeps its inherited access
+    // instead of locking the user out of their own key.
+    execFile('icacls', [dir, '/grant:r', `${user}:(OI)(CI)F`], { windowsHide: true, timeout: 15_000 }, (grantErr, _stdout, grantStderr) => {
+      if (grantErr) {
+        log(`HTTPS: icacls grant gagal (izin folder tls tidak dibatasi): ${String(grantStderr || grantErr.message).trim()}`);
+        return resolve();
+      }
+      execFile('icacls', [dir, '/inheritance:r'], { windowsHide: true, timeout: 15_000 }, (err, _out, stderr) => {
+        if (err) log(`HTTPS: icacls inheritance gagal: ${String(stderr || err.message).trim()}`);
+        resolve();
+      });
     });
   });
 }

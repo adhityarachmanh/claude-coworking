@@ -79,6 +79,14 @@ const APP_DIR = process.env.OFFICE_APP_DIR
       }
     })();
 const APP_VERSION = JSON.parse(readFileSync(path.join(APP_DIR, 'package.json'), 'utf8')).version;
+// Optional Ed25519 public key (PEM) shipped next to the app: when present, every update needs a valid .sig asset.
+const UPDATE_PUBKEY = (() => {
+  try {
+    return readFileSync(path.join(APP_DIR, 'update-pubkey.pem'), 'utf8');
+  } catch {
+    return null;
+  }
+})();
 const PUBLIC_DIR = path.join(APP_DIR, 'public');
 const AI_LOGOS_DIR = path.join(APP_DIR, 'ai_logos'); // model logos shown in the office/brain (public, no data)
 // Used until roots are set in the web UI: env, else the folder this app lives in.
@@ -353,12 +361,15 @@ const CHECK_DELAY = Number(process.env.OFFICE_CLAUDE_CHECK_DELAY_MS);
 // ⬆ Adhit Office's own updates (git fetch every 30 min, banner, "Update sekarang"). Off for test servers (a fake
 // CLAUDE_BIN) unless OFFICE_UPDATE_CHECK=1; OFFICE_UPDATE_CHECK=0 turns it off anywhere.
 const updateCheck = process.env.OFFICE_UPDATE_CHECK ? process.env.OFFICE_UPDATE_CHECK !== '0' : !process.env.CLAUDE_BIN;
-const appUpdater = PACKAGED
+const appUpdater = PACKAGED && process.platform === 'win32'
   ? new DesktopUpdater({
       currentVersion: APP_VERSION,
       dataDir: DATA_DIR,
+      repo: process.env.OFFICE_UPDATE_REPO,
+      publicKey: UPDATE_PUBKEY,
       firstCheckMs: updateCheck ? Number(process.env.OFFICE_UPDATE_FIRST_CHECK_MS ?? 60_000) : -1,
       busy: () => [...sessions.sessions.values()].some((s) => s.turnActive()),
+      onBeforeExit: () => shutdown(),
       onChange: (view) => {
         if (!hub.config) return;
         hub.config.appUpdate = view;

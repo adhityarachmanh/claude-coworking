@@ -56,8 +56,12 @@ npx([POSTJECT, EXE, 'NODE_SEA_BLOB', blob, '--sentinel-fuse', FUSE]);
 
 step('Salin aset web dan metadata');
 for (const name of ['public', 'ai_logos']) cpSync(path.join(ROOT, name), path.join(DIST, name), { recursive: true });
+cpSync(path.join(ROOT, '.claude', 'agents'), path.join(DIST, '.claude', 'agents'), { recursive: true });
 for (const name of ['package.json', 'README.md', 'CHANGELOG.md']) copyFileSync(path.join(ROOT, name), path.join(DIST, name));
 cpSync(path.join(ROOT, 'docs'), path.join(DIST, 'docs'), { recursive: true });
+const pubkey = path.join(ROOT, 'assets', 'update-pubkey.pem');
+if (existsSync(pubkey)) copyFileSync(pubkey, path.join(DIST, 'update-pubkey.pem'));
+if (existsSync(path.join(DIST, 'data')) || existsSync(path.join(DIST, 'portable'))) throw new Error('Folder data/portable ikut di dist; hapus sebelum membuat installer.');
 writeFileSync(path.join(DIST, 'CARA-PAKAI.txt'), [
   'Adhit Office (build Windows, eksperimental)',
   '',
@@ -66,7 +70,8 @@ writeFileSync(path.join(DIST, 'CARA-PAKAI.txt'), [
   '3. Prasyarat: Claude Code dan/atau OpenCode sudah terpasang dan login.',
   '',
   'Mode portable: buat file bernama "portable" di folder ini; data akan disimpan di .\\data.',
-  'Build ini belum ditandatangani dan belum punya auto-update.',
+  'Update: ⚙ Sistem → Update aplikasi (GitHub Releases + verifikasi SHA-256/tanda tangan bila tersedia).',
+  'Build ini belum ditandatangani; SmartScreen akan memperingatkan.',
   '',
 ].join('\r\n'));
 

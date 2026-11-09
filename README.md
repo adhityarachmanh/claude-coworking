@@ -63,19 +63,23 @@ Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server t
 
 > **Setelah update dari versi sebelum HTTPS:** jalankan `setup.cmd` lagi sekali (minta izin Administrator). Aturan firewall lama hanya membuka port 4317, sehingga HTTPS `:4318` dari HP terblokir.
 
-### Aplikasi terpasang (Windows, eksperimental)
+### Aplikasi terpasang (eksperimental)
 
-Kalau tidak ingin mengelola Node/git, build installer Windows:
+Kalau tidak ingin mengelola Node/git, build installer/paket:
 
 ```powershell
-npm run build:win
+npm run build:win     # Windows: exe + Setup.exe
+npm run build:linux   # Linux: tar.gz + .deb (bisa dibuat dari Windows)
+npm run build:mac     # macOS: .app (harus dijalankan di Mac, belum ditandatangani)
 ```
 
-Hasilnya `dist\installer\AdhitOffice-Setup-<versi>.exe` (per-user, tanpa admin) dan folder portable
-`dist\AdhitOffice`. UI tetap dibuka di browser/PWA pada `http://127.0.0.1:4317`, data di
-`%LOCALAPPDATA%\AdhitOffice\data`, dan update memakai **GitHub Releases + SHA-256** (installer diverifikasi
-sebelum dijalankan). Build belum ditandatangani; SmartScreen akan memperingatkan. Detail, alur rilis, dan
-rencana Linux/macOS: [docs/packaging-desktop.md](docs/packaging-desktop.md).
+Hasil Windows: `dist\installer\AdhitOffice-Setup-<versi>.exe` (per-user, tanpa admin) dan folder portable
+`dist\AdhitOffice`. UI tetap dibuka di browser/PWA pada `http://127.0.0.1:4317`, data Windows di
+`%LOCALAPPDATA%\AdhitOffice\data`, Linux di `~/.local/share/adhit-office/data`, macOS di
+`~/Library/Application Support/AdhitOffice/data`. Update Windows memakai **GitHub Releases + SHA-256**
+(installer diverifikasi sebelum dijalankan); Linux/macOS masih diperbarui manual. Build belum ditandatangani;
+SmartScreen/Gatekeeper akan memperingatkan. Detail, alur rilis, dan code signing:
+[docs/packaging-desktop.md](docs/packaging-desktop.md).
 
 **Troubleshooting**
 

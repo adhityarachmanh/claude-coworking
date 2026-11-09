@@ -40,7 +40,7 @@ Name: "desktopicon"; Description: "Buat shortcut di Desktop"; GroupDescription: 
 Name: "autostart"; Description: "Jalankan Adhit Office saat login Windows"; GroupDescription: "Startup:"; Flags: unchecked
 
 [Files]
-Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#BuildDir}\*"; DestDir: "{app}"; Excludes: "data\*,portable,server.log"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

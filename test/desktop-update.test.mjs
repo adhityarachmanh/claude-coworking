@@ -1,6 +1,6 @@
 // ⬆ Desktop update: GitHub release check, mandatory SHA-256, and no install while a turn is running.
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -58,8 +58,7 @@ test('check: a newer GitHub release becomes one update, with installer + checksu
   updater.stop();
 });
 
-test('check: the same version is up to date; a missing checksum asset is an error', async () => {
-  const same = new DesktopUpdater({ currentVersion: '0.3.0', dataDir: TMP, fetch: fakeFetch().fetch, firstCheckMs: -1 });
+test('check: the same version is up to date; a missing checksum asset is an error', async () => {  const same = new DesktopUpdater({ currentVersion: '0.3.0', dataDir: TMP, fetch: fakeFetch().fetch, firstCheckMs: -1 });
   assert.equal((await same.check()).behind, 0);
   same.stop();
 
@@ -114,5 +113,40 @@ test('update: refuses while a turn is running, and old installers are pruned on 
   const result = await updater.update();
   assert.equal(result.ok, false);
   assert.match(result.error, /giliran/);
+  updater.stop();
+});
+
+test('check: an unsafe version tag is refused, and a pinned public key requires a .sig asset', async () => {
+  const unsafe = new DesktopUpdater({
+    currentVersion: '0.2.0',
+    dataDir: path.join(TMP, 'unsafe'),
+    firstCheckMs: -1,
+    fetch: async () => new Response(JSON.stringify({ tag_name: 'v1.2.3/../../evil', assets: [] }), { status: 200 }),
+  });
+  assert.match((await unsafe.check()).error, /versi stabil/);
+  unsafe.stop();
+
+  const { publicKey } = generateKeyPairSync('ed25519');
+  const signed = new DesktopUpdater({
+    currentVersion: '0.2.0',
+    dataDir: path.join(TMP, 'unsigned'),
+    publicKey: publicKey.export({ type: 'spki', format: 'pem' }),
+    firstCheckMs: -1,
+    fetch: fakeFetch().fetch,
+  });
+  assert.match((await signed.check()).error, /ditandatangani/);
+  signed.stop();
+});
+
+test('update: an installer changed after verification is re-hashed and rejected before spawn', async (t) => {
+  if (process.platform !== 'win32') return t.skip('installer spawn hanya di Windows');
+  const dir = path.join(TMP, 'toctou');
+  const updater = new DesktopUpdater({ currentVersion: '0.2.0', dataDir: dir, fetch: fakeFetch().fetch, busy: () => false, firstCheckMs: -1 });
+  await updater.check();
+  const file = await updater.prepare();
+  writeFileSync(file.file, 'tampered');
+  const result = await updater.update();
+  assert.equal(result.ok, false);
+  assert.match(result.error, /berubah setelah diverifikasi/);
   updater.stop();
 });

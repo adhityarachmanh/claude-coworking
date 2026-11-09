@@ -309,17 +309,19 @@ Menjawab izin sesi `claude` di terminal dari kantor/HP, tanpa mengubah config Cl
 
 Batasan: hanya laptop (route ditolak dari LAN/Tailscale), maksimal 3 izin menunggu per project, dan proses lokal dengan hak user yang sama tetap dipercaya. Status: **belum dirilis** sampai verifikasi TUI manual selesai. Detail: [design-cli-bridge.md](design-cli-bridge.md).
 
-## Aplikasi terpasang (Windows, eksperimental)
+## Aplikasi terpasang (eksperimental)
 
-`npm run build:win` membundel server menjadi satu `AdhitOffice.exe` + aset web, lalu membuat installer
-per-user (`AdhitOffice-Setup-<versi>.exe`) dengan shortcut, opsi autostart, dan uninstaller.
+`npm run build:win`, `npm run build:linux`, dan `npm run build:mac` membundel server menjadi satu executable
++ aset web, lalu membuat installer/paket: Setup.exe per-user, tar.gz + `.deb`, atau `.app` (macOS harus
+di-build di Mac).
 
 - UI tetap dibuka di browser/PWA `http://127.0.0.1:4317`; tidak ada Chromium tambahan.
-- Data di `%LOCALAPPDATA%\AdhitOffice\data`; file `portable` di folder aplikasi memindahkannya ke `.\data`.
-- **Update aplikasi**: cek GitHub Releases tiap 30 menit, unduh installer, verifikasi **SHA-256** dan host,
-  lalu jalankan senyap. Update ditolak saat ada giliran berjalan.
-- Belum ditandatangani: SmartScreen akan memperingatkan sampai code signing ditambahkan.
-- Linux/macOS masih direncanakan (AppImage/deb, .app/.dmg + notarization).
+- Data: `%LOCALAPPDATA%\AdhitOffice\data` (Windows), `~/.local/share/adhit-office/data` (Linux), atau
+  `~/Library/Application Support/AdhitOffice/data` (macOS). File `portable` memindahkannya ke `.\data`.
+- **Update aplikasi**: Windows mengecek GitHub Releases, mengunduh installer, memverifikasi **SHA-256** dan
+  host, lalu menjalankan senyap. Linux/macOS masih manual.
+- Belum ditandatangani: SmartScreen/Gatekeeper akan memperingatkan sampai code signing ditambahkan.
+- AppImage dan notarization macOS masih direncanakan.
 
 Detail build dan alur rilis: [packaging-desktop.md](packaging-desktop.md).
 

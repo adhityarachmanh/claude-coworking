@@ -1,8 +1,8 @@
 // ⬆ Auto-update for a packaged Adhit Office (Windows installer): GitHub Releases + SHA-256, never an unverified
 // installer. The UI keeps the same shape as src/app-update.js (behind/commits/check/update), so the existing banner
 // and ⚙ section work in both modes. Code signing is still required before this is safe against a compromised repo.
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, verify } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
@@ -13,6 +13,7 @@ const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 const ALLOWED_ASSET = /^https:\/\/(?:github\.com|(?:[\w-]+\.)*githubusercontent\.com)\//i;
 
 const versionParts = (v) => String(v ?? '').replace(/^v/i, '').split(/[.+-]/).map((part) => Number.parseInt(part, 10) || 0);
+const STABLE_VERSION = /^\d+\.\d+\.\d+$/;
 const isNewer = (latest, current) => {
   const a = versionParts(latest);
   const b = versionParts(current);
@@ -30,12 +31,14 @@ export class DesktopUpdater {
    * @param {{ currentVersion: string, dataDir: string, repo?: string, onChange?: Function, busy?: Function,
    *           fetch?: Function, firstCheckMs?: number }} opts
    */
-  constructor({ currentVersion, dataDir, repo = 'adhityarachmanh/claude-coworking', onChange = () => {}, busy = () => false, fetch: fetchImpl = globalThis.fetch, firstCheckMs = FIRST_CHECK_MS }) {
+  constructor({ currentVersion, dataDir, repo = 'adhityarachmanh/claude-coworking', publicKey = null, onChange = () => {}, busy = () => false, onBeforeExit = null, fetch: fetchImpl = globalThis.fetch, firstCheckMs = FIRST_CHECK_MS }) {
     this.currentVersion = currentVersion;
     this.dataDir = dataDir;
-    this.repo = repo;
+    this.repo = /^[\w.-]+\/[\w.-]+$/.test(String(repo)) ? String(repo) : 'adhityarachmanh/claude-coworking';
+    this.publicKey = publicKey || null; // PEM Ed25519; when set, a valid .sig asset is mandatory
     this.onChange = onChange;
     this.busy = busy;
+    this.onBeforeExit = onBeforeExit;
     this.fetch = fetchImpl;
     this.download = null;
     mkdirSync(path.join(dataDir, 'updates'), { recursive: true });
@@ -56,6 +59,7 @@ export class DesktopUpdater {
       error: null,
       installerUrl: null,
       sha256Url: null,
+      signatureUrl: null,
       size: null,
       notes: null,
     };
@@ -90,12 +94,14 @@ export class DesktopUpdater {
       if (!response.ok) throw new Error(`GitHub membalas ${response.status}`);
       const release = await response.json();
       const latest = String(release?.tag_name ?? '').replace(/^v/i, '').trim();
-      if (!/^\d+\.\d+\.\d+/.test(latest)) throw new Error('Rilis terbaru tidak punya tag versi yang valid.');
+      if (!STABLE_VERSION.test(latest)) throw new Error('Rilis terbaru tidak punya tag versi stabil (x.y.z).');
       const assets = Array.isArray(release.assets) ? release.assets : [];
       const installer = assets.find((asset) => asset?.name === `AdhitOffice-Setup-${latest}.exe`);
       const checksum = assets.find((asset) => asset?.name === `${installer?.name}.sha256`);
+      const signature = assets.find((asset) => asset?.name === `${installer?.name}.sig`);
       const newer = isNewer(latest, this.currentVersion);
       if (newer && (!installer || !checksum)) throw new Error('Rilis terbaru tidak menyertakan installer + SHA-256.');
+      if (newer && this.publicKey && !signature) throw new Error('Rilis terbaru tidak ditandatangani (butuh .sig).');
       const commits = newer ? [{ hash: latest, subject: `Adhit Office ${latest}` }] : [];
       this.set({
         latestVersion: latest,
@@ -103,6 +109,7 @@ export class DesktopUpdater {
         commits,
         installerUrl: installer?.browser_download_url ?? null,
         sha256Url: checksum?.browser_download_url ?? null,
+        signatureUrl: signature?.browser_download_url ?? null,
         size: Number(installer?.size) || null,
         notes: String(release?.body ?? '').slice(0, 2000) || null,
         checkedAt: Date.now(),
@@ -118,7 +125,7 @@ export class DesktopUpdater {
   /** Download + verify the installer; nothing is executed here. */
   async prepare() {
     if (!this.state.behind) throw new Error('Sudah versi terbaru.');
-    if (this.state.installing || this.state.updating) throw new Error('Update sedang berjalan.');
+    if (this.state.installing) throw new Error('Update sedang berjalan.');
     if (this.download) return this.download;
     this.download = this.downloadInstaller().finally(() => { this.download = null; });
     return this.download;
@@ -128,13 +135,26 @@ export class DesktopUpdater {
     const version = this.state.latestVersion;
     const installerUrl = this.state.installerUrl;
     const shaUrl = this.state.sha256Url;
+    const sigUrl = this.state.signatureUrl;
     if (!ALLOWED_ASSET.test(String(installerUrl)) || !ALLOWED_ASSET.test(String(shaUrl))) throw new Error('URL installer bukan dari GitHub.');
+    if (this.publicKey && !ALLOWED_ASSET.test(String(sigUrl))) throw new Error('Rilis tidak menyertakan tanda tangan yang valid.');
     this.set({ downloading: true, error: null });
     try {
       const shaResponse = await this.fetch(shaUrl, { signal: AbortSignal.timeout(30_000) });
       if (!shaResponse.ok) throw new Error(`Checksum tidak bisa diunduh (${shaResponse.status}).`);
-      const expected = /^([a-f0-9]{64})\b/i.exec((await shaResponse.text()).trim())?.[1]?.toLowerCase();
+      const shaText = await shaResponse.text();
+      if (shaText.length > 4096) throw new Error('File SHA-256 terlalu besar.');
+      const expected = /^([a-f0-9]{64})\b/i.exec(shaText.trim())?.[1]?.toLowerCase();
       if (!expected) throw new Error('File SHA-256 tidak valid.');
+
+      let signature = null;
+      if (this.publicKey) {
+        const sigResponse = await this.fetch(sigUrl, { signal: AbortSignal.timeout(30_000) });
+        if (!sigResponse.ok) throw new Error(`Tanda tangan tidak bisa diunduh (${sigResponse.status}).`);
+        const sigText = await sigResponse.text();
+        if (sigText.length > 4096) throw new Error('File tanda tangan terlalu besar.');
+        signature = Buffer.from(sigText.trim(), 'base64');
+      }
 
       const response = await this.fetch(installerUrl, { redirect: 'follow', signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
       if (!response.ok) throw new Error(`Installer tidak bisa diunduh (${response.status}).`);
@@ -145,12 +165,16 @@ export class DesktopUpdater {
       if (bytes.length > MAX_INSTALLER_BYTES) throw new Error('Installer terlalu besar.');
       const actual = createHash('sha256').update(bytes).digest('hex');
       if (actual !== expected) throw new Error('SHA-256 installer tidak cocok; unduhan dibatalkan.');
+      if (this.publicKey && !verify(null, bytes, this.publicKey, signature)) throw new Error('Tanda tangan installer tidak valid.');
 
       const dir = path.join(this.dataDir, 'updates');
       mkdirSync(dir, { recursive: true });
       const file = path.join(dir, `AdhitOffice-Setup-${version}.exe`);
-      writeFileSync(file, bytes, { mode: 0o600 });
-      this.setStateSafe({ downloaded: { file, version, sha256: actual, at: Date.now() } });
+      if (!path.resolve(file).startsWith(`${path.resolve(dir)}${path.sep}`)) throw new Error('Path installer tidak valid.');
+      const part = `${file}.part`;
+      writeFileSync(part, bytes, { mode: 0o600 });
+      renameSync(part, file);
+      this.setStateSafe({ downloaded: { file, version, sha256: actual, signed: Boolean(this.publicKey), at: Date.now() } });
       return this.state.downloaded;
     } finally {
       this.set({ downloading: false });
@@ -161,28 +185,34 @@ export class DesktopUpdater {
   async update() {
     if (process.platform !== 'win32') return { ok: false, error: 'Update otomatis build terpasang baru tersedia di Windows.' };
     if (this.busy()) return { ok: false, error: 'Masih ada giliran yang berjalan. Update setelah selesai (server akan di-restart).' };
-    if (this.state.downloading || this.state.installing) return { ok: false, error: 'Update sedang berjalan.' };
-    if (!this.state.behind) await this.check();
-    if (!this.state.behind) return { ok: false, error: 'Sudah versi terbaru.' };
-    let file = this.state.downloaded?.version === this.state.latestVersion ? this.state.downloaded.file : null;
-    if (!file || !existsSync(file)) {
-      try {
-        file = (await this.prepare()).file;
-      } catch (err) {
-        this.set({ error: shortError(err) });
-        return { ok: false, error: this.state.error };
-      }
-    }
-    this.set({ updating: true, installing: true, error: null });
+    if (this.state.downloading || this.state.installing || this.state.updating) return { ok: false, error: 'Update sedang berjalan.' };
+    this.set({ updating: true, error: null });
     try {
-      const child = spawn(file, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/TASKS='], {
+      if (!this.state.behind) await this.check();
+      if (!this.state.behind) return { ok: false, error: 'Sudah versi terbaru.' };
+      let downloaded = this.state.downloaded?.version === this.state.latestVersion ? this.state.downloaded : null;
+      if (!downloaded || !existsSync(downloaded.file)) downloaded = await this.prepare();
+      if (this.busy()) return { ok: false, error: 'Giliran baru mulai saat update disiapkan. Coba lagi setelah selesai.' };
+      // TOCTOU: re-hash the exact file right before running it, after the download wait.
+      const stat = statSync(downloaded.file);
+      if (!stat.isFile()) throw new Error('Installer bukan file biasa.');
+      const bytes = readFileSync(downloaded.file);
+      if (createHash('sha256').update(bytes).digest('hex') !== downloaded.sha256) throw new Error('Installer berubah setelah diverifikasi; dibatalkan.');
+      this.set({ installing: true });
+      const child = spawn(downloaded.file, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/TASKS='], {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,
       });
+      child.on('error', (err) => {
+        this.set({ updating: false, installing: false, error: shortError(err) });
+      });
       child.unref();
-      // The installer closes this process (PrepareToInstall taskkill); exiting here releases the exe for replacement.
-      setTimeout(() => process.exit(0), 1500).unref?.();
+      // The installer closes this process; the graceful shutdown releases state/children instead of a hard exit.
+      setTimeout(() => {
+        if (typeof this.onBeforeExit === 'function') this.onBeforeExit();
+        else process.exit(0);
+      }, 1500).unref?.();
       return { ok: true, pulled: 1, version: this.state.latestVersion };
     } catch (err) {
       this.set({ updating: false, installing: false, error: shortError(err) });
