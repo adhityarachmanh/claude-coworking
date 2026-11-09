@@ -6,6 +6,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ### Eksperimental
 
+- **📦 Build Windows + auto-update.** `npm run build:win` menghasilkan `AdhitOffice.exe` (Node SEA) dan installer per-user Inno Setup. Data disimpan di `%LOCALAPPDATA%\AdhitOffice\data` (mode portable lewat file `portable`), UI tetap web/PWA. Update mengecek GitHub Releases, mewajibkan aset installer + SHA-256, memverifikasi hash dan host sebelum menjalankan installer senyap; ditolak saat ada giliran berjalan. Build belum ditandatangani. Detail: [docs/packaging-desktop.md](docs/packaging-desktop.md).
 - **🌉 CLI bridge opt-in.** `office claude` menjalankan Claude Code dengan hook `PreToolUse` sementara sehingga izin tool berbahaya bisa dijawab dari kantor/HP. Fail-closed: server mati, timeout, atau hook gagal menyerahkan keputusan ke prompt terminal. Izin CLI diberi penanda **Terminal · CLI bridge**, tidak bisa di-allow dari layar kunci, dibatasi 3 menitung/project, dan dicatat sebagai `cli-approval`. **Belum dirilis**: menunggu uji TUI manual (fallback prompt terminal) sebelum masuk README fitur dan pengaturan.
 
 ## 2026-11-08

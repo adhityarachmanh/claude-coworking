@@ -309,6 +309,20 @@ Menjawab izin sesi `claude` di terminal dari kantor/HP, tanpa mengubah config Cl
 
 Batasan: hanya laptop (route ditolak dari LAN/Tailscale), maksimal 3 izin menunggu per project, dan proses lokal dengan hak user yang sama tetap dipercaya. Status: **belum dirilis** sampai verifikasi TUI manual selesai. Detail: [design-cli-bridge.md](design-cli-bridge.md).
 
+## Aplikasi terpasang (Windows, eksperimental)
+
+`npm run build:win` membundel server menjadi satu `AdhitOffice.exe` + aset web, lalu membuat installer
+per-user (`AdhitOffice-Setup-<versi>.exe`) dengan shortcut, opsi autostart, dan uninstaller.
+
+- UI tetap dibuka di browser/PWA `http://127.0.0.1:4317`; tidak ada Chromium tambahan.
+- Data di `%LOCALAPPDATA%\AdhitOffice\data`; file `portable` di folder aplikasi memindahkannya ke `.\data`.
+- **Update aplikasi**: cek GitHub Releases tiap 30 menit, unduh installer, verifikasi **SHA-256** dan host,
+  lalu jalankan senyap. Update ditolak saat ada giliran berjalan.
+- Belum ditandatangani: SmartScreen akan memperingatkan sampai code signing ditambahkan.
+- Linux/macOS masih direncanakan (AppImage/deb, .app/.dmg + notarization).
+
+Detail build dan alur rilis: [packaging-desktop.md](packaging-desktop.md).
+
 ## Figma (bridge lokal)
 
 `tools/figma-bridge/` menghubungkan agent AI ke **Figma desktop** lewat plugin, tanpa token Figma dan tanpa internet:

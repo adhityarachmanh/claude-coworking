@@ -1,0 +1,95 @@
+#!/usr/bin/env node
+// 📦 Windows build (spike): bundle the server into one executable with Node SEA, then copy the web assets next to it.
+// Usage: node scripts/build-windows.mjs
+// Output: dist/AdhitOffice/AdhitOffice.exe + public/ + ai_logos/ + package.json
+//
+// No runtime dependencies are added to the app: esbuild/postject are fetched with npx at build time.
+import { execFileSync, execSync } from 'node:child_process';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const BUILD = path.join(ROOT, '.build');
+const DIST = path.join(ROOT, 'dist', 'AdhitOffice');
+const EXE = path.join(DIST, 'AdhitOffice.exe');
+const ESBUILD = 'esbuild@0.25.12';
+const POSTJECT = 'postject@1.0.0-alpha.6';
+const FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
+
+const npx = (args) => run('npx', ['--yes', ...args]);
+
+/** Windows cannot spawn .cmd files directly (Node 26); go through cmd.exe with every argument quoted. */
+function run(command, args) {
+  if (process.platform === 'win32') {
+    const line = [command, ...args].map((arg) => `"${String(arg).replace(/"/g, '""')}"`).join(' ');
+    execSync(line, { cwd: ROOT, stdio: 'inherit' });
+  } else {
+    execFileSync(command, args, { cwd: ROOT, stdio: 'inherit' });
+  }
+}
+
+const step = (text) => process.stdout.write(`\n▶ ${text}\n`);
+
+step('Bersihkan output lama');
+rmSync(BUILD, { recursive: true, force: true });
+rmSync(DIST, { recursive: true, force: true });
+mkdirSync(BUILD, { recursive: true });
+mkdirSync(DIST, { recursive: true });
+
+step('Bundle server.js → satu file CommonJS');
+npx([ESBUILD, 'server.js', '--bundle', '--platform=node', '--format=cjs', '--target=node20', `--outfile=${path.join(BUILD, 'server.cjs')}`, '--log-level=warning']);
+// `import.meta` is empty in CJS; server.js falls back to process.execPath in that case (see APP_DIR).
+
+step('Siapkan konfigurasi SEA');
+const seaConfig = path.join(BUILD, 'sea-config.json');
+const blob = path.join(BUILD, 'sea-prep.blob');
+writeFileSync(seaConfig, `${JSON.stringify({ main: path.join(BUILD, 'server.cjs'), output: blob, disableExperimentalSEAWarning: true, useSnapshot: false, useCodeCache: false }, null, 2)}\n`);
+execFileSync(process.execPath, ['--experimental-sea-config', seaConfig], { cwd: ROOT, stdio: 'inherit' });
+if (!existsSync(blob)) throw new Error('SEA blob tidak dibuat.');
+
+step('Salin runtime Node ke executable aplikasi');
+copyFileSync(process.execPath, EXE);
+
+step('Suntikkan blob SEA');
+npx([POSTJECT, EXE, 'NODE_SEA_BLOB', blob, '--sentinel-fuse', FUSE]);
+
+step('Salin aset web dan metadata');
+for (const name of ['public', 'ai_logos']) cpSync(path.join(ROOT, name), path.join(DIST, name), { recursive: true });
+for (const name of ['package.json', 'README.md', 'CHANGELOG.md']) copyFileSync(path.join(ROOT, name), path.join(DIST, name));
+cpSync(path.join(ROOT, 'docs'), path.join(DIST, 'docs'), { recursive: true });
+writeFileSync(path.join(DIST, 'CARA-PAKAI.txt'), [
+  'Adhit Office (build Windows, eksperimental)',
+  '',
+  '1. Jalankan AdhitOffice.exe. Data disimpan di %LOCALAPPDATA%\\AdhitOffice\\data.',
+  '2. Buka http://127.0.0.1:4317 di browser (atau pasang sebagai aplikasi/PWA).',
+  '3. Prasyarat: Claude Code dan/atau OpenCode sudah terpasang dan login.',
+  '',
+  'Mode portable: buat file bernama "portable" di folder ini; data akan disimpan di .\\data.',
+  'Build ini belum ditandatangani dan belum punya auto-update.',
+  '',
+].join('\r\n'));
+
+step('Selesai');
+process.stdout.write(`\n📦 ${EXE}\n`);
+
+// ---- Installer (Inno Setup). Optional: the portable folder above still works when ISCC is not installed. ----
+const version = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+const iscc = findIscc();
+if (!iscc) {
+  process.stdout.write('\n⚠ Inno Setup tidak ditemukan; Setup.exe dilewati. Pasang Inno Setup 6, atau set INNO_SETUP_ISCC.\n');
+} else {
+  step('Build installer (Inno Setup)');
+  execFileSync(iscc, [`/DMyAppVersion=${version}`, path.join(ROOT, 'installer', 'AdhitOffice.iss')], { cwd: ROOT, stdio: 'inherit' });
+  process.stdout.write(`\n📦 ${path.join(ROOT, 'dist', 'installer', `AdhitOffice-Setup-${version}.exe`)}\n`);
+}
+
+function findIscc() {
+  if (process.env.INNO_SETUP_ISCC && existsSync(process.env.INNO_SETUP_ISCC)) return process.env.INNO_SETUP_ISCC;
+  const candidates = [
+    path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Inno Setup 6', 'ISCC.exe'),
+    path.join(process.env['ProgramFiles(x86)'] ?? '', 'Inno Setup 6', 'ISCC.exe'),
+    path.join(process.env.ProgramFiles ?? '', 'Inno Setup 6', 'ISCC.exe'),
+  ];
+  return candidates.find((candidate) => candidate && existsSync(candidate)) ?? null;
+}

@@ -63,6 +63,20 @@ Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server t
 
 > **Setelah update dari versi sebelum HTTPS:** jalankan `setup.cmd` lagi sekali (minta izin Administrator). Aturan firewall lama hanya membuka port 4317, sehingga HTTPS `:4318` dari HP terblokir.
 
+### Aplikasi terpasang (Windows, eksperimental)
+
+Kalau tidak ingin mengelola Node/git, build installer Windows:
+
+```powershell
+npm run build:win
+```
+
+Hasilnya `dist\installer\AdhitOffice-Setup-<versi>.exe` (per-user, tanpa admin) dan folder portable
+`dist\AdhitOffice`. UI tetap dibuka di browser/PWA pada `http://127.0.0.1:4317`, data di
+`%LOCALAPPDATA%\AdhitOffice\data`, dan update memakai **GitHub Releases + SHA-256** (installer diverifikasi
+sebelum dijalankan). Build belum ditandatangani; SmartScreen akan memperingatkan. Detail, alur rilis, dan
+rencana Linux/macOS: [docs/packaging-desktop.md](docs/packaging-desktop.md).
+
 **Troubleshooting**
 
 | Gejala | Penyebab & solusi |

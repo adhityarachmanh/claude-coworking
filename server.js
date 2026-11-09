@@ -12,11 +12,12 @@ import { OPENCODE_CAPS } from './src/acp-session.js';
 import { ClaudeCheckService } from './src/claude-check.js';
 import { OpenCodeCheckService } from './src/opencode-check.js';
 import { AppUpdater } from './src/app-update.js';
+import { DesktopUpdater } from './src/desktop-update.js';
 import { Hub } from './src/hub.js';
 import { pruneAuth } from './src/auth-audit.js';
 import { recordAudit } from './src/audit-log.js';
 import { discoverProjects, isDirectory, isInside, isMissing } from './src/projects.js';
-import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { writeBackup } from './src/backup.js';
 import { AccountService, accountPrivacyView, accountViewKey } from './src/account.js';
 import { autostartStatus } from './src/autostart.js';
@@ -66,7 +67,17 @@ const HTTPS_TEST_BIND = process.env.OFFICE_HTTPS_TEST_BIND === '127.0.0.1' ? '12
 // Tests only: point ♪ Spotify at test-support/fake-spotify.mjs. Loopback only; tokens are bound to the origin that
 // issued them (src/spotify.js), so this can never send a real token anywhere else.
 const SPOTIFY_TEST_ORIGIN = /^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(process.env.OFFICE_SPOTIFY_TEST_ORIGIN ?? '') ? process.env.OFFICE_SPOTIFY_TEST_ORIGIN : null;
-const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
+const APP_DIR = process.env.OFFICE_APP_DIR
+  ? path.resolve(process.env.OFFICE_APP_DIR)
+  : (() => {
+      // Packaged builds bundle this file into one executable: import.meta is empty there, so the files next to
+      // the .exe are the app folder. Running from source keeps the repo folder.
+      try {
+        return path.dirname(fileURLToPath(import.meta.url));
+      } catch {
+        return path.dirname(process.execPath);
+      }
+    })();
 const APP_VERSION = JSON.parse(readFileSync(path.join(APP_DIR, 'package.json'), 'utf8')).version;
 const PUBLIC_DIR = path.join(APP_DIR, 'public');
 const AI_LOGOS_DIR = path.join(APP_DIR, 'ai_logos'); // model logos shown in the office/brain (public, no data)
@@ -110,9 +121,23 @@ const MIME = {
   '.webmanifest': 'application/manifest+json',
 };
 
+// A packaged build keeps data outside the install folder (Program Files is not writable). A `portable` file next
+// to the executable, or OFFICE_PORTABLE=1, keeps everything in .\data instead.
+const PACKAGED = !existsSync(path.join(APP_DIR, 'server.js')) && existsSync(path.join(APP_DIR, 'public', 'index.html'));
+const PORTABLE = process.env.OFFICE_PORTABLE === '1' || existsSync(path.join(APP_DIR, 'portable'));
+function userDataDir() {
+  const home = process.env.USERPROFILE ?? process.env.HOME ?? APP_DIR;
+  if (process.platform === 'win32') return path.join(process.env.LOCALAPPDATA ?? path.join(home, 'AppData', 'Local'), 'AdhitOffice', 'data');
+  if (process.platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'AdhitOffice', 'data');
+  return path.join(process.env.XDG_DATA_HOME ?? path.join(home, '.local', 'share'), 'adhit-office', 'data');
+}
+
+// OFFICE_DATA_DIR lets tests run against a throwaway state file.
+const DATA_DIR = process.env.OFFICE_DATA_DIR ?? (PACKAGED && !PORTABLE ? userDataDir() : path.join(APP_DIR, 'data'));
+
 // Started hidden at Windows login: there is no console, so keep a log file instead.
 if (process.argv.includes('--background')) {
-  const logFile = path.join(APP_DIR, 'data', 'server.log');
+  const logFile = path.join(DATA_DIR, 'server.log');
   mkdirSync(path.dirname(logFile), { recursive: true });
   const write = (level) => (...args) => appendFileSync(logFile, `[${new Date().toISOString()}] ${level} ${args.map(String).join(' ')}\n`);
   console.log = write('INFO');
@@ -122,8 +147,6 @@ if (process.argv.includes('--background')) {
 // Before any outgoing HTTPS: also trust the OS certificate store (TLS-inspecting proxies such as Zscaler).
 const SYSTEM_CERTS = trustSystemCertificates();
 
-// OFFICE_DATA_DIR lets tests run against a throwaway state file.
-const DATA_DIR = process.env.OFFICE_DATA_DIR ?? path.join(APP_DIR, 'data');
 const hub = new Hub({ dataDir: DATA_DIR });
 // 📈 Operational history for 🩺 Kesehatan (aggregate only, never conversation content). Counts this start, then the
 // rolling seven days from data/metrics.json.
@@ -330,16 +353,28 @@ const CHECK_DELAY = Number(process.env.OFFICE_CLAUDE_CHECK_DELAY_MS);
 // ⬆ Adhit Office's own updates (git fetch every 30 min, banner, "Update sekarang"). Off for test servers (a fake
 // CLAUDE_BIN) unless OFFICE_UPDATE_CHECK=1; OFFICE_UPDATE_CHECK=0 turns it off anywhere.
 const updateCheck = process.env.OFFICE_UPDATE_CHECK ? process.env.OFFICE_UPDATE_CHECK !== '0' : !process.env.CLAUDE_BIN;
-const appUpdater = new AppUpdater({
-  appDir: APP_DIR,
-  firstCheckMs: updateCheck ? Number(process.env.OFFICE_UPDATE_FIRST_CHECK_MS ?? 60_000) : -1,
-  busy: () => [...sessions.sessions.values()].some((s) => s.turnActive()),
-  onChange: (view) => {
-    if (!hub.config) return;
-    hub.config.appUpdate = view;
-    hub.broadcast('config', hub.config);
-  },
-});
+const appUpdater = PACKAGED
+  ? new DesktopUpdater({
+      currentVersion: APP_VERSION,
+      dataDir: DATA_DIR,
+      firstCheckMs: updateCheck ? Number(process.env.OFFICE_UPDATE_FIRST_CHECK_MS ?? 60_000) : -1,
+      busy: () => [...sessions.sessions.values()].some((s) => s.turnActive()),
+      onChange: (view) => {
+        if (!hub.config) return;
+        hub.config.appUpdate = view;
+        hub.broadcast('config', hub.config);
+      },
+    })
+  : new AppUpdater({
+      appDir: APP_DIR,
+      firstCheckMs: updateCheck ? Number(process.env.OFFICE_UPDATE_FIRST_CHECK_MS ?? 60_000) : -1,
+      busy: () => [...sessions.sessions.values()].some((s) => s.turnActive()),
+      onChange: (view) => {
+        if (!hub.config) return;
+        hub.config.appUpdate = view;
+        hub.broadcast('config', hub.config);
+      },
+    });
 const claudeCheck = new ClaudeCheckService({
   file: path.join(DATA_DIR, 'claude-check.json'),
   claude,

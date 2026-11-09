@@ -197,7 +197,7 @@ const rules = {
 };
 
 export default [
-  { ignores: ['data/**', 'node_modules/**', '**/*.min.js'] },
+  { ignores: ['data/**', 'node_modules/**', '**/*.min.js', 'dist/**', '.build/**'] },
   {
     files: ['**/*.js', '**/*.mjs'],
     linterOptions: { reportUnusedDisableDirectives: 'warn' },

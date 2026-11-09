@@ -12,6 +12,7 @@
     "open": "node server.js --open",
     "dev": "node --watch server.js",
     "figma-bridge": "node tools/figma-bridge/server.mjs",
+    "build:win": "node scripts/build-windows.mjs",
     "test": "node --test --test-concurrency=1",
     "test:claude": "node test-support/claude-contract.mjs",
     "test:opencode": "node test-support/opencode-contract.mjs",

@@ -21,6 +21,7 @@ function renderBanner() {
   const box = $('#app-update-banner');
   const newest = v?.commits?.[0]?.hash;
   if (!v?.behind || !newest || seenHash() === newest) return box.replaceChildren();
+  const desktop = v.mode === 'desktop';
   const list = v.commits.map((c) => `<li><code>${escapeHtml(c.hash)}</code> ${escapeHtml(c.subject)}</li>`).join('');
   const action = !state.local
     ? '<span class="cc-hint">Update dari laptop (⚙ → Update aplikasi).</span>'
@@ -28,7 +29,7 @@ function renderBanner() {
       ? '<span class="cc-hint">Ada perubahan lokal di folder aplikasi: commit/stash dulu, atau jalankan update.cmd.</span>'
       : `<button type="button" class="primary" data-up="run"${up.running || v.updating ? ' disabled' : ''}>${up.running || v.updating ? 'Memperbarui…' : '⬆ Update sekarang'}</button>`;
   box.innerHTML = `<div class="cc-banner ok app-update">
-    <span class="cc-text">⬆ Versi baru Adhit Office tersedia: ${v.behind} perubahan.</span>
+    <span class="cc-text">⬆ ${desktop ? `Versi baru Adhit Office ${escapeHtml(v.latestVersion ?? '')} tersedia (terpasang ${escapeHtml(v.currentVersion ?? '')}).` : `Versi baru Adhit Office tersedia: ${v.behind} perubahan.`}</span>
     <details class="app-update-list"><summary>Lihat</summary><ul>${list}</ul></details>
     ${action}
     <button type="button" class="icon-btn cc-close" data-up="dismiss" aria-label="Tutup pemberitahuan update" title="Nanti saja">✕</button>
@@ -42,6 +43,8 @@ function renderSection() {
   if (!v?.available) st.textContent = 'Folder aplikasi bukan repo git: update otomatis tidak tersedia.';
   else if (v.checking) st.textContent = 'Memeriksa GitHub…';
   else if (v.error) st.textContent = `⚠ ${v.error}`;
+  else if (v.mode === 'desktop' && v.behind) st.textContent = `⬆ Versi ${v.latestVersion} tersedia (terpasang ${v.currentVersion}).`;
+  else if (v.mode === 'desktop') st.textContent = v.checkedAt ? `✓ Versi terbaru ${v.currentVersion} · dicek ${new Date(v.checkedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : 'Dicek otomatis tiap 30 menit.';
   else if (v.behind) st.textContent = `⬆ ${v.behind} perubahan baru di ${v.upstream}.`;
   else st.textContent = v.checkedAt ? `✓ Sudah versi terbaru (${v.branch}) · dicek ${new Date(v.checkedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : 'Dicek otomatis tiap 30 menit.';
   $('#app-update-check').disabled = !state.local || !v?.available || v.checking;
@@ -58,13 +61,17 @@ export function applyAppUpdate(view) {
 }
 
 async function runUpdate() {
-  if (!window.confirm(`Update Adhit Office (${up.view?.behind ?? 0} perubahan)?\n\ngit pull lalu server di-restart dengan rapi (giliran yang berjalan dicatat dan bisa dilanjutkan). Halaman tersambung lagi sendiri.`)) return;
+  const desktop = up.view?.mode === 'desktop';
+  const question = desktop
+    ? `Update Adhit Office ke versi ${up.view?.latestVersion}?\n\nInstaller akan diunduh, diverifikasi SHA-256, lalu dipasang. Server di-restart sendiri; halaman tersambung lagi.`
+    : `Update Adhit Office (${up.view?.behind ?? 0} perubahan)?\n\ngit pull lalu server di-restart dengan rapi (giliran yang berjalan dicatat dan bisa dilanjutkan). Halaman tersambung lagi sendiri.`;
+  if (!window.confirm(question)) return;
   up.running = true;
   renderBanner();
   renderSection();
   try {
     const r = await api('/api/app-update/run');
-    toast(`Update ${r.pulled} perubahan selesai. Server di-restart…`, 'ok');
+    toast(desktop ? `Installer ${up.view?.latestVersion ?? ''} dijalankan. Server akan restart…` : `Update ${r.pulled} perubahan selesai. Server di-restart…`, 'ok');
     setTimeout(() => location.reload(), 12_000); // after the restart the new page (new JS/CSS) loads
   } catch (err) {
     toast(err.data?.error ?? err.message, 'warn');
