@@ -24,6 +24,18 @@ test('classifierModel: the Seimbang model wins over the active model (routing ne
   assert.equal(r.model, 'opencode-go/deepseek-v4.1-flash');
 });
 
+test('classifyEffort: the classifier may choose a different effort from the model level; guardrails clamp it', async () => {
+  const answer = (effort) => JSON.stringify({ result: JSON.stringify({ level: 'high', effort, reason: 'clear refactor' }) });
+  const runClaude = async () => answer('medium');
+  const clear = await classifyEffort({ engine: 'claude', claude: bin, text: 'refactor jelas', runClaude });
+  assert.equal(clear.level, 'high', 'the model tier still comes from level');
+  assert.equal(clear.effort, 'medium', 'effort is the separate decision');
+
+  const tooMuch = await classifyEffort({ engine: 'claude', claude: bin, text: 'refactor jelas', runClaude: async () => answer('max') });
+  assert.equal(tooMuch.level, 'high');
+  assert.equal(tooMuch.effort, 'high', 'max is clamped for a high task');
+});
+
 test('Claude: falls back to currentModel when classifierModel is absent, reads the JSON result envelope, and reports the level', async () => {
   let seen = null;
   const r = await classifyEffort({

@@ -154,8 +154,9 @@ export function register(router) {
         autoPick = auto;
         const patch = {};
         if (settings.effortAuto) {
-          autoEffort = auto;
-          patch.effort = auto.level;
+          const effort = auto.effort ?? auto.level;
+          autoEffort = { ...auto, level: effort };
+          patch.effort = effort;
           patch.effortAuto = true;
         }
         if (settings.modelAuto) {

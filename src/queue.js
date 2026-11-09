@@ -123,7 +123,8 @@ function cleanItem(raw) {
     engine: raw.engine === 'opencode' || raw.engine === 'claude' ? raw.engine : null, // the engine it was sent to
     pinned: raw.pinned === true, // 📌 runs before interactive prompts (ignored once the item starts)
     autoDeferred: raw.autoDeferred === true, // Effort/Model Auto is classified at dispatch (queued at the turn limit)
-    effort: cleanAutoLevel(raw.effort),
+    autoLevel: cleanAutoLevel(raw.autoLevel) ?? cleanAutoLevel(raw.effort), // the Model Auto tier decision
+    effort: cleanAutoLevel(raw.effort) ?? cleanAutoLevel(raw.autoLevel), // the Effort Auto thinking decision
     effortReason: typeof raw.effortReason === 'string' ? raw.effortReason.slice(0, 300) : null,
     effortSource: raw.effortSource === 'llm' || raw.effortSource === 'fallback' ? raw.effortSource : null,
     effortModel: typeof raw.effortModel === 'string' ? raw.effortModel.slice(0, 120) : null,
@@ -316,7 +317,8 @@ export class TaskQueue {
       engine: null,
       pinned: false,
       autoDeferred: extra?.autoDeferred === true,
-      effort: cleanAutoLevel(effort?.level),
+      autoLevel: cleanAutoLevel(effort?.level),
+      effort: cleanAutoLevel(effort?.effort) ?? cleanAutoLevel(effort?.level),
       effortReason: typeof effort?.reason === 'string' ? effort.reason.slice(0, 300) : null,
       effortSource: effort?.source === 'llm' || effort?.source === 'fallback' ? effort.source : null,
       effortModel: typeof effort?.model === 'string' ? effort.model.slice(0, 120) : null,
@@ -333,7 +335,9 @@ export class TaskQueue {
     if (item.status !== 'waiting') throw new QueueError(409, 'Hanya item yang masih menunggu yang bisa diubah.');
     item.text = cleanText(text);
     if (effort) {
-      item.effort = cleanAutoLevel(effort.level);
+      const level = cleanAutoLevel(effort.level) ?? item.autoLevel;
+      item.autoLevel = level;
+      item.effort = cleanAutoLevel(effort.effort) ?? level;
       item.effortReason = typeof effort.reason === 'string' ? effort.reason.slice(0, 300) : null;
       item.effortSource = effort.source === 'llm' || effort.source === 'fallback' ? effort.source : null;
       item.effortModel = typeof effort.model === 'string' ? effort.model.slice(0, 120) : null;
@@ -886,7 +890,8 @@ export class TaskQueue {
         this.scheduleAll();
       }
       Object.assign(item, {
-        effort: cleanAutoLevel(auto?.level),
+        autoLevel: cleanAutoLevel(auto?.level),
+        effort: cleanAutoLevel(auto?.effort) ?? cleanAutoLevel(auto?.level),
         effortReason: typeof auto?.reason === 'string' ? auto.reason.slice(0, 300) : null,
         effortSource: auto?.source === 'llm' || auto?.source === 'fallback' ? auto.source : null,
         effortModel: typeof auto?.model === 'string' ? auto.model.slice(0, 120) : null,
@@ -919,9 +924,9 @@ export class TaskQueue {
       const autoEffort = item.effort && settings.effortAuto
         ? { level: item.effort, reason: item.effortReason, source: item.effortSource, model: item.effortModel }
         : null;
-      // Model Auto: the item was classified (routes/queue.js, or at dispatch above) and its level picks the tier here,
-      // so a queue keeps switching models per task with no classifier call at dispatch.
-      const autoModel = item.effort && settings.modelAuto ? tierFor(item.effort, engine, settings.modelTiers) : null;
+      // Model Auto: the item keeps the classifier's level separately from the effort it applies.
+      const autoLevel = item.autoLevel ?? item.effort;
+      const autoModel = autoLevel && settings.modelAuto ? tierFor(autoLevel, engine, settings.modelTiers) : null;
       // A prompt queued at the turn limit already has its bubble: the session fills that one in instead of adding one.
       const queueChatId = typeof item.chatId === 'string' && item.chatId ? item.chatId : null;
       try {

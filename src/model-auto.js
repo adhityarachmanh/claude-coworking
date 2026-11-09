@@ -1,5 +1,6 @@
 // Model Auto: the model follows the task. The same one-shot classifier as Effort Auto (src/effort-classifier.js)
-// picks an effort level; here the level maps to a tier (hemat / seimbang / kuat / maks) with one model per engine.
+// picks a model level; here the level maps to a tier (hemat / seimbang / kuat / maks) with one model per engine.
+// The classifier also picks a separate thinking effort (src/effort.js), so a clear high task may run at medium.
 // The defaults below are the ladder; a project may replace single tiers with models of its own (settings.modelTiers,
 // validated in src/hub.js cleanSettings). The tier names are what the chat line shows, the model is what is applied.
 import { cleanAutoLevel } from './effort.js';

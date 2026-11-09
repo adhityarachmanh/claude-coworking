@@ -200,9 +200,10 @@ export class SessionManager {
       let autoEffort = null;
       let autoModel = null;
       if (settings.effortAuto) {
-        patch.effort = auto.level;
+        const effort = auto.effort ?? auto.level;
+        patch.effort = effort;
         patch.effortAuto = true;
-        autoEffort = auto;
+        autoEffort = { ...auto, level: effort };
       }
       if (settings.modelAuto) {
         const tier = tierFor(auto.level, engine, settings.modelTiers);

@@ -101,11 +101,12 @@ Harga OpenCode Go diambil dari katalog resmi `opencode.ai` dan disimpan di folde
 ## Memakai Model Auto
 
 1. Buka chip **⚙ Pengaturan giliran** → daftar **Model** → pilih **Auto — sesuaikan task**.
-2. Setiap prompt dinilai dulu (satu panggilan yang sama dengan Effort Auto) memakai **model tier Seimbang** — bukan model aktif — lalu model giliran dipilih dari tangga:
+2. Setiap prompt dinilai dulu (satu panggilan yang sama dengan Effort Auto) memakai **model tier Seimbang** — bukan model aktif. Classifier memilih **level** untuk model dan **effort** thinking secara terpisah, lalu model giliran dipilih dari tangga:
    - **Hemat** untuk pertanyaan/typo/perubahan kecil,
    - **Seimbang** untuk bug fix dan fitur kecil,
    - **Kuat** untuk pekerjaan multi-file/refactor,
    - **Maks** untuk tugas paling berat.
+   Effort bisa berbeda: refactor yang sudah jelas bisa `Kuat` + `medium`, bug yang belum jelas bisa `Seimbang` + `high`.
 3. Di chat muncul `🤖 Model Auto: Seimbang → sonnet` saat model berganti. Pilihan model di daftar ikut berubah.
 4. Memilih model tertentu (atau **Default**) mematikan Auto. Saat tim sedang bekerja, model tidak diganti di tengah giliran.
 5. **Atur tangga…** (di bawah pilihan model saat Auto aktif): pilih model untuk **Hemat / Seimbang / Kuat / Maks** per mesin, atau **Bawaan** untuk kembali ke default. Berlaku untuk Claude Code dan OpenCode.

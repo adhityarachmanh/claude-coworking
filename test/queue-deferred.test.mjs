@@ -360,3 +360,22 @@ test('📌 pin: a pinned waiting item goes before an older one across projects; 
     cleanupQueue(hub, tq);
   }
 });
+
+test('🤖 Auto: a queued item keeps the model level and the effort separately', async () => {
+  const { hub, tq, projects } = setupTwo({
+    classifier: async () => ({ level: 'high', effort: 'medium', reason: 'refactor jelas', source: 'llm' }),
+  });
+  const [p1] = projects;
+  try {
+    hub.updateSettings(p1.id, { modelAuto: true });
+    const item = tq.add(p1.id, 'refactor jelas', null, [], { autoDeferred: true });
+    await tq.dispatch(p1.id);
+    const saved = tq.queues[p1.id].items.find((i) => i.id === item.id);
+    assert.equal(saved.autoLevel, 'high', 'level tetap untuk memilih model');
+    assert.equal(saved.effort, 'medium', 'effort terpisah untuk thinking');
+    assert.equal(hub.settingsFor(p1.id).model, 'opus', 'model dari level high (tangga Claude)');
+    assert.equal(hub.settingsFor(p1.id).effort, 'medium', 'effort dari keputusan kedua');
+  } finally {
+    cleanupQueue(hub, tq);
+  }
+});

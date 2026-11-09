@@ -1,11 +1,12 @@
-// Effort Auto's model router: one small, tool-free classification call before a turn. The user explicitly accepts
-// the extra tokens; a local fallback keeps the prompt usable when the classifier is unavailable.
+// Effort/Model Auto's router: one small, tool-free classification call before a turn. It returns a model level
+// plus a separate thinking effort; the user explicitly accepts the extra tokens. A local fallback keeps the prompt
+// usable when the classifier is unavailable.
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileTree } from './proc.js';
 import { childOpenCodeEnv } from './opencode-bin.js';
-import { classifierPrompt, classifyEffortLocally, cleanAutoLevel, parseEffortClassification } from './effort.js';
+import { classifierPrompt, classifyEffortLocally, cleanAutoLevel, effectiveEffort, parseEffortClassification } from './effort.js';
 
 const DEFAULT_TIMEOUT_MS = 25_000;
 const MAX_OUTPUT = 32 * 1024;
@@ -110,10 +111,13 @@ export async function classifyEffort({
   runClaude = runClaudeClassifier,
   runOpenCode = runOpenCodeClassifier,
 } = {}) {
-  const fallback = () => ({ ...classifyEffortLocally({ text, attachments, mentions }), model: null });
+  const fallback = () => {
+    const local = classifyEffortLocally({ text, attachments, mentions });
+    return { ...local, effort: effectiveEffort(local.level, null), model: null };
+  };
   // Integration tests set this to avoid spawning a model; production never does.
   const fake = cleanAutoLevel(process.env.OFFICE_EFFORT_FAKE);
-  if (fake) return { level: fake, reason: 'classifier palsu (test)', source: 'llm', model: 'fake' };
+  if (fake) return { level: fake, effort: effectiveEffort(fake, null), reason: 'classifier palsu (test)', source: 'llm', model: 'fake' };
 
   const prompt = classifierPrompt({ text, attachments, mentions, context });
   // Routing must not burn pro tokens: the Auto classifier uses the project's Seimbang tier. `currentModel` stays a
@@ -129,7 +133,7 @@ export async function classifyEffort({
       answer = await runClaude(claude, model, prompt, timeout);
     }
     const parsed = parseEffortClassification(answer);
-    if (parsed) return { ...parsed, source: 'llm', model: model || 'default' };
+    if (parsed) return { ...parsed, effort: effectiveEffort(parsed.level, parsed.effort), source: 'llm', model: model || 'default' };
   } catch {
     // fall through: a failed classifier must never block the prompt
   }
