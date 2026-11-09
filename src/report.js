@@ -52,12 +52,17 @@ function providerSection(go) {
   const range = daily.length ? `${dateFmt(Date.parse(daily[0].date))} — ${dateFmt(Date.parse(daily.at(-1).date))}` : 'tidak ada aktivitas pada periode ini';
   const models = (Array.isArray(go.models) ? go.models : []).slice(0, 20);
   const modelRows = models.map((m) => `<tr><td>${esc(m.model)}</td><td>${num(m.requests)}</td></tr>`).join('');
+  const sessions = Array.isArray(go.sessions) ? go.sessions : [];
+  const sessionRows = sessions
+    .map((s) => `<tr><td>${esc(String(s.key ?? '').split('|')[0])} · ${esc(String(s.sessionId ?? '').slice(0, 8))}</td><td>${num(s.requests)}</td><td>${num(s.tokens)}</td><td>${esc(usd(s.costUsd))}${s.truncated ? ' (sebagian)' : ''}</td></tr>`)
+    .join('');
   return `<h2>OpenCode Go — data provider</h2>
   <p><b>${esc(plan)}</b>${active ? ` · aktif sampai ${esc(active)}` : ''} · <span class="muted">sumber: OpenCode Console</span></p>
   ${meters ? `<table><thead><tr><th>Jendela</th><th>Terpakai / batas</th><th>%</th><th>Reset</th></tr></thead><tbody>${meters}</tbody></table>` : ''}
   <p>Periode ${esc(range)}: <b>${esc(usd(totals.costUsd))}</b> · ${num(totals.tokens)} token · ${num(totals.requests)} request</p>
   ${dailyRows ? `<table class="sub"><thead><tr><th>Tanggal</th><th>Biaya</th><th>Token</th><th>Request</th></tr></thead><tbody>${dailyRows}</tbody></table>` : ''}
   ${modelRows ? `<h2>OpenCode Go — model (request)</h2><table><thead><tr><th>Model</th><th>Request</th></tr></thead><tbody>${modelRows}</tbody></table>` : ''}
+  ${sessionRows ? `<h2>OpenCode Go — sesi teratas (provider)</h2><table><thead><tr><th>Project · sesi</th><th>Request</th><th>Token</th><th>Biaya provider</th></tr></thead><tbody>${sessionRows}</tbody></table><p class="muted">Dihitung dari awal periode sampai sekarang untuk maksimal 5 sesi OpenCode; tanda “sebagian” berarti pagination terpotong.</p>` : ''}
   <p class="muted">Data provider mencakup seluruh pemakaian akun OpenCode, termasuk perangkat lain; data ini tidak punya dimensi project/role dan tidak dijumlahkan ke tabel ledger.</p>`;
 }
 

@@ -367,6 +367,10 @@ function renderReportProvider(go) {
     .join('');
   const models = (Array.isArray(go.models) ? go.models : []).slice(0, 20);
   const modelRows = models.map((m) => `<tr><td>${escapeHtml(m.model)}</td><td>${fmtNum(m.requests)}</td></tr>`).join('');
+  const sessions = Array.isArray(go.sessions) ? go.sessions : [];
+  const sessionRows = sessions
+    .map((s) => `<tr><td>${escapeHtml(String(s.key ?? '').split('|')[0])} · ${escapeHtml(String(s.sessionId ?? '').slice(0, 8))}</td><td>${fmtNum(s.requests)}</td><td>${fmtShort(s.tokens)}</td><td>${fmtUsd(s.costUsd)}${s.truncated ? ' (sebagian)' : ''}</td></tr>`)
+    .join('');
   box.hidden = false;
   box.innerHTML = `<h4 class="report-sub">OpenCode Go — data provider</h4>
     <p class="muted small"><b>${escapeHtml(plan)}</b>${active ? ` · aktif sampai ${escapeHtml(active)}` : ''} · sumber: OpenCode Console</p>
@@ -374,6 +378,7 @@ function renderReportProvider(go) {
     <p class="muted small">Periode ${daily.length ? `${escapeHtml(daily[0].date)} — ${escapeHtml(daily.at(-1).date)}` : 'tanpa aktivitas'}: <b>${fmtUsd(totals.costUsd)}</b> · ${fmtShort(totals.tokens)} token · ${fmtNum(totals.requests)} request.</p>
     ${dailyRows ? `<details class="report-provider-daily"><summary>Pemakaian harian (${daily.length})</summary><table class="usage-table"><thead><tr><th>Tanggal</th><th>Biaya</th><th>Token</th><th>Request</th></tr></thead><tbody>${dailyRows}</tbody></table></details>` : ''}
     ${modelRows ? `<details class="report-provider-daily"><summary>Model (${models.length})</summary><table class="usage-table"><thead><tr><th>Model</th><th>Request</th></tr></thead><tbody>${modelRows}</tbody></table></details>` : ''}
+    ${sessionRows ? `<details class="report-provider-daily"><summary>Sesi teratas (${sessions.length})</summary><table class="usage-table"><thead><tr><th>Project · sesi</th><th>Request</th><th>Token</th><th>Biaya provider</th></tr></thead><tbody>${sessionRows}</tbody></table><p class="muted small">Dari awal periode sampai sekarang, maksimal 5 sesi OpenCode; “sebagian” berarti pagination terpotong.</p></details>` : ''}
     <p class="muted small">Data provider mencakup seluruh pemakaian akun OpenCode, termasuk perangkat lain; tidak dijumlahkan ke tabel per project/role.</p>`;
 }
 
@@ -474,6 +479,9 @@ function downloadCsv() {
     lines.push(['Total biaya provider USD', (go.totals?.costUsd ?? 0).toFixed(6), 'Token', go.totals?.tokens ?? 0, 'Request', go.totals?.requests ?? 0].map(csvCell).join(','));
     for (const d of Array.isArray(go.daily) ? go.daily : []) lines.push([d.date, d.costUsd ?? 0, d.tokens ?? 0, d.requests ?? 0].map(csvCell).join(','));
     for (const m of Array.isArray(go.models) ? go.models : []) lines.push([`Model ${m.model}`, '', '', m.requests ?? 0].map(csvCell).join(','));
+    for (const s of Array.isArray(go.sessions) ? go.sessions : []) {
+      lines.push([`Sesi ${String(s.key ?? '').split('|')[0]} · ${String(s.sessionId ?? '').slice(0, 8)}`, s.costUsd ?? 0, s.tokens ?? 0, s.requests ?? 0].map(csvCell).join(','));
+    }
   }
   const name = `laporan-token-${new Date(s.from).toLocaleDateString('sv-SE')}-${new Date(s.to).toLocaleDateString('sv-SE')}.csv`;
   saveBlob(name, new Blob([`\uFEFF${lines.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' }));

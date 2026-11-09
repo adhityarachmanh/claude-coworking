@@ -2176,6 +2176,7 @@ for (const vp of VIEWPORTS) {
             ],
             daily: [{ date: '2026-11-09', costUsd: 1.02, tokens: 112085150, requests: 383 }],
             models: [{ model: 'deepseek-v4.1-flash', requests: 17406 }],
+            sessions: [{ key: 'toko|ses_abcdef12', project: 'toko', sessionId: 'ses_abcdef12', requests: 120, tokens: 5000, costUsd: 0.25, truncated: false }],
             totals: { costUsd: 6.52, tokens: 730729017, requests: 2661 },
           },
         }),
@@ -2188,6 +2189,9 @@ for (const vp of VIEWPORTS) {
         assert.match(text, /5 jam/);
         assert.match(text, /30 hari/);
         assert.match(text, /deepseek-v4\.1-flash/);
+        assert.match(text, /Sesi teratas \(1\)/);
+        assert.match(text, /toko · ses_abcd/);
+        assert.match(text, /\$0\.25/);
         assert.match(text, /6\.52/);
         assert.match(text, /tidak dijumlahkan/);
       } finally {

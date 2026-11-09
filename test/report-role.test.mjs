@@ -90,6 +90,7 @@ test('reportHtml: OpenCode Go provider section shows exact meters/activity and n
       { date: '2026-11-09', costUsd: 1.02, tokens: 112085150, requests: 383 },
     ],
     models: [{ model: 'deepseek-v4.1-flash', requests: 17406 }],
+    sessions: [{ key: 'toko|ses_abcdef12', project: 'toko', sessionId: 'ses_abcdef12', requests: 120, tokens: 5000, costUsd: 0.25, truncated: false }],
     totals: { costUsd: 6.52, tokens: 730729017, requests: 2661 },
   };
   const html = reportHtml({ account: { email: 'Semua akun', org: null }, profile: null, limits: null, summary, opencodeGo });
@@ -99,6 +100,9 @@ test('reportHtml: OpenCode Go provider section shows exact meters/activity and n
   assert.match(html, /30 hari/);
   assert.match(html, /deepseek-v4\.1-flash/);
   assert.match(html, /6\.52/);
+  assert.match(html, /sesi teratas \(provider\)/i);
+  assert.match(html, /toko · ses_abcd/);
+  assert.match(html, /\$0\.25/);
   assert.match(html, /tidak punya dimensi project\/role/);
   assert.doesNotMatch(html, /subscriberUserId|paymentMethodId|acc_secret/);
 });

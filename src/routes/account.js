@@ -412,6 +412,31 @@ async function report(ctx, req, res, body, { pdf: wantPdf }) {
     try {
       const snapshot = await goConsoleSnapshot(ctx.opencode, { now: () => to });
       opencodeGo = consoleForPeriod(snapshot, from, to);
+      // Exact provider cost for the OpenCode sessions that made it into the report's top ten (bounded, in parallel).
+      if (opencodeGo && Array.isArray(summary.topSessions)) {
+        const opencodeSessions = new Set(rows.filter((row) => engineOf(row) === 'opencode' && row.sessionId).map((row) => row.sessionId));
+        const targets = summary.topSessions
+          .map((s) => ({ s, sessionId: String(s.key ?? '').split('|').at(-1) }))
+          .filter(({ sessionId }) => opencodeSessions.has(sessionId))
+          .slice(0, 5);
+        const providerSessions = await Promise.all(
+          targets.map(async ({ s, sessionId }) => {
+            const t = await consoleRequestTotals(ctx.opencode, { sessionId, since: from > 0 ? from : undefined, maxMs: 2500, maxPages: 5 }).catch(() => null);
+            if (!t?.available) return null;
+            return {
+              key: s.key,
+              project: String(s.key ?? '').split('|')[0],
+              sessionId,
+              requests: t.totals.requests,
+              tokens: t.totals.tokens,
+              costUsd: t.totals.costUsd,
+              truncated: t.truncated,
+              pages: t.pages,
+            };
+          }),
+        );
+        opencodeGo.sessions = providerSessions.filter(Boolean);
+      }
     } catch {
       opencodeGo = null; // best effort: the report still works without the console
     }
