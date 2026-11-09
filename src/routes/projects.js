@@ -69,9 +69,11 @@ export function registerProjectActions(router) {
     if (!ctx.canManageAccount?.(req)) return json(res, 403, { error: 'Ganti mesin hanya dari laptop atau lewat Tailscale.' });
     const engine = String(body?.engine ?? '');
     if (!ENGINES.includes(engine)) return json(res, 400, { error: 'Mesin tidak dikenal.' });
-    const result = ctx.sessions.setProjectEngine(project, engine);
+    const result = body?.afterTurn === true
+      ? ctx.sessions.queueEngineSwitch(project, engine)
+      : ctx.sessions.setProjectEngine(project, engine);
     if (!result.ok) return json(res, result.status ?? 409, { error: result.error, ...(result.busy && { busy: result.busy }) });
-    return json(res, 200, { ok: true, engine: result.engine });
+    return json(res, 200, { ok: true, engine: result.engine, ...(result.queued && { queued: true, enginePending: result.enginePending }) });
   }));
   // The model picker of a non-Claude engine (OpenCode: `opencode models` for the providers set up on this laptop).
   router.post('/api/projects/:id/models', withSession(async ({ hub, opencode, sessions }, req, res, { project }) => {

@@ -92,6 +92,7 @@ export class SessionManager {
     this.ledger = ledger;
     this.account = account;
     this.sessions = new Map();
+    this.pendingEngines = new Map(); // project id -> engine to apply when its running turn ends
     this.taskQueue = null; // 📋 Antrian, set by server.js: a waiting item blocks a project's engine switch
   }
 
@@ -365,8 +366,46 @@ export class SessionManager {
       return { ok: false, status: err.status ?? 409, error: err.message };
     }
     console.log(`Mesin project ${project.name ?? id} diganti ke ${engine === 'opencode' ? 'OpenCode' : 'Claude Code'}`);
+    this.pendingEngines.delete(id);
+    this.hub.setStatus(id, { enginePending: null });
     this.onProjectEngineChange?.(id, engine);
     return { ok: true, engine };
+  }
+
+  /**
+   * “Ganti mesin setelah giliran selesai”: queue it while the project is busy; every status update from its
+   * session retries `applyPendingEngine`. A waiting queue item, an approval or a cut-short turn is still a hard
+   * refusal (the user can resolve it first), so the queue only covers a running turn.
+   */
+  queueEngineSwitch(project, engine) {
+    const id = project.id;
+    if (!ENGINES.includes(engine)) return { ok: false, status: 400, error: 'Mesin tidak dikenal.' };
+    if (engine === this.hub.engineOf(id)) return { ok: true, engine };
+    if (engine === 'opencode' && !this.opencode) return { ok: false, status: 409, error: 'OpenCode belum terpasang di laptop ini.' };
+    const session = this.sessions.get(id);
+    const busy = Boolean(session && (session.turnActive() || session.busy || session.inflight?.size || session.rewinding));
+    if (!busy) return this.setProjectEngine(project, engine); // idle: apply immediately (other blockers still refuse)
+    this.pendingEngines.set(id, { project, engine });
+    this.hub.setStatus(id, { enginePending: engine });
+    return { ok: true, queued: true, engine: this.hub.engineOf(id), enginePending: engine };
+  }
+
+  /** Called after a project's turn status changes: apply a queued switch once every blocker is gone. */
+  applyPendingEngine(id) {
+    const pending = this.pendingEngines.get(id);
+    if (!pending || this.stopping) return;
+    const result = this.setProjectEngine(pending.project, pending.engine);
+    if (result.ok) return;
+    // Still busy or another transient blocker (approval/queue/interrupted): keep waiting.
+    if (result.status === 409) return;
+    this.pendingEngines.delete(id);
+    this.hub.setStatus(id, { enginePending: null, enginePendingError: result.error });
+  }
+
+  cancelPendingEngine(id) {
+    if (!this.pendingEngines.delete(id)) return false;
+    this.hub.setStatus(id, { enginePending: null, enginePendingError: null });
+    return true;
   }
 
   /**
@@ -1257,6 +1296,7 @@ export class ClaudeSession {
     const queue = [...this.inflight.values()].filter((i) => i.state !== 'started').length;
     this.trackTurn(); // on disk before the browser hears the turn started
     this.hub.setStatus(this.id, { alive: Boolean(this.child), busy: this.busy || Boolean(this.autoTurn), queue, autoApprove: this.autoApprove });
+    this.m.applyPendingEngine?.(this.id); // a queued engine switch waits for this turn to end
   }
 }
 

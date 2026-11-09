@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🔀 Ganti mesin saat project bekerja.** Memilih mesin lain saat giliran berjalan kini **dijadwalkan** dan diterapkan otomatis setelah giliran selesai, bukan ditolak. Tombol menampilkan status “dijadwalkan”; antrian/izin/giliran terputus tetap harus diselesaikan dulu.
+
 ## 1.0.1
 
 ### Perbaikan

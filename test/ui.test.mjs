@@ -3643,7 +3643,7 @@ for (const vp of VIEWPORTS) {
         const accepted = await page.eval(() => ({ calls: window.__pe.calls.length, error: document.querySelector('#project-engine-error').textContent }));
         assert.equal(accepted.calls, 2);
         assert.equal(accepted.error, '', 'galat lama dibersihkan sebelum percobaan berikutnya');
-        // A project that is working cannot switch engines (the server returns 409): say so before the click.
+        // A project that is working queues the switch instead of refusing it outright.
         const busy = await page.eval(async (id) => {
           const { state } = await import('/js/core/state.js');
           const { syncProjectEngine } = await import('/js/features/settings.js');
@@ -3653,12 +3653,19 @@ for (const vp of VIEWPORTS) {
             disabled: [...document.querySelectorAll('#project-engine-opts [data-project-engine]')].every((b) => b.disabled),
             hint: document.querySelector('#project-engine-hint').textContent,
           };
-          state.statuses[id] = { ...state.statuses[id], busy: false };
-          syncProjectEngine();
           return out;
         }, projectId);
-        assert.equal(busy.disabled, true, 'tombol mesin mati saat project bekerja');
+        assert.equal(busy.disabled, false, 'tombol mesin tetap bisa dipakai untuk menjadwalkan');
         assert.match(busy.hint, /sedang bekerja/);
+        await page.click('#project-engine-opts [data-project-engine="opencode"]');
+        await page.waitFor(() => window.__pe.calls.length === 3, { timeoutMs: 3000, message: 'permintaan ganti mesin terjadwal' });
+        const queued = await page.eval(() => window.__pe.calls[2]);
+        assert.deepEqual(queued, { engine: 'opencode', afterTurn: true }, 'project sibuk → minta switch setelah giliran');
+        await page.eval(async (id) => {
+          const { state } = await import('/js/core/state.js');
+          state.statuses[id] = { ...state.statuses[id], busy: false };
+          (await import('/js/features/settings.js')).syncProjectEngine();
+        }, projectId);
         assert.deepEqual(realProblems(page), [], 'tanpa error console');
       } finally {
         await page.eval(async (id) => {

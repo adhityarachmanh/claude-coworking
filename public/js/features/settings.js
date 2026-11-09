@@ -200,13 +200,16 @@ function engineLockReason(id) {
   if (state.readOnly) return `${READ_ONLY_HINT}.`;
   if (!state.projects.some((p) => p.id === id)) return 'Project ini tidak ada lagi di daftar.';
   // The server refuses these too (409); say it BEFORE the click so the button never looks like it worked.
+  // A running turn is NOT a hard lock: the user can queue the switch for after it ends.
   const st = state.statuses[id] ?? {};
-  if (st.busy) return 'Project ini sedang bekerja. Tunggu giliran selesai atau hentikan dulu, lalu ganti mesin.';
   if (st.pending) return 'Masih ada permintaan izin yang menunggu jawaban. Jawab dulu, lalu ganti mesin.';
   if (st.queue) return '📋 Antrian project ini masih berisi item. Selesaikan atau hapus dulu, lalu ganti mesin.';
   if (st.interrupted) return 'Ada giliran terputus ("Lanjutkan"). Lanjutkan atau abaikan dulu, lalu ganti mesin.';
   return '';
 }
+
+/** A running turn: the switch is queued and applied when the turn ends. */
+const engineBusy = (id) => Boolean(state.statuses[id]?.busy);
 
 /**
  * Draws the "Mesin project" section from the active project's status (statuses[id].engine). Called when ⚙ opens and
@@ -232,8 +235,11 @@ export function syncProjectEngine() {
   const hint = $('#project-engine-hint');
   const current = engineLabel(engine);
   const currentMissing = engine !== 'claude' && config.engines?.[engine]?.available === false;
+  const st = state.statuses[id] ?? {};
   if (locked) hint.textContent = locked;
   else if (currentMissing) hint.textContent = `${current} tidak terpasang di laptop ini. Pasang lalu restart server (README: Memakai OpenCode), atau pilih Claude Code untuk project ini.`;
+  else if (st.enginePending) hint.textContent = `Ganti ke ${engineLabel(st.enginePending)} dijadwalkan setelah giliran project ini selesai. Pilih mesin lain untuk mengganti jadwal.`;
+  else if (st.busy) hint.textContent = `Project ini sedang bekerja. Memilih mesin lain akan dijadwalkan dan diterapkan setelah giliran selesai.`;
   else hint.textContent = `Project ini memakai ${current}. Mesin dipilih per project; project lain tidak terpengaruh.`;
   hint.title = hint.textContent;
   $('#project-engine-desc').textContent = ENGINE_SWITCH_NOTE;
@@ -257,7 +263,7 @@ export function syncProjectEngine() {
   }
 }
 
-/** Confirms, then switches ONLY this project's engine; a 409 stays inline and the shown value does not move. */
+/** Confirms, then switches ONLY this project's engine; while a turn runs it is queued for after the turn. */
 async function switchProjectEngine(engine) {
   const id = state.active;
   if (!PROJECT_ENGINES.includes(engine)) return;
@@ -266,14 +272,20 @@ async function switchProjectEngine(engine) {
   const config = state.config;
   if (engine === engineOf(state.statuses[id] ?? {}, config)) return;
   if (engine !== 'claude' && config?.engines?.[engine]?.available === false) return setEngineError(`${engineLabel(engine)} belum terpasang di laptop ini.`);
-  const ok = window.confirm(`Ganti mesin project ini ke ${engineLabel(engine)}?\n\n${ENGINE_SWITCH_NOTE} Project lain tidak terpengaruh.`);
+  const busy = engineBusy(id);
+  const ok = window.confirm(
+    busy
+      ? `Project ini sedang bekerja.\n\nJadwalkan ganti mesin ke ${engineLabel(engine)} setelah giliran ini selesai? ${ENGINE_SWITCH_NOTE}`
+      : `Ganti mesin project ini ke ${engineLabel(engine)}?\n\n${ENGINE_SWITCH_NOTE} Project lain tidak terpengaruh.`,
+  );
   if (!ok) return;
   setEngineError('');
   engineSwitching = true;
   syncProjectEngine(); // draws both buttons disabled until the answer
   try {
-    await api(`/api/projects/${encodeURIComponent(id)}/engine`, { engine });
-    toast(`Project ini sekarang memakai ${engineLabel(engine)}.`, 'ok');
+    const result = await api(`/api/projects/${encodeURIComponent(id)}/engine`, { engine, ...(busy && { afterTurn: true }) });
+    if (result?.queued) toast(`Ganti ke ${engineLabel(engine)} dijadwalkan setelah giliran selesai.`, 'ok');
+    else toast(`Project ini sekarang memakai ${engineLabel(engine)}.`, 'ok');
   } catch (err) {
     const message = err?.message || 'Gagal mengganti mesin project.';
     setEngineError(message);

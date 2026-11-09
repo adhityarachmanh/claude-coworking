@@ -266,6 +266,23 @@ test('chats live in the right folder and switching shows the other history WITHO
   assert.ok(!back.some((m) => m.text === 'pesan claude'));
 });
 
+test('a queued engine switch is applied automatically when the running turn ends', async () => {
+  const alfa = await projectId('alfa');
+  await switchProject(alfa, 'opencode');
+  await api(`/api/projects/${alfa}/prompt`, { text: 'kerja dulu, ganti mesin setelah selesai' });
+  await until(async () => (await statusOf(alfa)).busy === true, 'the turn is running');
+  const queued = await api(`/api/projects/${alfa}/engine`, { engine: 'claude', afterTurn: true });
+  assert.equal(queued.status, 200, JSON.stringify(queued.body));
+  assert.equal(queued.body.queued, true);
+  assert.equal((await statusOf(alfa)).enginePending, 'claude', 'the card says a switch is scheduled');
+  await api(`/api/projects/${alfa}/stop`);
+  await until(async () => (await statusOf(alfa)).engine === 'claude', 'the queued switch applied');
+  const after = await statusOf(alfa);
+  assert.equal(after.enginePending, null, 'the pending marker is cleared');
+  assert.equal(after.busy, false);
+  await switchProject(alfa, 'opencode'); // restore for the rest of the suite
+});
+
 test('two projects can run on different engines at the same time', async () => {
   const alfa = await projectId('alfa');
   const beta = await projectId('beta');
