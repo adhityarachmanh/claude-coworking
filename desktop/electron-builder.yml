@@ -1,6 +1,8 @@
 appId: com.adhit.office
 productName: Adhit Office Desktop
 copyright: Adhit
+# Reuse the Electron runtime installed by npm ci instead of downloading the ZIP from GitHub again (flaky 504s).
+electronDist: node_modules/electron/dist
 directories:
   output: dist/electron
   buildResources: assets
