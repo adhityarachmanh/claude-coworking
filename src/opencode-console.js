@@ -269,6 +269,59 @@ export async function consoleRequestLogs(bin, { sessionId = '', model = '', sinc
   return { available: true, ...normalized, fetchedAt: Date.now() };
 }
 
+/** The total provider cost/tokens/requests for one session, by walking the cursor pages with a bounded budget. */
+export async function consoleRequestTotals(bin, { sessionId = '', since = Date.now() - 30 * 86_400_000, maxPages = 20, maxMs = 8_000, readToken = consoleAccessToken, fetch: fetchImpl = globalThis.fetch } = {}) {
+  if (!bin || typeof fetchImpl !== 'function') return { available: false, state: 'no-opencode' };
+  const sid = String(sessionId ?? '');
+  if (!/^ses_[A-Za-z0-9_-]{1,100}$/.test(sid)) return { available: false, state: 'bad-params' };
+  let token = await readToken(bin).catch(() => null);
+  if (!token) return { available: false, state: 'no-token' };
+  const at = Number(since);
+  const start = Date.now();
+  const totals = { requests: 0, tokens: 0, costUsd: 0 };
+  let cursor = '';
+  let pages = 0;
+  let next = null;
+  let retentionDays = null;
+  while (pages < maxPages && Date.now() - start < maxMs) {
+    const url = new URL(REQUEST_LOGS_PATH, CONSOLE_ORIGIN);
+    url.searchParams.set('since', String(Number.isFinite(at) && at > 0 ? at : Date.now() - 30 * 86_400_000));
+    url.searchParams.set('category', 'inference');
+    url.searchParams.set('limit', '50');
+    url.searchParams.set('sessionID', sid);
+    if (cursor) url.searchParams.set('cursor', cursor);
+    let result = await getJson(fetchImpl, url.toString(), token).catch(() => ({ status: 'network' }));
+    if (result.status === 401 || result.status === 403) {
+      const fresh = await readToken(bin, { fresh: true }).catch(() => null);
+      if (fresh && fresh !== token) {
+        token = fresh;
+        result = await getJson(fetchImpl, url.toString(), fresh).catch(() => ({ status: 'network' }));
+      }
+    }
+    if (result.status) {
+      if (!pages) return { available: false, state: result.status === 401 || result.status === 403 ? 'expired' : 'unavailable' };
+      break;
+    }
+    const page = normalizeRequestLogs(result.data);
+    if (!page) {
+      if (!pages) return { available: false, state: 'shape' };
+      break;
+    }
+    retentionDays = page.retentionDays ?? retentionDays;
+    for (const item of page.items) {
+      totals.requests += 1;
+      totals.tokens += (item.inputTokens ?? 0) + (item.outputTokens ?? 0) + (item.reasoningTokens ?? 0) + (item.cacheReadTokens ?? 0) + (item.cacheWriteTokens ?? 0);
+      totals.costUsd += item.costUsd ?? 0;
+    }
+    pages += 1;
+    next = page.nextCursor;
+    if (!next) break;
+    cursor = next;
+  }
+  totals.costUsd = Math.round(totals.costUsd * 1e6) / 1e6;
+  return { available: true, totals, pages, truncated: Boolean(next), retentionDays };
+}
+
 /** One JSON request; a non-2xx is a status, never a thrown error with a body that could carry a secret. */async function getJson(fetchImpl, url, token) {
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(TIMEOUT_MS) : undefined;
   const response = await fetchImpl(url, {

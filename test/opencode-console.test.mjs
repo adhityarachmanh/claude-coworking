@@ -2,7 +2,7 @@
 // the fallback when the console/token is unavailable. No real network and no real OpenCode here.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { consoleForPeriod, consoleRequestLogs, goConsoleSnapshot, normalizeConsoleActivity, normalizeConsoleStatus, normalizeRequestLogs, normalizeUsageModels, normalizeUsageSummary, planOf } from '../src/opencode-console.js';
+import { consoleForPeriod, consoleRequestLogs, consoleRequestTotals, goConsoleSnapshot, normalizeConsoleActivity, normalizeConsoleStatus, normalizeRequestLogs, normalizeUsageModels, normalizeUsageSummary, planOf } from '../src/opencode-console.js';
 
 const status = {
   subscriberUserId: 'acc_secret',
@@ -235,6 +235,47 @@ test('consoleRequestLogs: session/model/cursor are sent; the response is normali
 
   const bad = await consoleRequestLogs(bin, { sessionId: 'bukan-sesi', readToken: async () => 'x', fetch: async () => ({ ok: true, json: async () => requestLog }) });
   assert.deepEqual([bad.available, bad.state], [false, 'bad-params']);
+});
+
+test('consoleRequestTotals: walks cursor pages and sums provider cost/tokens for one session', async () => {
+  let calls = 0;
+  const result = await consoleRequestTotals(bin, {
+    sessionId: 'ses_abcdef',
+    readToken: async () => 'tok_secret_123',
+    fetch: async (url) => {
+      calls += 1;
+      assert.match(String(url), /sessionID=ses_abcdef/);
+      if (calls === 1) {
+        return {
+          ok: true,
+          json: async () => ({
+            items: [
+              { startedAt: 1, model: 'm', cost: 0.005, inputTokens: 10, outputTokens: 2, reasoningTokens: 3, cacheReadTokens: 4, cacheWriteTokens: 5 },
+              { startedAt: 2, model: 'm', cost: 0.006, inputTokens: 1 },
+            ],
+            nextCursor: 'page-2',
+            retentionDays: 30,
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({ items: [{ startedAt: 3, model: 'm', cost: 0.007, inputTokens: 2 }], nextCursor: null, retentionDays: 30 }) };
+    },
+  });
+  assert.equal(result.available, true);
+  assert.deepEqual(result.totals, { requests: 3, tokens: 10 + 2 + 3 + 4 + 5 + 1 + 2, costUsd: 0.018 });
+  assert.equal(result.pages, 2);
+  assert.equal(result.truncated, false);
+  assert.equal(calls, 2);
+  assert.equal(JSON.stringify(result).includes('tok_secret_123'), false);
+
+  const truncated = await consoleRequestTotals(bin, {
+    sessionId: 'ses_abcdef',
+    maxPages: 1,
+    readToken: async () => 'tok',
+    fetch: async () => ({ ok: true, json: async () => ({ items: [{ startedAt: 1, model: 'm', cost: 0.1 }], nextCursor: 'more', retentionDays: 30 }) }),
+  });
+  assert.equal(truncated.truncated, true);
+  assert.equal(truncated.pages, 1);
 });
 
 test('goConsoleSnapshot: missing token / 401 / network / bad shape fall back without throwing', async () => {

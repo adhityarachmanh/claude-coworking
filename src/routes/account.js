@@ -10,7 +10,7 @@ import { readModelPrices } from '../model-prices.js';
 import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
 import { GO_PLANS, goAllowance } from '../opencode-go.js';
-import { consoleForPeriod, consoleRequestLogs, goConsoleSnapshot } from '../opencode-console.js';
+import { consoleForPeriod, consoleRequestLogs, consoleRequestTotals, goConsoleSnapshot } from '../opencode-console.js';
 import { renderPdf, reportHtml } from '../report.js';
 import { roleUsage } from '../role-usage.js';
 import { openCodeRoleSessions } from '../opencode-role-usage.js';
@@ -144,6 +144,13 @@ export function register(router) {
       since: Number.isFinite(since) && since > 0 ? since : undefined,
       limit: body?.limit,
     });
+  }));
+  // 📡 Total provider usage for one OpenCode session (paginated, bounded); used next to the ledger's session total.
+  router.post('/api/opencode/request-totals', openCode(async (bin, body) => {
+    const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : '';
+    if (!/^ses_[A-Za-z0-9_-]{1,100}$/.test(sessionId)) throw Object.assign(new Error('Session ID tidak valid.'), { status: 400 });
+    const since = Number(body?.since);
+    return consoleRequestTotals(bin, { sessionId, since: Number.isFinite(since) && since > 0 ? since : undefined });
   }));
   router.post('/api/opencode/login/key', audited('login-key', (body) => body.provider, (bin, body, ctx) => openCodeConnectKey(bin, body.provider, body).then(loggedIn(ctx)).then(phoneAlert(ctx, 'login', body.provider))));
   router.post('/api/opencode/login/oauth', audited('oauth-start', (body) => body.provider, (bin, body, ctx) => openCodeOAuthStart(bin, body.provider, body).then(phoneAlert(ctx, 'login', body.provider))));

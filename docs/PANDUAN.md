@@ -134,7 +134,7 @@ Batasan: redo kode hanya untuk **perubahan kode yang belum di-commit** di **repo
 3. Kalau data resmi tidak tersedia, panel memakai perkiraan manual: pilih paket **Go ($10/bulan)**, **Go Plus ($40/bulan)**, atau **Go Teams ($20/anggota/bulan)**. Tiap model menampilkan **terpakai / batas**, **sisa**, dan tiga bar **5 jam / 7 hari / 30 hari**.
    - Hijau < 70%, kuning 70–90%, merah > 90%.
    - `tak terbatas` untuk model gratis; `batas belum diketahui` untuk model yang tidak ada di tabel paket itu.
-4. Aktivitas harian dan daftar model dari provider juga ada di **📊 Laporan → OpenCode Go — data provider**, bukan di panel kuota. Angka perkiraan lokal tetap dipakai hanya saat data resmi tidak tersedia. Di **🕘 Riwayat sesi**, tombol **📡** membuka request khusus sesi OpenCode itu.
+4. Aktivitas harian dan daftar model dari provider juga ada di **📊 Laporan → OpenCode Go — data provider**, bukan di panel kuota. Angka perkiraan lokal tetap dipakai hanya saat data resmi tidak tersedia. Di **🕘 Riwayat sesi**, tombol **📡** membuka request khusus sesi OpenCode itu, dengan **total provider** (request/token/biaya) dan pembanding total ledger sesi.
 
 Detail: [Akun & laporan](FITUR.md#akun--laporan).
 

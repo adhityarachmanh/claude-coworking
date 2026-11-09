@@ -2,10 +2,10 @@
 // safe fields (no prompt, headers, geo or personal ids); this module only draws them.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
-import { fmtShort, fmtUsd } from '../core/format.js';
+import { fmtNum, fmtShort, fmtUsd } from '../core/format.js';
 import { openModal } from '../ui/modals.js';
 
-const view = { sessionId: null, title: '', cursor: null, loading: false, count: 0 };
+const view = { sessionId: null, title: '', cursor: null, loading: false, count: 0, ledgerUsage: null };
 
 const fmtMs = (ms) => (ms == null ? '—' : ms >= 60_000 ? `${(ms / 60_000).toFixed(1)} mnt` : `${(ms / 1000).toFixed(1)} dtk`);
 const fmtCost = (n) => (n == null ? '—' : n > 0 && n < 0.01 ? `$${Number(n).toFixed(5)}` : fmtUsd(n));
@@ -154,19 +154,49 @@ function openInlineRequests() {
   loadInline(false);
 }
 
+/** Accurate provider total for the whole session, compared with the ledger's own session total. */
+async function loadTotals() {
+  const el = $('#requests-summary');
+  if (!el) return;
+  if (!view.sessionId) {
+    el.textContent = '';
+    return;
+  }
+  el.textContent = 'Menghitung total provider…';
+  try {
+    const res = await api('/api/opencode/request-totals', { sessionId: view.sessionId });
+    if (!res?.available) {
+      el.textContent = res?.state === 'expired' ? 'Total provider tidak tersedia: sesi OpenCode Console kedaluwarsa.' : 'Total provider tidak tersedia.';
+      return;
+    }
+    const t = res.totals ?? {};
+    const parts = [`Provider: ${fmtNum(t.requests ?? 0)} request`, `${fmtShort(t.tokens ?? 0)} token`, fmtCost(t.costUsd ?? 0)];
+    if (res.truncated) parts.push(`sebagian (${res.pages ?? 0} halaman)`);
+    const ledger = view.ledgerUsage;
+    if (ledger && (ledger.tokens || ledger.usd)) parts.push(`Ledger sesi: ${fmtShort(ledger.tokens ?? 0)} token · ${fmtUsd(ledger.usd ?? 0)}`);
+    el.textContent = parts.join(' · ');
+  } catch {
+    el.textContent = 'Total provider tidak tersedia.';
+  }
+}
+
 /** Opens the request log; sessionId filters to one OpenCode session, title is shown in the header. */
-export function openOpenCodeRequests({ sessionId = null, title = '' } = {}) {
+export function openOpenCodeRequests({ sessionId = null, title = '', ledgerUsage = null } = {}) {
   view.sessionId = sessionId && /^ses_[A-Za-z0-9_-]{1,100}$/.test(sessionId) ? sessionId : null;
   view.title = title || '';
+  view.ledgerUsage = ledgerUsage && typeof ledgerUsage === 'object' ? ledgerUsage : null;
   view.cursor = null;
   view.count = 0;
   view.loading = false;
   $('#requests-title').textContent = view.sessionId ? `📡 Request — ${view.title || view.sessionId.slice(0, 8)}` : '📡 Request OpenCode';
   $('#requests-list').innerHTML = '';
+  const summary = $('#requests-summary');
+  if (summary) summary.textContent = '';
   setMeta(view.sessionId ? 'Hanya sesi ini' : 'Memuat request terbaru…');
   setMore(false);
   openModal('requests-modal');
   load(false);
+  loadTotals();
 }
 
 export function initOpenCodeRequests() {
@@ -185,8 +215,10 @@ export function initOpenCodeRequests() {
     if (open) {
       e.preventDefault();
       const sessionId = open.dataset.ocRequests || '';
-      if (sessionId) openOpenCodeRequests({ sessionId, title: open.dataset.requestTitle || '' });
-      else openInlineRequests();
+      if (sessionId) {
+        const ledgerUsage = { tokens: Number(open.dataset.ledgerTokens) || 0, usd: Number(open.dataset.ledgerUsd) || 0 };
+        openOpenCodeRequests({ sessionId, title: open.dataset.requestTitle || '', ledgerUsage });
+      } else openInlineRequests();
     }
   });
   $('#requests-more')?.addEventListener('click', () => load(true));

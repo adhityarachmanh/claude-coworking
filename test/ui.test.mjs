@@ -1061,6 +1061,9 @@ async function stubOpenCodeAccount(page, { go = null, usage = null } = {}) {
           retentionDays: 30,
         });
       }
+      if (path === '/api/opencode/request-totals') {
+        return json({ available: true, totals: { requests: 120, tokens: 5000, costUsd: 0.25 }, pages: 3, truncated: false, retentionDays: 30 });
+      }
       if (path === '/api/account/go-plan') {
         window.__ocAcct.calls.push({ path, body: JSON.parse(opts?.body ?? '{}') });
         return json({ ok: true });
@@ -4975,6 +4978,32 @@ for (const vp of VIEWPORTS) {
         assert.match(r.text, /0\.00502/);
         assert.equal(r.calls, 1);
         await page.eval(() => document.querySelector('#account-requests [data-request-close]').click());
+        await page.press('Escape');
+      } finally {
+        await restoreOpenCodeAccount(page);
+      }
+    });
+
+    test('📡 request sesi: total provider dibandingkan total ledger sesi', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubOpenCodeAccount(page, { usage: GO_USAGE });
+        await page.eval(async () => {
+          const { openOpenCodeRequests } = await import('/js/features/opencode-requests.js');
+          openOpenCodeRequests({ sessionId: 'ses_uji', title: 'Sesi uji', ledgerUsage: { tokens: 100, usd: 0.5 } });
+        });
+        await page.waitFor(() => /Provider: 120 request/.test(document.querySelector('#requests-summary')?.textContent ?? ''), { timeoutMs: 8000, message: 'total provider sesi' });
+        const r = await page.eval(() => ({
+          modal: !document.querySelector('#requests-modal').hidden,
+          title: document.querySelector('#requests-title').textContent,
+          summary: document.querySelector('#requests-summary').textContent,
+        }));
+        assert.equal(r.modal, true);
+        assert.match(r.title, /Sesi uji/);
+        assert.match(r.summary, /Provider: 120 request/);
+        assert.match(r.summary, /5\s+rb token/);
+        assert.match(r.summary, /\$0\.25/);
+        assert.match(r.summary, /Ledger sesi: 100 token · \$0\.50/);
         await page.press('Escape');
       } finally {
         await restoreOpenCodeAccount(page);
