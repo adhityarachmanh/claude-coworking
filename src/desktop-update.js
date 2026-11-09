@@ -199,7 +199,7 @@ export class DesktopUpdater {
       const bytes = readFileSync(downloaded.file);
       if (createHash('sha256').update(bytes).digest('hex') !== downloaded.sha256) throw new Error('Installer berubah setelah diverifikasi; dibatalkan.');
       this.set({ installing: true });
-      const child = spawn(downloaded.file, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/TASKS='], {
+      const child = spawn(downloaded.file, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'], {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,

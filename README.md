@@ -68,18 +68,24 @@ Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server t
 Kalau tidak ingin mengelola Node/git, build installer/paket:
 
 ```powershell
-npm run build:win     # Windows: exe + Setup.exe
-npm run build:linux   # Linux: tar.gz + .deb (bisa dibuat dari Windows)
-npm run build:mac     # macOS: .app (lokal di Mac, atau lewat GitHub Actions tanpa Mac)
+npm run build:win     # Windows: server + Electron + Setup.exe (pilih Website/Desktop/All)
+npm run build:linux   # Linux: tar.gz + .deb (website)
+npm run build:mac     # macOS: .app (lewat Mac atau GitHub Actions)
 ```
 
-Hasil Windows: `dist\installer\AdhitOffice-Setup-<versi>.exe` (per-user, tanpa admin) dan folder portable
-`dist\AdhitOffice`. UI tetap dibuka di browser/PWA pada `http://127.0.0.1:4317`, data Windows di
-`%LOCALAPPDATA%\AdhitOffice\data`, Linux di `~/.local/share/adhit-office/data`, macOS di
-`~/Library/Application Support/AdhitOffice/data`. Update Windows memakai **GitHub Releases + SHA-256**
-(installer diverifikasi sebelum dijalankan); Linux/macOS masih diperbarui manual. Build belum ditandatangani;
-SmartScreen/Gatekeeper akan memperingatkan. Detail, alur rilis, dan code signing:
-[docs/packaging-desktop.md](docs/packaging-desktop.md).
+Installer Windows menawarkan tiga mode:
+- **Website** — shortcut browser/PWA.
+- **Desktop** — jendela Electron + tray; memakai server yang sama.
+- **All** — keduanya.
+
+Hasil Windows: `dist\installer\AdhitOffice-Setup-<versi>.exe` (per-user, tanpa admin), folder portable
+`dist\AdhitOffice`, dan shell Electron di `dist\electron`. UI tetap dibuka di `http://127.0.0.1:4317`;
+data Windows di `%LOCALAPPDATA%\AdhitOffice\data`, Linux di `~/.local/share/adhit-office/data`, macOS di
+`~/Library/Application Support/AdhitOffice/data`.
+
+Update Windows memakai **GitHub Releases + SHA-256 + Ed25519** (installer diverifikasi sebelum dijalankan);
+Linux/macOS masih manual. Build belum ditandatangani Authenticode; SmartScreen akan memperingatkan. Detail,
+alur rilis, dan code signing: [docs/packaging-desktop.md](docs/packaging-desktop.md).
 
 **Troubleshooting**
 

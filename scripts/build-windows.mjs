@@ -34,6 +34,7 @@ const step = (text) => process.stdout.write(`\n▶ ${text}\n`);
 step('Bersihkan output lama');
 rmSync(BUILD, { recursive: true, force: true });
 rmSync(DIST, { recursive: true, force: true });
+rmSync(path.join(ROOT, 'dist', 'electron'), { recursive: true, force: true });
 mkdirSync(BUILD, { recursive: true });
 mkdirSync(DIST, { recursive: true });
 
@@ -69,11 +70,18 @@ writeFileSync(path.join(DIST, 'CARA-PAKAI.txt'), [
   '2. Buka http://127.0.0.1:4317 di browser (atau pasang sebagai aplikasi/PWA).',
   '3. Prasyarat: Claude Code dan/atau OpenCode sudah terpasang dan login.',
   '',
+  'Mode Desktop: jalankan Adhit Office Desktop dari Start Menu (Electron).',
   'Mode portable: buat file bernama "portable" di folder ini; data akan disimpan di .\\data.',
   'Update: ⚙ Sistem → Update aplikasi (GitHub Releases + verifikasi SHA-256/tanda tangan bila tersedia).',
   'Build ini belum ditandatangani; SmartScreen akan memperingatkan.',
   '',
 ].join('\r\n'));
+
+step('Build Electron shell');
+if (!existsSync(path.join(ROOT, 'node_modules', 'electron-builder'))) {
+  throw new Error('Electron belum terpasang. Jalankan `npm install` sekali sebelum build.');
+}
+run('npm', ['run', 'build:electron']);
 
 step('Selesai');
 process.stdout.write(`\n📦 ${EXE}\n`);

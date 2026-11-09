@@ -1,9 +1,11 @@
 {
   "name": "adhit-office",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Adhit Office — kantor pixel-art untuk mengoperasikan Claude Code dari browser dan HP",
+  "author": "Adhit",
   "type": "module",
+  "main": "desktop/main.mjs",
   "engines": {
     "node": ">=20"
   },
@@ -11,13 +13,19 @@
     "start": "node server.js",
     "open": "node server.js --open",
     "dev": "node --watch server.js",
+    "desktop": "electron .",
     "figma-bridge": "node tools/figma-bridge/server.mjs",
     "build:win": "node scripts/build-windows.mjs",
     "build:linux": "node scripts/build-linux.mjs",
     "build:mac": "node scripts/build-macos.mjs",
+    "build:electron": "electron-builder --win --dir --config desktop/electron-builder.yml",
     "test": "node --test --test-concurrency=1",
     "test:claude": "node test-support/claude-contract.mjs",
     "test:opencode": "node test-support/opencode-contract.mjs",
     "lint": "npx --yes eslint@9.39.5 ."
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
   }
 }

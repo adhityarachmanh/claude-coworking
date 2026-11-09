@@ -1,0 +1,30 @@
+appId: com.adhit.office
+productName: Adhit Office Desktop
+copyright: Adhit
+directories:
+  output: dist/electron
+  buildResources: assets
+files:
+  - desktop/**
+  - package.json
+extraResources:
+  - from: assets/icon.ico
+    to: icon.ico
+  - from: assets/icon.png
+    to: icon.png
+asar: true
+win:
+  target:
+    - dir
+  icon: assets/icon.ico
+  executableName: AdhitOfficeDesktop
+mac:
+  target:
+    - dir
+  icon: assets/icon.png
+  category: public.app-category.developer-tools
+linux:
+  target:
+    - dir
+  icon: assets/icon.png
+  category: Development

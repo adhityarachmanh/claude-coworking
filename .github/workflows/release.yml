@@ -1,0 +1,73 @@
+name: release
+
+# Stable release pipeline: tag v* builds Windows/Linux, signs every asset with the Ed25519 key in the
+# UPDATE_SIGNING_KEY secret, and uploads installer + checksums + signatures to the GitHub Release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Inno Setup
+        run: choco install innosetup --yes --no-progress
+      - name: Build Windows (server + Electron + installer)
+        run: npm run build:win
+      - name: Sign assets
+        shell: pwsh
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          $key = Join-Path $env:RUNNER_TEMP 'update-key.pem'
+          $env:UPDATE_SIGNING_KEY | Set-Content -NoNewline -Encoding ascii $key
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          node scripts/sign-release.mjs "dist/installer/AdhitOffice-Setup-$version.exe" $key
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          gh release view $tag 2>$null; if ($LASTEXITCODE -ne 0) { gh release create $tag --title "Adhit Office $($tag.TrimStart('v'))" --notes "Rilis $tag" }
+          gh release upload $tag dist/installer/*.exe dist/installer/*.sha256 dist/installer/*.sig --clobber
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build Linux (tar.gz + deb)
+        run: npm run build:linux
+      - name: Sign assets
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          printf '%s' "$UPDATE_SIGNING_KEY" > "$RUNNER_TEMP/update-key.pem"
+          for f in dist/linux/*.tar.gz dist/linux/*.deb; do node scripts/sign-release.mjs "$f" "$RUNNER_TEMP/update-key.pem"; done
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Adhit Office ${TAG#v}" --notes "Rilis $TAG"
+          gh release upload "$TAG" dist/linux/*.tar.gz dist/linux/*.deb dist/linux/*.sha256 dist/linux/*.sig --clobber

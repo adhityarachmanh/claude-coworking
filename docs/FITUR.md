@@ -312,17 +312,16 @@ Batasan: hanya laptop (route ditolak dari LAN/Tailscale), maksimal 3 izin menung
 ## Aplikasi terpasang (eksperimental)
 
 `npm run build:win`, `npm run build:linux`, dan `npm run build:mac` membundel server menjadi satu executable
-+ aset web, lalu membuat installer/paket: Setup.exe per-user, tar.gz + `.deb`, atau `.app` (macOS harus
-di-build di Mac).
++ aset web. Installer Windows juga menyertakan **Electron** dan menawarkan mode **Website / Desktop / All**;
+Linux dan macOS saat ini memakai mode website (`.deb`/tarball dan `.app`).
 
-- UI tetap dibuka di browser/PWA `http://127.0.0.1:4317`; tidak ada Chromium tambahan.
+- UI tetap dibuka di browser/PWA atau jendela Electron `http://127.0.0.1:4317`.
+- Desktop Electron: single instance, tray, tutup jendela → tray, memakai server yang sama.
 - Data: `%LOCALAPPDATA%\AdhitOffice\data` (Windows), `~/.local/share/adhit-office/data` (Linux), atau
   `~/Library/Application Support/AdhitOffice/data` (macOS). File `portable` memindahkannya ke `.\data`.
-- **Update aplikasi**: Windows mengecek GitHub Releases, mengunduh installer, memverifikasi **SHA-256** dan
-  host, lalu menjalankan senyap. Linux/macOS masih manual.
-- Belum ditandatangani: SmartScreen/Gatekeeper akan memperingatkan sampai code signing ditambahkan.
-- macOS bisa dibangun lewat GitHub Actions (`.github/workflows/build-macos.yml`) tanpa Mac sendiri;
-  AppImage dan notarization macOS masih direncanakan.
+- **Update aplikasi**: Windows mengecek GitHub Releases, mengunduh installer, memverifikasi **SHA-256 +
+  Ed25519**, lalu menjalankan senyap. Linux/macOS masih manual.
+- Belum ditandatangani Authenticode/notarized: SmartScreen/Gatekeeper akan memperingatkan.
 
 Detail build dan alur rilis: [packaging-desktop.md](packaging-desktop.md).
 
