@@ -49,7 +49,7 @@ export const PUSH_SPEC = Object.freeze({
  */
 export const LOCKSCREEN_SAFE_TOOLS = Object.freeze(new Set(['Read', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'NotebookRead', 'Glob', 'Grep', 'LS', 'TodoWrite', 'TodoRead']));
 /** Izinkan from the notification: a tool permission, a safe tool, and the device opted in. */
-const lockscreenAllows = (approval, device) => approval.kind === 'tool' && LOCKSCREEN_SAFE_TOOLS.has(approval.tool) && device.push?.settings?.lockscreenAllow === true;
+const lockscreenAllows = (approval, device) => approval.kind === 'tool' && approval.source !== 'cli' && LOCKSCREEN_SAFE_TOOLS.has(approval.tool) && device.push?.settings?.lockscreenAllow === true;
 const TEST_COOLDOWN_MS = 10_000; // POST /api/push/test: one per device per 10 s
 
 const QUEUE_REASON_LABEL = Object.freeze({ restart: 'Server dimulai ulang', failed: 'Ada tugas yang gagal', rate_limit: 'Batas pemakaian tercapai', budget: 'Batas anggaran tercapai' });
@@ -413,7 +413,7 @@ export class PushService {
       const label = a.kind === 'question' ? 'Pertanyaan' : a.kind === 'plan' ? 'Rencana' : cut(String(a.tool ?? '').replace(/[^\w.:-]/g, ''), 40) || 'Tool';
       this.fanOut('ask', a.project, (device, plan) => {
         got.add(device.id);
-        const fields = { project: a.project, role: this.roleName(a.role), label, approvalId: a.id, silent: !plan.sound, pending };
+        const fields = { project: a.project, role: a.source === 'cli' ? 'Terminal' : this.roleName(a.role), label, approvalId: a.id, silent: !plan.sound, pending };
         // Izinkan / Tolak only for a tool permission; Izinkan only where the device allows it on the lock screen.
         if (a.kind === 'tool') Object.assign(fields, { t: this.issueToken(a.id, device.id), allowAllowed: lockscreenAllows(a, device) });
         return fields;

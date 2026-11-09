@@ -7,6 +7,7 @@ import * as attention from './attention.js';
 import * as backup from './backup.js';
 import * as budget from './budget.js';
 import * as checklist from './checklist.js';
+import * as cliBridge from './cli-bridge.js';
 import * as data from './data.js';
 import * as claudeCheck from './claude-check.js';
 import * as diagnostics from './diagnostics.js';
@@ -48,6 +49,7 @@ export function buildRouter() {
     routines.register,
     approvals.register,
     attention.register,
+    cliBridge.register,
     templates.register,
     team.register,
     account.register,

@@ -20,7 +20,7 @@ atau data orang lain. Aplikasi berjalan di laptop sendiri dan menyimpan data di 
 | `chats/`, `chats-opencode/` | pesan panel chat (prompt, jawaban, tool) | retensi chat 0–3650 hari; default selamanya |
 | `usage.jsonl`, `usage-archive/` | token, biaya, akun, project, sesi, agent | retensi laporan 0–3650 hari; default selamanya |
 | `auth-audit.jsonl` | aksi login/logout akun & provider | 180 hari / maks 2.000 aksi |
-| `audit.log` | aksi data: backup, verifikasi, hapus, retensi | maks 500 baris |
+| `audit.log` | aksi data: backup, verifikasi, hapus, retensi, persetujuan CLI | maks 500 baris |
 | `redo/<project>/` | perubahan kode/percapakan untuk redo | maks 5 per project, 7 hari |
 | `queue-files/` | lampiran item antrian | sampai item selesai/dibatalkan/project dihapus |
 | `trash/` | transkrip sesi Claude yang dihapus | 30 hari |
@@ -54,6 +54,26 @@ hapus file ZIP-nya sendiri bila perlu.
   berubah. Setelah logout atau kredensial dihapus, panel kembali ke estimasi lokal.
 - Endpoint console bersifat internal/undocumented; bila berubah, aplikasi kembali ke estimasi dan tidak
   mengirim data tambahan.
+
+## CLI bridge (eksperimental, opt-in)
+
+- Hanya aktif bila kamu menjalankan `office claude`; tanpa itu tidak ada hook dan tidak ada file settings.
+- Hook mengirim **nama tool + input yang sudah dipotong** ke server lokal: perintah, path, isi file
+  (`content`/`old_string`/`new_string`), URL, atau argumen MCP—dipotong dengan penanda “dipotong” dan
+  anggaran ±12 KB. Bukan isi prompt atau percakapan.
+- Kartu izin muncul di kantor dan perangkat yang dipasangkan (termasuk WiFi hanya-baca yang bisa melihat,
+  tetapi tidak bisa menjawab). Notifikasi HP **tidak** menyediakan tombol “Izinkan” dari layar kunci untuk
+  izin CLI; buka aplikasi untuk melihat konteksnya.
+- Token API per start ditulis ke file sementara di folder temp OS (mode 0600), dirujuk oleh hook, dan
+  dihapus saat wrapper selesai. Token tidak lewat environment tool, tidak masuk `data/`, log, atau backup.
+  File settings sementara di `data/cli-bridge/` hanya berisi path hook dan dihapus saat wrapper selesai.
+- Server tidak pernah otomatis mengizinkan: server mati, timeout, atau hook gagal → hook tidak memberi
+  keputusan dan **prompt terminal Claude Code** yang mengambil alih. Keputusan dicatat di `audit.log`
+  sebagai `cli-approval` (tool, project, hasil: allow/deny/timeout; tanpa isi perintah).
+- Endpoint `/api/cli-bridge/ask` hanya untuk laptop: token, origin, dan daftar laptop-only wajib.
+- Batas kepercayaan: proses lokal dengan hak user yang sama (termasuk tool yang dijalankan agent) tetap
+  dipercaya dan bisa membaca token/approval seperti klien lokal lain. Bridge mengurangi risiko salah klik
+  dan prompt injection biasa, bukan isolasi OS dari proses jahat.
 
 ## Tujuan & dasar pemrosesan
 

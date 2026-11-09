@@ -21,7 +21,7 @@ function list({ hub, ledger, taskQueue }, req, res) {
       project: approval.project,
       projectName: projectName(hub, approval.project),
       label: approval.label || approval.tool || 'Menunggu jawaban',
-      detail: approval.kind === 'plan' ? 'Rencana menunggu persetujuan' : approval.kind === 'question' ? 'Pertanyaan menunggu jawaban' : 'Izin menunggu jawaban',
+      detail: approval.source === 'cli' ? 'Dari terminal (CLI bridge) · izin menunggu jawaban' : approval.kind === 'plan' ? 'Rencana menunggu persetujuan' : approval.kind === 'question' ? 'Pertanyaan menunggu jawaban' : 'Izin menunggu jawaban',
       chatId: approval.chatId ?? null,
     });
   }

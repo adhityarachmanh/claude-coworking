@@ -1,6 +1,6 @@
 # Desain: CLI bridge opt-in (izin sesi terminal dari kantor/HP)
 
-Status: **spike selesai, belum diimplementasikan.** Dokumen ini mencatat hasil uji nyata dengan Claude Code 2.1.316 (Windows) dan rencana implementasi yang aman. Tidak ada kode produksi yang berubah karena dokumen ini.
+Status: **prototipe diimplementasikan, belum dirilis.** Dokumen ini mencatat hasil uji nyata dengan Claude Code 2.1.316 (Windows) dan rencana implementasi yang aman. Rilis menunggu **uji TUI manual** (fallback prompt terminal saat hook gagal/timeout) dan security review atas kode prototipe.
 
 ## Masalah
 
@@ -84,13 +84,17 @@ Komponen:
 
 ## Aturan keamanan (wajib)
 
-1. **Fail-closed.** Server mati, timeout, jawaban tidak valid, atau hook error → `deny`/tanpa keputusan, tidak pernah `allow`.
-2. **Laptop-only + token + origin** untuk endpoint bridge, sama seperti route data lain. HP hanya menjawab lewat kartu aplikasi yang sudah terautentikasi, bukan endpoint baru.
-3. **Tidak ada isi prompt/tool di payload push.** Notifikasi HP hanya memuat nama project, role, dan nama tool—persis aturan `src/push.js` sekarang. Detail perintah hanya di kartu aplikasi.
-4. **Tidak menulis config user.** File settings dibuat di folder data aplikasi dan dihapus saat wrapper selesai (best effort).
-5. **Audit.** Setiap keputusan bridge dicatat sebagai aksi `cli-approval` (tool, project, via terminal/HP, hasil) tanpa isi perintah.
-6. **Batasan waktu.** Timeout hook 120 detik; setelah itu CLI kembali ke prompt terminal (perlu verifikasi manual).
+1. **Fail-closed.** Server mati, timeout, jawaban tidak valid, atau hook error → tidak ada keputusan; prompt
+   terminal Claude Code yang mengambil alih. Tidak pernah `allow`. Timeout **bukan** penolakan eksplisit.
+2. **Laptop-only + token + origin** untuk endpoint bridge, sama seperti route data lain. HP hanya menjawab lewat kartu aplikasi yang sudah terautentikasi, bukan endpoint baru. Notifikasi HP untuk izin CLI tidak boleh punya tombol “Izinkan” dari layar kunci (tanpa konteks).
+3. **Tidak ada isi prompt/tool di payload push.** Notifikasi HP hanya memuat nama project, role/asal, dan nama tool—persis aturan `src/push.js` sekarang. Detail perintah hanya di kartu aplikasi.
+4. **Tidak menulis config user.** File settings dibuat di folder data aplikasi dan dihapus saat wrapper selesai (best effort). Token per start ditulis ke file sementara di folder temp OS (mode 0600), bukan ke environment tool, dan dihapus bersama settings.
+5. **Audit.** Setiap keputusan bridge dicatat sebagai aksi `cli-approval` (tool, project, hasil allow/deny/timeout; tanpa isi perintah).
+6. **Batasan waktu.** Timeout hook 120 detik; server menjawab lebih dulu (115 detik) dengan `fallback`, lalu prompt terminal muncul (perlu verifikasi manual).
 7. **Matcher sempit.** Hanya tool yang benar-benar berbahaya; baca file biasa tetap mengikuti aturan Claude Code.
+8. **Preview jujur.** Input yang dipotong selalu diberi penanda; tidak ada field yang tampil kosong seolah-olah tidak ada isi.
+9. **Batas antrean.** Maksimal 3 izin CLI menunggu per project dan 10 secara global; lebih dari itu `429`.
+10. **Batas kepercayaan.** Proses lokal dengan hak user yang sama (termasuk tool/MCP yang dijalankan agent) tetap dipercaya; bridge bukan isolasi OS dari agent hostile.
 
 ## Pertanyaan yang harus dijawab sebelum implementasi
 
@@ -103,8 +107,12 @@ Komponen:
 
 ## Rencana implementasi bertahap
 
-1. **Prototipe lokal** (tanpa rilis): launcher + hook + endpoint, diuji dengan fake server dan 1 turn Haiku.
-2. **Uji TUI manual**: setujui/tolak dari terminal, HP, dan saat server mati; pastikan tidak ada auto-allow.
-3. **Keamanan**: review endpoint, token/origin, audit, dan payload push oleh security.
-4. **Rilis opt-in**: dokumentasi `office claude`, status di README, dan tombol “CLI bridge” di ⚙ Sistem (hanya laptop).
-5. **Baru setelah itu**: pertimbangkan integrasi ke sesi CLI yang sudah berjalan (di luar cakupan desain ini).
+1. ✅ **Prototipe lokal**: launcher (`office.cmd` → `tools/cli-bridge/launch.mjs`), hook
+   (`tools/cli-bridge/hook.mjs`), settings sementara (`tools/cli-bridge/settings.mjs`), route
+   (`src/routes/cli-bridge.js`), dan helper payload (`src/cli-bridge.js`). Diuji otomatis dengan fake server:
+   allow, deny, timeout, server error, token hilang, dan folder di luar project (semua fail-closed).
+2. ⏳ **Uji TUI manual**: setujui/tolak dari terminal, HP, dan saat server mati; pastikan tidak ada auto-allow
+   dan prompt terminal benar-benar muncul saat hook gagal/timeout. **Ini prasyarat rilis.**
+3. ⏳ **Keamanan**: review endpoint, token/origin, audit, payload push, dan launcher oleh security.
+4. ⏳ **Rilis opt-in**: dokumentasi `office claude`, status di README, dan tombol “CLI bridge” di ⚙ Sistem (hanya laptop).
+5. ⏳ **Baru setelah itu**: pertimbangkan integrasi ke sesi CLI yang sudah berjalan (di luar cakupan desain ini).

@@ -23,7 +23,7 @@ export function fillApproval(node, msg) {
   const approval = state.approvals.get(msg.approvalId);
   const status = approval?.status ?? msg.status;
   node.className = `approval ${status}`;
-  const head = `<div class="ap-head">${who(msg.role)}<span>minta izin · ${escapeHtml(approval?.tool ?? '')}</span></div>`;
+  const head = `<div class="ap-head">${approval?.source === 'cli' ? '<b class="cli-badge">Terminal · CLI bridge</b>' : who(msg.role)}<span>minta izin · ${escapeHtml(approval?.tool ?? '')}</span></div>`;
   if (status !== 'pending' || !approval) {
     const label = { allowed: '✓ Diizinkan', denied: '✗ Ditolak', cancelled: '– Dibatalkan', pending: '… Menunggu' }[status] ?? status;
     node.innerHTML = `${head}<div class="ap-label">${escapeHtml(msg.text)}</div><div class="ap-status">${label}</div>`;

@@ -1772,6 +1772,7 @@ export class Hub {
 
   requestApproval(projectId, data, onResolve) {
     const approval = { status: 'pending', ts: Date.now(), project: projectId, ...data };
+    if (!approval.id || this.approvals.has(approval.id)) return null; // same id twice: never overwrite a waiting card
     this.approvals.set(approval.id, { approval, onResolve });
     this.broadcast('approval', approval);
     this.refreshPending(projectId);
