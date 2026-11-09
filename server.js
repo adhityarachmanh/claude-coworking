@@ -17,7 +17,7 @@ import { Hub } from './src/hub.js';
 import { pruneAuth } from './src/auth-audit.js';
 import { recordAudit } from './src/audit-log.js';
 import { discoverProjects, isDirectory, isInside, isMissing } from './src/projects.js';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
 import { writeBackup } from './src/backup.js';
 import { AccountService, accountPrivacyView, accountViewKey } from './src/account.js';
 import { autostartStatus } from './src/autostart.js';
@@ -147,6 +147,12 @@ const DATA_DIR = process.env.OFFICE_DATA_DIR ?? (PACKAGED && !PORTABLE ? userDat
 if (process.argv.includes('--background')) {
   const logFile = path.join(DATA_DIR, 'server.log');
   mkdirSync(path.dirname(logFile), { recursive: true });
+  // Keep the log bounded: at start, rotate a file over 5 MB (one previous copy is enough for diagnostics).
+  try {
+    if (statSync(logFile).size > 5 * 1024 * 1024) renameSync(logFile, `${logFile}.1`);
+  } catch {
+    // no log yet
+  }
   const write = (level) => (...args) => appendFileSync(logFile, `[${new Date().toISOString()}] ${level} ${args.map(String).join(' ')}\n`);
   console.log = write('INFO');
   console.error = write('ERROR');
