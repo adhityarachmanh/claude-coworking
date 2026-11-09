@@ -25,7 +25,7 @@ const isLaptop = () => state.local ?? ['localhost', '127.0.0.1', '[::1]'].includ
 
 const MESSAGES = {
   short: 'Terputus dari laptop — menyambung lagi…',
-  laptop: 'Server Adhit Office tidak berjalan — jalankan start-office.cmd',
+  laptop: 'Server Adhitron tidak berjalan — jalankan start-office.cmd',
   phone: 'Laptop tidak terjangkau — pastikan laptop menyala dan Tailscale/WiFi aktif',
 };
 

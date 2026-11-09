@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Restarts the Adhit Office server the clean way:
+// Restarts the Adhitron server the clean way:
 //   1. asks the running server to shut down (POST /api/shutdown, laptop only): a turn Claude is still working on
 //      is recorded as cut short and interrupted, so after the restart its chat offers "Lanjutkan";
 //   2. waits until the port is free (if the server hangs: kills it, which the next start still detects);
@@ -92,7 +92,7 @@ async function main() {
   // The auto-start watchdog may have started one in the meantime: any healthy server on the port counts.
   if (await waitFor(health, START_TIMEOUT_MS)) {
     const now = await health();
-    console.log(`Adhit Office berjalan lagi di ${BASE} (pid ${now?.pid ?? child.pid}).`);
+    console.log(`Adhitron berjalan lagi di ${BASE} (pid ${now?.pid ?? child.pid}).`);
     return;
   }
   console.error(`Server tidak menjawab /health dalam ${START_TIMEOUT_MS / 1000} dtk. Cek data/server.log.`);

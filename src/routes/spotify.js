@@ -87,7 +87,7 @@ export function register(router) {
 // ---------- GET /spotify/callback ----------
 
 const PAGES = {
-  ok: [200, 'Spotify terhubung', 'Spotify sudah terhubung ke Adhit Office. Tab ini boleh ditutup.'],
+  ok: [200, 'Spotify terhubung', 'Spotify sudah terhubung ke Adhitron. Tab ini boleh ditutup.'],
   denied: [200, 'Dibatalkan', 'Login Spotify dibatalkan. Tidak ada yang berubah.'],
   'invalid-state': [400, 'Tautan login tidak valid', 'Tautan login tidak valid atau sudah kedaluwarsa. Mulai lagi dari ⚙ Pengaturan.'],
   exchange: [502, 'Login gagal', 'Spotify tidak menyelesaikan login. Coba lagi dari ⚙ Pengaturan.'],
@@ -98,8 +98,8 @@ const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt
 /** A static result page: no script (CSP), never cached; the link goes back to the office tab's origin. */
 function page(res, kind, returnOrigin) {
   const [status, title, text] = PAGES[kind] ?? PAGES.error;
-  const link = returnOrigin ? `<p><a href="${escapeHtml(returnOrigin)}/">Kembali ke Adhit Office</a></p>` : '';
-  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)} · Adhit Office</title><style>body{font:16px system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#222}</style></head><body><h1>♪ ${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p>${link}</body></html>`;
+  const link = returnOrigin ? `<p><a href="${escapeHtml(returnOrigin)}/">Kembali ke Adhitron</a></p>` : '';
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)} · Adhitron</title><style>body{font:16px system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#222}</style></head><body><h1>♪ ${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p>${link}</body></html>`;
   res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(html);
 }

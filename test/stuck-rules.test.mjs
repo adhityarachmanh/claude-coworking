@@ -80,7 +80,7 @@ test('toolStuck: running 10+ min → chip even with changing or unreadable outpu
 test('chip texts', () => {
   assert.equal(toolChipText({ reason: 'quiet', minutes: 3 }), '⚠ Tidak ada output 3 mnt — mungkin macet');
   assert.equal(toolChipText({ reason: 'long', minutes: 12 }), '⚠ Berjalan 12 mnt — mungkin macet');
-  assert.equal(delegateChipText('Adhit - Backend', { reason: 'idle', minutes: 5 }), '⚠ Adhit - Backend tidak ada aktivitas 5 mnt');
+  assert.equal(delegateChipText('Adhitron - Backend', { reason: 'idle', minutes: 5 }), '⚠ Adhitron - Backend tidak ada aktivitas 5 mnt');
 });
 
 test('delegateStuck: 5 min without activity; latest() ignores unknowns', () => {

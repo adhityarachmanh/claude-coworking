@@ -12,11 +12,12 @@ test.after(() => rmSync(TMP, { recursive: true, force: true }));
 
 const bytes = Buffer.from('installer-bytes');
 const sha = createHash('sha256').update(bytes).digest('hex');
-const installerUrl = 'https://github.com/adhityarachmanh/claude-coworking/releases/download/v0.3.0/AdhitOffice-Setup-0.3.0.exe';
+const installerUrl = 'https://github.com/adhityarachmanh/claude-coworking/releases/download/v0.3.0/Adhitron-Setup-0.3.0.exe';
 const shaUrl = `${installerUrl}.sha256`;
 
-function fakeFetch({ tag = 'v0.3.0', checksum = sha, badHash = false, assetHost = 'github.com' } = {}) {
+function fakeFetch({ tag = 'v0.3.0', checksum = sha, badHash = false, assetHost = 'github.com', legacy = false } = {}) {
   const calls = [];
+  const base = legacy ? 'AdhitOffice' : 'Adhitron';
   const fetch = async (url) => {
     calls.push(String(url));
     if (String(url).startsWith('https://api.github.com/')) {
@@ -24,8 +25,8 @@ function fakeFetch({ tag = 'v0.3.0', checksum = sha, badHash = false, assetHost 
         tag_name: tag,
         body: 'Perbaikan penting.',
         assets: [
-          { name: `AdhitOffice-Setup-${tag.replace(/^v/, '')}.exe`, browser_download_url: installerUrl, size: bytes.length },
-          { name: `AdhitOffice-Setup-${tag.replace(/^v/, '')}.exe.sha256`, browser_download_url: shaUrl, size: 65 },
+          { name: `${base}-Setup-${tag.replace(/^v/, '')}.exe`, browser_download_url: installerUrl, size: bytes.length },
+          { name: `${base}-Setup-${tag.replace(/^v/, '')}.exe.sha256`, browser_download_url: shaUrl, size: 65 },
         ],
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -58,6 +59,40 @@ test('check: a newer GitHub release becomes one update, with installer + checksu
   updater.stop();
 });
 
+test('check: a legacy AdhitOffice installer is still accepted for 1.0.9 upgrades', async () => {
+  const { fetch } = fakeFetch({ legacy: true });
+  const updater = new DesktopUpdater({ currentVersion: '0.2.0', dataDir: TMP, fetch, firstCheckMs: -1 });
+  const view = await updater.check();
+  assert.equal(view.available, true);
+  assert.equal(view.behind, 1);
+  assert.equal(view.error, null);
+  updater.stop();
+});
+
+test('check: with both installer names, the Adhitron one wins', async () => {
+  const newUrl = 'https://github.com/adhityarachmanh/claude-coworking/releases/download/v0.5.0/Adhitron-Setup-0.5.0.exe';
+  const fetch = async (url) => {
+    if (String(url).startsWith('https://api.github.com/')) {
+      return new Response(JSON.stringify({
+        tag_name: 'v0.5.0',
+        assets: [
+          { name: 'AdhitOffice-Setup-0.5.0.exe', browser_download_url: installerUrl },
+          { name: 'AdhitOffice-Setup-0.5.0.exe.sha256', browser_download_url: shaUrl },
+          { name: 'Adhitron-Setup-0.5.0.exe', browser_download_url: newUrl },
+          { name: 'Adhitron-Setup-0.5.0.exe.sha256', browser_download_url: `${newUrl}.sha256` },
+        ],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response('not found', { status: 404 });
+  };
+  const updater = new DesktopUpdater({ currentVersion: '0.4.0', dataDir: path.join(TMP, 'both'), fetch, firstCheckMs: -1 });
+  const view = await updater.check();
+  assert.equal(view.available, true);
+  assert.equal(updater.state.installerUrl, newUrl, 'the new name is preferred when both exist');
+  assert.equal(updater.state.sha256Url, `${newUrl}.sha256`, 'the checksum belongs to the chosen installer');
+  updater.stop();
+});
+
 test('check: the same version is up to date; a missing checksum asset is an error', async () => {  const same = new DesktopUpdater({ currentVersion: '0.3.0', dataDir: TMP, fetch: fakeFetch().fetch, firstCheckMs: -1 });
   assert.equal((await same.check()).behind, 0);
   same.stop();
@@ -66,7 +101,7 @@ test('check: the same version is up to date; a missing checksum asset is an erro
     currentVersion: '0.2.0',
     dataDir: TMP,
     firstCheckMs: -1,
-    fetch: async () => new Response(JSON.stringify({ tag_name: 'v0.4.0', assets: [{ name: 'AdhitOffice-Setup-0.4.0.exe', browser_download_url: installerUrl }] }), { status: 200 }),
+    fetch: async () => new Response(JSON.stringify({ tag_name: 'v0.4.0', assets: [{ name: 'Adhitron-Setup-0.4.0.exe', browser_download_url: installerUrl }] }), { status: 200 }),
   });
   const view = await missing.check();
   assert.match(view.error, /SHA-256/);
@@ -107,6 +142,7 @@ test('update: refuses while a turn is running, and old installers are pruned on 
   const updates = path.join(dir, 'updates');
   mkdirSync(updates, { recursive: true });
   writeFileSync(path.join(updates, 'AdhitOffice-Setup-0.1.0.exe'), 'old');
+  writeFileSync(path.join(updates, 'Adhitron-Setup-0.1.0.exe'), 'old');
   const updater = new DesktopUpdater({ currentVersion: '0.2.0', dataDir: dir, fetch: fakeFetch().fetch, busy: () => true, firstCheckMs: -1 });
   assert.deepEqual(readdirSync(updates), [], 'old installer removed');
   await updater.check();

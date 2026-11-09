@@ -189,7 +189,7 @@ test('permission request: urgency high, TTL ~10 min, opaque Topic per project, m
   assert.equal(p.type, 'ask');
   assert.equal(p.project, 'p1');
   assert.equal(p.projectName, 'toko-online');
-  assert.equal(p.role, 'Adhit - Backend');
+  assert.equal(p.role, 'Adhitron - Backend');
   assert.equal(p.label, 'Edit', 'tool name only');
   assert.equal(p.approvalId, 'ap1');
   assert.match(p.t, /^[\w-]{43}$/);

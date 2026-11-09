@@ -5,7 +5,7 @@ otomatis: memastikan hook yang gagal/timeout benar-benar menyerahkan keputusan k
 Code di terminal**, bukan menolak diam-diam atau auto-allow. Sisi servernya (404 untuk folder di luar project,
 `fallback` saat timeout, token sempit) sudah diuji di `test/cli-bridge.test.mjs`.
 
-Perkiraan waktu: **15–20 menit**. Jalankan di laptop (Windows), server Adhit Office menyala, dan Claude Code
+Perkiraan waktu: **15–20 menit**. Jalankan di laptop (Windows), server Adhitron menyala, dan Claude Code
 sudah login.
 
 ## Persiapan
@@ -130,7 +130,7 @@ string panjang berulang).
 
 Tanggal:
 Versi Claude Code (`claude --version`):
-Versi Adhit Office (`package.json`):
+Versi Adhitron (`package.json`):
 
 ## Setelah semua lulus
 

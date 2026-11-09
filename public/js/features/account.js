@@ -118,7 +118,7 @@ export function onAccountAlert({ action, device, email, engine, provider }) {
   const text = action === 'logout' ? `HP "${device}" me-logout ${target}${email ? ` (${email})` : ''}.` : `HP "${device}" memulai login/ganti akun ${target}.`;
   toast(text, 'warn');
   chime('ask', 100); // a security alert: always full volume, whatever the 🔔 volume setting
-  if ('Notification' in window && Notification.permission === 'granted') new Notification(`Adhit Office: akun ${engine === 'opencode' ? 'OpenCode' : 'Claude'}`, { body: text, tag: 'account-alert' });
+  if ('Notification' in window && Notification.permission === 'granted') new Notification(`Adhitron: akun ${engine === 'opencode' ? 'OpenCode' : 'Claude'}`, { body: text, tag: 'account-alert' });
 }
 
 /** Laptop or a phone over Tailscale only: a plain-WiFi phone never sees the audit (the server refuses it too). */

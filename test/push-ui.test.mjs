@@ -148,10 +148,10 @@ describe('sw.js: push → notification', () => {
 
   test('test push: the server text; silent honoured; other types never take a server title', async () => {
     const { listeners, calls } = loadSw();
-    await dispatch(listeners.push, pushEvent({ type: 'test', project: '', title: '🔔 Tes notifikasi', body: 'Notifikasi dari Adhit Office berfungsi.', silent: false }));
+    await dispatch(listeners.push, pushEvent({ type: 'test', project: '', title: '🔔 Tes notifikasi', body: 'Notifikasi dari Adhitron berfungsi.', silent: false }));
     await dispatch(listeners.push, pushEvent({ ...ASK, type: 'done', title: 'spoof', silent: true }));
     assert.equal(calls.shown[0].title, '🔔 Tes notifikasi');
-    assert.equal(calls.shown[0].options.body, 'Notifikasi dari Adhit Office berfungsi.');
+    assert.equal(calls.shown[0].options.body, 'Notifikasi dari Adhitron berfungsi.');
     assert.equal(calls.shown[0].options.silent, false);
     assert.equal(calls.shown[0].options.data.url, '/');
     assert.equal(calls.shown[1].title, '✓ toko: tugas selesai');

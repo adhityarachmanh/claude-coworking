@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// One-click update of Adhit Office (update.cmd): fetch → show what is new → ask → git pull --ff-only → clean restart
+// One-click update of Adhitron (update.cmd): fetch → show what is new → ask → git pull --ff-only → clean restart
 // (scripts/restart.mjs: a running turn is recorded and offered to continue). Never touches local changes: with
 // uncommitted changes or a diverged branch it stops and says what to do.
 // Usage: node scripts/update.mjs          ask before pulling
@@ -28,7 +28,7 @@ const fail = (msg) => {
   process.exit(1);
 };
 
-console.log('\nAdhit Office - update\n');
+console.log('\nAdhitron - update\n');
 if (tryGit('rev-parse', '--is-inside-work-tree') !== 'true') fail('Folder ini bukan repo git (diunduh sebagai ZIP?). Clone ulang dengan git agar bisa di-update.');
 const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
 const upstream = tryGit('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}');
@@ -68,4 +68,4 @@ if (pull.status !== 0) fail('git pull gagal. Tidak ada yang diubah kecuali sudah
 console.log('\n  Restart server…');
 const restart = spawnSync(process.execPath, [path.join(APP_DIR, 'scripts', 'restart.mjs')], { cwd: APP_DIR, stdio: 'inherit', windowsHide: true });
 if (restart.status !== 0) fail('Restart gagal. Jalankan start-office.cmd atau node scripts\\restart.mjs.');
-console.log(`\n  [OK] Adhit Office sudah diperbarui (${behind} perubahan). Muat ulang halaman di browser/HP.\n`);
+console.log(`\n  [OK] Adhitron sudah diperbarui (${behind} perubahan). Muat ulang halaman di browser/HP.\n`);

@@ -1,4 +1,4 @@
-// ⬆ Auto-update for a packaged Adhit Office (Windows installer): GitHub Releases + SHA-256, never an unverified
+// ⬆ Auto-update for a packaged Adhitron (Windows installer): GitHub Releases + SHA-256, never an unverified
 // installer. The UI keeps the same shape as src/app-update.js (behind/commits/check/update), so the existing banner
 // and ⚙ section work in both modes. Code signing is still required before this is safe against a compromised repo.
 import { createHash, verify } from 'node:crypto';
@@ -11,6 +11,12 @@ const FIRST_CHECK_MS = 60_000;
 const MAX_INSTALLER_BYTES = 300 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 const ALLOWED_ASSET = /^https:\/\/(?:github\.com|(?:[\w-]+\.)*githubusercontent\.com)\//i;
+// Installer asset name. The app was renamed Adhit Office → Adhitron, so the installer is "Adhitron-Setup-<v>.exe"
+// while an installed 1.0.9 only looks for "AdhitOffice-Setup-<v>.exe". The release that renames publishes the same
+// file under both names (see .github/workflows/release.yml); the new name is read first, the legacy one is a fallback.
+const INSTALLER_BASE_NAMES = ['Adhitron', 'AdhitOffice'];
+const installerAssetNames = (version) => INSTALLER_BASE_NAMES.map((base) => `${base}-Setup-${version}.exe`);
+const LOCAL_INSTALLER = /^(?:Adhitron|AdhitOffice)-Setup-.*\.exe(?:\.part)?$/i;
 
 const versionParts = (v) => String(v ?? '').replace(/^v/i, '').split(/[.+-]/).map((part) => Number.parseInt(part, 10) || 0);
 const STABLE_VERSION = /^\d+\.\d+\.\d+$/;
@@ -87,7 +93,7 @@ export class DesktopUpdater {
     this.set({ checking: true, error: null });
     try {
       const response = await this.fetch(`https://api.github.com/repos/${this.repo}/releases/latest`, {
-        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'AdhitOffice' },
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Adhitron' },
         signal: AbortSignal.timeout(20_000),
       });
       if (response.status === 404) throw new Error('Belum ada rilis GitHub untuk aplikasi ini.');
@@ -96,13 +102,13 @@ export class DesktopUpdater {
       const latest = String(release?.tag_name ?? '').replace(/^v/i, '').trim();
       if (!STABLE_VERSION.test(latest)) throw new Error('Rilis terbaru tidak punya tag versi stabil (x.y.z).');
       const assets = Array.isArray(release.assets) ? release.assets : [];
-      const installer = assets.find((asset) => asset?.name === `AdhitOffice-Setup-${latest}.exe`);
+      const installer = installerAssetNames(latest).map((name) => assets.find((asset) => asset?.name === name)).find(Boolean);
       const checksum = assets.find((asset) => asset?.name === `${installer?.name}.sha256`);
       const signature = assets.find((asset) => asset?.name === `${installer?.name}.sig`);
       const newer = isNewer(latest, this.currentVersion);
       if (newer && (!installer || !checksum)) throw new Error('Rilis terbaru tidak menyertakan installer + SHA-256.');
       if (newer && this.publicKey && !signature) throw new Error('Rilis terbaru tidak ditandatangani (butuh .sig).');
-      const commits = newer ? [{ hash: latest, subject: `Adhit Office ${latest}` }] : [];
+      const commits = newer ? [{ hash: latest, subject: `Adhitron ${latest}` }] : [];
       this.set({
         latestVersion: latest,
         behind: newer ? 1 : 0,
@@ -169,7 +175,8 @@ export class DesktopUpdater {
 
       const dir = path.join(this.dataDir, 'updates');
       mkdirSync(dir, { recursive: true });
-      const file = path.join(dir, `AdhitOffice-Setup-${version}.exe`);
+      // Always stored under the new name: the legacy alias is only an upload-side transition, see the comment above.
+      const file = path.join(dir, `Adhitron-Setup-${version}.exe`);
       if (!path.resolve(file).startsWith(`${path.resolve(dir)}${path.sep}`)) throw new Error('Path installer tidak valid.');
       const part = `${file}.part`;
       writeFileSync(part, bytes, { mode: 0o600 });
@@ -234,7 +241,7 @@ export class DesktopUpdater {
 function pruneOldDownloads(dir) {
   try {
     for (const name of readdirSync(dir)) {
-      if (/^AdhitOffice-Setup-.*\.exe$/i.test(name)) rmSync(path.join(dir, name), { force: true });
+      if (LOCAL_INSTALLER.test(name)) rmSync(path.join(dir, name), { force: true });
     }
   } catch {
     // no updates folder yet

@@ -51,7 +51,7 @@ const handlers = {
     applyRoster(config.team); // 👥 Kelola tim saved somewhere: the office gets or loses desks, no reload
     applyClaudeCheck(config.claudeCheck); // Claude Code updated: contract check result (banner + ⚙)
     applyOpenCodeCheck(config.opencodeCheck); // the same for OpenCode (silent when not installed)
-    applyAppUpdate(config.appUpdate); // ⬆ a newer Adhit Office: banner + ⚙
+    applyAppUpdate(config.appUpdate); // ⬆ a newer Adhitron: banner + ⚙
     if (!$('#settings-modal').hidden) syncProjectEngine(); // 🔀 engine availability/versions may have changed
     if (!$('#phone-modal').hidden) {
       phone.pairing = null; // a device just paired (codes are single-use) or settings changed
@@ -89,7 +89,7 @@ const handlers = {
     applySpotify(snap.spotify, { snapshot: true }); // ♪ absent = this server has no Spotify support
     applyClaudeCheck(snap.config?.claudeCheck); // after state.readOnly: WiFi gets the passive notice
     applyOpenCodeCheck(snap.config?.opencodeCheck);
-    applyAppUpdate(snap.config?.appUpdate); // ⬆ a newer Adhit Office (banner)
+    applyAppUpdate(snap.config?.appUpdate); // ⬆ a newer Adhitron (banner)
     loadAttention(); // after state.readOnly: a WiFi page skips it instead of earning a 403
   },
   'pairing-reset'() {

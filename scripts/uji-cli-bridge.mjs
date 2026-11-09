@@ -45,7 +45,7 @@ async function main() {
   } catch {
     health = null;
   }
-  check('Server Adhit Office menyala', Boolean(health), health ? undefined : `tidak menjawab dengan ok di ${BASE}`);
+  check('Server Adhitron menyala', Boolean(health), health ? undefined : `tidak menjawab dengan ok di ${BASE}`);
 
   let tokenOk = false;
   if (health) {

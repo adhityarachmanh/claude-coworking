@@ -479,7 +479,7 @@ test('a symlinked config file is refused by save, restore and consolidate', (t) 
   assert.equal(readFileSync(real, 'utf8'), '{"model":"real"}\n', 'the real file behind the link was not touched');
 });
 
-test('a junction on .opencode cannot send save, restore or consolidate outside the project', () => {
+test('a junction on .opencode cannot send save, restore or consolidate outside the project', (t) => {
   const project = path.join(TMP, 'projects', 'junction');
   const outside = path.join(TMP, 'outside-junction');
   mkdirSync(project, { recursive: true });
@@ -489,6 +489,9 @@ test('a junction on .opencode cannot send save, restore or consolidate outside t
   } catch (err) {
     assert.fail(`junction should be allowed here: ${err.code}`);
   }
+  // Some Windows setups create the junction but Node cannot traverse it (EPERM/UNKNOWN on scandir). The guard
+  // still matters where junctions do work, so skip instead of failing the suite on such a machine.
+  if (!existsSync(path.join(project, '.opencode', 'opencode.json'))) return t.skip('junction is not readable in this environment');
   const where = { scope: 'project', projectPath: project, projectId: 'junction' };
   const view = readOpenCodeConfig({ scope: 'project', projectPath: project });
   assert.equal(view.path, path.join(project, '.opencode', 'opencode.json'), 'the editor sees the junctioned file');

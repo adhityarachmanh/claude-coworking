@@ -10,7 +10,7 @@ import path from 'node:path';
 
 const SUPPORTED = process.platform === 'win32';
 const STARTUP_DIR = path.join(process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
-// The app was called "Claude Coworking" before it became Adhit Office. These ids are already
+// The app was called "Claude Coworking" before it became Adhitron. These ids are already
 // installed on people's machines, so they keep the old name: renaming them would orphan installs.
 const LAUNCHER = path.join(STARTUP_DIR, 'claude-coworking.vbs');
 const TASK = 'Claude Coworking';
@@ -33,7 +33,7 @@ export function autostartStatus() {
 export function launcherScript(appDir, port = 4317) {
   const q = (s) => s.replace(/"/g, '""'); // VBScript string escaping
   return [
-    "' Adhit Office: starts the office server (at login and every 5 minutes if it is down).",
+    "' Adhitron: starts the office server (at login and every 5 minutes if it is down).",
     "' Remove with uninstall-autostart.cmd.",
     'On Error Resume Next',
     'Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")',
@@ -57,7 +57,7 @@ function watchdogXml() {
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>Adhit Office: keeps the office server running (starts it if it is down).</Description></RegistrationInfo>
+  <RegistrationInfo><Description>Adhitron: keeps the office server running (starts it if it is down).</Description></RegistrationInfo>
   <Triggers>
     <TimeTrigger>
       <StartBoundary>${start}</StartBoundary>

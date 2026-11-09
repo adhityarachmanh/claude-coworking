@@ -38,7 +38,7 @@ const currentView = () => (document.body.dataset.view === 'office' ? 'office' : 
 function renderHeadMore() {
   const st = state.statuses[state.active] ?? {};
   const project = state.projects?.find((p) => p.id === state.active);
-  $('#hm-project').textContent = project?.name ?? 'Adhit Office';
+  $('#hm-project').textContent = project?.name ?? 'Adhitron';
   $('#hm-title').textContent = $('#sb-title').textContent;
   $('#hm-meta').textContent = $('#sb-meta').textContent;
   const quota = $('#quota-pill');

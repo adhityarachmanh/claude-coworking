@@ -8,7 +8,7 @@ import { roleColor, roleName } from '../office/cast.js';
 
 const KIND_ICON = { prompt: '💬', delegate: '➜', agent_stop: '✓', tool_start: '•', tool_fail: '✗', ask: '✋', ask_done: '👍', stop: '🎉', error: '⚠', say: '💭', tests: '🧪', huddle: '🗣' };
 
-/** "dari Adhit - Tech Lead " when a specialist (not the lead) handed the work over. */
+/** "dari Adhitron - Tech Lead " when a specialist (not the lead) handed the work over. */
 const fromPrefix = (from) => (from && from !== 'claude' ? `dari ${roleName(from)} ` : '');
 
 export function appendActivity(evt, prepend) {

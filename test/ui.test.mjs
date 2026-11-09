@@ -5799,7 +5799,7 @@ for (const vp of VIEWPORTS) {
         };
       });
       assert.match(agent.title, /Uji regresi checkout/);
-      assert.match(agent.info, /Adhit - QA/);
+      assert.match(agent.info, /Adhitron - QA/);
       assert.match(agent.info, /\d+ (dtk|mnt)/, 'durasi tampil');
       assert.equal(agent.live, 'polite');
       assert.ok(agent.labels.some((l) => /^Membaca checkout\.ts$|^\$ npm test -- checkout$|^Mengedit checkout\.ts$/.test(l)), agent.labels.join(' | '));
@@ -7381,7 +7381,7 @@ describe('UI koneksi putus', { skip: SKIP ?? false }, () => {
     assert.equal(await page.eval(() => document.querySelector('#prompt').value), text);
     assert.equal(await page.eval((k) => localStorage.getItem(k), draftKey()), text);
 
-    await page.waitFor(() => /Server Adhit Office tidak berjalan — jalankan start-office\.cmd/.test(document.querySelector('#conn-banner').textContent), { timeoutMs: 6000, message: 'petunjuk putus lama (laptop)' });
+    await page.waitFor(() => /Server Adhitron tidak berjalan — jalankan start-office\.cmd/.test(document.querySelector('#conn-banner').textContent), { timeoutMs: 6000, message: 'petunjuk putus lama (laptop)' });
 
     await startServer();
     await page.waitFor(() => document.querySelector('#conn.ok') && !document.querySelector('#conn-banner').textContent, { timeoutMs: 15000, message: 'tersambung lagi, banner hilang' });
@@ -8042,8 +8042,8 @@ for (const vp of VIEWPORTS) {
       // the five optional roles off: 12/17, saved, their desks empty in place without a reload
       for (const role of ['mobile', 'data', 'support', 'reviewer', 'compliance']) await page.eval((r) => document.querySelector(`#roster-${r}`).click(), role);
       assert.equal(await page.eval(() => document.querySelector('#roster-count').textContent), '12/17 meja');
-      assert.match(await page.eval(() => document.querySelector('#roster-mobile-desc').textContent), /Nonaktif → dikerjakan Adhit - Frontend/, 'fallback tampil');
-      assert.match(await page.eval(() => document.querySelector('#roster-compliance-desc').textContent), /Nonaktif → dikerjakan Adhit - Security/, 'Compliance mati: Security yang mengerjakan');
+      assert.match(await page.eval(() => document.querySelector('#roster-mobile-desc').textContent), /Nonaktif → dikerjakan Adhitron - Frontend/, 'fallback tampil');
+      assert.match(await page.eval(() => document.querySelector('#roster-compliance-desc').textContent), /Nonaktif → dikerjakan Adhitron - Security/, 'Compliance mati: Security yang mengerjakan');
       assert.equal(await page.eval(() => document.querySelector('#roster-save').disabled), false);
       await shot('roster');
       await page.click('#roster-save');
@@ -8108,7 +8108,7 @@ for (const vp of VIEWPORTS) {
         return {
           count: names.length,
           overlaps,
-          titled: names.every((n) => /^Adhit - /.test(n.title)),
+          titled: names.every((n) => /^Adhitron - /.test(n.title)),
           spoken: names.every((n) => n.querySelector('.sr-only')?.textContent === n.title || n.textContent === n.title),
           shown: names.map((n) => n.querySelector('[aria-hidden]')?.textContent ?? n.textContent),
         };
@@ -8116,8 +8116,8 @@ for (const vp of VIEWPORTS) {
       assert.equal(tags.count, 18, '18 label nama');
       assert.deepEqual(tags.overlaps, [], 'label nama tidak saling tumpuk');
       assert.ok(tags.titled && tags.spoken, 'nama lengkap tetap di title dan untuk pembaca layar');
-      if (vp.mobile) assert.ok(tags.shown.every((t) => !t.startsWith('Adhit - ')), `HP: awalan bersama "Adhit - " dibuang (${tags.shown.join(', ')})`);
-      else assert.ok(tags.shown.every((t) => t.startsWith('Adhit - ')), `desktop: nama lengkap (${tags.shown.join(', ')})`);
+      if (vp.mobile) assert.ok(tags.shown.every((t) => !t.startsWith('Adhitron - ')), `HP: awalan bersama "Adhitron - " dibuang (${tags.shown.join(', ')})`);
+      else assert.ok(tags.shown.every((t) => t.startsWith('Adhitron - ')), `desktop: nama lengkap (${tags.shown.join(', ')})`);
       // A private office whose role is off shows its door plate; occupied, it has none (its person has a name tag).
       const plates = await page.eval(async () => {
         const { stage } = await import('/js/core/scenes.js');

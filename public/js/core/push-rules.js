@@ -28,7 +28,7 @@ export function pushAvailability(env) {
 export function pushStatusText(availability, subscribed) {
   switch (availability) {
     case 'ios-install':
-      return 'iPhone/iPad: Tambahkan ke Layar Utama dulu (Bagikan → Tambahkan ke Layar Utama), lalu buka Adhit Office dari ikon itu dan aktifkan di sana.';
+      return 'iPhone/iPad: Tambahkan ke Layar Utama dulu (Bagikan → Tambahkan ke Layar Utama), lalu buka Adhitron dari ikon itu dan aktifkan di sana.';
     case 'unsupported':
       return 'Tidak didukung browser ini. Pakai Chrome/Edge di Android, atau aplikasi Layar Utama di iPhone (iOS 16.4+).';
     case 'denied':

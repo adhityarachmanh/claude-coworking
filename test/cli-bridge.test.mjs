@@ -142,7 +142,7 @@ test('ask: allow/deny reach the hook, the card carries a clipped CLI payload, an
   assert.equal(entry.approval.input.command, 'echo halo');
   approvals.get(id).onResolve({ allow: true });
   const result = await pending;
-  assert.deepEqual(result, { status: 200, body: { decision: 'allow', reason: 'Disetujui dari Adhit Office' } });
+  assert.deepEqual(result, { status: 200, body: { decision: 'allow', reason: 'Disetujui dari Adhitron' } });
 
   const denied = harness({ project });
   const deniedCall = denied.call({ tool: 'Write', cwd: path.join(TMP, 'toko'), input: { file_path: 'a.txt', content: 'ok' } });

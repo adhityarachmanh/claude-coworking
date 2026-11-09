@@ -13,7 +13,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUILD = path.join(ROOT, '.build');
 const DIST = path.join(ROOT, 'dist', 'linux');
 const PKG = path.join(BUILD, 'linux-pkg');
-const APP = path.join(PKG, 'opt', 'adhit-office');
+const APP = path.join(PKG, 'opt', 'adhitron');
 const VERSION = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const NODE_VERSION = process.version.replace(/^v/, '');
 const NODE_DIR = `node-v${NODE_VERSION}-linux-x64`;
@@ -33,7 +33,7 @@ function run(command, args, options = {}) {
 }
 
 /** True for the files that must be executable in the Linux package. */
-const isExecutable = (rel) => /(^|\/)(AdhitOffice|jalankan\.sh|adhit-office)$/.test(rel);
+const isExecutable = (rel) => /(^|\/)(Adhitron|jalankan\.sh|adhitron)$/.test(rel);
 
 /** Minimal ustar writer (Windows tar here has no --mode): modes are explicit, mtimes fixed, sorted entries. */
 function tarBuffer(root, { base = '' } = {}) {
@@ -158,8 +158,8 @@ if (sha256File(DOWNLOAD) !== expectedNode) throw new Error('SHA-256 runtime Node
 run('tar', ['-xzf', DOWNLOAD, '-C', BUILD, `${NODE_DIR}/bin/node`]);
 const linuxNode = path.join(BUILD, NODE_DIR, 'bin', 'node');
 if (!existsSync(linuxNode)) throw new Error(`Node Linux tidak ditemukan: ${linuxNode}`);
-copyFileSync(linuxNode, path.join(APP, 'AdhitOffice'));
-execFileSync(process.execPath, [POSTJECT, path.join(APP, 'AdhitOffice'), 'NODE_SEA_BLOB', blob, '--sentinel-fuse', FUSE], { cwd: ROOT, stdio: 'inherit' });
+copyFileSync(linuxNode, path.join(APP, 'Adhitron'));
+execFileSync(process.execPath, [POSTJECT, path.join(APP, 'Adhitron'), 'NODE_SEA_BLOB', blob, '--sentinel-fuse', FUSE], { cwd: ROOT, stdio: 'inherit' });
 
 step('Salin aset web');
 for (const name of ['public', 'ai_logos', 'docs']) assertNoSymlinks(path.join(ROOT, name));
@@ -169,10 +169,10 @@ for (const name of ['package.json', 'README.md', 'CHANGELOG.md']) copyFileSync(p
 const pubkey = path.join(ROOT, 'assets', 'update-pubkey.pem');
 if (existsSync(pubkey)) copyFileSync(pubkey, path.join(APP, 'update-pubkey.pem'));
 writeFileSync(path.join(APP, 'CARA-PAKAI.txt'), [
-  'Adhit Office (build Linux x64, eksperimental)',
+  'Adhitron (build Linux x64, eksperimental)',
   '',
-  'Portable: ./AdhitOffice --background lalu buka http://127.0.0.1:4317',
-  'Data: ~/.local/share/adhit-office/data (mode portable: buat file "portable" di folder ini).',
+  'Portable: ./Adhitron --background lalu buka http://127.0.0.1:4317',
+  'Data: ~/.local/share/adhit-office/data (nama folder lama, sengaja tidak berubah; mode portable: buat file "portable" di folder ini).',
   'Prasyarat: Claude Code dan/atau OpenCode terpasang dan login.',
   'Belum ditandatangani/notarized; update otomatis untuk build terpasang baru tersedia di Windows.',
   '',
@@ -184,36 +184,37 @@ const APPLICATIONS = path.join(PKG, 'usr', 'share', 'applications');
 const ICONS = path.join(PKG, 'usr', 'share', 'icons', 'hicolor', '512x512', 'apps');
 const UNITS = path.join(PKG, 'usr', 'lib', 'systemd', 'user');
 for (const dir of [BIN, APPLICATIONS, ICONS, UNITS]) mkdirSync(dir, { recursive: true });
-writeFileSync(path.join(BIN, 'adhit-office'), '#!/bin/sh\nexec /opt/adhit-office/AdhitOffice "$@"\n');
-chmodSync(path.join(BIN, 'adhit-office'), 0o755);
-writeFileSync(path.join(APPLICATIONS, 'adhit-office.desktop'), [
+writeFileSync(path.join(BIN, 'adhitron'), '#!/bin/sh\nexec /opt/adhitron/Adhitron "$@"\n');
+chmodSync(path.join(BIN, 'adhitron'), 0o755);
+writeFileSync(path.join(APPLICATIONS, 'adhitron.desktop'), [
   '[Desktop Entry]',
   'Type=Application',
-  'Name=Adhit Office',
+  'Name=Adhitron',
   'Comment=Kantor pixel-art untuk Claude Code dan OpenCode',
-  'Exec=adhit-office',
-  'Icon=adhit-office',
+  'Exec=adhitron',
+  'Icon=adhitron',
   'Terminal=false',
   'Categories=Development;',
-  'StartupWMClass=AdhitOffice',
+  'StartupWMClass=Adhitron',
   '',
 ].join('\n'));
-copyFileSync(path.join(ROOT, 'public', 'icons', 'icon-512.png'), path.join(ICONS, 'adhit-office.png'));
-writeFileSync(path.join(UNITS, 'adhit-office.service'), [
+copyFileSync(path.join(ROOT, 'public', 'icons', 'icon-512.png'), path.join(ICONS, 'adhitron.png'));
+writeFileSync(path.join(UNITS, 'adhitron.service'), [
   '[Unit]',
-  'Description=Adhit Office',
+  'Description=Adhitron',
   'After=network-online.target',
   '',
   '[Service]',
   'Type=simple',
   // Login shell so claude/opencode from nvm or ~/.local/bin are on PATH; hardening where available.
-  'ExecStart=/bin/sh -lc \'exec /opt/adhit-office/AdhitOffice --background\'',
+  'ExecStart=/bin/sh -lc \'exec /opt/adhitron/Adhitron --background\'',
   'Restart=on-failure',
   'RestartSec=5',
   'NoNewPrivileges=true',
   'PrivateTmp=true',
   'ProtectSystem=strict',
   'ProtectHome=read-only',
+  // The data dir keeps its old name ("adhit-office") on purpose, so existing history is not orphaned.
   'ReadWritePaths=-%h/.local/share/adhit-office -%h/.claude -%h/.config/opencode',
   '',
   '[Install]',
@@ -222,12 +223,12 @@ writeFileSync(path.join(UNITS, 'adhit-office.service'), [
 ].join('\n'));
 
 step('Buat tarball portable');
-const tarRoot = path.join(BUILD, 'linux-tar', 'AdhitOffice-linux-x64');
+const tarRoot = path.join(BUILD, 'linux-tar', 'Adhitron-linux-x64');
 rmSync(path.dirname(tarRoot), { recursive: true, force: true });
 mkdirSync(tarRoot, { recursive: true });
 cpSync(APP, tarRoot, { recursive: true });
-writeFileSync(path.join(tarRoot, 'jalankan.sh'), '#!/bin/sh\ncd "$(dirname "$0")"\nexec ./AdhitOffice --background\n');
-writeTarGz(tarRoot, path.join(DIST, `AdhitOffice-${VERSION}-linux-x64.tar.gz`), { base: path.basename(tarRoot) });
+writeFileSync(path.join(tarRoot, 'jalankan.sh'), '#!/bin/sh\ncd "$(dirname "$0")"\nexec ./Adhitron --background\n');
+writeTarGz(tarRoot, path.join(DIST, `Adhitron-${VERSION}-linux-x64.tar.gz`), { base: path.basename(tarRoot) });
 
 step('Buat paket .deb');
 const dataDir = path.join(BUILD, 'deb-data');
@@ -238,17 +239,20 @@ mkdirSync(dataDir, { recursive: true });
 mkdirSync(controlDir, { recursive: true });
 cpSync(PKG, dataDir, { recursive: true });
 writeFileSync(path.join(controlDir, 'control'), [
-  'Package: adhit-office',
+  'Package: adhitron',
   `Version: ${VERSION}`,
   'Section: utils',
   'Priority: optional',
   'Architecture: amd64',
   'Maintainer: Adhit <noreply@localhost>',
   'Depends: libc6',
+  // The package was renamed; replace the old one instead of letting both services run on port 4317.
+  'Conflicts: adhit-office',
+  'Replaces: adhit-office',
   'Recommends: systemd',
-  'Description: Adhit Office',
+  'Description: Adhitron',
   ' Kantor pixel-art untuk mengoperasikan Claude Code dan OpenCode dari browser dan HP.',
-  ' UI disajikan lokal di http://127.0.0.1:4317; data di ~/.local/share/adhit-office/data.',
+  ' UI disajikan lokal di http://127.0.0.1:4317; data di ~/.local/share/adhit-office/data (nama folder lama).',
   '',
 ].join('\n'));
 // No maintainer scripts: `systemctl --global enable` would start a per-user server for every account without
@@ -262,7 +266,7 @@ writeAr([
   { name: 'debian-binary', data: Buffer.from('2.0\n') },
   { name: 'control.tar.gz', data: readFileSync(controlTar) },
   { name: 'data.tar.gz', data: readFileSync(dataTar) },
-], path.join(DIST, `adhit-office_${VERSION}_amd64.deb`));
+], path.join(DIST, `adhitron_${VERSION}_amd64.deb`));
 
 step('Selesai');
-process.stdout.write(`\n📦 ${path.join(DIST, `AdhitOffice-${VERSION}-linux-x64.tar.gz`)}\n📦 ${path.join(DIST, `adhit-office_${VERSION}_amd64.deb`)}\n`);
+process.stdout.write(`\n📦 ${path.join(DIST, `Adhitron-${VERSION}-linux-x64.tar.gz`)}\n📦 ${path.join(DIST, `adhitron_${VERSION}_amd64.deb`)}\n`);

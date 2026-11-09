@@ -258,7 +258,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
   background: linear-gradient(180deg, var(--chrome-hi), var(--chrome));
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: .01em; white-space: nowrap; }
-.brand .logo { width: 24px; height: 24px; flex: none; image-rendering: pixelated; }
+.brand .logo { width: 24px; height: 24px; flex: none; }
 .crumb { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 520px; padding: 5px 10px; text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-lg); }
 .crumb:hover { border-color: var(--accent); }
 .crumb-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; flex: 1; }
@@ -2635,7 +2635,7 @@ body.read-only #composer-hint { color: var(--ask); }
 
   /* Kantor: 🗂 stays on top while the team list scrolls under it */
   .dash-bar { position: sticky; top: 0; z-index: 2; min-height: 48px; box-shadow: 0 -8px 0 8px var(--bg); }
-  .member small { display: none; } /* role title: the name says it ("Adhit - QA"); full text in the card's title */
+  .member small { display: none; } /* role title: the name says it ("Adhitron - QA"); full text in the card's title */
   .member { min-height: 48px; }
 
   /* Perubahan: [⎇ branch · sync] → files → diff → [pesan][Commit]. Buttons live in ⋯ (Perubahan + Git groups). */

@@ -1,8 +1,8 @@
 {
-  "name": "adhit-office",
-  "version": "1.0.9",
+  "name": "adhitron",
+  "version": "1.0.10",
   "private": true,
-  "description": "Adhit Office — kantor pixel-art untuk mengoperasikan Claude Code dari browser dan HP",
+  "description": "Adhitron — kantor pixel-art untuk mengoperasikan Claude Code dari browser dan HP",
   "author": "Adhit",
   "type": "module",
   "main": "desktop/main.mjs",

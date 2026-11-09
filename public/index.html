@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#16171c" />
     <meta name="office-token" content="__OFFICE_TOKEN__" />
-    <title>Adhit Office</title>
+    <title>Adhitron</title>
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <!-- Installable on a phone's home screen (PWA) -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <meta name="application-name" content="Adhit Office" />
-    <meta name="apple-mobile-web-app-title" content="Adhit Office" />
+    <meta name="application-name" content="Adhitron" />
+    <meta name="apple-mobile-web-app-title" content="Adhitron" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -20,7 +20,7 @@
   </head>
   <body data-view="panel" data-tab="chat">
     <header class="topbar">
-      <div class="brand"><img class="logo" src="/icons/icon.svg" alt="" /><span>Adhit Office</span></div>
+      <div class="brand"><img class="logo" src="/icons/icon.svg" alt="" /><span>Adhitron</span></div>
       <button id="crumb" class="crumb" title="Ganti project (Ctrl+K)"></button>
       <span class="grow"></span>
       <!-- Quota warning (features/quota.js): shown only while a plan window is past the yellow/red threshold -->
@@ -60,7 +60,7 @@
     <div id="cc-banner" class="conn-region" role="status" aria-live="polite"></div>
     <!-- OpenCode updated: the same, for OpenCode (features/opencode-check.js). Empty until there is news. -->
     <div id="oc-banner" class="conn-region" role="status" aria-live="polite"></div>
-    <!-- ⬆ A newer Adhit Office on GitHub (features/app-update.js). Empty until there is one. -->
+    <!-- ⬆ A newer Adhitron on GitHub (features/app-update.js). Empty until there is one. -->
     <div id="app-update-banner" class="conn-region" role="status" aria-live="polite"></div>
 
     <div class="layout">
@@ -284,7 +284,7 @@
     <!-- Help: how the office works + keyboard shortcuts (opens with ?) -->
     <div id="help-modal" class="modal" hidden>
       <div class="modal-card help-card" role="dialog" aria-modal="true" aria-label="Panduan">
-        <div class="modal-head"><b>❓ Panduan Adhit Office</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b>❓ Panduan Adhitron</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <button type="button" id="btn-tour" class="ghost help-tour">👋 Tur singkat (4 langkah)</button>
         <div class="help">
           <section>
@@ -364,7 +364,7 @@
               <li>Tandai project yang sering dipakai dengan <b>★</b> di daftar project supaya selalu di atas.</li>
               <li><b>🔔 Pengaturan notifikasi</b> (per jenis kejadian, jam tenang, hanya project favorit, volume): buka palet <kbd>Ctrl</kbd> <kbd>P</kbd> (di HP: tombol 🔎 di bawah) → <i>Pengaturan notifikasi</i>. Di laptop juga lewat klik kanan 🔔 atau ⚙ Pengaturan.</li>
               <li>Klik kartu anggota tim di bawah kantor untuk <b>mengganti nama</b> mereka.</li>
-              <li><b>📱 Buka di HP</b>: scan QR-nya, lalu pilih <i>Add to Home Screen</i> agar Adhit Office tampil seperti aplikasi. Lewat WiFi HP hanya bisa melihat; lewat Tailscale bisa mengirim perintah.</li>
+              <li><b>📱 Buka di HP</b>: scan QR-nya, lalu pilih <i>Add to Home Screen</i> agar Adhitron tampil seperti aplikasi. Lewat WiFi HP hanya bisa melihat; lewat Tailscale bisa mengirim perintah.</li>
             </ul>
           </section>
         </div>
@@ -1079,8 +1079,8 @@
                 <label for="ba-keep">Simpan</label>
                 <span class="ba-keep"><input id="ba-keep" type="number" min="1" max="100" step="1" inputmode="numeric" /> backup terakhir</span>
               </div>
-              <label for="ba-folder">Folder tujuan <small>(path lengkap, misalnya <code>D:\Backup\adhit-office</code>; bukan folder jaringan)</small></label>
-              <input id="ba-folder" spellcheck="false" autocomplete="off" placeholder="D:\Backup\adhit-office"aria-describedby="ba-error ba-desc" />
+              <label for="ba-folder">Folder tujuan <small>(path lengkap, misalnya <code>D:\Backup\adhitron</code>; bukan folder jaringan)</small></label>
+              <input id="ba-folder" spellcheck="false" autocomplete="off" placeholder="D:\Backup\adhitron"aria-describedby="ba-error ba-desc" />
               <p id="ba-error" class="field-error" role="alert"></p>
               <div class="backup-actions">
                 <button type="button" id="ba-save" class="ghost">💾 Simpan jadwal</button>
@@ -1099,7 +1099,7 @@
           <div class="settings-panel" id="settings-panel-sistem" data-settings-panel="sistem" role="tabpanel" aria-labelledby="settings-tab-sistem">
           <!-- ⬆ Update aplikasi (features/app-update.js, server src/app-update.js) -->
           <section class="claude-check" aria-labelledby="au-title">
-            <b id="au-title">⬆ Update Adhit Office</b>
+            <b id="au-title">⬆ Update Adhitron</b>
             <p class="muted small">Dicek tiap 30 menit dari GitHub. Perubahan lokal yang belum di-commit tidak ditimpa.</p>
             <p id="app-update-status" class="muted" role="status" aria-live="polite"></p>
             <div class="backup-actions">

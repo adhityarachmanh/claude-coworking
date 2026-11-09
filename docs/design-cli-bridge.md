@@ -12,7 +12,7 @@ Gunakan **wrapper opt-in** `office claude`, bukan mengubah config Claude milik u
 
 1. Wrapper menjalankan `claude` seperti biasa, ditambah `--settings <file>` milik aplikasi.
 2. Settings itu hanya menambahkan hook `PreToolUse` untuk tool yang berbahaya (`Write|Edit|Bash|WebFetch|mcp__*`).
-3. Hook mengirim payload ke server Adhit Office di localhost, menunggu jawaban, lalu mengembalikan `permissionDecision: allow|deny`.
+3. Hook mengirim payload ke server Adhitron di localhost, menunggu jawaban, lalu mengembalikan `permissionDecision: allow|deny`.
 4. Kalau server mati, lambat, atau hook gagal: hook keluar tanpa keputusan → Claude Code kembali ke alur izin normal di terminal (**fail-closed oleh bridge**; hasil akhirnya mengikuti aturan izin Claude Code sendiri, yang bisa auto-allow bila user sudah punya allowlist).
 5. Tanpa wrapper, CLI tetap 100% seperti sekarang. Tidak ada hook yang dipasang diam-diam ke `~/.claude/settings.json`.
 
@@ -50,7 +50,7 @@ Jawaban hook:
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "allow",
-    "permissionDecisionReason": "Disetujui dari Adhit Office"
+    "permissionDecisionReason": "Disetujui dari Adhitron"
   }
 }
 ```

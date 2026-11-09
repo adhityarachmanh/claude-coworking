@@ -1,4 +1,4 @@
-# Panduan harian Adhit Office
+# Panduan harian Adhitron
 
 Panduan singkat untuk pemakaian sehari-hari, di laptop dan HP. Detail tiap fitur ada di [FITUR](FITUR.md); cara menjalankan dan keamanan ada di [README](../README.md).
 
@@ -43,7 +43,7 @@ Lewat WiFi rumah biasa (tanpa Tailscale), HP **hanya bisa melihat**. Itu disenga
 
 ## Izin sesi terminal (CLI bridge, eksperimental)
 
-1. Pastikan Adhit Office berjalan dan folder kerja terdaftar sebagai project.
+1. Pastikan Adhitron berjalan dan folder kerja terdaftar sebagai project.
 2. Di terminal folder project, jalankan `office claude` (dari folder repo ini, atau `office.cmd` di PATH).
 3. Saat Claude Code meminta izin untuk tool berbahaya, kartu **Terminal · CLI bridge** muncul di kantor/HP. Jawab **Izinkan** atau **Tolak** di aplikasi.
 4. Kalau server mati, hook gagal, atau tidak dijawab ±2 menit, izin kembali ke **prompt terminal**—tidak pernah otomatis diizinkan.

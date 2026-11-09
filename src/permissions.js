@@ -71,7 +71,7 @@ async function loadSettings(file) {
   try {
     data = text.trim() ? JSON.parse(text.replace(/^﻿/, '')) : {};
   } catch (err) {
-    throw new PermissionError(`${path.basename(file)} bukan JSON yang valid (${err.message}). Perbaiki file itu dulu; Adhit Office tidak akan menimpanya.`, 409);
+    throw new PermissionError(`${path.basename(file)} bukan JSON yang valid (${err.message}). Perbaiki file itu dulu; Adhitron tidak akan menimpanya.`, 409);
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new PermissionError(`${path.basename(file)} harus berisi objek JSON ({ … }).`, 409);
   return { exists: true, data, indent: text.match(/^[{[]\r?\n([ \t]+)/)?.[1] ?? 2 };

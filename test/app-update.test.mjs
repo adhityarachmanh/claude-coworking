@@ -1,4 +1,4 @@
-// ⬆ Adhit Office's own update (src/app-update.js) against throwaway git repos: a bare "GitHub", the installed copy
+// ⬆ Adhitron's own update (src/app-update.js) against throwaway git repos: a bare "GitHub", the installed copy
 // and a second clone that pushes a new commit. No network, nothing outside the temp folder.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';

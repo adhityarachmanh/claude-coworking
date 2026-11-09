@@ -98,7 +98,7 @@ const AUTH_FAILED = /Authentication failed|could not read (Username|Password)|te
 const NOT_FF_PULL = /Not possible to fast-forward|diverging branches|fatal: Need to specify how to reconcile/i;
 const PUSH_REJECTED = /\[rejected\]|non-fast-forward|fetch first|Updates were rejected/i;
 const WOULD_OVERWRITE = /would be overwritten|Please commit your changes or stash them|untracked working tree files would be/i;
-const LOGIN_HINT = 'Remote butuh login. Jalankan sekali dari terminal laptop (mis. git fetch) atau atur credential helper / SSH key, lalu coba lagi. Adhit Office tidak pernah meminta atau menyimpan password.';
+const LOGIN_HINT = 'Remote butuh login. Jalankan sekali dari terminal laptop (mis. git fetch) atau atur credential helper / SSH key, lalu coba lagi. Adhitron tidak pernah meminta atau menyimpan password.';
 
 /**
  * A branch name the user typed, checked before git sees it: never an option (`--upload-pack=…`), no

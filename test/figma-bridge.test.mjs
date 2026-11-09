@@ -1,6 +1,7 @@
 // 🌉 Figma bridge: MCP stdio + the plugin's HTTP polling, without a real Figma file (a fake plugin answers).
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -62,7 +63,7 @@ after(() => {
 
 test('MCP: initialize, tools/list, and status without a plugin', async () => {
   const init = await request(1, 'initialize');
-  assert.equal(init.result.serverInfo.name, 'adhit-office-figma-bridge');
+  assert.equal(init.result.serverInfo.name, 'adhitron-figma-bridge');
   const list = await request(2, 'tools/list');
   const names = list.result.tools.map((t) => t.name);
   for (const name of ['figma_status', 'figma_selection', 'figma_export', 'figma_create_frame', 'figma_set_fill']) assert.ok(names.includes(name), name);
@@ -143,4 +144,10 @@ test('a tool that needs the plugin says so when it is not connected', async () =
   const answer = await request(30, 'tools/call', { name: 'figma_selection', arguments: {} });
   assert.equal(answer.result.isError, true);
   assert.match(answer.result.content[0].text, /Plugin Figma belum terhubung/);
+});
+
+test('the plugin manifest is valid JSON and keeps the Adhitron brand plus the stable Figma id', () => {
+  const manifest = JSON.parse(readFileSync(path.join(APP, 'tools', 'figma-bridge', 'plugin', 'manifest.json'), 'utf8'));
+  assert.equal(manifest.name, 'Adhitron Bridge');
+  assert.equal(manifest.id, 'adhit-office-figma-bridge', 'the Figma plugin id must not change');
 });

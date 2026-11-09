@@ -1,4 +1,4 @@
-// 🌉 Adhit Office ⇄ Figma bridge.
+// 🌉 Adhitron ⇄ Figma bridge.
 //
 // One local process with two sides:
 //   - MCP over stdio (newline-delimited JSON-RPC), so an AI agent can call the figma_* tools;
@@ -42,7 +42,7 @@ function enqueue(cmd, args = {}) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       inflight.delete(id);
-      reject(new Error(`Plugin Figma tidak merespons dalam ${Math.round(COMMAND_TIMEOUT_MS / 1000)} detik. Buka plugin Adhit Office Bridge di Figma.`));
+      reject(new Error(`Plugin Figma tidak merespons dalam ${Math.round(COMMAND_TIMEOUT_MS / 1000)} detik. Buka plugin Adhitron Bridge di Figma.`));
     }, COMMAND_TIMEOUT_MS);
     timer.unref?.();
     queue.push({ id, cmd, args });
@@ -196,7 +196,7 @@ server.listen(PORT, HOST, () => {
   // When this runs as an MCP server, stderr belongs to the client's log: point at the file instead of the token.
   if (process.stderr.isTTY) {
     console.error(`Token bridge: ${TOKEN}`);
-    console.error('Tempel token itu di plugin Adhit Office Bridge (disimpan di Figma). CLI memakai token yang sama.');
+    console.error('Tempel token itu di plugin Adhitron Bridge (disimpan di Figma). CLI memakai token yang sama.');
   } else {
     console.error(`Token bridge tersedia di ${TOKEN_FILE}`);
   }
@@ -207,7 +207,7 @@ server.listen(PORT, HOST, () => {
 const TOOLS = [
   {
     name: 'figma_status',
-    description: 'Status of the Adhit Office Figma bridge: is the plugin connected, which file/page is open.',
+    description: 'Status of the Adhitron Figma bridge: is the plugin connected, which file/page is open.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -292,7 +292,7 @@ async function callTool(name, args) {
   if (name === 'figma_status') {
     return { ok: true, plugin: pluginFresh(), bridge: `http://${HOST}:${PORT}`, file: bridge.info?.file ?? null, page: bridge.info?.page ?? null };
   }
-  if (!pluginFresh()) throw new Error('Plugin Figma belum terhubung. Buka file di Figma desktop lalu jalankan plugin "Adhit Office Bridge" (Plugins → Development).');
+  if (!pluginFresh()) throw new Error('Plugin Figma belum terhubung. Buka file di Figma desktop lalu jalankan plugin "Adhitron Bridge" (Plugins → Development).');
   const map = {
     figma_selection: 'selection',
     figma_page: 'page',
@@ -325,7 +325,7 @@ rl.on('line', async (line) => {
       return reply(msg.id, {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'adhit-office-figma-bridge', version: '1.0.0' },
+        serverInfo: { name: 'adhitron-figma-bridge', version: '1.0.0' },
       });
     }
     if (msg.method === 'ping') return reply(msg.id, {});

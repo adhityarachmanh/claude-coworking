@@ -280,10 +280,10 @@ test('new roles: appended after the original 13 (order unchanged) with names, ti
   for (const id of NEW_ROLES) assert.ok(ROLE_ORDER.includes(id), `${id} in ROLE_ORDER`);
   assert.deepEqual(
     NEW_ROLES.map((id) => CAST[id].name),
-    ['Adhit - Mobile', 'Adhit - Data/AI', 'Adhit - Support', 'Adhit - Reviewer'],
+    ['Adhitron - Mobile', 'Adhitron - Data/AI', 'Adhitron - Support', 'Adhitron - Reviewer'],
   );
   assert.equal(ROLE_ORDER.at(-1), 'compliance', 'the 17th role is appended last');
-  assert.deepEqual([CAST.compliance.name, CAST.compliance.title], ['Adhit - Compliance', 'Compliance / Privacy (DPO)']);
+  assert.deepEqual([CAST.compliance.name, CAST.compliance.title], ['Adhitron - Compliance', 'Compliance / Privacy (DPO)']);
   const colours = ROLE_ORDER.map((id) => CAST[id].color);
   assert.equal(new Set(colours).size, colours.length, 'one colour per role');
   for (const id of LATER_ROLES) {
@@ -400,14 +400,14 @@ test('new roles: every theme × view × pose × arms paints inside the 20×32 sp
 });
 
 test('name tags: the prefix the whole team shares is computed from the current names, not hardcoded', () => {
-  assert.equal(sharedPrefix(ROLE_ORDER.map((id) => CAST[id].name)), 'Adhit - ', 'default names');
+  assert.equal(sharedPrefix(ROLE_ORDER.map((id) => CAST[id].name)), 'Adhitron - ', 'default names');
   assert.equal(sharedPrefix(['Tim Rina - PM', 'Tim Rina - DBA', 'Tim Rina - Data']), 'Tim Rina - ', 'renamed team');
-  assert.equal(sharedPrefix(['Adhit - PM', 'Budi', 'Adhit - QA']), '', 'one renamed person: no shared prefix');
-  assert.equal(sharedPrefix(['Adhit - Data', 'Adhit - DBA']), 'Adhit - ', 'cut back to the separator, not mid-word');
+  assert.equal(sharedPrefix(['Adhitron - PM', 'Budi', 'Adhitron - QA']), '', 'one renamed person: no shared prefix');
+  assert.equal(sharedPrefix(['Adhitron - Data', 'Adhitron - DBA']), 'Adhitron - ', 'cut back to the separator, not mid-word');
   assert.equal(sharedPrefix(['Dewi Ayu', 'Dewi Sari']), '', 'a common first word without a separator is part of the name');
-  assert.equal(sharedPrefix(['Adhit - PM', 'Adhit - ']), '', 'nothing may be left empty');
-  assert.equal(sharedPrefix(['Adhit - PM']), '', 'a single name keeps its prefix');
-  assert.deepEqual(labelVariants({ name: 'Adhit - Frontend', short: 'FE', count: 2 }, 'Adhit - '), ['Adhit - Frontend ×2', 'Frontend ×2', 'FE ×2']);
+  assert.equal(sharedPrefix(['Adhitron - PM', 'Adhitron - ']), '', 'nothing may be left empty');
+  assert.equal(sharedPrefix(['Adhitron - PM']), '', 'a single name keeps its prefix');
+  assert.deepEqual(labelVariants({ name: 'Adhitron - Frontend', short: 'FE', count: 2 }, 'Adhitron - '), ['Adhitron - Frontend ×2', 'Frontend ×2', 'FE ×2']);
   assert.deepEqual(labelVariants({ name: 'Budi', short: '' }, ''), ['Budi', 'Budi', 'Budi'], 'no short title: the name');
   for (const id of ROLE_ORDER) assert.ok(CAST[id].short && CAST[id].short.length <= 4, `${id}: a short title of at most 4 characters`);
   assert.equal(new Set(ROLE_ORDER.map((id) => CAST[id].short)).size, ROLE_ORDER.length, 'short titles are distinct');

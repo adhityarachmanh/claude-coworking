@@ -1,7 +1,7 @@
 // One server event stream (SSE) for every tab of this origin.
 //
 // Why: the server is plain HTTP/1.1, and browsers open at most 6 connections per host. Each EventSource holds one
-// for good, so with a handful of Adhit Office tabs open every other request (API calls, assets) queued forever.
+// for good, so with a handful of Adhitron tabs open every other request (API calls, assets) queued forever.
 //
 // How: the tabs elect one leader. Only the leader opens the EventSource; it applies every event itself and relays it
 // (the raw JSON text) over a BroadcastChannel, which only reaches pages of this same origin. Followers apply the

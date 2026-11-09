@@ -1,6 +1,6 @@
 @echo off
-title Adhit Office
+title Adhitron
 cd /d "%~dp0"
-echo Menjalankan Adhit Office... (tutup jendela ini untuk berhenti)
+echo Menjalankan Adhitron... (tutup jendela ini untuk berhenti)
 node server.js --open
 pause

@@ -107,7 +107,7 @@ async function loadPushHistory() {
     $('#ns-history-list').innerHTML = entries
       .map((e) => {
         const devices = Array.isArray(e.devices) && e.devices.length ? ` · ${e.devices.join(', ')}` : '';
-        return `<li class="push-history-row"><span class="ph-main"><b>${escapeHtml(e.projectName || 'Adhit Office')}</b> · ${escapeHtml(TYPE_LABEL[e.type] ?? e.type)}${e.role ? ` · ${escapeHtml(e.role)}` : ''}</span><span class="ph-meta">${escapeHtml(ago(e.at))}${escapeHtml(devices)}</span></li>`;
+        return `<li class="push-history-row"><span class="ph-main"><b>${escapeHtml(e.projectName || 'Adhitron')}</b> · ${escapeHtml(TYPE_LABEL[e.type] ?? e.type)}${e.role ? ` · ${escapeHtml(e.role)}` : ''}</span><span class="ph-meta">${escapeHtml(ago(e.at))}${escapeHtml(devices)}</span></li>`;
       })
       .join('');
   } catch {

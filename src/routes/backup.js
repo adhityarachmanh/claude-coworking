@@ -18,6 +18,7 @@ import { isDirectory } from '../projects.js';
 import { projectId as idOfPath } from '../util.js';
 import { ZipError } from '../zip.js';
 import { HttpError, json } from './http.js';
+import { migrateTeamNames } from '../role-catalog.js';
 import { cleanTeamNames } from './team.js';
 
 const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed', 'application/octet-stream']);
@@ -433,9 +434,10 @@ async function applyRestored({ hub, ledger, mirror, projectRoots, refreshProject
       });
       summary.opencodeSessions = { added: importedSessions.added.length, skipped: importedSessions.skipped.length };
     }
-    // Team names: only roles this machine has not renamed itself.
+    // Team names: only roles this machine has not renamed itself. A backup from 1.0.9 still holds the old
+    // defaults ("Adhit - QA"); migrate them here so the imported office shows Adhitron immediately.
     const own = hub.persisted.teamNames ?? {};
-    const names = { ...cleanTeamNames(imported.teamNames), ...own };
+    const names = { ...migrateTeamNames(cleanTeamNames(imported.teamNames)).names, ...own };
     summary.state.teamNames = Object.keys(names).length - Object.keys(own).length;
     hub.persisted.teamNames = names;
   }

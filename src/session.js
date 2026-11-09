@@ -33,7 +33,7 @@ const CATALOG_TIMEOUT_MS = 60_000;
 // interruption to its transcript, so `--resume` continues from a clean point) before its process tree is killed.
 export const SHUTDOWN_GRACE_MS = 3000;
 // What "Lanjutkan" sends to the cut-short session (the conversation, tool results included, is in its transcript).
-export const CONTINUE_PROMPT = 'Lanjutkan pekerjaan yang terputus tadi (server Adhit Office sempat di-restart di tengah giliranmu). Periksa dulu kondisi terakhir, lalu teruskan.';
+export const CONTINUE_PROMPT = 'Lanjutkan pekerjaan yang terputus tadi (server Adhitron sempat di-restart di tengah giliranmu). Periksa dulu kondisi terakhir, lalu teruskan.';
 const UUID = /^[0-9a-f-]{36}$/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const EFFORT_LABEL = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
@@ -704,7 +704,7 @@ export class ClaudeSession {
     // Claude knows it was the restart, not the user, that refused.
     for (const { approval } of [...this.hub.approvals.values()]) {
       if (approval.project !== this.id) continue;
-      this.hub.resolveApproval(approval.id, { allow: false, cancelled: true, message: 'Server Adhit Office di-restart sebelum izin ini dijawab. Minta izin lagi bila masih perlu.' });
+      this.hub.resolveApproval(approval.id, { allow: false, cancelled: true, message: 'Server Adhitron di-restart sebelum izin ini dijawab. Minta izin lagi bila masih perlu.' });
     }
     this.interrupting = true;
     this.request({ subtype: 'interrupt' }).catch(() => {});
@@ -1317,7 +1317,7 @@ export class ClaudeSession {
     } else {
       response = {
         behavior: 'deny',
-        message: decision.cancelled && req.tool_name === 'ExitPlanMode' ? 'Selesai tanpa build; jangan lanjutkan rencana ini.' : decision.message || 'Ditolak oleh user dari web Adhit Office.',
+        message: decision.cancelled && req.tool_name === 'ExitPlanMode' ? 'Selesai tanpa build; jangan lanjutkan rencana ini.' : decision.message || 'Ditolak oleh user dari web Adhitron.',
       };
     }
     this.write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } });

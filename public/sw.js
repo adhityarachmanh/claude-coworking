@@ -1,4 +1,4 @@
-// Adhit Office service worker: Web Push notifications only (docs/design-web-push.md §C, §D).
+// Adhitron service worker: Web Push notifications only (docs/design-web-push.md §C, §D).
 //
 // - Registered only on the https (Tailscale) origin; the http listeners answer /sw.js with 404. Note: a 404 on an
 //   update check does NOT unregister an installed worker (the spec keeps the registration). A real kill switch
@@ -78,7 +78,7 @@ function buildNotification(p) {
     done: `${p.role} sudah menyelesaikan permintaanmu`,
     error: 'Ketuk untuk melihat di aplikasi',
     queue: p.started ? 'Item yang menunggu mulai berjalan' : 'Ketuk untuk melihat antrian',
-    test: p.body || 'Notifikasi dari Adhit Office berfungsi.',
+    test: p.body || 'Notifikasi dari Adhitron berfungsi.',
   };
   const ask = p.type === 'ask';
   const actions = [];

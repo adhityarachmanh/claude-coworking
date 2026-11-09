@@ -1,4 +1,4 @@
-// ⬆ Adhit Office's own updates: every 30 minutes `git fetch` (no merge) and count the commits the branch is behind its
+// ⬆ Adhitron's own updates: every 30 minutes `git fetch` (no merge) and count the commits the branch is behind its
 // upstream. The page shows a banner with what is new; "Update sekarang" (laptop only) does `git pull --ff-only` and
 // restarts the server the clean way (scripts/restart.mjs: a running turn is recorded and offered to continue).
 // Local changes are never touched: with uncommitted changes or a diverged branch the update is refused.

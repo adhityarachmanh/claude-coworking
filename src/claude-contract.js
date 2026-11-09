@@ -337,7 +337,7 @@ function appArgs(dir) {
   const agentsFile = path.join(dir, 'agents.json');
   const promptFile = path.join(dir, 'lead.md');
   writeFileSync(agentsFile, JSON.stringify({ qa: { description: 'QA tester', prompt: 'You are QA.' } }), 'utf8');
-  writeFileSync(promptFile, 'Kamu Lead dalam tes kontrak Adhit Office. Jawab sesingkat mungkin.', 'utf8');
+  writeFileSync(promptFile, 'Kamu Lead dalam tes kontrak Adhitron. Jawab sesingkat mungkin.', 'utf8');
   return [
     '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
     '--include-partial-messages', '--replay-user-messages', '--permission-prompt-tool', 'stdio', '--permission-mode', 'default',

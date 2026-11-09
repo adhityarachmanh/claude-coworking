@@ -38,7 +38,7 @@ jobs:
         run: |
           $env:OFFICE_PORT = '4399'
           $env:OFFICE_DATA_DIR = Join-Path $env:RUNNER_TEMP 'office-smoke'
-          $p = Start-Process -FilePath 'dist\AdhitOffice\AdhitOffice.exe' -ArgumentList '--background' -PassThru
+          $p = Start-Process -FilePath 'dist\Adhitron\Adhitron.exe' -ArgumentList '--background' -PassThru
           try {
             $ok = $false
             for ($i = 0; $i -lt 40; $i++) {
@@ -60,7 +60,16 @@ jobs:
           $key = Join-Path $env:RUNNER_TEMP 'update-key.pem'
           $env:UPDATE_SIGNING_KEY | Set-Content -NoNewline -Encoding ascii $key
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          node scripts/sign-release.mjs "dist/installer/AdhitOffice-Setup-$version.exe" $key
+          $installer = "dist/installer/Adhitron-Setup-$version.exe"
+          # Transition release (Adhit Office → Adhitron): an installed 1.0.9 only ever requests
+          # "AdhitOffice-Setup-<v>.exe", so the same bytes are also uploaded under that legacy name. The copy is
+          # byte-identical, so its .sha256 and .sig are valid too. Drop the alias once no 1.0.9 install remains.
+          $legacy = "dist/installer/AdhitOffice-Setup-$version.exe"
+          Copy-Item -Path $installer -Destination $legacy -Force
+          foreach ($file in @($installer, $legacy)) {
+            node scripts/sign-release.mjs $file $key
+            if ($LASTEXITCODE -ne 0) { throw "Sign gagal: $file" }
+          }
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -71,7 +80,7 @@ jobs:
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $notes = Join-Path $env:RUNNER_TEMP 'notes.md'
           node scripts/release-notes.mjs "$version" --out "$notes"
-          gh release view $tag 2>$null; if ($LASTEXITCODE -ne 0) { gh release create $tag --draft --title "Adhit Office $version" --notes-file "$notes" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Host 'Release sudah dibuat oleh job lain.' } }
+          gh release view $tag 2>$null; if ($LASTEXITCODE -ne 0) { gh release create $tag --draft --title "Adhitron $version" --notes-file "$notes" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Host 'Release sudah dibuat oleh job lain.' } }
           gh release edit $tag --notes-file "$notes"; if ($LASTEXITCODE -ne 0) { Write-Host 'Catatan rilis tidak diperbarui; aset tetap diunggah.' }
           gh release upload $tag dist/installer/*.exe dist/installer/*.sha256 dist/installer/*.sig --clobber
 
@@ -100,7 +109,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           VERSION=$(node -p "require('./package.json').version")
           node scripts/release-notes.mjs "$VERSION" --out "$RUNNER_TEMP/notes.md"
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "Adhit Office $VERSION" --notes-file "$RUNNER_TEMP/notes.md" || true
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "Adhitron $VERSION" --notes-file "$RUNNER_TEMP/notes.md" || true
           gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md" || true
           gh release upload "$TAG" dist/linux/*.tar.gz dist/linux/*.deb dist/linux/*.sha256 dist/linux/*.sig --clobber
 
@@ -142,7 +151,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           VERSION=$(node -p "require('./package.json').version")
           node scripts/release-notes.mjs "$VERSION" --out "$RUNNER_TEMP/notes.md"
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "Adhit Office $VERSION" --notes-file "$RUNNER_TEMP/notes.md" || true
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "Adhitron $VERSION" --notes-file "$RUNNER_TEMP/notes.md" || true
           gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md" || true
           gh release upload "$TAG" dist/macos/*.zip dist/macos/*.sha256 dist/macos/*.sig --clobber
 
@@ -155,6 +164,15 @@ jobs:
     steps:
       # gh needs a checkout to know which repository the tag belongs to.
       - uses: actions/checkout@v4
+      - name: Check tag matches package.json
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error file=package.json::tag v$TAG tidak sama dengan package.json $VERSION"
+            exit 1
+          fi
+          echo "Rilis v$TAG cocok dengan package.json."
       - name: Check every platform is there
         env:
           GH_TOKEN: ${{ github.token }}
@@ -168,21 +186,26 @@ jobs:
           check() {
             echo "$ASSETS" | grep -qE "$1" || { echo "::error file=.github/workflows/release.yml::aset rilis hilang: $1"; missing=1; }
           }
+          check '^Adhitron-Setup-[0-9.]+\.exe$'
+          check '^Adhitron-Setup-[0-9.]+\.exe\.sha256$'
+          check '^Adhitron-Setup-[0-9.]+\.exe\.sig$'
+          # Transition alias: an installed 1.0.9 only looks for the legacy name, so 1.0.10 must also ship it.
+          # Byte-identical to the new installer; remove these three checks together with the alias copy.
           check '^AdhitOffice-Setup-[0-9.]+\.exe$'
           check '^AdhitOffice-Setup-[0-9.]+\.exe\.sha256$'
           check '^AdhitOffice-Setup-[0-9.]+\.exe\.sig$'
-          check '^AdhitOffice-[0-9.]+-linux-x64\.tar\.gz$'
-          check '^AdhitOffice-[0-9.]+-linux-x64\.tar\.gz\.sha256$'
-          check '^AdhitOffice-[0-9.]+-linux-x64\.tar\.gz\.sig$'
-          check '^adhit-office_[0-9.]+_amd64\.deb$'
-          check '^adhit-office_[0-9.]+_amd64\.deb\.sha256$'
-          check '^adhit-office_[0-9.]+_amd64\.deb\.sig$'
-          check '^AdhitOffice-[0-9.]+-macos-arm64-unsigned\.zip$'
-          check '^AdhitOffice-[0-9.]+-macos-arm64-unsigned\.zip\.sha256$'
-          check '^AdhitOffice-[0-9.]+-macos-arm64-unsigned\.zip\.sig$'
-          check '^AdhitOffice-[0-9.]+-macos-x64-unsigned\.zip$'
-          check '^AdhitOffice-[0-9.]+-macos-x64-unsigned\.zip\.sha256$'
-          check '^AdhitOffice-[0-9.]+-macos-x64-unsigned\.zip\.sig$'
+          check '^Adhitron-[0-9.]+-linux-x64\.tar\.gz$'
+          check '^Adhitron-[0-9.]+-linux-x64\.tar\.gz\.sha256$'
+          check '^Adhitron-[0-9.]+-linux-x64\.tar\.gz\.sig$'
+          check '^adhitron_[0-9.]+_amd64\.deb$'
+          check '^adhitron_[0-9.]+_amd64\.deb\.sha256$'
+          check '^adhitron_[0-9.]+_amd64\.deb\.sig$'
+          check '^Adhitron-[0-9.]+-macos-arm64-unsigned\.zip$'
+          check '^Adhitron-[0-9.]+-macos-arm64-unsigned\.zip\.sha256$'
+          check '^Adhitron-[0-9.]+-macos-arm64-unsigned\.zip\.sig$'
+          check '^Adhitron-[0-9.]+-macos-x64-unsigned\.zip$'
+          check '^Adhitron-[0-9.]+-macos-x64-unsigned\.zip\.sha256$'
+          check '^Adhitron-[0-9.]+-macos-x64-unsigned\.zip\.sig$'
           exit $missing
       - name: Publish
         env:

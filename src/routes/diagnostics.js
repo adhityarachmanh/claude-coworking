@@ -45,11 +45,11 @@ export function register(router) {
         ['info.json', JSON.stringify(info, null, 2)],
         ['health.json', JSON.stringify(health, null, 2)],
         ['server.log', log],
-        ['README.txt', 'Bundel diagnostik Adhit Office.\n\n- info.json: versi, platform, jumlah project dan catatan pemakaian\n- health.json: hasil Kesehatan sistem\n- server.log: 512 KB terakhir log server (folder home disamarkan sebagai ~)\n\nTidak berisi isi percakapan, token, atau kunci push.'],
+        ['README.txt', 'Bundel diagnostik Adhitron.\n\n- info.json: versi, platform, jumlah project dan catatan pemakaian\n- health.json: hasil Kesehatan sistem\n- server.log: 512 KB terakhir log server (folder home disamarkan sebagai ~)\n\nTidak berisi isi percakapan, token, atau kunci push.'],
       ];
       res.writeHead(200, {
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="adhit-office-diagnostik-${now.toLocaleDateString('sv-SE')}.zip"`,
+        'Content-Disposition': `attachment; filename="adhitron-diagnostik-${now.toLocaleDateString('sv-SE')}.zip"`,
         'Cache-Control': 'no-store',
       });
       const zip = new ZipWriter(res);

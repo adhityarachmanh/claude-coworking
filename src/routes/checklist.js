@@ -58,7 +58,7 @@ export function register(router) {
         }
       };
       if (wanted.has('readme') && !has(dir, 'README.md', 'README.MD', 'readme.md', 'Readme.md')) {
-        write('README.md', `# ${project.name}\n\nProject ini dikelola dari Adhit Office.\n\n## Menjalankan\n\nIsi perintah untuk memasang dependensi dan menjalankan project di sini.\n\n## Test\n\nIsi perintah test di sini.\n`);
+        write('README.md', `# ${project.name}\n\nProject ini dikelola dari Adhitron.\n\n## Menjalankan\n\nIsi perintah untuk memasang dependensi dan menjalankan project di sini.\n\n## Test\n\nIsi perintah test di sini.\n`);
       }
       if (wanted.has('agents') && !has(dir, 'AGENTS.md', 'CLAUDE.md', 'CLAUDE.local.md')) {
         write('AGENTS.md', `# Panduan untuk AI\n\n- Jelaskan perubahan yang akan dibuat sebelum mengedit banyak file.\n- Jalankan test/lint yang relevan sebelum menyatakan pekerjaan selesai.\n- Jangan menyimpan rahasia (token, kunci, kata sandi) di dalam repo.\n`);

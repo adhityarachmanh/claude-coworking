@@ -2,6 +2,14 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.10
+
+- **🏷️ Nama baru: Adhitron.** Nama tampilan aplikasi berubah dari *Adhit Office* menjadi **Adhitron** di judul halaman, PWA, notifikasi, laporan, dan pesan terminal. Logo dan ikon ikut diperbarui (favicon, ikon PWA, ikon installer dan aplikasi desktop). Fitur dan perilakunya tidak berubah.
+- **👥 Nama role bawaan ikut berganti.** Default di 👥 Kelola tim menjadi `Adhitron - Lead`, `Adhitron - PM`, `Adhitron - BA`, dan seterusnya untuk 18 role (Lead, PM, BA, Tech Lead, UI/UX, Frontend, Backend, DBA, QA, Security, DevOps, Writer, Freelancer, Mobile, Data/AI, Support, Reviewer, Compliance). Nama yang sudah kamu ubah sendiri tetap dipakai; **↺ Tim bawaan** mengembalikannya ke nama baru.
+- **📦 EXE, installer, dan aplikasi desktop berganti nama.** Build Windows menghasilkan `Adhitron.exe` di `dist\Adhitron` dengan installer `Adhitron-Setup-<versi>.exe`; aplikasi desktop menjadi **Adhitron Desktop** (`AdhitronDesktop.exe`); Linux memakai `Adhitron`/`adhitron_<versi>_amd64.deb`, macOS memakai `Adhitron.app`. Installer memakai AppId yang sama, jadi pemasangan 1.0.9 ditingkatkan di tempat tanpa uninstall.
+- **💾 Data, env, dan auto-start lama tetap dipakai.** Folder data (`%LOCALAPPDATA%\AdhitOffice`, `~/Library/Application Support/AdhitOffice`, `~/.local/share/adhit-office`), env `OFFICE_*`, nama backup `adhit-office-backup*.zip`, repo `claude-coworking`, serta `claude-coworking.vbs`, task `Claude Coworking`, dan rule firewall `Claude Coworking (Tailscale)` tidak berubah. Tidak ada migrasi data: setelah update, riwayat, pengaturan, pairing HP, dan auto-start langsung terpakai. Jangan memindahkan folder data ke nama baru.
+- **⬆ Update dari versi lama tetap satu jalur.** Rilis transisi menerbitkan installer yang sama dengan dua nama: `Adhitron-Setup-*.exe` dan `AdhitOffice-Setup-*.exe`. Versi 1.0.9 hanya mencari nama lama, sedangkan versi baru membaca nama Adhitron lebih dulu dan memakai nama lama sebagai cadangan.
+
 ## 1.0.9
 
 - **📋 Pencarian & filter antrian.** Dialog antrian punya pencarian teks dan filter status (Menunggu/Berjalan/Selesai/Gagal); item yang tidak cocok disembunyikan dengan empty state yang jelas.

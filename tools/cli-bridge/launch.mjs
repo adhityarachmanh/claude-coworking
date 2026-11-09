@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 🌉 `office claude [...]`: the opt-in wrapper. It asks this laptop's Adhit Office for the narrow CLI token (only
+// 🌉 `office claude [...]`: the opt-in wrapper. It asks this laptop's Adhitron for the narrow CLI token (only
 // usable for approval decisions), writes a temporary settings file in the app data folder, and runs the user's own
 // `claude` with that file. Without this command nothing changes; ~/.claude/settings.json is never touched.
 import { execFileSync, spawn } from 'node:child_process';
@@ -88,7 +88,7 @@ async function main() {
   }
   const token = await readToken().catch(() => null);
   if (!token) {
-    process.stderr.write(`Adhit Office tidak bisa dihubungi di ${BASE}. Jalankan server dulu, lalu ulangi.\n`);
+    process.stderr.write(`Adhitron tidak bisa dihubungi di ${BASE}. Jalankan server dulu, lalu ulangi.\n`);
     process.exitCode = 1;
     return;
   }

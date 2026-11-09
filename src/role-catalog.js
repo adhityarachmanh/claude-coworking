@@ -20,20 +20,20 @@ export const GENERALIST = 'freelancer';
  * `signals` (optional roles only): agent-type / file / command / MCP patterns, consulted only while active.
  */
 const ENTRIES = [
-  { id: 'pm', name: 'Adhit - PM', title: 'Product Manager', description: 'Scope, prioritas, acceptance criteria, pecah pekerjaan jadi task.', fallback: ['ba', 'architect'], lead: 'scope, priorities, acceptance criteria, task breakdown' },
-  { id: 'ba', name: 'Adhit - BA', title: 'Business Analyst', description: 'Kebutuhan, aturan bisnis, analisis kode & dokumen yang ada.', fallback: ['pm', 'architect'], lead: 'requirements, business rules, analysis of existing code and documents' },
-  { id: 'architect', name: 'Adhit - Tech Lead', title: 'Tech Lead / Architect', description: 'Desain teknis, keputusan arsitektur, review diff.', fallback: ['backend'], lead: 'technical design, architecture decisions, code review of diffs' },
-  { id: 'ui-ux', name: 'Adhit - UI/UX', title: 'UI/UX Designer', description: 'Alur pengguna, desain UI, styling, aksesibilitas.', fallback: ['frontend'], lead: 'user flows, UI design, styling, accessibility' },
-  { id: 'frontend', name: 'Adhit - Frontend', title: 'Frontend Developer', description: 'Implementasi UI: komponen, halaman, state di client.', fallback: ['ui-ux', 'backend'], lead: 'UI implementation (components, pages, client state)' },
-  { id: 'backend', name: 'Adhit - Backend', title: 'Backend Developer', description: 'API, logika bisnis, integrasi, perbaikan di server.', fallback: ['frontend'], lead: 'APIs, business logic, integrations, server-side fixes' },
-  { id: 'dba', name: 'Adhit - DBA', title: 'Database Engineer', description: 'Skema, migrasi, query, perbaikan data, performa database.', fallback: ['backend'], lead: 'schema, migrations, queries, data fixes, database performance' },
-  { id: 'qa', name: 'Adhit - QA', title: 'QA Engineer', description: 'Rencana test, test otomatis, reproduksi bug, verifikasi.', fallback: ['backend'], lead: 'test plans, automated tests, bug reproduction, verification' },
-  { id: 'security', name: 'Adhit - Security', title: 'Security Engineer', description: 'Security review, kerentanan, secret, audit dependency.', fallback: ['reviewer', 'architect'], lead: 'security review, vulnerabilities, secrets, dependency audit' },
-  { id: 'devops', name: 'Adhit - DevOps', title: 'DevOps / SRE', description: 'Build, CI/CD, Docker, deployment, environment & konfigurasi.', fallback: ['backend'], lead: 'build, CI/CD, Docker, deployment, environment and config issues' },
-  { id: 'writer', name: 'Adhit - Writer', title: 'Technical Writer', description: 'README, dokumentasi API, changelog, panduan pengguna.', fallback: ['ba'], lead: 'README, API docs, changelog, user guides' },
-  { id: 'freelancer', name: 'Adhit - Freelancer', title: 'Freelancer / Generalist', description: 'Generalis untuk subagent yang bukan spesialis (general-purpose, fork, tipe kustom). Selalu aktif.', fallback: [], lead: null },
+  { id: 'pm', name: 'Adhitron - PM', title: 'Product Manager', description: 'Scope, prioritas, acceptance criteria, pecah pekerjaan jadi task.', fallback: ['ba', 'architect'], lead: 'scope, priorities, acceptance criteria, task breakdown' },
+  { id: 'ba', name: 'Adhitron - BA', title: 'Business Analyst', description: 'Kebutuhan, aturan bisnis, analisis kode & dokumen yang ada.', fallback: ['pm', 'architect'], lead: 'requirements, business rules, analysis of existing code and documents' },
+  { id: 'architect', name: 'Adhitron - Tech Lead', title: 'Tech Lead / Architect', description: 'Desain teknis, keputusan arsitektur, review diff.', fallback: ['backend'], lead: 'technical design, architecture decisions, code review of diffs' },
+  { id: 'ui-ux', name: 'Adhitron - UI/UX', title: 'UI/UX Designer', description: 'Alur pengguna, desain UI, styling, aksesibilitas.', fallback: ['frontend'], lead: 'user flows, UI design, styling, accessibility' },
+  { id: 'frontend', name: 'Adhitron - Frontend', title: 'Frontend Developer', description: 'Implementasi UI: komponen, halaman, state di client.', fallback: ['ui-ux', 'backend'], lead: 'UI implementation (components, pages, client state)' },
+  { id: 'backend', name: 'Adhitron - Backend', title: 'Backend Developer', description: 'API, logika bisnis, integrasi, perbaikan di server.', fallback: ['frontend'], lead: 'APIs, business logic, integrations, server-side fixes' },
+  { id: 'dba', name: 'Adhitron - DBA', title: 'Database Engineer', description: 'Skema, migrasi, query, perbaikan data, performa database.', fallback: ['backend'], lead: 'schema, migrations, queries, data fixes, database performance' },
+  { id: 'qa', name: 'Adhitron - QA', title: 'QA Engineer', description: 'Rencana test, test otomatis, reproduksi bug, verifikasi.', fallback: ['backend'], lead: 'test plans, automated tests, bug reproduction, verification' },
+  { id: 'security', name: 'Adhitron - Security', title: 'Security Engineer', description: 'Security review, kerentanan, secret, audit dependency.', fallback: ['reviewer', 'architect'], lead: 'security review, vulnerabilities, secrets, dependency audit' },
+  { id: 'devops', name: 'Adhitron - DevOps', title: 'DevOps / SRE', description: 'Build, CI/CD, Docker, deployment, environment & konfigurasi.', fallback: ['backend'], lead: 'build, CI/CD, Docker, deployment, environment and config issues' },
+  { id: 'writer', name: 'Adhitron - Writer', title: 'Technical Writer', description: 'README, dokumentasi API, changelog, panduan pengguna.', fallback: ['ba'], lead: 'README, API docs, changelog, user guides' },
+  { id: 'freelancer', name: 'Adhitron - Freelancer', title: 'Freelancer / Generalist', description: 'Generalis untuk subagent yang bukan spesialis (general-purpose, fork, tipe kustom). Selalu aktif.', fallback: [], lead: null },
   {
-    id: 'mobile', name: 'Adhit - Mobile', title: 'Mobile Developer', description: 'Aplikasi mobile (Flutter, React Native, Android/iOS), build & bug khusus perangkat.', fallback: ['frontend'], optional: true,
+    id: 'mobile', name: 'Adhitron - Mobile', title: 'Mobile Developer', description: 'Aplikasi mobile (Flutter, React Native, Android/iOS), build & bug khusus perangkat.', fallback: ['frontend'], optional: true,
     lead: 'mobile apps (Flutter, React Native, Android/iOS), device-specific bugs, app builds',
     signals: {
       agent: /\b(mobile|flutter|android|ios|react-native|swift|swiftui|kotlin|dart|expo|xamarin)\b/,
@@ -42,7 +42,7 @@ const ENTRIES = [
     },
   },
   {
-    id: 'data', name: 'Adhit - Data/AI', title: 'Data / AI Engineer', description: 'Pipeline data, analitik, notebook, fitur ML/AI (LLM, embedding, RAG).', fallback: ['backend', 'dba'], optional: true,
+    id: 'data', name: 'Adhitron - Data/AI', title: 'Data / AI Engineer', description: 'Pipeline data, analitik, notebook, fitur ML/AI (LLM, embedding, RAG).', fallback: ['backend', 'dba'], optional: true,
     lead: 'data pipelines, analytics, notebooks, ML/AI features (LLM, embeddings, RAG), data quality',
     signals: {
       agent: /\b(data-engineer|data-scientist|data-analyst|data-science|ml|mlops|machine-learning|ai|ai-engineer|analytics|notebook|jupyter|llm|embedding|embeddings|rag|etl|dbt|airflow)\b/,
@@ -51,7 +51,7 @@ const ENTRIES = [
     },
   },
   {
-    id: 'support', name: 'Adhit - Support', title: 'Tech Support / Ops Helpdesk', description: 'Triage laporan user, reproduksi dari log, respons awal insiden, jawaban helpdesk.', fallback: ['qa', 'ba'], optional: true,
+    id: 'support', name: 'Adhitron - Support', title: 'Tech Support / Ops Helpdesk', description: 'Triage laporan user, reproduksi dari log, respons awal insiden, jawaban helpdesk.', fallback: ['qa', 'ba'], optional: true,
     lead: 'triage of user reports, reproducing issues from logs, first incident response, helpdesk answers',
     signals: {
       agent: /\b(support|helpdesk|help-desk|triage|triager|incident|incident-responder|repro|reproducer|on-call|oncall|customer-support|ticket)\b/,
@@ -59,7 +59,7 @@ const ENTRIES = [
     },
   },
   {
-    id: 'reviewer', name: 'Adhit - Reviewer', title: 'Code Reviewer', description: 'Review kode independen atas diff: kebenaran, keterbacaan, test.', fallback: ['architect'], optional: true,
+    id: 'reviewer', name: 'Adhitron - Reviewer', title: 'Code Reviewer', description: 'Review kode independen atas diff: kebenaran, keterbacaan, test.', fallback: ['architect'], optional: true,
     lead: 'independent code review of diffs (correctness, readability, tests) before work is done',
     signals: {
       agent: /\b(review|reviewer|code-reviewer|pr-review|pr-reviewer|code-review)\b/,
@@ -67,7 +67,7 @@ const ENTRIES = [
     },
   },
   {
-    id: 'compliance', name: 'Adhit - Compliance', title: 'Compliance / Privacy (DPO)', description: 'Kepatuhan data pribadi (UU PDP, GDPR): consent, retensi, kebijakan privasi, DPIA.', fallback: ['security', 'ba'], optional: true,
+    id: 'compliance', name: 'Adhitron - Compliance', title: 'Compliance / Privacy (DPO)', description: 'Kepatuhan data pribadi (UU PDP, GDPR): consent, retensi, kebijakan privasi, DPIA.', fallback: ['security', 'ba'], optional: true,
     lead: 'privacy & compliance: personal data handling (UU PDP / GDPR), consent, retention, data subject rights, privacy policy/ToS review, DPIA',
     signals: {
       agent: /\b(compliance|privacy|dpo|gdpr|pdp|legal|consent|dpia|data-protection)\b/,
@@ -85,6 +85,40 @@ export const CATALOG_IDS = Object.freeze(ROLE_CATALOG.map((r) => r.id));
 export const CLASSIC_TEAM = Object.freeze(ROLE_CATALOG.filter((r) => !r.optional).map((r) => r.id));
 /** Default team (never saved / reset): the whole catalog (all 17 roles) except roles marked `defaultOff` (none today). */
 export const DEFAULT_ENABLED = Object.freeze(ROLE_CATALOG.filter((r) => !r.defaultOff).map((r) => r.id));
+
+/** The product's display name (user-facing text; never a data folder, env var or file name). */
+export const PRODUCT_NAME = 'Adhitron';
+/** The Lead's default display name (the Lead is not in the catalog). */
+export const LEAD_NAME = `${PRODUCT_NAME} - Lead`;
+export const DEFAULT_NAME_PREFIX = `${PRODUCT_NAME} - `;
+const OLD_NAME_PREFIX = 'Adhit - ';
+/** role id (or `claude` for the Lead) → its current default display name. */
+const DEFAULT_ROLE_NAMES = new Map([[LEAD_ID, LEAD_NAME], ...ROLE_CATALOG.map((r) => [r.id, r.name])]);
+/** role id → its default display name before the rename ("Adhit - X"). */
+const OLD_ROLE_NAMES = new Map([...DEFAULT_ROLE_NAMES].map(([role, name]) => [
+  role,
+  name.startsWith(DEFAULT_NAME_PREFIX) ? `${OLD_NAME_PREFIX}${name.slice(DEFAULT_NAME_PREFIX.length)}` : name,
+]));
+
+/**
+ * One-way rename of the built-in display names in a saved `teamNames` map (state.json): a stored value is
+ * replaced only when it is exactly the old default for that role ("Adhit - QA"), so custom names are never
+ * touched. Idempotent: after the first run nothing matches and the caller has nothing new to persist.
+ * @returns {{ names: object, changed: boolean }}
+ */
+export function migrateTeamNames(names) {
+  if (!names || typeof names !== 'object' || Array.isArray(names)) return { names: {}, changed: false };
+  const next = { ...names };
+  let changed = false;
+  for (const [role, oldName] of OLD_ROLE_NAMES) {
+    if (next[role] !== oldName) continue;
+    const newName = DEFAULT_ROLE_NAMES.get(role);
+    if (!newName || newName === oldName) continue;
+    next[role] = newName;
+    changed = true;
+  }
+  return { names: next, changed };
+}
 
 /** A team setting the user sent that cannot be accepted (shown as-is, HTTP 400). */
 export class TeamConfigError extends Error {
@@ -188,7 +222,7 @@ export function teamPrompt(enabled, agentNames = enabled) {
   const flows = [...DEFAULT_FLOWS, ...ROLE_CATALOG.filter((r) => r.optional && on.has(r.id)).map((r) => OPTIONAL_FLOWS[r.id])];
   const missing = CLASSIC_TEAM.some((id) => !on.has(id));
   return [
-    'You are the Engineering Lead of an IT team that the user watches live in the "Adhit Office" pixel office.',
+    'You are the Engineering Lead of an IT team that the user watches live in the "Adhitron" pixel office.',
     'Delegate focused work to the specialist subagents with the Agent tool, but only to the roles a task actually needs:',
     'each delegation costs time and tokens, so do small or trivial work yourself.',
     ...roles,

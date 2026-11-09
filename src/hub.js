@@ -8,6 +8,7 @@ import { EFFORT_LEVELS } from './effort.js';
 import { MODEL_TIERS } from './model-auto.js';
 import { GO_PLANS } from './opencode-go.js';
 import { describeTool } from './roles.js';
+import { migrateTeamNames } from './role-catalog.js';
 import { basename, normalizePath, projectId } from './util.js';
 import { isMissing } from './projects.js';
 
@@ -273,6 +274,11 @@ export class Hub {
     // 🗂 Archived projects: an id list; a hand-edited file cannot break the picker.
     this.persisted.archivedProjects = Array.isArray(this.persisted.archivedProjects) ? [...new Set(this.persisted.archivedProjects.filter((p) => typeof p === 'string' && p).slice(0, 500))] : [];
     this.persisted.queueRetryOnce = isObject(this.persisted.queueRetryOnce) ? Object.fromEntries(Object.entries(this.persisted.queueRetryOnce).filter(([id, on]) => id && on === true).slice(0, 500)) : {};
+    // 🏷 Team names saved by an older version still hold the old defaults ("Adhit - QA"): rename exactly those
+    // (custom names are untouched) and persist once, so the migration never runs again.
+    const teamNames = migrateTeamNames(this.persisted.teamNames);
+    const teamNamesMigrated = teamNames.changed;
+    if (teamNamesMigrated) this.persisted.teamNames = teamNames.names;
     this.budgetOverrideUntil = 0; // one-shot "allow one turn" after a hard stop (memory only)
     // Ids continue after the stored chats: browsers find a bubble by id, so an id reused after a restart
     // would send a new reply's live updates to an old bubble (the new one stays empty until a reload).
@@ -280,7 +286,7 @@ export class Hub {
     this.seq = Math.max(maxStoredSeq(this.storedChats), this.migrationSeq, Number.isSafeInteger(this.persisted.chatSeq) ? this.persisted.chatSeq : 0);
     // Stage 2: the old app-wide switch's parking lot is flattened here, once, before anything else reads it.
     // save() (not writeState) so a chat migration that failed this run keeps its `chats` in state.json too.
-    if (this.migrateWorkspaces()) this.save();
+    if (this.migrateWorkspaces() || teamNamesMigrated) this.save();
     this.prunePreProjectBackups();
     this.closeStaleReplies();
     this.projects.set(DEMO_ID, { id: DEMO_ID, name: 'Demo kantor', path: null, sources: ['demo'], virtual: true });

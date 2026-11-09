@@ -22,16 +22,22 @@ test('release: draft first, publish only after windows, linux and macOS', () => 
 test('release: publish refuses a release with a missing asset or signature', () => {
   const workflow = read('release.yml');
   for (const asset of [
+    "Adhitron-Setup-[0-9.]+\\.exe$",
+    "Adhitron-Setup-[0-9.]+\\.exe\\.sig$",
+    "Adhitron-[0-9.]+-linux-x64\\.tar\\.gz$",
+    "adhitron_[0-9.]+_amd64\\.deb$",
+    "Adhitron-[0-9.]+-macos-arm64-unsigned\\.zip$",
+    "Adhitron-[0-9.]+-macos-x64-unsigned\\.zip$",
+    // One transition release: 1.0.9 only looks for the legacy Windows installer name.
     "AdhitOffice-Setup-[0-9.]+\\.exe$",
     "AdhitOffice-Setup-[0-9.]+\\.exe\\.sig$",
-    "AdhitOffice-[0-9.]+-linux-x64\\.tar\\.gz$",
-    "adhit-office_[0-9.]+_amd64\\.deb$",
-    "AdhitOffice-[0-9.]+-macos-arm64-unsigned\\.zip$",
-    "AdhitOffice-[0-9.]+-macos-x64-unsigned\\.zip$",
   ]) {
     assert.ok(workflow.includes(asset), `publish checks ${asset}`);
   }
   assert.match(workflow, /exit \$missing/, 'a missing asset fails the publish job');
+  assert.match(workflow, /Copy-Item -Path \$installer -Destination \$legacy/, 'the transition release copies the installer to the legacy name');
+  assert.match(workflow, /foreach \(\$file in @\(\$installer, \$legacy\)\)/, 'both installer names are signed');
+  assert.match(workflow, /Check tag matches package\.json/, 'publish refuses a tag that does not match package.json');
 });
 
 test('build-macos is manual only; tag releases go through release.yml', () => {

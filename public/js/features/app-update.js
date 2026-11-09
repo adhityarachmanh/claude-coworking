@@ -1,4 +1,4 @@
-// ⬆ "Versi baru Adhit Office tersedia" (server: src/app-update.js): a banner under the top bar with what is new and,
+// ⬆ "Versi baru Adhitron tersedia" (server: src/app-update.js): a banner under the top bar with what is new and,
 // on the laptop, "Update sekarang" (git pull --ff-only + clean restart; the page reconnects by itself). The same
 // status sits in ⚙ with a "Cek update" button. A dismissed banner stays away until a newer commit arrives.
 import { api, toast } from '../core/api.js';
@@ -29,7 +29,7 @@ function renderBanner() {
       ? '<span class="cc-hint">Ada perubahan lokal di folder aplikasi: commit/stash dulu, atau jalankan update.cmd.</span>'
       : `<button type="button" class="primary" data-up="run"${up.running || v.updating ? ' disabled' : ''}>${up.running || v.updating ? 'Memperbarui…' : '⬆ Update sekarang'}</button>`;
   box.innerHTML = `<div class="cc-banner ok app-update">
-    <span class="cc-text">⬆ ${desktop ? `Versi baru Adhit Office ${escapeHtml(v.latestVersion ?? '')} tersedia (terpasang ${escapeHtml(v.currentVersion ?? '')}).` : `Versi baru Adhit Office tersedia: ${v.behind} perubahan.`}</span>
+    <span class="cc-text">⬆ ${desktop ? `Versi baru Adhitron ${escapeHtml(v.latestVersion ?? '')} tersedia (terpasang ${escapeHtml(v.currentVersion ?? '')}).` : `Versi baru Adhitron tersedia: ${v.behind} perubahan.`}</span>
     <details class="app-update-list"><summary>Lihat</summary><ul>${list}</ul></details>
     ${action}
     <button type="button" class="icon-btn cc-close" data-up="dismiss" aria-label="Tutup pemberitahuan update" title="Nanti saja">✕</button>
@@ -63,8 +63,8 @@ export function applyAppUpdate(view) {
 async function runUpdate() {
   const desktop = up.view?.mode === 'desktop';
   const question = desktop
-    ? `Update Adhit Office ke versi ${up.view?.latestVersion}?\n\nInstaller akan diunduh, diverifikasi SHA-256, lalu dipasang. Server di-restart sendiri; halaman tersambung lagi.`
-    : `Update Adhit Office (${up.view?.behind ?? 0} perubahan)?\n\ngit pull lalu server di-restart dengan rapi (giliran yang berjalan dicatat dan bisa dilanjutkan). Halaman tersambung lagi sendiri.`;
+    ? `Update Adhitron ke versi ${up.view?.latestVersion}?\n\nInstaller akan diunduh, diverifikasi SHA-256, lalu dipasang. Server di-restart sendiri; halaman tersambung lagi.`
+    : `Update Adhitron (${up.view?.behind ?? 0} perubahan)?\n\ngit pull lalu server di-restart dengan rapi (giliran yang berjalan dicatat dan bisa dilanjutkan). Halaman tersambung lagi sendiri.`;
   if (!window.confirm(question)) return;
   up.running = true;
   renderBanner();

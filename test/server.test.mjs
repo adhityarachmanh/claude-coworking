@@ -842,12 +842,12 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   await sleep(300);
   assert.equal((await lan('/')).headers.get('location'), '/pair', 'unpaired device is sent to pairing');
   assert.equal((await lan('/stream')).status, 401);
-  assert.match(await (await lan('/pair')).text(), /Hubungkan ke Adhit Office/);
+  assert.match(await (await lan('/pair')).text(), /Hubungkan ke Adhitron/);
   // the app icon and manifest load before pairing (browsers fetch the manifest without cookies)
   const manifest = await lan('/manifest.webmanifest');
   assert.equal(manifest.status, 200);
   assert.equal(manifest.headers.get('content-type'), 'application/manifest+json');
-  assert.equal((await manifest.json()).name, 'Adhit Office');
+  assert.equal((await manifest.json()).name, 'Adhitron');
   assert.equal((await lan('/icons/icon-192.png')).headers.get('content-type'), 'image/png');
   assert.equal((await lan('/js/pair.js')).status, 200, 'the pairing page script loads before pairing (no inline script under CSP)');
   const lanPage = await lan('/pair');
@@ -2061,6 +2061,11 @@ test('file viewer: reads text inside the project; truncates, refuses binaries, t
     linked = true;
   } catch (err) {
     t.diagnostic(`junction not possible here: ${err.code}`);
+  }
+  if (linked && !existsSync(path.join(root, 'tautan', 'kunci.txt'))) {
+    // Some Windows setups create the junction but Node cannot traverse it; the check below still runs where it can.
+    linked = false;
+    t.diagnostic('junction created but not readable here: skipped');
   }
   if (linked) {
     const via = await read('tautan/kunci.txt');

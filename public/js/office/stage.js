@@ -236,7 +236,7 @@ ${actor.agentCount}`;
 
   /**
    * Chooses each name tag's label so no two overlap where the people sit: the full name while it fits, else the
-   * name without the prefix the whole team shares ("Adhit - "), else the role's short title. The full name stays
+   * name without the prefix the whole team shares ("Adhitron - "), else the role's short title. The full name stays
    * in the tag's tooltip and accessible name. Runs only when sizes, names or the team change.
    */
   fitTags(actors) {

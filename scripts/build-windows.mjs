@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 📦 Windows build (spike): bundle the server into one executable with Node SEA, then copy the web assets next to it.
 // Usage: node scripts/build-windows.mjs
-// Output: dist/AdhitOffice/AdhitOffice.exe + public/ + ai_logos/ + package.json
+// Output: dist/Adhitron/Adhitron.exe + public/ + ai_logos/ + package.json
 //
 // No runtime dependencies are added to the app: esbuild/postject are fetched with npx at build time.
 import { execFileSync, execSync } from 'node:child_process';
@@ -12,8 +12,8 @@ import { build } from 'esbuild';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUILD = path.join(ROOT, '.build');
-const DIST = path.join(ROOT, 'dist', 'AdhitOffice');
-const EXE = path.join(DIST, 'AdhitOffice.exe');
+const DIST = path.join(ROOT, 'dist', 'Adhitron');
+const EXE = path.join(DIST, 'Adhitron.exe');
 const POSTJECT = path.join(ROOT, 'node_modules', 'postject', 'dist', 'cli.js');
 const FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
 
@@ -62,13 +62,13 @@ const pubkey = path.join(ROOT, 'assets', 'update-pubkey.pem');
 if (existsSync(pubkey)) copyFileSync(pubkey, path.join(DIST, 'update-pubkey.pem'));
 if (existsSync(path.join(DIST, 'data')) || existsSync(path.join(DIST, 'portable'))) throw new Error('Folder data/portable ikut di dist; hapus sebelum membuat installer.');
 writeFileSync(path.join(DIST, 'CARA-PAKAI.txt'), [
-  'Adhit Office (build Windows, eksperimental)',
+  'Adhitron (build Windows, eksperimental)',
   '',
-  '1. Jalankan AdhitOffice.exe. Data disimpan di %LOCALAPPDATA%\\AdhitOffice\\data.',
+  '1. Jalankan Adhitron.exe. Data disimpan di %LOCALAPPDATA%\\AdhitOffice\\data (nama folder lama, sengaja tidak berubah).',
   '2. Buka http://127.0.0.1:4317 di browser (atau pasang sebagai aplikasi/PWA).',
   '3. Prasyarat: Claude Code dan/atau OpenCode sudah terpasang dan login.',
   '',
-  'Mode Desktop: jalankan Adhit Office Desktop dari Start Menu (Electron).',
+  'Mode Desktop: jalankan Adhitron Desktop dari Start Menu (Electron).',
   'Mode portable: buat file bernama "portable" di folder ini; data akan disimpan di .\\data.',
   'Update: ⚙ Sistem → Update aplikasi (GitHub Releases + verifikasi SHA-256/tanda tangan bila tersedia).',
   'Build ini belum ditandatangani; SmartScreen akan memperingatkan.',
@@ -92,8 +92,8 @@ if (!iscc) {
   process.stdout.write('\n⚠ Inno Setup tidak ditemukan; Setup.exe dilewati. Pasang Inno Setup 6, atau set INNO_SETUP_ISCC.\n');
 } else {
   step('Build installer (Inno Setup)');
-  execFileSync(iscc, [`/DMyAppVersion=${version}`, path.join(ROOT, 'installer', 'AdhitOffice.iss')], { cwd: ROOT, stdio: 'inherit' });
-  process.stdout.write(`\n📦 ${path.join(ROOT, 'dist', 'installer', `AdhitOffice-Setup-${version}.exe`)}\n`);
+  execFileSync(iscc, [`/DMyAppVersion=${version}`, path.join(ROOT, 'installer', 'Adhitron.iss')], { cwd: ROOT, stdio: 'inherit' });
+  process.stdout.write(`\n📦 ${path.join(ROOT, 'dist', 'installer', `Adhitron-Setup-${version}.exe`)}\n`);
 }
 
 function findIscc() {

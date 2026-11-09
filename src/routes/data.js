@@ -155,7 +155,7 @@ export function register(router) {
   router.post('/api/data/audit-export', ({ dataDir }, req, res) => {
     const rows = readAudit(dataDir, 500).reverse();
     const csv = ['waktu,aksi,detail', ...rows.map((e) => [new Date(e.at).toISOString(), e.action, String(e.detail ?? '').replace(/"/g, '""')].map((v) => `"${v}"`).join(','))].join('\r\n');
-    res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="adhit-office-audit-${new Date().toLocaleDateString('sv-SE')}.csv"`, 'Cache-Control': 'no-store' });
+    res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="adhitron-audit-${new Date().toLocaleDateString('sv-SE')}.csv"`, 'Cache-Control': 'no-store' });
     res.end(`\uFEFF${csv}\r\n`);
   }, { maxBody: 1024 });
 

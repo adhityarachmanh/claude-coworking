@@ -1,11 +1,11 @@
 // Name tags over the office people: which label each one shows so no two tags overlap (pure, no DOM).
 //
 // Three variants per person, longest first:
-//   0  the full name                      "Adhit - Frontend"
+//   0  the full name                      "Adhitron - Frontend"
 //   1  without the prefix the team shares  "Frontend"      (whole team at once, so the tags stay consistent)
 //   2  the role's short title             "FE"            (only the tags that still collide)
 
-// Separators that end a shared prefix: "Adhit - X", "Adhit – X", "Tim: X", "Adhit | X", "Adhit · X".
+// Separators that end a shared prefix: "Adhitron - X", "Adhitron – X", "Tim: X", "Adhitron | X", "Adhitron · X".
 const SEPARATOR = /\s[-–—|·]\s|:\s/g;
 
 /**

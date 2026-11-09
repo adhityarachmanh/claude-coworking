@@ -1,5 +1,5 @@
 @echo off
-title Adhit Office - Update
+title Adhitron - Update
 cd /d "%~dp0"
 
 where node >nul 2>nul

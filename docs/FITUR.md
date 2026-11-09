@@ -133,24 +133,24 @@ Siapa yang mengerjakan setiap langkah (file, perintah shell, MCP, skill, tipe su
 
 | Orang | Role | Dipakai untuk |
 |---|---|---|
-| Adhit - Lead | Engineering Lead (Claude) | **Atasan**: menerima prompt-mu (di Mode Otak menjadi otak di tengah) dan menutup giliran |
-| Adhit - PM | Product Manager | **Juru bicara & pembagi tugas**: menerima brief dari Lead, memecah pekerjaan di papan task, mengantar tugas ke tiap role dan menerima laporannya, bertanya ke kamu bila perlu. Scope, prioritas, acceptance criteria |
-| Adhit - BA | Business Analyst | Kebutuhan, aturan bisnis, analisis kode/dokumen |
-| Adhit - Tech Lead | Tech Lead / Architect | Desain teknis, arsitektur, review diff |
-| Adhit - UI/UX | UI/UX Designer | Alur pengguna, styling, aksesibilitas |
-| Adhit - Frontend | Frontend Developer | Komponen, halaman, state di client |
-| Adhit - Backend | Backend Developer | API, logika bisnis, integrasi |
-| Adhit - DBA | Database Engineer | Skema, migrasi, query, perbaikan data |
-| Adhit - QA | QA Engineer | Reproduksi bug, test otomatis, verifikasi |
-| Adhit - Security | Security Engineer | Review keamanan, secret, audit dependensi |
-| Adhit - DevOps | DevOps / SRE | Build, CI/CD, Docker, environment, deploy |
-| Adhit - Writer | Technical Writer | README, dokumentasi API, changelog |
-| Adhit - Freelancer | Freelancer / Generalist | Subagent non-spesialis (`general-purpose`, `fork`, tipe tak dikenal). Selalu aktif |
-| Adhit - Mobile | Mobile Developer | Flutter, React Native, Android/iOS |
-| Adhit - Data/AI | Data / AI Engineer | Pipeline data, analitik, fitur ML/AI |
-| Adhit - Support | Tech Support / Helpdesk | Triage laporan user, reproduksi dari log |
-| Adhit - Reviewer | Code Reviewer | Review kode independen sebelum dinyatakan selesai |
-| Adhit - Compliance | Compliance / Privacy (DPO) | Data pribadi (UU PDP / GDPR): consent, retensi, kebijakan privasi |
+| Adhitron - Lead | Engineering Lead (Claude) | **Atasan**: menerima prompt-mu (di Mode Otak menjadi otak di tengah) dan menutup giliran |
+| Adhitron - PM | Product Manager | **Juru bicara & pembagi tugas**: menerima brief dari Lead, memecah pekerjaan di papan task, mengantar tugas ke tiap role dan menerima laporannya, bertanya ke kamu bila perlu. Scope, prioritas, acceptance criteria |
+| Adhitron - BA | Business Analyst | Kebutuhan, aturan bisnis, analisis kode/dokumen |
+| Adhitron - Tech Lead | Tech Lead / Architect | Desain teknis, arsitektur, review diff |
+| Adhitron - UI/UX | UI/UX Designer | Alur pengguna, styling, aksesibilitas |
+| Adhitron - Frontend | Frontend Developer | Komponen, halaman, state di client |
+| Adhitron - Backend | Backend Developer | API, logika bisnis, integrasi |
+| Adhitron - DBA | Database Engineer | Skema, migrasi, query, perbaikan data |
+| Adhitron - QA | QA Engineer | Reproduksi bug, test otomatis, verifikasi |
+| Adhitron - Security | Security Engineer | Review keamanan, secret, audit dependensi |
+| Adhitron - DevOps | DevOps / SRE | Build, CI/CD, Docker, environment, deploy |
+| Adhitron - Writer | Technical Writer | README, dokumentasi API, changelog |
+| Adhitron - Freelancer | Freelancer / Generalist | Subagent non-spesialis (`general-purpose`, `fork`, tipe tak dikenal). Selalu aktif |
+| Adhitron - Mobile | Mobile Developer | Flutter, React Native, Android/iOS |
+| Adhitron - Data/AI | Data / AI Engineer | Pipeline data, analitik, fitur ML/AI |
+| Adhitron - Support | Tech Support / Helpdesk | Triage laporan user, reproduksi dari log |
+| Adhitron - Reviewer | Code Reviewer | Review kode independen sebelum dinyatakan selesai |
+| Adhitron - Compliance | Compliance / Privacy (DPO) | Data pribadi (UU PDP / GDPR): consent, retensi, kebijakan privasi |
 
 **👥 Kelola tim** (⚙, menu ⋯, `Ctrl+P`, atau `/team`): pilih role dari katalog bawaan (12 inti + 5 opsional: Mobile, Data/AI, Support, Reviewer, Compliance). **Bawaan: semua 17 role aktif, termasuk Compliance.** Tim yang sudah pernah disimpan tidak diubah; aktifkan role baru di sini, atau **↺ Tim bawaan**. Lead selalu ada, Freelancer selalu aktif. Role nonaktif tidak dipakai: pekerjaannya dialihkan ke role aktif terdekat (mis. reviewer → architect, data → backend, compliance → security → ba; katalog di `src/role-catalog.js`). Sesi yang diam dimulai ulang otomatis, yang sibuk setelah gilirannya selesai.
 
@@ -301,7 +301,7 @@ Kontrol Spotify yang sudah kamu pakai (Spotify Connect) lewat Spotify Web API. B
 
 Menjawab izin sesi `claude` di terminal dari kantor/HP, tanpa mengubah config Claude milikmu.
 
-1. Pastikan Adhit Office berjalan di laptop dan folder kerja adalah project yang terdaftar.
+1. Pastikan Adhitron berjalan di laptop dan folder kerja adalah project yang terdaftar.
 2. Jalankan `office claude` dari folder repo ini (atau `office.cmd` yang ada di PATH), lalu pakai Claude Code seperti biasa.
 3. Saat tool berbahaya (`Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch|WebSearch|mcp__*`) meminta izin, kartu muncul di kantor/HP sebagai **Terminal · CLI bridge**. Izinkan atau tolak dari aplikasi.
 4. Kalau server mati, hook gagal, atau tidak dijawab dalam ±2 menit: hook tidak memberi keputusan dan **prompt terminal** mengambil alih. Tidak ada auto-allow.
@@ -330,8 +330,8 @@ Detail build dan alur rilis: [packaging-desktop.md](packaging-desktop.md).
 `tools/figma-bridge/` menghubungkan agent AI ke **Figma desktop** lewat plugin, tanpa token Figma dan tanpa internet:
 
 - Jalankan bridge: `node tools/figma-bridge/server.mjs` (HTTP lokal `127.0.0.1:3939` + MCP stdio). Terminal mencetak **token bridge**; tempel sekali di plugin.
-- Di Figma desktop: **Plugins → Development → Import plugin from manifest…** → pilih `tools/figma-bridge/plugin/manifest.json`, lalu jalankan **Adhit Office Bridge** di file yang ingin dikerjakan. Isi token bridge, lalu biarkan jendela plugin terbuka.
-- Daftarkan MCP di Adhit Office (**🔌 Server MCP**) dengan command `node <path repo>\tools\figma-bridge\server.mjs`.
+- Di Figma desktop: **Plugins → Development → Import plugin from manifest…** → pilih `tools/figma-bridge/plugin/manifest.json`, lalu jalankan **Adhitron Bridge** di file yang ingin dikerjakan. Isi token bridge, lalu biarkan jendela plugin terbuka.
+- Daftarkan MCP di Adhitron (**🔌 Server MCP**) dengan command `node <path repo>\tools\figma-bridge\server.mjs`.
 - Tool: `figma_status`, `figma_selection`, `figma_page`, `figma_node`, `figma_export` (SVG/PNG), `figma_create_frame`, `figma_create_rect`, `figma_create_text`, `figma_set_fill`, `figma_move`.
 - Perintah masuk lewat MCP atau CLI lokal (`cli.mjs`); `/poll`, `/result`, dan `/exec` mewajibkan token, CORS hanya untuk origin plugin, dan `delete`/`batch` tidak diekspos lewat HTTP. Plugin memakai izin akun Figma kamu dan hanya file yang sedang terbuka. Detail & troubleshooting: [`tools/figma-bridge/README.md`](../tools/figma-bridge/README.md).
 

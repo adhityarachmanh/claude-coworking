@@ -615,7 +615,7 @@ export class Brain {
     }
     g.restore();
     const sub = st === 'ask' ? 'menunggu izin' : st === 'busy' ? short(person?.task || 'bekerja', 26) : '';
-    this.drawLabel(g, at, roleName(role).replace(/^Adhit - /, ''), sub, active ? '#f4f6ff' : 'rgba(200,210,255,0.6)');
+    this.drawLabel(g, at, roleName(role).replace(/^Adhitron - /, ''), sub, active ? '#f4f6ff' : 'rgba(200,210,255,0.6)');
   }
 
   /**

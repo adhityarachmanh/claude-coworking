@@ -53,7 +53,7 @@ export function checkQuota(now = Date.now()) {
       alerts.sort((a, b) => b.level - a.level);
       const text = alerts.map((a) => alertText(a, now)).join(' ');
       toast(text, alerts[0].level >= th.crit ? 'error' : 'warn');
-      notifyNotice('Adhit Office: kuota Claude', text, 'quota');
+      notifyNotice('Adhitron: kuota Claude', text, 'quota');
     }
   }
   renderQuotaIndicator(windows, th, now);

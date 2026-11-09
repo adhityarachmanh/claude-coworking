@@ -1,6 +1,6 @@
 # Privasi & data pribadi (RoPA/DPIA ringkas)
 
-Dokumen kerja untuk Adhit Office. Ini **bukan nasihat hukum**; tinjau ulang bila dipakai untuk organisasi
+Dokumen kerja untuk Adhitron. Ini **bukan nasihat hukum**; tinjau ulang bila dipakai untuk organisasi
 atau data orang lain. Aplikasi berjalan di laptop sendiri dan menyimpan data di folder `data/`.
 
 ## Peran

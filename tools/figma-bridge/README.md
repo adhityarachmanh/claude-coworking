@@ -26,11 +26,11 @@ Dokumen Figma yang sedang dibuka
    - Buka **Figma desktop**, bukan browser.
    - Menu **Plugins → Development → Import plugin from manifest…**
    - Pilih `tools/figma-bridge/plugin/manifest.json`.
-   - Buka file desainmu → **Plugins → Development → Adhit Office Bridge**.
+   - Buka file desainmu → **Plugins → Development → Adhitron Bridge**.
    - Tempel **Token bridge** dari terminal ke kolom token, lalu **Simpan**.
    - Jendela plugin menampilkan “Terhubung. Menunggu perintah dari agent…”. Biarkan terbuka.
 
-3. **Daftarkan MCP** di Adhit Office:
+3. **Daftarkan MCP** di Adhitron:
    - Buka project → **🔌 Server MCP** → tambah server lokal.
    - Command: `node C:\Users\adhit\projects\claude-coworking\tools\figma-bridge\server.mjs`
    - Scope: **user** (semua project) atau project ini.

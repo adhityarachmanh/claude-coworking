@@ -1,5 +1,5 @@
-// 🖥 Adhit Office Desktop: a thin Electron window over the existing local server. It never embeds or replaces the
-// server; if 127.0.0.1:4317 is already healthy it just connects, otherwise it starts AdhitOffice.exe and waits.
+// 🖥 Adhitron Desktop: a thin Electron window over the existing local server. It never embeds or replaces the
+// server; if 127.0.0.1:4317 is already healthy it just connects, otherwise it starts Adhitron.exe and waits.
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,7 +35,7 @@ async function healthy(timeoutMs = 1200) {
 function serverLaunch() {
   if (process.env.OFFICE_SERVER_BIN) return { command: process.env.OFFICE_SERVER_BIN, args: ['--background'] };
   if (!app.isPackaged) return { command: process.env.OFFICE_NODE_BIN ?? 'node', args: [path.join(ROOT, 'server.js'), '--background'] };
-  const exe = isWin ? 'AdhitOffice.exe' : 'AdhitOffice';
+  const exe = isWin ? 'Adhitron.exe' : 'Adhitron';
   return { command: path.join(path.dirname(process.execPath), '..', exe), args: ['--background'] };
 }
 
@@ -81,7 +81,7 @@ function createTray() {
   } catch {
     return; // no tray: the window still works
   }
-  tray.setToolTip('Adhit Office');
+  tray.setToolTip('Adhitron');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Buka kantor', click: showWindow },
     {
@@ -104,10 +104,10 @@ function createTray() {
       click: async () => {
         try {
           await api('/api/shutdown');
-          dialog.showMessageBox({ type: 'info', title: 'Adhit Office', message: 'Server dihentikan. Jendela akan ditutup.', buttons: ['OK'] });
+          dialog.showMessageBox({ type: 'info', title: 'Adhitron', message: 'Server dihentikan. Jendela akan ditutup.', buttons: ['OK'] });
           app.quit();
         } catch (err) {
-          dialog.showMessageBox({ type: 'warning', title: 'Adhit Office', message: `Server tidak bisa dihentikan: ${err?.message ?? err}`, buttons: ['OK'] });
+          dialog.showMessageBox({ type: 'warning', title: 'Adhitron', message: `Server tidak bisa dihentikan: ${err?.message ?? err}`, buttons: ['OK'] });
         }
       },
     },
@@ -130,7 +130,7 @@ function createWindow() {
     minHeight: 640,
     show: false,
     backgroundColor: '#1d1f24',
-    title: 'Adhit Office',
+    title: 'Adhitron',
     icon: iconPath('icon.png'),
     autoHideMenuBar: true,
     webPreferences: {
@@ -163,7 +163,7 @@ if (!lock) {
     if (isMac) app.dock?.show?.();
     const ready = await ensureServer();
     if (!ready) {
-      dialog.showMessageBoxSync({ type: 'error', title: 'Adhit Office', message: 'Server lokal tidak bisa dijalankan di 127.0.0.1:4317.\n\nJalankan Adhit Office dari menu Start, lalu coba lagi.', buttons: ['Keluar'] });
+      dialog.showMessageBoxSync({ type: 'error', title: 'Adhitron', message: 'Server lokal tidak bisa dijalankan di 127.0.0.1:4317.\n\nJalankan Adhitron dari menu Start, lalu coba lagi.', buttons: ['Keluar'] });
       app.quit();
       return;
     }
@@ -172,7 +172,7 @@ if (!lock) {
     app.on('activate', showWindow);
     if (process.env.OFFICE_DESKTOP_TEST === '1') setTimeout(() => { quitting = true; app.quit(); }, 2500);
   }).catch((err) => {
-    dialog.showMessageBoxSync({ type: 'error', title: 'Adhit Office', message: String(err?.message ?? err), buttons: ['Keluar'] });
+    dialog.showMessageBoxSync({ type: 'error', title: 'Adhitron', message: String(err?.message ?? err), buttons: ['Keluar'] });
     app.quit();
   });
   app.on('window-all-closed', () => {

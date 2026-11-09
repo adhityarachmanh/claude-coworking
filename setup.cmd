@@ -1,5 +1,5 @@
 @echo off
-title Adhit Office - Setup
+title Adhitron - Setup
 cd /d "%~dp0"
 
 where node >nul 2>nul

@@ -32,9 +32,9 @@ const GIT_BUFFER = 64 * 1024 * 1024; // `git show` of one file
 // only keeps the snapshot working in a repository where git has none configured.
 const STASH_ENV = {
   ...process.env,
-  GIT_AUTHOR_NAME: 'Adhit Office',
+  GIT_AUTHOR_NAME: 'Adhitron',
   GIT_AUTHOR_EMAIL: 'office@localhost',
-  GIT_COMMITTER_NAME: 'Adhit Office',
+  GIT_COMMITTER_NAME: 'Adhitron',
   GIT_COMMITTER_EMAIL: 'office@localhost',
   GIT_TERMINAL_PROMPT: '0',
   LC_ALL: 'C',

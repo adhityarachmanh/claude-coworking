@@ -449,7 +449,7 @@ function downloadCsv() {
   const periods = (s.byPeriod ?? []).filter((p) => p.total);
   const head = ['Periode', 'Input', 'Output', 'Cache read', 'Total token', 'Biaya USD'];
   const meta = [
-    ['Laporan', 'Adhit Office'],
+    ['Laporan', 'Adhitron'],
     ['Dari', new Date(s.from).toLocaleString('id-ID')],
     ['Sampai', new Date(s.to).toLocaleString('id-ID')],
     ['Total token', s.totals?.total ?? 0],

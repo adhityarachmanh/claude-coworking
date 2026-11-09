@@ -27,6 +27,6 @@ process.stdout.write([
   `Disalin ke : ${target} (ikut build; update wajib .sig)`,
   '',
   'Tanda tangani rilis:',
-  `  node scripts/sign-release.mjs dist/installer/AdhitOffice-Setup-<versi>.exe ${privateFile}`,
+  `  node scripts/sign-release.mjs dist/installer/Adhitron-Setup-<versi>.exe ${privateFile}`,
   '',
 ].join('\n'));

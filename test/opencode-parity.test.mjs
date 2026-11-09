@@ -148,7 +148,7 @@ test('🔔 push: an OpenCode turn that ends sends "done" (minimal payload, no an
   const p = got[0].payload;
   assert.equal(p.project, project.id);
   assert.equal(p.projectName, 'toko');
-  assert.equal(p.role, 'Adhit - Lead');
+  assert.equal(p.role, 'Adhitron - Lead');
   assert.equal(got[0].headers.Urgency, 'normal');
   assert.ok(!JSON.stringify(p).includes('OpenCode palsu'), 'never the answer text');
 });

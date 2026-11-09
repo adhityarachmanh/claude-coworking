@@ -3,7 +3,7 @@
 // The API token of the server run that served this page. Mutable: a restarted server has a new one
 // (the stream picks it up on reconnect, see refreshToken in features/connection.js).
 export const auth = { token: document.querySelector('meta[name="office-token"]').content };
-export const APP_NAME = 'Adhit Office';
+export const APP_NAME = 'Adhitron';
 export const DEMO_ID = 'demo';
 
 export const state = {

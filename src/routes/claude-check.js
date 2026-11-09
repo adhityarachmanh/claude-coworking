@@ -42,7 +42,7 @@ export function register(router) {
     }, { maxBody: 1024 });
   }
 
-  // ⬆ Adhit Office's own update (src/app-update.js): check now / pull + restart. Laptop only (LOCAL_ONLY).
+  // ⬆ Adhitron's own update (src/app-update.js): check now / pull + restart. Laptop only (LOCAL_ONLY).
   router.post('/api/app-update/check', async ({ appUpdater }, req, res) => json(res, 200, await appUpdater.check()), { maxBody: 1024 });
   router.post('/api/app-update/run', async ({ appUpdater }, req, res) => {
     const r = await appUpdater.update();

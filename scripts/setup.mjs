@@ -176,7 +176,7 @@ async function setupAutostart() {
 
 // ---------- main ----------
 
-console.log('\n=== Adhit Office — setup ===');
+console.log('\n=== Adhitron — setup ===');
 if (process.argv.includes('--remove')) {
   setAutostart(false, APP_DIR, PORT);
   ok('Auto-start dan penjaga Task Scheduler dihapus.');

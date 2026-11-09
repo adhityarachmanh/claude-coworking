@@ -46,7 +46,7 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AdhitOffice-macos-${{ matrix.arch }}
+          name: Adhitron-macos-${{ matrix.arch }}
           path: |
             dist/macos/*.zip
             dist/macos/*.sha256

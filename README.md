@@ -1,4 +1,4 @@
-# Adhit Office
+# Adhitron
 
 Kantor pixel-art untuk **mengoperasikan Claude Code dari browser dan HP**. Pilih project, ketik prompt, jawab izin. Tim IT berisi 17 role + Lead terlihat bekerja di kantor secara real-time. Sesi yang kamu jalankan di terminal (CLI) juga ikut tampil.
 
@@ -12,7 +12,7 @@ Server menjalankan Claude Code milikmu sendiri dalam mode headless, jadi login, 
 
 Panduan harian yang lebih santai: [docs/PANDUAN.md](docs/PANDUAN.md). Detail tiap fitur: [docs/FITUR.md](docs/FITUR.md). Riwayat perubahan: [CHANGELOG.md](CHANGELOG.md).
 
-> Dulu bernama *Claude Coworking*. Nama teknis yang sudah terpasang di Windows (file `claude-coworking.vbs`, task Task Scheduler `Claude Coworking`, rule firewall `Claude Coworking (Tailscale)`) sengaja tidak diganti, supaya auto-start yang sudah jalan tidak rusak.
+> **Kompatibilitas nama lama.** Nama tampilan aplikasi kini **Adhitron** (sebelumnya *Adhit Office*, dan sebelum itu *Claude Coworking*). Nama internal sengaja tidak diganti supaya data dan auto-start yang sudah terpasang tetap jalan: repo `claude-coworking`, folder data `%LOCALAPPDATA%\AdhitOffice` (Windows), `~/Library/Application Support/AdhitOffice` (macOS), `~/.local/share/adhit-office` (Linux), env `OFFICE_*`, backup `adhit-office-backup*.zip`, serta `claude-coworking.vbs`, task Task Scheduler `Claude Coworking`, dan rule firewall `Claude Coworking (Tailscale)`.
 
 **Isi**
 
@@ -52,7 +52,7 @@ Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server t
 | ⚙ → *Nyalakan otomatis saat Windows login* | Pasang atau lepas auto-start dari web (file `claude-coworking.vbs` di folder Startup). Log di `data/server.log` |
 | ⚙ → **⏻ Matikan server** | Hentikan server background, misalnya sebelum `git pull` |
 | **`update.cmd`** | Update ke versi terbaru dari GitHub: tampilkan perubahan → tanya (Y/n) → `git pull --ff-only` → restart rapi. Menolak kalau ada perubahan lokal yang belum di-commit. `node scripts/update.mjs --check` hanya mengecek |
-| Banner **⬆ Versi baru tersedia** / ⚙ → *Update Adhit Office* | Server mengecek GitHub tiap 30 menit (hanya `git fetch`). Banner menampilkan daftar perubahan dan **Update sekarang** (dari laptop) = pull + restart otomatis; halaman tersambung lagi sendiri. `OFFICE_UPDATE_CHECK=0` mematikan pengecekan |
+| Banner **⬆ Versi baru tersedia** / ⚙ → *Update Adhitron* | Server mengecek GitHub tiap 30 menit (hanya `git fetch`). Banner menampilkan daftar perubahan dan **Update sekarang** (dari laptop) = pull + restart otomatis; halaman tersambung lagi sendiri. `OFFICE_UPDATE_CHECK=0` mematikan pengecekan |
 | `node scripts/restart.mjs` | Restart yang rapi (lihat [Test & pengembangan](#test--pengembangan)) |
 | `node scripts\setup.mjs --check` | Cek status semua langkah setup tanpa mengubah apa pun |
 | `uninstall-autostart.cmd` | Lepas auto-start dan penjaga Task Scheduler |
@@ -78,8 +78,8 @@ Installer Windows menawarkan tiga mode:
 - **Desktop** — jendela Electron + tray; memakai server yang sama.
 - **All** — keduanya.
 
-Hasil Windows: `dist\installer\AdhitOffice-Setup-<versi>.exe` (per-user, tanpa admin), folder portable
-`dist\AdhitOffice`, dan shell Electron di `dist\electron`. UI tetap dibuka di `http://127.0.0.1:4317`;
+Hasil Windows: `dist\installer\Adhitron-Setup-<versi>.exe` (per-user, tanpa admin), folder portable
+`dist\Adhitron`, dan shell Electron di `dist\electron`. UI tetap dibuka di `http://127.0.0.1:4317`;
 data Windows di `%LOCALAPPDATA%\AdhitOffice\data`, Linux di `~/.local/share/adhit-office/data`, macOS di
 `~/Library/Application Support/AdhitOffice/data`.
 
@@ -243,7 +243,7 @@ Isi chat dan kode tetap terlihat lewat WiFi, jadi **pakai hanya di WiFi yang kam
 
 ## Saat Claude Code diperbarui
 
-Adhit Office memakai protokol internal Claude Code, sedangkan Claude Code memperbarui dirinya sendiri. Karena itu server membaca versi Claude Code (`claude --version`) saat menyala dan setiap 6 jam. Kalau versinya baru, server menjalankan **cek kontrak ringan** di latar belakang:
+Adhitron memakai protokol internal Claude Code, sedangkan Claude Code memperbarui dirinya sendiri. Karena itu server membaca versi Claude Code (`claude --version`) saat menyala dan setiap 6 jam. Kalau versinya baru, server menjalankan **cek kontrak ringan** di latar belakang:
 
 - Menunggu sampai tidak ada giliran yang berjalan (prompt dan start server tidak pernah ditahan).
 - Sebagian besar tanpa token: versi, flag peluncuran yang dipakai aplikasi, `initialize` (perintah, model, agent dari file), dan perintah kontrol (mode, model, konteks).

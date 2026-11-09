@@ -12,7 +12,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { NOTIFY_KINDS, cleanNotifySettings, isTime, notifyPlan } from '../public/js/core/notify-rules.js';
-import { CATALOG } from './role-catalog.js';
+import { CATALOG, LEAD_NAME, PRODUCT_NAME } from './role-catalog.js';
 import { DEVICE_IDLE_MS } from './remote.js';
 import { MAX_PLAINTEXT, PUSH_SERVICE_HOSTS, WebPushError, endpointAllowed, ensureVapidKeys, sendPush, subscriptionKeys } from './webpush.js';
 
@@ -343,9 +343,9 @@ export class PushService {
       throw new PushError(429, `Tunggu ${retryAfter} detik sebelum tes berikutnya.`, { retryAfter });
     }
     this.lastTest.set(device.id, this.now());
-    const payload = this.payload('test', { project: '', projectName: 'Adhit Office', role: 'Adhit Office', label: 'Tes notifikasi', silent: false, title: '🔔 Tes notifikasi', body: 'Notifikasi dari Adhit Office berfungsi.' });
+    const payload = this.payload('test', { project: '', projectName: PRODUCT_NAME, role: PRODUCT_NAME, label: 'Tes notifikasi', silent: false, title: '🔔 Tes notifikasi', body: `Notifikasi dari ${PRODUCT_NAME} berfungsi.` });
     const result = await this.enqueue(device.id, payload, PUSH_SPEC.test);
-    this.record({ type: 'test', project: '', projectName: 'Adhit Office', role: 'Adhit Office', devices: [device.name] });
+    this.record({ type: 'test', project: '', projectName: PRODUCT_NAME, role: PRODUCT_NAME, devices: [device.name] });
     return { ok: Boolean(result?.ok), status: result?.status ?? null };
   }
 
@@ -522,7 +522,7 @@ export class PushService {
 
   roleName(role) {
     const custom = this.hub.persisted.teamNames?.[role];
-    return cut(custom || CATALOG[role]?.name || (role === 'claude' || !role ? 'Adhit - Lead' : 'Claude'), 40);
+    return cut(custom || CATALOG[role]?.name || (role === 'claude' || !role ? LEAD_NAME : 'Claude'), 40);
   }
 
   /** The decrypted push body (public/sw.js parsePayload). Strings are cut so it always fits one record. */

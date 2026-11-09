@@ -239,7 +239,7 @@ export async function writeBackup(out, { state, usageFile, chatsDir, engineChats
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
     createdAt: new Date().toISOString(),
-    app: { name: 'Adhit Office', version: appVersion },
+    app: { name: 'Adhitron', version: appVersion },
     platform: process.platform,
     homeDir,
     claudeDir,
@@ -430,13 +430,13 @@ export async function previewBackup(zipFile, ctx = {}) {
   const reader = await ZipReader.open(zipFile);
   try {
     const entries = reader.entries.filter((e) => !e.isDir);
-    for (const e of entries) if (!isKnownEntry(e.name)) throw new ZipError(`Entri "${e.name}" bukan bagian dari backup Adhit Office.`);
+    for (const e of entries) if (!isKnownEntry(e.name)) throw new ZipError(`Entri "${e.name}" bukan bagian dari backup Adhitron.`);
     const byName = new Map(entries.map((e) => [e.name, e]));
     const manifestEntry = byName.get('manifest.json');
-    if (!manifestEntry) throw new ZipError('Ini bukan backup Adhit Office (manifest.json tidak ada).');
+    if (!manifestEntry) throw new ZipError('Ini bukan backup Adhitron (manifest.json tidak ada).');
     const manifest = parseJson(await reader.read(manifestEntry, 16 * 1024 * 1024), 'manifest.json');
-    if (manifest.format !== BACKUP_FORMAT) throw new ZipError('Ini bukan backup Adhit Office (format tidak dikenal).');
-    if (!(Number(manifest.version) <= BACKUP_VERSION)) throw new BackupError(400, 'Backup dibuat oleh versi Adhit Office yang lebih baru. Perbarui app ini dulu.');
+    if (manifest.format !== BACKUP_FORMAT) throw new ZipError('Ini bukan backup Adhitron (format tidak dikenal).');
+    if (!(Number(manifest.version) <= BACKUP_VERSION)) throw new BackupError(400, 'Backup dibuat oleh versi Adhitron yang lebih baru. Perbarui app ini dulu.');
     const unpacked = entries.reduce((sum, e) => sum + e.usize, 0);
     if (unpacked > maxUnpacked) throw new BackupError(413, 'Isi backup terlalu besar untuk dipulihkan.');
 
@@ -541,13 +541,13 @@ export async function restoreBackup(zipFile, ctx = {}) {
     const entries = reader.entries.filter((e) => !e.isDir);
     // Zip-slip & co: every name was checked by the reader; here it must also be one of ours. Checked for
     // the whole archive before a single byte is written.
-    for (const e of entries) if (!isKnownEntry(e.name)) throw new ZipError(`Entri "${e.name}" bukan bagian dari backup Adhit Office.`);
+    for (const e of entries) if (!isKnownEntry(e.name)) throw new ZipError(`Entri "${e.name}" bukan bagian dari backup Adhitron.`);
     const byName = new Map(entries.map((e) => [e.name, e]));
     const manifestEntry = byName.get('manifest.json');
-    if (!manifestEntry) throw new ZipError('Ini bukan backup Adhit Office (manifest.json tidak ada).');
+    if (!manifestEntry) throw new ZipError('Ini bukan backup Adhitron (manifest.json tidak ada).');
     const manifest = parseJson(await reader.read(manifestEntry, 16 * 1024 * 1024), 'manifest.json');
-    if (manifest.format !== BACKUP_FORMAT) throw new ZipError('Ini bukan backup Adhit Office (format tidak dikenal).');
-    if (!(Number(manifest.version) <= BACKUP_VERSION)) throw new BackupError(400, 'Backup dibuat oleh versi Adhit Office yang lebih baru. Perbarui app ini dulu.');
+    if (manifest.format !== BACKUP_FORMAT) throw new ZipError('Ini bukan backup Adhitron (format tidak dikenal).');
+    if (!(Number(manifest.version) <= BACKUP_VERSION)) throw new BackupError(400, 'Backup dibuat oleh versi Adhitron yang lebih baru. Perbarui app ini dulu.');
 
     const unpacked = entries.reduce((sum, e) => sum + e.usize, 0);
     if (unpacked > maxUnpacked) throw new BackupError(413, 'Isi backup terlalu besar untuk dipulihkan.');

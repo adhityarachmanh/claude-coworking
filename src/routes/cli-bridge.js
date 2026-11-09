@@ -30,7 +30,7 @@ async function ask({ hub, dataDir, cliBridgeTimeoutMs }, req, res, params, body)
   const tool = typeof body?.tool === 'string' ? body.tool.trim() : '';
   if (!TOOL.test(tool)) return json(res, 400, { error: 'Tool tidak valid.' });
   const project = projectForCwd(hub?.projects?.values?.() ?? [], body?.cwd);
-  if (!project) return json(res, 404, { error: 'Folder kerja ini bukan project Adhit Office.' });
+  if (!project) return json(res, 404, { error: 'Folder kerja ini bukan project Adhitron.' });
   if (typeof hub?.requestApproval !== 'function') return json(res, 503, { error: 'Kartu izin tidak tersedia.' });
 
   const pendingCli = [...(hub.approvals?.values?.() ?? [])].filter((entry) => entry?.approval?.status === 'pending' && entry.approval.source === 'cli');
@@ -118,11 +118,11 @@ async function ask({ hub, dataDir, cliBridgeTimeoutMs }, req, res, params, body)
   return json(res, 200, {
     decision: decision.timedOut || decision.aborted ? 'fallback' : decision.allow ? 'allow' : 'deny',
     reason: decision.allow
-      ? 'Disetujui dari Adhit Office'
+      ? 'Disetujui dari Adhitron'
       : decision.timedOut
         ? 'Tidak dijawab sebelum batas waktu; lanjutkan di terminal'
         : decision.aborted
           ? 'Hook berhenti; lanjutkan di terminal'
-          : 'Ditolak dari Adhit Office',
+          : 'Ditolak dari Adhitron',
   });
 }

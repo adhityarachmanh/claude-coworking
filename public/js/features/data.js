@@ -278,7 +278,7 @@ export function initData() {
   $('#data-audit-export')?.addEventListener('click', async () => {
     try {
       const blob = await api('/api/data/audit-export', {}, { raw: true });
-      saveBlob(`adhit-office-audit-${new Date().toLocaleDateString('sv-SE')}.csv`, blob);
+      saveBlob(`adhitron-audit-${new Date().toLocaleDateString('sv-SE')}.csv`, blob);
       toast('Audit diunduh.', 'ok');
     } catch (err) {
       toast(err.message);

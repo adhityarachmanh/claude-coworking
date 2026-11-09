@@ -1,5 +1,5 @@
 {
-  "name": "Adhit Office Bridge",
+  "name": "Adhitron Bridge",
   "id": "adhit-office-figma-bridge",
   "api": "1.0.0",
   "main": "code.js",
@@ -9,6 +9,6 @@
   "networkAccess": {
     "allowedDomains": ["http://localhost:3939"],
     "devAllowedDomains": ["http://localhost:3939"],
-    "reasoning": "Bridge lokal Adhit Office: plugin mengambil perintah dari localhost dan mengirim hasilnya kembali. Tidak ada data yang dikirim ke internet."
+    "reasoning": "Bridge lokal Adhitron: plugin mengambil perintah dari localhost dan mengirim hasilnya kembali. Tidak ada data yang dikirim ke internet."
   }
 }

@@ -1,4 +1,4 @@
-// Adhit Office server: runs headless Claude Code per project and serves the office web app.
+// Adhitron server: runs headless Claude Code per project and serves the office web app.
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -366,7 +366,7 @@ hub.redactors.set('approval', wifiApproval); // "answered from <phone name>": no
 // the light contract check in the background once no turn is busy. Its own file (not in history backups).
 // OFFICE_CLAUDE_CHECK_DELAY_MS: tests only, how long after start the first look happens (default 20 s).
 const CHECK_DELAY = Number(process.env.OFFICE_CLAUDE_CHECK_DELAY_MS);
-// ⬆ Adhit Office's own updates (git fetch every 30 min, banner, "Update sekarang"). Off for test servers (a fake
+// ⬆ Adhitron's own updates (git fetch every 30 min, banner, "Update sekarang"). Off for test servers (a fake
 // CLAUDE_BIN) unless OFFICE_UPDATE_CHECK=1; OFFICE_UPDATE_CHECK=0 turns it off anywhere.
 const updateCheck = process.env.OFFICE_UPDATE_CHECK ? process.env.OFFICE_UPDATE_CHECK !== '0' : !process.env.CLAUDE_BIN;
 const appUpdater = PACKAGED && process.platform === 'win32'
@@ -455,7 +455,7 @@ function refreshProjects() {
     spotify: { redirectUri: spotify.redirectUri }, // shown (with a copy button) in ⚙ → Spotify
     claudeCheck: claudeCheck.publicView(), // versions + last contract check result (no details)
     opencodeCheck: opencodeCheck.publicView(), // the same for OpenCode (available: false when not installed)
-    appUpdate: appUpdater.publicView(), // ⬆ a newer Adhit Office on GitHub (src/app-update.js)
+    appUpdate: appUpdater.publicView(), // ⬆ a newer Adhitron on GitHub (src/app-update.js)
     // The engines a project can run on (docs/design-opencode.md §6.1): Claude Code's caps are the UI's defaults.
     engine: hub.engine, // the app-wide DEFAULT (Akun) for new projects; each project carries its own `settings.engine`
     concurrency: { maxConcurrent: maxConcurrentOf(hub) }, // global turn limit (src/concurrency.js)
@@ -958,14 +958,14 @@ remote.pruneIdle();
 setInterval(() => remote.pruneIdle(), 60 * 60 * 1000).unref();
 
 server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') console.error(`Port ${PORT} sudah dipakai — Adhit Office mungkin sudah berjalan.`);
+  if (err.code === 'EADDRINUSE') console.error(`Port ${PORT} sudah dipakai — Adhitron mungkin sudah berjalan.`);
   else console.error(err);
   process.exit(1);
 });
 
 server.listen(PORT, HOST, () => {
   const url = `http://localhost:${PORT}`;
-  console.log(`Adhit Office berjalan di ${url}`);
+  console.log(`Adhitron berjalan di ${url}`);
   console.log(claude ? `Claude Code: ${claude.command}` : 'PERINGATAN: Claude Code tidak ditemukan (set env CLAUDE_BIN).');
   if (opencode) {
     console.log(`OpenCode: ${opencode.command}`);

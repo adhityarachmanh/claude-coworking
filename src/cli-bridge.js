@@ -152,7 +152,7 @@ export function hookDecision(decision) {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: decision,
-      permissionDecisionReason: decision === 'allow' ? 'Disetujui dari Adhit Office' : 'Ditolak dari Adhit Office',
+      permissionDecisionReason: decision === 'allow' ? 'Disetujui dari Adhitron' : 'Ditolak dari Adhitron',
     },
   };
 }

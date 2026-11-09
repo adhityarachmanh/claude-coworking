@@ -1,4 +1,4 @@
-// Adhit Office web app: project picker, chat with Claude Code, approvals, live office.
+// Adhitron web app: project picker, chat with Claude Code, approvals, live office.
 // Entry point (native ES modules, no build step): wires up every feature, then starts the office.
 //
 // Module rules (the features import each other in cycles, which is only safe because of these):
@@ -93,7 +93,7 @@ initFileViewer();
 initTeam();
 initViewMode(); // 🧠 Mode Otak ↔ 🏢 Kantor
 initFocus(); // 🎯 Mode fokus: the office is hidden and its animation paused (/fokus)
-initAppUpdate(); // ⬆ newer Adhit Office: banner + ⚙
+initAppUpdate(); // ⬆ newer Adhitron: banner + ⚙
 initHandoff(); // 🔁 /lanjut: context from the other engine
 initHealth(); // 🩺 Kesehatan sistem (⚙ → Sistem; laptop/Tailscale only)
 initInstall(); // 📲 pasang sebagai aplikasi (PWA), hint in ❓ Panduan

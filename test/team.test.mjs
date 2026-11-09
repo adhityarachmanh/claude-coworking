@@ -1,21 +1,33 @@
 // 👥 Kelola tim: the built-in role catalog, team validation, role mapping per active team (with fallbacks),
 // the subagents / Lead prompt per team, and the fixed office floor plan (desks per department, reachability).
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, test } from 'node:test';
+import { after, afterEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { Scene } from '../public/js/office/scene.js';
 import { CAST } from '../public/js/office/cast.js';
 import { CLASSIC_TEAM as CLIENT_CLASSIC, DEFAULT_TEAM, defaultTeam, resolveRole as clientResolve, roster, setRoster, teamOrder } from '../public/js/office/roster.js';
 import { CAT_SPOTS, DESKS, DOOR, H, SIGNS, SLOTS, SOFA_SEATS, SPOTS, W, findPath, isWalkable, layoutDesks, room } from '../public/js/office/world.js';
 import {
-  CATALOG_IDS, CLASSIC_TEAM, COMMAND_RULES, DEFAULT_ENABLED, MAX_ACTIVE_ROLES, ROLE_CATALOG, TeamConfigError, activeAgents, normalizeEnabled, publicCatalog, resolveRole, storedEnabled, teamPrompt,
+  CATALOG_IDS, CLASSIC_TEAM, COMMAND_RULES, DEFAULT_ENABLED, MAX_ACTIVE_ROLES, ROLE_CATALOG, TeamConfigError, activeAgents, migrateTeamNames, normalizeEnabled, publicCatalog, resolveRole, storedEnabled, teamPrompt,
 } from '../src/role-catalog.js';
 import { activeRoles, agentRole, inferRole, loadAgentDefinitions, screenFor, setActiveRoles, toRole } from '../src/roles.js';
+import { Hub } from '../src/hub.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ALL = [...CATALOG_IDS];
 const NEW = ['mobile', 'data', 'support', 'reviewer', 'compliance'];
+
+const dirs = [];
+after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
+const tmp = () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-team-names-'));
+  dirs.push(dir);
+  return dir;
+};
+const readState = (dir) => JSON.parse(readFileSync(path.join(dir, 'state.json'), 'utf8'));
 
 afterEach(() => setActiveRoles(DEFAULT_ENABLED));
 
@@ -39,6 +51,20 @@ test('catalog: the 12 existing roles + 5 optional ones, fixed ids; the default t
   const pub = publicCatalog();
   assert.equal(JSON.stringify(pub).includes('signals'), false, 'no RegExps go to the browser');
   assert.deepEqual(pub.filter((r) => r.locked).map((r) => r.id), ['freelancer']);
+});
+
+test('team names: a saved old default ("Adhit - QA") migrates to "Adhitron - QA" once; custom names stay', () => {
+  const dir = tmp();
+  writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ teamNames: { claude: 'Adhit - Lead', qa: 'Adhit - QA', backend: 'Budi', architect: 'Tim Rina - TL', support: 'Adhitron - Support' } }));
+  const expected = { claude: 'Adhitron - Lead', qa: 'Adhitron - QA', backend: 'Budi', architect: 'Tim Rina - TL', support: 'Adhitron - Support' };
+  const hub = new Hub({ dataDir: dir });
+  assert.deepEqual(hub.persisted.teamNames, expected, 'old defaults renamed; custom names (and a new default) untouched');
+  assert.deepEqual(readState(dir).teamNames, expected, 'saved right away, so the migration never runs again');
+  // A second start is a no-op: nothing matches the old defaults any more.
+  const again = new Hub({ dataDir: dir });
+  assert.deepEqual(again.persisted.teamNames, expected);
+  assert.deepEqual(migrateTeamNames(expected), { names: expected, changed: false });
+  assert.deepEqual(migrateTeamNames({ qa: 'Adhit - QA', pm: 'Adhit - PM' }), { names: { qa: 'Adhitron - QA', pm: 'Adhitron - PM' }, changed: true });
 });
 
 test('validation: catalog ids only, no Lead, at most 16; duplicates dropped, freelancer always on', () => {
@@ -141,7 +167,7 @@ test('some roles off: work goes along the fallback chain; an off role is never h
 
 // ---------- subagents and the Lead prompt ----------
 
-const OLD_TEAM_PROMPT = `You are the Engineering Lead of an IT team that the user watches live in the "Adhit Office" pixel office.
+const OLD_TEAM_PROMPT = `You are the Engineering Lead of an IT team that the user watches live in the "Adhitron" pixel office.
 Delegate focused work to the specialist subagents with the Agent tool, but only to the roles a task actually needs:
 each delegation costs time and tokens, so do small or trivial work yourself.
 - pm: scope, priorities, acceptance criteria, task breakdown
@@ -351,7 +377,7 @@ test('client defaults: DEFAULT_TEAM and "↺ Tim bawaan" are all 17 roles, Compl
   setRoster({ enabled: ALL, catalog: publicCatalog(), max: MAX_ACTIVE_ROLES });
   assert.equal(roster.max, 17);
   assert.deepEqual(defaultTeam().sort(), [...DEFAULT_ENABLED].sort(), 'same default as the server');
-  assert.equal(CAST.compliance.name, 'Adhit - Compliance');
+  assert.equal(CAST.compliance.name, 'Adhitron - Compliance');
   assert.equal(clientResolve('compliance'), 'compliance');
   const noCompliance = DEFAULT_TEAM.filter((r) => r !== 'compliance');
   setRoster({ enabled: noCompliance, catalog: publicCatalog() });

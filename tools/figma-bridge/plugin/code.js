@@ -1,5 +1,5 @@
 /* global figma, __html__ */
-// 🎨 Adhit Office Figma bridge — plugin main thread (Figma Plugin API).
+// 🎨 Adhitron Figma bridge — plugin main thread (Figma Plugin API).
 // It receives one command at a time from ui.html and answers with a plain JSON value.
 figma.showUI(__html__, { width: 340, height: 210 });
 

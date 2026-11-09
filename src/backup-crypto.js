@@ -58,7 +58,7 @@ export async function decryptBackupFile(inFile, outFile, password) {
     fd = openSync(inFile, 'r');
     const head = Buffer.alloc(start);
     readSync(fd, head, 0, start, 0);
-    if (!head.subarray(0, BACKUP_MAGIC.length).equals(BACKUP_MAGIC)) throw new BackupCryptoError('File ini bukan backup terenkripsi Adhit Office.');
+    if (!head.subarray(0, BACKUP_MAGIC.length).equals(BACKUP_MAGIC)) throw new BackupCryptoError('File ini bukan backup terenkripsi Adhitron.');
     const salt = head.subarray(BACKUP_MAGIC.length, BACKUP_MAGIC.length + SALT_LEN);
     const iv = head.subarray(BACKUP_MAGIC.length + SALT_LEN, start);
     const tag = Buffer.alloc(TAG_LEN);
