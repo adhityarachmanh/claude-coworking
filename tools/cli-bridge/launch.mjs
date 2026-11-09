@@ -68,6 +68,11 @@ async function main() {
     return;
   }
   const claudeArgs = args.slice(1);
+  if (claudeArgs.some((arg) => arg === '--settings' || arg.startsWith('--settings='))) {
+    process.stderr.write('Wrapper ini menambahkan --settings sendiri; jalankan claude langsung bila ingin memakai settings lain.\n');
+    process.exitCode = 2;
+    return;
+  }
   if (claudeArgs.some((arg) => /[\r\n]/.test(arg))) {
     process.stderr.write('Argumen berisi baris baru; jalankan claude langsung untuk kasus itu.\n');
     process.exitCode = 2;
