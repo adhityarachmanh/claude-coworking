@@ -2,9 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.2
 
-- **🔀 Ganti mesin saat project bekerja.** Memilih mesin lain saat giliran berjalan kini **dijadwalkan** dan diterapkan otomatis setelah giliran selesai, bukan ditolak. Tombol menampilkan status “dijadwalkan”; antrian/izin/giliran terputus tetap harus diselesaikan dulu.
+- **🔀 Ganti mesin saat project bekerja.** Memilih mesin lain saat giliran berjalan kini **dijadwalkan** dan diterapkan otomatis setelah giliran selesai; antrian/izin/giliran terputus tetap harus diselesaikan dulu.
+- **Tombol Mesin project lebih jelas.** Saat project sibuk, menunggu izin, punya antrian, atau giliran terputus, tombol menampilkan alasan; error 409 juga muncul sebagai toast.
+- **Backup project & chat lengkap.** Export menyertakan root efektif dan path setiap project, sehingga import mengenali project walaupun root tidak pernah diatur manual. Backup lama perlu dibuat ulang.
+- **Build Electron lebih andal.** CI memakai runtime Electron lokal/mirror, menghindari kegagalan unduhan 504 dari GitHub.
 
 ## 1.0.1
 
