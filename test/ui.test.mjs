@@ -1162,8 +1162,20 @@ const GO_CONSOLE = {
       totals: { costUsd: 6.52, tokens: 730729017, requests: 2661 },
     },
     usage: {
-      today: { costUsd: 1.87, requests: 520, tokens: 191000000, inputTokens: 5300677, outputTokens: 326582, cacheReadTokens: 181586432, cacheWriteTokens: 0 },
-      week: { costUsd: 37.32, requests: 13274, tokens: 3929943307, inputTokens: 3000000, outputTokens: 500000, cacheReadTokens: 3926443307, cacheWriteTokens: 0 },
+      today: {
+        costUsd: 1.87,
+        requests: 520,
+        tokens: 191000000,
+        inputTokens: 5300677,
+        outputTokens: 326582,
+        cacheReadTokens: 181586432,
+        cacheWriteTokens: 0,
+        models: [
+          { model: 'deepseek-v4.1-flash', provider: 'opencode-go', requests: 564, inputTokens: 6727223, outputTokens: 360976, cacheReadTokens: 212861568, cacheWriteTokens: 0, tokens: 219945767, costUsd: 2.562577 },
+          { model: 'hy4', provider: 'opencode-go', requests: 2, inputTokens: 2707, outputTokens: 3174, cacheReadTokens: 30848, cacheWriteTokens: 0, tokens: 36729, costUsd: 0.011491 },
+        ],
+      },
+      week: { costUsd: 37.32, requests: 13274, tokens: 3929943307, inputTokens: 3000000, outputTokens: 500000, cacheReadTokens: 3926443307, cacheWriteTokens: 0, models: [] },
     },
     fetchedAt: 1,
   },
@@ -4876,7 +4888,7 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test('kuota OpenCode Go: data resmi console tampil sebagai tiga bar, tanpa daftar model', async () => {
+    test('kuota OpenCode Go: data resmi console tampil sebagai tiga bar + rincian per model', async () => {
       await ensureApp(page, `#${projectId}`);
       try {
         await stubOpenCodeAccount(page, { go: GO_CONSOLE, usage: GO_USAGE });
@@ -4892,6 +4904,9 @@ for (const vp of VIEWPORTS) {
             usageText: usage?.textContent ?? '',
             usagePeriods: [...(usage?.querySelectorAll('.oc-usage-period') ?? [])].map((n) => n.textContent),
             usageCards: usage?.querySelectorAll('.oc-usage-grid > div').length ?? 0,
+            usageModelRows: usage?.querySelectorAll('.oc-usage-scroll tbody tr').length ?? 0,
+            modelText: usage?.querySelector('.oc-usage-models')?.textContent ?? '',
+            modelSummary: usage?.querySelector('.oc-usage-models summary')?.textContent ?? '',
             meters: [...go.querySelectorAll('.oc-go-meter-main b')].map((n) => n.textContent),
             planButtons: go.querySelectorAll('.oc-go-plan [data-plan]').length,
             modelRows: go.querySelectorAll('.oc-go-row').length,
@@ -4913,6 +4928,11 @@ for (const vp of VIEWPORTS) {
         assert.match(r.usageText, /191/);
         assert.deepEqual(r.usagePeriods, ['Hari ini', '7 hari']);
         assert.equal(r.usageCards, 6, 'tiga kartu untuk Hari ini dan tiga untuk 7 hari');
+        assert.equal(r.usageModelRows, 2, 'dua baris model dari endpoint usage/models');
+        assert.match(r.modelSummary, /Rincian per model \(2\)/);
+        assert.match(r.modelText, /deepseek-v4\.1-flash/);
+        assert.match(r.modelText, /564/);
+        assert.match(r.modelText, /\$2\.56/);
         assert.doesNotMatch(r.usageText, /Pemakaian lokal OpenCode/);
         await page.press('Escape');
       } finally {

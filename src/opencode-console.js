@@ -10,6 +10,7 @@ export const CONSOLE_ORIGIN = 'https://opencode.ai';
 const STATUS_PATH = '/console/api/go/status';
 const ACTIVITY_PATH = '/console/api/activity/go';
 const USAGE_PATH = '/console/api/usage/summary';
+const USAGE_MODELS_PATH = '/console/api/usage/models';
 const TIMEOUT_MS = 8_000;
 const SNAPSHOT_MS = 60_000;
 const FAILURE_MS = 15_000;
@@ -154,6 +155,49 @@ function usageUrl(userId, range, { since = null } = {}) {
   return url.toString();
 }
 
+/** The per-model breakdown for one range (the console's "Usage by Model"); the token already identifies the account. */
+function usageModelsUrl(range, { since = null } = {}) {
+  const url = new URL(USAGE_MODELS_PATH, CONSOLE_ORIGIN);
+  url.searchParams.set('range', range);
+  if (since) url.searchParams.set('since', since);
+  url.searchParams.set('page', '1');
+  url.searchParams.set('pageSize', '100');
+  url.searchParams.set('costOrder', 'desc');
+  return url.toString();
+}
+
+/**
+ * `usage/models` → one row per model with requests, tokens and cost. Unknown items are skipped; the server already
+ * orders by cost. Page 1 is enough for this account's model count; a truncated page is still just a partial table,
+ * never a wrong total (the summary cards remain the source of the totals).
+ */
+export function normalizeUsageModels(raw) {
+  if (!isObject(raw) || !Array.isArray(raw.items)) return null;
+  const models = raw.items
+    .slice(0, 100)
+    .map((m) => {
+      if (!isObject(m) || typeof m.model !== 'string' || !m.model.trim()) return null;
+      const inputTokens = num(m.totalInputTokens) ?? 0;
+      const outputTokens = num(m.totalOutputTokens) ?? 0;
+      const cacheReadTokens = num(m.totalCacheReadTokens) ?? 0;
+      const cacheWrite5mTokens = num(m.totalCacheWrite5mTokens) ?? 0;
+      const cacheWrite1hTokens = num(m.totalCacheWrite1hTokens) ?? 0;
+      return {
+        model: m.model.trim().slice(0, 120),
+        provider: typeof m.provider === 'string' ? m.provider.slice(0, 60) : '',
+        requests: num(m.totalRequests) ?? 0,
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheWriteTokens: cacheWrite5mTokens + cacheWrite1hTokens,
+        tokens: inputTokens + outputTokens + cacheReadTokens + cacheWrite5mTokens + cacheWrite1hTokens,
+        costUsd: usd(m.totalCostMicroCents) ?? 0,
+      };
+    })
+    .filter(Boolean);
+  return { models, total: num(raw.pageInfo?.total) ?? models.length };
+}
+
 /** One JSON request; a non-2xx is a status, never a thrown error with a body that could carry a secret. */
 async function getJson(fetchImpl, url, token) {
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(TIMEOUT_MS) : undefined;
@@ -236,14 +280,18 @@ export async function goConsoleSnapshot(bin, { now = Date.now, fetch: fetchImpl 
   const userId = typeof status.data?.subscriberUserId === 'string' && /^acc_[A-Za-z0-9_-]{1,100}$/.test(status.data.subscriberUserId) ? status.data.subscriberUserId : null;
   const dayStart = new Date(at);
   dayStart.setHours(0, 0, 0, 0);
-  const [aResult, todayResult, weekResult] = await Promise.all([
+  const [aResult, todayResult, weekResult, todayModelsResult, weekModelsResult] = await Promise.all([
     getJson(fetchImpl, `${CONSOLE_ORIGIN}${ACTIVITY_PATH}`, token).catch(() => ({ status: 'network' })),
     userId ? getJson(fetchImpl, usageUrl(userId, '24h', { since: dayStart.toISOString() }), token).catch(() => ({ status: 'network' })) : null,
     userId ? getJson(fetchImpl, usageUrl(userId, '7d'), token).catch(() => ({ status: 'network' })) : null,
+    getJson(fetchImpl, usageModelsUrl('24h', { since: dayStart.toISOString() }), token).catch(() => ({ status: 'network' })),
+    getJson(fetchImpl, usageModelsUrl('7d'), token).catch(() => ({ status: 'network' })),
   ]);
   if (aResult && !aResult.status) activity = normalizeConsoleActivity(aResult.data);
   const today = todayResult && !todayResult.status ? normalizeUsageSummary(todayResult.data) : null;
   const week = weekResult && !weekResult.status ? normalizeUsageSummary(weekResult.data) : null;
+  if (today) today.models = todayModelsResult && !todayModelsResult.status ? normalizeUsageModels(todayModelsResult.data)?.models ?? [] : [];
+  if (week) week.models = weekModelsResult && !weekModelsResult.status ? normalizeUsageModels(weekModelsResult.data)?.models ?? [] : [];
   if (today || week) usage = { today, week };
   return cacheSnapshot(cache, key, at, { available: true, ...normalized, activity, usage, fetchedAt: at });
 }

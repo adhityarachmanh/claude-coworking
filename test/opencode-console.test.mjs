@@ -2,7 +2,7 @@
 // the fallback when the console/token is unavailable. No real network and no real OpenCode here.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { consoleForPeriod, goConsoleSnapshot, normalizeConsoleActivity, normalizeConsoleStatus, normalizeUsageSummary, planOf } from '../src/opencode-console.js';
+import { consoleForPeriod, goConsoleSnapshot, normalizeConsoleActivity, normalizeConsoleStatus, normalizeUsageModels, normalizeUsageSummary, planOf } from '../src/opencode-console.js';
 
 const status = {
   subscriberUserId: 'acc_secret',
@@ -54,6 +54,16 @@ const usageWeek = {
   totalCacheWrite1hTokens: '0',
   totalCostMicroCents: '3732473719',
 };
+
+const modelsToday = {
+  items: [
+    { model: 'deepseek-v4.1-flash', provider: 'opencode-go', totalRequests: '564', totalInputTokens: '6727223', totalOutputTokens: '360976', totalCacheReadTokens: '212861568', totalCacheWrite5mTokens: '0', totalCacheWrite1hTokens: '0', totalCostMicroCents: '256257742' },
+    { model: 'hy4', provider: 'opencode-go', totalRequests: '2', totalInputTokens: '2707', totalOutputTokens: '3174', totalCacheReadTokens: '30848', totalCacheWrite5mTokens: '0', totalCacheWrite1hTokens: '0', totalCostMicroCents: '1149142' },
+  ],
+  pageInfo: { page: 1, pageSize: 100, total: 2, pageCount: 1 },
+};
+
+const modelsWeek = { items: [], pageInfo: { page: 1, pageSize: 100, total: 0, pageCount: 0 } };
 
 const bin = { command: 'fake-opencode', args: [] };
 
@@ -108,12 +118,25 @@ test('normalizeUsageSummary: cost, requests and the full token total', () => {
   assert.equal(normalizeUsageSummary(null), null);
 });
 
+test('normalizeUsageModels: per-model requests, tokens, cache write and cost', () => {
+  const view = normalizeUsageModels(modelsToday);
+  assert.equal(view.total, 2);
+  assert.equal(view.models[0].model, 'deepseek-v4.1-flash');
+  assert.equal(view.models[0].requests, 564);
+  assert.equal(view.models[0].tokens, 6727223 + 360976 + 212861568);
+  assert.equal(view.models[0].cacheWriteTokens, 0);
+  assert.equal(view.models[0].costUsd, 2.562577);
+  assert.equal(view.models[1].model, 'hy4');
+  assert.equal(normalizeUsageModels(null), null);
+});
+
 test('goConsoleSnapshot: exact status + activity + today/week usage, cached for the next call', async () => {
   let calls = 0;
   const fetch = async (url) => {
     calls += 1;
     const u = String(url);
     if (u.endsWith('/go/status')) return { ok: true, json: async () => status };
+    if (u.includes('/usage/models')) return { ok: true, json: async () => (u.includes('range=24h') ? modelsToday : modelsWeek) };
     if (u.includes('/usage/summary')) return { ok: true, json: async () => (u.includes('range=24h') ? usageToday : usageWeek) };
     return { ok: true, json: async () => activity };
   };
@@ -125,14 +148,15 @@ test('goConsoleSnapshot: exact status + activity + today/week usage, cached for 
   assert.equal(first.usage.today.requests, 512);
   assert.equal(first.usage.today.costUsd, 1.912375);
   assert.equal(first.usage.today.tokens, 187213691);
+  assert.equal(first.usage.today.models[0].model, 'deepseek-v4.1-flash');
   assert.equal(first.usage.week.requests, 13274);
   assert.equal(first.fetchedAt, 1000);
-  assert.equal(calls, 4, 'status + activity + today usage + week usage');
+  assert.equal(calls, 6, 'status + activity + two summaries + two model tables');
   assert.equal(JSON.stringify(first).includes('acc_secret'), false, 'the userId stays server-side');
 
   const second = await goConsoleSnapshot(bin, { readToken: async () => 'tok_secret_123', fetch, cache, now: () => 2000 });
   assert.equal(second, first, 'the cached snapshot is reused for a minute');
-  assert.equal(calls, 4);
+  assert.equal(calls, 6);
 });
 
 test('goConsoleSnapshot: missing token / 401 / network / bad shape fall back without throwing', async () => {

@@ -1361,6 +1361,10 @@ body.read-only #composer-hint { color: var(--ask); }
 .oc-usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 8px; }
 .oc-usage-period { display: block; margin: 12px 0 0; color: var(--muted); font-size: var(--fs-sm); }
 .oc-usage-period:first-of-type { margin-top: 8px; }
+.oc-usage-models { margin-top: 8px; }
+.oc-usage-models summary { cursor: pointer; color: var(--muted); font-size: var(--fs-sm); }
+.oc-usage-scroll { overflow-x: auto; margin-top: 6px; }
+.oc-usage-scroll table { min-width: 620px; font-size: var(--fs-sm); }
 .oc-usage-grid > div { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 .oc-usage-grid small { display: block; color: var(--muted); }
 .oc-usage-grid b { display: block; font-size: var(--fs-lg); margin: 2px 0; }

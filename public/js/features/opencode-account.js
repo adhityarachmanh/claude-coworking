@@ -113,16 +113,21 @@ const connectionHtml = (p, c) =>
     ? `<li><span>${escapeHtml(c.label)} <small class="muted">${c.method === 'oauth' ? 'OAuth' : 'API key'}</small></span><button class="ghost danger-text" data-act="oc-logout" data-cred="${escapeHtml(c.id)}" data-name="${escapeHtml(p.name)}">Logout</button></li>`
     : `<li><span>${escapeHtml(c.label)} <small class="muted">variabel lingkungan</small></span><small class="muted" title="Diatur di environment Windows, bukan dari aplikasi">diatur di luar app</small></li>`;
 
-/** Three cards for one range, from the official console summary. */
+/** Three cards for one range, plus the exact per-model table when the console provided it. */
 function usageCards(label, u) {
   if (!u) return '';
   const full = `${fmtNum(u.tokens)} token · input ${fmtNum(u.inputTokens)} · output ${fmtNum(u.outputTokens)} · cache read ${fmtNum(u.cacheReadTokens)} · cache write ${fmtNum(u.cacheWriteTokens)}`;
+  const models = Array.isArray(u.models) ? u.models : [];
+  const rows = models
+    .map((m) => `<tr><td>${escapeHtml(m.model)}${m.provider ? `<small class="muted"> ${escapeHtml(m.provider)}</small>` : ''}</td><td>${fmtNum(m.requests)}</td><td>${fmtShort(m.inputTokens)}</td><td>${fmtShort(m.cacheReadTokens)}</td><td>${m.cacheWriteTokens ? fmtShort(m.cacheWriteTokens) : '—'}</td><td>${fmtShort(m.outputTokens)}</td><td>${fmtUsd(m.costUsd)}</td></tr>`)
+    .join('');
   return `<b class="oc-usage-period">${escapeHtml(label)}</b>
     <div class="oc-usage-grid">
       <div><small>Biaya</small><b>${fmtUsd(u.costUsd)}</b><span>estimasi provider</span></div>
       <div><small>Request</small><b>${fmtNum(u.requests)}</b><span>API request</span></div>
       <div><small>Token</small><b title="${escapeHtml(full)}">${fmtShort(u.tokens)}</b><span title="${escapeHtml(full)}">input + output + cache</span></div>
-    </div>`;
+    </div>
+    ${rows ? `<details class="oc-usage-models"><summary>Rincian per model (${models.length})</summary><div class="oc-usage-scroll"><table class="usage-table"><thead><tr><th>Model</th><th>Request</th><th>Input</th><th>Cache read</th><th>Cache write</th><th>Output</th><th>Biaya</th></tr></thead><tbody>${rows}</tbody></table></div></details>` : ''}`;
 }
 
 /** Official OpenCode usage (usage/summary); falls back to the local ledger cards when it is unavailable. */
