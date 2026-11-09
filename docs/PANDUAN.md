@@ -136,7 +136,7 @@ Batasan: redo kode hanya untuk **perubahan kode yang belum di-commit** di **repo
    - `tak terbatas` untuk model gratis; `batas belum diketahui` untuk model yang tidak ada di tabel paket itu.
 4. Aktivitas harian dan daftar model dari provider juga ada di **📊 Laporan → OpenCode Go — data provider**, bukan di panel kuota. Angka perkiraan lokal tetap dipakai hanya saat data resmi tidak tersedia. Di **🕘 Riwayat sesi**, tombol **📡** membuka request khusus sesi OpenCode itu, dengan **total provider** (request/token/biaya) dan pembanding total ledger sesi.
 
-Detail: [Akun & laporan](FITUR.md#akun--laporan).
+Detail: [Akun & laporan](FITUR.md#akun--laporan) · [Privasi & data pribadi](privasi-data.md).
 
 ## Mengatur budget pemakaian
 

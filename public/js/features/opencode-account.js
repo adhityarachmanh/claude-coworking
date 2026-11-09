@@ -137,7 +137,7 @@ function usageHtml() {
   if (usage && (usage.today || usage.week)) {
     const fetched = go.console?.fetchedAt ? new Date(go.console.fetchedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '';
     return `<div class="acct-section oc-usage"><div class="acct-title"><b>Pemakaian OpenCode</b><span class="badge">Data resmi OpenCode</span></div>
-      <p class="muted small">Dari OpenCode Console${fetched ? ` · diperbarui ${escapeHtml(fetched)}` : ''}. Angka provider, bukan perkiraan ledger.</p>
+      <p class="muted small">Dari OpenCode Console${fetched ? ` · diperbarui ${escapeHtml(fetched)}` : ''}. Angka provider, bukan perkiraan ledger. Data diambil memakai kredensial login OpenCode; token tidak disimpan di aplikasi dan tidak dikirim ke browser.</p>
       ${usageCards('Hari ini', usage.today)}
       ${usageCards('7 hari', usage.week)}
       <div class="acct-actions"><button type="button" class="ghost" data-oc-requests title="Lihat request OpenCode terbaru">📡 Request terbaru</button></div>
@@ -151,6 +151,7 @@ function usageHtml() {
           </table>
         </div>
         <div class="requests-actions"><button type="button" id="account-requests-more" class="ghost" data-request-more hidden>Muat lebih banyak</button></div>
+        <p class="muted small">Tanpa isi prompt, header, atau lokasi. Token OpenCode Console tidak dikirim ke browser.</p>
       </div>
     </div>`;
   }

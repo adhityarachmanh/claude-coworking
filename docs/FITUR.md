@@ -406,6 +406,8 @@ Batasan: lokasi Claude mengikuti `~/.claude` (atau `CLAUDE_PROJECTS_DIR`). Pinda
 
 ## Retensi data
 
+Daftar lengkap data, retensi, pihak ketiga, hak subjek data, dan DPIA ringkas ada di **[privasi-data.md](privasi-data.md)**.
+
 **⏳ Retensi otomatis** (⚙ → **💾 Cadangkan riwayat** → **🕵️ Data saya**, hanya dari laptop) membersihkan dua hal yang tumbuh terus: riwayat chat panel dan ledger pemakaian. Default keduanya **0 = simpan selamanya**, jadi tidak ada yang terhapus sampai kamu mengaturnya.
 
 | Pengaturan | Default | Pilihan |

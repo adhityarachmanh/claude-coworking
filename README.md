@@ -158,6 +158,8 @@ Detail tiap fitur—termasuk batasan dan perilakunya—ada di **[docs/FITUR.md](
 
 ## Keamanan & privasi
 
+**Data & kepatuhan:** daftar data yang disimpan, retensi, pihak ketiga, hak subjek data, dan DPIA ringkas ada di **[docs/privasi-data.md](docs/privasi-data.md)**.
+
 **Jaringan dan akses**
 
 - Server hanya listen di `127.0.0.1`. Saat akses HP aktif, juga di alamat LAN dan Tailscale laptop (bukan `0.0.0.0`), plus listener HTTPS `:4318` **hanya** di interface Tailscale.
