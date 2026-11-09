@@ -1,0 +1,18 @@
+name: debug-draft
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          RESULT=$(gh release view v1.0.6 --json isDraft,assets --jq '"draft=" + (.isDraft|tostring) + " assets=" + ([.assets[].name]|join(" | "))' 2>&1)
+          CODE=$?
+          echo "::error file=debug.txt::code=$CODE ${RESULT:0:4000}"
