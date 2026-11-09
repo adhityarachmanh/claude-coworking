@@ -76,10 +76,11 @@ writeFileSync(path.join(DIST, 'CARA-PAKAI.txt'), [
 ].join('\r\n'));
 
 step('Build Electron shell');
-if (!existsSync(path.join(ROOT, 'node_modules', 'electron-builder'))) {
+const electronBuilder = path.join(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder');
+if (!existsSync(electronBuilder)) {
   throw new Error('Electron belum terpasang. Jalankan `npm install` sekali sebelum build.');
 }
-run('npm', ['run', 'build:electron']);
+run(electronBuilder, ['--win', '--dir', '--config', path.join(ROOT, 'desktop', 'electron-builder.yml')]);
 
 step('Selesai');
 process.stdout.write(`\n📦 ${EXE}\n`);
