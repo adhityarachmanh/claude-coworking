@@ -2018,8 +2018,9 @@ test('file viewer: reads text inside the project; truncates, refuses binaries, t
   assert.equal(ok.body.secret, false);
   assert.equal(ok.body.size, ok.body.content.length);
   assert.ok(ok.body.mtime > 0);
-  // backslashes and an absolute path inside the project are fine (tool rows carry absolute paths)
-  assert.equal((await read(String.raw`src\app.js`)).body.path, 'src/app.js');
+  // On Windows a tool row may carry a backslash path; on POSIX a backslash is an ordinary filename character, and
+  // tool rows use '/', so only the native separator is expected to resolve there.
+  if (process.platform === 'win32') assert.equal((await read(String.raw`src\app.js`)).body.path, 'src/app.js');
   assert.equal((await read(path.join(root, 'src', 'app.js'))).body.path, 'src/app.js');
 
   const big = await read('besar.log');
