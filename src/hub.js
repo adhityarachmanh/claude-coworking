@@ -1451,7 +1451,7 @@ export class Hub {
    * back through a save on this machine.
    */
   exportState() {
-    const { remote: _remote, catalog: _catalog, turns: _turns, interrupted: _interrupted, queues: _queues, backupSchedule: _backupSchedule, backupRuns: _backupRuns, chatSeq: _chatSeq, workspaces: _workspaces, ...rest } = this.persisted;
+    const { remote: _remote, catalog: _catalog, turns: _turns, interrupted: _interrupted, queues: _queues, backupSchedule: _backupSchedule, backupRuns: _backupRuns, chatSeq: _chatSeq, workspaces: _workspaces, engineQueue: _engineQueue, ...rest } = this.persisted;
     return structuredClone(rest);
   }
 

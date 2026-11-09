@@ -275,6 +275,11 @@ test('a queued engine switch is applied automatically when the running turn ends
   assert.equal(queued.status, 200, JSON.stringify(queued.body));
   assert.equal(queued.body.queued, true);
   assert.equal((await statusOf(alfa)).enginePending, 'claude', 'the card says a switch is scheduled');
+  const cancelled = await api(`/api/projects/${alfa}/engine`, { cancel: true });
+  assert.equal(cancelled.status, 200);
+  assert.equal((await statusOf(alfa)).enginePending, null, 'cancel clears the queued switch');
+  const again = await api(`/api/projects/${alfa}/engine`, { engine: 'claude', afterTurn: true });
+  assert.equal(again.body.queued, true);
   await api(`/api/projects/${alfa}/stop`);
   await until(async () => (await statusOf(alfa)).engine === 'claude', 'the queued switch applied');
   const after = await statusOf(alfa);

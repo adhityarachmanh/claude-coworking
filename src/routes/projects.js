@@ -67,6 +67,10 @@ export function registerProjectActions(router) {
   // Laptop/Tailscale only: it starts another agent process on this machine.
   router.post('/api/projects/:id/engine', withProject((ctx, req, res, { project }, body) => {
     if (!ctx.canManageAccount?.(req)) return json(res, 403, { error: 'Ganti mesin hanya dari laptop atau lewat Tailscale.' });
+    if (body?.cancel === true) {
+      const ok = ctx.sessions.cancelPendingEngine(project.id);
+      return json(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'Tidak ada jadwal ganti mesin untuk project ini.' });
+    }
     const engine = String(body?.engine ?? '');
     if (!ENGINES.includes(engine)) return json(res, 400, { error: 'Mesin tidak dikenal.' });
     const result = body?.afterTurn === true

@@ -93,6 +93,11 @@ export class SessionManager {
     this.account = account;
     this.sessions = new Map();
     this.pendingEngines = new Map(); // project id -> engine to apply when its running turn ends
+    for (const [id, engine] of Object.entries(hub.persisted.engineQueue ?? {})) {
+      const project = hub.projects.get(id);
+      if (project && ENGINES.includes(engine)) this.pendingEngines.set(id, { project, engine });
+    }
+    if (this.pendingEngines.size) setTimeout(() => this.resumePendingEngines(), 3000).unref?.();
     this.taskQueue = null; // 📋 Antrian, set by server.js: a waiting item blocks a project's engine switch
   }
 
@@ -366,8 +371,8 @@ export class SessionManager {
       return { ok: false, status: err.status ?? 409, error: err.message };
     }
     console.log(`Mesin project ${project.name ?? id} diganti ke ${engine === 'opencode' ? 'OpenCode' : 'Claude Code'}`);
-    this.pendingEngines.delete(id);
-    this.hub.setStatus(id, { enginePending: null });
+    this.clearPendingEngine(id);
+    this.hub.setStatus(id, { enginePending: null, enginePendingError: null });
     this.onProjectEngineChange?.(id, engine);
     return { ok: true, engine };
   }
@@ -386,8 +391,31 @@ export class SessionManager {
     const busy = Boolean(session && (session.turnActive() || session.busy || session.inflight?.size || session.rewinding));
     if (!busy) return this.setProjectEngine(project, engine); // idle: apply immediately (other blockers still refuse)
     this.pendingEngines.set(id, { project, engine });
-    this.hub.setStatus(id, { enginePending: engine });
+    this.hub.persisted.engineQueue = { ...(this.hub.persisted.engineQueue ?? {}), [id]: engine };
+    this.hub.scheduleSave?.();
+    this.hub.setStatus(id, { enginePending: engine, enginePendingError: null });
     return { ok: true, queued: true, engine: this.hub.engineOf(id), enginePending: engine };
+  }
+
+  /** Forget a queued switch (server restart re-reads it from persisted.engineQueue). */
+  clearPendingEngine(id) {
+    this.pendingEngines.delete(id);
+    if (this.hub.persisted.engineQueue && id in this.hub.persisted.engineQueue) {
+      delete this.hub.persisted.engineQueue[id];
+      this.hub.scheduleSave?.();
+    }
+  }
+
+  /** On server start: re-arm queued switches and retry them (they may have finished while we were down). */
+  resumePendingEngines() {
+    for (const [id, pending] of this.pendingEngines) {
+      if (!this.hub.projects.has(id)) {
+        this.clearPendingEngine(id);
+        continue;
+      }
+      this.hub.setStatus(id, { enginePending: pending.engine, enginePendingError: null });
+      this.applyPendingEngine(id);
+    }
   }
 
   /** Called after a project's turn status changes: apply a queued switch once every blocker is gone. */
@@ -398,12 +426,13 @@ export class SessionManager {
     if (result.ok) return;
     // Still busy or another transient blocker (approval/queue/interrupted): keep waiting.
     if (result.status === 409) return;
-    this.pendingEngines.delete(id);
+    this.clearPendingEngine(id);
     this.hub.setStatus(id, { enginePending: null, enginePendingError: result.error });
   }
 
   cancelPendingEngine(id) {
-    if (!this.pendingEngines.delete(id)) return false;
+    if (!this.pendingEngines.has(id) && !(id in (this.hub.persisted.engineQueue ?? {}))) return false;
+    this.clearPendingEngine(id);
     this.hub.setStatus(id, { enginePending: null, enginePendingError: null });
     return true;
   }

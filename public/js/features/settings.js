@@ -242,6 +242,11 @@ export function syncProjectEngine() {
   else if (st.busy) hint.textContent = `Project ini sedang bekerja. Memilih mesin lain akan dijadwalkan dan diterapkan setelah giliran selesai.`;
   else hint.textContent = `Project ini memakai ${current}. Mesin dipilih per project; project lain tidak terpengaruh.`;
   hint.title = hint.textContent;
+  const cancel = $('#project-engine-cancel');
+  if (cancel) {
+    cancel.hidden = !st.enginePending;
+    cancel.disabled = Boolean(locked) || engineSwitching;
+  }
   $('#project-engine-desc').textContent = ENGINE_SWITCH_NOTE;
   const html = PROJECT_ENGINES.map((e) => {
     const on = e === engine;
@@ -293,6 +298,17 @@ async function switchProjectEngine(engine) {
   } finally {
     engineSwitching = false;
     syncProjectEngine(); // still the old value until the server's status arrives (a 409 changes nothing)
+  }
+}
+
+/** Cancels a switch queued while the project was busy. */
+async function cancelEngineSwitch() {
+  const id = state.active;
+  try {
+    await api(`/api/projects/${encodeURIComponent(id)}/engine`, { cancel: true });
+    toast('Jadwal ganti mesin dibatalkan.', 'ok');
+  } catch (err) {
+    toast(err?.message || 'Gagal membatalkan jadwal ganti mesin.', 'warn');
   }
 }
 
@@ -392,6 +408,7 @@ export function initSettings() {
     const btn = e.target.closest('[data-project-engine]');
     if (btn && !btn.disabled) switchProjectEngine(btn.dataset.projectEngine);
   });
+  $('#project-engine-cancel').addEventListener('click', cancelEngineSwitch);
 
   $('#refresh-projects').addEventListener('click', () => api('/api/projects/refresh').catch((err) => toast(err.message)));
   $('#add-project').addEventListener('submit', async (e) => {
