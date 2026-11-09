@@ -20,6 +20,7 @@ export class UsageLedger {
    * @param {{ engine?: 'claude'|'opencode', source: 'web'|'cli', project: {id,name}, sessionId?: string,
    *           model: string, input: number, output: number, cacheRead: number, cacheWrite: number,
    *           costUsd?: number|null, requests?: number, turns?: number,
+   *           agent?: string,
    *           account?: {id,email,org}|null }} entry  account defaults to whoever is logged in now
    */
   record(entry) {
@@ -35,6 +36,8 @@ export class UsageLedger {
       project: entry.project?.name ?? null,
       projectId: entry.project?.id ?? null,
       sessionId: entry.sessionId ?? null,
+      // OpenCode's session agent (build/plan/role) — kept with the turn so per-role reports survive a deleted session.
+      agent: typeof entry.agent === 'string' && entry.agent.trim() ? entry.agent.trim().toLowerCase().slice(0, 40) : null,
       model: entry.model || 'unknown',
       input: entry.input ?? 0,
       output: entry.output ?? 0,

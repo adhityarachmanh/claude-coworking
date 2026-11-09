@@ -1271,6 +1271,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         source: 'web',
         project: this.project,
         sessionId: this.hub.sessionIdFor(this.id),
+        agent: agentMode(this.applied ?? this.hub.settingsFor(this.id)),
         model: this.hub.settingsFor(this.id).model || this.hub.statusFor?.(this.id)?.activeModel || 'opencode',
         input,
         output,

@@ -11,6 +11,18 @@ import { byPeriod, ENGINES, engineOf, periodStart, summarize, totals, UsageLedge
 const A = { id: 'uuid-a', email: 'kantor@example.com', org: 'Kantor' };
 const B = { id: 'uuid-b', email: 'pribadi@example.com', org: null };
 
+test('ledger: an OpenCode agent is stored sanitized with the turn', () => {
+  const ledger = new UsageLedger({ file: path.join(mkdtempSync(path.join(tmpdir(), 'usage-agent-')), 'usage.jsonl'), account: () => A });
+  const base = { engine: 'opencode', source: 'web', project: { id: 'p1', name: 'toko' }, sessionId: 'ses_1', model: 'm', input: 1, output: 1, cacheRead: 0, cacheWrite: 0 };
+  ledger.record({ ...base, agent: 'QA' });
+  ledger.record({ ...base, agent: '  build  ' });
+  ledger.record({ ...base, agent: 42 });
+  const rows = ledger.rows();
+  assert.equal(rows[0].agent, 'qa');
+  assert.equal(rows[1].agent, 'build');
+  assert.equal(rows[2].agent, null);
+});
+
 function ledgerWithTwoAccounts() {
   let who = A;
   const ledger = new UsageLedger({ file: path.join(mkdtempSync(path.join(tmpdir(), 'usage-')), 'usage.jsonl'), account: () => who });
@@ -266,7 +278,7 @@ test('an OpenCode report labels local usage and says provider quota is unavailab
   assert.doesNotMatch(html, /Estimasi harga list dari Claude Code/);
 });
 
-test('report shows usage per engine and engine × source, and notes that roles are not split', () => {
+test('report shows usage per engine and engine × source; no role section without byRole', () => {
   const ledger = ledgerWithEngines();
   const summary = summarize(ledger.query({ accountId: A.id }), { from: 0, to: Date.now() });
   const html = reportHtml({ account: A, profile: null, limits: null, summary });
@@ -277,7 +289,7 @@ test('report shows usage per engine and engine × source, and notes that roles a
     assert.ok(html.includes(label), `shows ${label}`);
   }
   assert.match(html, /Per sumber/, 'the per-source table stays');
-  assert.match(html, /Rincian per role belum tersedia; pemakaian subagent digabung ke sesi induknya\./);
+  assert.doesNotMatch(html, /Per role/, 'no role table when the summary has no byRole');
   assert.match(html, /\$0\.00/, 'a zero cost is spelled out');
   assert.match(html, /\(50%\)/, 'partial cost coverage is shown');
   assert.match(html, /<td>—<\/td>/, 'no cost on record reads as a dash');

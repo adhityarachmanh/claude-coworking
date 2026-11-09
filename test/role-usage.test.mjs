@@ -111,6 +111,16 @@ test('roleUsage: an OpenCode session agent becomes the role (build = Lead)', asy
   assert.equal(result.roles.reduce((n, r) => n + r.tokens, 0), 3000);
 });
 
+test('roleUsage: a ledger agent is enough when the OpenCode session was deleted', async () => {
+  const { roleUsage } = await import('../src/role-usage.js');
+  const result = roleUsage([{ ...row, engine: 'opencode', sessionId: 'ses_gone', agent: 'qa' }], { hub, from: 0, to: Date.now() + 1000 });
+  assert.equal(result.roles[0].role, 'qa');
+  assert.equal(result.roles[0].tokens, 1000);
+  assert.equal(result.roles[0].delegations, 1);
+  assert.equal(result.coverage.percent, 1);
+  assert.equal(result.coverage.sessionsWithTranscript, 1);
+});
+
 test('roleUsage: an unknown agent type is the freelancer, never silently a specialist', async () => {
   const session = '33333333-3333-4333-8333-333333333333';
   writeSession({ session, agents: [{ type: 'agent-tanpa-peta', input: 100, output: 0 }] });

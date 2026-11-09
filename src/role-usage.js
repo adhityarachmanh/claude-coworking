@@ -171,12 +171,17 @@ export function roleUsage(rows, { hub = null, from = 0, to = Date.now(), opencod
   const groups = new Map();
   for (const row of rows) {
     const key = `${row.projectId ?? ''}|${row.sessionId ?? ''}`;
-    const g = groups.get(key) ?? { projectId: row.projectId ?? null, sessionId: row.sessionId ?? null, tokens: 0, costUsd: null, engine: null };
+    const g = groups.get(key) ?? { projectId: row.projectId ?? null, sessionId: row.sessionId ?? null, tokens: 0, costUsd: null, engine: null, agent: null };
     g.tokens += n(row.input) + n(row.output) + n(row.cacheRead) + n(row.cacheWrite);
     if (typeof row.costUsd === 'number') g.costUsd = (g.costUsd ?? 0) + row.costUsd;
     const engine = engineOf(row);
     if (!g.engine) g.engine = engine;
     else if (g.engine !== engine) g.engine = 'mixed';
+    const agent = typeof row.agent === 'string' && row.agent.trim() ? row.agent.trim().toLowerCase() : null;
+    if (agent) {
+      if (!g.agent) g.agent = agent;
+      else if (g.agent !== agent) g.agent = 'mixed';
+    }
     groups.set(key, g);
   }
   // Pathological report: keep the biggest sessions, the rest is explicitly "no detail" (never guessed).
@@ -195,10 +200,11 @@ export function roleUsage(rows, { hub = null, from = 0, to = Date.now(), opencod
     const shares = g.sessionId ? sharesForSession(projectPath, g.sessionId, from, to) : null;
     const rawTotal = shares ? shares.lead + [...shares.sub.values()].reduce((sum, x) => sum + x.tokens, 0) : 0;
     if (!shares || !(rawTotal > 0)) {
-      // OpenCode keeps its own session list: a session's agent is its role (no transcript needed).
-      const oc = g.engine === 'opencode' && g.sessionId ? opencodeSessions?.get?.(g.sessionId) ?? null : null;
-      if (oc) {
-        const role = roleForOpenCode(oc.agent);
+      // OpenCode keeps its own session list: a session's agent is its role (no transcript needed). New ledger rows
+      // carry that agent themselves, so the report survives a deleted session; older rows fall back to session.list.
+      const agent = g.agent && g.agent !== 'mixed' ? g.agent : opencodeSessions?.get?.(g.sessionId)?.agent ?? null;
+      if (g.engine === 'opencode' && agent) {
+        const role = roleForOpenCode(agent);
         if (role === UNKNOWN_ROLE) {
           add(totals, OPENCODE_UNKNOWN_ROLE, g.tokens, g.costUsd, g.costUsd != null);
           unknownTokens += g.tokens;

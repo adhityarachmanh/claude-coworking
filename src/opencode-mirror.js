@@ -255,6 +255,7 @@ export class OpenCodeMirror {
       source: 'cli',
       project: project ? { id: project.id, name: project.name } : { id: s.pid, name: null },
       sessionId: s.id,
+      agent: typeof m.agent === 'string' ? m.agent : s.agent,
       model,
       input,
       output,
