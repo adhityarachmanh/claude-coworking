@@ -44,7 +44,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = $env:GITHUB_REF_NAME
-          gh release view $tag 2>$null; if ($LASTEXITCODE -ne 0) { gh release create $tag --title "Adhit Office $($tag.TrimStart('v'))" --notes "Rilis $tag" }
+          gh release view $tag 2>$null; if ($LASTEXITCODE -ne 0) { gh release create $tag --title "Adhit Office $($tag.TrimStart('v'))" --notes "Rilis $tag" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Host 'Release sudah dibuat oleh job lain.' } }
           gh release upload $tag dist/installer/*.exe dist/installer/*.sha256 dist/installer/*.sig --clobber
 
   linux:
@@ -69,5 +69,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Adhit Office ${TAG#v}" --notes "Rilis $TAG"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Adhit Office ${TAG#v}" --notes "Rilis $TAG" || true
           gh release upload "$TAG" dist/linux/*.tar.gz dist/linux/*.deb dist/linux/*.sha256 dist/linux/*.sig --clobber
