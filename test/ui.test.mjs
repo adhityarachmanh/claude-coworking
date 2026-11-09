@@ -1137,6 +1137,36 @@ const GO_MANY = {
   })),
 };
 
+/** Exact console data: the meters/activity block, plus the local estimate kept below it. */
+const GO_CONSOLE = {
+  plan: 'plus',
+  source: 'console',
+  available: true,
+  note: 'Kuota resmi dari OpenCode Console. Angka per model di bawah adalah perkiraan lokal dari ledger.',
+  console: {
+    plan: 'plus',
+    product: 'go-plus',
+    activeUntil: '2026-11-21T06:39:17.000Z',
+    meters: [
+      { key: 'fiveHour', label: '5 jam', usedUsd: 1.75, limitUsd: 48, percent: 0.0365, resetsAt: '2026-11-09T04:17:00.000Z' },
+      { key: 'week', label: '7 hari', usedUsd: 1.2, limitUsd: 120, percent: 0.01, resetsAt: '2026-11-16T00:00:00.000Z' },
+      { key: 'month', label: '30 hari', usedUsd: 83.51, limitUsd: 240, percent: 0.348, resetsAt: '2026-11-21T06:39:17.000Z' },
+    ],
+    activity: {
+      startsAt: '2026-10-21T06:39:17.000Z',
+      daily: [
+        { date: '2026-11-08', costUsd: 5.5, tokens: 618643867, requests: 2278 },
+        { date: '2026-11-09', costUsd: 1.02, tokens: 112085150, requests: 383 },
+      ],
+      models: [{ provider: 'opencode-go', model: 'deepseek-v4.1-flash', requests: 17406 }],
+      totals: { costUsd: 6.52, tokens: 730729017, requests: 2661 },
+    },
+    fetchedAt: 1,
+  },
+  estimate: GO_QUOTA,
+  models: GO_QUOTA.models,
+};
+
 
 for (const vp of VIEWPORTS) {
   describe(`UI ${vp.name}`, { skip: SKIP ?? false }, () => {
@@ -2098,6 +2128,40 @@ for (const vp of VIEWPORTS) {
         const empty = await page.eval(() => ({ text: document.querySelector('#report-empty').textContent, bodyHidden: document.querySelector('#report-body').hidden }));
         assert.match(empty.text, /Tidak ada pemakaian di periode ini/);
         assert.equal(empty.bodyHidden, true, 'state kosong menyembunyikan seluruh pratinjau');
+      } finally {
+        await restoreReport(page);
+      }
+    });
+
+    test('Laporan: bagian OpenCode Go data provider tampil terpisah dari tabel lokal', async () => {
+      await ensureApp(page, '#demo');
+      await stubReport(
+        page,
+        reportSummary({
+          opencodeGo: {
+            plan: 'plus',
+            product: 'go-plus',
+            activeUntil: '2026-11-21T06:39:17.000Z',
+            meters: [
+              { key: 'fiveHour', label: '5 jam', usedUsd: 1.75, limitUsd: 48, percent: 0.0365, resetsAt: '2026-11-09T04:17:00.000Z' },
+              { key: 'month', label: '30 hari', usedUsd: 83.51, limitUsd: 240, percent: 0.348, resetsAt: '2026-11-21T06:39:17.000Z' },
+            ],
+            daily: [{ date: '2026-11-09', costUsd: 1.02, tokens: 112085150, requests: 383 }],
+            models: [{ model: 'deepseek-v4.1-flash', requests: 17406 }],
+            totals: { costUsd: 6.52, tokens: 730729017, requests: 2661 },
+          },
+        }),
+      );
+      try {
+        await tap(page, '#btn-report');
+        await page.waitFor(() => /OpenCode Go — data provider/.test(document.querySelector('#report-provider')?.textContent ?? ''), { timeoutMs: 4000, message: 'bagian provider di laporan' });
+        const text = await page.eval(() => document.querySelector('#report-provider').textContent);
+        assert.match(text, /Go Plus/);
+        assert.match(text, /5 jam/);
+        assert.match(text, /30 hari/);
+        assert.match(text, /deepseek-v4\.1-flash/);
+        assert.match(text, /6\.52/);
+        assert.match(text, /tidak dijumlahkan/);
       } finally {
         await restoreReport(page);
       }
@@ -4802,6 +4866,36 @@ for (const vp of VIEWPORTS) {
         });
         await page.waitFor(() => window.__ocAcct.providerDone >= 1, { timeoutMs: 4000, message: 'refresh selesai' });
         assert.deepEqual(await page.eval(() => ({ calls: window.__ocAcct.providerCalls, done: window.__ocAcct.providerDone })), { calls: 1, done: 1 }, 'klik ganda → satu permintaan providers');
+        await page.press('Escape');
+      } finally {
+        await restoreOpenCodeAccount(page);
+      }
+    });
+
+    test('kuota OpenCode Go: data resmi console tampil, estimasi lokal tetap terpisah', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubOpenCodeAccount(page, { go: GO_CONSOLE, usage: GO_USAGE });
+        await tap(page, '#btn-account');
+        await page.waitFor(() => document.querySelectorAll('#account-body .oc-go > .oc-go-wins .oc-go-win').length === 3, { timeoutMs: 8000, message: 'tiga meter resmi' });
+        const r = await page.eval(() => {
+          const body = document.querySelector('#account-body');
+          const go = body.querySelector('.oc-go');
+          return {
+            badge: go.querySelector('.acct-title .badge')?.textContent ?? '',
+            text: go.textContent,
+            meters: [...go.querySelectorAll(':scope > .oc-go-wins .oc-go-win-label')].map((n) => n.textContent),
+            planButtons: go.querySelectorAll('.oc-go-plan [data-plan]').length,
+            estimate: Boolean([...go.querySelectorAll('summary')].find((n) => /Perkiraan lokal per model/.test(n.textContent))),
+          };
+        });
+        assert.equal(r.badge, 'Data resmi OpenCode');
+        assert.deepEqual(r.meters, ['5 jam', '7 hari', '30 hari']);
+        assert.match(r.text, /Go Plus/);
+        assert.match(r.text, /6\.52/, 'total provider');
+        assert.match(r.text, /deepseek-v4\.1-flash/);
+        assert.equal(r.planButtons, 0, 'paket dari console tidak bisa ditimpa manual');
+        assert.equal(r.estimate, true, 'estimasi lokal tetap ada di bawah');
         await page.press('Escape');
       } finally {
         await restoreOpenCodeAccount(page);

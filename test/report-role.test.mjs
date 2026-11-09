@@ -61,3 +61,44 @@ test('reportHtml: a server without byRole keeps the rest of the report', () => {
   assert.doesNotMatch(html, /Per role/);
   assert.match(html, /Laporan Penggunaan Token/);
 });
+
+test('reportHtml: OpenCode Go provider section shows exact meters/activity and no personal ids', () => {
+  const summary = {
+    from: now - 86_400_000,
+    to: now,
+    groupBy: 'day',
+    records: 1,
+    totals: { input: 60, output: 40, cacheRead: 0, cacheWrite: 0, total: 100, requests: 1, turns: 1, costUsd: 1, costCoverage: 1, cacheHitRate: 0 },
+    byModel: [],
+    byProject: [],
+    bySource: [],
+    byEngine: [],
+    byEngineSource: [],
+    byPeriod: [period],
+    topSessions: [],
+  };
+  const opencodeGo = {
+    plan: 'plus',
+    product: 'go-plus',
+    activeUntil: '2026-11-21T06:39:17.000Z',
+    meters: [
+      { key: 'fiveHour', label: '5 jam', usedUsd: 1.75, limitUsd: 48, percent: 0.0365, resetsAt: '2026-11-09T04:17:00.000Z' },
+      { key: 'month', label: '30 hari', usedUsd: 83.51, limitUsd: 240, percent: 0.348, resetsAt: '2026-11-21T06:39:17.000Z' },
+    ],
+    daily: [
+      { date: '2026-11-08', costUsd: 5.5, tokens: 618643867, requests: 2278 },
+      { date: '2026-11-09', costUsd: 1.02, tokens: 112085150, requests: 383 },
+    ],
+    models: [{ model: 'deepseek-v4.1-flash', requests: 17406 }],
+    totals: { costUsd: 6.52, tokens: 730729017, requests: 2661 },
+  };
+  const html = reportHtml({ account: { email: 'Semua akun', org: null }, profile: null, limits: null, summary, opencodeGo });
+  assert.match(html, /OpenCode Go — data provider/);
+  assert.match(html, /Go Plus/);
+  assert.match(html, /5 jam/);
+  assert.match(html, /30 hari/);
+  assert.match(html, /deepseek-v4\.1-flash/);
+  assert.match(html, /6\.52/);
+  assert.match(html, /tidak punya dimensi project\/role/);
+  assert.doesNotMatch(html, /subscriberUserId|paymentMethodId|acc_secret/);
+});

@@ -1364,6 +1364,11 @@ body.read-only #composer-hint { color: var(--ask); }
 .oc-usage-grid b { display: block; font-size: var(--fs-lg); margin: 2px 0; }
 .oc-usage-grid span { color: var(--muted); font-size: var(--fs-sm); }
 .oc-go-note { margin: 0 0 8px; }
+.oc-go-meter-note { margin: -2px 0 2px 48px; font-variant-numeric: tabular-nums; }
+.oc-go-period { margin: 8px 0 0; }
+.oc-go-daily, .oc-go-estimate { margin-top: 10px; }
+.oc-go-daily summary, .oc-go-estimate summary { cursor: pointer; color: var(--muted); font-size: var(--fs-sm); }
+.oc-go-daily table { margin-top: 6px; }
 .oc-go-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .oc-go-row { min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
 .oc-go-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 1px 10px; min-width: 0; }

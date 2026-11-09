@@ -1365,9 +1365,10 @@ test('OpenCode Go allowance: the providers answer carries an estimate from the l
   assert.ok(Array.isArray(res.body.connected) && Array.isArray(res.body.available), 'the provider list is still there');
   assert.equal(typeof res.body.usage.week.total, 'number', 'the local usage rows are still there too');
   const go = res.body.go;
-  assert.deepEqual(Object.keys(go).sort(), ['available', 'models', 'note', 'plan']);
+  assert.deepEqual(Object.keys(go).sort(), ['available', 'console', 'estimate', 'models', 'note', 'plan', 'source']);
   assert.equal(go.plan, 'go');
   assert.equal(go.available, true);
+  assert.equal(go.source, 'estimate', 'no console credential in the fake OpenCode');
   assert.ok(Array.isArray(go.models));
   assert.match(go.note, /Perkiraan/);
   // The OpenCode row seeded in the phone test (model opencode-go/hy4) is priced from its tokens.

@@ -27,7 +27,39 @@ const UNIT_TITLE = { day: 'hari', week: 'minggu', month: 'bulan' };
 // Engine and source labels for the per-engine section (the data keys stay claude/opencode, web/cli).
 const ENGINE_LABEL = { claude: 'Claude', opencode: 'OpenCode', unknown: 'Tidak diketahui' };
 const SOURCE_LABEL = { web: 'Web', cli: 'Terminal', unknown: 'Tidak diketahui' };
+const GO_PLAN_LABEL = { go: 'Go', plus: 'Go Plus', teams: 'Go Teams' };
 const costCell = (r) => `${usd(r.costUsd)}${r.costUsd != null && r.costCoverage < 1 ? ` (${Math.floor(r.costCoverage * 100)}%)` : ''}`;
+
+/**
+ * "OpenCode Go — data provider": the exact console meters and activity for the report period. The provider data is
+ * account-wide (no project/role dimension), so it is a separate section and never added to the ledger tables.
+ */
+function providerSection(go) {
+  if (!go) return '';
+  const plan = GO_PLAN_LABEL[go.plan] ?? go.product ?? 'OpenCode Go';
+  const active = go.activeUntil && !Number.isNaN(Date.parse(go.activeUntil)) ? dateFmt(Date.parse(go.activeUntil), { dateStyle: 'medium' }) : '';
+  const meters = (Array.isArray(go.meters) ? go.meters : [])
+    .map((m) => {
+      const percent = m.percent == null ? null : Math.min(100, Math.round(m.percent * 1000) / 10);
+      return `<tr><td>${esc(m.label)}</td><td>${esc(`${usd(m.usedUsd)} / ${usd(m.limitUsd)}`)}</td><td>${percent == null ? '—' : `${percent}%`}</td><td>${esc(m.resetsAt ? dateFmt(Date.parse(m.resetsAt), { dateStyle: 'medium', timeStyle: 'short' }) : '—')}</td></tr>`;
+    })
+    .join('');
+  const totals = go.totals ?? { costUsd: 0, tokens: 0, requests: 0 };
+  const daily = Array.isArray(go.daily) ? go.daily : [];
+  const dailyRows = daily
+    .map((d) => `<tr><td>${esc(d.date)}</td><td>${esc(usd(d.costUsd))}</td><td>${num(d.tokens)}</td><td>${num(d.requests)}</td></tr>`)
+    .join('');
+  const range = daily.length ? `${dateFmt(Date.parse(daily[0].date))} — ${dateFmt(Date.parse(daily.at(-1).date))}` : 'tidak ada aktivitas pada periode ini';
+  const models = (Array.isArray(go.models) ? go.models : []).slice(0, 20);
+  const modelRows = models.map((m) => `<tr><td>${esc(m.model)}</td><td>${num(m.requests)}</td></tr>`).join('');
+  return `<h2>OpenCode Go — data provider</h2>
+  <p><b>${esc(plan)}</b>${active ? ` · aktif sampai ${esc(active)}` : ''} · <span class="muted">sumber: OpenCode Console</span></p>
+  ${meters ? `<table><thead><tr><th>Jendela</th><th>Terpakai / batas</th><th>%</th><th>Reset</th></tr></thead><tbody>${meters}</tbody></table>` : ''}
+  <p>Periode ${esc(range)}: <b>${esc(usd(totals.costUsd))}</b> · ${num(totals.tokens)} token · ${num(totals.requests)} request</p>
+  ${dailyRows ? `<table class="sub"><thead><tr><th>Tanggal</th><th>Biaya</th><th>Token</th><th>Request</th></tr></thead><tbody>${dailyRows}</tbody></table>` : ''}
+  ${modelRows ? `<h2>OpenCode Go — model (request)</h2><table><thead><tr><th>Model</th><th>Request</th></tr></thead><tbody>${modelRows}</tbody></table>` : ''}
+  <p class="muted">Data provider mencakup seluruh pemakaian akun OpenCode, termasuk perangkat lain; data ini tidak punya dimensi project/role dan tidak dijumlahkan ke tabel ledger.</p>`;
+}
 
 /** Table with a cost column; requests/turns are not broken down per engine. */
 function costTable(rows, label) {
@@ -132,7 +164,7 @@ function roleSection(summary) {
 }
 
 /** @param {{ account, profile, limits, summary, generatedAt }} data */
-export function reportHtml({ account, profile, limits, billing = null, summary }) {
+export function reportHtml({ account, profile, limits, billing = null, summary, opencodeGo = null }) {
   const t = summary.totals;
   // Three scopes: one Claude account, one OpenCode account, or every account (the combined report).
   const scope = account.email === 'Semua akun' ? 'all' : account.id === 'opencode' || account.email === 'OpenCode' ? 'opencode' : 'claude';
@@ -212,6 +244,7 @@ export function reportHtml({ account, profile, limits, billing = null, summary }
   ${table('Per sumber', summary.bySource, 'Sumber')}
   ${engineSection(summary)}
   ${roleSection(summary)}
+  ${providerSection(opencodeGo)}
   ${table('10 sesi teratas', summary.topSessions.map((s) => ({ ...s, key: `${s.key.split('|')[0]} · ${s.key.split('|')[1].slice(0, 8)}` })), 'Project · sesi')}
   ` : `<div class="empty">Belum ada pemakaian tercatat ${isAll ? '' : 'untuk akun ini '}pada periode tersebut.</div>`}
 
@@ -224,7 +257,7 @@ export function reportHtml({ account, profile, limits, billing = null, summary }
     <li>Sumber: sesi dari web Adhit Office (per giliran, termasuk subagent) dan ${isAll ? 'sesi Claude Code maupun OpenCode di terminal yang terbaca oleh mirror (per request/pesan)' : isOpenCode ? 'sesi OpenCode di terminal yang terbaca oleh mirror (per pesan)' : 'sesi Claude Code di terminal yang terbaca oleh mirror (per API request)'}, sejak pencatatan aktif.</li>
     <li><b>Cache read</b> = konteks yang dipakai ulang dari cache (jauh lebih murah); <b>cache write</b> = konteks yang baru disimpan ke cache. Cache hit rate tinggi berarti sesi efisien.</li>
     ${summary.byRole?.roles?.length ? `<li><b>Per role</b> adalah perkiraan: total token/biaya laporan dibagi menurut proporsi token di transcript (main thread vs subagent). Cache read dan sesi tanpa transcript bisa membuat angkanya tidak presisi, tetapi jumlah tabel tetap sama dengan total laporan.</li>` : ''}
-    ${isAll ? '<li>Biaya adalah estimasi: harga list Claude Code untuk sesi web Claude, dan data biaya OpenCode bila provider menyediakannya. Kuota dan sisa pemakaian tidak digabung di sini.</li>' : isOpenCode ? '<li>Biaya berasal dari data OpenCode bila provider menyediakannya. OpenCode tidak menyediakan sisa kuota provider; laporan ini hanya pemakaian lokal.</li>' : '<li>Biaya adalah estimasi harga list dari Claude Code (hanya tersedia untuk sesi web). Untuk langganan Pro/Max/Team, yang membatasi adalah kuota, bukan biaya.</li>'}
+    ${isAll ? '<li>Biaya tabel lokal adalah estimasi: harga list Claude Code dan data biaya OpenCode bila provider menyediakannya. Bagian <b>OpenCode Go — data provider</b> memakai angka resmi console dan tidak dijumlahkan ke tabel lokal.</li>' : isOpenCode ? '<li>Biaya tabel lokal berasal dari ledger. Bagian <b>OpenCode Go — data provider</b> (bila tersedia) memakai angka resmi console; keduanya tidak dijumlahkan.</li>' : '<li>Biaya adalah estimasi harga list dari Claude Code (hanya tersedia untuk sesi web). Untuk langganan Pro/Max/Team, yang membatasi adalah kuota, bukan biaya.</li>'}
   </ul></div>
 </body></html>`;
 }

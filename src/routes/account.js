@@ -10,6 +10,7 @@ import { readModelPrices } from '../model-prices.js';
 import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
 import { GO_PLANS, goAllowance } from '../opencode-go.js';
+import { consoleForPeriod, goConsoleSnapshot } from '../opencode-console.js';
 import { renderPdf, reportHtml } from '../report.js';
 import { roleUsage } from '../role-usage.js';
 import { openCodeRoleSessions } from '../opencode-role-usage.js';
@@ -36,12 +37,30 @@ const GO_PRICES_DAYS = 30;
  * the catalog's Go list prices, compared to the published monthly limits. Without a catalog (no cache, fetch failed)
  * the answer says so instead of pretending the plan is untouched. Never throws: readModelPrices never does either.
  */
-async function goView({ hub, ledger, dataDir }, now = Date.now()) {
-  const plan = hub?.goPlan?.() ?? 'go';
-  const catalog = await readModelPrices({ dataDir: hub?.dataDir ?? dataDir });
-  if (!catalog || !Object.keys(catalog.models ?? {}).length) return { plan, available: false, models: [], note: 'Harga model belum tersedia.' };
-  const rows = ledger ? ledger.query({ accountId: 'all', from: now - GO_PRICES_DAYS * DAY_MS }) : [];
-  return { available: true, ...goAllowance({ rows, prices: catalog.models, now, plan }) };
+async function goView({ hub, ledger, dataDir, opencode }, now = Date.now()) {
+  const manualPlan = hub?.goPlan?.() ?? 'go';
+  const [catalog, consoleView] = await Promise.all([
+    readModelPrices({ dataDir: hub?.dataDir ?? dataDir }),
+    opencode ? goConsoleSnapshot(opencode, { now: () => now }) : Promise.resolve(null),
+  ]);
+  const plan = consoleView?.available ? consoleView.plan ?? manualPlan : manualPlan;
+  const estimate =
+    catalog && Object.keys(catalog.models ?? {}).length
+      ? { available: true, ...goAllowance({ rows: ledger ? ledger.query({ accountId: 'all', from: now - GO_PRICES_DAYS * DAY_MS }) : [], prices: catalog.models, now, plan }) }
+      : null;
+  const source = consoleView?.available ? 'console' : 'estimate';
+  return {
+    plan,
+    source,
+    available: Boolean(consoleView?.available || estimate?.available),
+    console: consoleView ?? null,
+    estimate,
+    models: estimate?.models ?? [],
+    note:
+      source === 'console'
+        ? 'Kuota resmi dari OpenCode Console. Angka per model di bawah adalah perkiraan lokal dari ledger.'
+        : estimate?.note ?? 'Harga model belum tersedia.',
+  };
 }
 
 /** One headless browser at a time renders report PDFs (each is a full Chrome/Edge process for up to 60 s). */
@@ -363,11 +382,21 @@ async function report(ctx, req, res, body, { pdf: wantPdf }) {
   } catch (err) {
     console.error(`Per-role usage tidak bisa dihitung: ${err?.message ?? err}`);
   }
+  // OpenCode Go provider data is account-wide (no project/role dimension): only for the OpenCode or combined report.
+  let opencodeGo = null;
+  if (ctx.opencode && (all || accountId === OPENCODE_ACCOUNT.id)) {
+    try {
+      const snapshot = await goConsoleSnapshot(ctx.opencode, { now: () => to });
+      opencodeGo = consoleForPeriod(snapshot, from, to);
+    } catch {
+      opencodeGo = null; // best effort: the report still works without the console
+    }
+  }
   // The same-length window right before this one, for the "vs previous period" line (only with a real start).
   const span = to - from;
   const previous = from > 0 && span > 0 ? totals(ledger.query({ accountId, from: from - span, to: from - 1 })) : null;
   // The summary is aggregated only (engine/model/project/source/period/sessions): no email, org or account id.
-  if (!wantPdf) return json(res, 200, { ...summary, ...(previous ? { previous, previousRange: { from: from - span, to: from - 1 } } : {}) });
+  if (!wantPdf) return json(res, 200, { ...summary, ...(previous ? { previous, previousRange: { from: from - span, to: from - 1 } } : {}), ...(opencodeGo ? { opencodeGo } : {}) });
   // Combined report: a fixed label without personal data, and no per-account profile, limits or billing.
   const found = all
     ? { email: 'Semua akun', org: null }
@@ -379,7 +408,7 @@ async function report(ctx, req, res, body, { pdf: wantPdf }) {
   const profile = isCurrent ? (view ? view.state({ profile: account.profile }).profile : account.profile) : null;
   // billing (usage-based seats): only a limit status and a reset date, nothing personal, so WiFi gets it too
   const billing = isCurrent ? billingStatus(account.profile, account.rateLimit) : null;
-  const html = reportHtml({ account: who, profile, limits: isCurrent ? account.limits : null, billing, summary });
+  const html = reportHtml({ account: who, profile, limits: isCurrent ? account.limits : null, billing, summary, opencodeGo });
   if (pdfRendering) return json(res, 429, { error: 'Laporan PDF lain sedang dibuat. Coba lagi sebentar.' });
   pdfRendering = true;
   try {

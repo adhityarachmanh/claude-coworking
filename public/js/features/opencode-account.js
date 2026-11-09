@@ -6,7 +6,7 @@ import { accountImpactText } from '../core/account-impact.js';
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { engineLabel } from '../core/engine-caps.js';
-import { fmtShort, fmtUsd } from '../core/format.js';
+import { fmtNum, fmtShort, fmtUsd } from '../core/format.js';
 import { state } from '../core/state.js';
 
 const POLL_MS = 2000;
@@ -120,7 +120,7 @@ function localUsageHtml() {
   const cost = (x) => (x.costUsd == null ? 'biaya belum tersedia' : fmtUsd(x.costUsd));
   const coverage = u.week.costCoverage;
   return `<div class="acct-section oc-usage"><div class="acct-title"><b>Pemakaian lokal OpenCode</b></div>
-    <p class="muted small">Dari sesi web dan terminal OpenCode yang tercatat di aplikasi. OpenCode tidak menyediakan sisa kuota provider; angka ini bukan batas langganan.</p>
+    <p class="muted small">Dari sesi web dan terminal OpenCode yang tercatat di aplikasi. Angka ini pemakaian lokal, bukan batas langganan; kuota resmi ada di bagian <b>Kuota OpenCode Go</b>.</p>
     <div class="oc-usage-grid">
       <div><small>Hari ini</small><b>${fmtShort(u.today.total)} token</b><span>${cost(u.today)}</span></div>
       <div><small>7 hari</small><b>${fmtShort(u.week.total)} token</b><span>${cost(u.week)}</span></div>
@@ -193,25 +193,88 @@ function goRowHtml(row) {
   </li>`;
 }
 
-/** "Kuota OpenCode Go": hidden unless the server offers it, empty-but-available gets its own message. */
+/** "30 Nov 2026, 14.05" for a console timestamp (local time). */
+function dateText(iso) {
+  if (typeof iso !== 'string') return '';
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? '' : at.toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+const PLAN_LABEL = Object.fromEntries(GO_PLAN_OPTIONS.map((p) => [p.id, p.label]));
+
+/** One exact console meter (5 jam / 7 hari / 30 hari), with its own reset time. */
+function consoleMeterHtml(m) {
+  const pct = m.percent == null ? null : Math.round(m.percent * 100);
+  const width = pct == null ? 0 : Math.round(Math.min(100, pct));
+  const used = m.usedUsd == null ? '—' : fmtUsd(m.usedUsd);
+  const limit = m.limitUsd == null ? 'batas tidak diketahui' : fmtUsd(m.limitUsd);
+  const reset = dateText(m.resetsAt);
+  const title = `${m.label}: ${used} / ${limit}${reset ? ` · reset ${reset}` : ''}`;
+  return `<div class="oc-go-win">
+    <span class="oc-go-win-label">${escapeHtml(m.label)}</span>
+    <div class="bar oc-go-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct == null ? 0 : Math.min(100, pct)}" aria-valuetext="${pct == null ? 'tidak diketahui' : `${pct}%`}" aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}"><i class="${pct != null && pct > 90 ? 'bad' : pct != null && pct >= 70 ? 'warn' : 'ok'}" style="width:${width}%"></i></div>
+    <b class="oc-go-pct">${pct == null ? '—' : `${pct}%`}</b>
+  </div>
+  <p class="muted small oc-go-meter-note">${escapeHtml(used)} / ${escapeHtml(limit)}${reset ? ` · reset ${escapeHtml(reset)}` : ''}</p>`;
+}
+
+/** Exact data from OpenCode Console; the local per-model estimate stays below, clearly separated. */
+function consoleQuotaHtml(go) {
+  const c = go.console;
+  const plan = PLAN_LABEL[go.plan] ?? c.product ?? 'Go';
+  const active = dateText(c.activeUntil);
+  const meters = (Array.isArray(c.meters) ? c.meters : []).map(consoleMeterHtml).join('');
+  const totals = c.activity?.totals;
+  const daily = Array.isArray(c.activity?.daily) ? c.activity.daily : [];
+  const models = Array.isArray(c.activity?.models) ? c.activity.models : [];
+  const summary = totals
+    ? `<p class="muted small oc-go-period">Periode berjalan: <b>${fmtUsd(totals.costUsd)}</b> · ${fmtShort(totals.tokens)} token · ${fmtNum(totals.requests)} request</p>`
+    : '';
+  const dailyRows = daily.length
+    ? `<details class="oc-go-daily"><summary>Pemakaian harian (${daily.length} hari)</summary><table class="usage-table"><thead><tr><th>Tanggal</th><th>Biaya</th><th>Token</th><th>Request</th></tr></thead><tbody>${daily
+        .slice()
+        .reverse()
+        .map((d) => `<tr><td>${escapeHtml(d.date)}</td><td>${fmtUsd(d.costUsd)}</td><td>${fmtShort(d.tokens)}</td><td>${fmtNum(d.requests)}</td></tr>`)
+        .join('')}</tbody></table></details>`
+    : '';
+  const modelRows = models.length
+    ? `<details class="oc-go-daily"><summary>Model (${models.length})</summary><ul class="oc-go-list">${models
+        .map((m) => `<li class="oc-go-row"><div class="oc-go-head"><b class="oc-go-model">${escapeHtml(m.model)}</b><span class="oc-go-money">${fmtNum(m.requests)} request</span></div></li>`)
+        .join('')}</ul></details>`
+    : '';
+  return `<div class="acct-section oc-go"><div class="acct-title"><b>Kuota OpenCode Go</b><span class="badge">Data resmi OpenCode</span></div>
+    <div class="engine-opts oc-go-plan" role="group" aria-label="Paket OpenCode Go"><span class="muted small">Paket</span><span class="engine-opt on">${escapeHtml(plan)}</span>${active ? `<span class="muted small">aktif sampai ${escapeHtml(active)}</span>` : ''}</div>
+    <p class="muted small oc-go-note">${escapeHtml(go.note ?? '')}</p>
+    <div class="oc-go-wins">${meters}</div>
+    ${summary}${dailyRows}${modelRows}
+    ${go.estimate ? `<details class="oc-go-estimate"><summary>Perkiraan lokal per model</summary><p class="muted small">${escapeHtml(go.estimate.note ?? 'Perkiraan dari ledger × harga list.')}</p>${estimateRowsHtml(go.estimate)}</details>` : ''}
+  </div>`;
+}
+
+/** The old estimated rows, reused inside the console panel and as the fallback when console is unavailable. */
+function estimateRowsHtml(estimate) {
+  const rows = (Array.isArray(estimate?.models) ? estimate.models : []).map(goRow).filter(Boolean);
+  if (!rows.length) return '<p class="muted small">Belum ada pemakaian OpenCode Go yang tercatat.</p>';
+  const visible = oc.showAllGo ? rows : rows.slice(0, GO_ROWS);
+  return `<ul class="oc-go-list" id="oc-go-models">${visible.map(goRowHtml).join('')}</ul>
+    ${rows.length > GO_ROWS ? `<button type="button" class="ghost oc-go-toggle" data-act="oc-go-all" aria-expanded="${oc.showAllGo}" aria-controls="oc-go-models">${oc.showAllGo ? 'Tampilkan lebih sedikit' : `Tampilkan semua (${rows.length})`}</button>` : ''}`;
+}
+
+/** "Kuota OpenCode Go": exact console data when available, otherwise the local estimate. */
 function goQuotaHtml() {
   const go = oc.providers?.go;
   if (!go || typeof go !== 'object' || go.available === false) return '';
-  const rows = (Array.isArray(go.models) ? go.models : []).map(goRow).filter(Boolean); // server order: highest 30d first
-  const visible = oc.showAllGo ? rows : rows.slice(0, GO_ROWS);
+  if (go.source === 'console' && go.console) return consoleQuotaHtml(go);
+  const estimate = go.estimate ?? go;
   const plan = GO_PLAN_OPTIONS.some((p) => p.id === go.plan) ? go.plan : 'go';
   const planButtons = GO_PLAN_OPTIONS.map(
     (p) => `<button type="button" class="engine-opt${p.id === plan ? ' on' : ''}" data-act="oc-go-plan" data-plan="${p.id}" aria-pressed="${p.id === plan}" title="${escapeHtml(`Paket ${p.label}: ${p.price}`)}"${state.accountAuth ? '' : ' disabled'}>${escapeHtml(p.label)}</button>`,
   ).join('');
   const note = typeof go.note === 'string' && go.note.trim() ? go.note : 'Perkiraan dari pemakaian yang tercatat × harga list model.';
-  const body = rows.length
-    ? `<ul class="oc-go-list" id="oc-go-models">${visible.map(goRowHtml).join('')}</ul>
-      ${rows.length > GO_ROWS ? `<button type="button" class="ghost oc-go-toggle" data-act="oc-go-all" aria-expanded="${oc.showAllGo}" aria-controls="oc-go-models">${oc.showAllGo ? 'Tampilkan lebih sedikit' : `Tampilkan semua (${rows.length})`}</button>` : ''}`
-    : '<p class="muted small">Belum ada pemakaian OpenCode Go yang tercatat.</p>';
   return `<div class="acct-section oc-go"><div class="acct-title"><b>Kuota OpenCode Go</b></div>
     <div class="engine-opts oc-go-plan" role="group" aria-label="Paket OpenCode Go"><span class="muted small">Paket</span>${planButtons}</div>
     <p class="muted small oc-go-note">${escapeHtml(note)}</p>
-    ${body}</div>`;
+    ${estimateRowsHtml(estimate)}</div>`;
 }
 
 function connectedHtml() {

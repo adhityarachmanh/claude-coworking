@@ -343,6 +343,40 @@ function renderReportEngines(rows, total) {
   box.innerHTML = `<h4 class="report-sub">Per mesin</h4><table class="usage-table"><thead><tr><th>Mesin · sumber</th><th>Total</th><th>%</th><th>Biaya</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
+/** OpenCode Go provider data (account-wide, official console). Hidden when the report has none. */
+function renderReportProvider(go) {
+  const box = $('#report-provider');
+  if (!box) return;
+  if (!go || typeof go !== 'object') {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  const plan = { go: 'Go', plus: 'Go Plus', teams: 'Go Teams' }[go.plan] ?? go.product ?? 'OpenCode Go';
+  const active = go.activeUntil ? new Date(go.activeUntil).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const meters = (Array.isArray(go.meters) ? go.meters : [])
+    .map((m) => {
+      const percent = m.percent == null ? null : Math.min(100, Math.round(m.percent * 1000) / 10);
+      return `<tr><td>${escapeHtml(m.label)}</td><td>${fmtUsd(m.usedUsd)} / ${fmtUsd(m.limitUsd)}</td><td>${percent == null ? '—' : `${percent}%`}</td><td>${escapeHtml(m.resetsAt ? new Date(m.resetsAt).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—')}</td></tr>`;
+    })
+    .join('');
+  const totals = go.totals ?? { costUsd: 0, tokens: 0, requests: 0 };
+  const daily = Array.isArray(go.daily) ? go.daily : [];
+  const dailyRows = daily
+    .map((d) => `<tr><td>${escapeHtml(d.date)}</td><td>${fmtUsd(d.costUsd)}</td><td>${fmtShort(d.tokens)}</td><td>${fmtNum(d.requests)}</td></tr>`)
+    .join('');
+  const models = (Array.isArray(go.models) ? go.models : []).slice(0, 20);
+  const modelRows = models.map((m) => `<tr><td>${escapeHtml(m.model)}</td><td>${fmtNum(m.requests)}</td></tr>`).join('');
+  box.hidden = false;
+  box.innerHTML = `<h4 class="report-sub">OpenCode Go — data provider</h4>
+    <p class="muted small"><b>${escapeHtml(plan)}</b>${active ? ` · aktif sampai ${escapeHtml(active)}` : ''} · sumber: OpenCode Console</p>
+    ${meters ? `<table class="usage-table"><thead><tr><th>Jendela</th><th>Terpakai / batas</th><th>%</th><th>Reset</th></tr></thead><tbody>${meters}</tbody></table>` : ''}
+    <p class="muted small">Periode ${daily.length ? `${escapeHtml(daily[0].date)} — ${escapeHtml(daily.at(-1).date)}` : 'tanpa aktivitas'}: <b>${fmtUsd(totals.costUsd)}</b> · ${fmtShort(totals.tokens)} token · ${fmtNum(totals.requests)} request.</p>
+    ${dailyRows ? `<details class="report-provider-daily"><summary>Pemakaian harian (${daily.length})</summary><table class="usage-table"><thead><tr><th>Tanggal</th><th>Biaya</th><th>Token</th><th>Request</th></tr></thead><tbody>${dailyRows}</tbody></table></details>` : ''}
+    ${modelRows ? `<details class="report-provider-daily"><summary>Model (${models.length})</summary><table class="usage-table"><thead><tr><th>Model</th><th>Request</th></tr></thead><tbody>${modelRows}</tbody></table></details>` : ''}
+    <p class="muted small">Data provider mencakup seluruh pemakaian akun OpenCode, termasuk perangkat lain; tidak dijumlahkan ke tabel per project/role.</p>`;
+}
+
 /** Footer line next to the PDF button: exactly what the PDF will contain. */
 function renderReportScope(q, range) {
   const scope = $('#report-scope');
@@ -352,7 +386,7 @@ function renderReportScope(q, range) {
   // "Semua akun" has no email to show: the scope names both engines instead.
   const who = all ? `<b>Semua akun</b> · <b>Claude + OpenCode</b>` : `<b>${escapeHtml(account)}</b>`;
   scope.innerHTML = `PDF berisi persis yang tampil di atas: ${who} · <b>${escapeHtml(rangeText(range))}</b> · per <b>${UNIT_NAME[q.groupBy]}</b>. Ditambah rincian per mesin, per project, sumber (web/CLI) dan sesi teratas.`;
-  if (all || q.accountId === 'opencode') scope.innerHTML += ' <span class="muted">Pemakaian lokal OpenCode (web + terminal); sisa kuota provider tidak tersedia.</span>';
+  if (all || q.accountId === 'opencode') scope.innerHTML += ' <span class="muted">Pemakaian lokal OpenCode (web + terminal); bagian OpenCode Go memakai data provider bila tersedia.</span>';
 }
 
 async function previewReport() {
@@ -388,6 +422,7 @@ async function previewReport() {
     renderReportModels(s.byModel);
     renderReportEngines(s.byEngineSource, s.totals?.total ?? 0);
     renderReportRoles(s.byRole);
+    renderReportProvider(s.opencodeGo);
   } catch (err) {
     if (seq === report.seq) showReportMessage(err.message, true);
   } finally {
@@ -427,6 +462,18 @@ function downloadCsv() {
     for (const r of roles) {
       lines.push([r.label ?? r.role ?? '', r.tokens ?? 0, r.share == null ? '' : (r.share * 100).toFixed(1), r.costUsd == null ? '' : Number(r.costUsd).toFixed(6), r.delegations ?? 0].map(csvCell).join(','));
     }
+  }
+  // OpenCode Go provider data (account-wide; never mixed into the ledger rows above).
+  const go = s.opencodeGo;
+  if (go && typeof go === 'object') {
+    lines.push('', ['OpenCode Go (data provider)', 'Nilai'].map(csvCell).join(','));
+    lines.push([`Paket ${go.plan ?? go.product ?? 'OpenCode Go'}`, go.activeUntil ? `aktif sampai ${go.activeUntil}` : ''].map(csvCell).join(','));
+    for (const m of Array.isArray(go.meters) ? go.meters : []) {
+      lines.push([`Kuota ${m.label}`, `${m.usedUsd ?? ''} / ${m.limitUsd ?? ''}`, m.percent == null ? '' : `${(m.percent * 100).toFixed(1)}%`, m.resetsAt ?? ''].map(csvCell).join(','));
+    }
+    lines.push(['Total biaya provider USD', (go.totals?.costUsd ?? 0).toFixed(6), 'Token', go.totals?.tokens ?? 0, 'Request', go.totals?.requests ?? 0].map(csvCell).join(','));
+    for (const d of Array.isArray(go.daily) ? go.daily : []) lines.push([d.date, d.costUsd ?? 0, d.tokens ?? 0, d.requests ?? 0].map(csvCell).join(','));
+    for (const m of Array.isArray(go.models) ? go.models : []) lines.push([`Model ${m.model}`, '', '', m.requests ?? 0].map(csvCell).join(','));
   }
   const name = `laporan-token-${new Date(s.from).toLocaleDateString('sv-SE')}-${new Date(s.to).toLocaleDateString('sv-SE')}.csv`;
   saveBlob(name, new Blob([`\uFEFF${lines.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' }));
