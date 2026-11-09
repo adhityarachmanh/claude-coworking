@@ -86,11 +86,11 @@ test('routes: backup import/preview/verify/rekey read their own (non-JSON) body'
   assert.deepEqual(router.routes.filter((r) => r.rawBody).map((r) => r.pattern).sort(), ['/api/backup/import', '/api/backup/preview', '/api/backup/rekey', '/api/backup/verify']);
 });
 
-test('routes: 🔔 /api/push/* never over plain WiFi; only /api/push/act skips x-office-token; push bodies are small', () => {
+test('routes: 🔔 /api/push/* never over plain WiFi; only /api/push/act carries its own proof; push bodies are small', () => {
   const pushRoutes = router.routes.filter((r) => r.pattern.startsWith('/api/push/'));
   assert.ok(pushRoutes.length >= 7, `${pushRoutes.length} push routes`);
   for (const r of pushRoutes) assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
-  assert.deepEqual(router.routes.filter((r) => r.noToken).map((r) => r.pattern), ['/api/push/act']);
+  assert.deepEqual(router.routes.filter((r) => r.token === 'none').map((r) => r.pattern), ['/api/cli-bridge/token', '/api/push/act']);
   for (const r of pushRoutes) assert.ok(r.maxBody > 0 && r.maxBody <= 4096, `${r.pattern} maxBody ${r.maxBody}`);
   assert.equal(router.routes.find((r) => r.pattern === '/api/push/act').maxBody, 1024);
 });
@@ -102,7 +102,7 @@ test('routes: 🧩 /api/claude-check/* (manual run, settings) never over plain W
     assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
     assert.ok(!WIFI_READS.has(r.pattern));
     assert.ok(r.maxBody > 0 && r.maxBody <= 1024, `${r.pattern} maxBody ${r.maxBody}`);
-    assert.equal(r.noToken, false);
+    assert.equal(r.token, 'office');
   }
   // Laptop only: server.js refuses them for every paired phone (Tailscale too) before the WiFi gate.
   const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
@@ -120,7 +120,7 @@ test('routes: 🧩 /api/opencode-check/* (manual run, settings) laptop only, nev
     assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
     assert.ok(!WIFI_READS.has(r.pattern));
     assert.ok(r.maxBody > 0 && r.maxBody <= 1024, `${r.pattern} maxBody ${r.maxBody}`);
-    assert.equal(r.noToken, false);
+    assert.equal(r.token, 'office');
     assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
   }
 });
@@ -142,7 +142,7 @@ test('routes: 🧩 OpenCode config editor is laptop only, with a bounded JSON bo
     assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
     assert.ok(!WIFI_READS.has(r.pattern));
     assert.ok(r.maxBody > 0 && r.maxBody <= 1024 * 1024, `${r.pattern} maxBody ${r.maxBody}`);
-    assert.equal(r.noToken, false);
+    assert.equal(r.token, 'office');
     assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
   }
 });

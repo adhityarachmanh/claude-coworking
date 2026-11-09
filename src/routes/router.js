@@ -22,19 +22,21 @@ function compile(pattern) {
 }
 
 export class Router {
-  /** @type {{ method: string, pattern: string, regex: RegExp, handler: Function, rawBody: boolean, maxBody: number|null, noToken: boolean }[]} */
+  /** @type {{ method: string, pattern: string, regex: RegExp, handler: Function, rawBody: boolean, maxBody: number|null, token: 'office'|'cli'|'none' }[]} */
   routes = [];
 
   /**
    * @param {string} method HTTP method
    * @param {string} pattern see the top of this file
    * @param {Function} handler (ctx, req, res, params, body) => any
-   * @param {{ rawBody?: boolean, maxBody?: number, noToken?: boolean }} [options] rawBody: the handler reads the request
-   *   body itself (not JSON) · maxBody: a smaller JSON body limit than the server's default · noToken: exempt from
-   *   x-office-token (only /api/push/act, which carries its own single-use token; see src/routes/push.js)
+   * @param {{ rawBody?: boolean, maxBody?: number, noToken?: boolean, token?: 'office'|'cli'|'none' }} [options]
+   *   rawBody: the handler reads the request body itself (not JSON) · maxBody: a smaller JSON body limit than the
+   *   server's default · token: which per-start token this route needs. `office` (default) can do everything;
+   *   `cli` is the narrower token handed to the CLI-bridge hook, so a leaked hook token cannot control the app;
+   *   `none` carries its own proof (only /api/push/act: a single-use token, see src/routes/push.js).
    */
-  add(method, pattern, handler, { rawBody = false, maxBody = null, noToken = false } = {}) {
-    this.routes.push({ method, pattern, regex: compile(pattern), handler, rawBody, maxBody, noToken });
+  add(method, pattern, handler, { rawBody = false, maxBody = null, noToken = false, token = 'office' } = {}) {
+    this.routes.push({ method, pattern, regex: compile(pattern), handler, rawBody, maxBody, token: noToken ? 'none' : token });
     return this;
   }
 

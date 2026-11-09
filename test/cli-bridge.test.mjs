@@ -8,6 +8,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { hookDecision, projectForCwd, sanitizeToolInput } from '../src/cli-bridge.js';
 import { register } from '../src/routes/cli-bridge.js';
+import { buildRouter } from '../src/routes/index.js';
 import { buildSettings, HOOK_MATCHER, HOOK_TIMEOUT_SECONDS } from '../tools/cli-bridge/settings.mjs';
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), 'office-cli-bridge-'));
@@ -52,6 +53,18 @@ test('a clipped command still shows its tail, and secrets are redacted', () => {
   for (const secret of ['abc123', 's3cret', 'ghp_abcdefghijklmnop', 'admin:hunter2', 'user:pass', 'sk-live-999', 'ghp-one']) {
     assert.equal(text.includes(secret), false, secret);
   }
+});
+
+test('the hook gets a narrow token that can only ask for approval decisions', async () => {
+  const router = buildRouter();
+  assert.equal(router.match('POST', '/api/cli-bridge/ask').route.token, 'cli', 'the ask route wants the CLI token');
+  const mint = router.match('POST', '/api/cli-bridge/token').route;
+  assert.equal(mint.token, 'none', 'minting carries no office token; the route is laptop-only');
+  let answer = null;
+  const res = { writeHead(status, headers) { answer = { status, headers }; }, end(text) { answer.body = JSON.parse(text); } };
+  await mint.handler({ cliToken: 'a'.repeat(48) }, {}, res, {}, {});
+  assert.equal(answer.status, 200);
+  assert.equal(answer.body.token, 'a'.repeat(48));
 });
 
 test('projectForCwd picks the deepest project, rejects outside/virtual folders', () => {
@@ -186,7 +199,7 @@ test('hook: posts a clipped payload, prints allow/deny, and stays silent on fail
     let body = '';
     req.on('data', (chunk) => { body += chunk; });
     req.on('end', () => {
-      seen.push({ url: req.url, token: req.headers['x-office-token'], body: JSON.parse(body) });
+      seen.push({ url: req.url, token: req.headers['x-cli-token'], body: JSON.parse(body) });
       if (req.url !== '/api/cli-bridge/ask') return res.writeHead(404).end('{}');
       if (seen.at(-1).body.tool === 'Write' && seen.at(-1).body.input.file_path === 'fail.txt') return res.writeHead(500).end('{}');
       res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ decision: seen.at(-1).body.tool === 'Bash' ? 'allow' : 'deny' }));

@@ -15,7 +15,15 @@ const MAX_CLI_PENDING = 10;
 const MAX_CLI_PENDING_PER_PROJECT = 3;
 
 export function register(router) {
-  router.post('/api/cli-bridge/ask', ask, { maxBody: MAX_BODY });
+  // The launcher mints the narrow CLI token here instead of scraping the office token out of index.html.
+  // Laptop-only (server.js LOCAL_ONLY) and limited to asking for an approval: it cannot control the office.
+  router.post('/api/cli-bridge/token', issueToken, { noToken: true });
+  router.post('/api/cli-bridge/ask', ask, { maxBody: MAX_BODY, token: 'cli' });
+}
+
+function issueToken({ cliToken }, req, res) {
+  if (!cliToken) return json(res, 503, { error: 'CLI bridge belum siap.' });
+  return json(res, 200, { token: cliToken });
 }
 
 async function ask({ hub, dataDir, cliBridgeTimeoutMs }, req, res, params, body) {

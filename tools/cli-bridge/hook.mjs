@@ -46,7 +46,7 @@ async function main() {
     response = await fetch(`${BASE}/api/cli-bridge/ask`, {
       method: 'POST',
       redirect: 'error',
-      headers: { 'Content-Type': 'application/json', 'X-Office-Token': token, Origin: BASE },
+      headers: { 'Content-Type': 'application/json', 'X-Cli-Token': token, Origin: BASE },
       body: JSON.stringify({ tool, input: sanitizeToolInput(payload.tool_input), cwd: payload.cwd }),
       signal: AbortSignal.timeout(MAX_WAIT_MS),
     });

@@ -100,6 +100,8 @@ const MAX_PAIR_BODY = 1024; // POST /pair is reachable before pairing: it only c
 const DEFAULT_SLASH = ['clear', 'compact', 'context', 'cost', 'effort', 'help', 'init', 'model', 'resume', 'review'];
 // Per-start secret: only pages served by this process can call the API (blocks CSRF from other sites).
 const TOKEN = randomBytes(24).toString('hex');
+// A narrower token for the CLI-bridge hook: it may only ask for an approval decision, never control the office.
+const CLI_TOKEN = randomBytes(24).toString('hex');
 
 // The Lead's team prompt and the subagents (--agents) follow the active team (👥 Kelola tim): src/role-catalog.js.
 
@@ -476,7 +478,7 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Spotify's Client ID, login and logout: laptop only (the redirect URI is the laptop's 127.0.0.1).
 // ⚙ Cek kompatibilitas Claude Code (run, settings): laptop only (it spawns Claude Code, maybe a model call).
 // ⚙ Kompatibilitas OpenCode (run, settings): laptop only too (it spawns `opencode acp`).
-const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/cli-bridge/ask', '/api/autostart', '/api/shutdown', '/api/config', '/api/concurrency/save', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/shutdown', '/api/config', '/api/concurrency/save', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 // The same for switching engines and OpenCode's provider logins (API keys travel in these requests).
@@ -650,8 +652,11 @@ function openStream(req, res, local, device = null, token = null) {
 
 async function handleApi(req, res, pathname, device = null) {
   const route = router.match(req.method, pathname);
-  // Every API needs this start's token, except a route that carries its own (only /api/push/act: src/routes/push.js).
-  if (!route?.route.noToken && req.headers['x-office-token'] !== TOKEN) return json(res, 403, { error: 'forbidden' });
+  // Every API needs this start's token. The CLI bridge carries a narrower one (x-cli-token), and /api/push/act
+  // carries its own single-use proof instead (src/routes/push.js).
+  const tokenKind = route?.route.token ?? 'office';
+  if (tokenKind === 'office' && req.headers['x-office-token'] !== TOKEN) return json(res, 403, { error: 'forbidden' });
+  if (tokenKind === 'cli' && req.headers['x-cli-token'] !== CLI_TOKEN) return json(res, 403, { error: 'forbidden' });
   if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
   // Per request: the paired phone making it (null on the laptop).
   const reqCtx = { ...ctx, device };
@@ -723,6 +728,7 @@ const ctx = {
   roleMemory,
   appDir: APP_DIR,
   appVersion: APP_VERSION,
+  cliToken: CLI_TOKEN,
   dataDir: DATA_DIR,
   port: PORT,
   httpsPort: HTTPS_PORT,

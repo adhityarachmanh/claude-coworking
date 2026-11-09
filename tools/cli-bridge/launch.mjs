@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// 🌉 `office claude [...]`: the opt-in wrapper. It asks this laptop's Adhit Office for a per-start token, writes a
-// temporary settings file in the app data folder, and runs the user's own `claude` with that file. Without this
-// command nothing changes; ~/.claude/settings.json is never touched.
+// 🌉 `office claude [...]`: the opt-in wrapper. It asks this laptop's Adhit Office for the narrow CLI token (only
+// usable for approval decisions), writes a temporary settings file in the app data folder, and runs the user's own
+// `claude` with that file. Without this command nothing changes; ~/.claude/settings.json is never touched.
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -20,11 +20,19 @@ const usage = () => {
   process.stderr.write('Pakai: office claude [argumen claude...]\n');
 };
 
+/** The narrow CLI token: it can only ask for approval decisions, never drive the office (POST /api/cli-bridge/ask). */
 async function readToken() {
-  const response = await fetch(`${BASE}/`, { signal: AbortSignal.timeout(4000), redirect: 'error' });
+  const response = await fetch(`${BASE}/api/cli-bridge/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+    signal: AbortSignal.timeout(4000),
+    redirect: 'error',
+  });
   if (!response.ok) return null;
-  const html = await response.text();
-  return /<meta name="office-token" content="([0-9a-f]+)"/.exec(html)?.[1] ?? null;
+  const body = await response.json().catch(() => null);
+  const token = String(body?.token ?? '');
+  return /^[0-9a-f]{32,}$/.test(token) ? token : null;
 }
 
 function findClaude() {

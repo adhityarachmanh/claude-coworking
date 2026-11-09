@@ -307,7 +307,7 @@ Menjawab izin sesi `claude` di terminal dari kantor/HP, tanpa mengubah config Cl
 4. Kalau server mati, hook gagal, atau tidak dijawab dalam ±2 menit: hook tidak memberi keputusan dan **prompt terminal** mengambil alih. Tidak ada auto-allow.
 5. Izin CLI tidak punya tombol **Izinkan** di layar kunci; buka aplikasi untuk melihat perintah/path yang sudah dipotong.
 
-Batasan: hanya laptop (route ditolak dari LAN/Tailscale), maksimal 3 izin menunggu per project, dan proses lokal dengan hak user yang sama tetap dipercaya. Status: **belum dirilis** sampai verifikasi TUI manual selesai. Detail: [design-cli-bridge.md](design-cli-bridge.md).
+Batasan: hanya laptop (route ditolak dari LAN/Tailscale), maksimal 3 izin menunggu per project, dan proses lokal dengan hak user yang sama tetap dipercaya. Hook memakai **token CLI sempit** (`x-cli-token`) yang hanya bisa meminta keputusan izin — tidak bisa memanggil API lain seperti shutdown, backup, atau menjawab izin. Status: **belum dirilis** sampai verifikasi TUI manual selesai. Detail: [design-cli-bridge.md](design-cli-bridge.md).
 
 ## Aplikasi terpasang (eksperimental)
 

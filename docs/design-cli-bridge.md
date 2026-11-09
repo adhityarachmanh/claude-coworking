@@ -79,8 +79,9 @@ Komponen:
 
 - `tools/cli-bridge/hook.mjs` — membaca stdin JSON, memanggil server, mencetak keputusan. Tidak menulis log isi tool ke disk.
 - `tools/cli-bridge/settings.js` — membuat file settings sementara di folder data aplikasi, dengan command hook dan timeout. File ini tidak pernah menyentuh config user.
-- `src/routes/cli-bridge.js` — `POST /api/cli-bridge/ask` (laptop-only, token, origin), `GET /api/cli-bridge/answer/:id` atau long-poll; memakai `hub.requestApproval` supaya kartu, notifikasi HP, dan audit sama dengan sesi web.
+- `src/routes/cli-bridge.js` — `POST /api/cli-bridge/token` (laptop-only) menerbitkan **token CLI sempit**, lalu `POST /api/cli-bridge/ask` (laptop-only, `x-cli-token`, origin) dan long-poll; memakai `hub.requestApproval` supaya kartu, notifikasi HP, dan audit sama dengan sesi web.
 - `office` launcher — entry point kecil yang meneruskan argumen ke `claude` dan menambahkan `--settings`. Opt-in eksplisit; tanpa `office`, tidak ada yang berubah.
+- **Least privilege.** Token CLI hanya diterima `/api/cli-bridge/ask`; token itu tidak bisa memanggil API lain (shutdown, backup, jawab izin, ubah project). Token aplikasi yang disuntikkan ke `index.html` tidak lagi dipakai hook.
 
 ## Aturan keamanan (wajib)
 

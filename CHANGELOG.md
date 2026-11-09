@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.8
+
+- **🔐 CLI bridge: token sempit.** Launcher tidak lagi mengambil token aplikasi dari halaman HTML; ia meminta token CLI yang hanya diterima `/api/cli-bridge/ask`. File token milik hook tidak bisa dipakai untuk shutdown, backup, atau menjawab izin lain bila bocor.
+
 ## 1.0.7
 
 - **🚦 Rilis tidak lagi setengah jadi.** GitHub Release dibuat sebagai **draft** dan baru dipublikasikan setelah aset Windows, Linux, dan macOS (arm64 + x64) beserta checksum/signature lengkap. Kalau satu platform gagal atau asetnya hilang, rilis tetap draft dan job publish gagal dengan nama aset yang kurang.

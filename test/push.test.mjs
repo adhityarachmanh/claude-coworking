@@ -478,7 +478,7 @@ test('routes: TLS + Tailscale + https device for every /api/push/*; act also nee
   const router = buildRouter();
   const pushRoutes = router.routes.filter((r) => r.pattern.startsWith('/api/push/'));
   assert.deepEqual(pushRoutes.map((r) => r.pattern).sort(), ['/api/push/act', '/api/push/history', '/api/push/settings', '/api/push/subscribe', '/api/push/test', '/api/push/unsubscribe', '/api/push/vapid', '/api/push/visible']);
-  assert.deepEqual(router.routes.filter((r) => r.noToken).map((r) => r.pattern), ['/api/push/act'], 'the only path without x-office-token');
+  assert.deepEqual(router.routes.filter((r) => r.token === 'none').map((r) => r.pattern), ['/api/cli-bridge/token', '/api/push/act'], 'only these carry their own proof');
   assert.ok(pushRoutes.every((r) => r.maxBody && r.maxBody <= 4096), 'small bodies only');
 
   const phone = addDevice('Android · Chrome', { settings: null });
