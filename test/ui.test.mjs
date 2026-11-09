@@ -3643,6 +3643,22 @@ for (const vp of VIEWPORTS) {
         const accepted = await page.eval(() => ({ calls: window.__pe.calls.length, error: document.querySelector('#project-engine-error').textContent }));
         assert.equal(accepted.calls, 2);
         assert.equal(accepted.error, '', 'galat lama dibersihkan sebelum percobaan berikutnya');
+        // A project that is working cannot switch engines (the server returns 409): say so before the click.
+        const busy = await page.eval(async (id) => {
+          const { state } = await import('/js/core/state.js');
+          const { syncProjectEngine } = await import('/js/features/settings.js');
+          state.statuses[id] = { ...state.statuses[id], busy: true };
+          syncProjectEngine();
+          const out = {
+            disabled: [...document.querySelectorAll('#project-engine-opts [data-project-engine]')].every((b) => b.disabled),
+            hint: document.querySelector('#project-engine-hint').textContent,
+          };
+          state.statuses[id] = { ...state.statuses[id], busy: false };
+          syncProjectEngine();
+          return out;
+        }, projectId);
+        assert.equal(busy.disabled, true, 'tombol mesin mati saat project bekerja');
+        assert.match(busy.hint, /sedang bekerja/);
         assert.deepEqual(realProblems(page), [], 'tanpa error console');
       } finally {
         await page.eval(async (id) => {

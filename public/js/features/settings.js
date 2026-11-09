@@ -193,12 +193,18 @@ function setEngineError(message = '') {
   if (box) box.textContent = message;
 }
 
-/** Why the project's engine cannot be switched right now (demo, read-only, older server), or ''. */
+/** Why the project's engine cannot be switched right now (demo, read-only, older server, busy), or ''. */
 function engineLockReason(id) {
   if (!state.config?.engines) return 'Server ini belum bisa mengganti mesin per project.';
   if (!id || id === DEMO_ID) return 'Pilih project nyata dulu untuk mengatur mesinnya.';
   if (state.readOnly) return `${READ_ONLY_HINT}.`;
   if (!state.projects.some((p) => p.id === id)) return 'Project ini tidak ada lagi di daftar.';
+  // The server refuses these too (409); say it BEFORE the click so the button never looks like it worked.
+  const st = state.statuses[id] ?? {};
+  if (st.busy) return 'Project ini sedang bekerja. Tunggu giliran selesai atau hentikan dulu, lalu ganti mesin.';
+  if (st.pending) return 'Masih ada permintaan izin yang menunggu jawaban. Jawab dulu, lalu ganti mesin.';
+  if (st.queue) return '📋 Antrian project ini masih berisi item. Selesaikan atau hapus dulu, lalu ganti mesin.';
+  if (st.interrupted) return 'Ada giliran terputus ("Lanjutkan"). Lanjutkan atau abaikan dulu, lalu ganti mesin.';
   return '';
 }
 
@@ -269,7 +275,9 @@ async function switchProjectEngine(engine) {
     await api(`/api/projects/${encodeURIComponent(id)}/engine`, { engine });
     toast(`Project ini sekarang memakai ${engineLabel(engine)}.`, 'ok');
   } catch (err) {
-    setEngineError(err?.message || 'Gagal mengganti mesin project.');
+    const message = err?.message || 'Gagal mengganti mesin project.';
+    setEngineError(message);
+    toast(message, 'warn');
   } finally {
     engineSwitching = false;
     syncProjectEngine(); // still the old value until the server's status arrives (a 409 changes nothing)
