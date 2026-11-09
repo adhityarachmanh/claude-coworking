@@ -2,7 +2,7 @@
 // The server sends OPENCODE_CAPS in config.engines.opencode.caps; these tests keep the server and UI in sync.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CLAUDE_CAPS, capReason, capsFor, engineBadge, engineOf } from '../public/js/core/engine-caps.js';
+import { CLAUDE_CAPS, capReason, capsFor, engineBadge, engineChangeNeedsReload, engineOf } from '../public/js/core/engine-caps.js';
 import { OPENCODE_CAPS } from '../src/acp-session.js';
 
 const CONFIG = Object.freeze({
@@ -74,3 +74,11 @@ test('the reason is clear and no longer says Fase 1', () => {
   assert.match(capReason('rewind', 'opencode'), /OpenCode belum mendukung Rewind/);
   for (const cap of ['permissions', 'extensions', 'search', 'exportSession']) assert.doesNotMatch(capReason(cap, 'opencode'), /Fase 1/);
 });
+
+test('every engine change reloads open clients, including ONE project switching engine', () => {
+  // App-wide default switch (no project) and per-project switch both invalidate chat/activity/history caches.
+  assert.equal(engineChangeNeedsReload({ engine: 'opencode' }), true);
+  assert.equal(engineChangeNeedsReload({ engine: 'opencode', project: 'p1' }), true);
+  assert.equal(engineChangeNeedsReload(null), false, 'a malformed event does not reload the page');
+});
+

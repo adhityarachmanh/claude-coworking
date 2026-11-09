@@ -88,6 +88,31 @@ async function snapshot() {
   return JSON.parse(text.match(/^data: (.*)$/m)[1]);
 }
 
+/** Waits for one named SSE event (the stream starts with a snapshot frame). */
+async function nextEvent(type, ms = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(`${BASE}/stream`, { signal: controller.signal });
+    const reader = res.body.getReader();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += new TextDecoder().decode(value);
+      const match = new RegExp(`event: ${type}\\ndata: (.*)\\n`).exec(buf);
+      if (match) {
+        reader.cancel().catch(() => {});
+        return JSON.parse(match[1]);
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+  }
+  return null;
+}
+
 async function until(fn, what, ms = 25_000) {
   const end = Date.now() + ms;
   for (;;) {
@@ -147,6 +172,16 @@ test('the app-wide engine is only the default: new projects use it, existing one
   assert.equal((await statusOf(alfa)).engine, 'opencode', 'still its own choice');
   await api('/api/engine', { engine: 'claude' }); // back to the Claude default for the rest of the suite
   assert.equal((await statusOf(gamma)).engine, 'opencode', 'an existing project stays where it was');
+});
+
+test('switching ONE project emits engine{project} so every open client reloads its history', async () => {
+  const alfa = await projectId('alfa');
+  await switchProject(alfa, 'claude');
+  const pending = nextEvent('engine');
+  await sleep(300); // let the stream deliver its snapshot before the switch
+  await switchProject(alfa, 'opencode');
+  const evt = await pending;
+  assert.deepEqual(evt, { engine: 'opencode', project: alfa });
 });
 
 test('each engine keeps its own model and effort for a project (mode/team stay shared)', async () => {

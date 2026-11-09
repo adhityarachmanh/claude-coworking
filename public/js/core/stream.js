@@ -21,6 +21,7 @@ import { maybeAutoTour } from '../features/tour.js';
 import { applyRoster } from '../features/roster.js';
 import { applySpotify } from '../features/spotify.js';
 import { reloadSoon } from '../features/opencode-account.js';
+import { engineChangeNeedsReload } from './engine-caps.js';
 import { onGithubLogin } from '../features/pull-request.js';
 import { onQueueEvent } from '../features/queue-all.js';
 import { onRoleMapChanged } from '../features/role-map.js';
@@ -105,9 +106,10 @@ const handlers = {
   spotify: (s) => applySpotify(s),
   'account-alert': (alert, live) => live && onAccountAlert(alert),
   // Akun changed the DEFAULT engine (this or another device): a fresh page shows the new default.
-  // Stage 1: ONE project changing engine also emits `engine`, but carries its id — that is applied in place by the
-  // `status`/`projects` events (the chat is swapped server-side), so it must NOT reload the page.
-  engine: (data, live) => live && !(data && typeof data === 'object' && data.project) && reloadSoon(),
+  // ONE project changing engine also emits `engine` with its id. The status/projects events update in place, but
+  // chat/activity/history keep the old engine's cache; reload every open client so two windows never diverge and
+  // look like one of them rolled the switch back.
+  engine: (data, live) => live && engineChangeNeedsReload(data) && reloadSoon(),
   'github-login': (login, live) => live && onGithubLogin(login), // ⇡ PR dialog: gh login finished / failed
   'role-map': (data, live) => live && onRoleMapChanged(), // 🧭 the AI mapped names / another device changed the map
   projects(projects) {

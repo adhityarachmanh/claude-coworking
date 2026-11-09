@@ -4,6 +4,12 @@
 
 export const DEFAULT_ENGINE = 'claude';
 
+/**
+ * True for any engine-change event (app-wide or one project). Chat/activity/history caches belong to the old
+ * engine, so every open client must reload into the server's new snapshot; two windows must never diverge.
+ */
+export const engineChangeNeedsReload = (data) => Boolean(data && typeof data === 'object' && (data.project || data.engine));
+
 /** Display names; an engine the server adds later still shows (its id) without a code change. */
 export const ENGINE_LABEL = { claude: 'Claude Code', opencode: 'OpenCode' };
 
