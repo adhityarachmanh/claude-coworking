@@ -93,7 +93,7 @@ export class SessionManager {
     this.account = account;
     this.sessions = new Map();
     this.pendingEngines = new Map(); // project id -> engine to apply when its running turn ends
-    for (const [id, engine] of Object.entries(hub.persisted.engineQueue ?? {})) {
+    for (const [id, engine] of Object.entries(hub.persisted?.engineQueue ?? {})) {
       const project = hub.projects.get(id);
       if (project && ENGINES.includes(engine)) this.pendingEngines.set(id, { project, engine });
     }
@@ -391,8 +391,10 @@ export class SessionManager {
     const busy = Boolean(session && (session.turnActive() || session.busy || session.inflight?.size || session.rewinding));
     if (!busy) return this.setProjectEngine(project, engine); // idle: apply immediately (other blockers still refuse)
     this.pendingEngines.set(id, { project, engine });
-    this.hub.persisted.engineQueue = { ...(this.hub.persisted.engineQueue ?? {}), [id]: engine };
-    this.hub.scheduleSave?.();
+    if (this.hub.persisted) {
+      this.hub.persisted.engineQueue = { ...(this.hub.persisted.engineQueue ?? {}), [id]: engine };
+      this.hub.scheduleSave?.();
+    }
     this.hub.setStatus(id, { enginePending: engine, enginePendingError: null });
     return { ok: true, queued: true, engine: this.hub.engineOf(id), enginePending: engine };
   }
@@ -400,8 +402,9 @@ export class SessionManager {
   /** Forget a queued switch (server restart re-reads it from persisted.engineQueue). */
   clearPendingEngine(id) {
     this.pendingEngines.delete(id);
-    if (this.hub.persisted.engineQueue && id in this.hub.persisted.engineQueue) {
-      delete this.hub.persisted.engineQueue[id];
+    const queue = this.hub.persisted?.engineQueue;
+    if (queue && id in queue) {
+      delete queue[id];
       this.hub.scheduleSave?.();
     }
   }
@@ -431,7 +434,7 @@ export class SessionManager {
   }
 
   cancelPendingEngine(id) {
-    if (!this.pendingEngines.has(id) && !(id in (this.hub.persisted.engineQueue ?? {}))) return false;
+    if (!this.pendingEngines.has(id) && !(id in (this.hub.persisted?.engineQueue ?? {}))) return false;
     this.clearPendingEngine(id);
     this.hub.setStatus(id, { enginePending: null, enginePendingError: null });
     return true;

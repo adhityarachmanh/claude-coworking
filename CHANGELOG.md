@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🧪 Test cepat untuk verifikasi harian.** `npm run test:fast` menjalankan hanya test logika murni (tanpa browser/server, ~36 dtk); tersedia juga `test:unit` dan `test:ui`. README kini jujur bahwa CI hanya membangun/merilis, bukan menjalankan test.
+
 ## 1.0.3
 
 - **💾 Backup sesi OpenCode.** Export/import kini menyertakan sesi OpenCode melalui `opencode session export/import` (bukan salinan DB saat service hidup). Sesi yang sudah ada dilewati; bila OpenCode tidak terpasang, sesi dilewati dengan peringatan. Format backup naik ke versi 2. Pratinjau import menyebut jumlah sesi OpenCode dan memperingatkan backup lama yang tidak menyimpan path project.

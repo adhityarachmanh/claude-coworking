@@ -260,15 +260,18 @@ Untuk detail lengkap, jalankan `npm run test:claude` (23 cek terhadap Claude Cod
 ## Test & pengembangan
 
 ```bash
-npm test             # offline: unit + server sungguhan dengan Claude Code palsu + UI (Chrome/Edge headless, dilewati bila tidak ada)
+npm run test:fast    # harian: hanya logika murni, tanpa browser/server (~35 dtk, 500+ test)
+npm run test:unit    # semua test tanpa browser (termasuk server sungguhan + Claude palsu)
+npm run test:ui      # test browser per file; yang gagal diulang sekali dan dilaporkan FLAKY
+npm test             # semuanya (unit + UI), paling lambat
 npm run test:claude  # kontrak ke Claude Code asli (beberapa request Haiku, memakai akunmu)
 npm run test:opencode  # kontrak ke OpenCode asli: cek tanpa token + giliran singkat dengan model gratis; `-- --light` = tanpa token saja
 npm run lint         # ESLint versi terkunci lewat npx
-node test-support/ci-tests.mjs unit   # seperti CI: semua test tanpa browser
-node test-support/ci-tests.mjs ui     # seperti CI: test browser per file, yang gagal diulang sekali (dilaporkan FLAKY)
 ```
 
-CI GitHub (`.github/workflows/test.yml`) menjalankan tiga job: **lint** (cek sintaks + ESLint), **unit** (Windows + Ubuntu) dan **ui** (Ubuntu, Chrome bawaan runner). Push baru ke branch yang sama membatalkan run lama. File UI yang baru lulus saat diulang ditulis di ringkasan job sebagai *flaky*, supaya diperbaiki, bukan disembunyikan.
+`test:fast` memilih otomatis file yang tidak mengimpor browser (`test-support/cdp.mjs`) atau memulai server/proses, jadi aman dijalankan setiap kali menyimpan. Untuk perubahan yang menyentuh server, backup, antrian, atau mesin project, jalankan file test terkait saja, misalnya `node --test --test-concurrency=1 test/engine-per-project.test.mjs`.
+
+GitHub Actions saat ini hanya berisi workflow build/rilis (`v*`) dan build macOS; test tidak dijalankan otomatis di CI. Jalankan `test:unit` sebelum mengirim perubahan besar.
 
 | Lapis | Isi |
 |---|---|
@@ -278,7 +281,7 @@ CI GitHub (`.github/workflows/test.yml`) menjalankan tiga job: **lint** (cek sin
 | Kontrak (`test-support/claude-contract.mjs`) | Asumsi protokol terhadap Claude Code asli: `init`, streaming, `can_use_tool`, allow/deny, interrupt, `--agents`, format transcript |
 | Kontrak OpenCode (`test-support/opencode-contract.mjs`) | Asumsi ACP terhadap OpenCode asli: `initialize`, `session/new` + configOptions, command, `set_config_option`, `session/load`, `opencode models`/`session list`, lalu (model gratis `opencode-go/beam-free`, atau `OPENCODE_CONTRACT_MODEL=<provider/model>`) streaming + `usage`, bentuk `session/request_permission` + tolak, `session/cancel` |
 
-Test offline juga jalan di GitHub Actions (Windows dan Linux) setiap push, plus lint.
+Test offline dijalankan lokal; CI GitHub hanya membangun dan merilis aplikasi.
 
 **Isolasi.** Semua test memakai folder sementara dan port acak (`OFFICE_DATA_DIR`, `CLAUDE_PROJECTS_DIR`, `CLAUDE_CONFIG_FILE`, `CLAUDE_CONFIG_DIR`, `OFFICE_TAILSCALE_BIN`, `OFFICE_OPEN_DRY_RUN`), jadi tidak menyentuh riwayat, settings, Tailscale, atau Spotify aslimu, dan aman dijalankan saat server background menyala. Tips:
 

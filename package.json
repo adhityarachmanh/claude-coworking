@@ -20,6 +20,9 @@
     "build:mac": "node scripts/build-macos.mjs",
     "build:electron": "electron-builder --win --dir --config desktop/electron-builder.yml",
     "test": "node --test --test-concurrency=1",
+    "test:fast": "node test-support/ci-tests.mjs fast",
+    "test:unit": "node test-support/ci-tests.mjs unit",
+    "test:ui": "node test-support/ci-tests.mjs ui",
     "test:claude": "node test-support/claude-contract.mjs",
     "test:opencode": "node test-support/opencode-contract.mjs",
     "lint": "npx --yes eslint@9.39.5 ."

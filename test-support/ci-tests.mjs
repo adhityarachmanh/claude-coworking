@@ -1,9 +1,11 @@
-// CI test runner (.github/workflows/test.yml), cross-platform:
+// Test runner, cross-platform:
+//   node test-support/ci-tests.mjs fast   → pure-logic files only (no browser, no server/process): the daily check
 //   node test-support/ci-tests.mjs unit   → every test file that needs no browser, in one `node --test` run
 //   node test-support/ci-tests.mjs ui     → the browser (CDP) test files one by one, each with a time limit; a file
 //                                           that fails is run once more: passing then is reported as FLAKY (named in
 //                                           the summary, so it is fixed, not hidden), failing twice fails the job
-// A UI file is one that imports test-support/cdp.mjs. Exit code: 0 when everything passed (flaky included).
+// A UI file is one that imports test-support/cdp.mjs. A slow file starts a server or spawns a process. Exit code: 0
+// when everything passed (flaky included).
 import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -17,12 +19,20 @@ const files = readdirSync(path.join(APP, 'test'))
   .filter((f) => f.endsWith('.test.mjs'))
   .sort()
   .map((f) => path.join('test', f));
-const isUi = (f) => /test-support\/cdp\.mjs/.test(readFileSync(path.join(APP, f), 'utf8'));
+const source = (f) => readFileSync(path.join(APP, f), 'utf8');
+const isUi = (f) => /test-support\/cdp\.mjs/.test(source(f));
+// A file that spawns a server/process (or imports the fakes) is the slow half of the suite on purpose: it tests the
+// real server, ports, and CLI lifecycle. Everything else is pure logic and safe to run on every save.
+const isSlow = (f) => !isUi(f) && /node:child_process|test-support\/(fake-|cdp|run-each)|from '\.\.\/src\/server\.js'/.test(source(f));
 
 const run = (list, timeout) =>
   spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...list], { cwd: APP, stdio: 'inherit', timeout, env: process.env });
 
-if (mode === 'unit') {
+if (mode === 'fast') {
+  const fast = files.filter((f) => !isUi(f) && !isSlow(f));
+  console.log(`fast: ${fast.length} file (tanpa browser dan tanpa server)`);
+  process.exit(run(fast).status ?? 1);
+} else if (mode === 'unit') {
   const unit = files.filter((f) => !isUi(f));
   console.log(`unit: ${unit.length} file`);
   process.exit(run(unit).status ?? 1);
@@ -47,6 +57,6 @@ if (mode === 'unit') {
   }
   process.exit(result.failed.length ? 1 : 0);
 } else {
-  console.error('pakai: node test-support/ci-tests.mjs unit|ui');
+  console.error('pakai: node test-support/ci-tests.mjs fast|unit|ui');
   process.exit(2);
 }
