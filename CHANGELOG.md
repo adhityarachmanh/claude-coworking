@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.1
+
+### Perbaikan
+
+- **Backup lengkap untuk project & chat.** Export kini menyertakan **root project efektif** dan **path setiap project**, bukan hanya root yang pernah diatur manual. Sebelumnya project yang memakai root default tidak dikenali saat import, sehingga chat dan pengaturan project ikut terbuang. Import juga membuat project eksplisit dari path backup. Buat ulang backup lama setelah update.
+
 ## 1.0.0
 
 ### Eksperimental
