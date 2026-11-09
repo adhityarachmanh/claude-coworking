@@ -113,6 +113,10 @@ Komponen:
    allow, deny, timeout, server error, token hilang, dan folder di luar project (semua fail-closed).
 2. ⏳ **Uji TUI manual**: setujui/tolak dari terminal, HP, dan saat server mati; pastikan tidak ada auto-allow
    dan prompt terminal benar-benar muncul saat hook gagal/timeout. **Ini prasyarat rilis.**
-3. ⏳ **Keamanan**: review endpoint, token/origin, audit, payload push, dan launcher oleh security.
-4. ⏳ **Rilis opt-in**: dokumentasi `office claude`, status di README, dan tombol “CLI bridge” di ⚙ Sistem (hanya laptop).
+3. ✅ **Keamanan**: review endpoint, token/origin, audit, payload push, dan launcher oleh security. Temuan
+   utama sudah diperbaiki: token tidak lewat environment, preview diberi penanda pemotongan, izin CLI tidak
+   bisa di-allow dari layar kunci, timeout menjadi fallback (bukan deny), kartu memakai chat/deep-link,
+   sanitasi C1/bidi/zero-width, guard duplikat, dan batas antrean 3/project + 10 global.
+4. 🟡 **Rilis opt-in**: dokumentasi eksperimental sudah ada di README/FITUR/PANDUAN/CHANGELOG. Status
+   “siap” dan tombol “CLI bridge” di ⚙ Sistem menunggu uji TUI manual (langkah 2).
 5. ⏳ **Baru setelah itu**: pertimbangkan integrasi ke sesi CLI yang sudah berjalan (di luar cakupan desain ini).

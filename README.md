@@ -142,7 +142,9 @@ Notifikasi tetap muncul walau aplikasi ditutup atau HP terkunci. Hanya lewat jal
 
 Semua sesi `claude` yang kamu jalankan di terminal, di project mana pun, otomatis tampil di kantor dengan tanda **CLI**: prompt, balasan, tool, delegasi subagent, dan tanda selesai. Server hanya **membaca** transcript yang ditulis Claude Code (`~/.claude/projects`), jadi tidak ada hook dan CLI tidak terpengaruh.
 
-Batasan: izin untuk sesi CLI tetap dijawab di terminal, dan prompt dari web membuat sesi web terpisah (tidak menyuntikkan pesan ke sesi CLI yang sedang terbuka). Rencana opt-in untuk menjawab izin CLI dari kantor/HP sudah melalui spike dan didokumentasikan di [docs/design-cli-bridge.md](docs/design-cli-bridge.md)—belum diimplementasikan.
+Batasan: izin untuk sesi CLI tetap dijawab di terminal, dan prompt dari web membuat sesi web terpisah (tidak menyuntikkan pesan ke sesi CLI yang sedang terbuka).
+
+**🌉 CLI bridge (eksperimental, opt-in).** Jalankan `office claude` (dari folder repo ini, atau `office.cmd` di PATH) untuk sesi yang izinnya bisa dijawab dari kantor/HP. Wrapper menambahkan file settings sementara berisi hook `PreToolUse` untuk tool berbahaya; config `~/.claude/settings.json` tidak disentuh. Server mati, timeout, atau hook gagal → keputusan diserahkan ke **prompt terminal** (tidak pernah auto-allow). Izin CLI tampil sebagai kartu di kantor/HP dengan penanda “Terminal · CLI bridge”, tidak bisa di-allow dari layar kunci, dan dicatat sebagai `cli-approval`. Status: **belum dirilis**—menunggu verifikasi TUI manual (fallback prompt saat server mati/timeout). Detail dan batasan: [docs/design-cli-bridge.md](docs/design-cli-bridge.md).
 
 ## Fitur
 

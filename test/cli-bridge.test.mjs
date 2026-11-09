@@ -196,3 +196,11 @@ test('hook: posts a clipped payload, prints allow/deny, and stays silent on fail
   assert.deepEqual(noToken, { code: 0, stdout: '' }, 'no token: fail-closed without a request');
   assert.equal(seen.length, 3, 'the no-token run never reached the server');
 });
+
+test('hook: a dead server leaves the decision to the terminal prompt', async () => {
+  const dead = await runHook(
+    { hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: 'a.txt', content: 'ok' }, cwd: TMP },
+    { base: 'http://127.0.0.1:1' },
+  );
+  assert.deepEqual(dead, { code: 0, stdout: '' });
+});

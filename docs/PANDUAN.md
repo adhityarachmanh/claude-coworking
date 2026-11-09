@@ -41,6 +41,16 @@ Tips:
 
 Lewat WiFi rumah biasa (tanpa Tailscale), HP **hanya bisa melihat**. Itu disengaja: koneksi WiFi biasa tidak terenkripsi. Lihat [Dari HP](../README.md#dari-hp).
 
+## Izin sesi terminal (CLI bridge, eksperimental)
+
+1. Pastikan Adhit Office berjalan dan folder kerja terdaftar sebagai project.
+2. Di terminal folder project, jalankan `office claude` (dari folder repo ini, atau `office.cmd` di PATH).
+3. Saat Claude Code meminta izin untuk tool berbahaya, kartu **Terminal · CLI bridge** muncul di kantor/HP. Jawab **Izinkan** atau **Tolak** di aplikasi.
+4. Kalau server mati, hook gagal, atau tidak dijawab ±2 menit, izin kembali ke **prompt terminal**—tidak pernah otomatis diizinkan.
+5. Izin CLI tidak bisa di-allow dari layar kunci; buka aplikasi untuk melihat perintah/path yang sudah dipotong.
+
+Status: **belum dirilis** sampai uji TUI manual selesai. Batasan lengkap: [CLI bridge](FITUR.md#cli-bridge-eksperimental).
+
 ## Memutar musik
 
 **Sekali saja, di laptop:** ⚙ → **♪ Spotify**. Ikuti 4 langkah di sana (buat app di developer.spotify.com, salin Redirect URI, tambahkan email Spotify-mu, tempel Client ID), lalu **🔗 Hubungkan**. Butuh Spotify Premium. Detail: [Musik (Spotify)](FITUR.md#musik-spotify).

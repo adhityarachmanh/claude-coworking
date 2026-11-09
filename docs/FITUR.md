@@ -297,6 +297,18 @@ Kontrol Spotify yang sudah kamu pakai (Spotify Connect) lewat Spotify Web API. B
 - **Audit akun** (`data/auth-audit.jsonl`) dipadatkan saat file melewati 256 KB atau saat server mulai: menyimpan **180 hari terakhir** (maks 2.000 aksi).
 - Sesi CLI ikut tercatat ke akun yang sedang login. Setelah ganti akun, buka ulang sesi CLI yang masih terbuka. Estimasi biaya (USD, harga list) hanya untuk sesi web.
 
+## CLI bridge (eksperimental)
+
+Menjawab izin sesi `claude` di terminal dari kantor/HP, tanpa mengubah config Claude milikmu.
+
+1. Pastikan Adhit Office berjalan di laptop dan folder kerja adalah project yang terdaftar.
+2. Jalankan `office claude` dari folder repo ini (atau `office.cmd` yang ada di PATH), lalu pakai Claude Code seperti biasa.
+3. Saat tool berbahaya (`Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch|WebSearch|mcp__*`) meminta izin, kartu muncul di kantor/HP sebagai **Terminal · CLI bridge**. Izinkan atau tolak dari aplikasi.
+4. Kalau server mati, hook gagal, atau tidak dijawab dalam ±2 menit: hook tidak memberi keputusan dan **prompt terminal** mengambil alih. Tidak ada auto-allow.
+5. Izin CLI tidak punya tombol **Izinkan** di layar kunci; buka aplikasi untuk melihat perintah/path yang sudah dipotong.
+
+Batasan: hanya laptop (route ditolak dari LAN/Tailscale), maksimal 3 izin menunggu per project, dan proses lokal dengan hak user yang sama tetap dipercaya. Status: **belum dirilis** sampai verifikasi TUI manual selesai. Detail: [design-cli-bridge.md](design-cli-bridge.md).
+
 ## Figma (bridge lokal)
 
 `tools/figma-bridge/` menghubungkan agent AI ke **Figma desktop** lewat plugin, tanpa token Figma dan tanpa internet:
