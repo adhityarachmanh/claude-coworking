@@ -27,7 +27,7 @@ const WARN_REASONS = new Set(['failed', 'rate_limit', 'budget', 'account']);
 /** Budget ranges, same as the server's (src/queue.js); the server stays the judge. */
 const BUDGET_RANGE = { tokensOut: [1000, 100_000_000], costUsd: [0.01, 10_000] };
 /** The open dialog: which project, its queue as last fetched, the item being edited, the budget the fields show. */
-export const queueView = { project: null, data: null, editing: null, rev: -1, loading: false, budgetKey: null, budgetOpened: false, runbooks: [] };
+export const queueView = { project: null, data: null, editing: null, rev: -1, loading: false, budgetKey: null, budgetOpened: false, runbooks: [], filter: { text: '', status: 'all' } };
 const lastReason = new Map(); // project -> pause reason last seen (a new failure/limit pause gets a toast)
 
 const canEdit = () => !state.readOnly;
@@ -66,12 +66,15 @@ function noticePause(project, s) {
 
 export async function openQueue({ focusAdd = false, project = state.active } = {}) {
   if (project === DEMO_ID) return toast('Pilih project dulu — demo tidak punya antrian.');
+  if (queueView.project !== project) queueView.filter = { text: '', status: 'all' };
   queueView.project = project;
   queueView.editing = null;
   queueView.budgetKey = null; // prefill the budget fields again
   queueView.budgetOpened = false;
   setBudgetOpen(false);
   showBudgetError('');
+  $('#queue-search').value = queueView.filter.text;
+  $('#queue-status-filter').value = queueView.filter.status;
   $('#queue-project').textContent = `· ${projectName(project)}`;
   openModal('queue-modal');
   await loadQueue();
@@ -331,10 +334,15 @@ function renderQueue() {
   $('#queue-count').textContent = `${waiting.length + (running ? 1 : 0)}/${q.limits.items} belum selesai`;
 
   const list = $('#queue-list');
+  const text = queueView.filter.text.trim().toLowerCase();
+  const status = queueView.filter.status;
+  const visible = q.items.filter((item) => (status === 'all' || item.status === status) && (!text || String(item.text ?? '').toLowerCase().includes(text)));
   if (!q.items.length) {
     list.innerHTML = '<li class="queue-empty muted">Belum ada item.</li>';
+  } else if (!visible.length) {
+    list.innerHTML = '<li class="queue-empty muted">Tidak ada item yang cocok dengan pencarian/filter.</li>';
   } else {
-    list.innerHTML = q.items.map((item) => itemHtml(item, waiting, edit)).join('');
+    list.innerHTML = visible.map((item) => itemHtml(item, waiting, edit)).join('');
   }
   for (const id of ['#queue-new', '#queue-add']) {
     $(id).disabled = !edit;
@@ -556,6 +564,14 @@ export function initQueue() {
     queueFromComposer();
   });
   $('#queue-add').addEventListener('click', addNew);
+  $('#queue-search').addEventListener('input', (e) => {
+    queueView.filter.text = e.target.value;
+    renderQueue();
+  });
+  $('#queue-status-filter').addEventListener('change', (e) => {
+    queueView.filter.status = e.target.value;
+    renderQueue();
+  });
   $('#queue-new').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || e.altKey)) {
       e.preventDefault();

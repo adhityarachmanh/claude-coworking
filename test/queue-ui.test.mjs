@@ -221,6 +221,27 @@ for (const vp of VIEWPORTS) {
       assert.match(await page.eval(() => document.querySelector('#queue-state').textContent), /dijeda olehmu/);
       assert.deepEqual(await page.eval(unnamed, '#queue-modal'), []);
       assert.equal(await page.eval(horizontalOverflow), null);
+      // Search + status filter: only matching items stay, with a clear empty state.
+      await page.eval(() => {
+        const input = document.querySelector('#queue-search');
+        input.value = 'pertama';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await page.waitFor(() => document.querySelectorAll('#queue-list li.queue-item').length === 1, { message: 'search filtered' });
+      await page.eval(() => {
+        document.querySelector('#queue-search').value = '';
+        document.querySelector('#queue-search').dispatchEvent(new Event('input', { bubbles: true }));
+        const sel = document.querySelector('#queue-status-filter');
+        sel.value = 'done';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.waitFor(() => /Tidak ada item yang cocok/.test(document.querySelector('#queue-list').textContent), { message: 'empty filter state' });
+      await page.eval(() => {
+        const sel = document.querySelector('#queue-status-filter');
+        sel.value = 'all';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.waitFor(() => document.querySelectorAll('#queue-list li.queue-item').length === 2, { message: 'filter cleared' });
       await shot(page, `queue-${vp.mobile ? 'mobile' : 'desktop'}-1`);
 
       // ↓ on the first item: order changes on the server

@@ -804,6 +804,16 @@
           <button id="queue-toggle" type="button" class="ghost">⏸ Jeda</button>
           <label class="switch small" title="Item yang gagal dicoba sekali lagi sebelum antrian dijeda"><input id="queue-retry-once" type="checkbox" /> ↻ Ulangi sekali bila gagal</label>
         </div>
+        <div class="queue-filter">
+          <input id="queue-search" type="search" placeholder="Cari prompt di antrian…" aria-label="Cari item antrian" autocomplete="off" />
+          <select id="queue-status-filter" aria-label="Saring antrian berdasarkan status">
+            <option value="all">Semua status</option>
+            <option value="waiting">Menunggu</option>
+            <option value="running">Berjalan</option>
+            <option value="done">Selesai</option>
+            <option value="failed">Gagal</option>
+          </select>
+        </div>
         <ol id="queue-list" class="queue-list" aria-label="Item antrian"></ol>
         <div class="queue-new">
           <label for="queue-new" class="sr-only">Prompt baru untuk antrian</label>

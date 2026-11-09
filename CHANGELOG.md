@@ -4,6 +4,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **📋 Pencarian & filter antrian.** Dialog antrian punya pencarian teks dan filter status (Menunggu/Berjalan/Selesai/Gagal); item yang tidak cocok disembunyikan dengan empty state yang jelas.
 - **🧪 Test browser mingguan + pembersihan draft rilis.** Alur chat/HP/dialog diuji di Chrome headless setiap Sabtu di CI (file yang gagal diulang sekali dan dilaporkan flaky). Draft rilis yang terbengkalai lebih dari 14 hari dihapus otomatis beserta tag-nya.
 
 ## 1.0.8

@@ -2050,6 +2050,9 @@ body.read-only #composer-hint { color: var(--ask); }
 .sb-queue.paused { color: var(--warn-text); border-color: var(--warn-line); background: var(--warn-soft); }
 .modal-card.queue-card { max-width: 640px; height: min(680px, calc(100vh - 32px)); display: flex; flex-direction: column; gap: 8px; }
 .queue-bar { display: flex; align-items: center; gap: 8px; flex: none; }
+.queue-filter { display: flex; gap: 8px; flex: none; }
+.queue-filter input { flex: 1; min-width: 0; }
+.queue-filter select { flex: none; }
 .queue-state { flex: 1; margin: 0; font-size: var(--fs-md); color: var(--text-2); }
 .queue-state.warn { color: var(--warn-text); }
 .queue-list { flex: 1; min-height: 80px; overflow-y: auto; list-style: none; margin: 0 -6px; padding: 0 6px; }
