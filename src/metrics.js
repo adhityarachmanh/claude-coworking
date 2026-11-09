@@ -158,6 +158,13 @@ export class Metrics {
     };
   }
 
+  /** 🧹 Data saya → Hapus riwayat kesehatan: clears the rolling days and the restart count, then writes the empty file. */
+  reset() {
+    this.days = {};
+    this.restarts = { count: 0, lastAt: null };
+    this.save();
+  }
+
   saveSoon() {
     if (this.saveTimer) return;
     this.saveTimer = setTimeout(() => {

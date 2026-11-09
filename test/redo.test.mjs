@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { applyRedo, captureRedo, conversationOf, listRedo, previewRedo, sealRedo } from '../src/redo.js';
+import { applyRedo, captureRedo, conversationOf, listRedo, previewRedo, removeProjectBundles, sealRedo } from '../src/redo.js';
 
 let hasGit = true;
 try {
@@ -35,6 +35,17 @@ function repo(name, files) {
   git('commit', '-qm', 'awal');
   return { dir, git };
 }
+
+test('redo: removeProjectBundles deletes one project and leaves the others, refusing a bad id', async () => {
+  mkdirSync(path.join(DATA, 'redo', 'p-satu', 'rd_abcdef12'), { recursive: true });
+  mkdirSync(path.join(DATA, 'redo', 'p-dua', 'rd_abcdef34'), { recursive: true });
+  writeFileSync(path.join(DATA, 'redo', 'p-satu', 'rd_abcdef12', 'bundle.json'), '{}');
+  writeFileSync(path.join(DATA, 'redo', 'p-dua', 'rd_abcdef34', 'bundle.json'), '{}');
+  await removeProjectBundles(DATA, 'p-satu');
+  assert.equal(existsSync(path.join(DATA, 'redo', 'p-satu')), false, 'bundel project itu hilang');
+  assert.equal(existsSync(path.join(DATA, 'redo', 'p-dua', 'rd_abcdef34', 'bundle.json')), true, 'project lain utuh');
+  await assert.rejects(() => removeProjectBundles(DATA, '../luar'), /Project tidak dikenal/);
+});
 
 test('redo: a modified tracked file and a new untracked file come back byte-identical; a deleted one is deleted again', { skip: !hasGit && 'git tidak terpasang' }, async () => {
   const { dir, git } = repo('repo1', { 'a.txt': 'satu\n', 'hapus.txt': 'akan dihapus\n' });

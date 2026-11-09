@@ -41,6 +41,11 @@ const STASH_ENV = {
 };
 
 /** A redo request that cannot be served; `status` is the HTTP answer (400 bad id, 404 unknown, 409 not ready/corrupt, 413 too large). */
+/** Removes every redo bundle of one project (used by "Hapus data project"). */
+export async function removeProjectBundles(dataDir, projectId) {
+  await rm(projectDir(dataDir, projectId), { recursive: true, force: true });
+}
+
 export class RedoError extends Error {
   constructor(status, message) {
     super(message);

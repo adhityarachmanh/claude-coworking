@@ -169,9 +169,15 @@ function render(data) {
     ['Pengaturan & status aplikasi', `state.json · ${fmt(data.state.bytes)}`],
     ['Riwayat chat (Claude + OpenCode)', `${data.chats.files} file · ${fmt(data.chats.bytes)}`],
     ['Laporan pemakaian token', `usage.jsonl · ${fmt(data.usage.bytes)}`],
+    ['Arsip laporan pemakaian', `${data.usageArchive.files} file · ${fmt(data.usageArchive.bytes)}`],
+    ['Lampiran antrian', `${data.queueFiles.files} file · ${fmt(data.queueFiles.bytes)}`],
+    ['Bundel redo (kembalikan perubahan)', `${data.redo.files} file · ${fmt(data.redo.bytes)}`],
+    ['Backup config OpenCode', `${data.configBackups.files} file · ${fmt(data.configBackups.bytes)}`],
+    ['Riwayat kesehatan server', `metrics.json · ${fmt(data.metrics.bytes)}`],
+    ['Log server', `server.log · ${fmt(data.logs.bytes)}`],
     ['Riwayat notifikasi', `${data.pushHistory.entries} entri · ${fmt(data.pushHistory.bytes)}`],
     ['Trash sesi', `${data.trash.files} file · ${fmt(data.trash.bytes)} · otomatis dibersihkan setelah ${data.trash.retentionDays} hari`],
-    ['Backup otomatis', `${data.backups.files} file · ${fmt(data.backups.bytes)}`],
+    ['Backup otomatis', `${data.backups.files} file · ${fmt(data.backups.bytes)} · tidak bisa dihapus per project`],
   ];
   $('#data-list').innerHTML = rows.map(([label, value]) => `<li class="data-row"><span>${escapeHtml(label)}</span><small class="muted">${escapeHtml(value)}</small></li>`).join('');
   const actions = { 'backup-export': 'Ekspor backup', 'backup-import': 'Impor backup', 'backup-verify': 'Verifikasi backup', 'backup-rekey': 'Ganti sandi backup', 'data-purge': 'Hapus data', 'retention-run': 'Retensi data' };
@@ -181,7 +187,7 @@ function render(data) {
         .map((entry) => `<li class="data-row"><span>${escapeHtml(actions[entry.action] ?? entry.action)}</span><small class="muted">${escapeHtml(new Date(entry.at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}${entry.detail ? ` · ${escapeHtml(entry.detail)}` : ''}</small></li>`)
         .join('')
     : '<li class="muted small">Belum ada aktivitas.</li>';
-  $('#data-note').textContent = 'Semua data ini ada di folder data aplikasi di laptop. Tidak ada yang dikirim ke luar.';
+  $('#data-note').textContent = 'Semua data ini ada di folder data aplikasi di laptop. Tidak ada yang dikirim ke luar. Backup otomatis yang sudah dibuat tidak bisa dihapus per project.';
   // The saved limits are written once per open (and after a save); a redraw never overwrites a choice being changed.
   if (!retention.filled) {
     fillRetention(data.retention);
@@ -217,12 +223,12 @@ async function load(auditAction = $('#data-audit-filter')?.value ?? '') {
   }
 }
 
-/** 🧹 Hapus data satu project: chat + ledger + pengaturan, tanpa menghapus projectnya. */
+/** 🧹 Hapus data satu project: chat + ledger + pengaturan + redo + antrian, tanpa menghapus projectnya. */
 async function purgeProject() {
   const id = $('#data-project')?.value;
   if (!id) return toast('Pilih project dulu.', 'warn');
   const name = projectName(id);
-  if (!window.confirm(`Hapus data project "${name}"?\n\nChat kedua mesin, laporan pemakaian, pengaturan, sesi, antrian, dan runbook project ini dihapus. Folder project dan transkrip Claude di disk tidak disentuh. Tindakan ini tidak bisa dibatalkan; cadangkan dulu bila perlu.`)) return;
+  if (!window.confirm(`Hapus data project "${name}"?\n\nChat kedua mesin, laporan pemakaian, pengaturan, sesi, antrian, bundel redo, dan lampiran antrian project ini dihapus. Folder project dan transkrip Claude di disk tidak disentuh. Backup otomatis yang sudah dibuat tetap utuh dan tidak bisa dihapus per project. Tindakan ini tidak bisa dibatalkan; cadangkan dulu bila perlu.`)) return;
   try {
     await api('/api/data/project', { projectId: id, confirm: 'HAPUS' });
     toast(`Data project "${name}" dihapus. Halaman dimuat ulang.`, 'ok');
@@ -247,6 +253,10 @@ export function initData() {
   $('#btn-data-panel')?.addEventListener('click', openDataPanel);
   $('#data-purge-push')?.addEventListener('click', () => purge('push-history', 'Hapus seluruh riwayat notifikasi'));
   $('#data-purge-trash')?.addEventListener('click', () => purge('trash', 'Kosongkan semua sesi di trash'));
+  $('#data-purge-redo')?.addEventListener('click', () => purge('redo', 'Hapus semua bundel redo'));
+  $('#data-purge-config-backups')?.addEventListener('click', () => purge('config-backups', 'Hapus semua backup config OpenCode'));
+  $('#data-purge-metrics')?.addEventListener('click', () => purge('metrics', 'Hapus riwayat kesehatan server'));
+  $('#data-purge-logs')?.addEventListener('click', () => purge('logs', 'Kosongkan log server'));
   $('#data-purge-project')?.addEventListener('click', purgeProject);
   $('#data-ret-preview-btn')?.addEventListener('click', previewRetention);
   $('#data-ret-save')?.addEventListener('click', saveRetention);

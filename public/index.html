@@ -700,6 +700,10 @@
         <div class="data-actions">
           <button type="button" id="data-purge-push" class="ghost" title="Hapus log notifikasi yang dikirim ke HP">🧹 Hapus riwayat notifikasi</button>
           <button type="button" id="data-purge-trash" class="ghost danger-text" title="Hapus permanen semua sesi di folder trash">🗑 Kosongkan trash sesi</button>
+          <button type="button" id="data-purge-redo" class="ghost danger-text" title="Hapus semua bundel redo; rewind yang sudah lalu tidak bisa dipulihkan">↩️ Hapus bundel redo</button>
+          <button type="button" id="data-purge-config-backups" class="ghost danger-text" title="Hapus backup konfigurasi OpenCode yang dibuat sebelum perubahan config">🧩 Hapus backup config OpenCode</button>
+          <button type="button" id="data-purge-metrics" class="ghost" title="Hapus riwayat kesehatan server (metrics.json)">📈 Hapus riwayat kesehatan</button>
+          <button type="button" id="data-purge-logs" class="ghost" title="Kosongkan isi server.log; file tetap dibuat lagi">📝 Kosongkan log server</button>
         </div>
         <!-- ⏳ Retensi otomatis (features/data.js, server POST /api/data/retention/*): laptop/Tailscale only -->
         <section class="data-retention" aria-labelledby="data-retention-title">
@@ -731,7 +735,7 @@
           </div>
         </section>
         <div class="data-project-row">
-          <label for="data-project" class="muted small">Hapus data satu project (chat, ledger, pengaturan)</label>
+          <label for="data-project" class="muted small">Hapus data satu project (chat, ledger, pengaturan, redo, antrian)</label>
           <div class="data-project-controls">
             <select id="data-project" aria-label="Project yang datanya dihapus"></select>
             <button type="button" id="data-purge-project" class="ghost danger-text">Hapus data project</button>

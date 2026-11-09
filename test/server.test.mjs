@@ -469,12 +469,31 @@ test('🕵️ Data saya: ringkasan ukuran, hapus data per project, filter & eksp
   const answer = await api('/api/data');
   assert.equal(answer.status, 200, JSON.stringify(answer.body));
   const d = answer.body.data;
-  for (const key of ['state', 'chats', 'usage', 'pushHistory', 'trash', 'backups']) assert.ok(d[key] && Number.isFinite(d[key].bytes), key);
+  for (const key of ['state', 'chats', 'usage', 'usageArchive', 'queueFiles', 'redo', 'configBackups', 'metrics', 'logs', 'pushHistory', 'trash', 'backups']) assert.ok(d[key] && Number.isFinite(d[key].bytes), key);
   assert.ok(Number.isFinite(d.chats.files) && Number.isFinite(d.trash.retentionDays));
   const clear = await api('/api/data/purge', { target: 'push-history' });
   assert.equal(clear.status, 200);
   assert.equal((await api('/api/data')).body.data.pushHistory.entries, 0);
   assert.equal((await api('/api/data/purge', { target: 'lainnya' })).status, 400);
+
+  // The new safe cleanups: redo bundles, OpenCode config backups, health history and the server log.
+  const dataDir = path.join(TMP, 'data');
+  const redoDir = path.join(dataDir, 'redo', 'project-lain');
+  const configBackups = path.join(dataDir, 'opencode-config-backups');
+  const metricsFile = path.join(dataDir, 'metrics.json');
+  const logFile = path.join(dataDir, 'server.log');
+  for (const dir of [redoDir, configBackups]) mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(redoDir, 'bundel.json'), '{}');
+  writeFileSync(path.join(configBackups, 'opencode.json.bak'), '{}');
+  writeFileSync(metricsFile, '{"days":{}}');
+  writeFileSync(logFile, 'baris lama\n');
+  for (const target of ['redo', 'config-backups', 'metrics', 'logs']) {
+    assert.equal((await api('/api/data/purge', { target })).status, 200, target);
+  }
+  assert.equal(existsSync(redoDir), false, 'bundel redo dihapus');
+  assert.equal(existsSync(configBackups), false, 'backup config OpenCode dihapus');
+  assert.equal(existsSync(metricsFile), false, 'riwayat kesehatan dihapus');
+  assert.equal(statSync(logFile).size, 0, 'log server dikosongkan');
 
   // A throwaway project: its chat/queue/settings go, the project stays listed.
   const dir = path.join(TMP, 'purge-project');
@@ -484,9 +503,13 @@ test('🕵️ Data saya: ringkasan ukuran, hapus data per project, filter & eksp
   const pid = created.body.id;
   try {
     await api(`/api/projects/${pid}/queue-add`, { text: 'item untuk dihapus' });
+    const projectRedo = path.join(dataDir, 'redo', pid);
+    mkdirSync(path.join(projectRedo, 'rd_abcdef12'), { recursive: true });
+    writeFileSync(path.join(projectRedo, 'rd_abcdef12', 'bundle.json'), '{}');
     assert.equal((await api('/api/data/project', { projectId: pid, confirm: 'salah' })).status, 400, 'butuh konfirmasi HAPUS');
     assert.equal((await api('/api/data/project', { projectId: pid, confirm: 'HAPUS' })).status, 200);
     assert.deepEqual((await api(`/api/projects/${pid}/queue`)).body.queue.items, [], 'antrian project dibersihkan');
+    assert.equal(existsSync(projectRedo), false, 'bundel redo project ikut dihapus');
     assert.ok((await snapshot()).projects.some((p) => p.id === pid), 'project tetap terdaftar');
     const filtered = await api('/api/data', { auditAction: 'data-purge' });
     assert.ok(filtered.body.audit.every((e) => e.action === 'data-purge'));

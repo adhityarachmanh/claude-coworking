@@ -1,11 +1,12 @@
 // 🕵️ "Data saya": what the app keeps on this laptop, where, and two safe things to clear.
 // Laptop only (server.js LOCAL_ONLY): sizes and paths are device-specific.
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { TRASH_RETENTION_DAYS } from '../session-admin.js';
 import { readAudit, recordAudit } from '../audit-log.js';
 import { DEMO_ID } from '../hub.js';
+import { removeProjectBundles } from '../redo.js';
 import { applyRetention, isRetentionDays, retentionOf, retentionPreview, setRetention } from '../retention.js';
 import { json } from './http.js';
 
@@ -59,11 +60,17 @@ export function register(router) {
         state: { bytes: fileBytes(hub.file ?? path.join(dataDir, 'state.json')) },
         chats: { files: countFiles(path.join(dataDir, 'chats')) + countFiles(path.join(dataDir, 'chats-opencode')), bytes: chats + chatsOpenCode },
         usage: { bytes: fileBytes(ledger?.file ?? path.join(dataDir, 'usage.jsonl')) },
+        usageArchive: { files: countFiles(path.join(dataDir, 'usage-archive')), bytes: sizeOf(path.join(dataDir, 'usage-archive')) },
+        queueFiles: { files: countFiles(path.join(dataDir, 'queue-files')), bytes: sizeOf(path.join(dataDir, 'queue-files')) },
+        redo: { files: countFiles(path.join(dataDir, 'redo')), bytes: sizeOf(path.join(dataDir, 'redo')) },
+        configBackups: { files: countFiles(path.join(dataDir, 'opencode-config-backups')), bytes: sizeOf(path.join(dataDir, 'opencode-config-backups')) },
+        metrics: { bytes: fileBytes(path.join(dataDir, 'metrics.json')) },
+        logs: { bytes: fileBytes(path.join(dataDir, 'server.log')) },
         pushHistory: { entries: push?.history?.length ?? 0, bytes: fileBytes(path.join(dataDir, 'push-history.json')) },
         trash: { files: countFiles(trash), bytes: sizeOf(trash), retentionDays: TRASH_RETENTION_DAYS },
         backups: { bytes: sizeOf(path.join(dataDir, 'backup-schedule')), files: countFiles(path.join(dataDir, 'backup-schedule')) },
       },
-      note: 'Retensi di bawah menghapus pesan chat aplikasi dan baris laporan pemakaian yang lebih lama dari batas; transkrip sesi dan backup tidak disentuh. Mengosongkan trash bersifat permanen; cadangkan dulu bila perlu.',
+      note: 'Retensi di bawah menghapus pesan chat aplikasi dan baris laporan pemakaian yang lebih lama dari batas; transkrip sesi dan backup tidak disentuh. Hapus data project juga menghapus redo dan lampiran antrian project itu. Backup yang sudah dibuat tidak bisa dihapus per project.',
       audit,
       retention: retentionOf(hub),
     });
@@ -110,8 +117,8 @@ export function register(router) {
     }
   }, { maxBody: 1024 });
 
-  // 🧹 Hapus data satu project (chat, ledger, pengaturan project) tanpa menghapus project/folder-nya.
-  router.post('/api/data/project', ({ hub, ledger, taskQueue, dataDir }, req, res, params, body) => {
+  // 🧹 Hapus data satu project (chat, ledger, pengaturan, redo, antrian) tanpa menghapus project/folder-nya.
+  router.post('/api/data/project', async ({ hub, ledger, taskQueue, dataDir }, req, res, params, body) => {
     if (body?.confirm !== 'HAPUS') return json(res, 400, { error: 'Konfirmasi tidak cocok. Ketik HAPUS untuk melanjutkan.' });
     const id = String(body?.projectId ?? '');
     const project = hub.projects.get(id);
@@ -119,7 +126,12 @@ export function register(router) {
     taskQueue?.forget?.(id);
     ledger?.removeProject?.(id);
     hub.clearProjectData(id);
-    recordAudit(dataDir, { action: 'data-purge', detail: `project ${project.name}` });
+    try {
+      await removeProjectBundles(dataDir, id);
+    } catch (err) {
+      console.error(`Redo project ${id} tidak bisa dihapus: ${err?.message ?? err}`);
+    }
+    recordAudit(dataDir, { action: 'data-purge', detail: `project ${project.name} (chat, ledger, pengaturan, redo, antrian)` });
     return json(res, 200, { ok: true });
   }, { maxBody: 1024 });
 
@@ -131,20 +143,43 @@ export function register(router) {
     res.end(`\uFEFF${csv}\r\n`);
   }, { maxBody: 1024 });
 
-  router.post('/api/data/purge', async ({ push, dataDir }, req, res, params, body) => {
+  router.post('/api/data/purge', async ({ push, metrics, dataDir }, req, res, params, body) => {
     const target = String(body?.target ?? '');
+    const purgeDir = async (name, label, detail) => {
+      try {
+        const dir = path.join(dataDir, name);
+        if (existsSync(dir)) await rm(dir, { recursive: true, force: true });
+      } catch (err) {
+        return json(res, 500, { error: `Gagal menghapus ${label}: ${err.message}` });
+      }
+      recordAudit(dataDir, { action: 'data-purge', detail });
+      return json(res, 200, { ok: true, target });
+    };
     if (target === 'push-history') {
       push?.clearHistory?.();
       recordAudit(dataDir, { action: 'data-purge', detail: 'riwayat notifikasi' });
       return json(res, 200, { ok: true, target });
     }
-    if (target === 'trash') {
+    if (target === 'trash') return purgeDir('trash', 'trash', 'trash sesi');
+    if (target === 'redo') return purgeDir('redo', 'redo', 'bundel redo');
+    if (target === 'config-backups') return purgeDir('opencode-config-backups', 'backup config OpenCode', 'backup config OpenCode');
+    if (target === 'metrics') {
       try {
-        if (existsSync(path.join(dataDir, 'trash'))) await rm(path.join(dataDir, 'trash'), { recursive: true, force: true });
+        metrics?.reset?.();
+        if (existsSync(path.join(dataDir, 'metrics.json'))) await rm(path.join(dataDir, 'metrics.json'), { force: true });
       } catch (err) {
-        return json(res, 500, { error: `Gagal mengosongkan trash: ${err.message}` });
+        return json(res, 500, { error: `Gagal menghapus riwayat kesehatan: ${err.message}` });
       }
-      recordAudit(dataDir, { action: 'data-purge', detail: 'trash sesi' });
+      recordAudit(dataDir, { action: 'data-purge', detail: 'riwayat kesehatan' });
+      return json(res, 200, { ok: true, target });
+    }
+    if (target === 'logs') {
+      try {
+        if (existsSync(path.join(dataDir, 'server.log'))) writeFileSync(path.join(dataDir, 'server.log'), '');
+      } catch (err) {
+        return json(res, 500, { error: `Gagal mengosongkan log server: ${err.message}` });
+      }
+      recordAudit(dataDir, { action: 'data-purge', detail: 'log server' });
       return json(res, 200, { ok: true, target });
     }
     return json(res, 400, { error: 'Target pembersihan tidak dikenal.' });

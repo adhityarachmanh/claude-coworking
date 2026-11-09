@@ -79,3 +79,19 @@ test('metrics: restart survives a reload, old days are trimmed, a corrupt file s
   const fresh = new Metrics({ file, now: () => now });
   assert.equal(fresh.view(now).today.turns, 0, 'a corrupt diagnostics file never breaks the app');
 });
+
+test('metrics: reset clears the rolling days and the restart count, then writes an empty file', () => {
+  const file = tempFile();
+  const metrics = new Metrics({ file, now: () => BASE, saveDelayMs: 0 });
+  metrics.restart();
+  metrics.turn({ ok: true, durationMs: 100 });
+  assert.equal(metrics.view(BASE).restarts.count, 1);
+  metrics.reset();
+  const view = metrics.view(BASE);
+  assert.equal(view.restarts.count, 0);
+  assert.equal(view.days.length, 7, 'the week is still drawn, all empty');
+  assert.ok(view.days.every((d) => d.turns === 0));
+  const stored = JSON.parse(readFileSync(file, 'utf8'));
+  assert.deepEqual(stored.days, {});
+  assert.deepEqual(stored.restarts, { count: 0, lastAt: null });
+});
