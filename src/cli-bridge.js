@@ -17,8 +17,19 @@ const SECRETS = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[private key disembunyikan]'],
   [/\b(authorization\s*[:=]\s*)(bearer\s+|basic\s+|token\s+)?[^\s"',;]+/gi, '$1***'],
   [/\b([A-Za-z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|API)[A-Za-z0-9_]*\s*[:=]\s*)(["']?)[^\s"',;]+/gi, '$1***'],
+  [/(\s--?[A-Za-z0-9_-]*(?:token|key|secret|password|passwd)[A-Za-z0-9_-]*\s+)(["']?)[^\s"',;]+/gi, '$1***'],
+  [/(\s-u\s+)([^\s:]+:[^\s]+)/gi, '$1***'],
+  [/(<<<\s*)("[^"]*"|'[^']*'|[^\s"',;]+)/g, '$1***'],
   [/(\b[a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^/\s@]+@/gi, '$1***:***@'],
 ];
+
+/** True when a command is longer than an approval card can show in full (see MAX_STRING). */
+export function tooLongForCard(value, max = MAX_STRING) {
+  if (typeof value === 'string') return value.length > max;
+  if (Array.isArray(value)) return value.some((item) => tooLongForCard(item, max));
+  if (value && typeof value === 'object') return Object.entries(value).some(([key, item]) => !BLOCKED.has(key) && tooLongForCard(item, max));
+  return false;
+}
 
 export function redactSecrets(value) {
   if (typeof value === 'string') {
@@ -32,7 +43,9 @@ export function redactSecrets(value) {
     for (const [key, item] of Object.entries(value)) {
       // A key that names a credential hides its value even when the value itself has no pattern (env: {API_KEY: ...}).
       const sensitive = /key|token|secret|password|passwd|auth|api/i.test(key);
-      out[key] = sensitive && (item == null || typeof item !== 'object') ? (item == null ? item : '***') : redactSecrets(item);
+      if (sensitive && Array.isArray(item)) out[key] = item.map((entry) => (entry && typeof entry === 'object' ? redactSecrets(entry) : '***'));
+      else if (sensitive && (item == null || typeof item !== 'object')) out[key] = item == null ? item : '***';
+      else out[key] = redactSecrets(item);
     }
     return out;
   }

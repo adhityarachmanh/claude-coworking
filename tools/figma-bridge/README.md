@@ -65,7 +65,7 @@ Semua perubahan bisa dibatalkan dengan **Ctrl+Z** di Figma.
 
 - Server hanya mendengarkan `127.0.0.1` dan **setiap** endpoint plugin/CLI (`/poll`, `/result`, `/exec`) mewajibkan token per-run; tanpa token, halaman web mana pun tidak bisa membaca perintah atau memalsukan hasil.
 - Token dicetak di terminal saat bridge menyala, dapat diganti lewat `FIGMA_BRIDGE_TOKEN` (minimal 16 karakter), dan disimpan plugin di `figma.clientStorage`.
-- CORS hanya diberikan ke origin plugin Figma; halaman web lain tidak bisa membaca respons. Header Private-Network-Access juga hanya dikirim ke origin itu.
+- CORS dan header Private-Network-Access hanya dikirim ke origin plugin Figma (opaque/`figma.com`); halaman web lain tidak mendapatkannya. Pembatas utamanya tetap token — `Origin: null` bisa datang dari iframe sandbox mana pun, jadi CORS bukan satu-satunya gerbang.
 - `manifest.json` membatasi plugin ke `http://localhost:3939`; tidak ada akses internet.
 - Tidak ada token Figma dan tidak ada isi desain yang dikirim ke layanan lain.
 

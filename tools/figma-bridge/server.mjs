@@ -6,7 +6,7 @@
 // Commands only come from MCP or the token-guarded local CLI (/exec); every plugin endpoint needs the same token,
 // so a random web page cannot read commands or forge results. Nothing leaves this laptop.
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,11 +26,6 @@ if (TOKEN.length < 16) {
   process.exit(2);
 }
 const TOKEN_FILE = path.join(os.tmpdir(), 'figma-bridge-token.txt');
-try {
-  writeFileSync(TOKEN_FILE, TOKEN, { mode: 0o600 });
-} catch {
-  // the CLI can still use FIGMA_BRIDGE_TOKEN
-}
 
 // A page that is allowed to talk to the plugin: Figma's own UI (opaque or figma.com). Everything else gets no CORS.
 const ORIGINS = new Set(['null', 'https://www.figma.com', 'https://figma.com']);
@@ -78,16 +73,18 @@ function tokenOk(req) {
 
 /** Every plugin/CLI endpoint needs the token; repeated failures from one IP are throttled. */
 function authorize(req, res) {
+  // The valid token always wins, even after failures from another local page: 192-bit tokens cannot be guessed, and
+  // throttling the real plugin/CLI out of a shared loopback bucket would be a denial of service.
+  if (tokenOk(req)) {
+    authFails.delete(req.socket.remoteAddress ?? '?');
+    return true;
+  }
   const ip = req.socket.remoteAddress ?? '?';
   const now = Date.now();
   const entry = authFails.get(ip);
   if (entry && entry.resetAt > now && entry.count >= AUTH_MAX_FAILS) {
     json(res, 429, { error: 'terlalu banyak percobaan token' });
     return false;
-  }
-  if (tokenOk(req)) {
-    authFails.delete(ip);
-    return true;
   }
   if (!entry || entry.resetAt <= now) authFails.set(ip, { count: 1, resetAt: now + AUTH_WINDOW_MS });
   else entry.count += 1;
@@ -183,10 +180,26 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+server.on('error', (err) => {
+  if (err?.code === 'EADDRINUSE') console.error(`Figma bridge: port ${PORT} sudah dipakai bridge lain. Pakai token dari terminal bridge yang sedang berjalan.`);
+  else console.error(`Figma bridge gagal: ${err?.message ?? err}`);
+  process.exit(1); // never overwrite the running instance's token file
+});
+
 server.listen(PORT, HOST, () => {
+  try {
+    writeFileSync(TOKEN_FILE, TOKEN, { mode: 0o600 });
+  } catch {
+    // the CLI can still use FIGMA_BRIDGE_TOKEN
+  }
   console.error(`Figma bridge: http://${HOST}:${PORT} (MCP di stdio)`);
-  console.error(`Token bridge: ${TOKEN}`);
-  console.error('Tempel token itu di plugin Adhit Office Bridge (disimpan di Figma). CLI memakai token yang sama.');
+  // When this runs as an MCP server, stderr belongs to the client's log: point at the file instead of the token.
+  if (process.stderr.isTTY) {
+    console.error(`Token bridge: ${TOKEN}`);
+    console.error('Tempel token itu di plugin Adhit Office Bridge (disimpan di Figma). CLI memakai token yang sama.');
+  } else {
+    console.error(`Token bridge tersedia di ${TOKEN_FILE}`);
+  }
 });
 
 // ---------- MCP side (stdio) ----------
@@ -329,7 +342,11 @@ rl.on('line', async (line) => {
 });
 
 function shutdown() {
-  rmSync(TOKEN_FILE, { force: true });
+  try {
+    if (readFileSync(TOKEN_FILE, 'utf8').trim() === TOKEN) rmSync(TOKEN_FILE, { force: true });
+  } catch {
+    // already gone
+  }
   server.close();
   process.exit(0);
 }

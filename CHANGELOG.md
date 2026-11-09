@@ -2,9 +2,9 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.4
 
-- **🖥️ CLI bridge: kartu izin lebih aman.** Perintah panjang kini menampilkan awal **dan** akhir (bukan hanya kepala), rahasia seperti token/password/URL ber-kredensial disamarkan sebelum masuk chat, backup, atau notifikasi HP, dan tombol *Izinkan semua* tidak muncul untuk izin terminal. Status tetap **eksperimental** sampai uji TUI manual.
+- **🖥️ CLI bridge: kartu izin lebih aman.** Perintah shell yang lebih panjang dari yang bisa ditampilkan utuh kini **tidak bisa diizinkan dari aplikasi**—keputusan dikembalikan ke terminal supaya bagian tengah perintah tidak lolos tanpa dilihat. Preview tetap menampilkan awal dan akhir, rahasia (token, `--token`, `-u`, password, URL ber-kredensial, private key) disamarkan sebelum masuk chat/backup/notifikasi HP, dan tombol *Izinkan semua* tidak muncul untuk izin terminal. Status tetap **eksperimental** sampai uji TUI manual.
 - **🔐 Figma bridge: semua endpoint butuh token.** `/poll`, `/result`, dan `/exec` kini mewajibkan token per-run (dicetak di terminal, disimpan plugin), CORS dibatasi ke origin plugin Figma, request URL rusak tidak lagi mematikan bridge, dan `delete`/`batch` tidak diekspos lewat HTTP. Token bisa ditetapkan lewat `FIGMA_BRIDGE_TOKEN` (minimal 16 karakter).
 - **🧪 Test cepat untuk verifikasi harian.** `npm run test:fast` menjalankan hanya test logika murni (tanpa browser/server, ~36 dtk); tersedia juga `test:unit` dan `test:ui`. README kini jujur bahwa CI hanya membangun/merilis, bukan menjalankan test.
 

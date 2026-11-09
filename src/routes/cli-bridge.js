@@ -3,7 +3,7 @@
 // approval card a web session would show. A timeout is a fallback to the terminal prompt, never an allow.
 import { randomUUID } from 'node:crypto';
 import { recordAudit } from '../audit-log.js';
-import { projectForCwd, sanitizeToolInput } from '../cli-bridge.js';
+import { projectForCwd, sanitizeToolInput, tooLongForCard } from '../cli-bridge.js';
 import { describeTool } from '../roles.js';
 import { json } from './http.js';
 
@@ -29,6 +29,14 @@ async function ask({ hub, dataDir, cliBridgeTimeoutMs }, req, res, params, body)
   const pendingHere = pendingCli.filter((entry) => entry.approval.project === project.id).length;
   if (pendingCli.length >= MAX_CLI_PENDING || pendingHere >= MAX_CLI_PENDING_PER_PROJECT) {
     return json(res, 429, { error: 'Terlalu banyak izin terminal yang menunggu jawaban.' });
+  }
+
+  // A shell command too long to show in full cannot be approved honestly: the hidden middle could hold anything.
+  // Fail closed to the terminal instead of showing a head+tail preview that invites a blind "allow".
+  const SHELLS = new Set(['Bash', 'PowerShell', 'pwsh', 'sh', 'shell']);
+  if (SHELLS.has(tool) && tooLongForCard(body?.input)) {
+    recordAudit(dataDir, { action: 'cli-approval', detail: `${tool} · ${project.name ?? project.id} · fallback (perintah terlalu panjang)` });
+    return json(res, 200, { decision: 'fallback', reason: 'Perintah terlalu panjang untuk diperiksa dari aplikasi; putuskan di terminal.' });
   }
 
   const input = sanitizeToolInput(body?.input);
