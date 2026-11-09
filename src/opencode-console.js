@@ -11,6 +11,7 @@ const STATUS_PATH = '/console/api/go/status';
 const ACTIVITY_PATH = '/console/api/activity/go';
 const USAGE_PATH = '/console/api/usage/summary';
 const USAGE_MODELS_PATH = '/console/api/usage/models';
+const REQUEST_LOGS_PATH = '/console/api/request-logs';
 const TIMEOUT_MS = 8_000;
 const SNAPSHOT_MS = 60_000;
 const FAILURE_MS = 15_000;
@@ -198,8 +199,77 @@ export function normalizeUsageModels(raw) {
   return { models, total: num(raw.pageInfo?.total) ?? models.length };
 }
 
-/** One JSON request; a non-2xx is a status, never a thrown error with a body that could carry a secret. */
-async function getJson(fetchImpl, url, token) {
+/**
+ * `request-logs` → only the safe request metadata. Prompt/response text is not in this endpoint; personal ids,
+ * workspace, headers and geography are dropped here. `cost` is already USD.
+ */
+export function normalizeRequestLogs(raw) {
+  if (!isObject(raw) || !Array.isArray(raw.items)) return null;
+  const items = raw.items
+    .slice(0, 50)
+    .map((m) => {
+      if (!isObject(m) || typeof m.model !== 'string' || !m.model.trim()) return null;
+      const startedAt = num(m.startedAt);
+      if (!startedAt) return null;
+      return {
+        startedAt,
+        model: m.model.trim().slice(0, 120),
+        app: typeof m.app === 'string' ? m.app.slice(0, 20) : '',
+        durationMs: num(m.durationMs) ?? 0,
+        ttftMs: num(m.timeToFirstTokenMs) ?? null,
+        inputTokens: num(m.inputTokens) ?? 0,
+        outputTokens: num(m.outputTokens) ?? 0,
+        reasoningTokens: num(m.reasoningTokens) ?? 0,
+        cacheReadTokens: num(m.cacheReadTokens) ?? 0,
+        cacheWriteTokens: num(m.cacheWriteTokens) ?? 0,
+        costUsd: num(m.cost) ?? 0,
+        outcome: typeof m.outcome === 'string' ? m.outcome.slice(0, 20) : '',
+        statusCode: num(m.statusCode) ?? null,
+        attemptCount: num(m.attemptCount) ?? 1,
+        finishReason: typeof m.finish?.reason === 'string' ? m.finish.reason.slice(0, 40) : '',
+      };
+    })
+    .filter(Boolean);
+  return {
+    items,
+    nextCursor: typeof raw.nextCursor === 'string' && raw.nextCursor.length <= 500 ? raw.nextCursor : null,
+    until: typeof raw.until === 'string' ? raw.until : null,
+    retentionDays: num(raw.retentionDays) ?? null,
+  };
+}
+
+/** The console's request log for one session/model; `cursor` is the opaque `nextCursor` of the previous page. */
+export async function consoleRequestLogs(bin, { sessionId = '', model = '', since = Date.now() - 7 * 86_400_000, limit = 50, cursor = '', readToken = consoleAccessToken, fetch: fetchImpl = globalThis.fetch } = {}) {
+  if (!bin || typeof fetchImpl !== 'function') return { available: false, state: 'no-opencode' };
+  const sid = String(sessionId ?? '');
+  if (sid && !/^ses_[A-Za-z0-9_-]{1,100}$/.test(sid)) return { available: false, state: 'bad-params' };
+  const wantedModel = String(model ?? '');
+  if (wantedModel && !/^[\w.:@/+-]{1,120}$/.test(wantedModel)) return { available: false, state: 'bad-params' };
+  const at = Number(since);
+  const url = new URL(REQUEST_LOGS_PATH, CONSOLE_ORIGIN);
+  url.searchParams.set('since', String(Number.isFinite(at) && at > 0 ? at : Date.now() - 7 * 86_400_000));
+  url.searchParams.set('category', 'inference');
+  url.searchParams.set('limit', String(Math.min(50, Math.max(1, Math.trunc(Number(limit) || 50)))));
+  if (sid) url.searchParams.set('sessionID', sid);
+  if (wantedModel) url.searchParams.set('model', wantedModel);
+  if (cursor) url.searchParams.set('cursor', String(cursor).slice(0, 500));
+  let token = await readToken(bin).catch(() => null);
+  if (!token) return { available: false, state: 'no-token' };
+  let result = await getJson(fetchImpl, url.toString(), token).catch(() => ({ status: 'network' }));
+  if (result.status === 401 || result.status === 403) {
+    const fresh = await readToken(bin, { fresh: true }).catch(() => null);
+    if (fresh && fresh !== token) {
+      token = fresh;
+      result = await getJson(fetchImpl, url.toString(), fresh).catch(() => ({ status: 'network' }));
+    }
+  }
+  if (result.status) return { available: false, state: result.status === 401 || result.status === 403 ? 'expired' : 'unavailable' };
+  const normalized = normalizeRequestLogs(result.data);
+  if (!normalized) return { available: false, state: 'shape' };
+  return { available: true, ...normalized, fetchedAt: Date.now() };
+}
+
+/** One JSON request; a non-2xx is a status, never a thrown error with a body that could carry a secret. */async function getJson(fetchImpl, url, token) {
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(TIMEOUT_MS) : undefined;
   const response = await fetchImpl(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },

@@ -59,6 +59,7 @@ import { initRoster } from './features/roster.js';
 import { initResumeTurn } from './features/resume-turn.js';
 import { initRewind } from './features/rewind.js';
 import { initSessions } from './features/sessions.js';
+import { initOpenCodeRequests } from './features/opencode-requests.js';
 import { initShortcutLinks } from './features/shortcut-links.js';
 import { initMemory } from './features/memory.js';
 import { initExtensions } from './features/extensions.js';
@@ -104,6 +105,7 @@ initCompact(); // 🧹 /ringkas: the dialog behind the status-line action and th
 initAttachments();
 initSuggest();
 initSessions();
+initOpenCodeRequests(); // 📡 OpenCode request log (global or one session)
 initMemory(); // 🧠 /memory: CLAUDE.md / AGENTS.md editor
 initExtensions(); // 🧩 /plugin /agents /hooks
 initPullRequest(); // ⇡ PR (gh)

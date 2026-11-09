@@ -130,11 +130,11 @@ Batasan: redo kode hanya untuk **perubahan kode yang belum di-commit** di **repo
 ## Melihat sisa kuota OpenCode Go
 
 1. Buka **👤 Akun** saat mesin OpenCode aktif.
-2. Gulir ke **Kuota OpenCode Go**. Kalau kredensial **OpenCode Console** tersedia, panel menampilkan **Data resmi OpenCode**: paket, masa aktif, dan tiga bar **Rolling / Weekly / Monthly** dengan persentase terpakai dan hitung mundur reset—sama seperti halaman akun OpenCode. Di atasnya, kartu **Pemakaian OpenCode** menampilkan **biaya, request, dan token** untuk **Hari ini** dan **7 hari** dari endpoint usage resmi; buka **Rincian per model** untuk request/input/cache/output/biaya tiap model.
+2. Gulir ke **Kuota OpenCode Go**. Kalau kredensial **OpenCode Console** tersedia, panel menampilkan **Data resmi OpenCode**: paket, masa aktif, dan tiga bar **Rolling / Weekly / Monthly** dengan persentase terpakai dan hitung mundur reset—sama seperti halaman akun OpenCode. Di atasnya, kartu **Pemakaian OpenCode** menampilkan **biaya, request, dan token** untuk **Hari ini** dan **7 hari** dari endpoint usage resmi; buka **Rincian per model** untuk request/input/cache/output/biaya tiap model, atau **📡 Request terbaru** untuk detail per request (durasi, TTFT, token, biaya, status).
 3. Kalau data resmi tidak tersedia, panel memakai perkiraan manual: pilih paket **Go ($10/bulan)**, **Go Plus ($40/bulan)**, atau **Go Teams ($20/anggota/bulan)**. Tiap model menampilkan **terpakai / batas**, **sisa**, dan tiga bar **5 jam / 7 hari / 30 hari**.
    - Hijau < 70%, kuning 70–90%, merah > 90%.
    - `tak terbatas` untuk model gratis; `batas belum diketahui` untuk model yang tidak ada di tabel paket itu.
-4. Aktivitas harian dan daftar model dari provider juga ada di **📊 Laporan → OpenCode Go — data provider**, bukan di panel kuota. Angka perkiraan lokal tetap dipakai hanya saat data resmi tidak tersedia.
+4. Aktivitas harian dan daftar model dari provider juga ada di **📊 Laporan → OpenCode Go — data provider**, bukan di panel kuota. Angka perkiraan lokal tetap dipakai hanya saat data resmi tidak tersedia. Di **🕘 Riwayat sesi**, tombol **📡** membuka request khusus sesi OpenCode itu.
 
 Detail: [Akun & laporan](FITUR.md#akun--laporan).
 

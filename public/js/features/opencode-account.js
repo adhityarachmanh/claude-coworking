@@ -140,6 +140,7 @@ function usageHtml() {
       <p class="muted small">Dari OpenCode Console${fetched ? ` · diperbarui ${escapeHtml(fetched)}` : ''}. Angka provider, bukan perkiraan ledger.</p>
       ${usageCards('Hari ini', usage.today)}
       ${usageCards('7 hari', usage.week)}
+      <div class="acct-actions"><button type="button" class="ghost" data-oc-requests title="Lihat request OpenCode terbaru">📡 Request terbaru</button></div>
     </div>`;
   }
   return localUsageHtml();

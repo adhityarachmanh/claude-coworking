@@ -2,7 +2,7 @@
 // the fallback when the console/token is unavailable. No real network and no real OpenCode here.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { consoleForPeriod, goConsoleSnapshot, normalizeConsoleActivity, normalizeConsoleStatus, normalizeUsageModels, normalizeUsageSummary, planOf } from '../src/opencode-console.js';
+import { consoleForPeriod, consoleRequestLogs, goConsoleSnapshot, normalizeConsoleActivity, normalizeConsoleStatus, normalizeRequestLogs, normalizeUsageModels, normalizeUsageSummary, planOf } from '../src/opencode-console.js';
 
 const status = {
   subscriberUserId: 'acc_secret',
@@ -64,6 +64,41 @@ const modelsToday = {
 };
 
 const modelsWeek = { items: [], pageInfo: { page: 1, pageSize: 100, total: 0, pageCount: 0 } };
+
+const requestLog = {
+  items: [
+    {
+      id: 'req_secret',
+      requestID: 'req_secret',
+      workspaceID: 'wrk_secret',
+      sessionID: 'ses_secret',
+      userID: 'acc_secret',
+      startedAt: 1794190300730,
+      finishedAt: 1794190307173,
+      durationMs: 6443,
+      outcome: 'succeeded',
+      app: 'acp',
+      model: 'deepseek-v4.1-flash',
+      statusCode: 200,
+      timeToFirstTokenMs: 4267,
+      inputTokens: 614,
+      outputTokens: 399,
+      reasoningTokens: 78,
+      cacheReadTokens: 726272,
+      cacheWriteTokens: 0,
+      cost: 0.00502063,
+      attemptCount: 1,
+      finish: { reason: 'stop' },
+      requestHeaders: { authorization: 'Bearer secret' },
+      country: 'ID',
+      region: 'Jakarta',
+      city: 'Jakarta',
+    },
+  ],
+  nextCursor: 'next-page',
+  until: '2026-11-09T00:00:00.000Z',
+  retentionDays: 30,
+};
 
 const bin = { command: 'fake-opencode', args: [] };
 
@@ -157,6 +192,49 @@ test('goConsoleSnapshot: exact status + activity + today/week usage, cached for 
   const second = await goConsoleSnapshot(bin, { readToken: async () => 'tok_secret_123', fetch, cache, now: () => 2000 });
   assert.equal(second, first, 'the cached snapshot is reused for a minute');
   assert.equal(calls, 6);
+});
+
+test('normalizeRequestLogs: safe request fields only, no ids/headers/geo', () => {
+  const view = normalizeRequestLogs(requestLog);
+  assert.equal(view.items.length, 1);
+  assert.equal(view.items[0].model, 'deepseek-v4.1-flash');
+  assert.equal(view.items[0].app, 'acp');
+  assert.equal(view.items[0].durationMs, 6443);
+  assert.equal(view.items[0].ttftMs, 4267);
+  assert.equal(view.items[0].costUsd, 0.00502063);
+  assert.equal(view.items[0].finishReason, 'stop');
+  assert.equal(view.nextCursor, 'next-page');
+  assert.equal(view.retentionDays, 30);
+  const json = JSON.stringify(view);
+  for (const secret of ['req_secret', 'wrk_secret', 'ses_secret', 'acc_secret', 'authorization', 'Jakarta']) assert.equal(json.includes(secret), false, secret);
+});
+
+test('consoleRequestLogs: session/model/cursor are sent; the response is normalized', async () => {
+  let seen = null;
+  const result = await consoleRequestLogs(bin, {
+    sessionId: 'ses_abcdef',
+    model: 'deepseek-v4.1-flash',
+    since: 1_700_000_000_000,
+    limit: 50,
+    cursor: 'page-2',
+    readToken: async () => 'tok_secret_123',
+    fetch: async (url) => {
+      seen = String(url);
+      return { ok: true, json: async () => requestLog };
+    },
+  });
+  assert.equal(result.available, true);
+  assert.equal(result.items[0].costUsd, 0.00502063);
+  assert.match(seen, /category=inference/);
+  assert.match(seen, /sessionID=ses_abcdef/);
+  assert.match(seen, /model=deepseek-v4\.1-flash/);
+  assert.match(seen, /limit=50/);
+  assert.match(seen, /cursor=page-2/);
+  assert.match(seen, /since=1700000000000/);
+  assert.equal(JSON.stringify(result).includes('tok_secret_123'), false, 'token never in the result');
+
+  const bad = await consoleRequestLogs(bin, { sessionId: 'bukan-sesi', readToken: async () => 'x', fetch: async () => ({ ok: true, json: async () => requestLog }) });
+  assert.deepEqual([bad.available, bad.state], [false, 'bad-params']);
 });
 
 test('goConsoleSnapshot: missing token / 401 / network / bad shape fall back without throwing', async () => {

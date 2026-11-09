@@ -1035,7 +1035,7 @@ async function stubOpenCodeAccount(page, { go = null, usage = null } = {}) {
     window.__officeFetch ??= window.fetch;
     const prev = window.fetch;
     window.__realConfirm = window.confirm;
-    window.__ocAcct = { calls: [], confirms: [], providerCalls: 0, providerDone: 0, go: payload.go, usage: payload.usage };
+    window.__ocAcct = { calls: [], confirms: [], providerCalls: 0, providerDone: 0, requestCalls: 0, go: payload.go, usage: payload.usage };
     window.confirm = (text) => {
       window.__ocAcct.confirms.push(String(text));
       return true; // the user confirms; the point of this test is what goes out afterwards
@@ -1051,6 +1051,15 @@ async function stubOpenCodeAccount(page, { go = null, usage = null } = {}) {
         const go = window.__ocAcct.go;
         if (go) body.go = go;
         return json(body);
+      }
+      if (path === '/api/opencode/requests') {
+        window.__ocAcct.requestCalls += 1;
+        return json({
+          available: true,
+          items: [{ startedAt: Date.now() - 6000, model: 'deepseek-v4.1-flash', app: 'acp', durationMs: 6443, ttftMs: 4267, inputTokens: 614, outputTokens: 399, reasoningTokens: 78, cacheReadTokens: 726272, cacheWriteTokens: 0, costUsd: 0.00502063, outcome: 'succeeded', statusCode: 200, attemptCount: 1, finishReason: 'stop' }],
+          nextCursor: null,
+          retentionDays: 30,
+        });
       }
       if (path === '/api/account/go-plan') {
         window.__ocAcct.calls.push({ path, body: JSON.parse(opts?.body ?? '{}') });
@@ -4934,6 +4943,34 @@ for (const vp of VIEWPORTS) {
         assert.match(r.modelText, /564/);
         assert.match(r.modelText, /\$2\.56/);
         assert.doesNotMatch(r.usageText, /Pemakaian lokal OpenCode/);
+        await page.press('Escape');
+      } finally {
+        await restoreOpenCodeAccount(page);
+      }
+    });
+
+    test('📡 request terbaru: tombol di Pemakaian OpenCode membuka tabel request aman', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubOpenCodeAccount(page, { go: GO_CONSOLE, usage: GO_USAGE });
+        await tap(page, '#btn-account');
+        await page.waitFor(() => document.querySelector('#account-body [data-oc-requests]'), { timeoutMs: 8000, message: 'tombol request resmi' });
+        await page.eval(() => document.querySelector('#account-body [data-oc-requests]').click());
+        await page.waitFor(() => !document.querySelector('#requests-modal').hidden && document.querySelectorAll('#requests-list tr').length === 1, { timeoutMs: 8000, message: 'tabel request terbuka' });
+        const r = await page.eval(() => ({
+          title: document.querySelector('#requests-title').textContent,
+          meta: document.querySelector('#requests-meta').textContent,
+          text: document.querySelector('#requests-list').textContent,
+          calls: window.__ocAcct.requestCalls,
+        }));
+        assert.match(r.title, /Request OpenCode/);
+        assert.match(r.meta, /Semua sesi/);
+        assert.match(r.meta, /retensi 30 hari/);
+        assert.match(r.text, /deepseek-v4\.1-flash/);
+        assert.match(r.text, /6\.4 dtk/);
+        assert.match(r.text, /0\.00502/);
+        assert.equal(r.calls, 1);
+        await page.press('Escape');
         await page.press('Escape');
       } finally {
         await restoreOpenCodeAccount(page);

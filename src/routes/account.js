@@ -10,7 +10,7 @@ import { readModelPrices } from '../model-prices.js';
 import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
 import { GO_PLANS, goAllowance } from '../opencode-go.js';
-import { consoleForPeriod, goConsoleSnapshot } from '../opencode-console.js';
+import { consoleForPeriod, consoleRequestLogs, goConsoleSnapshot } from '../opencode-console.js';
 import { renderPdf, reportHtml } from '../report.js';
 import { roleUsage } from '../role-usage.js';
 import { openCodeRoleSessions } from '../opencode-role-usage.js';
@@ -127,6 +127,23 @@ export function register(router) {
   router.post('/api/opencode/providers', openCode(async (bin, body, ctx) => {
     const [view, go] = await Promise.all([openCodeProviders(bin), goView(ctx)]);
     return { ...view, usage: openCodeUsage(ctx.ledger), go };
+  }));
+  // 📡 Recent OpenCode requests (optionally one session/model): normalized server-side, no prompts or personal ids.
+  router.post('/api/opencode/requests', openCode(async (bin, body) => {
+    const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : '';
+    if (sessionId && !/^ses_[A-Za-z0-9_-]{1,100}$/.test(sessionId)) throw Object.assign(new Error('Session ID tidak valid.'), { status: 400 });
+    const model = typeof body?.model === 'string' ? body.model : '';
+    if (model && !/^[\w.:@/+-]{1,120}$/.test(model)) throw Object.assign(new Error('Model tidak valid.'), { status: 400 });
+    const cursor = typeof body?.cursor === 'string' ? body.cursor : '';
+    if (cursor.length > 500) throw Object.assign(new Error('Cursor tidak valid.'), { status: 400 });
+    const since = Number(body?.since);
+    return consoleRequestLogs(bin, {
+      sessionId,
+      model,
+      cursor,
+      since: Number.isFinite(since) && since > 0 ? since : undefined,
+      limit: body?.limit,
+    });
   }));
   router.post('/api/opencode/login/key', audited('login-key', (body) => body.provider, (bin, body, ctx) => openCodeConnectKey(bin, body.provider, body).then(loggedIn(ctx)).then(phoneAlert(ctx, 'login', body.provider))));
   router.post('/api/opencode/login/oauth', audited('oauth-start', (body) => body.provider, (bin, body, ctx) => openCodeOAuthStart(bin, body.provider, body).then(phoneAlert(ctx, 'login', body.provider))));

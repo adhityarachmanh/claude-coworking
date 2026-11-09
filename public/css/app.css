@@ -2959,3 +2959,12 @@ body.read-only #concurrency-section { display: none !important; }
 .msg-actions .queue-cancel { color: var(--err); }
 .msg-actions .queue-cancel:hover:not(:disabled) { color: var(--err-text); }
 .msg-actions .queue-cancel:disabled { opacity: .55; }
+
+/* ---------- 📡 OpenCode request log ---------- */
+.requests-card { max-width: 920px; height: min(680px, calc(100vh - 32px)); display: flex; flex-direction: column; gap: 8px; }
+.requests-card #requests-meta { margin: 0; flex: none; }
+.requests-table-wrap { flex: 1; min-height: 100px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
+.requests-table { min-width: 720px; margin: 0; }
+.requests-table th, .requests-table td { white-space: nowrap; }
+.requests-table tr.bad td { color: var(--warn-text); }
+.requests-actions { display: flex; justify-content: flex-end; gap: 8px; flex: none; }
