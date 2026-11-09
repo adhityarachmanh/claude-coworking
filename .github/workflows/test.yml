@@ -25,3 +25,6 @@ jobs:
         run: npm run lint
       - name: Fast tests
         run: npm run test:fast
+      - name: Locate failing fast test
+        if: failure()
+        run: node test-support/ci-fast-files.mjs
