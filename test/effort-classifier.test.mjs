@@ -5,7 +5,26 @@ import { autoContext, classifyEffort } from '../src/effort-classifier.js';
 
 const bin = { command: 'fake', args: [] };
 
-test('Claude: uses the active model, reads the JSON result envelope, and reports the chosen level', async () => {
+test('classifierModel: the Seimbang model wins over the active model (routing never spends pro tokens)', async () => {
+  let seen = null;
+  const r = await classifyEffort({
+    engine: 'opencode',
+    opencode: bin,
+    currentModel: 'opencode-go/deepseek-v4-pro',
+    classifierModel: 'opencode-go/deepseek-v4.1-flash',
+    text: 'refactor modul auth di beberapa file',
+    runOpenCode: async (gotBin, gotModel) => {
+      seen = { gotBin, gotModel };
+      return '{"level":"high","reason":"multi-file refactor"}';
+    },
+  });
+  assert.equal(seen.gotBin, bin);
+  assert.equal(seen.gotModel, 'opencode-go/deepseek-v4.1-flash');
+  assert.equal(r.level, 'high');
+  assert.equal(r.model, 'opencode-go/deepseek-v4.1-flash');
+});
+
+test('Claude: falls back to currentModel when classifierModel is absent, reads the JSON result envelope, and reports the level', async () => {
   let seen = null;
   const r = await classifyEffort({
     engine: 'claude',
@@ -26,7 +45,7 @@ test('Claude: uses the active model, reads the JSON result envelope, and reports
   assert.equal(r.model, 'sonnet');
 });
 
-test('OpenCode: uses the active model (never a model picked from the catalog), sends the task, and accepts a fenced answer', async () => {
+test('OpenCode: falls back to currentModel when classifierModel is absent, sends the task, and accepts a fenced answer', async () => {
   let model = null;
   const r = await classifyEffort({
     engine: 'opencode',

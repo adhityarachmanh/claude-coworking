@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { DEFAULT_SETTINGS, Hub } from '../src/hub.js';
-import { autoModelFor, DEFAULT_TIERS, shortModelLabel, tierFor, tiersFor } from '../src/model-auto.js';
+import { autoModelFor, classifierModelFor, DEFAULT_TIERS, shortModelLabel, tierFor, tiersFor } from '../src/model-auto.js';
 
 const dataDir = mkdtempSync(path.join(tmpdir(), 'office-model-auto-'));
 process.on('exit', () => rmSync(dataDir, { recursive: true, force: true }));
@@ -32,6 +32,14 @@ test('Model Auto: the default ladders per engine are cheap but still tiered', ()
   assert.equal(tierFor('high', 'mesin-lain').model, 'opus', 'an unknown engine uses the Claude ladder');
   assert.deepEqual(tiersFor('opencode', null), DEFAULT_TIERS.opencode, 'no ladder = the defaults');
   assert.deepEqual(tiersFor('opencode', {}), DEFAULT_TIERS.opencode);
+});
+
+test('classifierModelFor: the Auto classifier always uses the Seimbang tier, never the active model', () => {
+  assert.equal(classifierModelFor('opencode'), 'opencode-go/glm-5.3-flash');
+  assert.equal(classifierModelFor('claude'), 'sonnet');
+  assert.equal(classifierModelFor('opencode', { opencode: { seimbang: 'opencode-go/deepseek-v4.1-flash', kuat: 'opencode-go/deepseek-v4-pro' } }), 'opencode-go/deepseek-v4.1-flash');
+  assert.equal(classifierModelFor('opencode', { opencode: { seimbang: '' } }), 'opencode-go/glm-5.3-flash', 'an empty slot falls back to the default');
+  assert.equal(classifierModelFor('mesin-lain'), 'sonnet', 'an unknown engine uses the Claude ladder');
 });
 
 test('Model Auto: a custom tier changes the applied model for a classified level only', () => {

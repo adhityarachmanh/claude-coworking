@@ -37,6 +37,7 @@ import { SessionManager } from './src/session.js';
 import { TemplateStore } from './src/templates.js';
 import { TaskQueue } from './src/queue.js';
 import { autoContext, classifyEffort } from './src/effort-classifier.js';
+import { classifierModelFor } from './src/model-auto.js';
 import { maxConcurrentOf } from './src/concurrency.js';
 import { applyRetention, retentionOf } from './src/retention.js';
 import { Metrics } from './src/metrics.js';
@@ -296,7 +297,8 @@ const taskQueue = new TaskQueue({
   metrics,
   classify: (id, text, attachments) => {
     const settings = hub.settingsFor(id);
-    return classifyEffort({ engine: hub.engineOf(id), claude, opencode, currentModel: settings.model, text, attachments, context: autoContext(hub, id) });
+    const engine = hub.engineOf(id);
+    return classifyEffort({ engine, claude, opencode, classifierModel: classifierModelFor(engine, settings.modelTiers), text, attachments, context: autoContext(hub, id) });
   },
 });
 const routines = new RoutineScheduler({ hub, taskQueue });

@@ -3,6 +3,7 @@
 import { AttachmentError, readAttachments } from '../attachments.js';
 import { autoContext, classifyEffort } from '../effort-classifier.js';
 import { QueueError } from '../queue.js';
+import { classifierModelFor } from '../model-auto.js';
 import { json } from './http.js';
 import { withProject } from './project.js';
 
@@ -11,7 +12,8 @@ import { withProject } from './project.js';
 async function autoEffort(ctx, id, text, attachments = []) {
   const settings = ctx.hub.settingsFor(id);
   if (!settings.effortAuto && !settings.modelAuto) return null;
-  return classifyEffort({ engine: ctx.hub.engineOf(id), claude: ctx.claude, opencode: ctx.opencode, currentModel: settings.model, text, attachments, context: autoContext(ctx.hub, id) });
+  const engine = ctx.hub.engineOf(id);
+  return classifyEffort({ engine, claude: ctx.claude, opencode: ctx.opencode, classifierModel: classifierModelFor(engine, settings.modelTiers), text, attachments, context: autoContext(ctx.hub, id) });
 }
 
 /** op → the change it makes; each answers with the queue's new view. */

@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { acpSessionClass } from './acp-session.js';
 import { autoContext, classifyEffort } from './effort-classifier.js';
-import { shortModelLabel, tierFor } from './model-auto.js';
+import { shortModelLabel, tierFor, classifierModelFor } from './model-auto.js';
 import { killTree } from './proc.js';
 import { attachmentChips, contentBlocks } from './attachments.js';
 import { ENGINES, PERMISSION_MODES } from './hub.js';
@@ -192,7 +192,7 @@ export class SessionManager {
         engine,
         claude: this.claude,
         opencode: this.opencode,
-        currentModel: settings.model,
+        classifierModel: classifierModelFor(engine, settings.modelTiers),
         text: String(text ?? ''),
         context: autoContext(this.hub, projectId),
       });

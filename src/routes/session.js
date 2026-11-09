@@ -11,7 +11,7 @@ import { checkTurn } from '../concurrency.js';
 import { autoContext, classifyEffort } from '../effort-classifier.js';
 import { DEMO_ID } from '../hub.js';
 import { QUEUE_LIMITS } from '../queue.js';
-import { shortModelLabel, tierFor } from '../model-auto.js';
+import { shortModelLabel, tierFor, classifierModelFor } from '../model-auto.js';
 import { listSessions, sessionHistory } from '../transcripts.js';
 import { openCodeSessions } from '../opencode-bin.js';
 import { importOpenCodeSession, OpenCodeAdminError } from '../opencode-admin.js';
@@ -149,7 +149,8 @@ export function register(router) {
         if (settings.effortAuto) autoEffort = { skipped: 'busy', reason: 'Mengikuti effort turn yang sedang berjalan' };
         if (settings.modelAuto) autoModel = { skipped: 'busy', reason: 'Mengikuti model turn yang sedang berjalan' };
       } else {
-        const auto = await classifyEffort({ engine: hub.engineOf(project.id), claude, opencode, currentModel: settings.model, text, attachments, context: autoContext(hub, project.id) });
+        const engine = hub.engineOf(project.id);
+        const auto = await classifyEffort({ engine, claude, opencode, classifierModel: classifierModelFor(engine, settings.modelTiers), text, attachments, context: autoContext(hub, project.id) });
         autoPick = auto;
         const patch = {};
         if (settings.effortAuto) {

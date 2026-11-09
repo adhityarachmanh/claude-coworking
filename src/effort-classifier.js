@@ -101,6 +101,7 @@ export async function classifyEffort({
   claude = null,
   opencode = null,
   currentModel = '',
+  classifierModel = '',
   text = '',
   attachments = [],
   mentions = mentionsOf(text),
@@ -115,8 +116,9 @@ export async function classifyEffort({
   if (fake) return { level: fake, reason: 'classifier palsu (test)', source: 'llm', model: 'fake' };
 
   const prompt = classifierPrompt({ text, attachments, mentions, context });
-  // Never pick a catalog model: the user's active model (or the engine's own default) is the only classifier.
-  const model = currentModel || '';
+  // Routing must not burn pro tokens: the Auto classifier uses the project's Seimbang tier. `currentModel` stays a
+  // fallback only for an older caller or a test that does not pass classifierModel.
+  const model = classifierModel || currentModel || '';
   try {
     let answer = '';
     if (engine === 'opencode') {

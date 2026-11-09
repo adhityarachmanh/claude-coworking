@@ -67,6 +67,14 @@ export function autoModelFor(engine, level, modelTiers = null) {
   return tierFor(level, engine, modelTiers).model;
 }
 
+/**
+ * The model the Auto classifier always runs on: the project's **Seimbang** tier (or the engine default when that
+ * slot is empty). Classification is routing, not work: pro/kuat/maks are never spent on it.
+ */
+export function classifierModelFor(engine, modelTiers = null) {
+  return tiersFor(engine, modelTiers).seimbang;
+}
+
 /** "opencode-go/glm-5.3" → "glm-5.3": the provider prefix says nothing in a one-line chat note. */
 export function shortModelLabel(model) {
   const raw = String(model ?? '');

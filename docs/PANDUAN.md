@@ -101,7 +101,7 @@ Harga OpenCode Go diambil dari katalog resmi `opencode.ai` dan disimpan di folde
 ## Memakai Model Auto
 
 1. Buka chip **⚙ Pengaturan giliran** → daftar **Model** → pilih **Auto — sesuaikan task**.
-2. Setiap prompt dinilai dulu (satu panggilan yang sama dengan Effort Auto), lalu model dipilih dari tangga:
+2. Setiap prompt dinilai dulu (satu panggilan yang sama dengan Effort Auto) memakai **model tier Seimbang** — bukan model aktif — lalu model giliran dipilih dari tangga:
    - **Hemat** untuk pertanyaan/typo/perubahan kecil,
    - **Seimbang** untuk bug fix dan fitur kecil,
    - **Kuat** untuk pekerjaan multi-file/refactor,
