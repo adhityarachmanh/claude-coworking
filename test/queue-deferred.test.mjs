@@ -309,8 +309,7 @@ test('deferred Auto: cancelling the only item while classifying wakes another pr
   }
 });
 
-test('⏸ pauseAllForUser / ▶ resumeAllForUser touch only user pauses, never a failed/budget queue', () => {
-  const { hub, tq, projects } = setupTwo();
+test('⏸ pauseAllForUser / ▶ resumeAllForUser touch only user pauses, never a failed/budget queue', () => {  const { hub, tq, projects } = setupTwo();
   const [p1, p2] = projects;
   try {
     tq.add(p1.id, 'satu', null, [], { autoDeferred: true });
@@ -332,6 +331,31 @@ test('⏸ pauseAllForUser / ▶ resumeAllForUser touch only user pauses, never a
     assert.equal(tq.resumeAllForUser(), 1);
     assert.equal(tq.queues[p1.id].paused, false);
     assert.equal(tq.queues[p2.id].paused, true, 'antrian gagal tidak dilanjutkan diam-diam');
+  } finally {
+    cleanupQueue(hub, tq);
+  }
+});
+
+test('📌 pin: a pinned waiting item goes before an older one across projects; only waiting items can be pinned', () => {
+  const { hub, tq, projects } = setupTwo();
+  const [p1, p2] = projects;
+  try {
+    const older = tq.add(p1.id, 'biasa', null, [], { autoDeferred: true });
+    const newer = tq.add(p2.id, 'penting', null, [], { autoDeferred: true });
+    assert.equal(tq.orderedWaiting()[0].item.id, older.id, 'tanpa pin: yang paling tua dulu');
+    assert.equal(tq.nextFair(), p1.id);
+
+    tq.pin(p2.id, newer.id, true);
+    assert.equal(tq.orderedWaiting()[0].item.id, newer.id, 'pin menang atas urutan umur');
+    assert.equal(tq.nextFair(), p2.id, 'scheduler fair juga memilih pin');
+    assert.equal(tq.queues[p2.id].items.find((i) => i.id === newer.id).pinned, true);
+
+    tq.pin(p2.id, newer.id, false);
+    assert.equal(tq.orderedWaiting()[0].item.id, older.id, 'lepas pin mengembalikan urutan umur');
+
+    const running = tq.queues[p1.id].items.find((i) => i.id === older.id);
+    running.status = 'running';
+    assert.throws(() => tq.pin(p1.id, running.id, true), /Hanya item yang masih menunggu/);
   } finally {
     cleanupQueue(hub, tq);
   }

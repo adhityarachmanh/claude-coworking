@@ -101,6 +101,7 @@ function queueAllRows() {
     status: row.querySelector('.queue-all-status')?.textContent.trim() ?? '',
     text: row.querySelector('.queue-all-text')?.textContent ?? '',
     eta: row.querySelector('.queue-all-eta')?.textContent ?? null,
+    pin: row.querySelector('.queue-all-pin')?.textContent ?? '',
   }));
 }
 
@@ -225,6 +226,15 @@ test('🌐 Semua antrian: urutan global, dijeda, Batal, Buka, dan auto-refresh e
     const summary = await page.eval(() => document.querySelector('#queue-all-summary').textContent);
     assert.match(summary, /^3 menunggu · 1 berjalan/, 'N menunggu · M berjalan');
     assert.match(summary, /1 antrian dijeda/);
+
+    // 📌 Pin C: it moves before B (older) and shows the pin mark; unpin puts B back first.
+    await page.click(`li.queue-all-row[data-project="${C}"] button[data-qa="pin"]`);
+    await page.waitFor((project) => document.querySelector(`li.queue-all-row[data-project="${project}"] .queue-all-pos`)?.textContent.trim() === '#1', { timeoutMs: 15000, message: 'C menjadi #1 setelah dipin' }, C);
+    const pinnedRows = await page.eval(queueAllRows);
+    assert.equal(pinnedRows.find((r) => r.project === C).pin, '📌');
+    assert.equal(pinnedRows.find((r) => r.project === B).pos, '#2', 'B bergeser ke belakang');
+    await page.click(`li.queue-all-row[data-project="${C}"] button[data-qa="pin"]`);
+    await page.waitFor((project) => document.querySelector(`li.queue-all-row[data-project="${project}"] .queue-all-pos`)?.textContent.trim() === '#1', { timeoutMs: 15000, message: 'B kembali #1 setelah unpin' }, B);
 
     // Batal on B's waiting row: the server removes the item and the list is read again.
     await page.eval(() => {

@@ -135,6 +135,7 @@ function render(data) {
         status,
         pos: status === 'waiting' && Number.isInteger(item.queuePosition) && item.queuePosition > 0 ? item.queuePosition : null,
         etaMs: status === 'waiting' && typeof item.etaMs === 'number' && Number.isFinite(item.etaMs) && item.etaMs >= 0 ? item.etaMs : null,
+        pinned: item.pinned === true,
         createdAt: Number.isFinite(item.createdAt) ? item.createdAt : 0,
         startedAt: Number.isFinite(item.startedAt) ? item.startedAt : 0,
       });
@@ -195,13 +196,14 @@ function rowHtml(row) {
   const status = row.status === 'running' ? 'berjalan' : pausedRow ? 'dijeda' : 'menunggu';
   const statusClass = row.status === 'running' ? 'running' : pausedRow ? 'paused' : 'waiting';
   const eta = row.etaMs == null ? '' : `<span class="queue-all-eta">${etaText(row.etaMs)}</span>`;
+  const pinMark = row.pinned ? '<span class="queue-all-pin" title="Diprioritaskan">📌</span>' : '';
   const cancel = row.status === 'waiting' && row.id
-    ? `<button type="button" class="ghost" data-qa="cancel" data-item="${escapeHtml(row.id)}" title="${state.readOnly ? escapeHtml(READ_ONLY_HINT) : 'Batalkan item antrian ini'}"${state.readOnly ? ' disabled' : ''}>Batal</button>`
+    ? `<button type="button" class="ghost" data-qa="pin" data-item="${escapeHtml(row.id)}" data-pinned="${row.pinned ? '1' : '0'}" title="${state.readOnly ? escapeHtml(READ_ONLY_HINT) : row.pinned ? 'Lepas pin prioritas' : 'Pin: jalankan sebelum item lain'}"${state.readOnly ? ' disabled' : ''}>${row.pinned ? '📌' : '📍'}</button><button type="button" class="ghost" data-qa="cancel" data-item="${escapeHtml(row.id)}" title="${state.readOnly ? escapeHtml(READ_ONLY_HINT) : 'Batalkan item antrian ini'}"${state.readOnly ? ' disabled' : ''}>Batal</button>`
     : '';
   return `<li class="queue-all-row ${row.status}${pausedRow ? ' paused' : ''}" data-project="${escapeHtml(row.project)}">
     <span class="queue-all-pos" aria-hidden="true">${pos}</span>
     <div class="queue-all-main">
-      <div class="queue-all-meta"><span class="queue-all-name">${escapeHtml(row.name)}</span><span class="queue-all-status ${statusClass}">${status}</span>${eta}</div>
+      <div class="queue-all-meta"><span class="queue-all-name">${escapeHtml(row.name)}</span><span class="queue-all-status ${statusClass}">${status}</span>${pinMark}${eta}</div>
       <div class="queue-all-text">${escapeHtml(row.text)}</div>
     </div>
     <div class="queue-all-actions"><button type="button" class="ghost" data-qa="open">Buka</button>${cancel}</div>
@@ -217,6 +219,20 @@ async function onAction(e) {
   if (button.dataset.qa === 'open') {
     closeModal('queue-all-modal');
     return openQueue({ project });
+  }
+  if (button.dataset.qa === 'pin') {
+    const itemId = button.dataset.item;
+    if (!itemId) return;
+    if (state.readOnly) return toast(`${READ_ONLY_HINT}.`);
+    button.disabled = true;
+    try {
+      await api(`/api/projects/${encodeURIComponent(project)}/queue-pin`, { itemId, pinned: button.dataset.pinned !== '1' });
+      await load();
+    } catch (err) {
+      toast(`Gagal mengubah pin: ${err.message}`);
+      if (button.isConnected) button.disabled = false;
+    }
+    return;
   }
   if (button.dataset.qa !== 'cancel') return;
   const itemId = button.dataset.item;

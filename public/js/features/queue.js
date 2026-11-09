@@ -472,10 +472,12 @@ function itemHtml(item, waiting, edit) {
   if ((item.status === 'done' || item.status === 'failed') && item.endedAt) meta.push(ago(item.endedAt));
   if (item.meta?.durationMs) meta.push(`${Math.max(1, Math.round(item.meta.durationMs / 1000))} dtk`);
   if (item.meta?.costUsd) meta.push(`$${item.meta.costUsd.toFixed(2)}`);
+  if (item.pinned) meta.push('📌 diprioritaskan');
   if (item.effort) meta.push(`Auto: ${{ low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' }[item.effort] ?? item.effort}${item.effortSource === 'fallback' ? ' (fallback)' : ''}`);
   const act = (name, label, title, extra = '') => `<button type="button" class="ghost icon" data-act="${name}" title="${title}" aria-label="${title}"${extra}>${label}</button>`;
   const actions = [];
   if (isWaiting && edit && !editing) {
+    actions.push(act('pin', item.pinned ? '📌' : '📍', item.pinned ? 'Lepas pin prioritas' : 'Pin: jalankan sebelum item lain'));
     actions.push(act('up', '↑', 'Naikkan', pos <= 0 ? ' disabled' : ''), act('down', '↓', 'Turunkan', pos >= waiting.length - 1 ? ' disabled' : ''), act('edit', '✎', 'Ubah'), act('remove', '🗑', 'Hapus'));
   }
   if (item.status === 'failed' && edit) actions.push(`<button type="button" class="ghost" data-act="retry" title="Kembalikan ke depan antrian">↻ Ulangi</button>`);
@@ -658,6 +660,8 @@ export function initQueue() {
       }
       case 'remove':
         return change('remove', { itemId: item.id });
+      case 'pin':
+        return change('pin', { itemId: item.id, pinned: !item.pinned });
       case 'retry':
         return change('retry', { itemId: item.id });
       case 'open':

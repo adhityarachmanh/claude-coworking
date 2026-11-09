@@ -202,6 +202,19 @@ test('/api/queues: running first-class, global positions across projects, paused
     const resumedView = await allQueues();
     for (const q of resumedView.queues) assert.equal(q.paused, false, `${q.project} dilanjutkan`);
     assert.equal(wifiAllows('/api/queues/pause'), false, 'jeda semua adalah aksi, bukan bacaan WiFi');
+
+    // 📌 Pin a waiting item: it becomes #1 across projects; a running item cannot be pinned.
+    const waitingB = (await queueOf(B)).items.find((i) => i.status === 'waiting');
+    const waitingC = (await queueOf(C)).items.find((i) => i.status === 'waiting');
+    assert.ok(waitingB && waitingC, 'B dan C masih menunggu');
+    assert.equal((await api(`/api/projects/${C}/queue-pin`, { itemId: waitingC.id, pinned: true })).status, 200);
+    const pinnedView = await allQueues();
+    const cRow = pinnedView.queues.find((q) => q.project === C);
+    assert.equal(cRow.items[0].pinned, true);
+    assert.equal(cRow.items[0].queuePosition, 1, 'pin menang atas item B yang lebih tua');
+    const runningA = (await queueOf(A)).items.find((i) => i.status === 'running');
+    assert.equal((await api(`/api/projects/${A}/queue-pin`, { itemId: runningA.id, pinned: true })).status, 409, 'item berjalan tidak bisa dipin');
+    assert.equal((await api(`/api/projects/${C}/queue-pin`, { itemId: waitingC.id, pinned: false })).status, 200);
   } finally {
     await api(`/api/projects/${A}/stop`).catch(() => {});
     for (const id of [A, B, C, D]) {
@@ -221,6 +234,7 @@ test('/api/queues is read-only over plain WiFi; queue-remove/queue-update stay r
   assert.equal(wifiAllows('/api/queues'), true, '🌐 Semua antrian boleh dibaca dari WiFi');
   assert.equal(wifiAllows(`/api/projects/${B}/queue`), true);
   assert.equal(wifiAllows(`/api/projects/${B}/queue-remove`), false, 'membatalkan item tetap aksi');
+  assert.equal(wifiAllows(`/api/projects/${B}/queue-pin`), false, 'pin prioritas juga aksi');
   assert.equal(wifiAllows(`/api/projects/${B}/queue-update`), false, 'mengubah prompt antrian tetap aksi');
 
   const ip = lanAddresses()[0];

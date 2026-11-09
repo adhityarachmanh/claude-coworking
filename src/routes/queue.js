@@ -19,6 +19,7 @@ const CHANGES = {
   remove: (q, id, body) => q.remove(id, body.itemId),
   reorder: (q, id, body) => q.reorder(id, body.order),
   pause: (q, id, body) => q.setPaused(id, body.paused === true),
+  pin: (q, id, body) => q.pin(id, body.itemId, body.pinned === true),
   retry: (q, id, body) => q.retry(id, body.itemId),
   clear: (q, id) => q.clearFinished(id),
   budget: (q, id, body) => q.setBudget(id, body),
@@ -55,6 +56,7 @@ export function register(router) {
             runbookId: item.runbookId ?? null,
             queuePosition: spot?.position ?? null,
             etaMs: spot?.etaMs ?? null,
+            pinned: item.pinned === true,
           };
         });
       if (!items.length && !q.paused) continue;

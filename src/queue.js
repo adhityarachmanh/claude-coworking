@@ -121,6 +121,7 @@ function cleanItem(raw) {
     runbookId: /^rb_[A-Za-z0-9_-]{1,40}$/.test(String(raw.runbookId ?? '')) ? raw.runbookId : null,
     runbookIndex: Number.isInteger(raw.runbookIndex) && raw.runbookIndex >= 0 ? raw.runbookIndex : null,
     engine: raw.engine === 'opencode' || raw.engine === 'claude' ? raw.engine : null, // the engine it was sent to
+    pinned: raw.pinned === true, // 📌 runs before interactive prompts (ignored once the item starts)
     autoDeferred: raw.autoDeferred === true, // Effort/Model Auto is classified at dispatch (queued at the turn limit)
     effort: cleanAutoLevel(raw.effort),
     effortReason: typeof raw.effortReason === 'string' ? raw.effortReason.slice(0, 300) : null,
@@ -313,6 +314,7 @@ export class TaskQueue {
       runbookId: /^rb_[A-Za-z0-9_-]{1,40}$/.test(String(extra?.runbookId ?? '')) ? extra.runbookId : null,
       runbookIndex: Number.isInteger(extra?.runbookIndex) && extra.runbookIndex >= 0 ? extra.runbookIndex : null,
       engine: null,
+      pinned: false,
       autoDeferred: extra?.autoDeferred === true,
       effort: cleanAutoLevel(effort?.level),
       effortReason: typeof effort?.reason === 'string' ? effort.reason.slice(0, 300) : null,
@@ -339,6 +341,19 @@ export class TaskQueue {
     item.updatedAt = this.now();
     // The bubble made when the prompt joined the queue must show the edited text too.
     if (item.chatId) this.hub.updateChat(id, item.chatId, { text: item.text });
+    this.changed(id);
+    return item;
+  }
+
+  /**
+   * 📌 Pin/unpin a waiting item. A pinned item goes before interactive prompts and scheduled routines across
+   * projects. Running/finished items cannot be pinned (their order is already settled).
+   */
+  pin(id, itemId, pinned) {
+    const item = this.item(id, itemId);
+    if (item.status !== 'waiting') throw new QueueError(409, 'Hanya item yang masih menunggu yang bisa dipin.');
+    item.pinned = pinned === true;
+    item.updatedAt = this.now();
     this.changed(id);
     return item;
   }
@@ -375,13 +390,15 @@ export class TaskQueue {
       let best = null;
       for (const [pid, list] of lists) {
         const item = list[0];
+        const pinned = item.pinned === true;
         const interactive = !item.routineId && !item.runbookId;
         if (
           !best ||
-          (interactive && !best.interactive) ||
-          (interactive === best.interactive && (item.createdAt ?? 0) < (best.item.createdAt ?? 0))
+          (pinned && !best.pinned) ||
+          (pinned === best.pinned && interactive && !best.interactive) ||
+          (pinned === best.pinned && interactive === best.interactive && (item.createdAt ?? 0) < (best.item.createdAt ?? 0))
         ) {
-          best = { projectId: pid, item, interactive };
+          best = { projectId: pid, item, pinned, interactive };
         }
       }
       out.push({ projectId: best.projectId, item: best.item });
@@ -694,11 +711,23 @@ export class TaskQueue {
       if (!project || project.virtual) continue;
       const item = q.items.find((i) => i.status === 'waiting');
       if (!item) continue;
+      const pinned = item.pinned === true;
       const interactive = !item.routineId && !item.runbookId;
-      candidates.push({ id, interactive, createdAt: item.createdAt ?? 0 });
+      candidates.push({ id, pinned, interactive, createdAt: item.createdAt ?? 0 });
     }
     if (!candidates.length) return null;
-    candidates.sort((a, b) => (a.interactive === b.interactive ? a.createdAt - b.createdAt : a.interactive ? -1 : 1));
+    candidates.sort(
+      (a, b) =>
+        a.pinned === b.pinned
+          ? a.interactive === b.interactive
+            ? a.createdAt - b.createdAt
+            : a.interactive
+              ? -1
+              : 1
+          : a.pinned
+            ? -1
+            : 1,
+    );
     return candidates[0].id;
   }
 
