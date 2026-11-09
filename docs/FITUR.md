@@ -321,7 +321,8 @@ di-build di Mac).
 - **Update aplikasi**: Windows mengecek GitHub Releases, mengunduh installer, memverifikasi **SHA-256** dan
   host, lalu menjalankan senyap. Linux/macOS masih manual.
 - Belum ditandatangani: SmartScreen/Gatekeeper akan memperingatkan sampai code signing ditambahkan.
-- AppImage dan notarization macOS masih direncanakan.
+- macOS bisa dibangun lewat GitHub Actions (`.github/workflows/build-macos.yml`) tanpa Mac sendiri;
+  AppImage dan notarization macOS masih direncanakan.
 
 Detail build dan alur rilis: [packaging-desktop.md](packaging-desktop.md).
 

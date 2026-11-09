@@ -72,8 +72,11 @@ dist/linux/adhit-office_<versi>_amd64.deb         # Debian/Ubuntu
 
 ## Build macOS
 
-Prasyarat: macOS + Xcode Command Line Tools. Node SEA memakai runtime lokal, dan rilis publik wajib
-**codesign + notarization** (akun Apple Developer).
+Tidak perlu Mac sendiri: workflow **`.github/workflows/build-macos.yml`** membangun `.app` di runner
+GitHub macOS (arm64 + Intel) dan mengunggah ZIP ke Release saat push tag `v*`. Bisa juga dijalankan manual
+dari tab **Actions → build-macos → Run workflow** (hasilnya sebagai artifact).
+
+Build lokal (kalau punya Mac):
 
 ```bash
 npm run build:mac
@@ -85,8 +88,13 @@ Output: `dist/macos/AdhitOffice-<versi>-macos-<arch>-unsigned.zip` berisi `Adhit
 - `.app` menjalankan server lalu membuka `http://127.0.0.1:4317`; launcher mengarahkan `OFFICE_APP_DIR`
   ke `Contents/Resources` dan build melakukan **ad-hoc codesign** agar bisa diuji lokal.
 - Data: `~/Library/Application Support/AdhitOffice/data`.
-- Belum dinotarisasi: Gatekeeper menolak unduhan dari internet; buka dengan klik kanan → **Open** hanya
-  untuk build lokal. Untuk rilis:
+- Belum dinotarisasi: macOS bisa menolak build unduhan. Pengguna membuka lewat **System Settings →
+  Privacy & Security → Open Anyway**, atau:
+  `xattr -dr com.apple.quarantine "Adhit Office.app"`.
+- Rilis publik yang mulus tetap butuh **Developer ID + notarization** (akun Apple Developer); tambahkan
+  secret ke workflow setelah itu.
+
+Untuk notarization di Mac:
 
 ```bash
 codesign --deep --force --options runtime --sign "Developer ID Application: …" "Adhit Office.app"

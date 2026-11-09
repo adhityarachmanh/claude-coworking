@@ -70,7 +70,7 @@ Kalau tidak ingin mengelola Node/git, build installer/paket:
 ```powershell
 npm run build:win     # Windows: exe + Setup.exe
 npm run build:linux   # Linux: tar.gz + .deb (bisa dibuat dari Windows)
-npm run build:mac     # macOS: .app (harus dijalankan di Mac, belum ditandatangani)
+npm run build:mac     # macOS: .app (lokal di Mac, atau lewat GitHub Actions tanpa Mac)
 ```
 
 Hasil Windows: `dist\installer\AdhitOffice-Setup-<versi>.exe` (per-user, tanpa admin) dan folder portable
