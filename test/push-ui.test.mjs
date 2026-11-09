@@ -632,6 +632,31 @@ describe('push UI in the browser (http://localhost)', { skip: SKIP ?? false }, (
     assert.deepEqual(r, { registrations: 0, sectionHidden: true });
   });
 
+  test('🔊 TTS: the toggle is per device, saved on change, and restored when the dialog opens again', async () => {
+    const r = await page.eval(async () => {
+      const { openNotifySettings } = await import('/js/features/notify.js');
+      const { setTtsOn } = await import('/js/features/tts.js');
+      const tick = () => new Promise((res) => setTimeout(res, 50));
+      setTtsOn(false);
+      openNotifySettings();
+      await tick();
+      const box = document.querySelector('#ns-tts');
+      box.checked = true;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      const saved = window.localStorage.getItem('office.tts');
+      document.querySelector('#notify-modal').hidden = true;
+      openNotifySettings();
+      await tick();
+      const restored = document.querySelector('#ns-tts').checked;
+      document.querySelector('#ns-tts').checked = false;
+      document.querySelector('#ns-tts').dispatchEvent(new Event('change', { bubbles: true }));
+      const cleared = window.localStorage.getItem('office.tts');
+      document.querySelector('#notify-modal').hidden = true;
+      return { present: Boolean(box), saved, restored, cleared };
+    });
+    assert.deepEqual(r, { present: true, saved: '1', restored: true, cleared: '0' });
+  });
+
   test('a phone on http (WiFi read-only): the https hint with config.remote.https.url, no buttons, no /api/push call', async () => {
     const r = await page.eval(async () => {
       const { state } = await import('/js/core/state.js');

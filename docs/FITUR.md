@@ -239,6 +239,7 @@ Klik **🔔** di header untuk mengaktifkan. Notifikasi dan suara muncul saat ada
 - notifikasi dan suara on/off **per jenis kejadian**;
 - **🌙 jam tenang** (boleh lewat tengah malam), dengan *Izin tetap diberitahu saat jam tenang* (aktif secara bawaan);
 - **hanya project favorit ★**, **🔇 project dibisukan** (tidak ada suara/pop-up dari project itu, termasuk minta izin), **volume** dengan **▶ Tes suara**, **↺ Kembalikan bawaan**;
+- **🔊 Bacakan balasan asisten** (per perangkat): jawaban akhir giliran dibacakan dengan **Web Speech API** browser. Markdown dibersihkan, blok kode dilewati, tautan dibaca labelnya, dan jawaban sangat panjang dipotong di batas kata (teks lengkap tetap di layar). **■ Stop** atau **Esc** menghentikan suara. Tidak ada teks yang dikirim ke server aplikasi; browser tanpa mesin suara menampilkan toggle nonaktif.
 - **📱 Notifikasi HP (push)**: lihat [Notifikasi push ke HP](../README.md#notifikasi-push-ke-hp).
 
 Disimpan per perangkat (browser).

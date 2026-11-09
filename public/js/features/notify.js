@@ -8,6 +8,7 @@ import { state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { selectProject } from './picker.js';
 import { isPushActive, pushSettingsChanged, renderPushSection } from './push.js';
+import { canSpeak, setTtsOn, ttsOn } from './tts.js';
 
 export const NOTIFY_KEY = 'office.notify';
 export const NOTIFY_SETTINGS_KEY = 'office.notifySettings';
@@ -154,6 +155,17 @@ export function syncNotifyForm() {
   $('#ns-fav').checked = s.favoritesOnly;
   renderMutedList(s.muted);
   $('#ns-volume').value = String(s.volume);
+  const tts = $('#ns-tts');
+  if (tts) {
+    tts.checked = ttsOn();
+    tts.disabled = !canSpeak();
+    const desc = $('#ns-tts-desc');
+    if (desc) {
+      desc.textContent = canSpeak()
+        ? 'Perangkat ini. Markdown dibersihkan; blok kode dilewati. Tidak ada teks yang dikirim ke server.'
+        : 'Browser ini tidak menyediakan suara (Web Speech API).';
+    }
+  }
   setQuietError(null);
   renderFormState(s.volume);
   $('#ns-perm').textContent = permissionText();
@@ -212,6 +224,7 @@ function saveNotifyForm(target) {
     muted,
     volume,
   });
+  setTtsOn($('#ns-tts')?.checked === true);
   renderFormState(volume);
 }
 
@@ -267,6 +280,7 @@ export function initNotify() {
   });
   $('#ns-reset').addEventListener('click', () => {
     saveNotifySettings(null);
+    setTtsOn(false);
     syncNotifyForm();
     toast('Pengaturan notifikasi kembali ke bawaan.', 'ok');
   });

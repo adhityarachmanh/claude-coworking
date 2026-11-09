@@ -43,6 +43,7 @@ import { initLiveOutput } from './features/live-output.js';
 import { initMcp } from './features/mcp.js';
 import { initHeaderMore, initMoreMenu } from './features/more-menu.js';
 import { initNotify } from './features/notify.js';
+import { initTts } from './features/tts.js';
 import { initPalette } from './features/palette.js';
 import { initPermissions } from './features/permissions.js';
 import { initPhone } from './features/phone.js';
@@ -122,6 +123,7 @@ initClaudeCheck(); // 🧩 Claude Code update detector: banner + ⚙ section
 initOpenCodeCheck(); // 🧩 the same for OpenCode (only shown when it is installed)
 initOpenCodeConfig(); // 🧩 OpenCode config/agent editor (laptop only)
 initNotify();
+initTts(); // 🔊 Bacakan balasan: Stop/Esc hentikan suara (toggle-nya ada di 🔔 Pengaturan notifikasi)
 initPush(); // 📱 Notifikasi HP (push): https only; the ?p=&ap= deep link runs after the first snapshot
 initQuota(); // after initSettings: refreshes its ⚙ fields when the dialog opens
 initChanges();

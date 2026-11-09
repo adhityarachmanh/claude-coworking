@@ -11,6 +11,7 @@ import { applyAppUpdate } from '../features/app-update.js';
 import { renderComposer } from '../features/composer.js';
 import { retryDelay, streamLost, streamOpened } from '../features/connection.js';
 import { notify } from '../features/notify.js';
+import { answerForResult, speakAnswer } from '../features/tts.js';
 import { phone, refreshPairing } from '../features/phone.js';
 import { renderSidebar, selectProject } from '../features/picker.js';
 import { onApprovalUpdate, onPushSnapshot, pushProjectsChanged } from '../features/push.js';
@@ -148,6 +149,12 @@ const handlers = {
       // replayed history: no notification for it
     } else if (msg.kind === 'result') {
       notify(msg.ok ? 'done' : 'error', msg.ok ? `✓ Tugas selesai — ${projectName(msg.project)}` : `■ Tugas berhenti — ${projectName(msg.project)}`, msg.ok ? 'Tim sudah menyelesaikan permintaanmu.' : msg.text || 'Cek chat untuk detailnya.', msg.project);
+      // 🔊 TTS reads the finished answer of the project on screen; the raw streaming text is never read.
+      // Only an assistant message after the previous result belongs to this turn: an empty turn must not re-read an old answer.
+      if (msg.ok && msg.project === state.active) {
+        const last = answerForResult(state.chats[msg.project], msg);
+        if (last) speakAnswer(last.text);
+      }
     } else if (msg.kind === 'error') {
       notify('error', `⚠ Ada kendala — ${projectName(msg.project)}`, msg.text.slice(0, 120), msg.project);
     }
