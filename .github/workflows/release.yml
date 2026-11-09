@@ -153,15 +153,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # gh needs a checkout to know which repository the tag belongs to.
+      - uses: actions/checkout@v4
       - name: Check every platform is there
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name' 2>&1) || {
+            echo "::error file=.github/workflows/release.yml::tidak bisa membaca rilis draft: $ASSETS"
+            exit 1
+          }
           missing=0
           check() {
-            echo "$ASSETS" | grep -qE "$1" || { echo "::error::aset rilis hilang: $1"; missing=1; }
+            echo "$ASSETS" | grep -qE "$1" || { echo "::error file=.github/workflows/release.yml::aset rilis hilang: $1"; missing=1; }
           }
           check '^AdhitOffice-Setup-[0-9.]+\.exe$'
           check '^AdhitOffice-Setup-[0-9.]+\.exe\.sha256$'

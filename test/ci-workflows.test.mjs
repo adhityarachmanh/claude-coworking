@@ -15,6 +15,8 @@ test('release: draft first, publish only after windows, linux and macOS', () => 
   assert.match(workflow, /needs: \[windows, linux, macos\]/, 'publish waits for every platform');
   assert.match(workflow, /--draft=false/, 'publish flips the draft only at the end');
   assert.match(workflow, /^\s{2}macos:/m, 'macOS builds inside the release workflow');
+  const publish = workflow.slice(workflow.indexOf('  publish:'));
+  assert.match(publish, /actions\/checkout@v4/, 'gh needs a checkout to resolve the repository');
 });
 
 test('release: publish refuses a release with a missing asset or signature', () => {
