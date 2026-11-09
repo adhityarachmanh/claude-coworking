@@ -6,7 +6,7 @@ import { accountImpactText } from '../core/account-impact.js';
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { engineLabel } from '../core/engine-caps.js';
-import { fmtNum, fmtShort, fmtUsd } from '../core/format.js';
+import { fmtShort, fmtUsd } from '../core/format.js';
 import { state } from '../core/state.js';
 
 const POLL_MS = 2000;
@@ -120,7 +120,7 @@ function localUsageHtml() {
   const cost = (x) => (x.costUsd == null ? 'biaya belum tersedia' : fmtUsd(x.costUsd));
   const coverage = u.week.costCoverage;
   return `<div class="acct-section oc-usage"><div class="acct-title"><b>Pemakaian lokal OpenCode</b></div>
-    <p class="muted small">Dari sesi web dan terminal OpenCode yang tercatat di aplikasi. Angka ini pemakaian lokal, bukan batas langganan; kuota resmi ada di bagian <b>Kuota OpenCode Go</b>.</p>
+    <p class="muted small">Dari sesi web dan terminal OpenCode yang tercatat di aplikasi. Angka ini pemakaian lokal, bukan batas langganan; data kuota resmi provider ditampilkan terpisah bila tersedia.</p>
     <div class="oc-usage-grid">
       <div><small>Hari ini</small><b>${fmtShort(u.today.total)} token</b><span>${cost(u.today)}</span></div>
       <div><small>7 hari</small><b>${fmtShort(u.week.total)} token</b><span>${cost(u.week)}</span></div>
@@ -202,52 +202,47 @@ function dateText(iso) {
 
 const PLAN_LABEL = Object.fromEntries(GO_PLAN_OPTIONS.map((p) => [p.id, p.label]));
 
-/** One exact console meter (5 jam / 7 hari / 30 hari), with its own reset time. */
+/** "2 jam 35 mnt" / "6 hari 22 jam" from the console's reset timestamp. */
+function resetIn(iso) {
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return 'Reset tidak diketahui';
+  const ms = at - Date.now();
+  if (ms <= 0) return 'Reset sedang berlangsung';
+  const totalMinutes = Math.floor(ms / 60_000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days) return `Reset dalam ${days} hari ${hours} jam`;
+  if (hours) return `Reset dalam ${hours} jam ${minutes} mnt`;
+  return `Reset dalam ${Math.max(1, minutes)} mnt`;
+}
+
+const consoleLabel = (key, fallback) => ({ fiveHour: 'Rolling', week: 'Weekly', month: 'Monthly' })[key] ?? fallback;
+
+/** One console meter in the same shape as OpenCode's account page: name, reset countdown, bar, percentage. */
 function consoleMeterHtml(m) {
   const pct = m.percent == null ? null : Math.round(m.percent * 100);
   const width = pct == null ? 0 : Math.round(Math.min(100, pct));
-  const used = m.usedUsd == null ? '—' : fmtUsd(m.usedUsd);
-  const limit = m.limitUsd == null ? 'batas tidak diketahui' : fmtUsd(m.limitUsd);
-  const reset = dateText(m.resetsAt);
-  const title = `${m.label}: ${used} / ${limit}${reset ? ` · reset ${reset}` : ''}`;
-  return `<div class="oc-go-win">
-    <span class="oc-go-win-label">${escapeHtml(m.label)}</span>
-    <div class="bar oc-go-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct == null ? 0 : Math.min(100, pct)}" aria-valuetext="${pct == null ? 'tidak diketahui' : `${pct}%`}" aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}"><i class="${pct != null && pct > 90 ? 'bad' : pct != null && pct >= 70 ? 'warn' : 'ok'}" style="width:${width}%"></i></div>
-    <b class="oc-go-pct">${pct == null ? '—' : `${pct}%`}</b>
-  </div>
-  <p class="muted small oc-go-meter-note">${escapeHtml(used)} / ${escapeHtml(limit)}${reset ? ` · reset ${escapeHtml(reset)}` : ''}</p>`;
+  const label = consoleLabel(m.key, m.label);
+  const reset = resetIn(m.resetsAt);
+  const text = `${label}: ${pct == null ? 'persentase tidak diketahui' : `${pct}% terpakai`}, ${reset}`;
+  return `<div class="oc-go-meter">
+    <div class="oc-go-meter-main"><b>${escapeHtml(label)}</b><small>${escapeHtml(reset)}</small></div>
+    <div class="bar oc-go-bar oc-go-meter-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct == null ? 0 : Math.min(100, pct)}" aria-valuetext="${escapeHtml(text)}" aria-label="${escapeHtml(text)}" title="${escapeHtml(text)}"><i class="${pct != null && pct > 90 ? 'bad' : pct != null && pct >= 70 ? 'warn' : 'ok'}" style="width:${width}%"></i></div>
+    <b class="oc-go-meter-pct">${pct == null ? '—' : `${pct}%`}</b>
+  </div>`;
 }
 
-/** Exact data from OpenCode Console; the local per-model estimate stays below, clearly separated. */
+/** Exact data from OpenCode Console, in the same three-bar shape as the provider's account page. */
 function consoleQuotaHtml(go) {
   const c = go.console;
-  const plan = PLAN_LABEL[go.plan] ?? c.product ?? 'Go';
-  const active = dateText(c.activeUntil);
+  const plan = PLAN_LABEL[go.plan] ?? c.product ?? 'OpenCode Go';
+  const renewal = dateText(c.activeUntil || c.meters?.find?.((m) => m.key === 'month')?.resetsAt);
   const meters = (Array.isArray(c.meters) ? c.meters : []).map(consoleMeterHtml).join('');
-  const totals = c.activity?.totals;
-  const daily = Array.isArray(c.activity?.daily) ? c.activity.daily : [];
-  const models = Array.isArray(c.activity?.models) ? c.activity.models : [];
-  const summary = totals
-    ? `<p class="muted small oc-go-period">Periode berjalan: <b>${fmtUsd(totals.costUsd)}</b> · ${fmtShort(totals.tokens)} token · ${fmtNum(totals.requests)} request</p>`
-    : '';
-  const dailyRows = daily.length
-    ? `<details class="oc-go-daily"><summary>Pemakaian harian (${daily.length} hari)</summary><table class="usage-table"><thead><tr><th>Tanggal</th><th>Biaya</th><th>Token</th><th>Request</th></tr></thead><tbody>${daily
-        .slice()
-        .reverse()
-        .map((d) => `<tr><td>${escapeHtml(d.date)}</td><td>${fmtUsd(d.costUsd)}</td><td>${fmtShort(d.tokens)}</td><td>${fmtNum(d.requests)}</td></tr>`)
-        .join('')}</tbody></table></details>`
-    : '';
-  const modelRows = models.length
-    ? `<details class="oc-go-daily"><summary>Model (${models.length})</summary><ul class="oc-go-list">${models
-        .map((m) => `<li class="oc-go-row"><div class="oc-go-head"><b class="oc-go-model">${escapeHtml(m.model)}</b><span class="oc-go-money">${fmtNum(m.requests)} request</span></div></li>`)
-        .join('')}</ul></details>`
-    : '';
   return `<div class="acct-section oc-go"><div class="acct-title"><b>Kuota OpenCode Go</b><span class="badge">Data resmi OpenCode</span></div>
-    <div class="engine-opts oc-go-plan" role="group" aria-label="Paket OpenCode Go"><span class="muted small">Paket</span><span class="engine-opt on">${escapeHtml(plan)}</span>${active ? `<span class="muted small">aktif sampai ${escapeHtml(active)}</span>` : ''}</div>
-    <p class="muted small oc-go-note">${escapeHtml(go.note ?? '')}</p>
-    <div class="oc-go-wins">${meters}</div>
-    ${summary}${dailyRows}${modelRows}
-    ${go.estimate ? `<details class="oc-go-estimate"><summary>Perkiraan lokal per model</summary><p class="muted small">${escapeHtml(go.estimate.note ?? 'Perkiraan dari ledger × harga list.')}</p>${estimateRowsHtml(go.estimate)}</details>` : ''}
+    <div class="oc-go-plan-line"><b>${escapeHtml(plan)}</b>${renewal ? `<span class="muted small">Perpanjangan ${escapeHtml(renewal.split(',')[0])}</span>` : ''}</div>
+    <div class="oc-go-console">${meters}</div>
+    <p class="muted small oc-go-source">Sumber: OpenCode Console${c.fetchedAt ? ` · diperbarui ${escapeHtml(new Date(c.fetchedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }))}` : ''}.</p>
   </div>`;
 }
 

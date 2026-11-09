@@ -130,11 +130,11 @@ Batasan: redo kode hanya untuk **perubahan kode yang belum di-commit** di **repo
 ## Melihat sisa kuota OpenCode Go
 
 1. Buka **👤 Akun** saat mesin OpenCode aktif.
-2. Gulir ke **Kuota OpenCode Go**. Kalau kredensial **OpenCode Console** tersedia, panel menampilkan **Data resmi OpenCode**: paket, masa aktif, tiga meter **5 jam / 7 hari / 30 hari** (terpakai/batas, persentase, reset), ringkasan biaya/token/request, dan daftar model.
+2. Gulir ke **Kuota OpenCode Go**. Kalau kredensial **OpenCode Console** tersedia, panel menampilkan **Data resmi OpenCode**: paket, masa aktif, dan tiga bar **Rolling / Weekly / Monthly** dengan persentase terpakai dan hitung mundur reset—sama seperti halaman akun OpenCode.
 3. Kalau data resmi tidak tersedia, panel memakai perkiraan manual: pilih paket **Go ($10/bulan)**, **Go Plus ($40/bulan)**, atau **Go Teams ($20/anggota/bulan)**. Tiap model menampilkan **terpakai / batas**, **sisa**, dan tiga bar **5 jam / 7 hari / 30 hari**.
    - Hijau < 70%, kuning 70–90%, merah > 90%.
    - `tak terbatas` untuk model gratis; `batas belum diketahui` untuk model yang tidak ada di tabel paket itu.
-4. **Perkiraan lokal per model** tetap ditampilkan terpisah di bawah data resmi; angkanya dari token tercatat × harga list, bukan tagihan.
+4. Aktivitas harian dan daftar model dari provider ada di **📊 Laporan → OpenCode Go — data provider**, bukan di panel kuota. Angka perkiraan lokal tetap dipakai hanya saat data resmi tidak tersedia.
 
 Detail: [Akun & laporan](FITUR.md#akun--laporan).
 

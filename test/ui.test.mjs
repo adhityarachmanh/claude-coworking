@@ -4872,30 +4872,32 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test('kuota OpenCode Go: data resmi console tampil, estimasi lokal tetap terpisah', async () => {
+    test('kuota OpenCode Go: data resmi console tampil sebagai tiga bar, tanpa daftar model', async () => {
       await ensureApp(page, `#${projectId}`);
       try {
         await stubOpenCodeAccount(page, { go: GO_CONSOLE, usage: GO_USAGE });
         await tap(page, '#btn-account');
-        await page.waitFor(() => document.querySelectorAll('#account-body .oc-go > .oc-go-wins .oc-go-win').length === 3, { timeoutMs: 8000, message: 'tiga meter resmi' });
+        await page.waitFor(() => document.querySelectorAll('#account-body .oc-go-console .oc-go-meter').length === 3, { timeoutMs: 8000, message: 'tiga meter resmi' });
         const r = await page.eval(() => {
           const body = document.querySelector('#account-body');
           const go = body.querySelector('.oc-go');
           return {
             badge: go.querySelector('.acct-title .badge')?.textContent ?? '',
             text: go.textContent,
-            meters: [...go.querySelectorAll(':scope > .oc-go-wins .oc-go-win-label')].map((n) => n.textContent),
+            meters: [...go.querySelectorAll('.oc-go-meter-main b')].map((n) => n.textContent),
             planButtons: go.querySelectorAll('.oc-go-plan [data-plan]').length,
+            modelRows: go.querySelectorAll('.oc-go-row').length,
             estimate: Boolean([...go.querySelectorAll('summary')].find((n) => /Perkiraan lokal per model/.test(n.textContent))),
           };
         });
         assert.equal(r.badge, 'Data resmi OpenCode');
-        assert.deepEqual(r.meters, ['5 jam', '7 hari', '30 hari']);
+        assert.deepEqual(r.meters, ['Rolling', 'Weekly', 'Monthly']);
         assert.match(r.text, /Go Plus/);
-        assert.match(r.text, /6\.52/, 'total provider');
-        assert.match(r.text, /deepseek-v4\.1-flash/);
+        assert.match(r.text, /Perpanjangan/);
+        assert.match(r.text, /Reset/);
         assert.equal(r.planButtons, 0, 'paket dari console tidak bisa ditimpa manual');
-        assert.equal(r.estimate, true, 'estimasi lokal tetap ada di bawah');
+        assert.equal(r.modelRows, 0, 'tidak ada daftar model di panel kuota');
+        assert.equal(r.estimate, false, 'estimasi lokal tidak lagi masuk panel kuota');
         await page.press('Escape');
       } finally {
         await restoreOpenCodeAccount(page);
