@@ -271,7 +271,7 @@ npm run lint         # ESLint versi terkunci (diambil lewat npm exec)
 
 `test:fast` memilih otomatis file yang tidak mengimpor browser (`test-support/cdp.mjs`) atau memulai server/proses, jadi aman dijalankan setiap kali menyimpan. Untuk perubahan yang menyentuh server, backup, antrian, atau mesin project, jalankan file test terkait saja, misalnya `node --test --test-concurrency=1 test/engine-per-project.test.mjs`.
 
-CI GitHub menjalankan **cek sintaks + ESLint + `test:fast`** di setiap push dan pull request (`.github/workflows/test.yml`). Test integrasi yang lebih berat (`test:unit`) berjalan **tiap malam** di Windows dan Ubuntu (`.github/workflows/nightly.yml`), dan bisa dipicu manual dari tab Actions. Test browser (`test:ui`) tetap lokal. Rilis `v*` dibuat sebagai **draft** dan baru dipublikasikan setelah installer Windows, Linux, serta macOS (arm64 + x64) beserta checksum/signature-nya lengkap; catatan rilis diambil dari `CHANGELOG.md`.
+CI GitHub menjalankan **cek sintaks + ESLint + `test:fast`** di setiap push dan pull request (`.github/workflows/test.yml`). Test integrasi yang lebih berat (`test:unit`) berjalan **tiap malam** di Windows dan Ubuntu (`.github/workflows/nightly.yml`), dan test browser (`test:ui`) **tiap Sabtu** di Ubuntu (`.github/workflows/weekly.yml`); keduanya bisa dipicu manual dari tab Actions. Rilis `v*` dibuat sebagai **draft** dan baru dipublikasikan setelah installer Windows, Linux, serta macOS (arm64 + x64) beserta checksum/signature-nya lengkap; catatan rilis diambil dari `CHANGELOG.md`. Draft yang terbengkalai lebih dari 14 hari (beserta tag-nya) dihapus otomatis oleh workflow mingguan.
 
 | Lapis | Isi |
 |---|---|

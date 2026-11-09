@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🧪 Test browser mingguan + pembersihan draft rilis.** Alur chat/HP/dialog diuji di Chrome headless setiap Sabtu di CI (file yang gagal diulang sekali dan dilaporkan flaky). Draft rilis yang terbengkalai lebih dari 14 hari dihapus otomatis beserta tag-nya.
+
 ## 1.0.8
 
 - **🔐 CLI bridge: token sempit.** Launcher tidak lagi mengambil token aplikasi dari halaman HTML; ia meminta token CLI yang hanya diterima `/api/cli-bridge/ask`. File token milik hook tidak bisa dipakai untuk shutdown, backup, atau menjawab izin lain bila bocor.

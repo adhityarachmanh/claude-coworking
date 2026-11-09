@@ -40,6 +40,15 @@ test('build-macos is manual only; tag releases go through release.yml', () => {
   assert.doesNotMatch(workflow, /gh release/);
 });
 
+test('weekly runs the browser suite and cleans abandoned release drafts', () => {
+  const workflow = read('weekly.yml');
+  assert.match(workflow, /schedule:/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /test-support\/ci-tests\.mjs ui/);
+  assert.match(workflow, /14 \* 86400/, 'drafts are only deleted after two weeks');
+  assert.match(workflow, /--cleanup-tag/, 'an abandoned draft takes its tag with it');
+});
+
 test('nightly runs the integration suite on Windows and Linux', () => {
   const workflow = read('nightly.yml');
   assert.match(workflow, /schedule:/);

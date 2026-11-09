@@ -1,0 +1,52 @@
+name: weekly
+
+# The weekly half of CI: browser flows (chat, phone layout, dialogs, approvals) that are too slow for every push,
+# plus housekeeping for release drafts that were never published.
+on:
+  schedule:
+    - cron: '0 17 * * 6' # Saturday 17:00 UTC = Sunday 00:00 WIB
+  workflow_dispatch:
+
+concurrency:
+  group: weekly
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # ci-tests.mjs retries a failing file once and reports it as FLAKY in the summary instead of hiding it.
+      - name: Browser tests (headless Chrome over CDP)
+        run: node test-support/ci-tests.mjs ui
+
+  drafts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4 # gh needs a checkout to resolve the repository
+      - name: Delete abandoned draft releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A draft older than 14 days is an abandoned release (a normal tag publishes in under an hour).
+          TAGS=$(gh release list --limit 100 --json tagName,isDraft,createdAt \
+            --jq '.[] | select(.isDraft) | select((now - (.createdAt | fromdateiso8601)) > 14 * 86400) | .tagName')
+          if [ -z "$TAGS" ]; then
+            echo "Tidak ada draft terbengkalai."
+            exit 0
+          fi
+          for tag in $TAGS; do
+            echo "Menghapus draft $tag"
+            gh release delete "$tag" --yes --cleanup-tag
+          done
