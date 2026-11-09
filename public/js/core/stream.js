@@ -157,6 +157,8 @@ const handlers = {
   chat_update: (update) => onChatUpdate(update),
   // Any project's queue changed: 🌐 Semua antrian redraws itself while it is open (debounced there).
   queue: () => onQueueEvent(),
+  // ▶ A queued item really started: only the "Antrian mulai" event (off by default) shows a popup/sound.
+  'queue-start': (data) => notify('queue', `▶ Antrian mulai — ${projectName(data.project)}`, 'Item yang menunggu mulai berjalan.', data.project),
   chat_reset({ project }) {
     state.chats[project] = [];
     if (project === state.active) renderChat();

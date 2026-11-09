@@ -388,6 +388,7 @@ export class PushService {
       if (type === 'approval') this.onApproval(data);
       else if (type === 'chat') this.onChat(data);
       else if (type === 'queue') this.onQueue(data);
+      else if (type === 'queue-start') this.onQueueStart(data);
     } catch (err) {
       this.warn(`Push: event ${type} gagal diproses: ${err?.message ?? err}`);
     }
@@ -453,6 +454,16 @@ export class PushService {
     this.queuePauses.set(id, s.reason);
     // "Antrian dijeda" follows the device's "Berhenti / error" toggle (Lead decision, Q4).
     this.fanOut('queue', id, () => ({ project: id, role: this.roleName('claude'), label: QUEUE_REASON_LABEL[s.reason] ?? '' }), 'error');
+  }
+
+  /**
+   * ▶ A queued item really started (src/queue.js dispatch broadcasts `queue-start`). Opt-in per device through the
+   * "Antrian mulai" event; the payload carries no prompt text, only the project it belongs to.
+   */
+  onQueueStart(q) {
+    const id = q?.project;
+    if (!id) return;
+    this.fanOut('queue', id, () => ({ project: id, role: this.roleName('claude'), started: true }), 'queue');
   }
 
   /**
@@ -523,6 +534,7 @@ export class PushService {
       projectName: cut(fields.projectName ?? this.hub.projects.get(fields.project)?.name ?? 'project', 40),
       role: cut(fields.role, 40),
       label: cut(fields.label, 60),
+      started: fields.started === true,
       approvalId: cut(fields.approvalId, 200),
       t: fields.t ?? '',
       allowAllowed: fields.allowAllowed === true,

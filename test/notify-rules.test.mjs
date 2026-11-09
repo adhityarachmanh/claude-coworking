@@ -59,6 +59,17 @@ test('inQuietHours: same-day and across-midnight ranges, end exclusive, empty ra
   assert.match(quietError('', '08:00'), /JJ:MM/);
 });
 
+test('▶ Antrian mulai (queue) is opt-in: off by default and independent from the other events', () => {
+  const d = cleanNotifySettings(null);
+  assert.deepEqual(d.events.queue, { popup: false, sound: false });
+  assert.deepEqual(notifyPlan('queue', d, { away: true }), { sound: false, popup: false });
+  const on = cleanNotifySettings({ events: { queue: { popup: true, sound: true } } });
+  assert.deepEqual(notifyPlan('queue', on, { away: true }), { sound: true, popup: true });
+  assert.deepEqual(notifyPlan('queue', on, { away: true, muted: true }), { sound: false, popup: false }, 'project dibisukan');
+  assert.deepEqual(notifyPlan('queue', on, { away: false }), { sound: false, popup: false }, 'sedang dilihat: tidak ada pop-up');
+  assert.deepEqual(notifyPlan('done', on, { away: true }), { sound: true, popup: true }, 'toggle lain tetap');
+});
+
 test('notifyPlan with the defaults reproduces the old behaviour', () => {
   const d = cleanNotifySettings(null);
   for (const kind of ['ask', 'done', 'error']) assert.deepEqual(notifyPlan(kind, d, { away: true }), { sound: true, popup: true }, `${kind} away`);

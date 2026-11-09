@@ -469,8 +469,9 @@ test('🕵️ Data saya: ringkasan ukuran, hapus data per project, filter & eksp
   const answer = await api('/api/data');
   assert.equal(answer.status, 200, JSON.stringify(answer.body));
   const d = answer.body.data;
-  for (const key of ['state', 'chats', 'usage', 'usageArchive', 'queueFiles', 'redo', 'configBackups', 'metrics', 'logs', 'pushHistory', 'trash', 'backups']) assert.ok(d[key] && Number.isFinite(d[key].bytes), key);
+  for (const key of ['state', 'chats', 'usage', 'usageArchive', 'queueFiles', 'redo', 'configBackups', 'metrics', 'logs', 'audit', 'authAudit', 'stateBackups', 'modelPrices', 'claudeCheck', 'pushHistory', 'trash', 'backups']) assert.ok(d[key] && Number.isFinite(d[key].bytes), key);
   assert.ok(Number.isFinite(d.chats.files) && Number.isFinite(d.trash.retentionDays));
+  assert.equal(d.authAudit.retentionDays, 180);
   const clear = await api('/api/data/purge', { target: 'push-history' });
   assert.equal(clear.status, 200);
   assert.equal((await api('/api/data')).body.data.pushHistory.entries, 0);
@@ -482,18 +483,21 @@ test('🕵️ Data saya: ringkasan ukuran, hapus data per project, filter & eksp
   const configBackups = path.join(dataDir, 'opencode-config-backups');
   const metricsFile = path.join(dataDir, 'metrics.json');
   const logFile = path.join(dataDir, 'server.log');
+  const stateBackup = path.join(dataDir, 'state.json.pre-per-project-1700000000000');
   for (const dir of [redoDir, configBackups]) mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(redoDir, 'bundel.json'), '{}');
   writeFileSync(path.join(configBackups, 'opencode.json.bak'), '{}');
   writeFileSync(metricsFile, '{"days":{}}');
   writeFileSync(logFile, 'baris lama\n');
-  for (const target of ['redo', 'config-backups', 'metrics', 'logs']) {
+  writeFileSync(stateBackup, '{}');
+  for (const target of ['redo', 'config-backups', 'metrics', 'logs', 'state-backups']) {
     assert.equal((await api('/api/data/purge', { target })).status, 200, target);
   }
   assert.equal(existsSync(redoDir), false, 'bundel redo dihapus');
   assert.equal(existsSync(configBackups), false, 'backup config OpenCode dihapus');
   assert.equal(existsSync(metricsFile), false, 'riwayat kesehatan dihapus');
   assert.equal(statSync(logFile).size, 0, 'log server dikosongkan');
+  assert.equal(existsSync(stateBackup), false, 'salinan state lama dihapus');
 
   // A throwaway project: its chat/queue/settings go, the project stays listed.
   const dir = path.join(TMP, 'purge-project');

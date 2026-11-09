@@ -175,6 +175,11 @@ function render(data) {
     ['Backup config OpenCode', `${data.configBackups.files} file · ${fmt(data.configBackups.bytes)}`],
     ['Riwayat kesehatan server', `metrics.json · ${fmt(data.metrics.bytes)}`],
     ['Log server', `server.log · ${fmt(data.logs.bytes)}`],
+    ['Audit aksi data', `audit.log · ${fmt(data.audit.bytes)} · maks 500 baris`],
+    ['Audit login akun', `auth-audit.jsonl · ${fmt(data.authAudit.bytes)} · ${data.authAudit.retentionDays} hari`],
+    ['Salinan state lama', `${data.stateBackups.files} file · ${fmt(data.stateBackups.bytes)} · otomatis maks 5 file/30 hari`],
+    ['Cache harga model', `model-prices.json · ${fmt(data.modelPrices.bytes)}`],
+    ['Status kompatibilitas', `claude-check.json · ${fmt(data.claudeCheck.bytes)}`],
     ['Riwayat notifikasi', `${data.pushHistory.entries} entri · ${fmt(data.pushHistory.bytes)}`],
     ['Trash sesi', `${data.trash.files} file · ${fmt(data.trash.bytes)} · otomatis dibersihkan setelah ${data.trash.retentionDays} hari`],
     ['Backup otomatis', `${data.backups.files} file · ${fmt(data.backups.bytes)} · tidak bisa dihapus per project`],
@@ -257,6 +262,7 @@ export function initData() {
   $('#data-purge-config-backups')?.addEventListener('click', () => purge('config-backups', 'Hapus semua backup config OpenCode'));
   $('#data-purge-metrics')?.addEventListener('click', () => purge('metrics', 'Hapus riwayat kesehatan server'));
   $('#data-purge-logs')?.addEventListener('click', () => purge('logs', 'Kosongkan log server'));
+  $('#data-purge-state-backups')?.addEventListener('click', () => purge('state-backups', 'Hapus semua salinan state lama'));
   $('#data-purge-project')?.addEventListener('click', purgeProject);
   $('#data-ret-preview-btn')?.addEventListener('click', previewRetention);
   $('#data-ret-save')?.addEventListener('click', saveRetention);

@@ -308,3 +308,31 @@ test('deferred Auto: cancelling the only item while classifying wakes another pr
     cleanupQueue(hub, tq);
   }
 });
+
+test('⏸ pauseAllForUser / ▶ resumeAllForUser touch only user pauses, never a failed/budget queue', () => {
+  const { hub, tq, projects } = setupTwo();
+  const [p1, p2] = projects;
+  try {
+    tq.add(p1.id, 'satu', null, [], { autoDeferred: true });
+    tq.add(p2.id, 'dua', null, [], { autoDeferred: true });
+
+    // p2 is already paused by a failure: the global pause must not rewrite its reason, and resume must skip it.
+    Object.assign(tq.queues[p2.id], { paused: true, reason: 'failed', pausedAt: Date.now() });
+    assert.equal(tq.pauseAllForUser(), 1, 'hanya antrian yang masih aktif');
+    assert.deepEqual([tq.queues[p1.id].paused, tq.queues[p1.id].reason], [true, 'user']);
+    assert.deepEqual([tq.queues[p2.id].paused, tq.queues[p2.id].reason], [true, 'failed']);
+
+    // A budget pause is equally untouchable.
+    Object.assign(tq.queues[p1.id], { reason: 'budget' });
+    assert.equal(tq.resumeAllForUser(), 0, 'tidak ada antrian yang dijeda user');
+    assert.equal(tq.queues[p1.id].paused, true, 'jeda budget tetap');
+
+    // Back to a user pause: resume brings p1 back, p2 stays failed.
+    Object.assign(tq.queues[p1.id], { reason: 'user' });
+    assert.equal(tq.resumeAllForUser(), 1);
+    assert.equal(tq.queues[p1.id].paused, false);
+    assert.equal(tq.queues[p2.id].paused, true, 'antrian gagal tidak dilanjutkan diam-diam');
+  } finally {
+    cleanupQueue(hub, tq);
+  }
+});

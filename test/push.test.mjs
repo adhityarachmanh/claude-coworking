@@ -254,6 +254,22 @@ test('turn done / error / queue paused: urgency, TTL and Topic per type; no erro
   assert.equal(fresh.inbox(p2).length, 0);
 });
 
+test('▶ queue start: opt-in per device, one push, and the payload never carries prompt text', async () => {
+  const { hub, push, addDevice, inbox } = setup();
+  const off = addDevice('Bawaan');
+  const on = addDevice('Ikut', { settings: { ...SETTINGS, events: { ...SETTINGS.events, queue: { popup: true, sound: true } } } });
+  hub.broadcast('queue-start', { project: 'p1', itemId: 'q_abcdef123456', text: 'isi prompt rahasia' });
+  await push.idle();
+  assert.equal(inbox(off).length, 0, 'antrian mulai mati secara bawaan');
+  const got = inbox(on).filter((m) => m.payload.type === 'queue');
+  assert.equal(got.length, 1);
+  assert.equal(got[0].payload.started, true);
+  assert.equal(got[0].payload.label, '');
+  assert.equal(got[0].payload.silent, false, 'suara mengikuti setelan perangkat');
+  assert.match(got[0].headers.Topic, /^q/);
+  assert.ok(!JSON.stringify(got[0].payload).includes('rahasia'), 'tidak ada isi prompt di payload');
+});
+
 test('quiet hours are evaluated in the phone\'s timezone; ask passes with allowAsk', async () => {
   // 16:30 UTC: 23:30 in Jakarta (quiet 22:00–07:00), 16:30 in London.
   const { hub, push, addDevice, inbox } = setup({ now: Date.parse('2026-11-02T16:30:00Z') });

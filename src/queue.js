@@ -491,12 +491,47 @@ export class TaskQueue {
    */
   pauseAll(reason = 'account') {
     const why = PAUSE_REASONS.includes(reason) ? reason : 'account';
+    let paused = 0;
     for (const [id, q] of Object.entries(this.queues)) {
       if (!q.items.some((i) => i.status === 'waiting' || i.status === 'running')) continue;
       Object.assign(q, { paused: true, reason: why, pausedAt: this.now() });
       this.changed(id); // saved + published at once (no dispatch: the queue is paused now)
+      paused += 1;
       this.hub.chat(id, { kind: 'info', level: 'warning', queue: true, text: '📋 Antrian dijeda: akun berubah. Periksa model lalu lanjutkan.' });
     }
+    return paused;
+  }
+
+  /**
+   * ⏸ Jeda semua antrian yang masih punya pekerjaan, atas permintaan user. Antrian yang sudah dijeda karena
+   * masalah lain (gagal, budget, akun, restart) tidak ditimpa alasannya. Giliran yang sedang berjalan tidak dipotong.
+   * @returns {number} berapa antrian yang baru dijeda
+   */
+  pauseAllForUser() {
+    let paused = 0;
+    for (const [id, q] of Object.entries(this.queues)) {
+      if (q.paused || !q.items.some((i) => i.status === 'waiting' || i.status === 'running')) continue;
+      Object.assign(q, { paused: true, reason: 'user', pausedAt: this.now() });
+      this.changed(id);
+      paused += 1;
+    }
+    return paused;
+  }
+
+  /**
+   * ▶ Lanjutkan hanya antrian yang dijeda oleh user. Antrian yang berhenti karena gagal/budget/akun/restart tetap
+   * dijeda: masalahnya harus dilihat dulu, bukan dihapus oleh satu tombol.
+   * @returns {number} berapa antrian yang dilanjutkan
+   */
+  resumeAllForUser() {
+    let resumed = 0;
+    for (const [id, q] of Object.entries(this.queues)) {
+      if (!q.paused || q.reason !== 'user') continue;
+      Object.assign(q, { paused: false, reason: null, pausedAt: null });
+      this.changed(id);
+      resumed += 1;
+    }
+    return resumed;
   }
 
   /** Sets the budget limits (validated); spending starts again from 0. Both null = no budget. */
@@ -888,6 +923,9 @@ export class TaskQueue {
       this.pauseFor(id, 'failed', `${name} tidak bisa dijalankan`);
       return;
     }
+    // ▶ A real start (the session accepted it): every observer knows, so a phone can announce it if enabled.
+    // Only the project and item id: the payload must never carry prompt text.
+    this.hub.broadcast('queue-start', { project: id, itemId: item.id });
     this.changed(id);
   }
 

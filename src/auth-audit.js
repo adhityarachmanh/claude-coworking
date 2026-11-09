@@ -18,7 +18,9 @@ const ENGINES = new Set(['claude', 'opencode']);
 const READ_MAX_BYTES = 256 * 1024;
 /** Retention: the audit is compacted once it passes this size, keeping 180 days / 2 000 newest actions. */
 const PRUNE_BYTES = 256 * 1024;
-const PRUNE_DAYS = 180;
+/** The login audit keeps this many days (shown as a retention note in 🕵️ Data saya). */
+export const AUTH_AUDIT_RETENTION_DAYS = 180;
+const PRUNE_DAYS = AUTH_AUDIT_RETENTION_DAYS;
 const PRUNE_MAX = 2000;
 
 const CONTROL = /[\u0000-\u001f\u007f]+/g;

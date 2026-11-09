@@ -187,6 +187,21 @@ test('/api/queues: running first-class, global positions across projects, paused
       assert.equal(typeof q.project, 'string');
       assert.equal(typeof q.name, 'string');
     }
+
+    // ⏸ Jeda semua / ▶ Lanjutkan semua: only queues the user paused come back; invalid body is a 400.
+    assert.equal((await api('/api/queues/pause', {})).status, 400, 'paused wajib boolean');
+    const pausedAll = await api('/api/queues/pause', { paused: true });
+    assert.equal(pausedAll.status, 200);
+    assert.equal(pausedAll.body.count, 3, 'A (berjalan) + B/C (menunggu); D sudah dijeda');
+    const pausedView = await allQueues();
+    for (const id of [A, B, C]) assert.equal(pausedView.queues.find((q) => q.project === id)?.paused, true, `${id} dijeda`);
+    assert.equal(pausedView.queues.find((q) => q.project === D)?.paused, true, 'D tetap dijeda');
+    const resumedAll = await api('/api/queues/pause', { paused: false });
+    assert.equal(resumedAll.status, 200);
+    assert.equal(resumedAll.body.count, 4, 'A, B, C, dan D semuanya dijeda user');
+    const resumedView = await allQueues();
+    for (const q of resumedView.queues) assert.equal(q.paused, false, `${q.project} dilanjutkan`);
+    assert.equal(wifiAllows('/api/queues/pause'), false, 'jeda semua adalah aksi, bukan bacaan WiFi');
   } finally {
     await api(`/api/projects/${A}/stop`).catch(() => {});
     for (const id of [A, B, C, D]) {

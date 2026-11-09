@@ -70,6 +70,14 @@ export function register(router) {
     return json(res, 200, { queues, waiting, running });
   }, { maxBody: 1024 });
 
+  // ⏸/▶ Jeda atau lanjutkan semua antrian yang dijeda user. Antrian yang berhenti karena gagal/budget/akun/restart
+  // tidak disentuh, dan giliran yang sedang berjalan tidak dipotong.
+  router.post('/api/queues/pause', ({ taskQueue }, req, res, params, body) => {
+    if (typeof body?.paused !== 'boolean') return json(res, 400, { error: 'paused harus true atau false.' });
+    const count = body.paused ? taskQueue.pauseAllForUser() : taskQueue.resumeAllForUser();
+    return json(res, 200, { ok: true, paused: body.paused, count });
+  }, { maxBody: 1024 });
+
   router.post('/api/projects/:id/queue', withProject(({ taskQueue }, req, res, { id }) => json(res, 200, { queue: taskQueue.view(id) })));
   // 🔁 Retry a failed item once, automatically (per project).
   router.post('/api/projects/:id/queue-retry-once', withProject((ctx, req, res, { id }, body) => {

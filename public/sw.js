@@ -32,6 +32,7 @@ function parsePayload(raw) {
     projectName: text(p.projectName, 40) || 'project',
     role: text(p.role, 40) || 'Tim',
     label: text(p.label, 60),
+    started: p.started === true,
     approvalId: text(p.approvalId, 200),
     t: typeof p.t === 'string' && p.t.length <= 200 ? p.t : '',
     allowAllowed: p.allowAllowed === true,
@@ -68,7 +69,7 @@ function buildNotification(p) {
     ask: `✋ ${p.projectName}: ${p.role} minta izin${p.label ? ` — ${p.label}` : ''}`,
     done: `✓ ${p.projectName}: tugas selesai`,
     error: `■ ${p.projectName}: tugas berhenti`,
-    queue: `⏸ ${p.projectName}: antrian dijeda`,
+    queue: p.started ? `▶ ${p.projectName}: antrian mulai` : `⏸ ${p.projectName}: antrian dijeda`,
     test: p.title || '🔔 Tes notifikasi',
   };
   const bodies = {
@@ -76,7 +77,7 @@ function buildNotification(p) {
     ask: p.t && !p.allowAllowed ? 'Buka app untuk melihat perintahnya' : 'Ketuk untuk melihat detail',
     done: `${p.role} sudah menyelesaikan permintaanmu`,
     error: 'Ketuk untuk melihat di aplikasi',
-    queue: 'Ketuk untuk melihat antrian',
+    queue: p.started ? 'Item yang menunggu mulai berjalan' : 'Ketuk untuk melihat antrian',
     test: p.body || 'Notifikasi dari Adhit Office berfungsi.',
   };
   const ask = p.type === 'ask';

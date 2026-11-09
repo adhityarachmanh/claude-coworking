@@ -74,7 +74,7 @@ Project yang foldernya sudah dipindah/dihapus ditandai **folder hilang** dan bis
    - Angka dalam tanda kurung, misalnya `$1.20 (87%)`, berarti hanya 87% catatan di kelompok itu yang punya biaya.
 6. **⬇ Unduh PDF** memuat tabel yang sama dengan rincian lebih lengkap (per mesin × sumber, per project, sesi teratas). **⬇ CSV** mengunduh angka per periode (input, output, cache, total token, biaya) untuk diolah di spreadsheet.
 
-Rincian **per role** belum tersedia: pemakaian subagent digabung ke sesi induknya. Detail: [Akun & laporan](FITUR.md#akun--laporan).
+Rincian **per role** tersedia di laporan: token, persentase, biaya, dan delegasi per role (termasuk Lead), dengan baris cakupan yang jujur. Detail: [Akun & laporan](FITUR.md#akun--laporan).
 
 ## Meringkas konteks percakapan
 

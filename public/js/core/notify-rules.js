@@ -4,14 +4,16 @@
 // The defaults reproduce the behaviour from before these settings existed: every event type with popup + sound,
 // no quiet hours, every project, full volume.
 
-export const NOTIFY_KINDS = Object.freeze(['ask', 'done', 'error']);
-export const NOTIFY_LABELS = Object.freeze({ ask: 'Minta izin', done: 'Selesai', error: 'Berhenti / error' });
+export const NOTIFY_KINDS = Object.freeze(['ask', 'done', 'error', 'queue']);
+export const NOTIFY_LABELS = Object.freeze({ ask: 'Minta izin', done: 'Selesai', error: 'Berhenti / error', queue: 'Antrian mulai' });
 
 export const NOTIFY_DEFAULTS = Object.freeze({
   events: Object.freeze({
     ask: Object.freeze({ popup: true, sound: true }),
     done: Object.freeze({ popup: true, sound: true }),
     error: Object.freeze({ popup: true, sound: true }),
+    // A runbook can start many items; announcing every start must be opt-in.
+    queue: Object.freeze({ popup: false, sound: false }),
   }),
   quiet: Object.freeze({ enabled: false, from: '22:00', to: '07:00', allowAsk: true }),
   favoritesOnly: false,
@@ -62,7 +64,8 @@ export function cleanNotifySettings(raw) {
   const events = {};
   for (const kind of NOTIFY_KINDS) {
     const e = src.events?.[kind] ?? {};
-    events[kind] = { popup: bool(e.popup, true), sound: bool(e.sound, true) };
+    const d = NOTIFY_DEFAULTS.events[kind];
+    events[kind] = { popup: bool(e.popup, d.popup), sound: bool(e.sound, d.sound) };
   }
   const q = src.quiet ?? {};
   const d = NOTIFY_DEFAULTS.quiet;

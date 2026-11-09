@@ -317,7 +317,7 @@ describe('push-rules', () => {
   test('settings: same shape as the 🔔 dialog + favourites, tz offset, lock-screen switch; 🔔 off = nothing', () => {
     const notify = cleanNotifySettings({ events: { done: { popup: false, sound: true } }, quiet: { enabled: true, from: '23:00', to: '06:30', allowAsk: false }, favoritesOnly: true });
     const s = pushSettings(notify, { on: true, favorites: ['b', 'a', 'a', '', 7], tzOffsetMin: 420, tz: 'Asia/Jakarta', lockscreenAllow: false });
-    assert.deepEqual(s.events, { ask: { popup: true, sound: true }, done: { popup: false, sound: true }, error: { popup: true, sound: true } });
+    assert.deepEqual(s.events, { ask: { popup: true, sound: true }, done: { popup: false, sound: true }, error: { popup: true, sound: true }, queue: { popup: false, sound: false } });
     assert.deepEqual(s.quiet, { enabled: true, from: '23:00', to: '06:30', allowAsk: false });
     assert.equal(s.favoritesOnly, true);
     assert.deepEqual(s.favorites, ['a', 'b']);

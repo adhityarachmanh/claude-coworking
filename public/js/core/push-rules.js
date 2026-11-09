@@ -55,7 +55,7 @@ export function httpsHint(httpsUrl) {
  */
 export function pushSettings(notify, { on = true, favorites = [], tzOffsetMin = 0, tz = '', lockscreenAllow = true } = {}) {
   const events = {};
-  for (const kind of ['ask', 'done', 'error']) {
+  for (const kind of ['ask', 'done', 'error', 'queue']) {
     const e = notify?.events?.[kind] ?? { popup: true, sound: true };
     events[kind] = { popup: Boolean(on && e.popup), sound: Boolean(on && e.sound) };
   }

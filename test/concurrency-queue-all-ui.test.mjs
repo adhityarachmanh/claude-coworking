@@ -263,6 +263,17 @@ test('🌐 Semua antrian: urutan global, dijeda, Batal, Buka, dan auto-refresh e
       message: 'item yang dihapus hilang dari daftar',
     });
 
+    // ⏸ Jeda semua / ▶ Lanjutkan semua from the dialog: the label flips with the state and the list follows.
+    await page.eval(() => {
+      window.confirm = () => true;
+    });
+    assert.equal(await page.eval(() => document.querySelector('#queue-all-pause').textContent.trim()), '⏸ Jeda semua');
+    await page.click('#queue-all-pause');
+    await page.waitFor(() => /antrian dijeda/.test(document.querySelector('#queue-all-summary').textContent), { timeoutMs: 15000, message: 'semua antrian dijeda' });
+    await page.waitFor(() => document.querySelector('#queue-all-pause').textContent.includes('Lanjutkan semua'), { timeoutMs: 15000, message: 'tombol berubah jadi lanjutkan' });
+    await page.click('#queue-all-pause');
+    await page.waitFor(() => !/antrian dijeda/.test(document.querySelector('#queue-all-summary').textContent), { timeoutMs: 15000, message: 'semua antrian dilanjutkan' });
+
     assert.deepEqual(page.problems, [], 'tanpa error konsol/HTTP');
   } finally {
     await api(`/api/projects/${A}/stop`).catch(() => {});

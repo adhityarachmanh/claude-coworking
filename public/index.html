@@ -704,6 +704,7 @@
           <button type="button" id="data-purge-config-backups" class="ghost danger-text" title="Hapus backup konfigurasi OpenCode yang dibuat sebelum perubahan config">🧩 Hapus backup config OpenCode</button>
           <button type="button" id="data-purge-metrics" class="ghost" title="Hapus riwayat kesehatan server (metrics.json)">📈 Hapus riwayat kesehatan</button>
           <button type="button" id="data-purge-logs" class="ghost" title="Kosongkan isi server.log; file tetap dibuat lagi">📝 Kosongkan log server</button>
+          <button type="button" id="data-purge-state-backups" class="ghost" title="Hapus salinan state.json.pre-per-project-*; state.json yang aktif tidak disentuh">🗂 Hapus salinan state lama</button>
         </div>
         <!-- ⏳ Retensi otomatis (features/data.js, server POST /api/data/retention/*): laptop/Tailscale only -->
         <section class="data-retention" aria-labelledby="data-retention-title">
@@ -830,7 +831,7 @@
       <div class="modal-card queue-card queue-all-card" role="dialog" aria-modal="true" aria-labelledby="queue-all-title">
         <div class="modal-head"><b id="queue-all-title">🌐 Semua antrian <small id="queue-all-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <p class="muted small">Urutan global lintas project. Prompt interaktif didahulukan dari runbook/tugas terjadwal, lalu yang paling lama menunggu.</p>
-        <div class="queue-all-tools"><button type="button" id="queue-all-refresh" class="ghost">↻ Muat ulang</button></div>
+        <div class="queue-all-tools"><button type="button" id="queue-all-pause" class="ghost" title="Jeda atau lanjutkan semua antrian yang sedang menunggu">⏸ Jeda semua</button><button type="button" id="queue-all-refresh" class="ghost">↻ Muat ulang</button></div>
         <ol id="queue-all-list" class="queue-all-list" aria-label="Semua item antrian"></ol>
         <p id="queue-all-empty" class="muted" hidden>Tidak ada item antrian.</p>
       </div>
@@ -1223,6 +1224,7 @@
                 <tr><th scope="row">✋ Minta izin</th><td><input id="ns-ask-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Minta izin" /></td><td><input id="ns-ask-sound" type="checkbox" aria-label="Suara untuk Minta izin" /></td></tr>
                 <tr><th scope="row">✓ Selesai</th><td><input id="ns-done-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Selesai" /></td><td><input id="ns-done-sound" type="checkbox" aria-label="Suara untuk Selesai" /></td></tr>
                 <tr><th scope="row">■ Berhenti / error</th><td><input id="ns-error-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Berhenti / error" /></td><td><input id="ns-error-sound" type="checkbox" aria-label="Suara untuk Berhenti / error" /></td></tr>
+                <tr><th scope="row">▶ Antrian mulai</th><td><input id="ns-queue-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Antrian mulai" /></td><td><input id="ns-queue-sound" type="checkbox" aria-label="Suara untuk Antrian mulai" /></td></tr>
               </tbody>
             </table>
           </fieldset>

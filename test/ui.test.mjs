@@ -3308,6 +3308,11 @@ for (const vp of VIEWPORTS) {
           configBackups: { files: 2, bytes: 1024 },
           metrics: { bytes: 256 },
           logs: { bytes: 512 },
+          audit: { bytes: 128 },
+          authAudit: { bytes: 256, retentionDays: 180 },
+          stateBackups: { files: 2, bytes: 640 },
+          modelPrices: { bytes: 320 },
+          claudeCheck: { bytes: 96 },
           pushHistory: { entries: 3, bytes: 512 },
           trash: { files: 2, bytes: 700, retentionDays: 30 },
           backups: { files: 1, bytes: 900 },
@@ -3320,6 +3325,7 @@ for (const vp of VIEWPORTS) {
             window.__dataCalls.push(body);
             if (body.target === 'push-history') data.pushHistory = { entries: 0, bytes: 0 };
             if (body.target === 'redo') data.redo = { files: 0, bytes: 0 };
+            if (body.target === 'state-backups') data.stateBackups = { files: 0, bytes: 0 };
             return Promise.resolve(reply({ ok: true }));
           }
           if (/\/api\/data$/.test(u)) return Promise.resolve(reply({ data, note: 'x' }));
@@ -3328,11 +3334,13 @@ for (const vp of VIEWPORTS) {
         (await import('/js/features/data.js')).openDataPanel();
       });
       try {
-        await page.waitFor(() => document.querySelectorAll('#data-list .data-row').length === 12, { timeoutMs: 4000, message: 'dua belas baris data' });
+        await page.waitFor(() => document.querySelectorAll('#data-list .data-row').length === 17, { timeoutMs: 4000, message: 'tujuh belas baris data' });
         assert.match(await page.eval(() => document.querySelector('#data-list').textContent), /Riwayat chat.*4 file.*4\.0 KB/);
         assert.match(await page.eval(() => document.querySelector('#data-list').textContent), /Trash sesi.*30 hari/);
         assert.match(await page.eval(() => document.querySelector('#data-list').textContent), /Bundel redo.*3 file.*2\.0 KB/);
         assert.match(await page.eval(() => document.querySelector('#data-list').textContent), /Backup config OpenCode.*2 file.*1\.0 KB/);
+        assert.match(await page.eval(() => document.querySelector('#data-list').textContent), /Audit login akun.*180 hari/);
+        assert.match(await page.eval(() => document.querySelector('#data-list').textContent), /Salinan state lama.*2 file/);
         await page.eval(() => document.querySelector('#data-purge-push').click());
         await page.waitFor(() => window.__dataCalls.length === 1, { timeoutMs: 4000, message: 'panggilan hapus riwayat' });
         assert.deepEqual(await page.eval(() => window.__dataCalls[0]), { target: 'push-history' });
@@ -3341,6 +3349,10 @@ for (const vp of VIEWPORTS) {
         await page.waitFor(() => window.__dataCalls.length === 2, { timeoutMs: 4000, message: 'panggilan hapus redo' });
         assert.deepEqual(await page.eval(() => window.__dataCalls[1]), { target: 'redo' });
         await page.waitFor(() => /Bundel redo.*0 file/.test(document.querySelector('#data-list').textContent), { timeoutMs: 4000, message: 'bundel redo kosong' });
+        await page.eval(() => document.querySelector('#data-purge-state-backups').click());
+        await page.waitFor(() => window.__dataCalls.length === 3, { timeoutMs: 4000, message: 'panggilan hapus salinan state' });
+        assert.deepEqual(await page.eval(() => window.__dataCalls[2]), { target: 'state-backups' });
+        await page.waitFor(() => /Salinan state lama.*0 file/.test(document.querySelector('#data-list').textContent), { timeoutMs: 4000, message: 'salinan state kosong' });
         await page.press('Escape');
         assert.deepEqual(realProblems(page), []);
       } finally {

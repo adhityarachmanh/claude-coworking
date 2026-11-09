@@ -5,6 +5,7 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { TRASH_RETENTION_DAYS } from '../session-admin.js';
 import { readAudit, recordAudit } from '../audit-log.js';
+import { AUTH_AUDIT_RETENTION_DAYS } from '../auth-audit.js';
 import { DEMO_ID } from '../hub.js';
 import { removeProjectBundles } from '../redo.js';
 import { applyRetention, isRetentionDays, retentionOf, retentionPreview, setRetention } from '../retention.js';
@@ -48,11 +49,21 @@ function fileBytes(file) {
   }
 }
 
+/** The `state.json.pre-per-project-*` copies at the top of the data folder (hub caps them at 5 / 30 days). */
+function preProjectBackups(dir) {
+  try {
+    return readdirSync(dir).filter((name) => /^state\.json\.pre-per-project-\d+$/.test(name));
+  } catch {
+    return [];
+  }
+}
+
 export function register(router) {
   router.post('/api/data', ({ hub, ledger, push, dataDir }, req, res, params, body) => {
     const chats = sizeOf(path.join(dataDir, 'chats'));
     const chatsOpenCode = sizeOf(path.join(dataDir, 'chats-opencode'));
     const trash = path.join(dataDir, 'trash');
+    const preProject = preProjectBackups(dataDir);
     const wanted = typeof body?.auditAction === 'string' ? body.auditAction : '';
     const audit = readAudit(dataDir, 200).filter((e) => !wanted || e.action === wanted).slice(0, 30);
     return json(res, 200, {
@@ -66,11 +77,16 @@ export function register(router) {
         configBackups: { files: countFiles(path.join(dataDir, 'opencode-config-backups')), bytes: sizeOf(path.join(dataDir, 'opencode-config-backups')) },
         metrics: { bytes: fileBytes(path.join(dataDir, 'metrics.json')) },
         logs: { bytes: fileBytes(path.join(dataDir, 'server.log')) },
+        audit: { bytes: fileBytes(path.join(dataDir, 'audit.log')) },
+        authAudit: { bytes: fileBytes(path.join(dataDir, 'auth-audit.jsonl')), retentionDays: AUTH_AUDIT_RETENTION_DAYS },
+        stateBackups: { files: preProject.length, bytes: preProject.reduce((n, name) => n + fileBytes(path.join(dataDir, name)), 0) },
+        modelPrices: { bytes: fileBytes(path.join(dataDir, 'model-prices.json')) },
+        claudeCheck: { bytes: fileBytes(path.join(dataDir, 'claude-check.json')) },
         pushHistory: { entries: push?.history?.length ?? 0, bytes: fileBytes(path.join(dataDir, 'push-history.json')) },
         trash: { files: countFiles(trash), bytes: sizeOf(trash), retentionDays: TRASH_RETENTION_DAYS },
         backups: { bytes: sizeOf(path.join(dataDir, 'backup-schedule')), files: countFiles(path.join(dataDir, 'backup-schedule')) },
       },
-      note: 'Retensi di bawah menghapus pesan chat aplikasi dan baris laporan pemakaian yang lebih lama dari batas; transkrip sesi dan backup tidak disentuh. Hapus data project juga menghapus redo dan lampiran antrian project itu. Backup yang sudah dibuat tidak bisa dihapus per project.',
+      note: 'Retensi di bawah menghapus pesan chat aplikasi dan baris laporan pemakaian yang lebih lama dari batas; transkrip sesi dan backup tidak disentuh. Hapus data project juga menghapus redo dan lampiran antrian project itu. Backup yang sudah dibuat tidak bisa dihapus per project. Audit aksi (audit.log) dan audit login (auth-audit.jsonl, 180 hari) hanya ditampilkan sebagai bukti, tidak dihapus dari panel ini.',
       audit,
       retention: retentionOf(hub),
     });
@@ -143,7 +159,7 @@ export function register(router) {
     res.end(`\uFEFF${csv}\r\n`);
   }, { maxBody: 1024 });
 
-  router.post('/api/data/purge', async ({ push, metrics, dataDir }, req, res, params, body) => {
+  router.post('/api/data/purge', async ({ push, metrics, hub, dataDir }, req, res, params, body) => {
     const target = String(body?.target ?? '');
     const purgeDir = async (name, label, detail) => {
       try {
@@ -163,6 +179,15 @@ export function register(router) {
     if (target === 'trash') return purgeDir('trash', 'trash', 'trash sesi');
     if (target === 'redo') return purgeDir('redo', 'redo', 'bundel redo');
     if (target === 'config-backups') return purgeDir('opencode-config-backups', 'backup config OpenCode', 'backup config OpenCode');
+    if (target === 'state-backups') {
+      try {
+        hub?.prunePreProjectBackups?.({ keep: 0, maxAgeDays: 0 });
+      } catch (err) {
+        return json(res, 500, { error: `Gagal menghapus salinan state lama: ${err.message}` });
+      }
+      recordAudit(dataDir, { action: 'data-purge', detail: 'salinan state lama' });
+      return json(res, 200, { ok: true, target });
+    }
     if (target === 'metrics') {
       try {
         metrics?.reset?.();
