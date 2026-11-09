@@ -2,7 +2,7 @@
 // One stream per browser, shared by every tab of this origin (core/stream-share.js).
 import { onAccountAlert, onAccountState, renderAccountButton } from '../features/account.js';
 import { appendActivity } from '../features/activity.js';
-import { scheduleAttention } from '../features/attention.js';
+import { scheduleAttention, loadAttention } from '../features/attention.js';
 import { scheduleChanges } from '../features/changes.js';
 import { appendChat, renderChat, replaceChat, scheduleReplace } from '../features/chat.js';
 import { applyClaudeCheck } from '../features/claude-check.js';
@@ -89,6 +89,7 @@ const handlers = {
     applyClaudeCheck(snap.config?.claudeCheck); // after state.readOnly: WiFi gets the passive notice
     applyOpenCodeCheck(snap.config?.opencodeCheck);
     applyAppUpdate(snap.config?.appUpdate); // ⬆ a newer Adhit Office (banner)
+    loadAttention(); // after state.readOnly: a WiFi page skips it instead of earning a 403
   },
   'pairing-reset'() {
     // Too many wrong codes on a phone: the shown code is dead, show the new one right away.

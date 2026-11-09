@@ -2,7 +2,7 @@
 // the fallback when the console/token is unavailable. No real network and no real OpenCode here.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { consoleForPeriod, consoleRequestLogs, consoleRequestTotals, goConsoleSnapshot, normalizeConsoleActivity, normalizeConsoleStatus, normalizeRequestLogs, normalizeUsageModels, normalizeUsageSummary, planOf } from '../src/opencode-console.js';
+import { consoleForPeriod, consoleRequestLogs, consoleRequestTotals, consoleRequestTotalsCached, goConsoleSnapshot, normalizeConsoleActivity, normalizeConsoleStatus, normalizeRequestLogs, normalizeUsageModels, normalizeUsageSummary, planOf } from '../src/opencode-console.js';
 
 const status = {
   subscriberUserId: 'acc_secret',
@@ -204,6 +204,7 @@ test('normalizeRequestLogs: safe request fields only, no ids/headers/geo', () =>
   assert.equal(view.items[0].costUsd, 0.00502063);
   assert.equal(view.items[0].finishReason, 'stop');
   assert.equal(view.nextCursor, 'next-page');
+  assert.equal(view.cursorDropped, false);
   assert.equal(view.retentionDays, 30);
   const json = JSON.stringify(view);
   for (const secret of ['req_secret', 'wrk_secret', 'ses_secret', 'acc_secret', 'authorization', 'Jakarta']) assert.equal(json.includes(secret), false, secret);
@@ -276,6 +277,39 @@ test('consoleRequestTotals: walks cursor pages and sums provider cost/tokens for
   });
   assert.equal(truncated.truncated, true);
   assert.equal(truncated.pages, 1);
+
+  const dropped = await consoleRequestTotals(bin, {
+    sessionId: 'ses_abcdef',
+    readToken: async () => 'tok',
+    fetch: async () => ({ ok: true, json: async () => ({ items: [{ startedAt: 1, model: 'm', cost: 0.1 }], nextCursor: 'x'.repeat(501) }) }),
+  });
+  assert.equal(dropped.truncated, true, 'a dropped cursor is never reported as complete');
+});
+
+test('consoleRequestTotalsCached: parallel/duplicate reports share one page walk', async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const page = { ok: true, json: async () => ({ items: [{ startedAt: 1, model: 'm', cost: 0.2, inputTokens: 7 }], nextCursor: null }) };
+  const opts = {
+    sessionId: 'ses_cached_1',
+    since: 1,
+    readToken: async () => 'tok_cached',
+    fetch: async () => {
+      calls += 1;
+      await gate;
+      return page;
+    },
+  };
+  const first = consoleRequestTotalsCached(bin, opts);
+  const second = consoleRequestTotalsCached(bin, opts);
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(calls, 1, 'the in-flight walk is shared');
+  assert.deepEqual(a.totals, b.totals);
+  const cached = await consoleRequestTotalsCached(bin, { ...opts, fetch: async () => { calls += 1; return page; } });
+  assert.equal(calls, 1, 'a successful result is reused for a minute');
+  assert.deepEqual(cached.totals, a.totals);
 });
 
 test('goConsoleSnapshot: missing token / 401 / network / bad shape fall back without throwing', async () => {

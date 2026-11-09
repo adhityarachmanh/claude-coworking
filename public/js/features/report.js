@@ -369,7 +369,7 @@ function renderReportProvider(go) {
   const modelRows = models.map((m) => `<tr><td>${escapeHtml(m.model)}</td><td>${fmtNum(m.requests)}</td></tr>`).join('');
   const sessions = Array.isArray(go.sessions) ? go.sessions : [];
   const sessionRows = sessions
-    .map((s) => `<tr><td>${escapeHtml(String(s.key ?? '').split('|')[0])} · ${escapeHtml(String(s.sessionId ?? '').slice(0, 8))}</td><td>${fmtNum(s.requests)}</td><td>${fmtShort(s.tokens)}</td><td>${fmtUsd(s.costUsd)}${s.truncated ? ' (sebagian)' : ''}</td></tr>`)
+    .map((s) => `<tr><td>${escapeHtml(s.project ?? '-')} · ${escapeHtml(String(s.sessionId ?? '').slice(0, 8))}</td><td>${fmtNum(s.requests)}</td><td>${fmtShort(s.tokens)}</td><td>${fmtUsd(s.costUsd)}${s.truncated ? ' (sebagian)' : ''}</td></tr>`)
     .join('');
   box.hidden = false;
   box.innerHTML = `<h4 class="report-sub">OpenCode Go — data provider</h4>
@@ -435,9 +435,10 @@ async function previewReport() {
   }
 }
 
-/** One CSV field: quoted only when it contains a comma, quote or newline. */
+/** One CSV field: quoted when needed, and never allowed to start a spreadsheet formula. */
 const csvCell = (v) => {
-  const s = String(v ?? '');
+  let s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
@@ -480,7 +481,7 @@ function downloadCsv() {
     for (const d of Array.isArray(go.daily) ? go.daily : []) lines.push([d.date, d.costUsd ?? 0, d.tokens ?? 0, d.requests ?? 0].map(csvCell).join(','));
     for (const m of Array.isArray(go.models) ? go.models : []) lines.push([`Model ${m.model}`, '', '', m.requests ?? 0].map(csvCell).join(','));
     for (const s of Array.isArray(go.sessions) ? go.sessions : []) {
-      lines.push([`Sesi ${String(s.key ?? '').split('|')[0]} · ${String(s.sessionId ?? '').slice(0, 8)}`, s.costUsd ?? 0, s.tokens ?? 0, s.requests ?? 0].map(csvCell).join(','));
+      lines.push([`Sesi ${s.project ?? '-'} · ${String(s.sessionId ?? '').slice(0, 8)}`, s.costUsd ?? 0, s.tokens ?? 0, s.requests ?? 0].map(csvCell).join(','));
     }
   }
   const name = `laporan-token-${new Date(s.from).toLocaleDateString('sv-SE')}-${new Date(s.to).toLocaleDateString('sv-SE')}.csv`;

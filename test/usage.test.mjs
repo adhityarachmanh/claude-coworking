@@ -270,11 +270,21 @@ test('a 7-day range with usage only today still shows all 7 days (the empty ones
   assert.equal(byPeriod(rows, { from, to: now, unit: 'month' }).length, 1, 'still one month: the UI disables "per bulan" here');
 });
 
+test('byPeriod bounds a huge or invalid range instead of building an endless array', () => {
+  const now = Date.now();
+  const rows = [{ ts: now, input: 1, output: 0, cacheRead: 0, cacheWrite: 0 }];
+  assert.deepEqual(byPeriod(rows, { from: 0, to: Infinity, unit: 'day' }), [], 'a non-finite range returns nothing');
+  assert.equal(byPeriod(rows, { from: now - 86_400_000, to: now, unit: 'day' }).length, 2);
+  const huge = byPeriod(rows, { from: 1, to: now, unit: 'month' });
+  assert.equal(huge.length, 400, 'at most the latest 400 periods are materialized');
+  assert.ok(huge.at(-1).total >= 1, 'the newest period still has the row');
+});
+
 test('an OpenCode report labels local usage and says provider quota is unavailable', () => {
   const summary = summarize([], { from: 0, to: Date.now() });
   const html = reportHtml({ account: { id: 'opencode', email: 'OpenCode', org: null }, profile: null, limits: null, summary });
-  assert.match(html, /pemakaian lokal/);
-  assert.match(html, /sisa kuota provider/);
+  assert.match(html, /Biaya tabel lokal berasal dari ledger/);
+  assert.match(html, /OpenCode Go — data provider/);
   assert.doesNotMatch(html, /Estimasi harga list dari Claude Code/);
 });
 

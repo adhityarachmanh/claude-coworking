@@ -54,7 +54,7 @@ function providerSection(go) {
   const modelRows = models.map((m) => `<tr><td>${esc(m.model)}</td><td>${num(m.requests)}</td></tr>`).join('');
   const sessions = Array.isArray(go.sessions) ? go.sessions : [];
   const sessionRows = sessions
-    .map((s) => `<tr><td>${esc(String(s.key ?? '').split('|')[0])} · ${esc(String(s.sessionId ?? '').slice(0, 8))}</td><td>${num(s.requests)}</td><td>${num(s.tokens)}</td><td>${esc(usd(s.costUsd))}${s.truncated ? ' (sebagian)' : ''}</td></tr>`)
+    .map((s) => `<tr><td>${esc(s.project ?? '-')} · ${esc(String(s.sessionId ?? '').slice(0, 8))}</td><td>${num(s.requests)}</td><td>${num(s.tokens)}</td><td>${esc(usd(s.costUsd))}${s.truncated ? ' (sebagian)' : ''}</td></tr>`)
     .join('');
   return `<h2>OpenCode Go — data provider</h2>
   <p><b>${esc(plan)}</b>${active ? ` · aktif sampai ${esc(active)}` : ''} · <span class="muted">sumber: OpenCode Console</span></p>

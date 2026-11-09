@@ -230,9 +230,11 @@ export function normalizeRequestLogs(raw) {
       };
     })
     .filter(Boolean);
+  const nextCursor = typeof raw.nextCursor === 'string' && raw.nextCursor.length <= 500 ? raw.nextCursor : null;
   return {
     items,
-    nextCursor: typeof raw.nextCursor === 'string' && raw.nextCursor.length <= 500 ? raw.nextCursor : null,
+    nextCursor,
+    cursorDropped: Boolean(raw.nextCursor) && !nextCursor,
     until: typeof raw.until === 'string' ? raw.until : null,
     retentionDays: num(raw.retentionDays) ?? null,
   };
@@ -282,6 +284,7 @@ export async function consoleRequestTotals(bin, { sessionId = '', since = Date.n
   let cursor = '';
   let pages = 0;
   let next = null;
+  let dropped = false;
   let retentionDays = null;
   while (pages < maxPages && Date.now() - start < maxMs) {
     const url = new URL(REQUEST_LOGS_PATH, CONSOLE_ORIGIN);
@@ -308,6 +311,7 @@ export async function consoleRequestTotals(bin, { sessionId = '', since = Date.n
       break;
     }
     retentionDays = page.retentionDays ?? retentionDays;
+    dropped = dropped || page.cursorDropped;
     for (const item of page.items) {
       totals.requests += 1;
       totals.tokens += (item.inputTokens ?? 0) + (item.outputTokens ?? 0) + (item.reasoningTokens ?? 0) + (item.cacheReadTokens ?? 0) + (item.cacheWriteTokens ?? 0);
@@ -319,7 +323,35 @@ export async function consoleRequestTotals(bin, { sessionId = '', since = Date.n
     cursor = next;
   }
   totals.costUsd = Math.round(totals.costUsd * 1e6) / 1e6;
-  return { available: true, totals, pages, truncated: Boolean(next), retentionDays };
+  return { available: true, totals, pages, truncated: Boolean(next) || dropped, retentionDays };
+}
+
+const totalsCache = new Map();
+const totalsInFlight = new Map();
+const TOTALS_MS = 60_000;
+
+/**
+ * Cached, single-flight `consoleRequestTotals`: repeated reports in the same minute share one page walk, so a
+ * browser (or a read-only WiFi device) cannot multiply console requests. Only successful results are cached.
+ */
+export function consoleRequestTotalsCached(bin, opts = {}) {
+  // `since` moves with the clock (a 30-day window is computed per request): bucket it to 5 minutes so a repeated
+  // report still hits the one-minute cache instead of walking the same session again.
+  const since = Number(opts.since);
+  const sinceBucket = Number.isFinite(since) && since > 0 ? Math.floor(since / 300_000) * 300_000 : '';
+  const key = `${keyOf(bin)}|${opts.sessionId ?? ''}|${sinceBucket}|${opts.maxPages ?? 20}|${opts.maxMs ?? 8_000}`;
+  const hit = totalsCache.get(key);
+  if (hit && Date.now() - hit.at < TOTALS_MS) return Promise.resolve(hit.value);
+  const running = totalsInFlight.get(key);
+  if (running) return running;
+  const pending = consoleRequestTotals(bin, opts)
+    .then((value) => {
+      if (value?.available) totalsCache.set(key, { at: Date.now(), value });
+      return value;
+    })
+    .finally(() => totalsInFlight.delete(key));
+  totalsInFlight.set(key, pending);
+  return pending;
 }
 
 /** One JSON request; a non-2xx is a status, never a thrown error with a body that could carry a secret. */async function getJson(fetchImpl, url, token) {
@@ -339,8 +371,30 @@ export async function consoleAccessToken(bin, { fresh = false, cache = defaultTo
   if (!key) return null;
   const at = Date.now();
   const hit = cache.get(key);
-  if (!fresh && hit && at - hit.at < TOKEN_MS) return hit.token;
-  const token = await new Promise((resolve) => {
+  // A missing token is cached briefly too: parallel calls share one CLI spawn instead of a storm of them.
+  if (!fresh && hit && at - hit.at < (hit.token ? TOKEN_MS : FAILURE_MS)) return hit.token;
+  const flightKey = `${key}|${fresh ? 'fresh' : 'cached'}`;
+  const running = tokenInFlight.get(flightKey);
+  if (running) return running;
+  const pending = readTokenFromOpenCode(bin)
+    .then((token) => {
+      cache.set(key, { at: Date.now(), token });
+      return token;
+    })
+    .finally(() => tokenInFlight.delete(flightKey));
+  tokenInFlight.set(flightKey, pending);
+  return pending;
+}
+
+/** Drops the cached console token (logout/credential change); the next call reads OpenCode again. */
+export function clearConsoleTokenCache() {
+  defaultTokenCache.clear();
+  tokenInFlight.clear();
+}
+
+/** One CLI read of `opencode auth export opencode`; never includes stdout/stderr in a value or an error. */
+function readTokenFromOpenCode(bin) {
+  return new Promise((resolve) => {
     try {
       execFileTree(
         bin.command,
@@ -362,12 +416,10 @@ export async function consoleAccessToken(bin, { fresh = false, cache = defaultTo
       resolve(null);
     }
   });
-  if (!token) return null;
-  cache.set(key, { at, token });
-  return token;
 }
 
 const defaultTokenCache = new Map();
+const tokenInFlight = new Map();
 const defaultSnapshotCache = new Map();
 
 /**

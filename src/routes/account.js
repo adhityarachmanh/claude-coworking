@@ -10,7 +10,7 @@ import { readModelPrices } from '../model-prices.js';
 import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
 import { GO_PLANS, goAllowance } from '../opencode-go.js';
-import { consoleForPeriod, consoleRequestLogs, consoleRequestTotals, goConsoleSnapshot } from '../opencode-console.js';
+import { clearConsoleTokenCache, consoleForPeriod, consoleRequestLogs, consoleRequestTotals, consoleRequestTotalsCached, goConsoleSnapshot } from '../opencode-console.js';
 import { renderPdf, reportHtml } from '../report.js';
 import { roleUsage } from '../role-usage.js';
 import { openCodeRoleSessions } from '../opencode-role-usage.js';
@@ -136,12 +136,11 @@ export function register(router) {
     if (model && !/^[\w.:@/+-]{1,120}$/.test(model)) throw Object.assign(new Error('Model tidak valid.'), { status: 400 });
     const cursor = typeof body?.cursor === 'string' ? body.cursor : '';
     if (cursor.length > 500) throw Object.assign(new Error('Cursor tidak valid.'), { status: 400 });
-    const since = Number(body?.since);
     return consoleRequestLogs(bin, {
       sessionId,
       model,
       cursor,
-      since: Number.isFinite(since) && since > 0 ? since : undefined,
+      since: consoleSince(body?.since),
       limit: body?.limit,
     });
   }));
@@ -149,8 +148,7 @@ export function register(router) {
   router.post('/api/opencode/request-totals', openCode(async (bin, body) => {
     const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : '';
     if (!/^ses_[A-Za-z0-9_-]{1,100}$/.test(sessionId)) throw Object.assign(new Error('Session ID tidak valid.'), { status: 400 });
-    const since = Number(body?.since);
-    return consoleRequestTotals(bin, { sessionId, since: Number.isFinite(since) && since > 0 ? since : undefined });
+    return consoleRequestTotals(bin, { sessionId, since: consoleSince(body?.since) });
   }));
   router.post('/api/opencode/login/key', audited('login-key', (body) => body.provider, (bin, body, ctx) => openCodeConnectKey(bin, body.provider, body).then(loggedIn(ctx)).then(phoneAlert(ctx, 'login', body.provider))));
   router.post('/api/opencode/login/oauth', audited('oauth-start', (body) => body.provider, (bin, body, ctx) => openCodeOAuthStart(bin, body.provider, body).then(phoneAlert(ctx, 'login', body.provider))));
@@ -209,6 +207,15 @@ async function oAuthStatus(bin, body, ctx) {
 
 const OPENCODE_LOGOUT_CONFIRM = 'LOGOUT';
 const CREDENTIAL_ID = /^[\w.-]{1,100}$/;
+const CONSOLE_LOOKBACK_MS = 90 * 86_400_000;
+
+/** A client-supplied `since`: never in the future, never older than 90 days (bounded provider scans). */
+function consoleSince(value) {
+  const at = Number(value);
+  if (!Number.isFinite(at) || at <= 0) return undefined;
+  const now = Date.now();
+  return Math.min(now, Math.max(now - CONSOLE_LOOKBACK_MS, at));
+}
 
 /** The provider a stored credential belongs to, from the providers list; null when unknown or already gone. */
 async function providerOfCredential(bin, credentialID) {
@@ -267,6 +274,7 @@ async function openCodeLogoutRoute(bin, body, ctx) {
 
 /** Credentials changed: idle OpenCode processes restart with them on the next prompt (busy ones after their turn). */
 const loggedIn = (ctx) => (result) => {
+  clearConsoleTokenCache(); // logout/login/cabut kredensial: never reuse a console token from before
   ctx.sessions.openCodeAccountChanged?.(); // only OpenCode sessions: an ACP process is unchanged by a Claude login
   // A provider came or went: every queue pauses until the user has checked the model (never a silent replacement).
   ctx.taskQueue?.pauseAll('account');
@@ -393,8 +401,14 @@ async function report(ctx, req, res, body, { pdf: wantPdf }) {
   const accountId = requestedAccount(ctx, view, body.accountId);
   if (accountId === null) return json(res, 404, { error: 'Akun tidak dikenal.' });
   const all = accountId === 'all';
-  const to = Number(body.to) || Date.now();
-  const from = Number(body.from) || 0;
+  // A report period is client-provided: clamp it to finite values, never beyond tomorrow, and to 10 years.
+  const now = Date.now();
+  const askedTo = Number(body.to);
+  const askedFrom = Number(body.from);
+  const to = Number.isFinite(askedTo) && askedTo > 0 ? Math.min(askedTo, now + 86_400_000) : now;
+  let from = Number.isFinite(askedFrom) && askedFrom > 0 ? askedFrom : 0;
+  if (from > to) from = 0;
+  if (from && to - from > 3_650 * 86_400_000) from = to - 3_650 * 86_400_000;
   const rows = ledger.query({ accountId, from, to });
   const groupBy = PERIOD_UNITS.includes(body.groupBy) ? body.groupBy : 'day';
   const summary = summarize(rows, { from: from || (rows[0]?.ts ?? to), to, groupBy });
@@ -407,10 +421,13 @@ async function report(ctx, req, res, body, { pdf: wantPdf }) {
     console.error(`Per-role usage tidak bisa dihitung: ${err?.message ?? err}`);
   }
   // OpenCode Go provider data is account-wide (no project/role dimension): only for the OpenCode or combined report.
+  // A read-only WiFi viewer gets no provider calls at all: reports are cheap to repeat and must not fan out to console.
   let opencodeGo = null;
-  if (ctx.opencode && (all || accountId === OPENCODE_ACCOUNT.id)) {
+  if (ctx.opencode && !view && (all || accountId === OPENCODE_ACCOUNT.id)) {
     try {
-      const snapshot = await goConsoleSnapshot(ctx.opencode, { now: () => to });
+      // Server time for the cache TTL; the requested period only filters the daily rows below. A client-supplied
+      // future `to` must never bypass the 60-second console cache.
+      const snapshot = await goConsoleSnapshot(ctx.opencode);
       opencodeGo = consoleForPeriod(snapshot, from, to);
       // Exact provider cost for the OpenCode sessions that made it into the report's top ten (bounded, in parallel).
       if (opencodeGo && Array.isArray(summary.topSessions)) {
@@ -421,12 +438,11 @@ async function report(ctx, req, res, body, { pdf: wantPdf }) {
           .slice(0, 5);
         const providerSessions = await Promise.all(
           targets.map(async ({ s, sessionId }) => {
-            const t = await consoleRequestTotals(ctx.opencode, { sessionId, since: from > 0 ? from : undefined, maxMs: 2500, maxPages: 5 }).catch(() => null);
+            const t = await consoleRequestTotalsCached(ctx.opencode, { sessionId, since: from > 0 ? from : undefined, maxMs: 2500, maxPages: 5 }).catch(() => null);
             if (!t?.available) return null;
             return {
-              key: s.key,
               project: String(s.key ?? '').split('|')[0],
-              sessionId,
+              sessionId: sessionId.slice(0, 8), // the report only shows a short label; the full id stays out of the JSON
               requests: t.totals.requests,
               tokens: t.totals.tokens,
               costUsd: t.totals.costUsd,

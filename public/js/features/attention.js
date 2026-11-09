@@ -92,6 +92,8 @@ export function renderAttention() {
 }
 
 export async function loadAttention({ force = false } = {}) {
+  // The list can name tools/files and is laptop/Tailscale-only; a read-only WiFi page must not even try.
+  if (state.readOnly) return;
   if (attention.loading) return;
   if (!force && Date.now() - attention.at < MIN_GAP_MS) return;
   attention.loading = true;
@@ -158,6 +160,6 @@ export function initAttention() {
   $('#dash-attention-note')?.addEventListener('click', (e) => {
     if (e.target.closest('[data-attention-restore]')) restoreSnoozes();
   });
-  loadAttention();
+  // The first load waits for the snapshot (state.readOnly), so a WiFi page never sends a refused request.
   setInterval(() => loadAttention(), 60_000).unref?.();
 }

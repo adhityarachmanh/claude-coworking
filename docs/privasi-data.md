@@ -44,10 +44,14 @@ hapus file ZIP-nya sendiri bila perlu.
 - Token **tidak** dikirim ke browser, tidak dicatat di log aplikasi, dan tidak masuk backup.
 - Data yang diambil: paket/kuota, aktivitas harian, usage per model, dan request log (model, app, durasi,
   token, biaya, status). Aplikasi **membuang** `userID`, `workspaceID`, `requestID`, header, metadata,
-  negara/kota, dan tidak pernah mengambil isi prompt/jawaban.
-- Hasil console di-cache di memori sebentar (±60 detik), tidak disimpan ke disk.
-- Untuk mencabut akses: logout **OpenCode Console** di OpenCode, atau hapus kredensialnya. Setelah itu
-  panel kembali ke estimasi lokal.
+  negara/kota, dan tidak pernah mengambil isi prompt/jawaban. `nextCursor` dari provider dikirim sebagai
+  handle pagination opaque; `sessionID` di laporan dipotong menjadi 8 karakter.
+- Hasil console di-cache di memori sebentar (±60 detik), termasuk total per sesi; tidak disimpan ke disk.
+- Data request log dan total/biaya per sesi juga dapat muncul di laporan, PDF, dan CSV. Laporan dari
+  perangkat **WiFi hanya-baca tidak memanggil console**; bagian provider hanya tersedia dari laptop atau
+  Tailscale (akses penuh).
+- Token console di-cache di memori paling lama ±5 menit; cache dibuang saat login/logout atau kredensial
+  berubah. Setelah logout atau kredensial dihapus, panel kembali ke estimasi lokal.
 - Endpoint console bersifat internal/undocumented; bila berubah, aplikasi kembali ke estimasi dan tidak
   mengirim data tambahan.
 
@@ -94,7 +98,8 @@ memakai data sensitif.
 |---|---|---|
 | Prompt berisi data pribadi terkirim ke provider | kendali di sisi pengguna; provider punya kebijakan sendiri | sedang |
 | Token OpenCode Console bocor | hanya dibaca server, tidak ke browser/log/backup; cache memori | rendah |
-| Request log memuat identitas | field pribadi dibuang sebelum keluar server | rendah |
+| Request log memuat identitas | field pribadi dibuang sebelum keluar server; sessionID laporan dipotong | rendah |
+| Data provider di laporan dibuka dari WiFi | WiFi hanya-baca tidak memanggil console; laporan tetap dari cache laptop | rendah |
 | Backup ZIP berisi transkrip | enkripsi `.aob` opsional; backup immutable per project | sedang |
 | HP hilang / WiFi disadap | pairing, cookie, WiFi hanya-baca, Tailscale HTTPS | rendah–sedang |
 | Audit log tumbuh | batas 500 baris / 180 hari / 2.000 aksi | rendah |

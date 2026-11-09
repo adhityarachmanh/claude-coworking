@@ -382,6 +382,14 @@ function nextPeriod(start, unit) {
   return d.getTime();
 }
 
+/** Start of the previous period (calendar-aware, mirror of nextPeriod). */
+function previousPeriod(start, unit) {
+  const d = new Date(start);
+  if (unit === 'month') d.setMonth(d.getMonth() - 1);
+  else d.setDate(d.getDate() - (unit === 'week' ? 7 : 1));
+  return d.getTime();
+}
+
 /** Today (local) across every account: recorded cost + coverage, turns, tokens, projects and sessions. */
 export function daySummary(ledger, now = Date.now()) {
   const from = periodStart(now, 'day');
@@ -445,9 +453,14 @@ export function byPeriod(rows, { from, to, unit = 'day' }) {
     buckets.get(key).push(r);
   }
   const first = from || rows.reduce((min, r) => Math.min(min, r.ts), to); // no range start: begin at the first record
+  const end = Number(to);
+  // A bad/huge range must never build an unbounded array: walk at most MAX_PERIODS back from the last period.
+  if (!Number.isFinite(first) || !Number.isFinite(end) || first > end) return [];
+  const firstStart = periodStart(first, unit);
   const starts = [];
-  for (let start = periodStart(first, unit); start <= to; start = nextPeriod(start, unit)) starts.push(start);
-  return starts.slice(-MAX_PERIODS).map((start) => ({
+  for (let start = periodStart(end, unit); start >= firstStart && starts.length < MAX_PERIODS; start = previousPeriod(start, unit)) starts.push(start);
+  starts.reverse();
+  return starts.map((start) => ({
     start: Math.max(start, first),
     end: Math.min(nextPeriod(start, unit) - 1, to),
     ...totals(buckets.get(start) ?? []),
