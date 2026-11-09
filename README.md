@@ -266,12 +266,12 @@ npm run test:ui      # test browser per file; yang gagal diulang sekali dan dila
 npm test             # semuanya (unit + UI), paling lambat
 npm run test:claude  # kontrak ke Claude Code asli (beberapa request Haiku, memakai akunmu)
 npm run test:opencode  # kontrak ke OpenCode asli: cek tanpa token + giliran singkat dengan model gratis; `-- --light` = tanpa token saja
-npm run lint         # ESLint versi terkunci lewat npx
+npm run lint         # ESLint versi terkunci (diambil lewat npm exec)
 ```
 
 `test:fast` memilih otomatis file yang tidak mengimpor browser (`test-support/cdp.mjs`) atau memulai server/proses, jadi aman dijalankan setiap kali menyimpan. Untuk perubahan yang menyentuh server, backup, antrian, atau mesin project, jalankan file test terkait saja, misalnya `node --test --test-concurrency=1 test/engine-per-project.test.mjs`.
 
-GitHub Actions saat ini hanya berisi workflow build/rilis (`v*`) dan build macOS; test tidak dijalankan otomatis di CI. Jalankan `test:unit` sebelum mengirim perubahan besar.
+CI GitHub (`.github/workflows/test.yml`) menjalankan **cek sintaks + ESLint + `test:fast`** di setiap push dan pull request. Test browser dan test server yang berat tetap lokal (`test:unit`/`test:ui`) supaya CI cepat dan tidak flaky. Rilis (`v*`) memakai bagian versi dari `CHANGELOG.md` sebagai catatan rilis di GitHub.
 
 | Lapis | Isi |
 |---|---|

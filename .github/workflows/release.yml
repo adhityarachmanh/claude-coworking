@@ -68,7 +68,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = $env:GITHUB_REF_NAME
-          gh release view $tag 2>$null; if ($LASTEXITCODE -ne 0) { gh release create $tag --title "Adhit Office $($tag.TrimStart('v'))" --notes "Rilis $tag" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Host 'Release sudah dibuat oleh job lain.' } }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $notes = Join-Path $env:RUNNER_TEMP 'notes.md'
+          node scripts/release-notes.mjs "$version" --out "$notes"
+          gh release view $tag 2>$null; if ($LASTEXITCODE -ne 0) { gh release create $tag --title "Adhit Office $version" --notes-file "$notes" 2>$null; if ($LASTEXITCODE -ne 0) { Write-Host 'Release sudah dibuat oleh job lain.' } }
+          gh release edit $tag --notes-file "$notes"; if ($LASTEXITCODE -ne 0) { Write-Host 'Catatan rilis tidak diperbarui; aset tetap diunggah.' }
           gh release upload $tag dist/installer/*.exe dist/installer/*.sha256 dist/installer/*.sig --clobber
 
   linux:
@@ -94,5 +98,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Adhit Office ${TAG#v}" --notes "Rilis $TAG" || true
+          VERSION=$(node -p "require('./package.json').version")
+          node scripts/release-notes.mjs "$VERSION" --out "$RUNNER_TEMP/notes.md"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Adhit Office $VERSION" --notes-file "$RUNNER_TEMP/notes.md" || true
+          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md" || true
           gh release upload "$TAG" dist/linux/*.tar.gz dist/linux/*.deb dist/linux/*.sha256 dist/linux/*.sig --clobber

@@ -1,0 +1,27 @@
+name: test
+
+# Fast checks on every push/PR: syntax, ESLint, and the pure-logic suite (~40 s). Browser/server tests stay
+# local (`npm run test:unit` / `test:ui`); the old workflow that ran them here was slow and flaky.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check (node --check)
+        run: git ls-files -z '*.js' '*.mjs' | xargs -0 -n1 node --check
+      - name: ESLint
+        run: npm run lint
+      - name: Fast tests
+        run: npm run test:fast

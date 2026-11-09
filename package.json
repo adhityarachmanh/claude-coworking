@@ -1,6 +1,6 @@
 {
   "name": "adhit-office",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "description": "Adhit Office — kantor pixel-art untuk mengoperasikan Claude Code dari browser dan HP",
   "author": "Adhit",
@@ -25,7 +25,7 @@
     "test:ui": "node test-support/ci-tests.mjs ui",
     "test:claude": "node test-support/claude-contract.mjs",
     "test:opencode": "node test-support/opencode-contract.mjs",
-    "lint": "npx --yes eslint@9.39.5 ."
+    "lint": "npm exec --yes --package=eslint@9.39.5 -- eslint ."
   },
   "devDependencies": {
     "electron": "45.2.3",

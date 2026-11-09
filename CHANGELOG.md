@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.5
+
+- **🧪 CI menjalankan test cepat.** Setiap push dan pull request kini menjalankan cek sintaks, ESLint, dan `test:fast` (~40 dtk) di Ubuntu. Test browser/server tetap lokal supaya CI tidak lambat dan flaky.
+- **📝 Catatan rilis dari CHANGELOG.** Halaman Release GitHub kini menampilkan perubahan versi itu (dari `CHANGELOG.md`), bukan lagi "Rilis vX".
+- **🔧 `npm run lint` diperbaiki.** Skrip memakai `npm exec` sehingga tetap jalan di mesin yang `npx`-nya salah resolusi.
+
 ## 1.0.4
 
 - **🖥️ CLI bridge: kartu izin lebih aman.** Perintah shell yang lebih panjang dari yang bisa ditampilkan utuh kini **tidak bisa diizinkan dari aplikasi**—keputusan dikembalikan ke terminal supaya bagian tengah perintah tidak lolos tanpa dilihat. Preview tetap menampilkan awal dan akhir, rahasia (token, `--token`, `-u`, password, URL ber-kredensial, private key) disamarkan sebelum masuk chat/backup/notifikasi HP, dan tombol *Izinkan semua* tidak muncul untuk izin terminal. Status tetap **eksperimental** sampai uji TUI manual.
