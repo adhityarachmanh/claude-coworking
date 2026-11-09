@@ -12,6 +12,7 @@
 //                              backups made before data/chats existed carry the chats in it (`chats`)
 //   office/chats/<id>.jsonl    each project's chat history (data/chats, see src/chat-store.js)
 //   office/chats-opencode/<id>.jsonl  the same for OpenCode's workspace (data/chats-opencode, per-project engine)
+//   opencode/sessions/<project>/<session>.json  OpenCode's own sessions via `opencode session export` (best effort)
 //   office/usage.jsonl         token ledger
 // Never included: login credentials (.credentials.json, ~/.claude.json), caches, logs.
 //
@@ -30,7 +31,7 @@ import { PROJECTS_DIR } from './transcripts.js';
 import { ZipError, ZipReader, ZipWriter, crc32, unsafeEntryName } from './zip.js';
 
 export const BACKUP_FORMAT = 'adhit-office-backup';
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 // A session transcript written to this recently is treated as in use (a terminal session may be running).
 const ACTIVE_WINDOW_MS = 60_000;
 const SESSION_FILE = /^[0-9a-f-]{36}\.jsonl$/i;
@@ -162,7 +163,7 @@ async function addFile(zip, f) {
  *   chatsDir: data/chats (flushed by the caller first); its *.jsonl go in as office/chats/
  * @returns {Promise<{ files: number, bytes: number, skipped: string[] }>}
  */
-export async function writeBackup(out, { state, usageFile, chatsDir, engineChats = {}, appVersion = null, homeDir = os.homedir(), locations = claudeLocations(), zip64 = false }) {
+export async function writeBackup(out, { state, usageFile, chatsDir, engineChats = {}, opencodeSessions = [], appVersion = null, homeDir = os.homedir(), locations = claudeLocations(), zip64 = false }) {
   const { projectsDir, claudeDir } = locations;
   const files = [];
   const skipped = [];
@@ -226,6 +227,14 @@ export async function writeBackup(out, { state, usageFile, chatsDir, engineChats
   }
 
   const stateBuf = Buffer.from(JSON.stringify(state ?? {}));
+  const sessionBuffers = [];
+  for (const session of opencodeSessions) {
+    const projectId = String(session?.projectId ?? '');
+    const sessionId = String(session?.sessionId ?? '');
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(projectId) || !/^ses_[A-Za-z0-9_-]{1,100}$/.test(sessionId)) continue;
+    if (!Buffer.isBuffer(session.data) || !session.data.length) continue;
+    sessionBuffers.push({ name: `opencode/sessions/${projectId}/${sessionId}.json`, data: session.data });
+  }
   const manifest = {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -235,7 +244,12 @@ export async function writeBackup(out, { state, usageFile, chatsDir, engineChats
     homeDir,
     claudeDir,
     projects,
-    counts: { files: files.length + 1, bytes: files.reduce((sum, f) => sum + f.size, 0) + stateBuf.length, sessions: projects.reduce((s, p) => s + p.sessions, 0) },
+    counts: {
+      files: files.length + 1 + sessionBuffers.length,
+      bytes: files.reduce((sum, f) => sum + f.size, 0) + stateBuf.length + sessionBuffers.reduce((sum, s) => sum + s.data.length, 0),
+      sessions: projects.reduce((s, p) => s + p.sessions, 0),
+      opencodeSessions: sessionBuffers.length,
+    },
     skipped,
   };
   const zip = new ZipWriter(out, { zip64 });
@@ -243,6 +257,10 @@ export async function writeBackup(out, { state, usageFile, chatsDir, engineChats
   await zip.add('office/state.json', stateBuf);
   let written = 2;
   for (const f of files) if (await addFile(zip, f)) written++;
+  for (const session of sessionBuffers) {
+    await zip.add(session.name, session.data);
+    written++;
+  }
   return { files: written, bytes: await zip.finish(), skipped };
 }
 
@@ -306,7 +324,8 @@ export function makeRemap(oldHome, newHome, oldPlatform = process.platform) {
 const KNOWN_FILES = new Set(['manifest.json', 'office/state.json', 'office/usage.jsonl', 'claude/history.jsonl']);
 const KNOWN_DIRS = /^claude\/(projects|file-history|plans)\/./;
 const USAGE_ARCHIVE = /^office\/usage-archive\/usage-[\w-]+\.jsonl$/; // rotated ledgers (src/usage.js)
-const isKnownEntry = (name) => KNOWN_FILES.has(name) || KNOWN_DIRS.test(name) || USAGE_ARCHIVE.test(name) || Boolean(chatEntryId(name));
+const OPENCODE_SESSION = /^opencode\/sessions\/([A-Za-z0-9_-]{1,64})\/(ses_[A-Za-z0-9_-]{1,100})\.json$/;
+const isKnownEntry = (name) => KNOWN_FILES.has(name) || KNOWN_DIRS.test(name) || USAGE_ARCHIVE.test(name) || OPENCODE_SESSION.test(name) || Boolean(chatEntryId(name));
 
 function parseJson(buf, what) {
   try {
@@ -426,8 +445,10 @@ export async function previewBackup(zipFile, ctx = {}) {
     const chats = { claude: 0, opencode: 0 };
     let fileHistory = 0;
     let plans = 0;
+    let opencodeSessions = 0;
     for (const e of entries) {
       const parts = e.name.split('/');
+      if (OPENCODE_SESSION.test(e.name)) opencodeSessions += 1;
       if (parts[0] === 'claude' && parts[1] === 'projects' && parts[2]) {
         const p = projects.get(parts[2]) ?? { folder: parts[2], cwd: cwdOf.get(parts[2]) ?? null, sessions: 0, files: 0 };
         if (parts.length === 4 && SESSION_FILE.test(parts[3])) p.sessions += 1;
@@ -441,6 +462,18 @@ export async function previewBackup(zipFile, ctx = {}) {
       const chat = chatEntryOf(e.name);
       if (chat) chats[chat.engine] += 1;
     }
+    // Backups from before the effective-root fix have neither roots nor explicit project paths: a project whose
+    // only history is OpenCode cannot be mapped on import. Warn before restoring instead of silently dropping it.
+    let legacy = false;
+    const stateEntry = byName.get('office/state.json');
+    if (stateEntry && chats.opencode > 0) {
+      try {
+        const state = parseJson(await reader.read(stateEntry, 16 * 1024 * 1024), 'office/state.json');
+        legacy = !(Array.isArray(state.roots) && state.roots.length) && !(Array.isArray(state.projects) && state.projects.length);
+      } catch {
+        legacy = false;
+      }
+    }
     return {
       format: manifest.format,
       version: Number(manifest.version) || 1,
@@ -452,6 +485,8 @@ export async function previewBackup(zipFile, ctx = {}) {
       sessions: [...projects.values()].reduce((sum, p) => sum + p.sessions, 0),
       chats,
       chatSessions: chats.claude + chats.opencode,
+      opencodeSessions,
+      legacy,
       includes: { state: byName.has('office/state.json'), usage: byName.has('office/usage.jsonl'), history: byName.has('claude/history.jsonl'), fileHistory, plans },
     };
   } finally {
@@ -666,7 +701,9 @@ export async function restoreBackup(zipFile, ctx = {}) {
     let state = null;
     const chats = {};
     const engineChats = {}; // engine -> { project id -> messages }, other workspaces than Claude Code's
+    const opencodeSessions = [];
     let chatBytes = 0; // every chat file is read into memory: bounded together, like usage/history
+    let opencodeBytes = 0;
     for (const e of entries) {
       const parts = e.name.split('/');
       if (e.name === 'manifest.json') continue;
@@ -697,6 +734,21 @@ export async function restoreBackup(zipFile, ctx = {}) {
         summary.usage.added = (summary.usage.added ?? 0) + ledger.importRows(rows);
       } else if (e.name === 'claude/history.jsonl') {
         if (keep.history && mergeable(e)) summary.history.added = await mergeHistory(e);
+      } else if (OPENCODE_SESSION.test(e.name)) {
+        if (!mergeable(e) || opencodeBytes + e.usize > maxMergeBytes) {
+          warn(`Sesi OpenCode dilewati karena terlalu besar: ${e.name}`);
+          continue;
+        }
+        const [, projectId, sessionId] = OPENCODE_SESSION.exec(e.name);
+        const data = await reader.read(e, maxMergeBytes);
+        try {
+          const parsed = JSON.parse(data.toString('utf8'));
+          if (parsed?.info?.id !== sessionId) throw new Error('id');
+          opencodeBytes += data.length;
+          opencodeSessions.push({ projectId, sessionId, data });
+        } catch {
+          warn(`Sesi OpenCode tidak valid: ${e.name}`);
+        }
       } else if (parts[1] === 'projects') {
         if (only && !only.has(parts[2])) continue; // not selected in the import preview
         const target = parts.length >= 4 ? folders.get(parts[2]) : null;
@@ -767,6 +819,7 @@ export async function restoreBackup(zipFile, ctx = {}) {
       state,
       chats,
       engineChats,
+      opencodeSessions,
       remap,
       projects: [...folders.values()],
     };

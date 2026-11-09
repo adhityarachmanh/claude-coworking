@@ -10,6 +10,7 @@ import path from 'node:path';
 import { Transform } from 'node:stream';
 import { finished, pipeline } from 'node:stream/promises';
 import { BackupError, isUnderHome, previewBackup, restoreBackup, writeBackup } from '../backup.js';
+import { collectOpenCodeSessions, importOpenCodeSessions } from '../opencode-backup.js';
 import { recordAudit } from '../audit-log.js';
 import { BackupCryptoError, MIN_BACKUP_PASSWORD, decryptBackupFile, encryptBackupFile, isEncryptedBackup } from '../backup-crypto.js';
 import { AUTO_NAME, ScheduleError } from '../backup-schedule.js';
@@ -71,7 +72,7 @@ function activeSessionIds(hub) {
 }
 
 /** POST /api/backup/export: the backup .zip (or an encrypted .aob), streamed (never held in memory). */
-async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, dataDir, projectRoots }, req, res, params, body) {
+async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, dataDir, projectRoots, opencode }, req, res, params, body) {
   if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
   if (backupLock.busy) return json(res, 409, { error: 'Export/import riwayat lain sedang berjalan. Tunggu sampai selesai.' });
   const password = typeof body?.password === 'string' ? body.password : '';
@@ -88,10 +89,15 @@ async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, data
       roots: projectRoots(),
       projects: [...hub.projects.values()].filter((p) => p?.path).map((p) => ({ id: p.id, path: p.path, name: p.name ?? null })),
     };
+    // OpenCode's own sessions go through its CLI; missing/broken OpenCode only means they are skipped.
+    const opencodeSessions = opencode
+      ? await collectOpenCodeSessions(opencode, [...hub.projects.values()]).catch(() => ({ sessions: [], skipped: [] }))
+      : { sessions: [], skipped: [] };
+    if (opencodeSessions.skipped.length) console.log(`Backup: ${opencodeSessions.skipped.length} sesi OpenCode dilewati.`);
     if (!password) {
       const name = `adhit-office-backup-${day}.zip`;
       res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
-      const result = await writeBackup(res, { state: backupState, usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), appVersion });
+      const result = await writeBackup(res, { state: backupState, usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), opencodeSessions: opencodeSessions.sessions, appVersion });
       res.end();
       const skipped = result.skipped.length ? `, ${result.skipped.length} dilewati (symlink/nama tidak valid)` : '';
       console.log(`Backup riwayat diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB${skipped}`);
@@ -105,7 +111,7 @@ async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, data
     const sealed = `${zipFile}.aob`;
     try {
       const out = createWriteStream(zipFile);
-      const result = await writeBackup(out, { state: backupState, usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), appVersion });
+      const result = await writeBackup(out, { state: backupState, usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), opencodeSessions: opencodeSessions.sessions, appVersion });
       out.end();
       await finished(out);
       await encryptBackupFile(zipFile, sealed, password);
@@ -179,7 +185,7 @@ async function verifyUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, re
     decrypted = prepared.decrypted;
     const preview = await previewBackup(prepared.source);
     recordAudit(dataDir, { action: 'backup-verify', detail: `${prepared.decrypted ? 'terenkripsi' : 'zip'} · ${preview.projects?.length ?? 0} project · ${preview.sessions ?? 0} sesi` });
-    return json(res, 200, { ok: true, encrypted: Boolean(prepared.decrypted), projects: preview.projects?.length ?? 0, sessions: preview.sessions ?? 0, createdAt: preview.createdAt ?? null });
+    return json(res, 200, { ok: true, encrypted: Boolean(prepared.decrypted), projects: preview.projects?.length ?? 0, sessions: preview.sessions ?? 0, opencodeSessions: preview.opencodeSessions ?? 0, createdAt: preview.createdAt ?? null });
   } catch (err) {
     if (err instanceof BackupCryptoError) return json(res, err.status, { error: err.message });
     if (err instanceof ZipError) return json(res, 400, { error: `File backup tidak valid: ${err.message}` });
@@ -283,7 +289,7 @@ async function previewUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, r
 }
 
 /** POST /api/backup/import: raw .zip body → temp file in <data dir>/tmp → merged restore → JSON summary. */
-async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir, maxBackupBytes, projectRoots, refreshProjects }, req, res) {
+async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir, maxBackupBytes, projectRoots, refreshProjects, opencode }, req, res) {
   if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
   const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
   if (!ZIP_TYPES.has(type)) return json(res, 415, { error: 'Kirim file .zip atau .aob hasil Export riwayat.' });
@@ -331,7 +337,7 @@ async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir,
     await receiveUpload(req, file, maxBackupBytes);
     const prepared = await openUpload(file, req, tmpDir);
     decrypted = prepared.decrypted;
-    const summary = await applyRestored({ hub, ledger, mirror, projectRoots, refreshProjects }, prepared.source, { only, parts });
+    const summary = await applyRestored({ hub, ledger, mirror, projectRoots, refreshProjects, opencode, dataDir }, prepared.source, { only, parts });
     recordAudit(dataDir, { action: 'backup-import', detail: `${summary.sessions?.added ?? 0} sesi ditambah · ${summary.sessions?.updated ?? 0} diperbarui` });
     return json(res, 200, summary);
   } catch (err) {
@@ -349,7 +355,7 @@ async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir,
 }
 
 /** The merge half of a restore (state, per-project data, chats, mirror), shared by upload and scheduled backup. */
-async function applyRestored({ hub, ledger, mirror, projectRoots, refreshProjects }, file, { only = null, parts = null } = {}) {
+async function applyRestored({ hub, ledger, mirror, projectRoots, refreshProjects, opencode, dataDir }, file, { only = null, parts = null } = {}) {
   const running = [...hub.runtime.values()].some((rt) => rt.status.busy || rt.status.cliBusy);
   const result = await restoreBackup(file, { activeSessions: activeSessionIds(hub), ledger, only, parts, onFileWritten: (f) => mirror.markSeen(f) });
   const { summary, state: imported, remap } = result;
@@ -411,6 +417,22 @@ async function applyRestored({ hub, ledger, mirror, projectRoots, refreshProject
     }
     Object.assign(summary.state, hub.mergeProjectData(imported, idMap, result.chats));
     for (const [engine, chats] of Object.entries(result.engineChats ?? {})) summary.state.chats += hub.importEngineChats(engine, idMap, chats);
+    // OpenCode's own sessions (exported through its CLI): import only into projects this machine recognizes.
+    summary.opencodeSessions = { added: 0, skipped: 0 };
+    if (result.opencodeSessions?.length) {
+      const tmpDir = path.join(dataDir ?? os.tmpdir(), 'tmp');
+      await mkdir(tmpDir, { recursive: true });
+      const importedSessions = await importOpenCodeSessions(opencode, {
+        sessions: result.opencodeSessions,
+        resolveProject: (from) => {
+          const to = idMap.get(from);
+          return to ? hub.projects.get(to)?.path ?? null : null;
+        },
+        tempDir: tmpDir,
+        onWarning: (text) => summary.warnings.push(text),
+      });
+      summary.opencodeSessions = { added: importedSessions.added.length, skipped: importedSessions.skipped.length };
+    }
     // Team names: only roles this machine has not renamed itself.
     const own = hub.persisted.teamNames ?? {};
     const names = { ...cleanTeamNames(imported.teamNames), ...own };

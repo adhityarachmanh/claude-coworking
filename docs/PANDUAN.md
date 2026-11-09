@@ -255,7 +255,7 @@ Kalau folder `data/` terasa makin besar, atur **⚙ → Cadangkan riwayat → �
 3. ⚙ → Cadangkan riwayat → **⬆ Import riwayat**, pilih file `.zip`.
 4. Buka project → **🕘 Riwayat sesi** → **Lanjutkan**.
 
-Yang ikut kembali: riwayat chat kedua mesin, **mesin tiap project**, pengaturan model/effort per mesin, **root project efektif dan path tiap project** (jadi project tetap dikenali walau root-nya tidak pernah diatur manual), dan percakapan **Claude** yang tersimpan di backup. Sesi OpenCode tidak dipulihkan (penyimpanannya tidak ikut backup); bila OpenCode tidak terpasang, project dari backup memakai Claude Code.
+Yang ikut kembali: riwayat chat kedua mesin, **mesin tiap project**, pengaturan model/effort per mesin, **root project efektif dan path tiap project** (jadi project tetap dikenali walau root-nya tidak pernah diatur manual), **sesi OpenCode** (lewat `opencode session export/import`), dan percakapan **Claude** yang tersimpan di backup. Bila OpenCode tidak terpasang saat import, sesi OpenCode dilewati dan project memakai Claude Code.
 
 Yang perlu diulang di laptop baru: login Claude, pairing HP (termasuk notifikasi push), dan menghubungkan Spotify. Mode izin tiap project kembali ke **Tanya dulu**.
 

@@ -81,7 +81,7 @@ async function verifyBackupFile(file) {
     });
     if (!res.ok) throw new Error(await errorOf(res));
     const info = await res.json();
-    setStatus(`Backup valid${info.encrypted ? ' (terenkripsi)' : ''}: ${info.projects} project, ${info.sessions} sesi${info.createdAt ? ` · dibuat ${new Date(info.createdAt).toLocaleDateString('id-ID')}` : ''}.`);
+    setStatus(`Backup valid${info.encrypted ? ' (terenkripsi)' : ''}: ${info.projects} project, ${info.sessions} sesi Claude${info.opencodeSessions ? `, ${info.opencodeSessions} sesi OpenCode` : ''}${info.createdAt ? ` · dibuat ${new Date(info.createdAt).toLocaleDateString('id-ID')}` : ''}.`);
     toast('File backup valid.', 'ok');
   } catch (err) {
     setStatus(`Verifikasi gagal: ${err.message}`);
@@ -184,6 +184,8 @@ function renderResult(r) {
   const st = r.state ?? {};
   const stateParts = [st.roots && `${st.roots} folder induk`, st.custom && `${st.custom} folder`, st.favorites && `${st.favorites} favorit`, st.settings && `${st.settings} pengaturan project (tanpa mode izin)`, st.engines && `${st.engines} mesin project`, st.engineSettings && `${st.engineSettings} pengaturan per mesin`, st.sessions && `${st.sessions} percakapan per mesin`, st.teamNames && `${st.teamNames} nama tim`].filter(Boolean);
   if (stateParts.length) list.append(el('li', `Data kantor digabung: ${stateParts.join(', ')}`));
+  if (r.opencodeSessions?.added) list.append(el('li', `${r.opencodeSessions.added} sesi OpenCode diimpor`));
+  if (r.opencodeSessions?.skipped && !r.opencodeSessions.added) list.append(el('li', `${r.opencodeSessions.skipped} sesi OpenCode dilewati (sudah ada/tidak dikenali)`));
   if (r.projectsAdded?.length) list.append(el('li', `Project ditambahkan: ${r.projectsAdded.join(', ')}`));
   box.append(list);
 
@@ -232,7 +234,8 @@ function renderPreview(p, file) {
   const box = $('#backup-result');
   previewProjects = Array.isArray(p.projects) ? p.projects : [];
   box.replaceChildren(el('b', `Isi ${file.name}`));
-  box.append(el('p', `${p.projects.length} project · ${p.sessions} sesi Claude · ${p.chatSessions} riwayat chat · ${fmtSize(p.unpackedBytes)}`, 'muted'));
+  box.append(el('p', `${p.projects.length} project · ${p.sessions} sesi Claude · ${p.opencodeSessions ?? 0} sesi OpenCode · ${p.chatSessions} riwayat chat · ${fmtSize(p.unpackedBytes)}`, 'muted'));
+  if (p.legacy) box.append(el('p', '⚠ Backup lama tidak menyimpan path project. Project yang hanya punya riwayat OpenCode bisa tidak dikenali saat import — export ulang dari versi terbaru bila memungkinkan.', 'warn'));
   if (previewProjects.length) {
     const pick = el('fieldset', null, 'backup-pick');
     pick.append(el('legend', 'Project yang dipulihkan'));

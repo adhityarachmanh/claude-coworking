@@ -11,7 +11,7 @@ import path from 'node:path';
 import { finished } from 'node:stream/promises';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { encodeProjectPath, makeRemap, previewBackup, restoreBackup } from '../src/backup.js';
+import { encodeProjectPath, makeRemap, previewBackup, restoreBackup, writeBackup } from '../src/backup.js';
 import { decryptBackupFile, encryptBackupFile, isEncryptedBackup } from '../src/backup-crypto.js';
 import { readAudit } from '../src/audit-log.js';
 import { projectId as projectIdOf } from '../src/util.js';
@@ -167,11 +167,11 @@ before(async () => {
   put(path.join(B.claude, 'history.jsonl'), `${JSON.stringify({ display: 'di B', timestamp: 2000, project: cwdB.toko })}\n`);
   put(path.join(B.data, 'usage.jsonl'), `${usageRow(1)}\n${usageRow(3)}\n`);
 
-  a = await start(A);
-  // B has no OpenCode (PATH points at an empty folder, so no global node_modules either): the per-project engine
-  // import has a deterministic downgrade path (a machine WITH OpenCode is covered in-process below).
   const noOpenCodePath = path.join(TMP, 'no-opencode-path');
   mkdirSync(noOpenCodePath, { recursive: true });
+  a = await start(A, { PATH: noOpenCodePath });
+  // B has no OpenCode (PATH points at an empty folder, so no global node_modules either): the per-project engine
+  // import has a deterministic downgrade path (a machine WITH OpenCode is covered in-process below).
   b = await start(B, { OFFICE_BACKUP_MAX_BYTES: String(LIMIT), PATH: noOpenCodePath });
 });
 
@@ -301,9 +301,26 @@ test('🔎 verify + 🔑 rekey an encrypted backup (wrong password is refused)',
   assert.ok(audit.some((e) => e.action === 'backup-rekey'), 'rekey is audited');
 });
 
+test('backup carries OpenCode sessions and preview/restore count them', async () => {
+  const file = path.join(TMP, 'opencode-sessions.zip');
+  const out = createWriteStream(file);
+  const location = { projectsDir: path.join(TMP, 'oc-projects'), claudeDir: path.join(TMP, 'oc-claude') };
+  const data = Buffer.from(JSON.stringify({ info: { id: 'ses_one', location: { directory: path.join(homeA, 'x') } }, messages: [] }));
+  await writeBackup(out, { state: {}, locations: location, opencodeSessions: [{ projectId: 'p1', sessionId: 'ses_one', data }] });
+  out.end();
+  await finished(out);
+  const preview = await previewBackup(file);
+  assert.equal(preview.opencodeSessions, 1);
+  const restored = await restoreBackup(file, { locations: location, homeDir: homeA });
+  assert.equal(restored.opencodeSessions.length, 1);
+  assert.equal(restored.opencodeSessions[0].projectId, 'p1');
+  assert.equal(restored.opencodeSessions[0].sessionId, 'ses_one');
+  assert.equal(restored.opencodeSessions[0].data.toString('utf8'), data.toString('utf8'));
+});
+
 test('preview: what is inside the backup, before anything is written', async () => {  const preview = await previewBackup(zipFile);
   assert.equal(preview.format, 'adhit-office-backup');
-  assert.equal(preview.version, 1);
+  assert.equal(preview.version, 2);
   const toko = preview.projects.find((p) => p.folder === encodeProjectPath(cwdA.toko));
   assert.equal(toko.cwd, cwdA.toko, 'the project path from the manifest');
   assert.equal(toko.sessions, 4);
