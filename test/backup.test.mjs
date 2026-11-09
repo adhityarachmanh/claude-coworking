@@ -246,6 +246,8 @@ test('export: a streamed .zip with every project, history, checkpoints, plans, s
   exportedSession = state.sessionsByEngine[fav].claude;
   assert.match(exportedSession, /^[0-9a-f-]{36}$/i, 'a Claude Code conversation id');
   assert.deepEqual(state.favorites, [fav]);
+  assert.ok(state.roots.includes(A.root), 'the EFFECTIVE root travels even when the UI never set one explicitly');
+  assert.ok(Array.isArray(state.projects) && state.projects.some((p) => projectIdOf(p.path) === projectIdOf(cwdA.toko)), 'every office project path travels, not only Claude transcripts');
 });
 
 test('🔐 encrypted backup: .aob round-trip, magic header, wrong password rejected', async () => {

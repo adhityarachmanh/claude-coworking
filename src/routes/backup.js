@@ -71,7 +71,7 @@ function activeSessionIds(hub) {
 }
 
 /** POST /api/backup/export: the backup .zip (or an encrypted .aob), streamed (never held in memory). */
-async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, dataDir }, req, res, params, body) {
+async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, dataDir, projectRoots }, req, res, params, body) {
   if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
   if (backupLock.busy) return json(res, 409, { error: 'Export/import riwayat lain sedang berjalan. Tunggu sampai selesai.' });
   const password = typeof body?.password === 'string' ? body.password : '';
@@ -80,10 +80,18 @@ async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, data
   try {
     hub.save(); // the state file on disk and in the backup agree
     const day = new Date().toLocaleDateString('sv-SE'); // local date, YYYY-MM-DD
+    // `persisted.roots` is empty while a project uses the default root. Export the EFFECTIVE roots and each
+    // project's path too, otherwise an import on a machine with a different default root cannot recognise any
+    // project and drops its chats/settings (the "backup is incomplete" bug).
+    const backupState = {
+      ...hub.exportState(),
+      roots: projectRoots(),
+      projects: [...hub.projects.values()].filter((p) => p?.path).map((p) => ({ id: p.id, path: p.path, name: p.name ?? null })),
+    };
     if (!password) {
       const name = `adhit-office-backup-${day}.zip`;
       res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
-      const result = await writeBackup(res, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), appVersion });
+      const result = await writeBackup(res, { state: backupState, usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), appVersion });
       res.end();
       const skipped = result.skipped.length ? `, ${result.skipped.length} dilewati (symlink/nama tidak valid)` : '';
       console.log(`Backup riwayat diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB${skipped}`);
@@ -97,7 +105,7 @@ async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, data
     const sealed = `${zipFile}.aob`;
     try {
       const out = createWriteStream(zipFile);
-      const result = await writeBackup(out, { state: hub.exportState(), usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), appVersion });
+      const result = await writeBackup(out, { state: backupState, usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), appVersion });
       out.end();
       await finished(out);
       await encryptBackupFile(zipFile, sealed, password);
@@ -353,8 +361,31 @@ async function applyRestored({ hub, ledger, mirror, projectRoots, refreshProject
   const outside = (p) => `Folder dari backup dilewati (di luar folder home ${home}, atau tidak ada): ${p}. Tambahkan manual bila perlu.`;
   summary.state = { roots: 0, custom: 0, favorites: 0, settings: 0, engines: 0, engineSettings: 0, sessions: 0, chats: 0, teamNames: 0 };
   if (imported) {
+    // Newer backups name every office project explicitly (including OpenCode-only projects with no Claude
+    // transcript). Recreate them before the id map is built, or their chats/settings are dropped.
+    for (const p of Array.isArray(imported.projects) ? imported.projects : []) {
+      if (typeof p?.path !== 'string' || !p.path) continue;
+      const mapped = remap.mapPath(p.path);
+      if (!isUnderHome(mapped, home)) {
+        summary.warnings.push(outside(mapped));
+        continue;
+      }
+      if (!isDirectory(mapped)) {
+        summary.warnings.push(`Folder project dari backup belum ada di laptop ini: ${mapped}. Riwayatnya tetap dipulihkan bila foldernya nanti ditambahkan.`);
+        continue;
+      }
+      // Already covered by a root (or known here): no need to duplicate it into the custom list.
+      const covered = projectRoots().some((root) => {
+        const rel = path.relative(path.resolve(root), path.resolve(mapped));
+        return !rel || (!rel.startsWith('..') && !path.isAbsolute(rel));
+      });
+      if (covered || hub.projects.has(idOfPath(mapped))) continue;
+      const before = hub.persisted.custom.length;
+      hub.addCustomProject(mapped);
+      if (hub.persisted.custom.length > before) summary.state.custom++;
+    }
     const { skipped, ...added } = hub.mergeFolders(imported, { mapPath: remap.mapPath, roots: projectRoots(), accept: (p) => isUnderHome(p, home) && isDirectory(p) });
-    Object.assign(summary.state, added);
+    Object.assign(summary.state, added, { custom: summary.state.custom + added.custom });
     for (const p of skipped) summary.warnings.push(outside(p));
   }
   refreshProjects();
