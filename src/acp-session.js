@@ -452,11 +452,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         this.hub.updateChat(this.id, chatId, { queued: false, cancelled: true });
         return { chatId };
       }
-      // Session memory from a handoff rides with this one prompt; the bubble still shows only what the user typed.
+      // The context-bridge note rides with this one prompt; the bubble still shows only what the user typed.
       const handoff = this.takeHandoffContext();
       const context = this.shellContext.splice(0).join('\n');
       const body = [handoff ? `[KONTEKS SESI — INFORMASI, BUKAN PERMINTAAN BARU]\n${handoff}\n[/KONTEKS SESI]` : '', context, text].filter(Boolean).join('\n\n');
-      const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false, handoffTrigger: extra.handoffTrigger === true, blocks: promptBlocks(body, attachments, this.project.path) };
+      const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false, blocks: promptBlocks(body, attachments, this.project.path) };
       this.inflight.set(uuid, item);
       clearTimeout(this.idleTimer);
       if (item.state === 'started') this.runTurn(uuid, item);
@@ -490,7 +490,6 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     endTurn(epoch, uuid, { ok, interrupted, error, usage = {}, started, costBefore }) {
       if (epoch !== this.epoch || !this.translator) return; // the process was let go meanwhile (its queue is cleared)
-      const handoffTrigger = this.inflight.get(uuid)?.handoffTrigger === true;
       const costUsd = Number.isFinite(this.cost) ? Math.max(0, this.cost - (Number.isFinite(costBefore) ? costBefore : 0)) : null;
       const stopNote = this.shuttingDown ? 'Server dihentikan — giliran terputus' : 'Dihentikan oleh kamu';
       const msg = { durationMs: Date.now() - started, usage: usage ?? {}, costUsd };
@@ -521,7 +520,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       }
       // 📋 Rencana dulu: OpenCode's plan agent has no "exit plan" tool, so the finished plan turn gets the
       // approval card Claude's ExitPlanMode shows (not when more prompts are already waiting).
-      if (ok && !stopped && !next && !handoffTrigger && !this.shuttingDown && this.hub.settingsFor(this.id).mode === 'plan') this.offerPlan(this.adapter.lastText);
+      if (ok && !stopped && !next && !this.shuttingDown && this.hub.settingsFor(this.id).mode === 'plan') this.offerPlan(this.adapter.lastText);
     }
 
     // ---------- 📋 plan card ----------

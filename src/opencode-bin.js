@@ -283,7 +283,7 @@ export const READ_ONLY_TOOLS = Object.freeze({ read: 'allow', grep: 'allow', glo
 const ENV_FILE_RULES = Object.freeze({ '*.env': 'ask', '*.env.*': 'ask', '*.env.example': 'allow' });
 
 /**
- * Env for a one-shot read-only `opencode run` (handoff note, role classifier): OPENCODE_CONFIG_CONTENT with
+ * Env for a one-shot read-only `opencode run` (role classifier, effort classifier): OPENCODE_CONFIG_CONTENT with
  * `{ "*": "deny", read/grep/glob/list }` on top of what that variable already holds (its other settings stay). The
  * user's own rules for the reading tools still apply (a deny stays, see mergePermission). Merged by the caller
  * over process.env, so no other variable is replaced.

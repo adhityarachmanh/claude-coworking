@@ -192,7 +192,7 @@ function render(data) {
         .map((entry) => `<li class="data-row"><span>${escapeHtml(actions[entry.action] ?? entry.action)}</span><small class="muted">${escapeHtml(new Date(entry.at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}${entry.detail ? ` · ${escapeHtml(entry.detail)}` : ''}</small></li>`)
         .join('')
     : '<li class="muted small">Belum ada aktivitas.</li>';
-  $('#data-note').textContent = 'Semua data ini ada di folder data aplikasi di laptop. Tidak ada yang dikirim ke luar. Backup otomatis yang sudah dibuat tidak bisa dihapus per project.';
+  $('#data-note').textContent = 'Semua data ini ada di folder data aplikasi di laptop; aplikasi tidak mengirimnya ke server pihak ketiga. Prompt tetap dikirim ke provider model yang kamu pilih (Claude Code/OpenCode). Backup otomatis yang sudah dibuat tidak bisa dihapus per project.';
   // The saved limits are written once per open (and after a save); a redraw never overwrites a choice being changed.
   if (!retention.filled) {
     fillRetention(data.retention);

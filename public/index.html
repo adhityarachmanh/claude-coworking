@@ -149,7 +149,6 @@
               <button role="menuitem" data-more="export">⬇ Export percakapan (.md)</button>
               <button role="menuitem" data-more="export-session" data-cap="exportSession" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">⬇ Export sesi lengkap (.md)</button>
               <button role="menuitem" data-more="permissions" data-cap="permissions">🛡️ Aturan izin (/permissions)</button>
-              <button role="menuitem" data-more="handoff" title="Bawa konteks percakapan Claude Code ↔ OpenCode project ini">🔁 Lanjutkan dari mesin lain</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
               <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
@@ -220,6 +219,8 @@
                 <option value="en-US">English</option>
               </select>
             </label>
+            <!-- Privacy notice at the point of choice: picking the other engine's model sends this chat's summary there. -->
+            <p id="model-engine-note" class="muted small model-engine-note">Memilih model mesin lain mengirim ringkasan percakapan ini ke provider mesin itu.</p>
           </div>
           <div id="suggest" class="suggest" hidden></div>
           <!-- 🎤 what is being heard (interim), before it lands in the box at the cursor -->
@@ -487,14 +488,6 @@
           <button type="button" class="ghost" data-close>Tutup</button>
         </div>
         <p class="muted small">Tanpa isi prompt, header, atau lokasi. Token OpenCode Console tidak dikirim ke browser.</p>
-      </div>
-    </div>
-
-    <!-- 🔁 Lanjutkan dari mesin lain (/lanjut; features/handoff.js) -->
-    <div id="handoff-modal" class="modal" hidden>
-      <div class="modal-card handoff-card" role="dialog" aria-modal="true" aria-labelledby="handoff-title">
-        <div class="modal-head"><b id="handoff-title">🔁 Lanjutkan dari mesin lain <small id="handoff-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <div id="handoff-body"></div>
       </div>
     </div>
 
@@ -957,16 +950,6 @@
           </section>
           </div>
           <div class="settings-panel" id="settings-panel-tim" data-settings-panel="tim" role="tabpanel" aria-labelledby="settings-tab-tim">
-          <!-- 🔀 Mesin project (Stage 1: one engine per project; features/settings.js, server POST /api/projects/:id/engine) -->
-          <section id="project-engine" class="project-engine" aria-labelledby="project-engine-title" aria-describedby="project-engine-desc">
-            <b id="project-engine-title">🔀 Mesin project</b>
-            <div id="project-engine-opts" class="engine-opts" role="group" aria-labelledby="project-engine-title"></div>
-            <p id="project-engine-desc" class="muted small">Riwayat tiap mesin disimpan terpisah. Berganti mesin hanya menampilkan riwayat mesin itu.</p>
-            <p id="project-engine-hint" class="muted small" role="status" aria-live="polite"></p>
-            <button type="button" id="project-engine-cancel" class="ghost small" hidden>Batalkan jadwal ganti mesin</button>
-            <p id="project-engine-error" class="field-error" role="alert"></p>
-          </section>
-          <hr id="project-engine-rule" />
           <button type="button" id="btn-roster" class="ghost team-names-btn" title="Pilih role bawaan yang punya meja di kantor">👥 Kelola tim (role aktif)</button>
           <button type="button" id="btn-team-names" class="ghost team-names-btn">✏️ Ganti nama anggota tim</button>
           <button type="button" id="btn-permissions" class="ghost team-names-btn" data-cap="permissions" title="Aturan allow / ask / deny Claude Code untuk project yang sedang dibuka">🛡️ Aturan izin project ini</button>
@@ -1319,7 +1302,7 @@
     <!-- Claude account: profile, plan usage, login/logout -->
     <div id="account-modal" class="modal" hidden>
       <div class="modal-card account-card" role="dialog" aria-modal="true" aria-label="Akun &amp; mesin AI">
-        <div class="modal-head"><b id="account-title">👤 Akun Claude</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="account-title">👤 Akun</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div id="account-body"></div>
       </div>
     </div>
@@ -1604,7 +1587,6 @@
           <button type="button" class="sheet-row" data-proxy="[data-more='export']"><span aria-hidden="true">⬇</span><span>Export percakapan (.md)</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='export-session']" data-cap="exportSession"><span aria-hidden="true">⬇</span><span>Export sesi lengkap (.md)</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='terminal']"><span aria-hidden="true">⌨</span><span>Salin perintah lanjut di terminal</span></button>
-          <button type="button" class="sheet-row" data-proxy="[data-more='handoff']"><span aria-hidden="true">🔁</span><span>Lanjutkan dari mesin lain</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='permissions']" data-cap="permissions"><span aria-hidden="true">🛡️</span><span>Aturan izin</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='roster']"><span aria-hidden="true">👥</span><span>Kelola tim</span></button>
           <button type="button" class="sheet-row local-only" data-proxy="[data-more='code']"><span aria-hidden="true">🧭</span><span>Buka project di VS Code</span></button>

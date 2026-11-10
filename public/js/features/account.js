@@ -1,5 +1,5 @@
-// Claude account: profile, plan quota, token usage, login/logout. With OpenCode as the engine (the switch at the
-// top, features/opencode-account.js) the dialog shows OpenCode's provider logins instead.
+// 👤 Akun: two INFO tabs, Claude (profile, plan quota, token usage, login/logout) and OpenCode (providers, login,
+// usage). The tabs only choose what is shown: they never change an engine or the project (features/opencode-account.js).
 import { accountImpactText } from '../core/account-impact.js';
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
@@ -10,7 +10,16 @@ import { closeModal, focusablesIn, openModal } from '../ui/modals.js';
 import { chime } from './notify.js';
 import { accountKeyOf, checkQuota } from './quota.js';
 import { openReport } from './report.js';
-import { activeEngine, engineSwitchHtml, ensureOpenCodeLoaded, loadOpenCode, onOpenCodeAction, onOpenCodeInput, onOpenCodeSubmit, openCodeBodyHtml, openCodeButton } from './opencode-account.js';
+import { activeEngine, ensureOpenCodeLoaded, loadOpenCode, onOpenCodeAction, onOpenCodeInput, onOpenCodeSubmit, openCodeBodyHtml, openCodeButton } from './opencode-account.js';
+
+// The tab only switches the information shown; it always starts on Claude and never touches the project engine.
+const ACCT_TABS = ['claude', 'opencode'];
+const acct = { tab: 'claude' };
+
+function accountTabsHtml(tab) {
+  const button = (id, label) => `<button type="button" id="acct-tab-${id}" class="engine-opt${tab === id ? ' on' : ''}" role="tab" data-act="acct-tab" data-tab="${id}" aria-selected="${tab === id}" aria-controls="acct-panel" tabindex="${tab === id ? 0 : -1}">${label}</button>`;
+  return `<div class="engine-opts acct-tabs" role="tablist" aria-label="Jenis akun">${button('claude', 'Claude')}${button('opencode', 'OpenCode')}</div>`;
+}
 
 const LOGIN_TEXT = {
   starting: 'Membuka halaman login di browser…',
@@ -39,7 +48,7 @@ export function renderAccountButton() {
     btn.classList.toggle('logged-out', !oc.loggedIn);
     $('#account-avatar').textContent = oc.avatar;
     $('#account-label').textContent = oc.label;
-    btn.title = 'Mesin: OpenCode — provider, login & pindah mesin';
+    btn.title = 'OpenCode — provider & login (tab info di 👤 Akun)';
     ensureOpenCodeLoaded(renderAccountButton);
     return;
   }
@@ -225,33 +234,25 @@ function renderAccount() {
 }
 
 function renderAccountBody(body) {
-  const engineSwitch = engineSwitchHtml();
-  $('#account-title').textContent = activeEngine() === 'opencode' ? '👤 Akun OpenCode' : '👤 Akun Claude';
-  if (activeEngine() === 'opencode') {
-    body.innerHTML = engineSwitch + openCodeBodyHtml() + auditHtml();
-    renderAccountButton();
-    return;
-  }
-  renderClaudeBody(body);
-  if (engineSwitch) body.insertAdjacentHTML('afterbegin', engineSwitch);
+  const tab = acct.tab;
+  $('#account-title').textContent = '👤 Akun';
+  const panel = tab === 'opencode' ? openCodeBodyHtml() : claudeBodyHtml();
+  body.innerHTML = `${accountTabsHtml(tab)}<div id="acct-panel" class="acct-panel" role="tabpanel" aria-labelledby="acct-tab-${tab}">${panel}</div>${auditHtml()}`;
+  if (tab === 'claude') renderLoginFlow();
+  renderAccountButton();
 }
 
-function renderClaudeBody(body) {
+function claudeBodyHtml() {
   const p = state.account?.profile;
-  if (!p) {
-    body.innerHTML = '<p class="muted">Memeriksa akun Claude Code…</p>';
-    return;
-  }
+  if (!p) return '<p class="muted">Memeriksa akun Claude Code…</p>';
   const actions = state.accountAuth
     ? p.loggedIn
       ? `<button class="ghost" data-act="login">⇄ Ganti akun</button><button class="danger" data-act="logout">⏻ Logout</button>`
       : `<button class="primary" data-act="login">🔑 Login dengan akun Claude</button><button class="ghost" data-act="login-console">Login via Console (API)</button>`
     : '<p class="muted small">Login/logout dari HP hanya lewat Tailscale (koneksi terenkripsi). Buka kantor lewat alamat Tailscale, atau lakukan dari laptop.</p>';
   if (!p.loggedIn) {
-    body.innerHTML = `<div class="acct-empty"><p>Claude Code di laptop ini <b>belum login</b>. Login membuka halaman claude.ai di browser, sama seperti <code>claude auth login</code>.</p></div>
-      <div class="acct-actions">${actions}</div><div id="acct-login"></div>${auditHtml()}`;
-    renderLoginFlow();
-    return;
+    return `<div class="acct-empty"><p>Claude Code di laptop ini <b>belum login</b>. Login membuka halaman claude.ai di browser, sama seperti <code>claude auth login</code>.</p></div>
+      <div class="acct-actions">${actions}</div><div id="acct-login"></div>`;
   }
   const facts = [
     ['Email', p.email],
@@ -280,7 +281,7 @@ function renderClaudeBody(body) {
           `<p class="quota-note">${escapeHtml(state.account.limits.note)}</p>
            <p class="muted small">Akun ini tidak melaporkan kuota dalam persen. Di atas adalah pesan asli dari <code>/usage</code>.</p>`
         : `<p class="muted small">${account.loading ? 'Mengambil kuota…' : 'Belum ada data kuota.'}</p>`;
-  body.innerHTML = `<div class="acct-head">
+  return `<div class="acct-head">
       <span class="avatar big">${escapeHtml(accountInitial(p))}</span>
       <div><b>${escapeHtml(accountName(p))}</b><small>${escapeHtml(p.email ?? '')}</small></div>
       ${p.subscriptionType ? `<span class="plan-badge">${escapeHtml(p.subscriptionType)}</span>` : ''}
@@ -290,12 +291,10 @@ function renderClaudeBody(body) {
     <div class="acct-section"><div class="acct-title"><b>Pemakaian token akun ini</b><button class="ghost" data-act="report">📊 Laporan</button></div>${usageTable(account.usage)}
       <p class="muted small">Dihitung dari sesi web & CLI sejak fitur ini aktif, hanya untuk akun yang sedang login.</p></div>
     <div class="acct-actions">${actions}</div>
-    <div id="acct-login"></div>${auditHtml()}`;
-  renderLoginFlow();
+    <div id="acct-login"></div>`;
 }
 
 async function loadAccount(force = false) {
-  if (activeEngine() === 'opencode') return loadOpenCode(renderAccount);
   try {
     const data = await api('/api/account', { force });
     account.usage = data.usage;
@@ -321,24 +320,39 @@ export function onAccountState(next) {
   renderAccountButton();
   const id = accountKeyOf(next.profile);
   if (next.login?.state === 'done' && account.loginState !== 'done') toast(`Login berhasil sebagai ${next.profile?.email ?? 'akun baru'}.`, 'ok');
-  if ($('#account-modal').hidden || activeEngine() === 'opencode') return; // OpenCode's body: Claude events don't redraw it
+  if ($('#account-modal').hidden || acct.tab === 'opencode') return; // OpenCode's tab: Claude events don't redraw it
   if (prevId !== id) return loadAccount(true); // switched account: usage & quota belong to the new one
   // Keep what the user is typing in the code box: only redraw the flow when its state changes.
   if ((next.login?.state ?? null) !== account.loginState) renderLoginFlow();
   if (!$('#login-code-input')) renderAccount();
 }
 
+/** Loads the data of the tab on screen: Claude's account/quota, or OpenCode's providers. */
+function loadAccountTab({ force = false } = {}) {
+  if (acct.tab === 'opencode') return loadOpenCode(renderAccount);
+  return loadAccount(force);
+}
+
 export function initAccount() {
   $('#btn-account').addEventListener('click', () => {
+    acct.tab = 'claude'; // every open starts on the Claude info tab (no remembered choice)
     openModal('account-modal');
     renderAccount();
-    loadAccount();
+    loadAccountTab();
   });
   $('#account-body').addEventListener('click', async (e) => {
     const el = e.target.closest('[data-act]');
     const act = el?.dataset.act;
     if (!act) return;
     try {
+      if (act === 'acct-tab') {
+        const next = ACCT_TABS.includes(el.dataset.tab) ? el.dataset.tab : 'claude';
+        if (next === acct.tab) return;
+        acct.tab = next;
+        renderAccount();
+        loadAccountTab();
+        return;
+      }
       if (act === 'audit-toggle') return toggleAudit();
       if (await onOpenCodeAction(act, el, renderAccount)) return;
       if (act === 'login' || act === 'login-console') {

@@ -1,7 +1,6 @@
 // Project picker (Ctrl+K): the project list, the header crumb, switching projects.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
-import { engineBadge, engineLabel, engineOf } from '../core/engine-caps.js';
 import { sceneFor, stage } from '../core/scenes.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
@@ -55,11 +54,7 @@ export function renderSidebar() {
             ? '<span class="dot live"></span>'
             : '';
       const icon = p.id === DEMO_ID ? '🎬' : p.sources.includes('claude') ? '✳' : '▢';
-      // 🔀 Each row names the engine that project runs on: visible before opening it (Claude vs OpenCode).
-      const engine = p.id === DEMO_ID ? null : engineOf(st, state.config);
-      const engineTag = engine
-        ? `<span class="engine-badge" data-engine="${engine}" title="Mesin project: ${escapeHtml(engineLabel(engine))}" aria-label="Mesin: ${escapeHtml(engineLabel(engine))}">${escapeHtml(engineBadge(engine))}</span>`
-        : '';
+      // The engine is not a project trait any more (the model picks it), so a row does not carry an engine pill.
       // A project whose folder is gone can be purged safely: the action never deletes a folder, only the app's data.
       const missingTag = p.missing ? '<span class="badge missing" title="Folder project tidak ditemukan">folder hilang</span>' : '';
       const purge = p.missing && p.id !== DEMO_ID
@@ -68,7 +63,6 @@ export function renderSidebar() {
       return `${head}<li class="${p.id === state.active ? 'active' : ''} ${i === picker.cursor ? 'cursor' : ''}" data-id="${p.id}" title="${escapeHtml(p.path ?? 'Simulasi tanpa Claude Code')}">
         <span class="p-icon">${icon}</span>
         <span class="p-text"><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.path ? p.path.replace(/^.*\/projects\//, '…/') : 'simulasi')}</small></span>
-        ${engineTag}
         ${missingTag}
         ${badge}
         ${star}

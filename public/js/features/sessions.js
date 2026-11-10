@@ -58,8 +58,9 @@ export function renderSessionBar() {
     ? [engine === 'opencode' ? 'sesi OpenCode' : known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
     : [`pesan pertamamu memulai sesi ${engine === 'opencode' ? 'OpenCode' : 'Claude Code'} baru`];
   if (st.cliBusy) meta.push('terminal aktif');
-  // 🔀 The project's engine first on the meta line: visible before a prompt is sent (its picker row has the same badge).
-  const badge = `<span id="sb-engine" class="engine-badge" data-engine="${escapeHtml(engine)}" title="Mesin project ini: ${escapeHtml(engineLabel(engine))} — ganti di ⚙ Pengaturan → Mesin project" aria-label="Mesin project: ${escapeHtml(engineLabel(engine))}">${escapeHtml(engineBadge(engine))}</span>`;
+  // The engine that runs the project right now (the model picked in Pengaturan giliran decides it): a small info
+  // badge, never a switch. Phone hides the session bar; the chat marks engine changes per message instead.
+  const badge = `<span id="sb-engine" class="engine-badge" data-engine="${escapeHtml(engine)}" title="Mesin project ini: ${escapeHtml(engineLabel(engine))} — dipilih oleh model di Pengaturan giliran" aria-label="Mesin project: ${escapeHtml(engineLabel(engine))}">${escapeHtml(engineBadge(engine))}</span>`;
   $('#sb-meta').innerHTML = badge + escapeHtml(meta.filter(Boolean).join(' · '));
   // Phone header: the session bar is hidden there, its title and the turn's state sit under the project name.
   const status = st.pending ? 'menunggu izin' : st.busy || st.cliBusy ? 'bekerja…' : '';

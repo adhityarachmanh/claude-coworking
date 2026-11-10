@@ -375,7 +375,7 @@ export function register(router) {
   })));
   // ⬆ OpenCode: `opencode session import` a JSON this app (or the CLI) exported. Laptop only and OpenCode-only.
   router.post('/api/projects/:id/session-import-json', withProject(({ hub, opencode }, req, res, { project }, body) => admin(res, async () => {
-    if (hub.engineOf(project.id) !== 'opencode') throw new SessionAdminError(409, 'Import JSON hanya untuk sesi OpenCode. Pindah mesin project ke OpenCode dulu.');
+    if (hub.engineOf(project.id) !== 'opencode') throw new SessionAdminError(409, 'Import JSON hanya untuk sesi OpenCode. Pilih model OpenCode di Pengaturan giliran dulu.');
     return importOpenCodeSession({ opencode, projectPath: project.path, data: body.data });
   })));
   router.post('/api/projects/:id/continue', withSession(({ hub, ledger, metrics }, req, res, { project, session }, body) => {
@@ -463,6 +463,12 @@ export function register(router) {
       const current = hub.sessionIdFor(project.id);
       if (current && current !== conversation.sessionId) {
         return json(res, 409, { error: 'Percakapan sudah berganti sejak rewind ini, jadi undo ini tidak bisa lagi mengembalikannya.' });
+      }
+      // The bundle belongs to the engine that was running then. Restoring it now would write to the other engine's
+      // session slot and patch rows in the wrong store: ask for that engine's model first (it is one pick away).
+      if (conversation.engine !== hub.engineOf(project.id)) {
+        const label = conversation.engine === 'opencode' ? 'OpenCode' : 'Claude Code';
+        return json(res, 409, { error: `Percakapan ini milik ${label}. Pilih model ${label} di Pengaturan giliran dulu untuk memulihkannya.` });
       }
       if (conversation.engine === 'claude') {
         // The transcript still has everything: only the position moved back, so the newest leaf is the way back.

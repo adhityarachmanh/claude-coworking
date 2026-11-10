@@ -2,7 +2,7 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { fmtTokens, time } from '../core/format.js';
-import { engineLabel, engineOf } from '../core/engine-caps.js';
+import { engineLabel, engineMark, engineOf } from '../core/engine-caps.js';
 import { MODEL_TIER_LABELS, shortModelName } from './engine.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { copyText, flashButton } from '../core/util.js';
@@ -537,6 +537,20 @@ export function who(role) {
   return `<img class="ava orbable" style="--c:${role === 'claude' ? '#b9a8ff' : roleColor(role)}" src="${avatarURL(look)}" alt=""><b style="color:${roleColor(role)}">${escapeHtml(roleName(role))}</b>`;
 }
 
+/**
+ * The faint engine mark of a row: only the first message of the timeline or one whose engine differs from the
+ * message just before it (the history is one flow, never split into two lists).
+ */
+function engineMarkHtml(msg) {
+  if (!msg.engine) return '';
+  const list = state.chats[msg.project ?? state.active] ?? [];
+  const at = list.lastIndexOf(msg);
+  const prev = at > 0 ? list[at - 1] : null;
+  if (prev && prev.engine === msg.engine) return '';
+  const label = engineLabel(msg.engine);
+  return `<span class="engine-mark" data-engine="${escapeHtml(msg.engine)}" title="${escapeHtml(label)}" aria-label="Mesin ${escapeHtml(label)}">${engineMark(msg.engine)}</span>`;
+}
+
 function fillChat(node, msg) {
   // Re-rendering replaces the row: keep keyboard focus on it (toggle via Enter, live status updates).
   const refocusRow = node.contains(document.activeElement) && document.activeElement.classList.contains('row');
@@ -585,7 +599,7 @@ function fillChatBody(node, msg) {
       node.className = `msg user ${msg.source === 'cli' ? 'cli' : ''} ${msg.history ? 'history' : ''} ${msg.queued ? 'queued' : ''} ${msg.cancelled ? 'cancelled' : ''}`;
       // 📎 Name + size chips only: the files' content went to Claude, not into the bubble.
       const files = Array.isArray(msg.attachments) && msg.attachments.length ? `<div class="msg-attachments">${msg.attachments.map((a) => attachmentChip(a)).join('')}</div>` : '';
-      node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>${files}<div class="meta">${actions}${autoModel}${autoTag}${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
+      node.innerHTML = `<div class="body">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>${files}<div class="meta">${engineMarkHtml(msg)}${actions}${autoModel}${autoTag}${tags.map((t) => `<span class="tag">${t}</span>`).join('')}${time(msg.ts)}</div>`;
       break;
     }
     case 'assistant': {
@@ -597,7 +611,7 @@ function fillChatBody(node, msg) {
       }
       node.className = `msg assistant ${msg.streaming ? 'streaming' : ''} ${msg.history ? 'history' : ''}`;
       const bm = isBookmarked(state.active, msg.id);
-      node.innerHTML = `<div class="who">${who('claude')}${msg.source === 'cli' ? '<span class="cli-tag">CLI</span>' : ''}${msg.history ? '<span class="tag">riwayat</span>' : ''}<span>${time(msg.ts)}</span>${msg.streaming ? '' : `<button class="msg-copy" data-msg-act="copy" title="Salin jawaban (Markdown)">Salin</button><button class="msg-copy msg-star" data-msg-act="star" aria-pressed="${bm}" aria-label="${bm ? 'Hapus jawaban dari simpanan' : 'Simpan jawaban ini'}" title="${bm ? 'Hapus dari pesan tersimpan' : 'Simpan jawaban ini'}">${bm ? '★' : '☆'}</button>`}</div><div class="body md">${renderMarkdown(msg.text)}</div>`;
+      node.innerHTML = `<div class="who">${who('claude')}${engineMarkHtml(msg)}${msg.source === 'cli' ? '<span class="cli-tag">CLI</span>' : ''}${msg.history ? '<span class="tag">riwayat</span>' : ''}<span>${time(msg.ts)}</span>${msg.streaming ? '' : `<button class="msg-copy" data-msg-act="copy" title="Salin jawaban (Markdown)">Salin</button><button class="msg-copy msg-star" data-msg-act="star" aria-pressed="${bm}" aria-label="${bm ? 'Hapus jawaban dari simpanan' : 'Simpan jawaban ini'}" title="${bm ? 'Hapus dari pesan tersimpan' : 'Simpan jawaban ini'}">${bm ? '★' : '☆'}</button>`}</div><div class="body md">${renderMarkdown(msg.text)}</div>`;
       // Paths to project files (`src/x.js`, public/js/app.js:120) open the file viewer; not while streaming.
       if (!msg.streaming) linkifyPaths(node.querySelector('.body'));
       break;
@@ -605,13 +619,13 @@ function fillChatBody(node, msg) {
     case 'tool': {
       const open = expanded.has(msg.id);
       node.className = `line tool expandable st-${msg.status} ${open ? 'open' : ''} ${msg.sub ? 'sub' : ''}`;
-      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span><span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s" title="${escapeHtml(roleName(msg.role))}">${escapeHtml(roleName(msg.role))}</span><span class="txt">${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : isLiveShell(msg) ? liveTail(msg) : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span>${engineMarkHtml(msg)}<span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s" title="${escapeHtml(roleName(msg.role))}">${escapeHtml(roleName(msg.role))}</span><span class="txt">${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : isLiveShell(msg) ? liveTail(msg) : ''}`;
       break;
     }
     case 'delegate': {
       const open = expanded.has(msg.id);
       node.className = `line delegate expandable st-${msg.status} ${open ? 'open' : ''}`;
-      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span><img class="ava sm orbable" style="--c:${msg.role === 'claude' ? '#b9a8ff' : roleColor(msg.role)}" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${escapeHtml(roleName(msg.role))}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span>${engineMarkHtml(msg)}<img class="ava sm orbable" style="--c:${msg.role === 'claude' ? '#b9a8ff' : roleColor(msg.role)}" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${escapeHtml(roleName(msg.role))}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
       break;
     }
     case 'thinking': {
@@ -619,14 +633,14 @@ function fillChatBody(node, msg) {
       const open = expanded.has(msg.id);
       node.className = `line thinking expandable ${open ? 'open' : ''} ${msg.streaming ? 'streaming' : ''}`;
       const preview = String(msg.text ?? '').replace(/\s+/g, ' ').trim();
-      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk lihat proses berpikir"><span class="chev">${open ? '▾' : '▸'}</span><span class="think-ico">✻</span><span class="txt">${msg.streaming ? 'Berpikir…' : 'Berpikir'} <i>${escapeHtml(msg.streaming ? preview.slice(-200) : preview.slice(0, 200))}</i></span>${msg.streaming ? STATUS_ICON.running : ''}</div>${open ? `<div class="detail"><div class="md sub">${renderMarkdown(msg.text || '…')}</div></div>` : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk lihat proses berpikir"><span class="chev">${open ? '▾' : '▸'}</span>${engineMarkHtml(msg)}<span class="think-ico">✻</span><span class="txt">${msg.streaming ? 'Berpikir…' : 'Berpikir'} <i>${escapeHtml(msg.streaming ? preview.slice(-200) : preview.slice(0, 200))}</i></span>${msg.streaming ? STATUS_ICON.running : ''}</div>${open ? `<div class="detail"><div class="md sub">${renderMarkdown(msg.text || '…')}</div></div>` : ''}`;
       break;
     }
     case 'shell': {
       // `!command` (bash mode): command and output always visible, like the CLI.
       node.className = `line shell st-${msg.status}`;
       const exit = msg.status === 'fail' && msg.exitCode != null ? ` <small>exit ${msg.exitCode}</small>` : '';
-      node.innerHTML = `<div class="row"><span class="bang">!</span><span class="txt">${escapeHtml(msg.text)}</span>${exit}${STATUS_ICON[msg.status] ?? ''}</div>${msg.output ? `<pre class="out ${msg.status === 'fail' ? 'fail' : ''}">${escapeHtml(msg.output)}</pre>` : ''}`;
+      node.innerHTML = `<div class="row"><span class="bang">!</span>${engineMarkHtml(msg)}<span class="txt">${escapeHtml(msg.text)}</span>${exit}${STATUS_ICON[msg.status] ?? ''}</div>${msg.output ? `<pre class="out ${msg.status === 'fail' ? 'fail' : ''}">${escapeHtml(msg.output)}</pre>` : ''}`;
       break;
     }
     case 'approval':

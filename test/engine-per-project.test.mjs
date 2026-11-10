@@ -88,31 +88,6 @@ async function snapshot() {
   return JSON.parse(text.match(/^data: (.*)$/m)[1]);
 }
 
-/** Waits for one named SSE event (the stream starts with a snapshot frame). */
-async function nextEvent(type, ms = 8000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  try {
-    const res = await fetch(`${BASE}/stream`, { signal: controller.signal });
-    const reader = res.body.getReader();
-    let buf = '';
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += new TextDecoder().decode(value);
-      const match = new RegExp(`event: ${type}\\ndata: (.*)\\n`).exec(buf);
-      if (match) {
-        reader.cancel().catch(() => {});
-        return JSON.parse(match[1]);
-      }
-    }
-  } finally {
-    clearTimeout(timer);
-    controller.abort();
-  }
-  return null;
-}
-
 async function until(fn, what, ms = 25_000) {
   const end = Date.now() + ms;
   for (;;) {
@@ -142,10 +117,11 @@ async function prompt(id, text) {
   await until(async () => ((await snapshot()).chats[id] ?? []).slice(before).some((m) => m.kind === 'result'), `result of "${text}"`);
 }
 
-/** Switches ONE project's engine over the API. */
+/** Switches ONE project's engine through its turn settings (the model picks the engine now). */
 async function switchProject(id, engine) {
-  const res = await api(`/api/projects/${id}/engine`, { engine });
+  const res = await api(`/api/projects/${id}/settings`, { engine });
   assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.engine, engine);
   assert.equal((await statusOf(id)).engine, engine);
 }
 
@@ -156,7 +132,7 @@ test('the app-wide engine is only the default: new projects use it, existing one
   assert.equal((await statusOf(alfa)).engine, 'claude', 'a fresh install defaults to Claude Code');
   assert.equal((await snapshot()).config.engine, 'claude');
 
-  assert.equal((await api(`/api/projects/${alfa}/engine`, { engine: 'opencode' })).status, 200);
+  assert.equal((await api(`/api/projects/${alfa}/settings`, { engine: 'opencode' })).status, 200);
   assert.equal((await statusOf(alfa)).engine, 'opencode');
   assert.equal(state().settings[alfa].engine, 'opencode', 'the project engine is stored with its settings');
 
@@ -174,14 +150,13 @@ test('the app-wide engine is only the default: new projects use it, existing one
   assert.equal((await statusOf(gamma)).engine, 'opencode', 'an existing project stays where it was');
 });
 
-test('switching ONE project emits engine{project} so every open client reloads its history', async () => {
+test('switching ONE project goes through its turn settings; the app-wide default is untouched', async () => {
   const alfa = await projectId('alfa');
   await switchProject(alfa, 'claude');
-  const pending = nextEvent('engine');
-  await sleep(300); // let the stream deliver its snapshot before the switch
+  assert.equal((await snapshot()).config.engine, 'claude', 'the default stays where it was');
   await switchProject(alfa, 'opencode');
-  const evt = await pending;
-  assert.deepEqual(evt, { engine: 'opencode', project: alfa });
+  assert.equal((await snapshot()).config.engine, 'claude', 'a project moving does not move the default');
+  assert.equal((await api('/api/engine', { engine: 'claude' })).status, 200);
 });
 
 test('each engine keeps its own model and effort for a project (mode/team stay shared)', async () => {
@@ -231,7 +206,7 @@ test('one conversation id per engine, restored when the project switches back', 
   assert.equal((await statusOf(alfa)).sessionId, opencodeId, "OpenCode's conversation is resumed too");
 });
 
-test('chats live in the right folder and switching shows the other history WITHOUT copying it', async () => {
+test('chats live in the right folder and the panel shows BOTH histories as one flow (never copied)', async () => {
   const alfa = await projectId('alfa');
   // Make sure each engine has a message of its own.
   await switchProject(alfa, 'claude');
@@ -248,43 +223,39 @@ test('chats live in the right folder and switching shows the other history WITHO
   assert.doesNotMatch(readFileSync(opencodeFile, 'utf8'), /pesan claude/);
 
   const opencodeChat = (await snapshot()).chats[alfa];
-  assert.ok(opencodeChat.some((m) => m.text === 'pesan opencode'));
-  assert.ok(!opencodeChat.some((m) => m.text === 'pesan claude'), "Claude's history is not in the shown one");
+  const claudeRow = opencodeChat.find((m) => m.text === 'pesan claude');
+  const opencodeRow = opencodeChat.find((m) => m.text === 'pesan opencode');
+  assert.ok(claudeRow && opencodeRow, "both engines' conversations are shown, as one timeline");
+  assert.equal(claudeRow.engine, 'claude');
+  assert.equal(opencodeRow.engine, 'opencode');
+  assert.ok(opencodeChat.indexOf(claudeRow) < opencodeChat.indexOf(opencodeRow), 'oldest first');
+  assert.ok(!opencodeChat.some((m) => m.kind === 'divider'), 'no divider is written any more');
 
+  // The old history is untouched: switching back still shows it, in its own order, never duplicated.
   await switchProject(alfa, 'claude');
   const claudeChat = (await snapshot()).chats[alfa];
-  assert.ok(claudeChat.some((m) => m.text === 'pesan claude'));
-  assert.ok(!claudeChat.some((m) => m.text === 'pesan opencode'), 'the old engine history is not copied');
-  assert.ok(
-    claudeChat.some((m) => m.kind === 'divider' && /Mesin project diganti ke Claude Code; riwayat OpenCode tetap tersimpan\./.test(m.text ?? '')),
-    'the new history says what happened',
-  );
-  // The old history is untouched: switching back still shows it, in its own order.
+  assert.equal(claudeChat.filter((m) => m.text === 'pesan claude').length, 1);
+  assert.ok(claudeChat.some((m) => m.text === 'pesan opencode'), "the other engine's history stays in view");
   await switchProject(alfa, 'opencode');
   const back = (await snapshot()).chats[alfa];
   assert.equal(back.filter((m) => m.text === 'pesan opencode').length, 1, 'no duplicate after switching back');
-  assert.ok(!back.some((m) => m.text === 'pesan claude'));
+  assert.equal(back.filter((m) => m.text === 'pesan claude').length, 1);
 });
 
-test('a queued engine switch is applied automatically when the running turn ends', async () => {
+test('there is no queued engine switch any more: a pick while busy is refused, never scheduled', async () => {
   const alfa = await projectId('alfa');
   await switchProject(alfa, 'opencode');
   await api(`/api/projects/${alfa}/prompt`, { text: 'kerja dulu, ganti mesin setelah selesai' });
   await until(async () => (await statusOf(alfa)).busy === true, 'the turn is running');
-  const queued = await api(`/api/projects/${alfa}/engine`, { engine: 'claude', afterTurn: true });
-  assert.equal(queued.status, 200, JSON.stringify(queued.body));
-  assert.equal(queued.body.queued, true);
-  assert.equal((await statusOf(alfa)).enginePending, 'claude', 'the card says a switch is scheduled');
-  const cancelled = await api(`/api/projects/${alfa}/engine`, { cancel: true });
-  assert.equal(cancelled.status, 200);
-  assert.equal((await statusOf(alfa)).enginePending, null, 'cancel clears the queued switch');
-  const again = await api(`/api/projects/${alfa}/engine`, { engine: 'claude', afterTurn: true });
-  assert.equal(again.body.queued, true);
+  const refused = await api(`/api/projects/${alfa}/settings`, { engine: 'claude' });
+  assert.equal(refused.status, 409, JSON.stringify(refused.body));
+  assert.match(refused.body.error, /bekerja/i);
+  const st = await statusOf(alfa);
+  assert.equal(st.engine, 'opencode', 'the running turn keeps its engine');
+  assert.equal(st.enginePending, undefined, 'nothing is scheduled in the background');
   await api(`/api/projects/${alfa}/stop`);
-  await until(async () => (await statusOf(alfa)).engine === 'claude', 'the queued switch applied');
-  const after = await statusOf(alfa);
-  assert.equal(after.enginePending, null, 'the pending marker is cleared');
-  assert.equal(after.busy, false);
+  await until(async () => (await statusOf(alfa)).busy === false, 'the turn ended');
+  await switchProject(alfa, 'claude'); // idle again: the pick goes through at once
   await switchProject(alfa, 'opencode'); // restore for the rest of the suite
 });
 
@@ -305,7 +276,7 @@ test('a project engine switch is refused (409) while busy, while 📋 Antrian wa
   // Busy: the fake keeps this turn open until it is cancelled.
   await api(`/api/projects/${alfa}/prompt`, { text: 'macet dulu' });
   await until(async () => (await statusOf(alfa)).busy === true, 'the turn is running');
-  const busy = await api(`/api/projects/${alfa}/engine`, { engine: 'claude' });
+  const busy = await api(`/api/projects/${alfa}/settings`, { engine: 'claude' });
   assert.equal(busy.status, 409);
   assert.match(busy.body.error, /bekerja/i);
   await api(`/api/projects/${alfa}/stop`);
@@ -314,7 +285,7 @@ test('a project engine switch is refused (409) while busy, while 📋 Antrian wa
   // 📋 Antrian: a waiting item would run on the other engine.
   await api(`/api/projects/${alfa}/queue-pause`, { paused: true });
   const added = (await api(`/api/projects/${alfa}/queue-add`, { text: 'tugas antre' })).body;
-  const queued = await api(`/api/projects/${alfa}/engine`, { engine: 'claude' });
+  const queued = await api(`/api/projects/${alfa}/settings`, { engine: 'claude' });
   assert.equal(queued.status, 409);
   assert.match(queued.body.error, /Antrian/);
   await api(`/api/projects/${alfa}/queue-remove`, { itemId: added.item.id });
@@ -325,7 +296,7 @@ test('a project engine switch is refused (409) while busy, while 📋 Antrian wa
   await api(`/api/projects/${alfa}/prompt`, { text: 'minta izin' });
   // (The card itself is read through the snapshot's approvals list.)
   const card = await until(async () => (await snapshot()).approvals.find((a) => a.project === alfa && a.status === 'pending'), 'the approval card');
-  const asking = await api(`/api/projects/${alfa}/engine`, { engine: 'claude' });
+  const asking = await api(`/api/projects/${alfa}/settings`, { engine: 'claude' });
   assert.equal(asking.status, 409);
   assert.match(asking.body.error, /izin/i);
   const chatBefore = (await snapshot()).chats[alfa]?.length ?? 0;

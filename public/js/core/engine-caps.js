@@ -13,8 +13,11 @@ export const engineChangeNeedsReload = (data) => Boolean(data && typeof data ===
 /** Display names; an engine the server adds later still shows (its id) without a code change. */
 export const ENGINE_LABEL = { claude: 'Claude Code', opencode: 'OpenCode' };
 
-/** Short badge labels (header, project picker, composer chip): compact enough for a phone. */
+/** Short badge labels (session bar): compact enough for a phone. */
 export const ENGINE_BADGE = { claude: '✳ Claude', opencode: '⌘ OpenCode' };
+
+/** The faint one-character mark on a chat row: shown only when the engine changes in the timeline. */
+export const ENGINE_MARK = { claude: '✳', opencode: '▢' };
 
 export const ALL_MODES = ['manual', 'acceptEdits', 'auto', 'plan', 'dontAsk'];
 
@@ -69,11 +72,14 @@ export const engineLabel = (engine) => ENGINE_LABEL[engine] ?? String(engine ?? 
 /** A compact badge label: "✳ Claude" / "⌘ OpenCode"; an engine the server adds later shows its own name. */
 export const engineBadge = (engine) => ENGINE_BADGE[engine] ?? engineLabel(engine);
 
+/** The one-character mark a timeline row uses when its engine differs from the previous message. */
+export const engineMark = (engine) => ENGINE_MARK[engine] ?? '▢';
+
 /**
- * The engine a project runs on (Stage 1: one engine per project). The project status wins (`status.engine`, set in
- * ⚙ → Mesin project); `config.engine` is only the DEFAULT for new projects, so it is the fallback for older servers
- * (and for a project without a status yet: never opened this run — it must still show the default engine's models
- * and modes). Anything missing or malformed is Claude Code.
+ * The engine a project runs on. The engine follows the model picked in Pengaturan giliran: the project status
+ * (`status.engine`) is set from that choice, and `config.engine` is only the DEFAULT for new projects, so it is the
+ * fallback for older servers (and for a project without a status yet: never opened this run — it must still show the
+ * default engine's models and modes). Anything missing or malformed is Claude Code.
  */
 export function engineOf(status, config) {
   return cleanId(status?.engine) ?? cleanId(config?.engine) ?? DEFAULT_ENGINE;

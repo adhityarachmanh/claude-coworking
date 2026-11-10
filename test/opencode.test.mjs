@@ -9,7 +9,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { HANDOFF_TRIGGER_PROMPT } from '../src/handoff.js';
 import { autoModelFor, shortModelLabel, tierFor } from '../src/model-auto.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -150,11 +149,11 @@ async function snapshot() {
 }
 const projectId = async () => (await snapshot()).projects.find((p) => p.name === 'toko').id;
 
-/** Switches the `toko` PROJECT to `engine` (Stage 1: one engine per project) and checks it took. */
+/** Switches the `toko` PROJECT to `engine` through its turn settings (the model picks the engine) and checks it took. */
 async function useEngine(engine) {
   const id = await projectId();
   if ((await snapshot()).statuses[id]?.engine !== engine) {
-    const res = await api(`/api/projects/${id}/engine`, { engine });
+    const res = await api(`/api/projects/${id}/settings`, { engine });
     assert.equal(res.status, 200, JSON.stringify(res.body));
   }
   for (let i = 0; i < 100 && !(await snapshot()).statuses[id]; i++) await sleep(50);
@@ -178,7 +177,7 @@ test('config.engines announces OpenCode with its caps; the engine is per project
   await api(`/api/projects/${id}/settings`, { model: 'opus' });
   assert.deepEqual((await api(`/api/projects/${id}/models`)).body.models, [], 'Claude models come with the app config');
   await api(`/api/projects/${id}/settings`, { engine: 'opencode' });
-  assert.equal((await snapshot()).statuses[id].engine, 'claude', "a settings patch can't switch the engine (POST /engine does)");
+  assert.equal((await snapshot()).statuses[id].engine, 'opencode', 'a settings patch with a model of the other engine switches it');
   assert.equal((await api('/api/engine', { engine: 'nope' })).status, 400, 'unknown default engines are refused');
   await useEngine('opencode');
   let st = (await snapshot()).statuses[id];
@@ -219,7 +218,7 @@ test('switching a project\'s engine is refused (409) while its turn runs', async
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'tugas lama' });
   await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch.streaming === true);
-  const res = await api(`/api/projects/${id}/engine`, { engine: 'claude' });
+  const res = await api(`/api/projects/${id}/settings`, { engine: 'claude' });
   assert.equal(res.status, 409);
   assert.deepEqual(res.body.busy, ['toko']);
   await api(`/api/projects/${id}/stop`);
@@ -301,7 +300,7 @@ test('stop cancels a running OpenCode turn (session/cancel) and the session stay
   assert.equal((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result')).ok, true);
 });
 
-test('each engine is its own workspace: chats, conversation and settings come back when switching back', async () => {
+test('each engine keeps its own conversation and settings; the chat is shown as one timeline', async () => {
   const id = await projectId();
   await useEngine('opencode');
   mark = seen.length;
@@ -314,9 +313,10 @@ test('each engine is its own workspace: chats, conversation and settings come ba
 
   mark = seen.length;
   await useEngine('claude');
-  assert.ok(seen.slice(mark).some((s) => s.type === 'engine' && s.obj.engine === 'claude'), 'open pages are told to reload');
   let snap = await snapshot();
-  assert.ok(!(snap.chats[id] ?? []).some((m) => m.text === 'halo opencode'), "OpenCode's chat is not in Claude Code's workspace");
+  // One timeline: the other engine's conversation stays in view (tagged), never copied into its file.
+  const fromOpencode = (snap.chats[id] ?? []).find((m) => m.text === 'halo opencode');
+  assert.equal(fromOpencode?.engine, 'opencode', "OpenCode's chat is still in the one timeline");
   assert.notEqual(snap.statuses[id].sessionId, ocSession);
   assert.equal(snap.statuses[id].model, 'opus', "Claude Code's own model setting is back");
   mark = seen.length;
@@ -329,7 +329,7 @@ test('each engine is its own workspace: chats, conversation and settings come ba
   assert.equal(snap.statuses[id].sessionId, ocSession, "OpenCode's conversation is resumed, not lost");
   assert.equal(snap.statuses[id].model, 'opencode-go/beam-free');
   assert.ok(snap.chats[id].some((m) => m.text === 'halo opencode'), "OpenCode's chat is back");
-  assert.ok(!snap.chats[id].some((m) => m.text === 'halo claude'));
+  assert.equal(snap.chats[id].find((m) => m.text === 'halo claude')?.engine, 'claude', "Claude's chat stays in the timeline too");
   const history = (await api(`/api/projects/${id}/sessions`)).body;
   assert.equal(history.engine, 'opencode');
   assert.deepEqual(history.sessions.map((x) => [x.id, x.title, x.source]), [['ses_fakeold', 'Sesi lama OpenCode', 'opencode']], "🕘 Riwayat sesi lists OpenCode's sessions");
@@ -348,11 +348,11 @@ test('review regressions: resume an OpenCode session, queue and bad engine block
   assert.equal((await api(`/api/projects/${id}/resume`, { sessionId: 'ses_fakeold' })).status, 200, "an OpenCode session from 🕘 resumes");
   assert.equal((await snapshot()).statuses[id].sessionId, 'ses_fakeold');
   assert.equal((await api(`/api/projects/${id}/resume`, { sessionId: '11111111-2222-3333-4444-555555555555' })).status, 404, 'a Claude id is not an OpenCode session');
-  assert.equal((await api(`/api/projects/${id}/engine`, { engine: '' })).status, 400, 'an unknown engine is a bad request');
+  assert.equal((await api(`/api/projects/${id}/settings`, { engine: '' })).status, 400, 'an unknown engine is a bad request');
   // 📋 Antrian with a waiting item: the item would run on the other engine
   await api(`/api/projects/${id}/queue-pause`, { paused: true });
   const added = (await api(`/api/projects/${id}/queue-add`, { text: 'tugas antre' })).body;
-  const refused = await api(`/api/projects/${id}/engine`, { engine: 'claude' });
+  const refused = await api(`/api/projects/${id}/settings`, { engine: 'claude' });
   assert.equal(refused.status, 409);
   assert.match(refused.body.error, /Antrian/);
   await api(`/api/projects/${id}/queue-remove`, { itemId: added.item.id });
@@ -485,94 +485,6 @@ test('🔌 MCP without the terminal: OpenCode lists opencode.json servers; ＋ T
   await useEngine('opencode');
 });
 
-test('🔁 Lanjutkan dari mesin lain: Cepat from the stored chat, Pintar on the ACTIVE engine, both ways', async () => {
-  const id = await projectId();
-  await useEngine('claude');
-  mark = seen.length;
-  await api(`/api/projects/${id}/prompt`, { text: 'halo dari claude untuk handoff' });
-  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
-  await useEngine('opencode');
-  const info = (await api(`/api/projects/${id}/handoff/info`)).body;
-  assert.equal(info.from, 'claude');
-  assert.ok(info.messages >= 2);
-  assert.equal(info.hasSession, true);
-  const quick = (await api(`/api/projects/${id}/handoff`, { mode: 'quick' })).body;
-  assert.match(quick.text, /^🔁 Konteks dari Claude Code/);
-  assert.match(quick.text, /halo dari claude untuk handoff/, "the other workspace's own messages");
-  // A real OpenCode turn with an explicit model, so the reverse handoff has a source chat and an active model.
-  await api(`/api/projects/${id}/settings`, { model: 'google/gemini-2.5-flash' });
-  mark = seen.length;
-  await api(`/api/projects/${id}/prompt`, { text: 'halo dari opencode untuk handoff' });
-  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
-  const ocActive = (await snapshot()).statuses[id].activeModel;
-  assert.equal(ocActive, 'google/gemini-2.5-flash');
-  const smart = (await api(`/api/projects/${id}/handoff`, { mode: 'smart' })).body;
-  assert.match(smart.text, /Handoff palsu dari OpenCode/, 'the ACTIVE engine (OpenCode) writes it, not Claude');
-  assert.ok(smart.text.includes(ocActive), `smart handoff uses the chat's active model (${ocActive}): ${smart.text}`);
-
-  await useEngine('claude');
-  const back = (await api(`/api/projects/${id}/handoff/info`)).body;
-  assert.equal(back.from, 'opencode');
-  assert.match((await api(`/api/projects/${id}/handoff`, { mode: 'quick' })).body.text, /^🔁 Konteks dari OpenCode/);
-  const claudeActive = (await snapshot()).statuses[id].activeModel;
-  const backSmart = (await api(`/api/projects/${id}/handoff`, { mode: 'smart' })).body;
-  assert.match(backSmart.text, /Handoff palsu dari Claude/, 'the ACTIVE engine (Claude) writes it, not OpenCode');
-  assert.ok(!claudeActive || backSmart.text.includes(claudeActive), `smart handoff uses the chat's active Claude model (${claudeActive}): ${backSmart.text}`);
-  await useEngine('opencode');
-});
-
-test('Handoff Apply: one action sends a context-only prompt, stores it in the chat, and shows no plan card', async () => {
-  const id = await projectId();
-  if ((await snapshot()).statuses[id]?.engine !== 'claude') assert.equal((await api(`/api/projects/${id}/engine`, { engine: 'claude' })).status, 200);
-  mark = seen.length;
-  await api(`/api/projects/${id}/prompt`, { text: 'sumber konteks apply' });
-  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
-  await useEngine('opencode');
-  await settle(id);
-  await api(`/api/projects/${id}/settings`, { mode: 'plan' });
-  mark = seen.length;
-  const applied = await api(`/api/projects/${id}/handoff/apply`);
-  assert.equal(applied.status, 200, JSON.stringify(applied.body));
-  const user = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === HANDOFF_TRIGGER_PROMPT);
-  assert.ok(user);
-  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
-  await sleep(250);
-  assert.equal(seen.slice(mark).filter((s) => s.type === 'approval' && s.obj.project === id && s.obj.kind === 'plan').length, 0, 'no plan card for the context-only turn');
-  assert.equal((await snapshot()).statuses[id].handoffReady, false, 'consumed by the trigger prompt');
-
-  // A running turn is refused instead of queueing a context trigger behind it.
-  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
-  mark = seen.length;
-  await api(`/api/projects/${id}/prompt`, { text: 'lama sekali' });
-  await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch.streaming === true);
-  assert.equal((await api(`/api/projects/${id}/handoff/apply`)).status, 409);
-  await api(`/api/projects/${id}/stop`);
-  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
-});
-
-test('Handoff context is session memory: no chat bubble, ready until the next prompt, then cleared', async () => {
-  const id = await projectId();
-  await useEngine('opencode');
-  await settle(id);
-  const before = (await snapshot()).chats[id]?.length ?? 0;
-  const saved = await api(`/api/projects/${id}/handoff/context`, { text: 'Konteks sesi uji: pekerjaan terakhir selesai di file A.' });
-  assert.equal(saved.status, 200, JSON.stringify(saved.body));
-  assert.equal((await snapshot()).statuses[id].handoffReady, true);
-  assert.equal((await snapshot()).chats[id]?.length ?? 0, before, 'tidak ada bubble prompt');
-  assert.equal((await api(`/api/projects/${id}/handoff/context`, { clear: true })).status, 200);
-  assert.equal((await snapshot()).statuses[id].handoffReady, false);
-
-  await api(`/api/projects/${id}/handoff/context`, { text: 'Konteks sesi uji sekali pakai.' });
-  mark = seen.length;
-  assert.equal((await api(`/api/projects/${id}/prompt`, { text: 'lanjut setelah konteks' })).status, 200);
-  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
-  const st = (await snapshot()).statuses[id];
-  assert.equal(st.handoffReady, false, 'konteks dipakai sekali, lalu status bersih');
-  const lastUser = [...((await snapshot()).chats[id] ?? [])].reverse().find((m) => m.kind === 'user');
-  assert.equal(lastUser.text, 'lanjut setelah konteks', 'bubble tetap hanya berisi pesan user');
-  await settle(id);
-});
-
 test('Sesi baru mengosongkan kolom chat, tetapi sesi lama tetap ada di Riwayat sesi', async () => {
   const id = await projectId();
   await useEngine('opencode');
@@ -622,6 +534,9 @@ test('OpenCode provider logins: list, API key, OAuth, logout (through `opencode 
   assert.equal((await api('/api/opencode/logout', { credentialID: go.connections[0].id, confirm: 'LOGOUT' })).status, 200);
   list = (await api('/api/opencode/providers')).body;
   assert.ok(!list.connected.some((p) => p.id === 'opencode-go'), 'logged out');
+  // The provider of the project's model is gone: pick one whose provider is still connected, so the rest of this
+  // file (which keeps working on the same project) is not refused by the modelStale guard.
+  assert.equal((await api(`/api/projects/${await projectId()}/settings`, { model: 'google/gemini-2.5-flash' })).status, 200);
 });
 
 test('⏪ Rewind OpenCode: prompts from session.message.list, preview from the snapshots, revert + commit, chat greyed, 409 while busy', async (t) => {

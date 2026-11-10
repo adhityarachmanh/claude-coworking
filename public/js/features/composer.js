@@ -2,7 +2,7 @@
 import { api, toast } from '../core/api.js';
 import { estimateUsd, formatEstimate, isPeak } from '../core/cost-estimate.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
-import { capReason, capsFor, engineBadge, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
+import { capReason, capsFor, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
 import { fmtNum } from '../core/format.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
@@ -10,9 +10,9 @@ import { attachmentPayload, attachments, attachmentsReady, clearAttachments, rem
 import { localCommand } from './commands.js';
 import { connection } from './connection.js';
 import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
-import { applyCapsToDom, autoModelNote, AUTO_MODEL, autoModelOption, guardCap, initEngine, isModelValue, matchCount, MODEL_TIER_LABELS, MODEL_TIERS, modelTiersFor, projectCaps, projectModelOptions, projectModels, tierOptionsHtml } from './engine.js';
+import { applyCapsToDom, autoModelNote, AUTO_MODEL, catalogMatchCount, engineSwitchLocked, guardCap, initEngine, isModelValue, MODEL_TIER_LABELS, MODEL_TIERS, modelCatalogOptions, modelEntry, modelTiersFor, projectCaps, projectModelCatalog, projectModels, tierOptionsHtml, wantModels } from './engine.js';
 import { recall, recallPrompt } from './history.js';
-import { modelPrices, priceDetail, priceFor, priceNote, priceSuffix } from './model-prices.js';
+import { modelPrices, priceFor, priceNote } from './model-prices.js';
 import { renderResumeTurn } from './resume-turn.js';
 import { openRewind } from './rewind.js';
 import { confirmNew, renderSessionBar } from './sessions.js';
@@ -167,11 +167,9 @@ function renderSettingsChip(st) {  const chip = $('#settings-chip');
   const effort = $('#effort').value && !$('#effort').disabled ? label('#effort') : '';
   const team = $('#team-mode').checked && !$('#team-ctl').classList.contains('cap-off');
   const engine = engineOf(st, state.config);
-  // The project's engine names itself on the chip (short badge label): a phone has no session bar to show it.
-  const engineName = engineBadge(engine);
-  // Laptop already shows the engine in the header/picker: keep the chip to mode · model · effort · tim.
-  chip.textContent = [narrow.matches ? engineName : '', modeShort(mode, engine), model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
-  chip.setAttribute('aria-label', `Pengaturan giliran: mesin ${engineLabel(engine)}, mode ${modeShort(mode, engine).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
+  // The engine follows the model: the chip stays mode · model · effort · tim on both laptop and phone.
+  chip.textContent = [modeShort(mode, engine), model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
+  chip.setAttribute('aria-label', `Pengaturan giliran: mode ${modeShort(mode, engine).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
   chip.classList.toggle('warn', mode === 'dontAsk' || Boolean(st?.autoApprove));
   const note = $('#effort-note');
   note.hidden = !$('#effort').disabled || Boolean(state.readOnly) || !$('#effort').title;
@@ -247,12 +245,6 @@ function applyCaps(caps, engine) {
   note.hidden = !off.length || state.active === DEMO_ID;
   note.textContent = off.length ? `${engineLabel(engine)} belum mendukung: ${off.map((c) => CAP_NAMES[c]).join(', ')}.` : '';
   applyCapsToDom();
-}
-
-/** The option tooltip: the model's own description first, then the price detail (model id, source, peak, records). */
-function priceTitle(value, base = '') {
-  const detail = priceDetail(value);
-  return detail ? [base, detail].filter(Boolean).join(' · ') : base;
 }
 
 /**
@@ -431,6 +423,7 @@ const showTiersError = (message) => {
 /** Opens the ladder dialog on the active project's engine, focus on the first tier. */
 export function openModelTiers() {
   if (!state.active || state.active === DEMO_ID || !$('#model-tiers-modal')) return;
+  wantModels(state.active);
   tiersView.key = '';
   tiersView.dirty = false;
   $('#tiers-rows').dataset.html = '';
@@ -488,63 +481,38 @@ async function saveModelTiers() {
 }
 
 
-/** The Model select: Claude Code's models from the app config, or the project's own list for another engine. */
+/**
+ * The Model select: ONE list for both engines (Auto, Default, Claude Code, OpenCode). Picking a model of the other
+ * engine makes that engine run the project (saveModel sends `{ engine, model }` in one request); while the project
+ * works, the other engine's models are disabled with the reason.
+ */
 function renderModelOptions(current, engine) {
   const select = $('#model');
   const search = $('#model-search');
-  const auto = state.statuses[state.active]?.modelAuto === true; // Auto is a setting, never a model value
+  const st = state.statuses[state.active] ?? {};
+  const auto = st.modelAuto === true; // Auto is a setting, never a model value
   modelPrices(renderComposer); // lazy and non-blocking: without an answer yet the labels just carry no suffix
-  const entry = modelsPerProject(engine) ? projectModels(state.active, state.statuses[state.active], renderComposer) : null;
-  if (entry) {
-    const query = search.value.trim();
-    const html = projectModelOptions(entry, current, query);
-    if (select.dataset.html !== html) {
-      select.innerHTML = html;
-      select.dataset.html = html;
-    }
-    select.value = auto ? AUTO_MODEL : current;
-    select.title = entry.models.length ? `${entry.models.length} model dari config ${engineLabel(engine)}` : 'Daftar model muncul setelah pesan pertama';
-    $('#model-search-ctl').hidden = entry.models.length < 8; // a short list needs no search box
-    $('#model-search-count').textContent = query ? `${matchCount(entry, query)} model cocok` : '';
-    // OpenCode: the chosen model's own effort levels (model.list); unknown (Default model, older OpenCode) → generic
-    const efforts = entry.models.find((m) => m.value === current)?.efforts;
-    setEffortOptions(Array.isArray(efforts) ? efforts : null);
-    const none = Array.isArray(efforts) && !efforts.length;
-    $('#effort').disabled = none || Boolean(state.readOnly);
-    $('#effort').title = none ? 'Model ini tidak punya level effort' : Array.isArray(efforts) ? `Level effort model ini: ${efforts.join(', ')}` : '';
-    renderPriceNote(auto, current, engine);
-    return;
+  const catalog = projectModelCatalog(state.active, st, renderComposer);
+  const query = search.value.trim();
+  const locked = engineSwitchLocked(st);
+  const html = modelCatalogOptions(catalog, current, query, { engine, locked, loading: catalog.loading, error: catalog.error });
+  if (select.dataset.html !== html) {
+    select.innerHTML = html;
+    select.dataset.html = html;
   }
-  setEffortOptions(null);
-  $('#model-search-ctl').hidden = true;
-  if (search.value) search.value = '';
-  select.title = '';
-  const models = state.config?.models ?? [];
-  if (models.length) {
-    const def = models.find((m) => m.value === 'default');
-    const opts = [autoModelOption(), `<option value="" title="${escapeHtml(def?.description ?? '')}">Default${def ? ` (${escapeHtml(def.description.split('·')[0].trim())})` : ''}</option>`];
-    for (const m of models) if (m.value !== 'default') opts.push(`<option value="${escapeHtml(m.value)}" title="${escapeHtml(priceTitle(m.value, m.description))}">${escapeHtml(`${m.displayName}${priceSuffix(m.value)}`)}</option>`);
-    // A model set with /model that the picker doesn't list (e.g. opus[1m] or a full id) stays selectable.
-    if (current && !models.some((m) => m.value === current)) opts.push(`<option value="${escapeHtml(current)}" title="${escapeHtml(priceTitle(current))}">${escapeHtml(`${current}${priceSuffix(current)}`)}</option>`);
-    const html = opts.join('');
-    if (select.dataset.html !== html) {
-      select.innerHTML = html;
-      select.dataset.html = html;
-    }
-  } else {
-    // No catalog yet (or another engine's list left behind): Auto and Default, nothing stale from OpenCode.
-    const html = `${autoModelOption()}<option value="">Default</option>`;
-    if (select.dataset.html !== html) {
-      select.innerHTML = html;
-      select.dataset.html = html;
-    }
-  }
+  // Keep the stored value selectable even when a filter hides it: the list always appends it as an extra option.
   select.value = auto ? AUTO_MODEL : current;
-  // Effort only for models that support it (as the CLI greys it out).
-  const chosen = models.find((m) => m.value === (current || 'default'));
-  const noEffort = Boolean(chosen && !chosen.efforts?.length);
-  $('#effort').disabled = noEffort || Boolean(state.readOnly);
-  $('#effort').title = noEffort ? 'Model ini tidak mendukung pengaturan effort' : '';
+  const total = catalogMatchCount(catalog, '');
+  select.title = `${total} model dari Claude Code + OpenCode${locked ? ' — model mesin lain menunggu giliran ini selesai' : ''}`;
+  $('#model-search-ctl').hidden = total < 8; // a short list needs no search box
+  $('#model-search-count').textContent = query ? `${catalogMatchCount(catalog, query)} model cocok` : '';
+  // The chosen model's own effort levels; unknown (Default model, older OpenCode) → the generic Claude list.
+  const chosen = modelEntry(catalog, current);
+  const efforts = chosen?.efforts;
+  setEffortOptions(Array.isArray(efforts) ? efforts : null);
+  const none = Array.isArray(efforts) && !efforts.length;
+  $('#effort').disabled = none || Boolean(state.readOnly);
+  $('#effort').title = none ? 'Model ini tidak punya level effort' : Array.isArray(efforts) ? `Level effort model ini: ${efforts.join(', ')}` : '';
   renderPriceNote(auto, current, engine);
 }
 
@@ -629,9 +597,10 @@ async function sendPrompt() {
 }
 
 /**
- * Picking a model in the #model select: only the model fields go out. Auto sends the flag alone (the classifier picks
- * the model per prompt), a concrete value clears Auto, Default clears both. Shown right away (optimistic), reverted
- * when the server refuses.
+ * Picking a model in the #model select: the model decides the engine. A model of the other engine sends ONE request
+ * with both fields (`{ engine, model }`); the project's own engine only sends the model. Auto sends the flag alone
+ * (the classifier picks the model per prompt), a concrete value clears Auto, Default clears both. Shown right away
+ * (optimistic), reverted when the server refuses.
  */
 export async function saveModel() {
   if (state.readOnly) return;
@@ -639,12 +608,17 @@ export async function saveModel() {
   const pick = $('#model').value;
   const auto = pick === AUTO_MODEL;
   const before = state.statuses[project] ?? {};
-  state.statuses[project] = { ...before, modelAuto: auto, ...(auto ? {} : { model: pick }) };
+  const currentEngine = engineOf(before, state.config);
+  // The option carries its own engine; Auto/Default belong to the project's current engine.
+  const picked = $('#model').selectedOptions[0]?.dataset?.engine;
+  const engine = auto || !pick || !picked ? currentEngine : picked;
+  const patch = auto ? { modelAuto: true } : { model: pick, modelAuto: false, ...(engine !== currentEngine && { engine }) };
+  state.statuses[project] = { ...before, modelAuto: auto, ...(auto ? {} : { model: pick }), ...(engine !== currentEngine && { engine }) };
   renderComposer();
   try {
-    await api(`/api/projects/${project}/settings`, auto ? { modelAuto: true } : { model: pick, modelAuto: false });
+    await api(`/api/projects/${project}/settings`, patch);
   } catch (err) {
-    state.statuses[project] = { ...(state.statuses[project] ?? {}), model: before.model, modelAuto: before.modelAuto };
+    state.statuses[project] = { ...(state.statuses[project] ?? {}), model: before.model, modelAuto: before.modelAuto, engine: before.engine };
     renderComposer();
     toast(err.message);
   }
@@ -773,6 +747,11 @@ export function initComposerControls() {
   $('#btn-demo').addEventListener('click', () => api('/api/demo').catch((err) => toast(err.message)));
   // Engine picker + the searchable per-project model list (features/engine.js).
   initEngine({ onModelPicked: saveModel, rerender: renderComposer });
+  // The model list is fetched only after its dialog is opened: the chip asks for it, then re-renders with the answer.
+  $('#settings-chip').addEventListener('click', () => {
+    wantModels();
+    setTimeout(renderComposer, 0);
+  });
   $('#model').addEventListener('change', saveModel);
   // Model Auto ladder dialog: one <select> per tier, saved for the project's engine.
   $('#tiers-rows').addEventListener('change', () => {

@@ -4,11 +4,8 @@
 // a user agent steers every project, like plugins and MCP servers; gh's login opens a device flow for this
 // machine). A project's own agents (.claude/agents) can be edited over Tailscale too.
 import { AdminError, deleteAgent, listAgents, listHooks, listPlugins, pluginAction, saveAgent } from '../claude-admin.js';
-import { budgetStop, consumeBudgetOverride } from '../budget.js';
-import { checkTurn } from '../concurrency.js';
 import { gitAction } from '../git.js';
 import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
-import { HANDOFF_TRIGGER_PROMPT, handoffInfo, HandoffError, otherEngine, quickHandoff, smartHandoff } from '../handoff.js';
 import { json } from './http.js';
 import { withProject, withSession } from './project.js';
 
@@ -24,7 +21,7 @@ const guard = (fn, { laptop = false, claude = false } = {}) => async (ctx, req, 
     return json(res, 200, await fn(ctx, req, res, params, body ?? {}));
   } catch (err) {
     if (err instanceof AdminError || err instanceof PrError) return json(res, err.status, { error: err.message });
-    if (err?.status) return json(res, err.status, err instanceof HandoffError && err.body && typeof err.body === 'object' ? { ...err.body, error: err.message } : { error: err.message });
+    if (err?.status) return json(res, err.status, { error: err.message });
     throw err;
   }
 };
@@ -72,72 +69,6 @@ export function register(router) {
     return r;
   }, { claude: true })));
   router.post('/api/projects/:id/hooks', withProject(guard((ctx, req, res, { project }) => ({ hooks: listHooks(project.path) }), { claude: true })));
-
-  // 🔁 Lanjutkan dari mesin lain: the other workspace's context as an opening message (src/handoff.js)
-  router.post('/api/projects/:id/handoff/info', withProject(guard(({ hub }, req, res, { project }) => handoffInfo(hub, project, otherEngine(hub.engineOf(project.id))))));
-  let smartBusy = false;
-  router.post('/api/projects/:id/handoff', withProject(guard(async ({ hub, claude, opencode }, req, res, { project }, body) => {
-    const to = hub.engineOf(project.id);
-    const from = otherEngine(to);
-    try {
-      if (body.mode !== 'smart') return { mode: 'quick', from, text: await quickHandoff({ hub, project, from }) };
-      if (smartBusy) throw new HandoffError(409, 'Catatan handoff lain sedang dibuat. Tunggu sebentar.');
-      smartBusy = true;
-      try {
-        console.log(`Handoff pintar: ${from} → ${to} (${project.name})`);
-        return { mode: 'smart', from, text: await smartHandoff({ hub, project, from, claude, opencode }) };
-      } finally {
-        smartBusy = false;
-      }
-    } catch (err) {
-      if (err instanceof HandoffError) throw Object.assign(err, { status: err.status });
-      throw err;
-    }
-  })), { maxBody: 1024 });
-
-  // One-button handoff: put the free context into the session and immediately send a context-only trigger prompt.
-  router.post(
-    '/api/projects/:id/handoff/apply',
-    withSession(
-      guard(async ({ hub, ledger, metrics }, req, res, { project, session }) => {
-        const stop = budgetStop(hub, ledger, Date.now(), project.id);
-        if (stop && !consumeBudgetOverride(hub)) throw new HandoffError(409, stop.message);
-        if (session.turnActive?.() || session.busy || session.inflight?.size || session.rewinding) throw new HandoffError(409, 'Tunggu giliran yang sedang berjalan selesai dulu.');
-        if ([...hub.approvals.values()].some(({ approval }) => approval.project === project.id)) throw new HandoffError(409, 'Jawab permintaan izin yang masih terbuka dulu.');
-        const to = hub.engineOf(project.id);
-        const from = otherEngine(to);
-        // Capacity is checked BEFORE building the handoff context: a refused request must not spend that work.
-        const gate = checkTurn(hub, project.id, session);
-        if (gate) {
-          metrics?.capacityRefused?.();
-          throw Object.assign(new HandoffError(gate.status, gate.body.error), { body: gate.body });
-        }
-        const text = await quickHandoff({ hub, project, from });
-        session.setHandoffContext(text);
-        try {
-          session.prompt(HANDOFF_TRIGGER_PROMPT, [], { handoffTrigger: true });
-        } catch (err) {
-          session.clearHandoffContext();
-          throw err;
-        }
-        return { ok: true, from, to };
-      }),
-    ),
-    { maxBody: 1024 },
-  );
-
-  // Session-only handoff memory: no turn, no file, no prompt. It rides with the next prompt once.
-  router.post('/api/projects/:id/handoff/context', withSession(guard((ctx, req, res, { project, session }, body) => {
-    if (body?.clear === true) {
-      session.clearHandoffContext();
-      return { ok: true, ready: false };
-    }
-    const text = typeof body?.text === 'string' ? body.text.trim() : '';
-    if (!text) throw new HandoffError(400, 'Catatan handoff kosong.');
-    if (text.length > 20_000) throw new HandoffError(413, 'Catatan handoff terlalu panjang.');
-    session.setHandoffContext(text);
-    return { ok: true, ready: true };
-  })));
 
   // ⇡ Pull request
   router.post('/api/github/status', guard(async () => ({ ...(await ghStatus(ghBin)), login: ghLoginState() })));

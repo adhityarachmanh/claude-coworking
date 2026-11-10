@@ -49,8 +49,8 @@ export function execFileTree(command, args, { timeout = 0, ...options } = {}, ca
     callback(err, out, errOut);
   });
   // Close stdin at once: it is a pipe (not a TTY), and `opencode run` / `claude -p` read a piped stdin as prompt
-  // input, so an open pipe makes them wait for EOF that never comes (handoff Pintar hit its 4-minute timeout and
-  // the Effort Auto classifier silently fell back after 25 s). No caller writes to this stdin.
+  // input, so an open pipe makes them wait for EOF that never comes (the Effort Auto classifier silently fell back
+  // after 25 s). No caller writes to this stdin.
   child.stdin?.on('error', () => {}); // EPIPE when the process is gone already: reported through the callback
   child.stdin?.end();
   if (timeout > 0) {

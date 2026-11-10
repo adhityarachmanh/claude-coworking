@@ -135,6 +135,32 @@ test('hub: a long chat stays bounded on disk and loads its last 250 messages', (
   assert.equal(chat[0].text, '#450');
 });
 
+test('hub: switching engine keeps each chat store in its own file (no cross-store compaction)', () => {
+  const dir = tmp();
+  const hub = new Hub({ dataDir: dir });
+  for (let i = 0; i < 600; i++) hub.chat('p1', { kind: 'assistant', text: `claude#${i}` });
+  hub.save();
+  assert.ok(lines(chatFile(dir, 'p1')).length >= 250, 'the Claude file is compacted but not empty');
+  hub.updateSettings('p1', { engine: 'opencode', model: 'opencode-go/kimi-k3' });
+  assert.equal(hub.rt('p1').chat, hub.storedChats['opencode:p1'], 'the runtime moved to the target engine store');
+  hub.chat('p1', { kind: 'info', text: 'opencode#baru' });
+  hub.save();
+  const opencode = lines(path.join(dir, 'chats-opencode', 'p1.jsonl'));
+  assert.equal(opencode.length, 1, 'the new engine store holds only its own row');
+  assert.match(opencode[0], /opencode#baru/);
+  const claude = lines(chatFile(dir, 'p1'));
+  assert.ok(claude.length >= 250, 'the old store is not wiped by the other engine\'s compaction');
+  assert.ok(claude.every((l) => !l.includes('opencode#baru')), 'no cross-store write');
+});
+
+test('hub: moving to another engine clears the previous model\'s stale warning', () => {
+  const dir = tmp();
+  const hub = new Hub({ dataDir: dir });
+  hub.setStatus('p1', { modelStale: true });
+  hub.updateSettings('p1', { engine: 'opencode', model: 'opencode-go/kimi-k3' });
+  assert.equal(hub.statusFor('p1').modelStale, false);
+});
+
 test('migration: chats move out of state.json once (safety copy kept 7 days), ids and labels kept', () => {
   const dir = tmp();
   const shell = { id: 'm5', ts: 1_700_000_000_005, project: 'p1', kind: 'tool', tool: 'Bash', input: { command: 'ls', description: 'Daftar file' }, text: '$ ls' };

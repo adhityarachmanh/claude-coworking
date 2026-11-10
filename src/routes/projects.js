@@ -13,6 +13,65 @@ import { withProject, withSession } from './project.js';
 // The turn settings picker's cost per model: list prices for OpenCode Go, a blended effective price from the
 // usage ledger for everything else. Not on the plain-WiFi read allowlist (src/remote.js): laptop + Tailscale only.
 const PRICE_DAYS = 90;
+// One model list per project for a moment: the picker is opened on every device/settings render, and each render
+// used to spawn `opencode models` again. Short (30 s) so a provider login shows up almost at once.
+const MODEL_CACHE_MS = 30_000;
+const openCodeListCache = new Map(); // project id -> { at, data: { models, needsStart } }
+
+const asBody = (body) => (body && typeof body === 'object' && !Array.isArray(body) ? body : {});
+
+/** Claude Code's models from the app's catalog (`initialize`), in the picker's shape ({ value, name, efforts }). */
+function claudeModelOptions(hub) {
+  const stored = hub.persisted?.catalog?.models;
+  const list = Array.isArray(stored) && stored.length ? stored : (hub.config?.models ?? []);
+  return (Array.isArray(list) ? list : [])
+    .filter((m) => typeof m?.value === 'string' && m.value)
+    .map((m) => ({ value: m.value, name: typeof m.displayName === 'string' && m.displayName ? m.displayName : (typeof m.name === 'string' && m.name ? m.name : m.value), efforts: Array.isArray(m.efforts) ? m.efforts : null }));
+}
+
+/** OpenCode's models (with each one's own effort levels), cached per project for at most MODEL_CACHE_MS. */
+async function openCodeModelOptions({ opencode, sessions }, id) {
+  const now = Date.now();
+  for (const [key, entry] of openCodeListCache) if (now - entry.at > MODEL_CACHE_MS * 4) openCodeListCache.delete(key);
+  const hit = openCodeListCache.get(id);
+  if (hit && now - hit.at < MODEL_CACHE_MS) return hit.data;
+  let values = await openCodeModels(opencode);
+  // `opencode models` empty (its service just started, catalog still loading): the models a running ACP session of
+  // any project offers (configOptions "model") are the same list, so the picker isn't left empty meanwhile.
+  if (!values.length) values = modelsOffered(sessions.sessions.values());
+  // each model's own effort levels (null = unknown: the picker offers the generic list and the nearest is used)
+  const efforts = values.length ? await openCodeModelEfforts(opencode) : new Map();
+  const models = values.map((value) => ({ value, name: `${value.slice(value.indexOf('/') + 1)}${/free/i.test(value) ? ' (gratis)' : ''}`, efforts: efforts.has(value) ? efforts.get(value) : null }));
+  // An empty list (OpenCode still starting, or `opencode models` failed) is cached just the same: the picker asks
+  // again after a moment, and one request never spawns the CLI twice.
+  const data = { models, needsStart: !models.length };
+  openCodeListCache.set(id, { at: now, data });
+  return data;
+}
+
+/** Why this project may not move to `engine` right now (a 409 body), or null when it is safe. */
+function engineSwitchRefusal({ hub, sessions, opencode, taskQueue }, project, engine) {
+  const id = project.id;
+  const name = project.name ?? id;
+  if (engine === 'opencode' && !opencode) return { error: 'OpenCode belum terpasang di laptop ini.' };
+  if (hub.legacyChats) return { error: 'Riwayat chat lama belum selesai dipindahkan (lihat log server). Restart aplikasi dulu, lalu coba lagi.' };
+  // An open card first: its reason is the one the user can act on (a turn may run behind it anyway).
+  if ([...hub.approvals.values()].some(({ approval }) => approval.project === id)) {
+    return { error: 'Masih ada permintaan izin/rencana yang menunggu jawaban. Jawab dulu, lalu pilih model mesin lain.' };
+  }
+  const session = sessions.sessions.get(id);
+  if (session && (session.turnActive() || session.busy || session.inflight?.size || session.rewinding)) {
+    return { error: `Masih ada yang bekerja: ${name}. Tunggu giliran ini selesai, lalu pilih model mesin lain.`, busy: [name] };
+  }
+  if (hub.persisted.turns?.[id] || hub.persisted.interrupted?.[id]) {
+    return { error: 'Ada giliran terputus ("Lanjutkan") di project ini. Lanjutkan atau abaikan dulu, lalu pilih model mesin lain.' };
+  }
+  const queue = taskQueue?.queues?.[id];
+  if (queue?.items?.some((i) => i.status === 'waiting' || i.status === 'running')) {
+    return { error: `📋 Antrian tugas masih berisi item: ${name}. Selesaikan atau hapus dulu, lalu pilih model mesin lain.`, busy: [name] };
+  }
+  return null;
+}
 
 export function register(router) {
   router.post('/api/models/prices', async ({ dataDir, ledger }, req, res, params, body) => {
@@ -51,47 +110,56 @@ export function register(router) {
 
 /** Per-project actions; registered with the other /api/projects/:id routes (see index.js). */
 export function registerProjectActions(router) {
-  router.post('/api/projects/:id/settings', withSession(({ hub }, req, res, { project, session }, body) => {
-    // The engine has its own guarded route (POST /api/projects/:id/engine, below): switching starts another
-    // engine's process and shows its history, which a settings patch must never do silently.
-    const { engine: _engine, ...patch } = body ?? {};
+  // Turn settings, including the engine: picking a model of the other engine makes that engine run the project
+  // (there is no separate "switch" action any more). Refused (409) while this project is working, waits in
+  // 📋 Antrian, has an open approval/plan card, or a cut-short turn to continue: two workspaces must not mix.
+  router.post('/api/projects/:id/settings', withProject((ctx, req, res, { project }, body) => {
+    const { hub, sessions } = ctx;
+    const patch = asBody(body);
+    const engine = patch.engine === undefined ? undefined : String(patch.engine);
+    if (engine !== undefined && !ENGINES.includes(engine)) return json(res, 400, { error: 'Mesin tidak dikenal.' });
+    if (engine !== undefined && engine !== hub.engineOf(project.id)) {
+      const refusal = engineSwitchRefusal(ctx, project, engine);
+      if (refusal) return json(res, 409, refusal);
+    }
+    const before = hub.settingsFor(project.id);
     hub.updateSettings(project.id, patch);
     // Picking a model (or Default) answers the "provider logged out" warning (routes/account.js modelStale):
     // the same field clears it, so the next prompt is let through even when the model is unchanged.
     if (patch.model !== undefined || patch.modelAuto !== undefined) hub.setStatus(project.id, { modelStale: false });
-    session.syncSettings(); // switches the running Claude Code live (mid-turn too, like Shift+Tab)
-    return json(res, 200, { ok: true });
-  }));
-  // 🔀 Stage 1: this project changes engine. Both engines' histories stay; only the shown one changes. Refused
-  // (409) while the project works, waits in 📋 Antrian, has an open approval, or a cut-short turn to continue.
-  // Laptop/Tailscale only: it starts another agent process on this machine.
-  router.post('/api/projects/:id/engine', withProject((ctx, req, res, { project }, body) => {
-    if (!ctx.canManageAccount?.(req)) return json(res, 403, { error: 'Ganti mesin hanya dari laptop atau lewat Tailscale.' });
-    if (body?.cancel === true) {
-      const ok = ctx.sessions.cancelPendingEngine(project.id);
-      return json(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'Tidak ada jadwal ganti mesin untuk project ini.' });
+    let session;
+    try {
+      // Creates the target engine's session (and carries the old engine's chat over once) before the next prompt.
+      session = sessions.get(project);
+    } catch (err) {
+      // Nothing may stay half-switched: put the settings (and the runtime chat) back where they were.
+      if (engine !== undefined && hub.engineOf(project.id) !== before.engine) {
+        hub.updateSettings(project.id, { ...before, engine: before.engine });
+        hub.takeEngineFrom(project.id);
+      }
+      return json(res, err.status ?? 409, { error: err.message });
     }
-    const engine = String(body?.engine ?? '');
-    if (!ENGINES.includes(engine)) return json(res, 400, { error: 'Mesin tidak dikenal.' });
-    const result = body?.afterTurn === true
-      ? ctx.sessions.queueEngineSwitch(project, engine)
-      : ctx.sessions.setProjectEngine(project, engine);
-    if (!result.ok) return json(res, result.status ?? 409, { error: result.error, ...(result.busy && { busy: result.busy }) });
-    return json(res, 200, { ok: true, engine: result.engine, ...(result.queued && { queued: true, enginePending: result.enginePending }) });
+    session.syncSettings(); // switches the running Claude Code live (mid-turn too, like Shift+Tab)
+    return json(res, 200, { ok: true, engine: hub.engineOf(project.id) });
   }));
-  // The model picker of a non-Claude engine (OpenCode: `opencode models` for the providers set up on this laptop).
+  // The model picker: both engines' models in one answer. The old fields (engine/models/current/needsStart) still
+  // describe the RUNNING engine, so an older page keeps working; `engines` adds each engine's own list.
   router.post('/api/projects/:id/models', withSession(async ({ hub, opencode, sessions }, req, res, { project }) => {
     const s = hub.settingsFor(project.id);
-    if (s.engine !== 'opencode') return json(res, 200, { engine: s.engine, models: [], current: s.model, needsStart: false });
-    let values = await openCodeModels(opencode);
-    // `opencode models` empty (its service just started, catalog still loading): the models a running ACP session of
-    // any project offers (configOptions "model") are the same list, so the picker isn't left empty meanwhile.
-    if (!values.length) values = modelsOffered(sessions.sessions.values());
-    // each model's own effort levels (null = unknown: the picker offers the generic list and the nearest is used)
-    const efforts = await openCodeModelEfforts(opencode);
-    const models = values.map((value) => ({ value, name: `${value.slice(value.indexOf('/') + 1)}${/free/i.test(value) ? ' (gratis)' : ''}`, efforts: efforts.has(value) ? efforts.get(value) : null }));
-    // An empty list (OpenCode still starting, or `opencode models` failed): the picker asks again shortly.
-    return json(res, 200, { engine: 'opencode', models, current: s.model, needsStart: !models.length });
+    const claudeModels = claudeModelOptions(hub);
+    const oc = await openCodeModelOptions({ hub, opencode, sessions }, project.id);
+    const active = s.engine === 'opencode' ? { models: oc.models, needsStart: oc.needsStart } : { models: [], needsStart: false };
+    return json(res, 200, {
+      engine: s.engine,
+      models: active.models,
+      current: s.model,
+      needsStart: active.needsStart,
+      engines: {
+        // Claude Code's models come with the app (its `initialize` catalog): nothing to ask the CLI here.
+        claude: { models: claudeModels, current: s.engine === 'claude' ? s.model : hub.engineSettingsFor(project.id, 'claude').model, needsStart: !claudeModels.length },
+        opencode: { models: oc.models, current: s.engine === 'opencode' ? s.model : hub.engineSettingsFor(project.id, 'opencode').model, needsStart: oc.needsStart },
+      },
+    });
   }));
   router.post('/api/projects/:id/favorite', withSession(({ hub }, req, res, { project }, body) => {
     hub.setFavorite(project.id, Boolean(body.on));

@@ -10,7 +10,6 @@
 import { brain, scenes, stage } from './core/scenes.js';
 import { initViewMode } from './features/view-mode.js';
 import { initAppUpdate } from './features/app-update.js';
-import { initHandoff } from './features/handoff.js';
 import { initHealth } from './features/health.js';
 import { initInstall } from './features/install.js';
 import { initRoleMap } from './features/role-map.js';
@@ -94,7 +93,6 @@ initTeam();
 initViewMode(); // 🧠 Mode Otak ↔ 🏢 Kantor
 initFocus(); // 🎯 Mode fokus: the office is hidden and its animation paused (/fokus)
 initAppUpdate(); // ⬆ newer Adhitron: banner + ⚙
-initHandoff(); // 🔁 /lanjut: context from the other engine
 initHealth(); // 🩺 Kesehatan sistem (⚙ → Sistem; laptop/Tailscale only)
 initInstall(); // 📲 pasang sebagai aplikasi (PWA), hint in ❓ Panduan
 initShortcutLinks(); // 🔗 PWA shortcut: /?open=dashboard or /?open=sessions

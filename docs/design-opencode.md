@@ -27,7 +27,7 @@ Fakta protokol di dokumen ini berasal dari probe OpenCode v2.0.18 (lihat §0.1).
 | D6 | Setelah satu **reject** dalam suatu giliran, semua kartu izin lain yang masih terbuka di giliran itu **ditutup otomatis** (ditolak); `PermissionNotFoundError` / `stopReason: "cancelled"` ditampilkan sebagai **"Dihentikan"**, bukan error | Sesuai perilaku yang terbukti di probe: setelah reject, OpenCode membatalkan giliran dan permintaan paralel lainnya sudah tidak valid. |
 | D7 | Token/biaya: `usage` dari hasil `session/prompt` per giliran; biaya = **selisih** `usage_update.cost.amount` (kumulatif sesi). Dicatat ke ledger dengan `engine: 'opencode'` dan `model: 'provider/model'` | Laporan dan batas biaya antrean tetap berfungsi. Biaya model gratis = 0. |
 | D8 | Daftar model per project diambil dari `configOptions` milik `session/new` dan **di-cache per project** (`persisted.engineCatalog.opencode`) | Ada 144 model dan bergantung pada provider yang dikonfigurasi user. Tidak boleh tercampur dengan katalog Claude (`persisted.catalog`). |
-| D9 | Mengganti mesin = **percakapan baru**: proses dihentikan, `sessionId` dikosongkan, dan chat mendapat info "Mesin diganti ke OpenCode" | Transcript Claude dan sesi OpenCode tidak saling kompatibel. Cara paling sederhana yang jujur. |
+| D9 | **Mesin mengikuti model**: memilih model mesin lain di Pengaturan giliran memindahkan project untuk giliran berikutnya (bukan aksi switch tersendiri). Proses lama ditutup, sesi native mesin tujuan dilanjutkan, dan percakapan mesin sebelumnya dibawa sebagai **ringkasan konteks** otomatis | Transcript Claude dan sesi OpenCode tidak saling kompatibel. Ringkasan dari chat tersimpan (tanpa panggilan model) lebih jujur daripada mengaku memindahkan percakapan utuh, dan pengguna cukup memilih model. |
 | D10 | UI memakai **flag kemampuan per mesin** (`config.engines[engine].caps`) untuk menyembunyikan fitur yang tidak didukung | Frontend tidak perlu bercabang dengan `if (engine === 'opencode')` di banyak tempat. |
 | D11 | Ditemukan seperti `claude-bin.js`: env `OPENCODE_BIN`, lalu `node_modules/@opencode/cli/bin/opencode.exe` di setiap dir PATH, lalu `opencode.exe` langsung yang terverifikasi `--version`. **Spawn tanpa shell** | Shim `.cmd`/`opencode` di PATH tidak bisa di-spawn tanpa shell, dan shell membuka celah injeksi argumen. |
 
@@ -56,20 +56,28 @@ export const DEFAULT_SETTINGS = { engine: 'claude', mode: 'manual', model: '', e
 `cleanSettings(base, patch)`:
 - `ENGINES.includes(patch.engine)` → `next.engine = patch.engine`. Nilai lain diabaikan (sama seperti field lain).
 - **Validasi model bergantung pada mesin**: untuk `opencode`, `model` valid jika `''` atau ada di `persisted.engineCatalog.opencode.models[].value` **atau** cocok dengan `^[a-z0-9][\w.-]*\/[\w.:@-]+$` (provider/model). Ini supaya model bisa dipilih sebelum katalog pertama terisi; kalau OpenCode menolaknya, kita tampilkan error dan model kembali ke default.
-- Jika `patch.engine` berbeda dari `base.engine`, maka `model` dan `effort` di-reset ke `''` (model Claude tidak berlaku di OpenCode, dan sebaliknya). `mode` dipertahankan, tapi `dontAsk` dipetakan ke `manual` untuk OpenCode (§5.2).
+- Jika `patch.engine` berbeda dari `base.engine`, pengaturan mesin lama disimpan ke `engineSettings`, lalu `model`/`effort`/`agent` diambil dari nilai yang dikirim bersama patch itu atau dari `engineSettings` mesin tujuan—tidak ada yang di-reset. `mode` dipertahankan, tapi `dontAsk` dipetakan ke `manual` untuk OpenCode (§5.2).
 - `effort` **diabaikan** untuk OpenCode di Fase 1 (lihat tabel paritas).
 
 ### 1.2 Migrasi
 
 Tidak ada migrasi data: `settingsFor(id)` sudah melakukan `{ ...DEFAULT_SETTINGS, ...persisted }`, jadi project lama mendapat `engine: 'claude'`. Ekspor dan backup ikut membawa field ini. Template project (`src/templates.js`) dan "duplikat setting" (hub.js:606) **ikut menyalin** `engine`.
 
-### 1.3 Ganti mesin (D9)
+### 1.3 Mesin mengikuti model (D9)
 
-Endpoint settings yang sudah ada (`PATCH` settings → `hub.updateSettings`) menerima `engine`. Jika `engine` berubah:
-1. Tolak dengan `409 { error: 'busy' }` kalau sesi sedang menjalankan giliran atau ada item antrean yang `started` (pengguna harus Stop dulu).
-2. `sessions.get(project).kill()`, `sessions.delete(project.id)`, `hub.setSessionId(id, null)`.
-3. Chat info: "Mesin diganti ke OpenCode. Percakapan baru dimulai."
-4. `SessionManager.get()` berikutnya membuat kelas yang sesuai.
+Tidak ada route switch tersendiri (`POST /api/projects/:id/engine` sudah dihapus). `POST /api/projects/:id/settings`
+menerima `{ engine, model }`, dan `engine` adalah mesin dari model yang dipilih. Jika `engine` berubah:
+
+1. Tolak `409` dengan alasan yang bisa ditindaklanjuti bila project sedang bekerja, ada izin/rencana menunggu jawaban,
+   antrean berisi item, ada giliran terputus, rewind berjalan, atau OpenCode belum terpasang.
+2. `hub.updateSettings` menyimpan pengaturan mesin lama (`engineSettings`), memulihkan pengaturan mesin tujuan, lalu
+   menandai `engineChanges`.
+3. `SessionManager.get()` berikutnya menutup proses lama (409 bila masih bekerja) dan membuat sesi mesin tujuan yang
+   melanjutkan `sessionsByEngine` miliknya. `src/handoff.js` menyusun `bridgeNote` dari chat tersimpan bila `needsBridge`,
+   menulis satu baris info `contextBridge` (`🔁 Konteks dari … dibawa ke … (N pesan)`), dan menaruh catatan itu sebagai
+   konteks sekali pakai pada prompt berikutnya. Status `handoffReady` menyala sampai prompt itu dikirim.
+4. Tidak ada penyalinan chat: `Hub.timeline(id)` menampilkan kedua store sebagai satu alur, sehingga kembali ke mesin lama
+   melanjutkan sesi aslinya.
 
 ---
 
@@ -300,10 +308,10 @@ Status project (`hub.setStatus`) menambah `engine` (sudah ada lewat settings) da
 
 | Tempat | Perubahan |
 |---|---|
-| `public/js/features/settings.js` (setting project) | Pilihan **Mesin**: Claude Code / OpenCode (OpenCode dinonaktifkan dengan tooltip jika `available:false`). Konfirmasi: "Mengganti mesin memulai percakapan baru." Tangani `409 busy`. |
+| `public/js/features/composer.js` (Pengaturan giliran) | Satu pilihan model: grup **Claude Code** dan **OpenCode**. Memilih model mesin lain mengirim `{ engine, model }` lewat `/api/projects/:id/settings`; model mesin lain dinonaktifkan beserta alasannya selama project sibuk, izin/rencana menunggu, antrean berisi item, giliran terputus, atau rewind. Tidak ada pilihan mesin terpisah. |
 | `public/js/features/composer.js` | Membaca `caps` mesin project: sembunyikan effort, toggle Mode tim, dan mode `dontAsk`; pemilih model memakai `/models` untuk OpenCode. |
 | `public/js/features/rewind.js`, `mcp.js`, `tasks.js`, `conversations.js` (ekspor) | Tombol/entri disembunyikan jika cap `false`. |
-| `public/js/features/statusline.js` + kartu dashboard | Label mesin kecil "OpenCode" (badge) bila `engine !== 'claude'`. |
+| `public/js/features/statusline.js` + kartu dashboard | Badge mesin halus hanya di bar sesi (mesin project, dipilih oleh model); badge mesin di daftar project dihapus. |
 | `public/js/features/approvals.js` | Teks penutupan otomatis ("Ditutup otomatis: giliran dihentikan"). Tidak ada perubahan struktur. |
 | `public/js/features/report.js` | Kolom/filter mesin (opsional, Fase 1 cukup menampilkan nama model `provider/model`). |
 | `public/js/core/engine-caps.js` (baru, murni) | `capsFor(config, engine)` + default aman bila config lama (tanpa `engines`) → caps Claude. Diuji unit. |
@@ -386,7 +394,7 @@ Hasilnya dicetak sebagai tabel PASS/FAIL. Tidak dijalankan di CI (membutuhkan ja
 | `src/session.js` | ubah | `SessionManager`: terima `opencode`, `get()` memilih kelas, `killTree` dan helper `shell` dipindah ke `src/util.js`. `ClaudeSession` hanya ganti import |
 | `src/translator.js` | ubah kecil | Ekspos `onToolUse/onToolResult/finishTurn` agar bisa dipakai `AcpTranslator` (tanpa perubahan perilaku) |
 | `src/hub.js` | ubah | `ENGINES`, `engine` di `DEFAULT_SETTINGS`/`cleanSettings`, validasi model per mesin, `persisted.engineCatalog`, `config.engines` + caps |
-| `src/routes/session.js`, `src/routes/project.js` | ubah | `/sessions` bercabang per mesin; `GET /api/projects/:id/models`; `409 busy` saat ganti mesin; method `unsupported` → `409 { error:'unsupported' }` |
+| `src/routes/session.js`, `src/routes/project.js` | ubah | `/sessions` bercabang per mesin; `GET /api/projects/:id/models`; `POST /api/projects/:id/settings { engine, model }` dengan **409** bila mesin tidak boleh pindah sekarang; method `unsupported` → `409 { error:'unsupported' }` |
 | `src/usage.js` | ubah kecil | Field `engine` opsional di ledger + agregasi |
 | `src/server.js` | ubah kecil | `findOpencode()` saat start, teruskan ke `SessionManager` |
 | `test-support/fake-acp.mjs`, `test-support/opencode-contract.mjs`, `test/acp-*.test.mjs`, `test/opencode-server.test.mjs` | baru | §7 |
@@ -396,9 +404,8 @@ Hasilnya dicetak sebagai tabel PASS/FAIL. Tidak dijalankan di CI (membutuhkan ja
 | File | Isi |
 |---|---|
 | `public/js/core/engine-caps.js` (baru) | `capsFor()` murni |
-| `public/js/features/settings.js` | Pilihan mesin + konfirmasi + 409 |
-| `public/js/features/composer.js` | Caps, pemilih model OpenCode (cari + grup) |
-| `public/js/features/rewind.js`, `mcp.js`, `tasks.js`, `conversations.js`, `statusline.js`, `dashboard.js`, `approvals.js` | Sembunyikan sesuai caps, badge mesin, teks auto-tutup |
+| `public/js/features/composer.js` | Satu daftar model dua mesin (grup Claude Code/OpenCode, cari + grup) + kirim `{ engine, model }`; caps, effort, Mode tim |
+| `public/js/features/rewind.js`, `mcp.js`, `tasks.js`, `conversations.js`, `statusline.js`, `dashboard.js`, `approvals.js` | Sembunyikan sesuai caps, badge mesin di bar sesi, teks auto-tutup |
 | `test/ui.test.mjs` (bagian UI) + unit `engine-caps` | |
 
 ### 9.3 Kontrak API/event (dibekukan sebelum kerja paralel)
@@ -440,17 +447,24 @@ Hasilnya dicetak sebagai tabel PASS/FAIL. Tidak dijalankan di CI (membutuhkan ja
 
 ## 11. Mesin per project dan login provider
 
-**Mesin dipilih per project** (⚙ Pengaturan → Mesin project), bukan lagi seluruh aplikasi. `persisted.engine` tinggal
-**default untuk project baru**; project yang sudah ada menyimpan `settings[id].engine`. Dua project boleh memakai mesin
-berbeda bersamaan.
+**Mesin mengikuti model.** Tidak ada aksi switch: model yang dipilih di Pengaturan giliran menentukan mesin project, dan
+`POST /api/projects/:id/settings` menerima `{ engine, model }`. `persisted.engine` tinggal **default untuk project baru**
+(`POST /api/engine`, tanpa tombol di UI); project yang sudah ada menyimpan `settings[id].engine`. Dua project boleh
+memakai mesin berbeda bersamaan.
 
 - **State** (`src/hub.js`): `settings[id].engine` (fallback ke `persisted.engine`), `engineSettings[id][engine] =
   { model, effort, agent }` (pilihan diingat per mesin), `sessionsByEngine[id][engine]` (id sesi per mesin; `sessions[id]`
   tetap ditulis sebagai cermin untuk kompatibilitas). Chat: `data/chats` (Claude Code) dan `data/chats-<engine>`; id pesan
   tetap unik lintas store (`seq` = maksimum kedua folder). `settingsFor().engine` mengikuti project.
-- **Ganti mesin satu project** (`SessionManager.setProjectEngine`, `POST /api/projects/:id/engine`): 409 bila project itu
-  sedang bekerja, punya izin menunggu, antrean berisi item, ada giliran terputus, atau chat lama belum dimigrasi; hanya
-  proses project itu yang ditutup. Riwayat kedua mesin **disimpan terpisah** dan tidak disalin.
+- **Pindah mesin** (`Hub.updateSettings` + `SessionManager.get`, tanpa route switch): 409 bila project itu sedang bekerja,
+  punya izin/rencana menunggu jawaban, antrean berisi item, ada giliran terputus, rewind berjalan, atau OpenCode belum
+  terpasang. `updateSettings` menyimpan pengaturan mesin lama, memulihkan pengaturan mesin tujuan, dan menandai
+  `engineChanges`; `get()` menutup proses lama (409 bila masih bekerja) lalu membuat sesi mesin tujuan yang melanjutkan
+  `sessionsByEngine` miliknya. `src/handoff.js` menyusun `bridgeNote` dari chat mesin lama (tanpa panggilan model, tanpa
+  git) bila `needsBridge`, menulis satu baris info `contextBridge`, dan menaruh catatan sebagai konteks sekali pakai pada
+  prompt berikutnya; `handoffReady` menyala sampai prompt itu dikirim. Dialog handoff manual dan route `/handoff/*` sudah
+  dihapus. Riwayat kedua mesin **tidak disalin**; panel menampilkan keduanya lewat `Hub.timeline` (tiap pesan membawa
+  `engine`).
 - **Migrasi satu arah (Stage 2)**: `workspaces` lama di-flatten ke `engineSettings`/`sessionsByEngine` saat start, dengan
   salinan `data/state.json.pre-per-project-<waktu>` lebih dulu; `workspaces` lalu dihapus. Migrasi idempoten.
 - **Login provider** (`src/opencode-auth.js`, semua `opencode api <operation>`):
@@ -472,12 +486,12 @@ berbeda bersamaan.
 - **Mode tim** (`caps.team = true`): `SessionManager.openCodeTeamConfig()` menulis `data/team/opencode-<hash>.json` = `{ agents: { <role>: { description, system, mode: "subagent" } }, instructions: [opencode-lead-<hash>.md] }` (skema `Config.Info` OpenCode 2.x) dan diberikan lewat env `OPENCODE_CONFIG` (17 prompt ≈ 34 KB, melebihi batas env Windows 32 KB untuk `OPENCODE_CONFIG_CONTENT`). Prompt Lead ditambah satu kalimat: delegasi lewat tool `subagent` (`agent` = nama role). Terbukti dengan OpenCode asli: Lead memanggil `subagent {agent:"pm"}`.
 - **Atribusi subagent**: OpenCode mengalirkan tool milik subagent ke sesi yang sama dengan judul `"<description>: <tool>"`. `AcpAdapter` mengingat `description → toolCallId` dari panggilan `subagent` yang berjalan, membuang awalan judul dan mengirim `parent_tool_use_id`, jadi kerja itu tercatat untuk role subagent (seperti subagent Claude).
 - **Effort** (`caps.effort = true`): opsi ACP `effort` (kategori `thought_level`, nilainya per model, mis. `low|medium|high|xhigh|max|default`). `effortValue()` memilih level terdekat yang tersedia; diterapkan setelah handshake, saat effort diganti, dan lagi setelah ganti model.
-- **Versi**: `opencode --version` (15 dtk) setelah start, masuk `config.engines.opencode.version` dan tampil di tombol mesin di Akun.
+- **Versi**: `opencode --version` (15 dtk) setelah start, masuk `config.engines.opencode.version`.
 
 ## 13. Fase 2b: sesuai OpenCode asli
 
 - **Izin digabung** (`permissionConfig(mode, readUserPermission(project))`): `permission` dari `~/.config/opencode/opencode.json(c)`, `<project>/opencode.json(c)` dan `<project>/.opencode/` dibaca (JSONC) tiap spawn. OpenCode menumpuk semua sumber config dan aturan yang cocok terakhir menang; `OPENCODE_CONFIG_CONTENT` adalah lapisan terakhir, jadi `"*"` tiap tool = yang paling ketat (deny > ask > allow) antara mode dan catch-all user (`mergePermission` di `src/opencode-bin.js`). Catch-all user = `"*"` tool itu atau aturan string-nya; hanya bila tool itu tidak punya, dipakai catch-all global (`"permission": "deny"` atau v2 `action: "*"`): aturan per-tool yang ditulis user mengalahkan aturan global miliknya sendiri (`{"*":"deny","bash":"allow"}` → bash mengikuti mode), tapi mode tetap tidak pernah melonggarkan hasilnya. Pola global (`{"*":{"rm *":"deny"}}`) ikut ke setiap tool, sebelum pola tool itu sendiri. `deny` milik user (catch-all maupun pola) tidak pernah dilonggarkan di mode apa pun; aturan berpola tetap (sesudah `"*"`); di ⚡ Auto `ask` user menjadi `allow` (seperti `--auto`), di dontAsk semuanya menjadi `deny`. Akibat "paling ketat": di ✏️ acceptEdits, user yang menulis `edit: "ask"` (atau `{"*":"ask"}`) tetap ditanya untuk edit — itu disengaja (pilihan user di config-nya sendiri). Format v2 `permissions: [{ action, resource, effect }]` (berurutan; `shell` = bash, `subagent` = task, `*` = semua tool) juga dibaca. Kunci key (`__proto__`, `constructor`, `prototype`) dari file user diabaikan (anti prototype pollution).
-- **Run sekali baca-saja** (handoff Pintar, klasifikasi peran: `opencode run --agent plan`): `OPENCODE_CONFIG_CONTENT` = `{"permission":{"*":"deny","read":…,"grep":"allow","glob":"allow","list":"allow"}}` (`readOnlyOpenCodeEnv`), isi variabel itu yang sudah ada tetap dibawa. Dicek dengan `opencode debug agents` (2.2.5): lapisan ini datang sesudah file user (v1 maupun v2), jadi shell/MCP yang di-allow user ikut ditolak; aturan baca milik user tetap berlaku, dan `.env` (default OpenCode: ask) ditutup karena tidak ada yang bisa menjawab.
+- **Run sekali baca-saja** (klasifikasi peran: `opencode run --agent plan`): `OPENCODE_CONFIG_CONTENT` = `{"permission":{"*":"deny","read":…,"grep":"allow","glob":"allow","list":"allow"}}` (`readOnlyOpenCodeEnv`), isi variabel itu yang sudah ada tetap dibawa. Dicek dengan `opencode debug agents` (2.2.5): lapisan ini datang sesudah file user (v1 maupun v2), jadi shell/MCP yang di-allow user ikut ditolak; aturan baca milik user tetap berlaku, dan `.env` (default OpenCode: ask) ditutup karena tidak ada yang bisa menjawab.
 - **Agent**: nilai opsi ACP `mode` (build, plan, primary agent user) dikirim sebagai `status.agents`; setelan per project `agent` ('' = build). 📋 Rencana dulu selalu memakai `plan`. Agent yang sudah tidak ada jatuh kembali ke build.
 - **Command**: `available_commands_update` → `status.commands` → autocomplete (`slashCatalog`, mesin OpenCode).
 - Claude Code: command layar-terminal (`CLI_ONLY` di public/js/features/commands.js) disaring dari autocomplete; `claude doctor` / `claude update` lewat `/api/claude-check/doctor|update` (laptop saja).

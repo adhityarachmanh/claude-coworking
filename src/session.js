@@ -15,8 +15,9 @@ import { autoContext, classifyEffort } from './effort-classifier.js';
 import { shortModelLabel, tierFor, classifierModelFor } from './model-auto.js';
 import { killTree } from './proc.js';
 import { attachmentChips, contentBlocks } from './attachments.js';
-import { ENGINES, PERMISSION_MODES } from './hub.js';
+import { PERMISSION_MODES } from './hub.js';
 import { HttpError } from './routes/http.js';
+import { ENGINE_LABEL, bridgeNote, needsBridge, otherChat } from './handoff.js';
 import { describeTool, inferRole } from './roles.js';
 import { promptChain } from './transcripts.js';
 import { StreamTranslator } from './translator.js';
@@ -92,12 +93,6 @@ export class SessionManager {
     this.ledger = ledger;
     this.account = account;
     this.sessions = new Map();
-    this.pendingEngines = new Map(); // project id -> engine to apply when its running turn ends
-    for (const [id, engine] of Object.entries(hub.persisted?.engineQueue ?? {})) {
-      const project = hub.projects.get(id);
-      if (project && ENGINES.includes(engine)) this.pendingEngines.set(id, { project, engine });
-    }
-    if (this.pendingEngines.size) setTimeout(() => this.resumePendingEngines(), 3000).unref?.();
     this.taskQueue = null; // 📋 Antrian, set by server.js: a waiting item blocks a project's engine switch
   }
 
@@ -313,9 +308,11 @@ export class SessionManager {
 
   get(project) {
     const engine = this.hub.engineOf(project.id);
+    // A model picked for the other engine moved this project: consumed once, whether or not a session exists yet.
+    const from = this.hub.takeEngineFrom?.(project.id) ?? null;
     let session = this.sessions.get(project.id);
     if (session && session.engine !== engine) {
-      // One engine per project (Stage 1): never reuse the other engine's process for this history.
+      // Never reuse the other engine's process for this history.
       if (session.turnActive() || session.busy || session.inflight?.size) {
         throw new HttpError(409, `Sesi ${session.engine === 'opencode' ? 'OpenCode' : 'Claude Code'} masih berjalan di project ini. Tunggu selesai atau hentikan dulu.`);
       }
@@ -327,117 +324,26 @@ export class SessionManager {
     if (!session) {
       session = engine === 'opencode' ? new AcpSession(this, project) : new ClaudeSession(this, project);
       this.sessions.set(project.id, session);
+      // The note from the engine this project just left goes with the next prompt (session-only, no divider, no
+      // model call, no git). needsBridge also keeps a switch back and forth without new work from repeating it.
+      if (from && from !== engine) {
+        this.hub.save?.(); // the conversation that just ended must be on disk before it is read below
+        if (needsBridge(this.hub, project.id, engine)) {
+          const chat = otherChat(this.hub, from, project.id);
+          const note = bridgeNote(chat, from);
+          if (note) {
+            const messages = chat.filter((m) => m.kind === 'user' || m.kind === 'assistant').length;
+            session.setHandoffContext(note);
+            this.hub.chat(project.id, {
+              kind: 'info',
+              contextBridge: { from, to: engine, messages },
+              text: `🔁 Ringkasan konteks dari ${ENGINE_LABEL[from]} dikirim ke ${ENGINE_LABEL[engine]} (${messages} pesan).`,
+            });
+          }
+        }
+      }
     }
     return session;
-  }
-
-  /**
-   * Stage 1: switches ONE project to another engine. The app default and the other projects are untouched, and
-   * both engines' histories stay (only which one is shown changes: Hub.setProjectEngine never copies messages).
-   * Refused while that project is working, has a waiting queue item, an open approval, or a cut-short turn
-   * ("Lanjutkan"): switching would mix the two workspaces or lose that.
-   * @returns {{ ok: true, engine: string } | { ok: false, status: number, error: string, busy?: string[] }}
-   */
-  setProjectEngine(project, engine) {
-    const id = project.id;
-    if (!ENGINES.includes(engine)) return { ok: false, status: 400, error: 'Mesin tidak dikenal.' };
-    if (engine === this.hub.engineOf(id)) return { ok: true, engine };
-    if (engine === 'opencode' && !this.opencode) return { ok: false, status: 409, error: 'OpenCode belum terpasang di laptop ini.' };
-    if (this.hub.legacyChats) return { ok: false, status: 409, error: 'Riwayat chat lama belum selesai dipindahkan (lihat log server). Restart aplikasi dulu, lalu coba lagi.' };
-    const session = this.sessions.get(id);
-    // An open permission card first: its reason is the one the user can act on (a turn runs behind it anyway).
-    if ([...this.hub.approvals.values()].some(({ approval }) => approval.project === id)) {
-      return { ok: false, status: 409, error: 'Masih ada permintaan izin yang menunggu jawaban. Jawab dulu, lalu ganti mesin.' };
-    }
-    if (session && (session.turnActive() || session.busy || session.inflight?.size || session.rewinding)) {
-      const name = project.name ?? id;
-      return { ok: false, status: 409, error: `Masih ada yang bekerja: ${name}. Tunggu selesai atau hentikan dulu.`, busy: [name] };
-    }
-    if (this.hub.persisted.turns?.[id] || this.hub.persisted.interrupted?.[id]) {
-      return { ok: false, status: 409, error: 'Ada giliran terputus ("Lanjutkan") di project ini. Lanjutkan atau abaikan dulu, lalu ganti mesin.' };
-    }
-    const queue = this.taskQueue?.queues?.[id];
-    if (queue?.items?.some((i) => i.status === 'waiting' || i.status === 'running')) {
-      const name = project.name ?? id;
-      return { ok: false, status: 409, error: `📋 Antrian tugas masih berisi item: ${name}. Selesaikan atau hapus dulu.`, busy: [name] };
-    }
-    // The old engine's process is closed first: the next turn starts the other engine's class (SessionManager.get).
-    session?.clearHandoffContext();
-    session?.closeChild();
-    if (session) this.sessions.delete(id);
-    try {
-      this.hub.setProjectEngine(id, engine);
-    } catch (err) {
-      return { ok: false, status: err.status ?? 409, error: err.message };
-    }
-    console.log(`Mesin project ${project.name ?? id} diganti ke ${engine === 'opencode' ? 'OpenCode' : 'Claude Code'}`);
-    this.clearPendingEngine(id);
-    this.hub.setStatus(id, { enginePending: null, enginePendingError: null });
-    this.onProjectEngineChange?.(id, engine);
-    return { ok: true, engine };
-  }
-
-  /**
-   * “Ganti mesin setelah giliran selesai”: queue it while the project is busy; every status update from its
-   * session retries `applyPendingEngine`. A waiting queue item, an approval or a cut-short turn is still a hard
-   * refusal (the user can resolve it first), so the queue only covers a running turn.
-   */
-  queueEngineSwitch(project, engine) {
-    const id = project.id;
-    if (!ENGINES.includes(engine)) return { ok: false, status: 400, error: 'Mesin tidak dikenal.' };
-    if (engine === this.hub.engineOf(id)) return { ok: true, engine };
-    if (engine === 'opencode' && !this.opencode) return { ok: false, status: 409, error: 'OpenCode belum terpasang di laptop ini.' };
-    const session = this.sessions.get(id);
-    const busy = Boolean(session && (session.turnActive() || session.busy || session.inflight?.size || session.rewinding));
-    if (!busy) return this.setProjectEngine(project, engine); // idle: apply immediately (other blockers still refuse)
-    this.pendingEngines.set(id, { project, engine });
-    if (this.hub.persisted) {
-      this.hub.persisted.engineQueue = { ...(this.hub.persisted.engineQueue ?? {}), [id]: engine };
-      this.hub.scheduleSave?.();
-    }
-    this.hub.setStatus(id, { enginePending: engine, enginePendingError: null });
-    return { ok: true, queued: true, engine: this.hub.engineOf(id), enginePending: engine };
-  }
-
-  /** Forget a queued switch (server restart re-reads it from persisted.engineQueue). */
-  clearPendingEngine(id) {
-    this.pendingEngines.delete(id);
-    const queue = this.hub.persisted?.engineQueue;
-    if (queue && id in queue) {
-      delete queue[id];
-      this.hub.scheduleSave?.();
-    }
-  }
-
-  /** On server start: re-arm queued switches and retry them (they may have finished while we were down). */
-  resumePendingEngines() {
-    for (const [id, pending] of this.pendingEngines) {
-      if (!this.hub.projects.has(id)) {
-        this.clearPendingEngine(id);
-        continue;
-      }
-      this.hub.setStatus(id, { enginePending: pending.engine, enginePendingError: null });
-      this.applyPendingEngine(id);
-    }
-  }
-
-  /** Called after a project's turn status changes: apply a queued switch once every blocker is gone. */
-  applyPendingEngine(id) {
-    const pending = this.pendingEngines.get(id);
-    if (!pending || this.stopping) return;
-    const result = this.setProjectEngine(pending.project, pending.engine);
-    if (result.ok) return;
-    // Still busy or another transient blocker (approval/queue/interrupted): keep waiting.
-    if (result.status === 409) return;
-    this.clearPendingEngine(id);
-    this.hub.setStatus(id, { enginePending: null, enginePendingError: result.error });
-  }
-
-  cancelPendingEngine(id) {
-    if (!this.pendingEngines.has(id) && !(id in (this.hub.persisted?.engineQueue ?? {}))) return false;
-    this.clearPendingEngine(id);
-    this.hub.setStatus(id, { enginePending: null, enginePendingError: null });
-    return true;
   }
 
   /**
@@ -474,12 +380,12 @@ export class ClaudeSession {
     this.restartPending = false;
     this.stderr = '';
     this.shellContext = []; // `!command` results not yet sent to Claude
-    this.pendingHandoff = ''; // session-only handoff memory: attached once to the next prompt, never written to a file
+    this.pendingHandoff = ''; // session-only context-bridge note: attached once to the next prompt, never written to a file
   }
 
   // ---------- public ----------
 
-  /** Save a handoff note as session memory. It is sent once with the next prompt, never as its own turn. */
+  /** Save a context-bridge note as session memory. It is sent once with the next prompt, never as its own turn. */
   setHandoffContext(text) {
     this.pendingHandoff = String(text ?? '').trim().slice(0, 20_000);
     this.hub.setStatus(this.id, { handoffReady: Boolean(this.pendingHandoff) });
@@ -536,14 +442,14 @@ export class ClaudeSession {
       this.hub.updateChat(this.id, chatId, { queued: false, cancelled: true });
       return { chatId };
     }
-    // Session memory from a handoff rides with this one prompt; the bubble still shows only what the user typed.
+    // The context-bridge note rides with this one prompt; the bubble still shows only what the user typed.
     const handoff = this.takeHandoffContext();
     // Shell output the user ran with `!` goes to Claude ahead of the prompt, not into the bubble.
     const context = this.shellContext.splice(0).join('\n');
     const body = [handoff ? `[KONTEKS SESI — INFORMASI, BUKAN PERMINTAAN BARU]\n${handoff}\n[/KONTEKS SESI]` : '', context, text].filter(Boolean).join('\n\n');
     const content = attachments.length ? contentBlocks(attachments, body) : body;
     // files: how many 📎 attachments rode along (only the count is ever kept, see Hub.beginTurn).
-    const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false, handoffTrigger: extra.handoffTrigger === true };
+    const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false };
     this.inflight.set(uuid, item);
     if (item.state === 'started') this.announce(item);
     this.chainLeaf = null;
@@ -1273,11 +1179,6 @@ export class ClaudeSession {
     }
     const kind = req.tool_name === 'AskUserQuestion' ? 'question' : req.tool_name === 'ExitPlanMode' ? 'plan' : 'tool';
     const role = this.translator.roleOf(req.tool_use_id) ?? inferRole(req.tool_name, req.input ?? {}, { projectPath: this.project.path });
-    // A handoff trigger is context-only: if the model tries to end plan mode, close it without a card.
-    if (req.tool_name === 'ExitPlanMode' && [...this.inflight.values()].some((i) => i.state === 'started' && i.handoffTrigger)) {
-      this.respond(msg.request_id, req, role, { allow: false, cancelled: true, message: 'Hanya konteks; jangan membuat rencana.' });
-      return;
-    }
     if (this.autoApprove && kind === 'tool') {
       this.respond(msg.request_id, req, role, { allow: true });
       return;
@@ -1328,7 +1229,6 @@ export class ClaudeSession {
     const queue = [...this.inflight.values()].filter((i) => i.state !== 'started').length;
     this.trackTurn(); // on disk before the browser hears the turn started
     this.hub.setStatus(this.id, { alive: Boolean(this.child), busy: this.busy || Boolean(this.autoTurn), queue, autoApprove: this.autoApprove });
-    this.m.applyPendingEngine?.(this.id); // a queued engine switch waits for this turn to end
   }
 }
 

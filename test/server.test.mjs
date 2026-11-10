@@ -528,7 +528,7 @@ test('🕵️ Data saya: ringkasan ukuran, hapus data per project, filter & eksp
   }
 });
 
-test('💰 hard stop: prompt, compact, and handoff apply are refused while a window is over', async () => {
+test('💰 hard stop: prompt and compact are refused while a window is over', async () => {
   const id = await projectId();
   const usageFile = path.join(TMP, 'data', 'usage.jsonl');
   const beforeUsage = existsSync(usageFile) ? readFileSync(usageFile, 'utf8') : '';
@@ -546,9 +546,6 @@ test('💰 hard stop: prompt, compact, and handoff apply are refused while a win
     const compact = await api(`/api/projects/${id}/compact`, {});
     assert.equal(compact.status, 409);
     assert.equal(compact.body.code, 'budget');
-    const handoff = await api(`/api/projects/${id}/handoff/apply`, {});
-    assert.equal(handoff.status, 409);
-    assert.match(handoff.body.error, /Budget/);
     // "Izinkan 1 giliran": the next prompt passes, and the override is used up.
     const override = await api('/api/budget/override', {});
     assert.equal(override.status, 200);

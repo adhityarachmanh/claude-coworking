@@ -95,6 +95,16 @@ Tergantung fitur yang dipakai, data dapat dikirim ke:
 Provider dapat memproses data di luar Indonesia. Periksa kebijakan masing-masing penyedia sebelum
 memakai data sensitif.
 
+### Perpindahan mesin (auto context bridge)
+
+Memilih model dari mesin lain mengirim **ringkasan percakapan project itu** (teks prompt/jawaban, maks
+30 pesan yang dipadatkan, plus label langkah tool terakhir) ke provider mesin baru sebagai bagian prompt
+berikutnya. Semua berjalan lokal saat menyusun ringkasan (tanpa panggilan model tambahan), dan rahasia
+yang dikenali polanya (token `sk-…`/GitHub/Slack/JWT, `KEY=value`, URL ber-kredensial, private key)
+disamarkan menjadi `***`. Catatan ringkasan itu sendiri **hanya ada di memori** sesi baru dan dipakai
+sekali; yang tersimpan di `chats/`/`chats-opencode/` hanya satu baris info `🔁 Ringkasan konteks … dikirim
+ke …`. Salinan prompt tetap tersimpan di sisi provider tujuan sesuai kebijakannya, di luar `data/`.
+
 ## Hak subjek data
 
 - **Akses/portabilitas**: ekspor ZIP backup, PDF/CSV laporan, dan file di `data/`.
@@ -117,6 +127,7 @@ memakai data sensitif.
 | Risiko | Mitigasi | Sisa risiko |
 |---|---|---|
 | Prompt berisi data pribadi terkirim ke provider | kendali di sisi pengguna; provider punya kebijakan sendiri | sedang |
+| Ringkasan percakapan menyeberang ke provider mesin lain | hanya saat model mesin lain dipilih; rahasia berpola disamarkan; catatan hanya di memori, sekali pakai | sedang |
 | Token OpenCode Console bocor | hanya dibaca server, tidak ke browser/log/backup; cache memori | rendah |
 | Request log memuat identitas | field pribadi dibuang sebelum keluar server; sessionID laporan dipotong | rendah |
 | Data provider di laporan dibuka dari WiFi | WiFi hanya-baca tidak memanggil console; laporan tetap dari cache laptop | rendah |

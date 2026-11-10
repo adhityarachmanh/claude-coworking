@@ -401,11 +401,13 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--r-pill); display: grid; place-items: center; font-size: var(--fs-xs); font-weight: 700; }
 .badge.ask { background: var(--ask); color: var(--on-ask); animation: pulse 1.2s infinite; }
 .badge.missing { background: var(--surface-2); color: var(--warn-text); white-space: nowrap; }
-/* 🔀 which engine a project runs on (session bar, project picker row): one compact pill, never wraps */
+/* 🔀 which engine runs the project right now (session bar): one compact pill, never wraps */
 .engine-badge { flex: none; display: inline-block; padding: 1px 7px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; line-height: 1.5; white-space: nowrap; }
 .engine-badge[data-engine='opencode'] { color: var(--accent-2); border-color: var(--accent-line); background: var(--accent-soft); }
 #sb-meta .engine-badge { margin-right: 6px; vertical-align: 1px; }
-.project-engine { display: flex; flex-direction: column; gap: 6px; }
+/* Faint engine mark on a timeline row: only where the engine changes (features/chat.js) */
+.engine-mark { flex: none; margin: 0 4px; color: var(--muted); font-size: var(--fs-xs); line-height: 1; }
+.engine-mark[data-engine='opencode'] { color: var(--accent-2); }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
 .dot.live { background: var(--ok); box-shadow: 0 0 0 3px #3fb95026; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 15%, transparent); }
 /* visibility (not display): row layout stays stable; shown on hover, on the keyboard-cursor row, and always on touch */
@@ -862,8 +864,9 @@ body:not([data-tab='chat']) #chat-search { display: none; }
 /* 🧹 Ringkas konteks: the action sits in the status line, next to the context chip (a chip of its own on a phone) */
 .sl-compact { min-height: 24px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
 .sl-compact:hover { color: var(--accent-2); }
-.sl-handoff { padding: 0; border: 0; background: none; color: var(--accent-2); font: inherit; cursor: pointer; }
-.sl-handoff:hover { text-decoration: underline; }
+.sl-handoff { padding: 0; border: 0; background: none; color: var(--accent-2); font: inherit; }
+/* The cross-engine privacy note under the model controls spans the row (also inside the phone sheet). */
+.model-engine-note { flex: 1 1 100%; order: 9; margin: 2px 0 0; }
 /* the textarea has no border of its own: the shared .input box shows bash mode */
 .composer.bash-mode .input, .composer.bash-mode .input:focus-within { border-color: var(--shell); box-shadow: 0 0 0 1px #e879a855; box-shadow: 0 0 0 1px color-mix(in srgb, var(--shell) 33%, transparent); }
 
@@ -1352,7 +1355,7 @@ body.read-only #composer-hint { color: var(--ask); }
 .login-code { display: flex; gap: 6px; }
 .login-code input { flex: 1; min-width: 0; font-family: var(--mono); }
 .login-flow > .ghost { align-self: flex-end; font-size: var(--fs-sm); }
-/* Akun: engine switch (Claude Code / OpenCode, app-wide) and OpenCode's provider logins (features/opencode-account.js) */
+/* Akun: Claude / OpenCode information tabs and OpenCode's provider logins (features/account.js, opencode-account.js) */
 .engine-opts, .oc-methods { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
 .engine-opt { flex: 1; min-width: 120px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); color: inherit; cursor: pointer; font-weight: 600; }
 .engine-opt.on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-2); box-shadow: inset 0 0 0 1px var(--accent-line); }
@@ -2779,15 +2782,6 @@ body.brain-on .roster-row:not(.on):not(.locked) img.orbable { opacity: .45; }
 .fv-table th, .fv-table td { padding: 4px 10px; border: 1px solid var(--border); text-align: left; white-space: nowrap; }
 .fv-table thead th { position: sticky; top: 0; background: var(--surface-3); }
 .fv-table tbody tr:nth-child(even) { background: var(--surface-2); }
-/* 🔁 Lanjutkan dari mesin lain (features/handoff.js) */
-.handoff-card { max-width: 680px; width: min(680px, 96vw); }
-.handoff-modes { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
-.handoff-mode { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); cursor: pointer; }
-.handoff-mode:has(input:checked) { border-color: var(--accent-line); background: var(--accent-soft); }
-.handoff-mode.disabled { opacity: .55; cursor: default; }
-.handoff-mode input { margin-top: 4px; }
-.handoff-mode small.muted { line-height: 1.45; }
-
 /* 🧭 Pemetaan peran (features/role-map.js) */
 .rolemap-card { width: min(760px, 96vw); max-width: 96vw; max-height: 88vh; overflow-y: auto; overflow-x: hidden; }
 #rolemap-body a { color: #8fb4ff; }

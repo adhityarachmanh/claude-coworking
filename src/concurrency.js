@@ -4,7 +4,7 @@
 // count: the server does not start or stop them, so they must never block a web turn forever.
 //
 // The setting lives in state.json as `persisted.maxConcurrent`; `checkTurn()` is the single authority for whether a
-// new turn may start (direct prompts, /compact, handoff, the queue). A message sent while the same project is busy
+// new turn may start (direct prompts, /compact, /continue, a plan approval, the queue). A message sent while the same project is busy
 // always passes: it joins the turn already running instead of starting another one.
 
 export const MAX_CONCURRENT_CAP = 8;

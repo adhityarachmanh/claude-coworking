@@ -38,6 +38,7 @@ const SMOKE = [
   'queue.test.mjs',
   'concurrency-flow.test.mjs',
   'engine-per-project.test.mjs',
+  'engine-mix.test.mjs',
   'backup.test.mjs',
   'backup-schedule.test.mjs',
 ];

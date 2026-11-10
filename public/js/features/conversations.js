@@ -161,13 +161,14 @@ function renderResults(all) {
 async function resumeResult(r, btn) {
   if (!state.projects.some((p) => p.id === r.projectId)) return toast('Project hasil ini sudah tidak ada di daftar.');
   const engine = r.engine === 'opencode' ? 'opencode' : 'claude';
-  // Stage 1: the result belongs to a project whose engine may differ. Switch THAT project only (never the default).
+  // The result belongs to a project whose engine may differ. Picking it puts that project on the result's engine
+  // (only that project; the engine follows the chosen model, so the picker shows it next time).
   const currentEngine = engineOf(state.statuses[r.projectId] ?? {}, state.config);
   if (engine !== currentEngine) {
     const label = engineLabel(engine);
-    if (!window.confirm(`Hasil ini dari ${label}. Project ${projectName(r.projectId)} sekarang memakai ${engineLabel(currentEngine)}.\n\nGanti mesin project itu ke ${label} untuk melanjutkan sesi? Project lain tidak terpengaruh.`)) return;
+    if (!window.confirm(`Hasil ini dari ${label}. Project ${projectName(r.projectId)} sekarang memakai ${engineLabel(currentEngine)}.\n\nLanjutkan sesi ini dengan ${label}? Project lain tidak terpengaruh.`)) return;
     try {
-      await api(`/api/projects/${encodeURIComponent(r.projectId)}/engine`, { engine });
+      await api(`/api/projects/${encodeURIComponent(r.projectId)}/settings`, { engine });
       toast(`Project ini sekarang memakai ${label}.`, 'ok');
     } catch (err) {
       return toast(err.message, 'warn');

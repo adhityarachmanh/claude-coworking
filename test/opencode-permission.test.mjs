@@ -1,6 +1,6 @@
 // OpenCode permission config (src/acp-session.js permissionConfig + src/opencode-bin.js readUserPermission): the
 // app's mode is written as the LAST config layer (OPENCODE_CONFIG_CONTENT), so it must never loosen a user deny.
-// Also the read-only env of the one-shot `opencode run --agent plan` (handoff, role classifier).
+// Also the read-only env of the one-shot `opencode run --agent plan` (role and effort classifiers).
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

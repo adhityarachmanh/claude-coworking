@@ -80,17 +80,6 @@ if (args.includes('-p') && String(args[args.indexOf('-p') + 1] ?? '').startsWith
   console.log(`Berikut pemetaannya:\n\`\`\`json\n${JSON.stringify(out)}\n\`\`\``);
   process.exit(0);
 }
-// 🔁 handoff "Pintar": claude -p <prompt> --resume <id> --fork-session --output-format text (one answer, then exit)
-if (args.includes('-p') && !args.includes('--fork-session') && args.some((a) => /CATATAN HANDOFF/.test(a))) {
-  const mi = args.indexOf('--model');
-  console.log(`## Tujuan\nHandoff palsu dari Claude (model ${mi >= 0 ? args[mi + 1] : 'default'})`);
-  process.exit(0);
-}
-if (args.includes('-p') && args.includes('--fork-session') && args[args.indexOf('--output-format') + 1] === 'text') {
-  if (args.includes('--permission-mode') && args[args.indexOf('--permission-mode') + 1] !== 'plan') process.exit(9); // must be read-only
-  console.log(`## Tujuan\nHandoff palsu dari Claude (sesi ${args[args.indexOf('--resume') + 1]})`);
-  process.exit(0);
-}
 if (args[0] === 'doctor' || args[0] === 'update') {
   console.log(args[0] === 'doctor' ? 'Claude Code doctor\n\nNo installation issues found.' : 'Claude Code is up to date (9.9.9-fake)');
   process.exit(0);
@@ -324,6 +313,9 @@ function result(extra = {}) {
 async function handlePrompt(text, content) {
   init();
   interrupted = false;
+  // The context-bridge note rides with the prompt; it is information, never a request (it must not look like
+  // "minta izin" or "rencana" just because the old conversation mentioned it).
+  text = String(text ?? '').replace(/\[KONTEKS SESI[\s\S]*?\[\/KONTEKS SESI\]/g, ' ');
   if (/lampiran\?/.test(text)) {
     // 📎 What arrived: the block types in order, document titles/media types, and the text attachments' first lines.
     const blocks = Array.isArray(content) ? content : [{ type: 'text', text: content }];
@@ -456,6 +448,14 @@ rl.on('line', (line) => {
   } else if (msg.type === 'user') {
     const content = msg.message.content;
     const text = typeof content === 'string' ? content : content.filter((b) => b.type === 'text').map((b) => b.text).join(' ');
+    // Tests can inspect exactly what the CLI was asked (including a context-bridge note): one JSON line per prompt.
+    if (process.env.FAKE_CLAUDE_SAW) {
+      try {
+        appendFileSync(process.env.FAKE_CLAUDE_SAW, `${JSON.stringify({ text })}\n`);
+      } catch {
+        // best effort only: recording must never change the fake's behaviour
+      }
+    }
     const uuid = msg.uuid ?? randomUUID();
     const lifecycle = (state) => send({ type: 'command_lifecycle', command_uuid: uuid, state, uuid: randomUUID() });
     lifecycle('queued');

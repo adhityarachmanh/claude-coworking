@@ -1,7 +1,7 @@
-// The global concurrency governor on every OTHER route that starts a turn: /compact, /continue, handoff/apply and
-// approving a plan. While project A holds the only slot, each of them is refused with 429/code concurrency and
-// nothing starts; once the slot frees, the same call goes through. A prompt that arrives at capacity joins the
-// queue instead (already covered by test/concurrency-server.test.mjs, not duplicated here).
+// The global concurrency governor on every OTHER route that starts a turn: /compact, /continue and approving a plan.
+// While project A holds the only slot, each of them is refused with 429/code concurrency and nothing starts; once the
+// slot frees, the same call goes through. A prompt that arrives at capacity joins the queue instead (already covered
+// by test/concurrency-server.test.mjs, not duplicated here).
 //
 // The plan card is produced by the OpenCode path (fake-acp's plan agent): the card is offered AFTER its turn ends,
 // so project B is idle while the card waits — exactly the "would this start a new turn?" case. Claude Code's
@@ -15,7 +15,6 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { PLAN_APPROVED_PROMPT } from '../src/acp-session.js';
-import { HANDOFF_TRIGGER_PROMPT } from '../src/handoff.js';
 import { wifiAllows } from '../src/remote.js';
 import { projectId } from '../src/util.js';
 
@@ -26,7 +25,6 @@ const PROJECTS = path.join(TMP, 'projects');
 // 6700–6849: clear of the other server tests' ranges (4300–6449).
 const PORT = 6700 + Math.floor(Math.random() * 150);
 const BASE = `http://localhost:${PORT}`;
-const DAY = 86_400_000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const A_DIR = path.join(PROJECTS, 'toko');
@@ -42,18 +40,6 @@ let token = null;
 async function start() {
   for (const dir of [A_DIR, B_DIR, C_DIR]) mkdirSync(dir, { recursive: true });
   mkdirSync(DATA, { recursive: true });
-  // handoff/apply on a Claude project reads the OTHER engine's chat for the same project: give B an OpenCode
-  // conversation so quickHandoff has something to carry over.
-  mkdirSync(path.join(DATA, 'chats-opencode'), { recursive: true });
-  writeFileSync(
-    path.join(DATA, 'chats-opencode', `${B}.jsonl`),
-    [
-      { id: 'oc-1', ts: Date.now() - 2 * DAY, project: B, kind: 'user', text: 'Kerjakan judul blog dulu.' },
-      { id: 'oc-2', ts: Date.now() - 2 * DAY, project: B, kind: 'assistant', text: 'Judul dan kerangka sudah siap.' },
-    ]
-      .map((m) => JSON.stringify(m))
-      .join('\n') + '\n',
-  );
   // Project C carries a turn cut short by a server stop, exactly as state.json would after a clean shutdown.
   writeFileSync(
     path.join(DATA, 'state.json'),
@@ -135,7 +121,8 @@ async function resetFlow() {
   const q = await queueOf(B);
   for (const item of q.items ?? []) await api(`/api/projects/${B}/queue-remove`, { itemId: item.id });
   await until(async () => ((await queueOf(B)).items ?? []).length === 0, 'antrian B kosong', 5000).catch(() => {});
-  assert.equal((await api('/api/concurrency/save', { maxConcurrent: 3 })).status, 200);
+  const saved = await api('/api/concurrency/save', { maxConcurrent: 3 });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
 }
 
 /** Runs a long A turn and waits until the server counts it as busy. */
@@ -223,34 +210,10 @@ test('/continue is refused at capacity; the cut-short notice stays until it can 
   }
 });
 
-test('handoff/apply is refused at capacity and the handoff context is not consumed', { timeout: 60000 }, async () => {
-  await resetFlow();
-  await holdOnlySlot();
-  try {
-    const refused = await api(`/api/projects/${B}/handoff/apply`);
-    assert.equal(refused.status, 429, JSON.stringify(refused.body));
-    assert.equal(refused.body.code, 'concurrency');
-    assert.ok(!(await statusOf(B)).handoffReady, 'konteks handoff tidak pernah dipasang (gate dicek sebelum quickHandoff)');
-    assert.equal((await statusOf(B)).busy, false, 'B tidak memulai giliran handoff');
-    assert.equal((await chatTexts(B)).some((m) => m.kind === 'user' && m.text === HANDOFF_TRIGGER_PROMPT), false, 'trigger prompt tidak terkirim');
-
-    assert.equal((await api(`/api/projects/${A}/stop`)).status, 200);
-    await waitIdle(A);
-
-    const allowed = await api(`/api/projects/${B}/handoff/apply`);
-    assert.equal(allowed.status, 200, JSON.stringify(allowed.body));
-    assert.equal(allowed.body.ok, true);
-    await until(async () => (await chatTexts(B)).some((m) => m.kind === 'user' && m.text === HANDOFF_TRIGGER_PROMPT), 'trigger prompt terkirim', 15000);
-    await waitIdle(B);
-  } finally {
-    await resetFlow();
-  }
-});
-
 test('approving an OpenCode plan card is refused at capacity; the card stays pending and can be retried', { timeout: 90000 }, async () => {
   await resetFlow();
   // OpenCode's plan card is offered after its turn ends: B is idle with the card pending.
-  assert.equal((await api(`/api/projects/${B}/engine`, { engine: 'opencode' })).status, 200);
+  assert.equal((await api(`/api/projects/${B}/settings`, { engine: 'opencode' })).status, 200);
   await until(async () => (await statusOf(B))?.engine === 'opencode', 'B pindah ke OpenCode', 15000);
   assert.equal((await api(`/api/projects/${B}/settings`, { mode: 'plan', modelAuto: false, effortAuto: false })).status, 200);
   assert.equal((await api(`/api/projects/${B}/prompt`, { text: 'buat rencana' })).status, 200);

@@ -100,8 +100,8 @@ export function register(router) {
     return json(res, 200, { entries: recentAuth(limit, { dataDir }) });
   });
   // ---------- engine (the DEFAULT for new projects) and OpenCode's provider logins ----------
-  // Stage 1: this no longer switches anything. Every project keeps its own engine (POST
-  // /api/projects/:id/engine); this only decides which engine a project seen for the first time starts on.
+  // This only decides which engine a project seen for the first time starts on. Every project follows the model
+  // picked for it (POST /api/projects/:id/settings { engine, model }).
   router.post('/api/engine', ({ hub, device }, req, res, params, body) => {
     const engine = String(body.engine ?? '');
     if (!ENGINES.includes(engine)) return json(res, 400, { error: 'Mesin tidak dikenal.' });

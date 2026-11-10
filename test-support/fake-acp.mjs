@@ -258,19 +258,9 @@ if (process.argv[2] === 'api') {
       fail(`Operation not found: ${op}`);
   }
 }
-// 🔁 handoff "Pintar": opencode run --session <id> --fork --agent plan <prompt>
-if (process.argv[2] === 'run') {
-  const a = process.argv.slice(3);
-  const handoff = a.some((x) => /CATATAN HANDOFF/.test(x));
-  if (handoff && !a.includes('--fork')) {
-    const mi = a.indexOf('--model');
-    console.log(`## Tujuan\nHandoff palsu dari OpenCode (model ${mi >= 0 ? a[mi + 1] : 'default'})`);
-    process.exit(0);
-  }
-  if (!a.includes('--fork') || a[a.indexOf('--agent') + 1] !== 'plan') process.exit(9);
-  console.log(`## Tujuan\nHandoff palsu dari OpenCode (sesi ${a[a.indexOf('--session') + 1]})`);
-  process.exit(0);
-}
+// One-shot `opencode run` (role/effort classifier): the fake only speaks ACP, so fail fast like the real CLI would
+// when it cannot answer.
+if (process.argv[2] === 'run') process.exit(9);
 if (process.argv[2] === 'mcp' && process.argv[3] === 'add') {
   const { appendFileSync } = await import('node:fs');
   if (process.env.FAKE_MCP_LOG) appendFileSync(process.env.FAKE_MCP_LOG, `${JSON.stringify(['opencode', ...process.argv.slice(4)])}\n`);
@@ -592,7 +582,8 @@ async function handle(msg) {
       // "tulis" really writes catatan.md when the store is on, so a rewind has a file to put back
       const file = `${process.cwd()}/catatan.md`;
       const before = s && /tulis/.test(text) ? { 'catatan.md': existsSync(file) ? readFileSync(file, 'utf8') : null } : {};
-      const result = await turn(params.sessionId, text);
+      // The context-bridge note rides with the prompt; it is information, not a request.
+      const result = await turn(params.sessionId, text.replace(/\[KONTEKS SESI[\s\S]*?\[\/KONTEKS SESI\]/g, ' '));
       if (s) {
         if (Object.keys(before).length && result.stopReason === 'end_turn') writeFileSync(file, `isi catatan ${seq}\n`);
         const files = result.stopReason === 'end_turn' ? Object.keys(before) : [];

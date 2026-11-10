@@ -11,7 +11,6 @@ import { exportActiveSession, openSearch } from './conversations.js';
 import { openDashboard } from './dashboard.js';
 import { openMcp } from './mcp.js';
 import { openMemory } from './memory.js';
-import { openHandoff } from './handoff.js';
 import { openExtensions } from './extensions.js';
 import { openQueue } from './queue.js';
 import { openPermissions } from './permissions.js';
@@ -44,7 +43,6 @@ export const LOCAL_COMMANDS = [
   { name: 'plugin', aliases: ['plugins'], description: '🧩 Plugin Claude Code: pasang dari marketplace, aktif/nonaktif, hapus' },
   { name: 'agents', description: '🤖 Subagent buatan sendiri (.claude/agents): buat, edit, hapus' },
   { name: 'hooks', description: '🪝 Hooks yang aktif (settings.json user/project/pribadi)' },
-  { name: 'lanjut', aliases: ['handoff'], description: '🔁 Bawa konteks percakapan dari mesin lain (Claude Code ↔ OpenCode) project ini' },
   { name: 'memory', description: '🧠 Edit instruksi memory: CLAUDE.md (Claude Code) / AGENTS.md (OpenCode)' },
   { name: 'dashboard', aliases: ['semua'], description: '🗂 Semua project: status setiap project sekaligus (izin, bekerja, antrian, idle)' },
   { name: 'help', description: 'Panduan & shortcut keyboard' },
@@ -145,6 +143,7 @@ export function localCommand(text) {
   const pick = (select, label, allowCustom) => {
     if (!value) {
       // No argument: the Pengaturan giliran dialog with that picker focused, like the CLI's /model dialog.
+      document.querySelector('#settings-chip')?.click(); // opens it and asks for the model list
       openModal('turn-settings-modal');
       $(select).focus();
       $(select).showPicker?.();
@@ -210,10 +209,6 @@ export function localCommand(text) {
       return true;
     case 'memory':
       openMemory();
-      return true;
-    case 'lanjut':
-    case 'handoff':
-      openHandoff();
       return true;
     case 'plugin':
     case 'plugins':

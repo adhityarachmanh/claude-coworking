@@ -1,11 +1,10 @@
-// 👤 Akun: the DEFAULT engine for new projects (Claude Code / OpenCode; each project has its own, ⚙ → Mesin project)
-// and OpenCode's provider logins. OpenCode has no single account:
-// every model provider (OpenCode Zen/Go, Anthropic, OpenAI, GitHub Copilot…) logs in on its own (API key or OAuth),
-// the same store `opencode auth login|logout|list` uses (src/opencode-auth.js).
+// 👤 Akun → tab OpenCode: provider logins and usage. OpenCode has no single account: every model provider
+// (OpenCode Zen/Go, Anthropic, OpenAI, GitHub Copilot…) logs in on its own (API key or OAuth), the same store
+// `opencode auth login|logout|list` uses (src/opencode-auth.js). The tab is information only: it never switches an
+// engine (the model picked in Pengaturan giliran does that).
 import { accountImpactText } from '../core/account-impact.js';
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
-import { engineLabel } from '../core/engine-caps.js';
 import { fmtNum, fmtShort, fmtUsd } from '../core/format.js';
 import { state } from '../core/state.js';
 
@@ -18,48 +17,6 @@ let pollTimer = null;
 
 /** The app-wide engine (config.engine; old servers: Claude Code). */
 export const activeEngine = () => (state.config?.engine === 'opencode' ? 'opencode' : 'claude');
-
-const engineAvailable = (engine) => state.config?.engines?.[engine]?.available !== false;
-
-/**
- * "Mesin bawaan untuk project baru": only the DEFAULT new projects start on. Projects that already have an engine
- * keep it (⚙ → Mesin project), so this control moves nothing — it is not the switch it used to be in Stage 0.
- */
-export function engineSwitchHtml() {
-  const engines = Object.keys(state.config?.engines ?? {});
-  if (engines.length < 2) return '';
-  const current = activeEngine();
-  const buttons = engines
-    .map((e) => {
-      const on = e === current;
-      const off = !engineAvailable(e);
-      const title = off ? `${engineLabel(e)} belum terpasang di laptop ini` : on ? 'Bawaan sekarang' : `Jadikan bawaan untuk project baru`;
-      return `<button type="button" class="engine-opt${on ? ' on' : ''}" data-act="engine" data-engine="${escapeHtml(e)}" aria-pressed="${on}" title="${escapeHtml(title)}"${off || !state.accountAuth ? ' disabled' : ''}>${escapeHtml(engineLabel(e))}${off ? ' <small>(tidak terpasang)</small>' : state.config?.engines?.[e]?.version ? ` <small class="muted">v${escapeHtml(state.config.engines[e].version)}</small>` : ''}</button>`;
-    })
-    .join('');
-  return `<div class="acct-section engine-switch"><div class="acct-title"><b>Mesin bawaan untuk project baru</b></div>
-    <div class="engine-opts" role="group" aria-label="Mesin bawaan untuk project baru">${buttons}</div>
-    <p class="muted small">Hanya untuk project yang baru ditambahkan. Project yang sudah ada tetap memakai mesinnya sendiri (⚙ Pengaturan → 🔀 Mesin project); mengganti bawaan ini tidak memindahkan project mana pun.</p></div>`;
-}
-
-/** Asks, then changes the DEFAULT for new projects; existing projects keep their engine (no reload needed). */
-export async function switchEngine(engine) {
-  if (engine === activeEngine()) return;
-  const busy = Object.values(state.statuses ?? {}).some((s) => s?.busy || s?.queue);
-  if (busy) return toast('Masih ada project yang bekerja. Tunggu selesai atau tekan Stop dulu sebelum mengganti mesin bawaan.', 'warn');
-  const ok = window.confirm(
-    `Jadikan ${engineLabel(engine)} mesin bawaan untuk project baru?\n\n` +
-      `Project yang sudah ada tetap memakai mesinnya masing-masing; tidak ada yang dipindah atau ditutup.`,
-  );
-  if (!ok) return;
-  try {
-    await api('/api/engine', { engine });
-    toast(`Mesin bawaan untuk project baru: ${engineLabel(engine)}.`, 'ok');
-    reloadSoon(); // the config event also updates it in place; a reload keeps every open tab consistent
-  } catch (err) {
-    toast(err.data?.error ?? err.message, 'warn');
-  }
-}
 
 let reloading = false;
 /** The server switched workspaces (this tab or another device did it): start fresh from its snapshot. */
@@ -388,7 +345,7 @@ export function openCodeBodyHtml() {
   return `${usageHtml()}${goQuotaHtml()}<div class="acct-section"><div class="acct-title"><b>Provider OpenCode</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
     ${connectedHtml()}${oc.error && oc.providers ? `<p class="warn small">${escapeHtml(oc.error)}</p>` : ''}
     ${oc.logoutError ? `<p class="warn small" role="alert">${escapeHtml(oc.logoutError)}</p>` : ''}
-    <p class="muted small">Provider ini dipakai project yang mesinnya OpenCode. Project dengan mesin Claude Code memakai akun Claude (bukan provider di sini); mesin tiap project dipilih di ⚙ Pengaturan → 🔀 Mesin project.</p></div>
+    <p class="muted small">Provider ini dipakai saat model project berasal dari OpenCode. Project yang memakai model Claude Code memakai akun Claude (tab Claude), bukan provider di sini. Tab ini hanya informasi: tidak mengubah mesin project.</p></div>
     ${state.accountAuth ? loginHtml() : '<p class="muted small">Login/logout provider dari HP hanya lewat Tailscale (koneksi terenkripsi), atau lakukan dari laptop.</p>'}`;
 }
 
@@ -437,9 +394,6 @@ function finishLogin(rerender, message) {
 /** Clicks inside Akun's body; returns true when it handled `act`. */
 export async function onOpenCodeAction(act, el, rerender) {
   switch (act) {
-    case 'engine':
-      await switchEngine(el.dataset.engine);
-      return true;
     case 'oc-refresh':
       oc.logoutError = null;
       await loadOpenCode(rerender);

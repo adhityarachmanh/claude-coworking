@@ -281,24 +281,40 @@ export class Page {
 
   /** Trusted click (mouse) or tap (touch emulation) on the centre of the first match. */
   async click(selector) {
-    const box = await this.eval((sel) => {
-      const el = document.querySelector(sel);
-      if (!el) return null;
-      el.scrollIntoView({ block: 'center', inline: 'center' });
-      const r = el.getBoundingClientRect();
-      return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
-    }, selector);
-    if (!box) throw new Error(`elemen tidak ada: ${selector}`);
-    if (!box.w || !box.h) throw new Error(`elemen tidak terlihat: ${selector}`);
-    if (this.touch) {
-      await this.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x, y: box.y }] });
-      await this.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    } else {
-      const base = { x: box.x, y: box.y, button: 'left', clickCount: 1 };
-      await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
-      await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base });
-      await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const box = await this.eval(async (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        el.scrollIntoView({ block: 'center', inline: 'center' });
+        // A smooth/async scroll can still move the element after scrollIntoView returns: measure on the next frame,
+        // or the trusted click lands where the element no longer is (silently hitting the sheet behind it).
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
+      }, selector);
+      if (!box) throw new Error(`elemen tidak ada: ${selector}`);
+      // A re-render can replace the node between the measurement and the click: measure again instead of clicking air.
+      if (!box.w || !box.h) {
+        await sleep(80);
+        continue;
+      }
+      const onTop = await this.eval((sel, x, y) => Boolean(document.elementFromPoint(x, y)?.closest(sel)), selector, box.x, box.y);
+      if (!onTop) {
+        await sleep(80);
+        continue;
+      }
+      if (this.touch) {
+        await this.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x, y: box.y }] });
+        await this.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      } else {
+        const base = { x: box.x, y: box.y, button: 'left', clickCount: 1 };
+        await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
+        await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base });
+        await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base });
+      }
+      return;
     }
+    throw new Error(`elemen tidak terlihat: ${selector}`);
   }
 
   /** Trusted key press; the browser performs the default action (Tab moves focus, etc.). */

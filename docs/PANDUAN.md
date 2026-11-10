@@ -139,7 +139,7 @@ Batasan: redo kode hanya untuk **perubahan kode yang belum di-commit** di **repo
 
 ## Melihat sisa kuota OpenCode Go
 
-1. Buka **👤 Akun** saat mesin OpenCode aktif.
+1. Buka **👤 Akun** → tab **OpenCode**.
 2. Gulir ke **Kuota OpenCode Go**. Kalau kredensial **OpenCode Console** tersedia, panel menampilkan **Data resmi OpenCode**: paket, masa aktif, dan tiga bar **Rolling / Weekly / Monthly** dengan persentase terpakai dan hitung mundur reset—sama seperti halaman akun OpenCode. Di atasnya, kartu **Pemakaian OpenCode** menampilkan **biaya, request, dan token** untuk **Hari ini** dan **7 hari** dari endpoint usage resmi; buka **Rincian per model** untuk request/input/cache/output/biaya tiap model, atau **📡 Request terbaru** yang tampil **di dalam dialog Akun** untuk detail per request (durasi, TTFT, token, biaya, status).
 3. Kalau data resmi tidak tersedia, panel memakai perkiraan manual: pilih paket **Go ($10/bulan)**, **Go Plus ($40/bulan)**, atau **Go Teams ($20/anggota/bulan)**. Tiap model menampilkan **terpakai / batas**, **sisa**, dan tiga bar **5 jam / 7 hari / 30 hari**.
    - Hijau < 70%, kuning 70–90%, merah > 90%.
@@ -162,15 +162,15 @@ Catatan: dihitung dari **biaya yang tercatat** (harga list untuk Claude). OpenCo
 - Ketik `/hemat`, `/seimbang`, `/kuat`, atau `/maks` untuk langsung memakai model tier itu (untuk mesin yang aktif). Auto dimatikan agar pilihan tidak berubah; `/auto` menyalakannya lagi.
 - Ketik `/fokus` untuk menyembunyikan dan menghentikan animasi kantor. Chat dan panel memakai seluruh layar; tombol **Keluar mode fokus** mengembalikannya. Pilihan diingat di perangkat itu.
 
-## Memilih mesin per project
+## Mesin mengikuti model
 
-1. Buka project yang diinginkan → ⚙ Pengaturan → **🔀 Mesin project**.
-2. Pilih **Claude Code** atau **OpenCode**, lalu konfirmasi.
-3. Project lain tidak terpengaruh; keduanya boleh berjalan bersamaan.
-4. Riwayat tiap mesin disimpan terpisah. Berganti mesin hanya menampilkan riwayat mesin itu; kembali ke mesin sebelumnya akan memunculkan riwayat lamanya.
-5. Pergantian ditolak bila project sedang bekerja, ada izin menunggu, antrean berisi item, atau ada giliran terputus yang ditawarkan untuk dilanjutkan — selesaikan/hentikan dulu.
+1. Buka project yang diinginkan, lalu klik chip **⚙ Pengaturan giliran** di atas kotak pesan.
+2. Di **Model**, pilih model dari grup **Claude Code** atau **OpenCode**. Memilih model mesin lain langsung memakai mesin itu untuk giliran berikutnya; tidak ada tombol ganti mesin.
+3. Project lain tidak terpengaruh; dua project boleh berjalan bersamaan dengan mesin berbeda.
+4. Chat menampilkan satu alur dari kedua mesin. Saat mesin berganti, ringkasan percakapan mesin sebelumnya dibawa otomatis (satu baris `🔁 Konteks dari …`) dan status **🧠 Konteks siap** muncul sampai pesan berikutnya. Ringkasan ini bukan salinan percakapan, dan kuota serta rewind tetap milik masing-masing mesin.
+5. Model mesin lain ditolak (**409**) bila project sedang bekerja, ada izin/rencana menunggu, antrean berisi item, ada giliran terputus, atau rewind berjalan — selesaikan dulu.
 
-Di **👤 Akun**, **Mesin bawaan untuk project baru** hanya berlaku untuk project yang baru ditambahkan.
+Kembali ke mesin sebelumnya melanjutkan sesi aslinya; pengaturan model/effort/agent tiap mesin tetap diingat. Di **👤 Akun** ada dua tab info, **Claude** dan **OpenCode**, yang hanya menampilkan kuota, pemakaian, dan provider.
 
 ## Memeriksa kesehatan aplikasi
 

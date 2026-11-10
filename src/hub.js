@@ -249,6 +249,7 @@ export class Hub {
     this.projects = new Map();
     this.runtime = new Map();
     this.approvals = new Map(); // id -> { approval, onResolve }
+    this.engineChanges = new Map(); // project id -> engine it just left (a settings change, until its new session takes it)
     this.clients = new Set();
     this.observers = new Set(); // server-side listeners to every broadcast, fn(type, data) (📋 Antrian, src/queue.js)
     // Per-client redaction: event type -> fn(data), what a redacted client (a plain-HTTP WiFi phone: sniffable) gets
@@ -309,6 +310,8 @@ export class Hub {
       // none yet, or unreadable: starts empty (as before)
     }
     const { chats: legacy, ...rest } = stored;
+    // The queued engine switch ("ganti mesin setelah giliran selesai") is gone: a model picks the engine at once.
+    delete rest.engineQueue;
     rest.engine = ENGINES.includes(rest.engine) ? rest.engine : 'claude';
     rest.opencodeGoPlan = Object.hasOwn(GO_PLANS, rest.opencodeGoPlan) ? rest.opencodeGoPlan : 'go';
     this.openChats();
@@ -469,8 +472,9 @@ export class Hub {
   }
 
   /**
-   * Loads BOTH engines' workspaces at start (Stage 1: one engine per project, both histories kept). Nothing is
-   * migrated or copied between them: switching a project only changes which one is shown (setProjectEngine).
+   * Loads BOTH engines' workspaces at start (one engine per project, both histories kept). Nothing is
+   * migrated or copied between them: a model picks which engine runs the project (Hub.updateSettings), and the
+   * panel shows both histories as one timeline (Hub.timeline).
    */
   openChats() {
     this.chatStores = {};
@@ -624,19 +628,48 @@ export class Hub {
   }
 
   /**
-   * Starts a clean chat column for the project's current engine. The engine's own transcript/session history is
-   * untouched (Riwayat sesi still lists it); this only drops the panel history and its file.
+   * One project's history as a single flow: both engines' stored messages plus the live chat, each tagged with the
+   * engine it came from, oldest first, cut to `limit`. A message present twice (the live list is also a stored
+   * list) is only listed once. Records without a numeric time keep their place at the start.
    */
-  clearChat(id, engine = this.engineOf(id)) {
+  timeline(id, limit = CHAT_LIMIT) {
+    const seen = new Set();
+    const all = [];
+    const add = (list, engine) => {
+      for (const m of Array.isArray(list) ? list : []) {
+        if (!m?.id || seen.has(m.id)) continue;
+        seen.add(m.id);
+        all.push(typeof m.engine === 'string' ? m : { ...m, engine }); // older rows carry no engine yet
+      }
+    };
+    for (const engine of ENGINES) add(this.storedChats[this.chatKey(engine, id)], engine);
+    add(this.runtime.get(id)?.chat, this.engineOf(id));
+    all.sort((a, b) => tsOf(a) - tsOf(b) || Number(/^m(\d+)$/.exec(a?.id ?? '')?.[1] ?? 0) - Number(/^m(\d+)$/.exec(b?.id ?? '')?.[1] ?? 0));
+    const max = Number.isSafeInteger(limit) && limit > 0 ? limit : CHAT_LIMIT;
+    return all.slice(-max);
+  }
+
+  /**
+   * Starts a clean chat column for the project: both engines' histories for it are dropped (one flow is shown now),
+   * while each engine's own transcript/session history is untouched (Riwayat sesi still lists it).
+   */
+  clearChat(id) {
+    const live = this.engineOf(id);
     const rt = this.runtime.get(id);
-    if (rt && this.engineOf(id) === engine) rt.chat.splice(0);
-    delete this.storedChats[this.chatKey(engine, id)];
-    if (this.legacyChats) delete this.legacyChats[id];
-    try {
-      this.chatStoreFor(engine).remove(id);
-    } catch (err) {
-      console.error(`Mengosongkan riwayat chat ${engine} ${id} gagal: ${err.message}`);
+    for (const engine of ENGINES) {
+      try {
+        this.chatStoreFor(engine).remove(id);
+      } catch (err) {
+        console.error(`Mengosongkan riwayat chat ${engine} ${id} gagal: ${err.message}`);
+      }
+      if (rt && engine === live) {
+        rt.chat = [];
+        this.storedChats[this.chatKey(engine, id)] = rt.chat;
+      } else {
+        delete this.storedChats[this.chatKey(engine, id)];
+      }
     }
+    if (this.legacyChats) delete this.legacyChats[id];
     this.broadcast('chat_reset', { project: id });
     this.scheduleSave();
   }
@@ -840,6 +873,7 @@ export class Hub {
    */
   purgeProject(id) {
     const project = this.projects.get(id);
+    this.engineChanges.delete(id);
     this.persisted.custom = (this.persisted.custom ?? []).filter((p) => projectId(p) !== id);
     this.persisted.favorites = this.persisted.favorites.filter((f) => f !== id);
     this.persisted.archivedProjects = this.persisted.archivedProjects.filter((p) => p !== id);
@@ -865,6 +899,7 @@ export class Hub {
   forgetProject(id) {
     const project = this.projects.get(id);
     if (!project?.sources.includes('custom')) return false;
+    this.engineChanges.delete(id);
     this.persisted.custom = this.persisted.custom.filter((p) => projectId(p) !== id);
     this.persisted.favorites = this.persisted.favorites.filter((f) => f !== id);
     this.persisted.archivedProjects = this.persisted.archivedProjects.filter((p) => p !== id);
@@ -915,6 +950,7 @@ export class Hub {
     const project = this.projects.get(id);
     if (!project) return false;
     const engine = this.engineOf(id);
+    this.engineChanges.delete(id);
     for (const e of ENGINES) {
       delete this.storedChats[this.chatKey(e, id)];
       try {
@@ -1123,55 +1159,58 @@ export class Hub {
   updateSettings(id, patch) {
     const before = this.settingsFor(id);
     const next = this.cleanSettings(before, patch);
-    if (next.engine !== before.engine) {
-      // Each engine keeps its own model/effort/agent here: park the old one and load the target's saved values.
+    const engineChanged = next.engine !== before.engine;
+    if (engineChanged) {
+      // The engine follows the model picked for it. A model/effort/agent sent with this same patch is the user's
+      // choice for the target engine and wins; otherwise that engine's own saved values come back exactly as they
+      // were. Either way both engines stay remembered (engineSettings), so going back and forth loses nothing.
       this.rememberEngineSettings(id, before.engine, before);
       const saved = this.engineSettingsFor(id, next.engine);
-      next.model = saved.model;
-      next.effort = saved.effort;
-      next.agent = saved.agent;
+      const sent = isObject(patch) ? patch : {};
+      // Only values this patch actually set (and cleanSettings accepted) beat the engine's own saved values.
+      const modelSent = typeof sent.model === 'string' && (sent.model === '' || sent.model === 'default' || next.model === sent.model);
+      const effortSent = EFFORT_LEVELS.includes(sent.effort);
+      const agentSent = sent.agent === '' || (typeof sent.agent === 'string' && STORED_AGENT.test(sent.agent));
+      if (!modelSent) next.model = saved.model;
+      if (!effortSent) next.effort = saved.effort;
+      if (!agentSent) next.agent = saved.agent;
+      // The next session this project creates (src/session.js) bridges the old engine's chat once.
+      this.engineChanges.set(id, before.engine);
     }
     this.rememberEngineSettings(id, next.engine, next);
     this.persisted.settings[id] = next;
+    if (engineChanged) {
+      // New messages belong to the target engine's store now; both are shown by timeline(). Resolve the store
+      // array directly: chatFor() would still return the old runtime list (engineOf already points at the target).
+      this.attachRuntimeChat(id, next.engine);
+      // The "provider logged out" warning belongs to the model of the engine we just left.
+      if (this.runtime.has(id)) this.setStatus(id, { modelStale: false });
+    }
     this.scheduleSave();
     this.setStatus(id, this.settingsFor(id));
   }
 
   /**
-   * Stage 1: one project changes engine. Both histories are kept side by side and nothing is copied or migrated:
-   * the runtime shows the target engine's chat as it was left, with a divider saying what happened. Refused while
-   * the old migration still holds chats in state.json. The caller (SessionManager.setProjectEngine) makes sure
-   * nothing is running in this project.
+   * Points a project's runtime at `engine`'s stored chat array. The old runtime list stays in storedChats under its
+   * own engine, so writes and compaction can never mix the two workspaces.
    */
-  setProjectEngine(id, engine) {
-    if (!ENGINES.includes(engine)) throw Object.assign(new Error('Mesin tidak dikenal.'), { status: 400 });
-    const from = this.engineOf(id);
-    if (engine === from) return false;
-    if (this.legacyChats) throw Object.assign(new Error('Riwayat chat lama belum selesai dipindahkan (lihat log server). Restart aplikasi dulu, lalu coba lagi.'), { status: 409 });
-    this.save(); // both stores on disk before the runtime moves to the other list
-    if (this.chatsDirty) throw Object.assign(new Error('Riwayat chat belum tersimpan ke disk (file sedang dikunci?). Coba lagi sebentar.'), { status: 409 });
-    const before = this.settingsFor(id);
-    const shown = this.chatFor(engine, id); // the target history, exactly as it was left
-    this.rememberEngineSettings(id, from, before);
-    const saved = this.engineSettingsFor(id, engine);
-    this.persisted.settings[id] = { ...before, engine, model: saved.model, effort: saved.effort, agent: saved.agent };
-    this.rememberEngineSettings(id, engine, this.persisted.settings[id]);
-    const rt = this.rt(id);
-    rt.chat = shown;
+  attachRuntimeChat(id, engine) {
+    const rt = this.runtime.get(id);
+    if (!rt) return;
+    rt.chat = (this.storedChats[this.chatKey(engine, id)] ??= []);
     rt.events = [];
-    const sessionId = this.sessionIdFor(id);
-    if (sessionId) this.persisted.sessions[id] = sessionId; // compatibility mirror
-    else delete this.persisted.sessions[id];
-    Object.assign(rt.status, { activeModel: null, sessionId, interrupted: publicTurn(this.persisted.interrupted[id]), ...this.settingsFor(id) });
-    const label = (e) => (e === 'opencode' ? 'OpenCode' : 'Claude Code');
-    // A divider in the NEW history; the old one stays exactly as it was (never copied).
-    this.chat(id, { kind: 'divider', text: `Mesin project diganti ke ${label(engine)}; riwayat ${label(from)} tetap tersimpan.` });
-    this.save();
-    this.setStatus(id, this.settingsFor(id));
-    // Open pages reload into the project's other history (the same event the app-wide switch used to send).
-    this.broadcast('engine', { engine, project: id });
-    this.broadcast('projects', this.listProjects());
-    return true;
+    if (rt.status) Object.assign(rt.status, { activeModel: null, sessionId: this.sessionIdFor(id) });
+  }
+
+  /**
+   * The engine a project just moved away from (a model picked for another engine), once: the new session carries
+   * that chat as a context note (src/handoff.js bridgeNote) and writes one info line in the chat. No divider.
+   * Memory only: a restart in between simply means no note (the next switch still works).
+   */
+  takeEngineFrom(id) {
+    const from = this.engineChanges.get(id);
+    this.engineChanges.delete(id);
+    return from ?? null;
   }
 
   /** Slash commands reported by Claude Code (skills, custom commands, plugins) for autocomplete. */
@@ -1457,7 +1496,7 @@ export class Hub {
    * back through a save on this machine.
    */
   exportState() {
-    const { remote: _remote, catalog: _catalog, turns: _turns, interrupted: _interrupted, queues: _queues, backupSchedule: _backupSchedule, backupRuns: _backupRuns, chatSeq: _chatSeq, workspaces: _workspaces, engineQueue: _engineQueue, ...rest } = this.persisted;
+    const { remote: _remote, catalog: _catalog, turns: _turns, interrupted: _interrupted, queues: _queues, backupSchedule: _backupSchedule, backupRuns: _backupRuns, chatSeq: _chatSeq, workspaces: _workspaces, ...rest } = this.persisted;
     return structuredClone(rest);
   }
 
@@ -1601,6 +1640,8 @@ export class Hub {
         settingsMap[to] = { ...this.settingsFor(to), engine: target, ...this.engineSettingsFor(to, target) };
         if (this.runtime.has(to)) this.setStatus(to, this.settingsFor(to));
       }
+      // A restored engine also moves a runtime that already exists (its chat must belong to that store).
+      if (target !== current && this.runtime.has(to)) this.attachRuntimeChat(to, target);
       if (switched) added.engines++;
     }
     // The single map is a mirror of the project's current engine (older readers).
@@ -1716,7 +1757,8 @@ export class Hub {
 
   chat(id, msg) {
     const rt = this.rt(id);
-    const message = { id: `m${++this.seq}`, ts: Date.now(), project: id, ...msg };
+    // Each row remembers the engine that produced it: one timeline shows both engines' histories (timeline()).
+    const message = { id: `m${++this.seq}`, ts: Date.now(), project: id, ...msg, engine: this.engineOf(id) };
     rt.chat.push(message);
     if (rt.chat.length > CHAT_LIMIT) rt.chat.shift();
     if (id !== DEMO_ID) this.chatStoreFor(this.engineOf(id)).append(id, message);
@@ -1840,7 +1882,9 @@ export class Hub {
     const events = {};
     for (const [id, rt] of this.runtime) {
       statuses[id] = rt.status;
-      if (rt.chat.length) chats[id] = rt.chat.slice(-150);
+      // One flow for both engines (tagged per message); the panel's own bound stays 150 rows.
+      const chat = this.timeline(id, 150);
+      if (chat.length) chats[id] = chat;
       if (rt.events.length) events[id] = rt.events.slice(-40);
     }
     return {

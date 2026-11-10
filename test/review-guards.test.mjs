@@ -245,7 +245,7 @@ test('execFileTree: a normal run keeps its normal result (no timeout error), and
 
 test('execFileTree: stdin is closed at once, so a CLI that reads stdin (opencode run, claude -p) does not wait forever', async () => {
   // A non-TTY stdin is a pipe: `opencode run` and `claude -p` read it as prompt input and wait for EOF. Left open,
-  // the one-shot never starts (handoff Pintar hit its 4-minute timeout, the Effort Auto classifier its 25 s one).
+  // the one-shot never starts (the Effort Auto classifier silently fell back after 25 s).
   const out = await new Promise((resolve) =>
     execFileTree(process.execPath, ['-e', 'process.stdin.resume(); process.stdin.on("end", () => console.log("eof"))'], { timeout: 10_000, encoding: 'utf8', windowsHide: true }, (err, stdout) =>
       resolve({ err, stdout }),

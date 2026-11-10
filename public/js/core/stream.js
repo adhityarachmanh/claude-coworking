@@ -16,7 +16,7 @@ import { phone, refreshPairing } from '../features/phone.js';
 import { renderSidebar, selectProject } from '../features/picker.js';
 import { onApprovalUpdate, onPushSnapshot, pushProjectsChanged } from '../features/push.js';
 import { applyRoutines } from '../features/routines.js';
-import { renderRoots, syncConcurrencySection, syncProjectEngine } from '../features/settings.js';
+import { renderRoots, syncConcurrencySection } from '../features/settings.js';
 import { maybeAutoTour } from '../features/tour.js';
 import { applyRoster } from '../features/roster.js';
 import { applySpotify } from '../features/spotify.js';
@@ -38,6 +38,21 @@ import { DEMO_ID, projectName, state } from './state.js';
 
 let share = null;
 
+/**
+ * Adds one chat message to the project's timeline, or updates the newest message with the same id (the snapshot and
+ * the live stream can both carry it). Returns `{ message, added }`: `added` false means no second row was created.
+ */
+export function mergeChatMessage(msg) {
+  const list = (state.chats[msg.project] ??= []);
+  const known = list.findLast((m) => m.id === msg.id);
+  if (known) {
+    Object.assign(known, msg);
+    return { message: known, added: false };
+  }
+  list.push(msg);
+  return { message: msg, added: true };
+}
+
 // One handler per server event. `live` is false while a tab that just joined replays what it missed
 // (core/stream-share.js): the state catches up, but old news never chimes or animates again.
 const handlers = {
@@ -52,7 +67,6 @@ const handlers = {
     applyClaudeCheck(config.claudeCheck); // Claude Code updated: contract check result (banner + ⚙)
     applyOpenCodeCheck(config.opencodeCheck); // the same for OpenCode (silent when not installed)
     applyAppUpdate(config.appUpdate); // ⬆ a newer Adhitron: banner + ⚙
-    if (!$('#settings-modal').hidden) syncProjectEngine(); // 🔀 engine availability/versions may have changed
     if (!$('#phone-modal').hidden) {
       phone.pairing = null; // a device just paired (codes are single-use) or settings changed
       refreshPairing();
@@ -127,11 +141,7 @@ const handlers = {
       renderComposer();
       renderCi();
     }
-    // A project engine changed (⚙ → Mesin project, this or another device): redraw the selector in place.
-    if (!$('#settings-modal').hidden) {
-      syncProjectEngine();
-      syncConcurrencySection(); // ⚡ "Saat ini X dari Y project sedang bekerja."
-    }
+    if (!$('#settings-modal').hidden) syncConcurrencySection(); // ⚡ "Saat ini X dari Y project sedang bekerja."
     updateTitle();
     scheduleAttention();
   },
@@ -145,7 +155,14 @@ const handlers = {
     }
   },
   chat(msg, live) {
-    (state.chats[msg.project] ??= []).push(msg);
+    // The snapshot already holds the messages up to now: the same message arriving again (snapshot + stream) must
+    // not double the row. A known id updates its newest row instead of pushing a second one.
+    const { added, message } = mergeChatMessage(msg);
+    if (!added) {
+      if (msg.project === state.active) scheduleReplace(message);
+      renderSidebar();
+      return;
+    }
     if (live) noteLiveMessage(msg); // a sample of the browser/server clock difference (stuck detector)
     if (msg.project === state.active) appendChat(msg);
     if (!live) {
