@@ -42,6 +42,9 @@ const IGNORED_PROBLEMS = [
   // picker already refuses unknown projects; a real failure shows up as a missing/erroring model list instead.
   /^404 .*\/api\/projects\/[0-9a-f]+\/models$/,
   /404 \(Not Found\).*\/api\/projects\/[0-9a-f]+\/models/,
+  // The POST fallback to a plain GET (an older server contract) answers 405 on the current route: same race.
+  /^405 .*\/api\/projects\/[0-9a-f]+\/models$/,
+  /405 \(Method Not Allowed\).*\/api\/projects\/[0-9a-f]+\/models/,
 ];
 
 let TMP;

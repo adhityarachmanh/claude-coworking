@@ -2,6 +2,17 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.11
+
+- **🔄 Mesin mengikuti model, tanpa aksi ganti mesin.** Tombol **🔀 Mesin project** dan `POST /api/projects/:id/engine` dihapus. Pilih model di **Pengaturan giliran** dan project memakai mesin model itu untuk giliran berikutnya; model mesin lain ditolak **409** selama project bekerja, ada izin/rencana menunggu, antrean berisi item, giliran terputus, atau rewind.
+- **📋 Satu daftar model.** Pemilih model kini berisi grup **Claude Code** dan **OpenCode** dalam satu pilihan. Chip pengaturan giliran tidak lagi menampilkan badge mesin, dan badge mesin di daftar project dihapus (mesin tetap terlihat di bar sesi).
+- **🌉 Konteks pindah otomatis.** Saat mesin berganti, ringkasan percakapan mesin sebelumnya dari chat tersimpan disuntik otomatis ke sesi baru—tanpa panggilan model dan tanpa token. Ringkasan itu **dikirim ke provider mesin baru** sebagai bagian prompt berikutnya; rahasia yang dikenali polanya (token, `KEY=value`, URL ber-kredensial, private key) disamarkan menjadi `***`, dan catatan ringkasannya hanya ada di memori serta dipakai sekali. Chat menulis satu baris `🔁 Ringkasan konteks dari … dikirim ke … (N pesan)` dan status **🧠 Konteks siap** muncul sampai pesan berikutnya. Maks 30 pesan dipadatkan + 8 langkah tool terakhir; ini **ringkasan, bukan replika percakapan**.
+- **🧵 Riwayat satu alur.** Chat menampilkan timeline gabungan kedua mesin dan tiap pesan membawa mesin asalnya; badge halus hanya muncul saat mesin berubah. Penulisan tetap terpisah di `data/chats` dan `data/chats-opencode`, jadi kembali ke mesin lama melanjutkan sesi aslinya. Rewind/redo tetap per mesin dan kuota kedua mesin tetap terpisah.
+- **🐞 Perbaikan saat pindah mesin.** Riwayat chat tidak lagi bisa saling menimpa saat file salah satu mesin dikompaksi; peringatan "provider logout" milik mesin lama dibersihkan; dan redo percakapan lintas mesin ditolak dengan alasan yang jelas (bukan menulis ke sesi mesin yang salah).
+- **🗑 Handoff manual dihapus.** Dialog **🔁 Lanjutkan dari mesin lain** beserta route `/handoff/info`, `/handoff`, `/handoff/apply`, dan `/handoff/context` sudah tidak ada (404). Antrean perpindahan mesin (`enginePending`/`engineQueue`) juga dihapus.
+- **👤 Akun: dua tab info.** Dialog Akun hanya menampilkan tab **Claude** (paket, kuota, pemakaian) dan **OpenCode** (provider, login, pemakaian); tab tidak memindahkan project. Aksi **Jadikan mesin bawaan** dihapus.
+- **📦 Tidak perlu migrasi.** `settings[id].engine`, `engineSettings`, dan `sessionsByEngine` dibaca seperti sebelumnya; backup lama tetap bisa diimpor. Yang hilang hanya route handoff dan route switch mesin.
+
 ## 1.0.10
 
 - **🏷️ Nama baru: Adhitron.** Nama tampilan aplikasi berubah dari *Adhit Office* menjadi **Adhitron** di judul halaman, PWA, notifikasi, laporan, dan pesan terminal. Logo dan ikon ikut diperbarui (favicon, ikon PWA, ikon installer dan aplikasi desktop). Fitur dan perilakunya tidak berubah.
