@@ -3863,6 +3863,61 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('🧰 Persiapan: status tiap komponen, modal, dan progres pemasangan', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await tap(page, '#btn-settings');
+      await settle(page, 'settings-modal');
+      if (!(await shownInPage(page, '#setup-open'))) await page.click('[data-settings-tab="sistem"]');
+      assert.equal(await shownInPage(page, '#setup-open'), true, 'tombol Persiapan tampil di tab Sistem');
+      await page.click('#setup-open');
+      await page.waitFor(() => !document.querySelector('#setup-modal').hidden && document.querySelectorAll('#setup-items .setup-item').length >= 3, { timeoutMs: 4000, message: 'daftar persiapan' });
+      const ids = await page.eval(() => [...document.querySelectorAll('#setup-items .setup-item')].map((n) => n.dataset.setupRow));
+      for (const id of ['node', 'claude', 'opencode', 'tailscale']) assert.ok(ids.includes(id), `baris ${id}`);
+      assert.ok((await page.eval(() => document.querySelector('#setup-note').textContent)).length > 20);
+      assert.equal(await page.eval(horizontalOverflow), null, 'tanpa scroll horizontal di 390px');
+
+      // A stubbed answer shows the progress UI without installing anything on the machine running the tests.
+      await page.eval(() => {
+        window.__setupFetch ??= window.fetch;
+        window.__setupConfirm ??= window.confirm;
+        window.confirm = () => true;
+        window.fetch = (url, opts) => {
+          if (String(url) === '/api/setup/install') {
+            const setup = {
+              supported: true,
+              busy: true,
+              needsSetup: true,
+              items: [
+                { id: 'node', label: 'Node.js', state: 'ready', optional: false },
+                { id: 'claude', label: 'Claude Code', state: 'missing', optional: false },
+                { id: 'opencode', label: 'OpenCode', state: 'missing', optional: true },
+                { id: 'tailscale', label: 'Tailscale', state: 'missing', optional: true },
+              ],
+              job: { target: 'claude', state: 'running', step: 'Mengunduh Node.js', percent: 40, cancellable: true },
+            };
+            return Promise.resolve(new Response(JSON.stringify({ setup }), { status: 202, headers: { 'Content-Type': 'application/json' } }));
+          }
+          return window.__setupFetch(url, opts);
+        };
+      });
+      try {
+        if (await page.eval(() => Boolean(document.querySelector('[data-setup-install="claude"]')))) {
+          await page.click('[data-setup-install="claude"]');
+          await page.waitFor(() => /Mengunduh/.test(document.querySelector('#setup-job')?.textContent ?? ''), { timeoutMs: 3000, message: 'progres pemasangan' });
+          assert.equal(await page.eval(() => document.querySelector('#setup-progress').value), 40);
+          assert.equal(await page.eval(() => document.querySelector('#setup-job').getAttribute('aria-live')), 'polite');
+        }
+      } finally {
+        await page.eval(() => {
+          window.fetch = window.__setupFetch;
+          window.confirm = window.__setupConfirm;
+          window.fetch = window.__setupFetch;
+        });
+      }
+      await page.press('Escape');
+      assert.equal(await page.eval(() => document.querySelector('#setup-modal').hidden), true);
+    });
+
     test('🩺 Kesehatan sistem: ringkasan, pemeriksaan, persiapan, data & error; ↻ satu request; galat inline', async () => {
       await ensureApp(page, '#demo');
       await stubHealth(page);

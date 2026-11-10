@@ -125,6 +125,35 @@ test('routes: 🧩 /api/opencode-check/* (manual run, settings) laptop only, nev
   }
 });
 
+test('routes: 🧰 /api/setup/* — status/refresh are laptop+Tailscale, the three mutations are laptop only', () => {
+  const routes = router.routes.filter((r) => r.pattern.startsWith('/api/setup/'));
+  assert.deepEqual(routes.map((r) => r.pattern).sort(), [
+    '/api/setup/cancel',
+    '/api/setup/install',
+    '/api/setup/login-terminal',
+    '/api/setup/refresh',
+    '/api/setup/status',
+  ]);
+  const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  for (const r of routes) {
+    assert.equal(r.method, 'POST');
+    assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
+    assert.ok(!WIFI_READS.has(r.pattern));
+    assert.ok(r.maxBody > 0 && r.maxBody <= 1024, `${r.pattern} maxBody ${r.maxBody}`);
+    // Everything but the three mutations is reachable from a Tailscale phone; all need this start's token.
+    assert.equal(r.token, 'office', `${r.pattern} needs the office token`);
+  }
+  for (const mutation of ['/api/setup/install', '/api/setup/cancel', '/api/setup/login-terminal']) {
+    assert.ok(localOnly.includes(`'${mutation}'`), `${mutation} in LOCAL_ONLY`);
+  }
+  // The status route (like every office route) is behind the x-office-token check in server.js: no token → 403.
+  assert.equal(routes.find((r) => r.pattern === '/api/setup/status').token, 'office');
+  assert.match(server, /req\.headers\['x-office-token'\] !== TOKEN/);
+  assert.ok(!localOnly.includes("'/api/setup/status'"), 'status stays available over Tailscale');
+  assert.ok(!localOnly.includes("'/api/setup/refresh'"), 'refresh stays available over Tailscale');
+});
+
 test('routes: 🧩 OpenCode config editor is laptop only, with a bounded JSON body', () => {
   const routes = router.routes.filter((r) => r.pattern.startsWith('/api/opencode-config'));
   assert.deepEqual(routes.map((r) => r.pattern).sort(), [

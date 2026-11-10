@@ -16,6 +16,7 @@ import { phone, refreshPairing } from '../features/phone.js';
 import { renderSidebar, selectProject } from '../features/picker.js';
 import { onApprovalUpdate, onPushSnapshot, pushProjectsChanged } from '../features/push.js';
 import { applyRoutines } from '../features/routines.js';
+import { applySetup } from '../features/setup.js';
 import { renderRoots, syncConcurrencySection } from '../features/settings.js';
 import { maybeAutoTour } from '../features/tour.js';
 import { applyRoster } from '../features/roster.js';
@@ -67,6 +68,7 @@ const handlers = {
     applyClaudeCheck(config.claudeCheck); // Claude Code updated: contract check result (banner + ⚙)
     applyOpenCodeCheck(config.opencodeCheck); // the same for OpenCode (silent when not installed)
     applyAppUpdate(config.appUpdate); // ⬆ a newer Adhitron: banner + ⚙
+    applySetup(config.setup); // 🧰 Persiapan: Node/Claude/OpenCode/Tailscale + a running install
     if (!$('#phone-modal').hidden) {
       phone.pairing = null; // a device just paired (codes are single-use) or settings changed
       refreshPairing();
@@ -104,6 +106,7 @@ const handlers = {
     applyClaudeCheck(snap.config?.claudeCheck); // after state.readOnly: WiFi gets the passive notice
     applyOpenCodeCheck(snap.config?.opencodeCheck);
     applyAppUpdate(snap.config?.appUpdate); // ⬆ a newer Adhitron (banner)
+    applySetup(snap.config?.setup); // 🧰 Persiapan (may open itself once on a fresh local install)
     loadAttention(); // after state.readOnly: a WiFi page skips it instead of earning a 403
   },
   'pairing-reset'() {

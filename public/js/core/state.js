@@ -15,6 +15,7 @@ export const state = {
   active: null,
   search: '',
   tab: 'chat',
+  setup: null,
 };
 
 // A phone on plain-HTTP WiFi may only look (the server enforces it: wifiAllows in src/remote.js).

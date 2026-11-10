@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.12
+
+- **🧰 Persiapan: pasang dari aplikasi, tanpa terminal.** Di **⚙ → Sistem → Persiapan** (dan otomatis sekali saat instalasi baru belum punya project) ada status **Node.js, Claude Code, OpenCode, dan Tailscale** dengan tombol **Pasang**, progres yang bisa dibatalkan, serta **Buka terminal login** untuk `claude`/`opencode auth login`. Semua instalasi meminta konfirmasi dan hanya dari laptop/Tailscale.
+- **Tanpa Node.js pun bisa.** `setup.cmd` kini membawa bootstrap: jika Node belum ada, ia menawarkan **Node.js LTS resmi** yang diunduh ke **runtime milik Adhitron** (±30 MB, SHA-256 diperiksa, tanpa admin, tanpa mengubah PATH sistem). Claude Code dipasang ke prefix lokal yang sama; OpenCode opsional. Installer `.exe`/Electron memakai wizard yang sama, jadi tidak lagi “prasyarat sudah terpasang”.
+- **Login tetap aman.** Kredensial tidak diotomasi dan tidak pernah disimpan aplikasi: terminal dibuka dengan PATH runtime, lalu status diperiksa ulang. Tailscale tetap opsional (winget) dan HP tetap perlu aplikasi Tailscale sendiri.
+
 ## 1.0.11
 
 - **🔄 Mesin mengikuti model, tanpa aksi ganti mesin.** Tombol **🔀 Mesin project** dan `POST /api/projects/:id/engine` dihapus. Pilih model di **Pengaturan giliran** dan project memakai mesin model itu untuk giliran berikutnya; model mesin lain ditolak **409** selama project bekerja, ada izin/rencana menunggu, antrean berisi item, giliran terputus, atau rewind.

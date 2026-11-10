@@ -323,6 +323,26 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; font: var(--fs-s
 .claude-check .switch { white-space: normal; }
 #cc-status.warn { color: var(--warn-text); }
 
+/* 🧰 Persiapan (features/setup.js): one row per tool, progress only while an install runs */
+.setup-card { width: min(720px, 100%); }
+.setup-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.setup-item { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
+.setup-main { display: grid; gap: 3px; min-width: 0; }
+.setup-main small { display: block; }
+.setup-badge { font-size: var(--fs-xs); padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+.setup-badge.ok { color: var(--ok-text-strong); border-color: var(--ok-line); background: var(--ok-soft); }
+.setup-badge.warn { color: var(--warn-text-strong); border-color: var(--warn-line); background: var(--warn-soft); }
+.setup-badge.muted { color: var(--muted); }
+.setup-item-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.setup-job { display: grid; gap: 6px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.setup-job-head { display: flex; justify-content: space-between; gap: 8px; }
+.setup-job progress { width: 100%; height: 10px; }
+.setup-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+@media (max-width: 560px) {
+  .setup-item { align-items: flex-start; flex-direction: column; }
+  .setup-item-actions { justify-content: flex-start; }
+}
+
 /* ---------- layout ---------- */
 .layout {
   flex: 1;

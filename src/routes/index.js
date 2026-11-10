@@ -26,6 +26,7 @@ import * as queue from './queue.js';
 import * as remote from './remote.js';
 import * as routines from './routines.js';
 import * as session from './session.js';
+import * as setup from './setup.js';
 import * as spotify from './spotify.js';
 import * as tasks from './tasks.js';
 import * as team from './team.js';
@@ -64,6 +65,7 @@ export function buildRouter() {
     diagnostics.register,
     opencodeCheck.register,
     opencodeConfig.register,
+    setup.register,
     misc.register,
   ])
     register(router);

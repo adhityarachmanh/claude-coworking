@@ -1092,6 +1092,14 @@
           </section>
           <hr />
           <!-- 🩺 Kesehatan sistem (features/health.js, server POST /api/health): laptop/Tailscale only, a WiFi phone is refused -->
+          <section id="setup-section" class="claude-check" aria-labelledby="setup-section-title">
+            <b id="setup-section-title">🧰 Persiapan</b>
+            <p class="muted small">Node.js, Claude Code, OpenCode, dan Tailscale. Dipasang ke folder aplikasi sendiri, tanpa admin; yang opsional boleh dilewati.</p>
+            <p id="setup-summary" class="muted" role="status" aria-live="polite">Memeriksa…</p>
+            <div class="backup-actions">
+              <button type="button" id="setup-open" class="ghost" aria-haspopup="dialog">Buka Persiapan</button>
+            </div>
+          </section>
           <section id="health-section" class="claude-check" aria-labelledby="health-section-title">
             <b id="health-section-title">🩺 Kesehatan sistem</b>
             <p class="muted small">Pemeriksaan server &amp; mesin, persiapan, ukuran data, dan error 24 jam.</p>
@@ -1165,6 +1173,19 @@
           <button type="button" id="health-diagnostics" class="ghost" title="Unduh .zip berisi versi, kesehatan, dan log terakhir (tanpa isi percakapan)">🩺 Bundel diagnostik</button>
           <button type="button" id="health-refresh" class="ghost">↻ Periksa ulang</button>
           <button type="button" id="health-close" class="ghost" data-close>Tutup</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🧰 Persiapan (features/setup.js): Node/Claude Code/OpenCode/Tailscale, one row each; laptop-only actions -->
+    <div id="setup-modal" class="modal" hidden>
+      <div class="modal-card setup-card" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+        <div class="modal-head"><b id="setup-title">🧰 Persiapan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="setup-note" class="muted small"></p>
+        <ul id="setup-items" class="setup-items"></ul>
+        <div class="setup-actions">
+          <button type="button" id="setup-refresh" class="ghost">↻ Periksa ulang</button>
+          <button type="button" id="setup-close" class="ghost" data-close>Tutup</button>
         </div>
       </div>
     </div>

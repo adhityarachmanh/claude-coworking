@@ -26,19 +26,20 @@ Panduan harian yang lebih santai: [docs/PANDUAN.md](docs/PANDUAN.md). Detail tia
 
 ## Mulai cepat
 
-1. Pasang **Node.js 20+** dan **Claude Code** (`npm install -g @anthropic-ai/claude-code`), lalu login sekali dengan menjalankan `claude` di terminal.
-2. Clone repo ini ke folder mana saja.
-3. Double-click **`setup.cmd`**. Setup berjalan langkah demi langkah dan **selalu bertanya (Y/n) sebelum memasang apa pun**:
+1. Clone repo ini ke folder mana saja, lalu double-click **`setup.cmd`**. Tidak perlu memasang Node.js atau CLI lebih dulu: kalau belum ada, setup menawarkan **Node.js LTS resmi** (diunduh ke runtime Adhitron, ±30 MB, tanpa admin, tanpa mengubah PATH sistem) dan **Claude Code** — semuanya **selalu bertanya (Y/n) sebelum memasang apa pun**.
+2. Setup berjalan langkah demi langkah:
 
    | Langkah | Yang dilakukan |
    |---|---|
-   | 1. Node.js & Claude Code | Memeriksa versi, memberi tahu cara memasang kalau belum ada |
+   | 1. Node.js & mesin AI | Memeriksa/menawarkan **Node.js**, **Claude Code** (wajib), dan **OpenCode** (opsional: mesin kedua/provider lain). CLI dipasang ke folder runtime aplikasi |
    | 2. Tailscale (opsional) | Menawarkan pasang lewat winget, lalu membuka halaman login. Dibutuhkan untuk kendali dari HP di jaringan mana saja |
    | 3. Firewall | Aturan sempit: hanya TCP 4317 (HTTP) dan 4318 (HTTPS), hanya dari alamat Tailscale, profil Private (muncul jendela izin Administrator sekali). Aturan lama yang hanya membuka 4317 diganti |
    | 4. Auto-start & server | Auto-start saat Windows login **plus penjaga Task Scheduler** yang mengecek tiap 5 menit dan menyalakan server lagi kalau mati (setelah sleep, hibernate, Fast Startup, atau crash). Lalu server langsung dinyalakan di latar belakang |
 
-4. Buka `http://localhost:4317`. Atur **⚙ → Folder induk projects** (satu per baris; semua subfolder-nya jadi project). Tanpa pengaturan ini, dipakai folder induk dari folder app ini (atau env `PROJECTS_ROOT`).
-5. Klik **🔔** untuk notifikasi, lalu **📱** untuk menghubungkan HP ([Dari HP](#dari-hp)).
+   Login tetap manual dan dipandu: buka **🧰 Persiapan** di aplikasi, tekan **Buka terminal login**, jalankan `claude` sekali, lalu **Periksa ulang**. Untuk installer `.exe`/Electron, **🧰 Persiapan** muncul sendiri saat instalasi belum punya project (atau kapan saja dari ⚙ → Sistem).
+
+3. Buka `http://localhost:4317`. Atur **⚙ → Folder induk projects** (satu per baris; semua subfolder-nya jadi project). Tanpa pengaturan ini, dipakai folder induk dari folder app ini (atau env `PROJECTS_ROOT`).
+4. Klik **🔔** untuk notifikasi, lalu **📱** untuk menghubungkan HP ([Dari HP](#dari-hp)).
 
 Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server tetap jalan dan menyala sendiri setiap Windows login.
 

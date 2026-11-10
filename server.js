@@ -8,6 +8,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findClaude } from './src/claude-bin.js';
 import { findOpenCode, openCodeVersion } from './src/opencode-bin.js';
+import { appPaths } from './src/app-paths.js';
+import { SetupService } from './src/setup/service.js';
+import { probeTools } from './src/setup/detect.js';
+import { runtimeBinDirs } from './src/setup/runtime.js';
 import { OPENCODE_CAPS } from './src/acp-session.js';
 import { ClaudeCheckService } from './src/claude-check.js';
 import { OpenCodeCheckService } from './src/opencode-check.js';
@@ -17,7 +21,7 @@ import { Hub } from './src/hub.js';
 import { pruneAuth } from './src/auth-audit.js';
 import { recordAudit } from './src/audit-log.js';
 import { discoverProjects, isDirectory, isInside, isMissing } from './src/projects.js';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
 import { writeBackup } from './src/backup.js';
 import { AccountService, accountPrivacyView, accountViewKey } from './src/account.js';
 import { autostartStatus } from './src/autostart.js';
@@ -78,6 +82,9 @@ const APP_DIR = process.env.OFFICE_APP_DIR
         return path.dirname(process.execPath);
       }
     })();
+// Resolvers (src/claude-bin.js, src/opencode-bin.js) look for the portable runtime through this: a packaged build
+// runs from a folder that is not the cwd, and its CLI installs live beside the data folder, not on PATH.
+process.env.OFFICE_APP_DIR ??= APP_DIR;
 const APP_VERSION = JSON.parse(readFileSync(path.join(APP_DIR, 'package.json'), 'utf8')).version;
 // Optional Ed25519 public key (PEM) shipped next to the app: when present, every update needs a valid .sig asset.
 const UPDATE_PUBKEY = (() => {
@@ -131,19 +138,12 @@ const MIME = {
   '.webmanifest': 'application/manifest+json',
 };
 
-// A packaged build keeps data outside the install folder (Program Files is not writable). A `portable` file next
-// to the executable, or OFFICE_PORTABLE=1, keeps everything in .\data instead.
-const PACKAGED = !existsSync(path.join(APP_DIR, 'server.js')) && existsSync(path.join(APP_DIR, 'public', 'index.html'));
-const PORTABLE = process.env.OFFICE_PORTABLE === '1' || existsSync(path.join(APP_DIR, 'portable'));
-function userDataDir() {
-  const home = process.env.USERPROFILE ?? process.env.HOME ?? APP_DIR;
-  if (process.platform === 'win32') return path.join(process.env.LOCALAPPDATA ?? path.join(home, 'AppData', 'Local'), 'AdhitOffice', 'data');
-  if (process.platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'AdhitOffice', 'data');
-  return path.join(process.env.XDG_DATA_HOME ?? path.join(home, '.local', 'share'), 'adhit-office', 'data');
-}
-
-// OFFICE_DATA_DIR lets tests run against a throwaway state file.
-const DATA_DIR = process.env.OFFICE_DATA_DIR ?? (PACKAGED && !PORTABLE ? userDataDir() : path.join(APP_DIR, 'data'));
+// A packaged build keeps data outside the install folder (Program Files is not writable), a `portable` file next to
+// the executable (or OFFICE_PORTABLE=1) keeps everything in .\data, and OFFICE_DATA_DIR/OFFICE_RUNTIME_DIR override
+// either. src/app-paths.js is the single definition of that layout (the setup runtime lives beside data).
+const APP_PATHS = appPaths({ appDir: APP_DIR });
+const DATA_DIR = APP_PATHS.dataDir;
+const RUNTIME_DIR = APP_PATHS.runtimeDir;
 
 // Started hidden at Windows login: there is no console, so keep a log file instead.
 if (process.argv.includes('--background')) {
@@ -178,8 +178,22 @@ pruneAuth(DATA_DIR, Date.now(), { force: true });
 const cutShort = hub.recoverTurns();
 // Leftovers of an import cut short by a crash or shutdown (uploaded .zip files): only this app writes there.
 rmSync(path.join(DATA_DIR, 'tmp'), { recursive: true, force: true });
-const claude = findClaude();
-const opencode = findOpenCode(); // optional second engine (src/acp-session.js); null when not installed
+// The portable setup runtime comes before the host PATH, so a fresh machine that installed Node/Claude/OpenCode from
+// the setup screen finds them in this process and in every child. The host PATH is kept, not replaced; a folder
+// already present is not added twice.
+const RUNTIME_BIN_DIRS = runtimeBinDirs(RUNTIME_DIR);
+if (RUNTIME_BIN_DIRS.length) {
+  const norm = (value) => (process.platform === 'win32' ? String(value).toLowerCase() : String(value));
+  const wanted = [...new Set(RUNTIME_BIN_DIRS.map(norm))].map((key) => RUNTIME_BIN_DIRS.find((dir) => norm(dir) === key));
+  const drop = new Set(wanted.map(norm));
+  const host = String(process.env.PATH ?? '')
+    .split(path.delimiter)
+    .filter(Boolean)
+    .filter((entry) => !drop.has(norm(entry)));
+  process.env.PATH = [...wanted, ...host].join(path.delimiter);
+}
+let claude = findClaude();
+let opencode = findOpenCode(); // optional second engine (src/acp-session.js); null when not installed
 let opencodeVersion = ''; // filled shortly after start (opencode --version), then sent with the config
 // Every role's subagent template; only the active team's go to `claude --agents` (saveTeam).
 const allAgents = loadAgentDefinitions(path.join(APP_DIR, '.claude', 'agents'));
@@ -369,7 +383,7 @@ const CHECK_DELAY = Number(process.env.OFFICE_CLAUDE_CHECK_DELAY_MS);
 // ⬆ Adhitron's own updates (git fetch every 30 min, banner, "Update sekarang"). Off for test servers (a fake
 // CLAUDE_BIN) unless OFFICE_UPDATE_CHECK=1; OFFICE_UPDATE_CHECK=0 turns it off anywhere.
 const updateCheck = process.env.OFFICE_UPDATE_CHECK ? process.env.OFFICE_UPDATE_CHECK !== '0' : !process.env.CLAUDE_BIN;
-const appUpdater = PACKAGED && process.platform === 'win32'
+const appUpdater = APP_PATHS.packaged && process.platform === 'win32'
   ? new DesktopUpdater({
       currentVersion: APP_VERSION,
       dataDir: DATA_DIR,
@@ -425,6 +439,92 @@ const opencodeCheck = new OpenCodeCheckService({
   ...(Number.isInteger(OC_CHECK_DELAY) && OC_CHECK_DELAY >= 0 && OC_CHECK_DELAY <= 600_000 ? { timing: { startDelayMs: OC_CHECK_DELAY } } : {}),
 });
 
+// 🧰 Setup (src/setup/service.js): what the laptop still needs (Node, Claude Code, OpenCode, Tailscale) and the
+// one-at-a-time installer. status/refresh are laptop+Tailscale only; install/cancel/login-terminal are LOCAL_ONLY.
+const setupBusy = () =>
+  Boolean(sessions.anyBusy?.()) ||
+  [...sessions.sessions.values()].some((s) => s.turnActive?.() || s.busy || s.inflight?.size) ||
+  Boolean(claudeCheck.running || opencodeCheck.running);
+let lastSetupDoneAt = null;
+const setup = new SetupService({
+  runtimeDir: RUNTIME_DIR,
+  platform: process.platform,
+  probe: (options) => probeTools({ ...options, account }),
+  isBusy: setupBusy,
+  log: (line) => console.log(line),
+  onChange: (view) => {
+    // A finished install can bring a new binary: re-resolve it before the config advertises the engines.
+    if (view.job?.state === 'done' && view.job.finishedAt !== lastSetupDoneAt) {
+      lastSetupDoneAt = view.job.finishedAt;
+      try {
+        refreshTools();
+      } catch (err) {
+        console.error('Setup: gagal memuat ulang alat:', err?.stack ?? err);
+      }
+    }
+    if (!hub.config) return;
+    hub.config = { ...hub.config, setup: view };
+    hub.broadcast('config', hub.config);
+  },
+});
+
+/**
+ * Re-resolves the CLIs after an install and gives every holder of a {command, args} pair the new object. Existing
+ * turns keep their process; the next spawn (and every check/classifier) uses the new binary.
+ */
+function refreshTools() {
+  setup.applyRuntimePath(process.env);
+  const previousClaude = claude;
+  const previousOpenCode = opencode;
+  claude = findClaude();
+  opencode = findOpenCode();
+
+  ctx.claude = claude;
+  ctx.opencode = opencode;
+  sessions.claude = claude;
+  sessions.opencode = opencode;
+  account.claude = claude;
+  claudeCheck.claude = claude;
+  opencodeCheck.claude = opencode; // the base class calls its binary `claude`
+  roleMemory.classify = engineClassifier({ engine: () => hub.engine, claude, opencode, dataDir: DATA_DIR });
+  // The mirror reads terminal OpenCode sessions; it only polls once it has a binary (start() is idempotent).
+  const mirrorBin = process.env.CLAUDE_BIN && !process.env.OFFICE_OPENCODE_MIRROR ? null : opencode;
+  const hadMirrorBin = Boolean(openCodeMirror.bin);
+  openCodeMirror.bin = mirrorBin;
+  if (!hadMirrorBin && mirrorBin) openCodeMirror.start();
+
+  if (!previousClaude && claude) {
+    // claudeCheck.start() did nothing while no binary existed; give it the new one and an immediate first look.
+    claudeCheck.start();
+    claudeCheck.tick?.();
+  } else if (claude && previousClaude?.command !== claude.command) {
+    claudeCheck.tick?.();
+  }
+  if (!previousOpenCode && opencode) {
+    if (OC_CHECK_AUTO) opencodeCheck.start();
+    opencodeCheck.tick?.();
+  } else if (opencode && previousOpenCode?.command !== opencode.command) {
+    opencodeCheck.tick?.();
+  }
+  if (opencode && previousOpenCode?.command !== opencode.command) refreshOpenCodeVersion();
+
+  account.refreshProfile(true).catch(() => {});
+  refreshProjects();
+}
+
+/** `opencode --version` for config.engines.opencode; called after start and after a successful install. */
+function refreshOpenCodeVersion() {
+  if (!opencode) return;
+  openCodeVersion(opencode)
+    .then((version) => {
+      opencodeVersion = version;
+      if (!version || !hub.config?.engines?.opencode) return;
+      hub.config.engines.opencode.version = version;
+      hub.broadcast('config', hub.config);
+    })
+    .catch(() => {});
+}
+
 const projectRoots = () => (hub.persisted.roots.length ? hub.persisted.roots : [DEFAULT_ROOT]);
 
 /** Folders that may appear as projects: under a configured root, or explicitly added via "Tambah project". */
@@ -455,6 +555,7 @@ function refreshProjects() {
     spotify: { redirectUri: spotify.redirectUri }, // shown (with a copy button) in ⚙ → Spotify
     claudeCheck: claudeCheck.publicView(), // versions + last contract check result (no details)
     opencodeCheck: opencodeCheck.publicView(), // the same for OpenCode (available: false when not installed)
+    setup: setup.publicView(), // 🧰 Node/Claude/OpenCode/Tailscale: needsSetup/firstRun + the running job
     appUpdate: appUpdater.publicView(), // ⬆ a newer Adhitron on GitHub (src/app-update.js)
     // The engines a project can run on (docs/design-opencode.md §6.1): Claude Code's caps are the UI's defaults.
     engine: hub.engine, // the app-wide DEFAULT (Akun) for new projects; each project carries its own `settings.engine`
@@ -478,7 +579,9 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Spotify's Client ID, login and logout: laptop only (the redirect URI is the laptop's 127.0.0.1).
 // ⚙ Cek kompatibilitas Claude Code (run, settings): laptop only (it spawns Claude Code, maybe a model call).
 // ⚙ Kompatibilitas OpenCode (run, settings): laptop only too (it spawns `opencode acp`).
-const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/shutdown', '/api/config', '/api/concurrency/save', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+// 🧰 Setup mutations (install/cancel/login-terminal): laptop only. Status/refresh stay absent from wifiAllows: a
+// plain-HTTP WiFi phone may not even read them, a Tailscale phone may (both are default-deny over WiFi).
+const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/setup/install', '/api/setup/cancel', '/api/setup/login-terminal', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/shutdown', '/api/config', '/api/concurrency/save', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 // The same for switching engines and OpenCode's provider logins (API keys travel in these requests).
@@ -709,6 +812,7 @@ const ctx = {
   sessions,
   claude, // ⚙ claude doctor / update (src/routes/claude-check.js)
   opencode,
+  setup, // 🧰 setup status/install/cancel/login-terminal (src/routes/setup.js)
   account,
   ledger,
   mirror,
@@ -730,6 +834,7 @@ const ctx = {
   appVersion: APP_VERSION,
   cliToken: CLI_TOKEN,
   dataDir: DATA_DIR,
+  runtimeDir: RUNTIME_DIR,
   port: PORT,
   httpsPort: HTTPS_PORT,
   maxBackupBytes: MAX_BACKUP_BYTES,
@@ -748,6 +853,9 @@ const ctx = {
   dropDeviceStreams,
   shutdown,
 };
+// Named explicitly too: refreshTools() replaces claude/opencode on this object after a successful install.
+ctx.setup = setup;
+ctx.runtimeDir = RUNTIME_DIR;
 const router = buildRouter();
 
 // ---------- pairing a phone ----------
@@ -942,6 +1050,7 @@ setInterval(() => {
 
 refreshProjects();
 hub.ready = true;
+setup.refresh({ deep: true }); // does not block start-up; config.setup is refreshed when the probe ends
 taskQueue.start();
 routines.start();
 backupScheduler.start();
@@ -1022,6 +1131,7 @@ async function shutdown() {
   openCodeMirror.stop();
   ciWatcher.stop();
   // A running contract check is aborted (its processes killed, whole tree) and not recorded; waited for ≤ 3 s.
+  // The same for a running setup install (npm/winget children are killed by their own abort handling).
   const checksStopped = Promise.allSettled([claudeCheck.stop(), opencodeCheck.stop()]);
   spotify.stop();
   routines.stop();
@@ -1031,6 +1141,7 @@ async function shutdown() {
     console.error('Shutdown:', err?.stack ?? err);
   }
   await checksStopped; // each stop() is itself bounded (STOP_WAIT_MS)
+  await setup.stop(); // bounded by SetupService.STOP_WAIT_MS; aborts a running install first
   hub.save();
   metrics.flush();
   process.exit(0);

@@ -66,7 +66,7 @@ writeFileSync(path.join(DIST, 'CARA-PAKAI.txt'), [
   '',
   '1. Jalankan Adhitron.exe. Data disimpan di %LOCALAPPDATA%\\AdhitOffice\\data (nama folder lama, sengaja tidak berubah).',
   '2. Buka http://127.0.0.1:4317 di browser (atau pasang sebagai aplikasi/PWA).',
-  '3. Prasyarat: Claude Code dan/atau OpenCode sudah terpasang dan login.',
+  '3. Belum punya Node.js/Claude Code/OpenCode? Buka 🧰 Persiapan di ⚙ → Sistem (atau wizard yang muncul di instalasi baru): semua dipasang ke folder aplikasi, tanpa admin.',
   '',
   'Mode Desktop: jalankan Adhitron Desktop dari Start Menu (Electron).',
   'Mode portable: buat file bernama "portable" di folder ini; data akan disimpan di .\\data.',

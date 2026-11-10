@@ -2,10 +2,42 @@
 import { existsSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { appPaths } from './app-paths.js';
 import { execFileTree } from './proc.js';
+import { runtimeBinDirs } from './setup/runtime.js';
 
 const WIN = process.platform === 'win32';
 const EXE = WIN ? 'opencode.exe' : 'opencode';
+
+/** Folders of the portable setup runtime; read lazily so a PATH install never touches the app's data layout. */
+function setupRuntimeDirs() {
+  try {
+    const runtimeDir =
+      process.env.OFFICE_RUNTIME_DIR ||
+      appPaths({ appDir: process.env.OFFICE_APP_DIR ?? process.cwd(), env: process.env, platform: process.platform }).runtimeDir;
+    return runtimeBinDirs(runtimeDir);
+  } catch {
+    return [];
+  }
+}
+
+/** The npm package's real binary in each folder. */
+function findPackages(dirs) {
+  for (const dir of dirs) {
+    const native = path.join(dir, 'node_modules', '@opencode', 'cli', 'bin', EXE);
+    if (existsSync(native)) return { command: native, args: [] };
+  }
+  return null;
+}
+
+/** A bare binary in each folder (other installers). */
+function findDirect(dirs) {
+  for (const dir of dirs) {
+    const direct = path.join(dir, EXE);
+    if (existsSync(direct)) return { command: direct, args: [] };
+  }
+  return null;
+}
 
 /** @returns {{ command: string, args: string[] } | null} */
 export function findOpenCode() {
@@ -13,16 +45,12 @@ export function findOpenCode() {
   if (override) return /\.[cm]?js$/.test(override) ? { command: process.execPath, args: [override] } : { command: override, args: [] };
   const dirs = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
   // 1. The npm package (`@opencode/cli`): PATH has a shim; the real binary sits in bin/ behind it.
-  for (const dir of dirs) {
-    const native = path.join(dir, 'node_modules', '@opencode', 'cli', 'bin', EXE);
-    if (existsSync(native)) return { command: native, args: [] };
-  }
   // 2. A bare binary on PATH (other installers).
-  for (const dir of dirs) {
-    const direct = path.join(dir, EXE);
-    if (existsSync(direct)) return { command: direct, args: [] };
-  }
-  return null;
+  // 3. The app's own portable runtime, after the system PATH (the explicit override above still wins).
+  const system = findPackages(dirs) ?? findDirect(dirs);
+  if (system) return system;
+  const runtimeDirs = setupRuntimeDirs();
+  return findPackages(runtimeDirs) ?? findDirect(runtimeDirs);
 }
 
 /**

@@ -5,12 +5,17 @@
 //        node scripts/setup.mjs --check    report each step's status, change nothing
 //        node scripts/setup.mjs --remove   remove auto-start
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
+import { appPaths } from '../src/app-paths.js';
 import { autostartStatus, setAutostart } from '../src/autostart.js';
 import { findClaude } from '../src/claude-bin.js';
+import { findOpenCode } from '../src/opencode-bin.js';
+import { installNpmPackage } from '../src/setup/npm.js';
+import { SETUP_TARGETS } from '../src/setup/packages.js';
+import { activeNode, installNodeRuntime, runtimeBinDirs, runtimePaths, withRuntimeLock } from '../src/setup/runtime.js';
 import { httpsPortFrom } from '../src/tls.js';
 
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,6 +25,7 @@ const HTTPS_PORT = httpsPortFrom(process.env.OFFICE_HTTPS_PORT, PORT).port ?? 43
 const WIN = process.platform === 'win32';
 const FIREWALL_RULE = 'Claude Coworking (Tailscale)'; // pre-rename id, kept so existing rules are found
 const CHECK_ONLY = process.argv.includes('--check');
+const RUNTIME_DIR = appPaths({ appDir: APP_DIR }).runtimeDir;
 
 const ok = (msg) => console.log(`  [OK]  ${msg}`);
 const warn = (msg) => console.log(`  [!!]  ${msg}`);
@@ -52,26 +58,132 @@ async function serverRunning() {
   }
 }
 
-// ---------- 1. Node.js + Claude Code ----------
+// ---------- 1. Node.js + mesin AI ----------
 
-async function checkBasics() {
-  step(1, 'Node.js & Claude Code');
+function useRuntimePath() {
+  const dirs = runtimeBinDirs(RUNTIME_DIR).filter(Boolean);
+  if (!dirs.length) return;
+  const have = new Set(String(process.env.PATH ?? '').split(path.delimiter));
+  const extra = dirs.filter((dir) => !have.has(dir));
+  if (extra.length) process.env.PATH = [...extra, process.env.PATH ?? ''].filter(Boolean).join(path.delimiter);
+}
+
+const versionOf = (bin) => {
+  try {
+    return capture(bin.command, [...bin.args, '--version']) ?? '';
+  } catch {
+    return '';
+  }
+};
+
+/** The portable Node runtime, downloaded only with consent; null when the user skips it. */
+async function ensureRuntimeNode() {
+  const active = activeNode(RUNTIME_DIR);
+  if (active) return active;
+  if (CHECK_ONLY) return null;
+  warn('Adhitron belum punya Node.js sendiri.');
+  info('Runtime ini hanya dipakai Adhitron: tanpa admin dan tanpa mengubah PATH sistem.');
+  if (!(await ask('Unduh Node.js LTS sekarang (±30 MB)?'))) return null;
+  let last = '';
+  try {
+    await withRuntimeLock(RUNTIME_DIR, () =>
+      installNodeRuntime({
+        runtimeDir: RUNTIME_DIR,
+        onProgress: ({ stage, percent }) => {
+          const label = stage ? `${stage}${percent != null ? ` ${Math.round(percent)}%` : ''}` : '';
+          if (label && label !== last) {
+            last = label;
+            info(label);
+          }
+        },
+      }),
+    );
+  } catch (err) {
+    warn(`Gagal memasang Node.js: ${err?.message ?? err}`);
+    return null;
+  }
+  const installed = activeNode(RUNTIME_DIR);
+  if (installed) {
+    useRuntimePath();
+    ok(`Node.js ${installed.version} siap di runtime Adhitron`);
+  }
+  return installed;
+}
+
+/** Installs one npm CLI into the per-user runtime prefix; false when the user skips or it fails. */
+async function installCli(target) {
+  const spec = SETUP_TARGETS[target]?.npm;
+  if (!spec) return false;
+  const node = await ensureRuntimeNode();
+  if (!node) {
+    info(`Lewati ${SETUP_TARGETS[target].label}. Pasang manual lewat wizard Persiapan di aplikasi setelah Node tersedia.`);
+    return false;
+  }
+  const runtime = { ...runtimePaths({ runtimeDir: RUNTIME_DIR }), node: node.dir };
+  try {
+    mkdirSync(path.dirname(runtime.npmrc), { recursive: true });
+    writeFileSync(runtime.npmrc, 'registry=https://registry.npmjs.org/\nfund=false\naudit=false\nupdate-notifier=false\n');
+    mkdirSync(path.dirname(runtime.globalNpmrc), { recursive: true });
+    writeFileSync(runtime.globalNpmrc, '');
+    info(`Memasang ${SETUP_TARGETS[target].label} ke runtime Adhitron (tanpa admin)…`);
+    await withRuntimeLock(RUNTIME_DIR, () =>
+      installNpmPackage({
+        runtime,
+        spec,
+        onLine: (line) => {
+          const text = String(line ?? '').trim();
+          if (text) info(text.slice(0, 200));
+        },
+      }),
+    );
+    useRuntimePath();
+    return true;
+  } catch (err) {
+    warn(`Gagal memasang ${SETUP_TARGETS[target].label}: ${err?.message ?? err}`);
+    if (err?.hint) info(err.hint);
+    return false;
+  }
+}
+
+async function setupEngines() {
+  step(1, 'Node.js & mesin AI');
   const major = Number(process.versions.node.split('.')[0]);
+  const runtime = activeNode(RUNTIME_DIR);
   if (major < 20) {
     warn(`Node.js ${process.versions.node} terlalu lama. Pasang Node.js 20+ dari https://nodejs.org lalu jalankan setup lagi.`);
     return false;
   }
-  ok(`Node.js ${process.versions.node}`);
-  const claude = findClaude();
-  if (!claude) {
+  ok(`Node.js ${process.versions.node}${runtime ? ' (runtime Adhitron)' : ' (sistem)'}`);
+  useRuntimePath();
+
+  let claude = findClaude();
+  if (claude) {
+    ok(`Claude Code ${versionOf(claude)}`.trim());
+  } else {
     warn('Claude Code belum terpasang.');
-    info('Pasang:  npm install -g @anthropic-ai/claude-code');
-    info('Lalu jalankan `claude` sekali di terminal untuk login, kemudian jalankan setup ini lagi.');
-    return false;
+    if (!CHECK_ONLY && (await ask('Pasang Claude Code sekarang? (mesin utama, tanpa admin)'))) {
+      await installCli('claude');
+      claude = findClaude();
+    }
+    if (!claude) {
+      warn('Claude Code tetap belum ada.');
+      info('Tanpa Claude Code, Adhitron hanya bisa memakai OpenCode atau mode demo.');
+      info('Pasang manual: npm install -g @anthropic-ai/claude-code, lalu jalankan `claude` sekali untuk login.');
+    }
   }
-  ok(`Claude Code ${capture(claude.command, [...claude.args, '--version']) ?? ''}`);
-  info('Pastikan sudah login sekali: buka terminal, jalankan `claude`.');
-  return true;
+
+  let opencode = findOpenCode();
+  if (opencode) {
+    ok(`OpenCode ${versionOf(opencode)}`.trim());
+  } else {
+    info('OpenCode belum terpasang (opsional: mesin kedua/provider lain).');
+    if (!CHECK_ONLY && (await ask('Pasang OpenCode sekarang?', false))) {
+      await installCli('opencode');
+      opencode = findOpenCode();
+    }
+  }
+  if (claude) info('Login sekali di terminal: jalankan `claude` (atau buka 🧰 Persiapan di aplikasi).');
+  return Boolean(claude || opencode);
 }
 
 // ---------- 2. Tailscale ----------
@@ -183,14 +295,13 @@ if (process.argv.includes('--remove')) {
   rl.close();
   process.exit(0);
 }
-if (!(await checkBasics())) {
-  rl.close();
-  process.exit(1);
-}
+const enginesReady = await setupEngines();
 const tailscaleIp = await setupTailscale();
 await setupFirewall(tailscaleIp);
 await setupAutostart();
 rl.close();
+
+if (CHECK_ONLY) process.exit(enginesReady ? 0 : 1);
 
 console.log('\n=== Selesai ===');
 console.log(`  Laptop : http://localhost:${PORT}`);

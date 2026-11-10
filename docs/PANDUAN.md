@@ -2,7 +2,7 @@
 
 Panduan singkat untuk pemakaian sehari-hari, di laptop dan HP. Detail tiap fitur ada di [FITUR](FITUR.md); cara menjalankan dan keamanan ada di [README](../README.md).
 
-Belum terpasang? Ikuti [Mulai cepat](../README.md#mulai-cepat) dulu.
+Belum terpasang? Ikuti [Mulai cepat](../README.md#mulai-cepat) dulu. Kalau Node.js atau CLI belum ada, buka **🧰 Persiapan** di ⚙ → Sistem: Adhitron menawarkan pemasangan Node.js, Claude Code, OpenCode, dan Tailscale tanpa admin.
 
 ## Mulai kerja di laptop
 

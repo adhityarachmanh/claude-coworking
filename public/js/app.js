@@ -11,6 +11,7 @@ import { brain, scenes, stage } from './core/scenes.js';
 import { initViewMode } from './features/view-mode.js';
 import { initAppUpdate } from './features/app-update.js';
 import { initHealth } from './features/health.js';
+import { initSetup } from './features/setup.js';
 import { initInstall } from './features/install.js';
 import { initRoleMap } from './features/role-map.js';
 import { connect } from './core/stream.js';
@@ -93,6 +94,7 @@ initTeam();
 initViewMode(); // 🧠 Mode Otak ↔ 🏢 Kantor
 initFocus(); // 🎯 Mode fokus: the office is hidden and its animation paused (/fokus)
 initAppUpdate(); // ⬆ newer Adhitron: banner + ⚙
+initSetup(); // 🧰 Persiapan: Node/Claude Code/OpenCode/Tailscale (⚙ → Sistem, once on a fresh install)
 initHealth(); // 🩺 Kesehatan sistem (⚙ → Sistem; laptop/Tailscale only)
 initInstall(); // 📲 pasang sebagai aplikasi (PWA), hint in ❓ Panduan
 initShortcutLinks(); // 🔗 PWA shortcut: /?open=dashboard or /?open=sessions
