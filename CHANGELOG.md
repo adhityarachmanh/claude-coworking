@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.13
+
+- **🔌 Provider kustom OpenAI-compatible.** Di 👤 Akun → tab OpenCode, panel login kini punya tombol **＋ Provider kustom** selain **＋ Login provider**. Isi ID (mis. `river`), nama tampilan, Base URL (mis. `https://api.river.ai/v1`), dan API key; tombol **Cek model** menanyakan `{baseURL}/models` ke endpoint lalu menampilkan daftar model untuk dicentang, dan **Simpan provider** menyelesaikannya. Berguna untuk layanan dengan API ala OpenAI yang tidak ada di katalog OpenCode—mis. River AI, atau server lokal seperti Ollama, LM Studio, dan vLLM. Provider yang tersimpan langsung muncul di daftar model **Pengaturan giliran** (prefiks `<id>/<model>`) dan bisa di-logout seperti provider biasa.
+- **🔐 API key disimpan oleh OpenCode di laptop, bukan oleh aplikasi.** Aplikasi hanya menulis blok provider ke config OpenCode global (`~/.config/opencode/opencode.json`)—file lama dibackup dulu di folder data aplikasi, penulisan atomik—sedangkan API key disimpan oleh OpenCode (credential store yang sama dengan `opencode auth login`) dan tidak pernah ditulis ke file config, log, atau riwayat audit. Kalau penyimpanan API key ke OpenCode gagal, blok config tetap tertulis dan pesan error menjelaskan key bisa di-login lewat **＋ Login provider** biasa.
+- **⚠️ Batasan yang jelas dari awal.** Base URL harus `https://` (`http://` hanya untuk localhost/127.0.0.1/[::1], untuk runtime lokal), maksimal 100 model per provider, jawaban daftar model di atas 2 MB ditolak, dan ID tidak boleh menabrak nama provider bawaan (openai, anthropic, dll) — ditolak **409** dengan ajakan memakai ID lain.
+
 ## 1.0.12
 
 - **🧭 Dua mode untuk kedua mesin: Plan dan Build.** Pilihan mode izin yang lama (Tanya dulu / Auto-edit / Auto / Jangan tanya) diganti satu kontrol yang sama untuk Claude Code dan OpenCode. **Build** mengubah file otomatis, tetapi **perintah shell dan jaringan tetap minta izin** dan aturan `deny` selalu menang; **Plan** hanya menyusun rencana (read-only). `Shift+Tab` sekarang hanya Build ⇄ Plan, dan kartu rencana punya satu tombol **Lanjut build**.
