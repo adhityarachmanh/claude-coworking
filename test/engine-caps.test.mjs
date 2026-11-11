@@ -29,7 +29,7 @@ test('OpenCode turns off Claude-only permissions/extensions, but keeps conversat
   assert.equal(caps.extensions, false, 'plugins/agents/hooks are Claude Code files');
   assert.equal(caps.search, true, 'conversation search covers OpenCode sessions too');
   assert.equal(caps.exportSession, false, 'full session export reads Claude transcripts');
-  assert.deepEqual(caps.modes, ['manual', 'plan'], 'OpenCode shows only Build and Plan');
+  assert.deepEqual(caps.modes, ['build', 'plan'], 'OpenCode shows only Build and Plan');
 });
 
 test('caps without an engines entry fall back to Claude (older servers)', () => {

@@ -1,7 +1,6 @@
 // Permission cards in the chat: questions, plans, tool approvals.
 import { api, toast } from '../core/api.js';
 import { escapeHtml } from '../core/dom.js';
-import { engineOf } from '../core/engine-caps.js';
 import { READ_ONLY_HINT, state } from '../core/state.js';
 import { renderMarkdown } from '../markdown.js';
 import { who } from './chat.js';
@@ -44,11 +43,9 @@ export function fillApproval(node, msg) {
     // Summary first, full plan behind "Lihat rencana lengkap": the three actions stay visible.
     const plan = String(input.plan ?? '').trim();
     const long = plan.length > 240 || plan.split(/\r?\n/).filter((line) => line.trim()).length > 3;
-    const opencode = engineOf(state.statuses[msg.project] ?? {}, state.config) === 'opencode';
     body = `<div class="plan-preview md">${renderMarkdown(long ? planPreview(plan) : plan)}</div>
       ${long ? `<details class="plan-more"><summary>Lihat rencana lengkap</summary><div class="plan md">${renderMarkdown(plan)}</div></details>` : ''}
-      <input class="feedback" placeholder="Catatan revisi (untuk Minta revisi)" aria-label="Catatan revisi rencana">
-      ${opencode ? '' : '<label class="plan-mode">Build sebagai <select aria-label="Mode kerja setelah rencana disetujui"><option value="acceptEdits">Auto-edit</option><option value="manual">Tanya tiap edit</option></select></label>'}`;
+      <input class="feedback" placeholder="Catatan revisi (untuk Minta revisi)" aria-label="Catatan revisi rencana">`;
     actions = '<button class="primary" data-act="build" title="Setujui rencana dan mulai build">▶ Lanjut build</button><button data-act="deny">Minta revisi</button><button data-act="finish" title="Simpan rencana tanpa menjalankan build">Selesai</button>';
   } else {
     if (input.command) body = `<pre>${escapeHtml(input.command)}</pre>${input.description ? `<p class="muted">${escapeHtml(input.description)}</p>` : ''}`;
@@ -70,15 +67,15 @@ export function fillApproval(node, msg) {
     return;
   }
   node.querySelectorAll('[data-act]').forEach((btn) =>
-    btn.addEventListener('click', () => decide(approval, btn.dataset.act, node, btn.dataset.mode)),
+    btn.addEventListener('click', () => decide(approval, btn.dataset.act, node)),
   );
 }
 
-async function decide(approval, act, node, mode) {
+async function decide(approval, act, node) {
   const body = {};
   if (act === 'build') {
     body.allow = true;
-    body.mode = node.querySelector('.plan-mode select')?.value || mode;
+    body.mode = 'build'; // approving a plan always continues in Build
   } else if (act === 'finish') {
     body.cancelled = true;
   } else {
@@ -86,7 +83,6 @@ async function decide(approval, act, node, mode) {
   }
   if (act === 'always') body.always = true;
   if (act === 'all') body.allowAll = true;
-  if (mode) body.mode = mode; // non-plan approval actions keep their explicit mode
   if (act === 'deny') body.message = node.querySelector('.feedback')?.value || undefined;
   if (act === 'answer') {
     const answers = {};

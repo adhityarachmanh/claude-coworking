@@ -1,6 +1,6 @@
 // Above and below the composer: Claude's todo list and the status line (mode, model, context).
 import { $, escapeHtml, narrow } from '../core/dom.js';
-import { engineOf } from '../core/engine-caps.js';
+import { normalizeMode } from '../core/engine-caps.js';
 import { fmtTokens } from '../core/format.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { openCompact } from './compact.js';
@@ -35,17 +35,13 @@ export function renderTodos(st) {
   }`;
 }
 
-/** Short labels for the phone's settings chip (features/composer.js). */
-export const MODE_SHORT = { manual: '🛡️ Tanya dulu', acceptEdits: '✏️ Auto-edit', plan: '📋 Rencana', auto: '⚡ Auto', dontAsk: '🚫 Jangan tanya' };
+/** Short labels for the phone's settings chip (features/composer.js). One vocabulary for both engines. */
+export const MODE_SHORT = { build: '🔨 Build', plan: '📋 Plan' };
 
-const MODE_LABEL = { manual: '🛡️ tanya dulu', acceptEdits: '✏️ auto-edit file', plan: '📋 rencana dulu', auto: '⚡ auto', dontAsk: '🚫 jangan tanya' };
-export const MODE_CYCLE = ['manual', 'acceptEdits', 'plan', 'auto']; // Shift+Tab order, as in the CLI
-const OPENCODE_MODE_SHORT = { manual: 'Build', plan: 'Plan' };
-const OPENCODE_MODE_LABEL = { manual: 'build', plan: 'plan' };
-/** OpenCode's two native modes; an old stored auto/acceptEdits setting is shown as Build. */
-const openCodeMode = (mode) => (mode === 'plan' ? 'plan' : 'manual');
-export const modeShort = (mode, engine) => (engine === 'opencode' ? OPENCODE_MODE_SHORT[openCodeMode(mode)] : MODE_SHORT[mode]) ?? mode;
-export const modeLabel = (mode, engine) => (engine === 'opencode' ? OPENCODE_MODE_LABEL[openCodeMode(mode)] : MODE_LABEL[mode]) ?? mode;
+const MODE_LABEL = { build: '🔨 build · edit otomatis', plan: '📋 plan dulu' };
+export const MODE_CYCLE = ['build', 'plan']; // Shift+Tab: Build ⇄ Plan
+export const modeShort = (mode) => MODE_SHORT[normalizeMode(mode)];
+export const modeLabel = (mode) => MODE_LABEL[normalizeMode(mode)];
 
 /** 🧹 Ringkas konteks: only with a real project that has a session, never only-lihat (the dialog itself re-checks). */
 const compactReady = (st) => Boolean(state.active) && state.active !== DEMO_ID && !state.readOnly && Boolean(st?.sessionId || st?.context?.used);
@@ -58,7 +54,7 @@ export function renderStatusline(st) {
     line.classList.remove('has-chips');
     return;
   }
-  const parts = [`<span class="sl-mode" title="Ganti dengan Shift+Tab">${modeLabel(st.mode ?? 'manual', engineOf(st, state.config))} <kbd>⇧Tab</kbd></span>`];
+  const parts = [`<span class="sl-mode" title="Ganti dengan Shift+Tab">${modeLabel(st.mode)} <kbd>⇧Tab</kbd></span>`];
   const model = st.activeModel || st.model;
   if (model) parts.push(`<span class="sl-model">${escapeHtml(model)}</span>`);
   if (st.handoffReady) parts.push('<span class="sl-handoff" title="Konteks dari mesin sebelumnya ikut pada pesan berikutnya">🧠 Konteks sesi siap</span>');

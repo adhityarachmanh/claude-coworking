@@ -9,6 +9,7 @@ import { searchOpenCodeSessions } from '../opencode-search.js';
 import { REWINDING_MESSAGE } from '../acp-session.js';
 import { checkTurn } from '../concurrency.js';
 import { autoContext, classifyEffort } from '../effort-classifier.js';
+import { MODE_CHOICE_MESSAGE } from '../modes.js';
 import { DEMO_ID } from '../hub.js';
 import { QUEUE_LIMITS } from '../queue.js';
 import { shortModelLabel, tierFor, classifierModelFor } from '../model-auto.js';
@@ -119,6 +120,10 @@ export function register(router) {
     // The provider of the active model was logged out (👤 Akun, routes/account.js): no silent replacement.
     if (hub.statusFor(project.id)?.modelStale) {
       return json(res, 409, { error: 'Model aktif tidak tersedia (provider sudah logout). Pilih model lain atau Default dulu.' });
+    }
+    // A legacy 'dontAsk' waits for an explicit Plan/Build choice: no turn may start (and silently get looser) first.
+    if (hub.settingsFor(project.id).modePendingChoice) {
+      return json(res, 409, { error: MODE_CHOICE_MESSAGE, code: 'mode-choice' });
     }
     const text = String(body.text ?? '').trim();
     let attachments;

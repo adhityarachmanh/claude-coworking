@@ -209,7 +209,7 @@ function renderResult(r) {
   }
   // The project's engine and its Claude conversation may come back with the backup; OpenCode session ids never do
   // (their store is not archived). Mode izin tetap tidak ikut.
-  box.append(el('p', 'Buka Riwayat sesi di project-nya untuk melanjutkan percakapan (atau jalankan claude --resume di folder project). Mode izin tidak ikut dipulihkan: tetap Manual. Mesin project ikut dipulihkan bila OpenCode terpasang; bila tidak, project dari backup memakai Claude Code.', 'muted'));
+  box.append(el('p', 'Buka Riwayat sesi di project-nya untuk melanjutkan percakapan (atau jalankan claude --resume di folder project). Mode tidak ikut dipulihkan: project memakai Build (file otomatis, shell/jaringan minta izin) sampai kamu memilih Plan. Mesin project ikut dipulihkan bila OpenCode terpasang; bila tidak, project dari backup memakai Claude Code.', 'muted'));
   box.hidden = false;
 }
 

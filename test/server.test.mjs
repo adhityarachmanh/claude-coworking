@@ -1030,7 +1030,7 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     '/api/not-yet-written', // default deny: an endpoint nobody listed is refused too
   ];
   for (const p of actions) {
-    const res = await phoneApi(p, { text: 'rm -rf /', command: 'whoami', allow: true, mode: 'dontAsk', message: 'x', uuid: 'x', on: true, names: { qa: 'X' } });
+    const res = await phoneApi(p, { text: 'rm -rf /', command: 'whoami', allow: true, mode: 'build', message: 'x', uuid: 'x', on: true, names: { qa: 'X' } });
     assert.equal(res.status, 403, p);
     const body = await res.json();
     assert.ok(body.readOnly || /laptop|Tailscale/.test(body.error), `${p}: ${body.error}`);
@@ -1151,7 +1151,7 @@ test('settings are validated; the demo runs without Claude', async () => {
   const id = await projectId();
   await api(`/api/projects/${id}/settings`, { mode: 'rm -rf', model: 'gpt', effort: '--dangerously-skip-permissions', team: false });
   const snap = await snapshot();
-  assert.equal(snap.statuses[id].mode, 'manual');
+  assert.equal(snap.statuses[id].mode, 'build');
   assert.equal(snap.statuses[id].model, '');
   assert.equal(snap.statuses[id].effort, '', 'only known effort levels reach the CLI');
   await api(`/api/projects/${id}/settings`, { effort: 'high' });
@@ -1549,7 +1549,7 @@ test('mode, model and effort switch live in the running Claude Code, without a r
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'status?' });
   const pid = (await nextReply(id, /pid=\d+/)).patch.text.match(/pid=(\d+)/)[1];
-  await api(`/api/projects/${id}/settings`, { mode: 'acceptEdits', model: 'fable', effort: 'high' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build', model: 'fable', effort: 'high' });
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'status?' });
   const reply = (await nextReply(id, /pid=\d+/)).patch.text;
@@ -1586,9 +1586,9 @@ test('approving a plan picks the mode the work continues in, like the CLI plan d
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'buat rencana' });
   const approval = await waitFor((t, o) => t === 'approval' && o.project === id && o.kind === 'plan' && o.status === 'pending');
-  await api(`/api/approvals/${approval.id}`, { allow: true, mode: 'acceptEdits' });
+  await api(`/api/approvals/${approval.id}`, { allow: true, mode: 'build' });
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
-  assert.equal((await snapshot()).statuses[id].mode, 'acceptEdits');
+  assert.equal((await snapshot()).statuses[id].mode, 'build');
 });
 
 test('plan approval re-runs Model/Effort Auto on the plan; Selesai cancels without building', async () => {
@@ -1598,7 +1598,7 @@ test('plan approval re-runs Model/Effort Auto on the plan; Selesai cancels witho
   await api(`/api/projects/${id}/prompt`, { text: 'buat rencana' });
   let approval = await waitFor((t, o) => t === 'approval' && o.project === id && o.kind === 'plan' && o.status === 'pending');
   await api(`/api/projects/${id}/settings`, { modelAuto: true, effortAuto: true });
-  await api(`/api/approvals/${approval.id}`, { allow: true, mode: 'acceptEdits' });
+  await api(`/api/approvals/${approval.id}`, { allow: true, mode: 'build' });
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
   let st = (await snapshot()).statuses[id];
   assert.equal(st.effort, 'high', 'the approved plan is classified again for Effort Auto');
@@ -1619,7 +1619,7 @@ test('plan approval re-runs Model/Effort Auto on the plan; Selesai cancels witho
   assert.equal(seen.slice(mark).filter((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'user').length, 0, 'nothing sent');
   st = (await snapshot()).statuses[id];
   assert.equal(st.mode, 'plan', 'still in plan mode');
-  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build' });
 });
 
 test('rewind: points from the transcript chain, conversation via --resume-session-at; a code rewind needs git (409)', async () => {

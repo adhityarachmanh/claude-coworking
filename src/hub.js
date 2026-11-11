@@ -7,6 +7,7 @@ import { CHAT_LIMIT, ChatStore, isChatId } from './chat-store.js';
 import { EFFORT_LEVELS } from './effort.js';
 import { MODEL_TIERS } from './model-auto.js';
 import { GO_PLANS } from './opencode-go.js';
+import { DEFAULT_MODE, isMode, migrateMode, normalizeMode } from './modes.js';
 import { describeTool } from './roles.js';
 import { migrateTeamNames } from './role-catalog.js';
 import { basename, normalizePath, projectId } from './util.js';
@@ -44,7 +45,7 @@ const MAX_IMPORTED_MESSAGE = 512 * 1024;
 //   (not in data/chats) and the move is tried again at the next start.
 
 export const DEMO_ID = 'demo';
-export const DEFAULT_SETTINGS = { mode: 'manual', model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {} };
+export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {} };
 // Which coding agent runs the project: Claude Code (stream-json) or OpenCode (ACP, src/acp-session.js).
 export const ENGINES = ['claude', 'opencode'];
 // Per-project data per engine lives in `settings[id].engine`, `engineSettings[id][engine]` and
@@ -63,7 +64,7 @@ const STORED_AGENT = /^[\w.-]{1,60}$/;
 // '' = Default. none / minimal: offered by some OpenCode models (their own levels, from `model.list`).
 // Auto is a separate boolean (`effortAuto`): a generated level must never be sent as `--effort auto`.
 // Claude Code's permission modes ('manual' is the app's name for its 'default'); bypassPermissions is left out on purpose.
-export const PERMISSION_MODES = ['manual', 'acceptEdits', 'auto', 'plan', 'dontAsk'];
+// Claude Code's permission modes are an implementation detail now: the app only stores build/plan (src/modes.js).
 // '' = default; otherwise what `--model` / /model take: an alias (fable, opus[1m], opusplan…), a full
 // claude-… id, or a model Claude Code itself listed. Anything else never reaches the command line.
 const MODEL_ALIAS = /^(?:best|opusplan|(?:opus|sonnet|haiku|fable)(?:\[1m\])?)$/;
@@ -287,7 +288,8 @@ export class Hub {
     this.seq = Math.max(maxStoredSeq(this.storedChats), this.migrationSeq, Number.isSafeInteger(this.persisted.chatSeq) ? this.persisted.chatSeq : 0);
     // Stage 2: the old app-wide switch's parking lot is flattened here, once, before anything else reads it.
     // save() (not writeState) so a chat migration that failed this run keeps its `chats` in state.json too.
-    if (this.migrateWorkspaces() || teamNamesMigrated) this.save();
+    const modesMigrated = this.migrateModes();
+    if (this.migrateWorkspaces() || teamNamesMigrated || modesMigrated) this.save();
     this.prunePreProjectBackups();
     this.closeStaleReplies();
     this.projects.set(DEMO_ID, { id: DEMO_ID, name: 'Demo kantor', path: null, sources: ['demo'], virtual: true });
@@ -370,6 +372,27 @@ export class Hub {
     } catch {
       // no data folder yet
     }
+  }
+
+  /**
+   * One-way mode migration (src/modes.js): stored modes become build/plan. A legacy 'dontAsk' becomes Plan with a
+   * pending choice, so it can never silently turn into a looser Build. Idempotent: a second run changes nothing.
+   */
+  migrateModes() {
+    const settings = isObject(this.persisted?.settings) ? this.persisted.settings : null;
+    if (!settings) return false;
+    let changed = false;
+    for (const raw of Object.values(settings)) {
+      if (!isObject(raw)) continue;
+      const next = migrateMode(raw.mode);
+      if (!next) continue;
+      raw.mode = next.mode;
+      if (next.legacyMode) raw.legacyMode = next.legacyMode;
+      if (next.pending) raw.modePendingChoice = true;
+      else delete raw.modePendingChoice;
+      changed = true;
+    }
+    return changed;
   }
 
   migrateWorkspaces() {
@@ -999,6 +1022,8 @@ export class Hub {
   settingsFor(id) {
     const engine = this.engineOf(id);
     const settings = { ...DEFAULT_SETTINGS, ...this.persisted.settings[id], engine };
+    // A hand-edited/older state.json could hold anything here: the engines only ever see build/plan.
+    settings.mode = normalizeMode(settings.mode);
     // A hand-edited state.json could hold anything here; ladders are validated when they are written instead.
     if (!isObject(settings.modelTiers)) settings.modelTiers = {};
     return settings;
@@ -1064,7 +1089,16 @@ export class Hub {
   cleanSettings(base, patch) {
     const next = { ...base };
     if (!isObject(patch)) return next;
-    if (PERMISSION_MODES.includes(patch.mode)) next.mode = patch.mode;
+    if (isMode(patch.mode)) {
+      const changed = patch.mode !== next.mode;
+      next.mode = patch.mode;
+      // An explicit choice (a mode click, the migration banner) ends a pending "dontAsk" decision; a model change
+      // that happens to carry the old mode must not count as that choice.
+      if (patch.modeChosen === true || changed) delete next.modePendingChoice;
+    } else if (patch.mode === 'manual' || patch.mode === 'acceptEdits' || patch.mode === 'auto') {
+      next.mode = 'build'; // an old tab: same vocabulary, auto-edit on; it can never turn permissions looser than Build
+    }
+    // 'dontAsk' from an old client is deliberately ignored: it must not silently become a looser Build.
     // The engine is this project's own choice; a target engine decides which models/agents are valid.
     const engine = ENGINES.includes(patch.engine) ? patch.engine : (ENGINES.includes(next.engine) ? next.engine : (this.persisted?.engine ?? 'claude'));
     if (ENGINES.includes(patch.engine)) next.engine = patch.engine;

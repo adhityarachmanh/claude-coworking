@@ -165,18 +165,15 @@
           <!-- Claude's live todo list (TodoWrite / Task tools), pinned like in the CLI -->
           <div id="todos" class="todos-pinned" hidden></div>
           <div class="controls">
-            <!-- Label and description follow the project's engine (composer.js renderModeOptions): Izin / Mode -->
-            <label id="mode-ctl" class="ctl" title="Kapan Claude harus minta izinmu sebelum mengedit file atau menjalankan perintah">
-              <span id="mode-label">Izin</span>
+            <!-- One vocabulary for both engines: Plan (read-only) and Build (files may change; shell/network ask) -->
+            <label id="mode-ctl" class="ctl" title="Plan: hanya menyusun rencana, tanpa mengubah file. Build: file boleh diubah otomatis, tetapi perintah shell dan jaringan tetap minta izin.">
+              <span id="mode-label">Mode</span>
               <select id="mode">
-                <option value="manual">🛡️ Tanya dulu</option>
-                <option value="acceptEdits">✏️ Auto-edit file</option>
-                <option value="auto">⚡ Auto</option>
-                <option value="plan">📋 Rencana dulu</option>
-                <option value="dontAsk">🚫 Jangan tanya</option>
+                <option value="build">🔨 Build</option>
+                <option value="plan">📋 Plan</option>
               </select>
             </label>
-            <!-- OpenCode: its primary agents (build, the user's own from opencode.json); 📋 Rencana dulu = its plan agent -->
+            <!-- OpenCode: its primary agents (build, the user's own from opencode.json); 📋 Plan = its plan agent -->
             <label id="agent-ctl" class="ctl" title="Agent OpenCode yang mengerjakan giliran: build (bawaan) atau agent buatanmu dari opencode.json. Untuk rencana saja, pilih Mode → Plan." hidden>
               <span>Agent</span>
               <select id="agent"></select>
@@ -230,6 +227,8 @@
           <div id="ro-banner" class="ro-banner phone-only" role="status" hidden>👁 Hanya lihat lewat WiFi. Kirim perintah dari laptop atau lewat Tailscale.</div>
           <!-- Project model gone after a provider logout (status.modelStale): prompts are refused until a model is picked -->
           <div id="model-stale" class="model-stale" role="alert" hidden></div>
+          <!-- Legacy 'dontAsk' (migrated): the project waits for an explicit Plan/Build choice before the next turn -->
+          <div id="mode-choice" class="model-stale" role="alert" hidden></div>
           <div class="input">
             <button id="btn-attach" class="ghost icon attach" title="Lampirkan file: gambar, PDF, log/teks/kode (atau paste / drag ke kotak ini)" aria-label="Lampirkan file">📎</button>
             <!-- accept is filled from core/attachment-rules.js (ATTACH_ACCEPT) at start -->
@@ -304,7 +303,7 @@
               <div><dt><kbd>Ctrl</kbd> <kbd>B</kbd></dt><dd>Lanjutkan perintah/subagent di latar belakang</dd></div>
               <div><dt><kbd>Enter</kbd> / <kbd>Shift</kbd> <kbd>Enter</kbd></dt><dd>Kirim / baris baru</dd></div>
               <div><dt><kbd>Alt</kbd> <kbd>Enter</kbd></dt><dd>Masukkan prompt ke antrian (tidak langsung dikirim)</dd></div>
-              <div><dt><kbd>Shift</kbd> <kbd>Tab</kbd></dt><dd>Ganti mode izin</dd></div>
+              <div><dt><kbd>Shift</kbd> <kbd>Tab</kbd></dt><dd>Ganti mode Build ⇄ Plan</dd></div>
               <div><dt><kbd>Alt</kbd> <kbd>M</kbd></dt><dd>Input suara</dd></div>
               <div><dt><kbd>Esc</kbd></dt><dd>Tutup dialog/menu teratas; tanpa dialog, hentikan giliran</dd></div>
               <div><dt><kbd>Esc</kbd> <kbd>Esc</kbd></dt><dd>Rewind percakapan/kode saat tidak ada yang berjalan</dd></div>
@@ -334,7 +333,7 @@
               <tr><td><kbd>/t</kbd></td><td>⚡ Template prompt (review, test, perbaiki error, commit…), juga tombol ⚡ di kotak pesan. Bagian <code>{…}</code> langsung terpilih; <kbd>Tab</kbd> ke bagian berikutnya</td></tr>
               <tr><td><kbd>Ctrl</kbd> <kbd>V</kbd></td><td>Tempel gambar atau screenshot</td></tr>
               <tr><td><kbd>!</kbd></td><td>Jalankan perintah shell langsung di folder project, misalnya <code>!git status</code>. Output-nya ikut terkirim ke Claude bersama pesan berikutnya.</td></tr>
-              <tr><td><kbd>Shift</kbd> <kbd>Tab</kbd></td><td>Ganti mode izin (Tanya dulu → Auto-edit → Rencana → Auto)</td></tr>
+              <tr><td><kbd>Shift</kbd> <kbd>Tab</kbd></td><td>Ganti mode (Build ⇄ Plan)</td></tr>
               <tr><td><kbd>Esc</kbd></td><td>Hentikan giliran yang berjalan (pesan yang antre ikut dibatalkan), atau tutup dialog</td></tr>
               <tr><td><kbd>Esc</kbd> <kbd>Esc</kbd></td><td>Kosongkan kotak pesan; kalau sudah kosong, buka <b>Rewind</b>: kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu</td></tr>
               <tr><td><kbd>Ctrl</kbd> <kbd>R</kbd></td><td>Cari di riwayat prompt</td></tr>
@@ -347,13 +346,10 @@
             </table>
           </section>
           <section>
-            <h3>Mode izin</h3>
+            <h3>Mode</h3>
             <table class="keys">
-              <tr><td>🛡️ Tanya dulu</td><td>Setiap edit file dan perintah menunggu izinmu. Paling aman.</td></tr>
-              <tr><td>✏️ Auto-edit file</td><td>Edit file langsung jalan, perintah terminal tetap minta izin.</td></tr>
-              <tr><td>⚡ Auto</td><td>Aksi yang dinilai aman langsung jalan, yang berisiko diblokir.</td></tr>
-              <tr><td>📋 Rencana dulu</td><td>Mesin menyusun rencana dulu, dan baru dikerjakan setelah kamu setujui.</td></tr>
-              <tr><td>🚫 Jangan tanya</td><td>Tidak ada kartu izin: yang belum diizinkan lewat aturan langsung ditolak. Untuk kerja tanpa ditunggui.</td></tr>
+              <tr><td>🔨 Build</td><td>File boleh diubah otomatis. Perintah shell dan jaringan tetap minta izin; aturan <code>deny</code> selalu menang.</td></tr>
+              <tr><td>📋 Plan</td><td>Mesin hanya menyusun rencana, tanpa mengubah file. Setujui dengan <b>Lanjut build</b> untuk mulai bekerja.</td></tr>
             </table>
           </section>
           <section>

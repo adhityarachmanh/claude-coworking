@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { attachmentChips } from './attachments.js';
 import { budgetStop, consumeBudgetOverride } from './budget.js';
 import { checkTurn, overCapacity } from './concurrency.js';
-import { PERMISSION_MODES } from './hub.js';
+import { MODE_CHOICE_MESSAGE, agentForMode } from './modes.js';
 import { OPENCODE_ACCOUNT } from './opencode-account.js';
 import { describeTool, inferRole } from './roles.js';
 import { StreamTranslator } from './translator.js';
@@ -50,9 +50,9 @@ export const OPENCODE_CAPS = Object.freeze({
   extensions: false, // Claude plugins/agents/hooks; OpenCode manages its own
   search: true, // Claude transcripts + OpenCode sessions (src/opencode-search.js)
   mirror: true, // sessions opened in a terminal, from the shared background service (src/opencode-mirror.js)
-  // The two native OpenCode modes: Build (normal work) and Plan (read-only planning). The app maps Build to its
-  // manual permission mode, so permission cards still follow the app's "ask" rules.
-  modes: Object.freeze(['manual', 'plan']),
+  // The two native OpenCode modes: Build (normal work, auto-edit) and Plan (read-only planning). Shell and network
+  // still ask in Build; the app's deny rules always win.
+  modes: Object.freeze(['build', 'plan']),
 });
 
 /**
@@ -165,11 +165,12 @@ export { OPENCODE_ACCOUNT };
  * user's own OpenCode config files are never touched). "ask" makes OpenCode send session/request_permission.
  */
 export function permissionConfig(mode, user = {}) {
+  // Build = auto-edit: files may be written automatically; shell and network still ask. Plan asks for everything.
+  // 'dontAsk' stays deny-all as a defence in depth for a legacy value that somehow reaches an engine.
   const base =
-    mode === 'auto' ? { edit: 'allow', bash: 'allow', webfetch: 'allow' }
-    : mode === 'dontAsk' ? { edit: 'deny', bash: 'deny', webfetch: 'deny' } // like Claude: never ask, refuse
-    : mode === 'acceptEdits' ? { edit: 'allow', bash: 'ask', webfetch: 'ask' }
-    : { edit: 'ask', bash: 'ask', webfetch: 'ask' }; // manual, plan
+    mode === 'dontAsk' ? { edit: 'deny', bash: 'deny', webfetch: 'deny' } // like Claude: never ask, refuse
+    : mode === 'plan' ? { edit: 'ask', bash: 'ask', webfetch: 'ask' }
+    : { edit: 'allow', bash: 'ask', webfetch: 'ask' }; // build (and any legacy mode normalized to it)
   // The user's own rules are kept, never loosened by the mode: see mergePermission (src/opencode-bin.js).
   return mergePermission(base, user, mode);
 }
@@ -178,7 +179,7 @@ export function permissionConfig(mode, user = {}) {
  * OpenCode's primary agent: 📋 Rencana dulu = its read-only "plan" agent; otherwise the agent picked in
  * Pengaturan giliran (build, or a custom primary agent from the user's OpenCode config), "build" by default.
  */
-const agentMode = (s) => (s.mode === 'plan' ? 'plan' : s.agent || 'build');
+const agentMode = (s) => agentForMode(s.mode, s.agent);
 /** Settings that only a fresh process can change (the permission config and the team are read at start). */
 const processKey = (s) => JSON.stringify([permissionConfig(s.mode), Boolean(s.team)]);
 
@@ -422,6 +423,9 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     prompt(text, attachments = [], extra = {}) {
       // the routes answer 409 first and the queue waits for status.rewinding: this is the last guard
       if (this.rewinding) throw Object.assign(new Error(REWINDING_MESSAGE), { status: 409 });
+      if (this.hub.settingsFor(this.id).modePendingChoice) {
+        throw Object.assign(new Error(MODE_CHOICE_MESSAGE), { status: 409, code: 'mode-choice' });
+      }
       this.pointsCache = null; // a new prompt joins the rewind list
       this.dropPlanCard(); // a new prompt instead of an answer: the plan card is stale
       this.hub.clearInterrupted(this.id);
@@ -580,8 +584,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
             // A classifier/apply failure must never block the approved build: keep the old model/effort.
           }
         }
-        const mode = this.engine === 'opencode' ? 'manual' : PERMISSION_MODES.includes(decision.mode) && decision.mode !== 'plan' ? decision.mode : 'manual';
-        this.hub.updateSettings(this.id, { mode });
+        const mode = 'build';
+        this.hub.updateSettings(this.id, { mode, modeChosen: true });
         this.prompt(PLAN_APPROVED_PROMPT, [], autoExtra(auto)); // syncSettings switches the agent (or the process) before it is sent
       } else if (decision.message?.trim()) {
         // A revision is a new prompt to the plan agent: classify it too, so the bubble carries the same Auto tags.

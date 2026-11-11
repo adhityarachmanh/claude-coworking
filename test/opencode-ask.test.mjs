@@ -184,7 +184,7 @@ test('caps: OpenCode now offers the interactive question / plan cards', async ()
 });
 
 test('question: OpenCode\'s question tool → the question card; the answers go back as the form content', async () => {
-  await openCodeProject('manual');
+  await openCodeProject('build');
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'tanya dulu' });
   const card = await pendingCard();
@@ -205,7 +205,7 @@ test('question: OpenCode\'s question tool → the question card; the answers go 
 });
 
 test('question: Lewati = decline (OpenCode carries on), Stop = cancel; "Izinkan semua" never answers a question', async () => {
-  await openCodeProject('manual');
+  await openCodeProject('build');
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'tanya lagi' });
   let card = await pendingCard();
@@ -225,8 +225,8 @@ test('question: Lewati = decline (OpenCode carries on), Stop = cancel; "Izinkan 
   const closed = await waitFor((t, o) => t === 'approval' && o.id === card.id && o.status !== 'pending');
   assert.equal(closed.status, 'cancelled');
   await result();
-  await api(`/api/projects/${id}/settings`, { mode: 'acceptEdits' }); // a fresh process: autoApprove off again
-  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build' }); // a fresh process: autoApprove off again
+  await api(`/api/projects/${id}/settings`, { mode: 'build' });
 });
 
 test('📋 plan: the plan turn ends with the plan card; Minta revisi (with a note) stays in plan, Setujui switches to build and continues', async () => {
@@ -250,11 +250,11 @@ test('📋 plan: the plan turn ends with the plan card; Minta revisi (with a not
   assert.equal((await snapshot()).statuses[id].mode, 'plan');
 
   // Setujui, tanya tiap edit: mode 🛡️, OpenCode leaves its plan agent before the continue prompt arrives
-  await api(`/api/approvals/${card.id}`, { allow: true, mode: 'manual' });
+  await api(`/api/approvals/${card.id}`, { allow: true, mode: 'build' });
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === PLAN_APPROVED_PROMPT);
   await finalText(/^Mengerjakan rencana \(agent=build\)$/);
   await result();
-  assert.equal((await snapshot()).statuses[id].mode, 'manual');
+  assert.equal((await snapshot()).statuses[id].mode, 'build');
   await sleep(200);
   assert.equal(seen.slice(mark).filter((s) => s.type === 'approval' && s.obj.project === id && s.obj.status === 'pending').length, 0, 'no plan card outside plan mode');
 });
@@ -265,11 +265,11 @@ test('📋 plan: Setujui continues in Build and keeps the same OpenCode session'
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'rencana lain' });
   const card = await pendingCard();
-  await api(`/api/approvals/${card.id}`, { allow: true, mode: 'manual' });
+  await api(`/api/approvals/${card.id}`, { allow: true, mode: 'build' });
   await finalText(/^Mengerjakan rencana \(agent=build\)$/);
   await result();
   const st = (await snapshot()).statuses[id];
-  assert.equal(st.mode, 'manual', 'Build');
+  assert.equal(st.mode, 'build', 'Build');
   assert.equal(st.sessionId, sessionId, 'session/load: the same OpenCode conversation');
 });
 
@@ -282,7 +282,7 @@ test('📋 plan: build re-runs Model/Effort Auto on the plan; Selesai closes it 
   let card = await pendingCard();
   await api(`/api/projects/${id}/settings`, { modelAuto: true, effortAuto: true });
   const beforeBuild = seen.length;
-  await api(`/api/approvals/${card.id}`, { allow: true, mode: 'manual' });
+  await api(`/api/approvals/${card.id}`, { allow: true, mode: 'build' });
   const buildBubble = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'user' && o.text === PLAN_APPROVED_PROMPT);
   assert.equal(buildBubble.autoEffort?.level, 'high', 'the build bubble carries the Auto effort');
   assert.equal(buildBubble.autoModel?.label, 'Kuat', 'and the Auto model');
@@ -323,7 +323,7 @@ test('📋 plan: build re-runs Model/Effort Auto on the plan; Selesai closes it 
   assert.equal(seen.slice(mark).filter((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'user').length, 0, 'nothing sent');
   st = (await snapshot()).statuses[id];
   assert.equal(st.mode, 'plan', 'still in plan mode');
-  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build' });
 });
 
 test('📋 plan: a new prompt instead of an answer closes the card; Tolak without a note just closes it', async () => {
@@ -338,5 +338,5 @@ test('📋 plan: a new prompt instead of an answer closes the card; Tolak withou
   await sleep(300);
   assert.equal(seen.slice(mark).filter((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'user').length, 0, 'nothing sent');
   assert.equal((await snapshot()).statuses[id].mode, 'plan');
-  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build' });
 });

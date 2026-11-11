@@ -18,7 +18,7 @@ Tips:
 - Antrian 📋 bisa disimpan sebagai **📚 Runbook** lalu diedit (nama + prompt, ada contoh siap pakai dan riwayat versi) dan dijalankan lagi kapan saja; dari daftar runbook bisa diganti nama, dijadwalkan harian (⏰), atau **↻ Lanjutkan** bila ada item yang gagal. Tab ⚙ → Jadwal menampilkan kalender 7 hari.
 - Project yang jarang dipakai bisa diarsipkan lewat **📦** di daftar project; toggle 📦 di judul dialog menampilkannya lagi.
 - Riwayat sesi bisa dirapikan dengan **🏷 tag** (ikut tercari, ada chip penyaring) dan **📦 arsip** (disembunyikan dari daftar utama, tetap bisa dilanjutkan); **Arsip otomatis** bisa menyembunyikan sesi yang tidak dipakai 30/90/180 hari. Centang beberapa sesi untuk memberi tag atau mengarsipkan sekaligus.
-- Ingin Claude bekerja tanpa ditunggui? Ganti mode izin (`Shift+Tab`). Mode paling aman tetap **🛡️ Tanya dulu**.
+- Ingin Claude bekerja tanpa ditunggui? Ganti mode dengan `Shift+Tab`: **🔨 Build** mengubah file otomatis (perintah shell & jaringan tetap minta izin), **📋 Plan** hanya menyusun rencana.
 - Pekerjaan berurutan? Masukkan ke **📋 Antrian** (`Alt+Enter`). Lihat [Antrian & batas](FITUR.md#antrian--batas).
 - Mau melihat antrian semua project sekaligus? Buka **🌐 Semua** di dialog 📋 Antrian (atau `Ctrl+P` → *Semua antrian*): **Buka** melompat ke antrian project itu, **Batal** membatalkan item yang masih menunggu. ETA `±X mnt` / `sebentar` di bubble **antre #N** hanya perkiraan, dan **Edit** pada bubble itu mengubah prompt yang masih antre di tempat, tanpa item kedua.
 
@@ -257,6 +257,6 @@ Kalau folder `data/` terasa makin besar, atur **⚙ → Cadangkan riwayat → �
 
 Yang ikut kembali: riwayat chat kedua mesin, **mesin tiap project**, pengaturan model/effort per mesin, **root project efektif dan path tiap project** (jadi project tetap dikenali walau root-nya tidak pernah diatur manual), **sesi OpenCode** (lewat `opencode session export/import`), dan percakapan **Claude** yang tersimpan di backup. Bila OpenCode tidak terpasang saat import, sesi OpenCode dilewati dan project memakai Claude Code.
 
-Yang perlu diulang di laptop baru: login Claude, pairing HP (termasuk notifikasi push), dan menghubungkan Spotify. Mode izin tiap project kembali ke **Tanya dulu**.
+Yang perlu diulang di laptop baru: login Claude, pairing HP (termasuk notifikasi push), dan menghubungkan Spotify. Mode tiap project kembali ke **Build**.
 
 > Backup adalah **data pribadi**. Pilih enkripsi kata sandi (`.aob`) bila file akan disimpan di tempat yang kurang aman; tanpa kata sandi file `.zip` tidak terenkripsi. Simpan di folder yang hanya kamu akses dan hapus bila tidak perlu. Import hanya menambah, tidak menghapus. Detail: [Backup & riwayat](FITUR.md#backup--riwayat).

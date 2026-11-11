@@ -8,8 +8,8 @@ import { teamOrder } from './roster.js';
 
 const TAU = Math.PI * 2;
 // The core's hue follows the permission mode: how freely the brain may act (r, g, b)
-const MODE_HUE = { plan: [110, 170, 255], manual: [170, 140, 255], acceptEdits: [90, 220, 200], auto: [255, 150, 70], dontAsk: [255, 90, 110] };
-const MODE_NAME = { plan: 'rencana', manual: 'tanya dulu', acceptEdits: 'auto-edit', auto: 'auto', dontAsk: 'jangan tanya' };
+const MODE_HUE = { plan: [110, 170, 255], build: [90, 220, 200], manual: [90, 220, 200], acceptEdits: [90, 220, 200], auto: [90, 220, 200], dontAsk: [110, 170, 255] };
+const MODE_NAME = { plan: 'rencana', build: 'build', manual: 'build', acceptEdits: 'build', auto: 'build', dontAsk: 'rencana' };
 const ease = (t) => 1 - (1 - t) ** 3;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const short = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -282,7 +282,7 @@ export class Brain {
     this.drawStreams(g, pos, now);
     // thinking core, tinted by the permission mode, wrapped in its memory (context) ring; the active model's logo
     // sits on it (the core keeps pulsing around the logo: its glow, its beat and its orbit of thoughts stay visible)
-    const hue = MODE_HUE[status.mode] ?? MODE_HUE.manual;
+    const hue = MODE_HUE[status.mode] ?? MODE_HUE.build;
     this.drawCore(g, pos.claude, Boolean(status.busy || status.cliBusy), t, hue, this.activeLogo(status));
     this.drawMemory(g, pos.claude, status, now, t);
     // signals, pulses, ripples
@@ -326,7 +326,7 @@ export class Brain {
     this.drawBursts(g, pos, now);
     // neurons on top
     for (const role of roles) if (role !== 'claude') this.drawNeuron(g, role, pos[role], state(role), people[role], t, this.hover === role);
-    this.drawLabel(g, pos.claude, roleName('claude'), status.busy ? `berpikir · ${MODE_NAME[status.mode] ?? 'tanya dulu'}` : MODE_NAME[status.mode] ?? '', '#e8ecff', true);
+    this.drawLabel(g, pos.claude, roleName('claude'), status.busy ? `berpikir · ${MODE_NAME[status.mode] ?? 'build'}` : MODE_NAME[status.mode] ?? '', '#e8ecff', true);
     this.drawGoal(g, scene);
     if (this.hover) this.updateTip(this.hover, people[this.hover], state(this.hover), status);
   }
@@ -538,7 +538,7 @@ export class Brain {
     return this.logo;
   }
 
-  drawCore(g, at, thinking, t, [cr, cg, cb] = MODE_HUE.manual, logo = null) {
+  drawCore(g, at, thinking, t, [cr, cg, cb] = MODE_HUE.build, logo = null) {
     const beat = 1 + (thinking ? 0.12 : 0.04) * Math.sin(t / (thinking ? 160 : 700));
     const r = at.r * beat;
     g.save();

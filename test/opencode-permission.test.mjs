@@ -9,13 +9,11 @@ import { test } from 'node:test';
 import { permissionConfig } from '../src/acp-session.js';
 import { mergePermission, readOnlyOpenCodeEnv, readUserPermission, childOpenCodeEnv } from '../src/opencode-bin.js';
 
-const MODES = ['manual', 'acceptEdits', 'auto', 'dontAsk', 'plan'];
+const MODES = ['build', 'plan', 'dontAsk'];
 
 test('permissionConfig without user rules: the mode alone', () => {
-  assert.deepEqual(permissionConfig('manual'), { edit: 'ask', bash: 'ask', webfetch: 'ask' });
+  assert.deepEqual(permissionConfig('build'), { edit: 'allow', bash: 'ask', webfetch: 'ask' });
   assert.deepEqual(permissionConfig('plan'), { edit: 'ask', bash: 'ask', webfetch: 'ask' });
-  assert.deepEqual(permissionConfig('acceptEdits'), { edit: 'allow', bash: 'ask', webfetch: 'ask' });
-  assert.deepEqual(permissionConfig('auto'), { edit: 'allow', bash: 'allow', webfetch: 'allow' });
   assert.deepEqual(permissionConfig('dontAsk'), { edit: 'deny', bash: 'deny', webfetch: 'deny' });
 });
 
@@ -38,20 +36,20 @@ test('permissionConfig: a plain string deny ("bash": "deny") is never loosened',
   }
 });
 
-test('permissionConfig: a pattern deny stays deny; ⚡ Auto turns the user\'s ask into allow; the stricter catch-all wins', () => {
+test('permissionConfig: a pattern deny stays deny; Build keeps shell/network asking; the stricter catch-all wins', () => {
   const user = { bash: { 'rm *': 'deny', 'git *': 'ask' }, webfetch: { '*': 'ask' } };
-  assert.deepEqual(permissionConfig('auto', user).bash, { '*': 'allow', 'rm *': 'deny', 'git *': 'allow' });
-  assert.equal(permissionConfig('auto', user).webfetch, 'allow', 'Auto: an "ask" catch-all is not a deny');
-  assert.deepEqual(permissionConfig('manual', user).bash, { '*': 'ask', 'rm *': 'deny', 'git *': 'ask' });
+  assert.deepEqual(permissionConfig('build', user).bash, { '*': 'ask', 'rm *': 'deny', 'git *': 'ask' });
+  assert.equal(permissionConfig('build', user).webfetch, 'ask', 'Build never turns a shell/network ask into allow');
+  assert.deepEqual(permissionConfig('plan', user).bash, { '*': 'ask', 'rm *': 'deny', 'git *': 'ask' });
   assert.deepEqual(permissionConfig('dontAsk', user).bash, { '*': 'deny', 'rm *': 'deny', 'git *': 'deny' });
-  assert.equal(permissionConfig('acceptEdits', { edit: { '*': 'ask' } }).edit, 'ask', 'the user asks for edits: stricter than the mode');
-  assert.equal(permissionConfig('manual', { bash: 'allow' }).bash, 'ask', 'a user allow does not loosen the mode either');
-  assert.equal(permissionConfig('manual', { bash: { '*': 'nonsense' } }).bash, 'ask', 'unknown actions are ignored');
+  assert.equal(permissionConfig('build', { edit: { '*': 'ask' } }).edit, 'ask', 'the user asks for edits: stricter than the mode');
+  assert.equal(permissionConfig('build', { bash: 'allow' }).bash, 'ask', 'a user allow does not loosen the mode either');
+  assert.equal(permissionConfig('build', { bash: { '*': 'nonsense' } }).bash, 'ask', 'unknown actions are ignored');
 });
 
 test('permissionConfig: a global "permission": "deny" (key "*") denies every tool the app writes', () => {
   for (const mode of MODES) assert.deepEqual(permissionConfig(mode, { '*': { '*': 'deny' } }), { edit: 'deny', bash: 'deny', webfetch: 'deny' }, mode);
-  assert.deepEqual(permissionConfig('auto', { '*': 'deny', bash: { 'git status': 'allow' } }).bash, { '*': 'deny', 'git status': 'allow' });
+  assert.deepEqual(permissionConfig('build', { '*': 'deny', bash: { 'git status': 'allow' } }).bash, { '*': 'deny', 'git status': 'allow' });
 });
 
 test('readUserPermission: v1 `permission`, a global string, and OpenCode 2\'s ordered `permissions` list', (t) => {
@@ -87,16 +85,16 @@ test('readUserPermission: v1 `permission`, a global string, and OpenCode 2\'s or
   const again = readUserPermission(project, home);
   assert.deepEqual(again.bash, { '*': 'ask' });
   assert.deepEqual(again['*'], { '*': 'deny' });
-  assert.deepEqual(permissionConfig('auto', again), { edit: 'deny', bash: 'allow', webfetch: 'deny' }, 'global deny for the rest; the later shell rule is the user\'s own choice for bash');
+  assert.deepEqual(permissionConfig('build', again), { edit: 'deny', bash: 'ask', webfetch: 'deny' }, 'global deny for the rest; the later shell rule is the user\'s own ask');
   assert.deepEqual(readUserPermission(path.join(project, 'missing'), path.join(home, 'none')), {});
 });
 
 test('permissionConfig: a tool rule the user wrote beats their own global catch-all; the mode never loosens it', () => {
   const user = { '*': 'deny', bash: 'allow' };
-  assert.deepEqual(permissionConfig('manual', user), { edit: 'deny', bash: 'ask', webfetch: 'deny' });
-  assert.deepEqual(permissionConfig('auto', user), { edit: 'deny', bash: 'allow', webfetch: 'deny' });
+  assert.deepEqual(permissionConfig('build', user), { edit: 'deny', bash: 'ask', webfetch: 'deny' });
+  assert.deepEqual(permissionConfig('plan', user), { edit: 'deny', bash: 'ask', webfetch: 'deny' });
   assert.deepEqual(permissionConfig('dontAsk', user), { edit: 'deny', bash: 'deny', webfetch: 'deny' });
-  assert.equal(permissionConfig('acceptEdits', { '*': 'allow', edit: { '*': 'ask' } }).edit, 'ask');
+  assert.equal(permissionConfig('build', { '*': 'allow', edit: { '*': 'ask' } }).edit, 'ask');
 });
 
 test('permissionConfig: patterns under the global tool "*" reach every tool (before the tool\'s own patterns)', () => {
@@ -104,8 +102,8 @@ test('permissionConfig: patterns under the global tool "*" reach every tool (bef
     const out = permissionConfig(mode, { '*': { '*': 'allow', 'rm *': 'deny' } });
     for (const tool of ['edit', 'bash', 'webfetch']) assert.equal(out[tool]['rm *'], 'deny', `${mode} ${tool}`);
   }
-  assert.deepEqual(permissionConfig('auto', { '*': { '*': 'allow', 'rm *': 'deny' } }).bash, { '*': 'allow', 'rm *': 'deny' });
-  const both = permissionConfig('manual', { '*': { 'rm *': 'deny', 'git *': 'deny' }, bash: { 'git *': 'allow', 'npm *': 'ask' } });
+  assert.deepEqual(permissionConfig('build', { '*': { '*': 'allow', 'rm *': 'deny' } }).bash, { '*': 'ask', 'rm *': 'deny' });
+  const both = permissionConfig('build', { '*': { 'rm *': 'deny', 'git *': 'deny' }, bash: { 'git *': 'allow', 'npm *': 'ask' } });
   assert.deepEqual(both.bash, { '*': 'ask', 'rm *': 'deny', 'git *': 'allow', 'npm *': 'ask' }, "the tool's own rule comes last and wins");
   assert.deepEqual(Object.keys(both.bash), ['*', 'rm *', 'git *', 'npm *']);
 });
@@ -129,7 +127,7 @@ test('readUserPermission: "__proto__" / "constructor" keys from a user file neve
   assert.equal(Object.getPrototypeOf(user), Object.prototype, 'plain objects come back');
   // the merge reads own keys only: inherited names are no rules
   assert.deepEqual(mergePermission({ constructor: 'ask', toString: 'allow' }, {}, 'manual'), { constructor: 'ask', toString: 'allow' });
-  assert.deepEqual(permissionConfig('manual', JSON.parse('{"__proto__":{"*":"allow"},"bash":{"__proto__":"allow"}}')), { edit: 'ask', bash: 'ask', webfetch: 'ask' });
+  assert.deepEqual(permissionConfig('build', JSON.parse('{"__proto__":{"*":"allow"},"bash":{"__proto__":"allow"}}')), { edit: 'allow', bash: 'ask', webfetch: 'ask' });
   assert.equal({}['*'], undefined);
 });
 

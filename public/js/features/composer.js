@@ -72,7 +72,7 @@ export function renderComposer() {
   $('#btn-stop').title = st.busy || st.queue ? 'Hentikan giliran yang sedang berjalan, termasuk tugas latar (Esc)' : 'Hentikan tugas latar yang masih berjalan (Esc)';
   renderModeOptions(caps, engine);
   renderAgentOptions(st, engine);
-  $('#mode').value = modeFor(st.mode ?? 'manual', caps);
+  $('#mode').value = modeFor(st.mode ?? 'build', caps);
   renderModelOptions(st.model ?? '', engine);
   $('#effort').value = st.effortAuto ? 'auto' : (st.effort ?? '');
   $('#team-mode').checked = st.team ?? true;
@@ -102,6 +102,7 @@ export function renderComposer() {
   renderTaskChip(st);
   renderQueueChip(st);
   renderModelStale(st);
+  renderModeChoice(st);
   renderVoice();
   renderSettingsChip(st);
   applyReadOnly();
@@ -157,26 +158,54 @@ function renderModelStale(st) {
   box.textContent = `⚠ ${name} tidak bisa dipakai lagi karena akun/provider berubah. Pilih model lain (atau Default) dulu — prompt ditolak sampai model dipilih.`;
 }
 
+/**
+ * A legacy 'dontAsk' waits for an explicit Plan/Build choice (status.modePendingChoice): the project cannot start a
+ * turn until then, so the banner is the only action in the composer. One choice clears the flag for good.
+ */
+function renderModeChoice(st) {
+  const box = $('#mode-choice');
+  if (!box) return;
+  box.hidden = st.modePendingChoice !== true;
+  if (box.hidden) return;
+  if (!box.dataset.ready) {
+    box.dataset.ready = '1';
+    box.innerHTML = `<p>Mode izin lama <b>Jangan tanya</b> tidak lagi tersedia. Pilih cara kerja sebelum melanjutkan:</p>
+      <div class="backup-actions">
+        <button type="button" class="ghost" data-mode-choice="plan">📋 Plan</button>
+        <button type="button" class="primary" data-mode-choice="build">🔨 Build</button>
+      </div>`;
+  }
+}
+
+async function chooseMode(mode) {
+  try {
+    await api(`/api/projects/${state.active}/settings`, { mode, modeChosen: true });
+    $('#mode').value = mode;
+    if ($('#mode-choice')) $('#mode-choice').hidden = true;
+  } catch (err) {
+    toast(err?.message ?? 'Mode tidak bisa disimpan.');
+  }
+}
+
 /** The chip above the input (toolbar on a phone) sums up the turn settings that live in its dialog. */
 function renderSettingsChip(st) {  const chip = $('#settings-chip');
-  const mode = $('#mode').value || 'manual';
+  const mode = $('#mode').value || 'build';
   // "Default (Fable 5 · …)" → "Default": the chip stays one short line
   const label = (sel) => ($(sel).selectedOptions[0]?.textContent ?? '').replace(/\s*\(.*$/, '').trim();
   // Auto replaces the model name in the chip (the full label is the description): "Auto".
   const model = st.modelAuto === true || $('#model').value === AUTO_MODEL ? 'Auto' : label('#model') || 'Default';
   const effort = $('#effort').value && !$('#effort').disabled ? label('#effort') : '';
   const team = $('#team-mode').checked && !$('#team-ctl').classList.contains('cap-off');
-  const engine = engineOf(st, state.config);
   // The engine follows the model: the chip stays mode · model · effort · tim on both laptop and phone.
-  chip.textContent = [modeShort(mode, engine), model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
-  chip.setAttribute('aria-label', `Pengaturan giliran: mode ${modeShort(mode, engine).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
-  chip.classList.toggle('warn', mode === 'dontAsk' || Boolean(st?.autoApprove));
+  chip.textContent = [modeShort(mode), model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
+  chip.setAttribute('aria-label', `Pengaturan giliran: mode ${modeShort(mode).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
+  chip.classList.toggle('warn', Boolean(st?.autoApprove));
   const note = $('#effort-note');
   note.hidden = !$('#effort').disabled || Boolean(state.readOnly) || !$('#effort').title;
   note.textContent = $('#effort').title;
 }
 
-/** Permission modes the engine doesn't offer (🚫 dontAsk on OpenCode) leave the select and the Shift+Tab cycle. */
+/** Modes the engine doesn't offer still leave the select and the Shift+Tab cycle (both engines offer both today). */
 /**
  * OpenCode's primary agents (status.agents from its `mode` option): build and the user's own agents. "plan" stays
  * under Mode → Plan (the Izin control on OpenCode), so it is not offered twice. Hidden for Claude Code or when there is only build.
@@ -199,15 +228,14 @@ function renderAgentOptions(st, engine) {
   select.title = st.mode === 'plan' ? 'Saat Mode = Plan, OpenCode memakai agent plan' : '';
 }
 
-// The Izin control's label and description (shown under it in the Pengaturan giliran dialog) per engine: OpenCode
-// offers its own two modes, so the Claude-only "Kapan Claude harus minta izinmu…" must not stay after a switch.
+// One mode control for both engines: Plan/Build. The engine name still tells which machine it configures.
 const MODE_CTL = {
-  claude: { label: 'Izin', title: 'Kapan Claude harus minta izinmu sebelum mengedit file atau menjalankan perintah' },
-  opencode: { label: 'Mode', title: 'Build: OpenCode mengerjakan tugas (edit file dan perintah tetap minta izinmu). Plan: hanya menyusun rencana, tanpa mengubah file.' },
+  label: 'Mode',
+  title: 'Plan: hanya menyusun rencana, tanpa mengubah file. Build: file boleh diubah otomatis, tetapi perintah shell dan jaringan tetap minta izin.',
 };
 
 function renderModeOptions(caps, engine) {
-  const ctl = MODE_CTL[engine] ?? MODE_CTL.claude;
+  const ctl = MODE_CTL;
   if ($('#mode-label').textContent !== ctl.label) $('#mode-label').textContent = ctl.label;
   $('#mode-ctl').title = ctl.title;
   // The dialog names the engine it configures: on a laptop the chip itself doesn't show it.
@@ -217,9 +245,6 @@ function renderModeOptions(caps, engine) {
     const off = !caps.modes.includes(opt.value);
     opt.hidden = off;
     opt.disabled = off;
-    // Claude Code keeps the full set of labels; OpenCode shows its two native modes as Build and Plan.
-    if (!opt.dataset.label) opt.dataset.label = opt.textContent;
-    opt.textContent = engine === 'opencode' ? (opt.value === 'manual' ? 'Build' : opt.value === 'plan' ? 'Plan' : opt.dataset.label) : opt.dataset.label;
   }
 }
 
@@ -753,6 +778,10 @@ export function initComposerControls() {
     setTimeout(renderComposer, 0);
   });
   $('#model').addEventListener('change', saveModel);
+  $('#mode-choice').addEventListener('click', (e) => {
+    const pick = e.target.closest('[data-mode-choice]')?.dataset.modeChoice;
+    if (pick) chooseMode(pick);
+  });
   // Model Auto ladder dialog: one <select> per tier, saved for the project's engine.
   $('#tiers-rows').addEventListener('change', () => {
     tiersView.dirty = true;

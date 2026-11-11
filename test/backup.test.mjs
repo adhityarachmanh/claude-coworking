@@ -208,7 +208,7 @@ test('export: a streamed .zip with every project, history, checkpoints, plans, s
   const fav = (await a.snapshot()).projects.find((p) => p.name === 'toko').id;
   assert.equal((await a.api(`/api/projects/${fav}/favorite`, { on: true })).status, 200);
   assert.equal((await a.api('/api/team', { names: { qa: 'Budi QA' } })).status, 200);
-  assert.equal((await a.api(`/api/projects/${fav}/settings`, { mode: 'acceptEdits', effort: 'high' })).status, 200);
+  assert.equal((await a.api(`/api/projects/${fav}/settings`, { mode: 'build', effort: 'high' })).status, 200);
   // One real turn: the project gets a Claude Code conversation id (sessionsByEngine), so the backup can carry it.
   assert.equal((await a.api(`/api/projects/${fav}/prompt`, { text: 'halo dari A' })).status, 200);
   await untilChat(a, fav, 'result');
@@ -457,7 +457,7 @@ test('import: folders remapped to the new home, merge rules, usage and prompt hi
   assert.equal(summary.state.favorites, 1);
   // settings come along, the permission mode never does (a backup can't switch a project to auto-accept)
   const saved = JSON.parse(readFileSync(path.join(B.data, 'state.json'), 'utf8'));
-  assert.deepEqual({ mode: saved.settings[toko.id].mode, effort: saved.settings[toko.id].effort }, { mode: 'manual', effort: 'high' });
+  assert.deepEqual({ mode: saved.settings[toko.id].mode, effort: saved.settings[toko.id].effort }, { mode: 'build', effort: 'high' });
   // ...and so does the project's machine setup: its engine, what that engine remembered, and the conversation.
   assert.equal(saved.settings[toko.id].engine, 'claude', "the project's engine is restored (machine-local no more)");
   assert.deepEqual(saved.engineSettings?.[toko.id]?.claude, { model: '', effort: 'high', agent: '' }, 'per-engine settings mapped to this machine\'s id');
@@ -564,7 +564,7 @@ test('untrusted state.json: no permission mode; the legacy single session map is
   const { status, body } = await b.upload(readFileSync(await craftBackup([['office/state.json', state]])));
   assert.equal(status, 200, JSON.stringify(body));
   const saved = JSON.parse(readFileSync(path.join(B.data, 'state.json'), 'utf8'));
-  assert.equal(saved.settings[kasir.id].mode, 'manual', 'the permission mode is never restored');
+  assert.equal(saved.settings[kasir.id].mode, 'build', 'the permission mode is never restored; the safe default is Build');
   assert.equal(saved.settings[kasir.id].effort, 'high', 'validated model/effort/team still are');
   assert.equal(saved.sessions[kasir.id], undefined, 'the legacy map is not set to continue with the next prompt');
   assert.equal((await b.snapshot()).statuses[kasir.id]?.sessionId ?? null, null);
@@ -617,7 +617,7 @@ test('with OpenCode installed: the engine and remembered values are restored, bu
     assert.equal(hub.engineOf('proj1'), 'opencode');
     const st = hub.settingsFor('proj1');
     assert.equal(st.engine, 'opencode');
-    assert.equal(st.mode, 'manual', 'the permission mode still never comes from a backup');
+    assert.equal(st.mode, 'build', 'the permission mode still never comes from a backup; the default is Build');
     assert.equal(st.model, 'opencode-go/beam-free');
     assert.equal(st.effort, 'high');
     assert.equal(hub.persisted.sessionsByEngine.proj1.opencode, undefined, "OpenCode's own session store is not in a backup: its id would dangle");

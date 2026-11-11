@@ -543,7 +543,7 @@ for (const vp of PHONES) {
       assert.deepEqual(page.problems, []);
     });
 
-    test('sheet pengaturan: .controls asli di sheet, ganti Izin → chip & server, lebar > 760 → chip pindah ke atas kotak', async () => {
+    test('sheet pengaturan: .controls asli di sheet, ganti Mode → chip & server, lebar > 760 → chip pindah ke atas kotak', async () => {
       await fresh();
       assert.equal(await page.eval(() => document.querySelector('.controls').parentElement.matches('#turn-settings-modal .sheet-body')), true);
       await page.click('#settings-chip');
@@ -555,12 +555,12 @@ for (const vp of PHONES) {
           s.value = v;
           s.dispatchEvent(new Event('change', { bubbles: true }));
         }, v);
-      await setMode('acceptEdits');
-      assert.match(await page.eval(() => document.querySelector('#settings-chip').textContent), /Auto-edit/);
-      assert.match(await page.eval(() => document.querySelector('#settings-chip').getAttribute('aria-label')), /mode Auto-edit/);
-      await untilSnapshot((s) => s.statuses[projectId]?.mode === 'acceptEdits', 'mode tersimpan di server');
-      await setMode('manual');
-      await untilSnapshot((s) => (s.statuses[projectId]?.mode ?? 'manual') === 'manual', 'mode kembali');
+      await setMode('build');
+      assert.match(await page.eval(() => document.querySelector('#settings-chip').textContent), /Build/);
+      assert.match(await page.eval(() => document.querySelector('#settings-chip').getAttribute('aria-label')), /mode Build/);
+      await untilSnapshot((s) => s.statuses[projectId]?.mode === 'build', 'mode tersimpan di server');
+      await setMode('plan');
+      await untilSnapshot((s) => s.statuses[projectId]?.mode === 'plan', 'mode kembali');
       await page.press('Escape');
       await sleep(80);
       assert.equal(await page.eval(() => document.activeElement?.id), 'settings-chip', 'fokus kembali ke chip');
@@ -573,7 +573,7 @@ for (const vp of PHONES) {
       assert.equal(await page.eval(() => document.querySelector('.controls').parentElement.matches('#turn-settings-modal .sheet-body')), true);
       await page.setViewport(vp);
       await page.waitFor(() => document.querySelector('#settings-chip').parentElement.classList.contains('input'), { timeoutMs: 2000, message: 'chip kembali ke toolbar input' });
-      assert.equal(await page.eval(() => document.querySelector('#mode').value), 'manual');
+      assert.equal(await page.eval(() => document.querySelector('#mode').value), 'plan');
       assert.deepEqual(page.problems, []);
     });
 

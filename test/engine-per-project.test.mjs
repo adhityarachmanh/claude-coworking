@@ -162,7 +162,7 @@ test('switching ONE project goes through its turn settings; the app-wide default
 test('each engine keeps its own model and effort for a project (mode/team stay shared)', async () => {
   const alfa = await projectId('alfa');
   await switchProject(alfa, 'claude');
-  assert.equal((await api(`/api/projects/${alfa}/settings`, { model: 'opus', effort: 'high', mode: 'auto' })).status, 200);
+  assert.equal((await api(`/api/projects/${alfa}/settings`, { model: 'opus', effort: 'high', mode: 'build' })).status, 200);
   let st = await statusOf(alfa);
   assert.equal(st.model, 'opus');
   assert.equal(st.effort, 'high');
@@ -171,7 +171,7 @@ test('each engine keeps its own model and effort for a project (mode/team stay s
   st = await statusOf(alfa);
   assert.equal(st.model, '', 'the Claude model does not follow the project into OpenCode');
   assert.equal(st.effort, '');
-  assert.equal(st.mode, 'auto', 'mode is shared');
+  assert.equal(st.mode, 'build', 'mode is shared');
   assert.deepEqual(state().engineSettings[alfa].claude, { model: 'opus', effort: 'high', agent: '' });
   await api(`/api/projects/${alfa}/settings`, { model: 'opencode-go/beam-free', effort: 'low' });
   st = await statusOf(alfa);
@@ -292,7 +292,7 @@ test('a project engine switch is refused (409) while busy, while 📋 Antrian wa
   await api(`/api/projects/${alfa}/queue-pause`, { paused: false });
 
   // An open permission card.
-  await api(`/api/projects/${alfa}/settings`, { mode: 'manual' });
+  await api(`/api/projects/${alfa}/settings`, { mode: 'build' });
   await api(`/api/projects/${alfa}/prompt`, { text: 'minta izin' });
   // (The card itself is read through the snapshot's approvals list.)
   const card = await until(async () => (await snapshot()).approvals.find((a) => a.project === alfa && a.status === 'pending'), 'the approval card');
@@ -304,7 +304,7 @@ test('a project engine switch is refused (409) while busy, while 📋 Antrian wa
   // A rejection closes the card and the turn carries on (a follow-up prompt): wait for its result, then idle.
   await until(async () => ((await snapshot()).chats[alfa] ?? []).slice(chatBefore).some((m) => m.kind === 'result'), 'the refused turn result');
   await until(async () => (await statusOf(alfa)).busy === false, 'the refused turn ended');
-  await api(`/api/projects/${alfa}/settings`, { mode: 'manual' });
+  await api(`/api/projects/${alfa}/settings`, { mode: 'build' });
 
   // Nothing was running/queued/asking: it goes through.
   await switchProject(alfa, 'claude');
@@ -358,7 +358,7 @@ test('📋 Antrian uses the PROJECT engine (dispatch tier + item engine) and a r
     projects: new Map([['a', project('a')], ['b', project('b')]]),
     runtime: new Map(),
     persisted: {},
-    settingsFor: () => ({ mode: 'manual', model: '', effort: '', modelAuto: true, effortAuto: false, modelTiers: { opencode: { kuat: 'opencode-go/kimi-k3' }, claude: { kuat: 'opus' } } }),
+    settingsFor: () => ({ mode: 'build', model: '', effort: '', modelAuto: true, effortAuto: false, modelTiers: { opencode: { kuat: 'opencode-go/kimi-k3' }, claude: { kuat: 'opus' } } }),
     engineOf: (id) => (id === 'a' ? 'opencode' : 'claude'),
     updateSettings: (id, patch) => updates.push({ id, patch }),
     setStatus() {},

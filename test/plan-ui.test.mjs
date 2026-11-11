@@ -167,7 +167,7 @@ for (const vp of VIEWPORTS) {
         await send(page, 'buat rencana');
         await newCard(page);
         assert.deepEqual(await page.eval(() => [...document.querySelectorAll('.approval.pending[data-target="1"] .ap-actions [data-act]')].map((b) => b.textContent.trim())), ['▶ Lanjut build', 'Minta revisi', 'Selesai']);
-        assert.equal(await page.eval(() => Boolean(document.querySelector('.approval.pending[data-target="1"] .plan-mode select'))), true, 'Claude picks the work mode');
+        assert.equal(await page.eval(() => Boolean(document.querySelector('.approval.pending[data-target="1"] .plan-mode select'))), false, 'no second work-mode dialog: one Build button');
         assert.match(await page.eval(() => document.querySelector('.approval.pending[data-target="1"] .plan-preview')?.textContent ?? ''), /Ubah validasi/, 'the card leads with a short summary');
 
         const users = await page.eval(() => document.querySelectorAll('.msg.user').length);

@@ -137,7 +137,7 @@ const resultAfter = (from) => nextEvent(from, (t, d) => t === 'chat' && d.projec
 // ---------- 1. Web Push ----------
 
 test('🔔 push: an OpenCode turn that ends sends "done" (minimal payload, no answer text) to the phones', async () => {
-  hub.updateSettings(project.id, { mode: 'auto' });
+  hub.updateSettings(project.id, { mode: 'build' });
   const from = events.length;
   const before = inbox('allow').length;
   session().prompt('halo');
@@ -168,7 +168,7 @@ test('🔔 push: an OpenCode turn that is stopped ends as "error" (no error text
 });
 
 test('🔔 push: an OpenCode shell permission → "ask" with a single-use token; Izinkan refused (not a file tool), Tolak works; WiFi redacts the phone name', async () => {
-  hub.updateSettings(project.id, { mode: 'manual' });
+  hub.updateSettings(project.id, { mode: 'build' });
   const from = events.length;
   const before = { allow: inbox('allow').length, closed: inbox('closed').length };
   session().prompt('minta izin');
@@ -215,8 +215,8 @@ test('🔔 push: an OpenCode shell permission → "ask" with a single-use token;
 });
 
 test('🔔 push: an OpenCode file write permission → Izinkan from the lock screen only where opted in (fail-closed); allow runs the tool', async () => {
-  hub.updateSettings(project.id, { mode: 'manual' });
-  assert.equal(permissionConfig('manual').edit, 'ask');
+  hub.updateSettings(project.id, { mode: 'plan' });
+  assert.equal(permissionConfig('plan').edit, 'ask');
   const from = events.length;
   const before = { allow: inbox('allow').length, closed: inbox('closed').length };
   session().prompt('tulis catatan');
@@ -239,7 +239,8 @@ test('🔔 push: an OpenCode file write permission → Izinkan from the lock scr
 // ---------- 2. stuck detector ----------
 
 test('⚠ stuck: a never-ending OpenCode shell command is a running tool row the detector flags ("long" rule)', async () => {
-  hub.updateSettings(project.id, { mode: 'auto' });
+  hub.updateSettings(project.id, { mode: 'build' });
+  session().autoApprove = true; // this test is about the stuck detector, not the permission card
   const from = events.length;
   session().prompt('perintah macet');
   const start = await nextEvent(from, (t, d) => t === 'office' && d.project === project.id && d.kind === 'tool_start' && d.tool === 'Bash', 'tool_start');
@@ -282,7 +283,8 @@ test('⚠ stuck: an OpenCode shell row gets a readable output (taskId) so "no ou
 // ---------- 3. queue + budget ----------
 
 test('📋 queue: OpenCode items run one by one; the cost budget counts OpenCode spending and pauses the queue (chat + push)', async () => {
-  hub.updateSettings(project.id, { mode: 'auto' });
+  hub.updateSettings(project.id, { mode: 'build' });
+  session().autoApprove = true; // the queue/budget test does not answer permission cards
   queue.setPaused(project.id, true);
   for (let i = 1; i <= 5; i++) queue.add(project.id, `halo ${i}`);
   queue.setBudget(project.id, { costUsd: 0.01 }); // the fake costs $0.0025 per turn: used up after 4 items

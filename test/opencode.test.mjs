@@ -172,7 +172,7 @@ test('config.engines announces OpenCode with its caps; the engine is per project
   assert.equal(snap.config.engines.opencode.caps.permissions, false, 'Claude permission files are Claude-only');
   assert.equal(snap.config.engines.opencode.caps.extensions, false, 'Claude plugins/agents/hooks are Claude-only');
   assert.equal(snap.config.engines.opencode.caps.search, true, 'conversation search covers Claude and OpenCode sessions');
-  assert.deepEqual(snap.config.engines.opencode.caps.modes, ['manual', 'plan'], 'OpenCode shows only Build and Plan');
+  assert.deepEqual(snap.config.engines.opencode.caps.modes, ['build', 'plan'], 'OpenCode shows only Build and Plan');
   const id = await projectId();
   await api(`/api/projects/${id}/settings`, { model: 'opus' });
   assert.deepEqual((await api(`/api/projects/${id}/models`)).body.models, [], 'Claude models come with the app config');
@@ -251,7 +251,7 @@ test('a prompt streams, works in the office, fills the to-do board and ends with
 test('approvals: OpenCode asks (permission config "ask"), allow runs the tool, ✕ Tolak continues with the rejection note', async () => {
   const id = await projectId();
   await useEngine('opencode');
-  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build' });
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'minta izin' });
   let approval = await waitFor((t, o) => t === 'approval' && o.project === id && o.status === 'pending');
@@ -274,16 +274,17 @@ test('approvals: OpenCode asks (permission config "ask"), allow runs the tool, �
   assert.ok((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && seen.findIndex((x) => x.obj === o) > seen.findIndex((x) => x.obj === follow))));
 });
 
-test('⚡ Auto: no approval card, the tool just runs (a fresh process gets the new permission config)', async () => {
+test('Build: a shell command still asks for permission (there is no auto-approve mode)', async () => {
   const id = await projectId();
   await useEngine('opencode');
-  await api(`/api/projects/${id}/settings`, { mode: 'auto' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build' });
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'izin otomatis' });
+  const approval = await waitFor((t, o) => t === 'approval' && o.project === id && o.status === 'pending');
+  assert.equal(approval.tool, 'Bash', 'Build auto-edits files, never shell commands');
+  await api(`/api/approvals/${approval.id}`, { allow: true });
   const result = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
   assert.equal(result.ok, true);
-  assert.equal(seen.slice(mark - 50).filter((s) => s.type === 'approval' && s.obj.project === id && s.obj.status === 'pending' && seen.indexOf(s) >= mark).length, 0);
-  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
 });
 
 test('stop cancels a running OpenCode turn (session/cancel) and the session stays usable', async () => {
@@ -367,7 +368,7 @@ test('review regressions: resume an OpenCode session, queue and bad engine block
 test('Mode tim: roles as OpenCode subagents (OPENCODE_CONFIG), their tools worked by that role; effort per model', async () => {
   const id = await projectId();
   await useEngine('opencode');
-  await api(`/api/projects/${id}/settings`, { team: true, mode: 'auto' });
+  await api(`/api/projects/${id}/settings`, { team: true, mode: 'build' });
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'kerja tim' });
   const delegate = await waitFor((t, o) => t === 'office' && o.project === id && o.kind === 'delegate');
@@ -382,7 +383,7 @@ test('Mode tim: roles as OpenCode subagents (OPENCODE_CONFIG), their tools worke
   await api(`/api/projects/${id}/prompt`, { text: 'cek effort' });
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
   assert.equal(lastText(id), 'effort=max', 'xhigh → the nearest level the model offers');
-  await api(`/api/projects/${id}/settings`, { effort: '', team: false, mode: 'manual' });
+  await api(`/api/projects/${id}/settings`, { effort: '', team: false, mode: 'build' });
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'kerja tim lagi' });
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
@@ -418,11 +419,11 @@ test('OpenCode like the real one: its commands, its agents (custom too), the use
   const id = await projectId();
   await useEngine('opencode');
   writeFileSync(path.join(TMP, 'projects', 'toko', 'opencode.json'), '{\n  // aturan milik user\n  "permission": { "bash": { "rm *": "deny", "git *": "ask" }, "webfetch": "deny", },\n}\n');
-  await api(`/api/projects/${id}/settings`, { mode: 'auto', agent: 'docs' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build', agent: 'docs' });
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'agent?' });
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
-  assert.equal(lastText(id), 'agent=docs bash={"*":"allow","rm *":"deny","git *":"allow"}', 'custom agent picked; ⚡ Auto keeps the user\'s deny');
+  assert.equal(lastText(id), 'agent=docs bash={"*":"ask","rm *":"deny","git *":"ask"}', 'custom agent picked; Build keeps the user\'s deny and still asks for the rest');
   const st = (await snapshot()).statuses[id];
   assert.deepEqual(st.commands.map((c) => c.name), ['init', 'rilis'], "OpenCode's commands for the autocomplete");
   assert.equal(st.commands[1].argumentHint, '<versi>');
@@ -432,7 +433,7 @@ test('OpenCode like the real one: its commands, its agents (custom too), the use
   await api(`/api/projects/${id}/prompt`, { text: 'agent? lagi' });
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
   assert.match(lastText(id), /^agent=plan /, '📋 Rencana dulu = the plan agent, whatever agent is picked');
-  await api(`/api/projects/${id}/settings`, { mode: 'manual', agent: '' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build', agent: '' });
   rmSync(path.join(TMP, 'projects', 'toko', 'opencode.json'));
 });
 
@@ -550,7 +551,7 @@ test('⏪ Rewind OpenCode: prompts from session.message.list, preview from the s
   git('commit', '-qm', 'awal');
   await useEngine('opencode');
   await api(`/api/projects/${id}/reset`);
-  await api(`/api/projects/${id}/settings`, { mode: 'auto' }); // "tulis" writes without an approval card
+  await api(`/api/projects/${id}/settings`, { mode: 'build' }); // Build writes files without an approval card
   const catatan = path.join(TMP, 'projects', 'toko', 'catatan.md');
   rmSync(catatan, { force: true });
   const send = async (text) => {
@@ -614,14 +615,14 @@ test('⏪ Rewind OpenCode: prompts from session.message.list, preview from the s
   const again = (await api(`/api/projects/${id}/rewind-points`)).body.points[0].uuid;
   assert.equal((await api(`/api/projects/${id}/rewind`, { uuid: again, conversation: true })).status, 200);
   assert.ok(existsSync(catatan), '💬 Percakapan saja keeps the files');
-  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build' });
 });
 
 test('🔄 Redo percakapan OpenCode: sesi diekspor sebelum revert, lalu diimpor sebagai sesi baru', async () => {
   const id = await projectId();
   await useEngine('opencode');
   await api(`/api/projects/${id}/reset`);
-  await api(`/api/projects/${id}/settings`, { mode: 'auto' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build' });
   const send = async (text) => {
     mark = seen.length;
     await api(`/api/projects/${id}/prompt`, { text });
@@ -657,7 +658,7 @@ test('🔄 Redo percakapan OpenCode: sesi diekspor sebelum revert, lalu diimpor 
   const cli = readFileSync(path.join(TMP, 'acp-cli.log'), 'utf8');
   assert.match(cli, /(^|\n)session export ses_/m, 'exported first (the messages were still there)');
   assert.match(cli, /(^|\n)session import .*--directory /m, 'then imported as a new session');
-  await api(`/api/projects/${id}/settings`, { mode: 'manual' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build' });
 });
 
 test('⏪ Rewind OpenCode, review regressions: duplicate prompts, prompt / shell / queue / 2nd rewind while rewinding, a failing commit', async () => {

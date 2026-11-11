@@ -15,7 +15,7 @@ import { autoContext, classifyEffort } from './effort-classifier.js';
 import { shortModelLabel, tierFor, classifierModelFor } from './model-auto.js';
 import { killTree } from './proc.js';
 import { attachmentChips, contentBlocks } from './attachments.js';
-import { PERMISSION_MODES } from './hub.js';
+import { MODE_CHOICE_MESSAGE, appModeFromCli, claudePermissionMode, isMode } from './modes.js';
 import { HttpError } from './routes/http.js';
 import { ENGINE_LABEL, bridgeNote, needsBridge, otherChat } from './handoff.js';
 import { describeTool, inferRole } from './roles.js';
@@ -39,9 +39,6 @@ const UUID = /^[0-9a-f-]{36}$/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const EFFORT_LABEL = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
 
-/** The app's "manual" is Claude Code's `default` permission mode (the CLI flag accepts both names). */
-const cliMode = (mode) => (mode === 'manual' ? 'default' : mode);
-const appMode = (mode) => (mode === 'default' ? 'manual' : mode);
 // Only the team setting (subagents + system prompt) needs a fresh process; mode/model/effort switch live.
 const restartKey = (s) => String(s.team);
 
@@ -414,6 +411,9 @@ export class ClaudeSession {
    * @returns {{ chatId: string }} the prompt's chat bubble
    */
   prompt(text, attachments = [], extra = {}) {
+    if (this.hub.settingsFor(this.id).modePendingChoice) {
+      throw Object.assign(new Error(MODE_CHOICE_MESSAGE), { status: 409, code: 'mode-choice' });
+    }
     this.hub.clearInterrupted(this.id); // the user carries on (or starts over): the cut-short notice is done
     const uuid = randomUUID();
     const { queueChatId, ...fields } = extra ?? {};
@@ -635,7 +635,7 @@ export class ClaudeSession {
     }
     if (s.mode !== a.mode) {
       a.mode = s.mode;
-      this.request({ subtype: 'set_permission_mode', mode: cliMode(s.mode) }).catch((err) => this.controlFailed('mode izin', err));
+      this.request({ subtype: 'set_permission_mode', mode: claudePermissionMode(s.mode) }).catch((err) => this.controlFailed('mode izin', err));
     }
     if (s.model !== a.model) {
       const previous = a.model;
@@ -808,7 +808,7 @@ export class ClaudeSession {
       '--include-partial-messages',
       '--replay-user-messages', // prompts come back with their uuid: lifecycle + rewind points
       '--permission-prompt-tool', 'stdio',
-      '--permission-mode', settings.mode,
+      '--permission-mode', claudePermissionMode(settings.mode),
     ];
     if (settings.model) args.push('--model', settings.model);
     if (settings.effort) args.push('--effort', settings.effort);
@@ -1102,9 +1102,9 @@ export class ClaudeSession {
   }
 
   onModeReported(mode) {
-    const next = appMode(mode);
+    const next = appModeFromCli(mode);
     if (this.applied) this.applied.mode = next;
-    if (PERMISSION_MODES.includes(next) && this.hub.settingsFor(this.id).mode !== next) this.hub.updateSettings(this.id, { mode: next });
+    if (isMode(next) && this.hub.settingsFor(this.id).mode !== next) this.hub.updateSettings(this.id, { mode: next });
   }
 
   /** Exact context usage, as /context counts it (from the last response; no extra model call). */
@@ -1209,11 +1209,11 @@ export class ClaudeSession {
       response = { behavior: 'allow', updatedInput: decision.answers ? { ...req.input, answers: decision.answers } : req.input };
       if (decision.always && req.permission_suggestions?.length) response.updatedPermissions = req.permission_suggestions;
       if (decision.allowAll) this.autoApprove = true;
-      // Approving a plan also picks how the work continues, as the CLI's plan dialog does.
-      if (req.tool_name === 'ExitPlanMode' && PERMISSION_MODES.includes(decision.mode)) {
-        response.updatedPermissions = [{ type: 'setMode', mode: cliMode(decision.mode), destination: 'session' }];
-        if (this.applied) this.applied.mode = decision.mode;
-        this.hub.updateSettings(this.id, { mode: decision.mode });
+      // Approving a plan continues in Build: one vocabulary, no second "how should the work continue?" dialog.
+      if (req.tool_name === 'ExitPlanMode' && decision.mode === 'build') {
+        response.updatedPermissions = [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }];
+        if (this.applied) this.applied.mode = 'build';
+        this.hub.updateSettings(this.id, { mode: 'build', modeChosen: true });
       }
     } else {
       response = {

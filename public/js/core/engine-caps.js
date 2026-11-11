@@ -19,7 +19,10 @@ export const ENGINE_BADGE = { claude: '✳ Claude', opencode: '⌘ OpenCode' };
 /** The faint one-character mark on a chat row: shown only when the engine changes in the timeline. */
 export const ENGINE_MARK = { claude: '✳', opencode: '▢' };
 
-export const ALL_MODES = ['manual', 'acceptEdits', 'auto', 'plan', 'dontAsk'];
+export const ALL_MODES = ['build', 'plan'];
+
+/** Legacy/unknown values from an older server or state read as Build; Plan remains Plan. */
+export const normalizeMode = (mode) => (mode === 'plan' ? 'plan' : 'build');
 
 /** Everything on: what Claude Code supports, and the safe default for a server without `config.engines`. */
 export const CLAUDE_CAPS = Object.freeze({
@@ -95,7 +98,8 @@ export function capsFor(config, engine = DEFAULT_ENGINE) {
   if (!isObj(raw)) return { ...CLAUDE_CAPS, modes: [...CLAUDE_CAPS.modes] };
   const caps = {};
   for (const key of BOOL_CAPS) caps[key] = typeof raw[key] === 'boolean' ? raw[key] : CLAUDE_CAPS[key];
-  const modes = Array.isArray(raw.modes) ? ALL_MODES.filter((m) => raw.modes.includes(m)) : [];
+  const rawModes = Array.isArray(raw.modes) ? raw.modes : [];
+  const modes = ALL_MODES.filter((m) => rawModes.map(normalizeMode).includes(m));
   caps.modes = modes.length ? modes : [...CLAUDE_CAPS.modes];
   return caps;
 }
@@ -128,10 +132,11 @@ export function capReason(cap, engine) {
   return CAP_REASON[cap] ?? `${engineLabel(engine)} belum mendukung ${CAP_FEATURE[cap] ?? cap}`;
 }
 
-/** A stored mode the engine doesn't offer (e.g. an old auto/acceptEdits on OpenCode) is shown as the first mode it does offer. */
+/** A stored mode the engine doesn't offer is shown as the first mode it does offer (always Build or Plan). */
 export function modeFor(mode, caps) {
   const modes = caps?.modes ?? CLAUDE_CAPS.modes;
-  return modes.includes(mode) ? mode : modes.includes('manual') ? 'manual' : modes[0];
+  const wanted = normalizeMode(mode);
+  return modes.includes(wanted) ? wanted : modes.includes('build') ? 'build' : modes[0];
 }
 
 /** Claude Code's models come with the app config; any other engine lists its own per project (`/models`). */

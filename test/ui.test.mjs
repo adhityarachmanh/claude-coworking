@@ -3799,14 +3799,53 @@ for (const vp of VIEWPORTS) {
       assert.equal(caps.opencode.permissionsBtn, true, 'tombol di ⚙ ikut tersembunyi');
       assert.match(caps.opencode.plugins, /opencode\.json/i, 'plugin/agent Claude diarahkan ke opencode.json');
       assert.equal(caps.opencode.rewind, null, 'OpenCode project tetap boleh rewind');
-      assert.deepEqual(caps.opencode.modes, ['manual', 'plan'], 'hanya Build & Plan');
+      assert.deepEqual(caps.opencode.modes, ['build', 'plan'], 'hanya Build & Plan');
       assert.equal(caps.opencode.note, '', 'OpenCode mendukung effort/team/rewind/MCP/tugas latar: tanpa catatan "belum mendukung"');
       assert.equal(caps.claude.permissions, false, 'project Claude menampilkan entri Claude-only');
       assert.equal(caps.claude.exportSession, false);
       assert.equal(caps.claude.permissionsBtn, false);
       assert.equal(caps.claude.plugins, null);
-      assert.deepEqual(caps.claude.modes, ['manual', 'acceptEdits', 'auto', 'plan', 'dontAsk']);
+      assert.deepEqual(caps.claude.modes, ['build', 'plan']);
       assert.deepEqual(realProblems(page), [], 'tanpa error console');
+    });
+
+    test('🧭 Mode lama dontAsk: banner Plan/Build, pilihan eksplisit dikirim, tidak ada mode lama di select', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(async (pid) => {
+        const { state } = await import('/js/core/state.js');
+        state.statuses[pid] = { ...(state.statuses[pid] ?? {}), modePendingChoice: true, mode: 'plan' };
+        (await import('/js/features/composer.js')).renderComposer();
+        window.__modeCalls = [];
+        window.__modeFetch ??= window.fetch;
+        const prev = window.fetch;
+        window.fetch = (url, opts) => {
+          if (String(url).endsWith(`/api/projects/${pid}/settings`)) {
+            window.__modeCalls.push(JSON.parse(opts.body));
+            return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+          }
+          return prev(url, opts);
+        };
+      }, projectId);
+      try {
+        const view = await page.eval(() => ({
+          options: [...document.querySelectorAll('#mode option')].map((o) => o.value),
+          hidden: document.querySelector('#mode-choice').hidden,
+          buttons: [...document.querySelectorAll('#mode-choice [data-mode-choice]')].map((b) => b.dataset.modeChoice),
+        }));
+        assert.deepEqual(view.options, ['build', 'plan'], 'hanya Build dan Plan');
+        assert.equal(view.hidden, false, 'banner pilihan mode tampil');
+        assert.deepEqual(view.buttons, ['plan', 'build']);
+        await page.eval(() => document.querySelector('#mode-choice [data-mode-choice="build"]').click());
+        await page.waitFor(() => window.__modeCalls?.length === 1, { timeoutMs: 3000, message: 'pilihan mode terkirim' });
+        assert.deepEqual(await page.eval(() => window.__modeCalls[0]), { mode: 'build', modeChosen: true });
+      } finally {
+        await page.eval(async (pid) => {
+          window.fetch = window.__modeFetch;
+          const { state } = await import('/js/core/state.js');
+          state.statuses[pid] = { ...(state.statuses[pid] ?? {}), modePendingChoice: undefined, mode: 'build' };
+          (await import('/js/features/composer.js')).renderComposer();
+        }, projectId);
+      }
     });
 
     test('👤 Akun: dua tab info Claude/OpenCode, tanpa tombol ganti mesin & tanpa /api/engine', async () => {
