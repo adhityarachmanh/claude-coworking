@@ -9,6 +9,7 @@ import { ENGINES } from '../hub.js';
 import { readModelPrices } from '../model-prices.js';
 import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
+import { addCustomProvider, CUSTOM_PROVIDER_PACKAGE, readOpenCodeConfig } from '../opencode-config.js';
 import { GO_PLANS, goAllowance } from '../opencode-go.js';
 import { clearConsoleTokenCache, consoleForPeriod, consoleRequestLogs, consoleRequestTotals, consoleRequestTotalsCached, goConsoleSnapshot } from '../opencode-console.js';
 import { renderPdf, reportHtml } from '../report.js';
@@ -156,6 +157,9 @@ export function register(router) {
   router.post('/api/opencode/login/code', audited('oauth-complete', (body) => body.provider, (bin, body, ctx) => openCodeOAuthComplete(bin, body.provider, body.attemptID, body.code).then(loggedIn(ctx))));
   router.post('/api/opencode/login/cancel', audited('cancel', (body) => body.provider, (bin, body) => openCodeOAuthCancel(bin, body.provider, body.attemptID)));
   router.post('/api/opencode/logout', openCode(openCodeLogoutRoute));
+  // Provider kustom OpenAI-compatible: cek endpoint /models, lalu blok config + API key + efek login standar.
+  router.post('/api/opencode/custom/check', openCode(customCheck));
+  router.post('/api/opencode/custom/add', audited('custom-add', (body) => body.id, customAdd));
   // ---------- usage report ----------
   router.post('/api/summary/today', ({ ledger }, req, res) => json(res, 200, { today: daySummary(ledger) }));
   router.post('/api/report/accounts', reportAccounts);
@@ -196,6 +200,155 @@ const audited = (action, providerOf, fn) => openCode(async (bin, body, ctx) => {
     throw err; // openCode() turns it into the same JSON status as before
   }
 });
+
+// ---------- provider kustom OpenAI-compatible (👤 Akun → OpenCode) ----------
+// The user points the app at an OpenAI-compatible endpoint: /api/opencode/custom/check asks the endpoint for its
+// model list, /api/opencode/custom/add writes a `providers.<id>` block into the global OpenCode config and stores
+// the API key through OpenCode's credential store. The key never lands in the config, a log line or the audit.
+
+const MAX_SECRET = 4096; // the same bound as src/opencode-auth.js
+const CUSTOM_ID = /^[A-Za-z0-9][\w.-]{0,63}$/;
+const CUSTOM_MODEL_ID = /^[\w.:@/+-]{1,120}$/; // the model id shape the rest of the app already accepts
+const CUSTOM_URL_MAX = 300;
+const CUSTOM_MODELS_MAX = 200; // what check may hand back
+const CUSTOM_MODELS_ADD_MAX = 100; // how many models one provider may carry
+const CHECK_TIMEOUT_MS = 10_000;
+const CHECK_BODY_MAX_BYTES = 2 * 1024 * 1024; // a model list is KBs: more than that is an attack or a proxy gone wrong
+
+/**
+ * Reads a response body up to CHECK_BODY_MAX_BYTES, then gives up (the stream is cancelled, never buffered): a
+ * hostile or runaway endpoint must not push hundreds of MB into the server's memory. Null when it is too large.
+ */
+async function readBoundedText(res) {
+  const reader = res.body?.getReader?.();
+  if (!reader) return res.text();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > CHECK_BODY_MAX_BYTES) {
+      try {
+        await reader.cancel();
+      } catch {
+        // already over the limit: the outcome is the same
+      }
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+/** Ids OpenCode (and its catalog) ships itself: a custom provider may never shadow one of these. */
+const CUSTOM_DENY = new Set(['openai', 'anthropic', 'google', 'google-vertex', 'azure', 'amazon-bedrock', 'openrouter', 'xai', 'ollama', 'lmstudio', 'vllm', 'github-copilot', 'opencode', 'opencode-go', 'opencode-zen']);
+
+/** A custom provider's base URL: https anywhere, plain http only on loopback (a phone may type a LAN box). */
+function customBaseURL(value) {
+  const url = String(value ?? '').trim();
+  if (!url) throw Object.assign(new Error('Base URL masih kosong.'), { status: 400 });
+  if (url.length > CUSTOM_URL_MAX) throw Object.assign(new Error(`Base URL maksimal ${CUSTOM_URL_MAX} karakter.`), { status: 400 });
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:' && !(u.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname))) throw new Error('bukan https / loopback');
+  } catch {
+    throw Object.assign(new Error('Base URL harus https:// (atau http:// hanya untuk localhost).'), { status: 400 });
+  }
+  return url;
+}
+
+/** The model ids an OpenAI-compatible /models answer carries, deduped and bounded; anything else is a 502. */
+async function customCheck(bin, body) {
+  const baseURL = customBaseURL(body?.baseURL);
+  const key = String(body?.key ?? '').trim();
+  if (key.length > MAX_SECRET) throw Object.assign(new Error(`API key maksimal ${MAX_SECRET} karakter.`), { status: 400 });
+  let res;
+  try {
+    res = await fetch(`${baseURL.replace(/\/+$/, '')}/models`, {
+      headers: key ? { Authorization: `Bearer ${key}` } : {}, // some endpoints list models without any auth
+      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
+    });
+  } catch {
+    throw Object.assign(new Error('Endpoint /models tidak bisa dihubungi. Cek base URL dan koneksi.'), { status: 502 });
+  }
+  if (!res.ok) throw Object.assign(new Error(`Endpoint /models menolak (HTTP ${res.status}).`), { status: 502 }); // body never logged: it may echo the request
+  const text = await readBoundedText(res);
+  if (text === null) throw Object.assign(new Error('Jawaban endpoint /models terlalu besar.'), { status: 502 });
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw Object.assign(new Error('Jawaban endpoint /models bukan JSON yang valid.'), { status: 502 });
+  }
+  const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.data) ? parsed.data : Array.isArray(parsed?.models) ? parsed.models : null;
+  if (!list) throw Object.assign(new Error('Format jawaban /models tidak dikenal (harus { data: [...] }).'), { status: 502 });
+  const seen = new Set();
+  const models = [];
+  for (const item of list) {
+    const id = typeof item === 'string' ? item : item && typeof item === 'object' ? item.id : null;
+    if (typeof id !== 'string' || !CUSTOM_MODEL_ID.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    models.push({ id });
+    if (models.length >= CUSTOM_MODELS_MAX) break;
+  }
+  return { models };
+}
+
+/** The models array of an add request: 1..100 valid ids, deduped, order kept. */
+function customModels(value) {
+  if (!Array.isArray(value)) throw Object.assign(new Error('Daftar model tidak valid.'), { status: 400 });
+  if (value.length < 1) throw Object.assign(new Error('Minimal satu model.'), { status: 400 });
+  if (value.length > CUSTOM_MODELS_ADD_MAX) throw Object.assign(new Error(`Maksimal ${CUSTOM_MODELS_ADD_MAX} model.`), { status: 400 });
+  const seen = new Set();
+  const models = [];
+  for (const item of value) {
+    if (typeof item !== 'string' || !CUSTOM_MODEL_ID.test(item)) {
+      throw Object.assign(new Error(`ID model tidak valid: ${String(item).slice(0, 40)}`), { status: 400 });
+    }
+    if (!seen.has(item)) (seen.add(item), models.push(item));
+  }
+  return models;
+}
+
+/**
+ * POST /api/opencode/custom/add: a new OpenAI-compatible provider. Refuses builtin ids (deny list, or one the
+ * OpenCode catalog already knows), and overwriting a config block that belongs to the user (a different package).
+ * The config block is written first, the key second; if the key fails the block stays (the user can log the key in
+ * through the usual login-key flow), and the 502 says so.
+ */
+async function customAdd(bin, body, ctx) {
+  const id = String(body?.id ?? '');
+  if (!CUSTOM_ID.test(id)) throw Object.assign(new Error('ID provider tidak valid (huruf/angka pertama, lalu huruf/angka, _, ., -; maks 64).'), { status: 400 });
+  if (CUSTOM_DENY.has(id)) throw Object.assign(new Error(`ID "${id}" dipakai provider bawaan OpenCode. Pilih ID lain.`), { status: 400 });
+  const name = String(body?.name ?? '').trim();
+  if (!name || name.length > 100) throw Object.assign(new Error('Nama provider wajib diisi (maks 100 karakter).'), { status: 400 });
+  const baseURL = customBaseURL(body?.baseURL);
+  const key = String(body?.key ?? '').trim();
+  if (!key || key.length > MAX_SECRET) throw Object.assign(new Error('API key wajib diisi (maks 4096 karakter).'), { status: 400 });
+  const models = customModels(body?.models);
+  // (a) an id the OpenCode catalog already knows (connected or just available) is refused even off the deny list.
+  const known = await openCodeProviders(bin);
+  if ([...known.connected, ...known.available].some((p) => p.id === id)) {
+    throw Object.assign(new Error(`ID "${id}" sudah dipakai provider bawaan. Pilih ID lain.`), { status: 409 });
+  }
+  // (b) overwrite only a block this feature wrote (its own package, or one without a package field).
+  const global = readOpenCodeConfig({ scope: 'global' });
+  const providers = global.config.providers;
+  const old = providers && typeof providers === 'object' && !Array.isArray(providers) ? providers[id] : undefined;
+  if (old && typeof old === 'object') {
+    const pkg = old.package;
+    if (typeof pkg === 'string' && pkg !== CUSTOM_PROVIDER_PACKAGE) {
+      throw Object.assign(new Error(`ID "${id}" sudah dipakai di config OpenCode global (package ${pkg}). Pilih ID lain.`), { status: 409 });
+    }
+  }
+  const saved = addCustomProvider({ id, name, baseURL, models, dataDir: ctx.hub?.dataDir ?? ctx.dataDir });
+  try {
+    await openCodeConnectKey(bin, id, { key });
+  } catch (err) {
+    throw Object.assign(new Error(`Blok provider sudah ditulis ke config OpenCode, tetapi API key gagal disimpan (${err.message}). Login key untuk provider ini lewat alur yang ada, lalu coba lagi.`), { status: 502 });
+  }
+  return phoneAlert(ctx, 'login', id)(loggedIn(ctx)({ ok: true, provider: id, models, path: saved.path, backup: saved.backup }));
+}
 
 /** The OAuth attempt's state; only the moment it completes is an auth action worth an audit line. */
 async function oAuthStatus(bin, body, ctx) {

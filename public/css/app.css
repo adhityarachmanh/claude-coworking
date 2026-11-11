@@ -1498,6 +1498,10 @@ body.read-only #composer-hint { color: var(--ask); }
 #oc-provider { font-size: var(--fs-md); }
 .oc-form { display: flex; flex-direction: column; gap: 8px; }
 .oc-form > .primary { align-self: flex-start; }
+.oc-custom-models { display: flex; flex-direction: column; gap: 4px; }
+.oc-custom-model { display: flex; align-items: baseline; gap: 6px; font-size: var(--fs-sm); }
+.oc-custom-model input { margin: 0; }
+.oc-custom-model span { flex-shrink: 0; }
 
 /* ---------- team names dialog ---------- */
 .modal-card.team-card { max-width: 560px; }

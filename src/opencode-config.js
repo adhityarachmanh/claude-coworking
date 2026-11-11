@@ -673,6 +673,40 @@ export function mergeForm(base, form = {}) {
   return validateObject(config);
 }
 
+// ---------- custom providers (OpenAI-compatible, 👤 Akun → OpenCode) ----------
+
+/** The package field this feature's blocks carry; an overwrite is only allowed on our own blocks (or no package). */
+export const CUSTOM_PROVIDER_PACKAGE = '@opencode/ai/providers/openai-compatible';
+const PROVIDER_ID = /^[A-Za-z0-9][\w.-]{0,63}$/;
+
+/**
+ * Writes one custom OpenAI-compatible provider into the global config: `providers.<id>` with OpenCode's
+ * openai-compatible package, the base URL and models, and the env var name the API key is expected under. The key
+ * itself is never written here — it goes to OpenCode's credential store. Everything else in the config is kept as
+ * it is, a previous file is backed up first, and an existing block of the same id is replaced whole (never merged).
+ * @param {{ id: string, name: string, baseURL: string, models: string[], home?: string, dataDir?: string }} input
+ * @returns {{ ok: true, path: string, backup: string|null }}
+ */
+export function addCustomProvider({ id, name, baseURL, models, home, dataDir } = {}) {
+  if (!PROVIDER_ID.test(String(id ?? ''))) throw new OpenCodeConfigError(400, 'ID provider tidak valid.');
+  const current = readOpenCodeConfig({ scope: 'global', home });
+  if (current.parseError) throw new OpenCodeConfigError(400, 'Config OpenCode global tidak valid. Perbaiki lewat ⚙ → Config OpenCode dulu.');
+  const config = validateObject(JSON.parse(JSON.stringify(isObject(current.config) ? current.config : {})));
+  const env = `${String(id).toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
+  const block = {
+    name,
+    package: CUSTOM_PROVIDER_PACKAGE,
+    settings: { baseURL },
+    models: Object.fromEntries(models.map((model) => [model, {}])),
+    env: [env],
+  };
+  config.providers = { ...(isObject(config.providers) ? config.providers : {}), [id]: block };
+  assertWritable(current.path, { scope: 'global', home });
+  const backup = writeBackup({ scope: 'global', path: current.path }, dataDir);
+  writeFileAtomic(current.path, `${JSON.stringify(config, null, 2)}\n`);
+  return { ok: true, path: current.path, backup: backup?.path ?? null };
+}
+
 /**
  * Save one scope. `mode: 'json'` writes the typed text (comments in JSONC stay); `mode: 'form'` merges the form.
  * The old file is copied into the app's backup folder first and the new one is written atomically; an invalid

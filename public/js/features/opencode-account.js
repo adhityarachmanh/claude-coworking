@@ -11,8 +11,9 @@ import { state } from '../core/state.js';
 const POLL_MS = 2000;
 const POLL_LIMIT_MS = 10 * 60_000; // an OAuth attempt the user never finishes stops being watched
 
-/** OpenCode's Akun state: providers (null = not loaded), the provider/method being logged in, a running OAuth attempt. */
-const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false, logoutError: null, showAllGo: false };
+/** OpenCode's Akun state: providers (null = not loaded), the provider/method being logged in, a running OAuth attempt,
+ *  and the ＋ Provider kustom form (custom = null while closed). */
+const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false, logoutError: null, showAllGo: false, custom: null };
 let pollTimer = null;
 
 /** The app-wide engine (config.engine; old servers: Claude Code). */
@@ -317,7 +318,9 @@ function loginHtml() {
       ${a.mode === 'code' ? `<form id="oc-code" class="login-code"><input id="oc-code-input" placeholder="Tempel kode dari browser" aria-label="Kode login" autocomplete="off" spellcheck="false" /><button class="primary"${oc.busy ? ' disabled' : ''}>Kirim</button></form>` : '<p class="muted small"><span class="spinner"></span> Menunggu login selesai…</p>'}
       <button type="button" class="ghost" data-act="oc-cancel">Batal</button></div>`;
   }
-  if (!oc.picking) return '<div class="acct-actions"><button class="primary" data-act="oc-pick">＋ Login provider</button></div>';
+  if (oc.custom) return customLoginHtml();
+  if (!oc.picking)
+    return '<div class="acct-actions"><button class="primary" data-act="oc-pick">＋ Login provider</button><button type="button" class="ghost" data-act="oc-custom">＋ Provider kustom</button></div>';
   const q = oc.filter.toLowerCase();
   const matches = oc.providers.available.filter((p) => !q || p.name.toLowerCase().includes(q) || p.id.includes(q));
   const p = oc.provider;
@@ -337,6 +340,40 @@ function loginHtml() {
     <select id="oc-provider" size="6" aria-label="Pilih provider">${matches.slice(0, 200).map((m) => `<option value="${escapeHtml(m.id)}"${m.id === p?.id ? ' selected' : ''}>${escapeHtml(m.name)}</option>`).join('')}</select>
     ${methodPicker}${form}
     <p class="muted small">Disimpan oleh OpenCode di laptop ini (sama seperti <code>opencode auth login</code>). API key tidak dicatat di log aplikasi.</p>
+    <button type="button" class="ghost" data-act="oc-close">Tutup</button></div>`;
+}
+
+// ---------- ＋ Provider kustom: any OpenAI-style base URL + key, into OpenCode's own auth store ----------
+
+/** Light client guards only (the server validates for real); plain HTTP stays allowed for loopback dev endpoints. */
+const CUSTOM_ID_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?$/;
+const CUSTOM_URL_RE = /^(?:https:\/\/|http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?:[:/]|$))/i;
+
+/** The check answer as checkbox rows: `["id"]` and `[{ id, name }]` entries both, capped like the provider picker. */
+function normalizeCustomModels(data) {
+  return (Array.isArray(data?.models) ? data.models : [])
+    .map((m) => (typeof m === 'string' ? { id: m.trim(), name: m.trim() } : { id: String(m?.id ?? '').trim(), name: String(m?.name ?? m?.id ?? '').trim() }))
+    .filter((m) => m.id)
+    .slice(0, 200);
+}
+
+function customLoginHtml() {
+  const c = oc.custom;
+  const models = c.models ?? [];
+  return `<div id="oc-login" class="login-flow">
+    <form id="oc-custom-form" class="oc-form">
+      <label class="oc-field" for="oc-custom-id"><span>ID *</span><input id="oc-custom-id" data-custom="id" value="${escapeHtml(c.form.id)}" placeholder="river" autocomplete="off" spellcheck="false" required /><small class="muted">huruf/angka, - . _</small></label>
+      <label class="oc-field" for="oc-custom-name"><span>Nama tampilan *</span><input id="oc-custom-name" data-custom="name" value="${escapeHtml(c.form.name)}" placeholder="River AI" autocomplete="off" spellcheck="false" required /></label>
+      <label class="oc-field" for="oc-custom-base"><span>Base URL *</span><input id="oc-custom-base" data-custom="baseURL" value="${escapeHtml(c.form.baseURL)}" placeholder="https://api.river.ai/v1" autocomplete="off" spellcheck="false" required /></label>
+      <label class="oc-field" for="oc-custom-key"><span>API key *</span><input id="oc-custom-key" type="password" data-custom="key" value="${escapeHtml(c.form.key)}" placeholder="Tempel API key" autocomplete="off" spellcheck="false" required /></label>
+      <button type="button" class="ghost" data-act="oc-check"${c.checking ? ' disabled' : ''}>${c.checking ? 'Memeriksa…' : 'Cek model'}</button>
+      ${c.checkError ? `<p class="warn small" role="alert">${escapeHtml(c.checkError)}</p>` : ''}
+      ${c.models ? (models.length ? `<div class="oc-custom-models"><small class="muted">${models.length} model ditemukan</small>${models
+        .map((m) => `<label class="oc-custom-model"><input type="checkbox" name="oc-custom-model" value="${escapeHtml(m.id)}"${c.picked.has(m.id) ? ' checked' : ''} /> <span>${escapeHtml(m.name)}</span><small class="muted">${escapeHtml(m.id)}</small></label>`)
+        .join('')}</div>` : '<p class="muted small">Tidak ada model ditemukan. Periksa base URL dan API key.</p>') : ''}
+      <button class="primary"${oc.busy ? ' disabled' : ''}>Simpan provider</button>
+    </form>
+    <p class="muted small">Provider apa pun dengan API ala OpenAI: OpenCode menyimpan API key-nya di laptop ini, sama seperti login provider resmi.</p>
     <button type="button" class="ghost" data-act="oc-close">Tutup</button></div>`;
 }
 
@@ -418,8 +455,45 @@ export async function onOpenCodeAction(act, el, rerender) {
       rerender();
       $('#oc-filter')?.focus();
       return true;
+    case 'oc-custom': {
+      // A blank form, kept in memory so no rerender (a running check, a failed save) drops what was typed.
+      Object.assign(oc, {
+        picking: false,
+        provider: null,
+        method: null,
+        answers: null,
+        filter: '',
+        custom: { form: { id: '', name: '', baseURL: '', key: '' }, checking: false, checkError: null, models: null, picked: new Set() },
+      });
+      rerender();
+      $('#oc-custom-id')?.focus();
+      return true;
+    }
+    case 'oc-check': {
+      const c = oc.custom;
+      if (!c || c.checking) return true;
+      const baseURL = c.form.baseURL.trim();
+      if (!CUSTOM_URL_RE.test(baseURL)) {
+        c.checkError = 'Base URL harus mulai https:// atau http://localhost/127.0.0.1/[::1].';
+        rerender();
+        return true;
+      }
+      c.checking = true;
+      c.checkError = null;
+      rerender();
+      try {
+        c.models = normalizeCustomModels(await api('/api/opencode/custom/check', { baseURL, key: c.form.key.trim() }));
+        c.picked = new Set(c.models.map((m) => m.id)); // everything pre-ticked; unticks survive a rerender
+      } catch (err) {
+        c.checkError = err.data?.error ?? err.message; // inline next to the button; the form keeps its values
+      } finally {
+        c.checking = false;
+        rerender();
+      }
+      return true;
+    }
     case 'oc-close':
-      Object.assign(oc, { picking: false, provider: null, method: null, answers: null, filter: '' });
+      Object.assign(oc, { picking: false, provider: null, method: null, answers: null, filter: '', custom: null });
       rerender();
       return true;
     case 'oc-method':
@@ -460,6 +534,17 @@ export async function onOpenCodeAction(act, el, rerender) {
 
 /** Typing/choosing inside the login panel (no full rerender while the user types an API key). */
 export function onOpenCodeInput(e, rerender) {
+  // ＋ Provider kustom: typed fields and model ticks live in `oc.custom`, so no rerender loses them.
+  if (oc.custom && e.target.dataset?.custom) {
+    oc.custom.form[e.target.dataset.custom] = e.target.value;
+    return true;
+  }
+  if (oc.custom && e.target.name === 'oc-custom-model') {
+    oc.custom.picked ??= new Set((oc.custom.models ?? []).map((m) => m.id));
+    if (e.target.checked) oc.custom.picked.add(e.target.value);
+    else oc.custom.picked.delete(e.target.value);
+    return true;
+  }
   if (e.target.id === 'oc-filter') {
     oc.filter = e.target.value;
     const q = oc.filter.toLowerCase();
@@ -485,11 +570,48 @@ export function onOpenCodeInput(e, rerender) {
   return false;
 }
 
-/** Submits of the key form / OAuth start / OAuth code. */
+/** ＋ Provider kustom's submit: light client checks (the server validates for real), then /api/opencode/custom/add. */
+async function submitCustom(rerender) {
+  const c = oc.custom;
+  if (!c) return true;
+  const id = c.form.id.trim();
+  const name = c.form.name.trim();
+  const baseURL = c.form.baseURL.trim();
+  const key = c.form.key.trim();
+  const fail = (message) => toast(`Gagal: ${message}`, 'warn');
+  if (!id || !name || !baseURL || !key) {
+    fail('lengkapi ID, nama tampilan, base URL, dan API key.');
+    return true;
+  }
+  if (!CUSTOM_ID_RE.test(id)) {
+    fail('ID hanya boleh huruf, angka, titik, strip, dan garis bawah.');
+    return true;
+  }
+  const models = [...document.querySelectorAll('#oc-custom-form input[name="oc-custom-model"]:checked')].map((b) => b.value);
+  if (!models.length) {
+    fail('pilih minimal satu model.');
+    return true;
+  }
+  oc.busy = true;
+  try {
+    await api('/api/opencode/custom/add', { id, name, baseURL, key, models });
+    oc.custom = null;
+    toast(`Provider kustom ${name} tersimpan. API key disimpan ke OpenCode.`, 'ok');
+    loadOpenCode(rerender);
+  } catch (err) {
+    toast(`Gagal: ${err.data?.error ?? err.message}`, 'warn'); // nothing cleared: fix and retry
+  } finally {
+    oc.busy = false;
+  }
+  return true;
+}
+
+/** Submits of the key form / OAuth start / OAuth code / custom provider. */
 export async function onOpenCodeSubmit(e, rerender) {
-  if (!['oc-login-form', 'oc-code'].includes(e.target.id)) return false;
+  if (!['oc-login-form', 'oc-code', 'oc-custom-form'].includes(e.target.id)) return false;
   e.preventDefault();
   if (oc.busy) return true;
+  if (e.target.id === 'oc-custom-form') return submitCustom(rerender);
   oc.busy = true;
   try {
     if (e.target.id === 'oc-code') {
