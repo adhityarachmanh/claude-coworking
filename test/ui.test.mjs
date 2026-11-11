@@ -3838,11 +3838,22 @@ for (const vp of VIEWPORTS) {
         await page.eval(() => document.querySelector('#mode-choice [data-mode-choice="build"]').click());
         await page.waitFor(() => window.__modeCalls?.length === 1, { timeoutMs: 3000, message: 'pilihan mode terkirim' });
         assert.deepEqual(await page.eval(() => window.__modeCalls[0]), { mode: 'build', modeChosen: true });
+
+        // A migrated project gets a non-blocking note once; "Mengerti" only dismisses the note.
+        await page.eval(async (pid) => {
+          const { state } = await import('/js/core/state.js');
+          state.statuses[pid] = { ...(state.statuses[pid] ?? {}), modePendingChoice: undefined, modeNotice: true, mode: 'build' };
+          (await import('/js/features/composer.js')).renderComposer();
+        }, projectId);
+        assert.match(await page.eval(() => document.querySelector('#mode-choice').textContent), /Mode kini Build/);
+        await page.eval(() => document.querySelector('#mode-choice [data-mode-notice]').click());
+        await page.waitFor(() => window.__modeCalls?.length === 2, { timeoutMs: 3000, message: 'catatan mode ditutup' });
+        assert.deepEqual(await page.eval(() => window.__modeCalls[1]), { modeNoticeSeen: true });
       } finally {
         await page.eval(async (pid) => {
           window.fetch = window.__modeFetch;
           const { state } = await import('/js/core/state.js');
-          state.statuses[pid] = { ...(state.statuses[pid] ?? {}), modePendingChoice: undefined, mode: 'build' };
+          state.statuses[pid] = { ...(state.statuses[pid] ?? {}), modePendingChoice: undefined, modeNotice: undefined, mode: 'build' };
           (await import('/js/features/composer.js')).renderComposer();
         }, projectId);
       }

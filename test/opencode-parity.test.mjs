@@ -214,26 +214,17 @@ test('🔔 push: an OpenCode shell permission → "ask" with a single-use token;
   assert.deepEqual(inbox('closed').slice(before.closed).map((m) => m.payload.type), ['ask', 'done', 'done'], 'the phone that answered gets no "answered"');
 });
 
-test('🔔 push: an OpenCode file write permission → Izinkan from the lock screen only where opted in (fail-closed); allow runs the tool', async () => {
+test('📋 Plan in OpenCode is read-only: a file write is denied, no permission card and no lock-screen allow', async () => {
   hub.updateSettings(project.id, { mode: 'plan' });
-  assert.equal(permissionConfig('plan').edit, 'ask');
+  assert.equal(permissionConfig('plan').edit, 'deny');
   const from = events.length;
-  const before = { allow: inbox('allow').length, closed: inbox('closed').length };
+  const before = inbox('allow').length;
   session().prompt('tulis catatan');
-  const approval = await nextEvent(from, (t, d) => t === 'approval' && d.project === project.id && d.status === 'pending', 'approval');
-  assert.equal(approval.tool, 'Write', "OpenCode's edit permission is a file tool");
-  assert.equal(approval.input.file_path, 'catatan.md');
-  await push.idle();
-  const [ask] = inbox('allow').slice(before.allow);
-  const [askClosed] = inbox('closed').slice(before.closed);
-  assert.equal(ask.payload.label, 'Write');
-  assert.equal(ask.payload.allowAllowed, true, 'opted in: Izinkan from the lock screen');
-  assert.equal(askClosed.payload.allowAllowed, false, 'lockscreenAllow never sent: fail-closed');
-  assert.equal(push.act({ device: phones.closed.device, t: askClosed.payload.t, a: 'allow', ip: '3' }).status, 403);
-  assert.equal(push.act({ device: phones.allow.device, t: ask.payload.t, a: 'allow', ip: '4' }).status, 200);
-  await nextEvent(from, (t, d) => t === 'chat_update' && d.project === project.id && d.patch.status === 'ok', 'the write ran');
-  assert.equal((await resultAfter(from)).ok, true);
+  await resultAfter(from);
   await settle();
+  const approvals = events.slice(from).filter((e) => e.type === 'approval' && e.data.project === project.id && e.data.kind === 'tool' && e.data.status === 'pending');
+  assert.equal(approvals.length, 0, 'Plan never asks to approve a write');
+  assert.equal(inbox('allow').slice(before).some((m) => m.payload.type === 'ask' && m.payload.label === 'Write'), false, 'no lock-screen allow for a write in Plan');
 });
 
 // ---------- 2. stuck detector ----------

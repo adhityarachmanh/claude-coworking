@@ -13,7 +13,7 @@ const MODES = ['build', 'plan', 'dontAsk'];
 
 test('permissionConfig without user rules: the mode alone', () => {
   assert.deepEqual(permissionConfig('build'), { edit: 'allow', bash: 'ask', webfetch: 'ask' });
-  assert.deepEqual(permissionConfig('plan'), { edit: 'ask', bash: 'ask', webfetch: 'ask' });
+  assert.deepEqual(permissionConfig('plan'), { edit: 'deny', bash: 'deny', webfetch: 'deny' });
   assert.deepEqual(permissionConfig('dontAsk'), { edit: 'deny', bash: 'deny', webfetch: 'deny' });
 });
 
@@ -22,7 +22,7 @@ test('permissionConfig: a user catch-all deny ({ "*": "deny" }) stays deny in ev
   for (const mode of MODES) {
     const out = permissionConfig(mode, user);
     assert.equal(out.bash['*'], 'deny', `${mode}: bash "*" stays deny`);
-    assert.equal(out.bash['git status'], mode === 'dontAsk' ? 'deny' : 'allow', `${mode}: the user's own allow pattern`);
+    assert.equal(out.bash['git status'], mode === 'build' ? 'allow' : 'deny', `${mode}: the user's own allow pattern`);
     assert.deepEqual(Object.keys(out.bash), ['*', 'git status'], `${mode}: "*" first, patterns after it (last match wins)`);
     assert.equal(out.edit, 'deny', `${mode}: edit stays deny`);
   }
@@ -40,7 +40,8 @@ test('permissionConfig: a pattern deny stays deny; Build keeps shell/network ask
   const user = { bash: { 'rm *': 'deny', 'git *': 'ask' }, webfetch: { '*': 'ask' } };
   assert.deepEqual(permissionConfig('build', user).bash, { '*': 'ask', 'rm *': 'deny', 'git *': 'ask' });
   assert.equal(permissionConfig('build', user).webfetch, 'ask', 'Build never turns a shell/network ask into allow');
-  assert.deepEqual(permissionConfig('plan', user).bash, { '*': 'ask', 'rm *': 'deny', 'git *': 'ask' });
+  assert.deepEqual(permissionConfig('plan', user).bash, { '*': 'deny', 'rm *': 'deny', 'git *': 'deny' });
+  assert.equal(permissionConfig('plan', user).webfetch, 'deny', 'Plan never opens the network');
   assert.deepEqual(permissionConfig('dontAsk', user).bash, { '*': 'deny', 'rm *': 'deny', 'git *': 'deny' });
   assert.equal(permissionConfig('build', { edit: { '*': 'ask' } }).edit, 'ask', 'the user asks for edits: stricter than the mode');
   assert.equal(permissionConfig('build', { bash: 'allow' }).bash, 'ask', 'a user allow does not loosen the mode either');
@@ -92,7 +93,7 @@ test('readUserPermission: v1 `permission`, a global string, and OpenCode 2\'s or
 test('permissionConfig: a tool rule the user wrote beats their own global catch-all; the mode never loosens it', () => {
   const user = { '*': 'deny', bash: 'allow' };
   assert.deepEqual(permissionConfig('build', user), { edit: 'deny', bash: 'ask', webfetch: 'deny' });
-  assert.deepEqual(permissionConfig('plan', user), { edit: 'deny', bash: 'ask', webfetch: 'deny' });
+  assert.deepEqual(permissionConfig('plan', user), { edit: 'deny', bash: 'deny', webfetch: 'deny' });
   assert.deepEqual(permissionConfig('dontAsk', user), { edit: 'deny', bash: 'deny', webfetch: 'deny' });
   assert.equal(permissionConfig('build', { '*': 'allow', edit: { '*': 'ask' } }).edit, 'ask');
 });

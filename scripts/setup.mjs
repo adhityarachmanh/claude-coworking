@@ -86,18 +86,17 @@ async function ensureRuntimeNode() {
   if (!(await ask('Unduh Node.js LTS sekarang (±30 MB)?'))) return null;
   let last = '';
   try {
-    await withRuntimeLock(RUNTIME_DIR, () =>
-      installNodeRuntime({
-        runtimeDir: RUNTIME_DIR,
-        onProgress: ({ stage, percent }) => {
-          const label = stage ? `${stage}${percent != null ? ` ${Math.round(percent)}%` : ''}` : '';
-          if (label && label !== last) {
-            last = label;
-            info(label);
-          }
-        },
-      }),
-    );
+    // installNodeRuntime takes the runtime lock itself; wrapping it again would deadlock (the lock is not reentrant).
+    await installNodeRuntime({
+      runtimeDir: RUNTIME_DIR,
+      onProgress: ({ stage, percent }) => {
+        const label = stage ? `${stage}${percent != null ? ` ${Math.round(percent)}%` : ''}` : '';
+        if (label && label !== last) {
+          last = label;
+          info(label);
+        }
+      },
+    });
   } catch (err) {
     warn(`Gagal memasang Node.js: ${err?.message ?? err}`);
     return null;

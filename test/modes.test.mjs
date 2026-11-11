@@ -38,7 +38,8 @@ describe('Plan/Build modes', () => {
 
   test('a CLI mode reported outside the app is shown as build/plan, never stored as a looser mode', () => {
     assert.equal(appModeFromCli('plan'), 'plan');
-    for (const value of ['acceptEdits', 'default', 'auto', 'dontAsk', undefined]) assert.equal(appModeFromCli(value), 'build');
+    assert.equal(appModeFromCli('dontAsk'), 'plan', 'the strictest CLI mode stays strict');
+    for (const value of ['acceptEdits', 'default', 'auto', undefined]) assert.equal(appModeFromCli(value), 'build');
   });
 
   test('Hub migrates stored modes once; dontAsk becomes Plan pending an explicit choice', (t) => {
@@ -64,6 +65,7 @@ describe('Plan/Build modes', () => {
     const stored = JSON.parse(readFileSync(file, 'utf8')).settings;
     assert.equal(stored.p1.mode, 'build');
     assert.equal(stored.p1.legacyMode, 'manual');
+    assert.equal(stored.p1.modeNotice, true, 'non-blocking note: Build edits files automatically');
     assert.equal(stored.p2.mode, 'build');
     assert.equal(stored.p3.mode, 'build');
     assert.equal(stored.p4.mode, 'plan');
@@ -80,7 +82,7 @@ describe('Plan/Build modes', () => {
     assert.equal(again.settingsFor('p5').mode, 'plan');
   });
 
-  test('an explicit mode choice clears the pending flag; an unrelated model save does not', (t) => {
+  test('an explicit mode choice clears the pending flag; an unrelated save does not', (t) => {
     const dir = mkdtempSync(path.join(tmpdir(), 'modes-choice-'));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ settings: { p1: { mode: 'dontAsk' } } }));
@@ -88,11 +90,21 @@ describe('Plan/Build modes', () => {
     assert.equal(hub.settingsFor('p1').modePendingChoice, true);
     hub.updateSettings('p1', { model: 'sonnet' });
     assert.equal(hub.settingsFor('p1').modePendingChoice, true, 'a model change is not a mode choice');
+    hub.updateSettings('p1', { mode: 'build' });
+    assert.equal(hub.settingsFor('p1').modePendingChoice, true, 'carrying the old mode without modeChosen is not a choice');
     hub.updateSettings('p1', { mode: 'build', modeChosen: true });
     assert.equal(hub.settingsFor('p1').modePendingChoice, undefined);
     assert.equal(hub.settingsFor('p1').mode, 'build');
-    // An old tab's dontAsk is ignored instead of loosening the project.
-    hub.updateSettings('p1', { mode: 'dontAsk' });
+  });
+
+  test('the one-time mode notice can be dismissed; the mode itself is not changed', (t) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'modes-notice-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ settings: { p1: { mode: 'manual' } } }));
+    const hub = new Hub({ dataDir: dir });
+    assert.equal(hub.settingsFor('p1').modeNotice, true);
+    hub.updateSettings('p1', { modeNoticeSeen: true });
+    assert.equal(hub.settingsFor('p1').modeNotice, undefined);
     assert.equal(hub.settingsFor('p1').mode, 'build');
   });
 });

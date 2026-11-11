@@ -165,11 +165,11 @@ export { OPENCODE_ACCOUNT };
  * user's own OpenCode config files are never touched). "ask" makes OpenCode send session/request_permission.
  */
 export function permissionConfig(mode, user = {}) {
-  // Build = auto-edit: files may be written automatically; shell and network still ask. Plan asks for everything.
-  // 'dontAsk' stays deny-all as a defence in depth for a legacy value that somehow reaches an engine.
+  // Build = auto-edit: files may be written automatically; shell and network still ask. Plan is read-only: edit and
+  // shell are denied outright, and even a user "allow" cannot open them (mergePermission's plan rule). 'dontAsk'
+  // stays deny-all as a defence in depth for a legacy value that somehow reaches an engine.
   const base =
-    mode === 'dontAsk' ? { edit: 'deny', bash: 'deny', webfetch: 'deny' } // like Claude: never ask, refuse
-    : mode === 'plan' ? { edit: 'ask', bash: 'ask', webfetch: 'ask' }
+    mode === 'dontAsk' || mode === 'plan' ? { edit: 'deny', bash: 'deny', webfetch: 'deny' }
     : { edit: 'allow', bash: 'ask', webfetch: 'ask' }; // build (and any legacy mode normalized to it)
   // The user's own rules are kept, never loosened by the mode: see mergePermission (src/opencode-bin.js).
   return mergePermission(base, user, mode);
@@ -651,8 +651,12 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const s = this.hub.settingsFor(this.id);
       const a = this.applied;
       if (processKey(s) !== processKey(a)) {
-        if (this.busy) this.restartPending = true;
-        else this.closeChild();
+        const enteringPlan = s.mode === 'plan' && a.mode !== 'plan';
+        if (enteringPlan) this.autoApprove = false; // "allow all" from Build must never carry into Plan
+        if (this.busy) {
+          this.restartPending = true;
+          if (enteringPlan) this.hub.chat(this.id, { kind: 'info', text: 'Mode Plan berlaku setelah giliran ini selesai.' });
+        } else this.closeChild();
         return;
       }
       if (agentMode(s) !== agentMode(a)) {
@@ -1195,9 +1199,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const { name, input } = this.adapter.start(id);
       const role = this.translator.roleOf(id) ?? inferRole(name, input, { projectPath: this.project.path });
       const reject = pick('reject_once', 'reject_always');
+      // Plan is read-only: a tool that needs permission (edit, shell, network) is refused here, never shown as a card.
+      if (this.hub.settingsFor(this.id).mode === 'plan') return reply(reject ? { outcome: 'selected', optionId: reject.optionId } : { outcome: 'cancelled' });
       // After a "Tolak" OpenCode cancels the turn: its other requests are stale, answering "allow" would fail it.
       if (this.rejectedThisTurn || this.interrupting) return reply(reject ? { outcome: 'selected', optionId: reject.optionId } : { outcome: 'cancelled' });
-      if (this.autoApprove) {
+      if (this.autoApprove && this.hub.settingsFor(this.id).mode !== 'plan') {
         const once = pick('allow_once', 'allow_always');
         if (once) return reply({ outcome: 'selected', optionId: once.optionId });
       }

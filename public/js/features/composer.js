@@ -165,15 +165,21 @@ function renderModelStale(st) {
 function renderModeChoice(st) {
   const box = $('#mode-choice');
   if (!box) return;
-  box.hidden = st.modePendingChoice !== true;
+  const pending = st.modePendingChoice === true;
+  const notice = !pending && st.modeNotice === true;
+  box.hidden = !pending && !notice;
   if (box.hidden) return;
-  if (!box.dataset.ready) {
-    box.dataset.ready = '1';
-    box.innerHTML = `<p>Mode izin lama <b>Jangan tanya</b> tidak lagi tersedia. Pilih cara kerja sebelum melanjutkan:</p>
-      <div class="backup-actions">
-        <button type="button" class="ghost" data-mode-choice="plan">📋 Plan</button>
-        <button type="button" class="primary" data-mode-choice="build">🔨 Build</button>
-      </div>`;
+  const kind = pending ? 'pending' : 'notice';
+  if (box.dataset.kind !== kind) {
+    box.dataset.kind = kind;
+    box.innerHTML = pending
+      ? `<p>Mode izin lama <b>Jangan tanya</b> tidak lagi tersedia. Pilih cara kerja sebelum melanjutkan:</p>
+        <div class="backup-actions">
+          <button type="button" class="ghost" data-mode-choice="plan">📋 Plan</button>
+          <button type="button" class="primary" data-mode-choice="build">🔨 Build</button>
+        </div>`
+      : `<p>Mode kini <b>Build</b>: file bisa diubah otomatis, tetapi perintah shell dan jaringan tetap minta izin. Pilih <b>Plan</b> kapan saja bila ingin hanya menyusun rencana.</p>
+        <div class="backup-actions"><button type="button" class="ghost" data-mode-notice="1">Mengerti</button></div>`;
   }
 }
 
@@ -561,7 +567,7 @@ function cycleMode() {
   const select = $('#mode');
   const cycle = MODE_CYCLE.filter((m) => projectCaps().modes.includes(m)); // only the modes the engine offers
   select.value = cycle[(cycle.indexOf(select.value) + 1) % cycle.length];
-  saveSettings();
+  saveSettings({ modeChosen: true });
 }
 
 async function sendPrompt() {
@@ -649,7 +655,7 @@ export async function saveModel() {
   }
 }
 
-export async function saveSettings() {
+export async function saveSettings(extra = {}) {
   try {
     const agent = $('#agent-ctl').hidden ? undefined : $('#agent').value; // OpenCode only
     const effort = $('#effort').value;
@@ -657,11 +663,12 @@ export async function saveSettings() {
     // Model Auto is a boolean setting: never send the sentinel as a model, and any concrete pick turns Auto off.
     const pick = $('#model').value;
     await api(`/api/projects/${state.active}/settings`, {
-      mode: $('#mode').value,
+      ...(extra.modeChosen ? { mode: $('#mode').value } : {}), // a mode save is an explicit choice; others don't touch it
       ...(pick === AUTO_MODEL ? { modelAuto: true } : { model: pick, modelAuto: false }),
       ...(auto ? { effortAuto: true } : { effort, effortAuto: false }),
       team: $('#team-mode').checked,
       ...(agent !== undefined && { agent }),
+      ...extra,
     });
   } catch (err) {
     toast(err.message);
@@ -780,7 +787,14 @@ export function initComposerControls() {
   $('#model').addEventListener('change', saveModel);
   $('#mode-choice').addEventListener('click', (e) => {
     const pick = e.target.closest('[data-mode-choice]')?.dataset.modeChoice;
-    if (pick) chooseMode(pick);
+    if (pick) return chooseMode(pick);
+    if (e.target.closest('[data-mode-notice]')) {
+      api(`/api/projects/${state.active}/settings`, { modeNoticeSeen: true })
+        .then(() => {
+          if ($('#mode-choice')) $('#mode-choice').hidden = true;
+        })
+        .catch((err) => toast(err?.message ?? 'Catatan tidak bisa disimpan.'));
+    }
   });
   // Model Auto ladder dialog: one <select> per tier, saved for the project's engine.
   $('#tiers-rows').addEventListener('change', () => {
@@ -794,8 +808,11 @@ export function initComposerControls() {
     const opener = $('#model-tiers-open');
     if (opener?.getClientRects().length) opener.focus({ preventScroll: true });
   }).observe($('#model-tiers-modal'), { attributeFilter: ['hidden'] });
-  for (const id of ['#mode', '#agent', '#effort', '#team-mode']) {
+  for (const id of ['#agent', '#effort', '#team-mode']) {
     $(id).addEventListener('change', saveSettings);
     $(id).addEventListener('change', () => renderSettingsChip(state.statuses[state.active])); // right away, before the server echoes it
   }
+  // A mode change is an explicit choice: it also clears a legacy "dontAsk" pending flag.
+  $('#mode').addEventListener('change', () => saveSettings({ modeChosen: true }));
+  $('#mode').addEventListener('change', () => renderSettingsChip(state.statuses[state.active]));
 }

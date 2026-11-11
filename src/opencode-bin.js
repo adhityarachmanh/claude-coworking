@@ -283,7 +283,12 @@ function splitRule(rule) {
  * @param {Record<string, 'allow'|'ask'|'deny'>} base
  */
 export function mergePermission(base, user, mode) {
-  const tune = (a) => (mode === 'auto' && a === 'ask' ? 'allow' : mode === 'dontAsk' && a !== 'deny' ? 'deny' : mode === 'readOnly' && a === 'ask' ? 'deny' : a);
+  const tune = (a) =>
+    mode === 'plan' && a !== 'deny' ? 'deny'
+    : mode === 'auto' && a === 'ask' ? 'allow'
+    : mode === 'dontAsk' && a !== 'deny' ? 'deny'
+    : mode === 'readOnly' && a === 'ask' ? 'deny'
+    : a;
   const global = splitRule(ownValue(user, '*'));
   const out = {};
   for (const [tool, action] of Object.entries(base)) {

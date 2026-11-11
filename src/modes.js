@@ -36,8 +36,8 @@ export function claudePermissionMode(mode) {
 
 /** Claude Code reports its CLI name (`default`, `acceptEdits`...) - the app's vocabulary is only build/plan. */
 export function appModeFromCli(mode) {
-  if (mode === 'plan') return 'plan';
-  // A CLI started outside the app (default/auto/dontAsk) is shown as Build; settings are not rewritten from it.
+  if (mode === 'plan' || mode === 'dontAsk') return 'plan';
+  // A CLI started outside the app (default/acceptEdits/auto) is shown as Build; settings are not rewritten from it.
   return 'build';
 }
 

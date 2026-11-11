@@ -389,7 +389,10 @@ export class Hub {
       raw.mode = next.mode;
       if (next.legacyMode) raw.legacyMode = next.legacyMode;
       if (next.pending) raw.modePendingChoice = true;
-      else delete raw.modePendingChoice;
+      else {
+        raw.modeNotice = true; // non-blocking: "the modes are now Plan/Build; Build edits files automatically"
+        delete raw.modePendingChoice;
+      }
       changed = true;
     }
     return changed;
@@ -1090,15 +1093,15 @@ export class Hub {
     const next = { ...base };
     if (!isObject(patch)) return next;
     if (isMode(patch.mode)) {
-      const changed = patch.mode !== next.mode;
       next.mode = patch.mode;
-      // An explicit choice (a mode click, the migration banner) ends a pending "dontAsk" decision; a model change
-      // that happens to carry the old mode must not count as that choice.
-      if (patch.modeChosen === true || changed) delete next.modePendingChoice;
+      // Only an explicit choice (the select, the migration banner, a plan approval) ends a pending decision.
+      // A model/team/effort save that happens to carry the old mode must never clear the gate.
+      if (patch.modeChosen === true) delete next.modePendingChoice;
     } else if (patch.mode === 'manual' || patch.mode === 'acceptEdits' || patch.mode === 'auto') {
       next.mode = 'build'; // an old tab: same vocabulary, auto-edit on; it can never turn permissions looser than Build
     }
     // 'dontAsk' from an old client is deliberately ignored: it must not silently become a looser Build.
+    if (patch.modeNoticeSeen === true) delete next.modeNotice; // the one-time "mode changed" note was read
     // The engine is this project's own choice; a target engine decides which models/agents are valid.
     const engine = ENGINES.includes(patch.engine) ? patch.engine : (ENGINES.includes(next.engine) ? next.engine : (this.persisted?.engine ?? 'claude'));
     if (ENGINES.includes(patch.engine)) next.engine = patch.engine;

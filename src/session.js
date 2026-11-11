@@ -635,6 +635,7 @@ export class ClaudeSession {
     }
     if (s.mode !== a.mode) {
       a.mode = s.mode;
+      if (s.mode === 'plan') this.autoApprove = false; // "allow all" never carries into Plan
       this.request({ subtype: 'set_permission_mode', mode: claudePermissionMode(s.mode) }).catch((err) => this.controlFailed('mode izin', err));
     }
     if (s.model !== a.model) {
@@ -1179,7 +1180,7 @@ export class ClaudeSession {
     }
     const kind = req.tool_name === 'AskUserQuestion' ? 'question' : req.tool_name === 'ExitPlanMode' ? 'plan' : 'tool';
     const role = this.translator.roleOf(req.tool_use_id) ?? inferRole(req.tool_name, req.input ?? {}, { projectPath: this.project.path });
-    if (this.autoApprove && kind === 'tool') {
+    if (this.autoApprove && kind === 'tool' && this.hub.settingsFor(this.id).mode !== 'plan') {
       this.respond(msg.request_id, req, role, { allow: true });
       return;
     }

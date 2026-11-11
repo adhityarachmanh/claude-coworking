@@ -225,8 +225,7 @@ test('question: Lewati = decline (OpenCode carries on), Stop = cancel; "Izinkan 
   const closed = await waitFor((t, o) => t === 'approval' && o.id === card.id && o.status !== 'pending');
   assert.equal(closed.status, 'cancelled');
   await result();
-  await api(`/api/projects/${id}/settings`, { mode: 'build' }); // a fresh process: autoApprove off again
-  await api(`/api/projects/${id}/settings`, { mode: 'build' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build' }); // a fresh process reads the Build permission config again
 });
 
 test('📋 plan: the plan turn ends with the plan card; Minta revisi (with a note) stays in plan, Setujui switches to build and continues', async () => {

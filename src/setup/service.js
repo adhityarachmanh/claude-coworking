@@ -9,7 +9,7 @@ import { cleanToolView, probeTools } from './detect.js';
 import { openLoginTerminal as openLoginTerminalDefault } from './login.js';
 import { installNpmPackage } from './npm.js';
 import { SETUP_TARGETS, isSetupTarget } from './packages.js';
-import { activeNode, installNodeRuntime, runtimeBinDirs, runtimePaths } from './runtime.js';
+import { activeNode, installNodeRuntime, runtimeBinDirs, runtimePaths, withRuntimeLock } from './runtime.js';
 import { findTailscale, installTailscale } from './tailscale.js';
 
 /** A normal refresh never starts a new probe sooner than this after the previous one. */
@@ -326,6 +326,15 @@ export class SetupService {
     }
   }
 
+  /** Absolute paths (the runtime, the Windows profile) never reach the broadcast view, spaces included. */
+  redact(value) {
+    let text = String(value ?? '');
+    if (this.runtimeDir) text = text.split(this.runtimeDir).join('~runtime');
+    const home = process.env.USERPROFILE ?? process.env.HOME;
+    if (home) text = text.split(home).join('~');
+    return text;
+  }
+
   setJob(patch) {
     if (!this.job) return;
     Object.assign(this.job, patch);
@@ -347,8 +356,8 @@ export class SetupService {
         this.setJob({ state: 'cancelled', step: 'dibatalkan', finishedAt: this.now(), error: 'Dibatalkan.', code: 'CANCELLED', hint: null });
         this.log(`Setup ${target}: dibatalkan.`);
       } else {
-        const error = cleanText(err?.message ?? err, 400) || 'Instalasi gagal.';
-        this.setJob({ state: 'failed', step: 'gagal', finishedAt: this.now(), error, code: cleanCode(err?.code), hint: cleanHint(err?.hint) });
+        const error = cleanText(this.redact(err?.message ?? err), 400) || 'Instalasi gagal.';
+        this.setJob({ state: 'failed', step: 'gagal', finishedAt: this.now(), error, code: cleanCode(err?.code), hint: cleanHint(this.redact(err?.hint)) });
         this.log(`Setup ${target} gagal: ${error}`);
       }
     } finally {
@@ -401,15 +410,18 @@ export class SetupService {
 
     this.setJob({ step: 'memasang paket', percent: 40 });
     let lines = 0;
-    await this.installers.npm({
-      runtime: { ...runtimePaths({ runtimeDir: this.runtimeDir }), node: node.dir },
-      spec: SETUP_TARGETS[target].npm,
-      signal,
-      onLine: () => {
-        lines += 1;
-        if (lines % 3 === 0) this.setJob({ percent: Math.min(90, 40 + lines) });
-      },
-    });
+    // One runtime lock for the whole job: setup.cmd and the setup screen can never swap the npm prefix at once.
+    await withRuntimeLock(this.runtimeDir, () =>
+      this.installers.npm({
+        runtime: { ...runtimePaths({ runtimeDir: this.runtimeDir }), node: node.dir },
+        spec: SETUP_TARGETS[target].npm,
+        signal,
+        onLine: () => {
+          lines += 1;
+          if (lines % 3 === 0) this.setJob({ percent: Math.min(90, 40 + lines) });
+        },
+      }),
+    );
     this.setJob({ step: 'memeriksa', percent: 92 });
   }
 
