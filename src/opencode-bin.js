@@ -103,7 +103,10 @@ export function openCodeModels(bin, { maxAgeMs = 10 * 60_000 } = {}) {
         modelCache = null; // try again next time
         return resolve([]);
       }
-      const list = [...new Set(String(out).split(/\r?\n/).map((l) => l.trim()).filter((l) => /^[\w.-]+\/[\w.:#@-]+$/.test(l)))];
+      // The FIRST slash splits provider from model; the model id itself may carry slashes
+      // (river/Qwen/Qwen3.5-9B, river/deepseek-ai/DeepSeek-V4.1-Flash — the OpenRouter shape too). The same
+      // shape hub.js validates for a stored model (OPENCODE_MODEL).
+      const list = [...new Set(String(out).split(/\r?\n/).map((l) => l.trim()).filter((l) => /^[\w.-]+\/[\w.:#@/-]{1,120}$/.test(l)))];
       // An empty answer (OpenCode's background service still starting) is not kept: the next ask runs it again.
       if (!list.length && modelCache?.load === load) modelCache = null;
       resolve(list);
