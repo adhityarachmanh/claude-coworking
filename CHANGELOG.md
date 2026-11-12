@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.17
+
+- **🗂 Daftar model OpenCode dikelompokkan per provider.** Di Pengaturan giliran, satu grup panjang "OpenCode" yang mencampur semua provider (`river · GLM-5.3`, `opencode-go · …`) kini pecah jadi satu grup per provider: **Claude Code**, **OpenCode Go**, **River AI**, dst—judul grup memakai nama tampilan provider (mis. "River AI", bukan `river`), dan opsi di dalam grupnya sendiri tanpa prefiks lagi. Filter pencarian dan aturan izin antar-mesin tetap bekerja seperti sebelumnya.
+
 ## 1.0.16
 
 - **✅ Catatan "Mode kini Build" cukup ditutup sekali.** Penutup banner itu disimpan per project, sehingga setiap project lama hasil migrasi mode (manual/auto) menampilkan banner yang sama lagi—di laptop dengan puluhan project, banner terasa muncul terus walau *Mengerti* sudah diklik. Sekali *Mengerti* kini menghapus catatan di **semua** project sekaligus.
