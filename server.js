@@ -586,8 +586,9 @@ const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/ap
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 // The same for switching engines and OpenCode's provider logins (API keys travel in these requests).
 // 📜 /api/account/audit names the devices that changed an account (personal data): never over plain WiFi.
-// Provider kustom OpenAI-compatible too (custom/check, custom/add): the API key travels in the request body.
-const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout', '/api/account/audit', '/api/engine', '/api/opencode/providers', '/api/opencode/login/key', '/api/opencode/login/oauth', '/api/opencode/login/status', '/api/opencode/login/code', '/api/opencode/login/cancel', '/api/opencode/logout', '/api/opencode/custom/check', '/api/opencode/custom/add']);
+// Provider kustom OpenAI-compatible too (custom/check, custom/add, custom/remove): the API key travels in these
+// requests, and a remove is as destructive as a logout.
+const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout', '/api/account/audit', '/api/engine', '/api/opencode/providers', '/api/opencode/login/key', '/api/opencode/login/oauth', '/api/opencode/login/status', '/api/opencode/login/code', '/api/opencode/login/cancel', '/api/opencode/logout', '/api/opencode/custom/check', '/api/opencode/custom/add', '/api/opencode/custom/remove']);
 // Opening VS Code / Explorer only makes sense on the laptop itself.
 // Changing saved permission rules (🛡️ Aturan izin) changes what Claude Code may do unasked: laptop only (phones may look).
 const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit|mcp-add|session-import-json|checklist-scaffold|archive)$/;

@@ -9,7 +9,7 @@ import { ENGINES } from '../hub.js';
 import { readModelPrices } from '../model-prices.js';
 import { OPENCODE_ACCOUNT } from '../opencode-account.js';
 import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
-import { addCustomProvider, CUSTOM_PROVIDER_PACKAGE, readOpenCodeConfig } from '../opencode-config.js';
+import { addCustomProvider, CUSTOM_PROVIDER_PACKAGE, readOpenCodeConfig, removeCustomProvider } from '../opencode-config.js';
 import { GO_PLANS, goAllowance } from '../opencode-go.js';
 import { clearConsoleTokenCache, consoleForPeriod, consoleRequestLogs, consoleRequestTotals, consoleRequestTotalsCached, goConsoleSnapshot } from '../opencode-console.js';
 import { renderPdf, reportHtml } from '../report.js';
@@ -157,9 +157,11 @@ export function register(router) {
   router.post('/api/opencode/login/code', audited('oauth-complete', (body) => body.provider, (bin, body, ctx) => openCodeOAuthComplete(bin, body.provider, body.attemptID, body.code).then(loggedIn(ctx))));
   router.post('/api/opencode/login/cancel', audited('cancel', (body) => body.provider, (bin, body) => openCodeOAuthCancel(bin, body.provider, body.attemptID)));
   router.post('/api/opencode/logout', openCode(openCodeLogoutRoute));
-  // Provider kustom OpenAI-compatible: cek endpoint /models, lalu blok config + API key + efek login standar.
+  // Provider kustom OpenAI-compatible: cek endpoint /models, lalu blok config + API key + efek login standar,
+  // dan Hapus: kredensial + blok config sekaligus (blok yang tertinggal membuat model mati tetap tampil).
   router.post('/api/opencode/custom/check', openCode(customCheck));
   router.post('/api/opencode/custom/add', audited('custom-add', (body) => body.id, customAdd));
+  router.post('/api/opencode/custom/remove', audited('custom-remove', (body) => body.id, customRemove));
   // ---------- usage report ----------
   router.post('/api/summary/today', ({ ledger }, req, res) => json(res, 200, { today: daySummary(ledger) }));
   router.post('/api/report/accounts', reportAccounts);
@@ -214,6 +216,7 @@ const CUSTOM_MODELS_MAX = 200; // what check may hand back
 const CUSTOM_MODELS_ADD_MAX = 100; // how many models one provider may carry
 const CHECK_TIMEOUT_MS = 10_000;
 const CHECK_BODY_MAX_BYTES = 2 * 1024 * 1024; // a model list is KBs: more than that is an attack or a proxy gone wrong
+const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 
 /**
  * Reads a response body up to CHECK_BODY_MAX_BYTES, then gives up (the stream is cancelled, never buffered): a
@@ -326,6 +329,20 @@ async function customAdd(bin, body, ctx) {
   const key = String(body?.key ?? '').trim();
   if (!key || key.length > MAX_SECRET) throw Object.assign(new Error('API key wajib diisi (maks 4096 karakter).'), { status: 400 });
   const models = customModels(body?.models);
+  // (0) a base URL another custom block already uses is refused: two blocks over one endpoint showed every model
+  // twice in the model list (the production duplicate). Blocks of another package are none of our business here.
+  const existing = readOpenCodeConfig({ scope: 'global' });
+  if (existing.parseError) throw Object.assign(new Error('Config OpenCode global tidak valid. Perbaiki lewat ⚙ → Config OpenCode dulu.'), { status: 400 });
+  const blocks = isObject(existing.config?.providers) ? existing.config.providers : {};
+  for (const [otherId, block] of Object.entries(blocks)) {
+    if (otherId === id || !isObject(block)) continue;
+    const pkg = block.package;
+    if (typeof pkg === 'string' && pkg !== CUSTOM_PROVIDER_PACKAGE) continue; // not a block this feature wrote
+    const url = isObject(block.settings) ? block.settings.baseURL : undefined;
+    if (typeof url === 'string' && url.trim() === baseURL) {
+      throw Object.assign(new Error(`ID baru ditolak: base URL ini sudah dipakai provider kustom "${otherId}". Pakai provider itu, atau hapus dulu lewat tombol Hapus.`), { status: 409 });
+    }
+  }
   // (a) an id the OpenCode catalog already knows (connected or just available) is refused even off the deny list.
   const known = await openCodeProviders(bin);
   if ([...known.connected, ...known.available].some((p) => p.id === id)) {
@@ -348,6 +365,42 @@ async function customAdd(bin, body, ctx) {
     throw Object.assign(new Error(`Blok provider sudah ditulis ke config OpenCode, tetapi API key gagal disimpan (${err.message}). Login key untuk provider ini lewat alur yang ada, lalu coba lagi.`), { status: 502 });
   }
   return phoneAlert(ctx, 'login', id)(loggedIn(ctx)({ ok: true, provider: id, models, path: saved.path, backup: saved.backup }));
+}
+
+const CUSTOM_REMOVE_CONFIRM = 'HAPUS';
+
+/**
+ * POST /api/opencode/custom/remove: drops one custom provider for good. The stored credential(s) go first — a
+ * credential that refuses to be removed is reported in the answer, never fatal (the dead block must not stay
+ * because of it) — then the config block itself (removeCustomProvider refuses a block another feature wrote).
+ * Every project running one of the provider's models goes stale, exactly like a logout, and the page is told the
+ * model may be gone: `opencode models` reads the config, so a left-over block would keep the models listed.
+ */
+async function customRemove(bin, body, ctx) {
+  if (body?.confirm !== CUSTOM_REMOVE_CONFIRM) {
+    throw Object.assign(new Error(`Ketik ${CUSTOM_REMOVE_CONFIRM} untuk konfirmasi hapus provider kustom.`), { status: 400 });
+  }
+  const id = String(body?.id ?? '');
+  if (!CUSTOM_ID.test(id)) throw Object.assign(new Error('ID provider tidak valid (huruf/angka pertama, lalu huruf/angka, _, ., -; maks 64).'), { status: 400 });
+  const credentialErrors = [];
+  let credentialsRemoved = 0;
+  try {
+    const { connected } = await openCodeProviders(bin);
+    for (const c of connected.find((p) => p.id === id)?.connections ?? []) {
+      if (c.type !== 'credential') continue;
+      try {
+        await openCodeLogout(bin, c.id);
+        credentialsRemoved++;
+      } catch (err) {
+        credentialErrors.push(err.message);
+      }
+    }
+  } catch (err) {
+    credentialErrors.push(`Daftar provider tidak bisa dibaca: ${err.message}`); // the block removal still proceeds
+  }
+  const removed = removeCustomProvider({ id, dataDir: ctx.hub?.dataDir ?? ctx.dataDir });
+  markModelStale(ctx.hub, id);
+  return phoneAlert(ctx, 'logout', id)(loggedIn(ctx)({ ok: true, provider: id, credentialsRemoved, credentialErrors, path: removed.path, backup: removed.backup }));
 }
 
 /** The OAuth attempt's state; only the moment it completes is an auth action worth an audit line. */

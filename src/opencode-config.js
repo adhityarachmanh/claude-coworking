@@ -708,6 +708,35 @@ export function addCustomProvider({ id, name, baseURL, models, home, dataDir } =
 }
 
 /**
+ * Removes one custom OpenAI-compatible provider block from the global config: only a block this feature wrote (its
+ * own package, or one without a package field) — a block another feature wrote is refused with a 409. Everything
+ * else is kept as it is, the previous file is backed up first, and `providers` itself is deleted when the removal
+ * leaves it empty (a clean config carries no empty object).
+ * @param {{ id: string, home?: string, dataDir?: string }} input
+ * @returns {{ ok: true, path: string, backup: string|null }}
+ */
+export function removeCustomProvider({ id, home, dataDir } = {}) {
+  if (!PROVIDER_ID.test(String(id ?? ''))) throw new OpenCodeConfigError(400, 'ID provider tidak valid.');
+  const current = readOpenCodeConfig({ scope: 'global', home });
+  if (current.parseError) throw new OpenCodeConfigError(400, 'Config OpenCode global tidak valid. Perbaiki lewat ⚙ → Config OpenCode dulu.');
+  const providers = isObject(current.config) && isObject(current.config.providers) ? current.config.providers : null;
+  if (!providers || !Object.hasOwn(providers, id)) {
+    throw new OpenCodeConfigError(404, `Provider kustom "${id}" tidak ditemukan di config OpenCode.`);
+  }
+  const pkg = isObject(providers[id]) ? providers[id].package : undefined;
+  if (typeof pkg === 'string' && pkg !== CUSTOM_PROVIDER_PACKAGE) {
+    throw new OpenCodeConfigError(409, `ID "${id}" bukan provider kustom yang dibuat aplikasi (package ${pkg}). Hapus lewat ⚙ → Config OpenCode.`);
+  }
+  const config = validateObject(JSON.parse(JSON.stringify(isObject(current.config) ? current.config : {})));
+  delete config.providers[id];
+  if (!Object.keys(config.providers).length) delete config.providers;
+  assertWritable(current.path, { scope: 'global', home });
+  const backup = writeBackup({ scope: 'global', path: current.path }, dataDir);
+  writeFileAtomic(current.path, `${JSON.stringify(config, null, 2)}\n`);
+  return { ok: true, path: current.path, backup: backup?.path ?? null };
+}
+
+/**
  * Save one scope. `mode: 'json'` writes the typed text (comments in JSONC stay); `mode: 'form'` merges the form.
  * The old file is copied into the app's backup folder first and the new one is written atomically; an invalid
  * request changes nothing. `baseHash` is the `hash` the editor read (mandatory): when it no longer matches, somebody

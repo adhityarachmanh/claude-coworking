@@ -1,7 +1,7 @@
-// Provider kustom OpenAI-compatible (👤 Akun → OpenCode): the two new routes (/api/opencode/custom/check and
-// /api/opencode/custom/add) against a hand-made ctx + a minimal fake `opencode` bin, and the config writer
-// (addCustomProvider) against a throwaway home folder. A tiny local HTTP server plays the provider's /models.
-// No real OpenCode, no real provider, no network beyond 127.0.0.1.
+// Provider kustom OpenAI-compatible (👤 Akun → OpenCode): the three routes (/api/opencode/custom/check, /add and
+// /remove) against a hand-made ctx + a minimal fake `opencode` bin, the config writers (addCustomProvider,
+// removeCustomProvider) against a throwaway home folder, and openCodeProviders' `custom` flags. A tiny local HTTP
+// server plays the provider's /models. No real OpenCode, no real provider, no network beyond 127.0.0.1.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -9,7 +9,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { buildRouter } from '../src/routes/index.js';
-import { addCustomProvider, backupRoot, readOpenCodeConfig } from '../src/opencode-config.js';
+import { wifiAllows } from '../src/remote.js';
+import { openCodeProviders } from '../src/opencode-auth.js';
+import { addCustomProvider, backupRoot, readOpenCodeConfig, removeCustomProvider } from '../src/opencode-config.js';
 
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-opencode-custom-'));
 const HOME = path.join(TMP, 'xdg');
@@ -17,24 +19,28 @@ const DATA = path.join(TMP, 'data');
 const CONFIG_DIR = path.join(HOME, 'opencode');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'opencode.json');
 const CONNECT_LOG = path.join(TMP, 'connect.log');
+const INTEGRATIONS_FILE = path.join(TMP, 'integrations.json');
 
 process.env.OFFICE_OPENCODE_CONFIG_HOME = HOME;
 process.env.FAKE_CONNECT_LOG = CONNECT_LOG;
+process.env.FAKE_INTEGRATIONS = INTEGRATIONS_FILE;
 
 after(() => {
   delete process.env.OFFICE_OPENCODE_CONFIG_HOME;
   delete process.env.FAKE_CONNECT_LOG;
+  delete process.env.FAKE_INTEGRATIONS;
   rmSync(TMP, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
-// ---------- fake `opencode` bin (only the two `api` operations the routes use) ----------
+// ---------- fake `opencode` bin (only the `api` operations the routes use) ----------
 
 const FAKE_BIN = path.join(TMP, 'fake-opencode-custom.mjs');
 writeFileSync(
   FAKE_BIN,
   `#!/usr/bin/env node
-// A minimal fake opencode: integration.list (a fixed catalog) and integration.connect.key (records to FAKE_CONNECT_LOG).
-import { appendFileSync } from 'node:fs';
+// A minimal fake opencode: integration.list (FAKE_INTEGRATIONS file when present, else a fixed catalog),
+// integration.connect.key and credential.remove (both record to FAKE_CONNECT_LOG).
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 const [, , , op, ...rest] = process.argv;
 const params = {};
 let body = {};
@@ -45,14 +51,23 @@ for (let i = 0; i < rest.length; i += 2) {
 const out = (data) => (console.log(JSON.stringify({ location: { directory: process.cwd() }, data })), process.exit(0));
 const fail = (msg) => (console.error(msg), process.exit(1));
 if (op === 'integration.list') {
-  out([
-    { id: 'opencode-go', name: 'OpenCode Go', methods: [{ type: 'key' }], connections: [] },
-    { id: 'riverfake', name: 'River Fake', methods: [{ type: 'key' }], connections: [] },
-  ]);
+  if (process.env.FAKE_INTEGRATIONS && existsSync(process.env.FAKE_INTEGRATIONS)) {
+    out(JSON.parse(readFileSync(process.env.FAKE_INTEGRATIONS, 'utf8')));
+  } else {
+    out([
+      { id: 'opencode-go', name: 'OpenCode Go', methods: [{ type: 'key' }], connections: [] },
+      { id: 'riverfake', name: 'River Fake', methods: [{ type: 'key' }], connections: [] },
+    ]);
+  }
 }
 if (op === 'integration.connect.key') {
   if (body.key === 'fail-key') fail('UnknownError: An error occurred\\n    at x (y:1:1) {\\n  [cause]: Error: Authentication failed\\n}');
   if (process.env.FAKE_CONNECT_LOG) appendFileSync(process.env.FAKE_CONNECT_LOG, \`\${params.integrationID}\\t\${body.key}\\n\`);
+  out(null);
+}
+if (op === 'credential.remove') {
+  if (params.credentialID === 'cred-fail') fail('UnknownError: An error occurred\\n    at x (y:1:1) {\\n  [cause]: Error: Boom\\n}');
+  if (process.env.FAKE_CONNECT_LOG) appendFileSync(process.env.FAKE_CONNECT_LOG, 'remove\\t' + params.credentialID + '\\n');
   out(null);
 }
 fail(\`Operation not found: \${op}\`);
@@ -136,6 +151,7 @@ const writeConfig = (config) => {
   mkdirSync(CONFIG_DIR, { recursive: true });
   writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`);
 };
+const writeIntegrations = (list) => writeFileSync(INTEGRATIONS_FILE, JSON.stringify(list));
 const resetConfig = () => {
   try {
     rmSync(CONFIG_FILE, { force: true });
@@ -144,12 +160,32 @@ const resetConfig = () => {
   }
   rmSync(DATA, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   rmSync(CONNECT_LOG, { force: true });
+  rmSync(INTEGRATIONS_FILE, { force: true });
+};
+
+/** A hub fake for markModelStale: one non-virtual project on the OpenCode engine with one active model. */
+const makeHub = (activeModel = '') => {
+  const hub = {
+    dataDir: DATA,
+    broadcast: () => {},
+    projects: new Map([['p1', { id: 'p1' }]]),
+    settingsFor: () => ({ engine: 'opencode' }),
+    runtime: { get: () => (activeModel ? { status: { activeModel } } : undefined) },
+    status: [],
+    notes: [],
+    setStatus: (id, patch) => hub.status.push([id, patch]),
+    chat: (id, note) => hub.notes.push(note),
+  };
+  return hub;
 };
 
 // ---------- /api/opencode/custom/check ----------
 
-test('routes: kedua route custom terdaftar dan bukan rute WiFi read-only', () => {
-  for (const p of ['/api/opencode/custom/check', '/api/opencode/custom/add']) assert.ok(router.match('POST', p), p);
+test('routes: ketiga route custom terdaftar dan bukan rute WiFi read-only', () => {
+  for (const p of ['/api/opencode/custom/check', '/api/opencode/custom/add', '/api/opencode/custom/remove']) {
+    assert.ok(router.match('POST', p), p);
+    assert.equal(wifiAllows(p), false, `${p} tidak pernah lewat WiFi`);
+  }
 });
 
 test('check: baseURL wajib URL https (atau http loopback), panjang & key dibatasi (400)', async () => {
@@ -285,6 +321,27 @@ test('add: overwrite blok buatan fitur ini boleh (ganti penuh), blok package lai
   assert.equal((await call('/api/opencode/custom/add', { ...GOOD, id: 'punya' })).status, 200, 'blok tanpa package boleh diganti');
 });
 
+test('add: baseURL sama dengan blok kustom lain (id beda) → 409 dengan nama id lama', async () => {
+  resetConfig();
+  writeConfig({ providers: { river_ai: { name: 'River AI', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://api.river.ai/v1' } } } });
+  const res = await call('/api/opencode/custom/add', GOOD);
+  assert.equal(res.status, 409, res.body);
+  assert.match(res.json().error, /river_ai/, 'pesan menyebut id blok lama');
+  assert.match(res.json().error, /sudah dipakai/);
+  assert.equal(readOpenCodeConfig({ scope: 'global', home: HOME }).config.providers.river, undefined, 'tidak ada yang ditulis');
+});
+
+test('add: baseURL sama tapi blok lama package lain → tetap boleh; baseURL sama id sama → overwrite seperti semula', async () => {
+  resetConfig();
+  writeConfig({ providers: { lain: { name: 'Lain', package: 'pkg/lain', settings: { baseURL: 'https://api.river.ai/v1' } } } });
+  assert.equal((await call('/api/opencode/custom/add', GOOD)).status, 200, 'guard duplikat hanya untuk blok kustom');
+  writeConfig({ providers: { river: { name: 'River lama', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://api.river.ai/v1' } } } });
+  const again = await call('/api/opencode/custom/add', GOOD);
+  assert.equal(again.status, 200, again.body);
+  const view = readOpenCodeConfig({ scope: 'global', home: HOME });
+  assert.deepEqual(view.config.providers.river.models, { 'river-1': {}, 'river-2': {} }, 'blok diganti penuh seperti semula');
+});
+
 test('add: config global tidak valid → 400 dengan pesan perbaiki dulu', async () => {
   resetConfig();
   writeFileSync(CONFIG_FILE, '{ broken\n');
@@ -306,6 +363,97 @@ test('add: connect key gagal → 502 yang menjelaskan blok sudah tertulis', asyn
   assert.match(audit, /"action":"custom-add"/);
   assert.match(audit, /"ok":false/);
   assert.ok(!audit.includes('fail-key'), 'key tidak pernah masuk audit');
+});
+
+// ---------- /api/opencode/custom/remove ----------
+
+test('remove: konfirmasi salah / id rusak (400), id tidak ada dan id bawaan (404)', async () => {
+  resetConfig();
+  writeConfig({});
+  let res = await call('/api/opencode/custom/remove', { id: 'river', confirm: 'hapus' });
+  assert.equal(res.status, 400, res.body);
+  assert.match(res.json().error, /HAPUS/);
+  res = await call('/api/opencode/custom/remove', { id: 'river' });
+  assert.equal(res.status, 400, 'konfirmasi wajib dari laptop juga');
+  res = await call('/api/opencode/custom/remove', { id: 'bad id', confirm: 'HAPUS' });
+  assert.equal(res.status, 400);
+  res = await call('/api/opencode/custom/remove', { id: 'river', confirm: 'HAPUS' });
+  assert.equal(res.status, 404, res.body);
+  assert.match(res.json().error, /river/);
+  // deny list tidak berlaku untuk remove: provider bawaan tidak punya blok → 404, bukan 400
+  res = await call('/api/opencode/custom/remove', { id: 'openai', confirm: 'HAPUS' });
+  assert.equal(res.status, 404, res.body);
+});
+
+test('remove: blok package lain → 409, config tidak berubah', async () => {
+  resetConfig();
+  writeConfig({ providers: { river: { name: 'River', package: 'user/pkg', settings: { baseURL: 'https://x/v1' } } } });
+  const res = await call('/api/opencode/custom/remove', { id: 'river', confirm: 'HAPUS' });
+  assert.equal(res.status, 409, res.body);
+  assert.match(res.json().error, /user\/pkg/);
+  assert.equal(readOpenCodeConfig({ scope: 'global', home: HOME }).config.providers.river.package, 'user/pkg', 'blok tetap ada');
+});
+
+test('remove: sukses — kredensial dihapus dulu, blok hilang, key lain tetap, backup, audit, markModelStale', async () => {
+  resetConfig();
+  writeConfig({
+    model: 'tetap',
+    providers: {
+      river: { name: 'River', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://api.river.ai/v1' }, models: { 'river-1': {} }, env: ['RIVER_API_KEY'] },
+      keep: { name: 'Keep' },
+    },
+  });
+  writeIntegrations([
+    { id: 'river', name: 'River', methods: [], connections: [{ type: 'credential', id: 'cred-ok' }, { type: 'credential', id: 'cred-fail' }] },
+    { id: 'opencode-go', name: 'OpenCode Go', methods: [{ type: 'key' }], connections: [] },
+  ]);
+  const hub = makeHub('river/river-1');
+  const res = await call('/api/opencode/custom/remove', { id: 'river', confirm: 'HAPUS' }, { ...CTX, hub });
+  assert.equal(res.status, 200, res.body);
+  const out = res.json();
+  assert.equal(out.ok, true);
+  assert.equal(out.provider, 'river');
+  assert.equal(out.credentialsRemoved, 1, 'satu kredensial dihapus, satu gagal tapi tidak fatal');
+  assert.equal(out.credentialErrors.length, 1);
+  const view = readOpenCodeConfig({ scope: 'global', home: HOME });
+  assert.equal(view.config.model, 'tetap', 'key config lain tetap');
+  assert.deepEqual(view.config.providers.keep, { name: 'Keep' }, 'blok provider lain tetap');
+  assert.equal(view.config.providers.river, undefined, 'blok river hilang');
+  assert.ok(existsSync(out.backup), 'backup dibuat');
+  assert.match(readFileSync(out.backup, 'utf8'), /"river"/, 'backup berisi config sebelumnya');
+  const log = readFileSync(CONNECT_LOG, 'utf8');
+  assert.match(log, /remove\tcred-ok/, 'kredensial yang bisa dihapus memang dihapus');
+  assert.ok(!log.includes('cred-fail'), 'kredensial yang gagal tidak dihitung');
+  const audit = readFileSync(path.join(DATA, 'auth-audit.jsonl'), 'utf8');
+  assert.match(audit, /"action":"custom-remove"/);
+  assert.match(audit, /"ok":true/);
+  assert.match(audit, /"provider":"river"/);
+  assert.ok(!audit.includes('sk-'), 'tidak ada key di audit');
+  assert.deepEqual(hub.status, [['p1', { modelStale: true }]], 'model aktif dari provider itu jadi stale');
+  assert.equal(hub.notes.length, 1, 'project diberi tahu di chat');
+  assert.equal(hub.notes[0].modelStale, true);
+});
+
+test('openCodeProviders: blok kustom → custom: true, katalog tidak, config rusak tetap membaca daftar', async () => {
+  resetConfig();
+  writeConfig({ providers: { riverfake: { name: 'River Fake', settings: { baseURL: 'https://x/v1' } } } });
+  writeIntegrations([
+    { id: 'riverfake', name: 'River Fake', methods: [{ type: 'key' }], connections: [{ type: 'credential', id: 'cred-x' }] },
+    { id: 'opencode-go', name: 'OpenCode Go', methods: [{ type: 'key' }], connections: [] },
+  ]);
+  const list = await openCodeProviders(BIN);
+  assert.equal(list.connected.find((p) => p.id === 'riverfake')?.custom, true, 'connected: blok kustom ditandai');
+  assert.equal(list.available.find((p) => p.id === 'riverfake')?.custom, true, 'available juga');
+  assert.equal(list.available.find((p) => p.id === 'opencode-go')?.custom, false, 'provider katalog tidak ditandai');
+  // blok dengan package lain (bukan buatan aplikasi) tidak dianggap kustom
+  writeConfig({ providers: { riverfake: { name: 'River Fake', package: 'user/pkg', settings: { baseURL: 'https://x/v1' } } } });
+  const other = await openCodeProviders(BIN);
+  assert.equal(other.connected.find((p) => p.id === 'riverfake')?.custom, false);
+  // config rusak: daftar tetap jalan, tanpa flag kustom
+  writeFileSync(CONFIG_FILE, '{ broken\n');
+  const broken = await openCodeProviders(BIN);
+  assert.equal(broken.connected.length, 1, 'daftar tetap terbaca');
+  assert.equal(broken.connected.find((p) => p.id === 'riverfake')?.custom, false);
 });
 
 // ---------- addCustomProvider (unit) ----------
@@ -335,4 +483,31 @@ test('addCustomProvider: menolak id rusak dan config yang tidak parse (400)', ()
   assert.throws(() => addCustomProvider({ id: 'x', name: 'X', baseURL: 'https://a/v1', models: ['m'], home: HOME, dataDir: DATA }), /Config OpenCode global/);
   writeConfig({});
   assert.throws(() => addCustomProvider({ id: '__proto__', name: 'X', baseURL: 'https://a/v1', models: ['m'], home: HOME, dataDir: DATA }), /ID provider/);
+});
+
+// ---------- removeCustomProvider (unit) ----------
+
+test('removeCustomProvider: blok hilang, providers kosong ikut dihapus, backup berisi lama, blok tanpa package boleh', () => {
+  resetConfig();
+  writeConfig({ model: 'x', providers: { only: { name: 'Only', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://x/v1' } } } });
+  const removed = removeCustomProvider({ id: 'only', home: HOME, dataDir: DATA });
+  assert.equal(removed.ok, true);
+  assert.equal(removed.path, CONFIG_FILE);
+  assert.ok(existsSync(removed.backup), 'backup ada');
+  assert.match(readFileSync(removed.backup, 'utf8'), /"Only"/, 'backup = isi file sebelumnya');
+  const config = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+  assert.equal(config.model, 'x', 'key lain tetap');
+  assert.equal(config.providers, undefined, 'providers yang jadi kosong ikut dihapus');
+  writeConfig({ providers: { bare: { name: 'Bare', settings: { baseURL: 'https://y/v1' } } } });
+  assert.equal(removeCustomProvider({ id: 'bare', home: HOME, dataDir: DATA }).ok, true, 'blok tanpa package boleh dihapus');
+});
+
+test('removeCustomProvider: id rusak (400), id tidak ada (404), config tidak parse (400), package lain (409)', () => {
+  writeConfig({});
+  assert.throws(() => removeCustomProvider({ id: 'bad id', home: HOME, dataDir: DATA }), (err) => err.status === 400);
+  assert.throws(() => removeCustomProvider({ id: 'nope', home: HOME, dataDir: DATA }), (err) => err.status === 404);
+  writeFileSync(CONFIG_FILE, '{ broken\n');
+  assert.throws(() => removeCustomProvider({ id: 'x', home: HOME, dataDir: DATA }), /Config OpenCode global/);
+  writeConfig({ providers: { river: { name: 'River', package: 'user/pkg' } } });
+  assert.throws(() => removeCustomProvider({ id: 'river', home: HOME, dataDir: DATA }), (err) => err.status === 409);
 });

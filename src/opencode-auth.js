@@ -9,6 +9,7 @@
 //   credential.remove                     → logout of one stored credential
 // Secrets (API keys, OAuth codes) are never logged; error messages are cut to their first line.
 import { clearModelCache } from './opencode-bin.js';
+import { CUSTOM_PROVIDER_PACKAGE, readOpenCodeConfig } from './opencode-config.js';
 import { execFileTree } from './proc.js';
 
 const TIMEOUT_MS = 60_000;
@@ -76,21 +77,48 @@ function publicConnection(c) {
 }
 
 /**
+ * Ids whose config block is a custom OpenAI-compatible provider this app wrote (its own package, or one without a
+ * package field, plus a settings.baseURL). An unreadable global config is ignored: the provider list itself never
+ * fails because of it — the flags are just absent then.
+ */
+function customProviderIds() {
+  const ids = new Set();
+  try {
+    const config = readOpenCodeConfig({ scope: 'global' }).config;
+    const providers = config && typeof config === 'object' && !Array.isArray(config) ? config.providers : null;
+    if (!providers || typeof providers !== 'object' || Array.isArray(providers)) return ids;
+    for (const [id, block] of Object.entries(providers)) {
+      if (!block || typeof block !== 'object' || Array.isArray(block)) continue;
+      const pkg = block.package;
+      const ours = !(typeof pkg === 'string' && pkg !== CUSTOM_PROVIDER_PACKAGE);
+      const url = block.settings && typeof block.settings === 'object' && !Array.isArray(block.settings) ? block.settings.baseURL : undefined;
+      if (ours && typeof url === 'string') ids.add(id);
+    }
+  } catch {
+    // no config, too large, or not parseable: no custom flags today
+  }
+  return ids;
+}
+
+/**
  * Providers for Akun: `connected` (logged in or set by an environment variable) and `available` (can be logged
- * in from the app: API key or OAuth).
+ * in from the app: API key or OAuth). Each one also says `custom`: whether its config block is a custom
+ * OpenAI-compatible provider this app wrote (those carry a Hapus button, they never leave a stale model behind).
  */
 export async function openCodeProviders(bin) {
   const list = (await openCodeApi(bin, 'integration.list')) ?? [];
+  const custom = customProviderIds();
   const providers = (Array.isArray(list) ? list : []).filter((i) => i && ID.test(String(i.id))).map((i) => ({
     id: i.id,
     name: i.name ?? i.id,
     methods: (i.methods ?? []).filter((m) => m.type === 'key' || m.type === 'oauth').map(publicMethod),
     env: (i.methods ?? []).filter((m) => m.type === 'env').flatMap((m) => m.names ?? []),
     connections: (i.connections ?? []).map(publicConnection),
+    custom: custom.has(i.id),
   }));
   return {
     connected: providers.filter((p) => p.connections.length),
-    available: providers.filter((p) => p.methods.length).map(({ id, name, methods }) => ({ id, name, methods })),
+    available: providers.filter((p) => p.methods.length).map(({ id, name, methods, custom }) => ({ id, name, methods, custom })),
   };
 }
 

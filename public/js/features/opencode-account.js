@@ -12,8 +12,8 @@ const POLL_MS = 2000;
 const POLL_LIMIT_MS = 10 * 60_000; // an OAuth attempt the user never finishes stops being watched
 
 /** OpenCode's Akun state: providers (null = not loaded), the provider/method being logged in, a running OAuth attempt,
- *  and the ＋ Provider kustom form (custom = null while closed). */
-const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false, logoutError: null, showAllGo: false, custom: null };
+ *  and the ＋ Provider kustom form (custom = null while closed). `removing` guards the custom-provider delete. */
+const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false, logoutError: null, showAllGo: false, custom: null, removing: false };
 let pollTimer = null;
 
 /** The app-wide engine (config.engine; old servers: Claude Code). */
@@ -281,7 +281,12 @@ function connectedHtml() {
   const list = oc.providers.connected;
   if (!list.length) return '<p>OpenCode <b>belum login</b> ke provider mana pun. Tanpa provider OpenCode tidak bisa menjawab: login minimal satu di bawah.</p>';
   return `<ul class="oc-providers">${list
-    .map((p) => `<li class="oc-provider"><b>${escapeHtml(p.name)}</b> <small class="muted">${escapeHtml(p.id)}</small><ul class="oc-conns">${p.connections.map((c) => connectionHtml(p, c)).join('')}</ul></li>`)
+    .map((p) => {
+      // Delete is per provider (it removes the provider + all its credentials), so the button sits on the title
+      // bar; only app-created custom blocks can be deleted here.
+      const del = p.custom === true ? `<button type="button" class="ghost danger-text" data-act="oc-delete" data-id="${escapeHtml(p.id)}" data-name="${escapeHtml(p.name)}" title="Hapus provider kustom: kredensial + blok config"${oc.removing ? ' disabled' : ''}>🗑 Hapus</button>` : '';
+      return `<li class="oc-provider"><b>${escapeHtml(p.name)}</b> <small class="muted">${escapeHtml(p.id)}</small>${del}<ul class="oc-conns">${p.connections.map((c) => connectionHtml(p, c)).join('')}</ul></li>`;
+    })
     .join('')}</ul>`;
 }
 
@@ -525,6 +530,29 @@ export async function onOpenCodeAction(act, el, rerender) {
       }
       toast(`Sudah logout dari ${name}.`, 'ok');
       await loadOpenCode(rerender);
+      return true;
+    }
+    case 'oc-delete': {
+      const id = el.dataset.id;
+      const name = el.dataset.name || id;
+      if (!id) return true; // never send a remove without the provider block it targets
+      if (oc.removing) return true; // one request at a time
+      if (!window.confirm(accountImpactText('opencode-delete', name))) return true;
+      oc.removing = true;
+      oc.logoutError = null;
+      rerender(); // the delete buttons disable while the request runs
+      try {
+        // The server demands the confirmation word: a stray tap must not delete a provider block.
+        await api('/api/opencode/custom/remove', { id, confirm: 'HAPUS' });
+      } catch (err) {
+        oc.removing = false;
+        oc.logoutError = err.data?.error ?? err.message; // inline, next to the provider list (like logout); a 409
+        rerender(); // message points at ⚙ → Config OpenCode and must reach the user whole
+        return true;
+      }
+      oc.removing = false;
+      toast(`Provider kustom ${name} dihapus.`, 'ok');
+      await loadOpenCode(rerender); // the provider list reloads without the deleted row
       return true;
     }
     default:

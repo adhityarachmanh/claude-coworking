@@ -31,11 +31,21 @@ const IMPACT = {
     ],
     question: 'Lanjutkan logout?',
   },
+  'opencode-delete': {
+    title: (target) => `Hapus provider kustom ${target || 'ini'}?`,
+    bullets: [
+      'Semua kredensial provider ini dihapus dari OpenCode di laptop ini, beserta blok config-nya (disertai cadangan).',
+      'Model dari provider ini tidak bisa dipakai sampai kamu memilih model lain atau Default.',
+      ...SHARED,
+    ],
+    question: 'Lanjutkan hapus?',
+  },
 };
 
 /**
- * The full confirmation text for `kind` ('claude-login' | 'claude-logout' | 'opencode-logout') and, for the logout
- * kinds, who is being signed out. An unknown kind gives '' so a caller can never confirm with an empty dialog.
+ * The full confirmation text for `kind` ('claude-login' | 'claude-logout' | 'opencode-logout' | 'opencode-delete')
+ * and, for the logout/delete kinds, who is being targeted. An unknown kind gives '' so a caller can never confirm
+ * with an empty dialog.
  */
 export function accountImpactText(kind, target = '') {
   const spec = IMPACT[kind];
