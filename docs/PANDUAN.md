@@ -113,6 +113,7 @@ Harga OpenCode Go diambil dari katalog resmi `opencode.ai` dan disimpan di folde
 1. Di **⚙ Pengaturan giliran**, pilih model yang sering dipakai.
 2. Klik **☆ Favoritkan** di bawah daftar — model pindah ke grup **⭐ Favorit** paling atas (tertulis `Nama Grup (jumlah)` untuk tiap provider).
 3. Klik lagi (**★ Difavoritkan**) untuk melepas. Favorit tersimpan untuk seluruh aplikasi dan semua jendela.
+4. Ketik **/favorit** di kotak pesan untuk langsung memakai model favorit pertamamu (pola sama dengan `/hemat`, `/kuat`, dst).
 
 ## Mengelola provider kustom (👤 Akun → OpenCode)
 

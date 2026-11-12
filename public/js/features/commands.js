@@ -26,6 +26,7 @@ import { openTemplates } from './templates.js';
 export const LOCAL_COMMANDS = [
   { name: 'clear', description: 'Mulai percakapan baru (sesi baru)' },
   { name: 'model', argumentHint: '<model>', description: 'Ganti model, misalnya /model fable, /model opus[1m], /model default' },
+  { name: 'favorit', description: '⭐ Pakai model favorit pertamamu (pin lewat ☆ di Pengaturan giliran)' },
   { name: 'hemat', description: '🪙 Pakai model tingkat Hemat dari tangga Model Auto (Auto dimatikan)' },
   { name: 'seimbang', description: '⚖️ Pakai model tingkat Seimbang dari tangga Model Auto (Auto dimatikan)' },
   { name: 'kuat', description: '💪 Pakai model tingkat Kuat dari tangga Model Auto (Auto dimatikan)' },
@@ -131,6 +132,17 @@ async function enableModelAuto() {
   await saveProjectModel(project, { modelAuto: true }, 'Model Auto aktif — model dipilih sesuai tingkat kesulitan tiap prompt');
 }
 
+/** /favorit: applies the FIRST pinned model (⭐ Favorit) — the tier commands' sibling. */
+async function applyFavorite() {
+  const project = writableProject('/favorit');
+  if (!project) return;
+  const fav = (state.config?.favoriteModels ?? []).find(Boolean);
+  if (!fav) {
+    return toast('Belum ada model favorit — pin lewat ☆ Favoritkan di ⚙ Pengaturan giliran.', 'warn');
+  }
+  await saveProjectModel(project, { model: fav, modelAuto: false }, `Model: ⭐ favorit → ${shortModelName(fav)}`);
+}
+
 /** Returns true when `text` was one of LOCAL_COMMANDS (handled here, not sent to Claude). */
 export function localCommand(text) {
   const [, name, arg = ''] = text.match(/^\/([\w-]+)\s*(.*)$/s) ?? [];
@@ -164,6 +176,9 @@ export function localCommand(text) {
       return true;
     case 'model':
       pick('#model', 'Model', true);
+      return true;
+    case 'favorit':
+      applyFavorite();
       return true;
     case 'hemat':
     case 'seimbang':

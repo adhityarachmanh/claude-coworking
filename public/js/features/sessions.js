@@ -2,6 +2,7 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { engineBadge, engineLabel, engineOf } from '../core/engine-caps.js';
+import { activeModelOf } from '../core/model-logo.js';
 import { ago, DAY, fmtTokens } from '../core/format.js';
 import { DEMO_ID, auth, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
@@ -61,7 +62,10 @@ export function renderSessionBar() {
   // The engine that runs the project right now (the model picked in Pengaturan giliran decides it): a small info
   // badge, never a switch. Phone hides the session bar; the chat marks engine changes per message instead.
   const badge = `<span id="sb-engine" class="engine-badge" data-engine="${escapeHtml(engine)}" title="Mesin project ini: ${escapeHtml(engineLabel(engine))} — dipilih oleh model di Pengaturan giliran" aria-label="Mesin project: ${escapeHtml(engineLabel(engine))}">${escapeHtml(engineBadge(engine))}</span>`;
-  $('#sb-meta').innerHTML = badge + escapeHtml(meta.filter(Boolean).join(' · '));
+  // The active model's logo (the same ai_logos the chip uses); an unknown family shows none.
+  const { file } = activeModelOf(st, engine);
+  const logo = file ? `<img class="sb-logo" src="/ai-logos/${escapeHtml(file)}" alt="" aria-hidden="true">` : '';
+  $('#sb-meta').innerHTML = badge + logo + escapeHtml(meta.filter(Boolean).join(' · '));
   // Phone header: the session bar is hidden there, its title and the turn's state sit under the project name.
   const status = st.pending ? 'menunggu izin' : st.busy || st.cliBusy ? 'bekerja…' : '';
   $('#head-sub').textContent = [$('#sb-title').textContent, status].filter(Boolean).join(' · ');

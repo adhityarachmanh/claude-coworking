@@ -13,7 +13,7 @@ const POLL_LIMIT_MS = 10 * 60_000; // an OAuth attempt the user never finishes s
 
 /** OpenCode's Akun state: providers (null = not loaded), the provider/method being logged in, a running OAuth attempt,
  *  and the ＋ Provider kustom form (custom = null while closed). `removing` guards the custom-provider delete. */
-const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false, logoutError: null, showAllGo: false, custom: null, removing: false, testing: null, testResult: null };
+const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false, logoutError: null, showAllGo: false, custom: null, removing: false, testing: null, testResult: null, testResults: {} };
 let pollTimer = null;
 
 /** The app-wide engine (config.engine; old servers: Claude Code). */
@@ -287,7 +287,7 @@ function connectedHtml() {
       const test = p.custom === true && p.edit ? `<button type="button" class="ghost" data-act="oc-test" data-id="${escapeHtml(p.id)}"${oc.testing === p.id ? ' disabled' : ''} title="Uji cepat koneksi: ping {baseURL}/models tanpa key">${oc.testing === p.id ? '⏳ Menguji…' : '⚡ Uji'}</button>` : '';
       const edit = p.custom === true && p.edit ? `<button type="button" class="ghost" data-act="oc-edit" data-id="${escapeHtml(p.id)}" title="Edit provider kustom: nama, base URL, model. Kosongkan key untuk mempertahankan yang tersimpan.">✏️ Edit</button>` : '';
       const del = p.custom === true ? `<button type="button" class="ghost danger-text" data-act="oc-delete" data-id="${escapeHtml(p.id)}" data-name="${escapeHtml(p.name)}" title="Hapus provider kustom: kredensial + blok config"${oc.removing ? ' disabled' : ''}>🗑 Hapus</button>` : '';
-      const testResult = p.custom === true && oc.testResult?.id === p.id ? `<small class="muted ${oc.testResult.ok ? '' : 'warn-text'}">${escapeHtml(oc.testResult.text)}</small>` : '';
+      const testResult = p.custom === true && (oc.testing === p.id ? null : oc.testResults?.[p.id]) ? `<small class="muted ${oc.testResults[p.id].ok ? '' : 'warn-text'}">${escapeHtml(oc.testResults[p.id].text)}</small>` : '';
       const models = p.custom === true && Array.isArray(p.edit?.models) ? `<small class="muted">· ${p.edit.models.length} model</small>` : '';
       return `<li class="oc-provider"><b>${escapeHtml(p.name)}</b> <small class="muted">${escapeHtml(p.id)}</small>${models}${test}${edit}${del}${testResult}<ul class="oc-conns">${p.connections.map((c) => connectionHtml(p, c)).join('')}</ul></li>`;
     })
@@ -481,6 +481,7 @@ export async function onOpenCodeAction(act, el, rerender) {
     }
     case 'oc-test': {
       // ⚡ Uji: pings the stored block's /models (the server reads the baseURL itself — the client sends only the id).
+      // The result is remembered per provider for the page session, so reopening the dialog still shows it.
       const id = el.dataset.id;
       if (!id || oc.testing) return true;
       oc.testing = id;
@@ -488,8 +489,7 @@ export async function onOpenCodeAction(act, el, rerender) {
       rerender();
       try {
         const r = await api('/api/opencode/custom/test', { id });
-        oc.testResult = {
-          id,
+        oc.testResults[id] = {
           ok: r.ok === true,
           text: r.ok === true
             ? (r.models != null ? `✅ ${r.models} model terjangkau (HTTP ${r.status})` : `✅ endpoint merespons (HTTP ${r.status})`)

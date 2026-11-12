@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.23
+
+- **🖼 Logo model di session bar** — di samping badge mesin, logo model aktif kini juga tampil di bar sesi (sama dengan chip ⚙ dan 🧠 Mode Otak).
+- **⭐ Perintah `/favorit`** — langsung memakai model favorit pertamamu untuk project aktif (pola sama dengan `/hemat` dst); tanpa favorit muncul petunjuk cara men-pin.
+- **⚡ Hasil uji koneksi diingat** selama sesi halaman ini: buka ulang dialog Akun dan hasil ⚡ Uji terakhir tetap tampil di baris providernya.
+
 ## 1.0.22
 
 - **💬 Pesan error Cek model kini menjelaskan apa yang salah.** HTTP 401/403 → *API key salah, kadaluarsa, atau butuh key*; 404 → *cek path base URL (biasanya /v1)*; 429 → *rate limit*; timeout → berapa detik yang dilewati. (Form Edit tanpa key sudah bisa memakai **Cek model** untuk endpoint yang mendaftar model tanpa auth—seperti punyamu.)

@@ -2075,6 +2075,71 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('🧭 session bar menampilkan logo model aktif di samping badge mesin', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubModels(page, [
+          { value: 'opencode-go/glm-5.3-flash', name: 'GLM 5.3 Flash' },
+          { value: 'river/xyz-tak-dikenal', name: 'Tak Dikenal' },
+        ]);
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: 'opencode-go/glm-5.3-flash' };
+          const search = document.querySelector('#model-search');
+          search.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await page.waitFor(() => Boolean(document.querySelector('#sb-meta img.sb-logo')), { timeoutMs: 4000, message: 'logo di session bar' });
+        assert.equal(await page.eval(() => document.querySelector('#sb-meta img.sb-logo')?.getAttribute('src')), '/ai-logos/glm-5.3-flash.svg');
+        // An unknown model family: no logo in the session bar either.
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), model: 'river/xyz-tak-dikenal' };
+          document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await page.waitFor(() => !document.querySelector('#sb-meta img.sb-logo'), { timeoutMs: 4000, message: 'tanpa logo untuk keluarga tak dikenal' });
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreModels(page);
+        await openApp(page, `#${projectId}`);
+      }
+    });
+
+    test('🧭 /favorit memakai model favorit pertama langsung (pola sama dengan /hemat)', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubModels(page, [
+          { value: 'river/GLM-5.3', name: 'GLM-5.3' },
+          { value: 'opencode-go/glm-5.3-flash', name: 'GLM 5.3 Flash' },
+        ]);
+        await stubSettings(page);
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.config = { ...state.config, engine: 'opencode', favoriteModels: ['river/GLM-5.3'] };
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: '' };
+        });
+        await typeInPrompt(page, '/favorit');
+        await page.press('Enter'); // closes the autocomplete layer
+        await page.press('Enter'); // sends the command
+        await page.waitFor(() => window.__settingsBodies.length === 1, { timeoutMs: 4000, message: 'POST model favorit' });
+        assert.deepEqual(await page.eval(() => window.__settingsBodies[0]), { model: 'river/GLM-5.3', modelAuto: false }, 'favorit pertama dipakai, Auto mati');
+        assert.equal(await page.eval(async () => (await import('/js/core/state.js')).state.statuses[(await import('/js/core/state.js')).state.active]?.model), 'river/GLM-5.3', 'status optimistis');
+        // Tanpa favorit: peringatan, tanpa POST tambahan.
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.config = { ...state.config, favoriteModels: [] };
+        });
+        await typeInPrompt(page, '/favorit');
+        await page.press('Enter');
+        await page.press('Enter');
+        await page.waitFor(() => [...document.querySelectorAll('.toast.warn')].some((t) => /favorit/.test(t.textContent)), { timeoutMs: 3000, message: 'peringatan tanpa favorit' });
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreSettings(page);
+        await restoreModels(page);
+        await openApp(page, `#${projectId}`);
+      }
+    });
+
     test('🤖 Tangga Model Auto: tautan "Atur tangga…" hanya saat Auto, catatan memuat tangga', async () => {
       await ensureApp(page, `#${projectId}`);
       try {
@@ -5287,6 +5352,12 @@ for (const vp of VIEWPORTS) {
         assert.deepEqual(await page.eval(() => window.__testCalls[0]), { id: 'river' }, 'klien hanya mengirim id, bukan base URL');
         await page.waitFor(() => /9 model terjangkau/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 4000, message: 'hasil uji tampil inline' });
         assert.match(await page.eval(() => document.querySelector('#account-body')?.textContent ?? ''), /· 1 model/, 'ringkasan satu baris: jumlah model di baris provider');
+        // Close and reopen the dialog: the remembered result (this page session) is still on the row.
+        await page.press('Escape');
+        await page.waitFor(() => document.querySelector('#account-modal').hidden, { timeoutMs: 2000, message: 'dialog tertutup' });
+        await tap(page, '#btn-account');
+        await openOpenCodeTab(page);
+        await page.waitFor(() => /9 model terjangkau/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 4000, message: 'hasil uji bertahan di sesi ini' });
         assert.deepEqual(realProblems(page), []);
       } finally {
         await restoreOpenCodeAccount(page);
