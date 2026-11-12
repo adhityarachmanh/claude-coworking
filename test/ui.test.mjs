@@ -1048,13 +1048,13 @@ async function openOpenCodeTab(page) {
   await page.click('#acct-tab-opencode');
 }
 
-async function stubOpenCodeAccount(page, { go = null, usage = null } = {}) {
+async function stubOpenCodeAccount(page, { go = null, usage = null, connected = null } = {}) {
   await page.eval(async (payload) => {
     localStorage.setItem('office.accountTab', 'opencode'); // no longer read (the dialog always opens on Claude), kept harmless
     window.__officeFetch ??= window.fetch;
     const prev = window.fetch;
     window.__realConfirm = window.confirm;
-    window.__ocAcct = { calls: [], confirms: [], providerCalls: 0, providerDone: 0, requestCalls: 0, go: payload.go, usage: payload.usage };
+    window.__ocAcct = { calls: [], confirms: [], providerCalls: 0, providerDone: 0, requestCalls: 0, go: payload.go, usage: payload.usage, connected: payload.connected };
     window.confirm = (text) => {
       window.__ocAcct.confirms.push(String(text));
       return true; // the user confirms; the point of this test is what goes out afterwards
@@ -1066,7 +1066,7 @@ async function stubOpenCodeAccount(page, { go = null, usage = null } = {}) {
         window.__ocAcct.providerCalls += 1;
         await new Promise((r) => setTimeout(r, 120)); // a slow answer: a second click must not start a second call
         window.__ocAcct.providerDone += 1;
-        const body = { connected: [{ id: 'anthropic', name: 'Anthropic', connections: [{ id: 'cred-1', type: 'credential', label: 'Claude Pro', method: 'oauth' }] }], available: [], usage: window.__ocAcct.usage };
+        const body = { connected: window.__ocAcct.connected ?? [{ id: 'anthropic', name: 'Anthropic', connections: [{ id: 'cred-1', type: 'credential', label: 'Claude Pro', method: 'oauth' }] }], available: [], usage: window.__ocAcct.usage };
         const go = window.__ocAcct.go;
         if (go) body.go = go;
         return json(body);
@@ -1108,7 +1108,7 @@ async function stubOpenCodeAccount(page, { go = null, usage = null } = {}) {
       },
     });
     (await import('/js/features/account.js')).renderAccountButton();
-  }, { go, usage });
+  }, { go, usage, connected });
 }
 
 const restoreOpenCodeAccount = (page) =>
@@ -5154,6 +5154,60 @@ for (const vp of VIEWPORTS) {
         assert.match(r.modelText, /\$2\.56/);
         assert.doesNotMatch(r.usageText, /Pemakaian lokal OpenCode/);
         await page.press('Escape');
+      } finally {
+        await restoreOpenCodeAccount(page);
+      }
+    });
+
+    test('akun OpenCode: ✏️ Edit prefill dari blok tersimpan, submit tanpa key mengirim key kosong', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubOpenCodeAccount(page, {
+          usage: GO_USAGE,
+          connected: [{ id: 'river', name: 'River AI', custom: true, edit: { baseURL: 'https://lama/v1', models: ['lama', 'lama-2'] }, connections: [{ id: 'cred-rf', type: 'credential', label: 'API key', method: 'key' }] }],
+        });
+        await page.eval(() => {
+          const prev = window.fetch; // chain under the account stub
+          window.__editCalls = [];
+          window.fetch = (url, opts) => {
+            if (/\/api\/opencode\/custom\/add$/.test(String(url))) {
+              window.__editCalls.push(JSON.parse(opts?.body ?? '{}'));
+              return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return prev(url, opts);
+          };
+        });
+        await tap(page, '#btn-account');
+        await openOpenCodeTab(page);
+        await page.waitFor(() => document.querySelector('#account-body [data-act="oc-edit"]'), { timeoutMs: 8000, message: 'tombol ✏️ Edit' });
+        await page.click('#account-body [data-act="oc-edit"]');
+        await page.waitFor(() => !document.querySelector('#oc-custom-form')?.closest('#oc-login')?.hidden, { timeoutMs: 4000, message: 'form edit terbuka' });
+        const form = await page.eval(() => ({
+          id: document.querySelector('#oc-custom-id').value,
+          idReadonly: document.querySelector('#oc-custom-id').readOnly,
+          name: document.querySelector('#oc-custom-name').value,
+          base: document.querySelector('#oc-custom-base').value,
+          keyRequired: document.querySelector('#oc-custom-key').required,
+          keyPlaceholder: document.querySelector('#oc-custom-key').placeholder,
+          checked: [...document.querySelectorAll('#oc-custom-form input[name="oc-custom-model"]:checked')].map((b) => b.value),
+        }));
+        assert.equal(form.id, 'river');
+        assert.equal(form.idReadonly, true, 'ID terkunci saat edit');
+        assert.equal(form.name, 'River AI');
+        assert.equal(form.base, 'https://lama/v1');
+        assert.equal(form.keyRequired, false, 'key tidak wajib saat edit');
+        assert.match(form.keyPlaceholder, /pertahankan/);
+        assert.deepEqual(form.checked, ['lama', 'lama-2'], 'model tersimpan tercentang');
+        // Change the base URL, tick nothing else, submit WITHOUT a key: the body must carry key: ''.
+        await page.eval(() => {
+          const base = document.querySelector('#oc-custom-base');
+          base.value = 'https://baru/v1';
+          base.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await page.eval(() => document.querySelector('#oc-custom-form button.primary').click());
+        await page.waitFor(() => window.__editCalls.length === 1, { timeoutMs: 4000, message: 'POST add terkirim' });
+        assert.deepEqual(await page.eval(() => window.__editCalls[0]), { id: 'river', name: 'River AI', baseURL: 'https://baru/v1', key: '', models: ['lama', 'lama-2'] });
+        assert.deepEqual(realProblems(page), []);
       } finally {
         await restoreOpenCodeAccount(page);
       }

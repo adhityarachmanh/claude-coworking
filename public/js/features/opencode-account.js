@@ -284,8 +284,9 @@ function connectedHtml() {
     .map((p) => {
       // Delete is per provider (it removes the provider + all its credentials), so the button sits on the title
       // bar; only app-created custom blocks can be deleted here.
+      const edit = p.custom === true && p.edit ? `<button type="button" class="ghost" data-act="oc-edit" data-id="${escapeHtml(p.id)}" title="Edit provider kustom: nama, base URL, model. Kosongkan key untuk mempertahankan yang tersimpan.">✏️ Edit</button>` : '';
       const del = p.custom === true ? `<button type="button" class="ghost danger-text" data-act="oc-delete" data-id="${escapeHtml(p.id)}" data-name="${escapeHtml(p.name)}" title="Hapus provider kustom: kredensial + blok config"${oc.removing ? ' disabled' : ''}>🗑 Hapus</button>` : '';
-      return `<li class="oc-provider"><b>${escapeHtml(p.name)}</b> <small class="muted">${escapeHtml(p.id)}</small>${del}<ul class="oc-conns">${p.connections.map((c) => connectionHtml(p, c)).join('')}</ul></li>`;
+      return `<li class="oc-provider"><b>${escapeHtml(p.name)}</b> <small class="muted">${escapeHtml(p.id)}</small>${edit}${del}<ul class="oc-conns">${p.connections.map((c) => connectionHtml(p, c)).join('')}</ul></li>`;
     })
     .join('')}</ul>`;
 }
@@ -365,12 +366,13 @@ function normalizeCustomModels(data) {
 function customLoginHtml() {
   const c = oc.custom;
   const models = c.models ?? [];
+  const editing = Boolean(c.editing);
   return `<div id="oc-login" class="login-flow">
     <form id="oc-custom-form" class="oc-form">
-      <label class="oc-field" for="oc-custom-id"><span>ID *</span><input id="oc-custom-id" data-custom="id" value="${escapeHtml(c.form.id)}" placeholder="river" autocomplete="off" spellcheck="false" required /><small class="muted">huruf/angka, - . _</small></label>
+      <label class="oc-field" for="oc-custom-id"><span>ID *</span><input id="oc-custom-id" data-custom="id" value="${escapeHtml(c.form.id)}" placeholder="river" autocomplete="off" spellcheck="false" required${editing ? ' readonly title="ID terkunci saat edit; ganti provider dengan Hapus lalu tambah baru"' : ''} /><small class="muted">huruf/angka, - . _</small></label>
       <label class="oc-field" for="oc-custom-name"><span>Nama tampilan *</span><input id="oc-custom-name" data-custom="name" value="${escapeHtml(c.form.name)}" placeholder="River AI" autocomplete="off" spellcheck="false" required /></label>
       <label class="oc-field" for="oc-custom-base"><span>Base URL *</span><input id="oc-custom-base" data-custom="baseURL" value="${escapeHtml(c.form.baseURL)}" placeholder="https://api.river.ai/v1" autocomplete="off" spellcheck="false" required /></label>
-      <label class="oc-field" for="oc-custom-key"><span>API key *</span><input id="oc-custom-key" type="password" data-custom="key" value="${escapeHtml(c.form.key)}" placeholder="Tempel API key" autocomplete="off" spellcheck="false" required /></label>
+      <label class="oc-field" for="oc-custom-key"><span>API key${editing ? '' : ' *'}</span><input id="oc-custom-key" type="password" data-custom="key" value="${escapeHtml(c.form.key)}" placeholder="${editing ? 'Kosong = pertahankan key tersimpan' : 'Tempel API key'}" autocomplete="off" spellcheck="false"${editing ? '' : ' required'} /></label>
       <button type="button" class="ghost" data-act="oc-check"${c.checking ? ' disabled' : ''}>${c.checking ? 'Memeriksa…' : 'Cek model'}</button>
       ${c.checkError ? `<p class="warn small" role="alert">${escapeHtml(c.checkError)}</p>` : ''}
       ${c.models ? (models.length ? `<div class="oc-custom-models"><small class="muted">${models.length} model ditemukan</small>${models
@@ -468,10 +470,36 @@ export async function onOpenCodeAction(act, el, rerender) {
         method: null,
         answers: null,
         filter: '',
-        custom: { form: { id: '', name: '', baseURL: '', key: '' }, checking: false, checkError: null, models: null, picked: new Set() },
+        custom: { editing: null, form: { id: '', name: '', baseURL: '', key: '' }, checking: false, checkError: null, models: null, picked: new Set() },
       });
       rerender();
       $('#oc-custom-id')?.focus();
+      return true;
+    }
+    case 'oc-edit': {
+      // ✏️ Edit a custom provider: the form opens prefilled from the stored block (id locked, key optional —
+      // an empty key keeps the stored credentials), the saved models pre-ticked without a re-check.
+      const p = (oc.providers?.connected ?? []).find((x) => x.id === el.dataset.id);
+      const edit = p?.edit;
+      if (!edit) return true;
+      const models = (Array.isArray(edit.models) ? edit.models : []).map((m) => ({ id: m, name: m }));
+      Object.assign(oc, {
+        picking: false,
+        provider: null,
+        method: null,
+        answers: null,
+        filter: '',
+        custom: {
+          editing: p.id,
+          form: { id: p.id, name: typeof p.name === 'string' ? p.name : p.id, baseURL: typeof edit.baseURL === 'string' ? edit.baseURL : '', key: '' },
+          checking: false,
+          checkError: null,
+          models,
+          picked: new Set(models.map((m) => m.id)),
+        },
+      });
+      rerender();
+      $('#oc-custom-name')?.focus();
       return true;
     }
     case 'oc-check': {
@@ -607,7 +635,7 @@ async function submitCustom(rerender) {
   const baseURL = c.form.baseURL.trim();
   const key = c.form.key.trim();
   const fail = (message) => toast(`Gagal: ${message}`, 'warn');
-  if (!id || !name || !baseURL || !key) {
+  if (!id || !name || !baseURL || (!key && !c.editing)) {
     fail('lengkapi ID, nama tampilan, base URL, dan API key.');
     return true;
   }
@@ -624,7 +652,7 @@ async function submitCustom(rerender) {
   try {
     await api('/api/opencode/custom/add', { id, name, baseURL, key, models });
     oc.custom = null;
-    toast(`Provider kustom ${name} tersimpan. API key disimpan ke OpenCode.`, 'ok');
+    toast(key ? `Provider kustom ${name} tersimpan. API key disimpan ke OpenCode.` : `Provider kustom ${name} diperbarui; key tersimpan dipertahankan.`, 'ok');
     loadOpenCode(rerender);
   } catch (err) {
     toast(`Gagal: ${err.data?.error ?? err.message}`, 'warn'); // nothing cleared: fix and retry

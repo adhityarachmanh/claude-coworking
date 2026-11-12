@@ -469,6 +469,46 @@ test('add: id yang blok kustomnya sendiri di config tidak dianggap provider bawa
   assert.equal(readFileSync(CONFIG_FILE, 'utf8').includes('sk-river-1'), false, 'key tetap tidak pernah di file config');
 });
 
+test('add: edit tanpa key diizinkan saat provider masih punya kredensial (key lama dipertahankan)', async () => {
+  resetConfig();
+  // An own custom block that is CONNECTED (its key lives in OpenCode's credential store): editing it must
+  // overwrite the block WITHOUT touching the key.
+  writeConfig({ providers: { riverfake: { name: 'River Fake', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://lama/v1' }, models: { lama: {} }, env: ['RIVERFAKE_API_KEY'] } } });
+  writeIntegrations([{ id: 'riverfake', name: 'River Fake', methods: [{ type: 'key' }], connections: [{ id: 'cred-rf', type: 'credential', label: 'API key', method: 'key' }] }]);
+  const before = existsSync(CONNECT_LOG) ? readFileSync(CONNECT_LOG, 'utf8') : '';
+  const res = await call('/api/opencode/custom/add', { id: 'riverfake', name: 'River AI', baseURL: 'https://baru/v1', key: '', models: ['baru-1'] });
+  assert.equal(res.status, 200, res.body);
+  const view = readOpenCodeConfig({ scope: 'global', home: HOME });
+  assert.equal(view.config.providers.riverfake.settings.baseURL, 'https://baru/v1', 'blok diperbarui');
+  assert.deepEqual(view.config.providers.riverfake.models, { 'baru-1': {} }, 'model diperbarui');
+  assert.equal(existsSync(CONNECT_LOG) ? readFileSync(CONNECT_LOG, 'utf8') : '', before, 'connect.key tidak dipanggil: key lama dipertahankan');
+});
+
+test('add: tanpa key tetap ditolak saat provider belum punya kredensial', async () => {
+  resetConfig();
+  // The block exists but is logged out (no connections): an empty key cannot produce a usable provider.
+  writeConfig({ providers: { riverfake: { name: 'River Fake', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://lama/v1' }, models: { lama: {} }, env: ['RIVERFAKE_API_KEY'] } } });
+  const res = await call('/api/opencode/custom/add', { id: 'riverfake', name: 'River AI', baseURL: 'https://baru/v1', key: '', models: ['baru-1'] });
+  assert.equal(res.status, 400);
+  const view = readOpenCodeConfig({ scope: 'global', home: HOME });
+  assert.equal(view.config.providers.riverfake.settings.baseURL, 'https://lama/v1', 'blok tidak berubah oleh tolakan');
+});
+
+test('providers: blok kustom milik aplikasi membawa data Edit (baseURL + models) untuk form prefill', async () => {
+  resetConfig();
+  writeConfig({ providers: { riverfake: { name: 'River Fake', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://lama/v1' }, models: { lama: {}, 'baru-2': {} }, env: ['RIVERFAKE_API_KEY'] } } });
+  writeIntegrations([{ id: 'riverfake', name: 'River Fake', methods: [{ type: 'key' }], connections: [{ id: 'cred-rf', type: 'credential', label: 'API key', method: 'key' }] }]);
+  const res = await call('/api/opencode/providers');
+  assert.equal(res.status, 200, res.body);
+  const body = res.json();
+  const rf = body.connected.find((p) => p.id === 'riverfake');
+  assert.ok(rf, 'riverfake terhubung');
+  assert.equal(rf.custom, true, 'ditandai custom');
+  assert.deepEqual(rf.edit, { baseURL: 'https://lama/v1', models: ['lama', 'baru-2'] }, 'prefill Edit dari blok tersimpan');
+  const notCustom = body.connected.find((p) => p.id === 'opencode-go');
+  if (notCustom) assert.equal(notCustom.edit, undefined, 'provider bukan blok aplikasi tidak membawa edit');
+});
+
 // ---------- addCustomProvider (unit) ----------
 
 test('addCustomProvider: derived env name, blok lain tetap, backup berisi isi lama, return { ok, path, backup }', () => {

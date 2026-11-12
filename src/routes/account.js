@@ -133,7 +133,7 @@ export function register(router) {
   // Providers plus the estimated Go allowance (the catalog fetch and the provider list run side by side).
   router.post('/api/opencode/providers', openCode(async (bin, body, ctx) => {
     const [view, go] = await Promise.all([openCodeProviders(bin), goView(ctx)]);
-    return { ...view, usage: openCodeUsage(ctx.ledger), go };
+    return { ...withCustomEdit(view), usage: openCodeUsage(ctx.ledger), go };
   }));
   // 📡 Recent OpenCode requests (optionally one session/model): normalized server-side, no prompts or personal ids.
   router.post('/api/opencode/requests', openCode(async (bin, body) => {
@@ -320,6 +320,34 @@ function customModels(value) {
 }
 
 /**
+ * The ✏️ Edit form's prefill: a provider whose config block this app wrote carries the block's baseURL and model
+ * ids (`edit`), plus the `custom` flag the catalog may not set. Blocks of another package are none of our business.
+ */
+function withCustomEdit(view) {
+  const existing = readOpenCodeConfig({ scope: 'global' });
+  if (existing.parseError) return view;
+  const blocks = isObject(existing.config?.providers) ? existing.config.providers : {};
+  const attach = (provider) => {
+    if (!isObject(provider)) return provider;
+    const block = blocks[provider.id];
+    if (!isObject(block) || (typeof block.package === 'string' && block.package !== CUSTOM_PROVIDER_PACKAGE)) return provider;
+    return {
+      ...provider,
+      custom: true,
+      edit: {
+        baseURL: isObject(block.settings) ? block.settings.baseURL : undefined,
+        models: Object.keys(isObject(block.models) ? block.models : {}),
+      },
+    };
+  };
+  return {
+    ...view,
+    connected: (Array.isArray(view.connected) ? view.connected : []).map(attach),
+    available: (Array.isArray(view.available) ? view.available : []).map(attach),
+  };
+}
+
+/**
  * POST /api/opencode/custom/add: a new OpenAI-compatible provider. Refuses builtin ids (deny list, or one the
  * OpenCode catalog already knows), and overwriting a config block that belongs to the user (a different package).
  * The config block is written first, the key second; if the key fails the block stays (the user can log the key in
@@ -333,7 +361,7 @@ async function customAdd(bin, body, ctx) {
   if (!name || name.length > 100) throw Object.assign(new Error('Nama provider wajib diisi (maks 100 karakter).'), { status: 400 });
   const baseURL = customBaseURL(body?.baseURL);
   const key = String(body?.key ?? '').trim();
-  if (!key || key.length > MAX_SECRET) throw Object.assign(new Error('API key wajib diisi (maks 4096 karakter).'), { status: 400 });
+  if (key.length > MAX_SECRET) throw Object.assign(new Error('API key maksimal 4096 karakter.'), { status: 400 });
   const models = customModels(body?.models);
   // (0) a base URL another custom block already uses is refused: two blocks over one endpoint showed every model
   // twice in the model list (the production duplicate). Blocks of another package are none of our business here.
@@ -366,11 +394,17 @@ async function customAdd(bin, body, ctx) {
       throw Object.assign(new Error(`ID "${id}" sudah dipakai di config OpenCode global (package ${pkg}). Pilih ID lain.`), { status: 409 });
     }
   }
+  // An empty key is an EDIT: allowed only while the provider still holds credentials (the stored key is kept);
+  // without credentials an empty key could only produce a provider that fails on first use.
+  const connected = known.connected.some((p) => p.id === id);
+  if (!key && !connected) throw Object.assign(new Error('API key wajib diisi (maks 4096 karakter).'), { status: 400 });
   const saved = addCustomProvider({ id, name, baseURL, models, dataDir: ctx.hub?.dataDir ?? ctx.dataDir });
-  try {
-    await openCodeConnectKey(bin, id, { key });
-  } catch (err) {
-    throw Object.assign(new Error(`Blok provider sudah ditulis ke config OpenCode, tetapi API key gagal disimpan (${err.message}). Login key untuk provider ini lewat alur yang ada, lalu coba lagi.`), { status: 502 });
+  if (key) {
+    try {
+      await openCodeConnectKey(bin, id, { key });
+    } catch (err) {
+      throw Object.assign(new Error(`Blok provider sudah ditulis ke config OpenCode, tetapi API key gagal disimpan (${err.message}). Login key untuk provider ini lewat alur yang ada, lalu coba lagi.`), { status: 502 });
+    }
   }
   return phoneAlert(ctx, 'login', id)(loggedIn(ctx)({ ok: true, provider: id, models, path: saved.path, backup: saved.backup }));
 }
