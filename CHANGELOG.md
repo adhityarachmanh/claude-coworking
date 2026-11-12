@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.18
+
+- **🔒 Model provider yang belum login tidak bisa dipilih lagi.** Di Pengaturan giliran, model milik provider yang belum punya API key tersimpan kini nonaktif dengan tooltip petunjuk arah loginnya, dan judul grupnya bertanda *(belum login)*—sebelumnya model itu terlihat bisa dipilih lalu prompt berhenti dengan *Authentication required*. Model yang sedang dipakai tetap bisa dipilih, jadi berpindah model selalu mungkin. Saat prompt tetap berhenti karena autentikasi, pesan berhentinya kini menyertakan arah login: 👤 Akun → OpenCode → ＋ Login provider.
+
 ## 1.0.17
 
 - **🗂 Daftar model OpenCode dikelompokkan per provider.** Di Pengaturan giliran, satu grup panjang "OpenCode" yang mencampur semua provider (`river · GLM-5.3`, `opencode-go · …`) kini pecah jadi satu grup per provider: **Claude Code**, **OpenCode Go**, **River AI**, dst—judul grup memakai nama tampilan provider (mis. "River AI", bukan `river`), dan opsi di dalam grupnya sendiri tanpa prefiks lagi. Filter pencarian dan aturan izin antar-mesin tetap bekerja seperti sebelumnya.
