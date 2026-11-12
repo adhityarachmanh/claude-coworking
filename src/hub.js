@@ -1216,6 +1216,16 @@ export class Hub {
     }
     this.rememberEngineSettings(id, next.engine, next);
     this.persisted.settings[id] = next;
+    if (patch.modeNoticeSeen === true) {
+      // The one-time migration note is the same text for every project: one dismissal clears it everywhere,
+      // so the banner does not reappear just because another project was migrated too.
+      for (const [otherId, raw] of Object.entries(this.persisted.settings)) {
+        if (otherId !== id && isObject(raw) && raw.modeNotice === true) {
+          delete raw.modeNotice;
+          if (this.runtime.has(otherId)) this.setStatus(otherId, this.settingsFor(otherId));
+        }
+      }
+    }
     if (engineChanged) {
       // New messages belong to the target engine's store now; both are shown by timeline(). Resolve the store
       // array directly: chatFor() would still return the old runtime list (engineOf already points at the target).

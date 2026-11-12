@@ -107,4 +107,22 @@ describe('Plan/Build modes', () => {
     assert.equal(hub.settingsFor('p1').modeNotice, undefined);
     assert.equal(hub.settingsFor('p1').mode, 'build');
   });
+
+  test('dismissing the notice in one project clears it everywhere (the migration text is the same for all)', (t) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'modes-notice-all-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ settings: {
+      p1: { mode: 'manual' }, p2: { mode: 'auto' }, p3: { mode: 'plan' }, p4: { mode: 'build', model: 'sonnet' },
+    } }));
+    const hub = new Hub({ dataDir: dir });
+    assert.equal(hub.settingsFor('p1').modeNotice, true);
+    assert.equal(hub.settingsFor('p2').modeNotice, true);
+    assert.equal(hub.settingsFor('p3').modeNotice, undefined);
+    hub.updateSettings('p1', { modeNoticeSeen: true });
+    for (const id of ['p1', 'p2', 'p3', 'p4']) {
+      assert.equal(hub.settingsFor(id).modeNotice, undefined, `${id} tidak menampilkan catatan lagi`);
+      assert.equal(hub.settingsFor(id).mode, id === 'p3' ? 'plan' : 'build', `${id} modenya tidak berubah`);
+    }
+    assert.equal(hub.settingsFor('p4').model, 'sonnet', 'field lain di project tidak disentuh');
+  });
 });
