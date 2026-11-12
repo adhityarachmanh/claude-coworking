@@ -2,6 +2,11 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.19
+
+- **⭐ Model favorit di atas daftar.** Tombol **☆ Favoritkan** di Pengaturan giliran men-pin model yang sedang dipilih ke grup **⭐ Favorit** paling atas daftar model (kedua mesin, maks 12, tersimpan untuk seluruh aplikasi dan semua jendela). Klik lagi (**★ Difavoritkan**) untuk melepas.
+- **✏️ Edit provider kustom.** Provider kustom yang terhubung kini punya tombol **✏️ Edit**: form terbuka ter-prefill (ID terkunci, model tersimpan tercentang), dan **key boleh dikosongkan** selama provider masih punya kredensial—key tersimpan dipertahankan, jadi ganti base URL atau daftar model tidak lagi berarti hapus lalu tambah ulang.
+
 ## 1.0.18
 
 - **🔒 Model provider yang belum login tidak bisa dipilih lagi.** Di Pengaturan giliran, model milik provider yang belum punya API key tersimpan kini nonaktif dengan tooltip petunjuk arah loginnya, dan judul grupnya bertanda *(belum login)*—sebelumnya model itu terlihat bisa dipilih lalu prompt berhenti dengan *Authentication required*. Model yang sedang dipakai tetap bisa dipilih, jadi berpindah model selalu mungkin. Saat prompt tetap berhenti karena autentikasi, pesan berhentinya kini menyertakan arah login: 👤 Akun → OpenCode → ＋ Login provider.
