@@ -108,6 +108,19 @@ Tombol ini tidak bisa dipakai saat tim sedang bekerja, ada izin yang menunggu ja
 
 Harga OpenCode Go diambil dari katalog resmi `opencode.ai` dan disimpan di folder data aplikasi; pembaruan gagal (offline) tidak mengganggu pemilihan model. Detail: [Tanpa terminal](FITUR.md#tanpa-terminal).
 
+## Men-pin model favorit
+
+1. Di **⚙ Pengaturan giliran**, pilih model yang sering dipakai.
+2. Klik **☆ Favoritkan** di bawah daftar — model pindah ke grup **⭐ Favorit** paling atas (tertulis `Nama Grup (jumlah)` untuk tiap provider).
+3. Klik lagi (**★ Difavoritkan**) untuk melepas. Favorit tersimpan untuk seluruh aplikasi dan semua jendela.
+
+## Mengelola provider kustom (👤 Akun → OpenCode)
+
+1. **⚡ Uji**: cek cepat koneksi provider — hasilnya inline di barisnya (`✅ 9 model terjangkau (HTTP 200)`); endpoint yang menjawab non-200 tetap dihitung terjangkau.
+2. **✏️ Edit**: ubah nama, base URL, atau daftar model. Key boleh dikosongkan selama provider masih punya kredensial (key lama dipertahankan).
+3. **Ganti ID**: ubah kolom ID di form edit — ini rename: blok baru + key wajib diisi ulang (key tersimpan terikat ID lama), blok dan kredensial lama dihapus.
+4. **🗑 Hapus**: hapus provider + kredensialnya sekaligus; project yang memakai modelnya diminta memilih model lain.
+
 ## Memakai Model Auto
 
 1. Buka chip **⚙ Pengaturan giliran** → daftar **Model** → pilih **Auto — sesuaikan task**.

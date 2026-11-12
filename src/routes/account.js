@@ -279,10 +279,23 @@ async function customCheck(bin, body) {
       headers: key ? { Authorization: `Bearer ${key}` } : {}, // some endpoints list models without any auth
       signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
     });
-  } catch {
+  } catch (err) {
+    if (err?.name === 'TimeoutError') {
+      throw Object.assign(new Error(`Endpoint /models tidak menjawab dalam ${CHECK_TIMEOUT_MS / 1000} detik (timeout). Cek base URL dan koneksi.`), { status: 502 });
+    }
     throw Object.assign(new Error('Endpoint /models tidak bisa dihubungi. Cek base URL dan koneksi.'), { status: 502 });
   }
-  if (!res.ok) throw Object.assign(new Error(`Endpoint /models menolak (HTTP ${res.status}).`), { status: 502 }); // body never logged: it may echo the request
+  if (!res.ok) {
+    // The status alone is actionable; the body never is (it may echo the request).
+    const reason = res.status === 401 || res.status === 403
+      ? 'API key salah, kadaluarsa, atau endpoint ini butuh key.'
+      : res.status === 404
+        ? 'Tidak ada /models di path itu — cek base URL (biasanya berakhiran /v1).'
+        : res.status === 429
+          ? 'Endpoint membatasi laju (rate limit). Coba lagi sebentar.'
+          : 'Cek base URL dan koneksi.';
+    throw Object.assign(new Error(`Endpoint /models menolak (HTTP ${res.status}): ${reason}`), { status: 502 });
+  }
   const text = await readBoundedText(res);
   if (text === null) throw Object.assign(new Error('Jawaban endpoint /models terlalu besar.'), { status: 502 });
   let parsed;

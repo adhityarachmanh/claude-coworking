@@ -288,7 +288,8 @@ function connectedHtml() {
       const edit = p.custom === true && p.edit ? `<button type="button" class="ghost" data-act="oc-edit" data-id="${escapeHtml(p.id)}" title="Edit provider kustom: nama, base URL, model. Kosongkan key untuk mempertahankan yang tersimpan.">✏️ Edit</button>` : '';
       const del = p.custom === true ? `<button type="button" class="ghost danger-text" data-act="oc-delete" data-id="${escapeHtml(p.id)}" data-name="${escapeHtml(p.name)}" title="Hapus provider kustom: kredensial + blok config"${oc.removing ? ' disabled' : ''}>🗑 Hapus</button>` : '';
       const testResult = p.custom === true && oc.testResult?.id === p.id ? `<small class="muted ${oc.testResult.ok ? '' : 'warn-text'}">${escapeHtml(oc.testResult.text)}</small>` : '';
-      return `<li class="oc-provider"><b>${escapeHtml(p.name)}</b> <small class="muted">${escapeHtml(p.id)}</small>${test}${edit}${del}${testResult}<ul class="oc-conns">${p.connections.map((c) => connectionHtml(p, c)).join('')}</ul></li>`;
+      const models = p.custom === true && Array.isArray(p.edit?.models) ? `<small class="muted">· ${p.edit.models.length} model</small>` : '';
+      return `<li class="oc-provider"><b>${escapeHtml(p.name)}</b> <small class="muted">${escapeHtml(p.id)}</small>${models}${test}${edit}${del}${testResult}<ul class="oc-conns">${p.connections.map((c) => connectionHtml(p, c)).join('')}</ul></li>`;
     })
     .join('')}</ul>`;
 }

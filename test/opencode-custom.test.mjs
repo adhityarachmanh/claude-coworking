@@ -235,7 +235,13 @@ test('check: fetch gagal / HTTP error / JSON rusak → 502 tanpa key di pesan', 
   const refused = await call('/api/opencode/custom/check', { baseURL: `http://127.0.0.1:${httpPort}`, key });
   assert.equal(refused.status, 502, refused.body);
   assert.match(refused.json().error, /HTTP 401/);
+  assert.match(refused.json().error, /API key/, 'petunjuk spesifik: key salah, kadaluarsa, atau butuh key');
   assert.ok(!refused.body.includes(key), 'body respons tidak dijadikan pesan');
+  // A wrong path answers 404: the hint points at the base URL's path (usually a missing /v1).
+  const miss = await call('/api/opencode/custom/check', { baseURL: `http://127.0.0.1:${httpPort}/v1`, key: '' });
+  assert.equal(miss.status, 502);
+  assert.match(miss.json().error, /HTTP 404/);
+  assert.match(miss.json().error, /path/i, 'petunjuk cek path base URL');
   STATE.mode = 'garbage';
   assert.equal((await call('/api/opencode/custom/check', { baseURL: `http://127.0.0.1:${httpPort}` })).status, 502);
   STATE.mode = 'huge';

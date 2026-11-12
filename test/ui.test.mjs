@@ -5286,6 +5286,7 @@ for (const vp of VIEWPORTS) {
         await page.waitFor(() => window.__testCalls.length === 1, { timeoutMs: 4000, message: 'POST test terkirim' });
         assert.deepEqual(await page.eval(() => window.__testCalls[0]), { id: 'river' }, 'klien hanya mengirim id, bukan base URL');
         await page.waitFor(() => /9 model terjangkau/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 4000, message: 'hasil uji tampil inline' });
+        assert.match(await page.eval(() => document.querySelector('#account-body')?.textContent ?? ''), /· 1 model/, 'ringkasan satu baris: jumlah model di baris provider');
         assert.deepEqual(realProblems(page), []);
       } finally {
         await restoreOpenCodeAccount(page);
