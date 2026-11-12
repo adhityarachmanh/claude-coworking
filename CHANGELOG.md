@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.14
+
+- **🗑 Hapus provider kustom.** Di 👤 Akun → tab OpenCode, provider kustom kini punya tombol **🗑 Hapus** di samping daftar koneksi: kredensial dan blok config-nya dihapus sekaligus (file config lama dibackup dulu di folder data aplikasi), dan project yang masih memakai model provider itu diminta memilih model lain sebelum lanjut. Sebelumnya logout hanya menghapus kredensial, sehingga model provider yang sudah logout tetap tampil di daftar.
+- **🧹 Base URL ganda ditolak.** Menambah provider kustom dengan base URL yang sudah dipakai provider kustom lain kini ditolak **409** dengan menyebut id yang sudah ada—dulu percobaan gagal yang diulang dengan id berbeda membuat dua blok identik dan model tampil dua kali.
+- **🔧 Model ber-slash kini tampil semua.** Daftar model OpenCode memangkas id yang mengandung `/` setelah provider (`river/Qwen/Qwen3.5-9B`, `river/deepseek-ai/DeepSeek-V4.1-Flash`, gaya OpenRouter juga), jadi hanya model tanpa slash yang muncul di **Pengaturan giliran**. Parser kini mengikuti bentuk id yang sama dengan validasi model di tempat lain.
+
 ## 1.0.13
 
 - **🔌 Provider kustom OpenAI-compatible.** Di 👤 Akun → tab OpenCode, panel login kini punya tombol **＋ Provider kustom** selain **＋ Login provider**. Isi ID (mis. `river`), nama tampilan, Base URL (mis. `https://api.river.ai/v1`), dan API key; tombol **Cek model** menanyakan `{baseURL}/models` ke endpoint lalu menampilkan daftar model untuk dicentang, dan **Simpan provider** menyelesaikannya. Berguna untuk layanan dengan API ala OpenAI yang tidak ada di katalog OpenCode—mis. River AI, atau server lokal seperti Ollama, LM Studio, dan vLLM. Provider yang tersimpan langsung muncul di daftar model **Pengaturan giliran** (prefiks `<id>/<model>`) dan bisa di-logout seperti provider biasa.
