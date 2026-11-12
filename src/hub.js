@@ -275,6 +275,8 @@ export class Hub {
     this.persisted.runbooks = cleanRunbooks(this.persisted.runbooks);
     // 🗂 Archived projects: an id list; a hand-edited file cannot break the picker.
     this.persisted.archivedProjects = Array.isArray(this.persisted.archivedProjects) ? [...new Set(this.persisted.archivedProjects.filter((p) => typeof p === 'string' && p).slice(0, 500))] : [];
+    // ⭐ Favorite models: ids the picker pins to the top; strings only, deduped, max 12.
+    this.persisted.favoriteModels = Array.isArray(this.persisted.favoriteModels) ? [...new Set(this.persisted.favoriteModels.filter((v) => typeof v === 'string' && v && v.length <= 200))].slice(0, 12) : [];
     this.persisted.queueRetryOnce = isObject(this.persisted.queueRetryOnce) ? Object.fromEntries(Object.entries(this.persisted.queueRetryOnce).filter(([id, on]) => id && on === true).slice(0, 500)) : {};
     // 🏷 Team names saved by an older version still hold the old defaults ("Adhit - QA"): rename exactly those
     // (custom names are untouched) and persist once, so the migration never runs again.
@@ -299,7 +301,7 @@ export class Hub {
     // turns: the turn running right now per project (written when it starts, removed when it ends); one left
     // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
     // the user continues or dismisses them (see recoverTurns / interruptTurn).
-    const empty = { roots: [], custom: [], favorites: [], settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, routines: [] };
+    const empty = { roots: [], custom: [], favorites: [], favoriteModels: [], settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, routines: [] };
     let stored = {};
     let parsedOk = false;
     try {
@@ -583,6 +585,27 @@ export class Hub {
     this.persisted.opencodeGoPlan = plan;
     this.save();
     return true;
+  }
+
+  /** ⭐ Favorite models: app-level ids the picker pins above the provider groups. */
+  favoriteModels() {
+    return Array.isArray(this.persisted.favoriteModels) ? this.persisted.favoriteModels : [];
+  }
+
+  /** Pins/unpins one id; invalid values are refused (null). Re-pinning a pinned id is a no-op (position kept). */
+  toggleFavoriteModel(value, on) {
+    const id = typeof value === 'string' ? value.trim() : '';
+    if (!id || id.length > 200 || !/^[\w.:@#/-]+$/.test(id)) return null;
+    if (on && this.favoriteModels().includes(id)) return this.favoriteModels();
+    const rest = this.favoriteModels().filter((v) => v !== id);
+    const next = on ? [...rest, id].slice(0, 12) : rest;
+    this.persisted.favoriteModels = next;
+    this.save();
+    if (this.config) {
+      this.config = { ...this.config, favoriteModels: next };
+      this.broadcast('config', this.config);
+    }
+    return next;
   }
 
   /** Safety copies of state.json from the chat migration: removed once older than 7 days (moved for good by then). */

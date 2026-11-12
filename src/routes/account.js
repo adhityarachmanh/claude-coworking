@@ -124,6 +124,12 @@ export function register(router) {
     if (device) console.log(`Paket OpenCode Go diganti ke ${plan} dari HP "${device.name}"`);
     return json(res, 200, { ok: true, plan });
   });
+  // ⭐ Pin/unpin one model id for the picker's favorite group (app-level; every client gets the config broadcast).
+  router.post('/api/model-favorites', ({ hub }, req, res, params, body) => {
+    const favorites = hub.toggleFavoriteModel(body?.value, body?.on === true);
+    if (favorites === null) return json(res, 400, { error: 'ID model tidak valid.' });
+    return json(res, 200, { favorites });
+  });
   // Providers plus the estimated Go allowance (the catalog fetch and the provider list run side by side).
   router.post('/api/opencode/providers', openCode(async (bin, body, ctx) => {
     const [view, go] = await Promise.all([openCodeProviders(bin), goView(ctx)]);

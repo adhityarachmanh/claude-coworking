@@ -2,7 +2,7 @@
 // "Pengaturan giliran", so one request lists both engines' models. Rules live in core/engine-caps.js.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
-import { capReason, capsFor, cleanModelList, DEFAULT_ENGINE, engineLabel, engineOf, groupModels, modelsPerProject, openCodeProviderGroups } from '../core/engine-caps.js';
+import { capReason, capsFor, cleanModelList, DEFAULT_ENGINE, engineLabel, engineOf, favoriteModelList, groupModels, modelsPerProject, openCodeProviderGroups } from '../core/engine-caps.js';
 import { auth, DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { priceDetail, priceSuffix } from './model-prices.js';
 
@@ -247,7 +247,7 @@ function claudeCatalogModels(catalog) {
  * `data-engine`, so picking a model of the other engine sends `{ engine, model }` in a single request. While the
  * project works (busy/pending/queue/interrupted/rewinding) the other engine's models are disabled with the reason.
  */
-export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_ENGINE, locked = false, loading = false, error = null, providerNames = null, providerAuth = null } = {}) {
+export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_ENGINE, locked = false, loading = false, error = null, providerNames = null, providerAuth = null, favorites = null } = {}) {
   const claude = claudeCatalogModels(catalog);
   const opencode = catalog?.opencode?.models ?? [];
   const config = new Map((state.config?.models ?? []).filter((m) => m?.value).map((m) => [m.value, m]));
@@ -261,6 +261,9 @@ export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_
   };
   const defText = engine === DEFAULT_ENGINE && def?.description ? `Default (${escapeHtml(def.description.split('·')[0].trim())})` : `Default (dari config ${escapeHtml(engineLabel(engine))})`;
   const opts = [autoModelOption(engine), `<option value="" data-engine="${escapeHtml(engine)}" title="${escapeHtml(def?.description ?? '')}">${defText}</option>`];
+  // ⭐ Favorit: the app-level pinned ids that exist in either list (each keeps its own engine + lock rules).
+  const favs = favoriteModelList(favorites, claude, opencode);
+  if (favs.length) opts.push(`<optgroup label="⭐ Favorit">${favs.map((m) => option(m, m.engine)).join('')}</optgroup>`);
   // Claude Code: one group with its own catalog (the search filter applies to it too).
   const claudeGroups = groupModels(claude, query);
   if (claudeGroups.length) opts.push(`<optgroup label="Claude Code">${claudeGroups.flatMap((g) => g.models.map((m) => option(m, DEFAULT_ENGINE))).join('')}</optgroup>`);

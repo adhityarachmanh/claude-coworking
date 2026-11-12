@@ -320,6 +320,43 @@ function renderTiersOpen(note, show) {
   open.hidden = !show;
 }
 
+/** ☆/★ the current model (Pengaturan giliran): pins/unpins it in the app-wide ⭐ Favorit group. Shown only for a
+ * concrete model (Auto/Default have nothing to pin); follows the same on-first-use pattern as #model-price-note. */
+function renderFavToggle(current) {
+  const controls = document.querySelector('.controls');
+  if (!controls) return;
+  let fav = $('#model-fav');
+  if (!fav) {
+    fav = document.createElement('button');
+    fav.id = 'model-fav';
+    fav.type = 'button';
+    fav.className = 'tiers-open';
+    fav.setAttribute('aria-pressed', 'false');
+    fav.addEventListener('click', toggleFavorite);
+  }
+  const tiers = $('#model-tiers-open');
+  if (tiers && tiers.nextElementSibling !== fav) tiers.after(fav);
+  else if (!tiers && controls.nextElementSibling !== fav) controls.after(fav);
+  const favorited = (state.config?.favoriteModels ?? []).includes(current);
+  fav.textContent = favorited ? '★ Difavoritkan' : '☆ Favoritkan';
+  fav.title = favorited ? 'Melepas model ini dari grup ⭐ Favorit' : 'Pin model ini ke grup ⭐ Favorit di atas daftar';
+  fav.setAttribute('aria-pressed', String(favorited));
+  fav.hidden = !(state.active !== DEMO_ID && current && current !== AUTO_MODEL);
+}
+
+/** POSTs the pin/unpin; the server's config broadcast (and this instant re-render) moves the model in the picker. */
+async function toggleFavorite() {
+  const current = $('#model').value;
+  if (!current || current === AUTO_MODEL) return;
+  const on = !(state.config?.favoriteModels ?? []).includes(current);
+  try {
+    await api('/api/model-favorites', { value: current, on });
+    renderComposer();
+  } catch (err) {
+    toast(err?.message ?? 'Favorit tidak bisa disimpan.');
+  }
+}
+
 // ---------- cost estimate before send (#cost-estimate) ----------
 
 const COST_DEBOUNCE_MS = 280;
@@ -526,13 +563,14 @@ function renderModelOptions(current, engine) {
   const catalog = projectModelCatalog(state.active, st, renderComposer);
   const query = search.value.trim();
   const locked = engineSwitchLocked(st);
-  const html = modelCatalogOptions(catalog, current, query, { engine, locked, loading: catalog.loading, error: catalog.error, providerNames: currentProviderNames(), providerAuth: currentProviderAuth() });
+  const html = modelCatalogOptions(catalog, current, query, { engine, locked, loading: catalog.loading, error: catalog.error, providerNames: currentProviderNames(), providerAuth: currentProviderAuth(), favorites: state.config?.favoriteModels ?? [] });
   if (select.dataset.html !== html) {
     select.innerHTML = html;
     select.dataset.html = html;
   }
   // Keep the stored value selectable even when a filter hides it: the list always appends it as an extra option.
   select.value = auto ? AUTO_MODEL : current;
+  renderFavToggle(select.value || current); // the button follows what the select shows right now, not a stale status
   const total = catalogMatchCount(catalog, '');
   select.title = `${total} model dari Claude Code + OpenCode${locked ? ' — model mesin lain menunggu giliran ini selesai' : ''}`;
   $('#model-search-ctl').hidden = total < 8; // a short list needs no search box

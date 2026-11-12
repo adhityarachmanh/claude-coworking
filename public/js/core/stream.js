@@ -63,6 +63,7 @@ const handlers = {
   },
   config(config) {
     renderRoots(config);
+    renderComposer(); // ⭐/🔧 config fields the composer renders (favorite models) arrive with the same push
     applyNames(config);
     applyRoster(config.team); // 👥 Kelola tim saved somewhere: the office gets or loses desks, no reload
     applyClaudeCheck(config.claudeCheck); // Claude Code updated: contract check result (banner + ⚙)

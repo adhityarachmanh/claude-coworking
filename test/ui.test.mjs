@@ -1965,6 +1965,70 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('🧭 Pengaturan giliran: model favorit grup ⭐ di atas + tombol pin mengirim POST', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubModels(page, [
+          { value: 'river/GLM-5.3', name: 'GLM-5.3' },
+          { value: 'opencode-go/glm-5.3-flash', name: 'GLM 5.3 Flash' },
+        ]);
+        await stubSettings(page); // a real settings POST would revert the optimistic pick (no OpenCode session here)
+        await page.eval(() => {
+          window.__officeFetch ??= window.fetch;
+          const prev = window.fetch; // chain: models stub sits underneath
+          window.__favCalls = [];
+          window.fetch = (url, opts) => {
+            if (/\/api\/model-favorites$/.test(String(url))) {
+              window.__favCalls.push(JSON.parse(opts?.body ?? '{}'));
+              return Promise.resolve(new Response(JSON.stringify({ favorites: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return prev(url, opts);
+          };
+        });
+        // Pin a favorite BEFORE the render: the ⭐ group must appear above the provider groups.
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.config = { ...state.config, favoriteModels: ['river/GLM-5.3'] };
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: '' };
+          const { wantModels, providerNames } = await import('/js/features/engine.js');
+          providerNames({ maxAgeMs: 0 });
+          wantModels();
+          const search = document.querySelector('#model-search');
+          if (search.value) search.value = '';
+          search.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === '⭐ Favorit'), { timeoutMs: 3000, message: 'grup ⭐ Favorit termuat' });
+        const order = await page.eval(() => [...document.querySelectorAll('#model optgroup')].map((g) => g.label));
+        assert.equal(order.indexOf('⭐ Favorit'), 0, 'grup favorit paling atas (setelah Auto/Default tanpa grup)');
+        assert.ok(order.includes('opencode-go'), 'grup provider tetap ada');
+        // Select a concrete model → the ☆ button appears; click → POST {value, on:true}.
+        await page.click('#settings-chip'); // the select (and its pin button) live in the turn-settings dialog
+        await page.waitFor(() => !document.querySelector('#turn-settings-modal').hidden, { timeoutMs: 3000, message: 'dialog Pengaturan giliran terbuka' });
+        await page.eval(() => {
+          const select = document.querySelector('#model');
+          select.value = 'opencode-go/glm-5.3-flash';
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await page.waitFor(() => !document.querySelector('#model-fav')?.hidden, { timeoutMs: 3000, message: 'tombol favorit tampil' });
+        assert.equal(await page.eval(() => document.querySelector('#model-fav').textContent), '☆ Favoritkan');
+        await page.click('#model-fav');
+        await page.waitFor(() => window.__favCalls.length === 1, { timeoutMs: 3000, message: 'POST favorit terkirim' });
+        assert.deepEqual(await page.eval(() => window.__favCalls[0]), { value: 'opencode-go/glm-5.3-flash', on: true });
+        // Auto/Default: no pin button.
+        await page.eval(() => {
+          const select = document.querySelector('#model');
+          select.value = 'auto';
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await page.waitFor(() => document.querySelector('#model-fav')?.hidden, { timeoutMs: 3000, message: 'Auto tidak bisa dipin' });
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreSettings(page);
+        await restoreModels(page);
+        await openApp(page, `#${projectId}`);
+      }
+    });
+
     test('🤖 Tangga Model Auto: tautan "Atur tangga…" hanya saat Auto, catatan memuat tangga', async () => {
       await ensureApp(page, `#${projectId}`);
       try {

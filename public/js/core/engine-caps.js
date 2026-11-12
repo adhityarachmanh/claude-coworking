@@ -197,3 +197,22 @@ export function openCodeProviderGroups(models, query = '', providerNames = {}, a
   const gated = (provider) => !known.size || !known.has(provider) || connected.has(provider);
   return groupModels(models, query).map((g) => ({ ...g, label: providerNames?.[g.provider] ?? g.provider, connected: g.provider === 'lainnya' ? true : gated(g.provider) }));
 }
+
+/**
+ * ⭐ The favorites the picker can show, in the pinned order: only ids that exist in one of the two engine lists
+ * (each entry carries the engine it belongs to, so the renderer can keep its data-engine and lock rules).
+ * Duplicates and ids neither list holds are skipped; a broken list yields nothing.
+ */
+export function favoriteModelList(favorites, claude, opencode) {
+  if (!Array.isArray(favorites) || !favorites.length) return [];
+  const all = [...(Array.isArray(claude) ? claude : []), ...(Array.isArray(opencode) ? opencode : [])];
+  const seen = new Set();
+  const out = [];
+  for (const id of favorites) {
+    if (typeof id !== 'string' || seen.has(id)) continue;
+    seen.add(id);
+    const model = all.find((m) => m?.value === id);
+    if (model) out.push({ ...model, engine: opencode.some((m) => m?.value === id) ? 'opencode' : 'claude' });
+  }
+  return out;
+}

@@ -2,7 +2,7 @@
 // The server sends OPENCODE_CAPS in config.engines.opencode.caps; these tests keep the server and UI in sync.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CLAUDE_CAPS, capReason, capsFor, engineBadge, engineChangeNeedsReload, engineOf, openCodeProviderGroups } from '../public/js/core/engine-caps.js';
+import { CLAUDE_CAPS, capReason, capsFor, engineBadge, engineChangeNeedsReload, engineOf, favoriteModelList, openCodeProviderGroups } from '../public/js/core/engine-caps.js';
 import { OPENCODE_CAPS } from '../src/acp-session.js';
 
 const CONFIG = Object.freeze({
@@ -126,5 +126,18 @@ test('providers unknown to the auth view and the unnamed group stay enabled', ()
   assert.equal(other.connected, true, 'grup "lainnya" tanpa provider id tidak pernah dipagari');
   const noAuth = openCodeProviderGroups(OC_PICKER_MODELS, '', {}, null);
   assert.deepEqual(noAuth.map((g) => g.connected), [true, true], 'tanpa data auth: tidak ada yang dipagari');
+});
+
+const FAV_CLAUDE = [{ value: 'sonnet', name: 'Sonnet' }, { value: 'opus', name: 'Opus' }];
+
+test('favoriteModelList: ids terpinji jadi entri ber-engine, urutan favorit, yang tak dikenal dilewati', () => {
+  const favs = favoriteModelList(['river/GLM-5.3', 'sonnet', 'hilang', 'river/GLM-5.3'], FAV_CLAUDE, OC_PICKER_MODELS);
+  assert.deepEqual(
+    favs.map((m) => [m.value, m.engine]),
+    [['river/GLM-5.3', 'opencode'], ['sonnet', 'claude']],
+    'urutan mengikuti daftar favorit; dua entri, id ganda dilewati, id asing dilewati',
+  );
+  assert.deepEqual(favoriteModelList([], FAV_CLAUDE, OC_PICKER_MODELS), [], 'tanpa favorit: kosong');
+  assert.deepEqual(favoriteModelList(null, FAV_CLAUDE, OC_PICKER_MODELS), [], 'daftar rusak: kosong');
 });
 
