@@ -108,3 +108,23 @@ test('the provider picker groups keep the search filter and the no-name fallback
   assert.equal(mixed.at(-1).models[0].value, 'solo-model');
 });
 
+const AUTH_KNOWN = ['river', 'opencode-go', 'openai'];
+const AUTH_CONNECTED = ['opencode-go', 'openai']; // river has no credentials yet
+
+test('the provider groups carry which providers still lack credentials', () => {
+  const groups = openCodeProviderGroups(OC_PICKER_MODELS, '', { river: 'River AI' }, { known: AUTH_KNOWN, connected: AUTH_CONNECTED });
+  assert.deepEqual(groups.map((g) => [g.label, g.connected]), [['River AI', false], ['opencode-go', true]], 'river belum terhubung, opencode-go iya');
+});
+
+test('providers unknown to the auth view and the unnamed group stay enabled', () => {
+  const auth = { known: ['river'], connected: [] };
+  const [river, go, other] = openCodeProviderGroups(
+    [...OC_PICKER_MODELS, { value: 'solo-model', name: 'Solo' }], '', {}, auth,
+  );
+  assert.equal(river.connected, false, 'river diketahui dan tidak terhubung');
+  assert.equal(go.connected, true, 'provider yang tidak ada di daftar auth dianggap terhubung (tidak dipagari)');
+  assert.equal(other.connected, true, 'grup "lainnya" tanpa provider id tidak pernah dipagari');
+  const noAuth = openCodeProviderGroups(OC_PICKER_MODELS, '', {}, null);
+  assert.deepEqual(noAuth.map((g) => g.connected), [true, true], 'tanpa data auth: tidak ada yang dipagari');
+});
+

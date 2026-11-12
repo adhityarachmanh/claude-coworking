@@ -126,6 +126,7 @@ before(async () => {
     windowsHide: true,
     env: {
       ...process.env,
+      OFFICE_APP_DIR: APP, // pin the app dir to the repo: a dev machine's OFFICE_APP_DIR may point at an installed Adhitron
       OFFICE_PORT: String(port),
       OFFICE_DATA_DIR: path.join(TMP, 'data'),
       OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale.exe'),

@@ -27,6 +27,17 @@ const OPENCODE_SESSION = /^ses_[\w-]{1,100}$/;
 const POINTS_CACHE_MS = 5000; // ⏪ the rewind list is reused this long (see rewindPoints)
 /** What a prompt / `!` shell gets while a rewind runs (409 from the routes). */
 export const REWINDING_MESSAGE = 'Rewind sedang berjalan. Tunggu sebentar, lalu kirim lagi.';
+
+/**
+ * A turn that stopped because the provider has no stored credentials reads just "Authentication required…". Point
+ * the user at the login path (the same message the picker's disabled models show). Idempotent: the note is appended
+ * once, so a pass-through that runs twice never stacks it.
+ */
+export function authRequiredNote(message) {
+  const text = typeof message === 'string' ? message : '';
+  if (!/authentication required/i.test(text) || /👤 Akun/.test(text)) return text;
+  return `${text}\nProvider ini belum punya API key tersimpan: buka 👤 Akun → OpenCode → ＋ Login provider, lalu coba lagi.`;
+}
 /**
  * What the UI may offer for an OpenCode project (config.engines.opencode.caps, read by public/js/core/engine-caps.js).
  * Effort = OpenCode's per-model "effort" config option (thought level); Mode tim = the roles as OpenCode subagents.
@@ -487,7 +498,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
             // After a rejected permission OpenCode cancels the turn; a parallel request it still had open then
             // fails the whole prompt with PermissionNotFoundError: that is a stop, not a crash.
             const stopped = this.interrupting || this.rejectedThisTurn || /PermissionNotFound/i.test(`${err.data?.errorName ?? ''} ${err.message}`);
-            this.endTurn(epoch, uuid, { ok: false, interrupted: stopped, error: err.message, started, costBefore });
+            this.endTurn(epoch, uuid, { ok: false, interrupted: stopped, error: authRequiredNote(err.message), started, costBefore });
           },
         );
     }

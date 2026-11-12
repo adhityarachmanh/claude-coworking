@@ -35,7 +35,7 @@ function makeRuntime({ nodeVersion = 'v24.11.0', npmVersion = '10.9.2' } = {}) {
   const paths = runtimePaths({ runtimeDir });
   const nodeDir = path.join(paths.nodeRoot, nodeVersion);
   mkdirSync(path.join(nodeDir, 'node_modules', 'npm', 'bin'), { recursive: true });
-  writeFileSync(path.join(nodeDir, process.platform === 'win32' ? 'node.exe' : 'node'), 'node');
+  writeFileSync(path.join(nodeDir, 'node.exe'), 'node'); // the portable runtime is the Windows layout on every host
   writeFileSync(path.join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'), '// npm');
   writeFileSync(path.join(paths.nodeRoot, 'current.txt'), `${nodeVersion}\n`);
   return { runtimeDir, paths, nodeDir, nodeVersion, npmVersion };
@@ -93,7 +93,7 @@ test('probeTools: runtime node/npm first, then system tools; stable order and sh
   assert.equal(tool(items, 'opencode').login, null, 'no auth spawn unless deep');
   assert.equal(tool(items, 'git').version, '2.45.1.windows.1');
   assert.equal(tool(items, 'winget').version, '1.9.1');
-  assert.ok(calls.some((call) => call[0] === path.join(rt.nodeDir, process.platform === 'win32' ? 'node.exe' : 'node') && call.some((part) => String(part).endsWith('npm-cli.js'))));
+  assert.ok(calls.some((call) => call[0] === path.join(rt.nodeDir, 'node.exe') && call.some((part) => String(part).endsWith('npm-cli.js'))));
 });
 
 test('probeTools: runtime.json alone (no current.txt) still marks Node as the runtime', () => {
@@ -102,7 +102,7 @@ test('probeTools: runtime.json alone (no current.txt) still marks Node as the ru
   const version = 'v24.10.0';
   const nodeDir = path.join(paths.nodeRoot, version);
   mkdirSync(nodeDir, { recursive: true });
-  writeFileSync(path.join(nodeDir, process.platform === 'win32' ? 'node.exe' : 'node'), 'node');
+  writeFileSync(path.join(nodeDir, 'node.exe'), 'node'); // the portable runtime is the Windows layout on every host
   saveRuntimeState(runtimeDir, { node: { version } });
   const items = probeTools({
     runtimeDir,

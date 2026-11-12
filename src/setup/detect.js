@@ -88,7 +88,7 @@ function readText(file) {
   }
 }
 
-function runtimeInfo(runtimeDir, platform) {
+function runtimeInfo(runtimeDir) {
   if (typeof runtimeDir !== 'string' || !runtimeDir) return null;
   try {
     const paths = runtimePaths({ runtimeDir });
@@ -98,7 +98,8 @@ function runtimeInfo(runtimeDir, platform) {
     const version = [current, stateVersion].find((value) => typeof value === 'string' && RUNTIME_VERSION.test(value.trim()));
     if (!version) return null;
     const dir = path.join(paths.nodeRoot, version.trim());
-    const exe = path.join(dir, platform === 'win32' ? 'node.exe' : 'node');
+    // The portable runtime is ALWAYS the Windows layout (installNodeRuntime downloads the win-x64 zip on every host).
+    const exe = path.join(dir, 'node.exe');
     if (!existsSync(exe)) return null;
     const npmCli = path.join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js');
     return {
@@ -159,7 +160,7 @@ function probeOpenCodeLogin(bin, run) {
  */
 export function probeTools({ runtimeDir, platform = process.platform, env = process.env, account, deep = false, run = execFileSync } = {}) {
   const root = runtimeDir ?? env?.OFFICE_RUNTIME_DIR ?? null;
-  const rt = runtimeInfo(root, platform);
+  const rt = runtimeInfo(root);
   const login = accountLogin(account);
 
   const probe = (id, fn) => {

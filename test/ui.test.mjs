@@ -1908,6 +1908,57 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('🧭 Pengaturan giliran: model provider yang belum login nonaktif dengan petunjuk, model aktif tetap bisa', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubModels(page, [
+          { value: 'river/GLM-5.3', name: 'GLM-5.3' },
+          { value: 'river/zai-org/GLM-5.3-Flash', name: 'GLM 5.3 Flash' },
+          { value: 'opencode-go/glm-5.3-flash', name: 'GLM 5.3 Flash' },
+        ]);
+        await page.eval(() => {
+          window.__officeFetch ??= window.fetch;
+          const prev = window.fetch; // chain: models stub sits underneath
+          window.fetch = (url) => {
+            // river is KNOWN to the account view but has NO credentials yet (not connected)
+            if (/\/api\/opencode\/providers$/.test(String(url))) {
+              return Promise.resolve(new Response(JSON.stringify({ connected: [], available: [{ id: 'river', name: 'River AI' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return prev(url);
+          };
+        });
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: 'river/GLM-5.3' };
+          const { wantModels, providerNames } = await import('/js/features/engine.js');
+          providerNames({ maxAgeMs: 0 }); // never trust a previous test's cache: fetch through the stub above
+          wantModels(); // the list is only fetched once the turn-settings dialog was opened
+          const search = document.querySelector('#model-search');
+          if (search.value) search.value = '';
+          search.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === 'River AI (belum login)'), { timeoutMs: 3000, message: 'grup River AI bertanda belum login' });
+        const view = await page.eval(() => ({
+          groups: [...document.querySelectorAll('#model optgroup')].map((g) => ({ label: g.label, options: [...g.querySelectorAll('option')].map((o) => ({ text: o.textContent, disabled: o.disabled, title: o.title })) })),
+        }));
+        const river = view.groups.find((g) => g.label === 'River AI (belum login)');
+        assert.ok(river, 'grup river ada dengan tanda (belum login)');
+        assert.equal(river.options.length, 2, 'dua model river');
+        const active = river.options.find((o) => o.text.startsWith('GLM-5.3'));
+        const other = river.options.find((o) => !o.text.startsWith('GLM-5.3'));
+        assert.equal(active.disabled, false, 'model yang sedang aktif tetap bisa dipilih (ganti model harus mungkin)');
+        assert.equal(other.disabled, true, 'model river lain nonaktif');
+        assert.equal(other.title.includes('Akun'), true, 'petunjuk login di tooltip');
+        const go = view.groups.find((g) => g.label === 'opencode-go');
+        assert.ok(go, 'grup opencode-go tanpa tanda (belum login)');
+        assert.equal(go.options.every((o) => !o.disabled), true, 'model opencode-go tetap aktif');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreModels(page);
+        await openApp(page, `#${projectId}`);
+      }
+    });
+
     test('🤖 Tangga Model Auto: tautan "Atur tangga…" hanya saat Auto, catatan memuat tangga', async () => {
       await ensureApp(page, `#${projectId}`);
       try {

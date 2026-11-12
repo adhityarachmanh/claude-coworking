@@ -418,13 +418,15 @@ export function runtimeBinDirs(runtimeDir) {
 /**
  * The active Node installation in the portable runtime, or null when none was installed yet.
  * `dir` is the version folder (node.exe lives there); `npmCli` is npm's entry point inside the same folder.
+ * The portable runtime is ALWAYS the Windows layout (installNodeRuntime downloads the win-x64 zip on every
+ * host), so the binary is node.exe regardless of the OS this process runs on.
  */
 export function activeNode(runtimeDir) {
   const paths = runtimePaths({ runtimeDir });
   const version = readCurrentVersion(paths.nodeRoot) ?? versionFromState(readRuntimeState(runtimeDir));
   if (!version) return null;
   const dir = path.join(paths.nodeRoot, version);
-  const exe = path.join(dir, process.platform === 'win32' ? 'node.exe' : 'bin/node');
+  const exe = path.join(dir, 'node.exe');
   if (!existsSync(exe)) return null;
   return { version, dir, exe, npmCli: path.join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js') };
 }
@@ -513,15 +515,16 @@ function compareVersions(a, b) {
   return left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
 }
 
-function nodeBinary(dir, platform) {
-  return path.join(dir, platform === 'win32' ? 'node.exe' : 'node');
+/** The portable runtime's Node binary: node.exe on every host (the win-x64 zip layout). */
+function nodeBinary(dir) {
+  return path.join(dir, 'node.exe');
 }
 
-/** True when dir contains the expected Node binary (and, on Windows, it answers `--version`). */
-function nodeBinaryWorks(dir, version, platform, spawnImpl) {
-  const exe = nodeBinary(dir, platform);
+/** True when dir contains the expected Node binary (and, on a Windows host, it answers `--version`). */
+function nodeBinaryWorks(dir, version, hostPlatform, spawnImpl) {
+  const exe = nodeBinary(dir);
   if (!existsSync(exe)) return false;
-  if (platform !== 'win32') return true;
+  if (hostPlatform !== 'win32') return true; // a Windows PE cannot be executed on another host: existence is the check
   try {
     const result = spawnImpl(exe, ['--version'], {
       encoding: 'utf8',
@@ -659,7 +662,7 @@ export async function installNodeRuntime({
 
       if (nodeBinaryWorks(target, version, process.platform, spawnImpl)) {
         say(`Node.js ${version} sudah terpasang.`);
-        writeInstallState(paths, { version, arch, target, platform: process.platform, reused: true });
+        writeInstallState(paths, { version, arch, target, platform: 'win32', reused: true }); // the zip layout is win-x64 on every host
         return { installed: false, version, dir: target };
       }
 
@@ -699,7 +702,7 @@ export async function installNodeRuntime({
       renameSync(staging, target);
       staging = null;
       say(`Node.js ${version} terpasang di ${target}.`);
-      writeInstallState(paths, { version, arch, target, platform: process.platform, reused: false });
+      writeInstallState(paths, { version, arch, target, platform: 'win32', reused: false }); // the zip layout is win-x64 on every host
       return { installed: true, version, dir: target };
     } catch (err) {
       if (signal?.aborted || isAbortLike(err)) throw cancelledError();

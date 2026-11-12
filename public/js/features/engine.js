@@ -91,29 +91,37 @@ function cleanCatalog(data) {
 const wantedModels = new Set();
 export const wantModels = (id = state.active) => id && wantedModels.add(id);
 
-// ---------- provider display names (the picker labels its per-provider groups with them) ----------
+// ---------- provider display names + credential state (the picker labels groups and gates the login-less ones) ----------
 
-/** { at, load, names } — names fills in when the fetch resolves; a failure keeps {} (labels fall back to ids). */
-let providerNamesCache = { at: 0, load: null, names: {} };
+/** { at, load, names, known, connected } — names/known/connected fill in when the fetch resolves. */
+let providerNamesCache = { at: 0, load: null, names: {}, known: [], connected: [] };
 
 /** The names fetched so far, synchronously (a pending fetch replaces them when it resolves). */
 export const currentProviderNames = () => providerNamesCache.names;
 
-/** id → display name from the account endpoint (the same call the Akun tab makes), cached for a minute. */
+/** What the account view last said: { known, connected } id lists (a pending fetch keeps the previous one). */
+export const currentProviderAuth = () => ({ known: providerNamesCache.known, connected: providerNamesCache.connected });
+
+/** id → display name plus which providers hold credentials, from the account endpoint (the Akun tab's call), cached a minute. */
 export function providerNames({ maxAgeMs = 60_000 } = {}) {
   const now = Date.now();
   if (providerNamesCache.load && now - providerNamesCache.at < maxAgeMs) return providerNamesCache.load;
   const load = api('/api/opencode/providers')
     .then((view) => {
       const names = {};
+      const known = [];
+      const connected = [];
       for (const p of [...(view?.connected ?? []), ...(view?.available ?? [])]) {
-        if (p?.id && typeof p.name === 'string' && p.name.trim()) names[p.id] = p.name.trim().slice(0, 60);
+        if (!p?.id) continue;
+        if (typeof p.name === 'string' && p.name.trim()) names[p.id] = p.name.trim().slice(0, 60);
+        known.push(p.id);
       }
-      providerNamesCache.names = names;
+      for (const p of view?.connected ?? []) if (p?.id) connected.push(p.id);
+      Object.assign(providerNamesCache, { names, known, connected });
       return names;
     })
-    .catch(() => ({})); // no names available: the picker labels the groups with the provider ids
-  providerNamesCache = { at: now, load, names: providerNamesCache.names };
+    .catch(() => ({})); // nothing available: the picker labels groups with ids and gates nothing
+  providerNamesCache = { at: now, load, names: providerNamesCache.names, known: providerNamesCache.known, connected: providerNamesCache.connected };
   return load;
 }
 
@@ -184,6 +192,9 @@ export const autoModelOption = (engine = DEFAULT_ENGINE) =>
 /** "Tunggu giliran ini selesai": why a model of the OTHER engine is disabled while the project works. */
 export const OTHER_ENGINE_LOCK_HINT = 'Tunggu giliran ini selesai';
 
+/** Why a provider's models are disabled: its group has no stored credentials yet (👤 Akun → OpenCode). */
+export const LOGIN_HINT = 'Provider belum login — simpan API key di 👤 Akun → OpenCode, lalu coba lagi.';
+
 /** The project's turn is holding the other engine back (same rule as the server's 409). */
 export const engineSwitchLocked = (st) => Boolean(st && (st.busy || st.pending || st.queue || st.interrupted || st.rewinding));
 
@@ -236,16 +247,16 @@ function claudeCatalogModels(catalog) {
  * `data-engine`, so picking a model of the other engine sends `{ engine, model }` in a single request. While the
  * project works (busy/pending/queue/interrupted/rewinding) the other engine's models are disabled with the reason.
  */
-export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_ENGINE, locked = false, loading = false, error = null, providerNames = null } = {}) {
+export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_ENGINE, locked = false, loading = false, error = null, providerNames = null, providerAuth = null } = {}) {
   const claude = claudeCatalogModels(catalog);
   const opencode = catalog?.opencode?.models ?? [];
   const config = new Map((state.config?.models ?? []).filter((m) => m?.value).map((m) => [m.value, m]));
   const def = config.get('default');
-  const option = (m, at) => {
+  const option = (m, at, hint = null) => {
     const detail = priceDetail(m.value);
     const desc = config.get(m.value)?.description || m.description || '';
-    const title = locked && at !== engine ? OTHER_ENGINE_LOCK_HINT : [desc, detail].filter(Boolean).join(' · ') || m.value;
-    const disabled = locked && at !== engine ? ' disabled' : '';
+    const title = hint ?? (locked && at !== engine ? OTHER_ENGINE_LOCK_HINT : [desc, detail].filter(Boolean).join(' · ') || m.value);
+    const disabled = (locked && at !== engine) || hint ? ' disabled' : '';
     return `<option value="${escapeHtml(m.value)}" data-engine="${escapeHtml(at)}" title="${escapeHtml(title)}"${disabled}>${escapeHtml(`${m.name}${priceSuffix(m.value)}`)}</option>`;
   };
   const defText = engine === DEFAULT_ENGINE && def?.description ? `Default (${escapeHtml(def.description.split('·')[0].trim())})` : `Default (dari config ${escapeHtml(engineLabel(engine))})`;
@@ -255,14 +266,21 @@ export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_
   if (claudeGroups.length) opts.push(`<optgroup label="Claude Code">${claudeGroups.flatMap((g) => g.models.map((m) => option(m, DEFAULT_ENGINE))).join('')}</optgroup>`);
   else opts.push(`<optgroup label="Claude Code">${infoOption(claude.length ? 'Tidak ada model yang cocok' : 'Katalog Claude Code belum tersedia')}</optgroup>`);
   // OpenCode: one group PER provider (river, opencode-go, …), each labelled by the provider's display name when
-  // known; an <optgroup> cannot nest another, so the "OpenCode" wrapper only remains for the info lines.
-  const groups = openCodeProviderGroups(opencode, query, providerNames);
+  // known; an <optgroup> cannot nest another, so the "OpenCode" wrapper only remains for the info lines. A group
+  // whose provider has no stored credentials renders its models disabled with the login hint — the model that is
+  // the project's current one stays selectable (changing away from it must still be possible).
+  const groups = openCodeProviderGroups(opencode, query, providerNames, providerAuth);
   let open = '';
   if (loading && !opencode.length) open = infoOption('Memuat daftar model…');
   else if (error && !opencode.length) open = infoOption(`Daftar model gagal dimuat: ${error}`);
   else if (!opencode.length) open = infoOption('Daftar model muncul setelah pesan pertama');
   else if (!groups.length) open = infoOption(query ? 'Tidak ada model yang cocok' : 'Daftar model muncul setelah pesan pertama');
-  else open = groups.map((g) => `<optgroup label="${escapeHtml(g.label)}">${g.models.map((m) => option(m, 'opencode')).join('')}</optgroup>`).join('');
+  else {
+    open = groups.map((g) => {
+      const gate = (m) => (g.connected || m.value === current ? option(m, 'opencode') : option({ ...m, name: `${m.name} ⚠` }, 'opencode', LOGIN_HINT));
+      return `<optgroup label="${escapeHtml(g.connected ? g.label : `${g.label} (belum login)`)}">${g.models.map(gate).join('')}</optgroup>`;
+    }).join('');
+  }
   if (open && !groups.length) opts.push(`<optgroup label="OpenCode">${open}</optgroup>`);
   else if (open) opts.push(open);
   // A model set with /model that neither list holds (e.g. opus[1m]) stays selectable on the project's engine.

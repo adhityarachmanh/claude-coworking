@@ -52,7 +52,7 @@ function makeRuntime(runtimeDir, version = 'v24.11.0') {
   const paths = runtimePaths({ runtimeDir });
   const nodeDir = path.join(paths.nodeRoot, version);
   mkdirSync(nodeDir, { recursive: true });
-  writeFileSync(path.join(nodeDir, process.platform === 'win32' ? 'node.exe' : 'node'), 'node');
+  writeFileSync(path.join(nodeDir, 'node.exe'), 'node'); // the portable runtime is the Windows layout on every host
   mkdirSync(paths.npmPrefix, { recursive: true });
   writeFileSync(path.join(paths.nodeRoot, 'current.txt'), `${version}\n`);
   return { paths, nodeDir, version };
