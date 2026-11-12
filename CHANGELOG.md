@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.15
+
+- **🔧 Menambah ulang provider kustom tidak lagi ditolak.** Blok kustom yang sudah ada membuat OpenCode mendaftarkan id yang sama di katalognya, sehingga menambah provider dengan id itu kena 409 *"sudah dipakai provider bawaan"*—padahal blok itu buatan aplikasi sendiri. Guard kini mengenali id milik blok kustom: menambah ulang berarti mengganti blok + menyimpan API key dalam satu langkah. Kasus nyata: id `river` gagal terus padahal provider-nya justru yang mau diperbaiki.
+
 ## 1.0.14
 
 - **🗑 Hapus provider kustom.** Di 👤 Akun → tab OpenCode, provider kustom kini punya tombol **🗑 Hapus** di samping daftar koneksi: kredensial dan blok config-nya dihapus sekaligus (file config lama dibackup dulu di folder data aplikasi), dan project yang masih memakai model provider itu diminta memilih model lain sebelum lanjut. Sebelumnya logout hanya menghapus kredensial, sehingga model provider yang sudah logout tetap tampil di daftar.
