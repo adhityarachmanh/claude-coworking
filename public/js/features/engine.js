@@ -280,8 +280,10 @@ export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_
   else if (!groups.length) open = infoOption(query ? 'Tidak ada model yang cocok' : 'Daftar model muncul setelah pesan pertama');
   else {
     open = groups.map((g) => {
+      // Connected groups carry their model count; a login-less group keeps its hint instead (one message, one line).
+      const label = g.connected ? `${g.label} (${g.models.length})` : `${g.label} (belum login)`;
       const gate = (m) => (g.connected || m.value === current ? option(m, 'opencode') : option({ ...m, name: `${m.name} ⚠` }, 'opencode', LOGIN_HINT));
-      return `<optgroup label="${escapeHtml(g.connected ? g.label : `${g.label} (belum login)`)}">${g.models.map(gate).join('')}</optgroup>`;
+      return `<optgroup label="${escapeHtml(label)}">${g.models.map(gate).join('')}</optgroup>`;
     }).join('');
   }
   if (open && !groups.length) opts.push(`<optgroup label="OpenCode">${open}</optgroup>`);

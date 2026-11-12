@@ -371,7 +371,7 @@ function customLoginHtml() {
   const editing = Boolean(c.editing);
   return `<div id="oc-login" class="login-flow">
     <form id="oc-custom-form" class="oc-form">
-      <label class="oc-field" for="oc-custom-id"><span>ID *</span><input id="oc-custom-id" data-custom="id" value="${escapeHtml(c.form.id)}" placeholder="river" autocomplete="off" spellcheck="false" required${editing ? ' readonly title="ID terkunci saat edit; ganti provider dengan Hapus lalu tambah baru"' : ''} /><small class="muted">huruf/angka, - . _</small></label>
+      <label class="oc-field" for="oc-custom-id"><span>ID *</span><input id="oc-custom-id" data-custom="id" value="${escapeHtml(c.form.id)}" placeholder="river" autocomplete="off" spellcheck="false" required /><small class="muted">huruf/angka, - . _${editing ? ' · mengganti ID = rename: blok baru + key wajib diisi ulang, blok lama dihapus' : ''}</small></label>
       <label class="oc-field" for="oc-custom-name"><span>Nama tampilan *</span><input id="oc-custom-name" data-custom="name" value="${escapeHtml(c.form.name)}" placeholder="River AI" autocomplete="off" spellcheck="false" required /></label>
       <label class="oc-field" for="oc-custom-base"><span>Base URL *</span><input id="oc-custom-base" data-custom="baseURL" value="${escapeHtml(c.form.baseURL)}" placeholder="https://api.river.ai/v1" autocomplete="off" spellcheck="false" required /></label>
       <label class="oc-field" for="oc-custom-key"><span>API key${editing ? '' : ' *'}</span><input id="oc-custom-key" type="password" data-custom="key" value="${escapeHtml(c.form.key)}" placeholder="${editing ? 'Kosong = pertahankan key tersimpan' : 'Tempel API key'}" autocomplete="off" spellcheck="false"${editing ? '' : ' required'} /></label>
@@ -665,6 +665,11 @@ async function submitCustom(rerender) {
     fail('lengkapi ID, nama tampilan, base URL, dan API key.');
     return true;
   }
+  const renamed = Boolean(c.editing) && id !== c.editing;
+  if (renamed && !key) {
+    fail('API key wajib saat mengganti ID: key tersimpan di OpenCode terikat pada ID lama dan tidak bisa dipindahkan.');
+    return true;
+  }
   if (!CUSTOM_ID_RE.test(id)) {
     fail('ID hanya boleh huruf, angka, titik, strip, dan garis bawah.');
     return true;
@@ -676,9 +681,15 @@ async function submitCustom(rerender) {
   }
   oc.busy = true;
   try {
-    await api('/api/opencode/custom/add', { id, name, baseURL, key, models });
-    oc.custom = null;
-    toast(key ? `Provider kustom ${name} tersimpan. API key disimpan ke OpenCode.` : `Provider kustom ${name} diperbarui; key tersimpan dipertahankan.`, 'ok');
+    if (renamed) {
+      await api('/api/opencode/custom/rename', { id: c.editing, newId: id, name, baseURL, key, models });
+      oc.custom = null;
+      toast(`Provider diganti ke ${name} (id ${id}); blok lama dan kredensialnya dihapus.`, 'ok');
+    } else {
+      await api('/api/opencode/custom/add', { id, name, baseURL, key, models });
+      oc.custom = null;
+      toast(key ? `Provider kustom ${name} tersimpan. API key disimpan ke OpenCode.` : `Provider kustom ${name} diperbarui; key tersimpan dipertahankan.`, 'ok');
+    }
     loadOpenCode(rerender);
   } catch (err) {
     toast(`Gagal: ${err.data?.error ?? err.message}`, 'warn'); // nothing cleared: fix and retry

@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.21
+
+- **🔁 Ganti ID provider kustom (rename).** Di form Edit, ID kini bisa diganti: menulis blok baru dengan key yang diisi ulang (key tersimpan di OpenCode terikat pada ID lama dan tidak bisa dipindahkan oleh aplikasi), lalu menghapus blok dan kredensial lama. Project yang memakai model ID lama diminta memilih model baru.
+- **🔢 Jumlah model per grup.** Judul grup provider di daftar model kini menampilkan jumlahnya: `River AI (9)`, `opencode-go (12)`.
+- **🧹 Konsistensi internal** kecil di modul setup (nama binary runtime) — tanpa perubahan perilaku di Windows.
+
 ## 1.0.20
 
 - **🖼 Logo model di chip Pengaturan giliran.** Chip ⚙ di atas kotak pesan kini menampilkan logo model aktif (folder `ai_logos`, sama dengan 🧠 Mode Otak; keluarga model tanpa logo tetap tampil tanpa gambar).

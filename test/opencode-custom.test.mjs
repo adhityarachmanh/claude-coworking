@@ -523,6 +523,55 @@ test('custom/test: ping /models milik blok tersimpan; id tidak dikenal 404; vali
   assert.equal(bad.status, 400, 'id tak valid 400');
 });
 
+test('custom/rename: blok baru + key baru, blok lama + kredensial lama dihapus, project lama stale', async () => {
+  resetConfig();
+  writeConfig({ providers: { riverfake: { name: 'River Fake', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://lama/v1' }, models: { lama: {} }, env: ['RIVERFAKE_API_KEY'] } } });
+  writeIntegrations([{ id: 'riverfake', name: 'River Fake', methods: [{ type: 'key' }], connections: [{ id: 'cred-rf', type: 'credential', label: 'API key', method: 'key' }] }]);
+  const hub = makeHub('riverfake/lama');
+  const ctx = { ...CTX, hub };
+  const res = await call('/api/opencode/custom/rename', { id: 'riverfake', newId: 'river-ai', name: 'River AI', baseURL: 'https://lama/v1', key: 'sk-new-1', models: ['baru-1'] }, ctx);
+  assert.equal(res.status, 200, res.body);
+  const body = res.json();
+  assert.equal(body.provider, 'river-ai');
+  assert.equal(body.previous, 'riverfake');
+  const view = readOpenCodeConfig({ scope: 'global', home: HOME });
+  assert.deepEqual(view.config.providers['river-ai'].models, { 'baru-1': {} }, 'blok baru tertulis');
+  assert.equal(view.config.providers.riverfake, undefined, 'blok lama dihapus');
+  const log = readFileSync(CONNECT_LOG, 'utf8');
+  assert.match(log, /river-ai\tsk-new-1/, 'key baru disimpan untuk id baru');
+  assert.match(log, /remove\tcred-rf/, 'kredensial lama dihapus');
+  assert.ok(hub.status.some(([id, patch]) => id === 'p1' && patch?.modelStale === true) || hub.notes.length > 0, 'project yang memakai model lama diberi tahu');
+});
+
+test('custom/rename: penolakan - id sama, blok lama tidak ada, id baru bentrok, key kosong, id bawaan', async () => {
+  resetConfig();
+  writeConfig({ providers: { riverfake: { name: 'River Fake', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://lama/v1' }, models: { lama: {} }, env: ['RIVERFAKE_API_KEY'] } } });
+  writeIntegrations([
+    { id: 'riverfake', name: 'River Fake', methods: [{ type: 'key' }], connections: [{ id: 'cred-rf', type: 'credential', label: 'API key', method: 'key' }] },
+    { id: 'taken-1', name: 'Taken', methods: [{ type: 'key' }], connections: [] },
+  ]);
+
+  const same = await call('/api/opencode/custom/rename', { id: 'riverfake', newId: 'riverfake', name: 'x', baseURL: 'https://lama/v1', key: 'sk-1', models: ['m'] });
+  assert.equal(same.status, 400, 'id baru = id lama ditolak');
+
+  const gone = await call('/api/opencode/custom/rename', { id: 'tidak-ada', newId: 'river-ai', name: 'x', baseURL: 'https://lama/v1', key: 'sk-1', models: ['m'] });
+  assert.equal(gone.status, 404, 'blok lama tidak ditemukan');
+
+  const collide = await call('/api/opencode/custom/rename', { id: 'riverfake', newId: 'taken-1', name: 'x', baseURL: 'https://lama/v1', key: 'sk-1', models: ['m'] });
+  assert.equal(collide.status, 409, 'id baru bentrok dengan provider katalog');
+
+  const deny = await call('/api/opencode/custom/rename', { id: 'riverfake', newId: 'openai', name: 'x', baseURL: 'https://lama/v1', key: 'sk-1', models: ['m'] });
+  assert.equal(deny.status, 400, 'id baru masuk daftar bawaan');
+
+  const noKey = await call('/api/opencode/custom/rename', { id: 'riverfake', newId: 'river-ai', name: 'x', baseURL: 'https://lama/v1', key: '', models: ['m'] });
+  assert.equal(noKey.status, 400, 'rename wajib key baru (key tersimpan terikat id lama)');
+
+  // Nothing was written by any refusal: only the old block remains.
+  const view = readOpenCodeConfig({ scope: 'global', home: HOME });
+  assert.ok(view.config.providers.riverfake, 'blok lama tetap');
+  assert.equal(view.config.providers['river-ai'], undefined, 'tidak ada blok baru dari tolakan');
+});
+
 test('providers: blok kustom milik aplikasi membawa data Edit (baseURL + models) untuk form prefill', async () => {
   resetConfig();
   writeConfig({ providers: { riverfake: { name: 'River Fake', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://lama/v1' }, models: { lama: {}, 'baru-2': {} }, env: ['RIVERFAKE_API_KEY'] } } });

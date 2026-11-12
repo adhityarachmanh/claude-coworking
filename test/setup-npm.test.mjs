@@ -122,7 +122,7 @@ test('installNpmPackage: stages, runs node + npm-cli with no shell, verifies and
   assert.equal(calls.length, 1);
   const [{ command, args, options }] = calls;
   const stage = prefixFromArgs(args);
-  assert.equal(command, path.join(runtime.node, process.platform === 'win32' ? 'node.exe' : 'node'));
+  assert.equal(command, path.join(runtime.node, 'node.exe'), 'npm berjalan lewat node.exe layout runtime (Windows di semua host)');
   assert.deepEqual(args, npmInstallArgs({
     npmCli: npmCliPath(runtime.node),
     npmPrefix: stage,

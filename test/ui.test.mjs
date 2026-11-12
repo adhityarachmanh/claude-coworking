@@ -1042,10 +1042,13 @@ const restoreAccount = (page) =>
 /** OpenCode's Akun with one provider credential; logout is answered with a 400. Switches the app to OpenCode.
  *  `go` is passed through as the providers response's Go quota (omitted entirely when null); `usage` feeds the local
  *  summary above it. */
-/** 👤 Akun always opens on the Claude tab (account.js "no remembered choice"): these tests switch to the OpenCode tab. */
+/** 👤 Akun always opens on the Claude tab (account.js "no remembered choice"): these tests switch to the OpenCode tab.
+ *  `oc` (and its cached providers) outlives a test in the same document, so the fresh providers answer is awaited
+ *  before anything clicks into the panel — clicking Edit on a previous test's stale data would prefill wrong. */
 async function openOpenCodeTab(page) {
   await page.waitFor(() => document.querySelector('#acct-tab-opencode'), { timeoutMs: 4000, message: 'dialog Akun terbuka' });
   await page.click('#acct-tab-opencode');
+  await page.waitFor(() => window.__ocAcct?.providerDone >= 1, { timeoutMs: 4000, message: 'daftar provider segar termuat' });
 }
 
 async function stubOpenCodeAccount(page, { go = null, usage = null, connected = null } = {}) {
@@ -1897,14 +1900,14 @@ for (const vp of VIEWPORTS) {
           if (search.value) search.value = ''; // a leftover filter from another test must not hide groups here
           search.dispatchEvent(new Event('input', { bubbles: true }));
         });
-        await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === 'River AI'), { timeoutMs: 3000, message: 'grup River AI (nama tampilan) termuat' });
-        await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === 'opencode-go'), { timeoutMs: 3000, message: 'grup opencode-go termuat' });
+        await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === 'River AI (2)'), { timeoutMs: 3000, message: 'grup River AI (jumlah model) termuat' });
+        await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === 'opencode-go (1)'), { timeoutMs: 3000, message: 'grup opencode-go termuat' });
         const groups = await page.eval(() => [...document.querySelectorAll('#model optgroup')].map((g) => ({ label: g.label, options: [...g.querySelectorAll('option')].map((o) => o.textContent) })));
-        const river = groups.find((g) => g.label === 'River AI');
-        const go = groups.find((g) => g.label === 'opencode-go');
-        assert.ok(river, 'grup river memakai nama tampilan River AI');
+        const river = groups.find((g) => g.label === 'River AI (2)');
+        const go = groups.find((g) => g.label === 'opencode-go (1)');
+        assert.ok(river, 'grup river memakai nama tampilan + jumlah model');
         assert.deepEqual(river.options, ['GLM-5.3', 'GLM 5.3 Flash'], 'opsi tanpa prefiks provider di grupnya sendiri');
-        assert.ok(go, 'grup opencode-go tetap ada');
+        assert.ok(go, 'grup opencode-go tetap ada (dengan jumlah model)');
         assert.ok(!go.options.some((t) => t.includes('opencode-go · ')), 'tidak ada lagi prefiks opencode-go · di dalam grup');
         assert.ok(groups.some((g) => g.label === 'Claude Code'), 'grup Claude Code tidak berubah');
         assert.deepEqual(realProblems(page), []);
@@ -1955,7 +1958,7 @@ for (const vp of VIEWPORTS) {
         assert.equal(active.disabled, false, 'model yang sedang aktif tetap bisa dipilih (ganti model harus mungkin)');
         assert.equal(other.disabled, true, 'model river lain nonaktif');
         assert.equal(other.title.includes('Akun'), true, 'petunjuk login di tooltip');
-        const go = view.groups.find((g) => g.label === 'opencode-go');
+        const go = view.groups.find((g) => g.label === 'opencode-go (1)');
         assert.ok(go, 'grup opencode-go tanpa tanda (belum login)');
         assert.equal(go.options.every((o) => !o.disabled), true, 'model opencode-go tetap aktif');
         assert.deepEqual(realProblems(page), []);
@@ -2000,7 +2003,7 @@ for (const vp of VIEWPORTS) {
         await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === '⭐ Favorit'), { timeoutMs: 3000, message: 'grup ⭐ Favorit termuat' });
         const order = await page.eval(() => [...document.querySelectorAll('#model optgroup')].map((g) => g.label));
         assert.equal(order.indexOf('⭐ Favorit'), 0, 'grup favorit paling atas (setelah Auto/Default tanpa grup)');
-        assert.ok(order.includes('opencode-go'), 'grup provider tetap ada');
+        assert.ok(order.includes('opencode-go (1)'), 'grup provider tetap ada');
         // Select a concrete model → the ☆ button appears; click → POST {value, on:true}.
         await page.click('#settings-chip'); // the select (and its pin button) live in the turn-settings dialog
         await page.waitFor(() => !document.querySelector('#turn-settings-modal').hidden, { timeoutMs: 3000, message: 'dialog Pengaturan giliran terbuka' });
@@ -5228,6 +5231,7 @@ for (const vp of VIEWPORTS) {
         const form = await page.eval(() => ({
           id: document.querySelector('#oc-custom-id').value,
           idReadonly: document.querySelector('#oc-custom-id').readOnly,
+          idHint: document.querySelector('#oc-custom-id')?.closest('.oc-field')?.textContent ?? '',
           name: document.querySelector('#oc-custom-name').value,
           base: document.querySelector('#oc-custom-base').value,
           keyRequired: document.querySelector('#oc-custom-key').required,
@@ -5235,11 +5239,12 @@ for (const vp of VIEWPORTS) {
           checked: [...document.querySelectorAll('#oc-custom-form input[name="oc-custom-model"]:checked')].map((b) => b.value),
         }));
         assert.equal(form.id, 'river');
-        assert.equal(form.idReadonly, true, 'ID terkunci saat edit');
+        assert.equal(form.idReadonly, false, 'ID bisa diedit: menggantinya berarti rename');
         assert.equal(form.name, 'River AI');
         assert.equal(form.base, 'https://lama/v1');
         assert.equal(form.keyRequired, false, 'key tidak wajib saat edit');
         assert.match(form.keyPlaceholder, /pertahankan/);
+        assert.match(form.idHint, /rename/, 'petunjuk rename di bawah kolom ID');
         assert.deepEqual(form.checked, ['lama', 'lama-2'], 'model tersimpan tercentang');
         // Change the base URL, tick nothing else, submit WITHOUT a key: the body must carry key: ''.
         await page.eval(() => {
@@ -5281,6 +5286,48 @@ for (const vp of VIEWPORTS) {
         await page.waitFor(() => window.__testCalls.length === 1, { timeoutMs: 4000, message: 'POST test terkirim' });
         assert.deepEqual(await page.eval(() => window.__testCalls[0]), { id: 'river' }, 'klien hanya mengirim id, bukan base URL');
         await page.waitFor(() => /9 model terjangkau/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 4000, message: 'hasil uji tampil inline' });
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreOpenCodeAccount(page);
+      }
+    });
+
+    test('akun OpenCode: mengganti ID di form edit mengirim rename, bukan add', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubOpenCodeAccount(page, {
+          usage: GO_USAGE,
+          connected: [{ id: 'river', name: 'River AI', custom: true, edit: { baseURL: 'https://lama/v1', models: ['lama'] }, connections: [{ id: 'cred-rf', type: 'credential', label: 'API key', method: 'key' }] }],
+        });
+        await page.eval(() => {
+          const prev = window.fetch; // chain under the account stub
+          window.__renCalls = [];
+          window.fetch = (url, opts) => {
+            if (/\/api\/opencode\/custom\/rename$/.test(String(url))) {
+              window.__renCalls.push(JSON.parse(opts?.body ?? '{}'));
+              return Promise.resolve(new Response(JSON.stringify({ ok: true, provider: 'river-2' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return prev(url, opts);
+          };
+        });
+        await tap(page, '#btn-account');
+        await openOpenCodeTab(page);
+        await page.waitFor(() => document.querySelector('#account-body [data-act="oc-edit"]'), { timeoutMs: 8000, message: 'tombol ✏️ Edit' });
+        await page.click('#account-body [data-act="oc-edit"]');
+        await page.waitFor(() => document.querySelector('#oc-custom-form'), { timeoutMs: 4000, message: 'form edit terbuka' });
+        // ID is editable in edit mode: change it, keep everything else, add the (required) new key, submit.
+        await page.eval(() => {
+          const form = document.querySelector('#oc-custom-form');
+          form.querySelector('#oc-custom-id').value = 'river-2';
+          form.querySelector('#oc-custom-id').dispatchEvent(new Event('input', { bubbles: true }));
+          const key = form.querySelector('#oc-custom-key');
+          key.value = 'sk-new-2';
+          key.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await page.eval(() => document.querySelector('#oc-custom-form button.primary').click());
+        await page.waitFor(() => window.__renCalls.length === 1, { timeoutMs: 4000, message: 'POST rename terkirim' });
+        const body = await page.eval(() => window.__renCalls[0]);
+        assert.deepEqual(body, { id: 'river', newId: 'river-2', name: 'River AI', baseURL: 'https://lama/v1', key: 'sk-new-2', models: ['lama'] });
         assert.deepEqual(realProblems(page), []);
       } finally {
         await restoreOpenCodeAccount(page);

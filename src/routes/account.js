@@ -167,6 +167,7 @@ export function register(router) {
   // dan Hapus: kredensial + blok config sekaligus (blok yang tertinggal membuat model mati tetap tampil).
   router.post('/api/opencode/custom/check', openCode(customCheck));
   router.post('/api/opencode/custom/test', openCode(customTest));
+  router.post('/api/opencode/custom/rename', openCode(customRename));
   router.post('/api/opencode/custom/add', audited('custom-add', (body) => body.id, customAdd));
   router.post('/api/opencode/custom/remove', audited('custom-remove', (body) => body.id, customRemove));
   // ---------- usage report ----------
@@ -365,9 +366,77 @@ async function customTest(bin, body) {
   return { ok: true, reachable: true, status };
 }
 
+/**
+ * POST /api/opencode/custom/rename: writes a NEW block under `newId` (the key must be re-entered: OpenCode's
+ * credential store binds keys to the integration id and this app can never read them back to move them), then
+ * drops the old block and its credentials. Projects running the old models go stale — they pick the new id's
+ * models like after a logout. Every refusal leaves the config untouched.
+ */
+async function customRename(bin, body, ctx) {
+  const id = String(body?.id ?? '');
+  const newId = String(body?.newId ?? '');
+  if (!CUSTOM_ID.test(id) || !CUSTOM_ID.test(newId)) throw Object.assign(new Error('ID provider tidak valid (huruf/angka pertama, lalu huruf/angka, _, ., -; maks 64).'), { status: 400 });
+  if (id === newId) throw Object.assign(new Error('ID baru sama dengan ID lama. Pakai Edit biasa, atau pilih ID lain.'), { status: 400 });
+  if (CUSTOM_DENY.has(newId)) throw Object.assign(new Error(`ID "${newId}" dipakai provider bawaan OpenCode. Pilih ID lain.`), { status: 400 });
+  const name = String(body?.name ?? '').trim();
+  if (!name || name.length > 100) throw Object.assign(new Error('Nama provider wajib diisi (maks 100 karakter).'), { status: 400 });
+  const baseURL = customBaseURL(body?.baseURL);
+  const key = String(body?.key ?? '').trim();
+  if (!key || key.length > MAX_SECRET) throw Object.assign(new Error('API key wajib saat mengganti ID (OpenCode menyimpan key per ID; aplikasi tidak bisa memindahkan key tersimpan).'), { status: 400 });
+  const models = customModels(body?.models);
+  // The old block must exist and be this app's own; the new id must be free (catalog + blocks) — the duplicate
+  // base URL of ANOTHER own block is still refused, the old block moving with the same URL is fine.
+  const existing = readOpenCodeConfig({ scope: 'global' });
+  if (existing.parseError) throw Object.assign(new Error('Config OpenCode global tidak valid. Perbaiki lewat ⚙ → Config OpenCode dulu.'), { status: 400 });
+  const blocks = isObject(existing.config?.providers) ? existing.config.providers : {};
+  const old = blocks[id];
+  if (!isObject(old) || (typeof old.package === 'string' && old.package !== CUSTOM_PROVIDER_PACKAGE)) {
+    throw Object.assign(new Error('Provider kustom tidak ditemukan (atau bukan blok yang ditulis aplikasi).'), { status: 404 });
+  }
+  for (const [otherId, block] of Object.entries(blocks)) {
+    if (otherId === id || !isObject(block)) continue;
+    const pkg = block.package;
+    if (typeof pkg === 'string' && pkg !== CUSTOM_PROVIDER_PACKAGE) continue;
+    const url = isObject(block.settings) ? block.settings.baseURL : undefined;
+    if (typeof url === 'string' && url.trim() === baseURL) {
+      throw Object.assign(new Error(`ID baru ditolak: base URL ini sudah dipakai provider kustom "${otherId}".`), { status: 409 });
+    }
+  }
+  const known = await openCodeProviders(bin);
+  if ([...known.connected, ...known.available].some((p) => p.id === newId)) {
+    throw Object.assign(new Error(`ID "${newId}" sudah dipakai. Pilih ID lain.`), { status: 409 });
+  }
+  const saved = addCustomProvider({ id: newId, name, baseURL, models, dataDir: ctx.hub?.dataDir ?? ctx.dataDir });
+  try {
+    await openCodeConnectKey(bin, newId, { key });
+  } catch (err) {
+    throw Object.assign(new Error(`Blok baru sudah ditulis, tetapi API key untuk "${newId}" gagal disimpan (${err.message}). Blok lama masih utuh — login key untuk id baru lewat ＋ Login provider, lalu coba rename lagi.`), { status: 502 });
+  }
+  // The old side goes away only after the new one is fully usable: credentials first (a refusing credential is
+  // reported, never fatal — the dead block must not stay), then the block, then the stale notice.
+  const credentialErrors = [];
+  let credentialsRemoved = 0;
+  try {
+    const { connected } = await openCodeProviders(bin);
+    for (const c of connected.find((p) => p.id === id)?.connections ?? []) {
+      if (c.type !== 'credential') continue;
+      try {
+        await openCodeLogout(bin, c.id);
+        credentialsRemoved++;
+      } catch (err) {
+        credentialErrors.push(err.message);
+      }
+    }
+  } catch (err) {
+    credentialErrors.push(`Daftar provider tidak bisa dibaca: ${err.message}`);
+  }
+  const removed = removeCustomProvider({ id, dataDir: ctx.hub?.dataDir ?? ctx.dataDir });
+  markModelStale(ctx.hub, id);
+  return phoneAlert(ctx, 'login', newId)(loggedIn(ctx)({ ok: true, provider: newId, previous: id, models, credentialsRemoved, credentialErrors, path: saved.path, backup: removed.backup }));
+}
+
 /** The models array of an add request: 1..100 valid ids, deduped, order kept. */
-function customModels(value) {
-  if (!Array.isArray(value)) throw Object.assign(new Error('Daftar model tidak valid.'), { status: 400 });
+function customModels(value) {  if (!Array.isArray(value)) throw Object.assign(new Error('Daftar model tidak valid.'), { status: 400 });
   if (value.length < 1) throw Object.assign(new Error('Minimal satu model.'), { status: 400 });
   if (value.length > CUSTOM_MODELS_ADD_MAX) throw Object.assign(new Error(`Maksimal ${CUSTOM_MODELS_ADD_MAX} model.`), { status: 400 });
   const seen = new Set();

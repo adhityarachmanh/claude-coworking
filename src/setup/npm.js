@@ -60,7 +60,8 @@ export function hardenedNpmEnv(env = process.env, { cache } = {}) {
 }
 
 function nodeBinary(nodeDir) {
-  return path.join(nodeDir, process.platform === 'win32' ? 'node.exe' : 'node');
+  // The portable runtime is the Windows layout (win-x64 zip) on every host OS: node.exe, always.
+  return path.join(nodeDir, 'node.exe');
 }
 
 function outputHint(lines) {
