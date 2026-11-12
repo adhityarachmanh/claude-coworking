@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.16
+
+- **✅ Catatan "Mode kini Build" cukup ditutup sekali.** Penutup banner itu disimpan per project, sehingga setiap project lama hasil migrasi mode (manual/auto) menampilkan banner yang sama lagi—di laptop dengan puluhan project, banner terasa muncul terus walau *Mengerti* sudah diklik. Sekali *Mengerti* kini menghapus catatan di **semua** project sekaligus.
+
 ## 1.0.15
 
 - **🔧 Menambah ulang provider kustom tidak lagi ditolak.** Blok kustom yang sudah ada membuat OpenCode mendaftarkan id yang sama di katalognya, sehingga menambah provider dengan id itu kena 409 *"sudah dipakai provider bawaan"*—padahal blok itu buatan aplikasi sendiri. Guard kini mengenali id milik blok kustom: menambah ulang berarti mengganti blok + menyimpan API key dalam satu langkah. Kasus nyata: id `river` gagal terus padahal provider-nya justru yang mau diperbaiki.
