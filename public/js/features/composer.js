@@ -2,6 +2,7 @@
 import { api, toast } from '../core/api.js';
 import { estimateUsd, formatEstimate, isPeak } from '../core/cost-estimate.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
+import { activeModelOf } from '../core/model-logo.js';
 import { capReason, capsFor, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
 import { fmtNum } from '../core/format.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
@@ -195,6 +196,7 @@ async function chooseMode(mode) {
 
 /** The chip above the input (toolbar on a phone) sums up the turn settings that live in its dialog. */
 function renderSettingsChip(st) {  const chip = $('#settings-chip');
+  const engine = engineOf(st, state.config);
   const mode = $('#mode').value || 'build';
   // "Default (Fable 5 · …)" → "Default": the chip stays one short line
   const label = (sel) => ($(sel).selectedOptions[0]?.textContent ?? '').replace(/\s*\(.*$/, '').trim();
@@ -203,7 +205,14 @@ function renderSettingsChip(st) {  const chip = $('#settings-chip');
   const effort = $('#effort').value && !$('#effort').disabled ? label('#effort') : '';
   const team = $('#team-mode').checked && !$('#team-ctl').classList.contains('cap-off');
   // The engine follows the model: the chip stays mode · model · effort · tim on both laptop and phone.
-  chip.textContent = [modeShort(mode), model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
+  const text = [modeShort(mode), model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
+  // The active model's logo leads the text (the same ai_logos the brain uses); an unknown family shows none.
+  const { file } = activeModelOf(st, engine);
+  const html = `${file ? `<img class="chip-logo" src="/ai-logos/${escapeHtml(file)}" alt="" aria-hidden="true">` : ''}<span>${escapeHtml(text)}</span>`;
+  if (chip.dataset.html !== html) {
+    chip.innerHTML = html;
+    chip.dataset.html = html;
+  }
   chip.setAttribute('aria-label', `Pengaturan giliran: mode ${modeShort(mode).replace(/^\W+/u, '')}, model ${model}, effort ${effort || 'default'}, mode tim ${team ? 'aktif' : 'mati'}`);
   chip.classList.toggle('warn', Boolean(st?.autoApprove));
   const note = $('#effort-note');

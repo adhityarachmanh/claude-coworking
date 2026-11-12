@@ -2029,6 +2029,49 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('🧭 chip Pengaturan giliran menampilkan logo model aktif, tanpa logo untuk keluarga tak dikenal', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubModels(page, [
+          { value: 'opencode-go/glm-5.3-flash', name: 'GLM 5.3 Flash' },
+          { value: 'river/xyz-tak-dikenal', name: 'Tak Dikenal' },
+        ]);
+        await stubOpenCodeAccount(page, { connected: [{ id: 'opencode-go', name: 'OpenCode Go' }], available: [] });
+        await stubSettings(page); // a real settings POST would revert the optimistic pick (no OpenCode session here)
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: 'opencode-go/glm-5.3-flash' };
+          const { wantModels, providerNames } = await import('/js/features/engine.js');
+          providerNames({ maxAgeMs: 0 });
+          wantModels();
+          const search = document.querySelector('#model-search');
+          if (search.value) search.value = '';
+          search.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        // The chip's logo (the exact ai_logos file) appears once the picker knows the model.
+        await page.waitFor(() => Boolean(document.querySelector('#settings-chip img.chip-logo')), { timeoutMs: 4000, message: 'logo di chip' });
+        const chip = await page.eval(() => ({
+          src: document.querySelector('#settings-chip img.chip-logo')?.getAttribute('src'),
+          text: document.querySelector('#settings-chip').textContent,
+        }));
+        assert.equal(chip.src, '/ai-logos/glm-5.3-flash.svg', 'logo file eksak model');
+        assert.match(chip.text, /GLM 5\.3 Flash/, 'teks chip tetap ada di samping logo');
+        // An unknown model family: no logo, text only.
+        await page.eval(() => {
+          const select = document.querySelector('#model');
+          select.value = 'river/xyz-tak-dikenal';
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await page.waitFor(() => !document.querySelector('#settings-chip img.chip-logo'), { timeoutMs: 4000, message: 'tanpa logo untuk keluarga tak dikenal' });
+        assert.match(await page.eval(() => document.querySelector('#settings-chip').textContent), /Tak Dikenal/);
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreSettings(page);
+        await restoreModels(page);
+        await openApp(page, `#${projectId}`);
+      }
+    });
+
     test('🤖 Tangga Model Auto: tautan "Atur tangga…" hanya saat Auto, catatan memuat tangga', async () => {
       await ensureApp(page, `#${projectId}`);
       try {
@@ -5207,6 +5250,37 @@ for (const vp of VIEWPORTS) {
         await page.eval(() => document.querySelector('#oc-custom-form button.primary').click());
         await page.waitFor(() => window.__editCalls.length === 1, { timeoutMs: 4000, message: 'POST add terkirim' });
         assert.deepEqual(await page.eval(() => window.__editCalls[0]), { id: 'river', name: 'River AI', baseURL: 'https://baru/v1', key: '', models: ['lama', 'lama-2'] });
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreOpenCodeAccount(page);
+      }
+    });
+
+    test('akun OpenCode: ⚡ Uji mengirim id saja dan menampilkan hasil inline', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubOpenCodeAccount(page, {
+          usage: GO_USAGE,
+          connected: [{ id: 'river', name: 'River AI', custom: true, edit: { baseURL: 'https://lama/v1', models: ['lama'] }, connections: [{ id: 'cred-rf', type: 'credential', label: 'API key', method: 'key' }] }],
+        });
+        await page.eval(() => {
+          const prev = window.fetch; // chain under the account stub
+          window.__testCalls = [];
+          window.fetch = (url, opts) => {
+            if (/\/api\/opencode\/custom\/test$/.test(String(url))) {
+              window.__testCalls.push(JSON.parse(opts?.body ?? '{}'));
+              return Promise.resolve(new Response(JSON.stringify({ ok: true, status: 200, models: 9 }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return prev(url, opts);
+          };
+        });
+        await tap(page, '#btn-account');
+        await openOpenCodeTab(page);
+        await page.waitFor(() => document.querySelector('#account-body [data-act="oc-test"]'), { timeoutMs: 8000, message: 'tombol ⚡ Uji' });
+        await page.click('#account-body [data-act="oc-test"]');
+        await page.waitFor(() => window.__testCalls.length === 1, { timeoutMs: 4000, message: 'POST test terkirim' });
+        assert.deepEqual(await page.eval(() => window.__testCalls[0]), { id: 'river' }, 'klien hanya mengirim id, bukan base URL');
+        await page.waitFor(() => /9 model terjangkau/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 4000, message: 'hasil uji tampil inline' });
         assert.deepEqual(realProblems(page), []);
       } finally {
         await restoreOpenCodeAccount(page);

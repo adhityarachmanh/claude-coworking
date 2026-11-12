@@ -494,6 +494,35 @@ test('add: tanpa key tetap ditolak saat provider belum punya kredensial', async 
   assert.equal(view.config.providers.riverfake.settings.baseURL, 'https://lama/v1', 'blok tidak berubah oleh tolakan');
 });
 
+test('custom/test: ping /models milik blok tersimpan; id tidak dikenal 404; validasi 400', async () => {
+  resetConfig();
+  writeConfig({ providers: { riverfake: { name: 'River Fake', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: `http://127.0.0.1:${httpPort}` }, models: { m1: {}, m2: {} }, env: ['RIVERFAKE_API_KEY'] } } });
+  const res = await call('/api/opencode/custom/test', { id: 'riverfake' });
+  assert.equal(res.status, 200, res.body);
+  assert.deepEqual(res.json(), { ok: true, status: 200, models: 2 }, 'm1/m2 valid (duplikat & id kotor dihitung satu)');
+
+  // A wrong path answers HTTP 404: still reachable (the base URL is right up to the port).
+  resetConfig();
+  writeConfig({ providers: { riverfake: { name: 'River Fake', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: `http://127.0.0.1:${httpPort}/v1` }, models: { m1: {} }, env: ['RIVERFAKE_API_KEY'] } } });
+  const miss = await call('/api/opencode/custom/test', { id: 'riverfake' });
+  assert.equal(miss.status, 200);
+  assert.deepEqual(miss.json(), { ok: true, reachable: true, status: 404 }, 'HTTP apa pun berarti terjangkau');
+
+  // A closed port: not reachable, a safe inline error (no stack, no URL echo).
+  resetConfig();
+  writeConfig({ providers: { riverfake: { name: 'River Fake', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: `http://127.0.0.1:${closedPort}` }, models: { m1: {} }, env: ['RIVERFAKE_API_KEY'] } } });
+  const down = await call('/api/opencode/custom/test', { id: 'riverfake' });
+  assert.equal(down.status, 200);
+  assert.equal(down.json().ok, false);
+  assert.match(down.json().error, /tidak bisa dihubungi/);
+  assert.doesNotMatch(down.json().error, /127\.0\.0\.1/);
+
+  const unknown = await call('/api/opencode/custom/test', { id: 'tidak-ada' });
+  assert.equal(unknown.status, 404, 'id tanpa blok kustom 404');
+  const bad = await call('/api/opencode/custom/test', { id: 'id dengan spasi' });
+  assert.equal(bad.status, 400, 'id tak valid 400');
+});
+
 test('providers: blok kustom milik aplikasi membawa data Edit (baseURL + models) untuk form prefill', async () => {
   resetConfig();
   writeConfig({ providers: { riverfake: { name: 'River Fake', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://lama/v1' }, models: { lama: {}, 'baru-2': {} }, env: ['RIVERFAKE_API_KEY'] } } });

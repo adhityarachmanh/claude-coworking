@@ -2,6 +2,11 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.20
+
+- **🖼 Logo model di chip Pengaturan giliran.** Chip ⚙ di atas kotak pesan kini menampilkan logo model aktif (folder `ai_logos`, sama dengan 🧠 Mode Otak; keluarga model tanpa logo tetap tampil tanpa gambar).
+- **⚡ Uji cepat koneksi provider kustom.** Provider kustom yang terhubung punya tombol **⚡ Uji** di tab Akun: ping `{baseURL}/models` langsung (tanpa buka form), hasilnya inline—`✅ 9 model terjangkau (HTTP 200)`, endpoint yang menjawab non-200 tetap dihitung terjangkau, dan endpoint mati menampilkan peringatan aman.
+
 ## 1.0.19
 
 - **⭐ Model favorit di atas daftar.** Tombol **☆ Favoritkan** di Pengaturan giliran men-pin model yang sedang dipilih ke grup **⭐ Favorit** paling atas daftar model (kedua mesin, maks 12, tersimpan untuk seluruh aplikasi dan semua jendela). Klik lagi (**★ Difavoritkan**) untuk melepas.

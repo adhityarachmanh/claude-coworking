@@ -166,6 +166,7 @@ export function register(router) {
   // Provider kustom OpenAI-compatible: cek endpoint /models, lalu blok config + API key + efek login standar,
   // dan Hapus: kredensial + blok config sekaligus (blok yang tertinggal membuat model mati tetap tampil).
   router.post('/api/opencode/custom/check', openCode(customCheck));
+  router.post('/api/opencode/custom/test', openCode(customTest));
   router.post('/api/opencode/custom/add', audited('custom-add', (body) => body.id, customAdd));
   router.post('/api/opencode/custom/remove', audited('custom-remove', (body) => body.id, customRemove));
   // ---------- usage report ----------
@@ -301,6 +302,67 @@ async function customCheck(bin, body) {
     if (models.length >= CUSTOM_MODELS_MAX) break;
   }
   return { models };
+}
+
+/** The raw model list of a parsed /models answer: an array, or the { data } / { models } shapes. */
+function modelListFrom(parsed) {
+  return Array.isArray(parsed) ? parsed : Array.isArray(parsed?.data) ? parsed.data : Array.isArray(parsed?.models) ? parsed.models : null;
+}
+
+/**
+ * POST /api/opencode/custom/test: a quick ⚡ reachability ping of a STORED custom block's /models — the client
+ * sends only the id (the base URL never comes from the wire). Any HTTP answer means the endpoint is reachable:
+ * 200 + a parseable list also reports the model count; a dead endpoint reports a safe inline error. Always a
+ * 200 body with { ok }, so the UI can phrase the result inline.
+ */
+async function customTest(bin, body) {
+  const id = String(body?.id ?? '');
+  if (!CUSTOM_ID.test(id)) throw Object.assign(new Error('ID provider tidak valid.'), { status: 400 });
+  const existing = readOpenCodeConfig({ scope: 'global' });
+  if (existing.parseError) throw Object.assign(new Error('Config OpenCode global tidak valid. Perbaiki lewat ⚙ → Config OpenCode dulu.'), { status: 400 });
+  const blocks = isObject(existing.config?.providers) ? existing.config.providers : {};
+  const block = blocks[id];
+  if (!isObject(block) || (typeof block.package === 'string' && block.package !== CUSTOM_PROVIDER_PACKAGE)) {
+    throw Object.assign(new Error('Provider kustom tidak ditemukan (atau bukan blok yang ditulis aplikasi).'), { status: 404 });
+  }
+  const baseURL = customBaseURL(isObject(block.settings) ? block.settings.baseURL : undefined);
+  let status = null;
+  let models = null;
+  try {
+    const res = await fetch(`${baseURL.replace(/\/+$/, '')}/models`, { signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) });
+    status = res.status;
+    if (res.ok) {
+      const text = await readBoundedText(res);
+      if (text !== null) {
+        try {
+          const list = modelListFrom(JSON.parse(text));
+          if (list) {
+            const seen = new Set();
+            let count = 0;
+            for (const item of list) {
+              const id = typeof item === 'string' ? item : item && typeof item === 'object' ? item.id : null;
+              if (typeof id !== 'string' || !CUSTOM_MODEL_ID.test(id) || seen.has(id)) continue;
+              seen.add(id);
+              count++;
+            }
+            models = count;
+          }
+        } catch {
+          // not JSON: reachable, but not an OpenAI-compatible /models — status still tells the story
+        }
+      }
+    } else {
+      try {
+        await res.body?.cancel?.();
+      } catch {
+        // the body is dropped either way
+      }
+    }
+  } catch {
+    return { ok: false, error: 'Endpoint /models tidak bisa dihubungi. Cek base URL dan koneksi.' };
+  }
+  if (models !== null) return { ok: true, status, models };
+  return { ok: true, reachable: true, status };
 }
 
 /** The models array of an add request: 1..100 valid ids, deduped, order kept. */
