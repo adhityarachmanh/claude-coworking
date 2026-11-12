@@ -10,7 +10,7 @@ import { attachmentPayload, attachments, attachmentsReady, clearAttachments, rem
 import { localCommand } from './commands.js';
 import { connection } from './connection.js';
 import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
-import { applyCapsToDom, autoModelNote, AUTO_MODEL, catalogMatchCount, engineSwitchLocked, guardCap, initEngine, isModelValue, MODEL_TIER_LABELS, MODEL_TIERS, modelCatalogOptions, modelEntry, modelTiersFor, projectCaps, projectModelCatalog, projectModels, tierOptionsHtml, wantModels } from './engine.js';
+import { applyCapsToDom, autoModelNote, AUTO_MODEL, catalogMatchCount, currentProviderNames, engineSwitchLocked, guardCap, initEngine, isModelValue, MODEL_TIER_LABELS, MODEL_TIERS, modelCatalogOptions, modelEntry, modelTiersFor, projectCaps, projectModelCatalog, projectModels, tierOptionsHtml, wantModels } from './engine.js';
 import { recall, recallPrompt } from './history.js';
 import { modelPrices, priceFor, priceNote } from './model-prices.js';
 import { renderResumeTurn } from './resume-turn.js';
@@ -526,7 +526,7 @@ function renderModelOptions(current, engine) {
   const catalog = projectModelCatalog(state.active, st, renderComposer);
   const query = search.value.trim();
   const locked = engineSwitchLocked(st);
-  const html = modelCatalogOptions(catalog, current, query, { engine, locked, loading: catalog.loading, error: catalog.error });
+  const html = modelCatalogOptions(catalog, current, query, { engine, locked, loading: catalog.loading, error: catalog.error, providerNames: currentProviderNames() });
   if (select.dataset.html !== html) {
     select.innerHTML = html;
     select.dataset.html = html;

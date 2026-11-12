@@ -2,7 +2,7 @@
 // The server sends OPENCODE_CAPS in config.engines.opencode.caps; these tests keep the server and UI in sync.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CLAUDE_CAPS, capReason, capsFor, engineBadge, engineChangeNeedsReload, engineOf } from '../public/js/core/engine-caps.js';
+import { CLAUDE_CAPS, capReason, capsFor, engineBadge, engineChangeNeedsReload, engineOf, openCodeProviderGroups } from '../public/js/core/engine-caps.js';
 import { OPENCODE_CAPS } from '../src/acp-session.js';
 
 const CONFIG = Object.freeze({
@@ -80,5 +80,31 @@ test('every engine change reloads open clients, including ONE project switching 
   assert.equal(engineChangeNeedsReload({ engine: 'opencode' }), true);
   assert.equal(engineChangeNeedsReload({ engine: 'opencode', project: 'p1' }), true);
   assert.equal(engineChangeNeedsReload(null), false, 'a malformed event does not reload the page');
+});
+
+const OC_PICKER_MODELS = Object.freeze([
+  { value: 'river/GLM-5.3', name: 'GLM-5.3' },
+  { value: 'river/zai-org/GLM-5.3-Flash', name: 'GLM 5.3 Flash' },
+  { value: 'river/deepseek-ai/DeepSeek-V4.1-Flash', name: 'DeepSeek V4.1 Flash' },
+  { value: 'opencode-go/glm-5.3-flash', name: 'GLM 5.3 Flash' },
+]);
+
+test('the picker groups OpenCode models one group per provider, labelled by the provider display name when known', () => {
+  const groups = openCodeProviderGroups(OC_PICKER_MODELS, '', { river: 'River AI' });
+  assert.deepEqual(groups.map((g) => g.label), ['River AI', 'opencode-go'], 'urutan kemunculan pertama, label dari nama tampilan');
+  assert.deepEqual(groups[0].models.map((m) => m.value), ['river/GLM-5.3', 'river/zai-org/GLM-5.3-Flash', 'river/deepseek-ai/DeepSeek-V4.1-Flash']);
+  assert.equal(groups[1].label, 'opencode-go', 'tanpa nama tampilan: label jatuh ke id provider');
+});
+
+test('the provider picker groups keep the search filter and the no-name fallback', () => {
+  const groups = openCodeProviderGroups(OC_PICKER_MODELS, 'glm', {});
+  assert.deepEqual(groups.map((g) => g.label), ['river', 'opencode-go'], 'filter tetap bekerja; label id apa adanya');
+  assert.deepEqual(groups[0].models.map((m) => m.value), ['river/GLM-5.3', 'river/zai-org/GLM-5.3-Flash']);
+  const none = openCodeProviderGroups(OC_PICKER_MODELS, 'tidak-ada-yang-cocok', { river: 'River AI' });
+  assert.deepEqual(none, [], 'tidak ada grup kosong saat filter tidak cocok');
+  // A model without a provider prefix shares one "lainnya" group (providerOf's rule).
+  const mixed = openCodeProviderGroups([...OC_PICKER_MODELS, { value: 'solo-model', name: 'Solo' }], '', {});
+  assert.equal(mixed.at(-1).label, 'lainnya');
+  assert.equal(mixed.at(-1).models[0].value, 'solo-model');
 });
 

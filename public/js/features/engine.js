@@ -2,7 +2,7 @@
 // "Pengaturan giliran", so one request lists both engines' models. Rules live in core/engine-caps.js.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
-import { capReason, capsFor, cleanModelList, DEFAULT_ENGINE, engineLabel, engineOf, groupModels, modelsPerProject } from '../core/engine-caps.js';
+import { capReason, capsFor, cleanModelList, DEFAULT_ENGINE, engineLabel, engineOf, groupModels, modelsPerProject, openCodeProviderGroups } from '../core/engine-caps.js';
 import { auth, DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { priceDetail, priceSuffix } from './model-prices.js';
 
@@ -91,6 +91,32 @@ function cleanCatalog(data) {
 const wantedModels = new Set();
 export const wantModels = (id = state.active) => id && wantedModels.add(id);
 
+// ---------- provider display names (the picker labels its per-provider groups with them) ----------
+
+/** { at, load, names } — names fills in when the fetch resolves; a failure keeps {} (labels fall back to ids). */
+let providerNamesCache = { at: 0, load: null, names: {} };
+
+/** The names fetched so far, synchronously (a pending fetch replaces them when it resolves). */
+export const currentProviderNames = () => providerNamesCache.names;
+
+/** id → display name from the account endpoint (the same call the Akun tab makes), cached for a minute. */
+export function providerNames({ maxAgeMs = 60_000 } = {}) {
+  const now = Date.now();
+  if (providerNamesCache.load && now - providerNamesCache.at < maxAgeMs) return providerNamesCache.load;
+  const load = api('/api/opencode/providers')
+    .then((view) => {
+      const names = {};
+      for (const p of [...(view?.connected ?? []), ...(view?.available ?? [])]) {
+        if (p?.id && typeof p.name === 'string' && p.name.trim()) names[p.id] = p.name.trim().slice(0, 60);
+      }
+      providerNamesCache.names = names;
+      return names;
+    })
+    .catch(() => ({})); // no names available: the picker labels the groups with the provider ids
+  providerNamesCache = { at: now, load, names: providerNamesCache.names };
+  return load;
+}
+
 export function projectModelCatalog(id = state.active, st = state.statuses[id] ?? {}, onLoaded = () => {}) {
   const engine = engineOf(st, state.config);
   if (!id || id === DEMO_ID) return { claude: EMPTY_LIST, opencode: EMPTY_LIST, loading: false, error: null };
@@ -120,6 +146,9 @@ export function projectModelCatalog(id = state.active, st = state.statuses[id] ?
     };
     modelCache.set(id, entry);
     const mine = entry;
+    // The group labels want the provider display names too (same cadence, cached a minute): one more render
+    // when they arrive.
+    providerNames().then(() => modelCache.get(id) === mine && onLoaded());
     fetchModels(id)
       .then((data) => Object.assign(mine, cleanCatalog(data), { error: null }))
       .catch((err) => Object.assign(mine, { error: err.message }))
@@ -207,7 +236,7 @@ function claudeCatalogModels(catalog) {
  * `data-engine`, so picking a model of the other engine sends `{ engine, model }` in a single request. While the
  * project works (busy/pending/queue/interrupted/rewinding) the other engine's models are disabled with the reason.
  */
-export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_ENGINE, locked = false, loading = false, error = null } = {}) {
+export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_ENGINE, locked = false, loading = false, error = null, providerNames = null } = {}) {
   const claude = claudeCatalogModels(catalog);
   const opencode = catalog?.opencode?.models ?? [];
   const config = new Map((state.config?.models ?? []).filter((m) => m?.value).map((m) => [m.value, m]));
@@ -225,15 +254,17 @@ export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_
   const claudeGroups = groupModels(claude, query);
   if (claudeGroups.length) opts.push(`<optgroup label="Claude Code">${claudeGroups.flatMap((g) => g.models.map((m) => option(m, DEFAULT_ENGINE))).join('')}</optgroup>`);
   else opts.push(`<optgroup label="Claude Code">${infoOption(claude.length ? 'Tidak ada model yang cocok' : 'Katalog Claude Code belum tersedia')}</optgroup>`);
-  // OpenCode: one group, models ordered by provider and prefixed with it (an <optgroup> cannot nest another).
-  const groups = groupModels(opencode, query);
+  // OpenCode: one group PER provider (river, opencode-go, …), each labelled by the provider's display name when
+  // known; an <optgroup> cannot nest another, so the "OpenCode" wrapper only remains for the info lines.
+  const groups = openCodeProviderGroups(opencode, query, providerNames);
   let open = '';
   if (loading && !opencode.length) open = infoOption('Memuat daftar model…');
   else if (error && !opencode.length) open = infoOption(`Daftar model gagal dimuat: ${error}`);
   else if (!opencode.length) open = infoOption('Daftar model muncul setelah pesan pertama');
   else if (!groups.length) open = infoOption(query ? 'Tidak ada model yang cocok' : 'Daftar model muncul setelah pesan pertama');
-  else open = groups.flatMap((g) => g.models.map((m) => option({ ...m, name: `${g.provider} · ${m.name}` }, 'opencode'))).join('');
-  opts.push(`<optgroup label="OpenCode">${open}</optgroup>`);
+  else open = groups.map((g) => `<optgroup label="${escapeHtml(g.label)}">${g.models.map((m) => option(m, 'opencode')).join('')}</optgroup>`).join('');
+  if (open && !groups.length) opts.push(`<optgroup label="OpenCode">${open}</optgroup>`);
+  else if (open) opts.push(open);
   // A model set with /model that neither list holds (e.g. opus[1m]) stays selectable on the project's engine.
   const known = claude.some((m) => m.value === current) || opencode.some((m) => m.value === current);
   if (current && !known) opts.push(option({ value: current, name: current }, engine));

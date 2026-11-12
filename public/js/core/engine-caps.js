@@ -182,3 +182,12 @@ export function groupModels(models, query = '') {
   }
   return [...groups].map(([provider, list]) => ({ provider, models: list }));
 }
+
+/**
+ * The picker's OpenCode section: one group per provider (first-seen order, the search filter still applied), each
+ * label the provider's display name when known (custom providers, e.g. "River AI") and the id otherwise. Empty
+ * input yields no groups — the renderer shows its own info line instead.
+ */
+export function openCodeProviderGroups(models, query = '', providerNames = {}) {
+  return groupModels(models, query).map((g) => ({ ...g, label: providerNames?.[g.provider] ?? g.provider }));
+}

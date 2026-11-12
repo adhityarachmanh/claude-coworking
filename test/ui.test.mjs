@@ -82,6 +82,7 @@ async function startServer() {
     windowsHide: true,
     env: {
       ...process.env,
+      OFFICE_APP_DIR: APP, // pin the app dir to the repo: a dev machine's OFFICE_APP_DIR may point at an installed Adhitron (see opencode-custom-remove-ui.test.mjs)
       OFFICE_PORT: String(PORT),
       OFFICE_DATA_DIR: path.join(TMP, 'data'),
       OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale.exe'), // never the real Tailscale CLI
@@ -1857,6 +1858,53 @@ for (const vp of VIEWPORTS) {
             document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
           })
           .catch(() => {});
+      }
+    });
+
+    test('🧭 Pengaturan giliran: model OpenCode dikelompokkan satu grup per provider, judul dari nama tampilan', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubModels(page, [
+          { value: 'river/GLM-5.3', name: 'GLM-5.3' },
+          { value: 'river/zai-org/GLM-5.3-Flash', name: 'GLM 5.3 Flash' },
+          { value: 'opencode-go/glm-5.3-flash', name: 'GLM 5.3 Flash' },
+        ]);
+        await page.eval(() => {
+          window.__officeFetch ??= window.fetch;
+          const prev = window.fetch; // chain: models stub sits underneath
+          window.fetch = (url) => {
+            if (/\/api\/opencode\/providers$/.test(String(url))) {
+              return Promise.resolve(new Response(JSON.stringify({ connected: [{ id: 'river', name: 'River AI' }], available: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return prev(url);
+          };
+        });
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: '' };
+          const { wantModels, providerNames } = await import('/js/features/engine.js');
+          // A previous test in this document may have primed the names cache from the real endpoint: force one
+          // fetch through the stub above instead of trusting the 60 s cache.
+          providerNames({ maxAgeMs: 0 });
+          wantModels(); // the list is only fetched once the turn-settings dialog was opened
+          const search = document.querySelector('#model-search');
+          if (search.value) search.value = ''; // a leftover filter from another test must not hide groups here
+          search.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === 'River AI'), { timeoutMs: 3000, message: 'grup River AI (nama tampilan) termuat' });
+        await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === 'opencode-go'), { timeoutMs: 3000, message: 'grup opencode-go termuat' });
+        const groups = await page.eval(() => [...document.querySelectorAll('#model optgroup')].map((g) => ({ label: g.label, options: [...g.querySelectorAll('option')].map((o) => o.textContent) })));
+        const river = groups.find((g) => g.label === 'River AI');
+        const go = groups.find((g) => g.label === 'opencode-go');
+        assert.ok(river, 'grup river memakai nama tampilan River AI');
+        assert.deepEqual(river.options, ['GLM-5.3', 'GLM 5.3 Flash'], 'opsi tanpa prefiks provider di grupnya sendiri');
+        assert.ok(go, 'grup opencode-go tetap ada');
+        assert.ok(!go.options.some((t) => t.includes('opencode-go · ')), 'tidak ada lagi prefiks opencode-go · di dalam grup');
+        assert.ok(groups.some((g) => g.label === 'Claude Code'), 'grup Claude Code tidak berubah');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreModels(page);
+        await openApp(page, `#${projectId}`);
       }
     });
 
