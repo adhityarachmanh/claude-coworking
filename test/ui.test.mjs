@@ -1042,9 +1042,15 @@ const restoreAccount = (page) =>
 /** OpenCode's Akun with one provider credential; logout is answered with a 400. Switches the app to OpenCode.
  *  `go` is passed through as the providers response's Go quota (omitted entirely when null); `usage` feeds the local
  *  summary above it. */
+/** 👤 Akun always opens on the Claude tab (account.js "no remembered choice"): these tests switch to the OpenCode tab. */
+async function openOpenCodeTab(page) {
+  await page.waitFor(() => document.querySelector('#acct-tab-opencode'), { timeoutMs: 4000, message: 'dialog Akun terbuka' });
+  await page.click('#acct-tab-opencode');
+}
+
 async function stubOpenCodeAccount(page, { go = null, usage = null } = {}) {
   await page.eval(async (payload) => {
-    localStorage.setItem('office.accountTab', 'opencode'); // 👤 Akun opens on the OpenCode information tab
+    localStorage.setItem('office.accountTab', 'opencode'); // no longer read (the dialog always opens on Claude), kept harmless
     window.__officeFetch ??= window.fetch;
     const prev = window.fetch;
     window.__realConfirm = window.confirm;
@@ -4822,6 +4828,7 @@ for (const vp of VIEWPORTS) {
       try {
         await stubOpenCodeAccount(page);
         await tap(page, '#btn-account');
+        await openOpenCodeTab(page);
         await page.waitFor(() => document.querySelector('#account-body [data-act="oc-logout"]'), { timeoutMs: 8000, message: 'daftar provider OpenCode' });
         await settle(page, 'account-modal');
         await page.click('#account-body [data-act="oc-logout"]');
@@ -4845,6 +4852,7 @@ for (const vp of VIEWPORTS) {
       try {
         await stubOpenCodeAccount(page, { go: GO_QUOTA, usage: GO_USAGE });
         await tap(page, '#btn-account');
+        await openOpenCodeTab(page);
         await page.waitFor(() => document.querySelectorAll('#account-body .oc-go-row').length === 5, { timeoutMs: 8000, message: 'lima baris kuota Go' });
         await settle(page, 'account-modal');
         const r = await page.eval(() => {
@@ -4937,6 +4945,7 @@ for (const vp of VIEWPORTS) {
       try {
         await stubOpenCodeAccount(page, { go: GO_MANY, usage: GO_USAGE });
         await tap(page, '#btn-account');
+        await openOpenCodeTab(page);
         await page.waitFor(() => document.querySelectorAll('#account-body .oc-go-row').length === 8, { timeoutMs: 8000, message: 'delapan baris pertama' });
         const collapsed = await page.eval(() => {
           const body = document.querySelector('#account-body');
@@ -4985,12 +4994,14 @@ for (const vp of VIEWPORTS) {
         await stubOpenCodeAccount(page, { go: GO_QUOTA, usage: GO_USAGE });
         // First open loads the panel; closing and reopening must fetch once more (fresh quota, not the cached body).
         await tap(page, '#btn-account');
+        await openOpenCodeTab(page);
         await page.waitFor((name) => window.__ocAcct.providerDone >= 1 && [...document.querySelectorAll('#account-body .oc-go-model')].some((b) => b.textContent === name), { timeoutMs: 8000, message: 'kuota Go saat panel dibuka' }, 'DeepSeek V4.1 Flash');
         assert.match(await page.eval(() => document.querySelector('#account-body').textContent), /Kuota OpenCode Go/);
         await page.press('Escape');
         await page.waitFor(() => document.querySelector('#account-modal').hidden, { timeoutMs: 2000, message: 'panel tertutup' });
         const quiet = await page.eval(() => ({ done: window.__ocAcct.providerDone, calls: window.__ocAcct.providerCalls }));
         await tap(page, '#btn-account');
+        await openOpenCodeTab(page);
         await page.waitFor((n) => window.__ocAcct.providerDone === n + 1, { timeoutMs: 8000, message: 'satu permintaan providers saat panel dibuka ulang' }, quiet.done);
         await page.waitFor((name) => [...document.querySelectorAll('#account-body .oc-go-model')].some((b) => b.textContent === name), { timeoutMs: 4000, message: 'kuota segar setelah panel dibuka ulang' }, 'DeepSeek V4.1 Flash');
         assert.equal(await page.eval(() => window.__ocAcct.providerCalls), quiet.calls + 1, 'membuka panel menyegarkan kuota sekali');
@@ -5036,6 +5047,7 @@ for (const vp of VIEWPORTS) {
       try {
         await stubOpenCodeAccount(page, { go: GO_CONSOLE, usage: GO_USAGE });
         await tap(page, '#btn-account');
+        await openOpenCodeTab(page);
         await page.waitFor(() => document.querySelectorAll('#account-body .oc-go-console .oc-go-meter').length === 3, { timeoutMs: 8000, message: 'tiga meter resmi' });
         const r = await page.eval(() => {
           const body = document.querySelector('#account-body');
@@ -5088,6 +5100,7 @@ for (const vp of VIEWPORTS) {
       try {
         await stubOpenCodeAccount(page, { go: GO_CONSOLE, usage: GO_USAGE });
         await tap(page, '#btn-account');
+        await openOpenCodeTab(page);
         await page.waitFor(() => document.querySelector('#account-body [data-oc-requests]'), { timeoutMs: 8000, message: 'tombol request resmi' });
         await page.eval(() => document.querySelector('#account-body [data-oc-requests]').click());
         await page.waitFor(() => !document.querySelector('#account-requests').hidden && document.querySelectorAll('#account-requests-list tr').length === 1, { timeoutMs: 8000, message: 'tabel request inline terbuka' });
