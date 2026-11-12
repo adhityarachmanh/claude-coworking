@@ -456,6 +456,19 @@ test('openCodeProviders: blok kustom → custom: true, katalog tidak, config rus
   assert.equal(broken.connected.find((p) => p.id === 'riverfake')?.custom, false);
 });
 
+test('add: id yang blok kustomnya sendiri di config tidak dianggap provider bawaan (overwrite boleh)', async () => {
+  resetConfig();
+  // The custom block makes OpenCode itself list `riverfake` as an integration (the fake bin does exactly that):
+  // re-adding it must be an overwrite, not a "sudah dipakai provider bawaan" 409.
+  writeConfig({ providers: { riverfake: { name: 'River Fake', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://lama/v1' }, models: { lama: {} }, env: ['RIVERFAKE_API_KEY'] } } });
+  const res = await call('/api/opencode/custom/add', { ...GOOD, id: 'riverfake', models: ['river-1'] });
+  assert.equal(res.status, 200, res.body);
+  const view = readOpenCodeConfig({ scope: 'global', home: HOME });
+  assert.equal(view.config.providers.riverfake.settings.baseURL, 'https://api.river.ai/v1', 'blok diganti penuh');
+  assert.deepEqual(view.config.providers.riverfake.models, { 'river-1': {} }, 'blok diganti penuh');
+  assert.equal(readFileSync(CONFIG_FILE, 'utf8').includes('sk-river-1'), false, 'key tetap tidak pernah di file config');
+});
+
 // ---------- addCustomProvider (unit) ----------
 
 test('addCustomProvider: derived env name, blok lain tetap, backup berisi isi lama, return { ok, path, backup }', () => {

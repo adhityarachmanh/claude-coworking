@@ -343,9 +343,11 @@ async function customAdd(bin, body, ctx) {
       throw Object.assign(new Error(`ID baru ditolak: base URL ini sudah dipakai provider kustom "${otherId}". Pakai provider itu, atau hapus dulu lewat tombol Hapus.`), { status: 409 });
     }
   }
-  // (a) an id the OpenCode catalog already knows (connected or just available) is refused even off the deny list.
+  // (a) an id the OpenCode catalog knows is refused even off the deny list — except one this app itself defined:
+  // our own custom block makes OpenCode list the same id as an integration, so re-adding it is an overwrite (b).
+  const ownCustom = new Set(Object.entries(blocks).filter(([, block]) => isObject(block) && (typeof block.package !== 'string' || block.package === CUSTOM_PROVIDER_PACKAGE)).map(([key]) => key));
   const known = await openCodeProviders(bin);
-  if ([...known.connected, ...known.available].some((p) => p.id === id)) {
+  if ([...known.connected, ...known.available].some((p) => p.id === id && !ownCustom.has(p.id))) {
     throw Object.assign(new Error(`ID "${id}" sudah dipakai provider bawaan. Pilih ID lain.`), { status: 409 });
   }
   // (b) overwrite only a block this feature wrote (its own package, or one without a package field).
