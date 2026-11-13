@@ -17,12 +17,16 @@ function planPreview(text) {
   return (bullets.length ? bullets : lines.slice(0, 3)).join('\n');
 }
 
+/** A small icon for the tool the card asks about: quick scanning across a busy chat. '🛡️' for anything unmapped. */
+const TOOL_ICON = { Bash: '⌨️', Edit: '✏️', MultiEdit: '✏️', Write: '📝', NotebookEdit: '📓', Read: '📖', Glob: '🗂', Grep: '🔎', WebFetch: '🌐', WebSearch: '🔍', Task: '🤝', TodoWrite: '☑️', ExitPlanMode: '📋', AskUserQuestion: '❓' };
+
 export function fillApproval(node, msg) {
   if (msg.approvalId) node.dataset.approvalId = msg.approvalId;
   const approval = state.approvals.get(msg.approvalId);
   const status = approval?.status ?? msg.status;
   node.className = `approval ${status}`;
-  const head = `<div class="ap-head">${approval?.source === 'cli' ? '<b class="cli-badge">Terminal · CLI bridge</b>' : who(msg.role)}<span>minta izin · ${escapeHtml(approval?.tool ?? '')}</span></div>`;
+  const icon = TOOL_ICON[approval?.tool] ?? '🛡️';
+  const head = `<div class="ap-head"><b class="ap-icon" aria-hidden="true">${icon}</b>${approval?.source === 'cli' ? '<b class="cli-badge">Terminal · CLI bridge</b>' : who(msg.role)}<span>minta izin · ${escapeHtml(approval?.tool ?? '')}</span></div>`;
   if (status !== 'pending' || !approval) {
     const label = { allowed: '✓ Diizinkan', denied: '✗ Ditolak', cancelled: '– Dibatalkan', pending: '… Menunggu' }[status] ?? status;
     node.innerHTML = `${head}<div class="ap-label">${escapeHtml(msg.text)}</div><div class="ap-status">${label}</div>`;

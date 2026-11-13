@@ -1,6 +1,7 @@
 // The chat log: messages, tool rows, follow-the-bottom scrolling.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
+import { logoFileFor, logoIndex } from '../core/model-logo.js';
 import { fmtTokens, time } from '../core/format.js';
 import { engineLabel, engineMark, engineOf } from '../core/engine-caps.js';
 import { MODEL_TIER_LABELS, shortModelName } from './engine.js';
@@ -510,6 +511,18 @@ function autoEffortTag(auto) {
 }
 
 /**
+ * A tiny logo for the model a tag names: the exact ai_logos file, else the model's family. A `provider/model` id
+ * is OpenCode, anything else is read as a Claude alias; no file → '' (the tag stays text-only).
+ */
+const tagLogo = (model) => {
+  const id = String(model ?? '').trim();
+  if (!id) return '';
+  const engine = id.includes('/') ? 'opencode' : 'claude';
+  const file = logoFileFor(id, logoIndex(), engine);
+  return file ? `<img class="tag-logo" src="/ai-logos/${file}" alt="" aria-hidden="true">` : '';
+};
+
+/**
  * The Model Auto tag on a prompt: which tier/model the classifier picked. The reason stays in the tooltip (the
  * Effort tag already carries the visible reason), and the tag truncates instead of overflowing its row.
  */
@@ -518,7 +531,7 @@ function autoModelTag(auto) {
   const tier = auto.label ?? MODEL_TIER_LABELS[auto.tier] ?? String(auto.tier ?? 'Auto');
   const label = `Model: ${tier} → ${shortModelName(auto.model)}`;
   const full = auto.reason ? `${label} — ${auto.reason}` : label;
-  return `<span class="tag auto-model" title="${escapeHtml(full)}" aria-label="${escapeHtml(full)}">${escapeHtml(label)}</span>`;
+  return `<span class="tag auto-model" title="${escapeHtml(full)}" aria-label="${escapeHtml(full)}">${tagLogo(auto.model)}${escapeHtml(label)}</span>`;
 }
 
 /**
@@ -610,6 +623,8 @@ function fillChatBody(node, msg) {
         break;
       }
       node.className = `msg assistant ${msg.streaming ? 'streaming' : ''} ${msg.history ? 'history' : ''}`;
+      // A faint role-coloured edge (the office's own palette) tells whose words these are at a glance.
+      node.style.borderLeft = `3px solid ${roleColor(msg.role)}`;
       const bm = isBookmarked(state.active, msg.id);
       node.innerHTML = `<div class="who">${who('claude')}${engineMarkHtml(msg)}${msg.source === 'cli' ? '<span class="cli-tag">CLI</span>' : ''}${msg.history ? '<span class="tag">riwayat</span>' : ''}<span>${time(msg.ts)}</span>${msg.streaming ? '' : `<button class="msg-copy" data-msg-act="copy" title="Salin jawaban (Markdown)">Salin</button><button class="msg-copy msg-star" data-msg-act="star" aria-pressed="${bm}" aria-label="${bm ? 'Hapus jawaban dari simpanan' : 'Simpan jawaban ini'}" title="${bm ? 'Hapus dari pesan tersimpan' : 'Simpan jawaban ini'}">${bm ? '★' : '☆'}</button>`}</div><div class="body md">${renderMarkdown(msg.text)}</div>`;
       // Paths to project files (`src/x.js`, public/js/app.js:120) open the file viewer; not while streaming.

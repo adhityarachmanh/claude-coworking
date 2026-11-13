@@ -157,6 +157,14 @@ export function localCommand(text) {
       // No argument: the Pengaturan giliran dialog with that picker focused, like the CLI's /model dialog.
       document.querySelector('#settings-chip')?.click(); // opens it and asks for the model list
       openModal('turn-settings-modal');
+      if (select === '#model') {
+        const field = document.querySelector('#model-field'); // the custom panel: open it and put focus there
+        if (field) {
+          field.click();
+          field.focus();
+          return;
+        }
+      }
       $(select).focus();
       $(select).showPicker?.();
       return;

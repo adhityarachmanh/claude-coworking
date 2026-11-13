@@ -692,6 +692,38 @@ body:not([data-tab='chat']) #chat-search { display: none; }
 .msg-copy { flex: none; margin-left: 2px; color: var(--muted); opacity: 0; transition: opacity .15s; }
 .msg:hover .msg-copy, .msg:focus-within .msg-copy { opacity: 1; }
 .tag { display: inline-block; padding: 0 6px; margin-right: 6px; border-radius: var(--r-pill); background: var(--wash-3); }
+/* Model logos in small UI (chip ⚙, session bar, chat tags): one size, and a faint disc keeps transparent SVGs
+   readable on any theme (the same idea drawModelLogo's dark disc serves on the canvas). */
+.chip-logo, .sb-logo, .tag-logo { width: 15px; height: 15px; object-fit: contain; vertical-align: -3px; margin-right: 5px; padding: 1px; box-sizing: content-box; border-radius: 4px; background: color-mix(in srgb, var(--text) 7%, transparent); }
+/* ---------- model picker (custom panel over the hidden state <select>) ---------- */
+#model-ctl { position: relative; }
+#model-field { display: inline-flex; align-items: center; gap: 5px; max-width: 260px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); cursor: pointer; font: var(--fs-md) var(--font); }
+#model-field:hover { border-color: var(--accent-2); }
+#model-field .mp-chev { color: var(--muted); font-size: 10px; }
+#model-field .mp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#model-panel { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: min(360px, 92vw); max-height: 380px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); box-shadow: var(--shadow-lg, 0 8px 30px #0003); padding: 6px; }
+#model-panel .mp-head { display: flex; align-items: center; gap: 5px; padding: 6px 8px 3px; font: 600 var(--fs-sm) var(--font); color: var(--muted); }
+#model-panel .mp-title { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+#model-panel .mp-group { border-top: 1px solid var(--border); padding: 2px 0 4px; }
+#model-panel .mp-group:first-child { border-top: none; }
+#model-panel .mp-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: var(--r-sm); cursor: pointer; font-size: var(--fs-md); }
+#model-panel .mp-row:hover, #model-panel .mp-row.active { background: var(--accent-tint); }
+#model-panel .mp-row.disabled { opacity: 0.5; cursor: not-allowed; }
+#model-panel .mp-row.mp-hl { background: var(--accent-tint); }
+#model-panel .mp-row .mp-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#model-panel .mp-trail { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex: none; }
+#model-panel .mp-star-btn { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; color: var(--muted); opacity: 0.45; transition: opacity 0.15s; padding: 2px 3px; border-radius: var(--r-sm); }
+#model-panel .mp-row:hover .mp-star-btn, #model-panel .mp-star-btn.on, #model-panel .mp-star-btn:focus-visible { opacity: 1; }
+#model-panel .mp-star-btn.on { color: var(--accent-2); }
+#model-panel .mp-lock { font-size: 12px; }
+#model-panel .mp-info { padding: 6px 8px; color: var(--muted); font-size: var(--fs-sm); }
+.mp-logo { width: 15px; height: 15px; object-fit: contain; padding: 1px; box-sizing: content-box; border-radius: 4px; background: color-mix(in srgb, var(--text) 7%, transparent); flex: none; }
+select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+/* Phone sheet: the panel joins the flow (no overlay math), full width, capped height. */
+@media (max-width: 700px) {
+  #model-panel { position: relative; top: 0; left: 0; width: 100%; max-height: 55vh; box-shadow: none; }
+  #model-field { max-width: 100%; width: 100%; justify-content: space-between; }
+}
 .tag.auto-effort, .tag.auto-model { background: var(--accent-soft); color: var(--accent-2); max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The reason Effort Auto gave, visible next to the level: small and muted so the row keeps its normal height. */
 .tag.auto-effort .auto-why { margin-left: 4px; font-size: var(--fs-2xs); font-style: italic; color: var(--muted); }
@@ -730,6 +762,8 @@ body:not([data-tab='chat']) #chat-search { display: none; }
 .muted { color: var(--muted); }
 
 .approval { border: 1px solid var(--border); border-radius: var(--r-xl); padding: 10px 12px; background: var(--surface-2); margin: 4px 0; }
+.approval .ap-icon { font-size: 16px; margin-right: 6px; }
+.approval.pending .ap-actions .primary { box-shadow: 0 0 0 2px color-mix(in srgb, var(--ask) 35%, transparent); font-weight: 600; }
 .approval.pending { border-color: var(--ask); box-shadow: 0 0 0 3px #f5a52422; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ask) 13%, transparent); animation: glow 1.6s infinite; }
 @keyframes glow { 50% { box-shadow: 0 0 0 5px #f5a5240f; box-shadow: 0 0 0 5px color-mix(in srgb, var(--ask) 6%, transparent); } }
 .ap-head { display: flex; align-items: center; gap: 6px; font-size: var(--fs-md); }
@@ -1615,7 +1649,16 @@ body.read-only #composer-hint { color: var(--ask); }
 .toast.ok { background: var(--ok-soft); color: var(--ok-text-strong); border-color: var(--ok-line); }
 .toast.warn { font-size: inherit; background: var(--warn-soft); color: var(--warn-text-strong); border-color: var(--warn-line); }
 .toasts { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: calc(100vw - 32px); pointer-events: none; } /* informational layer: never swallow a click on the button underneath */
-.toast { padding: 10px 16px; border-radius: var(--r-lg); background: var(--err-soft); color: var(--err-text-strong); border: 1px solid var(--err-line); box-shadow: 0 8px 24px #0008; max-width: 100%; overflow-wrap: anywhere; }
+.toast { padding: 10px 16px; border-radius: var(--r-lg); background: var(--err-soft); color: var(--err-text-strong); border: 1px solid var(--err-line); box-shadow: 0 8px 24px #0008; max-width: 100%; overflow-wrap: anywhere; cursor: default; }
+/* Per-tone icon (CSS-only: textContent stays the plain message). The layer itself stays pointer-events:none —
+   toasts never swallow a click; the reading-time pause is a document-level hit test (see api.js). */
+.toast::before { font-weight: 600; margin-right: 6px; }
+.toast.ok::before { content: '✅'; }
+.toast.warn::before { content: '⚠️'; }
+.toast.error::before { content: '⛔'; }
+/* A queued prompt breathes: one thin sweeping line under the bubble (indeterminate — no elapsed data exists). */
+.msg.user.queued:not(.cancelled)::after { content: ''; display: block; height: 2px; margin-top: 5px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: queue-sweep 1.6s linear infinite; }
+@keyframes queue-sweep { from { background-position: -45% 0; } to { background-position: 145% 0; } }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1500px) {

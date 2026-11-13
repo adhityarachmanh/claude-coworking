@@ -2,6 +2,14 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.24
+
+- **🎛 Daftar model jadi panel kustom.** Pengaturan giliran kini membuka panel dengan **logo provider di judul grup** (`OpenCode Go (12)`, `River AI (9)`), **bintang ⭐ inline per model** (pin/unpin tanpa keluar dari daftar), badge **🔒/⚠** untuk model terkunci atau provider belum login, harga tiap baris, kotak pencarian di dalam panel, dan **navigasi penuh keyboard** (↑↓/Home/End menyorot, Enter menerapkan, Esc menutup). Tampilan di HP masuk alur sheet.
+- **🖼 Bahasa visual logo menyatu**: chip ⚙, session bar, dan badge **Model Auto di chat** kini memakai logo model aktif dari `ai_logos/` (latar disc tipis agar terbaca di tema gelap & terang); bubble jawaban beraksen warna role di tepi kirinya.
+- **🛡 Kartu izin lebih menagih perhatian**: ikon per tool di kepala kartu (⌨️ Bash, ✏️ Edit, 🌐 WebFetch, dst) dan tombol aksi utama yang menonjol saat menunggu keputusan.
+- **💬 Toast berikon + bisa dibaca tenang**: ✅/⚠️/⛔ per tipe, dan mengarahkan kursor ke toast **menghentikan hitung mundurnya** (sisa waktu jalan setelah kursor pergi) — layer toast tetap tak pernah menelan klik.
+- **📋 Prompt antre "bernapas"**: garis sweep tipis di bawah bubble `antre #N`; empty state daftar model kini memandu (kirim prompt pertama, coba kata kunci lain) dengan tooltip lengkap.
+
 ## 1.0.23
 
 - **🖼 Logo model di session bar** — di samping badge mesin, logo model aktif kini juga tampil di bar sesi (sama dengan chip ⚙ dan 🧠 Mode Otak).

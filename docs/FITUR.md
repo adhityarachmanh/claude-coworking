@@ -72,7 +72,7 @@ Riwayat chat tiap project disimpan di `data/chats/<id>.jsonl` (250 pesan terakhi
 
 ## Mesin: Claude Code atau OpenCode
 
-**Mesin mengikuti model.** Tidak ada aksi ganti mesin: pilih model di **Pengaturan giliran** (chip ⚙ di atas kotak chat). Satu daftar model memuat grup **⭐ Favorit**, **Claude Code**, dan **OpenCode** (satu sub-grup per provider: OpenCode Go, River AI, dst—judul memakai nama tampilan provider), dan memilih model dari mesin lain langsung membuat mesin itu menjalankan giliran berikutnya untuk project ini. Dua project boleh memakai mesin berbeda **pada saat yang sama** (Claude Code di satu project, OpenCode di project lain).
+**Mesin mengikuti model.** Tidak ada aksi ganti mesin: pilih model di **Pengaturan giliran** (chip ⚙ di atas kotak chat). Daftar model kini **panel kustom**: grup **⭐ Favorit**, **Claude Code**, dan **OpenCode** (satu grup per provider: OpenCode Go, River AI, dst — judul berlogo dengan nama tampilan + jumlah model), tiap baris berlogo dan berharga, **bintang ⭐ inline untuk pin/unpin tanpa keluar dari daftar**, badge **belum login** pada provider tanpa key, kotak pencarian di dalam panel, dan navigasi keyboard penuh (↑↓/Home/End menyorot, Enter menerapkan, Esc menutup). Memilih model dari mesin lain langsung membuat mesin itu menjalankan giliran berikutnya untuk project ini. Dua project boleh memakai mesin berbeda **pada saat yang sama** (Claude Code di satu project, OpenCode di project lain).
 
 - **⭐ Favorit**: tombol **☆ Favoritkan** di dialog Pengaturan giliran men-pin model yang sedang dipilih ke grup paling atas daftar (maks 12, tersimpan untuk seluruh aplikasi dan semua jendela); klik lagi (**★ Difavoritkan**) untuk melepas.
 - **Claude Code** (bawaan)

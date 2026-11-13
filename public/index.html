@@ -178,21 +178,19 @@
               <span>Agent</span>
               <select id="agent"></select>
             </label>
-            <label class="ctl" title="Model untuk project ini">
+            <div id="model-ctl" class="ctl" title="Model untuk project ini">
               <span>Model</span>
-              <select id="model">
-                <option value="">Default</option>
-                <option value="opus">Opus</option>
-                <option value="sonnet">Sonnet</option>
-                <option value="haiku">Haiku</option>
-              </select>
-            </label>
-            <!-- A long per-project model list (OpenCode): filters the Model select; Enter picks the first match -->
-            <label id="model-search-ctl" class="ctl model-search-ctl" hidden>
-              <span>Cari model</span>
-              <input id="model-search" type="search" placeholder="mis. claude, gpt, free…" autocomplete="off" spellcheck="false" aria-controls="model" aria-describedby="model-search-count" />
-              <small id="model-search-count" class="sr-only" aria-live="polite"></small>
-            </label>
+              <button id="model-field" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="model-groups"></button>
+              <div id="model-panel" hidden>
+                <label id="model-search-ctl" class="ctl model-search-ctl" hidden>
+                  <span>Cari model</span>
+                  <input id="model-search" type="search" placeholder="mis. claude, gpt, free…" autocomplete="off" spellcheck="false" aria-controls="model" aria-describedby="model-search-count" />
+                  <small id="model-search-count" class="sr-only" aria-live="polite"></small>
+                </label>
+                <div id="model-groups" role="listbox" aria-label="Daftar model"></div>
+              </div>
+              <select id="model" class="mp-state" tabindex="-1" aria-hidden="true"></select>
+            </div>
             <label class="ctl" title="Seberapa dalam model berpikir. Lebih tinggi: lebih teliti untuk tugas sulit, tapi lebih lambat dan lebih banyak token. Auto memakai model kecil untuk menilai tiap prompt.">
               <span>Effort</span>
               <select id="effort">

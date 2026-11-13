@@ -3,6 +3,7 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { capReason, capsFor, cleanModelList, DEFAULT_ENGINE, engineLabel, engineOf, favoriteModelList, groupModels, modelsPerProject, openCodeProviderGroups } from '../core/engine-caps.js';
+import { mpApplyRow, mpHighlight, mpRows } from './model-picker.js';
 import { auth, DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { priceDetail, priceSuffix } from './model-prices.js';
 
@@ -274,10 +275,10 @@ export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_
   // the project's current one stays selectable (changing away from it must still be possible).
   const groups = openCodeProviderGroups(opencode, query, providerNames, providerAuth);
   let open = '';
-  if (loading && !opencode.length) open = infoOption('Memuat daftar model…');
-  else if (error && !opencode.length) open = infoOption(`Daftar model gagal dimuat: ${error}`);
-  else if (!opencode.length) open = infoOption('Daftar model muncul setelah pesan pertama');
-  else if (!groups.length) open = infoOption(query ? 'Tidak ada model yang cocok' : 'Daftar model muncul setelah pesan pertama');
+  if (loading && !opencode.length) open = infoOption('⏳ Memuat daftar model…');
+  else if (error && !opencode.length) open = infoOption(`⚠ Daftar model gagal dimuat: ${error}`, 'Coba lagi dengan ↻ Cek ulang di dialog ini, atau pastikan OpenCode terpasang dan berjalan.');
+  else if (!opencode.length) open = infoOption('📭 Muncul setelah pesan pertama', 'Kirim satu prompt untuk memulai sesi OpenCode — daftar modelnya langsung terisi di sini.');
+  else if (!groups.length) open = infoOption(query ? 'Tidak ada model yang cocok' : 'Daftar model muncul setelah pesan pertama', query ? 'Coba kata kunci lain, atau kosongkan kotak pencarian.' : 'Kirim satu prompt untuk memulai sesi OpenCode.');
   else {
     open = groups.map((g) => {
       // Connected groups carry their model count; a login-less group keeps its hint instead (one message, one line).
@@ -294,8 +295,9 @@ export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_
   return opts.join('');
 }
 
-/** A disabled line that explains an empty/still-loading group (never selectable). */
-const infoOption = (text) => `<option value="" disabled data-info>${escapeHtml(text)}</option>`;
+/** A disabled line that explains an empty/still-loading group (never selectable): short text, the full guidance in
+ *  its tooltip — an <option> truncates, so the actionable part must fit one line. */
+const infoOption = (text, hint = '') => `<option value="" disabled data-info${hint ? ` title="${escapeHtml(hint)}"` : ''}>${escapeHtml(text)}</option>`;
 
 /** Number of models (both engines) matching the search box. */
 export const catalogMatchCount = (catalog, query) =>
@@ -384,8 +386,9 @@ export function tierOptionsHtml(tier, engine, models, current, { grouped = false
 export function initEngine({ onModelPicked, rerender }) {
   const search = $('#model-search');
   search.addEventListener('input', rerender);
-  // Enter picks the first match (the search is a filter for the select next to it).
+  // The panel's combobox: arrows highlight rows, Enter applies the highlighted one, Esc clears the filter.
   search.addEventListener('keydown', (e) => {
+    const groupsEl = $('#model-groups');
     if (e.key === 'Escape' && search.value) {
       e.preventDefault();
       e.stopPropagation(); // Esc clears the filter, not the running turn
@@ -393,12 +396,25 @@ export function initEngine({ onModelPicked, rerender }) {
       rerender();
       return;
     }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      if (!groupsEl) return;
+      const rows = mpRows(groupsEl);
+      if (!rows.length) return;
+      const at = Number(groupsEl.dataset.mpIndex ?? -1);
+      const next = e.key === 'ArrowDown' ? at + 1 : e.key === 'ArrowUp' ? at - 1 : e.key === 'Home' ? 0 : rows.length - 1;
+      mpHighlight(groupsEl, next);
+      return;
+    }
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const first = [...$('#model').options].find((o) => o.value && !o.disabled && o.parentElement.tagName === 'OPTGROUP');
-    if (!first) return toast('Tidak ada model yang cocok.', 'warn');
-    $('#model').value = first.value;
-    search.value = '';
-    onModelPicked();
+    const row = mpRows(groupsEl)[Number(groupsEl?.dataset.mpIndex ?? -1)] ?? mpRows(groupsEl)[0];
+    if (!row) return toast('Tidak ada model yang cocok.', 'warn');
+    if (mpApplyRow(row)) {
+      search.value = '';
+      rerender();
+    } else {
+      toast('Tidak ada model yang cocok.', 'warn');
+    }
   });
 }

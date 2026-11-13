@@ -3,6 +3,7 @@ import { api, toast } from '../core/api.js';
 import { estimateUsd, formatEstimate, isPeak } from '../core/cost-estimate.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { activeModelOf } from '../core/model-logo.js';
+import { modelPanelHtml, mpApplyRow, mpHighlight } from './model-picker.js';
 import { capReason, capsFor, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
 import { fmtNum } from '../core/format.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
@@ -112,7 +113,7 @@ export function renderComposer() {
 }
 
 // Controls that change something: disabled (with the reason as tooltip) for a phone on plain WiFi.
-const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#model-search', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
+const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#model-field', '#model-search', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
 
 function applyReadOnly() {
   if (!state.readOnly) return; // fixed per connection: a laptop / Tailscale page never needs undoing
@@ -329,34 +330,9 @@ function renderTiersOpen(note, show) {
   open.hidden = !show;
 }
 
-/** ☆/★ the current model (Pengaturan giliran): pins/unpins it in the app-wide ⭐ Favorit group. Shown only for a
- * concrete model (Auto/Default have nothing to pin); follows the same on-first-use pattern as #model-price-note. */
-function renderFavToggle(current) {
-  const controls = document.querySelector('.controls');
-  if (!controls) return;
-  let fav = $('#model-fav');
-  if (!fav) {
-    fav = document.createElement('button');
-    fav.id = 'model-fav';
-    fav.type = 'button';
-    fav.className = 'tiers-open';
-    fav.setAttribute('aria-pressed', 'false');
-    fav.addEventListener('click', toggleFavorite);
-  }
-  const tiers = $('#model-tiers-open');
-  if (tiers && tiers.nextElementSibling !== fav) tiers.after(fav);
-  else if (!tiers && controls.nextElementSibling !== fav) controls.after(fav);
-  const favorited = (state.config?.favoriteModels ?? []).includes(current);
-  fav.textContent = favorited ? '★ Difavoritkan' : '☆ Favoritkan';
-  fav.title = favorited ? 'Melepas model ini dari grup ⭐ Favorit' : 'Pin model ini ke grup ⭐ Favorit di atas daftar';
-  fav.setAttribute('aria-pressed', String(favorited));
-  fav.hidden = !(state.active !== DEMO_ID && current && current !== AUTO_MODEL);
-}
-
-/** POSTs the pin/unpin; the server's config broadcast (and this instant re-render) moves the model in the picker. */
-async function toggleFavorite() {
-  const current = $('#model').value;
-  if (!current || current === AUTO_MODEL) return;
+/** POSTs the pin/unpin for one model id (the panel's inline ★, and /favorit's sibling flows). The server's config
+ *  broadcast (and this instant re-render) moves the model between groups in the picker. */
+async function toggleFavoriteValue(current) {
   const on = !(state.config?.favoriteModels ?? []).includes(current);
   try {
     await api('/api/model-favorites', { value: current, on });
@@ -559,6 +535,32 @@ async function saveModelTiers() {
 
 
 /**
+ * The picker's VISIBLE parts: the field button (logo + current name + engine mark) and the panel's groups — both
+ * built from the same catalog data the hidden #model select holds. The select stays the state holder; the panel
+ * only writes its value and fires the same change event, so exactly one code path picks a model.
+ */
+function renderPickerExtras(catalog, current, query, engine, locked, st) {
+  const field = $('#model-field');
+  const groups = $('#model-groups');
+  if (!field || !groups) return;
+  const { file } = activeModelOf(st, engine);
+  const auto = st.modelAuto === true;
+  const label = auto ? 'Auto' : ($('#model').selectedOptions[0]?.textContent ?? '').replace(/\s*\(.*$/, '').trim() || 'Default';
+  const html = `${file ? `<img class="mp-logo" src="/ai-logos/${escapeHtml(file)}" alt="" aria-hidden="true">` : ''}<span class="mp-name">${escapeHtml(label)}</span><span class="mp-chev">▾</span>`;
+  if (field.dataset.html !== html) {
+    field.innerHTML = html;
+    field.dataset.html = html;
+  }
+  const html2 = modelPanelHtml({ catalog, current, query, engine, locked, providerNames: currentProviderNames(), providerAuth: currentProviderAuth(), favorites: state.config?.favoriteModels ?? [] });
+  if (groups.dataset.html !== html2) {
+    groups.innerHTML = html2;
+    groups.dataset.html = html2;
+    // A re-render (prices, catalog, provider names) must not drop the keyboard highlight: re-apply the index.
+    if (groups.dataset.mpIndex != null && !$('#model-panel').hidden) mpHighlight(groups, Number(groups.dataset.mpIndex));
+  }
+}
+
+/**
  * The Model select: ONE list for both engines (Auto, Default, Claude Code, OpenCode). Picking a model of the other
  * engine makes that engine run the project (saveModel sends `{ engine, model }` in one request); while the project
  * works, the other engine's models are disabled with the reason.
@@ -579,10 +581,9 @@ function renderModelOptions(current, engine) {
   }
   // Keep the stored value selectable even when a filter hides it: the list always appends it as an extra option.
   select.value = auto ? AUTO_MODEL : current;
-  renderFavToggle(select.value || current); // the button follows what the select shows right now, not a stale status
-  const total = catalogMatchCount(catalog, '');
-  select.title = `${total} model dari Claude Code + OpenCode${locked ? ' — model mesin lain menunggu giliran ini selesai' : ''}`;
-  $('#model-search-ctl').hidden = total < 8; // a short list needs no search box
+  renderPickerExtras(catalog, current, query, engine, locked, st);
+  // The search now lives INSIDE the panel: it is the combobox anchor (keyboard enters here), so it is always shown.
+  $('#model-search-ctl').hidden = false;
   $('#model-search-count').textContent = query ? `${catalogMatchCount(catalog, query)} model cocok` : '';
   // The chosen model's own effort levels; unknown (Default model, older OpenCode) → the generic Claude list.
   const chosen = modelEntry(catalog, current);
@@ -832,6 +833,40 @@ export function initComposerControls() {
     setTimeout(renderComposer, 0);
   });
   $('#model').addEventListener('change', saveModel);
+  // The visible picker over the hidden state select: open/close, click-outside, row click (same change path), Esc.
+  const mpField = $('#model-field');
+  const mpPanel = $('#model-panel');
+  const mpClose = () => {
+    mpPanel.hidden = true;
+    mpField.setAttribute('aria-expanded', 'false');
+  };
+  mpField.addEventListener('click', (e) => {
+    e.stopPropagation();
+    mpPanel.hidden = !mpPanel.hidden;
+    mpField.setAttribute('aria-expanded', String(!mpPanel.hidden));
+  });
+  document.addEventListener('click', (e) => {
+    if (!mpPanel.hidden && !mpPanel.contains(e.target) && !mpField.contains(e.target)) mpClose();
+  });
+  mpPanel.addEventListener('click', (e) => {
+    const star = e.target.closest('.mp-star-btn');
+    if (star) {
+      e.stopPropagation();
+      toggleFavoriteValue(star.dataset.value); // inline pin/unpin: the panel stays open, the row's star flips
+      return;
+    }
+    const row = e.target.closest('.mp-row');
+    if (!row || row.classList.contains('disabled')) return;
+    if (mpApplyRow(row)) mpClose();
+  });
+  mpPanel.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation(); // Esc closes the panel, not the running turn or the dialog
+      mpClose();
+      mpField.focus();
+    }
+  });
   $('#mode-choice').addEventListener('click', (e) => {
     const pick = e.target.closest('[data-mode-choice]')?.dataset.modeChoice;
     if (pick) return chooseMode(pick);

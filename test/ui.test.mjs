@@ -1556,7 +1556,7 @@ for (const vp of VIEWPORTS) {
           };
         });
         assert.equal(view.kimi.text, 'Kimi K2', 'label tanpa akhiran harga');
-        assert.equal(view.kimi.title, '', 'title tanpa detail harga');
+        assert.equal(view.kimi.title, 'opencode-go/kimi-k2', 'title tanpa detail harga (id apa adanya)');
         assert.equal(view.sonnet, 'Sonnet');
         assert.equal(view.note.hidden, false, 'catatan tetap jujur: belum ada data');
         assert.equal(view.note.text, 'Belum ada data harga untuk model ini.');
@@ -1831,12 +1831,12 @@ for (const vp of VIEWPORTS) {
             selected: select.selectedOptions[0]?.textContent,
             suffix: /\$\d/.test(select.selectedOptions[0]?.textContent ?? ''),
             note: note && { text: note.textContent, hidden: note.hidden, live: note.getAttribute('aria-live'), afterControls: note.previousElementSibling?.classList.contains('controls') },
-            label: document.querySelector('#model').closest('label')?.querySelector('span')?.textContent,
+            label: document.querySelector('#model').closest('#model-ctl')?.querySelector(':scope > span')?.textContent,
           };
         });
         assert.equal(view.value, 'auto', 'status.modelAuto memilih Auto');
         assert.equal(view.selected, 'Auto — sesuaikan task');
-        assert.equal(view.label, 'Model', 'label select tetap ada');
+        assert.equal(view.label, 'Model', 'label picker tetap ada');
         assert.equal(view.suffix, false, 'Auto tanpa akhiran harga');
         assert.equal(view.note.text, 'Model dipilih otomatis: Hemat haiku · Seimbang sonnet · Kuat opus · Maks fable. Sekarang: sonnet.');
         assert.equal(view.note.hidden, false);
@@ -1893,8 +1893,8 @@ for (const vp of VIEWPORTS) {
           state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: '' };
           const { wantModels, providerNames } = await import('/js/features/engine.js');
           // A previous test in this document may have primed the names cache from the real endpoint: force one
-          // fetch through the stub above instead of trusting the 60 s cache.
-          providerNames({ maxAgeMs: 0 });
+          // fetch through the stub above and AWAIT it, so no render reads the previous test's names/auth.
+          await providerNames({ maxAgeMs: 0 });
           wantModels(); // the list is only fetched once the turn-settings dialog was opened
           const search = document.querySelector('#model-search');
           if (search.value) search.value = ''; // a leftover filter from another test must not hide groups here
@@ -1968,7 +1968,7 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test('🧭 Pengaturan giliran: model favorit grup ⭐ di atas + tombol pin mengirim POST', async () => {
+    test('🧭 Pengaturan giliran: grup ⭐ di atas + bintang inline di panel mengirim toggle', async () => {
       await ensureApp(page, `#${projectId}`);
       try {
         await stubModels(page, [
@@ -1977,10 +1977,13 @@ for (const vp of VIEWPORTS) {
         ]);
         await stubSettings(page); // a real settings POST would revert the optimistic pick (no OpenCode session here)
         await page.eval(() => {
-          window.__officeFetch ??= window.fetch;
-          const prev = window.fetch; // chain: models stub sits underneath
+          const prev = window.fetch; // chain: models + settings stubs sit underneath
           window.__favCalls = [];
           window.fetch = (url, opts) => {
+            // A controlled providers answer: both providers connected, so no row is gated in this test.
+            if (/\/api\/opencode\/providers$/.test(String(url))) {
+              return Promise.resolve(new Response(JSON.stringify({ connected: [{ id: 'river', name: 'River AI' }, { id: 'opencode-go', name: 'OpenCode Go' }], available: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
             if (/\/api\/model-favorites$/.test(String(url))) {
               window.__favCalls.push(JSON.parse(opts?.body ?? '{}'));
               return Promise.resolve(new Response(JSON.stringify({ favorites: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -1994,36 +1997,43 @@ for (const vp of VIEWPORTS) {
           state.config = { ...state.config, favoriteModels: ['river/GLM-5.3'] };
           state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: '' };
           const { wantModels, providerNames } = await import('/js/features/engine.js');
-          providerNames({ maxAgeMs: 0 });
+          await providerNames({ maxAgeMs: 0 }); // controlled names/auth BEFORE any render reads them
           wantModels();
-          const search = document.querySelector('#model-search');
-          if (search.value) search.value = '';
-          search.dispatchEvent(new Event('input', { bubbles: true }));
         });
-        await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === '⭐ Favorit'), { timeoutMs: 3000, message: 'grup ⭐ Favorit termuat' });
-        const order = await page.eval(() => [...document.querySelectorAll('#model optgroup')].map((g) => g.label));
-        assert.equal(order.indexOf('⭐ Favorit'), 0, 'grup favorit paling atas (setelah Auto/Default tanpa grup)');
-        assert.ok(order.includes('opencode-go (1)'), 'grup provider tetap ada');
-        // Select a concrete model → the ☆ button appears; click → POST {value, on:true}.
-        await page.click('#settings-chip'); // the select (and its pin button) live in the turn-settings dialog
+        await page.click('#settings-chip');
         await page.waitFor(() => !document.querySelector('#turn-settings-modal').hidden, { timeoutMs: 3000, message: 'dialog Pengaturan giliran terbuka' });
-        await page.eval(() => {
-          const select = document.querySelector('#model');
-          select.value = 'opencode-go/glm-5.3-flash';
-          select.dispatchEvent(new Event('change', { bubbles: true }));
+        await page.waitFor(() => document.querySelectorAll('#model-groups .mp-row').length >= 2, { timeoutMs: 3000, message: 'panel termuat' });
+        await page.click('#model-field'); // open the panel (the rows render even closed; the click needs it open)
+        // A re-render from the chip's fetch can race the toggle: retry (bounded) until the panel is open.
+        let tries = 0;
+        while ((await page.eval(() => document.querySelector('#model-panel').hidden)) && tries++ < 10) {
+          await page.click('#model-field').catch(() => {});
+          await sleep(150);
+        }
+        // The ⭐ Favorit group leads the PANEL, with the pinned model starred inline.
+        const panel = await page.eval(() => {
+          const heads = [...document.querySelectorAll('#model-groups .mp-head .mp-title')].map((n) => n.textContent.trim());
+          const rows = [...document.querySelectorAll('#model-groups .mp-row')].map((r) => ({ value: r.dataset.value, star: r.querySelector('.mp-star-btn')?.classList.contains('on') }));
+          return { heads, rows };
         });
-        await page.waitFor(() => !document.querySelector('#model-fav')?.hidden, { timeoutMs: 3000, message: 'tombol favorit tampil' });
-        assert.equal(await page.eval(() => document.querySelector('#model-fav').textContent), '☆ Favoritkan');
-        await page.click('#model-fav');
-        await page.waitFor(() => window.__favCalls.length === 1, { timeoutMs: 3000, message: 'POST favorit terkirim' });
+        assert.equal(panel.heads[0], '⭐ Favorit', 'grup favorit paling atas panel');
+        assert.ok(panel.heads.includes('OpenCode Go (1)'), `grup provider tetap ada: ${panel.heads.join(' | ')}`);
+        const favRow = panel.rows.find((r) => r.value === 'river/GLM-5.3');
+        const goRow = panel.rows.find((r) => r.value === 'opencode-go/glm-5.3-flash');
+        assert.equal(favRow.star, true, 'favorit bertanda ★');
+        assert.equal(goRow.star, false, 'bukan favorit bertanda ☆');
+        // The inline star pins the OTHER model: POST {value, on:true} without leaving the panel.
+        await page.click('#model-groups .mp-row[data-value="opencode-go/glm-5.3-flash"] .mp-star-btn');
+        await page.waitFor(() => window.__favCalls.length === 1, { timeoutMs: 3000, message: 'bintang inline mengirim pin' });
         assert.deepEqual(await page.eval(() => window.__favCalls[0]), { value: 'opencode-go/glm-5.3-flash', on: true });
-        // Auto/Default: no pin button.
-        await page.eval(() => {
-          const select = document.querySelector('#model');
-          select.value = 'auto';
-          select.dispatchEvent(new Event('change', { bubbles: true }));
+        // The row's star flips on without a reload: the re-render marks it as favorited.
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.config = { ...state.config, favoriteModels: ['river/GLM-5.3', 'opencode-go/glm-5.3-flash'] };
         });
-        await page.waitFor(() => document.querySelector('#model-fav')?.hidden, { timeoutMs: 3000, message: 'Auto tidak bisa dipin' });
+        await page.eval(() => document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true })));
+        await page.waitFor(() => new Set([...document.querySelectorAll('#model-groups .mp-star-btn.on')].map((b) => b.dataset.value)).size === 2, { timeoutMs: 3000, message: 'dua model bertanda bintang' });
+        assert.equal(await page.eval(() => document.querySelector('#model-panel').hidden), false, 'panel tetap terbuka setelah pin');
         assert.deepEqual(realProblems(page), []);
       } finally {
         await restoreSettings(page);
@@ -2132,6 +2142,67 @@ for (const vp of VIEWPORTS) {
         await page.press('Enter');
         await page.press('Enter');
         await page.waitFor(() => [...document.querySelectorAll('.toast.warn')].some((t) => /favorit/.test(t.textContent)), { timeoutMs: 3000, message: 'peringatan tanpa favorit' });
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreSettings(page);
+        await restoreModels(page);
+        await openApp(page, `#${projectId}`);
+      }
+    });
+
+    test('🧭 panel model: panah menyorot, Enter menerapkan, bintang inline mengirim toggle', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await stubModels(page, [
+          { value: 'river/GLM-5.3', name: 'GLM-5.3' },
+          { value: 'opencode-go/glm-5.3-flash', name: 'GLM 5.3 Flash' },
+        ]);
+        await stubSettings(page);
+        await page.eval(() => {
+          window.__officeFetch ??= window.fetch;
+          const prev = window.fetch; // chain: models + settings stubs sit underneath
+          window.__favCalls = [];
+          window.fetch = (url, opts) => {
+            // A controlled providers answer: both providers connected, so no row is gated in this test.
+            if (/\/api\/opencode\/providers$/.test(String(url))) {
+              return Promise.resolve(new Response(JSON.stringify({ connected: [{ id: 'river', name: 'River AI' }, { id: 'opencode-go', name: 'OpenCode Go' }], available: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            if (/\/api\/model-favorites$/.test(String(url))) {
+              window.__favCalls.push(JSON.parse(opts?.body ?? '{}'));
+              return Promise.resolve(new Response(JSON.stringify({ favorites: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return prev(url, opts);
+          };
+        });
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.config = { ...state.config, engine: 'opencode', favoriteModels: ['river/GLM-5.3'] };
+          state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), engine: 'opencode', model: '' };
+          const { wantModels, providerNames } = await import('/js/features/engine.js');
+          await providerNames({ maxAgeMs: 0 }); // controlled names/auth BEFORE any render reads them
+          wantModels();
+        });
+        await page.click('#settings-chip');
+        await page.waitFor(() => !document.querySelector('#turn-settings-modal').hidden, { timeoutMs: 3000, message: 'dialog terbuka' });
+        await page.waitFor(() => document.querySelectorAll('#model-groups .mp-row').length >= 2, { timeoutMs: 3000, message: 'panel termuat' });
+        await page.click('#model-field'); // open the panel
+        // A re-render from the chip's fetch can race the toggle: retry (bounded) until the panel is open.
+        let tries = 0;
+        while ((await page.eval(() => document.querySelector('#model-panel').hidden)) && tries++ < 10) {
+          await page.click('#model-field').catch(() => {});
+          await sleep(150);
+        }
+        await page.waitFor(() => !document.querySelector('#model-panel').hidden, { timeoutMs: 3000, message: 'panel terbuka' });
+        await page.eval(() => document.querySelector('#model-search').focus());
+        // ArrowDown twice: first favorite, then the next enabled row — highlighted, not applied.
+        const arrow = (key) => page.eval((k) => document.querySelector('#model-search').dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })), key);
+        await arrow('ArrowDown');
+        await arrow('ArrowDown');
+        await page.waitFor(() => [...document.querySelectorAll('#model-groups .mp-row.mp-hl')].some((r) => r.dataset.value === 'opencode-go/glm-5.3-flash'), { timeoutMs: 3000, message: 'sorotan panah di baris kedua' });
+        // Enter applies the highlighted row: the same change → saveModel path.
+        await page.press('Enter');
+        await page.waitFor(() => window.__settingsBodies.length === 1, { timeoutMs: 3000, message: 'Enter menerapkan baris tersorot' });
+        assert.deepEqual(await page.eval(() => window.__settingsBodies[0]), { model: 'opencode-go/glm-5.3-flash', modelAuto: false });
         assert.deepEqual(realProblems(page), []);
       } finally {
         await restoreSettings(page);
@@ -2338,7 +2409,7 @@ for (const vp of VIEWPORTS) {
           document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
         });
         await openLadder(page);
-        await page.waitFor(() => /Daftar model muncul/.test(document.querySelector('#model')?.innerHTML ?? ''), { timeoutMs: 3000, message: 'daftar model kosong' });
+        await page.waitFor(() => /Muncul setelah pesan pertama/.test(document.querySelector('#model')?.innerHTML ?? ''), { timeoutMs: 3000, message: 'daftar model kosong' });
         const rows = await page.eval(() => [...document.querySelectorAll('#tiers-rows [data-tier]')].map((el) => ({ tag: el.tagName, value: el.value, placeholder: el.getAttribute('placeholder'), label: el.getAttribute('aria-label') })));
         assert.deepEqual(rows.map((r) => r.tag), ['INPUT', 'INPUT', 'INPUT', 'INPUT'], 'tanpa daftar: input teks');
         assert.match(rows[0].placeholder, /opencode-go\//, 'placeholder berisi contoh id');
@@ -9046,7 +9117,7 @@ for (const vp of VIEWPORTS) {
         labelled: [...document.querySelectorAll('#notify-form input')].every((i) => i.getAttribute('aria-label') || i.closest('label') || document.querySelector(`label[for="${i.id}"]`)),
         focusInside: document.querySelector('#notify-modal').contains(document.activeElement),
       }));
-      assert.deepEqual(form, { on: true, events: [true, true, true, true, true, true], quiet: false, timesDisabled: true, allowAsk: true, fav: false, volume: '100', labelled: true, focusInside: true });
+      assert.deepEqual(form, { on: true, events: [true, true, true, true, true, true, false, false], quiet: false, timesDisabled: true, allowAsk: true, fav: false, volume: '100', labelled: true, focusInside: true });
       assert.equal(await page.eval(horizontalOverflow), null, 'dialog tanpa scroll horizontal');
       assert.deepEqual(await page.eval(unnamedButtons, '#notify-modal'), []);
       assert.equal(await page.eval(() => document.querySelector('.notify-card').scrollWidth <= document.querySelector('.notify-card').clientWidth + 1), true, 'isi dialog muat');

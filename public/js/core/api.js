@@ -65,7 +65,7 @@ export function toast(message, tone = 'error') {
   // after a short reconnect reads as one event, not three.
   for (const old of box.querySelectorAll('.toast')) {
     if (old.dataset.tone === tone && old.textContent === message) {
-      clearTimeout(old.toastTimer);
+      clearTimeout(old.timer);
       old.remove();
     }
   }
@@ -74,13 +74,49 @@ export function toast(message, tone = 'error') {
   node.dataset.tone = tone;
   node.setAttribute('role', tone === 'error' ? 'alert' : 'status'); // errors interrupt a screen reader, the rest wait
   node.textContent = message;
-  box.append(node);
-  while (box.children.length > TOAST_MAX) {
-    clearTimeout(box.firstElementChild.toastTimer);
-    box.firstElementChild.remove();
-  }
-  node.toastTimer = setTimeout(() => {
+  // Reading time: the pointer over a toast pauses its dismissal (the layer itself stays pointer-events:none —
+  // toasts never swallow a click — so the pause is wired on a document listener with a geometric hit test).
+  node.left = TOAST_MS;
+  node.startedAt = Date.now();
+  node.finish = () => {
+    clearTimeout(node.timer);
     node.remove();
     if (!box.children.length) box.remove(); // no empty fixed layer left over the page
-  }, TOAST_MS);
+  };
+  node.pause = () => {
+    clearTimeout(node.timer);
+    node.left -= Date.now() - node.startedAt;
+  };
+  node.resume = () => {
+    node.startedAt = Date.now();
+    clearTimeout(node.timer);
+    node.timer = setTimeout(node.finish, Math.max(600, node.left));
+  };
+  node.timer = setTimeout(node.finish, node.left);
+  wireToastHover(box);
+  box.append(node);
+  while (box.children.length > TOAST_MAX) {
+    box.firstElementChild.finish?.();
+    box.firstElementChild.remove();
+  }
+}
+
+/** One document-level mousemove pauses/resumes every visible toast whose box is under the pointer. */
+let toastHoverWired = false;
+function wireToastHover(box) {
+  if (toastHoverWired) return;
+  toastHoverWired = true;
+  document.addEventListener('mousemove', (e) => {
+    for (const t of box.querySelectorAll('.toast')) {
+      const r = t.getBoundingClientRect();
+      const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      if (inside && !t.paused) {
+        t.paused = true;
+        t.pause();
+      } else if (!inside && t.paused) {
+        t.paused = false;
+        t.resume();
+      }
+    }
+  }, { passive: true });
 }
