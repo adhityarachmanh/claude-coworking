@@ -13,12 +13,15 @@ import { openReport } from './report.js';
 import { activeEngine, ensureOpenCodeLoaded, loadOpenCode, onOpenCodeAction, onOpenCodeInput, onOpenCodeSubmit, openCodeBodyHtml, openCodeButton } from './opencode-account.js';
 
 // The tab only switches the information shown; it always starts on Claude and never touches the project engine.
+// A SELECT, not tabs: engines keep growing (Cursor CLI, …) — a dropdown scales, a row of tabs does not. A new
+// engine adds one entry here + one panel function in renderAccountBody.
 const ACCT_TABS = ['claude', 'opencode'];
+const ACCT_TAB_LABELS = { claude: 'Claude', opencode: 'OpenCode' };
 const acct = { tab: 'claude' };
 
 function accountTabsHtml(tab) {
-  const button = (id, label) => `<button type="button" id="acct-tab-${id}" class="engine-opt${tab === id ? ' on' : ''}" role="tab" data-act="acct-tab" data-tab="${id}" aria-selected="${tab === id}" aria-controls="acct-panel" tabindex="${tab === id ? 0 : -1}">${label}</button>`;
-  return `<div class="engine-opts acct-tabs" role="tablist" aria-label="Jenis akun">${button('claude', 'Claude')}${button('opencode', 'OpenCode')}</div>`;
+  const options = ACCT_TABS.map((id) => `<option value="${id}"${tab === id ? ' selected' : ''}>${ACCT_TAB_LABELS[id] ?? id}</option>`).join('');
+  return `<label class="acct-tabs" for="acct-tab"><span>Mesin</span><select id="acct-tab" aria-controls="acct-panel">${options}</select></label>`;
 }
 
 const LOGIN_TEXT = {
@@ -237,7 +240,7 @@ function renderAccountBody(body) {
   const tab = acct.tab;
   $('#account-title').textContent = '👤 Akun';
   const panel = tab === 'opencode' ? openCodeBodyHtml() : claudeBodyHtml();
-  body.innerHTML = `${accountTabsHtml(tab)}<div id="acct-panel" class="acct-panel" role="tabpanel" aria-labelledby="acct-tab-${tab}">${panel}</div>${auditHtml()}`;
+  body.innerHTML = `${accountTabsHtml(tab)}<div id="acct-panel" class="acct-panel" role="tabpanel" aria-labelledby="acct-tab">${panel}</div>${auditHtml()}`;
   if (tab === 'claude') renderLoginFlow();
   renderAccountButton();
 }
@@ -340,19 +343,20 @@ export function initAccount() {
     renderAccount();
     loadAccountTab();
   });
+  // The engine dropdown replaces the old tab buttons: one change switches the whole panel.
+  $('#account-body').addEventListener('change', (e) => {
+    if (e.target.id !== 'acct-tab') return;
+    const next = ACCT_TABS.includes(e.target.value) ? e.target.value : 'claude';
+    if (next === acct.tab) return;
+    acct.tab = next;
+    renderAccount();
+    loadAccountTab();
+  });
   $('#account-body').addEventListener('click', async (e) => {
     const el = e.target.closest('[data-act]');
     const act = el?.dataset.act;
     if (!act) return;
     try {
-      if (act === 'acct-tab') {
-        const next = ACCT_TABS.includes(el.dataset.tab) ? el.dataset.tab : 'claude';
-        if (next === acct.tab) return;
-        acct.tab = next;
-        renderAccount();
-        loadAccountTab();
-        return;
-      }
       if (act === 'audit-toggle') return toggleAudit();
       if (await onOpenCodeAction(act, el, renderAccount)) return;
       if (act === 'login' || act === 'login-console') {

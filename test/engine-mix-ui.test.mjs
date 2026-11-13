@@ -253,24 +253,25 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
         };
       });
       await page.eval(() => document.querySelector('#btn-account').click());
-      await page.waitFor(() => !document.querySelector('#account-modal').hidden && document.querySelectorAll('#account-body [data-act="acct-tab"]').length === 2, { timeoutMs: 5000, message: 'dua tab Akun' });
+      await page.waitFor(() => !document.querySelector('#account-modal').hidden && document.querySelector('#account-body #acct-tab')?.tagName === 'SELECT', { timeoutMs: 5000, message: 'dropdown mesin Akun' });
       const first = await page.eval(() => ({
-        tabs: [...document.querySelectorAll('#account-body [data-act="acct-tab"]')].map((b) => [b.dataset.tab, b.getAttribute('aria-selected')]),
+        options: [...document.querySelectorAll('#acct-tab option')].map((o) => o.value),
+        selected: document.querySelector('#acct-tab').value,
         switch: Boolean(document.querySelector('#account-body .engine-switch')),
         engineButtons: document.querySelectorAll('#account-body [data-act="engine"]').length,
         title: document.querySelector('#account-title').textContent,
       }));
-      assert.deepEqual(first.tabs, [['claude', 'true'], ['opencode', 'false']], 'tab default Claude');
+      assert.deepEqual(first.options, ['claude', 'opencode'], 'dua mesin di dropdown');
+      assert.equal(first.selected, 'claude', 'default Claude');
       assert.equal(first.title, '👤 Akun');
       assert.equal(first.switch, false);
       assert.equal(first.engineButtons, 0, 'tidak ada tombol "Jadikan mesin bawaan"');
 
-      await page.eval(() => document.querySelector('#account-body [data-act="acct-tab"][data-tab="opencode"]').click());
-      await page.waitFor(() => document.querySelector('#acct-tab-opencode')?.getAttribute('aria-selected') === 'true', { timeoutMs: 3000, message: 'tab OpenCode' });
+      await page.eval(() => { const s = document.querySelector('#acct-tab'); s.value = 'opencode'; s.dispatchEvent(new Event('change', { bubbles: true })); });
       await page.waitFor(() => /Provider OpenCode/.test(document.querySelector('#acct-panel')?.textContent ?? ''), { timeoutMs: 6000, message: 'isi OpenCode' });
-      await page.eval(() => document.querySelector('#account-body [data-act="acct-tab"][data-tab="claude"]').click());
-      await page.waitFor(() => document.querySelector('#acct-tab-claude')?.getAttribute('aria-selected') === 'true', { timeoutMs: 3000, message: 'tab Claude' });
-      assert.equal(await page.eval(() => window.__acctEngineCalls), 0, 'tab tidak memanggil /api/engine');
+      await page.eval(() => { const s = document.querySelector('#acct-tab'); s.value = 'claude'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+      await page.waitFor(() => /Login dengan akun Claude|Ganti akun/.test(document.querySelector('#acct-panel')?.textContent ?? ''), { timeoutMs: 3000, message: 'panel Claude' });
+      assert.equal(await page.eval(() => window.__acctEngineCalls), 0, 'dropdown tidak memanggil /api/engine');
       assert.deepEqual(page.problems, [], 'tanpa error console');
     } finally {
       await page.eval(() => {

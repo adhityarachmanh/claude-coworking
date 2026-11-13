@@ -168,7 +168,7 @@ for (const vp of VIEWPORTS) {
 
         await tap(page, '#btn-account');
         await page.waitFor(() => !document.querySelector('#account-modal').hidden, { timeoutMs: 4000, message: 'modal Akun terbuka' });
-        await page.click('#account-body [data-act="acct-tab"][data-tab="opencode"]');
+        await page.eval(() => { const s = document.querySelector('#acct-tab'); s.value = 'opencode'; s.dispatchEvent(new Event('change', { bubbles: true })); });
         await page.waitFor(() => document.querySelector('#account-body [data-act="oc-refresh"]')?.getClientRects().length, { timeoutMs: 6000, message: 'tab OpenCode terbuka' });
         // The providers may already be loaded from the real server (before the fake): refresh through the fake once.
         await page.click('#account-body [data-act="oc-refresh"]');

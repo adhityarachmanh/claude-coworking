@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.25
+
+- **🔽 👤 Akun: mesin kini dropdown, bukan tab.** Dialog Akun memakai dropdown **Mesin** (Claude / OpenCode) di atas panelnya — siap menampung mesin-mesin berikutnya (Cursor CLI, dst) tanpa menambah baris tombol. Perilaku tidak berubah: buka dialog selalu mulai di Claude, dan dropdown hanya memilih info yang ditampilkan.
+
 ## 1.0.24
 
 - **🎛 Daftar model jadi panel kustom.** Pengaturan giliran kini membuka panel dengan **logo provider di judul grup** (`OpenCode Go (12)`, `River AI (9)`), **bintang ⭐ inline per model** (pin/unpin tanpa keluar dari daftar), badge **🔒/⚠** untuk model terkunci atau provider belum login, harga tiap baris, kotak pencarian di dalam panel, dan **navigasi penuh keyboard** (↑↓/Home/End menyorot, Enter menerapkan, Esc menutup). Tampilan di HP masuk alur sheet.

@@ -1046,8 +1046,8 @@ const restoreAccount = (page) =>
  *  `oc` (and its cached providers) outlives a test in the same document, so the fresh providers answer is awaited
  *  before anything clicks into the panel — clicking Edit on a previous test's stale data would prefill wrong. */
 async function openOpenCodeTab(page) {
-  await page.waitFor(() => document.querySelector('#acct-tab-opencode'), { timeoutMs: 4000, message: 'dialog Akun terbuka' });
-  await page.click('#acct-tab-opencode');
+  await page.waitFor(() => document.querySelector('#acct-tab'), { timeoutMs: 4000, message: 'dialog Akun terbuka' });
+  await page.eval(() => { const s = document.querySelector('#acct-tab'); s.value = 'opencode'; s.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitFor(() => window.__ocAcct?.providerDone >= 1, { timeoutMs: 4000, message: 'daftar provider segar termuat' });
 }
 
@@ -4227,31 +4227,40 @@ for (const vp of VIEWPORTS) {
       try {
         await tap(page, '#btn-account');
         await settle(page, 'account-modal');
-        await page.waitFor(() => document.querySelectorAll('#account-body .acct-tabs [data-act="acct-tab"]').length === 2, { timeoutMs: 4000, message: 'dua tab info Akun' });
+        await page.waitFor(() => document.querySelector('#account-body #acct-tab')?.tagName === 'SELECT', { timeoutMs: 4000, message: 'dropdown mesin Akun' });
         const first = await page.eval(() => ({
-          tabs: [...document.querySelectorAll('#account-body [data-act="acct-tab"]')].map((b) => [b.dataset.tab, b.getAttribute('aria-selected')]),
+          options: [...document.querySelectorAll('#acct-tab option')].map((o) => o.value),
+          selected: document.querySelector('#acct-tab').value,
           engineSwitch: Boolean(document.querySelector('#account-body .engine-switch')),
           engineButtons: document.querySelectorAll('#account-body [data-act="engine"]').length,
           title: document.querySelector('#account-title').textContent,
         }));
-        assert.deepEqual(first.tabs, [['claude', 'true'], ['opencode', 'false']], 'default tab Claude');
+        assert.deepEqual(first.options, ['claude', 'opencode'], 'dua mesin di dropdown');
+        assert.equal(first.selected, 'claude', 'default mesin Claude');
         assert.equal(first.title, '👤 Akun');
         assert.equal(first.engineSwitch, false, 'tidak ada sakelar mesin');
         assert.equal(first.engineButtons, 0, 'tidak ada tombol "Jadikan mesin bawaan"');
 
-        await page.click('#account-body [data-act="acct-tab"][data-tab="opencode"]');
-        await page.waitFor(() => document.querySelector('#acct-tab-opencode')?.getAttribute('aria-selected') === 'true', { timeoutMs: 3000, message: 'tab OpenCode aktif' });
-        await page.waitFor(() => /Provider OpenCode/.test(document.querySelector('#acct-panel')?.textContent ?? ''), { timeoutMs: 6000, message: 'isi tab OpenCode' });
+        await page.eval(() => {
+          const s = document.querySelector('#acct-tab');
+          s.value = 'opencode';
+          s.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await page.waitFor(() => /Provider OpenCode/.test(document.querySelector('#acct-panel')?.textContent ?? ''), { timeoutMs: 6000, message: 'isi panel OpenCode' });
         const second = await page.eval(() => ({
-          tab: document.querySelector('#acct-tab-opencode').getAttribute('aria-selected'),
+          selected: document.querySelector('#acct-tab').value,
           panel: document.querySelector('#acct-panel').textContent,
         }));
-        assert.equal(second.tab, 'true');
+        assert.equal(second.selected, 'opencode');
         assert.match(second.panel, /Provider OpenCode/);
 
-        await page.click('#account-body [data-act="acct-tab"][data-tab="claude"]');
-        await page.waitFor(() => document.querySelector('#acct-tab-claude')?.getAttribute('aria-selected') === 'true', { timeoutMs: 3000, message: 'tab Claude aktif lagi' });
-        assert.equal(await page.eval(() => window.__acctEngineCalls), 0, 'tab hanya mengganti info, tidak memanggil /api/engine');
+        await page.eval(() => {
+          const s = document.querySelector('#acct-tab');
+          s.value = 'claude';
+          s.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await page.waitFor(() => /Login dengan akun Claude|Ganti akun/.test(document.querySelector('#acct-panel')?.textContent ?? ''), { timeoutMs: 3000, message: 'panel Claude aktif lagi' });
+        assert.equal(await page.eval(() => window.__acctEngineCalls), 0, 'dropdown hanya mengganti info, tidak memanggil /api/engine');
         assert.deepEqual(realProblems(page), [], 'tanpa error console');
         await page.press('Escape');
       } finally {
