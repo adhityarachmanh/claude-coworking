@@ -118,6 +118,10 @@ Pengaturan laptop (folder projects, tambah folder project, auto-start, matikan s
 3. Scan QR dengan kamera HP. Atau buka alamatnya lalu masukkan **kode 6 digit** dari layar laptop.
 4. Selesai. HP diingat, jadi lain kali cukup buka alamat itu lagi. HP yang tidak dipakai 30 hari dicabut otomatis.
 
+**Pasang dari jauh lewat `office pair`.** Laptop tidak perlu ada di depanmu: dari HP, Tailscale SSH ke laptop, jalankan `office pair`, lalu buka link `https://…/pair?k=…` yang tercetak langsung di HP (🔒 link HTTPS disarankan: kendali penuh + push). CLI hanya **membaca** kode yang sedang tampil—tidak me-rotate atau memakainya—dan kode tetap tampil di layar laptop. Perangkat tetap tercatat di daftar pasangan dan bisa dicabut seperti biasa.
+
+**Pasang otomatis dari perangkat tailnet.** Centang *Izinkan pasang otomatis dari perangkat tailnet (tanpa kode)* di dialog **📱** (aktif secara bawaan, bisa dimatikan): perangkat yang login dengan **akun Tailscale yang sama dengan laptop** memasang langsung lewat 🔒 HTTPS, tanpa mengetik kode—login tailnet sudah membuktikan siapa punya. Perangkat lain (lewat WiFi, atau akun tailnet yang berbeda) tetap wajib kode sekali pakai. Pemeriksaan identitas berjalan per upaya dengan `tailscale status`; kalau Tailscale gagal dijawab, alur normal dengan kode tetap dipakai (fail closed). Pengaturannya hanya bisa diubah dari laptop, dan setiap pasangan tetap tercatat + bisa dicabut.
+
 Untuk Tailscale: pasang **Tailscale** di laptop dan HP (`tailscale.com/download`), login dengan akun yang sama, dan nyalakan VPN Tailscale di HP. Aplikasi mengenali interface Tailscale laptop secara otomatis saat akses HP aktif.
 
 ### Pasang sebagai aplikasi (PWA)
@@ -265,7 +269,7 @@ Untuk detail lengkap, jalankan `npm run test:claude` (23 cek terhadap Claude Cod
 
 ```bash
 npm run test:fast    # harian: hanya logika murni, tanpa browser/server (~35 dtk, 500+ test)
-npm run test:smoke   # gerbang rilis: server, izin, antrian, backup, CLI bridge (~1–2 mnt)
+npm run test:smoke   # gerbang rilis: 10 file integrasi (server, izin, antrian, backup, CLI bridge, autopair tailnet, shell OpenCode) (~1–2 mnt)
 npm run test:unit    # semua test tanpa browser (termasuk server sungguhan + Claude palsu)
 npm run test:ui      # test browser per file; yang gagal diulang sekali dan dilaporkan FLAKY
 npm test             # semuanya (unit + UI), paling lambat

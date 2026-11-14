@@ -111,6 +111,8 @@ function renderPhone() {
         : viaTailscale
         ? '🌐 <b>Tailscale: kendali penuh.</b> HP bisa mengirim perintah, menjawab izin, dan commit.'
         : '📶 <b>WiFi: hanya lihat.</b> HP bisa memantau chat, perubahan, dan aktivitas, tapi tidak bisa mengirim perintah. Untuk kendali penuh, pakai Tailscale.'}</p>
+      <div class="auto-pair"><label class="switch"><input id="remote-auto-pair" type="checkbox" ${info.autoPairTailnet !== false ? 'checked' : ''}/> Izinkan pasang otomatis dari perangkat tailnet (tanpa kode)</label>
+        <p class="muted small">Perangkat yang login dengan akun Tailscale yang sama dengan laptop ini bisa pasang langsung lewat 🔒 HTTPS, tanpa mengetik kode. Perangkat lain (WiFi, akun tailnet orang lain) tetap butuh kode sekali pakai.</p></div>
       <p class="muted small">Belum tersambung? Saat pertama kali, Windows mungkin menanyakan izin firewall untuk Node.js — pilih <b>Allow / Izinkan</b> (jaringan Private).</p>`
     : '<p class="muted">Menyiapkan kode…</p>';
   renderHttps(info);
@@ -161,6 +163,18 @@ export function initPhone() {
       await api('/api/remote', { enabled: e.target.checked });
       phone.pairing = null;
       setTimeout(refreshPairing, 300);
+    } catch (err) {
+      e.target.checked = !e.target.checked;
+      toast(err.message);
+    }
+  });
+  // 🔓 Pasang otomatis dari perangkat tailnet: the checkbox is rebuilt every second by renderPhone(),
+  // so the change handler saves at once and the next render already shows the saved state.
+  $('#phone-body').addEventListener('change', async (e) => {
+    if (e.target.id !== 'remote-auto-pair') return;
+    try {
+      const info = await api('/api/remote/auto-pair', { autoPairTailnet: e.target.checked });
+      if (state.config?.remote) state.config.remote = { ...state.config.remote, autoPairTailnet: info.autoPairTailnet };
     } catch (err) {
       e.target.checked = !e.target.checked;
       toast(err.message);

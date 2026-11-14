@@ -33,6 +33,7 @@ import { CiWatcher } from './src/github-ci.js';
 import { findGh } from './src/github-pr.js';
 import { DEVICE_COOKIE, HTTPS_DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows, wifiConfig } from './src/remote.js';
 import { TailscaleCert, httpsPortFrom, restrictDir } from './src/tls.js';
+import { eligibleTailnetPeer } from './src/tailnet.js';
 import { purgeTrash, TRASH_RETENTION_DAYS } from './src/session-admin.js';
 import { PushService, wifiApproval } from './src/push.js';
 import { activeAgents, storedEnabled, teamPrompt } from './src/role-catalog.js';
@@ -107,7 +108,8 @@ const MAX_PAIR_BODY = 1024; // POST /pair is reachable before pairing: it only c
 const DEFAULT_SLASH = ['clear', 'compact', 'context', 'cost', 'effort', 'help', 'init', 'model', 'resume', 'review'];
 // Per-start secret: only pages served by this process can call the API (blocks CSRF from other sites).
 const TOKEN = randomBytes(24).toString('hex');
-// A narrower token for the CLI-bridge hook: it may only ask for an approval decision, never control the office.
+// A narrower token for the local CLI (`office claude` hook + `office pair`): it may only ask for an approval
+// decision and read the pairing snapshot, never control the office.
 const CLI_TOKEN = randomBytes(24).toString('hex');
 
 // The Lead's team prompt and the subagents (--agents) follow the active team (👥 Kelola tim): src/role-catalog.js.
@@ -899,7 +901,23 @@ async function handlePair(req, res, url) {
   }
   if (req.method === 'GET') return servePairPage(res);
   if (req.method !== 'POST' || !String(req.headers['content-type']).startsWith('application/json')) return json(res, 405, { error: 'method not allowed' });
-  const result = remote.pair({ code: (await readJson(req, MAX_PAIR_BODY)).code }, userAgent, ip, transport);
+  const body = await readJson(req, MAX_PAIR_BODY);
+  // 🔓 Pasang otomatis dari perangkat tailnet (src/tailnet.js): only over the https (Tailscale) listener,
+  // only for a device of the laptop owner's OWN tailnet user, and only while the setting is on — the
+  // tailnet login already proves who it is, so no code is needed. Plain http (WiFi/LAN) never auto-pairs,
+  // even when the IP is a 100.x tailnet address; another user's device, a missing CLI, or a broken
+  // `status --json` falls through to the normal code flow (fail closed). Fresh status per attempt.
+  if (secure && remote.enabled && remote.autoPairTailnet) {
+    const found = await eligibleTailnetPeer(req.socket.remoteAddress);
+    const auto = found && remote.autoPair(found.name, transport);
+    if (auto) {
+      announcePairedDevice(auto.device); // the other phones hear about it, exactly like a code pairing
+      publishConfig();
+      res.writeHead(200, { 'Set-Cookie': deviceCookie(auto.token, secure), 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: true, auto: true }));
+    }
+  }
+  const result = remote.pair({ code: body.code }, userAgent, ip, transport);
   if (result.retryAfter) {
     res.setHeader('Retry-After', String(result.retryAfter));
     return json(res, 429, result);

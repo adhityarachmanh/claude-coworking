@@ -28,7 +28,7 @@ Tips:
 **Sekali saja:**
 
 1. Pasang Tailscale di laptop dan HP, login dengan akun yang sama.
-2. Di laptop: **📱** → centang **Izinkan akses dari HP** → pilih **🔒 Tailscale (HTTPS)** → scan QR dari HP. Kalau pilihan itu belum ada, ikuti langkah [Notifikasi push ke HP](../README.md#notifikasi-push-ke-hp) dulu.
+2. Di laptop: **📱** → centang **Izinkan akses dari HP** → pilih **🔒 Tailscale (HTTPS)** → scan QR dari HP. Kalau pilihan itu belum ada, ikuti langkah [Notifikasi push ke HP](../README.md#notifikasi-push-ke-hp) dulu. Dari HP jauh, bisa juga Tailscale SSH ke laptop dan jalankan `office pair` untuk membuka link pasang langsung (lihat [Menghubungkan HP](../README.md#menghubungkan-hp)); perangkat dengan akun Tailscale yang sama dengan laptop biasanya terpasang otomatis, tanpa kode.
 3. Pasang sebagai aplikasi: Android lewat menu ⋮ → *Install app*; iPhone lewat Bagikan → **Tambahkan ke Layar Utama**, lalu buka dari ikon itu dan masukkan kode pairing sekali lagi.
 4. Di HP: **🔎 Cari** → *Pengaturan notifikasi* → **📱 Notifikasi HP (push)** → **Aktifkan** → **Kirim tes**.
 

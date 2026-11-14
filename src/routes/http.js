@@ -40,12 +40,12 @@ export function readJson(req, limit) {
   });
 }
 
-/** Replies with what a Claude Code control request answered, or its error as a 400. */
+/** Replies with what a Claude Code control request answered; a typed error keeps its own status (else a generic 400). */
 export async function answer(res, promise) {
   try {
     return json(res, 200, (await promise) ?? {});
   } catch (err) {
-    return json(res, 400, { error: err.message });
+    return json(res, Number.isInteger(err?.status) && err.status >= 400 && err.status <= 599 ? err.status : 400, { error: err.message });
   }
 }
 

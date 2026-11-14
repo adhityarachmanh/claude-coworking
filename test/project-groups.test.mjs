@@ -2,7 +2,7 @@
 // folder semantics (satu project maksimal satu grup — masuk grup baru = pindah), dan route CRUD + daftar
 // sesi GABUNGAN yang hanya MERUJUK (sesi tetap milik repo masing-masing, tidak pernah dipindah).
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
@@ -146,11 +146,14 @@ test('route /api/groups: create → update → dissolve; anggota asing 400', asy
   assert.deepEqual(hub.projectGroups(), []);
 });
 
-function writeTranscript(projectPath, sessionId, title) {
+function writeTranscript(projectPath, sessionId, title, timestamp = '2026-11-13T08:00:00Z', mtimeMs = Date.now()) {
   const dir = path.join(TRANSCRIPTS, path.resolve(projectPath).replace(/[^a-zA-Z0-9]/g, '-'));
   mkdirSync(dir, { recursive: true });
-  const line = JSON.stringify({ type: 'user', message: { content: title }, entrypoint: 'cli', timestamp: new Date('2026-11-13T08:00:00Z').toISOString() });
-  writeFileSync(path.join(dir, `${sessionId}.jsonl`), `${line}\n`);
+  const line = JSON.stringify({ type: 'user', message: { content: title }, entrypoint: 'cli', timestamp: new Date(timestamp).toISOString() });
+  const file = path.join(dir, `${sessionId}.jsonl`);
+  writeFileSync(file, `${line}\n`);
+  // The merged list sorts by file mtime: pin it, because two writes inside one millisecond would tie.
+  utimesSync(file, new Date(mtimeMs), new Date(mtimeMs));
 }
 
 test('route sesi gabungan: sesi tiap anggota di-merge urut waktu + label sumber, tanpa memindahkan apa pun', async () => {
@@ -158,8 +161,10 @@ test('route sesi gabungan: sesi tiap anggota di-merge urut waktu + label sumber,
   hub.config = { engine: 'claude' };
   const ctx = ctxFor(hub);
   // Two member repos, each with its own transcript (the sessions stay where they are).
-  writeTranscript(path.join(TMP, 'web'), '11111111-1111-4111-8111-111111111111', 'fix login web');
-  writeTranscript(path.join(TMP, 'api'), '22222222-2222-4222-8222-222222222222', 'tambah endpoint api');
+  writeTranscript(path.join(TMP, 'web'), '11111111-1111-4111-8111-111111111111', 'fix login web', undefined, Date.now() - 60_000);
+  // The api session is pinned newer (content timestamp AND mtime): the merge sorts by mtime, and two files
+  // written inside one millisecond would tie into an arbitrary order.
+  writeTranscript(path.join(TMP, 'api'), '22222222-2222-4222-8222-222222222222', 'tambah endpoint api', '2026-11-13T08:00:05Z', Date.now());
   const group = hub.createProjectGroup('Proyek X', ['pweb', 'papi']);
 
   const res = await call(`/api/groups/${group.id}/sessions`, {}, ctx);

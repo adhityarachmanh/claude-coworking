@@ -159,6 +159,20 @@ export class RemoteAccess {
     this.hub.save();
   }
 
+  /**
+   * Pasang otomatis dari perangkat tailnet (feature B): a device of the laptop owner's own tailnet user
+   * arriving over the https listener pairs without the code. Default true; a state from before the
+   * setting existed (no key) counts as true.
+   */
+  get autoPairTailnet() {
+    return this.state.autoPairTailnet !== false;
+  }
+
+  setAutoPairTailnet(on) {
+    this.state.autoPairTailnet = Boolean(on);
+    this.hub.save();
+  }
+
   /** Current one-time pairing secrets (rotated after use, expiry or too many wrong codes). */
   currentPairing() {
     if (!this.pairing || Date.now() > this.pairing.expires) {
@@ -253,6 +267,26 @@ export class RemoteAccess {
   }
 
   /**
+   * Pasang otomatis (no code) for a device of the laptop owner's own tailnet user arriving over the
+   * https listener (server.js calls this only after the tailnet identity check in src/tailnet.js):
+   * the tailnet login proves who it is, so there is nothing to guess — the code and its rate limiting
+   * (per-IP lockout, global pause) do not apply, and no failure is recorded. The current pairing code
+   * stays alive: it was not used, and the screen may still be waiting for another device.
+   * Same record shape, transport binding and persistence as a successful pair().
+   * @param {string} name device display name (the tailnet hostname, see src/tailnet.js)
+   * @param {{ transport?: 'http'|'https' }} [options] the transport it arrived over (the token only works there)
+   * @returns {{ token: string, device: object }|null} null when phone access is off
+   */
+  autoPair(name, { transport = 'http' } = {}) {
+    if (!this.enabled) return null;
+    const token = randomBytes(32).toString('base64url');
+    const device = { id: randomUUID(), hash: sha256(token), name, created: Date.now(), lastSeen: Date.now(), transport: cleanTransport(transport) };
+    this.state.devices.push(device);
+    this.hub.save();
+    return { token, device };
+  }
+
+  /**
    * The paired device for a cookie token, or null (also null once it sat unused for DEVICE_IDLE_MS, and null
    * when the request came over another transport than the pairing did).
    * @param {{ transport?: 'http'|'https' }} [options]
@@ -299,6 +333,7 @@ export class RemoteAccess {
   publicInfo(port) {
     return {
       enabled: this.enabled,
+      autoPairTailnet: this.autoPairTailnet,
       urls: this.enabled ? lanAddresses().map((ip) => `http://${ip}:${port}`) : [],
       tailscale: networkAddresses().some((a) => a.kind === 'tailscale'),
       // push: 🔔 badge + "last push" (never the endpoint or keys); null = not subscribed

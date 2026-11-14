@@ -5,6 +5,8 @@
 //   "lama" — streams, then waits until session/cancel                       anything else — text, a read, a plan
 //   "tulis" — writes a file; asks first when permission.edit is "ask" (the edit permission's shape, kind "edit")
 //   "macet" — a shell command that never ends (`tail -f`), no output, until session/cancel (the stuck detector)
+//   "shellberkas"/"shelllatar"/"shellgantung" — a shell call tagged with metadata (shellID, background); its
+//             output file is written under FAKE_ACP_SHELL_OUT_DIR; latar keeps running, gantung never finishes
 //   "tanya" — the `question` tool: elicitation/create (form) like OpenCode 2.2.5 when the client offered
 //             elicitation.form at initialize, else the "couldn't be shown" fallback; says what came back
 //   "rencana" in the plan agent — a plan as the last answer; "disetujui" — says which agent works on it
@@ -32,6 +34,9 @@ const STORE = process.env.FAKE_ACP_STORE;
 // FAKE_ACP_SHELL_FILE: the running shell the fake service would list (`api shell.list`), so the app's shell linker
 // can be tested. Written by the "macet" scenario and removed when that turn is cancelled.
 const SHELL_FILE = process.env.FAKE_ACP_SHELL_FILE;
+// FAKE_ACP_SHELL_OUT_DIR: the shell/ folder under OpenCode's data dir — the "shell*" scenarios write their shell's
+// output file here (<dir>/projek-palsu/<shellID>.out), so the app's file-backed shell tasks can be tested.
+const SHELL_OUT_DIR = process.env.FAKE_ACP_SHELL_OUT_DIR;
 const storePath = (sid) => `${STORE}/${String(sid).replace(/[^\w-]/g, '')}.json`;
 function loadStore(sid) {
   try {
@@ -287,7 +292,7 @@ if (process.argv[2] !== 'acp') {
 }
 
 // FAKE_ACP_FAIL_ONCE=<file>: the very first `acp` process dies at initialize (a cold start), later ones work.
-import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 const failOnce = process.env.FAKE_ACP_FAIL_ONCE;
 const coldStart = Boolean(failOnce) && !existsSync(failOnce);
 if (coldStart) writeFileSync(failOnce, 'started');
@@ -436,6 +441,36 @@ async function turn(sessionId, text) {
     update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-sub-1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'API aman' } }] });
     await say('msg_team', 'Tim selesai.');
     return { stopReason: 'end_turn', usage: { inputTokens: 30, outputTokens: 6, totalTokens: 36 } };
+  }
+  if (/^shell(berkas|latar|gantung)/.test(text)) {
+    // OpenCode's shell tool tags its calls with metadata (shellID, background); its output goes to
+    // <data>/opencode/shell/<project.id>/<shellID>.out — the app reads that file for the ⧗ panel.
+    const kind = /latar/.test(text) ? 'latar' : /gantung/.test(text) ? 'gantung' : 'berkas';
+    const shellId = `sh_fake${{ berkas: 1, latar: 2, gantung: 3 }[kind]}`;
+    const command = `echo shell-${kind}`;
+    const call = `call-shell-${kind}`;
+    const meta = { shellID: shellId, background: kind === 'latar', command };
+    const writeOut = (line) => {
+      if (!SHELL_OUT_DIR) return;
+      try {
+        const dir = `${SHELL_OUT_DIR}/projek-palsu`;
+        mkdirSync(dir, { recursive: true });
+        appendFileSync(`${dir}/${shellId}.out`, line);
+      } catch {}
+    };
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'shell', kind: 'execute', status: 'pending', locations: [], rawInput: {}, _meta: meta });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'in_progress', kind: 'execute', title: command, rawInput: { command }, _meta: meta });
+    writeOut(`${kind}: mulai\n`);
+    if (kind === 'gantung') {
+      await sleep(150);
+      await say('msg_gantung', 'Berkas menggantung.');
+      return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } }; // the call never finishes
+    }
+    await sleep(800);
+    writeOut(`${kind}: selesai\n`);
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: `${kind}: mulai\nselesai\n` } }], rawOutput: { metadata: { exit: 0, shellID: shellId } } });
+    await say('msg_shell_done', 'Shell selesai.');
+    return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
   }
   if (/macet/.test(text)) {
     const call = 'call-hang-1';

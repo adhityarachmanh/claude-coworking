@@ -17,6 +17,12 @@ const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mode = process.argv[2];
 const FILE_TIMEOUT_MS = Number(process.env.CI_UI_FILE_TIMEOUT_MS ?? 15 * 60_000);
 
+// Hermetic: the office app sets OFFICE_APP_DIR (and may set the other isolation vars) for its own children, and a
+// test run inside one inherits that. A test must always exercise the repo checkout, never an installed copy, so
+// every wrapper-set OFFICE_* env is dropped before the test processes spawn. (A bare `node --test test/x.mjs`
+// outside this runner still inherits — unset those envs first when running files directly.)
+for (const key of ['OFFICE_APP_DIR', 'OFFICE_PORT', 'OFFICE_HTTPS_PORT', 'OFFICE_DATA_DIR', 'PROJECTS_ROOT', 'CLAUDE_BIN', 'CLAUDE_PROJECTS_DIR', 'CLAUDE_CONFIG_FILE', 'CLAUDE_CONFIG_DIR', 'OFFICE_TAILSCALE_BIN', 'OFFICE_BROWSER', 'OPENCODE_BIN', 'SPOTIFY_CLIENT_ID', 'OFFICE_OPENCODE_SHELL_DIR', 'OFFICE_SHELL_WATCH_MS', 'OFFICE_OPENCODE_CONFIG_HOME']) delete process.env[key];
+
 const files = readdirSync(path.join(APP, 'test'))
   .filter((f) => f.endsWith('.test.mjs'))
   .sort()
@@ -41,6 +47,8 @@ const SMOKE = [
   'engine-mix.test.mjs',
   'backup.test.mjs',
   'backup-schedule.test.mjs',
+  'tailnet-autopair.test.mjs',
+  'opencode-acp-shells.test.mjs',
 ];
 
 if (mode === 'fast') {

@@ -293,6 +293,8 @@ export class StreamTranslator {
     const id = msg.task_id;
     if (!id) return;
     const t = this.bgTasks.get(id) ?? { id, status: 'running', startedAt: Date.now() };
+    if (Number.isFinite(msg.startedAt)) t.startedAt = msg.startedAt; // OpenCode's shell tasks start with the tool call
+    if (msg.source) t.source = msg.source; // 'acp' (an ACP-hosted session's own shell) vs the service's shells
     if (msg.subtype === 'task_started') {
       Object.assign(t, { kind: msg.subagent_type ? 'agent' : 'shell', agent: msg.subagent_type ?? null, background: Boolean(msg.is_backgrounded), status: 'running' });
       t.lastActivityAt ??= t.startedAt;
@@ -397,14 +399,18 @@ export class StreamTranslator {
 
   /**
    * OpenCode: the service's running shells of this project as tasks (⧗ Tugas latar). Replace semantics for these
-   * ids; a shell whose tool call has ended (or was moved with ⧗ Pindah ke latar) is in the background.
+   * ids; a shell whose tool call has ended (or was moved with ⧗ Pindah ke latar) is in the background. Tasks of
+   * ACP-hosted sessions (`source: 'acp'`, src/acp-session.js) are invisible to the service: their state comes only
+   * from their tool call, and a stale service list (or an empty one) must never close or resurrect them.
    * @param {{ id: string, command: string, startedAt?: number, toolUseId?: string|null }[]} shells
    */
   syncShellTasks(shells) {
     const live = new Set();
     for (const s of shells) {
       live.add(s.id);
+      if (this.bgTasks.get(s.id)?.source === 'acp') continue; // an acp shell owns this id: the service cannot see it
       const t = this.bgTasks.get(s.id) ?? { id: s.id, status: 'running', startedAt: s.startedAt ?? Date.now(), kind: 'shell' };
+      t.source ??= 'service';
       Object.assign(t, { kind: 'shell', status: 'running', command: truncate(s.command, 500), description: truncate(s.command, 200) });
       if (s.toolUseId) t.toolUseId = s.toolUseId;
       t.background = !(t.toolUseId && this.tools.has(t.toolUseId));
@@ -413,7 +419,7 @@ export class StreamTranslator {
     }
     let changed = live.size > 0;
     for (const t of this.bgTasks.values()) {
-      if (String(t.id).startsWith('oc:') && t.status === 'running' && !live.has(t.id)) {
+      if (String(t.id).startsWith('oc:') && t.source !== 'acp' && t.status === 'running' && !live.has(t.id)) {
         Object.assign(t, { status: 'completed', endedAt: Date.now() });
         changed = true;
       }
@@ -722,6 +728,17 @@ export class StreamTranslator {
     if (this.liveThinking) this.finishThinking('');
     this.retryChatId = null;
     this.status({ compacting: false });
+    let changed = false;
+    // OpenCode (source 'acp'): a shell task whose tool call is still open when the turn ends (it was interrupted
+    // or its final update never came) is done with the turn — never reopened by a stale .out file later.
+    for (const t of this.bgTasks.values()) {
+      if (!String(t.id).startsWith('oc:') || t.source !== 'acp' || t.status !== 'running' || t.background) continue;
+      if (t.toolUseId && this.tools.has(t.toolUseId)) {
+        Object.assign(t, { status: 'completed', endedAt: Date.now() });
+        changed = true;
+      }
+    }
+    if (changed) this.emitBgTasks();
     // The context window comes only with the result (per model); the main model's is the largest.
     const windows = Object.values(msg.modelUsage ?? {}).map((u) => u.contextWindow).filter((n) => n > 0);
     if (windows.length) this.contextWindow = Math.max(...windows);

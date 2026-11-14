@@ -11,6 +11,7 @@ import { mergePermission, readUserPermission, childOpenCodeEnv } from './opencod
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { attachmentChips } from './attachments.js';
+import { recordAudit } from './audit-log.js';
 import { budgetStop, consumeBudgetOverride } from './budget.js';
 import { checkTurn, overCapacity } from './concurrency.js';
 import { MODE_CHOICE_MESSAGE, agentForMode } from './modes.js';
@@ -284,6 +285,9 @@ export class AcpAdapter {
           info.done = true;
           const text = textOf(u.content) || (u.rawOutput?.error ? String(u.rawOutput.error) : u.status === 'completed' ? 'ok' : 'gagal');
           this.emit({ type: 'user', parent_tool_use_id: info.parent ?? null, message: { content: [{ type: 'tool_result', tool_use_id: u.toolCallId, content: clip(text, 8000), is_error: u.status === 'failed' }] } });
+          // Late metadata (only on the final update): the task still exists, already finished.
+          this.registerShellTask(u.toolCallId, info, mapTool(info).name, info.rawInput ?? {});
+          this.finishShellTask(info, u.status, text);
           for (const [desc, ids] of this.subagents) {
             const left = ids.filter((x) => x !== u.toolCallId);
             if (left.length) this.subagents.set(desc, left);
@@ -308,6 +312,10 @@ export class AcpAdapter {
   toolInfo(id, u = {}) {
     const info = this.tools.get(id) ?? { kind: 'other', title: '', rawInput: {}, locations: [], content: [], started: false, done: false };
     if (u.kind) info.kind = u.kind;
+    // OpenCode's shell tool tags its calls with metadata (shellID, background, command) while running AND in the
+    // final one (rawOutput.metadata): kept here, so the session can register `oc:<shellID>` as a background task.
+    const meta = { ...(u._meta && typeof u._meta === 'object' ? u._meta : {}), ...(u.meta && typeof u.meta === 'object' ? u.meta : {}), ...(u.rawOutput?.metadata?.shellID ? u.rawOutput.metadata : {}) };
+    if (meta.shellID) info.meta = { ...info.meta, ...meta };
     if (u.title) {
       // "<subagent description>: <tool>" → the subagent's own call, under its Agent row
       // the longest running description that prefixes the title (a description may itself contain ": ")
@@ -337,7 +345,33 @@ export class AcpAdapter {
     const desc = info.rawInput?.description;
     if (name === 'Agent' && typeof desc === 'string' && desc) this.subagents.set(desc, [...(this.subagents.get(desc) ?? []), id]);
     this.emit({ type: 'assistant', parent_tool_use_id: info.parent ?? null, message: { id: `acp-tool-${id}`, content: [{ type: 'tool_use', id, name, input }] } });
+    this.registerShellTask(id, info, name, input);
     return { name, input };
+  }
+
+  /**
+   * OpenCode's shell tool names its shell in the call's metadata (shellID): the task `oc:<shellID>` exists from the
+   * first update, so the ⧗ panel, the stuck chip and stop work from the very start (like Claude Code's tasks). Its
+   * state later comes only from the tool call itself (never from the output file).
+   */
+  registerShellTask(id, info, name, input) {
+    const shellId = String(info.meta?.shellID ?? '');
+    if (info.shellTask || !/^sh_[\w-]{1,100}$/.test(shellId) || (name !== 'Bash' && name !== 'PowerShell')) return;
+    info.shellTask = true;
+    const command = typeof input.command === 'string' ? input.command : info.title;
+    this.emit({ type: 'system', subtype: 'task_started', task_id: `oc:${shellId}`, is_backgrounded: Boolean(info.meta.background), tool_use_id: id, description: command, startedAt: Date.now(), source: 'acp' });
+  }
+
+  /** The call is over: a foreground shell's task ends with it (its outcome; a background one keeps running). */
+  finishShellTask(info, status, text = '') {
+    const shellId = String(info.meta?.shellID ?? '');
+    if (!info.shellTask || !/^sh_[\w-]{1,100}$/.test(shellId) || info.meta?.background) return;
+    this.emit({
+      type: 'system',
+      subtype: 'task_updated',
+      task_id: `oc:${shellId}`,
+      patch: { status: status === 'failed' ? 'failed' : 'completed', ...(status === 'failed' && text ? { error: clip(text, 300) } : {}) },
+    });
   }
 
   flushText() {
@@ -712,7 +746,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     /** Every 15 s while a bash call has run 8 s+: finds it among the service's running shells and links it. */
     watchShells() {
       if (this.shellTimer) return;
-      this.shellTimer = setInterval(() => this.linkShells().catch(() => {}), 15_000);
+      const ms = Math.max(50, Number(process.env.OFFICE_SHELL_WATCH_MS) || 15_000); // test hook (300 in tests); ≥50 ms so 0/negative cannot spin
+      this.shellTimer = setInterval(() => {
+        this.syncAcpShellActivity(); // the output files of this session's own shells feed the stuck chip
+        this.linkShells().catch(() => {});
+      }, ms);
       this.shellTimer.unref?.();
     }
 
@@ -745,7 +783,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const t = this.translator;
       const waiting = t?.unlinkedShells?.().filter((s) => Date.now() - s.startedAt >= 8000) ?? [];
       // looked at while a turn runs, a bash call waits for its shell, or a shell of ours may still be running
-      const tracking = t?.runningTaskIds?.().some((id) => String(id).startsWith('oc:'));
+      // (only the service's own tasks — an acp shell's task lives on its tool call, not in the service list)
+      const tracking = t?.runningTaskIds?.().some((id) => String(id).startsWith('oc:') && t.bgTasks.get(id)?.source !== 'acp');
       if ((!waiting.length && !this.busy && !tracking) || !this.m.opencode || this.shellLookup) return;
       this.shellLookup = true;
       try {
@@ -768,6 +807,27 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       }
     }
 
+    /**
+     * Live state of this session's own shell tasks (source 'acp'): OpenCode writes each one's output to
+     * <data>/opencode/shell/<project.id>/<sh_id>.out — its mtime moves the task's "no output for 3 min" stuck chip.
+     */
+    syncAcpShellActivity() {
+      import('./opencode-shells.js').then(({ shellFileMtime }) => {
+        const t = this.translator;
+        if (!t || !t.bgTasks.size) return;
+        let changed = false;
+        for (const task of t.bgTasks.values()) {
+          if (task.source !== 'acp' || task.kind !== 'shell' || task.status !== 'running') continue;
+          const mtime = shellFileMtime(String(task.id).replace(/^oc:/, ''));
+          if (mtime != null && Math.abs((task.lastActivityAt ?? 0) - mtime) > 1500) {
+            task.lastActivityAt = mtime;
+            changed = true;
+          }
+        }
+        if (changed) t.emitBgTasks();
+      }).catch(() => {});
+    }
+
     /** The shell of a task id from the browser: only one of this session's own (linked to its bash call). */
     async ownShell(taskId) {
       const { OC_TASK } = await import('./opencode-shells.js');
@@ -779,16 +839,50 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     }
 
     async taskOutput(taskId) {
-      const id = await this.ownShell(taskId);
+      const id = String(taskId);
+      const task = this.translator?.bgTasks.get(id);
+      // This session's own shell (ACP-hosted): the service cannot see it — the output is read from its file.
+      if (task?.source === 'acp') {
+        const { shellFileTail } = await import('./opencode-shells.js');
+        const tail = shellFileTail(id.replace(/^oc:/, ''));
+        if (!tail) return { output: '(belum ada output)', truncated: false };
+        task.lastActivityAt = Math.max(task.lastActivityAt ?? 0, tail.mtimeMs); // the file feeds the stuck chip
+        return { output: tail.output, truncated: tail.truncated };
+      }
+      const shell = await this.ownShell(taskId);
       const { shellOutput } = await import('./opencode-shells.js');
-      return shellOutput(this.m.opencode, this.project.path, id);
+      return shellOutput(this.m.opencode, this.project.path, shell);
     }
 
     async stopTask(taskId) {
+      const task = this.translator?.bgTasks.get(String(taskId));
+      // This session's own shell (ACP-hosted): `shell.remove` cannot reach it — a guarded kill instead.
+      if (task?.source === 'acp') return this.stopAcpShell(task);
       const shell = await this.ownShell(taskId);
       const { stopShell } = await import('./opencode-shells.js');
       await stopShell(this.m.opencode, this.project.path, shell);
       return { ok: true };
+    }
+
+    /**
+     * Stops one of this session's own shells by finding its process: only a process whose command line carries the
+     * exact command text AND whose ancestry reaches this session's ACP child is killed. Anything ambiguous fails
+     * closed (409, nothing killed) — a user's own look-alike process is never touched.
+     */
+    async stopAcpShell(task) {
+      const { listShellProcesses, matchShellProcess } = await import('./opencode-shells.js');
+      const { killTree } = await import('./proc.js');
+      const list = await listShellProcesses();
+      const pid = matchShellProcess(task.command ?? '', this.child?.pid, list);
+      if (!pid) throw Object.assign(new Error('Proses shell tidak ditemukan secara unik (mungkin sudah selesai, atau perintah yang sama berjalan di tempat lain). Tidak ada yang dihentikan.'), { status: 409 });
+      killTree(pid);
+      recordAudit(this.m.hub?.dataDir, { action: 'opencode-shell-kill', detail: `${task.id} pid ${pid} · ${truncate(task.command ?? '', 120)}` });
+      // A background shell's tool call already returned: nothing will close the task — this stop is the end.
+      if (!(task.toolUseId && this.translator.tools.has(task.toolUseId))) {
+        Object.assign(task, { status: 'killed', endedAt: Date.now() });
+        this.translator.emitBgTasks();
+      }
+      return { ok: true, pid };
     }
 
     /** ⧗ Pindah ke latar (Ctrl+B): OpenCode's session.background; the turn goes on, the shell keeps running. */
