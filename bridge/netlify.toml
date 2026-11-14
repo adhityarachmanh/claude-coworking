@@ -1,0 +1,15 @@
+# bridge/netlify.toml — deploy folder bridge/ ini sebagai ROOT sebuah situs Netlify (tanpa build step).
+# Routing tidak butuh redirects: tiap fungsi menyatakan path-nya sendiri lewat `export const config = { path }`.
+
+[build]
+  # Tidak ada aset statis — semua halaman dirender dari fungsi (lihat src/pages.mjs).
+  publish = "."
+
+[functions]
+  directory = "netlify/functions"
+  # Jadwal cron tiap menit dinyatakan di netlify/functions/scheduled.mjs
+  # (export const config = { schedule: "* * * * *" }).
+
+# Env var yang wajib di-set operator (Netlify UI → Site configuration → Environment variables):
+#   ENCRYPTION_KEY = 32-byte hex (64 karakter hex acak), mis. `openssl rand -hex 32`.
+#   Tanpa ini pendaftaran space menolak (kredensial user tidak akan pernah disimpan tanpa enkripsi).

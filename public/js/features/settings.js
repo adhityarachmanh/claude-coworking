@@ -210,9 +210,41 @@ export function initSettings() {
     }
   });
   $('#btn-shutdown').addEventListener('click', async () => {
-    if (!window.confirm(`Matikan server ${APP_NAME}? Sesi Claude yang sedang berjalan ikut dihentikan.`)) return;
-    await api('/api/shutdown').catch(() => {});
-    toast('Server dimatikan. Jalankan start-office.cmd untuk menyalakan lagi.', 'ok');
+    const pc = $('#rp-shutdown-pc')?.checked === true;
+    if (!window.confirm(pc ? `Matikan server ${APP_NAME} dan PC-nya? Sesi Claude yang sedang berjalan dihentikan dengan rapi, lalu listrik diputus jembatan.` : `Matikan server ${APP_NAME}? Sesi Claude yang sedang berjalan ikut dihentikan.`)) return;
+    const out = await api('/api/shutdown', { pc }).catch(() => {});
+    // ⏻ Handoff ke halaman jembatan (countdown pemutusan listrik): TAB YANG SAMA, tanpa toast — halaman berganti.
+    if (pc && out?.handoffUrl) {
+      window.location.href = out.handoffUrl;
+      return;
+    }
+    toast(pc ? 'PC dimatikan: server ditutup rapi, lalu listrik diputus jembatan.' : 'Server dimatikan. Jalankan start-office.cmd untuk menyalakan lagi.', 'ok');
+  });
+  // ⚡ Remote power (opsional): the self-hosted bridge that boots/cuts the PC when away.
+  const rpFill = (rp) => {
+    $('#rp-url').value = rp?.bridgeUrl ?? '';
+    $('#rp-token').value = rp?.token ?? '';
+    $('#rp-delay').value = String(rp?.offDelaySec ?? 120);
+  };
+
+  $('#rp-save').addEventListener('click', async () => {
+    const status = $('#rp-status');
+    try {
+      await api('/api/remote-power/settings', { bridgeUrl: $('#rp-url').value.trim(), token: $('#rp-token').value.trim(), offDelaySec: Number($('#rp-delay').value) || 120 });
+      status.textContent = '✅ Setelan disimpan.';
+    } catch (err) {
+      status.textContent = `⚠ ${err.message}`;
+    }
+  });
+  $('#rp-test').addEventListener('click', async () => {
+    const status = $('#rp-status');
+    status.textContent = '⏳ Menguji jembatan…';
+    try {
+      const r = await api('/api/remote-power/test');
+      status.textContent = r.ok ? `✅ Jembatan hidup — plug: ${r.plug ?? '?'}` : `⚠ ${r.error}`;
+    } catch (err) {
+      status.textContent = `⚠ ${err.message}`;
+    }
   });
 
   $('#btn-settings').addEventListener('click', () => {
@@ -225,6 +257,8 @@ export function initSettings() {
     openModal('settings-modal');
     concurrencyDirty = false; // a fresh open shows the saved limit, not a leftover draft
     syncConcurrencySection({ fill: true }); // ⚡ the saved turn limit + who is working right now (needs the dialog open)
+    // ⚡ Remote power: prefill the saved bridge config when the dialog opens.
+    api('/api/remote-power/get').then((r) => rpFill(r.remotePower)).catch(() => {});
     // After the other #btn-settings listeners (Spotify shows/hides its section): pick a tab that is available.
     requestAnimationFrame(() => selectSettingsTab());
   });

@@ -253,6 +253,13 @@ const remote = new RemoteAccess(hub, {
     }
     publishConfig();
   },
+  // A BRAND-NEW pairing code goes to the owner's already-paired phones by push (they cannot see this screen).
+  // `push` is created below: the callback only runs once an API route asks for a code, never during startup.
+  onNewCode: ({ code, expiresAt }) => {
+    // Best effort (docs/design-web-push.md §B4): a push failure must never break pairing, and the code
+    // never lands in the log — error messages of the push path carry no payload text.
+    Promise.resolve(push.sendPairingCode({ code, expiresAt })).catch((err) => console.error('Push kode pasangan gagal:', err?.message ?? err));
+  },
 });
 
 // The https listener's certificate (Tailscale MagicDNS name). Checked only while phone access is on.
@@ -581,7 +588,7 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // ⚙ Kompatibilitas OpenCode (run, settings): laptop only too (it spawns `opencode acp`).
 // 🧰 Setup mutations (install/cancel/login-terminal): laptop only. Status/refresh stay absent from wifiAllows: a
 // plain-HTTP WiFi phone may not even read them, a Tailscale phone may (both are default-deny over WiFi).
-const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/setup/install', '/api/setup/cancel', '/api/setup/login-terminal', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/shutdown', '/api/config', '/api/concurrency/save', '/api/projects', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/setup/install', '/api/setup/cancel', '/api/setup/login-terminal', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/shutdown', '/api/remote-power/get', '/api/remote-power/settings', '/api/remote-power/test', '/api/config', '/api/concurrency/save', '/api/projects', '/api/groups', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/pairing/code/push', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 // The same for switching engines and OpenCode's provider logins (API keys travel in these requests).
@@ -591,7 +598,8 @@ const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/ap
 const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout', '/api/account/audit', '/api/engine', '/api/opencode/providers', '/api/opencode/login/key', '/api/opencode/login/oauth', '/api/opencode/login/status', '/api/opencode/login/code', '/api/opencode/login/cancel', '/api/opencode/logout', '/api/opencode/custom/check', '/api/opencode/custom/add', '/api/opencode/custom/remove']);
 // Opening VS Code / Explorer only makes sense on the laptop itself.
 // Changing saved permission rules (🛡️ Aturan izin) changes what Claude Code may do unasked: laptop only (phones may look).
-const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit|mcp-add|session-import-json|checklist-scaffold|archive)$/;
+const LOCAL_ONLY_ACTION = /^\/api\/(projects\/[\w-]+\/(open|permissions-edit|mcp-add|session-import-json|checklist-scaffold|archive)|groups\/[\w-]+)$/;
+const LOCAL_ONLY_GROUP = /^\/api\/groups\/[\w-]+\/dissolve$/; // the update route above covers /api/groups/:id too
 const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+|js\/pair\.js)$/;
 
 // A TLS socket is never the laptop, even from loopback (e.g. someone puts `tailscale serve` in front of it):
@@ -884,6 +892,7 @@ async function handlePair(req, res, url) {
   if (req.method === 'GET' && key) {
     const result = remote.pair({ key }, userAgent, ip, transport);
     if (!result.token) return servePairPage(res, result.error);
+    announcePairedDevice(result.device); // the other phones hear about the new device (see below)
     publishConfig();
     res.writeHead(302, { 'Set-Cookie': deviceCookie(result.token, secure), Location: '/' }); // drop the key from the address bar
     return res.end();
@@ -896,9 +905,16 @@ async function handlePair(req, res, url) {
     return json(res, 429, result);
   }
   if (!result.token) return json(res, 400, result);
+  announcePairedDevice(result.device);
   publishConfig();
   res.writeHead(200, { 'Set-Cookie': deviceCookie(result.token, secure), 'Content-Type': 'application/json' });
   return res.end(JSON.stringify({ ok: true }));
+}
+
+/** A device just paired: a ✅ push to the OTHER phones (the new one has no subscription yet). Best effort. */
+function announcePairedDevice(device) {
+  if (!device) return;
+  Promise.resolve(push.sendPairedNotice(device)).catch((err) => console.error('Push pemberitahuan pasangan gagal:', err?.message ?? err));
 }
 
 // ---------- request handling (shared by the localhost, LAN and https listeners) ----------
@@ -950,7 +966,7 @@ async function handler(req, res) {
         }
         return json(res, 401, { error: 'Perangkat belum dipasangkan.' });
       }
-      if (LOCAL_ONLY.has(pathname) || pathname.startsWith('/api/remote') || LOCAL_ONLY_ACTION.test(pathname)) return json(res, 403, { error: 'Pengaturan ini hanya bisa diubah dari laptop.' });
+      if (LOCAL_ONLY.has(pathname) || pathname.startsWith('/api/remote') || LOCAL_ONLY_ACTION.test(pathname) || LOCAL_ONLY_GROUP.test(pathname)) return json(res, 403, { error: 'Pengaturan ini hanya bisa diubah dari laptop.' });
       if (ACCOUNT_AUTH.has(pathname) && !canManageAccount(req)) return json(res, 403, { error: 'Login/logout dari HP hanya lewat Tailscale (koneksi terenkripsi), bukan WiFi biasa.' });
       // The one gate for plain-HTTP WiFi: read-only, by allowlist (a new endpoint is refused until listed there).
       if (pathname.startsWith('/api/') && isReadOnly(req) && !wifiAllows(pathname)) return json(res, 403, { error: READ_ONLY_ERROR, readOnly: true });
@@ -1066,6 +1082,23 @@ account.refreshProfile(true).catch(() => {});
 setInterval(() => account.refreshProfile(true).catch(() => {}), 60_000).unref();
 // Phones unused for DEVICE_IDLE_MS are unpaired: now (after a long shutdown) and every hour.
 remote.pruneIdle();
+// ⚡ Remote power: a fresh heartbeat tells the bridge "PC hidup" (its status page shows 🟢 and unlocks the
+// waiting flow). Halts while a scheduled power-off exists — a heartbeat landing after /api/off would
+// cancel that schedule (the bridge's rule: PC alive again → don't cut power). One-way halt was fragile:
+// if the OS shutdown failed the heartbeat never came back while the PC stayed on. So the halt is
+// time-based: 10 minutes after the last halt request it resumes on its own.
+let remotePowerHaltUntil = 0;
+setInterval(() => {
+  if (Date.now() < remotePowerHaltUntil) return;
+  const rp = hub.remotePower();
+  if (!rp.bridgeUrl || !rp.token) return;
+  fetch(`${rp.bridgeUrl}/api/heartbeat`, {
+    method: 'POST',
+    headers: { 'X-Bridge-Token': rp.token, 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ ts: Date.now(), version: APP_VERSION }),
+  }).catch((err) => console.error('Remote power heartbeat:', err.message)); // retried next tick; never crashes
+}, 5 * 60 * 1000).unref();
+ctx.remotePowerHalt = () => { remotePowerHaltUntil = Date.now() + 10 * 60 * 1000; }; // set by /api/shutdown (pc) in src/routes/misc.js
 setInterval(() => remote.pruneIdle(), 60 * 60 * 1000).unref();
 
 server.on('error', (err) => {

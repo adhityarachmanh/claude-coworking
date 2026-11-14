@@ -1,0 +1,13 @@
+{
+  "name": "adhitron-bridge-netlify",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jembatan remote power Adhitron multi-tenant (Netlify Functions + Blobs)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.0.0"
+  }
+}

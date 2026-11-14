@@ -2,6 +2,16 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Unreleased
+
+- **🌉 Remote power kini multi-tenant di Netlify.** Jembatan daya pindah dari Cloudflare Worker single-tenant ke jembatan Netlify (`bridge/`): setiap user mendaftar di web dengan form, memasukkan kredensial Tuya-nya sendiri (terenkripsi AES-256-GCM per-space), dan mendapat URL + token untuk ditempel di ⚙ Remote power. Bisa memakai jembatan operator atau deploy sendiri dengan env `ENCRYPTION_KEY`.
+- **🎟 Halaman status serah-terima.** Saat shutdown, Adhitron menerima `handoffUrl` berisi tiket sekali pakai (TTL 10 menit) — buka status PC di HP (🟢/⚫ + countdown) tanpa token jangka panjang.
+- **💓 Heartbeat berkala.** Adhitron mengirim "PC hidup" ke jembatan tiap 5 menit; heartbeat datang saat ada jadwal pemutusan otomatis membatalkannya. Cron jembatan tiap menit memastikan listrik tetap dipotong tepat waktu walau PC sudah mati, dan halaman status menampilkan alur tunggu **Nyalakan PC → booting → 🟢 → ▶ Buka Adhitron** plus monitor daya Bardi (watt).
+
+## 1.0.26
+
+- **🗂 Parent group untuk proyek terkait.** Repo yang satu produk tapi terpisah (web + api + mobile) kini bisa dikelompokkan di bawah satu nama: tombol **🏷** di daftar project membuka dialog **Grup proyek terkait** — buat grup, pilih anggota, ganti nama, tambah/keluarkan anggota, atau bongkar. Anggota tampil **berbadge grup** di daftar project, dan tombol **🕘 Riwayat gabungan** menampilkan **semua sesi repo anggota tergabung urut waktu**, tiap entri berlabel repo sumbernya. Sesi **tidak pernah dipindah**: grup hanya merujuk — data sesi tetap milik repo masing-masing, dan "Buka di repo" melompat ke sana untuk melanjutkan.
+
 ## 1.0.25
 
 - **🔽 👤 Akun: mesin kini dropdown, bukan tab.** Dialog Akun memakai dropdown **Mesin** (Claude / OpenCode) di atas panelnya — siap menampung mesin-mesin berikutnya (Cursor CLI, dst) tanpa menambah baris tombol. Perilaku tidak berubah: buka dialog selalu mulai di Claude, dan dropdown hanya memilih info yang ditampilkan.
