@@ -4,17 +4,20 @@
 //
 // Kontrak untuk Adhitron (lihat README):
 //   POST /api/heartbeat { ts, version }   header X-Bridge-Token → { ok }
-//   POST /api/off?delay=300               header X-Bridge-Token → { ok, offAt, handoffUrl }
-//   POST /api/on                          header X-Bridge-Token / X-Status-Token → { ok }
+//   POST /api/off?delay=300[&hold=1]      header X-Bridge-Token → { ok, offAt, handoffUrl }
+//                                         hold=1 (tombol "Matikan PC rapi" di halaman): heartbeat TIDAK membatalkan
+//                                         jadwal — jadwal hanya bisa dibatalkan lewat /api/off/cancel atau /api/on.
+//   POST /api/off/cancel                  header X-Bridge-Token / X-Status-Token → { ok, cancelled } tanpa menyentuh plug
+//   POST /api/on                          header X-Bridge-Token / X-Status-Token → { ok } (selalu membatalkan jadwal)
 //   GET  /api/status                      header X-Bridge-Token / X-Status-Token → status lengkap
 //   POST /api/pair                        header X-Bridge-Token SAJA (ownerToken, bukan tiket) → { ok, code, expiresAt }
 //                                         kode = 8 karakter base32 tanpa huruf ambigu, TTL 2 menit, satu kode per space
 //   POST /api/pair/claim { code }         tanpa auth, tanpa CORS → respons register (id + ownerToken), kode habis dipakai
-// PENTING: setelah /api/off, client WAJIB berhenti mengirim heartbeat sampai shutdown selesai —
+// PENTING: setelah /api/off (tanpa hold), client WAJIB berhenti mengirim heartbeat sampai shutdown selesai —
 // heartbeat dianggap bukti "PC ternyata hidup" dan MEMBATALKAN jadwal mati (aturan pembatalan spesifikasi).
 import { randomBytes, randomInt } from 'node:crypto';
 import { assertEncryptionKey, decryptCreds, decryptSecret, encryptCreds, encryptSecret } from './vault.mjs';
-import { drivePlug, isValidRegion, normalizeRegion, readPowerW } from './tuya.mjs';
+import { TuyaError, drivePlug, isValidRegion, normalizeRegion, readPowerW, tuyaErrorClass, tuyaPublicMessage, verifyCreds } from './tuya.mjs';
 import * as store from './store.mjs';
 import {
   deletedPageHtml, errorPageHtml, managePageHtml,
@@ -37,7 +40,8 @@ const HTML_HEADERS = {
   'Content-Security-Policy': "frame-ancestors 'none'", // hanya anti-frame: script inline halaman tetap boleh
 };
 
-const ALIVE_WINDOW_MS = 30 * 60_000;   // heartbeat lebih tua dari ini = PC dianggap mati/beku
+const HEARTBEAT_FRESH_MS = 7 * 60_000; // kabar Adhitron lebih tua dari ini = bukan lagi bukti PC hidup
+const POWER_FRESH_MS = 90_000;         // sampel daya lebih tua dari ini = bukti listrik sudah basi
 const TICKET_TTL_MS = 10 * 60_000;     // umur tiket serah-terima
 const PAIR_TTL_MS = 120_000;           // umur kode pasangan (pindah space ke perangkat lain)
 const PAIR_MAX_FAILS = 20;             // klaim kode GAGAL per IP per jam, sesudahnya 429
@@ -51,10 +55,11 @@ const PAIR_CODE_RE = new RegExp(`^[${PAIR_ALPHABET}]{${PAIR_CODE_LEN}}$`);
 const PAIR_FAIL_MESSAGE = 'Terlalu banyak percobaan kode dari jaringan ini. Coba lagi nanti.';
 const PAIR_TRY_KEEP_MS = 2 * 60 * 60_000; // hitungan klaim lebih lama dari ini dibersihkan cron
 const REGISTER_LIMIT = 10;             // anti-abuse: 10 pendaftaran per IP per hari
+const VERIFY_DAILY_LIMIT = 300;        // cap GLOBAL verifikasi kredensial ke Tuya per hari (lintas IP, biaya/kuota API)
 const POWER_BOOT_W = 20;               // di atas ini dianggap "PC menarik daya"
 const POWER_OFF_W = 5;                 // di bawah ini listrik dianggap benar-benar terputus
 const BOOT_DETECT_MS = 30_000;         // power tinggi ≥ 30 dtk + heartbeat basi = booting/beku
-const POWER_SAMPLE_MS = 30_000;        // jeda sampling Tuya (kuota API — polling 10 dtk tidak memanggil Tuya tiap kali)
+const POWER_SAMPLE_MS = 30_000;        // jeda PERCOBAAN sampling Tuya (kuota API) — gagal pun ikut di-throttle (powerTryAt)
 const MAX_DELAY_S = 3600;              // batas delay jadwal mati
 const DEFAULT_DELAY_S = 300;
 const RETRY_DELAY_MS = 60_000;         // cron mencoba ulang pasien gagal-putus tiap menit
@@ -96,6 +101,35 @@ function readAdhitronUrl(raw) {
   if (raw == null || raw === '') return null;
   if (!isStr(raw) || !raw.startsWith('https://')) throw new HttpError(400, 'adhitronUrl (kalau diisi) harus https:// dan ≤ 200 karakter');
   return raw;
+}
+
+/** TuyaError → HttpError dengan status & pesan STABIL (tidak pernah JSON mentah / kredensial).
+ *  Kredensial/device/plug = kesalahan yang bisa diperbaiki user (422 register / 400 manage);
+ *  jaringan atau kuota Tuya = gangguan sementara (503, boleh coba lagi). */
+function tuyaHttpError(err, rejectStatus) {
+  const cls = tuyaErrorClass(err);
+  if (cls === 'TOKEN_REJECTED' || cls === 'DEVICE_REJECTED' || cls === 'NOT_A_PLUG') {
+    return new HttpError(rejectStatus, tuyaPublicMessage(err));
+  }
+  if (cls === 'NETWORK' || cls === 'TUYA_BUSY') return new HttpError(503, tuyaPublicMessage(err));
+  return new HttpError(502, 'Validasi kredensial Tuya gagal, coba lagi.');
+}
+
+/** Validasi kredensial Tuya SEBELUM menyimpan apa pun (fail closed). Read-only: token + GET status,
+ *  TIDAK pernah /commands. Ditolak Tuya → HttpError(rejectStatus), jaringan/kuota → 503.
+ *  Pesannya berasal dari peta publik tuya.mjs — tidak memuat Client ID/Secret. */
+async function assertTuyaCreds(creds, rejectStatus = 422) {
+  try {
+    await verifyCreds({
+      region: creds.tuyaRegion,
+      clientId: creds.tuyaClientId,
+      clientSecret: creds.tuyaClientSecret,
+      deviceId: creds.tuyaDeviceId,
+    });
+  } catch (err) {
+    if (!(err instanceof TuyaError)) throw new HttpError(502, 'Validasi kredensial Tuya gagal, coba lagi.');
+    throw tuyaHttpError(err, rejectStatus);
+  }
 }
 
 /** IP client menurut Netlify, disanitasi untuk key Blobs. `x-forwarded-for` TIDAK dipercaya: siapa pun bisa
@@ -176,8 +210,16 @@ async function register(request, env, url) {
   const body = await readJson(request);
   const creds = readCreds(body);
   const adhitronUrl = readAdhitronUrl(body.adhitronUrl);
-  const count = await store.incrRegisterCount(env, clientIp(request), new Date().toISOString().slice(0, 10));
+  const dayKey = new Date().toISOString().slice(0, 10);
+  const count = await store.incrRegisterCount(env, clientIp(request), dayKey);
   if (count > REGISTER_LIMIT) throw new HttpError(429, 'Batas 10 pendaftaran per IP per hari. Coba besok atau hubungi operator situs.');
+  // Cap GLOBAL harian: tiap percobaan verifikasi memanggil Tuya (token + status) dan memakai kuota
+  // project operator — dibatasi lintas IP supaya tidak bisa dipakai menghabiskan kuota dari banyak IP.
+  const verifies = await store.incrVerifyCount(env, dayKey);
+  if (verifies > VERIFY_DAILY_LIMIT) throw new HttpError(503, 'Batas verifikasi harian situs tercapai, coba besok.');
+  // Kredensial dicek langsung ke Tuya (read-only) SEBELUM enkripsi/tulis: kalau salah, jangan sampai
+  // space + index token + sisa key apa pun tersimpan lalu baru ketahuan rusak di cron.
+  await assertTuyaCreds(creds);
   let id = hex(4);
   while (await store.getSpace(env, id)) id = hex(4); // 8-char hex, tahan bentrokan
   const ownerToken = hex(32);
@@ -193,8 +235,10 @@ async function register(request, env, url) {
     lastHeartbeat: 0,
     offAt: null,
     offAtWrittenAt: 0,
+    offHold: false, // true = jadwal "matikan rapi" kebal pembatalan heartbeat (hanya /api/off/cancel atau /api/on)
     powerW: null,
     powerAt: 0,
+    powerTryAt: 0, // throttle PERCOBAAN sampling Tuya (berhasil/gagal) — powerAt hanya maju saat berhasil
     powerHighSince: null,
     attempts: 0,
     needsAttention: false,
@@ -295,7 +339,11 @@ async function heartbeat(request, env) {
   const now = Date.now();
   // ATURAN PEMBATALAN (spesifikasi): offAt masih di masa depan + heartbeat datang setelah jadwal ditulis
   // → PC ternyata hidup lagi → jadwal mati dibatalkan.
-  const cancelled = space.offAt != null && space.offAt > now && space.offAtWrittenAt < now;
+  // KECUALI jadwal "matikan rapi" (hold=1): user sudah memilih memotong listrik dari halaman status tanpa
+  // bisa memerintahkan OS mati, jadi kabar Adhitron (mis. saat shutdown berjalan) tidak boleh membatalkannya.
+  // Pembatalan manual tetap bisa lewat /api/off/cancel atau /api/on.
+  const held = space.offHold ?? false;
+  const cancelled = !held && space.offAt != null && space.offAt > now && space.offAtWrittenAt < now;
   if (cancelled) space.offAt = null;
   // Throttle tulis: ≥ 1 menit antar-heartbeat cukup; tapi saat jadwal baru ditulis (batal/batal-baru) selalu tulis.
   const throttled = !cancelled && space.lastHeartbeat > 0 && now - space.lastHeartbeat < 60_000;
@@ -320,8 +368,12 @@ async function off(url, request, env) {
     }
   }
   const now = Date.now();
+  // hold=1 = tombol "Matikan PC rapi" di halaman status: listrik tetap dipotong setelah delay walau
+  // Adhitron masih sempat mengirim heartbeat (mis. OS sedang shutdown). Hanya /api/off/cancel atau /api/on yang membatalkan.
+  const hold = url.searchParams.get('hold') === '1';
   space.offAt = now + delay * 1000;
   space.offAtWrittenAt = now;
+  space.offHold = hold;
   space.attempts = 0;
   space.needsAttention = false;
   let fired = false;
@@ -338,9 +390,34 @@ async function off(url, request, env) {
   return json({ ok: true, offAt: space.offAt, fired, handoffUrl: `/s/${space.id}?t=${ticket}` });
 }
 
-async function on(request, env) {
+/** POST /api/off/cancel — drops a pending schedule WITHOUT touching the plug. A mis-click on
+ *  "⏻ Matikan PC rapi" (or a change of mind before the countdown ends) must be undoable without the
+ *  OFF → ON cycle of /api/on, which would cut power to a running PC. Auth is the same as /api/off. */
+async function cancelOff(request, env) {
   const space = await requireSpace(env, request);
+  const had = space.offAt != null;
+  const held = space.offHold === true;
+  space.offAt = null;
+  space.offHold = false;
+  space.attempts = 0;
+  if (had || held) await store.putSpace(env, space);
+  return json({ ok: true, cancelled: had });
+}
+
+async function on(request, env, url) {
+  const space = await requireSpace(env, request);
+  const now = Date.now();
+  // Pengaman: menyalakan plug yang PC-nya masih hidup = listrik disiklus (OFF → ON) dan PC mati mendadak.
+  // Tanpa ?force=1 kita TOLAK lebih dulu — tanpa memanggil Tuya sama sekali (kuota API + tidak ada efek samping).
+  const force = url.searchParams.get('force') === '1';
+  if (!force) {
+    const st = statusOf(space, now);
+    if (st.alive) {
+      throw new HttpError(409, 'PC sepertinya masih hidup — listrik tidak disiklus. Kirim ?force=1 kalau yakin.');
+    }
+  }
   space.offAt = null; // spec: /api/on menghapus jadwal mati yang menunggu
+  space.offHold = false; // pembatalan manual selalu berlaku, termasuk jadwal "matikan rapi"
   space.attempts = 0;
   space.needsAttention = false;
   await store.putSpace(env, space); // simpan dulu: gagal Tuya pun jadwal sudah batal, user bisa coba lagi
@@ -351,29 +428,55 @@ async function on(request, env) {
   return json({ ok: true });
 }
 
-/** Sampling daya (dibatasi POWER_SAMPLE_MS) + pemeliharaan powerHighSince; mutasi space dan menyimpannya. */
+/** Sampling daya (dibatasi POWER_SAMPLE_MS lewat powerTryAt) + pemeliharaan powerHighSince; mutasi space
+ *  dan menyimpannya. powerAt HANYA maju saat pembacaan Tuya berhasil: kalau gagal, sampel lama harus tetap
+ *  terlihat basi (kalau tidak, powerW lama tampak segar dan statusnya bohong). */
 async function samplePower(env, space, now) {
-  if (now - space.powerAt < POWER_SAMPLE_MS) return;
-  space.powerAt = now; // tandai dulu: kegagalan Tuya tidak boleh membuat tiap poll memanggil Tuya
+  if (now - (space.powerTryAt ?? 0) < POWER_SAMPLE_MS) return;
+  space.powerTryAt = now; // throttle PERCOBAAN: kegagalan Tuya tidak boleh membuat tiap poll memanggil Tuya
   try {
     const w = await readPowerW(await cfgFor(env, space));
     if (w != null) {
       space.powerW = w;
+      space.powerAt = now;
       space.powerHighSince = w > POWER_BOOT_W ? (space.powerHighSince ?? now) : null;
     }
-  } catch { /* Tuya gagal: pertahankan sampel lama */ }
+  } catch { /* Tuya gagal: pertahankan sampel lama (powerAt tidak disentuh → sampel tetap basi) */ }
   await store.putSpace(env, space);
 }
 
-/** Status murni dari record (tanpa sampling) — dipakai API dan halaman. */
+/** Status murni dari record (tanpa sampling) — dipakai API dan halaman.
+ *  `alive` = PC hidup menurut DUA bukti yang mungkin: heartbeat Adhitron yang segar, atau listrik yang
+ *  benar-benar mengalir (daya segar di atas ambang) walau Adhitron sudah tidak mengirim kabar — mis. app crash.
+ *  `state` menyusun bukti itu menjadi satu keadaan eksplisit untuk halaman & klien. */
 function statusOf(space, now) {
-  const alive = space.lastHeartbeat > 0 && now - space.lastHeartbeat < ALIVE_WINDOW_MS;
-  const booting = !alive
-    && space.powerW != null && space.powerW > POWER_BOOT_W
+  const heartbeatFresh = space.lastHeartbeat > 0 && now - space.lastHeartbeat < HEARTBEAT_FRESH_MS;
+  const powerFresh = space.powerW != null && space.powerAt > 0 && now - space.powerAt < POWER_FRESH_MS;
+  const powerHigh = powerFresh && space.powerW > POWER_BOOT_W;
+  // A fresh low reading is the strongest evidence: the PC stopped drawing power. It must beat a heartbeat
+  // that is merely "recent" (up to 7 min old) — otherwise the page keeps saying "PC hidup" right after the
+  // plug was cut. A laptop running on battery with the plug off is deliberately treated as "off" here.
+  const measuredOff = powerFresh && space.powerW <= POWER_OFF_W;
+  // Plug sudah OFF dan tidak ada jadwal menunggu: with no power meter this is the only evidence we have.
+  const plugOff = space.lastPlug === 'off' && space.offAt == null;
+  const alive = !measuredOff && (heartbeatFresh || powerHigh);
+  const booting = !heartbeatFresh && powerHigh
     && space.powerHighSince != null && now - space.powerHighSince >= BOOT_DETECT_MS;
+  let state;
+  if (measuredOff) state = 'off';                      // listrik benar-benar 0 W setelah kabar terakhir
+  else if (heartbeatFresh) state = 'alive';            // kabar terbaru dari aplikasi
+  else if (booting) state = 'booting';                 // daya ada ≥ 30 dtk tanpa kabar: PC beku/booting
+  else if (powerHigh) state = 'suspected-alive';       // daya ada, tapi belum cukup lama untuk disebut booting
+  else if (plugOff && !heartbeatFresh) state = 'off';  // tanpa sensor daya: perintah OFF + kabar basi
+  else state = 'unknown';                              // tidak ada bukti segar sama sekali
   return {
     id: space.id,
     alive,
+    state,
+    heartbeatFresh,
+    powerFresh,
+    heartbeatAgeSec: space.lastHeartbeat > 0 ? Math.max(0, Math.floor((now - space.lastHeartbeat) / 1000)) : null,
+    powerAgeSec: space.powerAt > 0 ? Math.max(0, Math.floor((now - space.powerAt) / 1000)) : null,
     offAt: space.offAt ?? null,
     secondsUntilOff: space.offAt != null && space.offAt > now ? Math.ceil((space.offAt - now) / 1000) : null,
     plug: space.lastPlug ?? null,
@@ -452,7 +555,11 @@ async function manageAction(env, url, request) {
       tuyaRegion: form.get('tuyaRegion'),
     };
     const creds = readCreds(body);
-    space.adhitronUrl = readAdhitronUrl(form.get('adhitronUrl'));
+    const adhitronUrl = readAdhitronUrl(form.get('adhitronUrl'));
+    // Validasi kredensial EFEKTIF (secret lama dipakai bila field secret kosong) sebelum menulis apa pun:
+    // kalau Tuya menolak, setelan lama tetap utuh dan user melihat alasannya di halaman ini.
+    await assertTuyaCreds(creds, 400);
+    space.adhitronUrl = adhitronUrl;
     space.enc = encryptCreds(ownerTokenOf(env, space), env.encryptionKey, creds);
     await store.putSpace(env, space);
     return html(managePageHtml(space, url.searchParams.get('token'), creds, { notice: '<div class="note">✅ Tersimpan.</div>' }));
@@ -500,8 +607,9 @@ export async function handleApi(request, env) {
     if (path === '/s' || path === '/s/') return html(errorPageHtml('Link tidak lengkap', 'URL halaman status: /s/<id>?t=<tiket>'));
     if (path.startsWith('/s/') && request.method === 'GET') return await statusPage(env, path.slice(3), url);
     if (path === '/api/heartbeat' && request.method === 'POST') return await heartbeat(request, env);
+    if (path === '/api/off/cancel' && request.method === 'POST') return await cancelOff(request, env);
     if (path === '/api/off' && request.method === 'POST') return await off(url, request, env);
-    if (path === '/api/on' && request.method === 'POST') return await on(request, env);
+    if (path === '/api/on' && request.method === 'POST') return await on(request, env, url);
     if (path === '/api/status' && request.method === 'GET') return await apiStatus(request, env);
     return (isPairApi(path) ? jsonNoCors : json)({ error: 'Tidak ditemukan' }, 404);
   } catch (err) {
@@ -509,6 +617,13 @@ export async function handleApi(request, env) {
     // endpoint lain tetap `*`. Tanpa ini sebuah situs luar bisa membaca jawaban error endpoint pair.
     const reply = isPairApi(path) ? jsonNoCors : json;
     if (err instanceof HttpError) return reply({ error: err.message }, err.status);
+    // TuyaError never reaches the client raw: the stable public message is all it gets (no JSON detail,
+    // no credentials). Network/quota trouble is temporary (503); anything else is an upstream failure.
+    if (err instanceof TuyaError) {
+      const cls = tuyaErrorClass(err);
+      const status = cls === 'NETWORK' || cls === 'TUYA_BUSY' ? 503 : 502;
+      return reply({ error: tuyaPublicMessage(err) }, status);
+    }
     return reply({ error: String(err?.message ?? err) }, 502);
   }
 }
@@ -542,8 +657,11 @@ export async function scheduledSweep(env, nowMs = Date.now()) {
       continue;
     }
     if (space.offAt == null || space.offAt > nowMs) continue;
-    if (space.lastHeartbeat > space.offAtWrittenAt) { // PC ternyata hidup setelah jadwal ditulis → batal
+    // Jadwal "matikan rapi" (offHold) sengaja TIDAK dibatalkan heartbeat — user memilih memotong listrik
+    // dari halaman status; hanya /api/off/cancel atau /api/on yang membatalkannya.
+    if (!(space.offHold ?? false) && space.lastHeartbeat > space.offAtWrittenAt) { // PC ternyata hidup setelah jadwal ditulis → batal
       space.offAt = null;
+      space.offHold = false;
       await store.putSpace(env, space);
       results.push({ id: space.id, action: 'cancel' });
       continue;
@@ -571,11 +689,13 @@ export async function scheduledSweep(env, nowMs = Date.now()) {
     if (w != null) {
       space.powerW = w;
       space.powerAt = nowMs;
+      space.powerTryAt = nowMs; // the sample just taken: /api/status must not call Tuya again within 30 s
       space.powerHighSince = w > POWER_BOOT_W ? (space.powerHighSince ?? nowMs) : null;
     }
     if (w == null || w < POWER_OFF_W) {
       // Terputus (atau plug tanpa sensor daya — komando OFF sudah sukses dikirim).
       space.offAt = null;
+      space.offHold = false;
       space.attempts = 0;
       space.needsAttention = false;
       results.push({ id: space.id, action: 'off', powerW: w });
@@ -593,6 +713,7 @@ function applyRetry(space, nowMs) {
   space.attempts += 1;
   if (space.attempts >= MAX_ATTEMPTS) {
     space.offAt = null;
+    space.offHold = false;
     space.needsAttention = true; // halaman status: "⚠ gagal memutus — cek plug manual"
   } else {
     space.offAt = nowMs + RETRY_DELAY_MS;

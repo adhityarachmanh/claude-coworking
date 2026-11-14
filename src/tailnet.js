@@ -5,6 +5,52 @@
 // garbage CLI output — keeps the code flow. Any doubt → null → fail closed to the code.
 import { cliRunner, findTailscale } from './tls.js';
 
+// `tailscale status --json` used to run on every pairing request, so a page on another site could flood
+// the CLI. One short-lived cache (default 5 s, OFFICE_TAILNET_CACHE_MS, 0 = off) answers the repeats, and
+// concurrent callers share a single CLI process. Failures are never cached: the next request asks again
+// (fail closed stays fail closed, no stale "eligible" answer).
+export const DEFAULT_TAILNET_CACHE_MS = 5000;
+// This path only answers "is this peer the owner's", so it needs far less patience than certificate renewal.
+const STATUS_TIMEOUT_MS = 10_000;
+let cachedStatus = null; // { bin, at, status }
+let inFlight = null; // { bin, promise }
+
+/**
+ * The status cache lifetime: OFFICE_TAILNET_CACHE_MS when it is an integer >= 0 (0 = off), else 5 s.
+ * @param {object} [env]
+ * @returns {number}
+ */
+export function tailnetCacheMs(env = process.env) {
+  const raw = env?.OFFICE_TAILNET_CACHE_MS;
+  if (raw === undefined || raw === null || raw === '') return DEFAULT_TAILNET_CACHE_MS;
+  const ms = Number(raw);
+  return Number.isInteger(ms) && ms >= 0 ? ms : DEFAULT_TAILNET_CACHE_MS;
+}
+
+/** Forgets the cached status and any run in flight (tests change the fake tailnet between cases). */
+export function clearTailnetCache() {
+  cachedStatus = null;
+  inFlight = null;
+}
+
+/** One `status --json` per bin at a time; the answer is cached for `tailnetCacheMs(env)`. */
+async function statusFor(bin, env) {
+  const ttl = tailnetCacheMs(env);
+  if (ttl > 0 && cachedStatus && cachedStatus.bin === bin && Date.now() - cachedStatus.at < ttl) return cachedStatus.status;
+  if (inFlight && inFlight.bin === bin) return inFlight.promise;
+  const promise = cliRunner(bin, { timeoutMs: STATUS_TIMEOUT_MS })(['status', '--json'])
+    .then((out) => {
+      const status = JSON.parse(out); // garbage throws here: never cached, the caller fails closed
+      if (ttl > 0) cachedStatus = { bin, at: Date.now(), status };
+      return status;
+    })
+    .finally(() => {
+      if (inFlight?.promise === promise) inFlight = null;
+    });
+  inFlight = { bin, promise };
+  return promise;
+}
+
 /** The connection address without the IPv4-mapped prefix; lowercase (IPv6 hex case). */
 const plainIp = (ip) => String(ip ?? '').trim().replace(/^::ffff:/, '').toLowerCase();
 
@@ -47,9 +93,9 @@ export function peerDeviceName(peer, status = null) {
 }
 
 /**
- * Runs `<tailscale> status --json` fresh (never cached: pairing attempts are rare, and a device may
- * appear or leave the tailnet at any moment) and maps `ip` to an eligible owner peer.
- * No binary, a failing CLI, or unparseable output → null: the code flow continues, never a crash.
+ * Maps `ip` to an eligible owner peer from `tailscale status --json` (cached for a few seconds and shared
+ * by concurrent callers, see statusFor). No binary, a failing CLI, unparseable output, or a slow CLI
+ * (10 s) → null: the code flow continues, never a crash.
  * @param {string} ip the connection's remote address
  * @param {object} [env] environment (tests inject one; default process.env — OFFICE_TAILSCALE_BIN etc.)
  * @returns {Promise<{ peer: object, name: string }|null>}
@@ -59,7 +105,7 @@ export async function eligibleTailnetPeer(ip, env = process.env) {
   if (!bin) return null;
   let status;
   try {
-    status = JSON.parse(await cliRunner(bin)(['status', '--json']));
+    status = await statusFor(bin, env);
   } catch {
     return null; // missing binary, CLI error, or garbage: not eligible
   }

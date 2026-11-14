@@ -7,7 +7,7 @@ memasukkan kredensial Tuya-nya sendiri, dan mendapat **URL + token** untuk ditem
 ```
 HP / browser apa pun ──▶ jembatan ini (Netlify, online 24 jam) ──▶ Tuya Cloud API ──▶ smart plug ──▶ PC
                               ▲
-                              └── heartbeat "PC hidup" dari Adhitron tiap 5 mnt
+                              └── heartbeat "PC hidup" dari Adhitron tiap 2 mnt
 ```
 
 1. **Nyalakan**: plug **ON** → BIOS *Restore on AC Power Loss = Power On* membuat PC boot sendiri. Plug yang
@@ -15,7 +15,8 @@ HP / browser apa pun ──▶ jembatan ini (Netlify, online 24 jam) ──▶ T
 2. **Matikan**: pemicu menulis jadwal `offAt` (default 5 mnt), lalu **cron tiap menit** mengeksekusinya —
    tetap tepat waktu walaupun PC (dan Adhitron) sudah mati.
 3. **Status**: halaman status publik (bisa dibuka via **tiket serah-terima** tanpa token jangka panjang)
-   menampilkan 🟢 hidup / ⚫ mati / ⏳ countdown pemutusan, plus tombol Nyalakan / Matikan rapi / Putus paksa.
+   menampilkan state eksplisit — 🟢 hidup / 🖥 booting / 🟡 kemungkinan hidup / ⚫ mati / ⚪ belum pasti — plus
+   ⏳ countdown pemutusan dan tombol yang sesuai dengan state itu.
 
 **Halaman `/` mengingat space di browser ini.** Setelah daftar, URL + token ditampilkan dan
 `{ id, bridgeUrl, statusUrl, manageUrl }` disimpan di `localStorage` (kunci `adhitron-space`) — jadi refresh
@@ -77,12 +78,13 @@ Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk
 
 | Endpoint | Header | Body / query | Respons |
 |---|---|---|---|
-| `POST /api/space` | — (IP di-throttle 10/hari) | `{ tuyaClientId, tuyaClientSecret, tuyaDeviceId, tuyaRegion, adhitronUrl? }` | `{ ok, id, token, bridgeUrl, statusUrl, manageUrl }` |
+| `POST /api/space` | — (IP di-throttle 10/hari) | `{ tuyaClientId, tuyaClientSecret, tuyaDeviceId, tuyaRegion, adhitronUrl? }` | valid → `{ ok, id, token, bridgeUrl, statusUrl, manageUrl }` · kredensial ditolak Tuya → **422** · Tuya tak terjangkau → **503** |
 | `POST /api/pair` | `X-Bridge-Token: <ownerToken>` **saja** (tiket → 401) | — | `{ ok, code, expiresAt }` |
 | `POST /api/pair/claim` | — (kodenya sendiri bukti; 20 gagal/IP/jam + 3000 gagal/jam total) | `{ code }` (8 karakter base32, string) | sama dengan `POST /api/space` |
 | `POST /api/heartbeat` | `X-Bridge-Token: <ownerToken>` | `{ ts, version }` | `{ ok }` |
-| `POST /api/off?delay=300` | `X-Bridge-Token` (atau `X-Status-Token`) | delay 0–3600 dtk, default 300 | `{ ok, offAt, fired, handoffUrl }` |
-| `POST /api/on` | `X-Bridge-Token` / `X-Status-Token` | — | `{ ok }` |
+| `POST /api/off?delay=300[&hold=1]` | `X-Bridge-Token` (atau `X-Status-Token`) | delay 0-3600 dtk, default 300; `hold=1` = jadwal "matikan rapi" yang kebal pembatalan heartbeat | `{ ok, offAt, fired, handoffUrl }` |
+| `POST /api/off/cancel` | `X-Bridge-Token` / `X-Status-Token` | - | `{ ok, cancelled }` - hapus jadwal tanpa menyentuh plug |
+| `POST /api/on` | `X-Bridge-Token` / `X-Status-Token` | `?force=1` untuk memaksa siklus OFF → ON | `{ ok }` · PC masih hidup tanpa `force` → **409** |
 | `GET /api/status` | `X-Bridge-Token` / `X-Status-Token` | — | status (di bawah) |
 
 - `bridgeUrl` = URL situs jembatan; **panel Adhitron ⚙ Remote power: URL = bridgeUrl, token = `token`**.
@@ -101,42 +103,88 @@ Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk
   untuk membuka halaman status tanpa token jangka panjang. Sekali pakai berlaku di mana pun: lewat halaman
   ATAU langsung sebagai `X-Status-Token` — pemakaian pertama menghapusnya (pemakaian kedua → **401**).
   Membukanya membuat **tiket sesi** baru (jenis `ticket/s/`, reusable sampai TTL) untuk polling halaman.
+- **Registrasi memvalidasi kredensial ke Tuya lebih dulu (fail closed).** `POST /api/space` memanggil Tuya —
+  token + `GET /v1.0/devices/{deviceId}/status` (read-only, timeout 5 dtk) — **sebelum** menyimpan apa pun.
+  Tidak ada `/commands` saat validasi. Kalau ditolak: **422** dengan pesan spesifik (`Client ID/Secret atau
+  region ditolak Tuya.`, `Device ID tidak ada di project ini …`, `Device ini bukan smart plug dengan saklar.`);
+  kalau Tuya tidak terjangkau/timeout: **503** `Tidak bisa menghubungi Tuya Cloud, coba lagi.`. Tidak ada
+  record space, index token, maupun tiket yang tersimpan saat gagal. Throttle 10/IP/hari tetap dihitung
+  sebelum validasi, dan ada **cap GLOBAL 300 verifikasi/hari** (lintas IP) supaya kuota Tuya operator tidak
+  bisa dihabiskan dari banyak IP; bila terlampaui → **503** `Batas verifikasi harian situs tercapai, coba besok.`
+  (tidak ada yang tersimpan). Pesan error tidak pernah memuat Client ID/Secret/Device ID.
+- **`POST /api/on` menolak menyalakan PC yang masih hidup.** Bila heartbeat segar atau daya segar > 20 W,
+  jembatan menjawab **409** `{ "error": "PC sepertinya masih hidup — listrik tidak disiklus. Kirim ?force=1
+  kalau yakin." }` **tanpa memanggil Tuya** (tidak ada siklus OFF → ON yang membunuh PC). `POST /api/on?force=1`
+  memaksa siklus OFF → ON — dipakai tombol **⚡ Nyalakan paksa** saat status `unknown`.
 - Kontrak header: **`X-Bridge-Token`** membawa ownerToken (dipakai Adhitron) dan diterima di semua endpoint
   API yang membutuhkan token; **`X-Status-Token`** membawa ownerToken ATAU tiket (`ticket/s/` sesi, atau
   `ticket/h/` serah-terima yang langsung habis dipakai) dan setara di `/api/off`, `/api/on`, `/api/status` —
   tetapi TIDAK di `/api/heartbeat` (khusus ownerToken). Token salah / tiket kedaluwarsa → **401**. Body salah
-  → **400**. Kegagalan Tuya → **502**. Throttle register → **429**.
+  → **400**. Kegagalan Tuya saat perintah → **502**. Throttle register → **429**. Validasi kredensial:
+  ditolak Tuya → **422** (register) / **400** (manage), Tuya tak terjangkau → **503**. PC masih hidup saat
+  `POST /api/on` tanpa `force` → **409**.
 
 `GET /api/status` →
 
 ```json
 {
-  "id": "1a2b3c4d", "alive": true,          // alive = heartbeat < 30 mnt
+  "id": "1a2b3c4d", "alive": true,          // alive = heartbeat segar ATAU daya segar > 20 W
+  "state": "alive",                         // alive | booting | suspected-alive | off | unknown
+  "heartbeatFresh": true, "powerFresh": true, // heartbeat < 7 mnt · sampel daya < 90 dtk
+  "heartbeatAgeSec": 41, "powerAgeSec": 12,   // null = belum pernah ada
   "offAt": 1794..., "secondsUntilOff": 214, // jadwal pemutusan (null = tidak ada)
   "plug": "on",                             // asumsi terakhir dari perintah yang dikirim
-  "powerW": 45.3, "powerAt": 1794...,       // sampel daya terakhir (sampling dibatasi 1×/30 dtk — kuota Tuya)
-  "booting": false,                         // powerW > 20 W ≥ 30 dtk && !alive (PC booting ATAU beku)
+  "powerW": 45.3, "powerAt": 1794...,       // sampel daya terakhir yang BERHASIL (percobaan dibatasi 1×/30 dtk)
+  "booting": false,                         // daya > 20 W ≥ 30 dtk tanpa heartbeat segar
   "needsAttention": false,                  // ⚠ cron gagal memutus 3× — cek plug manual
   "lastHeartbeat": 1794..., "adhitronUrl": "https://nama.ts.net"
 }
 ```
 
+Aturan `state`:
+
+| `state` | Bukti | Arti |
+|---|---|---|
+| `alive` | heartbeat < 7 mnt, atau sampel daya < 90 dtk dengan daya > 20 W - kecuali sampel segar ≤ 5 W (bukti listrik menang) | PC hidup |
+| `booting` | daya > 20 W ≥ 30 dtk, heartbeat basi | PC booting — atau beku |
+| `suspected-alive` | daya > 20 W segar, heartbeat basi, < 30 dtk | kemungkinan hidup, bukti belum cukup |
+| `off` | daya ≤ 5 W segar, atau plug OFF tanpa heartbeat segar | PC mati |
+| `unknown` | tidak ada bukti segar | belum bisa dipastikan |
+
+`samplePower` membatasi **percobaan** Tuya lewat `powerTryAt` (30 dtk); `powerAt` hanya maju saat pembacaan
+berhasil, jadi sampel gagal tidak pernah tampak segar.
+
 **PENTING — aturan pembatalan (kontrak heartbeat):** jika heartbeat datang ketika ada jadwal `offAt` di masa
 depan, jadwal **otomatis dibatalkan** (heartbeat = bukti PC hidup; dipakai untuk membatalkan "putus paksa"
 kalau PC ternyata hidup lagi). Karena itu client yang memanggil `POST /api/off` (alur shutdown rapi) **wajib
-berhenti mengirim heartbeat sampai proses shutdown selesai**, kalau tidak jadwalnya akan membatalkan dirinya sendiri.
+berhenti mengirim heartbeat sampai proses shutdown selesai** — Adhitron menjeda heartbeat 12 menit sejak
+permintaan shutdown dan melanjutkannya sendiri setelah itu.
+
+**Pengecualian `hold=1`:** tombol **⏻ Matikan PC rapi** di halaman status memanggil
+`POST /api/off?delay=300&hold=1`. Jadwal itu **tidak** dibatalkan oleh heartbeat (listrik tetap dipotong setelah
+delay, walau Adhitron masih sempat menjawab selama OS shutdown); `POST /api/on` atau **✕ Batalkan jadwal**
+(`POST /api/off/cancel`, tanpa menyentuh plug) yang membatalkannya. Tanpa
+`hold` (dari Adhitron atau tombol **⚠ Putus paksa**), aturan pembatalan heartbeat di atas tetap berlaku.
 
 Halaman web:
 
 - `/` — pendaftaran + panduan kredensial + pemberitahuan privasi (ringkas selalu tampil; versi lengkap terlipat di `<details>`).
   Halaman memakai brand Adhitron (logo inline SVG, latar gelap, aksen oranye) — CSS satu blok di `pages.mjs`.
+  Form menampilkan catatan **"Kredensial dicek langsung ke Tuya Cloud sebelum disimpan."** — daftar baru
+  berhasil setelah Tuya menerima Client ID/Secret, region, dan Device ID-nya.
   Bagian **Punya kode pasangan?** menerima kode **8 karakter** (huruf besar/kecil sama): `POST /api/pair/claim`,
   lalu space langsung diingat di perangkat itu (kartu **Space kamu**, bukan form kosong).
 - `/manage?token=<ownerToken>` — ganti kredensial/adhitronUrl, rotasi token (re-enkripsi otomatis, token lama mati),
   hapus space (wajib konfirmasi), plus **📲 Pasangkan perangkat lain**: **Buat kode pasangan** (kode 8 karakter +
-  hitung mundur 2 menit) dan **Salin link manage** untuk dibuka di perangkat lain.
+  hitung mundur 2 menit) dan **Salin link manage** untuk dibuka di perangkat lain. Update memvalidasi
+  **kredensial efektif** (secret lama dipakai bila kolom secret dikosongkan) ke Tuya: ditolak → halaman
+  menjawab **400** dengan alasan spesifik, jaringan → **503**, dan setelan lama tetap dipakai.
 - `/s/<id>?t=<tiket>` atau `/s/<id>?token=<ownerToken>` — halaman status; polling `GET /api/status` tiap 10 dtk
   dengan header **`X-Status-Token`** (aturan halaman: bukan `X-Bridge-Token`) membawa tiket sesi / ownerToken.
+  Tombol mengikuti `state` — `alive`: **⏻ Matikan PC rapi** + **▶ Buka Adhitron**; `booting`/`suspected-alive`:
+  hanya **⚠ Putus paksa**; `off`: **⚡ Nyalakan PC**; `unknown`: **⚡ Nyalakan paksa** (konfirmasi, memakai
+  `/api/on?force=1`). Penolakan **409** ditampilkan sebagai peringatan di halaman, bukan gagal diam-diam.
+  Bila jadwal aktif dan daya ≤ 5 W: **⚫ PC sudah mati · ⏳ listrik diputus dalam m:ss**.
 
 ## Cron tiap menit (`scheduledSweep`)
 
@@ -181,8 +229,10 @@ Satu pass per tick, tidak pernah loop: untuk tiap space dengan `offAt` jatuh tem
 ## Di sisi Adhitron
 
 ⚙ → **Remote power**: kolom URL = `bridgeUrl` dari pendaftaran (mis. `https://adhitron-bridge.netlify.app`),
-token = `token`. Heartbeat tiap 5 mnt; saat shutdown: panggil `POST /api/off?delay=300` lalu **berhenti
-heartbeat**; buka `handoffUrl` untuk halaman status serah-terima di HP.
+token = `token`. Adhitron mengirim **beat pertama segera saat server siap, lalu tiap 2 menit**
+(`OFFICE_POWER_BEAT_MS` bisa menimpanya: integer milidetik ≥ 60000; nilai lebih kecil diabaikan). Saat shutdown: panggil `POST /api/off?delay=300`
+lalu **berhenti heartbeat 12 menit** (kontrak pembatalan tetap: heartbeat saat jadwal aktif membatalkan jadwal);
+buka `handoffUrl` untuk halaman status serah-terima di HP.
 
 ## Test
 
@@ -190,9 +240,11 @@ heartbeat**; buka `handoffUrl` untuk halaman status serah-terima di HP.
 node --test --test-timeout=60000 "bridge/**/*.test.mjs"
 ```
 
-Menggunakan fake fetch Tuya + fake Blobs — tanpa jaringan. Mencakup: register & enkripsi (tidak ada plaintext
-di store), validasi, throttle 10/IP/hari, auth 401, jadwal off + tiket sekali pakai, pembatalan via heartbeat,
-cron sukses / coba ulang / needsAttention / batal, `/api/on` menghapus jadwal, halaman tidak bocorkan kredensial,
-manage (update/rotasi/hapus), kode pasangan (8 karakter base32, hanya sha256 di store, TTL 2 menit, sekali pakai,
-hanya ownerToken yang boleh membuat kode, satu kode aktif per space, pesan 401 yang sama, 400 untuk body salah,
-throttle 20/IP/jam + 3000/jam total → 429, pembersihan cron).
+**64 tes** (`node --test`), menggunakan fake fetch Tuya + fake Blobs - tanpa jaringan. Mencakup: register &
+enkripsi (tidak ada plaintext di store), validasi kredensial ke Tuya sebelum menyimpan (422/503, pesan tanpa
+kredensial), throttle 10/IP/hari, auth 401, jadwal off + tiket sekali pakai, pembatalan via heartbeat,
+cron sukses / coba ulang / needsAttention / batal, `hold=1` (heartbeat tidak membatalkan "matikan rapi"), `/api/on` (409 saat PC masih hidup, `?force=1`, hapus jadwal),
+cap global 300 verifikasi/hari, error Tuya stabil (tanpa JSON mentah), status `state` + field umur heartbeat/daya, sampel daya gagal tidak dianggap segar, halaman tidak bocorkan
+kredensial, tombol per state, manage (update/validasi/rotasi/hapus), kode pasangan (8 karakter base32, hanya
+sha256 di store, TTL 2 menit, sekali pakai, hanya ownerToken yang boleh membuat kode, satu kode aktif per
+space, pesan 401 yang sama, 400 untuk body salah, throttle 20/IP/jam + 3000/jam total → 429, pembersihan cron).

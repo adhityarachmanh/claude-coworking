@@ -20,16 +20,33 @@ const realFetch = globalThis.fetch;
 after(() => { globalThis.fetch = realFetch; });
 
 const res = (j) => ({ json: async () => j });
-const fakeTuya = () => {
+/** Fake Tuya. `opts` membuat kegagalan terkontrol untuk tes validasi kredensial:
+ *  tokenRejected (sign/region salah), deviceMissing (token lolos, device tidak ada di project),
+ *  notAPlug (tanpa switch_1/switch), networkError (fetch melempar, mis. DNS/timeout). */
+const fakeTuya = (opts = {}) => {
   calls.length = 0;
   globalThis.fetch = async (url, init) => {
     const u = String(url);
     calls.push({ url: u, method: init?.method ?? 'GET', body: init?.body ? JSON.parse(init.body) : null });
-    if (u.includes('/v1.0/token')) return res({ success: true, result: { access_token: 'tok-1' } });
+    if (opts.networkError) throw new TypeError('fetch failed'); // seperti DNS mati / AbortSignal.timeout
+    if (u.includes('/v1.0/token')) {
+      if (opts.tokenRejected) return res({ success: false, code: 1004, msg: 'sign invalid' });
+      if (opts.tokenBusy) return res({ success: false, code: 28841002, msg: 'quota limit reached' });
+      return res({ success: true, result: { access_token: 'tok-1' } });
+    }
     if (u.includes('/commands')) return res({ success: true, result: true });
-    if (u.includes('/status')) return res({ success: true, result: [{ code: 'switch_1', value: true }, { code: 'power', value: powerW }] });
+    if (u.includes('/status')) {
+      if (opts.deviceMissing) return res({ success: false, code: 1106, msg: 'permission deny' });
+      if (opts.notAPlug) return res({ success: true, result: [{ code: 'bright_value', value: 10 }] });
+      return res({ success: true, result: [{ code: 'switch_1', value: true }, { code: 'power', value: powerW }] });
+    }
     return res({ success: true, result: null });
   };
+};
+/** Key yang TIDAK boleh ada setelah registrasi gagal validasi (fail closed: tidak boleh ada sisa data). */
+const assertNothingStored = (env) => {
+  const keys = [...env.store.map.keys()].filter((k) => k.startsWith('space/') || k.startsWith('token/') || k.startsWith('ticket/'));
+  assert.deepEqual(keys, [], 'gagal validasi tidak boleh menyimpan space/index/tiket');
 };
 
 /** Driver Blobs palsu, bentuk persis @netlify/blobs store; map diekspos agar test bisa mengintip isi store. */
@@ -57,6 +74,10 @@ const statusOf = async (r) => {
   try { body = text ? JSON.parse(text) : null; } catch { body = text; } // halaman HTML (mis. tiket kedaluwarsa) diteruskan mentah
   return { status: r.status, body };
 };
+
+/** Isi blok HTML server-side (mis. #state / #btns) — bagian yang dilihat pengguna sebelum JS polling jalan.
+ *  Dicocokkan per blok karena skrip halaman memang memuat label tombol semua state. */
+const blockOf = (html, id) => html.match(new RegExp(`<div[^>]*id="${id}"[^>]*>([\\s\\S]*?)</div>`))?.[1] ?? '';
 
 const defaultBody = () => ({ tuyaClientId: CID, tuyaClientSecret: SECRET, tuyaDeviceId: DEVICE, tuyaRegion: 'eu', adhitronUrl: 'https://saya.ts.net' });
 
@@ -677,6 +698,108 @@ test('heartbeat: lastHeartbeat tertulis; heartbeat datang → jadwal mati BATAL 
   assert.equal((await getSpace(env, id)).lastHeartbeat, space.lastHeartbeat, 'throttled: tidak menulis ulang');
 });
 
+test('off?hold=1 ("Matikan PC rapi" dari halaman): heartbeat TIDAK membatalkan jadwal, /api/on tetap bisa', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 45;
+  const { body: { id, token } } = await doRegister(env);
+  const off = await statusOf(await handleApi(req('/api/off?delay=300&hold=1', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(off.status, 200);
+  let space = await getSpace(env, id);
+  assert.equal(space.offHold, true, 'the schedule is marked as held');
+  space.offAtWrittenAt -= 5_000; // like the real 2-minute Adhitron beat arriving after the schedule
+  await store.putSpace(env, space);
+  await handleApi(jsonReq('/api/heartbeat', {}, { 'X-Bridge-Token': token }), env);
+  space = await getSpace(env, id);
+  assert.ok(space.offAt, 'a heartbeat no longer cancels the user’s "matikan rapi"');
+  // The cron still cuts the power when due — and clears the flag.
+  powerW = 0.2;
+  assert.deepEqual(await scheduledSweep(env, space.offAt + 500), [{ id, action: 'off', powerW: 0.2 }]);
+  space = await getSpace(env, id);
+  assert.equal(space.offAt, null);
+  assert.equal(space.offHold, false, 'cleared together with the schedule');
+  // /api/on still cancels a held schedule explicitly.
+  await handleApi(req('/api/off?delay=300&hold=1', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env);
+  assert.equal((await getSpace(env, id)).offHold, true);
+  const on = await statusOf(await handleApi(req('/api/on?force=1', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(on.status, 200);
+  space = await getSpace(env, id);
+  assert.equal(space.offAt, null, 'manual on cancels the schedule');
+  assert.equal(space.offHold, false);
+});
+
+test('status: a fresh 0 W sample beats an old-but-fresh heartbeat (normal shutdown)', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 0;
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  const space = await getSpace(env, id);
+  space.lastHeartbeat = now - 2 * 60_000; // still fresh (7 min), from just before the shutdown
+  space.powerW = 0;
+  space.powerAt = now; // the reading came after the last beat
+  space.lastPlug = 'off';
+  await store.putSpace(env, space);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.body.heartbeatFresh, true);
+  assert.equal(st.body.state, 'off', 'the newer measurement wins');
+  assert.equal(st.body.alive, false);
+  // /api/on is no longer refused: the PC is off and the user may turn it on.
+  const on = await statusOf(await handleApi(req('/api/on', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(on.status, 200, JSON.stringify(on.body));
+
+  const page = await handleApi(req(`/s/${id}?token=${token}`), env);
+  const html = await page.text();
+  assert.match(blockOf(html, 'state'), /PC mati|sudah mati/);
+  assert.equal(blockOf(html, 'btns').includes('Matikan PC rapi'), false, 'no "matikan" button once it is off');
+});
+
+test('status: even a heartbeat newer than a 0 W sample reads "off" (power evidence wins)', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 0;
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  const space = await getSpace(env, id);
+  space.lastHeartbeat = now - 30_000;
+  space.powerW = 0;
+  space.powerAt = now - 60_000; // the beat arrived after the reading
+  await store.putSpace(env, space);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.body.state, 'off');
+  assert.equal(st.body.alive, false);
+});
+
+test('POST /api/off/cancel drops a "matikan rapi" schedule without touching the plug', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 45;
+  const { body: { id, token } } = await doRegister(env);
+  await handleApi(req('/api/off?delay=300&hold=1', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env);
+  let space = await getSpace(env, id);
+  assert.ok(space.offAt);
+  calls.length = 0;
+  const cancelled = await statusOf(await handleApi(req('/api/off/cancel', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env));
+  assert.deepEqual(cancelled, { status: 200, body: { ok: true, cancelled: true } });
+  assert.deepEqual(cmdValues(), [], 'the plug is never cycled to cancel');
+  space = await getSpace(env, id);
+  assert.equal(space.offAt, null);
+  assert.equal(space.offHold, false);
+  // The page offers the cancel button while a schedule exists.
+  await handleApi(req('/api/off?delay=300&hold=1', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env);
+  const html = await (await handleApi(req(`/s/${id}?token=${token}`), env)).text();
+  assert.match(blockOf(html, 'btns'), /Batalkan jadwal/);
+});
+
+test('register: a temporary Tuya quota/limit is TUYA_BUSY (503), not "Client ID ditolak" (422)', async () => {
+  const env = makeEnv();
+  fakeTuya({ tokenBusy: true });
+  const r = await doRegister(env);
+  assert.equal(r.status, 503);
+  assert.match(r.body.error, /kuota|limit/i);
+  assert.equal([...env.store.map.keys()].filter((k) => k.startsWith('space/')).length, 0);
+});
+
 // ---------------------------------------------------------------- cron
 
 test('cron: jadwal jatuh tempo + daya turun → plug OFF, jadwal bersih, attempts 0', async () => {
@@ -798,24 +921,34 @@ test('on: menghapus jadwal, memutari listrik (siklus OFF→ON karena plug tercat
   assert.equal(space.lastPlug, 'on');
 });
 
-test('/api/status: bentuk kontrak lengkap; booting = power tinggi ≥ 30 dtk + heartbeat basi', async () => {
+test('/api/status: bentuk kontrak lengkap (state + umur bukti); booting = power tinggi ≥ 30 dtk + heartbeat basi', async () => {
   const env = makeEnv();
   fakeTuya();
   powerW = 45;
   const { body: { id, token } } = await doRegister(env);
   const now = Date.now();
   const space = await getSpace(env, id);
-  space.lastHeartbeat = now - 31 * 60_000; // basi ≥ 30 mnt
+  space.lastHeartbeat = now - 8 * 60_000; // basi: lebih tua dari HEARTBEAT_FRESH_MS (7 mnt)
   space.powerW = 45;
-  space.powerAt = now; // sampel segar → apiStatus tidak memanggil Tuya
+  space.powerAt = now; // sampel segar
+  space.powerTryAt = now; // sudah dicoba sekarang → apiStatus tidak memanggil Tuya
   space.powerHighSince = now - 40_000; // power tinggi ≥ 30 dtk
   space.lastPlug = 'on';
   await store.putSpace(env, space);
   const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
   assert.equal(st.status, 200);
-  assert.deepEqual(Object.keys(st.body).sort(), ['adhitronUrl', 'alive', 'booting', 'id', 'lastHeartbeat', 'needsAttention', 'offAt', 'plug', 'powerAt', 'powerW', 'secondsUntilOff']);
-  assert.equal(st.body.alive, false);
+  assert.deepEqual(Object.keys(st.body).sort(), [
+    'adhitronUrl', 'alive', 'booting', 'heartbeatAgeSec', 'heartbeatFresh', 'id', 'lastHeartbeat',
+    'needsAttention', 'offAt', 'plug', 'powerAgeSec', 'powerAt', 'powerFresh', 'powerW',
+    'secondsUntilOff', 'state',
+  ]);
+  assert.equal(st.body.alive, true, 'listrik mengalir > ambang boot = PC hidup walau tanpa heartbeat');
+  assert.equal(st.body.state, 'booting', 'state eksplisit untuk halaman');
   assert.equal(st.body.booting, true, 'PC beku/booting terdeteksi');
+  assert.equal(st.body.heartbeatFresh, false);
+  assert.equal(st.body.powerFresh, true);
+  assert.ok(st.body.heartbeatAgeSec >= 480 && st.body.heartbeatAgeSec <= 482, `umur heartbeat dalam dtk (${st.body.heartbeatAgeSec})`);
+  assert.ok(st.body.powerAgeSec <= 1, 'umur sampel daya ~0 dtk');
   assert.equal(st.body.powerW, 45);
   assert.equal(st.body.plug, 'on');
   assert.equal(st.body.adhitronUrl, 'https://saya.ts.net');
@@ -826,17 +959,294 @@ test('/api/status: bentuk kontrak lengkap; booting = power tinggi ≥ 30 dtk + h
   assert.equal(calls.filter((c) => c.url.includes('/status')).length, 0, 'kuota Tuya dijaga');
 });
 
+// ---------------------------------------------------------------- state PC (heartbeat + bukti daya)
+
+test('regresi: PC mati & plug OFF — heartbeat 20 mnt lalu + daya 0 W segar → state off (bukan "PC hidup")', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 0;
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  const space = await getSpace(env, id);
+  space.lastHeartbeat = now - 20 * 60_000; // dulu: < 30 mnt → alive=true (bug)
+  space.powerW = 0;
+  space.powerAt = now; // bukti listrik: benar-benar 0 W
+  space.powerTryAt = now;
+  space.powerHighSince = null;
+  space.lastPlug = 'off';
+  await store.putSpace(env, space);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.status, 200);
+  assert.equal(st.body.state, 'off');
+  assert.equal(st.body.alive, false, 'heartbeat 20 mnt bukan bukti PC hidup');
+  assert.equal(st.body.heartbeatFresh, false);
+  assert.equal(st.body.powerFresh, true);
+  assert.equal(st.body.booting, false);
+  const page = await handleApi(req(`/s/${id}?token=${token}`), env);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  // Halaman yang dilihat pengguna sebelum JS polling: state + tombol server-side.
+  assert.match(blockOf(html, 'state'), /PC mati/, 'bukan "PC hidup"');
+  assert.equal(blockOf(html, 'state').includes('PC hidup'), false);
+  assert.equal(blockOf(html, 'btns').includes('Matikan PC rapi'), false, 'jangan tawarkan matikan rapi untuk PC yang sudah mati');
+  assert.match(blockOf(html, 'btns'), /Nyalakan PC/);
+});
+
+test('status: daya 45 W segar + heartbeat basi → suspected-alive (< 30 dtk), lalu booting (≥ 30 dtk); tombol hanya Putus paksa', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 45;
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  const base = await getSpace(env, id);
+  base.lastHeartbeat = now - 8 * 60_000; // basi
+  base.powerW = 45;
+  base.powerAt = now;
+  base.powerTryAt = now;
+  base.powerHighSince = now - 5_000; // < BOOT_DETECT_MS
+  base.lastPlug = 'on';
+  await store.putSpace(env, base);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.body.state, 'suspected-alive', 'daya ada tapi belum cukup lama = belum pasti booting');
+  assert.equal(st.body.alive, true, 'listrik mengalir = PC dianggap hidup walau Adhitron tidak berkabar');
+  assert.equal(st.body.booting, false);
+  assert.equal(st.body.heartbeatFresh, false);
+  const page = await handleApi(req(`/s/${id}?token=${token}`), env);
+  const html = await page.text();
+  assert.match(blockOf(html, 'state'), /kemungkinan hidup/);
+  assert.match(blockOf(html, 'btns'), /Putus paksa/);
+  assert.equal(blockOf(html, 'btns').includes('Matikan PC rapi'), false);
+  // ≥ 30 dtk daya tinggi tanpa heartbeat → booting/beku
+  const older = await getSpace(env, id);
+  older.powerHighSince = now - 40_000;
+  older.powerTryAt = Date.now();
+  await store.putSpace(env, older);
+  const boot = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(boot.body.state, 'booting');
+  assert.equal(boot.body.booting, true);
+});
+
+test('status: plug tercatat OFF + offAt null + heartbeat 20 mnt → off (walau belum ada sampel daya)', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  const space = await getSpace(env, id);
+  space.lastHeartbeat = now - 20 * 60_000;
+  space.lastPlug = 'off';
+  space.offAt = null;
+  space.powerW = null; // tanpa sensor daya / belum pernah disampel
+  space.powerAt = 0;
+  space.powerTryAt = now; // jangan sampling saat tes
+  await store.putSpace(env, space);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.body.state, 'off');
+  assert.equal(st.body.alive, false);
+  assert.equal(st.body.powerFresh, false);
+});
+
+test('status: sampel daya basi (10 mnt) + heartbeat basi → unknown (bukan tebakan "mati")', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  const space = await getSpace(env, id);
+  space.lastHeartbeat = now - 20 * 60_000;
+  space.powerW = 45;
+  space.powerAt = now - 10 * 60_000; // > POWER_FRESH_MS (90 dtk)
+  space.powerTryAt = now; // sampling di-throttle: bukti lama tetap diperiksa apa adanya
+  space.powerHighSince = now - 20 * 60_000;
+  await store.putSpace(env, space);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.body.state, 'unknown');
+  assert.equal(st.body.alive, false);
+  assert.equal(st.body.powerFresh, false);
+  assert.equal(st.body.booting, false);
+  assert.ok(st.body.powerAgeSec >= 600);
+  const html = await (await handleApi(req(`/s/${id}?token=${token}`), env)).text();
+  assert.match(blockOf(html, 'state'), /Status belum pasti/);
+  assert.match(blockOf(html, 'btns'), /Nyalakan paksa/);
+});
+
+test('status: sampel GAGAL dimodelkan — pembacaan Tuya gagal TIDAK membuat powerAt segar (umur null/ tetap basi)', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const space = await getSpace(env, id);
+  space.lastHeartbeat = 0;
+  space.powerW = null;
+  space.powerAt = 0;
+  space.powerTryAt = 0; // belum pernah dicoba → apiStatus akan mencoba
+  await store.putSpace(env, space);
+  fakeTuya({ networkError: true }); // Tuya tidak bisa dihubungi
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.status, 200);
+  assert.equal(st.body.state, 'unknown');
+  assert.equal(st.body.powerAt, null, 'tidak ada sampel: powerAt tetap kosong (bukan diisi waktu percobaan)');
+  assert.equal(st.body.powerAgeSec, null, 'belum ada sampel → umur null');
+  assert.equal(st.body.heartbeatAgeSec, null, 'belum pernah heartbeat → umur null');
+  const after = await getSpace(env, id);
+  assert.equal(after.powerAt, 0, 'powerAt tidak dimajukan saat gagal');
+  assert.ok(after.powerTryAt > 0, 'percobaan sampling tetap di-throttle lewat powerTryAt');
+  // Kegagalan berikutnya dalam < 30 dtk tidak memanggil Tuya lagi.
+  calls.length = 0;
+  await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env);
+  assert.equal(calls.length, 0, 'kuota Tuya dijaga saat gagal');
+});
+
+test('/api/on: PC masih hidup → 409 TANPA memanggil Tuya; ?force=1 menyiklus OFF → ON', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  const space = await getSpace(env, id);
+  space.lastHeartbeat = now - 60_000; // segar (< 7 mnt)
+  space.powerTryAt = now;
+  await store.putSpace(env, space);
+  calls.length = 0;
+  const r = await statusOf(await handleApi(jsonReq('/api/on', {}, { 'X-Bridge-Token': token }), env));
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /masih hidup/);
+  assert.deepEqual(cmdValues(), [], 'penolakan tidak mengirim komando');
+  assert.equal(calls.length, 0, 'penolakan tidak memanggil Tuya sama sekali (termasuk token)');
+  assert.equal((await getSpace(env, id)).lastPlug, null, 'record tidak diubah oleh penolakan');
+  // Bukti daya juga menahan: heartbeat basi tapi listrik masih mengalir.
+  const byPower = await getSpace(env, id);
+  byPower.lastHeartbeat = 0;
+  byPower.powerW = 45;
+  byPower.powerAt = Date.now();
+  byPower.powerTryAt = Date.now();
+  await store.putSpace(env, byPower);
+  assert.equal((await statusOf(await handleApi(jsonReq('/api/on', {}, { 'X-Bridge-Token': token }), env))).status, 409, 'daya tinggi segar = masih hidup');
+  // ?force=1 → siklus OFF → ON (fake: switch_1 sudah ON).
+  const forced = await statusOf(await handleApi(jsonReq('/api/on?force=1', {}, { 'X-Bridge-Token': token }), env));
+  assert.equal(forced.status, 200, JSON.stringify(forced.body));
+  assert.deepEqual(cmdValues(), [false, true], 'force menyiklus listrik');
+  assert.equal((await getSpace(env, id)).lastPlug, 'on');
+});
+
+// ---------------------------------------------------------------- validasi kredensial sebelum simpan (fail closed)
+
+test('register: kredensial dicek READ-ONLY ke Tuya (token + status, TANPA /commands) sebelum space dibuat', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { status, body } = await doRegister(env);
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.ok(await getSpace(env, body.id), 'space tersimpan setelah validasi lolos');
+  assert.equal(calls.filter((c) => c.url.includes('/v1.0/token')).length, 1, 'token diminta sekali');
+  assert.equal(calls.filter((c) => c.url.includes(`/devices/${DEVICE}/status`)).length, 1, 'device dicek read-only');
+  assert.deepEqual(cmdValues(), [], 'validasi tidak pernah mengirim komando');
+});
+
+test('register: token/region ditolak Tuya → 422; tidak ada space/token/tiket tersimpan', async () => {
+  const env = makeEnv();
+  fakeTuya({ tokenRejected: true });
+  const r = await doRegister(env);
+  assert.equal(r.status, 422, JSON.stringify(r.body));
+  assert.match(r.body.error, /Client ID\/Secret atau region ditolak Tuya\./);
+  assertNothingStored(env);
+  assert.equal([...env.store.map.keys()].some((k) => k.startsWith('reg/1.2.3.4/')), true, 'hitungan throttle tetap jalan (sebelum validasi)');
+});
+
+test('register: device tidak ada di project / bukan smart plug → 422 dengan pesan spesifik', async () => {
+  const env = makeEnv();
+  fakeTuya({ deviceMissing: true });
+  let r = await doRegister(env);
+  assert.equal(r.status, 422, JSON.stringify(r.body));
+  assert.match(r.body.error, /Device ID tidak ada di project ini/);
+  assertNothingStored(env);
+  fakeTuya({ notAPlug: true });
+  r = await doRegister(env, defaultBody(), '6.6.6.6');
+  assert.equal(r.status, 422, JSON.stringify(r.body));
+  assert.match(r.body.error, /bukan smart plug/);
+  assertNothingStored(env);
+});
+
+test('register: Tuya tidak bisa dihubungi (jaringan/timeout) → 503; tidak ada yang tersimpan', async () => {
+  const env = makeEnv();
+  fakeTuya({ networkError: true });
+  const r = await doRegister(env);
+  assert.equal(r.status, 503, JSON.stringify(r.body));
+  assert.match(r.body.error, /Tidak bisa menghubungi Tuya Cloud/);
+  assertNothingStored(env);
+});
+
+test('manage update: kredensial ditolak Tuya → 400; ciphertext + URL lama utuh dan tetap bisa didekripsi', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const before = await getSpace(env, id);
+  fakeTuya({ deviceMissing: true });
+  const r = await statusOf(await handleApi(req(`/api/manage?token=${token}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      action: 'update', tuyaClientId: 'cid-baru', tuyaClientSecret: 'secret-baru',
+      tuyaDeviceId: 'dev-2', tuyaRegion: 'asia', adhitronUrl: 'https://ganti.ts.net',
+    }).toString(),
+  }), env));
+  assert.equal(r.status, 400, JSON.stringify(r.body));
+  assert.match(r.body.error, /Device ID tidak ada di project ini/);
+  const after = await getSpace(env, id);
+  assert.equal(after.enc.ct, before.enc.ct, 'tidak ada penulisan kredensial');
+  assert.equal(after.adhitronUrl, before.adhitronUrl, 'URL lama dipertahankan');
+  const creds = decryptCreds(decryptSecret(KEY, after.ownerTokenEnc), KEY, after.enc);
+  assert.equal(creds.tuyaClientSecret, SECRET, 'secret lama masih bisa didekripsi');
+  assert.equal(creds.tuyaClientId, CID);
+});
+
+test('error validasi tidak pernah memuat Client ID/Secret/Device ID', async () => {
+  const env = makeEnv();
+  for (const [i, opts] of [{ tokenRejected: true }, { deviceMissing: true }, { notAPlug: true }, { networkError: true }].entries()) {
+    fakeTuya(opts);
+    const body = {
+      tuyaClientId: 'CID-RAHASIA-XYZ', tuyaClientSecret: 'SECRET-RAHASIA-XYZ',
+      tuyaDeviceId: 'DEVID-RAHASIA-XYZ', tuyaRegion: 'eu',
+    };
+    const r = await doRegister(env, body, `4.5.6.${i + 1}`);
+    const text = JSON.stringify(r.body);
+    assert.equal(r.status >= 400, true, JSON.stringify(opts));
+    assert.equal(text.includes('RAHASIA'), false, `error ${JSON.stringify(opts)} membocorkan kredensial: ${text}`);
+  }
+});
+
+test('register: cap GLOBAL 300 verifikasi/hari → 503 sebelum Tuya dipanggil, tidak ada space', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const day = new Date().toISOString().slice(0, 10);
+  await env.store.set(`verify/${day}`, '300');
+  const r = await doRegister(env, defaultBody(), '9.9.9.9');
+  assert.equal(r.status, 503);
+  assert.match(r.body.error, /Batas verifikasi harian/);
+  assert.equal(calls.length, 0, 'no Tuya call once the daily cap is reached');
+  assert.equal([...env.store.map.keys()].filter((k) => k.startsWith('space/')).length, 0, 'nothing stored');
+});
+
+test('/api/on: a Tuya error is answered with a stable message, never raw upstream JSON', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { token } } = await doRegister(env);
+  fakeTuya({ tokenRejected: true });
+  const on = await statusOf(await handleApi(req('/api/on?force=1', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(on.status, 502);
+  assert.equal(on.body.error, 'Client ID/Secret atau region ditolak Tuya.');
+  assert.equal(JSON.stringify(on.body).includes('"success"'), false, 'no upstream JSON leaked');
+  assert.equal(cmdValues().length, 0, 'no command was sent');
+});
+
 // ---------------------------------------------------------------- halaman
 
 test('halaman: register di /, manage, status — tanpa membocorkan kredensial', async () => {
   const env = makeEnv();
   fakeTuya();
+  powerW = 0; // PC mati: state 'off' → tombol Nyalakan PC
   const { body: { id, token } } = await doRegister(env);
   const home = await handleApi(req('/'), env);
   assert.equal(home.status, 200);
   const homeHtml = await home.text();
   assert.match(homeHtml, /Daftar/);
   assert.match(homeHtml, /terenkripsi/, 'pemberitahuan privasi tampil');
+  assert.match(homeHtml, /Kredensial dicek langsung ke Tuya Cloud sebelum disimpan/, 'catatan validasi kredensial di halaman register');
   const page = await handleApi(req(`/s/${id}?token=${token}`), env);
   assert.equal(page.status, 200);
   const html = await page.text();
@@ -849,6 +1259,7 @@ test('halaman: register di /, manage, status — tanpa membocorkan kredensial', 
   assert.equal(manage.status, 200);
   assert.match(manageHtml, /Hapus permanen/);
   assert.match(manageHtml, /Rotasi token/);
+  assert.match(manageHtml, /Perubahan dicek ke Tuya dulu/, 'catatan validasi di halaman manage');
   assert.match(manageHtml, new RegExp(DEVICE), 'device id (milik pemilik) tampil di manage');
   assert.equal(manageHtml.includes(SECRET), false, 'secret tidak dirender ulang');
 });
@@ -882,6 +1293,21 @@ test('halaman /: skrip halaman benar-benar bisa dikompilasi (regex tidak kehilan
   // sehingga seluruh skrip SyntaxError dan semua tombol/form mati. Kompilasi = penjaga nyata.
   assert.doesNotThrow(() => new vm.Script(scripts[0]), 'skrip halaman harus valid');
   assert.match(scripts[0], /new RegExp\(/, 'regex disuntik dari SPACE_SHAPE, bukan literal di template');
+});
+
+test('halaman status: skrip state-machine (tombol per state + 409) valid dan tidak meninggalkan interpolasi', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 0;
+  const { body: { id, token } } = await doRegister(env);
+  const html = await (await handleApi(req(`/s/${id}?token=${token}`), env)).text();
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  assert.equal(scripts.length, 1, 'satu blok skrip di halaman status');
+  assert.equal(scripts[0].includes('${'), false, 'tidak ada sisa interpolasi template');
+  assert.doesNotThrow(() => new vm.Script(scripts[0]), 'skrip halaman status harus valid');
+  assert.match(scripts[0], /\/api\/on\?force=1/, 'state unknown memakai ?force=1');
+  assert.match(scripts[0], /r\.ok/, 'penolakan server (409) diperiksa, bukan diabaikan');
+  assert.match(scripts[0], /flash = r\.error/, 'pesan error server ditampilkan di halaman');
 });
 
 test('manage: rotasi & hapus ikut memperbarui kartu "Space kamu" (hanya untuk id yang cocok)', async () => {

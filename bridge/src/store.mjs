@@ -14,6 +14,7 @@
 //   pairSpace/<spaceId> → sha256(kode) — kode AKTIF milik space itu (satu saja; dihapus saat kode baru dibuat)
 //   pairtry/<bucket>/<yyyy-mm-ddThh> → hitungan klaim kode GAGAL per jam (bucket = IP, atau '_global' untuk backstop)
 //   pairtry/_globalm/<yyyy-mm-ddThh:mm> → hitungan klaim gagal GLOBAL per menit (pemulihan ≤ 1 menit)
+//   verify/<yyyy-mm-dd> → hitungan verifikasi kredensial ke Tuya per hari (cap GLOBAL lintas IP — kuota/egress)
 import { createHash } from 'node:crypto';
 
 const SPACE_PREFIX = 'space/';
@@ -23,6 +24,7 @@ const REG_PREFIX = 'reg/';
 const PAIR_PREFIX = 'pair/';
 const PAIR_SPACE_PREFIX = 'pairSpace/';
 const PAIR_TRY_PREFIX = 'pairtry/';
+const VERIFY_PREFIX = 'verify/';
 /** Bucket hitungan gagal global (batas total lintas IP) — IP asli tidak pernah diawali '_' (lihat clientIp). */
 export const PAIR_GLOBAL_BUCKET = '_global';
 /** Bucket hitungan gagal global PER MENIT: setelah cap tercapai, IP bersih pulih ≤ 1 menit (bukan sejam). */
@@ -88,6 +90,21 @@ export async function incrRegisterCount(env, ip, dayKey) {
     if (day < dayKey) await env.store.delete(blob.key); // tanggal lewat (urutan string = urutan waktu)
   }
   const key = `${REG_PREFIX}${ip}/${dayKey}`;
+  const n = Number(await env.store.get(key)) || 0;
+  await env.store.set(key, String(n + 1));
+  return n + 1;
+}
+
+/** Cap GLOBAL verifikasi kredensial ke Tuya per hari UTC (lintas IP): pemeriksaan memakai kuota/egress
+ *  project operator, jadi batas ini tidak boleh bisa dihabiskan dari banyak IP. Day key lama ikut dibuang
+ *  (urutan string = urutan waktu), sama seperti hitungan register. get+set — bukan atomik, cukup untuk cap. */
+export async function incrVerifyCount(env, dayKey) {
+  const res = await env.store.list({ prefix: VERIFY_PREFIX });
+  for (const blob of res.blobs) {
+    const day = blob.key.slice(VERIFY_PREFIX.length);
+    if (day < dayKey) await env.store.delete(blob.key);
+  }
+  const key = `${VERIFY_PREFIX}${dayKey}`;
   const n = Number(await env.store.get(key)) || 0;
   await env.store.set(key, String(n + 1));
   return n + 1;

@@ -58,6 +58,7 @@ import { wifiGithubLogin } from './src/github-pr.js';
 import { HttpError, json, readJson } from './src/routes/http.js';
 import { buildRouter } from './src/routes/index.js';
 import { POWER_SECURE_ERROR } from './src/power.js';
+import { RemotePowerBeat } from './src/power-beat.js';
 import { teamConfig } from './src/routes/team.js';
 import { projectId } from './src/util.js';
 
@@ -891,6 +892,37 @@ function deviceCookie(token, secure) {
   return `${DEVICE_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`;
 }
 
+/**
+ * GET /pair auto-pairs only for a real top-level navigation. A subresource request (fetch, image, …) can
+ * be fired by a page on another site; pairing there would mint records the owner never asked for. Missing
+ * headers count as navigation (older browsers and the tests' plain requests send none).
+ */
+function isTopLevelNavigation(req) {
+  const mode = req.headers['sec-fetch-mode'];
+  const dest = req.headers['sec-fetch-dest'];
+  return (mode === undefined || mode === 'navigate') && (dest === undefined || dest === 'document');
+}
+
+/**
+ * 🔓 Pasang otomatis dari perangkat tailnet (src/tailnet.js): only over the https (Tailscale) listener,
+ * only for a device of the laptop owner's OWN tailnet user, and only while the setting is on — the
+ * tailnet login already proves who it is, so no code is needed. Plain http (WiFi/LAN) never auto-pairs,
+ * even when the IP is a 100.x tailnet address; another user's device, a missing CLI, or a broken
+ * `status --json` returns null (fail closed). Fresh status per attempt (cached a few seconds upstream).
+ * Shared by GET /pair (a phone that was redirected here) and POST /pair (the form); on success the caller
+ * only writes the response. The per-IP pace and the device cap live in src/remote.js autoPair().
+ * @returns {Promise<{ token: string, device: object }|null>} null = the normal code flow continues
+ */
+async function autoPairTailnet(req, secure, transport) {
+  if (!secure || !remote.enabled || !remote.autoPairTailnet) return null;
+  const found = await eligibleTailnetPeer(req.socket.remoteAddress);
+  const auto = found && remote.autoPair(found.name, { ...transport, ip: String(req.socket.remoteAddress ?? '') });
+  if (!auto) return null;
+  announcePairedDevice(auto.device); // the other phones hear about it, exactly like a code pairing
+  publishConfig();
+  return auto;
+}
+
 /** GET /pair?k=… (QR link), GET /pair (code form), POST /pair {code}. */
 async function handlePair(req, res, url) {
   const userAgent = String(req.headers['user-agent'] ?? '');
@@ -906,23 +938,32 @@ async function handlePair(req, res, url) {
     res.writeHead(302, { 'Set-Cookie': deviceCookie(result.token, secure), Location: '/' }); // drop the key from the address bar
     return res.end();
   }
-  if (req.method === 'GET') return servePairPage(res);
+  if (req.method === 'GET') {
+    // A valid cookie means this browser is already paired: going home must never mint another record
+    // (otherwise every cross-site navigation to /pair would keep growing the device list).
+    if (remote.verify(deviceToken(req), transport)) {
+      res.writeHead(302, { Location: '/', 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+    // A phone that lands on /pair without a code is paired right away when its tailnet login says it is the
+    // owner's: it never has to read the PIN off the laptop. Same cookie as a code pairing, then straight
+    // home. Only a top-level navigation may pair (a subresource can come from another site).
+    if (!isTopLevelNavigation(req)) return servePairPage(res);
+    const auto = await autoPairTailnet(req, secure, transport);
+    if (auto) {
+      res.writeHead(302, { 'Set-Cookie': deviceCookie(auto.token, secure), Location: '/', 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+    return servePairPage(res);
+  }
   if (req.method !== 'POST' || !String(req.headers['content-type']).startsWith('application/json')) return json(res, 405, { error: 'method not allowed' });
   const body = await readJson(req, MAX_PAIR_BODY);
-  // 🔓 Pasang otomatis dari perangkat tailnet (src/tailnet.js): only over the https (Tailscale) listener,
-  // only for a device of the laptop owner's OWN tailnet user, and only while the setting is on — the
-  // tailnet login already proves who it is, so no code is needed. Plain http (WiFi/LAN) never auto-pairs,
-  // even when the IP is a 100.x tailnet address; another user's device, a missing CLI, or a broken
-  // `status --json` falls through to the normal code flow (fail closed). Fresh status per attempt.
-  if (secure && remote.enabled && remote.autoPairTailnet) {
-    const found = await eligibleTailnetPeer(req.socket.remoteAddress);
-    const auto = found && remote.autoPair(found.name, transport);
-    if (auto) {
-      announcePairedDevice(auto.device); // the other phones hear about it, exactly like a code pairing
-      publishConfig();
-      res.writeHead(200, { 'Set-Cookie': deviceCookie(auto.token, secure), 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: true, auto: true }));
-    }
+  // Already paired (valid cookie): say so instead of minting a second record for the same browser.
+  if (remote.verify(deviceToken(req), transport)) return json(res, 200, { ok: true, already: true });
+  const auto = await autoPairTailnet(req, secure, transport);
+  if (auto) {
+    res.writeHead(200, { 'Set-Cookie': deviceCookie(auto.token, secure), 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true, auto: true }));
   }
   const result = remote.pair({ code: body.code }, userAgent, ip, transport);
   if (result.retryAfter) {
@@ -1113,21 +1154,15 @@ setInterval(() => account.refreshProfile(true).catch(() => {}), 60_000).unref();
 remote.pruneIdle();
 // ⚡ Remote power: a fresh heartbeat tells the bridge "PC hidup" (its status page shows 🟢 and unlocks the
 // waiting flow). Halts while a scheduled power-off exists — a heartbeat landing after /api/off would
-// cancel that schedule (the bridge's rule: PC alive again → don't cut power). One-way halt was fragile:
-// if the OS shutdown failed the heartbeat never came back while the PC stayed on. So the halt is
-// time-based: 10 minutes after the last halt request it resumes on its own.
-let remotePowerHaltUntil = 0;
-setInterval(() => {
-  if (Date.now() < remotePowerHaltUntil) return;
-  const rp = hub.remotePower();
-  if (!rp.bridgeUrl || !rp.token) return;
-  fetch(`${rp.bridgeUrl}/api/heartbeat`, {
-    method: 'POST',
-    headers: { 'X-Bridge-Token': rp.token, 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ ts: Date.now(), version: APP_VERSION }),
-  }).catch((err) => console.error('Remote power heartbeat:', err.message)); // retried next tick; never crashes
-}, 5 * 60 * 1000).unref();
-ctx.remotePowerHalt = () => { remotePowerHaltUntil = Date.now() + 10 * 60 * 1000; }; // set by /api/shutdown (pc) in src/routes/misc.js
+// cancel that schedule (the bridge's rule: PC alive again → don't cut power). The halt is time-based:
+// 10 minutes after the last halt request it resumes on its own (see src/power-beat.js).
+const powerBeat = new RemotePowerBeat({
+  getConfig: () => hub.remotePower(),
+  appVersion: APP_VERSION,
+  onError: (err) => console.error('Remote power heartbeat:', err.message), // retried next tick; never crashes
+});
+powerBeat.start(); // the first beat goes out at once, then every 2 minutes (OFFICE_POWER_BEAT_MS overrides)
+ctx.remotePowerHalt = () => powerBeat.halt(); // set by /api/shutdown (pc) in src/routes/misc.js
 setInterval(() => remote.pruneIdle(), 60 * 60 * 1000).unref();
 
 server.on('error', (err) => {
@@ -1194,6 +1229,7 @@ async function shutdown() {
   mirror.stop();
   openCodeMirror.stop();
   ciWatcher.stop();
+  powerBeat.stop();
   // A running contract check is aborted (its processes killed, whole tree) and not recorded; waited for ≤ 3 s.
   // The same for a running setup install (npm/winget children are killed by their own abort handling).
   const checksStopped = Promise.allSettled([claudeCheck.stop(), opencodeCheck.stop()]);

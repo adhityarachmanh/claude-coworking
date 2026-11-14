@@ -115,11 +115,11 @@ export function splitPem(pem) {
  * Node (lets tests point OFFICE_TAILSCALE_BIN at a fake CLI script on every platform).
  * @returns {(args: string[]) => Promise<string>} stdout
  */
-export function cliRunner(bin) {
+export function cliRunner(bin, { timeoutMs = CLI_TIMEOUT_MS } = {}) {
   const [command, prefix] = /\.m?js$/i.test(bin) ? [process.execPath, [bin]] : [bin, []];
   return (args) =>
     new Promise((resolve, reject) => {
-      execFile(command, [...prefix, ...args], { windowsHide: true, timeout: CLI_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+      execFile(command, [...prefix, ...args], { windowsHide: true, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           err.stderr = String(stderr ?? '').trim();
           return reject(err);

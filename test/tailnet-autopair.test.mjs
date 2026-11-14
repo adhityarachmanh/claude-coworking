@@ -14,8 +14,8 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { Hub } from '../src/hub.js';
-import { RemoteAccess, lanAddresses } from '../src/remote.js';
-import { eligibleTailnetPeer, peerDeviceName, tailnetPeer } from '../src/tailnet.js';
+import { MAX_DEVICES, RemoteAccess, lanAddresses } from '../src/remote.js';
+import { clearTailnetCache, DEFAULT_TAILNET_CACHE_MS, eligibleTailnetPeer, peerDeviceName, tailnetPeer, tailnetCacheMs } from '../src/tailnet.js';
 import { buildRouter } from '../src/routes/index.js';
 import { selfSignedCert } from '../test-support/x509.mjs';
 
@@ -79,6 +79,8 @@ before(async () => {
       OFFICE_HTTPS_TEST_BIND: '127.0.0.1',
       OFFICE_TAILSCALE_BIN: path.join(APP, 'test-support', 'fake-tailscale.mjs'),
       FAKE_TAILSCALE_CONFIG: CONFIG,
+      // scenario() swaps the tailnet identity while the server runs: no cached status may outlive it.
+      OFFICE_TAILNET_CACHE_MS: '0',
       OFFICE_DATA_DIR: path.join(TMP, 'data'),
       PROJECTS_ROOT: path.join(TMP, 'projects'),
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
@@ -148,7 +150,8 @@ async function snapshot() {
   return JSON.parse(text.match(/^data: (.*)$/m)[1]);
 }
 const remoteInfo = async () => (await snapshot()).config.remote;
-const listening = () => tlsRequest('/pair').then(() => true, () => false);
+// A liveness probe that pairs nothing: GET /pair now auto-pairs an owner device, /health does not.
+const listening = () => tlsRequest('/health').then(() => true, () => false);
 async function until(pred, ms = 5000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -231,6 +234,68 @@ test('autoPair(): an ordinary record, transport-bound, revocable — and off tog
   assert.equal(remote.autoPair('pixel-adhit', { transport: 'https' }), null, 'no auto-pair while phone access is off');
 });
 
+test('autoPair(): the device cap and the per-IP pace bound a cross-site /pair loop', () => {
+  const state = { enabled: true, devices: [] };
+  const remote = new RemoteAccess({ persisted: { remote: state }, save() {}, scheduleSave() {}, broadcast() {} });
+  const now = Date.now();
+  // Distinct IPs so the per-IP pace does not kick in: only the hard device cap is under test here.
+  for (let i = 0; i < MAX_DEVICES; i++) {
+    assert.ok(remote.autoPair(`hp-${i}`, { transport: 'https', ip: `100.64.0.${i + 1}`, now }), `record ${i + 1}`);
+  }
+  assert.equal(remote.autoPair('one-too-many', { transport: 'https', ip: '100.64.0.250', now }), null, 'the cap refuses');
+  assert.equal(state.devices.length, MAX_DEVICES, 'the list never exceeds the cap');
+});
+
+test('autoPair(): at most 5 per minute and 20 per hour from one IP', () => {
+  const state = { enabled: true, devices: [] };
+  const remote = new RemoteAccess({ persisted: { remote: state }, save() {}, scheduleSave() {}, broadcast() {} });
+  const now = 1_000_000;
+  for (let i = 0; i < 5; i++) assert.ok(remote.autoPair('pixel', { transport: 'https', ip: '1.2.3.4', now: now + i }), `#${i + 1}`);
+  assert.equal(remote.autoPair('pixel', { transport: 'https', ip: '1.2.3.4', now: now + 10 }), null, 'minute bucket full');
+  assert.ok(remote.autoPair('pixel', { transport: 'https', ip: '5.6.7.8', now: now + 11 }), 'another IP is unaffected');
+  assert.ok(remote.autoPair('pixel', { transport: 'https', ip: '1.2.3.4', now: now + 61_000 }), 'the minute window moves on');
+});
+
+test('tailnetCacheMs(): 5 s by default, OFFICE_TAILNET_CACHE_MS overrides, 0 disables', () => {
+  assert.equal(DEFAULT_TAILNET_CACHE_MS, 5000);
+  assert.equal(tailnetCacheMs({}), 5000);
+  assert.equal(tailnetCacheMs({ OFFICE_TAILNET_CACHE_MS: '0' }), 0);
+  assert.equal(tailnetCacheMs({ OFFICE_TAILNET_CACHE_MS: '1234' }), 1234);
+  assert.equal(tailnetCacheMs({ OFFICE_TAILNET_CACHE_MS: 'abc' }), 5000);
+  assert.equal(tailnetCacheMs({ OFFICE_TAILNET_CACHE_MS: '-1' }), 5000);
+});
+
+test('the tailnet status is cached, shared in flight, and clearTailnetCache() forces a fresh CLI call', async () => {
+  const fakeBin = path.join(APP, 'test-support', 'fake-tailscale.mjs');
+  const log = path.join(TMP, 'cache-calls.log');
+  const cfg = path.join(TMP, 'cache-tailnet.json');
+  writeFileSync(cfg, JSON.stringify({ selfUserId: OWNER, peers: peers(), log }));
+  const env = { OFFICE_TAILSCALE_BIN: fakeBin, OFFICE_TAILNET_CACHE_MS: '5000' };
+  const calls = () => (readFileSync(log, 'utf8').match(/\n/g) ?? []).length;
+  const previous = process.env.FAKE_TAILSCALE_CONFIG;
+  process.env.FAKE_TAILSCALE_CONFIG = cfg; // the CLI child inherits this process's env
+  try {
+    clearTailnetCache();
+    assert.equal((await eligibleTailnetPeer('127.0.0.1', env)).name, 'pixel-adhit');
+    assert.equal((await eligibleTailnetPeer('127.0.0.1', env)).name, 'pixel-adhit');
+    assert.equal(calls(), 1, 'the second read is served from the cache');
+    clearTailnetCache();
+    await eligibleTailnetPeer('127.0.0.1', env);
+    assert.equal(calls(), 2, 'clearing forces a fresh call');
+    // No cache: two concurrent callers still share one in-flight CLI process.
+    const shared = { ...env, OFFICE_TAILNET_CACHE_MS: '0' };
+    clearTailnetCache();
+    const [a, b] = await Promise.all([eligibleTailnetPeer('127.0.0.1', shared), eligibleTailnetPeer('127.0.0.1', shared)]);
+    assert.equal(a.name, 'pixel-adhit');
+    assert.equal(b.name, 'pixel-adhit');
+    assert.equal(calls(), 3, 'single-flight: one more call, not two');
+  } finally {
+    if (previous === undefined) delete process.env.FAKE_TAILSCALE_CONFIG;
+    else process.env.FAKE_TAILSCALE_CONFIG = previous;
+    clearTailnetCache();
+  }
+});
+
 test('the auto-pair setting: default true, persisted in the remote state, saved immediately', (t) => {
   const dir = mkdtempSync(path.join(TMP, 'setting-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -303,6 +368,89 @@ test('an owner device over https pairs WITHOUT a code and works like a normal de
   assert.equal((await api('/api/remote/revoke', { id: device.id })).status, 200);
   assert.equal((await tlsRequest('/', { headers: { Cookie: cookie } })).status, 302, 'its cookie is dead');
   assert.equal((await remoteInfo()).devices.length, count, 'gone from the list');
+});
+
+// ---------- GET /pair auto-pairs too: the phone redirected here never sees the pin form ----------
+
+test('GET /pair without a code from an owner device auto-pairs and goes home', async () => {
+  const count = (await remoteInfo()).devices.length;
+  const res = await tlsRequest('/pair');
+  assert.equal(res.status, 302, res.body.slice(0, 120));
+  assert.equal(res.headers.location, '/', 'straight to the office, no form');
+  const setCookie = res.headers['set-cookie'][0];
+  assert.match(setCookie, /^__Host-office_device=/, 'the https cookie, like a code pairing');
+  const cookie = setCookie.split(';')[0];
+
+  const info = await remoteInfo();
+  assert.equal(info.devices.length, count + 1, 'one device record, from the GET alone');
+  const device = info.devices.at(-1);
+  assert.equal(device.name, 'pixel-adhit', 'named after the tailnet hostname');
+  assert.equal(device.transport, 'https', 'transport-bound record');
+
+  assert.equal((await tlsRequest('/', { headers: { Cookie: cookie } })).status, 200, 'the cookie works at once');
+  await api('/api/remote/revoke', { id: device.id });
+  assert.equal((await remoteInfo()).devices.length, count, 'gone again');
+});
+
+test('GET /pair with a valid cookie never mints another device', async () => {
+  const first = await tlsRequest('/pair');
+  assert.equal(first.status, 302);
+  const cookie = first.headers['set-cookie'][0].split(';')[0];
+  const count = (await remoteInfo()).devices.length;
+  const again = await tlsRequest('/pair', { headers: { Cookie: cookie } });
+  assert.equal(again.status, 302, 'goes home');
+  assert.equal(again.headers['set-cookie'], undefined, 'no new cookie');
+  assert.equal((await remoteInfo()).devices.length, count, 'no record for an already-paired browser');
+  await api('/api/remote/revoke', { id: (await remoteInfo()).devices.at(-1).id });
+});
+
+test('GET /pair from a subresource (another site) never auto-pairs', async () => {
+  const count = (await remoteInfo()).devices.length;
+  const res = await tlsRequest('/pair', { headers: { 'Sec-Fetch-Mode': 'no-cors', 'Sec-Fetch-Dest': 'image' } });
+  assert.equal(res.status, 200, 'the form, not a pairing');
+  assert.match(res.body, /Hubungkan ke Adhitron/);
+  assert.equal(res.headers['set-cookie'], undefined, 'no cookie handed out');
+  assert.equal((await remoteInfo()).devices.length, count, 'no device appeared');
+});
+
+test('GET /pair with the setting off: the code form, no device', async () => {
+  assert.equal((await api('/api/remote/auto-pair', { autoPairTailnet: false })).status, 200);
+  const count = (await remoteInfo()).devices.length;
+  const res = await tlsRequest('/pair');
+  assert.equal(res.status, 200);
+  assert.match(res.body, /Hubungkan ke Adhitron/, 'the PIN form');
+  assert.equal(res.headers['set-cookie'], undefined, 'no cookie handed out');
+  assert.equal((await remoteInfo()).devices.length, count, 'no device appeared');
+  await api('/api/remote/auto-pair', { autoPairTailnet: true }); // restore for the next tests
+});
+
+test('GET /pair from another tailnet user: the code form', async () => {
+  scenario({ peers: peers(OTHER) }); // the connecting loopback address belongs to another user
+  const count = (await remoteInfo()).devices.length;
+  const res = await tlsRequest('/pair');
+  assert.equal(res.status, 200, 'no auto-pair: the form answers');
+  assert.match(res.body, /Hubungkan ke Adhitron/);
+  assert.equal((await remoteInfo()).devices.length, count, 'no device appeared');
+  scenario({}); // back to the owner map
+});
+
+test('GET /pair with a broken `tailscale status --json`: the code form, fail closed', async () => {
+  scenario({ statusGarbage: true });
+  const count = (await remoteInfo()).devices.length;
+  const res = await tlsRequest('/pair');
+  assert.equal(res.status, 200);
+  assert.match(res.body, /Hubungkan ke Adhitron/);
+  assert.equal((await remoteInfo()).devices.length, count, 'no auto-pair from garbage output');
+  scenario({});
+});
+
+test('GET /pair over plain http (WiFi/LAN): the code form, never auto-pair', async (t) => {
+  if (!LAN) return t.skip('no LAN address on this machine');
+  const count = (await remoteInfo()).devices.length;
+  const res = await fetch(`http://${LAN}:${PORT}/pair`, { redirect: 'manual' });
+  assert.equal(res.status, 200, 'the eligible address still needs the code over http');
+  assert.match(await res.text(), /Hubungkan ke Adhitron/);
+  assert.equal((await remoteInfo()).devices.length, count, 'no device appeared');
 });
 
 test('over plain http (WiFi/LAN) the SAME eligible address still needs the code', async (t) => {

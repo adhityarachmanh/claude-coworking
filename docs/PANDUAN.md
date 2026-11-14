@@ -28,7 +28,7 @@ Tips:
 **Sekali saja:**
 
 1. Pasang Tailscale di laptop dan HP, login dengan akun yang sama.
-2. Di laptop: **📱** → centang **Izinkan akses dari HP** → pilih **🔒 Tailscale (HTTPS)** → scan QR dari HP. Kalau pilihan itu belum ada, ikuti langkah [Notifikasi push ke HP](../README.md#notifikasi-push-ke-hp) dulu. Dari HP jauh, bisa juga Tailscale SSH ke laptop dan jalankan `office pair` untuk membuka link pasang langsung (lihat [Menghubungkan HP](../README.md#menghubungkan-hp)); perangkat dengan akun Tailscale yang sama dengan laptop biasanya terpasang otomatis, tanpa kode.
+2. Di laptop: **📱** → centang **Izinkan akses dari HP** → pilih **🔒 Tailscale (HTTPS)** → scan QR dari HP. Kalau pilihan itu belum ada, ikuti langkah [Notifikasi push ke HP](../README.md#notifikasi-push-ke-hp) dulu. Dari HP jauh, bisa juga Tailscale SSH ke laptop dan jalankan `office pair` untuk membuka link pasang langsung (lihat [Menghubungkan HP](../README.md#menghubungkan-hp)); perangkat dengan akun Tailscale yang sama dengan laptop terpasang **otomatis saat halaman `/pair` dibuka** — tanpa kode, tanpa form PIN. Perangkat baru yang belum berlangganan push tetap perlu halaman **📱** di laptop, `office pair`, atau pasang otomatis itu; notifikasi *kode pasangan baru* hanya sampai ke HP yang sudah terpasang dan berlangganan push lewat HTTPS.
 3. Pasang sebagai aplikasi: Android lewat menu ⋮ → *Install app*; iPhone lewat Bagikan → **Tambahkan ke Layar Utama**, lalu buka dari ikon itu dan masukkan kode pairing sekali lagi.
 4. Di HP: **🔎 Cari** → *Pengaturan notifikasi* → **📱 Notifikasi HP (push)** → **Aktifkan** → **Kirim tes**.
 
@@ -41,6 +41,15 @@ Tips:
 - Di aplikasi, jawab lewat kartu izin seperti di laptop.
 
 Lewat WiFi rumah biasa (tanpa Tailscale), HP **hanya bisa melihat**. Itu disengaja: koneksi WiFi biasa tidak terenkripsi. Lihat [Dari HP](../README.md#dari-hp).
+
+## Daya dari HP (menyalakan / mematikan PC)
+
+1. Buka **⚡ Daya** — di header laptop, atau baris **⚡ Daya** di sheet **⋯** HP. Hanya jalan dari **laptop** atau **HP lewat 🔒 Tailscale (HTTPS)**; HP di WiFi biasa ditolak.
+2. Pilih **⏻ Matikan PC** (shutdown rapi, listrik diputus jembatan setelah jeda) atau **⏻ Matikan server saja** (PC tetap menyala).
+3. **PC mati?** Buka **Buka halaman jembatan** dari dialog yang sama. Halaman status menunjukkan keadaan sebenarnya: 🟢 hidup / 🖥 booting / 🟡 kemungkinan hidup / ⚫ mati / ⚪ belum pasti, dan tombolnya menyesuaikan — **⚡ Nyalakan PC** saat mati, **⏻ Matikan PC rapi** saat hidup, **⚠ Putus paksa** saat booting. Menyalakan saat PC masih hidup sengaja ditolak supaya PC tidak mati mendadak.
+4. Adhitron mengirim tanda "PC hidup" ke jembatan **tiap 2 menit**. Saat kamu meminta shutdown, tanda itu dijeda 12 menit supaya jadwal pemutusan tidak batal sendiri. Tombol **⏻ Matikan PC rapi** di halaman jembatan tidak bisa dibatalkan oleh tanda itu; **⚡ Nyalakan** atau **✕ Batalkan jadwal** yang membatalkannya (batalkan tidak memotong listrik).
+
+Detail lengkap (setup BIOS, plug Tuya, jembatan): [Remote power](remote-power-bridge.md).
 
 ## Izin sesi terminal (CLI bridge, eksperimental)
 

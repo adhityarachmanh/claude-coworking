@@ -24,6 +24,14 @@ const cleanTransport = (t) => (t === 'https' ? 'https' : 'http');
 export const DEVICE_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 // lastSeen only needs to be accurate to this for the idle rule, so a busy phone doesn't cause a disk write per request.
 const LAST_SEEN_STEP_MS = 60 * 60 * 1000;
+// Auto-pairing (no code, tailnet): every attempt mints a record, so a page on another site that keeps
+// navigating to /pair must not grow the list without bound. The cap and the per-IP pace are the backstop;
+// revoking a device (or idle pruning) frees a slot again, and the hour window ends on its own.
+export const MAX_DEVICES = 20;
+const AUTO_PAIR_MAX_PER_MINUTE = 5;
+const AUTO_PAIR_MAX_PER_HOUR = 20;
+const AUTO_PAIR_MINUTE_MS = 60 * 1000;
+const AUTO_PAIR_HOUR_MS = 60 * 60 * 1000;
 
 // ---------- what a phone on plain WiFi may do ----------
 
@@ -136,6 +144,7 @@ export class RemoteAccess {
     this.pairing = null;
     this.failures = new Map(); // remote ip -> { count, until } (wrong pairing guesses)
     this.recentFailures = []; // timestamps of wrong guesses from any IP (last GLOBAL_WINDOW_MS)
+    this.autoPairAttempts = new Map(); // remote ip -> timestamps of auto-pairings (last AUTO_PAIR_HOUR_MS)
     this.pausedUntil = 0;
   }
 
@@ -273,14 +282,35 @@ export class RemoteAccess {
    * (per-IP lockout, global pause) do not apply, and no failure is recorded. The current pairing code
    * stays alive: it was not used, and the screen may still be waiting for another device.
    * Same record shape, transport binding and persistence as a successful pair().
+   *
+   * Bounded on purpose (security review): a page on another site can navigate a phone to /pair, so a
+   * record is only minted while the list is below MAX_DEVICES and this IP has not auto-paired
+   * AUTO_PAIR_MAX_PER_MINUTE times in the last minute / AUTO_PAIR_MAX_PER_HOUR times in the last hour.
+   * A refused attempt changes nothing (existing records stay valid; revoke still frees a slot).
    * @param {string} name device display name (the tailnet hostname, see src/tailnet.js)
-   * @param {{ transport?: 'http'|'https' }} [options] the transport it arrived over (the token only works there)
-   * @returns {{ token: string, device: object }|null} null when phone access is off
+   * @param {{ transport?: 'http'|'https', ip?: string, now?: number }} [options] transport the token is
+   *   bound to, the connecting address for the per-IP pace, and the clock (tests inject it)
+   * @returns {{ token: string, device: object }|null} null when phone access is off, the list is full,
+   *   or this IP is paced out
    */
-  autoPair(name, { transport = 'http' } = {}) {
+  autoPair(name, { transport = 'http', ip = '', now = Date.now() } = {}) {
     if (!this.enabled) return null;
+    if (this.state.devices.length >= MAX_DEVICES) return null;
+    const key = String(ip ?? '');
+    const attempts = (this.autoPairAttempts.get(key) ?? []).filter((t) => now - t < AUTO_PAIR_HOUR_MS);
+    const lastMinute = attempts.filter((t) => now - t < AUTO_PAIR_MINUTE_MS).length;
+    if (lastMinute >= AUTO_PAIR_MAX_PER_MINUTE || attempts.length >= AUTO_PAIR_MAX_PER_HOUR) {
+      this.autoPairAttempts.set(key, attempts); // pruned, so a stale entry cannot live forever
+      return null;
+    }
+    // Bounded memory, like the wrong-guess map: only entries with nothing recent are dropped.
+    if (this.autoPairAttempts.size > 1000) {
+      for (const [k, times] of this.autoPairAttempts) if (!times.length || now - times.at(-1) >= AUTO_PAIR_HOUR_MS) this.autoPairAttempts.delete(k);
+    }
+    attempts.push(now);
+    this.autoPairAttempts.set(key, attempts);
     const token = randomBytes(32).toString('base64url');
-    const device = { id: randomUUID(), hash: sha256(token), name, created: Date.now(), lastSeen: Date.now(), transport: cleanTransport(transport) };
+    const device = { id: randomUUID(), hash: sha256(token), name, created: now, lastSeen: now, transport: cleanTransport(transport) };
     this.state.devices.push(device);
     this.hub.save();
     return { token, device };
