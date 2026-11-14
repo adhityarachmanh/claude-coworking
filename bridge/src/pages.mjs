@@ -357,16 +357,30 @@ ${newToken ? `<div class="note"><b>Token baru (token lama MATI):</b><br><code>${
 </form></div>
 <script>
 // Kartu "Space kamu" di "/" harus ikut token yang berlaku: setelah rotasi, token lama di localStorage
-// akan 401. Sinkronkan hanya untuk space yang id-nya cocok (halaman ini = space itu).
+// akan 401. Sinkronkan hanya untuk space yang id-nya cocok; kalau belum ada yang diingat sama sekali,
+// ingat space ini (alur "Sudah punya token?" → /manage) — tapi jangan menimpa space lain.
 try {
   const KEY = 'adhitron-space';
-  const raw = localStorage.getItem(KEY);
   const token = ${jsonForScript(String(queryToken ?? ''))};
-  if (raw && /^[0-9a-f]{64}$/i.test(token)) {
-    const s = JSON.parse(raw);
-    if (s && s.id === ${jsonForScript(space.id)}) {
-      s.manageUrl = '/manage?token=' + encodeURIComponent(token);
-      localStorage.setItem(KEY, JSON.stringify(s));
+  const id = ${jsonForScript(space.id)};
+  if (/^[0-9a-f]{64}$/i.test(token)) {
+    let stored = null;
+    try {
+      const raw = localStorage.getItem(KEY);
+      stored = raw ? JSON.parse(raw) : null;
+    } catch { stored = null; }
+    // Entri dianggap "space lain" hanya bila benar-benar punya id yang sah; objek kosong/rusak = belum ada.
+    const recalled = stored && typeof stored === 'object' && !Array.isArray(stored) && /^[0-9a-f]{8}$/i.test(stored.id ?? '');
+    if (!recalled) {
+      localStorage.setItem(KEY, JSON.stringify({
+        id: id,
+        bridgeUrl: location.origin,
+        statusUrl: '/s/' + id,
+        manageUrl: '/manage?token=' + encodeURIComponent(token),
+      }));
+    } else if (stored.id === id) {
+      stored.manageUrl = '/manage?token=' + encodeURIComponent(token);
+      localStorage.setItem(KEY, JSON.stringify(stored));
     }
   }
 } catch {}

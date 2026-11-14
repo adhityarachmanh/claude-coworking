@@ -497,8 +497,12 @@ test('manage: rotasi & hapus ikut memperbarui kartu "Space kamu" (hanya untuk id
   // untuk space ini saja — tanpa itu, kartu "/" masih memakai token mati dan tautannya 401.
   const rotated = await (await post(token, { action: 'rotate' })).text();
   assert.match(rotated, /adhitron-space/);
-  assert.match(rotated, /s\.manageUrl = '\/manage\?token=' \+ encodeURIComponent\(token\)/, 'kartu "/" memakai token baru');
-  assert.ok(rotated.includes(`s.id === "${id}"`), 'hanya space ini yang disentuh');
+  assert.match(rotated, /stored\.manageUrl = '\/manage\?token=' \+ encodeURIComponent\(token\)/, 'kartu "/" memakai token baru');
+  assert.ok(rotated.includes(`const id = "${id}";`), 'id halaman disuntik sebagai konstanta');
+  assert.match(rotated, /stored\.id === id/, 'hanya space ini yang disentuh');
+  // Alur "Sudah punya token?": membuka /manage saat belum ada yang diingat membuat entri (bridgeUrl dari origin).
+  assert.match(rotated, /bridgeUrl: location\.origin/, 'space lama ikut diingat saat manage dibuka');
+  assert.ok(rotated.includes("statusUrl: '/s/' + id"), 'statusUrl dihitung dari id halaman');
   const newToken = rotated.match(/<code>([0-9a-f]{64})<\/code>/)?.[1];
   assert.ok(newToken && newToken !== token, 'token baru ditampilkan (sekali) setelah rotasi');
   // Hapus: halaman terhapus membersihkan entri localStorage, tetap hanya bila id-nya cocok.
