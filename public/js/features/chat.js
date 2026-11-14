@@ -586,6 +586,13 @@ function fillChat(node, msg) {
 function fillChatBody(node, msg) {
   switch (msg.kind) {
     case 'user': {
+      // A raw step block (a tool_result carried as message content, no typed text) is transcript data,
+      // not a bubble: hidden like an empty assistant row.
+      if (!String(msg.text ?? '').trim() && Array.isArray(msg.message?.content)) {
+        node.className = 'hidden-msg';
+        node.innerHTML = '';
+        break;
+      }
       const tags = [
         msg.source === 'demo' ? 'demo' : '',
         msg.source === 'cli' ? 'dari terminal' : '',

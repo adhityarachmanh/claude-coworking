@@ -1,5 +1,5 @@
 // Translates Claude Code `--output-format stream-json` messages into office events and chat messages.
-import { activeRoles, agentRole, describeTool, extractTodos, inferRole, screenFor } from './roles.js';
+import { activeRoles, agentRole, describeTool, extractTodos, inferRole, ROLE_IDS, screenFor, toRole } from './roles.js';
 import { clip, firstSentence, truncate } from './util.js';
 
 const DELEGATE_TOOLS = new Set(['Agent', 'Task']);
@@ -8,6 +8,12 @@ const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const BUILDER_ROLES = new Set(['frontend', 'backend', 'dba', 'devops', 'ui-ux', 'security', 'freelancer']);
 const IGNORED_TOOLS = new Set(['SubagentHandback']); // harness plumbing, not work
 const ASYNC_LAUNCH = /async agent launched|launched successfully|running in the background/i;
+
+/** A tool whose name is itself a role id ("backend", "qa"…): an ACP step names its worker directly. */
+const roleNamed = (name) => {
+  const id = String(name ?? '').toLowerCase();
+  return ROLE_IDS.includes(id) ? toRole(id) : null;
+};
 const THINK_THROTTLE_MS = 4000;
 const STREAM_FLUSH_MS = 80;
 const OUTPUT_LIMIT = 3000;
@@ -135,6 +141,9 @@ export class StreamTranslator {
     for (const t of this.bgTasks.values()) {
       if (t.kind !== 'shell' || t.status !== 'running' || !t.role) continue;
       if (t.toolUseId && this.tools.has(t.toolUseId)) continue; // still a foreground call, counted above
+      // An ACP background shell's completion is never reported back (its state lives on its tool call): the
+      // office must not keep its worker "working" on it forever — the ⧗ panel still lists the running task.
+      if (t.source === 'acp' && t.background) continue;
       const w = (working[t.role] ??= { tools: 0, agents: 0 });
       w.tools++;
       w.label ??= t.description ? `⏳ ${t.description}` : '⏳ Perintah di latar belakang';
@@ -515,7 +524,7 @@ export class StreamTranslator {
         this.think(parentId);
         if (!parentId) this.finishThinking(block.thinking);
       }
-      else if (block.type === 'tool_use') this.onToolUse(block, parentRole, parentId);
+      else if (block.type === 'tool_use') this.onToolUse(block, parentRole, parentId, /^acp-tool-/.test(msg.message?.id ?? ''));
     }
   }
 
@@ -581,7 +590,7 @@ export class StreamTranslator {
 
   // ---------- tools ----------
 
-  onToolUse(block, parentRole, parentId = null) {
+  onToolUse(block, parentRole, parentId = null, acp = false) {
     const input = block.input ?? {};
     if (IGNORED_TOOLS.has(block.name)) return;
     if (DELEGATE_TOOLS.has(block.name)) {
@@ -620,7 +629,10 @@ export class StreamTranslator {
       return;
     }
 
-    let role = parentRole ?? inferRole(block.name, input, this.roleCtx);
+    // An ACP step titled with the role itself ("backend") names its worker directly — it never goes to the
+    // coordinator's desk, and it claims exactly that role in `working` (released by its own result).
+    const namedRole = parentRole ? null : (roleNamed(block.name) ?? roleNamed(block.stepRole));
+    let role = parentRole ?? namedRole ?? inferRole(block.name, input, this.roleCtx);
     if (role === 'claude') role = this.coordinator(); // asking you, waiting, coordinating: the PM's desk, not the boss's
     if (EDIT_TOOLS.has(block.name) && BUILDER_ROLES.has(role)) this.lastBuilder = role;
     // Planning happens around a table: the PM and tech lead meet before work starts / to present it.
@@ -638,9 +650,12 @@ export class StreamTranslator {
       ...(parentRole ? { sub: true } : {}),
       ...(parentId ? { parentToolUseId: parentId } : {}), // which delegation this subagent row belongs to
     });
-    this.tools.set(block.id, { name: block.name, input, role, label, screen, chatId, startedAt: Date.now() });
+    this.tools.set(block.id, { name: block.name, input, role, label, screen, chatId, startedAt: Date.now(), step: Boolean(namedRole), acp });
     this.rememberRole(block.id, role);
     if ((block.name === 'Bash' || block.name === 'PowerShell') && input.command) this.rememberCommand(block.id, input.command);
+    // The step's raw blocks stay in the transcript (tool_use now, its tool_result when it closes) without a
+    // bubble of their own: the UI shows the role's tool row, this row only carries the block data.
+    if (namedRole) this.sink.chat({ kind: 'assistant', message: { content: [block] } });
     // Its task may have been announced before the call itself (order is not guaranteed).
     for (const t of this.bgTasks.values()) if (t.toolUseId === block.id) this.linkTask(t);
     if (input.run_in_background && this.bgShellRoles.push(role) > 50) this.bgShellRoles.shift();
@@ -685,6 +700,8 @@ export class StreamTranslator {
       if (!info) continue;
       const text = resultText(block.content);
       const failed = Boolean(block.is_error);
+      // A step's closing block rides along in the transcript, next to its tool_use row.
+      if (info.step) this.sink.chat({ kind: 'user', message: { content: [block] } });
 
       if (info.agent) {
         // A background agent "returns" immediately but keeps working; it finishes later.
@@ -744,8 +761,10 @@ export class StreamTranslator {
     if (windows.length) this.contextWindow = Math.max(...windows);
     if (this.contextUsed) this.status({ context: { used: this.contextUsed, window: this.contextWindow || null, autoCompactAt: this.autoCompactAt ?? null } });
     const activeRoles = [];
+    const openCalls = []; // ACP tool calls the turn ends with (a delegated step's report was lost, a shell cut off)
     for (const [id, info] of this.tools) {
       if (info.agent && info.background) activeRoles.push(info.role);
+      else if (info.acp && !info.agent) openCalls.push(id); // closed by a synthetic tool_result below, not cancelled
       else {
         // Never got a result (interrupted or denied): close the line out.
         this.sink.updateChat(info.chatId, { status: 'cancel' });
@@ -779,5 +798,10 @@ export class StreamTranslator {
     });
     const kind = ok ? 'stop' : msg.subtype === 'interrupted' ? 'halt' : 'error';
     this.sink.office({ kind, role: 'claude', label: ok ? 'Selesai' : 'Berhenti', activeRoles });
+    // A tool call open at the turn's end never spins forever: each gets a synthetic tool_result right after the
+    // turn's line — its row reads ended (with the note as output) and its role is released, never left "working".
+    for (const id of openCalls) {
+      this.handle({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'Giliran selesai sebelum langkah ini dilaporkan.', is_error: false }] } });
+    }
   }
 }

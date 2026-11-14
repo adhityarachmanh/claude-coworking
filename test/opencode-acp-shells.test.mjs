@@ -194,6 +194,23 @@ test('⧗ a turn ends with its still-open shell call: the task is closed, never 
   assert.equal(closed.tasks.find((x) => x.id === 'oc:sh_fake3').status, 'completed');
 });
 
+test('a delegated step whose final update never arrives is closed by a synthetic result at turn end', async () => {
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'langkahgantung' });
+  // the step's row exists as a running tool while the turn runs…
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'assistant' && (o.message?.content ?? []).some((c) => c.type === 'tool_use' && c.id === 'call-step-hang'));
+  // …and the turn ends without any final update for it.
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && o.ok === true);
+  // the app must close the row itself: a synthetic tool_result, before the turn's line, never an endless spinner
+  await waitFor((t, o) => {
+    if (t !== 'chat' || o.project !== id || o.kind !== 'user') return false;
+    return (o.message?.content ?? []).some((c) => c.type === 'tool_result' && c.tool_use_id === 'call-step-hang' && /Giliran selesai/.test(c.content ?? ''));
+  }, 8000);
+  // and nothing stays "working" afterwards: the office is honest about being idle
+  const s = await snapshot();
+  assert.deepEqual(s.statuses[id].working ?? {}, {}, 'no role is left working by a lost step');
+});
+
 /** The user texts OpenCode received since `since`, oldest first (FAKE_ACP_STORE: one file per session, all turns). */
 let receivedSince = 0;
 const receivedAll = () => {

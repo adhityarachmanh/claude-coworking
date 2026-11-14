@@ -16,7 +16,7 @@ import { budgetStop, consumeBudgetOverride } from './budget.js';
 import { checkTurn, overCapacity } from './concurrency.js';
 import { MODE_CHOICE_MESSAGE, agentForMode } from './modes.js';
 import { OPENCODE_ACCOUNT } from './opencode-account.js';
-import { describeTool, inferRole } from './roles.js';
+import { describeTool, inferRole, ROLE_IDS } from './roles.js';
 import { StreamTranslator } from './translator.js';
 import { clip, truncate } from './util.js';
 
@@ -325,7 +325,10 @@ export class AcpAdapter {
       if (parent && parent !== id) {
         info.parent = parent;
         info.title = title.slice(desc.length + 2);
-      } else if (!info.parent) info.title = title;
+      } else if (!info.parent) {
+        info.title = title;
+        info.firstTitle ??= title; // a delegated step names its role here ("backend"); later updates rename the call
+      }
     }
     if (u.rawInput && Object.keys(u.rawInput).length) info.rawInput = u.rawInput;
     if (u.locations?.length) info.locations = u.locations;
@@ -341,10 +344,14 @@ export class AcpAdapter {
     info.started = true;
     this.flushText(); // the text before a tool call ends there, as in Claude's messages
     const { name, input } = mapTool(info);
+    // A delegated step names its role in its first title ("backend") even when a later update renames the call
+    // to the step's own label: the block carries it so the translator attributes the work to that role.
+    const stepRole = ROLE_IDS.includes(String(info.firstTitle ?? '').toLowerCase()) ? String(info.firstTitle).toLowerCase() : null;
+    const block = { type: 'tool_use', id, name, input, ...(stepRole ? { stepRole } : {}) };
     // only a real description (not the "subagent" title fallback) can prefix the subagent's own calls
     const desc = info.rawInput?.description;
     if (name === 'Agent' && typeof desc === 'string' && desc) this.subagents.set(desc, [...(this.subagents.get(desc) ?? []), id]);
-    this.emit({ type: 'assistant', parent_tool_use_id: info.parent ?? null, message: { id: `acp-tool-${id}`, content: [{ type: 'tool_use', id, name, input }] } });
+    this.emit({ type: 'assistant', parent_tool_use_id: info.parent ?? null, message: { id: `acp-tool-${id}`, content: [block] } });
     this.registerShellTask(id, info, name, input);
     return { name, input };
   }

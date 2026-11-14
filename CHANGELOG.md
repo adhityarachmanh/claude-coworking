@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.27
+
+- **🔁 Langkah delegasi yang laporannya hilang tidak lagi muter selamanya.** OpenCode kadang mengakhiri giliran tanpa laporan akhir untuk langkah yang masih jalan (langkah subagent, shell yang terpotong): barisnya kini ditutup rapi dengan hasil sintetis *"Giliran selesai sebelum langkah ini dilaporkan."*, dan worker role-nya benar-benar berhenti — `working` kosong setelah giliran, jadi kamu selalu tahu mana yang sudah selesai. Shell latar tetap berjalan seperti Claude Code; langkah shell milik giliran yang terpotong ikut ditutup dari daftar task-nya.
+
 ## Unreleased
 
 - **🌉 Remote power kini multi-tenant di Netlify.** Jembatan daya pindah dari Cloudflare Worker single-tenant ke jembatan Netlify (`bridge/`): setiap user mendaftar di web dengan form, memasukkan kredensial Tuya-nya sendiri (terenkripsi AES-256-GCM per-space), dan mendapat URL + token untuk ditempel di ⚙ Remote power. Bisa memakai jembatan operator atau deploy sendiri dengan env `ENCRYPTION_KEY`.

@@ -472,6 +472,15 @@ async function turn(sessionId, text) {
     await say('msg_shell_done', 'Shell selesai.');
     return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
   }
+  if (/^langkahgantung/.test(text)) {
+    // A delegated step whose final update never arrives (a lost report with the turn's end): the app must close
+    // the still-open call with a synthetic tool_result at the turn's end, never leave its row spinning.
+    const call = 'call-step-hang';
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'backend', kind: 'think', status: 'pending', locations: [], rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'in_progress', kind: 'think', title: 'Merekam ulang dua permukaan prioritas', rawInput: {} });
+    await say('msg_step_hang', 'Langkah menggantung.');
+    return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+  }
   if (/macet/.test(text)) {
     const call = 'call-hang-1';
     if (SHELL_FILE) writeFileSync(SHELL_FILE, JSON.stringify({ id: 'sh_macet1', command: 'tail -f app.log', status: 'running', time: { started: Date.now() } }));
