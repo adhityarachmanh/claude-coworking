@@ -346,7 +346,7 @@ async function manageAction(env, url, request) {
     await store.deleteTokenIndexByHash(env, space.tokenHash);
     await store.deleteTicketsOfSpace(env, space.id); // tiket milik space ikut mati
     await store.deleteSpace(env, space.id);
-    return html(deletedPageHtml());
+    return html(deletedPageHtml(space.id));
   }
   throw new HttpError(400, 'action tidak dikenal');
 }

@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, test } from 'node:test';
+import vm from 'node:vm';
 import { handleApi, scheduledSweep } from './src/bridge.mjs';
 import { decryptCreds, decryptSecret, encryptCreds } from './src/vault.mjs';
 import * as store from './src/store.mjs';
@@ -449,6 +450,61 @@ test('halaman: register di /, manage, status — tanpa membocorkan kredensial', 
   assert.match(manageHtml, /Rotasi token/);
   assert.match(manageHtml, new RegExp(DEVICE), 'device id (milik pemilik) tampil di manage');
   assert.equal(manageHtml.includes(SECRET), false, 'secret tidak dirender ulang');
+});
+
+test('halaman /: space diingat di browser (localStorage) supaya refresh tidak kembali ke form kosong', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const home = await handleApi(req('/'), env);
+  assert.equal(home.status, 200);
+  const html = await home.text();
+  // Kartu "Space kamu" tersembunyi sampai localStorage berisi space (renderSpace() saat halaman dibuka).
+  assert.match(html, /id="space"[^>]*hidden/, 'kartu space disembunyikan saat belum ada yang diingat');
+  assert.match(html, /adhitron-space/, 'kunci localStorage');
+  assert.match(html, /saveSpace\(\{ id: d\.id, bridgeUrl: d\.bridgeUrl, statusUrl: d\.statusUrl, manageUrl: d\.manageUrl \}\)/, 'hasil daftar disimpan (tanpa salinan token terpisah)');
+  assert.match(html, /localStorage\.removeItem/, 'tombol Lupakan menghapusnya');
+  assert.match(html, /Sudah punya token\?/, 'jalur untuk token yang sudah ada');
+  assert.match(html, /id="paste"/, 'form tempel token');
+  assert.match(html, /location\.href = '\/manage\?token=' \+ encodeURIComponent\(token\)/, 'tempel token membuka manage');
+  assert.match(html, /sp-token/, 'token dirender lewat elemen teks (textContent)');
+  assert.equal(/innerHTML[^\n]*d\.token/.test(html), false, 'token tidak pernah lewat innerHTML');
+});
+
+test('halaman /: skrip halaman benar-benar bisa dikompilasi (regex tidak kehilangan backslash di template)', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const html = await (await handleApi(req('/'), env)).text();
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  assert.equal(scripts.length, 1, 'satu blok skrip di halaman /');
+  assert.equal(scripts[0].includes('${'), false, 'tidak ada sisa interpolasi template');
+  // Dulu regex literal di dalam template string kehilangan backslash-nya (\/ → /, \? → ?, \s → s),
+  // sehingga seluruh skrip SyntaxError dan semua tombol/form mati. Kompilasi = penjaga nyata.
+  assert.doesNotThrow(() => new vm.Script(scripts[0]), 'skrip halaman harus valid');
+  assert.match(scripts[0], /new RegExp\(/, 'regex disuntik dari SPACE_SHAPE, bukan literal di template');
+});
+
+test('manage: rotasi & hapus ikut memperbarui kartu "Space kamu" (hanya untuk id yang cocok)', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const post = (tok, body) =>
+    handleApi(req(`/api/manage?token=${tok}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(body).toString(),
+    }), env);
+  // Rotasi: halaman baru menampilkan token baru dan skrip yang mengganti manageUrl di localStorage
+  // untuk space ini saja — tanpa itu, kartu "/" masih memakai token mati dan tautannya 401.
+  const rotated = await (await post(token, { action: 'rotate' })).text();
+  assert.match(rotated, /adhitron-space/);
+  assert.match(rotated, /s\.manageUrl = '\/manage\?token=' \+ encodeURIComponent\(token\)/, 'kartu "/" memakai token baru');
+  assert.ok(rotated.includes(`s.id === "${id}"`), 'hanya space ini yang disentuh');
+  const newToken = rotated.match(/<code>([0-9a-f]{64})<\/code>/)?.[1];
+  assert.ok(newToken && newToken !== token, 'token baru ditampilkan (sekali) setelah rotasi');
+  // Hapus: halaman terhapus membersihkan entri localStorage, tetap hanya bila id-nya cocok.
+  const deleted = await (await post(newToken, { action: 'delete', confirm: 'HAPUS' })).text();
+  assert.match(deleted, /localStorage\.removeItem\(KEY\)/);
+  assert.ok(deleted.includes(`s.id === "${id}"`), 'id space yang dihapus ikut diperiksa');
 });
 
 test('manage: update memakai secret lama saat kosong, rotasi token mematikan token lama, hapus wajib konfirmasi', async () => {

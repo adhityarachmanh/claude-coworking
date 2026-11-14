@@ -81,6 +81,8 @@ details{margin:14px 0;border:1px solid var(--line);border-radius:10px;background
 summary{cursor:pointer;padding:10px 12px;font-size:.85rem;color:var(--muted)}
 details>div{padding:0 12px 12px;font-size:.78rem;color:var(--text-2)}
 .foot{padding:14px 20px;border-top:1px solid var(--line);text-align:center;font-size:.75rem;color:var(--muted)}
+[hidden]{display:none!important}
+.card-box{background:var(--surface);border:1px solid var(--accent-line);border-radius:12px;padding:14px;margin:14px 0}
 `;
 
 export const escapeHtml = (s) => String(s ?? '')
@@ -136,6 +138,16 @@ token-mu sendiri.</li>
 sebarkan URL manage-mu</b> — token ada di URL-nya.</li>
 </ul></div></details>`;
 
+/** Bentuk yang diterbitkan server untuk "space" di localStorage (id 8 hex, token 64 hex). */
+const SPACE_SHAPE = Object.freeze({
+  id: /^[0-9a-f]{8}$/i,
+  token: /^[0-9a-f]{64}$/i,
+  bridgeUrl: /^https?:\/\/[^\s]+$/,
+  manageUrl: /^\/manage\?token=[0-9a-f]{64}$/i,
+  statusUrl: /^\/s\/[0-9a-f]{8}$/i,
+  tokenInManage: /^\/manage\?token=([0-9a-f]{64})$/i,
+});
+
 export function registerPageHtml(notice = '') {
   return page('Adhitron Remote Power — daftar', `
 <h1>Remote power untuk PC-mu</h1>
@@ -145,6 +157,20 @@ ${notice}
 ${tuyaHelp}
 ${privacy}
 ${privacyNotice}
+<section id="space" class="card-box" hidden>
+<h2>Space kamu</h2>
+<p class="muted">id: <code id="sp-id"></code></p>
+<p><b>Tempel di panel Adhitron ⚙ → Remote power:</b></p>
+<p>URL jembatan: <code id="sp-url"></code></p>
+<p>Token: <code id="sp-token"></code></p>
+<a class="btn open" id="sp-status" href="#">Buka halaman status</a>
+<a class="btn ghost" id="sp-manage" href="#">⚙ Kelola / hapus space</a>
+<p class="muted">Token = kunci penuh space ini, dan sekarang tersimpan <b>hanya di browser ini</b>. Klik “Lupakan” kalau perangkat ini dipakai bersama.</p>
+<button class="btn ghost" id="sp-forget" type="button">Lupakan di perangkat ini</button>
+<button class="btn ghost" id="sp-new" type="button">+ Daftar space baru</button>
+<p class="muted">“Lupakan” hanya menghapus salinan di browser — space di server tetap ada selama tokennya kamu simpan.</p>
+</section>
+<div id="regzone">
 <h2>Daftar</h2>
 <form id="reg">
 <label>Client ID (Access ID Tuya)<input name="tuyaClientId" required maxlength="200"></label>
@@ -155,8 +181,92 @@ ${privacyNotice}
 <button class="btn on" type="submit">Daftar &amp; dapat token</button>
 </form>
 <div id="out"></div>
+</div>
+<div id="pastezone">
+<h2>Sudah punya token?</h2>
+<p class="muted">Tempel token dari panel ⚙ Remote power Adhitron untuk membuka space yang sudah ada — ini tidak membuat space baru.</p>
+<form id="paste">
+<label>Token (64 karakter hex)<input name="token" required minlength="64" maxlength="64" autocomplete="off" spellcheck="false" placeholder="64 karakter hex"></label>
+<button class="btn ghost" type="submit">Buka space-ku</button>
+</form>
+<div id="paste-out"></div>
+</div>
 <script>
 const $ = (id) => document.getElementById(id);
+// Ingat space di browser ini (localStorage), supaya refresh tidak mengembalikan ke form kosong.
+// Hanya URL yang disimpan; token sudah ada di dalam manageUrl (satu salinan rahasia), dan semuanya
+// dirender lewat textContent — tidak ada jalur innerHTML dari data ini.
+const SPACE_KEY = 'adhitron-space';
+// Bentuk yang benar-benar diterbitkan server. Regex-nya disuntik dari modul (SPACE_SHAPE) lewat new RegExp:
+// menulis regex literal di sini akan kehilangan backslash-nya (template string memakan \/ \? \s), dan
+// seluruh <script> jadi SyntaxError — perilaku ini dijaga test yang mengompilasi skrip halaman.
+const ID_RE = new RegExp(${jsonForScript(SPACE_SHAPE.id.source)}, 'i');
+const TOKEN_RE = new RegExp(${jsonForScript(SPACE_SHAPE.token.source)}, 'i');
+const BRIDGE_RE = new RegExp(${jsonForScript(SPACE_SHAPE.bridgeUrl.source)}, 'i');
+const MANAGE_RE = new RegExp(${jsonForScript(SPACE_SHAPE.manageUrl.source)}, 'i');
+const STATUS_RE = new RegExp(${jsonForScript(SPACE_SHAPE.statusUrl.source)}, 'i');
+const TOKEN_IN_MANAGE_RE = new RegExp(${jsonForScript(SPACE_SHAPE.tokenInManage.source)}, 'i');
+// Entri localStorage bisa rusak/aneh (storage bersama, versi lama): yang tidak cocok diperlakukan sebagai
+// "belum ada space" — bukan dirender sebagai [object Object] dan bukan dipasang sebagai href.
+const readSpace = () => {
+  try {
+    const v = JSON.parse(localStorage.getItem(SPACE_KEY) || 'null');
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+    if (typeof v.id !== 'string' || !ID_RE.test(v.id)) return null;
+    if (typeof v.bridgeUrl !== 'string' || !BRIDGE_RE.test(v.bridgeUrl)) return null;
+    if (typeof v.manageUrl !== 'string' || !MANAGE_RE.test(v.manageUrl)) return null;
+    if (typeof v.statusUrl !== 'string' || !STATUS_RE.test(v.statusUrl)) return null;
+    return v;
+  } catch { return null; }
+};
+const saveSpace = (space) => {
+  try { localStorage.setItem(SPACE_KEY, JSON.stringify(space)); } catch { /* storage penuh/diblokir: tetap boleh daftar */ }
+};
+const tokenOf = (space) => {
+  const m = TOKEN_IN_MANAGE_RE.exec(space.manageUrl);
+  return m ? m[1] : '';
+};
+function renderSpace() {
+  const space = readSpace();
+  const box = $('space');
+  if (!space) {
+    box.hidden = true;
+    $('regzone').hidden = false;
+    $('pastezone').hidden = false;
+    return;
+  }
+  const token = tokenOf(space);
+  $('sp-id').textContent = space.id;
+  $('sp-url').textContent = space.bridgeUrl;
+  $('sp-token').textContent = token;
+  $('sp-manage').href = space.manageUrl;
+  $('sp-status').href = token && space.statusUrl ? space.statusUrl + '?token=' + encodeURIComponent(token) : space.manageUrl;
+  box.hidden = false;
+  $('regzone').hidden = true;
+  $('pastezone').hidden = true;
+}
+$('sp-forget').addEventListener('click', () => {
+  try { localStorage.removeItem(SPACE_KEY); } catch { /* nothing to forget */ }
+  renderSpace();
+});
+$('sp-new').addEventListener('click', () => {
+  $('regzone').hidden = false;
+  $('pastezone').hidden = false;
+  $('regzone').scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+});
+$('paste').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const out = $('paste-out');
+  const token = String(new FormData(e.target).get('token') || '').trim();
+  if (!TOKEN_RE.test(token)) {
+    const warn = document.createElement('div');
+    warn.className = 'warn';
+    warn.textContent = '⚠ Token harus 64 karakter hex (sudah termasuk huruf dan angka).';
+    out.replaceChildren(warn);
+    return;
+  }
+  location.href = '/manage?token=' + encodeURIComponent(token);
+});
 document.getElementById('reg').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target, out = $('out');
@@ -197,6 +307,9 @@ document.getElementById('reg').addEventListener('submit', async (e) => {
     p3.textContent = 'Simpan token sekarang. Halaman status nanti bisa dibuka tanpa token lewat link serah-terima.';
     note.append(p1, p2, a, p3);
     out.replaceChildren(note);
+    // Ingat space ini supaya refresh menampilkan kartu "Space kamu", bukan form kosong lagi.
+    saveSpace({ id: d.id, bridgeUrl: d.bridgeUrl, statusUrl: d.statusUrl, manageUrl: d.manageUrl });
+    renderSpace();
   } catch (err) {
     const warn = document.createElement('div');
     warn.className = 'warn';
@@ -204,6 +317,7 @@ document.getElementById('reg').addEventListener('submit', async (e) => {
     out.replaceChildren(warn);
   }
 });
+renderSpace();
 </script>`);
 }
 
@@ -240,12 +354,39 @@ ${newToken ? `<div class="note"><b>Token baru (token lama MATI):</b><br><code>${
 <input type="hidden" name="action" value="delete">
 <label><input type="checkbox" name="confirm" value="HAPUS"> Saya yakin hapus space ini</label>
 <button class="btn off" type="submit">Hapus permanen</button>
-</form></div>`);
+</form></div>
+<script>
+// Kartu "Space kamu" di "/" harus ikut token yang berlaku: setelah rotasi, token lama di localStorage
+// akan 401. Sinkronkan hanya untuk space yang id-nya cocok (halaman ini = space itu).
+try {
+  const KEY = 'adhitron-space';
+  const raw = localStorage.getItem(KEY);
+  const token = ${jsonForScript(String(queryToken ?? ''))};
+  if (raw && /^[0-9a-f]{64}$/i.test(token)) {
+    const s = JSON.parse(raw);
+    if (s && s.id === ${jsonForScript(space.id)}) {
+      s.manageUrl = '/manage?token=' + encodeURIComponent(token);
+      localStorage.setItem(KEY, JSON.stringify(s));
+    }
+  }
+} catch {}
+</script>`);
 }
 
-export const deletedPageHtml = () => page('Space dihapus', `
+export const deletedPageHtml = (id = '') => page('Space dihapus', `
 <h1>🗑 Space dihapus</h1><p class="muted">Semua data (termasuk kredensial terenkripsi) sudah dihapus dari server.</p>
-<p><a href="/">← Daftar lagi</a></p>`);
+<p><a href="/">← Daftar lagi</a></p>
+<script>
+// Kartu "Space kamu" di "/" tidak boleh menunjuk space yang sudah tidak ada (hanya yang id-nya cocok).
+try {
+  const KEY = 'adhitron-space';
+  const raw = localStorage.getItem(KEY);
+  if (raw) {
+    const s = JSON.parse(raw);
+    if (s && s.id === ${jsonForScript(String(id))}) localStorage.removeItem(KEY);
+  }
+} catch {}
+</script>`);
 
 export const errorPageHtml = (title, text) => page(escapeHtml(title), `
 <h1>${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p><p><a href="/">← Beranda</a></p>`);

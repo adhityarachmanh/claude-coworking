@@ -17,6 +17,12 @@ HP / browser apa pun ──▶ jembatan ini (Netlify, online 24 jam) ──▶ T
 3. **Status**: halaman status publik (bisa dibuka via **tiket serah-terima** tanpa token jangka panjang)
    menampilkan 🟢 hidup / ⚫ mati / ⏳ countdown pemutusan, plus tombol Nyalakan / Matikan rapi / Putus paksa.
 
+**Halaman `/` mengingat space di browser ini.** Setelah daftar, URL + token ditampilkan dan
+`{ id, bridgeUrl, statusUrl, manageUrl }` disimpan di `localStorage` (kunci `adhitron-space`) — jadi refresh
+menampilkan kartu **Space kamu** (Buka status / ⚙ Kelola / Lupakan), bukan form kosong lagi. Token tidak
+disimpan terpisah (sudah ada di `manageUrl`), dan kolom **Sudah punya token?** membuka `/manage?token=…`
+tanpa membuat space baru. “Lupakan” hanya menghapus salinan di perangkat; space di server tetap ada.
+
 ## Deploy (Netlify, gratis)
 
 1. Buat situs Netlify baru (mis. `netlify deploy --dir bridge` atau import repo dengan *base directory* `bridge/`).
