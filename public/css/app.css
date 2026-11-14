@@ -2608,7 +2608,7 @@ body.read-only #composer-hint { color: var(--ask); }
   #spotify-box { grid-column: 3; }
   #btn-head-more { grid-column: 4; display: grid; place-items: center; position: relative; width: 44px; height: 44px; font-size: var(--fs-xl); letter-spacing: 1px; }
   #conn { grid-column: 5; }
-  .topbar .grow, #btn-account, #btn-report, #btn-settings, #btn-phone, #quota-pill, .header-more { display: none !important; }
+  .topbar .grow, #btn-account, #btn-report, #btn-settings, #btn-phone, #btn-power, #quota-pill, .header-more { display: none !important; } /* ⚡ Daya: the ⋯ sheet row */
   body[data-view='panel'] #spotify-box { display: none !important; } /* still in the Kantor view and in ⋯ */
   /* quota past the yellow/red line: a dot on ⋯ (the numbers are on the sheet's Akun row) */
   body:has(#quota-pill:not([hidden])) #btn-head-more::after { content: ''; position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--ask); }
@@ -3066,3 +3066,13 @@ body.read-only #concurrency-section { display: none !important; }
 .requests-table th, .requests-table td { white-space: nowrap; }
 .requests-table tr.bad td { color: var(--warn-text); }
 .requests-actions { display: flex; justify-content: flex-end; gap: 8px; flex: none; }
+
+/* ---------- ⚡ Daya (features/power.js): matikan PC / server, juga dari HP lewat Tailscale ---------- */
+.modal-card.power-card { max-width: 460px; display: flex; flex-direction: column; gap: 10px; }
+.power-card .modal-head { margin-bottom: 0; }
+#power-status { min-height: 1.4em; margin: 0; }
+.power-actions { display: flex; flex-direction: column; gap: 8px; }
+.power-actions button { width: 100%; min-height: 44px; font-size: var(--fs-md); }
+.power-bridge { display: block; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--r-md); color: var(--text-2); text-align: center; text-decoration: none; font-size: var(--fs-md); }
+.power-bridge:hover { border-color: var(--accent); color: var(--text); }
+@media (pointer: coarse) { .power-actions button, .power-bridge { min-height: 48px; } }

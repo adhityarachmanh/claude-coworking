@@ -7,9 +7,12 @@
 //   POST /api/off?delay=300               header X-Bridge-Token → { ok, offAt, handoffUrl }
 //   POST /api/on                          header X-Bridge-Token / X-Status-Token → { ok }
 //   GET  /api/status                      header X-Bridge-Token / X-Status-Token → status lengkap
+//   POST /api/pair                        header X-Bridge-Token SAJA (ownerToken, bukan tiket) → { ok, code, expiresAt }
+//                                         kode = 8 karakter base32 tanpa huruf ambigu, TTL 2 menit, satu kode per space
+//   POST /api/pair/claim { code }         tanpa auth, tanpa CORS → respons register (id + ownerToken), kode habis dipakai
 // PENTING: setelah /api/off, client WAJIB berhenti mengirim heartbeat sampai shutdown selesai —
 // heartbeat dianggap bukti "PC ternyata hidup" dan MEMBATALKAN jadwal mati (aturan pembatalan spesifikasi).
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 import { assertEncryptionKey, decryptCreds, decryptSecret, encryptCreds, encryptSecret } from './vault.mjs';
 import { drivePlug, isValidRegion, normalizeRegion, readPowerW } from './tuya.mjs';
 import * as store from './store.mjs';
@@ -24,10 +27,29 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 // CORS hanya untuk API JSON; halaman HTML tidak butuh CORS (B7) dan tidak boleh membawanya.
-const HTML_HEADERS = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' };
+// Halaman bridge juga tidak boleh di-frame situs lain dan tidak boleh mengirim referrer (kodenya ada di URL sesaat).
+const HTML_HEADERS = {
+  'Content-Type': 'text/html; charset=utf-8',
+  'Cache-Control': 'no-store',
+  'Referrer-Policy': 'no-referrer',
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': "frame-ancestors 'none'", // hanya anti-frame: script inline halaman tetap boleh
+};
 
 const ALIVE_WINDOW_MS = 30 * 60_000;   // heartbeat lebih tua dari ini = PC dianggap mati/beku
 const TICKET_TTL_MS = 10 * 60_000;     // umur tiket serah-terima
+const PAIR_TTL_MS = 120_000;           // umur kode pasangan (pindah space ke perangkat lain)
+const PAIR_MAX_FAILS = 20;             // klaim kode GAGAL per IP per jam, sesudahnya 429
+const PAIR_GLOBAL_MAX_FAILS = 3000;    // backstop total klaim gagal per jam (lintas IP)
+const PAIR_GLOBAL_MINUTE_FAILS = 120;  // cap total per MENIT: IP bersih pulih ≤ 1 menit, bukan sejam (anti-DoS)
+const PAIR_MAX_COLLISIONS = 5;         // percobaan membuat kode bila hash-nya bentrok dengan kode aktif lain
+const PAIR_CODE_LEN = 8;               // 8 karakter dari 30 simbol ≈ 39 bit: di luar jangkauan tebak (throttle 20/jam/IP)
+// Tanpa huruf/angka ambigu (I, L, O, U, 0, 1): kode dibacakan/diketik ulang dari layar atau HP.
+const PAIR_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ';
+const PAIR_CODE_RE = new RegExp(`^[${PAIR_ALPHABET}]{${PAIR_CODE_LEN}}$`);
+const PAIR_FAIL_MESSAGE = 'Terlalu banyak percobaan kode dari jaringan ini. Coba lagi nanti.';
+const PAIR_TRY_KEEP_MS = 2 * 60 * 60_000; // hitungan klaim lebih lama dari ini dibersihkan cron
 const REGISTER_LIMIT = 10;             // anti-abuse: 10 pendaftaran per IP per hari
 const POWER_BOOT_W = 20;               // di atas ini dianggap "PC menarik daya"
 const POWER_OFF_W = 5;                 // di bawah ini listrik dianggap benar-benar terputus
@@ -45,8 +67,15 @@ class HttpError extends Error {
 }
 
 const hex = (n) => randomBytes(n).toString('hex');
+/** Kode pasangan acak (CSPRNG): 8 karakter dari alfabet tanpa huruf/angka ambigu. */
+const newPairCode = () => Array.from({ length: PAIR_CODE_LEN }, () => PAIR_ALPHABET[randomInt(0, PAIR_ALPHABET.length)]).join('');
 // B1: no-store di SEMUA respons — respons register/manage membawa ownerToken; halaman membawa tiket.
-const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...CORS } });
+const json = (data, status = 200, headers = CORS) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers } });
+// /api/pair* sengaja TANPA CORS: halaman bridge memanggilnya same-origin, jadi situs lain tidak boleh bisa
+// memicu klaim kode (brute force lintas-origin). Respons tetap no-store dan tetap JSON.
+const jsonNoCors = (data, status = 200) => json(data, status, {});
+/** Kedua endpoint kode pasangan: satu-satunya rute yang tidak membawa CORS. */
+const isPairApi = (path) => path === '/api/pair' || path === '/api/pair/claim';
 const html = (text, status = 200) => new Response(text, { status, headers: HTML_HEADERS });
 
 const isStr = (v, min = 1, max = 200) => typeof v === 'string' && v.length >= min && v.length <= max;
@@ -69,11 +98,14 @@ function readAdhitronUrl(raw) {
   return raw;
 }
 
-/** IP client (Netlify header dulu), disanitasi untuk key Blobs. */
+/** IP client menurut Netlify, disanitasi untuk key Blobs. `x-forwarded-for` TIDAK dipercaya: siapa pun bisa
+ *  memalsukannya (satu header per request = throttle per IP tak berguna), jadi tanpa header Netlify semua
+ *  permintaan jatuh ke satu bucket 'unknown' — tetap terbatas, bukan tak terbatas. */
 function clientIp(request) {
-  const nf = request.headers.get('x-nf-client-connection-ip');
-  const fwd = (request.headers.get('x-forwarded-for') ?? '').split(',')[0].trim();
-  return String(nf || fwd || 'unknown').replace(/[^0-9a-fA-F:.]/g, '_').slice(0, 64) || 'unknown';
+  const raw = request.headers.get('x-nf-client-connection-ip');
+  const clean = String(raw ?? '').replace(/[^0-9a-fA-F:.]/g, '_').slice(0, 64);
+  // Harus diawali karakter IP: bucket tak pernah bisa menyamar jadi '_global' (batas total) atau kosong.
+  return /^[0-9a-fA-F:.]/.test(clean) ? clean : 'unknown';
 }
 
 /** ownerToken user dipulihkan dari simpanan terenkripsi (A3) — hanya server yang bisa; snapshot Blobs
@@ -112,9 +144,32 @@ async function requireSpace(env, request, headers = ['X-Bridge-Token', 'X-Status
   throw new HttpError(401, 'Unauthorized');
 }
 
+/** Auth KHUSUS ownerToken (index token saja, tanpa tiket). Dipakai membuat kode pasangan: tiket sengaja berumur
+ *  pendek (10 menit, sekali pakai), sedangkan klaim kode menyerahkan ownerToken permanen — tiket tidak boleh
+ *  dipakai untuk menukar diri menjadi token permanen. */
+async function requireOwner(env, request) {
+  const token = request.headers.get('X-Bridge-Token');
+  if (!token || !TOKEN_RE.test(token)) throw new HttpError(401, 'Unauthorized');
+  const space = await store.spaceByToken(env, token);
+  if (!space) throw new HttpError(401, 'Unauthorized');
+  return space;
+}
+
 const readJson = async (request) => request.json().catch(() => { throw new HttpError(400, 'body harus JSON'); });
 
 // ---------------------------------------------------------------- endpoint: register
+
+/** Respons "perangkat ini sekarang memegang space": register dan klaim kode pasangan memakai bentuk yang sama. */
+function devicePayload(space, ownerToken, url) {
+  return {
+    ok: true,
+    id: space.id,
+    token: ownerToken,
+    bridgeUrl: url.origin, // tempel ini + token di panel ⚙ Remote power Adhitron
+    statusUrl: `/s/${space.id}`,
+    manageUrl: `/manage?token=${ownerToken}`,
+  };
+}
 
 async function register(request, env, url) {
   assertEncryptionKey(env.encryptionKey); // 500 jelas kalau operator lupa env var — bukan 502 samar
@@ -149,14 +204,87 @@ async function register(request, env, url) {
   };
   await store.putSpace(env, space);
   await store.putTokenIndex(env, ownerToken, id);
-  return json({
-    ok: true,
-    id,
-    token: ownerToken,
-    bridgeUrl: url.origin, // tempel ini + token di panel ⚙ Remote power Adhitron
-    statusUrl: `/s/${id}`,
-    manageUrl: `/manage?token=${ownerToken}`,
-  });
+  return json(devicePayload(space, ownerToken, url));
+}
+
+// ---------------------------------------------------------------- endpoint: kode pasangan
+
+/** Buat kode 8 karakter (sekali pakai, 2 menit) untuk memindahkan space ke perangkat lain — mis. HP.
+ *  Hanya ownerToken yang boleh (bukan tiket), hanya satu kode aktif per space, dan hash kode aktif milik space
+ *  lain tidak pernah ditimpa (tabrakan → buat ulang). Kode LAMA baru dihapus setelah kode baru benar-benar
+ *  tersimpan: lima tabrakan (503) tidak boleh membuat pengguna kehilangan kode yang masih berlaku. */
+async function pair(request, env) {
+  const space = await requireOwner(env, request);
+  // `env.makeCode` hanya dipakai test (seperti cycleWaitMs): memaksa tabrakan hash secara deterministik.
+  const makeCode = typeof env.makeCode === 'function' ? env.makeCode : newPairCode;
+  const now = Date.now();
+  const exp = now + PAIR_TTL_MS;
+  let code = null;
+  for (let attempt = 0; attempt < PAIR_MAX_COLLISIONS && !code; attempt++) {
+    const candidate = makeCode();
+    const hash = store.pairCodeHash(candidate);
+    const taken = await store.getPairCodeByHash(env, hash);
+    if (taken) {
+      if (taken.exp > now) continue; // kode aktif (space lain, atau kode lama sendiri): jangan ditimpa
+      // Record kedaluwarsa akan ditimpa: bersihkan dulu referensi pemilik lamanya (kalau masih menunjuk hash ini).
+      await store.deletePairSpaceCodeIf(env, taken.spaceId, hash);
+    }
+    code = candidate;
+  }
+  if (!code) throw new HttpError(503, 'Kode pasangan gagal dibuat. Coba lagi sebentar lagi.');
+  const hash = store.pairCodeHash(code);
+  await store.putPairCode(env, code, { spaceId: space.id, exp });
+  // Baru sekarang kode lama space ini dimatikan (satu kode aktif per space).
+  const previous = await store.getPairSpaceCode(env, space.id);
+  if (previous && previous !== hash) await store.deletePairCodeByHash(env, previous);
+  await store.putPairSpaceCode(env, space.id, hash);
+  return jsonNoCors({ ok: true, code, expiresAt: exp });
+}
+
+/** Klaim kode di perangkat baru: tanpa auth (kodenya sendiri bukti), sekali pakai, dibatasi per IP + batas total.
+ *  Pesan gagal selalu sama — beda antara "tidak ada", "kedaluwarsa" dan "sudah dipakai" tidak dibocorkan. */
+async function pairClaim(request, env, url) {
+  const body = await readJson(request);
+  const raw = body?.code;
+  if (typeof raw !== 'string') throw new HttpError(400, `code harus ${PAIR_CODE_LEN} karakter`);
+  const code = raw.trim().toUpperCase(); // dinormalisasi: kode selalu dibandingkan dalam huruf besar
+  if (!PAIR_CODE_RE.test(code)) throw new HttpError(400, `code harus ${PAIR_CODE_LEN} karakter`);
+  const ip = clientIp(request);
+  const now = Date.now();
+  const hourKey = new Date(now).toISOString().slice(0, 13);  // 'yyyy-mm-ddThh' (UTC)
+  const minuteKey = new Date(now).toISOString().slice(0, 16); // 'yyyy-mm-ddThh:mm'
+  // Anti-abuse berlapis, semuanya di prefix pairtry/ (terpisah dari reg/):
+  //   20 gagal/IP/jam · 120 gagal GLOBAL/menit (pemulihan ≤ 1 menit) · 3000 gagal GLOBAL/jam (backstop).
+  // Bucket '_globalm'/'_global' tidak bisa dipalsukan lewat IP: clientIp selalu diawali karakter IP.
+  if (await store.pairFailures(env, ip, hourKey) >= PAIR_MAX_FAILS) throw new HttpError(429, PAIR_FAIL_MESSAGE);
+  if (await store.pairFailures(env, store.PAIR_GLOBAL_MINUTE_BUCKET, minuteKey) >= PAIR_GLOBAL_MINUTE_FAILS) throw new HttpError(429, PAIR_FAIL_MESSAGE);
+  if (await store.pairFailures(env, store.PAIR_GLOBAL_BUCKET, hourKey) >= PAIR_GLOBAL_MAX_FAILS) throw new HttpError(429, PAIR_FAIL_MESSAGE);
+  const failClaim = async () => {
+    await store.incrPairFailure(env, ip, hourKey);
+    await store.incrPairFailure(env, store.PAIR_GLOBAL_MINUTE_BUCKET, minuteKey);
+    await store.incrPairFailure(env, store.PAIR_GLOBAL_BUCKET, hourKey);
+    throw new HttpError(401, 'Kode tidak dikenal atau kedaluwarsa');
+  };
+  // Pencarian lewat sha256(kode) — pola yang sama dengan index token: kode plaintext tidak ada di store,
+  // dan perbandingan tidak pernah dilakukan byte-per-byte terhadap kode asli.
+  const hash = store.pairCodeHash(code);
+  const rec = await store.getPairCodeByHash(env, hash);
+  if (!rec || !(rec.exp > now)) {
+    if (rec) {
+      await store.deletePairCodeByHash(env, hash); // kedaluwarsa: buang, jangan biarkan mengunci kode itu
+      await store.deletePairSpaceCodeIf(env, rec.spaceId, hash);
+    }
+    await failClaim();
+  }
+  await store.deletePairCodeByHash(env, hash); // SEKALI PAKAI: dihapus sebelum apa pun yang bisa gagal
+  await store.deletePairSpaceCodeIf(env, rec.spaceId, hash);
+  // Jujur soal atomisitas: Netlify Blobs tidak punya compare-and-swap di sini, jadi dua klaim PARALEL untuk kode
+  // yang sama bisa sama-sama lolos dan menerima ownerToken yang SAMA (bukan eskalasi: token itu sudah dipegang
+  // pemiliknya). Klaim BERURUTAN tetap 401 karena record sudah terhapus di klaim pertama.
+  const space = await store.getSpace(env, rec.spaceId);
+  // Space sudah dihapus (manage/retensi) di antara pembuatan dan klaim kode: mati juga untuk perangkat ini.
+  if (!space) await failClaim();
+  return jsonNoCors(devicePayload(space, ownerTokenOf(env, space), url));
 }
 
 // ---------------------------------------------------------------- endpoint: heartbeat
@@ -345,6 +473,7 @@ async function manageAction(env, url, request) {
     if (form.get('confirm') !== 'HAPUS') throw new HttpError(400, 'Hapus wajib konfirmasi: centang kotak "Saya yakin".');
     await store.deleteTokenIndexByHash(env, space.tokenHash);
     await store.deleteTicketsOfSpace(env, space.id); // tiket milik space ikut mati
+    await store.deletePairCodeOfSpace(env, space.id); // kode pasangan aktif + referensinya ikut mati
     await store.deleteSpace(env, space.id);
     return html(deletedPageHtml(space.id));
   }
@@ -357,10 +486,15 @@ async function manageAction(env, url, request) {
 export async function handleApi(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+  if (request.method === 'OPTIONS') {
+    // Preflight: endpoint kode pasangan tidak membawa CORS sama sekali (dipanggil same-origin oleh halaman bridge).
+    return new Response(null, { status: 204, headers: isPairApi(path) ? {} : CORS });
+  }
   try {
     if (path === '/' && request.method === 'GET') return html(registerPageHtml());
     if (path === '/api/space' && request.method === 'POST') return await register(request, env, url);
+    if (path === '/api/pair' && request.method === 'POST') return await pair(request, env);
+    if (path === '/api/pair/claim' && request.method === 'POST') return await pairClaim(request, env, url);
     if (path === '/manage' && request.method === 'GET') return await managePage(env, url);
     if (path === '/api/manage' && request.method === 'POST') return await manageAction(env, url, request);
     if (path === '/s' || path === '/s/') return html(errorPageHtml('Link tidak lengkap', 'URL halaman status: /s/<id>?t=<tiket>'));
@@ -369,10 +503,13 @@ export async function handleApi(request, env) {
     if (path === '/api/off' && request.method === 'POST') return await off(url, request, env);
     if (path === '/api/on' && request.method === 'POST') return await on(request, env);
     if (path === '/api/status' && request.method === 'GET') return await apiStatus(request, env);
-    return json({ error: 'Tidak ditemukan' }, 404);
+    return (isPairApi(path) ? jsonNoCors : json)({ error: 'Tidak ditemukan' }, 404);
   } catch (err) {
-    if (err instanceof HttpError) return json({ error: err.message }, err.status);
-    return json({ error: String(err?.message ?? err) }, 502);
+    // CORS harus konsisten dengan jalur sukses: /api/pair* tidak pernah membawa ACAO (termasuk 400/401/502),
+    // endpoint lain tetap `*`. Tanpa ini sebuah situs luar bisa membaca jawaban error endpoint pair.
+    const reply = isPairApi(path) ? jsonNoCors : json;
+    if (err instanceof HttpError) return reply({ error: err.message }, err.status);
+    return reply({ error: String(err?.message ?? err) }, 502);
   }
 }
 
@@ -381,19 +518,25 @@ export async function handleApi(request, env) {
  * offAt jatuh tempo → PC hidup setelah jadwal ditulis? batal. Else: plug OFF + verifikasi daya:
  * < 5 W sukses; masih tinggi → coba ulang (+60 dtk); 3× gagal → needsAttention (bukan loop). */
 export async function scheduledSweep(env, nowMs = Date.now()) {
+  // Kode pasangan yang tak pernah diklaim (TTL 2 menit) dan hitungan klaim lama (> 2 jam) dibuang di sini:
+  // tanpa ini key pair/ dan pairtry/ menumpuk selamanya di store. Suffix jam maupun menit dibandingkan
+  // terhadap cutoff berpresisi menit (key jam yang lebih tua tetap urut lebih kecil).
+  await store.deleteExpiredPairCodes(env, nowMs);
+  await store.deleteOldPairAttempts(env, new Date(nowMs - PAIR_TRY_KEEP_MS).toISOString().slice(0, 16));
   const spaces = await store.listSpaces(env);
   const results = [];
   for (const space of spaces) {
     if (!space) continue;
     // C1 — retensi (kepatuhan): space yang tidak pernah dipakai (> 30 hari sejak daftar, heartbeat 0)
-    // atau sudah lama mati (tanpa heartbeat > ±6 bulan) dihapus otomatis, termasuk index token dan
-    // semua tiketnya (pola sama dengan delete di manage).
+    // atau sudah lama mati (tanpa heartbeat > ±6 bulan) dihapus otomatis, termasuk index token, semua
+    // tiketnya dan kode pasangan aktifnya (pola sama dengan delete di manage).
     const deadSince = space.lastHeartbeat > 0
       ? nowMs - space.lastHeartbeat > RETENTION_STALE_MS
       : space.createdAt < nowMs - RETENTION_UNUSED_MS;
     if (deadSince) {
       if (space.tokenHash) await store.deleteTokenIndexByHash(env, space.tokenHash);
       await store.deleteTicketsOfSpace(env, space.id);
+      await store.deletePairCodeOfSpace(env, space.id); // kode pasangan aktif + referensinya ikut mati
       await store.deleteSpace(env, space.id);
       results.push({ id: space.id, action: 'retention-delete' });
       continue;

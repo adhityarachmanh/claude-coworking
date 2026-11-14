@@ -1659,12 +1659,54 @@ export class Hub {
   }
 
   /**
+   * Closes rows a previous process left open in the chat: a tool call still `running` can never get its result (the
+   * process that knew it is gone), so it would spin "Sedang berjalan…" forever; a `pending` approval can no longer be
+   * answered. Called once at start, before any session runs. A backup import does the same for its own messages.
+   * @returns {number} chats changed
+   */
+  closeStaleRows() {
+    let changed = 0;
+    const dirtyStores = new Set();
+    for (const engine of ENGINES) {
+      const store = this.chatStoreFor(engine);
+      for (const id of store.list()) {
+        const chat = this.chatFor(engine, id);
+        let dirty = false;
+        for (const m of chat) {
+          if (m?.status === 'running') {
+            m.status = 'cancel';
+            if (!m.output) m.output = 'Server di-restart — langkah ini terputus.';
+            dirty = true;
+          } else if (m?.status === 'pending') {
+            m.status = 'cancelled';
+            dirty = true;
+          }
+        }
+        if (!dirty) continue;
+        store.rewrite(id);
+        dirtyStores.add(engine);
+        changed++;
+      }
+    }
+    for (const engine of dirtyStores) this.chatStoreFor(engine).flush((id) => this.chatFor(engine, id));
+    return changed;
+  }
+
+  /**
    * At start. A turn still marked as running was cut short without a clean shutdown (crash, forced kill).
    * Each cut-short turn gets one notice in its chat (once, not again on every restart) and shows in the
    * status (`interrupted`) until the user continues or dismisses it.
    * @returns {string[]} ids of the projects with a cut-short turn
    */
   recoverTurns() {
+    // A tool/approval row lives in the chat as `status: 'running'`/`'pending'` until its result arrives. After a
+    // server update/restart/crash that result can never arrive (the process that knew the call is gone), so the row
+    // would spin forever. No turn is running at this point: close the leftovers (a backup import does the same).
+    try {
+      this.closeStaleRows();
+    } catch (err) {
+      console.error(`Baris lama tidak bisa ditutup: ${err?.message ?? err}`);
+    }
     for (const id of Object.keys(this.persisted.turns)) this.interruptTurn(id, 'crash');
     const ids = Object.keys(this.persisted.interrupted);
     for (const id of ids) {

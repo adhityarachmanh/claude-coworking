@@ -2,6 +2,13 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.31
+
+- **⚡ Daya dari HP.** Tombol **⚡ Daya** (header di laptop, baris **⋯** di HP) membuka panel dengan **⏻ Matikan PC** (shutdown rapi, listrik diputus jembatan setelah jeda) dan **⏻ Matikan server saja**, plus status remote power dan tautan halaman jembatan untuk menyalakan PC saat mati. Aksi daya dari HP hanya lewat **Tailscale HTTPS**; HP di WiFi biasa tetap ditolak (403).
+- **📲 Pindah space jembatan ke perangkat lain tanpa daftar ulang.** Di halaman Kelola muncul **Pasangkan perangkat lain**: buat **kode 8 karakter** (berlaku 2 menit, sekali pakai, satu kode aktif per space) lalu masukkan di **Punya kode pasangan?** pada halaman depan perangkat baru — space langsung diingat di perangkat itu. Ada juga **Salin link manage**.
+- **🔁 Baris “Sedang berjalan…” tidak lagi nyangkut setelah update/restart.** Baris langkah yang ditinggal proses sebelumnya (mis. saat update dari dalam aplikasi me-restart server) kini ditutup otomatis saat start dengan catatan *“Server di-restart — langkah ini terputus.”* Kartu persetujuan yang menggantung ikut dibatalkan.
+- **🔐 Keamanan kode pasangan.** Kode hanya bisa dibuat dengan **owner token** (tautan tiket status ditolak), tidak ada CORS lintas-origin, throttle 20 gagal/IP/jam + 120 gagal/menit + 3000/jam global, kode lama mati saat kode baru dibuat, dan halaman jembatan memakai `Referrer-Policy: no-referrer` + anti-iframe. URL jembatan di panel Daya disanitasi (tanpa kredensial/query).
+
 ## 1.0.30
 
 - **🧩 Emoji dan ikon pulih.** Rilis 1.0.29 merusak sebagian karakter UTF-8 di antarmuka (emoji tampil seperti `?`/mojibake). Seluruh berkas dipulihkan dan ada test penjaga encoding agar tidak terulang.

@@ -50,6 +50,7 @@ import { initPhone } from './features/phone.js';
 import { initPhoneSheets } from './features/phone-sheets.js';
 import { initPicker } from './features/picker.js';
 import { initGroups } from './features/groups.js';
+import { initPower } from './features/power.js';
 import { initPush } from './features/push.js';
 import { initQuota } from './features/quota.js';
 import { initQueue } from './features/queue.js';
@@ -114,6 +115,7 @@ initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initHeaderMore();
 initSettings();
+initPower(); // ⚡ Daya: matikan PC / server (laptop, atau HP lewat Tailscale HTTPS)
 initBudget(); // 💰 budget pemakaian global (⚙ → Umum + 🩺 Kesehatan; laptop/Tailscale only)
 initRoutines(); // ⏰ tugas terjadwal (⚙ → Jadwal; laptop/Tailscale only)
 initAppearance(); // 🎛️ app theme, text size, density, motion (per device)

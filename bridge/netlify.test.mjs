@@ -134,6 +134,407 @@ test('vault: kunci salah tidak bisa dekripsi; pasangan enkripsi-dekripsi simetri
   assert.throws(() => encryptCreds('tok', 'tidak-hex', { a: 1 }), 'ENCRYPTION_KEY tidak valid → ditolak');
 });
 
+// ---------------------------------------------------------------- kode pasangan (pindah space ke perangkat lain)
+
+// Alfabet kode = 30 simbol tanpa huruf/angka ambigu (I, L, O, U, 0, 1); 30^8 ≈ 6,6 × 10^11.
+const PAIR_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ';
+const PAIR_RE = new RegExp(`^[${PAIR_ALPHABET}]{8}$`);
+const wrongCode = (i) => `ZZZZZZZ${PAIR_ALPHABET[i % PAIR_ALPHABET.length]}`; // kode sah-format yang pasti tidak ada
+const hourKeyOf = (ms = Date.now()) => new Date(ms).toISOString().slice(0, 13);
+
+const requestPair = async (env, token) => statusOf(await handleApi(jsonReq('/api/pair', {}, { 'X-Bridge-Token': token }), env));
+const pairHash = (code) => createHash('sha256').update(code).digest('hex'); // isi index pairSpace/<id>
+const pairHashKey = (code) => `pair/${pairHash(code)}`;
+/** Klaim kode; `body` boleh objek (dikirim JSON) atau string mentah (body bukan JSON). */
+const claimPair = async (env, body, ip = '7.7.7.7') => statusOf(await handleApi(req('/api/pair/claim', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'x-nf-client-connection-ip': ip },
+  body: typeof body === 'string' ? body : JSON.stringify(body),
+}), env));
+
+test('pair: kode 8 karakter base32 + expiresAt 2 menit; store HANYA menyimpan sha256(kode); satu kode aktif per space', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const before = Date.now();
+  const r = await requestPair(env, token);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(r.body.code, PAIR_RE, '8 karakter dari alfabet tanpa huruf/angka ambigu (tanpa I/L/O/U/0/1)');
+  assert.ok(r.body.expiresAt > before + 119_000 && r.body.expiresAt <= Date.now() + 120_000, 'TTL tetap 120 dtk');
+  assert.deepEqual(JSON.parse(env.store.map.get(pairHashKey(r.body.code))), { spaceId: id, exp: r.body.expiresAt }, 'record = { spaceId, exp } di key sha256(kode)');
+  assert.equal(env.store.map.has(`pair/${r.body.code}`), false, 'kode plaintext tidak dipakai sebagai key');
+  assert.equal([...env.store.map.keys()].some((k) => k.includes(r.body.code)), false, 'kode tidak muncul di key mana pun');
+  assert.equal(await store.getPairSpaceCode(env, id), pairHash(r.body.code), 'referensi kode aktif space disimpan');
+  // Kode baru = kode lama mati (satu kode aktif per space).
+  const second = await requestPair(env, token);
+  assert.equal(second.status, 200);
+  assert.notEqual(second.body.code, r.body.code);
+  assert.equal(env.store.map.has(pairHashKey(r.body.code)), false, 'kode lama dihapus saat kode baru dibuat');
+  assert.equal(await store.getPairSpaceCode(env, id), pairHash(second.body.code), 'referensi menunjuk kode terbaru');
+  assert.equal((await claimPair(env, { code: r.body.code })).status, 401, 'kode lama tidak bisa diklaim lagi');
+});
+
+test('pair: HANYA ownerToken — tiket serah-terima (ticket/h) dan tiket sesi (ticket/s) ditolak 401', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  // ticket/s: tiket SESI dibuat saat halaman status dibuka dengan tiket serah-terima.
+  const first = await statusOf(await handleApi(jsonReq('/api/off?delay=60', {}, { 'X-Bridge-Token': token }), env));
+  const handoff1 = first.body.handoffUrl.split('?t=')[1];
+  const page = await handleApi(req(`/s/${id}?t=${handoff1}`), env);
+  const session = (await page.text()).match(/TOKEN = "([0-9a-f]{64})"/)?.[1];
+  assert.ok(session, 'halaman memberi tiket sesi');
+  assert.equal((await statusOf(await handleApi(jsonReq('/api/pair', {}, { 'X-Bridge-Token': session }), env))).status, 401, 'tiket sesi tidak boleh ditukar jadi ownerToken');
+  // Tiket sesi tidak dihabiskan oleh percobaan itu: jalur status tetap menerimanya.
+  assert.equal((await statusOf(await handleApi(req('/api/status', { headers: { 'X-Status-Token': session } }), env))).status, 200, 'tiket sesi masih hidup');
+  // ticket/h: tiket serah-terima baru dari /api/off
+  const second = await statusOf(await handleApi(jsonReq('/api/off?delay=60', {}, { 'X-Bridge-Token': token }), env));
+  const handoff2 = second.body.handoffUrl.split('?t=')[1];
+  assert.equal((await statusOf(await handleApi(jsonReq('/api/pair', {}, { 'X-Bridge-Token': handoff2 }), env))).status, 401, 'tiket serah-terima tidak boleh ditukar jadi ownerToken');
+  assert.equal((await handleApi(req(`/s/${id}?t=${handoff2}`), env)).status, 200, 'tiket serah-terima masih hidup (tidak dihabiskan /api/pair)');
+  // ownerToken sendiri tetap boleh.
+  assert.equal((await requestPair(env, token)).status, 200, 'ownerToken tidak terpengaruh');
+});
+
+test('pair: tanpa token / token salah / header status → 401', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { token } } = await doRegister(env);
+  assert.equal((await statusOf(await handleApi(jsonReq('/api/pair', {}), env))).status, 401);
+  assert.equal((await statusOf(await handleApi(jsonReq('/api/pair', {}, { 'X-Bridge-Token': 'salah' }), env))).status, 401);
+  assert.equal((await statusOf(await handleApi(jsonReq('/api/pair', {}, { 'X-Status-Token': token }), env))).status, 401, 'ownerToken di X-Status-Token pun tidak membuka /api/pair');
+});
+
+test('claim: kode sah (huruf kecil ikut dinormalisasi) → respons register, sekali pakai', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const { body: { code } } = await requestPair(env, token);
+  const claimed = await claimPair(env, { code: code.toLowerCase() });
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.body));
+  assert.deepEqual(claimed.body, {
+    ok: true,
+    id,
+    token, // ownerToken yang sama dengan register: perangkat ini sekarang memegang space-nya
+    bridgeUrl: 'https://bridge.test',
+    statusUrl: `/s/${id}`,
+    manageUrl: `/manage?token=${token}`,
+  }, 'bentuk persis respons register');
+  assert.equal(await store.getPairCode(env, code), null, 'kode dihapus setelah dipakai');
+  assert.equal(env.store.map.has(pairHashKey(code)), false, 'tidak ada sisa key kode');
+  assert.ok(!(await store.getPairSpaceCode(env, id)), 'referensi kode aktif ikut dibersihkan');
+  assert.equal((await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': claimed.body.token } }), env))).status, 200, 'token hasil klaim benar-benar berlaku');
+  const again = await claimPair(env, { code });
+  assert.equal(again.status, 401, 'kode yang sama tidak bisa dipakai dua kali (berurutan)');
+  assert.equal(again.body.error, 'Kode tidak dikenal atau kedaluwarsa');
+});
+
+test('claim: kode tidak ada dan kode kedaluwarsa → 401 dengan pesan yang SAMA (tidak membocorkan bedanya)', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { token } } = await doRegister(env);
+  const missing = await claimPair(env, { code: 'ZZZZZZZZ' });
+  assert.equal(missing.status, 401);
+  assert.deepEqual(missing.body, { error: 'Kode tidak dikenal atau kedaluwarsa' });
+  const { body: { code } } = await requestPair(env, token);
+  await store.putPairCode(env, code, { spaceId: 'x', exp: Date.now() - 1 }); // dimundurkan: kedaluwarsa
+  const expired = await claimPair(env, { code });
+  assert.equal(expired.status, 401);
+  assert.deepEqual(expired.body, missing.body, 'kedaluwarsa dan tidak-ada tidak bisa dibedakan');
+});
+
+test('claim: body bukan JSON / code bukan 8 karakter base32 → 400', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  for (const body of [
+    'bukan json', {}, { code: '' }, { code: 'ABCDEFG' }, { code: 'ABCDEFGHJ' }, // panjang salah
+    { code: 'ABCDEFGI' }, { code: 'ABCDEFGL' }, { code: 'ABCDEFGO' }, { code: 'ABCDEFGU' }, // huruf ambigu
+    { code: 'ABCDEFG0' }, { code: 'ABCDEFG1' }, { code: '12345678' }, // angka ambigu
+    { code: 12345678 }, { code: null }, { code: ['AAAAAAAA'] },
+  ]) {
+    const r = await claimPair(env, body);
+    assert.equal(r.status, 400, `body ${JSON.stringify(body)} harus 400`);
+  }
+});
+
+test('claim: 20 percobaan gagal per IP per jam → 429, dan tidak mencampur kuota register (prefix pairtry/)', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { token } } = await doRegister(env);
+  const ip = '9.9.9.9';
+  for (let i = 0; i < 20; i++) {
+    assert.equal((await claimPair(env, { code: wrongCode(i) }, ip)).status, 401, `percobaan gagal #${i + 1}`);
+  }
+  const blocked = await claimPair(env, { code: wrongCode(20) }, ip);
+  assert.equal(blocked.status, 429, 'percobaan ke-21 dari IP yang sama ditolak');
+  assert.match(blocked.body.error, /Terlalu banyak/);
+  // IP yang terkunci tetap ditolak walau kodenya sah (anti-tebak), IP lain tidak terpengaruh.
+  const { body: { code } } = await requestPair(env, token);
+  assert.equal((await claimPair(env, { code }, ip)).status, 429, 'kode sah pun ditolak selama IP terkunci');
+  assert.equal((await claimPair(env, { code }, '8.8.8.8')).status, 200, 'IP lain bisa mengklaim kode yang sama');
+  // Throttle klaim punya key sendiri: kuota register IP itu tidak ikut terbakar.
+  assert.equal([...env.store.map.keys()].some((k) => k.startsWith('pairtry/9.9.9.9/')), true, 'hitungan gagal di prefix pairtry/');
+  assert.equal([...env.store.map.keys()].some((k) => k.startsWith('reg/9.9.9.9/')), false, 'reg/<ip> tidak tersentuh');
+  assert.equal((await doRegister(env, defaultBody(), ip)).status, 200, 'IP yang terkunci klaim masih boleh mendaftar (kuota terpisah)');
+});
+
+test('claim: x-forwarded-for TIDAK dipercaya — semua request tanpa header Netlify jatuh ke bucket "unknown"', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  // 20 gagal, masing-masing dengan XFF berbeda dan TANPA x-nf-client-connection-ip → satu bucket.
+  for (let i = 0; i < 20; i++) {
+    const r = await statusOf(await handleApi(req('/api/pair/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': `10.1.1.${i}` },
+      body: JSON.stringify({ code: wrongCode(i) }),
+    }), env));
+    assert.equal(r.status, 401, `gagal #${i + 1}`);
+  }
+  // XFF baru tidak memberi bucket baru: tetap 429 dari bucket 'unknown'.
+  const blocked = await statusOf(await handleApi(req('/api/pair/claim', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '10.9.9.9' },
+    body: JSON.stringify({ code: wrongCode(20) }),
+  }), env));
+  assert.equal(blocked.status, 429, 'XFF palsu tidak melewati throttle');
+  const keys = [...env.store.map.keys()];
+  assert.equal(keys.some((k) => k.startsWith('pairtry/unknown/')), true, 'bucket "unknown" yang dipakai');
+  assert.equal(keys.some((k) => k.includes('10.1.1.') || k.includes('10.9.9.')), false, 'tidak ada bucket dari XFF');
+});
+
+test('claim: batas global 3000 gagal/jam lintas IP → 429 walau IP ini belum pernah gagal', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { token } } = await doRegister(env);
+  // Isi batas global jam berjalan; probe memastikan bridge benar-benar membacanya (jaga-jaga lintas jam).
+  let filled = null;
+  for (let i = 0; i < 3 && !filled; i++) {
+    await env.store.set(`pairtry/_global/${hourKeyOf()}`, '3000');
+    if (await claimPair(env, { code: wrongCode(i) }, `10.5.5.${i + 1}`).then((r) => r.status === 429)) filled = hourKeyOf();
+  }
+  assert.ok(filled, 'batas global terpasang');
+  const { body: { code } } = await requestPair(env, token);
+  const fresh = await claimPair(env, { code }, '10.6.6.6'); // IP baru, belum pernah salah
+  assert.equal(fresh.status, 429, 'kode sah pun ditolak saat batas total penuh');
+  assert.match(fresh.body.error, /Terlalu banyak/);
+});
+
+test('pair: tabrakan kode tidak menimpa kode aktif space lain (kode dibuat ulang)', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const a = await doRegister(env, defaultBody(), '1.1.1.1');
+  const b = await doRegister(env, defaultBody(), '2.2.2.2');
+  const codeA = (await requestPair(env, a.body.token)).body.code;
+  // Simulasi: pembuat kode space B "kebetulan" menghasilkan kode yang sama dengan space A, lalu kode bebas.
+  let calls = 0;
+  env.makeCode = () => (++calls === 1 ? codeA : 'ZZZZZZZZ');
+  const r = await requestPair(env, b.body.token);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.code, 'ZZZZZZZZ', 'kode bentrok dilewati, bukan ditimpa');
+  const recA = JSON.parse(env.store.map.get(pairHashKey(codeA)));
+  assert.equal(recA.spaceId, a.body.id, 'record kode space A utuh (tidak ditimpa)');
+  assert.equal((await claimPair(env, { code: codeA })).body.id, a.body.id, 'klaim kode A tetap menuju space A');
+});
+
+test('pair: 5 tabrakan berturut-turut → 503, kode space lain tetap utuh', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const a = await doRegister(env, defaultBody(), '1.1.1.1');
+  const b = await doRegister(env, defaultBody(), '2.2.2.2');
+  const codeA = (await requestPair(env, a.body.token)).body.code;
+  env.makeCode = () => codeA; // selalu bentrok
+  const r = await requestPair(env, b.body.token);
+  assert.equal(r.status, 503, 'tidak ada kode valid setelah 5 percobaan');
+  assert.equal((await claimPair(env, { code: codeA })).body.id, a.body.id, 'kode space A tidak tersentuh');
+  assert.ok(!(await store.getPairSpaceCode(env, b.body.id)), 'space B tidak menyimpan referensi kode gagal');
+});
+
+test('CORS: /api/pair* tanpa Access-Control-Allow-Origin (termasuk preflight); endpoint lain tidak berubah', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { token } } = await doRegister(env);
+  const pairRes = await handleApi(jsonReq('/api/pair', {}, { 'X-Bridge-Token': token }), env);
+  assert.equal(pairRes.status, 200);
+  assert.equal(pairRes.headers.get('access-control-allow-origin'), null, 'respons /api/pair tanpa ACAO');
+  const code = (await pairRes.json()).code;
+  const claimRes = await handleApi(jsonReq('/api/pair/claim', { code }), env);
+  assert.equal(claimRes.status, 200);
+  assert.equal(claimRes.headers.get('access-control-allow-origin'), null, 'respons claim tanpa ACAO');
+  for (const p of ['/api/pair', '/api/pair/claim']) {
+    const pre = await handleApi(req(p, { method: 'OPTIONS' }), env);
+    assert.equal(pre.status, 204, `preflight ${p}`);
+    assert.equal(pre.headers.get('access-control-allow-origin'), null, `preflight ${p} tanpa ACAO`);
+  }
+  const other = await handleApi(req('/api/status', { method: 'OPTIONS' }), env);
+  assert.equal(other.status, 204);
+  assert.equal(other.headers.get('access-control-allow-origin'), '*', 'endpoint lain tetap membawa CORS');
+  assert.equal(other.headers.get('access-control-allow-methods'), 'GET, POST, OPTIONS');
+});
+
+test('halaman HTML: Referrer-Policy, X-Frame-Options DENY, nosniff, CSP frame-ancestors (script inline tetap jalan)', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  for (const path of ['/', `/s/${id}?token=${token}`, `/manage?token=${token}`]) {
+    const page = await handleApi(req(path), env);
+    assert.equal(page.status, 200, path);
+    assert.equal(page.headers.get('referrer-policy'), 'no-referrer', path);
+    assert.equal(page.headers.get('x-frame-options'), 'DENY', path);
+    assert.equal(page.headers.get('x-content-type-options'), 'nosniff', path);
+    assert.equal(page.headers.get('content-security-policy'), "frame-ancestors 'none'", `${path}: CSP hanya anti-frame, tanpa script-src`);
+    assert.equal(page.headers.get('cache-control'), 'no-store', path);
+    assert.equal(page.headers.get('access-control-allow-origin'), null, `${path} tetap tanpa CORS`);
+  }
+});
+
+test('cron: kode pasangan kedaluwarsa dibuang (kode + referensi), yang masih berlaku tidak', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const { body: { code, expiresAt } } = await requestPair(env, token);
+  assert.deepEqual(await scheduledSweep(env, expiresAt - 1), [], 'sweep sebelum kedaluwarsa tidak mengubah apa pun');
+  assert.ok(await store.getPairCode(env, code), 'kode masih ada');
+  assert.deepEqual(await scheduledSweep(env, expiresAt + 1), []);
+  assert.equal(env.store.map.has(pairHashKey(code)), false, 'key pair/ kedaluwarsa dihapus sweep');
+  assert.ok(!(await store.getPairSpaceCode(env, id)), 'referensi pairSpace/ ikut dibersihkan');
+  assert.equal((await claimPair(env, { code })).status, 401, 'kode yang dibuang sweep tidak bisa diklaim');
+});
+
+test('cron: hitungan klaim lebih lama dari ~2 jam dibuang (semua bucket, jam & menit); key lain tidak', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const now = Date.now();
+  const oldIpHour = hourKeyOf(now - 3 * 3_600_000);
+  const oldGlobalHour = hourKeyOf(now - 4 * 3_600_000);
+  const freshHour = hourKeyOf(now - 30 * 60_000);
+  const minuteKey = (ms) => new Date(ms).toISOString().slice(0, 16);
+  const oldMinute = minuteKey(now - 5 * 3_600_000);
+  const freshMinute = minuteKey(now - 30 * 60_000);
+  await env.store.set(`pairtry/1.2.3.4/${oldIpHour}`, '5');
+  await env.store.set(`pairtry/_global/${oldGlobalHour}`, '100');
+  await env.store.set(`pairtry/_globalm/${oldMinute}`, '120');
+  await env.store.set(`pairtry/1.2.3.4/${freshHour}`, '2');
+  await env.store.set(`pairtry/_global/${freshHour}`, '7');
+  await env.store.set(`pairtry/_globalm/${freshMinute}`, '9');
+  await env.store.set(`reg/1.2.3.4/${new Date(now).toISOString().slice(0, 10)}`, '1');
+  assert.deepEqual(await scheduledSweep(env, now), []);
+  assert.equal(env.store.map.has(`pairtry/1.2.3.4/${oldIpHour}`), false, 'hitungan IP lama dibuang');
+  assert.equal(env.store.map.has(`pairtry/_global/${oldGlobalHour}`), false, 'hitungan global/jam lama dibuang');
+  assert.equal(env.store.map.has(`pairtry/_globalm/${oldMinute}`), false, 'hitungan global/menit lama dibuang');
+  assert.equal(env.store.map.has(`pairtry/1.2.3.4/${freshHour}`), true, 'hitungan < 2 jam dipertahankan');
+  assert.equal(env.store.map.has(`pairtry/_global/${freshHour}`), true);
+  assert.equal(env.store.map.has(`pairtry/_globalm/${freshMinute}`), true, 'bucket menit berjalan dipertahankan');
+  assert.equal([...env.store.map.keys()].some((k) => k.startsWith('reg/')), true, 'sweep tidak menyentuh reg/');
+});
+
+test('claim: cap global 120 gagal/MENIT → 429, pulih di menit berikutnya; backstop 3000/jam tetap', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { token } } = await doRegister(env);
+  const minuteKey = (ms = Date.now()) => new Date(ms).toISOString().slice(0, 16); // 'yyyy-mm-ddThh:mm'
+  // 1) Menit berjalan penuh → IP yang belum pernah salah pun kena 429.
+  let blocked = null;
+  for (let i = 0; i < 3 && !blocked; i++) {
+    const minute = minuteKey();
+    await env.store.set(`pairtry/_globalm/${minute}`, '120');
+    const r = await claimPair(env, { code: wrongCode(i) }, `10.7.7.${i + 1}`);
+    if (r.status === 429 && minuteKey() === minute) blocked = r;
+  }
+  assert.equal(blocked?.status, 429, '120 gagal/menit = 429');
+  assert.match(blocked.body.error, /Terlalu banyak/);
+  // 2) Pemulihan ≤ 1 menit: menit sebelumnya penuh, menit berjalan kosong → klaim sah diterima lagi.
+  await env.store.delete(`pairtry/_globalm/${minuteKey()}`);
+  await env.store.set(`pairtry/_globalm/${minuteKey(Date.now() - 60_000)}`, '120');
+  const { body: { code } } = await requestPair(env, token);
+  assert.equal((await claimPair(env, { code }, '10.8.8.8')).status, 200, 'tidak ada carry-over dari menit lalu');
+  // 3) Backstop per jam (3000) tetap berlaku saat menit masih kosong.
+  let hourBlocked = null;
+  for (let i = 0; i < 3 && !hourBlocked; i++) {
+    const hour = hourKeyOf();
+    await env.store.set(`pairtry/_global/${hour}`, '3000');
+    await env.store.delete(`pairtry/_globalm/${minuteKey()}`);
+    const r = await claimPair(env, { code: wrongCode(10 + i) }, `10.9.9.${i + 1}`);
+    if (r.status === 429 && hourKeyOf() === hour) hourBlocked = r;
+  }
+  assert.equal(hourBlocked?.status, 429, 'backstop 3000/jam tetap ada');
+});
+
+test('CORS jalan error: 400/401/404 di /api/pair* tanpa ACAO; endpoint lain tetap `*`', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const cases = [
+    ['401 tanpa token', await handleApi(jsonReq('/api/pair', {}), env), 401],
+    ['400 code pendek', await handleApi(req('/api/pair/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"code":"pendek"}' }), env), 400],
+    ['400 body bukan JSON', await handleApi(req('/api/pair/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'nope' }), env), 400],
+    ['404 method salah', await handleApi(req('/api/pair'), env), 404],
+    ['404 claim method salah', await handleApi(req('/api/pair/claim'), env), 404],
+  ];
+  for (const [label, res, status] of cases) {
+    assert.equal(res.status, status, label);
+    assert.equal(res.headers.get('access-control-allow-origin'), null, `${label}: tanpa ACAO`);
+  }
+  const other = await handleApi(req('/api/nope', { method: 'POST' }), env);
+  assert.equal(other.status, 404);
+  assert.equal(other.headers.get('access-control-allow-origin'), '*', 'endpoint lain tidak berubah');
+});
+
+test('manage delete & retensi: kode pasangan aktif + referensinya ikut terhapus', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const deleteForm = (token) => req(`/api/manage?token=${token}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ action: 'delete', confirm: 'HAPUS' }).toString(),
+  });
+  // (a) dihapus pemiliknya lewat halaman manage
+  const a = await doRegister(env, defaultBody(), '3.3.3.3');
+  const codeA = (await requestPair(env, a.body.token)).body.code;
+  assert.equal((await handleApi(deleteForm(a.body.token), env)).status, 200);
+  assert.equal(env.store.map.has(pairHashKey(codeA)), false, 'kode aktif ikut terhapus');
+  assert.ok(!(await store.getPairSpaceCode(env, a.body.id)), 'referensi pairSpace ikut terhapus');
+  assert.equal((await claimPair(env, { code: codeA })).status, 401, 'kode tidak bisa diklaim lagi');
+  // (b) dihapus otomatis oleh sweep retensi
+  const b = await doRegister(env, defaultBody(), '4.4.4.4');
+  const codeB = (await requestPair(env, b.body.token)).body.code;
+  const spaceB = await store.getSpace(env, b.body.id);
+  spaceB.createdAt = Date.now() - 31 * 86_400_000; // didaftarkan tapi tak pernah dipakai
+  await store.putSpace(env, spaceB);
+  const results = await scheduledSweep(env, Date.now());
+  assert.ok(results.find((r) => r.id === b.body.id && r.action === 'retention-delete'), 'space dihapus retensi');
+  assert.equal(env.store.map.has(pairHashKey(codeB)), false, 'kode aktif space retensi ikut terhapus');
+  assert.ok(!(await store.getPairSpaceCode(env, b.body.id)));
+});
+
+test('pair: record kode KEDALUWARSA milik space lain boleh ditimpa — referensi lamanya dibersihkan', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const a = await doRegister(env, defaultBody(), '1.1.1.1');
+  const b = await doRegister(env, defaultBody(), '2.2.2.2');
+  const stale = 'ZZZZZZZ2';
+  await store.putPairCode(env, stale, { spaceId: a.body.id, exp: Date.now() - 1 }); // sudah kedaluwarsa
+  await store.putPairSpaceCode(env, a.body.id, store.pairCodeHash(stale)); // referensi "yatim" milik A
+  let calls = 0;
+  env.makeCode = () => (++calls === 1 ? stale : 'ZZZZZZZ3');
+  const r = await requestPair(env, b.body.token);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.code, stale, 'kode kedaluwarsa dipakai ulang (bukan dianggap tabrakan)');
+  assert.equal(JSON.parse(env.store.map.get(pairHashKey(stale))).spaceId, b.body.id, 'sekarang milik space B');
+  assert.ok(!(await store.getPairSpaceCode(env, a.body.id)), 'referensi A dibersihkan, tidak menunjuk kode B');
+});
+
+test('pair: 503 karena tabrakan TIDAK menghapus kode lama yang masih berlaku', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const first = (await requestPair(env, token)).body.code;
+  env.makeCode = () => first; // setiap percobaan "bentrok" dengan kode lama space ini sendiri
+  const r = await requestPair(env, token);
+  assert.equal(r.status, 503, 'tak ada kode baru setelah 5 percobaan');
+  assert.ok(await store.getPairCode(env, first), 'kode lama tetap tersimpan');
+  assert.equal(await store.getPairSpaceCode(env, id), pairHash(first), 'referensi tetap menunjuk kode lama');
+  assert.equal((await claimPair(env, { code: first })).status, 200, 'kode lama masih bisa diklaim');
+});
+
 // ---------------------------------------------------------------- auth
 
 test('auth: token salah/hilang → 401 di semua endpoint, tanpa bocor', async () => {

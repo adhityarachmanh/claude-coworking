@@ -240,6 +240,30 @@ test('forgetting a project removes its chat file', () => {
   assert.equal(new Hub({ dataDir: dir }).rt(id).chat.length, 0);
 });
 
+test('startup: rows a previous process left open come back cancelled (no endless "Sedang berjalan…")', () => {
+  const dir = tmp();
+  const store = new ChatStore(path.join(dir, 'chats'), { limit: 100 });
+  const chat = [
+    msg(1),
+    msg(2, { kind: 'tool', tool: 'Bash', status: 'running', output: '' }),
+    msg(3, { kind: 'approval', status: 'pending' }),
+    msg(4, { kind: 'tool', tool: 'Read', status: 'ok', output: 'isi' }),
+  ];
+  for (const m of chat) store.append('p1', m);
+  store.flush(() => chat);
+
+  // What the next start does before any session runs (server.js calls this).
+  new Hub({ dataDir: dir }).recoverTurns();
+
+  const back = new Hub({ dataDir: dir }).rt('p1').chat;
+  const by = (id) => back.find((m) => m.id === id);
+  assert.equal(by('m1').status, undefined, 'a normal message is untouched');
+  assert.equal(by('m2').status, 'cancel', 'a running tool row is closed');
+  assert.match(by('m2').output, /terputus/, 'and says why');
+  assert.equal(by('m3').status, 'cancelled', 'a pending approval is cancelled');
+  assert.equal(by('m4').status, 'ok', 'a finished row is untouched');
+});
+
 // ---------- backups ----------
 
 async function exportFrom(hub, dir) {

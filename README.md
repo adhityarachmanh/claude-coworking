@@ -98,6 +98,7 @@ alur rilis, dan code signing: [docs/packaging-desktop.md](docs/packaging-desktop
 | Chat terasa macet | Lihat chip ⚠ di [Chat & izin](docs/FITUR.md#chat--izin) dan [PANDUAN: Kalau terasa macet](docs/PANDUAN.md#kalau-terasa-macet) |
 | Prompt masuk **📋 Antrian** karena **⚡ batas giliran bersamaan** | Batas global sedang penuh (default 3). Prompt ke project lain otomatis antri dan jalan sendiri saat ada slot; tunggu, atau ubah batas di ⚙ → Umum |
 | Server mati setelah laptop sleep | Penjaga Task Scheduler menyalakannya lagi dalam ±5 menit. Jalankan `node scripts\setup.mjs --check` untuk memastikan penjaga terpasang |
+| Baris **Sedang berjalan…** berputar terus setelah update/restart | Baris langkah yang ditinggal proses sebelumnya (`running`/`pending`) tidak akan pernah dapat hasil. Saat server menyala, baris itu ditutup otomatis (`cancel` + catatan *“Server di-restart — langkah ini terputus”*). Kalau masih berputar, muat ulang halaman |
 
 ## Dari HP
 
@@ -109,7 +110,7 @@ Akses HP **mati secara default**. Ada tiga jalur, dan masing-masing dipasangkan 
 | 🌐 Tailscale | `http://<IP-Tailscale>:4317` | **Penuh** | Terenkripsi oleh Tailscale (WireGuard), dari jaringan mana saja |
 | 🔒 Tailscale (HTTPS) | `https://<nama-laptop>.<tailnet>.ts.net:4318` | **Penuh + notifikasi push** | Wajib untuk Web Push dan 🎤 input suara di HP |
 
-Pengaturan laptop (folder projects, tambah folder project, auto-start, matikan server, akses HP, backup, Spotify Client ID/login, aturan izin, buka VS Code/folder) **hanya bisa diubah dari laptop**, apa pun jalurnya.
+Pengaturan laptop (folder projects, tambah folder project, auto-start, akses HP, backup, Spotify Client ID/login, aturan izin, buka VS Code/folder) **hanya bisa diubah dari laptop**, apa pun jalurnya. Satu pengecualian: **⚡ Daya** (matikan PC, atau matikan server saja) bisa dipakai dari laptop, atau dari HP lewat **🔒 Tailscale (HTTPS)** — lihat [Daya dari HP](#daya-dari-hp).
 
 ### Menghubungkan HP
 
@@ -155,6 +156,19 @@ Notifikasi tetap muncul walau aplikasi ditutup atau HP terkunci. Hanya lewat jal
 - Nyalakan **auto-start** (⚙) supaya server jalan lagi setelah restart.
 
 > Tunnel publik seperti ngrok atau Cloudflare Tunnel sengaja tidak dipakai. Aplikasi ini bisa menjalankan perintah di laptopmu, jadi lebih aman kalau tidak punya alamat publik sama sekali.
+
+### Daya dari HP
+
+Tombol **⚡ Daya** ada di header (laptop) dan sebagai baris **⚡ Daya** di sheet **⋯** HP. Dialognya menampilkan status remote power dan dua aksi:
+
+| Aksi | Yang terjadi |
+|---|---|
+| **⏻ Matikan PC** | Giliran Claude dihentikan, OS dimatikan, lalu jembatan memutus listrik setelah jeda (`offDelaySec`, default 120 dtk). Kalau panel ⚙ Remote power sudah diset, halaman jembatan (hitung mundur + tombol Nyalakan) langsung dibuka |
+| **⏻ Matikan server saja** | Hanya Adhitron yang berhenti; PC tetap menyala. Nyalakan lagi dari laptop |
+
+- Boleh dari **laptop**, atau dari **HP lewat 🔒 Tailscale (HTTPS)** (`https://…:4318`). HP lewat WiFi HTTP — dan Tailscale HTTP — ditolak **403**: `Aksi daya hanya lewat Tailscale (HTTPS).`
+- Status dibaca dari `POST /api/power/status` → `{ configured, bridgeUrl, offDelaySec }`. `bridgeUrl` disanitasi: hanya `https:` tanpa kredensial, query, atau hash (`null` bila tidak valid). Token jembatan tidak ikut dikirim ke browser.
+- **Saat PC mati, aplikasi tidak bisa dihubungi.** Menyalakan PC dilakukan dari halaman status jembatan: smart plug + BIOS *Restore on AC Power Loss = Power On*. Tautan **Buka halaman jembatan** muncul di dialog ⚡ Daya saat remote power diset.
 
 ### Kalau HP tidak tersambung
 
@@ -315,7 +329,7 @@ Test offline dijalankan lokal; CI push hanya menjalankan cek cepat + smoke, buka
 node scripts/restart.mjs            # port lain: --port 4400 (atau env OFFICE_PORT)
 ```
 
-Skrip meminta server berhenti dengan rapi (`POST /api/shutdown`, hanya dari laptop), menunggu port bebas, lalu menjalankan `node server.js --background` ter-detach (log di `data/server.log`) dan menunggu `/health`. Argumen lain untuk `server.js` setelah `--` (mis. `node scripts/restart.mjs -- --open`).
+Skrip meminta server berhenti dengan rapi (`POST /api/shutdown`; dari laptop, atau HP lewat Tailscale HTTPS), menunggu port bebas, lalu menjalankan `node server.js --background` ter-detach (log di `data/server.log`) dan menunggu `/health`. Argumen lain untuk `server.js` setelah `--` (mis. `node scripts/restart.mjs -- --open`).
 
 Pakai ini, bukan `Stop-Process -Force`, dan sebaiknya saat tidak ada giliran/subagent yang berjalan. Proses Claude Code adalah child process server, jadi **giliran yang berjalan selalu terputus saat server berhenti**:
 

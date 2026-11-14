@@ -1,9 +1,12 @@
 // Laptop settings and odds and ends: start at login, shut down, the demo, the concurrency limit.
-// /api/autostart, /api/concurrency/save and /api/shutdown are laptop only (LOCAL_ONLY in server.js).
+// /api/autostart and /api/concurrency/save are laptop only (LOCAL_ONLY in server.js).
+// ⏻ /api/shutdown and /api/power/status are SECURE_ONLY: the laptop, or a phone over the https (Tailscale)
+// link — never a plain-HTTP WiFi phone (src/power.js holds the rule).
 import { spawn } from 'node:child_process';
 import { runDemo } from '../demo.js';
 import { setAutostart } from '../autostart.js';
 import { MAX_CONCURRENT_CAP } from '../concurrency.js';
+import { POWER_SECURE_ERROR, powerAllowed, powerStatus } from '../power.js';
 import { json } from './http.js';
 
 /** ⏻ OS shutdown, delayed: the server shuts down gracefully first; the bridge cuts power later (its cron). */
@@ -31,7 +34,16 @@ export function register(router) {
     taskQueue?.scheduleAll?.();
     return json(res, 200, { maxConcurrent: value });
   });
-  router.post('/api/shutdown', async ({ shutdown, hub, device, pcShutdown = spawnPcShutdown, remotePowerHalt }, req, res, params, body) => {
+  // ⚡ What the UI needs before offering the power button: configured?, bridge URL, delay. Never the token.
+  router.post('/api/power/status', ({ hub }, req, res) => json(res, 200, powerStatus(hub)));
+  router.post('/api/shutdown', async ({ shutdown, hub, device, pcShutdown = spawnPcShutdown, remotePowerHalt, isLocal, isSecure, isReadOnly }, req, res, params, body) => {
+    // Defence in depth: server.js already refuses this before the route (SECURE_ONLY), but the rule lives in
+    // src/power.js so it can be unit-tested — a phone on plain-HTTP WiFi may never power the PC off. Test
+    // contexts without transport signals (no isLocal/isSecure) skip it and rely on the server gate.
+    if (typeof isLocal === 'function' && typeof isSecure === 'function') {
+      const access = { local: isLocal(req), secure: isSecure(req), readOnly: isReadOnly?.(req) };
+      if (!powerAllowed(access)) return json(res, 403, { error: POWER_SECURE_ERROR });
+    }
     let handoffUrl;
     if (body?.pc === true) {
       const rp = hub.remotePower();

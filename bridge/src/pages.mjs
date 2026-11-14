@@ -83,6 +83,12 @@ details>div{padding:0 12px 12px;font-size:.78rem;color:var(--text-2)}
 .foot{padding:14px 20px;border-top:1px solid var(--line);text-align:center;font-size:.75rem;color:var(--muted)}
 [hidden]{display:none!important}
 .card-box{background:var(--surface);border:1px solid var(--accent-line);border-radius:12px;padding:14px;margin:14px 0}
+/* Kode pasangan 8 karakter base32: besar + monospace supaya mudah dibaca dan diketik ulang di perangkat lain. */
+.pair-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:1.9rem;line-height:1.2;
+letter-spacing:.22em;font-variant-numeric:tabular-nums;text-align:center;padding:12px 10px;margin:10px 0 6px;
+background:var(--surface-2);border:1px solid var(--accent-line);border-radius:12px;color:var(--text);
+word-break:break-all}
+.pair-code.expired{color:var(--muted);border-color:var(--line);text-decoration:line-through}
 `;
 
 export const escapeHtml = (s) => String(s ?? '')
@@ -148,6 +154,14 @@ const SPACE_SHAPE = Object.freeze({
   tokenInManage: /^\/manage\?token=([0-9a-f]{64})$/i,
 });
 
+/** Kode pasangan: 8 karakter base32 tanpa huruf/angka ambigu (tanpa backslash, aman disuntik ke <script>).
+ *  Alfabet sama dengan backend: 2-9 + A-Z tanpa I, L, O, U. Dibandingkan uppercase (input user di-toUpperCase). */
+const PAIR_DIGITS = '23456789';
+const PAIR_LETTERS = 'ABCDEFGHJKMNPQRSTVWXYZ';
+const PAIR_CODE_SOURCE = `^[${PAIR_DIGITS}${PAIR_LETTERS}]{8}$`;
+/** Atribut HTML pattern (case-insensitive: huruf kecil ikut diterima, backend juga menerimanya). */
+const PAIR_PATTERN = `[${PAIR_DIGITS}${PAIR_LETTERS}${PAIR_LETTERS.toLowerCase()}]{8}`;
+
 export function registerPageHtml(notice = '') {
   return page('Adhitron Remote Power — daftar', `
 <h1>Remote power untuk PC-mu</h1>
@@ -191,6 +205,17 @@ ${privacyNotice}
 </form>
 <div id="paste-out"></div>
 </div>
+<div id="pairzone">
+<h2>Punya kode pasangan?</h2>
+<p class="muted">Buka space yang sama di perangkat ini tanpa mengetik token: di perangkat lain yang sudah membuka halaman Kelola,
+tekan <b>📲 Buat kode pasangan</b>, lalu masukkan kode 8 karakter itu di sini (huruf besar/kecil sama). Kode berlaku 2 menit
+dan hanya bisa dipakai sekali.</p>
+<form id="pair" novalidate>
+<label>Kode 8 karakter (dari halaman Kelola)<input name="code" inputmode="text" autocapitalize="characters" pattern="${PAIR_PATTERN}" minlength="8" maxlength="8" required autocomplete="one-time-code" spellcheck="false" placeholder="K7M2QX9B"></label>
+<button class="btn ghost" type="submit">Buka dengan kode</button>
+</form>
+<div id="pair-out"></div>
+</div>
 <script>
 const $ = (id) => document.getElementById(id);
 // Ingat space di browser ini (localStorage), supaya refresh tidak mengembalikan ke form kosong.
@@ -206,6 +231,7 @@ const BRIDGE_RE = new RegExp(${jsonForScript(SPACE_SHAPE.bridgeUrl.source)}, 'i'
 const MANAGE_RE = new RegExp(${jsonForScript(SPACE_SHAPE.manageUrl.source)}, 'i');
 const STATUS_RE = new RegExp(${jsonForScript(SPACE_SHAPE.statusUrl.source)}, 'i');
 const TOKEN_IN_MANAGE_RE = new RegExp(${jsonForScript(SPACE_SHAPE.tokenInManage.source)}, 'i');
+const CODE_RE = new RegExp(${jsonForScript(PAIR_CODE_SOURCE)});
 // Entri localStorage bisa rusak/aneh (storage bersama, versi lama): yang tidak cocok diperlakukan sebagai
 // "belum ada space" — bukan dirender sebagai [object Object] dan bukan dipasang sebagai href.
 const readSpace = () => {
@@ -226,6 +252,17 @@ const tokenOf = (space) => {
   const m = TOKEN_IN_MANAGE_RE.exec(space.manageUrl);
   return m ? m[1] : '';
 };
+/** Hanya field yang memang dipakai kartu, dan hanya bila bentuknya sah (jawaban server tidak dipercaya begitu saja). */
+const pickSpace = (d) => {
+  if (!d || typeof d !== 'object') return null;
+  const id = typeof d.id === 'string' ? d.id : '';
+  const bridgeUrl = typeof d.bridgeUrl === 'string' ? d.bridgeUrl : '';
+  const statusUrl = typeof d.statusUrl === 'string' ? d.statusUrl : '';
+  const manageUrl = typeof d.manageUrl === 'string' ? d.manageUrl : '';
+  if (!ID_RE.test(id) || !BRIDGE_RE.test(bridgeUrl) || !STATUS_RE.test(statusUrl) || !MANAGE_RE.test(manageUrl)) return null;
+  return { id: id, bridgeUrl: bridgeUrl, statusUrl: statusUrl, manageUrl: manageUrl };
+};
+const errText = (d, fallback) => (d && typeof d.error === 'string' && d.error ? d.error : fallback);
 function renderSpace() {
   const space = readSpace();
   const box = $('space');
@@ -233,6 +270,7 @@ function renderSpace() {
     box.hidden = true;
     $('regzone').hidden = false;
     $('pastezone').hidden = false;
+    $('pairzone').hidden = false;
     return;
   }
   const token = tokenOf(space);
@@ -244,6 +282,7 @@ function renderSpace() {
   box.hidden = false;
   $('regzone').hidden = true;
   $('pastezone').hidden = true;
+  $('pairzone').hidden = true;
 }
 $('sp-forget').addEventListener('click', () => {
   try { localStorage.removeItem(SPACE_KEY); } catch { /* nothing to forget */ }
@@ -252,6 +291,7 @@ $('sp-forget').addEventListener('click', () => {
 $('sp-new').addEventListener('click', () => {
   $('regzone').hidden = false;
   $('pastezone').hidden = false;
+  $('pairzone').hidden = false;
   $('regzone').scrollIntoView?.({ behavior: 'smooth', block: 'start' });
 });
 $('paste').addEventListener('submit', (e) => {
@@ -266,6 +306,32 @@ $('paste').addEventListener('submit', (e) => {
     return;
   }
   location.href = '/manage?token=' + encodeURIComponent(token);
+});
+// 📲 Kode pasangan dari halaman Kelola di perangkat lain: sekali pakai, berlaku 2 menit.
+$('pair').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const out = $('pair-out');
+  const warn = (msg) => {
+    const box = document.createElement('div');
+    box.className = 'warn';
+    box.textContent = msg;
+    out.replaceChildren(box);
+  };
+  const code = String(new FormData(e.target).get('code') || '').trim().toUpperCase();
+  if (!CODE_RE.test(code)) return warn('⚠ Kode harus 8 karakter: A–Z dan 2–9 (tanpa I, L, O, U).');
+  out.innerHTML = '<p class="muted">Membuka…</p>';
+  try {
+    const r = await fetch('/api/pair/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: code }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return warn('⚠ ' + errText(d, 'kode tidak dikenal atau kedaluwarsa'));
+    const space = pickSpace(d);
+    if (!space) return warn('⚠ Jawaban server tidak lengkap — coba lagi.');
+    saveSpace(space); // kartu "Space kamu" yang tampil, tanpa redirect
+    renderSpace();
+  } catch (err) {
+    warn('⚠ jaringan gagal — coba lagi.');
+  }
 });
 document.getElementById('reg').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -342,6 +408,13 @@ ${newToken ? `<div class="note"><b>Token baru (token lama MATI):</b><br><code>${
 <label>URL Adhitron (https://…, kosongkan = tanpa link)<input name="adhitronUrl" value="${escapeHtml(space.adhitronUrl ?? '')}" maxlength="200"></label>
 <button class="btn on" type="submit">Simpan perubahan</button>
 </form>
+<h2>📲 Pasangkan perangkat lain</h2>
+<p class="muted">Buka situs ini di perangkat lain (mis. HP), lalu masukkan kode 8 karakter di bagian <b>Punya kode pasangan?</b> —
+space langsung terbuka di sana tanpa mengetik token. Kode berlaku 2 menit dan hanya bisa dipakai sekali.</p>
+<button class="btn ghost" type="button" id="pair-new">Buat kode pasangan</button>
+<div id="pair-code" class="pair-code" hidden></div>
+<p id="pair-note" class="muted" aria-live="polite"><span id="pair-msg"></span> <span id="pair-count" aria-hidden="true"></span></p>
+<button class="btn ghost" type="button" id="pair-copy" hidden>Salin link manage</button>
 <h2>Token</h2>
 <p class="muted">Rotasi membuat token lama langsung mati — Adhitron perlu diisi ulang.</p>
 <form method="post" action="${formAction}" onsubmit="return confirm('Rotasi token? Token lama langsung mati — Adhitron perlu diisi ulang.')">
@@ -384,6 +457,71 @@ try {
     }
   }
 } catch {}
+// 📲 Pasangkan perangkat lain: kode 8 karakter base32 sekali pakai (2 menit) + link manage untuk ditempel di sana.
+// Semua isi dari server divalidasi dulu (alfabet & panjang kode, waktu kedaluwarsa wajar) lalu dirender via textContent.
+const PAIR_TOKEN = ${jsonForScript(String(queryToken ?? ''))};
+const PAIR_CODE_RE = new RegExp(${jsonForScript(PAIR_CODE_SOURCE)});
+const PAIR_TTL_MS = 2 * 60 * 1000;
+const byId = (id) => document.getElementById(id);
+let pairTimer = 0, pairEndsAt = 0;
+const pairMsg = (text) => { const el = byId('pair-msg'); if (el) el.textContent = text; };
+function pairTick() {
+  const left = Math.max(0, Math.ceil((pairEndsAt - Date.now()) / 1000));
+  const count = byId('pair-count');
+  if (count) count.textContent = '· sisa ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0'); // berhenti di 0:00
+  if (left > 0) return;
+  clearInterval(pairTimer);
+  pairTimer = 0;
+  byId('pair-code').classList.add('expired');
+  pairMsg('⌛ Kode kedaluwarsa — tekan “Buat kode baru” untuk kode lain.');
+}
+function showPairCode(code, expiresAt) {
+  const now = Date.now();
+  const exp = Number(expiresAt);
+  const sane = Number.isFinite(exp) && exp > now && exp - now <= 10 * 60 * 1000; // jam server ngawur → pakai 2 menit lokal
+  pairEndsAt = sane ? exp : now + PAIR_TTL_MS;
+  const box = byId('pair-code');
+  box.textContent = String(code).toUpperCase(); // selalu uppercase, apa pun yang dikirim server
+  box.classList.remove('expired');
+  box.hidden = false;
+  byId('pair-copy').hidden = false;
+  pairMsg('Kode siap — masukkan di perangkat lain. Berlaku 2 menit dan hanya sekali pakai.');
+  pairTick();
+  clearInterval(pairTimer);
+  pairTimer = setInterval(pairTick, 1000);
+}
+byId('pair-new').addEventListener('click', async () => {
+  const btn = byId('pair-new');
+  if (!PAIR_TOKEN) { pairMsg('⚠ Token tidak ada di URL — buka halaman Kelola lewat link manage-mu.'); return; }
+  btn.disabled = true;
+  btn.textContent = 'Membuat kode…';
+  try {
+    const r = await fetch('/api/pair', { method: 'POST', headers: { 'X-Bridge-Token': PAIR_TOKEN } });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d && typeof d.error === 'string' && d.error ? d.error : 'HTTP ' + r.status);
+    const raw = d && typeof d.code === 'string' ? d.code.trim().toUpperCase() : ''; // kode selalu ditampilkan uppercase
+    const code = PAIR_CODE_RE.test(raw) ? raw : '';
+    if (!code) throw new Error('kode dari server tidak lengkap');
+    showPairCode(code, d.expiresAt);
+    btn.textContent = 'Buat kode baru';
+  } catch (err) {
+    pairMsg('⚠ Gagal membuat kode: ' + (err && err.message ? err.message : 'jaringan gagal'));
+    btn.textContent = 'Coba lagi';
+  } finally {
+    btn.disabled = false;
+  }
+});
+byId('pair-copy').addEventListener('click', async () => {
+  if (!PAIR_TOKEN) return;
+  const link = location.origin + '/manage?token=' + encodeURIComponent(PAIR_TOKEN);
+  try {
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') throw new Error('clipboard tidak tersedia');
+    await navigator.clipboard.writeText(link);
+    pairMsg('✅ Link manage disalin — buka di perangkat lain, lalu tempel di kolom alamat.');
+  } catch (err) {
+    window.prompt('Salin link manage (Ctrl+C):', link); // fallback: tidak semua browser mengizinkan clipboard
+  }
+});
 </script>`);
 }
 

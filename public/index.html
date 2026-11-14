@@ -38,6 +38,8 @@
       <button id="btn-phone" class="icon-btn labeled" title="Buka dari HP (scan QR)" hidden><span class="ico" aria-hidden="true">📱</span><span class="lbl">Buka di HP</span></button>
       <button id="btn-notify" class="icon-btn labeled" title="Notifikasi & suara"><span class="ico" aria-hidden="true">🔕</span><span class="lbl">Notifikasi</span></button>
       <button id="btn-help" class="icon-btn labeled" title="Panduan & shortcut keyboard (?)"><span class="ico" aria-hidden="true">❓</span><span class="lbl">Bantuan</span></button>
+      <!-- ⚡ Daya (features/power.js): matikan PC / server dari laptop atau HP (Tailscale HTTPS). Phone: the ⋯ sheet row. -->
+      <button id="btn-power" class="icon-btn labeled" title="Daya: matikan PC/server" aria-haspopup="dialog" hidden><span class="ico" aria-hidden="true">⚡</span><span class="lbl">Daya</span></button>
       <button id="btn-settings" class="icon-btn labeled" title="Pengaturan"><span class="ico" aria-hidden="true">⚙</span><span class="lbl">Pengaturan</span></button>
       <!-- Desktop: the three rarer header actions live in one ⋯ menu; the phone keeps its own ⋯ sheet. -->
       <div id="header-more" class="header-more">
@@ -1201,6 +1203,21 @@
       </div>
     </div>
 
+    <!-- ⚡ Daya (features/power.js): matikan PC / server, dari laptop atau HP lewat Tailscale HTTPS.
+         Bukan bagian ⚙: dialog Pengaturan disembunyikan untuk perangkat jauh (body.remote-client). -->
+    <div id="power-modal" class="modal" hidden>
+      <div class="modal-card power-card" role="dialog" aria-modal="true" aria-labelledby="power-title" aria-describedby="power-hint">
+        <div class="modal-head"><b id="power-title">⚡ Daya</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="power-status" class="muted small" role="status" aria-live="polite">Memeriksa remote power…</p>
+        <div class="power-actions">
+          <button type="button" id="power-pc" class="danger">⏻ Matikan PC</button>
+          <button type="button" id="power-server" class="ghost">⏻ Matikan server saja</button>
+        </div>
+        <a id="power-bridge" class="power-bridge" href="#" target="_blank" rel="noopener noreferrer" hidden>Buka halaman jembatan</a>
+        <p id="power-hint" class="muted small">Saat PC mati, nyalakan lagi lewat halaman jembatan (plug + BIOS <b>power-on</b>). Tanpa remote power, PC hanya bisa dinyalakan dengan menekan tombolnya.</p>
+      </div>
+    </div>
+
     <!-- 🧰 Persiapan (features/setup.js): Node/Claude Code/OpenCode/Tailscale, one row each; laptop-only actions -->
     <div id="setup-modal" class="modal" hidden>
       <div class="modal-card setup-card" role="dialog" aria-modal="true" aria-labelledby="setup-title">
@@ -1645,6 +1662,7 @@
           <button type="button" class="sheet-row" data-proxy="#btn-report"><span aria-hidden="true">📊</span><span>Laporan token</span></button>
           <button type="button" class="sheet-row" data-proxy="#btn-notify-settings" data-always><span aria-hidden="true">🔔</span><span>Pengaturan notifikasi</span></button>
           <button type="button" class="sheet-row" data-proxy="#btn-help"><span aria-hidden="true">❓</span><span>Panduan &amp; shortcut</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-power" data-mutates><span aria-hidden="true">⚡</span><span>Daya</span></button>
           <button type="button" class="sheet-row" data-proxy="#btn-settings"><span aria-hidden="true">⚙</span><span>Pengaturan</span></button>
           <button type="button" class="sheet-row" data-proxy="#btn-phone"><span aria-hidden="true">📱</span><span>Buka di HP</span></button>
         </div>

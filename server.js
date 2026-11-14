@@ -57,6 +57,7 @@ import { wifiAccountAlert } from './src/routes/account.js';
 import { wifiGithubLogin } from './src/github-pr.js';
 import { HttpError, json, readJson } from './src/routes/http.js';
 import { buildRouter } from './src/routes/index.js';
+import { POWER_SECURE_ERROR } from './src/power.js';
 import { teamConfig } from './src/routes/team.js';
 import { projectId } from './src/util.js';
 
@@ -590,7 +591,12 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // ⚙ Kompatibilitas OpenCode (run, settings): laptop only too (it spawns `opencode acp`).
 // 🧰 Setup mutations (install/cancel/login-terminal): laptop only. Status/refresh stay absent from wifiAllows: a
 // plain-HTTP WiFi phone may not even read them, a Tailscale phone may (both are default-deny over WiFi).
-const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/setup/install', '/api/setup/cancel', '/api/setup/login-terminal', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/shutdown', '/api/remote-power/get', '/api/remote-power/settings', '/api/remote-power/test', '/api/config', '/api/concurrency/save', '/api/projects', '/api/groups', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/pairing/code/push', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/setup/install', '/api/setup/cancel', '/api/setup/login-terminal', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/remote-power/get', '/api/remote-power/settings', '/api/remote-power/test', '/api/config', '/api/concurrency/save', '/api/projects', '/api/groups', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/pairing/code/push', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+// ⚡ Power actions (⏻ Matikan PC) from a phone: ONLY over the https (Tailscale) listener, where the link is
+// encrypted end-to-end. A phone paired on plain-HTTP WiFi stays refused — it is read-only anyway, but this
+// gate answers with the real reason ("aksi daya hanya lewat Tailscale") instead of the generic read-only text.
+// NOT laptop-only (a phone must be able to switch the PC off); the laptop itself never reaches this gate.
+const SECURE_ONLY = new Set(['/api/power/status', '/api/shutdown']);
 // Login/logout switch the account of every Claude Code on the laptop: from a phone only over
 // Tailscale (encrypted), never over plain-HTTP WiFi where the device cookie could be sniffed.
 // The same for switching engines and OpenCode's provider logins (API keys travel in these requests).
@@ -851,6 +857,7 @@ const ctx = {
   httpsPort: HTTPS_PORT,
   maxBackupBytes: MAX_BACKUP_BYTES,
   isLocal,
+  isSecure, // https listener (Tailscale): power actions from a phone need it (src/power.js, src/routes/misc.js)
   canManageAccount, // laptop or Tailscale (♪ control: may start the Spotify app)
   isTailscale: (req) => isTailscaleConnection(req.socket.localAddress, req.socket.remoteAddress), // 🔔 push routes
   isReadOnly, // plain-HTTP WiFi phone (♪ state, 👤 account, report: reduced view)
@@ -985,6 +992,10 @@ async function handler(req, res) {
         return json(res, 401, { error: 'Perangkat belum dipasangkan.' });
       }
       if (LOCAL_ONLY.has(pathname) || pathname.startsWith('/api/remote') || LOCAL_ONLY_ACTION.test(pathname) || LOCAL_ONLY_GROUP.test(pathname)) return json(res, 403, { error: 'Pengaturan ini hanya bisa diubah dari laptop.' });
+      // ⚡ Power actions from a phone need the encrypted Tailscale (https) link. Checked BEFORE the read-only
+      // gate so a WiFi phone gets the real reason; a https phone that is not on the tailnet (read-only) still
+      // falls through to that gate below and is refused there.
+      if (SECURE_ONLY.has(pathname) && !isSecure(req)) return json(res, 403, { error: POWER_SECURE_ERROR });
       if (ACCOUNT_AUTH.has(pathname) && !canManageAccount(req)) return json(res, 403, { error: 'Login/logout dari HP hanya lewat Tailscale (koneksi terenkripsi), bukan WiFi biasa.' });
       // The one gate for plain-HTTP WiFi: read-only, by allowlist (a new endpoint is refused until listed there).
       if (pathname.startsWith('/api/') && isReadOnly(req) && !wifiAllows(pathname)) return json(res, 403, { error: READ_ONLY_ERROR, readOnly: true });

@@ -23,6 +23,13 @@ menampilkan kartu **Space kamu** (Buka status / ⚙ Kelola / Lupakan), bukan for
 disimpan terpisah (sudah ada di `manageUrl`), dan kolom **Sudah punya token?** membuka `/manage?token=…`
 tanpa membuat space baru. “Lupakan” hanya menghapus salinan di perangkat; space di server tetap ada.
 
+**Pindah perangkat tanpa daftar ulang.** Ingatan itu hanya milik satu browser. Untuk membuka space yang sama di
+HP/laptop lain — tanpa membuat space kedua — pakai **kode pasangan**: di halaman Kelola tekan
+**📲 Pasangkan perangkat lain** → **Buat kode pasangan**, lalu masukkan **8 karakter** itu (mis. `K7M2QX9B`) di
+halaman `/` perangkat baru pada bagian **Punya kode pasangan?**. Huruf besar/kecil sama. Kode berlaku 2 menit dan
+sekali pakai; sesudah diklaim, space langsung diingat di perangkat itu. Tombol **Salin link manage** juga
+tersedia kalau ingin menempel link `/manage?token=…` langsung.
+
 ## Deploy (Netlify, gratis)
 
 1. Buat situs Netlify baru (mis. `netlify deploy --dir bridge` atau import repo dengan *base directory* `bridge/`).
@@ -48,7 +55,8 @@ bridge/
     bridge.mjs             inti: routing, auth, endpoint register/heartbeat/off/on/status, cron sweep
     tuya.mjs               adapter Tuya Cloud (diporting dari worker.js lama: HMAC-SHA256 dua lapis, siklus ON)
     vault.mjs              enkripsi kredensial per-space (AES-256-GCM + scrypt) + enkripsi ownerToken
-    store.mjs              lapisan penyimpanan di atas Blobs (space/<id>, token/<sha256>, ticket/h|s/<t>, reg/<ip>)
+    store.mjs              lapisan penyimpanan di atas Blobs (space/<id>, token/<sha256>, ticket/h|s/<t>, reg/<ip>,
+                           pair/<sha256>, pairSpace/<id>, pairtry/<bucket>)
     pages.mjs              halaman HTML: pendaftaran, manage, status (template string, tanpa file statis)
   netlify.test.mjs         test: node --test (fake fetch Tuya + fake Blobs)
 ```
@@ -70,21 +78,34 @@ Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk
 | Endpoint | Header | Body / query | Respons |
 |---|---|---|---|
 | `POST /api/space` | — (IP di-throttle 10/hari) | `{ tuyaClientId, tuyaClientSecret, tuyaDeviceId, tuyaRegion, adhitronUrl? }` | `{ ok, id, token, bridgeUrl, statusUrl, manageUrl }` |
+| `POST /api/pair` | `X-Bridge-Token: <ownerToken>` **saja** (tiket → 401) | — | `{ ok, code, expiresAt }` |
+| `POST /api/pair/claim` | — (kodenya sendiri bukti; 20 gagal/IP/jam + 3000 gagal/jam total) | `{ code }` (8 karakter base32, string) | sama dengan `POST /api/space` |
 | `POST /api/heartbeat` | `X-Bridge-Token: <ownerToken>` | `{ ts, version }` | `{ ok }` |
 | `POST /api/off?delay=300` | `X-Bridge-Token` (atau `X-Status-Token`) | delay 0–3600 dtk, default 300 | `{ ok, offAt, fired, handoffUrl }` |
 | `POST /api/on` | `X-Bridge-Token` / `X-Status-Token` | — | `{ ok }` |
 | `GET /api/status` | `X-Bridge-Token` / `X-Status-Token` | — | status (di bawah) |
 
 - `bridgeUrl` = URL situs jembatan; **panel Adhitron ⚙ Remote power: URL = bridgeUrl, token = `token`**.
+- **Kode pasangan** (pindah space ke perangkat lain): `POST /api/pair` membuat kode **8 karakter base32** —
+  alfabet `23456789ABCDEFGHJKMNPQRSTVWXYZ` (tanpa `I`, `L`, `O`, `U`, `0`, `1`), huruf besar/kecil sama
+  (dinormalisasi uppercase), mis. `K7M2QX9B`. TTL **120 detik**, **sekali pakai**, dan **satu kode aktif per
+  space** (kode lama mati saat kode baru dibuat). Hanya **ownerToken** yang boleh membuat kode: tiket
+  serah-terima/sesi dari link status ditolak **401**, jadi tiket tidak bisa ditukar menjadi token permanen.
+  Yang disimpan hanya **sha256(kode)** (`pair/<sha256>`; kode plaintext tidak pernah masuk store atau log).
+  `POST /api/pair/claim` tidak butuh auth — kodenya sendiri bukti — dipanggil same-origin **tanpa header CORS**,
+  dan menjawab dengan bentuk yang sama seperti register, jadi perangkat baru langsung memegang `token` +
+  `manageUrl`. Kode salah, kedaluwarsa, atau sudah dipakai → **401** dengan **satu pesan yang sama** (jenis
+  kegagalan tidak dibocorkan); body bukan `{ code }` valid → **400**; **20 klaim gagal per IP per jam** atau
+  **3000 klaim gagal per jam total** → **429**. Kode yang tidak pernah diklaim dibuang cron.
 - `handoffUrl` = `/s/<id>?t=<tiket>` — tiket serah-terima (jenis `ticket/h/`) **sekali pakai**, TTL 10 menit,
   untuk membuka halaman status tanpa token jangka panjang. Sekali pakai berlaku di mana pun: lewat halaman
   ATAU langsung sebagai `X-Status-Token` — pemakaian pertama menghapusnya (pemakaian kedua → **401**).
   Membukanya membuat **tiket sesi** baru (jenis `ticket/s/`, reusable sampai TTL) untuk polling halaman.
 - Kontrak header: **`X-Bridge-Token`** membawa ownerToken (dipakai Adhitron) dan diterima di semua endpoint
-  API; **`X-Status-Token`** membawa ownerToken ATAU tiket (`ticket/s/` sesi, atau `ticket/h/` serah-terima
-  yang langsung habis dipakai) dan setara di `/api/off`, `/api/on`, `/api/status` — tetapi TIDAK di
-  `/api/heartbeat` (khusus ownerToken). Token salah / tiket kedaluwarsa → **401**. Body salah → **400**.
-  Kegagalan Tuya → **502**. Throttle register → **429**.
+  API yang membutuhkan token; **`X-Status-Token`** membawa ownerToken ATAU tiket (`ticket/s/` sesi, atau
+  `ticket/h/` serah-terima yang langsung habis dipakai) dan setara di `/api/off`, `/api/on`, `/api/status` —
+  tetapi TIDAK di `/api/heartbeat` (khusus ownerToken). Token salah / tiket kedaluwarsa → **401**. Body salah
+  → **400**. Kegagalan Tuya → **502**. Throttle register → **429**.
 
 `GET /api/status` →
 
@@ -109,8 +130,11 @@ Halaman web:
 
 - `/` — pendaftaran + panduan kredensial + pemberitahuan privasi (ringkas selalu tampil; versi lengkap terlipat di `<details>`).
   Halaman memakai brand Adhitron (logo inline SVG, latar gelap, aksen oranye) — CSS satu blok di `pages.mjs`.
+  Bagian **Punya kode pasangan?** menerima kode **8 karakter** (huruf besar/kecil sama): `POST /api/pair/claim`,
+  lalu space langsung diingat di perangkat itu (kartu **Space kamu**, bukan form kosong).
 - `/manage?token=<ownerToken>` — ganti kredensial/adhitronUrl, rotasi token (re-enkripsi otomatis, token lama mati),
-  hapus space (wajib konfirmasi).
+  hapus space (wajib konfirmasi), plus **📲 Pasangkan perangkat lain**: **Buat kode pasangan** (kode 8 karakter +
+  hitung mundur 2 menit) dan **Salin link manage** untuk dibuka di perangkat lain.
 - `/s/<id>?t=<tiket>` atau `/s/<id>?token=<ownerToken>` — halaman status; polling `GET /api/status` tiap 10 dtk
   dengan header **`X-Status-Token`** (aturan halaman: bukan `X-Bridge-Token`) membawa tiket sesi / ownerToken.
 
@@ -128,6 +152,10 @@ Satu pass per tick, tidak pernah loop: untuk tiap space dengan `offAt` jatuh tem
 
 - Register dibatasi **10 space per IP per hari** (key `reg/<ip>/<tanggal>` di Blobs; hitungan get+set, bukan
   atomik; key hari sebelumnya ikut dihapus saat register berikutnya).
+- Klaim kode pasangan dibatasi **20 kegagalan per IP per jam** dan **3000 kegagalan per jam total** (bucket
+  `_global`) — key `pairtry/<bucket>/<yyyy-mm-ddThh>`, terpisah dari kuota register → **429**. Kode hanya
+  disimpan sebagai `pair/<sha256(kode)>` (8 karakter base32, TTL 120 detik, sekali pakai, satu kode aktif per
+  space lewat `pairSpace/<id>`); cron membuang kode dan hitungan lama supaya key tidak menumpuk.
 - Heartbeat ditulis maksimal 1×/menit per space (diterima `ok` tapi tidak menulis ulang) — kecuali ada jadwal
   yang perlu dibatalkan, itu selalu ditulis.
 - Kredensial Tuya **tidak pernah plaintext** di store maupun halaman: AES-256-GCM, kunci `scrypt(tokenUser +
@@ -139,6 +167,10 @@ Satu pass per tick, tidak pernah loop: untuk tiap space dengan `offAt` jatuh tem
   header) dan `ticket/s/<t>` tiket sesi polling (reusable sampai TTL).
 - Header token divalidasi (hex, 16–64 karakter) sebelum dipakai sebagai key Blobs; respons membawa
   `Cache-Control: no-store` (respons register/manage memuat token, halaman memuat tiket).
+- Halaman HTML jembatan mengirim `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `nosniff`, dan
+  `frame-ancestors 'none'` — kode/tiket pernah ada di URL, jadi halaman tidak boleh di-frame atau membocorkan
+  referrer. API JSON membawa CORS, **kecuali** `/api/pair` dan `/api/pair/claim` yang khusus same-origin
+  (situs lain tidak bisa memicu klaim kode).
 - Tidak ada secret di kode; `ENCRYPTION_KEY` lewat env var Netlify. Query selalu terparameterisasi (Blobs API),
   nilai user di HTML selalu di-escape.
 - **Insiden keamanan:** operator wajib merotasi `ENCRYPTION_KEY` dan mengabari user terdampak
@@ -161,4 +193,6 @@ node --test --test-timeout=60000 "bridge/**/*.test.mjs"
 Menggunakan fake fetch Tuya + fake Blobs — tanpa jaringan. Mencakup: register & enkripsi (tidak ada plaintext
 di store), validasi, throttle 10/IP/hari, auth 401, jadwal off + tiket sekali pakai, pembatalan via heartbeat,
 cron sukses / coba ulang / needsAttention / batal, `/api/on` menghapus jadwal, halaman tidak bocorkan kredensial,
-manage (update/rotasi/hapus).
+manage (update/rotasi/hapus), kode pasangan (8 karakter base32, hanya sha256 di store, TTL 2 menit, sekali pakai,
+hanya ownerToken yang boleh membuat kode, satu kode aktif per space, pesan 401 yang sama, 400 untuk body salah,
+throttle 20/IP/jam + 3000/jam total → 429, pembersihan cron).
