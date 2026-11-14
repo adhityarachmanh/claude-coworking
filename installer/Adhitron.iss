@@ -50,6 +50,10 @@ Name: "modewebsite"; Description: "Website (browser/PWA)"; GroupDescription: "Mo
 Name: "modedesktop"; Description: "Desktop (jendela Electron)"; GroupDescription: "Mode aplikasi:"; Flags: exclusive
 Name: "modeall"; Description: "Keduanya (All)"; GroupDescription: "Mode aplikasi:"; Flags: exclusive checkedonce
 Name: "autostart"; Description: "Jalankan Adhitron saat login Windows"; GroupDescription: "Startup:"; Flags: unchecked
+; 🧱 Firewall Tailscale: users of the packaged app never run setup.cmd, so without this Windows blocks the
+; phone's HTTPS :4318 (README troubleshooting used to make this a manual step). Checked by default; UNCHECKING
+; leaves the firewall completely untouched. One UAC prompt on install; akses HP tetap harus dinyalakan di app (📱).
+Name: "firewalltailscale"; Description: "Izinkan akses HP lewat Tailscale (butuh Administrator; akses HP tetap dinyalakan di app 📱)"; GroupDescription: "Akses HP:"; Flags: checkedonce
 
 [Files]
 Source: "{#BuildDir}\*"; DestDir: "{app}"; Excludes: "data\*,portable,server.log"; Flags: recursesubdirs createallsubdirs ignoreversion
@@ -81,6 +85,15 @@ Filename: "http://127.0.0.1:4317"; Description: "Buka kantor di browser"; Flags:
 ; Silent update/install: no finished page, so start the selected mode explicitly.
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--background"; Flags: nowait runhidden; Check: WizardSilent; Tasks: modewebsite or modeall
 Filename: "{app}\Desktop\{#MyDesktopExeName}"; Flags: nowait runhidden; Check: WizardSilent; Tasks: modedesktop or modeall
+; 🧱 The firewall fix (task "firewalltailscale", checked by default, SKIPPED on silent runs: a background
+; updater must never pop a UAC prompt; unchecking the task leaves the firewall untouched). ONE elevated
+; PowerShell (one UAC prompt) runs the FIXED command built by src/firewall-check.js (single source of truth —
+; test/firewall-check.test.mjs keeps this exact string byte-for-byte in sync): it adds the NEW rule
+; "Adhitron (Tailscale)" (TCP 4317+4318, Tailscale range 100.64.0.0/10 only, Private profile) and deletes ONLY
+; the legacy rule "Claude Coworking (Tailscale)" (exact name, nothing broader). The inner netsh commands travel
+; as fixed base64 (-EncodedCommand): no quoting can break across the Inno → PowerShell → Start-Process layers.
+; The rule stays after uninstall (removing it would pop another UAC prompt); it only opens 4317+4318 to Tailscale.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-EncodedCommand','bgBlAHQAcwBoACAAYQBkAHYAZgBpAHIAZQB3AGEAbABsACAAZgBpAHIAZQB3AGEAbABsACAAYQBkAGQAIAByAHUAbABlACAAbgBhAG0AZQA9ACIAQQBkAGgAaQB0AHIAbwBuACAAKABUAGEAaQBsAHMAYwBhAGwAZQApACIAIABkAGkAcgA9AGkAbgAgAGEAYwB0AGkAbwBuAD0AYQBsAGwAbwB3ACAAcAByAG8AdABvAGMAbwBsAD0AVABDAFAAIABsAG8AYwBhAGwAcABvAHIAdAA9ADQAMwAxADcALAA0ADMAMQA4ACAAcgBlAG0AbwB0AGUAaQBwAD0AMQAwADAALgA2ADQALgAwAC4AMAAvADEAMAAgAHAAcgBvAGYAaQBsAGUAPQBwAHIAaQB2AGEAdABlADsAIABuAGUAdABzAGgAIABhAGQAdgBmAGkAcgBlAHcAYQBsAGwAIABmAGkAcgBlAHcAYQBsAGwAIABkAGUAbABlAHQAZQAgAHIAdQBsAGUAIABuAGEAbQBlAD0AIgBDAGwAYQB1AGQAZQAgAEMAbwB3AG8AcgBrAGkAbgBnACAAKABUAGEAaQBsAHMAYwBhAGwAZQApACIA'"; Description: "Pasang aturan firewall untuk akses HP lewat Tailscale (butuh izin Administrator)"; Flags: runhidden skipifsilent; Tasks: firewalltailscale
 
 [UninstallRun]
 ; New RunOnceIds on purpose: reusing the 1.0.9 ids ("StopAdhitDesktop"/"StopAdhitOffice") would make Inno treat the

@@ -328,7 +328,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const configOptions = () => [
   { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: options.model, options: [{ value: 'opencode-go/beam-free', name: 'beam free' }, { value: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' }] },
   { id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: options.mode, options: [{ value: 'build', name: 'build' }, { value: 'plan', name: 'plan' }, { value: 'docs', name: 'docs', description: 'Penulis dokumentasi' }] },
-  { id: 'effort', name: 'Effort', category: 'thought_level', type: 'select', currentValue: options.effort, options: ['low', 'high', 'max', 'default'].map((value) => ({ value, name: value })) },
+  // "medium" is offered like OpenCode does for a custom provider whose effort levels it guessed (river AI), even
+  // though such a provider may refuse it — the app must recover instead of stopping the turn.
+  { id: 'effort', name: 'Effort', category: 'thought_level', type: 'select', currentValue: options.effort, options: ['low', 'medium', 'high', 'max', 'default'].map((value) => ({ value, name: value })) },
 ];
 const ask = (params) =>
   new Promise((resolve) => {
@@ -443,21 +445,53 @@ async function turn(sessionId, text) {
     return { stopReason: 'end_turn', usage: { inputTokens: 30, outputTokens: 6, totalTokens: 36 } };
   }
   if (/^delegasilatar/.test(text)) {
-    // OpenCode 1.0.27: the turn's answer resolves (end_turn) while a delegation keeps running; its subagent's
-    // steps keep streaming on the same connection AFTER the prompt result — their results must close the rows.
-    const call = 'call-bg-sub';
-    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'subagent', kind: 'think', status: 'pending', rawInput: {} });
-    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, title: 'subagent', kind: 'think', status: 'in_progress', rawInput: { agent: 'backend', description: 'Cek API latar', prompt: 'periksa' } });
+    // Reality (real OpenCode frames, `opencode acp`): a `subagent` call is only the LAUNCH. It is created
+    // pending, gets its rawInput, and then COMPLETES IMMEDIATELY carrying rawOutput.metadata.sessionID (the
+    // child session it just started, still `running`) and a "working in the background" body. The child then
+    // runs as its OWN session (its own title), streaming its steps here LATER with `<childSession>:<tool>` call
+    // ids and `_meta['opencode/child-session']` naming the child (id + title + parentID). Those late steps (and
+    // their late results) must still be linked to the delegation and must close their rows.
+    // Two delegations run in parallel, each with its own child session.
+    const child = (n) => `ses_fakechild${n}`; // the child session ids OpenCode announces
+    const children = [
+      { call: 'call-bg-sub', sid: child(1), desc: 'Cek API latar' },
+      { call: 'call-bg-sub2', sid: child(2), desc: 'Cek API kedua' },
+    ];
+    for (const c of children) {
+      update(sessionId, { sessionUpdate: 'tool_call', toolCallId: c.call, title: 'subagent', kind: 'think', status: 'pending', rawInput: {} });
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: c.call, title: 'subagent', kind: 'think', status: 'in_progress', rawInput: { agent: 'backend', description: c.desc, prompt: 'periksa' } });
+    }
+    for (const c of children) {
+      // the launch resolves at once: the child is announced and keeps working in the background
+      update(sessionId, {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: c.call,
+        status: 'completed',
+        rawOutput: { metadata: { sessionID: c.sid, status: 'running', truncated: false } },
+        content: [{ type: 'content', content: { type: 'text', text: `The subagent is working in the background (sessionID: ${c.sid}).` } }],
+      });
+    }
+    const meta = (c) => ({ 'opencode/child-session': { id: c.sid, parentID: sessionId, depth: 1, title: c.desc } });
+    const stepStart = (c, toolId, kind, title, rawInput) => {
+      update(sessionId, { sessionUpdate: 'tool_call', toolCallId: `${c.sid}:${toolId}`, title: `${c.desc}: ${title}`, kind, status: 'pending', rawInput: {}, _meta: meta(c) });
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: `${c.sid}:${toolId}`, title: `${c.desc}: ${title}`, kind, status: 'in_progress', rawInput, _meta: meta(c) });
+    };
+    const stepEnd = (c, toolId, out) => {
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: `${c.sid}:${toolId}`, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: out } }], _meta: meta(c) });
+    };
+    // The real capture's shape: the first child's read STARTS INSIDE the turn (its row is open when the turn ends and
+    // its result comes later), so the turn must keep it across the turn end and its real result must close it.
+    stepStart(children[0], 'chatcmpl-fake-read', 'read', 'read', { path: 'README.md' });
     await say('msg_bglatar', 'Laporan menyusul.');
-    // the turn ends here (the result is written below); the delegation's steps finish afterwards
+    // the turn ends here (the result is written below); the children's steps keep streaming afterwards
     setTimeout(() => {
-      update(sessionId, { sessionUpdate: 'tool_call', toolCallId: 'call-bg-read', title: 'Cek API latar: read', kind: 'read', status: 'pending', rawInput: {} });
-      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-bg-read', title: 'Cek API latar: read', kind: 'read', status: 'in_progress', rawInput: { path: 'README.md' } });
-      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-bg-read', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: '1: # Toko' } }] });
-      update(sessionId, { sessionUpdate: 'tool_call', toolCallId: 'call-bg-grep', title: 'Cek API latar: grep', kind: 'search', status: 'pending', rawInput: {} });
-      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-bg-grep', title: 'Cek API latar: grep', kind: 'search', status: 'in_progress', rawInput: { pattern: 'api' } });
-      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-bg-grep', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'README.md: api' } }] });
-      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'API aman' } }] });
+      stepEnd(children[0], 'chatcmpl-fake-read', '1: # Toko');
+      // a grep that both STARTS and FINISHES after the turn
+      stepStart(children[0], 'chatcmpl-fake-grep', 'search', 'grep', { pattern: 'api' });
+      stepEnd(children[0], 'chatcmpl-fake-grep', 'README.md: api');
+      // second child: its own steps, in parallel, also after the turn
+      stepStart(children[1], 'chatcmpl-fake-read2', 'read', 'read', { path: 'README.md' });
+      stepEnd(children[1], 'chatcmpl-fake-read2', '1: # Toko');
     }, 150);
     return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
   }
@@ -641,6 +675,12 @@ async function handle(msg) {
         delete s.revert;
         s.messages.push({ id: msgId(), time: { created: Date.now() }, text, type: 'user' });
         saveStore(params.sessionId, s);
+      }
+      // "effortriver" — the provider refuses an effort level OpenCode offered it (real river AI error, verbatim): the
+      // turn fails while effort is "medium" (the user's message is kept, as a real provider failure keeps it) and
+      // succeeds once the app has fallen back to Default and sent the prompt again.
+      if (/effortriver/.test(text) && options.effort === 'medium') {
+        return send({ id, error: { code: -32603, message: 'Internal error: This model supports reasoning effort low, high, max, or an integer from 1 to 100' } });
       }
       // "tulis" really writes catatan.md when the store is on, so a rewind has a file to put back
       const file = `${process.cwd()}/catatan.md`;

@@ -2,12 +2,13 @@
 // "Izinkan selalu" on a permission card stores. Anyone may look; only the laptop may change them
 // (the server refuses `permissions-edit` from every other device).
 import { api, toast } from '../core/api.js';
+import { PERMISSION_PRESETS, planPreset } from '../core/permission-presets.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
 import { guardCap } from './engine.js';
 
-const perm = { project: null, scopes: [], busy: false };
+const perm = { project: null, scopes: [], busy: false, plan: null };
 const LISTS = [
   ['allow', 'allow', 'jalan tanpa bertanya'],
   ['ask', 'ask', 'selalu tanya'],
@@ -32,6 +33,9 @@ export function openPermissions() {
   $('#perm-add').hidden = !state.local;
   $('#perm-ro').hidden = state.local;
   $('#perm-add-error').textContent = '';
+  perm.plan = null; // a preset plan from the previous project is meaningless here
+  $('#perm-presets').hidden = !state.local; // presets write rules: laptop only, like the add form
+  renderPresetPlan();
   closeModal('settings-modal'); // opened from ⚙: one dialog at a time
   openModal('perm-modal');
   loadPermissions();
@@ -47,6 +51,7 @@ async function loadPermissions() {
     perm.scopes = scopes;
     list.dataset.project = project;
     renderPermissions();
+    if (perm.plan) renderPresetPlan(); // the plan's skip/add statuses follow the fresh rules
   } catch (err) {
     if (project !== perm.project) return;
     perm.scopes = [];
@@ -97,6 +102,80 @@ async function edit(body, done) {
   }
 }
 
+// ---------- Presets: one click writes real allow rules through the same add API as a typed rule ----------
+// Never deny, never remove, never write without an explicit Terapkan: the plan shows every rule with
+// why it would be added or skipped (a user deny/ask anywhere wins — Claude Code: deny → ask → allow).
+
+function renderPresetPlan() {
+  const panel = $('#perm-preset-plan');
+  const preset = PERMISSION_PRESETS.find((p) => p.id === perm.plan);
+  if (!preset) {
+    panel.hidden = true;
+    panel.innerHTML = '';
+    return;
+  }
+  const scope = $('#perm-add-scope').value;
+  const where = perm.scopes.find((s) => s.scope === scope);
+  if (!where) {
+    panel.hidden = false;
+    panel.innerHTML = `<div class="perm-plan-head"><b>${escapeHtml(preset.label)}</b><span class="muted small"><span class="spinner" aria-hidden="true"></span> Memuat aturan…</span></div>`;
+    return;
+  }
+  if (where.error) {
+    panel.hidden = false;
+    panel.innerHTML = `<div class="state-error">Preset tidak bisa direncanakan (${escapeHtml(where.label)}): ${escapeHtml(where.error)}</div>`;
+    return;
+  }
+  const labelOf = (s) => perm.scopes.find((x) => x.scope === s)?.label ?? s;
+  const plan = planPreset(preset.rules, perm.scopes);
+  const addable = plan.filter((p) => p.status === 'add').length;
+  const items = plan.map((p) => {
+    if (p.status === 'add') return `<li><span class="pill ok">tambah</span><code>${escapeHtml(p.rule)}</code></li>`;
+    const why = p.status === 'allow'
+      ? `sudah tercakup allow <code>${escapeHtml(p.via.rule)}</code> (${escapeHtml(labelOf(p.via.scope))})`
+      : p.status === 'ask'
+        ? `aturan ask <code>${escapeHtml(p.via.rule)}</code> (${escapeHtml(labelOf(p.via.scope))}) dievaluasi lebih dulu — Claude tetap ditanya`
+        : `aturan deny <code>${escapeHtml(p.via.rule)}</code> (${escapeHtml(labelOf(p.via.scope))}) selalu menang atas allow`;
+    return `<li><span class="pill ${p.status === 'allow' ? '' : LIST_TONE[p.status]}">lewati</span><code>${escapeHtml(p.rule)}</code><small class="muted">${why}</small></li>`;
+  }).join('');
+  panel.innerHTML = `
+    <div class="perm-plan-head"><b>${escapeHtml(preset.label)}</b><span class="muted small">→ ${escapeHtml(where.label)} <code class="perm-file">${escapeHtml(where.file)}</code> · ${addable} akan ditambahkan${addable < plan.length ? `, ${plan.length - addable} dilewati` : ''}</span></div>
+    <ul>${items}</ul>
+    ${addable
+      ? '<div class="perm-plan-acts"><button type="button" class="primary" data-plan="apply">Terapkan</button><button type="button" class="ghost" data-plan="close">Batal</button></div>'
+      : `<p class="muted small" role="status">Tidak ada yang perlu ditambahkan — aturan yang sudah ada mencakup semuanya.</p><div class="perm-plan-acts"><button type="button" class="ghost" data-plan="close">Tutup</button></div>`}`;
+  panel.hidden = false;
+}
+
+async function applyPreset() {
+  const preset = PERMISSION_PRESETS.find((p) => p.id === perm.plan);
+  const scope = $('#perm-add-scope').value;
+  if (!preset || !scope || perm.busy) return;
+  // Re-planned right before writing: between the preview and this click the files may have changed.
+  const addable = planPreset(preset.rules, perm.scopes).filter((p) => p.status === 'add');
+  if (!addable.length) return renderPresetPlan();
+  perm.busy = true;
+  let added = 0;
+  let applied = 'none';
+  try {
+    for (const item of addable) {
+      const res = await api(`/api/projects/${perm.project}/permissions-edit`, { scope, action: 'add', list: 'allow', rule: item.rule });
+      added++;
+      applied = res.applied ?? 'none';
+    }
+    const skipped = preset.rules.length - added;
+    toast(`Preset ${preset.label}: ${added} aturan ditambahkan${skipped ? `, ${skipped} dilewati` : ''}. ${APPLIED[applied] ?? APPLIED.none}`, 'ok');
+    perm.plan = null;
+    renderPresetPlan();
+  } catch (err) {
+    toast(err.message);
+    $('#perm-add-error').textContent = `${added ? `${added} aturan tersimpan, lalu gagal: ` : ''}${err.message}`;
+  } finally {
+    perm.busy = false;
+    loadPermissions(); // shows the files as they are now (also after a refusal mid-way)
+  }
+}
+
 export function initPermissions() {
   $('#btn-permissions').addEventListener('click', openPermissions);
   $('#perm-refresh').addEventListener('click', loadPermissions);
@@ -114,6 +193,25 @@ export function initPermissions() {
   $('#perm-add-rule').addEventListener('input', () => {
     $('#perm-add-error').textContent = '';
     $('#perm-add-rule').removeAttribute('aria-invalid');
+  });
+  // Presets target the same source picker as a manual add; changing it re-plans (pure, no request).
+  $('#perm-add-scope').addEventListener('change', () => {
+    if (perm.plan) renderPresetPlan();
+  });
+  $('#perm-presets').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-preset]');
+    if (!btn || perm.busy) return;
+    perm.plan = perm.plan === btn.dataset.preset ? null : btn.dataset.preset;
+    renderPresetPlan();
+  });
+  $('#perm-preset-plan').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-plan]');
+    if (!btn || perm.busy) return;
+    if (btn.dataset.plan === 'apply') applyPreset();
+    else {
+      perm.plan = null;
+      renderPresetPlan();
+    }
   });
   $('#perm-list').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-perm]');

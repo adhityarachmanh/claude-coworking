@@ -237,6 +237,9 @@ async function setupFirewall(tailscaleIp) {
   // older setup only opened PORT, which silently blocks https://<machine>.ts.net:4318 from the phone.
   const ports = [...new Set([PORT, HTTPS_PORT])].sort((a, b) => a - b);
   const want = ports.join(',');
+  // Single source of truth for the firewall fix lives in src/firewall-check.js (installer task + in-app 🔧
+  // button use it, with the NEW rule name "Adhitron (Tailscale)"). setup.cmd keeps the pre-rename id on
+  // purpose: it updates the rule older installs already have, and the detector there is name-agnostic anyway.
   const current = powershell(`$r = Get-NetFirewallRule -DisplayName '${FIREWALL_RULE}' -ErrorAction SilentlyContinue; if ($r) { (($r | Get-NetFirewallPortFilter).LocalPort | Sort-Object) -join ',' } else { 'none' }`);
   if (current === want) return ok(`Aturan "${FIREWALL_RULE}" sudah ada (TCP ${want})`);
   info('Windows menggolongkan Tailscale sebagai jaringan Private dan memblokir koneksi masuk ke Node.js.');

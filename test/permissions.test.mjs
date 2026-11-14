@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import { PermissionError, cleanRule, editPermission, readPermissions } from '../src/permissions.js';
+import { PERMISSION_PRESETS, planPreset } from '../public/js/core/permission-presets.js';
 
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-perms-'));
 after(() => rmSync(TMP, { recursive: true, force: true }));
@@ -106,4 +107,88 @@ test('quick edits in a row are serialized (none is lost)', async () => {
   const { project, opts, local } = setup();
   await Promise.all(['A', 'B', 'C', 'D', 'E'].map((t) => editPermission(project, { scope: 'local', action: 'add', list: 'allow', rule: t }, opts)));
   assert.deepEqual(readJson(local).permissions.allow.sort(), ['A', 'B', 'C', 'D', 'E']);
+});
+
+// ---------- Presets (public/js/core/permission-presets.js): one-click allow packages ----------
+
+const PAKET = [
+  'Bash(npm *)', 'Bash(npx *)', 'Bash(pnpm *)', 'Bash(bun *)',
+  'Bash(git status*)', 'Bash(git add*)', 'Bash(git commit*)', 'Bash(git push*)',
+  'Bash(git pull*)', 'Bash(git diff*)', 'Bash(git log*)', 'Bash(git branch*)',
+];
+const emptyScopes = ['local', 'project', 'user'].map((scope) => ({ scope, rules: { allow: [], deny: [], ask: [] } }));
+const withRules = (scope, list, rules) => emptyScopes.map((s) => (s.scope === scope ? { ...s, rules: { ...s.rules, [list]: rules } } : s));
+
+test('preset → rules: the exact lists the dialog writes (allow only, all pass the server validation)', () => {
+  assert.deepEqual(PERMISSION_PRESETS.map((p) => p.id), ['paket-test', 'kerja-penuh']);
+  assert.deepEqual(PERMISSION_PRESETS[0].rules, PAKET);
+  assert.deepEqual(PERMISSION_PRESETS[1].rules, [...PAKET, 'Edit', 'Write', 'Read']);
+  for (const preset of PERMISSION_PRESETS) for (const rule of preset.rules) assert.equal(cleanRule(rule), rule, `${rule} lolos cleanRule`);
+});
+
+test('plan: fresh files → every rule is an add (nothing skipped)', () => {
+  const plan = planPreset(PERMISSION_PRESETS[1].rules, emptyScopes);
+  assert.deepEqual(plan.map((p) => p.rule), PERMISSION_PRESETS[1].rules);
+  assert.ok(plan.every((p) => p.status === 'add'));
+});
+
+test('plan: a bare-tool deny anywhere (user catch-all) wins — every covered rule is skipped, never added', () => {
+  const plan = planPreset(PERMISSION_PRESETS[0].rules, withRules('user', 'deny', ['Bash']));
+  assert.ok(plan.every((p) => p.status === 'deny' && p.via.scope === 'user' && p.via.rule === 'Bash'), JSON.stringify(plan));
+  // Kerja penuh: the file tools are a different tool, the catch-all does not touch them.
+  const kerja = planPreset(PERMISSION_PRESETS[1].rules, withRules('user', 'deny', ['Bash']));
+  assert.deepEqual(kerja.slice(-3).map((p) => p.rule), ['Edit', 'Write', 'Read']);
+  assert.ok(kerja.slice(-3).every((p) => p.status === 'add'));
+  // A patterned deny only skips its own scope of commands.
+  const npm = planPreset(PERMISSION_PRESETS[0].rules, withRules('project', 'deny', ['Bash(npm *)']));
+  assert.deepEqual(npm.map((p) => p.status === 'deny' ? p.rule : null).filter(Boolean), ['Bash(npm *)']);
+});
+
+test('plan: an ask rule anywhere masks the allow for shared commands (ask is evaluated first)', () => {
+  // The docs' own recommendation `Bash(git push *)` shares commands with the preset's Bash(git push*).
+  const plan = planPreset(PERMISSION_PRESETS[0].rules, withRules('user', 'ask', ['Bash(git push *)']));
+  const push = plan.find((p) => p.rule === 'Bash(git push*)');
+  assert.equal(push.status, 'ask');
+  assert.equal(push.via.rule, 'Bash(git push *)');
+  assert.equal(plan.find((p) => p.rule === 'Bash(git commit*)').status, 'add', 'ask hanya menutup pola yang bertabrakan');
+});
+
+test('plan: allow coverage — a duplicate or broader allow skips the add, a narrower one does not', () => {
+  // Exact duplicate (the idempotency case) and a broader stored rule both skip…
+  for (const stored of ['Bash(npm install foo)', 'Bash(npm *)']) {
+    const plan = planPreset(['Bash(npm install foo)'], withRules('local', 'allow', [stored]));
+    assert.equal(plan[0].status, 'allow', JSON.stringify([stored, plan]));
+  }
+  // …but a narrower stored allow never marks a broader candidate as covered.
+  const plan = planPreset(['Bash(npm *)'], withRules('local', 'allow', ['Bash(npm install *)']));
+  assert.equal(plan[0].status, 'add');
+  // A stored allow of another tool is irrelevant.
+  assert.equal(planPreset(['Edit'], withRules('user', 'allow', ['Write']))[0].status, 'add');
+});
+
+test('idempotency: applying a preset twice through the real add API stores each rule once', async () => {
+  const { project, opts, local } = setup();
+  const preset = PERMISSION_PRESETS[0];
+  const apply = async () => {
+    const { scopes } = await readPermissions(project, opts);
+    for (const item of planPreset(preset.rules, scopes).filter((p) => p.status === 'add')) {
+      await editPermission(project, { scope: 'local', action: 'add', list: 'allow', rule: item.rule }, opts);
+    }
+  };
+  await apply();
+  assert.deepEqual(readJson(local).permissions.allow, preset.rules);
+  const second = planPreset(preset.rules, (await readPermissions(project, opts)).scopes);
+  assert.equal(second.filter((p) => p.status === 'add').length, 0, 'semua aturan sudah tercakup — tidak ada yang dikirim lagi');
+  await apply();
+  assert.deepEqual(readJson(local).permissions.allow, preset.rules, 'tidak ada duplikat');
+});
+
+test('guardrail: with a user deny catch-all the preset adds nothing (files untouched)', async () => {
+  const { project, opts, local, user } = setup();
+  mkdirSync(path.dirname(user), { recursive: true });
+  writeFileSync(user, JSON.stringify({ permissions: { deny: ['Bash'] } }, null, 2));
+  const { scopes } = await readPermissions(project, opts);
+  const addable = planPreset(PERMISSION_PRESETS[0].rules, scopes).filter((p) => p.status === 'add');
+  assert.deepEqual(addable, [], 'semua aturan Bash tertutup deny catch-all user');
+  assert.equal(existsSync(local), false, 'tidak ada file yang ditulis');
 });

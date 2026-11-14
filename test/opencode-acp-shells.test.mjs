@@ -214,21 +214,42 @@ test('a delegated step whose final update never arrives is closed by a synthetic
 test('a delegation that outlives its turn closes its step rows as the late results arrive', async () => {
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'delegasilatar' });
-  // the turn's answer resolves while the delegation is still open…
+  const from = mark; // the rows of THIS turn and its two background children
+  // the turn's answer resolves while the delegations are still open…
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && o.ok === true);
-  // …and its steps keep streaming afterwards: each row must close with its REAL result (never a synthetic
+  // …and their steps keep streaming afterwards: each row must close with its REAL result (never a synthetic
   // "Giliran selesai" note, never an endless spinner until the whole delegation happens to finish).
   const read = await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch?.status === 'ok' && /# Toko/.test(o.patch.output ?? ''), 10000);
   assert.ok(read, 'the first step closed with its real result after the turn ended');
   const grep = await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch?.status === 'ok' && /README\.md: api/.test(o.patch.output ?? ''), 10000);
   assert.ok(grep, 'a step that STARTED after the turn also streamed, ran and closed');
-  // the delegation itself reports back: its row finishes and the office releases the role
-  await waitFor((t, o) => t === 'office' && o.project === id && o.kind === 'agent_stop' && o.role === 'backend' && /Cek API latar/.test(o.label ?? ''), 10000);
+  // Not just timing: the first child's read was ALREADY open when the turn ended (its row outlived the turn through
+  // the grace), and closed only after the turn's result — exactly the pre-fix failure mode.
+  const during = seen.slice(from);
+  const idxResult = during.findIndex((e) => e.type === 'chat' && e.obj.kind === 'result' && e.obj.ok === true);
+  const idxRead = during.findIndex((e) => e.type === 'chat_update' && e.obj.patch?.status === 'ok' && /# Toko/.test(e.obj.patch.output ?? ''));
+  assert.ok(idxResult > -1 && idxRead > idxResult, 'a child step was open when the turn ended and closed after its result (the grace path)');
   await sleep(300);
   const chats = (await snapshot()).chats?.[id] ?? [];
   const delegate = chats.find((c) => c.kind === 'delegate' && /Cek API latar/.test(c.text ?? ''));
   assert.equal(delegate?.status, 'ok', 'the delegation row finished with its report');
-  const hanging = chats.filter((c) => c.kind === 'tool' && /Cek API latar/.test(c.text ?? '') && c.status === 'running');
+  // each launch resolved at once (rawOutput.metadata.sessionID): both delegations reported and released their role
+  const stops = seen
+    .slice(from)
+    .filter((e) => e.type === 'office' && e.obj.project === id && e.obj.kind === 'agent_stop' && e.obj.role === 'backend')
+    .map((e) => e.obj.label);
+  assert.deepEqual(stops, ['Cek API latar', 'Cek API kedua'], 'both delegations reported back');
+  // Two parallel delegations: the steps of BOTH closed, linked by the child session id (never a title guess),
+  // and each carries the delegated role (never an inferred one).
+  const steps = seen
+    .slice(from)
+    .filter((e) => e.type === 'chat' && e.obj.project === id && e.obj.kind === 'tool')
+    .map((e) => e.obj);
+  assert.deepEqual(steps.map((c) => c.tool), ['Read', 'Grep', 'Read'], 'the three child steps became rows');
+  assert.deepEqual([...new Set(steps.map((c) => c.role))], ['backend'], 'child steps belong to the delegated role');
+  const byId = new Map(chats.map((c) => [c.id, c]));
+  for (const c of steps) assert.equal(byId.get(c.id)?.status, 'ok', `step row ${c.tool} closed`);
+  const hanging = chats.filter((c) => c.kind === 'tool' && c.status === 'running');
   assert.deepEqual(hanging, [], 'no step row is left spinning');
   const s = await snapshot();
   assert.deepEqual(s.statuses[id].working ?? {}, {}, 'no role is left working after the delegation reports');
@@ -286,4 +307,23 @@ test('a prompt sent mid-turn is queued (never sent to OpenCode while the tool ru
   await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false, 15000);
   const done = (await snapshot()).statuses[id];
   assert.equal(done.busy, false, 'every queued prompt had its own turn, then idle');
+});
+
+test('a provider that refuses an effort level is retried with Default, never left as "Berhenti"', async () => {
+  mark = seen.length;
+  const before = receivedAll()?.length ?? 0;
+  // OpenCode offers "medium" for this provider (river AI) although the provider refuses it: pick it, like the user would.
+  assert.equal((await api(`/api/projects/${id}/settings`, { effort: 'medium' })).status, 200);
+  const pr = await api(`/api/projects/${id}/prompt`, { text: 'effortriver' });
+  assert.equal(pr.status, 200, JSON.stringify(pr.body));
+  const res = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result', 15000);
+  assert.equal(res.ok, true, 'the turn finished instead of stopping over the provider error');
+  // the prompt really went out twice: the app fell back to Default and sent it again
+  await waitFor(() => (receivedAll()?.length ?? 0) - before >= 2, 15000);
+  assert.equal((receivedAll()?.length ?? 0) - before, 2, 'one retry, not a retry loop');
+  const chats = (await snapshot()).chats?.[id] ?? [];
+  assert.ok(chats.find((c) => c.kind === 'info' && /menolak effort .medium./.test(c.text ?? '')), 'the fallback was explained');
+  assert.deepEqual(chats.filter((c) => c.kind === 'error' && /reasoning effort/i.test(c.text ?? '')), [], 'the provider error never reached the chat as a stop');
+  assert.ok(chats.find((c) => c.kind === 'assistant' && /effort=default/.test(c.text ?? '')), 'the retry ran with Default, as the provider is told');
+  await api(`/api/projects/${id}/settings`, { effort: '' }); // back to Default for whatever runs next
 });

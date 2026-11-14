@@ -2107,6 +2107,14 @@ body.read-only #composer-hint { color: var(--ask); }
 .perm-add { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; flex: none; }
 .perm-add input { flex: 1 1 180px; min-width: 0; font: var(--fs-md) var(--mono); }
 .perm-add .field-error { flex-basis: 100%; }
+.perm-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; flex: none; }
+.perm-plan { flex: none; margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
+.perm-plan-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.perm-plan ul { list-style: none; margin: 6px 0; padding: 0; }
+.perm-plan li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 3px 0; border-bottom: 1px solid var(--wash-1); }
+.perm-plan li:last-child { border-bottom: 0; }
+.perm-plan li > code { overflow-wrap: anywhere; }
+.perm-plan-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .perm-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
 .perm-scope { padding: 9px 10px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
 .perm-scope-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }

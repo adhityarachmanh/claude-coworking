@@ -1,5 +1,6 @@
 // ---------- phone access (📱 Akses dari HP) ----------
 // Every /api/remote* route is laptop only: server.js refuses the whole prefix to paired phones.
+import { checkFirewallRules, manualFirewallCommand, runFirewallFix } from '../firewall-check.js';
 import { networkAddresses } from '../remote.js';
 import { json } from './http.js';
 
@@ -44,6 +45,23 @@ export function register(router) {
     publishConfig();
     return json(res, 200, { ok: true });
   });
+  // 🧱 Firewall check (laptop only, like all of /api/remote): does a Windows rule let TCP 4317+4318 in from the
+  // Tailscale range? Read-only (`Get-Net*Firewall*`, no admin needed). covered: true/false, null = unknown
+  // (PowerShell failed) — the 📱 banner only nags on a definite false, never on unknown; non-Windows: no check.
+  // Tests inject `firewallCheck`; production uses the real one (src/firewall-check.js, which never throws).
+  router.post('/api/remote/firewall-check', async ({ firewallCheck }, req, res) => {
+    return json(res, 200, await (firewallCheck ?? checkFirewallRules)());
+  }, { maxBody: 64 });
+  // 🔧 One-click fix (laptop only): runs the SAME fixed elevated command the installer task runs (single source
+  // of truth: src/firewall-check.js; the .iss is kept in sync by test/firewall-check.test.mjs). Elevation happens
+  // only after this explicit click — fail-closed, nothing is auto-run. Then the check runs again: the answer
+  // (`check`) is the truth, `ok` only says the elevated window finished without a timeout/cancel.
+  router.post('/api/remote/firewall-fix', async ({ firewallCheck, firewallFix }, req, res) => {
+    const fix = await (firewallFix ?? runFirewallFix)();
+    if (fix.platforms === 'other') return json(res, 400, { error: 'Perbaikan firewall hanya untuk Windows.' });
+    const check = await (firewallCheck ?? checkFirewallRules)();
+    return json(res, 200, { ...fix, check, manual: manualFirewallCommand() });
+  }, { maxBody: 64 });
 }
 
 /** 🔔 Rotate the one-time pairing code and push it to the paired phones; the laptop shows the same code it just pushed. */

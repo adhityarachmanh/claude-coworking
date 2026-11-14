@@ -254,6 +254,15 @@ export class AcpAdapter {
     // Mode tim: a running `subagent` call's description -> its toolCallId. OpenCode streams the subagent's own tool
     // calls into the same session titled "<description>: <tool>"; they become that role's work (parent_tool_use_id).
     this.subagents = new Map(); // description -> [toolCallId, …] (several subagents may share one description)
+    // A `subagent` call is only the LAUNCH: OpenCode resolves it at once ("working in the background") and the
+    // child keeps working as its OWN session, streaming its steps here later. That session id is the authoritative
+    // link (the call announced it in rawOutput.metadata.sessionID; its steps carry `_meta['opencode/child-session']`
+    // or a `<sessionId>:` prefixed call id). Kept for the whole session, so a step that starts AND finishes long
+    // after the turn still finds its delegation, keeps its role, and closes its own row.
+    this.childSessions = new Map(); // child session id -> { call: the launching toolCallId, title: the child's own title }
+    // Child steps whose one-turn grace ran out (or whose turn was stopped): closed by the translator already, so a
+    // late frame for one of them must NOT open a fresh row. Bounded like `childSessions`.
+    this.droppedChildren = new Set();
     this.text = null; // { id, parts } — the assistant message being streamed
     this.lastText = ''; // the last finished assistant message of the turn (reset per turn by the session)
     this.planSeq = 0;
@@ -279,6 +288,9 @@ export class AcpAdapter {
         return;
       case 'tool_call':
       case 'tool_call_update': {
+        // Closed for us already (grace ran out, or the turn was stopped): a frame that slipped past the idle gate
+        // (the turn is busy now) must not create a phantom row for it.
+        if (this.droppedChildren.has(String(u.toolCallId ?? ''))) return;
         const info = this.toolInfo(u.toolCallId, u);
         if (u.status === 'in_progress' || u.status === 'completed' || u.status === 'failed') this.start(u.toolCallId);
         if ((u.status === 'completed' || u.status === 'failed') && !info.done) {
@@ -288,10 +300,14 @@ export class AcpAdapter {
           // Late metadata (only on the final update): the task still exists, already finished.
           this.registerShellTask(u.toolCallId, info, mapTool(info).name, info.rawInput ?? {});
           this.finishShellTask(info, u.status, text);
-          for (const [desc, ids] of this.subagents) {
-            const left = ids.filter((x) => x !== u.toolCallId);
-            if (left.length) this.subagents.set(desc, left);
-            else this.subagents.delete(desc);
+          // A `subagent` call resolving this way is only its LAUNCH ("working in the background"): the child runs
+          // on as its own session, so its description key stays — the late steps still need it to find their row.
+          if (!this.launchesChild(u.toolCallId)) {
+            for (const [desc, ids] of this.subagents) {
+              const left = ids.filter((x) => x !== u.toolCallId);
+              if (left.length) this.subagents.set(desc, left);
+              else this.subagents.delete(desc);
+            }
           }
         }
         return;
@@ -308,6 +324,40 @@ export class AcpAdapter {
     }
   }
 
+  /** OpenCode's child-session marker on a child's own frames: `{ id, parentID, depth, title }`. */
+  childMarker(u = {}) {
+    return u._meta?.['opencode/child-session'] ?? u.meta?.['opencode/child-session'];
+  }
+
+  /** The child session a call belongs to: the `_meta` marker OpenCode sends, else the `<sessionId>:` id prefix. */
+  childSessionId(u = {}) {
+    const meta = this.childMarker(u);
+    if (typeof meta?.id === 'string' && meta.id) return meta.id;
+    const head = String(u.toolCallId ?? '').split(':')[0];
+    return OPENCODE_SESSION.test(head) ? head : null;
+  }
+
+  /** Records a child session (idempotent, bounded): its own title and the `subagent` call that launched it. */
+  registerChild(sid, patch = {}) {
+    if (!sid) return null;
+    const entry = { ...(this.childSessions.get(sid) ?? {}), ...patch };
+    this.childSessions.set(sid, entry);
+    if (this.childSessions.size > 200) this.childSessions.delete(this.childSessions.keys().next().value);
+    return entry;
+  }
+
+  /** Bounded tombstone: a call whose row was closed for us (its grace ran out, or its turn was stopped) never reopens. */
+  dropChild(id) {
+    this.droppedChildren.add(id);
+    if (this.droppedChildren.size > 200) this.droppedChildren.delete(this.droppedChildren.values().next().value);
+  }
+
+  /** True when this call launched a child session OpenCode keeps running past the turn (its steps stay reachable). */
+  launchesChild(callId) {
+    for (const entry of this.childSessions.values()) if (entry.call === callId) return true;
+    return false;
+  }
+
   /** Merges what OpenCode said about a tool call so far (fields arrive spread over several updates). */
   toolInfo(id, u = {}) {
     const info = this.tools.get(id) ?? { kind: 'other', title: '', rawInput: {}, locations: [], content: [], started: false, done: false };
@@ -316,15 +366,33 @@ export class AcpAdapter {
     // final one (rawOutput.metadata): kept here, so the session can register `oc:<shellID>` as a background task.
     const meta = { ...(u._meta && typeof u._meta === 'object' ? u._meta : {}), ...(u.meta && typeof u.meta === 'object' ? u.meta : {}), ...(u.rawOutput?.metadata?.shellID ? u.rawOutput.metadata : {}) };
     if (meta.shellID) info.meta = { ...info.meta, ...meta };
+    // A `subagent` call's final update announces the child session it just started: the authoritative link to the
+    // steps that will stream later (a title prefix is only a fallback).
+    const announced = typeof u.rawOutput?.metadata?.sessionID === 'string' ? u.rawOutput.metadata.sessionID : null;
+    if (announced) this.registerChild(announced, { call: id });
+    // A child session's own call carries the marker (or a `<sessionId>:` prefixed id): link it to its delegation.
+    const sid = this.childSessionId(u);
+    if (sid) {
+      const marker = this.childMarker(u);
+      const entry = this.registerChild(sid, typeof marker?.title === 'string' && marker.title ? { title: marker.title } : {});
+      info.child = sid;
+      if (entry?.title) info.childTitle ??= String(entry.title);
+      if (!info.parent && entry?.call) info.parent = entry.call;
+    }
     if (u.title) {
-      // "<subagent description>: <tool>" → the subagent's own call, under its Agent row
-      // the longest running description that prefixes the title (a description may itself contain ": ")
+      // "<subagent description>: <tool>" (the child session's own title, or the description it was launched with)
+      // → the subagent's own call, under its Agent row. Longest prefix first (a description may itself contain ": ").
       const title = String(u.title);
-      const desc = [...this.subagents.keys()].filter((d) => title.startsWith(`${d}: `)).sort((a, b) => b.length - a.length)[0];
-      const parent = desc ? this.subagents.get(desc)[0] : undefined; // the oldest still running with that description
+      const names = [...this.subagents.keys(), ...(info.childTitle ? [info.childTitle] : [])];
+      const desc = names.filter((d) => title.startsWith(`${d}: `)).sort((a, b) => b.length - a.length)[0];
+      // The marker/prefix link (`info.parent`) always wins. The title is only a fallback, and then the NEWEST call
+      // with that description: the oldest may be a launch that finished long ago (its key now survives the turn).
+      const ids = desc ? (this.subagents.get(desc) ?? []) : [];
+      const open = ids.filter((x) => this.tools.get(x)?.started && !this.tools.get(x)?.done);
+      const parent = info.parent ?? (open.length ? open.at(-1) : ids.at(-1));
       if (parent && parent !== id) {
         info.parent = parent;
-        info.title = title.slice(desc.length + 2);
+        info.title = desc ? title.slice(desc.length + 2) : title;
       } else if (!info.parent) {
         info.title = title;
         info.firstTitle ??= title; // a delegated step names its role here ("backend"); later updates rename the call
@@ -399,10 +467,28 @@ export class AcpAdapter {
     const still = new Set();
     for (const [id, info] of snap) {
       if (!info.started || info.done) continue;
-      if (info.parent) {
+      // A ■ Stop ends the whole turn, subagents included: nothing stays open (a launch kept here would hang its row
+      // and its role's "working" chip forever, since a stopped turn no longer accepts its frames). Every open call is
+      // tombstoned, so a stray late frame cannot resurrect a row after the user cancelled.
+      if (interrupted) {
+        this.dropChild(id);
+        continue;
+      }
+      // A depth-2+ delegation is itself a launch even though its own frame carries its parent's marker: it takes the
+      // delegation branch below, never the child-step grace.
+      if (info.child && !this.launchesChild(id)) {
+        // A child session's own step: it outlives the turn that saw it (the child works on). One turn of grace — its
+        // real (late) result closes the row; still open at the next turn's end, it is dropped (and tombstoned, so a
+        // later frame cannot resurrect it): the translator closes the row with a synthetic note, never an endless spinner.
+        if ((info.turnsOpen = (info.turnsOpen ?? 0) + 1) > 1) {
+          this.dropChild(id);
+          continue;
+        }
+        still.add(id);
+      } else if (info.parent) {
         const agent = this.tools.get(info.parent);
         if (agent?.started && !agent.done) still.add(id); // a live delegation's step
-      } else if (this.subagents.has(String(info.rawInput?.description ?? ''))) still.add(id); // the delegation itself
+      } else if (this.launchesChild(id) || this.subagents.has(String(info.rawInput?.description ?? ''))) still.add(id); // the delegation itself
     }
     this.emit({
       type: 'result',
@@ -423,7 +509,8 @@ export class AcpAdapter {
       if (info) this.tools.set(id, info);
     }
     for (const [desc, ids] of this.subagents) {
-      const left = ids.filter((x) => still.has(x));
+      // A launch that started a child session keeps its key: the late steps find their delegation through it.
+      const left = ids.filter((x) => still.has(x) || this.launchesChild(x));
       if (left.length) this.subagents.set(desc, left);
       else this.subagents.delete(desc);
     }
@@ -435,7 +522,24 @@ export class AcpAdapter {
    */
   continues(u) {
     if (u?.sessionUpdate !== 'tool_call' && u?.sessionUpdate !== 'tool_call_update') return false;
-    if (this.tools.has(u.toolCallId)) return true;
+    const id = String(u.toolCallId ?? '');
+    // A closed (grace-expired or stopped) child step never reopens — a fresh row would be a phantom.
+    if (this.droppedChildren.has(id)) return false;
+    if (this.tools.has(id)) return true;
+    const sid = this.childSessionId(u);
+    if (sid) {
+      // The `_meta` marker is OpenCode's own statement that this frame belongs to a child session it is running:
+      // trust it (and remember the child, so its later frames are known). A launch's frame can be swallowed during a
+      // session/load replay, and the child's steps must still show.
+      const marker = this.childMarker(u);
+      if (marker) {
+        this.registerChild(sid, typeof marker.title === 'string' && marker.title ? { title: marker.title } : {});
+        return true;
+      }
+      // A bare `<sessionId>:` id is only a shape: a foreign session's replayed frame must not reopen the office, so
+      // the child has to be one a launch actually announced.
+      if (this.childSessions.has(sid)) return true;
+    }
     const title = String(u.title ?? '');
     return [...this.subagents.keys()].some((d) => title.startsWith(`${d}: `));
   }
@@ -495,6 +599,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.ready = null;
       this.cost = null; // cumulative session cost from usage_update (per turn = difference)
       this.epoch = 0; // +1 whenever the process is let go (closeChild/kill): a late turn result is then ignored
+      this.badEfforts = new Set(); // effort levels this provider refused (see fallBackEffort): never sent again
+      this.stoppedTurn = false; // a turn the user stopped: its late frames must not reopen rows until the next prompt
     }
 
     get engineName() {
@@ -558,21 +664,39 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.announce(item);
       this.rejectedThisTurn = false;
       this.rejection = null;
+      this.stoppedTurn = false; // a new turn runs: a delegation's late frames pass the gate again
       if (this.adapter) this.adapter.lastText = '';
       const epoch = this.epoch;
       const started = Date.now();
       const costBefore = this.cost;
-      this.ready
-        .then(() => this.rpc('session/prompt', { sessionId: this.acpSessionId, prompt: item.blocks }, 0))
-        .then(
-          (res) => this.endTurn(epoch, uuid, { ok: res?.stopReason !== 'cancelled' && res?.stopReason !== 'refusal', interrupted: res?.stopReason === 'cancelled', error: res?.stopReason === 'refusal' ? 'Model menolak permintaan ini.' : '', usage: res?.usage, started, costBefore }),
-          (err) => {
-            // After a rejected permission OpenCode cancels the turn; a parallel request it still had open then
-            // fails the whole prompt with PermissionNotFoundError: that is a stop, not a crash.
-            const stopped = this.interrupting || this.rejectedThisTurn || /PermissionNotFound/i.test(`${err.data?.errorName ?? ''} ${err.message}`);
-            this.endTurn(epoch, uuid, { ok: false, interrupted: stopped, error: authRequiredNote(err.message), started, costBefore });
-          },
-        );
+      // One retry: a provider that refuses the effort level (fallBackEffort) must not cost the user their turn.
+      const send = () =>
+        this.ready
+          .then(() => this.rpc('session/prompt', { sessionId: this.acpSessionId, prompt: item.blocks }, 0))
+          .then(
+            (res) => this.endTurn(epoch, uuid, { ok: res?.stopReason !== 'cancelled' && res?.stopReason !== 'refusal', interrupted: res?.stopReason === 'cancelled', error: res?.stopReason === 'refusal' ? 'Model menolak permintaan ini.' : '', usage: res?.usage, started, costBefore }),
+            async (err) => {
+              // After a rejected permission OpenCode cancels the turn; a parallel request it still had open then
+              // fails the whole prompt with PermissionNotFoundError: that is a stop, not a crash.
+              let stopped = this.interrupting || this.rejectedThisTurn || /PermissionNotFound/i.test(`${err.data?.errorName ?? ''} ${err.message}`);
+              // A refused effort level gets the turn one more try on Default: the provider failed the request before
+              // running it, so re-sending the same prompt is safe (it may read twice in the session's own history —
+              // a duplicate line beats losing the turn). A ■ Stop during the effort switch still wins, and then the
+              // switch is NOT announced as a retry.
+              const refused = !stopped && !item.effortRetried && this.effortRejected(err) ? await this.fallBackEffort() : null;
+              if (refused) {
+                stopped = this.interrupting || this.stoppedTurn;
+                if (!stopped) {
+                  this.hub.chat(this.id, { kind: 'info', level: 'warning', text: `Provider menolak effort «${refused}» untuk model ini — giliran dicoba ulang dengan Default.` });
+                  item.effortRetried = true;
+                  send();
+                  return;
+                }
+              }
+              this.endTurn(epoch, uuid, { ok: false, interrupted: stopped, error: authRequiredNote(err.message), started, costBefore });
+            },
+          );
+      send();
     }
 
     endTurn(epoch, uuid, { ok, interrupted, error, usage = {}, started, costBefore }) {
@@ -711,6 +835,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       // session/cancel ends the whole turn, subagents included (OpenCode runs them inside the turn)
       if (this.child && (this.busy || [...this.inflight.values()].some((i) => i.state === 'started'))) {
         this.interrupting = true;
+        this.stoppedTurn = true; // the cancelled turn is over: its frames must not reopen a row before the next prompt
         this.notify('session/cancel', { sessionId: this.acpSessionId });
         clearTimeout(this.killTimer);
         this.killTimer = setTimeout(() => this.busy && this.kill(), INTERRUPT_GRACE_MS);
@@ -1200,7 +1325,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     async setOption(configId, value) {
       const res = await this.rpc('session/set_config_option', { sessionId: this.acpSessionId, configId, value }, RPC_TIMEOUT_MS);
-      if (configId === 'model') this.hub.setStatus(this.id, { activeModel: value });
+      // Another model may well accept what this one refused (effort levels differ per model): forget the refusals.
+      if (configId === 'model') {
+        this.badEfforts.clear();
+        this.hub.setStatus(this.id, { activeModel: value });
+      }
       if (res?.configOptions) this.configOptions = res.configOptions;
       else if (configId === 'model') this.configOptions = null; // the new model's effort levels are unknown: none sent
       this.publishAgents();
@@ -1215,9 +1344,47 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.hub.setStatus(this.id, { agents, activeAgent: opt.currentValue ?? null });
     }
 
+    /** The effort value OpenCode currently has set (what a provider would have refused), or null. */
+    currentEffort() {
+      const current = (this.configOptions ?? []).find((o) => o.id === 'effort')?.currentValue;
+      return typeof current === 'string' && current ? current : null;
+    }
+
+    /** What to use instead of a level the provider refused: OpenCode's Default (the model's own thinking level). */
+    safeEffort(bad) {
+      const safe = effortValue('', this.configOptions);
+      return safe && safe !== bad ? safe : null;
+    }
+
+    /** A prompt the provider refused over its reasoning-effort value (river AI: "supports reasoning effort low…"). */
+    effortRejected(err) {
+      return /reasoning[\s_-]?effort/i.test(`${err?.data?.errorName ?? ''} ${err?.message ?? ''}`);
+    }
+
+    /**
+     * The provider refused the level OpenCode offered (river AI rejects "medium" while OpenCode advertises it). Remember
+     * it so it is never sent again and drop to Default: the caller re-sends the prompt, so the turn is never lost to a
+     * cryptic error. The caller also announces the switch — only it knows whether the retry actually still runs.
+     * @returns {Promise<string|null>} the refused level when the switch worked (only then is a retry worth it), else null
+     */
+    async fallBackEffort() {
+      const bad = this.currentEffort();
+      const safe = bad ? this.safeEffort(bad) : null;
+      if (!safe) return null;
+      this.badEfforts.add(bad);
+      try {
+        await this.setOption('effort', safe);
+      } catch {
+        return null; // the switch itself failed: a retry would only send the refused level again
+      }
+      return bad;
+    }
+
     /** The app's effort on the current model (skipped when the model has no effort levels, or already has it). */
     async applyEffort(effort) {
-      const value = effortValue(effort, this.configOptions);
+      let value = effortValue(effort, this.configOptions);
+      // A value this provider already refused is never sent again: Default (or nothing) instead.
+      if (value && this.badEfforts.has(value)) value = this.safeEffort(value);
       const current = (this.configOptions ?? []).find((o) => o.id === 'effort')?.currentValue;
       if (value && value !== current) await this.setOption('effort', value);
     }
@@ -1328,8 +1495,9 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       }
       // Only during one of our turns: a late update after a stop must not reopen it (the office would stay "busy").
       // A delegation that outlived the turn is the exception: OpenCode keeps streaming its steps and their results
-      // must close the rows (1.0.27 resolves the prompt while a subagent still runs in the background).
-      if (!this.busy && !this.adapter.continues(u)) return;
+      // must close the rows (1.0.27 resolves the prompt while a subagent still runs in the background). A turn the
+      // user STOPPED keeps nothing: its late frames are dropped until the next prompt.
+      if (!this.busy && (this.stoppedTurn || !this.adapter.continues(u))) return;
       this.adapter.update(u);
     }
 

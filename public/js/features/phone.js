@@ -1,14 +1,18 @@
 // Phone access (QR pairing), laptop only.
 import { api, toast } from '../core/api.js';
+import { firewallBanner } from '../core/firewall-banner.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { ago } from '../core/format.js';
 import { state } from '../core/state.js';
 import { qrSvg } from '../qr.js';
 
 // https: true = the 🔒 Tailscale (HTTPS) QR, false = an http address, null = not chosen yet (HTTPS when available).
-export const phone = { timer: null, pairing: null, ip: null, https: null, checking: false, pushing: false };
+export const phone = { timer: null, pairing: null, ip: null, https: null, checking: false, pushing: false, firewall: null, fixing: false, fixError: null, manual: null };
 const ADDRESS_LABEL = { lan: '📶 WiFi yang sama', tailscale: '🌐 Dari mana saja (Tailscale)' };
 const HTTPS_LABEL = '🔒 Tailscale (HTTPS)';
+
+/** HTTPS is really serving a certificate ('ok', or 'expiring' = still served but renewing). */
+const httpsActive = (info) => info?.https?.state === 'ok' || info?.https?.state === 'expiring';
 
 const fmtDate = (ts) => new Date(ts).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -50,6 +54,42 @@ function renderHttps(info) {
 
 // lastSeen is only stored about once an hour (server throttles disk writes), so recent use reads as "dalam 1 jam terakhir".
 const lastActive = (ts) => (Date.now() - ts < 3_600_000 ? 'dalam 1 jam terakhir' : ago(ts));
+
+// 🧱 Firewall banner (rendered in its own box, dataset-cached like the 🔒 HTTPS line): only when HTTPS is really
+// serving and the read-only check says the Tailscale ports are NOT covered. Unknown (covered === null) and
+// non-Windows never show it (public/js/core/firewall-banner.js returns null there).
+function renderFirewall() {
+  const info = state.config?.remote;
+  const banner = firewallBanner(phone.firewall, {
+    httpsActive: Boolean(info?.enabled) && httpsActive(info),
+    busy: phone.fixing,
+    fixError: phone.fixError,
+    manual: phone.manual,
+  });
+  const box = $('#phone-firewall');
+  const html = banner
+    ? `<p class="warn"><span>🧱 ${escapeHtml(banner.text)} <small class="muted">${escapeHtml(banner.hint)}</small></span>
+        <span class="grow"></span><button type="button" data-firewall-fix ${phone.fixing ? 'disabled' : ''}>${escapeHtml(banner.button)}</button></p>
+      ${banner.manual ? `<p class="muted small">Atau jalankan sendiri di PowerShell (Run as Administrator):<br/><code>${escapeHtml(banner.manual)}</code></p>` : ''}`
+    : '';
+  // Drawn apart from the per-second countdown so the 🔧 button keeps its focus while it is busy.
+  if (box.dataset.html !== html) {
+    box.innerHTML = html;
+    box.dataset.html = html;
+  }
+}
+
+// Read-only check, once per dialog open (and again after 🔧). Failures leave it null → no banner (fail-safe).
+async function fetchFirewall() {
+  const info = state.config?.remote;
+  if (!info?.enabled || !httpsActive(info)) return;
+  try {
+    phone.firewall = await api('/api/remote/firewall-check');
+  } catch {
+    phone.firewall = null; // unknown: the banner must not nag on a maybe (a phone page is refused here anyway)
+  }
+  renderFirewall();
+}
 
 function renderPhone() {
   const info = state.config?.remote ?? { enabled: false, urls: [], devices: [] };
@@ -117,6 +157,7 @@ function renderPhone() {
     : '<p class="muted">Menyiapkan kode…</p>';
   renderHttps(info);
   body.innerHTML += `<div class="devices"><b>Perangkat terhubung</b>${devices ? `<ul>${devices}</ul>` : '<p class="muted small">Belum ada.</p>'}<p class="muted small">Dicabut otomatis setelah ${info.idleDays ?? 30} hari tidak aktif.</p></div>`;
+  renderFirewall();
   // Rendered apart from the per-second countdown so an opened <details> stays open.
   const tipBox = $('#phone-tip');
   if (tipBox.dataset.tailscale !== String(info.tailscale)) {
@@ -145,8 +186,12 @@ function openPhone() {
   $('#phone-modal').hidden = false;
   phone.pairing = null;
   phone.https = null; // HTTPS first again when it is available
+  phone.firewall = null; // re-checked on every open (cheap, read-only)
+  phone.fixError = null;
+  phone.manual = null;
   renderPhone();
   refreshPairing();
+  fetchFirewall();
 }
 
 export function initPhone() {
@@ -194,6 +239,29 @@ export function initPhone() {
       phone.checking = false;
       renderPhone();
       refreshPairing();
+      fetchFirewall(); // with a certificate served, the firewall question becomes relevant
+    }
+  });
+  // 🧱 🔧 One-click fix: the server runs the SAME fixed elevated command the installer task runs (one UAC
+  // prompt, nothing constructed here), then re-checks and answers the fresh state. Success removes the banner;
+  // still uncovered → the banner stays and offers the manual command (from the server, shown escaped).
+  $('#phone-firewall').addEventListener('click', async (e) => {
+    if (!e.target.closest('[data-firewall-fix]') || phone.fixing) return;
+    phone.fixing = true;
+    phone.fixError = null;
+    phone.manual = null;
+    renderFirewall();
+    try {
+      const out = await api('/api/remote/firewall-fix');
+      phone.firewall = out.check ?? null;
+      phone.manual = out.manual ?? null;
+      if (out.ok && out.check?.covered === true) toast('🧱 Aturan firewall Tailscale terpasang — coba buka dari HP lagi.', 'ok');
+      else phone.fixError = out.reason ?? 'declined';
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      phone.fixing = false;
+      renderFirewall();
     }
   });
   $('#phone-body').addEventListener('click', async (e) => {

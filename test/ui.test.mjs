@@ -2724,6 +2724,9 @@ for (const vp of VIEWPORTS) {
       const refilled = await page.eval(() => ({ url: document.querySelector('#rp-url').value, delay: document.querySelector('#rp-delay').value }));
       assert.equal(refilled.url, 'https://adhitron.netlify.app');
       assert.equal(refilled.delay, '90');
+      // Leave the dialog as we found it: settings.js remembers the open tab (module state AND sessionStorage),
+      // so without this the next test in this file opens on Sistem instead of the default Umum.
+      await page.click('[data-settings-tab="umum"]');
       await page.press('Escape');
       assert.deepEqual(realProblems(page), []);
     });
