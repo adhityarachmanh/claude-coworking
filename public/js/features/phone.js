@@ -6,7 +6,7 @@ import { state } from '../core/state.js';
 import { qrSvg } from '../qr.js';
 
 // https: true = the 🔒 Tailscale (HTTPS) QR, false = an http address, null = not chosen yet (HTTPS when available).
-export const phone = { timer: null, pairing: null, ip: null, https: null, checking: false };
+export const phone = { timer: null, pairing: null, ip: null, https: null, checking: false, pushing: false };
 const ADDRESS_LABEL = { lan: '📶 WiFi yang sama', tailscale: '🌐 Dari mana saja (Tailscale)' };
 const HTTPS_LABEL = '🔒 Tailscale (HTTPS)';
 
@@ -102,6 +102,8 @@ function renderPhone() {
           </ol>
           <div class="code">${p.code.slice(0, 3)} ${p.code.slice(3)}</div>
           <div class="muted">Berlaku ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · sekali pakai</div>
+          <button type="button" data-code-push ${phone.pushing ? 'disabled' : ''}>${phone.pushing ? 'Mengirim…' : '🔔 Kirim kode ke HP-mu'}</button>
+          <div class="muted small">Jauh dari layar laptop? Kode baru dikirim sebagai notifikasi ke HP yang sudah terpasang.</div>
         </div>
       </div>
       <p class="access-mode ${viaTailscale ? 'full' : 'view'}">${viaHttps
@@ -181,6 +183,25 @@ export function initPhone() {
     }
   });
   $('#phone-body').addEventListener('click', async (e) => {
+    const pushBtn = e.target.closest('[data-code-push]');
+    if (pushBtn) {
+      if (phone.pushing) return;
+      phone.pushing = true;
+      renderPhone();
+      try {
+        const out = await api('/api/pairing/code/push');
+        phone.pairing = null; // the old code just died: show the fresh one right away
+        if (out.pushed > 0) toast('🔔 Kode pasangan baru dikirim ke HP-mu.', 'ok');
+        else if (out.skipped) toast('Kode lama di notifikasi sudah tidak berlaku. Notifikasi kode baru menyusul < 1 menit — atau lihat kode baru di layar laptop.');
+        else toast('Belum ada HP terpasang yang berlangganan notifikasi (butuh HTTPS Tailscale).');
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        phone.pushing = false;
+        refreshPairing();
+      }
+      return;
+    }
     if (e.target.closest('[data-https]')) {
       phone.https = true; // same pairing code, QR for the https origin
       renderPhone();

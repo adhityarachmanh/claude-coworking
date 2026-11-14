@@ -70,6 +70,67 @@ function fakeRemote() {
   return { remote: new RemoteAccess(hub), events };
 }
 
+test('onNewCode: fires exactly once per brand-new code, not on cached reads, again after expiry or rotation', (t) => {
+  const codes = [];
+  const hub = { persisted: { remote: { enabled: true, devices: [] } }, save() {}, scheduleSave() {}, broadcast() {} };
+  const remote = new RemoteAccess(hub, { onNewCode: (info) => codes.push(info) });
+
+  const first = remote.currentPairing();
+  assert.deepEqual(codes, [{ code: first.code, expiresAt: first.expires }], 'a created code is announced once');
+  assert.equal(remote.currentPairing(), first);
+  assert.equal(remote.currentPairing().code, first.code);
+  assert.equal(codes.length, 1, 'a still-alive code fires nothing');
+
+  // Expiry (2 minutes) → the next read makes a new code and fires again.
+  const t0 = Date.now();
+  let clock = t0;
+  t.mock.method(Date, 'now', () => clock);
+  clock = t0 + 2 * 60 * 1000 + 1;
+  const second = remote.currentPairing();
+  assert.notEqual(second.code, first.code);
+  assert.equal(codes.length, 2);
+  assert.deepEqual(codes[1], { code: second.code, expiresAt: second.expires });
+  remote.currentPairing();
+  assert.equal(codes.length, 2, 'repeat reads stay silent');
+
+  // rotatePairing() (the laptop's "send it to my phone" button): a forced fresh code, announced too.
+  clock = t0 + 2 * 60 * 1000 + 2;
+  const third = remote.rotatePairing();
+  assert.notEqual(third.code, second.code);
+  assert.deepEqual(codes[2], { code: third.code, expiresAt: third.expires });
+  assert.equal(codes.length, 3);
+
+  // announce: false (route /api/pairing/code/push pushes itself): a fresh code, but no hook call.
+  const fourth = remote.rotatePairing({ announce: false });
+  assert.notEqual(fourth.code, third.code);
+  assert.equal(codes.length, 3, 'the hook stayed silent');
+  remote.currentPairing();
+  assert.equal(remote.currentPairing().code, fourth.code, 'the code is alive and cached');
+  assert.equal(codes.length, 3);
+});
+
+/** fakeRemote() that also counts saves and records idle-unpaired devices. */
+function countingRemote() {
+  const saves = { now: 0, scheduled: 0 };
+  const expired = [];
+  const hub = { persisted: { remote: { enabled: true, devices: [] } }, save: () => saves.now++, scheduleSave: () => saves.scheduled++, broadcast() {} };
+  return { remote: new RemoteAccess(hub, { onExpire: (devices) => expired.push(...devices.map((d) => d.id)) }), hub, saves, expired };
+}
+
+const pairDevice = (remote, ua = 'iPhone Safari/1') => remote.pair({ key: remote.currentPairing().key }, ua, '10.0.0.2').token;
+
+test('pair() returns the record of THIS pairing: two pairings in a row, each result names its own device', () => {
+  const { remote } = fakeRemote();
+  const a = remote.pair({ key: remote.currentPairing().key }, 'iPhone Safari/1', '10.0.0.2');
+  const b = remote.pair({ key: remote.currentPairing().key }, 'Android Chrome/1', '10.0.0.3', { transport: 'https' });
+  // The server announces exactly result.device to the other phones — it must not guess "the last record".
+  assert.equal(a.device.name, 'iPhone · Safari');
+  assert.equal(b.device.name, 'Android · Chrome');
+  assert.equal(b.device.transport, 'https');
+  assert.notEqual(a.device.id, b.device.id);
+  assert.deepEqual(remote.state.devices, [a.device, b.device], 'the returned records are the stored ones');
+});
+
 test('pairing: 5 wrong codes kill the code, tell the laptop, and lock that IP out for a while', (t) => {
   const { remote, events } = fakeRemote();
   const { code } = remote.currentPairing();
@@ -101,16 +162,6 @@ test('pairing: a right code clears the failures of that IP', () => {
   for (let i = 0; i < 3; i++) remote.pair({ code: p.code === '000000' ? '111111' : '000000' }, '', '10.0.0.9');
   assert.equal(remote.lockedFor('10.0.0.9'), 0, 'counting starts over after a success');
 });
-
-/** fakeRemote() that also counts saves and records idle-unpaired devices. */
-function countingRemote() {
-  const saves = { now: 0, scheduled: 0 };
-  const expired = [];
-  const hub = { persisted: { remote: { enabled: true, devices: [] } }, save: () => saves.now++, scheduleSave: () => saves.scheduled++, broadcast() {} };
-  return { remote: new RemoteAccess(hub, { onExpire: (devices) => expired.push(...devices.map((d) => d.id)) }), hub, saves, expired };
-}
-
-const pairDevice = (remote, ua = 'iPhone Safari/1') => remote.pair({ key: remote.currentPairing().key }, ua, '10.0.0.2').token;
 
 test('idle devices: unused for more than 30 days they are refused, removed and stored without them', (t) => {
   t.mock.method(console, 'log', () => {});

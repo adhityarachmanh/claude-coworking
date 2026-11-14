@@ -9,13 +9,15 @@
 //   scope so test/push-ui.test.mjs can run this file in a Node vm with a stubbed `self`.
 'use strict';
 
-const SW_VERSION = '2'; // bump on every change: a byte-different sw.js is what makes browsers update it
+const SW_VERSION = '3'; // bump on every change: a byte-different sw.js is what makes browsers update it
 
 const ICON = '/icons/icon-192.png';
 const BADGE = '/icons/icon-192.png';
 const ACT_TIMEOUT_MS = 8000; // the laptop may be asleep or Tailscale off: never hang the click handler
 
-const PUSH_TYPES = ['ask', 'answered', 'done', 'error', 'queue', 'test'];
+const PUSH_TYPES = ['ask', 'answered', 'done', 'error', 'queue', 'test', 'pairing', 'paired'];
+// Types whose title/body text is built by the server (Indonesian, like the rest) instead of here.
+const SERVER_TEXT_TYPES = ['test', 'pairing', 'paired'];
 
 /** Text from the payload, trimmed and capped (it ends up on the lock screen). */
 function text(value, max) {
@@ -37,14 +39,17 @@ function parsePayload(raw) {
     t: typeof p.t === 'string' && p.t.length <= 200 ? p.t : '',
     allowAllowed: p.allowAllowed === true,
     silent: p.silent === true, // quiet hours etc. are decided by the server; it may ask for no sound
-    // Only the "Kirim tes" push brings its own text; every other title is built here from the fields above.
-    title: p.type === 'test' ? text(p.title, 80) : '',
-    body: p.type === 'test' ? text(p.body, 120) : '',
+    // Server-built text travels only for the whitelisted types above; every other title is built here from the fields.
+    title: SERVER_TEXT_TYPES.includes(p.type) ? text(p.title, 80) : '',
+    body: SERVER_TEXT_TYPES.includes(p.type) ? text(p.body, 120) : '',
   };
 }
 
 /** One notification per project and kind: a newer one replaces the older (the ask/answered pair shares one). */
 function tagFor(p) {
+  // Pairing pushes belong to no project: one fixed tag, so a new code/notice replaces the previous one.
+  if (p.type === 'pairing') return 'pairing-code';
+  if (p.type === 'paired') return 'device-paired';
   const topic = p.type === 'answered' ? 'ask' : p.type;
   return `${topic}:${p.project}`;
 }
@@ -71,6 +76,8 @@ function buildNotification(p) {
     error: `■ ${p.projectName}: tugas berhenti`,
     queue: p.started ? `▶ ${p.projectName}: antrian mulai` : `⏸ ${p.projectName}: antrian dijeda`,
     test: p.title || '🔔 Tes notifikasi',
+    pairing: p.title || '🔑 Kode pasangan baru',
+    paired: p.title || '✅ Perangkat baru terpasang',
   };
   const bodies = {
     // Izinkan withheld (execution/network tool, or switched off on this device): look at it in the app first.
@@ -79,6 +86,8 @@ function buildNotification(p) {
     error: 'Ketuk untuk melihat di aplikasi',
     queue: p.started ? 'Item yang menunggu mulai berjalan' : 'Ketuk untuk melihat antrian',
     test: p.body || 'Notifikasi dari Adhitron berfungsi.',
+    pairing: p.body || 'Ketik kodenya di halaman pasang.',
+    paired: p.body || 'Perangkat itu kini bisa membuka kantor ini.',
   };
   const ask = p.type === 'ask';
   const actions = [];

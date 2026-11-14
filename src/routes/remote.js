@@ -19,6 +19,11 @@ export function register(router) {
     return json(res, 200, httpsInfo());
   });
   router.post('/api/remote/pairing', pairing);
+  // 🔔 "Kirim kode ke HP-mu" (⚙ → Akses dari HP): rotate the one-time code now and push the fresh one to the
+  // paired phones. Laptop only (LOCAL_ONLY in server.js): a paired phone must not reset the code. The route
+  // pushes itself (announce: false) so the response can say whether the push went out (the toast tells the truth).
+  // A named handler, like pairing(): tests can call it directly — server.js boots a full app at import, too heavy.
+  router.post('/api/pairing/code/push', pairingCodePush, { maxBody: 1024 });
   router.post('/api/remote/revoke', ({ remote, push, dropDeviceStreams, publishConfig }, req, res, params, body) => {
     const id = String(body.id ?? '');
     remote.revoke(id); // its push subscription lives on the record: gone with it
@@ -27,6 +32,14 @@ export function register(router) {
     publishConfig();
     return json(res, 200, { ok: true });
   });
+}
+
+/** 🔔 Rotate the one-time pairing code and push it to the paired phones; the laptop shows the same code it just pushed. */
+async function pairingCodePush({ remote, push }, req, res) {
+  if (!remote.enabled) return json(res, 400, { error: 'Nyalakan akses dari HP dulu.' });
+  const { code, expires } = remote.rotatePairing({ announce: false });
+  const result = await push.sendPairingCode({ code, expiresAt: expires });
+  return json(res, 200, { ok: true, code, expires, pushed: result.pushed, skipped: result.skipped });
 }
 
 function pairing({ remote, port, httpsInfo }, req, res, params, body) {

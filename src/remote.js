@@ -122,12 +122,16 @@ const isIdle = (d, now) => now - lastActive(d) > DEVICE_IDLE_MS;
 export class RemoteAccess {
   /**
    * @param {object} hub
-   * @param {{ onExpire?: (devices: object[]) => void }} [options] onExpire: devices just unpaired for being idle
-   *   (the server ends their event streams, like a manual revoke).
+   * @param {{ onExpire?: (devices: object[]) => void, onNewCode?: (info: { code: string, expiresAt: number }) => void }} [options]
+   *   onExpire: devices just unpaired for being idle (the server ends their event streams, like a manual revoke).
+   *   onNewCode: a BRAND-NEW pairing code was made (never on a cached read); the only channel the code may leave
+   *   this class through (server.js pushes it to the owner's paired phones). Rate limiting stays here untouched.
    */
-  constructor(hub, { onExpire } = {}) {
+  constructor(hub, { onExpire, onNewCode } = {}) {
     this.hub = hub;
     this.onExpire = onExpire ?? (() => {});
+    this.onNewCode = onNewCode ?? (() => {});
+    this.holdNewCode = false; // rotatePairing({ announce: false }) silences the hook for one code
     hub.persisted.remote ??= { enabled: false, devices: [] };
     this.pairing = null;
     this.failures = new Map(); // remote ip -> { count, until } (wrong pairing guesses)
@@ -158,14 +162,31 @@ export class RemoteAccess {
   /** Current one-time pairing secrets (rotated after use, expiry or too many wrong codes). */
   currentPairing() {
     if (!this.pairing || Date.now() > this.pairing.expires) {
+      const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+      const expires = Date.now() + PAIRING_TTL_MS;
       this.pairing = {
-        code: String(randomInt(0, 1_000_000)).padStart(6, '0'),
+        code,
         key: randomBytes(18).toString('base64url'),
-        expires: Date.now() + PAIRING_TTL_MS,
+        expires,
         tries: 0,
       };
+      // Only for a fresh code: a repeated get() with the cache still alive fires nothing (no push spam).
+      if (!this.holdNewCode) this.onNewCode({ code, expiresAt: expires });
     }
     return this.pairing;
+  }
+
+  /**
+   * Kills the current code and makes a new one right away (the laptop's "send it to my phone" button).
+   * `announce: false`: the caller pushes the fresh code itself (route /api/pairing/code/push, so the laptop
+   * learns pushed/skipped for its toast) instead of the onNewCode hook.
+   */
+  rotatePairing({ announce = true } = {}) {
+    this.pairing = null;
+    this.holdNewCode = !announce;
+    const p = this.currentPairing();
+    this.holdNewCode = false;
+    return p;
   }
 
   /** Seconds this IP must still wait after too many wrong codes (0 = may try). */
@@ -197,7 +218,9 @@ export class RemoteAccess {
 
   /**
    * @param {{ transport?: 'http'|'https' }} [options] the transport this pairing came in over (the token only works there)
-   * @returns {{ token?: string, error?: string, triesLeft?: number, retryAfter?: number }}
+   * @returns {{ token?: string, device?: object, error?: string, triesLeft?: number, retryAfter?: number }}
+   *   device: the record just appended to state.devices (the server announces exactly this one to the other phones —
+   *   no guess about "the last record": two pairings in the same moment must name their own device).
    */
   pair({ code, key }, userAgent, ip = '', { transport = 'http' } = {}) {
     if (!this.enabled) return { error: 'Akses dari perangkat lain sedang dimatikan.' };
@@ -223,9 +246,10 @@ export class RemoteAccess {
     this.failures.delete(ip);
     this.pairing = null; // single use
     const token = randomBytes(32).toString('base64url');
-    this.state.devices.push({ id: randomUUID(), hash: sha256(token), name: deviceName(userAgent), created: Date.now(), lastSeen: Date.now(), transport: cleanTransport(transport) });
+    const device = { id: randomUUID(), hash: sha256(token), name: deviceName(userAgent), created: Date.now(), lastSeen: Date.now(), transport: cleanTransport(transport) };
+    this.state.devices.push(device);
     this.hub.save();
-    return { token };
+    return { token, device };
   }
 
   /**

@@ -158,6 +158,21 @@ describe('sw.js: push → notification', () => {
     assert.equal(calls.shown[1].options.silent, true);
   });
 
+  test('pairing code / paired notice: the server text, one fixed tag, no buttons, a tap opens the app', async () => {
+    const { listeners, calls } = loadSw();
+    await dispatch(listeners.push, pushEvent({ type: 'pairing', project: '', title: '🔑 Kode pasangan baru: 123456', body: 'Berlaku 2 menit — ketik di halaman pasang di perangkat tujuan.' }));
+    await dispatch(listeners.push, pushEvent({ type: 'paired', project: '', title: '✅ Perangkat "Pixel" berhasil dipasang', body: 'Perangkat itu kini bisa membuka kantor ini.' }));
+    assert.equal(calls.shown[0].title, '🔑 Kode pasangan baru: 123456');
+    assert.equal(calls.shown[0].options.body, 'Berlaku 2 menit — ketik di halaman pasang di perangkat tujuan.');
+    assert.equal(calls.shown[0].options.tag, 'pairing-code', 'a newer code replaces the older notification');
+    assert.equal(calls.shown[1].options.tag, 'device-paired');
+    for (const n of calls.shown) {
+      assert.deepEqual(plain(n.options.actions), []);
+      assert.equal(n.options.renotify, false);
+      assert.equal(n.options.data.url, '/');
+    }
+  });
+
   test('an unreadable payload still shows a notification (browsers punish silent pushes)', async () => {
     const { listeners, calls } = loadSw();
     await dispatch(listeners.push, { data: { json: () => { throw new SyntaxError('bad'); } } });

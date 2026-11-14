@@ -31,6 +31,7 @@ const ACT_FAILURE_WINDOW_MS = 60 * 1000;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/; // 32 random bytes, base64url
 const TAB_RE = /^[\w-]{1,64}$/;
 const MAX_TABS = 20;
+const PAIRING_PUSH_GAP_MS = 60 * 1000; // at most one pairing-code push per minute (auto-rotation on wrong guesses must not buzz-spam)
 
 /** Per push type: Urgency, TTL (s), Topic prefix (null = no Topic). `answered` replaces `ask` (same Topic). */
 export const PUSH_SPEC = Object.freeze({
@@ -40,6 +41,9 @@ export const PUSH_SPEC = Object.freeze({
   error: Object.freeze({ urgency: 'normal', ttl: 3600, topic: 'e' }),
   queue: Object.freeze({ urgency: 'normal', ttl: 3600, topic: 'q' }),
   test: Object.freeze({ urgency: 'normal', ttl: 60, topic: null }),
+  // The pairing code lives 2 minutes (remote.js PAIRING_TTL_MS); the paired notice outlives it a little.
+  pairing: Object.freeze({ urgency: 'high', ttl: 120, topic: null }),
+  paired: Object.freeze({ urgency: 'normal', ttl: 300, topic: null }),
 });
 
 /**
@@ -232,6 +236,7 @@ export class PushService {
     this.answering = null; // { approvalId, deviceId } while /api/push/act resolves an approval
     this.visible = new Map(); // deviceId -> Map(tab -> { visible, at })
     this.lastTest = new Map(); // deviceId -> time of the last test push
+    this.lastPairingPush = 0; // time of the last pairing-code push (in memory: a restart resets the rate limit, acceptable)
     this.backoff = new Map(); // deviceId -> epoch ms until which nothing is sent (429/503)
     this.queuePauses = new Map(); // projectId -> pause reason already announced
     // The laptop's notification log (data/push-history.json, never in a backup): what was sent, to which devices.
@@ -347,6 +352,63 @@ export class PushService {
     const result = await this.enqueue(device.id, payload, PUSH_SPEC.test);
     this.record({ type: 'test', project: '', projectName: PRODUCT_NAME, role: PRODUCT_NAME, devices: [device.name] });
     return { ok: Boolean(result?.ok), status: result?.status ?? null };
+  }
+
+  // ---------- pairing code to the owner's phones ----------
+
+  /** The phones that may get the pairing pushes: eligible (targets) with 🔔 not switched off. */
+  pairingTargets(exceptDeviceId = null) {
+    return this.targets().filter((d) => d.id !== exceptDeviceId && d.push.settings?.enabled !== false);
+  }
+
+  /**
+   * A fresh pairing code exists (created, not read from cache): push it so the owner away from the laptop
+   * screen can still pair. Only https-paired, subscribed, not-idle devices get it — like every push (§B4).
+   * Rate limit: at most one code push per minute — a flood of wrong guesses rotates the code often, but the
+   * phone is not turned into a siren; the new code itself stays active and is shown on the laptop. The gap
+   * starts only after a push that actually reached at least one device (pushed > 0): an empty round (no
+   * eligible device) must not swallow the next code too.
+   * The code never lands in push-history.json: record() stores only type and device names (loadHistory drops
+   * anything else), so there is nothing to redact — the secret simply has no field to sit in.
+   * @param {{ code: string, expiresAt?: number }} input
+   * @returns {Promise<{ pushed: number, skipped: boolean }>} pushed = sends that the push services accepted
+   */
+  async sendPairingCode({ code, expiresAt }) {
+    const now = this.now();
+    if (now - this.lastPairingPush < PAIRING_PUSH_GAP_MS) return { pushed: 0, skipped: true };
+    const minutes = Number.isFinite(expiresAt) ? Math.max(1, Math.round((expiresAt - now) / 60_000)) : 1;
+    const payload = this.payload('pairing', {
+      project: '',
+      role: '',
+      title: `🔑 Kode pasangan baru: ${code}`,
+      body: `Berlaku ${minutes} menit — ketik di halaman pasang di perangkat tujuan.`,
+      silent: false,
+    });
+    const devices = this.pairingTargets();
+    const results = await Promise.all(devices.map((d) => this.enqueue(d.id, payload, PUSH_SPEC.pairing)));
+    const pushed = results.filter((r) => r?.ok).length;
+    if (pushed > 0) this.lastPairingPush = now; // a delivered push starts the 1-minute gap; a failed/empty one does not
+    if (devices.length) this.record({ type: 'pairing', project: '', projectName: PRODUCT_NAME, role: '', devices: devices.map((d) => d.name).slice(0, 20) });
+    return { pushed, skipped: false };
+  }
+
+  /**
+   * A device just paired (POST /pair or the QR link): tell the other phones. The new device is excluded —
+   * it has no subscription yet (it paired seconds ago), and the notice would be useless to it.
+   * @param {{ id: string, name: string }} device the freshly paired device record
+   */
+  async sendPairedNotice(device) {
+    const payload = this.payload('paired', {
+      project: '',
+      role: '',
+      title: `✅ Perangkat "${cut(device?.name, 40)}" berhasil dipasang`,
+      body: 'Perangkat itu kini bisa membuka kantor ini.',
+      silent: false,
+    });
+    const devices = this.pairingTargets(device?.id);
+    const results = await Promise.all(devices.map((d) => this.enqueue(d.id, payload, PUSH_SPEC.paired)));
+    if (devices.length) this.record({ type: 'paired', project: '', projectName: PRODUCT_NAME, role: '', devices: devices.map((d) => d.name).slice(0, 20) });
+    return { pushed: results.filter((r) => r?.ok).length, skipped: false };
   }
 
   // ---------- forgetting ----------

@@ -3,10 +3,11 @@
 // private key to check what a phone would actually show. No network, no server process.
 import assert from 'node:assert/strict';
 import { createDecipheriv, createECDH, hkdfSync } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { Hub } from '../src/hub.js';
 import { ACT_TTL_MS, LOCKSCREEN_SAFE_TOOLS, PUSH_SPEC, PushService, VISIBLE_TTL_MS, parseSettings, parseSubscription, phoneClock, wifiApproval } from '../src/push.js';
 import { RemoteAccess } from '../src/remote.js';
@@ -584,4 +585,118 @@ test('POST /api/push/test: one per device per 10 s (429 + Retry-After)', async (
   assert.equal((await call(b.device)).status, 200, 'per device');
   clock.now += 10_000;
   assert.equal((await call(a.device)).status, 200, 'after the cooldown');
+});
+
+// ---------- kode pasangan via push ----------
+
+test('sendPairingCode: only eligible https devices get the code, title carries it, never the history, dedupe 1/min', async () => {
+  const { push, clock, addDevice, inbox } = setup();
+  const phone = addDevice('Android · Chrome');
+  addDevice('WiFi-HP', { transport: 'http' }); // token http: tidak pernah dapat push (terikat transport)
+  addDevice('Bell-Off', { settings: { ...SETTINGS, enabled: false } });
+  addDevice('TanpaLangganan', { settings: null });
+  const code = '123456';
+  const out = await push.sendPairingCode({ code, expiresAt: clock.now + 120_000 });
+  assert.deepEqual(out, { pushed: 1, skipped: false }, 'hanya HP https yang berlangganan dan 🔔 aktif');
+  const [msg] = inbox(phone);
+  assert.equal(msg.headers.Urgency, 'high');
+  assert.equal(msg.headers.TTL, '120', 'TTL = umur kode (2 menit)');
+  assert.equal(msg.payload.type, 'pairing');
+  assert.equal(msg.payload.title, '🔑 Kode pasangan baru: 123456');
+  assert.match(msg.payload.body, /Berlaku 2 menit/);
+  assert.ok(!JSON.stringify(push.historyView()).includes(code), 'kode tidak pernah masuk riwayat notifikasi');
+  assert.equal(push.historyView()[0].type, 'pairing');
+
+  // Rotasi beruntun (banyak tebakan salah) tidak boleh membuat HP berbunyi tiap detik.
+  clock.now += 30_000;
+  assert.deepEqual(await push.sendPairingCode({ code: '654321', expiresAt: clock.now + 120_000 }), { pushed: 0, skipped: true }, '< 1 menit: push dilewati, kode baru tetap aktif');
+  assert.equal(inbox(phone).length, 1);
+  clock.now += 31_000;
+  assert.deepEqual(await push.sendPairingCode({ code: '654321', expiresAt: clock.now + 120_000 }), { pushed: 1, skipped: false });
+  assert.equal(inbox(phone)[1].payload.title, '🔑 Kode pasangan baru: 654321');
+
+  // Tanpa perangkat yang eligible: tidak ada yang terkirim — dan push itu TIDAK memulai gap: kode berikutnya
+  // boleh langsung dikirim (gap hanya berlaku setelah push yang benar-benar sampai, pushed > 0).
+  phone.device.push = undefined;
+  clock.now += 61_000;
+  assert.deepEqual(await push.sendPairingCode({ code: '999999', expiresAt: clock.now + 120_000 }), { pushed: 0, skipped: false });
+  clock.now += 1000;
+  push.subscribe(phone.device, { subscription: phone.browser.subscription, settings: SETTINGS });
+  assert.deepEqual(await push.sendPairingCode({ code: '888888', expiresAt: clock.now + 120_000 }), { pushed: 1, skipped: false }, 'round sebelumnya 0 terkirim: langsung dikirim');
+  clock.now += 1000;
+  assert.deepEqual(await push.sendPairingCode({ code: '777777', expiresAt: clock.now + 120_000 }), { pushed: 0, skipped: true }, 'push yang sampai baru saja: gap 1 menit berlaku');
+});
+
+test('dua pasangan hampir bersamaan: tiap notice menyebut device dari hasil pair() (bukan tebakan record terakhir)', async () => {
+  const { push, remote, addDevice, inbox } = setup();
+  const old = addDevice('Lama');
+  const a = remote.pair({ key: remote.currentPairing().key }, 'iPhone Safari/1', '10.0.0.2', { transport: 'https' });
+  const b = remote.pair({ key: remote.currentPairing().key }, 'Android Chrome/1', '10.0.0.3', { transport: 'https' });
+  // server.js announces exactly what pair() returned (announcePairedDevice(result.device)).
+  assert.deepEqual(await push.sendPairedNotice(a.device), { pushed: 1, skipped: false });
+  assert.deepEqual(await push.sendPairedNotice(b.device), { pushed: 1, skipped: false });
+  const msgs = inbox(old);
+  assert.equal(msgs[0].payload.title, '✅ Perangkat "iPhone · Safari" berhasil dipasang');
+  assert.equal(msgs[1].payload.title, '✅ Perangkat "Android · Chrome" berhasil dipasang');
+});
+
+test('route /api/pairing/code/push: laptop only (LOCAL_ONLY), needs phone access on, rotates the code, no double announce', async () => {
+  // (a) The 403 for every paired phone comes from server.js's LOCAL_ONLY gate, before the route runs: the route
+  //     module cannot test that gate, so the test pins the registration like routes.test.mjs does (read the source).
+  const server = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server.js'), 'utf8');
+  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  assert.ok(localOnly.includes("'/api/pairing/code/push'"), 'a paired phone gets 403 (laptop only)');
+
+  const { hub, svc, clock, addDevice, inbox } = setup();
+  const hookCalls = []; // server.js's onNewCode hook: a fresh code would be pushed again through here
+  const remote = new RemoteAccess(hub, { onNewCode: (info) => hookCalls.push(info) });
+  remote.state.enabled = true;
+  const push = new PushService({ hub, remote, fetch: svc.fetch, now: () => clock.now, log: () => {}, warn: () => {} });
+  const phone = addDevice('Android · Chrome');
+  const router = buildRouter();
+  const ctx = { hub, remote, push };
+  const call = async () => {
+    const res = fakeRes();
+    await router.match('POST', '/api/pairing/code/push').route.handler(ctx, {}, res, {}, {});
+    return res;
+  };
+
+  // (b) Phone access off: the laptop itself is told to turn it on first (400, not 403 — it IS the laptop).
+  remote.setEnabled(false);
+  const off = await call();
+  assert.deepEqual([off.status, off.body.error], [400, 'Nyalakan akses dari HP dulu.']);
+  remote.state.enabled = true;
+
+  // (c) Success: a brand-new code is pushed and IS the one now active in remote; the onNewCode hook stays
+  //     silent (announce: false), so the phone gets exactly one notification.
+  const ok = await call();
+  assert.deepEqual(Object.keys(ok.body).sort(), ['code', 'expires', 'ok', 'pushed', 'skipped']);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.ok, true);
+  assert.deepEqual([ok.body.pushed, ok.body.skipped], [1, false]);
+  assert.equal(hookCalls.length, 0, 'the hook did not double-push');
+  const active = remote.currentPairing();
+  assert.equal(active.code, ok.body.code, 'the rotated code is the one active in remote');
+  assert.equal(active.expires, ok.body.expires);
+  assert.equal(inbox(phone).length, 1);
+  assert.equal(inbox(phone)[0].payload.title, `🔑 Kode pasangan baru: ${ok.body.code}`);
+
+  // Again right away: the 1-minute gap skips the push, but the code still rotates (the laptop shows the fresh one).
+  const again = await call();
+  assert.deepEqual([again.body.pushed, again.body.skipped], [0, true]);
+  assert.notEqual(again.body.code, ok.body.code);
+  assert.equal(remote.currentPairing().code, again.body.code);
+  assert.equal(hookCalls.length, 0, 'still no hook call');
+  assert.equal(inbox(phone).length, 1);
+});
+
+test('sendPairedNotice: the other phones hear about a fresh pairing, the new device itself gets nothing', async () => {
+  const { push, addDevice, inbox } = setup();
+  const old = addDevice('Lama');
+  const baru = { id: 'dev-baru', hash: 'h', name: 'Pixel · Chrome', created: 1, lastSeen: 1, transport: 'https' }; // belum berlangganan
+  assert.deepEqual(await push.sendPairedNotice(baru), { pushed: 1, skipped: false });
+  const [msg] = inbox(old);
+  assert.equal(msg.payload.type, 'paired');
+  assert.equal(msg.payload.title, '✅ Perangkat "Pixel · Chrome" berhasil dipasang');
+  assert.equal(msg.headers.Urgency, 'normal');
 });
