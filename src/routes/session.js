@@ -252,38 +252,7 @@ export function register(router) {
   }));
   // The active engine's conversations: Claude Code's transcripts, or OpenCode's own session list.
   router.post('/api/projects/:id/sessions', withSession(async ({ hub, opencode, ledger }, req, res, { project }) => {
-    const engine = hub.engineOf(project.id);
-    const sessions = engine === 'opencode' ? await openCodeSessions(opencode, project.path) : listSessions(project.path);
-    // What each session actually used (the token ledger is keyed by sessionId): shown next to its date.
-    const usage = new Map();
-    for (const row of ledger?.query?.({ accountId: 'all', projectId: project.id }) ?? []) {
-      if (!row?.sessionId) continue;
-      const u = usage.get(row.sessionId) ?? { usd: 0, tokens: 0, known: 0, rows: 0 };
-      u.rows += 1;
-      u.tokens += positive(row.input) + positive(row.output) + positive(row.cacheRead) + positive(row.cacheWrite);
-      if (typeof row.costUsd === 'number') {
-        u.usd += row.costUsd;
-        u.known += 1;
-      }
-      usage.set(row.sessionId, u);
-    }
-    for (const s of sessions) {
-      const u = usage.get(s.id);
-      if (u) s.usage = { usd: Math.round(u.usd * 100) / 100, tokens: u.tokens, rows: u.rows, known: u.known };
-    }
-    // 🏷/📦 What the user tagged or archived (persisted per project + session id), plus 📦 auto-archive by age.
-    const meta = hub.sessionMetaMap(project.id);
-    const autoDays = hub.sessionAutoArchiveDays(project.id);
-    const cutoff = autoDays ? Date.now() - autoDays * 86_400_000 : 0;
-    for (const s of sessions) {
-      const m = meta[s.id] ?? {};
-      if (m.tag) s.tag = m.tag;
-      if (m.pinned) s.pinned = true;
-      const auto = cutoff > 0 && s.updated < cutoff && m.pinned !== true;
-      if (auto) s.autoArchived = true;
-      if (m.archived === true || auto) s.archived = true;
-    }
-    return json(res, 200, { sessions, engine, current: hub.sessionIdFor(project.id), autoArchiveDays: autoDays });
+    return json(res, 200, await projectSessions({ hub, opencode, ledger }, project));
   }));
   router.post('/api/projects/:id/resume', withSession(async ({ hub, opencode }, req, res, { project, session }, body) => {
     const sessionId = String(body.sessionId ?? '');
@@ -566,6 +535,45 @@ export function register(router) {
 /** A file name that is safe on every platform (Windows included), never empty. */
 const safeFile = (s) => String(s ?? '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 80) || 'sesi';
 /** A non-negative number from an untrusted ledger row. */
+/**
+ * The active engine's conversation list for one project — the body of POST /api/projects/:id/sessions, and the
+ * building block the parent-group route merges across a group's members (sessions are read, never moved).
+ */
+export async function projectSessions({ hub, opencode, ledger }, project) {
+  const engine = hub.engineOf(project.id);
+  const sessions = engine === 'opencode' ? await openCodeSessions(opencode, project.path) : listSessions(project.path);
+  // What each session actually used (the token ledger is keyed by sessionId): shown next to its date.
+  const usage = new Map();
+  for (const row of ledger?.query?.({ accountId: 'all', projectId: project.id }) ?? []) {
+    if (!row?.sessionId) continue;
+    const u = usage.get(row.sessionId) ?? { usd: 0, tokens: 0, known: 0, rows: 0 };
+    u.rows += 1;
+    u.tokens += positive(row.input) + positive(row.output) + positive(row.cacheRead) + positive(row.cacheWrite);
+    if (typeof row.costUsd === 'number') {
+      u.usd += row.costUsd;
+      u.known += 1;
+    }
+    usage.set(row.sessionId, u);
+  }
+  for (const s of sessions) {
+    const u = usage.get(s.id);
+    if (u) s.usage = { usd: Math.round(u.usd * 100) / 100, tokens: u.tokens, rows: u.rows, known: u.known };
+  }
+  // 🏷/📦 What the user tagged or archived (persisted per project + session id), plus 📦 auto-archive by age.
+  const meta = hub.sessionMetaMap(project.id);
+  const autoDays = hub.sessionAutoArchiveDays(project.id);
+  const cutoff = autoDays ? Date.now() - autoDays * 86_400_000 : 0;
+  for (const s of sessions) {
+    const m = meta[s.id] ?? {};
+    if (m.tag) s.tag = m.tag;
+    if (m.pinned) s.pinned = true;
+    const auto = cutoff > 0 && s.updated < cutoff && m.pinned !== true;
+    if (auto) s.autoArchived = true;
+    if (m.archived === true || auto) s.archived = true;
+  }
+  return { sessions, engine, current: hub.sessionIdFor(project.id), autoArchiveDays: autoDays };
+}
+
 const positive = (n) => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0);
 
 /** A ConversationError (bad query, unknown session, too large) goes back with its own status. */
