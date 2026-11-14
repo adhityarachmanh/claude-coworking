@@ -3,7 +3,8 @@
 
 [build]
   # Tidak ada aset statis — semua halaman dirender dari fungsi (lihat src/pages.mjs).
-  publish = "."
+  # publish menunjuk folder kosong supaya source/tests/README tidak ikut terpublikasi sebagai file statis.
+  publish = "public"
 
 [functions]
   directory = "netlify/functions"
