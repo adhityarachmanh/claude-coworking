@@ -59,9 +59,9 @@ function statusText() {
   if (power.loading) return 'Memeriksa remote power…';
   if (!power.loaded) return 'Remote power belum diperiksa.';
   if (!power.configured) {
-    return 'Remote power belum diset — PC tetap dimatikan, tapi listrik tidak diputus otomatis (setel dari laptop: ⚙ → Sistem).';
+    return 'Remote power belum diset — PC tetap dimatikan, tapi listrik Bardi tidak bisa diputus (setel dari laptop: ⚙ → Sistem).';
   }
-  return `Remote power siap (jeda ${power.delaySec ?? DEFAULT_DELAY} dtk).`;
+  return `Remote power siap — Windows dimatikan dari sini, listrik diputus dari halaman jembatan (jeda ${power.delaySec ?? DEFAULT_DELAY} dtk).`;
 }
 
 function renderPower() {
@@ -139,8 +139,8 @@ async function onShutdown(pc) {
   const delay = power.delaySec ?? DEFAULT_DELAY;
   const asked = pc
     ? window.confirm(power.configured
-      ? `Matikan PC? Sesi Claude dihentikan, lalu listrik diputus jembatan ${delay} detik setelahnya.`
-      : 'Matikan PC? Sesi Claude dihentikan, lalu listrik diputus jembatan. Remote power belum diset, jadi listrik tidak diputus otomatis.')
+      ? `Matikan PC? Sesi Claude dihentikan, lalu Windows dimatikan. Listrik Bardi TIDAK diputus otomatis — halaman jembatan terbuka untuk memutus arus (jeda ${delay} detik).`
+      : 'Matikan PC? Sesi Claude dihentikan, lalu Windows dimatikan. Remote power belum diset, jadi listrik tidak bisa diputus dari jauh.')
     : window.confirm('Matikan server saja? Sesi Claude dihentikan dan Adhitron tidak bisa dibuka sampai servernya dinyalakan lagi; PC tetap menyala.');
   if (!asked) return;
   power.phase = 'busy';
@@ -159,7 +159,7 @@ async function onShutdown(pc) {
     }
     power.phase = 'done';
     power.note = pc
-      ? '⏳ PC dimatikan — jembatan memutus listrik sebentar lagi.'
+      ? '⏳ Windows dimatikan — putuskan listrik Bardi dari halaman jembatan.'
       : '⏳ Server dimatikan — halaman ini kehilangan sambungan sampai dinyalakan lagi.';
     renderPower();
   } catch (err) {

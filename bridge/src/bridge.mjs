@@ -5,9 +5,11 @@
 // Kontrak untuk Adhitron (lihat README):
 //   POST /api/heartbeat { ts, version }   header X-Bridge-Token → { ok }
 //   POST /api/off?delay=300[&hold=1]      header X-Bridge-Token → { ok, offAt, handoffUrl }
-//                                         hold=1 (tombol "Matikan PC rapi" di halaman): heartbeat TIDAK membatalkan
+//                                         hold=1 (tombol "Putus arus" di halaman): heartbeat TIDAK membatalkan
 //                                         jadwal — jadwal hanya bisa dibatalkan lewat /api/off/cancel atau /api/on.
 //   POST /api/off/cancel                  header X-Bridge-Token / X-Status-Token → { ok, cancelled } tanpa menyentuh plug
+//   POST /api/handoff                     header X-Bridge-Token / X-Status-Token → { ok, handoffUrl } tanpa jadwal/plug
+//                                         (dipakai Adhitron setelah shutdown Windows: buka halaman status, putus arus manual)
 //   POST /api/on                          header X-Bridge-Token / X-Status-Token → { ok } (selalu membatalkan jadwal)
 //   GET  /api/status                      header X-Bridge-Token / X-Status-Token → status lengkap
 //   POST /api/pair                        header X-Bridge-Token SAJA (ownerToken, bukan tiket) → { ok, code, expiresAt }
@@ -254,7 +256,8 @@ async function register(request, env, url) {
     lastHeartbeat: 0,
     offAt: null,
     offAtWrittenAt: 0,
-    offHold: false, // true = jadwal "matikan rapi" kebal pembatalan heartbeat (hanya /api/off/cancel atau /api/on)
+    offHold: false, // true = jadwal "putus arus" kebal pembatalan heartbeat (hanya /api/off/cancel atau /api/on)
+    offDelaySec: DEFAULT_DELAY_S, // jeda halaman status saat memutus arus (Adhitron mengirim offDelaySec-nya)
     powerW: null,
     powerAt: 0,
     powerTryAt: 0, // throttle PERCOBAAN sampling Tuya (berhasil/gagal) — powerAt hanya maju saat berhasil
@@ -378,8 +381,9 @@ async function heartbeat(request, env) {
 
 async function off(url, request, env) {
   const space = await requireSpace(env, request);
+  // No explicit delay (the page's "Putus arus" button): use the delay Adhitron stored with the handoff.
   const raw = url.searchParams.get('delay');
-  let delay = DEFAULT_DELAY_S;
+  let delay = Number.isInteger(space.offDelaySec) ? space.offDelaySec : DEFAULT_DELAY_S;
   if (raw !== null) {
     delay = Number(raw);
     if (!Number.isInteger(delay) || delay < 0 || delay > MAX_DELAY_S) {
@@ -399,6 +403,10 @@ async function off(url, request, env) {
   if (delay === 0) { // tanpa jeda: langsung memutus (jadwal tersisa = no-op untuk cron, plug sudah off)
     await drivePlug(await cfgFor(env, space), false, env.cycleWaitMs);
     space.lastPlug = 'off';
+    space.powerW = 0; // the plug is off: no power can flow, even if a sensor is absent
+    space.powerAt = now;
+    space.offAt = null; // nothing left for the cron to do
+    space.offHold = false;
     fired = true;
   }
   // Tiket serah-terima sekali pakai (A1, jenis 'h'): user PC membuka halaman status TANPA token
@@ -421,6 +429,26 @@ async function cancelOff(request, env) {
   space.attempts = 0;
   if (had || held) await store.putSpace(env, space);
   return json({ ok: true, cancelled: had });
+}
+
+/** POST /api/handoff[?delay=N] — a status-page ticket WITHOUT scheduling a power cut and WITHOUT touching
+ *  the plug. Adhitron calls this right before it shuts Windows down: the user lands on the status page and
+ *  decides there whether to cut the Bardi power (that action belongs to the bridge page, not to the app).
+ *  `delay` (0–3600) is remembered on the space so the page's "Putus arus" button uses the user's own setting. */
+async function handoff(request, env, url) {
+  const space = await requireSpace(env, request);
+  const raw = url.searchParams.get('delay');
+  if (raw !== null) {
+    const delay = Number(raw);
+    if (!Number.isInteger(delay) || delay < 0 || delay > MAX_DELAY_S) {
+      throw new HttpError(400, `delay harus bilangan bulat 0–${MAX_DELAY_S} detik`);
+    }
+    space.offDelaySec = delay;
+  }
+  const ticket = hex(32);
+  await store.putTicket(env, 'h', ticket, { spaceId: space.id, exp: Date.now() + TICKET_TTL_MS });
+  await store.putSpace(env, space);
+  return json({ ok: true, handoffUrl: `/s/${space.id}?t=${ticket}`, offDelaySec: Number.isInteger(space.offDelaySec) ? space.offDelaySec : DEFAULT_DELAY_S });
 }
 
 async function on(request, env, url) {
@@ -498,6 +526,7 @@ function statusOf(space, now) {
     powerAgeSec: space.powerAt > 0 ? Math.max(0, Math.floor((now - space.powerAt) / 1000)) : null,
     offAt: space.offAt ?? null,
     secondsUntilOff: space.offAt != null && space.offAt > now ? Math.ceil((space.offAt - now) / 1000) : null,
+    offDelaySec: Number.isInteger(space.offDelaySec) ? space.offDelaySec : DEFAULT_DELAY_S,
     plug: space.lastPlug ?? null,
     powerW: space.powerW ?? null,
     powerAt: space.powerAt || null,
@@ -627,6 +656,7 @@ export async function handleApi(request, env) {
     if (path.startsWith('/s/') && request.method === 'GET') return await statusPage(env, path.slice(3), url);
     if (path === '/api/heartbeat' && request.method === 'POST') return await heartbeat(request, env);
     if (path === '/api/off/cancel' && request.method === 'POST') return await cancelOff(request, env);
+    if (path === '/api/handoff' && request.method === 'POST') return await handoff(request, env, url);
     if (path === '/api/off' && request.method === 'POST') return await off(url, request, env);
     if (path === '/api/on' && request.method === 'POST') return await on(request, env, url);
     if (path === '/api/status' && request.method === 'GET') return await apiStatus(request, env);

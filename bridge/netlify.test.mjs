@@ -599,6 +599,26 @@ test('off?delay: jadwal ditulis, handoffUrl + tiket 10 menit dibuat', async () =
   assert.deepEqual(cmdValues(), [], 'delay>0: belum ada komando plug');
 });
 
+test('handoff: tiket halaman status TANPA jadwal/plug, dan delay disimpan untuk tombol Putus arus', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const h = await statusOf(await handleApi(jsonReq('/api/handoff?delay=90', {}, { 'X-Bridge-Token': token }), env));
+  assert.equal(h.status, 200, JSON.stringify(h.body));
+  assert.match(h.body.handoffUrl, new RegExp(`^/s/${id}\\?t=`));
+  assert.equal(h.body.offDelaySec, 90);
+  assert.deepEqual(cmdValues(), [], 'handoff tidak menyentuh plug');
+  let space = await getSpace(env, id);
+  assert.equal(space.offAt, null, 'tidak ada jadwal pemutusan');
+  assert.equal(space.offDelaySec, 90, 'delay aplikasi diingat halaman');
+  assert.ok(await store.getTicket(env, 'h', h.body.handoffUrl.split('t=')[1]), 'tiket serah-terima dibuat');
+  // Halaman memakai delay tersimpan saat tombol "Putus arus" ditekan (tanpa ?delay).
+  const off = await statusOf(await handleApi(jsonReq('/api/off?hold=1', {}, { 'X-Bridge-Token': token }), env));
+  assert.equal(off.status, 200);
+  const seconds = Math.ceil((off.body.offAt - Date.now()) / 1000);
+  assert.ok(seconds >= 88 && seconds <= 90, `memakai delay 90 dtk (dapat ${seconds})`);
+});
+
 test('off: delay di luar 0–3600 → 400; delay kosong → default 300', async () => {
   const env = makeEnv();
   fakeTuya();
@@ -700,7 +720,7 @@ test('heartbeat: lastHeartbeat tertulis; heartbeat datang → jadwal mati BATAL 
   assert.equal((await getSpace(env, id)).lastHeartbeat, space.lastHeartbeat, 'throttled: tidak menulis ulang');
 });
 
-test('off?hold=1 ("Matikan PC rapi" dari halaman): heartbeat TIDAK membatalkan jadwal, /api/on tetap bisa', async () => {
+test('off?hold=1 ("Putus arus" dari halaman): heartbeat TIDAK membatalkan jadwal, /api/on tetap bisa', async () => {
   const env = makeEnv();
   fakeTuya();
   powerW = 45;
@@ -941,7 +961,7 @@ test('/api/status: bentuk kontrak lengkap (state + umur bukti); booting = power 
   assert.equal(st.status, 200);
   assert.deepEqual(Object.keys(st.body).sort(), [
     'adhitronUrl', 'alive', 'booting', 'heartbeatAgeSec', 'heartbeatFresh', 'id', 'lastHeartbeat',
-    'needsAttention', 'offAt', 'plug', 'powerAgeSec', 'powerAt', 'powerFresh', 'powerW',
+    'needsAttention', 'offAt', 'offDelaySec', 'plug', 'powerAgeSec', 'powerAt', 'powerFresh', 'powerW',
     'secondsUntilOff', 'state',
   ]);
   assert.equal(st.body.alive, true, 'listrik mengalir > ambang boot = PC hidup walau tanpa heartbeat');
@@ -990,8 +1010,9 @@ test('regresi: PC mati & plug OFF — heartbeat 20 mnt lalu + daya 0 W segar →
   // Halaman yang dilihat pengguna sebelum JS polling: state + tombol server-side.
   assert.match(blockOf(html, 'state'), /PC mati/, 'bukan "PC hidup"');
   assert.equal(blockOf(html, 'state').includes('PC hidup'), false);
-  assert.equal(blockOf(html, 'btns').includes('Matikan PC rapi'), false, 'jangan tawarkan matikan rapi untuk PC yang sudah mati');
+  assert.equal(blockOf(html, 'btns').includes('Matikan PC rapi'), false, 'tidak ada tombol shutdown dari halaman');
   assert.match(blockOf(html, 'btns'), /Nyalakan PC/);
+  assert.match(blockOf(html, 'btns'), /Putus arus listrik/, 'PC sudah mati: putus arus Bardi opsional dari sini');
 });
 
 test('status: daya 45 W segar + heartbeat basi → suspected-alive (< 30 dtk), lalu booting (≥ 30 dtk); tombol hanya Putus paksa', async () => {
@@ -1017,7 +1038,7 @@ test('status: daya 45 W segar + heartbeat basi → suspected-alive (< 30 dtk), l
   const html = await page.text();
   assert.match(blockOf(html, 'state'), /kemungkinan hidup/);
   assert.match(blockOf(html, 'btns'), /Putus paksa/);
-  assert.equal(blockOf(html, 'btns').includes('Matikan PC rapi'), false);
+  assert.equal(blockOf(html, 'btns').includes('Putus arus listrik'), false, 'state belum pasti: jangan tawarkan putus arus biasa');
   // ≥ 30 dtk daya tinggi tanpa heartbeat → booting/beku
   const older = await getSpace(env, id);
   older.powerHighSince = now - 40_000;

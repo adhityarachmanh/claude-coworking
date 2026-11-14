@@ -45,9 +45,9 @@ Lewat WiFi rumah biasa (tanpa Tailscale), HP **hanya bisa melihat**. Itu disenga
 ## Daya dari HP (menyalakan / mematikan PC)
 
 1. Buka **⚡ Daya** — di header laptop, atau baris **⚡ Daya** di sheet **⋯** HP. Hanya jalan dari **laptop** atau **HP lewat 🔒 Tailscale (HTTPS)**; HP di WiFi biasa ditolak.
-2. Pilih **⏻ Matikan PC** (shutdown rapi, listrik diputus jembatan setelah jeda) atau **⏻ Matikan server saja** (PC tetap menyala).
-3. **PC mati?** Buka **Buka halaman jembatan** dari dialog yang sama. Halaman status menunjukkan keadaan sebenarnya: 🟢 hidup / 🖥 booting / 🟡 kemungkinan hidup / ⚫ mati / ⚪ belum pasti, dan tombolnya menyesuaikan — **⚡ Nyalakan PC** saat mati, **⏻ Matikan PC rapi** saat hidup, **⚠ Putus paksa** saat booting. Menyalakan saat PC masih hidup sengaja ditolak supaya PC tidak mati mendadak.
-4. Adhitron mengirim tanda "PC hidup" ke jembatan **tiap 2 menit**. Saat kamu meminta shutdown, tanda itu dijeda 12 menit supaya jadwal pemutusan tidak batal sendiri. Tombol **⏻ Matikan PC rapi** di halaman jembatan tidak bisa dibatalkan oleh tanda itu; **⚡ Nyalakan** atau **✕ Batalkan jadwal** yang membatalkannya (batalkan tidak memotong listrik).
+2. Pilih **⏻ Matikan PC** (Windows shutdown rapi; listrik Bardi **tidak** diputus otomatis) atau **⏻ Matikan server saja** (PC tetap menyala).
+3. **PC mati?** Buka **Buka halaman jembatan** dari dialog yang sama. Halaman status menunjukkan keadaan sebenarnya: 🟢 hidup / 🖥 booting / 🟡 kemungkinan hidup / ⚫ mati / ⚪ belum pasti, dan tombolnya menyesuaikan — **⚡ Nyalakan PC** saat mati, **⏻ Putus arus listrik** saat hidup (memotong arus Bardi; Windows tidak dimatikan dari sini), **⚠ Putus paksa** saat booting. Menyalakan saat PC masih hidup sengaja ditolak supaya PC tidak mati mendadak.
+4. Adhitron mengirim tanda "PC hidup" ke jembatan **tiap 2 menit**. Tombol **⏻ Putus arus listrik** di halaman jembatan tidak bisa dibatalkan oleh tanda itu; **⚡ Nyalakan** atau **✕ Batalkan jadwal** yang membatalkannya (batalkan tidak memotong listrik).
 
 Detail lengkap (setup BIOS, plug Tuya, jembatan): [Remote power](remote-power-bridge.md).
 

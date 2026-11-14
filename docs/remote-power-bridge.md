@@ -24,7 +24,7 @@ Kalau operator jembatan (mis. pengembang Adhitron) sudah menjalankan situs jemba
 
 1. Buka halaman pendaftaran situs jembatan (`/`), isi kredensial Tuya-mu sendiri (Access ID, Access Secret, Device ID, region) — lihat [Setup Tuya](#setup-tuya-bardi--smart-life). Kredensialmu **dicek langsung ke Tuya sebelum disimpan** (read-only, tanpa perintah apa pun), lalu **terenkripsi** di server; kamu mendapat **URL + token**. Kalau Tuya menolak, pendaftaran berhenti dengan alasan yang jelas dan tidak ada data yang tersimpan.
 2. Di Adhitron, buka **⚙ → Remote power** dan tempel: **URL** = bridgeUrl, **Token** = token.
-3. Selesai. Adhitron mengirim heartbeat tiap 2 menit (beat pertama langsung saat server siap), dan tombol nyalakan/matikan jalan dari kantor/HP.
+3. Selesai. Adhitron mengirim heartbeat tiap 2 menit (beat pertama langsung saat server siap). **⏻ Matikan PC** di Adhitron mematikan Windows; menyalakan PC dan memutus arus Bardi dilakukan dari halaman status jembatan.
 
 ### b) Jadi operator sendiri (deploy jembatanmu sendiri)
 
@@ -60,8 +60,9 @@ Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk
 |---|---|---|---|
 | `POST /api/heartbeat` | `X-Bridge-Token: <token>` | `{ ts, version }` — tiap 2 menit (best-effort), tanpa data pribadi | `{ ok }` |
 | `POST /api/on` | `X-Bridge-Token` / `X-Status-Token` | `?force=1` untuk memaksa siklus OFF → ON | `{ ok }` — PC masih hidup tanpa `force` → **409** |
-| `POST /api/off?delay=300[&hold=1]` | `X-Bridge-Token` / `X-Status-Token` | delay 0–3600 dtk, default 300 — dijadwalkan, cron memutus tepat waktu; `hold=1` = kebal pembatalan heartbeat (tombol "Matikan PC rapi") | `{ ok, offAt, fired, handoffUrl }` |
+| `POST /api/off?delay=300[&hold=1]` | `X-Bridge-Token` / `X-Status-Token` | delay 0–3600 dtk (kosong = `offDelaySec` dari handoff, default 300); `hold=1` = kebal pembatalan heartbeat (tombol "Putus arus") | `{ ok, offAt, fired, handoffUrl }` |
 | `POST /api/off/cancel` | `X-Bridge-Token` / `X-Status-Token` | — | `{ ok, cancelled }` — hapus jadwal tanpa menyentuh plug |
+| `POST /api/handoff[?delay=N]` | `X-Bridge-Token` / `X-Status-Token` | delay 0–3600 dtk (opsional) | `{ ok, handoffUrl, offDelaySec }` — tiket halaman status, tanpa jadwal/plug |
 | `GET /api/status` | `X-Bridge-Token` / `X-Status-Token` | — | status (di bawah) |
 
 Kode error: token salah / tiket kedaluwarsa → **401**; body salah → **400**; PC masih hidup pada `POST /api/on` tanpa `force` → **409**; kredensial Tuya ditolak → **422** (register) / **400** (manage); Tuya tak terjangkau, kuota, atau cap **300 verifikasi/hari** → **503**; register lebih dari 10 space/IP/hari → **429**.
@@ -97,12 +98,12 @@ Kode error: token salah / tiket kedaluwarsa → **401**; body salah → **400**;
 
 Percobaan sampel daya dibatasi 30 dtk, tetapi `powerAt` hanya maju bila pembacaan Tuya berhasil — sampel gagal tetap terlihat basi, jadi status tidak pernah "bohong" karena sampel lama.
 
-**Aturan pembatalan (kontrak heartbeat):** jika heartbeat datang ketika ada jadwal `offAt` di masa depan, jadwal **otomatis dibatalkan** (heartbeat = bukti PC hidup). Karena itu, saat memanggil `POST /api/off` (alur shutdown rapi) Adhitron **berhenti mengirim heartbeat 12 menit** sejak permintaan shutdown lalu melanjutkannya sendiri - kalau tidak, jadwalnya membatalkan dirinya sendiri. Pengecualian: tombol **⏻ Matikan PC rapi** di halaman status memakai `hold=1`, sehingga heartbeat **tidak** membatalkan jadwal itu; `POST /api/on` atau tombol **✕ Batalkan jadwal** (`POST /api/off/cancel`, tanpa menyentuh plug) yang membatalkannya. Listrik tetap dipotong setelah delay bila tidak dibatalkan.
+**Aturan pembatalan (kontrak heartbeat):** jika heartbeat datang ketika ada jadwal `offAt` di masa depan, jadwal **otomatis dibatalkan** (heartbeat = bukti PC hidup). Tombol **⏻ Putus arus listrik** di halaman memakai `hold=1`, sehingga heartbeat **tidak** membatalkan jadwal itu; `POST /api/on` atau tombol **✕ Batalkan jadwal** (`POST /api/off/cancel`, tanpa menyentuh plug) yang membatalkannya. Listrik tetap dipotong setelah delay bila tidak dibatalkan. Adhitron **tidak lagi menjadwalkan pemutusan** dari aplikasi — "⏻ Matikan PC" hanya mematikan Windows lalu membuka halaman status lewat `POST /api/handoff`.
 
 ## Halaman status & tiket serah-terima
 
-- `POST /api/off` mengembalikan `handoffUrl` = `/s/<id>?t=<tiket>` — tiket **sekali pakai**, TTL 10 menit, untuk membuka halaman status dari HP **tanpa token jangka panjang**. Membukanya menghapus tiket dan membuat tiket sesi baru untuk polling (tiap 10 detik, header `X-Status-Token`).
-- Halaman status menampilkan state dan tombol yang sesuai: **alive** → 🟢 PC hidup + **⏻ Matikan PC rapi** dan **▶ Buka Adhitron**; **booting**/**suspected-alive** → hanya **⚠ Putus paksa**; **off** → **⚡ Nyalakan PC**; **unknown** → **⚡ Nyalakan paksa** (konfirmasi, menyiklus listrik). Countdown **⏳ listrik diputus dalam m:ss** tetap tampil; bila jadwal aktif dan daya ≤ 5 W, barisnya menjadi **⚫ PC sudah mati · ⏳ listrik diputus dalam m:ss**. Penolakan server (mis. **409**) tampil sebagai peringatan di halaman, bukan gagal diam-diam.
+- `POST /api/off` dan `POST /api/handoff` mengembalikan `handoffUrl` = `/s/<id>?t=<tiket>` — tiket **sekali pakai**, TTL 10 menit, untuk membuka halaman status dari HP **tanpa token jangka panjang**. `handoff` hanya membuat tiket (tanpa jadwal/plug) dan dipakai Adhitron setelah Windows dimatikan; delay yang dikirim disimpan untuk tombol Putus arus. Membuka tiket menghapusnya dan membuat tiket sesi baru untuk polling (tiap 10 detik, header `X-Status-Token`).
+- Halaman status menampilkan state dan tombol yang sesuai: **alive** → 🟢 PC hidup + **⏻ Putus arus listrik** dan **▶ Buka Adhitron** (arus Bardi; Windows tidak dimatikan dari sini); **booting**/**suspected-alive** → hanya **⚠ Putus paksa**; **off** → **⚡ Nyalakan PC** + **⏻ Putus arus listrik**; **unknown** → **⚡ Nyalakan paksa** (konfirmasi, menyiklus listrik). Countdown **⏳ listrik diputus dalam m:ss** tetap tampil; bila jadwal aktif dan daya ≤ 5 W, barisnya menjadi **⚫ PC sudah mati · ⏳ listrik diputus dalam m:ss**. Penolakan server (mis. **409**) tampil sebagai peringatan di halaman, bukan gagal diam-diam.
 - Halaman juga menampilkan daya plug (watt) dan peringatan **⚠ gagal memutus — cek plug manual** bila cron 3× gagal.
 - Alur tunggu saat menyalakan dari jauh: **Nyalakan PC → booting → 🟢 → ▶ Buka Adhitron**.
 

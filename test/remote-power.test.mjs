@@ -92,7 +92,7 @@ test('route remote power: get → save → get; test memanggil jembatan (status 
   }
 });
 
-test('route shutdown dengan pc:true: OS shutdown + jembatan memutus listrik dengan delay', async () => {
+test('route shutdown dengan pc:true: Windows shutdown saja + handoff (listrik TIDAK dijadwalkan)', async () => {
   const hub = makeHub();
   hub.setRemotePower({ bridgeUrl: 'https://j.workers.dev', token: 'tok', offDelaySec: 120 });
   const calls = [];
@@ -105,8 +105,8 @@ test('route shutdown dengan pc:true: OS shutdown + jembatan memutus listrik deng
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     calls.push({ url: String(url), token: init?.headers?.['X-Bridge-Token'] });
-    // Bridge replies with the handoff URL of its countdown page (multi-tenant bridge contract).
-    return new Response(JSON.stringify({ ok: true, offAt: 12345, handoffUrl: '/s/abc?t=tiket1' }), {
+    // Bridge only issues a status-page ticket; cutting the Bardi power stays a manual action there.
+    return new Response(JSON.stringify({ ok: true, handoffUrl: '/s/abc?t=tiket1' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -118,10 +118,10 @@ test('route shutdown dengan pc:true: OS shutdown + jembatan memutus listrik deng
     await new Promise((r) => setTimeout(r, 450)); // the route defers shutdown() by 300 ms
     assert.ok(calls.includes('shutdown'), 'server dimatikan seperti biasa');
     assert.ok(calls.includes('pc-shutdown'), 'OS shutdown (PC) dijalankan lewat injeksi, bukan spawn nyata');
-    const beat = calls.find((c) => typeof c === 'object' && String(c.url).includes('/api/off'));
-    assert.ok(beat, 'jembatan dipanggil untuk memutus listrik');
+    const beat = calls.find((c) => typeof c === 'object');
+    assert.match(String(beat.url), /\/api\/handoff\?delay=120/, 'hanya minta halaman status; tidak ada jadwal pemutusan');
+    assert.equal(String(beat.url).includes('/api/off'), false, 'listrik Bardi bukan urusan aplikasi');
     assert.equal(beat.token, 'tok');
-    assert.match(String(beat.url), /delay=120/, 'listrik diputus lewat jadwal (setelah OS shutdown)');
   } finally {
     globalThis.fetch = realFetch;
   }

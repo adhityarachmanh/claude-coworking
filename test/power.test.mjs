@@ -139,13 +139,12 @@ test('route /api/shutdown: HP https Tailscale (bukan read-only) boleh — sama s
   assert.deepEqual(calls, ['shutdown'], 'server berhenti rapi; pc:false tidak menyentuh OS');
 });
 
-test('route /api/shutdown: pc:true dari HP https → halt heartbeat, bridge /api/off, handoffUrl dikembalikan', async () => {
+test('route /api/shutdown: pc:true dari HP https → Windows shutdown + handoff halaman jembatan', async () => {
   const calls = [];
   const ctx = {
     hub: hubWith(CONFIGURED),
     shutdown: () => calls.push('shutdown'),
     pcShutdown: () => calls.push('pc-shutdown'),
-    remotePowerHalt: () => calls.push('halt'),
     isLocal: () => false,
     isSecure: () => true,
     isReadOnly: () => false,
@@ -153,17 +152,18 @@ test('route /api/shutdown: pc:true dari HP https → halt heartbeat, bridge /api
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     calls.push({ url: String(url), token: init?.headers?.['X-Bridge-Token'] });
-    return new Response(JSON.stringify({ ok: true, offAt: 1, handoffUrl: '/s/abc?t=tiket1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ ok: true, handoffUrl: '/s/abc?t=tiket1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
   try {
     const res = await call('/api/shutdown', { pc: true }, ctx);
     assert.equal(res.status, 200);
-    assert.deepEqual(res.json(), { ok: true, pc: true, handoffUrl: '/s/abc?t=tiket1' }, 'halaman hitung mundur jembatan ikut dikembalikan');
+    assert.deepEqual(res.json(), { ok: true, pc: true, handoffUrl: '/s/abc?t=tiket1' }, 'halaman status jembatan ikut dikembalikan');
     const off = calls.find((c) => typeof c === 'object');
-    assert.match(String(off.url), /\/api\/off\?delay=120/, 'listrik diputus lewat jadwal jembatan');
+    assert.match(String(off.url), /\/api\/handoff\?delay=120/, 'hanya handoff — listrik Bardi diputus manual di halaman jembatan');
+    assert.equal(String(off.url).includes('/api/off'), false, 'tidak ada jadwal pemutusan dari aplikasi');
     assert.equal(off.token, 'rahasia-jembatan');
     await wait(450);
-    assert.ok(calls.includes('halt'), 'heartbeat dihentikan supaya jadwal tidak membatalkan diri');
+    assert.equal(calls.includes('halt'), false, 'heartbeat tidak perlu dijeda: tidak ada jadwal yang bisa batal');
     assert.ok(calls.includes('pc-shutdown'), 'OS shutdown dijalankan (injeksi, bukan spawn nyata)');
     assert.ok(calls.includes('shutdown'), 'server berhenti rapi');
   } finally {

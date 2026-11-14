@@ -83,8 +83,9 @@ Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk
 | `POST /api/pair` | `X-Bridge-Token: <ownerToken>` **saja** (tiket → 401) | — | `{ ok, code, expiresAt }` |
 | `POST /api/pair/claim` | — (kodenya sendiri bukti; 20 gagal/IP/jam + 3000 gagal/jam total) | `{ code }` (8 karakter base32, string) | sama dengan `POST /api/space` |
 | `POST /api/heartbeat` | `X-Bridge-Token: <ownerToken>` | `{ ts, version }` | `{ ok }` |
-| `POST /api/off?delay=300[&hold=1]` | `X-Bridge-Token` (atau `X-Status-Token`) | delay 0-3600 dtk, default 300; `hold=1` = jadwal "matikan rapi" yang kebal pembatalan heartbeat | `{ ok, offAt, fired, handoffUrl }` |
+| `POST /api/off?delay=300[&hold=1]` | `X-Bridge-Token` (atau `X-Status-Token`) | delay 0-3600 dtk (kosong = `offDelaySec` yang disimpan handoff, default 300); `hold=1` = kebal pembatalan heartbeat | `{ ok, offAt, fired, handoffUrl }` |
 | `POST /api/off/cancel` | `X-Bridge-Token` / `X-Status-Token` | - | `{ ok, cancelled }` - hapus jadwal tanpa menyentuh plug |
+| `POST /api/handoff[?delay=N]` | `X-Bridge-Token` / `X-Status-Token` | delay 0-3600 dtk (opsional, disimpan untuk tombol Putus arus) | `{ ok, handoffUrl, offDelaySec }` - tiket halaman status, tanpa jadwal/plug |
 | `POST /api/on` | `X-Bridge-Token` / `X-Status-Token` | `?force=1` untuk memaksa siklus OFF → ON | `{ ok }` · PC masih hidup tanpa `force` → **409** |
 | `GET /api/status` | `X-Bridge-Token` / `X-Status-Token` | — | status (di bawah) |
 
@@ -159,15 +160,12 @@ berhasil, jadi sampel gagal tidak pernah tampak segar.
 
 **PENTING — aturan pembatalan (kontrak heartbeat):** jika heartbeat datang ketika ada jadwal `offAt` di masa
 depan, jadwal **otomatis dibatalkan** (heartbeat = bukti PC hidup; dipakai untuk membatalkan "putus paksa"
-kalau PC ternyata hidup lagi). Karena itu client yang memanggil `POST /api/off` (alur shutdown rapi) **wajib
-berhenti mengirim heartbeat sampai proses shutdown selesai** — Adhitron menjeda heartbeat 12 menit sejak
-permintaan shutdown dan melanjutkannya sendiri setelah itu.
-
-**Pengecualian `hold=1`:** tombol **⏻ Matikan PC rapi** di halaman status memanggil
-`POST /api/off?delay=300&hold=1`. Jadwal itu **tidak** dibatalkan oleh heartbeat (listrik tetap dipotong setelah
-delay, walau Adhitron masih sempat menjawab selama OS shutdown); `POST /api/on` atau **✕ Batalkan jadwal**
-(`POST /api/off/cancel`, tanpa menyentuh plug) yang membatalkannya. Tanpa
-`hold` (dari Adhitron atau tombol **⚠ Putus paksa**), aturan pembatalan heartbeat di atas tetap berlaku.
+kalau PC ternyata hidup lagi). Karena itu tombol **⏻ Putus arus listrik** di halaman memakai
+`POST /api/off?hold=1`: jadwal itu **tidak** dibatalkan oleh heartbeat (listrik tetap dipotong setelah delay);
+`POST /api/on` atau **✕ Batalkan jadwal** (`POST /api/off/cancel`, tanpa menyentuh plug) yang membatalkannya.
+Adhitron sendiri **tidak lagi menjadwalkan pemutusan** dari aplikasi: "⏻ Matikan PC" hanya mematikan Windows
+dan meminta handoff (lihat di bawah), jadi tidak ada heartbeat yang perlu dijeda. Tanpa
+`hold` (mis. tombol **⚠ Putus paksa**), aturan pembatalan heartbeat di atas tetap berlaku.
 
 Halaman web:
 
@@ -184,8 +182,9 @@ Halaman web:
   menjawab **400** dengan alasan spesifik, jaringan → **503**, dan setelan lama tetap dipakai.
 - `/s/<id>?t=<tiket>` atau `/s/<id>?token=<ownerToken>` — halaman status; polling `GET /api/status` tiap 10 dtk
   dengan header **`X-Status-Token`** (aturan halaman: bukan `X-Bridge-Token`) membawa tiket sesi / ownerToken.
-  Tombol mengikuti `state` — `alive`: **⏻ Matikan PC rapi** + **▶ Buka Adhitron**; `booting`/`suspected-alive`:
-  hanya **⚠ Putus paksa**; `off`: **⚡ Nyalakan PC**; `unknown`: **⚡ Nyalakan paksa** (konfirmasi, memakai
+  Tombol mengikuti `state` — `alive`: **⏻ Putus arus listrik** + **▶ Buka Adhitron** (memotong arus Bardi; Windows
+  tidak dimatikan dari sini); `booting`/`suspected-alive`: hanya **⚠ Putus paksa**; `off`: **⚡ Nyalakan PC** +
+  **⏻ Putus arus listrik**; `unknown`: **⚡ Nyalakan paksa** (konfirmasi, memakai
   `/api/on?force=1`). Penolakan **409** ditampilkan sebagai peringatan di halaman, bukan gagal diam-diam.
   Bila jadwal aktif dan daya ≤ 5 W: **⚫ PC sudah mati · ⏳ listrik diputus dalam m:ss**.
 
@@ -233,9 +232,10 @@ Satu pass per tick, tidak pernah loop: untuk tiap space dengan `offAt` jatuh tem
 
 ⚙ → **Remote power**: kolom URL = `bridgeUrl` dari pendaftaran (mis. `https://adhitron-bridge.netlify.app`),
 token = `token`. Adhitron mengirim **beat pertama segera saat server siap, lalu tiap 2 menit**
-(`OFFICE_POWER_BEAT_MS` bisa menimpanya: integer milidetik ≥ 60000; nilai lebih kecil diabaikan). Saat shutdown: panggil `POST /api/off?delay=300`
-lalu **berhenti heartbeat 12 menit** (kontrak pembatalan tetap: heartbeat saat jadwal aktif membatalkan jadwal);
-buka `handoffUrl` untuk halaman status serah-terima di HP.
+(`OFFICE_POWER_BEAT_MS` bisa menimpanya: integer milidetik ≥ 60000; nilai lebih kecil diabaikan). Saat pengguna
+memilih **⏻ Matikan PC**, Adhitron hanya memanggil `POST /api/handoff?delay=<offDelaySec>` (tiket halaman status,
+tanpa jadwal/plug), lalu menjalankan `shutdown /s /t 45` untuk Windows. Memutus arus Bardi dilakukan **manual**
+dari halaman status (**⏻ Putus arus listrik**); heartbeat berhenti sendiri karena server ikut mati.
 
 ## Test
 
@@ -243,7 +243,7 @@ buka `handoffUrl` untuk halaman status serah-terima di HP.
 node --test --test-timeout=60000 "bridge/**/*.test.mjs"
 ```
 
-**68 tes** (`node --test`), menggunakan fake fetch Tuya + fake Blobs - tanpa jaringan. Mencakup: register &
+**69 tes** (`node --test`), menggunakan fake fetch Tuya + fake Blobs - tanpa jaringan. Mencakup: register &
 enkripsi (tidak ada plaintext di store), validasi kredensial ke Tuya sebelum menyimpan (422/503, pesan tanpa
 kredensial), throttle 10/IP/hari, auth 401, jadwal off + tiket sekali pakai, pembatalan via heartbeat,
 cron sukses / coba ulang / needsAttention / batal, `hold=1` (heartbeat tidak membatalkan "matikan rapi"), `/api/on` (409 saat PC masih hidup, `?force=1`, hapus jadwal),

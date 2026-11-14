@@ -211,14 +211,14 @@ export function initSettings() {
   });
   $('#btn-shutdown').addEventListener('click', async () => {
     const pc = $('#rp-shutdown-pc')?.checked === true;
-    if (!window.confirm(pc ? `Matikan server ${APP_NAME} dan PC-nya? Sesi Claude yang sedang berjalan dihentikan dengan rapi, lalu listrik diputus jembatan.` : `Matikan server ${APP_NAME}? Sesi Claude yang sedang berjalan ikut dihentikan.`)) return;
+    if (!window.confirm(pc ? `Matikan server ${APP_NAME} dan Windows PC-nya? Sesi Claude yang sedang berjalan dihentikan dengan rapi, lalu Windows shutdown. Listrik Bardi tidak diputus otomatis — halaman jembatan terbuka untuk memutus arus.` : `Matikan server ${APP_NAME}? Sesi Claude yang sedang berjalan ikut dihentikan.`)) return;
     const out = await api('/api/shutdown', { pc }).catch(() => {});
     // ⏻ Handoff ke halaman jembatan (countdown pemutusan listrik): TAB YANG SAMA, tanpa toast — halaman berganti.
     if (pc && out?.handoffUrl) {
       window.location.href = out.handoffUrl;
       return;
     }
-    toast(pc ? 'PC dimatikan: server ditutup rapi, lalu listrik diputus jembatan.' : 'Server dimatikan. Jalankan start-office.cmd untuk menyalakan lagi.', 'ok');
+    toast(pc ? 'Windows dimatikan: server ditutup rapi. Putuskan listrik Bardi dari halaman jembatan.' : 'Server dimatikan. Jalankan start-office.cmd untuk menyalakan lagi.', 'ok');
   });
   // ⚡ Remote power (opsional): the self-hosted bridge that boots/cuts the PC when away.
   const rpFill = (rp) => {

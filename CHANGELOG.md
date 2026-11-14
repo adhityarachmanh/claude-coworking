@@ -2,8 +2,9 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.33
 
+- **⏻ Pemisahan tegas: aplikasi mematikan Windows, halaman jembatan memutus arus Bardi.** Tombol **⏻ Matikan PC** di Adhitron (dan centang "ikut mematikan Windows" di ⚙) kini **hanya menjalankan shutdown Windows** (`/s /t 45`) — tidak lagi menjadwalkan pemutusan listrik lewat bridge. Setelah itu halaman status jembatan terbuka; di sana **⏻ Putus arus listrik** memotong listrik Bardi memakai jeda `offDelaySec` (default 120 dtk). Tombol yang sama tersedia saat state `off`. Heartbeat tidak lagi dijeda karena aplikasi tidak membuat jadwal. Bridge mendapat endpoint `POST /api/handoff` (tiket halaman status tanpa jadwal/plug) dan `POST /api/off` tanpa `delay` memakai jeda tersimpan. Deploy bridge Netlify lebih dulu, lalu rilis aplikasi.
 - **🌍 Semua 7 data center Tuya + deteksi region otomatis.** Form jembatan kini menampilkan `eu`, `eu-west`, `america`, `us-east`, `asia`, `india`, dan `singapore` (sebelumnya hanya 3). Kalau region yang dipilih ditolak, jembatan mencoba ketujuh endpoint Tuya secara paralel (read-only: token + status device) dan **menyimpan region yang benar** — salah pilih region tidak lagi menggagalkan pendaftaran. Ubah di halaman Kelola dengan perilaku yang sama. **Perbaikan penting:** signature Tuya kini memakai header `t` dan menyertakan URL/path di stringToSign — sebelumnya keduanya salah sehingga **semua** permintaan token ditolak `1004 sign invalid`, walau credential-nya benar. Kredensial juga di-trim (spasi/newline tak terlihat tidak lagi merusak signature). Deploy bridge Netlify; tidak perlu rilis aplikasi.
 
 ## 1.0.32

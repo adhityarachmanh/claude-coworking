@@ -36,7 +36,7 @@ export function register(router) {
   });
   // ⚡ What the UI needs before offering the power button: configured?, bridge URL, delay. Never the token.
   router.post('/api/power/status', ({ hub }, req, res) => json(res, 200, powerStatus(hub)));
-  router.post('/api/shutdown', async ({ shutdown, hub, device, pcShutdown = spawnPcShutdown, remotePowerHalt, isLocal, isSecure, isReadOnly }, req, res, params, body) => {
+  router.post('/api/shutdown', async ({ shutdown, hub, device, pcShutdown = spawnPcShutdown, isLocal, isSecure, isReadOnly }, req, res, params, body) => {
     // Defence in depth: server.js already refuses this before the route (SECURE_ONLY), but the rule lives in
     // src/power.js so it can be unit-tested — a phone on plain-HTTP WiFi may never power the PC off. Test
     // contexts without transport signals (no isLocal/isSecure) skip it and rely on the server gate.
@@ -48,13 +48,11 @@ export function register(router) {
     if (body?.pc === true) {
       const rp = hub.remotePower();
       if (rp.bridgeUrl && rp.token) {
-        // ⚡ Remote power: shutdown the PC gracefully FIRST (the OS closes everything), then the bridge cuts the
-        // power later (its cron fires the scheduled off after the delay) — never mid-write.
-        // The bridge replies with a handoff URL (its countdown page): it must be read BEFORE json() is sent,
-        // because the response then carries it for the UI to open. Bridge down/timeout → shutdown goes on without it.
-        remotePowerHalt?.(); // contract: no more heartbeats once an off is scheduled (else the schedule cancels itself)
+        // ⚡ Separation of concerns: the app shuts WINDOWS down; cutting the Bardi power is the bridge page's
+        // job. We only ask the bridge for a one-time status-page link (handoff) — no schedule, no plug command.
+        // The bridge replies with a relative path: read it BEFORE json() so the UI can open it.
         try {
-          const off = await fetch(`${rp.bridgeUrl}/api/off?delay=${rp.offDelaySec}`, {
+          const off = await fetch(`${rp.bridgeUrl}/api/handoff?delay=${rp.offDelaySec}`, {
             method: 'POST',
             headers: { 'X-Bridge-Token': rp.token },
             signal: AbortSignal.timeout(3000),
@@ -67,12 +65,12 @@ export function register(router) {
             && (url.startsWith('/s/') || (url.startsWith('/') && !url.startsWith('//')));
           if (safe) handoffUrl = url;
         } catch (err) {
-          console.error('Remote power off:', err.message); // jembatan tak terjangkau: tetap matikan, tanpa handoff
+          console.error('Remote power handoff:', err.message); // jembatan tak terjangkau: tetap matikan, tanpa handoff
         }
-        if (device) console.log(`Listrik diputus jembatan dalam ${rp.offDelaySec} dtk (permintaan dari "${device.name}")`);
+        if (device) console.log(`Halaman status jembatan disiapkan (permintaan shutdown Windows dari "${device.name}")`);
       }
       json(res, 200, handoffUrl ? { ok: true, pc: true, handoffUrl } : { ok: true, pc: true });
-      pcShutdown(); // OS shutdown (Windows: /t 45 s) — the bridge cuts the power after its own delay
+      pcShutdown(); // OS shutdown only (Windows: /t 45 s); the Bardi power stays on until cut from the bridge page
       console.log('PC dimatikan oleh OS (shutdown tertunda) — server dimatikan lebih dulu dengan rapi');
       setTimeout(shutdown, 300);
       return;

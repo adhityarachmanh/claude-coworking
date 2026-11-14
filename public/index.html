@@ -1173,16 +1173,16 @@
           <!-- ⚡ Remote power (opsional): jembatan self-hosted yang bisa boot/memutus PC dari jauh (spec: docs/remote-power-bridge.md) -->
           <div class="oc-config" role="group" aria-labelledby="rp-title">
             <b id="rp-title">⚡ Remote power (matikan PC dari jauh)</b>
-            <p class="muted small">Jembatan sendiri (open-source, <a href="https://github.com/adhityarachmanh/claude-coworking/tree/main/bridge" target="_blank" rel="noopener">panduan deploy</a>) + smart plug: nyalakan PC dari jauh (BIOS power-on) dan putus listriknya setelah shutdown.</p>
+            <p class="muted small">Jembatan sendiri (open-source, <a href="https://github.com/adhityarachmanh/claude-coworking/tree/main/bridge" target="_blank" rel="noopener">panduan deploy</a>) + smart plug: nyalakan PC dari jauh (BIOS power-on) dan putus arus Bardi dari halaman jembatan setelah Windows dimatikan.</p>
             <label class="oc-field" for="rp-url"><span>URL jembatan</span><input id="rp-url" placeholder="https://remote-power.xxx.workers.dev" autocomplete="off" spellcheck="false" /></label>
             <label class="oc-field" for="rp-token"><span>Token jembatan</span><input id="rp-token" type="password" autocomplete="off" spellcheck="false" /></label>
-            <label class="oc-field" for="rp-delay"><span>Jeda sebelum listrik diputus (detik, 0-600)</span><input id="rp-delay" type="number" min="0" max="600" value="120" inputmode="numeric" autocomplete="off" /></label>
+            <label class="oc-field" for="rp-delay"><span>Jeda sebelum listrik diputus di halaman jembatan (detik, 0-600)</span><input id="rp-delay" type="number" min="0" max="600" value="120" inputmode="numeric" autocomplete="off" /></label>
             <div class="rp-row">
               <button type="button" id="rp-save" class="ghost">Simpan</button>
               <button type="button" id="rp-test" class="ghost">⚡ Uji koneksi</button>
               <small id="rp-result" class="muted" aria-live="polite"></small>
             </div>
-            <label class="switch" id="rp-pc-row"><input id="rp-shutdown-pc" type="checkbox" /> ⏻ tombol di bawah ikut <b>mematikan PC</b> (shutdown OS dulu, listrik menyusul)</label>
+            <label class="switch" id="rp-pc-row"><input id="rp-shutdown-pc" type="checkbox" /> ⏻ tombol di bawah ikut <b>mematikan Windows</b> (listrik Bardi diputus dari halaman jembatan)</label>
           </div>
           <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
           </div>

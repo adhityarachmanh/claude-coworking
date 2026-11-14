@@ -1162,7 +1162,6 @@ const powerBeat = new RemotePowerBeat({
   onError: (err) => console.error('Remote power heartbeat:', err.message), // retried next tick; never crashes
 });
 powerBeat.start(); // the first beat goes out at once, then every 2 minutes (OFFICE_POWER_BEAT_MS overrides)
-ctx.remotePowerHalt = () => powerBeat.halt(); // set by /api/shutdown (pc) in src/routes/misc.js
 setInterval(() => remote.pruneIdle(), 60 * 60 * 1000).unref();
 
 server.on('error', (err) => {
