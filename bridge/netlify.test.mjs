@@ -2,7 +2,7 @@
 // fetch Tuya dan store Blobs difake (driver Map); tanpa jaringan, tanpa runtime Netlify.
 // Jalankan: node --test --test-timeout=60000 bridge/
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { after, test } from 'node:test';
 import vm from 'node:vm';
 import { handleApi, scheduledSweep } from './src/bridge.mjs';
@@ -27,7 +27,7 @@ const fakeTuya = (opts = {}) => {
   calls.length = 0;
   globalThis.fetch = async (url, init) => {
     const u = String(url);
-    calls.push({ url: u, method: init?.method ?? 'GET', body: init?.body ? JSON.parse(init.body) : null });
+    calls.push({ url: u, method: init?.method ?? 'GET', body: init?.body ? JSON.parse(init.body) : null, headers: init?.headers ?? {} });
     if (opts.networkError) throw new TypeError('fetch failed'); // seperti DNS mati / AbortSignal.timeout
     if (u.includes('/v1.0/token')) {
       // `goodHost` models the real rule: a Cloud Project's credentials only work in its own data center.
@@ -1270,6 +1270,30 @@ test('halaman: ketujuh data center Tuya tampil di form register & manage', async
   }
   const manage = await (await handleApi(req(`/manage?token=${token}`), env)).text();
   assert.match(manage, /value="eu"\s+selected/, 'the saved region stays selected');
+});
+
+test('signature Tuya: header `t`, token memakai hash body kosong, command memakai hash body-nya', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { token } } = await doRegister(env);
+  const sha = (text) => createHash('sha256').update(text).digest('hex');
+  const mac = (text) => createHmac('sha256', SECRET).update(text).digest('hex').toUpperCase();
+  const tokenCall = calls.find((c) => c.url.includes('/v1.0/token'));
+  const statusCall = calls.find((c) => c.url.includes('/status'));
+  assert.ok(tokenCall.headers.t, 'header `t` dikirim (Tuya membacanya, bukan `timestamp`)');
+  assert.equal(tokenCall.headers.t, tokenCall.headers.timestamp, 'keduanya sama untuk gateway lama');
+  const urlPart = (path) => `\n\n${path}`;
+  assert.equal(tokenCall.headers.sign, mac(CID + tokenCall.headers.t + 'GET\n' + sha('') + urlPart('/v1.0/token?grant_type=1')), 'token: body kosong + URL token');
+  assert.equal(statusCall.headers.t, statusCall.headers.timestamp);
+  assert.equal(statusCall.headers.sign, mac(CID + 'tok-1' + statusCall.headers.t + 'GET\n' + sha('') + urlPart(`/v1.0/devices/${DEVICE}/status`)), 'status: GET tanpa body + path');
+
+  calls.length = 0;
+  const off = await statusOf(await handleApi(req('/api/off?delay=0', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(off.status, 200, JSON.stringify(off.body));
+  const command = calls.find((c) => c.url.includes('/commands'));
+  assert.ok(command, 'perintah OFF dikirim');
+  const commandBody = JSON.stringify(command.body);
+  assert.equal(command.headers.sign, mac(CID + 'tok-1' + command.headers.t + 'POST\n' + sha(commandBody) + urlPart(`/v1.0/devices/${DEVICE}/commands`)), 'command: hash body JSON + path');
 });
 
 // ---------------------------------------------------------------- halaman

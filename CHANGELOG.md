@@ -4,7 +4,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
-- **🌍 Semua 7 data center Tuya + deteksi region otomatis.** Form jembatan kini menampilkan `eu`, `eu-west`, `america`, `us-east`, `asia`, `india`, dan `singapore` (sebelumnya hanya 3). Kalau region yang dipilih ditolak, jembatan mencoba ketujuh endpoint Tuya secara paralel (read-only: token + status device) dan **menyimpan region yang benar** — salah pilih region tidak lagi menggagalkan pendaftaran. Ubah di halaman Kelola dengan perilaku yang sama. Deploy bridge Netlify; tidak perlu rilis aplikasi.
+- **🌍 Semua 7 data center Tuya + deteksi region otomatis.** Form jembatan kini menampilkan `eu`, `eu-west`, `america`, `us-east`, `asia`, `india`, dan `singapore` (sebelumnya hanya 3). Kalau region yang dipilih ditolak, jembatan mencoba ketujuh endpoint Tuya secara paralel (read-only: token + status device) dan **menyimpan region yang benar** — salah pilih region tidak lagi menggagalkan pendaftaran. Ubah di halaman Kelola dengan perilaku yang sama. **Perbaikan penting:** signature Tuya kini memakai header `t` dan menyertakan URL/path di stringToSign — sebelumnya keduanya salah sehingga **semua** permintaan token ditolak `1004 sign invalid`, walau credential-nya benar. Kredensial juga di-trim (spasi/newline tak terlihat tidak lagi merusak signature). Deploy bridge Netlify; tidak perlu rilis aplikasi.
 
 ## 1.0.32
 

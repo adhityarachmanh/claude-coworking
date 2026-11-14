@@ -85,14 +85,17 @@ const html = (text, status = 200) => new Response(text, { status, headers: HTML_
 
 const isStr = (v, min = 1, max = 200) => typeof v === 'string' && v.length >= min && v.length <= max;
 
-/** Validasi body register/manage → kredensial ternormalisasi; error = HttpError 400. */
+/** Validasi body register/manage → kredensial ternormalisasi; error = HttpError 400.
+ *  Nilai di-trim: menempel Access Secret dari halaman Tuya sering membawa spasi/newline tak terlihat, dan
+ *  satu spasi saja membuat signature HMAC berbeda → Tuya menjawab "sign invalid" walau secret benar. */
 function readCreds(body) {
   const out = {};
   for (const field of ['tuyaClientId', 'tuyaClientSecret', 'tuyaDeviceId']) {
-    if (!isStr(body[field])) throw new HttpError(400, `${field} wajib string 1–200 karakter`);
-    out[field] = body[field];
+    const value = String(body[field] ?? '').trim();
+    if (!isStr(value)) throw new HttpError(400, `${field} wajib string 1–200 karakter`);
+    out[field] = value;
   }
-  if (!isValidRegion(body.tuyaRegion)) throw new HttpError(400, 'tuyaRegion harus salah satu dari: eu, america, asia');
+  if (!isValidRegion(body.tuyaRegion)) throw new HttpError(400, 'tuyaRegion harus salah satu data center Tuya (eu, eu-west, america, us-east, asia, india, singapore)');
   out.tuyaRegion = normalizeRegion(body.tuyaRegion);
   return out;
 }
@@ -108,10 +111,14 @@ function readAdhitronUrl(raw) {
  *  jaringan atau kuota Tuya = gangguan sementara (503, boleh coba lagi). */
 function tuyaHttpError(err, rejectStatus) {
   const cls = tuyaErrorClass(err);
+  // The numeric Tuya code (e.g. 1004 sign invalid, 1106 device/permission) is safe to show and is the fastest
+  // way for the owner to see WHY a credential was refused. It never contains the secret.
+  const code = Number(err?.detail);
+  const suffix = Number.isFinite(code) && code > 0 ? ` (kode Tuya ${code})` : '';
   if (cls === 'TOKEN_REJECTED' || cls === 'DEVICE_REJECTED' || cls === 'NOT_A_PLUG') {
-    return new HttpError(rejectStatus, tuyaPublicMessage(err));
+    return new HttpError(rejectStatus, tuyaPublicMessage(err) + suffix);
   }
-  if (cls === 'NETWORK' || cls === 'TUYA_BUSY') return new HttpError(503, tuyaPublicMessage(err));
+  if (cls === 'NETWORK' || cls === 'TUYA_BUSY') return new HttpError(503, tuyaPublicMessage(err) + suffix);
   return new HttpError(502, 'Validasi kredensial Tuya gagal, coba lagi.');
 }
 

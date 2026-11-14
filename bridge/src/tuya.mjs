@@ -117,13 +117,20 @@ async function tuyaRequest(cfg, path, method = 'GET', body = null, timeoutMs = T
   const ts = Date.now().toString();
   const bodyText = body === null ? '' : JSON.stringify(body);
   const bodyHash = await sha256Hex(bodyText);
+  // Tuya signs `client_id + t + stringToSign` where stringToSign = method + "\n" + contentHash + "\n" +
+  // optionalHeaders + "\n" + URL (path + alphabetically sorted query). The URL is MANDATORY — without it the
+  // server rejects every call as "sign invalid" (1004). The token call has its own empty body and its own URL.
+  const tokenUrl = '/v1.0/token?grant_type=1';
+  const emptyHash = await sha256Hex('');
+  const stringToSign = (m, hash, url) => `${m}\n${hash}\n\n${url}`;
   try {
-    const tokenRes = await fetch(`${base}/v1.0/token?grant_type=1`, {
+    const tokenRes = await fetch(`${base}${tokenUrl}`, {
       headers: {
         client_id: cfg.clientId,
         sign_method: 'HMAC-SHA256',
-        sign: await hmacHex(cfg.clientSecret, cfg.clientId + ts + 'GET\n' + bodyHash + '\n'),
-        timestamp: ts,
+        sign: await hmacHex(cfg.clientSecret, cfg.clientId + ts + stringToSign('GET', emptyHash, tokenUrl)),
+        t: ts,
+        timestamp: ts, // kept for older gateways; Tuya reads `t`
       },
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -139,7 +146,7 @@ async function tuyaRequest(cfg, path, method = 'GET', body = null, timeoutMs = T
     }
     const access = tokenData.result.access_token;
     const ts2 = Date.now().toString();
-    const sign2 = await hmacHex(cfg.clientSecret, cfg.clientId + access + ts2 + method + '\n' + bodyHash + '\n');
+    const sign2 = await hmacHex(cfg.clientSecret, cfg.clientId + access + ts2 + stringToSign(method, bodyHash, path));
     const res = await fetch(base + path, {
       method,
       headers: {
@@ -147,7 +154,8 @@ async function tuyaRequest(cfg, path, method = 'GET', body = null, timeoutMs = T
         access_token: access,
         sign_method: 'HMAC-SHA256',
         sign: sign2,
-        timestamp: ts2,
+        t: ts2,
+        timestamp: ts2, // kept for older gateways; Tuya reads `t`
         'Content-Type': 'application/json',
       },
       body: body === null ? undefined : bodyText,

@@ -72,8 +72,9 @@ bridge/
 
 Data center yang didukung (7): `eu` (Eropa Tengah), `eu-west` (Eropa Barat), `america` (Amerika Barat), `us-east` (Amerika Timur), `asia` (Tiongkok), `india`, `singapore`. Alias lama `us`/`cn`/`sg`/`in` dikanonisasi otomatis. Kalau region yang dipilih ditolak, bridge mencoba **semua** data center secara paralel (read-only) dan menyimpan yang benar — jadi salah pilih region tidak lagi menggagalkan pendaftaran.
 
-## Kontrak API (untuk Adhitron / client lain)
+**Kalau tetap ditolak (422):** pesan menyertakan kode Tuya, mis. `(kode Tuya 1004)`. `1004` = signature/Secret tidak cocok → salin ulang **Access Secret** dari Cloud Project (hanya tampil sekali; spasi/newline kini otomatis di-trim), dan pastikan memakai **Access ID/Access Secret Cloud Project**, bukan API key portal lain. `1106` = Device ID tidak ada/tidak punya izin di project itu. Kuota/trial habis → **503**, bukan 422.
 
+## Kontrak API (untuk Adhitron / client lain)
 Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk halaman HTML):
 
 | Endpoint | Header | Body / query | Respons |
@@ -242,7 +243,7 @@ buka `handoffUrl` untuk halaman status serah-terima di HP.
 node --test --test-timeout=60000 "bridge/**/*.test.mjs"
 ```
 
-**67 tes** (`node --test`), menggunakan fake fetch Tuya + fake Blobs - tanpa jaringan. Mencakup: register &
+**68 tes** (`node --test`), menggunakan fake fetch Tuya + fake Blobs - tanpa jaringan. Mencakup: register &
 enkripsi (tidak ada plaintext di store), validasi kredensial ke Tuya sebelum menyimpan (422/503, pesan tanpa
 kredensial), throttle 10/IP/hari, auth 401, jadwal off + tiket sekali pakai, pembatalan via heartbeat,
 cron sukses / coba ulang / needsAttention / batal, `hold=1` (heartbeat tidak membatalkan "matikan rapi"), `/api/on` (409 saat PC masih hidup, `?force=1`, hapus jadwal),
