@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="id">
   <head>
     <meta charset="utf-8" />
@@ -25,33 +25,33 @@
       <span class="grow"></span>
       <!-- Quota warning (features/quota.js): shown only while a plan window is past the yellow/red threshold -->
       <button id="quota-pill" class="quota-pill" type="button" hidden></button>
-      <!-- ♪ Now playing (features/spotify.js): only once the server reports a Spotify state; phone: art/♪ + ⏯ only -->
+      <!-- â™ª Now playing (features/spotify.js): only once the server reports a Spotify state; phone: art/â™ª + â¯ only -->
       <span id="spotify-box" class="spotify-box" hidden>
-        <button id="spotify-pill" class="spotify-pill" type="button" aria-haspopup="dialog"><span class="sp-art sp-art-16" aria-hidden="true"><img alt="" hidden /><span class="sp-note">♪</span></span><span id="spotify-pill-text" class="sp-pill-text"></span><span id="spotify-pill-warn" class="sp-pill-warn" aria-hidden="true" hidden>⚠</span><span class="sp-pill-bar" aria-hidden="true"><span></span></span></button>
-        <button id="spotify-toggle" class="spotify-toggle" type="button" aria-label="Putar musik" hidden>▶</button>
+        <button id="spotify-pill" class="spotify-pill" type="button" aria-haspopup="dialog"><span class="sp-art sp-art-16" aria-hidden="true"><img alt="" hidden /><span class="sp-note">â™ª</span></span><span id="spotify-pill-text" class="sp-pill-text"></span><span id="spotify-pill-warn" class="sp-pill-warn" aria-hidden="true" hidden>âš </span><span class="sp-pill-bar" aria-hidden="true"><span></span></span></button>
+        <button id="spotify-toggle" class="spotify-toggle" type="button" aria-label="Putar musik" hidden>â–¶</button>
       </span>
       <button id="btn-account" class="account-btn" title="Akun Claude, kuota & login"><span id="account-avatar" class="avatar">?</span><span id="account-label" class="account-label">Akun</span></button>
-      <!-- 🗂 Semua project (features/dashboard.js); phone: the Kantor bar and the 🗂 in the project picker -->
-      <button id="btn-dashboard" class="icon-btn labeled" title="Semua project: status setiap project sekaligus" aria-haspopup="dialog"><span class="ico" aria-hidden="true">🗂</span><span class="lbl">Semua project</span><span id="attention-count" class="attention-count" hidden></span></button>
-      <button id="btn-palette" class="icon-btn labeled" title="Palet perintah: cari aksi, file, project (Ctrl+P)" aria-haspopup="dialog" aria-keyshortcuts="Control+P"><span class="ico" aria-hidden="true">🔎</span><span class="lbl">Cari</span></button>
-      <button id="btn-report" class="icon-btn labeled" title="Laporan penggunaan token (PDF)"><span class="ico" aria-hidden="true">📊</span><span class="lbl">Laporan</span></button>
-      <button id="btn-phone" class="icon-btn labeled" title="Buka dari HP (scan QR)" hidden><span class="ico" aria-hidden="true">📱</span><span class="lbl">Buka di HP</span></button>
-      <button id="btn-notify" class="icon-btn labeled" title="Notifikasi & suara"><span class="ico" aria-hidden="true">🔕</span><span class="lbl">Notifikasi</span></button>
-      <button id="btn-help" class="icon-btn labeled" title="Panduan & shortcut keyboard (?)"><span class="ico" aria-hidden="true">❓</span><span class="lbl">Bantuan</span></button>
-      <button id="btn-settings" class="icon-btn labeled" title="Pengaturan"><span class="ico" aria-hidden="true">⚙</span><span class="lbl">Pengaturan</span></button>
-      <!-- Desktop: the three rarer header actions live in one ⋯ menu; the phone keeps its own ⋯ sheet. -->
+      <!-- ðŸ—‚ Semua project (features/dashboard.js); phone: the Kantor bar and the ðŸ—‚ in the project picker -->
+      <button id="btn-dashboard" class="icon-btn labeled" title="Semua project: status setiap project sekaligus" aria-haspopup="dialog"><span class="ico" aria-hidden="true">ðŸ—‚</span><span class="lbl">Semua project</span><span id="attention-count" class="attention-count" hidden></span></button>
+      <button id="btn-palette" class="icon-btn labeled" title="Palet perintah: cari aksi, file, project (Ctrl+P)" aria-haspopup="dialog" aria-keyshortcuts="Control+P"><span class="ico" aria-hidden="true">ðŸ”Ž</span><span class="lbl">Cari</span></button>
+      <button id="btn-report" class="icon-btn labeled" title="Laporan penggunaan token (PDF)"><span class="ico" aria-hidden="true">ðŸ“Š</span><span class="lbl">Laporan</span></button>
+      <button id="btn-phone" class="icon-btn labeled" title="Buka dari HP (scan QR)" hidden><span class="ico" aria-hidden="true">ðŸ“±</span><span class="lbl">Buka di HP</span></button>
+      <button id="btn-notify" class="icon-btn labeled" title="Notifikasi & suara"><span class="ico" aria-hidden="true">ðŸ”•</span><span class="lbl">Notifikasi</span></button>
+      <button id="btn-help" class="icon-btn labeled" title="Panduan & shortcut keyboard (?)"><span class="ico" aria-hidden="true">â“</span><span class="lbl">Bantuan</span></button>
+      <button id="btn-settings" class="icon-btn labeled" title="Pengaturan"><span class="ico" aria-hidden="true">âš™</span><span class="lbl">Pengaturan</span></button>
+      <!-- Desktop: the three rarer header actions live in one â‹¯ menu; the phone keeps its own â‹¯ sheet. -->
       <div id="header-more" class="header-more">
-        <button id="btn-header-more" class="icon-btn" type="button" title="Lainnya: notifikasi, bantuan, buka di HP" aria-label="Lainnya" aria-haspopup="menu" aria-expanded="false">⋯</button>
+        <button id="btn-header-more" class="icon-btn" type="button" title="Lainnya: notifikasi, bantuan, buka di HP" aria-label="Lainnya" aria-haspopup="menu" aria-expanded="false">â‹¯</button>
         <div id="header-more-menu" class="menu header-more-menu" role="menu" hidden>
-          <button role="menuitem" data-header-act="notify">🔔 Notifikasi &amp; suara</button>
-          <button role="menuitem" data-header-act="help">❓ Panduan &amp; shortcut</button>
+          <button role="menuitem" data-header-act="notify">ðŸ”” Notifikasi &amp; suara</button>
+          <button role="menuitem" data-header-act="help">â“ Panduan &amp; shortcut</button>
         </div>
       </div>
-      <!-- Phone only: session title · status under the project name (features/phone-sheets.js) -->
+      <!-- Phone only: session title Â· status under the project name (features/phone-sheets.js) -->
       <small id="head-sub" class="head-sub phone-only"></small>
-      <!-- Phone only: one ⋯ for session, export, account, report, music, settings (sheet #head-more-modal) -->
-      <button id="btn-head-more" class="icon-btn phone-only" type="button" aria-haspopup="dialog" aria-label="Menu: sesi, export, akun, lainnya">⋯</button>
-      <span id="conn" class="pill">menghubungkan…</span>
+      <!-- Phone only: one â‹¯ for session, export, account, report, music, settings (sheet #head-more-modal) -->
+      <button id="btn-head-more" class="icon-btn phone-only" type="button" aria-haspopup="dialog" aria-label="Menu: sesi, export, akun, lainnya">â‹¯</button>
+      <span id="conn" class="pill">menghubungkanâ€¦</span>
     </header>
     <!-- Lost connection to the laptop (features/connection.js). Always present and empty while connected, so the
          live region is announced when the banner is put in. -->
@@ -60,63 +60,63 @@
     <div id="cc-banner" class="conn-region" role="status" aria-live="polite"></div>
     <!-- OpenCode updated: the same, for OpenCode (features/opencode-check.js). Empty until there is news. -->
     <div id="oc-banner" class="conn-region" role="status" aria-live="polite"></div>
-    <!-- ⬆ A newer Adhitron on GitHub (features/app-update.js). Empty until there is one. -->
+    <!-- â¬† A newer Adhitron on GitHub (features/app-update.js). Empty until there is one. -->
     <div id="app-update-banner" class="conn-region" role="status" aria-live="polite"></div>
 
     <div class="layout">
       <main class="office">
-        <!-- Phone only: 🗂 Semua project from the Kantor view, with a one-line summary (features/dashboard.js) -->
-        <button id="dash-bar" class="dash-bar" type="button" aria-haspopup="dialog"><span class="dash-bar-title"><span aria-hidden="true">🗂</span> Semua project</span><span id="dash-bar-sum" class="dash-bar-sum"></span><span class="dash-bar-chev" aria-hidden="true">›</span></button>
+        <!-- Phone only: ðŸ—‚ Semua project from the Kantor view, with a one-line summary (features/dashboard.js) -->
+        <button id="dash-bar" class="dash-bar" type="button" aria-haspopup="dialog"><span class="dash-bar-title"><span aria-hidden="true">ðŸ—‚</span> Semua project</span><span id="dash-bar-sum" class="dash-bar-sum"></span><span class="dash-bar-chev" aria-hidden="true">â€º</span></button>
         <div id="stage" class="stage">
           <canvas aria-label="Kantor tim"></canvas>
           <div class="overlay"></div>
         </div>
         <!-- Office controls sit under the stage instead of floating over the pixel art. -->
         <div class="office-tools">
-          <button id="view-mode" class="view-mode" type="button" aria-pressed="false" title="Ganti tampilan: kantor pixel ↔ jaringan otak AI">🧠 Mode Otak</button>
+          <button id="view-mode" class="view-mode" type="button" aria-pressed="false" title="Ganti tampilan: kantor pixel â†” jaringan otak AI">ðŸ§  Mode Otak</button>
           <!-- Laptop: the people under the office can be folded away (remembered per browser, features/team.js) -->
-          <button id="team-toggle" class="team-toggle" type="button" aria-expanded="true" aria-controls="team"><span>👥 Karyawan</span><small id="team-toggle-sum"></small><span class="team-toggle-chev" aria-hidden="true">▾</span></button>
+          <button id="team-toggle" class="team-toggle" type="button" aria-expanded="true" aria-controls="team"><span>ðŸ‘¥ Karyawan</span><small id="team-toggle-sum"></small><span class="team-toggle-chev" aria-hidden="true">â–¾</span></button>
         </div>
         <div id="team" class="team"></div>
       </main>
 
       <section class="panel">
-        <!-- 🎯 Mode fokus (features/focus.js): the office is hidden and paused; this chip is the way back -->
-        <button id="focus-exit" class="focus-exit" type="button" hidden aria-label="Keluar dari mode fokus"><span aria-hidden="true">🎯</span> Mode fokus — keluar <span aria-hidden="true">✕</span></button>
+        <!-- ðŸŽ¯ Mode fokus (features/focus.js): the office is hidden and paused; this chip is the way back -->
+        <button id="focus-exit" class="focus-exit" type="button" hidden aria-label="Keluar dari mode fokus"><span aria-hidden="true">ðŸŽ¯</span> Mode fokus â€” keluar <span aria-hidden="true">âœ•</span></button>
         <!-- Desktop only: drag to resize the panel (double-click resets) -->
-        <div id="panel-resizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Ubah lebar panel chat" tabindex="0" title="Geser untuk ubah lebar · klik dua kali untuk ukuran bawaan"></div>
+        <div id="panel-resizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Ubah lebar panel chat" tabindex="0" title="Geser untuk ubah lebar Â· klik dua kali untuk ukuran bawaan"></div>
         <nav class="tabs">
           <button data-tab="chat" class="active">Chat</button>
           <button data-tab="changes">Perubahan <span id="changes-count" class="count" hidden></span></button>
           <button data-tab="activity">Aktivitas</button>
-          <button id="btn-chat-search" class="tab-action" type="button" title="Cari di percakapan (Ctrl+F)" aria-label="Cari di percakapan">🔍</button>
+          <button id="btn-chat-search" class="tab-action" type="button" title="Cari di percakapan (Ctrl+F)" aria-label="Cari di percakapan">ðŸ”</button>
         </nav>
         <div id="chat-search" class="chat-search" hidden>
-          <input id="chat-search-input" type="search" placeholder="Cari di percakapan ini…" aria-label="Cari di percakapan" autocomplete="off" />
+          <input id="chat-search-input" type="search" placeholder="Cari di percakapan iniâ€¦" aria-label="Cari di percakapan" autocomplete="off" />
           <span id="chat-search-count" class="muted small" role="status" aria-live="polite"></span>
-          <button type="button" id="chat-search-close" class="icon-btn" title="Tutup pencarian" aria-label="Tutup pencarian">✕</button>
+          <button type="button" id="chat-search-close" class="icon-btn" title="Tutup pencarian" aria-label="Tutup pencarian">âœ•</button>
         </div>
         <div id="changes" class="changes" hidden>
           <div class="ch-head">
             <span id="ch-branch" class="muted"></span>
             <span class="grow"></span>
-            <button id="ch-view" class="ghost" title="Lihat isi file yang dipilih (di sini, juga di HP)">📄 Lihat file</button>
-            <button id="ch-open" class="ghost local-only" title="Buka file yang dipilih (atau project) di VS Code">🧭 VS Code</button>
-            <button id="ch-review" class="ghost" title="Minta Tech Lead me-review semua perubahan">🔍 Minta review</button>
-            <button id="ch-refresh" class="ghost icon" title="Muat ulang" aria-label="Muat ulang">↻</button>
+            <button id="ch-view" class="ghost" title="Lihat isi file yang dipilih (di sini, juga di HP)">ðŸ“„ Lihat file</button>
+            <button id="ch-open" class="ghost local-only" title="Buka file yang dipilih (atau project) di VS Code">ðŸ§­ VS Code</button>
+            <button id="ch-review" class="ghost" title="Minta Tech Lead me-review semua perubahan">ðŸ” Minta review</button>
+            <button id="ch-refresh" class="ghost icon" title="Muat ulang" aria-label="Muat ulang">â†»</button>
           </div>
-          <!-- ⎇ git: branch + ahead/behind, switch / new branch, fetch, pull (ff-only), push (never --force), PR prompt -->
+          <!-- âŽ‡ git: branch + ahead/behind, switch / new branch, fetch, pull (ff-only), push (never --force), PR prompt -->
           <div id="ch-git" class="ch-git" hidden>
-            <label class="ch-git-branch" title="Branch saat ini — pilih branch lain untuk pindah"><span aria-hidden="true">⎇</span><select id="ch-git-select" aria-label="Branch (pilih untuk pindah)"></select></label>
+            <label class="ch-git-branch" title="Branch saat ini â€” pilih branch lain untuk pindah"><span aria-hidden="true">âŽ‡</span><select id="ch-git-select" aria-label="Branch (pilih untuk pindah)"></select></label>
             <span id="ch-git-sync" class="ch-git-sync"></span>
-            <!-- ✅ GitHub checks of the last push (src/github-ci.js → status.ci; features/ci-status.js) -->
+            <!-- âœ… GitHub checks of the last push (src/github-ci.js â†’ status.ci; features/ci-status.js) -->
             <a id="ch-git-ci" class="ch-git-ci" hidden target="_blank" rel="noopener"></a>
             <span class="grow"></span>
-            <button id="ch-git-new" class="ghost" type="button" title="Buat branch baru dari commit saat ini">＋ Branch</button>
-            <button id="ch-git-fetch" class="ghost" type="button" title="git fetch: ambil info terbaru dari remote">⟳ Fetch</button>
-            <button id="ch-git-pull" class="ghost" type="button">⬇ Pull</button>
-            <button id="ch-git-push" class="ghost" type="button">⬆ Push</button>
-            <button id="ch-git-pr" class="ghost" type="button" title="Buka dialog pull request: buat langsung lewat gh, atau minta Claude yang membuatnya">🔀 Buat PR</button>
+            <button id="ch-git-new" class="ghost" type="button" title="Buat branch baru dari commit saat ini">ï¼‹ Branch</button>
+            <button id="ch-git-fetch" class="ghost" type="button" title="git fetch: ambil info terbaru dari remote">âŸ³ Fetch</button>
+            <button id="ch-git-pull" class="ghost" type="button">â¬‡ Pull</button>
+            <button id="ch-git-push" class="ghost" type="button">â¬† Push</button>
+            <button id="ch-git-pr" class="ghost" type="button" title="Buka dialog pull request: buat langsung lewat gh, atau minta Claude yang membuatnya">ðŸ”€ Buat PR</button>
           </div>
           <form id="ch-git-create" class="ch-git-create" hidden>
             <input id="ch-git-name" aria-label="Nama branch baru" aria-describedby="ch-git-name-error" placeholder="nama-branch-baru, mis. fitur/login" autocomplete="off" spellcheck="false" maxlength="200" />
@@ -126,12 +126,12 @@
           </form>
           <div id="ch-git-out" class="ch-git-out" role="status" aria-live="polite" hidden>
             <pre id="ch-git-text"></pre>
-            <button id="ch-git-out-close" class="icon-btn" type="button" title="Tutup pesan git" aria-label="Tutup pesan git">✕</button>
+            <button id="ch-git-out-close" class="icon-btn" type="button" title="Tutup pesan git" aria-label="Tutup pesan git">âœ•</button>
           </div>
           <ul id="ch-files" class="ch-files"></ul>
           <div id="ch-diff" class="ch-diff"></div>
           <form id="ch-commit" class="ch-commit">
-            <input id="ch-message" aria-label="Pesan commit" placeholder="Pesan commit…" autocomplete="off" />
+            <input id="ch-message" aria-label="Pesan commit" placeholder="Pesan commitâ€¦" autocomplete="off" />
             <button class="primary">Commit</button>
           </form>
         </div>
@@ -139,27 +139,27 @@
           <!-- Which Claude Code session this chat continues, with history / new session -->
           <div id="session-bar" class="session-bar">
             <b id="sb-title">Percakapan baru</b>
-            <button id="sb-tasks" class="sb-btn sb-tasks" type="button" hidden title="Tugas latar yang sedang berjalan (/tasks)"><span aria-hidden="true">⧗</span> <span id="sb-tasks-n">0</span> <span class="sb-tasks-lbl">berjalan</span></button>
-            <button id="sb-queue" class="sb-btn sb-queue" type="button" hidden title="📋 Antrian prompt: dijalankan satu per satu saat tim tidak sibuk"><span aria-hidden="true">📋</span> <span id="sb-queue-n">0</span> <span class="sb-queue-lbl">antrian</span></button>
-            <button id="btn-sessions" class="sb-btn" title="Lihat dan lanjutkan sesi Claude Code sebelumnya (dari terminal maupun web)">🕘 <span>Riwayat sesi</span></button>
-            <button id="btn-new" class="sb-btn" title="Mulai percakapan baru — Claude tidak membawa konteks percakapan ini">＋ <span>Sesi baru</span></button>
-            <button id="btn-more" class="sb-btn sb-more" title="Lainnya: export, lanjut di terminal, buka di VS Code" aria-haspopup="menu" aria-expanded="false" aria-label="Lainnya">⋯</button>
+            <button id="sb-tasks" class="sb-btn sb-tasks" type="button" hidden title="Tugas latar yang sedang berjalan (/tasks)"><span aria-hidden="true">â§—</span> <span id="sb-tasks-n">0</span> <span class="sb-tasks-lbl">berjalan</span></button>
+            <button id="sb-queue" class="sb-btn sb-queue" type="button" hidden title="ðŸ“‹ Antrian prompt: dijalankan satu per satu saat tim tidak sibuk"><span aria-hidden="true">ðŸ“‹</span> <span id="sb-queue-n">0</span> <span class="sb-queue-lbl">antrian</span></button>
+            <button id="btn-sessions" class="sb-btn" title="Lihat dan lanjutkan sesi Claude Code sebelumnya (dari terminal maupun web)">ðŸ•˜ <span>Riwayat sesi</span></button>
+            <button id="btn-new" class="sb-btn" title="Mulai percakapan baru â€” Claude tidak membawa konteks percakapan ini">ï¼‹ <span>Sesi baru</span></button>
+            <button id="btn-more" class="sb-btn sb-more" title="Lainnya: export, lanjut di terminal, buka di VS Code" aria-haspopup="menu" aria-expanded="false" aria-label="Lainnya">â‹¯</button>
             <small id="sb-meta"></small>
             <div id="more-menu" class="menu" role="menu" hidden>
-              <button role="menuitem" data-more="export">⬇ Export percakapan (.md)</button>
-              <button role="menuitem" data-more="export-session" data-cap="exportSession" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">⬇ Export sesi lengkap (.md)</button>
-              <button role="menuitem" data-more="permissions" data-cap="permissions">🛡️ Aturan izin (/permissions)</button>
-              <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
-              <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
-              <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
-              <button role="menuitem" data-more="folder" class="local-only">📁 Buka folder project</button>
+              <button role="menuitem" data-more="export">â¬‡ Export percakapan (.md)</button>
+              <button role="menuitem" data-more="export-session" data-cap="exportSession" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">â¬‡ Export sesi lengkap (.md)</button>
+              <button role="menuitem" data-more="permissions" data-cap="permissions">ðŸ›¡ï¸ Aturan izin (/permissions)</button>
+              <button role="menuitem" data-more="roster">ðŸ‘¥ Kelola tim (/team)</button>
+              <button role="menuitem" data-more="terminal">âŒ¨ Salin perintah lanjut di terminal</button>
+              <button role="menuitem" data-more="code" class="local-only">ðŸ§­ Buka project di VS Code</button>
+              <button role="menuitem" data-more="folder" class="local-only">ðŸ“ Buka folder project</button>
             </div>
           </div>
           <div id="chat" class="chat" role="log" aria-label="Percakapan"></div>
-          <button id="jump-latest" class="jump" hidden>↓ Terbaru</button>
+          <button id="jump-latest" class="jump" hidden>â†“ Terbaru</button>
         </div>
         <ol id="activity" class="activity" hidden></ol>
-        <div id="typing" class="typing" hidden><span></span><span></span><span></span><em id="typing-text">Tim sedang bekerja…</em><button id="typing-stop" class="ghost phone-only" type="button" aria-label="Hentikan giliran">■ Stop</button></div>
+        <div id="typing" class="typing" hidden><span></span><span></span><span></span><em id="typing-text">Tim sedang bekerjaâ€¦</em><button id="typing-stop" class="ghost phone-only" type="button" aria-label="Hentikan giliran">â–  Stop</button></div>
 
         <div id="composer" class="composer">
           <!-- Claude's live todo list (TodoWrite / Task tools), pinned like in the CLI -->
@@ -169,12 +169,12 @@
             <label id="mode-ctl" class="ctl" title="Plan: hanya menyusun rencana, tanpa mengubah file. Build: file boleh diubah otomatis, tetapi perintah shell dan jaringan tetap minta izin.">
               <span id="mode-label">Mode</span>
               <select id="mode">
-                <option value="build">🔨 Build</option>
-                <option value="plan">📋 Plan</option>
+                <option value="build">ðŸ”¨ Build</option>
+                <option value="plan">ðŸ“‹ Plan</option>
               </select>
             </label>
-            <!-- OpenCode: its primary agents (build, the user's own from opencode.json); 📋 Plan = its plan agent -->
-            <label id="agent-ctl" class="ctl" title="Agent OpenCode yang mengerjakan giliran: build (bawaan) atau agent buatanmu dari opencode.json. Untuk rencana saja, pilih Mode → Plan." hidden>
+            <!-- OpenCode: its primary agents (build, the user's own from opencode.json); ðŸ“‹ Plan = its plan agent -->
+            <label id="agent-ctl" class="ctl" title="Agent OpenCode yang mengerjakan giliran: build (bawaan) atau agent buatanmu dari opencode.json. Untuk rencana saja, pilih Mode â†’ Plan." hidden>
               <span>Agent</span>
               <select id="agent"></select>
             </label>
@@ -184,7 +184,7 @@
               <div id="model-panel" hidden>
                 <label id="model-search-ctl" class="ctl model-search-ctl" hidden>
                   <span>Cari model</span>
-                  <input id="model-search" type="search" placeholder="mis. claude, gpt, free…" autocomplete="off" spellcheck="false" aria-controls="model" aria-describedby="model-search-count" />
+                  <input id="model-search" type="search" placeholder="mis. claude, gpt, freeâ€¦" autocomplete="off" spellcheck="false" aria-controls="model" aria-describedby="model-search-count" />
                   <small id="model-search-count" class="sr-only" aria-live="polite"></small>
                 </label>
                 <div id="model-groups" role="listbox" aria-label="Daftar model"></div>
@@ -203,11 +203,11 @@
                 <option value="max">Max</option>
               </select>
             </label>
-            <label id="team-ctl" class="switch" title="Claude mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.">
+            <label id="team-ctl" class="switch" title="Claude mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, â€¦). Kantor lebih hidup, tapi lebih banyak token.">
               <input id="team-mode" type="checkbox" checked /> Mode tim
             </label>
-            <!-- 🎤 input suara (features/voice.js): shown together with the 🎤 button, remembered per browser -->
-            <label id="voice-lang-ctl" class="ctl" title="Bahasa input suara 🎤 (disimpan di browser ini)" hidden>
+            <!-- ðŸŽ¤ input suara (features/voice.js): shown together with the ðŸŽ¤ button, remembered per browser -->
+            <label id="voice-lang-ctl" class="ctl" title="Bahasa input suara ðŸŽ¤ (disimpan di browser ini)" hidden>
               <span>Suara</span>
               <select id="voice-lang">
                 <option value="id-ID">Indonesia</option>
@@ -218,72 +218,72 @@
             <p id="model-engine-note" class="muted small model-engine-note">Memilih model mesin lain mengirim ringkasan percakapan ini ke provider mesin itu.</p>
           </div>
           <div id="suggest" class="suggest" hidden></div>
-          <!-- 🎤 what is being heard (interim), before it lands in the box at the cursor -->
+          <!-- ðŸŽ¤ what is being heard (interim), before it lands in the box at the cursor -->
           <div id="voice-live" class="voice-live" role="status" aria-live="polite"></div>
           <div id="attachments" class="attachments" hidden></div>
           <!-- Phone on plain WiFi: one clear banner instead of a greyed-out composer -->
-          <div id="ro-banner" class="ro-banner phone-only" role="status" hidden>👁 Hanya lihat lewat WiFi. Kirim perintah dari laptop atau lewat Tailscale.</div>
+          <div id="ro-banner" class="ro-banner phone-only" role="status" hidden>ðŸ‘ Hanya lihat lewat WiFi. Kirim perintah dari laptop atau lewat Tailscale.</div>
           <!-- Project model gone after a provider logout (status.modelStale): prompts are refused until a model is picked -->
           <div id="model-stale" class="model-stale" role="alert" hidden></div>
           <!-- Legacy 'dontAsk' (migrated): the project waits for an explicit Plan/Build choice before the next turn -->
           <div id="mode-choice" class="model-stale" role="alert" hidden></div>
           <div class="input">
-            <button id="btn-attach" class="ghost icon attach" title="Lampirkan file: gambar, PDF, log/teks/kode (atau paste / drag ke kotak ini)" aria-label="Lampirkan file">📎</button>
+            <button id="btn-attach" class="ghost icon attach" title="Lampirkan file: gambar, PDF, log/teks/kode (atau paste / drag ke kotak ini)" aria-label="Lampirkan file">ðŸ“Ž</button>
             <!-- accept is filled from core/attachment-rules.js (ATTACH_ACCEPT) at start -->
             <input id="file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,.pdf,text/*" multiple hidden />
-            <button id="btn-template" class="ghost icon attach" type="button" title="Template prompt (/t)" aria-label="Template prompt" aria-haspopup="dialog">⚡</button>
-            <textarea id="prompt" rows="3" aria-label="Pesan untuk tim" title=" / command · @file · ! shell · Shift+Enter baris baru" placeholder="Minta sesuatu ke tim…"></textarea>
-            <!-- 🎤 hidden unless the Web Speech API exists in a secure context (HTTPS / localhost) and the page may act -->
-            <!-- Phone only: ＋ (attach, template, queue, voice, ! @ /) and the turn-settings chip, in the toolbar under the text -->
-            <button id="btn-chat-search-mobile" class="ghost icon phone-only" type="button" title="Cari di percakapan" aria-label="Cari di percakapan">🔍</button>
-            <button id="btn-plus" class="ghost icon phone-only" type="button" aria-haspopup="dialog" aria-label="Tambahkan: lampiran, template, antrian, suara">＋</button>
+            <button id="btn-template" class="ghost icon attach" type="button" title="Template prompt (/t)" aria-label="Template prompt" aria-haspopup="dialog">âš¡</button>
+            <textarea id="prompt" rows="3" aria-label="Pesan untuk tim" title=" / command Â· @file Â· ! shell Â· Shift+Enter baris baru" placeholder="Minta sesuatu ke timâ€¦"></textarea>
+            <!-- ðŸŽ¤ hidden unless the Web Speech API exists in a secure context (HTTPS / localhost) and the page may act -->
+            <!-- Phone only: ï¼‹ (attach, template, queue, voice, ! @ /) and the turn-settings chip, in the toolbar under the text -->
+            <button id="btn-chat-search-mobile" class="ghost icon phone-only" type="button" title="Cari di percakapan" aria-label="Cari di percakapan">ðŸ”</button>
+            <button id="btn-plus" class="ghost icon phone-only" type="button" aria-haspopup="dialog" aria-label="Tambahkan: lampiran, template, antrian, suara">ï¼‹</button>
             <button id="settings-chip" class="settings-chip" type="button" aria-haspopup="dialog" aria-label="Pengaturan giliran" title="Izin, model, effort & Mode tim"></button>
-            <button id="btn-voice" class="ghost icon attach voice-btn" type="button" title="Input suara (Alt+M)" aria-label="Mulai input suara" aria-pressed="false" aria-keyshortcuts="Alt+M" hidden>🎤</button>
-            <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)" aria-label="Hentikan giliran">■ Stop</button>
-            <button id="btn-queue-add" class="ghost icon attach queue-add" type="button" title="Tambah ke 📋 Antrian, dijalankan saat tim tidak sibuk (Alt+Enter). Kotak kosong: buka antrian" aria-label="Tambah ke antrian">📋</button>
+            <button id="btn-voice" class="ghost icon attach voice-btn" type="button" title="Input suara (Alt+M)" aria-label="Mulai input suara" aria-pressed="false" aria-keyshortcuts="Alt+M" hidden>ðŸŽ¤</button>
+            <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)" aria-label="Hentikan giliran">â–  Stop</button>
+            <button id="btn-queue-add" class="ghost icon attach queue-add" type="button" title="Tambah ke ðŸ“‹ Antrian, dijalankan saat tim tidak sibuk (Alt+Enter). Kotak kosong: buka antrian" aria-label="Tambah ke antrian">ðŸ“‹</button>
             <button id="btn-send" class="primary" aria-label="Kirim pesan">Kirim</button>
           </div>
           <!-- Status line: permission mode (Shift+Tab), model, context used -->
           <div id="statusline" class="statusline"></div>
           <div id="composer-hint" class="hint"></div>
-          <button id="btn-demo" class="primary demo-btn">▶ Jalankan demo</button>
+          <button id="btn-demo" class="primary demo-btn">â–¶ Jalankan demo</button>
         </div>
       </section>
     </div>
 
     <!-- Phone layout: one full-screen view at a time -->
     <nav id="mobile-nav" class="mobile-nav">
-      <button data-view="office"><span class="ico">🏢</span>Kantor</button>
-      <button data-view="chat" class="active"><span class="ico">💬</span>Chat<span id="nav-badge-chat" class="nav-badge" hidden></span></button>
-      <button data-view="changes"><span class="ico">📝</span>Perubahan<span id="nav-badge-changes" class="nav-badge muted-badge" hidden></span></button>
-      <button data-view="activity"><span class="ico">📋</span>Aktivitas</button>
-      <!-- Phone: the 🔎 command palette lives here (the top bar has no room left with the quota pill) -->
-      <button id="nav-palette" type="button" aria-haspopup="dialog" title="Palet perintah: cari aksi, file, project"><span class="ico" aria-hidden="true">🔎</span>Cari</button>
+      <button data-view="office"><span class="ico">ðŸ¢</span>Kantor</button>
+      <button data-view="chat" class="active"><span class="ico">ðŸ’¬</span>Chat<span id="nav-badge-chat" class="nav-badge" hidden></span></button>
+      <button data-view="changes"><span class="ico">ðŸ“</span>Perubahan<span id="nav-badge-changes" class="nav-badge muted-badge" hidden></span></button>
+      <button data-view="activity"><span class="ico">ðŸ“‹</span>Aktivitas</button>
+      <!-- Phone: the ðŸ”Ž command palette lives here (the top bar has no room left with the quota pill) -->
+      <button id="nav-palette" type="button" aria-haspopup="dialog" title="Palet perintah: cari aksi, file, project"><span class="ico" aria-hidden="true">ðŸ”Ž</span>Cari</button>
     </nav>
 
     <!-- Project picker (Ctrl+K) -->
     <div id="project-modal" class="modal" hidden>
       <div class="modal-card project-card" role="dialog" aria-modal="true" aria-label="Pilih project">
         <div class="side-head">
-          <input id="project-search" type="search" aria-label="Cari project" placeholder="Cari project…  (↑↓ pilih · Enter buka · Esc tutup)" autocomplete="off" />
-          <button id="project-dash" class="icon-btn" type="button" title="Semua project: status setiap project sekaligus" aria-label="Semua project">🗂</button>
-          <button id="project-groups" class="icon-btn" type="button" title="Grup proyek terkait (web + api + mobile)" aria-label="Grup proyek terkait">🏷</button>
-          <button id="project-archived" class="icon-btn" type="button" aria-pressed="false" title="Tampilkan project diarsipkan" aria-label="Tampilkan project diarsipkan">📦</button>
-          <button id="refresh-projects" class="icon-btn" title="Pindai ulang folder" aria-label="Pindai ulang folder">↻</button>
-          <button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button>
+          <input id="project-search" type="search" aria-label="Cari project" placeholder="Cari projectâ€¦  (â†‘â†“ pilih Â· Enter buka Â· Esc tutup)" autocomplete="off" />
+          <button id="project-dash" class="icon-btn" type="button" title="Semua project: status setiap project sekaligus" aria-label="Semua project">ðŸ—‚</button>
+          <button id="project-groups" class="icon-btn" type="button" title="Grup proyek terkait (web + api + mobile)" aria-label="Grup proyek terkait">ðŸ·</button>
+          <button id="project-archived" class="icon-btn" type="button" aria-pressed="false" title="Tampilkan project diarsipkan" aria-label="Tampilkan project diarsipkan">ðŸ“¦</button>
+          <button id="refresh-projects" class="icon-btn" title="Pindai ulang folder" aria-label="Pindai ulang folder">â†»</button>
+          <button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button>
         </div>
         <ul id="project-list" class="projects"></ul>
         <form id="add-project" class="add-project">
           <input id="add-project-path" aria-label="Tambah folder project" placeholder="Tambah folder lain: C:\path\project" autocomplete="off" />
-          <button class="icon-btn" title="Tambah" aria-label="Tambah folder">＋</button>
+          <button class="icon-btn" title="Tambah" aria-label="Tambah folder">ï¼‹</button>
         </form>
       </div>
     </div>
 
-    <!-- 🗂 Parent groups: related repos referenced under one named group (sessions never move) -->
+    <!-- ðŸ—‚ Parent groups: related repos referenced under one named group (sessions never move) -->
     <div id="groups-modal" class="modal" hidden>
       <div class="modal-card" role="dialog" aria-modal="true" aria-label="Grup proyek terkait">
-        <div class="modal-head"><b>🗂 Grup proyek terkait</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b>ðŸ—‚ Grup proyek terkait</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div id="groups-body"></div>
       </div>
     </div>
@@ -291,17 +291,17 @@
     <!-- Help: how the office works + keyboard shortcuts (opens with ?) -->
     <div id="help-modal" class="modal" hidden>
       <div class="modal-card help-card" role="dialog" aria-modal="true" aria-label="Panduan">
-        <div class="modal-head"><b>❓ Panduan Adhitron</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <button type="button" id="btn-tour" class="ghost help-tour">👋 Tur singkat (4 langkah)</button>
+        <div class="modal-head"><b>â“ Panduan Adhitron</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
+        <button type="button" id="btn-tour" class="ghost help-tour">ðŸ‘‹ Tur singkat (4 langkah)</button>
         <div class="help">
           <section>
-            <h3>📲 Pasang sebagai aplikasi</h3>
-            <p>Android (Chrome/Edge): menu <b>⋮</b> → <b>Install app</b> / <b>Tambahkan ke layar utama</b>. iPhone/iPad (Safari): <b>Bagikan</b> → <b>Tambahkan ke Layar Utama</b>.</p>
+            <h3>ðŸ“² Pasang sebagai aplikasi</h3>
+            <p>Android (Chrome/Edge): menu <b>â‹®</b> â†’ <b>Install app</b> / <b>Tambahkan ke layar utama</b>. iPhone/iPad (Safari): <b>Bagikan</b> â†’ <b>Tambahkan ke Layar Utama</b>.</p>
             <p class="muted small">Aplikasi dari layar utama punya penyimpanan sendiri: masukkan kode pairing sekali lagi di sana. Halaman tidak di-cache untuk offline (token sesi tidak boleh tersimpan di cache browser).</p>
-            <button type="button" id="install-app" class="primary" hidden>📲 Pasang sekarang</button>
+            <button type="button" id="install-app" class="primary" hidden>ðŸ“² Pasang sekarang</button>
           </section>
           <section id="help-keys">
-            <h3>⌨️ Shortcut keyboard</h3>
+            <h3>âŒ¨ï¸ Shortcut keyboard</h3>
             <dl class="help-keys-list">
               <div><dt><kbd>Ctrl</kbd> <kbd>K</kbd></dt><dd>Pilih project</dd></div>
               <div><dt><kbd>Ctrl</kbd> <kbd>P</kbd></dt><dd>Palet perintah (semua aksi); <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> langsung ke perintah</dd></div>
@@ -310,7 +310,7 @@
               <div><dt><kbd>Ctrl</kbd> <kbd>B</kbd></dt><dd>Lanjutkan perintah/subagent di latar belakang</dd></div>
               <div><dt><kbd>Enter</kbd> / <kbd>Shift</kbd> <kbd>Enter</kbd></dt><dd>Kirim / baris baru</dd></div>
               <div><dt><kbd>Alt</kbd> <kbd>Enter</kbd></dt><dd>Masukkan prompt ke antrian (tidak langsung dikirim)</dd></div>
-              <div><dt><kbd>Shift</kbd> <kbd>Tab</kbd></dt><dd>Ganti mode Build ⇄ Plan</dd></div>
+              <div><dt><kbd>Shift</kbd> <kbd>Tab</kbd></dt><dd>Ganti mode Build â‡„ Plan</dd></div>
               <div><dt><kbd>Alt</kbd> <kbd>M</kbd></dt><dd>Input suara</dd></div>
               <div><dt><kbd>Esc</kbd></dt><dd>Tutup dialog/menu teratas; tanpa dialog, hentikan giliran</dd></div>
               <div><dt><kbd>Esc</kbd> <kbd>Esc</kbd></dt><dd>Rewind percakapan/kode saat tidak ada yang berjalan</dd></div>
@@ -330,55 +330,55 @@
             <h3>Shortcut keyboard</h3>
             <table class="keys">
               <tr><td><kbd>Ctrl</kbd> <kbd>K</kbd></td><td>Ganti project</td></tr>
-              <tr><td><kbd>Ctrl</kbd> <kbd>P</kbd></td><td>Palet perintah: semua aksi, file (<kbd>@</kbd>), project (<kbd>#</kbd>), perintah (<kbd>&gt;</kbd>) — <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> langsung ke perintah</td></tr>
+              <tr><td><kbd>Ctrl</kbd> <kbd>P</kbd></td><td>Palet perintah: semua aksi, file (<kbd>@</kbd>), project (<kbd>#</kbd>), perintah (<kbd>&gt;</kbd>) â€” <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> langsung ke perintah</td></tr>
               <tr><td><kbd>Enter</kbd></td><td>Kirim pesan</td></tr>
               <tr><td><kbd>Shift</kbd> <kbd>Enter</kbd></td><td>Baris baru</td></tr>
-              <tr><td><kbd>Alt</kbd> <kbd>Enter</kbd></td><td>📋 Tambah ke antrian (juga tombol 📋 di samping Kirim, atau <code>/antrian</code>): prompt dijalankan satu per satu otomatis saat tim tidak sibuk</td></tr>
-              <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Panggil lagi prompt sebelumnya (di kotak pesan)</td></tr>
+              <tr><td><kbd>Alt</kbd> <kbd>Enter</kbd></td><td>ðŸ“‹ Tambah ke antrian (juga tombol ðŸ“‹ di samping Kirim, atau <code>/antrian</code>): prompt dijalankan satu per satu otomatis saat tim tidak sibuk</td></tr>
+              <tr><td><kbd>â†‘</kbd> <kbd>â†“</kbd></td><td>Panggil lagi prompt sebelumnya (di kotak pesan)</td></tr>
               <tr><td><kbd>/</kbd></td><td>Slash command &amp; skill, misalnya <code>/compact</code> atau <code>/context</code></td></tr>
               <tr><td><kbd>@</kbd></td><td>Sebut file di project</td></tr>
-              <tr><td><kbd>/t</kbd></td><td>⚡ Template prompt (review, test, perbaiki error, commit…), juga tombol ⚡ di kotak pesan. Bagian <code>{…}</code> langsung terpilih; <kbd>Tab</kbd> ke bagian berikutnya</td></tr>
+              <tr><td><kbd>/t</kbd></td><td>âš¡ Template prompt (review, test, perbaiki error, commitâ€¦), juga tombol âš¡ di kotak pesan. Bagian <code>{â€¦}</code> langsung terpilih; <kbd>Tab</kbd> ke bagian berikutnya</td></tr>
               <tr><td><kbd>Ctrl</kbd> <kbd>V</kbd></td><td>Tempel gambar atau screenshot</td></tr>
               <tr><td><kbd>!</kbd></td><td>Jalankan perintah shell langsung di folder project, misalnya <code>!git status</code>. Output-nya ikut terkirim ke Claude bersama pesan berikutnya.</td></tr>
-              <tr><td><kbd>Shift</kbd> <kbd>Tab</kbd></td><td>Ganti mode (Build ⇄ Plan)</td></tr>
+              <tr><td><kbd>Shift</kbd> <kbd>Tab</kbd></td><td>Ganti mode (Build â‡„ Plan)</td></tr>
               <tr><td><kbd>Esc</kbd></td><td>Hentikan giliran yang berjalan (pesan yang antre ikut dibatalkan), atau tutup dialog</td></tr>
               <tr><td><kbd>Esc</kbd> <kbd>Esc</kbd></td><td>Kosongkan kotak pesan; kalau sudah kosong, buka <b>Rewind</b>: kembalikan kode dan/atau percakapan ke sebelum salah satu pesanmu</td></tr>
               <tr><td><kbd>Ctrl</kbd> <kbd>R</kbd></td><td>Cari di riwayat prompt</td></tr>
               <tr><td><kbd>Ctrl</kbd> <kbd>B</kbd></td><td>Pindahkan perintah/agent yang sedang jalan ke latar belakang</td></tr>
-              <tr><td><kbd>Alt</kbd> <kbd>M</kbd></td><td>🎤 Input suara: mulai / berhenti (juga tombol 🎤 di kotak pesan; <kbd>Esc</kbd> berhenti). Teks masuk di posisi kursor. Butuh HTTPS atau localhost</td></tr>
-              <tr><td><code>/clear</code> <code>/model</code> <code>/effort</code> <code>/resume</code></td><td>Sesi baru · ganti model · ganti effort · riwayat sesi</td></tr>
-              <tr><td><code>/rewind</code> <code>/mcp</code> <code>/tasks</code> <code>/memory</code></td><td>Rewind · server MCP (status, login) · tugas latar · buka memory (CLAUDE.md/AGENTS.md)</td></tr>
-              <tr><td><code>/usage</code> <code>/context</code> <code>/compact</code> <code>/rename</code> …</td><td>Command mesin lain jalan seperti di terminal; ketik <kbd>/</kbd> untuk daftar lengkapnya</td></tr>
+              <tr><td><kbd>Alt</kbd> <kbd>M</kbd></td><td>ðŸŽ¤ Input suara: mulai / berhenti (juga tombol ðŸŽ¤ di kotak pesan; <kbd>Esc</kbd> berhenti). Teks masuk di posisi kursor. Butuh HTTPS atau localhost</td></tr>
+              <tr><td><code>/clear</code> <code>/model</code> <code>/effort</code> <code>/resume</code></td><td>Sesi baru Â· ganti model Â· ganti effort Â· riwayat sesi</td></tr>
+              <tr><td><code>/rewind</code> <code>/mcp</code> <code>/tasks</code> <code>/memory</code></td><td>Rewind Â· server MCP (status, login) Â· tugas latar Â· buka memory (CLAUDE.md/AGENTS.md)</td></tr>
+              <tr><td><code>/usage</code> <code>/context</code> <code>/compact</code> <code>/rename</code> â€¦</td><td>Command mesin lain jalan seperti di terminal; ketik <kbd>/</kbd> untuk daftar lengkapnya</td></tr>
               <tr><td><kbd>?</kbd></td><td>Buka panduan ini</td></tr>
             </table>
           </section>
           <section>
             <h3>Mode</h3>
             <table class="keys">
-              <tr><td>🔨 Build</td><td>File boleh diubah otomatis. Perintah shell dan jaringan tetap minta izin; aturan <code>deny</code> selalu menang.</td></tr>
-              <tr><td>📋 Plan</td><td>Mesin hanya menyusun rencana, tanpa mengubah file. Setujui dengan <b>Lanjut build</b> untuk mulai bekerja.</td></tr>
+              <tr><td>ðŸ”¨ Build</td><td>File boleh diubah otomatis. Perintah shell dan jaringan tetap minta izin; aturan <code>deny</code> selalu menang.</td></tr>
+              <tr><td>ðŸ“‹ Plan</td><td>Mesin hanya menyusun rencana, tanpa mengubah file. Setujui dengan <b>Lanjut build</b> untuk mulai bekerja.</td></tr>
             </table>
           </section>
           <section>
             <h3>Tips</h3>
             <ul>
               <li><b>Mode tim</b>: mesin mendelegasikan ke PM, BA, developer, QA, dan lainnya. Kantor lebih hidup, tapi token lebih banyak.</li>
-              <li><b>🕘 Riwayat sesi</b> melanjutkan percakapan lama, termasuk yang dimulai di terminal. Menu <b>⋯</b> menyalin perintah untuk melanjutkan sesi web di terminal.</li>
+              <li><b>ðŸ•˜ Riwayat sesi</b> melanjutkan percakapan lama, termasuk yang dimulai di terminal. Menu <b>â‹¯</b> menyalin perintah untuk melanjutkan sesi web di terminal.</li>
               <li>Sesi yang kamu jalankan di terminal (CLI) ikut tampil live di sini.</li>
-              <li>Tandai project yang sering dipakai dengan <b>★</b> di daftar project supaya selalu di atas.</li>
-              <li><b>🔔 Pengaturan notifikasi</b> (per jenis kejadian, jam tenang, hanya project favorit, volume): buka palet <kbd>Ctrl</kbd> <kbd>P</kbd> (di HP: tombol 🔎 di bawah) → <i>Pengaturan notifikasi</i>. Di laptop juga lewat klik kanan 🔔 atau ⚙ Pengaturan.</li>
+              <li>Tandai project yang sering dipakai dengan <b>â˜…</b> di daftar project supaya selalu di atas.</li>
+              <li><b>ðŸ”” Pengaturan notifikasi</b> (per jenis kejadian, jam tenang, hanya project favorit, volume): buka palet <kbd>Ctrl</kbd> <kbd>P</kbd> (di HP: tombol ðŸ”Ž di bawah) â†’ <i>Pengaturan notifikasi</i>. Di laptop juga lewat klik kanan ðŸ”” atau âš™ Pengaturan.</li>
               <li>Klik kartu anggota tim di bawah kantor untuk <b>mengganti nama</b> mereka.</li>
-              <li><b>📱 Buka di HP</b>: scan QR-nya, lalu pilih <i>Add to Home Screen</i> agar Adhitron tampil seperti aplikasi. Lewat WiFi HP hanya bisa melihat; lewat Tailscale bisa mengirim perintah.</li>
+              <li><b>ðŸ“± Buka di HP</b>: scan QR-nya, lalu pilih <i>Add to Home Screen</i> agar Adhitron tampil seperti aplikasi. Lewat WiFi HP hanya bisa melihat; lewat Tailscale bisa mengirim perintah.</li>
             </ul>
           </section>
         </div>
       </div>
     </div>
 
-    <!-- 👋 Tur singkat: a four-step welcome, opened from Panduan or the empty state -->
+    <!-- ðŸ‘‹ Tur singkat: a four-step welcome, opened from Panduan or the empty state -->
     <div id="tour-modal" class="modal" hidden>
       <div class="modal-card tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title">
-        <div class="modal-head"><b id="tour-title">👋 Tur singkat</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="tour-title">ðŸ‘‹ Tur singkat</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div id="tour-body" class="tour-body"></div>
         <div class="tour-actions">
           <button type="button" id="tour-skip" class="ghost">Lewati</button>
@@ -391,12 +391,12 @@
     <!-- Team names: rename the people in the office (shared by every device) -->
     <div id="team-modal" class="modal" hidden>
       <div class="modal-card team-card" role="dialog" aria-modal="true" aria-label="Nama anggota tim">
-        <div class="modal-head"><b>👥 Nama anggota tim</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b>ðŸ‘¥ Nama anggota tim</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p class="muted small">Nama tampil di kantor, chat, aktivitas, dan laporan. Kosongkan untuk kembali ke nama bawaan. Berlaku di laptop dan HP.</p>
         <form id="team-form">
           <div id="team-list" class="team-list"></div>
           <div class="team-actions">
-            <button type="button" id="team-reset" class="ghost">↺ Kembalikan semua</button>
+            <button type="button" id="team-reset" class="ghost">â†º Kembalikan semua</button>
             <span class="grow"></span>
             <button class="primary">Simpan</button>
           </div>
@@ -404,18 +404,18 @@
       </div>
     </div>
 
-    <!-- 👥 Kelola tim (/team): which built-in roles have a desk; catalog only, the Lead is always there -->
+    <!-- ðŸ‘¥ Kelola tim (/team): which built-in roles have a desk; catalog only, the Lead is always there -->
     <div id="roster-modal" class="modal" hidden>
       <div class="modal-card roster-card" role="dialog" aria-modal="true" aria-labelledby="roster-title" aria-describedby="roster-intro">
-        <div class="modal-head"><b id="roster-title">👥 Kelola tim <small id="roster-count" class="muted" aria-live="polite"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="roster-title">ðŸ‘¥ Kelola tim <small id="roster-count" class="muted" aria-live="polite"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p id="roster-intro" class="muted small">Pilih role yang punya meja. Role nonaktif dialihkan ke role aktif terdekat dan berlaku untuk sesi Claude Code berikutnya.</p>
         <p id="roster-ro" class="ro-note" hidden>Lewat WiFi hanya bisa melihat. Pakai laptop atau Tailscale untuk mengubah tim.</p>
         <form id="roster-form">
           <ul id="roster-list" class="roster-list" aria-label="Katalog role"></ul>
           <p id="roster-error" class="field-error" role="alert"></p>
           <div class="team-actions">
-            <button type="button" id="roster-default" class="ghost">↺ Tim bawaan</button>
-            <button type="button" id="roster-map" class="ghost" title="Nama tool, skill, subagent atau skrip yang belum dikenali aturan bawaan: pilih siapa yang mengerjakannya">🧭 Pemetaan peran</button>
+            <button type="button" id="roster-default" class="ghost">â†º Tim bawaan</button>
+            <button type="button" id="roster-map" class="ghost" title="Nama tool, skill, subagent atau skrip yang belum dikenali aturan bawaan: pilih siapa yang mengerjakannya">ðŸ§­ Pemetaan peran</button>
             <span class="grow"></span>
             <button id="roster-save" class="primary">Simpan</button>
           </div>
@@ -423,10 +423,10 @@
       </div>
     </div>
 
-    <!-- 🧭 Pemetaan peran (features/role-map.js): names no built-in rule knows → a role, for this laptop or the project -->
+    <!-- ðŸ§­ Pemetaan peran (features/role-map.js): names no built-in rule knows â†’ a role, for this laptop or the project -->
     <div id="rolemap-modal" class="modal" hidden>
       <div class="modal-card rolemap-card" role="dialog" aria-modal="true" aria-labelledby="rolemap-title">
-        <div class="modal-head"><b id="rolemap-title">🧭 Pemetaan peran</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="rolemap-title">ðŸ§­ Pemetaan peran</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div id="rolemap-body" aria-live="polite"></div>
       </div>
     </div>
@@ -434,16 +434,16 @@
     <!-- Session history: continue an earlier Claude Code session (CLI or web) -->
     <div id="sessions-modal" class="modal" hidden>
       <div class="modal-card sessions-card" role="dialog" aria-modal="true" aria-label="Riwayat sesi">
-        <div class="modal-head"><b>🕘 Riwayat sesi <small id="sessions-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <p class="muted small">Lanjutkan, cabangkan (⑂ salinan baru, aslinya tetap), unduh atau hapus percakapan sebelumnya di project ini, dari terminal maupun dari web.</p>
+        <div class="modal-head"><b>ðŸ•˜ Riwayat sesi <small id="sessions-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
+        <p class="muted small">Lanjutkan, cabangkan (â‘‚ salinan baru, aslinya tetap), unduh atau hapus percakapan sebelumnya di project ini, dari terminal maupun dari web.</p>
         <div class="sessions-tools">
-          <input id="sessions-search" type="search" aria-label="Cari sesi" placeholder="Cari judul sesi…" autocomplete="off" />
+          <input id="sessions-search" type="search" aria-label="Cari sesi" placeholder="Cari judul sesiâ€¦" autocomplete="off" />
           <select id="sessions-range" aria-label="Rentang waktu sesi" title="Saring sesi berdasarkan kapan terakhir dipakai">
             <option value="all">Semua waktu</option>
             <option value="7">7 hari terakhir</option>
             <option value="30">30 hari terakhir</option>
             <option value="90">90 hari terakhir</option>
-            <option value="archived">📦 Diarsipkan</option>
+            <option value="archived">ðŸ“¦ Diarsipkan</option>
           </select>
           <select id="sessions-auto-archive" aria-label="Arsip otomatis sesi lama" title="Sesi yang tidak dipakai lebih dari waktu ini masuk arsip (masih bisa dibuka)">
             <option value="0">Arsip otomatis: mati</option>
@@ -451,33 +451,33 @@
             <option value="90">Arsip otomatis: 90 hari</option>
             <option value="180">Arsip otomatis: 180 hari</option>
           </select>
-          <button id="sessions-import" class="ghost" hidden title="Import sesi OpenCode dari file JSON (laptop saja)">⬆ Import JSON</button>
+          <button id="sessions-import" class="ghost" hidden title="Import sesi OpenCode dari file JSON (laptop saja)">â¬† Import JSON</button>
           <input id="sessions-import-file" type="file" accept=".json,application/json" hidden />
-          <button id="sessions-new" class="ghost">＋ Sesi baru</button>
+          <button id="sessions-new" class="ghost">ï¼‹ Sesi baru</button>
         </div>
         <label class="switch small export-opt"><input class="export-tools-opt" type="checkbox" /> Export .md: sertakan ringkasan tool calls</label>
         <div id="sessions-tags" class="sessions-tags" role="group" aria-label="Saring sesi berdasarkan tag" hidden></div>
         <div id="sessions-bulk" class="sessions-bulk" hidden>
           <label class="switch small"><input id="sessions-select-all" type="checkbox" /> Pilih semua</label>
           <span class="sessions-bulk-actions">
-            <button id="sessions-tag-selected" class="ghost" type="button" disabled>🏷 Tag</button>
-            <button id="sessions-archive-selected" class="ghost" type="button" disabled>📦 Arsipkan</button>
-            <button id="sessions-export-selected" class="ghost" type="button" disabled>⬇ Export</button>
+            <button id="sessions-tag-selected" class="ghost" type="button" disabled>ðŸ· Tag</button>
+            <button id="sessions-archive-selected" class="ghost" type="button" disabled>ðŸ“¦ Arsipkan</button>
+            <button id="sessions-export-selected" class="ghost" type="button" disabled>â¬‡ Export</button>
             <button id="sessions-delete-selected" class="ghost danger-text" type="button" disabled>Hapus sesi</button>
           </span>
         </div>
         <div id="sessions-list" class="sessions-list"></div>
         <details id="sessions-trash" class="sessions-trash" hidden>
-          <summary>🗑 Sesi terhapus <span id="sessions-trash-count" class="count"></span> <small id="sessions-trash-retention" class="muted"></small></summary>
+          <summary>ðŸ—‘ Sesi terhapus <span id="sessions-trash-count" class="count"></span> <small id="sessions-trash-retention" class="muted"></small></summary>
           <div id="sessions-trash-list" class="sessions-list"></div>
         </details>
       </div>
     </div>
 
-    <!-- 📡 OpenCode request log (features/opencode-requests.js): normalized inference requests, global or per session -->
+    <!-- ðŸ“¡ OpenCode request log (features/opencode-requests.js): normalized inference requests, global or per session -->
     <div id="requests-modal" class="modal" hidden>
       <div class="modal-card requests-card" role="dialog" aria-modal="true" aria-labelledby="requests-title">
-        <div class="modal-head"><b id="requests-title">📡 Request OpenCode</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="requests-title">ðŸ“¡ Request OpenCode</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p id="requests-meta" class="muted small" aria-live="polite"></p>
         <p id="requests-summary" class="muted small" aria-live="polite"></p>
         <div class="requests-table-wrap">
@@ -494,23 +494,23 @@
       </div>
     </div>
 
-    <!-- 🧩 Ekstensi (/plugin, /agents, /hooks; features/extensions.js) -->
+    <!-- ðŸ§© Ekstensi (/plugin, /agents, /hooks; features/extensions.js) -->
     <div id="ext-modal" class="modal" hidden>
       <div class="modal-card ext-card" role="dialog" aria-modal="true" aria-labelledby="ext-title">
-        <div class="modal-head"><b id="ext-title">🧩 Ekstensi Claude Code <small id="ext-project" class="muted"></small></b><button id="ext-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="ext-title">ðŸ§© Ekstensi Claude Code <small id="ext-project" class="muted"></small></b><button id="ext-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">â†»</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div id="ext-tabs" class="engine-opts" role="group" aria-label="Jenis ekstensi">
-          <button type="button" class="engine-opt" data-tab="plugins">🧩 Plugin</button>
-          <button type="button" class="engine-opt" data-tab="agents">🤖 Agents</button>
-          <button type="button" class="engine-opt" data-tab="hooks">🪝 Hooks</button>
+          <button type="button" class="engine-opt" data-tab="plugins">ðŸ§© Plugin</button>
+          <button type="button" class="engine-opt" data-tab="agents">ðŸ¤– Agents</button>
+          <button type="button" class="engine-opt" data-tab="hooks">ðŸª Hooks</button>
         </div>
         <div id="ext-body" class="ext-body"></div>
       </div>
     </div>
 
-    <!-- ⇡ Pull request (features/pull-request.js): gh login + gh pr create -->
+    <!-- â‡¡ Pull request (features/pull-request.js): gh login + gh pr create -->
     <div id="pr-modal" class="modal" hidden>
       <div class="modal-card pr-card" role="dialog" aria-modal="true" aria-labelledby="pr-title-h">
-        <div class="modal-head"><b id="pr-title-h">⇡ Pull request <small id="pr-branch" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="pr-title-h">â‡¡ Pull request <small id="pr-branch" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div id="pr-gh"></div>
         <form id="pr-form" class="oc-form" hidden>
           <label class="oc-field"><span>Judul *</span><input id="pr-title" required maxlength="256" autocomplete="off" /></label>
@@ -518,23 +518,23 @@
           <label class="oc-field"><span>Ke branch (kosong = branch default repo)</span><input id="pr-base" placeholder="main" autocomplete="off" /></label>
           <label class="switch"><input id="pr-draft" type="checkbox" /> Draft</label>
           <p class="muted small">Branch di-push dulu (upstream diatur bila baru, tanpa --force), lalu <code>gh pr create</code>.</p>
-          <div class="acct-actions"><button type="button" id="pr-claude" class="ghost" title="Claude menulis judul & deskripsi dari perubahannya, lalu membuat PR">✳ Biar Claude yang buat</button><button class="primary">⇡ Buat PR</button></div>
+          <div class="acct-actions"><button type="button" id="pr-claude" class="ghost" title="Claude menulis judul & deskripsi dari perubahannya, lalu membuat PR">âœ³ Biar Claude yang buat</button><button class="primary">â‡¡ Buat PR</button></div>
           <p id="pr-result" class="small"></p>
         </form>
       </div>
     </div>
 
-    <!-- 🧠 Memory (/memory, features/memory.js): CLAUDE.md / AGENTS.md editor, laptop or Tailscale -->
+    <!-- ðŸ§  Memory (/memory, features/memory.js): CLAUDE.md / AGENTS.md editor, laptop or Tailscale -->
     <div id="memory-modal" class="modal" hidden>
       <div class="modal-card memory-card" role="dialog" aria-modal="true" aria-labelledby="memory-title">
-        <div class="modal-head"><b id="memory-title">🧠 Memory <small id="memory-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="memory-title">ðŸ§  Memory <small id="memory-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p class="muted small">Instruksi yang dibaca setiap sesi (seperti <code>/memory</code> di terminal). Disimpan langsung ke file-nya.</p>
         <div id="memory-tabs" class="engine-opts" role="group" aria-label="File memory"></div>
         <p id="memory-hint" class="muted small"></p>
         <textarea id="memory-text" class="memory-text" spellcheck="false" aria-label="Isi file memory"></textarea>
         <div class="acct-actions">
-          <button type="button" id="memory-reload" class="ghost">↻ Muat ulang</button>
-          <button type="button" id="memory-save" class="primary">💾 Simpan (Ctrl+S)</button>
+          <button type="button" id="memory-reload" class="ghost">â†» Muat ulang</button>
+          <button type="button" id="memory-save" class="primary">ðŸ’¾ Simpan (Ctrl+S)</button>
         </div>
       </div>
     </div>
@@ -542,7 +542,7 @@
     <!-- Rewind (Esc Esc, /rewind): restore code and/or conversation to before one of your prompts -->
     <div id="rewind-modal" class="modal" hidden>
       <div class="modal-card rewind-card" role="dialog" aria-modal="true" aria-label="Rewind">
-        <div class="modal-head"><b>⏪ Rewind</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b>âª Rewind</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p class="muted small">Pilih pesanmu. Kode dan/atau percakapan dikembalikan ke keadaan <i>sebelum</i> pesan itu dikirim, seperti Esc Esc di Claude Code.</p>
         <ol id="rewind-list" class="rewind-list"></ol>
         <div id="rewind-detail" class="rewind-detail" hidden></div>
@@ -551,16 +551,16 @@
       </div>
     </div>
 
-    <!-- 🧹 Ringkas konteks (/ringkas, alias /compact): the engine compacts its context; the app's chat is unchanged -->
+    <!-- ðŸ§¹ Ringkas konteks (/ringkas, alias /compact): the engine compacts its context; the app's chat is unchanged -->
     <div id="compact-modal" class="modal" hidden>
       <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="compact-title">
-        <div class="modal-head"><b id="compact-title">🧹 Ringkas konteks</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="compact-title">ðŸ§¹ Ringkas konteks</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p id="compact-summary" class="compact-summary"></p>
         <form id="compact-form">
           <label class="oc-field" for="compact-focus"><span>Fokus (opsional)</span>
             <input id="compact-focus" maxlength="300" autocomplete="off" placeholder="pertahankan keputusan API dan file yang diubah" aria-describedby="compact-opencode-note compact-note" />
           </label>
-          <p id="compact-opencode-note" class="compact-note muted small" hidden>OpenCode mengabaikan teks fokus untuk sekarang — hanya Claude Code yang memakainya.</p>
+          <p id="compact-opencode-note" class="compact-note muted small" hidden>OpenCode mengabaikan teks fokus untuk sekarang â€” hanya Claude Code yang memakainya.</p>
           <p id="compact-note" class="compact-note muted small">Ringkas konteks memakai token mesin ini. Riwayat percakapan di aplikasi tidak berubah: tetap bisa dibaca, dicari, dan diekspor.</p>
           <p id="compact-error" class="field-error" role="alert"></p>
           <div class="acct-actions">
@@ -574,31 +574,31 @@
     <!-- MCP servers (/mcp): status, reconnect, enable/disable, OAuth login -->
     <div id="mcp-modal" class="modal" hidden>
       <div class="modal-card mcp-card" role="dialog" aria-modal="true" aria-label="Server MCP">
-        <div class="modal-head"><b>🔌 Server MCP <small id="mcp-summary" class="muted"></small></b><button id="mcp-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b>ðŸ”Œ Server MCP <small id="mcp-summary" class="muted"></small></b><button id="mcp-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">â†»</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div id="mcp-callback" class="mcp-callback" hidden>
           <p class="small">Setelah login, browser diarahkan ke alamat <code>localhost</code> yang mungkin gagal dibuka di perangkat ini. Salin URL lengkap dari address bar, lalu tempel di sini:</p>
-          <form id="mcp-callback-form"><input id="mcp-callback-url" aria-label="URL callback login MCP" placeholder="http://localhost:…/callback?code=…" autocomplete="off" /><button class="primary">Selesaikan login</button></form>
+          <form id="mcp-callback-form"><input id="mcp-callback-url" aria-label="URL callback login MCP" placeholder="http://localhost:â€¦/callback?code=â€¦" autocomplete="off" /><button class="primary">Selesaikan login</button></form>
         </div>
         <p id="mcp-engine-note" class="muted small"></p>
         <ul id="mcp-list" class="mcp-list"></ul>
-        <div class="acct-actions"><button type="button" id="mcp-add-toggle" class="ghost">＋ Tambah server</button></div>
+        <div class="acct-actions"><button type="button" id="mcp-add-toggle" class="ghost">ï¼‹ Tambah server</button></div>
         <form id="mcp-add" class="oc-form mcp-add" hidden>
           <label class="oc-field"><span>Nama *</span><input name="name" required pattern="[\w.\-]{1,60}" placeholder="mis. github, sentry, playwright" autocomplete="off" /></label>
           <label class="oc-field"><span>Jenis</span><select name="kind"><option value="local">Lokal (perintah di laptop ini)</option><option value="remote">Remote (URL http/https)</option></select></label>
           <label class="oc-field mcp-local"><span>Perintah *</span><input name="command" placeholder="mis. npx -y @playwright/mcp@latest" autocomplete="off" spellcheck="false" /></label>
           <label class="oc-field mcp-remote" hidden><span>URL *</span><input name="url" type="url" placeholder="https://mcp.example.com/mcp" autocomplete="off" /></label>
-          <label class="oc-field"><span>Variabel lingkungan (satu per baris, NAMA=nilai)</span><textarea name="env" rows="2" spellcheck="false" placeholder="API_KEY=…"></textarea></label>
+          <label class="oc-field"><span>Variabel lingkungan (satu per baris, NAMA=nilai)</span><textarea name="env" rows="2" spellcheck="false" placeholder="API_KEY=â€¦"></textarea></label>
           <label class="oc-field"><span>Berlaku untuk</span><select name="scope"><option value="local">Project ini (pribadi)</option><option value="project">Project ini (dibagi lewat file config project)</option><option value="user">Semua project</option></select></label>
           <button class="primary">Tambah</button>
         </form>
       </div>
     </div>
 
-    <!-- 🛡️ Saved permission rules (/permissions): per settings file; changing them is laptop-only -->
+    <!-- ðŸ›¡ï¸ Saved permission rules (/permissions): per settings file; changing them is laptop-only -->
     <div id="perm-modal" class="modal" hidden>
       <div class="modal-card perm-card" role="dialog" aria-modal="true" aria-labelledby="perm-title">
-        <div class="modal-head"><b id="perm-title">🛡️ Aturan izin <small id="perm-project" class="muted"></small> <small id="perm-count" class="muted"></small></b><button id="perm-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <p class="muted small perm-intro">Aturan "Izinkan selalu": <b>allow</b> tanpa tanya · <b>ask</b> selalu tanya · <b>deny</b> selalu tolak. Berlaku untuk sesi Claude Code berikutnya.</p>
+        <div class="modal-head"><b id="perm-title">ðŸ›¡ï¸ Aturan izin <small id="perm-project" class="muted"></small> <small id="perm-count" class="muted"></small></b><button id="perm-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">â†»</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
+        <p class="muted small perm-intro">Aturan "Izinkan selalu": <b>allow</b> tanpa tanya Â· <b>ask</b> selalu tanya Â· <b>deny</b> selalu tolak. Berlaku untuk sesi Claude Code berikutnya.</p>
         <p id="perm-ro" class="ro-note" hidden>Hanya bisa diubah dari laptop (aturan ini menentukan apa yang boleh dijalankan Claude tanpa bertanya).</p>
         <form id="perm-add" class="perm-add">
           <select id="perm-add-list" aria-label="Jenis aturan"><option value="allow">allow</option><option value="ask">ask</option><option value="deny">deny</option></select>
@@ -611,40 +611,40 @@
       </div>
     </div>
 
-    <!-- 📄 File viewer: one text file of the project, read-only (paths in the chat, the Changes tab) -->
+    <!-- ðŸ“„ File viewer: one text file of the project, read-only (paths in the chat, the Changes tab) -->
     <div id="file-modal" class="modal" hidden>
       <div class="modal-card file-card" role="dialog" aria-modal="true" aria-labelledby="fv-title">
-        <div class="modal-head"><b id="fv-title" class="fv-title">📄 Lihat file</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="fv-title" class="fv-title">ðŸ“„ Lihat file</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p id="fv-meta" class="fv-meta muted small"></p>
         <div class="fv-tools">
           <div class="fv-search" role="search">
             <input id="fv-q" type="search" placeholder="Cari di file (Ctrl+F)" aria-label="Cari di file" autocomplete="off" spellcheck="false" />
             <span id="fv-count" class="muted small" aria-live="polite"></span>
-            <button id="fv-prev" class="ghost icon" type="button" title="Hasil sebelumnya (Shift+Enter)" aria-label="Hasil sebelumnya">↑</button>
-            <button id="fv-next" class="ghost icon" type="button" title="Hasil berikutnya (Enter)" aria-label="Hasil berikutnya">↓</button>
+            <button id="fv-prev" class="ghost icon" type="button" title="Hasil sebelumnya (Shift+Enter)" aria-label="Hasil sebelumnya">â†‘</button>
+            <button id="fv-next" class="ghost icon" type="button" title="Hasil berikutnya (Enter)" aria-label="Hasil berikutnya">â†“</button>
           </div>
-          <button id="fv-mode" class="ghost" type="button" hidden>‹› Kode</button>
-          <button id="fv-copy" class="ghost" type="button" title="Salin seluruh isi file">📋 Salin</button>
-          <button id="fv-open" class="ghost local-only" type="button" title="Buka file ini di VS Code (di laptop)">🧭 Buka di VS Code</button>
+          <button id="fv-mode" class="ghost" type="button" hidden>â€¹â€º Kode</button>
+          <button id="fv-copy" class="ghost" type="button" title="Salin seluruh isi file">ðŸ“‹ Salin</button>
+          <button id="fv-open" class="ghost local-only" type="button" title="Buka file ini di VS Code (di laptop)">ðŸ§­ Buka di VS Code</button>
         </div>
         <div id="fv-body" class="fv-body"></div>
       </div>
     </div>
 
-    <!-- Background task monitor (/tasks, Ctrl+B, ⧗ chip): Bash commands and subagents Claude Code runs.
+    <!-- Background task monitor (/tasks, Ctrl+B, â§— chip): Bash commands and subagents Claude Code runs.
          Desktop: list left, live detail right. Phone: the list, then the detail with a back button. -->
     <div id="tasks-modal" class="modal" hidden>
       <div class="modal-card tasks-card" role="dialog" aria-modal="true" aria-labelledby="tasks-title">
-        <div class="modal-head"><b id="tasks-title">⧗ Tugas latar <small id="tasks-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="tasks-title">â§— Tugas latar <small id="tasks-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div class="tasks-tools">
           <p class="muted small">Perintah dan agent yang dijalankan mesin AI di sesi ini. <kbd>Ctrl</kbd> <kbd>B</kbd> memindahkan yang sedang jalan ke latar belakang supaya kamu bisa lanjut chat. Shell OpenCode dari sesi lain di folder ini tampil hanya-lihat.</p>
-          <button id="tasks-background" class="ghost" title="Ctrl+B">⏬ Pindahkan ke latar</button>
+          <button id="tasks-background" class="ghost" title="Ctrl+B">â¬ Pindahkan ke latar</button>
         </div>
         <div id="tasks-body" class="tasks-body">
           <ul id="tasks-list" class="tasks-list" aria-label="Daftar tugas"></ul>
           <section id="task-detail" class="task-detail" aria-labelledby="td-title">
             <div class="td-head">
-              <button id="td-back" class="ghost td-back" type="button">← Daftar tugas</button>
+              <button id="td-back" class="ghost td-back" type="button">â† Daftar tugas</button>
               <h3 id="td-title" class="td-title"></h3>
               <p id="td-info" class="td-info"></p>
               <p id="td-meta" class="td-meta" role="status" aria-live="polite"></p>
@@ -658,7 +658,7 @@
 
     <div id="runbook-modal" class="modal" hidden>
       <div class="modal-card runbook-card" role="dialog" aria-modal="true" aria-labelledby="runbook-title">
-        <div class="modal-head"><b id="runbook-title">📚 Runbook</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="runbook-title">ðŸ“š Runbook</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <label class="runbook-field"><span>Nama</span><input id="runbook-name" maxlength="80" autocomplete="off" /></label>
         <label class="runbook-field"><span>Mulai dari pustaka (opsional)</span><select id="runbook-template"></select></label>
         <label class="runbook-field"><span>Prompt</span><textarea id="runbook-prompts" rows="10" spellcheck="false" placeholder="Prompt pertama&#10;---&#10;Prompt kedua"></textarea></label>
@@ -671,31 +671,31 @@
       </div>
     </div>
 
-    <!-- ⚡ Prompt templates (features/templates.js): pick one into the composer; the user's own are stored on the server -->
+    <!-- âš¡ Prompt templates (features/templates.js): pick one into the composer; the user's own are stored on the server -->
     <div id="templates-modal" class="modal" hidden>
       <div class="modal-card templates-card" role="dialog" aria-modal="true" aria-labelledby="tpl-heading">
-        <div class="modal-head"><b id="tpl-heading">⚡ Template prompt</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="tpl-heading">âš¡ Template prompt</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div id="tpl-pick" class="tpl-pick">
           <div class="sessions-tools">
-            <input id="tpl-search" type="search" placeholder="Cari template…" aria-label="Cari template" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="tpl-list" aria-autocomplete="list" aria-describedby="tpl-keys" />
-            <button id="tpl-new" type="button" class="ghost">＋ Baru</button>
+            <input id="tpl-search" type="search" placeholder="Cari templateâ€¦" aria-label="Cari template" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="tpl-list" aria-autocomplete="list" aria-describedby="tpl-keys" />
+            <button id="tpl-new" type="button" class="ghost">ï¼‹ Baru</button>
           </div>
           <div id="tpl-list" class="tpl-list" role="listbox" aria-label="Daftar template"></div>
           <div id="tpl-preview" class="tpl-preview" aria-live="polite" aria-label="Isi template terpilih"></div>
           <div class="tpl-actions">
-            <button id="tpl-delete" type="button" class="danger" hidden>🗑 Hapus</button>
-            <button id="tpl-edit" type="button" class="ghost" hidden>✎ Ubah</button>
-            <button id="tpl-copy" type="button" class="ghost" hidden>⧉ Jadikan milikku</button>
+            <button id="tpl-delete" type="button" class="danger" hidden>ðŸ—‘ Hapus</button>
+            <button id="tpl-edit" type="button" class="ghost" hidden>âœŽ Ubah</button>
+            <button id="tpl-copy" type="button" class="ghost" hidden>â§‰ Jadikan milikku</button>
             <span class="grow"></span>
             <button id="tpl-use" type="button" class="primary">Sisipkan</button>
           </div>
-          <p id="tpl-keys" class="muted small tpl-keys">↑↓ pilih · Enter sisipkan · Esc tutup. Template masuk ke kotak pesan (tidak langsung dikirim); bagian <code>{…}</code> langsung terpilih untuk diisi, Tab ke bagian berikutnya.</p>
+          <p id="tpl-keys" class="muted small tpl-keys">â†‘â†“ pilih Â· Enter sisipkan Â· Esc tutup. Template masuk ke kotak pesan (tidak langsung dikirim); bagian <code>{â€¦}</code> langsung terpilih untuk diisi, Tab ke bagian berikutnya.</p>
         </div>
         <form id="tpl-form" class="tpl-form" hidden novalidate>
           <b id="tpl-form-title" class="tpl-form-title">Template baru</b>
           <label for="tpl-name">Nama <small id="tpl-name-count" class="muted"></small></label>
           <input id="tpl-name" maxlength="60" autocomplete="off" aria-describedby="tpl-error" />
-          <label for="tpl-text">Isi <small class="muted">— tulis <code>{placeholder}</code> untuk bagian yang diisi setiap kali</small></label>
+          <label for="tpl-text">Isi <small class="muted">â€” tulis <code>{placeholder}</code> untuk bagian yang diisi setiap kali</small></label>
           <textarea id="tpl-text" rows="8" maxlength="8000" spellcheck="false" aria-describedby="tpl-text-count tpl-error"></textarea>
           <small id="tpl-text-count" class="muted tpl-count"></small>
           <p id="tpl-error" class="field-error" role="alert"></p>
@@ -708,24 +708,24 @@
       </div>
     </div>
 
-    <!-- 📋 Antrian (features/queue.js, server src/queue.js): prompts run one by one when the session is idle -->
+    <!-- ðŸ“‹ Antrian (features/queue.js, server src/queue.js): prompts run one by one when the session is idle -->
     <div id="data-modal" class="modal" hidden>
       <div class="modal-card data-card" role="dialog" aria-modal="true" aria-labelledby="data-title">
-        <div class="modal-head"><b id="data-title">🕵️ Data saya</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="data-title">ðŸ•µï¸ Data saya</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p id="data-note" class="muted small"></p>
         <ul id="data-list" class="data-list" aria-label="Data yang disimpan"></ul>
         <div class="data-actions">
-          <button type="button" id="data-purge-push" class="ghost" title="Hapus log notifikasi yang dikirim ke HP">🧹 Hapus riwayat notifikasi</button>
-          <button type="button" id="data-purge-trash" class="ghost danger-text" title="Hapus permanen semua sesi di folder trash">🗑 Kosongkan trash sesi</button>
-          <button type="button" id="data-purge-redo" class="ghost danger-text" title="Hapus semua bundel redo; rewind yang sudah lalu tidak bisa dipulihkan">↩️ Hapus bundel redo</button>
-          <button type="button" id="data-purge-config-backups" class="ghost danger-text" title="Hapus backup konfigurasi OpenCode yang dibuat sebelum perubahan config">🧩 Hapus backup config OpenCode</button>
-          <button type="button" id="data-purge-metrics" class="ghost" title="Hapus riwayat kesehatan server (metrics.json)">📈 Hapus riwayat kesehatan</button>
-          <button type="button" id="data-purge-logs" class="ghost" title="Kosongkan isi server.log; file tetap dibuat lagi">📝 Kosongkan log server</button>
-          <button type="button" id="data-purge-state-backups" class="ghost" title="Hapus salinan state.json.pre-per-project-*; state.json yang aktif tidak disentuh">🗂 Hapus salinan state lama</button>
+          <button type="button" id="data-purge-push" class="ghost" title="Hapus log notifikasi yang dikirim ke HP">ðŸ§¹ Hapus riwayat notifikasi</button>
+          <button type="button" id="data-purge-trash" class="ghost danger-text" title="Hapus permanen semua sesi di folder trash">ðŸ—‘ Kosongkan trash sesi</button>
+          <button type="button" id="data-purge-redo" class="ghost danger-text" title="Hapus semua bundel redo; rewind yang sudah lalu tidak bisa dipulihkan">â†©ï¸ Hapus bundel redo</button>
+          <button type="button" id="data-purge-config-backups" class="ghost danger-text" title="Hapus backup konfigurasi OpenCode yang dibuat sebelum perubahan config">ðŸ§© Hapus backup config OpenCode</button>
+          <button type="button" id="data-purge-metrics" class="ghost" title="Hapus riwayat kesehatan server (metrics.json)">ðŸ“ˆ Hapus riwayat kesehatan</button>
+          <button type="button" id="data-purge-logs" class="ghost" title="Kosongkan isi server.log; file tetap dibuat lagi">ðŸ“ Kosongkan log server</button>
+          <button type="button" id="data-purge-state-backups" class="ghost" title="Hapus salinan state.json.pre-per-project-*; state.json yang aktif tidak disentuh">ðŸ—‚ Hapus salinan state lama</button>
         </div>
-        <!-- ⏳ Retensi otomatis (features/data.js, server POST /api/data/retention/*): laptop/Tailscale only -->
+        <!-- â³ Retensi otomatis (features/data.js, server POST /api/data/retention/*): laptop/Tailscale only -->
         <section class="data-retention" aria-labelledby="data-retention-title">
-          <b id="data-retention-title">⏳ Retensi otomatis</b>
+          <b id="data-retention-title">â³ Retensi otomatis</b>
           <p class="muted small">Pesan chat dan laporan pemakaian yang lebih lama dari batas ini dihapus otomatis tiap hari. Transkrip sesi dan backup tidak disentuh; 0 = simpan selamanya.</p>
           <div class="data-retention-row">
             <label for="data-ret-chats">Chat</label>
@@ -761,7 +761,7 @@
         </div>
         <section class="data-audit" aria-labelledby="data-audit-title">
           <div class="data-audit-head">
-            <b id="data-audit-title">📜 Aktivitas data terakhir</b>
+            <b id="data-audit-title">ðŸ“œ Aktivitas data terakhir</b>
             <span class="data-audit-tools">
               <select id="data-audit-filter" aria-label="Saring aktivitas data">
                 <option value="">Semua</option>
@@ -772,7 +772,7 @@
                 <option value="data-purge">Hapus data</option>
                 <option value="retention-run">Retensi data</option>
               </select>
-              <button type="button" id="data-audit-export" class="ghost" title="Unduh seluruh audit sebagai CSV">⬇ CSV</button>
+              <button type="button" id="data-audit-export" class="ghost" title="Unduh seluruh audit sebagai CSV">â¬‡ CSV</button>
             </span>
           </div>
           <ul id="data-audit" class="data-audit-list"><li class="muted small">Belum ada aktivitas.</li></ul>
@@ -782,26 +782,26 @@
 
     <div id="checklist-modal" class="modal" hidden>
       <div class="modal-card checklist-card" role="dialog" aria-modal="true" aria-labelledby="checklist-title">
-        <div class="modal-head"><b id="checklist-title">✅ Checklist project <small id="checklist-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="checklist-title">âœ… Checklist project <small id="checklist-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p id="checklist-sum" class="muted small" role="status" aria-live="polite"></p>
         <p class="muted small">Hal-hal yang membuat project lebih mudah dikerjakan mesin AI. Tidak ada yang diubah dari sini.</p>
         <ul id="checklist-list" class="checklist-list" aria-label="Butir checklist"></ul>
         <div class="checklist-actions">
-          <button type="button" id="checklist-scaffold" class="ghost" title="Buat README/AGENTS.md/.env.example/docs yang belum ada; file yang sudah ada tidak ditimpa">🛠 Buat kerangka yang belum ada</button>
+          <button type="button" id="checklist-scaffold" class="ghost" title="Buat README/AGENTS.md/.env.example/docs yang belum ada; file yang sudah ada tidak ditimpa">ðŸ›  Buat kerangka yang belum ada</button>
         </div>
       </div>
     </div>
 
     <div id="queue-modal" class="modal" hidden>
       <div class="modal-card queue-card" role="dialog" aria-modal="true" aria-labelledby="queue-title">
-        <div class="modal-head"><b id="queue-title">📋 Antrian <small id="queue-project" class="muted"></small></b><button type="button" id="queue-all-open" class="ghost" title="Lihat antrian semua project">🌐 Semua</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="queue-title">ðŸ“‹ Antrian <small id="queue-project" class="muted"></small></b><button type="button" id="queue-all-open" class="ghost" title="Lihat antrian semua project">ðŸŒ Semua</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div class="queue-bar">
           <p id="queue-state" class="queue-state" role="status" aria-live="polite"></p>
-          <button id="queue-toggle" type="button" class="ghost">⏸ Jeda</button>
-          <label class="switch small" title="Item yang gagal dicoba sekali lagi sebelum antrian dijeda"><input id="queue-retry-once" type="checkbox" /> ↻ Ulangi sekali bila gagal</label>
+          <button id="queue-toggle" type="button" class="ghost">â¸ Jeda</button>
+          <label class="switch small" title="Item yang gagal dicoba sekali lagi sebelum antrian dijeda"><input id="queue-retry-once" type="checkbox" /> â†» Ulangi sekali bila gagal</label>
         </div>
         <div class="queue-filter">
-          <input id="queue-search" type="search" placeholder="Cari prompt di antrian…" aria-label="Cari item antrian" autocomplete="off" />
+          <input id="queue-search" type="search" placeholder="Cari prompt di antrianâ€¦" aria-label="Cari item antrian" autocomplete="off" />
           <select id="queue-status-filter" aria-label="Saring antrian berdasarkan status">
             <option value="all">Semua status</option>
             <option value="waiting">Menunggu</option>
@@ -813,18 +813,18 @@
         <ol id="queue-list" class="queue-list" aria-label="Item antrian"></ol>
         <div class="queue-new">
           <label for="queue-new" class="sr-only">Prompt baru untuk antrian</label>
-          <textarea id="queue-new" rows="2" maxlength="20000" placeholder="Prompt berikutnya… (Ctrl+Enter untuk menambah)"></textarea>
-          <button id="queue-add" type="button" class="primary">＋ Tambah</button>
+          <textarea id="queue-new" rows="2" maxlength="20000" placeholder="Prompt berikutnyaâ€¦ (Ctrl+Enter untuk menambah)"></textarea>
+          <button id="queue-add" type="button" class="primary">ï¼‹ Tambah</button>
         </div>
         <div class="queue-foot">
           <small id="queue-count" class="muted"></small>
           <span class="grow"></span>
-          <button id="queue-clear" type="button" class="ghost" hidden>🧹 Bersihkan yang selesai</button>
+          <button id="queue-clear" type="button" class="ghost" hidden>ðŸ§¹ Bersihkan yang selesai</button>
         </div>
         <!-- Batas antrian: token/cost budget, checked by the server after each item (POST queue-budget) -->
         <section id="qb" class="queue-budget" aria-label="Batas antrian">
           <div class="qb-head">
-            <button id="qb-toggle" type="button" class="qb-toggle" aria-expanded="false" aria-controls="qb-body">💰 Batas antrian</button>
+            <button id="qb-toggle" type="button" class="qb-toggle" aria-expanded="false" aria-controls="qb-body">ðŸ’° Batas antrian</button>
             <span id="qb-usage" class="qb-usage muted">tanpa batas</span>
             <span id="qb-bar" class="qb-bar" role="progressbar" aria-label="Pemakaian batas antrian" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><span class="qb-fill"></span></span>
           </div>
@@ -843,31 +843,31 @@
         </section>
         <section id="runbooks" class="queue-runbooks" aria-label="Runbook antrian">
           <div class="rb-head">
-            <b>📚 Runbook</b>
-            <button id="runbook-save" type="button" class="ghost" title="Simpan item antrian yang masih menunggu sebagai runbook">＋ Simpan antrian ini</button>
+            <b>ðŸ“š Runbook</b>
+            <button id="runbook-save" type="button" class="ghost" title="Simpan item antrian yang masih menunggu sebagai runbook">ï¼‹ Simpan antrian ini</button>
           </div>
-          <p class="muted small">Rangkaian prompt tersimpan untuk project ini. ▶ menambahkannya ke antrian.</p>
+          <p class="muted small">Rangkaian prompt tersimpan untuk project ini. â–¶ menambahkannya ke antrian.</p>
           <ul id="runbook-list" class="runbook-list"></ul>
         </section>
         <p class="muted small queue-help">Satu item per giliran. Antrian berhenti bila item gagal/dihentikan, kuota habis, atau penuh; tetap dijeda setelah restart. Seret untuk mengubah urutan.</p>
       </div>
     </div>
 
-    <!-- 🌐 Semua antrian (features/queue-all.js): the global order across projects, read-only from the server -->
+    <!-- ðŸŒ Semua antrian (features/queue-all.js): the global order across projects, read-only from the server -->
     <div id="queue-all-modal" class="modal" hidden>
       <div class="modal-card queue-card queue-all-card" role="dialog" aria-modal="true" aria-labelledby="queue-all-title">
-        <div class="modal-head"><b id="queue-all-title">🌐 Semua antrian <small id="queue-all-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="queue-all-title">ðŸŒ Semua antrian <small id="queue-all-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p class="muted small">Urutan global lintas project. Prompt interaktif didahulukan dari runbook/tugas terjadwal, lalu yang paling lama menunggu.</p>
-        <div class="queue-all-tools"><button type="button" id="queue-all-pause" class="ghost" title="Jeda atau lanjutkan semua antrian yang sedang menunggu">⏸ Jeda semua</button><button type="button" id="queue-all-refresh" class="ghost">↻ Muat ulang</button></div>
+        <div class="queue-all-tools"><button type="button" id="queue-all-pause" class="ghost" title="Jeda atau lanjutkan semua antrian yang sedang menunggu">â¸ Jeda semua</button><button type="button" id="queue-all-refresh" class="ghost">â†» Muat ulang</button></div>
         <ol id="queue-all-list" class="queue-all-list" aria-label="Semua item antrian"></ol>
         <p id="queue-all-empty" class="muted" hidden>Tidak ada item antrian.</p>
       </div>
     </div>
 
-    <!-- ✎ Edit a prompt that is still in 📋 Antrian (features/queue-edit.js): POST queue-update patches the same bubble -->
+    <!-- âœŽ Edit a prompt that is still in ðŸ“‹ Antrian (features/queue-edit.js): POST queue-update patches the same bubble -->
     <div id="queue-edit-modal" class="modal" hidden>
       <div class="modal-card queue-edit-card" role="dialog" aria-modal="true" aria-labelledby="queue-edit-title">
-        <div class="modal-head"><b id="queue-edit-title">✎ Ubah prompt antrian</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="queue-edit-title">âœŽ Ubah prompt antrian</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <label class="queue-edit-field" for="queue-edit-text">Prompt</label>
         <textarea id="queue-edit-text" class="queue-edit-input" rows="5" maxlength="20000" spellcheck="false" aria-describedby="queue-edit-error"></textarea>
         <p class="muted small">Tersimpan untuk item antrian ini saja; bubble di chat ikut diperbarui.</p>
@@ -882,21 +882,21 @@
     <!-- Settings (laptop only) -->
     <div id="settings-modal" class="modal" hidden>
       <div class="modal-card settings-card" role="dialog" aria-modal="true" aria-label="Pengaturan">
-        <div class="modal-head"><b>⚙ Pengaturan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b>âš™ Pengaturan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <!-- Desktop: sections in tabs (the phone keeps one long sheet; CSS hides this bar under 760 px). -->
         <div id="settings-tabs" class="settings-tabs" role="tablist" aria-label="Bagian pengaturan">
-          <button type="button" class="settings-tab on" id="settings-tab-umum" role="tab" aria-selected="true" aria-controls="settings-panel-umum" data-settings-tab="umum">📁 Umum</button>
-          <button type="button" class="settings-tab" id="settings-tab-tim" role="tab" aria-selected="false" aria-controls="settings-panel-tim" data-settings-tab="tim">👥 Tim &amp; izin</button>
-          <button type="button" class="settings-tab" id="settings-tab-jadwal" role="tab" aria-selected="false" aria-controls="settings-panel-jadwal" data-settings-tab="jadwal">⏰ Jadwal</button>
-          <button type="button" class="settings-tab" id="settings-tab-notifikasi" role="tab" aria-selected="false" aria-controls="settings-panel-notifikasi" data-settings-tab="notifikasi">🔔 Notifikasi</button>
-          <button type="button" class="settings-tab" id="settings-tab-spotify" role="tab" aria-selected="false" aria-controls="settings-panel-spotify" data-settings-tab="spotify" hidden>♪ Spotify</button>
-          <button type="button" class="settings-tab" id="settings-tab-cadangan" role="tab" aria-selected="false" aria-controls="settings-panel-cadangan" data-settings-tab="cadangan">💾 Cadangan</button>
-          <button type="button" class="settings-tab" id="settings-tab-sistem" role="tab" aria-selected="false" aria-controls="settings-panel-sistem" data-settings-tab="sistem">⚙ Sistem</button>
+          <button type="button" class="settings-tab on" id="settings-tab-umum" role="tab" aria-selected="true" aria-controls="settings-panel-umum" data-settings-tab="umum">ðŸ“ Umum</button>
+          <button type="button" class="settings-tab" id="settings-tab-tim" role="tab" aria-selected="false" aria-controls="settings-panel-tim" data-settings-tab="tim">ðŸ‘¥ Tim &amp; izin</button>
+          <button type="button" class="settings-tab" id="settings-tab-jadwal" role="tab" aria-selected="false" aria-controls="settings-panel-jadwal" data-settings-tab="jadwal">â° Jadwal</button>
+          <button type="button" class="settings-tab" id="settings-tab-notifikasi" role="tab" aria-selected="false" aria-controls="settings-panel-notifikasi" data-settings-tab="notifikasi">ðŸ”” Notifikasi</button>
+          <button type="button" class="settings-tab" id="settings-tab-spotify" role="tab" aria-selected="false" aria-controls="settings-panel-spotify" data-settings-tab="spotify" hidden>â™ª Spotify</button>
+          <button type="button" class="settings-tab" id="settings-tab-cadangan" role="tab" aria-selected="false" aria-controls="settings-panel-cadangan" data-settings-tab="cadangan">ðŸ’¾ Cadangan</button>
+          <button type="button" class="settings-tab" id="settings-tab-sistem" role="tab" aria-selected="false" aria-controls="settings-panel-sistem" data-settings-tab="sistem">âš™ Sistem</button>
         </div>
         <form id="roots-form" class="roots settings-body">
-          <input id="settings-search" class="settings-search" type="search" placeholder="Cari pengaturan…" aria-label="Cari pengaturan" autocomplete="off" />
+          <input id="settings-search" class="settings-search" type="search" placeholder="Cari pengaturanâ€¦" aria-label="Cari pengaturan" autocomplete="off" />
           <div class="settings-panel on" id="settings-panel-umum" data-settings-panel="umum" role="tabpanel" aria-labelledby="settings-tab-umum">
-          <label for="roots-input">Folder induk projects <small>(satu per baris — semua subfolder-nya jadi project)</small></label>
+          <label for="roots-input">Folder induk projects <small>(satu per baris â€” semua subfolder-nya jadi project)</small></label>
           <textarea id="roots-input" rows="3" spellcheck="false" placeholder="C:\Users\nama\projects"></textarea>
           <p id="roots-hint" class="muted"></p>
           <div class="roots-actions">
@@ -904,13 +904,13 @@
           </div>
           <hr />
           <section class="theme-pick" aria-labelledby="theme-title" aria-describedby="theme-desc">
-            <b id="theme-title">🎨 Tema kantor</b>
+            <b id="theme-title">ðŸŽ¨ Tema kantor</b>
             <div id="theme-seg" class="seg" role="group" aria-labelledby="theme-title"></div>
             <p id="theme-desc" class="muted">Ganti tampilan kantor pixel dan kostum tim. Disimpan di browser ini.</p>
           </section>
           <hr />
           <section class="appearance" aria-labelledby="appearance-title">
-            <b id="appearance-title">🖥️ Tampilan</b>
+            <b id="appearance-title">ðŸ–¥ï¸ Tampilan</b>
             <div class="appearance-row"><span>Tema</span><div class="seg" data-appearance="theme" role="group" aria-label="Tema aplikasi"><button type="button" data-value="light" aria-pressed="false">Terang</button><button type="button" data-value="dark" aria-pressed="false">Gelap</button><button type="button" data-value="contrast" aria-pressed="false">Kontras tinggi</button><button type="button" data-value="system" aria-pressed="false">Sistem</button></div></div>
             <div class="appearance-row"><span>Ukuran teks</span><div class="seg" data-appearance="size" role="group" aria-label="Ukuran teks"><button type="button" data-value="small" aria-pressed="false">Kecil</button><button type="button" data-value="normal" aria-pressed="false">Normal</button><button type="button" data-value="large" aria-pressed="false">Besar</button></div></div>
             <div class="appearance-row"><span>Kepadatan</span><div class="seg" data-appearance="density" role="group" aria-label="Kepadatan tampilan"><button type="button" data-value="comfortable" aria-pressed="false">Nyaman</button><button type="button" data-value="compact" aria-pressed="false">Padat</button></div></div>
@@ -918,11 +918,11 @@
             <p class="muted small">Disimpan di perangkat ini. Tema kantor tetap diatur terpisah di atas.</p>
           </section>
           <hr />
-          <!-- 💰 Budget pemakaian global (features/budget.js, server POST /api/budget & /api/budget/save): laptop/Tailscale only -->
+          <!-- ðŸ’° Budget pemakaian global (features/budget.js, server POST /api/budget & /api/budget/save): laptop/Tailscale only -->
           <section id="budget-section" class="budget-block" aria-labelledby="budget-title">
-            <b id="budget-title">💰 Budget pemakaian</b>
+            <b id="budget-title">ðŸ’° Budget pemakaian</b>
             <label class="budget-field budget-scope">Berlaku untuk<select id="budget-project"><option value="">Global (semua project)</option></select></label>
-            <ul id="budget-rows" class="budget-rows" aria-live="polite" aria-busy="false"><li class="muted small">Memuat budget…</li></ul>
+            <ul id="budget-rows" class="budget-rows" aria-live="polite" aria-busy="false"><li class="muted small">Memuat budgetâ€¦</li></ul>
             <div id="budget-form" class="budget-form">
               <label class="budget-field"><span>Harian (USD)</span><input id="budget-daily" type="number" inputmode="decimal" min="0" max="10000" step="0.01" placeholder="tanpa batas" aria-describedby="budget-note budget-error" /></label>
               <label class="budget-field"><span>Mingguan (USD)</span><input id="budget-weekly" type="number" inputmode="decimal" min="0" max="10000" step="0.01" placeholder="tanpa batas" aria-describedby="budget-note budget-error" /></label>
@@ -936,14 +936,14 @@
             <p id="budget-note" class="muted small">Batas biaya tercatat, bukan tagihan. OpenCode Go berlangganan, jadi budget ini terutama untuk Claude.</p>
             <details id="budget-audit" class="budget-audit">
               <summary>Riwayat perubahan budget</summary>
-              <ul id="budget-audit-list"><li class="muted small">Buka untuk memuat riwayat…</li></ul>
+              <ul id="budget-audit-list"><li class="muted small">Buka untuk memuat riwayatâ€¦</li></ul>
             </details>
           </section>
           <hr />
-          <!-- ⚡ Batas giliran bersamaan (features/settings.js, server POST /api/concurrency/save): laptop/Tailscale only -->
+          <!-- âš¡ Batas giliran bersamaan (features/settings.js, server POST /api/concurrency/save): laptop/Tailscale only -->
           <section id="concurrency-section" class="concurrency-block" aria-labelledby="concurrency-title">
-            <b id="concurrency-title">⚡ Batas giliran bersamaan</b>
-            <p class="muted small">Berapa project yang boleh bekerja pada saat yang sama di laptop ini. Prompt ke project lain otomatis masuk 📋 Antrian saat batas tercapai dan jalan begitu ada slot kosong; 0 = tanpa batas.</p>
+            <b id="concurrency-title">âš¡ Batas giliran bersamaan</b>
+            <p class="muted small">Berapa project yang boleh bekerja pada saat yang sama di laptop ini. Prompt ke project lain otomatis masuk ðŸ“‹ Antrian saat batas tercapai dan jalan begitu ada slot kosong; 0 = tanpa batas.</p>
             <div class="concurrency-row">
               <label for="max-concurrent">Maksimal giliran</label>
               <input id="max-concurrent" type="number" inputmode="numeric" min="0" max="8" step="1" value="3" aria-describedby="max-concurrent-hint" />
@@ -953,15 +953,15 @@
           </section>
           </div>
           <div class="settings-panel" id="settings-panel-tim" data-settings-panel="tim" role="tabpanel" aria-labelledby="settings-tab-tim">
-          <button type="button" id="btn-roster" class="ghost team-names-btn" title="Pilih role bawaan yang punya meja di kantor">👥 Kelola tim (role aktif)</button>
-          <button type="button" id="btn-team-names" class="ghost team-names-btn">✏️ Ganti nama anggota tim</button>
-          <button type="button" id="btn-permissions" class="ghost team-names-btn" data-cap="permissions" title="Aturan allow / ask / deny Claude Code untuk project yang sedang dibuka">🛡️ Aturan izin project ini</button>
+          <button type="button" id="btn-roster" class="ghost team-names-btn" title="Pilih role bawaan yang punya meja di kantor">ðŸ‘¥ Kelola tim (role aktif)</button>
+          <button type="button" id="btn-team-names" class="ghost team-names-btn">âœï¸ Ganti nama anggota tim</button>
+          <button type="button" id="btn-permissions" class="ghost team-names-btn" data-cap="permissions" title="Aturan allow / ask / deny Claude Code untuk project yang sedang dibuka">ðŸ›¡ï¸ Aturan izin project ini</button>
           </div>
           <div class="settings-panel" id="settings-panel-jadwal" data-settings-panel="jadwal" role="tabpanel" aria-labelledby="settings-tab-jadwal">
           <section class="routines" aria-labelledby="routines-title">
-            <b id="routines-title">⏰ Tugas terjadwal</b>
+            <b id="routines-title">â° Tugas terjadwal</b>
             <p class="muted small">Prompt otomatis masuk antrian saat waktunya tiba: sekali, harian, atau mingguan.</p>
-            <div id="routine-list" class="routine-list" aria-live="polite"><p class="muted small">Memuat jadwal…</p></div>
+            <div id="routine-list" class="routine-list" aria-live="polite"><p class="muted small">Memuat jadwalâ€¦</p></div>
             <div class="routine-form">
               <label class="routine-field">Project<select id="routine-project"></select></label>
               <label class="routine-field">Prompt<textarea id="routine-prompt" rows="2" maxlength="4000" placeholder="mis. Cek CI lalu laporkan hasilnya."></textarea></label>
@@ -972,15 +972,15 @@
                 <label class="routine-field" id="routine-date-wrap" hidden>Tanggal<input id="routine-date" type="date" /></label>
               </div>
               <p id="routine-error" class="field-error" role="alert"></p>
-              <div class="routine-actions"><button type="button" id="routine-add" class="primary">＋ Tambah jadwal</button><button type="button" id="routine-cancel" class="ghost" hidden>Batal</button></div>
+              <div class="routine-actions"><button type="button" id="routine-add" class="primary">ï¼‹ Tambah jadwal</button><button type="button" id="routine-cancel" class="ghost" hidden>Batal</button></div>
             </div>
           </section>
           </div>
           <div class="settings-panel" id="settings-panel-notifikasi" data-settings-panel="notifikasi" role="tabpanel" aria-labelledby="settings-tab-notifikasi">
-          <button type="button" id="btn-notify-settings" class="ghost team-names-btn" aria-haspopup="dialog" title="Per jenis kejadian, jam tenang, hanya project favorit, volume (disimpan di browser ini)">🔔 Pengaturan notifikasi</button>
+          <button type="button" id="btn-notify-settings" class="ghost team-names-btn" aria-haspopup="dialog" title="Per jenis kejadian, jam tenang, hanya project favorit, volume (disimpan di browser ini)">ðŸ”” Pengaturan notifikasi</button>
           <hr />
           <section class="quota-alerts" aria-labelledby="quota-title" aria-describedby="quota-desc">
-            <b id="quota-title">⏳ Peringatan kuota</b>
+            <b id="quota-title">â³ Peringatan kuota</b>
             <label class="switch"><input id="quota-on" type="checkbox" /> Ingatkan saat kuota Claude hampir habis</label>
             <div class="quota-thresholds">
               <label for="quota-warn"><span class="quota-swatch warn" aria-hidden="true"></span>Kuning pada</label>
@@ -993,12 +993,12 @@
           </section>
           </div>
           <div class="settings-panel" id="settings-panel-spotify" data-settings-panel="spotify" role="tabpanel" aria-labelledby="settings-tab-spotify">
-          <!-- ♪ Spotify (features/spotify.js; laptop only, like this whole dialog). Hidden while the server has no Spotify support. -->
+          <!-- â™ª Spotify (features/spotify.js; laptop only, like this whole dialog). Hidden while the server has no Spotify support. -->
           <section id="sps" class="spotify-settings" aria-labelledby="sps-title" hidden>
-            <b id="sps-title">♪ Spotify</b>
+            <b id="sps-title">â™ª Spotify</b>
             <ol class="sps-steps muted small">
               <li>Buat app di <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer">developer.spotify.com</a>.</li>
-              <li>Tambahkan Redirect URI ini persis: <code id="sps-redirect">…</code> <button type="button" id="sps-copy" class="ghost sps-copy" aria-label="Salin Redirect URI">📋 Salin</button></li>
+              <li>Tambahkan Redirect URI ini persis: <code id="sps-redirect">â€¦</code> <button type="button" id="sps-copy" class="ghost sps-copy" aria-label="Salin Redirect URI">ðŸ“‹ Salin</button></li>
               <li>Di <i>Users and Access</i>, tambahkan email akun Spotify kamu.</li>
               <li>Tempel Client ID di bawah. Tanpa client secret.</li>
             </ol>
@@ -1011,14 +1011,14 @@
             <p id="sps-error" class="field-error" role="alert"></p>
             <p id="sps-status" class="sps-status" role="status" aria-live="polite"></p>
             <div class="backup-actions">
-              <button type="button" id="sps-connect" class="ghost">🔗 Hubungkan</button>
-              <button type="button" id="sps-switch" class="ghost" hidden>↻ Ganti akun</button>
-              <button type="button" id="sps-logout" class="ghost" hidden>⏏ Putuskan</button>
+              <button type="button" id="sps-connect" class="ghost">ðŸ”— Hubungkan</button>
+              <button type="button" id="sps-switch" class="ghost" hidden>â†» Ganti akun</button>
+              <button type="button" id="sps-logout" class="ghost" hidden>â Putuskan</button>
             </div>
             <p id="sps-revoke" class="muted small" hidden>Untuk mencabut akses sepenuhnya, buka <a href="https://www.spotify.com/account/apps/" target="_blank" rel="noopener noreferrer">spotify.com/account/apps</a>.</p>
             <label class="switch"><input id="sps-office" type="checkbox" /> Tampilkan radio musik di kantor</label>
             <label class="switch"><input id="sps-autolaunch" type="checkbox" aria-describedby="sps-autolaunch-hint" /> Buka Spotify otomatis di latar belakang</label>
-            <p id="sps-autolaunch-hint" class="muted small">Saat ▶ ditekan dan tidak ada perangkat aktif: buka Spotify di laptop (diperkecil), lalu putar di sana.</p>
+            <p id="sps-autolaunch-hint" class="muted small">Saat â–¶ ditekan dan tidak ada perangkat aktif: buka Spotify di laptop (diperkecil), lalu putar di sana.</p>
             <div class="sps-row">
               <label for="sps-duck">Saat ada permintaan izin</label>
               <select id="sps-duck"><option value="off">Mati</option><option value="duck">Kecilkan</option><option value="pause">Jeda</option></select>
@@ -1028,32 +1028,32 @@
           </div>
           <div class="settings-panel" id="settings-panel-cadangan" data-settings-panel="cadangan" role="tabpanel" aria-labelledby="settings-tab-cadangan">
           <section class="backup" aria-labelledby="backup-title" aria-describedby="backup-desc">
-            <b id="backup-title">💾 Cadangkan riwayat</b>
+            <b id="backup-title">ðŸ’¾ Cadangkan riwayat</b>
             <p id="backup-desc" class="muted">Export di sini, Import di laptop baru, lalu lanjutkan percakapan. Login tidak ikut.</p>
             <p id="backup-remote" class="muted" hidden>Hanya dari laptop.</p>
             <div class="backup-actions">
-              <button type="button" id="btn-backup-export" class="ghost">⬇ Export riwayat</button>
-              <button type="button" id="btn-backup-import" class="ghost">⬆ Import riwayat</button>
-              <button type="button" id="btn-backup-verify" class="ghost" title="Periksa file dan kata sandinya tanpa memulihkan apa pun">🔎 Verifikasi file</button>
-              <button type="button" id="btn-backup-rekey" class="ghost" title="Ganti kata sandi file .aob (unduh ulang dengan sandi baru)">🔑 Ganti sandi</button>
+              <button type="button" id="btn-backup-export" class="ghost">â¬‡ Export riwayat</button>
+              <button type="button" id="btn-backup-import" class="ghost">â¬† Import riwayat</button>
+              <button type="button" id="btn-backup-verify" class="ghost" title="Periksa file dan kata sandinya tanpa memulihkan apa pun">ðŸ”Ž Verifikasi file</button>
+              <button type="button" id="btn-backup-rekey" class="ghost" title="Ganti kata sandi file .aob (unduh ulang dengan sandi baru)">ðŸ”‘ Ganti sandi</button>
               <input type="file" id="backup-file" accept=".zip,.aob,application/zip,application/octet-stream" aria-label="File backup riwayat (.zip atau .aob)" hidden />
               <input type="file" id="backup-verify-file" accept=".zip,.aob" aria-label="File backup untuk diverifikasi" hidden />
               <input type="file" id="backup-rekey-file" accept=".aob" aria-label="File backup terenkripsi untuk diganti sandinya" hidden />
             </div>
-            <label class="backup-password-label" for="backup-password">🔐 Kata sandi backup <small>(opsional saat export; wajib untuk file .aob)</small></label>
+            <label class="backup-password-label" for="backup-password">ðŸ” Kata sandi backup <small>(opsional saat export; wajib untuk file .aob)</small></label>
             <div class="backup-password-row">
               <input id="backup-password" type="password" minlength="8" maxlength="200" placeholder="Minimal 8 karakter untuk mengenkripsi" aria-label="Kata sandi backup" autocomplete="new-password" />
-              <button type="button" id="backup-generate" class="ghost" title="Buat kata sandi acak kuat (recovery key)">🎲 Buat</button>
-              <button type="button" id="backup-copy-password" class="ghost" title="Salin kata sandi ke clipboard">📋</button>
+              <button type="button" id="backup-generate" class="ghost" title="Buat kata sandi acak kuat (recovery key)">ðŸŽ² Buat</button>
+              <button type="button" id="backup-copy-password" class="ghost" title="Salin kata sandi ke clipboard">ðŸ“‹</button>
             </div>
             <p id="backup-strength" class="muted small" role="status" aria-live="polite"></p>
             <p id="backup-encrypt-note" class="muted small">Backup terenkripsi tidak bisa dibuka tanpa kata sandi ini; tidak ada pemulihan. Kosongkan saat export untuk file .zip biasa.</p>
             <p id="backup-status" class="muted" role="status" aria-live="polite"></p>
-            <button type="button" id="btn-data-panel" class="ghost team-names-btn" title="Apa saja yang disimpan aplikasi di laptop ini, dan bersihkan yang aman">🕵️ Data saya</button>
+            <button type="button" id="btn-data-panel" class="ghost team-names-btn" title="Apa saja yang disimpan aplikasi di laptop ini, dan bersihkan yang aman">ðŸ•µï¸ Data saya</button>
             <div id="backup-result" class="backup-result" hidden></div>
-            <!-- ⏰ Backup otomatis (features/backup-auto.js, server src/backup-schedule.js) -->
+            <!-- â° Backup otomatis (features/backup-auto.js, server src/backup-schedule.js) -->
             <div class="backup-auto" role="group" aria-labelledby="ba-title">
-              <b id="ba-title">⏰ Backup otomatis</b>
+              <b id="ba-title">â° Backup otomatis</b>
               <label class="switch"><input id="ba-enabled" type="checkbox" /> Buat backup terjadwal ke folder di laptop ini</label>
               <div class="ba-grid">
                 <label for="ba-frequency">Jadwal</label>
@@ -1069,12 +1069,12 @@
               <input id="ba-folder" spellcheck="false" autocomplete="off" placeholder="D:\Backup\adhitron"aria-describedby="ba-error ba-desc" />
               <p id="ba-error" class="field-error" role="alert"></p>
               <div class="backup-actions">
-                <button type="button" id="ba-save" class="ghost">💾 Simpan jadwal</button>
-                <button type="button" id="ba-run" class="ghost">▶ Jalankan sekarang</button>
+                <button type="button" id="ba-save" class="ghost">ðŸ’¾ Simpan jadwal</button>
+                <button type="button" id="ba-run" class="ghost">â–¶ Jalankan sekarang</button>
               </div>
               <p id="ba-status" class="muted" role="status" aria-live="polite"></p>
               <div id="ba-history" class="ba-history" hidden>
-                <b>🕘 Riwayat backup otomatis</b>
+                <b>ðŸ•˜ Riwayat backup otomatis</b>
                 <ul id="ba-history-list" class="ba-history-list"></ul>
                 <p id="ba-restore-status" class="muted small" role="status" aria-live="polite"></p>
               </div>
@@ -1083,139 +1083,140 @@
           </section>
           </div>
           <div class="settings-panel" id="settings-panel-sistem" data-settings-panel="sistem" role="tabpanel" aria-labelledby="settings-tab-sistem">
-          <!-- ⬆ Update aplikasi (features/app-update.js, server src/app-update.js) -->
+          <!-- â¬† Update aplikasi (features/app-update.js, server src/app-update.js) -->
           <section class="claude-check" aria-labelledby="au-title">
-            <b id="au-title">⬆ Update Adhitron</b>
+            <b id="au-title">â¬† Update Adhitron</b>
             <p class="muted small">Dicek tiap 30 menit dari GitHub. Perubahan lokal yang belum di-commit tidak ditimpa.</p>
             <p id="app-update-status" class="muted" role="status" aria-live="polite"></p>
             <div class="backup-actions">
-              <button type="button" id="app-update-check" class="ghost">↻ Cek update</button>
-              <button type="button" id="app-update-run" class="primary" hidden>⬆ Update sekarang</button>
+              <button type="button" id="app-update-check" class="ghost">â†» Cek update</button>
+              <button type="button" id="app-update-run" class="primary" hidden>â¬† Update sekarang</button>
             </div>
           </section>
           <hr />
-          <!-- 🩺 Kesehatan sistem (features/health.js, server POST /api/health): laptop/Tailscale only, a WiFi phone is refused -->
+          <!-- ðŸ©º Kesehatan sistem (features/health.js, server POST /api/health): laptop/Tailscale only, a WiFi phone is refused -->
           <section id="setup-section" class="claude-check" aria-labelledby="setup-section-title">
-            <b id="setup-section-title">🧰 Persiapan</b>
+            <b id="setup-section-title">ðŸ§° Persiapan</b>
             <p class="muted small">Node.js, Claude Code, OpenCode, dan Tailscale. Dipasang ke folder aplikasi sendiri, tanpa admin; yang opsional boleh dilewati.</p>
-            <p id="setup-summary" class="muted" role="status" aria-live="polite">Memeriksa…</p>
+            <p id="setup-summary" class="muted" role="status" aria-live="polite">Memeriksaâ€¦</p>
             <div class="backup-actions">
               <button type="button" id="setup-open" class="ghost" aria-haspopup="dialog">Buka Persiapan</button>
             </div>
           </section>
           <section id="health-section" class="claude-check" aria-labelledby="health-section-title">
-            <b id="health-section-title">🩺 Kesehatan sistem</b>
+            <b id="health-section-title">ðŸ©º Kesehatan sistem</b>
             <p class="muted small">Pemeriksaan server &amp; mesin, persiapan, ukuran data, dan error 24 jam.</p>
             <div class="backup-actions">
-              <button type="button" id="health-open" class="ghost" aria-haspopup="dialog">🩺 Kesehatan sistem</button>
+              <button type="button" id="health-open" class="ghost" aria-haspopup="dialog">ðŸ©º Kesehatan sistem</button>
             </div>
           </section>
           <hr />
-          <!-- 🧩 Claude Code update detector (features/claude-check.js, server src/claude-check.js; laptop only like this dialog) -->
+          <!-- ðŸ§© Claude Code update detector (features/claude-check.js, server src/claude-check.js; laptop only like this dialog) -->
           <section class="claude-check" aria-labelledby="cc-title" aria-describedby="cc-desc">
-            <b id="cc-title">🧩 Kompatibilitas Claude Code</b>
+            <b id="cc-title">ðŸ§© Kompatibilitas Claude Code</b>
             <p id="cc-desc" class="muted small">Cek kontrak ringan setelah Claude Code diperbarui; hasilnya muncul sebagai pemberitahuan.</p>
             <p id="cc-status" class="muted" role="status" aria-live="polite"></p>
             <label class="switch"><input id="cc-auto" type="checkbox" /> Cek otomatis saat Claude Code diperbarui</label>
             <label class="switch"><input id="cc-model" type="checkbox" aria-describedby="cc-model-hint" /> Boleh pakai 1 request kecil (Haiku)</label>
             <p id="cc-model-hint" class="muted small">Untuk cek streaming dan pesan init. Tanpa ini: pemeriksaan tanpa token.</p>
             <div class="backup-actions">
-              <button type="button" id="cc-run" class="ghost">▶ Cek kompatibilitas Claude Code</button>
-              <button type="button" id="cc-doctor" class="ghost" title="claude doctor: kesehatan instalasi Claude Code (tanpa model)">🩺 Doctor</button>
-              <button type="button" id="cc-update" class="ghost" title="claude update: pasang versi Claude Code terbaru">⬆ Update Claude Code</button>
+              <button type="button" id="cc-run" class="ghost">â–¶ Cek kompatibilitas Claude Code</button>
+              <button type="button" id="cc-doctor" class="ghost" title="claude doctor: kesehatan instalasi Claude Code (tanpa model)">ðŸ©º Doctor</button>
+              <button type="button" id="cc-update" class="ghost" title="claude update: pasang versi Claude Code terbaru">â¬† Update Claude Code</button>
             </div>
             <pre id="cc-output" class="cc-output" hidden></pre>
           </section>
           <hr />
-          <!-- 🧩 OpenCode update detector (features/opencode-check.js, server src/opencode-check.js): only when OpenCode is installed -->
+          <!-- ðŸ§© OpenCode update detector (features/opencode-check.js, server src/opencode-check.js): only when OpenCode is installed -->
           <section id="oc-section" class="claude-check" aria-labelledby="oc-title" aria-describedby="oc-desc" hidden>
-            <b id="oc-title">🧩 Kompatibilitas OpenCode</b>
+            <b id="oc-title">ðŸ§© Kompatibilitas OpenCode</b>
             <p id="oc-desc" class="muted small">Cek kontrak ringan setelah OpenCode diperbarui, tanpa memanggil model.</p>
             <p id="oc-status" class="muted" role="status" aria-live="polite"></p>
             <label class="switch"><input id="oc-auto" type="checkbox" /> Cek otomatis saat OpenCode diperbarui</label>
             <div class="backup-actions">
-              <button type="button" id="oc-run" class="ghost">▶ Cek kompatibilitas OpenCode</button>
-              <button type="button" id="oc-update" class="ghost" title="Jalankan opencode upgrade (laptop saja)">⬆ Update OpenCode</button>
-              <button type="button" id="oc-restart" class="ghost" title="Jalankan opencode service restart (laptop saja)">↻ Restart layanan OpenCode</button>
+              <button type="button" id="oc-run" class="ghost">â–¶ Cek kompatibilitas OpenCode</button>
+              <button type="button" id="oc-update" class="ghost" title="Jalankan opencode upgrade (laptop saja)">â¬† Update OpenCode</button>
+              <button type="button" id="oc-restart" class="ghost" title="Jalankan opencode service restart (laptop saja)">â†» Restart layanan OpenCode</button>
             </div>
             <pre id="oc-output" class="cc-output" hidden></pre>
             <div class="oc-plugins" role="group" aria-labelledby="oc-plugins-title">
-              <b id="oc-plugins-title">🧩 Plugin OpenCode</b>
+              <b id="oc-plugins-title">ðŸ§© Plugin OpenCode</b>
               <p class="muted small">Plugin menjalankan kode pihak ketiga. Tambahkan hanya dari sumber tepercaya.</p>
-              <div id="oc-plugin-list" class="oc-plugin-list" aria-live="polite"><p class="muted small">Buka Pengaturan untuk memuat plugin…</p></div>
+              <div id="oc-plugin-list" class="oc-plugin-list" aria-live="polite"><p class="muted small">Buka Pengaturan untuk memuat pluginâ€¦</p></div>
               <div class="oc-plugin-add">
                 <input id="oc-plugin-spec" type="text" autocomplete="off" spellcheck="false" maxlength="300" placeholder="paket npm atau URL Git" aria-label="Paket plugin OpenCode" />
-                <button type="button" id="oc-plugin-add" class="ghost">＋ Tambah</button>
-                <button type="button" id="oc-plugin-check" class="ghost">↻ Cek update</button>
-                <button type="button" id="oc-plugin-update-all" class="ghost">⬆ Update semua</button>
+                <button type="button" id="oc-plugin-add" class="ghost">ï¼‹ Tambah</button>
+                <button type="button" id="oc-plugin-check" class="ghost">â†» Cek update</button>
+                <button type="button" id="oc-plugin-update-all" class="ghost">â¬† Update semua</button>
               </div>
               <p id="oc-plugin-status" class="muted small" role="status" aria-live="polite"></p>
               <pre id="oc-plugin-output" class="cc-output" hidden></pre>
             </div>
             <div class="oc-config" role="group" aria-labelledby="oc-config-title">
-              <b id="oc-config-title">🧩 Config &amp; Agent OpenCode</b>
+              <b id="oc-config-title">ðŸ§© Config &amp; Agent OpenCode</b>
               <p class="muted small">Ubah model dan agent di <code>opencode.json</code>. File lama dibackup otomatis.</p>
-              <button type="button" id="oc-config-open" class="ghost">✏️ Buka editor config</button>
+              <button type="button" id="oc-config-open" class="ghost">âœï¸ Buka editor config</button>
             </div>
           </section>
           <hr id="oc-section-sep" hidden />
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
           <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>
-          <!-- ⚡ Remote power (opsional): jembatan self-hosted yang bisa boot/memutus PC dari jauh (spec: docs/remote-power-bridge.md) -->
+          <!-- âš¡ Remote power (opsional): jembatan self-hosted yang bisa boot/memutus PC dari jauh (spec: docs/remote-power-bridge.md) -->
           <div class="oc-config" role="group" aria-labelledby="rp-title">
-            <b id="rp-title">⚡ Remote power (matikan PC dari jauh)</b>
+            <b id="rp-title">âš¡ Remote power (matikan PC dari jauh)</b>
             <p class="muted small">Jembatan sendiri (open-source, <a href="https://github.com/adhityarachmanh/claude-coworking/tree/main/bridge" target="_blank" rel="noopener">panduan deploy</a>) + smart plug: nyalakan PC dari jauh (BIOS power-on) dan putus listriknya setelah shutdown.</p>
             <label class="oc-field" for="rp-url"><span>URL jembatan</span><input id="rp-url" placeholder="https://remote-power.xxx.workers.dev" autocomplete="off" spellcheck="false" /></label>
             <label class="oc-field" for="rp-token"><span>Token jembatan</span><input id="rp-token" type="password" autocomplete="off" spellcheck="false" /></label>
+                        <label class="oc-field" for="rp-delay"><span>Jeda sebelum listrik diputus (detik, 0-600)</span><input id="rp-delay" type="number" min="0" max="600" value="120" inputmode="numeric" autocomplete="off" /></label>
             <div class="rp-row">
               <button type="button" id="rp-save" class="ghost">Simpan</button>
-              <button type="button" id="rp-test" class="ghost">⚡ Uji koneksi</button>
+              <button type="button" id="rp-test" class="ghost">âš¡ Uji koneksi</button>
               <small id="rp-result" class="muted" aria-live="polite"></small>
             </div>
-            <label class="switch" id="rp-pc-row"><input id="rp-shutdown-pc" type="checkbox" /> ⏻ tombol di bawah ikut <b>mematikan PC</b> (shutdown OS dulu, listrik menyusul)</label>
+            <label class="switch" id="rp-pc-row"><input id="rp-shutdown-pc" type="checkbox" /> â» tombol di bawah ikut <b>mematikan PC</b> (shutdown OS dulu, listrik menyusul)</label>
           </div>
-          <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
+          <button type="button" id="btn-shutdown" class="danger">â» Matikan server</button>
           </div>
         </form>
       </div>
     </div>
 
-    <!-- 🩺 Kesehatan sistem (features/health.js): checks, onboarding checklist, app data size, 24h errors. Laptop/Tailscale only. -->
+    <!-- ðŸ©º Kesehatan sistem (features/health.js): checks, onboarding checklist, app data size, 24h errors. Laptop/Tailscale only. -->
     <div id="health-modal" class="modal" hidden>
       <div class="modal-card health-card" role="dialog" aria-modal="true" aria-labelledby="health-title">
-        <div class="modal-head"><b id="health-title">🩺 Kesehatan sistem</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="health-title">ðŸ©º Kesehatan sistem</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div id="health-body" class="health-body"></div>
         <div class="health-actions">
-          <button type="button" id="health-diagnostics" class="ghost" title="Unduh .zip berisi versi, kesehatan, dan log terakhir (tanpa isi percakapan)">🩺 Bundel diagnostik</button>
-          <button type="button" id="health-refresh" class="ghost">↻ Periksa ulang</button>
+          <button type="button" id="health-diagnostics" class="ghost" title="Unduh .zip berisi versi, kesehatan, dan log terakhir (tanpa isi percakapan)">ðŸ©º Bundel diagnostik</button>
+          <button type="button" id="health-refresh" class="ghost">â†» Periksa ulang</button>
           <button type="button" id="health-close" class="ghost" data-close>Tutup</button>
         </div>
       </div>
     </div>
 
-    <!-- 🧰 Persiapan (features/setup.js): Node/Claude Code/OpenCode/Tailscale, one row each; laptop-only actions -->
+    <!-- ðŸ§° Persiapan (features/setup.js): Node/Claude Code/OpenCode/Tailscale, one row each; laptop-only actions -->
     <div id="setup-modal" class="modal" hidden>
       <div class="modal-card setup-card" role="dialog" aria-modal="true" aria-labelledby="setup-title">
-        <div class="modal-head"><b id="setup-title">🧰 Persiapan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="setup-title">ðŸ§° Persiapan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p id="setup-note" class="muted small"></p>
         <ul id="setup-items" class="setup-items"></ul>
         <div class="setup-actions">
-          <button type="button" id="setup-refresh" class="ghost">↻ Periksa ulang</button>
+          <button type="button" id="setup-refresh" class="ghost">â†» Periksa ulang</button>
           <button type="button" id="setup-close" class="ghost" data-close>Tutup</button>
         </div>
       </div>
     </div>
 
-    <!-- 🧩 OpenCode config/agent editor (features/opencode-config.js): global or the active project; laptop only -->
+    <!-- ðŸ§© OpenCode config/agent editor (features/opencode-config.js): global or the active project; laptop only -->
     <div id="oc-config-modal" class="modal" hidden>
       <div class="modal-card oc-config-card" role="dialog" aria-modal="true" aria-labelledby="oc-config-modal-title" aria-describedby="oc-config-note">
-        <div class="modal-head"><b id="oc-config-modal-title">🧩 Config &amp; Agent OpenCode</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="oc-config-modal-title">ðŸ§© Config &amp; Agent OpenCode</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div class="oc-config-kicker">
           <div class="oc-config-tabs" role="tablist" aria-label="Cakupan config">
             <button type="button" id="oc-scope-project" class="oc-tab" role="tab" aria-selected="true">Project ini</button>
             <button type="button" id="oc-scope-global" class="oc-tab" role="tab" aria-selected="false">Global</button>
           </div>
-          <p id="oc-config-path" class="muted small oc-config-path" role="status" aria-live="polite" tabindex="-1">Memuat config…</p>
+          <p id="oc-config-path" class="muted small oc-config-path" role="status" aria-live="polite" tabindex="-1">Memuat configâ€¦</p>
           <div id="oc-conflict" class="oc-conflict" role="alert" hidden>
             <p id="oc-conflict-message"></p>
             <ul id="oc-conflict-paths" class="oc-conflict-paths" aria-label="File config OpenCode yang ditemukan"></ul>
@@ -1234,7 +1235,7 @@
             <label class="oc-field"><span>Model</span><input id="oc-model" type="text" autocomplete="off" spellcheck="false" maxlength="200" placeholder="provider/model" /></label>
             <label class="oc-field"><span>Small model</span><input id="oc-small-model" type="text" autocomplete="off" spellcheck="false" maxlength="200" placeholder="opsional" /></label>
           </div>
-          <div class="oc-agents-head"><b>Agent</b><button type="button" id="oc-agent-add" class="ghost">＋ Agent</button></div>
+          <div class="oc-agents-head"><b>Agent</b><button type="button" id="oc-agent-add" class="ghost">ï¼‹ Agent</button></div>
           <div id="oc-agent-list" class="oc-agent-list"></div>
           <p class="muted small">Kosongkan prompt untuk menghapusnya. Agent bawaan OpenCode tidak perlu ditambahkan di sini.</p>
         </div>
@@ -1245,7 +1246,7 @@
         <p id="oc-config-error" class="field-error" role="alert"></p>
         <p id="oc-config-note" class="muted small">Backup config ada di folder data aplikasi (bukan <code>.bak</code> di sebelah file) dan bisa dipulihkan dari Riwayat backup. Konsolidasi menyimpan <code>.opencode</code> dengan awalan <code>dot--</code>.</p>
         <details id="oc-history" class="oc-backups">
-          <summary>🕘 Riwayat backup</summary>
+          <summary>ðŸ•˜ Riwayat backup</summary>
           <p id="oc-backup-error" class="field-error" role="alert"></p>
           <div id="oc-backup-list" class="oc-backup-list" aria-live="polite"></div>
           <div id="oc-backup-preview-wrap" class="oc-backup-preview-wrap" hidden>
@@ -1254,16 +1255,16 @@
           </div>
         </details>
         <div class="backup-actions oc-config-actions">
-          <button type="button" id="oc-config-reload" class="ghost">↻ Muat ulang</button>
+          <button type="button" id="oc-config-reload" class="ghost">â†» Muat ulang</button>
           <button type="button" id="oc-config-save" class="primary">Simpan</button>
         </div>
       </div>
     </div>
 
-    <!-- 🔔 Pengaturan notifikasi (features/notify.js): per device (localStorage), also on a phone (Ctrl+P / 🔎) -->
+    <!-- ðŸ”” Pengaturan notifikasi (features/notify.js): per device (localStorage), also on a phone (Ctrl+P / ðŸ”Ž) -->
     <div id="notify-modal" class="modal" hidden>
       <div class="modal-card notify-card" role="dialog" aria-modal="true" aria-labelledby="notify-title" aria-describedby="notify-desc">
-        <div class="modal-head"><b id="notify-title">🔔 Pengaturan notifikasi</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="notify-title">ðŸ”” Pengaturan notifikasi</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <form id="notify-form" class="notify-form" novalidate>
           <label class="switch big"><input id="ns-on" type="checkbox" /> Aktifkan notifikasi &amp; suara di perangkat ini</label>
           <p id="notify-desc" class="muted small">Muncul saat kamu di tab atau project lain; izin tetap berbunyi. Disimpan di browser ini.</p>
@@ -1273,15 +1274,15 @@
             <table class="ns-table">
               <thead><tr><th scope="col">Kejadian</th><th scope="col">Notifikasi</th><th scope="col">Suara</th></tr></thead>
               <tbody>
-                <tr><th scope="row">✋ Minta izin</th><td><input id="ns-ask-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Minta izin" /></td><td><input id="ns-ask-sound" type="checkbox" aria-label="Suara untuk Minta izin" /></td></tr>
-                <tr><th scope="row">✓ Selesai</th><td><input id="ns-done-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Selesai" /></td><td><input id="ns-done-sound" type="checkbox" aria-label="Suara untuk Selesai" /></td></tr>
-                <tr><th scope="row">■ Berhenti / error</th><td><input id="ns-error-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Berhenti / error" /></td><td><input id="ns-error-sound" type="checkbox" aria-label="Suara untuk Berhenti / error" /></td></tr>
-                <tr><th scope="row">▶ Antrian mulai</th><td><input id="ns-queue-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Antrian mulai" /></td><td><input id="ns-queue-sound" type="checkbox" aria-label="Suara untuk Antrian mulai" /></td></tr>
+                <tr><th scope="row">âœ‹ Minta izin</th><td><input id="ns-ask-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Minta izin" /></td><td><input id="ns-ask-sound" type="checkbox" aria-label="Suara untuk Minta izin" /></td></tr>
+                <tr><th scope="row">âœ“ Selesai</th><td><input id="ns-done-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Selesai" /></td><td><input id="ns-done-sound" type="checkbox" aria-label="Suara untuk Selesai" /></td></tr>
+                <tr><th scope="row">â–  Berhenti / error</th><td><input id="ns-error-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Berhenti / error" /></td><td><input id="ns-error-sound" type="checkbox" aria-label="Suara untuk Berhenti / error" /></td></tr>
+                <tr><th scope="row">â–¶ Antrian mulai</th><td><input id="ns-queue-popup" type="checkbox" aria-label="Notifikasi pop-up untuk Antrian mulai" /></td><td><input id="ns-queue-sound" type="checkbox" aria-label="Suara untuk Antrian mulai" /></td></tr>
               </tbody>
             </table>
           </fieldset>
           <fieldset class="ns-group">
-            <legend>🌙 Jam tenang</legend>
+            <legend>ðŸŒ™ Jam tenang</legend>
             <label class="switch"><input id="ns-quiet" type="checkbox" aria-describedby="ns-quiet-desc" /> Senyapkan pada jam tertentu</label>
             <div class="ns-times">
               <label for="ns-from">Dari</label>
@@ -1293,24 +1294,24 @@
             <label class="switch wrap"><input id="ns-quiet-ask" type="checkbox" /> Izin tetap diberitahu saat jam tenang</label>
             <p id="ns-quiet-desc" class="muted small">Tanpa suara dan pop-up selama jam tenang. Jam perangkat ini.</p>
           </fieldset>
-          <label class="switch wrap"><input id="ns-fav" type="checkbox" /> Hanya project favorit ★</label>
+          <label class="switch wrap"><input id="ns-fav" type="checkbox" /> Hanya project favorit â˜…</label>
           <fieldset class="ns-group">
-            <legend>🔇 Project dibisukan</legend>
+            <legend>ðŸ”‡ Project dibisukan</legend>
             <p class="muted small">Project yang dicentang tidak mengirim suara maupun pop-up ke perangkat ini.</p>
             <div id="ns-muted-list" class="ns-muted-list"></div>
             <p id="ns-muted-none" class="muted small" hidden>Belum ada project.</p>
           </fieldset>
           <div class="ns-volume">
-            <label for="ns-volume">🔊 Volume</label>
+            <label for="ns-volume">ðŸ”Š Volume</label>
             <input id="ns-volume" type="range" min="0" max="100" step="5" />
             <output id="ns-volume-val" for="ns-volume" aria-hidden="true">100%</output>
-            <button type="button" id="ns-test" class="ghost">▶ Tes suara</button>
+            <button type="button" id="ns-test" class="ghost">â–¶ Tes suara</button>
           </div>
-          <label class="switch wrap"><input id="ns-tts" type="checkbox" aria-describedby="ns-tts-desc" /> 🔊 Bacakan balasan asisten</label>
-          <p id="ns-tts-desc" class="muted small" title="Tidak ada teks yang dikirim ke server.">Perangkat ini — markdown dibersihkan, blok kode dilewati.</p>
-          <!-- 📱 Web Push (features/push.js): only on a phone; the buttons only on the https Tailscale origin -->
+          <label class="switch wrap"><input id="ns-tts" type="checkbox" aria-describedby="ns-tts-desc" /> ðŸ”Š Bacakan balasan asisten</label>
+          <p id="ns-tts-desc" class="muted small" title="Tidak ada teks yang dikirim ke server.">Perangkat ini â€” markdown dibersihkan, blok kode dilewati.</p>
+          <!-- ðŸ“± Web Push (features/push.js): only on a phone; the buttons only on the https Tailscale origin -->
           <fieldset id="ns-push" class="ns-group" hidden>
-            <legend>📱 Notifikasi HP (push)</legend>
+            <legend>ðŸ“± Notifikasi HP (push)</legend>
             <p class="muted small">Tetap muncul saat aplikasi tertutup atau HP terkunci. Pengaturan di atas ikut berlaku.</p>
             <p id="ns-push-hint" class="ns-push-hint small" hidden></p>
             <p id="ns-push-status" class="small" role="status" aria-live="polite"></p>
@@ -1325,12 +1326,12 @@
             </div>
           </fieldset>
           <fieldset id="ns-history" class="ns-group" hidden>
-            <legend>🕘 Riwayat notifikasi</legend>
+            <legend>ðŸ•˜ Riwayat notifikasi</legend>
             <p class="muted small">Yang dikirim server ke HP sejak aplikasi menyala (maksimal 30 terakhir).</p>
             <ul id="ns-history-list" class="push-history-list"></ul>
           </fieldset>
           <div class="ns-actions">
-            <button type="button" id="ns-reset" class="ghost">↺ Kembalikan bawaan</button>
+            <button type="button" id="ns-reset" class="ghost">â†º Kembalikan bawaan</button>
           </div>
         </form>
       </div>
@@ -1339,7 +1340,7 @@
     <!-- Claude account: profile, plan usage, login/logout -->
     <div id="account-modal" class="modal" hidden>
       <div class="modal-card account-card" role="dialog" aria-modal="true" aria-label="Akun &amp; mesin AI">
-        <div class="modal-head"><b id="account-title">👤 Akun</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="account-title">ðŸ‘¤ Akun</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div id="account-body"></div>
       </div>
     </div>
@@ -1347,10 +1348,10 @@
     <!-- Token usage report -->
     <div id="report-modal" class="modal" hidden>
       <div class="modal-card report-card" role="dialog" aria-modal="true" aria-label="Laporan penggunaan token">
-        <div class="modal-head"><b>📊 Laporan penggunaan token</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b>ðŸ“Š Laporan penggunaan token</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <!-- Step 1: which data. The preview below and the PDF always show exactly this. -->
         <fieldset class="report-filters">
-          <legend>🔎 Pilih data · berlaku untuk pratinjau <i>dan</i> PDF</legend>
+          <legend>ðŸ”Ž Pilih data Â· berlaku untuk pratinjau <i>dan</i> PDF</legend>
           <label class="report-field">Akun<select id="report-account"></select></label>
           <div class="report-field">
             <span id="report-period-label">Periode</span>
@@ -1360,7 +1361,7 @@
               <button type="button" data-period="30">30 hari</button>
               <button type="button" data-period="month">Bulan ini</button>
               <button type="button" data-period="all">Semua</button>
-              <button type="button" data-period="custom">📅 Pilih tanggal</button>
+              <button type="button" data-period="custom">ðŸ“… Pilih tanggal</button>
             </div>
           </div>
           <div class="custom-range" hidden>
@@ -1371,7 +1372,7 @@
         </fieldset>
 
         <!-- Step 2: the preview. The day/week/month switch sits on the chart it changes. -->
-        <div class="report-preview-head">👁 Pratinjau</div>
+        <div class="report-preview-head">ðŸ‘ Pratinjau</div>
         <div id="report-preview" class="report-preview">
           <p id="report-note" class="report-note" hidden></p>
           <p id="report-empty" class="muted" hidden></p>
@@ -1381,7 +1382,7 @@
         <p id="report-compare" class="muted small" hidden></p>
             <section class="trend" aria-labelledby="trend-title">
               <div class="trend-head">
-                <b id="trend-title">📈 Tren pemakaian</b>
+                <b id="trend-title">ðŸ“ˆ Tren pemakaian</b>
                 <div id="report-units" class="seg" role="group" aria-label="Rincian per">
                   <button type="button" data-unit="day">Per hari</button>
                   <button type="button" data-unit="week">Per minggu</button>
@@ -1403,8 +1404,8 @@
         </div>
         <div class="report-actions">
           <div id="report-scope" class="report-scope muted small"></div>
-          <button id="report-csv" class="ghost" disabled>⬇ Unduh CSV</button>
-          <button id="report-pdf" class="primary">⬇ Unduh PDF</button>
+          <button id="report-csv" class="ghost" disabled>â¬‡ Unduh CSV</button>
+          <button id="report-pdf" class="primary">â¬‡ Unduh PDF</button>
         </div>
       </div>
     </div>
@@ -1412,29 +1413,29 @@
     <div id="phone-modal" class="modal" hidden>
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="phone-title">
         <div class="modal-head">
-          <b id="phone-title">📱 Buka dari HP</b>
-          <button id="phone-close" class="icon-btn" title="Tutup" aria-label="Tutup">✕</button>
+          <b id="phone-title">ðŸ“± Buka dari HP</b>
+          <button id="phone-close" class="icon-btn" title="Tutup" aria-label="Tutup">âœ•</button>
         </div>
-        <label class="switch big"><input id="remote-enabled" type="checkbox" /> Izinkan akses dari HP (WiFi: hanya lihat · Tailscale: penuh)</label>
+        <label class="switch big"><input id="remote-enabled" type="checkbox" /> Izinkan akses dari HP (WiFi: hanya lihat Â· Tailscale: penuh)</label>
         <div id="phone-body"></div>
         <div id="phone-https"></div>
         <div id="phone-tip"></div>
       </div>
     </div>
 
-    <!-- 🔎 Search conversations (features/conversations.js): every session of the project, or every project -->
-    <!-- ★ Pesan tersimpan (features/bookmarks.js): starred in this browser, opened from Ctrl+P -->
+    <!-- ðŸ”Ž Search conversations (features/conversations.js): every session of the project, or every project -->
+    <!-- â˜… Pesan tersimpan (features/bookmarks.js): starred in this browser, opened from Ctrl+P -->
     <div id="bookmarks-modal" class="modal" hidden>
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="bookmarks-title">
-        <div class="modal-head"><b id="bookmarks-title">★ Pesan tersimpan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <input id="bookmarks-search" class="bookmarks-search" type="search" placeholder="Cari pesan tersimpan…" aria-label="Cari pesan tersimpan" autocomplete="off" />
+        <div class="modal-head"><b id="bookmarks-title">â˜… Pesan tersimpan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
+        <input id="bookmarks-search" class="bookmarks-search" type="search" placeholder="Cari pesan tersimpanâ€¦" aria-label="Cari pesan tersimpan" autocomplete="off" />
         <p id="bookmarks-note" class="muted small"></p>
         <div id="bookmarks-list" class="bookmarks-list"></div>
       </div>
     </div>
     <div id="search-modal" class="modal" hidden>
       <div class="modal-card sessions-card search-card" role="dialog" aria-modal="true" aria-labelledby="search-title">
-        <div class="modal-head"><b id="search-title">🔎 Cari percakapan <small id="search-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="search-title">ðŸ”Ž Cari percakapan <small id="search-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <form id="search-form" class="sessions-tools" role="search" novalidate>
           <input id="search-q" type="search" aria-label="Kata kunci" placeholder="Cari di pesanmu dan balasan Claude/OpenCode." maxlength="200" autocomplete="off" spellcheck="false" aria-describedby="search-error" />
           <button class="primary" type="submit">Cari</button>
@@ -1449,24 +1450,24 @@
       </div>
     </div>
 
-    <!-- 🗂 Semua project (features/dashboard.js, rules in core/dashboard-rules.js): read-only, live from the stream -->
+    <!-- ðŸ—‚ Semua project (features/dashboard.js, rules in core/dashboard-rules.js): read-only, live from the stream -->
     <div id="dash-modal" class="modal" hidden>
       <div class="modal-card dash-modal-card" role="dialog" aria-modal="true" aria-labelledby="dash-title">
-        <div class="modal-head"><b id="dash-title">🗂 Semua project <span id="dash-capacity" class="dash-capacity" hidden></span> <small id="dash-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <!-- ♪ one music row (features/spotify.js): read-only info, ⏯ when this device may control it -->
+        <div class="modal-head"><b id="dash-title">ðŸ—‚ Semua project <span id="dash-capacity" class="dash-capacity" hidden></span> <small id="dash-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
+        <!-- â™ª one music row (features/spotify.js): read-only info, â¯ when this device may control it -->
         <div id="dash-today" class="dash-today" hidden></div>
         <div id="dash-music" class="dash-music" hidden>
-          <span class="sp-art sp-art-32" aria-hidden="true"><img alt="" hidden /><span class="sp-note">♪</span></span>
+          <span class="sp-art sp-art-32" aria-hidden="true"><img alt="" hidden /><span class="sp-note">â™ª</span></span>
           <span class="dash-music-text"><b id="dash-music-title"></b><small id="dash-music-sub" class="muted"></small></span>
-          <button type="button" id="dash-music-toggle" class="ghost dash-music-btn" aria-label="Putar musik" hidden>▶</button>
-          <button type="button" id="dash-music-more" class="ghost dash-music-btn" aria-haspopup="dialog">Lainnya…</button>
+          <button type="button" id="dash-music-toggle" class="ghost dash-music-btn" aria-label="Putar musik" hidden>â–¶</button>
+          <button type="button" id="dash-music-more" class="ghost dash-music-btn" aria-haspopup="dialog">Lainnyaâ€¦</button>
         </div>
         <section id="dash-attention" class="dash-attention" aria-labelledby="dash-attention-title" hidden>
-          <b id="dash-attention-title">⚠ Perlu perhatian <span id="dash-attention-count" class="count"></span></b>
+          <b id="dash-attention-title">âš  Perlu perhatian <span id="dash-attention-count" class="count"></span></b>
           <ul id="dash-attention-list"></ul>
           <p id="dash-attention-note" class="att-note" hidden></p>
         </section>
-        <input id="dash-search" class="dash-search" type="search" aria-label="Saring project" aria-controls="dash-list" placeholder="Saring project…  (Enter buka yang pertama)" autocomplete="off" />
+        <input id="dash-search" class="dash-search" type="search" aria-label="Saring project" aria-controls="dash-list" placeholder="Saring projectâ€¦  (Enter buka yang pertama)" autocomplete="off" />
         <div id="dash-filters" class="dash-filters" role="group" aria-label="Saring project per status"></div>
         <ul id="dash-list" class="dash-list" aria-label="Status semua project"></ul>
         <p id="dash-empty" class="dash-empty muted" hidden></p>
@@ -1474,12 +1475,12 @@
       </div>
     </div>
 
-    <!-- ♪ Musik (features/spotify.js): now playing, controls, devices, playlists. Over WiFi: look only. -->
+    <!-- â™ª Musik (features/spotify.js): now playing, controls, devices, playlists. Over WiFi: look only. -->
     <div id="spotify-modal" class="modal" hidden>
       <div class="modal-card spotify-card" role="dialog" aria-modal="true" aria-labelledby="sp-head">
-        <div class="modal-head"><b id="sp-head">♪ Musik</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="sp-head">â™ª Musik</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div class="sp-now">
-          <span class="sp-art sp-art-96" aria-hidden="true"><img alt="" hidden /><span class="sp-note">♪</span></span>
+          <span class="sp-art sp-art-96" aria-hidden="true"><img alt="" hidden /><span class="sp-note">â™ª</span></span>
           <div class="sp-meta">
             <h2 id="sp-title" class="sp-title"></h2>
             <p id="sp-artist" class="sp-artist"></p>
@@ -1492,35 +1493,35 @@
           <span id="sp-time" class="sp-time muted small">0:00 / 0:00</span>
         </div>
         <div id="sp-controls" class="sp-controls">
-          <button type="button" id="sp-prev" class="sp-btn" aria-label="Lagu sebelumnya">⏮</button>
-          <button type="button" id="sp-play" class="sp-btn sp-play" aria-label="Putar musik">▶</button>
-          <button type="button" id="sp-next" class="sp-btn" aria-label="Lagu berikutnya">⏭</button>
-          <label class="sp-volume"><span aria-hidden="true">🔊</span><input id="sp-volume" type="range" min="0" max="100" step="1" value="50" aria-label="Volume" /></label>
+          <button type="button" id="sp-prev" class="sp-btn" aria-label="Lagu sebelumnya">â®</button>
+          <button type="button" id="sp-play" class="sp-btn sp-play" aria-label="Putar musik">â–¶</button>
+          <button type="button" id="sp-next" class="sp-btn" aria-label="Lagu berikutnya">â­</button>
+          <label class="sp-volume"><span aria-hidden="true">ðŸ”Š</span><input id="sp-volume" type="range" min="0" max="100" step="1" value="50" aria-label="Volume" /></label>
         </div>
         <p id="sp-status" class="sp-status" role="status" aria-live="polite"></p>
         <p id="sp-ro" class="ro-note" hidden></p>
         <section id="sp-devices-box" class="sp-section" aria-labelledby="sp-devices-title">
-          <div class="sp-section-head"><b id="sp-devices-title">Perangkat</b><button type="button" id="sp-devices-refresh" class="ghost sp-small" aria-label="Muat ulang daftar perangkat">↻</button></div>
+          <div class="sp-section-head"><b id="sp-devices-title">Perangkat</b><button type="button" id="sp-devices-refresh" class="ghost sp-small" aria-label="Muat ulang daftar perangkat">â†»</button></div>
           <div id="sp-devices" class="sp-devices" role="radiogroup" aria-labelledby="sp-devices-title"></div>
           <p id="sp-devices-note" class="muted small" role="status"></p>
         </section>
         <section id="sp-playlists-box" class="sp-section" aria-labelledby="sp-pl-toggle">
-          <button type="button" id="sp-pl-toggle" class="ghost sp-pl-toggle" aria-expanded="false" aria-controls="sp-pl-panel">▸ Playlist</button>
+          <button type="button" id="sp-pl-toggle" class="ghost sp-pl-toggle" aria-expanded="false" aria-controls="sp-pl-panel">â–¸ Playlist</button>
           <div id="sp-pl-panel" class="sp-pl-panel" hidden>
             <div id="sp-pl-browse" class="sp-pl-browse">
-              <input id="sp-pl-filter" type="search" class="sp-pl-filter" placeholder="Saring playlist…" aria-label="Saring playlist" autocomplete="off" />
+              <input id="sp-pl-filter" type="search" class="sp-pl-filter" placeholder="Saring playlistâ€¦" aria-label="Saring playlist" autocomplete="off" />
               <ul id="sp-pl-list" class="sp-pl-list" aria-label="Playlist"></ul>
               <p id="sp-pl-note" class="muted small" role="status"></p>
               <button type="button" id="sp-pl-more" class="ghost sp-small" hidden>Muat lagi</button>
             </div>
-            <!-- a playlist's tracks (features/spotify.js openTracks): ← back, filter, tap a track to play from it -->
+            <!-- a playlist's tracks (features/spotify.js openTracks): â† back, filter, tap a track to play from it -->
             <div id="sp-tr-view" class="sp-tr-view" hidden>
               <div class="sp-tr-head">
-                <button type="button" id="sp-tr-back" class="ghost sp-small" aria-label="Kembali ke daftar playlist">← Playlist</button>
+                <button type="button" id="sp-tr-back" class="ghost sp-small" aria-label="Kembali ke daftar playlist">â† Playlist</button>
                 <h3 id="sp-tr-title" class="sp-tr-title" tabindex="-1"></h3>
-                <button type="button" id="sp-tr-playall" class="ghost sp-small">▶ Semua</button>
+                <button type="button" id="sp-tr-playall" class="ghost sp-small">â–¶ Semua</button>
               </div>
-              <input id="sp-tr-filter" type="search" class="sp-pl-filter" placeholder="Saring lagu…" aria-label="Saring lagu" autocomplete="off" />
+              <input id="sp-tr-filter" type="search" class="sp-pl-filter" placeholder="Saring laguâ€¦" aria-label="Saring lagu" autocomplete="off" />
               <ul id="sp-tr-list" class="sp-pl-list sp-tr-list" aria-labelledby="sp-tr-title"></ul>
               <p id="sp-tr-note" class="muted small" role="status"></p>
               <button type="button" id="sp-tr-more" class="ghost sp-small" hidden>Muat lagi</button>
@@ -1531,7 +1532,7 @@
           <label for="sp-duck">Saat ada permintaan izin</label>
           <select id="sp-duck"><option value="off">Mati</option><option value="duck">Kecilkan</option><option value="pause">Jeda</option></select>
         </div>
-        <button type="button" id="sp-settings" class="ghost sp-small" hidden>⚙ Pengaturan Spotify</button>
+        <button type="button" id="sp-settings" class="ghost sp-small" hidden>âš™ Pengaturan Spotify</button>
       </div>
     </div>
 
@@ -1539,37 +1540,37 @@
     <div id="palette-modal" class="modal palette-modal" hidden>
       <div class="modal-card palette-card" role="dialog" aria-modal="true" aria-label="Palet perintah">
         <div class="palette-head">
-          <span class="pal-search-ico" aria-hidden="true">🔎</span>
+          <span class="pal-search-ico" aria-hidden="true">ðŸ”Ž</span>
           <span id="palette-scope" class="pal-scope" hidden></span>
-          <input id="palette-input" type="text" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" aria-haspopup="listbox" aria-label="Cari aksi, file, atau project" aria-describedby="palette-keys" placeholder="Cari aksi, file, project…" autocomplete="off" spellcheck="false" />
-          <button class="icon-btn pal-close" data-close title="Tutup (Esc)" aria-label="Tutup">✕</button>
+          <input id="palette-input" type="text" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" aria-haspopup="listbox" aria-label="Cari aksi, file, atau project" aria-describedby="palette-keys" placeholder="Cari aksi, file, projectâ€¦" autocomplete="off" spellcheck="false" />
+          <button class="icon-btn pal-close" data-close title="Tutup (Esc)" aria-label="Tutup">âœ•</button>
         </div>
         <div id="palette-list" class="palette-list" role="listbox" aria-label="Hasil"></div>
-        <p id="palette-keys" class="palette-keys muted small"><span>↑↓ pilih · Enter jalankan · Esc tutup</span><span><kbd>&gt;</kbd> perintah · <kbd>@</kbd> file · <kbd>#</kbd> project</span><span id="palette-count" class="sr-only" aria-live="polite"></span></p>
+        <p id="palette-keys" class="palette-keys muted small"><span>â†‘â†“ pilih Â· Enter jalankan Â· Esc tutup</span><span><kbd>&gt;</kbd> perintah Â· <kbd>@</kbd> file Â· <kbd>#</kbd> project</span><span id="palette-count" class="sr-only" aria-live="polite"></span></p>
       </div>
     </div>
 
-    <!-- ---------- Phone only (≤ 760 px or a phone sideways): bottom sheets of the Chat view (⋯ is view-aware) (features/phone-sheets.js) ----------
+    <!-- ---------- Phone only (â‰¤ 760 px or a phone sideways): bottom sheets of the Chat view (â‹¯ is view-aware) (features/phone-sheets.js) ----------
          Every row/tile forwards to a control that already exists (data-proxy); no logic of its own. -->
     <div id="plus-modal" class="modal phone-sheet" hidden>
       <div class="modal-card sheet-card" role="dialog" aria-modal="true" aria-labelledby="plus-title">
-        <div class="modal-head"><b id="plus-title">Tambahkan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="plus-title">Tambahkan</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <div class="plus-grid">
-          <button type="button" class="plus-tile" data-proxy="#btn-attach"><span class="pt-ico" aria-hidden="true">📎</span><span>Lampiran</span></button>
-          <button type="button" class="plus-tile" data-proxy="#btn-template"><span class="pt-ico" aria-hidden="true">⚡</span><span>Template</span></button>
-          <button type="button" class="plus-tile" data-proxy="#btn-voice"><span class="pt-ico" aria-hidden="true">🎤</span><span>Suara</span></button>
-          <button type="button" class="plus-tile" data-proxy="#btn-queue-add"><span class="pt-ico" aria-hidden="true">📋</span><span id="plus-queue-label">Buka antrian</span></button>
+          <button type="button" class="plus-tile" data-proxy="#btn-attach"><span class="pt-ico" aria-hidden="true">ðŸ“Ž</span><span>Lampiran</span></button>
+          <button type="button" class="plus-tile" data-proxy="#btn-template"><span class="pt-ico" aria-hidden="true">âš¡</span><span>Template</span></button>
+          <button type="button" class="plus-tile" data-proxy="#btn-voice"><span class="pt-ico" aria-hidden="true">ðŸŽ¤</span><span>Suara</span></button>
+          <button type="button" class="plus-tile" data-proxy="#btn-queue-add"><span class="pt-ico" aria-hidden="true">ðŸ“‹</span><span id="plus-queue-label">Buka antrian</span></button>
           <button type="button" class="plus-tile" data-insert="!"><span class="pt-ico" aria-hidden="true">!</span><span>Shell</span></button>
           <button type="button" class="plus-tile" data-insert="@"><span class="pt-ico" aria-hidden="true">@</span><span>File</span></button>
           <button type="button" class="plus-tile" data-insert="/"><span class="pt-ico" aria-hidden="true">/</span><span>Command</span><small id="plus-slash-note" hidden>Kosongkan kotak dulu</small></button>
         </div>
-        <p class="muted small sheet-help">Gambar, PDF, log/teks/kode · <b>!</b> menjalankan perintah di folder project · <b>@</b> menyebut file · <b>/</b> command Claude Code</p>
+        <p class="muted small sheet-help">Gambar, PDF, log/teks/kode Â· <b>!</b> menjalankan perintah di folder project Â· <b>@</b> menyebut file Â· <b>/</b> command Claude Code</p>
       </div>
     </div>
 
     <div id="turn-settings-modal" class="modal phone-sheet" hidden>
       <div class="modal-card sheet-card" role="dialog" aria-modal="true" aria-labelledby="turn-settings-title">
-        <div class="modal-head"><b id="turn-settings-title">Pengaturan giliran <small id="turn-settings-engine" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="turn-settings-title">Pengaturan giliran <small id="turn-settings-engine" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <!-- the composer's own .controls (same ids and listeners) are moved in here (features/phone-sheets.js) -->
         <div class="sheet-body"></div>
         <p id="effort-note" class="muted small" hidden></p>
@@ -1578,10 +1579,10 @@
       </div>
     </div>
 
-    <!-- Model Auto ladder: the model each tier uses on the project's engine (features/composer.js, "Atur tangga…") -->
+    <!-- Model Auto ladder: the model each tier uses on the project's engine (features/composer.js, "Atur tanggaâ€¦") -->
     <div id="model-tiers-modal" class="modal" hidden>
       <div class="modal-card tiers-card" role="dialog" aria-modal="true" aria-labelledby="tiers-title" aria-describedby="tiers-intro">
-        <div class="modal-head"><b id="tiers-title">Tangga Model Auto</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="tiers-title">Tangga Model Auto</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p id="tiers-intro" class="muted small tiers-intro">Model yang dipakai tiap tingkat saat Model = Auto. Klasifikasi Auto selalu memakai model tingkat <b>Seimbang</b>; pro/kuat/maks hanya dipakai untuk menjalankan tugas. Pilih Bawaan untuk kembali ke model bawaan mesin ini.</p>
         <div id="tiers-rows" class="tiers-rows"></div>
         <p id="tiers-error" class="tiers-error small" role="alert" hidden></p>
@@ -1594,50 +1595,50 @@
 
     <div id="head-more-modal" class="modal phone-sheet" hidden>
       <div class="modal-card sheet-card" role="dialog" aria-modal="true" aria-labelledby="hm-project">
-        <div class="modal-head"><b id="hm-project">Project</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="hm-project">Project</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">âœ•</button></div>
         <p class="hm-session" data-view="chat"><span id="hm-title"></span><small id="hm-meta" class="muted"></small></p>
         <!-- View-aware: [data-view] groups show only in that phone view (Chat: session + conversation, Perubahan: git) -->
         <div class="sheet-group" role="group" aria-labelledby="hm-g-changes" data-view="changes" data-needs-project>
           <h3 id="hm-g-changes" class="sheet-group-head">Perubahan</h3>
-          <button type="button" class="sheet-row" data-proxy="#ch-view"><span aria-hidden="true">📄</span><span>Lihat isi file terpilih</span></button>
-          <button type="button" class="sheet-row" data-proxy="#ch-review" data-mutates><span aria-hidden="true">🔍</span><span>Minta review semua perubahan</span></button>
-          <button type="button" class="sheet-row" data-proxy="#ch-refresh"><span aria-hidden="true">↻</span><span>Muat ulang</span></button>
-          <button type="button" class="sheet-row local-only" data-proxy="#ch-open"><span aria-hidden="true">🧭</span><span>Buka di VS Code</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-view"><span aria-hidden="true">ðŸ“„</span><span>Lihat isi file terpilih</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-review" data-mutates><span aria-hidden="true">ðŸ”</span><span>Minta review semua perubahan</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-refresh"><span aria-hidden="true">â†»</span><span>Muat ulang</span></button>
+          <button type="button" class="sheet-row local-only" data-proxy="#ch-open"><span aria-hidden="true">ðŸ§­</span><span>Buka di VS Code</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-git" data-view="changes" data-show-if="#ch-git">
           <h3 id="hm-g-git" class="sheet-group-head">Git</h3>
-          <button type="button" class="sheet-row" data-proxy="#ch-git-new" data-reason><span aria-hidden="true">＋</span><span>Branch baru</span></button>
-          <button type="button" class="sheet-row" data-proxy="#ch-git-fetch" data-reason="Belum ada remote (git remote add origin …)"><span aria-hidden="true">⟳</span><span>Fetch</span></button>
-          <button type="button" class="sheet-row" data-proxy="#ch-git-pull" data-reason><span aria-hidden="true">⬇</span><span>Pull</span></button>
-          <button type="button" class="sheet-row" data-proxy="#ch-git-push" data-reason="Belum ada remote, atau HEAD detached"><span aria-hidden="true">⬆</span><span>Push</span></button>
-          <button type="button" class="sheet-row" data-proxy="#ch-git-pr" data-reason><span aria-hidden="true">🔀</span><span>Buat PR</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-git-new" data-reason><span aria-hidden="true">ï¼‹</span><span>Branch baru</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-git-fetch" data-reason="Belum ada remote (git remote add origin â€¦)"><span aria-hidden="true">âŸ³</span><span>Fetch</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-git-pull" data-reason><span aria-hidden="true">â¬‡</span><span>Pull</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-git-push" data-reason="Belum ada remote, atau HEAD detached"><span aria-hidden="true">â¬†</span><span>Push</span></button>
+          <button type="button" class="sheet-row" data-proxy="#ch-git-pr" data-reason><span aria-hidden="true">ðŸ”€</span><span>Buat PR</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-session" data-view="chat" data-needs-project>
           <h3 id="hm-g-session" class="sheet-group-head">Sesi</h3>
-          <button type="button" class="sheet-row" data-proxy="#btn-sessions"><span aria-hidden="true">🕘</span><span>Riwayat sesi</span></button>
-          <button type="button" class="sheet-row" data-proxy="#btn-new" data-mutates><span aria-hidden="true">＋</span><span>Sesi baru</span></button>
-          <button type="button" class="sheet-row" data-proxy="#sb-title" data-mutates data-needs-session><span aria-hidden="true">✎</span><span>Ganti nama sesi</span></button>
-          <button type="button" class="sheet-row" data-action="rewind" data-mutates data-cap="rewind"><span aria-hidden="true">⏪</span><span>Rewind</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-sessions"><span aria-hidden="true">ðŸ•˜</span><span>Riwayat sesi</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-new" data-mutates><span aria-hidden="true">ï¼‹</span><span>Sesi baru</span></button>
+          <button type="button" class="sheet-row" data-proxy="#sb-title" data-mutates data-needs-session><span aria-hidden="true">âœŽ</span><span>Ganti nama sesi</span></button>
+          <button type="button" class="sheet-row" data-action="rewind" data-mutates data-cap="rewind"><span aria-hidden="true">âª</span><span>Rewind</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>
           <h3 id="hm-g-chat" class="sheet-group-head">Percakapan</h3>
-          <button type="button" class="sheet-row" data-proxy="[data-more='export']"><span aria-hidden="true">⬇</span><span>Export percakapan (.md)</span></button>
-          <button type="button" class="sheet-row" data-proxy="[data-more='export-session']" data-cap="exportSession"><span aria-hidden="true">⬇</span><span>Export sesi lengkap (.md)</span></button>
-          <button type="button" class="sheet-row" data-proxy="[data-more='terminal']"><span aria-hidden="true">⌨</span><span>Salin perintah lanjut di terminal</span></button>
-          <button type="button" class="sheet-row" data-proxy="[data-more='permissions']" data-cap="permissions"><span aria-hidden="true">🛡️</span><span>Aturan izin</span></button>
-          <button type="button" class="sheet-row" data-proxy="[data-more='roster']"><span aria-hidden="true">👥</span><span>Kelola tim</span></button>
-          <button type="button" class="sheet-row local-only" data-proxy="[data-more='code']"><span aria-hidden="true">🧭</span><span>Buka project di VS Code</span></button>
-          <button type="button" class="sheet-row local-only" data-proxy="[data-more='folder']"><span aria-hidden="true">📁</span><span>Buka folder project</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='export']"><span aria-hidden="true">â¬‡</span><span>Export percakapan (.md)</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='export-session']" data-cap="exportSession"><span aria-hidden="true">â¬‡</span><span>Export sesi lengkap (.md)</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='terminal']"><span aria-hidden="true">âŒ¨</span><span>Salin perintah lanjut di terminal</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='permissions']" data-cap="permissions"><span aria-hidden="true">ðŸ›¡ï¸</span><span>Aturan izin</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='roster']"><span aria-hidden="true">ðŸ‘¥</span><span>Kelola tim</span></button>
+          <button type="button" class="sheet-row local-only" data-proxy="[data-more='code']"><span aria-hidden="true">ðŸ§­</span><span>Buka project di VS Code</span></button>
+          <button type="button" class="sheet-row local-only" data-proxy="[data-more='folder']"><span aria-hidden="true">ðŸ“</span><span>Buka folder project</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-more">
           <h3 id="hm-g-more" class="sheet-group-head">Lainnya</h3>
-          <button type="button" class="sheet-row" data-proxy="#btn-account"><span aria-hidden="true">👤</span><span id="hm-account">Akun</span><span id="hm-quota-dot" class="hm-dot" aria-hidden="true" hidden></span></button>
-          <button type="button" class="sheet-row" data-proxy="#spotify-pill" data-show-if="#spotify-box"><span aria-hidden="true">♪</span><span id="hm-music">Musik</span></button>
-          <button type="button" class="sheet-row" data-proxy="#btn-report"><span aria-hidden="true">📊</span><span>Laporan token</span></button>
-          <button type="button" class="sheet-row" data-proxy="#btn-notify-settings" data-always><span aria-hidden="true">🔔</span><span>Pengaturan notifikasi</span></button>
-          <button type="button" class="sheet-row" data-proxy="#btn-help"><span aria-hidden="true">❓</span><span>Panduan &amp; shortcut</span></button>
-          <button type="button" class="sheet-row" data-proxy="#btn-settings"><span aria-hidden="true">⚙</span><span>Pengaturan</span></button>
-          <button type="button" class="sheet-row" data-proxy="#btn-phone"><span aria-hidden="true">📱</span><span>Buka di HP</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-account"><span aria-hidden="true">ðŸ‘¤</span><span id="hm-account">Akun</span><span id="hm-quota-dot" class="hm-dot" aria-hidden="true" hidden></span></button>
+          <button type="button" class="sheet-row" data-proxy="#spotify-pill" data-show-if="#spotify-box"><span aria-hidden="true">â™ª</span><span id="hm-music">Musik</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-report"><span aria-hidden="true">ðŸ“Š</span><span>Laporan token</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-notify-settings" data-always><span aria-hidden="true">ðŸ””</span><span>Pengaturan notifikasi</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-help"><span aria-hidden="true">â“</span><span>Panduan &amp; shortcut</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-settings"><span aria-hidden="true">âš™</span><span>Pengaturan</span></button>
+          <button type="button" class="sheet-row" data-proxy="#btn-phone"><span aria-hidden="true">ðŸ“±</span><span>Buka di HP</span></button>
         </div>
       </div>
     </div>

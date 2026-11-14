@@ -228,7 +228,7 @@ export function initSettings() {
   };
 
   $('#rp-save').addEventListener('click', async () => {
-    const status = $('#rp-status');
+    const status = $('#rp-result');
     try {
       await api('/api/remote-power/settings', { bridgeUrl: $('#rp-url').value.trim(), token: $('#rp-token').value.trim(), offDelaySec: Number($('#rp-delay').value) || 120 });
       status.textContent = '✅ Setelan disimpan.';
@@ -237,7 +237,7 @@ export function initSettings() {
     }
   });
   $('#rp-test').addEventListener('click', async () => {
-    const status = $('#rp-status');
+    const status = $('#rp-result');
     status.textContent = '⏳ Menguji jembatan…';
     try {
       const r = await api('/api/remote-power/test');

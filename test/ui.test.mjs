@@ -2698,6 +2698,36 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('⚡ Remote power: simpan URL + token tersimpan dan hasilnya tampil di panel', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await tap(page, '#btn-settings');
+      await settle(page, 'settings-modal');
+      await page.click('[data-settings-tab="sistem"]'); // ⚡ Remote power lives in the Sistem tab
+      await page.eval(() => {
+        document.querySelector('#rp-url').value = 'https://adhitron.netlify.app';
+        document.querySelector('#rp-token').value = 'ui-test-token';
+        document.querySelector('#rp-delay').value = '90';
+      });
+      await page.click('#rp-save');
+      await page.waitFor(() => /Setelan disimpan/.test(document.querySelector('#rp-result')?.textContent ?? ''), { timeoutMs: 5000, message: 'hasil simpan tampil' });
+      const saved = await page.eval(async () => {
+        const token = document.querySelector('meta[name="office-token"]').content;
+        const res = await fetch('/api/remote-power/get', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': token }, body: '{}' });
+        const body = await res.json().catch(() => null);
+        return { status: res.status, body };
+      });
+      assert.deepEqual(saved.body?.remotePower, { bridgeUrl: 'https://adhitron.netlify.app', token: 'ui-test-token', offDelaySec: 90 }, JSON.stringify(saved).slice(0, 200));
+      await page.click('#rp-test');
+      await page.waitFor(() => /Jembatan|belum diset/.test(document.querySelector('#rp-result')?.textContent ?? ''), { timeoutMs: 10000, message: 'hasil uji koneksi tampil' });
+      // The expected 502 (invalid test token) is part of the flow above; clear it so the page reads clean.
+      page.clearProblems();
+      const refilled = await page.eval(() => ({ url: document.querySelector('#rp-url').value, delay: document.querySelector('#rp-delay').value }));
+      assert.equal(refilled.url, 'https://adhitron.netlify.app');
+      assert.equal(refilled.delay, '90');
+      await page.press('Escape');
+      assert.deepEqual(realProblems(page), []);
+    });
+
     test('⚙ Pengaturan: bagian jadi tab di desktop dan HP', async () => {
       await ensureApp(page, `#${projectId}`);
       await tap(page, '#btn-settings');

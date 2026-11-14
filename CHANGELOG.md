@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.29
+
+- **⚡ Remote power: tombol Simpan dan Uji koneksi kini benar-benar memberi umpan balik.** Sebelumnya hasil ditulis ke elemen yang tidak ada (`#rp-status` vs `#rp-result`) dan kolom jeda pemutusan tidak pernah dirender — setiap klik gagal diam-diam tanpa jejak. Kini: Simpan menyimpan (kolom **jeda 0–600 detik** kini ada di panel, terisi otomatis saat dialog dibuka) dan menampilkan ✅; Uji koneksi menampilkan hasil sungguhan (✅ jembatan hidup / ⚠ alasan gagal). Panel ikut gerbang `test:ui` dengan test permanen.
+
 ## 1.0.28
 
 - **🧹 Kerapian UI: 👤 Akun dan ⚙ Pengaturan giliran dirapikan.** Select **Mesin** di Akun kini full width dengan label di atasnya (di HP 44px, bebas zoom iOS), seksi-konsisten dengan garis pemisah; field Pengaturan giliran mesin OpenCode tidak lagi setengah lebar tanpa maksud. Plus perapian craft dari audit visual: satu gaya tombol, jarak, dan perataan di permukaan-permukaan utama (desktop + HP, tema terang & gelap).
