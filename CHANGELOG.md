@@ -2,6 +2,14 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.30
+
+- **🧩 Emoji dan ikon pulih.** Rilis 1.0.29 merusak sebagian karakter UTF-8 di antarmuka (emoji tampil seperti `?`/mojibake). Seluruh berkas dipulihkan dan ada test penjaga encoding agar tidak terulang.
+- **⏳ Langkah delegasi latar tidak lagi "loading terus".** Langkah subagent OpenCode yang berjalan sebagai sesi sendiri kini tetap tertaut ke delegasinya dan menutup barisnya dengan **hasil asli**, bukan spinner abadi. Giliran yang kamu **Stop** kini tidak meninggalkan baris atau chip "bekerja" yang menggantung.
+- **🎚️ Provider yang menolak level effort tidak lagi mematikan giliran.** Sebelumnya memilih level yang ditolak provider (mis. `medium` pada provider custom river AI) berakhir dengan "■ Berhenti: … reasoning effort …". Kini level itu diingat, otomatis jatuh ke **Default**, dan giliran **dicoba ulang sekali** dengan catatan singkat di chat.
+- **🧱 Akses HP lewat Tailscale langsung siap.** Installer memasang aturan firewall 4317 + 4318 (opsi bisa dimatikan saat pasang; jalur update otomatis tidak memunculkan UAC). Kalau aturan lama masih hanya 4317, app 📱 menampilkan banner 🧱 dengan tombol **🔧 Perbaiki** — tanpa uninstall dan tanpa mengubah aturan lain.
+- **🛡️ Preset izin sekali klik.** Dialog Aturan izin kini punya **📦 Paket & test** (npm/npx/pnpm/bun + git harian) dan **💼 Kerja penuh** (ditambah Edit/Write/Read); aturan yang sudah tercakup atau terhalang deny/ask lain ditandai, bukan ditulis sia-sia.
+
 ## 1.0.29
 
 - **⚡ Remote power: tombol Simpan dan Uji koneksi kini benar-benar memberi umpan balik.** Sebelumnya hasil ditulis ke elemen yang tidak ada (`#rp-status` vs `#rp-result`) dan kolom jeda pemutusan tidak pernah dirender — setiap klik gagal diam-diam tanpa jejak. Kini: Simpan menyimpan (kolom **jeda 0–600 detik** kini ada di panel, terisi otomatis saat dialog dibuka) dan menampilkan ✅; Uji koneksi menampilkan hasil sungguhan (✅ jembatan hidup / ⚠ alasan gagal). Panel ikut gerbang `test:ui` dengan test permanen.
