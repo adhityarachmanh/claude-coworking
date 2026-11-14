@@ -64,13 +64,13 @@ bridge/
 
 ## Setup Tuya (Bardi / Smart Life)
 
-1. Daftar di [iot.tuya.com](https://iot.tuya.com) (region sesuai app — Indonesia biasanya **eu**), buat **Cloud Project**.
+1. Daftar di [iot.tuya.com](https://iot.tuya.com) dan buat **Cloud Project**. Saat membuat project, **pilih data center yang sesuai akun Smart Life-mu** — kredensial hanya valid di data center itu. Kalau tidak yakin, biarkan saja: bridge mendeteksinya otomatis.
 2. Salin **Access ID** (= Client ID) dan **Access Secret**.
 3. Tautkan akun **Smart Life** yang berisi plug (Devices → Link Smart Life).
 4. Cari **Device ID** plug-nya.
 5. Set BIOS PC: **Restore on AC Power Loss = Power On**.
 
-Region yang diterima bridge: `eu`, `america`, `asia` (alias portal lama `us`/`cn` dikanonisasi otomatis).
+Data center yang didukung (7): `eu` (Eropa Tengah), `eu-west` (Eropa Barat), `america` (Amerika Barat), `us-east` (Amerika Timur), `asia` (Tiongkok), `india`, `singapore`. Alias lama `us`/`cn`/`sg`/`in` dikanonisasi otomatis. Kalau region yang dipilih ditolak, bridge mencoba **semua** data center secara paralel (read-only) dan menyimpan yang benar — jadi salah pilih region tidak lagi menggagalkan pendaftaran.
 
 ## Kontrak API (untuk Adhitron / client lain)
 
@@ -107,7 +107,9 @@ Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk
   token + `GET /v1.0/devices/{deviceId}/status` (read-only, timeout 5 dtk) — **sebelum** menyimpan apa pun.
   Tidak ada `/commands` saat validasi. Kalau ditolak: **422** dengan pesan spesifik (`Client ID/Secret atau
   region ditolak Tuya.`, `Device ID tidak ada di project ini …`, `Device ini bukan smart plug dengan saklar.`);
-  kalau Tuya tidak terjangkau/timeout: **503** `Tidak bisa menghubungi Tuya Cloud, coba lagi.`. Tidak ada
+  kalau Tuya tidak terjangkau/timeout: **503** `Tidak bisa menghubungi Tuya Cloud, coba lagi.`. Kalau region yang
+  dipilih ditolak, **semua 7 data center dicoba otomatis** (paralel, read-only) dan region yang berhasil disimpan;
+  hanya kalau semuanya menolak kredensial, pesan 422 muncul. Tidak ada
   record space, index token, maupun tiket yang tersimpan saat gagal. Throttle 10/IP/hari tetap dihitung
   sebelum validasi, dan ada **cap GLOBAL 300 verifikasi/hari** (lintas IP) supaya kuota Tuya operator tidak
   bisa dihabiskan dari banyak IP; bila terlampaui → **503** `Batas verifikasi harian situs tercapai, coba besok.`
@@ -240,7 +242,7 @@ buka `handoffUrl` untuk halaman status serah-terima di HP.
 node --test --test-timeout=60000 "bridge/**/*.test.mjs"
 ```
 
-**64 tes** (`node --test`), menggunakan fake fetch Tuya + fake Blobs - tanpa jaringan. Mencakup: register &
+**67 tes** (`node --test`), menggunakan fake fetch Tuya + fake Blobs - tanpa jaringan. Mencakup: register &
 enkripsi (tidak ada plaintext di store), validasi kredensial ke Tuya sebelum menyimpan (422/503, pesan tanpa
 kredensial), throttle 10/IP/hari, auth 401, jadwal off + tiket sekali pakai, pembatalan via heartbeat,
 cron sukses / coba ulang / needsAttention / batal, `hold=1` (heartbeat tidak membatalkan "matikan rapi"), `/api/on` (409 saat PC masih hidup, `?force=1`, hapus jadwal),

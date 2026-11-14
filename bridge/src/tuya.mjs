@@ -4,17 +4,39 @@
 // ON disiklus OFF → ON karena BIOS butuh kejadian listrik baru.
 // Kredensial tidak pernah di-log dan tidak pernah masuk respons HTTP.
 
+// Tuya punya 7 data center (bukan 3): kredensial/Cloud Project hanya valid di DC tempat project dibuat.
+// Kunci lama (eu/america/asia) DIPERTAHANKAN supaya record space yang sudah ada tetap terbaca.
 const REGIONS = {
-  eu: 'https://openapi.tuyaeu.com',      // Eropa Barat — plug Bardi Indonesia biasanya terdaftar di sini
-  america: 'https://openapi.tuyaus.com', // Amerika
-  asia: 'https://openapi.tuyacn.com',    // Tiongkok / Asia
+  eu: 'https://openapi.tuyaeu.com',              // Central Europe (Frankfurt)
+  'eu-west': 'https://openapi-weaz.tuyaeu.com',  // Western Europe (Amsterdam)
+  america: 'https://openapi.tuyaus.com',         // Western America (Oregon)
+  'us-east': 'https://openapi-ueaz.tuyaus.com',  // Eastern America (Virginia)
+  asia: 'https://openapi.tuyacn.com',            // China (Shanghai)
+  india: 'https://openapi.tuyain.com',           // India (Mumbai)
+  singapore: 'https://openapi-sg.iotbing.com',   // Singapore
 };
 
-/** Nama region spesifikasi bridge ini: eu | america | asia. Alias portal lama dikanonisasi. */
+/** Urutan pilihan di form (label manusiawi, bukan cuma kode). */
+export const REGION_LABELS = {
+  eu: 'eu — Eropa Tengah (Frankfurt)',
+  'eu-west': 'eu-west — Eropa Barat (Amsterdam)',
+  america: 'america — Amerika Barat (Oregon)',
+  'us-east': 'us-east — Amerika Timur (Virginia)',
+  asia: 'asia — Tiongkok (Shanghai)',
+  india: 'india — India (Mumbai)',
+  singapore: 'singapore — Singapura',
+};
+export const REGION_KEYS = Object.keys(REGIONS);
+
+/** Nama region bridge: 7 kunci di atas; alias portal lama dikanonisasi. */
 export function normalizeRegion(region) {
   const r = String(region ?? '').trim().toLowerCase();
   if (r === 'us') return 'america';
   if (r === 'cn') return 'asia';
+  if (r === 'sg') return 'singapore';
+  if (r === 'in') return 'india';
+  if (r === 'east-america' || r === 'us-east-1') return 'us-east';
+  if (r === 'west-europe') return 'eu-west';
   return r;
 }
 
@@ -166,6 +188,40 @@ export async function verifyCreds(cfg, { timeoutMs = 5000 } = {}) {
   const sw = codes.find((c) => c.code === 'switch_1' || c.code === 'switch');
   if (!sw) throw new TuyaError('NOT_A_PLUG', PUBLIC_MESSAGE.NOT_A_PLUG);
   return { switchCode: sw.code, hasPowerMeter: codes.some((c) => c.code === 'power' || c.code === 'power_current') };
+}
+
+/** Cari data center yang benar dengan mencoba ketujuh endpoint Tuya secara paralel (read-only: tiap percobaan
+ *  hanya token + GET status). Dipakai saat region pilihan user ditolak: kredensial/Cloud Project hanya valid
+ *  di DC asalnya, dan user sering tidak tahu DC mana yang dipilih saat membuat project.
+ *  Kembalikan kunci region yang berhasil; gagal → TuyaError yang sudah diklasifikasikan (aman untuk klien).
+ *  @param {{ region?: string, clientId: string, clientSecret: string, deviceId: string }} cfg
+ *  @param {{ timeoutMs?: number }} [options] short per-request timeout (default 4 dtk, 7 request paralel)
+ *  @returns {Promise<string>} salah satu dari REGION_KEYS
+ */
+export async function detectRegion(cfg, { timeoutMs = 4000 } = {}) {
+  const attempts = REGION_KEYS.map(async (region) => {
+    const status = await tuyaRequest({ ...cfg, region }, `${devicePath(cfg)}/status`, 'GET', null, timeoutMs);
+    const codes = Array.isArray(status) ? status : [];
+    if (!codes.some((c) => c.code === 'switch_1' || c.code === 'switch')) {
+      throw new TuyaError('NOT_A_PLUG', PUBLIC_MESSAGE.NOT_A_PLUG);
+    }
+    return region;
+  });
+  const settled = await Promise.allSettled(attempts);
+  const ok = settled.find((r) => r.status === 'fulfilled');
+  if (ok) return ok.value;
+  const errors = settled.filter((r) => r.status === 'rejected').map((r) => r.reason).filter((e) => e instanceof TuyaError);
+  // A status call that succeeded but had no switch proves the credentials are valid in that DC.
+  const notPlug = errors.find((e) => classOf(e) === 'NOT_A_PLUG');
+  if (notPlug) throw notPlug;
+  const device = errors.find((e) => classOf(e) === 'DEVICE_REJECTED');
+  if (device) throw new TuyaError('DEVICE_REJECTED', PUBLIC_MESSAGE.DEVICE_REJECTED);
+  const tokenRejected = errors.some((e) => classOf(e) === 'TOKEN_REJECTED');
+  const network = errors.find((e) => classOf(e) === 'NETWORK');
+  const busy = errors.find((e) => classOf(e) === 'TUYA_BUSY');
+  if (!tokenRejected && network) throw network;
+  if (!tokenRejected && busy) throw busy;
+  throw new TuyaError('TOKEN_REJECTED', PUBLIC_MESSAGE.TOKEN_REJECTED);
 }
 
 /** Status saklar plug (switch_1 / switch), atau null kalau kode statusnya absen. */

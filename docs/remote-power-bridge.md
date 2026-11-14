@@ -40,12 +40,12 @@ Detail lengkap deploy, struktur kode, anti-abuse, dan pengelolaan space (rotasi 
 
 ## Setup Tuya (Bardi / Smart Life)
 
-1. Daftar di [iot.tuya.com](https://iot.tuya.com) (region sesuai app — Indonesia biasanya **eu**), buat **Cloud Project**.
+1. Daftar di [iot.tuya.com](https://iot.tuya.com) dan buat **Cloud Project**. Pilih **data center** yang sesuai akun Smart Life-mu (kredensial hanya valid di DC itu); kalau ragu, bridge mendeteksinya otomatis.
 2. Salin **Access ID** (= Client ID) dan **Access Secret**.
 3. Tautkan akun **Smart Life** yang berisi plug (Devices → Link Smart Life).
 4. Cari **Device ID** plug-nya.
 
-Region yang diterima jembatan: `eu`, `america`, `asia` (alias portal lama `us`/`cn` dikanonisasi otomatis).
+Data center yang didukung: `eu` (Eropa Tengah), `eu-west` (Eropa Barat), `america` (Amerika Barat), `us-east` (Amerika Timur), `asia` (Tiongkok), `india`, `singapore` — alias lama `us`/`cn`/`sg`/`in` dikanonisasi otomatis. Salah pilih region tidak menggagalkan pendaftaran: bridge mencoba ketujuhnya secara paralel (read-only) dan menyimpan yang benar.
 
 ## Checklist di sisi PC (wajib sekali)
 

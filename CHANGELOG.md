@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🌍 Semua 7 data center Tuya + deteksi region otomatis.** Form jembatan kini menampilkan `eu`, `eu-west`, `america`, `us-east`, `asia`, `india`, dan `singapore` (sebelumnya hanya 3). Kalau region yang dipilih ditolak, jembatan mencoba ketujuh endpoint Tuya secara paralel (read-only: token + status device) dan **menyimpan region yang benar** — salah pilih region tidak lagi menggagalkan pendaftaran. Ubah di halaman Kelola dengan perilaku yang sama. Deploy bridge Netlify; tidak perlu rilis aplikasi.
+
 ## 1.0.32
 
 - **📲 HP terpasang otomatis saat halaman `/pair` dibuka.** Perangkat yang masuk lewat **🔒 Tailscale (HTTPS)** dengan **akun Tailscale yang sama** kini langsung dipasangkan dan diantar ke beranda (cookie `__Host-office_device`, HttpOnly/Secure/SameSite=Strict) — form PIN tidak muncul. Syaratnya sama dengan pasang otomatis yang sudah ada: setting *Pasang otomatis dari perangkat tailnet* aktif (bawaan). WiFi HTTP, akun tailnet lain, perangkat shared-in, atau `tailscale status` yang gagal tetap memakai **kode 6 digit** (fail closed). `POST /pair` dan link QR `?k=…` tidak berubah. Pengaman: cookie valid tidak membuat record baru, hanya navigasi halaman yang bisa memicu auto-pair (bukan subresource dari situs lain), maksimal **20 perangkat** serta **5/menit & 20/jam per IP** (lebih dari itu kembali ke form kode), dan status Tailscale di-cache ±5 detik. Catatan: notifikasi *kode pasangan baru* hanya sampai ke HP yang **sudah terpasang & berlangganan push** di HTTPS; perangkat baru tanpa push tetap perlu halaman 📱, `office pair`, atau auto-pair tailnet.

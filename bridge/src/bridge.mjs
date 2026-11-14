@@ -17,7 +17,7 @@
 // heartbeat dianggap bukti "PC ternyata hidup" dan MEMBATALKAN jadwal mati (aturan pembatalan spesifikasi).
 import { randomBytes, randomInt } from 'node:crypto';
 import { assertEncryptionKey, decryptCreds, decryptSecret, encryptCreds, encryptSecret } from './vault.mjs';
-import { TuyaError, drivePlug, isValidRegion, normalizeRegion, readPowerW, tuyaErrorClass, tuyaPublicMessage, verifyCreds } from './tuya.mjs';
+import { TuyaError, detectRegion, drivePlug, isValidRegion, normalizeRegion, readPowerW, tuyaErrorClass, tuyaPublicMessage, verifyCreds } from './tuya.mjs';
 import * as store from './store.mjs';
 import {
   deletedPageHtml, errorPageHtml, managePageHtml,
@@ -117,17 +117,29 @@ function tuyaHttpError(err, rejectStatus) {
 
 /** Validasi kredensial Tuya SEBELUM menyimpan apa pun (fail closed). Read-only: token + GET status,
  *  TIDAK pernah /commands. Ditolak Tuya → HttpError(rejectStatus), jaringan/kuota → 503.
+ *  Kalau region yang dipilih ditolak, cari data center yang benar otomatis (Tuya punya 7 DC dan user sering
+ *  tidak tahu DC project-nya). Region hasil deteksi ditulis balik ke `creds` supaya ikut tersimpan.
  *  Pesannya berasal dari peta publik tuya.mjs — tidak memuat Client ID/Secret. */
 async function assertTuyaCreds(creds, rejectStatus = 422) {
+  const cfg = {
+    region: creds.tuyaRegion,
+    clientId: creds.tuyaClientId,
+    clientSecret: creds.tuyaClientSecret,
+    deviceId: creds.tuyaDeviceId,
+  };
   try {
-    await verifyCreds({
-      region: creds.tuyaRegion,
-      clientId: creds.tuyaClientId,
-      clientSecret: creds.tuyaClientSecret,
-      deviceId: creds.tuyaDeviceId,
-    });
+    await verifyCreds(cfg);
+    return;
   } catch (err) {
     if (!(err instanceof TuyaError)) throw new HttpError(502, 'Validasi kredensial Tuya gagal, coba lagi.');
+    if (tuyaErrorClass(err) === 'TOKEN_REJECTED') {
+      try {
+        creds.tuyaRegion = await detectRegion(cfg);
+        return;
+      } catch (err2) {
+        throw tuyaHttpError(err2 instanceof TuyaError ? err2 : err, rejectStatus);
+      }
+    }
     throw tuyaHttpError(err, rejectStatus);
   }
 }

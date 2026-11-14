@@ -30,6 +30,8 @@ const fakeTuya = (opts = {}) => {
     calls.push({ url: u, method: init?.method ?? 'GET', body: init?.body ? JSON.parse(init.body) : null });
     if (opts.networkError) throw new TypeError('fetch failed'); // seperti DNS mati / AbortSignal.timeout
     if (u.includes('/v1.0/token')) {
+      // `goodHost` models the real rule: a Cloud Project's credentials only work in its own data center.
+      if (opts.goodHost && !u.includes(opts.goodHost)) return res({ success: false, code: 1004, msg: 'sign invalid' });
       if (opts.tokenRejected) return res({ success: false, code: 1004, msg: 'sign invalid' });
       if (opts.tokenBusy) return res({ success: false, code: 28841002, msg: 'quota limit reached' });
       return res({ success: true, result: { access_token: 'tok-1' } });
@@ -1232,6 +1234,42 @@ test('/api/on: a Tuya error is answered with a stable message, never raw upstrea
   assert.equal(on.body.error, 'Client ID/Secret atau region ditolak Tuya.');
   assert.equal(JSON.stringify(on.body).includes('"success"'), false, 'no upstream JSON leaked');
   assert.equal(cmdValues().length, 0, 'no command was sent');
+});
+
+test('register: region yang salah dideteksi otomatis (7 data center) dan yang benar disimpan', async () => {
+  const env = makeEnv();
+  fakeTuya({ goodHost: 'openapi-weaz.tuyaeu.com' }); // the project lives in Western Europe
+  const r = await doRegister(env, { ...defaultBody(), tuyaRegion: 'eu' }); // the user picked Central Europe
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const space = await getSpace(env, r.body.id);
+  const creds = decryptCreds(r.body.token, KEY, space.enc);
+  assert.equal(creds.tuyaRegion, 'eu-west', 'the detected data center is what gets stored');
+  // A second registration with the now-correct region needs no detection round.
+  fakeTuya({ goodHost: 'openapi-weaz.tuyaeu.com' });
+  const again = await doRegister(env, { ...defaultBody(), tuyaRegion: 'eu-west' }, '7.7.7.7');
+  assert.equal(again.status, 200);
+  assert.equal(calls.filter((c) => c.url.includes('/v1.0/token')).length, 1, 'one token call when the region is right');
+});
+
+test('register: region salah dan kredensial memang salah → 422, tetap tanpa data', async () => {
+  const env = makeEnv();
+  fakeTuya({ goodHost: 'tidak-ada.tuya.invalid' });
+  const r = await doRegister(env, { ...defaultBody(), tuyaRegion: 'asia' });
+  assert.equal(r.status, 422);
+  assert.match(r.body.error, /Client ID\/Secret atau region/);
+  assert.equal([...env.store.map.keys()].filter((k) => k.startsWith('space/')).length, 0);
+});
+
+test('halaman: ketujuh data center Tuya tampil di form register & manage', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { token } } = await doRegister(env);
+  const home = await (await handleApi(req('/'), env)).text();
+  for (const region of ['eu', 'eu-west', 'america', 'us-east', 'asia', 'india', 'singapore']) {
+    assert.match(home, new RegExp(`value="${region}"`), `register: ${region}`);
+  }
+  const manage = await (await handleApi(req(`/manage?token=${token}`), env)).text();
+  assert.match(manage, /value="eu"\s+selected/, 'the saved region stays selected');
 });
 
 // ---------------------------------------------------------------- halaman

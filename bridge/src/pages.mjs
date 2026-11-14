@@ -4,6 +4,11 @@
 // Tampilan: brand Adhitron (bg gelap #121317, aksen oranye #d97757, logo inline) — CSS satu blok di bawah,
 // tanpa dependensi, responsif (phone 390 / desktop 1440). Nama class .note/.warn/.btn/.danger/.muted
 // dipertahankan karena dipakai juga oleh notice dari bridge.mjs.
+import { REGION_KEYS, REGION_LABELS } from './tuya.mjs';
+
+/** Semua data center Tuya (7) + label manusiawi; default dipakai kalau region tersimpan tidak dikenal. */
+const regionOptions = (selected) =>
+  REGION_KEYS.map((r) => `<option value="${r}" ${selected === r ? 'selected' : ''}>${REGION_LABELS[r] ?? r}</option>`).join('');
 
 const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
 <rect width="64" height="64" rx="14" fill="#17181e"/>
@@ -191,7 +196,8 @@ ${privacyNotice}
 <label>Client ID (Access ID Tuya)<input name="tuyaClientId" required maxlength="200"></label>
 <label>Client Secret (Access Secret Tuya)<input name="tuyaClientSecret" type="password" required maxlength="200"></label>
 <label>Device ID plug<input name="tuyaDeviceId" required maxlength="200"></label>
-<label>Region<select name="tuyaRegion"><option value="eu">eu (Eropa)</option><option value="america">america</option><option value="asia">asia</option></select></label>
+<label>Region (data center Tuya)<select name="tuyaRegion">${regionOptions('america')}</select></label>
+<p class="muted">Tidak yakin? Biarkan apa adanya — bridge mencoba semua data center dan menyimpan yang benar otomatis.</p>
 <label>URL Adhitron (opsional, https://… — link "Buka Adhitron" di halaman status)<input name="adhitronUrl" placeholder="https://nama-mu.ts.net" maxlength="200"></label>
 <button class="btn on" type="submit">Daftar &amp; dapat token</button>
 </form>
@@ -390,8 +396,7 @@ renderSpace();
 
 /** space.ownerToken tidak ada lagi di record (terenkripsi) — form action memakai token dari query request. */
 export function managePageHtml(space, queryToken, creds, { notice = '', newToken = null } = {}) {
-  const regionOpts = ['eu', 'america', 'asia']
-    .map((r) => `<option value="${r}" ${creds.tuyaRegion === r ? 'selected' : ''}>${r}</option>`).join('');
+  const regionOpts = regionOptions(creds.tuyaRegion);
   const formAction = `/api/manage?token=${encodeURIComponent(queryToken)}`;
   return page('Kelola space', `
 <h1>Kelola space</h1>
@@ -406,7 +411,8 @@ ${newToken ? `<div class="note"><b>Token baru (token lama MATI):</b><br><code>${
 <label>Client ID (Access ID)<input name="tuyaClientId" value="${escapeHtml(creds.tuyaClientId)}" maxlength="200"></label>
 <label>Client Secret (kosongkan = tetap pakai yang lama)<input name="tuyaClientSecret" type="password" placeholder="••••••••" maxlength="200"></label>
 <label>Device ID plug<input name="tuyaDeviceId" value="${escapeHtml(creds.tuyaDeviceId)}" maxlength="200"></label>
-<label>Region<select name="tuyaRegion">${regionOpts}</select></label>
+<label>Region (data center Tuya)<select name="tuyaRegion">${regionOpts}</select></label>
+<p class="muted">Region dicek &amp; dideteksi otomatis saat disimpan.</p>
 <label>URL Adhitron (https://…, kosongkan = tanpa link)<input name="adhitronUrl" value="${escapeHtml(space.adhitronUrl ?? '')}" maxlength="200"></label>
 <button class="btn on" type="submit">Simpan perubahan</button>
 </form>
