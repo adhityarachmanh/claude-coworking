@@ -176,6 +176,7 @@ Batasan: izin untuk sesi CLI tetap dijawab di terminal, dan prompt dari web memb
 Detail tiap fitur—termasuk batasan dan perilakunya—ada di **[docs/FITUR.md](docs/FITUR.md)**. README ini fokus pada cara menjalankan, akses HP, keamanan, pengembangan, dan struktur.
 
 - **🔄 Mesin mengikuti model**: tidak ada tombol ganti mesin. Satu daftar model memuat grup **⭐ Favorit**, **Claude Code**, dan **OpenCode** (satu sub-grup per provider); memilih model mesin lain di **Pengaturan giliran** langsung memakai mesin itu untuk giliran berikutnya. Tombol **☆ Favoritkan** men-pin model ke atas daftar, dan model provider yang belum punya API key tampil nonaktif dengan arah loginnya. Chat menampilkan satu riwayat gabungan kedua mesin, dan ringkasan percakapan mesin sebelumnya dibawa otomatis (tanpa panggilan model) saat mesin berganti. Detail: [Mesin: Claude Code atau OpenCode](docs/FITUR.md#mesin-claude-code-atau-opencode).
+- **🗂 Parent group untuk proyek terkait** (🏷 di daftar project): repo yang satu produk tapi dipisah (web + api + mobile) dikelompokkan di bawah satu nama — anggota berbadge di daftar, dan **🕘 Riwayat gabungan** menampilkan semua sesi repo anggota tergabung berlabel repo sumber; **📁 Buka di repo** melanjutkan sesinya di sana. Sesi tidak pernah dipindah. Detail: [Project & dashboard](docs/FITUR.md#project--dashboard).
 - **⚡ Batas giliran bersamaan** (⚙ → Umum, default 3, 0 = tanpa batas, diubah dari laptop): batasi berapa project yang boleh bekerja serentak dari aplikasi. Prompt ke project lain otomatis masuk 📋 Antrian saat penuh, tampil sebagai bubble **antre #N** dengan tombol **✕ Batal**, dan dijalankan FIFO lintas project. Badge `⚡ 2/3` tampil di 🗂 Semua project dan di bar HP. Detail: [Antrian & batas](docs/FITUR.md#antrian--batas).
 - **🌐 Semua antrian + ETA + jeda semua + pin**: dialog 📋 Antrian punya tombol **🌐 Semua** (juga `Ctrl+P` → *Semua antrian*) untuk melihat antrian semua project dalam urutan giliran yang adil—**berjalan** dulu, lalu menunggu `#N`, lalu yang **dijeda** ⏸—dengan **Buka** dan **Batal**. **📌 Pin** pada item menunggu menjalankannya sebelum item lain lintas project (📍 melepas pin); hanya item yang masih menunggu yang bisa dipin. ETA `±X mnt · ≈HH.MM` disegarkan tiap menit selama dialog terbuka, dan tombol **⏸ Jeda semua / ▶ Lanjutkan semua** menghentikan atau melanjutkan antrian yang kamu jeda (antrian gagal/budget tetap dijeda; giliran berjalan tidak dipotong). Bubble **antre #N** juga menampilkan perkiraan `±X mnt` / `sebentar` (tanpa data: tanpa ETA), dan **Edit** pada bubble yang masih antre mengubah item itu langsung. Ini perkiraan, bukan janji. Detail: [Antrian & batas](docs/FITUR.md#antrian--batas).
 - **⏳ Retensi otomatis** (⚙ → Cadangkan riwayat → 🕵️ Data saya, default simpan selamanya): hapus pesan panel chat dan baris laporan pemakaian yang lebih lama dari batas. Transkrip sesi, riwayat sesi, dan backup tidak disentuh. **🕵️ Data saya** juga menampilkan pemakaian disk per kategori—chat, ledger dan arsipnya, lampiran antrian, bundel redo, backup config OpenCode, riwayat kesehatan, log server, audit aksi/login, salinan state lama, cache harga model, trash, dan backup otomatis—dengan pembersihan aman untuk redo, backup config OpenCode, riwayat kesehatan, log server, dan salinan state lama. **Hapus data project** ikut menghapus redo dan lampiran antrian project itu; backup otomatis (ZIP seluruh kantor) tetap utuh dan tidak bisa dihapus per project. Detail: [Retensi data](docs/FITUR.md#retensi-data).
@@ -336,6 +337,21 @@ Setelah hidup lagi, chat project itu menawarkan **▶ Lanjutkan** / **Tutup** (l
 | `SPOTIFY_CLIENT_ID` | – | Client ID Spotify (kalau tidak diisi di ⚙) |
 
 Ikon diubah lewat sprite 16×16 di `scripts/make-icons.mjs`, lalu `node scripts/make-icons.mjs`. Test gagal kalau ikon yang di-commit tidak sesuai generator.
+
+## Kolaborasi
+
+Adhitron itu **perekat yang brand-netral**, bukan aplikasi yang mengunci ke satu vendor. Hari ini ia mengoperasikan **Claude Code CLI** dan **OpenCode CLI** — besok siap menambah mesin berikutnya (Cursor CLI, dan lainnya): strukturnya sudah mendukung mesin tambahan tanpa mengubah cara kerja aplikasi. Yang dioperasikan tetap **milikmu sendiri**: login, settings, MCP, dan `CLAUDE.md` tiap project terpakai apa adanya.
+
+**Mau berkolaborasi? Sangat terbuka.** Repo ini publik — lapor bug, usulkan fitur, tambahkan mesin baru, atau kirim PR:
+
+1. **Fork & clone**, lalu jalankan dari source tanpa installer: butuh Node.js >= 20, lalu `node server.js` (setup CLI tetap lewat `setup.cmd`/`🧰 Persiapan`). Tidak ada dependency npm.
+2. **Cek dulu sebelum kontribusi**: `npm run lint` dan `npm run test:fast` — keduanya cepat dan tidak menyentuh data aslimu (semua test memakai folder sementara; lihat [Test & pengembangan](#test--pengembangan)).
+3. **PR kecil dan fokus** satu topik, dengan test untuk perilaku baru (pola TDD dipakai di repo ini: test dulu, baru implementasi). Konvensi: komentar kode bahasa Inggris, teks yang tampil ke pengguna bahasa Indonesia.
+4. **Diskusi dulu untuk perubahan besar** (arsitektur, mesin baru, keamanan): buka Issue dulu supaya arahnya sepakat sebelum kodenya.
+
+Peta kode & lapisan test ada di [Struktur](#struktur) dan tabel di atas; dokumen fitur ([docs/FITUR.md](docs/FITUR.md)) dan panduan harian ([docs/PANDUAN.md](docs/PANDUAN.md)) adalah acuan perilaku yang dianggap benar. Untuk pertanyaan keamanan (gerbang WiFi, pairing, data pribadi), baca dulu [Keamanan & privasi](#keamanan--privasi) supaya PR-nya nyambung dengan model ancaman yang sudah ada.
+
+---
 
 ## Struktur
 

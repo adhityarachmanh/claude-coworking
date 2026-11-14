@@ -49,6 +49,7 @@ import { initPermissions } from './features/permissions.js';
 import { initPhone } from './features/phone.js';
 import { initPhoneSheets } from './features/phone-sheets.js';
 import { initPicker } from './features/picker.js';
+import { initGroups } from './features/groups.js';
 import { initPush } from './features/push.js';
 import { initQuota } from './features/quota.js';
 import { initQueue } from './features/queue.js';
@@ -82,6 +83,7 @@ import { initShortcuts } from './ui/shortcuts.js';
 // (dialog Tab trap before the composer's Shift+Tab, #prompt input handlers, capture-phase Esc first).
 initModals();
 initPicker();
+initGroups();
 initShortcuts();
 initMobileNav();
 initSwipeViews(); // 👆 swipe between Kantor/Chat/Perubahan/Aktivitas on a phone

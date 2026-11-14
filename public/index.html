@@ -267,6 +267,7 @@
         <div class="side-head">
           <input id="project-search" type="search" aria-label="Cari project" placeholder="Cari project…  (↑↓ pilih · Enter buka · Esc tutup)" autocomplete="off" />
           <button id="project-dash" class="icon-btn" type="button" title="Semua project: status setiap project sekaligus" aria-label="Semua project">🗂</button>
+          <button id="project-groups" class="icon-btn" type="button" title="Grup proyek terkait (web + api + mobile)" aria-label="Grup proyek terkait">🏷</button>
           <button id="project-archived" class="icon-btn" type="button" aria-pressed="false" title="Tampilkan project diarsipkan" aria-label="Tampilkan project diarsipkan">📦</button>
           <button id="refresh-projects" class="icon-btn" title="Pindai ulang folder" aria-label="Pindai ulang folder">↻</button>
           <button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button>
@@ -276,6 +277,14 @@
           <input id="add-project-path" aria-label="Tambah folder project" placeholder="Tambah folder lain: C:\path\project" autocomplete="off" />
           <button class="icon-btn" title="Tambah" aria-label="Tambah folder">＋</button>
         </form>
+      </div>
+    </div>
+
+    <!-- 🗂 Parent groups: related repos referenced under one named group (sessions never move) -->
+    <div id="groups-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-label="Grup proyek terkait">
+        <div class="modal-head"><b>🗂 Grup proyek terkait</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div id="groups-body"></div>
       </div>
     </div>
 
@@ -1152,6 +1161,19 @@
           <hr id="oc-section-sep" hidden />
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
           <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>
+          <!-- ⚡ Remote power (opsional): jembatan self-hosted yang bisa boot/memutus PC dari jauh (spec: docs/remote-power-bridge.md) -->
+          <div class="oc-config" role="group" aria-labelledby="rp-title">
+            <b id="rp-title">⚡ Remote power (matikan PC dari jauh)</b>
+            <p class="muted small">Jembatan sendiri (open-source, <a href="https://github.com/adhityarachmanh/claude-coworking/tree/main/bridge" target="_blank" rel="noopener">panduan deploy</a>) + smart plug: nyalakan PC dari jauh (BIOS power-on) dan putus listriknya setelah shutdown.</p>
+            <label class="oc-field" for="rp-url"><span>URL jembatan</span><input id="rp-url" placeholder="https://remote-power.xxx.workers.dev" autocomplete="off" spellcheck="false" /></label>
+            <label class="oc-field" for="rp-token"><span>Token jembatan</span><input id="rp-token" type="password" autocomplete="off" spellcheck="false" /></label>
+            <div class="rp-row">
+              <button type="button" id="rp-save" class="ghost">Simpan</button>
+              <button type="button" id="rp-test" class="ghost">⚡ Uji koneksi</button>
+              <small id="rp-result" class="muted" aria-live="polite"></small>
+            </div>
+            <label class="switch" id="rp-pc-row"><input id="rp-shutdown-pc" type="checkbox" /> ⏻ tombol di bawah ikut <b>mematikan PC</b> (shutdown OS dulu, listrik menyusul)</label>
+          </div>
           <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
           </div>
         </form>

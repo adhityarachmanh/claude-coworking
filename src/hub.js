@@ -1,5 +1,6 @@
 // Central state: project registry, per-project chat/events/status, approvals, SSE broadcast, persistence.
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { BUDGET_KEYS, BUDGET_MAX_USD, cents, cleanLimits, cleanProjectBudgets } from './budget.js';
 import { cleanRoutines } from './routines.js';
@@ -103,6 +104,53 @@ function cleanSessionMeta(raw) {
   }
   return out;
 }
+
+/** 🗂 Parent groups (related repos referenced under one named group): { id, name, members }. Folder semantics:
+ *  a project belongs to at most one group. Sessions are never moved — the group only points at its members. */
+const GROUP_NAME_MAX = 60;const cleanGroupMembers = (value) => [...new Set((Array.isArray(value) ? value : []).filter((m) => typeof m === 'string' && m).slice(0, 12))];
+const cleanProjectGroups = (value) => {
+  const groups = (Array.isArray(value) ? value : [])
+    .filter((g) => isObject(g) && typeof g.id === 'string' && /^[\w-]{4,32}$/.test(g.id))
+    .map((g) => ({
+      id: g.id,
+      name: (String(g.name ?? '').trim() || 'Grup').slice(0, GROUP_NAME_MAX),
+      members: cleanGroupMembers(g.members),
+    }))
+    .filter((g) => g.members.length)
+    .filter((g, i, all) => all.findIndex((x) => x.id === g.id) === i);
+  const owned = new Set();
+  for (const g of groups) g.members = g.members.filter((m) => (owned.has(m) ? false : (owned.add(m), true)));
+  return groups;
+};
+/** A group's writable input: a real name, and — when members were sent — at least one that exists. */
+const cleanGroupInput = (name, members, projects) => {
+  const cleanName = String(name ?? '').trim();
+  if (!cleanName || cleanName.length > GROUP_NAME_MAX) return null; // a too-long name is refused, not clamped
+  const list = cleanGroupMembers(members);
+  if (Array.isArray(members) && members.length && !list.length) return null;
+  if (list.some((m) => !projects.has(m))) return null;
+  return { name: cleanName, members: list };
+};
+
+/** ⚡ Remote power (Bardi/Tuya via a self-hosted bridge): where the bridge lives, its token, and how long after a
+ *  graceful shutdown the bridge may cut the power. The bridge is remote → https only; clearing the URL disables. */
+const REMOTE_POWER_DELAY_MAX = 600;
+const cleanRemotePower = (raw) => {
+  const url = String(raw?.bridgeUrl ?? '').trim();
+  const token = String(raw?.token ?? '').trim();
+  const delay = Number(raw?.offDelaySec);
+  if (raw?.offDelaySec !== undefined && (!Number.isInteger(delay) || delay < 0 || delay > REMOTE_POWER_DELAY_MAX)) return null;
+  const offDelaySec = Number.isFinite(delay) ? delay : 120;
+  if (!url) return { bridgeUrl: '', token: '', offDelaySec };
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' || !token || token.length > 200) return null; // url set but no token → useless, refused
+  return { bridgeUrl: url.replace(/\/+$/, ''), token, offDelaySec };
+};
 
 /** 📚 Runbooks: saved prompt sequences; only valid entries survive a hand-edited state.json. */
 function cleanRunbooks(raw) {
@@ -277,6 +325,11 @@ export class Hub {
     this.persisted.archivedProjects = Array.isArray(this.persisted.archivedProjects) ? [...new Set(this.persisted.archivedProjects.filter((p) => typeof p === 'string' && p).slice(0, 500))] : [];
     // ⭐ Favorite models: ids the picker pins to the top; strings only, deduped, max 12.
     this.persisted.favoriteModels = Array.isArray(this.persisted.favoriteModels) ? [...new Set(this.persisted.favoriteModels.filter((v) => typeof v === 'string' && v && v.length <= 200))].slice(0, 12) : [];
+    // 🗂 Parent groups: related repos (web + api + mobile = one product) referenced under one named group.
+    // Sessions are never moved — the group only points at its members (see routes/groups.js).
+    this.persisted.projectGroups = cleanProjectGroups(this.persisted.projectGroups);
+    // ⚡ Remote power (optional): the self-hosted bridge that can boot/cut the PC when away (see bridge/).
+    this.persisted.remotePower = cleanRemotePower(this.persisted.remotePower);
     this.persisted.queueRetryOnce = isObject(this.persisted.queueRetryOnce) ? Object.fromEntries(Object.entries(this.persisted.queueRetryOnce).filter(([id, on]) => id && on === true).slice(0, 500)) : {};
     // 🏷 Team names saved by an older version still hold the old defaults ("Adhit - QA"): rename exactly those
     // (custom names are untouched) and persist once, so the migration never runs again.
@@ -301,7 +354,7 @@ export class Hub {
     // turns: the turn running right now per project (written when it starts, removed when it ends); one left
     // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
     // the user continues or dismisses them (see recoverTurns / interruptTurn).
-    const empty = { roots: [], custom: [], favorites: [], favoriteModels: [], settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, routines: [] };
+    const empty = { roots: [], custom: [], favorites: [], favoriteModels: [], projectGroups: [], remotePower: { bridgeUrl: '', token: '', offDelaySec: 120 }, settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, routines: [] };
     let stored = {};
     let parsedOk = false;
     try {
@@ -952,6 +1005,7 @@ export class Hub {
     this.persisted.custom = this.persisted.custom.filter((p) => projectId(p) !== id);
     this.persisted.favorites = this.persisted.favorites.filter((f) => f !== id);
     this.persisted.archivedProjects = this.persisted.archivedProjects.filter((p) => p !== id);
+    this.removeProjectFromGroups(id); // a forgotten project also leaves its parent group
     for (const key of ['settings', 'sessions', 'activity', 'turns', 'interrupted', 'queues', 'sessionsByEngine', 'engineSettings']) if (this.persisted[key]) delete this.persisted[key][id];
     if (this.legacyChats) delete this.legacyChats[id];
     for (const engine of ENGINES) {
@@ -979,7 +1033,82 @@ export class Hub {
       // The folder is gone (moved, deleted, a temp folder from an old CLI session): the picker may offer a safe purge.
       // Only ENOENT/ENOTDIR: an unreadable or temporarily offline folder is not an orphan.
       missing: Boolean(p.path) && isMissing(p.path),
+      group: this.groupOf(p.id) ? { id: this.groupOf(p.id).id, name: this.groupOf(p.id).name } : null,
     }));
+  }
+
+  // ---------- 🗂 parent groups (related repos referenced under one named group; sessions never move) ----------
+
+  projectGroups() {
+    return Array.isArray(this.persisted.projectGroups) ? this.persisted.projectGroups : [];
+  }
+
+  /** The group a project belongs to (folder semantics: at most one), or null. */
+  groupOf(projectId) {
+    return this.projectGroups().find((g) => g.members.includes(projectId)) ?? null;
+  }
+
+  /** Creates a group: a trimmed unique name and members that exist; a member already in another group moves here. */
+  createProjectGroup(name, members) {
+    const clean = cleanGroupInput(name, members, this.projects);
+    if (!clean) return null;
+    const group = { id: randomBytes(4).toString('hex'), name: clean.name, members: clean.members };
+    for (const g of this.persisted.projectGroups) g.members = g.members.filter((m) => !group.members.includes(m));
+    this.persisted.projectGroups = [...this.projectGroups().filter((g) => g.members.length), group];
+    this.save();
+    this.broadcast('projects', this.listProjects());
+    return group;
+  }
+
+  /** Renames, adds members (moving them out of their previous group) and/or removes members. */
+  updateProjectGroup(id, { name, add, remove } = {}) {
+    const group = this.projectGroups().find((g) => g.id === id);
+    if (!group) return null;
+    if (name !== undefined) {
+      const clean = cleanGroupInput(name, [], this.projects);
+      if (!clean) return null;
+      group.name = clean.name;
+    }
+    const addIds = Array.isArray(add) ? add : [];
+    const removeIds = Array.isArray(remove) ? remove : [];
+    if (addIds.some((m) => typeof m !== 'string' || !this.projects.has(m))) return null;
+    for (const other of this.persisted.projectGroups) if (other.id !== id) other.members = other.members.filter((m) => !addIds.includes(m));
+    group.members = group.members.filter((m) => !removeIds.includes(m));
+    for (const m of addIds) if (!group.members.includes(m)) group.members.push(m);
+    this.persisted.projectGroups = this.projectGroups().filter((g) => g.members.length);
+    this.save();
+    this.broadcast('projects', this.listProjects());
+    return group;
+  }
+
+  /** Dissolves a group only: its members' projects, sessions and data are untouched. */
+  dissolveProjectGroup(id) {
+    const rest = this.projectGroups().filter((g) => g.id !== id);
+    if (rest.length === this.projectGroups().length) return null;
+    this.persisted.projectGroups = rest;
+    this.save();
+    this.broadcast('projects', this.listProjects());
+    return true;
+  }
+
+  /** A forgotten/purged project leaves every group; a group with no members left dissolves itself. */
+  removeProjectFromGroups(projectId) {
+    for (const g of this.projectGroups()) g.members = g.members.filter((m) => m !== projectId);
+    this.persisted.projectGroups = this.projectGroups().filter((g) => g.members.length);
+  }
+
+  /** ⚡ Remote power: the self-hosted bridge config (url + token + power-cut delay), or an empty config when off. */
+  remotePower() {
+    return cleanRemotePower(this.persisted.remotePower);
+  }
+
+  /** Saves a validated config; the url is required https (the bridge is remote), an empty url disables. */
+  setRemotePower(patch) {
+    const clean = cleanRemotePower(patch);
+    if (!clean) return null;
+    this.persisted.remotePower = clean;
+    this.save();
+    return clean;
   }
 
   /** 🗂 Archive (hide from the picker) or show a project again; nothing is deleted. */

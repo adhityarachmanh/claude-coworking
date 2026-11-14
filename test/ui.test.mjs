@@ -1968,6 +1968,70 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('🗂 grup proyek: buat grup di dialog, badge di picker, riwayat gabungan + lompat ke repo', async () => {
+      const second = await addTempProject('grup-member-2');
+      try {
+        // Sessions for both member repos (the group only references them).
+        const transDir = path.join(TMP, 'claude-projects');
+        const mangle = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
+        const { projects } = await snapshot();
+        const webPath = projects.find((p) => p.id === projectId).path;
+        const apiPath = projects.find((p) => p.id === second).path;
+        for (const [pPath, sid, title] of [
+          [webPath, '11111111-1111-4111-8111-111111111111', 'fix login web'],
+          [apiPath, '22222222-2222-4222-8222-222222222222', 'tambah endpoint api'],
+        ]) {
+          mkdirSync(path.join(transDir, mangle(pPath)), { recursive: true });
+          writeFileSync(path.join(transDir, mangle(pPath), `${sid}.jsonl`), `${JSON.stringify({ type: 'user', message: { content: title }, entrypoint: 'cli', timestamp: new Date().toISOString() })}\n`);
+        }
+
+        await ensureApp(page, `#${projectId}`);
+        await page.click('#crumb'); // the groups button lives in the picker's toolbar
+        await page.waitFor(() => !document.querySelector('#project-modal').hidden, { timeoutMs: 3000, message: 'picker terbuka' });
+        await page.click('#project-groups');
+        await page.waitFor(() => !document.querySelector('#groups-modal').hidden, { timeoutMs: 4000, message: 'dialog grup terbuka' });
+        await page.waitFor(() => document.querySelector('#groups-new-name'), { timeoutMs: 4000, message: 'form grup termuat' });
+        await page.eval((ids) => {
+          document.querySelector('#groups-new-name').value = 'Proyek X';
+          document.querySelector('#groups-new-name').dispatchEvent(new Event('input', { bubbles: true }));
+          for (const box of document.querySelectorAll('input[name="groups-new-member"]')) {
+            box.checked = ids.includes(box.value);
+            box.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }, [`${projectId}`, `${second}`]);
+        await page.click('#groups-create button[type="submit"]');
+        await page.waitFor(() => document.querySelectorAll('#groups-body .grp-card').length === 1, { timeoutMs: 4000, message: 'kartu grup dibuat' });
+        await page.waitFor((sid) => Boolean(document.querySelector(`.grp-member [data-member="${sid}"]`)), { timeoutMs: 4000, message: 'kedua anggota tercantum' }, `${second}`);
+        const card = await page.eval((sid) => ({
+          name: document.querySelector('.grp-name')?.value,
+          members: [...document.querySelectorAll('.grp-member [data-member]')].map((n) => n.dataset.member),
+        }), `${second}`);
+        assert.equal(card.name, 'Proyek X');
+        assert.deepEqual(card.members.sort(), [`${projectId}`, `${second}`].sort(), 'dua anggota');
+        // The picker badge: both member rows carry the group name (the list re-rendered via the projects broadcast).
+        await page.waitFor(() => [...document.querySelectorAll('#project-list .badge.group')].length >= 2, { timeoutMs: 4000, message: 'badge grup di picker' });
+        // Merged history: open from the group card.
+        await page.click('#groups-body [data-gact="sessions"]');
+        await page.waitFor(() => !document.querySelector('#sessions-modal').hidden, { timeoutMs: 4000, message: 'riwayat gabungan terbuka' });
+        await page.waitFor(() => [...document.querySelectorAll('#sessions-list .s-item')].length === 2, { timeoutMs: 4000, message: 'dua sesi referensi' });
+        const merged = await page.eval(() => [...document.querySelectorAll('#sessions-list .s-item')].map((r) => ({ title: r.querySelector('.s-title')?.textContent, src: r.querySelector('[data-open-src]')?.dataset.openSrc })));
+        assert.ok(merged.some((m) => m.title === 'fix login web' && m.src === `${projectId}`), 'sesi web berlabel');
+        assert.ok(merged.some((m) => m.title === 'tambah endpoint api' && m.src === `${second}`), 'sesi api berlabel');
+        // A reference row jumps to its source repo (the per-project history opens there).
+        // Click the web repo's row explicitly: the two seeded sessions share a timestamp, so DOM order is not stable.
+        await page.click(`#sessions-list [data-open-src="${projectId}"]`);
+        await page.waitFor(() => document.querySelector('#sessions-modal').hidden, { timeoutMs: 3000, message: 'kembali ke repo sumber' });
+        assert.equal(await page.eval(async () => (await import('/js/core/state.js')).state.active), `${projectId}`, 'aktif di repo sumber');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        // Let in-flight loads (trash, sessions) land while both projects still exist, then reset the last-active
+        // pointer BEFORE forgetting: later tests must not boot pointing at a forgotten project (404s).
+        await sleep(500);
+        await page.eval((id) => localStorage.setItem('office.active', id), `${projectId}`).catch(() => {});
+        await forgetTempProject(second);
+      }
+    });
+
     test('🧭 Pengaturan giliran: grup ⭐ di atas + bintang inline di panel mengirim toggle', async () => {
       await ensureApp(page, `#${projectId}`);
       try {

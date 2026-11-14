@@ -57,6 +57,7 @@ export function renderSidebar() {
       // The engine is not a project trait any more (the model picks it), so a row does not carry an engine pill.
       // A project whose folder is gone can be purged safely: the action never deletes a folder, only the app's data.
       const missingTag = p.missing ? '<span class="badge missing" title="Folder project tidak ditemukan">folder hilang</span>' : '';
+      const groupBadge = p.group ? `<span class="badge group" title="Grup ${escapeHtml(p.group.name)}">🗂 ${escapeHtml(p.group.name)}</span>` : '';
       const purge = p.missing && p.id !== DEMO_ID
         ? `<button class="purge" title="${state.readOnly ? READ_ONLY_HINT : 'Hapus data project ini (foldernya sudah tidak ada)'}" aria-label="Hapus data project ${escapeHtml(p.name)}" ${state.readOnly ? 'disabled' : ''}>🗑</button>`
         : '';
@@ -64,6 +65,7 @@ export function renderSidebar() {
         <span class="p-icon">${icon}</span>
         <span class="p-text"><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.path ? p.path.replace(/^.*\/projects\//, '…/') : 'simulasi')}</small></span>
         ${missingTag}
+        ${groupBadge}
         ${badge}
         ${star}
         ${archive}

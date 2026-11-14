@@ -21,7 +21,8 @@ const acct = { tab: 'claude' };
 
 function accountTabsHtml(tab) {
   const options = ACCT_TABS.map((id) => `<option value="${id}"${tab === id ? ' selected' : ''}>${ACCT_TAB_LABELS[id] ?? id}</option>`).join('');
-  return `<label class="acct-tabs" for="acct-tab"><span>Mesin</span><select id="acct-tab" aria-controls="acct-panel">${options}</select></label>`;
+  // The openness must be visible in the app too: more engines are coming (Cursor CLI, …), not a closed set.
+  return `<label class="acct-tabs" for="acct-tab"><span>Mesin</span><select id="acct-tab" aria-controls="acct-panel">${options}</select></label><small class="muted">Mesin lain menyusul — Cursor CLI, dll. — cukup ditambahkan di sini.</small>`;
 }
 
 const LOGIN_TEXT = {

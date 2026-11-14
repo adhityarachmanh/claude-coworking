@@ -11,7 +11,7 @@ import { saveBlob } from '../core/util.js';
 
 const sessionTitles = new Map(); // Claude Code session id -> { title, source }
 const titleTried = new Map(); // session id -> last lookup (a brand-new transcript may not exist yet)
-const sessionsView = { project: null, list: [], current: null, selected: new Set(), tag: null, autoDays: 0, trash: [], trashDays: 0 }; // the open history dialog
+const sessionsView = { project: null, list: [], current: null, selected: new Set(), tag: null, autoDays: 0, trash: [], trashDays: 0, group: null }; // the open history dialog
 
 function rememberSessions(sessions) {
   for (const s of sessions) sessionTitles.set(s.id, { title: s.title, source: s.source });
@@ -83,6 +83,7 @@ function dayGroup(ts) {
 
 export async function openSessions() {
   if (state.active === DEMO_ID) return;
+  sessionsView.group = null; // the per-project view: the group's merged list is openSessionsFor
   sessionsView.project = state.active;
   sessionsView.selected.clear();
   sessionsView.tag = null;
@@ -510,7 +511,63 @@ export async function exportOpenCodeJson(projectId, sessionId) {
   }
 }
 
-/** Continues a past session (Riwayat sesi, 🔎 Cari percakapan). True when it was resumed. */
+/** /** 🗂 The parent group's merged history: every member repo's sessions, newest first, read-only references.
+ *  Actions live in each repo — a row's "Buka di repo" jumps there and opens the full per-project history. */
+export async function openSessionsFor(projectId, groupId) {
+  if (state.active === DEMO_ID || !groupId) return;
+  sessionsView.project = projectId; // the entry point repo (the panel's header still names the group)
+  sessionsView.selected.clear();
+  sessionsView.tag = null;
+  sessionsView.group = { id: groupId };
+  $('#sessions-project').textContent = '· grup ' + groupId;
+  $('#sessions-search').value = '';
+  $('#sessions-range').value = 'all';
+  $('#sessions-list').innerHTML = '<p class="muted"><span class="spinner"></span> Menggabungkan riwayat grup…</p>';
+  $('#sessions-bulk').hidden = true;
+  $('#sessions-import').hidden = true;
+  openModal('sessions-modal');
+  try {
+    const { sessions, name } = await api(`/api/groups/${groupId}/sessions`);
+    rememberSessions(sessions);
+    sessionsView.group = { id: groupId, name: name || groupId };
+    sessionsView.list = sessions;
+    $('#sessions-project').textContent = '· 🗂 ' + (sessionsView.group.name);
+    renderGroupSessionList();
+  } catch (err) {
+    $('#sessions-list').innerHTML = '<p class="state-error">Gagal menggabungkan riwayat grup: ' + escapeHtml(err.message) + '</p>';
+  }
+}
+
+/** The group mode's list: references only — title, source repo, time, and a jump into that repo. */
+function renderGroupSessionList() {
+  const box = $('#sessions-list');
+  const bulk = $('#sessions-bulk');
+  if (bulk) bulk.hidden = true;
+  if (!sessionsView.list.length) {
+    box.innerHTML = '<div class="s-empty"><b>Belum ada sesi di grup ini</b><p class="muted">Sesi dari tiap repo anggota akan muncul di sini sebagai referensi — data sesinya tetap di repo masing-masing.</p></div>';
+    return;
+  }
+  const q = $('#sessions-search').value.trim().toLowerCase();
+  const list = sessionsView.list.filter((s) => !q || s.title.toLowerCase().includes(q) || (s.projectName || '').toLowerCase().includes(q));
+  if (!list.length) { box.innerHTML = '<div class="s-empty"><p class="muted">Tidak ada sesi yang cocok.</p></div>'; return; }
+  let group = null;
+  box.innerHTML = list
+    .map((s) => {
+      const g = dayGroup(s.updated);
+      const head = g !== group ? '<div class="s-group">' + g + '</div>' : '';
+      group = g;
+      return head + '<div class="s-item">' +
+        '<div class="s-main">' +
+        '<span class="s-title">' + escapeHtml(s.title) + '</span>' +
+        '<span class="s-meta"><span class="s-tag" title="Repo sumber">🗂 ' + escapeHtml(s.projectName || s.project) + '</span><span class="src src-' + s.source + '">' + (s.source === 'web' ? 'Web' : s.source === 'opencode' ? 'OpenCode' : 'Terminal') + '</span>' + ago(s.updated) + ' · <code>' + s.id.slice(0, 8) + '</code>' + usageText(s.usage) + '</span>' +
+        '</div>' +
+        '<button type="button" class="ghost s-resume" data-open-src="' + escapeHtml(s.project) + '" title="Buka di repo sumber: lihat & lanjutkan sesi ini di sana">📁 Buka di ' + escapeHtml(s.projectName || s.project) + '</button>' +
+        '</div>';
+    })
+    .join('');
+}
+
+/** 🗂 Continues a past session (Riwayat sesi, 🔎 Cari percakapan). True when it was resumed. */
 export async function resumeSession(projectId, sessionId, btn = null) {
   const st = state.statuses[projectId] ?? {};
   const warnings = [
@@ -585,9 +642,15 @@ export function initSessions() {
   });
 
   $('#btn-sessions').addEventListener('click', openSessions);
-  $('#sessions-search').addEventListener('input', renderSessionList);
-  $('#sessions-range').addEventListener('change', renderSessionList);
+  // Group mode routes its filters to the merged list; the per-project view keeps renderSessionList.
+  const renderCurrent = () => (sessionsView.group ? renderGroupSessionList() : renderSessionList());
+  $('#sessions-search').addEventListener('input', renderCurrent);
+  $('#sessions-range').addEventListener('change', (e) => {
+    if (sessionsView.group) return renderGroupSessionList(); // the range select is a per-project control
+    renderSessionList();
+  });
   $('#sessions-tags').addEventListener('click', (e) => {
+    if (sessionsView.group) return; // tags are per-project metadata; the group list has none
     if (e.target.closest('[data-tag-manage]')) return manageTags();
     const chip = e.target.closest('[data-filter-tag]');
     if (!chip) return;
@@ -606,6 +669,15 @@ export function initSessions() {
     }
   });
   $('#sessions-list').addEventListener('click', async (e) => {
+    // 🗂 Group mode: a reference row only jumps to its source repo (actions live there).
+    const src = e.target.closest('[data-open-src]');
+    if (src) {
+      closeModal('sessions-modal');
+      const { selectProject } = await import('./picker.js');
+      selectProject(src.dataset.openSrc);
+      openSessions();
+      return;
+    }
     const exp = e.target.closest('[data-export]');
     if (exp) {
       // Each session belongs to its project's engine: export its own format, whatever the app-wide default is.

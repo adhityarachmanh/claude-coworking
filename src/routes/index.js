@@ -26,6 +26,7 @@ import * as queue from './queue.js';
 import * as remote from './remote.js';
 import * as routines from './routines.js';
 import * as session from './session.js';
+import * as groups from './groups.js';
 import * as setup from './setup.js';
 import * as spotify from './spotify.js';
 import * as tasks from './tasks.js';
@@ -38,6 +39,7 @@ export function buildRouter() {
   for (const register of [
     projects.register,
     projects.registerProjectActions,
+    groups.register,
     session.register,
     tasks.register,
     extensions.register,
