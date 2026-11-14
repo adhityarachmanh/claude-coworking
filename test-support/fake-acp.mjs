@@ -442,6 +442,25 @@ async function turn(sessionId, text) {
     await say('msg_team', 'Tim selesai.');
     return { stopReason: 'end_turn', usage: { inputTokens: 30, outputTokens: 6, totalTokens: 36 } };
   }
+  if (/^delegasilatar/.test(text)) {
+    // OpenCode 1.0.27: the turn's answer resolves (end_turn) while a delegation keeps running; its subagent's
+    // steps keep streaming on the same connection AFTER the prompt result — their results must close the rows.
+    const call = 'call-bg-sub';
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'subagent', kind: 'think', status: 'pending', rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, title: 'subagent', kind: 'think', status: 'in_progress', rawInput: { agent: 'backend', description: 'Cek API latar', prompt: 'periksa' } });
+    await say('msg_bglatar', 'Laporan menyusul.');
+    // the turn ends here (the result is written below); the delegation's steps finish afterwards
+    setTimeout(() => {
+      update(sessionId, { sessionUpdate: 'tool_call', toolCallId: 'call-bg-read', title: 'Cek API latar: read', kind: 'read', status: 'pending', rawInput: {} });
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-bg-read', title: 'Cek API latar: read', kind: 'read', status: 'in_progress', rawInput: { path: 'README.md' } });
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-bg-read', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: '1: # Toko' } }] });
+      update(sessionId, { sessionUpdate: 'tool_call', toolCallId: 'call-bg-grep', title: 'Cek API latar: grep', kind: 'search', status: 'pending', rawInput: {} });
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-bg-grep', title: 'Cek API latar: grep', kind: 'search', status: 'in_progress', rawInput: { pattern: 'api' } });
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'call-bg-grep', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'README.md: api' } }] });
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'API aman' } }] });
+    }, 150);
+    return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
+  }
   if (/^shell(berkas|latar|gantung)/.test(text)) {
     // OpenCode's shell tool tags its calls with metadata (shellID, background); its output goes to
     // <data>/opencode/shell/<project.id>/<shellID>.out — the app reads that file for the ⧗ panel.

@@ -22,6 +22,7 @@ import { afterRowRender, isLiveShell, liveBlock, liveTail, resetLiveOutput, save
 import { openQueueEdit } from './queue-edit.js';
 import { openSessions } from './sessions.js';
 import { stuckChip } from './stuck.js';
+import { runningCount } from './tasks.js';
 
 // ---------- chat ----------
 
@@ -678,7 +679,10 @@ function fillChatBody(node, msg) {
         m.denials ? `${m.denials} ditolak` : '',
       ].filter(Boolean);
       node.className = `result ${msg.ok ? 'ok' : 'fail'}`;
-      node.innerHTML = msg.ok ? `✓ Selesai · ${parts.join(' · ')}` : `■ Berhenti${msg.text ? `: ${escapeHtml(msg.text)}` : ''}`;
+      // A finished turn can leave subagents working in the background: say so right on the result line.
+      const live = runningCount(state.statuses[state.active]);
+      const liveBadge = live ? ` <span class="bg-live" title="Tugas latar masih berjalan — buka ⧗ untuk memantau">⏳ ${live} masih bekerja</span>` : '';
+      node.innerHTML = (msg.ok ? `✓ Selesai · ${parts.join(' · ')}` : `■ Berhenti${msg.text ? `: ${escapeHtml(msg.text)}` : ''}`) + liveBadge;
       break;
     }
     case 'error':

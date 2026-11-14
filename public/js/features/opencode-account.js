@@ -95,7 +95,7 @@ function usageHtml() {
   if (usage && (usage.today || usage.week)) {
     const fetched = go.console?.fetchedAt ? new Date(go.console.fetchedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '';
     return `<div class="acct-section oc-usage"><div class="acct-title"><b>Pemakaian OpenCode</b><span class="badge">Data resmi OpenCode</span></div>
-      <p class="muted small">Dari OpenCode Console${fetched ? ` · diperbarui ${escapeHtml(fetched)}` : ''}. Angka provider, bukan perkiraan ledger. Data diambil memakai kredensial login OpenCode; token tidak disimpan di aplikasi dan tidak dikirim ke browser.</p>
+      <p class="muted small" title="Data diambil memakai kredensial login OpenCode; token tidak disimpan di aplikasi dan tidak dikirim ke browser.">Dari OpenCode Console${fetched ? ` · diperbarui ${escapeHtml(fetched)}` : ''}. Angka provider, bukan perkiraan ledger.</p>
       ${usageCards('Hari ini', usage.today)}
       ${usageCards('7 hari', usage.week)}
       <div class="acct-actions"><button type="button" class="ghost" data-oc-requests title="Lihat request OpenCode terbaru">📡 Request terbaru</button></div>
@@ -123,7 +123,7 @@ function localUsageHtml() {
   const cost = (x) => (x.costUsd == null ? 'biaya belum tersedia' : fmtUsd(x.costUsd));
   const coverage = u.week.costCoverage;
   return `<div class="acct-section oc-usage"><div class="acct-title"><b>Pemakaian lokal OpenCode</b></div>
-    <p class="muted small">Dari sesi web dan terminal OpenCode yang tercatat di aplikasi. Angka ini pemakaian lokal, bukan batas langganan; data kuota resmi provider ditampilkan terpisah bila tersedia.</p>
+    <p class="muted small" title="Data kuota resmi provider ditampilkan terpisah bila tersedia.">Dari sesi web & terminal OpenCode yang tercatat di aplikasi — pemakaian lokal, bukan batas langganan.</p>
     <div class="oc-usage-grid">
       <div><small>Hari ini</small><b>${fmtShort(u.today.total)} token</b><span>${cost(u.today)}</span></div>
       <div><small>7 hari</small><b>${fmtShort(u.week.total)} token</b><span>${cost(u.week)}</span></div>
@@ -392,7 +392,7 @@ export function openCodeBodyHtml() {
   return `${usageHtml()}${goQuotaHtml()}<div class="acct-section"><div class="acct-title"><b>Provider OpenCode</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
     ${connectedHtml()}${oc.error && oc.providers ? `<p class="warn small">${escapeHtml(oc.error)}</p>` : ''}
     ${oc.logoutError ? `<p class="warn small" role="alert">${escapeHtml(oc.logoutError)}</p>` : ''}
-    <p class="muted small">Provider ini dipakai saat model project berasal dari OpenCode. Project yang memakai model Claude Code memakai akun Claude (tab Claude), bukan provider di sini. Tab ini hanya informasi: tidak mengubah mesin project.</p></div>
+    <p class="muted small" title="Project yang memakai model Claude Code memakai akun Claude (tab Claude), bukan provider di sini. Ini tidak mengubah mesin project.">Tab ini hanya informasi: provider dipakai saat model project berasal dari OpenCode.</p></div>
     ${state.accountAuth ? loginHtml() : '<p class="muted small">Login/logout provider dari HP hanya lewat Tailscale (koneksi terenkripsi), atau lakukan dari laptop.</p>'}`;
 }
 

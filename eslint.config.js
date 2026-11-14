@@ -219,7 +219,7 @@ export default [
   {
     // UI smoke tests: functions here are serialised and evaluated inside the page via CDP,
     // so they legitimately reference browser globals (in addition to Node ones).
-    files: ['test/ui.test.mjs', 'test-support/cdp.mjs', 'test-support/office-shots.mjs'],
+    files: ['test/ui.test.mjs', 'test-support/cdp.mjs', 'test-support/office-shots.mjs', 'test-support/polish-shots.mjs'],
     languageOptions: { globals: browserGlobals },
   },
   {

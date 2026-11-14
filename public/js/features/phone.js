@@ -89,7 +89,7 @@ function renderPhone() {
           <li>Pasang aplikasi Tailscale di HP, login dengan akun yang sama.</li>
           <li>Buka lagi jendela ini — muncul pilihan <b>Dari mana saja (Tailscale)</b> dengan QR-nya.</li>
         </ol>
-        <p class="muted small">Tailscale membuat jaringan pribadi terenkripsi antara laptop dan HP-mu. Laptop tidak terbuka ke internet publik. Lewat Tailscale HP bisa mengirim perintah; lewat WiFi biasa hanya bisa melihat.</p>
+        <p class="muted small" title="Laptop tidak terbuka ke internet publik. Lewat Tailscale HP bisa mengirim perintah; lewat WiFi biasa hanya bisa melihat.">Tailscale membuat jaringan pribadi terenkripsi antara laptop dan HP-mu.</p>
       </details>`;
   body.innerHTML = p
     ? `${chooser}<div class="pair">

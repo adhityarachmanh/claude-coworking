@@ -796,6 +796,8 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .result { align-self: center; font-size: var(--fs-sm); color: var(--muted); padding: 3px 12px; border-radius: var(--r-pill); background: var(--surface-2); margin: 4px 0 8px; }
 .result.ok { color: var(--ok-text); }
 .result.fail { color: var(--err-text); }
+/* A finished turn with live background work (tasks.js's count): the result line says so right away. */
+.result .bg-live { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: var(--r-pill); background: var(--warn-soft); border: 1px solid var(--warn-line); color: var(--warn-text-strong); font-weight: 600; white-space: nowrap; }
 .info { align-self: center; max-width: 100%; overflow-wrap: anywhere; text-align: center; line-height: 1.4; font-size: var(--fs-sm); color: var(--muted); }
 .divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: var(--fs-xs); margin: 10px 0; }
 .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
@@ -1029,6 +1031,12 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .ti-role::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
 .task-item.st-failed .ti-meta, .task-item.st-killed .ti-meta { color: var(--err-text); }
 .task-item.st-completed .ti-ico, .task-item.st-stopped .ti-ico, .task-item.st-failed .ti-ico, .task-item.st-killed .ti-ico { filter: grayscale(.6); }
+/* live vs done at a glance: a finished row carries its own mark where the running one keeps the spinner */
+.ti-state { flex: none; margin-top: 2px; font-size: var(--fs-md); font-weight: 700; line-height: 1.2; }
+.ti-state.ok { color: var(--ok-text); }
+.ti-state.bad { color: var(--err-text); }
+.ti-state.muted { color: var(--muted); }
+.tasks-live { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: var(--r-pill); background: var(--warn-soft); border: 1px solid var(--warn-line); color: var(--warn-text-strong); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: 0; text-transform: none; white-space: nowrap; }
 
 .task-detail { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); overflow: hidden; }
 .td-head { flex: none; padding: 10px 12px; border-bottom: 1px solid var(--border); }
@@ -1373,6 +1381,12 @@ body.read-only #composer-hint { color: var(--ask); }
 
 /* ---------- account dialog ---------- */
 .acct-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+/* 👤 Akun's engine picker ("Mesin"): label above, full-width select — a stacked control like the rest of the
+   dialog, not a dropdown floating next to its label (it used to default to content width and collide with the note). */
+.acct-tabs { display: flex; flex-direction: column; gap: 4px; margin: 0 0 4px; font-size: var(--fs-md); }
+.acct-tabs span { font-size: var(--fs-sm); color: var(--muted); }
+.acct-tabs select { width: 100%; min-height: 34px; }
+#account-body > small { display: block; margin: 0 0 10px; }
 .acct-head > div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .acct-head small { color: var(--muted); overflow-wrap: anywhere; }
 .plan-badge { padding: 3px 10px; border-radius: var(--r-pill); background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent-2); font-size: var(--fs-sm); text-transform: capitalize; }
@@ -1765,6 +1779,9 @@ body.read-only #composer-hint { color: var(--ask); }
   .tasks-body { grid-template-columns: minmax(0, 1fr); }
   .tasks-body.show-detail .tasks-list, .tasks-body:not(.show-detail) .task-detail { display: none; }
   .td-back { display: inline-flex; }
+  .task-item { min-height: 44px; align-items: center; }
+  .task-item .ti-main, .task-item .ti-state { align-self: flex-start; } /* a tall wrapped row keeps the mark at the top */
+  .task-item .ti-state { margin-top: 0; }
   .task-detail { border-radius: var(--r-md); }
   .member-task { min-width: 28px; height: 24px; line-height: 22px; font-size: var(--fs-xs); }
   .sb-btn { padding: 6px 8px; font-size: var(--fs-sm); }
@@ -1824,6 +1841,7 @@ body.read-only #composer-hint { color: var(--ask); }
   /* dialogs become bottom sheets */
   .modal { padding: 0; place-items: end stretch; }
   .modal-card { max-height: 92dvh; border-radius: var(--r-2xl) var(--r-2xl) 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
+  .acct-tabs select { min-height: 44px; font-size: var(--fs-input-touch); } /* 16px: no zoom-on-focus on iOS */
   /* One tab at a time on the phone too: the tab bar scrolls sideways, the body scrolls under it. */
   .modal-card.settings-card { max-width: none; height: 92dvh; max-height: 92dvh; display: flex; flex-direction: column; padding: 14px 14px 0; overflow: hidden; }
   .settings-card .modal-head { flex: none; padding: 0 0 8px; }
@@ -2547,6 +2565,9 @@ body.read-only #composer-hint { color: var(--ask); }
 #turn-settings-modal .ctl[hidden] { display: none; }
 #turn-settings-modal .ctl::after, #turn-settings-modal .switch::after { content: attr(title); font-size: var(--fs-xs); line-height: 1.35; color: var(--muted); }
 #turn-settings-modal select, #turn-settings-modal input[type='search'] { max-width: none; width: 100%; min-height: 34px; }
+/* Model is a button-styled picker, not a <select>: full width like the selects around it */
+#turn-settings-modal #model-field { width: 100%; max-width: none; }
+#turn-settings-modal #model-panel { left: 0; right: 0; min-width: 0; }
 #turn-settings-modal .switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); font-size: var(--fs-md); color: var(--text); white-space: normal; }
 #turn-settings-modal .switch::after { flex: 1 0 100%; }
 
@@ -2776,6 +2797,8 @@ body.read-only #composer-hint { color: var(--ask); }
   .plus-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .plus-tile { min-height: 64px; }
   #turn-settings-modal .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  /* Pairs stay pairs (Mode | Agent / Effort | Suara); the picker, the team switch and the note need the whole row. */
+  #turn-settings-modal #model-ctl, #turn-settings-modal #team-ctl, #turn-settings-modal .model-engine-note { grid-column: 1 / -1; }
 }
 /* ⚙ claude doctor / update output (features/claude-check.js) */
 .cc-output { max-height: 240px; overflow: auto; margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font: var(--fs-xs)/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }

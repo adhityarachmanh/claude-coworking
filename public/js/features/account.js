@@ -91,7 +91,7 @@ function billingHtml(billing) {
   const [tone, text] = BILLING_STATUS[billing.status] ?? ['', 'Status muncul setelah Claude menjawab satu giliran'];
   const reset = billing.resetsAt ? new Date(billing.resetsAt * 1000).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : null;
   return `<div class="billing ${tone}"><b>${text}</b>${reset ? `<small class="muted">Periode tagihan reset ${escapeHtml(reset)}</small>` : ''}</div>
-    <p class="muted small">Paket berbasis pemakaian (usage-based): tidak ada kuota sesi/mingguan dalam persen. Pemakaian ditagih ke organisasi dengan batas yang diatur admin, dan Claude Code tidak mengirim sisa batasnya.</p>`;
+    <p class="muted small" title="Pemakaian ditagih ke organisasi dengan batas yang diatur admin, dan Claude Code tidak mengirim sisa batasnya.">Paket berbasis pemakaian (usage-based): tidak ada kuota dalam persen — pemakaian ditagih ke organisasi.</p>`;
 }
 
 function usageTable(usage) {
@@ -253,7 +253,7 @@ function claudeBodyHtml() {
     ? p.loggedIn
       ? `<button class="ghost" data-act="login">⇄ Ganti akun</button><button class="danger" data-act="logout">⏻ Logout</button>`
       : `<button class="primary" data-act="login">🔑 Login dengan akun Claude</button><button class="ghost" data-act="login-console">Login via Console (API)</button>`
-    : '<p class="muted small">Login/logout dari HP hanya lewat Tailscale (koneksi terenkripsi). Buka kantor lewat alamat Tailscale, atau lakukan dari laptop.</p>';
+    : '<p class="muted small" title="Buka kantor lewat alamat Tailscale, atau lakukan dari laptop.">Login/logout dari HP hanya lewat Tailscale (koneksi terenkripsi).</p>';
   if (!p.loggedIn) {
     return `<div class="acct-empty"><p>Claude Code di laptop ini <b>belum login</b>. Login membuka halaman claude.ai di browser, sama seperti <code>claude auth login</code>.</p></div>
       <div class="acct-actions">${actions}</div><div id="acct-login"></div>`;

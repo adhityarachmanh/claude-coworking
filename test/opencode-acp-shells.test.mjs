@@ -211,6 +211,29 @@ test('a delegated step whose final update never arrives is closed by a synthetic
   assert.deepEqual(s.statuses[id].working ?? {}, {}, 'no role is left working by a lost step');
 });
 
+test('a delegation that outlives its turn closes its step rows as the late results arrive', async () => {
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'delegasilatar' });
+  // the turn's answer resolves while the delegation is still open…
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && o.ok === true);
+  // …and its steps keep streaming afterwards: each row must close with its REAL result (never a synthetic
+  // "Giliran selesai" note, never an endless spinner until the whole delegation happens to finish).
+  const read = await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch?.status === 'ok' && /# Toko/.test(o.patch.output ?? ''), 10000);
+  assert.ok(read, 'the first step closed with its real result after the turn ended');
+  const grep = await waitFor((t, o) => t === 'chat_update' && o.project === id && o.patch?.status === 'ok' && /README\.md: api/.test(o.patch.output ?? ''), 10000);
+  assert.ok(grep, 'a step that STARTED after the turn also streamed, ran and closed');
+  // the delegation itself reports back: its row finishes and the office releases the role
+  await waitFor((t, o) => t === 'office' && o.project === id && o.kind === 'agent_stop' && o.role === 'backend' && /Cek API latar/.test(o.label ?? ''), 10000);
+  await sleep(300);
+  const chats = (await snapshot()).chats?.[id] ?? [];
+  const delegate = chats.find((c) => c.kind === 'delegate' && /Cek API latar/.test(c.text ?? ''));
+  assert.equal(delegate?.status, 'ok', 'the delegation row finished with its report');
+  const hanging = chats.filter((c) => c.kind === 'tool' && /Cek API latar/.test(c.text ?? '') && c.status === 'running');
+  assert.deepEqual(hanging, [], 'no step row is left spinning');
+  const s = await snapshot();
+  assert.deepEqual(s.statuses[id].working ?? {}, {}, 'no role is left working after the delegation reports');
+});
+
 /** The user texts OpenCode received since `since`, oldest first (FAKE_ACP_STORE: one file per session, all turns). */
 let receivedSince = 0;
 const receivedAll = () => {

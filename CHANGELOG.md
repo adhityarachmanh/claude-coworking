@@ -2,6 +2,14 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.28
+
+- **🧹 Kerapian UI: 👤 Akun dan ⚙ Pengaturan giliran dirapikan.** Select **Mesin** di Akun kini full width dengan label di atasnya (di HP 44px, bebas zoom iOS), seksi-konsisten dengan garis pemisah; field Pengaturan giliran mesin OpenCode tidak lagi setengah lebar tanpa maksud. Plus perapian craft dari audit visual: satu gaya tombol, jarak, dan perataan di permukaan-permukaan utama (desktop + HP, tema terang & gelap).
+- **✂️ Tulisan dipangkas.** Catatan panjang 3–4 kalimat di Akun/OpenCode dan dialog lain kini maksimal 1–2 kalimat pendek; detail yang benar-benar penting pindah ke tooltip atau terlipat `<details>` — maknanya tidak hilang.
+- **⏳ Baris tugas yang masih jalan terbaca jelas.** Task latar yang hidup menampilkan ⏱ durasinya dan panel menandai "N subagent masih bekerja"; yang selesai menutup dengan ✅/■/❌ tanpa spinner — selalu tahu mana yang sudah selesai.
+- **🌈 Halaman jembatan remote power diperbagus.** Pendaftaran, kelola, dan status (`bridge/`) kini tampil dengan brand Adhitron (gelap + aksen oranye + logo), langkah Tuya jadi list bernomor singkat, halaman status ramah HP dengan tombol besar dan peringatan ⚠ mencolok — perilaku auth, field, dan endpoint tidak berubah sedikit pun (test bridge 21/21).
+- **🌼 Test bridge & halaman ikut gerbang smoke.** `bridge` masuk `test:smoke`, dan runner test kini hermetik terhadap env aplikasi (OFFICE_APP_DIR dll. tidak bocor ke test).
+
 ## 1.0.27
 
 - **🔁 Langkah delegasi yang laporannya hilang tidak lagi muter selamanya.** OpenCode kadang mengakhiri giliran tanpa laporan akhir untuk langkah yang masih jalan (langkah subagent, shell yang terpotong): barisnya kini ditutup rapi dengan hasil sintetis *"Giliran selesai sebelum langkah ini dilaporkan."*, dan worker role-nya benar-benar berhenti — `working` kosong setelah giliran, jadi kamu selalu tahu mana yang sudah selesai. Shell latar tetap berjalan seperti Claude Code; langkah shell milik giliran yang terpotong ikut ditutup dari daftar task-nya.

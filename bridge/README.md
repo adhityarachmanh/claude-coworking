@@ -101,7 +101,8 @@ berhenti mengirim heartbeat sampai proses shutdown selesai**, kalau tidak jadwal
 
 Halaman web:
 
-- `/` — pendaftaran + panduan kredensial + pemberitahuan privasi.
+- `/` — pendaftaran + panduan kredensial + pemberitahuan privasi (ringkas selalu tampil; versi lengkap terlipat di `<details>`).
+  Halaman memakai brand Adhitron (logo inline SVG, latar gelap, aksen oranye) — CSS satu blok di `pages.mjs`.
 - `/manage?token=<ownerToken>` — ganti kredensial/adhitronUrl, rotasi token (re-enkripsi otomatis, token lama mati),
   hapus space (wajib konfirmasi).
 - `/s/<id>?t=<tiket>` atau `/s/<id>?token=<ownerToken>` — halaman status; polling `GET /api/status` tiap 10 dtk

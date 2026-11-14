@@ -218,20 +218,27 @@ function renderList(tasks) {
     return;
   }
   const focused = document.activeElement?.closest?.('#tasks-list [data-task]')?.dataset.task;
+  // Live vs done at a glance: running keeps its spinner (and its live ⏱), a finished row gets its own mark.
+  const stateMark = (t) => ({ completed: ['✓', 'ok'], failed: ['✗', 'bad'], stopped: ['■', 'muted'], killed: ['■', 'bad'], paused: ['⏸', 'muted'] }[t.status] ?? ['•', 'muted']);
   const item = (t) => {
     const c = who(t);
     const meta = [stateLabel(t), ...counts(t)];
+    const live = isRunning(t);
+    const mark = stateMark(t);
     return `<li><button type="button" class="task-item st-${escapeHtml(t.status)}" data-task="${escapeHtml(t.id)}" aria-current="${t.id === tasksView.selected}">
       <span class="ti-ico" aria-hidden="true">${icon(t)}</span>
       <span class="ti-main">
         <span class="ti-title">${escapeHtml(t.description || t.command || t.id)}</span>
         <span class="ti-meta">${c ? `<span class="ti-role" style="--c:${c.color}">${escapeHtml(c.name)}</span>` : ''}<span>${escapeHtml(meta.join(' · '))}</span><span class="ti-dur" data-dur="${escapeHtml(t.id)}">${durationOf(t)}</span></span>
       </span>
-      ${isRunning(t) ? '<span class="spinner" aria-hidden="true"></span>' : ''}
+      ${live ? '<span class="spinner" aria-hidden="true"></span>' : `<span class="ti-state st-${escapeHtml(t.status)} ${mark[1]}" aria-label="${escapeHtml(stateLabel(t))}" title="${escapeHtml(stateLabel(t))}">${mark[0]}</span>`}
     </button></li>`;
   };
   const running = tasks.filter(isRunning);
   const done = tasks.filter((t) => !isRunning(t));
+  // A completed turn with subagents still working: the live count stays visible in the group header.
+  const agentsLive = running.filter((t) => t.kind === 'agent').length;
+  const liveBadge = agentsLive ? `<span class="tasks-live" title="Tugas latar masih berjalan meski jawaban sudah selesai — ⧗ memantau">⏳ ${escapeHtml(String(agentsLive))} masih bekerja</span>` : '';
   // Shell of another OpenCode session in the same folder: shown for awareness only (no row to click, no Stop).
   const otherItem = (s) =>
     `<li><div class="task-item task-other st-${escapeHtml(s.status ?? 'running')}" title="Shell sesi OpenCode lain di folder ini — hanya lihat">
@@ -243,7 +250,7 @@ function renderList(tasks) {
       ${s.status === 'running' ? '<span class="spinner" aria-hidden="true"></span>' : ''}
     </div></li>`;
   list.innerHTML = [
-    running.length ? `<li class="tasks-group">Berjalan (${running.length})</li>${running.map(item).join('')}` : '',
+    running.length ? `<li class="tasks-group">Berjalan (${running.length})${liveBadge}</li>${running.map(item).join('')}` : '',
     done.length ? `<li class="tasks-group">Selesai</li>${done.map(item).join('')}` : '',
     others.length ? `<li class="tasks-group">Shell lain di folder ini (${others.length}, hanya lihat)</li>${others.map(otherItem).join('')}` : '',
   ].join('');

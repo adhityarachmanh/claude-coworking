@@ -762,7 +762,17 @@ export class StreamTranslator {
     if (this.contextUsed) this.status({ context: { used: this.contextUsed, window: this.contextWindow || null, autoCompactAt: this.autoCompactAt ?? null } });
     const activeRoles = [];
     const openCalls = []; // ACP tool calls the turn ends with (a delegated step's report was lost, a shell cut off)
+    // OpenCode 1.0.27 can resolve the prompt while a delegation keeps running: those calls (and their steps) are
+    // announced by the adapter (stillDelegating) and stay open like background agents — their late real results
+    // finish the rows, never a synthetic note here.
+    const still = new Set(msg.stillDelegating ?? []);
     for (const [id, info] of this.tools) {
+      if (still.has(id) && info.agent) {
+        info.background = true; // it keeps working past the turn, exactly like a background agent
+        activeRoles.push(info.role);
+        continue;
+      }
+      if (still.has(id)) continue; // one of its steps: the late real result closes the row
       if (info.agent && info.background) activeRoles.push(info.role);
       else if (info.acp && !info.agent) openCalls.push(id); // closed by a synthetic tool_result below, not cancelled
       else {

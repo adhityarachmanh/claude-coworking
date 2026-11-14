@@ -393,6 +393,17 @@ export class AcpAdapter {
   finish({ ok, interrupted = false, error = '', durationMs, usage = {}, costUsd = null }) {
     this.flushText();
     const outputTokens = (usage.outputTokens ?? 0) + (usage.thoughtTokens ?? 0);
+    // A delegation OpenCode keeps running past the turn: its open calls — and the steps under them — stay known so
+    // the late updates still find their parent and their results close the rows. Everything else is dropped.
+    const snap = [...this.tools];
+    const still = new Set();
+    for (const [id, info] of snap) {
+      if (!info.started || info.done) continue;
+      if (info.parent) {
+        const agent = this.tools.get(info.parent);
+        if (agent?.started && !agent.done) still.add(id); // a live delegation's step
+      } else if (this.subagents.has(String(info.rawInput?.description ?? ''))) still.add(id); // the delegation itself
+    }
     this.emit({
       type: 'result',
       subtype: ok ? 'success' : interrupted ? 'interrupted' : 'error_during_execution',
@@ -404,9 +415,29 @@ export class AcpAdapter {
       total_cost_usd: costUsd ?? undefined,
       turnUsage: { costUsd: costUsd ?? 0, outputTokens },
       permission_denials: [],
+      ...(still.size ? { stillDelegating: [...still] } : {}),
     });
     this.tools.clear();
-    this.subagents.clear();
+    for (const id of still) {
+      const info = snap.find(([sid]) => sid === id)?.[1];
+      if (info) this.tools.set(id, info);
+    }
+    for (const [desc, ids] of this.subagents) {
+      const left = ids.filter((x) => still.has(x));
+      if (left.length) this.subagents.set(desc, left);
+      else this.subagents.delete(desc);
+    }
+  }
+
+  /**
+   * A `tool_call` update after the turn's end still belongs to the conversation when it is a delegation OpenCode
+   * keeps running (or resolves one of its calls): those pass the idle gate; anything else stays dropped.
+   */
+  continues(u) {
+    if (u?.sessionUpdate !== 'tool_call' && u?.sessionUpdate !== 'tool_call_update') return false;
+    if (this.tools.has(u.toolCallId)) return true;
+    const title = String(u.title ?? '');
+    return [...this.subagents.keys()].some((d) => title.startsWith(`${d}: `));
   }
 }
 
@@ -1296,7 +1327,9 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         return;
       }
       // Only during one of our turns: a late update after a stop must not reopen it (the office would stay "busy").
-      if (!this.busy) return;
+      // A delegation that outlived the turn is the exception: OpenCode keeps streaming its steps and their results
+      // must close the rows (1.0.27 resolves the prompt while a subagent still runs in the background).
+      if (!this.busy && !this.adapter.continues(u)) return;
       this.adapter.update(u);
     }
 
