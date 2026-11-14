@@ -249,8 +249,59 @@ export async function readPowerW(cfg) {
   return typeof code?.value === 'number' ? code.value : null;
 }
 
-/** Set plug. ON saat plug sudah ON disiklus OFF → ON: BIOS butuh kejadian listrik baru untuk boot. */
-export async function tuyaSetPlug(cfg, on, waitMs = 2000) {
+/** Query string dengan KEY DIURUTKAN alfabetis — Tuya menandatangani URL persis seperti yang dikirim. */
+const sortedQuery = (params) => Object.keys(params).sort().map((k) => `${k}=${encodeURIComponent(String(params[k]))}`).join('&');
+
+/** Status listrik saat ini dari /status (plug metering Bardi). Skala firmware Tuya: `cur_power` 0,1 W,
+ *  `cur_voltage` 0,1 V, `cur_current` mA; sebagian firmware memakai `power`/`voltage`/`current` apa adanya. */
+export async function readEnergyNow(cfg) {
+  const status = await tuyaRequest(cfg, `${devicePath(cfg)}/status`, 'GET', null, 6000);
+  const codes = Array.isArray(status) ? status : [];
+  const pick = (...names) => {
+    for (const name of names) {
+      const found = codes.find((c) => c.code === name);
+      if (found && typeof found.value === 'number' && Number.isFinite(found.value)) return { value: found.value, code: name };
+    }
+    return null;
+  };
+  const power = pick('cur_power', 'power', 'power_current');
+  const current = pick('cur_current', 'current');
+  const voltage = pick('cur_voltage', 'voltage');
+  const powerW = power ? (power.code === 'cur_power' ? power.value / 10 : power.value) : null;
+  const voltageV = voltage ? (voltage.code === 'cur_voltage' ? voltage.value / 10 : (voltage.value > 1000 ? voltage.value / 10 : voltage.value)) : null;
+  // `current` tanpa awalan `cur_` biasanya ampere; `cur_current` selalu mA.
+  const currentMa = current ? (current.code === 'cur_current' ? current.value : (current.value < 20 ? current.value * 1000 : current.value)) : null;
+  return {
+    powerW: powerW === null ? null : Math.round(powerW * 10) / 10,
+    currentMa: currentMa === null ? null : Math.round(currentMa),
+    voltageV: voltageV === null ? null : Math.round(voltageV * 10) / 10,
+  };
+}
+
+/** Total konsumsi listrik (kWh) satu device dalam rentang. `statisticsType`: day/month. */
+export async function readEnergySum(cfg, { statisticsType, startTime, endTime }) {
+  const query = sortedQuery({
+    contain_childs: 'false', device_ids: cfg.deviceId, end_time: endTime, energy_action: 'consume',
+    start_time: startTime, statistics_type: statisticsType,
+  });
+  const value = await tuyaRequest(cfg, `/v1.0/iot-03/energy/electricity/device/nodes/statistics-sum?${query}`, 'GET', null, 6000);
+  return typeof value === 'number' ? value : 0;
+}
+
+/** Tren konsumsi listrik (kWh) per titik waktu. `statisticsType`: day (maks 7 hari) / month (maks 12 bulan). */
+export async function readEnergyTrend(cfg, { statisticsType, startTime, endTime }) {
+  const query = sortedQuery({
+    contain_childs: 'false', device_ids: cfg.deviceId, end_time: endTime, energy_action: 'consume',
+    start_time: startTime, statistics_type: statisticsType,
+  });
+  const result = await tuyaRequest(cfg, `/v1.0/iot-03/energy/electricity/devices/nodes/statistics-trend?${query}`, 'GET', null, 6000);
+  const rows = Array.isArray(result) ? result : [];
+  return rows
+    .filter((r) => r && typeof r.time === 'string')
+    .map((r) => ({ time: r.time, value: typeof r.value === 'number' ? r.value : 0 }));
+}
+
+/** Set plug. ON saat plug sudah ON disiklus OFF → ON: BIOS butuh kejadian listrik baru untuk boot. */export async function tuyaSetPlug(cfg, on, waitMs = 2000) {
   const code = 'switch_1';
   if (on) {
     let state = null;

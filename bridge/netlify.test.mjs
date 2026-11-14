@@ -36,11 +36,15 @@ const fakeTuya = (opts = {}) => {
       if (opts.tokenBusy) return res({ success: false, code: 28841002, msg: 'quota limit reached' });
       return res({ success: true, result: { access_token: 'tok-1' } });
     }
+    if (u.includes('/energy/electricity/device/nodes/statistics-sum')) return res({ success: true, result: 12.34 });
+    if (u.includes('/energy/electricity/devices/nodes/statistics-trend')) {
+      return res({ success: true, result: [{ time: '20261114', value: 0.21 }, { time: '20261115', value: 0.15 }] });
+    }
     if (u.includes('/commands')) return res({ success: true, result: true });
     if (u.includes('/status')) {
       if (opts.deviceMissing) return res({ success: false, code: 1106, msg: 'permission deny' });
       if (opts.notAPlug) return res({ success: true, result: [{ code: 'bright_value', value: 10 }] });
-      return res({ success: true, result: [{ code: 'switch_1', value: true }, { code: 'power', value: powerW }] });
+      return res({ success: true, result: [{ code: 'switch_1', value: true }, { code: 'power', value: powerW }, { code: 'cur_voltage', value: 2141 }, { code: 'cur_current', value: 990 }] });
     }
     return res({ success: true, result: null });
   };
@@ -1315,6 +1319,47 @@ test('signature Tuya: header `t`, token memakai hash body kosong, command memaka
   assert.ok(command, 'perintah OFF dikirim');
   const commandBody = JSON.stringify(command.body);
   assert.equal(command.headers.sign, mac(CID + 'tok-1' + command.headers.t + 'POST\n' + sha(commandBody) + urlPart(`/v1.0/devices/${DEVICE}/commands`)), 'command: hash body JSON + path');
+});
+
+test('GET /api/energy: daya/voltase/arus + kWh hari/bulan + tren, dan cache 60 dtk', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 237;
+  const { body: { token } } = await doRegister(env);
+  fakeTuya(); // register made its own calls; start the energy window clean
+  const r = await statusOf(await handleApi(req('/api/energy?range=week&tz=Asia/Jakarta', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.ok, true);
+  assert.equal(r.body.now.powerW, 237);
+  assert.equal(r.body.now.voltageV, 214.1);
+  assert.equal(r.body.now.currentMa, 990);
+  assert.equal(r.body.todayKwh, 12.34);
+  assert.equal(r.body.monthKwh, 12.34);
+  assert.equal(r.body.trend.length, 2);
+  assert.deepEqual(cmdValues(), [], 'read-only: tidak ada perintah ke plug');
+  const statusCalls = calls.filter((c) => c.url.includes('/status')).length;
+  const energyCalls = calls.filter((c) => c.url.includes('/energy/')).length;
+  assert.ok(statusCalls >= 1 && energyCalls === 3, 'status + 2 sum + 1 trend');
+  calls.length = 0;
+  const again = await statusOf(await handleApi(req('/api/energy?range=week&tz=Asia/Jakarta', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(again.body.todayKwh, 12.34);
+  assert.equal(calls.length, 0, 'cache 60 dtk: tidak memanggil Tuya lagi');
+});
+
+test('GET /api/energy: device tanpa izin statistik → ok:false dengan kode, halaman tetap hidup', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  fakeTuya({ deviceMissing: true });
+  const r = await statusOf(await handleApi(req('/api/energy?range=year', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(r.status, 200);
+  assert.equal(r.body.ok, false);
+  assert.match(r.body.error, /Power Management|kode Tuya/);
+  const status = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(status.status, 200, 'kegagalan energi tidak merusak status');
+  const page = await handleApi(req(`/s/${id}?token=${token}`), env);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /Energi Bardi/);
 });
 
 // ---------------------------------------------------------------- halaman

@@ -94,6 +94,21 @@ letter-spacing:.22em;font-variant-numeric:tabular-nums;text-align:center;padding
 background:var(--surface-2);border:1px solid var(--accent-line);border-radius:12px;color:var(--text);
 word-break:break-all}
 .pair-code.expired{color:var(--muted);border-color:var(--line);text-decoration:line-through}
+.energy{margin-top:22px;border-top:1px solid var(--line);padding-top:14px}
+.ehead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ehead h2{margin:0}
+.etabs{display:flex;gap:6px}
+.etab{background:var(--surface-2);color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit;font-size:.75rem;cursor:pointer}
+.etab.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
+.enow{font-size:1.05rem;font-weight:600;margin:8px 0;font-variant-numeric:tabular-nums}
+.ecards{display:flex;gap:8px;margin:8px 0}
+.ecard{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.ecard b{display:block;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.ecard span{font-size:.72rem;color:var(--muted)}
+.echart{display:flex;align-items:flex-end;gap:6px;height:120px;margin:12px 0 4px}
+.ebar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;gap:4px}
+.ebar i{display:block;width:100%;max-width:26px;background:var(--accent);border-radius:4px 4px 0 0;min-height:2px}
+.ebar span{font-size:.62rem;color:var(--muted)}
 `;
 
 export const escapeHtml = (s) => String(s ?? '')
@@ -622,6 +637,13 @@ export function statusPageHtml(id, pollToken, fromTicket, status, adhitronUrl) {
 <div class="state" id="state">${escapeHtml(initialLine(initial))}</div>
 <div id="extra"></div>
 <div id="btns">${initialButtons(state, initial)}${status.offAt ? '<button class="btn" onclick="batalkan()">✕ Batalkan jadwal</button>' : ''}</div>
+<section class="energy" id="energy" aria-live="polite">
+  <div class="ehead"><h2>⚡ Energi Bardi</h2><div class="etabs"><button type="button" class="etab on" id="e-week">7 hari</button><button type="button" class="etab" id="e-year">12 bulan</button></div></div>
+  <div class="enow" id="e-now">Memuat…</div>
+  <div class="ecards" id="e-cards"></div>
+  <div class="echart" id="e-chart"></div>
+  <p class="muted" id="e-note"></p>
+</section>
 <p class="muted" id="plug">Plug: ${escapeHtml(status.plug ?? '?')}${status.powerW != null ? ` · ${escapeHtml(String(status.powerW))} W` : ''}</p>
 <script>
 const ID = ${jsonForScript(id)}, TOKEN = ${jsonForScript(pollToken)}, FROM_TICKET = ${jsonForScript(fromTicket)};
@@ -713,6 +735,49 @@ async function poll() {
 }
 render(${jsonForScript(initial)});
 poll();
+// ⚡ Energi Bardi: live W/V/mA + kWh hari/bulan + tren 7 hari / 12 bulan (dari Tuya Cloud, cache 60 dtk).
+let eRange = 'week', eTimer = null;
+function kwh(v) { return v == null ? '—' : Number(v).toFixed(2) + ' kWh'; }
+function setEnergyRange(r) {
+  eRange = r;
+  $('e-week').classList.toggle('on', r === 'week');
+  $('e-year').classList.toggle('on', r === 'year');
+  loadEnergy();
+}
+async function loadEnergy() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jakarta';
+    const r = await fetch('/api/energy?range=' + eRange + '&tz=' + encodeURIComponent(tz), { headers: { 'X-Status-Token': TOKEN } });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) {
+      $('e-now').textContent = '—';
+      $('e-cards').innerHTML = '';
+      $('e-chart').innerHTML = '';
+      $('e-note').textContent = d.error || 'Statistik energi tidak tersedia.';
+      return;
+    }
+    $('e-now').textContent = [d.now.powerW != null ? Number(d.now.powerW).toFixed(1) + ' W' : '— W',
+      d.now.voltageV != null ? Number(d.now.voltageV).toFixed(1) + ' V' : '— V',
+      d.now.currentMa != null ? Math.round(d.now.currentMa) + ' mA' : '— mA'].join(' · ');
+    $('e-cards').innerHTML = '<div class="ecard"><b>' + kwh(d.todayKwh) + '</b><span>hari ini</span></div>'
+      + '<div class="ecard"><b>' + kwh(d.monthKwh) + '</b><span>bulan ini</span></div>';
+    const trend = Array.isArray(d.trend) ? d.trend : [];
+    const max = Math.max(0.01, ...trend.map((x) => Number(x.value) || 0));
+    $('e-chart').innerHTML = trend.length ? trend.map((x) => {
+      const h = Math.max(2, Math.round(((Number(x.value) || 0) / max) * 100));
+      const label = String(x.time || '').length === 6 ? String(x.time).slice(4) : String(x.time).slice(6);
+      return '<div class="ebar" title="' + esc(String(x.time)) + ': ' + Number(x.value || 0).toFixed(3) + ' kWh"><i style="height:' + h + '%"></i><span>' + esc(label) + '</span></div>';
+    }).join('') : '<p class="muted">Belum ada data.</p>';
+    $('e-note').textContent = 'Diperbarui ' + new Date(d.updatedAt).toLocaleTimeString('id-ID') + ' · sumber Tuya Cloud';
+  } catch {
+    $('e-note').textContent = 'Tidak bisa memuat energi — coba lagi.';
+  }
+  clearTimeout(eTimer);
+  eTimer = setTimeout(loadEnergy, 60000);
+}
+$('e-week').addEventListener('click', () => setEnergyRange('week'));
+$('e-year').addEventListener('click', () => setEnergyRange('year'));
+loadEnergy();
 </script>`);
 }
 

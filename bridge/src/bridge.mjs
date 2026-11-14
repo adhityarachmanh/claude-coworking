@@ -12,6 +12,7 @@
 //                                         (dipakai Adhitron setelah shutdown Windows: buka halaman status, putus arus manual)
 //   POST /api/on                          header X-Bridge-Token / X-Status-Token → { ok } (selalu membatalkan jadwal)
 //   GET  /api/status                      header X-Bridge-Token / X-Status-Token → status lengkap
+//   GET  /api/energy?range=week|year&tz=  header X-Bridge-Token / X-Status-Token → daya/voltase/arus + kWh + tren
 //   POST /api/pair                        header X-Bridge-Token SAJA (ownerToken, bukan tiket) → { ok, code, expiresAt }
 //                                         kode = 8 karakter base32 tanpa huruf ambigu, TTL 2 menit, satu kode per space
 //   POST /api/pair/claim { code }         tanpa auth, tanpa CORS → respons register (id + ownerToken), kode habis dipakai
@@ -19,7 +20,7 @@
 // heartbeat dianggap bukti "PC ternyata hidup" dan MEMBATALKAN jadwal mati (aturan pembatalan spesifikasi).
 import { randomBytes, randomInt } from 'node:crypto';
 import { assertEncryptionKey, decryptCreds, decryptSecret, encryptCreds, encryptSecret } from './vault.mjs';
-import { TuyaError, detectRegion, drivePlug, isValidRegion, normalizeRegion, readPowerW, tuyaErrorClass, tuyaPublicMessage, verifyCreds } from './tuya.mjs';
+import { TuyaError, detectRegion, drivePlug, isValidRegion, normalizeRegion, readEnergyNow, readEnergySum, readEnergyTrend, readPowerW, tuyaErrorClass, tuyaPublicMessage, verifyCreds } from './tuya.mjs';
 import * as store from './store.mjs';
 import {
   deletedPageHtml, errorPageHtml, managePageHtml,
@@ -544,6 +545,70 @@ async function apiStatus(request, env) {
   return json(statusOf(space, now));
 }
 
+// ---------------------------------------------------------------- energi (monitoring Bardi)
+
+const ENERGY_CACHE_MS = 60_000; // Tuya quota: one round per minute per space/range is plenty for a dashboard
+const energyCache = new Map();
+
+/** YYYYMMDD in the user's timezone (`Asia/Jakarta` fallback), like Tuya's statistics keys. */
+function dayKey(timeZone, date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const get = (type) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('year')}${get('month')}${get('day')}`;
+}
+
+/** Shift a YYYYMMDD key by whole days without timezone/DST surprises. */
+function shiftDay(key, delta) {
+  const d = new Date(Date.UTC(Number(key.slice(0, 4)), Number(key.slice(4, 6)) - 1, Number(key.slice(6, 8)) + delta));
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** GET /api/energy — Bardi energy monitoring: live W/V/mA, kWh today/month, 7-day or 12-month trend.
+ *  Read-only Tuya calls (status + statistics-sum + statistics-trend), cached 60 s. A missing API permission
+ *  or a device without metering answers `{ ok:false, error }` without breaking the status page. */
+async function energy(request, env, url) {
+  const space = await requireSpace(env, request);
+  const range = url.searchParams.get('range') === 'year' ? 'year' : 'week';
+  let tz = String(url.searchParams.get('tz') ?? 'Asia/Jakarta');
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+  } catch {
+    tz = 'Asia/Jakarta';
+  }
+  const cacheKey = `${space.id}:${range}:${tz}`;
+  const hit = energyCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < ENERGY_CACHE_MS) return json(hit.data);
+
+  const today = dayKey(tz);
+  const month = today.slice(0, 6);
+  const cfg = await cfgFor(env, space);
+  let data;
+  try {
+    const [now, dayKwh, monthKwh, trend] = await Promise.all([
+      readEnergyNow(cfg),
+      readEnergySum(cfg, { statisticsType: 'day', startTime: today, endTime: today }),
+      readEnergySum(cfg, { statisticsType: 'month', startTime: month, endTime: month }),
+      range === 'year'
+        ? readEnergyTrend(cfg, { statisticsType: 'month', startTime: `${today.slice(0, 4)}01`, endTime: month })
+        : readEnergyTrend(cfg, { statisticsType: 'day', startTime: shiftDay(today, -6), endTime: today }),
+    ]);
+    data = { ok: true, range, tz, now, todayKwh: dayKwh, monthKwh, trend, updatedAt: Date.now() };
+  } catch (err) {
+    // Do not leak upstream JSON/credentials; the page shows a short hint (usually a missing API permission).
+    const code = Number(err?.detail);
+    data = {
+      ok: false,
+      range,
+      error: 'Statistik energi belum tersedia dari Tuya. Aktifkan izin Power Management (Energy Consumption Statistics) di Cloud Project-mu.'
+        + (Number.isFinite(code) && code > 0 ? ` (kode Tuya ${code})` : ''),
+      updatedAt: Date.now(),
+    };
+  }
+  energyCache.set(cacheKey, { at: Date.now(), data });
+  if (energyCache.size > 200) for (const [k, v] of energyCache) if (Date.now() - v.at > ENERGY_CACHE_MS) energyCache.delete(k);
+  return json(data);
+}
+
 // ---------------------------------------------------------------- halaman HTML
 
 async function statusPage(env, id, url) {
@@ -660,6 +725,7 @@ export async function handleApi(request, env) {
     if (path === '/api/off' && request.method === 'POST') return await off(url, request, env);
     if (path === '/api/on' && request.method === 'POST') return await on(request, env, url);
     if (path === '/api/status' && request.method === 'GET') return await apiStatus(request, env);
+    if (path === '/api/energy' && request.method === 'GET') return await energy(request, env, url);
     return (isPairApi(path) ? jsonNoCors : json)({ error: 'Tidak ditemukan' }, 404);
   } catch (err) {
     // CORS harus konsisten dengan jalur sukses: /api/pair* tidak pernah membawa ACAO (termasuk 400/401/502),

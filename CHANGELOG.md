@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **⚡ Monitoring energi Bardi di halaman status jembatan.** Halaman `/s/<id>` kini menampilkan daya (W), voltase (V), arus (mA) saat ini, kWh **hari ini** dan **bulan ini**, serta grafik **7 hari / 12 bulan** — sumber Tuya Cloud (`cur_power`/`cur_voltage`/`cur_current` + statistik energi), di-cache 60 detik agar kuota Tuya aman. Butuh izin API **Power Management / Energy Consumption Statistics** di Cloud Project; bila belum aktif, bagian energi menampilkan petunjuk dan status PC tetap berfungsi. Deploy bridge Netlify; tidak perlu rilis aplikasi.
+
 ## 1.0.33
 
 - **⏻ Pemisahan tegas: aplikasi mematikan Windows, halaman jembatan memutus arus Bardi.** Tombol **⏻ Matikan PC** di Adhitron (dan centang "ikut mematikan Windows" di ⚙) kini **hanya menjalankan shutdown Windows** (`/s /t 45`) — tidak lagi menjadwalkan pemutusan listrik lewat bridge. Setelah itu halaman status jembatan terbuka; di sana **⏻ Putus arus listrik** memotong listrik Bardi memakai jeda `offDelaySec` (default 120 dtk). Tombol yang sama tersedia saat state `off`. Heartbeat tidak lagi dijeda karena aplikasi tidak membuat jadwal. Bridge mendapat endpoint `POST /api/handoff` (tiket halaman status tanpa jadwal/plug) dan `POST /api/off` tanpa `delay` memakai jeda tersimpan. Deploy bridge Netlify lebih dulu, lalu rilis aplikasi.

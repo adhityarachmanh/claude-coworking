@@ -87,7 +87,8 @@ Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk
 | `POST /api/off/cancel` | `X-Bridge-Token` / `X-Status-Token` | - | `{ ok, cancelled }` - hapus jadwal tanpa menyentuh plug |
 | `POST /api/handoff[?delay=N]` | `X-Bridge-Token` / `X-Status-Token` | delay 0-3600 dtk (opsional, disimpan untuk tombol Putus arus) | `{ ok, handoffUrl, offDelaySec }` - tiket halaman status, tanpa jadwal/plug |
 | `POST /api/on` | `X-Bridge-Token` / `X-Status-Token` | `?force=1` untuk memaksa siklus OFF → ON | `{ ok }` · PC masih hidup tanpa `force` → **409** |
-| `GET /api/status` | `X-Bridge-Token` / `X-Status-Token` | — | status (di bawah) |
+| `GET /api/status` | `X-Bridge-Token` / `X-Status-Token` | - | status (di bawah) |
+| `GET /api/energy` | `X-Bridge-Token` / `X-Status-Token` | `?range=week|year&tz=Asia/Jakarta` | `{ ok, now:{powerW,currentMa,voltageV}, todayKwh, monthKwh, trend:[{time,value}], updatedAt }` (cache 60 dtk) |
 
 - `bridgeUrl` = URL situs jembatan; **panel Adhitron ⚙ Remote power: URL = bridgeUrl, token = `token`**.
 - **Kode pasangan** (pindah space ke perangkat lain): `POST /api/pair` membuat kode **8 karakter base32** —
@@ -187,6 +188,9 @@ Halaman web:
   **⏻ Putus arus listrik**; `unknown`: **⚡ Nyalakan paksa** (konfirmasi, memakai
   `/api/on?force=1`). Penolakan **409** ditampilkan sebagai peringatan di halaman, bukan gagal diam-diam.
   Bila jadwal aktif dan daya ≤ 5 W: **⚫ PC sudah mati · ⏳ listrik diputus dalam m:ss**.
+  Di bawah tombol ada bagian **⚡ Energi Bardi**: daya/voltase/arus saat ini, kWh hari ini & bulan ini, dan grafik
+  **7 hari** / **12 bulan** (sumber Tuya Cloud, di-cache 60 dtk). Butuh izin API **Power Management / Energy
+  Consumption Statistics** di Cloud Project; kalau belum aktif, bagian ini menampilkan petunjuk tanpa merusak status.
 
 ## Cron tiap menit (`scheduledSweep`)
 
@@ -243,7 +247,7 @@ dari halaman status (**⏻ Putus arus listrik**); heartbeat berhenti sendiri kar
 node --test --test-timeout=60000 "bridge/**/*.test.mjs"
 ```
 
-**69 tes** (`node --test`), menggunakan fake fetch Tuya + fake Blobs - tanpa jaringan. Mencakup: register &
+**71 tes** (`node --test`), menggunakan fake fetch Tuya + fake Blobs - tanpa jaringan. Mencakup: register &
 enkripsi (tidak ada plaintext di store), validasi kredensial ke Tuya sebelum menyimpan (422/503, pesan tanpa
 kredensial), throttle 10/IP/hari, auth 401, jadwal off + tiket sekali pakai, pembatalan via heartbeat,
 cron sukses / coba ulang / needsAttention / batal, `hold=1` (heartbeat tidak membatalkan "matikan rapi"), `/api/on` (409 saat PC masih hidup, `?force=1`, hapus jadwal),
