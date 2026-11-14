@@ -98,8 +98,9 @@ test('firewallCheckScript: fixed read-only detector (no netsh add/delete, only G
 
 test('checkFirewallRules: parses the fake runner; failure = unknown; non-Windows = no check', async () => {
   const yes = { platforms: 'windows', covered: true, legacyRule: false };
-  assert.deepEqual(await checkFirewallRules(async () => '{"covered":true,"legacy":false}'), yes, 'jalur normal lewat parser');
-  assert.deepEqual(await checkFirewallRules(async () => { throw new Error('boom'); }), { platforms: 'windows', covered: null, legacyRule: false }, 'gagal → unknown, TIDAK throw');
+  // Explicit 'win32': the suite must not depend on the OS running it (CI is Linux, the app ships Windows).
+  assert.deepEqual(await checkFirewallRules(async () => '{"covered":true,"legacy":false}', 'win32'), yes, 'jalur normal lewat parser');
+  assert.deepEqual(await checkFirewallRules(async () => { throw new Error('boom'); }, 'win32'), { platforms: 'windows', covered: null, legacyRule: false }, 'gagal → unknown, TIDAK throw');
   assert.deepEqual(await checkFirewallRules(async () => '', 'darwin'), { platforms: 'other', covered: null, legacyRule: false }, 'non-Windows tanpa pemeriksaan');
   assert.deepEqual(await checkFirewallRules(async () => '', 'linux'), { platforms: 'other', covered: null, legacyRule: false });
 });
@@ -107,9 +108,10 @@ test('checkFirewallRules: parses the fake runner; failure = unknown; non-Windows
 // ---------- the elevated fix (injected runner, never real) ----------
 
 test('runFirewallFix: ok on clean exit; declined/timeout on failure; non-Windows refused', async () => {
-  assert.deepEqual(await runFirewallFix(async () => ''), { platforms: 'windows', ok: true });
-  assert.deepEqual(await runFirewallFix(async () => { const e = new Error('canceled'); e.killed = false; throw e; }), { platforms: 'windows', ok: false, reason: 'declined' }, 'UAC ditolak');
-  assert.deepEqual(await runFirewallFix(async () => { const e = new Error('timeout'); e.killed = true; throw e; }), { platforms: 'windows', ok: false, reason: 'timeout' }, 'UAC tidak dijawab');
+  // Explicit 'win32' for the same reason: the assertions describe Windows behaviour, not the runner's OS.
+  assert.deepEqual(await runFirewallFix(async () => '', 'win32'), { platforms: 'windows', ok: true });
+  assert.deepEqual(await runFirewallFix(async () => { const e = new Error('canceled'); e.killed = false; throw e; }, 'win32'), { platforms: 'windows', ok: false, reason: 'declined' }, 'UAC ditolak');
+  assert.deepEqual(await runFirewallFix(async () => { const e = new Error('timeout'); e.killed = true; throw e; }, 'win32'), { platforms: 'windows', ok: false, reason: 'timeout' }, 'UAC tidak dijawab');
   assert.deepEqual(await runFirewallFix(async () => '', 'darwin'), { platforms: 'other' });
   assert.equal((await runFirewallFix(async (cmd) => cmd, 'win32', 5)).platforms, 'windows', 'cmd tetap string tetap dari builder');
 });
