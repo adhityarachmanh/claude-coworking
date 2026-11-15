@@ -7,3 +7,6 @@ runtime/
 
 # Local Netlify folder
 .netlify
+
+# Local agent workspace (plans, notes) — never part of the app
+.superpowers/

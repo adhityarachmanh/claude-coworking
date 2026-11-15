@@ -21,6 +21,7 @@
 // fails a named test instead of letting the runner pass with zero tests: `--test-force-exit` would exit faster but
 // Node 26 then runs out of memory on this file, so the guard is in the suite, not in the flags.
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,6 +35,28 @@ export const areasOf = (argv) => argv.flatMap((a) => String(a).split(',')).map((
 
 /** The `--test-name-pattern` value for one filter (regex-escaped, nothing else). */
 export const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Every block name the suite registers, with `${vp.name}` expanded for each viewport, so a filter can be checked
+ * before a child is started (a typo used to boot a server and a browser, then fail ~5 s later).
+ */
+export function blockNamesOf(source) {
+  const viewports = [...String(source).matchAll(/\{\s*name:\s*'([^']+)'/g)].map((m) => m[1]);
+  const names = [];
+  for (const m of String(source).matchAll(/describeArea\(\s*(`([^`]*)`|'([^']*)'|"([^"]*)")/g)) {
+    const raw = m[2] ?? m[3] ?? m[4] ?? '';
+    if (!raw.includes('${')) {
+      if (raw) names.push(raw);
+      continue;
+    }
+    const template = raw.replace(/\$\{[^}]*\}/g, '\u0000');
+    for (const vp of viewports) names.push(template.replace(/\u0000/g, vp));
+  }
+  return names;
+}
+
+/** True when any block name contains the filter (the same substring rule describeArea uses). */
+export const filterMatches = (area, names) => names.some((name) => name.includes(area));
 
 /** Run one filter in its own `node --test` child; resolves { area, status, out, timedOut }. */
 function runArea(area) {
@@ -87,7 +110,14 @@ async function main(argv) {
   const failed = [];
   const empty = [];
   const slow = [];
+  const blocks = blockNamesOf(readFileSync(path.join(APP, SUITE), 'utf8'));
   for (const area of areas) {
+    // A filter that matches no block is a typo: say so now instead of starting a server and a browser for nothing.
+    if (!filterMatches(area, blocks)) {
+      empty.push(area);
+      console.log(`ui-area: GAGAL ${JSON.stringify(area)} — tidak ada blok yang cocok (0.0 dtk). Cek ejaan di docs/uji-ui.md.`);
+      continue;
+    }
     console.log(`ui-area: mulai ${JSON.stringify(area)}`);
     const started = Date.now();
     const { status, out, timedOut } = await runArea(area);

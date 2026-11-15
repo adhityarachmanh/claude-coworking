@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { areasOf, escapeRegExp } from '../test-support/ui-area.mjs';
+import { areasOf, blockNamesOf, escapeRegExp, filterMatches } from '../test-support/ui-area.mjs';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RUNNER = readFileSync(path.join(APP, 'test-support', 'ui-area.mjs'), 'utf8');
@@ -48,6 +48,9 @@ test('a filter that matches nothing is a failure, never a green run', () => {
   assert.match(RUNNER, /empty\.push\(area\)/, 'nol test dicatat sebagai TANPA TEST');
   assert.match(RUNNER, /process\.exit\(failed\.length \|\| empty\.length \? 1 : 0\)/, 'keluar 1 bila ada yang gagal/kosong');
   assert.match(RUNNER, /if \(!areas\.length\)[\s\S]{0,200}process\.exit\(2\)/, 'tanpa argumen: pakai ulang, keluar 2');
+  // A typo must not even start a child: the block names are known before spawning (server + browser cost seconds).
+  assert.match(RUNNER, /filterMatches\(area, blocks\)/, 'filter dicek sebelum proses anak dimulai');
+  assert.match(RUNNER, /blockNamesOf\(readFileSync/, 'nama blok dibaca dari suite');
   // A child that never exits (server stuck, browser gone) must be killed and reported, not waited on forever.
   assert.match(RUNNER, /UI_AREA_TIMEOUT_MS/, 'batas waktu bisa dinaikkan lewat env');
   assert.match(RUNNER, /timedOut = true;\s*child\.kill\(\);/, 'child yang lewat batas waktu dihentikan');
@@ -75,4 +78,16 @@ test('every block of the UI suite stays selectable (none was dropped while wirin
     assert.ok(DOCS.includes(documented), `docs/uji-ui.md menyebut "${documented}"`);
   }
   assert.ok(!/^ {0,2}describe\(/m.test(SUITE), 'tidak ada describe(...) yang terlewat dari describeArea');
+});
+
+test('block names are known before a child starts: a typo fails without booting a server', () => {
+  const names = blockNamesOf(SUITE);
+  // Every documented argument must be recognised by the pre-check, including the viewport-templated ones.
+  for (const area of ['UI mobile 390x844', 'UI desktop 1440x900', 'UI Ringkas konteks', 'CSP', 'UI Setelan PIN', 'Setelan PIN']) {
+    assert.ok(filterMatches(area, names), `filter "${area}" dikenali`);
+  }
+  // A name that is only a test title, or a typo, is not a block.
+  for (const area of ['settings: WhatsApp card', 'UI tidak ada', 'settings']) {
+    assert.equal(filterMatches(area, names), false, `"${area}" bukan nama blok`);
+  }
 });

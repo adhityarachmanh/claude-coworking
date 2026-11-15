@@ -22,8 +22,8 @@ jobs:
       # GitHub's Electron release download often returns 504 on runners; the mirror keeps npm ci deterministic.
       ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm ci
@@ -88,8 +88,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm ci --ignore-scripts
@@ -125,8 +125,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm ci --ignore-scripts
@@ -163,7 +163,7 @@ jobs:
     timeout-minutes: 10
     steps:
       # gh needs a checkout to know which repository the tag belongs to.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check tag matches package.json
         run: |
           TAG="${GITHUB_REF_NAME#v}"

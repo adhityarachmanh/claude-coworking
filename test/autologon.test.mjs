@@ -21,6 +21,10 @@ const ME = windowsAccount();
 const TEST_SID = 'S-1-5-21-1111111111-2222222222-3333333333-1001';
 const accountArgs = () => ['--user', ME.user, '--domain', ME.domain];
 
+// The module throws 'Autologon hanya tersedia di Windows' before doing anything on other platforms, so its flows
+// are Windows-only; the nightly Linux job runs the rest of the suite.
+const wtest = (name, fn) => test(name, { skip: process.platform !== 'win32' && 'Autologon hanya tersedia di Windows' }, fn);
+
 const DIRS = [];
 after(() => DIRS.forEach((d) => rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })));
 
@@ -181,7 +185,7 @@ function scriptRunner({ status = 0, verify = true, schtasksCreate = 'ok', autoAd
   return { exec, calls, script: () => script, scriptPath: () => scriptPath, taskXml: () => taskXml };
 }
 
-test('skrip elevated tidak pernah memuat sandi', () => {
+wtest('skrip elevated tidak pernah memuat sandi', () => {
   const script = winlogonScript();
 
   assert.ok(!script.includes(SECRET), 'sandi tidak boleh masuk skrip: file PowerShell bisa dibaca siapa saja');
@@ -193,7 +197,7 @@ test('skrip elevated tidak pernah memuat sandi', () => {
   assert.match(script, /ReadAllText\(\$PasswordFile\)/, 'sandi dibaca dari file, bukan dari argumen');
 });
 
-test('sandi salah: exit 3 dan registry tidak disentuh', async () => {
+wtest('sandi salah: exit 3 dan registry tidak disentuh', async () => {
   const script = winlogonScript();
   const validate = script.indexOf('$logon::LogonUser(');
   const firstWrite = script.indexOf("SetValue('DefaultUserName'");
@@ -228,7 +232,7 @@ test('sandi salah: exit 3 dan registry tidak disentuh', async () => {
   assert.ok(ps.script().includes('LogonUser'), 'yang dijalankan adalah skrip LogonUser, bukan perintah reg add');
 });
 
-test('akun Microsoft memakai domain MicrosoftAccount', async () => {
+wtest('akun Microsoft memakai domain MicrosoftAccount', async () => {
   assert.deepEqual(windowsAccount('adhit', 'adhit@outlook.com'), { user: 'adhit@outlook.com', domain: 'MicrosoftAccount' });
   assert.deepEqual(windowsAccount('adhit', ''), { user: 'adhit', domain: os.hostname() });
   assert.deepEqual(windowsAccount('  adhit  '), { user: 'adhit', domain: os.hostname() });
@@ -252,7 +256,7 @@ test('akun Microsoft memakai domain MicrosoftAccount', async () => {
   assert.match(command, /--domain "?MicrosoftAccount"?/, 'domain wajib MicrosoftAccount');
 });
 
-test('enable menulis file sandi 0600 dan menghapusnya di finally', async () => {
+wtest('enable menulis file sandi 0600 dan menghapusnya di finally', async () => {
   const box = sandbox();
   const seen = [];
   const { spawn, calls } = fakeSpawn({
@@ -293,7 +297,7 @@ test('enable menulis file sandi 0600 dan menghapusnya di finally', async () => {
   assert.match(commandOf(calls[0]), /-Verb RunAs -Wait -PassThru/);
 });
 
-test('UAC dibatalkan (1223) dilaporkan cancelled, bukan error', async () => {
+wtest('UAC dibatalkan (1223) dilaporkan cancelled, bukan error', async () => {
   const box = sandbox();
   const noStatus = () => {
     throw new Error('status tidak boleh dibaca saat UAC dibatalkan');
@@ -324,7 +328,7 @@ test('UAC dibatalkan (1223) dilaporkan cancelled, bukan error', async () => {
   assert.deepEqual(fromText, { ok: false, cancelled: true });
 });
 
-test('setelah enable, status harus membaca autologon on', async () => {
+wtest('setelah enable, status harus membaca autologon on', async () => {
   const box = sandbox();
   const base = {
     password: SECRET,
@@ -361,7 +365,7 @@ test('setelah enable, status harus membaca autologon on', async () => {
   );
 });
 
-test('sandi salah dari helper dipetakan ke error wrong-password', async () => {
+wtest('sandi salah dari helper dipetakan ke error wrong-password', async () => {
   const box = sandbox();
   await assert.rejects(
     () => enableAutologon({
@@ -381,7 +385,7 @@ test('sandi salah dari helper dipetakan ke error wrong-password', async () => {
   );
 });
 
-test('enable menolak platform non-Windows dan sandi kosong tanpa menjalankan proses', async () => {
+wtest('enable menolak platform non-Windows dan sandi kosong tanpa menjalankan proses', async () => {
   const box = sandbox();
   const { spawn, calls } = fakeSpawn({ code: 0 });
 
@@ -390,7 +394,7 @@ test('enable menolak platform non-Windows dan sandi kosong tanpa menjalankan pro
   assert.equal(calls.length, 0, 'tidak ada UAC untuk input yang tidak valid');
 });
 
-test('helper elevated memasang task pengunci layar sebelum registry', async () => {
+wtest('helper elevated memasang task pengunci layar sebelum registry', async () => {
   const box = sandbox();
   const file = secretFileIn(box.tmp);
   const ps = scriptRunner({ status: 0 });
@@ -428,7 +432,7 @@ test('helper elevated memasang task pengunci layar sebelum registry', async () =
   assert.ok(!call.args.includes('-Startup'), 'skrip tidak lagi butuh folder Startup');
 });
 
-test('C2 membandingkan SID, bukan tulisan nama akun', async () => {
+wtest('C2 membandingkan SID, bukan tulisan nama akun', async () => {
   const box = sandbox();
   const file = secretFileIn(box.tmp);
   const ps = scriptRunner({ status: 0 });
@@ -449,7 +453,7 @@ test('C2 membandingkan SID, bukan tulisan nama akun', async () => {
   assert.match(script, /WindowsIdentity\]::GetCurrent\(\)\.User\.Value/, 'cadangan bila SID induk tidak terbaca');
 });
 
-test('SID sesi ini diteruskan ke salinan elevated lewat --account-sid', async () => {
+wtest('SID sesi ini diteruskan ke salinan elevated lewat --account-sid', async () => {
   const box = sandbox();
   const { spawn, calls } = fakeSpawn({ code: 0 });
   await enableAutologon({
@@ -465,7 +469,7 @@ test('SID sesi ini diteruskan ke salinan elevated lewat --account-sid', async ()
   assert.match(commandOf(calls[0]), new RegExp(`--account-sid "?${TEST_SID}"?`), 'SID induk, bukan SID administrator UAC');
 });
 
-test('helper elevated menolak file sandi asing atau di luar folder temp', async () => {
+wtest('helper elevated menolak file sandi asing atau di luar folder temp', async () => {
   const box = sandbox();
   const foreign = path.join(box.root, 'adhitron-autologon-deadbeef.txt');
   writeFileSync(foreign, SECRET);
@@ -485,7 +489,7 @@ test('helper elevated menolak file sandi asing atau di luar folder temp', async 
   assert.ok(existsSync(wrongName));
 });
 
-test('helper --autologon-disable mematikan autologon dan melepas pengunci layar', async () => {
+wtest('helper --autologon-disable mematikan autologon dan melepas pengunci layar', async () => {
   const box = sandbox();
   const ps = scriptRunner({ status: 0 });
 
@@ -503,7 +507,7 @@ test('helper --autologon-disable mematikan autologon dan melepas pengunci layar'
   assert.doesNotMatch(script, /PasswordFile/, 'mematiikan tidak perlu sandi');
 });
 
-test('helper tidak elevated meminta UAC sekali dan meneruskan kode keluar', async () => {
+wtest('helper tidak elevated meminta UAC sekali dan meneruskan kode keluar', async () => {
   const box = sandbox();
   const notElevated = (file) => {
     if (file === 'net') throw new Error('ERROR: Access is denied.');
@@ -528,12 +532,12 @@ test('helper tidak elevated meminta UAC sekali dan meneruskan kode keluar', asyn
   assert.equal(cancelledCode, 6, 'UAC dibatalkan = 6');
 });
 
-test('helperMain menolak argv tanpa perintah autologon', async () => {
+wtest('helperMain menolak argv tanpa perintah autologon', async () => {
   await assert.rejects(() => helperMain(['node', 'server.js']), /--autologon-enable/);
   await assert.rejects(() => helperMain(['--autologon-enable', '--autologon-disable']), /tepat satu/);
 });
 
-test('startupDirOf memakai folder Startup yang sama dengan autostartStatus', () => {
+wtest('startupDirOf memakai folder Startup yang sama dengan autostartStatus', () => {
   const box = sandbox();
   assert.equal(startupDirOf({ appData: box.root }), path.join(box.root, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup'));
   assert.equal(startupDirOf({ startupDir: box.startupDir }), box.startupDir);
@@ -541,7 +545,7 @@ test('startupDirOf memakai folder Startup yang sama dengan autostartStatus', () 
 
 // --- Putaran perbaikan (review independen) -------------------------------------------------------------------
 
-test('S1: --user/--domain akun lain ditolak sebelum UAC, registry tidak ditulis', async () => {
+wtest('S1: --user/--domain akun lain ditolak sebelum UAC, registry tidak ditulis', async () => {
   const box = sandbox();
   const file = secretFileIn(box.tmp);
   const ps = scriptRunner();
@@ -567,7 +571,7 @@ test('S1: --user/--domain akun lain ditolak sebelum UAC, registry tidak ditulis'
   assert.ok(!existsSync(otherDomain));
 });
 
-test('S1: nama akun dicocokkan tanpa peduli huruf besar/kecil', async () => {
+wtest('S1: nama akun dicocokkan tanpa peduli huruf besar/kecil', async () => {
   const box = sandbox();
   const file = secretFileIn(box.tmp);
   const ps = scriptRunner({ status: 0 });
@@ -582,7 +586,7 @@ test('S1: nama akun dicocokkan tanpa peduli huruf besar/kecil', async () => {
   assert.ok(ps.calls.some((call) => call.file === 'powershell.exe'), 'skrip registry dijalankan');
 });
 
-test('S1: akun Microsoft dibandingkan lewat upn, dengan fallback nama akun', async () => {
+wtest('S1: akun Microsoft dibandingkan lewat upn, dengan fallback nama akun', async () => {
   const box = sandbox();
   const account = { user: 'adhit', domain: 'MicrosoftAccount' };
   const run = (upn, hex) => {
@@ -609,7 +613,7 @@ test('S1: akun Microsoft dibandingkan lewat upn, dengan fallback nama akun', asy
   assert.equal(await run('', '9999aaaabbbbcccc'), 0, 'fallback ke nama akun sesi');
 });
 
-test('M2: saklar AutoAdminLogon=1 adalah tulisan terakhir, tanpa rollback yang tak terjangkau', () => {
+wtest('M2: saklar AutoAdminLogon=1 adalah tulisan terakhir, tanpa rollback yang tak terjangkau', () => {
   const script = winlogonScript();
   const passwordWrite = script.indexOf("SetValue('DefaultPassword'");
   const switchWrite = script.indexOf("SetValue('AutoAdminLogon', '1'");
@@ -630,7 +634,7 @@ test('M2: saklar AutoAdminLogon=1 adalah tulisan terakhir, tanpa rollback yang t
   assert.match(script, /4: registry write[\s\S]*AutoAdminLogon is the SWITCH and goes LAST/);
 });
 
-test('S4: argumen berakhiran backslash tidak menelan argumen berikutnya', async () => {
+wtest('S4: argumen berakhiran backslash tidak menelan argumen berikutnya', async () => {
   const box = sandbox();
   const { spawn, calls } = fakeSpawn({ code: 0 });
   const weird = 'C:\\Folder Dengan Spasi\\';
@@ -650,7 +654,7 @@ test('S4: argumen berakhiran backslash tidak menelan argumen berikutnya', async 
   assert.match(command, /--user "C:\\Folder Dengan Spasi\\\\" --domain /, `quoting salah: ${command}`);
 });
 
-test('S5: UAC dibatalkan saat self-elevation tetap menghapus file sandi', async () => {
+wtest('S5: UAC dibatalkan saat self-elevation tetap menghapus file sandi', async () => {
   const box = sandbox();
   const file = secretFileIn(box.tmp);
   const notElevated = (name) => {
@@ -669,7 +673,7 @@ test('S5: UAC dibatalkan saat self-elevation tetap menghapus file sandi', async 
   assert.ok(!existsSync(file), 'file sandi tidak boleh bertahan setelah UAC dibatalkan');
 });
 
-test('S6: PowerShell yang menggantung dibatasi timeout (bukan menggantung selamanya)', async () => {
+wtest('S6: PowerShell yang menggantung dibatasi timeout (bukan menggantung selamanya)', async () => {
   const box = sandbox();
   const { spawn, children } = fakeSpawn({ never: true });
 
@@ -713,7 +717,7 @@ test('S6: PowerShell yang menggantung dibatasi timeout (bukan menggantung selama
   assert.ok(!existsSync(stuckFile), 'file sandi tetap dibersihkan');
 });
 
-test('S7: file sandi yang gagal dihapus dilaporkan, tanpa mencetak isinya', async () => {
+wtest('S7: file sandi yang gagal dihapus dilaporkan, tanpa mencetak isinya', async () => {
   const box = sandbox();
   const { spawn, calls } = fakeSpawn({ code: 0 });
   const lines = [];
@@ -749,7 +753,7 @@ test('S7: file sandi yang gagal dihapus dilaporkan, tanpa mencetak isinya', asyn
   assert.ok(!warning.includes(SECRET), 'isi sandi tidak boleh dicetak');
 });
 
-test('G4: exit code null tanpa signal dianggap gagal, bukan sukses', async () => {
+wtest('G4: exit code null tanpa signal dianggap gagal, bukan sukses', async () => {
   const box = sandbox();
   await assert.rejects(
     () => enableAutologon({
@@ -769,7 +773,7 @@ test('G4: exit code null tanpa signal dianggap gagal, bukan sukses', async () =>
   );
 });
 
-test('G1: helper meneruskan exit 4 (registry) dan 5 (bukan admin)', async () => {
+wtest('G1: helper meneruskan exit 4 (registry) dan 5 (bukan admin)', async () => {
   for (const status of [4, 5]) {
     const box = sandbox();
     const file = secretFileIn(box.tmp);
@@ -786,7 +790,7 @@ test('G1: helper meneruskan exit 4 (registry) dan 5 (bukan admin)', async () => 
   }
 });
 
-test('G1: spawn error (PowerShell tidak ada) tetap menghapus file sandi', async () => {
+wtest('G1: spawn error (PowerShell tidak ada) tetap menghapus file sandi', async () => {
   const box = sandbox();
   const { spawn, calls } = fakeSpawn({ error: new Error('spawn powershell.exe ENOENT') });
 
@@ -811,7 +815,7 @@ test('G1: spawn error (PowerShell tidak ada) tetap menghapus file sandi', async 
   assert.ok(file && !existsSync(file), 'file sandi harus terhapus walau proses tidak pernah jalan');
 });
 
-test('G1: helperMain tidak pernah memanggil process.exit', async () => {
+wtest('G1: helperMain tidak pernah memanggil process.exit', async () => {
   const box = sandbox();
   const file = secretFileIn(box.tmp);
   const ps = scriptRunner({ status: 0 });
@@ -836,7 +840,7 @@ test('G1: helperMain tidak pernah memanggil process.exit', async () => {
 
 // --- Putaran perbaikan (review keamanan independen) ---------------------------------------------------------
 
-test('C2: task pengunci yang tidak bisa diverifikasi = exit 4, registry tidak disentuh', async () => {
+wtest('C2: task pengunci yang tidak bisa diverifikasi = exit 4, registry tidak disentuh', async () => {
   const box = sandbox();
   const file = secretFileIn(box.tmp);
   const ps = scriptRunner({ verify: false });
@@ -884,7 +888,7 @@ for (const [label, autoAdminLogon] of [['sudah ON', '1'], ['tidak terbaca', null
   });
 }
 
-test('C2: SID di argv yang formatnya salah ditolak, bukan diganti SID sesi ini', async () => {
+wtest('C2: SID di argv yang formatnya salah ditolak, bukan diganti SID sesi ini', async () => {
   const box = sandbox();
   const file = secretFileIn(box.tmp);
   const ps = scriptRunner({ status: 0 });
@@ -918,7 +922,7 @@ const withOwner = (owner, script) => [
   script,
 ].join('\r\n');
 
-test('skrip C2 asli: nama pendek diterima, akun lain ditolak', { skip: process.platform !== 'win32' }, () => {
+wtest('skrip C2 asli: nama pendek diterima, akun lain ditolak', { skip: process.platform !== 'win32' }, () => {
   // This is the bug 1.0.34 shipped: Task Scheduler answers with the short name while the code compared "DOMAIN\User".
   const realSid = /"(S-1-[0-9-]+)"/.exec(String(execFileSync('whoami', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8' }) ?? ''));
   assert.ok(realSid, 'SID sesi ini harus terbaca');
@@ -936,7 +940,7 @@ test('skrip C2 asli: nama pendek diterima, akun lain ditolak', { skip: process.p
   assert.equal(psScriptVerdict(withOwner(ME.user, lockTaskCheckScript({ ...account, sid: '' }))), 0, 'cadangan SID sesi');
 });
 
-test('C2/M4: lockTaskXml menulis <UserId> DOMAIN\\User dan tidak pernah memuat port aneh', () => {
+wtest('C2/M4: lockTaskXml menulis <UserId> DOMAIN\\User dan tidak pernah memuat port aneh', () => {
   const xml = lockTaskXml(4318, { user: 'adhit', domain: 'KOMPUTER' });
   assert.match(xml, /<UserId>KOMPUTER\\adhit<\/UserId>/);
   assert.match(xml, /server port 4318/);
@@ -949,7 +953,7 @@ test('C2/M4: lockTaskXml menulis <UserId> DOMAIN\\User dan tidak pernah memuat p
   assert.match(lockTaskXml(4317, { user: 'a&b', domain: 'x<y' }), /<UserId>x&lt;y\\a&amp;b<\/UserId>/);
 });
 
-test('I1: schtasks /Create untuk pengunci gagal = fail-closed', async () => {
+wtest('I1: schtasks /Create untuk pengunci gagal = fail-closed', async () => {
   const box = sandbox();
   const file = secretFileIn(box.tmp);
   const ps = scriptRunner({ schtasksCreate: 'fail' });
@@ -965,7 +969,7 @@ test('I1: schtasks /Create untuk pengunci gagal = fail-closed', async () => {
   assert.ok(!existsSync(file), 'file sandi tetap terhapus');
 });
 
-test('I3: --app-dir asing tidak menentukan kode yang jalan sebagai Administrator', async () => {
+wtest('I3: --app-dir asing tidak menentukan kode yang jalan sebagai Administrator', async () => {
   const box = sandbox();
   const own = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const notElevated = (name) => {
@@ -985,7 +989,7 @@ test('I3: --app-dir asing tidak menentukan kode yang jalan sebagai Administrator
   assert.ok(command.includes(`--app-dir ${own}`) || command.includes(`--app-dir "${own}"`), `pakai folder aplikasi ini: ${command}`);
 });
 
-test('I4: alasan dari anak elevated dipakai di pesan error, file hasil dihapus', async () => {
+wtest('I4: alasan dari anak elevated dipakai di pesan error, file hasil dihapus', async () => {
   const box = sandbox();
   const { spawn } = fakeSpawn({
     code: 4,
@@ -1015,7 +1019,7 @@ test('I4: alasan dari anak elevated dipakai di pesan error, file hasil dihapus',
   assert.equal(readdirSync(box.tmp).filter((name) => name.endsWith('.result')).length, 0, 'file hasil dihapus');
 });
 
-test('UAC akun lain: file sandi di %TEMP% pemanggil diterima lewat --password-dir', async () => {
+wtest('UAC akun lain: file sandi di %TEMP% pemanggil diterima lewat --password-dir', async () => {
   const box = sandbox();
   // Named exactly like a real per-user temp: `...\AppData\Local\Temp`. The elevated copy (different administrator
   // account) has another %TEMP%, so without --password-dir the file would look foreign and bootmode could never be
@@ -1036,7 +1040,7 @@ test('UAC akun lain: file sandi di %TEMP% pemanggil diterima lewat --password-di
   assert.ok(!existsSync(file), 'file sandi tetap dihapus walau beda akun');
 });
 
-test('UAC akun lain: folder selain temp pengguna tetap ditolak dan tidak dihapus', async () => {
+wtest('UAC akun lain: folder selain temp pengguna tetap ditolak dan tidak dihapus', async () => {
   const box = sandbox();
   const rogue = path.join(box.root, 'bukan-temp');
   mkdirSync(rogue, { recursive: true });
@@ -1054,7 +1058,7 @@ test('UAC akun lain: folder selain temp pengguna tetap ditolak dan tidak dihapus
   assert.ok(existsSync(file), 'file milik orang lain tidak boleh dihapus');
 });
 
-test('I4: helper menulis kode + satu baris alasan ke --result-file (tanpa sandi)', async () => {
+wtest('I4: helper menulis kode + satu baris alasan ke --result-file (tanpa sandi)', async () => {
   const box = sandbox();
   const file = secretFileIn(box.tmp);
   const result = path.join(box.tmp, 'adhitron-autologon-1111222233334444.result');
@@ -1074,7 +1078,7 @@ test('I4: helper menulis kode + satu baris alasan ke --result-file (tanpa sandi)
   assert.ok(!existsSync(file), 'file sandi tetap terhapus');
 });
 
-test('I5: sandi salah tidak meninggalkan task pengunci yang baru dipasang', async () => {
+wtest('I5: sandi salah tidak meninggalkan task pengunci yang baru dipasang', async () => {
   const box = sandbox();
   const base = {
     password: SECRET,
@@ -1098,7 +1102,7 @@ test('I5: sandi salah tidak meninggalkan task pengunci yang baru dipasang', asyn
   assert.equal(kept.calls.some((c) => c.file === 'schtasks' && c.args.includes('/Delete')), false, 'task lama dipertahankan');
 });
 
-test('I2: parent kehabisan waktu tapi Windows sudah on+boot = sukses', async () => {
+wtest('I2: parent kehabisan waktu tapi Windows sudah on+boot = sukses', async () => {
   const box = sandbox();
   const result = await enableAutologon({
     password: SECRET,
@@ -1114,7 +1118,7 @@ test('I2: parent kehabisan waktu tapi Windows sudah on+boot = sukses', async () 
   assert.deepEqual(result, { ok: true, verified: true }, 'anak selesai setelah parent berhenti menunggu');
 });
 
-test('I6: --autologon-disable tidak digerbang cek akun', async () => {
+wtest('I6: --autologon-disable tidak digerbang cek akun', async () => {
   const box = sandbox();
   const ps = scriptRunner({ status: 0 });
 
@@ -1127,7 +1131,7 @@ test('I6: --autologon-disable tidak digerbang cek akun', async () => {
   assert.match(ps.script(), /SetValue\('AutoAdminLogon', '0'/);
 });
 
-test('M3: exit 4 memakai kalimat yang jelas untuk pengguna', async () => {
+wtest('M3: exit 4 memakai kalimat yang jelas untuk pengguna', async () => {
   const box = sandbox();
   await assert.rejects(
     () => enableAutologon({
@@ -1148,7 +1152,7 @@ test('M3: exit 4 memakai kalimat yang jelas untuk pengguna', async () => {
 });
 
 
-test('file sandi yang tertinggal dibersihkan saat start, file baru dan file lain tidak', () => {
+wtest('file sandi yang tertinggal dibersihkan saat start, file baru dan file lain tidak', () => {
   const box = sandbox();
   const oldSecret = secretFileIn(box.tmp, 'aaaaaaaaaaaaaaa1');
   const oldResult = path.join(box.tmp, 'adhitron-autologon-aaaaaaaaaaaaaaa2.result');
@@ -1168,7 +1172,7 @@ test('file sandi yang tertinggal dibersihkan saat start, file baru dan file lain
   assert.ok(existsSync(stranger), 'file lain di %TEMP% tidak pernah disentuh');
 });
 
-test('relaunchOf tidak memakai skrip di luar folder aplikasi', () => {
+wtest('relaunchOf tidak memakai skrip di luar folder aplikasi', () => {
   const box = sandbox();
   // appDir tanpa server.js: process.argv[1] (berkas test ini) berada di luar appDir, jadi tidak boleh dipakai.
   const { args } = relaunchOf(box.appDir);

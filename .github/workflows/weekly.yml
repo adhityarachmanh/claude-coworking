@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       # Same as the push workflow: the app imports the real dependencies (baileys), so install them before the suite.
@@ -36,7 +36,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4 # gh needs a checkout to resolve the repository
+      - uses: actions/checkout@v5 # gh needs a checkout to resolve the repository
       - name: Delete abandoned draft releases
         env:
           GH_TOKEN: ${{ github.token }}
