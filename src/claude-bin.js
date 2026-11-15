@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { appPaths } from './app-paths.js';
+import { childEnv } from './child-env.js';
 import { runtimeBinDirs } from './setup/runtime.js';
 
 const WIN = process.platform === 'win32';
@@ -16,7 +17,7 @@ const EXE = WIN ? 'claude.exe' : 'claude';
  */
 function answers(command) {
   try {
-    const out = execFileSync(command, ['--version'], { encoding: 'utf8', timeout: 15_000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = execFileSync(command, ['--version'], { encoding: 'utf8', timeout: 15_000, windowsHide: true, env: childEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
     return /claude code/i.test(out);
   } catch {
     return false;

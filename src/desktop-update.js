@@ -6,6 +6,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, s
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
+import { childEnv } from './child-env.js';
+
 const CHECK_EVERY_MS = 30 * 60_000;
 const FIRST_CHECK_MS = 60_000;
 const MAX_INSTALLER_BYTES = 300 * 1024 * 1024;
@@ -210,6 +212,9 @@ export class DesktopUpdater {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,
+        // childEnv: Inno's [Run] starts the app again from here; nvm's `.nodejs` junction in PATH is what makes the
+        // first prompt after an update fail with EUNKNOWN lstat pwsh.exe.
+        env: childEnv(),
       });
       child.on('error', (err) => {
         this.set({ updating: false, installing: false, error: shortError(err) });

@@ -22,6 +22,14 @@ const readOnlyAllows = (path) => Boolean(readOnlyApi && (readOnlyApi.paths.inclu
 /** Whether this page may call `path` at all (false only for a read-only phone on WiFi and a path off its allowlist). */
 export const canCall = (path) => !state.readOnly || readOnlyAllows(path);
 
+/** The server refused a call: an Error with the HTTP `status` and the parsed JSON body (`error`, `code`, …). */
+function apiError(res, data) {
+  const err = new Error(typeof data.error === 'string' && data.error ? data.error : `HTTP ${res.status}`);
+  err.status = res.status;
+  err.data = data;
+  return err;
+}
+
 /**
  * POSTs JSON to the server. Resolves with the parsed JSON, or with a Blob when `raw` (images: ♪ album art).
  * A refused call throws an Error carrying `status` and the server's JSON (`data`: e.g. `code`, `retryAfter`).
@@ -35,12 +43,19 @@ export async function api(path, body = {}, { raw = false } = {}) {
   });
   if (raw && res.ok) return res.blob();
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(typeof data.error === 'string' && data.error ? data.error : `HTTP ${res.status}`);
-    err.status = res.status;
-    err.data = data;
-    throw err;
-  }
+  if (!res.ok) throw apiError(res, data);
+  return data;
+}
+
+/**
+ * GETs JSON from the server (reads that are not an action, e.g. polling /api/wa/status). Same token, same refusals
+ * as `api()`: a read-only phone is stopped here exactly like the POSTs are.
+ */
+export async function apiGet(path) {
+  if (!canCall(path)) throw new Error(`${READ_ONLY_HINT}.`);
+  const res = await fetch(path, { headers: { 'X-Office-Token': auth.token } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw apiError(res, data);
   return data;
 }
 

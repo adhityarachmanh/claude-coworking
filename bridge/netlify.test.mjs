@@ -6,6 +6,7 @@ import { createHash, createHmac } from 'node:crypto';
 import { after, test } from 'node:test';
 import vm from 'node:vm';
 import { handleApi, scheduledSweep } from './src/bridge.mjs';
+import { readPlugStatus } from './src/tuya.mjs';
 import { decryptCreds, decryptSecret, encryptCreds } from './src/vault.mjs';
 import * as store from './src/store.mjs';
 
@@ -16,18 +17,22 @@ const KEY = 'ab'.repeat(32); // ENCRYPTION_KEY 32-byte hex
 
 const calls = [];
 let powerW = 45;
+let plugOn = true; // keadaan saklar plug di fake: /commands mengubahnya, /status melaporkannya
 const realFetch = globalThis.fetch;
 after(() => { globalThis.fetch = realFetch; });
 
 const res = (j) => ({ json: async () => j });
 /** Fake Tuya. `opts` membuat kegagalan terkontrol untuk tes validasi kredensial:
  *  tokenRejected (sign/region salah), deviceMissing (token lolos, device tidak ada di project),
- *  notAPlug (tanpa switch_1/switch), networkError (fetch melempar, mis. DNS/timeout). */
+ *  notAPlug (tanpa switch_1/switch), networkError (fetch melempar, mis. DNS/timeout), commandFail
+ *  (komando plug ditolak), statusPayload (hasil /status kustom — mis. parsing lewat nomor DP `id`). */
 const fakeTuya = (opts = {}) => {
   calls.length = 0;
+  plugOn = true; // tiap skenario mulai dengan plug ON (fake tidak bicara dengan perangkat sungguhan)
   globalThis.fetch = async (url, init) => {
     const u = String(url);
-    calls.push({ url: u, method: init?.method ?? 'GET', body: init?.body ? JSON.parse(init.body) : null, headers: init?.headers ?? {} });
+    const body = init?.body ? JSON.parse(init.body) : null;
+    calls.push({ url: u, method: init?.method ?? 'GET', body, headers: init?.headers ?? {} });
     if (opts.networkError) throw new TypeError('fetch failed'); // seperti DNS mati / AbortSignal.timeout
     if (u.includes('/v1.0/token')) {
       // `goodHost` models the real rule: a Cloud Project's credentials only work in its own data center.
@@ -36,15 +41,22 @@ const fakeTuya = (opts = {}) => {
       if (opts.tokenBusy) return res({ success: false, code: 28841002, msg: 'quota limit reached' });
       return res({ success: true, result: { access_token: 'tok-1' } });
     }
-    if (u.includes('/energy/electricity/device/nodes/statistics-sum')) return res({ success: true, result: 12.34 });
-    if (u.includes('/energy/electricity/devices/nodes/statistics-trend')) {
-      return res({ success: true, result: [{ time: '20261114', value: 0.21 }, { time: '20261115', value: 0.15 }] });
+    if (u.includes('/commands')) {
+      if (!opts.commandFail) plugOn = Boolean(body?.commands?.[0]?.value);
+      return res({ success: true, result: true });
     }
-    if (u.includes('/commands')) return res({ success: true, result: true });
     if (u.includes('/status')) {
       if (opts.deviceMissing) return res({ success: false, code: 1106, msg: 'permission deny' });
       if (opts.notAPlug) return res({ success: true, result: [{ code: 'bright_value', value: 10 }] });
-      return res({ success: true, result: [{ code: 'switch_1', value: true }, { code: 'power', value: powerW }, { code: 'cur_voltage', value: 2141 }, { code: 'cur_current', value: 990 }] });
+      if (opts.statusPayload) return res({ success: true, result: opts.statusPayload });
+      // Payload gaya plug Bardi: `cur_power` 0,1 W · `cur_voltage` 0,1 V · `cur_current` mA · `add_ele` 0,01 kWh.
+      return res({ success: true, result: [
+        { code: 'switch_1', value: plugOn },
+        { code: 'cur_power', value: Math.round(powerW * 10) },
+        { code: 'cur_voltage', value: 2201 },
+        { code: 'cur_current', value: 990 },
+        { code: 'add_ele', value: 1234 },
+      ] });
     }
     return res({ success: true, result: null });
   };
@@ -761,7 +773,7 @@ test('status: a fresh 0 W sample beats an old-but-fresh heartbeat (normal shutdo
   const { body: { id, token } } = await doRegister(env);
   const now = Date.now();
   const space = await getSpace(env, id);
-  space.lastHeartbeat = now - 2 * 60_000; // still fresh (7 min), from just before the shutdown
+  space.lastHeartbeat = now - 60_000; // masih segar (ambang heartbeat 4 mnt), dari tepat sebelum shutdown
   space.powerW = 0;
   space.powerAt = now; // the reading came after the last beat
   space.lastPlug = 'off';
@@ -954,7 +966,7 @@ test('/api/status: bentuk kontrak lengkap (state + umur bukti); booting = power 
   const { body: { id, token } } = await doRegister(env);
   const now = Date.now();
   const space = await getSpace(env, id);
-  space.lastHeartbeat = now - 8 * 60_000; // basi: lebih tua dari HEARTBEAT_FRESH_MS (7 mnt)
+  space.lastHeartbeat = now - 8 * 60_000; // basi: lebih tua dari HEARTBEAT_FRESH_MS (4 mnt)
   space.powerW = 45;
   space.powerAt = now; // sampel segar
   space.powerTryAt = now; // sudah dicoba sekarang → apiStatus tidak memanggil Tuya
@@ -964,9 +976,9 @@ test('/api/status: bentuk kontrak lengkap (state + umur bukti); booting = power 
   const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
   assert.equal(st.status, 200);
   assert.deepEqual(Object.keys(st.body).sort(), [
-    'adhitronUrl', 'alive', 'booting', 'heartbeatAgeSec', 'heartbeatFresh', 'id', 'lastHeartbeat',
-    'needsAttention', 'offAt', 'offDelaySec', 'plug', 'powerAgeSec', 'powerAt', 'powerFresh', 'powerW',
-    'secondsUntilOff', 'state',
+    'adhitronUrl', 'alive', 'booting', 'currentMa', 'energyKwh', 'heartbeatAgeSec', 'heartbeatFresh', 'id',
+    'lastHeartbeat', 'needsAttention', 'offAt', 'offDelaySec', 'plug', 'powerAgeSec', 'powerAt', 'powerFresh',
+    'powerW', 'secondsUntilOff', 'state', 'switchOn', 'voltageV',
   ]);
   assert.equal(st.body.alive, true, 'listrik mengalir > ambang boot = PC hidup walau tanpa heartbeat');
   assert.equal(st.body.state, 'booting', 'state eksplisit untuk halaman');
@@ -1053,6 +1065,57 @@ test('status: daya 45 W segar + heartbeat basi → suspected-alive (< 30 dtk), l
   assert.equal(boot.body.booting, true);
 });
 
+test('status: switch_1 OFF dari plug menang atas heartbeat segar → off (arus bisa diputus dari aplikasi Bardi)', async () => {
+  const env = makeEnv();
+  fakeTuya({ statusPayload: [{ code: 'switch_1', value: false }, { code: 'cur_power', value: 0 }] });
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  const space = await getSpace(env, id);
+  space.lastHeartbeat = now - 30_000; // masih segar (< 4 mnt) — bukti saklar tetap menang
+  space.powerTryAt = 0; // /api/status mengambil sampel nyata dari plug
+  await store.putSpace(env, space);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.body.switchOn, false);
+  assert.equal(st.body.state, 'off');
+  assert.equal(st.body.alive, false);
+  assert.equal(st.body.plug, 'off', 'lastPlug ikut switch_1, bukan hanya perintah dari bridge');
+});
+
+test('status: cur_power 124 (12,4 W) → standby + hanya tombol Putus paksa (bukan "PC hidup")', async () => {
+  const env = makeEnv();
+  fakeTuya({ statusPayload: [{ code: 'switch_1', value: true }, { code: 'cur_power', value: 124 }] });
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  const space = await getSpace(env, id);
+  space.lastHeartbeat = now - 30_000; // segar: 10–15 W tetap standby (bukan bukti PC hidup)
+  space.powerTryAt = 0;
+  await store.putSpace(env, space);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.body.powerW, 12.4, 'cur_power adalah 0,1 W → 12,4 W');
+  assert.equal(st.body.state, 'standby');
+  assert.equal(st.body.alive, false);
+  const html = await (await handleApi(req(`/s/${id}?token=${token}`), env)).text();
+  assert.match(blockOf(html, 'state'), /Standby/);
+  assert.match(blockOf(html, 'btns'), /Putus paksa/);
+  assert.equal(blockOf(html, 'btns').includes('Putus arus listrik'), false, 'standby tidak menawarkan putus arus biasa');
+});
+
+test('status: cur_power 450 (45 W) + heartbeat segar → alive', async () => {
+  const env = makeEnv();
+  fakeTuya({ statusPayload: [{ code: 'switch_1', value: true }, { code: 'cur_power', value: 450 }] });
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  const space = await getSpace(env, id);
+  space.lastHeartbeat = now - 30_000;
+  space.powerTryAt = 0;
+  await store.putSpace(env, space);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.body.powerW, 45);
+  assert.equal(st.body.switchOn, true);
+  assert.equal(st.body.state, 'alive');
+  assert.equal(st.body.alive, true);
+});
+
 test('status: plug tercatat OFF + offAt null + heartbeat 20 mnt → off (walau belum ada sampel daya)', async () => {
   const env = makeEnv();
   fakeTuya();
@@ -1127,7 +1190,7 @@ test('/api/on: PC masih hidup → 409 TANPA memanggil Tuya; ?force=1 menyiklus O
   const { body: { id, token } } = await doRegister(env);
   const now = Date.now();
   const space = await getSpace(env, id);
-  space.lastHeartbeat = now - 60_000; // segar (< 7 mnt)
+  space.lastHeartbeat = now - 60_000; // segar (< 4 mnt)
   space.powerTryAt = now;
   await store.putSpace(env, space);
   calls.length = 0;
@@ -1321,45 +1384,91 @@ test('signature Tuya: header `t`, token memakai hash body kosong, command memaka
   assert.equal(command.headers.sign, mac(CID + 'tok-1' + command.headers.t + 'POST\n' + sha(commandBody) + urlPart(`/v1.0/devices/${DEVICE}/commands`)), 'command: hash body JSON + path');
 });
 
-test('GET /api/energy: daya/voltase/arus + kWh hari/bulan + tren, dan cache 60 dtk', async () => {
+test('GET /api/energy: monitoring realtime dari SATU device status (IoT Core gratis) + cache 5 dtk', async () => {
   const env = makeEnv();
   fakeTuya();
   powerW = 237;
   const { body: { token } } = await doRegister(env);
   fakeTuya(); // register made its own calls; start the energy window clean
-  const r = await statusOf(await handleApi(req('/api/energy?range=week&tz=Asia/Jakarta', { headers: { 'X-Bridge-Token': token } }), env));
+  const r = await statusOf(await handleApi(req('/api/energy?range=year&tz=Asia/Jakarta', { headers: { 'X-Bridge-Token': token } }), env));
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.ok, true);
-  assert.equal(r.body.now.powerW, 237);
-  assert.equal(r.body.now.voltageV, 214.1);
-  assert.equal(r.body.now.currentMa, 990);
-  assert.equal(r.body.todayKwh, 12.34);
-  assert.equal(r.body.monthKwh, 12.34);
-  assert.equal(r.body.trend.length, 2);
+  assert.deepEqual(r.body, {
+    ok: true,
+    now: { powerW: 237, voltageV: 220.1, currentMa: 990 },
+    switchOn: true,
+    energyKwh: 12.34,
+    updatedAt: r.body.updatedAt,
+  });
+  assert.ok(Number.isFinite(r.body.updatedAt));
+  // Hanya SATU panggilan device status: tanpa statistik Power Management (berbayar) dan tanpa argumen range.
+  assert.equal(calls.filter((c) => c.url.includes('/status')).length, 1, 'satu panggilan device status');
   assert.deepEqual(cmdValues(), [], 'read-only: tidak ada perintah ke plug');
-  const statusCalls = calls.filter((c) => c.url.includes('/status')).length;
-  const energyCalls = calls.filter((c) => c.url.includes('/energy/')).length;
-  assert.ok(statusCalls >= 1 && energyCalls === 3, 'status + 2 sum + 1 trend');
   calls.length = 0;
-  const again = await statusOf(await handleApi(req('/api/energy?range=week&tz=Asia/Jakarta', { headers: { 'X-Bridge-Token': token } }), env));
-  assert.equal(again.body.todayKwh, 12.34);
-  assert.equal(calls.length, 0, 'cache 60 dtk: tidak memanggil Tuya lagi');
+  const again = await statusOf(await handleApi(req('/api/energy', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.deepEqual(again.body, r.body, 'cache 5 dtk: jawaban sama');
+  assert.equal(calls.length, 0, 'cache menahan kuota Tuya (tidak poll terus-menerus)');
 });
 
-test('GET /api/energy: device tanpa izin statistik → ok:false dengan kode, halaman tetap hidup', async () => {
+test('GET /api/energy: Tuya gagal → ok:false pesan generik (tanpa kode/JSON upstream), status tetap hidup', async () => {
   const env = makeEnv();
   fakeTuya();
   const { body: { id, token } } = await doRegister(env);
   fakeTuya({ deviceMissing: true });
-  const r = await statusOf(await handleApi(req('/api/energy?range=year', { headers: { 'X-Bridge-Token': token } }), env));
+  const r = await statusOf(await handleApi(req('/api/energy', { headers: { 'X-Bridge-Token': token } }), env));
   assert.equal(r.status, 200);
   assert.equal(r.body.ok, false);
-  assert.match(r.body.error, /Power Management|kode Tuya/);
+  assert.deepEqual(Object.keys(r.body).sort(), ['error', 'ok'], 'kontrak error: hanya ok + error');
+  assert.doesNotMatch(r.body.error, /1106|kode Tuya|permission|Client ID|Secret|JSON/i);
   const status = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
-  assert.equal(status.status, 200, 'kegagalan energi tidak merusak status');
+  assert.equal(status.status, 200, 'kegagalan listrik tidak merusak status');
   const page = await handleApi(req(`/s/${id}?token=${token}`), env);
   assert.equal(page.status, 200);
-  assert.match(await page.text(), /Energi Bardi/);
+  assert.match(await page.text(), /Listrik Bardi/);
+});
+
+test('Tuya: tidak ada satu pun panggilan ke endpoint statistik energi berbayar (penyebab 28841101)', async () => {
+  // Regresi untuk keluhan "Statistik energi belum tersedia dari Tuya … (kode Tuya 28841101)". Akun ini hanya punya
+  // paket IoT Core gratis: endpoint Power Management (/v1.0/iot-03/energy/...) harus NOL panggilan, dari rute mana pun.
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { token } } = await doRegister(env);
+  fakeTuya(); // jendela bersih: hanya panggilan dari rute di bawah yang diperiksa
+  for (const path of ['/api/status', '/api/energy']) {
+    const r = await statusOf(await handleApi(req(path, { headers: { 'X-Bridge-Token': token } }), env));
+    assert.equal(r.status, 200, `${path} tetap melayani`);
+  }
+  assert.ok(calls.length > 0, 'rute di atas memang memanggil Tuya (kalau tidak, tes ini tidak membuktikan apa pun)');
+  const offenders = calls.filter(({ url }) => /\/iot-03\/energy|\/energy\/electricity|\/statistics/i.test(new URL(url).pathname));
+  assert.deepEqual(offenders.map((c) => c.url), [], 'endpoint statistik energi tidak boleh dipanggil');
+  const allowed = new Set(['/v1.0/token', `/v1.0/devices/${DEVICE}/status`]);
+  for (const { url } of calls) assert.ok(allowed.has(new URL(url).pathname), `endpoint tak terduga: ${url}`);
+});
+
+test('readPlugStatus: parsing lewat nomor DP (`id`) tanpa `code` — saklar, daya, tegangan, arus, kWh', async () => {
+  fakeTuya({ statusPayload: [
+    { id: 1, value: true },
+    { id: 19, value: 124 },
+    { id: 20, value: 2201 },
+    { id: 18, value: 990 },
+    { id: 17, value: 1234 },
+  ] });
+  const cfg = { region: 'eu', clientId: CID, clientSecret: SECRET, deviceId: DEVICE };
+  assert.deepEqual(await readPlugStatus(cfg), {
+    switchOn: true, powerW: 12.4, voltageV: 220.1, currentMa: 990, energyKwh: 12.34,
+  });
+  assert.equal(calls.filter((c) => c.url.includes('/status')).length, 1, 'satu panggilan device status (IoT Core)');
+});
+
+test('readPlugStatus: field opsional hilang → null (tidak melempar); `switch` dipakai bila `switch_1` absen', async () => {
+  const cfg = { region: 'eu', clientId: CID, clientSecret: SECRET, deviceId: DEVICE };
+  fakeTuya({ statusPayload: [{ code: 'switch', value: false }] });
+  assert.deepEqual(await readPlugStatus(cfg), {
+    switchOn: false, powerW: null, voltageV: null, currentMa: null, energyKwh: null,
+  }, 'plug tanpa sensor daya: saklar terbaca, metering null');
+  fakeTuya({ statusPayload: [] });
+  assert.deepEqual(await readPlugStatus(cfg), {
+    switchOn: null, powerW: null, voltageV: null, currentMa: null, energyKwh: null,
+  }, 'tidak ada DP sama sekali pun tidak boleh membuat pembacaan gagal');
 });
 
 // ---------------------------------------------------------------- halaman

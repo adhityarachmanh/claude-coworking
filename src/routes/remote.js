@@ -5,9 +5,12 @@ import { networkAddresses } from '../remote.js';
 import { json } from './http.js';
 
 export function register(router) {
-  router.post('/api/remote', ({ remote, tls, push, syncListeners, publishConfig, remoteInfo }, req, res, params, body) => {
+  router.post('/api/remote', ({ remote, tls, push, syncListeners, publishConfig, remoteInfo, accessPin }, req, res, params, body) => {
     remote.setEnabled(Boolean(body.enabled));
-    if (!remote.enabled) push?.forgetAll(); // no notification button stays usable while phone access is off
+    if (!remote.enabled) {
+      push?.forgetAll(); // no notification button stays usable while phone access is off
+      accessPin?.clear(); // and a live PIN must not survive the switch-off (a new phone could still use it)
+    }
     syncListeners();
     if (remote.enabled) tls.refresh(); // in the background; a certificate brings the https listener up (onChange)
     publishConfig();
@@ -37,11 +40,12 @@ export function register(router) {
   // pushes itself (announce: false) so the response can say whether the push went out (the toast tells the truth).
   // A named handler, like pairing(): tests can call it directly — server.js boots a full app at import, too heavy.
   router.post('/api/pairing/code/push', pairingCodePush, { maxBody: 1024 });
-  router.post('/api/remote/revoke', ({ remote, push, dropDeviceStreams, publishConfig }, req, res, params, body) => {
+  router.post('/api/remote/revoke', ({ remote, push, dropDeviceStreams, publishConfig, accessPin }, req, res, params, body) => {
     const id = String(body.id ?? '');
     remote.revoke(id); // its push subscription lives on the record: gone with it
     push?.forgetDevice(id); // and its notification buttons (action tokens)
     dropDeviceStreams(id); // its open event streams end now, not at the next reconnect
+    accessPin?.clear(); // revoking is an owner decision: any pending PIN is spent
     publishConfig();
     return json(res, 200, { ok: true });
   });

@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, wri
 import os from 'node:os';
 import path from 'node:path';
 import { execFileTree } from './proc.js';
+import { childEnv } from './child-env.js';
 
 export class AdminError extends Error {
   constructor(status, message) {
@@ -17,7 +18,7 @@ export class AdminError extends Error {
 export function runClaude(bin, args, { cwd, timeout = 120_000 } = {}) {
   if (!bin) return Promise.reject(new AdminError(404, 'Claude Code tidak ditemukan.'));
   return new Promise((resolve) => {
-    execFileTree(bin.command, [...bin.args, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024, env: { ...process.env, CI: '1', NO_COLOR: '1' } }, (error, out, err) => {
+    execFileTree(bin.command, [...bin.args, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024, env: childEnv({ CI: '1', NO_COLOR: '1' }) }, (error, out, err) => {
       const strip = (s) => String(s ?? '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
       resolve({ ok: !error, timedOut: Boolean(error?.killed), out: strip(out), err: strip(err) });
     });

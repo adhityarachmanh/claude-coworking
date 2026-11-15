@@ -9,7 +9,7 @@ Perkiraan waktu: **20 menit**. Siapkan satu HP (Android atau iPhone) dan laptop 
 ## Persiapan
 
 1. Laptop: pastikan **Tailscale** tersambung dan HTTPS aktif (📱 → 🔒 Tailscale (HTTPS)).
-2. HP: Tailscale menyala, lalu pairing lewat QR atau kode 6 digit.
+2. HP: Tailscale menyala, lalu pairing lewat QR, kode 6 digit, atau **PIN WhatsApp** (kalau WhatsApp sudah ditautkan dari laptop — lihat [pairing-whatsapp.md](pairing-whatsapp.md)).
 3. Catat perangkat dan versi browser di tabel hasil.
 4. Kosongkan antrian dan pastikan tidak ada giliran berjalan supaya notifikasi mudah dipicu.
 
@@ -19,6 +19,13 @@ Perkiraan waktu: **20 menit**. Siapkan satu HP (Android atau iPhone) dan laptop 
 
 - [ ] Halaman terbuka lewat HTTPS, tidak ada peringatan sertifikat.
 - [ ] Pairing berhasil; setelah tutup-buka browser, HP masih diingat (tidak minta kode lagi).
+- [ ] Jalur `Punya kode 6 digit dari layar laptop?` (terlipat) masih berfungsi.
+- [ ] *Kalau WhatsApp ditautkan:* **📲 Kirim PIN ke WhatsApp** mengirim PIN 6 digit, verifikasi berhasil, dan PIN yang
+      sama **ditolak di browser lain** (`Kode ini diminta dari perangkat lain`) — PIN terikat ke browser peminta.
+- [ ] *Kalau WhatsApp ditautkan:* PIN salah 3× → PIN hangus dan harus minta PIN baru; tombol kirim ulang menunggu 60 detik.
+- [ ] *Kalau WhatsApp belum ditautkan atau sesinya dicabut dari HP:* tombol PIN mati sendiri dan halaman menyuruh memakai kode laptop.
+- [ ] Perangkat tailnet yang sudah dikenal: hapus cookie situs, buka `/pair` lagi lewat HTTPS Tailscale →
+      kembali ke beranda tanpa kode, dan jumlah perangkat di 📱 tidak bertambah.
 - [ ] Header HP: nama project + subjudul sesi + **⋯**; navigasi bawah terlihat.
 - [ ] Lebar 390 px tanpa scroll horizontal.
 

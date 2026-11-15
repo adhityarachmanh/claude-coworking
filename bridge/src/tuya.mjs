@@ -3,6 +3,10 @@
 // vault.mjs. Logika Tuya dipakai ulang apa adanya: HMAC-SHA256 dua lapis (token lalu komando),
 // ON disiklus OFF → ON karena BIOS butuh kejadian listrik baru.
 // Kredensial tidak pernah di-log dan tidak pernah masuk respons HTTP.
+//
+// HANYA endpoint IoT Core GRATIS yang dipakai: `GET /v1.0/devices/{id}/status` dan
+// `POST /v1.0/devices/{id}/commands`. API statistik energi Power Management BERBAYAR dan tidak
+// tersedia untuk akun ini, jadi sengaja TIDAK dipanggil sama sekali.
 
 // Tuya punya 7 data center (bukan 3): kredensial/Cloud Project hanya valid di DC tempat project dibuat.
 // Kunci lama (eu/america/asia) DIPERTAHANKAN supaya record space yang sudah ada tetap terbaca.
@@ -70,6 +74,9 @@ export class TuyaError extends Error {
 
 const TUYA_TIMEOUT_MS = 10_000; // B5: Tuya tidak boleh menggantung request sampai timeout platform
 const devicePath = (cfg) => `/v1.0/devices/${encodeURIComponent(cfg.deviceId)}`; // ID user tidak boleh mengubah path
+
+/** Nomor DP standar smart plug Tuya: dipakai kalau payload hanya membawa `id` (tanpa `code`). */
+const DP_ID = { switchOn: 1, energyKwh: 17, currentMa: 18, powerW: 19, voltageV: 20 };
 
 // Kode error Tuya IoT Cloud yang dikenal → kelas pesan aman (tanpa JSON mentah / kredensial).
 const TUYA_SIGN_CODES = new Set([1004, 1005, 1006, 1010, 1011, 1012]); // sign / client id / timestamp / token
@@ -195,7 +202,10 @@ export async function verifyCreds(cfg, { timeoutMs = 5000 } = {}) {
   const codes = Array.isArray(status) ? status : [];
   const sw = codes.find((c) => c.code === 'switch_1' || c.code === 'switch');
   if (!sw) throw new TuyaError('NOT_A_PLUG', PUBLIC_MESSAGE.NOT_A_PLUG);
-  return { switchCode: sw.code, hasPowerMeter: codes.some((c) => c.code === 'power' || c.code === 'power_current') };
+  // Plug Bardi melaporkan `cur_power` (DP 19), bukan `power`/`power_current` firmware lama.
+  const hasPowerMeter = codes.some((c) => c.code === 'cur_power' || c.code === 'power'
+    || c.code === 'power_current' || c.id === DP_ID.powerW);
+  return { switchCode: sw.code, hasPowerMeter };
 }
 
 /** Cari data center yang benar dengan mencoba ketujuh endpoint Tuya secara paralel (read-only: tiap percobaan
@@ -240,65 +250,55 @@ export async function tuyaPlugState(cfg) {
   return typeof on === 'boolean' ? (on ? 'on' : 'off') : null;
 }
 
-/** Daya terukur plug (watt), atau null kalau plug tidak punya sensor daya.
- * Catatan: sebagian firmware melapor dalam 0,1 W — nilai apa adanya dipakai, ambang 5 W (spesifikasi). */
-export async function readPowerW(cfg) {
-  const status = await tuyaRequest(cfg, `${devicePath(cfg)}/status`);
-  const codes = Array.isArray(status) ? status : [];
-  const code = codes.find((c) => c.code === 'power' || c.code === 'power_current');
-  return typeof code?.value === 'number' ? code.value : null;
+/** Cari satu datapoint numerik: nama `code` lebih dulu, lalu nomor DP `id`.
+ *  Tidak pernah melempar — field yang absen/non-numerik dianggap tidak ada (null). */
+function findDp(codes, names, ids) {
+  for (const name of names) {
+    const found = codes.find((c) => c && c.code === name && Number.isFinite(c.value));
+    if (found) return { value: found.value, code: name };
+  }
+  for (const id of ids) {
+    const found = codes.find((c) => c && c.id === id && Number.isFinite(c.value));
+    if (found) return { value: found.value, code: null };
+  }
+  return null;
 }
 
-/** Query string dengan KEY DIURUTKAN alfabetis — Tuya menandatangani URL persis seperti yang dikirim. */
-const sortedQuery = (params) => Object.keys(params).sort().map((k) => `${k}=${encodeURIComponent(String(params[k]))}`).join('&');
+/** Saklar bisa boolean (Tuya normal) atau 0/1 (sebagian firmware): selain itu → null (tidak diketahui). */
+const asSwitch = (value) => (typeof value === 'boolean' ? value : value === 1 || value === 0 ? value === 1 : null);
 
-/** Status listrik saat ini dari /status (plug metering Bardi). Skala firmware Tuya: `cur_power` 0,1 W,
- *  `cur_voltage` 0,1 V, `cur_current` mA; sebagian firmware memakai `power`/`voltage`/`current` apa adanya. */
-export async function readEnergyNow(cfg) {
+/** Status plug lengkap dari SATU panggilan `GET /devices/{id}/status` (IoT Core, gratis).
+ *  Cocok lewat `code` MAUPUN nomor DP `id`, karena firmware Bardi melaporkan `cur_power`/`add_ele`
+ *  dan sebagian gateway hanya meneruskan `id`. Skala firmware Tuya: `cur_power` 0,1 W,
+ *  `cur_voltage` 0,1 V, `cur_current` mA, `add_ele` 0,01 kWh. Field opsional yang hilang → null
+ *  (plug tanpa sensor daya tidak boleh membuat pembacaan gagal). */
+export async function readPlugStatus(cfg) {
   const status = await tuyaRequest(cfg, `${devicePath(cfg)}/status`, 'GET', null, 6000);
   const codes = Array.isArray(status) ? status : [];
-  const pick = (...names) => {
-    for (const name of names) {
-      const found = codes.find((c) => c.code === name);
-      if (found && typeof found.value === 'number' && Number.isFinite(found.value)) return { value: found.value, code: name };
-    }
-    return null;
-  };
-  const power = pick('cur_power', 'power', 'power_current');
-  const current = pick('cur_current', 'current');
-  const voltage = pick('cur_voltage', 'voltage');
-  const powerW = power ? (power.code === 'cur_power' ? power.value / 10 : power.value) : null;
-  const voltageV = voltage ? (voltage.code === 'cur_voltage' ? voltage.value / 10 : (voltage.value > 1000 ? voltage.value / 10 : voltage.value)) : null;
+  const sw = codes.find((c) => c.code === 'switch_1')
+    ?? codes.find((c) => c.code === 'switch') // firmware lama: `switch_1` absen, `switch` dipakai
+    ?? codes.find((c) => c.id === DP_ID.switchOn);
+  const power = findDp(codes, ['cur_power', 'power', 'power_current'], [DP_ID.powerW]);
+  const voltage = findDp(codes, ['cur_voltage', 'voltage'], [DP_ID.voltageV]);
+  const current = findDp(codes, ['cur_current', 'current'], [DP_ID.currentMa]);
+  const energy = findDp(codes, ['add_ele'], [DP_ID.energyKwh]);
+  // `cur_power` (dan DP 19 tanpa code) selalu 0,1 W; `power`/`power_current` firmware lama sudah watt.
+  const powerW = power ? (power.code === 'cur_power' || power.code === null ? power.value / 10 : power.value) : null;
+  // `cur_voltage` (dan DP 20) selalu 0,1 V; `voltage` lama kadang mV.
+  const voltageV = voltage
+    ? (voltage.code === 'cur_voltage' || voltage.code === null ? voltage.value / 10 : (voltage.value > 1000 ? voltage.value / 10 : voltage.value))
+    : null;
   // `current` tanpa awalan `cur_` biasanya ampere; `cur_current` selalu mA.
-  const currentMa = current ? (current.code === 'cur_current' ? current.value : (current.value < 20 ? current.value * 1000 : current.value)) : null;
+  const currentMa = current
+    ? (current.code === 'cur_current' || current.code === null ? current.value : (current.value < 20 ? current.value * 1000 : current.value))
+    : null;
   return {
+    switchOn: asSwitch(sw?.value),
     powerW: powerW === null ? null : Math.round(powerW * 10) / 10,
-    currentMa: currentMa === null ? null : Math.round(currentMa),
     voltageV: voltageV === null ? null : Math.round(voltageV * 10) / 10,
+    currentMa: currentMa === null ? null : Math.round(currentMa),
+    energyKwh: energy === null ? null : Math.round(energy.value) / 100,
   };
-}
-
-/** Total konsumsi listrik (kWh) satu device dalam rentang. `statisticsType`: day/month. */
-export async function readEnergySum(cfg, { statisticsType, startTime, endTime }) {
-  const query = sortedQuery({
-    contain_childs: 'false', device_ids: cfg.deviceId, end_time: endTime, energy_action: 'consume',
-    start_time: startTime, statistics_type: statisticsType,
-  });
-  const value = await tuyaRequest(cfg, `/v1.0/iot-03/energy/electricity/device/nodes/statistics-sum?${query}`, 'GET', null, 6000);
-  return typeof value === 'number' ? value : 0;
-}
-
-/** Tren konsumsi listrik (kWh) per titik waktu. `statisticsType`: day (maks 7 hari) / month (maks 12 bulan). */
-export async function readEnergyTrend(cfg, { statisticsType, startTime, endTime }) {
-  const query = sortedQuery({
-    contain_childs: 'false', device_ids: cfg.deviceId, end_time: endTime, energy_action: 'consume',
-    start_time: startTime, statistics_type: statisticsType,
-  });
-  const result = await tuyaRequest(cfg, `/v1.0/iot-03/energy/electricity/devices/nodes/statistics-trend?${query}`, 'GET', null, 6000);
-  const rows = Array.isArray(result) ? result : [];
-  return rows
-    .filter((r) => r && typeof r.time === 'string')
-    .map((r) => ({ time: r.time, value: typeof r.value === 'number' ? r.value : 0 }));
 }
 
 /** Set plug. ON saat plug sudah ON disiklus OFF → ON: BIOS butuh kejadian listrik baru untuk boot. */export async function tuyaSetPlug(cfg, on, waitMs = 2000) {

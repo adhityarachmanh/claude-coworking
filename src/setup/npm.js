@@ -8,6 +8,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { SETUP_TARGETS } from './packages.js';
+import { childEnv } from '../child-env.js';
 import { runCapturedProcess } from './process.js';
 import { cancelledError } from './runtime.js';
 
@@ -204,7 +205,8 @@ export async function installNpmPackage({ runtime, spec, signal, timeoutMs = 600
     result = await runCapturedProcess({
       command: nodeBinary(runtime.node),
       args,
-      env: hardenedNpmEnv(process.env, { cache: runtime.npmCache }),
+      // childEnv: npm and its lifecycle scripts must not inherit nvm's `.nodejs` junction (EUNKNOWN lstat pwsh.exe).
+      env: hardenedNpmEnv(childEnv(), { cache: runtime.npmCache }),
       cwd: runtime.tmpDir,
       timeoutMs,
       signal,

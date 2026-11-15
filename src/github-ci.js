@@ -3,6 +3,7 @@
 // carries `ci` ({ state: 'running'|'success'|'failure'|'none'|'login', runs, sha, url }) for the chip in the Changes tab;
 // the chat gets one line when they finish. Read-only: nothing is re-run or changed on GitHub.
 import { execFileTree } from './proc.js';
+import { childEnv } from './child-env.js';
 
 const POLL_MS = 20_000;
 const FIRST_MS = 8000; // GitHub needs a moment to register the runs of a fresh push
@@ -13,7 +14,7 @@ const asNode = (bin) => (/\.[cm]?js$/.test(bin) ? { command: process.execPath, p
 
 function exec(command, args, cwd, timeout = 30_000) {
   return new Promise((resolve) => {
-    execFileTree(command, args, { cwd, encoding: 'utf8', timeout, windowsHide: true, env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1', GH_NO_UPDATE_NOTIFIER: '1', GIT_TERMINAL_PROMPT: '0' } }, (err, out, errOut) =>
+    execFileTree(command, args, { cwd, encoding: 'utf8', timeout, windowsHide: true, env: childEnv({ GH_PROMPT_DISABLED: '1', NO_COLOR: '1', GH_NO_UPDATE_NOTIFIER: '1', GIT_TERMINAL_PROMPT: '0' }) }, (err, out, errOut) =>
       resolve({ ok: !err, out: String(out ?? ''), err: String(errOut ?? '') }),
     );
   });

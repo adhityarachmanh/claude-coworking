@@ -13,6 +13,7 @@ import { mkdtempSync, rmSync as rmSyncDefault } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { classify as classifyWith, sanitize } from './claude-contract.js';
+import { childEnv } from './child-env.js';
 import { CLIENT_CAPABILITIES, permissionConfig } from './acp-session.js';
 import { execFileTree, killTree } from './proc.js';
 
@@ -70,7 +71,7 @@ export function readOpenCodeVersion(bin, { timeoutMs = DEFAULT_TIMEOUTS.version,
   if (track?.aborted()) return Promise.resolve({ version: null, error: ABORTED });
   return new Promise((resolve) => {
     try {
-      const child = execFileImpl(bin.command, [...bin.args, '--version'], { timeout: timeoutMs, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024, env: { ...env, OPENCODE_DISABLE_AUTOUPDATE: '1' } }, (err, stdout) => {
+      const child = execFileImpl(bin.command, [...bin.args, '--version'], { timeout: timeoutMs, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024, env: childEnv({ OPENCODE_DISABLE_AUTOUPDATE: '1' }, env) }, (err, stdout) => {
         if (err) return resolve({ version: null, error: err.killed || err.signal ? `timeout setelah ${timeoutMs} ms` : sanitize(err.code ?? err.message) });
         const version = parseOpenCodeVersion(stdout);
         resolve(version ? { version, error: null } : { version: null, error: `output tak dikenal: ${sanitize(stdout, 80)}` });
@@ -394,16 +395,17 @@ export async function runOpenCodeContract({ bin, profile = 'light', env = proces
   // The CLI runs never use the throwaway folder as cwd: a lingering process there would block removing it.
   const cliCwd = os.tmpdir();
   // As src/acp-session.js runs it: no self-update, the app's permission layer (manual: "ask") per process only.
-  const childEnv = { ...env, OFFICE_MANAGED: '1', OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: permissionConfig('manual') }) };
+  // childEnv cleans the inherited PATH (nvm's `.nodejs` junction → EUNKNOWN lstat pwsh.exe) before every spawn.
+  const cliEnv = childEnv({ OFFICE_MANAGED: '1', OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: permissionConfig('manual') }) }, env);
   let sessionId = null;
   try {
-    let acp = openAcp(bin, { cwd: dir, env: childEnv, deadline, track });
+    let acp = openAcp(bin, { cwd: dir, env: cliEnv, deadline, track });
     try {
       let hs = await handshake(acp, check, { t, cwd: dir });
       if (hs.error && acp.hasExited() && Date.now() < deadline && !track.aborted()) {
         // Cold start (the first `opencode` call brings up its background service): one fresh process.
         await acp.close(t.exit);
-        acp = openAcp(bin, { cwd: dir, env: childEnv, deadline, track });
+        acp = openAcp(bin, { cwd: dir, env: cliEnv, deadline, track });
         hs = await handshake(acp, check, { t, cwd: dir });
       }
       if (hs.error) check(CHECKS.launch, false, track.aborted() ? ABORTED : hs.error);
@@ -418,10 +420,10 @@ export async function runOpenCodeContract({ bin, profile = 'light', env = proces
     } finally {
       await acp.close(t.exit);
     }
-    if (launched(checks) && !track.aborted()) await cliChecks(bin, check, { t, cwd: cliCwd, env: childEnv, track, budget });
+    if (launched(checks) && !track.aborted()) await cliChecks(bin, check, { t, cwd: cliCwd, env: cliEnv, track, budget });
   } finally {
     // The throwaway session is not history anyone wants (best effort, short, never after a stop).
-    if (sessionId && !track.aborted()) await runCli(bin, ['api', 'session.remove', '--param', `sessionID=${sessionId}`], { cwd: cliCwd, env: childEnv, timeoutMs: budget(Math.min(t.cli, 30_000), 5_000), track });
+    if (sessionId && !track.aborted()) await runCli(bin, ['api', 'session.remove', '--param', `sessionID=${sessionId}`], { cwd: cliCwd, env: cliEnv, timeoutMs: budget(Math.min(t.cli, 30_000), 5_000), track });
     try {
       rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     } catch {

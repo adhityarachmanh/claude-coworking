@@ -2,6 +2,7 @@
 // child (on Windows: TerminateProcess on that one pid), so a CLI that started a shell, a test runner or a node
 // grandchild leaves it running, and that grandchild may keep the stdout pipe open so the callback never comes.
 import { execFile, spawn } from 'node:child_process';
+import { childEnv } from './child-env.js';
 
 const WIN = process.platform === 'win32';
 
@@ -35,6 +36,11 @@ const PIPE_GRACE_MS = 5000;
  * execFile; on a timeout `err.killed` is true (as with execFile's own timeout), so callers need no change. A run
  * that finished normally just as the timer fired keeps its normal result. The child's stdin is closed at once (see
  * below), so this helper is for commands whose input is in argv — not for feeding a CLI through stdin.
+ *
+ * The child always gets a cleaned environment (src/child-env.js) unless the caller passes its own `env`: the
+ * inherited PATH may carry nvm-windows' `.nodejs` junction, which makes libuv fail to `lstat` a path inside it
+ * (`EUNKNOWN: unknown error, lstat '...\nvm\.nodejs\pwsh.exe'`) — the "Internal error" on the first prompt after
+ * an in-app update. A central default here covers every wrapper that spawns a CLI, present and future.
  */
 export function execFileTree(command, args, { timeout = 0, ...options } = {}, callback = () => {}) {
   let timedOut = false;
@@ -42,7 +48,7 @@ export function execFileTree(command, args, { timeout = 0, ...options } = {}, ca
   let grace = null;
   // POSIX: its own process group, so killTree(-pid) reaches the grandchildren. Windows: unchanged (detached
   // would give it a console of its own; taskkill /T already follows the tree).
-  const child = execFile(command, args, { ...options, ...(WIN ? {} : { detached: true }) }, (err, out, errOut) => {
+  const child = execFile(command, args, { ...options, env: options.env ?? childEnv(), ...(WIN ? {} : { detached: true }) }, (err, out, errOut) => {
     clearTimeout(timer);
     clearTimeout(grace);
     if (err && timedOut) err.killed = true;

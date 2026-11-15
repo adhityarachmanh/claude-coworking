@@ -14,7 +14,7 @@ Cara kerja singkat:
 
 1. **Nyalakan**: plug **ON** → BIOS *Restore on AC Power Loss = Power On* membuat PC boot sendiri. Plug yang sudah ON disikluskan OFF → ON agar BIOS mendapat kejadian listrik baru.
 2. **Matikan**: pemicu menulis jadwal `offAt` (default 5 menit), lalu **cron tiap menit** mengeksekusinya — tetap tepat waktu walaupun PC (dan Adhitron) sudah mati.
-3. **Status**: halaman status publik menampilkan state eksplisit — 🟢 hidup / 🖥 booting / 🟡 kemungkinan hidup / ⚫ mati / ⚪ belum pasti — plus ⏳ countdown pemutusan dan tombol yang sesuai state, termasuk alur tunggu "Nyalakan PC → booting → 🟢 → ▶ Buka Adhitron" saat pertama menyalakan dari jauh.
+3. **Status**: halaman status publik menampilkan state eksplisit — 🟢 hidup / 🖥 booting / 🟡 kemungkinan hidup / 🟡 standby / ⚫ mati / ⚪ belum pasti — plus ⏳ countdown pemutusan dan tombol yang sesuai state, termasuk alur tunggu "Nyalakan PC → booting → 🟢 → ▶ Buka Adhitron" saat pertama menyalakan dari jauh. Listrik plug-nya juga dipantau realtime (daya, tegangan, arus, status saklar).
 
 ## Dua jalur pemakaian
 
@@ -50,7 +50,7 @@ Data center yang didukung: `eu` (Eropa Tengah), `eu-west` (Eropa Barat), `americ
 ## Checklist di sisi PC (wajib sekali)
 
 - **BIOS**: *Restore on AC Power Loss = Power On* — inilah yang membuat PC menyala sendiri saat plug mendapat listrik.
-- **Windows autostart**: Adhitron harus menyala otomatis saat login, jadi PC yang baru boot langsung siap dijangkau.
+- **Windows autostart**: Adhitron harus menyala otomatis saat login, jadi PC yang baru boot langsung siap dijangkau. Kalau PC sering di-reboot dari jauh dan tidak ada orang di depannya, nyalakan mode **🔐 Akses saat PC terkunci** di ⚙ → Sistem (autologon + layar terkunci) — lihat [README → Sebelum login Windows](../README.md#sebelum-login-windows-opsional).
 
 ## Kontrak API (Adhitron ↔ jembatan)
 
@@ -64,6 +64,9 @@ Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk
 | `POST /api/off/cancel` | `X-Bridge-Token` / `X-Status-Token` | — | `{ ok, cancelled }` — hapus jadwal tanpa menyentuh plug |
 | `POST /api/handoff[?delay=N]` | `X-Bridge-Token` / `X-Status-Token` | delay 0–3600 dtk (opsional) | `{ ok, handoffUrl, offDelaySec }` — tiket halaman status, tanpa jadwal/plug |
 | `GET /api/status` | `X-Bridge-Token` / `X-Status-Token` | — | status (di bawah) |
+| `GET /api/energy` | `X-Bridge-Token` / `X-Status-Token` | — (tanpa `range`/`tz`) | `{ ok, now:{powerW,voltageV,currentMa}, switchOn, energyKwh, updatedAt }`; `{ ok:false, error }` dengan pesan generik bila Tuya gagal |
+
+Hanya **endpoint IoT Core gratis** yang dipakai: `GET /v1.0/devices/{id}/status` dan `POST /v1.0/devices/{id}/commands`. Endpoint statistik energi Power Management (`/v1.0/iot-03/energy/electricity/...`) **sudah dihapus** dari jembatan karena akun ini tidak punya izin memakainya — tidak ada satu pun panggilan ke sana, jadi tidak ada lagi bagian yang gagal karena izin API.
 
 Kode error: token salah / tiket kedaluwarsa → **401**; body salah → **400**; PC masih hidup pada `POST /api/on` tanpa `force` → **409**; kredensial Tuya ditolak → **422** (register) / **400** (manage); Tuya tak terjangkau, kuota, atau cap **300 verifikasi/hari** → **503**; register lebih dari 10 space/IP/hari → **429**.
 
@@ -75,26 +78,44 @@ Kode error: token salah / tiket kedaluwarsa → **401**; body salah → **400**;
 
 ```json
 {
-  "id": "1a2b3c4d", "alive": true,          // alive = heartbeat segar ATAU daya segar > 20 W
-  "state": "alive",                         // alive | booting | suspected-alive | off | unknown
-  "heartbeatFresh": true, "powerFresh": true, // heartbeat < 7 mnt · sampel daya < 90 dtk
+  "id": "1a2b3c4d", "alive": true,          // alive = ada bukti segar PC hidup (lihat tabel state)
+  "state": "alive",                         // alive | booting | suspected-alive | standby | off | unknown
+  "heartbeatFresh": true, "powerFresh": true, // heartbeat < 4 mnt · sampel daya < 90 dtk
   "heartbeatAgeSec": 41, "powerAgeSec": 12,   // null = belum pernah ada
   "offAt": 1794..., "secondsUntilOff": 214, // jadwal pemutusan (null = tidak ada)
-  "plug": "on",                             // asumsi terakhir dari perintah yang dikirim
-  "powerW": 45.3, "powerAt": 1794...,       // sampel daya terakhir yang berhasil (percobaan 1×/30 dtk)
-  "booting": false,                         // daya > 20 W ≥ 30 dtk tanpa heartbeat segar
+  "offDelaySec": 120,                       // jeda tombol Putus arus di halaman (dari handoff)
+  "plug": "on",                             // saklar terakhir yang diketahui: perintah yang dikirim atau pembacaan switch_1/switch (null = tak diketahui)
+  "powerW": 45.3, "voltageV": 220.1, "currentMa": 990, "switchOn": true,
+  "energyKwh": 12.34,                       // kWh kumulatif DP add_ele (null kalau plug tidak melaporkannya)
+  "powerAt": 1794...,                       // sampel daya terakhir yang BERHASIL (percobaan dibatasi 1×/30 dtk)
+  "booting": false,                         // daya > 15 W ≥ 30 dtk tanpa heartbeat segar
   "needsAttention": false,                  // ⚠ cron gagal memutus 3× — cek plug manual
   "lastHeartbeat": 1794..., "adhitronUrl": "https://nama.ts.net"
 }
 ```
 
+Aturan `state` (tegangan **tidak** dipakai sebagai bukti hidup — 220 V tetap ada walau PC mati):
+
 | `state` | Bukti | Arti |
 |---|---|---|
-| `alive` | heartbeat < 7 mnt, atau daya segar > 20 W - kecuali sampel segar ≤ 5 W (bukti listrik menang) | PC hidup |
-| `booting` | daya > 20 W ≥ 30 dtk, heartbeat basi | booting — atau beku |
-| `suspected-alive` | daya > 20 W segar, heartbeat basi, < 30 dtk | kemungkinan hidup |
-| `off` | daya ≤ 5 W segar, atau plug OFF tanpa heartbeat segar | PC mati |
+| `alive` | heartbeat < 4 mnt, atau sampel daya segar > 15 W — kecuali saklar `switch_1 === false` atau sampel segar ≤ 10 W (bukti listrik menang) | PC hidup |
+| `booting` | daya > 15 W ≥ 30 dtk, heartbeat basi | PC booting — atau beku |
+| `suspected-alive` | daya > 15 W segar, heartbeat basi, < 30 dtk | kemungkinan hidup, bukti belum cukup |
+| `standby` | sampel daya segar 10–15 W — mengalahkan heartbeat segar sekalipun | standby / baru dinyalakan, belum bisa dijangkau — **tidak** dihitung hidup |
+| `off` | `switchOn === false`, sampel daya segar ≤ 10 W, atau plug tercatat OFF tanpa heartbeat segar dan tanpa jadwal menunggu | PC mati |
 | `unknown` | tidak ada bukti segar | belum pasti |
+
+Pembacaan listrik dan saklar memakai **satu** panggilan `GET /v1.0/devices/{id}/status` (IoT Core, gratis). Parsing DP-nya cocok lewat `code` maupun nomor DP `id`, karena firmware Bardi kadang hanya mengirim salah satunya:
+
+| DP | Skala | Arti |
+|---|---|---|
+| `switch_1` (1) | boolean / 0–1 | saklar plug |
+| `cur_power` (19) | ÷ 10 → W | daya aktif |
+| `cur_voltage` (20) | ÷ 10 → V | tegangan |
+| `cur_current` (18) | mA | arus |
+| `add_ele` (17) | ÷ 100 → kWh | pemakaian kumulatif |
+
+Field yang tidak dilaporkan plug menjadi `null`, bukan error — plug tanpa sensor daya tetap bisa dinyalakan/dimatikan.
 
 Percobaan sampel daya dibatasi 30 dtk, tetapi `powerAt` hanya maju bila pembacaan Tuya berhasil — sampel gagal tetap terlihat basi, jadi status tidak pernah "bohong" karena sampel lama.
 
@@ -103,9 +124,9 @@ Percobaan sampel daya dibatasi 30 dtk, tetapi `powerAt` hanya maju bila pembacaa
 ## Halaman status & tiket serah-terima
 
 - `POST /api/off` dan `POST /api/handoff` mengembalikan `handoffUrl` = `/s/<id>?t=<tiket>` — tiket **sekali pakai**, TTL 10 menit, untuk membuka halaman status dari HP **tanpa token jangka panjang**. `handoff` hanya membuat tiket (tanpa jadwal/plug) dan dipakai Adhitron setelah Windows dimatikan; delay yang dikirim disimpan untuk tombol Putus arus. Membuka tiket menghapusnya dan membuat tiket sesi baru untuk polling (tiap 10 detik, header `X-Status-Token`).
-- Halaman status menampilkan state dan tombol yang sesuai: **alive** → 🟢 PC hidup + **⏻ Putus arus listrik** dan **▶ Buka Adhitron** (arus Bardi; Windows tidak dimatikan dari sini); **booting**/**suspected-alive** → hanya **⚠ Putus paksa**; **off** → **⚡ Nyalakan PC** + **⏻ Putus arus listrik**; **unknown** → **⚡ Nyalakan paksa** (konfirmasi, menyiklus listrik). Countdown **⏳ listrik diputus dalam m:ss** tetap tampil; bila jadwal aktif dan daya ≤ 5 W, barisnya menjadi **⚫ PC sudah mati · ⏳ listrik diputus dalam m:ss**. Penolakan server (mis. **409**) tampil sebagai peringatan di halaman, bukan gagal diam-diam.
-- Halaman juga menampilkan daya plug (watt) dan peringatan **⚠ gagal memutus — cek plug manual** bila cron 3× gagal.
-- Bagian **⚡ Energi Bardi** menampilkan daya/voltase/arus saat ini, kWh hari ini & bulan ini, serta grafik 7 hari / 12 bulan (sumber Tuya Cloud, cache 60 dtk). Butuh izin API **Power Management / Energy Consumption Statistics** di Cloud Project; bila belum aktif, bagian itu menampilkan petunjuk dan status PC tetap berfungsi.
+- Halaman status menampilkan state dan tombol yang sesuai: **alive** → 🟢 PC hidup + **⏻ Putus arus listrik** dan **▶ Buka Adhitron** (arus Bardi; Windows tidak dimatikan dari sini); **booting**/**standby**/**suspected-alive** → hanya **⚠ Putus paksa**; **off** → **⚡ Nyalakan PC** + **⏻ Putus arus listrik**; **unknown** → **⚡ Nyalakan paksa** (konfirmasi, menyiklus listrik). Countdown **⏳ listrik diputus dalam m:ss** tetap tampil; bila jadwal aktif dan daya ≤ 10 W, barisnya menjadi **⚫ PC sudah mati · ⏳ listrik diputus dalam m:ss**. Penolakan server (mis. **409**) tampil sebagai peringatan di halaman, bukan gagal diam-diam.
+- Halaman menampilkan peringatan **⚠ gagal memutus — cek plug manual** bila cron 3× gagal.
+- Bagian **⚡ Listrik Bardi** adalah monitoring realtime: kartu **daya aktif** (W), **tegangan** (V), **arus** (mA, atau A bila ≥ 1000 mA), **status plug** (`🔌 Plug ON/OFF`), tombol **↻ Refresh**, dan teks "diperbarui N dtk lalu". Datanya dari `GET /api/energy` — satu panggilan device status Tuya IoT Core (gratis) dengan cache 5 detik. Tab **7 hari / 12 bulan** sudah dihapus, karena statistiknya butuh API Power Management yang tidak tersedia untuk akun ini. Halaman memanggil endpoint itu **hanya** saat dibuka, saat **↻ Refresh**, dan 3× jeda 5 detik setelah aksi daya — tidak ada polling tanpa henti, supaya kuota Tuya tidak habis. Saat Bardi masih mengukur daya > 15 W, tombol pemutusan arus meminta **konfirmasi tambahan** karena PC kemungkinan masih hidup.
 - Alur tunggu saat menyalakan dari jauh: **Nyalakan PC → booting → 🟢 → ▶ Buka Adhitron**.
 
 ## Keamanan

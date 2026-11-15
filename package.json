@@ -1,6 +1,6 @@
 {
   "name": "adhitron",
-  "version": "1.0.33",
+  "version": "1.0.34",
   "private": true,
   "description": "Adhitron — kantor pixel-art untuk mengoperasikan Claude Code dari browser dan HP",
   "author": "Adhit",
@@ -24,6 +24,7 @@
     "test:smoke": "node test-support/ci-tests.mjs smoke",
     "test:unit": "node test-support/ci-tests.mjs unit",
     "test:ui": "node test-support/ci-tests.mjs ui",
+    "test:ui:area": "node test-support/ui-area.mjs",
     "test:claude": "node test-support/claude-contract.mjs",
     "test:opencode": "node test-support/opencode-contract.mjs",
     "lint": "npm exec --yes --package=eslint@9.39.5 -- eslint ."
@@ -33,5 +34,9 @@
     "electron-builder": "26.18.0",
     "esbuild": "^0.25.12",
     "postject": "^1.0.0-alpha.6"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "qrcode": "^1.5.4"
   }
 }

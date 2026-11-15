@@ -8,6 +8,7 @@ import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
+import { describeArea } from '../test-support/ui-area-select.mjs';
 import { fileURLToPath } from 'node:url';
 import { cdpUnavailableReason, launchBrowser } from '../test-support/cdp.mjs';
 import { lanAddresses } from '../src/remote.js';
@@ -36,7 +37,7 @@ const TRIGGERS = {
   'sessions-modal': ['#btn-sessions'], // needs a real project (not the demo) selected
 };
 
-// Expected noise, not app bugs. Currently none: every resource the pages load exists on the test server.
+// Expected noise, not app bugs.
 const IGNORED_PROBLEMS = [
   // A temp project deleted while its model list was still in flight: the 404 lands after the test's cleanup. The
   // picker already refuses unknown projects; a real failure shows up as a missing/erroring model list instead.
@@ -45,6 +46,10 @@ const IGNORED_PROBLEMS = [
   // The POST fallback to a plain GET (an older server contract) answers 405 on the current route: same race.
   /^405 .*\/api\/projects\/[0-9a-f]+\/models$/,
   /405 \(Method Not Allowed\).*\/api\/projects\/[0-9a-f]+\/models/,
+  // /pair asks whether the WhatsApp gateway is ready. With phone access off (this suite never turns it on) that
+  // route answers a documented 403 — the page then shows the laptop-code fallback. Not a page error.
+  /^403 .*\/api\/auth\/pin-status$/,
+  /403 \(Forbidden\).*\/api\/auth\/pin-status/,
 ];
 
 let TMP;
@@ -1220,7 +1225,7 @@ const GO_CONSOLE = {
 
 
 for (const vp of VIEWPORTS) {
-  describe(`UI ${vp.name}`, { skip: SKIP ?? false }, () => {
+  describeArea(`UI ${vp.name}`, { skip: SKIP ?? false }, () => {
     let page;
     before(async () => {
       if (SKIP) return;
@@ -7290,7 +7295,7 @@ async function seedSessionContext(page) {
 const compactOpen = (page) => page.waitFor(() => !document.querySelector('#compact-modal').hidden, { timeoutMs: 2000, message: 'dialog Ringkas terbuka' });
 
 for (const vp of VIEWPORTS) {
-  describe(`UI Ringkas konteks — ${vp.name}`, { skip: SKIP ?? false }, () => {
+  describeArea(`UI Ringkas konteks — ${vp.name}`, { skip: SKIP ?? false }, () => {
     let page;
     let pid;
     before(async () => {
@@ -7612,7 +7617,7 @@ for (const vp of VIEWPORTS) {
 
 // ---------- Content-Security-Policy: the printable report still renders ----------
 
-describe('CSP', { skip: SKIP ?? false }, () => {
+describeArea('CSP', { skip: SKIP ?? false }, () => {
   test('laporan cetak (document.write ke about:blank, mewarisi CSP) tetap bergaya tanpa pelanggaran CSP', async () => {
     const page = await browser.newPage();
     try {
@@ -7655,7 +7660,7 @@ describe('CSP', { skip: SKIP ?? false }, () => {
 
 // ---------- a phone on plain WiFi: read-only ----------
 
-describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
+describeArea('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
   let page;
   let LAN = null;
   let laptopApi;
@@ -7798,7 +7803,7 @@ describe('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
 
 // ---------- live chat: bubbles stay filled (restart with stored chats, desync, finished-but-empty) ----------
 
-describe('UI chat live', { skip: SKIP ?? false }, () => {
+describeArea('UI chat live', { skip: SKIP ?? false }, () => {
   let page;
   const OLD = 120; // within the 150 messages a snapshot carries, so one "Muat pesan lama" brings all of them back
   const api = async (p, body = {}) => {
@@ -7929,7 +7934,7 @@ describe('UI chat live', { skip: SKIP ?? false }, () => {
 
 // ---------- lost connection: the server stops and comes back (runs last: the restart gives a new token) ----------
 
-describe('UI koneksi putus', { skip: SKIP ?? false }, () => {
+describeArea('UI koneksi putus', { skip: SKIP ?? false }, () => {
   let page;
   before(async () => {
     if (SKIP) return;
@@ -8046,7 +8051,7 @@ function captureDownloads() {
 }
 
 for (const vp of VIEWPORTS) {
-  describe(`UI palet perintah & cari percakapan — ${vp.name}`, { skip: SKIP ?? false }, () => {
+  describeArea(`UI palet perintah & cari percakapan — ${vp.name}`, { skip: SKIP ?? false }, () => {
     let page;
     let sid;
     before(async () => {
@@ -8897,7 +8902,7 @@ function stubSpeech() {
 // ---------- quick tier commands (/hemat…/maks, /auto) + 🎯 focus mode ----------
 
 for (const vp of VIEWPORTS) {
-  describe(`UI perintah tier & mode fokus — ${vp.name}`, { skip: SKIP ?? false }, () => {
+  describeArea(`UI perintah tier & mode fokus — ${vp.name}`, { skip: SKIP ?? false }, () => {
     let page;
     before(async () => {
       if (SKIP) return;
@@ -9151,7 +9156,7 @@ for (const vp of VIEWPORTS) {
 }
 
 for (const vp of VIEWPORTS) {
-  describe(`UI notifikasi & input suara — ${vp.name}`, { skip: SKIP ?? false }, () => {
+  describeArea(`UI notifikasi & input suara — ${vp.name}`, { skip: SKIP ?? false }, () => {
     let page;
     before(async () => {
       if (SKIP) return;
@@ -10126,7 +10131,7 @@ for (const vp of VIEWPORTS) {
 
 // ---------- 🗂 Semua project (features/dashboard.js): every project at once, live, read-only ----------
 
-describe('UI 🗂 Semua project', { skip: SKIP ?? false }, () => {
+describeArea('UI 🗂 Semua project', { skip: SKIP ?? false }, () => {
   let api;
   const ids = {};
   const SHOTS = process.env.OFFICE_UI_SHOTS;
@@ -10305,3 +10310,275 @@ describe('UI 🗂 Semua project', { skip: SKIP ?? false }, () => {
     });
   }
 });
+
+// ---------- ⚙ Setelan: 📱 PIN ke HP (WhatsApp) dan 🔐 Akses saat PC terkunci (autologon) ----------
+
+/** A 1×1 PNG data URL: valid enough for the card's QR guard (data:image/png;base64 + the exact bytes are irrelevant). */
+const WA_QR_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/** Stubs /api/wa/* (the screen is what these tests cover) and records every status read, so a leaked poll is visible. */
+async function stubWa(page, status = { state: 'off', qr: null, me: null }) {
+  await page.eval((first) => {
+    window.__waPrevFetch = window.fetch;
+    window.__waStatus = first;
+    window.__waLinkReply = { state: 'qr', qr: null, me: null };
+    window.__waCalls = [];
+    const json = (body, st = 200) => Promise.resolve(new Response(JSON.stringify(body), { status: st, headers: { 'Content-Type': 'application/json' } }));
+    window.fetch = (url, opts) => {
+      const p = String(url);
+      if (p === '/api/wa/status') {
+        window.__waCalls.push('status');
+        return json(window.__waStatus);
+      }
+      if (p === '/api/wa/link') {
+        window.__waCalls.push('link');
+        window.__waStatus = window.__waLinkReply;
+        return json(window.__waStatus);
+      }
+      if (p === '/api/wa/unlink') {
+        window.__waCalls.push('unlink');
+        window.__waStatus = { state: 'off', qr: null, me: null };
+        return json(window.__waStatus);
+      }
+      if (p === '/api/wa/test') {
+        window.__waCalls.push('test');
+        return json({ ok: true });
+      }
+      return window.__waPrevFetch(url, opts);
+    };
+  }, status);
+}
+
+const restoreWa = (page) =>
+  page
+    .eval(() => {
+      if (window.__waPrevFetch) window.fetch = window.__waPrevFetch;
+      delete window.__waPrevFetch;
+      delete window.__waStatus;
+      delete window.__waLinkReply;
+      delete window.__waCalls;
+    })
+    .catch(() => {});
+
+/** Stubs the two autologon POSTs: `__autologonReply` says what Windows answers, `__autologonBodies` records the sends. */
+async function stubAutologon(page) {
+  await page.eval(() => {
+    window.__autologonPrevFetch = window.fetch;
+    window.__autologonReply = { status: 401, body: { error: 'Sandi Windows salah.' } };
+    window.__autologonBodies = [];
+    const json = (body, st = 200) => Promise.resolve(new Response(JSON.stringify(body), { status: st, headers: { 'Content-Type': 'application/json' } }));
+    window.fetch = (url, opts) => {
+      const p = String(url);
+      if (p === '/api/autologon') {
+        try {
+          window.__autologonBodies.push(JSON.parse(opts?.body ?? '{}'));
+        } catch {
+          window.__autologonBodies.push(null);
+        }
+        return json(window.__autologonReply.body, window.__autologonReply.status);
+      }
+      if (p === '/api/autologon/disable') {
+        return json({ ok: true, autostart: { supported: true, enabled: true, mode: 'login', autologon: 'off', needsElevation: false, unsafeDesktop: false } });
+      }
+      return window.__autologonPrevFetch(url, opts);
+    };
+  });
+}
+
+const restoreAutologon = (page) =>
+  page
+    .eval(() => {
+      if (window.__autologonPrevFetch) window.fetch = window.__autologonPrevFetch;
+      delete window.__autologonPrevFetch;
+      delete window.__autologonReply;
+      delete window.__autologonBodies;
+    })
+    .catch(() => {});
+
+/** Puts the autostart block the server would report into the client state (the card draws from it, not from a request). */
+async function setAutostart(page, autostart) {
+  await page.eval(async (a) => {
+    const { state } = await import('/js/core/state.js');
+    const { renderRoots } = await import('/js/features/settings.js');
+    state.config = { ...(state.config ?? {}), roots: state.config?.roots ?? [], autostart: a };
+    renderRoots(state.config);
+  }, autostart);
+}
+
+for (const vp of VIEWPORTS) {
+  describeArea(`UI Setelan PIN & akses terkunci — ${vp.name}`, { skip: SKIP ?? false }, () => {
+    let page;
+    before(async () => {
+      if (SKIP) return;
+      page = await browser.newPage();
+      await page.setViewport(vp);
+    });
+    after(async () => {
+      await page?.close();
+    });
+
+    test('settings: WhatsApp card', async () => {
+      await openApp(page, '#demo');
+      await stubWa(page);
+      try {
+        await page.eval((qr) => {
+          window.__waLinkReply = { state: 'qr', qr, me: null };
+        }, WA_QR_PNG);
+        await tap(page, '#btn-settings');
+        await page.waitFor(() => !document.querySelector('#settings-modal').hidden, { timeoutMs: 3000, message: 'Setelan terbuka' });
+        await page.click('[data-settings-tab="sistem"]');
+        await page.click('#wa-channel-wa');
+        await page.waitFor(() => document.querySelector('#wa-state')?.textContent === 'Belum ditautkan.', { timeoutMs: 4000, message: 'status WhatsApp awal' });
+        assert.deepEqual(
+          await page.eval(() => ({
+            panel: document.querySelector('#wa-panel').hidden,
+            label: document.querySelector('#btn-wa-link').textContent,
+            qr: document.querySelector('#wa-qr').hidden,
+            hint: document.querySelector('#wa-hint').textContent,
+          })),
+          { panel: false, label: 'Tautkan', qr: true, hint: 'Pindai kode sekali; sesinya disimpan terenkripsi di laptop ini.' },
+        );
+        // The disclosure must be readable before Tautkan: WhatsApp Web is not Meta's official API, sessions are
+        // local, and the PIN travels through WhatsApp.
+        const notice = await page.eval(() => document.querySelector('#wa-notice').textContent);
+        assert.match(notice, /bukan API resmi/);
+        assert.match(notice, /dibatasi/);
+        assert.match(notice, /Lepas/);
+        assert.match(notice, /WhatsApp \(Meta\)/);
+
+        // Tautkan → QR + instruksi + Batal
+        await page.click('#btn-wa-link');
+        await page.waitFor(() => !document.querySelector('#wa-qr').hidden, { timeoutMs: 3000, message: 'gambar QR muncul' });
+        assert.deepEqual(
+          await page.eval(() => ({
+            alt: document.querySelector('#wa-qr').alt,
+            src: document.querySelector('#wa-qr').getAttribute('src'),
+            hint: document.querySelector('#wa-qr-hint').hidden,
+            hintText: document.querySelector('#wa-qr-hint').textContent,
+            label: document.querySelector('#btn-wa-link').textContent,
+            state: document.querySelector('#wa-state').textContent,
+          })),
+          {
+            alt: 'Kode QR untuk menautkan WhatsApp ke Adhitron',
+            src: WA_QR_PNG,
+            hint: false,
+            hintText: 'WhatsApp → Perangkat tertaut → Tautkan perangkat, lalu pindai kode ini.',
+            label: 'Batal',
+            state: 'Menunggu kode QR dipindai di HP.',
+          },
+        );
+
+        // Closing ⚙ must stop the 2 s poll: the point of tying it to the dialog, not to a timer that keeps running.
+        await page.press('Escape');
+        await page.waitFor(() => document.querySelector('#settings-modal').hidden, { timeoutMs: 2000, message: 'Esc menutup Setelan' });
+        await sleep(400); // an in-flight read may still land right after the close
+        const reads = await page.eval(() => window.__waCalls.filter((c) => c === 'status').length);
+        await sleep(2300);
+        assert.equal(await page.eval(() => window.__waCalls.filter((c) => c === 'status').length), reads, 'polling berhenti saat Setelan ditutup');
+
+        // Linked: number + Tes + Lepas, no QR, and the poll ends by itself.
+        await page.eval(() => {
+          window.__waStatus = { state: 'linked', qr: null, me: { number: '+62 812-3456-7890', name: 'Bardi' } };
+        });
+        await tap(page, '#btn-settings');
+        await page.waitFor(() => !document.querySelector('#settings-modal').hidden, { timeoutMs: 3000, message: 'Setelan terbuka lagi' });
+        await page.click('[data-settings-tab="sistem"]');
+        await page.click('#wa-channel-wa');
+        await page.waitFor(() => /\+6281234567890/.test(document.querySelector('#wa-me')?.textContent ?? ''), { timeoutMs: 5000, message: 'nomor tertaut tampil' });
+        const linked = await page.eval(() => ({
+          me: document.querySelector('#wa-me').textContent,
+          qr: document.querySelector('#wa-qr').hidden,
+          link: document.querySelector('#btn-wa-link').hidden,
+          test: document.querySelector('#btn-wa-test').hidden,
+          unlink: document.querySelector('#btn-wa-unlink').hidden,
+          hint: document.querySelector('#wa-hint').textContent,
+        }));
+        assert.equal(linked.me, 'Nomor: +6281234567890 (Bardi)');
+        assert.equal(linked.qr, true, 'QR disembunyikan saat tertaut');
+        assert.equal(linked.link, true, 'tombol Tautkan hilang saat tertaut');
+        assert.equal(linked.test, false, 'tombol Tes tampil');
+        assert.equal(linked.unlink, false, 'tombol Lepas tampil');
+        assert.match(linked.hint, /Nomor ini menerima kode masuk/);
+
+        // No terminal vocabulary anywhere in the dialog (hidden panels included).
+        const text = await page.eval(() => document.querySelector('#settings-modal').textContent);
+        assert.doesNotMatch(text, /WAHA|setx|docker|\.cmd/i);
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreWa(page);
+      }
+    });
+
+    test('settings: autologon modal', async () => {
+      await openApp(page, '#demo');
+      await stubAutologon(page);
+      try {
+        await setAutostart(page, { supported: true, enabled: true, mode: 'boot', autologon: 'off', needsElevation: false, unsafeDesktop: false });
+        await tap(page, '#btn-settings');
+        await page.waitFor(() => !document.querySelector('#settings-modal').hidden, { timeoutMs: 3000, message: 'Setelan terbuka' });
+        await page.click('[data-settings-tab="sistem"]');
+        await page.waitFor(() => !document.querySelector('#autologon-card').hidden && !document.querySelector('#btn-autologon-enable').hidden, { timeoutMs: 3000, message: 'kartu autologon siap' });
+        assert.equal(await page.eval(() => document.querySelector('#btn-autologon-disable').hidden), true, 'Matikan disembunyikan saat belum aktif');
+
+        await page.click('#btn-autologon-enable');
+        await page.waitFor(() => !document.querySelector('#autologon-modal').hidden, { timeoutMs: 3000, message: 'modal sandi terbuka' });
+        // Contents are not stored encrypted and any local administrator can read them: one warning block, no jargon.
+        const modalNote = await page.eval(() => document.querySelector('#autologon-modal-note').textContent);
+        assert.match(modalNote, /tanpa enkripsi/);
+        assert.match(modalNote, /Administrator/);
+        assert.match(modalNote, /BitLocker/);
+        assert.match(modalNote, /akun Windows khusus/);
+        assert.doesNotMatch(await page.eval(() => document.querySelector('#autologon-modal').textContent), /DefaultPassword|\\Windows\\|%TEMP%|\.cmd/i);
+        assert.deepEqual(
+          await page.eval(() => {
+            const input = document.querySelector('#autologon-password');
+            return {
+              type: input.type,
+              autocomplete: input.autocomplete,
+              focused: document.activeElement === input,
+              submit: document.querySelector('#btn-autologon-submit').disabled,
+            };
+          }),
+          { type: 'password', autocomplete: 'current-password', focused: true, submit: true },
+        );
+        assert.equal(await page.eval(() => window.__autologonBodies.length), 0, 'sandi kosong tidak pernah dikirim');
+
+        // 401: the dialog stays open with the clear reason, and the caret is back in the field.
+        await page.send('Input.insertText', { text: 'sandi-rahasia' });
+        await page.waitFor(() => !document.querySelector('#btn-autologon-submit').disabled, { timeoutMs: 2000, message: 'tombol kirim menyala' });
+        await page.click('#btn-autologon-submit');
+        await page.waitFor(() => document.querySelector('#autologon-error').textContent === 'Sandi Windows salah.', { timeoutMs: 3000, message: 'sandi salah tampil' });
+        assert.equal(await page.eval(() => document.querySelector('#autologon-modal').hidden), false, 'modal tetap terbuka setelah 401');
+
+        await page.press('Escape');
+        await page.waitFor(() => document.querySelector('#autologon-modal').hidden, { timeoutMs: 2000, message: 'Esc menutup modal sandi' });
+        assert.equal(await page.eval(() => document.querySelector('#autologon-password').value), '', 'sandi tidak tertinggal di DOM');
+
+        // Success: one POST with the typed password, the dialog closes, Windows' own answer turns the card active.
+        await page.click('#btn-autologon-enable');
+        await page.waitFor(() => !document.querySelector('#autologon-modal').hidden, { timeoutMs: 3000, message: 'modal sandi terbuka lagi' });
+        await page.send('Input.insertText', { text: 'sandi-rahasia' });
+        await page.eval(() => {
+          window.__autologonReply = { status: 200, body: { ok: true, autostart: { supported: true, enabled: true, mode: 'boot', autologon: 'on', needsElevation: false, unsafeDesktop: false } } };
+        });
+        await page.click('#btn-autologon-submit');
+        await page.waitFor(() => document.querySelector('#autologon-modal').hidden, { timeoutMs: 3000, message: 'modal tertutup setelah sukses' });
+        await page.waitFor(() => /^Aktif/.test(document.querySelector('#autologon-status').textContent), { timeoutMs: 2000, message: 'status aktif' });
+        assert.deepEqual(
+          await page.eval(() => ({ enable: document.querySelector('#btn-autologon-enable').hidden, disable: document.querySelector('#btn-autologon-disable').hidden })),
+          { enable: true, disable: false },
+        );
+        const bodies = await page.eval(() => window.__autologonBodies);
+        assert.equal(bodies.length, 2, 'satu kirim untuk 401, satu untuk sukses');
+        assert.deepEqual(bodies[0], { password: 'sandi-rahasia' });
+        assert.deepEqual(bodies[1], { password: 'sandi-rahasia' });
+
+        const pageText = await page.eval(() => document.body.innerText);
+        assert.doesNotMatch(pageText, /enable-autologon|autologon-path|\.cmd/i);
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreAutologon(page);
+      }
+    });
+  });
+}

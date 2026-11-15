@@ -11,6 +11,8 @@ import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { childEnv } from './child-env.js';
+
 /** Every value of `publicInfo().state`. */
 export const HTTPS_STATES = Object.freeze(['off', 'no-tailscale', 'certs-disabled', 'ok', 'expiring', 'expired', 'error']);
 // Fewer days left than this: still served, but the 📱 dialog warns.
@@ -89,12 +91,12 @@ export function restrictDir(dir, log = console.error, platform = process.platfor
   return new Promise((resolve) => {
     // Grant first, remove inheritance second: if the account lookup fails the folder keeps its inherited access
     // instead of locking the user out of their own key.
-    execFile('icacls', [dir, '/grant:r', `${user}:(OI)(CI)F`], { windowsHide: true, timeout: 15_000 }, (grantErr, _stdout, grantStderr) => {
+    execFile('icacls', [dir, '/grant:r', `${user}:(OI)(CI)F`], { windowsHide: true, timeout: 15_000, env: childEnv() }, (grantErr, _stdout, grantStderr) => {
       if (grantErr) {
         log(`HTTPS: icacls grant gagal (izin folder tls tidak dibatasi): ${String(grantStderr || grantErr.message).trim()}`);
         return resolve();
       }
-      execFile('icacls', [dir, '/inheritance:r'], { windowsHide: true, timeout: 15_000 }, (err, _out, stderr) => {
+      execFile('icacls', [dir, '/inheritance:r'], { windowsHide: true, timeout: 15_000, env: childEnv() }, (err, _out, stderr) => {
         if (err) log(`HTTPS: icacls inheritance gagal: ${String(stderr || err.message).trim()}`);
         resolve();
       });
@@ -119,7 +121,7 @@ export function cliRunner(bin, { timeoutMs = CLI_TIMEOUT_MS } = {}) {
   const [command, prefix] = /\.m?js$/i.test(bin) ? [process.execPath, [bin]] : [bin, []];
   return (args) =>
     new Promise((resolve, reject) => {
-      execFile(command, [...prefix, ...args], { windowsHide: true, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+      execFile(command, [...prefix, ...args], { windowsHide: true, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env: childEnv() }, (err, stdout, stderr) => {
         if (err) {
           err.stderr = String(stderr ?? '').trim();
           return reject(err);

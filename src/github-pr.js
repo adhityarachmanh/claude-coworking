@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { execFileTree } from './proc.js';
+import { childEnv } from './child-env.js';
 
 export class PrError extends Error {
   constructor(status, message) {
@@ -27,7 +28,7 @@ const asNode = (bin) => (/\.[cm]?js$/.test(bin) ? { command: process.execPath, p
 function gh(bin, args, { cwd, timeout = 60_000 } = {}) {
   const { command, pre } = asNode(bin);
   return new Promise((resolve) => {
-    execFileTree(command, [...pre, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1', GH_NO_UPDATE_NOTIFIER: '1' } }, (error, out, err) =>
+    execFileTree(command, [...pre, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, env: childEnv({ GH_PROMPT_DISABLED: '1', NO_COLOR: '1', GH_NO_UPDATE_NOTIFIER: '1' }) }, (error, out, err) =>
       resolve({ ok: !error, out: String(out ?? ''), err: String(err ?? '') }),
     );
   });
@@ -48,7 +49,7 @@ export async function repoAccess(bin, cwd) {
     }
   }
   const url = await new Promise((resolve) =>
-    execFileTree('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf8', timeout: 10_000, windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (err, out) => resolve(err ? '' : String(out).trim())),
+    execFileTree('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf8', timeout: 10_000, windowsHide: true, env: childEnv({ GIT_TERMINAL_PROMPT: '0' }) }, (err, out) => resolve(err ? '' : String(out).trim())),
   );
   const slug = /github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(url)?.[1] ?? null;
   return { slug, canPush: false };
@@ -79,7 +80,7 @@ export function ghLoginStart(bin, { onChange = () => {} } = {}) {
   const { command, pre } = asNode(bin);
   const child = spawn(command, [...pre, 'auth', 'login', '--hostname', 'github.com', '--git-protocol', 'https', '--web', '--skip-ssh-key'], {
     windowsHide: true,
-    env: { ...process.env, NO_COLOR: '1', GH_NO_UPDATE_NOTIFIER: '1', BROWSER: 'none' },
+    env: childEnv({ NO_COLOR: '1', GH_NO_UPDATE_NOTIFIER: '1', BROWSER: 'none' }),
   });
   login = { child, state: 'starting' };
   const mine = login;
@@ -129,7 +130,7 @@ const BASE = /^[A-Za-z0-9][\w./-]{0,199}$/;
 /** git in the project; the trimmed stdout, null on failure. */
 function git(cwd, args) {
   return new Promise((resolve) => {
-    execFileTree('git', args, { cwd, encoding: 'utf8', timeout: 15_000, windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (error, out) =>
+    execFileTree('git', args, { cwd, encoding: 'utf8', timeout: 15_000, windowsHide: true, env: childEnv({ GIT_TERMINAL_PROMPT: '0' }) }, (error, out) =>
       resolve(error ? null : String(out ?? '').trim()),
     );
   });

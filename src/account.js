@@ -5,6 +5,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { childEnv } from './child-env.js';
 
 const PROFILE_TTL_MS = 30_000;
 const LIMITS_TTL_MS = 60_000;
@@ -16,7 +17,7 @@ const ANSI = /\u001b\][^\u0007\u001b]*(\u0007|\u001b\\)|\u001b\[[0-9;?]*[A-Za-z]
 function runClaude(claude, args, { input, cwd = os.tmpdir(), timeout = 60_000 } = {}) {
   return new Promise((resolve) => {
     let out = '';
-    const child = spawn(claude.command, [...claude.args, ...args], { cwd, windowsHide: true, env: { ...process.env, OFFICE_MANAGED: '1' } });
+    const child = spawn(claude.command, [...claude.args, ...args], { cwd, windowsHide: true, env: childEnv({ OFFICE_MANAGED: '1' }) });
     const timer = setTimeout(() => child.kill(), timeout);
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (out += d));
@@ -212,7 +213,7 @@ export class AccountService {
   startLogin({ console = false } = {}) {
     if (!this.claude) throw new Error('Claude Code tidak ditemukan.');
     this.cancelLogin();
-    const child = spawn(this.claude.command, [...this.claude.args, 'auth', 'login', console ? '--console' : '--claudeai'], { windowsHide: true, env: { ...process.env, OFFICE_MANAGED: '1' } });
+    const child = spawn(this.claude.command, [...this.claude.args, 'auth', 'login', console ? '--console' : '--claudeai'], { windowsHide: true, env: childEnv({ OFFICE_MANAGED: '1' }) });
     const flow = { state: 'starting', url: null, error: null, child, output: '' };
     this.login = flow;
     const onData = (d) => {

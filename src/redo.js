@@ -15,6 +15,7 @@ import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { childEnv } from './child-env.js';
 
 const ID = /^rd_[a-z0-9]{8,40}$/;
 const PROJECT_ID = /^[\w-]{1,64}$/;
@@ -30,15 +31,14 @@ const TTL_MS = 7 * 24 * 60 * 60 * 1000; // older than this: dropped on capture/l
 const GIT_BUFFER = 64 * 1024 * 1024; // `git show` of one file
 // A stash commit needs an author. It never enters the user's history (no ref points at it): a fallback identity
 // only keeps the snapshot working in a repository where git has none configured.
-const STASH_ENV = {
-  ...process.env,
+const STASH_ENV = childEnv({
   GIT_AUTHOR_NAME: 'Adhitron',
   GIT_AUTHOR_EMAIL: 'office@localhost',
   GIT_COMMITTER_NAME: 'Adhitron',
   GIT_COMMITTER_EMAIL: 'office@localhost',
   GIT_TERMINAL_PROMPT: '0',
   LC_ALL: 'C',
-};
+});
 
 /** A redo request that cannot be served; `status` is the HTTP answer (400 bad id, 404 unknown, 409 not ready/corrupt, 413 too large). */
 /** Removes every redo bundle of one project (used by "Hapus data project"). */

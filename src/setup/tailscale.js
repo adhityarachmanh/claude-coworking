@@ -4,6 +4,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { SETUP_TARGETS } from './packages.js';
+import { childEnv } from '../child-env.js';
 import { runCapturedProcess } from './process.js';
 import { cancelledError } from './runtime.js';
 
@@ -88,7 +89,7 @@ export async function installTailscale({ spawnImpl = spawn, signal, onLine, plat
     result = await runCapturedProcess({
       command: 'winget',
       args: [...SETUP_TARGETS.tailscale.winget.args],
-      env: process.env,
+      env: childEnv(),
       timeoutMs,
       signal,
       spawnImpl,

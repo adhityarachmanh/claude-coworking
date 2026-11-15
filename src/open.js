@@ -4,6 +4,8 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
+import { childEnv } from './child-env.js';
+
 /** VS Code's own executable (not the code.cmd wrapper, which would need a shell on Windows). */
 export function findVsCode(env = process.env, platform = process.platform) {
   if (env.OFFICE_EDITOR) return env.OFFICE_EDITOR;
@@ -38,7 +40,8 @@ export function openInApp(app, dir, options = {}) {
   const cmd = openCommand(app, dir, options);
   if (!cmd) throw new Error('VS Code tidak ditemukan. Pasang VS Code, atau set env OFFICE_EDITOR ke path editormu.');
   if (process.env.OFFICE_OPEN_DRY_RUN) return cmd;
-  const child = spawn(cmd.command, cmd.args, { detached: true, stdio: 'ignore', windowsHide: false });
+  // A cleaned PATH: explorer.exe / `cmd` would otherwise be looked up through nvm's `.nodejs` junction.
+  const child = spawn(cmd.command, cmd.args, { detached: true, stdio: 'ignore', windowsHide: false, env: childEnv() });
   child.on('error', () => {}); // e.g. xdg-open missing: nothing to clean up
   child.unref();
   return cmd;

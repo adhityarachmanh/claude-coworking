@@ -154,6 +154,24 @@ test('routes: 🧰 /api/setup/* — status/refresh are laptop+Tailscale, the thr
   assert.ok(!localOnly.includes("'/api/setup/refresh'"), 'refresh stays available over Tailscale');
 });
 
+test('routes: 📱 /api/wa/* (link, unlink, test) is laptop only and never over plain WiFi', () => {
+  const routes = router.routes.filter((r) => r.pattern.startsWith('/api/wa/'));
+  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/wa/link', '/api/wa/status', '/api/wa/test', '/api/wa/unlink']);
+  const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  for (const r of routes) {
+    assert.equal(r.method, 'POST');
+    assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
+    assert.ok(!WIFI_READS.has(r.pattern));
+    assert.ok(r.maxBody > 0 && r.maxBody <= 1024, `${r.pattern} maxBody ${r.maxBody}`);
+    assert.equal(r.token, 'office');
+    // The QR is a session credential: a paired phone (Tailscale too) is refused before it reaches the handler.
+    assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
+  }
+  // GET /api/wa/status is served by server.js itself (the router only dispatches POST), behind the same gate.
+  assert.match(server, /pathname === '\/api\/wa\/status' && req\.method === 'GET'/);
+});
+
 test('routes: 🧩 OpenCode config editor is laptop only, with a bounded JSON body', () => {
   const routes = router.routes.filter((r) => r.pattern.startsWith('/api/opencode-config'));
   assert.deepEqual(routes.map((r) => r.pattern).sort(), [
@@ -172,6 +190,36 @@ test('routes: 🧩 OpenCode config editor is laptop only, with a bounded JSON bo
     assert.ok(!WIFI_READS.has(r.pattern));
     assert.ok(r.maxBody > 0 && r.maxBody <= 1024 * 1024, `${r.pattern} maxBody ${r.maxBody}`);
     assert.equal(r.token, 'office');
+    assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
+  }
+});
+
+// The Windows build bundles server.js to CommonJS (scripts/build-windows.mjs, `format: 'cjs'`), where esbuild
+// refuses a top-level `await`. The autologon CLI branch therefore runs before the listener through the blocking
+// `helperMainSync`; a promise there would either start the server or break the build.
+test('routes: 🪟 autologon CLI branch is blocking, before the listener, with no top-level await', () => {
+  const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  assert.match(server, /process\.exit\(helperMainSync\(process\.argv\)\)/, 'the one-shot CLI uses the blocking helper');
+  assert.ok(
+    server.indexOf('helperMainSync(process.argv)') < server.indexOf('server.listen('),
+    'the CLI branch runs before any listener',
+  );
+  assert.equal(/^await /m.test(server), false, 'top-level await would break the CommonJS Windows build');
+});
+
+test('routes: 🪟 /api/autologon* is laptop only, never over plain WiFi, with a small JSON body', () => {
+  const routes = router.routes.filter((r) => r.pattern.startsWith('/api/autologon'));
+  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/autologon', '/api/autologon/disable']);
+  const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  for (const r of routes) {
+    assert.equal(r.method, 'POST');
+    assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
+    assert.ok(!WIFI_READS.has(r.pattern));
+    // The body is one Windows password, never anything else.
+    assert.ok(r.maxBody > 0 && r.maxBody <= 1024, `${r.pattern} maxBody ${r.maxBody}`);
+    assert.equal(r.token, 'office');
+    // A paired phone (Tailscale too) must never change how the PC logs in.
     assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
   }
 });

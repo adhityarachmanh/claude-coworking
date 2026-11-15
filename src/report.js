@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { childEnv } from './child-env.js';
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const num = (n) => Math.round(n ?? 0).toLocaleString('id-ID');
 const short = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} M` : n >= 1e6 ? `${(n / 1e6).toFixed(2)} jt` : n >= 1e3 ? `${(n / 1e3).toFixed(1)} rb` : num(n));
@@ -299,7 +301,7 @@ export function renderPdf(html) {
       `--user-data-dir=${path.join(dir, 'profile')}`, // never touches your real browser profile
       '--no-pdf-header-footer', '--print-to-pdf-no-header',
       `--print-to-pdf=${pdfFile}`, pathToFileURL(htmlFile).href,
-    ], { windowsHide: true, stdio: 'ignore' });
+    ], { windowsHide: true, stdio: 'ignore', env: childEnv() });
     const timer = setTimeout(() => child.kill(), 60_000);
     child.on('error', reject);
     child.on('exit', () => {

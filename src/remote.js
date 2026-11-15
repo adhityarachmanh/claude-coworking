@@ -240,12 +240,14 @@ export class RemoteAccess {
   }
 
   /**
-   * @param {{ transport?: 'http'|'https' }} [options] the transport this pairing came in over (the token only works there)
+   * @param {{ transport?: 'http'|'https', nodeId?: string }} [options] the transport this pairing came in over (the token
+   *   only works there), and the tailnet node id when the request itself proved the owner's device (same record shape as
+   *   autoPair()/pairTrusted(): a lost cookie is then adopted instead of asking for a code again, see adopt())
    * @returns {{ token?: string, device?: object, error?: string, triesLeft?: number, retryAfter?: number }}
    *   device: the record just appended to state.devices (the server announces exactly this one to the other phones —
    *   no guess about "the last record": two pairings in the same moment must name their own device).
    */
-  pair({ code, key }, userAgent, ip = '', { transport = 'http' } = {}) {
+  pair({ code, key }, userAgent, ip = '', { transport = 'http', nodeId = '' } = {}) {
     if (!this.enabled) return { error: 'Akses dari perangkat lain sedang dimatikan.' };
     const paused = this.pausedFor();
     if (paused) return { error: `Pairing dijeda karena terlalu banyak percobaan salah. Coba lagi dalam ${Math.ceil(paused / 60)} menit.`, retryAfter: paused };
@@ -270,6 +272,7 @@ export class RemoteAccess {
     this.pairing = null; // single use
     const token = randomBytes(32).toString('base64url');
     const device = { id: randomUUID(), hash: sha256(token), name: deviceName(userAgent), created: Date.now(), lastSeen: Date.now(), transport: cleanTransport(transport) };
+    if (nodeId) device.nodeId = String(nodeId);
     this.state.devices.push(device);
     this.hub.save();
     return { token, device };
@@ -288,20 +291,91 @@ export class RemoteAccess {
    * AUTO_PAIR_MAX_PER_MINUTE times in the last minute / AUTO_PAIR_MAX_PER_HOUR times in the last hour.
    * A refused attempt changes nothing (existing records stay valid; revoke still frees a slot).
    * @param {string} name device display name (the tailnet hostname, see src/tailnet.js)
-   * @param {{ transport?: 'http'|'https', ip?: string, now?: number }} [options] transport the token is
-   *   bound to, the connecting address for the per-IP pace, and the clock (tests inject it)
+   * @param {{ transport?: 'http'|'https', ip?: string, now?: number, nodeId?: string }} [options] transport the
+   *   token is bound to, the connecting address for the per-IP pace, the clock (tests inject it), and the
+   *   tailnet node id this record belongs to (see adopt())
    * @returns {{ token: string, device: object }|null} null when phone access is off, the list is full,
    *   or this IP is paced out
    */
-  autoPair(name, { transport = 'http', ip = '', now = Date.now() } = {}) {
+  autoPair(name, { transport = 'http', ip = '', now = Date.now(), nodeId = '' } = {}) {
     if (!this.enabled) return null;
     if (this.state.devices.length >= MAX_DEVICES) return null;
+    if (!this.#spendAutoPair(ip, now)) return null;
+    const token = randomBytes(32).toString('base64url');
+    const device = { id: randomUUID(), hash: sha256(token), name, created: now, lastSeen: now, transport: cleanTransport(transport) };
+    if (nodeId) device.nodeId = String(nodeId);
+    this.state.devices.push(device);
+    this.hub.save();
+    return { token, device };
+  }
+
+  /**
+   * A device authorised by the WhatsApp PIN instead of a code (server.js /api/auth/verify-pin): the owner approved
+   * it out of band, and the PIN's own limits (5 minutes, one use, 3 attempts, requester binding, request pacing)
+   * live in src/access-pin.js. Same record shape and transport binding as a code pairing; bounded by MAX_DEVICES.
+   * @param {string} userAgent the request's User-Agent (the display name comes from it)
+   * @param {{ transport?: 'http'|'https', nodeId?: string }} [options] transport the token is bound to, and the
+   *   tailnet node id when the request itself proved the owner's device (so a lost cookie is adopted, not re-added)
+   * @returns {{ token: string, device: object }|null} null when phone access is off or the list is full
+   */
+  pairTrusted(userAgent, { transport = 'http', nodeId = '' } = {}) {
+    if (!this.enabled) return null;
+    if (this.state.devices.length >= MAX_DEVICES) return null;
+    const now = Date.now();
+    const token = randomBytes(32).toString('base64url');
+    const device = { id: randomUUID(), hash: sha256(token), name: deviceName(userAgent), created: now, lastSeen: now, transport: cleanTransport(transport) };
+    if (nodeId) device.nodeId = String(nodeId);
+    this.state.devices.push(device);
+    this.hub.save();
+    return { token, device };
+  }
+
+  /** Whether another device may join (the 📱 list is capped): checked before a one-time PIN is spent. */
+  hasRoom() {
+    return this.state.devices.length < MAX_DEVICES;
+  }
+
+  /**
+   * The same phone coming back: a device that already paired from this tailnet node gets a fresh token on the
+   * SAME record instead of a new one, so the owner is not asked for a code again after a cookie was lost
+   * (another origin, cleared site data, a pruned record) — and the device list does not grow one record per visit.
+   *
+   * As strong as autoPair(): the caller only reaches this after `tailscale status --json` proved the peer is
+   * the owner's own device (src/tailnet.js). The pace is shared with autoPair, so a cross-site redirect loop
+   * cannot rotate tokens endlessly. Only the newest record of that node id is adopted; a record without a
+   * nodeId (e.g. paired by code over plain WiFi, where nothing proves who the peer is) is never matched.
+   * @param {string} nodeId the tailnet node id (`Peer.ID`)
+   * @param {string} name the device name to keep current
+   * @param {{ transport?: 'http'|'https', ip?: string, now?: number }} [options]
+   * @returns {{ token: string, device: object }|null}
+   */
+  adopt(nodeId, name, { transport = 'http', ip = '', now = Date.now() } = {}) {
+    const id = String(nodeId ?? '');
+    if (!this.enabled || !id) return null;
+    const known = [...this.state.devices].reverse().find((d) => d.nodeId === id);
+    if (!known) return null;
+    if (!this.#spendAutoPair(ip, now)) return null;
+    const token = randomBytes(32).toString('base64url');
+    known.hash = sha256(token); // the old cookie for this record stops working: it was lost anyway
+    known.transport = cleanTransport(transport);
+    known.lastSeen = now;
+    if (name) known.name = name;
+    this.hub.save();
+    return { token, device: known };
+  }
+
+  /**
+   * Per-IP pace shared by autoPair() and adopt(): a page on another site can navigate a phone to /pair, so at
+   * most AUTO_PAIR_MAX_PER_MINUTE per minute and AUTO_PAIR_MAX_PER_HOUR per hour from one address.
+   * @returns {boolean} true when the attempt may proceed (and is counted)
+   */
+  #spendAutoPair(ip, now) {
     const key = String(ip ?? '');
     const attempts = (this.autoPairAttempts.get(key) ?? []).filter((t) => now - t < AUTO_PAIR_HOUR_MS);
     const lastMinute = attempts.filter((t) => now - t < AUTO_PAIR_MINUTE_MS).length;
     if (lastMinute >= AUTO_PAIR_MAX_PER_MINUTE || attempts.length >= AUTO_PAIR_MAX_PER_HOUR) {
       this.autoPairAttempts.set(key, attempts); // pruned, so a stale entry cannot live forever
-      return null;
+      return false;
     }
     // Bounded memory, like the wrong-guess map: only entries with nothing recent are dropped.
     if (this.autoPairAttempts.size > 1000) {
@@ -309,11 +383,7 @@ export class RemoteAccess {
     }
     attempts.push(now);
     this.autoPairAttempts.set(key, attempts);
-    const token = randomBytes(32).toString('base64url');
-    const device = { id: randomUUID(), hash: sha256(token), name, created: now, lastSeen: now, transport: cleanTransport(transport) };
-    this.state.devices.push(device);
-    this.hub.save();
-    return { token, device };
+    return true;
   }
 
   /**

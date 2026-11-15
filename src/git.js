@@ -2,13 +2,14 @@
 import { execFile } from 'node:child_process';
 import { lstat, readFile, readlink } from 'node:fs/promises';
 import path from 'node:path';
+import { childEnv } from './child-env.js';
 
 const MAX_DIFF = 200 * 1024;
 const STATUS_LABEL = { M: 'diubah', A: 'baru', D: 'dihapus', R: 'diganti nama', C: 'disalin', U: 'konflik', '?': 'baru' };
 
 function git(cwd, args, { timeout = 15000, env } = {}) {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, timeout, env, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('git', args, { cwd, timeout, env: env ?? gitEnv(), windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
       resolve({ ok: !err, out: stdout, err: (stderr || err?.message || '').trim(), timedOut: Boolean(err?.killed) });
     });
   });
@@ -80,7 +81,7 @@ const LOCAL_TIMEOUT = 30 * 1000; // switch/create (hooks may run)
 // Never ask for credentials: no terminal prompt, no Git Credential Manager window, no ssh askpass —
 // a remote that needs a login fails fast with a message instead of hanging. Messages in English (C locale)
 // so they can be recognised below. Nothing here ever reads, asks for or stores a password.
-const gitEnv = () => ({ ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', SSH_ASKPASS_REQUIRE: 'never', LC_ALL: 'C', LANGUAGE: 'C' });
+const gitEnv = () => childEnv({ GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', SSH_ASKPASS_REQUIRE: 'never', LC_ALL: 'C', LANGUAGE: 'C' });
 
 /** git's stderr/stdout made short and safe to show: no colour codes, no progress redraws, no tokens in URLs. */
 export function compactOutput(text, maxLines = 30) {

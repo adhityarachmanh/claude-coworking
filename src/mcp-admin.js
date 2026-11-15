@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseJsonc } from './opencode-bin.js';
+import { childEnv } from './child-env.js';
 import { execFileTree } from './proc.js';
 
 export class McpAdminError extends Error {
@@ -79,7 +80,7 @@ export function addMcpServer({ engine, bin, projectPath, request }) {
     else args.push(r.name, '--', ...r.argv);
   }
   return new Promise((resolve, reject) => {
-    execFileTree(bin.command, args, { cwd: projectPath, encoding: 'utf8', timeout: 60_000, windowsHide: true, env: { ...process.env, CI: '1', NO_COLOR: '1' } }, (err, out, errOut) => {
+    execFileTree(bin.command, args, { cwd: projectPath, encoding: 'utf8', timeout: 60_000, windowsHide: true, env: childEnv({ CI: '1', NO_COLOR: '1' }) }, (err, out, errOut) => {
       const text = `${out ?? ''}\n${errOut ?? ''}`.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
       if (err) return reject(new McpAdminError(502, text.split('\n').find((l) => l.trim() && !/^\s+at /.test(l))?.slice(0, 300) || 'Menambah server MCP gagal.'));
       resolve({ ok: true, output: text.slice(0, 2000) });

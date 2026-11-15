@@ -16,7 +16,19 @@ const spawnPcShutdown = () => (process.platform === 'win32'
 
 export function register(router) {
   router.post('/api/autostart', ({ hub, appDir, port }, req, res, params, body) => {
-    hub.config = { ...hub.config, autostart: setAutostart(Boolean(body.enabled), appDir, port) };
+    // 'login' = after the user logs in (the old behaviour); 'boot' = autologon + a locked screen, so a
+    // PC rebooted from far away serves again over Tailscale without anyone in front of it.
+    const mode = body?.mode ?? 'login';
+    if (mode !== 'login' && mode !== 'boot') {
+      return json(res, 400, { error: 'Mode auto-start harus "login" (setelah login Windows) atau "boot" (sebelum login, dengan autologon).' });
+    }
+    // A generated file can refuse to be written (Program Files without elevation). Say which file and why instead
+    // of the generic 500, and leave the previous setting in place.
+    try {
+      hub.config = { ...hub.config, autostart: setAutostart(Boolean(body.enabled), appDir, port, { mode }) };
+    } catch (err) {
+      return json(res, 409, { error: err?.message ?? 'Auto-start tidak bisa diubah.' });
+    }
     hub.broadcast('config', hub.config);
     return json(res, 200, hub.config.autostart);
   });

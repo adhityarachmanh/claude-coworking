@@ -8,6 +8,7 @@ import path from 'node:path';
 import { statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { mergePermission, readUserPermission, childOpenCodeEnv } from './opencode-bin.js';
+import { childEnv } from './child-env.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { attachmentChips } from './attachments.js';
@@ -1200,7 +1201,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         child = spawn(bin.command, [...bin.args, 'acp'], {
           cwd: this.project.path,
           windowsHide: true,
-          env: {
+          env: childEnv({
             ...childOpenCodeEnv(process.env),
             OFFICE_MANAGED: '1',
             OPENCODE_DISABLE_AUTOUPDATE: '1',
@@ -1209,7 +1210,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
             OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: permissionConfig(settings.mode, readUserPermission(this.project.path)) }),
             // Mode tim: the roles as subagents + the Lead's prompt, from a file (17 prompts pass Windows' 32 KB env limit).
             ...(settings.team && Object.keys(this.m.agents).length ? { OPENCODE_CONFIG: this.m.openCodeTeamConfig() } : {}),
-          },
+          }),
         });
       } catch (err) {
         this.hub.chat(this.id, { kind: 'error', text: `Gagal menjalankan OpenCode: ${err.message}` });

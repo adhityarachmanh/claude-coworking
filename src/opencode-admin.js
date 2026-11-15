@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { clearSessionCache } from './opencode-bin.js';
+import { childEnv } from './child-env.js';
 import { execFileTree } from './proc.js';
 
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
@@ -29,7 +30,7 @@ const firstLine = (r) => clean(`${r.output ?? ''}`).split('\n').map((l) => l.tri
 export function runOpenCode(bin, args, { cwd, timeout = 120_000 } = {}) {
   if (!bin) return Promise.reject(new OpenCodeAdminError(404, 'OpenCode tidak ditemukan.'));
   return new Promise((resolve) => {
-    execFileTree(bin.command, [...bin.args, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, CI: '1', NO_COLOR: '1' } }, (error, out, err) => {
+    execFileTree(bin.command, [...bin.args, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env: childEnv({ CI: '1', NO_COLOR: '1' }) }, (error, out, err) => {
       resolve({ ok: !error, timedOut: Boolean(error?.killed), output: clean(`${out ?? ''}${err ? `\n${err}` : ''}`).slice(0, 20_000) });
     });
   });

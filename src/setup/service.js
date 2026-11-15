@@ -4,6 +4,7 @@
 // clock are injectable so the state machine can be tested without a real Node download.
 import path from 'node:path';
 import { findClaude } from '../claude-bin.js';
+import { sanitizePathEntries } from '../child-env.js';
 import { findOpenCode } from '../opencode-bin.js';
 import { cleanToolView, probeTools } from './detect.js';
 import { openLoginTerminal as openLoginTerminalDefault } from './login.js';
@@ -274,19 +275,22 @@ export class SetupService {
   /**
    * Puts the runtime's npm prefix and Node folder at the front of a PATH-like env, without duplicating an entry
    * already there (the host PATH is kept for child processes). Only folders that exist are added.
+   *
+   * The inherited entries are sanitized first (src/child-env.js): nvm-windows' `.nodejs` junction is replaced by
+   * the folder it points at, and a broken one is dropped — the server's own PATH is what every child inherits.
    * @returns {string[]} the folders that were prepended
    */
   applyRuntimePath(env = process.env) {
     const dirs = runtimeBinDirs(this.runtimeDir);
     if (!dirs.length) return [];
     const key = Object.keys(env).find((name) => name.toUpperCase() === 'PATH') ?? 'PATH';
+    // The PATH here is THIS machine's own (children inherit it), so the host platform decides how it is split and
+    // probed; `this.platform` is for probing tools, not for the filesystem.
     const norm = (value) => (process.platform === 'win32' ? String(value).toLowerCase() : String(value));
     const wanted = [];
     for (const dir of dirs) if (!wanted.some((seen) => norm(seen) === norm(dir))) wanted.push(dir);
     const drop = new Set(wanted.map(norm));
-    const kept = String(env[key] ?? '')
-      .split(path.delimiter)
-      .filter(Boolean)
+    const kept = sanitizePathEntries(String(env[key] ?? ''))
       .filter((entry) => !drop.has(norm(entry)));
     env[key] = [...wanted, ...kept].join(path.delimiter);
     return wanted;

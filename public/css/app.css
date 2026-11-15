@@ -3076,3 +3076,160 @@ body.read-only #concurrency-section { display: none !important; }
 .power-bridge { display: block; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--r-md); color: var(--text-2); text-align: center; text-decoration: none; font-size: var(--fs-md); }
 .power-bridge:hover { border-color: var(--accent); color: var(--text); }
 @media (pointer: coarse) { .power-actions button, .power-bridge { min-height: 48px; } }
+
+/* ---------- ⚙ Setelan → Sistem: 📱 PIN ke HP & 🔐 Akses saat PC terkunci ---------- */
+/* The two cards are plain rows of the settings panel; only their inner layout is shaped here. */
+#wa-section,
+#autologon-card { gap: 8px; min-width: 0; }
+#wa-section p,
+#autologon-card p { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+
+/* Channel picker: two selectable cards with a real radio, never mistaken for action buttons. */
+.wa-channels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 2px; }
+.wa-channel {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--fs-md);
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.wa-channel:hover { border-color: var(--border-strong); }
+/* A drawn radio: hollow ring → solid dot (shape, not only hue), so a colour-blind user still sees the choice. */
+.wa-channel input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--text-2);
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.wa-channel input:checked { border-color: var(--accent-2); background: radial-gradient(circle, var(--accent-2) 0 4.5px, transparent 4.6px); }
+/* Selected: filled card + accent border + heavier text; the radio dot carries the same cue without colour. */
+.wa-channel:has(input:checked) {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent-2);
+  font-weight: 600;
+}
+/* The base rule turns the outline off for inputs: the label around the radio owns the visible focus ring. */
+.wa-channel:has(input:focus-visible) { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+
+/* WhatsApp panel: status pill, QR plate and linked identity, in one bordered block. */
+.wa-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+#wa-state {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--fs-md);
+  line-height: 1.35;
+}
+#wa-state::before { content: '○'; flex: none; font-size: var(--fs-lg); line-height: 1; }
+/* QR ready: a square marker + warning surface, so the state reads without the text alone. */
+.wa-panel:has(#wa-qr:not([hidden])) #wa-state { border-color: var(--warn-line); background: var(--warn-soft); color: var(--warn-text-strong); }
+.wa-panel:has(#wa-qr:not([hidden])) #wa-state::before { content: '▣'; }
+/* Linked: check mark + ok surface; the number sits right below as its own chip. */
+.wa-panel:has(#wa-me:not([hidden])) #wa-state { border-color: var(--ok-line); background: var(--ok-soft); color: var(--ok-text-strong); }
+.wa-panel:has(#wa-me:not([hidden])) #wa-state::before { content: '✓'; font-weight: 700; }
+/* A dark theme still needs a real white quiet zone around the code. */
+#wa-qr {
+  align-self: center;
+  display: block;
+  width: min(240px, 100%);
+  height: auto;
+  margin: 2px auto 0;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+#wa-qr-hint { max-width: 40ch; margin-inline: auto; text-align: center; color: var(--text-2); }
+#wa-me {
+  align-self: flex-start;
+  padding: 6px 10px;
+  border: 1px solid var(--ok-line);
+  border-radius: var(--r-md);
+  background: var(--ok-soft);
+  color: var(--ok-text-strong);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+#wa-error { margin: 0; }
+
+/* Autologon: the status line and its one button share a row; the unsafe warning spans the card. */
+#autologon-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+}
+#autologon-title,
+#autologon-desc,
+#autologon-unsafe { grid-column: 1 / -1; }
+#autologon-status { grid-column: 1; margin: 0; color: var(--text-2); }
+#autologon-card > .backup-actions { grid-column: 2; justify-content: flex-end; margin: 0; }
+/* An insecure desktop must not hide in grey small print: a filled warning block with its own icon. */
+#autologon-unsafe {
+  position: relative;
+  margin-top: 2px;
+  padding: 10px 12px 10px 34px;
+  border: 1px solid var(--warn-line);
+  border-left-width: 4px;
+  border-radius: var(--r-md);
+  background: var(--warn-soft);
+  color: var(--warn-text-strong);
+  line-height: 1.45;
+}
+#autologon-unsafe::before { content: '⚠'; position: absolute; left: 10px; top: 8px; font-size: var(--fs-lg); line-height: 1.2; color: var(--warn-text-strong); }
+#autologon-unsafe b { color: inherit; }
+
+/* Password dialog: one comfortable column, the same field rhythm as the other small modals. */
+#autologon-modal .modal-card { max-width: 440px; display: flex; flex-direction: column; gap: 10px; }
+#autologon-modal .modal-head { margin-bottom: 0; gap: 8px; }
+#autologon-modal .modal-head b { flex: 1; min-width: 0; }
+#autologon-modal form { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+#autologon-modal form > * { margin: 0; }
+#autologon-modal label { font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+#autologon-modal input { width: 100%; }
+#autologon-modal .backup-actions { justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 520px) {
+  .wa-channels { grid-template-columns: minmax(0, 1fr); }
+  #autologon-card { grid-template-columns: minmax(0, 1fr); }
+  /* Reset the explicit column: a second implicit track would scroll the card sideways on 360 px. */
+  #autologon-status,
+  #autologon-card > .backup-actions { grid-column: 1; }
+  #autologon-card > .backup-actions { justify-content: flex-start; }
+}
+@media (max-width: 760px) {
+  #autologon-password { font-size: var(--fs-input-touch); } /* 16px: no zoom-on-focus on iOS */
+  /* Same tab, same phone: the ⚡ Remote power switch is one long line and used to push the panel sideways. */
+  #rp-pc-row.switch { white-space: normal; }
+}

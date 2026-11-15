@@ -11,6 +11,7 @@ import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { appPaths } from '../src/app-paths.js';
 import { autostartStatus, setAutostart } from '../src/autostart.js';
+import { childEnv } from '../src/child-env.js';
 import { findClaude } from '../src/claude-bin.js';
 import { findOpenCode } from '../src/opencode-bin.js';
 import { installNpmPackage } from '../src/setup/npm.js';
@@ -40,10 +41,10 @@ async function ask(question, def = true) {
   return answer ? answer.startsWith('y') : def;
 }
 
-const run = (cmd, args, opts = {}) => spawnSync(cmd, args, { stdio: 'inherit', windowsHide: false, ...opts });
+const run = (cmd, args, opts = {}) => spawnSync(cmd, args, { stdio: 'inherit', windowsHide: false, env: childEnv(), ...opts });
 const capture = (cmd, args) => {
   try {
-    return execFileSync(cmd, args, { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    return execFileSync(cmd, args, { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv() }).trim();
   } catch (err) {
     return (err.stdout || err.stderr || '').toString().trim() || null;
   }
@@ -269,11 +270,19 @@ async function setupAutostart() {
     const current = autostartStatus();
     (current.enabled ? ok : warn)(`Auto-start saat login ${current.enabled ? 'terpasang' : 'belum terpasang'}`);
     (current.watchdog ? ok : warn)(`Penjaga 5 menit (Task Scheduler) ${current.watchdog ? 'terpasang' : 'belum terpasang'}`);
+    if (current.mode === 'boot') {
+      (current.autologon === 'on' ? ok : warn)(current.autologon === 'on'
+        ? 'Mode sebelum login aktif (autologon menyala, layar terkunci otomatis)'
+        : 'Mode sebelum login terpasang, TAPI autologon belum aktif: buka Setelan → Sistem → 🔐 Akses saat PC terkunci, lalu tekan Aktifkan');
+    }
     ((await serverRunning()) ? ok : warn)(`Server di port ${PORT} ${(await serverRunning()) ? 'berjalan' : 'tidak berjalan'}`);
     return;
   }
-  const status = setAutostart(true, APP_DIR, PORT);
-  ok('Auto-start terpasang — server menyala sendiri setiap Windows login');
+  // Re-running setup on a machine that already uses the boot mode (autologon + locked screen) must not
+  // silently downgrade it to "after login": that would break remote access after the next reboot.
+  const installed = autostartStatus({ appDir: APP_DIR }).mode;
+  const status = setAutostart(true, APP_DIR, PORT, { mode: installed });
+  ok(`Auto-start terpasang — server menyala sendiri setiap Windows login${installed === 'boot' ? ' (mode sebelum login / autologon tetap aktif)' : ''}`);
   info(status.path);
   if (status.watchdog) ok('Penjaga terpasang — dicek tiap 5 menit, server dinyalakan lagi kalau mati (setelah sleep/hibernate/crash)');
   else warn('Penjaga Task Scheduler gagal dipasang; auto-start tetap jalan saat login.');
@@ -282,7 +291,7 @@ async function setupAutostart() {
     info('Kalau itu `npm run dev` di terminal, tutup terminalnya lalu jalankan setup lagi supaya server background yang dipakai.');
     return;
   }
-  spawn('wscript', [status.path], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  spawn('wscript', [status.path], { detached: true, stdio: 'ignore', windowsHide: true, env: childEnv() }).unref();
   for (let i = 0; i < 20 && !(await serverRunning()); i++) await new Promise((r) => setTimeout(r, 500));
   if (await serverRunning()) ok('Server berjalan di latar belakang (log: data\\server.log)');
   else warn('Server belum menyala. Lihat data\\server.log untuk penyebabnya.');

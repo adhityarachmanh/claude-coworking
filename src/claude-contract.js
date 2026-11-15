@@ -10,6 +10,7 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { childEnv } from './child-env.js';
 import { transcriptDir } from './transcripts.js';
 
 /** Default bounds (ms). `total` caps the whole run; each step also has its own limit. */
@@ -82,7 +83,8 @@ export function readClaudeVersion(claude, { timeoutMs = DEFAULT_TIMEOUTS.version
   if (!claude) return Promise.resolve({ version: null, error: 'Claude Code tidak ditemukan' });
   return new Promise((resolve) => {
     try {
-      execFileImpl(claude.command, [...claude.args, '--version'], { timeout: timeoutMs, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024, env, shell: false }, (err, stdout) => {
+      // childEnv: the inherited PATH is cleaned first (nvm's `.nodejs` junction → EUNKNOWN lstat pwsh.exe).
+      execFileImpl(claude.command, [...claude.args, '--version'], { timeout: timeoutMs, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024, env: childEnv({}, env), shell: false }, (err, stdout) => {
         if (err) return resolve({ version: null, error: err.killed || err.signal ? `timeout setelah ${timeoutMs} ms` : sanitize(err.code ?? err.message) });
         const version = parseVersion(stdout);
         resolve(version ? { version, error: null } : { version: null, error: `output tak dikenal: ${sanitize(stdout, 80)}` });
@@ -112,7 +114,7 @@ function killTree(child) {
  * now on) matching `pred`, and rejects on its timeout, the run's deadline, or the process exiting first.
  */
 function openCli(claude, args, { cwd, env, deadline, signal }) {
-  const child = spawn(claude.command, [...claude.args, ...args], { cwd, env: { ...env, OFFICE_MANAGED: '1' }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(claude.command, [...claude.args, ...args], { cwd, env: childEnv({ OFFICE_MANAGED: '1' }, env), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   // Server shutdown (src/claude-check.js stop()): the whole tree goes at once; every wait then ends with the exit.
   const onAbort = () => killTree(child);
   if (signal?.aborted) onAbort();

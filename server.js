@@ -24,7 +24,8 @@ import { discoverProjects, isDirectory, isInside, isMissing } from './src/projec
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
 import { writeBackup } from './src/backup.js';
 import { AccountService, accountPrivacyView, accountViewKey } from './src/account.js';
-import { autostartStatus } from './src/autostart.js';
+import { autostartStatus, repairUnsafeAutologon } from './src/autostart.js';
+import { helperMainSync, sweepLeftoverSecrets } from './src/autologon.js';
 import { UsageLedger } from './src/usage.js';
 import { moduleGraph, preloadTags } from './src/modules.js';
 import { TranscriptMirror } from './src/mirror.js';
@@ -32,6 +33,9 @@ import { OpenCodeMirror } from './src/opencode-mirror.js';
 import { CiWatcher } from './src/github-ci.js';
 import { findGh } from './src/github-pr.js';
 import { DEVICE_COOKIE, HTTPS_DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI_READ_API, isTailscaleConnection, lanAddresses, networkAddresses, wifiAllows, wifiConfig } from './src/remote.js';
+import { AccessPin, PinError, pinCooldownMs, pinMaxPerIpPerHour, pinMessage } from './src/access-pin.js';
+import { WaLink, WaLinkError, pairStatus } from './src/wa-link.js';
+import { EncryptedAuthStore } from './src/wa-auth-store.js';
 import { TailscaleCert, httpsPortFrom, restrictDir } from './src/tls.js';
 import { eligibleTailnetPeer } from './src/tailnet.js';
 import { purgeTrash, TRASH_RETENTION_DAYS } from './src/session-admin.js';
@@ -57,6 +61,8 @@ import { wifiAccountAlert } from './src/routes/account.js';
 import { wifiGithubLogin } from './src/github-pr.js';
 import { HttpError, json, readJson } from './src/routes/http.js';
 import { buildRouter } from './src/routes/index.js';
+import { fakeAutologon, windowsAutologon } from './src/routes/autologon.js';
+import { status as waStatus } from './src/routes/wa.js';
 import { POWER_SECURE_ERROR } from './src/power.js';
 import { RemotePowerBeat } from './src/power-beat.js';
 import { teamConfig } from './src/routes/team.js';
@@ -164,6 +170,15 @@ if (process.argv.includes('--background')) {
   console.error = write('ERROR');
 }
 
+// 🪟 The elevated autologon helper (`--autologon-enable` / `--autologon-disable`) is a ONE-SHOT CLI: it writes
+// HKLM\Winlogon (or clears it), reports through its exit code, and must never start a server, a listener or the
+// event loops below. server.js calls it before anything else, then exits with exactly the code it returned.
+// `helperMainSync` (src/autologon.js) is the blocking form of `helperMain`: the Windows build bundles this file to
+// CommonJS (scripts/build-windows.mjs), where esbuild refuses a top-level `await`.
+if (process.argv.includes('--autologon-enable') || process.argv.includes('--autologon-disable')) {
+  process.exit(helperMainSync(process.argv));
+}
+
 // Before any outgoing HTTPS: also trust the OS certificate store (TLS-inspecting proxies such as Zscaler).
 const SYSTEM_CERTS = trustSystemCertificates();
 
@@ -265,6 +280,93 @@ const remote = new RemoteAccess(hub, {
     Promise.resolve(push.sendPairingCode({ code, expiresAt })).catch((err) => console.error('Push kode pasangan gagal:', err?.message ?? err));
   },
 });
+
+// 📱 WhatsApp runs INSIDE this process (src/wa-link.js): pairing is a QR scanned from the Settings page, and the
+// session on disk is sealed (src/wa-auth-store.js). This replaces the old local sidecar and its four environment
+// variables — nothing here reads a URL, a number, or an API key from the environment.
+const WA_FAKE = process.env.OFFICE_WA_FAKE === '1';
+// Tests only (never set in a real install): the autologon routes answer from an in-memory switch (src/routes/
+// autologon.js), so the end-to-end test never raises a UAC prompt or writes HKLM/Startup. Warned about at start.
+const AUTOLOGON_FAKE = process.env.OFFICE_AUTOLOGON_FAKE === '1';
+// Tests only (never set in a real install): the fake socket below writes what it "sent" here, so the end-to-end test
+// can read the PIN it delivered without a WhatsApp account. Nothing is written while the flag is off.
+const WA_FAKE_SENT = WA_FAKE ? process.env.OFFICE_WA_FAKE_SENT : null;
+const waLink = new WaLink({
+  store: new EncryptedAuthStore({ dir: path.join(DATA_DIR, 'wa') }),
+  ...(WA_FAKE ? { socketFactory: fakeWaSocket } : {}),
+  // An event carries the STATE only, never `qr` or `me`: a broadcast reaches every open client, and a socket that
+  // was paired from a phone is not "read-only", so the redactor below cannot be the only line of defence. The QR is a
+  // session credential and lives only in the laptop-only GET /api/wa/status; the laptop page polls that.
+  onChange: (status) => hub.broadcast('wa', { state: status.state }),
+});
+// Second layer, the same rule as `config`/`spotify`: whatever the `wa` event grows into, a read-only (plain-WiFi)
+// client is handed the state and nothing else — no key for the code, no key for the paired number.
+hub.redactors.set('wa', (status) => ({ state: status.state }));
+
+// The access PIN (src/access-pin.js) is delivered over WhatsApp to the linked account itself: the owner does not have
+// to be in front of the laptop to let a new phone in. The PIN only exists inside the WhatsApp message — it is never
+// logged, never returned by an endpoint, and only its HMAC is kept.
+const accessPin = new AccessPin({
+  send: async (pin) => {
+    try {
+      return await waLink.sendText(pinMessage(pin));
+    } catch (err) {
+      // The pair page shows this wording and falls back to the code on the laptop screen. The PIN itself never leaks.
+      throw new PinError('wa_failed', err?.code === 'not_linked' ? 'WhatsApp belum ditautkan.' : 'Kode tidak terkirim ke WhatsApp. Coba lagi.', { status: 503 });
+    }
+  },
+  cooldownMs: pinCooldownMs(),
+  maxPerIpPerHour: pinMaxPerIpPerHour(),
+});
+
+/**
+ * Tests only (OFFICE_WA_FAKE=1): a stand-in for baileys' socket that emits a QR and then reports itself linked to a
+ * fixed number, so the end-to-end tests can drive /api/wa/* and the PIN path without a WhatsApp account. Everything
+ * else stays real — the encrypted store, the states, the routes — so the flag changes nothing but the socket.
+ * @param {{ auth?: { creds?: object } }} [config] what WaLink hands baileys (the session it just loaded)
+ */
+function fakeWaSocket({ auth } = {}) {
+  const handlers = new Map();
+  const emit = (type, payload) => {
+    for (const fn of handlers.get(type) ?? []) {
+      try {
+        fn(payload);
+      } catch {
+        // A broken listener must not break the fake socket.
+      }
+    }
+  };
+  const socket = {
+    ev: {
+      on: (type, fn) => {
+        if (!handlers.has(type)) handlers.set(type, []);
+        handlers.get(type).push(fn);
+      },
+    },
+    async sendMessage(jid, message) {
+      if (WA_FAKE_SENT) {
+        try {
+          appendFileSync(WA_FAKE_SENT, `${JSON.stringify({ jid, text: String(message?.text ?? '') })}\n`);
+        } catch {
+          // Test-only bookkeeping: it must never change the outcome.
+        }
+      }
+      return { key: { id: 'fake' } };
+    },
+    async logout() {},
+    async end() {},
+  };
+  // A QR right away (the page shows it), then "the owner scanned it": the account is this fake number.
+  setTimeout(() => emit('connection.update', { qr: 'ADHITRON-FAKE-QR' }), 0).unref?.();
+  setTimeout(() => {
+    if (auth?.creds) {
+      auth.creds.me = { id: '628123456789:1@s.whatsapp.net', name: 'WhatsApp Uji' };
+      emit('creds.update', {});
+    }
+    emit('connection.update', { connection: 'open' });
+  }, 600).unref?.();
+  return socket;
+}
 
 // The https listener's certificate (Tailscale MagicDNS name). Checked only while phone access is on.
 const tls = new TailscaleCert({
@@ -559,7 +661,7 @@ function refreshProjects() {
     usingDefault: !hub.persisted.roots.length,
     slashCommands: [...new Set([...DEFAULT_SLASH, ...(hub.persisted.slashCommands ?? [])])].sort(),
     ...hub.catalogConfig(), // models + commands with descriptions, as Claude Code reports them
-    autostart: autostartStatus(),
+    autostart: autostartStatus({ appDir: APP_DIR }), // mode/autologon/needsElevation/unsafeDesktop (no script paths)
     remote: remoteInfo(),
     teamNames: hub.persisted.teamNames ?? {},
     team: teamConfig(),
@@ -592,7 +694,9 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // ⚙ Kompatibilitas OpenCode (run, settings): laptop only too (it spawns `opencode acp`).
 // 🧰 Setup mutations (install/cancel/login-terminal): laptop only. Status/refresh stay absent from wifiAllows: a
 // plain-HTTP WiFi phone may not even read them, a Tailscale phone may (both are default-deny over WiFi).
-const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/setup/install', '/api/setup/cancel', '/api/setup/login-terminal', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/remote-power/get', '/api/remote-power/settings', '/api/remote-power/test', '/api/config', '/api/concurrency/save', '/api/projects', '/api/groups', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/pairing/code/push', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+// 📱 WhatsApp (status/link/unlink/test): laptop only — pairing needs the QR, and the QR is a session credential.
+// 🪟 Autologon (enable/disable): laptop only — it asks for the Windows password and changes how the PC logs in.
+const LOCAL_ONLY = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/setup/install', '/api/setup/cancel', '/api/setup/login-terminal', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/autologon', '/api/autologon/disable', '/api/remote-power/get', '/api/remote-power/settings', '/api/remote-power/test', '/api/config', '/api/concurrency/save', '/api/projects', '/api/groups', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/pairing/code/push', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout', '/api/wa/status', '/api/wa/link', '/api/wa/unlink', '/api/wa/test']);
 // ⚡ Power actions (⏻ Matikan PC) from a phone: ONLY over the https (Tailscale) listener, where the link is
 // encrypted end-to-end. A phone paired on plain-HTTP WiFi stays refused — it is read-only anyway, but this
 // gate answers with the real reason ("aksi daya hanya lewat Tailscale") instead of the generic read-only text.
@@ -619,6 +723,19 @@ const isSecure = (req) => Boolean(req.socket.encrypted);
 const transportOf = (req) => (isSecure(req) ? 'https' : 'http');
 /** The device cookie of this transport: each listener reads only its own (see src/remote.js). */
 const deviceToken = (req) => cookies(req)[isSecure(req) ? HTTPS_DEVICE_COOKIE : DEVICE_COOKIE];
+// 🔐 The PIN is bound to the browser that asked for it (src/access-pin.js): this cookie carries the requester token,
+// the only thing that may spend that PIN. Without it, anyone on the same WiFi could burn a live PIN with three wrong
+// digits. It never leaves the server as JSON — it is not the PIN, but it is the right to use it.
+const PIN_COOKIE = 'office_pin';
+const HTTPS_PIN_COOKIE = '__Host-office_pin';
+const pinCookieName = (secure) => (secure ? HTTPS_PIN_COOKIE : PIN_COOKIE);
+const pinToken = (req) => cookies(req)[pinCookieName(isSecure(req))];
+/** Sets the requester token cookie — or, with an empty token, CLEARS it (Max-Age=0; a short Max-Age would leave an
+ *  empty cookie behind for 10 more minutes, and docs/pairing-whatsapp.md promises it is removed). */
+const pinCookie = (token, secure) => {
+  const base = `${pinCookieName(secure)}=${token}; ${secure ? 'Secure; ' : ''}HttpOnly; SameSite=Strict; Path=/`;
+  return token ? `${base}; Max-Age=600` : `${base}; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+};
 /** What this browser may do with the Claude account: laptop, or a paired phone over Tailscale. */
 // Tailscale = came in through the laptop's Tailscale interface from a tailnet peer, not just any 100.x address (CGNAT WiFi uses those too).
 const canManageAccount = (req) => isLocal(req) || isTailscaleConnection(req.socket.localAddress, req.socket.remoteAddress);
@@ -836,6 +953,8 @@ const ctx = {
   ledger,
   mirror,
   remote,
+  accessPin, // 🔐 PIN WhatsApp: dropped when phone access goes off or a device is revoked (src/routes/remote.js)
+  waLink, // 📱 WhatsApp in-process: /api/wa/* (src/routes/wa.js) and the PIN transport
   tls,
   templates,
   taskQueue,
@@ -851,6 +970,7 @@ const ctx = {
   roleMemory,
   appDir: APP_DIR,
   appVersion: APP_VERSION,
+  autologon: AUTOLOGON_FAKE ? fakeAutologon() : windowsAutologon(), // 🪟 /api/autologon* (src/routes/autologon.js)
   cliToken: CLI_TOKEN,
   dataDir: DATA_DIR,
   runtimeDir: RUNTIME_DIR,
@@ -911,16 +1031,111 @@ function isTopLevelNavigation(req) {
  * `status --json` returns null (fail closed). Fresh status per attempt (cached a few seconds upstream).
  * Shared by GET /pair (a phone that was redirected here) and POST /pair (the form); on success the caller
  * only writes the response. The per-IP pace and the device cap live in src/remote.js autoPair().
+ * @param {object} req the incoming request (its peer address selects the tailnet peer)
+ * @param {boolean} secure whether the request came over the https (Tailscale) listener
+ * @param {{ transport: 'http'|'https' }} transport
+ * @param {() => Promise<{ peer?: object, name?: string }|null>} [peerOf] the tailnet peer lookup, memoized by the
+ *   caller (handlePair): the code/PIN path of the same request reuses it instead of running the CLI twice
  * @returns {Promise<{ token: string, device: object }|null>} null = the normal code flow continues
  */
-async function autoPairTailnet(req, secure, transport) {
+async function autoPairTailnet(req, secure, transport, peerOf = () => eligibleTailnetPeer(req.socket.remoteAddress)) {
   if (!secure || !remote.enabled || !remote.autoPairTailnet) return null;
-  const found = await eligibleTailnetPeer(req.socket.remoteAddress);
-  const auto = found && remote.autoPair(found.name, { ...transport, ip: String(req.socket.remoteAddress ?? '') });
+  const found = await peerOf();
+  if (!found) return null;
+  const ip = String(req.socket.remoteAddress ?? '');
+  const nodeId = String(found.peer?.ID ?? '');
+  // The same phone coming back: a known tailnet node gets a fresh cookie on its EXISTING record, so a lost cookie
+  // (another origin, cleared site data, a pruned record) does not ask the owner for a code again and the device
+  // list does not grow one record per visit. A node never seen before becomes a new record.
+  const adopted = remote.adopt(nodeId, found.name, { ...transport, ip });
+  const auto = adopted ?? remote.autoPair(found.name, { ...transport, ip, nodeId });
   if (!auto) return null;
-  announcePairedDevice(auto.device); // the other phones hear about it, exactly like a code pairing
+  // Only a brand-new record is announced: an adopted one is the same phone coming back with a fresh cookie, and the
+  // other phones should not get a "device paired" notification for it.
+  if (!adopted) announcePairedDevice(auto.device);
   publishConfig();
   return auto;
+}
+
+/**
+ * The WhatsApp PIN (src/access-pin.js). Reachable BEFORE pairing — that is the whole point — but only while phone
+ * access is on, and every route keeps its own hard limit:
+ *   GET  /api/auth/pin-status    → is WhatsApp configured/connected? (never the PIN; "active" only for the browser
+ *                                  that asked for it)
+ *   POST /api/auth/request-pin   → mint a PIN and send it to the owner's WhatsApp (1/min, 5/hour, 3/hour per address)
+ *   POST /api/auth/verify-pin    → one use on success, 3 wrong attempts burn it, only from the asking browser
+ * None of these ever returns the PIN or puts it in a log. The transport is the in-process link (src/wa-link.js).
+ */
+async function handleAuthPin(req, res, pathname, { secure, local }) {
+  // The master gate: with phone access off nothing here does anything — including a verify that would otherwise
+  // burn the owner's live PIN or answer "the list is full" for a switch that is simply off.
+  if (!remote.enabled) return json(res, 403, { error: 'Akses dari perangkat lain sedang dimatikan.' });
+  // Over the Tailscale listener the peer must be proven to be the OWNER'S OWN device (src/tailnet.js), exactly like
+  // auto-pair: without this, another tailnet user's node could pair itself with a PIN and get a full-control device
+  // (isReadOnly() only looks at the network path, not at who the peer is). Fail closed, and the laptop's own
+  // localhost requests skip it.
+  const peer = !local && secure ? await eligibleTailnetPeer(req.socket.remoteAddress) : null;
+  if (!local && secure && !peer) {
+    return json(res, 403, { error: 'Perangkat Tailscale ini bukan milik pemilik laptop. Pasangkan dengan kode 6 digit dari layar laptop.' });
+  }
+  const transport = { transport: transportOf(req) };
+  if (pathname === '/api/auth/pin-status' && req.method === 'GET') {
+    // configured/status are the mapping /pair already speaks (src/wa-link.js pairStatus): WhatsApp counts as
+    // configured once a QR is showing or the account is linked, and as disconnected while the link is off.
+    const wa = pairStatus(await waLink.status());
+    const pin = accessPin.status({ token: pinToken(req) });
+    return json(res, 200, { configured: wa.configured, status: wa.status, active: pin.active, expiresInSec: pin.expiresInSec, canRequestInSec: pin.canRequestInSec });
+  }
+  if (pathname === '/api/auth/request-pin') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
+    try {
+      const issued = await accessPin.request({ ip: String(req.socket.remoteAddress ?? ''), userAgent: String(req.headers['user-agent'] ?? '') });
+      // The token binds this PIN to this browser (the pair page keeps it as an HttpOnly cookie, never as JSON).
+      res.setHeader('Set-Cookie', pinCookie(issued.token, secure));
+      return json(res, 200, { ok: true, expiresInSec: issued.expiresInSec, attemptsLeft: issued.attemptsLeft });
+    } catch (err) {
+      return pinError(res, err);
+    }
+  }
+  if (pathname === '/api/auth/verify-pin') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
+    if (!String(req.headers['content-type']).startsWith('application/json')) return json(res, 405, { error: 'method not allowed' });
+    const body = (await readJson(req, MAX_PAIR_BODY)) ?? {};
+    const pin = typeof body === 'object' ? body.pin : undefined;
+    if (remote.verify(deviceToken(req), transport)) return json(res, 200, { ok: true, already: true });
+    // Capacity BEFORE spending the PIN: a one-time PIN thrown away on a full list forces a second request.
+    if (!remote.hasRoom()) return json(res, 403, { error: 'Daftar perangkat sudah penuh. Cabut satu perangkat dari laptop dulu.' });
+    let result;
+    try {
+      result = accessPin.verify(pin, { token: pinToken(req) });
+    } catch (err) {
+      return pinError(res, err);
+    }
+    if (!result.ok) return json(res, 400, { ok: false, error: 'PIN salah.', triesLeft: result.triesLeft });
+    // A paired-by-PIN phone over Tailscale is stored with its tailnet node id, so a lost cookie is adopted later
+    // (src/remote.js adopt) instead of creating a second record for the same phone.
+    const paired = remote.pairTrusted(String(req.headers['user-agent'] ?? ''), { ...transport, nodeId: String(peer?.peer?.ID ?? '') });
+    if (!paired) return json(res, 403, { error: 'Daftar perangkat sudah penuh. Cabut satu perangkat dari laptop dulu.' });
+    announcePairedDevice(paired.device);
+    publishConfig();
+    res.setHeader('Set-Cookie', [deviceCookie(paired.token, secure), pinCookie('', secure)]);
+    res.setHeader('Cache-Control', 'no-store');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+  return json(res, 404, { error: 'not found' });
+}
+
+/** A PIN/WhatsApp failure → the status and wording the pair page shows. Never the PIN, never a JID or a message body. */
+function pinError(res, err) {
+  if (err instanceof PinError) {
+    if (err.retryAfterSec) res.setHeader('Retry-After', String(err.retryAfterSec));
+    return json(res, err.status, { ok: false, error: err.message, retryAfter: err.retryAfterSec || undefined });
+  }
+  // A failed send reaches the page as a PinError (the transport wrapper in this file); this is the fallback.
+  if (err instanceof WaLinkError) return json(res, 503, { ok: false, error: err.message });
+  console.error('PIN WhatsApp:', err?.message ?? err);
+  return json(res, 500, { ok: false, error: 'Terjadi kesalahan di server.' });
 }
 
 /** GET /pair?k=… (QR link), GET /pair (code form), POST /pair {code}. */
@@ -930,8 +1145,15 @@ async function handlePair(req, res, url) {
   const key = url.searchParams.get('k');
   const secure = isSecure(req);
   const transport = { transport: transportOf(req) }; // the token works only over the transport it was paired on
+  // One tailnet peer lookup per request (the CLI answer is cached a few seconds upstream): the auto-pair attempt and
+  // the code/PIN pairing below share it. Over plain http nothing proves the peer, so it stays null — no CLI call at
+  // all — and the record simply has no node id (fail closed, like before).
+  let peerLookup = null;
+  const peerOf = () => (peerLookup ??= secure ? eligibleTailnetPeer(ip) : Promise.resolve(null));
+  const nodeIdOf = (found) => String(found?.peer?.ID ?? '');
   if (req.method === 'GET' && key) {
-    const result = remote.pair({ key }, userAgent, ip, transport);
+    // The QR/6-digit link over Tailscale: stored with its node id so a lost cookie is adopted later (adopt()).
+    const result = remote.pair({ key }, userAgent, ip, { ...transport, nodeId: nodeIdOf(await peerOf()) });
     if (!result.token) return servePairPage(res, result.error);
     announcePairedDevice(result.device); // the other phones hear about the new device (see below)
     publishConfig();
@@ -949,7 +1171,7 @@ async function handlePair(req, res, url) {
     // owner's: it never has to read the PIN off the laptop. Same cookie as a code pairing, then straight
     // home. Only a top-level navigation may pair (a subresource can come from another site).
     if (!isTopLevelNavigation(req)) return servePairPage(res);
-    const auto = await autoPairTailnet(req, secure, transport);
+    const auto = await autoPairTailnet(req, secure, transport, peerOf);
     if (auto) {
       res.writeHead(302, { 'Set-Cookie': deviceCookie(auto.token, secure), Location: '/', 'Cache-Control': 'no-store' });
       return res.end();
@@ -960,12 +1182,14 @@ async function handlePair(req, res, url) {
   const body = await readJson(req, MAX_PAIR_BODY);
   // Already paired (valid cookie): say so instead of minting a second record for the same browser.
   if (remote.verify(deviceToken(req), transport)) return json(res, 200, { ok: true, already: true });
-  const auto = await autoPairTailnet(req, secure, transport);
+  const auto = await autoPairTailnet(req, secure, transport, peerOf);
   if (auto) {
     res.writeHead(200, { 'Set-Cookie': deviceCookie(auto.token, secure), 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: true, auto: true }));
   }
-  const result = remote.pair({ code: body.code }, userAgent, ip, transport);
+  // The code/PIN over Tailscale: the peer lookup above already ran for the auto-pair attempt (memoized), so the
+  // record also gets its node id and a later lost cookie is adopted instead of asking for a code again (adopt()).
+  const result = remote.pair({ code: body.code }, userAgent, ip, { ...transport, nodeId: nodeIdOf(await peerOf()) });
   if (result.retryAfter) {
     res.setHeader('Retry-After', String(result.retryAfter));
     return json(res, 429, result);
@@ -1015,6 +1239,8 @@ async function handler(req, res) {
   // sw.js that calls self.registration.unregister(). Server-side, deleting device.push already stops every push.
   if (pathname === '/sw.js' && !(secure && req.method === 'GET')) return json(res, 404, { error: 'not found' });
   try {
+    // Access PIN (WhatsApp): handled before the pairing gate — an unpaired phone is exactly who calls it.
+    if (pathname.startsWith('/api/auth/')) return await handleAuthPin(req, res, pathname, { secure, local });
     if (!local) {
       // Another device on the network: it must be paired, and some settings stay laptop-only.
       if (!remote.enabled) return json(res, 403, { error: 'Akses dari perangkat lain sedang dimatikan.' });
@@ -1040,6 +1266,13 @@ async function handler(req, res) {
       if (ACCOUNT_AUTH.has(pathname) && !canManageAccount(req)) return json(res, 403, { error: 'Login/logout dari HP hanya lewat Tailscale (koneksi terenkripsi), bukan WiFi biasa.' });
       // The one gate for plain-HTTP WiFi: read-only, by allowlist (a new endpoint is refused until listed there).
       if (pathname.startsWith('/api/') && isReadOnly(req) && !wifiAllows(pathname)) return json(res, 403, { error: READ_ONLY_ERROR, readOnly: true });
+    }
+    // GET /api/wa/status: the settings card polls it. The router only dispatches POST (src/routes/router.js), so this
+    // read is served here — behind the same per-start token as every other API, after the LOCAL_ONLY gate above (which
+    // is what keeps the QR away from phones).
+    if (pathname === '/api/wa/status' && req.method === 'GET') {
+      if (req.headers['x-office-token'] !== TOKEN) return json(res, 403, { error: 'forbidden' });
+      return await waStatus(ctx, req, res);
     }
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, device);
     // Spotify's redirect after login (laptop only). Handles its own errors: its URL holds the code and state.
@@ -1170,6 +1403,25 @@ server.on('error', (err) => {
   process.exit(1);
 });
 
+// 🪟 Upgrade guard (1.0.33 → now): that version wrote `AutoAdminLogon=1` while its `adhitron-lock.vbs` was being
+// quarantined by Defender, so the next boot logged in and left the desktop OPEN. The replacement lock task needs no
+// elevation (per-user, InteractiveToken, LeastPrivilege): put it back before serving, and never let a refused Task
+// Scheduler take the office down. No-op when Windows says autologon is off (or already has the lock task).
+if (!AUTOLOGON_FAKE) {
+  try {
+    if (repairUnsafeAutologon(PORT)) console.log('Pengunci layar dipasang ulang: autologon aktif tanpa task pengunci.');
+  } catch (err) {
+    console.error(`Pengunci layar tidak bisa dipasang ulang: ${err?.message ?? err}`);
+  }
+  // A Setup wizard killed mid-way (or a helper that could not delete its temp file) leaves the Windows password in
+  // %TEMP%: sweep the leftovers even if nothing else needs repairing.
+  try {
+    if (sweepLeftoverSecrets() > 0) console.log('File sandi sementara yang tertinggal dibersihkan.');
+  } catch (err) {
+    console.error(`File sandi sementara tidak bisa dibersihkan: ${err?.message ?? err}`);
+  }
+}
+
 server.listen(PORT, HOST, () => {
   const url = `http://localhost:${PORT}`;
   console.log(`Adhitron berjalan di ${url}`);
@@ -1193,6 +1445,8 @@ server.listen(PORT, HOST, () => {
   if (HTTPS_TEST_BIND) console.error('PERINGATAN: OFFICE_HTTPS_TEST_BIND aktif — listener HTTPS di 127.0.0.1 (hanya untuk test).');
   if (SPOTIFY_TEST_ORIGIN) console.error(`PERINGATAN: OFFICE_SPOTIFY_TEST_ORIGIN aktif — Spotify: MODE TEST (${SPOTIFY_TEST_ORIGIN}).`);
   else if (process.env.OFFICE_SPOTIFY_TEST_ORIGIN) console.error('PERINGATAN: OFFICE_SPOTIFY_TEST_ORIGIN diabaikan (hanya http://127.0.0.1:<port>).');
+  if (WA_FAKE) console.error('PERINGATAN: OFFICE_WA_FAKE aktif — WhatsApp memakai soket palsu (hanya untuk test).');
+  if (AUTOLOGON_FAKE) console.error('PERINGATAN: OFFICE_AUTOLOGON_FAKE aktif — autologon memakai saklar palsu (hanya untuk test).');
   spotify.start();
   syncListeners();
   tls.start(); // a certificate on disk is used at once; Tailscale is asked in the background
@@ -1233,6 +1487,7 @@ async function shutdown() {
   // The same for a running setup install (npm/winget children are killed by their own abort handling).
   const checksStopped = Promise.allSettled([claudeCheck.stop(), opencodeCheck.stop()]);
   spotify.stop();
+  waLink.stop(); // closes the WhatsApp socket without touching the encrypted session (a restart reconnects)
   routines.stop();
   try {
     await sessions.shutdown();

@@ -14,6 +14,7 @@
 //   failure is "unknown" (`covered: null`), and the banner must not nag on unknown.
 
 import { execFile } from 'node:child_process';
+import { childEnv } from './child-env.js';
 
 /** The rule this app installs (NEW name on purpose — never reuse the legacy one). */
 export const FIREWALL_RULE_NAME = 'Adhitron (Tailscale)';
@@ -105,14 +106,14 @@ export function parseFirewallCheck(stdout) {
 const execPowerShell = (script, timeoutMs) =>
   new Promise((resolve, reject) => {
     const args = ['-NoProfile', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')];
-    execFile(powershellPath(), args, { windowsHide: true, timeout: timeoutMs, maxBuffer: 1 << 20 }, (err, stdout) =>
+    execFile(powershellPath(), args, { windowsHide: true, timeout: timeoutMs, maxBuffer: 1 << 20, env: childEnv() }, (err, stdout) =>
       err ? reject(err) : resolve(String(stdout ?? '')));
   });
 
 /** Runs the elevated fix through Windows PowerShell (its own -Command layer, no cmd.exe). Fixed string only. */
 const execFirewallFix = (timeoutMs) =>
   new Promise((resolve, reject) => {
-    execFile(powershellPath(), firewallFixArgs(), { windowsHide: true, timeout: timeoutMs, maxBuffer: 1 << 20 }, (err, stdout) =>
+    execFile(powershellPath(), firewallFixArgs(), { windowsHide: true, timeout: timeoutMs, maxBuffer: 1 << 20, env: childEnv() }, (err, stdout) =>
       err ? reject(err) : resolve(String(stdout ?? '')));
   });
 

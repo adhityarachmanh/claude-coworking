@@ -14,6 +14,8 @@ import { existsSync as nodeExistsSync, readdirSync as nodeReaddirSync } from 'no
 import os from 'node:os';
 import path from 'node:path';
 
+import { childEnv } from './child-env.js';
+
 /** A Store package folder / family name: SpotifyAB.SpotifyMusic_<13-char publisher id>. */
 const STORE_FAMILY = /^SpotifyAB\.SpotifyMusic_[a-z0-9]{1,20}$/i;
 const MINIMIZE_TIMEOUT_MS = 5000;
@@ -51,7 +53,7 @@ export function createSpotifyLauncher(o = {}) {
     new Promise((resolve, reject) => {
       let child;
       try {
-        child = execFile(file, args, { windowsHide: true, detached: true, stdio: 'ignore', shell: false });
+        child = execFile(file, args, { windowsHide: true, detached: true, stdio: 'ignore', shell: false, env: childEnv({}, env) });
       } catch (err) {
         return reject(err);
       }
@@ -114,7 +116,7 @@ export function createSpotifyLauncher(o = {}) {
     return new Promise((resolve) => {
       try {
         const ps = win.join(env.SystemRoot || env.windir || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-        const child = execFile(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', MINIMIZE_SCRIPT], { windowsHide: true, timeout: MINIMIZE_TIMEOUT_MS, shell: false }, (err) => resolve(!err));
+        const child = execFile(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', MINIMIZE_SCRIPT], { windowsHide: true, timeout: MINIMIZE_TIMEOUT_MS, shell: false, env: childEnv({}, env) }, (err) => resolve(!err));
         child?.once?.('error', () => resolve(false));
       } catch {
         resolve(false);

@@ -15,8 +15,9 @@ HP / browser apa pun ──▶ jembatan ini (Netlify, online 24 jam) ──▶ T
 2. **Matikan**: pemicu menulis jadwal `offAt` (default 5 mnt), lalu **cron tiap menit** mengeksekusinya —
    tetap tepat waktu walaupun PC (dan Adhitron) sudah mati.
 3. **Status**: halaman status publik (bisa dibuka via **tiket serah-terima** tanpa token jangka panjang)
-   menampilkan state eksplisit — 🟢 hidup / 🖥 booting / 🟡 kemungkinan hidup / ⚫ mati / ⚪ belum pasti — plus
-   ⏳ countdown pemutusan dan tombol yang sesuai dengan state itu.
+   menampilkan state eksplisit — 🟢 hidup / 🖥 booting / 🟡 kemungkinan hidup / 🟡 standby / ⚫ mati / ⚪ belum pasti — plus
+   ⏳ countdown pemutusan dan tombol yang sesuai dengan state itu. Di bawahnya ada monitoring listrik
+   realtime (daya, tegangan, arus, status saklar) dari data IoT Core yang sama.
 
 **Halaman `/` mengingat space di browser ini.** Setelah daftar, URL + token ditampilkan dan
 `{ id, bridgeUrl, statusUrl, manageUrl }` disimpan di `localStorage` (kunci `adhitron-space`) — jadi refresh
@@ -88,7 +89,7 @@ Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk
 | `POST /api/handoff[?delay=N]` | `X-Bridge-Token` / `X-Status-Token` | delay 0-3600 dtk (opsional, disimpan untuk tombol Putus arus) | `{ ok, handoffUrl, offDelaySec }` - tiket halaman status, tanpa jadwal/plug |
 | `POST /api/on` | `X-Bridge-Token` / `X-Status-Token` | `?force=1` untuk memaksa siklus OFF → ON | `{ ok }` · PC masih hidup tanpa `force` → **409** |
 | `GET /api/status` | `X-Bridge-Token` / `X-Status-Token` | - | status (di bawah) |
-| `GET /api/energy` | `X-Bridge-Token` / `X-Status-Token` | `?range=week|year&tz=Asia/Jakarta` | `{ ok, now:{powerW,currentMa,voltageV}, todayKwh, monthKwh, trend:[{time,value}], updatedAt }` (cache 60 dtk) |
+| `GET /api/energy` | `X-Bridge-Token` / `X-Status-Token` | - (tanpa argumen range/tz) | `{ ok, now:{powerW,voltageV,currentMa}, switchOn, energyKwh, updatedAt }` — monitoring realtime dari SATU panggilan device status Tuya IoT Core (gratis; cache 5 dtk). Gagal → `{ ok:false, error }` dengan pesan generik |
 
 - `bridgeUrl` = URL situs jembatan; **panel Adhitron ⚙ Remote power: URL = bridgeUrl, token = `token`**.
 - **Kode pasangan** (pindah space ke perangkat lain): `POST /api/pair` membuat kode **8 karakter base32** —
@@ -117,7 +118,7 @@ Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk
   sebelum validasi, dan ada **cap GLOBAL 300 verifikasi/hari** (lintas IP) supaya kuota Tuya operator tidak
   bisa dihabiskan dari banyak IP; bila terlampaui → **503** `Batas verifikasi harian situs tercapai, coba besok.`
   (tidak ada yang tersimpan). Pesan error tidak pernah memuat Client ID/Secret/Device ID.
-- **`POST /api/on` menolak menyalakan PC yang masih hidup.** Bila heartbeat segar atau daya segar > 20 W,
+- **`POST /api/on` menolak menyalakan PC yang masih hidup.** Bila heartbeat segar atau daya segar > 15 W,
   jembatan menjawab **409** `{ "error": "PC sepertinya masih hidup — listrik tidak disiklus. Kirim ?force=1
   kalau yakin." }` **tanpa memanggil Tuya** (tidak ada siklus OFF → ON yang membunuh PC). `POST /api/on?force=1`
   memaksa siklus OFF → ON — dipakai tombol **⚡ Nyalakan paksa** saat status `unknown`.
@@ -133,31 +134,51 @@ Semua respons JSON. Auth API **hanya lewat header** (query `?token=` hanya untuk
 
 ```json
 {
-  "id": "1a2b3c4d", "alive": true,          // alive = heartbeat segar ATAU daya segar > 20 W
-  "state": "alive",                         // alive | booting | suspected-alive | off | unknown
-  "heartbeatFresh": true, "powerFresh": true, // heartbeat < 7 mnt · sampel daya < 90 dtk
+  "id": "1a2b3c4d", "alive": true,          // alive = ada bukti segar PC hidup (lihat tabel state)
+  "state": "alive",                         // alive | booting | suspected-alive | standby | off | unknown
+  "heartbeatFresh": true, "powerFresh": true, // heartbeat < 4 mnt · sampel daya < 90 dtk
   "heartbeatAgeSec": 41, "powerAgeSec": 12,   // null = belum pernah ada
   "offAt": 1794..., "secondsUntilOff": 214, // jadwal pemutusan (null = tidak ada)
-  "plug": "on",                             // asumsi terakhir dari perintah yang dikirim
-  "powerW": 45.3, "powerAt": 1794...,       // sampel daya terakhir yang BERHASIL (percobaan dibatasi 1×/30 dtk)
-  "booting": false,                         // daya > 20 W ≥ 30 dtk tanpa heartbeat segar
+  "plug": "on",                             // saklar terakhir yang diketahui: perintah yang dikirim atau pembacaan switch_1/switch (null = tak diketahui)
+  "powerW": 45.3, "voltageV": 220.1, "currentMa": 990, "switchOn": true,
+  "energyKwh": 12.34,                       // kWh kumulatif DP add_ele (null kalau plug tidak melaporkannya)
+  "powerAt": 1794...,                       // sampel daya terakhir yang BERHASIL (percobaan dibatasi 1×/30 dtk)
+  "booting": false,                         // daya > 15 W ≥ 30 dtk tanpa heartbeat segar
   "needsAttention": false,                  // ⚠ cron gagal memutus 3× — cek plug manual
   "lastHeartbeat": 1794..., "adhitronUrl": "https://nama.ts.net"
 }
 ```
 
-Aturan `state`:
+Aturan `state` (tegangan **tidak** dipakai sebagai bukti hidup — 220 V tetap ada walau PC mati):
 
 | `state` | Bukti | Arti |
 |---|---|---|
-| `alive` | heartbeat < 7 mnt, atau sampel daya < 90 dtk dengan daya > 20 W - kecuali sampel segar ≤ 5 W (bukti listrik menang) | PC hidup |
-| `booting` | daya > 20 W ≥ 30 dtk, heartbeat basi | PC booting — atau beku |
-| `suspected-alive` | daya > 20 W segar, heartbeat basi, < 30 dtk | kemungkinan hidup, bukti belum cukup |
-| `off` | daya ≤ 5 W segar, atau plug OFF tanpa heartbeat segar | PC mati |
+| `alive` | heartbeat < 4 mnt, atau sampel daya < 90 dtk dengan daya > 15 W — kecuali sampel segar ≤ 10 W atau saklar `switch_1 === false` (bukti listrik menang) | PC hidup |
+| `booting` | daya > 15 W ≥ 30 dtk, heartbeat basi | PC booting — atau beku |
+| `suspected-alive` | daya > 15 W segar, heartbeat basi, < 30 dtk | kemungkinan hidup, bukti belum cukup |
+| `standby` | sampel daya segar 10–15 W — mengalahkan heartbeat segar sekalipun | standby / baru dinyalakan — belum bisa dijangkau |
+| `off` | `switchOn === false`, sampel daya segar ≤ 10 W, atau plug tercatat OFF tanpa heartbeat segar dan tanpa jadwal menunggu | PC mati |
 | `unknown` | tidak ada bukti segar | belum bisa dipastikan |
 
-`samplePower` membatasi **percobaan** Tuya lewat `powerTryAt` (30 dtk); `powerAt` hanya maju saat pembacaan
-berhasil, jadi sampel gagal tidak pernah tampak segar.
+Pembacaan listrik dan saklar memakai **satu** panggilan `GET /v1.0/devices/{id}/status` (IoT Core, gratis).
+`switchOn`/`lastPlug` ikut diperbarui dari `switch_1`, jadi plug yang dimatikan dari aplikasi Bardi/Smart Life
+langsung terbaca OFF. `samplePower` membatasi **percobaan** Tuya lewat `powerTryAt` (30 dtk); `powerAt` hanya
+maju saat pembacaan berhasil, jadi sampel gagal tidak pernah tampak segar.
+
+Parsing datapoint cocok lewat `code` **maupun** nomor DP `id` (sebagian gateway hanya meneruskan `id`), dan field
+yang tidak dilaporkan plug menjadi `null` — bukan error:
+
+| DP | Nama | Skala |
+|---|---|---|
+| 1 | `switch_1` (atau `switch` di firmware lama) | boolean / 0–1 |
+| 19 | `cur_power` | ÷ 10 → W |
+| 20 | `cur_voltage` | ÷ 10 → V |
+| 18 | `cur_current` | mA |
+| 17 | `add_ele` | ÷ 100 → kWh |
+
+Endpoint API yang sengaja **tidak** dipakai: statistik energi Power Management
+(`/v1.0/iot-03/energy/electricity/...`) — berbayar dan tidak tersedia untuk akun ini, jadi endpoint itu sudah
+dihapus dari jembatan. Yang tersisa hanya dua endpoint IoT Core gratis di atas.
 
 **PENTING — aturan pembatalan (kontrak heartbeat):** jika heartbeat datang ketika ada jadwal `offAt` di masa
 depan, jadwal **otomatis dibatalkan** (heartbeat = bukti PC hidup; dipakai untuk membatalkan "putus paksa"
@@ -187,17 +208,21 @@ Halaman web:
   tidak dimatikan dari sini); `booting`/`suspected-alive`: hanya **⚠ Putus paksa**; `off`: **⚡ Nyalakan PC** +
   **⏻ Putus arus listrik**; `unknown`: **⚡ Nyalakan paksa** (konfirmasi, memakai
   `/api/on?force=1`). Penolakan **409** ditampilkan sebagai peringatan di halaman, bukan gagal diam-diam.
-  Bila jadwal aktif dan daya ≤ 5 W: **⚫ PC sudah mati · ⏳ listrik diputus dalam m:ss**.
-  Di bawah tombol ada bagian **⚡ Energi Bardi**: daya/voltase/arus saat ini, kWh hari ini & bulan ini, dan grafik
-  **7 hari** / **12 bulan** (sumber Tuya Cloud, di-cache 60 dtk). Butuh izin API **Power Management / Energy
-  Consumption Statistics** di Cloud Project; kalau belum aktif, bagian ini menampilkan petunjuk tanpa merusak status.
+  Bila jadwal aktif dan daya ≤ 10 W: **⚫ PC sudah mati · ⏳ listrik diputus dalam m:ss**.
+  Di bawah tombol ada bagian **⚡ Listrik Bardi (realtime)**: kartu **daya aktif**, **tegangan**, **arus**
+  (mA, atau A bila ≥ 1000 mA), dan **status plug** (`🔌 Plug ON/OFF`), tombol **↻ Refresh**, serta teks
+  "diperbarui N dtk lalu". Datanya dari **satu** panggilan device status Tuya IoT Core (gratis) — tidak ada
+  statistik Power Management yang berbayar. Halaman memanggil endpoint ini **hanya** saat dibuka, saat Refresh
+  ditekan, dan 3× jeda 5 dtk setelah aksi daya; tidak ada polling energi tanpa henti (kuota Tuya ~26.000/bulan).
+  Saat Bardi masih mengukur daya > 15 W, tombol pemutusan arus meminta **konfirmasi tambahan** karena PC
+  kemungkinan masih hidup.
 
 ## Cron tiap menit (`scheduledSweep`)
 
 Satu pass per tick, tidak pernah loop: untuk tiap space dengan `offAt` jatuh tempo —
 
 1. `lastHeartbeat > offAtWrittenAt` (PC ternyata hidup lagi) → **batal**.
-2. Else: plug **OFF** via Tuya, lalu verifikasi daya: `< 5 W` → sukses (jadwal dibersihkan, `attempts = 0`);
+2. Else: plug **OFF** via Tuya, lalu verifikasi daya: `≤ 10 W` → sukses (jadwal dibersihkan, `attempts = 0`);
    plug tanpa sensor daya → komando OFF dianggap sukses.
 3. Masih tinggi → `attempts++`, jadwal ulang `offAt = now + 60`; **3× gagal** → jadwal dihentikan,
    `needsAttention = true` (halaman status: "⚠ gagal memutus — cek plug manual").
@@ -247,11 +272,12 @@ dari halaman status (**⏻ Putus arus listrik**); heartbeat berhenti sendiri kar
 node --test --test-timeout=60000 "bridge/**/*.test.mjs"
 ```
 
-**71 tes** (`node --test`), menggunakan fake fetch Tuya + fake Blobs - tanpa jaringan. Mencakup: register &
+**76 tes** (`node --test`), menggunakan fake fetch Tuya + fake Blobs - tanpa jaringan. Mencakup: register &
 enkripsi (tidak ada plaintext di store), validasi kredensial ke Tuya sebelum menyimpan (422/503, pesan tanpa
 kredensial), throttle 10/IP/hari, auth 401, jadwal off + tiket sekali pakai, pembatalan via heartbeat,
 cron sukses / coba ulang / needsAttention / batal, `hold=1` (heartbeat tidak membatalkan "matikan rapi"), `/api/on` (409 saat PC masih hidup, `?force=1`, hapus jadwal),
-cap global 300 verifikasi/hari, error Tuya stabil (tanpa JSON mentah), status `state` + field umur heartbeat/daya, sampel daya gagal tidak dianggap segar, halaman tidak bocorkan
+cap global 300 verifikasi/hari, error Tuya stabil (tanpa JSON mentah), status `state` + field umur heartbeat/daya, sampel daya gagal tidak dianggap segar, `standby` 10–15 W,
+`GET /api/energy` (satu device status + cache 5 dtk, gagal → `ok:false` pesan generik), parsing DP lewat `id` tanpa `code`, halaman tidak bocorkan
 kredensial, tombol per state, manage (update/validasi/rotasi/hapus), kode pasangan (8 karakter base32, hanya
 sha256 di store, TTL 2 menit, sekali pakai, hanya ownerToken yang boleh membuat kode, satu kode aktif per
 space, pesan 401 yang sama, 400 untuk body salah, throttle 20/IP/jam + 3000/jam total → 429, pembersihan cron).

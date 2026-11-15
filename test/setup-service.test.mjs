@@ -448,6 +448,8 @@ test('applyRuntimePath: prepends npm prefix + Node folder, keeps the host PATH a
   const { paths, nodeDir } = makeRuntime(runtimeDir);
   const host = tmpPath('host-bin');
   const other = tmpPath('other-bin');
+  mkdirSync(host, { recursive: true });
+  mkdirSync(other, { recursive: true }); // the inherited entries are sanitized: a folder that is not there is dropped
   const env = { PATH: [host, paths.npmPrefix, other, nodeDir].join(path.delimiter) };
   const service = new SetupService({ runtimeDir, platform: 'win32', probe: () => [] });
   const added = service.applyRuntimePath(env);

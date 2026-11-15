@@ -51,6 +51,7 @@ before(async () => {
       OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale'), // phone access on: never ask the real Tailscale for a certificate
       OFFICE_CLAUDE_CHECK_DELAY_MS: '0', // 🧩 the update detector looks at the (fake) Claude Code version right away
       OFFICE_EFFORT_FAKE: 'high', // Effort/Model Auto are tested without spawning a real classifier model
+      OFFICE_AUTOLOGON_FAKE: '1', // never touch the real HKLM/Winlogon or Task Scheduler from a test run
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -134,6 +135,16 @@ async function snapshot() {
   reader.cancel();
   return JSON.parse(text.match(/^data: (.*)$/m)[1]);
 }
+
+test('🪟 upgrade guard: a stale autologon gets its lock task back before the server serves', () => {
+  const source = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  assert.match(source, /repairUnsafeAutologon\(PORT\)/, 'server.js repairs the missing lock task');
+  assert.ok(
+    source.indexOf('repairUnsafeAutologon(PORT)') < source.indexOf('server.listen(PORT, HOST'),
+    'the repair happens before the listener',
+  );
+  assert.equal(/^await /m.test(source), false, 'top-level await would break the CommonJS Windows build');
+});
 
 test('security: token, origin, host and path checks', async () => {
   assert.equal((await fetch(`${BASE}/api/demo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 403);

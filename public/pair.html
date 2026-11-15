@@ -8,7 +8,7 @@
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <style>
-      :root { --bg: #121317; --surface: #1f232b; --border: #2c303b; --text: #ece9e4; --muted: #8d939f; --accent: #d97757; --err: #f0524a; }
+      :root { --bg: #121317; --surface: #1f232b; --border: #2c303b; --text: #ece9e4; --muted: #8d939f; --accent: #d97757; --err: #f0524a; --ok: #6fbf73; }
       * { box-sizing: border-box; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
       main { width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px 20px; text-align: center; }
@@ -18,22 +18,44 @@
       input { width: 100%; font: 600 30px/1 ui-monospace, Consolas, monospace; letter-spacing: 10px; text-align: center; padding: 12px 8px 12px 18px; border-radius: 12px; border: 1px solid var(--border); background: #15171c; color: var(--text); outline: none; }
       input:focus { border-color: var(--accent); }
       button { width: 100%; margin-top: 12px; padding: 13px; border: 0; border-radius: 12px; background: #b85a3c; color: #fff; font-weight: 600; font-size: 16px; line-height: 1; font-family: inherit; cursor: pointer; }
-      button:disabled { opacity: .5; }
+      button:disabled { opacity: .5; cursor: default; }
+      button.ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); font-weight: 500; font-size: 14px; }
       .msg { min-height: 22px; margin-top: 12px; font-size: 14px; color: var(--err); }
+      .msg.ok { color: var(--ok); }
+      .hint { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; }
+      .hint.warn { color: #e0b341; margin: 0 0 12px; }
+      details { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; text-align: left; }
+      summary { color: var(--muted); font-size: 13px; cursor: pointer; }
       small { display: block; margin-top: 16px; color: var(--muted); font-size: 12px; }
+      [hidden] { display: none !important; }
     </style>
   </head>
   <body>
     <main>
       <img class="logo" src="/icons/icon.svg" alt="" />
       <h1>Hubungkan ke Adhitron</h1>
-      <p>Masukkan kode 6 digit yang tampil di laptop:<br />📱 Buka di HP (kanan atas)</p>
-      <form id="form">
-        <input id="code" aria-label="Kode 6 digit dari laptop" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required autofocus />
-        <button id="btn">Hubungkan</button>
+      <p id="intro">Kode PIN dikirim ke WhatsApp pemilik laptop — tidak perlu melihat layar laptop.</p>
+
+      <form id="pin-form">
+        <button id="send" type="button">📲 Kirim PIN ke WhatsApp</button>
+        <div id="pin-step" hidden>
+          <input id="pin" aria-label="Kode PIN 6 digit dari WhatsApp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" minlength="6" pattern="[0-9]{6}" required placeholder="••••••" />
+          <button id="verify" type="submit">Hubungkan</button>
+        </div>
       </form>
-      <div id="msg" class="msg" role="alert">__MESSAGE__</div>
-      <small>Atau scan QR di laptop. Perangkat ini akan diingat sampai dicabut dari laptop.<br />Lewat WiFi biasa HP hanya bisa melihat; untuk mengirim perintah pakai Tailscale.<br />Perangkat Tailscale dengan akun yang sama tersambung otomatis, tanpa kode.</small>
+
+      <div id="msg" class="msg" role="alert" aria-live="polite">__MESSAGE__</div>
+      <div id="countdown" class="hint" hidden></div>
+
+      <details>
+        <summary>Punya kode 6 digit dari layar laptop?</summary>
+        <form id="form">
+          <input id="code" aria-label="Kode 6 digit dari laptop" inputmode="numeric" autocomplete="one-time-code" maxlength="6" minlength="6" pattern="[0-9]{6}" required placeholder="••••••" />
+          <button id="btn">Pakai kode laptop</button>
+        </form>
+      </details>
+
+      <small>Perangkat ini diingat sampai dicabut dari laptop.<br />Lewat WiFi biasa HP hanya bisa melihat; untuk mengirim perintah pakai Tailscale.<br />Perangkat Tailscale dengan akun yang sama tersambung otomatis, tanpa kode.</small>
     </main>
     <script src="/js/pair.js" defer></script>
   </body>

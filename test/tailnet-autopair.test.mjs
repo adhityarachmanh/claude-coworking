@@ -514,12 +514,16 @@ test('a broken `tailscale status --json` fails closed: code required, no crash',
 });
 
 test('the setting is laptop-only: a paired device gets 403', async () => {
-  const auto = await tlsPost('/pair', {});
-  assert.equal(auto.status, 200, 'auto-paired again for this test');
-  const cookie = auto.headers['set-cookie'][0].split(';')[0];
+  // Paired by CODE here (auto-pair off just for the pairing): this test is about WHO may change the setting, and
+  // the per-IP auto-pair budget (5 per minute) is needed by the adoption test at the end of the file.
+  assert.equal((await api('/api/remote/auto-pair', { autoPairTailnet: false })).status, 200);
+  const info = (await api('/api/remote/pairing', { https: true })).body;
+  const paired = await tlsPost('/pair', { code: info.code });
+  assert.equal(paired.status, 200, 'paired for this test');
+  const cookie = paired.headers['set-cookie'][0].split(';')[0];
   assert.equal((await tlsPost('/api/remote/auto-pair', { autoPairTailnet: true }, cookie)).status, 403, '/api/remote* is refused to paired phones');
   assert.equal((await api('/api/remote/auto-pair', { autoPairTailnet: true })).status, 200, 'the laptop can turn it back on');
-  assert.equal((await remoteInfo()).devices.filter((d) => d.name === 'pixel-adhit').length, 1, 'the whole loop ran on auto-pairings');
+  await api('/api/remote/revoke', { id: (await remoteInfo()).devices.at(-1).id });
 });
 
 // keep an http code pairing in the file to prove the two paths coexist
@@ -529,4 +533,39 @@ test('a normal code pairing over http keeps working next to auto-pair', async (t
   assert.equal(paired.status, 200);
   assert.equal(JSON.parse(await paired.text()).auto, undefined, 'no auto flag on a code pairing');
   assert.ok((await remoteInfo()).devices.some((d) => d.transport === 'http'));
+});
+
+// ---------- a QR link pairing over https is remembered by tailnet node (src/remote.js adopt) ----------
+
+test('a QR link over https is not asked for a code again when its cookie is lost', async () => {
+  // The QR link is a code pairing, not auto-pair. It used to be stored WITHOUT the tailnet node id, so a phone
+  // that later lost its cookie (cleared site data, another origin) got the code form again even though the
+  // tailnet had already proved who it was. handlePair now passes the peer's node id on the `?k=` path too, and
+  // adopt() hands the EXISTING record a fresh token instead of creating a second one.
+  scenario({ peers: { ...peers(), owner: { ...peers().owner, ID: 'node-owner-1' } } });
+  const before = (await remoteInfo()).devices.length;
+  const info = (await api('/api/remote/pairing', { https: true })).body;
+  assert.ok(info.https?.qrUrl, 'the test needs the https listener');
+  const key = new URL(info.https.qrUrl).searchParams.get('k');
+  const paired = await tlsRequest(`/pair?k=${encodeURIComponent(key)}`);
+  assert.equal(paired.status, 302, paired.body.slice(0, 120));
+  const cookie = paired.headers['set-cookie'][0].split(';')[0];
+  const afterPair = (await remoteInfo()).devices;
+  assert.equal(afterPair.length, before + 1, 'one record for the QR pairing');
+  const record = afterPair.at(-1);
+
+  // The same phone comes back without its cookie: the proven peer is adopted, not asked for a code.
+  const again = await tlsRequest('/pair');
+  assert.equal(again.status, 302, 'no code form for the same tailnet node');
+  const fresh = again.headers['set-cookie'][0].split(';')[0];
+  assert.notEqual(fresh, cookie, 'a new token');
+  const afterAdopt = (await remoteInfo()).devices;
+  assert.equal(afterAdopt.length, afterPair.length, 'the record was adopted, not duplicated');
+  assert.equal(afterAdopt.at(-1).id, record.id, 'same device id');
+  assert.equal((await tlsRequest('/', { headers: { Cookie: fresh } })).status, 200, 'the fresh cookie works');
+  assert.equal((await tlsRequest('/', { headers: { Cookie: cookie } })).status, 302, 'the lost cookie is dead');
+
+  await api('/api/remote/revoke', { id: record.id });
+  assert.equal((await remoteInfo()).devices.length, before, 'gone again');
+  scenario({}); // back to the plain owner map for any later test
 });

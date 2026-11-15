@@ -11,6 +11,8 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { childEnv } from '../src/child-env.js';
+
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const dashDash = argv.indexOf('--');
@@ -83,7 +85,9 @@ async function main() {
 
   const child = spawn(process.execPath, [path.join(APP_DIR, 'server.js'), ...serverArgs], {
     cwd: APP_DIR,
-    env: { ...process.env, OFFICE_PORT: String(PORT) },
+    // childEnv: the server (and every CLI it spawns) must not inherit nvm's `.nodejs` junction in PATH — that is
+    // the EUNKNOWN lstat pwsh.exe that breaks the first prompt after an in-app update.
+    env: childEnv({ OFFICE_PORT: String(PORT) }),
     detached: true,
     stdio: 'ignore',
     windowsHide: true,

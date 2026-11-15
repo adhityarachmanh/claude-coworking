@@ -4,6 +4,7 @@ import { Router } from './router.js';
 import * as account from './account.js';
 import * as approvals from './approvals.js';
 import * as attention from './attention.js';
+import * as autologon from './autologon.js';
 import * as backup from './backup.js';
 import * as budget from './budget.js';
 import * as checklist from './checklist.js';
@@ -32,6 +33,7 @@ import * as spotify from './spotify.js';
 import * as tasks from './tasks.js';
 import * as team from './team.js';
 import * as templates from './templates.js';
+import * as wa from './wa.js';
 
 /** Builds the router. Registering touches no state, so tests can enumerate the routes without a server. */
 export function buildRouter() {
@@ -69,6 +71,8 @@ export function buildRouter() {
     opencodeConfig.register,
     setup.register,
     misc.register,
+    autologon.register,
+    wa.register,
   ])
     register(router);
   return router;

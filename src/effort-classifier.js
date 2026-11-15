@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileTree } from './proc.js';
+import { childEnv } from './child-env.js';
 import { childOpenCodeEnv } from './opencode-bin.js';
 import { classifierPrompt, classifyEffortLocally, cleanAutoLevel, effectiveEffort, parseEffortClassification } from './effort.js';
 
@@ -24,7 +25,7 @@ const rmDir = (dir) => {
 
 function run(bin, args, { cwd, timeout = DEFAULT_TIMEOUT_MS } = {}) {
   return new Promise((resolve) => {
-    execFileTree(bin.command, [...bin.args, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: MAX_OUTPUT, env: { ...childOpenCodeEnv(process.env), CI: '1', NO_COLOR: '1', OPENCODE_DISABLE_AUTOUPDATE: '1' } }, (error, out, err) => {
+    execFileTree(bin.command, [...bin.args, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: MAX_OUTPUT, env: childEnv({ ...childOpenCodeEnv(process.env), CI: '1', NO_COLOR: '1', OPENCODE_DISABLE_AUTOUPDATE: '1' }) }, (error, out, err) => {
       resolve({ ok: !error, timedOut: Boolean(error?.killed), text: strip(`${out ?? ''}\n${err ?? ''}`).slice(0, MAX_OUTPUT) });
     });
   });

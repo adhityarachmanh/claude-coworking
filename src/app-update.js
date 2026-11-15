@@ -5,13 +5,14 @@
 import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { childEnv } from './child-env.js';
 
 const CHECK_EVERY_MS = 30 * 60_000;
 const FIRST_CHECK_MS = 60_000;
 
 function git(cwd, args, timeout = 60_000) {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, encoding: 'utf8', timeout, windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo', LC_ALL: 'C' } }, (err, out, errOut) =>
+    execFile('git', args, { cwd, encoding: 'utf8', timeout, windowsHide: true, env: childEnv({ GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo', LC_ALL: 'C' }) }, (err, out, errOut) =>
       resolve({ ok: !err, out: String(out ?? '').trim(), err: String(errOut ?? '').trim() }),
     );
   });
@@ -96,7 +97,9 @@ export class AppUpdater {
     this.set({ updating: false, behind: 0, commits: [] }); // pulled: nothing pending (the restart follows)
     if (restart) {
       // Detached + delayed: this request is answered first, then restart.mjs asks this server to shut down cleanly.
-      const child = spawn(process.execPath, [path.join(this.appDir, 'scripts', 'restart.mjs')], { cwd: this.appDir, detached: true, stdio: 'ignore', windowsHide: true });
+      // childEnv: the restarted server inherits this environment, so nvm's `.nodejs` junction must not be in PATH
+      // (otherwise the first prompt after the update dies with EUNKNOWN lstat pwsh.exe).
+      const child = spawn(process.execPath, [path.join(this.appDir, 'scripts', 'restart.mjs')], { cwd: this.appDir, detached: true, stdio: 'ignore', windowsHide: true, env: childEnv() });
       child.unref();
     }
     return { ok: true, pulled };

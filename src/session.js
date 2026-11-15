@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } f
 import os from 'node:os';
 import path from 'node:path';
 import { acpSessionClass } from './acp-session.js';
+import { childEnv } from './child-env.js';
 import { autoContext, classifyEffort } from './effort-classifier.js';
 import { shortModelLabel, tierFor, classifierModelFor } from './model-auto.js';
 import { killTree } from './proc.js';
@@ -254,7 +255,7 @@ export class SessionManager {
     return new Promise((resolve) => {
       let child;
       try {
-        child = spawn(this.claude.command, streamArgs(this.claude), { cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, OFFICE_MANAGED: '1' } });
+        child = spawn(this.claude.command, streamArgs(this.claude), { cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'], env: childEnv({ OFFICE_MANAGED: '1' }) });
       } catch {
         resolve(null);
         return;
@@ -470,7 +471,7 @@ export class ClaudeSession {
     let stderr = '';
     let child;
     try {
-      child = spawn(cmd, args, { cwd: this.project.path, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(cmd, args, { cwd: this.project.path, env: childEnv(), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (err) {
       this.hub.updateChat(this.id, chatId, { status: 'fail', output: err.message });
       return;
@@ -833,7 +834,7 @@ export class ClaudeSession {
       child = spawn(this.m.claude.command, args, {
         cwd: this.project.path,
         // File checkpoints before every edit (always on in the interactive CLI): what rewind restores.
-        env: { ...process.env, OFFICE_MANAGED: '1', CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: 'true' },
+        env: childEnv({ OFFICE_MANAGED: '1', CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: 'true' }),
         windowsHide: true,
       });
     } catch (err) {

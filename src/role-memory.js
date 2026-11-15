@@ -12,6 +12,7 @@
 // a hint (never code, paths, commands or chat), each name once; the answer is stored and reused for good.
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { childEnv } from './child-env.js';
 import { readOnlyOpenCodeEnv, readUserPermission } from './opencode-bin.js';
 import { execFileTree } from './proc.js';
 import { CATALOG_IDS } from './role-catalog.js';
@@ -364,7 +365,7 @@ export function parseAnswer(text) {
 
 function run(command, args, { cwd, timeout, env }) {
   return new Promise((resolve) => {
-    execFileTree(command, args, { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 1024 * 1024, env: { ...process.env, ...env } }, (err, out, errOut) =>
+    execFileTree(command, args, { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 1024 * 1024, env: childEnv({ ...env }) }, (err, out, errOut) =>
       resolve({ ok: !err, out: String(out ?? ''), err: String(errOut ?? ''), timedOut: Boolean(err?.killed) }),
     );
   });

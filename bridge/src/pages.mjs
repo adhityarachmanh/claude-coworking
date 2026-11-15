@@ -97,18 +97,16 @@ word-break:break-all}
 .energy{margin-top:22px;border-top:1px solid var(--line);padding-top:14px}
 .ehead{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .ehead h2{margin:0}
-.etabs{display:flex;gap:6px}
-.etab{background:var(--surface-2);color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit;font-size:.75rem;cursor:pointer}
-.etab.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
-.enow{font-size:1.05rem;font-weight:600;margin:8px 0;font-variant-numeric:tabular-nums}
-.ecards{display:flex;gap:8px;margin:8px 0}
-.ecard{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
-.ecard b{display:block;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.ebtn{background:var(--surface-2);color:var(--text-2);border:1px solid var(--line);border-radius:8px;
+padding:7px 11px;min-height:34px;font:inherit;font-size:.78rem;cursor:pointer}
+.ebtn:hover{background:var(--line);color:var(--text)}
+.epower{background:var(--surface);border:1px solid var(--accent-line);border-radius:12px;padding:12px 14px;margin:10px 0}
+.epower b{display:block;font-size:1.9rem;line-height:1.15;font-variant-numeric:tabular-nums;color:var(--accent-2)}
+.epower span{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.ecards{display:flex;gap:8px;margin:8px 0;flex-wrap:wrap}
+.ecard{flex:1 1 30%;min-width:92px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.ecard b{display:block;font-size:1.02rem;font-variant-numeric:tabular-nums}
 .ecard span{font-size:.72rem;color:var(--muted)}
-.echart{display:flex;align-items:flex-end;gap:6px;height:120px;margin:12px 0 4px}
-.ebar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;gap:4px}
-.ebar i{display:block;width:100%;max-width:26px;background:var(--accent);border-radius:4px 4px 0 0;min-height:2px}
-.ebar span{font-size:.62rem;color:var(--muted)}
 `;
 
 export const escapeHtml = (s) => String(s ?? '')
@@ -566,33 +564,51 @@ try {
 export const errorPageHtml = (title, text) => page(escapeHtml(title), `
 <h1>${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p><p><a href="/">← Beranda</a></p>`);
 
-const POWER_OFF_W = 5; // sama dengan ambang bridge: di bawah ini listrik dianggap benar-benar terputus
+const POWER_OFF_W = 10; // sama dengan ambang bridge: ≤ ini listrik dianggap benar-benar terputus
+const POWER_ALIVE_W = 15; // sama dengan bridge: di atas ini listrik benar-benar mengalir (PC menarik daya)
 const fmtClock = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+/** Angka gaya Indonesia untuk kartu listrik: satu desimal + koma ("12,4 W" · "220,1 V"). */
+const fmtW = (v) => (typeof v === 'number' ? `${v.toFixed(1).replace('.', ',')} W` : '—');
+const fmtV = (v) => (typeof v === 'number' ? `${v.toFixed(1).replace('.', ',')} V` : '—');
+/** Arus: mA sampai 999, di atasnya ampere dua desimal (1000 mA → "1,00 A"). */
+const fmtA = (ma) => (typeof ma === 'number'
+  ? (ma >= 1000 ? `${(ma / 1000).toFixed(2).replace('.', ',')} A` : `${Math.round(ma)} mA`)
+  : '—');
 /** State eksplisit dari server; jawaban versi lama (tanpa `state`) diperlakukan konservatif. */
 const stateOfStatus = (s) => s.state || (s.alive ? 'alive' : 'unknown');
 
 /** Baris state awal (server-side, fallback tanpa JS). Fungsi modul — bukan bagian dari script halaman.
  *  Aturan (sama dengan render() di klien):
- *    alive → 🟢 hidup · booting → 🖥 · suspected-alive → 🟡 · off → ⚫ · unknown → ⚪ belum pasti.
- *  Daya ≤ 5 W saat jadwal mati aktif = listrik sudah tidak mengalir: tampilkan "PC sudah mati", bukan 🟢. */
+ *    alive → 🟢 hidup · booting → 🖥 · suspected-alive → 🟡 · standby → 🟡 standby · off → ⚫ · unknown → ⚪.
+ *  Daya ≤ 10 W saat jadwal mati aktif = listrik sudah tidak mengalir: tampilkan "PC sudah mati", bukan 🟢. */
 export function initialLine(s) {
   if (s.needsAttention) return '⚠ gagal memutus — cek plug manual';
   const state = stateOfStatus(s);
-  const watts = s.powerW != null ? ` (${s.powerW} W)` : '';
+  const watts = typeof s.powerW === 'number' ? ` (${fmtW(s.powerW)})` : '';
   const countdown = s.offAt && s.secondsUntilOff != null ? ` · ⏳ listrik diputus dalam ${fmtClock(s.secondsUntilOff)}` : '';
-  if (s.powerW != null && s.powerW <= POWER_OFF_W && s.offAt != null) return '⚫ PC sudah mati' + countdown;
+  if (typeof s.powerW === 'number' && s.powerW <= POWER_OFF_W && s.offAt != null) return '⚫ PC sudah mati' + countdown;
   if (state === 'alive') return '🟢 PC hidup' + countdown;
   if (state === 'booting') return '🖥 PC sedang booting…' + watts + countdown;
   if (state === 'suspected-alive') return '🟡 PC kemungkinan hidup' + watts + countdown;
+  if (state === 'standby') return '🟡 Standby / sedang booting…' + watts + countdown;
   if (state === 'off') return '⚫ PC mati' + countdown;
   return '⚪ Status belum pasti' + countdown;
 }
+
+/** Baris ringkas di bawah halaman: "Plug: on · 45,3 W · 220,1 V · 990 mA" (bagian kosong dilewati). */
+const plugLine = (s) => {
+  const bits = [`Plug: ${s.plug ?? '?'}`];
+  if (typeof s.powerW === 'number') bits.push(fmtW(s.powerW));
+  if (typeof s.voltageV === 'number') bits.push(fmtV(s.voltageV));
+  if (typeof s.currentMa === 'number') bits.push(fmtA(s.currentMa));
+  return bits.join(' · ');
+};
 
 /** "5 mnt" / "45 dtk" for the pending power-cut warning. */
 const delayText = (sec) => (sec >= 60 ? `${Math.round(sec / 60)} mnt` : `${sec} dtk`);
 
 /** Tombol untuk render server-side (sebelum JS jalan). Aturannya identik dengan render() di klien:
- *  hidup → Matikan PC rapi + Buka Adhitron; booting/curiga hidup → hanya Putus paksa; mati → Nyalakan PC;
+ *  hidup → Matikan PC rapi + Buka Adhitron; booting/standby/curiga hidup → hanya Putus paksa; mati → Nyalakan PC;
  *  belum pasti → Nyalakan paksa (menyiklus listrik). */
 function initialButtons(state, s) {
   const open = s.adhitronUrl
@@ -604,7 +620,7 @@ function initialButtons(state, s) {
       + `<p class="muted">Windows TIDAK dimatikan dari sini. Matikan PC dari aplikasi dulu; tombol ini memotong listrik Bardi ${escapeHtml(delayText(delay))} lagi.</p>`
       + open;
   }
-  if (state === 'booting' || state === 'suspected-alive') {
+  if (state === 'booting' || state === 'standby' || state === 'suspected-alive') {
     return '<button class="btn off" onclick="force()">⚠ Putus paksa</button>'
       + '<p class="muted">PC tidak kunjung hidup? Putus paksa memotong listrik dalam 5 mnt; kalau ternyata heartbeat datang, jadwal otomatis batal.</p>';
   }
@@ -620,16 +636,16 @@ function initialButtons(state, s) {
 /** Halaman status: state awal dirender server (fallback tanpa JS), lalu JS polling /api/status tiap 10 dtk
  * dengan header X-Status-Token (bukan X-Bridge-Token — aturan sendiri untuk tiket/ownerToken di halaman).
  * Aturan tombol per `status.state`:
- *   alive          → ⏻ Matikan PC rapi + ▶ Buka Adhitron;
- *   booting        → hanya ⚠ Putus paksa (jangan tawarkan "matikan rapi" untuk PC yang belum bisa dijangkau);
- *   suspected-alive→ sama, dengan nada "kemungkinan hidup";
+ *   alive          → ⏻ Putus arus listrik + ▶ Buka Adhitron;
+ *   booting/standby/suspected-alive → hanya ⚠ Putus paksa (jangan tawarkan "matikan rapi" untuk PC yang belum bisa dijangkau);
  *   off            → ⚡ Nyalakan PC (ditolak server dengan 409 kalau ternyata masih hidup);
  *   unknown        → ⚡ Nyalakan paksa (?force=1, listrik disiklus — dijelaskan lewat confirm). */
 export function statusPageHtml(id, pollToken, fromTicket, status, adhitronUrl) {
   const state = stateOfStatus(status);
   const initial = {
-    state, alive: status.alive, offAt: status.offAt, secondsUntilOff: status.secondsUntilOff,
+    id, state, alive: status.alive, offAt: status.offAt, secondsUntilOff: status.secondsUntilOff,
     offDelaySec: status.offDelaySec, plug: status.plug, powerW: status.powerW, booting: status.booting,
+    voltageV: status.voltageV, currentMa: status.currentMa, switchOn: status.switchOn,
     needsAttention: status.needsAttention, lastHeartbeat: status.lastHeartbeat, adhitronUrl,
   };
   return page('Remote power', `
@@ -638,23 +654,42 @@ export function statusPageHtml(id, pollToken, fromTicket, status, adhitronUrl) {
 <div id="extra"></div>
 <div id="btns">${initialButtons(state, initial)}${status.offAt ? '<button class="btn" onclick="batalkan()">✕ Batalkan jadwal</button>' : ''}</div>
 <section class="energy" id="energy" aria-live="polite">
-  <div class="ehead"><h2>⚡ Energi Bardi</h2><div class="etabs"><button type="button" class="etab on" id="e-week">7 hari</button><button type="button" class="etab" id="e-year">12 bulan</button></div></div>
-  <div class="enow" id="e-now">Memuat…</div>
-  <div class="ecards" id="e-cards"></div>
-  <div class="echart" id="e-chart"></div>
-  <p class="muted" id="e-note"></p>
+  <div class="ehead"><h2>⚡ Listrik Bardi</h2><button type="button" class="ebtn" id="e-refresh">↻ Refresh</button></div>
+  <div class="epower"><b id="e-power">${escapeHtml(fmtW(status.powerW))}</b><span>daya aktif</span></div>
+  <div class="ecards">
+    <div class="ecard"><b id="e-voltage">${escapeHtml(fmtV(status.voltageV))}</b><span>tegangan</span></div>
+    <div class="ecard"><b id="e-current">${escapeHtml(fmtA(status.currentMa))}</b><span>arus</span></div>
+    <div class="ecard"><b id="e-plug">${status.switchOn === true ? '🔌 Plug ON' : status.switchOn === false ? '🔌 Plug OFF' : '🔌 Plug ?'}</b><span>status plug</span></div>
+  </div>
+  <p class="muted" id="e-note">Memuat data listrik…</p>
 </section>
-<p class="muted" id="plug">Plug: ${escapeHtml(status.plug ?? '?')}${status.powerW != null ? ` · ${escapeHtml(String(status.powerW))} W` : ''}</p>
+<p class="muted" id="plug">${escapeHtml(plugLine(status))}</p>
 <script>
 const ID = ${jsonForScript(id)}, TOKEN = ${jsonForScript(pollToken)}, FROM_TICKET = ${jsonForScript(fromTicket)};
 const OFF_DELAY = ${jsonForScript(Number.isInteger(status.offDelaySec) && status.offDelaySec >= 0 ? status.offDelaySec : 300)};
-const POWER_OFF_W = ${POWER_OFF_W};
-let bootMode = false, timer = null, flash = '';
+const POWER_OFF_W = ${POWER_OFF_W}, POWER_ALIVE_W = ${POWER_ALIVE_W};
+let bootMode = false, timer = null, flash = '', last = null;
+let eUpdatedAt = 0, eBurst = 0;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 if (FROM_TICKET) history.replaceState(null, '', '/s/' + ID + '?t=' + TOKEN); // tiket sesi menggantikan tiket serah-terima di URL
 function fmt(sec) { const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); }
 function dtext(sec) { return sec >= 60 ? Math.round(sec / 60) + ' mnt' : sec + ' dtk'; }
+// Angka gaya Indonesia untuk kartu listrik (sama dengan render server): "12,4 W" · "220,1 V" · "990 mA".
+function num(v, digits) { return Number(v).toFixed(digits).replace('.', ','); }
+function fmtW(v) { return typeof v === 'number' ? num(v, 1) + ' W' : '—'; }
+function fmtV(v) { return typeof v === 'number' ? num(v, 1) + ' V' : '—'; }
+function fmtA(ma) {
+  if (typeof ma !== 'number') return '—';
+  return ma >= 1000 ? num(ma / 1000, 2) + ' A' : Math.round(ma) + ' mA';
+}
+function plugText(s) {
+  const bits = ['Plug: ' + (s.plug ?? '?')];
+  if (typeof s.powerW === 'number') bits.push(fmtW(s.powerW));
+  if (typeof s.voltageV === 'number') bits.push(fmtV(s.voltageV));
+  if (typeof s.currentMa === 'number') bits.push(fmtA(s.currentMa));
+  return bits.join(' · ');
+}
 async function call(path) {
   try {
     const r = await fetch(path, { method: 'POST', headers: { 'X-Status-Token': TOKEN } });
@@ -665,13 +700,14 @@ async function call(path) {
   } catch { return { ok: false, error: 'jaringan gagal — coba lagi.' }; }
 }
 function render(s) {
-  if (s.id !== ID) return;
+  if (!s || s.id !== ID) return;
+  last = s; // dipakai konfirmasi tambahan: daya terukur sebelum memotong arus
   const state = s.state || (s.alive ? 'alive' : 'unknown');
   const extra = [];
   if (s.needsAttention) extra.push('<div class="warn">⚠ gagal memutus — cek plug manual, lalu coba Nyalakan ulang.</div>');
   if (flash) extra.push('<div class="warn">⚠ ' + esc(flash) + '</div>');
   $('extra').innerHTML = extra.join('');
-  const watts = s.powerW != null ? ' (' + s.powerW + ' W)' : '';
+  const watts = typeof s.powerW === 'number' ? ' (' + fmtW(s.powerW) + ')' : '';
   const countdown = (s.offAt && s.secondsUntilOff != null) ? ' · ⏳ listrik diputus dalam ' + fmt(s.secondsUntilOff) : '';
   let line, btns = '';
   if (state === 'alive') {
@@ -680,8 +716,9 @@ function render(s) {
       '<p class="muted">Windows TIDAK dimatikan dari sini. Matikan PC dari aplikasi dulu; tombol ini memotong listrik Bardi ' + dtext(OFF_DELAY) + ' lagi.</p>' +
       (s.adhitronUrl ? '<a class="btn open" href="' + esc(s.adhitronUrl) + '" target="_self" rel="noreferrer">▶ Buka Adhitron</a>' : '');
     bootMode = false;
-  } else if (state === 'booting' || state === 'suspected-alive' || bootMode) {
-    line = (state === 'suspected-alive' ? '🟡 PC kemungkinan hidup' : '🖥 PC sedang booting…') + watts;
+  } else if (state === 'standby' || state === 'booting' || state === 'suspected-alive' || bootMode) {
+    line = (state === 'standby' ? '🟡 Standby / sedang booting…'
+      : state === 'suspected-alive' ? '🟡 PC kemungkinan hidup' : '🖥 PC sedang booting…') + watts;
     btns = '<button class="btn off" onclick="force()">⚠ Putus paksa</button>' +
       '<p class="muted">PC tidak kunjung hidup? Putus paksa memotong listrik dalam 5 mnt; kalau ternyata heartbeat datang, jadwal otomatis batal.</p>';
   } else if (state === 'off') {
@@ -694,28 +731,45 @@ function render(s) {
     btns = '<button class="btn on" onclick="nyalakanPaksa()">⚡ Nyalakan paksa</button>' +
       '<p class="muted">Belum ada bukti yang cukup untuk memastikan PC mati. Nyalakan paksa menyiklus listrik OFF → ON — PC yang masih hidup akan mati sebentar.</p>';
   }
-  // Daya ≤ 5 W saat jadwal mati aktif: listrik sudah tidak mengalir → jangan tampilkan "PC hidup".
-  if (s.offAt && s.powerW != null && s.powerW <= POWER_OFF_W) line = '⚫ PC sudah mati';
+  // Daya ≤ 10 W saat jadwal mati aktif: listrik sudah tidak mengalir → jangan tampilkan "PC hidup".
+  if (s.offAt && typeof s.powerW === 'number' && s.powerW <= POWER_OFF_W) line = '⚫ PC sudah mati';
   if (countdown) line += countdown;
   // A pending schedule can always be dropped without cycling the plug (hold=1 is not cancelled by heartbeats).
   if (s.offAt) btns += '<button class="btn" onclick="batalkan()">✕ Batalkan jadwal</button>';
   $('state').textContent = line;
   $('btns').innerHTML = btns;
-  $('plug').textContent = 'Plug: ' + (s.plug ?? '?') + (s.powerW != null ? ' · ' + s.powerW + ' W' : '');
+  $('plug').textContent = plugText(s);
 }
 async function act(path, boot) {
   flash = '';
   bootMode = !!boot; // optimistis: tampilkan "booting…" sampai poll berikutnya
   const r = await call(path);
   if (!r.ok) { bootMode = false; flash = r.error; } // jangan diam: alasan penolakan server tampil di halaman
+  if (r.ok) refreshEnergyBurst(); // listrik berubah: beberapa sampel singkat lalu berhenti (kuota Tuya dijaga)
   poll();
 }
 function nyalakan() { act('/api/on', true); }
 function nyalakanPaksa() {
   if (confirm('Nyalakan paksa? Listrik akan disiklus OFF → ON. Kalau PC ternyata masih hidup, PC mati mendadak lalu hidup lagi. Lanjut?')) act('/api/on?force=1', true);
 }
-function offRapi() { if (confirm('Putus arus listrik Bardi? Windows TIDAK dimatikan dari sini — matikan PC dari aplikasi dulu. Listrik diputus ' + dtext(OFF_DELAY) + ' lagi. Lanjut?')) act('/api/off?hold=1'); }
-function putusArus() { if (confirm('Putus arus listrik sekarang? Pastikan PC sudah mati (Windows sudah shutdown).')) act('/api/off?delay=0&hold=1'); }
+/** Konfirmasi TAMBAHAN sebelum memotong arus saat Bardi masih mengukur daya > 15 W (PC kemungkinan hidup).
+ *  Tanpa data daya (plug tanpa sensor) tidak ada pertanyaan tambahan: konfirmasi biasa sudah cukup. */
+function confirmPowerCut(what) {
+  const w = last && typeof last.powerW === 'number' ? last.powerW : null;
+  if (w == null || w <= POWER_ALIVE_W) return true;
+  return confirm('⚠ Bardi masih mengukur ' + fmtW(w) + ' — PC kemungkinan masih hidup. ' + what +
+    ' akan memotong listrik dan bisa mematikan PC mendadak (data bisa hilang). Tetap lanjut?');
+}
+function offRapi() {
+  if (!confirm('Putus arus listrik Bardi? Windows TIDAK dimatikan dari sini — matikan PC dari aplikasi dulu. Listrik diputus ' + dtext(OFF_DELAY) + ' lagi. Lanjut?')) return;
+  if (!confirmPowerCut('Putus arus')) return;
+  act('/api/off?hold=1');
+}
+function putusArus() {
+  if (!confirm('Putus arus listrik sekarang? Pastikan PC sudah mati (Windows sudah shutdown).')) return;
+  if (!confirmPowerCut('Putus arus sekarang')) return;
+  act('/api/off?delay=0&hold=1');
+}
 async function batalkan() {
   if (!confirm('Batalkan jadwal pemutusan listrik? PC tetap menyala.')) return;
   flash = '';
@@ -723,7 +777,11 @@ async function batalkan() {
   if (!r.ok) flash = r.error;
   poll();
 }
-function force() { if (confirm('Putus paksa? Listrik diputus dalam 5 menit; kalau ternyata PC hidup lagi, jadwal otomatis batal.')) act('/api/off?delay=300'); }
+function force() {
+  if (!confirm('Putus paksa? Listrik diputus dalam 5 menit; kalau ternyata PC hidup lagi, jadwal otomatis batal.')) return;
+  if (!confirmPowerCut('Putus paksa')) return;
+  act('/api/off?delay=300');
+}
 async function poll() {
   try {
     const r = await fetch('/api/status', { headers: { 'X-Status-Token': TOKEN } });
@@ -735,48 +793,64 @@ async function poll() {
 }
 render(${jsonForScript(initial)});
 poll();
-// ⚡ Energi Bardi: live W/V/mA + kWh hari/bulan + tren 7 hari / 12 bulan (dari Tuya Cloud, cache 60 dtk).
-let eRange = 'week', eTimer = null;
-function kwh(v) { return v == null ? '—' : Number(v).toFixed(2) + ' kWh'; }
-function setEnergyRange(r) {
-  eRange = r;
-  $('e-week').classList.toggle('on', r === 'week');
-  $('e-year').classList.toggle('on', r === 'year');
-  loadEnergy();
+// ⚡ Listrik Bardi (realtime): SATU panggilan /api/energy = satu panggilan device status Tuya IoT Core (gratis).
+// Sengaja TIDAK dipoll terus-menerus (kuota Tuya terbatas): hanya saat halaman dibuka, tombol ↻ Refresh, dan
+// 3× jeda 5 dtk setelah aksi daya (/api/on, /api/off) — lalu berhenti.
+function agoText() {
+  if (!eUpdatedAt) return '';
+  const s = Math.max(0, Math.round((Date.now() - eUpdatedAt) / 1000));
+  return s < 60 ? s + ' dtk lalu' : Math.round(s / 60) + ' mnt lalu';
+}
+function energyNote(msg) {
+  $('e-note').textContent = msg || (eUpdatedAt ? 'diperbarui ' + agoText() + ' · sumber Tuya Cloud' : '');
+}
+function clearEnergy() {
+  $('e-power').textContent = '—';
+  $('e-voltage').textContent = '—';
+  $('e-current').textContent = '—';
+  $('e-plug').textContent = '🔌 —';
+}
+function setEnergy(d) {
+  const now = (d && d.now && typeof d.now === 'object') ? d.now : {};
+  $('e-power').textContent = fmtW(now.powerW);
+  $('e-voltage').textContent = fmtV(now.voltageV);
+  $('e-current').textContent = fmtA(now.currentMa);
+  $('e-plug').textContent = d.switchOn === true ? '🔌 Plug ON' : d.switchOn === false ? '🔌 Plug OFF' : '🔌 Plug ?';
 }
 async function loadEnergy() {
+  const btn = $('e-refresh');
+  if (btn) btn.disabled = true;
   try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jakarta';
-    const r = await fetch('/api/energy?range=' + eRange + '&tz=' + encodeURIComponent(tz), { headers: { 'X-Status-Token': TOKEN } });
+    const r = await fetch('/api/energy', { headers: { 'X-Status-Token': TOKEN } });
     const d = await r.json().catch(() => ({}));
-    if (!d.ok) {
-      $('e-now').textContent = '—';
-      $('e-cards').innerHTML = '';
-      $('e-chart').innerHTML = '';
-      $('e-note').textContent = d.error || 'Statistik energi tidak tersedia.';
+    if (!d || d.ok !== true) {
+      clearEnergy();
+      eUpdatedAt = 0;
+      energyNote((d && typeof d.error === 'string' && d.error) ? d.error : 'Data listrik belum tersedia.');
       return;
     }
-    $('e-now').textContent = [d.now.powerW != null ? Number(d.now.powerW).toFixed(1) + ' W' : '— W',
-      d.now.voltageV != null ? Number(d.now.voltageV).toFixed(1) + ' V' : '— V',
-      d.now.currentMa != null ? Math.round(d.now.currentMa) + ' mA' : '— mA'].join(' · ');
-    $('e-cards').innerHTML = '<div class="ecard"><b>' + kwh(d.todayKwh) + '</b><span>hari ini</span></div>'
-      + '<div class="ecard"><b>' + kwh(d.monthKwh) + '</b><span>bulan ini</span></div>';
-    const trend = Array.isArray(d.trend) ? d.trend : [];
-    const max = Math.max(0.01, ...trend.map((x) => Number(x.value) || 0));
-    $('e-chart').innerHTML = trend.length ? trend.map((x) => {
-      const h = Math.max(2, Math.round(((Number(x.value) || 0) / max) * 100));
-      const label = String(x.time || '').length === 6 ? String(x.time).slice(4) : String(x.time).slice(6);
-      return '<div class="ebar" title="' + esc(String(x.time)) + ': ' + Number(x.value || 0).toFixed(3) + ' kWh"><i style="height:' + h + '%"></i><span>' + esc(label) + '</span></div>';
-    }).join('') : '<p class="muted">Belum ada data.</p>';
-    $('e-note').textContent = 'Diperbarui ' + new Date(d.updatedAt).toLocaleTimeString('id-ID') + ' · sumber Tuya Cloud';
+    setEnergy(d);
+    eUpdatedAt = Number.isFinite(Number(d.updatedAt)) ? Number(d.updatedAt) : Date.now();
+    energyNote('');
   } catch {
-    $('e-note').textContent = 'Tidak bisa memuat energi — coba lagi.';
+    eUpdatedAt = 0;
+    energyNote('Tidak bisa memuat data listrik — coba lagi.');
+  } finally {
+    if (btn) btn.disabled = false;
   }
-  clearTimeout(eTimer);
-  eTimer = setTimeout(loadEnergy, 60000);
 }
-$('e-week').addEventListener('click', () => setEnergyRange('week'));
-$('e-year').addEventListener('click', () => setEnergyRange('year'));
+function refreshEnergyBurst() {
+  clearTimeout(eBurst);
+  let left = 3;
+  const step = () => {
+    loadEnergy();
+    left -= 1;
+    if (left > 0) eBurst = setTimeout(step, 5000);
+  };
+  step();
+}
+$('e-refresh').addEventListener('click', () => loadEnergy());
+setInterval(() => { if (eUpdatedAt) energyNote(''); }, 5000); // teks "diperbarui N dtk lalu" (tanpa network)
 loadEnergy();
 </script>`);
 }

@@ -8,9 +8,9 @@ Browser / HP ──HTTP(S) + SSE──▶ server.js ──stdin/stdout (stream-j
                                    └── membaca ~/.claude/projects/*.jsonl  (sesi CLI, read-only, real-time)
 ```
 
-Server menjalankan Claude Code milikmu sendiri dalam mode headless, jadi login, settings, MCP, dan `CLAUDE.md` tiap project tetap terpakai. Tidak perlu API key dan tidak ada dependency npm. Cukup Node.js ≥ 20.
+Server menjalankan Claude Code milikmu sendiri dalam mode headless, jadi login, settings, MCP, dan `CLAUDE.md` tiap project tetap terpakai. Tidak perlu API key. Cukup Node.js ≥ 20; dependensi npm hanya untuk WhatsApp (sesi WhatsApp + pembuat QR), dan semuanya ikut dibundel saat build.
 
-Panduan harian yang lebih santai: [docs/PANDUAN.md](docs/PANDUAN.md). Detail tiap fitur: [docs/FITUR.md](docs/FITUR.md). Riwayat perubahan: [CHANGELOG.md](CHANGELOG.md).
+Panduan harian yang lebih santai: [docs/PANDUAN.md](docs/PANDUAN.md). Detail tiap fitur: [docs/FITUR.md](docs/FITUR.md). WhatsApp untuk PIN pairing: [docs/pairing-whatsapp.md](docs/pairing-whatsapp.md). Riwayat perubahan: [CHANGELOG.md](CHANGELOG.md).
 
 > **Kompatibilitas nama lama.** Nama tampilan aplikasi kini **Adhitron** (sebelumnya *Adhit Office*, dan sebelum itu *Claude Coworking*). Nama internal sengaja tidak diganti supaya data dan auto-start yang sudah terpasang tetap jalan: repo `claude-coworking`, folder data `%LOCALAPPDATA%\AdhitOffice` (Windows), `~/Library/Application Support/AdhitOffice` (macOS), `~/.local/share/adhit-office` (Linux), env `OFFICE_*`, backup `adhit-office-backup*.zip`, serta `claude-coworking.vbs`, task Task Scheduler `Claude Coworking`, dan rule firewall `Claude Coworking (Tailscale)`.
 
@@ -34,14 +34,14 @@ Panduan harian yang lebih santai: [docs/PANDUAN.md](docs/PANDUAN.md). Detail tia
    | 1. Node.js & mesin AI | Memeriksa/menawarkan **Node.js**, **Claude Code** (wajib), dan **OpenCode** (opsional: mesin kedua/provider lain). CLI dipasang ke folder runtime aplikasi |
    | 2. Tailscale (opsional) | Menawarkan pasang lewat winget, lalu membuka halaman login. Dibutuhkan untuk kendali dari HP di jaringan mana saja |
    | 3. Firewall | Aturan sempit: hanya TCP 4317 (HTTP) dan 4318 (HTTPS), hanya dari alamat Tailscale, profil Private (muncul jendela izin Administrator sekali). Aturan lama yang hanya membuka 4317 diganti |
-   | 4. Auto-start & server | Auto-start saat Windows login **plus penjaga Task Scheduler** yang mengecek tiap 5 menit dan menyalakan server lagi kalau mati (setelah sleep, hibernate, Fast Startup, atau crash). Lalu server langsung dinyalakan di latar belakang |
+   | 4. Auto-start & server | Auto-start saat Windows login **plus penjaga Task Scheduler** yang mengecek tiap 5 menit dan menyalakan server lagi kalau mati (setelah sleep, hibernate, Fast Startup, atau crash). Lalu server langsung dinyalakan di latar belakang. Bisa ditingkatkan menjadi **sebelum login Windows** dari ⚙ → Sistem → 🔐 **Akses saat PC terkunci** — lihat [Sebelum login Windows](#sebelum-login-windows-opsional) |
 
    Login tetap manual dan dipandu: buka **🧰 Persiapan** di aplikasi, tekan **Buka terminal login**, jalankan `claude` sekali, lalu **Periksa ulang**. Untuk installer `.exe`/Electron, **🧰 Persiapan** muncul sendiri saat instalasi belum punya project (atau kapan saja dari ⚙ → Sistem).
 
 3. Buka `http://localhost:4317`. Atur **⚙ → Folder induk projects** (satu per baris; semua subfolder-nya jadi project). Tanpa pengaturan ini, dipakai folder induk dari folder app ini (atau env `PROJECTS_ROOT`).
 4. Klik **🔔** untuk notifikasi, lalu **📱** untuk menghubungkan HP ([Dari HP](#dari-hp)).
 
-Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server tetap jalan dan menyala sendiri setiap Windows login.
+Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server tetap jalan dan menyala sendiri setiap Windows login (atau sebelum login, kalau mode itu dinyalakan).
 
 **Cara lain menjalankan**
 
@@ -50,12 +50,14 @@ Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server t
 | `start-office.cmd` | Jalankan server di jendela biasa dan buka browser |
 | `npm run open` | Sama, lewat npm (`http://localhost:4317`) |
 | `npm start` / `npm run dev` | Tanpa membuka browser / dengan `--watch` |
-| ⚙ → *Nyalakan otomatis saat Windows login* | Pasang atau lepas auto-start dari web (file `claude-coworking.vbs` di folder Startup). Log di `data/server.log` |
+| ⚙ → Sistem → *Nyalakan otomatis saat Windows login* | Pasang atau lepas auto-start dari web (file `claude-coworking.vbs` di folder Startup). Log di `data/server.log` |
+| ⚙ → Sistem → 🔐 *Akses saat PC terkunci* | Mode **sebelum login** dalam satu tombol: **Aktifkan** → masukkan sandi Windows → setujui satu izin Administrator. **Matikan** membatalkannya — lihat [Sebelum login Windows](#sebelum-login-windows-opsional) |
 | ⚙ → **⏻ Matikan server** | Hentikan server background, misalnya sebelum `git pull` |
 | **`update.cmd`** | Update ke versi terbaru dari GitHub: tampilkan perubahan → tanya (Y/n) → `git pull --ff-only` → restart rapi. Menolak kalau ada perubahan lokal yang belum di-commit. `node scripts/update.mjs --check` hanya mengecek |
 | Banner **⬆ Versi baru tersedia** / ⚙ → *Update Adhitron* | Server mengecek GitHub tiap 30 menit (hanya `git fetch`). Banner menampilkan daftar perubahan dan **Update sekarang** (dari laptop) = pull + restart otomatis; halaman tersambung lagi sendiri. `OFFICE_UPDATE_CHECK=0` mematikan pengecekan |
 | `node scripts/restart.mjs` | Restart yang rapi (lihat [Test & pengembangan](#test--pengembangan)) |
-| `node scripts\setup.mjs --check` | Cek status semua langkah setup tanpa mengubah apa pun |
+| `node scripts\setup.mjs --check` | Cek status semua langkah setup tanpa mengubah apa pun, termasuk mode sebelum login + status autologon |
+| `node scripts\setup.mjs --remove` | Lepas auto-start dan penjaga Task Scheduler (autologon Windows tidak diubah) |
 | `uninstall-autostart.cmd` | Lepas auto-start dan penjaga Task Scheduler |
 
 > Jangan jalankan `npm run dev` bersamaan dengan server background, karena keduanya memakai port 4317.
@@ -63,6 +65,44 @@ Setelah itu terminal, Claude Code, dan browser di laptop boleh ditutup. Server t
 > Kalau folder repo dipindah atau versi Node.js diganti (misalnya lewat nvm), jalankan `setup.cmd` lagi, karena lokasi keduanya tercatat di script auto-start.
 
 > **Setelah update dari versi sebelum HTTPS:** jalankan `setup.cmd` lagi sekali (minta izin Administrator). Aturan firewall lama hanya membuka port 4317, sehingga HTTPS `:4318` dari HP terblokir.
+
+### Sebelum login Windows (opsional)
+
+Bawaannya server menyala **setelah** kamu login Windows. Kalau PC sering di-reboot dari jauh (listrik putus, update, atau shutdown), server tidak hidup sampai ada orang login di depannya. Mode **sebelum login** menutup celah itu:
+
+| Mode | Yang dipasang | Kapan server hidup |
+|---|---|---|
+| `login` (bawaan) | `claude-coworking.vbs` di folder Startup + penjaga Task Scheduler `Claude Coworking` tiap 5 menit | setelah user login |
+| `boot` | semua di atas **plus** task Task Scheduler `Adhitron Lock` (kunci layar) dan autologon Windows | Windows login otomatis → server hidup → layar dikunci 15 detik kemudian |
+
+**Menyalakan:**
+
+1. ⚙ → **Sistem** → **🔐 Akses saat PC terkunci** → **Aktifkan**. Langkah ini memasang mode sebelum login sekaligus membuka modal sandi.
+2. Ketik **sandi Windows** akun yang sedang kamu pakai → **Aktifkan**. Sandi divalidasi dulu: kalau salah, tidak ada yang diubah.
+3. Windows menampilkan **satu izin Administrator (UAC)** → **Yes**. Setelah selesai, status di kartu berbunyi *Aktif: PC login sendiri setelah reboot, lalu layar terkunci otomatis 15 detik kemudian.* Membatalkan jendela izin itu juga aman: tidak ada perubahan. **Setujui izin itu dengan akun Windows yang sama yang sedang login** (kalau akunmu sudah Administrator, cukup tekan Yes). Bila Windows malah meminta nama dan sandi **akun Administrator lain**, mode ini menolak dan tidak mengubah apa pun — pakai akun tersebut untuk login, atau minta admin menyalakannya dari akun itu.
+4. `node scripts\setup.mjs --check` menuliskan mode sebelum login dan status autologon, jadi kamu bisa memastikan tanpa membuka ⚙.
+
+Installer Windows menawarkan opsi yang sama di halaman sandi saat instalasi; halaman itu tidak muncul pada instalasi senyap atau update.
+
+**Sandi tidak disimpan Adhitron.** Sandi hanya ada di form modal, lalu diteruskan ke proses yang meminta izin Administrator lewat file sementara milik user ini yang langsung dihapus. Sandi tidak masuk `state.json`, tidak masuk log, dan tidak dikirim ke perangkat mana pun. Yang menyimpannya adalah Windows sendiri (lihat risiko di bawah).
+
+**Cara kerjanya.** Windows login otomatis dengan akunmu, lalu 15 detik kemudian task Task Scheduler **`Adhitron Lock`** (`rundll32.exe user32.dll,LockWorkStation`) mengunci layar. Server dan Tailscale tetap jalan di belakang layar kunci, jadi remote masih bisa masuk. Pengunci layar berupa **task**, bukan file `.vbs`: Windows Defender mengarantina `.vbs` yang memuat `LockWorkStation`, dan desktop bisa tertinggal terbuka. Task-nya berjalan sebagai user yang sama (InteractiveToken, LeastPrivilege, tersembunyi), jadi tidak perlu izin Administrator. Task itu dipasang **sebelum** registry diubah, sehingga autologon tidak pernah menyala tanpa pengunci layar. Menjalankan `setup.cmd` lagi tidak menurunkan mesin yang sudah memakai mode ini.
+
+**Kenapa autologon + layar terkunci, bukan service Windows atau Task Scheduler "run whether logged on or not"?** Aplikasi ini hidup dari profil user: `os.homedir()` dipakai untuk `~/.claude`, `~/.claude.json`, `~/.config/opencode`, transkrip, dan backup. Sesi non-interaktif memindahkan HOME sehingga kredensial Claude dan dialog terminal rusak. Autologon memakai sesi interaktif yang sama dengan sekarang.
+
+**Risiko yang harus kamu terima** — baca sebelum menyalakan:
+
+- **Sandi Windows tersimpan plaintext** di `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon` (nilai `DefaultPassword`), karena Windows harus bisa login sendiri. **Administrator/SYSTEM di PC itu bisa membacanya.** Mitigasi: nyalakan **BitLocker** dan pakai akun Windows khusus untuk mesin ini, bukan akun utama yang dipakai di mana-mana.
+- **Setiap login ikut terkunci** selama mode ini aktif, termasuk login manual di depan PC: layar terkunci 15 detik setelah login.
+- **Akun Microsoft** (login pakai email): dikenali sebagai `Domain=MicrosoftAccount`, tetapi kombinasi ini **belum diuji** di mesin nyata. Bila **Aktifkan** menjawab *Sandi Windows salah* padahal sandinya benar, pakai akun Windows lokal khusus untuk mesin ini. **PC domain perusahaan** belum ditangani otomatis: jangan andalkan mode ini di sana sebelum memeriksa `DefaultDomainName` di registry.
+- Layar tetap terkunci 15 detik setelah login, bahkan kalau `/health` tidak pernah menjawab: task pengunci tidak menunggu server. Nyalakan server dari layar itu (atau lewat penjaga Task Scheduler tiap 5 menit).
+
+**Membatalkan:**
+
+1. ⚙ → **Sistem** → **🔐 Akses saat PC terkunci** → **Matikan** (satu izin Administrator). Ini mengembalikan `AutoAdminLogon=0`, menghapus `DefaultPassword`, dan melepas task `Adhitron Lock`.
+2. Kalau tidak ingin server menyala otomatis sama sekali: matikan **Nyalakan otomatis saat Windows login**, atau jalankan `node scripts\setup.mjs --remove` (menghapus file auto-start + penjaga Task Scheduler; autologon Windows tidak diubah).
+
+> Kalau ⚙ menampilkan peringatan **Autologon Windows masih menyala, tetapi pengunci layar tidak terpasang** (misalnya sisa versi lama yang pengunci `.vbs`-nya diarantina Defender), Adhitron memasang task pengunci sendiri saat server berikutnya menyala. Kalau peringatan itu masih muncul setelah restart, tekan **Aktifkan** sekali di **🔐 Akses saat PC terkunci**. Jangan biarkan PC login sendiri dengan desktop terbuka.
 
 ### Aplikasi terpasang (eksperimental)
 
@@ -98,6 +138,13 @@ alur rilis, dan code signing: [docs/packaging-desktop.md](docs/packaging-desktop
 | Chat terasa macet | Lihat chip ⚠ di [Chat & izin](docs/FITUR.md#chat--izin) dan [PANDUAN: Kalau terasa macet](docs/PANDUAN.md#kalau-terasa-macet) |
 | Prompt masuk **📋 Antrian** karena **⚡ batas giliran bersamaan** | Batas global sedang penuh (default 3). Prompt ke project lain otomatis antri dan jalan sendiri saat ada slot; tunggu, atau ubah batas di ⚙ → Umum |
 | Server mati setelah laptop sleep | Penjaga Task Scheduler menyalakannya lagi dalam ±5 menit. Jalankan `node scripts\setup.mjs --check` untuk memastikan penjaga terpasang |
+| Claude berhenti dengan **"Internal error"** pada prompt pertama setelah update Node/Claude, dan log memuat `EUNKNOWN: unknown error, lstat '…\nvm\.nodejs\pwsh.exe'` | PATH warisan berisi junction nvm yang rusak atau sedang diganti. Proses anak (Claude Code, OpenCode, perintah admin) kini menerima PATH yang dibersihkan: junction diganti folder aslinya, junction rusak dibuang, entri duplikat dan file dibuang, folder `node.exe` didahulukan. Perbaikannya otomatis — tidak ada aksi user. Kalau masih muncul setelah update, restart server supaya PATH baru dipakai |
+| PC menyala sendiri setelah reboot tapi tidak bisa dihubungi | Mode **sebelum login** belum aktif, atau autologon Windows belum tersetel. `node scripts\setup.mjs --check` akan menulis *autologon belum aktif*; buka ⚙ → Sistem → 🔐 **Akses saat PC terkunci** → **Aktifkan** |
+| Layar langsung terkunci setiap kali login | Itu memang perilaku mode **sebelum login** selama aktif: layar terkunci 15 detik setelah setiap login. Tekan **Matikan** di ⚙ → Sistem → 🔐 **Akses saat PC terkunci** kalau tidak diinginkan |
+| Peringatan **Autologon Windows masih menyala, tetapi pengunci layar tidak terpasang** | Mode sebelum login pernah dilepas tanpa mematikan autologon, sehingga PC akan login sendiri dengan desktop terbuka. Adhitron memasang task pengunci sendiri saat server menyala; bila peringatan tetap ada, tekan **Aktifkan** di 🔐 **Akses saat PC terkunci** |
+| **Aktifkan** menjawab *Sandi Windows salah.* | Sandi yang diketik bukan sandi akun Windows yang sedang login, atau salah ketik. Ulangi; tidak ada perubahan registry saat sandi ditolak |
+| **Aktifkan** menjawab *Dibatalkan.* | Jendela izin Administrator ditutup. Tidak ada perubahan; ulangi dan setujui jendelanya |
+| *Windows tidak menjawab dalam 120 detik.* | Antivirus atau kebijakan perusahaan menahan proses yang meminta izin Administrator. Coba lagi, atau pasang dari installer dengan opsi yang sama |
 | Baris **Sedang berjalan…** berputar terus setelah update/restart | Baris langkah yang ditinggal proses sebelumnya (`running`/`pending`) tidak akan pernah dapat hasil. Saat server menyala, baris itu ditutup otomatis (`cancel` + catatan *“Server di-restart — langkah ini terputus”*). Kalau masih berputar, muat ulang halaman |
 
 ## Dari HP
@@ -116,12 +163,16 @@ Pengaturan laptop (folder projects, tambah folder project, auto-start, akses HP,
 
 1. Di laptop, klik **📱** di header, lalu centang **Izinkan akses dari HP**.
 2. Pilih jalur: alamat WiFi, **🌐 Dari mana saja (Tailscale)**, atau **🔒 Tailscale (HTTPS)** (muncul kalau sertifikat HTTPS sudah aktif).
-3. Scan QR dengan kamera HP. Atau buka alamatnya lalu masukkan **kode 6 digit** dari layar laptop. Lewat **🔒 Tailscale (HTTPS)** dengan akun Tailscale yang sama, HP biasanya **tidak perlu kode**: membuka halaman `/pair` langsung memasangkan perangkat dan kembali ke beranda.
+3. Scan QR dengan kamera HP. Di halaman `/pair` ada dua jalur: **📲 Kirim PIN ke WhatsApp** (PIN 6 digit dikirim ke WhatsApp-mu — dipakai kalau kamu tidak sedang di depan laptop) dan **Punya kode 6 digit dari layar laptop?** (terlipat di bawah). Lewat **🔒 Tailscale (HTTPS)** dengan akun Tailscale yang sama, HP biasanya **tidak perlu kode**: membuka halaman `/pair` langsung memasangkan perangkat dan kembali ke beranda.
 4. Selesai. HP diingat, jadi lain kali cukup buka alamat itu lagi. HP yang tidak dipakai 30 hari dicabut otomatis.
+
+**PIN lewat WhatsApp.** Halaman `/pair` bisa mengirim PIN 6 digit ke WhatsApp-mu, jadi kamu tidak perlu melihat layar laptop. WhatsApp ditautkan **sekali dari dalam aplikasi**: ⚙ → **📱 PIN ke HP** → pilih **WhatsApp** → **Tautkan** → pindai QR (WhatsApp → **Perangkat tertaut** → **Tautkan perangkat**) dari laptop. Tidak ada Docker, gateway terpisah, atau environment variable; sesinya disimpan terenkripsi di laptop. PIN berlaku **5 menit**, **sekali pakai**, dan **hangus setelah 3 kali salah**; minta ulang dibatasi **1×/60 detik**, **5×/jam**, dan **3×/jam per alamat IP** (8 PIN salah dalam sejam menjeda permintaan 15 menit). PIN **terikat ke browser yang memintanya**, jadi minta dan masukkan PIN di HP yang sama. Yang disimpan hanya HMAC-nya di memori — PIN tidak pernah muncul di respons API atau di log. Ketiga rute PIN hanya hidup selama **Izinkan akses dari HP** menyala; mematikan akses atau mencabut perangkat langsung menghapus PIN yang aktif. PIN dikirim ke **nomor yang baru ditautkan** (nomormu sendiri). Kalau WhatsApp belum ditautkan atau sesinya dicabut dari HP, tombol PIN mati sendiri dan halaman menyuruh memakai kode dari layar laptop. Panduan: [WhatsApp untuk PIN pairing](docs/pairing-whatsapp.md).
 
 **Pasang dari jauh lewat `office pair`.** Laptop tidak perlu ada di depanmu: dari HP, Tailscale SSH ke laptop, jalankan `office pair`, lalu buka link `https://…/pair?k=…` yang tercetak langsung di HP (🔒 link HTTPS disarankan: kendali penuh + push). CLI hanya **membaca** kode yang sedang tampil—tidak me-rotate atau memakainya—dan kode tetap tampil di layar laptop. Perangkat tetap tercatat di daftar pasangan dan bisa dicabut seperti biasa.
 
 **Pasang otomatis dari perangkat tailnet.** Centang *Izinkan pasang otomatis dari perangkat tailnet (tanpa kode)* di dialog **📱** (aktif secara bawaan, bisa dimatikan): perangkat yang login dengan **akun Tailscale yang sama dengan laptop** memasang langsung lewat 🔒 HTTPS, tanpa mengetik kode—login tailnet sudah membuktikan siapa punya. Caranya cukup buka alamat `https://…:4318` (atau `/pair` tanpa kode): perangkat dipasangkan, mendapat cookie `__Host-office_device` (HttpOnly, Secure, SameSite=Strict), lalu diantar ke beranda—form PIN tidak pernah muncul. Halaman `/pair` juga menuliskan *"Perangkat Tailscale dengan akun yang sama tersambung otomatis, tanpa kode."* Perangkat lain (lewat WiFi, atau akun tailnet yang berbeda) tetap wajib kode sekali pakai. Pemeriksaan identitas berjalan per upaya dengan `tailscale status`; kalau Tailscale gagal dijawab, perangkat bukan anggota tailnet-mu, atau setting dimatikan, alur normal dengan kode tetap dipakai (fail closed). Pengaturannya hanya bisa diubah dari laptop, dan setiap pasangan tetap tercatat + bisa dicabut. Auto-pair juga dibatasi: maksimal **20 perangkat** terpasang, **5 pasang/menit** dan **20/jam per alamat IP** — bila tercapai, halaman kembali ke form kode (tidak ada record baru; mencabut perangkat lama membebaskan slot). Hanya navigasi halaman yang bisa memicu auto-pair; permintaan subresource (gambar/fetch dari situs lain) tidak pernah memasangkan, dan browser yang cookie-nya masih valid tidak membuat record baru. Hasil `tailscale status` di-cache ±5 detik (`OFFICE_TAILNET_CACHE_MS`, 0 = nonaktif).
+
+**Perangkat yang sudah dikenal tidak diminta kode lagi.** Cookie bisa hilang (origin lain, data situs dibersihkan, record terhapus), dan sebelumnya itu berarti mengetik kode dari laptop. Sekarang identitas **node tailnet** (`ID` dari `tailscale status --json`) dicocokkan: record yang sudah ada **mendapat cookie baru** (token lama mati, daftar perangkat tidak bertambah). Hanya record yang punya identitas **node tailnet** yang bisa diadopsi: perangkat yang dipasangkan lewat **HTTPS Tailscale** (otomatis, dengan PIN, atau dengan kode 6 digit / link QR). Perangkat yang dipasangkan lewat **WiFi** (HTTP) tidak punya nodeId, jadi tetap perlu kode sekali pakai. Batas 20 perangkat, jeda 5/menit, dan 20/jam per IP berlaku sama seperti auto-pair.
 
 **Batasan notifikasi pasangan baru.** Notifikasi *"kode pasangan baru"* hanya bisa sampai ke HP yang **sudah terpasang dan berlangganan push lewat 🔒 HTTPS**. Perangkat baru yang belum punya push tetap perlu salah satu dari: halaman **📱** di laptop, `office pair` lewat Tailscale SSH (link `?k=…`), atau pasang otomatis tailnet di atas.
 
@@ -155,7 +206,8 @@ Notifikasi tetap muncul walau aplikasi ditutup atau HP terkunci. Hanya lewat jal
 ### Supaya bisa diakses saat kamu pergi
 
 - **Laptop harus menyala dan tidak sleep.** *Settings → System → Power*: saat dicolok, sleep = **Never**; *saat lid ditutup = Do nothing* kalau laptop sering ditutup.
-- Nyalakan **auto-start** (⚙) supaya server jalan lagi setelah restart.
+- Nyalakan **auto-start** (⚙ → Sistem) supaya server jalan lagi setelah restart.
+- Kalau PC sering reboot tanpa ada orang di depannya, nyalakan **🔐 Akses saat PC terkunci** di ⚙ → Sistem — lihat [Sebelum login Windows](#sebelum-login-windows-opsional). Tanpa itu, server baru hidup setelah ada yang login.
 
 > Tunnel publik seperti ngrok atau Cloudflare Tunnel sengaja tidak dipakai. Aplikasi ini bisa menjalankan perintah di laptopmu, jadi lebih aman kalau tidak punya alamat publik sama sekali.
 
@@ -170,9 +222,9 @@ Tombol **⚡ Daya** ada di header (laptop) dan sebagai baris **⚡ Daya** di she
 
 - Boleh dari **laptop**, atau dari **HP lewat 🔒 Tailscale (HTTPS)** (`https://…:4318`). HP lewat WiFi HTTP — dan Tailscale HTTP — ditolak **403**: `Aksi daya hanya lewat Tailscale (HTTPS).`
 - Status dibaca dari `POST /api/power/status` → `{ configured, bridgeUrl, offDelaySec }`. `bridgeUrl` disanitasi: hanya `https:` tanpa kredensial, query, atau hash (`null` bila tidak valid). Token jembatan tidak ikut dikirim ke browser.
-- **Halaman status jembatan tahu bedanya hidup dan mati.** Keadaannya eksplisit: 🟢 **PC hidup** (heartbeat Adhitron < 7 menit, atau listrik masih mengalir > 20 W), 🖥 **sedang booting**, 🟡 **kemungkinan hidup**, ⚫ **PC mati** (daya ≤ 5 W, atau plug OFF), ⚪ **belum pasti**. Tombol mengikuti keadaan itu: **⏻ Putus arus listrik** + **▶ Buka Adhitron** saat hidup (hanya memotong arus Bardi — Windows tidak dimatikan dari sana); hanya **⚠ Putus paksa** saat booting/curiga hidup; **⚡ Nyalakan PC** + **⏻ Putus arus listrik** saat mati; **⚡ Nyalakan paksa** saat belum pasti. Menyalakan saat PC masih hidup ditolak server (**409**) supaya listrik tidak disiklus dan PC tidak mati mendadak.
+- **Halaman status jembatan tahu bedanya hidup dan mati.** Keadaannya eksplisit: 🟢 **PC hidup** (heartbeat Adhitron < 4 menit, atau listrik mengalir > 15 W), 🖥 **sedang booting** (daya > 15 W ≥ 30 detik tanpa heartbeat), 🟡 **kemungkinan hidup** (daya > 15 W baru terukur), 🟡 **standby** (daya 10–15 W — belum dianggap hidup), ⚫ **PC mati** (daya ≤ 10 W, atau plug OFF), ⚪ **belum pasti**. Tegangan tidak dipakai sebagai bukti hidup (220 V tetap ada walau PC mati). Urutan buktinya: saklar plug OFF atau daya ≤ 10 W = mati; daya > 15 W = hidup; 10–15 W = standby (mengalahkan heartbeat); heartbeat segar = hidup. Tombol mengikuti keadaan itu: **⏻ Putus arus listrik** + **▶ Buka Adhitron** saat hidup (hanya memotong arus Bardi — Windows tidak dimatikan dari sana); hanya **⚠ Putus paksa** saat booting/standby/curiga hidup; **⚡ Nyalakan PC** + **⏻ Putus arus listrik** saat mati; **⚡ Nyalakan paksa** saat belum pasti. Menyalakan saat PC masih hidup ditolak server (**409**) supaya listrik tidak disiklus dan PC tidak mati mendadak.
 - **Heartbeat Adhitron tiap 2 menit** (beat pertama langsung saat server siap; `OFFICE_POWER_BEAT_MS` bisa mengubahnya, nilai di bawah 60 detik diabaikan). Saat Windows dimatikan, server ikut berhenti sehingga heartbeat berhenti sendiri. Tombol **⏻ Putus arus listrik** di halaman status memakai `hold=1`: heartbeat tidak membatalkan jadwal itu — hanya **⚡ Nyalakan** (`POST /api/on`) atau **✕ Batalkan jadwal** (`POST /api/off/cancel`, tanpa menyiklus listrik) yang membatalkannya.
-- **⚡ Energi Bardi di halaman status jembatan.** Di bawah tombol ada monitoring smart plug: daya (W), voltase (V), arus (mA) saat ini, kWh **hari ini** dan **bulan ini**, plus grafik **7 hari** / **12 bulan** (sumber Tuya Cloud, cache 60 detik). Butuh izin API **Power Management / Energy Consumption Statistics** di Cloud Project Tuya; kalau belum aktif, bagian itu menampilkan petunjuk dan status PC tetap berfungsi.
+- **⚡ Listrik Bardi (realtime) di halaman status jembatan.** Di bawah tombol ada kartu **daya aktif** (W), **tegangan** (V), **arus** (mA, atau A bila ≥ 1000 mA), dan **status plug**, plus tombol **↻ Refresh** dan teks "diperbarui N dtk lalu". Datanya dari **satu** panggilan `GET /v1.0/devices/{id}/status` (Tuya IoT Core, gratis), di-cache 5 detik; statistik energi Power Management yang berbayar tidak dipakai. Halaman memanggilnya hanya saat dibuka, saat **↻ Refresh**, dan 3× setelah aksi daya — tidak ada polling terus-menerus, supaya kuota Tuya tidak habis. Saat Bardi masih mengukur daya > 15 W, pemutusan arus meminta **konfirmasi tambahan**.
 - **Saat PC mati, aplikasi tidak bisa dihubungi.** Menyalakan PC dilakukan dari halaman status jembatan: smart plug + BIOS *Restore on AC Power Loss = Power On*. Tautan **Buka halaman jembatan** muncul di dialog ⚡ Daya saat remote power diset.
 
 ### Kalau HP tidak tersambung
@@ -184,6 +236,10 @@ Tombol **⚡ Daya** ada di header (laptop) dan sebagai baris **⚡ Daya** di she
 | 📱 meminta menyalakan *HTTPS Certificates* | Nyalakan di admin console Tailscale (DNS → HTTPS Certificates), lalu **Periksa lagi** |
 | HP: `DNS_PROBE_FINISHED_NXDOMAIN` untuk `…ts.net` | HP tidak memakai DNS Tailscale. Matikan **Use secure DNS (DoH)** di browser HP (Chrome: Settings → Privacy and security → Use secure DNS → OFF) — DoH bertanya ke resolver publik yang tidak mengenal domain tailnet. Lalu pastikan **MagicDNS ON** di admin console (DNS) dan HP login ke **tailnet yang sama**; matikan juga iCloud Private Relay / VPN lain saat menguji. Catatan: laptop tetap bisa membuka nama itu walau MagicDNS mati karena Tailscale di Windows menulis entri ke file `hosts` — jadi "laptop bisa" bukan bukti MagicDNS hidup |
 | Kode ditolak | Kode berlaku 2 menit, sekali pakai, dan diganti setelah 5 kali salah. Ambil kode baru di laptop |
+| Tombol **📲 Kirim PIN ke WhatsApp** mati, atau PIN tidak pernah datang | WhatsApp belum ditautkan, sedang menyambung, atau sesinya dicabut dari HP. Pakai kode dari layar laptop, lalu tautkan lewat ⚙ → 📱 PIN ke HP → **Tautkan**. Detail: [WhatsApp untuk PIN pairing](docs/pairing-whatsapp.md) |
+| PIN ditolak / "Kode kedaluwarsa" | PIN hangus setelah 3 kali salah atau lewat 5 menit. Minta PIN baru — jeda 60 detik, maksimal 5×/jam (3×/jam per alamat IP) |
+| "Kode ini diminta dari perangkat lain" | PIN terikat ke browser yang memintanya. Minta PIN baru dari HP yang akan dipasangkan, jangan pindah browser |
+| "Perangkat Tailscale ini bukan milik pemilik laptop" | HP tidak login akun tailnet yang sama, node shared-in, atau `tailscale status` di laptop gagal. Pakai kode dari layar laptop |
 | Masih diminta PIN padahal lewat 🔒 Tailscale | Auto-pair hanya jalan bila *Pasang otomatis dari perangkat tailnet* aktif, HP login dengan **akun Tailscale yang sama**, dan `tailscale status` bisa dijawab di laptop. Kalau salah satunya tidak terpenuhi, form kode memang tampil (fail closed) — masukkan kode dari laptop atau pakai `office pair` |
 | "Perangkat belum dipasangkan" | HP dicabut, tidak dipakai 30 hari, atau jalurnya beda (pairing HTTPS tidak berlaku di HTTP dan sebaliknya). Pairing ulang |
 | Tidak ada tombol 🎤 di HP | Input suara butuh HTTPS. Buka lewat 🔒 Tailscale (HTTPS) |
@@ -227,8 +283,17 @@ Detail tiap fitur—termasuk batasan dan perilakunya—ada di **[docs/FITUR.md](
 **Pairing HP**
 
 - Kode 6 digit berlaku 2 menit, sekali pakai, diganti setelah 5 kali salah. Alamat yang 5 kali salah diblokir 60 detik; lebih dari 20 tebakan salah dalam 10 menit menjeda pairing untuk semua selama 10 menit.
-- HP menyimpan token acak di cookie `HttpOnly; SameSite=Strict` (HTTPS: `__Host-office_device; Secure`). Server hanya menyimpan hash-nya. Token **terikat jalur**: pairing HTTPS tidak berlaku di HTTP, dan sebaliknya.
+- **PIN WhatsApp** hanya disimpan sebagai HMAC di memori (kunci acak per proses), berlaku 5 menit, sekali pakai, hangus setelah 3 kali salah. Permintaan dibatasi 1×/60 detik, 5×/jam, dan 3×/jam per alamat IP; 8 PIN salah dalam sejam menjeda permintaan 15 menit. PIN **terikat ke browser peminta** (cookie `office_pin`), jadi verifikasi dari browser lain ditolak. PIN tidak pernah muncul di respons API, halaman, atau log. Ketiga rute PIN (`/api/auth/pin-status`, `request-pin`, `verify-pin`) hanya hidup selama akses HP menyala; mematikan akses atau mencabut perangkat langsung membuang PIN aktif. Lewat HTTPS Tailscale, rute ini hanya melayani perangkat dari akun tailnet pemilik. Detail: [WhatsApp untuk PIN pairing](docs/pairing-whatsapp.md).
+- **Sesi WhatsApp = kredensial login.** Sesi disimpan terenkripsi (AES-256-GCM) di `data/wa/` — `session.bin` dan kunci `key` di folder `data/` milik user Windows ini (izin folder; Windows mengabaikan mode file). Kunci itu ada di folder yang sama dengan datanya, jadi enkripsi menolong bila satu file bocor, bukan bila seluruh `data/` tersalin: jangan sinkronkan folder itu ke cloud. Kunci **tidak pernah** dikirim ke perangkat mana pun, dan folder itu tidak ikut backup. **QR hanya bisa diambil dari laptop**: `GET /api/wa/status` menolak HP/Tailscale (403), dan event status ke perangkat lain hanya berisi keadaan — tanpa QR, tanpa nomor. Tautkan hanya dari laptop sendiri; siapa pun yang memindai QR itu bisa mengirim dan membaca pesan atas namamu. Tekan **Lepas** untuk memutus dan menghapus sesi.
+- **WhatsApp Web, bukan API resmi Meta.** Fitur ini memakai protokol WhatsApp Web. WhatsApp bisa mengubahnya sehingga tautan berhenti bekerja, dan nomor pemilik berisiko dibatasi. Kalau itu terjadi, jalur **kode 6 digit dari layar laptop** tetap jalan.
+- HP menyimpan token acak di cookie `HttpOnly; SameSite=Strict` (HTTPS: `__Host-office_device; Secure`). Server hanya menyimpan hash-nya. Token **terikat jalur**: pairing HTTPS tidak berlaku di HTTP, dan sebaliknya. Perangkat tailnet yang sudah dikenal mendapat cookie baru pada record yang sama (token lama mati).
 - Cabut kapan saja di 📱 (koneksi live HP itu langsung diputus). HP yang tidak dipakai 30 hari dicabut otomatis, langganan push-nya ikut terhapus.
+
+**Autologon Windows (mode sebelum login)**
+
+- Autologon menulis sandi Windows **plaintext** ke `HKLM\...\Winlogon\DefaultPassword` supaya Windows bisa login sendiri. **Administrator/SYSTEM bisa membacanya** — pakai BitLocker dan akun khusus, dan tekan **Matikan** di ⚙ → Sistem → 🔐 Akses saat PC terkunci bila tidak dipakai lagi.
+- Sandi divalidasi (logon Windows) **sebelum** registry ditulis: sandi salah tidak mengubah apa pun. Adhitron tidak menyimpan sandi — hanya modal Setelan, file sementara per-user yang langsung dihapus, lalu registry Windows. Tidak masuk log, `state.json`, atau perangkat lain.
+- Task Scheduler `Adhitron Lock` mengunci layar 15 detik setelah **setiap** login (aksi `rundll32.exe user32.dll,LockWorkStation`), supaya desktop tidak pernah terbuka dalam keadaan autologon. Tidak ada file `.vbs` lagi: Defender mengarantina `.vbs` berisi payload itu, dan versi 1.0.33 bisa meninggalkan desktop terbuka.
 
 **Privasi lewat WiFi** (HTTP biasa bisa disadap di jaringan yang sama). Penonton WiFi **tidak menerima**:
 
@@ -293,6 +358,7 @@ npm run test:fast    # harian: hanya logika murni, tanpa browser/server (~35 dtk
 npm run test:smoke   # gerbang rilis: 10 file integrasi (server, izin, antrian, backup, CLI bridge, autopair tailnet, shell OpenCode) (~1–2 mnt)
 npm run test:unit    # semua test tanpa browser (termasuk server sungguhan + Claude palsu)
 npm run test:ui      # test browser per file; yang gagal diulang sekali dan dilaporkan FLAKY
+npm run test:ui:area -- settings   # hanya blok UI yang tersentuh (lihat docs/uji-ui.md)
 npm test             # semuanya (unit + UI), paling lambat
 npm run test:claude  # kontrak ke Claude Code asli (beberapa request Haiku, memakai akunmu)
 npm run test:opencode  # kontrak ke OpenCode asli: cek tanpa token + giliran singkat dengan model gratis; `-- --light` = tanpa token saja
@@ -300,6 +366,8 @@ npm run lint         # ESLint versi terkunci (diambil lewat npm exec)
 ```
 
 `test:fast` memilih otomatis file yang tidak mengimpor browser (`test-support/cdp.mjs`) atau memulai server/proses, jadi aman dijalankan setiap kali menyimpan. Untuk perubahan yang menyentuh server, backup, antrian, atau mesin project, jalankan `npm run test:smoke` atau file test terkait saja, misalnya `node --test --test-concurrency=1 test/engine-per-project.test.mjs`.
+
+Untuk UI, `npm run test:ui:area -- "<nama blok>"` menjalankan hanya blok `test/ui.test.mjs` yang dipilih (mis. `settings`), tanpa menyiapkan server/browser blok lain — test yang sama, tanpa perubahan; daftar blok dan aturan kapan memakai yang mana ada di [docs/uji-ui.md](docs/uji-ui.md).
 
 CI GitHub menjalankan **cek sintaks + ESLint + `test:fast` + `test:smoke`** di setiap push dan pull request (`.github/workflows/test.yml`). Sisanya berjalan **tiap malam** (`test:unit`, Windows dan Ubuntu, `.github/workflows/nightly.yml`) dan **tiap Sabtu** (`test:ui`, Ubuntu, `.github/workflows/weekly.yml`); keduanya bisa dipicu manual dari tab Actions. Rilis `v*` dibuat sebagai **draft** dan baru dipublikasikan setelah installer Windows, Linux, serta macOS (arm64 + x64) beserta checksum/signature-nya lengkap; catatan rilis diambil dari `CHANGELOG.md`. Draft yang terbengkalai lebih dari 14 hari (beserta tag-nya) dihapus otomatis oleh workflow mingguan.
 
@@ -360,6 +428,7 @@ Setelah hidup lagi, chat project itu menawarkan **▶ Lanjutkan** / **Tutup** (l
 | `OFFICE_BROWSER` | Edge/Chrome | Browser untuk PDF laporan |
 | `OFFICE_BACKUP_MAX_BYTES` | 4 GB | Batas upload import riwayat |
 | `SPOTIFY_CLIENT_ID` | – | Client ID Spotify (kalau tidak diisi di ⚙) |
+| `OFFICE_PIN_COOLDOWN_MS` | `60000` | **Hanya untuk tes otomatis** (memperpendek jeda minta PIN). Bukan pengaturan yang disarankan |
 
 Ikon diubah lewat sprite 16×16 di `scripts/make-icons.mjs`, lalu `node scripts/make-icons.mjs`. Test gagal kalau ikon yang di-commit tidak sesuai generator.
 
@@ -369,7 +438,7 @@ Adhitron itu **perekat yang brand-netral**, bukan aplikasi yang mengunci ke satu
 
 **Mau berkolaborasi? Sangat terbuka.** Repo ini publik — lapor bug, usulkan fitur, tambahkan mesin baru, atau kirim PR:
 
-1. **Fork & clone**, lalu jalankan dari source tanpa installer: butuh Node.js >= 20, lalu `node server.js` (setup CLI tetap lewat `setup.cmd`/`🧰 Persiapan`). Tidak ada dependency npm.
+1. **Fork & clone**, lalu jalankan dari source tanpa installer: butuh Node.js >= 20 dan `npm install` sekali (untuk paket WhatsApp), lalu `node server.js` (setup CLI tetap lewat `setup.cmd`/`🧰 Persiapan`).
 2. **Cek dulu sebelum kontribusi**: `npm run lint` dan `npm run test:fast` — keduanya cepat dan tidak menyentuh data aslimu (semua test memakai folder sementara; lihat [Test & pengembangan](#test--pengembangan)).
 3. **PR kecil dan fokus** satu topik, dengan test untuk perilaku baru (pola TDD dipakai di repo ini: test dulu, baru implementasi). Konvensi: komentar kode bahasa Inggris, teks yang tampil ke pengguna bahasa Indonesia.
 4. **Diskusi dulu untuk perubahan besar** (arsitektur, mesin baru, keamanan): buka Issue dulu supaya arahnya sepakat sebelum kodenya.
@@ -395,6 +464,7 @@ src/chat-store.js      riwayat chat per project (data/chats/*.jsonl)
 src/role-catalog.js    katalog 17 role, rantai fallback, prompt Lead
 src/roles.js           pemetaan agent/tool/file → role
 src/remote.js          akses HP: pairing, perangkat, gerbang WiFi (wifiAllows), redaksi
+src/access-pin.js · wa-link.js · wa-auth-store.js   PIN akses lewat WhatsApp (HMAC, batas) + tautan WhatsApp di dalam server (QR, sesi terenkripsi)
 src/tls.js             sertifikat HTTPS Tailscale (tailscale cert)
 src/webpush.js         Web Push tanpa dependency (VAPID, aes128gcm)
 src/push.js            kebijakan push: event, pengaturan per HP, token aksi Izinkan/Tolak
@@ -409,7 +479,7 @@ src/role-usage.js      🧩 perkiraan token/biaya per role dari transcript subag
 src/backup.js · backup-schedule.js · zip.js   export/import riwayat, backup otomatis, ZIP
 src/retention.js       ⏳ retensi otomatis chat panel + ledger pemakaian
 src/metrics.js         📈 agregat aktivitas 7 hari untuk 🩺 (tanpa isi percakapan)
-src/open.js · autostart.js · claude-bin.js · modules.js
+src/open.js · autostart.js · autologon.js · child-env.js · claude-bin.js · modules.js
 public/index.html      satu halaman; public/js/app.js = entry point (ES module native, tanpa build)
 public/js/core/        state, api, stream (+ stream-share: satu koneksi untuk semua tab), aturan murni (*-rules.js)
 public/js/features/    satu module per fitur (chat, composer, izin, dashboard, push, spotify, phone-sheets, …)

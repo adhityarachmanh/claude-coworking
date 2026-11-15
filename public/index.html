@@ -1169,6 +1169,43 @@
           </section>
           <hr id="oc-section-sep" hidden />
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
+          <!-- 🔐 Akses saat PC terkunci (features/settings.js, server POST /api/autologon(+ /disable)): satu tombol,
+               satu izin Administrator. Tidak ada langkah terminal, tidak ada nama berkas bantu di UI. -->
+          <section id="autologon-card" class="claude-check" aria-labelledby="autologon-title" aria-describedby="autologon-desc">
+            <b id="autologon-title">🔐 Akses saat PC terkunci</b>
+            <p id="autologon-desc" class="muted small">Server tetap hidup setelah PC dinyalakan ulang, sebelum ada yang login. Windows login sendiri lalu layar terkunci otomatis 15 detik setelahnya. Windows menyimpan sandi itu di registry mesin ini (bukan di Adhitron), dan meminta izin Administrator sekali saat diaktifkan.</p>
+            <p id="autologon-status" class="muted small" role="status" aria-live="polite"></p>
+            <div class="backup-actions">
+              <button type="button" id="btn-autologon-enable" class="primary">Aktifkan</button>
+              <button type="button" id="btn-autologon-disable" class="ghost" hidden>Matikan</button>
+            </div>
+            <p id="autologon-unsafe" class="warn" hidden>Autologon Windows masih <b>menyala</b>, tetapi pengunci layar tidak terpasang: PC ini akan login sendiri dan desktopnya terbuka saat reboot. Klik <b>Matikan</b> di bagian ini, lalu nyalakan lagi "Aktifkan" agar layar ikut terkunci.</p>
+          </section>
+          <hr />
+          <!-- 📱 PIN ke HP (features/settings.js, server /api/wa/*): laptop only, like this whole dialog -->
+          <section id="wa-section" class="claude-check" aria-labelledby="wa-title" aria-describedby="wa-desc wa-notice">
+            <b id="wa-title">📱 PIN ke HP</b>
+            <p id="wa-desc" class="muted small">Cara HP pemilik menerima kode masuk Adhitron saat tidak ada yang duduk di depan laptop.</p>
+            <div class="wa-channels" role="radiogroup" aria-labelledby="wa-title">
+              <label class="wa-channel"><input id="wa-channel-code" type="radio" name="wa-channel" value="code" checked /> Kode 6 digit dari layar laptop</label>
+              <label class="wa-channel"><input id="wa-channel-wa" type="radio" name="wa-channel" value="wa" /> WhatsApp</label>
+            </div>
+            <p id="wa-notice" class="muted small">Menautkan HP memakai WhatsApp Web, bukan API resmi Meta, jadi nomor ini bisa dibatasi atau diblokir WhatsApp. Sesi tersimpan di laptop ini dan dihapus lewat tombol Lepas; kode yang dikirim saat masuk berangkat lewat WhatsApp (Meta) ke nomormu sendiri.</p>
+            <p id="wa-hint" class="muted small">Tanpa setup: saat HP meminta masuk, kode 6 digit tampil di layar laptop.</p>
+            <div id="wa-panel" class="wa-panel" hidden>
+              <p id="wa-state" class="muted small" role="status" aria-live="polite">Memeriksa WhatsApp…</p>
+              <img id="wa-qr" alt="Kode QR untuk menautkan WhatsApp ke Adhitron" width="240" height="240" hidden />
+              <p id="wa-qr-hint" class="muted small" hidden>WhatsApp → Perangkat tertaut → Tautkan perangkat, lalu pindai kode ini.</p>
+              <p id="wa-me" class="muted small" hidden></p>
+              <div class="backup-actions">
+                <button type="button" id="btn-wa-link" class="ghost">Tautkan</button>
+                <button type="button" id="btn-wa-test" class="ghost" hidden>Tes</button>
+                <button type="button" id="btn-wa-unlink" class="ghost" hidden>Lepas</button>
+              </div>
+              <p id="wa-error" class="field-error" role="alert"></p>
+            </div>
+          </section>
+          <hr />
           <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>
           <!-- ⚡ Remote power (opsional): jembatan self-hosted yang bisa boot/memutus PC dari jauh (spec: docs/remote-power-bridge.md) -->
           <div class="oc-config" role="group" aria-labelledby="rp-title">
@@ -1185,6 +1222,24 @@
             <label class="switch" id="rp-pc-row"><input id="rp-shutdown-pc" type="checkbox" /> ⏻ tombol di bawah ikut <b>mematikan Windows</b> (listrik Bardi diputus dari halaman jembatan)</label>
           </div>
           <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 🔐 Sandi Windows untuk autologon (features/settings.js): opened from ⚙ → Sistem. The password never leaves this
+         form except through POST /api/autologon; nothing is stored in the page or in the app's state. -->
+    <div id="autologon-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="autologon-modal-title" aria-describedby="autologon-modal-note">
+        <div class="modal-head"><b id="autologon-modal-title">🔐 Aktifkan akses saat PC terkunci</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <form id="autologon-form" novalidate>
+          <p id="autologon-modal-note" class="muted small">Windows perlu sandi akunmu untuk login sendiri setelah reboot, lalu layar terkunci otomatis 15 detik kemudian. Sandi disimpan Windows di registry mesin ini — bukan di Adhitron, tidak dikirim ke perangkat lain — tetapi tanpa enkripsi, jadi Administrator atau SYSTEM di PC ini bisa membacanya. Sebaiknya nyalakan BitLocker dan pakai akun Windows khusus untuk Adhitron. Windows meminta izin Administrator sekali; batalkan di jendela itu bila berubah pikiran.</p>
+          <label for="autologon-password">Sandi Windows</label>
+          <input id="autologon-password" type="password" autocomplete="current-password" aria-describedby="autologon-modal-note autologon-error" spellcheck="false" />
+          <p id="autologon-error" class="field-error" role="alert"></p>
+          <div class="backup-actions">
+            <button type="button" id="btn-autologon-cancel" class="ghost">Batal</button>
+            <button type="submit" id="btn-autologon-submit" class="primary" disabled>Aktifkan</button>
           </div>
         </form>
       </div>
