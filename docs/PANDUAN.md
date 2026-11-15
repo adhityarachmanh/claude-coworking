@@ -224,7 +224,7 @@ Hanya dari laptop atau Tailscale; di HP WiFi biasa tombol ini tidak muncul. Deta
 
 ## Mengubah config atau agent OpenCode
 
-Hanya dari laptop. Dari HP (termasuk lewat Tailscale) editor ini tidak terbuka.
+Dari laptop, atau dari HP yang terpasang lewat **Tailscale HTTPS**; HP di WiFi biasa tidak bisa membuka editor ini.
 
 1. Buka ⚙ → tab **Sistem** → **🧩 Config & Agent OpenCode**.
 2. Pilih **Project ini** atau **Global**. Path file yang sedang diedit tampil di atas editor.
