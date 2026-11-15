@@ -224,6 +224,9 @@ test('🗂 badge ⚡ 2/3 tampil saat dua project bekerja, hilang saat batas 0 (d
   const phone = await browser.newPage({ width: 390, height: 844, mobile: true });
   try {
     await openApp(desktop);
+    // The phone page loads BEFORE the turns start: a slow page load on a busy CI runner used to outlast the fake's
+    // ~10 s stream, and then there was no ⚡ count to see any more.
+    await openApp(phone);
     // Two turns in two projects, so two of three slots are in use (the fake streams "lama" for ~10 s).
     assert.equal((await api(`/api/projects/${toko}/prompt`, { text: 'lama dari toko' })).status, 200);
     assert.equal((await api(`/api/projects/${blog}/prompt`, { text: 'lama dari blog' })).status, 200);
@@ -246,8 +249,11 @@ test('🗂 badge ⚡ 2/3 tampil saat dua project bekerja, hilang saat batas 0 (d
     assert.match(badge.title, /blog/);
     assert.equal(badge.full, false, '2 dari 3 belum penuh');
 
-    // Phone: the same count in the 🗂 bar summary, and the dialog badge after tapping it.
-    await openApp(phone);
+    // Phone: the same count in the 🗂 bar summary, and the dialog badge after tapping it. Sent again right before the
+    // phone checks so both slots are still busy: a prompt for a project that is working joins that turn instead of
+    // starting another, and the count stays at 2 of 3 either way.
+    assert.equal((await api(`/api/projects/${toko}/prompt`, { text: 'lama lagi dari toko' })).status, 200);
+    assert.equal((await api(`/api/projects/${blog}/prompt`, { text: 'lama lagi dari blog' })).status, 200);
     await phone.waitFor(() => /⚡ 2\/3/.test(document.querySelector('#dash-bar-sum')?.textContent ?? ''), { timeoutMs: 20000, message: 'bar HP ⚡ 2/3' });
     await phone.eval(() => document.querySelector('#dash-bar').click());
     await phone.waitFor(() => !document.querySelector('#dash-capacity').hidden && document.querySelector('#dash-capacity').textContent.trim() === '⚡ 2/3', { timeoutMs: 5000, message: 'badge dialog HP' });

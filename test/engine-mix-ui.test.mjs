@@ -118,10 +118,24 @@ after(async () => {
 });
 
 describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
-  test('satu daftar model: dua optgroup mesin, memilih model OpenCode mengirim {engine, model}', async () => {
+  test('satu daftar model: Claude Code + grup OpenCode, memilih model OpenCode mengirim {engine, model}', async () => {
     const page = await browser.newPage({ width: 1440, height: 900, mobile: false });
     try {
       page.clearProblems();
+      // Which providers hold credentials decides whether an OpenCode group is selectable (a provider without one
+      // renders its models disabled with a login hint). Pinned here so the test never depends on the machine's own
+      // OpenCode logins — the picker groups by provider, not by a single "OpenCode" block.
+      await page.initScript(() => {
+        const real = window.fetch;
+        window.fetch = (url, opts) => {
+          if (String(url).includes('/api/opencode/providers')) {
+            return Promise.resolve(
+              new Response(JSON.stringify({ connected: [{ id: 'opencode-go', name: 'OpenCode Go' }, { id: 'google', name: 'Google' }], available: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+            );
+          }
+          return real(url, opts);
+        };
+      });
       await page.goto(`${BASE}/#${projectId}`);
       await page.waitFor(appReady, { timeoutMs: 10000, message: 'app ready' });
       await page.eval(async () => {
@@ -139,11 +153,19 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
         (await import('/js/features/engine.js')).wantModels(state.active); // the picker asks for the list when it opens
         document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
       });
-      await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === 'Claude Code') && [...document.querySelectorAll('#model optgroup')].some((g) => g.label === 'OpenCode') && Boolean(document.querySelector('#model option[data-engine="opencode"]')), { timeoutMs: 15000, message: 'dua optgroup mesin' });
+      await page.waitFor(
+        () => {
+          const groups = [...document.querySelectorAll('#model optgroup')];
+          return groups.some((g) => g.label === 'Claude Code' && g.querySelector('option[data-engine="claude"]')) && groups.some((g) => g.label !== 'Claude Code' && g.querySelector('option[data-engine="opencode"]'));
+        },
+        { timeoutMs: 15000, message: 'daftar dua mesin' },
+      );
 
       const groups = await page.eval(() => [...document.querySelectorAll('#model optgroup')].map((g) => g.label));
       assert.ok(groups.includes('Claude Code'), `grup Claude Code ada: ${groups.join(' | ')}`);
-      assert.ok(groups.includes('OpenCode'), `grup OpenCode ada: ${groups.join(' | ')}`);
+      const openGroups = groups.filter((l) => l !== 'Claude Code');
+      assert.ok(openGroups.length > 0, `ada grup OpenCode: ${groups.join(' | ')}`);
+      assert.ok(openGroups.some((l) => /OpenCode Go|Google/.test(l)), `grup itu milik provider OpenCode: ${groups.join(' | ')}`);
       const engines = await page.eval(() => [...document.querySelectorAll('#model option')].filter((o) => o.dataset.engine).map((o) => o.dataset.engine));
       assert.ok(engines.includes('claude') && engines.includes('opencode'), 'setiap option membawa data-engine');
       assert.ok(await page.eval(() => [...document.querySelectorAll('#model option[data-engine="claude"]')].some((o) => o.value && o.value !== 'auto')), 'model Claude dari katalog ikut');
@@ -186,6 +208,19 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
     const page = await browser.newPage({ width: 1440, height: 900, mobile: false });
     try {
       page.clearProblems();
+      // Same pin as above: every provider counts as logged in, so the only reason an OpenCode model is disabled here
+      // is the running turn (without it, a machine with no OpenCode logins would see the login hint instead).
+      await page.initScript(() => {
+        const real = window.fetch;
+        window.fetch = (url, opts) => {
+          if (String(url).includes('/api/opencode/providers')) {
+            return Promise.resolve(
+              new Response(JSON.stringify({ connected: [{ id: 'opencode-go', name: 'OpenCode Go' }, { id: 'google', name: 'Google' }], available: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+            );
+          }
+          return real(url, opts);
+        };
+      });
       await page.goto(`${BASE}/#${projectId}`);
       await page.waitFor(appReady, { timeoutMs: 10000, message: 'app ready' });
       await page.eval(async () => {

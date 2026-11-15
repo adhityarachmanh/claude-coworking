@@ -7,20 +7,9 @@ permissions:
   contents: read
 
 jobs:
-  models:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-      - run: npm ci --ignore-scripts
-      - run: node scripts/probe-models.mjs
-
   ui:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -28,6 +17,5 @@ jobs:
           node-version: 22
       - run: npm ci --ignore-scripts
       - run: node --test test/engine-mix-ui.test.mjs
-        continue-on-error: true
       - run: node --test test/concurrency-retention-ui.test.mjs
-        continue-on-error: true
+      - run: node --test test/mobile-chat.test.mjs

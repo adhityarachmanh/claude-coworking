@@ -107,6 +107,9 @@ export const currentProviderAuth = () => ({ known: providerNamesCache.known, con
 export function providerNames({ maxAgeMs = 60_000 } = {}) {
   const now = Date.now();
   if (providerNamesCache.load && now - providerNamesCache.at < maxAgeMs) return providerNamesCache.load;
+  // OpenCode is not installed here: the route answers 404, so asking would only put a network error in the console
+  // (and on a phone that is every load). The picker then labels groups with ids, exactly like an empty answer.
+  if (state.config?.opencode?.available === false) return Promise.resolve({});
   const load = api('/api/opencode/providers')
     .then((view) => {
       const names = {};
