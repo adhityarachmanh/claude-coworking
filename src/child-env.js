@@ -91,8 +91,11 @@ function pathKey(env) {
 }
 
 /** The folder node.exe itself lives in, with a junction resolved: `node`/`npx` must stay findable. */
-function ownBinDir(execPath, probes) {
-  const dir = path.dirname(execPath);
+function ownBinDir(execPath, platform, probes) {
+  // The host's `path` module is POSIX on Linux, where `dirname('C:\\node\\node.exe')` is "." — the child would get
+  // a relative PATH entry instead of the node folder. A Windows path is always parsed by the win32 implementation.
+  const sep = platform === 'win32' ? path.win32 : path;
+  const dir = sep.dirname(execPath);
   try {
     return probes.lstat(dir).isSymbolicLink() ? probes.realpath(dir) : dir;
   } catch {
@@ -119,7 +122,7 @@ export function childEnv(extra = {}, base = process.env, { platform = process.pl
   const probes = { lstat: options.lstat ?? lstatSync, realpath: options.realpath ?? realpathSync };
   const merged = [];
   const seen = new Set();
-  for (const dir of [ownBinDir(execPath, probes), ...sanitizePathEntries(inherited, { ...options, platform, ...probes })]) {
+  for (const dir of [ownBinDir(execPath, platform, probes), ...sanitizePathEntries(inherited, { ...options, platform, ...probes })]) {
     const dedupeKey = dir.toLowerCase();
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);

@@ -441,8 +441,9 @@ export class WaLink {
     attempt.catch(() => {}); // abandoned after a timeout: swallow so it never becomes an unhandled rejection
     let timer;
     const deadline = new Promise((resolve) => {
+      // The timer must keep the loop alive: the caller is awaiting this race, so an unref'd timer lets node exit
+      // first (the runner then reports "Promise resolution is still pending" and the await never settles).
       timer = setTimeout(resolve, ms);
-      timer.unref?.();
     });
     try {
       return await Promise.race([attempt, deadline]);
