@@ -455,6 +455,19 @@ function paintWa() {
     link.disabled = waBusy || Boolean(state.readOnly);
     link.title = state.readOnly ? READ_ONLY_HINT : '';
   }
+  // No QR needed from a phone: the pairing code works remotely, so it is offered while the session is not linked.
+  const pairBtn = $('#btn-wa-pair');
+  if (pairBtn) {
+    pairBtn.hidden = waState === 'linked';
+    pairBtn.disabled = waBusy || Boolean(state.readOnly);
+    pairBtn.title = state.readOnly ? READ_ONLY_HINT : '';
+  }
+  const phoneInput = $('#wa-phone');
+  if (phoneInput) {
+    phoneInput.hidden = waState === 'linked';
+    phoneInput.disabled = waBusy || Boolean(state.readOnly);
+    phoneInput.title = state.readOnly ? READ_ONLY_HINT : '';
+  }
   for (const id of ['#btn-wa-test', '#btn-wa-unlink']) {
     const btn = $(id);
     if (!btn) continue;
@@ -506,6 +519,39 @@ function startWaPolling() {
 }
 
 /** Tautkan / Batal: a pending scan is released with unlink (idempotent while nothing is linked yet). */
+async function pairWa() {
+  if (waBusy) return;
+  const phone = $('#wa-phone')?.value.trim() ?? '';
+  const out = $('#wa-pair-code');
+  if (out) {
+    out.hidden = true;
+    out.textContent = '';
+  }
+  waBusy = true;
+  setWaError('');
+  paintWa();
+  try {
+    const res = await api('/api/wa/pair-code', { phone });
+    waStatus = cleanWaStatus(res);
+    if (out) {
+      if (res?.code) {
+        out.textContent = `Kode tautan: ${res.code} — buka WhatsApp di HP → Perangkat tertaut → Tautkan dengan nomor telepon, lalu ketik kode itu.`;
+        out.hidden = false;
+      } else {
+        out.textContent = 'WhatsApp sudah tertaut.';
+        out.hidden = false;
+      }
+    }
+  } catch (err) {
+    setWaError(err.message || 'Kode tautan tidak bisa dibuat.');
+  } finally {
+    waBusy = false;
+    paintWa();
+    if (waStatus.state === 'linked') stopWaPolling();
+    else if (settingsOpen()) startWaPolling();
+  }
+}
+
 async function linkWa() {
   if (waBusy) return;
   waBusy = true;
@@ -607,6 +653,7 @@ export function initSettings() {
     });
   }
   $('#btn-wa-link').addEventListener('click', linkWa);
+  $('#btn-wa-pair').addEventListener('click', pairWa);
   $('#btn-wa-test').addEventListener('click', testWa);
   $('#btn-wa-unlink').addEventListener('click', unlinkWa);
   // Polling is tied to the dialog itself, not to one opener: every way of opening ⚙ starts it, every close stops it.

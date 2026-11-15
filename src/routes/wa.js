@@ -43,6 +43,18 @@ export const status = async ({ waLink, device }, req, res) => {
 /** Registers the POST routes (src/routes/index.js, like every other route group). */
 export function register(router) {
   router.post('/api/wa/status', status, { maxBody: 1024 });
+  // Remote linking: no QR (a phone cannot scan itself) — WhatsApp's pairing code, typed on the owner's phone.
+  router.post(
+    '/api/wa/pair-code',
+    async ({ waLink }, req, res, params, body) => {
+      try {
+        return json(res, 200, await waLink.pairingCode(body?.phone));
+      } catch (err) {
+        return fail(res, err);
+      }
+    },
+    { maxBody: 1024 },
+  );
   router.post(
     '/api/wa/link',
     async ({ waLink }, req, res) => {
@@ -108,7 +120,11 @@ function within(work, ms) {
  * @returns {import('node:http').ServerResponse}
  */
 function fail(res, err) {
-  if (err instanceof WaLinkError) return json(res, err.code === 'not_linked' ? 409 : 503, { error: err.message });
+  if (err instanceof WaLinkError) {
+    // A bad number is the caller's mistake (400); everything else means "the link is not usable right now".
+    const status = err.code === 'not_linked' ? 409 : err.code === 'bad_phone' ? 400 : 503;
+    return json(res, status, { error: err.message });
+  }
   if (err instanceof WaAuthStoreError) return json(res, 503, { error: err.message });
   console.error(`WhatsApp: permintaan gagal (${err?.name ?? 'Error'})`);
   return json(res, 503, { error: SEND_FAILED_MESSAGE });

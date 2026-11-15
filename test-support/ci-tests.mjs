@@ -52,6 +52,7 @@ const SMOKE = [
   'engine-mix.test.mjs',
   'backup.test.mjs',
   'backup-schedule.test.mjs',
+  'settings-persist.test.mjs',
   'tailnet-autopair.test.mjs',
   'opencode-acp-shells.test.mjs',
 ];

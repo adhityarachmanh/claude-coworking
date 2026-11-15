@@ -63,6 +63,18 @@ const userJidOf = (jid) => {
 };
 
 /**
+ * Digits of a phone number, or null when it cannot be a WhatsApp number (8–15 digits, no leading zero). Accepts the
+ * shapes people copy from their phone: `+62 812-3456-789`, `0812…` (a local number is refused: the country code is
+ * required, because the server cannot guess it), `628123456789`.
+ * @param {string} input
+ * @returns {string|null}
+ */
+export function normalizePhone(input) {
+  const digits = String(input ?? '').replace(/[^\d]/g, '');
+  return /^[1-9]\d{7,14}$/.test(digits) ? digits : null;
+}
+
+/**
  * The shape the existing /pair page and its status endpoint already speak (public/js/pair.js), so the route can stay
  * dumb: linked → connected, qr/connecting → qr_ready/connecting, off → disconnected.
  * @param {{ state: 'off'|'qr'|'connecting'|'linked' }} status
@@ -91,6 +103,7 @@ export class WaLink {
   #logoutTimeoutMs;
   #state = 'off';
   #qr = null;
+  #pair = null;
   #qrAt = 0;
   #qrSeq = 0;
   #qrWork = Promise.resolve();
@@ -185,6 +198,33 @@ export class WaLink {
       throw err;
     }
     return this.status();
+  }
+
+  /**
+   * Links without a QR: WhatsApp gives an 8-character code for the owner's number, and the owner types it on the phone
+   * (WhatsApp → Perangkat tertaut → Tautkan dengan nomor telepon). This is what makes linking possible from a phone —
+   * a QR cannot be scanned by the same phone that displays it.
+   * @param {string} phone the owner's number, digits only (a leading +, spaces and dashes are accepted)
+   * @returns {Promise<{ state: string, qr: null, me: object|null, code: string|null }>}
+   */
+  async pairingCode(phone) {
+    const digits = normalizePhone(phone);
+    if (!digits) throw new WaLinkError('bad_phone', 'Nomor WhatsApp tidak valid: tulis nomor lengkap dengan kode negara, mis. 628123456789.');
+    if (this.#state === 'linked') return { ...(await this.status()), code: null };
+    await this.link();
+    const sock = this.#socket;
+    if (typeof sock?.requestPairingCode !== 'function') {
+      throw new WaLinkError('pairing_unavailable', 'Versi WhatsApp di server ini tidak mendukung kode tautan. Pakai QR dari laptop.');
+    }
+    const code = await sock.requestPairingCode(digits);
+    this.#pair = { phone: digits, code, at: this.#now() };
+    this.#publish();
+    return { ...(await this.status()), code };
+  }
+
+  /** The code handed out last (null once the phone has linked or the session was wiped). */
+  get pairCode() {
+    return this.#pair?.code ?? null;
   }
 
   /**
@@ -344,6 +384,7 @@ export class WaLink {
     if (connection === 'open') {
       this.#attempt = 0;
       this.#dropQr();
+      this.#pair = null; // the phone finished linking: the code is spent
       this.#state = 'linked';
       this.#lastError = null;
       this.#publish();

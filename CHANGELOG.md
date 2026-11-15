@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.39
+
+- **📱 WhatsApp bisa ditautkan dari HP, tanpa memindai QR.** Aplikasi menambahkan kolom nomor + tombol **Minta kode tautan** di ⚙ → **📱 PIN ke HP**: WhatsApp memberi kode 8 karakter, dan kamu mengetiknya di HP (**WhatsApp → Perangkat tertaut → Tautkan dengan nomor telepon**). Ini membuat penautan bisa dilakukan dari mana saja lewat Tailscale — sebelumnya wajib di depan laptop karena harus memindai layar. QR tetap tersedia di laptop, dan status WhatsApp yang dilihat HP tetap tanpa gambar QR (QR adalah kredensial sesi). Nomor divalidasi (digit, kode negara wajib) dan permintaan bisa ditolak sebelum ada koneksi dibuka.
+- **📋 Peta setelan.** Dokumen baru [docs/setelan.md](docs/setelan.md) mencatat di mana setiap setelan disimpan (server `state.json` vs `localStorage`), supaya tidak ada lagi setelan yang hanya hidup di dialog dan hilang saat halaman dimuat ulang.
+- **🧪 Bukti "tidak reset setelah restart".** Test integrasi baru menjalankan server sungguhan dua kali dengan folder data yang sama: setelan jembatan (termasuk ⏻) dan folder project diubah → server dimatikan → dihidupkan → nilainya tetap. Ini menggantikan klaim "seharusnya tersimpan" dengan bukti.
+
 ## 1.0.38
 
 - **⚙ Setelan bisa diatur dari HP lewat Tailscale.** Sebelumnya hampir semua pengaturan administratif menolak perangkat lain, jadi kamu harus kembali ke laptop untuk mengubah apa pun: setelan umum, jembatan daya, menambah project/grup, backup, retensi data, routines, cek Claude/OpenCode, update aplikasi, status/lepas/uji WhatsApp, dan Spotify. Sekarang semuanya boleh dari HP **lewat Tailscale HTTPS** (terenkripsi, perangkat terpasang). HP di WiFi biasa tetap **hanya-lihat**. Yang tetap khusus laptop: terminal setup/login, hook CLI lokal, autologon/autostart (butuh persetujuan UAC di PC), dan pemasangan WhatsApp lewat QR.

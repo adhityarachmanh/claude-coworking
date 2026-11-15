@@ -19,18 +19,20 @@ Tidak ada Docker, gateway terpisah, atau environment variable. WhatsApp berjalan
 
 ## Menautkan WhatsApp
 
-Lakukan dari **laptop**, sekali saja:
+**Dari HP, tanpa QR (bisa diremote lewat Tailscale):**
 
-1. Buka **⚙ Setelan** → bagian **📱 PIN ke HP**.
-2. Pilih **WhatsApp** (bawaan: **Kode 6 digit dari layar laptop**).
-3. Tekan **Tautkan**. Status berubah menjadi *Menghubungkan ke WhatsApp…*, lalu **kode QR** muncul.
-4. Di HP: **WhatsApp** → **Perangkat tertaut** → **Tautkan perangkat** → pindai kode di layar laptop.
-5. Status menjadi *Tertaut.* dengan nomor WhatsApp yang terhubung. Tekan **Tes** untuk mengirim pesan uji ke
-   nomor itu, atau **Lepas** untuk memutus tautan dan menghapus sesi.
+1. Buka **⚙ Setelan** → **📱 PIN ke HP** → pilih **WhatsApp**.
+2. Di kolom **"Atau tautkan dari HP tanpa QR"**, tulis nomor WhatsApp lengkap dengan kode negara (mis. `628123456789`).
+3. Tekan **Minta kode tautan** → muncul kode 8 karakter.
+4. Di HP: **WhatsApp** → **Perangkat tertaut** → **Tautkan dengan nomor telepon**, lalu ketik kode itu.
+5. Status menjadi *Tertaut.* Tekan **Tes** untuk mengirim pesan uji, atau **Lepas** untuk memutus tautan.
 
-Kode QR hanya bisa diambil dari laptop. `GET /api/wa/status` menolak HP dan Tailscale (**403**), dan event
-status yang disiarkan ke perangkat lain hanya berisi keadaan (`off`, `qr`, `connecting`, `linked`) — tanpa
-gambar QR dan tanpa nomor.
+**Dari laptop, dengan QR** (sekali saja): pilih **WhatsApp** → **Tautkan** → status *Menghubungkan…* → **kode QR**
+muncul → di HP: **Perangkat tertaut** → **Tautkan perangkat** → pindai.
+
+Kode QR tidak pernah dikirim ke perangkat lain: `GET /api/wa/status` dari HP/Tailscale mengembalikan keadaan
+(`off`, `qr`, `connecting`, `linked`) tanpa gambar QR, dan event status ke perangkat lain juga tanpa QR/nomor. Kode
+tautan (pairing code) boleh dibuat dari HP — itu satu-satunya cara menautkan tanpa memindai layar laptop.
 
 Kalau QR sudah lebih dari satu menit, gambar disembunyikan dan server memutar kode baru; tidak perlu memuat
 ulang halaman. Tombol **Tautkan** berubah menjadi **Batal** selama menunggu pindai.

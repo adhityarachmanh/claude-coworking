@@ -156,7 +156,7 @@ test('routes: 🧰 /api/setup/* — status/refresh are laptop+Tailscale, the thr
 
 test('routes: 📱 /api/wa/* — status/lepas/uji lewat Tailscale; link (QR) tetap laptop saja', () => {
   const routes = router.routes.filter((r) => r.pattern.startsWith('/api/wa/'));
-  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/wa/link', '/api/wa/status', '/api/wa/test', '/api/wa/unlink']);
+  assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/wa/link', '/api/wa/pair-code', '/api/wa/status', '/api/wa/test', '/api/wa/unlink']);
   const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
   const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
   const secureAdmin = server.match(/const SECURE_ADMIN = new Set\(\[([^\]]*)\]\)/)[1];

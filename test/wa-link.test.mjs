@@ -47,6 +47,12 @@ function fakeSocketFactory(log) {
         sock.sends.push({ jid, content });
         return { key: { id: 'stub' } };
       },
+      // baileys' pairing code (no QR): the link asks for the owner's number and shows what WhatsApp returned.
+      pairingAsks: [],
+      async requestPairingCode(number) {
+        sock.pairingAsks.push(number);
+        return 'ABCD-1234';
+      },
       async logout() {
         sock.loggedOut = true;
       },
@@ -382,6 +388,32 @@ test('unlink() wipes the store and stops the socket', async () => {
 
 // "Lepas" is the user's data-deletion path (the privacy doc promises the session is gone afterwards). A phone that is
 // offline never answers logout(), and the route gives up at 5 s — so unlink() must not depend on that answer.
+test('pairingCode(): hanya digit yang dikirim, kode dikembalikan, nomor salah ditolak sebelum socket dibuka', async () => {
+  const dir = tempDir();
+  const badDir = tempDir();
+  try {
+    const h = harness({ dir });
+    const out = await h.link.pairingCode('+62 812-3456-789');
+    assert.equal(out.code, 'ABCD-1234', 'kode dari WhatsApp diteruskan ke pemanggil');
+    assert.equal(h.link.pairCode, 'ABCD-1234');
+    const sock = h.log.sockets[0];
+    assert.deepEqual(sock.pairingAsks, ['628123456789'], 'digit saja, kode negara ikut');
+
+    // once the phone links, the code is spent
+    sock.emit('connection.update', { connection: 'open' });
+    assert.equal(h.link.pairCode, null, 'kode hilang setelah tertaut');
+    assert.equal((await h.link.pairingCode('628123456789')).code, null, 'sudah tertaut: tidak ada kode baru');
+    h.link.stop();
+
+    const bad = harness({ dir: badDir });
+    await assert.rejects(() => bad.link.pairingCode('0812'), (err) => err.code === 'bad_phone');
+    assert.equal(bad.log.sockets.length, 0, 'nomor yang tidak valid tidak membuka socket');
+  } finally {
+    cleanup(dir);
+    cleanup(badDir);
+  }
+});
+
 test('unlink() still deletes the session when logout() never finishes', async () => {
   const dir = tempDir();
   try {

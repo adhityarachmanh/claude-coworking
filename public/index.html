@@ -1202,6 +1202,12 @@
                 <button type="button" id="btn-wa-test" class="ghost" hidden>Tes</button>
                 <button type="button" id="btn-wa-unlink" class="ghost" hidden>Lepas</button>
               </div>
+              <!-- Tautkan dari HP tanpa QR: kode 8 karakter diketik di HP (Perangkat tertaut → Tautkan dengan nomor). -->
+              <label class="oc-field" for="wa-phone"><span>Atau tautkan dari HP tanpa QR — nomor WhatsApp lengkap</span><input id="wa-phone" inputmode="tel" autocomplete="tel" placeholder="628123456789" /></label>
+              <div class="backup-actions">
+                <button type="button" id="btn-wa-pair" class="ghost">Minta kode tautan</button>
+              </div>
+              <p id="wa-pair-code" class="muted small" role="status" aria-live="polite" hidden></p>
               <p id="wa-error" class="field-error" role="alert"></p>
             </div>
           </section>
