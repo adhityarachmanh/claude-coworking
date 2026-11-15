@@ -1,23 +1,9 @@
-// TEMPORARY diagnostic (removed after reading the log): why does a grandchild of execFileTree outlive the SIGKILL
-// escalation on Ubuntu? Prints every process.kill the helper makes and the /proc state around it.
-import { readFileSync, writeFileSync } from 'node:fs';
-import { execFileTree } from '../src/proc.js';
+// TEMPORARY diagnostic (removed after reading the log): does `detached` actually put the child in its own process
+// group under execFile vs spawn on this Node/Linux? Prints the pgrp from /proc for each case.
+import { execFile, spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
-const pidFile = '/tmp/probe-grandchild.pid';
-const t0 = Date.now();
-const at = () => `${Date.now() - t0}ms`;
-
-const realKill = process.kill;
-process.kill = (pid, signal) => {
-  try {
-    const out = realKill(pid, signal);
-    console.log(`${at()} kill(${pid}, ${signal ?? 'SIGTERM'}) ok`);
-    return out;
-  } catch (err) {
-    console.log(`${at()} kill(${pid}, ${signal ?? 'SIGTERM'}) FAILED ${err.code}`);
-    throw err;
-  }
-};
+const SLEEP = ['-e', 'setTimeout(() => {}, 60000)'];
 
 const stat = (pid) => {
   try {
@@ -29,31 +15,27 @@ const stat = (pid) => {
   }
 };
 
-const childCode = [
-  "const { spawn } = require('node:child_process');",
-  "const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'inherit' });",
-  `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(c.pid));`,
-  'setTimeout(() => {}, 60000);',
-].join('');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const child = execFileTree(process.execPath, ['-e', childCode], { timeout: 2500 }, (err) => {
-  console.log(`${at()} callback: killed=${err?.killed}`);
-});
-console.log(`${at()} direct child pid=${child.pid} self pgid=${process.getpgrp?.() ?? 'n/a'}`);
+console.log(`node ${process.version} self pid=${process.pid} self stat: ${stat(process.pid)}`);
 
-setTimeout(() => {
-  const pid = Number(readFileSync(pidFile, 'utf8'));
-  console.log(`${at()} grandchild pid=${pid} direct=${child.pid}`);
-  console.log(`${at()} /proc/${child.pid}: ${stat(child.pid)}`);
-  console.log(`${at()} /proc/${pid}: ${stat(pid)}`);
+const withDetachedSpawn = spawn(process.execPath, SLEEP, { detached: true, stdio: 'ignore', windowsHide: true });
+const withDetachedExecFile = execFile(process.execPath, SLEEP, { detached: true, windowsHide: true }, () => {});
+const withDetachedExecFileNoCallback = execFile(process.execPath, SLEEP, { detached: true });
+const plainSpawn = spawn(process.execPath, SLEEP, { stdio: 'ignore' });
+
+await sleep(300);
+console.log(`spawn detached      pid=${withDetachedSpawn.pid} ${stat(withDetachedSpawn.pid)}`);
+console.log(`execFile detached   pid=${withDetachedExecFile.pid} ${stat(withDetachedExecFile.pid)}`);
+console.log(`execFile detached#2 pid=${withDetachedExecFileNoCallback.pid} ${stat(withDetachedExecFileNoCallback.pid)}`);
+console.log(`spawn plain         pid=${plainSpawn.pid} ${stat(plainSpawn.pid)}`);
+for (const [label, pid] of [['spawn detached', withDetachedSpawn.pid], ['execFile detached', withDetachedExecFile.pid]]) {
   try {
-    process.kill(-child.pid, 'SIGKILL');
-    console.log(`${at()} manual group SIGKILL sent to ${-child.pid}`);
+    process.kill(-pid, 'SIGKILL');
+    console.log(`group SIGKILL to -${pid} (${label}) ok`);
   } catch (err) {
-    console.log(`${at()} manual group SIGKILL FAILED ${err.code}`);
+    console.log(`group SIGKILL to -${pid} (${label}) FAILED ${err.code}`);
   }
-  setTimeout(() => {
-    console.log(`${at()} after manual SIGKILL /proc/${pid}: ${stat(pid)}`);
-    process.exit(0);
-  }, 1500);
-}, 3500);
+}
+for (const p of [withDetachedExecFileNoCallback, plainSpawn]) p.kill('SIGKILL');
+withDetachedExecFileNoCallback.unref?.();
