@@ -1,5 +1,5 @@
 // ✅ Checklist project: which habits/files a project still misses (src/routes/checklist.js).
-import { api, toast } from '../core/api.js';
+import { api, laptopBlocked, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
@@ -34,8 +34,14 @@ let wired = false;
 function wire() {
   const btn = $('#checklist-scaffold');
   if (!btn) return;
+  // Writing skeletons writes into the project folder: laptop only, so a phone is shown the reason instead of a button
+  // the server answers with 403 (LOCAL_ONLY_ACTION in server.js).
+  const laptop = laptopBlocked('/api/projects/contoh/checklist-scaffold');
+  btn.hidden = laptop;
   btn.disabled = state.readOnly;
   btn.title = state.readOnly ? READ_ONLY_HINT : 'Buat README/AGENTS.md/.env.example/docs yang belum ada; file yang sudah ada tidak ditimpa';
+  const note = $('#checklist-laptop-note');
+  if (note) note.hidden = !laptop;
   if (wired) return;
   wired = true;
   btn.addEventListener('click', async () => {

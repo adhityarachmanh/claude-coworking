@@ -7742,13 +7742,13 @@ describeArea('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
         approvalEnabled: [...document.querySelectorAll('.approval.pending button, .approval.pending input')].filter((b) => !b.disabled).length,
         approvalNote: document.querySelector('.approval.pending .ro-note')?.textContent ?? '',
         // ⚙ is reachable from a paired phone over Tailscale, but never from plain WiFi (read-only is refused there).
-        settings: Boolean(document.querySelector('#btn-settings')?.getClientRects().length),
+        settings: document.querySelector('#btn-settings').hidden,
         // reads still go out: the UI checks them against the server's allowlist from the snapshot
         changesText: document.querySelector('#ch-files').textContent,
       };
     });
     assert.equal(ui.readOnly, true);
-    assert.equal(ui.settings, false, '⚙ tetap tersembunyi di WiFi biasa');
+    assert.equal(ui.settings, true, '⚙ tetap tersembunyi di WiFi biasa');
     assert.equal(ui.prompt, true, 'kotak pesan nonaktif');
     assert.equal(ui.placeholder, 'Hanya lihat lewat WiFi — pakai Tailscale untuk mengirim perintah');
     assert.deepEqual(ui.controls, [], 'tombol aksi yang masih aktif');
@@ -10498,7 +10498,7 @@ describeArea('UI HP lewat Tailscale (setelan dari HP)', { skip: SKIP ?? false },
     await stubClient(page, { local: false, secure: true, readOnly: false, accountAuth: true, push: null });
     await openApp(page, '#demo');
     await page.waitFor(() => document.body.classList.contains('remote-client'), { timeoutMs: 5000, message: 'halaman sadar ini HP' });
-    assert.equal(await page.eval(() => Boolean(document.querySelector('#btn-settings')?.getClientRects().length)), true, '⚙ terlihat di header HP Tailscale');
+    assert.equal(await page.eval(() => document.querySelector('#btn-settings').hidden), false, '⚙ tersedia di HP Tailscale (baris ⋯ tidak disembunyikan)');
 
     await tap(page, '#btn-settings');
     await page.waitFor(() => !document.querySelector('#settings-modal').hidden, { timeoutMs: 3000, message: 'Setelan terbuka dari HP' });
@@ -10576,6 +10576,90 @@ describeArea('UI HP lewat Tailscale (setelan dari HP)', { skip: SKIP ?? false },
     for (const [path, message] of Object.entries(r.out)) assert.match(message, /hanya bisa diubah dari laptop/i, `${path}: ${message}`);
     assert.deepEqual(r.calls, ['/api/wa/status'], 'tidak ada satu pun aksi laptop yang dikirim ke server');
     assert.equal(r.reads, 'ok', 'status WhatsApp (admin remote) tetap bisa dibaca');
+    assert.deepEqual(realProblems(page), []);
+  });
+
+  test('admin biasa tidak lagi dikunci: cadangan, cek update, cek Claude/OpenCode, dan palet setelan', async () => {
+    // Controls whose state comes from the server's config views: feed them a realistic view, because whether Claude
+    // Code is installed on the CI machine must not decide what this test proves.
+    const gates = await page.eval(async () => {
+      const [au, cc, oc] = await Promise.all([
+        import('/js/features/app-update.js'),
+        import('/js/features/claude-check.js'),
+        import('/js/features/opencode-check.js'),
+      ]);
+      const before = document.querySelector('#app-update-banner').innerHTML;
+      au.applyAppUpdate({ available: true, behind: 1, branch: 'main', commits: [{ hash: 'abc1234', subject: 'contoh' }] });
+      cc.applyClaudeCheck({ available: true, running: false, result: 'ok', checkedAt: 1, settings: { autoCheck: true, allowModel: true } });
+      oc.applyOpenCodeCheck({ available: true, running: false, result: 'ok', checkedAt: 1, settings: { autoCheck: true }, plugins: [] });
+      const out = {
+        update: !document.querySelector('#app-update-check').disabled,
+        updateRun: !document.querySelector('#app-update-run').disabled,
+        ccRun: !document.querySelector('#cc-run').disabled,
+        ccAuto: !document.querySelector('#cc-auto').disabled,
+        ocRun: !document.querySelector('#oc-run').disabled,
+        ocAuto: !document.querySelector('#oc-auto').disabled,
+      };
+      // Put the laptop-only buttons back where the test server would draw them: a remote phone must not keep an
+      // action it cannot call, even after another view arrives.
+      document.querySelector('#app-update-banner').innerHTML = before;
+      return out;
+    });
+    assert.deepEqual(gates, { update: true, updateRun: true, ccRun: true, ccAuto: true, ocRun: true, ocAuto: true });
+
+    await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+    await tap(page, '#btn-settings');
+    await page.waitFor(() => !document.querySelector('#settings-modal').hidden, { timeoutMs: 3000, message: 'Setelan terbuka' });
+    await page.click('[data-settings-tab="cadangan"]');
+    await settle(page, 'settings-modal');
+    await page.waitFor(() => !document.querySelector('#ba-save').disabled, { timeoutMs: 5000, message: 'jadwal backup dimuat untuk HP' });
+    const backup = await page.eval(() => ({
+      exportEnabled: !document.querySelector('#btn-backup-export').disabled,
+      importEnabled: !document.querySelector('#btn-backup-import').disabled,
+      noteHidden: document.querySelector('#backup-remote').hidden,
+      saveEnabled: !document.querySelector('#ba-save').disabled,
+    }));
+    assert.deepEqual(backup, { exportEnabled: true, importEnabled: true, noteHidden: true, saveEnabled: true }, 'export/import & backup otomatis bisa dari HP');
+
+    // Palette: settings and the diagnostics bundle are admin commands, not laptop-only ones.
+    await paletteType(page, 'Pengaturan: Cadangan');
+    const paletteState = (label) =>
+      page.eval((text) => {
+        const opt = [...document.querySelectorAll('#palette-list .pal-opt')].find((o) => o.textContent.includes(text));
+        return opt ? opt.getAttribute('aria-disabled') : 'tidak ada';
+      }, label);
+    assert.equal(await paletteState('Pengaturan: Cadangan'), null, 'item setelan tidak dikunci di HP Tailscale');
+
+    // 🗂 Semua project: archiving stays laptop-only, so the button is not offered.
+    await page.eval(async () => {
+      document.querySelectorAll('.modal').forEach((m) => (m.hidden = true));
+      (await import('/js/features/picker.js')).openProjects();
+    });
+    await page.waitFor(() => document.querySelectorAll('#project-list li[data-id]').length > 1, { timeoutMs: 5000, message: 'daftar project terisi' });
+    const picker = await page.eval(() => ({
+      open: !document.querySelector('#project-modal').hidden,
+      archives: document.querySelectorAll('#project-list .arch').length,
+      projects: document.querySelectorAll('#project-list li[data-id]').length,
+    }));
+    assert.equal(picker.open, true, 'daftar project terbuka');
+    assert.ok(picker.projects > 1, 'ada project yang bisa diarsipkan');
+    assert.equal(picker.archives, 0, 'tombol arsip (laptop-only) tidak dirender di HP');
+
+    // 👥 Grup: creating and reading is fine, but rename/members/dissolve stay on the laptop.
+    await page.eval(async () => {
+      document.querySelectorAll('.modal').forEach((m) => (m.hidden = true));
+      (await import('/js/features/groups.js')).openGroups();
+    });
+    await page.waitFor(() => Boolean(document.querySelector('#groups-create') || document.querySelector('#groups-body .warn')), { timeoutMs: 5000, message: 'daftar grup termuat' });
+    const groups = await page.eval(() => ({
+      create: Boolean(document.querySelector('#groups-create')),
+      dissolve: document.querySelectorAll('#groups-body [data-gact="dissolve"]').length,
+      note: document.querySelector('#groups-laptop-note')?.textContent ?? '',
+      body: document.querySelector('#groups-body').innerHTML.slice(0, 160),
+    }));
+    assert.equal(groups.create, true, `membuat grup tetap bisa dari HP — ${groups.body}`);
+    assert.equal(groups.dissolve, 0, 'bongkar grup tidak ditawarkan di HP');
+    assert.match(groups.note, /hanya bisa dari laptop/i, 'alasannya terbaca, bukan tombol mati');
     assert.deepEqual(realProblems(page), []);
   });
 });

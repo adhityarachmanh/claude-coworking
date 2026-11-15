@@ -3,7 +3,7 @@
 // effort, chat actions. Fuzzy match with highlighted letters, ↑↓ Enter Esc, recently used actions first.
 // Prefixes narrow the list: `>` commands & actions, `@` files, `#` projects.
 // Accessible as a combobox (the input) driving a listbox (aria-activedescendant); no focusable options.
-import { api, toast } from '../core/api.js';
+import { api, mayAdmin, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { THEME_IDS, THEMES, theme } from '../office/themes.js';
@@ -167,6 +167,7 @@ function buildItems() {
   const ro = state.readOnly ? READ_ONLY_HINT : null;
   const isDemo = !state.active || state.active === DEMO_ID;
   const needProject = isDemo ? 'Pilih project dulu (bukan demo)' : null;
+  const adminOnly = mayAdmin() ? null : 'Hanya lihat lewat WiFi — pakai laptop atau Tailscale';
   const laptopOnly = state.local ? null : 'Hanya dari laptop';
   const st = state.statuses[state.active] ?? {};
   const items = [];
@@ -204,9 +205,9 @@ function buildItems() {
     ['mcp', '🔌', 'Server MCP', '/mcp', needProject ?? ro, () => openMcp(), 'mcp server plugin'],
     ['templates', '⚡', 'Template prompt', '/t', needProject ?? ro, () => localCommand('/template'), 'template snippet'],
     ['roster', '👥', 'Kelola tim', '/team', null, () => openRoster(), 'team tim role roster anggota meja kelola'],
-    ['settings', '⚙', 'Pengaturan', '', laptopOnly, click('#btn-settings'), 'settings config preferences'],
+    ['settings', '⚙', 'Pengaturan', '', adminOnly, click('#btn-settings'), 'settings config preferences'],
     ['notify', '🔔', 'Pengaturan notifikasi', '', null, () => openNotifySettings(), 'notification notifikasi suara sound jam tenang quiet volume favorit'],
-    ['diagnostics', '🩺', 'Bundel diagnostik', '', laptopOnly, () => downloadDiagnostics(), 'diagnostic diagnostik log bug laporan dukungan support'],
+    ['diagnostics', '🩺', 'Bundel diagnostik', '', adminOnly, () => downloadDiagnostics(), 'diagnostic diagnostik log bug laporan dukungan support'],
     ['checklist', '✅', 'Checklist project', '', needProject, () => openChecklist(), 'checklist siap readme test build git docs onboarding kesiapan'],
     ['account', '👤', 'Akun Claude', '', null, click('#btn-account'), 'account login kuota quota'],
     ['report', '📊', 'Laporan penggunaan token', '', null, click('#btn-report'), 'report usage token pdf'],
@@ -245,7 +246,7 @@ function buildItems() {
       icon,
       label: `Pengaturan: ${label}`,
       hint: 'Buka bagian ini',
-      disabled: laptopOnly,
+      disabled: adminOnly,
       keywords,
       run: () => {
         $('#btn-settings').click();

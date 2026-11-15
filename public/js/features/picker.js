@@ -1,5 +1,5 @@
 // Project picker (Ctrl+K): the project list, the header crumb, switching projects.
-import { api, toast } from '../core/api.js';
+import { api, laptopBlocked, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { sceneFor, stage } from '../core/scenes.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
@@ -41,8 +41,9 @@ export function renderSidebar() {
       const favTitle = state.readOnly ? READ_ONLY_HINT : p.favorite ? 'Hapus dari favorit' : 'Jadikan favorit (selalu di atas)';
       const star = p.id === DEMO_ID ? '' : `<button class="fav ${p.favorite ? 'on' : ''}" title="${favTitle}" aria-pressed="${Boolean(p.favorite)}" ${state.readOnly ? 'disabled' : ''}>${p.favorite ? '★' : '☆'}</button>`;
       // 🗂 Archived projects are hidden unless "tampilkan arsip" is on (the active one always stays).
+      // Archiving is laptop-only (LOCAL_ONLY_ACTION in server.js): a phone gets no button it cannot use.
       const archive =
-        p.id === DEMO_ID
+        p.id === DEMO_ID || laptopBlocked('/api/projects/contoh/archive')
           ? ''
           : `<button class="arch ${p.archived ? 'on' : ''}" data-archive-project title="${state.readOnly ? READ_ONLY_HINT : p.archived ? 'Keluarkan dari arsip' : 'Arsipkan: sembunyikan dari daftar tanpa menghapus'}" aria-pressed="${Boolean(p.archived)}" aria-label="${p.archived ? 'Keluarkan dari arsip' : 'Arsipkan'}: ${escapeHtml(p.name)}" ${state.readOnly ? 'disabled' : ''}>${p.archived ? '↩' : '📦'}</button>`;
       const st = state.statuses[p.id] ?? {};
@@ -167,7 +168,7 @@ export function initPicker() {
       return;
     }
     if (e.target.closest('.arch')) {
-      if (state.readOnly) return;
+      if (state.readOnly || laptopBlocked('/api/projects/contoh/archive')) return;
       const project = state.projects.find((p) => p.id === li.dataset.id);
       api(`/api/projects/${li.dataset.id}/archive`, { archived: !project?.archived })
         .then((r) => toast(r.archived ? 'Project diarsipkan — buka 📦 untuk melihatnya lagi.' : 'Project dikeluarkan dari arsip.', 'ok'))

@@ -1,9 +1,9 @@
 // ⬆ "Versi baru Adhitron tersedia" (server: src/app-update.js): a banner under the top bar with what is new and,
-// on the laptop, "Update sekarang" (git pull --ff-only + clean restart; the page reconnects by itself). The same
-// status sits in ⚙ with a "Cek update" button. A dismissed banner stays away until a newer commit arrives.
-import { api, toast } from '../core/api.js';
+// for an admin client (laptop, or a phone over Tailscale), "Update sekarang" (git pull --ff-only + clean restart;
+// the page reconnects by itself). The same status sits in ⚙ with a "Cek update" button. A dismissed banner stays
+// away until a newer commit arrives.
+import { api, mayAdmin, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
-import { state } from '../core/state.js';
 
 const SEEN_KEY = 'office.appUpdateSeen';
 const up = { view: null, running: false };
@@ -23,8 +23,8 @@ function renderBanner() {
   if (!v?.behind || !newest || seenHash() === newest) return box.replaceChildren();
   const desktop = v.mode === 'desktop';
   const list = v.commits.map((c) => `<li><code>${escapeHtml(c.hash)}</code> ${escapeHtml(c.subject)}</li>`).join('');
-  const action = !state.local
-    ? '<span class="cc-hint">Update dari laptop (⚙ → Update aplikasi).</span>'
+  const action = !mayAdmin()
+    ? '<span class="cc-hint">Hanya lihat lewat WiFi — pakai laptop atau Tailscale untuk memperbarui.</span>'
     : v.dirty
       ? '<span class="cc-hint">Ada perubahan lokal di folder aplikasi: commit/stash dulu, atau jalankan update.cmd.</span>'
       : `<button type="button" class="primary" data-up="run"${up.running || v.updating ? ' disabled' : ''}>${up.running || v.updating ? 'Memperbarui…' : '⬆ Update sekarang'}</button>`;
@@ -47,9 +47,9 @@ function renderSection() {
   else if (v.mode === 'desktop') st.textContent = v.checkedAt ? `✓ Versi terbaru ${v.currentVersion} · dicek ${new Date(v.checkedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : 'Dicek otomatis tiap 30 menit.';
   else if (v.behind) st.textContent = `⬆ ${v.behind} perubahan baru di ${v.upstream}.`;
   else st.textContent = v.checkedAt ? `✓ Sudah versi terbaru (${v.branch}) · dicek ${new Date(v.checkedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : 'Dicek otomatis tiap 30 menit.';
-  $('#app-update-check').disabled = !state.local || !v?.available || v.checking;
+  $('#app-update-check').disabled = !mayAdmin() || !v?.available || v.checking;
   $('#app-update-run').hidden = !v?.behind;
-  $('#app-update-run').disabled = !state.local || v.dirty || up.running || v.updating;
+  $('#app-update-run').disabled = !mayAdmin() || v.dirty || up.running || v.updating;
 }
 
 /** The server's config.appUpdate (snapshot or live `config` event). */

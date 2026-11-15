@@ -691,17 +691,14 @@ function refreshProjects() {
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Settings that only the laptop itself may change, never a paired phone.
 // Adding a project folder points Claude Code (and git, file search) at any path: laptop only.
-// Backup export/import read and write the whole Claude history: laptop only (Tailscale phones too are refused).
-// Spotify's Client ID, login and logout: laptop only (the redirect URI is the laptop's 127.0.0.1).
-// ⚙ Cek kompatibilitas Claude Code (run, settings): laptop only (it spawns Claude Code, maybe a model call).
-// ⚙ Kompatibilitas OpenCode (run, settings): laptop only too (it spawns `opencode acp`).
-// 🧰 Setup mutations (install/cancel/login-terminal): laptop only. Status/refresh stay absent from wifiAllows: a
-// plain-HTTP WiFi phone may not even read them, a Tailscale phone may (both are default-deny over WiFi).
-// 📱 WhatsApp (status/link/unlink/test): laptop only — pairing needs the QR, and the QR is a session credential.
-// 🪟 Autologon (enable/disable): laptop only — it asks for the Windows password and changes how the PC logs in.
-// Aksi yang benar-benar menuntut mesinnya sendiri: setup/terminal login, hook CLI lokal, UAC (autologon/autostart),
-// dan gambar QR WhatsApp. Semua setelan lain boleh diubah dari HP lewat Tailscale (SECURE_ONLY) — itu yang membuat
-// aplikasi ini nyaman diremote.
+// 🧰 Setup mutations (install/cancel/login-terminal): laptop only; status/refresh stay readable over Tailscale.
+// 📱 WhatsApp link: laptop only — pairing needs the QR, and the QR is a session credential (status/unlink/test are
+// SECURE_ADMIN, so a phone can read, unlink and test but never link).
+// 🪟 Autologon/autostart: laptop only — it asks for the Windows password and changes how the PC logs in (UAC).
+// 🧩 Memasang/menghapus plugin Claude Code (routes/extensions.js guard laptop) dan login GitHub: laptop only.
+// 🎵 Spotify tetap laptop-only DI UI karena redirect OAuth-nya 127.0.0.1 di laptop (server: SECURE_ADMIN).
+// Semua setelan lain boleh diubah dari HP lewat Tailscale (SECURE_ADMIN) — itu yang membuat aplikasi ini nyaman
+// diremote.
 const LOCAL_ONLY = new Set(['/api/setup/install', '/api/setup/cancel', '/api/setup/login-terminal', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/autologon', '/api/autologon/disable', '/api/pairing/code/push', '/api/wa/link']);
 // Admin biasa: boleh dari HP, tetapi hanya lewat Tailscale HTTPS (terenkripsi + perangkat terpasang). WiFi biasa
 // tetap hanya-lihat; gate read-only di bawah menolak sisanya.
@@ -720,8 +717,11 @@ const SECURE_ONLY = new Set(['/api/power/status', '/api/shutdown']);
 const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout', '/api/account/audit', '/api/engine', '/api/opencode/providers', '/api/opencode/login/key', '/api/opencode/login/oauth', '/api/opencode/login/status', '/api/opencode/login/code', '/api/opencode/login/cancel', '/api/opencode/logout', '/api/opencode/custom/check', '/api/opencode/custom/add', '/api/opencode/custom/remove']);
 // Opening VS Code / Explorer only makes sense on the laptop itself.
 // Changing saved permission rules (🛡️ Aturan izin) changes what Claude Code may do unasked: laptop only (phones may look).
-const LOCAL_ONLY_ACTION = /^\/api\/(projects\/[\w-]+\/(open|permissions-edit|mcp-add|session-import-json|checklist-scaffold|archive)|groups\/[\w-]+)$/;
-const LOCAL_ONLY_GROUP = /^\/api\/groups\/[\w-]+\/dissolve$/; // the update route above covers /api/groups/:id too
+const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit|mcp-add|session-import-json|checklist-scaffold|archive)$/;
+// Rename/add/remove members only. `/api/groups/list` and `/api/groups/:id/sessions` are reads and stay available to a
+// paired phone; without the lookahead the id pattern swallowed `list` and the group dialog showed nothing but 403.
+const LOCAL_ONLY_GROUP = /^\/api\/groups\/(?!list$)[\w-]+$/;
+const LOCAL_ONLY_GROUP_DISSOLVE = /^\/api\/groups\/[\w-]+\/dissolve$/;
 /**
  * The same laptop-only rule as JSON for the settings dialog (`client.laptopOnly`): a phone hides those controls
  * instead of offering a button the server answers with 403. Built from the constants above, so a new laptop-only
@@ -729,8 +729,15 @@ const LOCAL_ONLY_GROUP = /^\/api\/groups\/[\w-]+\/dissolve$/; // the update rout
  * (public/js/core/api.js), exactly like the server does.
  */
 const LAPTOP_ONLY_API = {
-  paths: [...LOCAL_ONLY, '/api/remote'],
-  patterns: ['^/api/remote/', LOCAL_ONLY_ACTION.source, LOCAL_ONLY_GROUP.source],
+  paths: [
+    ...LOCAL_ONLY,
+    '/api/remote',
+    // Route-level laptop guards (routes/extensions.js `guard(..., { laptop: true })`), so the UI can hide them too.
+    '/api/claude/plugins/action',
+    '/api/github/login',
+    '/api/github/login/cancel',
+  ],
+  patterns: ['^/api/remote/', LOCAL_ONLY_ACTION.source, LOCAL_ONLY_GROUP.source, LOCAL_ONLY_GROUP_DISSOLVE.source],
 };
 const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+|js\/pair\.js)$/;
 
@@ -1287,7 +1294,15 @@ async function handler(req, res) {
         }
         return json(res, 401, { error: 'Perangkat belum dipasangkan.' });
       }
-      if (LOCAL_ONLY.has(pathname) || pathname === '/api/remote' || pathname.startsWith('/api/remote/') || LOCAL_ONLY_ACTION.test(pathname) || LOCAL_ONLY_GROUP.test(pathname)) return json(res, 403, { error: 'Pengaturan ini hanya bisa diubah dari laptop.' });
+      if (
+        LOCAL_ONLY.has(pathname) ||
+        pathname === '/api/remote' ||
+        pathname.startsWith('/api/remote/') ||
+        LOCAL_ONLY_ACTION.test(pathname) ||
+        LOCAL_ONLY_GROUP.test(pathname) ||
+        LOCAL_ONLY_GROUP_DISSOLVE.test(pathname)
+      )
+        return json(res, 403, { error: 'Pengaturan ini hanya bisa diubah dari laptop.' });
       // Setelan/admin biasa dari HP: wajib jalur Tailscale (https), bukan WiFi biasa.
       if (SECURE_ADMIN.has(pathname) && !isSecure(req)) return json(res, 403, { error: 'Pengaturan ini dari HP hanya lewat Tailscale (koneksi terenkripsi), bukan WiFi biasa.' });
       // ⚡ Power actions from a phone need the encrypted Tailscale (https) link. Checked BEFORE the read-only

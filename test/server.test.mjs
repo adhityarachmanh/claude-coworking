@@ -913,8 +913,10 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
   const uiAllows = (p) => readOnlyApi.paths.includes(p) || readOnlyApi.patterns.some((source) => new RegExp(source).test(p));
   // ...and the laptop-only list, so a phone hides those controls instead of offering a button that answers 403.
   const uiLaptopOnly = (p) => laptopOnlyApi.paths.includes(p) || laptopOnlyApi.patterns.some((source) => new RegExp(source).test(p));
-  for (const p of ['/api/autostart', '/api/autologon', '/api/autologon/disable', '/api/wa/link', '/api/setup/install', '/api/cli-bridge/ask', '/api/pairing/code/push']) assert.ok(uiLaptopOnly(p), `${p} ditandai laptop-only`);
+  for (const p of ['/api/autostart', '/api/autologon', '/api/autologon/disable', '/api/wa/link', '/api/setup/install', '/api/cli-bridge/ask', '/api/pairing/code/push', '/api/claude/plugins/action', '/api/github/login']) assert.ok(uiLaptopOnly(p), `${p} ditandai laptop-only`);
   for (const p of ['/api/remote', '/api/remote/pairing', `/api/projects/${id}/open`, `/api/projects/${id}/permissions-edit`, '/api/groups/g1/dissolve', '/api/projects/x/archive']) assert.ok(uiLaptopOnly(p), `${p} ditandai laptop-only (pola)`);
+  // ...but the group dialog's reads are not: the id pattern used to swallow `/api/groups/list` and a phone saw 403 only.
+  for (const p of ['/api/groups/list', '/api/groups/g1/sessions']) assert.ok(!uiLaptopOnly(p), `${p} tetap bisa dibaca dari HP`);
   for (const p of ['/api/config', '/api/wa/pair-code', '/api/wa/unlink', '/api/spotify/login', '/api/shutdown']) assert.ok(!uiLaptopOnly(p), `${p} bukan laptop-only (HP lewat Tailscale boleh)`);
   assert.equal((await snapshot()).client.readOnly, false, 'the laptop is never read-only');
   // privacy: sniffable WiFi never gets the paired devices list (names); the laptop's 📱 dialog does

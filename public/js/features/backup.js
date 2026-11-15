@@ -1,8 +1,9 @@
 // ⚙ → Cadangkan riwayat: export the Claude Code history + office data as one .zip, and import it on another
-// laptop (server: POST /api/backup/export and /api/backup/import, laptop only — see src/backup.js).
-import { toast } from '../core/api.js';
+// laptop (server: POST /api/backup/export and /api/backup/import, admin: laptop or a phone over Tailscale —
+// see server.js SECURE_ADMIN).
+import { mayAdmin, toast } from '../core/api.js';
 import { $ } from '../core/dom.js';
-import { auth, state } from '../core/state.js';
+import { auth } from '../core/state.js';
 import { saveBlob } from '../core/util.js';
 
 const MB = 1024 * 1024;
@@ -19,12 +20,12 @@ const fmtSize = (bytes) => (bytes >= MB ? `${(bytes / MB).toLocaleString('id-ID'
 
 const setStatus = (text) => ($('#backup-status').textContent = text);
 
-/** Buttons follow the device (laptop only) and whether an export/import is running. */
+/** Buttons follow the device (laptop, or a phone over Tailscale) and whether an export/import is running. */
 function renderAccess() {
-  const laptop = state.local !== false;
-  $('#backup-remote').hidden = laptop;
-  $('#btn-backup-export').disabled = backup.busy || !laptop;
-  $('#btn-backup-import').disabled = backup.busy || !laptop;
+  const admin = mayAdmin();
+  $('#backup-remote').hidden = admin;
+  $('#btn-backup-export').disabled = backup.busy || !admin;
+  $('#btn-backup-import').disabled = backup.busy || !admin;
 }
 
 function setBusy(on) {

@@ -1,8 +1,8 @@
 // OpenCode update detector (server: src/opencode-check.js): a banner under the top bar after a check of a new
-// OpenCode version, and ⚙ → 🧩 Kompatibilitas OpenCode (status, manual run, the auto-check switch; laptop only).
-// Shown only when OpenCode is installed (view.available). The view arrives with the config (snapshot + `config`
-// events): applyOpenCodeCheck is called from core/stream.js. Same look as features/claude-check.js.
-import { api, toast } from '../core/api.js';
+// OpenCode version, and ⚙ → 🧩 Kompatibilitas OpenCode (status, manual run, the auto-check switch; admin: laptop or
+// a phone over Tailscale). Shown only when OpenCode is installed (view.available). The view arrives with the config
+// (snapshot + `config` events): applyOpenCodeCheck is called from core/stream.js. Same look as claude-check.js.
+import { api, mayAdmin, toast } from '../core/api.js';
 import { openCodeCheckBanner, openCodeCheckStatus, staleRunReply } from '../core/claude-check-rules.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { shortDate } from '../core/format.js';
@@ -90,7 +90,7 @@ function renderPlugins() {
 }
 
 async function loadPlugins(force = false) {
-  if (!oc.view?.available || state.local === false || state.readOnly) return;
+  if (!oc.view?.available || !mayAdmin() || state.readOnly) return;
   if (oc.pluginsLoading || (!force && oc.plugins != null)) return;
   oc.pluginsLoading = true;
   renderPlugins();
@@ -149,16 +149,16 @@ function renderSection() {
   $('#oc-status').textContent = openCodeCheckStatus(v, shortDate);
   $('#oc-status').classList.toggle('warn', v.result === 'warning' || v.result === 'failed');
   $('#oc-auto').checked = v.settings?.autoCheck !== false;
-  const laptop = state.local !== false;
-  const blocked = !laptop || v.running || oc.busy;
+  const admin = mayAdmin();
+  const blocked = !admin || v.running || oc.busy;
   $('#oc-run').disabled = blocked;
-  $('#oc-auto').disabled = !laptop;
+  $('#oc-auto').disabled = !admin;
   $('#oc-update').disabled = blocked;
   $('#oc-restart').disabled = blocked;
-  $('#oc-config-open').disabled = !laptop;
+  $('#oc-config-open').disabled = !admin;
   for (const id of ['#oc-plugin-spec', '#oc-plugin-add', '#oc-plugin-check', '#oc-plugin-update-all']) {
     const el = $(id);
-    if (el) el.disabled = !laptop || oc.busy;
+    if (el) el.disabled = !admin || oc.busy;
   }
 }
 

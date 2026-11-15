@@ -42,6 +42,13 @@ export const laptopBlocked = (path) => state.local === false && Boolean(laptopOn
 /** Whether this page may call `path` at all (false only for a read-only phone on WiFi and a path off its allowlist). */
 export const canCall = (path) => !state.readOnly || readOnlyAllows(path);
 
+/**
+ * Whether this page may run an administrative action: the laptop always can, a paired phone only over Tailscale
+ * HTTPS (`state.secure`), never a plain-WiFi phone. Mirrors the server's SECURE_ADMIN gate, so a button is offered
+ * exactly where the request would be accepted.
+ */
+export const mayAdmin = () => state.local !== false || (state.secure === true && !state.readOnly);
+
 /** The server refused a call: an Error with the HTTP `status` and the parsed JSON body (`error`, `code`, …). */
 function apiError(res, data) {
   const err = new Error(typeof data.error === 'string' && data.error ? data.error : `HTTP ${res.status}`);

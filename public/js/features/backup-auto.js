@@ -1,9 +1,9 @@
 // ⚙ → Cadangkan riwayat → ⏰ Backup otomatis: the schedule (daily/weekly at a time), the target folder, how many
-// to keep, the last result and "Jalankan sekarang" (server: src/backup-schedule.js, laptop only).
-import { api, toast } from '../core/api.js';
+// to keep, the last result and "Jalankan sekarang" (server: src/backup-schedule.js, admin: laptop or a phone over
+// Tailscale).
+import { api, mayAdmin, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { shortDate } from '../core/format.js';
-import { state } from '../core/state.js';
 
 const MB = 1024 * 1024;
 const POLL_MS = 1500;
@@ -48,10 +48,10 @@ function renderStatus() {
   }
   $('#ba-status').textContent = parts.join(' ');
   $('#ba-status').classList.toggle('warn', Boolean(last && !last.ok));
-  const laptop = state.local !== false;
-  $('#ba-run').disabled = v.running || !laptop || !v.schedule.folder;
+  const admin = mayAdmin();
+  $('#ba-run').disabled = v.running || !admin || !v.schedule.folder;
   $('#ba-run').title = v.schedule.folder ? '' : 'Simpan folder tujuan dulu';
-  $('#ba-save').disabled = !laptop;
+  $('#ba-save').disabled = !admin;
 }
 
 function poll() {
@@ -67,7 +67,7 @@ function poll() {
 
 /** The scheduled backups already in the folder, newest first; "Pulihkan" reuses the import merge. */
 async function loadHistory() {
-  if (state.local === false) return;
+  if (!mayAdmin()) return;
   try {
     const data = await api('/api/backup/schedule/history');
     auto.history = Array.isArray(data?.backups) ? data.backups : [];
@@ -111,7 +111,7 @@ async function restoreHistory(btn) {
 }
 
 async function load({ keepForm = false } = {}) {
-  if (state.local === false) return;
+  if (!mayAdmin()) return;
   try {
     auto.view = await api('/api/backup/schedule');
     if (!keepForm) fill(auto.view);

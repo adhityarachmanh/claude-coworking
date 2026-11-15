@@ -1,7 +1,8 @@
 // Claude Code update detector (server: src/claude-check.js): a banner under the top bar after a check of a new
-// Claude Code version, and ⚙ → 🧩 Cek kompatibilitas Claude Code (status, manual run, two settings; laptop only).
-// The view arrives with the config (snapshot + `config` events): applyClaudeCheck is called from core/stream.js.
-import { api, toast } from '../core/api.js';
+// Claude Code version, and ⚙ → 🧩 Cek kompatibilitas Claude Code (status, manual run, two settings; admin: laptop
+// or a phone over Tailscale). The view arrives with the config (snapshot + `config` events): applyClaudeCheck is
+// called from core/stream.js.
+import { api, mayAdmin, toast } from '../core/api.js';
 import { claudeCheckBanner, claudeCheckStatus, staleRunReply } from '../core/claude-check-rules.js';
 import { $ } from '../core/dom.js';
 import { shortDate } from '../core/format.js';
@@ -85,12 +86,12 @@ function renderSection() {
   $('#cc-status').classList.toggle('warn', v.result === 'warning' || v.result === 'failed');
   $('#cc-auto').checked = v.settings.autoCheck;
   $('#cc-model').checked = v.settings.allowModel;
-  const laptop = state.local !== false;
-  $('#cc-run').disabled = !laptop || !v.available || v.running;
-  $('#cc-doctor').disabled = !laptop || cc.maintaining;
-  $('#cc-update').disabled = !laptop || cc.maintaining || v.running;
-  $('#cc-auto').disabled = !laptop;
-  $('#cc-model').disabled = !laptop;
+  const admin = mayAdmin();
+  $('#cc-run').disabled = !admin || !v.available || v.running;
+  $('#cc-doctor').disabled = !admin || cc.maintaining;
+  $('#cc-update').disabled = !admin || cc.maintaining || v.running;
+  $('#cc-auto').disabled = !admin;
+  $('#cc-model').disabled = !admin;
 }
 
 /** The server's config.claudeCheck (snapshot or live `config` event). */

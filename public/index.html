@@ -798,6 +798,7 @@
         <div class="checklist-actions">
           <button type="button" id="checklist-scaffold" class="ghost" title="Buat README/AGENTS.md/.env.example/docs yang belum ada; file yang sudah ada tidak ditimpa">🛠 Buat kerangka yang belum ada</button>
         </div>
+        <p id="checklist-laptop-note" class="muted small" hidden>🔒 Membuat kerangka file hanya bisa dari laptop: tombolnya menulis langsung ke folder project.</p>
       </div>
     </div>
 
@@ -1039,7 +1040,7 @@
           <section class="backup" aria-labelledby="backup-title" aria-describedby="backup-desc">
             <b id="backup-title">💾 Cadangkan riwayat</b>
             <p id="backup-desc" class="muted">Export di sini, Import di laptop baru, lalu lanjutkan percakapan. Login tidak ikut.</p>
-            <p id="backup-remote" class="muted" hidden>Hanya dari laptop.</p>
+            <p id="backup-remote" class="muted" hidden>Hanya lihat lewat WiFi. Pakai laptop atau Tailscale untuk export/import.</p>
             <div class="backup-actions">
               <button type="button" id="btn-backup-export" class="ghost">⬇ Export riwayat</button>
               <button type="button" id="btn-backup-import" class="ghost">⬆ Import riwayat</button>
@@ -1298,7 +1299,8 @@
       </div>
     </div>
 
-    <!-- 🧩 OpenCode config/agent editor (features/opencode-config.js): global or the active project; laptop only -->
+    <!-- 🧩 OpenCode config/agent editor (features/opencode-config.js): global or the active project; laptop or a
+         phone over Tailscale (SECURE_ADMIN in server.js) -->
     <div id="oc-config-modal" class="modal" hidden>
       <div class="modal-card oc-config-card" role="dialog" aria-modal="true" aria-labelledby="oc-config-modal-title" aria-describedby="oc-config-note">
         <div class="modal-head"><b id="oc-config-modal-title">🧩 Config &amp; Agent OpenCode</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
