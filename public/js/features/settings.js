@@ -392,7 +392,8 @@ function cleanWaStatus(raw) {
   const qr = typeof raw?.qr === 'string' && raw.qr.length <= WA_QR_MAX && WA_QR_RE.test(raw.qr) ? raw.qr : null;
   const number = typeof raw?.me?.number === 'string' ? raw.me.number.replace(/[^0-9+]/g, '').slice(0, 20) : '';
   const name = typeof raw?.me?.name === 'string' ? raw.me.name.trim().slice(0, 80) : '';
-  return { state, qr, me: number ? { number, name } : null };
+  const since = Number.isFinite(raw?.since) && raw.since > 0 ? raw.since : null;
+  return { state, qr, me: number ? { number, name } : null, since };
 }
 
 /** One line under the channel choice; it follows both the choice and the real state. */
@@ -414,10 +415,11 @@ function paintWa() {
   const hintText = waHintText();
   if (hint && hint.textContent !== hintText) hint.textContent = hintText;
 
-  const { state: waState, qr, me } = waStatus;
+  const { state: waState, qr, me, since } = waStatus;
+  const sinceText = since ? ` Tertaut sejak ${new Date(since).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}.` : '';
   const stateText =
     waState === 'linked'
-      ? 'Tertaut.'
+      ? `Tertaut.${sinceText}`
       : waState === 'qr'
         ? qr
           ? 'Menunggu kode QR dipindai di HP.'
@@ -535,7 +537,10 @@ async function pairWa() {
     waStatus = cleanWaStatus(res);
     if (out) {
       if (res?.code) {
-        out.textContent = `Kode tautan: ${res.code} — buka WhatsApp di HP → Perangkat tertaut → Tautkan dengan nomor telepon, lalu ketik kode itu.`;
+        const until = Number.isFinite(res?.expiresAt)
+          ? new Date(res.expiresAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+          : '';
+        out.textContent = `Kode tautan: ${res.code}${until ? ` (berlaku sampai ${until})` : ''} — buka WhatsApp di HP → Perangkat tertaut → Tautkan dengan nomor telepon, lalu ketik kode itu.`;
         out.hidden = false;
       } else {
         out.textContent = 'WhatsApp sudah tertaut.';
@@ -747,6 +752,10 @@ export function initSettings() {
     syncHealthButton(); // a WiFi phone may not call /api/health: the opener is hidden, not broken
     syncAutostartSection(); // ⚙ the boot switch + "run as Administrator" hint follow the last config
     syncBudgetSection(); // same for the 💰 budget section (read-only page: hidden)
+    // Which folder this server reads/writes: the installed app and a dev checkout differ, and that alone looks like
+    // "WhatsApp needs linking again".
+    const dataDir = $('#data-dir');
+    if (dataDir) dataDir.textContent = state.config?.dataDir ?? '—';
     openModal('settings-modal');
     concurrencyDirty = false; // a fresh open shows the saved limit, not a leftover draft
     syncConcurrencySection({ fill: true }); // ⚡ the saved turn limit + who is working right now (needs the dialog open)

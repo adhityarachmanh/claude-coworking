@@ -2,6 +2,15 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+Rilis ditahan sampai seluruh penyempurnaan selesai (diminta pemilik produk); perubahan di bawah sudah ada di `main`
+dan belum diberi nomor versi.
+
+- **🔐 Modal "Akses saat PC terkunci" menjelaskan bahwa yang diminta adalah sandi akun, bukan PIN.** Untuk akun Microsoft, sandinya adalah sandi akun Microsoft — bukan PIN Windows Hello yang dipakai sehari-hari. Ditambah petunjuk reset sandi, karena inilah kebingungan yang paling sering muncul saat mengaktifkan mode ini.
+- **📁 ⚙ → Sistem menunjukkan folder data server yang sedang dipakai.** Aplikasi terpasang dan salinan dev memakai folder berbeda; sesi WhatsApp (dan setelan) mengikuti folder itu, jadi "harus tautkan ulang" biasanya berarti sedang membuka server yang lain.
+- **⏳ Kode tautan WhatsApp menampilkan masa berlakunya** ("berlaku sampai HH:MM"), dan status *Tertaut* kini menyebut sejak kapan sesi itu ada.
+
 ## 1.0.39
 
 - **📱 WhatsApp bisa ditautkan dari HP, tanpa memindai QR.** Aplikasi menambahkan kolom nomor + tombol **Minta kode tautan** di ⚙ → **📱 PIN ke HP**: WhatsApp memberi kode 8 karakter, dan kamu mengetiknya di HP (**WhatsApp → Perangkat tertaut → Tautkan dengan nomor telepon**). Ini membuat penautan bisa dilakukan dari mana saja lewat Tailscale — sebelumnya wajib di depan laptop karena harus memindai layar. QR tetap tersedia di laptop, dan status WhatsApp yang dilihat HP tetap tanpa gambar QR (QR adalah kredensial sesi). Nomor divalidasi (digit, kode negara wajib) dan permintaan bisa ditolak sebelum ada koneksi dibuka.

@@ -11,10 +11,14 @@
 //   • status() never throws: the settings page polls it exactly when the network is down.
 import makeWASocket, { DisconnectReason } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
+import { statSync } from 'node:fs';
+import path from 'node:path';
 import { WaAuthStoreError } from './wa-auth-store.js';
 
 /** A QR older than a minute is not worth scanning any more; the socket keeps rotating new ones. */
 export const QR_TTL_MS = 60_000;
+/** WhatsApp's pairing code (the QR-free link) is valid for a few minutes; the card says until when it can be typed. */
+export const PAIR_CODE_TTL_MS = 5 * 60_000;
 /**
  * A phone that is offline never answers `logout()`. "Lepas" must still delete the session on disk (the privacy doc
  * promises exactly that) and the route gives up at 5 s, so the goodbye gets 3 s and the wipe runs regardless.
@@ -219,7 +223,7 @@ export class WaLink {
     const code = await sock.requestPairingCode(digits);
     this.#pair = { phone: digits, code, at: this.#now() };
     this.#publish();
-    return { ...(await this.status()), code };
+    return { ...(await this.status()), code, expiresAt: this.#pair.at + PAIR_CODE_TTL_MS };
   }
 
   /** The code handed out last (null once the phone has linked or the session was wiped). */
@@ -520,7 +524,17 @@ export class WaLink {
   }
 
   #snapshot() {
-    return { state: this.#state, qr: this.#freshQr(), me: this.#me() };
+    return { state: this.#state, qr: this.#freshQr(), me: this.#me(), since: this.#linkedSince() };
+  }
+
+  /** When the saved session was last written: "tertaut sejak …" tells an old link from one made a minute ago. */
+  #linkedSince() {
+    if (this.#state !== 'linked') return null;
+    try {
+      return Math.round(statSync(path.join(this.#store.dir, 'session.bin')).mtimeMs);
+    } catch {
+      return null;
+    }
   }
 
   #me() {

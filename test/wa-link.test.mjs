@@ -309,7 +309,7 @@ test('status() never throws when the store refuses or the socket cannot start', 
       },
     });
     await assert.rejects(() => refusing.link.link(), /Sesi WhatsApp/);
-    assert.deepEqual(await refusing.link.status(), { state: 'off', qr: null, me: null });
+    assert.deepEqual(await refusing.link.status(), { state: 'off', qr: null, me: null, since: null });
     assert.match(refusing.link.lastError, /Sesi WhatsApp/);
 
     const crashing = harness({
@@ -395,6 +395,7 @@ test('pairingCode(): hanya digit yang dikirim, kode dikembalikan, nomor salah di
     const h = harness({ dir });
     const out = await h.link.pairingCode('+62 812-3456-789');
     assert.equal(out.code, 'ABCD-1234', 'kode dari WhatsApp diteruskan ke pemanggil');
+    assert.ok(out.expiresAt > Date.now() + 4 * 60_000, 'kode punya masa berlaku (kartu menampilkan sampai jam berapa)');
     assert.equal(h.link.pairCode, 'ABCD-1234');
     const sock = h.log.sockets[0];
     assert.deepEqual(sock.pairingAsks, ['628123456789'], 'digit saja, kode negara ikut');

@@ -1213,6 +1213,7 @@
           </section>
           <hr />
           <p class="muted">Server berjalan di latar belakang tanpa jendela. Log: <code>data/server.log</code></p>
+          <p class="muted small">Folder data server ini: <code id="data-dir">—</code> <span class="muted">(aplikasi terpasang dan salinan dev memakai folder berbeda; sesi WhatsApp mengikuti folder ini)</span></p>
           <!-- ⚡ Remote power (opsional): jembatan self-hosted yang bisa boot/memutus PC dari jauh (spec: docs/remote-power-bridge.md) -->
           <div class="oc-config" role="group" aria-labelledby="rp-title">
             <b id="rp-title">⚡ Remote power (matikan PC dari jauh)</b>
@@ -1239,8 +1240,8 @@
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="autologon-modal-title" aria-describedby="autologon-modal-note">
         <div class="modal-head"><b id="autologon-modal-title">🔐 Aktifkan akses saat PC terkunci</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <form id="autologon-form" novalidate>
-          <p id="autologon-modal-note" class="muted small">Windows perlu sandi akunmu untuk login sendiri setelah reboot, lalu layar terkunci otomatis 15 detik kemudian. Sandi disimpan Windows di registry mesin ini — bukan di Adhitron, tidak dikirim ke perangkat lain — tetapi tanpa enkripsi, jadi Administrator atau SYSTEM di PC ini bisa membacanya. Sebaiknya nyalakan BitLocker dan pakai akun Windows khusus untuk Adhitron. Windows meminta izin Administrator sekali; batalkan di jendela itu bila berubah pikiran.</p>
-          <label for="autologon-password">Sandi Windows</label>
+          <p id="autologon-modal-note" class="muted small"><b>Sandi akun, bukan PIN.</b> Yang diminta adalah sandi akun Windows/Microsoft (untuk akun Microsoft: sandi akun Microsoft-mu, sama seperti saat login di situs Microsoft) — PIN Windows Hello yang kamu pakai sehari-hari tidak bisa dipakai di sini. Kalau sandimu tidak diingat, reset dulu di account.microsoft.com (akun Microsoft) atau di Pengaturan → Akun (akun lokal). Windows perlu sandi itu untuk login sendiri setelah reboot, lalu layar terkunci otomatis 15 detik kemudian. Sandi disimpan Windows di registry mesin ini — bukan di Adhitron, tidak dikirim ke perangkat lain — tetapi tanpa enkripsi, jadi Administrator atau SYSTEM di PC ini bisa membacanya. Sebaiknya nyalakan BitLocker dan pakai akun Windows khusus untuk Adhitron. Windows meminta izin Administrator sekali; batalkan di jendela itu bila berubah pikiran.</p>
+          <label for="autologon-password">Sandi akun Windows / Microsoft</label>
           <input id="autologon-password" type="password" autocomplete="current-password" aria-describedby="autologon-modal-note autologon-error" spellcheck="false" />
           <p id="autologon-error" class="field-error" role="alert"></p>
           <div class="backup-actions">

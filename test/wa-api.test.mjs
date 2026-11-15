@@ -143,12 +143,12 @@ after(async () => {
 test('status starts off', async () => {
   const off = await status();
   assert.equal(off.status, 200);
-  assert.deepEqual(off.body, { state: 'off', qr: null, me: null });
+  assert.deepEqual(off.body, { state: 'off', qr: null, me: null, since: null });
 
   // The app's API helper only speaks POST (src/routes/router.js): both spellings answer the same.
   const posted = await status({ method: 'POST' });
   assert.equal(posted.status, 200);
-  assert.deepEqual(posted.body, { state: 'off', qr: null, me: null });
+  assert.deepEqual(posted.body, { state: 'off', qr: null, me: null, since: null });
 
   assert.equal((await status({ officeToken: '' })).status, 403, "the laptop's per-start token is required");
 });
@@ -201,7 +201,7 @@ test('test 409 when not linked, 200 after link', async () => {
   const off = await unlink();
   assert.equal(off.status, 200);
   assert.deepEqual(off.body, { ok: true });
-  assert.deepEqual((await status()).body, { state: 'off', qr: null, me: null }, 'unlink drops the link at once');
+  assert.deepEqual((await status()).body, { state: 'off', qr: null, me: null, since: null }, 'unlink drops the link at once');
 
   const refused = await testMessage();
   assert.equal(refused.status, 409);
@@ -214,11 +214,17 @@ test('test 409 when not linked, 200 after link', async () => {
 
 test('over plain WiFi every WhatsApp route is refused (403), GET status included', async (t) => {
   if (!phone) return t.skip('no LAN address on this machine');
-  // Every route is laptop-only (LOCAL_ONLY): a paired phone gets the same 403, Tailscale or not.
-  for (const [name, request] of [['status', status], ['link', link], ['unlink', unlink], ['test', testMessage]]) {
+  // link stays laptop-only (the QR is a session credential); status/unlink/test are remote admin, so a plain-WiFi
+  // phone is refused with the Tailscale reason instead.
+  for (const [name, request, reason] of [
+    ['status', status, /Tailscale/],
+    ['link', link, /hanya bisa diubah dari laptop/],
+    ['unlink', unlink, /Tailscale/],
+    ['test', testMessage, /Tailscale/],
+  ]) {
     const res = await request(phone);
     assert.equal(res.status, 403, `${name} refused over plain WiFi`);
-    assert.match(res.body.error, /hanya bisa diubah dari laptop/, name);
+    assert.match(res.body.error, reason, name);
   }
   const read = await status(phone);
   assert.equal(read.status, 403, 'GET /api/wa/status from a phone: the QR is never handed out here');
@@ -229,7 +235,7 @@ test('a non-local client never receives the QR: the wa event is { state } only',
   if (!phone) return t.skip('no LAN address on this machine');
   // Back to off first, so the next link() publishes a fresh sequence of events to the stream below.
   await unlink();
-  assert.deepEqual((await status()).body, { state: 'off', qr: null, me: null });
+  assert.deepEqual((await status()).body, { state: 'off', qr: null, me: null, since: null });
 
   const streamed = { text: '' };
   const mobile = pump(await fetch(`${phone.base}/stream`, { headers: { Cookie: phone.cookie } }), streamed);

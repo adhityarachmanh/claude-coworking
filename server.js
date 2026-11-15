@@ -183,6 +183,9 @@ if (process.argv.includes('--autologon-enable') || process.argv.includes('--auto
 const SYSTEM_CERTS = trustSystemCertificates();
 
 const hub = new Hub({ dataDir: DATA_DIR });
+// Where this server keeps its data (settings, WhatsApp session, chats). Shown in ⚙ → Sistem: the installed app and a
+// dev checkout use different folders, which is the usual reason a linked WhatsApp looks "unlinked" on the other one.
+hub.config = { ...hub.config, dataDir: DATA_DIR };
 // 📈 Operational history for 🩺 Kesehatan (aggregate only, never conversation content). Counts this start, then the
 // rolling seven days from data/metrics.json.
 const metrics = new Metrics({ file: path.join(DATA_DIR, 'metrics.json') });
