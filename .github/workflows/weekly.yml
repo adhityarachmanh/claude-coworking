@@ -23,6 +23,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Same as the push workflow: the app imports the real dependencies (baileys), so install them before the suite.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
       # ci-tests.mjs retries a failing file once and reports it as FLAKY in the summary instead of hiding it.
       - name: Browser tests (headless Chrome over CDP)
         run: node test-support/ci-tests.mjs ui

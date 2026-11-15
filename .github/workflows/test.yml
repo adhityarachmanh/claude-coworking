@@ -20,6 +20,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The suite imports the real runtime dependencies (baileys from src/wa-auth-store.js), so node_modules must
+      # exist: without this step every test that reaches the server fails with "Cannot find package".
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
       - name: Syntax check (node --check)
         run: git ls-files -z '*.js' '*.mjs' | xargs -0 -n1 node --check
       - name: ESLint
@@ -39,5 +43,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
       - name: Integration smoke
         run: npm run test:smoke

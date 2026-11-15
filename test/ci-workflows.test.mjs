@@ -72,3 +72,21 @@ test('push workflow runs the release-critical smoke suite', () => {
   assert.match(smoke, /node-version: 22/);
   assert.match(smoke, /run: npm run test:smoke/, 'the smoke job runs the curated integration files');
 });
+
+test('every test job installs the runtime dependencies first', () => {
+  // src/wa-auth-store.js imports baileys and server.js imports it, so a job without node_modules fails every test
+  // that reaches the server with "Cannot find package '@whiskeysockets/baileys'" — that is how CI went red on 1.0.34.
+  for (const [name, jobStart] of [['test.yml', '  check:'], ['test.yml', '  smoke:'], ['nightly.yml', '  unit:'], ['weekly.yml', '  ui:']]) {
+    const workflow = read(name);
+    const start = workflow.indexOf(jobStart);
+    assert.ok(start > -1, `${name}: job ${jobStart.trim()} ada`);
+    const rest = workflow.slice(start + jobStart.length);
+    const next = rest.search(/^\s{2}\S+:/m);
+    const job = next > -1 ? rest.slice(0, next) : rest;
+    const install = job.indexOf('npm ci');
+    assert.ok(install > -1, `${name}${jobStart.trim()}: memasang dependency sebelum test`);
+    const suite = job.indexOf('ci-tests.mjs');
+    if (suite > -1) assert.ok(install < suite, `${name} ${jobStart.trim()}: install sebelum suite`);
+    assert.match(job.slice(install, install + 60), /npm ci --ignore-scripts/, `${name} ${jobStart.trim()}: tanpa lifecycle script`);
+  }
+});

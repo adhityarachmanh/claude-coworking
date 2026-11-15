@@ -21,6 +21,15 @@ const FILE_TIMEOUT_MS = Number(process.env.CI_UI_FILE_TIMEOUT_MS ?? 15 * 60_000)
 // Hermetic: see test-support/test-files.mjs. Every wrapper-set OFFICE_* env is dropped before the test processes spawn.
 dropIsolationEnv();
 
+// A missing runtime dependency otherwise shows up as "Cannot find package '@whiskeysockets/baileys'" in dozens of
+// files (src/wa-auth-store.js imports it, server.js imports that). Say it once, with the fix.
+try {
+  import.meta.resolve('@whiskeysockets/baileys');
+} catch {
+  console.error('ci-tests: dependency belum terpasang — jalankan `npm install` dulu.');
+  process.exit(2);
+}
+
 const files = readdirSync(path.join(APP, 'test'))
   .filter((f) => f.endsWith('.test.mjs'))
   .sort()
