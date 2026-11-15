@@ -140,8 +140,11 @@ export function toast(message, tone = 'error') {
   wireToastHover(box);
   box.append(node);
   while (box.children.length > TOAST_MAX) {
-    box.firstElementChild.finish?.();
-    box.firstElementChild.remove();
+    const oldest = box.firstElementChild;
+    // `finish()` already removes the node (and the empty layer): removing again here would drop the second
+    // oldest too, so four quick messages used to leave two toasts on screen instead of three.
+    if (oldest.finish) oldest.finish();
+    else oldest.remove();
   }
 }
 

@@ -184,6 +184,10 @@ export class Page {
     const { sessionId } = await conn.send('Target.attachToTarget', { targetId, flatten: true });
     const page = new Page(conn, targetId, sessionId);
     await Promise.all(['Page.enable', 'Runtime.enable', 'Log.enable', 'Network.enable'].map((m) => page.send(m)));
+    // The app's default theme is "system", so without this the same test asserts different colours on a light
+    // machine (CI runners prefer light) than on a dark laptop. Every page boots dark; a test that wants another
+    // look calls setColorScheme() or picks the theme in the app.
+    await page.setColorScheme('dark');
     // A caller's `{ width, height, mobile }` is applied before the first navigation: the page must already be narrow
     // when it boots (the phone layout and its media query are read by the app at import time).
     if (viewport) await page.setViewport(viewport);
@@ -250,6 +254,14 @@ export class Page {
     await this.send('Emulation.setTouchEmulationEnabled', mobile ? { enabled: true, maxTouchPoints: 5 } : { enabled: false });
   }
 
+  /**
+   * The colour scheme the page reports to `prefers-color-scheme` ("dark" by default, see create). The app's own
+   * theme picker wins over it; this only pins what "system" resolves to, so it never varies with the host.
+   */
+  setColorScheme(scheme = 'dark') {
+    return this.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+  }
+
   /** Full navigation (a hash-only change fires no load event, so leave the document first). */
   async goto(url, timeoutMs = 15000, attempt = 1) {
     const current = await this.eval('location.href').catch(() => 'about:blank');
@@ -304,7 +316,10 @@ export class Page {
 
   /** Trusted click (mouse) or tap (touch emulation) on the centre of the first match. */
   async click(selector) {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // Several tries, not one: a sheet/slide/fade can still be on top of the target for a moment after a render, and a
+    // real user simply clicks again. The last attempt explains what covered the target instead of only saying "not
+    // visible", so a genuine overlay bug is diagnosed in one run.
+    for (let attempt = 0; attempt < 10; attempt++) {
       const box = await this.eval(async (sel) => {
         const el = document.querySelector(sel);
         if (!el) return null;
@@ -323,6 +338,17 @@ export class Page {
       }
       const onTop = await this.eval((sel, x, y) => Boolean(document.elementFromPoint(x, y)?.closest(sel)), selector, box.x, box.y);
       if (!onTop) {
+        if (attempt === 9) {
+          const why = await this.eval((sel, x, y) => {
+            const hit = document.elementFromPoint(x, y);
+            const el = document.querySelector(sel);
+            return {
+              covered_by: hit ? `${hit.tagName.toLowerCase()}${hit.id ? `#${hit.id}` : ''}.${String(hit.className || '').split(' ').filter(Boolean).join('.')}` : null,
+              size: el ? [el.getBoundingClientRect().width, el.getBoundingClientRect().height] : null,
+            };
+          }, selector, box.x, box.y);
+          throw new Error(`elemen tidak terlihat: ${selector} ${JSON.stringify(why)}`);
+        }
         await sleep(80);
         continue;
       }

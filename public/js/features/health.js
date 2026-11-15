@@ -315,8 +315,9 @@ export function initHealth() {
     if (state.readOnly || !canCall(PATH)) return; // the server refuses it too
     openModal('health-modal');
     renderHealth(); // the cached report shows at once; loadHealth refreshes it in the background
-    // 💰 the cached budget shows at once; a first open asks /api/budget once and redraws the dialog with its answer
-    loadBudgetView({ force: true, scope: '' }).then(() => {
+    // 💰 the cached budget shows at once; if ⚙ already loaded it (the usual way in) this asks nothing, so the
+    // same view is never requested twice within one visit.
+    loadBudgetView({ scope: '' }).then(() => {
       if (!$('#health-modal')?.hidden) renderHealth();
     });
     loadHealth();

@@ -2,9 +2,10 @@
 // hints — the part a native <optgroup> can never carry. The hidden #model select stays the state holder; a row
 // click sets its value and fires the same change → saveModel path, so there is exactly one way a model is picked.
 import { escapeHtml } from '../core/dom.js';
-import { favoriteModelList, groupModels, openCodeProviderGroups } from '../core/engine-caps.js';
+import { engineLabel, favoriteModelList, groupModels, openCodeProviderGroups } from '../core/engine-caps.js';
 import { priceSuffix } from './model-prices.js';
 import { logoFileFor, logoIndex } from '../core/model-logo.js';
+import { AUTO_MODEL, AUTO_MODEL_LABEL, AUTO_MODEL_TITLE } from './engine.js';
 
 /** A tiny model logo for a row/header: the exact ai_logos file, else the family; '' when unknown. */
 const mpLogo = (model, engine = '') => {
@@ -23,11 +24,31 @@ function mpRow(m, rowEngine, { current, engine, locked, favSet }, id) {
 const mpInfo = (text) => `<div class="mp-info">${escapeHtml(text)}</div>`;
 
 /**
+ * The two entries that are not models but a SETTING: "Auto — sesuaikan task" (the classifier picks the tier) and
+ * "Default (dari config <engine>)". The hidden #model select has always carried them first; the visible panel used to
+ * omit both, so Auto could not be turned on (or off) from the picker or a project could not go back to Default at all.
+ * They sit in one group above ⭐ Favorit, are never starred, and apply through the same mpApplyRow path (values 'auto'
+ * and '').
+ */
+function mpSettingRows({ engine, current, modelAuto, defaultLabel }, nextId) {
+  const autoOn = modelAuto === true;
+  const row = (value, selected, name, title, modifier = '') =>
+    `<div class="mp-row mp-setting${modifier}${selected ? ' active' : ''}" id="${nextId()}" role="option" aria-selected="${selected}" aria-disabled="false" data-value="${escapeHtml(value)}" data-engine="${escapeHtml(engine)}" title="${escapeHtml(title)}"><span class="mp-name">${escapeHtml(name)}</span></div>`;
+  return `<div class="mp-group" data-mp-setting><div class="mp-head"><span class="mp-title">Pengaturan</span></div>${row(
+    AUTO_MODEL,
+    autoOn,
+    AUTO_MODEL_LABEL,
+    AUTO_MODEL_TITLE,
+    ' mp-auto',
+  )}${row('', !autoOn && !current, defaultLabel, `Model bawaan dari config ${engineLabel(engine)}`)}</div>`;
+}
+
+/**
  * The panel's body: ⭐ Favorit (its stars shown here; wiring is the same /api/model-favorites as the ☆ button),
  * Claude Code (one group), then one group per OpenCode provider (display name + count, "(belum login)" hint,
  * rows disabled when that provider has no credentials). The search filter applies to everything, like before.
  */
-export function modelPanelHtml({ catalog, current, query, engine, locked, providerNames, providerAuth, favorites }) {
+export function modelPanelHtml({ catalog, current, query, engine, modelAuto = false, defaultLabel = '', locked, providerNames, providerAuth, favorites }) {
   const claude = catalog?.claude?.models ?? [];
   const opencode = catalog?.opencode?.models ?? [];
   const favSet = new Set(Array.isArray(favorites) ? favorites : []);
@@ -35,6 +56,9 @@ export function modelPanelHtml({ catalog, current, query, engine, locked, provid
   let seq = 0;
   const nextId = () => `mp-opt-${seq++}`;
   const groups = [];
+  // Always first, whatever the search box says: Auto/Default are settings the user must be able to pick or undo, and
+  // they are what the field shows before any model was chosen.
+  groups.push(mpSettingRows({ engine, current, modelAuto, defaultLabel: defaultLabel || `Default (dari config ${engineLabel(engine)})` }, nextId));
   if (favs.length) {
     groups.push(`<div class="mp-group"><div class="mp-head"><span class="mp-title">⭐ Favorit</span></div>${favs.map((m) => mpRow(m, m.engine, { current, engine, locked, favSet }, nextId())).join('')}</div>`);
   }

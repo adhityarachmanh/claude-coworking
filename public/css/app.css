@@ -669,7 +669,7 @@ body:not([data-tab='chat']) #chat-search { display: none; }
 .empty { margin: auto 4px; padding: 22px 18px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: var(--r-xl); }
 .empty b { color: var(--text); font-size: var(--fs-lg); }
 .empty p { margin: 6px 0 0; font-size: var(--fs-md); }
-.empty-icon { width: 44px; height: 44px; margin: 0 auto 10px; display: grid; place-items: center; border-radius: var(--r-xl); background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent); font-size: var(--fs-2xl); }
+.empty-icon { width: 44px; height: 44px; margin: 0 auto 10px; display: grid; place-items: center; border-radius: var(--r-xl); background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent-2); font-size: var(--fs-2xl); } /* --accent-2, not --accent: on the light theme's --accent-soft the brighter accent is only 3.8:1 */
 .starters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; text-align: left; }
 .starters button { display: flex; align-items: center; gap: 8px; padding: 9px 10px; font-size: var(--fs-md); color: var(--text); background: var(--surface-2); border-radius: var(--r-lg); }
 .starters button:hover { border-color: var(--accent); background: var(--accent-soft); }
@@ -716,6 +716,9 @@ body:not([data-tab='chat']) #chat-search { display: none; }
 #model-panel .mp-row:hover .mp-star-btn, #model-panel .mp-star-btn.on, #model-panel .mp-star-btn:focus-visible { opacity: 1; }
 #model-panel .mp-star-btn.on { color: var(--accent-2); }
 #model-panel .mp-lock { font-size: 12px; }
+#model-panel .mp-setting .mp-name { font-weight: 600; }
+#model-panel .mp-row.mp-auto .mp-name::before { content: '⚡ '; }
+#model-panel .mp-row[data-value=''].mp-name::before { content: '◇ '; }
 #model-panel .mp-info { padding: 6px 8px; color: var(--muted); font-size: var(--fs-sm); }
 .mp-logo { width: 15px; height: 15px; object-fit: contain; padding: 1px; box-sizing: content-box; border-radius: 4px; background: color-mix(in srgb, var(--text) 7%, transparent); flex: none; }
 select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

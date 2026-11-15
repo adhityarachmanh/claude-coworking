@@ -92,6 +92,22 @@ function cleanCatalog(data) {
 const wantedModels = new Set();
 export const wantModels = (id = state.active) => id && wantedModels.add(id);
 
+/**
+ * Project id → the views that drew from its catalog (the composer's picker, the ladder rows). The list can be
+ * fetched by ONE view (the ladder link opens first) while another already rendered: when the answer arrives every
+ * watcher redraws, so the picker never keeps showing "Default" until some unrelated state broadcast.
+ */
+const catalogWatchers = new Map();
+function watchCatalog(id, fn) {
+  if (typeof fn !== 'function') return;
+  let set = catalogWatchers.get(id);
+  if (!set) catalogWatchers.set(id, (set = new Set()));
+  set.add(fn);
+}
+function notifyCatalog(id) {
+  for (const fn of [...(catalogWatchers.get(id) ?? [])]) fn();
+}
+
 // ---------- provider display names + credential state (the picker labels groups and gates the login-less ones) ----------
 
 /** { at, load, names, known, connected } — names/known/connected fill in when the fetch resolves. */
@@ -129,11 +145,12 @@ export function providerNames({ maxAgeMs = 60_000 } = {}) {
   return load;
 }
 
-export function projectModelCatalog(id = state.active, st = state.statuses[id] ?? {}, onLoaded = () => {}) {
+export function projectModelCatalog(id = state.active, st = state.statuses[id] ?? {}, onLoaded = null) {
   const engine = engineOf(st, state.config);
   if (!id || id === DEMO_ID) return { claude: EMPTY_LIST, opencode: EMPTY_LIST, loading: false, error: null };
   // A project the server no longer lists (forgotten/purged elsewhere) must not be asked for models: that is a 404.
   if (!state.projects.some((p) => p.id === id)) return { claude: EMPTY_LIST, opencode: EMPTY_LIST, loading: false, error: null };
+  watchCatalog(id, onLoaded);
   const now = Date.now();
   let entry = modelCache.get(id);
   // The list is only fetched after the turn-settings (or ladder) dialog was opened: a background render must not
@@ -160,23 +177,23 @@ export function projectModelCatalog(id = state.active, st = state.statuses[id] ?
     const mine = entry;
     // The group labels want the provider display names too (same cadence, cached a minute): one more render
     // when they arrive.
-    providerNames().then(() => modelCache.get(id) === mine && onLoaded());
+    providerNames().then(() => modelCache.get(id) === mine && notifyCatalog(id));
     fetchModels(id)
       .then((data) => Object.assign(mine, cleanCatalog(data), { error: null }))
       .catch((err) => Object.assign(mine, { error: err.message }))
       .finally(() => {
         Object.assign(mine, { loading: false, at: Date.now() });
         if (modelCache.get(id) !== mine) return;
-        onLoaded();
+        notifyCatalog(id);
         // still empty: render again after the retry delay, which asks once more (up to EMPTY_TRIES)
-        if (!mine.error && mine.opencode?.needsStart && mine.tries < EMPTY_TRIES) setTimeout(() => modelCache.get(id) === mine && onLoaded(), RETRY_EMPTY_MS + 200);
+        if (!mine.error && mine.opencode?.needsStart && mine.tries < EMPTY_TRIES) setTimeout(() => modelCache.get(id) === mine && notifyCatalog(id), RETRY_EMPTY_MS + 200);
       });
   }
   return entry ?? { claude: EMPTY_LIST, opencode: EMPTY_LIST, loading: false, error: state.readOnly ? READ_ONLY_HINT : null };
 }
 
 /** The cached list for the project's engine (null = Claude Code: its catalog comes with the app config). */
-export function projectModels(id, st = state.statuses[id] ?? {}, onLoaded = () => {}) {
+export function projectModels(id, st = state.statuses[id] ?? {}, onLoaded = null) {
   const engine = engineOf(st, state.config);
   if (!modelsPerProject(engine) || !id || id === DEMO_ID) return null;
   const catalog = projectModelCatalog(id, st, onLoaded);
@@ -188,6 +205,9 @@ export function projectModels(id, st = state.statuses[id] ?? {}, onLoaded = () =
 export const AUTO_MODEL = 'auto';
 export const AUTO_MODEL_LABEL = 'Auto — sesuaikan task';
 const AUTO_MODEL_TITLE = 'Model dipilih otomatis sesuai tingkat kesulitan tiap prompt: Hemat / Seimbang / Kuat / Maks.';
+// The visible panel (features/model-picker.js) repeats these two entries: export them so the label and the tooltip
+// can never drift apart between the hidden select and the panel.
+export { AUTO_MODEL_TITLE };
 
 /** The "Auto" entry every engine's model select starts with (same label and value on both engines). */
 export const autoModelOption = (engine = DEFAULT_ENGINE) =>

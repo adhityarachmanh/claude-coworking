@@ -98,6 +98,10 @@ async function startServer() {
       OFFICE_GH_BIN: path.join(TMP, 'fake-gh.mjs'), // never the real GitHub CLI (or its login): always "not logged in"
       PROJECTS_ROOT: path.join(TMP, 'projects'),
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
+      // A machine WITH OpenCode: the suite must not depend on the host's install (a CI runner has none, and the
+      // picker, the account tab and the model ladder then behave differently than on a developer's laptop).
+      OPENCODE_BIN: path.join(APP, 'test-support', 'fake-acp.mjs'),
+      OFFICE_OPENCODE_CONFIG_HOME: path.join(TMP, 'xdg'), // never the real ~/.config/opencode
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'), // user-level settings.json (🛡️ Aturan izin), never the real ~/.claude
@@ -1080,9 +1084,45 @@ const restoreAccount = (page) =>
  *  `oc` (and its cached providers) outlives a test in the same document, so the fresh providers answer is awaited
  *  before anything clicks into the panel — clicking Edit on a previous test's stale data would prefill wrong. */
 async function openOpenCodeTab(page) {
-  await page.waitFor(() => document.querySelector('#acct-tab'), { timeoutMs: 4000, message: 'dialog Akun terbuka' });
-  await page.eval(() => { const s = document.querySelector('#acct-tab'); s.value = 'opencode'; s.dispatchEvent(new Event('change', { bubbles: true })); });
-  await page.waitFor(() => window.__ocAcct?.providerDone >= 1, { timeoutMs: 4000, message: 'daftar provider segar termuat' });
+  // `#acct-tab` stays in the document after the dialog is closed, so its existence alone is not "the dialog is open".
+  await page.waitFor(() => !document.querySelector('#account-modal')?.hidden && document.querySelector('#acct-tab'), { timeoutMs: 4000, message: 'dialog Akun terbuka' });
+  const pick = (tab) =>
+    page.eval((value) => {
+      const s = document.querySelector('#acct-tab');
+      s.value = value;
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+    }, tab);
+  // A previous test in this document may have left the tab on OpenCode: go through Claude first so the switch really
+  // re-renders the panel and asks for the fresh provider list this helper waits for. Each pick is its own eval: the
+  // first one re-renders the panel, so the old <select> node is detached and a second dispatch on it goes nowhere.
+  await pick('claude');
+  // The account button also asks for the providers quietly when the page connects. A load already in flight makes the
+  // switch queue behind it (the app never sends the same request twice), which is correct but leaves this test's stub
+  // with no request of its own: switch away and back once more to ask again.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await pick('opencode');
+    try {
+      await page.waitFor(() => window.__ocAcct?.providerDone >= 1, { timeoutMs: 2500, message: 'daftar provider segar termuat' });
+      return;
+    } catch (err) {
+      if (attempt === 2) {
+        // Say why the panel never asked: a logged-out page or a server that reports OpenCode as missing skips it.
+        const why = await page
+          .eval(async () => {
+            const { state } = await import('/js/core/state.js');
+            return {
+              accountAuth: state.accountAuth,
+              available: state.config?.engines?.opencode?.available ?? null,
+              panel: document.querySelector('#acct-panel')?.textContent?.trim().slice(0, 200) ?? '',
+              providerCalls: window.__ocAcct?.providerCalls ?? null,
+            };
+          })
+          .catch((e) => ({ probe: e.message }));
+        throw new Error(`${err.message} ${JSON.stringify({ ...why, problems: realProblems(page) })}`);
+      }
+      await pick('claude');
+    }
+  }
 }
 
 async function stubOpenCodeAccount(page, { go = null, usage = null, connected = null } = {}) {
@@ -1564,21 +1604,25 @@ for (const vp of VIEWPORTS) {
     test('💲 harga model: gagal memuat harga → label tetap, tanpa error console & toast', async () => {
       await ensureApp(page, `#${projectId}`);
       await stubPrices(page, null, true); // the route is refused (plain WiFi) / offline
-      try {
-        await page.eval(async () => {
+      const fakeCatalog = [
+        { value: 'default', displayName: 'Default', description: 'bawaan' },
+        { value: 'opencode-go/kimi-k2', displayName: 'Kimi K2', description: '' },
+        { value: 'sonnet', displayName: 'Sonnet', description: '' },
+      ];
+      // A server broadcast can re-sync state.config at any moment (it carries the real catalog), so the fake one is
+      // installed again right before the render whose DOM is asserted.
+      const useFakeCatalog = async () => {
+        await page.eval(async (models) => {
           const { state } = await import('/js/core/state.js');
-          state.config = {
-            ...state.config,
-            models: [
-              { value: 'default', displayName: 'Default', description: 'bawaan' },
-              { value: 'opencode-go/kimi-k2', displayName: 'Kimi K2', description: '' },
-              { value: 'sonnet', displayName: 'Sonnet', description: '' },
-            ],
-          };
-        });
-        await setPickerModel(page, 'opencode-go/kimi-k2');
+          state.config = { ...state.config, models };
+        }, fakeCatalog);
         await rerenderPicker(page);
-        await sleep(250);
+      };
+      try {
+        await setPickerModel(page, 'opencode-go/kimi-k2');
+        await useFakeCatalog();
+        await sleep(250); // the refused price request settles into the honest note
+        await useFakeCatalog();
         const view = await page.eval(() => {
           const option = (value) => [...document.querySelectorAll('#model option')].find((o) => o.value === value);
           const note = document.querySelector('#model-price-note');
@@ -1772,6 +1816,58 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('🤖 Model Auto: baris Auto & Default di panel pemilih bisa diklik (Auto menyala, Default mematikan)', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await stubSettings(page);
+      try {
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.config = { ...state.config, models: [{ value: 'default', displayName: 'Default', description: 'bawaan' }, { value: 'sonnet', displayName: 'Sonnet', description: 'Serbaguna' }] };
+          document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        const openPanel = async () => {
+          // The picker lives in the "Pengaturan giliran" sheet: open it first (a desktop click, the same way a user does).
+          if (await page.eval(() => document.querySelector('#turn-settings-modal').hidden)) {
+            await page.click('#settings-chip');
+            await page.waitFor(() => !document.querySelector('#turn-settings-modal').hidden, { timeoutMs: 2000, message: 'sheet pengaturan giliran' });
+          }
+          if (await page.eval(() => document.querySelector('#model-panel').hidden)) await page.click('#model-field');
+          await page.waitFor(() => !document.querySelector('#model-panel').hidden, { timeoutMs: 2000, message: 'panel model terbuka' });
+        };
+        const clickRow = async (value) => {
+          const box = await page.eval((v) => {
+            const row = [...document.querySelectorAll('#model-groups .mp-row')].find((r) => r.dataset.value === v);
+            if (!row) return null;
+            const r = row.getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+          }, value);
+          assert.ok(box, `baris "${value}" ada di panel`);
+          // The panel is a user-facing surface: click the row itself (a trusted click lands where it really is).
+          await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.y, button: 'left', clickCount: 1 });
+          await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', clickCount: 1 });
+        };
+
+        await openPanel();
+        await clickRow('auto');
+        await page.waitFor(() => window.__settingsBodies.length === 1, { timeoutMs: 3000, message: 'POST Auto terkirim' });
+        assert.deepEqual(await page.eval(() => window.__settingsBodies[0]), { modelAuto: true }, 'Auto hanya mengirim flag modelAuto');
+        assert.equal(await page.eval(() => document.querySelector('#model-panel').hidden), true, 'panel tertutup setelah memilih');
+        assert.equal(await page.eval(() => document.querySelector('#model-field .mp-name').textContent), 'Auto', 'field menampilkan Auto');
+
+        await openPanel();
+        await clickRow('');
+        await page.waitFor(() => window.__settingsBodies.length === 2, { timeoutMs: 3000, message: 'POST Default terkirim' });
+        const second = await page.eval(() => window.__settingsBodies[1]);
+        assert.equal(second.model, '', 'Default mengosongkan model');
+        assert.equal(second.modelAuto, false, 'Default mematikan Auto');
+        assert.match(await page.eval(() => document.querySelector('#model-field .mp-name').textContent), /^Default/, 'field kembali ke Default');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await restoreSettings(page);
+        await openApp(page, `#${projectId}`);
+      }
+    });
+
     test('🤖 Model Auto: "Auto — sesuaikan task" jadi opsi pertama di kedua mesin', async () => {
       await ensureApp(page, `#${projectId}`);
       try {
@@ -1791,6 +1887,18 @@ for (const vp of VIEWPORTS) {
         assert.deepEqual(claude.map((o) => o.value), ['auto', ''], 'Claude: Auto lalu Default');
         assert.equal(claude[0].text, 'Auto — sesuaikan task');
         assert.match(claude[0].title, /Hemat \/ Seimbang \/ Kuat \/ Maks/, 'tooltip menjelaskan tier');
+        // The VISIBLE panel is what a user picks from: the hidden select alone proved nothing (Auto was missing there
+        // while the select still carried it, so the picker could not turn Model Auto on at all).
+        const panel = await page.eval(() => ({
+          rows: [...document.querySelectorAll('#model-groups .mp-row')].slice(0, 2).map((r) => ({ value: r.dataset.value, text: r.querySelector('.mp-name').textContent })),
+          group: document.querySelector('#model-groups .mp-group')?.dataset.mpSetting !== undefined,
+          star: document.querySelectorAll('#model-groups [data-mp-setting] .mp-star-btn').length,
+        }));
+        assert.deepEqual(panel.rows.map((r) => r.value), ['auto', ''], 'panel: Auto lalu Default di paling atas');
+        assert.equal(panel.rows[0].text, 'Auto — sesuaikan task');
+        assert.match(panel.rows[1].text, /^Default/, 'baris Default menyebut sumber confignya');
+        assert.equal(panel.group, true, 'keduanya di grup Pengaturan tersendiri');
+        assert.equal(panel.star, 0, 'pengaturan bukan model: tanpa tombol ⭐');
 
         const opencode = await page.eval(async () => {
           const { projectModelOptions } = await import('/js/features/engine.js');
@@ -2055,7 +2163,20 @@ for (const vp of VIEWPORTS) {
         // A reference row jumps to its source repo (the per-project history opens there).
         // Click the web repo's row explicitly: the two seeded sessions share a timestamp, so DOM order is not stable.
         await page.click(`#sessions-list [data-open-src="${projectId}"]`);
-        await page.waitFor(() => document.querySelector('#sessions-modal').hidden, { timeoutMs: 3000, message: 'kembali ke repo sumber' });
+        // The jump closes the group list and opens the SOURCE repo's own history: the dialog stays open (that is the
+        // whole point of the button), so the proof is the per-project view — no jump rows left, its own session shown.
+        await page.waitFor(
+          (id) => {
+            const list = document.querySelector('#sessions-list');
+            return (
+              !document.querySelector('#sessions-modal').hidden &&
+              !list.querySelector('[data-open-src]') &&
+              /fix login web/.test(list.textContent) &&
+              document.querySelector('#sessions-project')?.textContent?.includes('toko')
+            );
+          },
+          { timeoutMs: 5000, message: 'kembali ke repo sumber' },
+        );
         assert.equal(await page.eval(async () => (await import('/js/core/state.js')).state.active), `${projectId}`, 'aktif di repo sumber');
         assert.deepEqual(realProblems(page), []);
       } finally {
@@ -2109,13 +2230,14 @@ for (const vp of VIEWPORTS) {
           await page.click('#model-field').catch(() => {});
           await sleep(150);
         }
-        // The ⭐ Favorit group leads the PANEL, with the pinned model starred inline.
+        // The ⭐ Favorit group leads the MODELS; the Auto/Default settings group sits above it (they are not models).
         const panel = await page.eval(() => {
           const heads = [...document.querySelectorAll('#model-groups .mp-head .mp-title')].map((n) => n.textContent.trim());
           const rows = [...document.querySelectorAll('#model-groups .mp-row')].map((r) => ({ value: r.dataset.value, star: r.querySelector('.mp-star-btn')?.classList.contains('on') }));
           return { heads, rows };
         });
-        assert.equal(panel.heads[0], '⭐ Favorit', 'grup favorit paling atas panel');
+        assert.equal(panel.heads[0], 'Pengaturan', 'Auto & Default paling atas panel');
+        assert.equal(panel.heads[1], '⭐ Favorit', 'lalu grup favorit');
         assert.ok(panel.heads.includes('OpenCode Go (1)'), `grup provider tetap ada: ${panel.heads.join(' | ')}`);
         const favRow = panel.rows.find((r) => r.value === 'river/GLM-5.3');
         const goRow = panel.rows.find((r) => r.value === 'opencode-go/glm-5.3-flash');
@@ -2125,12 +2247,13 @@ for (const vp of VIEWPORTS) {
         await page.click('#model-groups .mp-row[data-value="opencode-go/glm-5.3-flash"] .mp-star-btn');
         await page.waitFor(() => window.__favCalls.length === 1, { timeoutMs: 3000, message: 'bintang inline mengirim pin' });
         assert.deepEqual(await page.eval(() => window.__favCalls[0]), { value: 'opencode-go/glm-5.3-flash', on: true });
-        // The row's star flips on without a reload: the re-render marks it as favorited.
+        // The row's star flips on without a reload: the re-render marks it as favorited. A server broadcast can re-sync
+        // state.config mid-test (it carries the real favorites), so the pair is installed again right before rendering.
         await page.eval(async () => {
           const { state } = await import('/js/core/state.js');
           state.config = { ...state.config, favoriteModels: ['river/GLM-5.3', 'opencode-go/glm-5.3-flash'] };
+          document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
         });
-        await page.eval(() => document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true })));
         await page.waitFor(() => new Set([...document.querySelectorAll('#model-groups .mp-star-btn.on')].map((b) => b.dataset.value)).size === 2, { timeoutMs: 3000, message: 'dua model bertanda bintang' });
         assert.equal(await page.eval(() => document.querySelector('#model-panel').hidden), false, 'panel tetap terbuka setelah pin');
         assert.deepEqual(realProblems(page), []);
@@ -3062,6 +3185,9 @@ for (const vp of VIEWPORTS) {
       await ensureApp(page, `#${projectId}`);
       await tap(page, '#btn-settings');
       await settle(page, 'settings-modal');
+      // The tab this page remembers: an earlier test may have moved it (it lives in sessionStorage), so the
+      // restore check below asks for that tab instead of assuming "umum".
+      const remembered = await page.waitFor(() => document.querySelector('#settings-tabs [data-settings-tab][aria-selected="true"]')?.dataset.settingsTab ?? null, { timeoutMs: 2000, message: 'tab setelan aktif' });
       const type = (text) => page.eval((value) => {
         const input = document.querySelector('#settings-search');
         input.value = value;
@@ -3074,7 +3200,7 @@ for (const vp of VIEWPORTS) {
       assert.equal(await shownInPage(page, '[data-settings-panel="jadwal"]'), true, 'the schedule panel is shown');
       assert.equal(await shownInPage(page, '#routine-list'), true);
       await type('');
-      assert.equal(await shownInPage(page, '[data-settings-panel="umum"]'), true, 'clearing restores the remembered tab');
+      assert.equal(await shownInPage(page, `[data-settings-panel="${remembered}"]`), true, `clearing restores the remembered tab (${remembered})`);
       await page.press('Escape');
     });
 
@@ -4614,7 +4740,11 @@ for (const vp of VIEWPORTS) {
           state.readOnly = true;
           document.body.classList.add('read-only');
         });
-        await tap(page, '#btn-settings');
+        // On plain WiFi the ⚙ button is gone entirely (`stream.js` sets `hidden`, and the read-only CSS hides it),
+        // so there is no way into the settings dialog from the page.
+        assert.equal(await shownInPage(page, '#btn-settings'), false, 'tombol ⚙ tidak tampil di halaman hanya-lihat');
+        // A stale page that still shows the dialog must not offer the health report inside it either.
+        await page.eval(() => document.querySelector('#btn-settings').click());
         await settle(page, 'settings-modal');
         await page.click('[data-settings-tab="sistem"]');
         const ro = await page.eval(() => {
@@ -4872,7 +5002,10 @@ for (const vp of VIEWPORTS) {
           state.readOnly = true;
           document.body.classList.add('read-only');
         });
-        await tap(page, '#btn-settings');
+        // The ⚙ button itself is gone on a read-only page; open the dialog the way a stale page would (a
+        // programmatic click) so the budget section behind it can be checked.
+        assert.equal(await shownInPage(page, '#btn-settings'), false, 'tombol ⚙ tidak tampil di halaman hanya-lihat');
+        await page.eval(() => document.querySelector('#btn-settings').click());
         await settle(page, 'settings-modal');
         const ro = await page.eval(() => {
           const section = document.querySelector('#budget-section');
@@ -6266,6 +6399,12 @@ for (const vp of VIEWPORTS) {
         checked: [...document.querySelectorAll('#theme-seg button[aria-pressed="true"]')].map((b) => b.dataset.theme),
         avatar: document.querySelector('#team .member[data-role="ui-ux"] img')?.src ?? '',
       });
+      // The team cards are drawn after the page connects (and again after a reload): read the state only once the
+      // avatar exists, or `avatar` is '' and the theme comparison below proves nothing.
+      const readTheme = async () => {
+        await page.waitFor(() => Boolean(document.querySelector('#team .member[data-role="ui-ux"] img')?.src), { timeoutMs: 8000, message: 'avatar tim tergambar' });
+        return page.eval(themeState);
+      };
 
       await openSettings();
       const seg = await page.eval(() => ({
@@ -6278,18 +6417,18 @@ for (const vp of VIEWPORTS) {
         label: 'theme-title',
         options: [['kantor', '🏢 Kantor'], ['halloween', '🎃 Halloween'], ['natal', '🎄 Natal'], ['lebaran', '🌙 Lebaran'], ['agustus', '🇮🇩 17 Agustus']],
       });
-      const before = await page.eval(themeState);
+      const before = await readTheme();
       assert.deepEqual({ root: before.root, checked: before.checked }, { root: 'kantor', checked: ['kantor'] }, 'default: Kantor');
 
       await page.click('#theme-seg button[data-theme="halloween"]');
-      const picked = await page.eval(themeState);
+      const picked = await readTheme();
       assert.deepEqual({ stored: picked.stored, root: picked.root, checked: picked.checked }, { stored: 'halloween', root: 'halloween', checked: ['halloween'] });
       assert.notEqual(picked.avatar, before.avatar, 'avatar kartu tim digambar ulang tanpa reload');
       assert.equal(await page.eval(horizontalOverflow), null, 'dialog Pengaturan tanpa scroll horizontal');
       await page.press('Escape');
 
       await openApp(page, `#${projectId}`); // full reload
-      const reloaded = await page.eval(themeState);
+      const reloaded = await readTheme();
       assert.deepEqual({ stored: reloaded.stored, root: reloaded.root, checked: reloaded.checked }, { stored: 'halloween', root: 'halloween', checked: ['halloween'] }, 'bertahan setelah reload');
       assert.equal(reloaded.avatar, picked.avatar);
       assert.equal(await page.eval(horizontalOverflow), null);
@@ -6352,9 +6491,9 @@ for (const vp of VIEWPORTS) {
       // Natal, Lebaran, 17 Agustus via the picker: saved, avatars redrawn, a few frames of decor/lighting, no errors.
       await openSettings();
       for (const id of ['natal', 'lebaran', 'agustus']) {
-        const prev = await page.eval(themeState);
+        const prev = await readTheme();
         await page.click(`#theme-seg button[data-theme="${id}"]`);
-        const now = await page.eval(themeState);
+        const now = await readTheme();
         assert.deepEqual({ stored: now.stored, root: now.root, checked: now.checked }, { stored: id, root: id, checked: [id] }, `${id} tersimpan`);
         assert.notEqual(now.avatar, prev.avatar, `${id}: avatar digambar ulang`);
         assert.equal(await page.eval(horizontalOverflow), null, `${id}: dialog tanpa scroll horizontal`);
@@ -6368,7 +6507,7 @@ for (const vp of VIEWPORTS) {
       await page.click('#theme-seg button[data-theme="kantor"]');
       await page.press('Escape');
       await openApp(page, `#${projectId}`);
-      const back = await page.eval(themeState);
+      const back = await readTheme();
       assert.deepEqual({ stored: back.stored, root: back.root }, { stored: 'kantor', root: 'kantor' });
       assert.equal(back.avatar, before.avatar, 'avatar Kantor kembali seperti semula');
       assert.deepEqual(realProblems(page), []);
@@ -6645,7 +6784,16 @@ for (const vp of VIEWPORTS) {
         }, { timeoutMs: 8000, message: 'balasan baru mulai mengalir di a' }, pids[0]);
         await switchRapidly(pids);
         await page.waitFor(() => /kata1[5-9]\d/.test(document.querySelector('#chat .msg.assistant.streaming')?.textContent ?? ''), { timeoutMs: 10000, message: 'balasan terus mengalir' });
-        const streaming = await page.eval(chatPos);
+        // Following happens when the reply grows, not in the same task: sample the position only once it has settled
+        // (a slow runner delivers the chunks in bursts, so an instant sample can land between two of them).
+        const streaming = await page.waitFor(
+          () => {
+            const chat = document.querySelector('#chat');
+            const dist = Math.round(chat.scrollHeight - chat.scrollTop - chat.clientHeight);
+            return dist < 60 ? { dist, jumpHidden: document.querySelector('#jump-latest').hidden } : null;
+          },
+          { timeoutMs: 3000, message: 'chat mengikuti balasan yang mengalir' },
+        );
         assert.ok(streaming.dist < 60, `chat ikut ke bawah saat balasan mengalir (jarak ${streaming.dist}px)`);
         assert.equal(streaming.jumpHidden, true, 'tombol ↓ Terbaru tidak muncul saat masih mengikuti');
         // The user scrolls up to read: following stops and ↓ Terbaru shows; clicking it resumes following.
@@ -8760,13 +8908,20 @@ for (const vp of VIEWPORTS) {
           titled: names.every((n) => /^Adhitron - /.test(n.title)),
           spoken: names.every((n) => n.querySelector('.sr-only')?.textContent === n.title || n.textContent === n.title),
           shown: names.map((n) => n.querySelector('[aria-hidden]')?.textContent ?? n.textContent),
+          titles: names.map((n) => n.title),
         };
       });
       assert.equal(tags.count, 18, '18 label nama');
       assert.deepEqual(tags.overlaps, [], 'label nama tidak saling tumpuk');
       assert.ok(tags.titled && tags.spoken, 'nama lengkap tetap di title dan untuk pembaca layar');
       if (vp.mobile) assert.ok(tags.shown.every((t) => !t.startsWith('Adhitron - ')), `HP: awalan bersama "Adhitron - " dibuang (${tags.shown.join(', ')})`);
-      else assert.ok(tags.shown.every((t) => t.startsWith('Adhitron - ')), `desktop: nama lengkap (${tags.shown.join(', ')})`);
+      else {
+        // A desktop drops the shared prefix when the names would overlap. Whether the full name still fits depends
+        // on the fonts installed (a Linux runner without Segoe UI falls back to a wider face), so what a desktop may
+        // never show is the role's short code ("FE"/"BE") - that would mean the fitting regressed.
+        const tooShort = tags.shown.filter((t, i) => t !== tags.titles[i] && t !== tags.titles[i].replace(/^Adhitron - /, ''));
+        assert.deepEqual(tooShort, [], `desktop: nama lengkap atau tanpa awalan bersama (${tooShort.join(', ')})`);
+      }
       // A private office whose role is off shows its door plate; occupied, it has none (its person has a name tag).
       const plates = await page.eval(async () => {
         const { stage } = await import('/js/core/scenes.js');

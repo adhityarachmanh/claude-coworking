@@ -551,7 +551,7 @@ function renderPickerExtras(catalog, current, query, engine, locked, st) {
     field.innerHTML = html;
     field.dataset.html = html;
   }
-  const html2 = modelPanelHtml({ catalog, current, query, engine, locked, providerNames: currentProviderNames(), providerAuth: currentProviderAuth(), favorites: state.config?.favoriteModels ?? [] });
+  const html2 = modelPanelHtml({ catalog, current, query, engine, modelAuto: auto, defaultLabel: $('#model').options[1]?.textContent ?? '', locked, providerNames: currentProviderNames(), providerAuth: currentProviderAuth(), favorites: state.config?.favoriteModels ?? [] });
   if (groups.dataset.html !== html2) {
     groups.innerHTML = html2;
     groups.dataset.html = html2;
