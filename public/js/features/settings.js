@@ -39,6 +39,14 @@ function applySettingsSearch(query) {
   const body = document.querySelector('#settings-modal .settings-body');
   let first = null;
   for (const panel of document.querySelectorAll('#settings-modal [data-settings-panel]')) {
+    // A panel whose tab is hidden for this client (a phone: Spotify needs the laptop) must not resurface via search:
+    // it would be empty, and anything left inside would only be refused by the server.
+    const tabButton = document.querySelector(`#settings-tabs [data-settings-tab="${panel.dataset.settingsPanel}"]`);
+    if (tabButton?.hidden) {
+      panel.style.display = 'none';
+      panel.classList.remove('search-hit');
+      continue;
+    }
     const fields = [...panel.querySelectorAll('input, select, textarea')].map((el) => `${el.placeholder ?? ''} ${el.getAttribute('aria-label') ?? ''}`).join(' ');
     const hit = `${panel.textContent} ${fields}`.toLowerCase().includes(settingsQuery);
     panel.style.display = hit ? 'flex' : 'none';
@@ -86,7 +94,7 @@ export function selectSettingsTab(tab = settingsTab) {
   if (!$('#settings-modal')?.hidden && tab === 'jadwal') openRoutines();
 }
 
-// ---------- ⚡ Batas giliran bersamaan (POST /api/concurrency/save, laptop only) ----------
+// ---------- ⚡ Batas giliran bersamaan (POST /api/concurrency/save: laptop or a phone over Tailscale) ----------
 
 let concurrencySaving = false;
 let concurrencyDirty = false; // the user typed here: a config push must not overwrite it before Simpan

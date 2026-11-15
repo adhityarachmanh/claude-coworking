@@ -10729,6 +10729,13 @@ describeArea('UI HP lewat Tailscale (setelan dari HP)', { skip: SKIP ?? false },
     assert.equal(spotify.tab, true, 'tab Spotify tidak ditawarkan ke HP');
     assert.equal(spotify.panel, false, 'panel Spotify yang kosong tidak sedang tampil');
     assert.ok(!spotify.visible.includes('spotify'), `tab yang terlihat: ${spotify.visible.join(', ')}`);
+    // 🔎 Pencarian must not bring a client-unavailable panel back: on a phone it would be empty.
+    await page.eval(() => {
+      const search = document.querySelector('#settings-search');
+      search.value = 'spotify';
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    assert.equal(await page.eval(() => getComputedStyle(document.querySelector('#settings-panel-spotify')).display), 'none', 'pencarian tidak memunculkan panel Spotify di HP');
     await page.eval(() => (document.querySelector('#settings-modal').hidden = true));
     assert.deepEqual(realProblems(page), []);
   });
