@@ -10550,6 +10550,15 @@ for (const vp of VIEWPORTS) {
         await page.waitFor(() => document.querySelector('#autologon-error').textContent === 'Sandi Windows salah.', { timeoutMs: 3000, message: 'sandi salah tampil' });
         assert.equal(await page.eval(() => document.querySelector('#autologon-modal').hidden), false, 'modal tetap terbuka setelah 401');
 
+        // 409: the server's own reason must reach the user. A refused Task Scheduler / registry change is not the
+        // same thing as a cancelled UAC prompt, and "Dibatalkan." for both hid the real failure.
+        await page.eval(() => {
+          window.__autologonReply = { status: 409, body: { error: 'Pengunci layar atau registry Windows tidak bisa dipasang (izin Administrator / Task Scheduler menolak). Coba lagi dari Setelan.' } };
+        });
+        await page.click('#btn-autologon-submit');
+        await page.waitFor(() => document.querySelector('#autologon-error').textContent === 'Pengunci layar atau registry Windows tidak bisa dipasang (izin Administrator / Task Scheduler menolak). Coba lagi dari Setelan.', { timeoutMs: 3000, message: 'alasan 409 dari server tampil apa adanya' });
+        assert.equal(await page.eval(() => document.querySelector('#autologon-modal').hidden), false, 'modal tetap terbuka setelah 409');
+
         await page.press('Escape');
         await page.waitFor(() => document.querySelector('#autologon-modal').hidden, { timeoutMs: 2000, message: 'Esc menutup modal sandi' });
         assert.equal(await page.eval(() => document.querySelector('#autologon-password').value), '', 'sandi tidak tertinggal di DOM');
@@ -10569,9 +10578,10 @@ for (const vp of VIEWPORTS) {
           { enable: true, disable: false },
         );
         const bodies = await page.eval(() => window.__autologonBodies);
-        assert.equal(bodies.length, 2, 'satu kirim untuk 401, satu untuk sukses');
+        assert.equal(bodies.length, 3, 'satu kirim untuk 401, satu untuk 409, satu untuk sukses');
         assert.deepEqual(bodies[0], { password: 'sandi-rahasia' });
         assert.deepEqual(bodies[1], { password: 'sandi-rahasia' });
+        assert.deepEqual(bodies[2], { password: 'sandi-rahasia' });
 
         const pageText = await page.eval(() => document.body.innerText);
         assert.doesNotMatch(pageText, /enable-autologon|autologon-path|\.cmd/i);

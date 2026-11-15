@@ -43,7 +43,7 @@ const TIMEOUT_MESSAGE = 'Windows tidak menjawab saat menyalakan autologon. Coba 
 /** Errors the helper is known to throw, already worded for the user (src/autologon.js). */
 const KNOWN_FAILURES = {
   notAdmin: 'Izin Administrator dibutuhkan untuk menyalakan autologon.',
-  registry: 'Registry Windows tidak bisa diubah. Autologon tetap mati.',
+  registry: 'Pengunci layar atau registry Windows tidak bisa dipasang (izin Administrator / Task Scheduler menolak). Coba lagi dari Setelan.',
   unverified: 'Autologon belum aktif menurut Windows. Coba lagi dari Setelan.',
   unsupported: 'Autologon hanya tersedia di Windows.',
 };

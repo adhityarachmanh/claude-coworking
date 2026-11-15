@@ -181,6 +181,7 @@ membuktikan siapa pemilik peer-nya.
 | Tombol **Tautkan** tidak memunculkan QR | Server sedang membuat soket; tunggu beberapa detik. Kalau tetap *Menghubungkan ke WhatsApp…*, periksa koneksi internet laptop lalu tekan **Batal** dan **Tautkan** lagi |
 | `WhatsApp belum ditautkan.` saat minta PIN | Sesi belum ada atau baru dicabut dari HP. Tautkan ulang dari laptop, atau pakai kode laptop |
 | `Kode tidak terkirim ke WhatsApp. Coba lagi.` | Pengiriman gagal (jaringan laptop bermasalah). Tunggu 10 detik, lalu minta lagi; kuota jam tidak terpakai |
+| Pesan uji bilang "terkirim" tetapi tidak terlihat di WhatsApp | Pesan dikirim ke **nomor itu sendiri**, jadi ada di chat **Pesan ke diri sendiri** (WhatsApp → pesan baru → namamu sendiri; di beberapa versi bernama "You"). Versi sebelum perbaikan ini mengalamatkan pesan ke ID ber-device sehingga tidak pernah tampil — perbarui aplikasi |
 | `Sesi WhatsApp tidak bisa dibaca: file sesi rusak atau diubah.` | File sesi di `data/wa/` rusak. Tekan **Lepas**, lalu **Tautkan** dan pindai QR baru |
 | `Kunci sesi WhatsApp hilang atau berubah…` | `data/wa/key` hilang/berubah. Tekan **Lepas**, lalu tautkan ulang |
 | `WhatsApp tidak merespons saat dilepas.` | HP tidak menjawab dalam 5 detik. Periksa jaringan laptop, lalu tekan **Lepas** lagi |

@@ -149,6 +149,25 @@ test('sendText goes to the linked account itself', async () => {
   }
 });
 
+test('sendText drops the device suffix from our own JID', async () => {
+  const dir = tempDir();
+  try {
+    const h = harness({ dir });
+    await h.link.link();
+    // WhatsApp stores our own id WITH the device (`628111:12@s.whatsapp.net`). baileys relays that string as-is,
+    // so the server accepted the message and the phone never showed it. The send must go to the user JID.
+    h.log.sockets[0].config.auth.creds.me = { id: '628111:12@s.whatsapp.net', name: 'Adhit' };
+    h.log.sockets[0].emit('connection.update', { connection: 'open' });
+    assert.equal((await h.link.status()).state, 'linked');
+
+    assert.deepEqual(await h.link.sendText('halo'), { ok: true });
+    assert.deepEqual(h.log.sockets[0].sends, [{ jid: '628111@s.whatsapp.net', content: { text: 'halo' } }]);
+    h.link.stop();
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('sendText before linking throws not_linked', async () => {
   const dir = tempDir();
   try {

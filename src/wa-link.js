@@ -49,6 +49,20 @@ export class WaLinkError extends Error {
 }
 
 /**
+ * Our own id carries the device WhatsApp registered us on (`628…:12@s.whatsapp.net`). baileys relays the JID exactly
+ * as given, so a message addressed to that string is accepted by the server and never shows up on the phone.
+ * The user JID (`628…@s.whatsapp.net`) is what a chat with ourselves needs. Never leaks a credential: it is our own
+ * number, already shown by the settings card.
+ * @param {string} jid
+ * @returns {string} `user@server`, or '' when the id is not a JID
+ */
+const userJidOf = (jid) => {
+  const [userPart = '', server = ''] = String(jid ?? '').split('@');
+  const user = userPart.split(':')[0];
+  return user && server ? `${user}@${server}` : '';
+};
+
+/**
  * The shape the existing /pair page and its status endpoint already speak (public/js/pair.js), so the route can stay
  * dumb: linked → connected, qr/connecting → qr_ready/connecting, off → disconnected.
  * @param {{ state: 'off'|'qr'|'connecting'|'linked' }} status
@@ -237,8 +251,8 @@ export class WaLink {
   }
 
   /**
-   * Sends one text to the linked account itself (`creds.me.id`): the PIN message must arrive on the owner's phone,
-   * and the app never messages anyone else.
+   * Sends one text to the linked account itself (`creds.me.id`, device suffix stripped): the PIN message must arrive
+   * on the owner's phone, and the app never messages anyone else.
    * @param {string} text
    * @returns {Promise<{ ok: true }>}
    * @throws {WaLinkError} `not_linked` when there is no session yet, `send_failed` when baileys rejects the send
@@ -246,7 +260,7 @@ export class WaLink {
   async sendText(text) {
     const body = typeof text === 'string' ? text : String(text ?? '');
     if (body.trim() === '') throw new WaLinkError('send_failed', 'Pesan WhatsApp kosong.');
-    const jid = this.#creds?.me?.id;
+    const jid = userJidOf(this.#creds?.me?.id);
     const sock = this.#socket;
     if (!jid || !sock || this.#state !== 'linked') {
       throw new WaLinkError('not_linked', 'WhatsApp belum tertaut. Tautkan lewat QR dari laptop terlebih dahulu.');

@@ -28,6 +28,8 @@ import { autostartStatus, installLockTask, removeLockTask } from './autostart.js
 // Must match src/autostart.js: the `Adhitron Lock` task is the "boot mode" flag, and the elevated helper installs it
 // too (before the registry changes) so an autologon can never boot into an open desktop.
 const LOCK_TASK = 'Adhitron Lock';
+/** A Windows security identifier, the only identity spelling C2 accepts from a command line. */
+const SID_PATTERN = /^S-1-[0-9-]+$/;
 const POWERSHELL = 'powershell.exe';
 // `-ExecutionPolicy Bypass`: the script lives in the per-user temp folder, on machines whose policy would otherwise
 // refuse an unsigned .ps1. `-NonInteractive`: helperMain is started by the server, there is nobody to answer a prompt.
@@ -527,30 +529,55 @@ function isOwnResultFile(file, tmpdir) {
 }
 
 /**
+ * The PowerShell the C2 check runs. Exported so the real script can be exercised against a real task instead of
+ * trusting a string that only a fixture ever reads.
+ */
+export function lockTaskCheckScript({ user, domain, sid = '' }) {
+  const wanted = `${domain}\\${user}`;
+  const wantedSid = SID_PATTERN.test(String(sid ?? '')) ? String(sid) : '';
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    `$want = '${psQuote(wanted)}'`,
+    `$wantSid = '${psQuote(wantedSid)}'`,
+    `try { $task = Get-ScheduledTask -TaskName '${LOCK_TASK}' -ErrorAction Stop } catch { exit 4 }`,
+    'if ($null -eq $task) { exit 4 }',
+    '$owner = [string]$task.Principal.UserId',
+    'if ([string]::IsNullOrWhiteSpace($owner)) { exit 4 }',
+    '$resolve = {',
+    '  param([string]$name)',
+    '  if ([string]::IsNullOrWhiteSpace($name)) { return \'\' }',
+    "  if ($name -match '^S-1-[0-9-]+$') { return $name }",
+    '  try { return ([Security.Principal.NTAccount]$name).Translate([Security.Principal.SecurityIdentifier]).Value } catch { return \'\' }',
+    '}',
+    // The SID comes from the parent's argv: it must BE this account, or a tampered/foreign value would verify someone
+    // else's task. `$want` that cannot be resolved (MicrosoftAccount\email) is checked by the owner comparison below.
+    'if ($wantSid) { $wantResolved = & $resolve $want; if ($wantResolved -and $wantResolved -ne $wantSid) { exit 4 } }',
+    'if ($owner -ieq $want) { exit 0 }',
+    '$ownerSid = & $resolve $owner',
+    "if (-not $ownerSid -and $owner -notmatch '\\\\') { $ownerSid = & $resolve ($env:COMPUTERNAME + '\\' + $owner) }",
+    'if ($ownerSid -and $wantSid) { if ($ownerSid -ieq $wantSid) { exit 0 } else { exit 4 } }',
+    // The parent could not report its SID (no `--account-sid`): accept the elevated session's own account, which is
+    // what the check did before. Only reachable for an elevated copy running as the very account that logs in.
+    'if ($ownerSid -and ($ownerSid -ieq [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)) { exit 0 }',
+    'exit 4',
+  ].join('\r\n');
+}
+
+/**
  * C2 - after `schtasks /Create`, does the lock task really belong to the account Windows will log in as?
  *
  * The elevated helper may have been started with ANOTHER administrator's credentials (common in an office): the
  * task would then be that admin's, `InteractiveToken` would never fire for the autologon account, and the screen
- * would stay unlocked while the status said "safe". Compare `Principal.UserId` with `DOMAIN\User`, case-insensitively,
- * and also accept the SID of this session's account (Task Scheduler may store it that way).
+ * would stay unlocked while the status said "safe". `lockTaskCheckScript` compares IDENTITIES (SIDs), not spellings:
+ * `Principal.UserId` comes back as the short name (`adhit`), as `ARH\adhit`, or as the SID, depending on the Windows
+ * build - string comparison alone rejected a perfectly good task and turned "Aktifkan" into a 409.
  *
- * Fail closed: no task, no owner, a locked-down Task Scheduler - all mean "not verified" (exit 4, registry untouched).
+ * Fail closed: no task, no owner, an unresolvable owner, a locked-down Task Scheduler - all mean "not verified"
+ * (exit 4, registry untouched).
  */
-function lockTaskBelongsTo(exec, { user, domain }) {
-  const wanted = `${domain}\\${user}`;
-  const script = [
-    "$ErrorActionPreference = 'Stop'",
-    `$want = '${psQuote(wanted)}'`,
-    `try { $task = Get-ScheduledTask -TaskName '${LOCK_TASK}' -ErrorAction Stop } catch { exit 4 }`,
-    'if ($null -eq $task) { exit 4 }',
-    '$owner = [string]$task.Principal.UserId',
-    "$me = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
-    'if ([string]::IsNullOrWhiteSpace($owner)) { exit 4 }',
-    'if ($owner -ieq $want -or $owner -ieq $me) { exit 0 }',
-    'exit 4',
-  ].join('\r\n');
+function lockTaskBelongsTo(exec, account) {
   try {
-    exec(POWERSHELL, [...PS_FLAGS, '-Command', script], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    exec(POWERSHELL, [...PS_FLAGS, '-Command', lockTaskCheckScript(account)], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     return true;
   } catch (err) {
     const detail = oneLine(String(err?.stderr ?? '').split(/\r?\n/)[0] ?? '');
@@ -568,6 +595,20 @@ function upnOf(exec) {
     const out = String(exec('whoami', ['/upn'], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }) ?? '');
     const upn = clean(out.split(/\r?\n/)[0]);
     return upn.includes('@') ? upn : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The SID of this session's account (`whoami /user /fo csv /nh` → `"ARH\adhit","S-1-5-21-…"`): the identity the
+ * lock task must belong to. '' when Windows does not answer.
+ */
+function sidOf(exec) {
+  try {
+    const out = String(exec('whoami', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }) ?? '');
+    const match = /"(S-1-[0-9-]+)"/.exec(out);
+    return match ? match[1] : '';
   } catch {
     return '';
   }
@@ -641,6 +682,9 @@ export async function enableAutologon({
 
   const dir = appDirOf({ appDir });
   const account = windowsAccount(user, upn);
+  // C2: read the SID of THIS session (the account Windows will log in as) before elevating; the elevated copy may
+  // run as another administrator, whose identity must not be the one the task is checked against.
+  const accountSid = sidOf(exec);
   const token = randomBytes(8).toString('hex');
   const secretFile = path.join(tmpdir, `${SECRET_PREFIX}${token}.txt`);
   // I4: the elevated child leaves its verdict here (exit code + one line, never the password). Deleted in every path.
@@ -670,6 +714,8 @@ export async function enableAutologon({
     '--domain', account.domain,
     '--app-dir', dir,
     '--port', String(port),
+    // C2: the identity the lock task must belong to, read from THIS (the account that will log in) session.
+    ...(accountSid ? ['--account-sid', accountSid] : []),
     // This copy is already elevated (Start-Process -Verb RunAs): no second prompt, no `net session` probe.
     '--elevated',
   ];
@@ -815,11 +861,24 @@ function planHelper(argv, options = {}) {
     domain = wanted.domain;
   }
 
+  // C2: the lock task is verified against the SID of the account that will log in. Prefer the SID the parent passed
+  // (it runs as that account); `whoami /user` is the fallback for a direct CLI call. A supplied value that is not a
+  // SID is refused instead of silently replaced: falling back to this (elevated, possibly another admin) session's
+  // identity is the cross-account mistake C2 exists to catch.
+  const requestedSid = clean(flagValue(args, '--account-sid'));
+  if (enable && requestedSid && !SID_PATTERN.test(requestedSid)) {
+    console.error('Autologon: SID akun di argumen tidak valid. Dibatalkan.');
+    removeSecret(passwordFile, removeFile);
+    return fail('SID akun di argumen tidak valid.');
+  }
+  const accountSid = enable ? (requestedSid || sidOf(exec)) : '';
+
   const selfArgs = [
     enable ? '--autologon-enable' : '--autologon-disable',
     ...(enable ? ['--password-file', passwordFile] : []),
     // Where that file lives, so an elevated copy under another administrator's account still accepts (and deletes) it.
     ...(enable && passwordFile ? ['--password-dir', path.dirname(path.resolve(passwordFile))] : []),
+    ...(enable && accountSid ? ['--account-sid', accountSid] : []),
     ...(resultFile ? ['--result-file', resultFile] : []),
     '--user', user,
     '--domain', domain,
@@ -830,13 +889,13 @@ function planHelper(argv, options = {}) {
   ];
   const elevated = options.elevated ?? (args.includes('--elevated') || isElevated(exec));
   return {
-    enable, appDir, port, passwordFile, resultFile, user, domain, selfArgs, elevated, exec, removeFile, tmpdir, timeoutMs, spawn,
+    enable, appDir, port, passwordFile, resultFile, user, domain, accountSid, selfArgs, elevated, exec, removeFile, tmpdir, timeoutMs, spawn,
   };
 }
 
 /**
  * The elevated entry point, called by server.js BEFORE the server starts (like `--background`):
- *   Adhitron.exe --autologon-enable --password-file <file> --user <u> --domain <d> [--app-dir] [--port]
+ *   Adhitron.exe --autologon-enable --password-file <file> --user <u> --domain <d> [--account-sid <SID>] [--app-dir] [--port]
  *   Adhitron.exe --autologon-disable [--app-dir]
  *
  * Returns the exit code; it never calls `process.exit` (server.js does). When it is not already elevated it
@@ -914,7 +973,7 @@ function syncElevation(plan, options) {
 
 /** Everything an elevated helper does, already synchronous (see `planHelper` for the shared decisions). */
 function elevatedWork(plan, options) {
-  const { enable, user, domain, port, tmpdir, exec, removeFile, passwordFile, resultFile } = plan;
+  const { enable, user, domain, port, tmpdir, exec, removeFile, passwordFile, resultFile, accountSid } = plan;
   if (enable) {
     // C2: the task must belong to the account Windows will log in as — the helper passes the S1-checked account.
     try {
@@ -926,7 +985,28 @@ function elevatedWork(plan, options) {
     }
     // C2: and the owner is VERIFIED before the registry changes; a task belonging to another administrator means
     // no lock at boot, which must never be sold as success.
-    if (!lockTaskBelongsTo(exec, { user, domain })) {
+    if (!lockTaskBelongsTo(exec, { user, domain, sid: accountSid })) {
+      // Fail closed AND leave nothing behind: an unverified lock would lock the screen 15 s after every logon while
+      // the registry stays untouched. Removing it is only safe when the registry provably does NOT log anybody in:
+      // with AutoAdminLogon already on, dropping the lock is exactly the open desktop this module exists to prevent.
+      // `'unknown'` (reg missing, policy, odd PATH) therefore keeps the task - only an explicit 'off' removes it.
+      let autologon = 'unknown';
+      try {
+        autologon = autostartStatus({
+          execFileSync: exec, startupDir: options.startupDir, platform: options.platform,
+        }).autologon;
+      } catch {
+        // autostartStatus does not throw, but a broken seam here must not remove the lock: keep 'unknown'.
+      }
+      if (autologon === 'off') {
+        try {
+          removeLockTask({
+            execFileSync: exec, tmpdir, startupDir: options.startupDir, platform: options.platform,
+          });
+        } catch (err) {
+          console.error(`Autologon: pengunci layar sisa tidak bisa dilepas: ${err?.message ?? err}`);
+        }
+      }
       writeResult(resultFile, EXIT.registry, LOCK_FAILED_MESSAGE);
       return EXIT.registry;
     }

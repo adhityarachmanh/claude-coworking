@@ -4,18 +4,21 @@
 // session, schtasks) adalah stub. Jadi tes ini tidak pernah memunculkan UAC, tidak pernah menulis registry, tidak
 // menyentuh folder Startup pengguna, dan tidak menyentuh Task Scheduler asli.
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import os, { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, test } from 'node:test';
-import { enableAutologon, helperMain, relaunchOf, sweepLeftoverSecrets, windowsAccount, winlogonScript } from '../src/autologon.js';
+import { enableAutologon, helperMain, lockTaskCheckScript, relaunchOf, sweepLeftoverSecrets, windowsAccount, winlogonScript } from '../src/autologon.js';
 import { lockTaskXml, startupDirOf } from '../src/autostart.js';
 
 const SECRET = 'R4has1a!SandiWindows';
 const LOCK_TASK = 'Adhitron Lock';
 // The account helperMain has to accept: the one this test process runs under (`--user`/`--domain` are checked, S1).
 const ME = windowsAccount();
+/** A stand-in for this session's SID (`whoami /user`); the real one is machine-specific. */
+const TEST_SID = 'S-1-5-21-1111111111-2222222222-3333333333-1001';
 const accountArgs = () => ['--user', ME.user, '--domain', ME.domain];
 
 const DIRS = [];
@@ -112,6 +115,10 @@ function fakeExec({ autoAdminLogon = null, lockTask = true, powershellStatus = 0
       if (autoAdminLogon === null) throw new Error('ERROR: The system was unable to find the specified registry key or value.');
       return `HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\r\n    AutoAdminLogon    REG_SZ    ${autoAdminLogon}\r\n`;
     }
+    if (file === 'whoami') {
+      if (args.includes('/user')) return `"${ME.domain}\\${ME.user}","${TEST_SID}"\r\n`;
+      throw new Error('ERROR: whoami: argumen tidak diharapkan di tes ini.');
+    }
     throw new Error(`ERROR: ${file} tidak diharapkan di tes ini.`);
   };
   return { exec, calls };
@@ -123,15 +130,23 @@ const onStatus = () => ({ autologon: 'on', mode: 'boot', unsafeDesktop: false })
 /**
  * The script the elevated helper actually ran (`-File <ps1>`), captured before helperMain deletes it. Also answers
  * the C2 identity check (`powershell -Command Get-ScheduledTask …`): `verify:false` makes it fail (exit 4 in the
- * helper), `schtasksCreate:'fail'` makes the lock task installation itself fail (I1).
+ * helper), `schtasksCreate:'fail'` makes the lock task installation itself fail (I1), and `autoAdminLogon` is what
+ * `reg query` reports afterwards (`null`: the value cannot be read at all).
  */
-function scriptRunner({ status = 0, verify = true, schtasksCreate = 'ok' } = {}) {
+function scriptRunner({ status = 0, verify = true, schtasksCreate = 'ok', autoAdminLogon = '0' } = {}) {
   const calls = [];
   let script = '';
   let scriptPath = '';
   let taskXml = '';
   const exec = (file, args = [], options = {}) => {
     calls.push({ file, args, options });
+    if (file === 'whoami') {
+      return args.includes('/user') ? `"${ME.domain}\\${ME.user}","${TEST_SID}"\r\n` : '';
+    }
+    if (file === 'reg') {
+      if (autoAdminLogon === null) throw new Error('ERROR: Access is denied.');
+      return `HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\r\n    AutoAdminLogon    REG_SZ    ${autoAdminLogon}\r\n`;
+    }
     if (file === 'powershell.exe') {
       const fileIndex = args.indexOf('-File');
       // C2: `-Command Get-ScheduledTask ... Principal.UserId` — a throw means "not verified".
@@ -411,6 +426,43 @@ test('helper elevated memasang task pengunci layar sebelum registry', async () =
   assert.ok(call.args.includes('-NonInteractive'), 'tidak boleh menggantung menunggu input');
   assert.deepEqual(call.args.slice(call.args.indexOf('-PasswordFile'), call.args.indexOf('-PasswordFile') + 2), ['-PasswordFile', file]);
   assert.ok(!call.args.includes('-Startup'), 'skrip tidak lagi butuh folder Startup');
+});
+
+test('C2 membandingkan SID, bukan tulisan nama akun', async () => {
+  const box = sandbox();
+  const file = secretFileIn(box.tmp);
+  const ps = scriptRunner({ status: 0 });
+
+  await helperMain(
+    ['node', 'server.js', '--autologon-enable', '--password-file', file, ...accountArgs(),
+      '--app-dir', box.appDir, '--port', '4317'],
+    { platform: 'win32', execFileSync: ps.exec, spawn: fakeSpawn().spawn, elevated: true, tmpdir: box.tmp, startupDir: box.startupDir },
+  );
+
+  const script = String(ps.calls.find((c) => c.file === 'powershell.exe' && c.args.includes('-Command'))?.args.at(-1) ?? '');
+  // Windows answers `Principal.UserId` with the SHORT name ("adhit") while the task belongs to "ARH\adhit" - or with
+  // the SID. Compare identities, not spellings: translate the owner to a SecurityIdentifier.
+  assert.match(script, /NTAccount/, 'nama akun harus diterjemahkan ke SID sebelum dibandingkan');
+  assert.match(script, /Translate\(\[Security\.Principal\.SecurityIdentifier\]\)/, 'perbandingan lewat SID');
+  assert.match(script, new RegExp(`\\$wantSid = '${TEST_SID}'`), 'SID sesi ini (dibaca induk) ikut dikirim');
+  assert.match(script, /COMPUTERNAME/, 'nama pendek dianggap akun komputer ini');
+  assert.match(script, /WindowsIdentity\]::GetCurrent\(\)\.User\.Value/, 'cadangan bila SID induk tidak terbaca');
+});
+
+test('SID sesi ini diteruskan ke salinan elevated lewat --account-sid', async () => {
+  const box = sandbox();
+  const { spawn, calls } = fakeSpawn({ code: 0 });
+  await enableAutologon({
+    password: SECRET,
+    appDir: box.appDir,
+    port: 4317,
+    spawn,
+    exec: fakeExec().exec,
+    tmpdir: box.tmp,
+    status: onStatus,
+  });
+
+  assert.match(commandOf(calls[0]), new RegExp(`--account-sid "?${TEST_SID}"?`), 'SID induk, bukan SID administrator UAC');
 });
 
 test('helper elevated menolak file sandi asing atau di luar folder temp', async () => {
@@ -805,6 +857,83 @@ test('C2: task pengunci yang tidak bisa diverifikasi = exit 4, registry tidak di
     'registry tidak boleh ditulis bila pengunci tidak terbukti milik akun ini',
   );
   assert.ok(!existsSync(file), 'file sandi tetap terhapus');
+  // Fail closed also means: the task must not be LEFT behind. An unverified lock would lock the screen 15 s after
+  // every logon while the registry is untouched.
+  const create = ps.calls.findIndex((c) => c.file === 'schtasks' && c.args.includes('/Create'));
+  const remove = ps.calls.findIndex((c) => c.file === 'schtasks' && c.args.includes('/Delete'));
+  assert.ok(create >= 0, 'task memang dipasang lebih dulu');
+  assert.ok(remove > create, 'task yang tidak bisa diverifikasi harus dilepas lagi');
+  assert.equal(ps.calls[remove].args[ps.calls[remove].args.indexOf('/TN') + 1], LOCK_TASK);
+});
+
+for (const [label, autoAdminLogon] of [['sudah ON', '1'], ['tidak terbaca', null]]) {
+  test(`C2 gagal + autologon ${label}: pengunci TIDAK dilepas`, async () => {
+    const box = sandbox();
+    const file = secretFileIn(box.tmp);
+    const ps = scriptRunner({ verify: false, autoAdminLogon });
+
+    const code = await helperMain(
+      ['--autologon-enable', '--password-file', file, ...accountArgs(), '--app-dir', box.appDir, '--port', '4317'],
+      { platform: 'win32', execFileSync: ps.exec, spawn: fakeSpawn().spawn, elevated: true, tmpdir: box.tmp, startupDir: box.startupDir },
+    );
+
+    assert.equal(code, 4);
+    // Removing the lock while Windows still logs in by itself is the open desktop this module prevents. Only an
+    // explicit AutoAdminLogon=0 proves nobody gets logged in, which is the case the other test covers.
+    assert.ok(!ps.calls.some((c) => c.file === 'schtasks' && c.args.includes('/Delete')), 'pengunci tidak boleh hilang');
+  });
+}
+
+test('C2: SID di argv yang formatnya salah ditolak, bukan diganti SID sesi ini', async () => {
+  const box = sandbox();
+  const file = secretFileIn(box.tmp);
+  const ps = scriptRunner({ status: 0 });
+
+  const code = await helperMain(
+    ['--autologon-enable', '--password-file', file, ...accountArgs(), '--account-sid', 'bukan-sid',
+      '--app-dir', box.appDir, '--port', '4317'],
+    { platform: 'win32', execFileSync: ps.exec, spawn: fakeSpawn().spawn, elevated: true, tmpdir: box.tmp, startupDir: box.startupDir },
+  );
+
+  assert.equal(code, 1, 'argumen cacat = exit 1 (tidak ada perubahan)');
+  assert.equal(ps.calls.length, 0, 'tidak ada schtasks/PowerShell yang dijalankan');
+  assert.ok(!existsSync(file), 'file sandi tetap terhapus');
+});
+
+/** The real script, run by the real powershell.exe against a stubbed `Get-ScheduledTask` (Windows only). */
+const psScriptVerdict = (script) => {
+  try {
+    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return 0;
+  } catch (err) {
+    return err.status;
+  }
+};
+
+/** `lockTaskCheckScript` with `Get-ScheduledTask` replaced: no real task, no Administrator rights needed. */
+const withOwner = (owner, script) => [
+  `function Get-ScheduledTask { param($TaskName) [pscustomobject]@{ Principal = [pscustomobject]@{ UserId = '${owner}' } } }`,
+  script,
+].join('\r\n');
+
+test('skrip C2 asli: nama pendek diterima, akun lain ditolak', { skip: process.platform !== 'win32' }, () => {
+  // This is the bug 1.0.34 shipped: Task Scheduler answers with the short name while the code compared "DOMAIN\User".
+  const realSid = /"(S-1-[0-9-]+)"/.exec(String(execFileSync('whoami', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8' }) ?? ''));
+  assert.ok(realSid, 'SID sesi ini harus terbaca');
+  const account = { user: ME.user, domain: ME.domain, sid: realSid[1] };
+  const script = lockTaskCheckScript(account);
+
+  assert.equal(psScriptVerdict(withOwner(ME.user, script)), 0, 'nama pendek = akun ini');
+  assert.equal(psScriptVerdict(withOwner(`${ME.domain}\\${ME.user}`, script)), 0, 'DOMAIN\\User = akun ini');
+  assert.equal(psScriptVerdict(withOwner(realSid[1], script)), 0, 'SID = akun ini');
+  assert.equal(psScriptVerdict(withOwner('administrator', script)), 4, 'akun lain harus ditolak');
+  assert.equal(psScriptVerdict(withOwner(`${ME.domain}\\administrator`, script)), 4, 'akun lain harus ditolak');
+  // The SID from argv must BE this account: a foreign SID cannot bless the session's own task.
+  assert.equal(psScriptVerdict(withOwner(ME.user, lockTaskCheckScript({ ...account, sid: 'S-1-5-18' }))), 4, 'SID asing ditolak');
+  // Without a SID, the elevated session's own account is the only thing left to compare against.
+  assert.equal(psScriptVerdict(withOwner(ME.user, lockTaskCheckScript({ ...account, sid: '' }))), 0, 'cadangan SID sesi');
 });
 
 test('C2/M4: lockTaskXml menulis <UserId> DOMAIN\\User dan tidak pernah memuat port aneh', () => {

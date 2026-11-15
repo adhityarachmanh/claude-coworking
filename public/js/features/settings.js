@@ -332,8 +332,13 @@ async function submitAutologon(e) {
       on ? 'ok' : 'warn',
     );
   } catch (err) {
-    // The dialog stays open: a mistyped password (401) or a cancelled UAC prompt (409) is not a dead end.
-    const text = err?.status === 401 ? 'Sandi Windows salah.' : err?.status === 409 ? 'Dibatalkan.' : err?.message || 'Autologon tidak bisa diaktifkan.';
+    // The dialog stays open: a mistyped password (401) or a refused change (409) is not a dead end. A 409 must show
+    // the server's own reason - a cancelled UAC prompt says "Dibatalkan.", a refused Task Scheduler/registry change
+    // says what was refused; collapsing both into "Dibatalkan." hid the real failure. An HTTP-less error (network
+    // down) has no useful message of its own, so it gets the local wording instead of "Failed to fetch".
+    const text = err?.status === 401
+      ? 'Sandi Windows salah.'
+      : err?.status ? err.message || 'Autologon tidak bisa diaktifkan.' : 'Autologon tidak bisa diaktifkan.';
     setAutologonError(text);
     input?.focus();
     input?.select?.();
