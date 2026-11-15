@@ -30,6 +30,9 @@ Aturan praktis: **kalau nilainya memengaruhi apa yang dilakukan server (atau har
 | Routines / runbook | `state.json` → `routines`, `runbooks` | `src/routines.js` |
 | Retensi data | `state.json` → `settings` (bagian retensi) | `src/retention.js` |
 | Sesi WhatsApp (tautan perangkat) | `data/wa/session.bin` + `data/wa/key` (terenkripsi AES-GCM) | `src/wa-auth-store.js`, `src/wa-link.js` |
+| HP/perangkat terpasang, izin akses dari HP, langganan push perangkat | `state.json` → `remote` (`enabled`, `devices[]` termasuk `push`) | `src/remote.js`, `src/push.js` |
+| Sertifikat HTTPS Tailscale | `data/tls/` | `src/tls.js` |
+| Nyala otomatis saat login + akses saat PC terkunci | **Windows**, bukan `data/`: Task Scheduler (`Adhitron`, `Adhitron Lock`) dan registry Autologon | `src/autostart.js`, `src/autologon.js` |
 | Riwayat chat | `data/chats/*.jsonl` | `src/chat-store.js` |
 | Backup | `data/backups/` | `src/backup*.js` |
 | Lebar panel samping | `localStorage` → `office.panelWidth` | `public/js/ui/layout.js` |
