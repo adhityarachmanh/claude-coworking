@@ -37,6 +37,7 @@ const sharedGlobals = {
   Event: 'readonly',
   EventTarget: 'readonly',
   CustomEvent: 'readonly',
+  MessageEvent: 'readonly',
   MessageChannel: 'readonly',
   BroadcastChannel: 'readonly',
   WebSocket: 'readonly',

@@ -10414,14 +10414,39 @@ const restoreAutologon = (page) =>
     })
     .catch(() => {});
 
-/** Puts the autostart block the server would report into the client state (the card draws from it, not from a request). */
-async function setAutostart(page, autostart) {
-  await page.eval(async (a) => {
-    const { state } = await import('/js/core/state.js');
-    const { renderRoots } = await import('/js/features/settings.js');
-    state.config = { ...(state.config ?? {}), roots: state.config?.roots ?? [], autostart: a };
-    renderRoots(state.config);
-  }, autostart);
+/**
+ * Freezes fields of the server's `config` for the rest of this page's life. The autologon card draws from the
+ * machine's real Windows state (a PC that logs itself in reports `autologon: 'on'`), and the server re-broadcasts that
+ * state on its own schedule: a stub written only into client state is overwritten mid-test, which is what made the
+ * autologon block fail on a machine with autologon enabled ("elemen tidak terlihat"). Every other field the server
+ * sends still arrives untouched.
+ *
+ * Must run before `openApp`: the app opens its event stream at boot, not on a request.
+ */
+async function freezeConfig(page, patch) {
+  await page.initScript((frozen) => {
+    const Native = window.EventSource;
+    const rewrite = (type, raw) => {
+      try {
+        const data = JSON.parse(raw);
+        if (type === 'config') return JSON.stringify({ ...data, ...frozen });
+        if (type === 'snapshot') return JSON.stringify({ ...data, config: { ...(data.config ?? {}), ...frozen } });
+        return raw;
+      } catch {
+        return raw; // never JSON in practice: hand the original bytes on rather than break the app
+      }
+    };
+    window.EventSource = class extends Native {
+      addEventListener(type, fn, opts) {
+        if ((type !== 'config' && type !== 'snapshot') || typeof fn !== 'function') return super.addEventListener(type, fn, opts);
+        return super.addEventListener(
+          type,
+          (event) => fn.call(this, new MessageEvent(type, { data: rewrite(type, event.data), lastEventId: event.lastEventId, origin: event.origin })),
+          opts,
+        );
+      }
+    };
+  }, patch);
 }
 
 for (const vp of VIEWPORTS) {
@@ -10529,10 +10554,14 @@ for (const vp of VIEWPORTS) {
     });
 
     test('settings: autologon modal', async () => {
+      // The card must start from "belum aktif" whatever this PC really does: freeze the Windows state the server
+      // keeps broadcasting, so a push landing mid-click cannot hide the button (see freezeConfig).
+      await freezeConfig(page, {
+        autostart: { supported: true, enabled: true, mode: 'boot', autologon: 'off', needsElevation: false, unsafeDesktop: false },
+      });
       await openApp(page, '#demo');
       await stubAutologon(page);
       try {
-        await setAutostart(page, { supported: true, enabled: true, mode: 'boot', autologon: 'off', needsElevation: false, unsafeDesktop: false });
         await tap(page, '#btn-settings');
         await page.waitFor(() => !document.querySelector('#settings-modal').hidden, { timeoutMs: 3000, message: 'Setelan terbuka' });
         await page.click('[data-settings-tab="sistem"]');

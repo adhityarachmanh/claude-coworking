@@ -268,6 +268,17 @@ export class Page {
     return result.value;
   }
 
+  /**
+   * Runs `fn(...args)` in every document this page loads from now on, before the app's own scripts. A test that has
+   * to change how the app boots (the event stream opens at startup, not on a request) cannot wait for the page to be
+   * ready, so it registers the change first. Returns the identifier for Page.removeScriptToEvaluateOnNewDocument.
+   */
+  async initScript(fn, ...args) {
+    const source = `(${fn})(...${JSON.stringify(args)})`;
+    const { identifier } = await this.send('Page.addScriptToEvaluateOnNewDocument', { source });
+    return identifier;
+  }
+
   /** Polls `fn` in the page until it returns truthy. */
   async waitFor(fn, { timeoutMs = 5000, message = 'kondisi' } = {}, ...args) {
     const end = Date.now() + timeoutMs;
