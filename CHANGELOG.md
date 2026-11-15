@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.38
+
+- **⚙ Setelan bisa diatur dari HP lewat Tailscale.** Sebelumnya hampir semua pengaturan administratif menolak perangkat lain, jadi kamu harus kembali ke laptop untuk mengubah apa pun: setelan umum, jembatan daya, menambah project/grup, backup, retensi data, routines, cek Claude/OpenCode, update aplikasi, status/lepas/uji WhatsApp, dan Spotify. Sekarang semuanya boleh dari HP **lewat Tailscale HTTPS** (terenkripsi, perangkat terpasang). HP di WiFi biasa tetap **hanya-lihat**. Yang tetap khusus laptop: terminal setup/login, hook CLI lokal, autologon/autostart (butuh persetujuan UAC di PC), dan pemasangan WhatsApp lewat QR.
+- **⏻ Pilihan "tombol di bawah ikut mematikan Windows" benar-benar tersimpan.** Sebelumnya centang itu hanya hidup di dalam dialog — hilang setiap halaman dimuat ulang, apalagi setelah server dimatikan. Sekarang disimpan bersama setelan jembatan (`remotePower.shutdownPc` di `state.json`), dikirim balik saat panel dibuka, dan disimpan begitu diubah. Menyimpan satu bagian (mis. centang saja) tidak menghapus URL/token jembatan yang sudah ada.
+- **🔒 Gambar QR WhatsApp tidak lagi dikirim ke HP.** Status WhatsApp dari perangkat tetap bisa dibaca (untuk tahu sudah tertaut atau belum), tetapi `qr` hanya diberikan ke halaman laptop — QR adalah kredensial sesi.
+
 ## 1.0.37
 
 - **🔐 "Aktifkan Akses saat PC terkunci" tidak lagi berakhir dengan 409 padahal semuanya sudah terpasang.** Setelah helper elevated memasang autologon *dan* task pengunci layar, aplikasi mencoba memasang task pengunci itu **sekali lagi tanpa hak Administrator**. Di mesin yang menolak `schtasks /Create /XML` tanpa elevasi, langkah kedua itu gagal (`Access is denied`) dan langkah selanjutnya — penjaga 5 menit — dibatalkan, menghasilkan pesan *"Autologon menyala, tetapi auto-start saat boot gagal dipasang: Task Scheduler menolak memasang pengunci layar"*. Task kini hanya dipasang kalau memang belum ada, jadi langkah boot mode selesai tanpa memasang ulang apa pun. Pesan penolakan Task Scheduler juga sekarang memuat alasan sebenarnya dari Windows, bukan hanya "menolak". Tidak ada aksi untuk mesin yang sudah aktif: autologon, task pengunci, penjaga 5 menit, dan mode sebelum login tetap seperti sekarang.

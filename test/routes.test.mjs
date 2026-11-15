@@ -104,24 +104,24 @@ test('routes: 🧩 /api/claude-check/* (manual run, settings) never over plain W
     assert.ok(r.maxBody > 0 && r.maxBody <= 1024, `${r.pattern} maxBody ${r.maxBody}`);
     assert.equal(r.token, 'office');
   }
-  // Laptop only: server.js refuses them for every paired phone (Tailscale too) before the WiFi gate.
+  // Remote admin: a paired phone may change these over Tailscale (https), never over plain WiFi.
   const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
-  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
-  for (const r of routes) assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
+  const secureAdmin = server.match(/const SECURE_ADMIN = new Set\(\[([^\]]*)\]\)/)[1];
+  for (const r of routes) assert.ok(secureAdmin.includes(`'${r.pattern}'`), `${r.pattern} in SECURE_ADMIN`);
 });
 
-test('routes: 🧩 /api/opencode-check/* (manual run, settings) laptop only, never over plain WiFi; small bodies', () => {
+test('routes: 🧩 /api/opencode-check/* (manual run, settings) boleh dari HP lewat Tailscale, tidak pernah lewat WiFi; small bodies', () => {
   const routes = router.routes.filter((r) => r.pattern.startsWith('/api/opencode-check/'));
   assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/opencode-check/restart-service', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update']);
   const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
-  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  const secureAdmin = server.match(/const SECURE_ADMIN = new Set\(\[([^\]]*)\]\)/)[1];
   for (const r of routes) {
     assert.equal(r.method, 'POST');
     assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
     assert.ok(!WIFI_READS.has(r.pattern));
     assert.ok(r.maxBody > 0 && r.maxBody <= 1024, `${r.pattern} maxBody ${r.maxBody}`);
     assert.equal(r.token, 'office');
-    assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
+    assert.ok(secureAdmin.includes(`'${r.pattern}'`), `${r.pattern} in SECURE_ADMIN`);
   }
 });
 
@@ -154,25 +154,27 @@ test('routes: 🧰 /api/setup/* — status/refresh are laptop+Tailscale, the thr
   assert.ok(!localOnly.includes("'/api/setup/refresh'"), 'refresh stays available over Tailscale');
 });
 
-test('routes: 📱 /api/wa/* (link, unlink, test) is laptop only and never over plain WiFi', () => {
+test('routes: 📱 /api/wa/* — status/lepas/uji lewat Tailscale; link (QR) tetap laptop saja', () => {
   const routes = router.routes.filter((r) => r.pattern.startsWith('/api/wa/'));
   assert.deepEqual(routes.map((r) => r.pattern).sort(), ['/api/wa/link', '/api/wa/status', '/api/wa/test', '/api/wa/unlink']);
   const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
   const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  const secureAdmin = server.match(/const SECURE_ADMIN = new Set\(\[([^\]]*)\]\)/)[1];
   for (const r of routes) {
     assert.equal(r.method, 'POST');
     assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
     assert.ok(!WIFI_READS.has(r.pattern));
     assert.ok(r.maxBody > 0 && r.maxBody <= 1024, `${r.pattern} maxBody ${r.maxBody}`);
     assert.equal(r.token, 'office');
-    // The QR is a session credential: a paired phone (Tailscale too) is refused before it reaches the handler.
-    assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
+    // The QR is a session credential: linking stays on the laptop (the status handler hides the QR from phones).
+    if (r.pattern === '/api/wa/link') assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
+    else assert.ok(secureAdmin.includes(`'${r.pattern}'`), `${r.pattern} in SECURE_ADMIN`);
   }
   // GET /api/wa/status is served by server.js itself (the router only dispatches POST), behind the same gate.
   assert.match(server, /pathname === '\/api\/wa\/status' && req\.method === 'GET'/);
 });
 
-test('routes: 🧩 OpenCode config editor is laptop only, with a bounded JSON body', () => {
+test('routes: 🧩 OpenCode config editor boleh dari HP lewat Tailscale, dengan body JSON yang dibatasi', () => {
   const routes = router.routes.filter((r) => r.pattern.startsWith('/api/opencode-config'));
   assert.deepEqual(routes.map((r) => r.pattern).sort(), [
     '/api/opencode-config',
@@ -183,14 +185,14 @@ test('routes: 🧩 OpenCode config editor is laptop only, with a bounded JSON bo
     '/api/opencode-config/save',
   ]);
   const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
-  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  const secureAdmin = server.match(/const SECURE_ADMIN = new Set\(\[([^\]]*)\]\)/)[1];
   for (const r of routes) {
     assert.equal(r.method, 'POST');
     assert.ok(!wifiAllows(r.pattern), `${r.pattern} refused over WiFi`);
     assert.ok(!WIFI_READS.has(r.pattern));
     assert.ok(r.maxBody > 0 && r.maxBody <= 1024 * 1024, `${r.pattern} maxBody ${r.maxBody}`);
     assert.equal(r.token, 'office');
-    assert.ok(localOnly.includes(`'${r.pattern}'`), `${r.pattern} in LOCAL_ONLY`);
+    assert.ok(secureAdmin.includes(`'${r.pattern}'`), `${r.pattern} in SECURE_ADMIN`);
   }
 });
 

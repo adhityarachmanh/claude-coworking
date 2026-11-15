@@ -92,7 +92,15 @@ export function register(router) {
   });
   router.post('/api/remote-power/get', ({ hub }, req, res) => json(res, 200, { remotePower: hub.remotePower() }));
   router.post('/api/remote-power/settings', ({ hub }, req, res, params, body) => {
-    const clean = hub.setRemotePower({ bridgeUrl: body?.bridgeUrl, token: body?.token, offDelaySec: body?.offDelaySec });
+    // Partial save: the dialog sends every field, but a single control (e.g. the ⏻ checkbox) must never wipe the
+    // bridge URL/token it did not send.
+    const current = hub.remotePower();
+    const clean = hub.setRemotePower({
+      bridgeUrl: body?.bridgeUrl ?? current.bridgeUrl,
+      token: body?.token ?? current.token,
+      offDelaySec: body?.offDelaySec ?? current.offDelaySec,
+      shutdownPc: body?.shutdownPc ?? current.shutdownPc,
+    });
     if (!clean) return json(res, 400, { error: 'URL jembatan harus https://, token maks 200 karakter, jeda 0–600 detik.' });
     return json(res, 200, { remotePower: clean });
   });

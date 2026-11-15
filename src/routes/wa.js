@@ -32,7 +32,13 @@ const TIMED_OUT = Symbol('timed out');
  * (src/routes/router.js), so server.js calls this for the GET — behind the same per-start token as every other API.
  * @returns {Promise<import('node:http').ServerResponse>}
  */
-export const status = async ({ waLink }, req, res) => json(res, 200, await waLink.status());
+export const status = async ({ waLink, device }, req, res) => {
+  const current = await waLink.status();
+  // The QR is a session credential (a phone that sees it could link its owner's WhatsApp): the laptop shows it, a
+  // paired phone gets the state only. Remote linking uses the pairing code, never the QR.
+  if (device && current?.qr) return json(res, 200, { ...current, qr: null });
+  return json(res, 200, current);
+};
 
 /** Registers the POST routes (src/routes/index.js, like every other route group). */
 export function register(router) {

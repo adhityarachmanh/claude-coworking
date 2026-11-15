@@ -139,9 +139,12 @@ const cleanRemotePower = (raw) => {
   const url = String(raw?.bridgeUrl ?? '').trim();
   const token = String(raw?.token ?? '').trim();
   const delay = Number(raw?.offDelaySec);
+  // ⏻ "tombol di bawah ikut mematikan Windows": a setting the user picks once. It lives here (state.json, like the
+  // rest of the bridge config) instead of the dialog's checkbox, which used to reset on every page load.
+  const shutdownPc = raw?.shutdownPc === true || raw?.shutdownPc === 'true' || raw?.shutdownPc === 1 || raw?.shutdownPc === '1';
   if (raw?.offDelaySec !== undefined && (!Number.isInteger(delay) || delay < 0 || delay > REMOTE_POWER_DELAY_MAX)) return null;
   const offDelaySec = Number.isFinite(delay) ? delay : 120;
-  if (!url) return { bridgeUrl: '', token: '', offDelaySec };
+  if (!url) return { bridgeUrl: '', token: '', offDelaySec, shutdownPc };
   let parsed;
   try {
     parsed = new URL(url);
@@ -149,7 +152,7 @@ const cleanRemotePower = (raw) => {
     return null;
   }
   if (parsed.protocol !== 'https:' || !token || token.length > 200) return null; // url set but no token → useless, refused
-  return { bridgeUrl: url.replace(/\/+$/, ''), token, offDelaySec };
+  return { bridgeUrl: url.replace(/\/+$/, ''), token, offDelaySec, shutdownPc };
 };
 
 /** 📚 Runbooks: saved prompt sequences; only valid entries survive a hand-edited state.json. */
@@ -354,7 +357,7 @@ export class Hub {
     // turns: the turn running right now per project (written when it starts, removed when it ends); one left
     // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
     // the user continues or dismisses them (see recoverTurns / interruptTurn).
-    const empty = { roots: [], custom: [], favorites: [], favoriteModels: [], projectGroups: [], remotePower: { bridgeUrl: '', token: '', offDelaySec: 120 }, settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, routines: [] };
+    const empty = { roots: [], custom: [], favorites: [], favoriteModels: [], projectGroups: [], remotePower: { bridgeUrl: '', token: '', offDelaySec: 120, shutdownPc: false }, settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, routines: [] };
     let stored = {};
     let parsedOk = false;
     try {

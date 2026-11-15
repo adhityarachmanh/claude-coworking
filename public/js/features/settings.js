@@ -644,12 +644,38 @@ export function initSettings() {
     $('#rp-url').value = rp?.bridgeUrl ?? '';
     $('#rp-token').value = rp?.token ?? '';
     $('#rp-delay').value = String(rp?.offDelaySec ?? 120);
+    // A saved setting, not a scratch checkbox: the dialog shows what the server holds.
+    const pc = $('#rp-shutdown-pc');
+    if (pc) pc.checked = rp?.shutdownPc === true;
   };
+
+  /** Saves the whole bridge config; the ⏻ checkbox is part of it (state.json), so it survives a reload/restart. */
+  const rpSave = () => api('/api/remote-power/settings', {
+    bridgeUrl: $('#rp-url').value.trim(),
+    token: $('#rp-token').value.trim(),
+    offDelaySec: Number($('#rp-delay').value) || 120,
+    shutdownPc: $('#rp-shutdown-pc')?.checked === true,
+  });
+
+  // The checkbox is a setting: save it the moment it changes, and put it back if the server refuses.
+  $('#rp-shutdown-pc')?.addEventListener('change', async (event) => {
+    const wanted = event.target.checked;
+    const status = $('#rp-result');
+    try {
+      const saved = await rpSave();
+      const value = saved?.remotePower?.shutdownPc === true;
+      event.target.checked = value;
+      if (status) status.textContent = value === wanted ? '✅ Pilihan ⏻ disimpan.' : '⚠ Server menyimpan nilai lain.';
+    } catch (err) {
+      event.target.checked = !wanted;
+      if (status) status.textContent = `⚠ ${err.message}`;
+    }
+  });
 
   $('#rp-save').addEventListener('click', async () => {
     const status = $('#rp-result');
     try {
-      await api('/api/remote-power/settings', { bridgeUrl: $('#rp-url').value.trim(), token: $('#rp-token').value.trim(), offDelaySec: Number($('#rp-delay').value) || 120 });
+      await rpSave();
       status.textContent = '✅ Setelan disimpan.';
     } catch (err) {
       status.textContent = `⚠ ${err.message}`;
