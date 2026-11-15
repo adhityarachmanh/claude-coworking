@@ -254,7 +254,18 @@ test('🗂 badge ⚡ 2/3 tampil saat dua project bekerja, hilang saat batas 0 (d
     // starting another, and the count stays at 2 of 3 either way.
     assert.equal((await api(`/api/projects/${toko}/prompt`, { text: 'lama lagi dari toko' })).status, 200);
     assert.equal((await api(`/api/projects/${blog}/prompt`, { text: 'lama lagi dari blog' })).status, 200);
-    await phone.waitFor(() => /⚡ 2\/3/.test(document.querySelector('#dash-bar-sum')?.textContent ?? ''), { timeoutMs: 20000, message: 'bar HP ⚡ 2/3' });
+    await phone.waitFor(() => /⚡ 2\/3/.test(document.querySelector('#dash-bar-sum')?.textContent ?? ''), { timeoutMs: 20000, message: 'bar HP ⚡ 2/3' }).catch(async (err) => {
+      // Evidence for the failure: what the phone bar actually says and which projects it believes are working.
+      const view = await phone.eval(() => {
+        const sum = document.querySelector('#dash-bar-sum');
+        return { bar: sum?.textContent ?? null, barHidden: sum?.hidden ?? null, conn: document.querySelector('#conn')?.className ?? null };
+      });
+      const busy = await phone.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        return Object.fromEntries(Object.entries(state.statuses ?? {}).map(([id, st]) => [id, { busy: st?.busy ?? null, pending: st?.pending ?? null }]));
+      });
+      throw new Error(`${err.message} — bar=${JSON.stringify(view.bar)} (hidden=${view.barHidden}, conn=${view.conn}) busy=${JSON.stringify(busy)}`);
+    });
     await phone.eval(() => document.querySelector('#dash-bar').click());
     await phone.waitFor(() => !document.querySelector('#dash-capacity').hidden && document.querySelector('#dash-capacity').textContent.trim() === '⚡ 2/3', { timeoutMs: 5000, message: 'badge dialog HP' });
 

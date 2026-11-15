@@ -245,6 +245,33 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
     }
   });
 
+  test('OpenCode belum terpasang: tidak ada permintaan daftar provider (dulu 404 di konsol setiap muat)', async () => {
+    const page = await browser.newPage({ width: 1440, height: 900, mobile: false });
+    try {
+      page.clearProblems();
+      await page.goto(`${BASE}/#${projectId}`);
+      await page.waitFor(appReady, { timeoutMs: 10000, message: 'app ready' });
+      const calls = await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        state.config = { ...state.config, opencode: { ...(state.config.opencode ?? {}), available: false } };
+        let hits = 0;
+        const real = window.fetch;
+        window.fetch = (url, opts) => {
+          if (String(url).includes('/api/opencode/providers')) hits++;
+          return real(url, opts);
+        };
+        // maxAgeMs: 0 clears the minute-long cache, so this really asks again (and must decide not to ask the server).
+        await (await import('/js/features/engine.js')).providerNames({ maxAgeMs: 0 });
+        window.fetch = real;
+        return hits;
+      });
+      assert.equal(calls, 0, 'tanpa OpenCode terpasang, daftar provider tidak diminta');
+      assert.deepEqual(page.problems, [], 'tanpa error console');
+    } finally {
+      await page.close();
+    }
+  });
+
   test('picker project tanpa badge mesin', async () => {
     const page = await browser.newPage({ width: 1440, height: 900, mobile: false });
     try {
