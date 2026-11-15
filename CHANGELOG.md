@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.35
 
 - **🔐 "Akses saat PC terkunci" tidak lagi berakhir "Dibatalkan."** Pemeriksaan pemilik task `Adhitron Lock` membandingkan **tulisan** nama akun (`ARH\adhit`), sedangkan Task Scheduler menjawab dengan nama pendek (`adhit`) — task yang benar dianggap milik orang lain, dan satu-satunya jawaban yang sampai ke layar adalah "Dibatalkan." Sekarang kedua sisi dibandingkan sebagai **SID** (identitas Windows), diteruskan dari proses yang sedang login (`--account-sid`), jadi nama pendek, `DOMAIN\User`, maupun SID semuanya diterima — sementara task milik administrator lain yang menjawab UAC tetap ditolak. Pesan 409 kini menampilkan **alasan dari server** apa adanya, tidak lagi disamarkan menjadi "Dibatalkan.". Bila verifikasi tetap gagal, task pengunci yang baru dipasang **dilepas lagi** selama `AutoAdminLogon` terbukti **belum menyala** (bila registry tidak terbaca, task dibiarkan demi keamanan), sehingga layar tidak terkunci tiap logon tanpa autologon yang menyala.
 - **📱 Pesan uji WhatsApp benar-benar sampai.** ID akun sendiri menyimpan **device** (`628…:12@s.whatsapp.net`); pesan yang dialamatkan ke bentuk itu diterima server WhatsApp tetapi tidak pernah tampil di HP, tanpa error. Pengiriman (pesan uji dan PIN) kini memakai JID pengguna `628…@s.whatsapp.net`. Tidak perlu tautkan ulang.
