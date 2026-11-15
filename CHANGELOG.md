@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.36
+
+- **⏳ Baris tugas subagent tidak lagi berputar selamanya.** Baris *"Sedang berjalan…"* milik agent yang sudah melapor (atau dihentikan) menunggu `task_notification` dari Claude Code; kalau kabar itu tidak datang, barisnya tetap berputar dan menumpuk. Sekarang baris ditutup begitu panggilan agent-nya selesai, dan saat giliran berakhir walau hasilnya tidak pernah datang. Daftar tugas juga dibatasi **100 baris** terbaru, jadi sesi panjang dengan banyak delegasi tidak lagi memanjangkan panel tanpa akhir.
+- **🩺 PATH untuk CLI di Linux benar.** Folder `node.exe` dihitung dengan pemisah path sistem host, sehingga di Linux `dirname('C:\node\node.exe')` menjadi `.` — PATH anak diawali entri relatif dan folder node hilang. Sekarang path gaya Windows selalu dibaca sebagai path Windows.
+- **🩹 "Lepas" WhatsApp tidak bisa menggantung lagi.** Batas waktu 5 detik pada `logout()` memakai timer yang tidak menahan proses; bila HP tidak pernah menjawab, timer itu bisa tidak pernah terpicu sehingga pelepasan sesi tidak selesai. Timernya sekarang menahan sampai batas waktunya, dan sesi dihapus seperti yang dijanjikan.
+
 ## 1.0.35
 
 - **🔐 "Akses saat PC terkunci" tidak lagi berakhir "Dibatalkan."** Pemeriksaan pemilik task `Adhitron Lock` membandingkan **tulisan** nama akun (`ARH\adhit`), sedangkan Task Scheduler menjawab dengan nama pendek (`adhit`) — task yang benar dianggap milik orang lain, dan satu-satunya jawaban yang sampai ke layar adalah "Dibatalkan." Sekarang kedua sisi dibandingkan sebagai **SID** (identitas Windows), diteruskan dari proses yang sedang login (`--account-sid`), jadi nama pendek, `DOMAIN\User`, maupun SID semuanya diterima — sementara task milik administrator lain yang menjawab UAC tetap ditolak. Pesan 409 kini menampilkan **alasan dari server** apa adanya, tidak lagi disamarkan menjadi "Dibatalkan.". Bila verifikasi tetap gagal, task pengunci yang baru dipasang **dilepas lagi** selama `AutoAdminLogon` terbukti **belum menyala** (bila registry tidak terbaca, task dibiarkan demi keamanan), sehingga layar tidak terkunci tiap logon tanpa autologon yang menyala.
