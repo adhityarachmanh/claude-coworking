@@ -11,22 +11,29 @@ const WIN = process.platform === 'win32';
  * process group (-pid; execFileTree starts its children as group leaders), falling back to the pid alone for a
  * process that leads no group (e.g. the long-lived sessions spawned without `detached`).
  */
-export function killTree(pid) {
+export function killTree(pid, signal = 'SIGTERM') {
   if (!pid) return;
   if (WIN) {
     spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', () => {});
     return;
   }
   try {
-    process.kill(-pid, 'SIGTERM');
+    process.kill(-pid, signal);
   } catch {
     try {
-      process.kill(pid, 'SIGTERM');
+      process.kill(pid, signal);
     } catch {
       // already gone
     }
   }
 }
+
+/**
+ * After the first SIGTERM: a grandchild that ignores it, or one forked a hair after the group signal was sent
+ * (the kernel already walked the group), must not keep the pipe open or outlive the deadline. SIGKILL hits every
+ * member again. Only escalated while the group still exists — a fully dead group makes the call a no-op (ESRCH).
+ */
+const KILL_ESCALATE_MS = 2000;
 
 /** After killTree, how long the pipes may stay open (a grandchild holding them) before they are closed here. */
 const PIPE_GRACE_MS = 5000;
@@ -46,11 +53,13 @@ export function execFileTree(command, args, { timeout = 0, ...options } = {}, ca
   let timedOut = false;
   let timer = null;
   let grace = null;
+  let escalate = null;
   // POSIX: its own process group, so killTree(-pid) reaches the grandchildren. Windows: unchanged (detached
   // would give it a console of its own; taskkill /T already follows the tree).
   const child = execFile(command, args, { ...options, env: options.env ?? childEnv(), ...(WIN ? {} : { detached: true }) }, (err, out, errOut) => {
     clearTimeout(timer);
     clearTimeout(grace);
+    clearTimeout(escalate);
     if (err && timedOut) err.killed = true;
     callback(err, out, errOut);
   });
@@ -65,6 +74,9 @@ export function execFileTree(command, args, { timeout = 0, ...options } = {}, ca
     timer = setTimeout(() => {
       timedOut = true;
       killTree(child.pid);
+      // A stubborn grandchild (or one born just after the group walk) would keep the pipe open and outlive the
+      // deadline: SIGKILL the group once the polite signal has had its chance (POSIX; Windows already forces).
+      if (!WIN) escalate = setTimeout(() => killTree(child.pid, 'SIGKILL'), KILL_ESCALATE_MS);
       grace = setTimeout(() => {
         child.stdout?.destroy();
         child.stderr?.destroy();

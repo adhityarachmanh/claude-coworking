@@ -22,6 +22,29 @@ const FAKE_GH = path.join(APP, 'test-support', 'fake-gh.mjs');
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-guards-'));
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
+/**
+ * True while the pid still runs. On POSIX a killed process can stay a zombie (dead, not yet reaped — the usual
+ * state under a container's PID 1), and a signal-0 probe still answers yes for it; /proc's state field separates
+ * the two. Kept in one place so every process-tree test reads it the same way.
+ */
+function pidAlive(pid) {
+  if (process.platform !== 'win32') {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+      if (fields[0] === 'Z') return false;
+    } catch {
+      // no /proc entry: the fallback below reports it gone
+    }
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const router = buildRouter();
 const LAPTOP = { local: true };
 const TAILSCALE = { local: false };
@@ -226,25 +249,7 @@ test('execFileTree: a timeout stops the child and its grandchildren (the callbac
   assert.ok(Date.now() - started < 15_000, `callback after ${Date.now() - started} ms`);
   const pid = Number(readFileSync(pidFile, 'utf8'));
   assert.ok(pid > 1, `a real grandchild pid was recorded (${pid})`);
-  const alive = () => {
-    // A killed POSIX process can stay a zombie (dead, not yet reaped — the usual state under a container's PID 1),
-    // and a signal-0 probe still answers yes for it. The state field of /proc tells the two apart.
-    if (process.platform !== 'win32') {
-      try {
-        const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
-        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
-        if (fields[0] === 'Z') return false;
-      } catch {
-        // no /proc entry: the fallback below reports it gone
-      }
-    }
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  const alive = () => pidAlive(pid);
   for (let i = 0; i < 50 && alive(); i++) await new Promise((r) => setTimeout(r, 100)); // taskkill is asynchronous
   const left = alive();
   // Why a failure needs evidence: on POSIX a signal-0 probe also answers yes for a zombie (the process is dead but
@@ -261,6 +266,30 @@ test('execFileTree: a timeout stops the child and its grandchildren (the callbac
   };
   if (left) process.kill(pid); // never leave it behind, even when the assertion fails
   assert.equal(left, false, `the grandchild is gone too (Windows: taskkill /T; POSIX: the process group)${detail()}`);
+});
+
+test('execFileTree: a process that ignores SIGTERM is killed anyway (the group is escalated to SIGKILL)', async () => {
+  // A polite signal can be ignored, and a grandchild forked a hair after the group signal was sent can miss it.
+  // Ubuntu nightlies caught exactly that: the grandchild kept the stdout pipe open and outlived the deadline.
+  const pidFile = path.join(TMP, 'stubborn.pid');
+  const grandchildCode = "process.on('SIGTERM', () => {}); setTimeout(() => {}, 60000)";
+  const childCode = [
+    "process.on('SIGTERM', () => {});",
+    "const { spawn } = require('node:child_process');",
+    `const c = spawn(process.execPath, ['-e', ${JSON.stringify(grandchildCode)}], { stdio: 'inherit' });`,
+    `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(c.pid));`,
+    'setTimeout(() => {}, 60000);',
+  ].join('');
+  const started = Date.now();
+  const err = await new Promise((resolve) => execFileTree(process.execPath, ['-e', childCode], { timeout: 3000, windowsHide: true }, (e) => resolve(e)));
+  assert.ok(err?.killed, 'reported as a timeout');
+  assert.ok(Date.now() - started < 15_000, `callback after ${Date.now() - started} ms (the pipe must not wait for the process)`);
+  const pid = Number(readFileSync(pidFile, 'utf8'));
+  assert.ok(pid > 1, `a real grandchild pid was recorded (${pid})`);
+  for (let i = 0; i < 50 && pidAlive(pid); i++) await new Promise((r) => setTimeout(r, 100));
+  const left = pidAlive(pid);
+  if (left) process.kill(pid); // never leave it behind, even when the assertion fails
+  assert.equal(left, false, 'the stubborn grandchild was SIGKILLed with its group');
 });
 
 test('execFileTree: a normal run keeps its normal result (no timeout error), and errors are passed as they are', async () => {
