@@ -211,14 +211,21 @@ test('CLI arguments: plugin ids and MCP names must start with a letter or digit'
 
 test('execFileTree: a timeout stops the child and its grandchildren (the callback comes, err.killed)', async () => {
   const pidFile = path.join(TMP, 'grandchild.pid');
-  const parent = path.join(TMP, 'parent.mjs');
-  // The parent starts a grandchild that inherits stdout (keeps the pipe open) and both sleep for a minute.
-  writeFileSync(parent, `import { spawn } from 'node:child_process';\nimport { writeFileSync } from 'node:fs';\nconst c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'inherit' });\nwriteFileSync(${JSON.stringify(pidFile)}, String(c.pid));\nsetTimeout(() => {}, 60000);\n`);
+  // The child starts a grandchild that inherits stdout (keeps the pipe open) and both sleep for a minute. Run as
+  // `-e` rather than an imported file: a cold CI runner may take longer to boot a module than the timeout, and the
+  // kill would then race the grandchild's own creation (it survived on Ubuntu nightlies exactly that way).
+  const childCode = [
+    "const { spawn } = require('node:child_process');",
+    `const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'inherit' });`,
+    `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(c.pid));`,
+    'setTimeout(() => {}, 60000);',
+  ].join('');
   const started = Date.now();
-  const err = await new Promise((resolve) => execFileTree(process.execPath, [parent], { timeout: 1500, windowsHide: true }, (e) => resolve(e)));
+  const err = await new Promise((resolve) => execFileTree(process.execPath, ['-e', childCode], { timeout: 2500, windowsHide: true }, (e) => resolve(e)));
   assert.ok(err?.killed, 'reported as a timeout');
   assert.ok(Date.now() - started < 15_000, `callback after ${Date.now() - started} ms`);
   const pid = Number(readFileSync(pidFile, 'utf8'));
+  assert.ok(pid > 1, `a real grandchild pid was recorded (${pid})`);
   const alive = () => {
     try {
       process.kill(pid, 0);
@@ -229,8 +236,20 @@ test('execFileTree: a timeout stops the child and its grandchildren (the callbac
   };
   for (let i = 0; i < 50 && alive(); i++) await new Promise((r) => setTimeout(r, 100)); // taskkill is asynchronous
   const left = alive();
+  // Why a failure needs evidence: on POSIX a signal-0 probe also answers yes for a zombie (the process is dead but
+  // its parent has not reaped it). The state/pgrp fields of /proc tell the two apart when this ever goes red.
+  const detail = () => {
+    if (process.platform === 'win32') return '';
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+      return ` [proc state=${fields[0]} ppid=${fields[1]} pgrp=${fields[2]}]`;
+    } catch {
+      return ' [no /proc entry]';
+    }
+  };
   if (left) process.kill(pid); // never leave it behind, even when the assertion fails
-  assert.equal(left, false, 'the grandchild is gone too (Windows: taskkill /T; POSIX: the process group)');
+  assert.equal(left, false, `the grandchild is gone too (Windows: taskkill /T; POSIX: the process group)${detail()}`);
 });
 
 test('execFileTree: a normal run keeps its normal result (no timeout error), and errors are passed as they are', async () => {
@@ -278,22 +297,24 @@ test('👤 OpenCode provider login/logout from a phone raises the same account a
   assert.equal(alerts.length, 3, 'from the laptop itself: no alert');
 });
 
-test('⚙ OpenCode config editor: backups/restore/consolidate are laptop only (LOCAL_ONLY) and never over plain WiFi', () => {
+test('⚙ OpenCode config editor: backups/restore/consolidate are remote admin (Tailscale only), never over plain WiFi', () => {
   const endpoints = ['/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate'];
   const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
-  const localOnly = server.match(/const LOCAL_ONLY = new Set\(\[([^\]]*)\]\)/)[1];
+  // A paired phone may restore or consolidate over Tailscale (the owner asked for full remote admin); a plain-WiFi
+  // phone stays read-only. LocalOnly would refuse the Tailscale phone too, which is not what 1.0.38 shipped.
+  const secureAdmin = server.match(/const SECURE_ADMIN = new Set\(\[([^\]]*)\]\)/)[1];
   const patterns = buildRouter().routes.map((r) => r.pattern);
   for (const p of endpoints) {
     assert.ok(patterns.includes(p), `${p} is registered`);
     assert.equal(wifiAllows(p), false, `${p} is refused over plain WiFi (default deny)`);
     assert.ok(!WIFI_READ_API.paths.includes(p), `${p} is not on the read-only allowlist`);
     assert.ok(!WIFI_READ_API.patterns.some((source) => new RegExp(source).test(p)), `${p} matches no read-only pattern`);
-    assert.ok(localOnly.includes(`'${p}'`), `${p} is in LOCAL_ONLY (refused for every phone, Tailscale too)`);
+    assert.ok(secureAdmin.includes(`'${p}'`), `${p} is in SECURE_ADMIN (Tailscale phone may, WiFi phone may not)`);
   }
-  // The editor's read and save are just as laptop only: no phone may pick a config path or write one.
+  // The editor's read and save follow the same rule: no plain-WiFi phone may pick a config path or write one.
   for (const p of ['/api/opencode-config', '/api/opencode-config/save']) {
     assert.equal(wifiAllows(p), false, `${p} is refused over plain WiFi`);
-    assert.ok(localOnly.includes(`'${p}'`), `${p} is in LOCAL_ONLY`);
+    assert.ok(secureAdmin.includes(`'${p}'`), `${p} is in SECURE_ADMIN`);
   }
   // End-to-end over plain WiFi lives in test/server.test.mjs ("phone access: off by default, pairing required…"):
   // it calls every registered non-read route from a paired plain-HTTP device and expects 403. The four endpoints are

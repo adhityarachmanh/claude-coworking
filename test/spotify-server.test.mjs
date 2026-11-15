@@ -283,7 +283,7 @@ test('backup: data/spotify.json is not in the export, state.json has no spotify 
   for (const t of [...fake.issued.access, ...fake.issued.refresh]) assert.ok(!all.some((c) => c.includes(t)), 'no token in any entry');
 });
 
-test('phones: WiFi may read state/art only; settings is refused as read-only (so Tailscale passes); config/login/logout laptop-only; callback 404', async (t) => {
+test('phones: WiFi may read state/art only; settings is refused as read-only (so Tailscale passes); config/login/logout need Tailscale; callback 404', async (t) => {
   const { lanAddresses } = await import('../src/remote.js');
   const ip = lanAddresses()[0];
   if (!ip) return t.skip('no LAN address on this machine');
@@ -309,10 +309,11 @@ test('phones: WiFi may read state/art only; settings is refused as read-only (so
       assert.equal(r.status, 403, p);
       assert.equal((await r.json()).readOnly, true, `${p}: refused by the WiFi gate only (allowed over Tailscale)`);
     }
+    // config/login/logout are remote admin: allowed from a paired phone over Tailscale, refused on plain WiFi.
     for (const p of ['config', 'login', 'logout']) {
       const r = await phone(`/api/spotify/${p}`, { clientId: 'ffffffffffffffffffffffffffffffff' });
       assert.equal(r.status, 403, p);
-      assert.match((await r.json()).error, /laptop/, `${p}: laptop only, Tailscale too`);
+      assert.match((await r.json()).error, /Tailscale/, `${p}: remote admin needs the encrypted Tailscale link`);
     }
     assert.equal((await fetch(`${LAN}/spotify/callback?code=x&state=y`, { headers: { Cookie: cookie }, redirect: 'manual' })).status, 404);
     assert.equal((await fetch(`${LAN}/spotify/callback?code=x&state=y`, { redirect: 'manual' })).status, 404, 'unpaired too (no redirect to /pair)');
