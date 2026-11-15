@@ -7743,12 +7743,14 @@ describeArea('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
         approvalNote: document.querySelector('.approval.pending .ro-note')?.textContent ?? '',
         // ⚙ is reachable from a paired phone over Tailscale, but never from plain WiFi (read-only is refused there).
         settings: document.querySelector('#btn-settings').hidden,
+        addProject: getComputedStyle(document.querySelector('#add-project')).display,
         // reads still go out: the UI checks them against the server's allowlist from the snapshot
         changesText: document.querySelector('#ch-files').textContent,
       };
     });
     assert.equal(ui.readOnly, true);
     assert.equal(ui.settings, true, '⚙ tetap tersembunyi di WiFi biasa');
+    assert.equal(ui.addProject, 'none', 'tambah folder project tidak ditawarkan di WiFi biasa');
     assert.equal(ui.prompt, true, 'kotak pesan nonaktif');
     assert.equal(ui.placeholder, 'Hanya lihat lewat WiFi — pakai Tailscale untuk mengirim perintah');
     assert.deepEqual(ui.controls, [], 'tombol aksi yang masih aktif');
@@ -10640,10 +10642,13 @@ describeArea('UI HP lewat Tailscale (setelan dari HP)', { skip: SKIP ?? false },
       open: !document.querySelector('#project-modal').hidden,
       archives: document.querySelectorAll('#project-list .arch').length,
       projects: document.querySelectorAll('#project-list li[data-id]').length,
+      // Adding a folder points at a path on this PC: a read-only WiFi phone gets no form, a paired phone may.
+      addProject: getComputedStyle(document.querySelector('#add-project')).display !== 'none',
     }));
     assert.equal(picker.open, true, 'daftar project terbuka');
     assert.ok(picker.projects > 1, 'ada project yang bisa diarsipkan');
     assert.equal(picker.archives, 0, 'tombol arsip (laptop-only) tidak dirender di HP');
+    assert.equal(picker.addProject, true, 'tambah folder project tetap bisa dari HP Tailscale');
 
     // 👥 Grup: creating and reading is fine, but rename/members/dissolve stay on the laptop.
     await page.eval(async () => {

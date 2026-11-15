@@ -1,6 +1,7 @@
 // ---------- the project list: folders to scan, added folders, per-project settings ----------
-// /api/projects and /api/config point Claude Code (and git, file search) at any path: laptop only (LOCAL_ONLY in
-// server.js). Opening VS Code / Explorer (`open`) is laptop only too (LOCAL_ONLY_ACTION).
+// /api/projects and /api/config point Claude Code (and git, file search) at any path: admin, laptop or a phone over
+// Tailscale (SECURE_ADMIN in server.js); a plain-WiFi phone is read-only and refused.
+// Opening VS Code / Explorer (`open`) is laptop only (LOCAL_ONLY_ACTION).
 import { modelsOffered, openCodeModelEfforts, openCodeModels } from '../opencode-bin.js';
 import path from 'node:path';
 import { ENGINES } from '../hub.js';

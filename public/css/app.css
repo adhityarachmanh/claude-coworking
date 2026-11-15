@@ -1371,7 +1371,7 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .devices .dev-badge.warn { color: var(--warn-text); }
 .devices li button { font-size: var(--fs-sm); padding: 4px 10px; flex: none; }
 /* A paired phone over Tailscale may open ⚙ (the dialog hides what needs this machine itself); plain WiFi may not. */
-body.read-only #btn-settings, body.remote-client .add-project, body.remote-client .local-only { display: none !important; }
+body.read-only #btn-settings, body.read-only .add-project, body.remote-client .local-only { display: none !important; }
 /* Phone on plain WiFi: read-only. Shortcuts that only fill the (disabled) composer are hidden; actions stay visible but disabled. */
 body.read-only .starters, body.read-only [data-msg-act="edit"], body.read-only [data-msg-act="resend"] { display: none !important; }
 body.read-only #prompt:disabled { cursor: not-allowed; opacity: .7; }
