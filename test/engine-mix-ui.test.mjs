@@ -253,7 +253,7 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
       await page.waitFor(appReady, { timeoutMs: 10000, message: 'app ready' });
       const calls = await page.eval(async () => {
         const { state } = await import('/js/core/state.js');
-        state.config = { ...state.config, opencode: { ...(state.config.opencode ?? {}), available: false } };
+        state.config = { ...state.config, engines: { ...(state.config.engines ?? {}), opencode: { ...(state.config.engines?.opencode ?? {}), available: false } } };
         let hits = 0;
         const real = window.fetch;
         window.fetch = (url, opts) => {
