@@ -250,7 +250,9 @@ test('execFileTree: a timeout stops the child and its grandchildren (the callbac
   const pid = Number(readFileSync(pidFile, 'utf8'));
   assert.ok(pid > 1, `a real grandchild pid was recorded (${pid})`);
   const alive = () => pidAlive(pid);
-  for (let i = 0; i < 50 && alive(); i++) await new Promise((r) => setTimeout(r, 100)); // taskkill is asynchronous
+  // taskkill/SIGTERM is asynchronous, and the SIGKILL escalation only comes 2 s after the timeout: 8 s of grace
+  // still fails when the tree is really left behind, but stops failing on a loaded runner that is a bit late.
+  for (let i = 0; i < 80 && alive(); i++) await new Promise((r) => setTimeout(r, 100));
   const left = alive();
   // Why a failure needs evidence: on POSIX a signal-0 probe also answers yes for a zombie (the process is dead but
   // its parent has not reaped it). The state/pgrp fields of /proc tell the two apart when this ever goes red.
@@ -286,7 +288,7 @@ test('execFileTree: a process that ignores SIGTERM is killed anyway (the group i
   assert.ok(Date.now() - started < 15_000, `callback after ${Date.now() - started} ms (the pipe must not wait for the process)`);
   const pid = Number(readFileSync(pidFile, 'utf8'));
   assert.ok(pid > 1, `a real grandchild pid was recorded (${pid})`);
-  for (let i = 0; i < 50 && pidAlive(pid); i++) await new Promise((r) => setTimeout(r, 100));
+  for (let i = 0; i < 80 && pidAlive(pid); i++) await new Promise((r) => setTimeout(r, 100));
   const left = pidAlive(pid);
   if (left) process.kill(pid); // never leave it behind, even when the assertion fails
   assert.equal(left, false, 'the stubborn grandchild was SIGKILLed with its group');
