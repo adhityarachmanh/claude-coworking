@@ -7741,11 +7741,14 @@ describeArea('UI HP lewat WiFi (hanya lihat)', { skip: SKIP ?? false }, () => {
         hint: document.querySelector('#composer-hint').textContent,
         approvalEnabled: [...document.querySelectorAll('.approval.pending button, .approval.pending input')].filter((b) => !b.disabled).length,
         approvalNote: document.querySelector('.approval.pending .ro-note')?.textContent ?? '',
+        // ⚙ is reachable from a paired phone over Tailscale, but never from plain WiFi (read-only is refused there).
+        settings: Boolean(document.querySelector('#btn-settings')?.getClientRects().length),
         // reads still go out: the UI checks them against the server's allowlist from the snapshot
         changesText: document.querySelector('#ch-files').textContent,
       };
     });
     assert.equal(ui.readOnly, true);
+    assert.equal(ui.settings, false, '⚙ tetap tersembunyi di WiFi biasa');
     assert.equal(ui.prompt, true, 'kotak pesan nonaktif');
     assert.equal(ui.placeholder, 'Hanya lihat lewat WiFi — pakai Tailscale untuk mengirim perintah');
     assert.deepEqual(ui.controls, [], 'tombol aksi yang masih aktif');
@@ -10448,6 +10451,134 @@ async function freezeConfig(page, patch) {
     };
   }, patch);
 }
+
+/**
+ * Rewrites the `client` block of the snapshot, so a page served on the laptop can act like a paired phone over
+ * Tailscale (or a WiFi phone). Only the fields given are replaced: `laptopOnly` and `readOnlyApi` still come from the
+ * real server, so the test exercises the list the app really ships. Must run before `openApp` (see freezeConfig).
+ */
+async function stubClient(page, patch) {
+  await page.initScript((frozen) => {
+    const Native = window.EventSource;
+    const rewrite = (type, raw) => {
+      try {
+        const data = JSON.parse(raw);
+        if (type !== 'snapshot' || !data.client) return raw;
+        return JSON.stringify({ ...data, client: { ...data.client, ...frozen } });
+      } catch {
+        return raw;
+      }
+    };
+    window.EventSource = class extends Native {
+      addEventListener(type, fn, opts) {
+        if (type !== 'snapshot' || typeof fn !== 'function') return super.addEventListener(type, fn, opts);
+        return super.addEventListener(
+          type,
+          (event) => fn.call(this, new MessageEvent(type, { data: rewrite(type, event.data), lastEventId: event.lastEventId, origin: event.origin })),
+          opts,
+        );
+      }
+    };
+  }, patch);
+}
+
+// ---------- a paired phone over Tailscale: the settings dialog is reachable, laptop-only controls are not ----------
+
+describeArea('UI HP lewat Tailscale (setelan dari HP)', { skip: SKIP ?? false }, () => {
+  let page;
+  before(async () => {
+    if (SKIP) return;
+    page = await browser.newPage();
+    await page.setViewport(VIEWPORTS[0]); // the real user: a phone
+  });
+  after(async () => page?.close());
+
+  test('⚙ terbuka dari HP; nyala otomatis, autologon, dan QR tautan WhatsApp dikunci dengan alasan', async () => {
+    // A paired phone on the https (Tailscale) listener: not read-only, but still not the laptop itself.
+    await stubClient(page, { local: false, secure: true, readOnly: false, accountAuth: true, push: null });
+    await openApp(page, '#demo');
+    await page.waitFor(() => document.body.classList.contains('remote-client'), { timeoutMs: 5000, message: 'halaman sadar ini HP' });
+    assert.equal(await page.eval(() => Boolean(document.querySelector('#btn-settings')?.getClientRects().length)), true, '⚙ terlihat di header HP Tailscale');
+
+    await tap(page, '#btn-settings');
+    await page.waitFor(() => !document.querySelector('#settings-modal').hidden, { timeoutMs: 3000, message: 'Setelan terbuka dari HP' });
+    await page.click('[data-settings-tab="sistem"]');
+    await settle(page, 'settings-modal');
+    const boot = await page.eval(() => ({
+      autostart: document.querySelector('#autostart-row').hidden,
+      autologon: document.querySelector('#autologon-card').hidden,
+      note: document.querySelector('#laptop-boot-note').hidden ? null : document.querySelector('#laptop-boot-note').textContent.trim(),
+      shutdown: document.querySelector('#btn-shutdown').hidden,
+      health: document.querySelector('#health-section').hidden,
+    }));
+    assert.deepEqual([boot.autostart, boot.autologon], [true, true], 'kontrol yang butuh izin Windows disembunyikan');
+    assert.match(boot.note ?? '', /hanya bisa diubah dari laptop/i, 'ada alasan yang terbaca, bukan ruang kosong');
+    assert.equal(boot.shutdown, false, '⏻ Matikan PC tetap tersedia dari HP (lewat Tailscale)');
+    assert.equal(boot.health, false, '🩺 Kesehatan sistem tetap tersedia dari HP');
+
+    // 📱 WhatsApp: the QR is a session credential (the server sends none to a phone); the pairing code works remotely.
+    await page.click('#wa-channel-wa');
+    await page.waitFor(() => !document.querySelector('#wa-panel').hidden, { timeoutMs: 2000, message: 'panel WhatsApp' });
+    const wa = await page.eval(() => ({
+      link: document.querySelector('#btn-wa-link').hidden,
+      qr: document.querySelector('#wa-qr').hidden,
+      qrSrc: Boolean(document.querySelector('#wa-qr').getAttribute('src')),
+      note: document.querySelector('#wa-link-note').hidden ? null : document.querySelector('#wa-link-note').textContent.trim(),
+      pair: document.querySelector('#btn-wa-pair').hidden,
+      phone: document.querySelector('#wa-phone').hidden,
+    }));
+    assert.equal(wa.link, true, 'tombol QR (Tautkan) tidak ditawarkan ke HP');
+    assert.equal(wa.qr, true, 'QR tidak ditampilkan');
+    assert.equal(wa.qrSrc, false, 'QR tidak pernah masuk DOM di HP');
+    assert.match(wa.note ?? '', /kode tautan/i, 'HP diarahkan ke kode tautan');
+    assert.deepEqual([wa.pair, wa.phone], [false, false], 'kode tautan tetap bisa diminta dari HP');
+    assert.deepEqual(realProblems(page), []);
+  });
+
+  test('aksi laptop-only tidak pernah meninggalkan HP (pesan jelas), admin biasa tetap jalan', async () => {
+    await page.eval(() => document.querySelector('#settings-modal') && (document.querySelector('#settings-modal').hidden = true));
+    const r = await page.eval(async () => {
+      const { api } = await import('/js/core/api.js');
+      const calls = [];
+      const orig = window.fetch;
+      window.fetch = (url, opts) => {
+        calls.push(String(url));
+        return orig(url, opts);
+      };
+      const attempt = async (path, body) => {
+        try {
+          await api(path, body);
+          return 'ok';
+        } catch (err) {
+          return err.message;
+        }
+      };
+      const out = {};
+      for (const [path, body] of [
+        ['/api/autostart', { enabled: true }],
+        ['/api/autologon', { password: 'salah' }],
+        ['/api/wa/link', {}],
+        ['/api/setup/install', { target: 'node' }],
+        ['/api/remote', { enabled: true }],
+        ['/api/projects/demo/open', { app: 'code' }],
+      ]) out[path] = await attempt(path, body);
+      // A normal remote-admin read still goes out: the gate must not turn the whole page into a museum.
+      let reads = 'ok';
+      try {
+        const status = await api('/api/wa/status', {});
+        reads = typeof status?.state === 'string' ? 'ok' : 'bentuk salah';
+      } catch (err) {
+        reads = err.message;
+      }
+      window.fetch = orig;
+      return { out, calls, reads };
+    });
+    for (const [path, message] of Object.entries(r.out)) assert.match(message, /hanya bisa diubah dari laptop/i, `${path}: ${message}`);
+    assert.deepEqual(r.calls, ['/api/wa/status'], 'tidak ada satu pun aksi laptop yang dikirim ke server');
+    assert.equal(r.reads, 'ok', 'status WhatsApp (admin remote) tetap bisa dibaca');
+    assert.deepEqual(realProblems(page), []);
+  });
+});
 
 for (const vp of VIEWPORTS) {
   describeArea(`UI Setelan PIN & akses terkunci — ${vp.name}`, { skip: SKIP ?? false }, () => {

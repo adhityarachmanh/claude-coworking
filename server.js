@@ -722,6 +722,16 @@ const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '
 // Changing saved permission rules (🛡️ Aturan izin) changes what Claude Code may do unasked: laptop only (phones may look).
 const LOCAL_ONLY_ACTION = /^\/api\/(projects\/[\w-]+\/(open|permissions-edit|mcp-add|session-import-json|checklist-scaffold|archive)|groups\/[\w-]+)$/;
 const LOCAL_ONLY_GROUP = /^\/api\/groups\/[\w-]+\/dissolve$/; // the update route above covers /api/groups/:id too
+/**
+ * The same laptop-only rule as JSON for the settings dialog (`client.laptopOnly`): a phone hides those controls
+ * instead of offering a button the server answers with 403. Built from the constants above, so a new laptop-only
+ * route reaches the UI without a second list to keep in sync. The laptop itself is never restricted — it ignores this
+ * (public/js/core/api.js), exactly like the server does.
+ */
+const LAPTOP_ONLY_API = {
+  paths: [...LOCAL_ONLY, '/api/remote'],
+  patterns: ['^/api/remote/', LOCAL_ONLY_ACTION.source, LOCAL_ONLY_GROUP.source],
+};
 const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+|js\/pair\.js)$/;
 
 // A TLS socket is never the laptop, even from loopback (e.g. someone puts `tailscale serve` in front of it):
@@ -875,7 +885,17 @@ function openStream(req, res, local, device = null, token = null) {
   // readOnlyApi: what a read-only phone may still call, so the UI doesn't keep its own copy of wifiAllows.
   const readOnly = isReadOnly(req);
   // secure: the https (Tailscale) origin. push: this phone's subscription state (https devices only, else null).
-  const client = { local, accountAuth: canManageAccount(req), readOnly, readOnlyApi: WIFI_READ_API, secure: isSecure(req), push: isSecure(req) ? push.clientInfo(device) : null };
+  // laptopOnly: the controls that need this machine itself (UAC, install, the WhatsApp QR): a phone hides them, and
+  // the page is reachable from that phone now that ⚙ is not laptop-only (public/js/core/stream.js).
+  const client = {
+    local,
+    accountAuth: canManageAccount(req),
+    readOnly,
+    readOnlyApi: WIFI_READ_API,
+    secure: isSecure(req),
+    push: isSecure(req) ? push.clientInfo(device) : null,
+    laptopOnly: LAPTOP_ONLY_API,
+  };
   const snap = { ...hub.snapshot(), account: account.publicState(), spotify: spotify.publicState() };
   // A snapshot key named like an event (config, spotify, …) gets that event's per-client view.
   for (const key of Object.keys(snap)) snap[key] = hub.viewFor(key, snap[key], readOnly);

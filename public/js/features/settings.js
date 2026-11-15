@@ -1,5 +1,5 @@
 // Help, laptop settings (auto-start, shutdown), project folders and adding a project.
-import { api, apiGet, toast } from '../core/api.js';
+import { api, apiGet, laptopBlocked, toast } from '../core/api.js';
 import { $ } from '../core/dom.js';
 import { APP_NAME, DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
@@ -198,21 +198,27 @@ function autostartMode() {
 function syncAutostartSection() {
   const status = autostartStatus();
   const supported = Boolean(status.supported);
+  // A paired phone over Tailscale may change the rest of this dialog, but these two ask Windows for permission on
+  // this machine and change how it logs in: laptop only (the server refuses them from every phone).
+  const laptop = laptopBlocked('/api/autostart');
   const row = $('#autostart-row');
-  if (row) row.hidden = !supported;
+  if (row) row.hidden = !supported || laptop;
   const box = $('#autostart');
   if (box) {
     box.checked = Boolean(status.enabled);
-    box.disabled = Boolean(state.readOnly);
+    box.disabled = Boolean(state.readOnly) || laptop;
     box.title = state.readOnly ? READ_ONLY_HINT : '';
   }
   const on = status.autologon === 'on';
   const card = $('#autologon-card');
-  if (card) card.hidden = !supported;
+  if (card) card.hidden = !supported || laptop;
+  // The one visible explanation on a phone, instead of two controls that silently disappear.
+  const note = $('#laptop-boot-note');
+  if (note) note.hidden = !(laptop && supported);
   const enable = $('#btn-autologon-enable');
   if (enable) {
     enable.hidden = on;
-    enable.disabled = autologonSaving || Boolean(state.readOnly);
+    enable.disabled = autologonSaving || Boolean(state.readOnly) || laptop;
     const label = autologonSaving ? '⏳ Meminta izin Windows…' : 'Aktifkan';
     if (enable.textContent !== label) enable.textContent = label;
     enable.title = state.readOnly ? READ_ONLY_HINT : '';
@@ -220,7 +226,7 @@ function syncAutostartSection() {
   const disable = $('#btn-autologon-disable');
   if (disable) {
     disable.hidden = !on;
-    disable.disabled = autologonSaving || Boolean(state.readOnly);
+    disable.disabled = autologonSaving || Boolean(state.readOnly) || laptop;
     disable.title = state.readOnly ? READ_ONLY_HINT : '';
   }
   const line = $('#autologon-status');
@@ -366,7 +372,7 @@ async function disableAutologon() {
   }
 }
 
-// ---------- 📱 PIN ke HP (GET /api/wa/status, POST /api/wa/link|unlink|test, laptop only) ----------
+// ---------- 📱 PIN ke HP (GET /api/wa/status, POST /api/wa/link|unlink|test; QR = laptop, kode tautan = HP) ----------
 
 const WA_POLL_MS = 2000; // one read every 2 s, and only while ⚙ is open with the phone not linked yet
 const WA_QR_MAX = 400_000; // a PNG data URL; anything longer is not a QR this card should render
@@ -398,8 +404,10 @@ function cleanWaStatus(raw) {
 
 /** One line under the channel choice; it follows both the choice and the real state. */
 function waHintText() {
+  const remote = laptopBlocked('/api/wa/link'); // a phone: the QR lives on the laptop, the pairing code does not
   if (waChannel === 'wa') {
-    return waStatus.state === 'linked' ? 'Nomor ini menerima kode masuk. Uji atau lepas kapan saja dari sini.' : 'Pindai kode sekali; sesinya disimpan terenkripsi di laptop ini.';
+    if (waStatus.state === 'linked') return 'Nomor ini menerima kode masuk. Uji atau lepas kapan saja dari sini.';
+    return remote ? 'Minta kode tautan di bawah, lalu ketik di WhatsApp HP ini → Perangkat tertaut → Tautkan dengan nomor telepon.' : 'Pindai kode sekali; sesinya disimpan terenkripsi di laptop ini.';
   }
   if (waStatus.state === 'linked') return 'WhatsApp sudah tertaut. Pilih opsi WhatsApp untuk menguji atau melepasnya.';
   if (waStatus.state === 'qr' || waStatus.state === 'connecting') return 'Tautan WhatsApp sedang disiapkan. Pilih opsi WhatsApp untuk melihat kodenya.';
@@ -410,6 +418,7 @@ function waHintText() {
 function paintWa() {
   const panel = $('#wa-panel');
   if (!panel) return;
+  const remote = laptopBlocked('/api/wa/link'); // QR is a session credential: laptop only, whatever the client asks
   panel.hidden = waChannel !== 'wa';
   const hint = $('#wa-hint');
   const hintText = waHintText();
@@ -421,9 +430,11 @@ function paintWa() {
     waState === 'linked'
       ? `Tertaut.${sinceText}`
       : waState === 'qr'
-        ? qr
-          ? 'Menunggu kode QR dipindai di HP.'
-          : 'Kode QR sedang diperbarui…'
+        ? remote
+          ? 'Menunggu kode QR dipindai di laptop.'
+          : qr
+            ? 'Menunggu kode QR dipindai di HP.'
+            : 'Kode QR sedang diperbarui…'
         : waState === 'connecting'
           ? 'Menghubungkan ke WhatsApp…'
           : 'Belum ditautkan.';
@@ -431,7 +442,7 @@ function paintWa() {
   if (stateEl && stateEl.textContent !== stateText) stateEl.textContent = stateText;
 
   const img = $('#wa-qr');
-  const showQr = waState === 'qr' && Boolean(qr);
+  const showQr = !remote && waState === 'qr' && Boolean(qr);
   if (img) {
     if (showQr && img.getAttribute('src') !== qr) img.src = qr;
     // The QR is a session credential: once it expires or the link is dropped it must leave the DOM, not just hide.
@@ -440,6 +451,8 @@ function paintWa() {
   }
   const qrHint = $('#wa-qr-hint');
   if (qrHint) qrHint.hidden = !showQr;
+  const linkNote = $('#wa-link-note');
+  if (linkNote) linkNote.hidden = !(remote && waState !== 'linked');
 
   const meEl = $('#wa-me');
   const meText = waState === 'linked' && me ? `Nomor: ${me.number}${me.name ? ` (${me.name})` : ''}` : '';
@@ -450,11 +463,11 @@ function paintWa() {
 
   const link = $('#btn-wa-link');
   if (link) {
-    link.hidden = waState === 'linked';
+    link.hidden = waState === 'linked' || remote;
     // connecting can also be a reconnect of an ALREADY linked account: pressing Batal there would silently unlink.
     const label = waState === 'qr' || (waState === 'connecting' && !me) ? 'Batal' : 'Tautkan';
     if (link.textContent !== label) link.textContent = label;
-    link.disabled = waBusy || Boolean(state.readOnly);
+    link.disabled = waBusy || Boolean(state.readOnly) || remote;
     link.title = state.readOnly ? READ_ONLY_HINT : '';
   }
   // No QR needed from a phone: the pairing code works remotely, so it is offered while the session is not linked.

@@ -906,11 +906,16 @@ test('phone access: off by default, pairing required, laptop-only settings, revo
     reader.cancel();
     return JSON.parse(text.match(/^data: (.*)$/m)[1]);
   })();
-  const { readOnlyApi, ...access } = phoneSnap.client;
+  const { readOnlyApi, laptopOnly: laptopOnlyApi, ...access } = phoneSnap.client;
   assert.deepEqual(access, { local: false, accountAuth: false, readOnly: true, secure: false, push: null });
   // the UI's guard uses the server's own allowlist from the snapshot (no copy of the rules in app code)
   assert.ok(readOnlyApi.paths.length && readOnlyApi.patterns.length, 'snapshot carries the read-only allowlist');
   const uiAllows = (p) => readOnlyApi.paths.includes(p) || readOnlyApi.patterns.some((source) => new RegExp(source).test(p));
+  // ...and the laptop-only list, so a phone hides those controls instead of offering a button that answers 403.
+  const uiLaptopOnly = (p) => laptopOnlyApi.paths.includes(p) || laptopOnlyApi.patterns.some((source) => new RegExp(source).test(p));
+  for (const p of ['/api/autostart', '/api/autologon', '/api/autologon/disable', '/api/wa/link', '/api/setup/install', '/api/cli-bridge/ask', '/api/pairing/code/push']) assert.ok(uiLaptopOnly(p), `${p} ditandai laptop-only`);
+  for (const p of ['/api/remote', '/api/remote/pairing', `/api/projects/${id}/open`, `/api/projects/${id}/permissions-edit`, '/api/groups/g1/dissolve', '/api/projects/x/archive']) assert.ok(uiLaptopOnly(p), `${p} ditandai laptop-only (pola)`);
+  for (const p of ['/api/config', '/api/wa/pair-code', '/api/wa/unlink', '/api/spotify/login', '/api/shutdown']) assert.ok(!uiLaptopOnly(p), `${p} bukan laptop-only (HP lewat Tailscale boleh)`);
   assert.equal((await snapshot()).client.readOnly, false, 'the laptop is never read-only');
   // privacy: sniffable WiFi never gets the paired devices list (names); the laptop's 📱 dialog does
   assert.deepEqual(phoneSnap.config.remote.devices, [], 'no paired device names over WiFi');

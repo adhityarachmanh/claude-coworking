@@ -21,4 +21,8 @@ export const state = {
 // A phone on plain-HTTP WiFi may only look (the server enforces it: wifiAllows in src/remote.js).
 export const READ_ONLY_HINT = 'Hanya lihat lewat WiFi — pakai Tailscale untuk mengirim perintah';
 
+// Some actions need the machine itself (an Administrator prompt, a local install, the WhatsApp QR). Even a phone on
+// Tailscale cannot do them: the server refuses, and the page hides their controls (api.js laptopBlocked).
+export const LAPTOP_ONLY_HINT = 'Hanya bisa diubah dari laptop, bukan dari HP';
+
 export const projectName = (id) => state.projects.find((p) => p.id === id)?.name ?? 'project';

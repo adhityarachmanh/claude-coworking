@@ -1,5 +1,5 @@
 // Talking to the server: JSON API calls (with the WiFi read-only guard) and toasts.
-import { auth, READ_ONLY_HINT, state } from './state.js';
+import { auth, LAPTOP_ONLY_HINT, READ_ONLY_HINT, state } from './state.js';
 
 // The server is the gate for a phone on plain WiFi (wifiAllows in src/remote.js). It sends that same allowlist in the
 // snapshot (`client.readOnlyApi`), so the UI never sends what would be refused, without keeping its own copy of the rules.
@@ -19,6 +19,26 @@ export function setReadOnlyApi(rules) {
 
 const readOnlyAllows = (path) => Boolean(readOnlyApi && (readOnlyApi.paths.includes(path) || readOnlyApi.patterns.some((re) => re.test(path))));
 
+// What only the machine itself may do (UAC, installs, opening a folder, the WhatsApp QR). The server sends its own list
+// in the snapshot (`client.laptopOnly`) so a phone hides those controls instead of offering a button that answers 403.
+// The laptop ignores it: the server never gates the laptop either.
+let laptopOnly = null; // { paths: string[], patterns: RegExp[] }
+
+/** Takes the laptop-only list from the snapshot. Anything malformed blocks nothing extra (the server still refuses). */
+export function setLaptopOnly(rules) {
+  try {
+    laptopOnly = {
+      paths: Array.isArray(rules?.paths) ? rules.paths.filter((p) => typeof p === 'string') : [],
+      patterns: Array.isArray(rules?.patterns) ? rules.patterns.filter((p) => typeof p === 'string').map((source) => new RegExp(source)) : [],
+    };
+  } catch {
+    laptopOnly = null; // a pattern that doesn't compile
+  }
+}
+
+/** True on a phone for a path only the laptop may call (`state.local === false`: the snapshot said so). */
+export const laptopBlocked = (path) => state.local === false && Boolean(laptopOnly && (laptopOnly.paths.includes(path) || laptopOnly.patterns.some((re) => re.test(path))));
+
 /** Whether this page may call `path` at all (false only for a read-only phone on WiFi and a path off its allowlist). */
 export const canCall = (path) => !state.readOnly || readOnlyAllows(path);
 
@@ -35,6 +55,7 @@ function apiError(res, data) {
  * A refused call throws an Error carrying `status` and the server's JSON (`data`: e.g. `code`, `retryAfter`).
  */
 export async function api(path, body = {}, { raw = false } = {}) {
+  if (laptopBlocked(path)) throw new Error(LAPTOP_ONLY_HINT);
   if (!canCall(path)) throw new Error(`${READ_ONLY_HINT}.`);
   const res = await fetch(path, {
     method: 'POST',
@@ -52,6 +73,7 @@ export async function api(path, body = {}, { raw = false } = {}) {
  * as `api()`: a read-only phone is stopped here exactly like the POSTs are.
  */
 export async function apiGet(path) {
+  if (laptopBlocked(path)) throw new Error(LAPTOP_ONLY_HINT);
   if (!canCall(path)) throw new Error(`${READ_ONLY_HINT}.`);
   const res = await fetch(path, { headers: { 'X-Office-Token': auth.token } });
   const data = await res.json().catch(() => ({}));

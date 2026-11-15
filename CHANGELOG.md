@@ -10,6 +10,7 @@ dan belum diberi nomor versi.
 - **🔐 Modal "Akses saat PC terkunci" menjelaskan bahwa yang diminta adalah sandi akun, bukan PIN.** Untuk akun Microsoft, sandinya adalah sandi akun Microsoft — bukan PIN Windows Hello yang dipakai sehari-hari. Ditambah petunjuk reset sandi, karena inilah kebingungan yang paling sering muncul saat mengaktifkan mode ini.
 - **📁 ⚙ → Sistem menunjukkan folder data server yang sedang dipakai.** Aplikasi terpasang dan salinan dev memakai folder berbeda; sesi WhatsApp (dan setelan) mengikuti folder itu, jadi "harus tautkan ulang" biasanya berarti sedang membuka server yang lain.
 - **⏳ Kode tautan WhatsApp menampilkan masa berlakunya** ("berlaku sampai HH:MM"), dan status *Tertaut* kini menyebut sejak kapan sesi itu ada.
+- **⚙ Setelan bisa dibuka dari HP yang terpasang lewat Tailscale.** Sebelumnya tombol ⚙ hanya muncul di laptop, jadi lewat HP tidak ada jalan masuk ke setelan sama sekali walau servernya sudah menerima. Sekarang ⚙ tersedia di HP (Tailscale HTTPS); kontrol yang menuntut mesin ini sendiri — nyala otomatis, akses saat PC terkunci, tautan QR WhatsApp, dan pemasangan/login Persiapan — disembunyikan dengan penjelasan, dan permintaannya tidak pernah dikirim dari HP (server tetap menolak). HP di WiFi biasa tetap hanya-lihat: ⚙ tidak muncul.
 
 ## 1.0.39
 

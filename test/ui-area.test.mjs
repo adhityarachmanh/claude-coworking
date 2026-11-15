@@ -65,16 +65,17 @@ test('a filter that matches nothing is a failure, never a green run', () => {
 
 test('every block of the UI suite stays selectable (none was dropped while wiring describeArea)', () => {
   const names = blocks();
-  assert.equal(names.length, 11, `blok describeArea: ${names.length} (5 blok × 2 viewport + CSP)`);
+  assert.equal(names.length, 12, `blok describeArea: ${names.length} (6 blok templat viewport + 6 blok tunggal)`);
   // Every original block must still be declared through describeArea: no leftover `describe(` that a filter can't
   // see, and each substring documented in docs/uji-ui.md is really present in a block name.
   const DOCS = readFileSync(path.join(APP, 'docs', 'uji-ui.md'), 'utf8');
-  for (const needle of ['UI ${vp.name}', 'Ringkas konteks', 'CSP', 'HP lewat WiFi', 'chat live', 'koneksi putus',
-    'palet perintah', 'notifikasi', 'perintah tier', 'Semua project', 'Setelan PIN']) {
+  for (const needle of ['UI ${vp.name}', 'Ringkas konteks', 'CSP', 'HP lewat WiFi', 'HP lewat Tailscale', 'chat live',
+    'koneksi putus', 'palet perintah', 'notifikasi', 'perintah tier', 'Semua project', 'Setelan PIN']) {
     assert.ok(names.some((n) => n.includes(needle)), `blok "${needle}" masih ada`);
   }
   for (const documented of ['UI mobile 390x844', 'UI desktop 1440x900', 'UI Ringkas konteks', 'CSP', 'UI HP lewat WiFi',
-    'UI chat live', 'UI koneksi putus', 'UI palet perintah', 'UI notifikasi', 'UI perintah tier', 'Semua project', 'Setelan PIN']) {
+    'UI HP lewat Tailscale', 'UI chat live', 'UI koneksi putus', 'UI palet perintah', 'UI notifikasi', 'UI perintah tier',
+    'Semua project', 'Setelan PIN']) {
     assert.ok(DOCS.includes(documented), `docs/uji-ui.md menyebut "${documented}"`);
   }
   assert.ok(!/^ {0,2}describe\(/m.test(SUITE), 'tidak ada describe(...) yang terlewat dari describeArea');
@@ -83,7 +84,7 @@ test('every block of the UI suite stays selectable (none was dropped while wirin
 test('block names are known before a child starts: a typo fails without booting a server', () => {
   const names = blockNamesOf(SUITE);
   // Every documented argument must be recognised by the pre-check, including the viewport-templated ones.
-  for (const area of ['UI mobile 390x844', 'UI desktop 1440x900', 'UI Ringkas konteks', 'CSP', 'UI Setelan PIN', 'Setelan PIN']) {
+  for (const area of ['UI mobile 390x844', 'UI desktop 1440x900', 'UI Ringkas konteks', 'CSP', 'UI Setelan PIN', 'Setelan PIN', 'UI HP lewat Tailscale']) {
     assert.ok(filterMatches(area, names), `filter "${area}" dikenali`);
   }
   // A name that is only a test title, or a typo, is not a block.

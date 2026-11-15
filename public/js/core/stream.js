@@ -31,7 +31,7 @@ import { noteLiveMessage, setStuckOnline } from '../features/stuck.js';
 import { applyNames } from '../features/team.js';
 import { applyTeamNames, roleName } from '../office/cast.js';
 import { updateTitle } from '../ui/layout.js';
-import { setReadOnlyApi } from './api.js';
+import { setLaptopOnly, setReadOnlyApi } from './api.js';
 import { $ } from './dom.js';
 import { startStreamShare } from './stream-share.js';
 import { brain, scenes } from './scenes.js';
@@ -76,17 +76,20 @@ const handlers = {
     }
   },
   snapshot(snap) {
-    // Opened from a paired phone: laptop-only settings are hidden (the server refuses them anyway).
+    // Opened from a paired phone: ⚙ is reachable over Tailscale, but the controls that need this machine are hidden
+    // (the server refuses them anyway: LOCAL_ONLY in server.js).
     state.local = snap.client?.local !== false;
     state.accountAuth = snap.client?.accountAuth ?? state.local; // laptop, or a phone over Tailscale
     state.readOnly = snap.client?.readOnly === true; // a phone on plain WiFi: look, don't act
     state.secure = snap.client?.secure === true; // the https (Tailscale) origin
     state.push = snap.client?.push ?? null; // https: this device's subscription as the server knows it
     setReadOnlyApi(snap.client?.readOnlyApi); // what such a phone may still call: the server's own list
+    setLaptopOnly(snap.client?.laptopOnly); // what only the laptop may do: hidden on a phone, same list as the server
     document.body.classList.toggle('remote-client', !state.local);
     document.body.classList.toggle('read-only', state.readOnly);
     $('#btn-phone').hidden = !state.local;
-    $('#btn-settings').hidden = !state.local;
+    // ⚙ changes server settings, so a paired phone over Tailscale may open it; plain WiFi (read-only) still may not.
+    $('#btn-settings').hidden = !(state.local || (state.secure && !state.readOnly));
     state.account = snap.account ?? null;
     renderRoots(snap.config);
     applyTeamNames(snap.config?.teamNames); // before the first render, so nothing shows the old names

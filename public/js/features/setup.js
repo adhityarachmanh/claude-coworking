@@ -1,7 +1,7 @@
 // 🧰 Persiapan (⚙ → Sistem, and once on a fresh install): Node.js, Claude Code, OpenCode and Tailscale in one
 // place. The server (src/setup/service.js) installs into its own per-user runtime; this screen only shows state,
 // asks before acting, and never sends a URL, package name or path - just one allowlisted target id.
-import { api, toast } from '../core/api.js';
+import { api, laptopBlocked, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { setupSummary, normalizeSetup, itemView, shouldAutoOpen } from '../core/setup-view.js';
 import { state } from '../core/state.js';
@@ -11,6 +11,8 @@ const SEEN_KEY = 'office.setupSeen';
 const up = { view: null, busy: false };
 
 const isLocal = () => state.local !== false;
+/** Status/refresh: the laptop or a paired phone over Tailscale. Installs and login terminals stay laptop-only. */
+const mayProbe = () => isLocal() || (Boolean(state.secure) && !state.readOnly);
 const seen = () => {
   try {
     return localStorage.getItem(SEEN_KEY) === '1';
@@ -72,14 +74,16 @@ function render() {
   if (note) {
     note.textContent = !view.supported
       ? 'Pemasangan satu-klik baru tersedia di Windows. Di macOS/Linux, pasang Node.js dan CLI lewat terminal; status di bawah tetap membantu.'
-      : state.readOnly
-        ? 'Hanya lihat lewat WiFi. Pemasangan dan login hanya dari laptop atau lewat Tailscale.'
-        : 'Adhitron memasang Node.js dan CLI ke folder miliknya sendiri (tanpa admin, tanpa mengubah PATH sistem). Tidak ada yang dipasang tanpa persetujuanmu.';
+      : !isLocal()
+        ? 'Dari HP: pemasangan dan login hanya bisa dilakukan di laptop. Status di bawah tetap bisa diperiksa dari sini.'
+        : state.readOnly
+          ? 'Hanya lihat lewat WiFi. Pemasangan dan login hanya dari laptop atau lewat Tailscale.'
+          : 'Adhitron memasang Node.js dan CLI ke folder miliknya sendiri (tanpa admin, tanpa mengubah PATH sistem). Tidak ada yang dipasang tanpa persetujuanmu.';
   }
   const cancel = $('#setup-cancel');
   if (cancel) cancel.disabled = !view.job || view.job.state !== 'running' || !view.job.cancellable;
   const refresh = $('#setup-refresh');
-  if (refresh) refresh.disabled = view.probing || view.busy || !isLocal() || state.readOnly;
+  if (refresh) refresh.disabled = view.probing || view.busy || !mayProbe();
 }
 
 function open() {
@@ -110,7 +114,8 @@ export function applySetup(view) {
 }
 
 async function action(path, body, okMessage) {
-  if (up.busy || state.readOnly || !isLocal()) return;
+  // `laptopBlocked`: install/cancel/login-terminal are refused for every phone; refresh/status are not.
+  if (up.busy || state.readOnly || !mayProbe() || laptopBlocked(path)) return;
   up.busy = true;
   render();
   try {
@@ -127,7 +132,7 @@ async function action(path, body, okMessage) {
 
 export function initSetup() {
   $('#setup-open')?.addEventListener('click', () => {
-    if (!isLocal()) return toast('Persiapan hanya bisa dibuka dari laptop atau lewat Tailscale.');
+    if (!mayProbe()) return toast('Persiapan hanya bisa dibuka dari laptop atau lewat Tailscale.');
     open();
   });
   $('#setup-refresh')?.addEventListener('click', () => action('/api/setup/refresh', {}, null));

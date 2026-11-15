@@ -38,7 +38,8 @@ Argumen dicocokkan sebagai **substring** nama `describe`, jadi pakai potongan ya
 | `UI mobile 390x844`, `UI desktop 1440x900` | audit utama: beranda, semua modal, kontras, aksesibilitas, laporan, sesi |
 | `UI Ringkas konteks` | 🧹 Ringkas konteks |
 | `CSP` | laporan cetak di bawah Content-Security-Policy |
-| `UI HP lewat WiFi` | HP hanya-lihat lewat WiFi |
+| `UI HP lewat WiFi` | HP hanya-lihat lewat WiFi (⚙ tidak bisa dibuka) |
+| `UI HP lewat Tailscale` | HP terpasang lewat Tailscale: ⚙ terbuka, kontrol khusus laptop disembunyikan |
 | `UI chat live` | gelembung chat yang tetap terisi |
 | `UI koneksi putus` | server berhenti lalu kembali (**paling lambat**: me-restart server) |
 | `UI palet perintah` | Ctrl+P, 🔎 cari percakapan, ⬇ ekspor .md |

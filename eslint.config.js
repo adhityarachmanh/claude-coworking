@@ -37,7 +37,6 @@ const sharedGlobals = {
   Event: 'readonly',
   EventTarget: 'readonly',
   CustomEvent: 'readonly',
-  MessageEvent: 'readonly',
   MessageChannel: 'readonly',
   BroadcastChannel: 'readonly',
   WebSocket: 'readonly',
@@ -87,6 +86,7 @@ const browserGlobals = {
   innerHeight: 'readonly',
   scrollTo: 'readonly',
   EventSource: 'readonly',
+  MessageEvent: 'readonly', // core/stream.js builds a rewritten config/snapshot event (tests freeze fields the same way)
   Notification: 'readonly',
   Audio: 'readonly',
   AudioContext: 'readonly',

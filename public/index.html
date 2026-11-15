@@ -1168,6 +1168,9 @@
             </div>
           </section>
           <hr id="oc-section-sep" hidden />
+          <!-- Sebuah HP lewat Tailscale boleh mengubah setelan di tab ini, kecuali yang menuntut mesin ini sendiri:
+               UAC (nyala otomatis/autologon). Catatan ini menggantikan dua kontrol itu, bukan menyisakan ruang kosong. -->
+          <p id="laptop-boot-note" class="muted small" hidden>🔒 Nyalakan otomatis dan akses saat PC terkunci hanya bisa diubah dari laptop: keduanya meminta izin Administrator di mesin ini.</p>
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
           <!-- 🔐 Akses saat PC terkunci (features/settings.js, server POST /api/autologon(+ /disable)): satu tombol,
                satu izin Administrator. Tidak ada langkah terminal, tidak ada nama berkas bantu di UI. -->
@@ -1194,6 +1197,8 @@
             <p id="wa-hint" class="muted small">Tanpa setup: saat HP meminta masuk, kode 6 digit tampil di layar laptop.</p>
             <div id="wa-panel" class="wa-panel" hidden>
               <p id="wa-state" class="muted small" role="status" aria-live="polite">Memeriksa WhatsApp…</p>
+              <!-- QR is a session credential: it only exists on the laptop. A phone links with the pairing code below. -->
+              <p id="wa-link-note" class="muted small" hidden>Tautan lewat kode QR hanya bisa dibuat dari laptop. Dari HP, minta kode tautan di bawah lalu ketik di WhatsApp → Perangkat tertaut → Tautkan dengan nomor telepon.</p>
               <img id="wa-qr" alt="Kode QR untuk menautkan WhatsApp ke Adhitron" width="240" height="240" hidden />
               <p id="wa-qr-hint" class="muted small" hidden>WhatsApp → Perangkat tertaut → Tautkan perangkat, lalu pindai kode ini.</p>
               <p id="wa-me" class="muted small" hidden></p>
