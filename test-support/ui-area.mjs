@@ -14,8 +14,12 @@
 // The runner prints one line when a child starts and a heartbeat every 30 s while it runs: the suite is silent for
 // minutes at a time (server start, browser launch, a long block), and silence must not look like a hung command.
 //
-// A filter that matches nothing makes the child report "tests 0", which is printed as GAGAL: a typo must not look
-// green. A child that never exits is killed after UI_AREA_TIMEOUT_MS (default 30 minutes) and reported as GAGAL.
+// A filter that matches nothing must never look green: the suite itself fails a named test for it (see below), and a
+// child that still reports "tests 0" is printed as GAGAL too. A child that never exits is killed after
+// UI_AREA_TIMEOUT_MS (default 30 minutes) and reported as GAGAL.
+// A selected-but-empty filter is caught inside the suite (`checkUiSelection` at the end of test/ui.test.mjs), which
+// fails a named test instead of letting the runner pass with zero tests: `--test-force-exit` would exit faster but
+// Node 26 then runs out of memory on this file, so the guard is in the suite, not in the flags.
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

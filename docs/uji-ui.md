@@ -5,21 +5,28 @@ harian, jalankan **hanya blok yang tersentuh** dengan `npm run test:ui:area`. Te
 tidak ada test yang disalin, diubah, atau dihapus.
 
 ```powershell
-npm run test:ui:area -- "settings: WhatsApp card"     # satu test
-npm run test:ui:area -- settings                      # semua blok yang namanya memuat "settings"
-npm run test:ui:area -- settings compact              # beberapa blok
+npm run test:ui:area -- "UI Setelan PIN"      # semua blok yang namanya memuat "UI Setelan PIN"
+npm run test:ui:area -- "UI notifikasi"       # satu blok
+npm run test:ui:area -- "UI chat live" "CSP"  # beberapa blok
 ```
+
+Argumen dicocokkan dengan **nama blok `describe`**, bukan nama test di dalamnya. Filter yang tidak cocok dengan blok
+mana pun **gagal dalam hitungan detik** dengan pesan yang menyebut filternya (dulu filter seperti itu memulai
+server+browser untuk nol test lalu menggantung).
 
 ## Cara kerjanya
 
 - `test-support/ui-area.mjs` menjalankan `test/ui.test.mjs` satu kali per argumen, dengan `UI_ONLY` diisi argumen itu
-  dan `--test-name-pattern` yang sama (untuk argumen yang tidak cocok dengan test mana pun, node melaporkan
-  `tests 0`).
+  dan `--test-name-pattern` yang sama, plus batas waktu per child (`UI_AREA_TIMEOUT_MS`, bawaan 30 menit).
 - Di suite, `describeArea(...)` (`test-support/ui-area-select.mjs`) **melewati blok** yang namanya tidak memuat
-  `UI_ONLY`, jadi server, browser, dan halaman blok itu tidak ikut disiapkan.
+  `UI_ONLY`, jadi server, browser, dan halaman blok itu tidak ikut disiapkan. Kalau tidak ada blok yang cocok,
+  `checkUiSelection()` di akhir suite membuat **satu test gagal** bernama filter itu — bukan "tests 0" yang bisa
+  terbaca hijau.
 - Satu proses per argumen: server, browser, dan halaman dibagi bersama dan satu halaman dipakai ulang per viewport,
   sehingga dua blok asing dalam satu proses **lebih lambat** daripada dijalankan berurutan.
 - Tanpa `UI_ONLY` (yaitu `npm run test:ui` dan `npm run test`), semua blok berjalan seperti biasa.
+- `startServer()` menyerah setelah 90 detik (`OFFICE_UI_START_TIMEOUT_MS`) dan mencetak stderr server: server yang
+  tidak pernah siap membuat run **gagal**, tidak menggantung.
 
 ## Blok yang bisa dipilih
 
@@ -44,5 +51,6 @@ Argumen dicocokkan sebagai **substring** nama `describe`, jadi pakai potongan ya
 - Selama mengembangkan satu fitur: `test:ui:area` untuk bloknya, ditambah `npm run test:fast`.
 - Mengubah `public/index.html`, `public/css/`, `public/js/core/`, atau `server.js`: blok audit utama ikut jalankan.
 - Sebelum rilis / PR besar: `npm run test:ui` (semua blok).
-- Argumen yang tidak cocok dengan blok mana pun dilaporkan **GAGAL "tanpa test"**, bukan lulus — salah eja nama tidak
-  boleh terlihat hijau.
+- Argumen yang tidak cocok dengan blok mana pun dilaporkan **GAGAL** dengan pesan yang menyebut filternya, bukan
+  lulus — salah eja nama tidak boleh terlihat hijau. Daftar nama blok yang benar ada di tabel di atas (atau
+  `npm run test:related` akan menyarankan blok yang menyentuh file yang kamu ubah).

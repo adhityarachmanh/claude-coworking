@@ -10,7 +10,7 @@ Browser / HP ──HTTP(S) + SSE──▶ server.js ──stdin/stdout (stream-j
 
 Server menjalankan Claude Code milikmu sendiri dalam mode headless, jadi login, settings, MCP, dan `CLAUDE.md` tiap project tetap terpakai. Tidak perlu API key. Cukup Node.js ≥ 20; dependensi npm hanya untuk WhatsApp (sesi WhatsApp + pembuat QR), dan semuanya ikut dibundel saat build.
 
-Panduan harian yang lebih santai: [docs/PANDUAN.md](docs/PANDUAN.md). Detail tiap fitur: [docs/FITUR.md](docs/FITUR.md). WhatsApp untuk PIN pairing: [docs/pairing-whatsapp.md](docs/pairing-whatsapp.md). Riwayat perubahan: [CHANGELOG.md](CHANGELOG.md).
+Panduan harian yang lebih santai: [docs/PANDUAN.md](docs/PANDUAN.md). Detail tiap fitur: [docs/FITUR.md](docs/FITUR.md). WhatsApp untuk PIN pairing: [docs/pairing-whatsapp.md](docs/pairing-whatsapp.md). Riwayat perubahan: [CHANGELOG.md](CHANGELOG.md). Kontribusi dan kerja dengan agen AI: mulai dari [AGENTS.md](AGENTS.md) dan [docs/PENGEMBANGAN.md](docs/PENGEMBANGAN.md).
 
 > **Kompatibilitas nama lama.** Nama tampilan aplikasi kini **Adhitron** (sebelumnya *Adhit Office*, dan sebelum itu *Claude Coworking*). Nama internal sengaja tidak diganti supaya data dan auto-start yang sudah terpasang tetap jalan: repo `claude-coworking`, folder data `%LOCALAPPDATA%\AdhitOffice` (Windows), `~/Library/Application Support/AdhitOffice` (macOS), `~/.local/share/adhit-office` (Linux), env `OFFICE_*`, backup `adhit-office-backup*.zip`, serta `claude-coworking.vbs`, task Task Scheduler `Claude Coworking`, dan rule firewall `Claude Coworking (Tailscale)`.
 
@@ -354,7 +354,9 @@ Untuk detail lengkap, jalankan `npm run test:claude` (23 cek terhadap Claude Cod
 ## Test & pengembangan
 
 ```bash
+npm run check        # gerbang cepat sehari-hari: ESLint + test:fast (±30 dtk)
 npm run test:fast    # harian: hanya logika murni, tanpa browser/server (~35 dtk, 500+ test)
+npm run test:related -- src/wa-link.js   # hanya test yang menyentuh file yang kamu ubah
 npm run test:smoke   # gerbang rilis: 10 file integrasi (server, izin, antrian, backup, CLI bridge, autopair tailnet, shell OpenCode) (~1–2 mnt)
 npm run test:unit    # semua test tanpa browser (termasuk server sungguhan + Claude palsu)
 npm run test:ui      # test browser per file; yang gagal diulang sekali dan dilaporkan FLAKY
@@ -366,6 +368,8 @@ npm run lint         # ESLint versi terkunci (diambil lewat npm exec)
 ```
 
 `test:fast` memilih otomatis file yang tidak mengimpor browser (`test-support/cdp.mjs`) atau memulai server/proses, jadi aman dijalankan setiap kali menyimpan. Untuk perubahan yang menyentuh server, backup, antrian, atau mesin project, jalankan `npm run test:smoke` atau file test terkait saja, misalnya `node --test --test-concurrency=1 test/engine-per-project.test.mjs`.
+
+Panduan kerja lengkap ada di [docs/PENGEMBANGAN.md](docs/PENGEMBANGAN.md) (alur, arsitektur, menambah rute/fitur/test, debugging, rilis); ringkasannya untuk agen AI di [AGENTS.md](AGENTS.md).
 
 Untuk UI, `npm run test:ui:area -- "<nama blok>"` menjalankan hanya blok `test/ui.test.mjs` yang dipilih (mis. `settings`), tanpa menyiapkan server/browser blok lain — test yang sama, tanpa perubahan; daftar blok dan aturan kapan memakai yang mana ada di [docs/uji-ui.md](docs/uji-ui.md).
 

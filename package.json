@@ -20,6 +20,8 @@
     "build:mac": "node scripts/build-macos.mjs",
     "build:electron": "electron-builder --win --dir --config desktop/electron-builder.yml",
     "test": "node --test --test-concurrency=1",
+    "check": "npm run lint && npm run test:fast",
+    "test:related": "node test-support/related-tests.mjs",
     "test:fast": "node test-support/ci-tests.mjs fast",
     "test:smoke": "node test-support/ci-tests.mjs smoke",
     "test:unit": "node test-support/ci-tests.mjs unit",

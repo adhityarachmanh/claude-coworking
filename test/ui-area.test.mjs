@@ -34,7 +34,7 @@ test('a filtered child also gets UI_ONLY, so unselected blocks never start their
   assert.match(RUNNER, /env: \{ \.\.\.process\.env, UI_ONLY: area,/, 'UI_ONLY diisi filter yang sama');
   assert.match(SELECT, /process\.env\.UI_ONLY/, 'describeArea membaca UI_ONLY');
   assert.match(SELECT, /if \(!uiSelected\(name\)\) return;/, 'blok yang tidak dipilih tidak didaftarkan sama sekali');
-  assert.match(SUITE, /import \{ describeArea \} from '\.\.\/test-support\/ui-area-select\.mjs';/);
+  assert.match(SUITE, /import \{ describeArea[^}]*\} from '\.\.\/test-support\/ui-area-select\.mjs';/);
 });
 
 test('without UI_ONLY every block runs exactly as before', () => {
@@ -52,6 +52,12 @@ test('a filter that matches nothing is a failure, never a green run', () => {
   assert.match(RUNNER, /UI_AREA_TIMEOUT_MS/, 'batas waktu bisa dinaikkan lewat env');
   assert.match(RUNNER, /timedOut = true;\s*child\.kill\(\);/, 'child yang lewat batas waktu dihentikan');
   assert.match(RUNNER, /if \(timedOut\) \{[\s\S]{0,300}failed\.push\(area\)/, 'lewat batas waktu = GAGAL');
+  // A filter that matches no block used to start a server and a browser for zero tests and then hang on their
+  // handles; the suite now fails a named test instead, which the runner reports as GAGAL in a couple of seconds.
+  assert.match(SELECT, /export function checkUiSelection\(\)/, 'penjaga filter kosong ada di select');
+  assert.match(SELECT, /selected > 0\) return;/, 'tanpa filter (atau ada blok terpilih) penjaga diam');
+  assert.match(SELECT, /assert\.fail\(/, 'filter kosong menghasilkan kegagalan yang menyebut filternya');
+  assert.match(SUITE, /\ncheckUiSelection\(\);\s*$/, 'suite memanggil penjaga sebagai pernyataan terakhir');
 });
 
 test('every block of the UI suite stays selectable (none was dropped while wiring describeArea)', () => {

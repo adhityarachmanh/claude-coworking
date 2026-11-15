@@ -8,7 +8,7 @@ import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { describeArea } from '../test-support/ui-area-select.mjs';
+import { describeArea, checkUiSelection } from '../test-support/ui-area-select.mjs';
 import { fileURLToPath } from 'node:url';
 import { cdpUnavailableReason, launchBrowser } from '../test-support/cdp.mjs';
 import { lanAddresses } from '../src/remote.js';
@@ -81,6 +81,10 @@ async function snapshot() {
   return JSON.parse(text.match(/^data: (.*)$/m)[1]);
 }
 
+// A server that never prints its ready line must fail the run, not hang it: a hung file burns the whole CI budget
+// and (before this timeout) left orphan servers behind on every interrupted attempt.
+const START_TIMEOUT_MS = Number(process.env.OFFICE_UI_START_TIMEOUT_MS ?? 90_000);
+
 /** Starts the server on PORT with the throwaway data in TMP (again after stopServer: same data, a new token). */
 async function startServer() {
   server = spawn(process.execPath, [path.join(APP, 'server.js')], {
@@ -102,11 +106,26 @@ async function startServer() {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  await new Promise((resolve, reject) => {
-    server.stdout.on('data', (d) => String(d).includes('berjalan di') && resolve());
-    server.on('exit', (code) => reject(new Error(`server exited ${code}`)));
+  let stderr = '';
+  server.stderr.on('data', (d) => {
+    stderr = (stderr + String(d)).slice(-4000);
   });
-  server.stderr.resume();
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      server.kill();
+      reject(new Error(`server tidak siap dalam ${START_TIMEOUT_MS / 1000} dtk: stdout "berjalan di" tidak muncul.\nstderr:\n${stderr || '(kosong)'}`));
+    }, START_TIMEOUT_MS);
+    timer.unref();
+    server.stdout.on('data', (d) => {
+      if (!String(d).includes('berjalan di')) return;
+      clearTimeout(timer);
+      resolve();
+    });
+    server.on('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`server exited ${code}\nstderr:\n${stderr || '(kosong)'}`));
+    });
+  });
 }
 
 async function stopServer() {
@@ -10592,3 +10611,6 @@ for (const vp of VIEWPORTS) {
     });
   });
 }
+
+// Last statement: a `test:ui:area` filter that matched no block must fail visibly instead of running zero tests.
+checkUiSelection();
