@@ -39,6 +39,9 @@ const LOCK_TASK = 'Adhitron Lock';
 const LEGACY_LOCK_FILE = 'adhitron-lock.vbs';
 const WINLOGON_KEY = 'HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon';
 const QUIET = { stdio: 'ignore', windowsHide: true };
+// `schtasks` explains its refusals on stderr ("ERROR: Access is denied."); with stdio ignored that reason is lost and
+// the UI can only say "Task Scheduler menolak". Capture it so the message names the real cause.
+const CAPTURE = { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] };
 
 /**
  * Everything the module touches the outside world with, injectable for tests:
@@ -111,7 +114,7 @@ function lockTaskExists(exec) {
  */
 function runSchtasks(exec, args, action) {
   try {
-    exec('schtasks', args, QUIET);
+    exec('schtasks', args, CAPTURE);
   } catch (err) {
     const detail = String(err?.stderr || err?.stdout || '').trim().split(/\r?\n/)[0] ?? '';
     const error = new Error(`Task Scheduler menolak ${action}${detail ? `: ${detail.slice(0, 200)}` : ''}`);
@@ -399,7 +402,11 @@ export function setAutostart(enabled, appDir, port = 4317, options = {}) {
   if (mode === 'boot') {
     // Lock first: from here on every logon locks the screen. The registry itself is written later, by the
     // elevated helper (POST /api/autologon), which refuses to run without this task.
-    installLockTask(port, options);
+    //
+    // Only when it is missing: the elevated helper already installed (and verified the owner of) this task, and on
+    // machines where `schtasks /Create /XML` needs Administrator a second, non-elevated attempt is refused with
+    // "Access is denied" — which used to abort boot mode even though the screen was already locking.
+    if (!lockTaskExists(ctx.exec)) installLockTask(port, options);
   } else if (!pinned) {
     // Autologon is off: a lock on every logon would only lock a desktop the user just unlocked by hand.
     removeLockTask(options);

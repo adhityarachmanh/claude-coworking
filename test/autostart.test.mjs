@@ -296,6 +296,18 @@ test('autologon dimatikan (REG_SZ 0): semua berkas khusus boot dibersihkan lagi'
   assert.ok(!box.tasks.has(LOCK_TASK), 'autologon mati: task pengunci dilepas');
 });
 
+test('boot mode does not re-create a lock task that is already installed', () => {
+  // The elevated helper installs (and verifies) the lock task; a second, non-elevated /Create is refused on machines
+  // where schtasks needs Administrator ("Access is denied"). The existing task is enough: keep going.
+  const box = sandbox({ autologon: 'on', lockTask: true });
+  const status = setAutostart(true, box.appDir, 4317, { ...box.options, mode: 'boot' });
+
+  assert.equal(creates(box, LOCK_TASK).length, 0, 'task pengunci yang sudah ada tidak dipasang ulang');
+  assert.equal(creates(box, WATCHDOG).length, 1, 'penjaga 5 menit tetap dipasang');
+  assert.equal(status.mode, 'boot');
+  assert.equal(status.unsafeDesktop, false, 'layar tetap terkunci: task-nya ada');
+});
+
 test('Task Scheduler menolak: pesan jelas, bukan "Command failed"', () => {
   const box = sandbox();
   const failing = (file, args = []) => {
