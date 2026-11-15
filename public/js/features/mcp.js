@@ -16,7 +16,9 @@ export async function openMcp() {
   mcpView.project = state.active;
   $('#mcp-callback').hidden = true;
   $('#mcp-add').hidden = true;
-  $('#mcp-add-toggle').hidden = !state.local; // adding writes config and runs the server's command: laptop only
+  const local = state.local !== false;
+  $('#mcp-add-toggle').hidden = !local; // adding writes config and runs the server's command: laptop only
+  $('#mcp-add-note').hidden = local; // a phone gets the reason instead of a missing button
   $('#mcp-engine-note').textContent = isOpenCode()
     ? 'OpenCode: server dari opencode.json (global + project) dengan status langsung dari OpenCode. ▶ / ⏸ berlaku sampai OpenCode dimulai ulang (config tidak diubah).'
     : 'Status langsung dari Claude Code. ＋ Tambah memakai claude mcp add.';

@@ -949,7 +949,12 @@ function onSettingsOpened() {
   const show = music.available && state.local;
   $('#sps').hidden = !show;
   $('#sps-rule').hidden = !show;
-  if (!show) return;
+  $('#settings-tab-spotify').hidden = !show; // one rule with the section: no tab without content
+  if (!show) {
+    // A phone must not be left with an empty Spotify tab; if that tab was shown, fall back to Umum.
+    if ($('#settings-panel-spotify').classList.contains('on')) selectSettingsTab('umum');
+    return;
+  }
   $('#sps-error').textContent = '';
   $('#sps-client').setAttribute('aria-invalid', 'false');
   $('#sps-revoke').hidden = true;
@@ -961,7 +966,7 @@ function onSettingsOpened() {
 /** Opens ⚙ at the ♪ Spotify section (from the radio, the pill's "Hubungkan", the dialog). */
 export function openSpotifySettings() {
   if (!state.local) {
-    toast('Spotify diatur dari laptop (⚙ Pengaturan).', 'warn');
+    toast('🎵 Spotify diatur dari laptop: login OAuth membuka 127.0.0.1 di mesin itu. Dari HP, pemutar tetap bisa dipakai.', 'warn');
     return;
   }
   closeModal('spotify-modal');

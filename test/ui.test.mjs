@@ -10696,6 +10696,42 @@ describeArea('UI HP lewat Tailscale (setelan dari HP)', { skip: SKIP ?? false },
     assert.match(await page.eval(() => document.querySelector('#ext-agent-form').textContent), /semua project diubah dari laptop/i, 'form menjelaskan kenapa pilihannya tidak ada');
     assert.deepEqual(realProblems(page), []);
   });
+
+  test('tambah server MCP dijelaskan, tab Spotify kosong tidak ditawarkan', async () => {
+    await stubClient(page, { local: false, secure: true, readOnly: false, accountAuth: true, push: null });
+    await openApp(page, `#${projectId}`);
+    await page.waitFor(appReady, { timeoutMs: 10000, message: 'app terhubung sebagai HP' });
+
+    // MCP: status and ▶/⏸ work from a phone; only the add form writes config and runs the command on this machine.
+    await page.eval(async () => {
+      document.querySelectorAll('.modal').forEach((m) => (m.hidden = true));
+      (await import('/js/features/mcp.js')).openMcp();
+    });
+    await page.waitFor(() => !document.querySelector('#mcp-modal').hidden && document.querySelectorAll('#mcp-list li').length > 0, { timeoutMs: 10000, message: 'daftar MCP termuat' });
+    const mcp = await page.eval(() => ({
+      add: document.querySelector('#mcp-add-toggle').hidden,
+      note: document.querySelector('#mcp-add-note').hidden ? null : document.querySelector('#mcp-add-note').textContent.trim(),
+      rows: document.querySelectorAll('#mcp-list li').length,
+    }));
+    assert.ok(mcp.rows > 0, 'server MCP tetap terbaca dari HP');
+    assert.equal(mcp.add, true, '＋ Tambah server tidak ditawarkan ke HP');
+    assert.match(mcp.note ?? '', /hanya bisa dari laptop/i, 'alasannya terbaca, bukan tombol yang hilang diam-diam');
+
+    // ⚙ → Spotify: the section needs the laptop (its OAuth redirect is 127.0.0.1 there), so the tab goes with it.
+    await page.eval(() => document.querySelectorAll('.modal').forEach((m) => (m.hidden = true)));
+    await tap(page, '#btn-settings');
+    await page.waitFor(() => !document.querySelector('#settings-modal').hidden, { timeoutMs: 3000, message: 'Setelan terbuka dari HP' });
+    const spotify = await page.eval(() => ({
+      tab: document.querySelector('#settings-tab-spotify').hidden,
+      panel: document.querySelector('#settings-panel-spotify').classList.contains('on'),
+      visible: [...document.querySelectorAll('#settings-tabs [data-settings-tab]')].filter((b) => !b.hidden).map((b) => b.dataset.settingsTab),
+    }));
+    assert.equal(spotify.tab, true, 'tab Spotify tidak ditawarkan ke HP');
+    assert.equal(spotify.panel, false, 'panel Spotify yang kosong tidak sedang tampil');
+    assert.ok(!spotify.visible.includes('spotify'), `tab yang terlihat: ${spotify.visible.join(', ')}`);
+    await page.eval(() => (document.querySelector('#settings-modal').hidden = true));
+    assert.deepEqual(realProblems(page), []);
+  });
 });
 
 for (const vp of VIEWPORTS) {
