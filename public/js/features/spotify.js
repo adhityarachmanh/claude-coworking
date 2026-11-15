@@ -949,7 +949,8 @@ function onSettingsOpened() {
   const show = music.available && state.local;
   $('#sps').hidden = !show;
   $('#sps-rule').hidden = !show;
-  $('#settings-tab-spotify').hidden = !show; // one rule with the section: no tab without content
+  const tab = $('#settings-tab-spotify');
+  if (tab) tab.hidden = !show; // one rule with the section: no tab without content
   if (!show) {
     // A phone must not be left with an empty Spotify tab; if that tab was shown, fall back to Umum.
     if ($('#settings-panel-spotify').classList.contains('on')) selectSettingsTab('umum');
