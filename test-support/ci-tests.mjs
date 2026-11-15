@@ -12,26 +12,22 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dropIsolationEnv, isSlowFile, isUiFile } from './test-files.mjs';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mode = process.argv[2];
 const FILE_TIMEOUT_MS = Number(process.env.CI_UI_FILE_TIMEOUT_MS ?? 15 * 60_000);
 
-// Hermetic: the office app sets OFFICE_APP_DIR (and may set the other isolation vars) for its own children, and a
-// test run inside one inherits that. A test must always exercise the repo checkout, never an installed copy, so
-// every wrapper-set OFFICE_* env is dropped before the test processes spawn. (A bare `node --test test/x.mjs`
-// outside this runner still inherits — unset those envs first when running files directly.)
-for (const key of ['OFFICE_APP_DIR', 'OFFICE_PORT', 'OFFICE_HTTPS_PORT', 'OFFICE_DATA_DIR', 'PROJECTS_ROOT', 'CLAUDE_BIN', 'CLAUDE_PROJECTS_DIR', 'CLAUDE_CONFIG_FILE', 'CLAUDE_CONFIG_DIR', 'OFFICE_TAILSCALE_BIN', 'OFFICE_BROWSER', 'OPENCODE_BIN', 'SPOTIFY_CLIENT_ID', 'OFFICE_OPENCODE_SHELL_DIR', 'OFFICE_SHELL_WATCH_MS', 'OFFICE_OPENCODE_CONFIG_HOME']) delete process.env[key];
+// Hermetic: see test-support/test-files.mjs. Every wrapper-set OFFICE_* env is dropped before the test processes spawn.
+dropIsolationEnv();
 
 const files = readdirSync(path.join(APP, 'test'))
   .filter((f) => f.endsWith('.test.mjs'))
   .sort()
   .map((f) => path.join('test', f));
 const source = (f) => readFileSync(path.join(APP, f), 'utf8');
-const isUi = (f) => /test-support\/cdp\.mjs/.test(source(f));
-// A file that spawns a server/process (or imports the fakes) is the slow half of the suite on purpose: it tests the
-// real server, ports, and CLI lifecycle. Everything else is pure logic and safe to run on every save.
-const isSlow = (f) => !isUi(f) && /node:child_process|test-support\/(fake-|cdp|run-each)|from '\.\.\/src\/server\.js'/.test(source(f));
+const isUi = (f) => isUiFile(source(f));
+const isSlow = (f) => isSlowFile(source(f));
 
 const run = (list, timeout) =>
   spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...list], { cwd: APP, stdio: 'inherit', timeout, env: process.env });

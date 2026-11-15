@@ -13,7 +13,8 @@ Daftar isi: [Prasyarat](#prasyarat) · [Menjalankan](#menjalankan) · [Arsitektu
 ## Prasyarat
 
 - **Node.js >= 20** (repo memakai `node:test`, `fetch`, dan ES module tanpa transpiler).
-- `npm install` sekali (dependensi: paket WhatsApp; saat dev juga ESLint).
+- `npm install` sekali: dependency runtime hanya paket WhatsApp + `qrcode` (plus devDependency Electron/esbuild/postject
+  untuk build). ESLint tidak dipasang — dijalankan lewat `npm exec --package=eslint@9.39.5`.
 - Windows untuk fitur yang memakai PowerShell/Task Scheduler/TLS Windows. Test non-Windows otomatis di-skip.
 - Tidak perlu API key: aplikasi mengoperasikan **CLI milikmu** (`claude`, opsional `opencode`) yang sudah login.
   Untuk test, CLI-nya diganti `test-support/fake-claude.mjs`, jadi tidak butuh akun.
@@ -61,7 +62,7 @@ Prinsip yang dipegang:
 
 ## Alur satu permintaan
 
-1. Browser memanggil API dengan header token per-start (`src/core/api.js`).
+1. Browser memanggil API dengan header token per-start (`public/js/core/api.js`).
 2. `server.js` memeriksa Host/Origin, token, apakah rute khusus laptop, dan allowlist WiFi (`wifiAllows`) →
    403/401 bila tidak berhak.
 3. `src/routes/router.js` mencocokkan method + pola path, lalu memanggil handler `(ctx, req, res, params, body)`.
@@ -117,11 +118,12 @@ Prinsip yang dipegang:
 | `npm run test:ui` | semua blok UI | sebelum rilis (puluhan menit) |
 | `npm test` | semuanya | paling lambat; hanya bila perlu |
 
-`test:related` memetakan file yang berubah ke test yang menyebutnya (nama modul, judul blok, kata kunci topik).
-Pemetaannya sengaja konservatif: kalau tidak ada test yang cocok, ia menjalankan `test:fast`; kalau yang berubah
-adalah file bersama (`server.js`, `public/index.html`, `package.json`, `test-support/**`, modul `src` yang dipakai
-banyak fitur), ia jatuh ke gerbang yang lebih luas. Jadi hasil "lulus" dari `test:related` tidak pernah berarti
-"tidak ada test yang dijalankan".
+`test:related` memetakan file yang berubah ke test yang menyebutnya (jalur file, nama file, atau nama modul sebagai
+kata utuh). Pemetaannya sengaja konservatif: kalau tidak ada test yang cocok, ia menjalankan `test:fast`; kalau yang
+berubah adalah file bersama (`server.js`, `public/index.html`, `package.json`, `test-support/**`, `public/js/core/**`),
+`test:smoke` **ditambahkan** pada test yang sudah terpilih (bukan menggantikannya). File di luar `test/` yang dibaca
+sebuah test ikut terpetakan — `.github/workflows/*.yml`, `installer/Adhitron.iss`, `docs/uji-ui.md` — jadi tidak ada
+jalur "hijau" tanpa test. Hasil "lulus" dari `test:related` tidak pernah berarti "tidak ada test yang dijalankan".
 
 Selalu beri batas waktu pada run panjang (`--test-timeout=900000`, atau `CI_UI_FILE_TIMEOUT_MS`). Run UI yang
 menggantung sekarang gagal sendiri: `startServer()` di suite UI menyerah setelah 90 dtk

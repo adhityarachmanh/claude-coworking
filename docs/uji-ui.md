@@ -11,8 +11,9 @@ npm run test:ui:area -- "UI chat live" "CSP"  # beberapa blok
 ```
 
 Argumen dicocokkan dengan **nama blok `describe`**, bukan nama test di dalamnya. Filter yang tidak cocok dengan blok
-mana pun **gagal dalam hitungan detik** dengan pesan yang menyebut filternya (dulu filter seperti itu memulai
-server+browser untuk nol test lalu menggantung).
+mana pun **gagal** dengan pesan yang menyebut filternya: server dan browser sempat dinyalakan (~3–5 dtk), lalu satu
+test bernama filter itu gagal. Sebelum penjaga ini ada, filter salah eja membuat run tanpa test sama sekali — dan
+pernah menggantung karena server/browser yang dinyalakan untuknya tidak pernah ditutup.
 
 ## Cara kerjanya
 

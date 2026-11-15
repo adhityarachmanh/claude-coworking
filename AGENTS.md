@@ -14,7 +14,8 @@ Browser/HP ──HTTP+SSE──▶ server.js ──stdin/stdout stream-json─�
 ```
 
 Tanpa framework dan tanpa bundler: Node >= 20, ES module, UI berupa file statis di `public/` yang dimuat langsung
-oleh browser. Satu-satunya dependency npm adalah paket WhatsApp + ESLint.
+oleh browser. Dependency npm-nya hanya paket WhatsApp + `qrcode`; ESLint dijalankan lewat `npm exec` (tidak dipasang
+sebagai dependency), dan Electron/esbuild/postject hanya devDependency untuk build.
 
 ## Perintah pokok
 
@@ -25,7 +26,7 @@ oleh browser. Satu-satunya dependency npm adalah paket WhatsApp + ESLint.
 | Test yang menyentuh file yang kamu ubah | `npm run test:related -- <path>...` (mis. `npm run test:related -- src/wa-link.js public/js/features/settings.js`) |
 | Semua test tanpa browser | `npm run test:unit` |
 | Gerbang rilis (integrasi: server, izin, antrian, backup, CLI bridge) | `npm run test:smoke` |
-| Test browser | `npm run test:ui:area -- settings` untuk blok tertentu; `npm run test:ui` untuk semuanya (puluhan menit) |
+| Test browser | `npm run test:ui:area -- "UI Setelan PIN"` untuk blok tertentu; `npm run test:ui` untuk semuanya (puluhan menit) |
 | Restart server dev | `node scripts/restart.mjs` — **jangan** `Stop-Process -Force` dan jangan `npm run dev` bersamaan dengan server background |
 
 Selalu beri batas waktu pada perintah panjang. Jangan menunggu tanpa batas dan jangan poll satu baris log saja.
@@ -84,9 +85,9 @@ sebut nama blok yang bisa dipilih lewat `describeArea` (lihat [docs/uji-ui.md](d
   instalasi/riwayat asli.
 - **Port 4317.** Jangan menyalakan server dev saat server background hidup. Test memakai port acak.
 - **Suite UI satu file besar.** `test/ui.test.mjs` berisi ~200 test (±10.000 baris) dan butuh puluhan menit. Selama
-  mengembangkan, pakai `test:ui:area`. `before()` sekarang punya batas waktu 90 dtk
+  mengembangkan, pakai `test:ui:area`. `startServer()` di suite itu punya batas waktu 90 dtk
   (`OFFICE_UI_START_TIMEOUT_MS`) dan mencetak stderr server — kalau timeout itu muncul, biasanya ada server yatim
-  atau port bentrok, bukan test yang salah.
+  atau port bentrok, bukan test yang salah. Filter area yang salah eja gagal ~5 dtk dengan pesan yang menyebutnya.
 - **Satu proses per area.** `test:ui:area` menjalankan satu proses per argumen; jangan menggabungkan blok asing
   dalam satu panggilan, itu justru lebih lambat.
 - **Windows vs Linux.** Beberapa test (PowerShell, Task Scheduler, TLS) hanya berjalan di Windows atau sebaliknya;
