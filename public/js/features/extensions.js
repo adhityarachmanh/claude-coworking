@@ -111,19 +111,32 @@ async function pluginAct(btn) {
 // ---------- your own subagents ----------
 
 function agentsHtml() {
+  // A user-scope subagent lives in ~/.claude/agents and steers every project: routes/extensions.js refuses to write
+  // it from anything but the laptop. A paired phone may still manage this project's own agents.
+  const local = state.local !== false;
   const rows = ext.agents.length
     ? `<ul class="ext-list">${ext.agents
-        .map((a, i) => `<li><div><b>${escapeHtml(a.name)}</b> <small class="muted">${a.scope === 'user' ? 'semua project' : 'project ini'}${a.model ? ` · ${escapeHtml(a.model)}` : ''}</small><p class="muted small">${escapeHtml(a.description)}</p></div><div class="ext-actions"><button class="ghost" data-agent-edit="${i}">✎ Edit</button><button class="ghost danger-text" data-agent-del="${i}">Hapus</button></div></li>`)
+        .map((a, i) => `<li><div><b>${escapeHtml(a.name)}</b> <small class="muted">${a.scope === 'user' ? 'semua project' : 'project ini'}${a.model ? ` · ${escapeHtml(a.model)}` : ''}</small><p class="muted small">${escapeHtml(a.description)}</p></div><div class="ext-actions">${
+          local || a.scope !== 'user'
+            ? `<button class="ghost" data-agent-edit="${i}">✎ Edit</button><button class="ghost danger-text" data-agent-del="${i}">Hapus</button>`
+            : '<small class="muted">ubah dari laptop</small>'
+        }</div></li>`)
         .join('')}</ul>`
     : '<p class="muted small">Belum ada subagent buatan sendiri.</p>';
   return `<p class="muted small">Subagent di <code>.claude/agents</code> (project) dan <code>~/.claude/agents</code> (semua project). Claude memanggilnya sesuai deskripsinya, seperti /agents di terminal. Role kantor (/team) terpisah.</p>
+    ${local ? '' : '<p class="muted small">🔒 Subagent untuk <b>semua project</b> hanya bisa diubah dari laptop; subagent project ini tetap bisa dari sini.</p>'}
     ${rows}<div class="acct-actions"><button class="primary" data-agent-new>＋ Agent baru</button></div>`;
 }
 
 function agentFormHtml(a) {
+  const local = state.local !== false;
   return `<form id="ext-agent-form" class="oc-form">
     <label class="oc-field"><span>Nama * (huruf kecil, angka, minus)</span><input name="name" value="${escapeHtml(a.name ?? '')}" required pattern="[a-z0-9][a-z0-9\\-]{0,49}" placeholder="code-reviewer" autocomplete="off" /></label>
-    <label class="oc-field"><span>Berlaku untuk</span><select name="scope"><option value="project"${a.scope !== 'user' ? ' selected' : ''}>Project ini</option><option value="user"${a.scope === 'user' ? ' selected' : ''}>Semua project</option></select></label>
+    <label class="oc-field"><span>Berlaku untuk</span><select name="scope">${
+      local
+        ? `<option value="project"${a.scope !== 'user' ? ' selected' : ''}>Project ini</option><option value="user"${a.scope === 'user' ? ' selected' : ''}>Semua project</option>`
+        : '<option value="project" selected>Project ini</option>'
+    }</select>${local ? '' : '<small class="muted">Subagent semua project diubah dari laptop.</small>'}</label>
     <label class="oc-field"><span>Deskripsi * (kapan Claude memakainya)</span><input name="description" value="${escapeHtml(a.description ?? '')}" required placeholder="Review kode setelah perubahan selesai" /></label>
     <label class="oc-field"><span>Tools (kosong = semua)</span><input name="tools" value="${escapeHtml(a.tools ?? '')}" placeholder="Read, Grep, Glob" autocomplete="off" /></label>
     <label class="oc-field"><span>Model (kosong = ikut sesi)</span><input name="model" value="${escapeHtml(a.model ?? '')}" placeholder="sonnet, opus, haiku, inherit" autocomplete="off" /></label>

@@ -93,7 +93,10 @@ export async function openSessions() {
   $('#sessions-list').innerHTML = '<p class="muted">Memuat riwayat…</p>';
   $('#sessions-bulk').hidden = true;
   // Import is OpenCode-only, but of THIS project's engine (an OpenCode project under a Claude default still gets it).
-  $('#sessions-import').hidden = engineOf(state.statuses[state.active] ?? {}, state.config) !== 'opencode' || !state.local || state.readOnly;
+  const canImport = engineOf(state.statuses[state.active] ?? {}, state.config) === 'opencode' && state.local && !state.readOnly;
+  $('#sessions-import').hidden = !canImport;
+  const importNote = $('#sessions-laptop-note');
+  if (importNote) importNote.hidden = canImport || engineOf(state.statuses[state.active] ?? {}, state.config) !== 'opencode' || state.readOnly;
   openModal('sessions-modal');
   try {
     const { sessions, current, autoArchiveDays } = await api(`/api/projects/${sessionsView.project}/sessions`);

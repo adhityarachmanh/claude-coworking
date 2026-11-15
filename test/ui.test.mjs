@@ -10662,6 +10662,32 @@ describeArea('UI HP lewat Tailscale (setelan dari HP)', { skip: SKIP ?? false },
     assert.match(groups.note, /hanya bisa dari laptop/i, 'alasannya terbaca, bukan tombol mati');
     assert.deepEqual(realProblems(page), []);
   });
+
+  test('subagent "semua project" tetap di laptop: HP hanya menawarkan scope project ini', async () => {
+    // The suite's real fixture project ('toko'); the agents tab is Claude Code's and the server runs fake-claude.
+    assert.ok(projectId, 'ada project untuk dibuka');
+    await page.eval(async (id) => {
+      document.querySelectorAll('.modal').forEach((m) => (m.hidden = true));
+      (await import('/js/features/picker.js')).selectProject(id); // synchronous: state.active is set before the next line
+      (await import('/js/features/extensions.js')).openExtensions('agents');
+    }, projectId);
+    await page.waitFor(() => Boolean(document.querySelector('#ext-modal') && !document.querySelector('#ext-modal').hidden && document.querySelector('[data-agent-new]')), { timeoutMs: 8000, message: 'tab subagent termuat' });
+    const panel = await page.eval(() => ({
+      note: [...document.querySelectorAll('#ext-body .muted.small')].map((n) => n.textContent).join(' '),
+      rows: [...document.querySelectorAll('#ext-body .ext-list li')].map((li) => ({ text: li.textContent, actions: li.querySelectorAll('[data-agent-edit], [data-agent-del]').length, scope: li.querySelector('small.muted')?.textContent ?? '' })),
+    }));
+    assert.match(panel.note, /semua project.*hanya bisa diubah dari laptop|hanya bisa diubah dari laptop.*semua project/i, 'alasannya terbaca di tab subagent');
+    for (const row of panel.rows.filter((r) => /semua project/.test(r.scope))) {
+      assert.equal(row.actions, 0, `subagent semua project tidak menawarkan Edit/Hapus di HP — ${row.text}`);
+      assert.match(row.text, /ubah dari laptop/, 'barisnya menyebut kenapa tidak bisa diubah');
+    }
+    await page.eval(() => document.querySelector('[data-agent-new]').click());
+    await page.waitFor(() => Boolean(document.querySelector('#ext-agent-form')), { timeoutMs: 3000, message: 'form subagent terbuka' });
+    const scopes = await page.eval(() => [...document.querySelectorAll('#ext-agent-form select[name="scope"] option')].map((o) => o.value));
+    assert.deepEqual(scopes, ['project'], 'HP tidak menawarkan scope semua project');
+    assert.match(await page.eval(() => document.querySelector('#ext-agent-form').textContent), /semua project diubah dari laptop/i, 'form menjelaskan kenapa pilihannya tidak ada');
+    assert.deepEqual(realProblems(page), []);
+  });
 });
 
 for (const vp of VIEWPORTS) {
