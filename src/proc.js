@@ -60,6 +60,8 @@ export function execFileTree(command, args, { timeout = 0, ...options } = {}, ca
   child.stdin?.on('error', () => {}); // EPIPE when the process is gone already: reported through the callback
   child.stdin?.end();
   if (timeout > 0) {
+    // Neither timer may be unref'd: the caller waits for the callback, and once the child is killed these timers are
+    // the only thing that keeps the event loop alive long enough to deliver it.
     timer = setTimeout(() => {
       timedOut = true;
       killTree(child.pid);
@@ -67,9 +69,7 @@ export function execFileTree(command, args, { timeout = 0, ...options } = {}, ca
         child.stdout?.destroy();
         child.stderr?.destroy();
       }, PIPE_GRACE_MS);
-      grace.unref?.();
     }, timeout);
-    timer.unref?.();
   }
   return child;
 }

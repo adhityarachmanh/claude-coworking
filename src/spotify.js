@@ -108,7 +108,9 @@ const sameSecret = (a, b) => {
 };
 const clip = (s) => String(s ?? '').slice(0, MAX_TEXT);
 const intIn = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms).unref?.());
+// Not unref'd: callers await this sleep, and an unref'd timer lets the event loop empty first, so the await could
+// never settle (the same failure Linux CI reported for other timers).
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** The remembered "play here" device from data/spotify.json, or null. Its id never reaches publicState(). */
 const cleanPreferred = (p) => {
   if (!p || typeof p !== 'object') return null;

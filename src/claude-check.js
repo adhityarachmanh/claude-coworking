@@ -120,12 +120,17 @@ export class ClaudeCheckService {
     }
   }
 
-  timer(fn, ms) {
+  /**
+   * A timer that is tracked so `stop()` can clear it. Unref'd by default: the 6-hourly tick must not keep the process
+   * alive. A tick that is *awaiting* the timer passes `keepAlive` — unref'd, the event loop can empty first and the
+   * promise never settles (Linux CI reported "Promise resolution is still pending").
+   */
+  timer(fn, ms, { keepAlive = false } = {}) {
     const t = setTimeout(() => {
       this.timers.delete(t);
       fn();
     }, ms);
-    t.unref?.();
+    if (!keepAlive) t.unref?.();
     this.timers.add(t);
     return t;
   }
@@ -203,7 +208,7 @@ export class ClaudeCheckService {
     if (this.isBusy()) {
       this.waiting = true;
       this.changed();
-      while (this.isBusy() && this.now() < until) await new Promise((r) => this.timer(r, this.timing.idlePollMs));
+      while (this.isBusy() && this.now() < until) await new Promise((r) => this.timer(r, this.timing.idlePollMs, { keepAlive: true }));
       this.waiting = false;
       if (this.isBusy()) {
         this.log(`Cek ${this.name}: ditunda (ada giliran berjalan), dicoba lagi dalam ${Math.round(this.timing.retryMs / 60000)} menit`);
