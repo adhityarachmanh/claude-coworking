@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.37
+
+- **🔐 "Aktifkan Akses saat PC terkunci" tidak lagi berakhir dengan 409 padahal semuanya sudah terpasang.** Setelah helper elevated memasang autologon *dan* task pengunci layar, aplikasi mencoba memasang task pengunci itu **sekali lagi tanpa hak Administrator**. Di mesin yang menolak `schtasks /Create /XML` tanpa elevasi, langkah kedua itu gagal (`Access is denied`) dan langkah selanjutnya — penjaga 5 menit — dibatalkan, menghasilkan pesan *"Autologon menyala, tetapi auto-start saat boot gagal dipasang: Task Scheduler menolak memasang pengunci layar"*. Task kini hanya dipasang kalau memang belum ada, jadi langkah boot mode selesai tanpa memasang ulang apa pun. Pesan penolakan Task Scheduler juga sekarang memuat alasan sebenarnya dari Windows, bukan hanya "menolak". Tidak ada aksi untuk mesin yang sudah aktif: autologon, task pengunci, penjaga 5 menit, dan mode sebelum login tetap seperti sekarang.
+
 ## 1.0.36
 
 - **⏳ Baris tugas subagent tidak lagi berputar selamanya.** Baris *"Sedang berjalan…"* milik agent yang sudah melapor (atau dihentikan) menunggu `task_notification` dari Claude Code; kalau kabar itu tidak datang, barisnya tetap berputar dan menumpuk. Sekarang baris ditutup begitu panggilan agent-nya selesai, dan saat giliran berakhir walau hasilnya tidak pernah datang. Daftar tugas juga dibatasi **100 baris** terbaru, jadi sesi panjang dengan banyak delegasi tidak lagi memanjangkan panel tanpa akhir.
