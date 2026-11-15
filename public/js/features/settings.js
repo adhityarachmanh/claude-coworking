@@ -1,5 +1,6 @@
 // Help, laptop settings (auto-start, shutdown), project folders and adding a project.
 import { api, apiGet, laptopBlocked, toast } from '../core/api.js';
+import { laptopBootNote } from '../core/autostart-rules.js';
 import { $ } from '../core/dom.js';
 import { APP_NAME, DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
@@ -212,9 +213,14 @@ function syncAutostartSection() {
   const on = status.autologon === 'on';
   const card = $('#autologon-card');
   if (card) card.hidden = !supported || laptop;
-  // The one visible explanation on a phone, instead of two controls that silently disappear.
+  // The one visible explanation on a phone, instead of two controls that silently disappear. It also says whether
+  // this PC will bring the server back after a reboot, so the phone is not blind to the next restart.
   const note = $('#laptop-boot-note');
-  if (note) note.hidden = !(laptop && supported);
+  if (note) {
+    const text = laptop ? laptopBootNote(status) : '';
+    note.hidden = !text;
+    if (note.textContent !== text) note.textContent = text;
+  }
   const enable = $('#btn-autologon-enable');
   if (enable) {
     enable.hidden = on;

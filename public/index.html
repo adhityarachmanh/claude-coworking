@@ -1171,7 +1171,8 @@
           </section>
           <hr id="oc-section-sep" hidden />
           <!-- Sebuah HP lewat Tailscale boleh mengubah setelan di tab ini, kecuali yang menuntut mesin ini sendiri:
-               UAC (nyala otomatis/autologon). Catatan ini menggantikan dua kontrol itu, bukan menyisakan ruang kosong. -->
+               UAC (nyala otomatis/autologon). Catatan ini menggantikan dua kontrol itu dengan status kesiapan
+               reboot (core/autostart-rules.js), bukan menyisakan ruang kosong. -->
           <p id="laptop-boot-note" class="muted small" hidden>🔒 Nyalakan otomatis dan akses saat PC terkunci hanya bisa diubah dari laptop: keduanya meminta izin Administrator di mesin ini.</p>
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
           <!-- 🔐 Akses saat PC terkunci (features/settings.js, server POST /api/autologon(+ /disable)): satu tombol,

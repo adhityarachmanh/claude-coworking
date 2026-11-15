@@ -10498,6 +10498,8 @@ describeArea('UI HP lewat Tailscale (setelan dari HP)', { skip: SKIP ?? false },
   test('⚙ terbuka dari HP; nyala otomatis, autologon, dan QR tautan WhatsApp dikunci dengan alasan', async () => {
     // A paired phone on the https (Tailscale) listener: not read-only, but still not the laptop itself.
     await stubClient(page, { local: false, secure: true, readOnly: false, accountAuth: true, push: null });
+    // A Windows PC with boot mode on: the phone must see a clear "ready for the next reboot" answer, not silence.
+    await freezeConfig(page, { autostart: { supported: true, enabled: true, mode: 'boot', autologon: 'on' } });
     await openApp(page, '#demo');
     await page.waitFor(() => document.body.classList.contains('remote-client'), { timeoutMs: 5000, message: 'halaman sadar ini HP' });
     assert.equal(await page.eval(() => document.querySelector('#btn-settings').hidden), false, '⚙ tersedia di HP Tailscale (baris ⋯ tidak disembunyikan)');
@@ -10514,7 +10516,8 @@ describeArea('UI HP lewat Tailscale (setelan dari HP)', { skip: SKIP ?? false },
       health: document.querySelector('#health-section').hidden,
     }));
     assert.deepEqual([boot.autostart, boot.autologon], [true, true], 'kontrol yang butuh izin Windows disembunyikan');
-    assert.match(boot.note ?? '', /hanya bisa diubah dari laptop/i, 'ada alasan yang terbaca, bukan ruang kosong');
+    assert.match(boot.note ?? '', /menyalakan server lagi setelah reboot/i, 'HP tahu PC akan hidup sendiri setelah reboot');
+    assert.match(boot.note ?? '', /Ubah dari laptop/i, 'dan tahu di mana mengubahnya, bukan ruang kosong');
     assert.equal(boot.shutdown, false, '⏻ Matikan PC tetap tersedia dari HP (lewat Tailscale)');
     assert.equal(boot.health, false, '🩺 Kesehatan sistem tetap tersedia dari HP');
 
