@@ -7,9 +7,9 @@ permissions:
   contents: read
 
 jobs:
-  ui:
+  badge:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -17,4 +17,14 @@ jobs:
           node-version: 22
       - run: npm ci --ignore-scripts
       - run: node --test test/concurrency-retention-ui.test.mjs
+
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
       - run: node --test test/mobile-chat.test.mjs

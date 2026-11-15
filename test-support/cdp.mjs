@@ -222,6 +222,15 @@ export class Page {
     this.problems = [];
   }
 
+  /**
+   * Makes this page the active tab. Chrome throttles requestAnimationFrame in a background tab, and every UI update
+   * that coalesces per frame (the 🗂 bar summary, the dashboard cards) then waits until the tab is visible again:
+   * a test that checks a page while ANOTHER page was just opened must bring this one back first.
+   */
+  bringToFront() {
+    return this.send('Page.bringToFront');
+  }
+
   waitForEvent(method, timeoutMs = 10000) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => (off(), reject(new Error(`timeout menunggu ${method}`))), timeoutMs);

@@ -231,6 +231,7 @@ test('🗂 badge ⚡ 2/3 tampil saat dua project bekerja, hilang saat batas 0 (d
     assert.equal((await api(`/api/projects/${toko}/prompt`, { text: 'lama dari toko' })).status, 200);
     assert.equal((await api(`/api/projects/${blog}/prompt`, { text: 'lama dari blog' })).status, 200);
 
+    await desktop.bringToFront(); // updates coalesce per frame: a background tab is throttled
     await desktop.eval(() => document.querySelector('#btn-dashboard').click());
     await desktop.waitFor(
       () => {
@@ -254,6 +255,7 @@ test('🗂 badge ⚡ 2/3 tampil saat dua project bekerja, hilang saat batas 0 (d
     // starting another, and the count stays at 2 of 3 either way.
     assert.equal((await api(`/api/projects/${toko}/prompt`, { text: 'lama lagi dari toko' })).status, 200);
     assert.equal((await api(`/api/projects/${blog}/prompt`, { text: 'lama lagi dari blog' })).status, 200);
+    await phone.bringToFront(); // the phone is the tab being looked at: its per-frame updates must run
     await phone.waitFor(() => /⚡ 2\/3/.test(document.querySelector('#dash-bar-sum')?.textContent ?? ''), { timeoutMs: 20000, message: 'bar HP ⚡ 2/3' }).catch(async (err) => {
       // Evidence for the failure: what the phone bar actually says and which projects it believes are working.
       const view = await phone.eval(() => {
