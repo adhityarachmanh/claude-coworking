@@ -19,6 +19,9 @@ const STREAM_FLUSH_MS = 80;
 const OUTPUT_LIMIT = 3000;
 // A subagent's own messages (tool calls / results) move its task's `lastActivityAt`; re-sent at most this often.
 const ACTIVITY_EMIT_MS = 5000;
+// The /tasks list is a recent-history view, not an archive: finished rows beyond this are dropped (oldest first), so a
+// long session with many delegations cannot grow the panel without end.
+const MAX_TASKS = 100;
 
 function resultText(content) {
   if (typeof content === 'string') return content;
@@ -205,7 +208,22 @@ export class StreamTranslator {
       failed,
       ...(report ? { report: firstSentence(report, 70) } : {}),
     });
+    this.settleAgentTask(toolUseId, failed);
     this.emitWorking();
+  }
+
+  /**
+   * Closes the task row of a delegated agent whose call is over. Without this the row keeps spinning forever when the
+   * agent reports before Claude Code sends its task_notification (or is interrupted and never sends one).
+   */
+  settleAgentTask(toolUseId, failed = false) {
+    let changed = false;
+    for (const t of this.bgTasks.values()) {
+      if (t.kind !== 'agent' || t.status !== 'running' || t.toolUseId !== toolUseId) continue;
+      Object.assign(t, { status: failed ? 'failed' : 'completed', endedAt: Date.now() });
+      changed = true;
+    }
+    if (changed) this.emitBgTasks();
   }
 
   handle(msg) {
@@ -334,6 +352,7 @@ export class StreamTranslator {
     }
     this.attachCommand(t);
     this.bgTasks.set(id, t);
+    this.pruneTasks();
     this.linkTask(t);
     this.settleTask(t);
     this.emitBgTasks();
@@ -351,6 +370,18 @@ export class StreamTranslator {
     if (!info || Boolean(info.agent) !== (t.kind === 'agent') || info.taskId === t.id) return;
     info.taskId = t.id;
     this.sink.updateChat(info.chatId, { taskId: t.id });
+  }
+
+  /** Drops the oldest finished tasks once the list is longer than MAX_TASKS (running ones are never dropped). */
+  pruneTasks() {
+    if (this.bgTasks.size <= MAX_TASKS) return;
+    const finished = [...this.bgTasks]
+      .filter(([, t]) => t.status !== 'running' && t.status !== 'pending')
+      .sort((a, b) => (a[1].endedAt ?? 0) - (b[1].endedAt ?? 0));
+    for (const [id] of finished) {
+      if (this.bgTasks.size <= MAX_TASKS) break;
+      this.bgTasks.delete(id);
+    }
   }
 
   /**
@@ -778,7 +809,10 @@ export class StreamTranslator {
       else {
         // Never got a result (interrupted or denied): close the line out.
         this.sink.updateChat(info.chatId, { status: 'cancel' });
-        if (info.agent) this.sink.office({ kind: 'agent_stop', role: info.role, label: info.label });
+        if (info.agent) {
+          this.sink.office({ kind: 'agent_stop', role: info.role, label: info.label });
+          this.settleAgentTask(id, false);
+        }
         this.tools.delete(id);
       }
     }

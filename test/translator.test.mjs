@@ -343,6 +343,34 @@ test('background work keeps its role at work until the task ends (shell + subage
   assert.ok(!translator.hasRunningTasks());
 });
 
+test('a delegated agent task never keeps spinning after its call is over', () => {
+  const { translator, status } = statusRecorder();
+  const tasks = () => status.tasks ?? [];
+  // The agent reports before Claude Code sends its task_notification: the tool result is enough to close the row.
+  translator.handle(use('a1', 'Agent', { subagent_type: 'reviewer', description: 'review' }));
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T1', tool_use_id: 'a1', subagent_type: 'reviewer', description: 'review' });
+  assert.equal(tasks().find((t) => t.id === 'T1').status, 'running');
+  translator.handle(done('a1', 'laporan selesai'));
+  assert.equal(tasks().find((t) => t.id === 'T1').status, 'completed', 'row is closed when the agent reports');
+
+  // Interrupted: the result never comes, so the end of the turn has to close the row.
+  translator.handle(use('a2', 'Agent', { subagent_type: 'reviewer', description: 'review 2' }));
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'T2', tool_use_id: 'a2', subagent_type: 'reviewer', description: 'review 2' });
+  translator.handle({ type: 'result', subtype: 'interrupted', is_error: true, duration_ms: 5, usage: {}, modelUsage: {} });
+  assert.notEqual(tasks().find((t) => t.id === 'T2').status, 'running', 'the end of the turn closes an interrupted agent');
+});
+
+test('the task list keeps only the most recent finished rows', () => {
+  const { translator, status } = statusRecorder();
+  // 105 finished agents: the list is recent history, not an archive (the panel used to grow without end).
+  for (let i = 0; i < 105; i++) {
+    translator.handle({ type: 'system', subtype: 'task_started', task_id: `t${i}`, description: `cek ${i}` });
+    translator.handle({ type: 'system', subtype: 'task_notification', task_id: `t${i}`, status: 'completed', summary: 'beres' });
+  }
+  assert.ok(status.tasks.length <= 100, `maksimal 100 baris, dapat ${status.tasks.length}`);
+  assert.ok(status.tasks.some((t) => t.id === 't104'), 'baris terbaru tetap ada');
+});
+
 test('background tasks without tool_use_id still map to the right role', () => {
   const statuses = [];
   const translator = new StreamTranslator({ office: () => {}, chat: () => 'c', updateChat: () => {}, status: (p) => p.working && statuses.push(p.working) });
