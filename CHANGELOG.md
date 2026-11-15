@@ -7,6 +7,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 Rilis ditahan sampai seluruh penyempurnaan selesai (diminta pemilik produk); perubahan di bawah sudah ada di `main`
 dan belum diberi nomor versi.
 
+- **⏱ Proses yang melewati tenggat kini benar-benar berhenti, termasuk anak-cucunya.** Sebelumnya sinyal berhenti bisa terlewat oleh proses yang baru lahir sedetik setelahnya, sehingga sisa proses tetap hidup dan menahan keluaran. Sekarang sinyalnya dinaikkan ke penghentian paksa untuk seluruh grup setelah dua detik, jadi cek kompatibilitas, ringkas konteks, dan perintah berbatas waktu tidak meninggalkan proses yatim.
+
 - **🔐 Modal "Akses saat PC terkunci" menjelaskan bahwa yang diminta adalah sandi akun, bukan PIN.** Untuk akun Microsoft, sandinya adalah sandi akun Microsoft — bukan PIN Windows Hello yang dipakai sehari-hari. Ditambah petunjuk reset sandi, karena inilah kebingungan yang paling sering muncul saat mengaktifkan mode ini.
 - **📁 ⚙ → Sistem menunjukkan folder data server yang sedang dipakai.** Aplikasi terpasang dan salinan dev memakai folder berbeda; sesi WhatsApp (dan setelan) mengikuti folder itu, jadi "harus tautkan ulang" biasanya berarti sedang membuka server yang lain.
 - **⏳ Kode tautan WhatsApp menampilkan masa berlakunya** ("berlaku sampai HH:MM"), dan status *Tertaut* kini menyebut sejak kapan sesi itu ada.
