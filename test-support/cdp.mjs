@@ -106,7 +106,7 @@ export async function launchBrowser({ executable = findBrowser(), timeoutMs = 15
   return {
     executable,
     conn,
-    newPage: () => Page.create(conn),
+    newPage: (viewport) => Page.create(conn, viewport),
     async close() {
       try {
         await Promise.race([conn.send('Browser.close'), sleep(2000)]);
@@ -179,11 +179,14 @@ class Connection {
 
 /** A tab: navigation, JS evaluation and trusted input (mouse, touch, keys). */
 export class Page {
-  static async create(conn) {
+  static async create(conn, viewport) {
     const { targetId } = await conn.send('Target.createTarget', { url: 'about:blank' });
     const { sessionId } = await conn.send('Target.attachToTarget', { targetId, flatten: true });
     const page = new Page(conn, targetId, sessionId);
     await Promise.all(['Page.enable', 'Runtime.enable', 'Log.enable', 'Network.enable'].map((m) => page.send(m)));
+    // A caller's `{ width, height, mobile }` is applied before the first navigation: the page must already be narrow
+    // when it boots (the phone layout and its media query are read by the app at import time).
+    if (viewport) await page.setViewport(viewport);
     return page;
   }
 

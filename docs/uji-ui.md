@@ -29,6 +29,15 @@ pernah menggantung karena server/browser yang dinyalakan untuknya tidak pernah d
 - `startServer()` menyerah setelah 90 detik (`OFFICE_UI_START_TIMEOUT_MS`) dan mencetak stderr server: server yang
   tidak pernah siap membuat run **gagal**, tidak menggantung.
 
+## Dua aturan saat menulis test browser
+
+- **Viewport lewat `browser.newPage({ width, height, mobile })`.** Argumen itu diterapkan sebelum navigasi pertama
+  (lewat `Page.setViewport`), jadi tata letak HP sudah sempit sejak halaman dimuat — media query `narrow` dibaca
+  modul saat impor, bukan saat diubah kemudian. Jangan mengandalkan ukuran jendela bawaan browser.
+- **`page.bringToFront()` sebelum memeriksa halaman yang bukan tab aktif.** Chrome menahan `requestAnimationFrame`
+  di tab latar belakang, dan pembaruan UI yang digabung per frame (bar 🗂 di HP, kartu Semua project) tidak jalan
+  sampai tab itu terlihat. Dua halaman dalam satu test berarti salah satunya selalu di belakang.
+
 ## Blok yang bisa dipilih
 
 Argumen dicocokkan sebagai **substring** nama `describe`, jadi pakai potongan yang unik:
