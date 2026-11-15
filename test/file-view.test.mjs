@@ -37,7 +37,7 @@ test('a bare file name from Claude\'s prose is found below the project (once), n
 });
 
 test('a file outside the project needs allowOutside, an absolute path under temp/user folders, and is never a secret shortcut', async () => {
-  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { mkdtempSync, realpathSync, writeFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const path = (await import('node:path')).default;
   const { readProjectFile } = await import('../src/file-view.js');
@@ -49,7 +49,8 @@ test('a file outside the project needs allowOutside, an absolute path under temp
     await assert.rejects(readProjectFile(root, file), (err) => err.status === 403, 'without the confirmation flag');
     const read = await readProjectFile(root, file, { allowOutside: true });
     assert.equal(read.content, 'di luar project\n');
-    assert.equal(read.path, file.split(path.sep).join('/'));
+    // The server reports the canonical path; `tmpdir()` may be the 8.3 short form (C:\Users\RUNNER~1) on Windows CI.
+    assert.equal(read.path, realpathSync.native(file).split(path.sep).join('/'));
     await assert.rejects(readProjectFile(root, '../catatan.txt', { allowOutside: true }), (err) => err.status === 403, 'still needs the full path');
     writeFileSync(path.join(outside, '.env'), 'RAHASIA');
     await assert.rejects(readProjectFile(root, path.join(outside, '.env'), { allowOutside: true }), (err) => err.status === 403 && /rahasia/i.test(err.message), 'secret gate still applies');

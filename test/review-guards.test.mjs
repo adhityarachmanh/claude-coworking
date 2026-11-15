@@ -227,6 +227,17 @@ test('execFileTree: a timeout stops the child and its grandchildren (the callbac
   const pid = Number(readFileSync(pidFile, 'utf8'));
   assert.ok(pid > 1, `a real grandchild pid was recorded (${pid})`);
   const alive = () => {
+    // A killed POSIX process can stay a zombie (dead, not yet reaped — the usual state under a container's PID 1),
+    // and a signal-0 probe still answers yes for it. The state field of /proc tells the two apart.
+    if (process.platform !== 'win32') {
+      try {
+        const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        if (fields[0] === 'Z') return false;
+      } catch {
+        // no /proc entry: the fallback below reports it gone
+      }
+    }
     try {
       process.kill(pid, 0);
       return true;

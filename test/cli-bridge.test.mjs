@@ -1,7 +1,7 @@
 // 🌉 CLI bridge: payload clipping, project matching, hook output, settings file, and the ask route (allow/deny/timeout).
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,7 +11,10 @@ import { register } from '../src/routes/cli-bridge.js';
 import { buildRouter } from '../src/routes/index.js';
 import { buildSettings, HOOK_MATCHER, HOOK_TIMEOUT_SECONDS } from '../tools/cli-bridge/settings.mjs';
 
-const TMP = mkdtempSync(path.join(os.tmpdir(), 'office-cli-bridge-'));
+// Canonical (long) form, not the 8.3 short name `os.tmpdir()` may return on Windows CI (RUNNER~1): projectForCwd
+// resolves an existing folder with realpathSync, and a not-yet-existing child (`docs`, `apps/toko`) keeps its
+// textual form. Mixing the two spellings made a path that IS under TMP look like `..\RUNNER~1\...` and the test red.
+const TMP = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), 'office-cli-bridge-')));
 test.after(() => rmSync(TMP, { recursive: true, force: true }));
 
 test('sanitizeToolInput clips strings, arrays, depth and total size', () => {
