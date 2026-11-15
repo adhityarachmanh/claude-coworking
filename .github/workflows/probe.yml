@@ -2,29 +2,25 @@ name: probe
 
 on:
   workflow_dispatch:
+    inputs:
+      file:
+        description: 'test file'
+        default: 'test/ui.test.mjs'
+      pattern:
+        description: '--test-name-pattern'
+        default: ''
 
 permissions:
   contents: read
 
 jobs:
-  badge:
+  ui:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm ci --ignore-scripts
-      - run: node --test test/concurrency-retention-ui.test.mjs
-
-  mobile:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-      - run: npm ci --ignore-scripts
-      - run: node --test test/mobile-chat.test.mjs
+      - run: node --test ${{ inputs.pattern != '' && format('--test-name-pattern="{0}"', inputs.pattern) || '' }} ${{ inputs.file }}

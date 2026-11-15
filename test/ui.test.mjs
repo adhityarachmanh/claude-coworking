@@ -997,8 +997,18 @@ async function openLadder(page) {
   await page.waitFor(() => !document.querySelector('#model-tiers-modal').hidden, { timeoutMs: 2000, message: 'dialog tangga model' });
 }
 
+/** A page on a machine WITH OpenCode installed: the picker and the account tab skip the provider request when the
+ *  server says OpenCode is not installed (`config.engines.opencode.available`), so every test that stubs those
+ *  endpoints says so first — otherwise it would pass on a developer's laptop and fail on a CI machine without it. */
+const pretendOpenCode = (page) =>
+  page.eval(async () => {
+    const { state } = await import('/js/core/state.js');
+    state.config = { ...state.config, engines: { ...(state.config.engines ?? {}), opencode: { ...(state.config.engines?.opencode ?? {}), available: true } } };
+  });
+
 /** Serves the project's model list (GET/POST /api/projects/:id/models) without waiting for a real OpenCode. */
 async function stubModels(page, models = OC_MODELS) {
+  await pretendOpenCode(page);
   await page.eval((list) => {
     window.__officeFetch ??= window.fetch;
     const prev = window.fetch; // chain onto whatever stub sits underneath (settings, prices)
@@ -1076,6 +1086,7 @@ async function openOpenCodeTab(page) {
 }
 
 async function stubOpenCodeAccount(page, { go = null, usage = null, connected = null } = {}) {
+  await pretendOpenCode(page);
   await page.eval(async (payload) => {
     localStorage.setItem('office.accountTab', 'opencode'); // no longer read (the dialog always opens on Claude), kept harmless
     window.__officeFetch ??= window.fetch;
@@ -2740,7 +2751,11 @@ for (const vp of VIEWPORTS) {
         const body = await res.json().catch(() => null);
         return { status: res.status, body };
       });
-      assert.deepEqual(saved.body?.remotePower, { bridgeUrl: 'https://adhitron.netlify.app', token: 'ui-test-token', offDelaySec: 90 }, JSON.stringify(saved).slice(0, 200));
+      assert.deepEqual(
+        saved.body?.remotePower,
+        { bridgeUrl: 'https://adhitron.netlify.app', token: 'ui-test-token', offDelaySec: 90, shutdownPc: false },
+        JSON.stringify(saved).slice(0, 200),
+      );
       await page.click('#rp-test');
       await page.waitFor(() => /Jembatan|belum diset/.test(document.querySelector('#rp-result')?.textContent ?? ''), { timeoutMs: 10000, message: 'hasil uji koneksi tampil' });
       // The expected 502 (invalid test token) is part of the flow above; clear it so the page reads clean.
