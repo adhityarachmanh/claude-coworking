@@ -2,6 +2,7 @@
 // child (on Windows: TerminateProcess on that one pid), so a CLI that started a shell, a test runner or a node
 // grandchild leaves it running, and that grandchild may keep the stdout pipe open so the callback never comes.
 import { execFile, spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { childEnv } from './child-env.js';
 
 const WIN = process.platform === 'win32';
@@ -68,43 +69,53 @@ function spawnExecFile(command, args, options, finish) {
   let errLen = 0;
   let overflow = '';
   let settled = false;
+  // A StringDecoder (not chunk.toString) keeps a multi-byte character whole when the pipe splits it between chunks:
+  // execFile does the same through `setEncoding`. maxBuffer still counts BYTES, like execFile.
+  const outText = text ? new StringDecoder(text) : null;
+  const errText = text ? new StringDecoder(text) : null;
+  const close = () => {
+    if (outText) out.push(outText.end());
+    if (errText) errOut.push(errText.end());
+  };
   const done = (err) => {
     if (settled) return;
     settled = true;
     finish(err, text ? out.join('') : Buffer.concat(out), text ? errOut.join('') : Buffer.concat(errOut));
   };
-  child.stdout?.on('data', (chunk) => {
-    outLen += chunk.length;
-    if (outLen > maxBuffer) {
-      overflow ||= 'stdout';
-      killTree(child.pid);
+  const collect = (chunk, chunks, decoder, len, stream) => {
+    if (len + chunk.length > maxBuffer) {
+      if (!overflow) {
+        overflow = stream;
+        killTree(child.pid);
+      }
       return;
     }
-    out.push(text ? chunk.toString(text) : chunk);
+    chunks.push(decoder ? decoder.write(chunk) : chunk);
+    return len + chunk.length;
+  };
+  child.stdout?.on('data', (chunk) => {
+    outLen = collect(chunk, out, outText, outLen, 'stdout') ?? outLen;
   });
   child.stderr?.on('data', (chunk) => {
-    errLen += chunk.length;
-    if (errLen > maxBuffer) {
-      overflow ||= 'stderr';
-      killTree(child.pid);
-      return;
-    }
-    errOut.push(text ? chunk.toString(text) : chunk);
+    errLen = collect(chunk, errOut, errText, errLen, 'stderr') ?? errLen;
   });
   child.on('error', (err) => {
     err.cmd = `${command} ${args.join(' ')}`;
     done(err);
   });
   child.on('close', (code, signal) => {
+    close(); // the tail of a split character still sitting in the decoder
     let err = null;
     if (overflow) {
       err = new Error(`${overflow} maxBuffer length exceeded`);
       err.code = 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
+      err.cmd = `${command} ${args.join(' ')}`;
     } else if (code !== 0 || signal) {
       const tail = text ? errOut.join('').trim() : '';
       err = new Error(`Command failed: ${command} ${args.join(' ')}${tail ? `\n${tail}` : ''}`);
-      err.code = code ?? undefined;
+      err.code = code ?? null;
       err.signal = signal ?? undefined;
+      err.cmd = `${command} ${args.join(' ')}`;
     }
     done(err);
   });

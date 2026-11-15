@@ -1,6 +1,6 @@
 // ---------- history backup (⚙ → Cadangkan riwayat) ----------
-// Backup export/import read and write the whole Claude history: laptop only. server.js refuses these paths to
-// every paired phone (LOCAL_ONLY, Tailscale too) and each handler checks isLocal again on its own.
+// Backup export/import read and write the whole Claude history: the laptop, or a paired phone over Tailscale HTTPS
+// (server.js: SECURE_ADMIN). A plain-HTTP WiFi phone is read-only: each handler checks again on its own.
 // One export, import or scheduled backup at a time: ctx.backupLock (shared with the BackupScheduler in server.js).
 import { randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
@@ -33,9 +33,9 @@ export function register(router) {
   router.post('/api/backup/verify', verifyUpload, { rawBody: true });
   // 🔑 Change the password of an encrypted backup: decrypt → re-encrypt → download the new .aob.
   router.post('/api/backup/rekey', rekeyUpload, { rawBody: true });
-  // POST /api/backup/schedule (read), /save (settings), /run (now, in the background). Laptop only (LOCAL_ONLY).
-  router.post('/api/backup/schedule', laptopOnly(({ backupScheduler }, req, res) => json(res, 200, backupScheduler.view())));
-  router.post('/api/backup/schedule/save', laptopOnly(async ({ backupScheduler }, req, res, params, body) => {
+  // POST /api/backup/schedule (read), /save (settings), /run (now, in the background). Laptop or Tailscale HTTPS.
+  router.post('/api/backup/schedule', adminOnly(({ backupScheduler }, req, res) => json(res, 200, backupScheduler.view())));
+  router.post('/api/backup/schedule/save', adminOnly(async ({ backupScheduler }, req, res, params, body) => {
     try {
       return json(res, 200, await backupScheduler.save(body));
     } catch (err) {
@@ -43,21 +43,24 @@ export function register(router) {
       throw err;
     }
   }));
-  router.post('/api/backup/schedule/run', laptopOnly(({ backupScheduler }, req, res) => {
+  router.post('/api/backup/schedule/run', adminOnly(({ backupScheduler }, req, res) => {
     if (!backupScheduler.schedule.folder) return json(res, 400, { error: 'Atur folder tujuan dulu.' });
     const run = backupScheduler.run({ trigger: 'manual' });
     if (!run) return json(res, 409, { error: 'Export/import/backup lain sedang berjalan. Tunggu sampai selesai.' });
     return json(res, 202, backupScheduler.view()); // the result arrives as a backup-schedule event (and in /schedule)
   }));
-  router.post('/api/backup/schedule/history', laptopOnly(async ({ backupScheduler }, req, res) => json(res, 200, await backupScheduler.history())));
+  router.post('/api/backup/schedule/history', adminOnly(async ({ backupScheduler }, req, res) => json(res, 200, await backupScheduler.history())));
   router.post('/api/backup/schedule/restore', restoreScheduled);
   // Anything else under /api/backup/schedule: the same laptop check, then a 404.
-  router.post('/api/backup/schedule*', laptopOnly((ctx, req, res) => json(res, 404, { error: 'not found' })));
+  router.post('/api/backup/schedule*', adminOnly((ctx, req, res) => json(res, 404, { error: 'not found' })));
 }
 
-/** The backup routes' own laptop check (in addition to server.js's LOCAL_ONLY gate). */
-const laptopOnly = (fn) => (ctx, req, res, params, body) => {
-  if (!ctx.isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
+/**
+ * The backup routes' own admin check, on top of server.js's SECURE_ADMIN gate: the laptop, or a paired phone over
+ * Tailscale HTTPS (`isReadOnly` false). A plain-HTTP WiFi phone stays read-only and is refused here too.
+ */
+const adminOnly = (fn) => (ctx, req, res, params, body) => {
+  if (ctx.isReadOnly?.(req) !== false) return json(res, 403, { error: 'Backup hanya bisa dari laptop atau lewat Tailscale.' });
   return fn(ctx, req, res, params, body);
 };
 
@@ -73,8 +76,8 @@ function activeSessionIds(hub) {
 }
 
 /** POST /api/backup/export: the backup .zip (or an encrypted .aob), streamed (never held in memory). */
-async function exportBackup({ hub, ledger, isLocal, backupLock, appVersion, dataDir, projectRoots, opencode }, req, res, params, body) {
-  if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
+async function exportBackup({ hub, ledger, isReadOnly, backupLock, appVersion, dataDir, projectRoots, opencode }, req, res, params, body) {
+  if (isReadOnly?.(req) !== false) return json(res, 403, { error: 'Backup hanya bisa dari laptop atau lewat Tailscale.' });
   if (backupLock.busy) return json(res, 409, { error: 'Export/import riwayat lain sedang berjalan. Tunggu sampai selesai.' });
   const password = typeof body?.password === 'string' ? body.password : '';
   if (password && password.length < MIN_BACKUP_PASSWORD) return json(res, 400, { error: `Kata sandi backup minimal ${MIN_BACKUP_PASSWORD} karakter.` });
@@ -153,9 +156,9 @@ async function openUpload(file, req, tmpDir) {
 const TMP_NAME = (kind) => path.join('tmp', `${kind}-${Date.now()}-${randomBytes(4).toString('hex')}`);
 
 /** Shared setup for the three raw-upload backup routes. */
-function uploadGuard({ isLocal, backupLock }, req, res) {
-  if (!isLocal(req)) {
-    json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
+function uploadGuard({ isReadOnly, backupLock }, req, res) {
+  if (isReadOnly?.(req) !== false) {
+    json(res, 403, { error: 'Backup hanya bisa dari laptop atau lewat Tailscale.' });
     return false;
   }
   const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
@@ -172,8 +175,8 @@ function uploadGuard({ isLocal, backupLock }, req, res) {
 }
 
 /** POST /api/backup/verify: is this a valid backup, and does the password open it? Nothing is restored. */
-async function verifyUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, req, res) {
-  if (!uploadGuard({ isLocal, backupLock }, req, res)) return;
+async function verifyUpload({ isReadOnly, backupLock, dataDir, maxBackupBytes }, req, res) {
+  if (!uploadGuard({ isReadOnly, backupLock }, req, res)) return;
   if (Number(req.headers['content-length']) > maxBackupBytes) throw new HttpError(413, `File backup terlalu besar (maks ${Math.round(maxBackupBytes / 1024 ** 2)} MB).`);
   backupLock.busy = true;
   const tmpDir = path.join(dataDir, 'tmp');
@@ -200,8 +203,8 @@ async function verifyUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, re
 }
 
 /** POST /api/backup/rekey: decrypt with the old password, seal with the new one, stream the new .aob. */
-async function rekeyUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, req, res) {
-  if (!uploadGuard({ isLocal, backupLock }, req, res)) return;
+async function rekeyUpload({ isReadOnly, backupLock, dataDir, maxBackupBytes }, req, res) {
+  if (!uploadGuard({ isReadOnly, backupLock }, req, res)) return;
   const next = String(req.headers['x-backup-new-password'] ?? '');
   if (next.length < MIN_BACKUP_PASSWORD) return json(res, 400, { error: `Kata sandi baru minimal ${MIN_BACKUP_PASSWORD} karakter.` });
   if (Number(req.headers['content-length']) > maxBackupBytes) throw new HttpError(413, `File backup terlalu besar (maks ${Math.round(maxBackupBytes / 1024 ** 2)} MB).`);
@@ -258,8 +261,8 @@ async function receiveUpload(req, file, limit) {
 }
 
 /** POST /api/backup/preview: raw .zip body → temp file → what the archive holds (projects, sessions, chats). */
-async function previewUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, req, res) {
-  if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
+async function previewUpload({ isReadOnly, backupLock, dataDir, maxBackupBytes }, req, res) {
+  if (isReadOnly?.(req) !== false) return json(res, 403, { error: 'Backup hanya bisa dari laptop atau lewat Tailscale.' });
   const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
   if (!ZIP_TYPES.has(type)) return json(res, 415, { error: 'Kirim file .zip atau .aob hasil Export riwayat.' });
   if (Number(req.headers['content-length']) > maxBackupBytes) throw new HttpError(413, `File backup terlalu besar (maks ${Math.round(maxBackupBytes / 1024 ** 2)} MB).`);
@@ -290,8 +293,8 @@ async function previewUpload({ isLocal, backupLock, dataDir, maxBackupBytes }, r
 }
 
 /** POST /api/backup/import: raw .zip body → temp file in <data dir>/tmp → merged restore → JSON summary. */
-async function importBackup({ hub, ledger, mirror, isLocal, backupLock, dataDir, maxBackupBytes, projectRoots, refreshProjects, opencode }, req, res) {
-  if (!isLocal(req)) return json(res, 403, { error: 'Backup hanya bisa dari laptop.' });
+async function importBackup({ hub, ledger, mirror, isReadOnly, backupLock, dataDir, maxBackupBytes, projectRoots, refreshProjects, opencode }, req, res) {
+  if (isReadOnly?.(req) !== false) return json(res, 403, { error: 'Backup hanya bisa dari laptop atau lewat Tailscale.' });
   const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
   if (!ZIP_TYPES.has(type)) return json(res, 415, { error: 'Kirim file .zip atau .aob hasil Export riwayat.' });
   // A backup is Claude Code's history plus the office state: that store is always kept (data/chats), whatever
@@ -449,7 +452,7 @@ async function applyRestored({ hub, ledger, mirror, projectRoots, refreshProject
 }
 
 /** POST /api/backup/schedule/restore: a scheduled backup in the chosen folder → merged restore (the file stays). */
-const restoreScheduled = laptopOnly(async (ctx, req, res, params, body) => {
+const restoreScheduled = adminOnly(async (ctx, req, res, params, body) => {
   const { backupScheduler, backupLock } = ctx;
   const name = String(body?.name ?? '');
   if (!AUTO_NAME.test(name)) return json(res, 400, { error: 'Nama backup tidak valid.' });

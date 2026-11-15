@@ -697,6 +697,13 @@ test('projects come from the configured root; bad roots are rejected', async () 
   assert.equal((await snapshot()).projects.find((p) => p.id === id).archived, false);
 });
 
+test('⚙ → Sistem: config.dataDir names the data folder this server really uses (and survives a refresh)', async () => {
+  assert.equal((await snapshot()).config.dataDir, path.join(TMP, 'data'), 'the same folder OFFICE_DATA_DIR points at');
+  // Every refresh REPLACES hub.config: a value patched in after that literal would vanish on the next refresh.
+  assert.equal((await api('/api/projects/refresh')).status, 200);
+  assert.equal((await snapshot()).config.dataDir, path.join(TMP, 'data'), 'still there after a refresh');
+});
+
 test('a prompt streams a reply and finishes with token stats', async () => {
   const id = await projectId();
   mark = seen.length;

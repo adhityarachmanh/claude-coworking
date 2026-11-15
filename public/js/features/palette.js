@@ -3,7 +3,7 @@
 // effort, chat actions. Fuzzy match with highlighted letters, ↑↓ Enter Esc, recently used actions first.
 // Prefixes narrow the list: `>` commands & actions, `@` files, `#` projects.
 // Accessible as a combobox (the input) driving a listbox (aria-activedescendant); no focusable options.
-import { api, mayAdmin, toast } from '../core/api.js';
+import { api, laptopBlocked, mayAdmin, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
 import { THEME_IDS, THEMES, theme } from '../office/themes.js';
@@ -207,7 +207,7 @@ function buildItems() {
     ['roster', '👥', 'Kelola tim', '/team', null, () => openRoster(), 'team tim role roster anggota meja kelola'],
     ['settings', '⚙', 'Pengaturan', '', adminOnly, click('#btn-settings'), 'settings config preferences'],
     ['notify', '🔔', 'Pengaturan notifikasi', '', null, () => openNotifySettings(), 'notification notifikasi suara sound jam tenang quiet volume favorit'],
-    ['diagnostics', '🩺', 'Bundel diagnostik', '', adminOnly, () => downloadDiagnostics(), 'diagnostic diagnostik log bug laporan dukungan support'],
+    ['diagnostics', '🩺', 'Bundel diagnostik', '', laptopBlocked('/api/diagnostics/export') ? laptopOnly : null, () => downloadDiagnostics(), 'diagnostic diagnostik log bug laporan dukungan support'],
     ['checklist', '✅', 'Checklist project', '', needProject, () => openChecklist(), 'checklist siap readme test build git docs onboarding kesiapan'],
     ['account', '👤', 'Akun Claude', '', null, click('#btn-account'), 'account login kuota quota'],
     ['report', '📊', 'Laporan penggunaan token', '', null, click('#btn-report'), 'report usage token pdf'],

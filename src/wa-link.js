@@ -11,7 +11,7 @@
 //   • status() never throws: the settings page polls it exactly when the network is down.
 import makeWASocket, { DisconnectReason } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
-import { statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { WaAuthStoreError } from './wa-auth-store.js';
 
@@ -391,6 +391,7 @@ export class WaLink {
       this.#pair = null; // the phone finished linking: the code is spent
       this.#state = 'linked';
       this.#lastError = null;
+      this.#markLinked();
       this.#publish();
     } else if (connection === 'close') {
       this.#onClose(lastDisconnect);
@@ -527,9 +528,28 @@ export class WaLink {
     return { state: this.#state, qr: this.#freshQr(), me: this.#me(), since: this.#linkedSince() };
   }
 
-  /** When the saved session was last written: "tertaut sejak …" tells an old link from one made a minute ago. */
+  /**
+   * When this session was linked. `session.bin` is rewritten on every credentials update (the ratchet moves with
+   * each message), so its mtime says "a minute ago" for a link made months ago: the moment of linking is written
+   * once, in its own file, and never touched again.
+   */
+  #markLinked() {
+    try {
+      const file = path.join(this.#store.dir, 'linked-at');
+      if (!existsSync(file)) writeFileSync(file, String(this.#now()), { mode: 0o600 });
+    } catch {
+      // a read-only data folder: the snapshot falls back to the session file's mtime below
+    }
+  }
+
   #linkedSince() {
     if (this.#state !== 'linked') return null;
+    try {
+      const at = Number(readFileSync(path.join(this.#store.dir, 'linked-at'), 'utf8'));
+      if (Number.isFinite(at) && at > 0) return at;
+    } catch {
+      // an install linked before `linked-at` existed
+    }
     try {
       return Math.round(statSync(path.join(this.#store.dir, 'session.bin')).mtimeMs);
     } catch {

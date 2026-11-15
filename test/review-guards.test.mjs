@@ -316,6 +316,22 @@ test('execFileTree: stdin is closed at once, so a CLI that reads stdin (opencode
   assert.equal(out.stdout.trim(), 'eof');
 });
 
+test('execFileTree: a multi-byte character split between chunks arrives whole (and maxBuffer still caps)', async () => {
+  // 1 + 65535 two-byte characters: the first 64 KiB pipe chunk ends in the middle of the last "é". Decoding each
+  // chunk on its own (chunk.toString) turns that half into a replacement character; execFile uses setEncoding.
+  const whole = await new Promise((resolve) =>
+    execFileTree(process.execPath, ['-e', "process.stdout.write('x' + 'é'.repeat(65535))"], { timeout: 20_000, encoding: 'utf8', windowsHide: true }, (err, stdout) => resolve({ err, stdout })),
+  );
+  assert.equal(whole.err, null);
+  assert.equal(whole.stdout.length, 1 + 65535);
+  assert.ok(!whole.stdout.includes('\uFFFD'), 'no replacement character in the middle');
+
+  const capped = await new Promise((resolve) =>
+    execFileTree(process.execPath, ['-e', "process.stdout.write('x'.repeat(5000))"], { timeout: 20_000, encoding: 'utf8', maxBuffer: 1000, windowsHide: true }, (err, stdout) => resolve({ err, stdout })),
+  );
+  assert.equal(capped.err?.code, 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', 'maxBuffer is still enforced like execFile');
+});
+
 test('👤 OpenCode provider login/logout from a phone raises the same account alert as Claude Code', async () => {
   const fake = path.join(TMP, 'fake-opencode-api.mjs');
   writeFileSync(fake, "console.log(JSON.stringify({ data: { attemptID: 'a1', url: 'https://example.com/login', mode: 'auto' } }));\n");
@@ -362,6 +378,28 @@ test('⚙ OpenCode config editor: backups/restore/consolidate are remote admin (
   // it calls every registered non-read route from a paired plain-HTTP device and expects 403. The four endpoints are
   // registered non-reads (asserted above), so that loop covers them; the fact it relies on is pinned here:
   assert.match(server, /isReadOnly\(req\) && !wifiAllows\(pathname\)/, 'the one plain-WiFi gate really uses wifiAllows');
+});
+
+test('💾 Backup dan bundel diagnostik: HP Tailscale boleh mencadangkan, HP WiFi biasa tidak', async () => {
+  const { ctx } = projectCtx();
+  const scheduler = { view: () => ({ enabled: false, folder: '' }), history: async () => [], schedule: {} };
+  const phone = { ...ctx, backupScheduler: scheduler, isReadOnly: () => false }; // laptop or paired Tailscale
+  const wifi = { ...ctx, backupScheduler: scheduler, isReadOnly: () => true }; // plain-HTTP WiFi phone
+  // The client shows the backup buttons to a paired phone (mayAdmin), so the server must accept them too.
+  assert.equal((await call('/api/backup/schedule', phone, TAILSCALE, {})).status, 200, 'jadwal backup terbaca dari HP Tailscale');
+  assert.equal((await call('/api/backup/schedule/history', phone, TAILSCALE, {})).status, 200, 'riwayat backup terbaca dari HP Tailscale');
+  const refused = await call('/api/backup/schedule', wifi, TAILSCALE, {});
+  assert.equal(refused.status, 403, 'WiFi biasa tetap ditolak');
+  assert.match(refused.body.error, /Tailscale/);
+  // Every backup handler repeats the check (server.js's SECURE_ADMIN gate is not the only one): no `isLocal` left.
+  const src = readFileSync(path.join(APP, 'src', 'routes', 'backup.js'), 'utf8');
+  assert.doesNotMatch(src, /isLocal/, 'the backup routes no longer demand the laptop itself');
+  // The diagnostics bundle carries logs that may name local folders: it stays laptop-only, and the client is told so.
+  const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  assert.ok(server.includes("'/api/diagnostics/export'"), 'listed in LAPTOP_ONLY_API for the client');
+  const bundle = await call('/api/diagnostics/export', { ...ctx, isLocal: () => false }, TAILSCALE, {});
+  assert.equal(bundle.status, 403);
+  assert.match(bundle.body.error, /laptop/);
 });
 
 test('Claude-only surfaces are closed while OpenCode is the app engine', async () => {

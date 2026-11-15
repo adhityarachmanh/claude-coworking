@@ -51,6 +51,11 @@ export async function loadOpenCode(rerender) {
     oc.error = 'Login provider OpenCode hanya dari laptop atau lewat Tailscale.';
     return rerender();
   }
+  // Not installed here: the route answers 404 (the tab already says so), so nothing is asked.
+  if (state.config?.engines?.opencode?.available === false) {
+    oc.error = 'OpenCode belum terpasang di laptop ini.';
+    return rerender();
+  }
   oc.loading = true;
   rerender();
   try {

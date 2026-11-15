@@ -183,9 +183,6 @@ if (process.argv.includes('--autologon-enable') || process.argv.includes('--auto
 const SYSTEM_CERTS = trustSystemCertificates();
 
 const hub = new Hub({ dataDir: DATA_DIR });
-// Where this server keeps its data (settings, WhatsApp session, chats). Shown in ⚙ → Sistem: the installed app and a
-// dev checkout use different folders, which is the usual reason a linked WhatsApp looks "unlinked" on the other one.
-hub.config = { ...hub.config, dataDir: DATA_DIR };
 // 📈 Operational history for 🩺 Kesehatan (aggregate only, never conversation content). Counts this start, then the
 // rolling seven days from data/metrics.json.
 const metrics = new Metrics({ file: path.join(DATA_DIR, 'metrics.json') });
@@ -662,6 +659,10 @@ function refreshProjects() {
     roots: projectRoots(),
     defaultRoot: DEFAULT_ROOT,
     usingDefault: !hub.persisted.roots.length,
+    // Where this server keeps its data (settings, WhatsApp session, chats). Shown in ⚙ → Sistem: the installed app
+    // and a dev checkout use different folders, which is the usual reason a linked WhatsApp looks "unlinked" on the
+    // other one. It lives in this literal (not a patch after it) because every refresh REPLACES hub.config.
+    dataDir: DATA_DIR,
     slashCommands: [...new Set([...DEFAULT_SLASH, ...(hub.persisted.slashCommands ?? [])])].sort(),
     ...hub.catalogConfig(), // models + commands with descriptions, as Claude Code reports them
     autostart: autostartStatus({ appDir: APP_DIR }), // mode/autologon/needsElevation/unsafeDesktop (no script paths)
@@ -736,6 +737,8 @@ const LAPTOP_ONLY_API = {
     '/api/claude/plugins/action',
     '/api/github/login',
     '/api/github/login/cancel',
+    // Route-level laptop guard (routes/diagnostics.js): the bundle carries logs that may name local folders.
+    '/api/diagnostics/export',
   ],
   patterns: ['^/api/remote/', LOCAL_ONLY_ACTION.source, LOCAL_ONLY_GROUP.source, LOCAL_ONLY_GROUP_DISSOLVE.source],
 };

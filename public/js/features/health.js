@@ -3,7 +3,7 @@
 // phone is refused), so its opener is hidden there and opening the dialog is guarded here too.
 // No polling: one request when the dialog opens (and one per ↻). The last good report stays in memory, so
 // reopening shows it at once and refreshes in the background; every field from the server is validated and escaped.
-import { api, canCall } from '../core/api.js';
+import { api, canCall, laptopBlocked } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { engineLabel } from '../core/engine-caps.js';
 import { state } from '../core/state.js';
@@ -300,6 +300,13 @@ export function syncHealthButton() {
   btn.disabled = blocked;
   const section = $('#health-section');
   if (section) section.hidden = blocked;
+  // The bundle carries logs that may name local folders, so its route is laptop-only (routes/diagnostics.js): the
+  // button follows that rule instead of offering a download the server refuses.
+  const diag = $('#health-diagnostics');
+  if (diag) {
+    diag.hidden = blocked || laptopBlocked('/api/diagnostics/export');
+    diag.title = diag.hidden ? 'Bundel diagnostik hanya bisa diunduh dari laptop' : diag.title;
+  }
 }
 
 export function initHealth() {

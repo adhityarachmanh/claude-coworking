@@ -6,7 +6,7 @@
 // sampai ke HP — baik lewat rute (403 dari laptop-only) maupun lewat stream HP WiFi biasa (redactor `wa`).
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -210,6 +210,19 @@ test('test 409 when not linked, 200 after link', async () => {
   // Linked again for the rest of this file, like the settings page would: unlink is not a one-way trip.
   assert.equal((await link()).status, 200);
   await until(async () => (await status()).body.state === 'linked');
+});
+
+test('sejak tertaut: waktu tautan itu sendiri, bukan waktu berkas sesi terakhir ditulis', async () => {
+  const linked = (await status()).body;
+  assert.equal(linked.state, 'linked');
+  assert.ok(linked.since > 0, 'a link date is published');
+  // Every credentials update (the ratchet moves with each message) rewrites session.bin. A touch may not move the
+  // date the user reads: "tertaut sejak …" must still be the moment of linking.
+  const session = path.join(TMP, 'data', 'wa', 'session.bin');
+  const future = new Date(Date.now() + 3600_000);
+  utimesSync(session, future, future);
+  assert.equal((await status()).body.since, linked.since, 'the session file mtime is not the link date');
+  assert.ok(existsSync(path.join(TMP, 'data', 'wa', 'linked-at')), 'the moment of linking is recorded once, on its own');
 });
 
 test('over plain WiFi every WhatsApp route is refused (403), GET status included', async (t) => {
