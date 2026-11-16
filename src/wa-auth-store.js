@@ -127,6 +127,15 @@ export class EncryptedAuthStore {
     return { state: { creds, keys }, saveCreds };
   }
 
+  /**
+   * True when a sealed session exists on disk. Public because the link has to decide, before opening a socket,
+   * whether there is a login to reconnect (a restart) or nothing at all (never show a QR at boot).
+   * @returns {boolean}
+   */
+  hasSession() {
+    return this.#hasSession();
+  }
+
   /** Removes the key and the session: the next `load()` starts from `initAuthCreds()`. Used by "lepas tautan". */
   async wipe() {
     // The flag goes up first: a saveCreds already queued (or called while this awaits) must not resurrect the session.

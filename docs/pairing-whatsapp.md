@@ -1,10 +1,13 @@
 # WhatsApp untuk PIN pairing HP
 
-Halaman `/pair` punya dua jalur masuk:
+Halaman `/pair` punya tiga jalur masuk:
 
-1. **📲 Kirim PIN ke WhatsApp** — PIN 6 digit dikirim ke WhatsApp-mu, jadi HP bisa dipasangkan walau tidak ada
+1. **Perangkat ini sudah terpasang** — HP yang cookie-nya masih sah (termasuk perangkat dari akun tailnet pemilik
+   laptop yang dipasangkan otomatis) langsung melihat **✅ Perangkat ini sudah terpasang** dan tombol menuju kantor.
+   Tidak ada PIN atau kode yang perlu diketik.
+2. **📲 Kirim PIN ke WhatsApp** — PIN 6 digit dikirim ke WhatsApp-mu, jadi HP bisa dipasangkan walau tidak ada
    yang duduk di depan laptop.
-2. **Punya kode 6 digit dari layar laptop?** — jalur bawaan, terlipat di bawah. **Tanpa setup apa pun.**
+3. **Punya kode 6 digit dari layar laptop?** — jalur bawaan, terlipat di bawah. **Tanpa setup apa pun.**
 
 Dokumen ini menjelaskan cara menautkan WhatsApp dari dalam aplikasi, batas keamanan PIN, dan cara mengatasinya
 kalau PIN tidak datang. Ringkasan akses HP ada di [README → Dari HP](../README.md#dari-hp).
@@ -47,9 +50,30 @@ berikutnya.
 
 Jalur **kode 6 digit dari layar laptop** tetap ada dan tetap menjadi bawaan. Tanpa menautkan WhatsApp:
 
-- halaman `/pair` menampilkan form kode (bukan tombol PIN yang menunggu tanpa ujung);
+- halaman `/pair` menampilkan tombol PIN yang **mati beserta alasannya** (bukan tombol yang menunggu tanpa ujung);
 - permintaan PIN menjawab **503** `WhatsApp belum ditautkan.`
 - saat HP meminta masuk, kode 6 digit tampil di layar laptop.
+
+## Sesi tersambung lagi sendiri
+
+Sesi WhatsApp yang sudah tertaut **tidak hilang saat server restart** (reboot laptop, listrik putus, aplikasi
+diperbarui). Sesi terenkripsi di `data/wa/` dibuka lagi secara otomatis saat server siap, di latar belakang:
+
+- status di ⚙ berubah dari *Belum ditautkan.* menjadi *Menghubungkan…* lalu *Tertaut* tanpa menekan **Tautkan**;
+- halaman `/pair` ikut menyegarkan dirinya (lihat tabel `reason` di bawah), jadi tombol PIN aktif sendiri;
+- permintaan PIN yang datang saat penyambungan belum selesai **menunggu** beberapa detik, lalu mengirim PIN-nya;
+- kalau sesinya benar-benar tidak ada (belum pernah ditautkan atau sudah **Lepas**), server **tidak** membuat sesi
+  baru dan **tidak** membuat QR saat start;
+- sesi yang masih ada tetapi **sudah tidak diakui WhatsApp** (mis. perangkat dihapus dari HP) bisa meminta tautkan
+  ulang: status menjadi *Menunggu kode QR dipindai di HP.* dan halaman `/pair` menyuruh memakai kode laptop. QR-nya
+  tetap hanya sampai ke laptop (`GET /api/wa/status`), tidak pernah ke HP (broadcast hanya `{ state }`);
+- Log start hanya memuat satu baris aman (tanpa nomor, JID, atau QR): `WhatsApp: sesi tersambung ulang`,
+  `WhatsApp: menyambung di latar belakang`, `WhatsApp: sesi tidak valid — perlu tautkan ulang dari laptop`,
+  `WhatsApp: sesi belum ada`, atau baris error bila sesinya tidak bisa dibuka.
+
+Jadi tombol **📲 Kirim PIN ke WhatsApp** mati hanya bila memang tidak ada yang bisa mengirimnya: sesi belum ada,
+sesi baru dicabut dari HP, atau WhatsApp sedang menampilkan QR yang belum dipindai. Cara menautkan ulang: ⚙ Setelan →
+📱 PIN ke HP → **Tautkan** (pindai QR), atau **Minta kode tautan** dari HP.
 
 ## Di mana sesinya disimpan
 
@@ -129,27 +153,39 @@ hanya selama akses HP menyala. Semua memakai JSON dan tidak butuh token API, tet
 
 | Endpoint | Body | Respons sukses |
 |---|---|---|
-| `GET /api/auth/pin-status` | – | `{ configured, status, active, expiresInSec, canRequestInSec }` |
+| `GET /api/auth/pin-status` | – | `{ paired, configured, status, reason, active, expiresInSec, canRequestInSec }` |
 | `POST /api/auth/request-pin` | – | `{ ok: true, expiresInSec, attemptsLeft }` + cookie `office_pin` |
 | `POST /api/auth/verify-pin` | `{ pin: "123456" }` | `{ ok: true }` + cookie perangkat (cookie PIN dihapus); `{ ok: true, already: true }` bila browser ini sudah terpasang |
 
 `verify-pin` mewajibkan `Content-Type: application/json` (selain itu **405**). Kalau browser sudah punya
 cookie perangkat yang sah, PIN tidak diperiksa dan tidak dihanguskan — jawabannya `already: true`.
 
-`pin-status` memetakan keadaan WhatsApp ke kontrak halaman `/pair`:
+`pin-status` memetakan keadaan WhatsApp ke kontrak halaman `/pair`. Field lama (`configured`, `status`, `active`,
+`expiresInSec`, `canRequestInSec`) tetap ada supaya halaman versi sebelumnya tidak rusak:
 
-| Keadaan WhatsApp | `configured` / `status` | Halaman `/pair` |
+| Keadaan WhatsApp | `configured` / `status` | `reason` | Halaman `/pair` |
+|---|---|---|---|
+| Tertaut (`linked`) | `true` / `connected` | `ready` | Tombol PIN hidup |
+| Menunggu QR (`qr`) | `true` / `qr_ready` | `wa-qr` | Tombol PIN mati + alasan; kode laptop |
+| Menyambung (`connecting`) | `true` / `connecting` | `wa-connecting` | Tombol PIN mati sampai tersambung; kode laptop |
+| Belum ditautkan (`off`) | `false` / `disconnected` | `wa-off` | Tombol PIN mati + alasan; kode laptop |
+
+`paired: true` berarti browser ini sudah membawa cookie perangkat yang sah (kasus biasa pada perangkat tailnet
+pemilik laptop): halaman menyembunyikan form PIN dan menampilkan **✅ Perangkat ini sudah terpasang** dengan tombol
+menuju kantor.
+
+`reason` juga dikirim di body **403**, supaya halaman tidak menebak-nebak:
+
+| `reason` 403 | Arti | Yang disarankan halaman |
 |---|---|---|
-| Belum ditautkan (`off`) | `false` / `disconnected` | Menyuruh memakai kode dari layar laptop |
-| Menunggu QR (`qr`) | `true` / `qr_ready` | Tombol PIN mati, menyuruh kode laptop |
-| Menyambung (`connecting`) | `true` / `connecting` | Tombol PIN mati, menyuruh kode laptop |
-| Tertaut (`linked`) | `true` / `connected` | Tombol PIN hidup |
+| `phone-access-off` | Akses HP dimatikan di laptop | Nyalakan aksesnya, atau pakai kode laptop |
+| `not-owner-tailnet` | Perangkat ini bukan perangkat tailnet pemilik laptop, atau Tailscale di HP belum tersambung (termasuk bila `tailscale status` gagal dijawab) | Masuk dengan akun tailnet pemilik, atau pakai kode 6 digit dari layar laptop |
 
-Kode error **`request-pin` / `verify-pin`** (`pin-status` selalu **200** selama akses HP menyala):
+Kode error **`request-pin` / `verify-pin`** (`pin-status` selalu **200** selama akses HP menyala dan peer lolos):
 
 | Status | Arti |
 |---|---|
-| **403** | Akses HP dimatikan (`Akses dari perangkat lain sedang dimatikan.`), daftar perangkat sudah penuh (maksimal 20) saat verifikasi, atau peer HTTPS Tailscale bukan perangkat akun pemilik |
+| **403** | Akses HP dimatikan (`Akses dari perangkat lain sedang dimatikan.`, `reason: phone-access-off`), peer HTTPS Tailscale bukan perangkat akun pemilik (`reason: not-owner-tailnet`), atau daftar perangkat sudah penuh (maksimal 20) saat verifikasi |
 | **400** | PIN salah — ada `triesLeft` |
 | **401** | PIN kedaluwarsa, sudah hangus karena 3 kali salah, atau diminta dari browser lain (`Kode ini diminta dari perangkat lain.`) |
 | **429** | Terlalu cepat minta ulang (60 detik), lebih dari 5 permintaan/jam, lebih dari 3 permintaan/jam dari satu alamat IP, atau 8 PIN salah dalam sejam (jeda 15 menit) — ada `retryAfter` dan header `Retry-After` |
@@ -159,11 +195,34 @@ Pesan error yang keluar selalu teks tetap; detail teknis hanya masuk log server.
 
 ## Halaman `/pair`
 
-- Jalur utama: **📲 Kirim PIN ke WhatsApp** (berubah menjadi **📲 Kirim ulang PIN** dengan hitung mundur).
+- **Perangkat sudah terpasang** (`paired: true`): form PIN dan tombol kirim disembunyikan; yang tampil hanya
+  **✅ Perangkat ini sudah terpasang** dan tombol **Buka Adhitron**. Tidak ada input PIN sama sekali.
+- Jalur utama untuk perangkat yang belum terpasang: **📲 Kirim PIN ke WhatsApp** (berubah menjadi
+  **📲 Kirim ulang PIN** dengan hitung mundur).
 - Jalur cadangan terlipat: **Punya kode 6 digit dari layar laptop?**
-- Kalau `pin-status` menjawab `configured: false` atau status bukan `connected`, tombol PIN dimatikan sendiri
-  dan teks pembuka menyuruh memakai kode dari laptop — tidak ada pesan yang ditunggu tanpa ujung.
+- Halaman **memeriksa status tiap 3 detik** selama tab terlihat (berhenti saat tab disembunyikan, langsung
+  memeriksa lagi saat dibuka). Jadi tombol PIN aktif sendiri begitu WhatsApp selesai menyambung — tidak perlu
+  memuat ulang halaman.
+- Tombol PIN mati **beserta alasannya**, dan setiap `reason` punya kalimatnya sendiri: WhatsApp belum tertaut,
+  QR belum dipindai, sedang menyambung ulang, akses HP dimatikan, atau perangkat ini bukan perangkat tailnet
+  pemilik. Semua alasan menunjuk ke kode 6 digit dari layar laptop.
 - Lewat bukan-HTTPS, halaman memperingatkan bahwa PIN dikirim tanpa enkripsi; pakai tautan Tailscale (https).
+
+## Pasang otomatis dari tailnet (tanpa PIN)
+
+Perangkat yang memakai **akun Tailscale pemilik laptop** dipasangkan **otomatis** saat membuka tautan https
+Tailscale — tanpa PIN dan tanpa kode. Ini tetap perilaku bawaan (bisa dimatikan di ⚙ Setelan → akses HP).
+Yang membuktikan identitas di jalur ini adalah login tailnet-nya, bukan PIN.
+
+Kedua sisi diberi tahu, tanpa perlu menebak:
+
+- **HP itu sendiri**: langsung diarahkan ke kantor; kalau halaman `/pair` sempat terbuka, ia menampilkan
+  **✅ Perangkat ini sudah terpasang** dan menyembunyikan form PIN (`paired: true` di `pin-status`).
+- **HP lain yang sudah terpasang**: menerima notifikasi push **✅ Perangkat "<nama>" berhasil dipasang**.
+- **Laptop**: perangkat baru muncul di daftar perangkat (⚙ Setelan → akses HP).
+- **Perangkat yang tidak lolos pemeriksaan** (akun tailnet lain, node shared-in, Tailscale mati, atau
+  `tailscale status` gagal dijawab) **tidak** dipasangkan otomatis; halaman `/pair` menjelaskannya dan menawarkan
+  PIN atau kode 6 digit dari layar laptop (`reason: not-owner-tailnet`).
 
 ## Perangkat yang sudah dikenal
 
@@ -178,7 +237,8 @@ membuktikan siapa pemilik peer-nya.
 
 | Gejala | Penyebab & solusi |
 |---|---|
-| Tombol **📲 Kirim PIN ke WhatsApp** mati, atau PIN tidak pernah datang | WhatsApp belum ditautkan, sedang menyambung, atau sesinya dicabut dari HP. Pakai kode dari layar laptop, lalu tautkan ulang lewat ⚙ → 📱 PIN ke HP |
+| Tombol **📲 Kirim PIN ke WhatsApp** mati, atau PIN tidak pernah datang | Baca alasan di bawah tombol. `WhatsApp belum tertaut` → tautkan di ⚙ → 📱 PIN ke HP. `QR belum dipindai` → pindai QR. `sedang menyambung ulang` → tunggu beberapa detik (tombol aktif sendiri). Sesi yang tertaut **tidak** hilang saat restart; kalau status tetap *Belum ditautkan.*, sesinya memang sudah tidak ada (pernah **Lepas** atau dicabut dari HP) |
+| Setelah restart, halaman `/pair` sempat bilang WhatsApp belum diatur | Server sedang membuka sesi terenkripsi di latar belakang; halaman memeriksa tiap 3 detik dan tombol PIN aktif sendiri. Tidak perlu memuat ulang halaman |
 | Status *Belum ditautkan.* padahal sudah memindai QR | Pindai ulang: kode QR berlaku singkat. Pastikan yang dipindai adalah **Perangkat tertaut → Tautkan perangkat** di WhatsApp, bukan kode lain |
 | Tombol **Tautkan** tidak memunculkan QR | Server sedang membuat soket; tunggu beberapa detik. Kalau tetap *Menghubungkan ke WhatsApp…*, periksa koneksi internet laptop lalu tekan **Batal** dan **Tautkan** lagi |
 | `WhatsApp belum ditautkan.` saat minta PIN | Sesi belum ada atau baru dicabut dari HP. Tautkan ulang dari laptop, atau pakai kode laptop |
@@ -193,7 +253,7 @@ membuktikan siapa pemilik peer-nya.
 | "Terlalu banyak kode salah. Coba lagi dalam N menit." | 8 PIN salah dalam sejam → permintaan dijeda 15 menit. Tunggu, lalu pakai kode dari layar laptop |
 | "Kode ini diminta dari perangkat lain" | PIN terikat ke browser yang memintanya. Minta PIN baru dari HP yang akan dipasangkan — jangan minta dari laptop/browser lain lalu memasukkan PIN di HP |
 | "Kode salah 3 kali dan sudah dibatalkan" | PIN hangus. Minta PIN baru |
-| `Perangkat Tailscale ini bukan milik pemilik laptop` | HP tidak memakai akun tailnet yang sama, node shared-in, atau `tailscale status` di laptop gagal dijawab. Pakai kode dari layar laptop |
+| `Perangkat Tailscale ini bukan milik pemilik laptop` | HP tidak memakai akun tailnet yang sama, node shared-in, atau `tailscale status` di laptop gagal dijawab. Pakai kode dari layar laptop, atau masuk dengan akun Tailscale pemilik laptop. Ini **bukan** berarti akses HP dimatikan |
 
 ## Catatan keamanan
 

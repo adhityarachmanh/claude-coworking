@@ -205,6 +205,32 @@ export class WaLink {
   }
 
   /**
+   * Reconnects the session left on disk: a restart must not quietly forget WhatsApp, because the encrypted
+   * credentials ARE the login. Called best-effort at server start and before a PIN send, so the /pair page comes
+   * back by itself instead of reporting "WhatsApp belum diatur" until the owner revisits the settings card.
+   *
+   * Never throws (the failure belongs in `lastError`, like every other connect failure) and never starts a fresh
+   * login: with no session on disk there is nothing to restore, so no QR is created at boot. A session that exists but
+   * is no longer registered still makes baileys offer a QR — that only means the owner has to link again from the
+   * laptop. The QR itself is never broadcast and never leaves this machine except through the laptop-only
+   * GET /api/wa/status. Idempotent: an existing socket or a scheduled retry is the attempt.
+   * @returns {Promise<{ state: 'off'|'qr'|'connecting'|'linked', qr: string|null, me: object|null }>}
+   */
+  async restore() {
+    // An unlink() in flight is deleting the session: reopening those credentials would race the wipe, so leave it.
+    if (this.#unlinking) return this.status();
+    if (this.#state !== 'off' || this.#socket || this.#timer || this.#starting) return this.status();
+    if (typeof this.#store.hasSession !== 'function' || !this.#store.hasSession()) return this.status();
+    try {
+      return await this.link();
+    } catch {
+      // link() already recorded the reason in #lastError (a tampered session, a socket that cannot start): restoring
+      // is best effort, so the caller keeps serving and the PIN path reports "belum ditautkan" as before.
+      return this.status();
+    }
+  }
+
+  /**
    * Links without a QR: WhatsApp gives an 8-character code for the owner's number, and the owner types it on the phone
    * (WhatsApp → Perangkat tertaut → Tautkan dengan nomor telepon). This is what makes linking possible from a phone —
    * a QR cannot be scanned by the same phone that displays it.

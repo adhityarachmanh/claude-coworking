@@ -3,7 +3,7 @@
 // The tests pin down the /pair contract, that a second link() never opens a second socket, that a PIN message goes to
 // the owner's own number, and that reconnect/unlink behave the way the settings page assumes.
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -66,6 +66,22 @@ function fakeSocketFactory(log) {
 }
 
 const stubQr = async (qr) => `data:image/png;base64,${Buffer.from(qr).toString('base64')}`;
+
+/**
+ * A store stand-in for restore(): only `hasSession()` decides whether a session is left on disk, and `load()`
+ * hands back credentials as if baileys had saved them before the server stopped.
+ */
+function storedSession(dir, { hasSession = true, loads } = {}) {
+  return {
+    dir,
+    hasSession: () => hasSession,
+    load: async () => {
+      if (loads) loads.count += 1;
+      return { state: { creds: { me: { id: '628111:3@s.whatsapp.net', name: 'Adhit' } }, keys: {} }, saveCreds: async () => {} };
+    },
+    wipe: async () => {},
+  };
+}
 
 function harness({ dir, now, retryBaseMs = 5, logoutTimeoutMs, onChange, qrToDataUrl = stubQr, store, socketFactory } = {}) {
   const log = { sockets: [], statuses: [] };
@@ -478,6 +494,98 @@ test('link() waits for a running unlink() instead of opening a socket mid-wipe',
     assert.equal(existsSync(dir), true, 'the fresh link starts its own session');
     assert.equal(h.log.sockets.length, 2, 'link() proceeds once the wipe is done');
     h.link.stop();
+  } finally {
+    cleanup(dir);
+  }
+});
+
+// A reboot/restart used to leave the link 'off' even though the encrypted session was still on disk: WhatsApp
+// "forgot" the login, /pair reported configured:false and the PIN button stayed dead. restore() is what the
+// server calls at start-up (and before a PIN send) to bring that session back.
+test('restore() reconnects the session left on disk', async () => {
+  const dir = tempDir();
+  try {
+    const h = harness({ dir, store: storedSession(dir) });
+    const status = await h.link.restore();
+    assert.equal(h.log.sockets.length, 1, 'the stored credentials open a socket');
+    assert.equal(status.state, 'connecting', 'the login is in flight, not a QR');
+
+    h.log.sockets[0].emit('connection.update', { connection: 'open' });
+    assert.equal((await h.link.status()).state, 'linked');
+    // The PIN path works right away: this is what the pair page needs after a reboot.
+    assert.deepEqual(await h.link.sendText('halo'), { ok: true });
+    assert.deepEqual(h.log.sockets[0].sends, [{ jid: '628111@s.whatsapp.net', content: { text: 'halo' } }]);
+    h.link.stop();
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('restore() without a session opens no socket and shows no QR', async () => {
+  const dir = tempDir();
+  try {
+    const loads = { count: 0 };
+    const h = harness({
+      dir,
+      store: { dir, hasSession: () => false, load: async () => { loads.count += 1; throw new Error('nothing to load'); }, wipe: async () => {} },
+    });
+    assert.deepEqual(await h.link.restore(), { state: 'off', qr: null, me: null, since: null });
+    assert.equal(h.log.sockets.length, 0, 'a boot without a session must not mint a new login');
+    assert.equal(loads.count, 0, 'the store is not even read');
+    assert.equal(h.log.statuses.length, 0, 'nothing to broadcast: no QR was created');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('restore() is idempotent while connecting or linked', async () => {
+  const dir = tempDir();
+  try {
+    const h = harness({ dir, store: storedSession(dir) });
+    await Promise.all([h.link.restore(), h.link.restore()]);
+    assert.equal(h.log.sockets.length, 1, 'two restores at boot share one socket');
+    await h.link.restore();
+    assert.equal(h.log.sockets.length, 1);
+
+    h.log.sockets[0].emit('connection.update', { connection: 'open' });
+    await h.link.restore();
+    assert.equal(h.log.sockets.length, 1, 'a linked session is left alone');
+    h.link.stop();
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('restore() never throws: a broken store is left in lastError', async () => {
+  const dir = tempDir();
+  try {
+    const h = harness({
+      dir,
+      store: {
+        dir,
+        hasSession: () => true,
+        load: async () => {
+          throw new WaAuthStoreError('tampered', 'Sesi WhatsApp tidak bisa dibaca: file sesi rusak atau diubah. Lepas tautan lalu pindai QR lagi.');
+        },
+        wipe: async () => {},
+      },
+    });
+    const status = await h.link.restore(); // not a rejection: a restart must survive a broken session
+    assert.equal(status.state, 'off');
+    assert.match(h.link.lastError, /Sesi WhatsApp/);
+    assert.equal(h.log.sockets.length, 0);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('hasSession(): a session file on disk counts, an empty folder does not', () => {
+  const dir = tempDir();
+  try {
+    const store = new EncryptedAuthStore({ dir });
+    assert.equal(store.hasSession(), false, 'nothing on disk yet');
+    writeFileSync(path.join(dir, 'session.bin'), Buffer.from('sealed'));
+    assert.equal(store.hasSession(), true, 'the sealed session is what restore() looks for');
   } finally {
     cleanup(dir);
   }

@@ -23,7 +23,9 @@
       .msg { min-height: 22px; margin-top: 12px; font-size: 14px; color: var(--err); }
       .msg.ok { color: var(--ok); }
       .hint { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; }
+      .hint.ok { color: var(--ok); font-size: 14px; }
       .hint.warn { color: #e0b341; margin: 0 0 12px; }
+      #paired a { display: block; margin-top: 10px; padding: 13px; border-radius: 12px; background: #b85a3c; color: #fff; font-weight: 600; font-size: 16px; line-height: 1; text-decoration: none; }
       details { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; text-align: left; }
       summary { color: var(--muted); font-size: 13px; cursor: pointer; }
       small { display: block; margin-top: 16px; color: var(--muted); font-size: 12px; }
@@ -37,12 +39,17 @@
       <p id="intro">Kode PIN dikirim ke WhatsApp pemilik laptop — tidak perlu melihat layar laptop.</p>
 
       <form id="pin-form">
-        <button id="send" type="button">📲 Kirim PIN ke WhatsApp</button>
+        <button id="send" type="button" disabled>📲 Kirim PIN ke WhatsApp</button>
         <div id="pin-step" hidden>
           <input id="pin" aria-label="Kode PIN 6 digit dari WhatsApp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" minlength="6" pattern="[0-9]{6}" required placeholder="••••••" />
           <button id="verify" type="submit">Hubungkan</button>
         </div>
       </form>
+
+      <div id="paired" hidden>
+        <p class="hint ok">✅ Perangkat ini sudah terpasang.</p>
+        <a id="open-office" href="/">Buka Adhitron</a>
+      </div>
 
       <div id="msg" class="msg" role="alert" aria-live="polite">__MESSAGE__</div>
       <div id="countdown" class="hint" hidden></div>

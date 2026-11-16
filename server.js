@@ -292,8 +292,11 @@ const AUTOLOGON_FAKE = process.env.OFFICE_AUTOLOGON_FAKE === '1';
 // Tests only (never set in a real install): the fake socket below writes what it "sent" here, so the end-to-end test
 // can read the PIN it delivered without a WhatsApp account. Nothing is written while the flag is off.
 const WA_FAKE_SENT = WA_FAKE ? process.env.OFFICE_WA_FAKE_SENT : null;
+// The sealed session is also read directly by the PIN transport below: without a session on disk there is nothing
+// to reconnect, and a PIN request must not wait for a socket that will never exist.
+const waStore = new EncryptedAuthStore({ dir: path.join(DATA_DIR, 'wa') });
 const waLink = new WaLink({
-  store: new EncryptedAuthStore({ dir: path.join(DATA_DIR, 'wa') }),
+  store: waStore,
   ...(WA_FAKE ? { socketFactory: fakeWaSocket } : {}),
   // An event carries the STATE only, never `qr` or `me`: a broadcast reaches every open client, and a socket that
   // was paired from a phone is not "read-only", so the redactor below cannot be the only line of defence. The QR is a
@@ -304,12 +307,59 @@ const waLink = new WaLink({
 // client is handed the state and nothing else — no key for the code, no key for the paired number.
 hub.redactors.set('wa', (status) => ({ state: status.state }));
 
+// 🔌 A restart must not quietly forget WhatsApp: the encrypted session on disk IS the login, so it is reconnected in
+// the background (start-up never waits for the network, and a failure is only a log line). With no session there is
+// nothing to restore — and restore() opens no socket in that case, so a credential-carrying QR never appears at boot.
+void waLink
+  .restore()
+  .then((status) => {
+    if (status.state === 'linked') console.log('WhatsApp: sesi tersambung ulang');
+    else if (status.state === 'connecting') console.log('WhatsApp: menyambung di latar belakang');
+    // A stored session can be unknown to WhatsApp any more (the phone removed this device): baileys then offers a
+    // new QR. Nothing is lost — the QR stays laptop-only and the settings card asks for a re-link.
+    else if (status.state === 'qr') console.error('WhatsApp: sesi tidak valid — perlu tautkan ulang dari laptop');
+    else if (waLink.lastError) console.error('WhatsApp: sesi tidak bisa disambungkan ulang');
+    else console.log('WhatsApp: sesi belum ada');
+  })
+  .catch(() => console.error('WhatsApp: sesi gagal disambungkan ulang'));
+
+/**
+ * How long a PIN send waits for WhatsApp to finish reconnecting. Opening the stored session takes a few seconds, and
+ * the owner tapping "Kirim PIN" right after a restart must not be told to reload a page that cannot help; the PIN
+ * lives 5 minutes, so waiting a little is harmless.
+ */
+const WA_LINK_WAIT_MS = 10_000;
+
+/**
+ * Polls until the link is 'linked' or the deadline passes. A link showing a QR needs the owner in front of the laptop,
+ * and one that failed carries its reason in `lastError`: neither becomes 'linked' by waiting.
+ * @param {import('./src/wa-link.js').WaLink} link
+ * @param {number} ms
+ * @returns {Promise<boolean>}
+ */
+async function waitForLinked(link, ms) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const status = await link.status(); // never throws
+    if (status.state === 'linked') return true;
+    if (status.state === 'qr' || (status.state === 'off' && link.lastError) || Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
 // The access PIN (src/access-pin.js) is delivered over WhatsApp to the linked account itself: the owner does not have
 // to be in front of the laptop to let a new phone in. The PIN only exists inside the WhatsApp message — it is never
 // logged, never returned by an endpoint, and only its HMAC is kept.
 const accessPin = new AccessPin({
   send: async (pin) => {
     try {
+      // A restart leaves the link 'off' while its encrypted session is still on disk. Reconnect it (and give the
+      // socket a few seconds) before sending, so the PIN heals itself instead of sending the owner to a page reload.
+      // With no session there is nothing to wait for: the 503 below is the answer.
+      if ((await waLink.status()).state !== 'linked' && waStore.hasSession()) {
+        await waLink.restore();
+        await waitForLinked(waLink, WA_LINK_WAIT_MS);
+      }
       return await waLink.sendText(pinMessage(pin));
     } catch (err) {
       // The pair page shows this wording and falls back to the code on the laptop screen. The PIN itself never leaks.
@@ -357,8 +407,10 @@ function fakeWaSocket({ auth } = {}) {
     async logout() {},
     async end() {},
   };
-  // A QR right away (the page shows it), then "the owner scanned it": the account is this fake number.
-  setTimeout(() => emit('connection.update', { qr: 'ADHITRON-FAKE-QR' }), 0).unref?.();
+  // A restored session (the saved credentials already name the account) logs in directly; only a fresh one shows a
+  // QR, exactly like baileys. This keeps a restart test faithful: no QR appears for a session that is already linked.
+  const restored = Boolean(auth?.creds?.me);
+  if (!restored) setTimeout(() => emit('connection.update', { qr: 'ADHITRON-FAKE-QR' }), 0).unref?.();
   setTimeout(() => {
     if (auth?.creds) {
       auth.creds.me = { id: '628123456789:1@s.whatsapp.net', name: 'WhatsApp Uji' };
@@ -1114,10 +1166,23 @@ async function autoPairTailnet(req, secure, transport, peerOf = () => eligibleTa
 }
 
 /**
+ * The machine-readable "why" behind pin-status, so /pair can pick the right Indonesian sentence instead of guessing
+ * from `configured`/`status` (that guessing is what mislabelled a failed tailnet peer check as "phone access off").
+ * @param {'connected'|'qr_ready'|'connecting'|'disconnected'} status the pairStatus() answer
+ * @returns {'ready'|'wa-off'|'wa-qr'|'wa-connecting'}
+ */
+function pinReason(status) {
+  if (status === 'connected') return 'ready';
+  if (status === 'qr_ready') return 'wa-qr';
+  if (status === 'connecting') return 'wa-connecting';
+  return 'wa-off';
+}
+
+/**
  * The WhatsApp PIN (src/access-pin.js). Reachable BEFORE pairing — that is the whole point — but only while phone
  * access is on, and every route keeps its own hard limit:
- *   GET  /api/auth/pin-status    → is WhatsApp configured/connected? (never the PIN; "active" only for the browser
- *                                  that asked for it)
+ *   GET  /api/auth/pin-status    → is WhatsApp configured/connected, and is this device already paired? (`paired`,
+ *                                  `reason`; never the PIN; "active" only for the browser that asked for it)
  *   POST /api/auth/request-pin   → mint a PIN and send it to the owner's WhatsApp (1/min, 5/hour, 3/hour per address)
  *   POST /api/auth/verify-pin    → one use on success, 3 wrong attempts burn it, only from the asking browser
  * None of these ever returns the PIN or puts it in a log. The transport is the in-process link (src/wa-link.js).
@@ -1125,14 +1190,18 @@ async function autoPairTailnet(req, secure, transport, peerOf = () => eligibleTa
 async function handleAuthPin(req, res, pathname, { secure, local }) {
   // The master gate: with phone access off nothing here does anything — including a verify that would otherwise
   // burn the owner's live PIN or answer "the list is full" for a switch that is simply off.
-  if (!remote.enabled) return json(res, 403, { error: 'Akses dari perangkat lain sedang dimatikan.' });
+  if (!remote.enabled) return json(res, 403, { error: 'Akses dari perangkat lain sedang dimatikan.', reason: 'phone-access-off' });
   // Over the Tailscale listener the peer must be proven to be the OWNER'S OWN device (src/tailnet.js), exactly like
   // auto-pair: without this, another tailnet user's node could pair itself with a PIN and get a full-control device
   // (isReadOnly() only looks at the network path, not at who the peer is). Fail closed, and the laptop's own
   // localhost requests skip it.
   const peer = !local && secure ? await eligibleTailnetPeer(req.socket.remoteAddress) : null;
   if (!local && secure && !peer) {
-    return json(res, 403, { error: 'Perangkat Tailscale ini bukan milik pemilik laptop. Pasangkan dengan kode 6 digit dari layar laptop.' });
+    // Not "phone access is off": the switch is on, but this device is not (or not provably) one of the owner's.
+    return json(res, 403, {
+      error: 'Perangkat Tailscale ini bukan milik pemilik laptop, atau Tailscale di HP belum tersambung. Masuk dengan akun Tailscale pemilik laptop, atau pakai kode 6 digit dari layar laptop.',
+      reason: 'not-owner-tailnet',
+    });
   }
   const transport = { transport: transportOf(req) };
   if (pathname === '/api/auth/pin-status' && req.method === 'GET') {
@@ -1140,7 +1209,17 @@ async function handleAuthPin(req, res, pathname, { secure, local }) {
     // configured once a QR is showing or the account is linked, and as disconnected while the link is off.
     const wa = pairStatus(await waLink.status());
     const pin = accessPin.status({ token: pinToken(req) });
-    return json(res, 200, { configured: wa.configured, status: wa.status, active: pin.active, expiresInSec: pin.expiresInSec, canRequestInSec: pin.canRequestInSec });
+    return json(res, 200, {
+      // A device with a valid cookie is already paired: the /pair page hides its PIN form for it. That is the normal
+      // case on the owner's tailnet (auto-pair), and a PIN form there reads as "any PIN gets in".
+      paired: Boolean(remote.verify(deviceToken(req), transport)),
+      configured: wa.configured,
+      status: wa.status,
+      reason: pinReason(wa.status),
+      active: pin.active,
+      expiresInSec: pin.expiresInSec,
+      canRequestInSec: pin.canRequestInSec,
+    });
   }
   if (pathname === '/api/auth/request-pin') {
     if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
