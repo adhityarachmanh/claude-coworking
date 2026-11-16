@@ -79,6 +79,7 @@ before(async () => {
     windowsHide: true,
     env: {
       ...process.env,
+      OFFICE_APP_DIR: APP, // pin the app dir to this repo: a dev machine may otherwise serve an installed build's assets
       OFFICE_PORT: String(port),
       OFFICE_DATA_DIR: path.join(TMP, 'data'),
       OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale.exe'), // never the real Tailscale CLI
@@ -516,7 +517,10 @@ for (const vp of PHONES) {
     test('Aktivitas dan 🔎 Cari: baris terbaca tanpa overflow, palet muat sebagai sheet', async () => {
       await fresh('activity');
       await fillActivity(page);
-      const act = await page.eval(() => ({ font: parseFloat(getComputedStyle(document.querySelector('#activity li')).fontSize), wide: [...document.querySelectorAll('#activity li')].some((li) => li.scrollWidth > li.clientWidth + 1) }));
+      const act = await page.eval(() => ({
+        font: parseFloat(getComputedStyle(document.querySelector('#activity li')).fontSize),
+        wide: [...document.querySelectorAll('#activity li')].some((li) => li.scrollWidth > li.clientWidth + 1),
+      }));
       assert.ok(act.font >= 13, `font aktivitas ${act.font}`);
       assert.equal(act.wide, false, 'teks panjang dibungkus di baris');
       assert.equal(await page.eval(horizontalOverflow), null);

@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { gunzipSync } from 'node:zlib';
+import { createGunzip, gunzipSync } from 'node:zlib';
 import { ZipReader } from '../src/zip.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -137,6 +137,44 @@ async function snapshot() {
   return JSON.parse(text.match(/^data: (.*)$/m)[1]);
 }
 
+/** The first event of a gzip-accepting stream, decompressed: the path a phone on a mobile link actually takes. */
+function firstEventGzip() {
+  return new Promise((resolve, reject) => {
+    const req = http.get(
+      { host: '127.0.0.1', port: PORT, path: '/stream', headers: { 'Accept-Encoding': 'gzip', Connection: 'close' } },
+      (res) => {
+        const gun = createGunzip();
+        let text = '';
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          res.destroy();
+          gun.destroy();
+          resolve({ encoding: res.headers['content-encoding'], text });
+        };
+        const timer = setTimeout(finish, 5000);
+        gun.on('data', (chunk) => {
+          text += chunk.toString();
+          if (text.includes('\n\n')) finish();
+        });
+        gun.on('error', () => finish());
+        res.pipe(gun);
+      },
+    );
+    req.on('error', reject);
+  });
+}
+
+test('stream: snapshot arrives gzipped for a client that accepts it (phone on a mobile link)', async () => {
+  const { encoding, text } = await firstEventGzip();
+  assert.equal(encoding, 'gzip');
+  const snap = JSON.parse(text.match(/^data: (.*)$/m)[1]);
+  assert.ok(Array.isArray(snap.projects), 'snapshot lengkap setelah dekompresi');
+  assert.equal(snap.client?.local, true);
+});
+
 test('🪟 upgrade guard: a stale autologon gets its lock task back before the server serves', () => {
   const source = readFileSync(path.join(APP, 'server.js'), 'utf8');
   assert.match(source, /repairUnsafeAutologon\(PORT\)/, 'server.js repairs the missing lock task');
@@ -192,7 +230,7 @@ test('🩺 health: /api/health on the laptop returns the report (checks + checkl
   assert.equal(health.app.pid, (await (await fetch(`${BASE}/health`)).json()).pid);
   assert.equal(health.app.engine, 'claude');
   assert.equal(health.app.port, PORT);
-  assert.deepEqual(health.checks.map((c) => c.id), ['claude', 'opencode', 'projects', 'backup', 'remote', 'errors', 'data']);
+  assert.deepEqual(health.checks.map((c) => c.id), ['claude', 'opencode', 'projects', 'backup', 'remote', 'push', 'power', 'errors', 'data']);
   for (const check of health.checks) {
     assert.equal(typeof check.ok, 'boolean', check.id);
     assert.equal(typeof check.label, 'string', check.id);

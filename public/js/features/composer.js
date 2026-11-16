@@ -125,7 +125,7 @@ export function renderComposer() {
 
 // Keep "· 2 mnt" honest without re-rendering the whole composer every second.
 setInterval(() => {
-  if ($('#typing').hidden) return;
+  if (document.hidden || $('#typing').hidden) return;
   renderTypingText(state.statuses[state.active] ?? {}, effortPending.project === state.active);
 }, 1000);
 

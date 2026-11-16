@@ -2,9 +2,12 @@
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { normalizeMode } from '../core/engine-caps.js';
 import { fmtTokens } from '../core/format.js';
+import { freshnessText } from '../core/freshness.js';
+import { requestResync } from '../core/resync.js';
 import { DEMO_ID, state } from '../core/state.js';
+import { toast } from '../core/api.js';
 import { openCompact } from './compact.js';
-import { connection } from './connection.js';
+import { connection, lastEventAgeSec } from './connection.js';
 import { openQueue } from './queue.js';
 import { openTasks, runningCount } from './tasks.js';
 
@@ -46,6 +49,9 @@ export const modeLabel = (mode) => MODE_LABEL[normalizeMode(mode)];
 /** 🧹 Ringkas konteks: only with a real project that has a session, never only-lihat (the dialog itself re-checks). */
 const compactReady = (st) => Boolean(state.active) && state.active !== DEMO_ID && !state.readOnly && Boolean(st?.sessionId || st?.context?.used);
 
+/** "45 dtk tanpa kabar" when the open stream stopped delivering events (including the server's 15 s ping). */
+const staleText = () => (connection.online ? freshnessText(lastEventAgeSec()) : '');
+
 /** Status line under the composer: permission mode, model, and how full the context is. */
 export function renderStatusline(st) {
   const line = $('#statusline');
@@ -74,6 +80,8 @@ export function renderStatusline(st) {
     );
   }
   if (compactReady(st)) parts.push('<button type="button" class="sl-compact" data-compact title="Ringkas konteks percakapan untuk menghemat token (memakai token; riwayat app tidak berubah) — /ringkas">🧹 Ringkas konteks</button>');
+  const stale = staleText();
+  if (stale) parts.push(`<button type="button" class="sl-stale" data-resync title="Sambungan tampak hidup, tetapi tidak ada kabar dari laptop — ketuk untuk menyegarkan">⟳ ${escapeHtml(stale)}</button>`);
   const running = runningCount(st); // same count as the ⧗ chip in the session bar
   if (running) parts.push(`<button type="button" class="sl-tasks" data-open-tasks title="Buka monitor tugas latar (/tasks)">⧗ ${running} tugas berjalan</button>`);
   if (narrow.matches) return renderStrip(line, st, running);
@@ -91,6 +99,8 @@ function renderStrip(line, st, running) {
   if (st.pending) chips.push('<button type="button" class="sl-chip sl-ask" data-jump-approval>✋ Menunggu izinmu</button>');
   if (st.autoApprove) chips.push('<span class="sl-chip sl-warn">⚠ Semua izin otomatis</span>');
   if (!connection.online) chips.push('<span class="sl-chip sl-warn">⚡ Belum tersambung</span>');
+  const stale = staleText();
+  if (stale) chips.push(`<button type="button" class="sl-chip sl-stale" data-resync aria-label="${escapeHtml(stale)} — ketuk untuk menyegarkan">⟳ ${escapeHtml(stale)}</button>`);
   // Context only once it matters (≥ 70 % of where auto-compact starts), as text: the /compact tip stays in the title.
   const ctx = st.context;
   if (ctx?.used && ctx.window) {
@@ -131,5 +141,19 @@ export function initStatusline() {
     else if (e.target.closest('[data-open-queue]')) openQueue();
     else if (e.target.closest('[data-jump-approval]')) jumpToApproval();
     else if (e.target.closest('[data-compact]')) openCompact();
+    else if (e.target.closest('[data-resync]')) {
+      requestResync();
+      toast('Menyegarkan sambungan…', 'ok');
+    }
+  });
+
+  // While the page is visible, a stream that has gone quiet for three pings asks for a fresh snapshot by itself;
+  // coming back from a long sleep (or another app) does the same instead of showing yesterday's screen.
+  setInterval(() => {
+    if (document.hidden || !connection.online) return;
+    if (staleText()) renderStatusline(state.statuses[state.active] ?? {});
+  }, 5000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && connection.online && staleText()) requestResync();
   });
 }

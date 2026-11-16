@@ -181,6 +181,10 @@ export function buildHealth(ctx = {}, { now = Date.now() } = {}) {
   const remoteEnabled = Boolean(remoteInfo?.enabled ?? safe(() => c.remote?.enabled, false));
   const https = safe(() => c.httpsInfo?.() ?? null);
   const httpsReady = HTTPS_READY.has(https?.state);
+  // 📱 Push: the phones that actually hold a subscription (https devices only). 🔌 Remote power: the heartbeat's
+  // last success/failure, so "can I still turn the PC on from away?" has an answer before leaving.
+  const pushDevices = safe(() => (c.remote?.state?.devices ?? []).filter((d) => d?.push), []) ?? [];
+  const power = safe(() => c.powerBeat?.state?.() ?? null);
   const deviceCount = Array.isArray(remoteInfo?.devices) ? remoteInfo.devices.length : 0;
 
   const errors = safe(() => recentErrors(dataDir, at), { count24h: 0, last: null });
@@ -263,6 +267,53 @@ export function buildHealth(ctx = {}, { now = Date.now() } = {}) {
       if (!remoteEnabled) return { ok: true, detail: 'Mati · hanya dari laptop', hint: 'Nyalakan di ⚙ → Akses HP kalau mau memantau dari HP.' };
       if (!httpsReady) return { ok: false, warn: true, detail: `Menyala · ${countLabel(deviceCount)} perangkat`, hint: 'HP hanya bisa lihat lewat WiFi. Pasang Tailscale supaya HP bisa mengirim perintah.' };
       return { ok: true, detail: `Menyala · ${countLabel(deviceCount)} perangkat · HTTPS ${oneLine(https?.host) || 'aktif'}` };
+    }),
+
+    run('push', 'Notifikasi HP', () => {
+      if (!remoteEnabled) return { ok: true, detail: 'Akses HP mati · tidak ada notifikasi' };
+      if (!pushDevices.length) {
+        return {
+          ok: false,
+          warn: true,
+          detail: 'Belum ada HP yang berlangganan push',
+          hint: 'Dari HP lewat Tailscale: 🔔 → 📱 Notifikasi HP → Aktifkan. Tanpa push, izin dan giliran selesai tidak memberi kabar saat aplikasi tertutup.',
+        };
+      }
+      const failed = pushDevices.find((d) => d.push?.lastError);
+      if (failed) {
+        return {
+          ok: false,
+          warn: true,
+          detail: `${countLabel(pushDevices.length)} HP · ${oneLine(failed.name) || 'satu HP'} gagal: ${clip(failed.push.lastError, 120)}`,
+          hint: 'Buka Adhitron sekali di HP itu (lewat Tailscale) supaya langganan push-nya diperbarui.',
+        };
+      }
+      const okAt = Math.max(0, ...pushDevices.map((d) => Number(d.push?.lastOk) || 0));
+      return { ok: true, detail: [`${countLabel(pushDevices.length)} HP berlangganan`, okAt ? `terakhir terkirim ${agoLabel(at, okAt)}` : 'belum ada pesan terkirim'].join(' · ') };
+    }),
+
+    run('power', 'Remote power (⚡ Daya)', () => {
+      if (!power) return { ok: false, warn: true, detail: 'Tidak bisa diperiksa', hint: 'Muat ulang halaman, lalu coba lagi.' };
+      if (!power.configured) {
+        return {
+          ok: false,
+          warn: true,
+          detail: 'Belum diset',
+          hint: 'Setel URL + token jembatan di ⚙ → Remote power supaya PC bisa dinyalakan dari jauh setelah dimatikan.',
+        };
+      }
+      if (power.lastError) {
+        return {
+          ok: false,
+          warn: true,
+          detail: `Heartbeat terakhir gagal ${agoLabel(at, power.lastErrorAt)}: ${clip(power.lastError, 120)}`,
+          hint: 'Periksa URL/token jembatan (⚙ → Remote power) dan koneksi internet laptop. Selama gagal, halaman jembatan menganggap PC sudah mati.',
+        };
+      }
+      if (!power.lastOkAt) {
+        return { ok: false, warn: true, detail: 'Jembatan diset, belum ada heartbeat berhasil', hint: 'Periksa URL/token jembatan dan koneksi internet laptop.' };
+      }
+      return { ok: true, detail: `Jembatan terhubung · heartbeat ${agoLabel(at, power.lastOkAt)}` };
     }),
 
     run('errors', 'Error server (24 jam)', () => {

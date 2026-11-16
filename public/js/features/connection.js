@@ -17,7 +17,18 @@ export const connection = {
   shown: false, // banner visible (only then does reconnecting show "Tersambung lagi")
   timers: [],
   retries: 0, // consecutive refused streams, for the reconnect backoff
+  lastEventAt: 0, // when the last event (including the server's 15 s ping) arrived
 };
+
+/** Any event from the server (including the keep-alive ping) proves the stream is alive, not just open. */
+export function noteEvent() {
+  connection.lastEventAt = Date.now();
+}
+
+/** Seconds since the last event from the server, or null before the first one. */
+export function lastEventAgeSec(now = Date.now()) {
+  return connection.lastEventAt ? Math.max(0, Math.round((now - connection.lastEventAt) / 1000)) : null;
+}
 
 // Opened from the laptop itself or from a phone. The snapshot says so (client.local); before the first snapshot
 // the address is the best guess (a phone always uses the laptop's Tailscale/LAN address, never localhost).
@@ -107,6 +118,7 @@ export async function streamOpened() {
   const wasShown = connection.shown;
   connection.online = true;
   connection.shown = false;
+  connection.lastEventAt = Date.now(); // the fresh snapshot counts as "heard from the server"
   setPill(true);
   renderBanner(null);
   renderSendState();

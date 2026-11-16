@@ -125,3 +125,24 @@ test('OFFICE_POWER_BEAT_MS: a positive integer ms overrides the 2-minute default
   process.env.OFFICE_POWER_BEAT_MS = '180000';
   assert.equal(new RemotePowerBeat({ getConfig: () => CONFIGURED }).beatMs, 180_000, 'the constructor reads the env');
 });
+
+test('state(): 🩺 sees configured, the last success, and a rejected heartbeat as a failure (never the token)', async () => {
+  let now = 10_000;
+  let answer = { ok: true };
+  const beat = new RemotePowerBeat({ getConfig: () => CONFIGURED, fetchImpl: async () => answer, now: () => now });
+  assert.deepEqual(beat.state(), { configured: true, lastTryAt: null, lastOkAt: null, lastError: null, lastErrorAt: null });
+  assert.equal(await beat.beat(), true);
+  assert.equal(beat.state().lastOkAt, 10_000);
+  now = 20_000;
+  answer = { ok: false, status: 401 }; // wrong token / deleted space: the bridge answers, but not with a heartbeat
+  assert.equal(await beat.beat(), false, 'a rejected beat is a failure');
+  assert.equal(beat.state().lastErrorAt, 20_000);
+  assert.match(beat.state().lastError, /401/);
+  assert.equal(JSON.stringify(beat.state()).includes(CONFIGURED.token), false, 'no token in the health view');
+});
+
+test('state(): no bridge → configured false, no fabricated error', () => {
+  const beat = new RemotePowerBeat({ getConfig: () => ({ bridgeUrl: '', token: '' }), fetchImpl: async () => ({ ok: true }) });
+  assert.equal(beat.state().configured, false);
+  assert.equal(beat.state().lastError, null);
+});

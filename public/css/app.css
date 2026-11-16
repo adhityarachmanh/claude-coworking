@@ -821,16 +821,16 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .activity li.activity-empty { display: block; padding: 18px 0; border: 0; color: var(--muted); text-align: center; }
 /* One row per agent (a "run"): the header is a button, the steps fold underneath. */
 .activity li.run { display: block; padding: 2px 0 6px; }
-.run-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; width: 100%; padding: 6px 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.run-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; width: 100%; padding: 6px 4px 6px 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .run-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 .run-head b { font-size: var(--fs-sm); min-width: 0; overflow-wrap: anywhere; }
 .run-head .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.run-meta { color: var(--muted); font: var(--fs-xs) var(--mono); }
-.run-state { margin-left: auto; color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.run-meta { flex: 1 1 auto; min-width: 0; color: var(--muted); font: var(--fs-xs) var(--mono); }
+.run-state { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
 .activity li.run[data-status="running"] .run-state { color: var(--accent-2); }
 .activity li.run[data-status="waiting"] .run-state { color: var(--warn-text); }
 .activity li.run[data-status="slow"] .run-state { color: var(--err-text); }
-.run-head .chev { color: var(--muted); font-size: var(--fs-xs); transition: transform 120ms ease; }
+.run-head .chev { width: 10px; height: 10px; line-height: 10px; text-align: center; flex: none; color: var(--muted); font-size: var(--fs-xs); transition: transform 120ms ease; }
 .run-head[aria-expanded="true"] .chev { transform: rotate(0deg); }
 .run-head[aria-expanded="false"] .chev { transform: rotate(-90deg); }
 .run-steps { list-style: none; margin: 0 0 0 4px; padding: 0 0 0 10px; border-left: 1px solid var(--wash-2); }
@@ -927,7 +927,7 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 @media (min-width: 761px) {
   /* Mode and model already sit on the settings chip; the status line only speaks up when something needs attention. */
   .statusline .sl-mode, .statusline .sl-model, .statusline .sep, .statusline .sl-ctx:not(.mid):not(.high) { display: none; }
-  .statusline:not(:has(.sl-ctx.mid, .sl-ctx.high, .sl-compact, .sl-tasks, .sl-handoff)) { display: none; }
+  .statusline:not(:has(.sl-ctx.mid, .sl-ctx.high, .sl-compact, .sl-tasks, .sl-handoff, .sl-stale)) { display: none; }
   /* A connected laptop is the normal state: show a dot, not another word in the header. */
   #conn.ok { width: 10px; height: 10px; padding: 0; border: 0; border-radius: 50%; background: var(--ok); font-size: 0; }
 }
@@ -962,6 +962,8 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 #sb-title.renamable:hover { text-decoration: underline dotted; }
 .sl-tasks { min-height: 24px; border: 0; background: none; padding: 0; color: var(--accent-2); font-size: var(--fs-xs); cursor: pointer; }
 .sl-tasks:hover { text-decoration: underline; }
+.sl-stale { min-height: 24px; border: 0; background: none; padding: 0; color: var(--warn-text); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
+.sl-stale:hover { text-decoration: underline; }
 .pill.warn { background: var(--warn-soft); color: var(--warn-text-strong); font-size: var(--fs-sm); } /* keep the pill size, not the --fs-md of .warn text */
 
 .modal-card.rewind-card, .modal-card.mcp-card { max-width: 640px; height: min(680px, calc(100vh - 32px)); display: flex; flex-direction: column; }
@@ -2695,6 +2697,7 @@ body.read-only #composer-hint { color: var(--ask); }
   .statusline > .sl-tasks { color: var(--accent-2); }
   .statusline > .sl-ask { border-color: var(--ask); color: var(--ask); }
   .statusline > .sl-warn { border-color: var(--warn-line); background: var(--warn-soft); color: var(--warn-text-strong); }
+  .statusline > .sl-stale { border-color: var(--warn-line); background: var(--warn-soft); color: var(--warn-text-strong); }
   #todos { margin: 0 0 6px; padding: 4px 10px; }
   #todos.collapsed { flex: 0 1 auto; max-width: 100%; display: flex; align-items: center; min-height: 36px; padding: 0 10px; border-radius: var(--r-pill); }
   #todos.collapsed:has(~ #statusline.has-chips) { max-width: 62%; }

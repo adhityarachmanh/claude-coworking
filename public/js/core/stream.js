@@ -9,7 +9,8 @@ import { applyClaudeCheck } from '../features/claude-check.js';
 import { applyOpenCodeCheck } from '../features/opencode-check.js';
 import { applyAppUpdate } from '../features/app-update.js';
 import { renderComposer } from '../features/composer.js';
-import { retryDelay, streamLost, streamOpened } from '../features/connection.js';
+import { retryDelay, noteEvent, streamLost, streamOpened } from '../features/connection.js';
+import { onResync } from './resync.js';
 import { notify } from '../features/notify.js';
 import { answerForResult, speakAnswer } from '../features/tts.js';
 import { phone, refreshPairing } from '../features/phone.js';
@@ -57,6 +58,9 @@ export function mergeChatMessage(msg) {
 // One handler per server event. `live` is false while a tab that just joined replays what it missed
 // (core/stream-share.js): the state catches up, but old news never chimes or animates again.
 const handlers = {
+  // The server's 15 s keep-alive: noteEvent() (in connect) is all it does, but it proves the socket still works
+  // when the project is idle. Without it a frozen stream looks exactly like a quiet one.
+  ping: () => {},
   routines: (list) => {
     applyRoutines(list);
     scheduleAttention();
@@ -229,7 +233,10 @@ export function connect() {
   share ??= startStreamShare({
     url: '/stream',
     types: Object.keys(handlers),
-    apply: (type, raw, live) => handlers[type](JSON.parse(raw), live),
+    apply: (type, raw, live) => {
+      noteEvent(); // any event, including the keep-alive ping, means the stream is alive
+      handlers[type](JSON.parse(raw), live);
+    },
     online(on) {
       if (on) return streamOpened();
       streamLost();
@@ -237,6 +244,8 @@ export function connect() {
     },
     retryDelay,
   });
+  // The status line's "no news" chip (and the auto-resync on wake) asks for a fresh snapshot through this hook.
+  onResync(() => resync());
 }
 
 // Server ids count up (`m<n>`): an unknown id newer than the oldest message this page holds falls inside the

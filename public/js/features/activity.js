@@ -51,6 +51,7 @@ function runsNow(now = Date.now()) {
 
 /** Coalesces a burst of events into one render: the list is rebuilt, not patched step by step. */
 let scheduled = null;
+let dirty = false;
 function scheduleActivity() {
   if (scheduled) return;
   scheduled = setTimeout(() => {
@@ -67,6 +68,12 @@ export function appendActivity(evt) {
 export function renderActivity() {
   const list = $('#activity');
   if (!list) return;
+  // A phone in a pocket must not rebuild a list nobody sees: remember the change and draw it when the page returns.
+  if (document.hidden) {
+    dirty = true;
+    return;
+  }
+  dirty = false;
   const runs = runsNow();
   if (!runs.length) {
     list.innerHTML = '<li class="activity-empty">Belum ada aktivitas di project ini.</li>';
@@ -101,7 +108,7 @@ export function renderActivity() {
  */
 export function paintActivityClocks() {
   const list = $('#activity');
-  if (!list || list.hidden) return;
+  if (!list || list.hidden || document.hidden) return;
   const now = Date.now();
   const runs = new Map(runsNow(now).map((run) => [run.key, run]));
   let refold = false;
@@ -127,6 +134,11 @@ export function paintActivityClocks() {
 
 // One ticker for the whole tab: text and dataset writes only, never a full redraw (except the fold above).
 setInterval(paintActivityClocks, 1000);
+
+// Back from a pocket (or another app): draw what changed while the page was hidden.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && dirty) renderActivity();
+});
 
 // One delegated listener for every run header (the list is rebuilt often, so the listener must not live on a row).
 document.addEventListener('click', (event) => {

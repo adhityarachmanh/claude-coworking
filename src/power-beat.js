@@ -46,6 +46,22 @@ export class RemotePowerBeat {
     this.onError = onError;
     this.haltUntil = 0;
     this.timer = null;
+    this.lastTryAt = 0;
+    this.lastOkAt = 0;
+    this.lastError = null;
+    this.lastErrorAt = 0;
+  }
+
+  /** Safe for 🩺: whether a bridge is configured and how the last beat went (no token, no URL). */
+  state() {
+    const configured = Boolean(safeConfig(this.getConfig)?.bridgeUrl);
+    return {
+      configured,
+      lastTryAt: this.lastTryAt || null,
+      lastOkAt: this.lastOkAt || null,
+      lastError: configured ? this.lastError : null,
+      lastErrorAt: this.lastErrorAt || null,
+    };
   }
 
   /** Sends the first beat right away (not after one interval), then one every beatMs. */
@@ -78,15 +94,32 @@ export class RemotePowerBeat {
       if (this.now() < this.haltUntil) return false;
       const { bridgeUrl, token } = this.getConfig() ?? {};
       if (!bridgeUrl || !token) return false;
-      await this.fetchImpl(`${bridgeUrl}/api/heartbeat`, {
+      this.lastTryAt = this.now();
+      const res = await this.fetchImpl(`${bridgeUrl}/api/heartbeat`, {
         method: 'POST',
         headers: { 'X-Bridge-Token': token, 'Content-Type': 'text/plain' },
         body: JSON.stringify({ ts: this.now(), version: this.appVersion }),
       });
+      // A rejected beat (wrong token, deleted space) is a failure, not a heartbeat: the old code only caught
+      // network errors, so 🩺 would have said "connected" forever with a dead bridge.
+      if (res && res.ok === false) throw new Error(`Jembatan menolak heartbeat (HTTP ${res.status ?? '?'}).`);
+      this.lastOkAt = this.now();
+      this.lastError = null;
       return true;
     } catch (err) {
+      this.lastError = String(err?.message ?? err).slice(0, 200);
+      this.lastErrorAt = this.now();
       this.onError?.(err); // retried next tick; never crashes
       return false;
     }
+  }
+}
+
+/** getConfig may throw in a broken test context: the health report must never fail because of it. */
+function safeConfig(getConfig) {
+  try {
+    return getConfig?.() ?? null;
+  } catch {
+    return null;
   }
 }

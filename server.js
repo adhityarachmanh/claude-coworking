@@ -6,6 +6,7 @@ import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { constants as zlibConstants, createGzip } from 'node:zlib';
 import { findClaude } from './src/claude-bin.js';
 import { findOpenCode, openCodeVersion } from './src/opencode-bin.js';
 import { appPaths } from './src/app-paths.js';
@@ -960,7 +961,32 @@ function dropDeviceStreams(deviceId) {
 }
 
 function openStream(req, res, local, device = null, token = null) {
-  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+  const headers = { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' };
+  // A phone away from home reconnects often (sleep, WiFi↔cellular, Tailscale): the first snapshot is large JSON, so
+  // the whole stream is gzipped when the client asks. EventSource decompresses transparently; a client that does not
+  // ask for gzip gets exactly the plain stream it always got. Z_SYNC_FLUSH keeps each event usable on arrival, so
+  // streaming never waits for a full buffer.
+  const gz = acceptsGzip(req.headers['accept-encoding']) ? createGzip({ flush: zlibConstants.Z_SYNC_FLUSH }) : null;
+  if (gz) {
+    headers['Content-Encoding'] = 'gzip';
+    headers.Vary = 'Accept-Encoding';
+  }
+  res.writeHead(200, headers);
+  if (gz) {
+    const rawWrite = res.write.bind(res);
+    const rawEnd = res.end.bind(res);
+    gz.on('data', (chunk) => rawWrite(chunk));
+    gz.on('end', () => rawEnd());
+    res.on('close', () => gz.destroy());
+    res.write = (chunk) => {
+      gz.write(chunk);
+      return true;
+    };
+    res.end = () => {
+      gz.end();
+      return res;
+    };
+  }
   // readOnlyApi: what a read-only phone may still call, so the UI doesn't keep its own copy of wifiAllows.
   const readOnly = isReadOnly(req);
   // secure: the https (Tailscale) origin. push: this phone's subscription state (https devices only, else null).
@@ -986,7 +1012,9 @@ function openStream(req, res, local, device = null, token = null) {
   const heartbeat = setInterval(() => {
     // Revoked, or phone access switched off since the stream opened: the device is out.
     if (device && !remote.verify(token, { transport: transportOf(req) })) return dropStream(res);
-    res.write(': ping\n\n');
+    // A real event, not an SSE comment: the phone can tell "the server is still there" from "the socket froze"
+    // (a half-open connection used to look connected while nothing new ever arrived).
+    res.write('event: ping\ndata: {}\n\n');
   }, STREAM_HEARTBEAT_MS);
   req.on('close', () => {
     clearInterval(heartbeat);
@@ -1542,6 +1570,7 @@ const powerBeat = new RemotePowerBeat({
   onError: (err) => console.error('Remote power heartbeat:', err.message), // retried next tick; never crashes
 });
 powerBeat.start(); // the first beat goes out at once, then every 2 minutes (OFFICE_POWER_BEAT_MS overrides)
+ctx.powerBeat = powerBeat; // 🩺 "Remote power": last successful beat, without exposing the URL or token
 setInterval(() => remote.pruneIdle(), 60 * 60 * 1000).unref();
 
 server.on('error', (err) => {

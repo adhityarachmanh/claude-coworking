@@ -65,7 +65,17 @@ function fakeCtx(over = {}) {
         nextAt: NOW + HOUR,
       }),
     },
-    remote: { enabled: true, publicInfo: () => ({ enabled: true, devices: [{ id: 'd1' }, { id: 'd2' }] }) },
+    remote: {
+      enabled: true,
+      publicInfo: () => ({ enabled: true, devices: [{ id: 'd1' }, { id: 'd2' }] }),
+      state: {
+        devices: [
+          { id: 'd1', name: 'HP A', push: { endpoint: 'x', lastOk: NOW - 5 * 60_000, lastError: null } },
+          { id: 'd2', name: 'HP B', push: { endpoint: 'y', lastOk: NOW - 10 * 60_000, lastError: null } },
+        ],
+      },
+    },
+    powerBeat: { state: () => ({ configured: true, lastOkAt: NOW - 2 * 60_000, lastError: null, lastErrorAt: null }) },
     httpsInfo: () => ({ state: 'ok', host: 'laptop.tail.ts.net' }),
   };
   return { ...base, ...over, dataDir };
@@ -101,7 +111,7 @@ test('health: a healthy office is all green', () => {
   assert.equal(health.app.engine, 'claude');
   assert.equal(health.app.port, 4317);
 
-  assert.deepEqual(health.checks.map((c) => c.id), ['claude', 'opencode', 'projects', 'backup', 'remote', 'errors', 'data']);
+  assert.deepEqual(health.checks.map((c) => c.id), ['claude', 'opencode', 'projects', 'backup', 'remote', 'push', 'power', 'errors', 'data']);
   for (const check of health.checks) {
     assert.equal(check.ok, true, `${check.id}: ${check.detail}`);
     assert.equal(check.warn, undefined, `${check.id} is not a warning`);
@@ -114,6 +124,8 @@ test('health: a healthy office is all green', () => {
   assert.equal(checkOf(health, 'projects').detail, '1 folder root · 1 project');
   assert.equal(checkOf(health, 'backup').detail, 'Terakhir 1 jam lalu · adhit-office-backup-auto-20261105-020000.zip · 2,0 KB');
   assert.equal(checkOf(health, 'remote').detail, 'Menyala · 2 perangkat · HTTPS laptop.tail.ts.net');
+  assert.equal(checkOf(health, 'push').detail, '2 HP berlangganan · terakhir terkirim 5 menit lalu');
+  assert.equal(checkOf(health, 'power').detail, 'Jembatan terhubung · heartbeat 2 menit lalu');
   assert.equal(checkOf(health, 'errors').detail, 'Tidak ada error dalam 24 jam terakhir');
 
   // Data: every file under dataDir, server.log included (the report counts what is on disk).
@@ -251,7 +263,7 @@ test('health: data/ of 1 GB or more is a warning', () => {
 
 test('health: services that are missing or throw never make buildHealth throw', () => {
   const bare = buildHealth({});
-  assert.deepEqual(bare.checks.map((c) => c.id), ['claude', 'opencode', 'projects', 'backup', 'remote', 'errors', 'data']);
+  assert.deepEqual(bare.checks.map((c) => c.id), ['claude', 'opencode', 'projects', 'backup', 'remote', 'push', 'power', 'errors', 'data']);
   for (const check of bare.checks) {
     assert.equal(typeof check.ok, 'boolean', check.id);
     assert.equal(typeof check.detail, 'string', check.id);
@@ -303,7 +315,7 @@ test('health: services that are missing or throw never make buildHealth throw', 
     },
   };
   const health = buildHealth(boom, { now: NOW });
-  assert.equal(health.checks.length, 7);
+  assert.equal(health.checks.length, 9);
   assert.deepEqual([checkOf(health, 'claude').ok, checkOf(health, 'claude').detail], [false, 'Belum login']);
   assert.deepEqual([checkOf(health, 'opencode').ok, checkOf(health, 'opencode').warn], [false, true]);
   assert.deepEqual([checkOf(health, 'projects').ok, checkOf(health, 'projects').warn], [false, true]);
@@ -312,6 +324,44 @@ test('health: services that are missing or throw never make buildHealth throw', 
   assert.deepEqual([checkOf(health, 'errors').ok, health.errors.count24h], [true, 0]);
   assert.equal(health.app.engine, 'claude');
   assert.equal(health.data.bytes, 0);
+});
+
+test('health: push dan remote power menjawab "siap ditinggal?" dengan jujur', () => {
+  const failing = buildHealth(
+    fakeCtx({
+      powerBeat: { state: () => ({ configured: true, lastOkAt: NOW - 60_000, lastError: 'Jembatan menolak heartbeat (HTTP 401).', lastErrorAt: NOW - 5_000 }) },
+    }),
+    { now: NOW },
+  );
+  const power = checkOf(failing, 'power');
+  assert.deepEqual([power.ok, power.warn], [false, true]);
+  assert.match(power.detail, /gagal.*401/i);
+  assert.match(power.hint, /⚙ → Remote power/);
+
+  const unset = buildHealth(fakeCtx({ powerBeat: { state: () => ({ configured: false }) } }), { now: NOW });
+  assert.equal(checkOf(unset, 'power').detail, 'Belum diset');
+
+  const noPush = buildHealth(
+    fakeCtx({ remote: { enabled: true, publicInfo: () => ({ enabled: true, devices: [] }), state: { devices: [] } } }),
+    { now: NOW },
+  );
+  const push = checkOf(noPush, 'push');
+  assert.deepEqual([push.ok, push.warn], [false, true]);
+  assert.match(push.hint, /Notifikasi HP/);
+
+  const badPush = buildHealth(
+    fakeCtx({
+      remote: {
+        enabled: true,
+        publicInfo: () => ({ enabled: true, devices: [{ id: 'd1' }] }),
+        state: { devices: [{ id: 'd1', name: 'HP lama', push: { endpoint: 'x', lastOk: null, lastError: '410 Gone' } }] },
+      },
+    }),
+    { now: NOW },
+  );
+  const failedPush = checkOf(badPush, 'push');
+  assert.equal(failedPush.warn, true);
+  assert.match(failedPush.detail, /HP lama gagal: 410 Gone/);
 });
 
 test('💰 budget: only a set limit adds the check; ok below 80 %, warn 80–100 %, hard fail over 100 %, no ledger = $0', () => {
@@ -327,7 +377,7 @@ test('💰 budget: only a set limit adds the check; ok below 80 %, warn 80–100
 
   const off = buildHealth(ctxWith({ dailyUsd: null, weeklyUsd: null, monthlyUsd: null }), { now: NOW });
   assert.equal(checkOf(off, 'budget'), undefined, 'no limit, no line');
-  assert.equal(off.checks.length, 7);
+  assert.equal(off.checks.length, 9);
 
   const ok = checkOf(buildHealth(ctxWith({ dailyUsd: 20 }), { now: NOW }), 'budget');
   assert.equal(ok.label, 'Batas pemakaian');
