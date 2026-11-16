@@ -1482,7 +1482,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     closeChild() {
       const busy = this.busy;
-      this.adapter.clearSettles();
+      this.adapter?.clearSettles?.(); // the adapter exists only after the process spawned
       const child = this.detach();
       if (!child) return;
       if (busy) this.killTree(child.pid);
