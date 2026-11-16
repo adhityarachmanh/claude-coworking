@@ -5,6 +5,7 @@ import { $, escapeHtml, narrow } from '../core/dom.js';
 import { activeModelOf } from '../core/model-logo.js';
 import { modelPanelHtml, mpApplyRow, mpHighlight } from './model-picker.js';
 import { capReason, capsFor, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
+import { typingText } from '../core/composer-typing.js';
 import { fmtNum } from '../core/format.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
@@ -62,6 +63,26 @@ const stoppable = (st) => Boolean(st.busy || st.queue || (st.tasks ?? []).some((
 // Sending an Auto prompt waits for the classifier before the server creates the chat bubble. Keep a visible
 // "Menentukan effort..." row so an empty chat does not look like the prompt was lost.
 const effortPending = { project: null };
+// When the current turn started: the typing row says "· 2 mnt" after a while so a slow job does not look stuck.
+// Per project, so switching from a chat that has been running for minutes does not lie about the new one.
+let busySince = { project: null, at: 0 };
+
+/** Writes the typing row (and only that): the 1 s ticker reuses it so the duration stays fresh. */
+function renderTypingText(st, classifying) {
+  const busy = Boolean(st.busy || st.cliBusy);
+  if (busy) {
+    if (busySince.project !== state.active || !busySince.at) busySince = { project: state.active, at: Date.now() };
+  } else if (busySince.project === state.active) {
+    busySince = { project: null, at: 0 };
+  }
+  const busyMs = busy && busySince.project === state.active ? Math.max(0, Date.now() - busySince.at) : 0;
+  const next = typingText(
+    { classifying, planPreparing: st.planPreparing, compacting: st.compacting, busy: st.busy, cliBusy: st.cliBusy, engine: engineOf(st, state.config), busyMs },
+    engineLabel,
+  );
+  const el = $('#typing-text');
+  if (el.textContent !== next) el.textContent = next;
+}
 
 export function renderComposer() {
   const isDemo = state.active === DEMO_ID;
@@ -85,17 +106,7 @@ export function renderComposer() {
   $('#composer-hint').title = line.title; // every hint stays available, even when only the first two fit
   const planPreparing = st.planPreparing;
   $('#typing').hidden = !(classifying || planPreparing || st.busy || st.cliBusy || st.compacting);
-  $('#typing-text').textContent = classifying
-    ? 'Menentukan effort…'
-    : planPreparing === 'build'
-      ? 'Menentukan model & effort…'
-      : planPreparing === 'revisi'
-        ? 'Menyiapkan revisi…'
-        : st.compacting
-          ? '⏳ Memadatkan konteks percakapan…'
-          : st.busy
-            ? 'Tim sedang bekerja…'
-            : 'Claude Code (terminal) sedang bekerja…';
+  renderTypingText(st, classifying);
   renderResumeTurn(st);
   renderTodos(st);
   renderStatusline(st);
@@ -111,6 +122,12 @@ export function renderComposer() {
   renderSendState();
   if (!$('#tasks-modal').hidden && tasksView.project === state.active) renderTasks();
 }
+
+// Keep "· 2 mnt" honest without re-rendering the whole composer every second.
+setInterval(() => {
+  if ($('#typing').hidden) return;
+  renderTypingText(state.statuses[state.active] ?? {}, effortPending.project === state.active);
+}, 1000);
 
 // Controls that change something: disabled (with the reason as tooltip) for a phone on plain WiFi.
 const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#model-field', '#model-search', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];

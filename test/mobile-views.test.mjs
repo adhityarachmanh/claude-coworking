@@ -268,12 +268,26 @@ async function goView(page, view) {
 /** Many activity rows, some with long unbroken text (no server events needed). */
 const fillActivity = (page) =>
   page.eval(async () => {
-    const { appendActivity } = await import('/js/features/activity.js');
+    const { renderActivity } = await import('/js/features/activity.js');
+    const { state } = await import('/js/core/state.js');
     const roles = ['claude', 'frontend', 'qa', 'backend'];
+    const now = Date.now();
+    const events = [];
     for (let i = 0; i < 40; i++) {
       const kind = ['tool_start', 'delegate', 'agent_stop', 'tool_fail'][i % 4];
-      appendActivity({ ts: Date.now() - i * 60000, kind, role: roles[i % 4], from: 'claude', agentType: 'frontend', label: i % 5 ? `Edit src/components/checkout/payment-methods/BankTransferInstructionsPanel.tsx baris ${i}` : `npm run test -- --grep=${'x'.repeat(80)}` }, false);
+      events.push({
+        project: state.active,
+        id: 10_000 + i,
+        ts: now - (39 - i) * 15_000, // oldest first, and the newest is "just now" so its run is open
+        kind,
+        role: roles[i % 4],
+        from: 'claude',
+        agentType: 'frontend',
+        label: i % 5 ? `Edit src/components/checkout/payment-methods/BankTransferInstructionsPanel.tsx baris ${i}` : `npm run test -- --grep=${'x'.repeat(80)}`,
+      });
     }
+    (state.events[state.active] ??= []).push(...events);
+    renderActivity();
   });
 
 /** Sheets and dialogs reachable on a phone. */

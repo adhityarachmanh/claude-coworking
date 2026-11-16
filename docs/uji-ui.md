@@ -29,6 +29,11 @@ pernah menggantung karena server/browser yang dinyalakan untuknya tidak pernah d
 - `startServer()` menyerah setelah 90 detik (`OFFICE_UI_START_TIMEOUT_MS`) dan mencetak stderr server: server yang
   tidak pernah siap membuat run **gagal**, tidak menggantung.
 
+**Test UI di file terpisah.** Beberapa area punya file sendiri (mis. `test/activity-runs-ui.test.mjs` untuk
+"UI Aktivitas tim") karena tidak butuh seluruh setup `test/ui.test.mjs`. File seperti itu **tidak** bisa dipilih lewat
+`test:ui:area`; jalankan langsung, mis. `node --test test/activity-runs-ui.test.mjs`. File itu tetap ikut
+`npm run test:ui` karena mengimpor `test-support/cdp.mjs`.
+
 ## Tiga aturan saat menulis test browser
 
 - **Viewport lewat `browser.newPage({ width, height, mobile })`.** Argumen itu diterapkan sebelum navigasi pertama

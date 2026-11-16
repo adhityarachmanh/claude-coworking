@@ -13,6 +13,7 @@ import { renderMarkdown } from '../markdown.js';
 import { CAST } from '../office/cast.js';
 import { W, room } from '../office/world.js';
 import { openModal } from '../ui/modals.js';
+import { donePreview } from '../core/agent-runs.js';
 
 const POLL_MS = OUTPUT_POLL_MS;
 const TASK_STATE = { running: 'berjalan', completed: 'selesai', failed: 'gagal', stopped: 'dihentikan', killed: 'dihentikan', paused: 'dijeda', pending: 'menunggu' };
@@ -32,6 +33,7 @@ export const tasksView = {
   stick: true, // keep the detail scrolled to the newest line (off while the user reads further up)
   keys: { list: '', head: '', body: '' },
   lastStatus: null, // status of the selected task at the last render (running → done fetches once more)
+  showAllDone: false, // ⧗ "Tampilkan N selesai": the list folds finished tasks after the newest three
 };
 
 // ---------- helpers ----------
@@ -77,6 +79,7 @@ export function openTasks({ taskId = null, role = null } = {}) {
     tasksView.outputs.clear();
     tasksView.details.clear();
     tasksView.errors.clear();
+    tasksView.showAllDone = false; // "show all finished" is a per-visit choice, not a preference that leaks across projects
   }
   tasksView.project = state.active;
   const tasks = tasksOf(state.active);
@@ -208,6 +211,7 @@ function renderList(tasks) {
     tasks.map((t) => [t.id, t.status, t.background, t.description, t.role, t.tokens, t.toolUses, t.endedAt]),
     others.map((s) => [s.id, s.status, s.command, s.startedAt]),
     tasksView.selected,
+    tasksView.showAllDone,
     Object.values(CAST).map((c) => c.name),
   ]);
   if (key === tasksView.keys.list) return;
@@ -236,9 +240,13 @@ function renderList(tasks) {
   };
   const running = tasks.filter(isRunning);
   const done = tasks.filter((t) => !isRunning(t));
+  const preview = donePreview(done, { showAll: tasksView.showAllDone });
   // A completed turn with subagents still working: the live count stays visible in the group header.
   const agentsLive = running.filter((t) => t.kind === 'agent').length;
   const liveBadge = agentsLive ? `<span class="tasks-live" title="Tugas latar masih berjalan meski jawaban sudah selesai — ⧗ memantau">⏳ ${escapeHtml(String(agentsLive))} masih bekerja</span>` : '';
+  // Finished tasks are folded after the newest three; the toggle keeps the rest one click away.
+  const moreLabel = tasksView.showAllDone ? `Sembunyikan ${Math.max(0, done.length - 3)} selesai` : `Tampilkan ${preview.hiddenCount} selesai`;
+  const moreRow = done.length > 3 ? `<li class="tasks-more"><button type="button" data-tasks-more>${escapeHtml(moreLabel)}</button></li>` : '';
   // Shell of another OpenCode session in the same folder: shown for awareness only (no row to click, no Stop).
   const otherItem = (s) =>
     `<li><div class="task-item task-other st-${escapeHtml(s.status ?? 'running')}" title="Shell sesi OpenCode lain di folder ini — hanya lihat">
@@ -251,7 +259,7 @@ function renderList(tasks) {
     </div></li>`;
   list.innerHTML = [
     running.length ? `<li class="tasks-group">Berjalan (${running.length})${liveBadge}</li>${running.map(item).join('')}` : '',
-    done.length ? `<li class="tasks-group">Selesai</li>${done.map(item).join('')}` : '',
+    done.length ? `<li class="tasks-group">Selesai</li>${preview.rows.map(item).join('')}${moreRow}` : '',
     others.length ? `<li class="tasks-group">Shell lain di folder ini (${others.length}, hanya lihat)</li>${others.map(otherItem).join('')}` : '',
   ].join('');
   if (focused) list.querySelector(`[data-task="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
@@ -281,7 +289,12 @@ function renderHead(task) {
   const detail = tasksView.details.get(task.id);
   const out = tasksView.outputs.get(task.id);
   const canCopy = task.kind === 'agent' ? Boolean(detail?.result || detail?.steps?.length) : Boolean(out?.text);
-  const key = JSON.stringify([task.id, task.status, task.description, task.summary, task.error, task.tokens, task.toolUses, c?.name, canCopy, state.readOnly]);
+  // An agent that has stopped writing steps is not "stuck": say how long it has been quiet, honestly.
+  const quietSec = task.kind === 'agent' && isRunning(task) && detail?.updatedAt
+    ? Math.max(0, Math.round((Date.now() - detail.updatedAt) / 1000))
+    : 0;
+  const quietText = quietSec >= 45 ? (quietSec >= 60 ? `menunggu ${Math.floor(quietSec / 60)} mnt` : `menunggu ${quietSec} dtk`) : '';
+  const key = JSON.stringify([task.id, task.status, task.description, task.summary, task.error, task.tokens, task.toolUses, c?.name, canCopy, state.readOnly, Math.floor(quietSec / 15)]);
   if (key === tasksView.keys.head) return;
   tasksView.keys.head = key;
   $('#td-title').innerHTML = `<span aria-hidden="true">${icon(task)}</span> ${escapeHtml(task.description || task.command || task.id)}`;
@@ -291,6 +304,8 @@ function renderHead(task) {
     `<span>${task.kind === 'agent' ? 'agent' : 'perintah'}</span>`,
     `<span title="Durasi">⏱ <span data-dur="${escapeHtml(task.id)}">${durationOf(task)}</span></span>`,
     ...counts(task).map((x) => `<span>${escapeHtml(x)}</span>`),
+    // Quiet time lives outside the aria-live status line: it changes every 15 s and must not be announced over and over.
+    quietText ? `<span class="td-wait">${escapeHtml(quietText)}</span>` : '',
   ]
     .filter(Boolean)
     .join('<span class="sep" aria-hidden="true">·</span>');
@@ -409,6 +424,14 @@ function initOfficeClicks() {
 
 export function initTasks() {
   $('#tasks-list').addEventListener('click', (e) => {
+    const more = e.target.closest('[data-tasks-more]');
+    if (more) {
+      tasksView.showAllDone = !tasksView.showAllDone;
+      renderList(tasksOf(tasksView.project));
+      // The toggle is rebuilt with the new label; keep the keyboard where the user left it.
+      document.querySelector('#tasks-list [data-tasks-more]')?.focus({ preventScroll: true });
+      return;
+    }
     const item = e.target.closest('[data-task]');
     if (item) select(item.dataset.task);
   });

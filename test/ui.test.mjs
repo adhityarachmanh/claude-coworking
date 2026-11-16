@@ -7309,22 +7309,30 @@ for (const vp of VIEWPORTS) {
       const r = await page.eval(async () => {
         const { CAST } = await import('/js/office/cast.js');
         const { appendChat } = await import('/js/features/chat.js');
-        const { appendActivity } = await import('/js/features/activity.js');
+        const { renderActivity } = await import('/js/features/activity.js');
+        const { state } = await import('/js/core/state.js');
         const saved = CAST.data.name;
         window.__xss = 0;
         CAST.data.name = '<img src=x onerror="window.__xss++">';
         try {
           appendChat({ id: 'xss-dele', ts: Date.now(), kind: 'delegate', role: 'data', from: 'claude', text: 'cek', status: 'ok', input: {} }, false);
-          appendActivity({ ts: Date.now(), kind: 'tool_start', role: 'data', label: 'x' }, false);
+          (state.events[state.active] ??= []).push({ project: state.active, id: 90_001, ts: Date.now(), kind: 'tool_start', role: 'data', label: 'x' });
+          renderActivity();
           await new Promise((res) => setTimeout(res, 100));
           const row = document.querySelector('#chat > [data-id="xss-dele"]');
-          return { injected: document.querySelectorAll('img[src="x"]').length, text: row.querySelector('.txt b').textContent, fired: window.__xss };
+          const activity = document.querySelector('#activity')?.textContent ?? '';
+          return {
+            injected: document.querySelectorAll('img[src="x"]').length,
+            text: row.querySelector('.txt b').textContent,
+            activityHasText: activity.includes('<img src=x onerror="window.__xss++">'),
+            fired: window.__xss,
+          };
         } finally {
           CAST.data.name = saved;
           document.querySelector('#chat > [data-id="xss-dele"]')?.remove();
         }
       });
-      assert.deepEqual(r, { injected: 0, text: '<img src=x onerror="window.__xss++">', fired: 0 });
+      assert.deepEqual(r, { injected: 0, text: '<img src=x onerror="window.__xss++">', activityHasText: true, fired: 0 });
       assert.deepEqual(realProblems(page), []);
     });
 
