@@ -65,6 +65,21 @@ test('routes: an unregistered path matches nothing (server.js answers 404) and i
   }
 });
 
+test('routes: 📱 /api/remote* stays laptop-only, except revoking a device (a lost phone is often noticed remotely)', () => {
+  const server = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  const secureAdmin = server.match(/const SECURE_ADMIN = new Set\(\[([^\]]*)\]\)/)[1];
+  assert.ok(secureAdmin.includes("'/api/remote/revoke'"), 'revoke boleh dari HP lewat Tailscale');
+  // The blanket prefix check runs BEFORE the SECURE_ADMIN lookup, so it must let exactly this one path through.
+  assert.match(server, /pathname\.startsWith\('\/api\/remote\/'\) && pathname !== '\/api\/remote\/revoke'/, 'hanya revoke yang dikecualikan');
+  const laptopOnly = server.match(/const LAPTOP_ONLY_API = \{[\s\S]*?patterns: \[([^\]]*)\]/)[1];
+  assert.match(laptopOnly, /\^\/api\/remote\/\(\?!revoke\$\)/, 'UI tidak memblokir revoke di HP');
+  assert.ok(patterns.includes('/api/remote/revoke'));
+  assert.equal(wifiAllows('/api/remote/revoke'), false, 'WiFi biasa tetap hanya-lihat');
+  for (const p of ['/api/remote', '/api/remote/firewall-check', '/api/remote/firewall-fix']) {
+    assert.ok(patterns.includes(p), `${p} terdaftar`);
+  }
+});
+
 test('router: literal paths, :params of [\\w-]+, a trailing * prefix, first match wins', () => {
   const r = new Router();
   const a = () => 'a';

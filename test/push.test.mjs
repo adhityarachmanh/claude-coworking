@@ -84,7 +84,7 @@ test('history: recent sends are persisted in data/push-history.json and survive 
 const SETTINGS = Object.freeze({ events: { ask: { popup: true, sound: true }, done: { popup: true, sound: true }, error: { popup: true, sound: false } }, quiet: { enabled: false, from: '22:00', to: '07:00', allowAsk: true }, favoritesOnly: false, tzOffsetMin: 420, lockscreenAllow: true });
 
 /** A hub with one project, phone access on, and a PushService wired to the fake push service. */
-function setup({ now = Date.parse('2026-11-02T05:00:00Z') } = {}) {
+function setup({ now = Date.parse('2026-11-02T05:00:00Z'), remindMs } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'office-push-'));
   dirs.push(dir);
   const hub = new Hub({ dataDir: dir });
@@ -99,7 +99,7 @@ function setup({ now = Date.parse('2026-11-02T05:00:00Z') } = {}) {
   const changes = [];
   const logs = [];
   const queue = {};
-  const push = new PushService({ hub, remote, fetch: svc.fetch, now: () => clock.now, hasStream: (id) => streams.has(id), queueSummary: (id) => queue[id] ?? null, onChange: () => changes.push(1), log: (m) => logs.push(m), warn: (m) => logs.push(m) });
+  const push = new PushService({ hub, remote, fetch: svc.fetch, now: () => clock.now, hasStream: (id) => streams.has(id), queueSummary: (id) => queue[id] ?? null, remindMs, onChange: () => changes.push(1), log: (m) => logs.push(m), warn: (m) => logs.push(m) });
   hub.observers.add((type, data) => push.observe(type, data));
   const addDevice = (name, { transport = 'https', settings = SETTINGS, host } = {}) => {
     const device = { id: `dev-${name}`, hash: `h-${name}`, name, created: clock.now, lastSeen: clock.now, transport };
@@ -341,6 +341,53 @@ test('no push to a device while one of its pages is visible (open stream + recen
   assert.equal(inbox(phone).length, 3, 'hidden again');
   assert.throws(() => push.setVisible(phone.device.id, 'bad tab!', true), { status: 400 });
   assert.throws(() => push.setVisible(phone.device.id, 't', 'yes'), { status: 400 });
+});
+
+test('a pending approval is reminded once, after the report that suppressed it went stale', async () => {
+  const { hub, push, clock, streams, addDevice, inbox } = setup();
+  const phone = addDevice('Android · Chrome');
+  const tablet = addDevice('Tablet');
+  streams.add(phone.device.id);
+  push.setVisible(phone.device.id, 'tab1', true);
+  ask(hub, 'ap-remind');
+  await push.idle();
+  assert.equal(inbox(phone).length, 0, 'layar terlihat: halamannya sendiri yang memberi tahu');
+  assert.equal(inbox(tablet).length, 1, 'perangkat lain tetap menerima permintaan itu');
+  // The screen locks, but the "visible: false" report is lost on the way out (best effort over a dead tunnel):
+  // only the 90 s TTL can end the suppression. Without a reminder the turn stays blocked in silence.
+  clock.now += VISIBLE_TTL_MS + 1000;
+  assert.equal(push.remind('ap-remind'), true, 'pengingat terkirim setelah laporan visible kedaluwarsa');
+  await push.idle();
+  assert.equal(inbox(phone).length, 1, 'satu pengingat sampai di HP itu');
+  const reminder = inbox(phone)[0].payload;
+  assert.equal(reminder.type, 'ask');
+  assert.equal(reminder.approvalId, 'ap-remind', 'pengingat membawa id izin yang sama');
+  assert.match(reminder.t, /^[A-Za-z0-9_-]{43}$/, 'tombol Izinkan/Tolak tetap berfungsi (token baru)');
+  assert.equal(push.remind('ap-remind'), false, 'perangkat yang sudah menerima tidak dibunyikan dua kali');
+  assert.equal(inbox(tablet).length, 1, 'tablet tidak menerima pengingat kedua');
+  hub.resolveApproval('ap-remind', { allow: true });
+  await push.idle();
+  assert.equal(push.remind('ap-remind'), false, 'izin yang sudah dijawab tidak pernah diingatkan');
+  assert.equal(push.reminders.size, 0, 'penjadwal pengingat dibersihkan');
+});
+
+test('the reminder timer fires by itself, and stops when the approval is answered first', async () => {
+  const { hub, push, clock, streams, addDevice, inbox } = setup({ remindMs: 20 });
+  const phone = addDevice('Android · Chrome');
+  streams.add(phone.device.id);
+  push.setVisible(phone.device.id, 'tab1', true);
+  ask(hub, 'ap-timer');
+  await push.idle();
+  assert.equal(inbox(phone).length, 0, 'permintaan pertama ditahan: halaman terlihat');
+  clock.now += VISIBLE_TTL_MS + 1000; // the report is stale before the timer fires
+  await new Promise((r) => setTimeout(r, 60));
+  await push.idle();
+  assert.equal(inbox(phone).length, 1, 'pengingat berjalan tanpa dipanggil manual');
+  assert.equal(push.reminders.size, 0, 'penjadwal pengingat dilepas setelah dipakai');
+  ask(hub, 'ap-stop');
+  hub.resolveApproval('ap-stop', { allow: false });
+  await push.idle();
+  assert.equal(push.reminders.size, 0, 'izin yang dijawab membatalkan pengingatnya');
 });
 
 test('push service answers: 410/404 drop the subscription, 429 backs off, 3× 403 drop it, failures logged without the endpoint', async () => {

@@ -1332,14 +1332,22 @@ for (const vp of VIEWPORTS) {
     });
 
     if (vp.mobile) {
-      test('mobile: #conn titik 10x10, .pill lain tetap terbaca', async (t) => {
+      test('mobile: #conn titik 16x16 dengan tanda "!" saat terputus, .pill lain tetap terbaca', async (t) => {
         await ensureApp(page, '#demo');
         const r = await page.eval(() => {
-          const box = document.querySelector('#conn').getBoundingClientRect();
+          const conn = document.querySelector('#conn');
+          const box = conn.getBoundingClientRect();
           const pills = [...document.querySelectorAll('.pill:not(#conn)')].map((p) => ({ html: p.outerHTML.slice(0, 80), fontSize: getComputedStyle(p).fontSize }));
-          return { w: box.width, h: box.height, pills };
+          // Not colour alone (WCAG 1.4.1): the broken state must also carry a glyph, readable without colour vision.
+          const glyph = getComputedStyle(conn, '::before').content;
+          conn.classList.add('bad');
+          const badGlyph = getComputedStyle(conn, '::before').content;
+          conn.classList.remove('bad');
+          return { w: box.width, h: box.height, pills, glyph, badGlyph };
         });
-        assert.deepEqual({ w: r.w, h: r.h }, { w: 10, h: 10 });
+        // 16 px, not 10: at 10 the dot was all but invisible on a phone in daylight (and it now holds a "!").
+        assert.deepEqual({ w: r.w, h: r.h }, { w: 16, h: 16 });
+        assert.doesNotMatch(r.badGlyph, /^(none|normal|'')$/, 'keadaan terputus punya tanda selain warna');
         if (!r.pills.length) t.diagnostic('tidak ada .pill lain di DOM saat ini (hanya #conn)');
         assert.deepEqual(r.pills.filter((p) => p.fontSize === '0px'), []);
       });
@@ -2230,6 +2238,14 @@ for (const vp of VIEWPORTS) {
           await page.click('#model-field').catch(() => {});
           await sleep(150);
         }
+        // A server broadcast can re-sync state.config (it carries the real favorites) between the pin above and this
+        // render, so the pair is installed again right before rendering the panel the assertions read.
+        await page.eval(async () => {
+          const { state } = await import('/js/core/state.js');
+          state.config = { ...state.config, favoriteModels: ['river/GLM-5.3'] };
+          document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await page.waitFor(() => [...document.querySelectorAll('#model-groups .mp-head .mp-title')].some((n) => n.textContent.trim() === '⭐ Favorit'), { timeoutMs: 3000, message: 'grup ⭐ Favorit muncul' });
         // The ⭐ Favorit group leads the MODELS; the Auto/Default settings group sits above it (they are not models).
         const panel = await page.eval(() => {
           const heads = [...document.querySelectorAll('#model-groups .mp-head .mp-title')].map((n) => n.textContent.trim());
@@ -2416,11 +2432,14 @@ for (const vp of VIEWPORTS) {
         }
         await page.waitFor(() => !document.querySelector('#model-panel').hidden, { timeoutMs: 3000, message: 'panel terbuka' });
         await page.eval(() => document.querySelector('#model-search').focus());
-        // ArrowDown twice: first favorite, then the next enabled row — highlighted, not applied.
+        // ArrowDown walks every enabled row from the top (Auto, Default, the starred favorite, then its neighbour in
+        // the provider group); only the highlight moves, nothing is applied until Enter. The list is walked by value
+        // rather than by a fixed count, so adding a settings row never breaks the keyboard contract.
         const arrow = (key) => page.eval((k) => document.querySelector('#model-search').dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })), key);
-        await arrow('ArrowDown');
-        await arrow('ArrowDown');
-        await page.waitFor(() => [...document.querySelectorAll('#model-groups .mp-row.mp-hl')].some((r) => r.dataset.value === 'opencode-go/glm-5.3-flash'), { timeoutMs: 3000, message: 'sorotan panah di baris kedua' });
+        const highlighted = (value) => page.eval((v) => [...document.querySelectorAll('#model-groups .mp-row.mp-hl')].some((r) => r.dataset.value === v), value);
+        let steps = 0;
+        while (!(await highlighted('opencode-go/glm-5.3-flash')) && steps++ < 8) await arrow('ArrowDown');
+        assert.equal(await highlighted('opencode-go/glm-5.3-flash'), true, 'panah menyorot baris tujuan tanpa menerapkannya');
         // Enter applies the highlighted row: the same change → saveModel path.
         await page.press('Enter');
         await page.waitFor(() => window.__settingsBodies.length === 1, { timeoutMs: 3000, message: 'Enter menerapkan baris tersorot' });
@@ -2981,6 +3000,217 @@ for (const vp of VIEWPORTS) {
       assert.equal(again.count, 3, 'pesan yang sama tidak menambah toast');
       assert.deepEqual(again.texts, ['tiga', 'empat', 'dua'], 'pesan yang sama pindah ke urutan terbaru');
       await page.eval(() => document.querySelector('#toasts')?.remove());
+    });
+
+    test('⏱ api() punya tenggat: permintaan yang tak pernah dijawab dibatalkan dengan code "timeout"', async () => {
+      await ensureApp(page, `#${projectId}`);
+      const out = await page.eval(async () => {
+        const { api } = await import('/js/core/api.js');
+        const real = window.fetch;
+        // A dead tunnel: the request stays open, and — like the real fetch — it only ends when the signal aborts.
+        window.fetch = (url, opts) => new Promise((resolve, reject) => opts?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
+        const started = Date.now();
+        try {
+          await api('/api/projects/x/prompt', { text: 'x' }, { timeoutMs: 120 });
+          return { resolved: true };
+        } catch (err) {
+          return { code: err.code ?? null, message: err.message, ms: Date.now() - started };
+        } finally {
+          window.fetch = real;
+        }
+      });
+      assert.equal(out.resolved, undefined, 'tidak menunggu selamanya');
+      assert.equal(out.code, 'timeout', 'pembatalan bisa dibedakan dari penolakan server');
+      assert.match(out.message, /tidak ada jawaban dalam/i);
+      assert.ok(out.ms >= 100 && out.ms < 3000, `dibatalkan mendekati tenggat (${out.ms} ms)`);
+    });
+
+    test('📤 kirim menggantung: satu prompt saja, teks kembali, dan pesan jujur soal kiriman yang tak terjawab', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(() => {
+        window.__officeFetch ??= window.fetch;
+        window.__prompts = [];
+        window.fetch = (url, opts) => {
+          if (/\/api\/projects\/[^/]+\/prompt$/.test(String(url))) {
+            return new Promise((resolve, reject) => {
+              window.__prompts.push({ body: JSON.parse(opts.body ?? '{}'), resolve, reject });
+            });
+          }
+          return window.__officeFetch(url, opts);
+        };
+        document.querySelector('#toasts')?.remove();
+      });
+      try {
+        await typeInPrompt(page, 'halo dari HP');
+        await page.click('#btn-send');
+        await page.waitFor(() => window.__prompts.length === 1, { timeoutMs: 3000, message: 'satu permintaan terkirim' });
+        // While it waits: the button is off (a second tap on a slow link must not send twice) and the box is empty.
+        const waiting = await page.eval(() => ({ disabled: document.querySelector('#btn-send').disabled, title: document.querySelector('#btn-send').title, text: document.querySelector('#prompt').value }));
+        assert.deepEqual(waiting, { disabled: true, title: 'Mengirim…', text: '' });
+        await page.click('#btn-send').catch(() => {});
+        await sleep(200);
+        assert.equal(await page.eval(() => window.__prompts.length), 1, 'tap kedua tidak mengirim ulang');
+        // The deadline passes (the api() layer reports it as code 'timeout').
+        await page.eval(() => window.__prompts[0].reject(Object.assign(new Error('Tidak ada jawaban dalam 60 detik.'), { code: 'timeout' })));
+        await page.waitFor(() => document.querySelector('#prompt').value === 'halo dari HP', { timeoutMs: 3000, message: 'teks kembali ke kotak' });
+        const after = await page.eval(() => ({
+          toast: [...document.querySelectorAll('.toast')].map((t) => t.textContent).join(' | '),
+          disabled: document.querySelector('#btn-send').disabled,
+        }));
+        assert.match(after.toast, /tidak menjawab dalam 60 detik/i, 'bukan "gagal mengirim": kiriman mungkin sudah sampai');
+        assert.match(after.toast, /periksa chat dulu/i, 'menyuruh memeriksa sebelum mengirim ulang');
+        assert.equal(after.disabled, false, 'tombol kirim hidup lagi');
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await page.eval(() => {
+          if (window.__officeFetch) window.fetch = window.__officeFetch;
+          delete window.__officeFetch;
+          window.__prompts = [];
+          document.querySelector('#toasts')?.remove();
+        });
+        await typeInPrompt(page, '');
+        await openApp(page, `#${projectId}`);
+      }
+    });
+
+    test('📱 ＋ → Baris baru menyisipkan ↵ di posisi kursor (keyboard HP tidak punya Shift+Enter)', { skip: !vp.mobile }, async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await typeInPrompt(page, 'baris satu');
+        await page.eval(() => document.querySelector('#prompt').setSelectionRange(4, 4)); // in the middle of a word
+        await tap(page, '#btn-plus');
+        await page.waitFor(() => !document.querySelector('#plus-modal').hidden, { timeoutMs: 2000, message: 'sheet ＋ terbuka' });
+        await page.click('#plus-modal [data-insert="newline"]');
+        await page.waitFor(() => document.querySelector('#plus-modal').hidden, { timeoutMs: 2000, message: 'sheet tertutup' });
+        const out = await page.eval(() => ({ value: document.querySelector('#prompt').value, caret: document.querySelector('#prompt').selectionStart, focus: document.activeElement?.id }));
+        assert.equal(out.value, 'bari\ns satu', 'baris baru di posisi kursor, bukan di ujung teks');
+        assert.equal(out.caret, 5, 'kursor setelah baris baru');
+        assert.equal(out.focus, 'prompt', 'kotak pesan kembali fokus');
+      } finally {
+        await typeInPrompt(page, '');
+      }
+    });
+
+    test('📱 ＋ → Riwayat mengisi kotak dengan prompt terakhir, tap berikutnya lebih lama (tanpa keyboard)', { skip: !vp.mobile }, async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await page.eval(async (pid) => {
+          const { state } = await import('/js/core/state.js');
+          const chat = await import('/js/features/chat.js');
+          window.__chatBackup = state.chats[pid];
+          state.chats[pid] = [
+            { id: 'h1', project: pid, kind: 'user', text: 'prompt paling lama', ts: 1 },
+            { id: 'h2', project: pid, kind: 'assistant', text: 'jawaban', ts: 2 },
+            { id: 'h3', project: pid, kind: 'user', text: 'prompt terakhir', ts: 3 },
+          ];
+          chat.renderChat();
+        }, projectId);
+        await typeInPrompt(page, '');
+        await tap(page, '#btn-plus');
+        await page.waitFor(() => !document.querySelector('#plus-modal').hidden, { timeoutMs: 2000, message: 'sheet ＋ terbuka' });
+        await page.click('#plus-modal [data-history]');
+        await page.waitFor(() => document.querySelector('#prompt').value === 'prompt terakhir', { timeoutMs: 2000, message: 'prompt terakhir masuk kotak' });
+        await tap(page, '#btn-plus');
+        await page.waitFor(() => !document.querySelector('#plus-modal').hidden, { timeoutMs: 2000, message: 'sheet ＋ terbuka lagi' });
+        await page.click('#plus-modal [data-history]');
+        await page.waitFor(() => document.querySelector('#prompt').value === 'prompt paling lama', { timeoutMs: 2000, message: 'tap kedua lebih lama' });
+        assert.equal(await page.eval(() => document.activeElement?.id), 'prompt', 'kotak pesan fokus');
+      } finally {
+        await page.eval(async (pid) => {
+          const { state } = await import('/js/core/state.js');
+          const chat = await import('/js/features/chat.js');
+          if (window.__chatBackup) state.chats[pid] = window.__chatBackup;
+          delete window.__chatBackup;
+          chat.renderChat();
+        }, projectId).catch(() => {});
+        await typeInPrompt(page, '');
+      }
+    });
+
+    test('📱 keyboard terbuka: baris todo menyingkir, chip status tetap (termasuk "Belum tersambung")', { skip: !vp.mobile }, async () => {
+      await ensureApp(page, `#${projectId}`);
+      const out = await page.eval(() => {
+        const todos = document.querySelector('#todos');
+        const status = document.querySelector('#statusline');
+        const wasStatusHidden = status.hidden;
+        const statusHtml = status.innerHTML;
+        todos.hidden = false;
+        status.hidden = false;
+        status.classList.add('has-chips'); // what the phone shows when a chip exists (app.css hides an empty row)
+        status.innerHTML = '<span class="sl-warn">⚡ Belum tersambung</span>';
+        document.body.classList.add('kb-open');
+        const open = { todos: getComputedStyle(todos).display, status: getComputedStyle(status).display, nav: getComputedStyle(document.querySelector('.mobile-nav')).display };
+        document.body.classList.remove('kb-open');
+        const closed = getComputedStyle(todos).display;
+        todos.hidden = true;
+        status.hidden = wasStatusHidden;
+        status.classList.remove('has-chips');
+        status.innerHTML = statusHtml;
+        return { open, closed };
+      });
+      assert.equal(out.open.todos, 'none', 'todo tidak memakan ruang chat di atas keyboard');
+      assert.notEqual(out.open.status, 'none', 'chip status (dan peringatan koneksi) tetap terlihat');
+      assert.equal(out.open.nav, 'none', 'navigasi bawah tetap tersembunyi');
+      assert.notEqual(out.closed, 'none', 'kembali tampil saat keyboard ditutup');
+    });
+
+    test('📱 animasi kantor berhenti saat layar lain terbuka (baterai HP)', { skip: !vp.mobile }, async () => {
+      const out = await page.eval(async () => {
+        const { officeInView } = await import('/js/ui/layout.js');
+        const view = document.body.dataset.view;
+        document.body.dataset.view = 'office';
+        const onOffice = officeInView();
+        document.body.dataset.view = 'panel';
+        const onChat = officeInView();
+        document.body.dataset.view = view;
+        return { onOffice, onChat };
+      });
+      assert.deepEqual(out, { onOffice: true, onChat: false }, 'frame kantor hanya berjalan saat kantor terlihat');
+    });
+
+    test('📱 baris riwayat sesi: tombol aksi pindah ke baris sendiri dengan sasaran 40 px', { skip: !vp.mobile }, async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await page.eval((pid) => {
+          window.__officeFetch ??= window.fetch;
+          const prev = window.fetch;
+          const now = Date.now();
+          window.fetch = (url, opts) => {
+            if (new RegExp(`/api/projects/${pid}/sessions$`).test(String(url))) {
+              const sessions = ['Sesi yang judulnya panjang sekali sampai perlu dua baris di layar HP', 'Sesi kedua', 'Sesi ketiga']
+                .map((title, i) => ({ id: `sess-${i}-abcdef123456`, title, updated: now - i * 3_600_000, source: 'cli' }));
+              return Promise.resolve(new Response(JSON.stringify({ sessions, current: null, autoArchiveDays: 30 }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return prev(url, opts);
+          };
+        }, projectId);
+        await tap(page, '#btn-sessions');
+        await page.waitFor(() => document.querySelectorAll('#sessions-list .s-item').length === 3, { timeoutMs: 6000, message: 'tiga baris sesi' });
+        const out = await page.eval(() => [...document.querySelectorAll('#sessions-list .s-item')].map((row) => {
+          const tools = row.querySelector('.s-tools').getBoundingClientRect();
+          const main = row.querySelector('.s-main').getBoundingClientRect();
+          const icons = [...row.querySelectorAll('.s-tools .icon')].map((b) => b.getBoundingClientRect());
+          return {
+            ownRow: tools.top >= main.bottom - 1,
+            minW: Math.min(...icons.map((i) => i.width)),
+            minH: Math.min(...icons.map((i) => i.height)),
+            inside: tools.right <= row.getBoundingClientRect().right + 1,
+          };
+        }));
+        assert.equal(out.length, 3);
+        for (const row of out) {
+          assert.equal(row.ownRow, true, 'tombol aksi di bawah judul: judul tidak lagi terhimpit');
+          assert.ok(row.minW >= 40 && row.minH >= 40, `sasaran sentuh ≥40 px (${row.minW}×${row.minH})`);
+          assert.equal(row.inside, true, 'tidak melewati tepi baris');
+        }
+        assert.deepEqual(realProblems(page), []);
+      } finally {
+        await page.eval(() => {
+          if (window.__officeFetch) window.fetch = window.__officeFetch;
+          delete window.__officeFetch;
+          document.querySelector('#sessions-modal').hidden = true;
+        }).catch(() => {});
+      }
     });
 
     test('🔍 Cari di chat: saring, sorot, lompat antar hasil, dan tahan render ulang', async () => {
@@ -7413,6 +7643,43 @@ for (const vp of VIEWPORTS) {
       await typeInPrompt(page, '');
       // The refused branch name (400) is the expected answer, logged by the browser as a failed request; nothing else.
       assert.deepEqual(realProblems(page).filter((p) => !/\/git-action\b/.test(p.text)), []);
+    });
+
+    test('⏻ "Matikan PC" dari ⚙ membuka halaman jembatan di host jembatan, bukan di host kantor', async () => {
+      await ensureApp(page, `#${projectId}`);
+      try {
+        await page.eval(() => {
+          window.__officeFetch ??= window.fetch;
+          const prev = window.fetch;
+          window.fetch = (url, opts) => {
+            if (/\/api\/shutdown$/.test(String(url))) {
+              // The server forwards the bridge's own relative path: it belongs to the BRIDGE origin.
+              return Promise.resolve(new Response(JSON.stringify({ ok: true, pc: true, handoffUrl: '/s/abc?t=tiket1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return prev(url, opts);
+          };
+          window.confirm = () => true; // the shutdown confirmation, and nothing else in this test
+        });
+        await tap(page, '#btn-settings');
+        await settle(page, 'settings-modal');
+        await page.click('#settings-tab-sistem');
+        await page.eval(() => {
+          document.querySelector('#rp-url').value = 'https://bridge.example';
+          document.querySelector('#rp-shutdown-pc').checked = true;
+        });
+        // Arm the listener BEFORE the click: the answer is immediate here, so the tab starts navigating inside the
+        // click handler and the button is gone by the time a second click could find it.
+        const wanted = 'https://bridge.example/s/abc?t=tiket1';
+        const navigated = page.waitForEvent('Page.frameRequestedNavigation', 8000);
+        await page.click('#btn-shutdown');
+        const nav = await navigated;
+        assert.equal(nav.url, wanted, 'relative /s/… diselesaikan terhadap URL jembatan, bukan terhadap host kantor');
+      } finally {
+        await page.eval(() => {
+          if (window.__officeFetch) window.fetch = window.__officeFetch;
+        }).catch(() => {});
+        await openApp(page, `#${projectId}`); // the navigation left the app: restore it for the next tests
+      }
     });
 
     test('pair.html termuat tanpa error dan tanpa scroll horizontal', async () => {

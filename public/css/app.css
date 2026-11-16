@@ -663,6 +663,10 @@ body:not([data-tab='chat']) #chat-search { display: none; }
   box-shadow: 0 4px 16px #0009;
   z-index: var(--z-raised);
 }
+/* A finger, not a mouse: the "jump to the newest message" pill gets a 40 px touch target. */
+@media (pointer: coarse) {
+  .jump { min-height: 40px; padding: 8px 18px; }
+}
 .chat { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 6px; }
 .chat-load-older { align-self: center; margin: 2px 0 6px; padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); color: var(--text-2); font-size: var(--fs-xs); cursor: pointer; }
 .chat-load-older:hover { border-color: var(--border-strong); color: var(--text); }
@@ -1742,9 +1746,11 @@ body.read-only #composer-hint { color: var(--ask); }
   .report-actions { bottom: calc(-14px - env(safe-area-inset-bottom)); margin: 12px -14px calc(-14px - env(safe-area-inset-bottom)); padding: 12px 14px calc(14px + env(safe-area-inset-bottom)); }
   .topbar .icon-btn { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; }
   /* only the connection indicator shrinks to a dot; other pills (MCP status…) keep their text */
-  #conn { font-size: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%; flex: none; }
+  #conn { font-size: 0; width: 16px; height: 16px; padding: 0; border-radius: 50%; flex: none; display: grid; place-items: center; }
   #conn.ok { background: var(--ok); }
   #conn.bad { background: var(--err); }
+  /* Not colour alone (WCAG 1.4.1): a broken link also wears a "!" — a colour-blind eye still sees the state. */
+  #conn.bad::before { content: '!'; font-size: 11px; font-weight: 700; line-height: 1; color: #fff; }
 
   .layout { flex: 1; min-height: 0; display: block; position: relative; }
   .office, .panel { position: absolute; inset: 0; border: 0; }
@@ -2679,9 +2685,12 @@ body.read-only #composer-hint { color: var(--ask); }
   body.read-only #ro-banner:not([hidden]) { display: block; padding: 10px 12px; border: 1px solid var(--warn-line); border-radius: var(--r-xl); background: var(--surface-2); color: var(--ask); font-size: var(--fs-md); line-height: 1.4; }
   body.read-only .input, body.read-only #typing-stop { display: none !important; }
 
-  /* on-screen keyboard open (ui/layout.js): the page is the visible area, no bottom nav */
+  /* on-screen keyboard open (ui/layout.js): the page is the visible area, no bottom nav. The todo row steps aside too
+     (on a 360×640 phone it takes ~36 px of the ~200 px left above the keyboard); the status chips STAY — "⚡ Belum
+     tersambung" is exactly what a remote user must still see while typing. */
   body.kb-open { height: var(--vv-h, 100dvh); }
   body.kb-open .mobile-nav { display: none; }
+  body.kb-open #todos { display: none; }
   body.kb-open .input textarea { max-height: 30dvh; }
   body.kb-open .toasts { bottom: 12px; }
   body:has(.phone-sheet:not([hidden])) .toasts { top: calc(12px + env(safe-area-inset-top)); bottom: auto; } /* never over a sheet's rows */
@@ -2820,6 +2829,13 @@ body.read-only #composer-hint { color: var(--ask); }
 /* 🕘 Riwayat sesi: ✎ ⑂ ⬇ 🗑 per session */
 .s-tools { display: inline-flex; gap: 4px; align-items: center; flex: none; }
 .s-tools .icon { width: 30px; height: 30px; padding: 0; }
+/* A finger, not a mouse: the tools get a row of their own under the title, with 40 px targets. Six 30 px icons
+   beside the title left ~40 px for the text on a 390 px phone — and 🗑 sat next to ⬇. */
+@media (pointer: coarse) {
+  .s-item { flex-wrap: wrap; }
+  .s-tools { order: 9; flex: 1 0 100%; justify-content: flex-end; gap: 8px; }
+  .s-tools .icon { width: 40px; height: 40px; }
+}
 /* 🧩 Ekstensi + ⇡ PR (features/extensions.js, pull-request.js) */
 .ext-card { max-width: 860px; width: min(860px, 96vw); }
 .pr-card { max-width: 640px; width: min(640px, 96vw); }

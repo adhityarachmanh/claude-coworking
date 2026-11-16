@@ -32,6 +32,28 @@ test('after a restart, new chat ids never reuse an id stored from the previous r
   }
 });
 
+test('a stream that stopped draining is dropped instead of buffering every message (phone asleep / dead tunnel)', () => {
+  const hub = new Hub({ dataDir: dataDirWith({ p1: [] }) });
+  hub.save = () => {};
+  hub.scheduleSave = () => {};
+  const frames = [];
+  const healthy = { write: (f) => frames.push(f), writableLength: 0, destroyed: false, writableEnded: false };
+  let destroyed = false;
+  const stalled = { write: () => assert.fail('tidak boleh menulis ke soket yang sudah menumpuk'), writableLength: 5 * 1024 * 1024, destroy: () => (destroyed = true) };
+  const ended = { write: () => assert.fail('stream yang sudah selesai tidak ditulisi'), writableEnded: true };
+  const gone = { write: () => assert.fail('soket yang sudah mati tidak ditulisi'), destroyed: true };
+  hub.clients.add(healthy);
+  hub.clients.add(stalled);
+  hub.clients.add(ended);
+  hub.clients.add(gone);
+  hub.redacted.add(stalled);
+  hub.broadcast('chat', { project: 'p1', id: 'm1' });
+  assert.equal(frames.length, 1, 'klien yang sehat tetap menerima pesan');
+  assert.equal(destroyed, true, 'soket yang menumpuk ditutup');
+  assert.deepEqual([...hub.clients], [healthy], 'hanya klien yang sehat yang tersisa');
+  assert.equal(hub.redacted.has(stalled), false, 'penanda redaksi ikut dibersihkan');
+});
+
 test('updateChat patches the new message, never an older one with a similar id', () => {
   const hub = new Hub({ dataDir: dataDirWith({ p1: [{ id: 'm1', ts: 1, project: 'p1', kind: 'assistant', text: 'jawaban lama' }] }) });
   hub.save = () => {};

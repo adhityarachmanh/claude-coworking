@@ -3,13 +3,15 @@
 // - Registered only on the https (Tailscale) origin; the http listeners answer /sw.js with 404. Note: a 404 on an
 //   update check does NOT unregister an installed worker (the spec keeps the registration). A real kill switch
 //   would serve an sw.js whose install/activate calls self.registration.unregister().
-// - NO fetch handler and NO Cache Storage: the API, /stream and index.html (which carries the per-start token)
-//   never pass through here, so nothing stale or secret can be served from a cache.
+// - One fetch handler, for page loads only: when the tunnel/laptop is unreachable a reload would otherwise end on the
+//   browser's own error page. It answers with a small built-in "not connected" page — never a cached app shell, so no
+//   stale token or data can be served. API calls, /stream and every other request never pass through here: still NO
+//   Cache Storage anywhere.
 // - Classic script (not a module SW) for older Firefox / iOS. The handlers are plain functions on the global
 //   scope so test/push-ui.test.mjs can run this file in a Node vm with a stubbed `self`.
 'use strict';
 
-const SW_VERSION = '3'; // bump on every change: a byte-different sw.js is what makes browsers update it
+const SW_VERSION = '4'; // bump on every change: a byte-different sw.js is what makes browsers update it
 
 const ICON = '/icons/icon-192.png';
 const BADGE = '/icons/icon-192.png';
@@ -174,9 +176,35 @@ async function onNotificationClick(event) {
   return openApp(data); // a plain tap, or the action could not be delivered: decide in the app
 }
 
+// The page a reload lands on while the laptop/Tailscale is unreachable. Deliberately tiny and self-contained: no app
+// markup, no token, nothing cached. Light/dark via the system preference, like the app's own default.
+const OFFLINE_HTML = `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Adhitron — belum tersambung</title><style>
+body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;font:16px/1.5 system-ui,sans-serif;background:#0f1115;color:#e6e8ee}
+main{max-width:26rem}h1{font-size:1.15rem;margin:0 0 8px}p{margin:0 0 12px;color:#a9b0c0}
+button{font:inherit;padding:10px 16px;border-radius:10px;border:1px solid #3a4050;background:#1b1f29;color:inherit}
+@media (prefers-color-scheme:light){body{background:#f6f7f9;color:#1a1c22}p{color:#555c6b}button{background:#fff;border-color:#d5d8e0}}
+</style></head><body><main><h1>Tidak tersambung ke laptop</h1>
+<p>Nyalakan Tailscale di HP (dan pastikan laptop menyala), lalu muat ulang halaman ini.</p>
+<button onclick="location.reload()">Muat ulang</button></main></body></html>`;
+
+/**
+ * A page load with the laptop unreachable: fetch normally, and only when that fails answer with the built-in notice.
+ * Guarded by `mode === 'navigate'`, so no module, API or event-stream response is ever replaced.
+ */
+async function onFetch(event) {
+  try {
+    return await fetch(event.request);
+  } catch {
+    return new Response(OFFLINE_HTML, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+  }
+}
+
 if (typeof self !== 'undefined' && typeof self.addEventListener === 'function') {
   self.addEventListener('install', () => self.skipWaiting()); // no cache to fill: take over right away
   self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
   self.addEventListener('push', (event) => event.waitUntil(onPush(event)));
   self.addEventListener('notificationclick', (event) => event.waitUntil(onNotificationClick(event)));
+  self.addEventListener('fetch', (event) => {
+    if (event.request.mode === 'navigate') event.respondWith(onFetch(event));
+  });
 }

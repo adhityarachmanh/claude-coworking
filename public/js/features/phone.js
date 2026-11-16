@@ -1,4 +1,6 @@
-// Phone access (QR pairing), laptop only.
+// Phone access (QR pairing): the laptop pairs and switches it on; a paired phone may still revoke a lost device.
+// Everything that needs the machine itself (the switch, the QR, "Periksa lagi", the firewall fix) is marked
+// `local-only` in the markup and hidden from a remote client (app.css: body.remote-client .local-only).
 import { api, toast } from '../core/api.js';
 import { firewallBanner } from '../core/firewall-banner.js';
 import { $, escapeHtml } from '../core/dom.js';
@@ -95,14 +97,17 @@ function renderPhone() {
   const info = state.config?.remote ?? { enabled: false, urls: [], devices: [] };
   $('#remote-enabled').checked = info.enabled;
   const body = $('#phone-body');
+  // A paired phone reading this dialog sees only the device list (the switch, the QR and the firewall actions are
+  // laptop-only); pairing must never happen from the page that is already paired.
+  const remote = state.local === false;
   if (!info.enabled) {
     renderHttps(info);
-    body.innerHTML = `<p class="muted">Setelah dinyalakan, scan QR dengan kamera HP untuk membuka kantor ini dari HP.</p>
+    body.innerHTML = `<div class="local-only"><p class="muted">Setelah dinyalakan, scan QR dengan kamera HP untuk membuka kantor ini dari HP.</p>
       <ul class="access-modes muted small">
         <li><b>📶 WiFi yang sama: hanya lihat.</b> Pantau chat, perubahan, dan aktivitas. Koneksi WiFi tidak terenkripsi, jadi HP tidak bisa mengirim perintah, menjawab izin, atau commit.</li>
         <li><b>🌐 Tailscale: kendali penuh</b> seperti di laptop (kecuali pengaturan laptop). Koneksinya terenkripsi dan bisa dari mana saja.</li>
       </ul>
-      <p class="warn">Hanya nyalakan di jaringan yang kamu percaya (rumah/kantor). Siapa pun di jaringan tetap butuh kode dari layar laptop ini untuk masuk.</p>`;
+      <p class="warn">Hanya nyalakan di jaringan yang kamu percaya (rumah/kantor). Siapa pun di jaringan tetap butuh kode dari layar laptop ini untuk masuk.</p></div>`;
     return;
   }
   const p = phone.pairing;
@@ -131,7 +136,7 @@ function renderPhone() {
         </ol>
         <p class="muted small" title="Laptop tidak terbuka ke internet publik. Lewat Tailscale HP bisa mengirim perintah; lewat WiFi biasa hanya bisa melihat.">Tailscale membuat jaringan pribadi terenkripsi antara laptop dan HP-mu.</p>
       </details>`;
-  body.innerHTML = p
+  const pairingHtml = p
     ? `${chooser}<div class="pair">
         <div class="qr">${qrSvg(qrUrl)}</div>
         <div class="pair-info">
@@ -155,8 +160,11 @@ function renderPhone() {
         <p class="muted small">Perangkat yang login dengan akun Tailscale yang sama dengan laptop ini bisa pasang langsung lewat 🔒 HTTPS, tanpa mengetik kode. Perangkat lain (WiFi, akun tailnet orang lain) tetap butuh kode sekali pakai.</p></div>
       <p class="muted small">Belum tersambung? Saat pertama kali, Windows mungkin menanyakan izin firewall untuk Node.js — pilih <b>Allow / Izinkan</b> (jaringan Private).</p>`
     : '<p class="muted">Menyiapkan kode…</p>';
+  body.innerHTML = `<div class="local-only">${pairingHtml}</div>`;
   renderHttps(info);
-  body.innerHTML += `<div class="devices"><b>Perangkat terhubung</b>${devices ? `<ul>${devices}</ul>` : '<p class="muted small">Belum ada.</p>'}<p class="muted small">Dicabut otomatis setelah ${info.idleDays ?? 30} hari tidak aktif.</p></div>`;
+  body.innerHTML += `<div class="devices"><b>Perangkat terhubung</b>${devices ? `<ul>${devices}</ul>` : '<p class="muted small">Belum ada.</p>'}<p class="muted small">${remote
+    ? 'Dari HP ini kamu bisa mencabut HP lain yang hilang, atau perangkat ini sendiri untuk keluar.'
+    : `Dicabut otomatis setelah ${info.idleDays ?? 30} hari tidak aktif.`}</p></div>`;
   renderFirewall();
   // Rendered apart from the per-second countdown so an opened <details> stays open.
   const tipBox = $('#phone-tip');
@@ -297,7 +305,7 @@ export function initPhone() {
       return;
     }
     const btn = e.target.closest('[data-revoke]');
-    if (!btn || !window.confirm('Cabut akses perangkat ini? HP itu harus scan QR lagi untuk masuk.')) return;
+    if (!btn || !window.confirm('Cabut akses perangkat ini? Perangkat itu harus dipasangkan ulang (kode/QR) untuk masuk lagi.')) return;
     await api('/api/remote/revoke', { id: btn.dataset.revoke }).catch((err) => toast(err.message));
   });
 }

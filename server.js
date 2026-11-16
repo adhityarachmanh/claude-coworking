@@ -1,6 +1,6 @@
 // Adhitron server: runs headless Claude Code per project and serves the office web app.
 import { spawn } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
@@ -28,6 +28,7 @@ import { autostartStatus, repairUnsafeAutologon } from './src/autostart.js';
 import { helperMainSync, sweepLeftoverSecrets } from './src/autologon.js';
 import { UsageLedger } from './src/usage.js';
 import { moduleGraph, preloadTags } from './src/modules.js';
+import { GzipCache, MIN_GZIP_BYTES, acceptsGzip, compressibleType, etagOf } from './src/compress.js';
 import { TranscriptMirror } from './src/mirror.js';
 import { OpenCodeMirror } from './src/opencode-mirror.js';
 import { CiWatcher } from './src/github-ci.js';
@@ -703,7 +704,7 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const LOCAL_ONLY = new Set(['/api/setup/install', '/api/setup/cancel', '/api/setup/login-terminal', '/api/cli-bridge/ask', '/api/cli-bridge/token', '/api/autostart', '/api/autologon', '/api/autologon/disable', '/api/pairing/code/push', '/api/wa/link']);
 // Admin biasa: boleh dari HP, tetapi hanya lewat Tailscale HTTPS (terenkripsi + perangkat terpasang). WiFi biasa
 // tetap hanya-lihat; gate read-only di bawah menolak sisanya.
-const SECURE_ADMIN = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/config', '/api/concurrency/save', '/api/projects', '/api/groups', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/remote-power/get', '/api/remote-power/settings', '/api/remote-power/test', '/api/wa/status', '/api/wa/pair-code', '/api/wa/unlink', '/api/wa/test', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
+const SECURE_ADMIN = new Set(['/api/app-update/check', '/api/app-update/run', '/api/budget/override', '/api/budget/audit', '/api/routines', '/api/routines/save', '/api/routines/delete', '/api/routines/toggle', '/api/routines/run', '/api/claude-check/run', '/api/claude-check/settings', '/api/claude-check/doctor', '/api/claude-check/update', '/api/opencode-check/run', '/api/opencode-check/settings', '/api/opencode-check/update', '/api/opencode-check/restart-service', '/api/opencode-plugins/list', '/api/opencode-plugins/add', '/api/opencode-plugins/remove', '/api/opencode-plugins/update', '/api/opencode-plugins/check', '/api/opencode-config', '/api/opencode-config/save', '/api/opencode-config/backups', '/api/opencode-config/backup', '/api/opencode-config/restore', '/api/opencode-config/consolidate', '/api/config', '/api/concurrency/save', '/api/projects', '/api/groups', '/api/backup/export', '/api/backup/import', '/api/backup/preview', '/api/backup/verify', '/api/backup/rekey', '/api/backup/schedule', '/api/backup/schedule/save', '/api/backup/schedule/run', '/api/backup/schedule/history', '/api/backup/schedule/restore', '/api/push/history', '/api/diagnostics/export', '/api/data', '/api/data/purge', '/api/data/project', '/api/data/audit-export', '/api/data/retention/preview', '/api/data/retention/save', '/api/data/retention/run', '/api/remote-power/get', '/api/remote-power/settings', '/api/remote-power/test', '/api/remote/revoke', '/api/wa/status', '/api/wa/pair-code', '/api/wa/unlink', '/api/wa/test', '/api/spotify/config', '/api/spotify/login', '/api/spotify/logout']);
 // ⚡ Power actions (⏻ Matikan PC) from a phone: ONLY over the https (Tailscale) listener, where the link is
 // encrypted end-to-end. A phone paired on plain-HTTP WiFi stays refused — it is read-only anyway, but this
 // gate answers with the real reason ("aksi daya hanya lewat Tailscale") instead of the generic read-only text.
@@ -740,7 +741,7 @@ const LAPTOP_ONLY_API = {
     // Route-level laptop guard (routes/diagnostics.js): the bundle carries logs that may name local folders.
     '/api/diagnostics/export',
   ],
-  patterns: ['^/api/remote/', LOCAL_ONLY_ACTION.source, LOCAL_ONLY_GROUP.source, LOCAL_ONLY_GROUP_DISSOLVE.source],
+  patterns: ['^/api/remote/(?!revoke$)', LOCAL_ONLY_ACTION.source, LOCAL_ONLY_GROUP.source, LOCAL_ONLY_GROUP_DISSOLVE.source],
 };
 const PUBLIC_ASSET = /^\/(manifest\.webmanifest|icons\/[\w.-]+|js\/pair\.js)$/;
 
@@ -812,9 +813,6 @@ function publishConfig() {
 // a 3–4 level waterfall. Worked out once per start (a new import picked up on restart; until then it simply loads late).
 const MODULE_PRELOADS = preloadTags(moduleGraph(PUBLIC_DIR, '/js/app.js'));
 
-/** Strong validator for a static file's bytes. */
-const etagOf = (body) => `"${createHash('sha1').update(body).digest('base64url')}"`;
-
 /** If-None-Match (a list, possibly weak validators or "*") matches this ETag. */
 function notModified(req, etag) {
   const header = String(req.headers['if-none-match'] ?? '');
@@ -847,28 +845,47 @@ async function serveAiLogos(pathname, res) {
   }
 }
 
-async function serveStatic(pathname, res, req, extraHeaders = {}) {  const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.slice(1));
+/** gzip bodies of the static files already compressed once (keyed by their plain ETag, bounded). */
+const staticGzip = new GzipCache();
+
+async function serveStatic(pathname, res, req, extraHeaders = {}) {
+  const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname.slice(1));
   const file = path.resolve(PUBLIC_DIR, rel);
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return json(res, 404, { error: 'not found' });
   try {
     let body = await readFile(file);
     const type = MIME[path.extname(file)] ?? 'application/octet-stream';
+    // A phone away from home pays for every byte: text assets go out gzipped when the client asks for it. `Vary` keeps
+    // a shared cache from handing a gzip body to a client that did not ask for one.
+    const wantGzip = acceptsGzip(req.headers['accept-encoding']) && compressibleType(type);
     if (rel === 'index.html') {
-      // Carries the per-start API token: never stored by the browser.
-      body = body.toString('utf8').replace('__OFFICE_TOKEN__', TOKEN).replace(/<!-- module-preloads:.*?-->/, MODULE_PRELOADS);
-      res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' });
-      return res.end(body);
+      // Carries the per-start API token: never stored by the browser, so no ETag and no cache to revalidate.
+      body = Buffer.from(body.toString('utf8').replace('__OFFICE_TOKEN__', TOKEN).replace(/<!-- module-preloads:.*?-->/, MODULE_PRELOADS));
+      const gz = wantGzip && body.length >= MIN_GZIP_BYTES ? staticGzip.encode(body, `index:${TOKEN}`) : null;
+      const out = gz?.body ?? body;
+      res.writeHead(200, {
+        'Content-Type': type,
+        'Cache-Control': 'no-store',
+        Vary: 'Accept-Encoding',
+        ...(gz ? { 'Content-Encoding': 'gzip' } : {}),
+        'Content-Length': out.length,
+      });
+      return res.end(out);
     }
     // Plain files (JS, CSS, icons): kept by the browser but revalidated on every use, so a reload is a
     // round of tiny 304s instead of full downloads, and an edited file is still picked up at once.
-    const etag = etagOf(body);
-    const headers = { 'Cache-Control': 'no-cache', ETag: etag, ...extraHeaders };
+    const plainEtag = etagOf(body);
+    // The gzip entry is keyed by the plain ETag, so an edited file is compressed again on its next request.
+    const gz = wantGzip && body.length >= MIN_GZIP_BYTES ? staticGzip.encode(body, plainEtag) : null;
+    const etag = gz?.etag ?? plainEtag;
+    const headers = { 'Cache-Control': 'no-cache', ETag: etag, Vary: 'Accept-Encoding', ...extraHeaders };
     if (notModified(req, etag)) {
       res.writeHead(304, headers);
       return res.end();
     }
-    res.writeHead(200, { ...headers, 'Content-Type': type });
-    res.end(body);
+    const out = gz?.body ?? body;
+    res.writeHead(200, { ...headers, 'Content-Type': type, ...(gz ? { 'Content-Encoding': 'gzip' } : {}), 'Content-Length': out.length });
+    res.end(out);
   } catch {
     json(res, 404, { error: 'not found' });
   }
@@ -1297,10 +1314,12 @@ async function handler(req, res) {
         }
         return json(res, 401, { error: 'Perangkat belum dipasangkan.' });
       }
+      // Revoking a device is the one /api/remote action a paired phone may run (a lost phone is often noticed while
+      // away from the laptop); everything else under the prefix stays laptop-only, as does switching phone access off.
+      const remoteLocked = pathname === '/api/remote' || (pathname.startsWith('/api/remote/') && pathname !== '/api/remote/revoke');
       if (
         LOCAL_ONLY.has(pathname) ||
-        pathname === '/api/remote' ||
-        pathname.startsWith('/api/remote/') ||
+        remoteLocked ||
         LOCAL_ONLY_ACTION.test(pathname) ||
         LOCAL_ONLY_GROUP.test(pathname) ||
         LOCAL_ONLY_GROUP_DISSOLVE.test(pathname)

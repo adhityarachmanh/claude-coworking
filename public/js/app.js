@@ -76,7 +76,7 @@ import { initTeam, renderTeam } from './features/team.js';
 import { initTemplates } from './features/templates.js';
 import { initTheme } from './features/theme.js';
 import { initVoice } from './features/voice.js';
-import { initKeyboardInset, initMobileNav, initPanelResizer, initSwipeViews, initTabs } from './ui/layout.js';
+import { initKeyboardInset, initMobileNav, initPanelResizer, initSwipeViews, initTabs, officeInView } from './ui/layout.js';
 import { initModals } from './ui/modals.js';
 import { initShortcuts } from './ui/shortcuts.js';
 
@@ -166,12 +166,16 @@ let lastTeam = 0;
 function loop(t) {
   const dt = Math.min((t - last) / 1000, 0.05);
   last = t;
-  // 🎯 Mode fokus: the office is hidden and paused — no scene/stage/brain frame at all (still scheduling, so turning
-  // it off just resumes on the next frame; `last` stays current, so dt never jumps).
+  // 🎯 Mode fokus / another phone view: the office is hidden and paused — no scene/stage/brain frame at all (still
+  // scheduling, so coming back just resumes on the next frame; `last` stays current, so dt never jumps). On a phone
+  // the office is its own screen: reading chat for ten minutes must not animate a canvas nobody sees. The team strip
+  // is plain DOM (cheap) and stays current, because the Kantor view and the task badges read it as soon as it is shown.
   if (!focusMode.on) {
-    for (const scene of scenes.values()) scene.update(dt, t);
-    if (brain.on) brain.frame(t, stage.scene); // 🧠 Mode Otak replaces the pixel office while it is on
-    else stage.frame(t);
+    if (officeInView()) {
+      for (const scene of scenes.values()) scene.update(dt, t);
+      if (brain.on) brain.frame(t, stage.scene); // 🧠 Mode Otak replaces the pixel office while it is on
+      else stage.frame(t);
+    }
     if (t - lastTeam > 500) {
       renderTeam();
       lastTeam = t;

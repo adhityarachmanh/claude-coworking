@@ -1,5 +1,6 @@
 // ---------- phone access (📱 Akses dari HP) ----------
-// Every /api/remote* route is laptop only: server.js refuses the whole prefix to paired phones.
+// Every /api/remote* route is laptop only — except POST /api/remote/revoke, which a paired phone may call over
+// Tailscale HTTPS so a lost phone can be cut off remotely (server.js refuses the prefix otherwise).
 import { checkFirewallRules, manualFirewallCommand, runFirewallFix } from '../firewall-check.js';
 import { networkAddresses } from '../remote.js';
 import { json } from './http.js';

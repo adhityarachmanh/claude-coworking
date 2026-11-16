@@ -17,6 +17,11 @@ import { isMissing } from './projects.js';
 const EVENT_LIMIT = 80;
 // Biggest message taken from a backup (tool output is clipped long before this).
 const MAX_IMPORTED_MESSAGE = 512 * 1024;
+/**
+ * An event stream that has this much unflushed data is not reading any more (phone asleep, tunnel dead). Dropping it
+ * is what keeps one half-open socket from holding every chat message in memory; the browser reconnects on its own.
+ */
+const MAX_STREAM_BACKLOG = 4 * 1024 * 1024;
 
 // ---------- where chat history lives ----------
 // state.json used to hold every chat, so each new message or streamed update rewrote the whole file (~250 KB
@@ -2109,7 +2114,15 @@ export class Hub {
     const frame = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
     const redact = this.redactors.get(type);
     let reduced = null; // built once per broadcast, only if a redacted client is listening
-    for (const res of this.clients) {
+    for (const res of [...this.clients]) {
+      // A phone on a dead tunnel never drains its socket: the queue grows with every broadcast until the process
+      // runs out of memory. Treat a backlog this large as gone (the request's own 'close' handler does the cleanup).
+      if (res.destroyed || res.writableEnded || (res.writableLength ?? 0) > MAX_STREAM_BACKLOG) {
+        this.clients.delete(res);
+        this.redacted.delete(res);
+        res.destroy?.();
+        continue;
+      }
       if (redact && this.redacted.has(res)) res.write((reduced ??= `event: ${type}\ndata: ${JSON.stringify(redact(data))}\n\n`));
       else res.write(frame);
     }

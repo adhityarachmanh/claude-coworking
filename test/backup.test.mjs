@@ -218,10 +218,36 @@ test('export: a streamed .zip with every project, history, checkpoints, plans, s
   assert.equal(res.headers.get('content-type'), 'application/zip');
   assert.equal(res.headers.get('cache-control'), 'no-store');
   assert.match(res.headers.get('content-disposition'), /^attachment; filename="adhit-office-backup-\d{4}-\d{2}-\d{2}\.zip"$/);
+  // The phone must be able to tell a truncated download from a complete one, and resume it.
+  const declared = Number(res.headers.get('content-length'));
+  assert.ok(Number.isInteger(declared) && declared > 0, 'Content-Length diumumkan');
+  assert.equal(res.headers.get('accept-ranges'), 'bytes');
   zipFile = path.join(TMP, 'backup.zip');
   const out = createWriteStream(zipFile);
   for await (const chunk of res.body) out.write(chunk);
   await new Promise((r) => out.end(r));
+  assert.equal(statSync(zipFile).size, declared, 'Content-Length sama dengan byte yang diterima');
+  // Resuming: a Range request returns exactly that slice, with the 206 headers a browser needs.
+  // The export lock is released right after the response finishes; a later request may briefly see 409.
+  const exportWith = async (range) => {
+    for (let i = 0; i < 50; i += 1) {
+      const r = await fetch(`${a.base}/api/backup/export`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': a.token, Range: range }, body: '{}' });
+      if (r.status !== 409) return r;
+      await new Promise((res) => setTimeout(res, 100));
+    }
+    throw new Error('export tetap sibuk');
+  };
+  const head = await exportWith('bytes=0-15');
+  assert.equal(head.status, 206);
+  // Each export builds a fresh zip (its own timestamps), so the total size differs by a few bytes: read it from this
+  // answer instead of comparing it with the first download.
+  const ranged = /^bytes 0-15\/(\d+)$/.exec(head.headers.get('content-range') ?? '');
+  assert.ok(ranged, `Content-Range menyebut ukuran total: ${head.headers.get('content-range')}`);
+  assert.ok(Number(ranged[1]) > 16);
+  assert.equal(head.headers.get('content-length'), '16');
+  assert.equal((await head.arrayBuffer()).byteLength, 16);
+  const tail = await exportWith('bytes=999999999-');
+  assert.equal(tail.status, 416, 'rentang di luar ukuran ditolak, bukan file kosong');
 
   const zip = await ZipReader.open(zipFile);
   const names = zip.entries.map((e) => e.name);

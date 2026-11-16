@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 import { ZipReader } from '../src/zip.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -624,6 +625,50 @@ test('static assets revalidate with ETag (304); index.html with its token is nev
     assert.equal(page.headers.get('etag'), null);
   }
   assert.equal((await fetch(`${BASE}/health`)).headers.get('cache-control'), 'no-store');
+});
+
+test('text assets go out gzipped when the client asks (a phone on a mobile link pays for every byte)', async () => {
+  // Raw HTTP: node's fetch decompresses transparently and hides what actually went over the wire.
+  const raw = (p, headers = {}) =>
+    new Promise((resolve, reject) => {
+      const req = http.get(`${BASE}${p}`, { headers }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+      });
+      req.on('error', reject);
+    });
+  const plain = await raw('/js/core/api.js', { 'Accept-Encoding': 'identity' });
+  const gz = await raw('/js/core/api.js', { 'Accept-Encoding': 'gzip' });
+  assert.equal(gz.status, 200);
+  assert.equal(gz.headers['content-encoding'], 'gzip', 'dikirim terkompresi');
+  assert.match(gz.headers.vary, /Accept-Encoding/i, 'cache bersama tidak mencampur badan gzip dan biasa');
+  assert.match(gz.headers['content-type'], /^text\/javascript/, 'tipe isi tetap sama');
+  assert.equal(Number(gz.headers['content-length']), gz.body.length, 'Content-Length = badan yang benar-benar dikirim');
+  assert.ok(gz.body.length < plain.body.length / 2, `jauh lebih kecil (${gz.body.length} vs ${plain.body.length})`);
+  assert.equal(gunzipSync(gz.body).toString('utf8'), plain.body.toString('utf8'), 'isi setelah dibuka sama persis');
+  assert.equal(plain.headers['content-encoding'], undefined, 'klien tanpa gzip menerima badan biasa');
+  assert.notEqual(gz.headers.etag, plain.headers.etag, 'ETag badan gzip berbeda: tidak ada 304 yang salah');
+  // Revalidate the compressed body with its own validator, and prove the plain client is not fooled by it.
+  const revalidated = await raw('/js/core/api.js', { 'Accept-Encoding': 'gzip', 'If-None-Match': gz.headers.etag });
+  assert.equal(revalidated.status, 304, 'validator gzip dipakai ulang');
+  assert.equal((await raw('/js/core/api.js', { 'Accept-Encoding': 'identity', 'If-None-Match': gz.headers.etag })).status, 200, 'ETag gzip tidak menjawab 304 untuk badan biasa');
+  // index.html holds the per-start token: compressed, but still never stored and never validated.
+  const page = await raw('/index.html', { 'Accept-Encoding': 'gzip' });
+  assert.equal(page.headers['content-encoding'], 'gzip');
+  assert.equal(page.headers['cache-control'], 'no-store');
+  assert.equal(page.headers.etag, undefined);
+  const plainPage = await raw('/index.html', { 'Accept-Encoding': 'identity' });
+  assert.equal(gunzipSync(page.body).toString('utf8'), plainPage.body.toString('utf8'), 'halaman yang sama setelah dibuka');
+  assert.doesNotMatch(gunzipSync(page.body).toString('utf8'), /__OFFICE_TOKEN__/, 'token asli menggantikan placeholder');
+  // Tiny files and already-compressed formats are not worth a gzip header.
+  const png = await raw('/icons/icon-192.png', { 'Accept-Encoding': 'gzip' });
+  assert.equal(png.status, 200);
+  assert.equal(png.headers['content-encoding'], undefined, 'PNG sudah terkompresi: tidak digzip ulang');
+  const small = await raw('/js/core/dom.js', { 'Accept-Encoding': 'gzip' });
+  assert.equal(small.status, 200);
+  assert.equal(small.headers['content-encoding'], undefined, 'di bawah ambang ukuran: badan biasa');
+  assert.equal(small.headers['content-type'], 'text/javascript; charset=utf-8');
 });
 
 test('/ai-logos: the index and the SVGs are public; traversal and unknown names are 404', async () => {

@@ -22,6 +22,13 @@ export function setMobileView(view) {
   document.querySelectorAll('#mobile-nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
 }
 
+/**
+ * Whether the pixel office is actually on screen. On the split (laptop) layout it always is; on a phone it is a
+ * full-screen view of its own, so the office animation has no reason to keep burning battery while the user reads
+ * chat. `body[data-view]` is the same flag the phone CSS uses (`app.css`), so the frame loop and the layout agree.
+ */
+export const officeInView = () => !narrow.matches || document.body.dataset.view === 'office';
+
 // ---------- phone: swipe left/right between the full-screen views ----------
 
 const SWIPE_ORDER = ['office', 'chat', 'changes', 'activity'];

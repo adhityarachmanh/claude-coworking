@@ -4,7 +4,7 @@
 // One export, import or scheduled backup at a time: ctx.backupLock (shared with the BackupScheduler in server.js).
 import { randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Transform } from 'node:stream';
@@ -75,6 +75,45 @@ function activeSessionIds(hub) {
   return ids;
 }
 
+/**
+ * Streams a finished backup file with a `Content-Length` and byte ranges. A phone on a flaky link loses the middle of
+ * a download: without a length it cannot tell a truncated .zip from a complete one, and without ranges it has to start
+ * over. `Range` is answered with 206 so the browser can resume.
+ */
+async function sendBackupFile(req, res, file, { type, name }) {
+  const rangeError = (message, size) => {
+    res.writeHead(416, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Range': `bytes */${size}` });
+    res.end(JSON.stringify({ error: message }));
+  };
+  const { size } = await stat(file);
+  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? '').trim());
+  let start = 0;
+  let end = size - 1;
+  let status = 200;
+  if (range) {
+    const [, from, to] = range;
+    if (from === '' && to === '') return rangeError('Rentang byte tidak valid.', size);
+    if (from === '') {
+      // Suffix range: the last N bytes.
+      start = Math.max(0, size - Number(to));
+    } else {
+      start = Number(from);
+      end = to === '' ? size - 1 : Math.min(Number(to), size - 1);
+    }
+    if (start > end || start >= size) return rangeError('Rentang byte di luar ukuran file.', size);
+    status = 206;
+  }
+  res.writeHead(status, {
+    'Content-Type': type,
+    'Content-Disposition': `attachment; filename="${name}"`,
+    'Cache-Control': 'no-store',
+    'Content-Length': end - start + 1,
+    'Accept-Ranges': 'bytes',
+    ...(status === 206 ? { 'Content-Range': `bytes ${start}-${end}/${size}` } : {}),
+  });
+  await pipeline(createReadStream(file, { start, end }), res);
+}
+
 /** POST /api/backup/export: the backup .zip (or an encrypted .aob), streamed (never held in memory). */
 async function exportBackup({ hub, ledger, isReadOnly, backupLock, appVersion, dataDir, projectRoots, opencode }, req, res, params, body) {
   if (isReadOnly?.(req) !== false) return json(res, 403, { error: 'Backup hanya bisa dari laptop atau lewat Tailscale.' });
@@ -98,34 +137,37 @@ async function exportBackup({ hub, ledger, isReadOnly, backupLock, appVersion, d
       ? await collectOpenCodeSessions(opencode, [...hub.projects.values()]).catch(() => ({ sessions: [], skipped: [] }))
       : { sessions: [], skipped: [] };
     if (opencodeSessions.skipped.length) console.log(`Backup: ${opencodeSessions.skipped.length} sesi OpenCode dilewati.`);
-    if (!password) {
-      const name = `adhit-office-backup-${day}.zip`;
-      res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
-      const result = await writeBackup(res, { state: backupState, usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), opencodeSessions: opencodeSessions.sessions, appVersion });
-      res.end();
-      const skipped = result.skipped.length ? `, ${result.skipped.length} dilewati (symlink/nama tidak valid)` : '';
-      console.log(`Backup riwayat diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB${skipped}`);
-      recordAudit(dataDir, { action: 'backup-export', detail: `${result.files} file · ${(result.bytes / 1024 ** 2).toFixed(1)} MB` });
-      return;
-    }
-    // 🔐 Encrypted: build the .zip in a temp file, seal it, then stream the .aob (the password is never stored).
     const tmpDir = path.join(dataDir, 'tmp');
     await mkdir(tmpDir, { recursive: true });
-    const zipFile = path.join(tmpDir, `export-${Date.now()}-${randomBytes(4).toString('hex')}.zip`);
-    const sealed = `${zipFile}.aob`;
+    const workFile = path.join(tmpDir, `export-${Date.now()}-${randomBytes(4).toString('hex')}.zip`);
+    const sealed = `${workFile}.aob`;
     try {
-      const out = createWriteStream(zipFile);
+      if (!password) {
+        // Built on disk first so the answer can carry a Content-Length: a phone that loses the link mid-download then
+        // knows the file is incomplete (and Range lets it resume instead of starting over).
+        const out = createWriteStream(workFile);
+        const result = await writeBackup(out, { state: backupState, usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), opencodeSessions: opencodeSessions.sessions, appVersion });
+        out.end();
+        await finished(out);
+        const name = `adhit-office-backup-${day}.zip`;
+        await sendBackupFile(req, res, workFile, { type: 'application/zip', name });
+        const skipped = result.skipped.length ? `, ${result.skipped.length} dilewati (symlink/nama tidak valid)` : '';
+        console.log(`Backup riwayat diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB${skipped}`);
+        recordAudit(dataDir, { action: 'backup-export', detail: `${result.files} file · ${(result.bytes / 1024 ** 2).toFixed(1)} MB` });
+        return;
+      }
+      // 🔐 Encrypted: build the .zip in a temp file, seal it, then stream the .aob (the password is never stored).
+      const out = createWriteStream(workFile);
       const result = await writeBackup(out, { state: backupState, usageFile: ledger.file, chatsDir: hub.backupChatsDir(), engineChats: hub.backupEngineChats(), opencodeSessions: opencodeSessions.sessions, appVersion });
       out.end();
       await finished(out);
-      await encryptBackupFile(zipFile, sealed, password);
+      await encryptBackupFile(workFile, sealed, password);
       const name = `adhit-office-backup-${day}.aob`;
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
-      await pipeline(createReadStream(sealed), res);
+      await sendBackupFile(req, res, sealed, { type: 'application/octet-stream', name });
       console.log(`Backup riwayat terenkripsi diekspor: ${result.files} file, ${(result.bytes / 1024 ** 2).toFixed(1)} MB`);
       recordAudit(dataDir, { action: 'backup-export', detail: `terenkripsi · ${result.files} file · ${(result.bytes / 1024 ** 2).toFixed(1)} MB` });
     } finally {
-      await rm(zipFile, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+      await rm(workFile, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
       await rm(sealed, { force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
     }
   } catch (err) {

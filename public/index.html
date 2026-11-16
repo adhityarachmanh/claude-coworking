@@ -1512,10 +1512,10 @@
           <b id="phone-title">📱 Buka dari HP</b>
           <button id="phone-close" class="icon-btn" title="Tutup" aria-label="Tutup">✕</button>
         </div>
-        <label class="switch big"><input id="remote-enabled" type="checkbox" /> Izinkan akses dari HP (WiFi: hanya lihat · Tailscale: penuh)</label>
+        <label class="switch big local-only"><input id="remote-enabled" type="checkbox" /> Izinkan akses dari HP (WiFi: hanya lihat · Tailscale: penuh)</label>
         <div id="phone-body"></div>
-        <div id="phone-https"></div>
-        <div id="phone-firewall"></div>
+        <div id="phone-https" class="local-only"></div>
+        <div id="phone-firewall" class="local-only"></div>
         <div id="phone-tip"></div>
       </div>
     </div>
@@ -1657,6 +1657,8 @@
           <button type="button" class="plus-tile" data-proxy="#btn-template"><span class="pt-ico" aria-hidden="true">⚡</span><span>Template</span></button>
           <button type="button" class="plus-tile" data-proxy="#btn-voice"><span class="pt-ico" aria-hidden="true">🎤</span><span>Suara</span></button>
           <button type="button" class="plus-tile" data-proxy="#btn-queue-add"><span class="pt-ico" aria-hidden="true">📋</span><span id="plus-queue-label">Buka antrian</span></button>
+          <button type="button" class="plus-tile" data-insert="newline"><span class="pt-ico" aria-hidden="true">↵</span><span>Baris baru</span></button>
+          <button type="button" class="plus-tile" data-history="1"><span class="pt-ico" aria-hidden="true">🕘</span><span>Riwayat</span></button>
           <button type="button" class="plus-tile" data-insert="!"><span class="pt-ico" aria-hidden="true">!</span><span>Shell</span></button>
           <button type="button" class="plus-tile" data-insert="@"><span class="pt-ico" aria-hidden="true">@</span><span>File</span></button>
           <button type="button" class="plus-tile" data-insert="/"><span class="pt-ico" aria-hidden="true">/</span><span>Command</span><small id="plus-slash-note" hidden>Kosongkan kotak dulu</small></button>

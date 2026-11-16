@@ -7,6 +7,7 @@ import { closeModal, openModal } from '../ui/modals.js';
 import { loadBudgetView, syncBudgetSection } from './budget.js';
 import { syncHealthButton } from './health.js';
 import { selectProject } from './picker.js';
+import { handoffTarget } from './power.js';
 import { openRoutines } from './routines.js';
 
 // The dialog shows one section at a time on both laptop and phone (the phone scrolls the tab bar sideways).
@@ -712,9 +713,15 @@ export function initSettings() {
     if (!window.confirm(pc ? `Matikan server ${APP_NAME} dan Windows PC-nya? Sesi Claude yang sedang berjalan dihentikan dengan rapi, lalu Windows shutdown. Listrik Bardi tidak diputus otomatis — halaman jembatan terbuka untuk memutus arus.` : `Matikan server ${APP_NAME}? Sesi Claude yang sedang berjalan ikut dihentikan.`)) return;
     const out = await api('/api/shutdown', { pc }).catch(() => {});
     // ⏻ Handoff ke halaman jembatan (countdown pemutusan listrik): TAB YANG SAMA, tanpa toast — halaman berganti.
+    // The server forwards the bridge's own relative path (`/s/…`), which belongs to the BRIDGE origin, not to this
+    // page: assigning it raw sent a phone to `<office>/s/…` (404) right after the PC went down. Resolve it against the
+    // bridge URL the dialog already holds, the same way the ⚡ panel does (features/power.js).
     if (pc && out?.handoffUrl) {
-      window.location.href = out.handoffUrl;
-      return;
+      const target = handoffTarget(out.handoffUrl, $('#rp-url')?.value.trim() || undefined);
+      if (target) {
+        window.location.href = target;
+        return;
+      }
     }
     toast(pc ? 'Windows dimatikan: server ditutup rapi. Putuskan listrik Bardi dari halaman jembatan.' : 'Server dimatikan. Buka aplikasi Adhitron lagi untuk menyalakannya.', 'ok');
   });

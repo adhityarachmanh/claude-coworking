@@ -80,7 +80,7 @@ function loadSw({ fetchImpl, windows = [] } = {}) {
     if (!fetchImpl) return { ok: true, status: 200, json: async () => ({ ok: true }) };
     return fetchImpl(url, init);
   };
-  const ctx = vm.createContext({ self, clients, fetch, URL, URLSearchParams, AbortController, setTimeout, clearTimeout, JSON, console });
+  const ctx = vm.createContext({ self, clients, fetch, Response, URL, URLSearchParams, AbortController, setTimeout, clearTimeout, JSON, console });
   vm.runInContext(SW_SOURCE, ctx, { filename: 'sw.js' });
   return { ctx, listeners, calls, shown };
 }
@@ -266,15 +266,43 @@ describe('sw.js: notificationclick', () => {
 });
 
 describe('sw.js: lifecycle', () => {
-  test('no fetch handler (no cache); skipWaiting on install, clients.claim on activate; a version constant', async () => {
+  test('skipWaiting on install, clients.claim on activate; a version constant', async () => {
     const { ctx, listeners, calls } = loadSw();
-    assert.equal(listeners.fetch, undefined, 'never intercepts requests');
-    assert.doesNotMatch(SW_SOURCE, /caches\.|addEventListener\(\s*['"]fetch/);
     listeners.install({});
     await dispatch(listeners.activate, {});
     assert.equal(calls.skipWaiting, 1);
     assert.equal(calls.claim, 1);
     assert.match(String(vm.runInContext('SW_VERSION', ctx)), /\S/);
+  });
+
+  test('the only fetch handling is a page-load fallback: no cache, and API/module/stream requests are untouched', async () => {
+    assert.doesNotMatch(SW_SOURCE, /caches\./);
+    const { listeners, calls } = loadSw();
+    assert.equal(typeof listeners.fetch, 'function');
+    // Anything that is not a navigation is not intercepted at all (the listener does not call respondWith).
+    let responded = null;
+    listeners.fetch({ request: { mode: 'cors', url: 'https://x/api/state' }, respondWith: (p) => (responded = p) });
+    listeners.fetch({ request: { mode: 'no-cors', url: 'https://x/js/app.js' }, respondWith: (p) => (responded = p) });
+    assert.equal(responded, null, 'API, modul, dan /stream tidak pernah lewat service worker');
+    assert.equal(calls.fetches.length, 0);
+  });
+
+  test('a page load while the laptop is unreachable answers with a built-in notice (not the browser error page)', async () => {
+    const ok = loadSw();
+    let body = null;
+    ok.listeners.fetch({ request: { mode: 'navigate', url: 'https://x/' }, respondWith: (p) => (body = p) });
+    assert.equal((await body).status, 200, 'tersambung: halaman asli apa adanya');
+    const down = loadSw({ fetchImpl: async () => { throw new Error('offline'); } });
+    let fallback = null;
+    down.listeners.fetch({ request: { mode: 'navigate', url: 'https://x/' }, respondWith: (p) => (fallback = p) });
+    const res = await fallback;
+    assert.equal(res.status, 503);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    const html = await res.text();
+    assert.match(html, /Tidak tersambung ke laptop/);
+    assert.match(html, /Tailscale/);
+    assert.doesNotMatch(html, /office-token|__OFFICE_TOKEN__|data-office-token/i, 'tidak membawa token atau data aplikasi');
   });
 });
 

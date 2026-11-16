@@ -2,9 +2,12 @@
 // header ⋯ sheet (view-aware: Chat → session/conversation rows, Perubahan → git rows, every view → Lainnya).
 // Every row/tile forwards a click to a control that already exists (data-proxy), so shortcuts, tests and the
 // read-only rules keep working on the original controls; this module only opens sheets and fills labels.
+import { toast } from '../core/api.js';
 import { $, narrow } from '../core/dom.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
+import { autosize, updateBashMode } from './composer.js';
+import { recallPrompt } from './history.js';
 import { openRewind } from './rewind.js';
 
 const SHEETS = ['plus-modal', 'turn-settings-modal', 'head-more-modal'];
@@ -91,10 +94,13 @@ function renderPlus() {
   $('#plus-slash-note').hidden = !text;
 }
 
-/** ! at the start, @ at the cursor, / into an empty box; then the box gets focus and the suggestions run. */
+/** ! at the start, @ at the cursor, / into an empty box, ↵ a line break (a soft keyboard has no Shift+Enter). */
 function insertToken(token) {
   const input = $('#prompt');
-  if (token === '!') {
+  if (token === 'newline') {
+    const start = input.selectionStart ?? input.value.length;
+    input.setRangeText('\n', start, input.selectionEnd ?? start, 'end');
+  } else if (token === '!') {
     if (!input.value.startsWith('!')) input.value = `!${input.value}`;
     input.setSelectionRange(input.value.length, input.value.length);
   } else if (token === '/') {
@@ -111,14 +117,34 @@ function insertToken(token) {
   input.dispatchEvent(new Event('input', { bubbles: true })); // autosize, bash mode, draft, / @ suggestions
 }
 
+/**
+ * 🕘 Riwayat (the ＋ tile): the same recall as ↑, without a physical keyboard. Each tap goes one prompt further back;
+ * a new keystroke resets it (features/history.js listens for `input`). The caret starts at the top so the recall guard
+ * (which leaves the arrows to the caret in a multi-line draft) does not refuse it.
+ */
+function recallLastPrompt() {
+  const input = $('#prompt');
+  input.setSelectionRange(0, 0);
+  if (!recallPrompt(-1)) {
+    toast('Belum ada riwayat prompt untuk project ini.');
+    return;
+  }
+  input.focus();
+  // No `input` event here: it would reset the recall position (features/history.js), so a second tap could never go
+  // one prompt further back. Autosize and the shell hint are updated directly, as the ↑ key path does.
+  autosize();
+  updateBashMode();
+}
+
 function onSheetClick(e) {
-  const item = e.target.closest('[data-proxy], [data-insert], [data-action]');
+  const item = e.target.closest('[data-proxy], [data-insert], [data-action], [data-history]');
   if (!item || item.disabled) return;
   const sheet = item.closest('.modal');
   // Close first, then forward in the same click handler: a file picker (📎) needs the user's gesture,
   // and a dialog opened by the target takes focus after the sheet is gone.
   sheet.hidden = true;
   if (item.dataset.insert) insertToken(item.dataset.insert);
+  else if (item.dataset.history) recallLastPrompt();
   else if (item.dataset.action === 'rewind') openRewind();
   else document.querySelector(item.dataset.proxy)?.click();
 }

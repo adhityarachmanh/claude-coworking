@@ -128,13 +128,20 @@ function applyReadOnly() {
 }
 
 const OFFLINE_HINT = 'Belum tersambung ke laptop — pesan belum dikirim, teksnya tetap di kotak';
+/**
+ * How long the phone waits for the prompt request. The server may classify Model/Effort Auto first (up to ~25 s), so
+ * a minute is generous; past that the tunnel is the problem, and the text belongs back in the box, not in limbo.
+ */
+const PROMPT_TIMEOUT_MS = 60_000;
+/** One prompt in flight at a time: a second tap on a slow link must never send the same text twice. */
+let sending = false;
 
 /** Kirim waits for the connection (the text box stays usable, so typing carries on and is kept as a draft). */
 export function renderSendState() {
   if (state.readOnly) return; // applyReadOnly owns the button there
   const send = $('#btn-send');
-  send.disabled = !connection.online;
-  send.title = connection.online ? '' : OFFLINE_HINT;
+  send.disabled = !connection.online || sending;
+  send.title = sending ? 'Mengirim…' : connection.online ? '' : OFFLINE_HINT;
   if (narrow.matches) renderStatusline(state.statuses[state.active] ?? {}); // phone: the "not connected" chip
 }
 
@@ -619,7 +626,7 @@ function cycleMode() {
 }
 
 async function sendPrompt() {
-  if (state.readOnly) return;
+  if (state.readOnly || sending) return;
   await attachmentsReady(); // a file dropped just before Enter goes out with this prompt
   const input = $('#prompt');
   const text = input.value.trim();
@@ -660,7 +667,9 @@ async function sendPrompt() {
     renderComposer();
   }
   try {
-    const answer = await api(`/api/projects/${project}/prompt`, { text, attachments: files });
+    sending = true;
+    renderSendState(); // a second tap while this one waits cannot send the same text twice
+    const answer = await api(`/api/projects/${project}/prompt`, { text, attachments: files }, { timeoutMs: PROMPT_TIMEOUT_MS });
     draftSent(project, text);
     rememberSent(project, kept); // memory only: ↻ Ulangi / Edit can send them again until a reload
     // ⚡ The global turn limit was full: the server put the prompt in 📋 Antrian instead of refusing it.
@@ -668,9 +677,12 @@ async function sendPrompt() {
   } catch (err) {
     input.value = text;
     restoreAttachments(kept, project);
-    toast(`Gagal mengirim: ${err.message}`);
+    // A timeout is not a refusal: the laptop may still have taken the prompt. Say so before the user sends it twice.
+    toast(err?.code === 'timeout' ? `Laptop tidak menjawab dalam ${PROMPT_TIMEOUT_MS / 1000} detik. Teks dikembalikan — periksa chat dulu sebelum mengirim ulang.` : `Gagal mengirim: ${err.message}`);
   } finally {
+    sending = false;
     effortPending.project = null;
+    renderSendState();
     if (autoEffort) renderComposer();
   }
 }

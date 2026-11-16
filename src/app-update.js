@@ -1,6 +1,8 @@
 // ⬆ Adhitron's own updates: every 30 minutes `git fetch` (no merge) and count the commits the branch is behind its
-// upstream. The page shows a banner with what is new; "Update sekarang" (laptop only) does `git pull --ff-only` and
-// restarts the server the clean way (scripts/restart.mjs: a running turn is recorded and offered to continue).
+// upstream. The page shows a banner with what is new; "Update sekarang" does `git pull --ff-only` and restarts the
+// server the clean way (scripts/restart.mjs: a running turn is recorded and offered to continue). Allowed from the
+// laptop and from a paired phone over Tailscale HTTPS (SECURE_ADMIN): the pull is fast-forward only, so a broken tree
+// can only come from your own pushed commits — and those go through `npm run check` first.
 // Local changes are never touched: with uncommitted changes or a diverged branch the update is refused.
 import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';

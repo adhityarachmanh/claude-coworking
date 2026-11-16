@@ -19,6 +19,11 @@ import { MAX_PLAINTEXT, PUSH_SERVICE_HOSTS, WebPushError, endpointAllowed, ensur
 export const ACT_TTL_MS = 15 * 60 * 1000;
 /** A page's "I am visible" report counts this long (the page repeats it every 30 s while visible). */
 export const VISIBLE_TTL_MS = 90 * 1000;
+/**
+ * A pending approval that reached no notification (its page looked visible, or the "hidden" report never left the
+ * phone) gets ONE reminder after this delay. The turn waits for the answer, so silence is the worst outcome.
+ */
+export const APPROVAL_REMIND_MS = 60 * 1000;
 const MAX_IN_FLIGHT = 4; // concurrent requests to push services
 const MAX_WAITING = 200; // beyond this, new pushes are dropped (best effort)
 const MAX_FAILURES = 3; // consecutive 400/401/403 answers: the subscription is dropped (usually a VAPID key mismatch)
@@ -214,11 +219,12 @@ export class PushService {
    * @param {typeof fetch} [options.fetch]  the push services' HTTP client (tests inject a fake push service)
    * @param {readonly string[]} [options.allowedHosts]  push service allowlist (tests only; never from env)
    * @param {() => number} [options.now]
+   * @param {number} [options.remindMs]  delay before the one reminder of a pending approval (tests use a short one)
    * @param {() => void} [options.onChange]  a device's push state changed (📱 badges)
    * @param {(msg: string) => void} [options.log]  info
    * @param {(msg: string) => void} [options.warn]  failures (sanitised: no endpoint, key or payload)
    */
-  constructor({ hub, remote, queueSummary = () => null, hasStream = () => false, fetch, allowedHosts = PUSH_SERVICE_HOSTS, dataDir = null, now = Date.now, onChange = () => {}, log = console.log, warn = console.error }) {
+  constructor({ hub, remote, queueSummary = () => null, hasStream = () => false, fetch, allowedHosts = PUSH_SERVICE_HOSTS, dataDir = null, now = Date.now, remindMs = APPROVAL_REMIND_MS, onChange = () => {}, log = console.log, warn = console.error }) {
     this.hub = hub;
     this.remote = remote;
     this.queueSummary = queueSummary;
@@ -226,6 +232,7 @@ export class PushService {
     this.fetch = fetch;
     this.allowedHosts = allowedHosts;
     this.now = now;
+    this.remindMs = remindMs;
     this.onChange = onChange;
     this.log = log;
     this.warn = warn;
@@ -233,6 +240,7 @@ export class PushService {
     this.spent = new Map(); // sha256(token) -> approvalId (used, expired or dropped tokens)
     this.finals = new Map(); // approvalId -> 'allowed'|'denied'|'cancelled'
     this.delivered = new Map(); // approvalId -> Set(deviceId) that got the "ask" push
+    this.reminders = new Map(); // approvalId -> timer of the one reminder (cleared when it is answered)
     this.answering = null; // { approvalId, deviceId } while /api/push/act resolves an approval
     this.visible = new Map(); // deviceId -> Map(tab -> { visible, at })
     this.lastTest = new Map(); // deviceId -> time of the last test push
@@ -469,20 +477,13 @@ export class PushService {
     if (a.status === 'pending') {
       if (this.delivered.has(a.id)) return;
       this.sweep();
-      const pending = [...this.hub.approvals.values()].filter((e) => e.approval.project === a.project).length;
-      const got = new Set();
-      this.delivered.set(a.id, got);
-      const label = a.kind === 'question' ? 'Pertanyaan' : a.kind === 'plan' ? 'Rencana' : cut(String(a.tool ?? '').replace(/[^\w.:-]/g, ''), 40) || 'Tool';
-      this.fanOut('ask', a.project, (device, plan) => {
-        got.add(device.id);
-        const fields = { project: a.project, role: a.source === 'cli' ? 'Terminal' : this.roleName(a.role), label, approvalId: a.id, silent: !plan.sound, pending };
-        // Izinkan / Tolak only for a tool permission; Izinkan only where the device allows it on the lock screen.
-        if (a.kind === 'tool') Object.assign(fields, { t: this.issueToken(a.id, device.id), allowAllowed: lockscreenAllows(a, device) });
-        return fields;
-      });
+      this.delivered.set(a.id, new Set());
+      this.sendAsk(a);
+      this.remindLater(a.id);
       return;
     }
     // Answered (here, on the laptop, another phone) or cancelled: tokens die, the ask notification is replaced.
+    this.clearReminder(a.id);
     remember(this.finals, a.id, a.status, FINAL_LRU);
     this.dropTokens((t) => t.approvalId === a.id);
     const got = this.delivered.get(a.id);
@@ -496,6 +497,56 @@ export class PushService {
       const payload = this.payload('answered', { project: a.project, role: this.roleName(a.role), approvalId: a.id, status: a.status, silent: true });
       this.enqueue(id, payload, PUSH_SPEC.answered, this.topic(PUSH_SPEC.answered.topic, a.project));
     }
+  }
+
+  /**
+   * The "ask" push for a pending approval, to every eligible device that does not have it yet (`skip`). Returns how
+   * many were queued. The pending count is recomputed, so a reminder carries the truth at the moment it is sent.
+   */
+  sendAsk(a, skip = null) {
+    const got = this.delivered.get(a.id) ?? new Set();
+    this.delivered.set(a.id, got);
+    const pending = [...this.hub.approvals.values()].filter((e) => e.approval.project === a.project).length;
+    const label = a.kind === 'question' ? 'Pertanyaan' : a.kind === 'plan' ? 'Rencana' : cut(String(a.tool ?? '').replace(/[^\w.:-]/g, ''), 40) || 'Tool';
+    let queued = 0;
+    this.fanOut(
+      'ask',
+      a.project,
+      (device, plan) => {
+        queued += 1;
+        got.add(device.id);
+        const fields = { project: a.project, role: a.source === 'cli' ? 'Terminal' : this.roleName(a.role), label, approvalId: a.id, silent: !plan.sound, pending };
+        // Izinkan / Tolak only for a tool permission; Izinkan only where the device allows it on the lock screen.
+        if (a.kind === 'tool') Object.assign(fields, { t: this.issueToken(a.id, device.id), allowAllowed: lockscreenAllows(a, device) });
+        return fields;
+      },
+      'ask',
+      skip,
+    );
+    return queued;
+  }
+
+  /** One reminder per pending approval: a page that looked visible (or a lost "hidden" report) is never the end. */
+  remindLater(approvalId) {
+    if (!(this.remindMs > 0)) return;
+    this.clearReminder(approvalId);
+    const timer = setTimeout(() => this.remind(approvalId), this.remindMs);
+    timer.unref?.(); // a pending approval must never hold the process open
+    this.reminders.set(approvalId, timer);
+  }
+
+  clearReminder(approvalId) {
+    const timer = this.reminders.get(approvalId);
+    if (timer) clearTimeout(timer);
+    this.reminders.delete(approvalId);
+  }
+
+  /** Sends the reminder now (the timer calls this; tests call it directly). False = nothing left to remind. */
+  remind(approvalId) {
+    this.reminders.delete(approvalId);
+    const entry = this.hub.approvals.get(approvalId);
+    if (!entry || entry.approval.status !== 'pending') return false;
+    return this.sendAsk(entry.approval, this.delivered.get(approvalId) ?? null) > 0;
   }
 
   onChat(m) {
@@ -530,9 +581,10 @@ export class PushService {
 
   /**
    * One event to every eligible device: its 🔔 settings (notifyPlan, phone clock), not while a page of that device
-   * is visible (the page alerts itself). `build(device, plan)` → payload fields.
+   * is visible (the page alerts itself) and not a device in `skip` (it already has this exact approval).
+   * `build(device, plan)` → payload fields.
    */
-  fanOut(type, projectId, build, planKind = type) {
+  fanOut(type, projectId, build, planKind = type, skip = null) {
     const spec = PUSH_SPEC[type];
     const favorite = (this.hub.persisted.favorites ?? []).includes(projectId);
     const topic = spec.topic ? this.topic(spec.topic, projectId) : undefined;
@@ -542,6 +594,7 @@ export class PushService {
       const settings = device.push.settings ?? {};
       if (settings.enabled === false) continue;
       if (settings.muted?.[projectId] === true) continue; // 🔇 this project is silenced on that phone
+      if (skip?.has(device.id)) continue; // a reminder must not buzz a phone that already shows this approval
       if (this.isVisible(device.id)) continue;
       const plan = notifyPlan(planKind, settings, { away: true, favorite, now: phoneClock(settings, this.now()) });
       if (!plan.popup) continue;

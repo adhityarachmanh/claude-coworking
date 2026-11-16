@@ -60,15 +60,13 @@ function apiError(res, data) {
 /**
  * POSTs JSON to the server. Resolves with the parsed JSON, or with a Blob when `raw` (images: ♪ album art).
  * A refused call throws an Error carrying `status` and the server's JSON (`data`: e.g. `code`, `retryAfter`).
+ * `timeoutMs` aborts a call the phone cannot wait for forever (a dead tunnel keeps the request open): the error
+ * carries `code: 'timeout'` so the caller can say "not answered" instead of "refused".
  */
-export async function api(path, body = {}, { raw = false } = {}) {
+export async function api(path, body = {}, { raw = false, timeoutMs = 0 } = {}) {
   if (laptopBlocked(path)) throw new Error(LAPTOP_ONLY_HINT);
   if (!canCall(path)) throw new Error(`${READ_ONLY_HINT}.`);
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Office-Token': auth.token },
-    body: JSON.stringify(body),
-  });
+  const res = await request(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Office-Token': auth.token }, body: JSON.stringify(body) }, timeoutMs);
   if (raw && res.ok) return res.blob();
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw apiError(res, data);
@@ -79,13 +77,32 @@ export async function api(path, body = {}, { raw = false } = {}) {
  * GETs JSON from the server (reads that are not an action, e.g. polling /api/wa/status). Same token, same refusals
  * as `api()`: a read-only phone is stopped here exactly like the POSTs are.
  */
-export async function apiGet(path) {
+export async function apiGet(path, { timeoutMs = 0 } = {}) {
   if (laptopBlocked(path)) throw new Error(LAPTOP_ONLY_HINT);
   if (!canCall(path)) throw new Error(`${READ_ONLY_HINT}.`);
-  const res = await fetch(path, { headers: { 'X-Office-Token': auth.token } });
+  const res = await request(path, { headers: { 'X-Office-Token': auth.token } }, timeoutMs);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw apiError(res, data);
   return data;
+}
+
+/** fetch() with an optional deadline; `apiError` consumers see `code: 'timeout'` when the phone gave up. */
+async function request(path, init, timeoutMs) {
+  if (!(timeoutMs > 0)) return fetch(path, init);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(path, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      const timeout = new Error(`Tidak ada jawaban dalam ${Math.round(timeoutMs / 1000)} detik.`);
+      timeout.code = 'timeout';
+      throw timeout;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const TOAST_MS = 4000;
