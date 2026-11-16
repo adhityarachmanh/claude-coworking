@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.42
 
 - **📶 Sambungan dari HP lebih hemat kuota dan tidak lagi "terlihat tersambung" saat data basi.** Seluruh stream peristiwa (snapshot pertama + setiap update) kini dikirim **gzip** seperti aset teks, jadi setiap reconnect — HP bangun dari tidur, pindah WiFi ↔ seluler, Tailscale menyambung ulang — memindahkan jauh lebih sedikit data. Server juga mengirim **ping 15 detik** sebagai bukti hidup; kalau tiga ping terlewat, status line HP menampilkan **"45 dtk tanpa kabar"** dan bisa **diketuk untuk menyegarkan** (snapshot baru). Halaman yang kembali terlihat setelah lama di latar juga menyegarkan sendiri, dan ticker aktivitas/status berhenti saat tab tersembunyi supaya baterai HP tidak terkuras.
 - **🩺 "Siap ditinggal": 🩺 kini menjawab apakah PC masih bisa dijangkau dari jauh.** Dua pemeriksaan baru: **Notifikasi HP** (berapa HP berlangganan push, kapan terakhir terkirim, atau langganan mana yang gagal) dan **Remote power (⚡ Daya)** (jembatan belum diset, heartbeat terakhir berhasil berapa lama lalu, atau kegagalan terakhir beserta alasannya). Heartbeat yang **ditolak** jembatan (mis. token salah) kini dihitung gagal — sebelumnya hanya kegagalan jaringan yang terlihat, sehingga status bisa bilang "terhubung" padahal jembatan sudah mati. Semua bisa dibuka dari HP lewat Tailscale sebelum berangkat.
