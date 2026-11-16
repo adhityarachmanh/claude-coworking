@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.47
+
+- **🧹 Baris "sedang berjalan" di project yang idle ditutup otomatis — tanpa perlu restart.** Ada dua kasus yang lolos dari perbaikan sebelumnya: tool **biasa** (bukan langkah subagent, jadi tidak punya induk) dan baris yang ditinggal proses OpenCode saat keluar. Kini server punya **rekonsiler tiap 30 detik**: bila sebuah project tidak sedang punya giliran, sesi CLI, atau tugas latar (⧗), baris tool yang masih `running` lebih dari **60 detik** ditutup menjadi **⚠ tidak dilaporkan** dengan catatan. Project yang benar-benar bekerja (giliran/⧗) tidak disentuh. Efeknya: tidak ada spinner yang bertahan setelah pekerjaan berhenti.
+
 ## 1.0.46
 
 - **🧵 Tidak ada lagi deretan spinner subagent di chat.** Semua langkah subagent — termasuk yang masih berjalan — kini dilipat ke dalam **kartu delegasinya**. Kartu itu meringkas **"N langkah · ⏳ X berjalan · ⚠ Y tidak dilaporkan"**, menampilkan spinner hanya selama anaknya berjalan, dan ringkasannya ikut berubah saat tiap langkah selesai atau kehilangan laporan. Chip progres giliran juga tidak menyembunyikan sisa: **"✓ Selesai · 4 mnt · 25 langkah · ⏳ 2 berjalan"**. Klik kartu delegasi untuk membuka langkah-langkahnya.
