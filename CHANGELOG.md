@@ -2,10 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
-
-Rilis ditahan sampai seluruh penyempurnaan selesai (diminta pemilik produk); perubahan di bawah sudah ada di `main`
-dan belum diberi nomor versi.
+## 1.0.40
 
 - **📦 Halaman jauh lebih ringan dibuka dari HP.** Aset teks (modul JS, CSS, `index.html`, SVG, JSON) kini dikirim terkompresi gzip ke browser yang mendukungnya — biasanya sekitar seperempat ukuran aslinya. Halaman ini memuat lebih dari 100 modul ES dan `index.html` 150 KB, jadi muat pertama dan setiap penyambungan ulang di jaringan seluler terasa jauh lebih cepat. Validator (ETag) dihitung dari byte yang benar-benar dikirim, sehingga tidak ada jawaban 304 yang salah untuk badan yang berbeda, dan `index.html` tetap tidak pernah disimpan browser.
 - **🧹 Satu HP yang tidur tidak lagi menghabiskan memori server.** Sambungan peristiwa (SSE) yang berhenti membaca — HP tertidur, Tailscale putus di tengah jalan — dulu terus ditulisi sampai antreannya tumbuh tanpa batas. Sambungan dengan antrean di atas 4 MB, yang sudah selesai, atau yang soketnya mati kini dilepas, dan browser menyambung lagi sendiri saat bangun.
