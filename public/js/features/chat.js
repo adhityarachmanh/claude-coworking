@@ -392,6 +392,15 @@ export function replaceChat(msg) {
   }
   rowMsg.set(node, msg);
   fillChat(node, msg);
+  // A step belongs to a delegation card: the card's "N langkah · X berjalan" follows its steps.
+  if (msg.sub && msg.parentToolUseId) {
+    const parent = parentDelegation(msg);
+    const parentNode = parent ? rows.get(parent.id) : null;
+    if (parentNode?.isConnected) {
+      rowMsg.set(parentNode, parent);
+      fillChat(parentNode, parent);
+    }
+  }
   if (msg.kind === 'user') markLatestUser();
   scrollChat(msg.kind === 'approval' && msg.status === 'pending');
 }
@@ -585,9 +594,9 @@ function fillChat(node, msg) {
 }
 
 function fillChatBody(node, msg) {
-  // A finished subagent step is folded into its delegation card: the chat shows the card, not ten rows. Running
-  // and "tidak dilaporkan" steps stay visible (they are the ones that need an explanation).
-  if (msg.sub && ['ok', 'fail', 'cancel'].includes(msg.status)) {
+  // Every subagent step belongs to its delegation card: folded there unless that card is expanded. Running steps
+  // included — the card's summary says how many are still running, so the chat never shows a column of spinners.
+  if (msg.sub && msg.parentToolUseId) {
     const parent = parentDelegation(msg);
     if (parent && !expanded.has(parent.id)) {
       node.className = 'hidden-msg';
@@ -657,8 +666,9 @@ function fillChatBody(node, msg) {
     }
     case 'delegate': {
       const open = expanded.has(msg.id);
+      const kidsRunning = childMessages(msg).some((k) => k.status === 'running');
       node.className = `line delegate expandable st-${msg.status} ${open ? 'open' : ''}`;
-      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span>${engineMarkHtml(msg)}<img class="ava sm orbable" style="--c:${msg.role === 'claude' ? '#b9a8ff' : roleColor(msg.role)}" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${escapeHtml(roleName(msg.role))}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${stepsSummary(msg)}${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span>${engineMarkHtml(msg)}<img class="ava sm orbable" style="--c:${msg.role === 'claude' ? '#b9a8ff' : roleColor(msg.role)}" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${escapeHtml(roleName(msg.role))}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${stepsSummary(msg)}${elapsedTag(msg)}${STATUS_ICON[kidsRunning ? 'running' : msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
       break;
     }
     case 'thinking': {
@@ -723,12 +733,22 @@ function parentDelegation(msg) {
   return (state.chats[msg.project ?? state.active] ?? []).find((m) => m.toolUseId === msg.parentToolUseId) ?? null;
 }
 
-/** Subagent steps of one delegation: "· 8 langkah · 2 berjalan" on the delegation row. */
+/** Subagent steps of one delegation. */
+function childMessages(msg) {
+  return (state.chats[msg.project ?? state.active] ?? []).filter((m) => m.sub && m.parentToolUseId === msg.toolUseId);
+}
+
+/** Subagent steps of one delegation: "· 12 langkah · 3 berjalan ⏳ · 1 tidak dilaporkan" on the delegation row. */
 function stepsSummary(msg) {
-  const kids = (state.chats[msg.project ?? state.active] ?? []).filter((m) => m.sub && m.parentToolUseId === msg.toolUseId);
+  const kids = childMessages(msg);
   if (!kids.length) return '';
   const running = kids.filter((k) => k.status === 'running').length;
-  return `<small class="steps-sum" title="${running ? `${running} langkah masih berjalan` : 'semua langkah sudah ditutup'}">· ${kids.length} langkah${running ? ` · ${running} berjalan` : ''}</small>`;
+  const stale = kids.filter((k) => k.status === 'stale').length;
+  const bits = [`${kids.length} langkah`];
+  if (running) bits.push(`⏳ ${running} berjalan`);
+  if (stale) bits.push(`⚠ ${stale} tidak dilaporkan`);
+  const title = running ? `${running} langkah masih berjalan` : 'semua langkah sudah ditutup';
+  return `<small class="steps-sum ${running ? 'live' : stale ? 'warn' : ''}" title="${title}">· ${bits.join(' · ')}</small>`;
 }
 
 export function initChat() {
