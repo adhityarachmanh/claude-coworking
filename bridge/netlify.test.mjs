@@ -759,6 +759,11 @@ test('off?hold=1 ("Putus arus" dari halaman): heartbeat TIDAK membatalkan jadwal
   // /api/on still cancels a held schedule explicitly.
   await handleApi(req('/api/off?delay=300&hold=1', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env);
   assert.equal((await getSpace(env, id)).offHold, true);
+  // The cron cut above set lastOffAt; rewind it as if the 2-minute cooldown already passed
+  // (a fresh cut blocks /api/on — including ?force=1 — see the cooldown tests).
+  space = await getSpace(env, id);
+  space.lastOffAt = Date.now() - 121_000;
+  await store.putSpace(env, space);
   const on = await statusOf(await handleApi(req('/api/on?force=1', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env));
   assert.equal(on.status, 200);
   space = await getSpace(env, id);
@@ -786,10 +791,36 @@ test('status: a fresh 0 W sample beats an old-but-fresh heartbeat (normal shutdo
   const on = await statusOf(await handleApi(req('/api/on', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env));
   assert.equal(on.status, 200, JSON.stringify(on.body));
 
+  // Deliberate behaviour change: right after /api/on the page shows the boot window (BOOT_HOLD_MS), not "PC mati",
+  // because a 0 W reading may just be the PSU not drawing yet. Only "Putus paksa" is offered meanwhile.
   const page = await handleApi(req(`/s/${id}?token=${token}`), env);
   const html = await page.text();
-  assert.match(blockOf(html, 'state'), /PC mati|sudah mati/);
-  assert.equal(blockOf(html, 'btns').includes('Matikan PC rapi'), false, 'no "matikan" button once it is off');
+  assert.match(blockOf(html, 'state'), /sedang booting/);
+  const btns = blockOf(html, 'btns');
+  assert.equal(btns.includes('Matikan PC rapi'), false, 'no "matikan" button during boot');
+  assert.equal(btns.includes('Putus arus listrik'), false, 'no "putus arus" button during boot');
+});
+
+test('off?delay=0 right after /api/on ends the boot window: state off, Nyalakan locked by cooldown', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 0;
+  const { status: regStatus, body: { id, token } } = await doRegister(env);
+  assert.equal(regStatus, 200);
+  const on = await statusOf(await handleApi(jsonReq('/api/on?force=1', {}, { 'X-Bridge-Token': token }), env));
+  assert.equal(on.status, 200, JSON.stringify(on.body));
+  assert.equal((await getSpace(env, id)).turnedOnAt > 0, true, 'ON opened a boot window');
+  // A real power cut must win over the boot window: the PC cannot be "booting" on a dead plug.
+  const cut = await handleApi(req('/api/off?delay=0', { method: 'POST', headers: { 'X-Bridge-Token': token } }), env);
+  assert.equal(cut.status, 200);
+  const space = await getSpace(env, id);
+  assert.equal(space.turnedOnAt, 0, 'boot window cleared by the cut');
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.body.state, 'off', 'not booting after a real cut');
+  assert.equal(st.body.alive, false);
+  assert.ok(st.body.onCooldownSec > 0, 'the 2-minute cooldown started');
+  const html = await (await handleApi(req(`/s/${id}?token=${token}`), env)).text();
+  assert.match(blockOf(html, 'btns'), /disabled id="btn-on"/, 'Nyalakan is locked during the cooldown');
 });
 
 test('status: even a heartbeat newer than a 0 W sample reads "off" (power evidence wins)', async () => {
@@ -977,8 +1008,8 @@ test('/api/status: bentuk kontrak lengkap (state + umur bukti); booting = power 
   assert.equal(st.status, 200);
   assert.deepEqual(Object.keys(st.body).sort(), [
     'adhitronUrl', 'alive', 'booting', 'currentMa', 'energyKwh', 'heartbeatAgeSec', 'heartbeatFresh', 'id',
-    'lastHeartbeat', 'needsAttention', 'offAt', 'offDelaySec', 'plug', 'powerAgeSec', 'powerAt', 'powerFresh',
-    'powerW', 'secondsUntilOff', 'state', 'switchOn', 'voltageV',
+    'lastHeartbeat', 'lastOffAt', 'needsAttention', 'offAt', 'offDelaySec', 'onCooldownSec', 'plug',
+    'powerAgeSec', 'powerAt', 'powerFresh', 'powerW', 'secondsUntilOff', 'state', 'switchOn', 'voltageV',
   ]);
   assert.equal(st.body.alive, true, 'listrik mengalir > ambang boot = PC hidup walau tanpa heartbeat');
   assert.equal(st.body.state, 'booting', 'state eksplisit untuk halaman');
@@ -1213,6 +1244,286 @@ test('/api/on: PC masih hidup → 409 TANPA memanggil Tuya; ?force=1 menyiklus O
   assert.equal(forced.status, 200, JSON.stringify(forced.body));
   assert.deepEqual(cmdValues(), [false, true], 'force menyiklus listrik');
   assert.equal((await getSpace(env, id)).lastPlug, 'on');
+});
+
+// ---------------------------------------------------------------- jeda 2 menit setelah pemutusan + realtime
+
+test('cooldown: setelah off?delay=0, status membawa lastOffAt/onCooldownSec dan POST /api/on → 409 tanpa memanggil Tuya', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { token } } = await doRegister(env);
+  const off = await statusOf(await handleApi(jsonReq('/api/off?delay=0', {}, { 'X-Bridge-Token': token }), env));
+  assert.equal(off.status, 200);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.ok(st.body.lastOffAt > 0, 'waktu listrik benar-benar diputus dicatat');
+  assert.ok(st.body.onCooldownSec > 0 && st.body.onCooldownSec <= 120, `jeda 2 menit (dapat ${st.body.onCooldownSec})`);
+  // Sisa daya di PSU harus habis dulu: berlaku juga untuk ?force=1 (fisik, bukan sekadar pengaman).
+  calls.length = 0;
+  const raw = await handleApi(jsonReq('/api/on', {}, { 'X-Bridge-Token': token }), env);
+  const body = await raw.json();
+  assert.equal(raw.status, 409, JSON.stringify(body));
+  assert.ok(body.retryAfterSec > 0 && body.retryAfterSec <= 120, `sisa detik di body (${body.retryAfterSec})`);
+  assert.match(body.error, /tunggu/i);
+  assert.equal(raw.headers.get('retry-after'), String(body.retryAfterSec), 'header Retry-After ikut dikirim');
+  for (const path of ['/api/on', '/api/on?force=1']) {
+    const r = await statusOf(await handleApi(jsonReq(path, {}, { 'X-Bridge-Token': token }), env));
+    assert.equal(r.status, 409, `${path} tetap ditolak selama cooldown`);
+    assert.ok(r.body.retryAfterSec > 0, `${path} membawa retryAfterSec`);
+  }
+  assert.deepEqual(cmdValues(), [], 'tidak ada komando ke plug');
+  assert.equal(calls.length, 0, 'penolakan cooldown tidak memanggil Tuya sama sekali');
+});
+
+test('cooldown: setelah 2 menit lewat (lastOffAt dimundurkan) POST /api/on diterima dan sampel lama dibuang', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  await handleApi(jsonReq('/api/off?delay=0', {}, { 'X-Bridge-Token': token }), env);
+  const space = await getSpace(env, id);
+  space.lastOffAt = Date.now() - 121_000;
+  await store.putSpace(env, space);
+  const before = Date.now();
+  const r = await statusOf(await handleApi(jsonReq('/api/on', {}, { 'X-Bridge-Token': token }), env));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const after = await getSpace(env, id);
+  assert.ok(after.turnedOnAt >= before, 'turnedOnAt dicatat saat perintah ON berhasil');
+  assert.equal(after.powerW, null, 'sampel daya lama (0 W) dibuang');
+  assert.equal(after.powerAt, 0, 'powerAt direset');
+  assert.equal(after.powerTryAt, 0, 'sampel berikutnya langsung boleh dicoba');
+  assert.equal(after.lastPlug, 'on');
+});
+
+test('on: sampel 0 W lama dibuang — status setelah menyalakan adalah booting, bukan off', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 0;
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  let space = await getSpace(env, id);
+  space.lastHeartbeat = now - 20 * 60_000; // PC sudah mati lama: tidak ada kabar
+  space.powerW = 0;
+  space.powerAt = now; // sampel 0 W segar → status "off"
+  space.powerTryAt = now;
+  space.switchOn = null;
+  space.lastPlug = 'off';
+  await store.putSpace(env, space);
+  const before = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(before.body.state, 'off');
+  assert.equal((await statusOf(await handleApi(jsonReq('/api/on', {}, { 'X-Bridge-Token': token }), env))).status, 200);
+  space = await getSpace(env, id);
+  assert.equal(space.powerW, null, 'sampel lama dibuang oleh /api/on');
+  assert.equal(space.powerAt, 0);
+  fakeTuya({ networkError: true }); // Tuya sesaat tidak terbaca: jangan jatuh ke "off" karena sampel lama
+  const after = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(after.body.state, 'booting', 'jendela booting, bukan off');
+  assert.equal(after.body.alive, false);
+  assert.equal(after.body.powerAgeSec, null, 'tidak ada sampel daya lama yang dipakai');
+});
+
+test('cron: pemutusan yang berhasil menulis lastOffAt (jeda berlaku untuk jadwal cron juga)', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 0.2;
+  const { body: { id, token } } = await doRegister(env);
+  await handleApi(jsonReq('/api/off?delay=60', {}, { 'X-Bridge-Token': token }), env);
+  const scheduled = await getSpace(env, id);
+  const now = scheduled.offAt + 500;
+  assert.deepEqual(await scheduledSweep(env, now), [{ id, action: 'off', powerW: 0.2 }]);
+  const after = await getSpace(env, id);
+  assert.equal(after.lastOffAt, now, 'waktu pemutusan tercatat di record');
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.ok(st.body.lastOffAt > 0, 'status membawa lastOffAt');
+  assert.equal(st.body.onCooldownSec != null, true, 'status membawa onCooldownSec');
+});
+
+test('status: heartbeat 3 menit tanpa bukti daya → suspected-alive, tombol Putus arus hilang, /api/on tetap 409', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  const space = await getSpace(env, id);
+  space.lastHeartbeat = now - 180_000; // 3 mnt: masih "fresh" (< 4 mnt) tapi lewat ambang hidup 2,5 mnt
+  space.powerW = null;
+  space.powerAt = 0;
+  space.powerTryAt = now; // jangan sampling: murni uji tangga heartbeat
+  space.switchOn = true;
+  space.lastPlug = 'on';
+  await store.putSpace(env, space);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.body.heartbeatFresh, true, 'kontrak lama: heartbeatFresh tetap 4 mnt');
+  assert.equal(st.body.state, 'suspected-alive');
+  // alive tetap true: pengaman /api/on tidak boleh melemah untuk PC yang mungkin masih hidup.
+  assert.equal(st.body.alive, true);
+  const html = await (await handleApi(req(`/s/${id}?token=${token}`), env)).text();
+  assert.match(blockOf(html, 'state'), /kemungkinan hidup/);
+  assert.equal(blockOf(html, 'btns').includes('Putus arus listrik'), false, 'tombol putus arus hilang');
+  assert.match(blockOf(html, 'btns'), /Putus paksa/);
+  // Tanpa ?force=1 /api/on menolak: status "mungkin hidup" tetap dilindungi dari siklus listrik.
+  calls.length = 0;
+  const on = await statusOf(await handleApi(jsonReq('/api/on', {}, { 'X-Bridge-Token': token }), env));
+  assert.equal(on.status, 409, JSON.stringify(on.body));
+  assert.match(on.body.error, /masih hidup/);
+  assert.deepEqual(cmdValues(), [], 'penolakan tidak menyentuh plug');
+});
+
+test('halaman status: polling 5 dtk + tombol Nyalakan terkunci hitung mundur selama cooldown 2 menit', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  await handleApi(jsonReq('/api/off?delay=0', {}, { 'X-Bridge-Token': token }), env);
+  const html = await (await handleApi(req(`/s/${id}?token=${token}`), env)).text();
+  assert.match(html, /bootMode \? 2000 : 5000/, 'poll /api/status tiap 5 dtk (2 dtk saat booting)');
+  const btns = blockOf(html, 'btns');
+  assert.match(btns, /<button class="btn on" type="button" disabled id="btn-on">⚡ Nyalakan PC \(\d:\d\d\)<\/button>/, 'tombol nyalakan terkunci + hitung mundur, dengan id stabil');
+  assert.equal(btns.includes('onclick="nyalakan()"'), false, 'tombol nyalakan tidak bisa diklik saat cooldown');
+  assert.match(btns, /Tunggu 2 menit setelah listrik diputus agar sisa daya di komputer habis\./);
+  assert.match(blockOf(html, 'proof'), /Bukti: heartbeat .* · daya /, 'baris umur bukti tampil');
+  assert.match(html, /setInterval\(cooldownTick, 1000\)/, 'hitung mundur berjalan tiap detik di klien');
+});
+
+test('realtime: sampel daya dibatasi 10 dtk — dua GET /api/status berurutan memanggil Tuya sekali', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  fakeTuya(); // jendela bersih: hanya panggilan dari rute di bawah yang dihitung
+  const statusCalls = () => calls.filter((c) => c.url.includes(`/devices/${DEVICE}/status`)).length;
+  const first = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal(statusCalls(), 1, 'sampel pertama mengambil satu device status');
+  await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env);
+  assert.equal(statusCalls(), 1, 'poll berikutnya dalam < 10 dtk tidak memanggil Tuya lagi');
+  let space = await getSpace(env, id);
+  space.powerTryAt = Date.now() - 9_000;
+  await store.putSpace(env, space);
+  await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env);
+  assert.equal(statusCalls(), 1, '9 dtk belum lewat: tetap di-throttle');
+  space = await getSpace(env, id);
+  space.powerTryAt = Date.now() - 11_000;
+  await store.putSpace(env, space);
+  await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env);
+  assert.equal(statusCalls(), 2, '≥ 10 dtk: sampel berikutnya diambil');
+});
+
+test('on: sampel Tuya 0 W yang BERHASIL sesudah ON tetap "booting" (bukan off), tanpa cooldown baru', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 0;
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  let space = await getSpace(env, id);
+  space.lastHeartbeat = now - 20 * 60_000; // PC sudah mati lama: tidak ada kabar
+  space.powerW = 0;
+  space.powerAt = now;
+  space.powerTryAt = now;
+  space.switchOn = null;
+  space.lastPlug = 'off';
+  await store.putSpace(env, space);
+  assert.equal((await statusOf(await handleApi(jsonReq('/api/on', {}, { 'X-Bridge-Token': token }), env))).status, 200);
+  // Sampel NYATA (bukan networkError) yang masih 0 W: beberapa detik pertama sesudah plug ON, PSU belum menarik daya.
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.status, 200);
+  assert.equal(st.body.state, 'booting', 'jendela 45 dtk mengalahkan bacaan 0 W');
+  assert.equal(st.body.alive, false);
+  assert.equal(st.body.powerFresh, true, 'sampelnya memang segar — bukan bukti yang hilang');
+  assert.equal(st.body.onCooldownSec, null, 'siklus ON sendiri bukan pemutusan');
+  space = await getSpace(env, id);
+  assert.equal(space.lastOffAt ?? null, null, 'tidak ada lastOffAt baru dari sampel 0 W');
+});
+
+test('on: setelah jendela 45 dtk lewat, sampel 0 W kembali membaca off', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  powerW = 0;
+  const { body: { id, token } } = await doRegister(env);
+  const now = Date.now();
+  let space = await getSpace(env, id);
+  space.lastHeartbeat = now - 20 * 60_000;
+  space.powerW = 0;
+  space.powerAt = now;
+  space.powerTryAt = now;
+  space.switchOn = null;
+  space.lastPlug = 'off';
+  await store.putSpace(env, space);
+  assert.equal((await statusOf(await handleApi(jsonReq('/api/on', {}, { 'X-Bridge-Token': token }), env))).status, 200);
+  space = await getSpace(env, id);
+  space.turnedOnAt = Date.now() - 46_000; // jendela boot sudah lewat
+  space.powerW = null;
+  space.powerAt = 0;
+  space.powerTryAt = 0; // biarkan sampel nyata diambil
+  await store.putSpace(env, space);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.status, 200);
+  assert.equal(st.body.powerW, 0, 'sampel 0 W benar-benar terbaca');
+  assert.equal(st.body.state, 'off', 'sesudah jendela, bukti listrik yang menang');
+  assert.equal(st.body.alive, false);
+});
+
+test('samplePower: transisi eksternal switchOn true→false menulis lastOffAt; null→false tidak', async () => {
+  // (1) plug yang tercatat ON dimatikan dari aplikasi Bardi/Smart Life: transisi nyata → cooldown mulai.
+  const env = makeEnv();
+  fakeTuya({ statusPayload: [{ code: 'switch_1', value: false }, { code: 'cur_power', value: 0 }] });
+  const a = await doRegister(env);
+  let space = await getSpace(env, a.body.id);
+  space.switchOn = true; // saklar terakhir diketahui ON (dari perintah bridge)
+  space.lastPlug = 'on';
+  space.powerTryAt = 0;
+  await store.putSpace(env, space);
+  const before = Date.now();
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': a.body.token } }), env));
+  assert.equal(st.body.state, 'off');
+  space = await getSpace(env, a.body.id);
+  assert.ok(space.lastOffAt >= before, `transisi true→false mencatat lastOffAt (${space.lastOffAt})`);
+  assert.ok(st.body.onCooldownSec > 0, 'jeda 2 menit langsung berlaku');
+  // (2) record yang belum pernah membaca saklar (null) + plug ternyata OFF: BUKAN pemutusan (bisa data lama berjam-jam).
+  const env2 = makeEnv();
+  fakeTuya({ statusPayload: [{ code: 'switch_1', value: false }, { code: 'cur_power', value: 0 }] });
+  const b = await doRegister(env2);
+  const st2 = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': b.body.token } }), env2));
+  assert.equal(st2.status, 200);
+  const space2 = await getSpace(env2, b.body.id);
+  assert.equal(space2.switchOn, false, 'saklar tetap dibaca apa adanya');
+  assert.equal(space2.lastOffAt ?? null, null, 'null→false tidak memulai cooldown');
+  assert.equal(st2.body.onCooldownSec, null);
+});
+
+test('record lama tanpa lastOffAt/turnedOnAt/cyclingUntil: status tidak error dan onCooldownSec null', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body: { id, token } } = await doRegister(env);
+  const space = await getSpace(env, id);
+  delete space.lastOffAt;      // field baru: belum ada di record produksi
+  delete space.turnedOnAt;
+  delete space.cyclingUntil;
+  space.powerTryAt = Date.now(); // cukup uji pembacaan record: jangan sampling
+  await store.putSpace(env, space);
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.status, 200);
+  assert.equal(st.body.state, 'unknown');
+  assert.equal(st.body.alive, false);
+  assert.equal(st.body.lastOffAt, null);
+  assert.equal(st.body.onCooldownSec, null, 'tanpa lastOffAt tidak ada jeda');
+  assert.equal((await statusOf(await handleApi(jsonReq('/api/on', {}, { 'X-Bridge-Token': token }), env))).status, 200, 'field yang hilang tidak mengunci /api/on');
+});
+
+test('on: siklus OFF→ON sendiri tidak memicu cooldown (sampel switch_1=false saat cyclingUntil aktif)', async () => {
+  const env = makeEnv();
+  fakeTuya({ statusPayload: [{ code: 'switch_1', value: false }, { code: 'cur_power', value: 0 }] });
+  const { body: { id, token } } = await doRegister(env);
+  await handleApi(jsonReq('/api/off?delay=0', {}, { 'X-Bridge-Token': token }), env);
+  let space = await getSpace(env, id);
+  const cutAt = Date.now() - 121_000;
+  space.lastOffAt = cutAt; // jeda 2 menit sudah lewat: /api/on boleh
+  space.powerTryAt = 0;
+  await store.putSpace(env, space);
+  assert.equal((await statusOf(await handleApi(jsonReq('/api/on', {}, { 'X-Bridge-Token': token }), env))).status, 200);
+  space = await getSpace(env, id);
+  assert.ok(space.cyclingUntil > Date.now(), 'on() menjaga jendela siklus plug');
+  // Sampel menyusul dan melaporkan saklar OFF (sisa komunikasi selama siklus) — bukan pemutusan oleh pengguna.
+  const st = await statusOf(await handleApi(req('/api/status', { headers: { 'X-Bridge-Token': token } }), env));
+  assert.equal(st.status, 200);
+  space = await getSpace(env, id);
+  assert.equal(space.lastOffAt, cutAt, 'lastOffAt tidak ditimpa oleh siklus sendiri');
+  assert.equal(space.switchOn, false, 'sampel tetap dicatat apa adanya');
 });
 
 // ---------------------------------------------------------------- validasi kredensial sebelum simpan (fail closed)

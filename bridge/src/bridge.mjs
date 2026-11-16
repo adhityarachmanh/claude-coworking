@@ -11,6 +11,8 @@
 //   POST /api/handoff                     header X-Bridge-Token / X-Status-Token → { ok, handoffUrl } tanpa jadwal/plug
 //                                         (dipakai Adhitron setelah shutdown Windows: buka halaman status, putus arus manual)
 //   POST /api/on                          header X-Bridge-Token / X-Status-Token → { ok } (selalu membatalkan jadwal)
+//                                         ditolak 409 + retryAfterSec selama 2 menit sesudah listrik diputus
+//                                         (berlaku juga untuk ?force=1: sisa daya di PSU harus habis dulu)
 //   GET  /api/status                      header X-Bridge-Token / X-Status-Token → status lengkap
 //   GET  /api/energy                      header X-Bridge-Token / X-Status-Token → monitoring listrik REALTIME
 //                                         { ok, now:{powerW,voltageV,currentMa}, switchOn, energyKwh, updatedAt }
@@ -48,6 +50,10 @@ const HTML_HEADERS = {
 // Kabar Adhitron lebih tua dari ini = bukan lagi bukti PC hidup. Dua kali interval beat (2 menit, src/power-beat.js):
 // satu beat yang gagal sesaat tidak boleh mengubah PC yang hidup menjadi "booting" selama dua menit.
 const HEARTBEAT_FRESH_MS = 4 * 60_000;
+// Stricter ladder step for `alive`: only a beat younger than 2.5 mnt counts as "the PC is reachable". A beat
+// between 2.5 and 4 mnt keeps `heartbeatFresh` (legacy contract) but yields `suspected-alive`, so the page stops
+// offering "Putus arus listrik" once the machine went quiet.
+const HEARTBEAT_ALIVE_MS = 150_000;
 const POWER_FRESH_MS = 90_000;         // sampel daya lebih tua dari ini = bukti listrik sudah basi
 const TICKET_TTL_MS = 10 * 60_000;     // umur tiket serah-terima
 const PAIR_TTL_MS = 120_000;           // umur kode pasangan (pindah space ke perangkat lain)
@@ -66,7 +72,14 @@ const VERIFY_DAILY_LIMIT = 300;        // cap GLOBAL verifikasi kredensial ke Tu
 const POWER_ALIVE_W = 15;              // di atas ini listrik benar-benar mengalir (PC menarik daya)
 const POWER_OFF_W = 10;                // di bawah/sama dengan ini listrik dianggap benar-benar terputus
 const BOOT_DETECT_MS = 30_000;         // power tinggi ≥ 30 dtk + heartbeat basi = booting/beku
-const POWER_SAMPLE_MS = 30_000;        // jeda PERCOBAAN sampling Tuya (kuota API) — gagal pun ikut di-throttle (powerTryAt)
+const POWER_SAMPLE_MS = 10_000;        // jeda PERCOBAAN sampling Tuya (kuota API) — gagal pun ikut di-throttle (powerTryAt)
+const OFF_COOLDOWN_MS = 120_000;       // 2 mnt setelah listrik diputus: sisa daya di PSU harus habis sebelum ON lagi
+// Right after a successful /api/on the plug may still read 0 W for a few seconds (PSU not drawing yet). For this
+// window the boot state beats any OFF evidence, so a live booting PC is never shown as "PC mati".
+const BOOT_HOLD_MS = 45_000;
+// A plug cycle issued by /api/on makes the switch read OFF → ON. Samples inside this guard must not be mistaken
+// for a user power cut (Bardi/Smart Life app), which would start the 2-minute cooldown on our own cycle.
+const CYCLE_GUARD_MS = 20_000;
 const MAX_DELAY_S = 3600;              // batas delay jadwal mati
 const DEFAULT_DELAY_S = 300;
 const RETRY_DELAY_MS = 60_000;         // cron mencoba ulang pasien gagal-putus tiap menit
@@ -75,7 +88,11 @@ const RETENTION_UNUSED_MS = 30 * 86_400_000;    // didaftarkan tapi tak pernah d
 const RETENTION_STALE_MS = 183 * 86_400_000;    // tanpa heartbeat lebih dari ±6 bulan → dihapus (C1)
 
 class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, { retryAfterSec = 0 } = {}) {
+    super(message);
+    this.status = status;
+    this.retryAfterSec = retryAfterSec;
+  }
 }
 
 const hex = (n) => randomBytes(n).toString('hex');
@@ -274,6 +291,9 @@ async function register(request, env, url) {
     attempts: 0,
     needsAttention: false,
     lastPlug: null,
+    lastOffAt: null, // kapan listrik benar-benar diputus (cooldown 2 mnt sebelum /api/on boleh)
+    turnedOnAt: 0,   // kapan /api/on terakhir berhasil (jendela "booting" sesudahnya)
+    cyclingUntil: 0, // sampai kapan sampel saklar OFF diabaikan (siklus plug milik /api/on sendiri)
     version: null,
     createdAt: now,
   };
@@ -415,6 +435,10 @@ async function off(url, request, env) {
     space.switchOn = false; // bukti perintah: status realtime langsung "Plug OFF"
     space.powerW = 0; // the plug is off: no power can flow, even if a sensor is absent
     space.powerAt = now;
+    space.lastOffAt = now; // cooldown: 2 mnt sebelum plug boleh dinyalakan lagi
+    // A real power cut ends any boot window: a PC switched on and then cut must not read "booting" for 45 s.
+    space.turnedOnAt = 0;
+    space.cyclingUntil = 0;
     space.offAt = null; // nothing left for the cron to do
     space.offHold = false;
     fired = true;
@@ -464,6 +488,17 @@ async function handoff(request, env, url) {
 async function on(request, env, url) {
   const space = await requireSpace(env, request);
   const now = Date.now();
+  // Jeda 2 menit setelah listrik diputus: sisa daya di PSU harus habis dulu sebelum plug dinyalakan lagi.
+  // This is a physical limit, so ?force=1 is blocked as well — force only skips the "PC still alive" guard.
+  const sinceOffMs = space.lastOffAt != null ? now - space.lastOffAt : Infinity;
+  if (sinceOffMs < OFF_COOLDOWN_MS) {
+    const retryAfterSec = Math.max(1, Math.ceil((OFF_COOLDOWN_MS - sinceOffMs) / 1000));
+    throw new HttpError(
+      409,
+      `Listrik baru diputus — tunggu ${retryAfterSec} dtk lagi, jangan nyalakan sebelum 2 menit lewat agar sisa daya di komputer habis.`,
+      { retryAfterSec },
+    );
+  }
   // Pengaman: menyalakan plug yang PC-nya masih hidup = listrik disiklus (OFF → ON) dan PC mati mendadak.
   // Tanpa ?force=1 kita TOLAK lebih dulu — tanpa memanggil Tuya sama sekali (kuota API + tidak ada efek samping).
   const force = url.searchParams.get('force') === '1';
@@ -477,11 +512,20 @@ async function on(request, env, url) {
   space.offHold = false; // pembatalan manual selalu berlaku, termasuk jadwal "matikan rapi"
   space.attempts = 0;
   space.needsAttention = false;
+  // Sampel saklar OFF selama siklus OFF → ON milik kita sendiri bukan pemutusan pengguna: jangan sampai
+  // sampel itu memulai cooldown 2 menit (dan memblokir tombol Nyalakan yang baru saja ditekan).
+  space.cyclingUntil = now + CYCLE_GUARD_MS;
   await store.putSpace(env, space); // simpan dulu: gagal Tuya pun jadwal sudah batal, user bisa coba lagi
   await drivePlug(await cfgFor(env, space), true, env.cycleWaitMs); // ON yang sudah-ON disiklus OFF → ON (BIOS)
   space.lastPlug = 'on';
   space.switchOn = true; // perintah ON berhasil: jangan biarkan switchOn lama membuat status "off"
   space.powerHighSince = null; // monitor boot mulai segar
+  space.turnedOnAt = now; // jendela booting: sampai ada sampel daya baru, state = 'booting'
+  // Sampel daya LAMA harus dibuang: sampel 0 W dari PC yang baru mati tidak boleh membuat status tetap "off"
+  // sesudah listrik dinyalakan. powerTryAt=0 → percobaan sampel berikutnya langsung diizinkan.
+  space.powerW = null;
+  space.powerAt = 0;
+  space.powerTryAt = 0;
   await store.putSpace(env, space);
   return json({ ok: true });
 }
@@ -507,8 +551,16 @@ async function samplePower(env, space, now) {
     space.energyKwh = status.energyKwh;
     // `switchOn` null = plug tidak melaporkan saklar: pertahankan nilai lama, jangan menebak.
     if (status.switchOn != null) {
+      // Power cut from the Bardi/Smart Life app (not from this bridge): start the 2-minute cooldown on the
+      // transition only. Ignored while WE are cycling the plug (cyclingUntil) or in the boot window right after
+      // /api/on (BOOT_HOLD_MS) — otherwise our own OFF → ON cycle would lock the button we just used. The
+      // previous value must be a real `true`: a null record (never sampled) may be hours old and is no evidence.
+      const guarded = now < (space.cyclingUntil ?? 0)
+        || (space.turnedOnAt > 0 && now - space.turnedOnAt < BOOT_HOLD_MS);
+      const turnedOff = !guarded && space.switchOn === true && status.switchOn === false;
       space.switchOn = status.switchOn;
       space.lastPlug = status.switchOn ? 'on' : 'off'; // plug bisa juga dimatikan dari aplikasi Bardi/Smart Life
+      if (turnedOff) space.lastOffAt = now;
     }
   } catch { /* Tuya gagal: pertahankan sampel lama (powerAt tidak disentuh → sampel tetap basi) */ }
   await store.putSpace(env, space);
@@ -516,13 +568,17 @@ async function samplePower(env, space, now) {
 
 /** Status murni dari record (tanpa sampling) — dipakai API dan halaman.
  *  `alive` = PC hidup menurut bukti yang paling kuat, berurutan:
- *    1. saklar plug OFF (`switchOn === false`) → listrik tidak mungkin mengalir, apa pun kata heartbeat;
- *    2. sampel daya segar: ≤ 10 W = mati, 10–15 W = standby/booting awal, > 15 W = listrik mengalir
- *       (alive kalau heartbeat segar, `booting` bila sudah ≥ 30 dtk tanpa kabar, selain itu `suspected-alive`);
- *    3. tanpa sensor daya (powerW/switchOn null) → aturan lama: heartbeat segar atau plug tercatat OFF.
+ *    1. sampel daya segar > 15 W → listrik benar-benar mengalir (menang paling awal: PC hidup tidak boleh "mati");
+ *    2. jendela boot sesudah /api/on (`turnedOnAt` < 45 dtk) → `booting`, bukti OFF/standby diabaikan;
+ *    3. saklar plug OFF (`switchOn === false`) atau sampel segar ≤ 10 W → listrik tidak mengalir;
+ *    4. sampel daya segar 10–15 W = standby/booting awal;
+ *    5. tanpa sensor daya: heartbeat < 2,5 mnt → `alive`; heartbeat 2,5–4 mnt → `suspected-alive` (alive tetap
+ *       true supaya /api/on tanpa force tetap 409), plug tercatat OFF → `off`, selain itu `unknown`.
  *  Tegangan TIDAK dipakai sebagai bukti hidup: 220 V tetap ada walau PC mati (plug hanya saklar). */
 function statusOf(space, now) {
   const heartbeatFresh = space.lastHeartbeat > 0 && now - space.lastHeartbeat < HEARTBEAT_FRESH_MS;
+  // Only a beat younger than HEARTBEAT_ALIVE_MS is strong enough for `alive` (see the ladder below).
+  const heartbeatAlive = space.lastHeartbeat > 0 && now - space.lastHeartbeat < HEARTBEAT_ALIVE_MS;
   const powerFresh = space.powerW != null && space.powerAt > 0 && now - space.powerAt < POWER_FRESH_MS;
   const powerW = space.powerW;
   const switchOn = space.switchOn === true || space.switchOn === false ? space.switchOn : null;
@@ -532,22 +588,33 @@ function statusOf(space, now) {
   const standby = powerFresh && powerW > POWER_OFF_W && powerW <= POWER_ALIVE_W;
   const booting = !heartbeatFresh && powerHigh
     && space.powerHighSince != null && now - space.powerHighSince >= BOOT_DETECT_MS;
+  // /api/on stamps turnedOnAt. For BOOT_HOLD_MS afterwards the boot state beats OFF evidence (a 0 W reading can
+  // be the PSU not drawing yet) — but a fresh high reading still wins first, so a live PC is never "mati".
+  const bootHold = space.turnedOnAt > 0 && now - space.turnedOnAt < BOOT_HOLD_MS;
   // Plug sudah OFF dan tidak ada jadwal menunggu: with no power meter this is the only evidence we have.
   const plugOff = space.lastPlug === 'off' && space.offAt == null;
   let alive;
   let state;
-  if (switchOff || powerOff) {
+  if (powerHigh) {
+    alive = true;                           // listrik mengalir: PC menarik daya (heartbeat hanya menambah bukti)
+    state = heartbeatAlive ? 'alive' : (booting ? 'booting' : 'suspected-alive');
+  } else if (bootHold) {
+    alive = false;
+    state = 'booting';                      // baru diperintah ON: abaikan bukti OFF sampai 45 dtk lewat
+  } else if (switchOff || powerOff) {
     alive = false;
     state = 'off';                          // saklar OFF / sampel segar ≤ 10 W: listrik tidak mengalir
-  } else if (powerHigh) {
-    alive = true;                           // listrik mengalir: PC menarik daya (heartbeat hanya menambah bukti)
-    state = heartbeatFresh ? 'alive' : (booting ? 'booting' : 'suspected-alive');
   } else if (standby) {
     alive = false;
     state = 'standby';                      // 10–15 W: biasanya baru dinyalakan / sedang boot, belum bisa dijangkau
-  } else if (heartbeatFresh) {
+  } else if (heartbeatAlive) {
     alive = true;
     state = 'alive';                        // tanpa sensor daya: kabar terbaru dari aplikasi
+  } else if (heartbeatFresh) {
+    // 2,5–4 mnt tanpa bukti daya: UI tidak menawarkan "Putus arus listrik", tetapi `alive` tetap true supaya
+    // POST /api/on TANPA force tetap 409 untuk PC yang mungkin masih hidup (pengaman tidak boleh melemah).
+    alive = true;
+    state = 'suspected-alive';
   } else if (plugOff) {
     alive = false;
     state = 'off';                          // tanpa sensor daya: perintah OFF + kabar basi
@@ -555,6 +622,7 @@ function statusOf(space, now) {
     alive = false;
     state = 'unknown';                      // tidak ada bukti segar sama sekali
   }
+  const lastOffAt = space.lastOffAt ?? null;
   return {
     id: space.id,
     alive,
@@ -566,6 +634,9 @@ function statusOf(space, now) {
     offAt: space.offAt ?? null,
     secondsUntilOff: space.offAt != null && space.offAt > now ? Math.ceil((space.offAt - now) / 1000) : null,
     offDelaySec: Number.isInteger(space.offDelaySec) ? space.offDelaySec : DEFAULT_DELAY_S,
+    lastOffAt,
+    // Remaining seconds of the post-cut pause (null when the power was never cut): the page counts this down.
+    onCooldownSec: lastOffAt != null ? Math.max(0, Math.ceil((lastOffAt + OFF_COOLDOWN_MS - now) / 1000)) : null,
     plug: space.lastPlug ?? null,
     powerW: space.powerW ?? null,
     voltageV: space.voltageV ?? null,
@@ -742,7 +813,15 @@ export async function handleApi(request, env) {
     // CORS harus konsisten dengan jalur sukses: /api/pair* tidak pernah membawa ACAO (termasuk 400/401/502),
     // endpoint lain tetap `*`. Tanpa ini sebuah situs luar bisa membaca jawaban error endpoint pair.
     const reply = isPairApi(path) ? jsonNoCors : json;
-    if (err instanceof HttpError) return reply({ error: err.message }, err.status);
+    if (err instanceof HttpError) {
+      // A rejected action may carry "try again in N seconds" (e.g. the 2-minute pause after a power cut):
+      // both the body field and the Retry-After header tell the page/client when it may retry.
+      if (err.retryAfterSec > 0) {
+        const headers = { ...(isPairApi(path) ? {} : CORS), 'Retry-After': String(err.retryAfterSec) };
+        return json({ error: err.message, retryAfterSec: err.retryAfterSec }, err.status, headers);
+      }
+      return reply({ error: err.message }, err.status);
+    }
     // TuyaError never reaches the client raw: the stable public message is all it gets (no JSON detail,
     // no credentials). Network/quota trouble is temporary (503); anything else is an upstream failure.
     if (err instanceof TuyaError) {
@@ -836,6 +915,10 @@ export async function scheduledSweep(env, nowMs = Date.now()) {
       space.offHold = false;
       space.attempts = 0;
       space.needsAttention = false;
+      space.lastOffAt = nowMs; // cooldown 2 mnt berlaku juga untuk pemutusan dari cron
+      // Same as the delay=0 path: a successful cut closes the boot window (no stale "booting" for 45 s).
+      space.turnedOnAt = 0;
+      space.cyclingUntil = 0;
       results.push({ id: space.id, action: 'off', powerW: w });
     } else {
       applyRetry(space, nowMs);

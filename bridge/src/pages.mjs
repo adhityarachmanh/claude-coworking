@@ -55,6 +55,8 @@ a{color:var(--accent)}
 border:1px solid transparent;font:inherit;font-size:1rem;font-weight:600;cursor:pointer;
 text-align:center;text-decoration:none}
 .btn:active{transform:translateY(1px)}
+.btn[disabled]{opacity:.55;cursor:not-allowed}
+.btn[disabled]:active{transform:none}
 .btn:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{
 outline:2px solid var(--accent);outline-offset:2px}
 .on{background:var(--accent-solid);color:#fff}
@@ -607,14 +609,33 @@ const plugLine = (s) => {
 /** "5 mnt" / "45 dtk" for the pending power-cut warning. */
 const delayText = (sec) => (sec >= 60 ? `${Math.round(sec / 60)} mnt` : `${sec} dtk`);
 
+/** How old the evidence is: "Bukti: heartbeat 42 dtk lalu · daya 9 dtk lalu" (null = belum ada). */
+const proofText = (s) => {
+  const ago = (sec) => (typeof sec === 'number' ? `${sec} dtk lalu` : 'belum ada');
+  return `Bukti: heartbeat ${ago(s.heartbeatAgeSec)} · daya ${ago(s.powerAgeSec)}`;
+};
+
+/** 2-minute pause after a power cut: the residual charge in the PSU must drain before a new ON. */
+const COOLDOWN_NOTE = 'Tunggu 2 menit setelah listrik diputus agar sisa daya di komputer habis.';
+const cooldownSecOf = (s) => (Number.isInteger(s.onCooldownSec) && s.onCooldownSec > 0 ? s.onCooldownSec : 0);
+
 /** Tombol untuk render server-side (sebelum JS jalan). Aturannya identik dengan render() di klien:
  *  hidup → Matikan PC rapi + Buka Adhitron; booting/standby/curiga hidup → hanya Putus paksa; mati → Nyalakan PC;
- *  belum pasti → Nyalakan paksa (menyiklus listrik). */
+ *  belum pasti → Nyalakan paksa (menyiklus listrik). Selama jeda 2 menit sesudah pemutusan, tombol Nyalakan
+ *  (termasuk Nyalakan paksa) dirender disabled dengan hitung mundur — server tetap penegak akhirnya (409). */
 function initialButtons(state, s) {
   const open = s.adhitronUrl
     ? `<a class="btn open" href="${escapeHtml(s.adhitronUrl)}" target="_self" rel="noreferrer">▶ Buka Adhitron</a>`
     : '';
   const delay = Number.isInteger(s.offDelaySec) && s.offDelaySec >= 0 ? s.offDelaySec : 300;
+  const cd = cooldownSecOf(s);
+  const nyalakanBtn = cd > 0
+    ? `<button class="btn on" type="button" disabled id="btn-on">⚡ Nyalakan PC (${fmtClock(cd)})</button>`
+    : '<button class="btn on" onclick="nyalakan()">⚡ Nyalakan PC</button>';
+  const nyalakanPaksaBtn = cd > 0
+    ? `<button class="btn on" type="button" disabled id="btn-on-force">⚡ Nyalakan paksa (${fmtClock(cd)})</button>`
+    : '<button class="btn on" onclick="nyalakanPaksa()">⚡ Nyalakan paksa</button>';
+  const cooldownNote = cd > 0 ? `<p class="muted">${COOLDOWN_NOTE}</p>` : '';
   if (state === 'alive') {
     return '<button class="btn off" onclick="offRapi()">⏻ Putus arus listrik</button>'
       + `<p class="muted">Windows TIDAK dimatikan dari sini. Matikan PC dari aplikasi dulu; tombol ini memotong listrik Bardi ${escapeHtml(delayText(delay))} lagi.</p>`
@@ -625,21 +646,25 @@ function initialButtons(state, s) {
       + '<p class="muted">PC tidak kunjung hidup? Putus paksa memotong listrik dalam 5 mnt; kalau ternyata heartbeat datang, jadwal otomatis batal.</p>';
   }
   if (state === 'off') {
-    return '<button class="btn on" onclick="nyalakan()">⚡ Nyalakan PC</button>'
+    return nyalakanBtn
       + '<button class="btn off" onclick="putusArus()">⏻ Putus arus listrik</button>'
+      + cooldownNote
       + (s.adhitronUrl ? '<p class="muted">Setelah hidup: tombol ▶ Buka Adhitron muncul di sini.</p>' : '');
   }
-  return '<button class="btn on" onclick="nyalakanPaksa()">⚡ Nyalakan paksa</button>'
-    + '<p class="muted">Belum ada bukti yang cukup untuk memastikan PC mati. Nyalakan paksa menyiklus listrik OFF → ON — PC yang masih hidup akan mati sebentar.</p>';
+  return nyalakanPaksaBtn
+    + '<p class="muted">Belum ada bukti yang cukup untuk memastikan PC mati. Nyalakan paksa menyiklus listrik OFF → ON — PC yang masih hidup akan mati sebentar.</p>'
+    + cooldownNote;
 }
 
-/** Halaman status: state awal dirender server (fallback tanpa JS), lalu JS polling /api/status tiap 10 dtk
+/** Halaman status: state awal dirender server (fallback tanpa JS), lalu JS polling /api/status tiap 5 dtk
  * dengan header X-Status-Token (bukan X-Bridge-Token — aturan sendiri untuk tiket/ownerToken di halaman).
  * Aturan tombol per `status.state`:
  *   alive          → ⏻ Putus arus listrik + ▶ Buka Adhitron;
  *   booting/standby/suspected-alive → hanya ⚠ Putus paksa (jangan tawarkan "matikan rapi" untuk PC yang belum bisa dijangkau);
  *   off            → ⚡ Nyalakan PC (ditolak server dengan 409 kalau ternyata masih hidup);
- *   unknown        → ⚡ Nyalakan paksa (?force=1, listrik disiklus — dijelaskan lewat confirm). */
+ *   unknown        → ⚡ Nyalakan paksa (?force=1, listrik disiklus — dijelaskan lewat confirm).
+ * Selama jeda 2 menit sesudah listrik diputus, tombol Nyalakan memakai hitung mundur (1 dtk) dan aktif sendiri
+ * saat mencapai 0 — tanpa menunggu poll; server tetap menolak dengan 409. */
 export function statusPageHtml(id, pollToken, fromTicket, status, adhitronUrl) {
   const state = stateOfStatus(status);
   const initial = {
@@ -647,11 +672,14 @@ export function statusPageHtml(id, pollToken, fromTicket, status, adhitronUrl) {
     offDelaySec: status.offDelaySec, plug: status.plug, powerW: status.powerW, booting: status.booting,
     voltageV: status.voltageV, currentMa: status.currentMa, switchOn: status.switchOn,
     needsAttention: status.needsAttention, lastHeartbeat: status.lastHeartbeat, adhitronUrl,
+    heartbeatAgeSec: status.heartbeatAgeSec, powerAgeSec: status.powerAgeSec,
+    lastOffAt: status.lastOffAt, onCooldownSec: status.onCooldownSec,
   };
   return page('Remote power', `
 <h1>Remote power PC</h1>
 <div class="state" id="state">${escapeHtml(initialLine(initial))}</div>
 <div id="extra"></div>
+<div class="muted" id="proof">${escapeHtml(proofText(initial))}</div>
 <div id="btns">${initialButtons(state, initial)}${status.offAt ? '<button class="btn" onclick="batalkan()">✕ Batalkan jadwal</button>' : ''}</div>
 <section class="energy" id="energy" aria-live="polite">
   <div class="ehead"><h2>⚡ Listrik Bardi</h2><button type="button" class="ebtn" id="e-refresh">↻ Refresh</button></div>
@@ -668,6 +696,10 @@ export function statusPageHtml(id, pollToken, fromTicket, status, adhitronUrl) {
 const ID = ${jsonForScript(id)}, TOKEN = ${jsonForScript(pollToken)}, FROM_TICKET = ${jsonForScript(fromTicket)};
 const OFF_DELAY = ${jsonForScript(Number.isInteger(status.offDelaySec) && status.offDelaySec >= 0 ? status.offDelaySec : 300)};
 const POWER_OFF_W = ${POWER_OFF_W}, POWER_ALIVE_W = ${POWER_ALIVE_W};
+const COOLDOWN_NOTE = ${jsonForScript(COOLDOWN_NOTE)};
+// Server sends only remaining seconds (onCooldownSec); the page converts it once into a local deadline so the
+// countdown keeps running between polls and the buttons re-enable themselves when it reaches 0 (server is final).
+let cooldownUntil = 0, cooldownWas = false;
 let bootMode = false, timer = null, flash = '', last = null;
 let eUpdatedAt = 0, eBurst = 0;
 const $ = (id) => document.getElementById(id);
@@ -675,6 +707,31 @@ const esc = (s) => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').re
 if (FROM_TICKET) history.replaceState(null, '', '/s/' + ID + '?t=' + TOKEN); // tiket sesi menggantikan tiket serah-terima di URL
 function fmt(sec) { const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); }
 function dtext(sec) { return sec >= 60 ? Math.round(sec / 60) + ' mnt' : sec + ' dtk'; }
+// Jeda 2 menit sesudah listrik diputus (semua pemutusan, ?force=1 ikut terkunci).
+function setCooldown(s) {
+  const sec = Number(s && s.onCooldownSec);
+  cooldownUntil = Number.isFinite(sec) && sec > 0 ? Date.now() + sec * 1000 : 0;
+}
+function cooldownLeft() { return cooldownUntil > 0 ? Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000)) : 0; }
+// Tick per detik: cukup ganti label tombol yang sedang terkunci (id stabil) — jangan render ulang #btns, supaya
+// fokus/klik pengguna tidak hilang. Saat mencapai 0, render sekali supaya tombol Nyalakan aktif kembali.
+function cooldownTick() {
+  if (!last) return;
+  const left = cooldownLeft();
+  if (left > 0) {
+    cooldownWas = true;
+    const on = $('btn-on');
+    if (on) on.textContent = '⚡ Nyalakan PC (' + fmt(left) + ')';
+    const force = $('btn-on-force');
+    if (force) force.textContent = '⚡ Nyalakan paksa (' + fmt(left) + ')';
+    return;
+  }
+  if (!cooldownWas) return;
+  cooldownWas = false;
+  render(last); // jeda habis: tombol aktif sendiri tanpa menunggu poll berikutnya
+}
+function agoSec(sec) { return typeof sec === 'number' ? sec + ' dtk lalu' : 'belum ada'; }
+function proofText(s) { return 'Bukti: heartbeat ' + agoSec(s.heartbeatAgeSec) + ' · daya ' + agoSec(s.powerAgeSec); }
 // Angka gaya Indonesia untuk kartu listrik (sama dengan render server): "12,4 W" · "220,1 V" · "990 mA".
 function num(v, digits) { return Number(v).toFixed(digits).replace('.', ','); }
 function fmtW(v) { return typeof v === 'number' ? num(v, 1) + ' W' : '—'; }
@@ -709,6 +766,14 @@ function render(s) {
   $('extra').innerHTML = extra.join('');
   const watts = typeof s.powerW === 'number' ? ' (' + fmtW(s.powerW) + ')' : '';
   const countdown = (s.offAt && s.secondsUntilOff != null) ? ' · ⏳ listrik diputus dalam ' + fmt(s.secondsUntilOff) : '';
+  const cd = cooldownLeft();
+  const nyalakanBtn = cd > 0
+    ? '<button class="btn on" type="button" disabled id="btn-on">⚡ Nyalakan PC (' + fmt(cd) + ')</button>'
+    : '<button class="btn on" onclick="nyalakan()">⚡ Nyalakan PC</button>';
+  const nyalakanPaksaBtn = cd > 0
+    ? '<button class="btn on" type="button" disabled id="btn-on-force">⚡ Nyalakan paksa (' + fmt(cd) + ')</button>'
+    : '<button class="btn on" onclick="nyalakanPaksa()">⚡ Nyalakan paksa</button>';
+  const cooldownNote = cd > 0 ? '<p class="muted">' + COOLDOWN_NOTE + '</p>' : '';
   let line, btns = '';
   if (state === 'alive') {
     line = '🟢 PC hidup';
@@ -723,13 +788,14 @@ function render(s) {
       '<p class="muted">PC tidak kunjung hidup? Putus paksa memotong listrik dalam 5 mnt; kalau ternyata heartbeat datang, jadwal otomatis batal.</p>';
   } else if (state === 'off') {
     line = '⚫ PC mati';
-    btns = '<button class="btn on" onclick="nyalakan()">⚡ Nyalakan PC</button>' +
-      '<button class="btn off" onclick="putusArus()">⏻ Putus arus listrik</button>';
+    btns = nyalakanBtn +
+      '<button class="btn off" onclick="putusArus()">⏻ Putus arus listrik</button>' + cooldownNote;
     if (s.adhitronUrl) btns += '<p class="muted">Setelah hidup: tombol ▶ Buka Adhitron muncul di sini.</p>';
   } else {
     line = '⚪ Status belum pasti' + watts;
-    btns = '<button class="btn on" onclick="nyalakanPaksa()">⚡ Nyalakan paksa</button>' +
-      '<p class="muted">Belum ada bukti yang cukup untuk memastikan PC mati. Nyalakan paksa menyiklus listrik OFF → ON — PC yang masih hidup akan mati sebentar.</p>';
+    btns = nyalakanPaksaBtn +
+      '<p class="muted">Belum ada bukti yang cukup untuk memastikan PC mati. Nyalakan paksa menyiklus listrik OFF → ON — PC yang masih hidup akan mati sebentar.</p>' +
+      cooldownNote;
   }
   // Daya ≤ 10 W saat jadwal mati aktif: listrik sudah tidak mengalir → jangan tampilkan "PC hidup".
   if (s.offAt && typeof s.powerW === 'number' && s.powerW <= POWER_OFF_W) line = '⚫ PC sudah mati';
@@ -738,6 +804,7 @@ function render(s) {
   if (s.offAt) btns += '<button class="btn" onclick="batalkan()">✕ Batalkan jadwal</button>';
   $('state').textContent = line;
   $('btns').innerHTML = btns;
+  $('proof').textContent = proofText(s);
   $('plug').textContent = plugText(s);
 }
 async function act(path, boot) {
@@ -786,13 +853,19 @@ async function poll() {
   try {
     const r = await fetch('/api/status', { headers: { 'X-Status-Token': TOKEN } });
     if (r.status === 401) { $('state').textContent = '⚫ sesi kedaluwarsa — muat ulang halaman / minta link baru'; return; }
-    render(await r.json());
+    const s = await r.json();
+    setCooldown(s); // jeda 2 menit dari server: hitung mundur lokal dimulai ulang dari sisa detik terbaru
+    render(s);
   } catch { /* jaringan: coba lagi di tick berikutnya */ }
   clearTimeout(timer);
-  timer = setTimeout(poll, bootMode ? 3000 : 10000);
+  timer = setTimeout(poll, bootMode ? 2000 : 5000);
 }
-render(${jsonForScript(initial)});
+const INITIAL = ${jsonForScript(initial)};
+setCooldown(INITIAL);
+cooldownWas = cooldownLeft() > 0;
+render(INITIAL);
 poll();
+setInterval(cooldownTick, 1000); // hitung mundur tombol Nyalakan (tanpa menunggu poll berikutnya)
 // ⚡ Listrik Bardi (realtime): SATU panggilan /api/energy = satu panggilan device status Tuya IoT Core (gratis).
 // Sengaja TIDAK dipoll terus-menerus (kuota Tuya terbatas): hanya saat halaman dibuka, tombol ↻ Refresh, dan
 // 3× jeda 5 dtk setelah aksi daya (/api/on, /api/off) — lalu berhenti.
