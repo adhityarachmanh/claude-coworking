@@ -44,6 +44,7 @@ import { initMcp } from './features/mcp.js';
 import { initHeaderMore, initMoreMenu } from './features/more-menu.js';
 import { initNotify } from './features/notify.js';
 import { initTts } from './features/tts.js';
+import { initWakeLock } from './features/wake-lock.js';
 import { initPalette } from './features/palette.js';
 import { initPermissions } from './features/permissions.js';
 import { initPhone } from './features/phone.js';
@@ -158,6 +159,7 @@ initPalette(); // Ctrl+P command palette (the shortcut itself is in ui/shortcuts
 initPanelResizer();
 initPhoneSheets(); // phone Chat: ＋ / settings / ⋯ sheets (moves .controls into its sheet on a phone)
 initKeyboardInset(); // phone: composer above the on-screen keyboard, bottom nav hidden while typing
+initWakeLock(); // phone: screen stays on while a turn runs (and the page is visible)
 
 // ---------- main loop ----------
 

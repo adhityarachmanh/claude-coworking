@@ -6,6 +6,7 @@ import { activeModelOf } from '../core/model-logo.js';
 import { modelPanelHtml, mpApplyRow, mpHighlight } from './model-picker.js';
 import { capReason, capsFor, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
 import { typingText } from '../core/composer-typing.js';
+import { syncWakeLock } from './wake-lock.js';
 import { fmtNum } from '../core/format.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
@@ -87,6 +88,7 @@ function renderTypingText(st, classifying) {
 export function renderComposer() {
   const isDemo = state.active === DEMO_ID;
   const st = state.statuses[state.active] ?? {};
+  void syncWakeLock(st); // phone: keep the screen on while a turn runs (only while this page is visible)
   const classifying = effortPending.project === state.active;
   const engine = engineOf(st, state.config);
   const caps = capsFor(state.config, engine);

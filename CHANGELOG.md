@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.43
+
+- **📱 Layar HP tetap menyala selama kamu menonton giliran.** Saat ada giliran yang berjalan dan halaman terlihat, Adhitron memegang **Wake Lock layar** (API browser; tanpa efek di perangkat yang tidak mendukung). Layar otomatis boleh tidur lagi begitu giliran selesai, halaman disembunyikan, atau aplikasi ditinggalkan — jadi baterai tidak terkuras saat HP di saku. Berguna untuk menunggu jawaban panjang atau izin yang muncul di akhir giliran tanpa layar mati di tengah jalan.
+
 ## 1.0.42
 
 - **📶 Sambungan dari HP lebih hemat kuota dan tidak lagi "terlihat tersambung" saat data basi.** Seluruh stream peristiwa (snapshot pertama + setiap update) kini dikirim **gzip** seperti aset teks, jadi setiap reconnect — HP bangun dari tidur, pindah WiFi ↔ seluler, Tailscale menyambung ulang — memindahkan jauh lebih sedikit data. Server juga mengirim **ping 15 detik** sebagai bukti hidup; kalau tiga ping terlewat, status line HP menampilkan **"45 dtk tanpa kabar"** dan bisa **diketuk untuk menyegarkan** (snapshot baru). Halaman yang kembali terlihat setelah lama di latar juga menyegarkan sendiri, dan ticker aktivitas/status berhenti saat tab tersembunyi supaya baterai HP tidak terkuras.
