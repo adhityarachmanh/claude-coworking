@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.45
+
+- **🧵 Perbaikan build 1.0.44:** menutup sesi yang belum sempat membuat proses OpenCode tidak lagi melempar `clearSettles` (penutupan langkah subagent). Perilaku pengguna tetap sama dengan 1.0.44.
+
 ## 1.0.44
 
 - **🧵 Langkah subagent tidak lagi berputar tanpa akhir, dan chat menjelaskan dirinya.** Langkah subagent yang mulai **setelah** giliran selesai bisa kehilangan penutup dari OpenCode; sebelumnya barisnya berputar selamanya. Kini: penutup yang hilang ditutup otomatis setelah **60 detik** dengan catatan **"Tidak ada kabar lanjutan dari subagent — kalau masih berjalan, buka ⧗"** (status ⚠ **tidak dilaporkan**, bukan spinner); semua baris yang masih `running` saat server start ditutup; hasil asli yang datang lebih dulu tetap menang; Stop menutup semuanya. Langkah subagent yang sudah selesai **dilipat ke dalam kartu delegasinya** (ringkasan **"N langkah · X berjalan"**, klik untuk membuka), jadi chat tidak lagi dibanjiri sepuluh baris. Detail setiap baris selalu ada isinya: perintah/input + **Output**, atau keterangan jujur ("belum ada output — masih berjalan" / "tidak ada kabar lanjutan").
