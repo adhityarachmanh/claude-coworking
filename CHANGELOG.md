@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.48
+
+- **✓ Baris yang ditutup tanpa hasil kini terbaca tenang: "selesai · tanpa laporan".** Sebelumnya langkah yang kehilangan output diberi tanda ⚠ **tidak dilaporkan**, sehingga satu project bisa terlihat penuh masalah padahal hanya kehilangan laporan. Sekarang ikonnya **centang abu-abu** dengan teks **selesai · tanpa laporan** (bukan hijau, bukan peringatan); detailnya tetap jujur: *"Output tidak dilaporkan — langkah ditutup otomatis; jalankan ulang kalau perlu."* Ringkasan kartu delegasi dan chip progres memakai istilah yang sama (**N tanpa laporan**). Peringatan ⚠ hanya dipakai untuk langkah yang benar-benar berjalan lama saat giliran aktif.
+
 ## 1.0.47
 
 - **🧹 Baris "sedang berjalan" di project yang idle ditutup otomatis — tanpa perlu restart.** Ada dua kasus yang lolos dari perbaikan sebelumnya: tool **biasa** (bukan langkah subagent, jadi tidak punya induk) dan baris yang ditinggal proses OpenCode saat keluar. Kini server punya **rekonsiler tiap 30 detik**: bila sebuah project tidak sedang punya giliran, sesi CLI, atau tugas latar (⧗), baris tool yang masih `running` lebih dari **60 detik** ditutup menjadi **⚠ tidak dilaporkan** dengan catatan. Project yang benar-benar bekerja (giliran/⧗) tidak disentuh. Efeknya: tidak ada spinner yang bertahan setelah pekerjaan berhenti.
