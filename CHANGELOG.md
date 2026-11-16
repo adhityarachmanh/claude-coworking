@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.46
+
+- **🧵 Tidak ada lagi deretan spinner subagent di chat.** Semua langkah subagent — termasuk yang masih berjalan — kini dilipat ke dalam **kartu delegasinya**. Kartu itu meringkas **"N langkah · ⏳ X berjalan · ⚠ Y tidak dilaporkan"**, menampilkan spinner hanya selama anaknya berjalan, dan ringkasannya ikut berubah saat tiap langkah selesai atau kehilangan laporan. Chip progres giliran juga tidak menyembunyikan sisa: **"✓ Selesai · 4 mnt · 25 langkah · ⏳ 2 berjalan"**. Klik kartu delegasi untuk membuka langkah-langkahnya.
+
 ## 1.0.45
 
 - **🧵 Perbaikan build 1.0.44:** menutup sesi yang belum sempat membuat proses OpenCode tidak lagi melempar `clearSettles` (penutupan langkah subagent). Perilaku pengguna tetap sama dengan 1.0.44.
