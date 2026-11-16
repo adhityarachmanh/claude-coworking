@@ -57,7 +57,7 @@ export function progressLabel(p, fmtDuration = (ms) => `${Math.round(ms / 1000)}
   const head = p.ok === false ? '■ Berhenti' : '✓ Selesai';
   const bits = [`${head} · ${dur}`, `${p.total} langkah`];
   if (p.running) bits.push(`⏳ ${p.running} berjalan`);
-  if (p.stale) bits.push(`${p.stale} tidak dilaporkan`);
+  if (p.stale) bits.push(`${p.stale} tanpa laporan`);
   if (p.background) bits.push(`${p.background} di latar`);
   return bits.join(' · ');
 }

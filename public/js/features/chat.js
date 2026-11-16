@@ -495,7 +495,7 @@ function toolDetail(msg) {
   return parts.join('') || '<div class="muted">Tidak ada detail.</div>';
 }
 
-const STATUS_ICON = { running: '<span class="spinner"></span>', ok: '<span class="ok">✓</span>', fail: '<span class="fail">✗</span>', stale: '<span class="stale" title="Tidak ada kabar lanjutan dari langkah ini">⚠</span>', cancel: '<span class="muted">–</span>' };
+const STATUS_ICON = { running: '<span class="spinner"></span>', ok: '<span class="ok">✓</span>', fail: '<span class="fail">✗</span>', stale: '<span class="stale-ok" title="Selesai tanpa laporan">✓</span>', cancel: '<span class="muted">–</span>' };
 
 const AUTO_EFFORT_LABEL = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
 
@@ -724,8 +724,8 @@ function fillChatBody(node, msg) {
 /** "Running… (12s)" on a long tool call, as the CLI shows it. */
 const elapsedTag = (msg) => (msg.status === 'running' && msg.elapsed ? `<small class="elapsed">${msg.elapsed >= 60 ? `${Math.floor(msg.elapsed / 60)} mnt ${msg.elapsed % 60} dtk` : `${msg.elapsed} dtk`}</small>` : '');
 
-/** "tidak dilaporkan": the step was closed because its final update never came (never a plain spinner). */
-const staleTag = (msg) => (msg.status === 'stale' ? '<small class="stale-note" title="Penutup langkah tidak pernah datang — detail menjelaskan">tidak dilaporkan</small>' : '');
+/** "selesai · tanpa laporan": closed without its final output (never a spinner, never an alarm). */
+const staleTag = (msg) => (msg.status === 'stale' ? '<small class="stale-note" title="Output tidak dilaporkan — langkah ditutup otomatis">selesai · tanpa laporan</small>' : '');
 
 /** The delegation row of a subagent step (the message owning its `parentToolUseId`), for grouping/folding. */
 function parentDelegation(msg) {
@@ -746,7 +746,7 @@ function stepsSummary(msg) {
   const stale = kids.filter((k) => k.status === 'stale').length;
   const bits = [`${kids.length} langkah`];
   if (running) bits.push(`⏳ ${running} berjalan`);
-  if (stale) bits.push(`⚠ ${stale} tidak dilaporkan`);
+  if (stale) bits.push(`${stale} tanpa laporan`);
   const title = running ? `${running} langkah masih berjalan` : 'semua langkah sudah ditutup';
   return `<small class="steps-sum ${running ? 'live' : stale ? 'warn' : ''}" title="${title}">· ${bits.join(' · ')}</small>`;
 }

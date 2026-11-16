@@ -36,6 +36,12 @@ test('turnProgress: selesai tapi langkahnya masih berjalan → tetap disebut (bu
   assert.equal(progressLabel(p, fmt), '✓ Selesai · 1 mnt 30 dtk · 1 langkah · ⏳ 1 berjalan');
 });
 
+test('turnProgress: langkah tanpa laporan disebut "tanpa laporan", bukan peringatan', () => {
+  const p = turnProgress([user(), tool(T + 1000, 'stale'), result(T + 90_000)], { now: T + 100_000, busy: false });
+  assert.equal(p.stale, 1);
+  assert.equal(progressLabel(p, fmt), '✓ Selesai · 1 mnt 30 dtk · 1 langkah · 1 tanpa laporan');
+});
+
 test('turnProgress: hanya giliran terakhir yang dihitung', () => {
   const p = turnProgress([user(T), tool(T + 1000, 'ok'), result(T + 2000), user(T + 10_000), tool(T + 11_000, 'running')], { now: T + 20_000, busy: true });
   assert.equal(p.total, 1);
