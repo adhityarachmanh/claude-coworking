@@ -15,6 +15,9 @@ import { basename, normalizePath, projectId } from './util.js';
 import { isMissing } from './projects.js';
 
 const EVENT_LIMIT = 80;
+// A running tool row in an idle project (no turn, no CLI, no background task) older than this is a leftover and is
+// closed by reconcileStaleToolRows(); 60 s is beyond any instant command and well before it looks "stuck".
+const STALE_TOOL_ROW_MS = 60_000;
 // Biggest message taken from a backup (tool output is clipped long before this).
 const MAX_IMPORTED_MESSAGE = 512 * 1024;
 /**
@@ -2015,6 +2018,34 @@ export class Hub {
     this.broadcast('chat', message);
     this.scheduleSave();
     return message.id;
+  }
+
+  /**
+   * Closes tool rows a dead or lost process left `running` in an IDLE project. Unlike the boot sweep, this runs
+   * while the server is alive: a project with no turn, no CLI session and no background task cannot have a tool
+   * running, so a row older than STALE_ROW_MS is a leftover (the real case: an ACP process exits mid-turn, or the
+   * final update never arrived). Returns how many rows were closed. Safe to call on a timer.
+   * @param {number} [now]
+   */
+  reconcileStaleToolRows(now = Date.now()) {
+    let closed = 0;
+    for (const [id, rt] of this.runtime) {
+      const st = rt.status ?? {};
+      const tasks = (st.tasks ?? []).some((t) => t?.status === 'running' || t?.status === 'pending');
+      // A turn, a CLI session or a background task is real work: never close its rows behind its back.
+      if (st.busy || st.cliBusy || tasks || st.planPreparing || st.compacting) continue;
+      for (const message of [...rt.chat]) {
+        if (message?.status !== 'running') continue;
+        if (message.kind !== 'tool' && message.kind !== 'delegate') continue;
+        if (now - (Number(message.ts) || 0) < STALE_TOOL_ROW_MS) continue;
+        this.updateChat(id, message.id, {
+          status: 'stale',
+          output: 'Tidak ada kabar — langkah ini ditutup otomatis karena giliran sudah selesai.',
+        });
+        closed++;
+      }
+    }
+    return closed;
   }
 
   updateChat(id, chatId, patch) {

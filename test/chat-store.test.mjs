@@ -533,3 +533,29 @@ test('a reply still "typing" when the server was killed is closed at the next st
   again.save();
   assert.equal(replayChat(readFileSync(chatFile(dir, 'p1'), 'utf8')).messages[0].streaming, false, 'written back');
 });
+
+test('hub: an idle project\'s running tool row is closed live (reconciler, no restart needed)', () => {
+  const dir = tmp();
+  const hub = new Hub({ dataDir: dir });
+  const old = hub.chat('p1', { kind: 'tool', role: 'pm', text: 'Cek folder', status: 'running' });
+  const fresh = hub.chat('p1', { kind: 'tool', role: 'pm', text: 'Baru mulai', status: 'running' });
+  const rows = hub.rt('p1').chat;
+  rows.find((m) => m.id === old).ts = Date.now() - 5 * 60_000; // a leftover from minutes ago
+  assert.equal(hub.reconcileStaleToolRows(), 1, 'only the old row is closed');
+  const byId = (id) => rows.find((m) => m.id === id);
+  assert.equal(byId(old).status, 'stale');
+  assert.match(byId(old).output, /Tidak ada kabar/);
+  assert.equal(byId(fresh).status, 'running', 'a row just started is untouched');
+});
+
+test('hub: the reconciler leaves a genuinely busy project alone (turn or background task)', () => {
+  const dir = tmp();
+  const hub = new Hub({ dataDir: dir });
+  const id = hub.chat('p1', { kind: 'tool', role: 'pm', text: 'Cek folder', status: 'running' });
+  hub.rt('p1').chat.find((m) => m.id === id).ts = Date.now() - 5 * 60_000;
+  hub.rt('p1').status.busy = true;
+  assert.equal(hub.reconcileStaleToolRows(), 0, 'a running turn owns its rows');
+  hub.rt('p1').status.busy = false;
+  hub.rt('p1').status.tasks = [{ id: 't1', status: 'running' }];
+  assert.equal(hub.reconcileStaleToolRows(), 0, 'a background task owns its row too');
+});

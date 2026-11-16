@@ -1572,6 +1572,9 @@ const powerBeat = new RemotePowerBeat({
 powerBeat.start(); // the first beat goes out at once, then every 2 minutes (OFFICE_POWER_BEAT_MS overrides)
 ctx.powerBeat = powerBeat; // 🩺 "Remote power": last successful beat, without exposing the URL or token
 setInterval(() => remote.pruneIdle(), 60 * 60 * 1000).unref();
+// Rows a lost process left "running" in an idle project (no turn, no CLI session, no ⧗ task) are closed live, so a
+// spinner never survives when nothing is actually working — the boot sweep only covers restarts.
+setInterval(() => hub.reconcileStaleToolRows(), 30_000).unref();
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') console.error(`Port ${PORT} sudah dipakai — Adhitron mungkin sudah berjalan.`);
