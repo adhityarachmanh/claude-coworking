@@ -24,6 +24,13 @@ import { clip, truncate } from './util.js';
 const HANDSHAKE_TIMEOUT_MS = 60_000;
 const RPC_TIMEOUT_MS = 30_000;
 const INTERRUPT_GRACE_MS = 8000;
+// A subagent step that starts after its turn ended can lose its final update (OpenCode stops relaying the child
+// once the parent prompt resolved). After this grace the row is closed with an honest note instead of spinning
+// forever; tests shorten it through the env var.
+const CHILD_SETTLE_MS = (() => {
+  const raw = Number(process.env.OFFICE_ACP_SETTLE_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 60_000;
+})();
 const STDERR_TAIL = 4000;
 const OPENCODE_SESSION = /^ses_[\w-]{1,100}$/;
 const POINTS_CACHE_MS = 5000; // ⏪ the rewind list is reused this long (see rewindPoints)
@@ -261,6 +268,7 @@ export class AcpAdapter {
     // or a `<sessionId>:` prefixed call id). Kept for the whole session, so a step that starts AND finishes long
     // after the turn still finds its delegation, keeps its role, and closes its own row.
     this.childSessions = new Map(); // child session id -> { call: the launching toolCallId, title: the child's own title }
+    this.settleTimers = new Map(); // child toolCallId -> timer that closes a step whose final update never came
     // Child steps whose one-turn grace ran out (or whose turn was stopped): closed by the translator already, so a
     // late frame for one of them must NOT open a fresh row. Bounded like `childSessions`.
     this.droppedChildren = new Set();
@@ -357,6 +365,70 @@ export class AcpAdapter {
   launchesChild(callId) {
     for (const entry of this.childSessions.values()) if (entry.call === callId) return true;
     return false;
+  }
+
+  /**
+   * A child step whose turn already ended may never get its final update (OpenCode stops relaying the child once
+   * the parent prompt resolved). Give it one grace, then close the row with a note instead of a forever spinner.
+   * Called for every frame: cheap when the call is not a child step or the turn is still busy.
+   */
+  armSettle(u, busy = false) {
+    const id = String(u?.toolCallId ?? '');
+    const info = id ? this.tools.get(id) : null;
+    if (!info?.child) return;
+    if (u.status === 'completed' || u.status === 'failed' || info.done) {
+      this.clearSettle(id);
+      return;
+    }
+    if (busy || !info.started || this.settleTimers.has(id)) return;
+    const timer = setTimeout(() => this.settleChild(id), CHILD_SETTLE_MS);
+    timer.unref?.();
+    this.settleTimers.set(id, timer);
+  }
+
+  /** Turn ended: every child step still open gets the same grace (its real result may still arrive first). */
+  armOpenChildren() {
+    for (const [id, info] of this.tools) {
+      if (!info.child || info.done || !info.started || this.launchesChild(id) || this.settleTimers.has(id)) continue;
+      const timer = setTimeout(() => this.settleChild(id), CHILD_SETTLE_MS);
+      timer.unref?.();
+      this.settleTimers.set(id, timer);
+    }
+  }
+
+  /** The grace ran out: close the row with an honest note (the ⧗ task, if any, keeps running on its own). */
+  settleChild(id) {
+    this.settleTimers.delete(id);
+    const info = this.tools.get(id);
+    if (!info || info.done) return;
+    info.done = true;
+    this.emit({
+      type: 'user',
+      parent_tool_use_id: info.parent ?? null,
+      message: {
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: id,
+            content: 'Tidak ada kabar lanjutan dari subagent setelah giliran selesai. Kalau pekerjaannya masih berjalan, buka ⧗.',
+            is_error: false,
+            stale: true,
+          },
+        ],
+      },
+    });
+    this.dropChild(id);
+  }
+
+  clearSettle(id) {
+    const timer = this.settleTimers.get(id);
+    if (timer) clearTimeout(timer);
+    this.settleTimers.delete(id);
+  }
+
+  clearSettles() {
+    for (const timer of this.settleTimers.values()) clearTimeout(timer);
+    this.settleTimers.clear();
   }
 
   /** Merges what OpenCode said about a tool call so far (fields arrive spread over several updates). */
@@ -711,6 +783,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const stopped = (interrupted || this.interrupting) && !rejection;
       // A turn the user stopped reads "Dihentikan", like Claude's interrupted turns.
       this.adapter.finish({ ...msg, ok: ok || Boolean(rejection), interrupted: stopped, error: stopped ? stopNote : error || 'OpenCode gagal menyelesaikan giliran.' });
+      if (!stopped) this.adapter.armOpenChildren(); // late child steps still open: close them if their report never comes
       this.recordTurnUsage(usage ?? {}, costUsd);
       this.interrupting = false;
       this.inflight.delete(uuid);
@@ -1409,6 +1482,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     closeChild() {
       const busy = this.busy;
+      this.adapter.clearSettles();
       const child = this.detach();
       if (!child) return;
       if (busy) this.killTree(child.pid);
@@ -1500,6 +1574,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       // user STOPPED keeps nothing: its late frames are dropped until the next prompt.
       if (!this.busy && (this.stoppedTurn || !this.adapter.continues(u))) return;
       this.adapter.update(u);
+      this.adapter.armSettle(u, this.busy);
     }
 
     // ---------- permissions ----------

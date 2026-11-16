@@ -36,6 +36,7 @@ before(async () => {
       ...cleanEnv,
       OFFICE_PORT: String(PORT),
       OFFICE_DATA_DIR: path.join(TMP, 'data'),
+      OFFICE_ACP_SETTLE_MS: '300', // a lost child report is settled quickly in tests (default 60 s)
       PROJECTS_ROOT: projects,
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       OPENCODE_BIN: path.join(APP, 'test-support', 'fake-acp.mjs'),
@@ -253,6 +254,23 @@ test('a delegation that outlives its turn closes its step rows as the late resul
   assert.deepEqual(hanging, [], 'no step row is left spinning');
   const s = await snapshot();
   assert.deepEqual(s.statuses[id].working ?? {}, {}, 'no role is left working after the delegation reports');
+});
+
+test('a child step that starts after the turn and never reports is closed by the settle grace', async () => {
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'langkahterlambat' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && o.ok === true);
+  // The step starts only after the result (the real failure mode) and never gets a final update.
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'tool' && /Tes latar/.test(o.text ?? ''), 8000);
+  const closed = await waitFor(
+    (t, o) => t === 'chat_update' && o.project === id && o.patch?.status === 'stale' && /Tidak ada kabar lanjutan/.test(o.patch.output ?? ''),
+    8000,
+  );
+  assert.ok(closed, 'the row is closed with a note, never an endless spinner');
+  const chats = (await snapshot()).chats?.[id] ?? [];
+  assert.deepEqual(chats.filter((c) => c.kind === 'tool' && c.status === 'running'), [], 'no row left running');
+  const s = await snapshot();
+  assert.deepEqual(s.statuses[id].working ?? {}, {}, 'no role left working');
 });
 
 /** The user texts OpenCode received since `since`, oldest first (FAKE_ACP_STORE: one file per session, all turns). */

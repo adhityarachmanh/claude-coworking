@@ -9,6 +9,7 @@ import { applyClaudeCheck } from '../features/claude-check.js';
 import { applyOpenCodeCheck } from '../features/opencode-check.js';
 import { applyAppUpdate } from '../features/app-update.js';
 import { renderComposer } from '../features/composer.js';
+import { renderStatusline } from '../features/statusline.js';
 import { retryDelay, noteEvent, streamLost, streamOpened } from '../features/connection.js';
 import { onResync } from './resync.js';
 import { notify } from '../features/notify.js';
@@ -175,7 +176,10 @@ const handlers = {
       return;
     }
     if (live) noteLiveMessage(msg); // a sample of the browser/server clock difference (stuck detector)
-    if (msg.project === state.active) appendChat(msg);
+    if (msg.project === state.active) {
+      appendChat(msg);
+      renderStatusline(state.statuses[msg.project] ?? {}); // the turn's progress chip follows every step
+    }
     if (!live) {
       // replayed history: no notification for it
     } else if (msg.kind === 'result') {
@@ -258,7 +262,10 @@ export function onChatUpdate({ project, id, patch }) {
   const msg = list.findLast((m) => m.id === id);
   if (msg) {
     Object.assign(msg, patch);
-    if (project === state.active) scheduleReplace(msg);
+    if (project === state.active) {
+      scheduleReplace(msg);
+      renderStatusline(state.statuses[project] ?? {});
+    }
     return;
   }
   const oldest = list.length ? Math.min(...list.map((m) => idNumber(m.id))) : 0;

@@ -495,6 +495,31 @@ async function turn(sessionId, text) {
     }, 150);
     return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
   }
+  if (/^langkahterlambat/.test(text)) {
+    // A child step that STARTS ONLY AFTER the turn's result and never gets its final update (the real failure in
+    // chats-opencode: OpenCode stops relaying the child once the parent prompt resolved). The app must close the
+    // row after the settle grace with an honest note, never leave a spinner.
+    const child = 'ses_fakelate1';
+    const launch = 'call-late-sub';
+    const meta = { 'opencode/child-session': { id: child, parentID: sessionId, depth: 1, title: 'Cek latar' } };
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: launch, title: 'subagent', kind: 'think', status: 'pending', rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: launch, title: 'subagent', kind: 'think', status: 'in_progress', rawInput: { agent: 'devops', description: 'Cek latar', prompt: 'cek' } });
+    update(sessionId, {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: launch,
+      status: 'completed',
+      rawOutput: { metadata: { sessionID: child, status: 'running', truncated: false } },
+      content: [{ type: 'content', content: { type: 'text', text: `The subagent is working in the background (sessionID: ${child}).` } }],
+    });
+    await say('msg_late', 'Delegasi berjalan di latar.');
+    setTimeout(() => {
+      const step = `${child}:call-late-step`;
+      update(sessionId, { sessionUpdate: 'tool_call', toolCallId: step, title: 'Cek latar: bash', kind: 'execute', status: 'pending', rawInput: {}, _meta: meta });
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: step, status: 'in_progress', kind: 'execute', title: 'Cek latar: bash', rawInput: { command: 'echo hi', description: 'Tes latar' }, _meta: meta });
+      // no completion on purpose
+    }, 150);
+    return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
+  }
   if (/^shell(berkas|latar|gantung)/.test(text)) {
     // OpenCode's shell tool tags its calls with metadata (shellID, background); its output goes to
     // <data>/opencode/shell/<project.id>/<shellID>.out — the app reads that file for the ⧗ panel.

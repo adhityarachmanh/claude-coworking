@@ -486,7 +486,7 @@ function toolDetail(msg) {
   return parts.join('') || '<div class="muted">Tidak ada detail.</div>';
 }
 
-const STATUS_ICON = { running: '<span class="spinner"></span>', ok: '<span class="ok">✓</span>', fail: '<span class="fail">✗</span>', cancel: '<span class="muted">–</span>' };
+const STATUS_ICON = { running: '<span class="spinner"></span>', ok: '<span class="ok">✓</span>', fail: '<span class="fail">✗</span>', stale: '<span class="stale" title="Tidak ada kabar lanjutan dari langkah ini">⚠</span>', cancel: '<span class="muted">–</span>' };
 
 const AUTO_EFFORT_LABEL = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
 
@@ -585,6 +585,16 @@ function fillChat(node, msg) {
 }
 
 function fillChatBody(node, msg) {
+  // A finished subagent step is folded into its delegation card: the chat shows the card, not ten rows. Running
+  // and "tidak dilaporkan" steps stay visible (they are the ones that need an explanation).
+  if (msg.sub && ['ok', 'fail', 'cancel'].includes(msg.status)) {
+    const parent = parentDelegation(msg);
+    if (parent && !expanded.has(parent.id)) {
+      node.className = 'hidden-msg';
+      node.innerHTML = '';
+      return;
+    }
+  }
   switch (msg.kind) {
     case 'user': {
       // A raw step block (a tool_result carried as message content, no typed text) is transcript data,
@@ -642,13 +652,13 @@ function fillChatBody(node, msg) {
     case 'tool': {
       const open = expanded.has(msg.id);
       node.className = `line tool expandable st-${msg.status} ${open ? 'open' : ''} ${msg.sub ? 'sub' : ''}`;
-      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span>${engineMarkHtml(msg)}<span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s" title="${escapeHtml(roleName(msg.role))}">${escapeHtml(roleName(msg.role))}</span><span class="txt">${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : isLiveShell(msg) ? liveTail(msg) : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk detail"><span class="chev">${open ? '▾' : '▸'}</span>${engineMarkHtml(msg)}<span class="dot" style="background:${roleColor(msg.role)}"></span><span class="who-s" title="${escapeHtml(roleName(msg.role))}">${escapeHtml(roleName(msg.role))}</span><span class="txt">${escapeHtml(msg.text)}</span>${staleTag(msg)}${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : isLiveShell(msg) ? liveTail(msg) : ''}`;
       break;
     }
     case 'delegate': {
       const open = expanded.has(msg.id);
       node.className = `line delegate expandable st-${msg.status} ${open ? 'open' : ''}`;
-      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span>${engineMarkHtml(msg)}<img class="ava sm orbable" style="--c:${msg.role === 'claude' ? '#b9a8ff' : roleColor(msg.role)}" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${escapeHtml(roleName(msg.role))}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
+      node.innerHTML = `<div class="row" role="button" tabindex="0" aria-expanded="${open}" title="Klik untuk instruksi & laporan"><span class="chev">${open ? '▾' : '▸'}</span>${engineMarkHtml(msg)}<img class="ava sm orbable" style="--c:${msg.role === 'claude' ? '#b9a8ff' : roleColor(msg.role)}" src="${avatarURL(CAST[msg.role]?.look ?? CAST.claude.look)}" alt=""><span class="txt"><b style="color:${roleColor(msg.role)}">${escapeHtml(roleName(msg.role))}</b> ditugaskan${msg.from && msg.from !== 'claude' ? ` oleh ${escapeHtml(roleName(msg.from))}` : ''}: ${escapeHtml(msg.text)}</span>${stepsSummary(msg)}${elapsedTag(msg)}${STATUS_ICON[msg.status] ?? ''}</div>${stuckChip(msg)}${open ? `<div class="detail">${toolDetail(msg)}</div>` : ''}`;
       break;
     }
     case 'thinking': {
@@ -703,6 +713,23 @@ function fillChatBody(node, msg) {
 
 /** "Running… (12s)" on a long tool call, as the CLI shows it. */
 const elapsedTag = (msg) => (msg.status === 'running' && msg.elapsed ? `<small class="elapsed">${msg.elapsed >= 60 ? `${Math.floor(msg.elapsed / 60)} mnt ${msg.elapsed % 60} dtk` : `${msg.elapsed} dtk`}</small>` : '');
+
+/** "tidak dilaporkan": the step was closed because its final update never came (never a plain spinner). */
+const staleTag = (msg) => (msg.status === 'stale' ? '<small class="stale-note" title="Penutup langkah tidak pernah datang — detail menjelaskan">tidak dilaporkan</small>' : '');
+
+/** The delegation row of a subagent step (the message owning its `parentToolUseId`), for grouping/folding. */
+function parentDelegation(msg) {
+  if (!msg?.sub || !msg.parentToolUseId) return null;
+  return (state.chats[msg.project ?? state.active] ?? []).find((m) => m.toolUseId === msg.parentToolUseId) ?? null;
+}
+
+/** Subagent steps of one delegation: "· 8 langkah · 2 berjalan" on the delegation row. */
+function stepsSummary(msg) {
+  const kids = (state.chats[msg.project ?? state.active] ?? []).filter((m) => m.sub && m.parentToolUseId === msg.toolUseId);
+  if (!kids.length) return '';
+  const running = kids.filter((k) => k.status === 'running').length;
+  return `<small class="steps-sum" title="${running ? `${running} langkah masih berjalan` : 'semua langkah sudah ditutup'}">· ${kids.length} langkah${running ? ` · ${running} berjalan` : ''}</small>`;
+}
 
 export function initChat() {
   // We only ever scroll to the very bottom, so a scroll that moves up from there is the user's.
@@ -791,6 +818,14 @@ export function initChat() {
     // Reading a tool's detail is a deliberate look back: pause following and keep the row in view.
     if (expanded.has(id) && node !== chatEl.lastElementChild) followChat = false;
     fillChat(node, msg);
+    // A delegation owns folded child steps: revealing it reveals them too (folding hides them again).
+    if (msg.kind === 'delegate' && msg.toolUseId) {
+      for (const kid of state.chats[msg.project ?? state.active] ?? []) {
+        if (!kid.sub || kid.parentToolUseId !== msg.toolUseId) continue;
+        const kidNode = rows.get(kid.id);
+        if (kidNode) fillChat(kidNode, kid);
+      }
+    }
   });
 
   $('#jump-latest').addEventListener('click', () => scrollChat(true));

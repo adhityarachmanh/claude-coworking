@@ -764,7 +764,12 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .line .who-s { color: var(--muted); font-size: var(--fs-xs); flex: none; width: 108px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* one line, fixed width: the commands stay aligned */
 .line .ok { color: var(--ok); }
 .line .fail { color: var(--err); }
+.line .stale { color: var(--warn-text); }
 .line.st-fail { background: #2a17194d; background: color-mix(in srgb, var(--err-surface) 30%, transparent); }
+.line.st-stale { background: color-mix(in srgb, var(--warn-soft) 45%, transparent); }
+.stale-note, .steps-sum { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.line.st-stale .stale-note { color: var(--warn-text); }
+.line.delegate .steps-sum { color: var(--muted); }
 .line.delegate { background: var(--surface-2); padding: 6px 8px; margin: 2px 0; }
 .muted { color: var(--muted); }
 
@@ -964,6 +969,10 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .sl-tasks:hover { text-decoration: underline; }
 .sl-stale { min-height: 24px; border: 0; background: none; padding: 0; color: var(--warn-text); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
 .sl-stale:hover { text-decoration: underline; }
+.sl-turn { min-height: 24px; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+.sl-turn.live { color: var(--accent-2); }
+.sl-turn.done { color: var(--ok-text); }
+.sl-turn.stop { color: var(--warn-text); }
 .pill.warn { background: var(--warn-soft); color: var(--warn-text-strong); font-size: var(--fs-sm); } /* keep the pill size, not the --fs-md of .warn text */
 
 .modal-card.rewind-card, .modal-card.mcp-card { max-width: 640px; height: min(680px, calc(100vh - 32px)); display: flex; flex-direction: column; }
@@ -2698,6 +2707,9 @@ body.read-only #composer-hint { color: var(--ask); }
   .statusline > .sl-ask { border-color: var(--ask); color: var(--ask); }
   .statusline > .sl-warn { border-color: var(--warn-line); background: var(--warn-soft); color: var(--warn-text-strong); }
   .statusline > .sl-stale { border-color: var(--warn-line); background: var(--warn-soft); color: var(--warn-text-strong); }
+  .statusline > .sl-turn.live { color: var(--accent-2); }
+  .statusline > .sl-turn.done { color: var(--ok-text); }
+  .statusline > .sl-turn.stop { color: var(--warn-text); }
   #todos { margin: 0 0 6px; padding: 4px 10px; }
   #todos.collapsed { flex: 0 1 auto; max-width: 100%; display: flex; align-items: center; min-height: 36px; padding: 0 10px; border-radius: var(--r-pill); }
   #todos.collapsed:has(~ #statusline.has-chips) { max-width: 62%; }

@@ -2,6 +2,11 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.44
+
+- **🧵 Langkah subagent tidak lagi berputar tanpa akhir, dan chat menjelaskan dirinya.** Langkah subagent yang mulai **setelah** giliran selesai bisa kehilangan penutup dari OpenCode; sebelumnya barisnya berputar selamanya. Kini: penutup yang hilang ditutup otomatis setelah **60 detik** dengan catatan **"Tidak ada kabar lanjutan dari subagent — kalau masih berjalan, buka ⧗"** (status ⚠ **tidak dilaporkan**, bukan spinner); semua baris yang masih `running` saat server start ditutup; hasil asli yang datang lebih dulu tetap menang; Stop menutup semuanya. Langkah subagent yang sudah selesai **dilipat ke dalam kartu delegasinya** (ringkasan **"N langkah · X berjalan"**, klik untuk membuka), jadi chat tidak lagi dibanjiri sepuluh baris. Detail setiap baris selalu ada isinya: perintah/input + **Output**, atau keterangan jujur ("belum ada output — masih berjalan" / "tidak ada kabar lanjutan").
+- **📈 Baris progres giliran: "sudah selesai belum?" dijawab di layar.** Di atas kotak pesan ada satu baris yang hidup: **"⏳ 4 mnt · 9 langkah · 2 berjalan"** saat bekerja, lalu **"✓ Selesai · 4 mnt · 9 langkah"** setelah hasil datang (bertahan sampai prompt berikutnya) — dengan **"· N tidak dilaporkan"** atau **"· N di latar"** bila ada sisa. Tidak perlu membuka ⧗ atau bertanya lagi.
+
 ## 1.0.43
 
 - **📱 Layar HP tetap menyala selama kamu menonton giliran.** Saat ada giliran yang berjalan dan halaman terlihat, Adhitron memegang **Wake Lock layar** (API browser; tanpa efek di perangkat yang tidak mendukung). Layar otomatis boleh tidur lagi begitu giliran selesai, halaman disembunyikan, atau aplikasi ditinggalkan — jadi baterai tidak terkuras saat HP di saku. Berguna untuk menunggu jawaban panjang atau izin yang muncul di akhir giliran tanpa layar mati di tengah jalan.

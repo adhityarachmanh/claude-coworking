@@ -731,6 +731,7 @@ export class StreamTranslator {
       if (!info) continue;
       const text = resultText(block.content);
       const failed = Boolean(block.is_error);
+      const stale = block.stale === true; // closed by the settle grace: not ok, not failed
       // A step's closing block rides along in the transcript, next to its tool_use row.
       if (info.step) this.sink.chat({ kind: 'user', message: { content: [block] } });
 
@@ -745,7 +746,7 @@ export class StreamTranslator {
       }
 
       this.tools.delete(block.tool_use_id);
-      this.sink.updateChat(info.chatId, { status: failed ? 'fail' : 'ok', output: clip(text, OUTPUT_LIMIT) });
+      this.sink.updateChat(info.chatId, { status: stale ? 'stale' : failed ? 'fail' : 'ok', output: clip(text, OUTPUT_LIMIT) });
       this.sink.office({ kind: failed ? 'tool_fail' : 'tool_end', role: info.role, label: info.label, tool: info.name, screen: info.screen });
       this.emitWorking();
       // ✅ a push the team ran: GitHub's checks of that commit are followed (src/github-ci.js)

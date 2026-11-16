@@ -5,11 +5,12 @@ import { fmtTokens } from '../core/format.js';
 import { freshnessText } from '../core/freshness.js';
 import { requestResync } from '../core/resync.js';
 import { DEMO_ID, state } from '../core/state.js';
+import { progressLabel, turnProgress } from '../core/turn-progress.js';
 import { toast } from '../core/api.js';
 import { openCompact } from './compact.js';
 import { connection, lastEventAgeSec } from './connection.js';
 import { openQueue } from './queue.js';
-import { openTasks, runningCount } from './tasks.js';
+import { fmtDuration, openTasks, runningCount } from './tasks.js';
 
 /** Claude's todo list, pinned above the composer while there is work left (CLI: ☐ ◼ ☒). */
 export function renderTodos(st) {
@@ -52,6 +53,21 @@ const compactReady = (st) => Boolean(state.active) && state.active !== DEMO_ID &
 /** "45 dtk tanpa kabar" when the open stream stopped delivering events (including the server's 15 s ping). */
 const staleText = () => (connection.online ? freshnessText(lastEventAgeSec()) : '');
 
+/**
+ * The turn's progress chip: "⏳ 4 mnt · 9 langkah · 2 berjalan" while running, "✓ Selesai · …" once the result is
+ * in. A finished chip stays for two hours or until the next prompt — the answer to "is it done?" without asking.
+ */
+function turnChip(st) {
+  const p = turnProgress(state.chats[state.active] ?? [], {
+    now: Date.now(),
+    busy: Boolean(st.busy || st.cliBusy),
+    background: runningCount(st),
+  });
+  if (!p || (!p.total && !p.finished)) return null;
+  if (p.finished && Date.now() - p.startedAt > 2 * 60 * 60_000) return null; // yesterday's turn is not news
+  return { text: progressLabel(p, fmtDuration), finished: p.finished, ok: p.ok };
+}
+
 /** Status line under the composer: permission mode, model, and how full the context is. */
 export function renderStatusline(st) {
   const line = $('#statusline');
@@ -84,6 +100,8 @@ export function renderStatusline(st) {
   if (stale) parts.push(`<button type="button" class="sl-stale" data-resync title="Sambungan tampak hidup, tetapi tidak ada kabar dari laptop — ketuk untuk menyegarkan">⟳ ${escapeHtml(stale)}</button>`);
   const running = runningCount(st); // same count as the ⧗ chip in the session bar
   if (running) parts.push(`<button type="button" class="sl-tasks" data-open-tasks title="Buka monitor tugas latar (/tasks)">⧗ ${running} tugas berjalan</button>`);
+  const turn = turnChip(st);
+  if (turn) parts.push(`<span class="sl-turn ${turn.finished ? (turn.ok === false ? 'stop' : 'done') : 'live'}" title="Progres giliran terakhir">${escapeHtml(turn.text)}</span>`);
   if (narrow.matches) return renderStrip(line, st, running);
   line.innerHTML = parts.join('<span class="sep">·</span>');
 }
@@ -99,6 +117,8 @@ function renderStrip(line, st, running) {
   if (st.pending) chips.push('<button type="button" class="sl-chip sl-ask" data-jump-approval>✋ Menunggu izinmu</button>');
   if (st.autoApprove) chips.push('<span class="sl-chip sl-warn">⚠ Semua izin otomatis</span>');
   if (!connection.online) chips.push('<span class="sl-chip sl-warn">⚡ Belum tersambung</span>');
+  const turn = turnChip(st);
+  if (turn) chips.push(`<span class="sl-chip sl-turn ${turn.finished ? (turn.ok === false ? 'stop' : 'done') : 'live'}" title="Progres giliran terakhir">${escapeHtml(turn.text)}</span>`);
   const stale = staleText();
   if (stale) chips.push(`<button type="button" class="sl-chip sl-stale" data-resync aria-label="${escapeHtml(stale)} — ketuk untuk menyegarkan">⟳ ${escapeHtml(stale)}</button>`);
   // Context only once it matters (≥ 70 % of where auto-compact starts), as text: the /compact tip stays in the title.
@@ -151,7 +171,9 @@ export function initStatusline() {
   // coming back from a long sleep (or another app) does the same instead of showing yesterday's screen.
   setInterval(() => {
     if (document.hidden || !connection.online) return;
-    if (staleText()) renderStatusline(state.statuses[state.active] ?? {});
+    const st = state.statuses[state.active] ?? {};
+    const p = turnProgress(state.chats[state.active] ?? [], { now: Date.now(), busy: Boolean(st.busy || st.cliBusy), background: runningCount(st) });
+    if (staleText() || (p && !p.finished)) renderStatusline(st);
   }, 5000);
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && connection.online && staleText()) requestResync();
