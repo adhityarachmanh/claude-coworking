@@ -7,7 +7,7 @@ import { modelPanelHtml, mpApplyRow, mpHighlight } from './model-picker.js';
 import { capReason, capsFor, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
 import { typingText } from '../core/composer-typing.js';
 import { syncWakeLock } from './wake-lock.js';
-import { fmtNum } from '../core/format.js';
+import { fmtNum, shortOptionLabel } from '../core/format.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
 import { attachmentPayload, attachments, attachmentsReady, clearAttachments, rememberSent, restoreAttachments } from './attachments.js';
@@ -225,8 +225,9 @@ async function chooseMode(mode) {
 function renderSettingsChip(st) {  const chip = $('#settings-chip');
   const engine = engineOf(st, state.config);
   const mode = $('#mode').value || 'build';
-  // "Default (Fable 5 · …)" → "Default": the chip stays one short line
-  const label = (sel) => ($(sel).selectedOptions[0]?.textContent ?? '').replace(/\s*\(.*$/, '').trim();
+  // "Default (Fable 5 · …)" → "Default": the chip stays one short line. On a phone the model's price hint
+  // (" — $0.15 in / $0.6 out /1M") is dropped too: it belongs in the dialog the chip opens, not in the toolbar.
+  const label = (sel) => shortOptionLabel($(sel).selectedOptions[0]?.textContent, { price: narrow.matches });
   // Auto replaces the model name in the chip (the full label is the description): "Auto".
   const model = st.modelAuto === true || $('#model').value === AUTO_MODEL ? 'Auto' : label('#model') || 'Default';
   const effort = $('#effort').value && !$('#effort').disabled ? label('#effort') : '';

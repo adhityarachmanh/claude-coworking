@@ -10,6 +10,17 @@ export const fmtNum = (n) => Number(n ?? 0).toLocaleString('id-ID');
 export const fmtShort = (n) => new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 }).format(n ?? 0);
 export const fmtUsd = (n) => (n == null ? '—' : `$${n.toFixed(2)}`);
 
+/**
+ * A `<select>` option's text without what only the option list needs: the parenthetical detail ("Auto (LLM)") and,
+ * when asked, the price hint appended to model names (" — ±$0.15 in / $0.6 out /1M"). The phone's settings chip is a
+ * single short line; the dialog it opens still shows the full label and the price note.
+ */
+export const shortOptionLabel = (text, { price = false } = {}) => {
+  let out = String(text ?? '');
+  if (price) out = out.replace(/\s+—.*$/u, '');
+  return out.replace(/\s*\(.*$/u, '').trim();
+};
+
 /** "baru saja", "12 menit lalu", "3 jam lalu", else a short date. */
 export function ago(ts) {
   const s = (Date.now() - ts) / 1000;

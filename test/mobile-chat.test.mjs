@@ -647,6 +647,93 @@ for (const vp of PHONES) {
       assert.deepEqual(page.problems, []);
     });
 
+    test('baris chat rapat: teks delegasi selebar baris, meta turun, header asisten & strip status tidak terjepit', async () => {
+      await fresh();
+      const r = await page.eval(() => {
+        const chat = document.querySelector('#chat');
+        const probe = document.createElement('div');
+        probe.innerHTML = `
+          <div class="msg assistant">
+            <div class="who"><img class="ava" alt=""><b>Adhitron - Lead Engineer &amp; Arsitek</b><span>12.48</span><button class="msg-copy" type="button">Salin</button><button class="msg-copy msg-star" type="button">☆</button></div>
+            <div class="body md">halo</div>
+          </div>
+          <div class="line delegate expandable">
+            <div class="row"><span class="chev">▸</span><img class="ava sm" alt=""><span class="txt"><b>Adhitron - QA</b> ditugaskan: Jalankan check dan test modul checkout</span><small class="steps-sum live">· 5 langkah · ⏳ 3 berjalan · 2 tanpa laporan</small><span class="spinner"></span></div>
+          </div>
+          <div class="result ok">✓ Selesai · 2 mnt 17 dtk · 23 langkah <span class="bg-live">⏳ 2 masih bekerja</span></div>
+          <div class="statusline has-chips"><span class="sl-chip sl-turn">✓ Selesai · 2 mnt 17 dtk · 23 langkah · ⏳ 1 berjalan</span><span class="sl-chip">⚡ Belum tersambung</span></div>`;
+        chat.append(probe);
+        const rect = (el) => el.getBoundingClientRect();
+        const row = probe.querySelector('.line.delegate > .row');
+        const txt = row.querySelector('.txt');
+        const sum = row.querySelector('.steps-sum');
+        const who = probe.querySelector('.who');
+        const name = who.querySelector('b');
+        const when = who.querySelector('span');
+        const copy = who.querySelector('.msg-copy');
+        const result = probe.querySelector('.result');
+        const strip = probe.querySelector('.statusline');
+        const chips = [...strip.children];
+        try {
+          return {
+            row: { w: Math.round(rect(row).width), right: Math.round(rect(row).right) },
+            txt: { w: Math.round(rect(txt).width), bottom: Math.round(rect(txt).bottom) },
+            sum: { top: Math.round(rect(sum).top), right: Math.round(rect(sum).right) },
+            who: { nameH: Math.round(rect(name).height), timeRight: Math.round(rect(when).right), copyLeft: Math.round(rect(copy).left), copyW: Math.round(rect(copy).width), copyH: Math.round(rect(copy).height), right: Math.round(rect(who).right), nameRight: Math.round(rect(name).right) },
+            result: { right: Math.round(rect(result).right) },
+            strip: { clientW: strip.clientWidth, scrollW: strip.scrollWidth, right: Math.round(rect(strip).right), chipsInside: chips.every((c) => rect(c).right <= rect(strip).right + 1) },
+            chatRight: Math.round(rect(chat).right),
+          };
+        } finally {
+          probe.remove();
+        }
+      });
+      // The task text owns the row (a word column was the bug) and the summary sits below it, never over it.
+      assert.ok(r.txt.w >= r.row.w - 20, `lebar teks delegasi ${r.txt.w}/${r.row.w}`);
+      assert.ok(r.sum.top >= r.txt.bottom - 1, `meta delegasi di baris sendiri (${r.sum.top} < ${r.txt.bottom})`);
+      assert.ok(r.sum.right <= r.row.right + 1, 'meta delegasi tidak keluar dari baris');
+      // The assistant header keeps its name on one line and gives the actions their full touch box.
+      assert.ok(r.who.nameH <= 22, `nama asisten tetap satu baris (${r.who.nameH} px)`);
+      assert.ok(r.who.nameRight <= r.who.right + 1, 'nama tidak keluar dari header');
+      assert.ok(r.who.timeRight <= r.who.copyLeft + 1, 'waktu dan Salin tidak bertumpuk');
+      assert.ok(r.who.copyW >= 24 && r.who.copyH >= 24, `target Salin ${r.who.copyW}×${r.who.copyH}`);
+      // Long pills stay inside the chat instead of poking past its right padding.
+      assert.ok(r.result.right <= r.chatRight - 8, 'pill hasil di dalam area chat');
+      // The turn strip wraps: nothing is hidden at the right edge (it used to be cut there).
+      assert.ok(r.strip.scrollW <= r.strip.clientW + 1, `strip status tidak terpotong (${r.strip.scrollW}/${r.strip.clientW})`);
+      assert.equal(r.strip.chipsInside, true, 'semua chip strip di dalam layar');
+      await fresh();
+      assert.deepEqual(page.problems, []);
+    });
+
+    test('pill ↓ Terbaru duduk di antara chat dan composer, bukan menimpa pesan', async () => {
+      await fresh();
+      const r = await page.eval(() => {
+        const el = document.querySelector('#jump-latest');
+        const chat = document.querySelector('#chat');
+        const composer = document.querySelector('#composer');
+        const wrap = document.querySelector('.chat-wrap');
+        el.hidden = false; // the scroll listener normally shows it
+        const rect = (n) => n.getBoundingClientRect();
+        try {
+          return {
+            pill: { top: Math.round(rect(el).top), bottom: Math.round(rect(el).bottom), left: Math.round(rect(el).left), right: Math.round(rect(el).right), h: Math.round(rect(el).height) },
+            chatBottom: Math.round(rect(chat).bottom),
+            composerTop: Math.round(rect(composer).top),
+            wrap: { left: Math.round(rect(wrap).left), right: Math.round(rect(wrap).right) },
+          };
+        } finally {
+          el.hidden = true;
+        }
+      });
+      assert.ok(r.pill.top >= r.chatBottom - 1, `pill (top ${r.pill.top}) menimpa pesan (chat bottom ${r.chatBottom})`);
+      assert.ok(r.pill.bottom <= r.composerTop + 1, `pill (bottom ${r.pill.bottom}) di atas composer (${r.composerTop})`);
+      assert.ok(r.pill.left >= r.wrap.left - 1 && r.pill.right <= r.wrap.right + 1, 'pill tetap di dalam area chat');
+      assert.ok(r.pill.h >= 40, `target sentuh pill ${r.pill.h} px`);
+      await fresh();
+      assert.deepEqual(page.problems, []);
+    });
+
     test('keyboard (visualViewport menyusut): navigasi bawah hilang, kotak di atas keyboard, chat tetap di bawah', async () => {
       // A chat taller than the view: three short exchanges with fake Claude in a project of its own.
       let pid = (await snapshot()).projects.find((p) => p.name === 'panjang')?.id;
