@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.49
 
 - **📱 Chat di HP tidak lagi terjepit atau terpotong (viewport ±390 px).** Lima baris yang dulu "gepeng" kini rapi di layar sempit: **kartu delegasi** memakai lebar penuh untuk teks tugas dan menurunkan ringkasan **"· 5 langkah · ⏳ 3 berjalan"** ke barisnya sendiri; tombol **↓ Terbaru** duduk di antara percakapan dan composer sehingga tidak lagi menutupi pesan yang sedang dibaca; **header jawaban asisten** membiarkan nama tetap satu baris dan memindahkan waktu/Salin/☆ ke baris berikutnya bila sempit (sasaran sentuh tetap ≥ 24 px); **strip progres giliran** membungkus chip **"✓ Selesai · …"** ke baris kedua alih-alih terpotong di tepi kanan; dan **chip pengaturan di composer** tidak lagi memuat harga model ("— $0.15 in / $0.6 out /1M") — angkanya tetap ada di dialog yang dibuka chip. Desktop tidak berubah.
 
