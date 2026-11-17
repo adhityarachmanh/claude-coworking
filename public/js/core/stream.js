@@ -35,6 +35,7 @@ import { applyTeamNames, roleName } from '../office/cast.js';
 import { updateTitle } from '../ui/layout.js';
 import { setLaptopOnly, setReadOnlyApi } from './api.js';
 import { $ } from './dom.js';
+import { toast } from './api.js';
 import { startStreamShare } from './stream-share.js';
 import { brain, scenes } from './scenes.js';
 import { DEMO_ID, projectName, state } from './state.js';
@@ -184,6 +185,12 @@ const handlers = {
       // replayed history: no notification for it
     } else if (msg.kind === 'result') {
       notify(msg.ok ? 'done' : 'error', msg.ok ? `✓ Tugas selesai — ${projectName(msg.project)}` : `■ Tugas berhenti — ${projectName(msg.project)}`, msg.ok ? 'Tim sudah menyelesaikan permintaanmu.' : msg.text || 'Cek chat untuk detailnya.', msg.project);
+      // A visible cue that needs no permission: watching a turn must not require asking "is it done?". The toast is
+      // for the project on screen (the phone is in the hand); a hidden page still gets the push/notification above.
+      if (msg.project === state.active && !document.hidden) {
+        toast(msg.ok ? `✓ Selesai — ${projectName(msg.project)}` : `■ Berhenti — ${projectName(msg.project)}`, msg.ok ? 'ok' : 'warn');
+        navigator.vibrate?.(60); // phones only; ignored where the API does not exist
+      }
       // 🔊 TTS reads the finished answer of the project on screen; the raw streaming text is never read.
       // Only an assistant message after the previous result belongs to this turn: an empty turn must not re-read an old answer.
       if (msg.ok && msg.project === state.active) {
