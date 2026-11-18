@@ -46,6 +46,7 @@ before(async () => {
       OFFICE_SHELL_WATCH_MS: '300',
       OFFICE_SHELL_LIVENESS_MS: '500',
       OFFICE_AGENT_QUIET_MS: '300',
+      OFFICE_ACP_SETTLE_MS: '300', // a child step would be settled early if the agent task did not keep it open
       OFFICE_RESUME_POLL_MS: '150',
       OFFICE_RESUME_QUIET_MS: '300',
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
@@ -146,9 +147,17 @@ test('a delegation (subagent) is listed in ⧗ while it builds, then closed when
   assert.equal(task.description, 'Build APK');
   assert.equal(task.background, true);
   assert.equal(task.status, 'running');
+  // The delegated role shows as working in the office/team card while the child runs.
+  await waitFor((t, o) => t === 'status' && o.project === id && (o.working?.devops?.agents ?? 0) >= 1, 8000, 'devops bekerja');
   // It stays running while the child reports its step (not closed with the parent turn).
   const progress = await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === task.id && x.lastActivityAt), 8000, 'aktivitas delegasi');
   assert.ok(progress.tasks.find((x) => x.id === task.id).lastActivityAt > 0);
+  // The child's long step is NOT settled by the 300 ms grace while the delegation task runs.
+  await sleep(800);
+  const openRows = (await snapshot()).chats?.[id] ?? [];
+  const buildRow = openRows.find((c) => c.kind === 'tool' && /flutter build apk/.test(c.input?.command ?? ''));
+  assert.equal(buildRow?.status, 'running', 'the build step stays open while its delegation runs');
+  assert.ok(!/Tidak ada kabar/.test(buildRow?.output ?? ''), 'no premature stale note');
 
   // The parent resumes with the child's report: ⧗ closes the task first (its info row), then the answer lands.
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /Tugas latar selesai/.test(o.text ?? ''), 20000, 'kabar delegasi selesai');
@@ -172,4 +181,26 @@ test('a delegation (subagent) is listed in ⧗ while it builds, then closed when
   assert.equal(detail.body.agentType, 'devops');
   assert.ok(detail.body.steps.some((s) => /flutter build apk/.test(s.text)), 'the build step is in the detail');
   assert.match(detail.body.result ?? '', /Build APK arm64 sedang berjalan/);
+  assert.match(detail.body.note ?? '', /Langkah lengkap ada di chat/);
+  // Closing the delegation closed its long step row with an honest note (no endless spinner).
+  const closed = (await snapshot()).chats?.[id] ?? [];
+  const doneRow = closed.find((c) => c.kind === 'tool' && /flutter build apk/.test(c.input?.command ?? ''));
+  assert.equal(doneRow?.status, 'ok', 'the build step row is closed with the delegation');
+  assert.match(doneRow?.output ?? '', /delegasi selesai/);
+});
+
+test('■ Stop ends a running delegation (task and child rows), not left spinning', async () => {
+  mark = seen.length;
+  const sent = await api(`/api/projects/${id}/prompt`, { text: 'delegasistop' });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === 'oc-agent-call-agent-stop' && x.status === 'running'), 20000, 'task stop running');
+  await waitFor((t, o) => t === 'chat' && o.kind === 'tool' && /adb install/.test(o.input?.command ?? ''), 10000, 'baris deploy');
+  const stop = await api(`/api/projects/${id}/stop`);
+  assert.equal(stop.status, 200, JSON.stringify(stop.body));
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /Tugas latar dihentikan/.test(o.text ?? ''), 10000, 'kabar dihentikan');
+  await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === 'oc-agent-call-agent-stop' && x.status === 'stopped'), 10000, 'task stop berhenti');
+  const chats = (await snapshot()).chats?.[id] ?? [];
+  const row = chats.find((c) => c.kind === 'tool' && /adb install/.test(c.input?.command ?? ''));
+  assert.equal(row?.status, 'ok', 'the child step row is closed by Stop');
+  assert.match(row?.output ?? '', /Dihentikan bersama giliran/);
 });

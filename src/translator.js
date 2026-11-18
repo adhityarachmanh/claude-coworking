@@ -152,6 +152,16 @@ export class StreamTranslator {
       w.label ??= t.description ? `⏳ ${t.description}` : '⏳ Perintah di latar belakang';
       w.screen ??= 'terminal';
     }
+    // ACP delegations keep working after their launch row closed (the child session runs on): the role stays at
+    // work in the office/team card until the task really ends (parent resume / child idle / Stop).
+    for (const t of this.bgTasks.values()) {
+      if (t.source !== 'acp' || t.kind !== 'agent' || t.status !== 'running' || !t.role) continue;
+      if (t.toolUseId && this.tools.has(t.toolUseId)) continue; // the open launch row already counts it
+      const w = (working[t.role] ??= { tools: 0, agents: 0 });
+      w.agents++;
+      w.label ??= t.description ? `🤖 ${t.description}` : '🤖 Subagent bekerja';
+      w.screen ??= 'terminal';
+    }
     this.status({ working });
   }
 
@@ -369,6 +379,8 @@ export class StreamTranslator {
     this.linkTask(t);
     this.settleTask(t);
     this.emitBgTasks();
+    // A delegation starting/ending changes who is at work (it outlives the launch row).
+    if (t.kind === 'agent' && t.source === 'acp') this.emitWorking();
   }
 
   /**

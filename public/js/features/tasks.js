@@ -334,6 +334,8 @@ function agentBody(task) {
   if (!d) return err ? `<p class="state-error">Gagal memuat langkah: ${escapeHtml(err)}</p>` : '<p class="muted small"><span class="spinner" aria-hidden="true"></span> Memuat langkah…</p>';
   const parts = [];
   if (err) parts.push(`<p class="state-error">Gagal memperbarui: ${escapeHtml(err)}</p>`);
+  // An ACP delegation's steps come from its child session: the full conversation stays in the chat.
+  if (d.note) parts.push(`<p class="muted small">${escapeHtml(d.note)}</p>`);
   if (!d.found) {
     parts.push(`<p class="muted small">Transcript agent ini belum ditemukan${isRunning(task) ? ' — biasanya muncul setelah langkah pertamanya.' : '.'}</p>`);
   } else {

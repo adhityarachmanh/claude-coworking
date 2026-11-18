@@ -537,29 +537,39 @@ async function turn(sessionId, text) {
     update(sessionId, { sessionUpdate: 'agent_message_chunk', messageId: 'msg_anak_apk', content: { type: 'text', text: 'Build APK arm64 sedang berjalan.' }, _meta: meta });
     await say('msg_apk', 'Saya delegasikan build APK; laporan menyusul.');
     setTimeout(() => {
-      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: `${sid}:sh_build`, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'app-arm64-v8a-release.apk 24 MB' } }], _meta: meta });
-      // OpenCode resumes the PARENT with the child's report: no prompt from the app.
+      // The child's long step stays open until the delegation ends: its final frame may never come (the real
+      // "flutter build" case). The app must not settle the row early; closing the task closes it.
       setTimeout(() => update(sessionId, { sessionUpdate: 'agent_message_chunk', messageId: 'msg_apk_done', content: { type: 'text', text: 'APK berhasil dibangun dan siap dipasang.' } }), 200);
     }, 1200);
     return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
   }
-  if (/^langkahterlambat/.test(text)) {
-    // A child step that STARTS ONLY AFTER the turn's result and never gets its final update (the real failure in
-    // chats-opencode: OpenCode stops relaying the child once the parent prompt resolved). The app must close the
-    // row after the settle grace with an honest note, never leave a spinner.
-    const child = 'ses_fakelate1';
-    const launch = 'call-late-sub';
-    const meta = { 'opencode/child-session': { id: child, parentID: sessionId, depth: 1, title: 'Cek latar' } };
-    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: launch, title: 'subagent', kind: 'think', status: 'pending', rawInput: {} });
-    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: launch, title: 'subagent', kind: 'think', status: 'in_progress', rawInput: { agent: 'devops', description: 'Cek latar', prompt: 'cek' } });
+  if (/^delegasistop/.test(text)) {
+    // A delegation whose child is still working when the user hits ■ Stop: its task and step rows must end there.
+    const call = 'call-agent-stop';
+    const sid = 'ses_anak_stop';
+    const meta = { 'opencode/child-session': { id: sid, parentID: sessionId, depth: 1, title: 'Deploy APK' } };
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'subagent', kind: 'think', status: 'pending', rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, title: 'subagent', kind: 'think', status: 'in_progress', rawInput: { agent: 'devops', description: 'Deploy APK', prompt: 'deploy' } });
+    await sleep(30);
     update(sessionId, {
       sessionUpdate: 'tool_call_update',
-      toolCallId: launch,
+      toolCallId: call,
       status: 'completed',
-      rawOutput: { metadata: { sessionID: child, status: 'running', truncated: false } },
-      content: [{ type: 'content', content: { type: 'text', text: `The subagent is working in the background (sessionID: ${child}).` } }],
+      rawOutput: { metadata: { sessionID: sid, status: 'running', truncated: false } },
+      content: [{ type: 'content', content: { type: 'text', text: `The subagent is working in the background (sessionID: ${sid}).` } }],
     });
-    await say('msg_late', 'Delegasi berjalan di latar.');
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: `${sid}:sh_deploy`, title: 'Deploy APK: bash', kind: 'execute', status: 'pending', rawInput: {}, _meta: meta });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: `${sid}:sh_deploy`, title: 'Deploy APK: bash', kind: 'execute', status: 'in_progress', rawInput: { command: 'adb install app-release.apk' }, _meta: meta });
+    await say('msg_stop', 'Deploy berjalan di latar.');
+    return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
+  }
+  if (/^langkahterlambat/.test(text)) {
+    // A child step that STARTS ONLY AFTER the turn's result and never gets its final update (the real failure in
+    // chats-opencode: OpenCode stops relaying the child once the parent prompt resolved). No delegation task owns it
+    // here: the app must close the row after the settle grace with an honest note, never leave a spinner.
+    const child = 'ses_fakelate1';
+    const meta = { 'opencode/child-session': { id: child, parentID: sessionId, depth: 1, title: 'Cek latar' } };
+    await say('msg_late', 'Langkah menyusul.');
     setTimeout(() => {
       const step = `${child}:call-late-step`;
       update(sessionId, { sessionUpdate: 'tool_call', toolCallId: step, title: 'Cek latar: bash', kind: 'execute', status: 'pending', rawInput: {}, _meta: meta });

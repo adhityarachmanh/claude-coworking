@@ -29,6 +29,12 @@ before(async () => {
   writeFileSync(path.join(projects, 'toko', 'README.md'), '# Toko\n');
   mkdirSync(path.join(TMP, 'claude-projects'));
   mkdirSync(path.join(TMP, 'acp-store'));
+  // The two children of the `delegasilatar` scenario are idle once their steps are done (their delegation tasks
+  // then close through the reaper, as a child that finished without the parent resuming would).
+  writeFileSync(path.join(TMP, 'agents.json'), JSON.stringify([
+    { id: 'ses_fakechild1', time: { busy: 1, idle: 2 } },
+    { id: 'ses_fakechild2', time: { busy: 1, idle: 2 } },
+  ]));
   const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('OPENCODE_')));
   server = spawn(process.execPath, [path.join(APP, 'server.js')], {
     windowsHide: true,
@@ -43,6 +49,8 @@ before(async () => {
       FAKE_ACP_AUTH_FILE: path.join(TMP, 'acp-auth.json'),
       FAKE_ACP_STORE: path.join(TMP, 'acp-store'), // the sessions' messages (⏪ + the prompt-queue test)
       FAKE_ACP_SHELL_OUT_DIR: SHELL_DIR, // the fake writes its shells' .out files here
+      FAKE_ACP_AGENT_STATE: path.join(TMP, 'agents.json'), // the delegation children as idle (see before)
+      OFFICE_AGENT_QUIET_MS: '300', // ...so their tasks close quickly in tests
       OFFICE_OPENCODE_SHELL_DIR: SHELL_DIR, // the app reads them there
       OFFICE_SHELL_WATCH_MS: '300', // the stuck chip's file watcher runs fast in tests
       OFFICE_SHELL_LIVENESS_MS: '1500', // background-shell liveness check (real default: 10 s)
@@ -283,8 +291,14 @@ test('a delegation that outlives its turn closes its step rows as the late resul
   for (const c of steps) assert.equal(byId.get(c.id)?.status, 'ok', `step row ${c.tool} closed`);
   const hanging = chats.filter((c) => c.kind === 'tool' && c.status === 'running');
   assert.deepEqual(hanging, [], 'no step row is left spinning');
-  const s = await snapshot();
-  assert.deepEqual(s.statuses[id].working ?? {}, {}, 'no role is left working after the delegation reports');
+  // The two delegations' tasks close (their children are idle): no role stays at work.
+  let idle = null;
+  for (let i = 0; i < 40 && !idle; i++) {
+    const st = await snapshot();
+    if (Object.keys(st.statuses[id].working ?? {}).length === 0) idle = st.statuses[id];
+    else await sleep(200);
+  }
+  assert.deepEqual(idle?.working ?? {}, {}, 'no role is left working after the delegation reports');
 });
 
 test('a child step that starts after the turn and never reports is closed by the settle grace', async () => {

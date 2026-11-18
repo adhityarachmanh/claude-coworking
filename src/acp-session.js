@@ -439,9 +439,12 @@ export class AcpAdapter {
   }
 
   /** Turn ended: every child step still open gets the same grace (its real result may still arrive first). */
-  armOpenChildren() {
+  armOpenChildren(isRunning = () => false) {
     for (const [id, info] of this.tools) {
       if (!info.child || info.done || !info.started || this.launchesChild(id) || this.settleTimers.has(id)) continue;
+      // Its delegation task is still running: the row must stay open until that task ends (it may be a long build).
+      const call = this.childSessions.get(info.child)?.call;
+      if (call && isRunning(call)) continue;
       const timer = setTimeout(() => this.settleChild(id), CHILD_SETTLE_MS);
       timer.unref?.();
       this.settleTimers.set(id, timer);
@@ -566,7 +569,17 @@ export class AcpAdapter {
     info.agentTask = true;
     const description = String(input?.description ?? info.title ?? 'Subagent').slice(0, 200) || 'Subagent';
     const agent = String(input?.subagent_type ?? 'general').slice(0, 40);
-    this.agents.set(id, { taskId: `oc-agent-${id}`, call: id, sessionId: null, description, agent, steps: [], lastText: '', lastAt: Date.now(), sentAt: 0 });
+    this.agents.set(id, { taskId: `oc-agent-${id}`, call: id, sessionId: null, description, agent, steps: [], lastText: '', lastAt: Date.now(), sentAt: 0, done: false });
+    // Bounded: a long session may launch many delegations; their steps and last answer must not pile up forever.
+    if (this.agents.size > 50) {
+      for (const [key, a] of this.agents) {
+        if (a.done) {
+          this.agents.delete(key);
+          break;
+        }
+      }
+      if (this.agents.size > 50) this.agents.delete(this.agents.keys().next().value);
+    }
     this.emit({
       type: 'system',
       subtype: 'task_started',
@@ -584,6 +597,26 @@ export class AcpAdapter {
   agentOfChild(sid) {
     const call = sid ? this.childSessions.get(sid)?.call : null;
     return call ? this.agents.get(call) : null;
+  }
+
+  /** The delegation's task is over: its record no longer needs to stay (the bounded map keeps the newest). */
+  markAgentDone(callId) {
+    const agent = this.agents.get(callId);
+    if (agent) agent.done = true;
+  }
+
+  /**
+   * Closes the child step rows of a delegation whose work is over (`callId` null = every delegation, on ■ Stop or a
+   * process close). The note is honest: a command may have finished while its final frame never came.
+   */
+  closeChildRows(callId = null, note = 'Tugas delegasi selesai — lihat laporan di chat.') {
+    for (const [id, info] of this.tools) {
+      if (!info.child || info.done) continue;
+      const owner = this.childSessions.get(info.child)?.call;
+      if (callId && owner !== callId) continue;
+      info.done = true;
+      this.emit({ type: 'user', parent_tool_use_id: info.parent ?? null, message: { content: [{ type: 'tool_result', tool_use_id: id, content: note, is_error: false }] } });
+    }
   }
 
   /** One child frame: keeps the delegation's task alive and records the step for its detail dialog. */
@@ -932,7 +965,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const stillWorking = this.adapter.finish({ ...msg, ok: ok || Boolean(rejection), interrupted: stopped, error: stopped ? stopNote : error || 'OpenCode gagal menyelesaikan giliran.' });
       const agentsRunning = [...(this.translator?.bgTasks?.values() ?? [])].some((t) => t.source === 'acp' && t.kind === 'agent' && t.status === 'running');
       if (!stopped && (stillWorking || agentsRunning)) this.expectResume(); // OpenCode resumes this session when the child/background work ends
-      if (!stopped) this.adapter.armOpenChildren(); // late child steps still open: close them if their report never comes
+      if (!stopped) this.adapter.armOpenChildren((callId) => this.agentTaskRunning(callId)); // late child steps still open: close them if their report never comes
       this.recordTurnUsage(usage ?? {}, costUsd);
       this.interrupting = false;
       this.inflight.delete(uuid);
@@ -1065,6 +1098,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       }
       // ■ Stop also ends this project's shells still running in the background (as it does for Claude Code)
       for (const id of this.translator?.runningTaskIds?.() ?? []) if (String(id).startsWith('oc:')) this.stopTask(id).catch(() => {});
+      this.stopAgentTasks(); // delegations/subagents: no task may spin after its turn was cancelled
       if (this.resumeTurn) this.finishResumeTurn({ interrupted: true }).catch(() => {}); // the continuation OpenCode started: ended too
       this.afterProgress();
     }
@@ -1208,7 +1242,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
           const quiet = now - (info.lastAt ?? 0);
           const endless = now - (Number(task.startedAt) || now) > AGENT_MAX_MS;
           if (endless || (rec && idle && quiet >= AGENT_QUIET_MS) || (!rec && quiet >= Math.max(AGENT_QUIET_MS, 60_000))) {
-            this.translator.handle({ type: 'system', subtype: 'task_updated', task_id: task.id, patch: { status: 'completed' } });
+            this.closeAgentTask(task);
           }
         }
       } finally {
@@ -1765,6 +1799,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     closeChild() {
       const busy = this.busy;
       this.adapter?.clearSettles?.(); // the adapter exists only after the process spawned
+      this.adapter?.closeChildRows?.(null, 'Ditutup bersama proses OpenCode.');
       this.translator?.closeAcpTasks?.(); // its shells die with the process: no task may keep spinning
       const child = this.detach();
       if (!child) return;
@@ -1779,6 +1814,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     onExit(child, code) {
       if (child !== this.child) return;
+      this.adapter?.closeChildRows?.(null, 'Proses OpenCode berhenti.');
       this.translator?.closeAcpTasks?.(); // a crashed/killed process takes its shells with it
       if (this.handshaking && !this.startRetried) {
         // Died while starting (cold start): fail the handshake only; its retry keeps the queue (spawn above).
@@ -1866,7 +1902,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         this.beginResumeTurn();
       }
       this.adapter.update(u);
-      this.adapter.armSettle(u, this.busy);
+      this.adapter.armSettle(u, this.busy || this.agentTaskRunningFor(u));
       if (this.resumeTurn) this.resumeTurn.lastAt = Date.now();
     }
 
@@ -1888,9 +1924,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (this.resumeTurn) return;
       // OpenCode only resumes the parent after its delegations reported back: their tasks are done now.
       for (const task of [...(this.translator?.bgTasks?.values() ?? [])]) {
-        if (task.source === 'acp' && task.kind === 'agent' && task.status === 'running') {
-          this.translator.handle({ type: 'system', subtype: 'task_updated', task_id: task.id, patch: { status: 'completed' } });
-        }
+        if (task.source === 'acp' && task.kind === 'agent' && task.status === 'running') this.closeAgentTask(task);
       }
       const uuid = `auto-${++this.autoSeq}`;
       this.inflight.set(uuid, { chatId: null, text: '', state: 'started', announced: true, auto: true, blocks: [] });
@@ -1956,6 +1990,50 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         cachedReadTokens: sum((m) => m.tokens.cache?.read),
       };
       return usage.inputTokens || usage.outputTokens || usage.thoughtTokens || usage.cachedReadTokens ? usage : {};
+    }
+
+    /** Is this child frame's delegation still a running ⧗ task? Its step rows stay open (no premature "tanpa kabar"). */
+    agentTaskRunningFor(u) {
+      const sid = this.adapter?.childSessionId(u);
+      const call = sid ? this.adapter.childSessions.get(sid)?.call : null;
+      return this.agentTaskRunning(call);
+    }
+
+    /** `callId` (a delegation's launch call) has a running ⧗ task. */
+    agentTaskRunning(callId) {
+      if (!callId) return false;
+      for (const t of this.translator?.bgTasks?.values() ?? []) {
+        if (t.kind === 'agent' && t.toolUseId === callId && t.status === 'running') return true;
+      }
+      return false;
+    }
+
+    /** Ends one ACP delegation task: close its child rows first, then let the translator announce it. */
+    closeAgentTask(task, { status = 'completed', note } = {}) {
+      if (!task || task.source !== 'acp' || task.kind !== 'agent' || task.status !== 'running') return false;
+      this.adapter?.closeChildRows(task.toolUseId, note);
+      this.adapter?.markAgentDone(task.toolUseId);
+      this.translator.handle({ type: 'system', subtype: 'task_updated', task_id: task.id, patch: { status } });
+      return true;
+    }
+
+    /** ■ Stop / shutdown: no delegation may keep spinning after its turn was cancelled. */
+    stopAgentTasks() {
+      const t = this.translator;
+      if (!t) return;
+      let changed = false;
+      for (const task of t.bgTasks.values()) {
+        if (task.source !== 'acp' || task.kind !== 'agent' || task.status !== 'running') continue;
+        this.adapter?.closeChildRows(task.toolUseId, 'Dihentikan bersama giliran.');
+        this.adapter?.markAgentDone(task.toolUseId);
+        Object.assign(task, { status: 'stopped', endedAt: Date.now() });
+        this.hub.chat(this.id, { kind: 'info', text: `⏹ Tugas latar dihentikan — ${truncate(String(task.description ?? task.id), 120)}` });
+        changed = true;
+      }
+      if (changed) {
+        t.emitBgTasks();
+        t.emitWorking();
+      }
     }
 
     // ---------- permissions ----------
