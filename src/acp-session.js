@@ -1232,6 +1232,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         }
       } finally {
         this.reaping = false;
+        this.applyPendingRestart(); // a deferred model/mode/account restart can happen once the shells are gone
       }
     }
 
@@ -2064,6 +2065,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (changed) {
         t.emitBgTasks();
         t.emitWorking();
+        this.applyPendingRestart(); // ■ Stop ended the background work: a deferred restart may apply now
       }
     }
 

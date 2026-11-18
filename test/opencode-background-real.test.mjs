@@ -145,6 +145,11 @@ test('a real background shell is tracked from its output text, closes, and its c
   assert.equal(task.background, true);
   assert.equal(task.command, 'echo asli');
   assert.ok(Number.isInteger(task.pid) && task.pid > 0, 'the PID OpenCode printed is kept');
+  // The parent turn ends while the shell works. Changing the mode then must defer the process restart.
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && o.ok === true, 15000, 'result shell');
+  const change = await api(`/api/projects/${id}/settings`, { mode: 'plan' });
+  assert.equal(change.status, 200, JSON.stringify(change.body));
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /berlaku setelah tugas latar/.test(o.text ?? ''), 8000, 'info tunda restart');
 
   // The late frame closes it, and the user is told (toast/push path). The chat row comes before the status broadcast.
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /Tugas latar selesai/.test(o.text ?? ''), 20000, 'kabar tugas selesai');
@@ -161,6 +166,8 @@ test('a real background shell is tracked from its output text, closes, and its c
   await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && o.meta?.durationMs >= 0 && o.ok === true, 20000, 'result lanjutan');
   const st = await snapshot();
   assert.equal(st.statuses[id].busy, false, 'the unsolicited turn is closed, not left spinning');
+  // The deferred restart is applied once the shell and the resumed turn are over.
+  await waitFor((t, o) => t === 'status' && o.project === id && o.alive === false, 8000, 'restart tertunda diterapkan');
 
   // The ⧗ output comes from the shell's own .out file.
   const out = await api(`/api/projects/${id}/task-output`, { taskId: 'oc:sh_fakeasli' });
