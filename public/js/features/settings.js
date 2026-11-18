@@ -710,7 +710,8 @@ export function initSettings() {
   }
   $('#btn-shutdown').addEventListener('click', async () => {
     const pc = $('#rp-shutdown-pc')?.checked === true;
-    if (!window.confirm(pc ? `Matikan server ${APP_NAME} dan Windows PC-nya? Sesi Claude yang sedang berjalan dihentikan dengan rapi, lalu Windows shutdown. Listrik Bardi tidak diputus otomatis — halaman jembatan terbuka untuk memutus arus.` : `Matikan server ${APP_NAME}? Sesi Claude yang sedang berjalan ikut dihentikan.`)) return;
+    const auto = $('#rp-auto-cut')?.checked === true;
+    if (!window.confirm(pc ? `Matikan server ${APP_NAME} dan Windows PC-nya? Sesi Claude yang sedang berjalan dihentikan dengan rapi, lalu Windows shutdown. ${auto ? 'Listrik Bardi diputus otomatis setelah Windows menerima shutdown.' : 'Listrik Bardi TIDAK diputus otomatis — halaman jembatan terbuka untuk memutus arus.'}` : `Matikan server ${APP_NAME}? Sesi Claude yang sedang berjalan ikut dihentikan.`)) return;
     const out = await api('/api/shutdown', { pc }).catch(() => {});
     // ⏻ Handoff ke halaman jembatan (countdown pemutusan listrik): TAB YANG SAMA, tanpa toast — halaman berganti.
     // The server forwards the bridge's own relative path (`/s/…`), which belongs to the BRIDGE origin, not to this
@@ -723,7 +724,7 @@ export function initSettings() {
         return;
       }
     }
-    toast(pc ? 'Windows dimatikan: server ditutup rapi. Putuskan listrik Bardi dari halaman jembatan.' : 'Server dimatikan. Buka aplikasi Adhitron lagi untuk menyalakannya.', 'ok');
+    toast(pc ? (auto ? 'Windows dimatikan: listrik Bardi diputus otomatis setelahnya.' : 'Windows dimatikan: server ditutup rapi. Putuskan listrik Bardi dari halaman jembatan.') : 'Server dimatikan. Buka aplikasi Adhitron lagi untuk menyalakannya.', 'ok');
   });
   // ⚡ Remote power (opsional): the self-hosted bridge that boots/cuts the PC when away.
   const rpFill = (rp) => {
@@ -733,6 +734,12 @@ export function initSettings() {
     // A saved setting, not a scratch checkbox: the dialog shows what the server holds.
     const pc = $('#rp-shutdown-pc');
     if (pc) pc.checked = rp?.shutdownPc === true;
+    const cut = $('#rp-auto-cut');
+    if (cut) cut.checked = rp?.autoCut === true;
+    const delay = $('#rp-delay');
+    if (delay) delay.min = cut?.checked ? '90' : '0';
+    const out = $('#rp-pair-out');
+    if (out) out.hidden = true; // a code from a previous dialog session is not reused
   };
 
   /** Saves the whole bridge config; the ⏻ checkbox is part of it (state.json), so it survives a reload/restart. */
@@ -741,6 +748,7 @@ export function initSettings() {
     token: $('#rp-token').value.trim(),
     offDelaySec: Number($('#rp-delay').value) || 120,
     shutdownPc: $('#rp-shutdown-pc')?.checked === true,
+    autoCut: $('#rp-auto-cut')?.checked === true,
   });
 
   // The checkbox is a setting: save it the moment it changes, and put it back if the server refuses.
@@ -756,6 +764,60 @@ export function initSettings() {
       event.target.checked = !wanted;
       if (status) status.textContent = `⚠ ${err.message}`;
     }
+  });
+
+  // The auto-cut checkbox is a setting too: save on change; enabling it raises the (now unsafe) delay to 90 s.
+  $('#rp-auto-cut')?.addEventListener('change', async (event) => {
+    const wanted = event.target.checked;
+    const status = $('#rp-result');
+    const delay = $('#rp-delay');
+    if (wanted && delay && Number(delay.value) < 90) delay.value = '90';
+    if (delay) delay.min = wanted ? '90' : '0';
+    try {
+      const saved = await rpSave();
+      const value = saved?.remotePower?.autoCut === true;
+      event.target.checked = value;
+      if (status) status.textContent = value === wanted ? '✅ Putus arus otomatis disimpan.' : '⚠ Server menyimpan nilai lain.';
+    } catch (err) {
+      event.target.checked = !wanted;
+      if (delay) delay.min = event.target.checked ? '90' : '0';
+      if (status) status.textContent = `⚠ ${err.message}`;
+    }
+  });
+
+  // 📲 Pair the phone: the server asks the bridge for a one-time 8-character code; the QR only carries the bridge
+  // URL (never the token). The phone opens the bridge, enters the code, and remembers the space.
+  $('#rp-pair')?.addEventListener('click', async () => {
+    const status = $('#rp-result');
+    const out = $('#rp-pair-out');
+    status.textContent = '⏳ Membuat kode pasangan…';
+    try {
+      const p = await api('/api/remote-power/pair');
+      $('#rp-pair-code').textContent = p.code;
+      $('#rp-pair-ttl').textContent = p.expiresAt ? `· berlaku ±${Math.max(1, Math.round((p.expiresAt - Date.now()) / 60_000))} mnt` : '· berlaku 2 mnt';
+      const img = $('#rp-pair-qr');
+      if (typeof p.qr === 'string' && p.qr.startsWith('data:image/')) {
+        img.src = p.qr;
+        img.hidden = false;
+      } else {
+        img.hidden = true;
+        img.removeAttribute('src');
+      }
+      out.hidden = false;
+      status.textContent = '✅ Kode dibuat — masukkan di HP sebelum kedaluwarsa.';
+    } catch (err) {
+      out.hidden = true;
+      status.textContent = `⚠ ${err.message}`;
+    }
+  });
+  $('#rp-open')?.addEventListener('click', () => {
+    const url = $('#rp-url').value.trim();
+    const status = $('#rp-result');
+    if (!/^https:\/\//i.test(url)) {
+      status.textContent = '⚠ Isi URL jembatan (https) dulu, lalu Simpan.';
+      return;
+    }
+    window.open(url, '_blank', 'noopener');
   });
 
   $('#rp-save').addEventListener('click', async () => {

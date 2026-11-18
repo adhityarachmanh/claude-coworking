@@ -1246,6 +1246,17 @@
               <small id="rp-result" class="muted" aria-live="polite"></small>
             </div>
             <label class="switch" id="rp-pc-row"><input id="rp-shutdown-pc" type="checkbox" /> ⏻ tombol di bawah ikut <b>mematikan Windows</b> (listrik Bardi diputus dari halaman jembatan)</label>
+            <label class="switch" id="rp-auto-cut-row"><input id="rp-auto-cut" type="checkbox" /> ⚡ Putus arus Bardi otomatis setelah Windows mati (jeda minimal 90 dtk)</label>
+            <div class="rp-row">
+              <button type="button" id="rp-pair" class="ghost">📲 Pasangkan HP</button>
+              <button type="button" id="rp-open" class="ghost">⚡ Buka halaman daya</button>
+            </div>
+            <div id="rp-pair-out" class="rp-pair" hidden>
+              <p class="small">Kode pasangan: <b id="rp-pair-code" class="rp-pair-code"></b> <span id="rp-pair-ttl" class="muted"></span></p>
+              <img id="rp-pair-qr" class="rp-pair-qr" alt="QR halaman jembatan" hidden />
+              <p class="muted small">Di HP: buka tautan/QR → bagian <b>Punya kode pasangan?</b> → masukkan kode → tambahkan ke layar utama.</p>
+            </div>
+            <p class="muted small">Checklist: BIOS <b>Restore on AC Power Loss = Power On</b>, Fast Startup &amp; Hibernate <b>Off</b>, Sleep <b>Never</b> saat listrik tersambung, autologon + autostart Adhitron aktif.</p>
           </div>
           <button type="button" id="btn-shutdown" class="danger">⏻ Matikan server</button>
           </div>

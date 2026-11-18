@@ -60,17 +60,27 @@ export function pcShutdownPlan(platform = process.platform, env = process.env) {
   return { command: 'shutdown', args: ['-h', '+1'] };
 }
 
+/** Auto-cut must leave Windows time to finish shutting down (45 s) plus a margin. */
+export const AUTO_CUT_MIN_SECONDS = 90;
+
+/** The delay used when the plug cuts itself after a shutdown, or null when auto-cut is off / the delay is unsafe. */
+export function autoCutPlan(autoCut, offDelaySec) {
+  if (autoCut !== true) return null;
+  const delay = Number(offDelaySec);
+  return Number.isInteger(delay) && delay >= AUTO_CUT_MIN_SECONDS && delay <= 600 ? delay : null;
+}
+
 /**
  * Status jembatan remote power untuk UI (⚙/📱): cukup untuk menampilkan tombol dan URL-nya.
  * Token jembatan TIDAK pernah ikut — sama seperti remotePower() tidak pernah dikirim utuh ke HP.
  * `configured` mengikuti setelan di hub (bridgeUrl + token ada); `bridgeUrl` hanya URL https yang sudah
  * disanitasi (null bila setelannya tidak bisa dipakai sebagai tautan).
- * @returns {{ configured: boolean, bridgeUrl: string|null, offDelaySec: number }}
+ * @returns {{ configured: boolean, bridgeUrl: string|null, offDelaySec: number, autoCut: boolean }}
  */
 export function powerStatus(hub) {
   const rp = hub?.remotePower?.() ?? {};
   const bridgeUrl = String(rp.bridgeUrl ?? '');
   const token = String(rp.token ?? '');
   const offDelaySec = Number(rp.offDelaySec ?? 120);
-  return { configured: Boolean(bridgeUrl && token), bridgeUrl: safeBridgeUrl(bridgeUrl), offDelaySec };
+  return { configured: Boolean(bridgeUrl && token), bridgeUrl: safeBridgeUrl(bridgeUrl), offDelaySec, autoCut: rp.autoCut === true };
 }

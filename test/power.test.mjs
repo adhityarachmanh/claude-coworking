@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { PC_SHUTDOWN_SECONDS, POWER_SECURE_ERROR, pcShutdownPlan, powerAllowed, powerStatus } from '../src/power.js';
+import { AUTO_CUT_MIN_SECONDS, autoCutPlan, PC_SHUTDOWN_SECONDS, POWER_SECURE_ERROR, pcShutdownPlan, powerAllowed, powerStatus } from '../src/power.js';
 import { wifiAllows } from '../src/remote.js';
 import { buildRouter } from '../src/routes/index.js';
 import { runShutdown } from '../src/routes/misc.js';
@@ -30,12 +30,12 @@ test('powerAllowed: laptop selalu boleh, HP hanya lewat https yang tidak read-on
 
 test('powerStatus: configured + bridgeUrl + offDelaySec, TIDAK pernah membawa token', () => {
   const status = powerStatus({ remotePower: () => ({ bridgeUrl: 'https://jembatan.workers.dev', token: 'rahasia-jembatan', offDelaySec: 90 }) });
-  assert.deepEqual(status, { configured: true, bridgeUrl: 'https://jembatan.workers.dev', offDelaySec: 90 });
+  assert.deepEqual(status, { configured: true, bridgeUrl: 'https://jembatan.workers.dev', offDelaySec: 90, autoCut: false });
   assert.equal(JSON.stringify(status).includes('rahasia-jembatan'), false, 'token jembatan tidak ikut ke browser');
   assert.equal('token' in status, false);
   // Belum diset: fitur mati, jeda default (hub.remotePower() mengembalikan bentuk yang sama).
-  assert.deepEqual(powerStatus({ remotePower: () => ({ bridgeUrl: '', token: '', offDelaySec: 120 }) }), { configured: false, bridgeUrl: null, offDelaySec: 120 });
-  assert.deepEqual(powerStatus({}), { configured: false, bridgeUrl: null, offDelaySec: 120 }, 'hub tanpa setelan tetap menjawab aman');
+  assert.deepEqual(powerStatus({ remotePower: () => ({ bridgeUrl: '', token: '', offDelaySec: 120 }) }), { configured: false, bridgeUrl: null, offDelaySec: 120, autoCut: false });
+  assert.deepEqual(powerStatus({}), { configured: false, bridgeUrl: null, offDelaySec: 120, autoCut: false }, 'hub tanpa setelan tetap menjawab aman');
 });
 
 test('powerStatus: bridgeUrl disanitasi — https absolut saja, tanpa kredensial/query/hash', () => {
@@ -51,7 +51,7 @@ test('powerStatus: bridgeUrl disanitasi — https absolut saja, tanpa kredensial
   assert.equal(withUrl('   ').bridgeUrl, null, 'kosong');
   assert.equal(withUrl('  https://jembatan.workers.dev  ').bridgeUrl, 'https://jembatan.workers.dev', 'spasi di tepi dibuang');
   // configured tetap mengikuti setelan hub (bridgeUrl + token ada), walau URL-nya tidak bisa dipakai sebagai tautan.
-  assert.deepEqual(withUrl('http://jembatan.workers.dev'), { configured: true, bridgeUrl: null, offDelaySec: 120 });
+  assert.deepEqual(withUrl('http://jembatan.workers.dev'), { configured: true, bridgeUrl: null, offDelaySec: 120, autoCut: false });
   assert.equal(withUrl('https://jembatan.workers.dev', '').configured, false, 'tanpa token = belum dikonfigurasi');
 });
 
@@ -78,14 +78,25 @@ async function call(p, body, ctx) {
 }
 
 const hubWith = (rp) => ({ remotePower: () => rp });
-const CONFIGURED = { bridgeUrl: 'https://jembatan.workers.dev', token: 'rahasia-jembatan', offDelaySec: 120 };
+const CONFIGURED = { bridgeUrl: 'https://jembatan.workers.dev', token: 'rahasia-jembatan', offDelaySec: 120, autoCut: false };
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 test('route /api/power/status: 200 dengan status jembatan, tanpa token', async () => {
   const res = await call('/api/power/status', {}, { hub: hubWith(CONFIGURED) });
   assert.equal(res.status, 200);
-  assert.deepEqual(res.json(), { configured: true, bridgeUrl: 'https://jembatan.workers.dev', offDelaySec: 120 });
+  assert.deepEqual(res.json(), { configured: true, bridgeUrl: 'https://jembatan.workers.dev', offDelaySec: 120, autoCut: false });
   assert.equal(res.body.includes('rahasia-jembatan'), false, 'respons tidak membocorkan token');
+});
+
+test('autoCutPlan/powerStatus: auto-cut hanya dengan jeda aman, dan statusnya ikut dikirim', () => {
+  assert.equal(AUTO_CUT_MIN_SECONDS, 90);
+  assert.equal(autoCutPlan(false, 120), null);
+  assert.equal(autoCutPlan(true, 90), 90);
+  assert.equal(autoCutPlan(true, 120), 120);
+  assert.equal(autoCutPlan(true, 89), null, 'terlalu cepat: Windows masih shutdown');
+  assert.equal(autoCutPlan(true, 601), null);
+  assert.equal(autoCutPlan(true, 120.5), null);
+  assert.equal(powerStatus({ remotePower: () => ({ ...CONFIGURED, autoCut: true }) }).autoCut, true);
 });
 
 test('route /api/shutdown: HP WiFi (bukan local, bukan https) ditolak 403 dan tidak mematikan apa pun', async () => {
@@ -167,6 +178,65 @@ test('route /api/shutdown: pc:true dari HP https → Windows shutdown + handoff 
     assert.equal(calls.includes('halt'), false, 'heartbeat tidak perlu dijeda: tidak ada jadwal yang bisa batal');
     assert.ok(calls.includes('pc-shutdown'), 'OS shutdown dijalankan (injeksi, bukan spawn nyata)');
     assert.ok(calls.includes('shutdown'), 'server berhenti rapi');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+// ---------- auto-cut: the bridge cuts the plug itself, but only after Windows accepted the shutdown ----------
+
+test('route /api/shutdown: autoCut menjadwalkan /api/off?delay&hold=1 setelah shutdown diterima', async () => {
+  const calls = [];
+  const ctx = {
+    hub: hubWith({ ...CONFIGURED, autoCut: true }),
+    shutdown: () => calls.push('shutdown'),
+    pcShutdown: () => calls.push('pc-shutdown'),
+    isLocal: () => true,
+    isSecure: () => false,
+    isReadOnly: () => false,
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), token: init?.headers?.['X-Bridge-Token'], body: init?.body });
+    return new Response(JSON.stringify({ ok: true, handoffUrl: '/s/abc?t=tiket1', offAt: 123 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const res = await call('/api/shutdown', { pc: true }, ctx);
+    assert.equal(res.status, 200, res.body);
+    assert.deepEqual(res.json(), { ok: true, pc: true, handoffUrl: '/s/abc?t=tiket1', autoCut: true, offDelaySec: 120 });
+    const off = calls.find((c) => typeof c === 'object' && String(c.url).includes('/api/off'));
+    assert.ok(off, 'jadwal putus arus dikirim');
+    assert.match(String(off.url), /\/api\/off\?delay=120&hold=1/);
+    assert.equal(off.token, 'rahasia-jembatan');
+    // Shutdown must be accepted first: no bridge schedule when the OS refuses.
+    await wait(450);
+    assert.ok(calls.indexOf('pc-shutdown') >= 0);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('route /api/shutdown: autoCut tidak dijadwalkan bila Windows menolak shutdown', async () => {
+  const calls = [];
+  const ctx = {
+    hub: hubWith({ ...CONFIGURED, autoCut: true }),
+    shutdown: () => calls.push('shutdown'),
+    pcShutdown: async () => ({ ok: false, code: 5, message: 'Access is denied.(5)' }),
+    isLocal: () => true,
+    isSecure: () => false,
+    isReadOnly: () => false,
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    return new Response('{}', { status: 200 });
+  };
+  try {
+    const res = await call('/api/shutdown', { pc: true }, ctx);
+    assert.equal(res.status, 502);
+    assert.equal(calls.some((u) => typeof u === 'string' && u.includes('/api/off')), false, 'tidak ada jadwal saat OS menolak');
+    await wait(450);
+    assert.equal(calls.includes('shutdown'), false, 'server tetap hidup');
   } finally {
     globalThis.fetch = realFetch;
   }

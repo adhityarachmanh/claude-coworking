@@ -23,6 +23,7 @@ const power = {
   configured: false, // the server has a bridge URL + token (remote power on)
   bridgeUrl: '', // https only: it becomes an href
   delaySec: null,
+  autoCut: false, // the bridge cuts the plug itself after the shutdown delay
   phase: 'idle', // 'idle' | 'busy' | 'done' (busy/done pin `note` in #power-status and keep the buttons off)
   note: '',
 };
@@ -44,6 +45,7 @@ export function normalizePowerStatus(raw) {
     configured: rp.configured === true || d.configured === true || isHttps(bridgeUrl),
     bridgeUrl: isHttps(bridgeUrl) ? bridgeUrl : '',
     delaySec,
+    autoCut: rp.autoCut === true || d.autoCut === true,
   };
 }
 
@@ -61,7 +63,9 @@ function statusText() {
   if (!power.configured) {
     return 'Remote power belum diset — PC tetap dimatikan, tapi listrik Bardi tidak bisa diputus (setel dari laptop: ⚙ → Sistem).';
   }
-  return `Remote power siap — Windows dimatikan dari sini, listrik diputus dari halaman jembatan (jeda ${power.delaySec ?? DEFAULT_DELAY} dtk).`;
+  return power.autoCut
+    ? `Remote power siap — Windows dimatikan dari sini, lalu listrik Bardi diputus otomatis ${power.delaySec ?? DEFAULT_DELAY} dtk setelahnya.`
+    : `Remote power siap — Windows dimatikan dari sini, listrik diputus dari halaman jembatan (jeda ${power.delaySec ?? DEFAULT_DELAY} dtk).`;
 }
 
 function renderPower() {
@@ -139,7 +143,9 @@ async function onShutdown(pc) {
   const delay = power.delaySec ?? DEFAULT_DELAY;
   const asked = pc
     ? window.confirm(power.configured
-      ? `Matikan PC? Sesi Claude dihentikan, lalu Windows dimatikan dalam ±45 detik. Aplikasi lain yang masih terbuka ditutup paksa — pekerjaan yang belum disimpan bisa hilang. Listrik Bardi TIDAK diputus otomatis — halaman jembatan terbuka untuk memutus arus (jeda ${delay} detik).`
+      ? power.autoCut
+        ? `Matikan PC? Sesi Claude dihentikan, lalu Windows dimatikan dalam ±45 detik. Aplikasi lain yang masih terbuka ditutup paksa — pekerjaan yang belum disimpan bisa hilang. Listrik Bardi akan DIPUTUS OTOMATIS ${delay} detik setelah Windows menerima shutdown; halaman jembatan terbuka untuk memantau.`
+        : `Matikan PC? Sesi Claude dihentikan, lalu Windows dimatikan dalam ±45 detik. Aplikasi lain yang masih terbuka ditutup paksa — pekerjaan yang belum disimpan bisa hilang. Listrik Bardi TIDAK diputus otomatis — halaman jembatan terbuka untuk memutus arus (jeda ${delay} detik).`
       : 'Matikan PC? Sesi Claude dihentikan, lalu Windows dimatikan dalam ±45 detik (aplikasi lain ditutup paksa). Remote power belum diset, jadi listrik tidak bisa diputus dari jauh.')
     : window.confirm('Matikan server saja? Sesi Claude dihentikan dan Adhitron tidak bisa dibuka sampai servernya dinyalakan lagi; PC tetap menyala.');
   if (!asked) return;
@@ -159,7 +165,9 @@ async function onShutdown(pc) {
     }
     power.phase = 'done';
     power.note = pc
-      ? '⏳ Windows akan mati dalam ±45 dtk — putuskan listrik Bardi dari halaman jembatan.'
+      ? power.autoCut
+        ? `⏳ Windows akan mati dalam ±45 dtk — listrik Bardi diputus otomatis setelahnya.`
+        : '⏳ Windows akan mati dalam ±45 dtk — putuskan listrik Bardi dari halaman jembatan.'
       : '⏳ Server dimatikan — halaman ini kehilangan sambungan sampai dinyalakan lagi.';
     renderPower();
   } catch (err) {

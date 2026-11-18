@@ -114,6 +114,7 @@ test('setelan bertahan setelah server dimatikan dan dihidupkan lagi', async () =
       token: 'rahasia',
       offDelaySec: 90,
       shutdownPc: true,
+      autoCut: false,
     });
     const state = JSON.parse(readFileSync(path.join(dataDir, 'state.json'), 'utf8'));
     assert.deepEqual(state.roots, [projects], 'folder project juga bertahan');

@@ -3,10 +3,12 @@
 // ⏻ /api/shutdown and /api/power/status are SECURE_ONLY: the laptop, or a phone over the https (Tailscale)
 // link — never a plain-HTTP WiFi phone (src/power.js holds the rule).
 import { spawn } from 'node:child_process';
+import QRCode from 'qrcode';
 import { runDemo } from '../demo.js';
 import { setAutostart } from '../autostart.js';
 import { MAX_CONCURRENT_CAP } from '../concurrency.js';
-import { PC_SHUTDOWN_SECONDS, POWER_SECURE_ERROR, pcShutdownPlan, powerAllowed, powerStatus } from '../power.js';
+import { autoCutPlan, PC_SHUTDOWN_SECONDS, POWER_SECURE_ERROR, pcShutdownPlan, powerAllowed, powerStatus } from '../power.js';
+import { pairBridge, scheduleBridgeCut } from '../power-bridge.js';
 import { json } from './http.js';
 
 // How long the OS shutdown command may take to answer. shutdown.exe returns as soon as Windows accepts the request;
@@ -122,8 +124,10 @@ export function register(router) {
       if (!powerAllowed(access)) return json(res, 403, { error: POWER_SECURE_ERROR });
     }
     let handoffUrl;
+    let cutDelay = null;
     if (body?.pc === true) {
       const rp = hub.remotePower();
+      cutDelay = autoCutPlan(rp.autoCut, rp.offDelaySec);
       if (rp.bridgeUrl && rp.token) {
         // ⚡ Separation of concerns: the app shuts WINDOWS down; cutting the Bardi power is the bridge page's
         // job. We only ask the bridge for a one-time status-page link (handoff) — no schedule, no plug command.
@@ -158,8 +162,20 @@ export function register(router) {
         console.error(`⏻ Shutdown Windows ditolak: ${result.message}`);
         return json(res, 502, { error: `Windows tidak bisa dimatikan: ${result.message}. Server tetap hidup — coba lagi, atau matikan langsung dari laptop.` });
       }
-      json(res, 200, handoffUrl ? { ok: true, pc: true, handoffUrl } : { ok: true, pc: true });
-      console.log(`PC dimatikan oleh OS (shutdown ${PC_SHUTDOWN_SECONDS} dtk, exit ${result?.code ?? 0}) — server dimatikan lebih dulu dengan rapi`);
+      // ⚡ Auto-cut: the bridge cuts the plug itself after the delay (the status page shows the countdown). Called
+      // only after Windows accepted the shutdown; a failure is logged and the user still has the manual button.
+      let autoCut = false;
+      if (cutDelay) {
+        const cut = await scheduleBridgeCut({ bridgeUrl: rp.bridgeUrl, token: rp.token, delay: cutDelay });
+        if (cut.ok) {
+          autoCut = true;
+          if (!handoffUrl && cut.handoffUrl) handoffUrl = cut.handoffUrl;
+        } else {
+          console.error(`⏻ Putus arus otomatis gagal: ${cut.error}`);
+        }
+      }
+      json(res, 200, { ok: true, pc: true, ...(handoffUrl ? { handoffUrl } : {}), ...(autoCut ? { autoCut: true, offDelaySec: cutDelay } : {}) });
+      console.log(`PC dimatikan oleh OS (shutdown ${PC_SHUTDOWN_SECONDS} dtk, exit ${result?.code ?? 0}) — server dimatikan lebih dulu dengan rapi${autoCut ? ` · listrik diputus otomatis dalam ${cutDelay} dtk` : ''}`);
       setTimeout(shutdown, 300);
       return;
     }
@@ -176,10 +192,22 @@ export function register(router) {
       token: body?.token ?? current.token,
       offDelaySec: body?.offDelaySec ?? current.offDelaySec,
       shutdownPc: body?.shutdownPc ?? current.shutdownPc,
+      autoCut: body?.autoCut ?? current.autoCut,
     });
-    if (!clean) return json(res, 400, { error: 'URL jembatan harus https://, token maks 200 karakter, jeda 0–600 detik.' });
+    if (!clean) return json(res, 400, { error: 'URL jembatan harus https://, token maks 200 karakter, jeda 0–600 detik; putus arus otomatis minimal 90 detik.' });
     return json(res, 200, { remotePower: clean });
   });
+  // 📲 The phone gets the bridge page without typing the token: an 8-character one-time code (the bridge owns its
+  // TTL/claims). The long-term token never leaves this server.
+  router.post('/api/remote-power/pair', async ({ hub }, req, res) => {
+    const rp = hub.remotePower();
+    if (!rp.bridgeUrl || !rp.token) return json(res, 400, { error: 'Remote power belum diset.' });
+    const pair = await pairBridge({ bridgeUrl: rp.bridgeUrl, token: rp.token });
+    if (!pair.ok) return json(res, 502, { error: pair.error });
+    // The QR only carries the bridge URL (no token). The code is shown as text next to it.
+    const qr = await QRCode.toDataURL(rp.bridgeUrl, { margin: 1, width: 240 }).catch(() => null);
+    return json(res, 200, { code: pair.code, expiresAt: pair.expiresAt, bridgeUrl: rp.bridgeUrl, qr });
+  }, { maxBody: 1024 });
   router.post('/api/remote-power/test', async ({ hub, appVersion }, req, res) => {
     const rp = hub.remotePower();
     if (!rp.bridgeUrl || !rp.token) return json(res, 400, { error: 'Remote power belum diset.' });

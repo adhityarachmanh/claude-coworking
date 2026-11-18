@@ -2920,6 +2920,10 @@ body.read-only #composer-hint { color: var(--ask); }
 /* ⚙ claude doctor / update output (features/claude-check.js) */
 .cc-output { max-height: 240px; overflow: auto; margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font: var(--fs-xs)/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .oc-stats-out { max-height: 320px; white-space: pre; overflow-x: auto; font-size: var(--fs-sm); } /* a table, not prose: keep the columns */
+/* 📲 Remote power pairing: code + QR (bridge URL only, never the token). */
+.rp-pair { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px dashed var(--border-strong); border-radius: var(--r-lg); background: var(--surface-2); }
+.rp-pair-code { font: 700 1.25rem/1.2 var(--mono); letter-spacing: .12em; }
+.rp-pair-qr { width: 180px; max-width: 100%; padding: 6px; border-radius: 8px; background: #fff; align-self: center; }
 /* 🧠 Memory editor (features/memory.js) */
 .memory-card { max-width: 860px; width: min(860px, 96vw); }
 .memory-text { width: 100%; min-height: 50vh; resize: vertical; font: var(--fs-sm)/1.5 var(--mono); padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); }
@@ -3365,6 +3369,7 @@ body.read-only #concurrency-section { display: none !important; }
   #autologon-password { font-size: var(--fs-input-touch); } /* 16px: no zoom-on-focus on iOS */
   /* Same tab, same phone: the ⚡ Remote power switch is one long line and used to push the panel sideways. */
   #rp-pc-row.switch { white-space: normal; }
+  #rp-auto-cut-row.switch { white-space: normal; }
 }
 
 /* ---------- phone: chat rows that used to squeeze or clip ----------

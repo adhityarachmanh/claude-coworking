@@ -12,6 +12,7 @@ import { DEFAULT_MODE, isMode, migrateMode, normalizeMode } from './modes.js';
 import { describeTool } from './roles.js';
 import { migrateTeamNames } from './role-catalog.js';
 import { basename, normalizePath, projectId } from './util.js';
+import { AUTO_CUT_MIN_SECONDS } from './power.js';
 import { isMissing } from './projects.js';
 
 const EVENT_LIMIT = 80;
@@ -150,9 +151,13 @@ const cleanRemotePower = (raw) => {
   // ⏻ "tombol di bawah ikut mematikan Windows": a setting the user picks once. It lives here (state.json, like the
   // rest of the bridge config) instead of the dialog's checkbox, which used to reset on every page load.
   const shutdownPc = raw?.shutdownPc === true || raw?.shutdownPc === 'true' || raw?.shutdownPc === 1 || raw?.shutdownPc === '1';
+  // ⚡ Putus arus otomatis: the bridge cuts the plug itself after the delay (no manual press on the status page).
+  const autoCut = raw?.autoCut === true || raw?.autoCut === 'true' || raw?.autoCut === 1 || raw?.autoCut === '1';
   if (raw?.offDelaySec !== undefined && (!Number.isInteger(delay) || delay < 0 || delay > REMOTE_POWER_DELAY_MAX)) return null;
+  // Cutting too soon would kill a PC that is still shutting down: refuse the setting, never silently change it.
+  if (autoCut && Number.isInteger(delay) && delay < AUTO_CUT_MIN_SECONDS) return null;
   const offDelaySec = Number.isFinite(delay) ? delay : 120;
-  if (!url) return { bridgeUrl: '', token: '', offDelaySec, shutdownPc };
+  if (!url) return { bridgeUrl: '', token: '', offDelaySec, shutdownPc, autoCut: false };
   let parsed;
   try {
     parsed = new URL(url);
@@ -160,7 +165,7 @@ const cleanRemotePower = (raw) => {
     return null;
   }
   if (parsed.protocol !== 'https:' || !token || token.length > 200) return null; // url set but no token → useless, refused
-  return { bridgeUrl: url.replace(/\/+$/, ''), token, offDelaySec, shutdownPc };
+  return { bridgeUrl: url.replace(/\/+$/, ''), token, offDelaySec, shutdownPc, autoCut };
 };
 
 /** 📚 Runbooks: saved prompt sequences; only valid entries survive a hand-edited state.json. */
@@ -365,7 +370,7 @@ export class Hub {
     // turns: the turn running right now per project (written when it starts, removed when it ends); one left
     // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
     // the user continues or dismisses them (see recoverTurns / interruptTurn).
-    const empty = { roots: [], custom: [], favorites: [], favoriteModels: [], projectGroups: [], remotePower: { bridgeUrl: '', token: '', offDelaySec: 120, shutdownPc: false }, settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, routines: [] };
+    const empty = { roots: [], custom: [], favorites: [], favoriteModels: [], projectGroups: [], remotePower: { bridgeUrl: '', token: '', offDelaySec: 120, shutdownPc: false, autoCut: false }, settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, routines: [] };
     let stored = {};
     let parsedOk = false;
     try {

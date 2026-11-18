@@ -44,19 +44,19 @@ async function call(p, body = {}, ctx) {
 test('hub: setelan remote power dibersihkan (https saja, token terbatas, jeda 0..600)', () => {
   const hub = makeHub();
   hub.setRemotePower({ bridgeUrl: 'https://jembatan.workers.dev', token: 'tok', offDelaySec: 120 });
-  assert.deepEqual(hub.remotePower(), { bridgeUrl: 'https://jembatan.workers.dev', token: 'tok', offDelaySec: 120, shutdownPc: false });
+  assert.deepEqual(hub.remotePower(), { bridgeUrl: 'https://jembatan.workers.dev', token: 'tok', offDelaySec: 120, shutdownPc: false, autoCut: false });
   assert.equal(hub.setRemotePower({ bridgeUrl: 'http://jembatan.workers.dev', token: 'tok' }), null, 'jembatan harus https');
   assert.equal(hub.setRemotePower({ bridgeUrl: 'https://jembatan.workers.dev', token: '' }), null, 'token wajib');
   assert.equal(hub.setRemotePower({ bridgeUrl: 'https://jembatan.workers.dev', token: 'x'.repeat(201) }), null, 'token maks 200');
   assert.equal(hub.setRemotePower({ bridgeUrl: 'https://jembatan.workers.dev', token: 'tok', offDelaySec: 9999 }), null, 'jeda maks 600');
-  assert.deepEqual(new Hub({ dataDir: hub.dataDir }).remotePower(), { bridgeUrl: 'https://jembatan.workers.dev', token: 'tok', offDelaySec: 120, shutdownPc: false }, 'tersimpan');
+  assert.deepEqual(new Hub({ dataDir: hub.dataDir }).remotePower(), { bridgeUrl: 'https://jembatan.workers.dev', token: 'tok', offDelaySec: 120, shutdownPc: false, autoCut: false }, 'tersimpan');
 });
 
 test('hub: setelan kosong / url kosong menghapus konfigurasi (fitur opsional)', () => {
   const hub = makeHub();
   hub.setRemotePower({ bridgeUrl: 'https://j.workers.dev', token: 't' });
   hub.setRemotePower({ bridgeUrl: '', token: '' });
-  assert.deepEqual(hub.remotePower(), { bridgeUrl: '', token: '', offDelaySec: 120, shutdownPc: false }, 'setelan kosong = fitur mati, jeda kembali ke default');
+  assert.deepEqual(hub.remotePower(), { bridgeUrl: '', token: '', offDelaySec: 120, shutdownPc: false, autoCut: false }, 'setelan kosong = fitur mati, jeda kembali ke default');
 });
 
 test('route remote power: get → save → get; test memanggil jembatan (status + heartbeat)', async () => {
@@ -71,17 +71,17 @@ test('route remote power: get → save → get; test memanggil jembatan (status 
   };
   try {
     const ctx = { hub, device: null };
-    const saved = await call('/api/remote-power/settings', { bridgeUrl: 'https://j.workers.dev', token: 'tok', offDelaySec: 90, shutdownPc: true }, ctx);
+    const saved = await call('/api/remote-power/settings', { bridgeUrl: 'https://j.workers.dev', token: 'tok', offDelaySec: 90, shutdownPc: true, autoCut: false }, ctx);
     assert.equal(saved.status, 200, saved.body);
-    assert.deepEqual(saved.json().remotePower, { bridgeUrl: 'https://j.workers.dev', token: 'tok', offDelaySec: 90, shutdownPc: true });
+    assert.deepEqual(saved.json().remotePower, { bridgeUrl: 'https://j.workers.dev', token: 'tok', offDelaySec: 90, shutdownPc: true, autoCut: false });
 
     const got = await call('/api/remote-power/get', {}, ctx);
-    assert.deepEqual(got.json().remotePower, { bridgeUrl: 'https://j.workers.dev', token: 'tok', offDelaySec: 90, shutdownPc: true });
+    assert.deepEqual(got.json().remotePower, { bridgeUrl: 'https://j.workers.dev', token: 'tok', offDelaySec: 90, shutdownPc: true, autoCut: false });
 
     // ⏻ toggling the checkbox alone must not wipe the URL/token it did not send (partial save)
     const toggled = await call('/api/remote-power/settings', { shutdownPc: false }, ctx);
     assert.equal(toggled.status, 200, toggled.body);
-    assert.deepEqual(toggled.json().remotePower, { bridgeUrl: 'https://j.workers.dev', token: 'tok', offDelaySec: 90, shutdownPc: false });
+    assert.deepEqual(toggled.json().remotePower, { bridgeUrl: 'https://j.workers.dev', token: 'tok', offDelaySec: 90, shutdownPc: false, autoCut: false });
 
     const bad = await call('/api/remote-power/settings', { bridgeUrl: 'http://j.workers.dev', token: 't' }, ctx);
     assert.equal(bad.status, 400, 'url tidak https ditolak');

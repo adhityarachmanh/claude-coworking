@@ -13,8 +13,17 @@ HP / browser apa pun ──▶ jembatan (Netlify, online 24 jam) ──▶ Tuya 
 Cara kerja singkat:
 
 1. **Nyalakan**: plug **ON** → BIOS *Restore on AC Power Loss = Power On* membuat PC boot sendiri. Plug yang sudah ON disikluskan OFF → ON agar BIOS mendapat kejadian listrik baru.
-2. **Matikan**: pemicu menulis jadwal `offAt` (default 5 menit), lalu **cron tiap menit** mengeksekusinya — tetap tepat waktu walaupun PC (dan Adhitron) sudah mati.
+2. **Matikan**: dari Adhitron, **⏻ Matikan PC** mematikan Windows dengan rapi. Listrik Bardi diputus dari **halaman status jembatan** (default, aman) atau — bila **⚡ Putus arus otomatis** diaktifkan — jembatan menjadwalkan pemutusan sendiri setelah jeda (minimal 90 dtk) dan cron-nya yang mengeksekusi. Jeda ini harus lebih panjang dari shutdown Windows (45 dtk).
 3. **Status**: halaman status publik menampilkan state eksplisit — 🟢 hidup / 🖥 booting / 🟡 kemungkinan hidup / 🟡 standby / ⚫ mati / ⚪ belum pasti — plus ⏳ countdown pemutusan dan tombol yang sesuai state, termasuk alur tunggu "Nyalakan PC → booting → 🟢 → ▶ Buka Adhitron" saat pertama menyalakan dari jauh. Listrik plug-nya juga dipantau realtime (daya, tegangan, arus, status saklar). Halaman memuat ulang status tiap **5 detik** (2 detik saat booting) dan menampilkan **umur bukti** ("Bukti: heartbeat 42 dtk lalu · daya 9 dtk lalu"). Sesudah listrik diputus — dari halaman, dari cron, maupun dari aplikasi Bardi — tombol **⚡ Nyalakan** terkunci **2 menit** (hitungan mundurnya tampil di tombol) supaya sisa daya di PSU habis dulu.
+
+### Siklus harian yang disarankan (Bardi + BIOS)
+
+1. Dari HP: **⏻ Matikan PC** di Adhitron. Windows shutdown ±45 dtk; halaman status jembatan terbuka.
+2. Tunggu state **⚫ mati**. Bila **⚡ Putus arus otomatis** aktif, listrik diputus sendiri setelah jeda; kalau tidak, tekan **⏻ Putus arus listrik** di halaman (jangan sebelum PC benar-benar mati).
+3. Beberapa saat kemudian (minimal **2 menit** setelah listrik diputus): buka halaman daya di HP → **⚡ Nyalakan PC** → tunggu **booting** → **▶ Buka Adhitron**.
+4. Semua langkah HP memakai space yang sama; gunakan **📲 Pasangkan HP** di ⚙ Adhitron (kode 8 karakter + QR URL jembatan) sekali saja, lalu tambahkan halaman itu ke layar utama.
+
+> **Jangan** menekan "Putus arus" saat Windows masih shutdown. Kalau PC masih hidup, matikan Windows dulu — pemutusan listrik saat sistem menulis disk bisa merusak data. Itu alasan jeda minimal 90 detik untuk auto-cut.
 
 ## Dua jalur pemakaian
 
@@ -49,8 +58,32 @@ Data center yang didukung: `eu` (Eropa Tengah), `eu-west` (Eropa Barat), `americ
 
 ## Checklist di sisi PC (wajib sekali)
 
-- **BIOS**: *Restore on AC Power Loss = Power On* — inilah yang membuat PC menyala sendiri saat plug mendapat listrik.
+- **BIOS**: *Restore on AC Power Loss = Power On* — inilah yang membuat PC menyala sendiri saat plug mendapat listrik. Matikan **ErP/EuP** bila ada (kalau tidak, sebagian board tidak memberi daya saat "mati").
+- **Windows**: **Fast Startup Off** dan **Hibernate Off** (kalau tidak, "shutdown" adalah hybrid S4 dan restore AC bisa berakhir tidak bersih), **Sleep = Never** saat listrik tersambung.
 - **Windows autostart**: Adhitron harus menyala otomatis saat login, jadi PC yang baru boot langsung siap dijangkau. Kalau PC sering di-reboot dari jauh dan tidak ada orang di depannya, nyalakan mode **🔐 Akses saat PC terkunci** di ⚙ → Sistem (autologon + layar terkunci) — lihat [README → Sebelum login Windows](../README.md#sebelum-login-windows-opsional).
+- **Tailscale**: service berjalan sebelum login; jangan logout akun Tailscale. **RDP/Sunshine hanya lewat Tailscale**, jangan buka port ke internet.
+
+## 📲 HP yang selalu bisa membuka halaman daya
+
+Halaman status dari tiket serah-terima hanya sekali pakai. Supaya HP bisa membuka halaman daya kapan pun:
+
+1. Di laptop: ⚙ → Remote power → **📲 Pasangkan HP** → kode **8 karakter** + QR URL jembatan.
+2. Di HP: buka URL jembatan → bagian **Punya kode pasangan?** → masukkan kode (berlaku ±2 menit, sekali pakai).
+3. Tambahkan halaman itu ke **layar utama** (Chrome: ⋮ → Tambahkan ke layar utama; iPhone: Bagikan → Tambah ke Layar Utama). Setelah itu: ⚡ Nyalakan PC → booting → ▶ Buka Adhitron.
+
+## Risiko Tuya IoT Core (cloud)
+
+Jembatan memakai Tuya Cloud (IoT Core). **Trial IoT Core biasanya berakhir sekitar 6 bulan**; setelah itu panggilan cloud ditolak dan tombol listrik di jembatan gagal. Rencana aman:
+
+- perpanjang trial / langganan di [iot.tuya.com](https://iot.tuya.com), **atau**
+- gunakan **aplikasi Smart Life/Bardi** langsung untuk menyalakan/mematikan plug (tetap bisa manual),
+- kontrol lokal (mis. `tinytuya` + local key) hanya mungkin dari perangkat yang selalu hidup di LAN — **tidak** dipakai di konsep Bardi + BIOS ini.
+
+## Desktop remote (opsional)
+
+- **Windows Pro**: aktifkan Remote Desktop, lalu sambung ke **IP Tailscale/MagicDNS** PC (bukan IP LAN, bukan port publik). RDP cukup untuk kerja kantor.
+- **Windows Home / butuh grafis mulus**: **Sunshine** di PC + **Moonlight** di HP/laptop, keduanya lewat Tailscale. Latensi jauh lebih rendah daripada RDP untuk video/gerak.
+- Jangan pernah meneruskan port RDP/Moonlight ke internet; Tailscale sudah menjadi jalur terenkripsi.
 
 ## Kontrak API (Adhitron ↔ jembatan)
 
