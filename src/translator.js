@@ -220,6 +220,9 @@ export class StreamTranslator {
     let changed = false;
     for (const t of this.bgTasks.values()) {
       if (t.kind !== 'agent' || t.status !== 'running' || t.toolUseId !== toolUseId) continue;
+      // An ACP delegation's launch resolving is NOT the end of its work: OpenCode keeps the child running (and
+      // resumes the parent when it reports). src/acp-session.js closes it on the parent's resume / child idle.
+      if (t.source === 'acp') continue;
       Object.assign(t, { status: failed ? 'failed' : 'completed', endedAt: Date.now() });
       changed = true;
     }
