@@ -94,6 +94,25 @@ export function register(router) {
   });
   // ⚡ What the UI needs before offering the power button: configured?, bridge URL, delay. Never the token.
   router.post('/api/power/status', ({ hub }, req, res) => json(res, 200, powerStatus(hub)));
+  // 🧭 Claude Code on/off (OpenCode stays): one persisted flag hides its models/account and stops its turns, nothing
+  // is deleted. Refused while a Claude project is working — a turn must never be cut by a settings switch.
+  router.post('/api/engines/claude', ({ hub, refreshProjects }, req, res, params, body) => {
+    const enabled = body?.enabled;
+    if (typeof enabled !== 'boolean') return json(res, 400, { error: 'Kirim { enabled: true|false }.' });
+    if (!enabled) {
+      const busy = [];
+      for (const [id, rt] of hub.runtime ?? []) {
+        const st = rt?.status ?? {};
+        if (hub.engineOf(id) !== 'claude') continue;
+        if (st.busy || st.cliBusy || st.pending || st.queue) busy.push(hub.projects?.get(id)?.name ?? id);
+      }
+      if (busy.length) return json(res, 409, { error: `Masih ada pekerjaan Claude di ${busy.join(', ')}. Tunggu giliran selesai, lalu nonaktifkan.` });
+    }
+    const now = hub.setClaudeEnabled(enabled);
+    refreshProjects?.(); // rebuilds config (engines.claude.enabled) and tells every page
+    console.log(`Claude Code ${now ? 'diaktifkan' : 'dinonaktifkan'} dari aplikasi`);
+    return json(res, 200, { enabled: now });
+  });
   router.post('/api/shutdown', async ({ shutdown, hub, device, pcShutdown = spawnPcShutdown, isLocal, isSecure, isReadOnly }, req, res, params, body) => {
     // Defence in depth: server.js already refuses this before the route (SECURE_ONLY), but the rule lives in
     // src/power.js so it can be unit-tested — a phone on plain-HTTP WiFi may never power the PC off. Test

@@ -260,8 +260,8 @@ for (const vp of VIEWPORTS) {
         });
         await page.click('#account-body [data-act="oc-delete"]');
         await sleep(120); // the first request is in flight; the button is gone or guarded by now
-        const second = await page.eval(() => document.querySelector('#account-body [data-act="oc-delete"]'));
-        if (second) await page.click('#account-body [data-act="oc-delete"]');
+        // A DOM click in the same evaluation: the element may vanish between a lookup and a coordinate click.
+        await page.eval(() => document.querySelector('#account-body [data-act="oc-delete"]')?.click()).catch(() => {});
         await page.waitFor(() => !document.querySelector('#account-body [data-act="oc-delete"]'), { timeoutMs: 8000, message: 'hapus ketiga (dibolehkan) selesai' });
         const guarded = await page.eval(() => window.__ocRemoveFake.removes.map((r) => r.id));
         assert.equal(guarded.length, 3, 'guard: klik saat request berjalan tidak mengirim request kedua');

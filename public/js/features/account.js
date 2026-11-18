@@ -8,6 +8,7 @@ import { fmtShort } from '../core/format.js';
 import { state } from '../core/state.js';
 import { closeModal, focusablesIn, openModal } from '../ui/modals.js';
 import { chime } from './notify.js';
+import { renderComposer } from './composer.js';
 import { accountKeyOf, checkQuota } from './quota.js';
 import { openReport } from './report.js';
 import { ensureOpenCodeLoaded, loadOpenCode, onOpenCodeAction, onOpenCodeInput, onOpenCodeSubmit, openCodeBodyHtml, openCodeButton } from './opencode-account.js';
@@ -277,7 +278,14 @@ function renderAccountBody(body) {
   renderAuditSection();
 }
 
+/** Is Claude Code switched on in the app? Off = OpenCode only; the Claude half of Akun collapses to a note. */
+const claudeOn = () => state.config?.engines?.claude?.enabled !== false;
+
 function claudeBodyHtml() {
+  if (!claudeOn()) {
+    return `<div class="acct-section"><div class="acct-title"><b>Claude</b><button type="button" class="ghost" data-act="claude-enable">Aktifkan</button></div>
+      <p class="muted small">Claude Code <b>dinonaktifkan</b> di aplikasi ini: model Claude disembunyikan dan project yang masih memakainya diminta memilih model OpenCode. Riwayat, sesi, dan login Claude tidak dihapus — aktifkan lagi kapan saja.</p></div>`;
+  }
   const p = state.account?.profile;
   if (!p) return '<p class="muted">Memeriksa akun Claude Code…</p>';
   const actions = state.accountAuth
@@ -326,7 +334,8 @@ function claudeBodyHtml() {
     <div class="acct-section"><div class="acct-title"><b>Pemakaian token akun ini</b><button class="ghost" data-act="report">📊 Laporan</button></div>${usageTable(account.usage)}
       <p class="muted small">Dihitung dari sesi web & CLI sejak fitur ini aktif, hanya untuk akun yang sedang login.</p></div>
     <div class="acct-actions">${actions}</div>
-    <div id="acct-login"></div>`;
+    <div id="acct-login"></div>
+    <div class="acct-actions"><button type="button" class="ghost" data-act="claude-disable" title="OpenCode tetap jalan; data dan sesi Claude tidak dihapus">⏸ Nonaktifkan Claude Code</button></div>`;
 }
 
 async function loadAccount(force = false) {
@@ -388,6 +397,16 @@ export function initAccount() {
     try {
       if (act === 'audit-toggle') return toggleAudit();
       if (await onOpenCodeAction(act, el, renderOpenCodeSection)) return;
+      if (act === 'claude-enable' || act === 'claude-disable') {
+        const on = act === 'claude-enable';
+        if (!on && !window.confirm('Nonaktifkan Claude Code? Model Claude disembunyikan dan project yang memakainya perlu memilih model OpenCode. Data, sesi, dan login Claude tetap tersimpan dan bisa diaktifkan lagi kapan saja.')) return;
+        const out = await api('/api/engines/claude', { enabled: on });
+        if (state.config?.engines?.claude) state.config.engines.claude = { ...state.config.engines.claude, enabled: out.enabled };
+        toast(out.enabled ? 'Claude Code aktif lagi — model Claude tersedia kembali.' : 'Claude Code dinonaktifkan. OpenCode tetap jalan; data Claude tidak dihapus.', 'ok');
+        renderAccount();
+        renderComposer(); // the model list and the ladder follow the switch
+        return;
+      }
       if (act === 'login' || act === 'login-console') {
         if (!window.confirm(accountImpactText('claude-login'))) return;
         state.account = { ...state.account, login: await api('/api/account/login', { console: act === 'login-console' }) };

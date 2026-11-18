@@ -14,7 +14,7 @@ import { attachmentPayload, attachments, attachmentsReady, clearAttachments, rem
 import { localCommand } from './commands.js';
 import { connection } from './connection.js';
 import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
-import { applyCapsToDom, autoModelNote, AUTO_MODEL, catalogMatchCount, currentProviderAuth, currentProviderNames, engineSwitchLocked, guardCap, initEngine, isModelValue, MODEL_TIER_LABELS, MODEL_TIERS, modelCatalogOptions, modelEntry, modelTiersFor, projectCaps, projectModelCatalog, projectModels, tierOptionsHtml, wantModels } from './engine.js';
+import { applyCapsToDom, autoModelNote, AUTO_MODEL, catalogMatchCount, claudeEnabled, currentProviderAuth, currentProviderNames, engineSwitchLocked, guardCap, initEngine, isModelValue, MODEL_TIER_LABELS, MODEL_TIERS, modelCatalogOptions, modelEntry, modelTiersFor, projectCaps, projectModelCatalog, projectModels, tierOptionsHtml, wantModels } from './engine.js';
 import { recall, recallPrompt } from './history.js';
 import { modelPrices, priceFor, priceNote } from './model-prices.js';
 import { renderFoldFlags } from './phone-fold.js';
@@ -452,7 +452,8 @@ function tierModelSource() {
   const st = state.statuses[state.active] ?? {};
   const engine = engineOf(st, state.config);
   if (!modelsPerProject(engine)) {
-    const models = (state.config?.models ?? []).filter((m) => m.value && m.value !== 'default').map((m) => ({ value: m.value, name: m.displayName || m.value }));
+    // Claude Code switched off: its catalog is empty, so no tier may offer a Claude model.
+    const models = claudeEnabled() ? (state.config?.models ?? []).filter((m) => m.value && m.value !== 'default').map((m) => ({ value: m.value, name: m.displayName || m.value })) : [];
     return { engine, models, loading: false, perProject: false };
   }
   const entry = projectModels(state.active, st, renderTierRows);

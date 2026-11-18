@@ -170,6 +170,20 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
       assert.ok(engines.includes('claude') && engines.includes('opencode'), 'setiap option membawa data-engine');
       assert.ok(await page.eval(() => [...document.querySelectorAll('#model option[data-engine="claude"]')].some((o) => o.value && o.value !== 'auto')), 'model Claude dari katalog ikut');
 
+      // Claude Code switched off (👤 Akun): its group disappears from the picker, OpenCode stays.
+      await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        state.config = { ...state.config, engines: { ...state.config.engines, claude: { ...(state.config.engines?.claude ?? {}), enabled: false } } };
+        document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await page.waitFor(() => ![...document.querySelectorAll('#model optgroup')].some((g) => g.label === 'Claude'), { timeoutMs: 4000, message: 'grup Claude hilang saat Claude dinonaktifkan' });
+      assert.ok(await page.eval(() => [...document.querySelectorAll('#model option[data-engine="opencode"]')].length > 0), 'model OpenCode tetap ada');
+      await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        state.config = { ...state.config, engines: { ...state.config.engines, claude: { ...(state.config.engines?.claude ?? {}), enabled: true } } };
+        document.querySelector('#model-search').dispatchEvent(new Event('input', { bubbles: true }));
+      });
+
       // Capture the next settings POST: picking an OpenCode model must send engine+model in ONE request.
       await page.eval(() => {
         window.__officeFetch ??= window.fetch;

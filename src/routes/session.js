@@ -121,6 +121,11 @@ export function register(router) {
     if (hub.statusFor(project.id)?.modelStale) {
       return json(res, 409, { error: 'Model aktif tidak tersedia (provider sudah logout). Pilih model lain atau Default dulu.' });
     }
+    // Claude Code was switched off in the app (⚙/👤 Akun): the project keeps its history, but a Claude turn may not
+    // start until an OpenCode model is picked (or Claude is enabled again). Nothing is replaced silently.
+    if (hub.engineOf(project.id) === 'claude' && hub.claudeEnabled?.() === false) {
+      return json(res, 409, { error: 'Claude Code sedang dinonaktifkan. Pilih model OpenCode di Pengaturan giliran, atau aktifkan lagi Claude Code di 👤 Akun.', code: 'claude-off' });
+    }
     // A legacy 'dontAsk' waits for an explicit Plan/Build choice: no turn may start (and silently get looser) first.
     if (hub.settingsFor(project.id).modePendingChoice) {
       return json(res, 409, { error: MODE_CHOICE_MESSAGE, code: 'mode-choice' });

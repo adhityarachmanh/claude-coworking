@@ -255,8 +255,10 @@ export function projectModelOptions(entry, current, query) {
 /** Number of models matching the search box (for its live count). */
 export const matchCount = (entry, query) => groupModels(entry.models, query).reduce((n, g) => n + g.models.length, 0);
 
-/** Claude Code's catalog: the server's answer, else the app config (the older, still-valid source). */
+/** Claude Code's catalog: the server's answer, else the app config (the older, still-valid source). Off = empty. */
 function claudeCatalogModels(catalog) {
+  // Claude Code can be switched off in the app (config.engines.claude.enabled): its models disappear everywhere then.
+  if (state.config?.engines?.claude?.enabled === false) return [];
   // "Default" is its own option before the groups: never list the catalog's default entry twice.
   const usable = (m) => m && typeof m.value === 'string' && m.value && m.value !== 'default';
   const fromServer = (catalog?.claude?.models ?? []).filter(usable);
@@ -265,6 +267,9 @@ function claudeCatalogModels(catalog) {
     .filter(usable)
     .map((m) => ({ value: m.value, name: m.displayName || m.name || m.value, description: m.description ?? '', efforts: Array.isArray(m.efforts) ? m.efforts : null }));
 }
+
+/** Is Claude Code switched on in the app? Off = OpenCode only (⚙/👤 Akun), nothing is deleted. */
+export const claudeEnabled = () => state.config?.engines?.claude?.enabled !== false;
 
 /**
  * The ONE model list: Auto, Default, then every Claude Code model and every OpenCode model. Each option carries
@@ -288,10 +293,12 @@ export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_
   // ⭐ Favorit: the app-level pinned ids that exist in either list (each keeps its own engine + lock rules).
   const favs = favoriteModelList(favorites, claude, opencode);
   if (favs.length) opts.push(`<optgroup label="⭐ Favorit">${favs.map((m) => option(m, m.engine)).join('')}</optgroup>`);
-  // Claude Code: one group with its own catalog (the search filter applies to it too).
-  const claudeGroups = groupModels(claude, query);
-  if (claudeGroups.length) opts.push(`<optgroup label="Claude">${claudeGroups.flatMap((g) => g.models.map((m) => option(m, DEFAULT_ENGINE))).join('')}</optgroup>`);
-  else opts.push(`<optgroup label="Claude">${infoOption(claude.length ? 'Tidak ada model yang cocok' : 'Katalog Claude belum tersedia')}</optgroup>`);
+  // Claude Code: one group with its own catalog (the search filter applies to it too). Hidden while Claude is off.
+  if (claudeEnabled()) {
+    const claudeGroups = groupModels(claude, query);
+    if (claudeGroups.length) opts.push(`<optgroup label="Claude">${claudeGroups.flatMap((g) => g.models.map((m) => option(m, DEFAULT_ENGINE))).join('')}</optgroup>`);
+    else opts.push(`<optgroup label="Claude">${infoOption(claude.length ? 'Tidak ada model yang cocok' : 'Katalog Claude belum tersedia')}</optgroup>`);
+  }
   // Model lain: one group PER provider (river, opencode-go, …), each labelled by the provider's display name when
   // known; an <optgroup> cannot nest another, so the "OpenCode" wrapper only remains for the info lines. A group
   // whose provider has no stored credentials renders its models disabled with the login hint — the model that is

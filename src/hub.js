@@ -522,7 +522,7 @@ export class Hub {
     const settings = (state.settings = isObject(state.settings) ? state.settings : {});
     for (const [id, raw] of Object.entries(settings)) {
       if (!isChatId(id) || ENGINES.includes(raw?.engine)) continue;
-      settings[id] = { ...(isObject(raw) ? raw : {}), engine: state.engine };
+      settings[id] = { ...(isObject(raw) ? raw : {}), engine: state.engine ?? this.defaultEngine() };
       changed = true;
     }
     return changed;
@@ -619,6 +619,25 @@ export class Hub {
   /** The app-wide DEFAULT engine (👤 Akun): projects that do not have one of their own yet start on it. */
   get engine() {
     return this.persisted.engine;
+  }
+
+  /** Is Claude Code switched on in the app? Off = OpenCode only; nothing is deleted and one flag brings it back. */
+  claudeEnabled() {
+    return this.persisted.claudeEnabled !== false;
+  }
+
+  /** The engine a project seen for the first time starts on: Claude only while it is enabled (and the default). */
+  defaultEngine() {
+    return this.claudeEnabled() ? this.persisted.engine : 'opencode';
+  }
+
+  /** Switches Claude Code off (or back on). Persisted with everything else: a backup restores the same state. */
+  setClaudeEnabled(on) {
+    const next = Boolean(on);
+    if (next === this.claudeEnabled()) return next;
+    this.persisted.claudeEnabled = next;
+    this.save();
+    return next;
   }
 
   /** The engine one project runs on: its own choice, else the app-wide default. */
@@ -962,7 +981,7 @@ export class Hub {
     const stored = this.persisted.settings?.[project.id];
     if (!ENGINES.includes(stored?.engine)) {
       this.persisted.settings ??= {};
-      this.persisted.settings[project.id] = { ...stored, engine: this.persisted.engine };
+      this.persisted.settings[project.id] = { ...stored, engine: this.defaultEngine() };
       changed = true;
     }
     if (changed && this.ready) this.broadcast('projects', this.listProjects());
