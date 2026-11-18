@@ -2932,6 +2932,13 @@ body.read-only #composer-hint { color: var(--ask); }
 .ext-list p { margin: 2px 0 0; }
 .ext-actions { display: flex; gap: 6px; flex: none; }
 #ext-filter { width: 100%; margin-bottom: 6px; }
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
+  /* A long plugin/agent name plus two buttons on 320–390 px squeezed the title to nothing: the actions get their
+     own row under it (a phone sheet, one thing per line). */
+  .ext-list > li { flex-wrap: wrap; }
+  .ext-actions { flex: 1 0 100%; justify-content: flex-end; }
+  .ext-actions button { min-height: 44px; }
+}
 .pr-code b { font: 700 22px/1.2 var(--mono); letter-spacing: 2px; }
 @media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   /* 📖 The phone's Kantor view now folds the people grid too: the toggle is the same one laptop uses, with a

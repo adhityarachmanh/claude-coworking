@@ -2737,6 +2737,13 @@ for (const vp of VIEWPORTS) {
         assert.match(view.costKpi, /\$0\.75/);
         assert.equal(view.hint, '60% catatan punya biaya');
         assert.equal(await page.eval(horizontalOverflow), null, 'tanpa scroll horizontal');
+        // The tables are wide (nowrap): the card itself must never scroll sideways on a phone. A wrapper that
+        // scrolls its own table is fine; a table pressed against the card edge is not.
+        const cardFit = await page.eval(() => {
+          const card = document.querySelector('#report-modal .modal-card');
+          return card ? card.scrollWidth - card.clientWidth : 0;
+        });
+        assert.ok(cardFit <= 1, `tabel laporan tidak melebihi kartu (${cardFit} px)`);
         assert.deepEqual(await page.eval(unnamedButtons, '#report-modal'), []);
       } finally {
         await restoreReport(page);

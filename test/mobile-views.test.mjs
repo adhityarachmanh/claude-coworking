@@ -22,11 +22,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const PORTRAIT = [
   { name: '390x844', width: 390, height: 844, mobile: true },
   { name: '360x740', width: 360, height: 740, mobile: true },
+  { name: '320x640', width: 320, height: 640, mobile: true }, // the narrowest phone still in use
 ];
 const LANDSCAPE = { name: '844x390', width: 844, height: 390, mobile: true, landscape: true };
 const PHONES = [...PORTRAIT, LANDSCAPE];
 const DESKTOP = { name: '1440x900', width: 1440, height: 900, mobile: false };
 const SHORT_DESKTOP = { name: '900x480', width: 900, height: 480, mobile: false }; // a short laptop window: still the laptop layout
+const TABLET = { name: '768x1024', width: 768, height: 1024, mobile: false }; // iPad portrait: stacked laptop layout, not a phone
 
 let TMP;
 let BASE;
@@ -347,7 +349,7 @@ describe('HP view: screenshot + audit', { skip: SKIP ?? false }, () => {
         await page.close();
       }
     }
-    for (const vp of [DESKTOP, SHORT_DESKTOP]) {
+    for (const vp of [DESKTOP, SHORT_DESKTOP, TABLET]) {
       const page = await browser.newPage();
       try {
         await page.setViewport(vp);
@@ -651,7 +653,7 @@ for (const vp of PHONES) {
 }
 
 describe('desktop tidak berubah (> 760 px, pointer halus)', { skip: SKIP ?? false }, () => {
-  for (const vp of [DESKTOP, SHORT_DESKTOP]) {
+  for (const vp of [DESKTOP, SHORT_DESKTOP, TABLET]) {
     test(`${vp.name}: layout laptop, tanpa .phone-only, tombol Perubahan lengkap, diff tidak dibungkus`, async () => {
       const page = await browser.newPage();
       try {
