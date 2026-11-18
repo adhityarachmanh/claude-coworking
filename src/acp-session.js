@@ -48,6 +48,10 @@ const RESUME_WINDOW_MS = envMs('OFFICE_RESUME_WINDOW_MS', 10 * 60_000);
 const RESUME_QUIET_MS = envMs('OFFICE_RESUME_QUIET_MS', 4_000);
 const RESUME_POLL_MS = envMs('OFFICE_RESUME_POLL_MS', 5_000);
 const RESUME_MAX_MS = envMs('OFFICE_RESUME_MAX_MS', 30 * 60_000);
+// ACP delegations (subagents) as ⧗ tasks: a child session that is no longer busy, with no new frame for this long,
+// is done. The parent's own resume is the primary signal (see beginResumeTurn); this is the fallback.
+const AGENT_QUIET_MS = envMs('OFFICE_AGENT_QUIET_MS', 20_000);
+const AGENT_MAX_MS = envMs('OFFICE_AGENT_MAX_MS', 30 * 60_000);
 const STDERR_TAIL = 4000;
 const OPENCODE_SESSION = /^ses_[\w-]{1,100}$/;
 const POINTS_CACHE_MS = 5000; // ⏪ the rewind list is reused this long (see rewindPoints)
@@ -298,6 +302,8 @@ export class AcpAdapter {
     // Background shell calls (toolCallId -> info), kept after the turn's tools are cleared: OpenCode notifies the
     // session when such a shell finishes, and that late frame must still close its ⧗ task.
     this.backgroundShells = new Map();
+    // ACP delegations (openCode `subagent`/`task`) as ⧗ tasks: launch call id -> liveness + detail of its child.
+    this.agents = new Map();
     this.text = null; // { id, parts } — the assistant message being streamed
     this.lastText = ''; // the last finished assistant message of the turn (reset per turn by the session)
     this.planSeq = 0;
@@ -308,6 +314,15 @@ export class AcpAdapter {
       case 'agent_message_chunk': {
         const piece = u.content?.type === 'text' ? u.content.text : '';
         if (!piece) return;
+        // A child session's own answer: keep the tail for the delegation's detail dialog (and keep its task alive).
+        const childSid = this.childSessionId(u);
+        if (childSid) {
+          const agent = this.agentOfChild(childSid);
+          if (agent) {
+            agent.lastAt = Date.now();
+            agent.lastText = `${agent.lastText ?? ''}${piece}`.slice(-4000);
+          }
+        }
         const id = u.messageId ?? 'acp-message';
         if (this.text?.id !== id) {
           this.flushText();
@@ -479,7 +494,11 @@ export class AcpAdapter {
     // A `subagent` call's final update announces the child session it just started: the authoritative link to the
     // steps that will stream later (a title prefix is only a fallback).
     const announced = typeof u.rawOutput?.metadata?.sessionID === 'string' ? u.rawOutput.metadata.sessionID : null;
-    if (announced) this.registerChild(announced, { call: id });
+    if (announced) {
+      this.registerChild(announced, { call: id });
+      const agent = this.agents.get(id);
+      if (agent) agent.sessionId = announced;
+    }
     // A child session's own call carries the marker (or a `<sessionId>:` prefixed id): link it to its delegation.
     const sid = this.childSessionId(u);
     if (sid) {
@@ -488,6 +507,8 @@ export class AcpAdapter {
       info.child = sid;
       if (entry?.title) info.childTitle ??= String(entry.title);
       if (!info.parent && entry?.call) info.parent = entry.call;
+      const step = typeof u.rawInput?.command === 'string' ? u.rawInput.command : typeof u.title === 'string' ? u.title : null;
+      this.touchAgent(sid, step);
     }
     if (u.title) {
       // "<subagent description>: <tool>" (the child session's own title, or the description it was launched with)
@@ -529,9 +550,54 @@ export class AcpAdapter {
     // only a real description (not the "subagent" title fallback) can prefix the subagent's own calls
     const desc = info.rawInput?.description;
     if (name === 'Agent' && typeof desc === 'string' && desc) this.subagents.set(desc, [...(this.subagents.get(desc) ?? []), id]);
+    if (name === 'Agent') this.registerAgentTask(id, info, input); // a delegation is background work: ⧗ Tugas latar
     this.emit({ type: 'assistant', parent_tool_use_id: info.parent ?? null, message: { id: `acp-tool-${id}`, content: [block] } });
     this.registerShellTask(id, info, name, input);
     return { name, input };
+  }
+
+  /**
+   * OpenCode's `subagent`/`task` call is a DELEGATION, not a normal tool: it resolves at once ("working in the
+   * background") and the child session keeps working after the parent's turn. Register it as a ⧗ task from the
+   * start, so a long delegated job (e.g. `flutter build apk`) is visible with its duration and last step.
+   */
+  registerAgentTask(id, info, input) {
+    if (info.agentTask) return;
+    info.agentTask = true;
+    const description = String(input?.description ?? info.title ?? 'Subagent').slice(0, 200) || 'Subagent';
+    const agent = String(input?.subagent_type ?? 'general').slice(0, 40);
+    this.agents.set(id, { taskId: `oc-agent-${id}`, call: id, sessionId: null, description, agent, steps: [], lastText: '', lastAt: Date.now(), sentAt: 0 });
+    this.emit({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: `oc-agent-${id}`,
+      subagent_type: agent,
+      is_backgrounded: true,
+      tool_use_id: id,
+      description,
+      startedAt: Date.now(),
+      source: 'acp',
+    });
+  }
+
+  /** The delegation whose child session this is (or null): used for its task's liveness and detail. */
+  agentOfChild(sid) {
+    const call = sid ? this.childSessions.get(sid)?.call : null;
+    return call ? this.agents.get(call) : null;
+  }
+
+  /** One child frame: keeps the delegation's task alive and records the step for its detail dialog. */
+  touchAgent(sid, step) {
+    const agent = this.agentOfChild(sid);
+    if (!agent) return;
+    agent.lastAt = Date.now();
+    if (step) {
+      agent.steps.push({ ts: Date.now(), type: 'tool', text: String(step).slice(0, 200), status: 'running' });
+      if (agent.steps.length > 60) agent.steps.splice(0, agent.steps.length - 60);
+    }
+    if (Date.now() - (agent.sentAt ?? 0) < 3000) return; // throttle: the task's lastActivityAt only needs a nudge
+    agent.sentAt = Date.now();
+    this.emit({ type: 'system', subtype: 'task_progress', task_id: agent.taskId, summary: agent.steps.at(-1)?.text ?? agent.description, last_tool_name: agent.steps.at(-1)?.text ?? null });
   }
 
   /**
@@ -746,6 +812,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.badEfforts = new Set(); // effort levels this provider refused (see fallBackEffort): never sent again
       this.stoppedTurn = false; // a turn the user stopped: its late frames must not reopen rows until the next prompt
       this.lastReapAt = 0; // last background-shell liveness check (throttled, see reapBackgroundShells)
+      this.lastAgentReapAt = 0; // last delegation liveness check (see reapAgentTasks)
+      this.agentReaping = false;
       this.reaping = false;
       this.resumeUntil = 0; // OpenCode may resume the session on its own after a background task (see onUpdate)
       this.resumeTurn = null; // { uuid, started, lastAt, costBefore, epoch, timer } while that turn is running
@@ -862,7 +930,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const stopped = (interrupted || this.interrupting) && !rejection;
       // A turn the user stopped reads "Dihentikan", like Claude's interrupted turns.
       const stillWorking = this.adapter.finish({ ...msg, ok: ok || Boolean(rejection), interrupted: stopped, error: stopped ? stopNote : error || 'OpenCode gagal menyelesaikan giliran.' });
-      if (!stopped && stillWorking) this.expectResume(); // OpenCode resumes this session when the child/background work ends
+      const agentsRunning = [...(this.translator?.bgTasks?.values() ?? [])].some((t) => t.source === 'acp' && t.kind === 'agent' && t.status === 'running');
+      if (!stopped && (stillWorking || agentsRunning)) this.expectResume(); // OpenCode resumes this session when the child/background work ends
       if (!stopped) this.adapter.armOpenChildren(); // late child steps still open: close them if their report never comes
       this.recordTurnUsage(usage ?? {}, costUsd);
       this.interrupting = false;
@@ -1069,6 +1138,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         this.syncAcpShellActivity(); // the output files of this session's own shells feed the stuck chip
         this.linkShells().catch(() => {});
         this.reapBackgroundShells().catch(() => {});
+        this.reapAgentTasks().catch(() => {});
       }, ms);
       this.shellTimer.unref?.();
     }
@@ -1102,6 +1172,47 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         }
       } finally {
         this.reaping = false;
+      }
+    }
+
+    /**
+     * ACP delegations (subagents) outlive the parent turn as child sessions. Their ⧗ task stays running while the
+     * child is busy; `session.list` says when it is idle, and only then (plus a quiet window) is it done. The
+     * parent's own resume closes it first in the usual path (beginResumeTurn), so this is the fallback.
+     */
+    async reapAgentTasks() {
+      const t = this.translator;
+      if (!t || !this.adapter?.agents.size || this.agentReaping) return;
+      const now = Date.now();
+      if (now - (this.lastAgentReapAt ?? 0) < SHELL_LIVENESS_MS) return;
+      const running = [...t.bgTasks.values()].filter((x) => x.source === 'acp' && x.kind === 'agent' && x.status === 'running');
+      if (!running.length) return;
+      this.lastAgentReapAt = now;
+      this.agentReaping = true;
+      try {
+        let sessions;
+        try {
+          const { openCodeApi } = await import('./opencode-auth.js');
+          const list = await openCodeApi(this.m.opencode, 'session.list', { timeout: 15_000 });
+          sessions = new Map((Array.isArray(list) ? list : []).map((s) => [s.id, s]));
+        } catch {
+          return; // cannot ask: the parent's resume is the authority, never guess
+        }
+        for (const task of running) {
+          if (task.status !== 'running') continue;
+          const info = this.adapter.agents.get(String(task.toolUseId));
+          if (!info) continue;
+          const rec = info.sessionId ? sessions.get(info.sessionId) : null;
+          // A running child has time.busy newer than time.idle; an idle one has time.idle >= time.busy.
+          const idle = rec ? (Number(rec.time?.idle) || 0) >= (Number(rec.time?.busy) || 0) : false;
+          const quiet = now - (info.lastAt ?? 0);
+          const endless = now - (Number(task.startedAt) || now) > AGENT_MAX_MS;
+          if (endless || (rec && idle && quiet >= AGENT_QUIET_MS) || (!rec && quiet >= Math.max(AGENT_QUIET_MS, 60_000))) {
+            this.translator.handle({ type: 'system', subtype: 'task_updated', task_id: task.id, patch: { status: 'completed' } });
+          }
+        }
+      } finally {
+        this.agentReaping = false;
       }
     }
 
@@ -1189,8 +1300,25 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       return m[1];
     }
 
-    async taskOutput(taskId) {
-      const id = String(taskId);
+    /** ⧗ detail for this session's own tasks: an ACP delegation reads its child's steps (no Claude transcript). */
+    taskDetail(task) {
+      if (task?.source !== 'acp' || task.kind !== 'agent') return null;
+      const info = this.adapter?.agents.get(String(task.toolUseId ?? ''));
+      return {
+        taskId: task.id,
+        kind: 'agent',
+        status: task.status ?? null,
+        found: Boolean(info),
+        agentType: info?.agent ?? task.agent ?? null,
+        prompt: null,
+        steps: (info?.steps ?? []).map((s) => ({ ...s })),
+        truncated: false,
+        result: info?.lastText || null,
+        note: 'Langkah lengkap ada di chat.',
+      };
+    }
+
+    async taskOutput(taskId) {      const id = String(taskId);
       const task = this.translator?.bgTasks.get(id);
       // This session's own shell (ACP-hosted): the service cannot see it — the output is read from its file.
       if (task?.source === 'acp') {
@@ -1758,6 +1886,12 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     /** The first frame of that continuation: model it as a turn (no user bubble) so busy/queue/result stay honest. */
     beginResumeTurn() {
       if (this.resumeTurn) return;
+      // OpenCode only resumes the parent after its delegations reported back: their tasks are done now.
+      for (const task of [...(this.translator?.bgTasks?.values() ?? [])]) {
+        if (task.source === 'acp' && task.kind === 'agent' && task.status === 'running') {
+          this.translator.handle({ type: 'system', subtype: 'task_updated', task_id: task.id, patch: { status: 'completed' } });
+        }
+      }
       const uuid = `auto-${++this.autoSeq}`;
       this.inflight.set(uuid, { chatId: null, text: '', state: 'started', announced: true, auto: true, blocks: [] });
       const turn = { uuid, started: Date.now(), lastAt: Date.now(), costBefore: this.cost, epoch: this.epoch, timer: null };

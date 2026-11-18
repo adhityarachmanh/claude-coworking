@@ -312,8 +312,11 @@ function renderHead(task) {
   // The live region only changes with the status (not every second), so a screen reader hears each change once.
   $('#td-meta').innerHTML = `<span class="td-state st-${escapeHtml(task.status)}">${escapeHtml(stateLabel(task))}</span>${task.summary ? ` — ${escapeHtml(task.summary)}` : ''}${task.error ? ` — <span class="err-text">${escapeHtml(task.error)}</span>` : ''}`;
   const ro = state.readOnly ? `disabled title="${READ_ONLY_HINT}"` : '';
+  // ACP delegations (OpenCode subagents) cannot be stopped per task: there is no per-child abort, only ■ Stop on
+  // the whole turn. Showing a button that always fails would be worse than no button.
+  const canStop = isRunning(task) && !(task.source === 'acp' && task.kind === 'agent');
   $('#td-actions').innerHTML = [
-    isRunning(task) ? `<button type="button" class="danger" data-task-act="stop" ${ro}>■ Hentikan</button>` : '',
+    canStop ? `<button type="button" class="danger" data-task-act="stop" ${ro}>■ Hentikan</button>` : '',
     `<button type="button" data-task-act="copy" ${canCopy ? '' : 'disabled'}>📋 ${task.kind === 'agent' ? 'Salin laporan' : 'Salin output'}</button>`,
   ].join('');
 }

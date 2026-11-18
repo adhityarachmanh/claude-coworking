@@ -54,12 +54,14 @@ export function register(router) {
       return json(res, 200, { available: true, shells: [] }); // shell service down: the section simply stays empty
     }
   }));
-  router.post('/api/projects/:id/task-detail', withSession(({ hub }, req, res, { project }, body) => {
+  router.post('/api/projects/:id/task-detail', withSession(({ hub }, req, res, { project, session }, body) => {
     // Read-only monitor (⧗ Tugas latar): the task must be one of this session's own; files are found server-side.
     const taskId = String(body.taskId ?? '');
     if (!taskId) return json(res, 400, { error: 'taskId kosong' });
     const task = (hub.rt(project.id).status.tasks ?? []).find((t) => t.id === taskId);
     if (!task) return json(res, 404, { error: 'Tugas tidak ditemukan (mungkin sudah dibersihkan).' });
+    const own = session.taskDetail?.(task); // ACP delegation: its child session, not a Claude transcript
+    if (own) return json(res, 200, own);
     return json(res, 200, taskDetail(project.path, hub.sessionIdFor(project.id), task));
   }));
   router.post('/api/projects/:id/task-stop', withSession((ctx, req, res, { session }, body) => answer(res, session.stopTask(String(body.taskId ?? '')))));

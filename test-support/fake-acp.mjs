@@ -112,6 +112,19 @@ if (process.argv[2] === 'api') {
     { id: 'google', name: 'Google', methods: [{ type: 'key' }, { type: 'env', names: ['GEMINI_API_KEY'] }] },
   ];
   switch (op) {
+    // The child sessions of a delegation as the real service lists them (id + time.busy/idle). The app's delegation
+    // liveness reads this; a test writes FAKE_ACP_AGENT_STATE. Empty by default: no child, nothing to reap.
+    case 'session.list': {
+      const stateFile = process.env.FAKE_ACP_AGENT_STATE;
+      let list = [];
+      try {
+        if (stateFile && has(stateFile)) list = JSON.parse(readFileSync(stateFile, 'utf8'));
+      } catch {
+        list = [];
+      }
+      out(Array.isArray(list) ? list : []);
+      break;
+    }
     // The app asks whether a session it did not prompt is still running (OpenCode's own continuation after a
     // background task). Tests keep it empty: the watcher closes the turn after its quiet window.
     case 'session.active':
@@ -499,6 +512,35 @@ async function turn(sessionId, text) {
       stepStart(children[1], 'chatcmpl-fake-read2', 'read', 'read', { path: 'README.md' });
       stepEnd(children[1], 'chatcmpl-fake-read2', '1: # Toko');
     }, 150);
+    return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
+  }
+  if (/^delegasiresume/.test(text)) {
+    // A delegation running a long job (the real APK build case): the launch resolves at once with its child session,
+    // the child streams a long `flutter build` step, and OpenCode RESUMES the parent when it reports back. The app
+    // must show the delegation in ⧗ while the child works, then close it and show the parent's continuation.
+    const call = 'call-agent-apk';
+    const sid = 'ses_anak_apk';
+    const meta = { 'opencode/child-session': { id: sid, parentID: sessionId, depth: 1, title: 'Build APK' } };
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'subagent', kind: 'think', status: 'pending', rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, title: 'subagent', kind: 'think', status: 'in_progress', rawInput: { agent: 'devops', description: 'Build APK', prompt: 'build' } });
+    await sleep(30);
+    update(sessionId, {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: call,
+      status: 'completed',
+      rawOutput: { metadata: { sessionID: sid, status: 'running', truncated: false } },
+      content: [{ type: 'content', content: { type: 'text', text: `The subagent is working in the background (sessionID: ${sid}).` } }],
+    });
+    // The child's own long step + an answer (the detail dialog reads both).
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: `${sid}:sh_build`, title: 'Build APK: bash', kind: 'execute', status: 'pending', rawInput: {}, _meta: meta });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: `${sid}:sh_build`, title: 'Build APK: bash', kind: 'execute', status: 'in_progress', rawInput: { command: 'flutter build apk --release --target-platform android-arm64' }, _meta: meta });
+    update(sessionId, { sessionUpdate: 'agent_message_chunk', messageId: 'msg_anak_apk', content: { type: 'text', text: 'Build APK arm64 sedang berjalan.' }, _meta: meta });
+    await say('msg_apk', 'Saya delegasikan build APK; laporan menyusul.');
+    setTimeout(() => {
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: `${sid}:sh_build`, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'app-arm64-v8a-release.apk 24 MB' } }], _meta: meta });
+      // OpenCode resumes the PARENT with the child's report: no prompt from the app.
+      setTimeout(() => update(sessionId, { sessionUpdate: 'agent_message_chunk', messageId: 'msg_apk_done', content: { type: 'text', text: 'APK berhasil dibangun dan siap dipasang.' } }), 200);
+    }, 1200);
     return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
   }
   if (/^langkahterlambat/.test(text)) {
