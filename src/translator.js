@@ -339,11 +339,15 @@ export class StreamTranslator {
       // OpenCode has no closing notification of its own: a background shell that ended is news for the user. A
       // foreground one ends with its call (every bash call would otherwise add a row), and Claude Code's
       // task_notification has its own path below.
-      if (wasRunning && t.background && t.source === 'acp' && p.status && p.status !== 'running' && p.status !== 'pending') this.announceTaskDone(t, p.status === 'failed');
+      if (wasRunning && t.background && t.source === 'acp' && p.status && p.status !== 'running' && p.status !== 'pending') {
+        this.announceTaskDone(t, p.status === 'failed');
+        this.sink.resume?.(); // OpenCode resumes the session by itself when that work is done (src/acp-session.js)
+      }
     } else if (msg.subtype === 'task_notification') {
       Object.assign(t, { status: msg.status, summary: msg.summary ?? t.summary, endedAt: Date.now() });
     }
     if (msg.description) t.description = truncate(msg.description, 200);
+    if (Number.isFinite(msg.pid)) t.pid = msg.pid; // the shell's own PID (OpenCode prints it): completion without ancestry
     t.kind ??= 'shell';
     if (msg.tool_use_id) t.toolUseId = msg.tool_use_id;
     t.role ??=

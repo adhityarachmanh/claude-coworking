@@ -206,6 +206,44 @@ export function shellLiveness(command, ancestorPid, list) {
 }
 
 /**
+ * Is the shell still running, judged by the PID OpenCode itself printed? A background shell is spawned by
+ * OpenCode's service, not by our ACP child, so the ancestry rule below cannot be used for it. A missing PID means
+ * "done" only when no child still carries the command; an unreadable list is "unknown" (never close running work).
+ * @param {number} pid
+ * @param {string} command
+ * @param {{ pid: number, ppid: number, command: string }[]} list
+ * @returns {'running'|'done'|'unknown'}
+ */
+export function pidLiveness(pid, command, list) {
+  const rootPid = Number(pid);
+  if (!Number.isFinite(rootPid) || rootPid <= 0 || !Array.isArray(list) || !list.length) return 'unknown';
+  const byId = new Map(list.filter((p) => Number.isFinite(p?.pid)).map((p) => [p.pid, p]));
+  const want = norm(command);
+  const root = byId.get(rootPid);
+  if (!root) {
+    // the wrapper is gone: a surviving child that still carries the command keeps the shell alive
+    const orphan = [...byId.values()].some((p) => p.ppid === rootPid && want && norm(p.command).includes(want));
+    return orphan ? 'running' : 'done';
+  }
+  if (!want) return 'running';
+  const ours = norm(root.command).includes(want) || [...byId.values()].some((p) => isAncestorOf(rootPid, p.pid, byId) && norm(p.command).includes(want));
+  // The PID exists but its command line does not prove it is ours (PID reuse): never declare it finished.
+  return ours ? 'running' : 'unknown';
+}
+
+/** The process tree to kill for a background shell with a known PID, or null when it cannot be proven ours. */
+export function processByPid(pid, command, list) {
+  const rootPid = Number(pid);
+  if (!Number.isFinite(rootPid) || rootPid <= 0 || !Array.isArray(list)) return null;
+  const byId = new Map(list.filter((p) => Number.isFinite(p?.pid)).map((p) => [p.pid, p]));
+  const root = byId.get(rootPid);
+  if (!root) return null;
+  const want = norm(command);
+  if (!want) return root;
+  return norm(root.command).includes(want) || [...byId.values()].some((p) => isAncestorOf(rootPid, p.pid, byId) && norm(p.command).includes(want)) ? root : null;
+}
+
+/**
  * The one process tree running `command` (its command line contains the exact command text) whose ancestry reaches
  * `ancestorPid` (our ACP child). The chain ACP child → shell wrapper → real command may match several processes:
  * the topmost one wins, its tree kill takes the rest. Only a UNIQUE tree is returned — none or ambiguous → null,

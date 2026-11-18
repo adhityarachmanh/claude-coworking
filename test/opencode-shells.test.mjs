@@ -4,10 +4,30 @@ import { test } from 'node:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { matchShell, matchShellProcess, OC_TASK, shellFileMtime, shellFileTail, shellLiveness, shellOutputFile } from '../src/opencode-shells.js';
+import { matchShell, matchShellProcess, OC_TASK, pidLiveness, processByPid, shellFileMtime, shellFileTail, shellLiveness, shellOutputFile } from '../src/opencode-shells.js';
 import { StreamTranslator } from '../src/translator.js';
 
 const sh = (id, command, started) => ({ id, command, status: 'running', time: { started } });
+
+test('pidLiveness: the PID OpenCode printed decides, not our ACP child (background shells are service children)', () => {
+  const list = [
+    { pid: 10, ppid: 1, command: 'powershell -Command "node build.js *> out.log"' },
+    { pid: 11, ppid: 10, command: 'node build.js' },
+    { pid: 99, ppid: 1, command: 'unrelated' },
+  ];
+  assert.equal(pidLiveness(10, 'node build.js', list), 'running', 'the wrapper still carries the command');
+  assert.equal(pidLiveness(10, 'cargo test', list), 'unknown', 'PID reused / not ours: never declare it finished');
+  assert.equal(pidLiveness(12, 'node build.js', list), 'done', 'the wrapper is gone and no child carries it');
+  assert.equal(pidLiveness(10, 'node build.js', []), 'unknown', 'an unreadable list closes nothing');
+  assert.equal(pidLiveness(0, 'x', list), 'unknown');
+  // A surviving child of a dead wrapper keeps it alive.
+  const orphan = [{ pid: 12, ppid: 7, command: 'webpack --watch' }];
+  assert.equal(pidLiveness(7, 'webpack --watch', orphan), 'running');
+  // The stop helper only returns a process it can prove is ours.
+  assert.equal(processByPid(10, 'node build.js', list)?.pid, 10);
+  assert.equal(processByPid(99, 'node build.js', list), null);
+  assert.equal(processByPid(10, '', list)?.pid, 10, 'no command: the PID itself, as printed by OpenCode');
+});
 
 test('a bash call is matched to its running shell: exact first, whitespace-insensitive, newest, never twice', () => {
   const shells = [sh('sh_a', 'npm   test', 1), sh('sh_b', 'npm test', 2), sh('sh_c', 'bash -lc "node server.js --port 1"', 3)];

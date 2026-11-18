@@ -41,6 +41,13 @@ const envMs = (name, fallback) => {
 };
 const SHELL_LIVENESS_MS = envMs('OFFICE_SHELL_LIVENESS_MS', 10_000);
 const SHELL_GRACE_MS = envMs('OFFICE_SHELL_GRACE_MS', 5_000);
+// After a background task ends OpenCode resumes the session on its own ("you will be resumed automatically"): those
+// frames belong to this conversation, but they arrive outside any prompt of ours. The window lets them in; the
+// session's own `session.active` then tells us when that unsolicited turn is over.
+const RESUME_WINDOW_MS = envMs('OFFICE_RESUME_WINDOW_MS', 10 * 60_000);
+const RESUME_QUIET_MS = envMs('OFFICE_RESUME_QUIET_MS', 4_000);
+const RESUME_POLL_MS = envMs('OFFICE_RESUME_POLL_MS', 5_000);
+const RESUME_MAX_MS = envMs('OFFICE_RESUME_MAX_MS', 30 * 60_000);
 const STDERR_TAIL = 4000;
 const OPENCODE_SESSION = /^ses_[\w-]{1,100}$/;
 const POINTS_CACHE_MS = 5000; // ⏪ the rewind list is reused this long (see rewindPoints)
@@ -336,6 +343,7 @@ export class AcpAdapter {
           const text = textOf(u.content) || (u.rawOutput?.error ? String(u.rawOutput.error) : u.status === 'completed' ? 'ok' : 'gagal');
           this.emit({ type: 'user', parent_tool_use_id: info.parent ?? null, message: { content: [{ type: 'tool_result', tool_use_id: u.toolCallId, content: clip(text, 8000), is_error: u.status === 'failed' }] } });
           // Late metadata (only on the final update): the task still exists, already finished.
+          this.adoptBackgroundShell(info, text);
           this.registerShellTask(u.toolCallId, info, mapTool(info).name, info.rawInput ?? {});
           this.finishShellTask(info, u.status, text);
           // A `subagent` call resolving this way is only its LAUNCH ("working in the background"): the child runs
@@ -527,6 +535,19 @@ export class AcpAdapter {
   }
 
   /**
+   * OpenCode's shell tool announces a backgrounded command in its OUTPUT text, not in metadata (v2.2.5/2.3.0):
+   * "Command moved to the background (shell ID: sh_…). PID: …". Adopt that as the call's metadata, so the ⧗ task
+   * exists, its output file is readable, and its PID can be checked for completion. Metadata wins when present.
+   */
+  adoptBackgroundShell(info, text) {
+    if (info.meta?.shellID || !/moved to the background/i.test(String(text ?? ''))) return;
+    const shellId = /shell ID:\s*(sh_[\w-]{1,100})/i.exec(String(text))?.[1];
+    if (!shellId) return;
+    const pid = Number(/PID:\s*(\d{1,10})/.exec(String(text))?.[1]) || null;
+    info.meta = { ...(info.meta ?? {}), shellID: shellId, background: true, ...(pid ? { pid } : {}) };
+  }
+
+  /**
    * OpenCode's shell tool names its shell in the call's metadata (shellID): the task `oc:<shellID>` exists from the
    * first update, so the ⧗ panel, the stuck chip and stop work from the very start (like Claude Code's tasks). Its
    * state later comes only from the tool call itself (never from the output file).
@@ -537,7 +558,7 @@ export class AcpAdapter {
     info.shellTask = true;
     info.callId = id;
     const command = typeof input.command === 'string' ? input.command : info.title;
-    this.emit({ type: 'system', subtype: 'task_started', task_id: `oc:${shellId}`, is_backgrounded: Boolean(info.meta.background), tool_use_id: id, description: command, startedAt: Date.now(), source: 'acp' });
+    this.emit({ type: 'system', subtype: 'task_started', task_id: `oc:${shellId}`, is_backgrounded: Boolean(info.meta.background), tool_use_id: id, description: command, startedAt: Date.now(), source: 'acp', pid: Number.isFinite(info.meta?.pid) ? info.meta.pid : undefined });
     // A background shell outlives its tool call: remember the call so a late `completed` frame (OpenCode notifies the
     // session when it finishes) still reaches this task after the turn's tools were cleared.
     if (info.meta?.background) {
@@ -634,6 +655,7 @@ export class AcpAdapter {
       if (left.length) this.subagents.set(desc, left);
       else this.subagents.delete(desc);
     }
+    return still.size; // the session opens its resume window when something of OpenCode keeps working
   }
 
   /**
@@ -725,6 +747,9 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.stoppedTurn = false; // a turn the user stopped: its late frames must not reopen rows until the next prompt
       this.lastReapAt = 0; // last background-shell liveness check (throttled, see reapBackgroundShells)
       this.reaping = false;
+      this.resumeUntil = 0; // OpenCode may resume the session on its own after a background task (see onUpdate)
+      this.resumeTurn = null; // { uuid, started, lastAt, costBefore, epoch, timer } while that turn is running
+      this.autoSeq = 0;
     }
 
     get engineName() {
@@ -836,7 +861,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.rejection = null;
       const stopped = (interrupted || this.interrupting) && !rejection;
       // A turn the user stopped reads "Dihentikan", like Claude's interrupted turns.
-      this.adapter.finish({ ...msg, ok: ok || Boolean(rejection), interrupted: stopped, error: stopped ? stopNote : error || 'OpenCode gagal menyelesaikan giliran.' });
+      const stillWorking = this.adapter.finish({ ...msg, ok: ok || Boolean(rejection), interrupted: stopped, error: stopped ? stopNote : error || 'OpenCode gagal menyelesaikan giliran.' });
+      if (!stopped && stillWorking) this.expectResume(); // OpenCode resumes this session when the child/background work ends
       if (!stopped) this.adapter.armOpenChildren(); // late child steps still open: close them if their report never comes
       this.recordTurnUsage(usage ?? {}, costUsd);
       this.interrupting = false;
@@ -970,6 +996,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       }
       // ■ Stop also ends this project's shells still running in the background (as it does for Claude Code)
       for (const id of this.translator?.runningTaskIds?.() ?? []) if (String(id).startsWith('oc:')) this.stopTask(id).catch(() => {});
+      if (this.resumeTurn) this.finishResumeTurn({ interrupted: true }).catch(() => {}); // the continuation OpenCode started: ended too
       this.afterProgress();
     }
 
@@ -1063,11 +1090,14 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.reaping = true;
       this.lastReapAt = now;
       try {
-        const { listShellProcesses, shellLiveness } = await import('./opencode-shells.js');
+        const { listShellProcesses, pidLiveness, shellLiveness } = await import('./opencode-shells.js');
         const list = await listShellProcesses().catch(() => []);
         for (const task of due) {
           if (task.status !== 'running') continue; // closed meanwhile (turn end, user stop)
-          if (shellLiveness(task.command ?? task.description, pid, list) !== 'done') continue;
+          // A real OpenCode background shell prints its PID; its process is a child of OpenCode's service, so the
+          // ACP-ancestry rule cannot judge it. Without a PID, keep the old rule (older fakes, service shells).
+          const alive = task.pid ? pidLiveness(task.pid, task.command ?? task.description, list) : shellLiveness(task.command ?? task.description, pid, list);
+          if (alive !== 'done') continue;
           this.translator.handle({ type: 'system', subtype: 'task_updated', task_id: task.id, patch: { status: 'completed' } });
         }
       } finally {
@@ -1191,10 +1221,13 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
      * closed (409, nothing killed) — a user's own look-alike process is never touched.
      */
     async stopAcpShell(task) {
-      const { listShellProcesses, matchShellProcess } = await import('./opencode-shells.js');
+      const { listShellProcesses, matchShellProcess, processByPid } = await import('./opencode-shells.js');
       const { killTree } = await import('./proc.js');
       const list = await listShellProcesses();
-      const pid = matchShellProcess(task.command ?? '', this.child?.pid, list);
+      // A real background shell carries the PID OpenCode printed: verify it is still the process running this
+      // command (or its parent), else fall back to the ancestry rule. Ambiguous → nothing is killed.
+      const known = task.pid ? processByPid(task.pid, task.command ?? '', list) : null;
+      const pid = known?.pid ?? matchShellProcess(task.command ?? '', this.child?.pid, list);
       if (!pid) throw Object.assign(new Error('Proses shell tidak ditemukan secara unik (mungkin sudah selesai, atau perintah yang sama berjalan di tempat lain). Tidak ada yang dihentikan.'), { status: 409 });
       killTree(pid);
       recordAudit(this.m.hub?.dataDir, { action: 'opencode-shell-kill', detail: `${task.id} pid ${pid} · ${truncate(task.command ?? '', 120)}` });
@@ -1392,6 +1425,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         chat: (msg) => this.hub.chat(this.id, msg),
         updateChat: (chatId, patch) => this.hub.updateChat(this.id, chatId, patch),
         status: (patch) => this.hub.setStatus(this.id, patch),
+        resume: () => this.expectResume(), // OpenCode may continue the session after a background task (see onUpdate)
         gitPushed: () => this.hub.ciWatch?.(this.id),
       }, { projectPath: this.project.path });
       this.adapter = new AcpAdapter((msg) => this.translator.handle(msg));
@@ -1585,6 +1619,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     detach() {
       this.epoch++;
+      if (this.resumeTurn) {
+        clearInterval(this.resumeTurn.timer);
+        this.resumeTurn = null;
+      }
+      this.resumeUntil = 0;
       for (const p of this.rpcPending.values()) {
         clearTimeout(p.timer);
         p.reject(new Error('OpenCode berhenti.'));
@@ -1692,10 +1731,97 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       // Only during one of our turns: a late update after a stop must not reopen it (the office would stay "busy").
       // A delegation that outlived the turn is the exception: OpenCode keeps streaming its steps and their results
       // must close the rows (1.0.27 resolves the prompt while a subagent still runs in the background). A turn the
-      // user STOPPED keeps nothing: its late frames are dropped until the next prompt.
-      if (!this.busy && (this.stoppedTurn || !this.adapter.continues(u))) return;
+      // user STOPPED keeps nothing: its late frames are dropped until the next prompt. OpenCode's own continuation
+      // after a background task ends is the other exception (see acceptsResume): no prompt of ours started it.
+      if (!this.busy && (this.stoppedTurn || !this.adapter.continues(u))) {
+        if (this.stoppedTurn || !this.acceptsResume(u)) return;
+        this.beginResumeTurn();
+      }
       this.adapter.update(u);
       this.adapter.armSettle(u, this.busy);
+      if (this.resumeTurn) this.resumeTurn.lastAt = Date.now();
+    }
+
+    // ---------- the turn OpenCode starts by itself after a background task ----------
+
+    /** Frames of an unsolicited continuation: agent text/tools/plan, inside the window a background finish opened. */
+    acceptsResume(u) {
+      if (Date.now() >= this.resumeUntil) return false;
+      return ['agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update', 'plan'].includes(u?.sessionUpdate);
+    }
+
+    /** A background task ended (src/translator.js calls this sink): OpenCode may now resume the session by itself. */
+    expectResume() {
+      this.resumeUntil = Date.now() + RESUME_WINDOW_MS;
+    }
+
+    /** The first frame of that continuation: model it as a turn (no user bubble) so busy/queue/result stay honest. */
+    beginResumeTurn() {
+      if (this.resumeTurn) return;
+      const uuid = `auto-${++this.autoSeq}`;
+      this.inflight.set(uuid, { chatId: null, text: '', state: 'started', announced: true, auto: true, blocks: [] });
+      const turn = { uuid, started: Date.now(), lastAt: Date.now(), costBefore: this.cost, epoch: this.epoch, timer: null };
+      turn.timer = setInterval(() => this.pollResumeTurn().catch(() => {}), RESUME_POLL_MS);
+      turn.timer.unref?.();
+      this.resumeTurn = turn;
+      this.resumeUntil = Date.now() + RESUME_WINDOW_MS;
+      this.afterProgress(); // busy: a prompt sent meanwhile waits in the queue until this turn ends
+    }
+
+    /** Is OpenCode still working on the continuation? `session.active` answers; a failed lookup never closes it fast. */
+    async pollResumeTurn() {
+      const turn = this.resumeTurn;
+      if (!turn) return;
+      const now = Date.now();
+      if (turn.epoch !== this.epoch || !this.child || !this.m.opencode) return this.finishResumeTurn({ interrupted: true });
+      if (now - turn.started > RESUME_MAX_MS) return this.finishResumeTurn({});
+      if (now - turn.lastAt < RESUME_QUIET_MS) return;
+      let active = false;
+      try {
+        const { openCodeApi } = await import('./opencode-auth.js');
+        const list = await openCodeApi(this.m.opencode, 'session.active', { timeout: 15_000 });
+        active = Boolean(list && typeof list === 'object' && Object.keys(list).includes(this.acpSessionId));
+      } catch {
+        active = now - turn.lastAt < 60_000; // cannot ask: keep it open for a little while, never forever
+      }
+      if (!active && this.resumeTurn === turn) this.finishResumeTurn({});
+    }
+
+    /** Ends the continuation turn: one result row (with its duration/cost), then the queued prompt, if any. */
+    async finishResumeTurn({ interrupted = false } = {}) {
+      const turn = this.resumeTurn;
+      if (!turn) return;
+      this.resumeTurn = null;
+      clearInterval(turn.timer);
+      this.resumeUntil = 0;
+      if (turn.epoch !== this.epoch) {
+        this.inflight.delete(turn.uuid); // the process was let go: nothing to end in it
+        this.updateStatus();
+        return;
+      }
+      const usage = await this.resumeUsage(turn).catch(() => ({}));
+      if (turn.epoch !== this.epoch) {
+        this.inflight.delete(turn.uuid);
+        this.updateStatus();
+        return;
+      }
+      this.endTurn(turn.epoch, turn.uuid, { ok: !interrupted, interrupted, error: '', started: turn.started, costBefore: turn.costBefore, usage });
+    }
+
+    /** Token usage of the messages this continuation created (its cost comes from the session's cumulative counter). */
+    async resumeUsage(turn) {
+      if (!this.m.opencode || !this.acpSessionId) return {};
+      const { openCodeApi } = await import('./opencode-auth.js');
+      const list = await openCodeApi(this.m.opencode, 'session.message.list', { params: { sessionID: this.acpSessionId, limit: 10, order: 'desc' }, timeout: 15_000 });
+      const fresh = (Array.isArray(list) ? list : []).filter((m) => m?.type === 'assistant' && m.tokens && (Number(m.time?.created) || 0) >= turn.started - 1000);
+      const sum = (pick) => fresh.reduce((n, m) => n + (Number(pick(m)) || 0), 0);
+      const usage = {
+        inputTokens: sum((m) => m.tokens.input),
+        outputTokens: sum((m) => m.tokens.output),
+        thoughtTokens: sum((m) => m.tokens.reasoning),
+        cachedReadTokens: sum((m) => m.tokens.cache?.read),
+      };
+      return usage.inputTokens || usage.outputTokens || usage.thoughtTokens || usage.cachedReadTokens ? usage : {};
     }
 
     // ---------- permissions ----------

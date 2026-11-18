@@ -11,7 +11,9 @@ Status: **Fase 1 diimplementasikan** · Penulis: Tech Lead · 2026-11-03
 Lingkup: satu project bisa memakai **OpenCode** (lewat Agent Client Protocol, `opencode.exe acp`) sebagai pengganti Claude Code. Chat, kantor pixel-art, kartu izin, Stop/Esc, antrean, laporan token, dan pemulihan setelah restart tetap bekerja dengan UI yang sama.
 Batasan tetap: Node ≥ 20 ESM, **nol dependensi npm**, Windows sebagai platform utama, frontend vanilla. **Config OpenCode milik user tidak diubah oleh operasi biasa**; satu-satunya pengecualian adalah editor eksplisit **⚙ → Sistem → Config & Agent OpenCode**, yang memvalidasi, menyimpan riwayat backup di folder data aplikasi (`opencode-config-backups/`, tidak di samping file config), dan hanya berjalan dari laptop. Semua perintah punya timeout (maksimal 120 detik), tanpa loop tunggu tanpa batas, dan `windowsHide: true`.
 
-Fakta protokol di dokumen ini berasal dari probe OpenCode v2.0.18 (lihat §0.1). Bagian yang hanya bersumber dari spesifikasi ACP ditandai *(spek)* dan harus diverifikasi lewat `test-support/opencode-contract.mjs`.
+Fakta protokol di dokumen ini berasal dari probe OpenCode v2.0.18 (lihat §0.1), lalu diperbarui dengan pengamatan
+pada **v2.3.0** (lihat §0.2). Bagian yang hanya bersumber dari spesifikasi ACP ditandai *(spek)* dan harus
+diverifikasi lewat `test-support/opencode-contract.mjs`.
 
 ---
 
@@ -40,6 +42,21 @@ Fakta protokol di dokumen ini berasal dari probe OpenCode v2.0.18 (lihat §0.1).
 - `session/prompt` → `{stopReason:"end_turn"|"cancelled", usage:{inputTokens, outputTokens, totalTokens, thoughtTokens, cachedReadTokens}}`.
 - `session/update`: `agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`, `usage_update {used, size, cost:{amount, currency}}`; *(spek)* `plan`, `session/cancel`, `session/load`.
 - Izin: `session/request_permission` dengan opsi `once` / `always` / `reject`, dijawab dengan `{outcome:{outcome:"selected", optionId}}`.
+
+### 0.2 Catatan upstream (tanggal · versi · perilaku)
+
+Sumber kebenaran: **https://github.com/anomalyco/opencode** (paket `@opencode/cli`, dilihat dari `repository` di
+`package.json` paket terpasang). Setiap perubahan perilaku OpenCode/ACP dicatat di sini **sebelum** memberi workaround;
+`test-support/fake-acp.mjs` harus meniru bentuk frame yang tercatat, bukan tebakan.
+
+| Tanggal | Versi | Temuan | Sumber |
+|---|---|---|---|
+| 2026-11-18 | 2.3.0 | Shell yang dipindah ke latar **tidak** membawa `shellID` di metadata ACP; identitasnya ada di teks output tool: `Command moved to the background (shell ID: sh_…). PID: …`. Aplikasi mendeteksi dari teks itu (metadata tetap dicoba lebih dulu) dan menyimpan PID. | Chat nyata Adhitron (6 shell latar di 3 project, 0 task terdaftar sebelum perbaikan 1.0.65) |
+| 2026-11-18 | 2.3.0 | `opencode api shell.list --param location[directory]=…` mengembalikan `[]` untuk shell ACP yang sudah selesai. Penyelesaian **tidak boleh** bergantung pada daftar layanan; pakai frame `completed` yang telat dan/atau PID. | Probe CLI di mesin ini |
+| 2026-11-18 | 2.3.0 | Setelah tugas latar selesai, OpenCode **melanjutkan sesi sendiri** (“you will be resumed automatically”) tanpa `session/prompt`. ACP tidak punya notifikasi akhir giliran untuk itu; `session.active` (dipakai mirror) adalah penanda “masih bekerja”. | Teks tool OpenCode + `src/opencode-mirror.js` |
+| 2026-11-18 | 2.3.0 | `opencode api session.list` memberi `time.busy` / `time.idle` per sesi; `session.active` mengembalikan sesi yang sedang bekerja. | Probe CLI di mesin ini |
+
+Kalau versi terpasang berbeda dari tabel ini, ulangi probe lebih dulu (lihat `AGENTS.md` → “Acuan upstream OpenCode”).
 
 ---
 

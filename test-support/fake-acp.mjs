@@ -112,6 +112,11 @@ if (process.argv[2] === 'api') {
     { id: 'google', name: 'Google', methods: [{ type: 'key' }, { type: 'env', names: ['GEMINI_API_KEY'] }] },
   ];
   switch (op) {
+    // The app asks whether a session it did not prompt is still running (OpenCode's own continuation after a
+    // background task). Tests keep it empty: the watcher closes the turn after its quiet window.
+    case 'session.active':
+      out({});
+      break;
     case 'integration.list':
       out(integrations.map((i) => ({ ...i, connections: [...creds.filter((c) => c.integrationID === i.id).map(({ id, label, method }) => ({ type: 'credential', id, label, method })), ...(i.id === 'google' ? [{ type: 'env', name: 'GEMINI_API_KEY' }] : [])] })));
       break;
@@ -293,6 +298,7 @@ if (process.argv[2] !== 'acp') {
 
 // FAKE_ACP_FAIL_ONCE=<file>: the very first `acp` process dies at initialize (a cold start), later ones work.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 const failOnce = process.env.FAKE_ACP_FAIL_ONCE;
 const coldStart = Boolean(failOnce) && !existsSync(failOnce);
 if (coldStart) writeFileSync(failOnce, 'started');
@@ -519,6 +525,37 @@ async function turn(sessionId, text) {
       // no completion on purpose
     }, 150);
     return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
+  }
+  if (/^latarasli/.test(text)) {
+    // The REAL shape (OpenCode 2.2.5/2.3.0): no shellID metadata at all — the release is only text in the output,
+    // with the shell id and PID. A real child process keeps the PID alive while the shell "runs". Later, OpenCode
+    // notifies the session (a late completed frame) and resumes the model by itself: both must reach the app.
+    const call = 'call-shell-asli';
+    const shellId = 'sh_fakeasli';
+    const command = 'echo asli';
+    const dir = SHELL_OUT_DIR ? `${SHELL_OUT_DIR}/projek-palsu` : '';
+    if (dir) {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(`${dir}/${shellId}.out`, 'asli: mulai\n');
+    }
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => process.exit(0), 2500)'], { stdio: 'ignore', windowsHide: true });
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'shell', kind: 'execute', status: 'pending', locations: [], rawInput: { command } });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'in_progress', kind: 'execute', title: command, rawInput: { command } });
+    await sleep(250);
+    update(sessionId, {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: call,
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: `Command moved to the background (shell ID: ${shellId}).\nPID: ${child.pid}\nOutput is streaming to: ${dir}/${shellId}.out\nYou will be notified automatically when the command finishes.` } }],
+      rawOutput: { metadata: { exit: 0 } }, // deliberately no shellID: the text is the only source
+    });
+    await say('msg_asli', 'Shell berjalan di latar.');
+    setTimeout(() => {
+      if (dir) appendFileSync(`${dir}/${shellId}.out`, 'asli: selesai\n');
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'asli: selesai' } }] });
+      setTimeout(() => update(sessionId, { sessionUpdate: 'agent_message_chunk', messageId: 'msg_lanjutan', content: { type: 'text', text: 'Lanjutan otomatis setelah tugas latar.' } }), 250);
+    }, 1200);
+    return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
   }
   if (/^shell(berkas|latar2|latar|gantung)/.test(text)) {
     // OpenCode's shell tool tags its calls with metadata (shellID, background); its output goes to
