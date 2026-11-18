@@ -6,6 +6,10 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 - **📱 Chat di HP tidak lagi terjepit atau terpotong (viewport ±390 px).** Lima baris yang dulu "gepeng" kini rapi di layar sempit: **kartu delegasi** memakai lebar penuh untuk teks tugas dan menurunkan ringkasan **"· 5 langkah · ⏳ 3 berjalan"** ke barisnya sendiri; tombol **↓ Terbaru** duduk di antara percakapan dan composer sehingga tidak lagi menutupi pesan yang sedang dibaca; **header jawaban asisten** membiarkan nama tetap satu baris dan memindahkan waktu/Salin/☆ ke baris berikutnya bila sempit (sasaran sentuh tetap ≥ 24 px); **strip progres giliran** membungkus chip **"✓ Selesai · …"** ke baris kedua alih-alih terpotong di tepi kanan; dan **chip pengaturan di composer** tidak lagi memuat harga model ("— $0.15 in / $0.6 out /1M") — angkanya tetap ada di dialog yang dibuka chip. Desktop tidak berubah.
 
+## 1.0.56
+
+- **⏳ Tugas latar OpenCode yang selesai sendiri akhirnya memberi kabar.** OpenCode tidak mengirim event penutup untuk shell latar milik sesi ACP (layanan OpenCode tidak melihatnya, dan file outputnya tidak punya penanda exit), jadi ⧗ dan animasi role bisa berputar selamanya. Kini aplikasi memeriksa **pohon proses** di bawah proses ACP tiap beberapa detik: begitu prosesnya hilang, tugas ditutup `completed` dan diumumkan **sekali** lewat baris chat **"✅ Tugas latar selesai — perintah"** + **toast/getar** di HP. Kalau daftar proses tidak terbaca, tugas dibiarkan (tidak pernah ditutup palsu). Shell latar milik layanan OpenCode memakai sinyal yang sama saat menghilang dari daftar. Jaring pengaman: saat proses ACP keluar/restart, semua tugasnya ditutup sebagai **"selesai tanpa laporan"** — tidak ada spinner tanpa proses.
+
 ## 1.0.55
 
 - **🧭 Satu wajah, tanpa istilah "mesin".** Konsep "Claude Code vs OpenCode" tidak lagi muncul di alur sehari-hari:

@@ -199,6 +199,16 @@ const handlers = {
       }
     } else if (msg.kind === 'error') {
       notify('error', `⚠ Ada kendala — ${projectName(msg.project)}`, msg.text.slice(0, 120), msg.project);
+    } else if (msg.kind === 'info' && msg.taskDone) {
+      // A background task ended on its own (OpenCode sends no closing event): tell the user the way a finished
+      // turn does, without pretending a turn ended. The chat row is already in the timeline.
+      const text = String(msg.text ?? '').slice(0, 140);
+      const failed = /gagal/i.test(text);
+      notify(failed ? 'error' : 'done', `⏳ Tugas latar — ${projectName(msg.project)}`, text, msg.project);
+      if (msg.project === state.active && !document.hidden) {
+        toast(text, failed ? 'warn' : 'ok');
+        navigator.vibrate?.(40); // phones only; ignored where the API does not exist
+      }
     }
     renderSidebar();
     if (live) scheduleAttention();

@@ -32,6 +32,15 @@ const CHILD_SETTLE_MS = (() => {
   const raw = Number(process.env.OFFICE_ACP_SETTLE_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : 60_000;
 })();
+// OpenCode's service cannot see the shells of an ACP-hosted session, and it writes no exit marker next to the output
+// file: the only proof of life is the process tree. A background shell is judged every LIVENESS_EVERY_MS, once it is
+// older than SHELL_GRACE_MS (the shell needs a moment to start). Tests shorten both through env vars.
+const envMs = (name, fallback) => {
+  const raw = Number(process.env[name]);
+  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+};
+const SHELL_LIVENESS_MS = envMs('OFFICE_SHELL_LIVENESS_MS', 10_000);
+const SHELL_GRACE_MS = envMs('OFFICE_SHELL_GRACE_MS', 5_000);
 const STDERR_TAIL = 4000;
 const OPENCODE_SESSION = /^ses_[\w-]{1,100}$/;
 const POINTS_CACHE_MS = 5000; // ⏪ the rewind list is reused this long (see rewindPoints)
@@ -681,6 +690,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.epoch = 0; // +1 whenever the process is let go (closeChild/kill): a late turn result is then ignored
       this.badEfforts = new Set(); // effort levels this provider refused (see fallBackEffort): never sent again
       this.stoppedTurn = false; // a turn the user stopped: its late frames must not reopen rows until the next prompt
+      this.lastReapAt = 0; // last background-shell liveness check (throttled, see reapBackgroundShells)
+      this.reaping = false;
     }
 
     get engineName() {
@@ -997,8 +1008,38 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.shellTimer = setInterval(() => {
         this.syncAcpShellActivity(); // the output files of this session's own shells feed the stuck chip
         this.linkShells().catch(() => {});
+        this.reapBackgroundShells().catch(() => {});
       }, ms);
       this.shellTimer.unref?.();
+    }
+
+    /**
+     * OpenCode sends no "background shell finished" event and its service cannot see an ACP session's shells. Once a
+     * background shell is old enough, its process tree is the judge: gone → completed (and the user is told, once).
+     * An unreadable process list leaves the task alone — a failed lookup must never close running work.
+     */
+    async reapBackgroundShells() {
+      const t = this.translator;
+      if (!t || this.reaping) return;
+      const now = Date.now();
+      if (now - (this.lastReapAt ?? 0) < SHELL_LIVENESS_MS) return;
+      const due = [...t.bgTasks.values()].filter((x) => x.source === 'acp' && x.kind === 'shell' && x.status === 'running' && x.background && now - (Number(x.startedAt) || 0) >= SHELL_GRACE_MS);
+      if (!due.length) return;
+      const pid = this.child?.pid;
+      if (!pid) return;
+      this.reaping = true;
+      this.lastReapAt = now;
+      try {
+        const { listShellProcesses, shellLiveness } = await import('./opencode-shells.js');
+        const list = await listShellProcesses().catch(() => []);
+        for (const task of due) {
+          if (task.status !== 'running') continue; // closed meanwhile (turn end, user stop)
+          if (shellLiveness(task.command ?? task.description, pid, list) !== 'done') continue;
+          this.translator.handle({ type: 'system', subtype: 'task_updated', task_id: task.id, patch: { status: 'completed' } });
+        }
+      } finally {
+        this.reaping = false;
+      }
     }
 
     /** ⏳ While a turn runs: the provider's refusals OpenCode is retrying (rate limits), once per attempt. */
@@ -1511,6 +1552,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     closeChild() {
       const busy = this.busy;
       this.adapter?.clearSettles?.(); // the adapter exists only after the process spawned
+      this.translator?.closeAcpTasks?.(); // its shells die with the process: no task may keep spinning
       const child = this.detach();
       if (!child) return;
       if (busy) this.killTree(child.pid);
@@ -1524,6 +1566,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     onExit(child, code) {
       if (child !== this.child) return;
+      this.translator?.closeAcpTasks?.(); // a crashed/killed process takes its shells with it
       if (this.handshaking && !this.startRetried) {
         // Died while starting (cold start): fail the handshake only; its retry keeps the queue (spawn above).
         for (const [id, p] of this.rpcPending) {

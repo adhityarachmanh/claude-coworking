@@ -330,10 +330,15 @@ export class StreamTranslator {
       t.lastActivityAt = Date.now(); // the browser's stuck detector judges idleness from this (no task-detail reads)
     } else if (msg.subtype === 'task_updated') {
       const p = msg.patch ?? {};
+      const wasRunning = t.status === 'running' || t.status === 'pending';
       if (p.status) t.status = p.status;
       if (p.is_backgrounded != null) t.background = p.is_backgrounded;
       if (p.error) t.error = truncate(p.error, 300);
       if (p.status && p.status !== 'running' && p.status !== 'pending') t.endedAt = Date.now();
+      // OpenCode has no closing notification of its own: a background shell that ended is news for the user. A
+      // foreground one ends with its call (every bash call would otherwise add a row), and Claude Code's
+      // task_notification has its own path below.
+      if (wasRunning && t.background && t.source === 'acp' && p.status && p.status !== 'running' && p.status !== 'pending') this.announceTaskDone(t, p.status === 'failed');
     } else if (msg.subtype === 'task_notification') {
       Object.assign(t, { status: msg.status, summary: msg.summary ?? t.summary, endedAt: Date.now() });
     }
@@ -427,6 +432,28 @@ export class StreamTranslator {
     if (toolUseId) this.finishAgent(toolUseId, t.status === 'failed' || t.status === 'killed', t.summary ?? '');
   }
 
+  /** One honest chat row when an OpenCode background task ends on its own (the client turns it into a toast too). */
+  announceTaskDone(t, failed = false, noReport = false) {
+    const what = truncate(String(t.command ?? t.description ?? t.id), 120);
+    const head = failed ? '⛔ Tugas latar gagal' : noReport ? '✓ Tugas latar selesai tanpa laporan' : '✅ Tugas latar selesai';
+    this.sink.chat({ kind: 'info', taskDone: true, text: `${head} — ${what}` });
+  }
+
+  /**
+   * The ACP process is gone (closed, crashed, restarted): nothing it started can still be alive. Close its shell
+   * tasks — with the "tanpa laporan" wording when the end was never reported — so no spinner outlives the process.
+   */
+  closeAcpTasks() {
+    let changed = false;
+    for (const t of this.bgTasks.values()) {
+      if (t.source !== 'acp' || t.status !== 'running') continue;
+      Object.assign(t, { status: 'completed', endedAt: Date.now() });
+      if (t.background) this.announceTaskDone(t, false, true);
+      changed = true;
+    }
+    if (changed) this.emitBgTasks();
+  }
+
   /** Ids of the tasks (shells, subagents) still running: Stop ends them with the turn (ClaudeSession.stop). */
   runningTaskIds() {
     return [...this.bgTasks.values()].filter((t) => t.status === 'running').map((t) => t.id);
@@ -460,7 +487,9 @@ export class StreamTranslator {
     let changed = live.size > 0;
     for (const t of this.bgTasks.values()) {
       if (String(t.id).startsWith('oc:') && t.source !== 'acp' && t.status === 'running' && !live.has(t.id)) {
+        const background = t.background === true;
         Object.assign(t, { status: 'completed', endedAt: Date.now() });
+        if (background) this.announceTaskDone(t, false); // the shell vanished from the list: it ended
         changed = true;
       }
     }

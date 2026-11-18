@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { matchShell, matchShellProcess, OC_TASK, shellFileMtime, shellFileTail, shellOutputFile } from '../src/opencode-shells.js';
+import { matchShell, matchShellProcess, OC_TASK, shellFileMtime, shellFileTail, shellLiveness, shellOutputFile } from '../src/opencode-shells.js';
 import { StreamTranslator } from '../src/translator.js';
 
 const sh = (id, command, started) => ({ id, command, status: 'running', time: { started } });
@@ -144,6 +144,60 @@ test('translator: an acp shell call with metadata registers oc:<shellID>, closes
   t.syncShellTasks([{ id: 'oc:sh_service', command: 'npm run dev', startedAt: 2 }]);
   t.syncShellTasks([]);
   assert.equal(statusTasks(statuses).find((x) => x.id === 'oc:sh_service').status, 'completed');
+});
+
+test('shellLiveness: only a missing process under our ACP child counts as done', () => {
+  const acp = p(100, 1, 'node ... serve --stdio');
+  const wrapper = p(200, 100, 'powershell -Command npm test');
+  const inner = p(300, 200, 'node .../npm test');
+  assert.equal(shellLiveness('npm test', 100, [acp, wrapper, inner]), 'running');
+  assert.equal(shellLiveness('npm test', 100, [acp]), 'done', 'the process tree is gone');
+  assert.equal(shellLiveness('npm test', 100, []), 'unknown', 'an unreadable list never closes a task');
+  assert.equal(shellLiveness('npm test', 0, [acp]), 'unknown', 'no ACP child to judge by');
+  assert.equal(shellLiveness('', 100, [acp]), 'unknown');
+  assert.equal(shellLiveness('npm test', 100, [acp, p(400, 1, 'powershell -Command npm test')]), 'done', 'a foreign process is not our shell');
+});
+
+test('translator: a finished OpenCode background task is announced once, a foreground one is not', () => {
+  const chats = [];
+  const t = new StreamTranslator({ office() {}, chat: (msg) => (chats.push(msg), `c${chats.length}`), updateChat() {}, status() {} });
+  t.handle({ type: 'system', subtype: 'task_started', task_id: 'oc:sh_bg', is_backgrounded: true, description: 'npm run dev', startedAt: 1, source: 'acp' });
+  t.handle({ type: 'system', subtype: 'task_updated', task_id: 'oc:sh_bg', patch: { status: 'completed' } });
+  const done = chats.filter((m) => m.taskDone);
+  assert.equal(done.length, 1, 'one row when the background shell ends');
+  assert.match(done[0].text, /Tugas latar selesai/);
+  assert.match(done[0].text, /npm run dev/);
+  t.handle({ type: 'system', subtype: 'task_updated', task_id: 'oc:sh_bg', patch: { status: 'completed' } });
+  assert.equal(chats.filter((m) => m.taskDone).length, 1, 'a repeated update is not news');
+  // Foreground shells end with their own call: announcing them would add a row to every bash call.
+  t.handle({ type: 'system', subtype: 'task_started', task_id: 'oc:sh_fg', is_backgrounded: false, description: 'ls', startedAt: 1, source: 'acp' });
+  t.handle({ type: 'system', subtype: 'task_updated', task_id: 'oc:sh_fg', patch: { status: 'completed' } });
+  assert.equal(chats.filter((m) => m.taskDone).length, 1);
+  // Claude Code's task_notification has its own notification path: no duplicate row here.
+  t.handle({ type: 'system', subtype: 'task_started', task_id: 't1', subagent_type: 'backend', is_backgrounded: true, description: 'x', startedAt: 1 });
+  t.handle({ type: 'system', subtype: 'task_notification', task_id: 't1', status: 'completed', summary: 'ok' });
+  assert.equal(chats.filter((m) => m.taskDone).length, 1);
+  // A service shell that disappears from the running list is announced too (same signal for both sources).
+  t.syncShellTasks([{ id: 'oc:sh_svc', command: 'npm run build', startedAt: 1 }]);
+  t.syncShellTasks([]);
+  const after = chats.filter((m) => m.taskDone);
+  assert.equal(after.length, 2);
+  assert.match(after[1].text, /npm run build/);
+});
+
+test('translator: when the ACP process is gone, its shell tasks are closed "tanpa laporan"', () => {
+  const chats = [];
+  const statuses = [];
+  const t = new StreamTranslator({ office() {}, chat: (msg) => (chats.push(msg), `c${chats.length}`), updateChat() {}, status: (s) => statuses.push(s) });
+  t.handle({ type: 'system', subtype: 'task_started', task_id: 'oc:sh_bg', is_backgrounded: true, description: 'npm run dev', startedAt: 1, source: 'acp' });
+  t.handle({ type: 'system', subtype: 'task_started', task_id: 'oc:sh_fg', is_backgrounded: false, description: 'ls', startedAt: 1, source: 'acp' });
+  assert.deepEqual(t.runningTaskIds().sort(), ['oc:sh_bg', 'oc:sh_fg']);
+  t.closeAcpTasks();
+  assert.deepEqual(t.runningTaskIds(), [], 'nothing outlives the process');
+  const done = chats.filter((m) => m.taskDone);
+  assert.equal(done.length, 1, 'only the background one is news');
+  assert.match(done[0].text, /tanpa laporan/);
+  assert.equal(statusTasks(statuses).find((x) => x.id === 'oc:sh_bg').status, 'completed');
 });
 
 test('translator: a turn end closes a still-open acp shell call; a background one keeps running', () => {

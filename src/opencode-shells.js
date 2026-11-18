@@ -187,6 +187,25 @@ const isAncestorOf = (pid, of, byId) => {
 };
 
 /**
+ * Is a shell of this session still running? The ACP-hosted shells are invisible to OpenCode's service, so the only
+ * proof of life is a process whose command line carries the command text and whose ancestry reaches our ACP child
+ * (the same rule the guarded stop uses). Returns 'unknown' when the list could not be read — a failed lookup must
+ * never close a task.
+ * @param {string} command
+ * @param {number} ancestorPid
+ * @param {{ pid: number, ppid: number, command: string }[]} list
+ * @returns {'running'|'done'|'unknown'}
+ */
+export function shellLiveness(command, ancestorPid, list) {
+  const want = String(command ?? '').trim();
+  const pid = Number(ancestorPid);
+  if (!want || !Number.isFinite(pid) || pid <= 0 || !Array.isArray(list) || !list.length) return 'unknown';
+  const byId = new Map(list.filter((p) => Number.isFinite(p?.pid)).map((p) => [p.pid, p]));
+  const alive = [...byId.values()].some((p) => p.pid !== pid && p.command?.includes(want) && isAncestorOf(pid, p.pid, byId));
+  return alive ? 'running' : 'done';
+}
+
+/**
  * The one process tree running `command` (its command line contains the exact command text) whose ancestry reaches
  * `ancestorPid` (our ACP child). The chain ACP child → shell wrapper → real command may match several processes:
  * the topmost one wins, its tree kill takes the rest. Only a UNIQUE tree is returned — none or ambiguous → null,

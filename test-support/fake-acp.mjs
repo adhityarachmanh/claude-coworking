@@ -520,14 +520,14 @@ async function turn(sessionId, text) {
     }, 150);
     return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
   }
-  if (/^shell(berkas|latar|gantung)/.test(text)) {
+  if (/^shell(berkas|latar2|latar|gantung)/.test(text)) {
     // OpenCode's shell tool tags its calls with metadata (shellID, background); its output goes to
     // <data>/opencode/shell/<project.id>/<shellID>.out — the app reads that file for the ⧗ panel.
-    const kind = /latar/.test(text) ? 'latar' : /gantung/.test(text) ? 'gantung' : 'berkas';
-    const shellId = `sh_fake${{ berkas: 1, latar: 2, gantung: 3 }[kind]}`;
+    const kind = /latar2/.test(text) ? 'latar2' : /latar/.test(text) ? 'latar' : /gantung/.test(text) ? 'gantung' : 'berkas';
+    const shellId = `sh_fake${{ berkas: 1, latar: 2, gantung: 3, latar2: 4 }[kind]}`;
     const command = `echo shell-${kind}`;
     const call = `call-shell-${kind}`;
-    const meta = { shellID: shellId, background: kind === 'latar', command };
+    const meta = { shellID: shellId, background: kind === 'latar' || kind === 'latar2', command };
     const writeOut = (line) => {
       if (!SHELL_OUT_DIR) return;
       try {

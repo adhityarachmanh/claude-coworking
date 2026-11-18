@@ -45,6 +45,8 @@ before(async () => {
       FAKE_ACP_SHELL_OUT_DIR: SHELL_DIR, // the fake writes its shells' .out files here
       OFFICE_OPENCODE_SHELL_DIR: SHELL_DIR, // the app reads them there
       OFFICE_SHELL_WATCH_MS: '300', // the stuck chip's file watcher runs fast in tests
+      OFFICE_SHELL_LIVENESS_MS: '1500', // background-shell liveness check (real default: 10 s)
+      OFFICE_SHELL_GRACE_MS: '3000', // a shell younger than this is not judged (real default: 5 s)
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'),
@@ -183,6 +185,21 @@ test('⧗ a background shell (metadata.background) keeps its task running past t
   assert.equal(out.body.output, 'latar: mulai\nlatar: selesai\n');
   const stop = await api(`/api/projects/${id}/task-stop`, { taskId: 'oc:sh_fake2' });
   assert.equal(stop.status, 409, 'no unique process matches here (no real kill in tests)');
+});
+
+test('⧗ a background shell that stops on its own is closed and announced (OpenCode sends no signal)', async () => {
+  await api(`/api/projects/${id}/prompt`, { text: 'shelllatar2' });
+  await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === 'oc:sh_fake4' && x.status === 'running' && x.background === true));
+  // No real process carries this command under the fake ACP child: the liveness check must close it…
+  const closed = await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === 'oc:sh_fake4' && x.status === 'completed'), 15000);
+  assert.equal(closed.tasks.find((x) => x.id === 'oc:sh_fake4').status, 'completed');
+  // …with one honest row the client can turn into a toast, not a silent disappearance.
+  const snap = await snapshot();
+  const rows = (snap.chats?.[id] ?? []).filter((c) => c.taskDone === true && /echo shell-latar2/.test(c.text ?? ''));
+  assert.equal(rows.length, 1, 'one completion row for this shell');
+  assert.match(rows[0].text, /Tugas latar selesai/);
+  assert.match(rows[0].text, /echo shell-latar2/);
+  assert.deepEqual(snap.statuses[id].working ?? {}, {}, 'no role stays at work');
 });
 
 test('⧗ a turn ends with its still-open shell call: the task is closed, never by a stale file', async () => {
