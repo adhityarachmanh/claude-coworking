@@ -216,7 +216,7 @@ test('translator: when the ACP process is gone, its shell tasks are closed "tanp
   assert.deepEqual(t.runningTaskIds(), [], 'nothing outlives the process');
   const done = chats.filter((m) => m.taskDone);
   assert.equal(done.length, 1, 'only the background one is news');
-  assert.match(done[0].text, /tanpa laporan/);
+  assert.match(done[0].text, /terputus tanpa laporan/);
   assert.equal(statusTasks(statuses).find((x) => x.id === 'oc:sh_bg').status, 'completed');
 });
 

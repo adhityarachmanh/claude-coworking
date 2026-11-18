@@ -203,7 +203,7 @@ const handlers = {
       // A background task ended on its own (OpenCode sends no closing event): tell the user the way a finished
       // turn does, without pretending a turn ended. The chat row is already in the timeline.
       const text = String(msg.text ?? '').slice(0, 140);
-      const failed = /gagal/i.test(text);
+      const failed = /gagal|terputus/i.test(text);
       notify(failed ? 'error' : 'done', `⏳ Tugas latar — ${projectName(msg.project)}`, text, msg.project);
       if (msg.project === state.active && !document.hidden) {
         toast(text, failed ? 'warn' : 'ok');

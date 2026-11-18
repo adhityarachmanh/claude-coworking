@@ -1111,6 +1111,27 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.notify('session/cancel', { sessionId: this.acpSessionId });
     }
 
+    /**
+     * The base closes the process when the account or settings changed. A delegation/shell still working must
+     * survive that: the restart waits until the last background task ends (applyPendingRestart).
+     */
+    becameIdle() {
+      this.interrupting = false;
+      clearTimeout(this.killTimer);
+      if ((this.staleAccount || this.restartPending) && this.translator?.hasRunningTasks?.()) {
+        clearTimeout(this.idleTimer);
+        return;
+      }
+      super.becameIdle();
+    }
+
+    /** The last background task ended: apply a restart that was deferred for it (if any). */
+    applyPendingRestart() {
+      if (!this.restartPending || this.busy || this.translator?.hasRunningTasks?.()) return;
+      this.restartPending = false;
+      this.closeChild();
+    }
+
     /** Model and plan/build switch in the running process; another permission mode needs a fresh one. */
     syncSettings() {
       if (!this.child || !this.applied) return;
@@ -1122,6 +1143,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         if (this.busy) {
           this.restartPending = true;
           if (enteringPlan) this.hub.chat(this.id, { kind: 'info', text: 'Mode Plan berlaku setelah giliran ini selesai.' });
+        } else if (this.translator?.hasRunningTasks?.()) {
+          // A delegated subagent/background shell is still working: changing the model/mode must not kill it.
+          // The restart is applied on the next prompt (or when the background turn ends).
+          if (!this.restartPending) this.hub.chat(this.id, { kind: 'info', text: 'Model/mode baru berlaku setelah tugas latar selesai.' });
+          this.restartPending = true;
         } else this.closeChild();
         return;
       }
@@ -1247,6 +1273,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         }
       } finally {
         this.agentReaping = false;
+        this.applyPendingRestart(); // no delegation left: a model/mode/account restart can happen now
       }
     }
 
@@ -2024,6 +2051,10 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       let changed = false;
       for (const task of t.bgTasks.values()) {
         if (task.source !== 'acp' || task.kind !== 'agent' || task.status !== 'running') continue;
+        // Best effort: cancel the CHILD's own turn too. The parent's cancel may already cover it, but a subagent is
+        // its own session in OpenCode, and a long build must not keep running after the user pressed ■ Stop.
+        const childSid = this.adapter?.agents.get(String(task.toolUseId ?? ''))?.sessionId;
+        if (childSid) this.notify('session/cancel', { sessionId: childSid });
         this.adapter?.closeChildRows(task.toolUseId, 'Dihentikan bersama giliran.');
         this.adapter?.markAgentDone(task.toolUseId);
         Object.assign(task, { status: 'stopped', endedAt: Date.now() });

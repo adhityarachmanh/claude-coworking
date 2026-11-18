@@ -171,7 +171,11 @@ export class SessionManager {
     for (const session of this.sessions.values()) {
       if (session.engine !== 'opencode') continue;
       if (session.busy) session.restartPending = true;
-      else session.closeChild();
+      else if (session.translator?.hasRunningTasks?.()) {
+        // A delegated build/shell still runs in this process: do not kill it for a credential change.
+        if (!session.restartPending) session.hub.chat(session.id, { kind: 'info', text: 'Login/logout provider berlaku setelah tugas latar selesai.' });
+        session.restartPending = true;
+      } else session.closeChild();
     }
   }
 

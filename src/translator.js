@@ -455,7 +455,7 @@ export class StreamTranslator {
   /** One honest chat row when an OpenCode background task ends on its own (the client turns it into a toast too). */
   announceTaskDone(t, failed = false, noReport = false) {
     const what = truncate(String(t.command ?? t.description ?? t.id), 120);
-    const head = failed ? '⛔ Tugas latar gagal' : noReport ? '✓ Tugas latar selesai tanpa laporan' : '✅ Tugas latar selesai';
+    const head = failed ? '⛔ Tugas latar gagal' : noReport ? '⚠ Tugas latar terputus tanpa laporan' : '✅ Tugas latar selesai';
     this.sink.chat({ kind: 'info', taskDone: true, text: `${head} — ${what}` });
   }
 

@@ -4,7 +4,7 @@
 // that continuation — no network, no tokens, no real OpenCode.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
@@ -43,6 +43,7 @@ before(async () => {
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
       OPENCODE_BIN: path.join(APP, 'test-support', 'fake-acp.mjs'),
       FAKE_ACP_AGENT_STATE: AGENT_STATE,
+      FAKE_ACP_RPC_LOG: path.join(TMP, 'rpc.log'),
       OFFICE_SHELL_WATCH_MS: '300',
       OFFICE_SHELL_LIVENESS_MS: '500',
       OFFICE_AGENT_QUIET_MS: '300',
@@ -149,6 +150,13 @@ test('a delegation (subagent) is listed in ⧗ while it builds, then closed when
   assert.equal(task.status, 'running');
   // The delegated role shows as working in the office/team card while the child runs.
   await waitFor((t, o) => t === 'status' && o.project === id && (o.working?.devops?.agents ?? 0) >= 1, 8000, 'devops bekerja');
+  // Changing the process settings (mode/team) while the delegation runs must NOT kill it: the restart waits.
+  const change = await api(`/api/projects/${id}/settings`, { mode: 'plan' });
+  assert.equal(change.status, 200, JSON.stringify(change.body));
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /berlaku setelah (giliran ini|tugas latar)/.test(o.text ?? ''), 8000, 'info tunda restart');
+  await sleep(500);
+  const alive = await snapshot();
+  assert.equal(alive.statuses[id].tasks.find((x) => x.id === task.id)?.status, 'running', 'settings change did not kill the delegation');
   // It stays running while the child reports its step (not closed with the parent turn).
   const progress = await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === task.id && x.lastActivityAt), 8000, 'aktivitas delegasi');
   assert.ok(progress.tasks.find((x) => x.id === task.id).lastActivityAt > 0);
@@ -203,4 +211,7 @@ test('■ Stop ends a running delegation (task and child rows), not left spinnin
   const row = chats.find((c) => c.kind === 'tool' && /adb install/.test(c.input?.command ?? ''));
   assert.equal(row?.status, 'ok', 'the child step row is closed by Stop');
   assert.match(row?.output ?? '', /Dihentikan bersama giliran/);
+  // The child session itself is told to cancel (a subagent is its own session in OpenCode).
+  const rpc = readFileSync(path.join(TMP, 'rpc.log'), 'utf8');
+  assert.match(rpc, /session\/cancel/, 'Stop also cancels the child session');
 });
