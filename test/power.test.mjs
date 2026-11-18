@@ -6,9 +6,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { POWER_SECURE_ERROR, powerAllowed, powerStatus } from '../src/power.js';
+import { PC_SHUTDOWN_SECONDS, POWER_SECURE_ERROR, pcShutdownPlan, powerAllowed, powerStatus } from '../src/power.js';
 import { wifiAllows } from '../src/remote.js';
 import { buildRouter } from '../src/routes/index.js';
+import { runShutdown } from '../src/routes/misc.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER = readFileSync(path.join(APP, 'server.js'), 'utf8');
@@ -169,6 +170,83 @@ test('route /api/shutdown: pc:true dari HP https → Windows shutdown + handoff 
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+// ---------- OS shutdown: perintahnya harus pasti sampai, dan kegagalannya harus kelihatan ----------
+
+test('pcShutdownPlan: path absolut shutdown.exe + /f, dan Linux memakai shutdown -h', () => {
+  const win = pcShutdownPlan('win32', { SystemRoot: 'C:\\Windows' });
+  assert.equal(win.command, 'C:\\Windows\\System32\\shutdown.exe', 'path absolut: tidak bergantung PATH proses');
+  assert.deepEqual(win.args, ['/s', '/t', String(PC_SHUTDOWN_SECONDS), '/f'], 'paksa tutup aplikasi: tanpa /f Windows bisa menunda/membatalkan');
+  assert.equal(pcShutdownPlan('win32', { windir: 'D:\\Win' }).command, 'D:\\Win\\System32\\shutdown.exe', 'windir ikut dipakai');
+  assert.equal(pcShutdownPlan('win32', {}).command.endsWith('\\System32\\shutdown.exe'), true, 'tanpa env pun tetap absolut (C:\\Windows)');
+  const linux = pcShutdownPlan('linux', {});
+  assert.deepEqual(linux, { command: 'shutdown', args: ['-h', '+1'] });
+});
+
+test('route /api/shutdown: Windows menolak (exit 5) → 502 dengan alasannya, server TIDAK berhenti', async () => {
+  const calls = [];
+  const ctx = {
+    hub: hubWith({ bridgeUrl: '', token: '', offDelaySec: 120 }),
+    shutdown: () => calls.push('shutdown'),
+    pcShutdown: async () => ({ ok: false, code: 5, message: 'Access is denied.(5)' }),
+    isLocal: () => true,
+    isSecure: () => false,
+    isReadOnly: () => false,
+  };
+  const res = await call('/api/shutdown', { pc: true }, ctx);
+  assert.equal(res.status, 502, res.body);
+  assert.match(res.json().error, /Windows/i);
+  assert.match(res.json().error, /Access is denied/, 'alasan dari Windows ikut dikirim');
+  await wait(450);
+  assert.deepEqual(calls, [], 'server tetap hidup supaya bisa dicoba lagi dari HP');
+});
+
+test('route /api/shutdown: shutdown.exe tidak bisa dijalankan (ENOENT) → 502, bukan seolah berhasil', async () => {
+  const calls = [];
+  const ctx = {
+    hub: hubWith({ bridgeUrl: '', token: '', offDelaySec: 120 }),
+    shutdown: () => calls.push('shutdown'),
+    pcShutdown: async () => ({ ok: false, code: null, message: 'spawn shutdown.exe ENOENT' }),
+    isLocal: () => true,
+    isSecure: () => false,
+    isReadOnly: () => false,
+  };
+  const res = await call('/api/shutdown', { pc: true }, ctx);
+  assert.equal(res.status, 502, res.body);
+  assert.match(res.json().error, /ENOENT/);
+  await wait(450);
+  assert.deepEqual(calls, []);
+});
+
+test('route /api/shutdown: pc:true berhasil (exit 0) → 200 lalu server berhenti rapi', async () => {
+  const calls = [];
+  const ctx = {
+    hub: hubWith({ bridgeUrl: '', token: '', offDelaySec: 120 }),
+    shutdown: () => calls.push('shutdown'),
+    pcShutdown: async () => ({ ok: true, code: 0, message: '' }),
+    isLocal: () => true,
+    isSecure: () => false,
+    isReadOnly: () => false,
+  };
+  const res = await call('/api/shutdown', { pc: true }, ctx);
+  assert.equal(res.status, 200, res.body);
+  assert.deepEqual(res.json(), { ok: true, pc: true });
+  await wait(450);
+  assert.deepEqual(calls, ['shutdown']);
+});
+
+test('runShutdown: exit 0 = diterima, exit ≠ 0 / ENOENT = gagal dengan alasannya', async () => {
+  const node = { command: process.execPath, args: [] };
+  const ok = await runShutdown({ ...node, args: ['-e', 'process.exit(0)'] });
+  assert.deepEqual(ok, { ok: true, code: 0, message: '' });
+  const denied = await runShutdown({ ...node, args: ['-e', 'console.error("Access is denied.(5)"); process.exit(5)'] });
+  assert.equal(denied.ok, false, 'exit 5 bukan sukses');
+  assert.equal(denied.code, 5);
+  assert.match(denied.message, /Access is denied/, 'stderr Windows dibawa ke pesan');
+  const missing = await runShutdown({ command: path.join(APP, 'tidak-ada-shutdown.exe'), args: [] });
+  assert.equal(missing.ok, false, 'perintah yang tidak bisa dijalankan bukan sukses');
+  assert.match(missing.message, /ENOENT/);
 });
 
 // ---------- gate di server.js (tanpa menyalakan server: dibaca sebagai teks, pola review-guards) ----------

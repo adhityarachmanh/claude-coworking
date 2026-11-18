@@ -139,8 +139,8 @@ async function onShutdown(pc) {
   const delay = power.delaySec ?? DEFAULT_DELAY;
   const asked = pc
     ? window.confirm(power.configured
-      ? `Matikan PC? Sesi Claude dihentikan, lalu Windows dimatikan. Listrik Bardi TIDAK diputus otomatis — halaman jembatan terbuka untuk memutus arus (jeda ${delay} detik).`
-      : 'Matikan PC? Sesi Claude dihentikan, lalu Windows dimatikan. Remote power belum diset, jadi listrik tidak bisa diputus dari jauh.')
+      ? `Matikan PC? Sesi Claude dihentikan, lalu Windows dimatikan dalam ±45 detik. Aplikasi lain yang masih terbuka ditutup paksa — pekerjaan yang belum disimpan bisa hilang. Listrik Bardi TIDAK diputus otomatis — halaman jembatan terbuka untuk memutus arus (jeda ${delay} detik).`
+      : 'Matikan PC? Sesi Claude dihentikan, lalu Windows dimatikan dalam ±45 detik (aplikasi lain ditutup paksa). Remote power belum diset, jadi listrik tidak bisa diputus dari jauh.')
     : window.confirm('Matikan server saja? Sesi Claude dihentikan dan Adhitron tidak bisa dibuka sampai servernya dinyalakan lagi; PC tetap menyala.');
   if (!asked) return;
   power.phase = 'busy';
@@ -159,7 +159,7 @@ async function onShutdown(pc) {
     }
     power.phase = 'done';
     power.note = pc
-      ? '⏳ Windows dimatikan — putuskan listrik Bardi dari halaman jembatan.'
+      ? '⏳ Windows akan mati dalam ±45 dtk — putuskan listrik Bardi dari halaman jembatan.'
       : '⏳ Server dimatikan — halaman ini kehilangan sambungan sampai dinyalakan lagi.';
     renderPower();
   } catch (err) {

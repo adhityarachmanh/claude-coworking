@@ -6,13 +6,59 @@ import { spawn } from 'node:child_process';
 import { runDemo } from '../demo.js';
 import { setAutostart } from '../autostart.js';
 import { MAX_CONCURRENT_CAP } from '../concurrency.js';
-import { POWER_SECURE_ERROR, powerAllowed, powerStatus } from '../power.js';
+import { PC_SHUTDOWN_SECONDS, POWER_SECURE_ERROR, pcShutdownPlan, powerAllowed, powerStatus } from '../power.js';
 import { json } from './http.js';
 
-/** ⏻ OS shutdown, delayed: the server shuts down gracefully first; the bridge cuts power later (its cron). */
-const spawnPcShutdown = () => (process.platform === 'win32'
-  ? spawn('shutdown', ['/s', '/t', '45'], { windowsHide: true })
-  : spawn('shutdown', ['-h', '+1'], { windowsHide: true }));
+// How long the OS shutdown command may take to answer. shutdown.exe returns as soon as Windows accepts the request;
+// a process still running after this never reached the OS (a dialog, a policy, a wrong binary), so it is a failure.
+const SHUTDOWN_WAIT_MS = 5000;
+const firstLine = (text) => String(text ?? '').split(/\r?\n/).map((line) => line.trim()).find(Boolean)?.slice(0, 300) ?? '';
+
+/**
+ * ⏻ Runs the OS shutdown and WAITS for its exit code. Windows quitting with 0 means the shutdown is scheduled;
+ * anything else (exit 5 "Access is denied", a spawn error, no answer) means Windows never accepted it. The old
+ * fire-and-forget call discarded exactly that information, so a failed request looked like a successful one while
+ * the PC stayed on. Never throws.
+ * @returns {Promise<{ ok: boolean, code: number|null, message: string }>}
+ */
+export const spawnPcShutdown = () => runShutdown(pcShutdownPlan());
+
+/**
+ * Runs one shutdown command and waits for it (see spawnPcShutdown). Exported so tests can exercise the exit-code
+ * handling with a harmless process instead of shutting the machine down.
+ * @param {{ command: string, args: string[] }} plan
+ */
+export const runShutdown = (plan) => new Promise((resolve) => {
+  let child;
+  try {
+    child = spawn(plan.command, plan.args, { windowsHide: true, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (err) {
+    return resolve({ ok: false, code: null, message: String(err?.message ?? err) });
+  }
+  let stderr = '';
+  let settled = false;
+  const finish = (result) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    child.unref?.(); // the OS keeps it after this server exits
+    resolve(result);
+  };
+  const timer = setTimeout(() => {
+    try {
+      child.kill();
+    } catch {
+      // already gone
+    }
+    finish({ ok: false, code: null, message: `shutdown tidak menjawab dalam ${SHUTDOWN_WAIT_MS / 1000} detik.` });
+  }, SHUTDOWN_WAIT_MS);
+  timer.unref?.();
+  child.stderr?.on('data', (chunk) => {
+    stderr = (stderr + String(chunk)).slice(-800);
+  });
+  child.on('error', (err) => finish({ ok: false, code: null, message: String(err?.message ?? err) })); // ENOENT etc.
+  child.on('close', (code) => finish(code === 0 ? { ok: true, code: 0, message: '' } : { ok: false, code, message: firstLine(stderr) || `shutdown keluar dengan kode ${code}.` }));
+});
 
 export function register(router) {
   router.post('/api/autostart', ({ hub, appDir, port }, req, res, params, body) => {
@@ -81,9 +127,20 @@ export function register(router) {
         }
         if (device) console.log(`Halaman status jembatan disiapkan (permintaan shutdown Windows dari "${device.name}")`);
       }
+      // The OS must accept the request BEFORE the server goes away: otherwise the user is left with no app and a
+      // PC that never shuts down (exactly the production report). Anything but exit 0 is reported and changes nothing.
+      let result;
+      try {
+        result = await pcShutdown();
+      } catch (err) {
+        result = { ok: false, code: null, message: String(err?.message ?? err) };
+      }
+      if (result && result.ok === false) {
+        console.error(`⏻ Shutdown Windows ditolak: ${result.message}`);
+        return json(res, 502, { error: `Windows tidak bisa dimatikan: ${result.message}. Server tetap hidup — coba lagi, atau matikan langsung dari laptop.` });
+      }
       json(res, 200, handoffUrl ? { ok: true, pc: true, handoffUrl } : { ok: true, pc: true });
-      pcShutdown(); // OS shutdown only (Windows: /t 45 s); the Bardi power stays on until cut from the bridge page
-      console.log('PC dimatikan oleh OS (shutdown tertunda) — server dimatikan lebih dulu dengan rapi');
+      console.log(`PC dimatikan oleh OS (shutdown ${PC_SHUTDOWN_SECONDS} dtk, exit ${result?.code ?? 0}) — server dimatikan lebih dulu dengan rapi`);
       setTimeout(shutdown, 300);
       return;
     }

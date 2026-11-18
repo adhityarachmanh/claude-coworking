@@ -39,6 +39,28 @@ export function safeBridgeUrl(raw) {
 }
 
 /**
+ * Berapa detik Windows menunggu sebelum benar-benar mati. Waktu ini yang dipakai UI ("mati dalam 45 dtk") dan
+ * argumen `/t`, jadi satu sumber: jangan sampai teks dan perintah berbeda.
+ */
+export const PC_SHUTDOWN_SECONDS = 45;
+
+/**
+ * Perintah OS shutdown yang dipakai route ⏻ Matikan PC. Path absolut (tidak bergantung PATH proses — kalau
+ * `shutdown.exe` tidak ketemu, Windows tidak pernah menerima perintah dan dulu tidak ada yang tahu), dan `/f`
+ * eksplisit: aplikasi yang memblokir tidak boleh membuat PC tetap hidup setelah kamu mengira ia mati.
+ * @param {string} [platform] default process.platform
+ * @param {Record<string, string|undefined>} [env] default process.env (SystemRoot/windir untuk folder Windows)
+ * @returns {{ command: string, args: string[] }}
+ */
+export function pcShutdownPlan(platform = process.platform, env = process.env) {
+  if (platform === 'win32') {
+    const root = String(env?.SystemRoot || env?.windir || 'C:\\Windows').replace(/[\\/]+$/, '');
+    return { command: `${root}\\System32\\shutdown.exe`, args: ['/s', '/t', String(PC_SHUTDOWN_SECONDS), '/f'] };
+  }
+  return { command: 'shutdown', args: ['-h', '+1'] };
+}
+
+/**
  * Status jembatan remote power untuk UI (⚙/📱): cukup untuk menampilkan tombol dan URL-nya.
  * Token jembatan TIDAK pernah ikut — sama seperti remotePower() tidak pernah dikirim utuh ke HP.
  * `configured` mengikuti setelan di hub (bridgeUrl + token ada); `bridgeUrl` hanya URL https yang sudah

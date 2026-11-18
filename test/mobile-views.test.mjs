@@ -1,4 +1,4 @@
-/* global document, window, getComputedStyle, matchMedia -- functions passed to page.eval run in the browser */
+/* global document, window, getComputedStyle, matchMedia, localStorage -- functions passed to page.eval run in the browser */
 // The other phone views (docs/design-mobile-chat.md, phase 2): Kantor, Perubahan, Aktivitas and the 🔎 palette, in
 // portrait (390×844, 360×740) and landscape (844×390, touch). One clear primary action per view, everything else
 // ≤ 2 taps away (view-aware header ⋯ sheet), no page overflow, diffs wrap inside their box, sheets fit a short
@@ -415,6 +415,51 @@ for (const vp of PHONES) {
       assert.deepEqual(page.problems, []);
     });
 
+    test('Kantor: daftar karyawan bisa dilipat — ilustrasi kantor/otak memakai tinggi layar penuh', async () => {
+      await fresh('office');
+      const toggle = await page.eval(() => {
+        const b = document.querySelector('#team-toggle');
+        if (!b) return null;
+        const r = b.getBoundingClientRect();
+        return { shown: b.getClientRects().length > 0, h: Math.round(r.height), label: b.textContent };
+      });
+      assert.ok(toggle?.shown, 'tombol 👥 Karyawan terlihat di HP');
+      assert.ok(toggle.h >= 44, `sasaran sentuh ${toggle?.h} px`);
+      assert.match(toggle.label, /Karyawan/, 'labelnya jelas');
+      // Normalize to "team shown" first: the first visit remembers the grid folded away.
+      if (await page.eval(() => document.querySelector('.office').classList.contains('team-hidden'))) await page.click('#team-toggle');
+      await page.waitFor(() => document.querySelector('#team').getClientRects().length > 0, { timeoutMs: 2000, message: 'daftar karyawan tampil' });
+      const opened = await page.eval(() => Math.round(document.querySelector('#stage').getBoundingClientRect().height));
+      await page.click('#team-toggle');
+      await page.waitFor(() => document.querySelector('.office').classList.contains('team-hidden') && !document.querySelector('#team').getClientRects().length, { timeoutMs: 2000, message: 'daftar karyawan terlipat' });
+      const folded = await page.eval(() => {
+        const stage = document.querySelector('#stage').getBoundingClientRect();
+        const canvas = document.querySelector('#stage canvas').getBoundingClientRect();
+        return { stage: Math.round(stage.height), canvasH: Math.round(canvas.height), saved: localStorage.getItem('office.teamHidden') };
+      });
+      assert.ok(folded.stage > opened + 40, `stage memakai tinggi layar lebih (${folded.stage} > ${opened})`);
+      assert.ok(folded.canvasH <= folded.stage + 1, 'kanvas muat di dalam stage');
+      assert.equal(folded.saved, '1', 'pilihan diingat per perangkat');
+      assert.equal(await page.eval(horizontalOverflow), null, 'tanpa overflow saat ilustrasi penuh');
+      // Otak memakai stage yang sama: kanvasnya ikut membesar.
+      await page.click('#view-mode');
+      await page.waitFor(() => document.querySelector('#stage').classList.contains('brain-mode'), { timeoutMs: 3000, message: 'mode otak' });
+      const brain = await page.eval(() => {
+        const stage = document.querySelector('#stage').getBoundingClientRect();
+        const canvas = document.querySelector('.brain-canvas').getBoundingClientRect();
+        return { stage: Math.round(stage.height), canvasH: Math.round(canvas.height), shown: getComputedStyle(document.querySelector('.brain-canvas')).display !== 'none' };
+      });
+      assert.equal(brain.shown, true, 'kanvas otak tampil');
+      assert.ok(Math.abs(brain.canvasH - brain.stage) <= 2, `kanvas otak setinggi stage (${brain.canvasH} vs ${brain.stage})`);
+      // Back to the office and to the list: stage returns to its aspect size.
+      await page.click('#view-mode');
+      await page.click('#team-toggle');
+      await page.waitFor(() => document.querySelector('#team').getClientRects().length > 0, { timeoutMs: 2000, message: 'daftar kembali' });
+      const back = await page.eval(() => Math.round(document.querySelector('#stage').getBoundingClientRect().height));
+      assert.ok(Math.abs(back - opened) <= 4, `tinggi stage kembali (${back} vs ${opened})`);
+      assert.deepEqual(page.problems, []);
+    });
+
     test('Perubahan: satu aksi utama (Commit), header view = ⎇ branch saja, diff dibungkus di dalam kotaknya, header tetap saat diff digulir', async () => {
       await fresh('changes');
       await page.click('#ch-files li[data-path="src/checkout.ts"]');
@@ -485,8 +530,11 @@ for (const vp of PHONES) {
 
     test('Kantor: 🗂 Semua project = aksi utama dan tetap terlihat saat digulir, kartu tim ≥ 44 px', async () => {
       await fresh('office');
+      // The people grid is foldable on a phone now: this test measures its cards, so make sure it is open.
+      if (await page.eval(() => document.querySelector('.office').classList.contains('team-hidden'))) await page.click('#team-toggle');
+      await page.waitFor(() => document.querySelector('#team .member'), { timeoutMs: 3000, message: 'kartu tim tampil' });
       const a = await page.eval(auditView, 'office');
-      assert.deepEqual(a.chrome, ['dash-bar', 'view-mode'], `kontrol view: ${a.chrome.join(', ')}`);
+      assert.deepEqual(a.chrome, ['dash-bar', 'view-mode', 'team-toggle'], `kontrol view: ${a.chrome.join(', ')}`);
       const cards = await page.eval(() => [...document.querySelectorAll('#team .member')].map((m) => Math.round(m.getBoundingClientRect().height)));
       assert.ok(cards.length > 0 && cards.every((h) => h >= 44), `tinggi kartu ${cards.join(',')}`);
       const stage = await page.eval(() => {

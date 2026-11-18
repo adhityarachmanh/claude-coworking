@@ -2900,8 +2900,17 @@ body.read-only #composer-hint { color: var(--ask); }
 #ext-filter { width: 100%; margin-bottom: 6px; }
 .pr-code b { font: 700 22px/1.2 var(--mono); letter-spacing: 2px; }
 @media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
-  .team-toggle { display: none; }
-  .office.team-hidden .team { display: grid; } /* the phone's Kantor view always lists the team */
+  /* 📖 The phone's Kantor view now folds the people grid too: the toggle is the same one laptop uses, with a
+     touch-sized target (the fold itself is right below). */
+  .team-toggle { display: inline-flex; min-height: 44px; }
+}
+
+/* 📖 Kantor di HP potret: daftar karyawan dilipat → stage memakai seluruh tinggi layar. Kanvas pixel-art/otak
+   sudah memakai ResizeObserver (stage.js, brain.js), jadi ilustrasi + animasinya ikut membesar tanpa kode baru.
+   Di landscape stage memang sudah setinggi layar (grid dua kolom), jadi aturan ini sengaja hanya untuk potret. */
+@media (max-width: 760px) {
+  .office.team-hidden { overflow: hidden; }
+  .office.team-hidden .stage { flex: 1 1 auto; height: auto; min-height: 0; margin-bottom: 8px; }
 }
 /* 🧠 Mode Otak (office/brain.js): a canvas over the stage; the pixel office hides while it is on */
 .brain-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: none; border-radius: var(--r-xl); box-shadow: 0 18px 50px #00000080, 0 0 0 1px #6c7cff33; }

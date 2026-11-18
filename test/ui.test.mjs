@@ -6839,7 +6839,8 @@ for (const vp of VIEWPORTS) {
 
       // From the office: the ⧗ badge on the QA card (the card itself still renames).
       if (vp.mobile) await page.click('#mobile-nav [data-view="office"]');
-      if (!vp.mobile && (await page.eval(() => document.querySelector('.office').classList.contains('team-hidden')))) await page.click('#team-toggle');
+      // The people grid is foldable on a phone too now: the QA card must be visible before clicking it.
+      if (await page.eval(() => document.querySelector('.office').classList.contains('team-hidden'))) await page.click('#team-toggle');
       await page.waitFor(() => Boolean(document.querySelector('#team .member[data-role="qa"] + .member-task')), { timeoutMs: 3000, message: 'badge ⧗ di kartu QA' });
       await page.click('#team .member[data-role="qa"] + .member-task');
       await page.waitFor(() => !document.querySelector('#tasks-modal').hidden && /Uji regresi/.test(document.querySelector('#td-title').textContent), { timeoutMs: 3000, message: 'monitor terbuka dengan tugas QA' });
