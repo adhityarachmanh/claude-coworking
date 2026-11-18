@@ -1,12 +1,12 @@
 // Above and below the composer: Claude's todo list and the status line (mode, model, context).
 import { $, escapeHtml, narrow } from '../core/dom.js';
-import { normalizeMode } from '../core/engine-caps.js';
+import { engineDown, normalizeMode } from '../core/engine-caps.js';
 import { fmtTokens } from '../core/format.js';
 import { freshnessText } from '../core/freshness.js';
 import { requestResync } from '../core/resync.js';
 import { DEMO_ID, state } from '../core/state.js';
 import { progressLabel, turnProgress } from '../core/turn-progress.js';
-import { toast } from '../core/api.js';
+import { api, toast } from '../core/api.js';
 import { openCompact } from './compact.js';
 import { connection, lastEventAgeSec } from './connection.js';
 import { openQueue } from './queue.js';
@@ -53,6 +53,9 @@ const compactReady = (st) => Boolean(state.active) && state.active !== DEMO_ID &
 /** "45 dtk tanpa kabar" when the open stream stopped delivering events (including the server's 15 s ping). */
 const staleText = () => (connection.online ? freshnessText(lastEventAgeSec()) : '');
 
+/** "⚠ OpenCode berhenti (exit 7) · ▶ Mulai ulang" — the code only when the server reported one. */
+const downText = (down) => `⚠ OpenCode berhenti${down.exit != null ? ` (exit ${down.exit})` : ''} · ▶ Mulai ulang`;
+
 /**
  * The turn's progress chip: "⏳ 4 mnt · 9 langkah · 2 berjalan" while running, "✓ Selesai · …" once the result is
  * in. A finished chip stays for two hours or until the next prompt — the answer to "is it done?" without asking.
@@ -80,6 +83,8 @@ export function renderStatusline(st) {
   const model = st.activeModel || st.model;
   if (model) parts.push(`<span class="sl-model">${escapeHtml(model)}</span>`);
   if (st.handoffReady) parts.push('<span class="sl-handoff" title="Konteks dari sumber sebelumnya ikut pada pesan berikutnya">🧠 Konteks sesi siap</span>');
+  const down = engineDown(st, state.config);
+  if (down && !state.readOnly) parts.push(`<button type="button" class="sl-down" data-engine-start title="Proses OpenCode berhenti sendiri. Ketuk untuk menyalakannya lagi — percakapan tetap sama.">${escapeHtml(downText(down))}</button>`);
   if (st.context?.used && !st.context.window) {
     // Window not reported yet (Claude Code tells it once the session runs): no guessed percentage.
     parts.push(`<span class="sl-ctx" title="Konteks terpakai: ${st.context.used.toLocaleString('id-ID')} token">konteks ${fmtTokens(st.context.used)}</span>`);
@@ -110,6 +115,7 @@ export function renderStatusline(st) {
 function renderStrip(line, st, running) {
   const chips = [];
   if (st.handoffReady) chips.push('<span class="sl-chip sl-handoff" title="Konteks dari sumber sebelumnya ikut pada pesan berikutnya">🧠 Konteks siap</span>');
+  if (engineDown(st, state.config) && !state.readOnly) chips.push('<button type="button" class="sl-chip sl-warn sl-down" data-engine-start aria-label="OpenCode berhenti — ketuk untuk menyalakannya lagi">⚠ OpenCode · ▶</button>');
   if (running) chips.push(`<button type="button" class="sl-chip sl-tasks" data-open-tasks aria-label="${running} tugas berjalan — buka monitor tugas latar">⧗ ${running}</button>`);
   const q = st.taskQueue;
   const waiting = q ? q.waiting + q.running : 0;
@@ -131,6 +137,19 @@ function renderStrip(line, st, running) {
   if (compactReady(st)) chips.push('<button type="button" class="sl-chip sl-compact" data-compact aria-label="Ringkas konteks percakapan" title="/ringkas">🧹 Ringkas</button>');
   line.classList.toggle('has-chips', chips.length > 0);
   line.innerHTML = chips.join('');
+}
+
+/** ▶ The engine process died on its own: start it again for this project (same session, no prompt). */
+async function startEngine() {
+  if (state.readOnly) return toast('Mode hanya-lihat: tidak bisa menyalakan OpenCode dari sini.', 'warn');
+  const project = state.active;
+  toast('Menyalakan OpenCode…', 'ok');
+  try {
+    await api(`/api/projects/${project}/engine-start`);
+    toast('OpenCode dinyalakan lagi.', 'ok');
+  } catch (err) {
+    toast(err.message, 'warn');
+  }
 }
 
 /** ✋ chip: the newest waiting permission card, scrolled into view with its first answer button focused. */
@@ -161,6 +180,7 @@ export function initStatusline() {
     else if (e.target.closest('[data-open-queue]')) openQueue();
     else if (e.target.closest('[data-jump-approval]')) jumpToApproval();
     else if (e.target.closest('[data-compact]')) openCompact();
+    else if (e.target.closest('[data-engine-start]')) startEngine();
     else if (e.target.closest('[data-resync]')) {
       requestResync();
       toast('Menyegarkan sambungan…', 'ok');

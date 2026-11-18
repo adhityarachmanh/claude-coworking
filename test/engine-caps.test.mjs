@@ -2,7 +2,7 @@
 // The server sends OPENCODE_CAPS in config.engines.opencode.caps; these tests keep the server and UI in sync.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CLAUDE_CAPS, capReason, capsFor, engineBadge, engineChangeNeedsReload, engineOf, favoriteModelList, openCodeProviderGroups } from '../public/js/core/engine-caps.js';
+import { CLAUDE_CAPS, capReason, capsFor, engineBadge, engineChangeNeedsReload, engineDown, engineOf, favoriteModelList, openCodeProviderGroups } from '../public/js/core/engine-caps.js';
 import { OPENCODE_CAPS } from '../src/acp-session.js';
 
 const CONFIG = Object.freeze({
@@ -66,6 +66,16 @@ test('the badge is short and still names an engine the server adds later', () =>
   assert.equal(engineBadge('opencode'), '⌘ OpenCode');
   assert.equal(engineBadge('cursor'), 'cursor');
   assert.equal(engineBadge(undefined), 'claude', 'like engineLabel: the default engine id, never "undefined"');
+});
+
+test('engineDown: only an OpenCode project shows ⚠ OpenCode berhenti, with its exit code', () => {
+  assert.deepEqual(engineDown({ engine: 'opencode', openCodeDown: true, openCodeExit: 7 }, CONFIG), { exit: 7 });
+  assert.deepEqual(engineDown({ engine: 'opencode', openCodeDown: true }, CONFIG), { exit: null }, 'no code is not a guess');
+  assert.deepEqual(engineDown({ engine: 'opencode', openCodeDown: true, openCodeExit: 'x' }, CONFIG), { exit: null });
+  assert.equal(engineDown({ engine: 'opencode', openCodeDown: false }, CONFIG), null);
+  assert.equal(engineDown({ engine: 'opencode' }, CONFIG), null, 'a status without the flag is a live engine');
+  // A stale flag from an earlier OpenCode session must never warn a Claude project.
+  assert.equal(engineDown({ engine: 'claude', openCodeDown: true }, CONFIG), null);
 });
 
 test('the reason is clear and no longer says Fase 1', () => {

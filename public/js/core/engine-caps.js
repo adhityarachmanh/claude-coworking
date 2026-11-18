@@ -89,6 +89,16 @@ export function engineOf(status, config) {
 }
 
 /**
+ * ▶ The project's OpenCode process died on its own (`status.openCodeDown`, src/acp-session.js): the statusline offers
+ * one button to start it again with the same conversation. Only for an OpenCode project — a flag left behind after
+ * switching engines must never warn a Claude session. Returns `{ exit }` (the code, when known) or null.
+ */
+export function engineDown(status, config) {
+  if (status?.openCodeDown !== true || engineOf(status, config) !== 'opencode') return null;
+  return { exit: Number.isInteger(status.openCodeExit) ? status.openCodeExit : null };
+}
+
+/**
  * Caps of `engine` from `config.engines[engine].caps`, every field validated (never trust the server blindly):
  * a missing/non-boolean flag falls back to Claude's, `modes` keeps only known modes and never ends up empty.
  * A config without `engines`, or without an entry for the engine, gives Claude's caps (design §6.2).

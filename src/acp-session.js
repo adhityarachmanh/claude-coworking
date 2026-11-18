@@ -1350,6 +1350,15 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     // ---------- process ----------
 
+    /**
+     * ▶ The statusline's "Mulai ulang" after the process died on its own: start it again with the same session and no
+     * prompt (the handshake clears status.openCodeDown; a failure writes its own chat row). False = no binary.
+     */
+    startEngine() {
+      if (this.m.stopping || this.shuttingDown) return false;
+      return this.ensureChild();
+    }
+
     spawn(settings) {
       const bin = this.m.opencode;
       if (!bin) return false;
@@ -1371,6 +1380,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         });
       } catch (err) {
         this.hub.chat(this.id, { kind: 'error', text: `Gagal menjalankan OpenCode: ${err.message}` });
+        this.hub.setStatus(this.id, { openCodeDown: true, openCodeExit: null });
         return false;
       }
       this.child = child;
@@ -1427,12 +1437,15 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
           return this.ready;
         }
         this.hub.chat(this.id, { kind: 'error', text: `OpenCode gagal dimulai: ${err.message}${this.stderrTail()}` });
+        this.hub.setStatus(this.id, { openCodeDown: true, openCodeExit: null });
         throw err;
       });
       this.ready
         .then(() => {
           this.startRetried = false;
           this.handshaking = false;
+          // The engine answers again: ⚠ "OpenCode berhenti" (statusline) goes away.
+          if (child === this.child) this.hub.setStatus(this.id, { openCodeDown: false, openCodeExit: null });
         })
         .catch(() => child === this.child && this.closeChild());
       this.updateStatus();
@@ -1610,13 +1623,17 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         return;
       }
       const wasBusy = this.busy;
+      // Died on its own (not Stop, not the app closing): the statusline offers ▶ Mulai ulang. A deliberate close
+      // (closeChild) detaches first, so it never reaches this point.
+      const crashed = !this.interrupting && !this.m.stopping && !this.shuttingDown;
       if (this.turnActive() && !this.interrupting && !this.m.stopping) this.hub.interruptTurn(this.id, 'exit', { announced: true });
       this.detach();
       if (wasBusy) {
         this.hub.chat(this.id, { kind: 'error', text: `OpenCode berhenti (exit ${code ?? '?'}).${this.stderrTail()}` });
         this.hub.office(this.id, { kind: 'error', role: 'claude', label: 'Proses berhenti' });
       }
-      this.updateStatus();
+      this.updateStatus(); // busy/queue first, so the ⚠ frame below carries the settled status
+      if (crashed) this.hub.setStatus(this.id, { openCodeDown: true, openCodeExit: Number.isInteger(code) ? code : null });
     }
 
     // ---------- JSON-RPC ----------

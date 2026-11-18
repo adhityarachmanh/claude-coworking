@@ -709,6 +709,13 @@ async function handle(msg) {
     case 'session/prompt': {
       const text = (params.prompt ?? []).map((b) => b.text ?? '').join(' ');
       links = (params.prompt ?? []).filter((b) => b.type === 'resource_link').map((b) => b.name);
+      // "crash": the process dies mid-turn (a real crash, or its service restarting under it): no reply at all, so the
+      // app must notice the exit itself (status.openCodeDown) and offer to start the engine again.
+      if (/\bcrash\b/.test(text)) {
+        update(params.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'sebelum mati' } });
+        setTimeout(() => process.exit(7), 40);
+        return;
+      }
       const s = STORE ? (loadStore(params.sessionId) ?? { dir: process.cwd(), messages: [] }) : null;
       const msgId = () => `msg_${Date.now().toString(36)}${process.pid.toString(36)}_${++seq}`;
       if (s) {

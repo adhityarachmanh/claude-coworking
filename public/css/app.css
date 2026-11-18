@@ -934,7 +934,7 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 @media (min-width: 761px) {
   /* Mode and model already sit on the settings chip; the status line only speaks up when something needs attention. */
   .statusline .sl-mode, .statusline .sl-model, .statusline .sep, .statusline .sl-ctx:not(.mid):not(.high) { display: none; }
-  .statusline:not(:has(.sl-ctx.mid, .sl-ctx.high, .sl-compact, .sl-tasks, .sl-handoff, .sl-stale)) { display: none; }
+  .statusline:not(:has(.sl-ctx.mid, .sl-ctx.high, .sl-compact, .sl-tasks, .sl-handoff, .sl-stale, .sl-down)) { display: none; }
   /* A connected laptop is the normal state: show a dot, not another word in the header. */
   #conn.ok { width: 10px; height: 10px; padding: 0; border: 0; border-radius: 50%; background: var(--ok); font-size: 0; }
 }
@@ -971,6 +971,9 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .sl-tasks:hover { text-decoration: underline; }
 .sl-stale { min-height: 24px; border: 0; background: none; padding: 0; color: var(--warn-text); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
 .sl-stale:hover { text-decoration: underline; }
+/* ⚠ The OpenCode process died on its own: one button to start it again (phone: a .sl-chip with .sl-warn). */
+.sl-down { min-height: 24px; border: 0; background: none; padding: 0; color: var(--warn-text-strong); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
+.sl-down:hover { text-decoration: underline; }
 .sl-turn { min-height: 24px; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
 .sl-turn.live { color: var(--accent-2); }
 .sl-turn.done { color: var(--ok-text); }

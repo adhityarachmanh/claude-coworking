@@ -251,6 +251,15 @@ export function register(router) {
     session.stop();
     return ok(res);
   }));
+  // ▶ The statusline chip after the OpenCode process died on its own: start it again (same conversation, no prompt).
+  // Spawning only: the handshake clears status.openCodeDown, and a failure writes its reason to the chat.
+  router.post('/api/projects/:id/engine-start', withSession(({ hub }, req, res, { project, session }) => {
+    if (hub.engineOf(project.id) !== 'opencode') return json(res, 409, { error: 'Mulai ulang mesin hanya untuk project OpenCode.' });
+    if (!session.startEngine?.()) {
+      return json(res, 503, { error: 'OpenCode tidak bisa dijalankan. Coba ⚙ → Sistem → Restart layanan OpenCode.' });
+    }
+    return json(res, 200, { ok: true });
+  }));
   router.post('/api/projects/:id/reset', withSession((ctx, req, res, { session }) => {
     session.reset();
     return ok(res);
