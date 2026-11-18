@@ -1,8 +1,8 @@
 // 🔌 MCP servers without the terminal: add one (`claude mcp add` / `opencode mcp add`, the CLIs write their own config)
 // and, for OpenCode, list the configured ones (its live status is only known inside its process).
 import { readFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { openCodeConfigRoot } from './opencode-config.js';
 import { parseJsonc } from './opencode-bin.js';
 import { childEnv } from './child-env.js';
 import { execFileTree } from './proc.js';
@@ -64,7 +64,7 @@ function cleanRequest({ name, kind, command, url, env = [], scope }) {
  * user). OpenCode: `opencode mcp add` (project config, or the global one for scope "user").
  */
 export function addMcpServer({ engine, bin, projectPath, request }) {
-  if (!bin) return Promise.reject(new McpAdminError(404, 'CLI mesin ini tidak ditemukan.'));
+  if (!bin) return Promise.reject(new McpAdminError(404, 'CLI di komputer ini tidak ditemukan.'));
   const r = cleanRequest(request ?? {});
   const args = [...bin.args, 'mcp', 'add'];
   if (engine === 'opencode') {
@@ -89,13 +89,15 @@ export function addMcpServer({ engine, bin, projectPath, request }) {
 }
 
 /**
- * OpenCode's configured MCP servers (global ~/.config/opencode and the project's opencode.json / .opencode/), as
- * the /mcp dialog lists them: status "configured" (connected or not is only known inside OpenCode).
+ * OpenCode's configured MCP servers (the global opencode config folder and the project's opencode.json /
+ * .opencode/), as the /mcp dialog lists them: status "configured" (connected or not is only known inside
+ * OpenCode). The global folder honours OFFICE_OPENCODE_CONFIG_HOME/XDG_CONFIG_HOME (openCodeConfigRoot), so a
+ * test or a portable install never reads the machine's own ~/.config/opencode.
  */
-export function listOpenCodeMcp(projectPath, home = os.homedir()) {
+export function listOpenCodeMcp(projectPath, home = null) {
   const byName = new Map();
   const layers = [
-    ['user', path.join(home, '.config', 'opencode')],
+    ['user', home ? path.join(home, '.config', 'opencode') : openCodeConfigRoot()],
     ['project', projectPath],
     ['project', projectPath && path.join(projectPath, '.opencode')],
   ];

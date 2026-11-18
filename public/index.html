@@ -217,7 +217,7 @@
               </select>
             </label>
             <!-- Privacy notice at the point of choice: picking the other engine's model sends this chat's summary there. -->
-            <p id="model-engine-note" class="muted small model-engine-note">Memilih model mesin lain mengirim ringkasan percakapan ini ke provider mesin itu.</p>
+            <p id="model-engine-note" class="muted small model-engine-note">Memilih model dari sumber lain mengirim ringkasan percakapan ini ke sumber itu.</p>
           </div>
           <div id="suggest" class="suggest" hidden></div>
           <!-- 🎤 what is being heard (interim), before it lands in the box at the cursor -->
@@ -327,7 +327,7 @@
             <h3>Mulai dalam 4 langkah</h3>
             <ol class="steps">
               <li><b>Pilih project</b>: klik nama project di kiri atas, atau tekan <kbd>Ctrl</kbd> <kbd>K</kbd>.</li>
-              <li><b>Ketik permintaan</b> di chat, atau klik salah satu ide di layar sambutan. Mesin AI bekerja langsung di folder project itu.</li>
+              <li><b>Ketik permintaan</b> di chat, atau klik salah satu ide di layar sambutan. AI bekerja langsung di folder project itu.</li>
               <li><b>Setujui izin</b>: saat tim mau mengedit file atau menjalankan perintah, kartu izin muncul di chat.</li>
               <li><b>Cek hasilnya</b> di tab <b>Perubahan</b> (diff per file), lalu commit.</li>
             </ol>
@@ -354,7 +354,7 @@
               <tr><td><kbd>Alt</kbd> <kbd>M</kbd></td><td>🎤 Input suara: mulai / berhenti (juga tombol 🎤 di kotak pesan; <kbd>Esc</kbd> berhenti). Teks masuk di posisi kursor. Butuh HTTPS atau localhost</td></tr>
               <tr><td><code>/clear</code> <code>/model</code> <code>/effort</code> <code>/resume</code></td><td>Sesi baru · ganti model · ganti effort · riwayat sesi</td></tr>
               <tr><td><code>/rewind</code> <code>/mcp</code> <code>/tasks</code> <code>/memory</code></td><td>Rewind · server MCP (status, login) · tugas latar · buka memory (CLAUDE.md/AGENTS.md)</td></tr>
-              <tr><td><code>/usage</code> <code>/context</code> <code>/compact</code> <code>/rename</code> …</td><td>Command mesin lain jalan seperti di terminal; ketik <kbd>/</kbd> untuk daftar lengkapnya</td></tr>
+              <tr><td><code>/usage</code> <code>/context</code> <code>/compact</code> <code>/rename</code> …</td><td>Command model berjalan seperti di terminal; ketik <kbd>/</kbd> untuk daftar lengkapnya</td></tr>
               <tr><td><kbd>?</kbd></td><td>Buka panduan ini</td></tr>
             </table>
           </section>
@@ -362,13 +362,13 @@
             <h3>Mode</h3>
             <table class="keys">
               <tr><td>🔨 Build</td><td>File boleh diubah otomatis. Perintah shell dan jaringan tetap minta izin; aturan <code>deny</code> selalu menang.</td></tr>
-              <tr><td>📋 Plan</td><td>Mesin hanya menyusun rencana, tanpa mengubah file. Setujui dengan <b>Lanjut build</b> untuk mulai bekerja.</td></tr>
+              <tr><td>📋 Plan</td><td>AI hanya menyusun rencana, tanpa mengubah file. Setujui dengan <b>Lanjut build</b> untuk mulai bekerja.</td></tr>
             </table>
           </section>
           <section>
             <h3>Tips</h3>
             <ul>
-              <li><b>Mode tim</b>: mesin mendelegasikan ke PM, BA, developer, QA, dan lainnya. Kantor lebih hidup, tapi token lebih banyak.</li>
+              <li><b>Mode tim</b>: AI mendelegasikan ke PM, BA, developer, QA, dan lainnya. Kantor lebih hidup, tapi token lebih banyak.</li>
               <li><b>🕘 Riwayat sesi</b> melanjutkan percakapan lama, termasuk yang dimulai di terminal. Menu <b>⋯</b> menyalin perintah untuk melanjutkan sesi web di terminal.</li>
               <li>Sesi yang kamu jalankan di terminal (CLI) ikut tampil live di sini.</li>
               <li>Tandai project yang sering dipakai dengan <b>★</b> di daftar project supaya selalu di atas.</li>
@@ -461,7 +461,7 @@
           <input id="sessions-import-file" type="file" accept=".json,application/json" hidden />
           <button id="sessions-new" class="ghost">＋ Sesi baru</button>
         </div>
-        <p id="sessions-laptop-note" class="muted small" hidden>🔒 Import JSON hanya dari laptop: file sesi dibaca langsung oleh OpenCode di mesin ini.</p>
+        <p id="sessions-laptop-note" class="muted small" hidden>🔒 Import JSON hanya dari laptop: file sesi dibaca langsung di komputer ini.</p>
         <label class="switch small export-opt"><input class="export-tools-opt" type="checkbox" /> Export .md: sertakan ringkasan tool calls</label>
         <div id="sessions-tags" class="sessions-tags" role="group" aria-label="Saring sesi berdasarkan tag" hidden></div>
         <div id="sessions-bulk" class="sessions-bulk" hidden>
@@ -568,7 +568,7 @@
             <input id="compact-focus" maxlength="300" autocomplete="off" placeholder="pertahankan keputusan API dan file yang diubah" aria-describedby="compact-opencode-note compact-note" />
           </label>
           <p id="compact-opencode-note" class="compact-note muted small" hidden>OpenCode mengabaikan teks fokus untuk sekarang — hanya Claude Code yang memakainya.</p>
-          <p id="compact-note" class="compact-note muted small">Ringkas konteks memakai token mesin ini. Riwayat percakapan di aplikasi tidak berubah: tetap bisa dibaca, dicari, dan diekspor.</p>
+          <p id="compact-note" class="compact-note muted small">Ringkas konteks memakai token model yang aktif. Riwayat percakapan di aplikasi tidak berubah: tetap bisa dibaca, dicari, dan diekspor.</p>
           <p id="compact-error" class="field-error" role="alert"></p>
           <div class="acct-actions">
             <button id="compact-cancel" type="button" class="ghost" data-close>Batal</button>
@@ -589,7 +589,7 @@
         <p id="mcp-engine-note" class="muted small"></p>
         <ul id="mcp-list" class="mcp-list"></ul>
         <div class="acct-actions"><button type="button" id="mcp-add-toggle" class="ghost">＋ Tambah server</button></div>
-        <p id="mcp-add-note" class="muted small" hidden>🔒 Tambah server hanya bisa dari laptop: formulirnya menjalankan perintah server di mesin ini. Status dan ▶/⏸ tetap bisa diatur dari sini.</p>
+        <p id="mcp-add-note" class="muted small" hidden>🔒 Tambah server hanya bisa dari laptop: formulirnya menjalankan perintah server di komputer ini. Status dan ▶/⏸ tetap bisa diatur dari sini.</p>
         <form id="mcp-add" class="oc-form mcp-add" hidden>
           <label class="oc-field"><span>Nama *</span><input name="name" required pattern="[\w.\-]{1,60}" placeholder="mis. github, sentry, playwright" autocomplete="off" /></label>
           <label class="oc-field"><span>Jenis</span><select name="kind"><option value="local">Lokal (perintah di laptop ini)</option><option value="remote">Remote (URL http/https)</option></select></label>
@@ -652,7 +652,7 @@
       <div class="modal-card tasks-card" role="dialog" aria-modal="true" aria-labelledby="tasks-title">
         <div class="modal-head"><b id="tasks-title">⧗ Tugas latar <small id="tasks-summary" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div class="tasks-tools">
-          <p class="muted small">Perintah dan agent yang dijalankan mesin AI di sesi ini. <kbd>Ctrl</kbd> <kbd>B</kbd> memindahkan yang sedang jalan ke latar belakang supaya kamu bisa lanjut chat. Shell OpenCode dari sesi lain di folder ini tampil hanya-lihat.</p>
+          <p class="muted small">Perintah dan agent yang dijalankan AI di sesi ini. <kbd>Ctrl</kbd> <kbd>B</kbd> memindahkan yang sedang jalan ke latar belakang supaya kamu bisa lanjut chat. Shell dari sesi lain di folder ini tampil hanya-lihat.</p>
           <button id="tasks-background" class="ghost" title="Ctrl+B">⏬ Pindahkan ke latar</button>
         </div>
         <div id="tasks-body" class="tasks-body">
@@ -799,7 +799,7 @@
       <div class="modal-card checklist-card" role="dialog" aria-modal="true" aria-labelledby="checklist-title">
         <div class="modal-head"><b id="checklist-title">✅ Checklist project <small id="checklist-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <p id="checklist-sum" class="muted small" role="status" aria-live="polite"></p>
-        <p class="muted small">Hal-hal yang membuat project lebih mudah dikerjakan mesin AI. Tidak ada yang diubah dari sini.</p>
+        <p class="muted small">Hal-hal yang membuat project lebih mudah dikerjakan AI. Tidak ada yang diubah dari sini.</p>
         <ul id="checklist-list" class="checklist-list" aria-label="Butir checklist"></ul>
         <div class="checklist-actions">
           <button type="button" id="checklist-scaffold" class="ghost" title="Buat README/AGENTS.md/.env.example/docs yang belum ada; file yang sudah ada tidak ditimpa">🛠 Buat kerangka yang belum ada</button>
@@ -1121,7 +1121,7 @@
           </section>
           <section id="health-section" class="claude-check" aria-labelledby="health-section-title">
             <b id="health-section-title">🩺 Kesehatan sistem</b>
-            <p class="muted small">Pemeriksaan server &amp; mesin, persiapan, ukuran data, dan error 24 jam.</p>
+            <p class="muted small">Pemeriksaan server &amp; AI, persiapan, ukuran data, dan error 24 jam.</p>
             <div class="backup-actions">
               <button type="button" id="health-open" class="ghost" aria-haspopup="dialog">🩺 Kesehatan sistem</button>
             </div>
@@ -1184,13 +1184,13 @@
           <!-- Sebuah HP lewat Tailscale boleh mengubah setelan di tab ini, kecuali yang menuntut mesin ini sendiri:
                UAC (nyala otomatis/autologon). Catatan ini menggantikan dua kontrol itu dengan status kesiapan
                reboot (core/autostart-rules.js), bukan menyisakan ruang kosong. -->
-          <p id="laptop-boot-note" class="muted small" hidden>🔒 Nyalakan otomatis dan akses saat PC terkunci hanya bisa diubah dari laptop: keduanya meminta izin Administrator di mesin ini.</p>
+          <p id="laptop-boot-note" class="muted small" hidden>🔒 Nyalakan otomatis dan akses saat PC terkunci hanya bisa diubah dari laptop: keduanya meminta izin Administrator di komputer ini.</p>
           <label class="switch" id="autostart-row"><input id="autostart" type="checkbox" /> Nyalakan otomatis saat Windows login</label>
           <!-- 🔐 Akses saat PC terkunci (features/settings.js, server POST /api/autologon(+ /disable)): satu tombol,
                satu izin Administrator. Tidak ada langkah terminal, tidak ada nama berkas bantu di UI. -->
           <section id="autologon-card" class="claude-check" aria-labelledby="autologon-title" aria-describedby="autologon-desc">
             <b id="autologon-title">🔐 Akses saat PC terkunci</b>
-            <p id="autologon-desc" class="muted small">Server tetap hidup setelah PC dinyalakan ulang, sebelum ada yang login. Windows login sendiri lalu layar terkunci otomatis 15 detik setelahnya. Windows menyimpan sandi itu di registry mesin ini (bukan di Adhitron), dan meminta izin Administrator sekali saat diaktifkan.</p>
+            <p id="autologon-desc" class="muted small">Server tetap hidup setelah PC dinyalakan ulang, sebelum ada yang login. Windows login sendiri lalu layar terkunci otomatis 15 detik setelahnya. Windows menyimpan sandi itu di registry komputer ini (bukan di Adhitron), dan meminta izin Administrator sekali saat diaktifkan.</p>
             <p id="autologon-status" class="muted small" role="status" aria-live="polite"></p>
             <div class="backup-actions">
               <button type="button" id="btn-autologon-enable" class="primary">Aktifkan</button>
@@ -1270,7 +1270,7 @@
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="autologon-modal-title" aria-describedby="autologon-modal-note">
         <div class="modal-head"><b id="autologon-modal-title">🔐 Aktifkan akses saat PC terkunci</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <form id="autologon-form" novalidate>
-          <p id="autologon-modal-note" class="muted small"><b>Sandi akun, bukan PIN.</b> Yang diminta adalah sandi akun Windows/Microsoft (untuk akun Microsoft: sandi akun Microsoft-mu, sama seperti saat login di situs Microsoft) — PIN Windows Hello yang kamu pakai sehari-hari tidak bisa dipakai di sini. Kalau sandimu tidak diingat, reset dulu di account.microsoft.com (akun Microsoft) atau di Pengaturan → Akun (akun lokal). Windows perlu sandi itu untuk login sendiri setelah reboot, lalu layar terkunci otomatis 15 detik kemudian. Sandi disimpan Windows di registry mesin ini — bukan di Adhitron, tidak dikirim ke perangkat lain — tetapi tanpa enkripsi, jadi Administrator atau SYSTEM di PC ini bisa membacanya. Sebaiknya nyalakan BitLocker dan pakai akun Windows khusus untuk Adhitron. Windows meminta izin Administrator sekali; batalkan di jendela itu bila berubah pikiran.</p>
+          <p id="autologon-modal-note" class="muted small"><b>Sandi akun, bukan PIN.</b> Yang diminta adalah sandi akun Windows/Microsoft (untuk akun Microsoft: sandi akun Microsoft-mu, sama seperti saat login di situs Microsoft) — PIN Windows Hello yang kamu pakai sehari-hari tidak bisa dipakai di sini. Kalau sandimu tidak diingat, reset dulu di account.microsoft.com (akun Microsoft) atau di Pengaturan → Akun (akun lokal). Windows perlu sandi itu untuk login sendiri setelah reboot, lalu layar terkunci otomatis 15 detik kemudian. Sandi disimpan Windows di registry komputer ini - bukan di Adhitron, tidak dikirim ke perangkat lain - tetapi tanpa enkripsi, jadi Administrator atau SYSTEM di PC ini bisa membacanya. Sebaiknya nyalakan BitLocker dan pakai akun Windows khusus untuk Adhitron. Windows meminta izin Administrator sekali; batalkan di jendela itu bila berubah pikiran.</p>
           <label for="autologon-password">Sandi akun Windows / Microsoft</label>
           <input id="autologon-password" type="password" autocomplete="current-password" aria-describedby="autologon-modal-note autologon-error" spellcheck="false" />
           <p id="autologon-error" class="field-error" role="alert"></p>
@@ -1456,7 +1456,7 @@
 
     <!-- Claude account: profile, plan usage, login/logout -->
     <div id="account-modal" class="modal" hidden>
-      <div class="modal-card account-card" role="dialog" aria-modal="true" aria-label="Akun &amp; mesin AI">
+      <div class="modal-card account-card" role="dialog" aria-modal="true" aria-label="Akun &amp; sumber model">
         <div class="modal-head"><b id="account-title">👤 Akun</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div id="account-body"></div>
       </div>
@@ -1700,7 +1700,7 @@
 
     <div id="turn-settings-modal" class="modal phone-sheet" hidden>
       <div class="modal-card sheet-card" role="dialog" aria-modal="true" aria-labelledby="turn-settings-title">
-        <div class="modal-head"><b id="turn-settings-title">Pengaturan giliran <small id="turn-settings-engine" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="turn-settings-title">Pengaturan giliran</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <!-- the composer's own .controls (same ids and listeners) are moved in here (features/phone-sheets.js) -->
         <div class="sheet-body"></div>
         <p id="effort-note" class="muted small" hidden></p>
@@ -1713,7 +1713,7 @@
     <div id="model-tiers-modal" class="modal" hidden>
       <div class="modal-card tiers-card" role="dialog" aria-modal="true" aria-labelledby="tiers-title" aria-describedby="tiers-intro">
         <div class="modal-head"><b id="tiers-title">Tangga Model Auto</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
-        <p id="tiers-intro" class="muted small tiers-intro">Model yang dipakai tiap tingkat saat Model = Auto. Klasifikasi Auto selalu memakai model tingkat <b>Seimbang</b>; pro/kuat/maks hanya dipakai untuk menjalankan tugas. Pilih Bawaan untuk kembali ke model bawaan mesin ini.</p>
+        <p id="tiers-intro" class="muted small tiers-intro">Model yang dipakai tiap tingkat saat Model = Auto. Klasifikasi Auto selalu memakai model tingkat <b>Seimbang</b>; pro/kuat/maks hanya dipakai untuk menjalankan tugas. Pilih Bawaan untuk kembali ke model bawaan.</p>
         <div id="tiers-rows" class="tiers-rows"></div>
         <p id="tiers-error" class="tiers-error small" role="alert" hidden></p>
         <div class="tiers-actions">

@@ -218,7 +218,7 @@ function renderList(tasks) {
   tasksView.keys.list = key;
   const list = $('#tasks-list');
   if (!tasks.length && !others.length) {
-    list.innerHTML = '<li class="tasks-empty muted">Belum ada tugas di sesi ini. Tugas muncul saat mesin AI menjalankan perintah atau agent, misalnya dev server atau agent di latar belakang.</li>';
+    list.innerHTML = '<li class="tasks-empty muted">Belum ada tugas di sesi ini. Tugas muncul saat AI menjalankan perintah atau agent, misalnya dev server atau agent di latar belakang.</li>';
     return;
   }
   const focused = document.activeElement?.closest?.('#tasks-list [data-task]')?.dataset.task;

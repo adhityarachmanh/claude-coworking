@@ -79,8 +79,27 @@ test('a `subagent` call is a launch: its key survives and the child steps after 
   assert.equal(h.adapter.tools.get(`${CHILD_A}:chatcmpl-1`)?.done, true, 'the step is marked done (the row closed)');
 });
 
-test('the launch resolving does NOT end the delegation: a step that starts AND finishes after it still links', () => {
+test('a delegation that reports INLINE (no child session) closes its ⧗ task, so a restart is not blocked forever', () => {
   const h = harness();
+  h.feed(subPending('sub-inline'));
+  h.feed(subRunning('sub-inline', 'Cek API cepat'));
+  // It finished in the same call: no rawOutput.metadata.sessionID, so no child session ever announces itself.
+  h.feed({
+    sessionUpdate: 'tool_call_update',
+    toolCallId: 'sub-inline',
+    status: 'completed',
+    content: [{ type: 'content', content: { type: 'text', text: 'API aman' } }],
+  });
+  // The task close is emitted as a normal `task_updated` frame (the translator owns the ⧗ list).
+  const close = h.out.filter((m) => m.type === 'system' && m.subtype === 'task_updated');
+  assert.deepEqual(
+    close.map((m) => [m.task_id, m.patch.status]),
+    [['oc-agent-sub-inline', 'completed']],
+    'the inline delegation reports its task done',
+  );
+});
+
+test('the launch resolving does NOT end the delegation: a step that starts AND finishes after it still links', () => {  const h = harness();
   h.feed(subPending('sub1'));
   h.feed(subRunning('sub1', 'Cek API latar'));
   h.feed(subLaunched('sub1', CHILD_A));

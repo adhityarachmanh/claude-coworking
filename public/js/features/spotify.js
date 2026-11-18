@@ -967,7 +967,7 @@ function onSettingsOpened() {
 /** Opens ⚙ at the ♪ Spotify section (from the radio, the pill's "Hubungkan", the dialog). */
 export function openSpotifySettings() {
   if (!state.local) {
-    toast('🎵 Spotify diatur dari laptop: login OAuth membuka 127.0.0.1 di mesin itu. Dari HP, pemutar tetap bisa dipakai.', 'warn');
+    toast('🎵 Spotify diatur dari laptop: login OAuth membuka 127.0.0.1 di komputer itu. Dari HP, pemutar tetap bisa dipakai.', 'warn');
     return;
   }
   closeModal('spotify-modal');

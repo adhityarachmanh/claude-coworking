@@ -51,6 +51,8 @@ Sumber kebenaran: **https://github.com/anomalyco/opencode** (paket `@opencode/cl
 
 | Tanggal | Versi | Temuan | Sumber |
 |---|---|---|---|
+| 2026-11-19 | 2.3.0 | Tidak ada perubahan protokol yang diperlukan untuk 1.0.71: penyatuan kosakata (tanpa "mesin") dan kelanjutan lintas sumber hanya menyentuh UI, `src/handoff.js`, dan penyimpanan brief di disk. ACP tetap satu `session/prompt` per giliran; brief ikut sebagai teks konteks di prompt pertama, bukan frame baru. | Ubah kode 1.0.71 + `test-support/fake-acp.mjs` |
+| 2026-11-19 | 2.3.0 | Delegasi `subagent` yang selesai **di dalam satu panggilan** (tanpa `rawOutput.metadata.sessionID`, jadi tidak pernah ada child session) dulu meninggalkan tugas `⧗` berstatus *running* selamanya. Karena `hasRunningTasks()` dianggap alasan sah untuk menunda restart, setiap pergantian model/mode/team atau login provider setelahnya menunggu tanpa akhir. Sekarang adapter menutup tugas itu lewat frame `task_updated` biasa saat panggilannya `completed`/`failed`. Bukti: `test/acp-adapter.test.mjs` ("INLINE"). | Frame nyata `opencode acp` 2.3.0 + `test/opencode.test.mjs` (Mode tim) yang gagal di baseline `v1.0.70` |
 | 2026-11-18 | 2.3.0 | Shell yang dipindah ke latar **tidak** membawa `shellID` di metadata ACP; identitasnya ada di teks output tool: `Command moved to the background (shell ID: sh_…). PID: …`. Aplikasi mendeteksi dari teks itu (metadata tetap dicoba lebih dulu) dan menyimpan PID. | Chat nyata Adhitron (6 shell latar di 3 project, 0 task terdaftar sebelum perbaikan 1.0.65) |
 | 2026-11-18 | 2.3.0 | `opencode api shell.list --param location[directory]=…` mengembalikan `[]` untuk shell ACP yang sudah selesai. Penyelesaian **tidak boleh** bergantung pada daftar layanan; pakai frame `completed` yang telat dan/atau PID. | Probe CLI di mesin ini |
 | 2026-11-18 | 2.3.0 | Setelah tugas latar selesai, OpenCode **melanjutkan sesi sendiri** (“you will be resumed automatically”) tanpa `session/prompt`. ACP tidak punya notifikasi akhir giliran untuk itu; `session.active` (dipakai mirror) adalah penanda “masih bekerja”. | Teks tool OpenCode + `src/opencode-mirror.js` |
@@ -91,9 +93,12 @@ menerima `{ engine, model }`, dan `engine` adalah mesin dari model yang dipilih.
 2. `hub.updateSettings` menyimpan pengaturan mesin lama (`engineSettings`), memulihkan pengaturan mesin tujuan, lalu
    menandai `engineChanges`.
 3. `SessionManager.get()` berikutnya menutup proses lama (409 bila masih bekerja) dan membuat sesi mesin tujuan yang
-   melanjutkan `sessionsByEngine` miliknya. `src/handoff.js` menyusun `bridgeNote` dari chat tersimpan bila `needsBridge`,
-   menulis satu baris info `contextBridge` (`🔁 Konteks dari … dibawa ke … (N pesan)`), dan menaruh catatan itu sebagai
-   konteks sekali pakai pada prompt berikutnya. Status `handoffReady` menyala sampai prompt itu dikirim.
+   melanjutkan `sessionsByEngine` miliknya. `SessionManager.bridgeFromOther()` menyusun brief dari chat tersimpan bila
+   `needsBridge` (`src/handoff.js` → `buildBrief`: percakapan, file, perintah, TODO), menyimpannya ke
+   `data/handoff/<projectId>.json` (`src/handoff-store.js`) agar tahan restart, menulis satu kartu info
+   `contextBridge` (bisa dibuka untuk melihat isi), dan menaruh catatan itu sebagai konteks sekali pakai pada prompt
+   berikutnya. Status `handoffReady` menyala sampai prompt itu dikirim. `POST /api/projects/:id/resume` memicu jalur
+   yang sama dengan `reason: 'resume'` (lanjut dari 🕘 Riwayat saat sumber lain punya pekerjaan lebih baru).
 4. Tidak ada penyalinan chat: `Hub.timeline(id)` menampilkan kedua store sebagai satu alur, sehingga kembali ke mesin lama
    melanjutkan sesi aslinya.
 

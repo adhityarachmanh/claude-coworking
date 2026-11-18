@@ -1,7 +1,7 @@
 // Sessions: the session bar above the chat, the history dialog (/resume), starting a new session.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
-import { engineBadge, engineLabel, engineOf } from '../core/engine-caps.js';
+import { engineOf } from '../core/engine-caps.js';
 import { activeModelOf } from '../core/model-logo.js';
 import { ago, DAY, fmtTokens } from '../core/format.js';
 import { DEMO_ID, auth, projectName, READ_ONLY_HINT, state } from '../core/state.js';
@@ -38,8 +38,8 @@ export function renderSessionBar() {
   }
   const st = state.statuses[state.active] ?? {};
   const engine = engineOf(st, state.config);
-  $('#btn-sessions').title = `Lihat dan lanjutkan sesi ${engineLabel(engine)} sebelumnya (dari terminal maupun web)`;
-  $('#btn-new').title = `Mulai percakapan baru — ${engineLabel(engine)} tidak membawa konteks percakapan ini`;
+  $('#btn-sessions').title = 'Lihat dan lanjutkan percakapan sebelumnya (dari terminal maupun web)';
+  $('#btn-new').title = 'Mulai percakapan baru — konteks percakapan ini tidak dibawa';
   const known = st.sessionId ? sessionTitles.get(st.sessionId) : null;
   if (st.sessionId && !known) lookupSessionTitle(state.active, st.sessionId);
   // A name set with /rename (or by clicking the title) wins, as in the CLI's /resume list.
@@ -56,18 +56,18 @@ export function renderSessionBar() {
     title.removeAttribute('tabindex');
   }
   const meta = st.sessionId
-    ? [engine === 'opencode' ? 'sesi OpenCode' : known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
-    : [`pesan pertamamu memulai sesi ${engine === 'opencode' ? 'OpenCode' : 'Claude Code'} baru`];
+    ? [known?.source === 'cli' ? 'lanjutan sesi terminal' : 'sesi web', st.sessionId.slice(0, 8), st.activeModel]
+    : ['pesan pertamamu memulai percakapan baru'];
   if (st.cliBusy) meta.push('terminal aktif');
-  // The engine that runs the project right now (the model picked in Pengaturan giliran decides it): a small info
-  // badge, never a switch. Phone hides the session bar; the chat marks engine changes per message instead.
-  const badge = `<span id="sb-engine" class="engine-badge" data-engine="${escapeHtml(engine)}" title="Sumber model: ${escapeHtml(engineLabel(engine))} — ditentukan oleh model di Pengaturan giliran" aria-label="Sumber model: ${escapeHtml(engineLabel(engine))}">${escapeHtml(engineBadge(engine))}</span>`;
+  // No per-engine badge: Adhitron is one app. The model (and where it comes from) lives in Pengaturan giliran.
   // The active model's logo (the same ai_logos the chip uses); an unknown family shows none.
   const { file } = activeModelOf(st, engine);
   const logo = file ? `<img class="sb-logo" src="/ai-logos/${escapeHtml(file)}" alt="" aria-hidden="true">` : '';
-  $('#sb-meta').innerHTML = badge + logo + escapeHtml(meta.filter(Boolean).join(' · '));
+  // The next prompt carries the other source's brief (src/handoff.js): say it once, here, until it is sent.
+  const handoff = st.handoffReady ? '<span class="sb-handoff" title="Ringkasan konteks dari sumber sebelumnya ikut pada pesan berikutnya">↪ konteks siap</span>' : '';
+  $('#sb-meta').innerHTML = logo + escapeHtml(meta.filter(Boolean).join(' · ')) + handoff;
   // Phone header: the session bar is hidden there, its title and the turn's state sit under the project name.
-  const status = st.pending ? 'menunggu izin' : st.busy || st.cliBusy ? 'bekerja…' : '';
+  const status = st.pending ? 'menunggu izin' : st.busy || st.cliBusy ? 'bekerja…' : st.handoffReady ? '↪ konteks siap' : '';
   $('#head-sub').textContent = [$('#sb-title').textContent, status].filter(Boolean).join(' · ');
 }
 

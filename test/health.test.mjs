@@ -238,7 +238,7 @@ test('health: Claude switched off → neutral line, no login item, OpenCode beco
   assert.equal(itemOf(health, 'login'), undefined, 'the Claude login item disappears');
   const opencode = itemOf(health, 'opencode');
   assert.equal(opencode.label, 'OpenCode', 'no longer marked optional');
-  assert.match(opencode.hint, /Mesin utama/);
+  assert.match(opencode.hint, /Sumber model utama/);
   assert.deepEqual(health.checklist.map((c) => c.id), ['project', 'backup', 'https', 'opencode']);
 });
 

@@ -369,6 +369,10 @@ export class AcpAdapter {
               if (left.length) this.subagents.set(desc, left);
               else this.subagents.delete(desc);
             }
+            // A delegation that reported INLINE (no child session of its own) is over with its call. Its ⧗ task must
+            // close here: left running, it would keep `hasRunningTasks()` true forever and every deferred restart
+            // (a model/mode/team change, a provider login) would wait for a task that will never end.
+            this.finishInlineAgentTask(u.toolCallId, u.status);
           }
         }
         return;
@@ -603,6 +607,19 @@ export class AcpAdapter {
   markAgentDone(callId) {
     const agent = this.agents.get(callId);
     if (agent) agent.done = true;
+  }
+
+  /**
+   * A delegation that reported INLINE (its call completed without starting a child session) is over. Close its ⧗
+   * task here: the translator deliberately leaves an ACP delegation "running" because the usual kind works on as a
+   * child session, so an inline one would otherwise keep `hasRunningTasks()` true forever — and every deferred
+   * restart (model/mode/team, provider login) would wait for a task that will never end.
+   */
+  finishInlineAgentTask(callId, status) {
+    const agent = this.agents.get(callId);
+    if (agent) agent.done = true;
+    // Frames go through `emit`, exactly like every other update: the translator owns the ⧗ task list.
+    this.emit({ type: 'system', subtype: 'task_updated', task_id: `oc-agent-${callId}`, patch: { status: status === 'failed' ? 'failed' : 'completed' } });
   }
 
   /**
@@ -1124,7 +1141,6 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       }
       super.becameIdle();
     }
-
     /** The last background task ended: apply a restart that was deferred for it (if any). */
     applyPendingRestart() {
       if (!this.restartPending || this.busy || this.translator?.hasRunningTasks?.()) return;

@@ -318,8 +318,10 @@ test('each engine keeps its own conversation and settings; the chat is shown as 
   // One timeline: the other engine's conversation stays in view (tagged), never copied into its file.
   const fromOpencode = (snap.chats[id] ?? []).find((m) => m.text === 'halo opencode');
   assert.equal(fromOpencode?.engine, 'opencode', "OpenCode's chat is still in the one timeline");
-  assert.notEqual(snap.statuses[id].sessionId, ocSession);
-  assert.equal(snap.statuses[id].model, 'opus', "Claude Code's own model setting is back");
+  assert.notEqual(snap.statuses[id].sessionId, ocSession, "Claude gets its own conversation, never OpenCode's id");
+  // ONE set of settings per project: the model picked for the other source does not come back on the way back
+  // (docs/FITUR.md, "Satu set pengaturan"). The conversation id above is per engine; the model is not.
+  assert.equal(snap.statuses[id].model, '', 'the old engine\'s model is not restored');
   mark = seen.length;
   await api(`/api/projects/${id}/prompt`, { text: 'halo claude' });
   assert.equal((await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result')).ok, true);
@@ -328,7 +330,7 @@ test('each engine keeps its own conversation and settings; the chat is shown as 
   await useEngine('opencode');
   snap = await snapshot();
   assert.equal(snap.statuses[id].sessionId, ocSession, "OpenCode's conversation is resumed, not lost");
-  assert.equal(snap.statuses[id].model, 'opencode-go/beam-free');
+  assert.equal(snap.statuses[id].model, '', 'one set of settings: no model is restored on the way back');
   assert.ok(snap.chats[id].some((m) => m.text === 'halo opencode'), "OpenCode's chat is back");
   assert.equal(snap.chats[id].find((m) => m.text === 'halo claude')?.engine, 'claude', "Claude's chat stays in the timeline too");
   const history = (await api(`/api/projects/${id}/sessions`)).body;
@@ -1165,7 +1167,7 @@ test('✂ Ringkas konteks (OpenCode): only an advertised /compact runs; absent a
   assert.ok(!((await snapshot()).statuses[id].commands ?? []).some((c) => c.name === 'compact'), 'not advertised');
   const absent = await api(`/api/projects/${id}/compact`, { focus: 'abaikan saja' });
   assert.equal(absent.status, 409);
-  assert.equal(absent.body.error, 'Mesin OpenCode di sesi ini tidak menyediakan perintah /compact.');
+  assert.equal(absent.body.error, 'Sumber OpenCode di sesi ini tidak menyediakan perintah /compact.');
   assert.ok(!seen.slice(mark).some((s) => s.type === 'chat' && s.obj.project === id && s.obj.kind === 'user' && s.obj.text === '/compact'), 'no prompt reached the chat');
 
   // A fresh session whose agent does advertise it (available_commands_update): /compact goes as a normal prompt.

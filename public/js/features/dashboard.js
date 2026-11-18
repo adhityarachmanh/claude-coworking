@@ -4,7 +4,6 @@
 // tapping one switches project like the picker does and jumps to its pending permission card.
 // Rules (summary, order, counts): core/dashboard-rules.js.
 import { api, toast } from '../core/api.js';
-import { engineLabel, engineOf } from '../core/engine-caps.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { fmtTokens } from '../core/format.js';
 import { DEMO_ID, projectName, READ_ONLY_HINT, state } from '../core/state.js';
@@ -96,8 +95,7 @@ function cardParts(s, now) {
     const who = s.roles.map((r) => escapeHtml(roleName(r))).join(', ');
     line = `<p class="dash-line dash-work">${who ? `<b>${who}</b>` : ''}${who && s.task ? ' · ' : ''}${s.task ? escapeHtml(s.task) : ''}</p>`;
   }
-  const snippetEngine = engineLabel(engineOf({ engine: s.engine }, state.config));
-  const snippet = s.snippet ? `<p class="dash-snip"><span class="dash-who">${s.snippet.who === 'user' ? 'Kamu' : escapeHtml(snippetEngine)}:</span> ${escapeHtml(s.snippet.text)}</p>` : '<p class="dash-snip muted">Belum ada percakapan.</p>';
+  const snippet = s.snippet ? `<p class="dash-snip"><span class="dash-who">${s.snippet.who === 'user' ? 'Kamu' : 'AI'}:</span> ${escapeHtml(s.snippet.text)}</p>` : '<p class="dash-snip muted">Belum ada percakapan.</p>';
   const body = `${meta.length ? `<p class="dash-meta">${meta.join('')}</p>` : ''}${line}${snippet}`;
 
   const acts = [];

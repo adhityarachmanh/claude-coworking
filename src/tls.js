@@ -350,7 +350,7 @@ export class TailscaleCert {
     }
     if (status.BackendState && status.BackendState !== 'Running') throw new CertError('no-tailscale', 'Tailscale belum tersambung (buka aplikasi Tailscale lalu Connect).');
     const host = String(status.Self?.DNSName ?? '').replace(/\.$/, '').toLowerCase();
-    if (!HOST_NAME.test(host)) throw Object.assign(new CertError('certs-disabled', 'Mesin ini tidak punya nama MagicDNS (nyalakan MagicDNS di admin console Tailscale).'), { host: null });
+    if (!HOST_NAME.test(host)) throw Object.assign(new CertError('certs-disabled', 'Komputer ini tidak punya nama MagicDNS (nyalakan MagicDNS di admin console Tailscale).'), { host: null });
     const domains = (Array.isArray(status.CertDomains) ? status.CertDomains : []).map((d) => String(d).replace(/\.$/, '').toLowerCase());
     if (!domains.includes(host)) throw Object.assign(new CertError('certs-disabled', 'HTTPS Certificates belum dinyalakan di admin console Tailscale (DNS → HTTPS Certificates).'), { host });
 

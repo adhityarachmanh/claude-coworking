@@ -3,7 +3,7 @@
 // (server: POST /api/projects/:id/compact).
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
-import { engineLabel, engineOf } from '../core/engine-caps.js';
+import { engineOf } from '../core/engine-caps.js';
 import { fmtTokens } from '../core/format.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { closeModal, openModal } from '../ui/modals.js';
@@ -30,7 +30,7 @@ function summary(st) {
         ? `Konteks terpakai: <b>${escapeHtml(fmtTokens(u.used))}</b> dari <b>${escapeHtml(fmtTokens(u.win))}</b> token (<b>${u.pct}%</b>)`
         : `Konteks terpakai: <b>${escapeHtml(fmtTokens(u.used))}</b> token`
       : 'Belum ada data konteks untuk sesi ini.',
-    `Mesin: <b>${escapeHtml(engineLabel(engineNow(st)))}</b>`,
+    `Model: <b>${escapeHtml(st.activeModel || st.model || 'Default')}</b>`,
   ];
   return parts.join(' · ');
 }
@@ -81,11 +81,11 @@ async function submit() {
   render();
   try {
     // No empty key on the wire: an absent focus is what the server expects.
-    const r = await api(`/api/projects/${project}/compact`, focus ? { focus } : {});
+    await api(`/api/projects/${project}/compact`, focus ? { focus } : {});
     co.busy = false;
     closeModal('compact-modal');
-    const engine = r?.engine === 'opencode' || r?.engine === 'claude' ? r.engine : engineNow();
-    toast(engine === 'opencode' ? 'Ringkas konteks dikirim ke OpenCode…' : 'Konteks sedang diringkas…', 'ok');
+    // One app: the toast never names a source, it only says the summary was sent.
+    toast('Konteks sedang diringkas…', 'ok');
   } catch (err) {
     // A 409 (turn running, rewind active, pending approval, /compact unsupported) stays in the dialog as-is:
     // the server's Indonesian reason is the message, and the request is never retried on its own.

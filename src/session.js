@@ -18,7 +18,8 @@ import { killTree } from './proc.js';
 import { attachmentChips, contentBlocks } from './attachments.js';
 import { MODE_CHOICE_MESSAGE, appModeFromCli, claudePermissionMode, isMode } from './modes.js';
 import { HttpError } from './routes/http.js';
-import { ENGINE_LABEL, bridgeNote, needsBridge, otherChat } from './handoff.js';
+import { ENGINE_LABEL, buildBrief, needsBridge, otherChat } from './handoff.js';
+import { HandoffStore } from './handoff-store.js';
 import { describeTool, inferRole } from './roles.js';
 import { promptChain } from './transcripts.js';
 import { StreamTranslator } from './translator.js';
@@ -92,6 +93,67 @@ export class SessionManager {
     this.account = account;
     this.sessions = new Map();
     this.taskQueue = null; // 📋 Antrian, set by server.js: a waiting item blocks a project's engine switch
+    // Handoff briefs live on disk: a switch survives a restart, and 🕘 Riwayat can offer the same note once.
+    this.handoff = new HandoffStore(path.join(this.hub.dataDir ?? os.tmpdir(), 'handoff'));
+  }
+
+  /**
+   * Carries the other source's newer work to `session` as a note that rides with its next prompt, and records one
+   * info card in the chat. `reason` says how it was triggered: 'switch' (a model of the other source was picked) or
+   * 'resume' (🕘 Riwayat, while the other source has newer work). The brief is persisted first, so the same note is
+   * still there after a restart (src/handoff-store.js). Returns true when a note was attached.
+   */
+  bridgeFromOther(project, session, { reason = 'switch', from = null } = {}) {
+    if (!session || session.pendingHandoff) return false;
+    const to = session.engine;
+    const source = from ?? (to === 'opencode' ? 'claude' : 'opencode');
+    if (!source || source === to) return false;
+    this.hub.save?.(); // the conversation that just ended must be on disk before it is read below
+    if (!needsBridge(this.hub, project.id, to)) return false;
+    const built = buildBrief(otherChat(this.hub, source, project.id), source);
+    if (!built.note) return false;
+    const stored = this.handoff.write(project.id, { from: source, to, reason, note: built.note, stats: built.stats, brief: built.brief });
+    session.setHandoffContext(stored?.note ?? built.note);
+    // Deliberately NOT cleared here: the file is the note's copy until the prompt actually carries it. A restart in
+    // between restores the same brief (restoreStoredBrief), and the session clears it when the note is sent.
+    const counts = [
+      `${built.stats.messages} pesan`,
+      built.stats.files ? `${built.stats.files} file` : '',
+      built.stats.commands ? `${built.stats.commands} perintah` : '',
+      built.stats.todos ? `${built.stats.todos} TODO` : '',
+    ].filter(Boolean).join(', ');
+    const how = reason === 'resume' ? 'dari Riwayat' : '';
+    this.hub.chat(project.id, {
+      kind: 'info',
+      contextBridge: { from: source, to, reason, ...built.stats, brief: built.brief },
+      text: `🔁 Ringkasan konteks ${ENGINE_LABEL[source]}${how ? ` ${how}` : ''} disiapkan (${counts}) — ikut pada pesan berikutnya, bukan sebagai pesan baru.`,
+    });
+    return true;
+  }
+
+  /**
+   * A brief written by an earlier switch whose note was never sent (the session is gone, e.g. the server
+   * restarted, or the project went to the other source and came back): attaches the SAME note once. The file stays
+   * until the note is sent, so a second restart still carries it.
+   */
+  restoreStoredBrief(project, session) {
+    if (!session || session.pendingHandoff) return false;
+    const stored = this.handoff.read(project.id);
+    if (!stored || stored.to !== session.engine) return false;
+    session.setHandoffContext(stored.note);
+    const counts = [
+      `${stored.stats.messages} pesan`,
+      stored.stats.files ? `${stored.stats.files} file` : '',
+      stored.stats.commands ? `${stored.stats.commands} perintah` : '',
+      stored.stats.todos ? `${stored.stats.todos} TODO` : '',
+    ].filter(Boolean).join(', ');
+    this.hub.chat(project.id, {
+      kind: 'info',
+      // Never the whole note: the card only needs the counts and the short lists (the note itself is for the model).
+      contextBridge: { from: stored.from, to: stored.to, reason: stored.reason, ...stored.stats, brief: stored.brief, restored: true },
+      text: `🔁 Ringkasan konteks ${ENGINE_LABEL[stored.from]} dari sesi sebelumnya dipulihkan (${counts}) — ikut pada pesan berikutnya.`,
+    });
+    return true;
   }
 
   /**
@@ -326,24 +388,11 @@ export class SessionManager {
     if (!session) {
       session = engine === 'opencode' ? new AcpSession(this, project) : new ClaudeSession(this, project);
       this.sessions.set(project.id, session);
-      // The note from the engine this project just left goes with the next prompt (session-only, no divider, no
-      // model call, no git). needsBridge also keeps a switch back and forth without new work from repeating it.
-      if (from && from !== engine) {
-        this.hub.save?.(); // the conversation that just ended must be on disk before it is read below
-        if (needsBridge(this.hub, project.id, engine)) {
-          const chat = otherChat(this.hub, from, project.id);
-          const note = bridgeNote(chat, from);
-          if (note) {
-            const messages = chat.filter((m) => m.kind === 'user' || m.kind === 'assistant').length;
-            session.setHandoffContext(note);
-            this.hub.chat(project.id, {
-              kind: 'info',
-              contextBridge: { from, to: engine, messages },
-              text: `🔁 Ringkasan konteks dari ${ENGINE_LABEL[from]} dikirim ke ${ENGINE_LABEL[engine]} (${messages} pesan).`,
-            });
-          }
-        }
-      }
+      // The note from the source this project just left goes with the next prompt (no divider, no model call, no
+      // git). needsBridge keeps a switch back and forth without new work from repeating it. A brief written by an
+      // earlier switch (e.g. before a restart) is attached from disk instead, so the work still carries over.
+      if (from && from !== engine) this.bridgeFromOther(project, session, { from });
+      this.restoreStoredBrief(project, session);
     }
     return session;
   }
@@ -395,8 +444,10 @@ export class ClaudeSession {
   }
 
   clearHandoffContext() {
+    const had = Boolean(this.pendingHandoff);
     this.pendingHandoff = '';
     this.hub.setStatus(this.id, { handoffReady: false });
+    if (had) this.m?.handoff?.clear(this.id); // the note is dropped for good: its on-disk copy goes with it
   }
 
   /** The pending note goes with this prompt; after that it lives in the session's own conversation history. */
@@ -405,6 +456,7 @@ export class ClaudeSession {
     if (!text) return '';
     this.pendingHandoff = '';
     this.hub.setStatus(this.id, { handoffReady: false });
+    this.m?.handoff?.clear(this.id); // carried by this prompt: never restored by a later restart
     return text;
   }
 

@@ -298,18 +298,21 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
           badge: row?.querySelector('.engine-badge')?.textContent ?? null,
           engineTag: row?.querySelector('[data-engine]')?.outerHTML ?? null,
           header: document.querySelector('#sb-engine')?.textContent ?? null,
+          meta: document.querySelector('#sb-meta')?.textContent ?? '',
         };
       }, projectId);
       assert.equal(view.badge, null, 'baris picker tanpa badge mesin');
       assert.equal(view.engineTag, null, 'tidak ada data-engine di baris picker');
-      assert.match(view.header, /Claude|OpenCode/, 'header sesi tetap menyebut mesin yang berjalan');
+      // Adhitron is one app: the session bar never names the source, only the model's logo and the session facts.
+      assert.equal(view.header, null, 'tidak ada badge sumber di header sesi');
+      assert.doesNotMatch(view.meta, /Claude|OpenCode/, 'meta sesi tidak menyebut sumber');
       assert.deepEqual(page.problems, [], 'tanpa error console');
     } finally {
       await page.close();
     }
   });
 
-  test('modal Akun: satu halaman (Claude + provider OpenCode), tanpa dropdown "mesin"', async () => {
+  test('modal Akun: satu daftar sumber (Claude + sumber model lain), tanpa dropdown "mesin"', async () => {
     const page = await browser.newPage({ width: 1440, height: 900, mobile: false });
     try {
       page.clearProblems();
@@ -328,21 +331,21 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
         };
       });
       await page.eval(() => document.querySelector('#btn-account').click());
-      await page.waitFor(() => !document.querySelector('#account-modal').hidden && /Provider OpenCode/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 8000, message: 'satu halaman Akun memuat Claude + provider' });
+      await page.waitFor(() => !document.querySelector('#account-modal').hidden && /Sumber model lain/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 8000, message: 'satu halaman Akun memuat Claude + sumber lain' });
       const view = await page.eval(() => ({
         tabSelect: Boolean(document.querySelector('#acct-tab')),
         tabs: document.querySelectorAll('#account-body .acct-tabs').length,
         note: document.querySelector('.acct-sources-note')?.textContent ?? '',
         text: document.querySelector('#account-body').textContent,
         claudeHere: /Login dengan akun Claude|Ganti akun/.test(document.querySelector('#account-body').textContent),
-        providersHere: /Provider OpenCode/.test(document.querySelector('#account-body').textContent),
+        providersHere: /Sumber model lain/.test(document.querySelector('#account-body').textContent),
         title: document.querySelector('#account-title').textContent,
       }));
       assert.equal(view.tabSelect, false, 'tidak ada dropdown mesin lagi');
       assert.equal(view.tabs, 0, 'tidak ada tab mesin');
-      assert.match(view.note, /Model selain Claude/, 'penjelasan satu kalimat antara dua sumber login');
+      assert.match(view.note, /Sumber model/, 'penjelasan satu daftar sumber');
       assert.equal(view.claudeHere, true, 'bagian Claude tampil di halaman yang sama');
-      assert.equal(view.providersHere, true, 'bagian provider OpenCode tampil di halaman yang sama');
+      assert.equal(view.providersHere, true, 'daftar sumber model lain tampil di halaman yang sama');
       assert.equal(view.title, '👤 Akun');
       assert.equal(await page.eval(() => window.__acctEngineCalls), 0, 'tidak ada panggilan /api/engine');
       assert.deepEqual(page.problems, [], 'tanpa error console');
@@ -356,7 +359,7 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
     }
   });
 
-  test('timeline satu alur: dua mesin berurutan, badge hanya saat mesin berubah', async () => {
+  test('timeline satu alur: dua sumber berurutan tanpa tanda per pesan', async () => {
     const page = await browser.newPage({ width: 1440, height: 900, mobile: false });
     try {
       page.clearProblems();
@@ -365,16 +368,13 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
       await page.waitFor(() => document.querySelectorAll('#chat [data-id]').length >= 4, { timeoutMs: 10000, message: 'timeline dirender' });
       const view = await page.eval(() => ({
         texts: [...document.querySelectorAll('#chat [data-id]')].map((n) => n.textContent).join(' | '),
-        marks: [...document.querySelectorAll('#chat .engine-mark')].map((n) => ({ mark: n.textContent, title: n.title, engine: n.dataset.engine })),
+        marks: [...document.querySelectorAll('#chat .engine-mark')].map((n) => n.textContent),
         rows: [...document.querySelectorAll('#chat [data-id]')].map((n) => n.dataset.id),
       }));
       assert.match(view.texts, /halo dari Claude/);
-      assert.match(view.texts, /halo dari OpenCode/, 'kedua mesin tampil dalam satu alur');
+      assert.match(view.texts, /halo dari OpenCode/, 'kedua sumber tampil dalam satu alur');
       assert.deepEqual(view.rows.slice(0, 4), ['mix-a1', 'mix-a2', 'mix-b1', 'mix-b2'], 'urutan timeline apa adanya');
-      assert.deepEqual(view.marks, [
-        { mark: '✳', title: 'Claude', engine: 'claude' },
-        { mark: '▢', title: 'OpenCode', engine: 'opencode' },
-      ], 'badge hanya pada pesan pertama dan saat mesin berubah');
+      assert.deepEqual(view.marks, [], 'tidak ada tanda sumber pada pesan: satu alur, satu aplikasi');
 
       // A duplicated chat event (snapshot + stream) updates the row instead of adding a second one.
       const dedupe = await page.eval(async (id) => {

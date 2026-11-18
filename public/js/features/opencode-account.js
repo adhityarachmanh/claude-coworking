@@ -326,10 +326,10 @@ function customLoginHtml() {
 
 /** Akun's body for OpenCode. */
 export function openCodeBodyHtml() {
-  return `${usageHtml()}${goQuotaHtml()}<div class="acct-section"><div class="acct-title"><b>Provider OpenCode</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
+  return `${usageHtml()}${goQuotaHtml()}<div class="acct-section"><div class="acct-title"><b>Sumber model lain</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
     ${connectedHtml()}${oc.error && oc.providers ? `<p class="warn small">${escapeHtml(oc.error)}</p>` : ''}
     ${oc.logoutError ? `<p class="warn small" role="alert">${escapeHtml(oc.logoutError)}</p>` : ''}
-    <p class="muted small" title="Provider ini dipakai saat model yang kamu pilih berasal dari OpenCode. Model Claude memakai akun Claude di atas.">Provider dipakai saat model yang kamu pilih berasal dari OpenCode. Model Claude memakai akun Claude di atas.</p></div>
+    <p class="muted small" title="Tiap sumber menyimpan login-nya sendiri di laptop ini; yang kamu pilih di Pengaturan giliran menentukan sumber mana yang dipakai.">Tiap sumber menyimpan login-nya sendiri di laptop ini. Yang kamu pilih di Pengaturan giliran menentukan sumbernya.</p></div>
     ${state.accountAuth ? loginHtml() : '<p class="muted small">Login/logout provider dari HP hanya lewat Tailscale (koneksi terenkripsi), atau lakukan dari laptop.</p>'}`;
 }
 

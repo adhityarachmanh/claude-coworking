@@ -123,7 +123,7 @@ export function registerProjectActions(router) {
     const { hub, sessions } = ctx;
     const patch = asBody(body);
     const engine = patch.engine === undefined ? undefined : String(patch.engine);
-    if (engine !== undefined && !ENGINES.includes(engine)) return json(res, 400, { error: 'Mesin tidak dikenal.' });
+    if (engine !== undefined && !ENGINES.includes(engine)) return json(res, 400, { error: 'Sumber model tidak dikenal.' });
     if (engine !== undefined && engine !== hub.engineOf(project.id)) {
       const refusal = engineSwitchRefusal(ctx, project, engine);
       if (refusal) return json(res, 409, refusal);

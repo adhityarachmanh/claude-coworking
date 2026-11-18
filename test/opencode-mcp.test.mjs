@@ -6,6 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { openCodeMcpAction, openCodeMcpStatus } from '../src/opencode-mcp.js';
+import { listOpenCodeMcp } from '../src/mcp-admin.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const bin = { command: process.execPath, args: [path.join(ROOT, 'test-support', 'fake-acp.mjs')] };
@@ -52,5 +53,29 @@ test('actions: reconnect / enable / disable through the service; login via the i
     assert.match(readFileSync(log, 'utf8'), /complete mcp-notion abc123/);
   } finally {
     delete process.env.FAKE_ACP_MCP_LOG;
+  }
+});
+
+test('the global MCP config comes from the app config root, never from the machine\'s own ~/.config/opencode', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'oc-mcp-home-'));
+  const root = path.join(home, 'xdg');
+  writeFileSync(path.join(home, 'secret.json'), '{}');
+  mkdirSync(path.join(root, 'opencode'), { recursive: true });
+  writeFileSync(
+    path.join(root, 'opencode', 'opencode.json'),
+    JSON.stringify({ mcp: { servers: { fromRoot: { type: 'remote', url: 'https://root.example/mcp' } } } }),
+  );
+  // A project config of its own, plus a global server that only exists in the override root.
+  const dir = project();
+  const before = process.env.OFFICE_OPENCODE_CONFIG_HOME;
+  process.env.OFFICE_OPENCODE_CONFIG_HOME = root;
+  try {
+    const list = listOpenCodeMcp(dir);
+    assert.deepEqual(list.map((s) => s.name).sort(), ['docs', 'fromRoot', 'local'], 'exactly the config root + the project');
+    assert.equal(list.find((s) => s.name === 'fromRoot').scope, 'user');
+    assert.equal(list.some((s) => s.name === 'Neon'), false, 'a server of the machine\'s real config never leaks in');
+  } finally {
+    if (before === undefined) delete process.env.OFFICE_OPENCODE_CONFIG_HOME;
+    else process.env.OFFICE_OPENCODE_CONFIG_HOME = before;
   }
 });

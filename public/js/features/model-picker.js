@@ -2,7 +2,7 @@
 // hints — the part a native <optgroup> can never carry. The hidden #model select stays the state holder; a row
 // click sets its value and fires the same change → saveModel path, so there is exactly one way a model is picked.
 import { escapeHtml } from '../core/dom.js';
-import { engineLabel, favoriteModelList, groupModels, openCodeProviderGroups } from '../core/engine-caps.js';
+import { engineLabel, favoriteModelList, groupModels, openCodeProviderGroups, providerOf } from '../core/engine-caps.js';
 import { priceSuffix } from './model-prices.js';
 import { logoFileFor, logoIndex } from '../core/model-logo.js';
 import { AUTO_MODEL, AUTO_MODEL_LABEL, AUTO_MODEL_TITLE } from './engine.js';
@@ -13,11 +13,24 @@ const mpLogo = (model, engine = '') => {
   return file ? `<img class="mp-logo" src="/ai-logos/${file}" alt="" aria-hidden="true">` : '';
 };
 
+/**
+ * Where a model comes from, shown next to its name: two providers can offer a model with the SAME name (e.g.
+ * `deepseek-v4.1-flash` on OpenCode Go and on Wally), and the row must say which one it is. Claude rows say
+ * "Claude" (the subscription source); a provider-less OpenCode id says "lainnya".
+ */
+export function modelSourceLabel({ engine, provider, providerNames } = {}) {
+  if (engine === 'claude') return 'Claude';
+  const id = String(provider ?? '');
+  if (!id) return '';
+  return String(providerNames?.[id] ?? id).slice(0, 60);
+}
+
 /** One option row: logo, name + price suffix, the current marker, a star toggle for favorites, a lock for the disabled. */
-function mpRow(m, rowEngine, { current, engine, locked, favSet }, id) {
+function mpRow(m, rowEngine, { current, engine, locked, favSet, source = '' }, id) {
   const disabled = locked && rowEngine !== engine;
   const starred = favSet.has(m.value);
-  return `<div class="mp-row${m.value === current ? ' active' : ''}${disabled ? ' disabled' : ''}" id="${id}" role="option" aria-selected="${m.value === current}" aria-disabled="${disabled}" data-value="${escapeHtml(m.value)}" data-engine="${escapeHtml(rowEngine)}" title="${escapeHtml(m.value)}">${mpLogo(m.value, rowEngine)}<span class="mp-name">${escapeHtml(`${m.name}${priceSuffix(m.value)}`)}</span><span class="mp-trail"><button type="button" class="mp-star-btn${starred ? ' on' : ''}" data-value="${escapeHtml(m.value)}" title="${starred ? 'Lepas dari ⭐ Favorit' : 'Pin ke ⭐ Favorit'}" aria-label="${starred ? `Lepas ${m.value} dari favorit` : `Pin ${m.value} ke favorit`}">${starred ? '★' : '☆'}</button>${disabled ? '<span class="mp-lock" title="Menunggu giliran ini selesai">🔒</span>' : ''}</span></div>`;
+  const via = source ? `<span class="mp-src" title="Asal model: ${escapeHtml(source)}">${escapeHtml(source)}</span>` : '';
+  return `<div class="mp-row${m.value === current ? ' active' : ''}${disabled ? ' disabled' : ''}" id="${id}" role="option" aria-selected="${m.value === current}" aria-disabled="${disabled}" data-value="${escapeHtml(m.value)}" data-engine="${escapeHtml(rowEngine)}" title="${escapeHtml(source ? `${m.name} · ${source}` : m.value)}">${mpLogo(m.value, rowEngine)}<span class="mp-name">${escapeHtml(`${m.name}${priceSuffix(m.value)}`)}${via}</span><span class="mp-trail"><button type="button" class="mp-star-btn${starred ? ' on' : ''}" data-value="${escapeHtml(m.value)}" title="${starred ? 'Lepas dari ⭐ Favorit' : 'Pin ke ⭐ Favorit'}" aria-label="${starred ? `Lepas ${m.value} dari favorit` : `Pin ${m.value} ke favorit`}">${starred ? '★' : '☆'}</button>${disabled ? '<span class="mp-lock" title="Menunggu giliran ini selesai">🔒</span>' : ''}</span></div>`;
 }
 
 /** A disabled info line (loading / failed / empty), the same texts the old select's info options carried. */
@@ -45,20 +58,25 @@ function mpSettingRows({ engine, current, modelAuto, defaultLabel }, nextId) {
 
 /**
  * The panel's body: ⭐ Favorit (its stars shown here; wiring is the same /api/model-favorites as the ☆ button),
- * Claude Code (one group), then one group per OpenCode provider (display name + count, "(belum login)" hint,
- * rows disabled when that provider has no credentials). The search filter applies to everything, like before.
+ * Claude Code (one group), then one group per OpenCode provider that HAS credentials. A provider that is not
+ * logged in / has no subscription is left out entirely (not disabled, not greyed): the picker only offers models
+ * that can actually run, and every row says where it comes from (`modelSourceLabel`) because two providers may
+ * offer the same model name. The search filter applies to everything, including the provider name.
  */
 export function modelPanelHtml({ catalog, current, query, engine, modelAuto = false, defaultLabel = '', locked, providerNames, providerAuth, favorites, recent = [] }) {
   const claude = catalog?.claude?.models ?? [];
   const opencode = catalog?.opencode?.models ?? [];
   const favSet = new Set(Array.isArray(favorites) ? favorites : []);
+  const q = String(query ?? '').toLowerCase();
+  // Source label per model value, used by every group (favorites, recent, provider rows).
+  const sourceOf = (value, rowEngine) => modelSourceLabel({ engine: rowEngine, provider: String(value).includes('/') ? providerOf(value) : '', providerNames });
   const favs = favoriteModelList(favorites, claude, opencode);
   // "Terakhir di project ini": the three newest picks that still exist in this engine's catalog.
   const known = new Map([...claude.map((m) => [m.value, { ...m, engine: 'claude' }]), ...opencode.map((m) => [m.value, { ...m, engine: 'opencode' }])]);
   const recentModels = (Array.isArray(recent) ? recent : [])
     .map((v) => known.get(v))
     .filter(Boolean)
-    .filter((m) => !query || `${m.name} ${m.value}`.toLowerCase().includes(String(query).toLowerCase()));
+    .filter((m) => !q || `${m.name} ${m.value} ${sourceOf(m.value, m.engine)}`.toLowerCase().includes(q));
   let seq = 0;
   const nextId = () => `mp-opt-${seq++}`;
   const groups = [];
@@ -66,26 +84,32 @@ export function modelPanelHtml({ catalog, current, query, engine, modelAuto = fa
   // they are what the field shows before any model was chosen.
   groups.push(mpSettingRows({ engine, current, modelAuto, defaultLabel: defaultLabel || `Default (dari config ${engineLabel(engine)})` }, nextId));
   if (recentModels.length) {
-    groups.push(`<div class="mp-group"><div class="mp-head"><span class="mp-title">Terakhir di project ini</span></div>${recentModels.map((m) => mpRow(m, m.engine, { current, engine, locked, favSet }, nextId())).join('')}</div>`);
+    groups.push(`<div class="mp-group"><div class="mp-head"><span class="mp-title">Terakhir di project ini</span></div>${recentModels.map((m) => mpRow(m, m.engine, { current, engine, locked, favSet, source: sourceOf(m.value, m.engine) }, nextId())).join('')}</div>`);
   }
-  if (favs.length) {
-    groups.push(`<div class="mp-group"><div class="mp-head"><span class="mp-title">⭐ Favorit</span></div>${favs.map((m) => mpRow(m, m.engine, { current, engine, locked, favSet }, nextId())).join('')}</div>`);
+  const favMatch = favs.filter((m) => !q || `${m.name} ${m.value} ${sourceOf(m.value, m.engine)}`.toLowerCase().includes(q));
+  if (favMatch.length) {
+    groups.push(`<div class="mp-group"><div class="mp-head"><span class="mp-title">⭐ Favorit</span></div>${favMatch.map((m) => mpRow(m, m.engine, { current, engine, locked, favSet, source: sourceOf(m.value, m.engine) }, nextId())).join('')}</div>`);
   }
   const claudeMatches = groupModels(claude, query);
   if (claude.length) {
     const body = claudeMatches.length
-      ? claudeMatches.flatMap((g) => g.models.map((m) => mpRow(m, 'claude', { current, engine, locked, favSet }, nextId()))).join('')
+      ? claudeMatches.flatMap((g) => g.models.map((m) => mpRow(m, 'claude', { current, engine, locked, favSet, source: modelSourceLabel({ engine: 'claude' }) }, nextId()))).join('')
       : mpInfo(query ? 'Tidak ada model yang cocok' : 'Katalog Claude belum tersedia');
     groups.push(`<div class="mp-group"><div class="mp-head"><span class="mp-title">Claude</span></div>${body}</div>`);
   }
-  const ocGroups = openCodeProviderGroups(opencode, query, providerNames, providerAuth);
+  // Only providers that can be used: a group whose credentials are missing is dropped (Akun is where to add one).
+  // Exception: the project's current model stays visible even if its source is gone — changing away from it must
+  // still be possible — and then only that row is shown.
+  const ocGroups = openCodeProviderGroups(opencode, query, providerNames, providerAuth)
+    .filter((g) => g.connected || g.models.some((m) => m.value === current))
+    .map((g) => (g.connected ? g : { ...g, models: g.models.filter((m) => m.value === current) }));
   if (opencode.length) {
     let body;
-    if (!ocGroups.length) body = mpInfo(query ? 'Tidak ada model yang cocok' : 'Daftar model muncul setelah pesan pertama');
+    if (!ocGroups.length) body = mpInfo(query ? 'Tidak ada model yang cocok' : 'Belum ada sumber model yang aktif');
     else {
       body = ocGroups.map((g) => {
-        const label = g.connected ? `${g.label} (${g.models.length})` : `${g.label} (belum login)`;
-        return `<div class="mp-head"><span class="mp-title">${mpLogo(g.provider, 'opencode')}${escapeHtml(label)}</span></div>${g.models.map((m) => mpRow(m, 'opencode', { current, engine, locked, favSet }, nextId())).join('')}`;
+        const label = g.connected ? `${g.label} (${g.models.length})` : g.label;
+        return `<div class="mp-head"><span class="mp-title">${mpLogo(g.provider, 'opencode')}${escapeHtml(label)}</span></div>${g.models.map((m) => mpRow(m, 'opencode', { current, engine, locked, favSet, source: modelSourceLabel({ engine: 'opencode', provider: g.provider, providerNames }) }, nextId())).join('')}`;
       }).join('');
     }
     groups.push(`<div class="mp-group">${body}</div>`);

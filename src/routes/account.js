@@ -106,7 +106,7 @@ export function register(router) {
   // picked for it (POST /api/projects/:id/settings { engine, model }).
   router.post('/api/engine', ({ hub, device }, req, res, params, body) => {
     const engine = String(body.engine ?? '');
-    if (!ENGINES.includes(engine)) return json(res, 400, { error: 'Mesin tidak dikenal.' });
+    if (!ENGINES.includes(engine)) return json(res, 400, { error: 'Sumber model tidak dikenal.' });
     if (engine === 'opencode' && !hub.config?.engines?.opencode?.available) return json(res, 409, { error: 'OpenCode belum terpasang di laptop ini.' });
     hub.setDefaultEngine(engine);
     if (hub.config) {

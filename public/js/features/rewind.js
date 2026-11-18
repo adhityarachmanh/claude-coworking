@@ -213,7 +213,7 @@ function renderRewindDetail() {
   } else if (codeOk) summary = '<span class="muted">Pesan ini terlalu lama untuk dilihat daftar filenya; file yang diubah sejak pesan ini tetap dikembalikan.</span>';
   else summary = `<span class="muted">${pv.canRewind ? 'Tidak ada file yang diubah sejak pesan ini.' : `Kode tidak bisa dikembalikan: ${escapeHtml(pv.error ?? 'tidak ada checkpoint untuk pesan ini')}`}</span>`;
   const note = typeof pv?.note === 'string' && pv.note ? `<div class="rw-note muted">${escapeHtml(pv.note.slice(0, 400))}</div>` : '';
-  const codeOnlyTitle = pv?.codeOnly === false ? ' title="Mesin ini hanya bisa mengembalikan kode bersama percakapannya"' : '';
+  const codeOnlyTitle = pv?.codeOnly === false ? ' title="Sumber model ini hanya bisa mengembalikan kode bersama percakapannya"' : '';
   box.innerHTML = `<div class="rw-head">Kembali ke sebelum: <i>“${escapeHtml(point.text.slice(0, 200))}”</i></div><div class="rw-summary">${summary}</div>${note}
     <div class="rw-actions">
       <button class="primary" data-rw="both" ${codeOk ? '' : 'disabled'}>⏪ Kode &amp; percakapan</button>

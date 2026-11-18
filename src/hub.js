@@ -1485,9 +1485,14 @@ export class Hub {
   sessionIdFor(id) {
     const engine = this.engineOf(id);
     const byEngine = this.persisted.sessionsByEngine?.[id];
-    if (byEngine && engine in byEngine) return byEngine[engine] ?? null;
+    // The per-engine map is authoritative once it exists: a missing entry means this engine has no conversation
+    // yet. Falling back to `sessions[id]` here would hand out the OTHER engine's id (that map is a mirror of the
+    // project's current engine) and resume the wrong conversation.
+    if (byEngine) return validSessionFor(engine, byEngine[engine]) ? byEngine[engine] : null;
     // Older state: `sessions` was the only map, and its id belonged to the then app-wide engine.
-    return engine === this.persisted.engine ? (this.persisted.sessions[id] ?? null) : null;
+    if (engine !== this.persisted.engine) return null;
+    const legacy = this.persisted.sessions[id];
+    return validSessionFor(engine, legacy) ? legacy : null;
   }
 
   setSessionId(id, sessionId) {

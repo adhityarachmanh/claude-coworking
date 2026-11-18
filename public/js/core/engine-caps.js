@@ -13,12 +13,6 @@ export const engineChangeNeedsReload = (data) => Boolean(data && typeof data ===
 /** Display names; an engine the server adds later still shows (its id) without a code change. */
 export const ENGINE_LABEL = { claude: 'Claude', opencode: 'OpenCode' };
 
-/** Short badge labels (session bar): compact enough for a phone. */
-export const ENGINE_BADGE = { claude: '✳ Claude', opencode: '⌘ OpenCode' };
-
-/** The faint one-character mark on a chat row: shown only when the engine changes in the timeline. */
-export const ENGINE_MARK = { claude: '✳', opencode: '▢' };
-
 export const ALL_MODES = ['build', 'plan'];
 
 /** Legacy/unknown values from an older server or state read as Build; Plan remains Plan. */
@@ -42,7 +36,7 @@ export const CLAUDE_CAPS = Object.freeze({
 
 const BOOL_CAPS = Object.keys(CLAUDE_CAPS).filter((k) => k !== 'modes');
 
-/** What each cap switches off, for "<Engine> belum mendukung <feature>". */
+/** What each cap switches off, for the neutral "not available for the active model" note. */
 const CAP_FEATURE = {
   effort: 'pengaturan effort',
   team: 'Mode tim',
@@ -71,12 +65,6 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const cleanId = (v) => (typeof v === 'string' && /^[a-z][\w-]{0,31}$/.test(v) ? v : null);
 
 export const engineLabel = (engine) => ENGINE_LABEL[engine] ?? String(engine ?? DEFAULT_ENGINE);
-
-/** A compact badge label: "✳ Claude" / "⌘ OpenCode"; an engine the server adds later shows its own name. */
-export const engineBadge = (engine) => ENGINE_BADGE[engine] ?? engineLabel(engine);
-
-/** The one-character mark a timeline row uses when its engine differs from the previous message. */
-export const engineMark = (engine) => ENGINE_MARK[engine] ?? '▢';
 
 /**
  * The engine a project runs on. The engine follows the model picked in Pengaturan giliran: the project status
@@ -137,9 +125,10 @@ export function engineChoices(config) {
   return list.length > 1 ? list : [];
 }
 
-/** Why a control is off: a Claude-only feature gets its own hint, other caps the generic reason. */
-export function capReason(cap, engine) {
-  return CAP_REASON[cap] ?? `${engineLabel(engine)} belum mendukung ${CAP_FEATURE[cap] ?? cap}`;
+/** Why a control is off: a Claude-only feature says where the same thing lives, other caps the neutral reason. The
+ *  note never blames an engine: the user picked a model, so it is about that model's abilities. */
+export function capReason(cap) {
+  return CAP_REASON[cap] ?? `Belum tersedia untuk model yang aktif: ${CAP_FEATURE[cap] ?? cap}`;
 }
 
 /** A stored mode the engine doesn't offer is shown as the first mode it does offer (always Build or Plan). */

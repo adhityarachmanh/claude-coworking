@@ -271,7 +271,7 @@ function renderAccountBody(body) {
   // One page, two login sources — no "engine" selector. Claude first (the subscription), then the OpenCode
   // providers used by every non-Claude model. Each section has its own container so a background refresh of one
   // never detaches a control the user is clicking in the other.
-  const note = '<div class="acct-sources-note"><b>Model selain Claude</b><small class="muted">dipakai lewat provider OpenCode di bawah. Model yang kamu pilih yang menentukan sumbernya — tidak ada pengaturan mesin.</small></div>';
+  const note = '<div class="acct-sources-note"><b>Sumber model</b><small class="muted">Satu daftar untuk semua model yang bisa dipakai. Yang kamu pilih di Pengaturan giliran yang menentukan sumbernya.</small></div>';
   body.innerHTML = `<div id="acct-claude"></div>${note}<div id="acct-opencode"></div><div id="acct-audit">${auditHtml()}</div>`;
   renderClaudeSection();
   renderOpenCodeSection();

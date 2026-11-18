@@ -2,7 +2,7 @@
 // The server sends OPENCODE_CAPS in config.engines.opencode.caps; these tests keep the server and UI in sync.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CLAUDE_CAPS, capReason, capsFor, engineBadge, engineChangeNeedsReload, engineDown, engineOf, favoriteModelList, openCodeProviderGroups } from '../public/js/core/engine-caps.js';
+import { CLAUDE_CAPS, capReason, capsFor, engineChangeNeedsReload, engineDown, engineOf, favoriteModelList, openCodeProviderGroups } from '../public/js/core/engine-caps.js';
 import { OPENCODE_CAPS } from '../src/acp-session.js';
 
 const CONFIG = Object.freeze({
@@ -61,11 +61,12 @@ test('caps follow the project engine, not the default', () => {
   assert.equal(capsFor(config, engineOf({ engine: 'claude' }, config)).permissions, true);
 });
 
-test('the badge is short and still names an engine the server adds later', () => {
-  assert.equal(engineBadge('claude'), '✳ Claude');
-  assert.equal(engineBadge('opencode'), '⌘ OpenCode');
-  assert.equal(engineBadge('cursor'), 'cursor');
-  assert.equal(engineBadge(undefined), 'claude', 'like engineLabel: the default engine id, never "undefined"');
+test('the neutral reason never names an engine (one app, one timeline)', () => {
+  assert.match(capReason('permissions', 'opencode'), /opencode\.json/i);
+  assert.match(capReason('extensions', 'opencode'), /Claude/);
+  assert.equal(capReason('rewind', 'opencode'), 'Belum tersedia untuk model yang aktif: Rewind');
+  assert.doesNotMatch(capReason('rewind', 'opencode'), /OpenCode|Claude Code/);
+  for (const cap of ['permissions', 'extensions', 'search', 'exportSession']) assert.doesNotMatch(capReason(cap, 'opencode'), /Fase 1/);
 });
 
 test('engineDown: only an OpenCode project shows ⚠ OpenCode berhenti, with its exit code', () => {
@@ -76,13 +77,6 @@ test('engineDown: only an OpenCode project shows ⚠ OpenCode berhenti, with its
   assert.equal(engineDown({ engine: 'opencode' }, CONFIG), null, 'a status without the flag is a live engine');
   // A stale flag from an earlier OpenCode session must never warn a Claude project.
   assert.equal(engineDown({ engine: 'claude', openCodeDown: true }, CONFIG), null);
-});
-
-test('the reason is clear and no longer says Fase 1', () => {
-  assert.match(capReason('permissions', 'opencode'), /opencode\.json/i);
-  assert.match(capReason('extensions', 'opencode'), /Claude/);
-  assert.match(capReason('rewind', 'opencode'), /OpenCode belum mendukung Rewind/);
-  for (const cap of ['permissions', 'extensions', 'search', 'exportSession']) assert.doesNotMatch(capReason(cap, 'opencode'), /Fase 1/);
 });
 
 test('every engine change reloads open clients, including ONE project switching engine', () => {

@@ -254,7 +254,7 @@ export function register(router) {
   // ▶ The statusline chip after the OpenCode process died on its own: start it again (same conversation, no prompt).
   // Spawning only: the handshake clears status.openCodeDown, and a failure writes its reason to the chat.
   router.post('/api/projects/:id/engine-start', withSession(({ hub }, req, res, { project, session }) => {
-    if (hub.engineOf(project.id) !== 'opencode') return json(res, 409, { error: 'Mulai ulang mesin hanya untuk project OpenCode.' });
+    if (hub.engineOf(project.id) !== 'opencode') return json(res, 409, { error: 'Mulai ulang hanya untuk project OpenCode.' });
     if (!session.startEngine?.()) {
       return json(res, 503, { error: 'OpenCode tidak bisa dijalankan. Coba ⚙ → Sistem → Restart layanan OpenCode.' });
     }
@@ -268,13 +268,16 @@ export function register(router) {
   router.post('/api/projects/:id/sessions', withSession(async ({ hub, opencode, ledger }, req, res, { project }) => {
     return json(res, 200, await projectSessions({ hub, opencode, ledger }, project));
   }));
-  router.post('/api/projects/:id/resume', withSession(async ({ hub, opencode }, req, res, { project, session }, body) => {
+  router.post('/api/projects/:id/resume', withSession(async ({ hub, opencode, sessions: manager }, req, res, { project, session }, body) => {
     const sessionId = String(body.sessionId ?? '');
     // Only a conversation of the project's engine (a Claude transcript id means nothing to OpenCode and vice versa).
     const opencodeActive = hub.engineOf(project.id) === 'opencode';
     const known = (opencodeActive ? await openCodeSessions(opencode, project.path, 200) : listSessions(project.path, 200)).some((s) => s.id === sessionId);
     if (!known) return json(res, 404, { error: 'Sesi tidak ditemukan' });
     session.resume(sessionId, opencodeActive ? [] : sessionHistory(project.path, sessionId));
+    // Continuing in the active session while the other source has newer work: its brief rides with the next prompt.
+    // The note says so in one line; the native conversation is never moved (no model call, no git).
+    manager.bridgeFromOther(project, session, { reason: 'resume' });
     return ok(res);
   }));
   // 🗑 Hapus: never the open conversation (start a new one first), never one running in a terminal.

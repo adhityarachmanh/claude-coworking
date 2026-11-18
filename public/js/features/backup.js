@@ -183,7 +183,7 @@ function renderResult(r) {
     el('li', `Riwayat prompt: +${r.history.added} baris · laporan token: +${r.usage.added} catatan`),
   );
   const st = r.state ?? {};
-  const stateParts = [st.roots && `${st.roots} folder induk`, st.custom && `${st.custom} folder`, st.favorites && `${st.favorites} favorit`, st.settings && `${st.settings} pengaturan project (tanpa mode izin)`, st.engines && `${st.engines} sumber project`, st.engineSettings && `${st.engineSettings} pengaturan per sumber`, st.sessions && `${st.sessions} percakapan per mesin`, st.teamNames && `${st.teamNames} nama tim`].filter(Boolean);
+  const stateParts = [st.roots && `${st.roots} folder induk`, st.custom && `${st.custom} folder`, st.favorites && `${st.favorites} favorit`, st.settings && `${st.settings} pengaturan project (tanpa mode izin)`, st.engines && `${st.engines} sumber project`, st.engineSettings && `${st.engineSettings} pengaturan per sumber`, st.sessions && `${st.sessions} percakapan`, st.teamNames && `${st.teamNames} nama tim`].filter(Boolean);
   if (stateParts.length) list.append(el('li', `Data kantor digabung: ${stateParts.join(', ')}`));
   if (r.opencodeSessions?.added) list.append(el('li', `${r.opencodeSessions.added} sesi OpenCode diimpor`));
   if (r.opencodeSessions?.skipped && !r.opencodeSessions.added) list.append(el('li', `${r.opencodeSessions.skipped} sesi OpenCode dilewati (sudah ada/tidak dikenali)`));
@@ -210,7 +210,7 @@ function renderResult(r) {
   }
   // The project's engine and its Claude conversation may come back with the backup; OpenCode session ids never do
   // (their store is not archived). Mode izin tetap tidak ikut.
-  box.append(el('p', 'Buka Riwayat sesi di project-nya untuk melanjutkan percakapan (atau jalankan claude --resume di folder project). Mode tidak ikut dipulihkan: project memakai Build (file otomatis, shell/jaringan minta izin) sampai kamu memilih Plan. Mesin project ikut dipulihkan bila OpenCode terpasang; bila tidak, project dari backup memakai Claude Code.', 'muted'));
+  box.append(el('p', 'Buka Riwayat sesi di project-nya untuk melanjutkan percakapan (atau jalankan claude --resume di folder project). Mode tidak ikut dipulihkan: project memakai Build (file otomatis, shell/jaringan minta izin) sampai kamu memilih Plan. Sumber model project ikut dipulihkan bila sumbernya terpasang; bila tidak, project dari backup memakai OpenCode.', 'muted'));
   box.hidden = false;
 }
 

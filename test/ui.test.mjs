@@ -1085,7 +1085,7 @@ const restoreAccount = (page) =>
  *  it; ↻ asks again). `oc` and its cached providers outlive a test in the same document, so the fresh answer is
  *  awaited before anything clicks into the panel. */
 async function openOpenCodeTab(page) {
-  await page.waitFor(() => !document.querySelector('#account-modal')?.hidden && /Provider OpenCode/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 6000, message: 'dialog Akun terbuka' });
+  await page.waitFor(() => !document.querySelector('#account-modal')?.hidden && /Sumber model lain/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 6000, message: 'dialog Akun terbuka' });
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (await page.eval(() => (window.__ocAcct?.providerDone ?? 0) >= 1)) return;
     await page.eval(() => document.querySelector('#account-body [data-act="oc-refresh"]')?.click()).catch(() => {});
@@ -2055,7 +2055,7 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test('🧭 Pengaturan giliran: model provider yang belum login nonaktif dengan petunjuk, model aktif tetap bisa', async () => {
+    test('🧭 Pengaturan giliran: sumber tanpa login disembunyikan (model aktif tetap terlihat), sumber aktif ditawarkan', async () => {
       await ensureApp(page, `#${projectId}`);
       try {
         await stubModels(page, [
@@ -2084,20 +2084,18 @@ for (const vp of VIEWPORTS) {
           if (search.value) search.value = '';
           search.dispatchEvent(new Event('input', { bubbles: true }));
         });
-        await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label === 'River AI (belum login)'), { timeoutMs: 3000, message: 'grup River AI bertanda belum login' });
+        await page.waitFor(() => [...document.querySelectorAll('#model optgroup')].some((g) => g.label.startsWith('River AI')), { timeoutMs: 3000, message: 'grup River AI tampil untuk model aktifnya' });
         const view = await page.eval(() => ({
           groups: [...document.querySelectorAll('#model optgroup')].map((g) => ({ label: g.label, options: [...g.querySelectorAll('option')].map((o) => ({ text: o.textContent, disabled: o.disabled, title: o.title })) })),
+          labels: [...document.querySelectorAll('#model optgroup')].map((g) => g.label).join(' | '),
         }));
-        const river = view.groups.find((g) => g.label === 'River AI (belum login)');
-        assert.ok(river, 'grup river ada dengan tanda (belum login)');
-        assert.equal(river.options.length, 2, 'dua model river');
-        const active = river.options.find((o) => o.text.startsWith('GLM-5.3'));
-        const other = river.options.find((o) => !o.text.startsWith('GLM-5.3'));
-        assert.equal(active.disabled, false, 'model yang sedang aktif tetap bisa dipilih (ganti model harus mungkin)');
-        assert.equal(other.disabled, true, 'model river lain nonaktif');
-        assert.equal(other.title.includes('Akun'), true, 'petunjuk login di tooltip');
+        assert.doesNotMatch(view.labels, /belum login/, 'sumber tanpa login tidak diberi label, tidak ditawarkan');
+        const river = view.groups.find((g) => g.label.startsWith('River AI'));
+        assert.ok(river, 'grup river tampil karena model itu yang sedang aktif');
+        assert.deepEqual(river.options.map((o) => o.text), ['GLM-5.3'], 'hanya model aktif yang tersisa: ganti sumber tetap mungkin');
+        assert.equal(river.options[0].disabled, false, 'model aktif bisa diganti');
         const go = view.groups.find((g) => g.label === 'opencode-go (1)');
-        assert.ok(go, 'grup opencode-go tanpa tanda (belum login)');
+        assert.ok(go, 'sumber yang login ditawarkan');
         assert.equal(go.options.every((o) => !o.disabled), true, 'model opencode-go tetap aktif');
         assert.deepEqual(realProblems(page), []);
       } finally {
@@ -2340,7 +2338,7 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test('🧭 session bar menampilkan logo model aktif di samping badge mesin', async () => {
+    test('🧭 session bar menampilkan logo model aktif, tanpa badge sumber', async () => {
       await ensureApp(page, `#${projectId}`);
       try {
         await stubModels(page, [
@@ -2355,6 +2353,7 @@ for (const vp of VIEWPORTS) {
         });
         await page.waitFor(() => Boolean(document.querySelector('#sb-meta img.sb-logo')), { timeoutMs: 4000, message: 'logo di session bar' });
         assert.equal(await page.eval(() => document.querySelector('#sb-meta img.sb-logo')?.getAttribute('src')), '/ai-logos/glm-5.3-flash.svg');
+        assert.equal(await page.eval(() => Boolean(document.querySelector('#sb-meta .engine-badge'))), false, 'tanpa badge sumber');
         // An unknown model family: no logo in the session bar either.
         await page.eval(async () => {
           const { state } = await import('/js/core/state.js');
@@ -4487,7 +4486,7 @@ for (const vp of VIEWPORTS) {
       await page.press('Escape');
     });
 
-    test('🔀 badge mesin: baris picker tanpa badge, header sesi tetap menyebut mesin', async () => {
+    test('🔀 satu aplikasi: baris picker dan header sesi tanpa badge sumber, apa pun model aktifnya', async () => {
       const other = await addTempProject('dua-mesin');
       try {
         await ensureApp(page, `#${projectId}`);
@@ -4507,9 +4506,7 @@ for (const vp of VIEWPORTS) {
             a: document.querySelector(`#project-list li[data-id="${ids.a}"] .engine-badge`)?.textContent ?? null,
             b: document.querySelector(`#project-list li[data-id="${ids.b}"] .engine-badge`)?.textContent ?? null,
             header: document.querySelector('#sb-engine')?.textContent ?? null,
-            engine: document.querySelector('#sb-engine')?.dataset.engine ?? null,
-            title: document.querySelector('#sb-engine')?.title ?? '',
-            aria: document.querySelector('#sb-engine')?.getAttribute('aria-label') ?? '',
+            meta: document.querySelector('#sb-meta')?.textContent ?? '',
           });
           const first = read();
           state.statuses[ids.a] = { ...state.statuses[ids.a], engine: 'claude' };
@@ -4526,16 +4523,15 @@ for (const vp of VIEWPORTS) {
           renderSessionBar();
           return { first, second };
         }, { a: projectId, b: other });
-        assert.equal(view.first.a, null, 'baris picker tidak lagi membawa badge mesin');
-        assert.equal(view.first.b, null, 'baris picker tidak lagi membawa badge mesin');
-        assert.equal(view.first.header, '⌘ OpenCode', 'header sesi tetap menyebut mesin yang berjalan');
-        assert.equal(view.first.engine, 'opencode');
-        assert.equal(view.first.aria, 'Sumber model: OpenCode');
-        assert.match(view.first.title, /ditentukan oleh model di Pengaturan giliran/);
+        assert.equal(view.first.a, null, 'baris picker tanpa badge sumber');
+        assert.equal(view.first.b, null, 'baris picker tanpa badge sumber');
+        assert.equal(view.first.header, null, 'header sesi tanpa badge sumber');
+        assert.doesNotMatch(view.first.meta, /Claude|OpenCode/, 'meta sesi tidak menyebut sumber');
         assert.equal(view.second.a, null, 'status berubah: picker tetap tanpa badge');
         assert.equal(view.second.b, null);
-        assert.equal(view.second.header, '✳ Claude');
-        assert.equal(await page.eval(horizontalOverflow), null, 'badge tidak membuat scroll horizontal');
+        assert.equal(view.second.header, null);
+        assert.doesNotMatch(view.second.meta, /Claude|OpenCode/);
+        assert.equal(await page.eval(horizontalOverflow), null, 'tanpa badge pun tidak ada scroll horizontal');
         assert.deepEqual(realProblems(page), [], 'tanpa error console');
       } finally {
         await forgetTempProject(other);
@@ -4626,7 +4622,7 @@ for (const vp of VIEWPORTS) {
       assert.deepEqual(realProblems(page), [], 'tanpa error console');
     });
 
-    test('🏷️ empty state menyebut mesin project, bukan selalu Claude', async () => {
+    test('🏷️ empty state netral: satu aplikasi, tidak menyebut sumber mana pun', async () => {
       await ensureApp(page, `#${projectId}`);
       const r = await page.eval(async (id) => {
         const { state } = await import('/js/core/state.js');
@@ -4647,10 +4643,10 @@ for (const vp of VIEWPORTS) {
         renderChat();
         return { opencode, claude };
       }, projectId);
-      assert.match(r.opencode, /OpenCode/);
-      assert.doesNotMatch(r.opencode, /Claude/);
-      assert.match(r.claude, /Claude/);
-      assert.doesNotMatch(r.claude, /OpenCode/);
+      for (const text of [r.opencode, r.claude]) {
+        assert.match(text, /AI bekerja di folder ini/);
+        assert.doesNotMatch(text, /Claude|OpenCode/);
+      }
       assert.deepEqual(realProblems(page), []);
     });
 
@@ -4764,20 +4760,20 @@ for (const vp of VIEWPORTS) {
       try {
         await tap(page, '#btn-account');
         await settle(page, 'account-modal');
-        await page.waitFor(() => !document.querySelector('#account-modal').hidden && /Provider OpenCode/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 8000, message: 'satu halaman Akun memuat Claude + provider' });
+        await page.waitFor(() => !document.querySelector('#account-modal').hidden && /Sumber model lain/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 8000, message: 'satu halaman Akun memuat Claude + sumber lain' });
         const first = await page.eval(() => ({
           tabSelect: Boolean(document.querySelector('#acct-tab')),
           note: document.querySelector('.acct-sources-note')?.textContent ?? '',
           hasClaude: /Login dengan akun Claude|Ganti akun/.test(document.querySelector('#account-body').textContent),
-          hasProviders: /Provider OpenCode/.test(document.querySelector('#account-body').textContent),
+          hasProviders: /Sumber model lain/.test(document.querySelector('#account-body').textContent),
           engineSwitch: Boolean(document.querySelector('#account-body .engine-switch')),
           engineButtons: document.querySelectorAll('#account-body [data-act="engine"]').length,
           title: document.querySelector('#account-title').textContent,
         }));
         assert.equal(first.tabSelect, false, 'tidak ada dropdown mesin lagi');
-        assert.match(first.note, /Model selain Claude/, 'penjelasan dua sumber login dalam satu halaman');
+        assert.match(first.note, /Sumber model/, 'penjelasan satu daftar sumber dalam satu halaman');
         assert.equal(first.hasClaude, true, 'bagian Claude ada');
-        assert.equal(first.hasProviders, true, 'bagian provider OpenCode ada di halaman yang sama');
+        assert.equal(first.hasProviders, true, 'daftar sumber model lain ada di halaman yang sama');
         assert.equal(first.title, '👤 Akun');
         assert.equal(first.engineSwitch, false, 'tidak ada sakelar mesin');
         assert.equal(first.engineButtons, 0, 'tidak ada tombol "Jadikan mesin bawaan"');
@@ -5793,7 +5789,7 @@ for (const vp of VIEWPORTS) {
         await page.eval(() => (window.__ocAcct.go = { ...window.__ocAcct.go, available: false }));
         await page.click('#account-body [data-act="oc-refresh"]');
         await page.waitFor(() => !document.querySelector('#account-body .oc-go'), { timeoutMs: 4000, message: 'seksi Go tersembunyi (available:false)' });
-        assert.match(await page.eval(() => document.querySelector('#account-body').textContent), /Provider OpenCode/);
+        assert.match(await page.eval(() => document.querySelector('#account-body').textContent), /Sumber model lain/);
         assert.equal(await page.eval(() => Boolean(document.querySelector('#account-body [data-act="oc-refresh"]'))), true);
 
         // available but no models → its own message.
@@ -7803,7 +7799,7 @@ for (const vp of VIEWPORTS) {
       await seedSessionContext(page);
     }
 
-    test('Ringkas: chip status membuka dialog (konteks + mesin), Enter mengirim fokus, kotak pesan tetap', async () => {
+    test('Ringkas: chip status membuka dialog (konteks + model), Enter mengirim fokus, kotak pesan tetap', async () => {
       await ready();
       await stubCompact(page, 200, { ok: true, engine: 'claude', command: '/compact' });
       try {
@@ -7823,13 +7819,12 @@ for (const vp of VIEWPORTS) {
 
         const view = await page.eval(async () => {
           const { state } = await import('/js/core/state.js');
-          const { engineLabel, engineOf } = await import('/js/core/engine-caps.js');
           const st = state.statuses[state.active] ?? {};
           const input = document.querySelector('#compact-focus');
           const doc = document.documentElement;
           return {
             summary: document.querySelector('#compact-summary').textContent,
-            engine: engineLabel(engineOf(st, state.config)),
+            model: st.activeModel ?? st.model ?? 'Default',
             label: (input.labels?.[0]?.textContent ?? '').trim(),
             maxlength: input.getAttribute('maxlength'),
             opencodeNoteHidden: document.querySelector('#compact-opencode-note').hidden,
@@ -7842,7 +7837,8 @@ for (const vp of VIEWPORTS) {
         assert.match(view.summary, /80k/);
         assert.match(view.summary, /200k/);
         assert.match(view.summary, /40%/);
-        assert.match(view.summary, new RegExp(view.engine), 'nama mesin tampil');
+        assert.match(view.summary, /Model:/, 'yang tampil model aktif, bukan nama sumber');
+        assert.doesNotMatch(view.summary, /Mesin:/);
         assert.match(view.label, /Fokus/);
         assert.equal(view.maxlength, '300');
         assert.equal(view.opencodeNoteHidden, true, 'catatan OpenCode hanya untuk OpenCode');
@@ -8069,7 +8065,8 @@ for (const vp of VIEWPORTS) {
         await compactOpen(page);
         const oc = await page.eval(() => ({ noteHidden: document.querySelector('#compact-opencode-note').hidden, summary: document.querySelector('#compact-summary').textContent }));
         assert.equal(oc.noteHidden, false, 'catatan OpenCode tampil');
-        assert.match(oc.summary, /OpenCode/);
+        assert.match(oc.summary, /Model:/, 'yang tampil model aktif, bukan nama sumber');
+        assert.doesNotMatch(oc.summary, /Claude|OpenCode|Mesin/, 'satu aplikasi: ringkasan tidak menyebut sumber');
         await page.press('Escape');
 
         // Read-only: no chip, and the slash command explains why and stays closed.

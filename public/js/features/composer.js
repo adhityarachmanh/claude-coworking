@@ -4,7 +4,7 @@ import { estimateUsd, formatEstimate, isPeak } from '../core/cost-estimate.js';
 import { $, escapeHtml, narrow } from '../core/dom.js';
 import { activeModelOf } from '../core/model-logo.js';
 import { modelPanelHtml, mpApplyRow, mpHighlight } from './model-picker.js';
-import { capReason, capsFor, engineLabel, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
+import { capReason, capsFor, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
 import { typingText } from '../core/composer-typing.js';
 import { syncWakeLock } from './wake-lock.js';
 import { fmtNum, shortOptionLabel } from '../core/format.js';
@@ -79,10 +79,7 @@ function renderTypingText(st, classifying) {
     busySince = { project: null, at: 0 };
   }
   const busyMs = busy && busySince.project === state.active ? Math.max(0, Date.now() - busySince.at) : 0;
-  const next = typingText(
-    { classifying, planPreparing: st.planPreparing, compacting: st.compacting, busy: st.busy, cliBusy: st.cliBusy, engine: engineOf(st, state.config), busyMs },
-    engineLabel,
-  );
+  const next = typingText({ classifying, planPreparing: st.planPreparing, compacting: st.compacting, busy: st.busy, cliBusy: st.cliBusy, busyMs });
   const el = $('#typing-text');
   if (el.textContent !== next) el.textContent = next;
 }
@@ -97,7 +94,7 @@ export function renderComposer() {
   $('#composer').classList.toggle('demo', isDemo);
   $('#btn-stop').hidden = isDemo || !stoppable(st);
   $('#btn-stop').title = st.busy || st.queue ? 'Hentikan giliran yang sedang berjalan, termasuk tugas latar (Esc)' : 'Hentikan tugas latar yang masih berjalan (Esc)';
-  renderModeOptions(caps, engine);
+  renderModeOptions(caps);
   renderAgentOptions(st, engine);
   $('#mode').value = modeFor(st.mode ?? 'build', caps);
   renderModelOptions(st.model ?? '', engine);
@@ -280,13 +277,10 @@ const MODE_CTL = {
   title: 'Plan: hanya menyusun rencana, tanpa mengubah file. Build: file boleh diubah otomatis, tetapi perintah shell dan jaringan tetap minta izin.',
 };
 
-function renderModeOptions(caps, engine) {
+function renderModeOptions(caps) {
   const ctl = MODE_CTL;
   if ($('#mode-label').textContent !== ctl.label) $('#mode-label').textContent = ctl.label;
   $('#mode-ctl').title = ctl.title;
-  // The dialog names the engine it configures: on a laptop the chip itself doesn't show it.
-  const name = state.active === DEMO_ID ? '' : `· ${engineLabel(engine)}`;
-  if ($('#turn-settings-engine').textContent !== name) $('#turn-settings-engine').textContent = name;
   for (const opt of $('#mode').options) {
     const off = !caps.modes.includes(opt.value);
     opt.hidden = off;
@@ -294,7 +288,7 @@ function renderModeOptions(caps, engine) {
   }
 }
 
-const TEAM_TITLE = (engine) => `${engineLabel(engine)} mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.`;
+const TEAM_TITLE = () => 'AI mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.';
 const CAP_NAMES = { effort: 'effort', team: 'Mode tim', rewind: 'Rewind', mcp: 'Server MCP', bgTasks: 'tugas latar' };
 
 /**
@@ -309,12 +303,13 @@ function applyCaps(caps, engine) {
   $('#effort').closest('.ctl').classList.toggle('cap-off', !caps.effort);
   const team = $('#team-ctl');
   $('#team-mode').disabled = !caps.team || Boolean(state.readOnly);
-  team.title = caps.team ? TEAM_TITLE(engine) : capReason('team', engine);
+  team.title = caps.team ? TEAM_TITLE() : capReason('team', engine);
   team.classList.toggle('cap-off', !caps.team);
   const off = Object.keys(CAP_NAMES).filter((c) => !caps[c]);
   const note = $('#engine-note');
   note.hidden = !off.length || state.active === DEMO_ID;
-  note.textContent = off.length ? `${engineLabel(engine)} belum mendukung: ${off.map((c) => CAP_NAMES[c]).join(', ')}.` : '';
+  // Never blame the engine: the user picked a model, so the note is about the active model's abilities.
+  note.textContent = off.length ? `Belum tersedia untuk model yang aktif: ${off.map((c) => CAP_NAMES[c]).join(', ')}.` : '';
   applyCapsToDom();
 }
 

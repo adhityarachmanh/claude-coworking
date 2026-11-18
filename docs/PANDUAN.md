@@ -247,7 +247,7 @@ Dari laptop, atau dari HP yang terpasang lewat **Tailscale HTTPS**; HP di WiFi b
 4. Baris bertanda *tidak valid* (file rusak) tidak bisa dipulihkan; tombolnya mati.
 5. Aplikasi menyimpan **10 backup terakhir per file** selama **90 hari** di folder data aplikasi. File `.bak-*` lama tetap muncul dengan tanda *format lama* dan tidak pernah dihapus aplikasi.
 
-**Kalau muncul *"File berubah di luar aplikasi…"*** (saat menyimpan, memulihkan, atau menggabungkan): file config diubah di luar aplikasi—atau editor sudah lama terbuka—jadi tidak ada yang ditulis. Klik **↻ Muat ulang**, cek perubahannya, lalu ulangi. Detail: [Mesin: Claude Code atau OpenCode](FITUR.md#mesin-claude-code-atau-opencode).
+**Kalau muncul *"File berubah di luar aplikasi…"*** (saat menyimpan, memulihkan, atau menggabungkan): file config diubah di luar aplikasi—atau editor sudah lama terbuka—jadi tidak ada yang ditulis. Klik **↻ Muat ulang**, cek perubahannya, lalu ulangi. Detail: [Sumber model: Claude Code atau OpenCode](FITUR.md#sumber-model-claude-code-atau-opencode).
 
 ## Kalau terasa macet
 

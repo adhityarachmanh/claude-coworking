@@ -216,9 +216,6 @@ export const autoModelOption = (engine = DEFAULT_ENGINE) =>
 /** "Tunggu giliran ini selesai": why a model of the OTHER engine is disabled while the project works. */
 export const OTHER_ENGINE_LOCK_HINT = 'Tunggu giliran ini selesai';
 
-/** Why a provider's models are disabled: its group has no stored credentials yet (👤 Akun → OpenCode). */
-export const LOGIN_HINT = 'Provider belum login — simpan API key di 👤 Akun → OpenCode, lalu coba lagi.';
-
 /** The project's turn is holding the other engine back (same rule as the server's 409). */
 export const engineSwitchLocked = (st) => Boolean(st && (st.busy || st.pending || st.queue || st.interrupted || st.rewinding));
 
@@ -300,22 +297,20 @@ export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_
     else opts.push(`<optgroup label="Claude">${infoOption(claude.length ? 'Tidak ada model yang cocok' : 'Katalog Claude belum tersedia')}</optgroup>`);
   }
   // Model lain: one group PER provider (river, opencode-go, …), each labelled by the provider's display name when
-  // known; an <optgroup> cannot nest another, so the "OpenCode" wrapper only remains for the info lines. A group
-  // whose provider has no stored credentials renders its models disabled with the login hint — the model that is
-  // the project's current one stays selectable (changing away from it must still be possible).
-  const groups = openCodeProviderGroups(opencode, query, providerNames, providerAuth);
+  // known. Only providers that can actually run are offered: a provider with no credentials is left out entirely
+  // (Akun is where one is added), unless the project's current model belongs to it — changing away from it must
+  // still be possible. An <optgroup> cannot nest another, so the "OpenCode" wrapper only remains for the info lines.
+  const allGroups = openCodeProviderGroups(opencode, query, providerNames, providerAuth);
+  const groups = allGroups
+    .filter((g) => g.connected || g.models.some((m) => m.value === current))
+    .map((g) => (g.connected ? g : { ...g, models: g.models.filter((m) => m.value === current) }));
   let open = '';
   if (loading && !opencode.length) open = infoOption('⏳ Memuat daftar model…');
   else if (error && !opencode.length) open = infoOption(`⚠ Daftar model gagal dimuat: ${error}`, 'Coba lagi dengan ↻ Cek ulang di dialog ini, atau pastikan OpenCode terpasang dan berjalan.');
   else if (!opencode.length) open = infoOption('📭 Muncul setelah pesan pertama', 'Kirim satu prompt untuk memulai sesi OpenCode — daftar modelnya langsung terisi di sini.');
-  else if (!groups.length) open = infoOption(query ? 'Tidak ada model yang cocok' : 'Daftar model muncul setelah pesan pertama', query ? 'Coba kata kunci lain, atau kosongkan kotak pencarian.' : 'Kirim satu prompt untuk memulai sesi OpenCode.');
+  else if (!groups.length) open = infoOption(query ? 'Tidak ada model yang cocok' : 'Belum ada sumber model yang aktif', query ? 'Coba kata kunci lain, atau kosongkan kotak pencarian.' : 'Buka 👤 Akun untuk menambahkan sumber model.');
   else {
-    open = groups.map((g) => {
-      // Connected groups carry their model count; a login-less group keeps its hint instead (one message, one line).
-      const label = g.connected ? `${g.label} (${g.models.length})` : `${g.label} (belum login)`;
-      const gate = (m) => (g.connected || m.value === current ? option(m, 'opencode') : option({ ...m, name: `${m.name} ⚠` }, 'opencode', LOGIN_HINT));
-      return `<optgroup label="${escapeHtml(label)}">${g.models.map(gate).join('')}</optgroup>`;
-    }).join('');
+    open = groups.map((g) => `<optgroup label="${escapeHtml(`${g.label} (${g.models.length})`)}">${g.models.map((m) => option(m, 'opencode')).join('')}</optgroup>`).join('');
   }
   if (open && !groups.length) opts.push(`<optgroup label="OpenCode">${open}</optgroup>`);
   else if (open) opts.push(open);

@@ -348,7 +348,7 @@ export function buildHealth(ctx = {}, { now = Date.now() } = {}) {
     { id: 'https', label: 'HTTPS untuk HP', done: httpsReady || !remoteEnabled, hint: 'Pasang Tailscale di laptop dan HP supaya HP bisa memantau dari mana saja (⚙ → Akses HP).' },
     claudeOn
       ? { id: 'opencode', label: 'OpenCode (opsional)', done: Boolean(c.opencode), hint: 'Opsional: pasang OpenCode untuk memakai model provider lain (⚙ → Kompatibilitas OpenCode).' }
-      : { id: 'opencode', label: 'OpenCode', done: Boolean(c.opencode), hint: 'Mesin utama aplikasi ini: pasang OpenCode lewat ⚙ → Kompatibilitas OpenCode.' },
+      : { id: 'opencode', label: 'OpenCode', done: Boolean(c.opencode), hint: 'Sumber model utama aplikasi ini: pasang OpenCode lewat ⚙ → Kompatibilitas OpenCode.' },
   ];
 
   return {

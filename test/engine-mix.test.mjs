@@ -30,7 +30,7 @@ const freePort = () =>
 
 before(async () => {
   const projects = path.join(TMP, 'projects');
-  for (const name of ['alfa', 'beta', 'delta']) {
+  for (const name of ['alfa', 'beta', 'delta', 'epsilon']) {
     mkdirSync(path.join(projects, name), { recursive: true });
     writeFileSync(path.join(projects, name, 'README.md'), `# ${name}\n`);
   }
@@ -216,6 +216,32 @@ test('switching carries the other engine\'s context over ONCE (one info line, no
   assert.equal(chat.filter((m) => m.contextBridge).length, 1, 'no second bridge on the way back');
   assert.ok(!chat.some((m) => m.kind === 'divider'));
   await switchProject(beta, 'opencode'); // restore for the tests below
+});
+
+test('the brief is written to disk and survives until it is sent (so a restart still carries it)', async () => {
+  const epsilon = await projectId('epsilon');
+  await prompt(epsilon, 'ubah src/handoff.js lalu jalankan npm test');
+  assert.equal((await api(`/api/projects/${epsilon}/settings`, { engine: 'opencode' })).status, 200);
+  assert.equal((await statusOf(epsilon)).handoffReady, true);
+
+  // The brief is on disk with what the next source needs, and reading it never consumes it (the restart case).
+  const briefFile = path.join(DATA, 'handoff', `${epsilon}.json`);
+  await until(() => existsSync(briefFile), 'handoff brief written to disk');
+  const brief = JSON.parse(readFileSync(briefFile, 'utf8'));
+  assert.deepEqual([brief.from, brief.to, brief.reason], ['claude', 'opencode', 'switch']);
+  assert.ok(brief.note.includes('Konteks dari Claude Code'));
+  assert.ok(brief.brief.files.includes('src/handoff.js'), 'the files the work touched travel with the brief');
+  assert.ok(brief.stats.files >= 1);
+
+  // The card in the chat can be expanded: it carries the same short lists, never the whole note.
+  const card = (await snapshot()).chats[epsilon].find((m) => m.contextBridge);
+  assert.ok(card.contextBridge.brief.files.length, 'the card shows which files it carries');
+  assert.ok(!JSON.stringify(card.contextBridge).includes('Konteks dari'), 'the note itself is not stored in the chat');
+
+  // Sending a prompt is what consumes it: the chip clears and the file goes with it (never sent twice).
+  await prompt(epsilon, 'lanjutkan');
+  assert.equal((await statusOf(epsilon)).handoffReady, false, 'the note rode along with that prompt');
+  await until(() => !existsSync(briefFile), 'the consumed brief is removed from disk');
 });
 
 /** Switches ONE project's engine through its turn settings (the model picks the engine now). */

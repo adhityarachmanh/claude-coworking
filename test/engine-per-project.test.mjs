@@ -438,8 +438,33 @@ test('a terminal Claude Code session only mirrors into a project that runs on Cl
   assert.match(read(path.join(DATA, 'chats', `${claudeId}.jsonl`)), /terminal claude di project claude/, 'the Claude project does keep its own');
 });
 
-test('listProjects marks a project whose folder is gone (safe purge offer)', async () => {
+test('a project that never ran on an engine reports NO session id for it (never the other engine\'s id)', async () => {
   const { Hub } = await import('../src/hub.js');
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-hub-sessionid-'));
+  try {
+    const hub = new Hub({ dataDir: dir });
+    const project = hub.upsertProject(path.join(dir, 'p'), 'custom');
+    const ocSession = 'ses_fakeold';
+    // Start on the NON-default engine: `sessions[id]` becomes a mirror of OpenCode's id.
+    hub.updateSettings(project.id, { engine: 'opencode' });
+    hub.setSessionId(project.id, ocSession);
+    assert.equal(hub.sessionIdFor(project.id), ocSession, 'OpenCode keeps its own conversation');
+
+    // Moving to Claude (the app-wide default): Claude never ran here, so it has no conversation. The mirror still
+    // holds OpenCode's id, and handing it out would resume the wrong conversation on Claude.
+    hub.updateSettings(project.id, { engine: 'claude' });
+    assert.equal(hub.sessionIdFor(project.id), null, 'Claude starts empty');
+    assert.notEqual(hub.sessionIdFor(project.id), ocSession, "an OpenCode id must never resume on Claude");
+
+    // Back on OpenCode the original conversation is still there.
+    hub.updateSettings(project.id, { engine: 'opencode' });
+    assert.equal(hub.sessionIdFor(project.id), ocSession);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('listProjects marks a project whose folder is gone (safe purge offer)', async () => {  const { Hub } = await import('../src/hub.js');
   const dir = mkdtempSync(path.join(tmpdir(), 'office-hub-missing-'));
   try {
     const hub = new Hub({ dataDir: dir });
