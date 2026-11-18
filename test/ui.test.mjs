@@ -2146,6 +2146,36 @@ for (const vp of VIEWPORTS) {
         }), `${second}`);
         assert.equal(card.name, 'Proyek X');
         assert.deepEqual(card.members.sort(), [`${projectId}`, `${second}`].sort(), 'dua anggota');
+        // Layout: the dialog had no CSS of its own (the "hancur" report) — the card, its title field, and every
+        // control must stay inside the dialog, and a phone gets finger-sized targets.
+        const layout = await page.eval(() => {
+          const box = (el) => Math.round(el.getBoundingClientRect().width);
+          const body = document.querySelector('#groups-body');
+          const card = document.querySelector('.grp-card');
+          const input = document.querySelector('.grp-name');
+          const buttons = [...document.querySelectorAll('#groups-body button')].filter((b) => b.getClientRects().length && !b.closest('.grp-member')).map((b) => Math.round(b.getBoundingClientRect().height));
+          const cs = (sel) => getComputedStyle(document.querySelector(sel));
+          return {
+            body: box(body),
+            card: box(card),
+            input: box(input),
+            right: Math.round(card.getBoundingClientRect().right),
+            vw: window.innerWidth,
+            minBtn: buttons.length ? Math.min(...buttons) : 0,
+            cardPad: parseInt(cs('.grp-card').paddingTop, 10),
+            memberDisplay: cs('.grp-member').display,
+            memberRadius: cs('.grp-member').borderRadius,
+            cols: new Set([...document.querySelectorAll('.groups-member')].map((el) => Math.round(el.getBoundingClientRect().left))).size,
+          };
+        });
+        assert.ok(layout.card <= layout.body + 1, `kartu grup di dalam dialog (${layout.card} > ${layout.body})`);
+        assert.ok(layout.input <= layout.card + 1, `nama grup tidak melebar keluar kartu (${layout.input} > ${layout.card})`);
+        assert.ok(layout.right <= layout.vw + 1, `kartu tidak keluar layar (${layout.right} > ${layout.vw})`);
+        assert.ok(layout.cardPad >= 8, `kartu grup punya padding (${layout.cardPad}px)`);
+        assert.ok(['flex', 'inline-flex'].includes(layout.memberDisplay), `anggota tampil sebagai chip (${layout.memberDisplay})`);
+        assert.notEqual(layout.memberRadius, '0px', 'anggota berbentuk pill');
+        assert.equal(layout.cols, vp.mobile ? 1 : 2, `kolom anggota ${layout.cols}`);
+        if (vp.mobile) assert.ok(layout.minBtn >= 44, `target sentuh tombol grup ${layout.minBtn}px`);
         // The picker badge: both member rows carry the group name (the list re-rendered via the projects broadcast).
         await page.waitFor(() => [...document.querySelectorAll('#project-list .badge.group')].length >= 2, { timeoutMs: 4000, message: 'badge grup di picker' });
         // Merged history: open from the group card.

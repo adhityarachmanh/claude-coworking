@@ -1587,6 +1587,40 @@ body.read-only #composer-hint { color: var(--ask); }
 #oc-provider { font-size: var(--fs-md); }
 .oc-form { display: flex; flex-direction: column; gap: 8px; }
 .oc-form > .primary { align-self: flex-start; }
+
+/* 🗂 Grup proyek terkait (#groups-modal, features/groups.js). The dialog had no layout of its own: the create form,
+   member chips and card actions ran into each other on a laptop and a phone. One card per group, chips wrap, and a
+   wrapping toolbar everywhere — never a control squeezed to zero width. */
+#groups-modal .modal-card { max-width: 640px; }
+#groups-body { display: flex; flex-direction: column; gap: 12px; }
+#groups-create { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); }
+.groups-members { min-width: 0; margin: 0; padding: 8px 10px 10px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; max-height: 190px; overflow-y: auto; }
+.groups-members legend { padding: 0 6px; font-size: var(--fs-sm); color: var(--muted); }
+.groups-member { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 32px; font-size: var(--fs-md); cursor: pointer; }
+.groups-member input { flex: none; width: 16px; height: 16px; margin: 0; }
+.groups-member span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grp-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); }
+.grp-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.grp-head > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.grp-name { flex: 1 1 220px; min-width: 0; }
+.grp-head .ghost, .grp-add .ghost, .grp-actions .ghost { flex: none; }
+.grp-members { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.grp-member { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 4px 3px 10px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); font-size: var(--fs-sm); }
+.grp-member > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grp-member button { flex: none; width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border-radius: 50%; }
+.grp-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.grp-add select { flex: 1 1 180px; min-width: 0; }
+.grp-note { line-height: 1.4; }
+.grp-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (pointer: coarse), (max-width: 760px) {
+  /* Phones: one column of members, full-width fields, and 44 px targets — stacked, never squeezed side by side. */
+  .groups-members { grid-template-columns: minmax(0, 1fr); max-height: 230px; }
+  .groups-member { min-height: 44px; }
+  .grp-head, .grp-add, .grp-actions { flex-direction: column; align-items: stretch; }
+  .grp-name, .grp-add select { flex: 1 1 auto; width: 100%; }
+  .grp-head .ghost, .grp-add .ghost, .grp-actions .ghost, #groups-create > .primary { width: 100%; min-height: 44px; }
+  .grp-member button { width: 32px; height: 32px; }
+}
 .oc-custom-models { display: flex; flex-direction: column; gap: 4px; }
 .oc-custom-model { display: flex; align-items: baseline; gap: 6px; font-size: var(--fs-sm); }
 .oc-custom-model input { margin: 0; }
