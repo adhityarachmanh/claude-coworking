@@ -136,6 +136,13 @@ describe('sw.js: push → notification', () => {
     }
   });
 
+  test('a background task finished: only its command rides in the body', async () => {
+    const { listeners, calls } = loadSw();
+    await dispatch(listeners.push, pushEvent({ type: 'done', project: 'p1', projectName: 'toko', role: 'Tugas latar', label: 'npm run build', t: 'x' }));
+    assert.equal(calls.shown[0].title, '✓ toko: tugas selesai');
+    assert.equal(calls.shown[0].options.body, 'Tugas latar selesai — npm run build');
+  });
+
   test('answered: closes that approval\'s notification silently (not a newer one of the same project)', async () => {
     const { listeners, calls } = loadSw();
     await dispatch(listeners.push, pushEvent(ASK));

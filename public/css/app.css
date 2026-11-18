@@ -741,6 +741,11 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .ava { width: 20px; height: 22px; image-rendering: pixelated; }
 .ava.sm { width: 16px; height: 18px; }
 .msg.error { background: var(--err-surface); border: 1px solid var(--err-line); color: var(--err-text-strong); }
+/* The provider-error hint under the raw message: one sentence + the button that opens the right place. */
+.msg-fix { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--err-line); font-size: var(--fs-xs); }
+.msg-fix span { flex: 1 1 180px; min-width: 0; }
+.msg-fix button { flex: none; }
+@media (max-width: 760px) { .msg-fix button { min-height: 36px; } }
 /* one look for "this failed" messages in panels and dialogs (changes, diff, rewind, MCP, session history) */
 .state-error { flex: 1; min-width: 0; margin: 0; padding: 8px 10px; border: 1px solid var(--err-line); border-radius: var(--r-md); background: var(--err-surface); color: var(--err-text-strong); font: var(--fs-md)/1.45 var(--font); overflow-wrap: anywhere; }
 
@@ -1597,12 +1602,14 @@ body.read-only #composer-hint { color: var(--ask); }
 #groups-modal .modal-card { max-width: 640px; }
 #groups-body { display: flex; flex-direction: column; gap: 12px; }
 #groups-create { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); }
-.groups-members { min-width: 0; margin: 0; padding: 8px 10px 10px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; max-height: 190px; overflow-y: auto; }
+.groups-members { min-width: 0; margin: 0; padding: 8px 10px 10px; border: 1px solid var(--border-strong); border-radius: var(--r-lg); background: var(--surface); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; max-height: 190px; overflow-y: auto; }
+.grp-section-title { margin: 4px 0 0; font-size: var(--fs-sm); color: var(--text-2); }
+.grp-section-title + .oc-form, .grp-section-title + .grp-card { margin-top: 2px; }
 .groups-members legend { padding: 0 6px; font-size: var(--fs-sm); color: var(--muted); }
 .groups-member { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 32px; font-size: var(--fs-md); cursor: pointer; }
-.groups-member input { flex: none; width: 16px; height: 16px; margin: 0; }
+.groups-member input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .groups-member span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.grp-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); }
+.grp-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--r-lg); background: var(--surface-2); }
 .grp-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .grp-head > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .grp-name { flex: 1 1 220px; min-width: 0; }

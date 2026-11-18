@@ -2,8 +2,9 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { logoFileFor, logoIndex } from '../core/model-logo.js';
-import { fmtTokens, time } from '../core/format.js';
+import { fmtTokens, fmtUsd, time } from '../core/format.js';
 import { engineLabel, engineMark, engineOf } from '../core/engine-caps.js';
+import { providerErrorHint } from '../core/provider-error.js';
 import { MODEL_TIER_LABELS, shortModelName } from './engine.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { copyText, flashButton } from '../core/util.js';
@@ -16,7 +17,9 @@ import { fillApproval } from './approvals.js';
 import { attachmentChip, attachmentPayload, putBackAttachments, recallSent, rememberSent } from './attachments.js';
 import { isBookmarked, toggleBookmark } from '../core/bookmarks.js';
 
-import { fillComposer } from './composer.js';
+import { fillComposer, openModelPicker } from './composer.js';
+import { openAccount } from './account.js';
+import { openCompact } from './compact.js';
 import { fileLinkHtml, linkifyPaths } from './file-viewer.js';
 import { afterRowRender, isLiveShell, liveBlock, liveTail, resetLiveOutput, saveLiveScroll } from './live-output.js';
 import { openQueueEdit } from './queue-edit.js';
@@ -574,6 +577,13 @@ function engineMarkHtml(msg) {
   return `<span class="engine-mark" data-engine="${escapeHtml(msg.engine)}" title="${escapeHtml(label)}" aria-label="Mesin ${escapeHtml(label)}">${engineMark(msg.engine)}</span>`;
 }
 
+/** Under a provider error: a one-line hint and the button that fixes it (the raw text stays above it). */
+function providerHintHtml(text) {
+  const hint = providerErrorHint(text);
+  if (!hint) return '';
+  return `<div class="msg-fix"><span>${escapeHtml(hint.text)}</span><button type="button" class="ghost" data-fix="${hint.act}">${escapeHtml(hint.button)}</button></div>`;
+}
+
 function fillChat(node, msg) {
   // Re-rendering replaces the row: keep keyboard focus on it (toggle via Enter, live status updates).
   const refocusRow = node.contains(document.activeElement) && document.activeElement.classList.contains('row');
@@ -696,18 +706,19 @@ function fillChatBody(node, msg) {
         m.turns ? `${m.turns} langkah` : '',
         m.tokensIn ? `konteks ${fmtTokens(m.tokensIn)}` : '',
         m.tokensOut ? `output ${fmtTokens(m.tokensOut)} token` : '',
+        m.costUsd > 0 ? fmtUsd(m.costUsd) : '',
         m.denials ? `${m.denials} ditolak` : '',
       ].filter(Boolean);
       node.className = `result ${msg.ok ? 'ok' : 'fail'}`;
       // A finished turn can leave subagents working in the background: say so right on the result line.
       const live = runningCount(state.statuses[state.active]);
       const liveBadge = live ? ` <span class="bg-live" title="Tugas latar masih berjalan — buka ⧗ untuk memantau">⏳ ${live} masih bekerja</span>` : '';
-      node.innerHTML = (msg.ok ? `✓ Selesai · ${parts.join(' · ')}` : `■ Berhenti${msg.text ? `: ${escapeHtml(msg.text)}` : ''}`) + liveBadge;
+      node.innerHTML = (msg.ok ? `✓ Selesai · ${parts.join(' · ')}` : `■ Berhenti${msg.text ? `: ${escapeHtml(msg.text)}` : ''}`) + liveBadge + (msg.ok ? '' : providerHintHtml(msg.text));
       break;
     }
     case 'error':
       node.className = 'msg error';
-      node.innerHTML = `<div class="body md">${renderMarkdown(msg.text)}</div>`;
+      node.innerHTML = `<div class="body md">${renderMarkdown(msg.text)}</div>${providerHintHtml(msg.text)}`;
       break;
     case 'divider':
       node.className = 'divider';
@@ -797,6 +808,13 @@ export function initChat() {
     if (e.target.closest('[data-open-tour]')) return openTour();
     const codeBtn = e.target.closest('[data-copy-code]');
     if (codeBtn) return flashButton(codeBtn, (await copyText(codeBtn.closest('pre').querySelector('code').textContent)) ? '✓ Tersalin' : 'Gagal');
+    const fix = e.target.closest('[data-fix]');
+    if (fix) {
+      if (fix.dataset.fix === 'account') openAccount();
+      else if (fix.dataset.fix === 'compact') openCompact();
+      else openModelPicker();
+      return;
+    }
     const act = e.target.closest('[data-msg-act]');
     if (!act) return;
     const msg = rowMsg.get(act.closest('[data-id]')); // the row's own message (ids of old chats may repeat)

@@ -553,6 +553,12 @@ export class PushService {
     if (!m?.project) return;
     if (m.kind === 'result') this.fanOut(m.ok ? 'done' : 'error', m.project, () => ({ project: m.project, role: this.roleName('claude') }));
     else if (m.kind === 'error') this.fanOut('error', m.project, () => ({ project: m.project, role: this.roleName('claude') }));
+    else if (m.kind === 'info' && m.taskDone) {
+      // A background task ended on its own: the page toasts it, and a locked phone gets the same news. Only the
+      // command (never the output) rides along, as the label.
+      const label = String(m.text ?? '').split('—').slice(1).join('—').trim() || 'Tugas latar';
+      this.fanOut(/gagal/i.test(String(m.text ?? '')) ? 'error' : 'done', m.project, () => ({ project: m.project, role: 'Tugas latar', label }));
+    }
   }
 
   onQueue(q) {

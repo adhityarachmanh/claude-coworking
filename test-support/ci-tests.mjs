@@ -95,14 +95,22 @@ if (mode === 'fast') {
 } else if (mode === 'ui') {
   const ui = files.filter(isUi);
   const result = { passed: [], flaky: [], failed: [] };
-  for (const f of ui) {
-    console.log(`\n=== ${f}`);
+  // A progress line per file (count + duration): a big UI file can take minutes, and silence reads as "stuck".
+  console.log(`UI: ${ui.length} file, batas ${Math.round(FILE_TIMEOUT_MS / 60_000)} mnt per file`);
+  for (const [i, f] of ui.entries()) {
+    console.log(`\n=== [${i + 1}/${ui.length}] ${f}`);
+    const started = Date.now();
     if (run([f], FILE_TIMEOUT_MS).status === 0) {
+      console.log(`\n✔ ${f} (${((Date.now() - started) / 1000).toFixed(1)} dtk)`);
       result.passed.push(f);
       continue;
     }
-    console.log(`\n=== ${f} gagal: diulang sekali`);
-    (run([f], FILE_TIMEOUT_MS).status === 0 ? result.flaky : result.failed).push(f);
+    console.log(`\n=== ${f} gagal setelah ${((Date.now() - started) / 1000).toFixed(1)} dtk: diulang sekali`);
+    const retry = Date.now();
+    if (run([f], FILE_TIMEOUT_MS).status === 0) {
+      console.log(`\n✔ ${f} (flaky, ulang ${((Date.now() - retry) / 1000).toFixed(1)} dtk)`);
+      result.flaky.push(f);
+    } else result.failed.push(f);
   }
   console.log(`\nUI: ${result.passed.length} lulus, ${result.flaky.length} flaky (lulus saat diulang), ${result.failed.length} gagal`);
   for (const f of result.flaky) console.log(`  FLAKY ${f}`);

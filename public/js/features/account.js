@@ -384,12 +384,15 @@ function loadAccountPage({ force = false } = {}) {
   return loadOpenCode(renderOpenCodeSection);
 }
 
+/** Open 👤 Akun (the same path as the top-bar button): used by the chat's provider-error hint too. */
+export function openAccount() {
+  openModal('account-modal');
+  renderAccount();
+  loadAccountPage();
+}
+
 export function initAccount() {
-  $('#btn-account').addEventListener('click', () => {
-    openModal('account-modal');
-    renderAccount();
-    loadAccountPage();
-  });
+  $('#btn-account').addEventListener('click', openAccount);
   $('#account-body').addEventListener('click', async (e) => {
     const el = e.target.closest('[data-act]');
     const act = el?.dataset.act;

@@ -48,17 +48,26 @@ function mpSettingRows({ engine, current, modelAuto, defaultLabel }, nextId) {
  * Claude Code (one group), then one group per OpenCode provider (display name + count, "(belum login)" hint,
  * rows disabled when that provider has no credentials). The search filter applies to everything, like before.
  */
-export function modelPanelHtml({ catalog, current, query, engine, modelAuto = false, defaultLabel = '', locked, providerNames, providerAuth, favorites }) {
+export function modelPanelHtml({ catalog, current, query, engine, modelAuto = false, defaultLabel = '', locked, providerNames, providerAuth, favorites, recent = [] }) {
   const claude = catalog?.claude?.models ?? [];
   const opencode = catalog?.opencode?.models ?? [];
   const favSet = new Set(Array.isArray(favorites) ? favorites : []);
   const favs = favoriteModelList(favorites, claude, opencode);
+  // "Terakhir di project ini": the three newest picks that still exist in this engine's catalog.
+  const known = new Map([...claude.map((m) => [m.value, { ...m, engine: 'claude' }]), ...opencode.map((m) => [m.value, { ...m, engine: 'opencode' }])]);
+  const recentModels = (Array.isArray(recent) ? recent : [])
+    .map((v) => known.get(v))
+    .filter(Boolean)
+    .filter((m) => !query || `${m.name} ${m.value}`.toLowerCase().includes(String(query).toLowerCase()));
   let seq = 0;
   const nextId = () => `mp-opt-${seq++}`;
   const groups = [];
   // Always first, whatever the search box says: Auto/Default are settings the user must be able to pick or undo, and
   // they are what the field shows before any model was chosen.
   groups.push(mpSettingRows({ engine, current, modelAuto, defaultLabel: defaultLabel || `Default (dari config ${engineLabel(engine)})` }, nextId));
+  if (recentModels.length) {
+    groups.push(`<div class="mp-group"><div class="mp-head"><span class="mp-title">Terakhir di project ini</span></div>${recentModels.map((m) => mpRow(m, m.engine, { current, engine, locked, favSet }, nextId())).join('')}</div>`);
+  }
   if (favs.length) {
     groups.push(`<div class="mp-group"><div class="mp-head"><span class="mp-title">⭐ Favorit</span></div>${favs.map((m) => mpRow(m, m.engine, { current, engine, locked, favSet }, nextId())).join('')}</div>`);
   }

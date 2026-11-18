@@ -212,6 +212,18 @@ test('permission request: urgency high, TTL ~10 min, opaque Topic per project, m
   assert.ok(!JSON.stringify(q.payload).includes('database'));
 });
 
+test('a background task finishing pushes its command, never its output', async () => {
+  const { hub, push, addDevice, inbox } = setup();
+  const phone = addDevice('Android · Chrome');
+  hub.chat('p1', { kind: 'info', taskDone: true, text: '✅ Tugas latar selesai — npm run build' });
+  hub.chat('p1', { kind: 'info', taskDone: true, text: '⛔ Tugas latar gagal — cargo test' });
+  await push.idle();
+  const got = inbox(phone);
+  assert.deepEqual(got.map((m) => m.payload.type), ['done', 'error']);
+  assert.equal(got[0].payload.label, 'npm run build');
+  assert.equal(got[1].payload.label, 'cargo test');
+});
+
 test('turn done / error / queue paused: urgency, TTL and Topic per type; no error text; queue edge-triggered', async () => {
   const { hub, push, addDevice, inbox, queue } = setup();
   const phone = addDevice('Android · Chrome');

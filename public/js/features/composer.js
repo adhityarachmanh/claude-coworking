@@ -17,6 +17,7 @@ import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
 import { applyCapsToDom, autoModelNote, AUTO_MODEL, catalogMatchCount, claudeEnabled, currentProviderAuth, currentProviderNames, engineSwitchLocked, guardCap, initEngine, isModelValue, MODEL_TIER_LABELS, MODEL_TIERS, modelCatalogOptions, modelEntry, modelTiersFor, projectCaps, projectModelCatalog, projectModels, tierOptionsHtml, wantModels } from './engine.js';
 import { recall, recallPrompt } from './history.js';
 import { modelPrices, priceFor, priceNote } from './model-prices.js';
+import { readRecentModels, rememberRecentModel } from '../core/recent-models.js';
 import { renderFoldFlags } from './phone-fold.js';
 import { renderResumeTurn } from './resume-turn.js';
 import { openRewind } from './rewind.js';
@@ -503,9 +504,23 @@ const showTiersError = (message) => {
   box.hidden = !message;
 };
 
+/**
+ * From a chat hint ("ganti model"): open the model list. On a phone the field lives in the Pengaturan giliran sheet,
+ * so the chip opens it first; then the panel itself (the same click the user would make).
+ */
+export function openModelPicker() {
+  const field = $('#model-field');
+  if (!field) return;
+  if (narrow.matches) $('#settings-chip')?.click();
+  field.scrollIntoView({ block: 'center' });
+  setTimeout(() => {
+    const panel = $('#model-panel');
+    if (panel?.hidden) field.click();
+  }, 0);
+}
+
 /** Opens the ladder dialog on the active project's engine, focus on the first tier. */
-export function openModelTiers() {
-  if (!state.active || state.active === DEMO_ID || !$('#model-tiers-modal')) return;
+export function openModelTiers() {  if (!state.active || state.active === DEMO_ID || !$('#model-tiers-modal')) return;
   wantModels(state.active);
   tiersView.key = '';
   tiersView.dirty = false;
@@ -581,7 +596,7 @@ function renderPickerExtras(catalog, current, query, engine, locked, st) {
     field.innerHTML = html;
     field.dataset.html = html;
   }
-  const html2 = modelPanelHtml({ catalog, current, query, engine, modelAuto: auto, defaultLabel: $('#model').options[1]?.textContent ?? '', locked, providerNames: currentProviderNames(), providerAuth: currentProviderAuth(), favorites: state.config?.favoriteModels ?? [] });
+  const html2 = modelPanelHtml({ catalog, current, query, engine, modelAuto: auto, defaultLabel: $('#model').options[1]?.textContent ?? '', locked, providerNames: currentProviderNames(), providerAuth: currentProviderAuth(), favorites: state.config?.favoriteModels ?? [], recent: readRecentModels(state.active) });
   if (groups.dataset.html !== html2) {
     groups.innerHTML = html2;
     groups.dataset.html = html2;
@@ -731,6 +746,7 @@ export async function saveModel() {
   renderComposer();
   try {
     await api(`/api/projects/${project}/settings`, patch);
+    if (!auto && pick) rememberRecentModel(project, pick); // "Terakhir di project ini" in the picker
   } catch (err) {
     state.statuses[project] = { ...(state.statuses[project] ?? {}), model: before.model, modelAuto: before.modelAuto, engine: before.engine };
     renderComposer();

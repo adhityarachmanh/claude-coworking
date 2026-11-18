@@ -84,7 +84,7 @@ function buildNotification(p) {
   const bodies = {
     // Izinkan withheld (execution/network tool, or switched off on this device): look at it in the app first.
     ask: p.t && !p.allowAllowed ? 'Buka app untuk melihat perintahnya' : 'Ketuk untuk melihat detail',
-    done: `${p.role} sudah menyelesaikan permintaanmu`,
+    done: p.label ? `Tugas latar selesai — ${p.label}` : `${p.role} sudah menyelesaikan permintaanmu`,
     error: 'Ketuk untuk melihat di aplikasi',
     queue: p.started ? 'Item yang menunggu mulai berjalan' : 'Ketuk untuk melihat antrian',
     test: p.body || 'Notifikasi dari Adhitron berfungsi.',

@@ -31,6 +31,7 @@ function render() {
   // group and reading its merged history are not. A phone shows the reason instead of buttons the server refuses.
   const canEdit = !laptopBlocked('/api/groups/contoh');
   const body = [];
+  body.push('<h4 class="grp-section-title">Buat grup baru</h4>');
   body.push(`<form id="groups-create" class="oc-form">
     <label class="oc-field" for="groups-new-name"><span>Nama grup baru</span><input id="groups-new-name" placeholder="mis. Proyek X (web + api + mobile)" autocomplete="off" spellcheck="false" maxlength="60" /></label>
     <fieldset class="groups-members"><legend>Anggota</legend>
@@ -40,6 +41,7 @@ function render() {
   </form>`);
   if (!canEdit) body.push('<p id="groups-laptop-note" class="muted small">🔒 Mengubah nama, anggota, dan membongkar grup hanya bisa dari laptop. Membuat grup baru dan membuka riwayat gabungan tetap bisa dari sini.</p>');
   if (!groups.list.length) body.push('<p class="muted small">Belum ada grup. Buat satu untuk merujuk beberapa repo (web + api + mobile) di bawah satu nama.</p>');
+  else body.push('<h4 class="grp-section-title">Grup yang ada</h4>');
   for (const g of groups.list) {
     const addable = groups.projects.filter((p) => p.id !== DEMO_ID && !g.members.includes(p.id));
     body.push(`<div class="grp-card" data-gid="${escapeHtml(g.id)}">

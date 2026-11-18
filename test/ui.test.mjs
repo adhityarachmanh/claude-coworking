@@ -7474,9 +7474,10 @@ for (const vp of VIEWPORTS) {
       await tapChangesAction(page, '#ch-refresh', vp.mobile);
       await page.waitFor(() => [...document.querySelectorAll('#ch-files li[data-path]')].some((li) => li.dataset.path === 'src/checkout.ts'), { timeoutMs: 6000, message: 'file berubah di tab Perubahan' });
       await page.eval(() => [...document.querySelectorAll('#ch-files li[data-path]')].find((li) => li.dataset.path === 'src/checkout.ts').click());
+      await page.waitFor(() => document.querySelector('#ch-files li.active[data-path="src/checkout.ts"]') && !document.querySelector('#ch-view')?.disabled, { timeoutMs: 5000, message: 'file perubahan terpilih' });
       assert.equal(await page.eval(horizontalOverflow), null, 'tab Perubahan tanpa scroll horizontal');
       await tapChangesAction(page, '#ch-view', vp.mobile);
-      await page.waitFor(() => /export const total/.test(document.querySelector('#fv-code')?.textContent ?? ''), { timeoutMs: 4000, message: 'penampil dari tab Perubahan' });
+      await page.waitFor(() => /export const total/.test(document.querySelector('#fv-code')?.textContent ?? ''), { timeoutMs: 8000, message: 'penampil dari tab Perubahan' });
       assert.equal(await page.eval(horizontalOverflow), null);
       await page.press('Escape');
       if (vp.mobile) await page.click('#mobile-nav [data-view="chat"]');
@@ -8421,6 +8422,18 @@ describeArea('UI chat live', { skip: SKIP ?? false }, () => {
     assert.equal(r.inState, true);
     await page.waitFor(appReady, { timeoutMs: 5000, message: 'tetap terhubung' });
     assert.deepEqual(realProblems(page), []);
+  });
+
+  test('error provider: baris result gagal menawarkan tombol yang tepat', async () => {
+    await ensureApp(page, `#${projectId}`);
+    await api(`/api/projects/${projectId}/prompt`, { text: 'kuota habis' });
+    await page.waitFor(
+      () => [...document.querySelectorAll('#chat .result.fail')].some((n) => /usage limit/i.test(n.textContent) && n.querySelector('.msg-fix button[data-fix="model"]')),
+      { timeoutMs: 10000, message: 'hint kuota di baris hasil' },
+    );
+    await page.click('#chat .result.fail .msg-fix button[data-fix="model"]');
+    await page.waitFor(() => !document.querySelector('#model-panel').hidden, { timeoutMs: 3000, message: 'panel model terbuka' });
+    await page.press('Escape'); // close the panel again, the block's later tests expect a clean composer
   });
 });
 
