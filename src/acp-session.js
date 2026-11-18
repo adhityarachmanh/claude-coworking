@@ -16,6 +16,7 @@ import { recordAudit } from './audit-log.js';
 import { budgetStop, consumeBudgetOverride } from './budget.js';
 import { checkTurn, overCapacity } from './concurrency.js';
 import { MODE_CHOICE_MESSAGE, agentForMode } from './modes.js';
+import { rememberEffortRefusal, refusalsFor } from './effort-memory.js';
 import { OPENCODE_ACCOUNT } from './opencode-account.js';
 import { describeTool, inferRole, ROLE_IDS } from './roles.js';
 import { StreamTranslator } from './translator.js';
@@ -213,12 +214,18 @@ const cleanCommands = (list) =>
 /**
  * The app's effort → a value of OpenCode's `effort` option for the current model (its values differ per model, e.g.
  * low | high | max | default). Nearest offered level; '' (Default) → "default". null when the model has no effort.
+ * `refused` holds the levels the provider already rejected for this model (src/effort-memory.js): they are never sent
+ * again. A refused level goes straight to Default — guessing the neighbour risks another failed request.
  */
 const EFFORT_CANDIDATES = { '': ['default'], none: ['none', 'minimal', 'low'], minimal: ['minimal', 'low', 'none'], low: ['low', 'minimal'], medium: ['medium', 'default'], high: ['high'], xhigh: ['xhigh', 'max', 'high'], max: ['max', 'xhigh', 'high'] };
-export function effortValue(effort, configOptions) {
+export function effortValue(effort, configOptions, refused = null) {
   const values = (configOptions ?? []).find((o) => o.id === 'effort')?.options?.map((o) => o.value) ?? [];
-  if (effort && values.includes(effort)) return effort; // the model's own level, picked from its list
-  return (EFFORT_CANDIDATES[effort ?? ''] ?? []).find((v) => values.includes(v)) ?? null;
+  const allowed = (v) => values.includes(v) && !refused?.has(v);
+  const fallback = () => (EFFORT_CANDIDATES[''] ?? []).find(allowed) ?? null;
+  if (effort && values.includes(effort)) return refused?.has(effort) ? fallback() : effort; // the model's own level
+  const nearest = (EFFORT_CANDIDATES[effort ?? ''] ?? []).find(allowed);
+  if (nearest) return nearest;
+  return effort ? fallback() : null; // an offered level was refused: Default, never a guess that may fail too
 }
 
 const textOf = (content) =>
@@ -760,7 +767,10 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
               if (refused) {
                 stopped = this.interrupting || this.stoppedTurn;
                 if (!stopped) {
-                  this.hub.chat(this.id, { kind: 'info', level: 'warning', text: `Provider menolak effort «${refused}» untuk model ini — giliran dicoba ulang dengan Default.` });
+                  // Only the first refusal for a model is news: after that the level is remembered and silently
+                  // replaced by Default, so a chat never fills with the same provider quirk.
+                  if (refused.first)
+                    this.hub.chat(this.id, { kind: 'info', level: 'warning', text: `Provider menolak effort «${refused.level}» untuk model ini — giliran dicoba ulang dengan Default, dan level itu tidak dikirim lagi ke provider ini.` });
                   item.effortRetried = true;
                   send();
                   return;
@@ -1424,9 +1434,22 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       return typeof current === 'string' && current ? current : null;
     }
 
+    /** The model the effort levels belong to ("provider/model"): the one the app picked, else OpenCode's own. */
+    effortModel() {
+      const current = (this.configOptions ?? []).find((o) => o.id === 'model')?.currentValue;
+      return String(this.applied?.model || current || '');
+    }
+
+    /** Refused levels for this model: what this process saw (fast) plus what the data folder remembers (a restart). */
+    refusedEfforts() {
+      const refused = new Set(this.badEfforts);
+      for (const level of refusalsFor(this.m.hub?.dataDir, this.effortModel())) refused.add(level);
+      return refused;
+    }
+
     /** What to use instead of a level the provider refused: OpenCode's Default (the model's own thinking level). */
     safeEffort(bad) {
-      const safe = effortValue('', this.configOptions);
+      const safe = effortValue('', this.configOptions, this.refusedEfforts());
       return safe && safe !== bad ? safe : null;
     }
 
@@ -1437,28 +1460,33 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     /**
      * The provider refused the level OpenCode offered (river AI rejects "medium" while OpenCode advertises it). Remember
-     * it so it is never sent again and drop to Default: the caller re-sends the prompt, so the turn is never lost to a
-     * cryptic error. The caller also announces the switch — only it knows whether the retry actually still runs.
-     * @returns {Promise<string|null>} the refused level when the switch worked (only then is a retry worth it), else null
+     * it — in this process and in the data folder, so a restart does not send it again — and drop to Default: the
+     * caller re-sends the prompt, so the turn is never lost to a cryptic error. The caller also announces the switch
+     * (only on the first refusal for a model: after that it is known and noise), because only it knows whether the
+     * retry actually still runs.
+     * @returns {Promise<{level: string, first: boolean}|null>} the refused level + whether it is the first one for this
+     * model; null when the switch did not work (only then is a retry worth it)
      */
     async fallBackEffort() {
       const bad = this.currentEffort();
+      const first = this.refusedEfforts().size === 0;
       const safe = bad ? this.safeEffort(bad) : null;
       if (!safe) return null;
       this.badEfforts.add(bad);
+      rememberEffortRefusal(this.m.hub?.dataDir, this.effortModel(), bad);
       try {
         await this.setOption('effort', safe);
       } catch {
         return null; // the switch itself failed: a retry would only send the refused level again
       }
-      return bad;
+      return { level: bad, first };
     }
 
     /** The app's effort on the current model (skipped when the model has no effort levels, or already has it). */
     async applyEffort(effort) {
-      let value = effortValue(effort, this.configOptions);
-      // A value this provider already refused is never sent again: Default (or nothing) instead.
-      if (value && this.badEfforts.has(value)) value = this.safeEffort(value);
+      // A level this provider already refused is never sent again: Default (or nothing) instead. Auto effort lands
+      // here too, so a classifier pick that is known to fail costs no failed request.
+      const value = effortValue(effort, this.configOptions, this.refusedEfforts());
       const current = (this.configOptions ?? []).find((o) => o.id === 'effort')?.currentValue;
       if (value && value !== current) await this.setOption('effort', value);
     }

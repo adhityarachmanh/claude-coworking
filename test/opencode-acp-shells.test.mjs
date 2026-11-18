@@ -343,5 +343,26 @@ test('a provider that refuses an effort level is retried with Default, never lef
   assert.ok(chats.find((c) => c.kind === 'info' && /menolak effort .medium./.test(c.text ?? '')), 'the fallback was explained');
   assert.deepEqual(chats.filter((c) => c.kind === 'error' && /reasoning effort/i.test(c.text ?? '')), [], 'the provider error never reached the chat as a stop');
   assert.ok(chats.find((c) => c.kind === 'assistant' && /effort=default/.test(c.text ?? '')), 'the retry ran with Default, as the provider is told');
+  // The refusal is remembered on disk, keyed by the model: a restart (or a fresh session) will not send it again.
+  const memory = JSON.parse(readFileSync(path.join(TMP, 'data', 'effort-refusals.json'), 'utf8'));
+  assert.deepEqual(memory, { 'opencode-go/beam-free': ['medium'] }, 'the refused level is remembered for this model');
   await api(`/api/projects/${id}/settings`, { effort: '' }); // back to Default for whatever runs next
+});
+
+test('a remembered effort refusal survives a restart: no failed request, no second warning', async () => {
+  // The previous test left "medium" refused for this model. A new AcpSession object (engine round trip) forgets the
+  // in-process set exactly like a restart does, so only the data folder can keep the promise.
+  assert.equal((await api(`/api/projects/${id}/settings`, { engine: 'claude' })).status, 200);
+  assert.equal((await api(`/api/projects/${id}/settings`, { engine: 'opencode' })).status, 200);
+  mark = seen.length;
+  const chatsBefore = ((await snapshot()).chats?.[id] ?? []).length;
+  assert.equal((await api(`/api/projects/${id}/settings`, { effort: 'medium' })).status, 200);
+  const pr = await api(`/api/projects/${id}/prompt`, { text: 'effortriver' });
+  assert.equal(pr.status, 200, JSON.stringify(pr.body));
+  const res = await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result', 15000);
+  assert.equal(res.ok, true, 'the turn ran');
+  const fresh = ((await snapshot()).chats?.[id] ?? []).slice(chatsBefore);
+  assert.deepEqual(fresh.filter((c) => /menolak effort/.test(c.text ?? '')), [], 'the provider quirk is not announced again');
+  assert.ok(fresh.find((c) => c.kind === 'assistant' && /effort=default/.test(c.text ?? '')), 'Default was used from the first request');
+  await api(`/api/projects/${id}/settings`, { effort: '' });
 });
