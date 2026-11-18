@@ -1152,9 +1152,15 @@
             <div class="backup-actions">
               <button type="button" id="oc-run" class="ghost">▶ Cek kompatibilitas OpenCode</button>
               <button type="button" id="oc-update" class="ghost" title="Jalankan opencode upgrade (laptop saja)">⬆ Update OpenCode</button>
-              <button type="button" id="oc-restart" class="ghost" title="Jalankan opencode service restart (laptop saja)">↻ Restart layanan OpenCode</button>
+              <button type="button" id="oc-restart" class="ghost" title="Jalankan opencode service restart">↻ Restart layanan OpenCode</button>
+              <button type="button" id="oc-service-start" class="ghost" title="Jalankan opencode service start">▶ Start layanan</button>
+              <button type="button" id="oc-service-stop" class="ghost" title="Jalankan opencode service stop">⏸ Stop layanan</button>
+              <button type="button" id="oc-service-status" class="ghost" title="Jalankan opencode service status">ℹ Status layanan</button>
+              <button type="button" id="oc-reload" class="ghost" title="Jalankan opencode reload (config dibaca ulang tanpa restart penuh)">↻ Muat ulang config</button>
+              <button type="button" id="oc-info" class="ghost" title="opencode debug paths + agents + status layanan">🔍 Info OpenCode</button>
             </div>
             <pre id="oc-output" class="cc-output" hidden></pre>
+            <pre id="oc-info-out" class="cc-output" hidden></pre>
             <div class="oc-plugins" role="group" aria-labelledby="oc-plugins-title">
               <b id="oc-plugins-title">🧩 Plugin OpenCode</b>
               <p class="muted small">Plugin menjalankan kode pihak ketiga. Tambahkan hanya dari sumber tepercaya.</p>

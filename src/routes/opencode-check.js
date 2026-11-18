@@ -3,7 +3,7 @@
 // The status itself reaches every browser through the config (config.opencodeCheck); WiFi read-only phones are refused
 // by the default-deny allowlist.
 import { OPENCODE_SETTING_KEYS } from '../opencode-check.js';
-import { addOpenCodePlugin, checkOpenCodePlugins, listOpenCodePlugins, OpenCodeAdminError, removeOpenCodePlugin, restartOpenCodeService, updateOpenCode, updateOpenCodePlugins } from '../opencode-admin.js';
+import { addOpenCodePlugin, checkOpenCodePlugins, listOpenCodePlugins, OpenCodeAdminError, openCodeInfo, openCodeService, reloadOpenCode, removeOpenCodePlugin, restartOpenCodeService, updateOpenCode, updateOpenCodePlugins } from '../opencode-admin.js';
 import { json } from './http.js';
 
 let maintenanceBusy = false;
@@ -37,6 +37,53 @@ export function register(router) {
       }
     }, { maxBody: 1024 });
   }
+
+  // 🔌 `opencode service start|stop|status` and ↻ `opencode reload`: the rest of what a terminal does with the
+  // service. `status` reads only; the others are maintenance (one at a time, never mid-turn).
+  router.post('/api/opencode-service', async ({ opencode, opencodeCheck, sessions }, req, res, params, body) => {
+    if (!opencode) return json(res, 404, { error: 'OpenCode tidak ditemukan.' });
+    const action = String(body?.action ?? '');
+    try {
+      if (action === 'status') return json(res, 200, await openCodeService(opencode, 'status'));
+      if (action !== 'start' && action !== 'stop' && action !== 'restart') return json(res, 400, { error: 'Aksi layanan tidak dikenal.' });
+      if (maintenanceBusy) return json(res, 409, { error: 'Maintenance OpenCode lain sedang berjalan.' });
+      if (opencodeCheck.publicView().running) return json(res, 409, { error: 'Cek kompatibilitas OpenCode sedang berjalan. Tunggu sebentar.' });
+      if (hasRunningTurn(sessions)) return json(res, 409, { error: `Layanan OpenCode tidak bisa di-${action} saat masih ada giliran yang berjalan.` });
+      maintenanceBusy = true;
+      try {
+        return json(res, 200, await openCodeService(opencode, action));
+      } finally {
+        maintenanceBusy = false;
+      }
+    } catch (err) {
+      return json(res, err.status ?? 502, { error: err.message });
+    }
+  }, { maxBody: 1024 });
+
+  router.post('/api/opencode-reload', async ({ opencode, opencodeCheck, sessions }, req, res) => {
+    if (!opencode) return json(res, 404, { error: 'OpenCode tidak ditemukan.' });
+    if (maintenanceBusy) return json(res, 409, { error: 'Maintenance OpenCode lain sedang berjalan.' });
+    if (opencodeCheck.publicView().running) return json(res, 409, { error: 'Cek kompatibilitas OpenCode sedang berjalan. Tunggu sebentar.' });
+    if (hasRunningTurn(sessions)) return json(res, 409, { error: 'Muat ulang config tidak bisa saat masih ada giliran yang berjalan.' });
+    maintenanceBusy = true;
+    try {
+      return json(res, 200, await reloadOpenCode(opencode));
+    } catch (err) {
+      return json(res, err.status ?? 502, { error: err.message });
+    } finally {
+      maintenanceBusy = false;
+    }
+  }, { maxBody: 1024 });
+
+  // 🔍 Info OpenCode (debug paths + agents + service status): read-only, safe while a turn runs.
+  router.post('/api/opencode-info', async ({ opencode }, req, res) => {
+    if (!opencode) return json(res, 404, { error: 'OpenCode tidak ditemukan.' });
+    try {
+      return json(res, 200, await openCodeInfo(opencode));
+    } catch (err) {
+      return json(res, err.status ?? 502, { error: err.message });
+    }
+  }, { maxBody: 1024 });
 
   // 🧩 Plugin OpenCode: list is read-only; add/remove/update/check are maintenance actions (one at a time).
   router.post('/api/opencode-plugins/list', async ({ opencode }, req, res) => {

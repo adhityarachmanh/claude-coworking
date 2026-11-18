@@ -156,6 +156,10 @@ function renderSection() {
   $('#oc-update').disabled = blocked;
   $('#oc-restart').disabled = blocked;
   $('#oc-config-open').disabled = !admin;
+  for (const id of ['#oc-service-start', '#oc-service-stop', '#oc-service-status', '#oc-reload', '#oc-info']) {
+    const el = $(id);
+    if (el) el.disabled = !admin || oc.busy;
+  }
   for (const id of ['#oc-plugin-spec', '#oc-plugin-add', '#oc-plugin-check', '#oc-plugin-update-all']) {
     const el = $(id);
     if (el) el.disabled = !admin || oc.busy;
@@ -175,8 +179,7 @@ export function applyOpenCodeCheck(view) {
   else if (view.result) toast(`OpenCode v${view.checkedVersion}: ${view.failing.length} cek kontrak gagal.`, view.result === 'failed' ? 'error' : 'warn');
 }
 
-async function runMaintenance(kind) {
-  if (oc.busy) return;
+async function runMaintenance(kind) {  if (oc.busy) return;
   const update = kind === 'update';
   const question = update
     ? 'Update OpenCode sekarang?\n\nMenjalankan "opencode upgrade". Giliran yang sedang berjalan harus selesai dulu.'
@@ -194,6 +197,73 @@ async function runMaintenance(kind) {
       oc.manual = true;
       applyOpenCodeCheck(await api('/api/opencode-check/run'));
     }
+  } catch (err) {
+    toast(err.message, 'warn');
+  } finally {
+    oc.busy = false;
+    renderSection();
+  }
+}
+
+/** ▶/⏸/ℹ `opencode service …` from the same card. `status` is read-only and never asks for confirmation. */
+async function runService(action) {
+  if (oc.busy) return;
+  if (action === 'stop' && !window.confirm('Stop layanan OpenCode?\n\nShell, MCP, dan mirror yang berjalan lewat layanan bisa terputus. Sesi giliran (ACP) tetap hidup sampai ditutup.')) return;
+  oc.busy = true;
+  renderSection();
+  try {
+    const r = await api('/api/opencode-service', { action });
+    const out = $('#oc-output');
+    out.hidden = !r.output;
+    out.textContent = r.output ?? '';
+    toast(action === 'status' ? 'Status layanan OpenCode diperbarui.' : `Layanan OpenCode ${action === 'start' ? 'dinyalakan' : action === 'stop' ? 'dihentikan' : 'direstart'}.`, 'ok');
+  } catch (err) {
+    toast(err.message, 'warn');
+  } finally {
+    oc.busy = false;
+    renderSection();
+  }
+}
+
+/** ↻ `opencode reload`: re-read the config without a full service restart. */
+async function runReload() {
+  if (oc.busy) return;
+  oc.busy = true;
+  renderSection();
+  try {
+    const r = await api('/api/opencode-reload');
+    const out = $('#oc-output');
+    out.hidden = !r.output;
+    out.textContent = r.output ?? '';
+    toast('Config OpenCode dimuat ulang.', 'ok');
+  } catch (err) {
+    toast(err.message, 'warn');
+  } finally {
+    oc.busy = false;
+    renderSection();
+  }
+}
+
+/** 🔍 What `opencode debug paths|agents` and `service status` print in a terminal. */
+async function showInfo() {
+  if (oc.busy) return;
+  oc.busy = true;
+  renderSection();
+  const box = $('#oc-info-out');
+  try {
+    const info = await api('/api/opencode-info');
+    const lines = [];
+    if (info.paths?.length) {
+      lines.push('Paths:');
+      for (const p of info.paths) lines.push(`  ${String(p.label).padEnd(8)} ${p.path}`);
+    }
+    if (info.agents?.length) {
+      lines.push('', 'Agents:');
+      for (const a of info.agents) lines.push(`  ${a.id} — ${a.name}${a.mode ? ` (${a.mode})` : ''}${a.hidden ? ' · tersembunyi' : ''}`);
+    }
+    if (info.service) lines.push('', 'Layanan:', ...String(info.service).split('\n').map((l) => `  ${l}`));
+    box.textContent = lines.join('\n') || 'Tidak ada info.';
+    box.hidden = false;
   } catch (err) {
     toast(err.message, 'warn');
   } finally {
@@ -225,6 +295,12 @@ export function initOpenCodeCheck() {
   });
   $('#oc-update').addEventListener('click', () => runMaintenance('update'));
   $('#oc-restart').addEventListener('click', () => runMaintenance('restart-service'));
+  // 🔌 The rest of `opencode service …` and ↻ reload: the same one-at-a-time maintenance lane.
+  for (const action of ['start', 'stop', 'status']) {
+    $(`#oc-service-${action}`).addEventListener('click', () => runService(action));
+  }
+  $('#oc-reload').addEventListener('click', () => runReload());
+  $('#oc-info').addEventListener('click', () => showInfo());
   $('#oc-auto').addEventListener('change', async (e) => {
     const input = e.target;
     try {

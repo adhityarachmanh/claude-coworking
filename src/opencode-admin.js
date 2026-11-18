@@ -46,6 +46,70 @@ export function restartOpenCodeService(bin, { timeout = 60_000 } = {}) {
   return runOpenCode(bin, ['service', 'restart'], { timeout });
 }
 
+/** The service actions the CLI offers (`opencode service …`). `status` is read-only; the rest change what runs. */
+const SERVICE_ACTIONS = new Set(['start', 'restart', 'stop', 'status']);
+
+/** `opencode service start|restart|stop|status`. Throws on failure; `status` output is plain text for the UI. */
+export async function openCodeService(bin, action) {
+  const act = String(action ?? '');
+  if (!SERVICE_ACTIONS.has(act)) throw new OpenCodeAdminError(400, 'Aksi layanan tidak dikenal.');
+  const r = await runOpenCode(bin, ['service', act], { timeout: act === 'status' ? 20_000 : 60_000 });
+  if (!r.ok) throw new OpenCodeAdminError(r.timedOut ? 504 : 502, `Layanan OpenCode (${act}) gagal: ${firstLine(r)}`);
+  return { ok: true, action: act, output: r.output };
+}
+
+/** `opencode reload`: re-read the config without restarting the whole service. */
+export async function reloadOpenCode(bin, { timeout = 60_000 } = {}) {
+  const r = await runOpenCode(bin, ['reload'], { timeout });
+  if (!r.ok) throw new OpenCodeAdminError(r.timedOut ? 504 : 502, `Muat ulang config OpenCode gagal: ${firstLine(r)}`);
+  return { ok: true, output: r.output };
+}
+
+/** `opencode debug paths` is a two-column text table ("data   C:\\…"): [{ label, path }]. */
+export function parseDebugPaths(output) {
+  const rows = [];
+  for (const line of String(output ?? '').split(/\r?\n/)) {
+    const match = line.trim().match(/^([a-z][\w-]{0,30})\s{2,}(.+)$/i);
+    if (match) rows.push({ label: match[1].slice(0, 30), path: match[2].trim().slice(0, 400) });
+  }
+  return rows;
+}
+
+/** `opencode debug agents` prints a JSON array: keep the fields the UI shows (never the permissions body). */
+export function parseDebugAgents(output) {
+  let list;
+  try {
+    list = JSON.parse(String(output ?? ''));
+  } catch {
+    return [];
+  }
+  return (Array.isArray(list) ? list : [])
+    .filter((a) => a && typeof a.id === 'string' && /^[\w.-]{1,60}$/.test(a.id))
+    .slice(0, 100)
+    .map((a) => ({
+      id: a.id,
+      name: typeof a.name === 'string' ? a.name.slice(0, 80) : a.id,
+      mode: a.mode === 'primary' || a.mode === 'subagent' ? a.mode : '',
+      description: typeof a.description === 'string' ? a.description.slice(0, 200) : '',
+      hidden: a.hidden === true,
+    }));
+}
+
+/** 🔍 Info OpenCode (what `opencode debug …` shows in a terminal): paths, agents and the service status. */
+export async function openCodeInfo(bin) {
+  if (!bin) throw new OpenCodeAdminError(404, 'OpenCode tidak ditemukan.');
+  const [paths, agents, service] = await Promise.all([
+    runOpenCode(bin, ['debug', 'paths'], { timeout: 20_000 }).catch(() => ({ ok: false, output: '' })),
+    runOpenCode(bin, ['debug', 'agents'], { timeout: 30_000 }).catch(() => ({ ok: false, output: '' })),
+    runOpenCode(bin, ['service', 'status'], { timeout: 20_000 }).catch(() => ({ ok: false, output: '' })),
+  ]);
+  return {
+    paths: parseDebugPaths(paths.output),
+    agents: parseDebugAgents(agents.output),
+    service: clean(service.output).slice(0, 4000),
+  };
+}
+
 /** `opencode plugin list` is a small text table; parse its ID / VERSION / SOURCE columns. */
 export function parsePluginList(output) {
   const rows = [];
