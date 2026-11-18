@@ -10,8 +10,9 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { buildRouter } from '../src/routes/index.js';
 import { wifiAllows } from '../src/remote.js';
-import { openCodeProviders } from '../src/opencode-auth.js';
+import { openCodeProviders, waitForProvider } from '../src/opencode-auth.js';
 import { addCustomProvider, backupRoot, readOpenCodeConfig, removeCustomProvider } from '../src/opencode-config.js';
+import { clearModelCache, customProvidersWithoutCredentials } from '../src/opencode-bin.js';
 
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-opencode-custom-'));
 const HOME = path.join(TMP, 'xdg');
@@ -24,11 +25,15 @@ const INTEGRATIONS_FILE = path.join(TMP, 'integrations.json');
 process.env.OFFICE_OPENCODE_CONFIG_HOME = HOME;
 process.env.FAKE_CONNECT_LOG = CONNECT_LOG;
 process.env.FAKE_INTEGRATIONS = INTEGRATIONS_FILE;
+// The real OpenCode service lists a provider block ~2 s after the file changes (config watcher). The fake keeps that
+// lag so the route must wait for the provider before storing its key — the missing wait is what left dead blocks.
+process.env.FAKE_PROVIDER_LAG_MS = '600';
 
 after(() => {
   delete process.env.OFFICE_OPENCODE_CONFIG_HOME;
   delete process.env.FAKE_CONNECT_LOG;
   delete process.env.FAKE_INTEGRATIONS;
+  delete process.env.FAKE_PROVIDER_LAG_MS;
   rmSync(TMP, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
@@ -38,9 +43,12 @@ const FAKE_BIN = path.join(TMP, 'fake-opencode-custom.mjs');
 writeFileSync(
   FAKE_BIN,
   `#!/usr/bin/env node
-// A minimal fake opencode: integration.list (FAKE_INTEGRATIONS file when present, else a fixed catalog),
-// integration.connect.key and credential.remove (both record to FAKE_CONNECT_LOG).
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+// A minimal fake opencode: integration.list (a fixed catalog PLUS this app's custom blocks, which the real service
+// only lists after its config watcher reloads — FAKE_PROVIDER_LAG_MS emulates that lag), integration.connect.key and
+// credential.remove (both record to FAKE_CONNECT_LOG). connect.key on a provider the service does not list yet is
+// the real "HTTP 404 Not Found" that used to leave a dead block behind.
+import { appendFileSync, existsSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
 const [, , , op, ...rest] = process.argv;
 const params = {};
 let body = {};
@@ -50,18 +58,29 @@ for (let i = 0; i < rest.length; i += 2) {
 }
 const out = (data) => (console.log(JSON.stringify({ location: { directory: process.cwd() }, data })), process.exit(0));
 const fail = (msg) => (console.error(msg), process.exit(1));
-if (op === 'integration.list') {
-  if (process.env.FAKE_INTEGRATIONS && existsSync(process.env.FAKE_INTEGRATIONS)) {
-    out(JSON.parse(readFileSync(process.env.FAKE_INTEGRATIONS, 'utf8')));
-  } else {
-    out([
-      { id: 'opencode-go', name: 'OpenCode Go', methods: [{ type: 'key' }], connections: [] },
-      { id: 'riverfake', name: 'River Fake', methods: [{ type: 'key' }], connections: [] },
-    ]);
-  }
-}
+const BASE = [
+  { id: 'opencode-go', name: 'OpenCode Go', methods: [{ type: 'key' }], connections: [] },
+  { id: 'riverfake', name: 'River Fake', methods: [{ type: 'key' }], connections: [] },
+  { id: 'wally', name: 'Wally', methods: [{ type: 'key' }], connections: [] },
+];
+const customFromConfig = () => {
+  const file = path.join(process.env.OFFICE_OPENCODE_CONFIG_HOME ?? '', 'opencode', 'opencode.json');
+  if (!existsSync(file)) return [];
+  const lag = Number(process.env.FAKE_PROVIDER_LAG_MS) || 0;
+  if (lag && Date.now() - statSync(file).mtimeMs < lag) return []; // config written a moment ago: not reloaded yet
+  let config = {};
+  try { config = JSON.parse(readFileSync(file, 'utf8')); } catch { return []; }
+  return Object.entries((config && config.providers) || {}).map(([id, block]) => ({ id, name: (block && block.name) || id, methods: [{ type: 'key' }], connections: [] }));
+};
+const integrations = () => {
+  const base = process.env.FAKE_INTEGRATIONS && existsSync(process.env.FAKE_INTEGRATIONS) ? JSON.parse(readFileSync(process.env.FAKE_INTEGRATIONS, 'utf8')) : BASE;
+  // A custom block is listed next to whatever the test's catalog file says (the real service merges both too).
+  return [...base, ...customFromConfig().filter((p) => !base.some((b) => b.id === p.id))];
+};
+if (op === 'integration.list') out(integrations());
 if (op === 'integration.connect.key') {
   if (body.key === 'fail-key') fail('UnknownError: An error occurred\\n    at x (y:1:1) {\\n  [cause]: Error: Authentication failed\\n}');
+  if (!integrations().some((p) => p.id === params.integrationID)) fail('NotFoundError: Provider not found\\nHTTP 404 Not Found');
   if (process.env.FAKE_CONNECT_LOG) appendFileSync(process.env.FAKE_CONNECT_LOG, \`\${params.integrationID}\\t\${body.key}\\n\`);
   out(null);
 }
@@ -356,19 +375,63 @@ test('add: config global tidak valid → 400 dengan pesan perbaiki dulu', async 
   assert.match(res.json().error, /Config OpenCode global/);
 });
 
-test('add: connect key gagal → 502 yang menjelaskan blok sudah tertulis', async () => {
+test('add: connect key gagal → 502 dan blok di-rollback (tidak ada provider mati di daftar model)', async () => {
   resetConfig();
-  writeConfig({});
+  writeConfig({ model: 'tetap' });
   const res = await call('/api/opencode/custom/add', { ...GOOD, key: 'fail-key' });
   assert.equal(res.status, 502, res.body);
-  assert.match(res.json().error, /config/i);
   assert.match(res.json().error, /key/i);
+  assert.match(res.json().error, /dibatalkan|rollback|tidak disimpan/i, 'pesan menyebut blok tidak ditinggalkan');
   const view = readOpenCodeConfig({ scope: 'global', home: HOME });
-  assert.equal(view.config.providers.river.settings.baseURL, 'https://api.river.ai/v1', 'blok tetap tertulis');
+  assert.equal(view.config.providers?.river, undefined, 'provider tanpa key tidak ditinggal di config');
+  assert.equal(view.config.model, 'tetap', 'config lain tidak ikut hilang');
   const audit = readFileSync(path.join(DATA, 'auth-audit.jsonl'), 'utf8');
   assert.match(audit, /"action":"custom-add"/);
   assert.match(audit, /"ok":false/);
   assert.ok(!audit.includes('fail-key'), 'key tidak pernah masuk audit');
+});
+
+test('add: blok lama yang di-overwrite dikembalikan utuh saat key baru gagal', async () => {
+  resetConfig();
+  const old = { name: 'River lama', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: 'https://lama/v1' }, models: { lama: {} }, env: ['LAMA_API_KEY'] };
+  writeConfig({ providers: { lain: { name: 'Lain', package: 'pkg/lain' }, river: old } });
+  const res = await call('/api/opencode/custom/add', { ...GOOD, key: 'fail-key' });
+  assert.equal(res.status, 502, res.body);
+  const view = readOpenCodeConfig({ scope: 'global', home: HOME });
+  assert.deepEqual(view.config.providers.river, old, 'blok lama kembali apa adanya');
+  assert.deepEqual(view.config.providers.lain, { name: 'Lain', package: 'pkg/lain' });
+});
+
+test('add: ID yang sudah jadi provider bawaan menyebut jalan Login provider, bukan sekadar "pilih ID lain"', async () => {
+  resetConfig();
+  const res = await call('/api/opencode/custom/add', { ...GOOD, id: 'wally' });
+  assert.equal(res.status, 409, res.body);
+  assert.match(res.json().error, /Wally/, 'nama provider bawaan ikut disebut');
+  assert.match(res.json().error, /Login provider/, 'menunjuk alur yang benar untuk provider yang sudah ada');
+  assert.equal(readOpenCodeConfig({ scope: 'global', home: HOME }).config.providers, undefined, 'tidak ada yang ditulis');
+});
+
+// ---------- the service needs a moment before it knows a brand-new provider ----------
+
+test('waitForProvider: menunggu layanan memuat provider baru, dan menyerah dengan jujur', async () => {
+  resetConfig();
+  addCustomProvider({ id: 'river', name: 'River', baseURL: 'https://api.river.ai/v1', models: ['m1'], home: HOME, dataDir: DATA });
+  const started = Date.now();
+  assert.equal(await waitForProvider(BIN, 'river', { timeout: 4000, every: 100 }), true, 'provider yang muncul setelah lag');
+  assert.ok(Date.now() - started >= 400, `benar-benar menunggu (${Date.now() - started} ms)`);
+  assert.equal(await waitForProvider(BIN, 'tidakada', { timeout: 300, every: 100 }), false, 'tidak menggantung selamanya');
+});
+
+test('customProvidersWithoutCredentials: blok kustom tanpa kredensial tidak boleh menyumbang model', async () => {
+  resetConfig();
+  addCustomProvider({ id: 'river', name: 'River', baseURL: 'https://api.river.ai/v1', models: ['m1'], home: HOME, dataDir: DATA });
+  clearModelCache();
+  assert.equal(await waitForProvider(BIN, 'river'), true, 'layanan sudah memuat blok itu');
+  assert.deepEqual([...(await customProvidersWithoutCredentials(BIN))], ['river'], 'belum ada key');
+  writeIntegrations([{ id: 'river', name: 'River', methods: [{ type: 'key' }], connections: [{ type: 'credential', id: 'cred_1', label: 'Default', method: 'key' }] }]);
+  clearModelCache();
+  assert.deepEqual([...(await customProvidersWithoutCredentials(BIN))], [], 'sudah login: modelnya dipakai lagi');
+  resetConfig();
 });
 
 // ---------- /api/opencode/custom/remove ----------

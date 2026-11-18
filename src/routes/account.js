@@ -8,8 +8,9 @@ import { recordAuth, recentAuth } from '../auth-audit.js';
 import { ENGINES } from '../hub.js';
 import { readModelPrices } from '../model-prices.js';
 import { OPENCODE_ACCOUNT } from '../opencode-account.js';
-import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders } from '../opencode-auth.js';
-import { addCustomProvider, CUSTOM_PROVIDER_PACKAGE, readOpenCodeConfig, removeCustomProvider } from '../opencode-config.js';
+import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders, waitForProvider } from '../opencode-auth.js';
+import { addCustomProvider, CUSTOM_PROVIDER_PACKAGE, readOpenCodeConfig, removeCustomProvider, restoreProviderBlock } from '../opencode-config.js';
+import { clearModelCache } from '../opencode-bin.js';
 import { GO_PLANS, goAllowance } from '../opencode-go.js';
 import { clearConsoleTokenCache, consoleForPeriod, consoleRequestLogs, consoleRequestTotals, consoleRequestTotalsCached, goConsoleSnapshot } from '../opencode-console.js';
 import { renderPdf, reportHtml } from '../report.js';
@@ -416,14 +417,31 @@ async function customRename(bin, body, ctx) {
     }
   }
   const known = await openCodeProviders(bin);
-  if ([...known.connected, ...known.available].some((p) => p.id === newId)) {
-    throw Object.assign(new Error(`ID "${newId}" sudah dipakai. Pilih ID lain.`), { status: 409 });
+  const builtin = [...known.connected, ...known.available].find((p) => p.id === newId);
+  if (builtin) {
+    throw Object.assign(
+      new Error(`ID "${newId}" adalah provider bawaan OpenCode (${builtin.name ?? newId}). Pakai ＋ Login provider untuk provider itu, atau pilih ID lain untuk provider kustom.`),
+      { status: 409 },
+    );
   }
   const saved = addCustomProvider({ id: newId, name, baseURL, models, dataDir: ctx.hub?.dataDir ?? ctx.dataDir });
+  const rollbackNew = () => {
+    try {
+      restoreProviderBlock({ id: newId, block: null, dataDir: ctx.hub?.dataDir ?? ctx.dataDir });
+      clearModelCache();
+    } catch {
+      // best effort: the error reported to the user already explains the failed rename
+    }
+  };
+  if (!(await waitForProvider(bin, newId))) {
+    rollbackNew();
+    throw Object.assign(new Error(`OpenCode belum mengenali provider "${newId}" (layanannya belum memuat config baru), jadi blok baru dibatalkan dan blok lama tetap utuh. Tunggu sebentar lalu coba lagi.`), { status: 503 });
+  }
   try {
     await openCodeConnectKey(bin, newId, { key });
   } catch (err) {
-    throw Object.assign(new Error(`Blok baru sudah ditulis, tetapi API key untuk "${newId}" gagal disimpan (${err.message}). Blok lama masih utuh — login key untuk id baru lewat ＋ Login provider, lalu coba rename lagi.`), { status: 502 });
+    rollbackNew();
+    throw Object.assign(new Error(`API key untuk "${newId}" gagal disimpan (${err.message}), jadi blok baru dibatalkan — blok lama tetap utuh dan tidak ada provider tanpa kredensial. Periksa key lalu coba lagi.`), { status: 502 });
   }
   // The old side goes away only after the new one is fully usable: credentials first (a refusing credential is
   // reported, never fatal — the dead block must not stay), then the block, then the stale notice.
@@ -525,8 +543,14 @@ async function customAdd(bin, body, ctx) {
   // our own custom block makes OpenCode list the same id as an integration, so re-adding it is an overwrite (b).
   const ownCustom = new Set(Object.entries(blocks).filter(([, block]) => isObject(block) && (typeof block.package !== 'string' || block.package === CUSTOM_PROVIDER_PACKAGE)).map(([key]) => key));
   const known = await openCodeProviders(bin);
-  if ([...known.connected, ...known.available].some((p) => p.id === id && !ownCustom.has(p.id))) {
-    throw Object.assign(new Error(`ID "${id}" sudah dipakai provider bawaan. Pilih ID lain.`), { status: 409 });
+  // A catalog provider is not a custom one: it has its own login (＋ Login provider) and its models already exist.
+  // Shadowing it with a custom block would hide that path, so the message names it instead of just saying "pick another".
+  const builtin = [...known.connected, ...known.available].find((p) => p.id === id && !ownCustom.has(p.id));
+  if (builtin) {
+    throw Object.assign(
+      new Error(`ID "${id}" adalah provider bawaan OpenCode (${builtin.name ?? id}). Pakai ＋ Login provider dan pilih "${builtin.name ?? id}" di sana, atau isi ID lain untuk provider kustom (mis. "${id}2").`),
+      { status: 409 },
+    );
   }
   // (b) overwrite only a block this feature wrote (its own package, or one without a package field).
   const global = readOpenCodeConfig({ scope: 'global' });
@@ -543,11 +567,28 @@ async function customAdd(bin, body, ctx) {
   const connected = known.connected.some((p) => p.id === id);
   if (!key && !connected) throw Object.assign(new Error('API key wajib diisi (maks 4096 karakter).'), { status: 400 });
   const saved = addCustomProvider({ id, name, baseURL, models, dataDir: ctx.hub?.dataDir ?? ctx.dataDir });
+  // A block that cannot get its key must not stay: its models would appear in the picker with no credentials and
+  // fail at the first prompt (the production "models listed but belum login"). The previous block, if any, comes back.
+  const rollback = () => {
+    try {
+      restoreProviderBlock({ id, block: old && typeof old === 'object' ? old : null, dataDir: ctx.hub?.dataDir ?? ctx.dataDir });
+      clearModelCache();
+    } catch {
+      // best effort: the error reported to the user already explains the failed add
+    }
+  };
   if (key) {
+    // OpenCode's service lists a config block a beat after the file changed (its config watcher): storing the key
+    // before that answers "HTTP 404 Not Found" and leaves exactly the dead provider this rollback exists for.
+    if (!(await waitForProvider(bin, id))) {
+      rollback();
+      throw Object.assign(new Error(`OpenCode belum mengenali provider "${id}" (layanannya belum memuat config baru), jadi blok itu dibatalkan. Tunggu sebentar lalu coba lagi; kalau tetap gagal, restart layanan OpenCode di ⚙ → Sistem.`), { status: 503 });
+    }
     try {
       await openCodeConnectKey(bin, id, { key });
     } catch (err) {
-      throw Object.assign(new Error(`Blok provider sudah ditulis ke config OpenCode, tetapi API key gagal disimpan (${err.message}). Login key untuk provider ini lewat alur yang ada, lalu coba lagi.`), { status: 502 });
+      rollback();
+      throw Object.assign(new Error(`API key gagal disimpan (${err.message}), jadi provider "${id}" dibatalkan — modelnya tidak dibiarkan masuk ke daftar model tanpa kredensial. Periksa key lalu coba lagi.`), { status: 502 });
     }
   }
   return phoneAlert(ctx, 'login', id)(loggedIn(ctx)({ ok: true, provider: id, models, path: saved.path, backup: saved.backup }));

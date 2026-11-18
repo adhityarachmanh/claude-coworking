@@ -89,10 +89,34 @@ export function modelsOffered(sessions) {
   return [...offered].filter((v) => /^[\w.@-]+\/\S+$/.test(v));
 }
 
+// Custom providers whose config block has no credentials (yet): their models must not reach the picker. Cached with
+// the model list; invalidated by clearModelCache() (login, logout, add, remove).
+let unreadyCache = null;
+
 /** After a provider login/logout the model list changes. */
 export function clearModelCache() {
   modelCache = null;
   variantCache = null;
+  unreadyCache = null;
+}
+
+/**
+ * Ids of this app's custom providers that hold no credential and no env connection: OpenCode still lists their models
+ * (`opencode models` reads the config), but choosing one can only fail at the first prompt. An unreadable integration
+ * list yields an empty set — the picker keeps working, it just does not hide anything.
+ * @param {{ command: string, args: string[] }} bin
+ * @param {{ maxAgeMs?: number }} [options]
+ * @returns {Promise<Set<string>>}
+ */
+export async function customProvidersWithoutCredentials(bin, { maxAgeMs = 60_000 } = {}) {
+  if (!bin) return new Set();
+  if (unreadyCache && Date.now() - unreadyCache.at < maxAgeMs) return unreadyCache.ids;
+  const { openCodeProviders } = await import('./opencode-auth.js');
+  const { connected, available } = await openCodeProviders(bin);
+  const withKey = new Set(connected.map((p) => p.id));
+  const ids = new Set(available.filter((p) => p.custom && !withKey.has(p.id)).map((p) => p.id));
+  unreadyCache = { at: Date.now(), ids };
+  return ids;
 }
 export function openCodeModels(bin, { maxAgeMs = 10 * 60_000 } = {}) {
   if (!bin) return Promise.resolve([]);

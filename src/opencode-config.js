@@ -708,6 +708,31 @@ export function addCustomProvider({ id, name, baseURL, models, home, dataDir } =
 }
 
 /**
+ * Puts one `providers.<id>` block back to a captured value (or removes it when `block` is null). Used to undo a
+ * custom add that could not store its key: without the rollback the block keeps its models in the picker while no
+ * credential exists, so choosing one fails at the first prompt. Only that one id is touched, the previous file is
+ * backed up, and everything else in the config is kept.
+ * @param {{ id: string, block?: object|null, home?: string, dataDir?: string }} input
+ * @returns {{ ok: true, path: string, backup: string|null }}
+ */
+export function restoreProviderBlock({ id, block = null, home, dataDir } = {}) {
+  if (!PROVIDER_ID.test(String(id ?? ''))) throw new OpenCodeConfigError(400, 'ID provider tidak valid.');
+  if (block !== null && (typeof block !== 'object' || Array.isArray(block))) throw new OpenCodeConfigError(400, 'Blok provider tidak valid.');
+  const current = readOpenCodeConfig({ scope: 'global', home });
+  if (current.parseError) throw new OpenCodeConfigError(400, 'Config OpenCode global tidak valid.');
+  const config = validateObject(JSON.parse(JSON.stringify(isObject(current.config) ? current.config : {})));
+  const providers = isObject(config.providers) ? config.providers : {};
+  if (block === null) delete providers[id];
+  else providers[id] = block;
+  if (Object.keys(providers).length) config.providers = providers;
+  else delete config.providers;
+  assertWritable(current.path, { scope: 'global', home });
+  const backup = writeBackup({ scope: 'global', path: current.path }, dataDir);
+  writeFileAtomic(current.path, `${JSON.stringify(config, null, 2)}\n`);
+  return { ok: true, path: current.path, backup: backup?.path ?? null };
+}
+
+/**
  * Removes one custom OpenAI-compatible provider block from the global config: only a block this feature wrote (its
  * own package, or one without a package field) — a block another feature wrote is refused with a 409. Everything
  * else is kept as it is, the previous file is backed up first, and `providers` itself is deleted when the removal

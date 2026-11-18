@@ -144,6 +144,24 @@ const checkId = (id, what) => {
   return String(id);
 };
 
+/**
+ * Waits until OpenCode's service lists a provider. A config block written a moment ago needs a beat before the
+ * service's config watcher loads it (measured: ~2 s); storing a key before that answers "HTTP 404 Not Found" and
+ * used to leave a provider with models but no credentials. Resolves true when listed, false on timeout.
+ * @param {{ command: string, args: string[] }} bin
+ * @param {string} id
+ * @param {{ timeout?: number, every?: number }} [options]
+ */
+export async function waitForProvider(bin, id, { timeout = 8000, every = 250 } = {}) {
+  const deadline = Date.now() + Math.max(0, timeout);
+  for (;;) {
+    const { connected, available } = await openCodeProviders(bin).catch(() => ({ connected: [], available: [] }));
+    if ([...connected, ...available].some((p) => p.id === id)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, Math.max(50, every)));
+  }
+}
+
 /** Stores an API key for a provider. */
 export async function openCodeConnectKey(bin, integrationID, { key, answer } = {}) {
   const secret = String(key ?? '').trim();

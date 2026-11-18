@@ -2,7 +2,7 @@
 // /api/projects and /api/config point Claude Code (and git, file search) at any path: admin, laptop or a phone over
 // Tailscale (SECURE_ADMIN in server.js); a plain-WiFi phone is read-only and refused.
 // Opening VS Code / Explorer (`open`) is laptop only (LOCAL_ONLY_ACTION).
-import { modelsOffered, openCodeModelEfforts, openCodeModels } from '../opencode-bin.js';
+import { customProvidersWithoutCredentials, modelsOffered, openCodeModelEfforts, openCodeModels } from '../opencode-bin.js';
 import path from 'node:path';
 import { ENGINES } from '../hub.js';
 import { readModelPrices } from '../model-prices.js';
@@ -40,6 +40,11 @@ async function openCodeModelOptions({ opencode, sessions }, id) {
   // `opencode models` empty (its service just started, catalog still loading): the models a running ACP session of
   // any project offers (configOptions "model") are the same list, so the picker isn't left empty meanwhile.
   if (!values.length) values = modelsOffered(sessions.sessions.values());
+  // A custom provider whose block has no credential yet still contributes models here (OpenCode reads the config),
+  // but choosing one can only fail. They stay out of the picker until the provider is logged in; an unreadable
+  // provider list hides nothing (fail open).
+  const unready = await customProvidersWithoutCredentials(opencode).catch(() => new Set());
+  if (unready.size) values = values.filter((value) => !unready.has(value.slice(0, value.indexOf('/'))));
   // each model's own effort levels (null = unknown: the picker offers the generic list and the nearest is used)
   const efforts = values.length ? await openCodeModelEfforts(opencode) : new Map();
   const models = values.map((value) => ({ value, name: `${value.slice(value.indexOf('/') + 1)}${/free/i.test(value) ? ' (gratis)' : ''}`, efforts: efforts.has(value) ? efforts.get(value) : null }));
