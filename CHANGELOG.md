@@ -6,6 +6,13 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 - **📱 Chat di HP tidak lagi terjepit atau terpotong (viewport ±390 px).** Lima baris yang dulu "gepeng" kini rapi di layar sempit: **kartu delegasi** memakai lebar penuh untuk teks tugas dan menurunkan ringkasan **"· 5 langkah · ⏳ 3 berjalan"** ke barisnya sendiri; tombol **↓ Terbaru** duduk di antara percakapan dan composer sehingga tidak lagi menutupi pesan yang sedang dibaca; **header jawaban asisten** membiarkan nama tetap satu baris dan memindahkan waktu/Salin/☆ ke baris berikutnya bila sempit (sasaran sentuh tetap ≥ 24 px); **strip progres giliran** membungkus chip **"✓ Selesai · …"** ke baris kedua alih-alih terpotong di tepi kanan; dan **chip pengaturan di composer** tidak lagi memuat harga model ("— $0.15 in / $0.6 out /1M") — angkanya tetap ada di dialog yang dibuka chip. Desktop tidak berubah.
 
+## 1.0.67
+
+- **Langkah anak mengikuti task delegasi.** Baris `flutter build apk` (dan langkah subagent lain) tidak lagi dicap “Tidak ada kabar lanjutan — buka ⧗” setelah 60 dtk selama task delegasinya masih berjalan. Baris tetap terbuka sampai task benar-benar selesai (sesi induk melanjutkan / sesi anak idle / ■ Stop), lalu ditutup dengan catatan jujur — bukan spinner abadi.
+- **■ Stop menutup delegasi.** Saat giliran dihentikan, task agent dan baris anaknya langsung berhenti dengan catatan “Dihentikan bersama giliran”, tanpa menunggu reaper 20–60 dtk.
+- **Role tampil bekerja di kantor/team card** selama delegasinya berjalan (sebelumnya hanya ⧗ yang menunjukkan task).
+- Detail task delegasi menampilkan keterangan “Langkah lengkap ada di chat”; memori rekaman agent dibatasi (50) agar sesi panjang tidak menumpuk.
+
 ## 1.0.66
 
 - **⧗ Tugas latar kini menampilkan delegasi/subagent OpenCode.** Saat model mendelegasikan pekerjaan ke agent (`subagent`/`task`), peluncurannya langsung “selesai” tetapi sesi anaknya tetap bekerja — mis. `flutter build apk` di dalam agent devops. Delegasi itu sekarang muncul di ⧗ sebagai task **agent** (🤖 role, deskripsi, durasi, langkah terakhir) dan **tidak lagi ditutup** oleh selesainya panggilan peluncuran. Task ditutup saat sesi induk melanjutkan dengan laporan anak (frame yang sama yang menampilkan jawaban lanjutan), atau saat sesi anak terbaca idle; selesai → **✅ Tugas latar selesai** + toast/getar + push. Detail task berisi langkah anak dan jawaban terakhirnya; tombol Hentikan tidak ditampilkan untuk subagent (hentikan lewat ■ Stop pada giliran).
