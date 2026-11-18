@@ -3,7 +3,7 @@
 // The status itself reaches every browser through the config (config.opencodeCheck); WiFi read-only phones are refused
 // by the default-deny allowlist.
 import { OPENCODE_SETTING_KEYS } from '../opencode-check.js';
-import { addOpenCodePlugin, checkOpenCodePlugins, listOpenCodePlugins, OpenCodeAdminError, openCodeInfo, openCodeService, reloadOpenCode, removeOpenCodePlugin, restartOpenCodeService, updateOpenCode, updateOpenCodePlugins } from '../opencode-admin.js';
+import { addOpenCodePlugin, checkOpenCodePlugins, listOpenCodePlugins, OpenCodeAdminError, openCodeInfo, openCodeService, openCodeStats, reloadOpenCode, removeOpenCodePlugin, restartOpenCodeService, updateOpenCode, updateOpenCodePlugins } from '../opencode-admin.js';
 import { json } from './http.js';
 
 let maintenanceBusy = false;
@@ -80,6 +80,20 @@ export function register(router) {
     if (!opencode) return json(res, 404, { error: 'OpenCode tidak ditemukan.' });
     try {
       return json(res, 200, await openCodeInfo(opencode));
+    } catch (err) {
+      return json(res, err.status ?? 502, { error: err.message });
+    }
+  }, { maxBody: 1024 });
+
+  // 📊 `opencode stats` (shareable usage report): read-only. The range is validated here, never passed as arbitrary
+  // CLI flags (a query string must not be able to reach the binary's argument list).
+  router.post('/api/opencode-stats', async ({ opencode }, req, res, params, body) => {
+    if (!opencode) return json(res, 404, { error: 'OpenCode tidak ditemukan.' });
+    const days = Number(body?.days);
+    const all = body?.all === true;
+    if (!all && !Number.isInteger(days)) return json(res, 400, { error: 'Rentang statistik tidak valid.' });
+    try {
+      return json(res, 200, await openCodeStats(opencode, { days, all, models: body?.models === true, cost: body?.cost === true, tools: body?.tools === true }));
     } catch (err) {
       return json(res, err.status ?? 502, { error: err.message });
     }

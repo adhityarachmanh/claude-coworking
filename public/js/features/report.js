@@ -544,4 +544,24 @@ export function initReport() {
   for (const id of ['#report-from', '#report-to']) $(id).addEventListener('change', previewReport);
   $('#report-pdf').addEventListener('click', downloadReport);
   $('#report-csv').addEventListener('click', downloadCsv);
+  // 📊 `opencode stats` on demand: the CLI's own database report (not the app ledger).
+  $('#report-oc-7').addEventListener('click', () => loadOcStats({ days: 7 }));
+  $('#report-oc-30').addEventListener('click', () => loadOcStats({ days: 30 }));
+  $('#report-oc-all').addEventListener('click', () => loadOcStats({ all: true }));
+}
+
+/** The CLI's shareable stats text, loaded on demand (nothing is fetched when the dialog opens). */
+async function loadOcStats(range) {
+  const out = $('#report-oc-out');
+  if (!out) return;
+  out.hidden = false;
+  out.textContent = '⏳ Menjalankan opencode stats…';
+  try {
+    const r = await api('/api/opencode-stats', { ...range, models: true, cost: true, tools: range.all === true });
+    out.textContent = r.text || 'Tidak ada data.';
+  } catch (err) {
+    out.textContent = '';
+    out.hidden = true;
+    toast(err.message, 'warn');
+  }
 }

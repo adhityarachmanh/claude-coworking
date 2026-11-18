@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { openCodeInfo, openCodeService, parseDebugAgents, parseDebugPaths, reloadOpenCode } from '../src/opencode-admin.js';
+import { openCodeInfo, openCodeService, openCodeStats, parseDebugAgents, parseDebugPaths, reloadOpenCode } from '../src/opencode-admin.js';
 import { buildRouter } from '../src/routes/index.js';
 
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-oc-admin-'));
@@ -19,6 +19,7 @@ const out = (s) => console.log(s);
 if (args[0] === 'debug' && args[1] === 'paths') out('home       C:\\\\Users\\\\uji\\ndata       C:\\\\Users\\\\uji\\\\.local\\\\share\\\\opencode\\nconfig     C:\\\\Users\\\\uji\\\\.config\\\\opencode');
 else if (args[0] === 'debug' && args[1] === 'agents') out(JSON.stringify([{ id: 'build', name: 'Build', mode: 'primary' }, { id: 'plan', name: 'Plan', mode: 'primary', hidden: true }, { id: 'bad id', name: 'x' }, { id: 'ok', name: 'Ok', mode: 'weird' }]));
 else if (args[0] === 'service') out(args[1] === 'status' ? 'running (pid 123)' : 'service ' + args[1] + ' ok');
+else if (args[0] === 'stats') out('opencode stats · last ' + (args.includes('--all') ? 'lifetime' : args[args.indexOf('--days') + 1]) + ' days' + (args.includes('--models') ? ' · models' : ''));
 else if (args[0] === 'reload') out('config reloaded');
 else { console.error('Operation not found'); process.exit(1); }
 `,
@@ -68,6 +69,18 @@ test('openCodeService: known actions run, an unknown one is refused before spawn
   assert.equal(info.paths.length, 3);
   assert.deepEqual(info.agents.map((a) => a.id), ['build', 'plan', 'ok']);
   assert.match(info.service, /running \(pid 123\)/);
+});
+
+test('openCodeStats + route: the CLI report is read-only and its range is validated', async () => {
+  assert.match((await openCodeStats(BIN, { days: 7 })).text, /last 7 days/);
+  assert.match((await openCodeStats(BIN, { all: true })).text, /lifetime/);
+  assert.match((await openCodeStats(BIN, { days: 7, models: true })).text, /models/);
+  const ok = await call('/api/opencode-stats', { days: 7, models: true, cost: true }, CTX);
+  assert.equal(ok.status, 200, ok.body);
+  assert.match(ok.json().text, /last 7 days · models/);
+  assert.equal((await call('/api/opencode-stats', {}, CTX)).status, 400, 'a range is required');
+  const all = await call('/api/opencode-stats', { all: true }, CTX);
+  assert.match(all.json().text, /lifetime/);
 });
 
 test('routes: service status is read-only; start/stop refuse mid-turn; reload and info answer', async () => {

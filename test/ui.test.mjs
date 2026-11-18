@@ -2744,6 +2744,26 @@ for (const vp of VIEWPORTS) {
           return card ? card.scrollWidth - card.clientWidth : 0;
         });
         assert.ok(cardFit <= 1, `tabel laporan tidak melebihi kartu (${cardFit} px)`);
+        // 📊 opencode stats on demand: the CLI text is shown verbatim, columns kept (white-space: pre).
+        await page.eval(() => {
+          window.__statsFetch = window.fetch;
+          const prev = window.fetch;
+          window.fetch = (url, opts) =>
+            String(url) === '/api/opencode-stats'
+              ? Promise.resolve(new Response(JSON.stringify({ ok: true, text: 'opencode stats · last 7 days\nalpha-model    1.2m     3.4k' }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+              : prev(url, opts);
+        });
+        await page.click('#report-oc-7');
+        await page.waitFor(() => /opencode stats · last 7 days/.test(document.querySelector('#report-oc-out')?.textContent ?? ''), { timeoutMs: 4000, message: 'stats OpenCode tampil' });
+        const ocStats = await page.eval(() => ({
+          out: document.querySelector('#report-oc-out').textContent,
+          ws: getComputedStyle(document.querySelector('#report-oc-out')).whiteSpace,
+          hidden: document.querySelector('#report-oc-out').hidden,
+        }));
+        assert.match(ocStats.out, /alpha-model\s+1\.2m/);
+        assert.equal(ocStats.ws, 'pre', 'kolom tabel tidak dibungkus');
+        assert.equal(ocStats.hidden, false);
+        await page.eval(() => { if (window.__statsFetch) window.fetch = window.__statsFetch; });
         assert.deepEqual(await page.eval(unnamedButtons, '#report-modal'), []);
       } finally {
         await restoreReport(page);

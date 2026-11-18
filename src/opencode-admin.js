@@ -95,8 +95,22 @@ export function parseDebugAgents(output) {
     }));
 }
 
-/** 🔍 Info OpenCode (what `opencode debug …` shows in a terminal): paths, agents and the service status. */
-export async function openCodeInfo(bin) {
+/** `opencode stats` (shareable usage report): 0 = today, else the last N days, or lifetime with `all`. */
+const STATS_DAYS = new Set([0, 1, 7, 30, 90]);
+export async function openCodeStats(bin, { days = 7, all = false, models = false, cost = false, tools = false } = {}) {
+  if (!bin) throw new OpenCodeAdminError(404, 'OpenCode tidak ditemukan.');
+  const args = ['stats'];
+  if (all) args.push('--all');
+  else args.push('--days', String(STATS_DAYS.has(days) ? days : 7));
+  if (models) args.push('--models');
+  if (cost) args.push('--cost');
+  if (tools) args.push('--tools');
+  const r = await runOpenCode(bin, args, { timeout: 60_000 });
+  if (!r.ok) throw new OpenCodeAdminError(r.timedOut ? 504 : 502, `Statistik OpenCode gagal: ${firstLine(r)}`);
+  return { ok: true, text: r.output.slice(0, 20_000) };
+}
+
+/** 🔍 Info OpenCode (what `opencode debug …` shows in a terminal): paths, agents and the service status. */export async function openCodeInfo(bin) {
   if (!bin) throw new OpenCodeAdminError(404, 'OpenCode tidak ditemukan.');
   const [paths, agents, service] = await Promise.all([
     runOpenCode(bin, ['debug', 'paths'], { timeout: 20_000 }).catch(() => ({ ok: false, output: '' })),
