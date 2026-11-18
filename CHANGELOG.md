@@ -6,6 +6,13 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 - **📱 Chat di HP tidak lagi terjepit atau terpotong (viewport ±390 px).** Lima baris yang dulu "gepeng" kini rapi di layar sempit: **kartu delegasi** memakai lebar penuh untuk teks tugas dan menurunkan ringkasan **"· 5 langkah · ⏳ 3 berjalan"** ke barisnya sendiri; tombol **↓ Terbaru** duduk di antara percakapan dan composer sehingga tidak lagi menutupi pesan yang sedang dibaca; **header jawaban asisten** membiarkan nama tetap satu baris dan memindahkan waktu/Salin/☆ ke baris berikutnya bila sempit (sasaran sentuh tetap ≥ 24 px); **strip progres giliran** membungkus chip **"✓ Selesai · …"** ke baris kedua alih-alih terpotong di tepi kanan; dan **chip pengaturan di composer** tidak lagi memuat harga model ("— $0.15 in / $0.6 out /1M") — angkanya tetap ada di dialog yang dibuka chip. Desktop tidak berubah.
 
+## 1.0.70
+
+- **⚡ Putus arus Bardi otomatis (opt-in).** Di ⚙ → Remote power ada pilihan baru: setelah Windows menerima shutdown, jembatan menjadwalkan pemutusan listrik sendiri (jeda minimal **90 detik**, default 120) — satu ketukan ⏻, tanpa perlu menekan tombol di halaman status. Kalau Windows menolak shutdown, tidak ada jadwal yang dibuat. Halaman status tetap terbuka untuk memantau hitung mundur.
+- **📲 Pasangkan HP sekali, halaman daya selalu ada.** Tombol **Pasangkan HP** meminta kode **8 karakter** sekali pakai dari jembatan (token tetap di server) dan menampilkan **QR URL jembatan** (tanpa token). Di HP: buka halaman jembatan → **Punya kode pasangan?** → masukkan kode → tambahkan ke layar utama. Ini menghilangkan ketergantungan pada link handoff yang sekali pakai.
+- **Kartu Remote power** kini menampilkan checklist BIOS/Windows yang tidak bisa dicek aplikasi (Restore on AC Power Loss, Fast Startup/Hibernate off, Sleep never) dan tombol **⚡ Buka halaman daya**.
+- **Dokumentasi siklus lengkap** (Bardi + BIOS): urutan matikan → putus arus → cooldown 2 menit → nyalakan → booting → Adhitron; risiko **trial Tuya IoT Core habis ±6 bulan** dengan fallback Smart Life; panduan RDP vs Sunshine+Moonlight lewat Tailscale.
+
 ## 1.0.69
 
 - **Restart tertunda juga diterapkan setelah tugas latar non-delegasi.** Kalau mode/team/akun berubah saat sebuah **shell latar** (bukan subagent) masih berjalan, restart proses yang ditunda sekarang diterapkan begitu shell itu selesai — atau tepat setelah ■ Stop — tidak lagi menunggu sampai pesan berikutnya. Perilaku untuk delegasi (1.0.68) tidak berubah.
