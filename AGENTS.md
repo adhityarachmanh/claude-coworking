@@ -17,6 +17,23 @@ Tanpa framework dan tanpa bundler: Node >= 20, ES module, UI berupa file statis 
 oleh browser. Dependency npm-nya hanya paket WhatsApp + `qrcode`; ESLint dijalankan lewat `npm exec` (tidak dipasang
 sebagai dependency), dan Electron/esbuild/postject hanya devDependency untuk build.
 
+## Acuan upstream OpenCode (wajib)
+
+Perilaku CLI/ACP **OpenCode** mengikuti repo resmi yang tertulis di `repository` paket `@opencode/cli`:
+
+- **https://github.com/anomalyco/opencode** (paket npm `@opencode/cli`)
+- Versi yang dipakai aplikasi adalah versi **terpasang di mesin** (`opencode --version`), bukan ingatan dari versi lama.
+  Saat dokumen ini ditulis: **2.3.0**.
+
+Sebelum mengubah apa pun yang menyentuh OpenCode/ACP:
+
+1. Cek versi terpasang dan rilis/tag terbaru di repo di atas.
+2. Catat temuan di **`docs/design-opencode.md` → “Catatan upstream”**: tanggal, versi, perilaku yang diamati, sumber
+   (file/issue/PR atau probe).
+3. `test-support/fake-acp.mjs` harus meniru **bentuk frame yang nyata** (sebut sumbernya di komentar). Jangan membuat
+   tes hijau hanya karena fake menebak bentuk yang tidak pernah dikirim OpenCode.
+4. Workaround hanya untuk versi yang memang belum punya perbaikannya; sebutkan versi minimumnya.
+
 ## Perintah pokok
 
 | Kebutuhan | Perintah |
