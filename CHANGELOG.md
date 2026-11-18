@@ -6,6 +6,11 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 - **📱 Chat di HP tidak lagi terjepit atau terpotong (viewport ±390 px).** Lima baris yang dulu "gepeng" kini rapi di layar sempit: **kartu delegasi** memakai lebar penuh untuk teks tugas dan menurunkan ringkasan **"· 5 langkah · ⏳ 3 berjalan"** ke barisnya sendiri; tombol **↓ Terbaru** duduk di antara percakapan dan composer sehingga tidak lagi menutupi pesan yang sedang dibaca; **header jawaban asisten** membiarkan nama tetap satu baris dan memindahkan waktu/Salin/☆ ke baris berikutnya bila sempit (sasaran sentuh tetap ≥ 24 px); **strip progres giliran** membungkus chip **"✓ Selesai · …"** ke baris kedua alih-alih terpotong di tepi kanan; dan **chip pengaturan di composer** tidak lagi memuat harga model ("— $0.15 in / $0.6 out /1M") — angkanya tetap ada di dialog yang dibuka chip. Desktop tidak berubah.
 
+## 1.0.60
+
+- **✅ Notifikasi penutup dari OpenCode akhirnya dipakai.** OpenCode **memang** mengirim kabar saat shell latar selesai (docs: *“background calls … notify the session when they finish”*), tetapi frame itu datang **setelah** giliran berakhir (issue OpenCode #17505) — dan aplikasi dulu membuangnya karena tool call sudah ditandai selesai. Sekarang: `completed` pertama hanya berarti “dilepas ke latar”, dan **frame `completed` kedua** menutup tugas dengan **output/exit aslinya** (ringkasan tugas memuat output itu). Pemeriksaan pohon proses dari 1.0.56 tetap menjadi cadangan untuk versi OpenCode yang tidak mengirim frame susulan.
+- **📊 Kuota OpenCode Go hanya tampil kalau benar-benar ada datanya.** Bagian “Kuota OpenCode Go” (dan pemilih paket) kini **kosong** bila OpenCode Console tidak menjawab — tidak ada estimasi lokal, tidak ada ajakan login, dan **tidak ada fitur yang bergantung pada langganan**. Pemakaian lokal (ledger aplikasi) tetap ditampilkan terpisah apa adanya.
+
 ## 1.0.59
 
 - **📱 Baris Ekstensi (🧩) di HP tidak lagi menghimpit judul.** Nama plugin/agent yang panjang dan dua tombol aksinya kini turun ke baris sendiri (satu hal per baris), dengan target sentuh 44 px — sebelumnya judul bisa tertekan sampai tidak terbaca di 320–390 px.

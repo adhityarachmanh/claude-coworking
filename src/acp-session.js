@@ -288,6 +288,9 @@ export class AcpAdapter {
     // Child steps whose one-turn grace ran out (or whose turn was stopped): closed by the translator already, so a
     // late frame for one of them must NOT open a fresh row. Bounded like `childSessions`.
     this.droppedChildren = new Set();
+    // Background shell calls (toolCallId -> info), kept after the turn's tools are cleared: OpenCode notifies the
+    // session when such a shell finishes, and that late frame must still close its ⧗ task.
+    this.backgroundShells = new Map();
     this.text = null; // { id, parts } — the assistant message being streamed
     this.lastText = ''; // the last finished assistant message of the turn (reset per turn by the session)
     this.planSeq = 0;
@@ -318,7 +321,17 @@ export class AcpAdapter {
         if (this.droppedChildren.has(String(u.toolCallId ?? ''))) return;
         const info = this.toolInfo(u.toolCallId, u);
         if (u.status === 'in_progress' || u.status === 'completed' || u.status === 'failed') this.start(u.toolCallId);
-        if ((u.status === 'completed' || u.status === 'failed') && !info.done) {
+        if ((u.status === 'completed' || u.status === 'failed') && info.done) {
+          // A background shell's call was already "completed" when it was released to the background. A later
+          // completed/failed frame for that same call is the real finish (OpenCode docs: background calls notify the
+          // session when they finish) — close its ⧗ task from it, with the output it carries.
+          if (this.backgroundShells.has(u.toolCallId)) {
+            const text = textOf(u.content) || (u.rawOutput?.error ? String(u.rawOutput.error) : '');
+            this.finishShellTask(info, u.status, text, { force: true });
+          }
+          return;
+        }
+        if (u.status === 'completed' || u.status === 'failed') {
           info.done = true;
           const text = textOf(u.content) || (u.rawOutput?.error ? String(u.rawOutput.error) : u.status === 'completed' ? 'ok' : 'gagal');
           this.emit({ type: 'user', parent_tool_use_id: info.parent ?? null, message: { content: [{ type: 'tool_result', tool_use_id: u.toolCallId, content: clip(text, 8000), is_error: u.status === 'failed' }] } });
@@ -449,7 +462,7 @@ export class AcpAdapter {
 
   /** Merges what OpenCode said about a tool call so far (fields arrive spread over several updates). */
   toolInfo(id, u = {}) {
-    const info = this.tools.get(id) ?? { kind: 'other', title: '', rawInput: {}, locations: [], content: [], started: false, done: false };
+    const info = this.tools.get(id) ?? this.backgroundShells.get(id) ?? { kind: 'other', title: '', rawInput: {}, locations: [], content: [], started: false, done: false };
     if (u.kind) info.kind = u.kind;
     // OpenCode's shell tool tags its calls with metadata (shellID, background, command) while running AND in the
     // final one (rawOutput.metadata): kept here, so the session can register `oc:<shellID>` as a background task.
@@ -522,20 +535,38 @@ export class AcpAdapter {
     const shellId = String(info.meta?.shellID ?? '');
     if (info.shellTask || !/^sh_[\w-]{1,100}$/.test(shellId) || (name !== 'Bash' && name !== 'PowerShell')) return;
     info.shellTask = true;
+    info.callId = id;
     const command = typeof input.command === 'string' ? input.command : info.title;
     this.emit({ type: 'system', subtype: 'task_started', task_id: `oc:${shellId}`, is_backgrounded: Boolean(info.meta.background), tool_use_id: id, description: command, startedAt: Date.now(), source: 'acp' });
+    // A background shell outlives its tool call: remember the call so a late `completed` frame (OpenCode notifies the
+    // session when it finishes) still reaches this task after the turn's tools were cleared.
+    if (info.meta?.background) {
+      this.backgroundShells.set(id, info);
+      if (this.backgroundShells.size > 20) this.backgroundShells.delete(this.backgroundShells.keys().next().value);
+    }
   }
 
-  /** The call is over: a foreground shell's task ends with it (its outcome; a background one keeps running). */
-  finishShellTask(info, status, text = '') {
+  /**
+   * The call is over. A foreground shell's task ends with it. A BACKGROUND shell's first completion only means
+   * "released to the background": OpenCode keeps it running and (docs: "notify the session when they finish") sends
+   * a later update — `force` closes the task from that late frame. Without such a frame the process-tree sweep in the
+   * session (reapBackgroundShells) is the fallback.
+   */
+  finishShellTask(info, status, text = '', { force = false } = {}) {
     const shellId = String(info.meta?.shellID ?? '');
-    if (!info.shellTask || !/^sh_[\w-]{1,100}$/.test(shellId) || info.meta?.background) return;
+    if (!info.shellTask || !/^sh_[\w-]{1,100}$/.test(shellId)) return;
+    if (info.meta?.background && !force) return; // it keeps running past the call: not finished yet
     this.emit({
       type: 'system',
       subtype: 'task_updated',
       task_id: `oc:${shellId}`,
-      patch: { status: status === 'failed' ? 'failed' : 'completed', ...(status === 'failed' && text ? { error: clip(text, 300) } : {}) },
+      patch: {
+        status: status === 'failed' ? 'failed' : 'completed',
+        ...(status === 'failed' && text ? { error: clip(text, 300) } : {}),
+        ...(text ? { summary: clip(text, 300) } : {}), // the late frame carries the real output/exit
+      },
     });
+    if (info.meta?.background) this.backgroundShells.delete(info.callId);
   }
 
   flushText() {
@@ -615,6 +646,8 @@ export class AcpAdapter {
     // A closed (grace-expired or stopped) child step never reopens — a fresh row would be a phantom.
     if (this.droppedChildren.has(id)) return false;
     if (this.tools.has(id)) return true;
+    // A background shell outlives the turn: OpenCode's late "finished" frame must reach its task, not be dropped.
+    if (this.backgroundShells.has(id)) return true;
     const sid = this.childSessionId(u);
     if (sid) {
       // The `_meta` marker is OpenCode's own statement that this frame belongs to a child session it is running:

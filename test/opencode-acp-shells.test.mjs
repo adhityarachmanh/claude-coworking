@@ -187,6 +187,20 @@ test('⧗ a background shell (metadata.background) keeps its task running past t
   assert.equal(stop.status, 409, 'no unique process matches here (no real kill in tests)');
 });
 
+test('⧗ OpenCode\'s late "finished" frame closes the background task (not the process sweep)', async () => {
+  await api(`/api/projects/${id}/prompt`, { text: 'shelllatar3' });
+  await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === 'oc:sh_fake5' && x.status === 'running' && x.background === true));
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && o.ok === true);
+  // The turn is over; the call already completed once ("released"). The second, real completion arrives late and
+  // must be accepted out of turn — with its output as the task summary.
+  const closed = await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === 'oc:sh_fake5' && x.status === 'completed'), 15000);
+  const task = closed.tasks.find((x) => x.id === 'oc:sh_fake5');
+  assert.equal(task.status, 'completed');
+  assert.match(String(task.summary ?? ''), /benar-benar selesai/, 'closed from the late frame, not the sweep');
+  const rows = ((await snapshot()).chats?.[id] ?? []).filter((c) => c.taskDone === true && /shell-latar3/.test(c.text ?? ''));
+  assert.equal(rows.length, 1, 'announced once');
+});
+
 test('⧗ a background shell that stops on its own is closed and announced (OpenCode sends no signal)', async () => {
   await api(`/api/projects/${id}/prompt`, { text: 'shelllatar2' });
   await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === 'oc:sh_fake4' && x.status === 'running' && x.background === true));

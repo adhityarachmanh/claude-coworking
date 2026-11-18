@@ -6,6 +6,7 @@ import { accountImpactText } from '../core/account-impact.js';
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { fmtNum, fmtShort, fmtUsd } from '../core/format.js';
+import { goQuotaFromConsole } from '../core/plan-quota.js';
 import { state } from '../core/state.js';
 
 const POLL_MS = 2000;
@@ -13,7 +14,7 @@ const POLL_LIMIT_MS = 10 * 60_000; // an OAuth attempt the user never finishes s
 
 /** OpenCode's Akun state: providers (null = not loaded), the provider/method being logged in, a running OAuth attempt,
  *  and the ＋ Provider kustom form (custom = null while closed). `removing` guards the custom-provider delete. */
-const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false, logoutError: null, showAllGo: false, custom: null, removing: false, testing: null, testResult: null, testResults: {} };
+const oc = { providers: null, loading: false, error: null, picking: false, filter: '', provider: null, method: null, attempt: null, busy: false, logoutError: null, custom: null, removing: false, testing: null, testResult: null, testResults: {} };
 let pollTimer = null;
 
 /** The app-wide engine (config.engine; old servers: Claude Code). */
@@ -144,62 +145,12 @@ function localUsageHtml() {
 // numbers, but independent of whether those fields carry a 0..1 ratio or a 0..100 percentage. Every field is
 // re-validated: a bad payload must degrade, not print "NaN"/"undefined".
 
-/** The three official Go windows, in row order, with each window's share of the monthly limit. */
-const GO_WINDOWS = [
-  { key: '5h', label: '5 jam', share: 0.2 },
-  { key: '7d', label: '7 hari', share: 0.5 },
-  { key: '30d', label: '30 hari', share: 1 },
-];
-const GO_ROWS = 8; // the list stays short; "Tampilkan semua" reveals the rest
 // The server validates the same ids; the price only fills the tooltip (the note says it in full).
 const GO_PLAN_OPTIONS = [
   { id: 'go', label: 'Go', price: '$10/bulan' },
   { id: 'plus', label: 'Go Plus', price: '$40/bulan' },
   { id: 'teams', label: 'Go Teams', price: '$20/anggota/bulan' },
 ];
-
-const goNumber = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-const goTone = (ratio) => (ratio > 0.9 ? 'bad' : ratio >= 0.7 ? 'warn' : 'ok');
-
-/** One model row: a name, a monthly used/limit pair and the three ratios (0..1+), computed from what was spent. */
-function goRow(m) {
-  if (!m || typeof m !== 'object') return null;
-  const model = typeof m.model === 'string' ? m.model.trim().slice(0, 120) : '';
-  if (!model) return null;
-  const limit = goNumber(m.limit);
-  const unlimited = m.unlimited === true; // a free model: nothing to spend (no limit to show)
-  const used30d = goNumber(m.used30d);
-  const remaining = goNumber(m.remaining) ?? (limit != null && limit > 0 && used30d != null ? Math.max(0, limit - used30d) : null);
-  const windows = GO_WINDOWS.map((w) => {
-    const used = goNumber(m[`used${w.key}`]) ?? 0;
-    return { label: w.label, ratio: limit != null && limit > 0 ? Math.max(0, used / (limit * w.share)) : 0 };
-  });
-  return { model, unlimited, limit, used30d, remaining, windows };
-}
-
-function goWindowHtml(row, w) {
-  const pct = Math.round(w.ratio * 100);
-  const width = Math.round(Math.min(100, w.ratio * 100));
-  const label = `${row.model} · ${w.label} · ${pct}%`;
-  return `<div class="oc-go-win">
-      <span class="oc-go-win-label">${w.label}</span>
-      <div class="bar oc-go-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, pct)}" aria-valuetext="${pct}%" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><i class="${goTone(w.ratio)}" style="width:${width}%"></i></div>
-      <b class="oc-go-pct">${pct}%</b>
-    </div>`;
-}
-
-function goRowHtml(row) {
-  const used = fmtUsd(row.used30d);
-  const money = row.unlimited
-    ? `terpakai ${used} / tak terbatas · sisa tak terbatas`
-    : row.limit == null
-      ? `terpakai ${used} / batas belum diketahui`
-      : `terpakai ${used} / ${fmtUsd(row.limit)} · sisa ${fmtUsd(row.remaining)}`;
-  return `<li class="oc-go-row">
-    <div class="oc-go-head"><b class="oc-go-model">${escapeHtml(row.model)}</b><span class="oc-go-money">${escapeHtml(money)}</span></div>
-    <div class="oc-go-wins">${row.windows.map((w) => goWindowHtml(row, w)).join('')}</div>
-  </li>`;
-}
 
 /** "30 Nov 2026, 14.05" for a console timestamp (local time). */
 function dateText(iso) {
@@ -254,30 +205,11 @@ function consoleQuotaHtml(go) {
   </div>`;
 }
 
-/** The old estimated rows, reused inside the console panel and as the fallback when console is unavailable. */
-function estimateRowsHtml(estimate) {
-  const rows = (Array.isArray(estimate?.models) ? estimate.models : []).map(goRow).filter(Boolean);
-  if (!rows.length) return '<p class="muted small">Belum ada pemakaian OpenCode Go yang tercatat.</p>';
-  const visible = oc.showAllGo ? rows : rows.slice(0, GO_ROWS);
-  return `<ul class="oc-go-list" id="oc-go-models">${visible.map(goRowHtml).join('')}</ul>
-    ${rows.length > GO_ROWS ? `<button type="button" class="ghost oc-go-toggle" data-act="oc-go-all" aria-expanded="${oc.showAllGo}" aria-controls="oc-go-models">${oc.showAllGo ? 'Tampilkan lebih sedikit' : `Tampilkan semua (${rows.length})`}</button>` : ''}`;
-}
-
-/** "Kuota OpenCode Go": exact console data when available, otherwise the local estimate. */
+/** "Kuota OpenCode Go": only the exact console data. Without a subscription the panel stays empty (no estimate, no nag). */
 function goQuotaHtml() {
   const go = oc.providers?.go;
-  if (!go || typeof go !== 'object' || go.available === false) return '';
-  if (go.source === 'console' && go.console) return consoleQuotaHtml(go);
-  const estimate = go.estimate ?? go;
-  const plan = GO_PLAN_OPTIONS.some((p) => p.id === go.plan) ? go.plan : 'go';
-  const planButtons = GO_PLAN_OPTIONS.map(
-    (p) => `<button type="button" class="engine-opt${p.id === plan ? ' on' : ''}" data-act="oc-go-plan" data-plan="${p.id}" aria-pressed="${p.id === plan}" title="${escapeHtml(`Paket ${p.label}: ${p.price}`)}"${state.accountAuth ? '' : ' disabled'}>${escapeHtml(p.label)}</button>`,
-  ).join('');
-  const note = typeof go.note === 'string' && go.note.trim() ? go.note : 'Perkiraan dari pemakaian yang tercatat × harga list model.';
-  return `<div class="acct-section oc-go"><div class="acct-title"><b>Kuota OpenCode Go</b></div>
-    <div class="engine-opts oc-go-plan" role="group" aria-label="Paket OpenCode Go"><span class="muted small">Paket</span>${planButtons}</div>
-    <p class="muted small oc-go-note">${escapeHtml(note)}</p>
-    ${estimateRowsHtml(estimate)}</div>`;
+  if (!goQuotaFromConsole(go)) return '';
+  return consoleQuotaHtml(go);
 }
 
 function connectedHtml() {
@@ -449,10 +381,6 @@ export async function onOpenCodeAction(act, el, rerender) {
     case 'oc-refresh':
       oc.logoutError = null;
       await loadOpenCode(rerender);
-      return true;
-    case 'oc-go-all':
-      oc.showAllGo = !oc.showAllGo;
-      rerender();
       return true;
     case 'oc-go-plan': {
       const plan = el.dataset.plan;

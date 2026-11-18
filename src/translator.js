@@ -332,6 +332,7 @@ export class StreamTranslator {
       const p = msg.patch ?? {};
       const wasRunning = t.status === 'running' || t.status === 'pending';
       if (p.status) t.status = p.status;
+      if (p.summary) t.summary = truncate(p.summary, 300); // a late "finished" frame carries the real output
       if (p.is_backgrounded != null) t.background = p.is_backgrounded;
       if (p.error) t.error = truncate(p.error, 300);
       if (p.status && p.status !== 'running' && p.status !== 'pending') t.endedAt = Date.now();

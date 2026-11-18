@@ -523,11 +523,11 @@ async function turn(sessionId, text) {
   if (/^shell(berkas|latar2|latar|gantung)/.test(text)) {
     // OpenCode's shell tool tags its calls with metadata (shellID, background); its output goes to
     // <data>/opencode/shell/<project.id>/<shellID>.out — the app reads that file for the ⧗ panel.
-    const kind = /latar2/.test(text) ? 'latar2' : /latar/.test(text) ? 'latar' : /gantung/.test(text) ? 'gantung' : 'berkas';
-    const shellId = `sh_fake${{ berkas: 1, latar: 2, gantung: 3, latar2: 4 }[kind]}`;
+    const kind = /latar3/.test(text) ? 'latar3' : /latar2/.test(text) ? 'latar2' : /latar/.test(text) ? 'latar' : /gantung/.test(text) ? 'gantung' : 'berkas';
+    const shellId = `sh_fake${{ berkas: 1, latar: 2, gantung: 3, latar2: 4, latar3: 5 }[kind]}`;
     const command = `echo shell-${kind}`;
     const call = `call-shell-${kind}`;
-    const meta = { shellID: shellId, background: kind === 'latar' || kind === 'latar2', command };
+    const meta = { shellID: shellId, background: kind === 'latar' || kind === 'latar2' || kind === 'latar3', command };
     const writeOut = (line) => {
       if (!SHELL_OUT_DIR) return;
       try {
@@ -547,6 +547,22 @@ async function turn(sessionId, text) {
     await sleep(800);
     writeOut(`${kind}: selesai\n`);
     update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: `${kind}: mulai\nselesai\n` } }], rawOutput: { metadata: { exit: 0, shellID: shellId } } });
+    if (kind === 'latar3') {
+      // The first completion only means "released to the background". OpenCode then notifies the session when the
+      // shell really finishes — a second completed frame, AFTER the prompt response (issue #17505's behaviour):
+      // the app must close the ⧗ task from this frame, not from the process-tree sweep.
+      setTimeout(() => {
+        writeOut('latar3: benar-benar selesai\n');
+        update(sessionId, {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: call,
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'latar3: benar-benar selesai' } }],
+          rawOutput: { metadata: { exit: 0, shellID: shellId } },
+          _meta: meta,
+        });
+      }, 1200);
+    }
     await say('msg_shell_done', 'Shell selesai.');
     return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
   }
