@@ -233,7 +233,7 @@ async function purgeProject() {
   const id = $('#data-project')?.value;
   if (!id) return toast('Pilih project dulu.', 'warn');
   const name = projectName(id);
-  if (!window.confirm(`Hapus data project "${name}"?\n\nChat kedua mesin, laporan pemakaian, pengaturan, sesi, antrian, bundel redo, dan lampiran antrian project ini dihapus. Folder project dan transkrip Claude di disk tidak disentuh. Backup otomatis yang sudah dibuat tetap utuh dan tidak bisa dihapus per project. Tindakan ini tidak bisa dibatalkan; cadangkan dulu bila perlu.`)) return;
+  if (!window.confirm(`Hapus data project "${name}"?\n\nChat kedua sumber, laporan pemakaian, pengaturan, sesi, antrian, bundel redo, dan lampiran antrian project ini dihapus. Folder project dan transkrip Claude di disk tidak disentuh. Backup otomatis yang sudah dibuat tetap utuh dan tidak bisa dihapus per project. Tindakan ini tidak bisa dibatalkan; cadangkan dulu bila perlu.`)) return;
   try {
     await api('/api/data/project', { projectId: id, confirm: 'HAPUS' });
     toast(`Data project "${name}" dihapus. Halaman dimuat ulang.`, 'ok');

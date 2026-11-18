@@ -156,11 +156,12 @@ test('a model picked for the other engine switches the engine and is kept as sen
   assert.equal((await state()).settings[alfa].engine, 'opencode');
   assert.deepEqual((await state()).engineSettings[alfa].claude, { model: 'opus', effort: '', agent: '' }, 'Claude\'s own choice is remembered');
 
-  // A patch without a model still loads the target engine's own saved model (back and forth remembers both).
+  // One set of settings: a bare engine patch starts from Default (the model belongs to the engine it was picked
+  // for), and coming back never restores a different model.
   assert.equal((await api(`/api/projects/${alfa}/settings`, { engine: 'claude' })).status, 200);
-  assert.equal((await statusOf(alfa)).model, 'opus');
+  assert.equal((await statusOf(alfa)).model, '', 'engine alone: Default, not the model of the other engine');
   assert.equal((await api(`/api/projects/${alfa}/settings`, { engine: 'opencode' })).status, 200);
-  assert.equal((await statusOf(alfa)).model, 'opencode-go/kimi-k3');
+  assert.equal((await statusOf(alfa)).model, '');
 });
 
 test('the chat is ONE timeline: both engines\' rows, tagged with their engine, oldest first', async () => {
@@ -286,7 +287,7 @@ test('POST /models lists BOTH engines and keeps the old fields for the running o
   }, 'OpenCode models');
   assert.deepEqual(oc.engines.opencode.models.map((m) => m.value), ['opencode-go/beam-free', 'opencode-go/kimi-k3', 'google/gemini-2.5-flash']);
   assert.deepEqual(oc.engines.opencode.models.map((m) => m.efforts), [['low', 'high', 'max'], [], ['minimal', 'low']]);
-  assert.equal(oc.engines.opencode.current, 'opencode-go/kimi-k3', 'the saved OpenCode model is shown while Claude runs');
+  assert.equal(oc.engines.opencode.current, '', 'one set of settings: no separate OpenCode model is remembered');
   assert.equal(oc.engines.opencode.needsStart, false);
   // The old top-level shape is unchanged for the running engine.
   assert.equal(oc.models.length, 0);

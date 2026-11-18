@@ -15,7 +15,7 @@ export async function openChecklist() {
     const data = await api(`/api/projects/${state.active}/checklist`);
     const checks = Array.isArray(data?.checks) ? data.checks : [];
     const done = checks.filter((c) => c.ok).length;
-    $('#checklist-sum').textContent = `${done}/${checks.length} siap · mesin ${data?.engine === 'opencode' ? 'OpenCode' : 'Claude Code'}${data?.model ? ` · model ${data.model}` : ''}`;
+    $('#checklist-sum').textContent = `${done}/${checks.length} siap · sumber ${data?.engine === 'opencode' ? 'OpenCode' : 'Claude'}${data?.model ? ` · model ${data.model}` : ''}`;
     $('#checklist-list').innerHTML = checks
       .map(
         (c) =>

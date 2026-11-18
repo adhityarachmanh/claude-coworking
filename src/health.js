@@ -215,7 +215,7 @@ export function buildHealth(ctx = {}, { now = Date.now() } = {}) {
     }),
 
     run('opencode', 'OpenCode', () => {
-      if (!c.opencode) return { ok: false, warn: true, detail: 'Belum terpasang', hint: 'Opsional: pasang OpenCode untuk memakai mesin kedua (⚙ → Kompatibilitas OpenCode).' };
+      if (!c.opencode) return { ok: false, warn: true, detail: 'Belum terpasang', hint: 'Opsional: pasang OpenCode untuk memakai model provider lain (⚙ → Kompatibilitas OpenCode).' };
       const version = oneLine(safe(() => c.hub?.config?.engines?.opencode?.version, '')).replace(/^v/i, '');
       return { ok: true, detail: version ? `Terpasang · v${version}` : 'Terpasang' };
     }),

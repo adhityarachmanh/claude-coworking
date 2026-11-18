@@ -98,7 +98,7 @@ export function setupSummary(view) {
   const ready = mandatory.filter((item) => item.state === 'ready').length;
   const missing = mandatory.find((item) => item.state !== 'ready');
   if (view.busy || view.job?.state === 'running') return `Memasang ${view.job?.target ?? 'komponen'}…`;
-  if (!missing) return `${ready}/${mandatory.length} siap · tetap bisa memakai mesin yang sudah ada`;
+  if (!missing) return `${ready}/${mandatory.length} siap · tetap bisa memakai sumber yang sudah ada`;
   return `${ready}/${mandatory.length} siap · berikutnya: ${missing.label}`;
 }
 

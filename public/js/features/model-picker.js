@@ -66,8 +66,8 @@ export function modelPanelHtml({ catalog, current, query, engine, modelAuto = fa
   if (claude.length) {
     const body = claudeMatches.length
       ? claudeMatches.flatMap((g) => g.models.map((m) => mpRow(m, 'claude', { current, engine, locked, favSet }, nextId()))).join('')
-      : mpInfo(query ? 'Tidak ada model yang cocok' : 'Katalog Claude Code belum tersedia');
-    groups.push(`<div class="mp-group"><div class="mp-head"><span class="mp-title">Claude Code</span></div>${body}</div>`);
+      : mpInfo(query ? 'Tidak ada model yang cocok' : 'Katalog Claude belum tersedia');
+    groups.push(`<div class="mp-group"><div class="mp-head"><span class="mp-title">Claude</span></div>${body}</div>`);
   }
   const ocGroups = openCodeProviderGroups(opencode, query, providerNames, providerAuth);
   if (opencode.length) {

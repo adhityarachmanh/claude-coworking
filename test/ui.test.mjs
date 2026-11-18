@@ -1080,27 +1080,15 @@ const restoreAccount = (page) =>
 /** OpenCode's Akun with one provider credential; logout is answered with a 400. Switches the app to OpenCode.
  *  `go` is passed through as the providers response's Go quota (omitted entirely when null); `usage` feeds the local
  *  summary above it. */
-/** 👤 Akun always opens on the Claude tab (account.js "no remembered choice"): these tests switch to the OpenCode tab.
- *  `oc` (and its cached providers) outlives a test in the same document, so the fresh providers answer is awaited
- *  before anything clicks into the panel — clicking Edit on a previous test's stale data would prefill wrong. */
+/** 👤 Akun is one page now: the Claude section and the OpenCode providers together, no tab to switch. This helper
+ *  opens it and waits for the fresh provider answer (a load already in flight from the account button queues behind
+ *  it; ↻ asks again). `oc` and its cached providers outlive a test in the same document, so the fresh answer is
+ *  awaited before anything clicks into the panel. */
 async function openOpenCodeTab(page) {
-  // `#acct-tab` stays in the document after the dialog is closed, so its existence alone is not "the dialog is open".
-  await page.waitFor(() => !document.querySelector('#account-modal')?.hidden && document.querySelector('#acct-tab'), { timeoutMs: 4000, message: 'dialog Akun terbuka' });
-  const pick = (tab) =>
-    page.eval((value) => {
-      const s = document.querySelector('#acct-tab');
-      s.value = value;
-      s.dispatchEvent(new Event('change', { bubbles: true }));
-    }, tab);
-  // A previous test in this document may have left the tab on OpenCode: go through Claude first so the switch really
-  // re-renders the panel and asks for the fresh provider list this helper waits for. Each pick is its own eval: the
-  // first one re-renders the panel, so the old <select> node is detached and a second dispatch on it goes nowhere.
-  await pick('claude');
-  // The account button also asks for the providers quietly when the page connects. A load already in flight makes the
-  // switch queue behind it (the app never sends the same request twice), which is correct but leaves this test's stub
-  // with no request of its own: switch away and back once more to ask again.
+  await page.waitFor(() => !document.querySelector('#account-modal')?.hidden && /Provider OpenCode/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 6000, message: 'dialog Akun terbuka' });
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await pick('opencode');
+    if (await page.eval(() => (window.__ocAcct?.providerDone ?? 0) >= 1)) return;
+    await page.eval(() => document.querySelector('#account-body [data-act="oc-refresh"]')?.click()).catch(() => {});
     try {
       await page.waitFor(() => window.__ocAcct?.providerDone >= 1, { timeoutMs: 2500, message: 'daftar provider segar termuat' });
       return;
@@ -1113,14 +1101,13 @@ async function openOpenCodeTab(page) {
             return {
               accountAuth: state.accountAuth,
               available: state.config?.engines?.opencode?.available ?? null,
-              panel: document.querySelector('#acct-panel')?.textContent?.trim().slice(0, 200) ?? '',
+              panel: document.querySelector('#account-body')?.textContent?.trim().slice(0, 200) ?? '',
               providerCalls: window.__ocAcct?.providerCalls ?? null,
             };
           })
           .catch((e) => ({ probe: e.message }));
         throw new Error(`${err.message} ${JSON.stringify({ ...why, problems: realProblems(page) })}`);
       }
-      await pick('claude');
     }
   }
 }
@@ -2060,7 +2047,7 @@ for (const vp of VIEWPORTS) {
         assert.deepEqual(river.options, ['GLM-5.3', 'GLM 5.3 Flash'], 'opsi tanpa prefiks provider di grupnya sendiri');
         assert.ok(go, 'grup opencode-go tetap ada (dengan jumlah model)');
         assert.ok(!go.options.some((t) => t.includes('opencode-go · ')), 'tidak ada lagi prefiks opencode-go · di dalam grup');
-        assert.ok(groups.some((g) => g.label === 'Claude Code'), 'grup Claude Code tidak berubah');
+        assert.ok(groups.some((g) => g.label === 'Claude'), 'grup Claude tetap ada (satu per sumber)');
         assert.deepEqual(realProblems(page), []);
       } finally {
         await restoreModels(page);
@@ -2687,12 +2674,12 @@ for (const vp of VIEWPORTS) {
       }
     });
 
-    test('Laporan: Per mesin (4 label, % dari total, biaya) dan petunjuk biaya di kartu KPI', async () => {
+    test('Laporan: Per sumber model (4 label, % dari total, biaya) dan petunjuk biaya di kartu KPI', async () => {
       await ensureApp(page, '#demo');
       await stubReport(page, reportSummary());
       try {
         await tap(page, '#btn-report');
-        await page.waitFor(() => document.querySelectorAll('#report-engines tbody tr').length === 4, { timeoutMs: 4000, message: 'blok Per mesin dengan 4 baris' });
+        await page.waitFor(() => document.querySelectorAll('#report-engines tbody tr').length === 4, { timeoutMs: 4000, message: 'blok per sumber model dengan 4 baris' });
         assert.equal(await page.eval(() => document.querySelector('#report-modal .report-more')?.open), false, 'rincian laporan dilipat dulu');
         await page.eval(() => (document.querySelector('#report-modal .report-more').open = true));
         const view = await page.eval(() => {
@@ -2707,9 +2694,9 @@ for (const vp of VIEWPORTS) {
             hint: kpis.at(-1)?.querySelector('.kpi-hint')?.textContent ?? '',
           };
         });
-        assert.equal(view.heading, 'Per mesin');
+        assert.equal(view.heading, 'Per sumber model');
         // No request/turn columns: those counts only exist on one surface each.
-        assert.deepEqual(view.heads, ['Mesin · sumber', 'Total', '%', 'Biaya']);
+        assert.deepEqual(view.heads, ['Sumber · kanal', 'Total', '%', 'Biaya']);
         assert.deepEqual(view.rows, [
           ['Claude · Web', '500', '50%', '$0.50'],
           ['Claude · Terminal', '300', '30%', '— (belum ada biaya)'], // null cost, nothing known
@@ -4486,8 +4473,8 @@ for (const vp of VIEWPORTS) {
         assert.equal(view.first.b, null, 'baris picker tidak lagi membawa badge mesin');
         assert.equal(view.first.header, '⌘ OpenCode', 'header sesi tetap menyebut mesin yang berjalan');
         assert.equal(view.first.engine, 'opencode');
-        assert.equal(view.first.aria, 'Mesin project: OpenCode');
-        assert.match(view.first.title, /dipilih oleh model di Pengaturan giliran/);
+        assert.equal(view.first.aria, 'Sumber model: OpenCode');
+        assert.match(view.first.title, /ditentukan oleh model di Pengaturan giliran/);
         assert.equal(view.second.a, null, 'status berubah: picker tetap tanpa badge');
         assert.equal(view.second.b, null);
         assert.equal(view.second.header, '✳ Claude');
@@ -4605,7 +4592,8 @@ for (const vp of VIEWPORTS) {
       }, projectId);
       assert.match(r.opencode, /OpenCode/);
       assert.doesNotMatch(r.opencode, /Claude/);
-      assert.match(r.claude, /Claude Code/);
+      assert.match(r.claude, /Claude/);
+      assert.doesNotMatch(r.claude, /OpenCode/);
       assert.deepEqual(realProblems(page), []);
     });
 
@@ -4719,40 +4707,24 @@ for (const vp of VIEWPORTS) {
       try {
         await tap(page, '#btn-account');
         await settle(page, 'account-modal');
-        await page.waitFor(() => document.querySelector('#account-body #acct-tab')?.tagName === 'SELECT', { timeoutMs: 4000, message: 'dropdown mesin Akun' });
+        await page.waitFor(() => !document.querySelector('#account-modal').hidden && /Provider OpenCode/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 8000, message: 'satu halaman Akun memuat Claude + provider' });
         const first = await page.eval(() => ({
-          options: [...document.querySelectorAll('#acct-tab option')].map((o) => o.value),
-          selected: document.querySelector('#acct-tab').value,
+          tabSelect: Boolean(document.querySelector('#acct-tab')),
+          note: document.querySelector('.acct-sources-note')?.textContent ?? '',
+          hasClaude: /Login dengan akun Claude|Ganti akun/.test(document.querySelector('#account-body').textContent),
+          hasProviders: /Provider OpenCode/.test(document.querySelector('#account-body').textContent),
           engineSwitch: Boolean(document.querySelector('#account-body .engine-switch')),
           engineButtons: document.querySelectorAll('#account-body [data-act="engine"]').length,
           title: document.querySelector('#account-title').textContent,
         }));
-        assert.deepEqual(first.options, ['claude', 'opencode'], 'dua mesin di dropdown');
-        assert.equal(first.selected, 'claude', 'default mesin Claude');
+        assert.equal(first.tabSelect, false, 'tidak ada dropdown mesin lagi');
+        assert.match(first.note, /Model selain Claude/, 'penjelasan dua sumber login dalam satu halaman');
+        assert.equal(first.hasClaude, true, 'bagian Claude ada');
+        assert.equal(first.hasProviders, true, 'bagian provider OpenCode ada di halaman yang sama');
         assert.equal(first.title, '👤 Akun');
         assert.equal(first.engineSwitch, false, 'tidak ada sakelar mesin');
         assert.equal(first.engineButtons, 0, 'tidak ada tombol "Jadikan mesin bawaan"');
-
-        await page.eval(() => {
-          const s = document.querySelector('#acct-tab');
-          s.value = 'opencode';
-          s.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-        await page.waitFor(() => /Provider OpenCode/.test(document.querySelector('#acct-panel')?.textContent ?? ''), { timeoutMs: 6000, message: 'isi panel OpenCode' });
-        const second = await page.eval(() => ({
-          selected: document.querySelector('#acct-tab').value,
-          panel: document.querySelector('#acct-panel').textContent,
-        }));
-        assert.equal(second.selected, 'opencode');
-        assert.match(second.panel, /Provider OpenCode/);
-
-        await page.eval(() => {
-          const s = document.querySelector('#acct-tab');
-          s.value = 'claude';
-          s.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-        await page.waitFor(() => /Login dengan akun Claude|Ganti akun/.test(document.querySelector('#acct-panel')?.textContent ?? ''), { timeoutMs: 3000, message: 'panel Claude aktif lagi' });
-        assert.equal(await page.eval(() => window.__acctEngineCalls), 0, 'dropdown hanya mengganti info, tidak memanggil /api/engine');
+        assert.equal(await page.eval(() => window.__acctEngineCalls), 0, 'halaman Akun tidak memanggil /api/engine');
         assert.deepEqual(realProblems(page), [], 'tanpa error console');
         await page.press('Escape');
       } finally {
@@ -4866,7 +4838,7 @@ for (const vp of VIEWPORTS) {
         // Header: enough of the checklist done and no failing *essential* check → "Siap dipakai (5/6)".
         assert.equal(view.verdict, 'Siap dipakai (5/6)');
         assert.match(view.meta, /v0\.2\.0/);
-        assert.match(view.meta, /Claude Code/);
+        assert.match(view.meta, /Claude/);
         assert.match(view.meta, /aktif 3 jam 5 mnt/);
         assert.match(view.meta, /port 4317/);
 

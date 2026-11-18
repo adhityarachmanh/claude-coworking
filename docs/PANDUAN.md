@@ -82,13 +82,13 @@ Yang **butuh kamu** selalu di atas: izin yang menunggu, giliran terputus, atau y
 
 Project yang foldernya sudah dipindah/dihapus ditandai **folder hilang** dan bisa dibersihkan lewat 🗑 di daftar project (project custom tetap terdaftar setelah restart/refresh). Yang dihapus hanya data aplikasi (pengaturan, riwayat chat kedua mesin, antrian, baris laporan token); folder di disk dan file backup tidak disentuh. Project yang foldernya masih ada ditolak, dan HP yang hanya-lihat tidak bisa menghapus.
 
-## Melihat pemakaian per mesin
+## Melihat pemakaian per sumber model
 
 1. Buka **📊 Laporan** (avatar akun, atau `Ctrl+P` → *Laporan*).
 2. Pilih **Semua akun (Claude + OpenCode)** untuk melihat kedua mesin sekaligus, atau satu akun saja.
 3. Pilih periode: Hari ini, 7 hari, 30 hari, Bulan ini, Semua, atau tanggal sendiri.
 4. Di atas kartu ringkasan ada **“Dibanding periode sebelumnya (sama panjang)”**: persentase naik/turun **token** dan **biaya** dibanding rentang tepat sebelum periode yang dipilih (muncul saat rentang mulai jelas, bukan “Semua”).
-5. Di bagian **Per mesin** lihat baris **Claude · Web**, **Claude · Terminal**, **OpenCode · Web**, dan **OpenCode · Terminal**.
+5. Di bagian **Per sumber model** lihat baris **Claude · Web**, **Claude · Terminal**, **OpenCode · Web**, dan **OpenCode · Terminal**.
    - **Total** = token untuk kelompok itu, **%** = bagiannya dari seluruh laporan.
    - **Biaya** `—` berarti belum ada catatan biaya untuk kelompok itu; `$0.00` berarti model gratis (biasanya OpenCode).
    - Angka dalam tanda kurung, misalnya `$1.20 (87%)`, berarti hanya 87% catatan di kelompok itu yang punya biaya.
@@ -143,7 +143,7 @@ Harga OpenCode Go diambil dari katalog resmi `opencode.ai` dan disimpan di folde
    Effort bisa berbeda: refactor yang sudah jelas bisa `Kuat` + `medium`, bug yang belum jelas bisa `Seimbang` + `high`.
 3. Di chat muncul `🤖 Model Auto: Seimbang → sonnet` saat model berganti. Pilihan model di daftar ikut berubah.
 4. Memilih model tertentu (atau **Default**) mematikan Auto. Saat tim sedang bekerja, model tidak diganti di tengah giliran.
-5. **Atur tangga…** (di bawah pilihan model saat Auto aktif): pilih model untuk **Hemat / Seimbang / Kuat / Maks** per mesin, atau **Bawaan** untuk kembali ke default. Berlaku untuk Claude Code dan OpenCode.
+5. **Atur tangga…** (di bawah pilihan model saat Auto aktif): pilih model untuk **Hemat / Seimbang / Kuat / Maks**, atau **Bawaan** untuk kembali ke default. Berlaku untuk Claude dan provider OpenCode.
 6. Alasan pilihan Auto muncul di chat (`🤖 Model Auto: Kuat → deepseek-v4-pro — multi-file bug fix`) dan pada badge Effort Auto. Baris `±$…` di atas kotak pesan adalah estimasi biaya prompt (konteks + teks + asumsi output), bukan tagihan pasti.
 
 - **Model Auto** kini menilai setiap prompt **bersama konteks rencana terakhir**: percakapan terakhir dan daftar todo/plan ikut dikirim ke classifier, jadi prompt lanjutan singkat seperti *“kerjakan”* atau *“lanjut”* dinilai dari rencana yang baru muncul, bukan dari satu kata. Detail: [Tanpa terminal](FITUR.md#tanpa-terminal).
@@ -189,7 +189,7 @@ Catatan: dihitung dari **biaya yang tercatat** (harga list untuk Claude). OpenCo
 ## Mesin mengikuti model
 
 1. Buka project yang diinginkan, lalu klik chip **⚙ Pengaturan giliran** di atas kotak pesan.
-2. Di **Model**, pilih model dari grup **Claude Code** atau **OpenCode**. Memilih model mesin lain langsung memakai mesin itu untuk giliran berikutnya; tidak ada tombol ganti mesin.
+2. Di **Model**, pilih dari grup **Claude** atau satu grup per provider OpenCode. Model yang kamu pilih yang menentukan sumbernya untuk giliran berikutnya; tidak ada tombol ganti mesin.
 3. Project lain tidak terpengaruh; dua project boleh berjalan bersamaan dengan mesin berbeda.
 4. Chat menampilkan satu alur dari kedua mesin. Saat mesin berganti, ringkasan percakapan mesin sebelumnya dibawa otomatis (satu baris `🔁 Konteks dari …`) dan status **🧠 Konteks siap** muncul sampai pesan berikutnya. Ringkasan ini bukan salinan percakapan, dan kuota serta rewind tetap milik masing-masing mesin.
 5. Model mesin lain ditolak (**409**) bila project sedang bekerja, ada izin/rencana menunggu, antrean berisi item, ada giliran terputus, atau rewind berjalan — selesaikan dulu.

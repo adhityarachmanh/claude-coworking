@@ -214,7 +214,7 @@ export function register(router) {
       // Only a command the agent itself advertises (available_commands_update): never a guess sent into a turn.
       const commands = hub.statusFor(project.id)?.commands ?? [];
       if (!commands.some((c) => c?.name === 'compact' || c?.value === 'compact')) {
-        return json(res, 409, { error: 'Mesin OpenCode di sesi ini tidak menyediakan perintah /compact.' });
+        return json(res, 409, { error: 'Sumber OpenCode di sesi ini tidak menyediakan perintah /compact.' });
       }
       const gate = checkTurn(hub, project.id, session);
       if (gate) {

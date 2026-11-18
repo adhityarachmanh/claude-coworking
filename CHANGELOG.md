@@ -6,6 +6,16 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 - **📱 Chat di HP tidak lagi terjepit atau terpotong (viewport ±390 px).** Lima baris yang dulu "gepeng" kini rapi di layar sempit: **kartu delegasi** memakai lebar penuh untuk teks tugas dan menurunkan ringkasan **"· 5 langkah · ⏳ 3 berjalan"** ke barisnya sendiri; tombol **↓ Terbaru** duduk di antara percakapan dan composer sehingga tidak lagi menutupi pesan yang sedang dibaca; **header jawaban asisten** membiarkan nama tetap satu baris dan memindahkan waktu/Salin/☆ ke baris berikutnya bila sempit (sasaran sentuh tetap ≥ 24 px); **strip progres giliran** membungkus chip **"✓ Selesai · …"** ke baris kedua alih-alih terpotong di tepi kanan; dan **chip pengaturan di composer** tidak lagi memuat harga model ("— $0.15 in / $0.6 out /1M") — angkanya tetap ada di dialog yang dibuka chip. Desktop tidak berubah.
 
+## 1.0.55
+
+- **🧭 Satu wajah, tanpa istilah "mesin".** Konsep "Claude Code vs OpenCode" tidak lagi muncul di alur sehari-hari:
+  - **👤 Akun satu halaman**: bagian **Claude** (profil, kuota, login) dan **provider OpenCode** tampil bersamaan, tanpa tab dan tanpa pilihan "Mesin". Masing-masing bagian punya kontainernya sendiri, jadi refresh kuota tidak lagi "mencuri" klik tombol provider atau menghapus form yang sedang diisi.
+  - **Daftar model per sumber**: grup **Claude** + satu grup per provider (OpenCode Go, River, Wally…). Tidak ada lagi grup "Claude Code"/"OpenCode".
+  - **Satu set pengaturan per project**: memilih model dari sumber lain tidak lagi mengembalikan model lama saat kamu kembali; effort/agent ikut kamu.
+  - **Laporan**: blok **Per sumber model** (bukan "Per mesin"), kolom **Sumber · kanal**.
+  - Istilah "mesin" diganti **sumber model** di badge sesi, checklist, backup, dan pesan kesalahan; badge sesi tetap ada sebagai penanda sumber.
+- **Diputuskan dengan fakta:** OpenCode di versi ini **belum** menyediakan login **Claude Pro/Max** (Anthropic hanya `key`/`env`, OAuth hanya GitHub Copilot dan OpenCode Console). Jadi Claude Max tetap memakai login Claude di belakang layar — yang kini tidak terlihat sebagai "mesin" terpisah.
+
 ## 1.0.54
 
 - **⏻ "Matikan PC" tidak lagi bisa "berhasil" padahal Windows tetap hidup.** Event Log membuktikan permintaan yang gagal tidak pernah menghasilkan shutdown sama sekali: aplikasi menjalankan `shutdown` lalu langsung mematikan server 300 ms kemudian, tanpa memeriksa apakah Windows menerimanya. Sekarang aplikasi memakai **path absolut** `%SystemRoot%\System32\shutdown.exe`, argumen **`/f`**, menunggu **exit code**, dan hanya mematikan server kalau Windows menerima (exit 0). Kalau gagal (akses ditolak, perintah tak ditemukan, tidak menjawab), dialog Daya menampilkan **alasan aslinya** dan server **tetap hidup** supaya bisa dicoba lagi. Konfirmasi juga jujur: aplikasi lain ditutup paksa (pekerjaan belum disimpan bisa hilang), Windows mati dalam ±45 detik.

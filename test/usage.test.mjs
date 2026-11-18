@@ -292,13 +292,13 @@ test('report shows usage per engine and engine × source; no role section withou
   const ledger = ledgerWithEngines();
   const summary = summarize(ledger.query({ accountId: A.id }), { from: 0, to: Date.now() });
   const html = reportHtml({ account: A, profile: null, limits: null, summary });
-  assert.match(html, /<h2>Per mesin<\/h2>/);
-  assert.match(html, /<th>Mesin<\/th>/, 'the engine table');
-  assert.match(html, /<th>Mesin · sumber<\/th>/, 'the engine × source table');
+  assert.match(html, /<h2>Per sumber model<\/h2>/);
+  assert.match(html, /<th>Sumber<\/th>/, 'the source table');
+  assert.match(html, /<th>Sumber · kanal<\/th>/, 'the source × channel table');
   for (const label of ['Claude', 'OpenCode', 'Claude · Web', 'Claude · Terminal', 'OpenCode · Web', 'OpenCode · Terminal']) {
     assert.ok(html.includes(label), `shows ${label}`);
   }
-  assert.match(html, /Per sumber/, 'the per-source table stays');
+  assert.match(html, /Per sumber model/, 'the per-source table stays');
   assert.doesNotMatch(html, /Per role/, 'no role table when the summary has no byRole');
   assert.match(html, /\$0\.00/, 'a zero cost is spelled out');
   assert.match(html, /\(50%\)/, 'partial cost coverage is shown');

@@ -1,5 +1,5 @@
-// 👤 Akun: two INFO tabs, Claude (profile, plan quota, token usage, login/logout) and OpenCode (providers, login,
-// usage). The tabs only choose what is shown: they never change an engine or the project (features/opencode-account.js).
+// 👤 Akun: one page with both login sources — Claude (subscription, quota, login) and the OpenCode providers. The
+// page never asks which "engine" a project uses: a model picks it (features/opencode-account.js).
 import { accountImpactText } from '../core/account-impact.js';
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
@@ -10,20 +10,7 @@ import { closeModal, focusablesIn, openModal } from '../ui/modals.js';
 import { chime } from './notify.js';
 import { accountKeyOf, checkQuota } from './quota.js';
 import { openReport } from './report.js';
-import { activeEngine, ensureOpenCodeLoaded, loadOpenCode, onOpenCodeAction, onOpenCodeInput, onOpenCodeSubmit, openCodeBodyHtml, openCodeButton } from './opencode-account.js';
-
-// The tab only switches the information shown; it always starts on Claude and never touches the project engine.
-// A SELECT, not tabs: engines keep growing (Cursor CLI, …) — a dropdown scales, a row of tabs does not. A new
-// engine adds one entry here + one panel function in renderAccountBody.
-const ACCT_TABS = ['claude', 'opencode'];
-const ACCT_TAB_LABELS = { claude: 'Claude', opencode: 'OpenCode' };
-const acct = { tab: 'claude' };
-
-function accountTabsHtml(tab) {
-  const options = ACCT_TABS.map((id) => `<option value="${id}"${tab === id ? ' selected' : ''}>${ACCT_TAB_LABELS[id] ?? id}</option>`).join('');
-  // The openness must be visible in the app too: more engines are coming (Cursor CLI, …), not a closed set.
-  return `<label class="acct-tabs" for="acct-tab"><span>Mesin</span><select id="acct-tab" aria-controls="acct-panel">${options}</select></label><small class="muted">Mesin lain menyusul — Cursor CLI, dll. — cukup ditambahkan di sini.</small>`;
-}
+import { ensureOpenCodeLoaded, loadOpenCode, onOpenCodeAction, onOpenCodeInput, onOpenCodeSubmit, openCodeBodyHtml, openCodeButton } from './opencode-account.js';
 
 const LOGIN_TEXT = {
   starting: 'Membuka halaman login di browser…',
@@ -47,19 +34,24 @@ const accountLabel = (p) => p.email ?? `Akun Claude${p.subscriptionType ? ` (${p
 export function renderAccountButton() {
   const p = state.account?.profile;
   const btn = $('#btn-account');
-  if (activeEngine() === 'opencode') {
-    const oc = openCodeButton();
-    btn.classList.toggle('logged-out', !oc.loggedIn);
+  if (state.accountAuth) ensureOpenCodeLoaded(renderAccountButton);
+  const oc = openCodeButton();
+  // Claude is the subscription; the OpenCode providers are the fallback indicator when it is not logged in.
+  const claudeIn = Boolean(p?.loggedIn);
+  btn.classList.toggle('logged-out', !claudeIn && !oc.loggedIn);
+  if (claudeIn) {
+    $('#account-avatar').textContent = accountInitial(p);
+    $('#account-label').textContent = accountLabel(p);
+    btn.title = `${accountLabel(p)}${p.orgName ? ` · ${p.orgName}` : ''} — profil, kuota & login`;
+  } else if (oc.loggedIn && oc.label !== 'OpenCode') {
     $('#account-avatar').textContent = oc.avatar;
     $('#account-label').textContent = oc.label;
-    btn.title = 'OpenCode — provider & login (tab info di 👤 Akun)';
-    ensureOpenCodeLoaded(renderAccountButton);
-    return;
+    btn.title = 'Provider OpenCode — login & daftar model';
+  } else {
+    $('#account-avatar').textContent = '!';
+    $('#account-label').textContent = 'Belum login';
+    btn.title = 'Belum login ke Claude atau provider OpenCode — klik untuk login';
   }
-  btn.classList.toggle('logged-out', !p?.loggedIn);
-  $('#account-avatar').textContent = p?.loggedIn ? accountInitial(p) : '!';
-  $('#account-label').textContent = p ? (p.loggedIn ? accountLabel(p) : 'Belum login') : 'Akun';
-  btn.title = p?.loggedIn ? `${accountLabel(p)}${p.orgName ? ` · ${p.orgName}` : ''} — profil, kuota & login` : 'Belum login ke Claude — klik untuk login';
   checkQuota(); // after every account change (snapshot, live rate-limit events): warnings + top-bar indicator
 }
 
@@ -237,13 +229,52 @@ function renderAccount() {
   }
 }
 
-function renderAccountBody(body) {
-  const tab = acct.tab;
-  $('#account-title').textContent = '👤 Akun';
-  const panel = tab === 'opencode' ? openCodeBodyHtml() : claudeBodyHtml();
-  body.innerHTML = `${accountTabsHtml(tab)}<div id="acct-panel" class="acct-panel" role="tabpanel" aria-labelledby="acct-tab">${panel}</div>${auditHtml()}`;
-  if (tab === 'claude') renderLoginFlow();
+/**
+ * Only the Claude half of the page. The quota load re-renders up to three times after the dialog opens; rebuilding the
+ * whole page each time used to detach the provider buttons under the user's finger (a click racing a re-render landed
+ * on nothing) and could wipe a half-filled provider form. Each source now owns its own container.
+ */
+function renderClaudeSection() {
+  const box = $('#acct-claude');
+  if (!box) return renderAccount(); // first paint: build the shell, which renders both sections
+  const active = document.activeElement;
+  const hadFocus = box.contains(active);
+  const act = hadFocus ? active.closest('[data-act]')?.dataset.act : null;
+  box.innerHTML = claudeBodyHtml();
+  renderLoginFlow();
+  // ↻ Cek ulang kuota rebuilds this half: keyboard focus must stay on the button (or inside the dialog), never <body>.
+  if (hadFocus && !box.contains(document.activeElement)) {
+    const target = (act && box.querySelector(`[data-act="${CSS.escape(act)}"]`)) || focusablesIn($('#account-modal'))[0];
+    target?.focus({ preventScroll: true });
+  }
+  renderAuditSection();
   renderAccountButton();
+}
+
+/** Only the OpenCode providers half. `openCodeAccount`'s own rerender callback is this function. */
+function renderOpenCodeSection() {
+  const box = $('#acct-opencode');
+  if (!box) return renderAccount();
+  box.innerHTML = openCodeBodyHtml();
+  renderAccountButton();
+}
+
+/** 🔒 The audit block (laptop/Tailscale only): its visibility follows the account state, which can change while open. */
+function renderAuditSection() {
+  const box = $('#acct-audit');
+  if (box) box.innerHTML = auditHtml();
+}
+
+function renderAccountBody(body) {
+  $('#account-title').textContent = '👤 Akun';
+  // One page, two login sources — no "engine" selector. Claude first (the subscription), then the OpenCode
+  // providers used by every non-Claude model. Each section has its own container so a background refresh of one
+  // never detaches a control the user is clicking in the other.
+  const note = '<div class="acct-sources-note"><b>Model selain Claude</b><small class="muted">dipakai lewat provider OpenCode di bawah. Model yang kamu pilih yang menentukan sumbernya — tidak ada pengaturan mesin.</small></div>';
+  body.innerHTML = `<div id="acct-claude"></div>${note}<div id="acct-opencode"></div><div id="acct-audit">${auditHtml()}</div>`;
+  renderClaudeSection();
+  renderOpenCodeSection();
+  renderAuditSection();
 }
 
 function claudeBodyHtml() {
@@ -304,17 +335,17 @@ async function loadAccount(force = false) {
     account.usage = data.usage;
     state.account = { ...state.account, ...data };
     renderAccountButton();
-    renderAccount();
+    renderClaudeSection(); // Claude only: the provider half is never rebuilt by a quota refresh
     if (!data.profile?.loggedIn) return;
     account.loading = true;
-    renderAccount();
+    renderClaudeSection();
     state.account.limits = await api('/api/account/limits', { force });
     checkQuota(); // a fresh `/usage` (fetched for this dialog anyway) may cross a threshold
   } catch (err) {
     toast(err.message);
   } finally {
     account.loading = false;
-    if (!$('#account-modal').hidden) renderAccount();
+    if (!$('#account-modal').hidden) renderClaudeSection();
   }
 }
 
@@ -324,34 +355,31 @@ export function onAccountState(next) {
   renderAccountButton();
   const id = accountKeyOf(next.profile);
   if (next.login?.state === 'done' && account.loginState !== 'done') toast(`Login berhasil sebagai ${next.profile?.email ?? 'akun baru'}.`, 'ok');
-  if ($('#account-modal').hidden || acct.tab === 'opencode') return; // OpenCode's tab: Claude events don't redraw it
+  if ($('#account-modal').hidden) return;
+  // Never redraw over a field the user is typing in (the Claude code box or a provider form): the values are kept,
+  // but the focus would jump. A login-code box is redrawn only when its state changed.
+  const focused = document.activeElement;
+  const typing = focused && focused !== document.body && $('#account-body').contains(focused) && /^(INPUT|TEXTAREA|SELECT)$/.test(focused.tagName);
   if (prevId !== id) return loadAccount(true); // switched account: usage & quota belong to the new one
-  // Keep what the user is typing in the code box: only redraw the flow when its state changes.
-  if ((next.login?.state ?? null) !== account.loginState) renderLoginFlow();
-  if (!$('#login-code-input')) renderAccount();
+  if ((next.login?.state ?? null) !== account.loginState) {
+    if (typing) return;
+    account.loginState = next.login?.state ?? null;
+    return renderLoginFlow();
+  }
+  if (!typing) renderClaudeSection();
 }
 
-/** Loads the data of the tab on screen: Claude's account/quota, or OpenCode's providers. */
-function loadAccountTab({ force = false } = {}) {
-  if (acct.tab === 'opencode') return loadOpenCode(renderAccount);
-  return loadAccount(force);
+/** Loads both sources (Claude + OpenCode providers): the page shows them together. */
+function loadAccountPage({ force = false } = {}) {
+  loadAccount(force);
+  return loadOpenCode(renderOpenCodeSection);
 }
 
 export function initAccount() {
   $('#btn-account').addEventListener('click', () => {
-    acct.tab = 'claude'; // every open starts on the Claude info tab (no remembered choice)
     openModal('account-modal');
     renderAccount();
-    loadAccountTab();
-  });
-  // The engine dropdown replaces the old tab buttons: one change switches the whole panel.
-  $('#account-body').addEventListener('change', (e) => {
-    if (e.target.id !== 'acct-tab') return;
-    const next = ACCT_TABS.includes(e.target.value) ? e.target.value : 'claude';
-    if (next === acct.tab) return;
-    acct.tab = next;
-    renderAccount();
-    loadAccountTab();
+    loadAccountPage();
   });
   $('#account-body').addEventListener('click', async (e) => {
     const el = e.target.closest('[data-act]');
@@ -359,7 +387,7 @@ export function initAccount() {
     if (!act) return;
     try {
       if (act === 'audit-toggle') return toggleAudit();
-      if (await onOpenCodeAction(act, el, renderAccount)) return;
+      if (await onOpenCodeAction(act, el, renderOpenCodeSection)) return;
       if (act === 'login' || act === 'login-console') {
         if (!window.confirm(accountImpactText('claude-login'))) return;
         state.account = { ...state.account, login: await api('/api/account/login', { console: act === 'login-console' }) };
@@ -381,11 +409,11 @@ export function initAccount() {
         loadAccount(true);
       } else if (act === 'limits') {
         account.loading = true;
-        renderAccount();
+        renderClaudeSection();
         state.account.limits = await api('/api/account/limits', { force: true });
         checkQuota();
         account.loading = false;
-        renderAccount();
+        renderClaudeSection();
       } else if (act === 'report') {
         closeModal('account-modal');
         openReport();

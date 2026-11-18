@@ -397,7 +397,7 @@ export function openCodeBodyHtml() {
   return `${usageHtml()}${goQuotaHtml()}<div class="acct-section"><div class="acct-title"><b>Provider OpenCode</b><button class="ghost icon" data-act="oc-refresh" title="Cek ulang">↻</button></div>
     ${connectedHtml()}${oc.error && oc.providers ? `<p class="warn small">${escapeHtml(oc.error)}</p>` : ''}
     ${oc.logoutError ? `<p class="warn small" role="alert">${escapeHtml(oc.logoutError)}</p>` : ''}
-    <p class="muted small" title="Project yang memakai model Claude Code memakai akun Claude (tab Claude), bukan provider di sini. Ini tidak mengubah mesin project.">Tab ini hanya informasi: provider dipakai saat model project berasal dari OpenCode.</p></div>
+    <p class="muted small" title="Provider ini dipakai saat model yang kamu pilih berasal dari OpenCode. Model Claude memakai akun Claude di atas.">Provider dipakai saat model yang kamu pilih berasal dari OpenCode. Model Claude memakai akun Claude di atas.</p></div>
     ${state.accountAuth ? loginHtml() : '<p class="muted small">Login/logout provider dari HP hanya lewat Tailscale (koneksi terenkripsi), atau lakukan dari laptop.</p>'}`;
 }
 

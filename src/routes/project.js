@@ -20,6 +20,6 @@ export const withSession = (fn) =>
  */
 export const claudeOnly = (fn, feature = 'Fitur ini') => (ctx, req, res, params, body) => {
   const engine = params?.project && ctx.hub?.engineOf ? ctx.hub.engineOf(params.project.id) : (ctx.hub?.engine ?? 'claude');
-  if (engine !== 'claude') return json(res, 409, { error: `${feature} hanya tersedia saat mesin Claude Code aktif.` });
+  if (engine !== 'claude') return json(res, 409, { error: `${feature} hanya tersedia saat model Claude aktif.` });
   return fn(ctx, req, res, params, body);
 };

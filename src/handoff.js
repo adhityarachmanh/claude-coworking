@@ -44,7 +44,7 @@ export function otherChat(hub, from, projectId) {
   }
 }
 
-const HEADER = (from) => `🔁 Konteks dari ${ENGINE_LABEL[from] ?? 'mesin sebelumnya'} (sesi sebelumnya di project ini). Teruskan pekerjaan dari sini; minta klarifikasi kalau ada yang belum jelas.`;
+const HEADER = (from) => `🔁 Konteks dari ${ENGINE_LABEL[from] ?? 'sumber sebelumnya'} (sesi sebelumnya di project ini). Teruskan pekerjaan dari sini; minta klarifikasi kalau ada yang belum jelas.`;
 
 /**
  * The note an automatic engine switch carries (a model picked for the other engine): built from what the app
@@ -58,7 +58,7 @@ export function bridgeNote(chat, from = (chat ?? []).findLast?.((m) => ENGINE_LA
   const list = Array.isArray(chat) ? chat : [];
   const talk = list.filter((m) => (m.kind === 'user' || m.kind === 'assistant') && String(m.text ?? '').trim());
   if (!talk.length) return '';
-  const who = (m) => (m.kind === 'user' ? 'Saya' : (ENGINE_LABEL[from] ?? 'Mesin'));
+  const who = (m) => (m.kind === 'user' ? 'Saya' : (ENGINE_LABEL[from] ?? 'Sumber'));
   const lines = [];
   let total = 0;
   for (const m of talk.slice(-MAX_MESSAGES)) {

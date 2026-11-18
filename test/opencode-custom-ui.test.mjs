@@ -147,9 +147,7 @@ for (const vp of VIEWPORTS) {
         });
 
         await tap(page, '#btn-account');
-        await page.waitFor(() => !document.querySelector('#account-modal').hidden, { timeoutMs: 4000, message: 'modal Akun terbuka' });
-        await page.eval(() => { const s = document.querySelector('#acct-tab'); s.value = 'opencode'; s.dispatchEvent(new Event('change', { bubbles: true })); });
-        await page.waitFor(() => document.querySelector('#account-body [data-act="oc-pick"]')?.getClientRects().length, { timeoutMs: 6000, message: 'tombol ＋ Login provider' });
+        await page.waitFor(() => !document.querySelector('#account-modal').hidden && document.querySelector('#account-body [data-act="oc-pick"]')?.getClientRects().length, { timeoutMs: 8000, message: 'tombol ＋ Login provider tampil di halaman Akun' });
         const buttons = await page.eval(() => ({
           login: document.querySelector('#account-body [data-act="oc-pick"]')?.textContent.trim() ?? null,
           custom: document.querySelector('#account-body [data-act="oc-custom"]')?.textContent.trim() ?? null,

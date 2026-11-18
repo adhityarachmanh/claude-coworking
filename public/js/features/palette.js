@@ -231,7 +231,7 @@ function buildItems() {
   // One search box for the settings panels too: type "backup", "budget", "jadwal", "mesin", …
   const settingsTabs = [
     ['umum', '📁', 'Umum', 'folder project budget tema tampilan'],
-    ['tim', '👥', 'Tim & izin', 'mesin project role aturan izin'],
+    ['tim', '👥', 'Tim & izin', 'sumber project role aturan izin'],
     ['jadwal', '⏰', 'Jadwal', 'tugas terjadwal rutin jadwal'],
     ['notifikasi', '🔔', 'Notifikasi', 'suara notifikasi jam tenang push'],
     ['spotify', '♪', 'Spotify', 'musik player'],

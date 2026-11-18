@@ -79,7 +79,7 @@ export function renderStatusline(st) {
   const parts = [`<span class="sl-mode" title="Ganti dengan Shift+Tab">${modeLabel(st.mode)} <kbd>⇧Tab</kbd></span>`];
   const model = st.activeModel || st.model;
   if (model) parts.push(`<span class="sl-model">${escapeHtml(model)}</span>`);
-  if (st.handoffReady) parts.push('<span class="sl-handoff" title="Konteks dari mesin sebelumnya ikut pada pesan berikutnya">🧠 Konteks sesi siap</span>');
+  if (st.handoffReady) parts.push('<span class="sl-handoff" title="Konteks dari sumber sebelumnya ikut pada pesan berikutnya">🧠 Konteks sesi siap</span>');
   if (st.context?.used && !st.context.window) {
     // Window not reported yet (Claude Code tells it once the session runs): no guessed percentage.
     parts.push(`<span class="sl-ctx" title="Konteks terpakai: ${st.context.used.toLocaleString('id-ID')} token">konteks ${fmtTokens(st.context.used)}</span>`);
@@ -109,7 +109,7 @@ export function renderStatusline(st) {
 /** Phone: a strip of chips above the box, only with something to say (mode and model are on the settings chip). */
 function renderStrip(line, st, running) {
   const chips = [];
-  if (st.handoffReady) chips.push('<span class="sl-chip sl-handoff" title="Konteks dari mesin sebelumnya ikut pada pesan berikutnya">🧠 Konteks siap</span>');
+  if (st.handoffReady) chips.push('<span class="sl-chip sl-handoff" title="Konteks dari sumber sebelumnya ikut pada pesan berikutnya">🧠 Konteks siap</span>');
   if (running) chips.push(`<button type="button" class="sl-chip sl-tasks" data-open-tasks aria-label="${running} tugas berjalan — buka monitor tugas latar">⧗ ${running}</button>`);
   const q = st.taskQueue;
   const waiting = q ? q.waiting + q.running : 0;

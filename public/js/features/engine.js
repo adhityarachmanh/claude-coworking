@@ -290,9 +290,9 @@ export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_
   if (favs.length) opts.push(`<optgroup label="⭐ Favorit">${favs.map((m) => option(m, m.engine)).join('')}</optgroup>`);
   // Claude Code: one group with its own catalog (the search filter applies to it too).
   const claudeGroups = groupModels(claude, query);
-  if (claudeGroups.length) opts.push(`<optgroup label="Claude Code">${claudeGroups.flatMap((g) => g.models.map((m) => option(m, DEFAULT_ENGINE))).join('')}</optgroup>`);
-  else opts.push(`<optgroup label="Claude Code">${infoOption(claude.length ? 'Tidak ada model yang cocok' : 'Katalog Claude Code belum tersedia')}</optgroup>`);
-  // OpenCode: one group PER provider (river, opencode-go, …), each labelled by the provider's display name when
+  if (claudeGroups.length) opts.push(`<optgroup label="Claude">${claudeGroups.flatMap((g) => g.models.map((m) => option(m, DEFAULT_ENGINE))).join('')}</optgroup>`);
+  else opts.push(`<optgroup label="Claude">${infoOption(claude.length ? 'Tidak ada model yang cocok' : 'Katalog Claude belum tersedia')}</optgroup>`);
+  // Model lain: one group PER provider (river, opencode-go, …), each labelled by the provider's display name when
   // known; an <optgroup> cannot nest another, so the "OpenCode" wrapper only remains for the info lines. A group
   // whose provider has no stored credentials renders its models disabled with the login hint — the model that is
   // the project's current one stays selectable (changing away from it must still be possible).

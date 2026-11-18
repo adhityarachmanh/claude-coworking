@@ -1423,11 +1423,10 @@ body.read-only #composer-hint { color: var(--ask); }
 
 /* ---------- account dialog ---------- */
 .acct-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-/* 👤 Akun's engine picker ("Mesin"): label above, full-width select — a stacked control like the rest of the
-   dialog, not a dropdown floating next to its label (it used to default to content width and collide with the note). */
-.acct-tabs { display: flex; flex-direction: column; gap: 4px; margin: 0 0 4px; font-size: var(--fs-md); }
-.acct-tabs span { font-size: var(--fs-sm); color: var(--muted); }
-.acct-tabs select { width: 100%; min-height: 34px; }
+/* 👤 Akun is one page now: Claude first, then the OpenCode providers (no "engine" picker). This line separates the
+   two login sources and says, in one sentence, that a model — not a setting — chooses where it runs. */
+.acct-sources-note { display: flex; flex-direction: column; gap: 2px; margin: 14px 0 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); font-size: var(--fs-md); }
+.acct-sources-note small { line-height: 1.4; }
 #account-body > small { display: block; margin: 0 0 10px; }
 .acct-head > div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .acct-head small { color: var(--muted); overflow-wrap: anywhere; }
@@ -1885,7 +1884,8 @@ body.read-only #composer-hint { color: var(--ask); }
   /* dialogs become bottom sheets */
   .modal { padding: 0; place-items: end stretch; }
   .modal-card { max-height: 92dvh; border-radius: var(--r-2xl) var(--r-2xl) 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
-  .acct-tabs select { min-height: 44px; font-size: var(--fs-input-touch); } /* 16px: no zoom-on-focus on iOS */
+  /* 16px: no zoom-on-focus on iOS for the provider form's inputs */
+  .acct-sources-note { margin-top: 12px; }
   /* One tab at a time on the phone too: the tab bar scrolls sideways, the body scrolls under it. */
   .modal-card.settings-card { max-width: none; height: 92dvh; max-height: 92dvh; display: flex; flex-direction: column; padding: 14px 14px 0; overflow: hidden; }
   .settings-card .modal-head { flex: none; padding: 0 0 8px; }

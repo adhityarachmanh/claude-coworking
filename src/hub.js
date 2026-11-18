@@ -1361,19 +1361,14 @@ export class Hub {
     const next = this.cleanSettings(before, patch);
     const engineChanged = next.engine !== before.engine;
     if (engineChanged) {
-      // The engine follows the model picked for it. A model/effort/agent sent with this same patch is the user's
-      // choice for the target engine and wins; otherwise that engine's own saved values come back exactly as they
-      // were. Either way both engines stay remembered (engineSettings), so going back and forth loses nothing.
+      // ONE set of settings per project. Choosing a model of the other engine switches where the turn runs, but your
+      // effort/agent come along; an engine patch without a model starts from Default, because the old model belongs
+      // to the engine it was picked for. The per-engine snapshot is still written for backups and old state files —
+      // it no longer changes what the picker shows.
       this.rememberEngineSettings(id, before.engine, before);
-      const saved = this.engineSettingsFor(id, next.engine);
       const sent = isObject(patch) ? patch : {};
-      // Only values this patch actually set (and cleanSettings accepted) beat the engine's own saved values.
       const modelSent = typeof sent.model === 'string' && (sent.model === '' || sent.model === 'default' || next.model === sent.model);
-      const effortSent = EFFORT_LEVELS.includes(sent.effort);
-      const agentSent = sent.agent === '' || (typeof sent.agent === 'string' && STORED_AGENT.test(sent.agent));
-      if (!modelSent) next.model = saved.model;
-      if (!effortSent) next.effort = saved.effort;
-      if (!agentSent) next.agent = saved.agent;
+      if (!modelSent) next.model = '';
       // The next session this project creates (src/session.js) bridges the old engine's chat once.
       this.engineChanges.set(id, before.engine);
     }

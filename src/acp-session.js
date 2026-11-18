@@ -984,7 +984,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     /** 🕘 Riwayat sesi lists Claude Code transcripts: only OpenCode's own sessions (ses_…) can continue here. */
     resume(sessionId, history) {
-      if (!String(sessionId).startsWith('ses_')) throw Object.assign(new Error('Sesi ini milik Claude Code. Ganti mesin project ke Claude Code untuk melanjutkannya.'), { status: 409 });
+      if (!String(sessionId).startsWith('ses_')) throw Object.assign(new Error('Sesi ini milik Claude. Pilih model Claude untuk melanjutkannya.'), { status: 409 });
       super.resume(sessionId, history);
     }
 

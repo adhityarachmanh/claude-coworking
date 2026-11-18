@@ -278,7 +278,7 @@ function renderReportRoles(byRole) {
   box.hidden = false;
 }
 
-// "Per mesin" labels: the same words as the PDF (the data keys stay claude/opencode, web/cli).
+// "Per sumber model" labels: the same words as the PDF (the data keys stay claude/opencode, web/cli).
 const ENGINE_LABEL = { claude: 'Claude', opencode: 'OpenCode' };
 const SOURCE_LABEL = { web: 'Web', cli: 'Terminal' };
 const UNKNOWN_LABEL = 'Tidak diketahui';
@@ -340,7 +340,7 @@ function renderReportEngines(rows, total) {
   const body = list
     .map((r) => `<tr><td>${escapeHtml(r.label)}</td><td><b>${fmtShort(r.total)}</b></td><td>${reportShare(r.total, total)}</td><td>${escapeHtml(engineCostText(r))}</td></tr>`)
     .join('');
-  box.innerHTML = `<h4 class="report-sub">Per mesin</h4><table class="usage-table"><thead><tr><th>Mesin · sumber</th><th>Total</th><th>%</th><th>Biaya</th></tr></thead><tbody>${body}</tbody></table>`;
+  box.innerHTML = `<h4 class="report-sub">Per sumber model</h4><table class="usage-table"><thead><tr><th>Sumber · kanal</th><th>Total</th><th>%</th><th>Biaya</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
 /** OpenCode Go provider data (account-wide, official console). Hidden when the report has none. */
@@ -390,7 +390,7 @@ function renderReportScope(q, range) {
   const account = $('#report-account').selectedOptions[0]?.textContent.replace(/ \(aktif\)$/, '') ?? '';
   // "Semua akun" has no email to show: the scope names both engines instead.
   const who = all ? `<b>Semua akun</b> · <b>Claude + OpenCode</b>` : `<b>${escapeHtml(account)}</b>`;
-  scope.innerHTML = `PDF berisi persis yang tampil di atas: ${who} · <b>${escapeHtml(rangeText(range))}</b> · per <b>${UNIT_NAME[q.groupBy]}</b>. Ditambah rincian per mesin, per project, sumber (web/CLI) dan sesi teratas.`;
+  scope.innerHTML = `PDF berisi persis yang tampil di atas: ${who} · <b>${escapeHtml(rangeText(range))}</b> · per <b>${UNIT_NAME[q.groupBy]}</b>. Ditambah rincian per sumber model, per project, sumber (web/CLI) dan sesi teratas.`;
   if (all || q.accountId === 'opencode') scope.innerHTML += ' <span class="muted">Pemakaian lokal OpenCode (web + terminal); bagian OpenCode Go memakai data provider bila tersedia.</span>';
 }
 

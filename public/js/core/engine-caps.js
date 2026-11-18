@@ -11,7 +11,7 @@ export const DEFAULT_ENGINE = 'claude';
 export const engineChangeNeedsReload = (data) => Boolean(data && typeof data === 'object' && (data.project || data.engine));
 
 /** Display names; an engine the server adds later still shows (its id) without a code change. */
-export const ENGINE_LABEL = { claude: 'Claude Code', opencode: 'OpenCode' };
+export const ENGINE_LABEL = { claude: 'Claude', opencode: 'OpenCode' };
 
 /** Short badge labels (session bar): compact enough for a phone. */
 export const ENGINE_BADGE = { claude: '✳ Claude', opencode: '⌘ OpenCode' };
@@ -62,9 +62,9 @@ const CAP_FEATURE = {
  * No trailing period: callers (guardCap) add one.
  */
 const CAP_REASON = {
-  permissions: 'Aturan izin Claude Code hanya tersedia saat mesin Claude Code aktif; OpenCode memakai aturan di opencode.json',
-  extensions: 'Ekstensi Claude Code hanya tersedia saat mesin Claude Code aktif; OpenCode memakai plugin dan agent di opencode.json',
-  exportSession: 'Export sesi lengkap Claude Code hanya tersedia saat mesin Claude Code aktif; pakai Export percakapan atau export JSON di Riwayat Sesi',
+  permissions: 'Aturan izin khusus Claude hanya tersedia saat model Claude aktif; model OpenCode memakai aturan di opencode.json',
+  extensions: 'Ekstensi khusus Claude hanya tersedia saat model Claude aktif; model OpenCode memakai plugin dan agent di opencode.json',
+  exportSession: 'Export sesi lengkap hanya tersedia saat model Claude aktif; pakai Export percakapan atau export JSON di Riwayat Sesi',
 };
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);

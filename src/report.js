@@ -79,16 +79,16 @@ function costTable(rows, label) {
   </table>`;
 }
 
-/** "Per mesin": which engine spent the tokens, then engine × source (web or terminal). */
+/** "Per sumber model": which source spent the tokens (Claude or an OpenCode provider), then source × kanal. */
 function engineSection(summary) {
   const engines = (summary.byEngine ?? []).filter((r) => r.total > 0).map((r) => ({ ...r, key: ENGINE_LABEL[r.key] ?? r.key }));
   const combos = (summary.byEngineSource ?? [])
     .filter((r) => r.total > 0) // empty buckets stay out of the report
     .map((r) => ({ ...r, key: `${ENGINE_LABEL[r.engine] ?? r.engine} · ${SOURCE_LABEL[r.source] ?? r.source}` }));
   if (!engines.length && !combos.length) return '';
-  return `<h2>Per mesin</h2>
-  ${costTable(engines, 'Mesin')}
-  ${costTable(combos, 'Mesin · sumber')}`;
+  return `<h2>Per sumber model</h2>
+  ${costTable(engines, 'Sumber')}
+  ${costTable(combos, 'Sumber · kanal')}`;
 }
 
 // Usage-based seats (Enterprise): the organisation's limit status from the rate-limit events (src/account.js billingStatus).

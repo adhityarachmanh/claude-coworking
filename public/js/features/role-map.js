@@ -35,7 +35,7 @@ function render() {
   const dis = ro || rm.busy ? ' disabled' : '';
   const ai = `<label class="rm-ai switch"><input type="checkbox" id="rm-ai"${d.ai ? ' checked' : ''}${ro || !d.aiAvailable ? ' disabled' : ''}>
       <span><b>🤖 Petakan nama baru otomatis dengan AI</b> <small class="pill warn">pakai token</small><br>
-      <small class="muted">Hanya <b>nama</b> tool yang dikirim (tanpa kode, path, perintah, atau chat) ke model termurah mesin aktif (Claude: Haiku; OpenCode: model bawaanmu). Sekitar beberapa ratus token per nama, <b>sekali saja</b>: jawabannya disimpan di laptop ini. Pilihanmu sendiri selalu menang.${d.busy ? ' <i>Sedang menanyakan AI…</i>' : d.queued ? ` <i>${d.queued} nama menunggu.</i>` : ''}${d.lastError ? ` <span class="state-error">${escapeHtml(d.lastError)}</span>` : ''}</small></span></label>`;
+      <small class="muted">Hanya <b>nama</b> tool yang dikirim (tanpa kode, path, perintah, atau chat) ke model termurah dari sumber aktif (Claude: Haiku; OpenCode: model bawaanmu). Sekitar beberapa ratus token per nama, <b>sekali saja</b>: jawabannya disimpan di laptop ini. Pilihanmu sendiri selalu menang.${d.busy ? ' <i>Sedang menanyakan AI…</i>' : d.queued ? ` <i>${d.queued} nama menunggu.</i>` : ''}${d.lastError ? ` <span class="state-error">${escapeHtml(d.lastError)}</span>` : ''}</small></span></label>`;
   const unknown = d.unknown.length
     ? `<ul class="rm-list">${d.unknown
         .map(
@@ -134,7 +134,7 @@ export function initRoleMap() {
     if (state.readOnly) return;
     if (e.target.id === 'rm-ai') {
       const on = e.target.checked;
-      if (on && !window.confirm('AI akan memakai sedikit token akun mesin aktif untuk setiap nama baru (sekali per nama). Nyalakan?')) {
+      if (on && !window.confirm('AI akan memakai sedikit token akun dari sumber aktif untuk setiap nama baru (sekali per nama). Nyalakan?')) {
         e.target.checked = false;
         return;
       }

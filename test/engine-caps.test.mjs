@@ -70,7 +70,7 @@ test('the badge is short and still names an engine the server adds later', () =>
 
 test('the reason is clear and no longer says Fase 1', () => {
   assert.match(capReason('permissions', 'opencode'), /opencode\.json/i);
-  assert.match(capReason('extensions', 'opencode'), /Claude Code/i);
+  assert.match(capReason('extensions', 'opencode'), /Claude/);
   assert.match(capReason('rewind', 'opencode'), /OpenCode belum mendukung Rewind/);
   for (const cap of ['permissions', 'extensions', 'search', 'exportSession']) assert.doesNotMatch(capReason(cap, 'opencode'), /Fase 1/);
 });

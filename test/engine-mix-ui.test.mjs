@@ -156,14 +156,14 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
       await page.waitFor(
         () => {
           const groups = [...document.querySelectorAll('#model optgroup')];
-          return groups.some((g) => g.label === 'Claude Code' && g.querySelector('option[data-engine="claude"]')) && groups.some((g) => g.label !== 'Claude Code' && g.querySelector('option[data-engine="opencode"]'));
+          return groups.some((g) => g.label === 'Claude' && g.querySelector('option[data-engine="claude"]')) && groups.some((g) => g.label !== 'Claude' && g.querySelector('option[data-engine="opencode"]'));
         },
-        { timeoutMs: 15000, message: 'daftar dua mesin' },
+        { timeoutMs: 15000, message: 'daftar dua sumber model' },
       );
 
       const groups = await page.eval(() => [...document.querySelectorAll('#model optgroup')].map((g) => g.label));
-      assert.ok(groups.includes('Claude Code'), `grup Claude Code ada: ${groups.join(' | ')}`);
-      const openGroups = groups.filter((l) => l !== 'Claude Code');
+      assert.ok(groups.includes('Claude'), `grup Claude ada: ${groups.join(' | ')}`);
+      const openGroups = groups.filter((l) => l !== 'Claude');
       assert.ok(openGroups.length > 0, `ada grup OpenCode: ${groups.join(' | ')}`);
       assert.ok(openGroups.some((l) => /OpenCode Go|Google/.test(l)), `grup itu milik provider OpenCode: ${groups.join(' | ')}`);
       const engines = await page.eval(() => [...document.querySelectorAll('#model option')].filter((o) => o.dataset.engine).map((o) => o.dataset.engine));
@@ -295,14 +295,13 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
     }
   });
 
-  test('modal Akun: dua tab info, tanpa memanggil /api/engine', async () => {
+  test('modal Akun: satu halaman (Claude + provider OpenCode), tanpa dropdown "mesin"', async () => {
     const page = await browser.newPage({ width: 1440, height: 900, mobile: false });
     try {
       page.clearProblems();
       await page.goto(`${BASE}/#${projectId}`);
       await page.waitFor(appReady, { timeoutMs: 10000, message: 'app ready' });
       await page.eval(() => {
-        window.localStorage.removeItem('office.accountTab');
         window.__officeFetch ??= window.fetch;
         const prev = window.fetch;
         window.__acctEngineCalls = 0;
@@ -315,29 +314,26 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
         };
       });
       await page.eval(() => document.querySelector('#btn-account').click());
-      await page.waitFor(() => !document.querySelector('#account-modal').hidden && document.querySelector('#account-body #acct-tab')?.tagName === 'SELECT', { timeoutMs: 5000, message: 'dropdown mesin Akun' });
-      const first = await page.eval(() => ({
-        options: [...document.querySelectorAll('#acct-tab option')].map((o) => o.value),
-        selected: document.querySelector('#acct-tab').value,
-        switch: Boolean(document.querySelector('#account-body .engine-switch')),
-        engineButtons: document.querySelectorAll('#account-body [data-act="engine"]').length,
+      await page.waitFor(() => !document.querySelector('#account-modal').hidden && /Provider OpenCode/.test(document.querySelector('#account-body')?.textContent ?? ''), { timeoutMs: 8000, message: 'satu halaman Akun memuat Claude + provider' });
+      const view = await page.eval(() => ({
+        tabSelect: Boolean(document.querySelector('#acct-tab')),
+        tabs: document.querySelectorAll('#account-body .acct-tabs').length,
+        note: document.querySelector('.acct-sources-note')?.textContent ?? '',
+        text: document.querySelector('#account-body').textContent,
+        claudeHere: /Login dengan akun Claude|Ganti akun/.test(document.querySelector('#account-body').textContent),
+        providersHere: /Provider OpenCode/.test(document.querySelector('#account-body').textContent),
         title: document.querySelector('#account-title').textContent,
       }));
-      assert.deepEqual(first.options, ['claude', 'opencode'], 'dua mesin di dropdown');
-      assert.equal(first.selected, 'claude', 'default Claude');
-      assert.equal(first.title, '👤 Akun');
-      assert.equal(first.switch, false);
-      assert.equal(first.engineButtons, 0, 'tidak ada tombol "Jadikan mesin bawaan"');
-
-      await page.eval(() => { const s = document.querySelector('#acct-tab'); s.value = 'opencode'; s.dispatchEvent(new Event('change', { bubbles: true })); });
-      await page.waitFor(() => /Provider OpenCode/.test(document.querySelector('#acct-panel')?.textContent ?? ''), { timeoutMs: 6000, message: 'isi OpenCode' });
-      await page.eval(() => { const s = document.querySelector('#acct-tab'); s.value = 'claude'; s.dispatchEvent(new Event('change', { bubbles: true })); });
-      await page.waitFor(() => /Login dengan akun Claude|Ganti akun/.test(document.querySelector('#acct-panel')?.textContent ?? ''), { timeoutMs: 3000, message: 'panel Claude' });
-      assert.equal(await page.eval(() => window.__acctEngineCalls), 0, 'dropdown tidak memanggil /api/engine');
+      assert.equal(view.tabSelect, false, 'tidak ada dropdown mesin lagi');
+      assert.equal(view.tabs, 0, 'tidak ada tab mesin');
+      assert.match(view.note, /Model selain Claude/, 'penjelasan satu kalimat antara dua sumber login');
+      assert.equal(view.claudeHere, true, 'bagian Claude tampil di halaman yang sama');
+      assert.equal(view.providersHere, true, 'bagian provider OpenCode tampil di halaman yang sama');
+      assert.equal(view.title, '👤 Akun');
+      assert.equal(await page.eval(() => window.__acctEngineCalls), 0, 'tidak ada panggilan /api/engine');
       assert.deepEqual(page.problems, [], 'tanpa error console');
     } finally {
       await page.eval(() => {
-        window.localStorage.removeItem('office.accountTab');
         if (window.__officeFetch) window.fetch = window.__officeFetch;
         delete window.__officeFetch;
         delete window.__acctEngineCalls;
@@ -362,7 +358,7 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
       assert.match(view.texts, /halo dari OpenCode/, 'kedua mesin tampil dalam satu alur');
       assert.deepEqual(view.rows.slice(0, 4), ['mix-a1', 'mix-a2', 'mix-b1', 'mix-b2'], 'urutan timeline apa adanya');
       assert.deepEqual(view.marks, [
-        { mark: '✳', title: 'Claude Code', engine: 'claude' },
+        { mark: '✳', title: 'Claude', engine: 'claude' },
         { mark: '▢', title: 'OpenCode', engine: 'opencode' },
       ], 'badge hanya pada pesan pertama dan saat mesin berubah');
 

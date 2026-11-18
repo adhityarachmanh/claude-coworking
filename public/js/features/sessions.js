@@ -61,7 +61,7 @@ export function renderSessionBar() {
   if (st.cliBusy) meta.push('terminal aktif');
   // The engine that runs the project right now (the model picked in Pengaturan giliran decides it): a small info
   // badge, never a switch. Phone hides the session bar; the chat marks engine changes per message instead.
-  const badge = `<span id="sb-engine" class="engine-badge" data-engine="${escapeHtml(engine)}" title="Mesin project ini: ${escapeHtml(engineLabel(engine))} — dipilih oleh model di Pengaturan giliran" aria-label="Mesin project: ${escapeHtml(engineLabel(engine))}">${escapeHtml(engineBadge(engine))}</span>`;
+  const badge = `<span id="sb-engine" class="engine-badge" data-engine="${escapeHtml(engine)}" title="Sumber model: ${escapeHtml(engineLabel(engine))} — ditentukan oleh model di Pengaturan giliran" aria-label="Sumber model: ${escapeHtml(engineLabel(engine))}">${escapeHtml(engineBadge(engine))}</span>`;
   // The active model's logo (the same ai_logos the chip uses); an unknown family shows none.
   const { file } = activeModelOf(st, engine);
   const logo = file ? `<img class="sb-logo" src="/ai-logos/${escapeHtml(file)}" alt="" aria-hidden="true">` : '';

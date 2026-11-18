@@ -63,18 +63,18 @@ function engineSwitchRefusal({ hub, sessions, opencode, taskQueue }, project, en
   if (hub.legacyChats) return { error: 'Riwayat chat lama belum selesai dipindahkan (lihat log server). Restart aplikasi dulu, lalu coba lagi.' };
   // An open card first: its reason is the one the user can act on (a turn may run behind it anyway).
   if ([...hub.approvals.values()].some(({ approval }) => approval.project === id)) {
-    return { error: 'Masih ada permintaan izin/rencana yang menunggu jawaban. Jawab dulu, lalu pilih model mesin lain.' };
+    return { error: 'Masih ada permintaan izin/rencana yang menunggu jawaban. Jawab dulu, lalu pilih model lain.' };
   }
   const session = sessions.sessions.get(id);
   if (session && (session.turnActive() || session.busy || session.inflight?.size || session.rewinding)) {
-    return { error: `Masih ada yang bekerja: ${name}. Tunggu giliran ini selesai, lalu pilih model mesin lain.`, busy: [name] };
+    return { error: `Masih ada yang bekerja: ${name}. Tunggu giliran ini selesai, lalu pilih model lain.`, busy: [name] };
   }
   if (hub.persisted.turns?.[id] || hub.persisted.interrupted?.[id]) {
-    return { error: 'Ada giliran terputus ("Lanjutkan") di project ini. Lanjutkan atau abaikan dulu, lalu pilih model mesin lain.' };
+    return { error: 'Ada giliran terputus ("Lanjutkan") di project ini. Lanjutkan atau abaikan dulu, lalu pilih model lain.' };
   }
   const queue = taskQueue?.queues?.[id];
   if (queue?.items?.some((i) => i.status === 'waiting' || i.status === 'running')) {
-    return { error: `📋 Antrian tugas masih berisi item: ${name}. Selesaikan atau hapus dulu, lalu pilih model mesin lain.`, busy: [name] };
+    return { error: `📋 Antrian tugas masih berisi item: ${name}. Selesaikan atau hapus dulu, lalu pilih model lain.`, busy: [name] };
   }
   return null;
 }

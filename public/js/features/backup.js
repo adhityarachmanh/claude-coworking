@@ -183,7 +183,7 @@ function renderResult(r) {
     el('li', `Riwayat prompt: +${r.history.added} baris · laporan token: +${r.usage.added} catatan`),
   );
   const st = r.state ?? {};
-  const stateParts = [st.roots && `${st.roots} folder induk`, st.custom && `${st.custom} folder`, st.favorites && `${st.favorites} favorit`, st.settings && `${st.settings} pengaturan project (tanpa mode izin)`, st.engines && `${st.engines} mesin project`, st.engineSettings && `${st.engineSettings} pengaturan per mesin`, st.sessions && `${st.sessions} percakapan per mesin`, st.teamNames && `${st.teamNames} nama tim`].filter(Boolean);
+  const stateParts = [st.roots && `${st.roots} folder induk`, st.custom && `${st.custom} folder`, st.favorites && `${st.favorites} favorit`, st.settings && `${st.settings} pengaturan project (tanpa mode izin)`, st.engines && `${st.engines} sumber project`, st.engineSettings && `${st.engineSettings} pengaturan per sumber`, st.sessions && `${st.sessions} percakapan per mesin`, st.teamNames && `${st.teamNames} nama tim`].filter(Boolean);
   if (stateParts.length) list.append(el('li', `Data kantor digabung: ${stateParts.join(', ')}`));
   if (r.opencodeSessions?.added) list.append(el('li', `${r.opencodeSessions.added} sesi OpenCode diimpor`));
   if (r.opencodeSessions?.skipped && !r.opencodeSessions.added) list.append(el('li', `${r.opencodeSessions.skipped} sesi OpenCode dilewati (sudah ada/tidak dikenali)`));

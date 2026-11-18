@@ -419,6 +419,6 @@ test('Claude-only surfaces are closed while OpenCode is the app engine', async (
   for (const [pattern, body] of requests) {
     const res = await call(pattern, ctx, LAPTOP, body, { id: 'p1' });
     assert.equal(res.status, 409, `${pattern} is Claude-only`);
-    assert.match(res.body.error, /Claude Code/, `${pattern} says why`);
+    assert.match(res.body.error, /Claude/, `${pattern} says why`);
   }
 });

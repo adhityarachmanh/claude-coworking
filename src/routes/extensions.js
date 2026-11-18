@@ -15,7 +15,7 @@ const ghBin = findGh();
  *  engine (a route without a project falls back to the app-wide default). Errors → their status. */
 const guard = (fn, { laptop = false, claude = false } = {}) => async (ctx, req, res, params, body) => {
   const engine = params?.project && ctx.hub?.engineOf ? ctx.hub.engineOf(params.project.id) : (ctx.hub?.engine ?? 'claude');
-  if (claude && engine !== 'claude') return json(res, 409, { error: 'Ekstensi hanya tersedia saat mesin Claude Code aktif.' });
+  if (claude && engine !== 'claude') return json(res, 409, { error: 'Ekstensi hanya tersedia saat model Claude aktif.' });
   if (laptop ? !ctx.isLocal(req) : ctx.isReadOnly?.(req) !== false) return json(res, 403, { error: laptop ? 'Hanya dari laptop.' : 'Hanya dari laptop atau lewat Tailscale.' });
   try {
     return json(res, 200, await fn(ctx, req, res, params, body ?? {}));

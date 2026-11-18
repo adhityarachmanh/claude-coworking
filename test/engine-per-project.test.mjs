@@ -159,7 +159,7 @@ test('switching ONE project goes through its turn settings; the app-wide default
   assert.equal((await api('/api/engine', { engine: 'claude' })).status, 200);
 });
 
-test('each engine keeps its own model and effort for a project (mode/team stay shared)', async () => {
+test('one set of settings per project: model and effort follow you (mode/team stay shared)', async () => {
   const alfa = await projectId('alfa');
   await switchProject(alfa, 'claude');
   assert.equal((await api(`/api/projects/${alfa}/settings`, { model: 'opus', effort: 'high', mode: 'build' })).status, 200);
@@ -169,21 +169,21 @@ test('each engine keeps its own model and effort for a project (mode/team stay s
 
   await switchProject(alfa, 'opencode');
   st = await statusOf(alfa);
-  assert.equal(st.model, '', 'the Claude model does not follow the project into OpenCode');
-  assert.equal(st.effort, '');
+  assert.equal(st.model, '', 'an engine switch alone starts from Default: the model belongs to the engine it was picked for');
+  assert.equal(st.effort, 'high', 'effort is one setting per project: it follows you');
   assert.equal(st.mode, 'build', 'mode is shared');
-  assert.deepEqual(state().engineSettings[alfa].claude, { model: 'opus', effort: 'high', agent: '' });
+  assert.deepEqual(state().engineSettings[alfa].claude, { model: 'opus', effort: 'high', agent: '' }, 'kept for backups only');
   await api(`/api/projects/${alfa}/settings`, { model: 'opencode-go/beam-free', effort: 'low' });
   st = await statusOf(alfa);
   assert.equal(st.model, 'opencode-go/beam-free');
 
   await switchProject(alfa, 'claude');
   st = await statusOf(alfa);
-  assert.equal(st.model, 'opus', 'the Claude model comes back exactly as it was');
-  assert.equal(st.effort, 'high');
-  await switchProject(alfa, 'opencode');
+  assert.equal(st.model, '', 'coming back never restores a different model');
+  assert.equal(st.effort, 'low', 'the effort you last chose stays');
+  await api(`/api/projects/${alfa}/settings`, { model: 'opus' });
   st = await statusOf(alfa);
-  assert.equal(st.model, 'opencode-go/beam-free');
+  assert.equal(st.model, 'opus', 'picking a Claude model switches the source and keeps the effort');
   assert.equal(st.effort, 'low');
 });
 
@@ -318,7 +318,7 @@ test('Claude-only surfaces follow the PROJECT engine, not the app-wide default',
   await switchProject(beta, 'claude');
   const refused = await api(`/api/projects/${alfa}/export-session`, { sessionId: '00000000-0000-0000-0000-000000000000' });
   assert.equal(refused.status, 409, 'an OpenCode project has no Claude transcript to export');
-  assert.match(refused.body.error, /Claude Code/);
+  assert.match(refused.body.error, /Claude/);
   const allowed = await api(`/api/projects/${beta}/export-session`, { sessionId: '00000000-0000-0000-0000-000000000000' });
   assert.notEqual(allowed.status, 409, 'a Claude project may use it (the unknown session is another error)');
 });
