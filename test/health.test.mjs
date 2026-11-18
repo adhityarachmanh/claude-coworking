@@ -218,6 +218,30 @@ test('health: an unlogged-in, unconfigured office warns without failing', () => 
   assert.equal(checkOf(health, 'data').ok, true);
 });
 
+test('health: Claude switched off → neutral line, no login item, OpenCode becomes the required engine', () => {
+  const ctx = {
+    account: { current: null, profile: { loggedIn: false } },
+    opencode: null,
+    hub: {
+      engine: 'opencode',
+      config: {},
+      claudeEnabled: () => false,
+      projects: new Map([['demo', { id: 'demo', name: 'Demo kantor', path: null, sources: ['demo'], virtual: true }]]),
+    },
+    backupScheduler: { view: () => ({ schedule: { enabled: false, folder: '' }, last: null }) },
+    remote: { enabled: false, publicInfo: () => ({ enabled: false, devices: [] }) },
+    httpsInfo: () => ({ state: 'off' }),
+  };
+  const health = buildHealth(ctx, { now: NOW });
+  const claude = checkOf(health, 'claude');
+  assert.deepEqual([claude.ok, claude.detail], [true, 'Dinonaktifkan'], 'nothing is missing: it is off on purpose');
+  assert.equal(itemOf(health, 'login'), undefined, 'the Claude login item disappears');
+  const opencode = itemOf(health, 'opencode');
+  assert.equal(opencode.label, 'OpenCode', 'no longer marked optional');
+  assert.match(opencode.hint, /Mesin utama/);
+  assert.deepEqual(health.checklist.map((c) => c.id), ['project', 'backup', 'https', 'opencode']);
+});
+
 test('health: backup — enabled but never run, and a failed last run', () => {
   const never = buildHealth(fakeCtx({ backupScheduler: { view: () => ({ schedule: { enabled: true, folder: 'D:\\Backup' }, last: null }) } }), { now: NOW });
   const neverCheck = checkOf(never, 'backup');

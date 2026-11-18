@@ -163,6 +163,8 @@ export function buildHealth(ctx = {}, { now = Date.now() } = {}) {
   const account = c.account ?? null;
   const current = safe(() => account?.current ?? null);
   const profile = safe(() => account?.profile ?? null);
+  // Claude Code can be switched off in the app (👤 Akun): its account line and login item then say nothing is wrong.
+  const claudeOn = safe(() => (typeof c.hub?.claudeEnabled === 'function' ? c.hub.claudeEnabled() : true), true) !== false;
 
   // ---------- what the checks below share (each read once, safely) ----------
   const roots = safe(() => c.projectRoots?.() ?? [], []) ?? [];
@@ -209,6 +211,8 @@ export function buildHealth(ctx = {}, { now = Date.now() } = {}) {
 
   const checks = [
     run('claude', 'Akun Claude', () => {
+      // Claude Code switched off in the app (👤 Akun): nothing about it is missing, so the line stays neutral.
+      if (!claudeOn) return { ok: true, detail: 'Dinonaktifkan', hint: 'Aktifkan lagi di 👤 Akun kalau suatu saat perlu.' };
       if (!current) return { ok: false, detail: 'Belum login', hint: 'Login Claude di ⚙ → Akun supaya bisa memulai giliran.' };
       const plan = oneLine(profile?.subscriptionType);
       return { ok: true, detail: [oneLine(current.email) || 'Sudah login', plan ? `paket ${plan}` : ''].filter(Boolean).join(' · ') };
@@ -336,13 +340,15 @@ export function buildHealth(ctx = {}, { now = Date.now() } = {}) {
   // Onboarding: what a fresh office still needs. "https" is done when the phone access that needs it is off.
   // `login` reads the Claude account only: listing OpenCode's providers (`opencode auth list`) would spawn a CLI,
   // which this report must never do, so an OpenCode-only setup shows this item as not done (OpenCode stays optional).
+  // With Claude switched off the login item disappears (it is Claude's) and OpenCode becomes the required engine.
   const checklist = [
-    { id: 'login', label: 'Login Claude (atau provider OpenCode)', done: Boolean(current), hint: 'Login lewat ⚙ → Akun.' },
+    ...(claudeOn ? [{ id: 'login', label: 'Login Claude (atau provider OpenCode)', done: Boolean(current), hint: 'Login lewat ⚙ → Akun.' }] : []),
     { id: 'project', label: 'Folder project', done: hasProject, hint: 'Tambahkan folder project di ⚙ → Folder project.' },
     { id: 'backup', label: 'Backup otomatis', done: Boolean(schedule?.enabled && schedule?.folder), hint: 'Nyalakan di ⚙ → Cadangkan riwayat dan pilih folder tujuan.' },
     { id: 'https', label: 'HTTPS untuk HP', done: httpsReady || !remoteEnabled, hint: 'Pasang Tailscale di laptop dan HP supaya HP bisa memantau dari mana saja (⚙ → Akses HP).' },
-    // Optional: the office works on Claude Code alone.
-    { id: 'opencode', label: 'OpenCode (opsional)', done: Boolean(c.opencode), hint: 'Opsional: pasang OpenCode untuk mesin kedua (⚙ → Kompatibilitas OpenCode).' },
+    claudeOn
+      ? { id: 'opencode', label: 'OpenCode (opsional)', done: Boolean(c.opencode), hint: 'Opsional: pasang OpenCode untuk memakai model provider lain (⚙ → Kompatibilitas OpenCode).' }
+      : { id: 'opencode', label: 'OpenCode', done: Boolean(c.opencode), hint: 'Mesin utama aplikasi ini: pasang OpenCode lewat ⚙ → Kompatibilitas OpenCode.' },
   ];
 
   return {
