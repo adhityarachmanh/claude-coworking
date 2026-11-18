@@ -2719,6 +2719,20 @@ body.read-only #composer-hint { color: var(--ask); }
   .todos-head { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
   .todos-now { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--text-2); }
 
+  /* mode baca (features/phone-fold.js): one tap folds the whole input area away — composer, status strip and todo
+     chip — so the chat fills the screen; a floating pill brings it back, still carrying what must not be missed. */
+  #btn-fold { order: 4; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; font-size: var(--fs-lg); color: var(--muted); }
+  body.composer-folded .composer { display: none; }
+  #btn-unfold { display: none; }
+  body.composer-folded[data-tab='chat'] #btn-unfold {
+    position: absolute; right: 10px; bottom: 10px; z-index: var(--z-raised);
+    display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px;
+    border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface-2); color: var(--text);
+    font: 600 var(--fs-md)/1 var(--font); box-shadow: 0 4px 16px #0009;
+  }
+  .unfold-flags { display: inline-flex; gap: 4px; }
+  .unfold-flags[hidden] { display: none; }
+
   /* WiFi view-only: one banner instead of the box */
   body.read-only #ro-banner:not([hidden]) { display: block; padding: 10px 12px; border: 1px solid var(--warn-line); border-radius: var(--r-xl); background: var(--surface-2); color: var(--ask); font-size: var(--fs-md); line-height: 1.4; }
   body.read-only .input, body.read-only #typing-stop { display: none !important; }

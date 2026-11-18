@@ -48,6 +48,7 @@ import { initWakeLock } from './features/wake-lock.js';
 import { initPalette } from './features/palette.js';
 import { initPermissions } from './features/permissions.js';
 import { initPhone } from './features/phone.js';
+import { initPhoneFold } from './features/phone-fold.js';
 import { initPhoneSheets } from './features/phone-sheets.js';
 import { initPicker } from './features/picker.js';
 import { initGroups } from './features/groups.js';
@@ -158,6 +159,7 @@ initSpotify(); // ♪ Spotify: pill, ♪ dialog, 🗂 row, ⚙ section, office r
 initPalette(); // Ctrl+P command palette (the shortcut itself is in ui/shortcuts.js)
 initPanelResizer();
 initPhoneSheets(); // phone Chat: ＋ / settings / ⋯ sheets (moves .controls into its sheet on a phone)
+initPhoneFold(); // phone Chat: fold the input area away for a full-screen read (mode baca)
 initKeyboardInset(); // phone: composer above the on-screen keyboard, bottom nav hidden while typing
 initWakeLock(); // phone: screen stays on while a turn runs (and the page is visible)
 

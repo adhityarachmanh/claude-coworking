@@ -244,12 +244,16 @@
             <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)" aria-label="Hentikan giliran">■ Stop</button>
             <button id="btn-queue-add" class="ghost icon attach queue-add" type="button" title="Tambah ke 📋 Antrian, dijalankan saat tim tidak sibuk (Alt+Enter). Kotak kosong: buka antrian" aria-label="Tambah ke antrian">📋</button>
             <button id="btn-send" class="primary" aria-label="Kirim pesan">Kirim</button>
+            <!-- Phone only: fold the whole input area away to read with the full screen (features/phone-fold.js) -->
+            <button id="btn-fold" class="ghost icon phone-only" type="button" aria-expanded="true" aria-controls="composer" aria-label="Lipat area input (mode baca)">▾</button>
           </div>
           <!-- Status line: permission mode (Shift+Tab), model, context used -->
           <div id="statusline" class="statusline"></div>
           <div id="composer-hint" class="hint"></div>
           <button id="btn-demo" class="primary demo-btn">▶ Jalankan demo</button>
         </div>
+        <!-- Phone only: the way back from mode baca — and the flags folding must not hide (features/phone-fold.js) -->
+        <button id="btn-unfold" class="phone-only unfold-pill" type="button" aria-label="Buka area input"><span aria-hidden="true">⌨</span> Tulis<span id="unfold-flags" class="unfold-flags" hidden></span></button>
       </section>
     </div>
 

@@ -1,4 +1,4 @@
-/* global document, window, getComputedStyle, DataTransfer, DragEvent -- functions passed to page.eval run in the browser */
+/* global document, window, getComputedStyle, DataTransfer, DragEvent, localStorage -- functions passed to page.eval run in the browser */
 // Chat tab on a phone (docs/design-mobile-chat.md, phase 1) in a headless Chrome/Edge (test-support/cdp.mjs):
 // compact header + ⋯ sheet, two-row composer (＋ sheet, settings chip, one morphing send/stop/🎤 button),
 // status strip, read-only banner, keyboard inset. Desktop (1440×900) must stay exactly as it was.
@@ -78,6 +78,7 @@ before(async () => {
       ...process.env,
       OFFICE_PORT: String(port),
       OFFICE_DATA_DIR: path.join(TMP, 'data'),
+      OFFICE_APP_DIR: APP, // never the installed app's assets: these tests describe the working tree
       OFFICE_TAILSCALE_BIN: path.join(TMP, 'no-tailscale.exe'), // never the real Tailscale CLI
       PROJECTS_ROOT: path.join(TMP, 'projects'),
       CLAUDE_BIN: path.join(APP, 'test-support', 'fake-claude.mjs'),
@@ -390,6 +391,11 @@ for (const vp of PHONES) {
       await page.setViewport(vp);
       await closeModals(page);
       await resetStatus(page);
+      // Mode baca: start each test with the composer open (a test that failed midway must not leak it).
+      await page.eval(() => {
+        document.body.classList.remove('composer-folded');
+        localStorage.removeItem('office.composerFolded');
+      });
       await setPrompt(page, '');
       await clearAttachmentsInPage(page);
       await page.eval(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
@@ -445,6 +451,60 @@ for (const vp of PHONES) {
         const w = await promptWidth(page);
         assert.ok(w >= 280, `lebar #prompt ${w} px (${name})`);
       }
+      await fresh();
+      assert.deepEqual(page.problems, []);
+    });
+
+    test('mode baca: satu ketukan melipat composer (chat penuh), pil ⌨ mengembalikan dengan fokus + flag tetap terlihat', async () => {
+      await fresh();
+      await patchStatus(page, BUSY);
+      assert.equal(await isShown(page, '#statusline'), true, 'strip status tampil saat sibuk');
+      assert.equal(await isShown(page, '#btn-unfold'), false, 'pil ⌨ belum tampil saat composer terbuka');
+      const chatOpen = await page.eval(() => Math.round(document.querySelector('#chat').getBoundingClientRect().height));
+
+      await page.click('#btn-fold');
+      await page.waitFor(() => !document.querySelector('#composer').getClientRects().length, { timeoutMs: 2000, message: 'composer terlipat' });
+      assert.equal(await isShown(page, '#composer'), false, 'composer tersembunyi');
+      assert.equal(await isShown(page, '#statusline'), false, 'strip status ikut tersembunyi');
+      assert.equal(await isShown(page, '#todos'), false, 'chip tugas ikut tersembunyi');
+      assert.equal(await isShown(page, '#btn-unfold'), true, 'pil ⌨ muncul');
+      assert.equal(await page.eval(() => document.body.classList.contains('composer-folded')), true, 'kelas body');
+      assert.equal(await page.eval(() => localStorage.getItem('office.composerFolded')), '1', 'pilihan diingat');
+      const chatFolded = await page.eval(() => Math.round(document.querySelector('#chat').getBoundingClientRect().height));
+      assert.ok(chatFolded > chatOpen, `chat memakai layar lebih penuh saat terlipat (${chatFolded} > ${chatOpen})`);
+      assert.equal(await page.eval(horizontalOverflow), null, 'tanpa overflow saat terlipat');
+      const pill = await page.eval(() => {
+        const r = document.querySelector('#btn-unfold').getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height), right: Math.round(r.right), bottom: Math.round(r.bottom), vw: window.innerWidth, vh: window.innerHeight };
+      });
+      assert.ok(pill.w >= 44 && pill.h >= 44, `target sentuh pil ${pill.w}×${pill.h}`);
+      assert.ok(pill.right <= pill.vw + 1 && pill.bottom <= pill.vh + 1, 'pil tetap di dalam layar');
+
+      // Folding must never hide a decision: a waiting permission still shows on the pill.
+      await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        state.approvals.set('test-pending', { id: 'test-pending', project: state.active, status: 'pending' });
+      });
+      await patchStatus(page, { ...BUSY, busy: false, todos: [] });
+      const flags = await page.eval(() => ({
+        text: document.querySelector('#unfold-flags').textContent,
+        label: document.querySelector('#btn-unfold').getAttribute('aria-label'),
+        hidden: document.querySelector('#unfold-flags').hidden,
+      }));
+      assert.match(flags.text, /✋/, `ikon izin menunggu di pil: "${flags.text}"`);
+      assert.equal(flags.hidden, false, 'flag terlihat di pil');
+      assert.match(flags.label, /izin menunggu/i, `aria-label pil: "${flags.label}"`);
+      await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        state.approvals.delete('test-pending');
+      });
+
+      // Back to writing: the box returns and the cursor is already in it.
+      await page.click('#btn-unfold');
+      await page.waitFor(() => document.querySelector('#composer').getClientRects().length, { timeoutMs: 2000, message: 'composer kembali' });
+      assert.equal(await isShown(page, '#composer'), true);
+      assert.equal(await page.eval(() => document.activeElement.id), 'prompt', 'fokus pindah ke kotak pesan');
+      assert.equal(await page.eval(() => localStorage.getItem('office.composerFolded')), '0', 'pilihan diingat');
       await fresh();
       assert.deepEqual(page.problems, []);
     });

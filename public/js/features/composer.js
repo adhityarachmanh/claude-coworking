@@ -17,6 +17,7 @@ import { draftSent, flushDraft, scheduleDraftSave } from './draft.js';
 import { applyCapsToDom, autoModelNote, AUTO_MODEL, catalogMatchCount, currentProviderAuth, currentProviderNames, engineSwitchLocked, guardCap, initEngine, isModelValue, MODEL_TIER_LABELS, MODEL_TIERS, modelCatalogOptions, modelEntry, modelTiersFor, projectCaps, projectModelCatalog, projectModels, tierOptionsHtml, wantModels } from './engine.js';
 import { recall, recallPrompt } from './history.js';
 import { modelPrices, priceFor, priceNote } from './model-prices.js';
+import { renderFoldFlags } from './phone-fold.js';
 import { renderResumeTurn } from './resume-turn.js';
 import { openRewind } from './rewind.js';
 import { confirmNew, renderSessionBar } from './sessions.js';
@@ -120,6 +121,7 @@ export function renderComposer() {
   renderModeChoice(st);
   renderVoice();
   renderSettingsChip(st);
+  renderFoldFlags(st);
   applyReadOnly();
   renderSendState();
   if (!$('#tasks-modal').hidden && tasksView.project === state.active) renderTasks();

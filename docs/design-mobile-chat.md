@@ -559,3 +559,16 @@ Query HP sekarang `(max-width: 760px), (pointer: coarse) and (max-height: 500px)
 - Diff di HP: `pre-wrap` di dalam `#ch-diff` (tanpa geser samping); header ⎇ dan Commit tidak ikut tergulir.
 - Landscape (`(pointer: coarse) and (max-height: 500px) and (orientation: landscape)`): navigasi jadi rail kiri 72 px (+ safe-area), header 44 px, composer satu baris `[＋][teks][chip][↑]`, Kantor = kantor kiri + 🗂/tim kanan, Perubahan = file kiri + diff kanan. Keyboard terbuka: header dan rail disembunyikan. Sheet: tengah, maks 640 px, tinggi maks layar, judul + ✕ sticky.
 - Test: `test/mobile-views.test.mjs` (390×844, 360×740, 844×390, desktop 1440×900 dan 900×480).
+
+---
+
+## 10. Mode baca: melipat area input (diimplementasi)
+
+Masalah: di layar 390 px, kotak pesan + strip status + chip tugas memakan ~180 px, sehingga chat panjang hanya menyisakan sedikit ruang baca. Solusinya satu tombol, tanpa mode baru yang harus dipelajari:
+
+- **▾ di baris kotak pesan** (`#btn-fold`, 44×44) menambahkan `body.composer-folded`: `.composer` (`display:none`) hilang, jadi strip status dan chip tugas ikut hilang karena berada di dalamnya. Chat memakai sisa layar penuh.
+- **Pil mengambang ⌨ Tulis** (`#btn-unfold`, tinggi ≥ 44 px, kanan-bawah di atas chat) mengembalikan composer dan langsung memfokuskan `#prompt` (satu ketukan → langsung menulis).
+- **Tidak menyembunyikan keputusan:** `features/phone-fold.js` merender flag di dalam pil dari `core/fold-rules.js` — **✋ izin menunggu** (ada approval `pending` untuk project aktif), **⚡ sambungan putus** (`connection.online`), **⏳ giliran berjalan** (`busy`/`cliBusy`/`compacting`). `aria-label` pil menyebut label flag, bukan hanya ikon.
+- **Diingat per perangkat** (`localStorage: office.composerFolded`), dipulihkan saat halaman dimuat. `renderFoldFlags(st)` dipanggil ulang dari `renderComposer()` pada setiap status, jadi flag mengikuti keadaan tanpa menunggu buka/tutup.
+- **Desktop tidak berubah:** semua aturan ada di blok `@media` HP dan kedua tombol memakai `.phone-only`.
+- **Test:** `test/mobile-chat.test.mjs` blok `HP chat …` — melipat, ukuran chat bertambah, pil di dalam layar, flag izin menunggu + `aria-label`, membuka kembali memfokuskan kotak, tanpa overflow horizontal.
