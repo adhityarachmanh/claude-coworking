@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.80
+
+- **🔑 Cek kompatibilitas Claude Code tidak lagi salah menyalahkan protokol saat Claude Code belum login.** Kalau Claude Code terpasang tetapi belum ada yang login (`claude auth status` → `loggedIn: false`), setiap prompt dijawab teks polos *"Not logged in · Please run /login"* tanpa streaming — dulu itu terbaca sebagai `stream_event text_delta` gagal, dan `npm run test:claude` (serta cek otomatis setelah update) menggantung sampai batas waktu lalu melaporkan protokol rusak. Sekarang cek **membaca status login** dan melaporkan satu cek jujur: **`login Claude Code`** beserta saran menjalankan `/login` — bukan `stream_event text_delta`. **Cek tanpa token tetap dijalankan** (flag peluncuran, `initialize`, `catalog`, `set_model`, `set_context_usage`), jadi kerusakan protokol yang nyata tetap ketahuan walau sedang belum login; yang dilewati hanya giliran modelnya. Kalau `auth status` sendiri tak terbaca, keputusan diambil dari **balasan giliran** yang menampilkan notice itu. Hasil “belum login” juga dicoba ulang otomatis pada cek berikutnya, jadi setelah kamu login statusnya pulih sendiri tanpa menunggu versi Claude Code berubah. (Tidak menyentuh setelan atau file Claude milikmu.)
+
 ## 1.0.79
 
 - **🧠 File petunjuk OpenCode lagi-lagi `CLAUDE.md`.** Sejak OpenCode 2.3.1, OpenCode **kembali membaca `CLAUDE.md`** di folder project yang belum punya `AGENTS.md` (dan jatuh ke `~/.claude/CLAUDE.md` bila `AGENTS.md` global juga tidak ada). Dulu file itu tidak terlihat di editor 🧠 Memory, jadi bisa "menyetir" sesi tanpa kamu sadari. Sekarang tab `CLAUDE.md` cadangan ikut muncul saat OpenCode memang akan membacanya **atau** file itu sudah ada di disk; begitu `AGENTS.md` ada, `AGENTS.md` yang menang dan tab cadangan itu hilang lagi. File global (`~/.claude/CLAUDE.md`, dipakai bersama Claude Code) tetap hanya bisa diubah dari laptop.
