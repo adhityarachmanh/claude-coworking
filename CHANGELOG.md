@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.74
 
 - **↪ Arahkan giliran yang sedang berjalan, tanpa menunggu antrian.** Di OpenCode 2.3+ sebuah giliran bisa "dibelokkan" saat masih bekerja (`_session/steering`). Sekarang pesan yang masuk saat tim masih bekerja mendapat tombol **↪ Arahkan sekarang** di bubble antreannya: teksnya langsung disisipkan ke giliran berjalan — berguna saat arahnya melenceng dan kamu tidak mau menunggu giliran selesai. Bila OpenCode terpasang lebih lama (tanpa dukungan steering), tombolnya tidak muncul dan perilakunya tetap seperti sekarang: pesan masuk 📋 Antrian.
 
