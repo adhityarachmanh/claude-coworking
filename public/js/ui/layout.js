@@ -140,7 +140,11 @@ export function initKeyboardInset() {
     tallest = Math.max(tallest, window.innerHeight, vv.height);
     const open = narrow.matches && tallest - vv.height > KEYBOARD_MIN && isTyping(document.activeElement);
     const body = document.body;
-    if (open) body.style.setProperty('--vv-h', `${Math.round(vv.height)}px`);
+    // On a phone the layout is sized to the VISIBLE area at all times, not only while typing: Android's URL bar
+    // showing/hiding and standalone/PWA change visualViewport without any keyboard, and a static `100dvh` then left
+    // the bottom nav floating above the real bottom (empty strip below it). Pinch-zoom (scale > 1) is left alone so
+    // the page does not resize under the fingers.
+    if (narrow.matches && vv.scale <= 1.01) body.style.setProperty('--vv-h', `${Math.round(vv.height)}px`);
     else body.style.removeProperty('--vv-h');
     if (open !== body.classList.contains('kb-open')) body.classList.toggle('kb-open', open);
     if (open && document.scrollingElement.scrollTop) document.scrollingElement.scrollTop = 0; // iOS pans the page up
@@ -148,6 +152,7 @@ export function initKeyboardInset() {
   };
   vv.addEventListener('resize', update);
   document.addEventListener('focusout', () => requestAnimationFrame(update)); // keyboard closing without a resize yet
+  update(); // set the measured phone height now, not only after the first resize (the URL bar may show later)
 }
 
 // ---------- resizable chat panel (desktop) ----------

@@ -1806,7 +1806,11 @@ body.read-only #composer-hint { color: var(--ask); }
 
 /* ---------- phone: app-style, one full-screen view + bottom navigation ---------- */
 @media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
-  body { height: 100dvh; overflow: hidden; }
+  /* The phone layout is exactly as tall as the VISIBLE area. A static `100dvh` tracks the layout viewport, which on
+     Android/WebView can differ from the visual one (URL bar shown/hidden, standalone/PWA) — the bottom nav then sat
+     above the real bottom and the leftover showed the page background. `--vv-h` (ui/layout.js, from visualViewport)
+     is the measured value; `100svh` is the no-JS fallback (smallest viewport → never taller than the screen). */
+  body { height: 100svh; height: var(--vv-h, 100dvh); overflow: hidden; }
   .topbar { flex: none; gap: 8px; height: calc(52px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 10px 0; }
   .brand span { display: none; }
   .brand .logo { width: 26px; height: 26px; }
