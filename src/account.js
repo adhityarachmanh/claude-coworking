@@ -81,6 +81,33 @@ export function billingStatus(profile, rateLimit) {
 
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
+/**
+ * A one-line warning when Claude Code's login is about to expire, from `claude auth status --json`'s
+ * `loginExpiresAt` (ISO string, epoch ms number, or epoch seconds — Claude Code 2.1.328 reports the field).
+ * Returns null when there is no expiry, it already passed, or it is further out than `days` ahead: the app only
+ * nudges, it never nags. The string is plain Indonesian so any surface (chat/status) can show it as-is.
+ * @param {object|null} profile the account profile ({ loginExpiresAt })
+ * @param {number} now epoch ms
+ * @param {number} days how many days ahead is worth a nudge
+ * @returns {string|null}
+ */
+export function loginExpiryNote(profile, now = Date.now(), days = 3) {
+  if (!profile?.loggedIn) return null;
+  const raw = profile.loginExpiresAt;
+  let ms = null;
+  if (typeof raw === 'number' && Number.isFinite(raw)) ms = raw < 1e12 ? raw * 1000 : raw; // seconds vs ms
+  else if (typeof raw === 'string' && raw) {
+    const parsed = Date.parse(raw);
+    if (Number.isFinite(parsed)) ms = parsed;
+  }
+  if (ms == null || ms <= now) return null;
+  const daysLeft = (ms - now) / 86_400_000;
+  if (daysLeft > days) return null;
+  const hours = Math.round((ms - now) / 3_600_000);
+  const when = hours < 48 ? `${Math.max(1, hours)} jam` : `${Math.round(daysLeft)} hari`;
+  return `Login Claude Code berakhir dalam ${when} — login ulang lewat 👤 Akun sebelum itu agar giliran tidak gagal.`;
+}
+
 /** What a browser shows of the rate-limit state: a change here is worth a broadcast, anything else is not. */
 function rateLimitSignature(rl) {
   if (!rl) return '';
@@ -149,6 +176,7 @@ export class AccountService {
       seatTier: oauth.seatTier ?? null,
       billingType: oauth.billingType ?? null,
       rateLimitTier: oauth.userRateLimitTier ?? oauth.organizationRateLimitTier ?? null,
+      loginExpiresAt: status.loginExpiresAt ?? oauth.loginExpiresAt ?? null, // Claude Code 2.1.328: login's own expiry
     };
     this.profileAt = Date.now();
     if (previous !== this.current?.id) {
@@ -282,7 +310,7 @@ export class AccountService {
   }
 
   publicState() {
-    return { profile: this.profile, limits: this.limits, rateLimit: this.rateLimit, billing: billingStatus(this.profile, this.rateLimit), login: this.publicLogin() };
+    return { profile: this.profile, limits: this.limits, rateLimit: this.rateLimit, billing: billingStatus(this.profile, this.rateLimit), login: this.publicLogin(), loginExpiry: loginExpiryNote(this.profile) };
   }
 
   emit() {

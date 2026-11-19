@@ -392,4 +392,49 @@ describe('mesin mengikuti model', { skip: SKIP ?? false }, () => {
       await page.close();
     }
   });
+
+  // ⚠ The Claude login's own expiry (`loginExpiresAt`) becomes one quiet line above the token usage, and nothing
+  // when the login is still far off or already gone: a nudge, never a nag (src/account.js loginExpiryNote).
+  test('akun: peringatan login Claude yang hampir kedaluwarsa tampil, dan sembunyi saat masih jauh', async () => {
+    const page = await browser.newPage({ width: 1440, height: 900, mobile: false });
+    try {
+      page.clearProblems();
+      await page.goto(`${BASE}/#${projectId}`);
+      await page.waitFor(appReady, { timeoutMs: 10000, message: 'app ready' });
+      await page.eval(() => {
+        window.__officeFetch ??= window.fetch;
+        const prev = window.fetch;
+        const json = (body) => Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+        window.__acctExpiry = { loginExpiry: 'Login Claude Code berakhir dalam 30 jam — login ulang lewat 👤 Akun sebelum itu agar giliran tidak gagal.' };
+        window.fetch = (url, opts) => {
+          const path = String(url);
+          if (path === '/api/account') return json({ profile: { loggedIn: true, email: 'uji@example.com', subscriptionType: 'pro', authMethod: 'claude.ai' }, login: null, usage: null, loginExpiry: window.__acctExpiry.loginExpiry });
+          if (path === '/api/account/limits') return json({ windows: [], note: null });
+          if (path === '/api/account/audit') return json({ entries: [] });
+          return prev(url, opts);
+        };
+      });
+      await page.eval(() => document.querySelector('#btn-account').click());
+      await page.waitFor(() => document.querySelector('#account-body .acct-warn'), { timeoutMs: 8000, message: 'peringatan login kedaluwarsa tampil' });
+      const warn = await page.eval(() => document.querySelector('#account-body .acct-warn')?.textContent ?? '');
+      assert.match(warn, /Login Claude Code berakhir dalam 30 jam/);
+      assert.match(warn, /👤 Akun/);
+      assert.deepEqual(page.problems, [], 'tanpa error console');
+
+      // A far-away expiry (server sends no loginExpiry): reopening the dialog drops the line.
+      await page.eval(() => {
+        window.__acctExpiry.loginExpiry = null;
+        document.querySelector('#account-modal [data-close], #account-modal .modal-close')?.click();
+      });
+      await page.eval(() => document.querySelector('#btn-account').click());
+      await page.waitFor(() => document.querySelector('#account-body .acct-facts') && !document.querySelector('#account-body .acct-warn'), { timeoutMs: 8000, message: 'tanpa peringatan saat login masih jauh' });
+    } finally {
+      await page.eval(() => {
+        if (window.__officeFetch) window.fetch = window.__officeFetch;
+        delete window.__officeFetch;
+        delete window.__acctExpiry;
+      }).catch(() => {});
+      await page.close();
+    }
+  });
 });

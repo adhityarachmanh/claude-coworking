@@ -331,6 +331,7 @@ function claudeBodyHtml() {
     </div>
     <dl class="acct-facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>
     <div class="acct-section"><div class="acct-title"><b>Kuota paket</b><button class="ghost icon" data-act="limits" title="Cek ulang kuota">↻</button></div>${quotaHtml}</div>
+    ${state.account?.loginExpiry ? `<p class="acct-warn" role="status">⚠ ${escapeHtml(state.account.loginExpiry)}</p>` : ''}
     <div class="acct-section"><div class="acct-title"><b>Pemakaian token akun ini</b><button class="ghost" data-act="report">📊 Laporan</button></div>${usageTable(account.usage)}
       <p class="muted small">Dihitung dari sesi web & CLI sejak fitur ini aktif, hanya untuk akun yang sedang login.</p></div>
     <div class="acct-actions">${actions}</div>

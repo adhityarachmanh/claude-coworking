@@ -1451,6 +1451,8 @@ body.read-only #composer-hint { color: var(--ask); }
 .acct-section { border-top: 1px solid var(--border); padding: 10px 0; }
 .acct-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: var(--fs-md); }
 .acct-title button { font-size: var(--fs-sm); padding: 3px 9px; }
+/* ⚠ Login Claude Code expires soon (src/account.js loginExpiryNote): a quiet nudge above the token usage section */
+.acct-warn { margin: 0 0 10px; padding: 7px 10px; font-size: var(--fs-md); background: var(--surface-2); border: 1px solid var(--border); border-left: 3px solid var(--ask); border-radius: 8px; }
 .quota { margin-bottom: 9px; font-size: var(--fs-md); }
 .quota-head { display: flex; justify-content: space-between; margin-bottom: 3px; }
 /* usage-based seats (Enterprise): status of the organisation's limit instead of "% used" bars */
