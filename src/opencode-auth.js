@@ -118,7 +118,7 @@ export async function openCodeProviders(bin) {
   }));
   return {
     connected: providers.filter((p) => p.connections.length),
-    available: providers.filter((p) => p.methods.length).map(({ id, name, methods, custom }) => ({ id, name, methods, custom })),
+    available: providers.filter((p) => p.methods.length || p.env.length).map(({ id, name, methods, custom, env }) => ({ id, name, methods, custom, env })),
   };
 }
 

@@ -52,21 +52,56 @@ const RESUME_MAX_MS = envMs('OFFICE_RESUME_MAX_MS', 30 * 60_000);
 // is done. The parent's own resume is the primary signal (see beginResumeTurn); this is the fallback.
 const AGENT_QUIET_MS = envMs('OFFICE_AGENT_QUIET_MS', 20_000);
 const AGENT_MAX_MS = envMs('OFFICE_AGENT_MAX_MS', 30 * 60_000);
+// A model/mode/account change deferred for a background task is applied at the latest this long after it was asked:
+// a delegation whose final frame never comes must not keep a project on the old mode forever (refina-smi).
+const RESTART_MAX_WAIT_MS = envMs('OFFICE_RESTART_MAX_WAIT_MS', 10 * 60_000);
 const STDERR_TAIL = 4000;
 const OPENCODE_SESSION = /^ses_[\w-]{1,100}$/;
 const POINTS_CACHE_MS = 5000; // ⏪ the rewind list is reused this long (see rewindPoints)
+// A provider-login lookup on a failed turn must never hold the stop line: the turn is closed with an honest note even
+// when OpenCode does not answer (see authErrorNote).
+const AUTH_LOOKUP_TIMEOUT_MS = 2500;
 /** What a prompt / `!` shell gets while a rewind runs (409 from the routes). */
 export const REWINDING_MESSAGE = 'Rewind sedang berjalan. Tunggu sebentar, lalu kirim lagi.';
 
 /**
- * A turn that stopped because the provider has no stored credentials reads just "Authentication required…". Point
- * the user at the login path (the same message the picker's disabled models show). Idempotent: the note is appended
- * once, so a pass-through that runs twice never stacks it.
+ * A turn that stopped because the provider refused it reads only "Authentication required…". What it means depends on
+ * what we know: with no stored credential the user must log in, while a stored key can still be refused because
+ * OpenCode's service classifies EVERY HTTP 403 as an authentication error (upstream #55995/#48297) — an entitlement
+ * or credit refusal, or a network/region block (an office proxy inspecting HTTPS) arrives as this same text. Point at
+ * the plausible cause and the login path instead of always claiming the key is missing. Idempotent: the note is
+ * appended once, so a pass-through that runs twice never stacks it.
+ * @param {string} message the provider's own error text
+ * @param {{ provider?: string|null, connected?: boolean|null, status?: number|null }} [context] `connected` comes from
+ *   OpenCode's provider list: true (a credential is stored), false (the provider is known but has none), null/unknown.
+ *   `status` is the HTTP status behind the error when one is known.
  */
-export function authRequiredNote(message) {
+export function authRequiredNote(message, { provider = null, connected = null, status = null } = {}) {
   const text = typeof message === 'string' ? message : '';
   if (!/authentication required/i.test(text) || /👤 Akun/.test(text)) return text;
-  return `${text}\nProvider ini belum punya API key tersimpan: buka 👤 Akun → OpenCode → ＋ Login provider, lalu coba lagi.`;
+  const name = typeof provider === 'string' && /^[\w.@-]{1,100}$/.test(provider) ? provider : '';
+  const who = name ? `Provider «${name}»` : 'Provider ini';
+  let note;
+  if (connected === false) {
+    note = `${who} belum punya API key tersimpan: buka 👤 Akun → OpenCode → ＋ Login provider, lalu coba lagi.`;
+  } else if (connected === true) {
+    note = `${who} sudah punya key tersimpan, tetapi provider menolak permintaannya. Kemungkinan utama: (1) HTTP 403 — model ini tidak berhak / kredit habis; (2) jaringan/region (proxy kantor) memblokir permintaan ke provider. Coba: Login ulang di 👤 Akun → OpenCode · Ganti model · jaringan lain.`;
+  } else {
+    note = `Status login ${name ? `provider «${name}»` : 'provider ini'} belum bisa dipastikan: periksa di 👤 Akun → OpenCode (Login provider / Login ulang bila perlu), lalu coba lagi.`;
+  }
+  // The status may arrive as data on the error or only in the text: a precise hint beats a generic one.
+  const fromText = /(?:^|\D)(401|403|429)(?:\D|$)/.exec(text)?.[1];
+  const given = status == null ? NaN : Number(status);
+  const code = Number.isFinite(given) ? given : fromText ? Number(fromText) : null;
+  const hint =
+    code === 401
+      ? 'HTTP 401: API key tidak dikenal atau sudah kedaluwarsa — login ulang provider ini.'
+      : code === 403
+        ? 'HTTP 403: key diterima tetapi model ini tidak berhak / kredit habis — atau jaringan (proxy/region) memblokirnya.'
+        : code === 429
+          ? 'HTTP 429: provider sedang sibuk atau kuota/rate limit tercapai — tunggu sebentar, lalu coba lagi.'
+          : '';
+  return `${text}\n${note}${hint ? `\n${hint}` : ''}`;
 }
 /**
  * What the UI may offer for an OpenCode project (config.engines.opencode.caps, read by public/js/core/engine-caps.js).
@@ -975,7 +1010,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
                   return;
                 }
               }
-              this.endTurn(epoch, uuid, { ok: false, interrupted: stopped, error: authRequiredNote(err.message), started, costBefore });
+              this.endTurn(epoch, uuid, { ok: false, interrupted: stopped, error: await this.authErrorNote(err), started, costBefore });
             },
           );
       send();
@@ -1156,9 +1191,60 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     }
     /** The last background task ended: apply a restart that was deferred for it (if any). */
     applyPendingRestart() {
-      if (!this.restartPending || this.busy || this.translator?.hasRunningTasks?.()) return;
+      if (!this.restartPending || this.busy) return;
+      const running = Boolean(this.translator?.hasRunningTasks?.());
+      // A task that never reports keeps `hasRunningTasks()` true forever. Remember since when the restart waits (some
+      // requests come from the base session's account/settings hooks and never stamp it) and, past the wait limit,
+      // the restart wins: staying on the old model/mode forever is worse than closing a ghost task.
+      if (running) this.restartPendingAt ||= Date.now();
+      const overdue = running && this.restartPendingAt > 0 && Date.now() - this.restartPendingAt >= RESTART_MAX_WAIT_MS;
+      if (running && !overdue) return;
+      if (overdue) {
+        this.hub.chat(this.id, { kind: 'info', level: 'warning', text: 'Perubahan model/mode diterapkan setelah tugas latar terlalu lama tidak melapor. Tugas itu ditutup; jalankan ulang kalau masih perlu.' });
+        this.translator?.closeAcpTasks?.();
+      }
       this.restartPending = false;
+      this.restartPendingAt = 0;
       this.closeChild();
+    }
+
+    /**
+     * The stop line for a provider error. Only "Authentication required" needs the extra context (and the provider
+     * lookup): every other error passes through untouched. The lookup is bounded and never throws, so a failure to
+     * read the provider list cannot delay or lose the turn's closing line.
+     */
+    async authErrorNote(err) {
+      const message = String(err?.message ?? '');
+      if (!/authentication required/i.test(message)) return authRequiredNote(message);
+      const status = Number(err?.data?.statusCode ?? err?.httpStatus) || null;
+      // The model that was actually sent (applied) — falling back to the requested one while a switch is pending.
+      const model = String(this.applied?.model || this.hub.settingsFor?.(this.id)?.model || '');
+      const provider = model.includes('/') ? model.slice(0, model.indexOf('/')) : '';
+      const connected = provider ? await this.providerCredentials(provider) : null;
+      return authRequiredNote(message, { provider: provider || null, connected, status });
+    }
+
+    /** Does the model's provider hold a credential, per OpenCode? true / false / null (unknown). Bounded, no throw. */
+    async providerCredentials(provider) {
+      const bin = this.m?.opencode;
+      if (!bin || !provider) return null;
+      let timer = null;
+      const timeout = new Promise((resolve) => {
+        timer = setTimeout(() => resolve(null), AUTH_LOOKUP_TIMEOUT_MS);
+        timer.unref?.();
+      });
+      try {
+        const { openCodeProviders } = await import('./opencode-auth.js');
+        const view = await Promise.race([openCodeProviders(bin), timeout]);
+        if (!view) return null;
+        if ((view.connected ?? []).some((p) => p.id === provider)) return true;
+        if ((view.available ?? []).some((p) => p.id === provider)) return false;
+        return null; // OpenCode does not know this id: no claim either way
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timer);
+      }
     }
 
     /** Model and plan/build switch in the running process; another permission mode needs a fresh one. */
@@ -1169,6 +1255,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (processKey(s) !== processKey(a)) {
         const enteringPlan = s.mode === 'plan' && a.mode !== 'plan';
         if (enteringPlan) this.autoApprove = false; // "allow all" from Build must never carry into Plan
+        // Remember when the change was first deferred: a task that never reports must not hold it forever.
+        if ((this.busy || this.translator?.hasRunningTasks?.()) && !this.restartPending) this.restartPendingAt = Date.now();
         if (this.busy) {
           this.restartPending = true;
           if (enteringPlan) this.hub.chat(this.id, { kind: 'info', text: 'Mode Plan berlaku setelah giliran ini selesai.' });
@@ -1228,6 +1316,9 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         this.linkShells().catch(() => {});
         this.reapBackgroundShells().catch(() => {});
         this.reapAgentTasks().catch(() => {});
+        // A restart deferred for a task that never reports must still land (RESTART_MAX_WAIT_MS), even when the
+        // reapers above return early: this is the only timer that keeps running while the session is idle.
+        if (this.restartPending) this.applyPendingRestart();
       }, ms);
       this.shellTimer.unref?.();
     }
@@ -1272,7 +1363,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
      */
     async reapAgentTasks() {
       const t = this.translator;
-      if (!t || !this.adapter?.agents.size || this.agentReaping) return;
+      if (!t || this.agentReaping) return;
       const now = Date.now();
       if (now - (this.lastAgentReapAt ?? 0) < SHELL_LIVENESS_MS) return;
       const running = [...t.bgTasks.values()].filter((x) => x.source === 'acp' && x.kind === 'agent' && x.status === 'running');
@@ -1280,24 +1371,31 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.lastAgentReapAt = now;
       this.agentReaping = true;
       try {
-        let sessions;
+        let sessions = null;
         try {
           const { openCodeApi } = await import('./opencode-auth.js');
           const list = await openCodeApi(this.m.opencode, 'session.list', { timeout: 15_000 });
           sessions = new Map((Array.isArray(list) ? list : []).map((s) => [s.id, s]));
         } catch {
-          return; // cannot ask: the parent's resume is the authority, never guess
+          // Cannot ask the service: the age rule below still applies, everything else waits for the parent's resume.
+          sessions = null;
         }
         for (const task of running) {
           if (task.status !== 'running') continue;
-          const info = this.adapter.agents.get(String(task.toolUseId));
-          if (!info) continue;
+          const info = this.adapter?.agents.get(String(task.toolUseId));
+          const endless = now - (Number(task.startedAt) || now) > AGENT_MAX_MS;
+          // An endless task is a leftover no matter what the service says (its frame never came): close it.
+          if (endless) {
+            this.closeAgentTask(task);
+            continue;
+          }
+          // No adapter record and no service answer: nothing to judge by — never guess a task is dead.
+          if (!info || !sessions) continue;
           const rec = info.sessionId ? sessions.get(info.sessionId) : null;
           // A running child has time.busy newer than time.idle; an idle one has time.idle >= time.busy.
           const idle = rec ? (Number(rec.time?.idle) || 0) >= (Number(rec.time?.busy) || 0) : false;
           const quiet = now - (info.lastAt ?? 0);
-          const endless = now - (Number(task.startedAt) || now) > AGENT_MAX_MS;
-          if (endless || (rec && idle && quiet >= AGENT_QUIET_MS) || (!rec && quiet >= Math.max(AGENT_QUIET_MS, 60_000))) {
+          if ((rec && idle && quiet >= AGENT_QUIET_MS) || (!rec && quiet >= Math.max(AGENT_QUIET_MS, 60_000))) {
             this.closeAgentTask(task);
           }
         }

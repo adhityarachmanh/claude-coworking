@@ -158,7 +158,7 @@ export function register(router) {
     if (!/^ses_[A-Za-z0-9_-]{1,100}$/.test(sessionId)) throw Object.assign(new Error('Session ID tidak valid.'), { status: 400 });
     return consoleRequestTotals(bin, { sessionId, since: consoleSince(body?.since) });
   }));
-  router.post('/api/opencode/login/key', audited('login-key', (body) => body.provider, (bin, body, ctx) => openCodeConnectKey(bin, body.provider, body).then(loggedIn(ctx)).then(phoneAlert(ctx, 'login', body.provider))));
+  router.post('/api/opencode/login/key', audited('login-key', (body) => body.provider, (bin, body, ctx) => loginKey(bin, body).then(loggedIn(ctx)).then(phoneAlert(ctx, 'login', body.provider))));
   router.post('/api/opencode/login/oauth', audited('oauth-start', (body) => body.provider, (bin, body, ctx) => openCodeOAuthStart(bin, body.provider, body).then(phoneAlert(ctx, 'login', body.provider))));
   router.post('/api/opencode/login/status', openCode(oAuthStatus));
   router.post('/api/opencode/login/code', audited('oauth-complete', (body) => body.provider, (bin, body, ctx) => openCodeOAuthComplete(bin, body.provider, body.attemptID, body.code).then(loggedIn(ctx))));
@@ -211,6 +211,41 @@ const audited = (action, providerOf, fn) => openCode(async (bin, body, ctx) => {
     throw err; // openCode() turns it into the same JSON status as before
   }
 });
+
+/**
+ * POST /api/opencode/login/key for a CATALOG provider: store the key, then only claim success while OpenCode itself
+ * lists the provider as connected. A key OpenCode accepts but never turns into a connection (an extra form field
+ * missing, the service still loading the config) used to answer "ok" while the next prompt failed with
+ * "Authentication required" — the dishonest success this check removes.
+ */
+async function loginKey(bin, body) {
+  const provider = String(body?.provider ?? '');
+  await openCodeConnectKey(bin, provider, body);
+  if (!(await confirmProviderConnected(bin, provider))) {
+    throw Object.assign(new Error('Key terkirim, tetapi provider belum terhubung — OpenCode mungkin butuh isian tambahan atau layanan belum memuat config; coba lagi.'), { status: 502 });
+  }
+  return { ok: true };
+}
+
+/**
+ * Waits (bounded) until the provider list shows `id` as connected. false only when the list was READABLE and kept
+ * missing a provider it knows; a list that never reads (OpenCode unavailable) never fails a good login, and an id the
+ * list does not know at all offers nothing to judge.
+ */
+async function confirmProviderConnected(bin, id, { timeout = 2000, every = 250 } = {}) {
+  const deadline = Date.now() + timeout;
+  let readable = false;
+  for (;;) {
+    const view = await openCodeProviders(bin).catch(() => null);
+    if (view) {
+      readable = true;
+      if (view.connected.some((p) => p.id === id)) return true;
+      if (!view.available.some((p) => p.id === id)) return true; // cannot judge: never claim a failure we cannot see
+    }
+    if (Date.now() >= deadline) return !readable;
+    await new Promise((resolve) => setTimeout(resolve, Math.max(50, every)));
+  }
+}
 
 // ---------- provider kustom OpenAI-compatible (👤 Akun → OpenCode) ----------
 // The user points the app at an OpenAI-compatible endpoint: /api/opencode/custom/check asks the endpoint for its

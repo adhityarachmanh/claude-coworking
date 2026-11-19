@@ -12,7 +12,7 @@ import { buildRouter } from '../src/routes/index.js';
 import { wifiAllows } from '../src/remote.js';
 import { openCodeProviders, waitForProvider } from '../src/opencode-auth.js';
 import { addCustomProvider, backupRoot, readOpenCodeConfig, removeCustomProvider } from '../src/opencode-config.js';
-import { clearModelCache, customProvidersWithoutCredentials } from '../src/opencode-bin.js';
+import { clearModelCache, providersWithoutCredentials } from '../src/opencode-bin.js';
 
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-opencode-custom-'));
 const HOME = path.join(TMP, 'xdg');
@@ -422,15 +422,28 @@ test('waitForProvider: menunggu layanan memuat provider baru, dan menyerah denga
   assert.equal(await waitForProvider(BIN, 'tidakada', { timeout: 300, every: 100 }), false, 'tidak menggantung selamanya');
 });
 
-test('customProvidersWithoutCredentials: blok kustom tanpa kredensial tidak boleh menyumbang model', async () => {
+test('providersWithoutCredentials: provider mana pun tanpa kredensial tidak boleh menyumbang model', async () => {
   resetConfig();
   addCustomProvider({ id: 'river', name: 'River', baseURL: 'https://api.river.ai/v1', models: ['m1'], home: HOME, dataDir: DATA });
   clearModelCache();
   assert.equal(await waitForProvider(BIN, 'river'), true, 'layanan sudah memuat blok itu');
-  assert.deepEqual([...(await customProvidersWithoutCredentials(BIN))], ['river'], 'belum ada key');
-  writeIntegrations([{ id: 'river', name: 'River', methods: [{ type: 'key' }], connections: [{ type: 'credential', id: 'cred_1', label: 'Default', method: 'key' }] }]);
+  // Two sets: `unready` gates every provider (the prompt route refuses it, the picker marks it "belum login");
+  // `hidden` only drops the CUSTOM blocks we wrote from the model list — a catalog provider keeps its models
+  // (it may be an entitlement/network refusal rather than a missing key).
+  const first = await providersWithoutCredentials(BIN);
+  assert.deepEqual([...first.unready].sort(), ['opencode-go', 'river', 'riverfake', 'wally'], 'belum ada key');
+  assert.deepEqual([...first.hidden], ['river'], 'hanya blok kustom yang disembunyikan dari daftar model');
+  writeIntegrations([
+    { id: 'opencode-go', name: 'OpenCode Go', methods: [{ type: 'key' }], connections: [] },
+    { id: 'riverfake', name: 'River Fake', methods: [{ type: 'key' }], connections: [] },
+    // Koneksi env adalah kredensial sungguhan (diatur di luar aplikasi): provider ini siap dan tidak dipagari.
+    { id: 'wally', name: 'Wally', methods: [{ type: 'key' }], connections: [{ type: 'env', name: 'WALLY_API_KEY' }] },
+    { id: 'river', name: 'River', methods: [{ type: 'key' }], connections: [{ type: 'credential', id: 'cred_1', label: 'Default', method: 'key' }] },
+  ]);
   clearModelCache();
-  assert.deepEqual([...(await customProvidersWithoutCredentials(BIN))], [], 'sudah login: modelnya dipakai lagi');
+  const second = await providersWithoutCredentials(BIN);
+  assert.deepEqual([...second.unready].sort(), ['opencode-go', 'riverfake'], 'yang login (kredensial/env) tidak dipagari');
+  assert.deepEqual([...second.hidden], [], 'blok kustom yang sudah login kembali ke daftar model');
   resetConfig();
 });
 

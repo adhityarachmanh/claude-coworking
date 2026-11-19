@@ -89,8 +89,8 @@ export function modelsOffered(sessions) {
   return [...offered].filter((v) => /^[\w.@-]+\/\S+$/.test(v));
 }
 
-// Custom providers whose config block has no credentials (yet): their models must not reach the picker. Cached with
-// the model list; invalidated by clearModelCache() (login, logout, add, remove).
+// Providers that hold no credential (yet): their models must not reach the picker. Cached with the model list;
+// invalidated by clearModelCache() (login, logout, add, remove).
 let unreadyCache = null;
 
 /** After a provider login/logout the model list changes. */
@@ -101,22 +101,40 @@ export function clearModelCache() {
 }
 
 /**
- * Ids of this app's custom providers that hold no credential and no env connection: OpenCode still lists their models
- * (`opencode models` reads the config), but choosing one can only fail at the first prompt. An unreadable integration
- * list yields an empty set — the picker keeps working, it just does not hide anything.
+ * Ids of providers that hold no credential yet, split by why they matter:
+ * - `hidden`: this app's CUSTOM blocks (a config block we wrote). Their models leave the picker entirely: a block
+ *   without a key can only fail, and hiding it keeps a dead custom provider out of the list.
+ * - `unready`: EVERY provider (custom or from OpenCode's catalog) that OpenCode knows but has no credential we can
+ *   see. A provider whose login methods include an environment variable is NOT gated: the variable is a legitimate
+ *   credential set outside the app, and whether it is exported cannot be read from the integration list.
+ *   Its models still appear (catalog models are listed by `opencode models`), but the picker marks them "belum login"
+ *   and the prompt route refuses one before a turn starts — a 403 there can also be an entitlement/network issue, so
+ *   the message must not just say "log in" (see authRequiredNote).
+ * A provider connected through an environment variable counts as ready. An unreadable integration list yields empty
+ * sets — the picker keeps working, it just does not gate or hide anything.
  * @param {{ command: string, args: string[] }} bin
  * @param {{ maxAgeMs?: number }} [options]
- * @returns {Promise<Set<string>>}
+ * @returns {Promise<{ hidden: Set<string>, unready: Set<string> }>}
  */
-export async function customProvidersWithoutCredentials(bin, { maxAgeMs = 60_000 } = {}) {
-  if (!bin) return new Set();
-  if (unreadyCache && Date.now() - unreadyCache.at < maxAgeMs) return unreadyCache.ids;
+export async function providersWithoutCredentials(bin, { maxAgeMs = 60_000 } = {}) {
+  if (!bin) return { hidden: new Set(), unready: new Set() };
+  const key = `${bin.command}\u0000${(bin.args ?? []).join('\u0000')}`;
+  if (unreadyCache && unreadyCache.key === key && Date.now() - unreadyCache.at < maxAgeMs) return unreadyCache.view;
   const { openCodeProviders } = await import('./opencode-auth.js');
-  const { connected, available } = await openCodeProviders(bin);
-  const withKey = new Set(connected.map((p) => p.id));
-  const ids = new Set(available.filter((p) => p.custom && !withKey.has(p.id)).map((p) => p.id));
-  unreadyCache = { at: Date.now(), ids };
-  return ids;
+  // A provider list that cannot be read hides nothing (fail open) and is cached just the same: the picker must not
+  // spawn the CLI again on every request while OpenCode is unavailable.
+  const list = await openCodeProviders(bin).catch(() => null);
+  const ready = new Set((list?.connected ?? []).map((p) => p.id));
+  // Explicit, not merely implied by `connected`: an env connection is a real one even if OpenCode reports it apart.
+  for (const p of list?.connected ?? []) if ((p.connections ?? []).some((c) => c.type === 'env')) ready.add(p.id);
+  const available = list?.available ?? [];
+  // A provider offering an env login is never gated: the variable may be exported outside the app, invisible here.
+  const envCapable = new Set(available.filter((p) => (p.env ?? []).length > 0).map((p) => p.id));
+  const unready = new Set(available.filter((p) => !ready.has(p.id) && !envCapable.has(p.id)).map((p) => p.id));
+  const hidden = new Set(available.filter((p) => p.custom && !ready.has(p.id) && !envCapable.has(p.id)).map((p) => p.id));
+  const view = { hidden, unready };
+  unreadyCache = { key, at: Date.now(), view };
+  return view;
 }
 export function openCodeModels(bin, { maxAgeMs = 10 * 60_000 } = {}) {
   if (!bin) return Promise.resolve([]);

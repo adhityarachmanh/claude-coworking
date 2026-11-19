@@ -14,7 +14,7 @@ import { DEMO_ID } from '../hub.js';
 import { QUEUE_LIMITS } from '../queue.js';
 import { shortModelLabel, tierFor, classifierModelFor } from '../model-auto.js';
 import { listSessions, sessionHistory } from '../transcripts.js';
-import { openCodeSessions } from '../opencode-bin.js';
+import { openCodeSessions, providersWithoutCredentials } from '../opencode-bin.js';
 import { importOpenCodeSession, OpenCodeAdminError } from '../opencode-admin.js';
 import { deleteSession, exportOpenCodeSession, forkOpenCodeSession, listTrashedSessions, renameClaudeSession, renameOpenCodeSession, restoreTrashedSession, SessionAdminError, TRASH_RETENTION_DAYS, validSessionId } from '../session-admin.js';
 import { applyRedo, captureRedo, conversationOf, listRedo, previewRedo, RedoError, sealRedo } from '../redo.js';
@@ -180,6 +180,22 @@ export function register(router) {
         if (Object.keys(patch).length) {
           hub.updateSettings(project.id, patch);
           session.syncSettings();
+        }
+      }
+    }
+    // A model of a provider OpenCode knows but is not connected to can only fail at the first prompt ("Authentication
+    // required", and a 403 there may really be a network/entitlement problem). Refuse before the turn starts and name
+    // the way to log in. An unreadable provider list proceeds (never refuse on a guess); Claude is untouched.
+    if (hub.engineOf(project.id) === 'opencode' && opencode) {
+      const model = String(hub.settingsFor(project.id).model ?? '');
+      const provider = model.includes('/') ? model.slice(0, model.indexOf('/')) : '';
+      if (/^[\w.@-]{1,100}$/.test(provider)) {
+        const view = await providersWithoutCredentials(opencode).catch(() => null);
+        if (view?.unready?.has(provider)) {
+          return json(res, 409, {
+            error: `Provider «${provider}» sudah dikenal OpenCode tetapi belum terhubung. Buka 👤 Akun → OpenCode → ＋ Login provider (atau pilih model lain), lalu kirim lagi.`,
+            code: 'provider-not-connected',
+          });
         }
       }
     }

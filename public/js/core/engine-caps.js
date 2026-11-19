@@ -186,15 +186,24 @@ export function groupModels(models, query = '') {
  * The picker's OpenCode section: one group per provider (first-seen order, the search filter still applied), each
  * label the provider's display name when known (custom providers, e.g. "River AI") and the id otherwise. Empty
  * input yields no groups — the renderer shows its own info line instead. `auth` (optional) gates the groups:
- * { known, connected } — id lists from the account view; a KNOWN provider that is NOT connected has no stored
- * credentials yet, so its group is marked connected: false (the renderer disables those models with a login hint).
- * Unknown ids and the prefix-less "lainnya" group are never gated.
+ * { known, connected } — id lists from the account view. A KNOWN provider that is NOT connected has no stored
+ * credentials yet, so its group is marked connected: false (the renderer hides those models with a login hint).
+ * `connected: null` means the account view could not be read: the models stay usable and the renderer shows a light
+ * "status login tidak terbaca" warning instead of hiding everything. Unknown ids and the prefix-less "lainnya" group
+ * are never gated.
  */
 export function openCodeProviderGroups(models, query = '', providerNames = {}, auth = null) {
   const known = new Set(Array.isArray(auth?.known) ? auth.known : (auth?.known ? [...auth.known] : []));
   const connected = new Set(Array.isArray(auth?.connected) ? auth.connected : (auth?.connected ? [...auth.connected] : []));
-  const gated = (provider) => !known.size || !known.has(provider) || connected.has(provider);
-  return groupModels(models, query).map((g) => ({ ...g, label: providerNames?.[g.provider] ?? g.provider, connected: g.provider === 'lainnya' ? true : gated(g.provider) }));
+  // No list at all is "unknown", not "everything is fine": fail-open silently is what hid a logged-out provider.
+  const readable = Array.isArray(auth?.known) && known.size > 0;
+  const gated = (provider) => {
+    if (provider === 'lainnya') return true;
+    if (!readable) return null; // status login tak terbaca: jangan menonaktifkan model apa pun
+    if (!known.has(provider)) return true; // an id the account view does not list is never gated
+    return connected.has(provider);
+  };
+  return groupModels(models, query).map((g) => ({ ...g, label: providerNames?.[g.provider] ?? g.provider, connected: gated(g.provider) }));
 }
 
 /**

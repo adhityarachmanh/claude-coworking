@@ -128,8 +128,15 @@ test('providers unknown to the auth view and the unnamed group stay enabled', ()
   assert.equal(river.connected, false, 'river diketahui dan tidak terhubung');
   assert.equal(go.connected, true, 'provider yang tidak ada di daftar auth dianggap terhubung (tidak dipagari)');
   assert.equal(other.connected, true, 'grup "lainnya" tanpa provider id tidak pernah dipagari');
+});
+
+test('an unreadable account view is marked unknown (null), not silently "connected"', () => {
+  // The bug this guards: an empty auth list used to mean "everything is fine", so a logged-out provider was offered
+  // (and the first prompt failed). No data now says "unknown": usable, but the renderer warns instead of gating.
   const noAuth = openCodeProviderGroups(OC_PICKER_MODELS, '', {}, null);
-  assert.deepEqual(noAuth.map((g) => g.connected), [true, true], 'tanpa data auth: tidak ada yang dipagari');
+  assert.deepEqual(noAuth.map((g) => g.connected), [null, null], 'tanpa data auth: status login tak terbaca');
+  const empty = openCodeProviderGroups(OC_PICKER_MODELS, '', {}, { known: [], connected: [] });
+  assert.deepEqual(empty.map((g) => g.connected), [null, null], 'daftar kosong juga "tak terbaca", bukan "semua terhubung"');
 });
 
 const FAV_CLAUDE = [{ value: 'sonnet', name: 'Sonnet' }, { value: 'opus', name: 'Opus' }];

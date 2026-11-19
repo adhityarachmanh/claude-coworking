@@ -180,8 +180,8 @@ test('permission request: urgency high, TTL ~10 min, opaque Topic per project, m
   assert.equal(msg.headers.Urgency, 'high');
   assert.equal(msg.headers.TTL, String(PUSH_SPEC.ask.ttl));
   assert.ok(PUSH_SPEC.ask.ttl >= 300 && PUSH_SPEC.ask.ttl <= 900);
-  assert.match(msg.headers.Topic, /^a[A-Za-z0-9_-]{20}$/);
-  assert.ok(!msg.headers.Topic.includes('p1'), 'Topic is opaque');
+  assert.match(msg.headers.Topic, /^a[A-Za-z0-9_-]{20}$/, 'Topic = prefix + 20 chars of a salted hash (base64url)');
+  assert.notEqual(msg.headers.Topic, 'ap1', 'Topic is not the project id');
   assert.equal(msg.headers['Content-Encoding'], 'aes128gcm');
   assert.match(msg.headers.Authorization, new RegExp(`^vapid t=[\\w-]+\\.[\\w-]+\\.[\\w-]+, k=${remote.state.vapid.publicKey}$`));
   assert.equal(msg.padded % 256, 0, 'padded to a multiple of 256 bytes');

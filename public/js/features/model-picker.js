@@ -97,20 +97,22 @@ export function modelPanelHtml({ catalog, current, query, engine, modelAuto = fa
       : mpInfo(query ? 'Tidak ada model yang cocok' : 'Katalog Claude belum tersedia');
     groups.push(`<div class="mp-group"><div class="mp-head"><span class="mp-title">Claude</span></div>${body}</div>`);
   }
-  // Only providers that can be used: a group whose credentials are missing is dropped (Akun is where to add one).
-  // Exception: the project's current model stays visible even if its source is gone — changing away from it must
-  // still be possible — and then only that row is shown.
+  // Only providers that can be used are offered: a group whose credentials are missing is left out entirely (Akun is
+  // where to add one). Exception: the project's current model stays visible even if its source is gone — changing
+  // away from it must still be possible — and then only that row is shown. `connected: null` (the account view could
+  // not be read) is not "missing": the models stay pickable and one light line says the status is unknown.
   const ocGroups = openCodeProviderGroups(opencode, query, providerNames, providerAuth)
-    .filter((g) => g.connected || g.models.some((m) => m.value === current))
-    .map((g) => (g.connected ? g : { ...g, models: g.models.filter((m) => m.value === current) }));
+    .filter((g) => g.connected !== false || g.models.some((m) => m.value === current))
+    .map((g) => (g.connected === false ? { ...g, models: g.models.filter((m) => m.value === current) } : g));
   if (opencode.length) {
     let body;
     if (!ocGroups.length) body = mpInfo(query ? 'Tidak ada model yang cocok' : 'Belum ada sumber model yang aktif');
     else {
       body = ocGroups.map((g) => {
-        const label = g.connected ? `${g.label} (${g.models.length})` : g.label;
-        return `<div class="mp-head"><span class="mp-title">${mpLogo(g.provider, 'opencode')}${escapeHtml(label)}</span></div>${g.models.map((m) => mpRow(m, 'opencode', { current, engine, locked, favSet, source: modelSourceLabel({ engine: 'opencode', provider: g.provider, providerNames }) }, nextId())).join('')}`;
+        const count = g.connected === false ? '' : ` (${g.models.length})`;
+        return `<div class="mp-head"><span class="mp-title">${mpLogo(g.provider, 'opencode')}${escapeHtml(`${g.label}${count}`)}</span></div>${g.models.map((m) => mpRow(m, 'opencode', { current, engine, locked, favSet, source: modelSourceLabel({ engine: 'opencode', provider: g.provider, providerNames }) }, nextId()))}`;
       }).join('');
+      if (ocGroups.some((g) => g.connected === null)) body += mpInfo('⚠ Status login provider tidak terbaca — model tetap bisa dipilih; periksa di 👤 Akun → OpenCode.');
     }
     groups.push(`<div class="mp-group">${body}</div>`);
   }

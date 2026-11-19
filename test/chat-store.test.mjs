@@ -559,3 +559,14 @@ test('hub: the reconciler leaves a genuinely busy project alone (turn or backgro
   hub.rt('p1').status.tasks = [{ id: 't1', status: 'running' }];
   assert.equal(hub.reconcileStaleToolRows(), 0, 'a background task owns its row too');
 });
+
+test('hub: a task that stopped reporting does not shield its own stuck row forever (refina-smi)', () => {
+  const dir = tmp();
+  const hub = new Hub({ dataDir: dir });
+  const id = hub.chat('p1', { kind: 'delegate', role: 'qa', text: 'Fix wave', status: 'running' });
+  hub.rt('p1').chat.find((m) => m.id === id).ts = Date.now() - 40 * 60_000;
+  // The delegation never sent a final frame: its task still says running, but its last activity is long past.
+  hub.rt('p1').status.tasks = [{ id: 'oc-agent-x', status: 'running', startedAt: Date.now() - 40 * 60_000 }];
+  assert.equal(hub.reconcileStaleToolRows(), 1, 'a stale task no longer counts as live work');
+  assert.equal(hub.rt('p1').chat.find((m) => m.id === id).status, 'stale');
+});

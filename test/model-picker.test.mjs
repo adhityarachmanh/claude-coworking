@@ -54,6 +54,13 @@ test('no usable source: the panel says so instead of showing models that cannot 
   assert.doesNotMatch(html, /Glm|GLM 5.3/);
 });
 
+test('an unreadable account view keeps every model and adds one light warning', () => {
+  const html = panel({ providerAuth: null });
+  assert.match(html, /wally\/deepseek-v4\.1-flash/, 'model tetap bisa dipilih saat status login tak terbaca');
+  assert.match(html, /status login provider tidak terbaca/i);
+  assert.match(html, /OpenCode Go \(\d\)/, 'grup tetap menampilkan jumlah model');
+});
+
 test('the project’s current model stays visible even when its source lost its credentials', () => {
   const html = panel({ current: 'wally/deepseek-v4.1-flash', providerAuth: { known: ['opencode-go', 'wally', 'river'], connected: ['opencode-go', 'river'] } });
   // Changing away from the current model must remain possible; the row itself is not hidden.

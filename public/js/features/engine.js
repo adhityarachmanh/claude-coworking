@@ -299,11 +299,14 @@ export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_
   // Model lain: one group PER provider (river, opencode-go, …), each labelled by the provider's display name when
   // known. Only providers that can actually run are offered: a provider with no credentials is left out entirely
   // (Akun is where one is added), unless the project's current model belongs to it — changing away from it must
-  // still be possible. An <optgroup> cannot nest another, so the "OpenCode" wrapper only remains for the info lines.
+  // still be possible. `connected: null` (the account view could not be read) keeps every model usable and adds one
+  // light info line instead of hiding them. An <optgroup> cannot nest another, so the "OpenCode" wrapper only
+  // remains for the info lines.
   const allGroups = openCodeProviderGroups(opencode, query, providerNames, providerAuth);
   const groups = allGroups
-    .filter((g) => g.connected || g.models.some((m) => m.value === current))
-    .map((g) => (g.connected ? g : { ...g, models: g.models.filter((m) => m.value === current) }));
+    .filter((g) => g.connected !== false || g.models.some((m) => m.value === current))
+    .map((g) => (g.connected === false ? { ...g, models: g.models.filter((m) => m.value === current) } : g));
+  const authUnknown = allGroups.some((g) => g.connected === null);
   let open = '';
   if (loading && !opencode.length) open = infoOption('⏳ Memuat daftar model…');
   else if (error && !opencode.length) open = infoOption(`⚠ Daftar model gagal dimuat: ${error}`, 'Coba lagi dengan ↻ Cek ulang di dialog ini, atau pastikan OpenCode terpasang dan berjalan.');
@@ -311,6 +314,7 @@ export function modelCatalogOptions(catalog, current, query, { engine = DEFAULT_
   else if (!groups.length) open = infoOption(query ? 'Tidak ada model yang cocok' : 'Belum ada sumber model yang aktif', query ? 'Coba kata kunci lain, atau kosongkan kotak pencarian.' : 'Buka 👤 Akun untuk menambahkan sumber model.');
   else {
     open = groups.map((g) => `<optgroup label="${escapeHtml(`${g.label} (${g.models.length})`)}">${g.models.map((m) => option(m, 'opencode')).join('')}</optgroup>`).join('');
+    if (authUnknown) open = `${infoOption('⚠ Status login provider tidak terbaca — model tetap bisa dipilih', 'Daftar provider di 👤 Akun → OpenCode belum bisa dibaca. Periksa di sana bila model ditolak.')}${open}`;
   }
   if (open && !groups.length) opts.push(`<optgroup label="OpenCode">${open}</optgroup>`);
   else if (open) opts.push(open);

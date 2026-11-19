@@ -10,6 +10,31 @@ test('an authentication-required stop gets a hint where to log the provider in',
   assert.match(note, /OpenCode/i, 'menyebut tab OpenCode');
   assert.match(note, /login/i, 'menyebut login');
   assert.match(note, /Authentication required/, 'pesan asli tetap ada');
+  // Unknown credential state: never claim the key is missing.
+  assert.doesNotMatch(note, /belum punya API key/);
+  assert.match(note, /belum bisa dipastikan/, 'netral: minta periksa status login');
+});
+
+test('a stored key that is still refused is explained honestly (403/credit/network), not as "no key"', () => {
+  const note = authRequiredNote('Authentication required: provider authentication required', { provider: 'wally', connected: true });
+  assert.doesNotMatch(note, /belum punya API key/, 'key ADA: jangan mengklaim sebaliknya');
+  assert.match(note, /wally/, 'provider disebut');
+  assert.match(note, /403/);
+  assert.match(note, /tidak berhak|kredit/);
+  assert.match(note, /jaringan|region|proxy/i);
+  assert.match(note, /Login ulang/);
+  assert.match(note, /Ganti model/);
+});
+
+test('no stored credential keeps the old message; a known status adds a precise hint', () => {
+  const missing = authRequiredNote('Authentication required', { provider: 'wally', connected: false });
+  assert.match(missing, /belum punya API key/);
+  assert.match(missing, /wally/);
+  assert.match(authRequiredNote('Authentication required', { connected: true, status: 401 }), /kedaluwarsa|tidak dikenal/);
+  assert.match(authRequiredNote('Authentication required', { connected: true, status: 403 }), /tidak berhak/);
+  assert.match(authRequiredNote('Authentication required', { connected: true, status: 429 }), /sibuk|kuota/);
+  // The status also counts when it only appears in the provider's own text.
+  assert.match(authRequiredNote('Authentication required (HTTP 429)'), /sibuk|kuota/);
 });
 
 test('unrelated stop errors and empty text pass through untouched', () => {
@@ -19,4 +44,5 @@ test('unrelated stop errors and empty text pass through untouched', () => {
   const once = authRequiredNote('provider authentication required');
   assert.equal(once.match(/Akun/gu).length, 1);
   assert.equal(authRequiredNote(once), once, 'idempotent: tidak menumpuk saat dipanggil lagi');
+  assert.equal(authRequiredNote(authRequiredNote('Authentication required', { connected: true }), { connected: false }), authRequiredNote('Authentication required', { connected: true }), 'idempotent juga untuk konteks berbeda');
 });

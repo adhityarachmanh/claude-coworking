@@ -19,6 +19,10 @@ const EVENT_LIMIT = 80;
 // A running tool row in an idle project (no turn, no CLI, no background task) older than this is a leftover and is
 // closed by reconcileStaleToolRows(); 60 s is beyond any instant command and well before it looks "stuck".
 const STALE_TOOL_ROW_MS = 60_000;
+// A background task that has shown no life for this long is a leftover (a delegation whose final frame never came):
+// it must not keep a project "busy" forever — that used to shield its own stuck row from this sweep AND defer every
+// model/mode restart indefinitely. Real work reports activity (lastActivityAt) far more often than this.
+const STALE_TASK_MS = 30 * 60_000;
 // Biggest message taken from a backup (tool output is clipped long before this).
 const MAX_IMPORTED_MESSAGE = 512 * 1024;
 /**
@@ -2055,8 +2059,15 @@ export class Hub {
     let closed = 0;
     for (const [id, rt] of this.runtime) {
       const st = rt.status ?? {};
-      const tasks = (st.tasks ?? []).some((t) => t?.status === 'running' || t?.status === 'pending');
-      // A turn, a CLI session or a background task is real work: never close its rows behind its back.
+      // Only a task that is still showing life blocks the sweep: a task whose last activity is long past is a
+      // leftover, and leaving it counted here would protect its own stuck row (the bug behind refina-smi).
+      const liveTask = (t) => {
+        const at = Number(t?.lastActivityAt ?? t?.startedAt ?? t?.ts);
+        // No timestamp at all: never guess it is dead (a legacy/synthetic task row keeps owning its row).
+        return !Number.isFinite(at) || at <= 0 || now - at < STALE_TASK_MS;
+      };
+      const tasks = (st.tasks ?? []).some((t) => (t?.status === 'running' || t?.status === 'pending') && liveTask(t));
+      // A turn, a CLI session or a live background task is real work: never close its rows behind its back.
       if (st.busy || st.cliBusy || tasks || st.planPreparing || st.compacting) continue;
       for (const message of [...rt.chat]) {
         if (message?.status !== 'running') continue;
