@@ -444,11 +444,12 @@ export class TaskQueue {
     }
   }
 
-  remove(id, itemId) {
+  remove(id, itemId, { steered = false } = {}) {
     const item = this.item(id, itemId);
     if (item.status === 'running') throw new QueueError(409, 'Item ini sedang berjalan. Hentikan dulu (Stop / Esc), lalu hapus.');
-    // The bubble says it was cancelled instead of keeping a position for an item that no longer waits.
-    if (item.status === 'waiting' && item.chatId) this.hub.updateChat(id, item.chatId, { queued: false, cancelled: true, queuePosition: null });
+    // The bubble says what happened to it instead of keeping a position for an item that no longer waits: "diarahkan"
+    // when its text already reached the running turn (↪ Arahkan sekarang), "dibatalkan" when it was dropped.
+    if (item.status === 'waiting' && item.chatId) this.hub.updateChat(id, item.chatId, steered ? { queued: false, steered: true, queuePosition: null } : { queued: false, cancelled: true, queuePosition: null });
     const q = this.queues[id];
     this.dropAttachments(id, item.id);
     q.items = q.items.filter((i) => i !== item);

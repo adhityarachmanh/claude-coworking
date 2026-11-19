@@ -3197,6 +3197,14 @@ body.read-only #concurrency-section { display: none !important; }
 .msg-actions .queue-cancel { color: var(--err); }
 .msg-actions .queue-cancel:hover:not(:disabled) { color: var(--err-text); }
 .msg-actions .queue-cancel:disabled { opacity: .55; }
+/* ↪ Redirect a queued prompt into the turn that is running (OpenCode 2.3+ steering). */
+.msg-actions .queue-steer { color: var(--accent-2); }
+.msg-actions .queue-steer:hover:not(:disabled) { color: var(--accent); }
+.msg-actions .queue-steer:disabled { opacity: .55; }
+/* ↪ Arahkan sekarang: the prompt reaches the running turn instead of waiting (OpenCode 2.3+ steering). */
+.msg-actions .queue-steer { color: var(--accent, var(--ok)); font-weight: 600; }
+.msg-actions .queue-steer:hover:not(:disabled) { text-decoration: underline; }
+.msg-actions .queue-steer:disabled { opacity: .55; }
 
 /* ---------- 📡 OpenCode request log ---------- */
 .acct-requests { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }

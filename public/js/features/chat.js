@@ -626,6 +626,7 @@ function fillChatBody(node, msg) {
         msg.images && !msg.attachments ? `🖼 ${msg.images} gambar` : '', // bubbles stored before 📎 Lampiran
         // A prompt waiting for a free turn shows its place in the queue and, when the server knows it, the wait.
         msg.queued ? queueTag(msg) : '',
+        msg.steered ? '↪ diarahkan' : '',
         msg.cancelled ? 'dibatalkan' : '',
       ].filter(Boolean);
       const autoTag = autoEffortTag(msg.autoEffort);
@@ -637,11 +638,17 @@ function fillChatBody(node, msg) {
       const cancel = !state.readOnly && msg.queued && msg.queueItem
         ? '<button class="queue-cancel" data-msg-act="queue-cancel" title="Batalkan item antrian ini" aria-label="Batalkan item antrian ini">✕ Batal</button>'
         : '';
+      // ↪ OpenCode 2.3+ can redirect the turn that is running (`_session/steering`): offered only while this project
+      // really has a running turn AND the engine advertised support — older builds look exactly as before.
+      const status = state.statuses[state.active] ?? {};
+      const steer = !state.readOnly && msg.queued && msg.queueItem && status.busy && status.steering
+        ? '<button class="queue-steer" data-msg-act="queue-steer" title="Kirim sebagai arahan ke giliran yang sedang berjalan, tanpa menunggu antrian" aria-label="Arahkan ke giliran yang sedang berjalan">↪ Arahkan sekarang</button>'
+        : '';
       // A queued prompt edits the item in place (the server patches this bubble); anything else goes back to the box.
       const editTitle = msg.queued && msg.queueItem ? 'Ubah prompt ini di antrian' : 'Salin ke kotak pesan untuk diedit lalu dikirim';
       const actions = msg.source === 'demo'
         ? ''
-        : `<span class="msg-actions">${cancel}<button data-msg-act="copy" title="Salin teks prompt">Salin</button><button data-msg-act="edit" title="${escapeHtml(editTitle)}">Edit</button>${msg.source === 'cli' ? '' : '<button class="resend" data-msg-act="resend" title="Kirim prompt ini sekali lagi">↻ Ulangi</button>'}${star('Simpan')}</span>`;
+        : `<span class="msg-actions">${cancel}${steer}<button data-msg-act="copy" title="Salin teks prompt">Salin</button><button data-msg-act="edit" title="${escapeHtml(editTitle)}">Edit</button>${msg.source === 'cli' ? '' : '<button class="resend" data-msg-act="resend" title="Kirim prompt ini sekali lagi">↻ Ulangi</button>'}${star('Simpan')}</span>`;
       node.className = `msg user ${msg.source === 'cli' ? 'cli' : ''} ${msg.history ? 'history' : ''} ${msg.queued ? 'queued' : ''} ${msg.cancelled ? 'cancelled' : ''}`;
       // 📎 Name + size chips only: the files' content went to Claude, not into the bubble.
       const files = Array.isArray(msg.attachments) && msg.attachments.length ? `<div class="msg-attachments">${msg.attachments.map((a) => attachmentChip(a)).join('')}</div>` : '';
@@ -834,7 +841,20 @@ export function initChat() {
       if (msg.queued && msg.queueItem) openQueueEdit(msg.project ?? state.active, msg.queueItem, msg.text);
       else editPrompt(msg);
     } else if (act.dataset.msgAct === 'resend') resendPrompt(msg);
-    else if (act.dataset.msgAct === 'queue-cancel') {
+    else if (act.dataset.msgAct === 'queue-steer') {
+      // ↪ Inject this prompt into the running turn (OpenCode 2.3+). The server drops the queue item behind this
+      // bubble once the instruction really reached the turn, so nothing runs twice; a 409 means it simply stays
+      // queued, exactly as before this button existed.
+      const project = msg.project ?? state.active;
+      act.disabled = true;
+      try {
+        const answer = await api(`/api/projects/${encodeURIComponent(project)}/steer`, { text: msg.text, chatId: msg.id });
+        toast(answer?.steered === false ? 'Giliran selesai lebih dulu — pesan tetap menunggu di antrian.' : 'Diarahkan ke giliran yang sedang berjalan.', 'ok');
+      } catch (err) {
+        toast(err.message);
+        if (act.isConnected) act.disabled = false;
+      }
+    } else if (act.dataset.msgAct === 'queue-cancel') {
       // The bubble is dropped by the server's chat_update (`queued:false, cancelled:true`): never remove the row here.
       const project = msg.project ?? state.active;
       if (!msg.queueItem) return;

@@ -135,8 +135,15 @@ export const OPENCODE_CAPS = Object.freeze({
  * What we offer at `initialize`. fs/terminal stay with OpenCode. `elicitation.form`: OpenCode 2.x then sends its
  * `question` tool (and other simple forms) as `elicitation/create`; without it the question is cancelled and the
  * model is told to continue without an answer.
+ * Steering is NOT declared here: it is a SERVER capability (`result._meta.steering.supported`, probe of `opencode acp`
+ * 2.3.0, 2026-11-19) and the client only calls `_session/steering` when the server advertised it — see steer().
  */
 export const CLIENT_CAPABILITIES = Object.freeze({ fs: Object.freeze({ readTextFile: false, writeTextFile: false }), terminal: false, elicitation: Object.freeze({ form: Object.freeze({}) }) });
+
+/** A steering instruction is one line of intent, not a new prompt: the cap keeps a stray paste out of the turn. */
+const STEER_MAX = 2000;
+/** The extension OpenCode 2.3.0 registers (upstream #54394); any other name answers "Method not found". */
+const STEER_METHOD = '_session/steering';
 
 /** 📋 Rencana dulu: what "Setujui" sends to OpenCode (now in build) after the plan turn. */
 export const PLAN_APPROVED_PROMPT = 'Rencana disetujui. Kerjakan sekarang sesuai rencana di atas.';
@@ -912,9 +919,13 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.lastAgentReapAt = 0; // last delegation liveness check (see reapAgentTasks)
       this.agentReaping = false;
       this.reaping = false;
+      this.steeringSupported = false; // _session/steering advertised at initialize (OpenCode 2.3+, see steer())
       this.resumeUntil = 0; // OpenCode may resume the session on its own after a background task (see onUpdate)
       this.resumeTurn = null; // { uuid, started, lastAt, costBefore, epoch, timer } while that turn is running
       this.autoSeq = 0;
+      // Does this OpenCode build accept `_session/steering`? Only what `initialize` advertised
+      // (`result._meta.steering.supported`) counts: an older build stays exactly as it is (no button, never a frame).
+      this.steeringSupported = false;
     }
 
     get engineName() {
@@ -1143,6 +1154,50 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const id = this.planCard;
       this.planCard = null;
       if (id) this.hub.resolveApproval(id, { allow: false, cancelled: true });
+    }
+
+    /**
+     * ↪ Redirect the turn that is running right now (OpenCode 2.3+ `_session/steering`, announced at initialize as
+     * `_meta.steering.supported`). Verified against `opencode acp` 2.3.0 on this machine: the method is
+     * `_session/steering`, `prompt` must be an ARRAY of content blocks (a plain string is refused with
+     * `-32602 Expected array`), and a session with no running turn answers
+     * `{ outcome: 'promptRequired', reason: 'noRunningTurn' }` — so it is only worth sending mid-turn.
+     * Steering is an EXTRA path, never a replacement: anything sent while busy still joins the queue. A prompt that
+     * is steered is dropped from that queue (`chatId`), so it does not run a second time after this turn.
+     * Never throws: the caller (a route) turns the reason into a message.
+     * @param {string} text the instruction to inject into the running turn
+     * @param {{ chatId?: string }} [context] the queued bubble this steer replaces, when it came from one
+     * @returns {Promise<{ ok: boolean, reason?: string, steered?: boolean }>}
+     */
+    async steer(text, { chatId } = {}) {
+      const instruction = String(text ?? '').trim().slice(0, STEER_MAX);
+      if (!instruction) return { ok: false, reason: 'empty' };
+      if (!this.child || !this.acpSessionId) return { ok: false, reason: 'no-turn' };
+      if (!this.steeringSupported) return { ok: false, reason: 'unsupported' };
+      if (!this.busy) return { ok: false, reason: 'no-turn' }; // do not send a frame the server will refuse anyway
+      try {
+        const res = await this.rpc(STEER_METHOD, { sessionId: this.acpSessionId, prompt: [{ type: 'text', text: instruction }] });
+        if (res?.outcome === 'promptRequired' || res?.reason === 'noRunningTurn') return { ok: false, reason: 'no-turn' };
+        const steered = typeof chatId === 'string' && chatId ? this.dropQueuedPrompt(chatId) : false;
+        return { ok: true, ...(steered ? { steered: true } : {}) };
+      } catch (err) {
+        return { ok: false, reason: String(err?.message ?? 'gagal').slice(0, 120) };
+      }
+    }
+
+    /**
+     * A prompt that was steered into the running turn leaves this session's queue: it must never run again as its
+     * own turn (the instruction is already inside the running one). Its bubble says "diarahkan", not "dibatalkan".
+     */
+    dropQueuedPrompt(chatId) {
+      for (const [uuid, item] of this.inflight) {
+        if (item.chatId !== chatId || item.state === 'started') continue;
+        this.inflight.delete(uuid);
+        this.hub.updateChat(this.id, chatId, { queued: false, steered: true, queuePosition: null });
+        this.afterProgress();
+        return true;
+      }
+      return false;
     }
 
     /** Esc: queued prompts are dropped, the running turn is cancelled (session/cancel), killed if it won't stop. */
@@ -1828,6 +1883,9 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     /** initialize, then continue the project's session (session/resume) or start one, then model + mode. */
     async handshake(settings) {
       const init = await this.rpc('initialize', { protocolVersion: 1, clientCapabilities: CLIENT_CAPABILITIES }, HANDSHAKE_TIMEOUT_MS);
+      // OpenCode 2.3+ advertises `_meta.steering.supported`: a running turn can be redirected (see steer()).
+      // Older builds omit it, and then the affordance stays off — never send a frame the server does not know.
+      this.steeringSupported = init?._meta?.steering?.supported === true;
       const cwd = this.project.path;
       const known = this.hub.sessionIdFor(this.id);
       let res = null;
@@ -1850,7 +1908,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.publishAgents();
       await this.applyEffort(settings.effort); // '' = OpenCode's default level, same as a later change back to Default
       const model = options.find((o) => o.id === 'model')?.currentValue ?? null;
-      this.hub.setStatus(this.id, { activeModel: model });
+      // ↪ steering: the UI offers "arahkan sekarang" only when this build can do it (see steer()).
+      this.hub.setStatus(this.id, { activeModel: model, steering: Boolean(this.steeringSupported) });
     }
 
     /** Apply Auto's model/effort now; `ready` is chained, so the next prompt waits for both switches. */

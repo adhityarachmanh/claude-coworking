@@ -112,6 +112,40 @@ function queueAtCapacity(hub, taskQueue, project, text, attachments, effort, gat
   }
 }
 
+/**
+ * ↪ The steer route's two pure decisions (exported so they are testable without a server).
+ * `steerDecision`: validate the body and the engine before any work happens.
+ * `steerOutcome`: map the session's answer to an HTTP status.
+ */
+export function steerDecision(body, session) {
+  const text = typeof body?.text === 'string' ? body.text.trim() : '';
+  if (!text) return { status: 400, error: 'Teks arahan kosong.' };
+  if (text.length > 2000) return { status: 400, error: 'Teks arahan maksimal 2000 karakter.' };
+  if (typeof session?.steer !== 'function') return { status: 409, error: 'Mesin ini belum mendukung pengarahan giliran. Pesan akan masuk antrian.', code: 'unsupported' };
+  return { status: 200, text };
+}
+
+export function steerOutcome(result) {
+  if (result?.ok) return { status: 200 };
+  if (result?.reason === 'no-turn') return { status: 409, error: 'Tidak ada giliran yang sedang berjalan. Kirim sebagai pesan biasa (masuk antrian).', code: 'no-turn' };
+  if (result?.reason === 'unsupported') return { status: 409, error: 'OpenCode versi ini belum mendukung pengarahan giliran. Pesan akan masuk antrian.', code: 'unsupported' };
+  if (result?.reason === 'empty') return { status: 400, error: 'Teks arahan kosong.' };
+  return { status: 502, error: `Arahan gagal dikirim: ${result?.reason ?? 'tidak diketahui'}` };
+}
+
+/**
+ * ↪ A steer that came from a 📋 Antrian bubble: find the waiting item behind that bubble. A steered prompt must not
+ * run a second time after this turn, so the item is dropped once the instruction really reached the turn. The bubble
+ * itself is left alone: the session patches it ("diarahkan"), the queue is not asked to mark it cancelled.
+ * @returns {string|null} the queue item id, or null (not a queued bubble, already running, unknown)
+ */
+export function steerQueueItem(taskQueue, projectId, chatId) {
+  if (typeof chatId !== 'string' || !chatId) return null;
+  const items = taskQueue?.queues?.[projectId]?.items ?? [];
+  const item = items.find((i) => i.chatId === chatId && i.status === 'waiting');
+  return item?.id ?? null;
+}
+
 export function register(router) {
   router.post('/api/projects/:id/prompt', withSession(async ({ hub, claude, opencode, ledger, taskQueue, metrics }, req, res, { project, session }, body) => {
     // 💰 Hard stop: never start a paid turn while a configured window is at/over its limit. A running turn is not cut.
@@ -279,6 +313,24 @@ export function register(router) {
   router.post('/api/projects/:id/reset', withSession((ctx, req, res, { session }) => {
     session.reset();
     return ok(res);
+  }));
+  // ↪ Arahkan giliran yang sedang berjalan (OpenCode 2.3+ `_session/steering`): the prompt is injected into the
+  // running turn instead of joining the queue. Versions without it answer 409 and the UI keeps the queue path.
+  router.post('/api/projects/:id/steer', withSession(async ({ taskQueue }, req, res, { project, session }, body) => {
+    const decision = steerDecision(body, session);
+    if (decision.status !== 200) return json(res, decision.status, { error: decision.error, ...(decision.code ? { code: decision.code } : {}) });
+    // A steer offered on a 📋 Antrian bubble replaces that item: it must not run again after this turn.
+    const itemId = steerQueueItem(taskQueue, project.id, body.chatId);
+    const result = await session.steer(decision.text, { chatId: typeof body.chatId === 'string' ? body.chatId : undefined });
+    const outcome = steerOutcome(result);
+    if (!result?.ok) {
+      // The prompt simply stays in the queue, exactly as before this route existed.
+      return json(res, outcome.status, { error: outcome.error, code: outcome.code ?? 'steer-failed' });
+    }
+    if (itemId) taskQueue.remove(project.id, itemId, { steered: true });
+    // `steered` tells the UI whether a queued prompt was really absorbed by the running turn (it then stops waiting);
+    // false = the steer went through without replacing anything, or the queue item had already been taken.
+    return json(res, outcome.status, { ok: true, steered: Boolean(result.steered || itemId) });
   }));
   // The active engine's conversations: Claude Code's transcripts, or OpenCode's own session list.
   router.post('/api/projects/:id/sessions', withSession(async ({ hub, opencode, ledger }, req, res, { project }) => {
