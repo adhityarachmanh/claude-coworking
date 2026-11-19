@@ -5,6 +5,8 @@
 //   "lama" — streams, then waits until session/cancel                       anything else — text, a read, a plan
 //   "tulis" — writes a file; asks first when permission.edit is "ask" (the edit permission's shape, kind "edit")
 //   "macet" — a shell command that never ends (`tail -f`), no output, until session/cancel (the stuck detector)
+//   "diam" — an LLM failure that emits no frame and never returns its prompt (upstream #26350): the stalled-turn
+//            watchdog must cancel and then close the turn honestly instead of leaving the office "busy" forever
 //   "shellberkas"/"shelllatar"/"shellgantung" — a shell call tagged with metadata (shellID, background); its
 //             output file is written under FAKE_ACP_SHELL_OUT_DIR; latar keeps running, gantung never finishes
 //   "tanya" — the `question` tool: elicitation/create (form) like OpenCode 2.2.5 when the client offered
@@ -750,6 +752,12 @@ async function turn(sessionId, text) {
     update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, status: 'in_progress', kind: 'think', title: 'Merekam ulang dua permukaan prioritas', rawInput: {} });
     await say('msg_step_hang', 'Langkah menggantung.');
     return { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
+  }
+  // "diam" — a non-tool LLM failure that emits NO frame at all and never returns its prompt result (upstream #26350):
+  // the office must not sit "busy" forever; the stalled-turn watchdog cancels it, then closes it honestly.
+  if (/^diam\b/.test(text)) {
+    await new Promise(() => {}); // no reply, no update: exactly the silent stall
+    return { stopReason: 'end_turn', usage: {} };
   }
   if (/macet/.test(text)) {
     const call = 'call-hang-1';

@@ -60,6 +60,9 @@ before(async () => {
       OFFICE_RESUME_WINDOW_MS: '700',
       OFFICE_RESUME_MISS_MS: '1200',
       OFFICE_AGENT_QUIET_MS: '300',
+      // The stalled-turn watchdog: a turn with no frame at all is cancelled, then closed a moment later.
+      OFFICE_TURN_STALL_MS: '500',
+      OFFICE_TURN_STALL_KILL_MS: '400',
       FAKE_ACP_RESUME_DELAY_MS: '1800',
       FAKE_ACP_AGENT_STATE: path.join(TMP, 'agents.json'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
@@ -246,4 +249,19 @@ test("the official child-session status closes a delegation without the parent's
   );
   const st = await snapshot();
   assert.equal(st.statuses[id].busy, false, 'the session is idle, nothing spins');
+});
+
+test('a turn that sends no frame at all is cancelled and closed, never left "busy" forever', async () => {
+  mark = seen.length;
+  const sent = await api(`/api/projects/${id}/prompt`, { text: 'diam' });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  // No frame ever arrives (upstream #26350): the watchdog announces the cancellation, then closes the turn.
+  await waitFor(
+    (t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /belum mengirim kemajuan apa pun/.test(o.text ?? ''),
+    15000,
+    'kabar giliran macet',
+  );
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && o.ok === false && /ditutup otomatis/.test(o.text ?? ''), 15000, 'result giliran ditutup');
+  const st = await snapshot();
+  assert.equal(st.statuses[id].busy, false, 'the stalled turn is not left spinning');
 });

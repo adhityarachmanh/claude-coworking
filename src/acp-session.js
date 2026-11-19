@@ -53,6 +53,16 @@ const RESUME_MAX_MS = envMs('OFFICE_RESUME_MAX_MS', 30 * 60_000);
 // as a foreign frame. If no continuation ever comes while the session is idle (upstream #56314: a failed resumed
 // turn leaves the parent silent), the user is told once instead of seeing the session stop with no explanation.
 const RESUME_MISS_MS = envMs('OFFICE_RESUME_MISS_MS', RESUME_WINDOW_MS);
+// A turn whose `session/prompt` never returns AND that sends no frame at all is the "silently stuck" case upstream
+// acknowledges (issue #26350: a non-tool LLM call that fails after retries emits no ACP frame). `session/prompt` is
+// sent with timeout 0 (no bound; see rpc), so without this nothing would ever close such a turn and the office would
+// sit "busy" forever. Deliberately conservative (10 minutes): a slow provider that still streams frames is never cut
+// off — only a turn with zero progress for this long is. The prompt RPC is still pending, so the stalled turn is
+// cancelled first (session/cancel) to free the session before it is closed. Tests shorten it via env.
+const TURN_STALL_MS = envMs('OFFICE_TURN_STALL_MS', 10 * 60_000);
+// After the stalled turn is cancelled, how long its prompt reply may take before the turn is closed anyway. Short:
+// the cancel is best effort, the honest closure must not depend on a wedged process answering.
+const TURN_STALL_KILL_MS = envMs('OFFICE_TURN_STALL_KILL_MS', 20_000);
 // ACP delegations (subagents) as ⧗ tasks: a child session that is no longer busy, with no new frame for this long,
 // is done. The parent's own resume is the primary signal (see beginResumeTurn); this is the fallback.
 const AGENT_QUIET_MS = envMs('OFFICE_AGENT_QUIET_MS', 20_000);
@@ -940,6 +950,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.reaping = false;
       this.steeringSupported = false; // _session/steering advertised at initialize (OpenCode 2.3+, see steer())
       this.resumeUntil = 0; // OpenCode may resume the session on its own after a background task (see onUpdate)
+      this.lastFrameAt = 0; // last progress of the running turn: frames/cards; feeds the stalled-turn watchdog (watchStall)
+      this.stallCancelAt = 0; // when the stalled turn was cancelled; 0 = not cancelled (see watchStall)
       this.resumeTurn = null; // { uuid, started, lastAt, costBefore, epoch, timer } while that turn is running
       this.awaitingResume = false; // a background end opened the resume window and no continuation has come yet
       this.autoSeq = 0;
@@ -1014,6 +1026,12 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const epoch = this.epoch;
       const started = Date.now();
       const costBefore = this.cost;
+      // The stalled-turn watchdog (watchStall) judges progress from the last frame, not from the start: a slow but
+      // live turn (heavy build) keeps sending frames and is never cut off; only total silence trips it.
+      item.startedAt = started;
+      item.costBefore = costBefore;
+      item.epoch = epoch;
+      this.lastFrameAt = started;
       // One retry: a provider that refuses the effort level (fallBackEffort) must not cost the user their turn.
       const send = () =>
         this.ready
@@ -1049,6 +1067,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     endTurn(epoch, uuid, { ok, interrupted, error, usage = {}, started, costBefore }) {
       if (epoch !== this.epoch || !this.translator) return; // the process was let go meanwhile (its queue is cleared)
+      if (!this.inflight.has(uuid)) return; // already closed (e.g. the stalled-turn watchdog): never finish a turn twice
       const costUsd = Number.isFinite(this.cost) ? Math.max(0, this.cost - (Number.isFinite(costBefore) ? costBefore : 0)) : null;
       const stopNote = this.shuttingDown ? 'Server dihentikan — giliran terputus' : 'Dihentikan oleh kamu';
       const msg = { durationMs: Date.now() - started, usage: usage ?? {}, costUsd };
@@ -1063,6 +1082,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (!stopped) this.adapter.armOpenChildren((callId) => this.agentTaskRunning(callId)); // late child steps still open: close them if their report never comes
       this.recordTurnUsage(usage ?? {}, costUsd);
       this.interrupting = false;
+      this.stallCancelAt = 0;
       this.inflight.delete(uuid);
       this.pointsCache = null;
       const next = [...this.inflight.entries()].find(([, i]) => i.state === 'queued');
@@ -1394,6 +1414,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         this.reapBackgroundShells().catch(() => {});
         this.reapAgentTasks().catch(() => {});
         this.watchResume();
+        this.watchStall();
         // A restart deferred for a task that never reports must still land (RESTART_MAX_WAIT_MS), even when the
         // reapers above return early: this is the only timer that keeps running while the session is idle.
         if (this.restartPending) this.applyPendingRestart();
@@ -2039,6 +2060,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       }
       this.resumeUntil = 0;
       this.awaitingResume = false;
+      this.stallCancelAt = 0;
       for (const p of this.rpcPending.values()) {
         clearTimeout(p.timer);
         p.reject(new Error('OpenCode berhenti.'));
@@ -2137,6 +2159,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
 
     onUpdate(u) {
       if (this.loading && u?.sessionUpdate !== 'available_commands_update') return;
+      this.lastFrameAt = Date.now(); // progress: the stalled-turn watchdog (watchStall) counts from the last frame
       if (u.sessionUpdate === 'usage_update') {
         if (Number.isFinite(u.cost?.amount)) this.cost = u.cost.amount;
         if (Number.isFinite(u.used) && Number.isFinite(u.size) && u.size > 0) this.hub.setStatus(this.id, { context: { used: u.used, window: u.size, autoCompactAt: null } });
@@ -2241,6 +2264,50 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         level: 'warning',
         text: 'OpenCode tidak melanjutkan sesi ini setelah tugas latar selesai — kemungkinan bug upstream (#56314). Kirim pesan apa pun untuk memicu ulang.',
       });
+    }
+
+    /**
+     * The stalled-turn watchdog: OpenCode's `session/prompt` has no timeout of ours (see rpc: a turn may run long),
+     * and upstream #26350/#26379 acknowledge a non-tool LLM failure after retries can emit NO frame at all — the
+     * prompt never returns and the office would sit "busy" forever. A turn that makes no progress (no frame, no
+     * permission/elicitation) for TURN_STALL_MS is first CANCELLED (session/cancel): a wedged turn must free the
+     * session, and a live-but-slow one is left alone because any frame resets the clock. If the prompt still has not
+     * returned a short grace later, the turn is closed here so nothing keeps spinning. A pending card counts as
+     * progress: a turn waiting for the user is never cut.
+     */
+    watchStall() {
+      const entry = [...this.inflight.entries()].find(([, i]) => i.state === 'started');
+      if (!entry) {
+        this.stallCancelAt = 0;
+        return;
+      }
+      // A pending card IS progress: never close a turn that is waiting for the user.
+      if ([...(this.hub.approvals?.values?.() ?? [])].some(({ approval }) => approval.project === this.id && approval.status === 'pending')) {
+        this.stallCancelAt = 0;
+        return;
+      }
+      const [uuid, item] = entry;
+      const now = Date.now();
+      const last = Math.max(this.lastFrameAt ?? 0, item.startedAt ?? 0);
+      if (now - last < TURN_STALL_MS) {
+        this.stallCancelAt = 0;
+        return;
+      }
+      if (!this.stallCancelAt) {
+        this.stallCancelAt = now;
+        this.hub.chat(this.id, {
+          kind: 'info',
+          level: 'warning',
+          text: `OpenCode belum mengirim kemajuan apa pun selama ${Math.round(TURN_STALL_MS / 60_000)} menit — giliran dibatalkan (kemungkinan bug upstream #26350). Kirim pesan lagi untuk mencoba ulang.`,
+        });
+        if (this.acpSessionId) this.notify('session/cancel', { sessionId: this.acpSessionId });
+        return;
+      }
+      if (now - this.stallCancelAt < TURN_STALL_KILL_MS) return; // give the cancel a moment: its reply ends the turn normally
+      this.stallCancelAt = 0;
+      // The cancel was not honoured in time: close the turn ourselves so the office stops spinning. Not `interrupting`
+      // (the user did not press Stop), so the result row carries this message instead of "Dihentikan oleh kamu".
+      this.endTurn(item.epoch ?? this.epoch, uuid, { ok: false, interrupted: false, error: 'OpenCode tidak menjawab dan tidak mengirim kemajuan; giliran ditutup otomatis.', started: item.startedAt ?? now, costBefore: item.costBefore ?? 0 });
     }
 
     /** The first frame of that continuation: model it as a turn (no user bubble) so busy/queue/result stay honest. */
