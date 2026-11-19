@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.72
 
 - **✅ Papan tulis OpenCode akhirnya terisi.** OpenCode V2 mematikan alat TODO-nya secara default, jadi selama ini papan tulis kantor kosong untuk semua project OpenCode walau AI-nya sedang membuat rencana bertahap. Aplikasi kini memintanya lewat `experimental.todo`, dan tetap berjalan normal bila versi OpenCode berikutnya menghapus flag itu (paling buruk: papan tulis kosong lagi, bukan error).
 - **💬 Kantor benar-benar terlihat "menunggu jawabanmu".** Kartu pertanyaan/izin/rencana dulu dikirim ke layar **sebelum** kantor diberi tahu bahwa kamu sedang dimintai jawaban, sehingga menjawab dengan cepat membuat animasi "menunggu" tidak pernah muncul (dan `ask_done` mendahului `ask`). Urutannya kini benar untuk OpenCode **dan** Claude Code: orangnya berhenti dan menoleh dulu, baru kartunya muncul.
