@@ -34,6 +34,21 @@ if (args[0] === 'mcp' && args[1] === 'add') {
   console.log(`Added MCP server ${args.find((a, i) => i > 1 && !a.startsWith('-') && args[i - 1] !== '-s' && args[i - 1] !== '-e' && args[i - 1] !== '--transport')}`);
   process.exit(0);
 }
+// `claude mcp add-json <name> -` (2.1.327+): the server JSON arrives on STDIN so a token never lands in argv.
+// Recorded WITHOUT the JSON's contents in the argv log on purpose — a test asserts that no secret is there.
+if (args[0] === 'mcp' && args[1] === 'add-json') {
+  let json = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (c) => (json += c));
+  process.stdin.on('end', () => {
+    const name = args[2];
+    if (process.env.FAKE_MCP_LOG) appendFileSync(process.env.FAKE_MCP_LOG, `${JSON.stringify({ cli: 'claude', argv: args.slice(2), stdin: json })}\n`);
+    if (process.env.FAKE_MCP_JSON_FILE) writeFileSync(process.env.FAKE_MCP_JSON_FILE, json);
+    console.log(`Added MCP server ${name}`);
+    process.exit(0);
+  });
+  // No fall-through: the JSON on stdin is the input, so this process waits for it (top-level `return` is illegal here).
+}
 // `claude plugin …` (🧩 Ekstensi): a tiny marketplace; installs are kept in FAKE_PLUGIN_STATE (JSON list of ids)
 if (args[0] === 'plugin') {
   const file = process.env.FAKE_PLUGIN_STATE;

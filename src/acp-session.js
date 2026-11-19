@@ -708,12 +708,21 @@ export class AcpAdapter {
    * OpenCode's shell tool announces a backgrounded command in its OUTPUT text, not in metadata (v2.2.5/2.3.0):
    * "Command moved to the background (shell ID: sh_…). PID: …". Adopt that as the call's metadata, so the ⧗ task
    * exists, its output file is readable, and its PID can be checked for completion. Metadata wins when present.
+   *
+   * Since 2.3.1 a command that hits its timeout is MOVED TO THE BACKGROUND instead of being killed ("Timed-Out Shell
+   * Commands Keep Running"), and OpenCode words that differently — so the test covers the timeout wording too. The
+   * pattern stays deliberately general: an unknown future wording with "shell ID" still lands here, and an
+   * announcement without an id is ignored (never a task nobody can finish).
    */
   adoptBackgroundShell(info, text) {
-    if (info.meta?.shellID || !/moved to the background/i.test(String(text ?? ''))) return;
-    const shellId = /shell ID:\s*(sh_[\w-]{1,100})/i.exec(String(text))?.[1];
+    if (info.meta?.shellID) return;
+    const body = String(text ?? '');
+    // 2.3.1+: timeout → background, no longer "killed". Accept that sentence as well as the plain move.
+    const moved = /moved to the background/i.test(body) || /(timed? ?out|timeout)[^.]{0,80}background/i.test(body);
+    if (!moved) return;
+    const shellId = /shell ID:\s*(sh_[\w-]{1,100})/i.exec(body)?.[1];
     if (!shellId) return;
-    const pid = Number(/PID:\s*(\d{1,10})/.exec(String(text))?.[1]) || null;
+    const pid = Number(/PID:\s*(\d{1,10})/.exec(body)?.[1]) || null;
     info.meta = { ...(info.meta ?? {}), shellID: shellId, background: true, ...(pid ? { pid } : {}) };
   }
 

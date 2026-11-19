@@ -133,7 +133,7 @@ function spawnExecFile(command, args, options, finish) {
  * (`EUNKNOWN: unknown error, lstat '...\nvm\.nodejs\pwsh.exe'`) — the "Internal error" on the first prompt after
  * an in-app update. A central default here covers every wrapper that spawns a CLI, present and future.
  */
-export function execFileTree(command, args, { timeout = 0, ...options } = {}, callback = () => {}) {
+export function execFileTree(command, args, { timeout = 0, input = null, ...options } = {}, callback = () => {}) {
   const state = { timedOut: false, timer: null, grace: null, escalate: null };
   const finish = (err, out, errOut) => {
     clearTimeout(state.timer);
@@ -148,9 +148,11 @@ export function execFileTree(command, args, { timeout = 0, ...options } = {}, ca
   const child = WIN ? execFile(command, args, { ...options, env: options.env ?? childEnv() }, finish) : spawnExecFile(command, args, options, finish);
   // Close stdin at once: it is a pipe (not a TTY), and `opencode run` / `claude -p` read a piped stdin as prompt
   // input, so an open pipe makes them wait for EOF that never comes (the Effort Auto classifier silently fell back
-  // after 25 s). No caller writes to this stdin.
+  // after 25 s). A caller that DOES have something to say (`input`, e.g. `claude mcp add-json -` reading the server
+  // JSON so a token never lands in argv) writes it and then closes the pipe itself.
   child.stdin?.on('error', () => {}); // EPIPE when the process is gone already: reported through the callback
-  child.stdin?.end();
+  if (input == null) child.stdin?.end();
+  else child.stdin?.end(String(input));
   if (timeout > 0) {
     // Neither timer may be unref'd: the caller waits for the callback, and once the child is killed these timers are
     // the only thing that keeps the event loop alive long enough to deliver it.

@@ -62,30 +62,52 @@ function cleanRequest({ name, kind, command, url, env = [], scope }) {
 /**
  * Adds a server to the engine's config through its own CLI. Claude Code: `claude mcp add` (scope local / project /
  * user). OpenCode: `opencode mcp add` (project config, or the global one for scope "user").
+ *
+ * 🔐 Secrets stay off the command line. `claude mcp add … -e KEY=VALUE` puts every value in argv, where another
+ * process (Task Manager, `ps`) can read it. Claude Code 2.1.327+ accepts `mcp add-json <name> -`: the server JSON is
+ * read from stdin, so tokens never appear as an argument. A request that carries an environment therefore goes that
+ * way; a request without one keeps the older argv form (works on every version and has nothing to hide).
  */
 export function addMcpServer({ engine, bin, projectPath, request }) {
   if (!bin) return Promise.reject(new McpAdminError(404, 'CLI di komputer ini tidak ditemukan.'));
   const r = cleanRequest(request ?? {});
-  const args = [...bin.args, 'mcp', 'add'];
-  if (engine === 'opencode') {
-    if (r.scope === 'user') args.push('--global');
-    for (const e of r.envs) args.push('--env', e);
-    args.push(r.name);
-    if (r.url) args.push('--url', r.url);
-    else args.push('--', ...r.argv);
-  } else {
-    args.push('-s', r.scope);
-    for (const e of r.envs) args.push('-e', e);
-    if (r.url) args.push('--transport', 'http', r.name, r.url);
-    else args.push(r.name, '--', ...r.argv);
+  // Claude + env → JSON over stdin (2.1.327+). OpenCode has no stdin form: its `--env` stays on argv, and the UI says so.
+  const viaJson = engine !== 'opencode' && r.envs.length > 0;
+  const args = [...bin.args, 'mcp', ...(viaJson ? ['add-json', r.name, '-'] : ['add'])];
+  if (!viaJson) {
+    if (engine === 'opencode') {
+      if (r.scope === 'user') args.push('--global');
+      for (const e of r.envs) args.push('--env', e);
+      args.push(r.name);
+      if (r.url) args.push('--url', r.url);
+      else args.push('--', ...r.argv);
+    } else {
+      args.push('-s', r.scope);
+      for (const e of r.envs) args.push('-e', e);
+      if (r.url) args.push('--transport', 'http', r.name, r.url);
+      else args.push(r.name, '--', ...r.argv);
+    }
   }
+  const input = viaJson ? `${mcpServerJson(r)}\n` : null;
   return new Promise((resolve, reject) => {
-    execFileTree(bin.command, args, { cwd: projectPath, encoding: 'utf8', timeout: 60_000, windowsHide: true, env: childEnv({ CI: '1', NO_COLOR: '1' }) }, (err, out, errOut) => {
+    execFileTree(bin.command, args, { cwd: projectPath, encoding: 'utf8', timeout: 60_000, windowsHide: true, env: childEnv({ CI: '1', NO_COLOR: '1' }), input }, (err, out, errOut) => {
       const text = `${out ?? ''}\n${errOut ?? ''}`.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
       if (err) return reject(new McpAdminError(502, text.split('\n').find((l) => l.trim() && !/^\s+at /.test(l))?.slice(0, 300) || 'Menambah server MCP gagal.'));
-      resolve({ ok: true, output: text.slice(0, 2000) });
+      resolve({ ok: true, output: text.slice(0, 2000), viaStdin: viaJson });
     });
   });
+}
+
+/**
+ * The `mcpServers` JSON Claude Code reads from stdin: one server, this app's scope mapped to its own vocabulary
+ * (`local` = this project only, `project` = shared .mcp.json, `user` = everywhere). Kept pure and exported: the shape
+ * is the contract, so a test can prove the token is in the JSON and not in argv.
+ */
+export function mcpServerJson(r) {
+  const server = r.url ? { type: 'http', url: r.url } : { type: 'stdio', command: r.argv[0], args: r.argv.slice(1) };
+  // Values only: the NAME= is the CLI's argv syntax; JSON wants a map.
+  server.env = Object.fromEntries(r.envs.map((e) => [e.slice(0, e.indexOf('=')), e.slice(e.indexOf('=') + 1)]));
+  return JSON.stringify({ mcpServers: { [r.name]: server } });
 }
 
 /**
