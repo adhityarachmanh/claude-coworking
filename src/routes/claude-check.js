@@ -6,9 +6,9 @@ import { execFileTree } from '../proc.js';
 import { json } from './http.js';
 
 /** `claude doctor` / `claude update` without a terminal (both print and exit); output cut to 20 KB. */
-function runClaude(bin, args, timeout) {
+function runClaude(bin, args, timeout, { cwd } = {}) {
   return new Promise((resolve) => {
-    execFileTree(bin.command, [...bin.args, ...args], { encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024, env: childEnv({ CI: '1', NO_COLOR: '1' }) }, (err, out, errOut) => {
+    execFileTree(bin.command, [...bin.args, ...args], { cwd, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024, env: childEnv({ CI: '1', NO_COLOR: '1' }) }, (err, out, errOut) => {
       const text = `${out ?? ''}${errOut ? `\n${errOut}` : ''}`.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim().slice(0, 20_000);
       resolve({ ok: !err, timedOut: Boolean(err?.killed), output: text || (err ? err.message.split('\n')[0] : '') });
     });
@@ -27,14 +27,18 @@ export function register(router) {
   }, { maxBody: 1024 });
 
   // 🩺 `claude doctor` (read-only health check) and ⬆ `claude update` (installs a newer Claude Code): laptop only.
+  // `doctor` reads the settings files of its CURRENT DIRECTORY (its own --help), so it runs inside the project whose
+  // …/agents, /hooks or settings.json may be broken — reporting the project's problems instead of the app folder's.
   for (const [name, args, timeout] of [['doctor', ['doctor'], 60_000], ['update', ['update'], 300_000]]) {
-    router.post(`/api/claude-check/${name}`, async ({ claude, sessions }, req, res) => {
+    router.post(`/api/claude-check/${name}`, async ({ claude, sessions }, req, res, params, body) => {
       if (!claude) return json(res, 404, { error: 'Claude Code tidak ditemukan.' });
       if (maintenanceBusy) return json(res, 409, { error: 'Doctor/update lain sedang berjalan.' });
       if (name === 'update' && [...(sessions?.sessions?.values() ?? [])].some((s) => s.turnActive?.())) return json(res, 409, { error: 'Masih ada giliran yang berjalan. Update setelah selesai.' });
+      // A project folder from the picker: `doctor` then checks THAT project's settings/agents/hooks.
+      const cwd = name === 'doctor' && typeof body?.projectPath === 'string' && body.projectPath ? body.projectPath : undefined;
       maintenanceBusy = true;
       try {
-        const result = await runClaude(claude, args, timeout);
+        const result = await runClaude(claude, args, timeout, { cwd });
         if (name === 'update') console.log(`claude update: ${result.ok ? 'selesai' : 'gagal'}`);
         return json(res, 200, result);
       } finally {

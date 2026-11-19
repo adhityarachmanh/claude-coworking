@@ -96,7 +96,13 @@ if (args.includes('-p') && String(args[args.indexOf('-p') + 1] ?? '').startsWith
   process.exit(0);
 }
 if (args[0] === 'doctor' || args[0] === 'update') {
-  console.log(args[0] === 'doctor' ? 'Claude Code doctor\n\nNo installation issues found.' : 'Claude Code is up to date (9.9.9-fake)');
+  // `cwd:` is what proves the route ran doctor inside the project (its real --help: "Reads settings files in the
+  // current directory"): the app folder has no Claude config of the user, the project does.
+  console.log(
+    args[0] === 'doctor'
+      ? `Claude Code doctor\ncwd: ${process.cwd()}\n\nNo installation issues found.`
+      : 'Claude Code is up to date (9.9.9-fake)',
+  );
   process.exit(0);
 }
 

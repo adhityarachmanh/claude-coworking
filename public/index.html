@@ -627,6 +627,13 @@
           <button class="primary">Tambah</button>
           <p id="perm-add-error" class="field-error" role="alert"></p>
         </form>
+        <!-- 🔌 Larang server MCP (Claude Code `deniedMcpServers`): a server listed here is never connected. -->
+        <form id="perm-deny-mcp" class="perm-add">
+          <span class="muted small">🔌 Larang server MCP</span>
+          <input id="perm-deny-mcp-name" aria-label="Nama server MCP yang dilarang" aria-describedby="perm-deny-mcp-error" placeholder="nama-server-mcp" autocomplete="off" spellcheck="false" maxlength="120" />
+          <button class="ghost">Larang</button>
+          <p id="perm-deny-mcp-error" class="field-error" role="alert"></p>
+        </form>
         <div id="perm-list" class="perm-list"></div>
       </div>
     </div>

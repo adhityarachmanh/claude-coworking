@@ -1,7 +1,7 @@
 // ---------- 🛡️ Aturan izin: Claude Code's saved permission rules ----------
 // `permissions` reads (Tailscale/laptop only: rules can hold exact commands, tokens included, so not over WiFi);
 // `permissions-edit` changes what Claude Code may do unasked: laptop only (LOCAL_ONLY_ACTION in server.js).
-import { PermissionError, editPermission, readPermissions } from '../permissions.js';
+import { PermissionError, editDeniedMcp, editPermission, readPermissions } from '../permissions.js';
 import { appliedOf, json } from './http.js';
 import { claudeOnly, withProject } from './project.js';
 
@@ -21,6 +21,20 @@ export function register(router) {
       const rule = String(edit.rule ?? '').trim();
       const what = { add: `ditambahkan ke ${edit.list}`, remove: `dihapus dari ${edit.list}`, move: `dipindah ${edit.list} → ${edit.to}` }[edit.action];
       hub.chat(project.id, { kind: 'info', text: `🛡️ Aturan izin "${rule}" ${what} (${result.file}).` });
+      return json(res, 200, { ...result, applied: appliedOf(applied) });
+    }),
+  ));
+  // 🔌 Larang server MCP (Claude Code `deniedMcpServers`): a server listed here is never connected, whatever its own
+  // config says. Separate from allow/deny/ask because it lives at the file's root, not under `permissions`.
+  router.post('/api/projects/:id/mcp-deny', withClaudeProject(({ hub, sessions }, req, res, { project }, body) =>
+    permissionTool(res, async () => {
+      const edit = { scope: String(body.scope ?? ''), action: String(body.action ?? ''), server: String(body.server ?? '') };
+      const result = await editDeniedMcp(project.path, edit);
+      // Settings are read at start: the same restart rule as a permission-rule edit.
+      const affected = edit.scope === 'user' ? [...sessions.sessions.values()] : [sessions.get(project)];
+      const applied = affected.map((s) => s.reloadSettings());
+      const what = edit.action === 'add' ? 'dilarang' : 'diizinkan lagi';
+      hub.chat(project.id, { kind: 'info', text: `🔌 Server MCP "${edit.server.trim()}" ${what} (${result.file}).` });
       return json(res, 200, { ...result, applied: appliedOf(applied) });
     }),
   ));

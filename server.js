@@ -799,7 +799,7 @@ const SECURE_ONLY = new Set(['/api/power/status', '/api/shutdown']);
 const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '/api/account/login/cancel', '/api/account/logout', '/api/account/audit', '/api/engine', '/api/opencode/providers', '/api/opencode/login/key', '/api/opencode/login/oauth', '/api/opencode/login/status', '/api/opencode/login/code', '/api/opencode/login/cancel', '/api/opencode/logout', '/api/opencode/custom/check', '/api/opencode/custom/add', '/api/opencode/custom/remove']);
 // Opening VS Code / Explorer only makes sense on the laptop itself.
 // Changing saved permission rules (🛡️ Aturan izin) changes what Claude Code may do unasked: laptop only (phones may look).
-const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit|mcp-add|session-import-json|checklist-scaffold|archive)$/;
+const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit|mcp-add|mcp-deny|session-import-json|checklist-scaffold|archive)$/;
 // Rename/add/remove members only. `/api/groups/list` and `/api/groups/:id/sessions` are reads and stay available to a
 // paired phone; without the lookahead the id pattern swallowed `list` and the group dialog showed nothing but 403.
 const LOCAL_ONLY_GROUP = /^\/api\/groups\/(?!list$)[\w-]+$/;

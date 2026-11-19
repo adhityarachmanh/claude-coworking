@@ -90,6 +90,50 @@ function rulesOf(data) {
   return rules;
 }
 
+/**
+ * 🔌 MCP servers this source refuses (Claude Code's top-level `deniedMcpServers`): a server listed here is never
+ * connected, whatever its own config says. Entries are a server name, or `claude.ai <name>` for a connector.
+ * Kept apart from the allow/deny/ask lists on purpose: they live at the file's root, not under `permissions`.
+ */
+const DENIED_MCP = /^[A-Za-z0-9][\w.: -]{0,120}$/;
+
+/** The `deniedMcpServers` of one settings blob, validated (a wrong shape is refused, never rewritten). */
+export function deniedMcpOf(data) {
+  const value = data?.deniedMcpServers;
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new PermissionError('"deniedMcpServers" di file ini bukan array.', 409);
+  return value.filter((n) => typeof n === 'string');
+}
+
+/**
+ * Adds or removes one entry in a source's `deniedMcpServers`. Every other key of the file is preserved; the array is
+ * dropped again when it ends up empty (so the file reads exactly as before the first add).
+ * @returns {Promise<{ scope: string, file: string, denied: string[] }>}
+ */
+export async function editDeniedMcp(projectPath, { scope, action, server } = {}, { userDir = userConfigDir() } = {}) {
+  if (!SCOPES.includes(scope)) throw new PermissionError('Sumber aturan tidak dikenal.');
+  if (!['add', 'remove'].includes(action)) throw new PermissionError('Aksi tidak dikenal.');
+  const name = String(server ?? '').trim();
+  if (!DENIED_MCP.test(name)) throw new PermissionError('Nama server MCP tidak valid.');
+  const file = settingsFile(projectPath, scope, userDir);
+  return serialized(file, async () => {
+    const { exists, data, indent } = await loadSettings(file);
+    const denied = deniedMcpOf(data);
+    if (action === 'add') {
+      if (denied.includes(name)) throw new PermissionError(`"${name}" sudah dilarang di sumber ini.`, 409);
+      denied.push(name);
+    } else {
+      if (!exists || !denied.includes(name)) throw new PermissionError(`"${name}" tidak ada di daftar larangan sumber ini.`, 404);
+      // Remove only on the remove path: the add path just pushed the name (removing it there undid the change).
+      denied.splice(denied.indexOf(name), 1);
+    }
+    if (denied.length) data.deniedMcpServers = denied;
+    else delete data.deniedMcpServers;
+    await writeAtomic(file, `${JSON.stringify(data, null, indent)}\n`);
+    return { scope, file: displayPath(file, projectPath), denied: deniedMcpOf(data) };
+  });
+}
+
 /** Shown path: ~ for the home folder, relative inside the project. */
 function displayPath(file, projectPath) {
   const rel = path.relative(projectPath, file);
@@ -103,11 +147,12 @@ export async function readPermissions(projectPath, { userDir = userConfigDir() }
   const scopes = [];
   for (const scope of SCOPES) {
     const file = settingsFile(projectPath, scope, userDir);
-    const entry = { scope, ...SCOPE_INFO[scope], file: displayPath(file, projectPath), exists: false, rules: { allow: [], deny: [], ask: [] } };
+    const entry = { scope, ...SCOPE_INFO[scope], file: displayPath(file, projectPath), exists: false, rules: { allow: [], deny: [], ask: [] }, deniedMcp: [] };
     try {
       const { exists, data } = await loadSettings(file);
       entry.exists = exists;
       entry.rules = rulesOf(data);
+      entry.deniedMcp = deniedMcpOf(data); // 🔌 servers this source refuses (top-level, not under permissions)
     } catch (err) {
       if (!(err instanceof PermissionError)) throw err;
       entry.error = err.message;

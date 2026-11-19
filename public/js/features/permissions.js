@@ -77,11 +77,17 @@ function renderPermissions() {
       const count = LISTS.reduce((m, [l]) => m + s.rules[l].length, 0);
       const head = `<div class="perm-scope-head"><b>${escapeHtml(s.label)}</b><code class="perm-file">${escapeHtml(s.file)}</code></div><p class="muted small">${escapeHtml(s.hint)}</p>`;
       if (s.error) return `<section class="perm-scope">${head}<div class="state-error">${escapeHtml(s.error)}</div></section>`;
-      if (!count) return `<section class="perm-scope">${head}<p class="muted small perm-empty">${s.exists ? 'Belum ada aturan.' : 'File belum ada — dibuat saat aturan pertama ditambahkan.'}</p></section>`;
+      // 🔌 Servers this file refuses (`deniedMcpServers`): listed even when no allow/deny/ask rule exists.
+      const denied = Array.isArray(s.deniedMcp) && s.deniedMcp.length
+        ? `<div class="perm-group"><span class="pill deny">MCP dilarang</span> <small class="muted">server ini tidak pernah dihubungkan dari sumber aturan ini</small><ul class="perm-rules">${s.deniedMcp
+            .map((n) => `<li data-scope="${s.scope}" data-mcp="${escapeHtml(n)}"><code>${escapeHtml(n)}</code>${state.local ? `<span class="perm-acts"><button type="button" class="ghost danger-text" data-perm="mcp-allow" title="Izinkan server ini lagi">🗑 Izinkan lagi</button></span>` : ''}</li>`)
+            .join('')}</ul></div>`
+        : '';
+      if (!count && !denied) return `<section class="perm-scope">${head}<p class="muted small perm-empty">${s.exists ? 'Belum ada aturan.' : 'File belum ada — dibuat saat aturan pertama ditambahkan.'}</p></section>`;
       const groups = LISTS.filter(([l]) => s.rules[l].length)
         .map(([l, label, meaning]) => `<div class="perm-group"><span class="pill ${LIST_TONE[l]}">${label}</span> <small class="muted">${meaning}</small><ul class="perm-rules">${s.rules[l].map((r) => ruleRow(s.scope, l, r)).join('')}</ul></div>`)
         .join('');
-      return `<section class="perm-scope">${head}${groups}</section>`;
+      return `<section class="perm-scope">${head}${groups}${denied}</section>`;
     })
     .join('');
 }
@@ -216,6 +222,16 @@ export function initPermissions() {
   $('#perm-list').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-perm]');
     if (!btn) return;
+    const row = btn.closest('li');
+    // 🔌 A denied MCP server row has no data-rule: it is its own kind of entry (top-level in the settings file).
+    if (btn.dataset.perm === 'mcp-allow') {
+      const scope = row.dataset.scope;
+      const server = row.dataset.mcp;
+      const where = perm.scopes.find((s) => s.scope === scope);
+      if (!window.confirm(`Izinkan server MCP "${server}" lagi di ${where?.label ?? scope}?`)) return;
+      editDenied({ scope, action: 'remove', server });
+      return;
+    }
     const { scope, list, rule } = btn.closest('li[data-rule]').dataset;
     const where = perm.scopes.find((s) => s.scope === scope);
     const label = `${where?.label ?? scope} (${where?.file ?? ''})`;
@@ -228,4 +244,29 @@ export function initPermissions() {
       edit({ scope, action: 'move', list, rule, to });
     }
   });
+  $('#perm-deny-mcp').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const server = $('#perm-deny-mcp-name').value.trim();
+    $('#perm-deny-mcp-error').textContent = server ? '' : 'Tulis nama server MCP-nya dulu.';
+    if (!server) return $('#perm-deny-mcp-name').focus();
+    editDenied({ scope: $('#perm-add-scope').value, action: 'add', server }, () => ($('#perm-deny-mcp-name').value = ''));
+  });
+  $('#perm-deny-mcp-name').addEventListener('input', () => ($('#perm-deny-mcp-error').textContent = ''));
+}
+
+/** 🔌 Add/remove one `deniedMcpServers` entry; the list is re-read afterwards either way. */
+async function editDenied(body, done) {
+  if (perm.busy) return;
+  perm.busy = true;
+  try {
+    const res = await api(`/api/projects/${perm.project}/mcp-deny`, body);
+    done?.();
+    toast(`Tersimpan di ${res.file}. ${APPLIED[res.applied] ?? APPLIED.none}`, 'ok');
+  } catch (err) {
+    toast(err.message);
+    $('#perm-deny-mcp-error').textContent = body.action === 'add' ? err.message : '';
+  } finally {
+    perm.busy = false;
+    loadPermissions();
+  }
 }

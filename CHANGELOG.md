@@ -2,6 +2,11 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🩺 `claude doctor` kini memeriksa project yang sedang dibuka.** `doctor` membaca file setelan di **folder tempat ia dijalankan** (perintah `--help`-nya sendiri), jadi sebelumnya ia memeriksa folder aplikasi — yang tidak berisi config Claude milikmu. Kini tombol 🩺 **Doctor** di ⚙ → Kompatibilitas Claude Code menjalankannya **di folder project aktif**, sehingga yang dilaporkan adalah masalah project itu: `.claude/settings.json` yang rusak, agent/hook/command yang tidak termuat, keybinding salah, atau setelan izin yang diabaikan.
+- **🔌 Larang server MCP tertentu (Claude Code).** Di 🛡️ **Aturan izin** kini ada bagian **Larang server MCP**: server yang dicantumkan tidak akan pernah dihubungkan dari sumber aturan itu (Claude Code `deniedMcpServers`). Daftar larangan tampil per sumber (project lokal / project bersama / user) dengan tombol **Izinkan lagi**, dan penyuntingannya hanya mengubah daftar itu — key lain di file setelan tetap utuh. Berlaku setelah Claude Code dimulai ulang, sama seperti perubahan aturan izin.
+
 ## 1.0.77
 
 - **🔐 Token server MCP tidak lagi lewat baris perintah.** Menambah server MCP dengan variabel lingkungan dulu mengirim `-e NAMA=nilai` sebagai argumen proses — di Windows nilai itu terlihat di Task Manager dan oleh proses lain. Untuk Claude Code (2.1.327+) aplikasi kini memakai `claude mcp add-json <nama> -`: JSON servernya (termasuk token) dikirim lewat **stdin**, jadi rahasianya tidak pernah menjadi argumen. Permintaan tanpa variabel lingkungan tetap memakai bentuk lama (kompatibel dengan versi Claude Code mana pun). OpenCode belum punya bentuk stdin, jadi jalurnya tetap seperti sekarang.

@@ -125,7 +125,10 @@ async function maintenance(name) {
   out.hidden = false;
   out.textContent = name === 'update' ? 'Memperbarui Claude Code… (bisa beberapa menit)' : 'Menjalankan claude doctor…';
   try {
-    const r = await api(`/api/claude-check/${name}`);
+    // Doctor reads the settings/agents/hooks of its working directory: send the ACTIVE project so its problems are
+    // the ones reported (the app folder has no Claude config of yours).
+    const project = name === 'doctor' ? state.projects.find((p) => p.id === state.active)?.path : null;
+    const r = await api(`/api/claude-check/${name}`, project ? { projectPath: project } : {});
     out.textContent = r.output || (r.ok ? 'Selesai.' : 'Gagal tanpa keterangan.');
     if (r.timedOut) toast(`claude ${name} tidak selesai tepat waktu.`, 'warn');
     else toast(r.ok ? (name === 'update' ? 'Update Claude Code selesai.' : 'Doctor selesai.') : `claude ${name} gagal.`, r.ok ? 'ok' : 'warn');
