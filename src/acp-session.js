@@ -220,6 +220,18 @@ export function permissionConfig(mode, user = {}) {
  * OpenCode's primary agent: 📋 Rencana dulu = its read-only "plan" agent; otherwise the agent picked in
  * Pengaturan giliran (build, or a custom primary agent from the user's OpenCode config), "build" by default.
  */
+/**
+ * The per-process config OpenCode reads from OPENCODE_CONFIG_CONTENT (the user's own files are never touched).
+ *
+ * `experimental.todo` turns on OpenCode V2's `todowrite` tool, which is OFF by default ("Todos are off by default in
+ * V2", opencode.ai/docs/migrate-v1). Without it OpenCode sends no `plan` updates, so the office's whiteboard stays
+ * empty for every OpenCode project. The flag is experimental upstream, so a version that drops it must still start:
+ * the risk is an empty whiteboard, never a refused process.
+ */
+export function openCodeConfigContent(settings, user = {}, todo = true) {
+  return JSON.stringify({ ...(todo ? { experimental: { todo: true } } : {}), permission: permissionConfig(settings.mode, user) });
+}
+
 const agentMode = (s) => agentForMode(s.mode, s.agent);
 /** Settings that only a fresh process can change (the permission config and the team are read at start). */
 const processKey = (s) => JSON.stringify([permissionConfig(s.mode), Boolean(s.team)]);
@@ -1020,13 +1032,14 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const label = describeTool('ExitPlanMode', input);
       const chatId = this.hub.chat(this.id, { kind: 'approval', role, text: label, approvalId: id, status: 'pending' });
       this.planCard = id;
+      // The office gathers (and waits) before the card is broadcast: never after it, or an instant answer races it.
+      this.hub.office(this.id, { kind: 'huddle', role: 'pm', roles: ['pm', 'architect'], label: 'Rencana siap, minta persetujuan' });
+      this.hub.office(this.id, { kind: 'ask', role, label, ask: 'plan' });
       this.hub.requestApproval(
         this.id,
         { id, chatId, role, kind: 'plan', tool: 'ExitPlanMode', label, description: '', input: previewInput('ExitPlanMode', input), canAlways: false },
         (decision) => this.onPlanDecision(id, role, decision, plan),
       );
-      this.hub.office(this.id, { kind: 'huddle', role: 'pm', roles: ['pm', 'architect'], label: 'Rencana siap, minta persetujuan' });
-      this.hub.office(this.id, { kind: 'ask', role, label, ask: 'plan' });
     }
 
     /**
@@ -1612,7 +1625,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
             OPENCODE_DISABLE_AUTOUPDATE: '1',
             // Per-process config: the user's ~/.config/opencode stays untouched.
             // The user's own rules are merged in (a deny stays a deny): see permissionConfig.
-            OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: permissionConfig(settings.mode, readUserPermission(this.project.path)) }),
+            OPENCODE_CONFIG_CONTENT: openCodeConfigContent(settings, readUserPermission(this.project.path)),
             // Mode tim: the roles as subagents + the Lead's prompt, from a file (17 prompts pass Windows' 32 KB env limit).
             ...(settings.team && Object.keys(this.m.agents).length ? { OPENCODE_CONFIG: this.m.openCodeTeamConfig() } : {}),
           }),
@@ -1692,22 +1705,37 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       return true;
     }
 
-    /** initialize, then continue the project's session (session/load) or start one, then model + mode. */
+    /**
+     * Continues an existing conversation. `session/resume` is preferred: OpenCode 2.3.0 advertises it under
+     * `agentCapabilities.sessionCapabilities.resume` and it does NOT replay the saved messages (probe 2026-11-19,
+     * docs: "session/load replays the saved messages; session/resume and session/fork don't replay them"). The app
+     * keeps its own chat on disk, so replayed updates were pure overhead — they had to be swallowed by `loading`.
+     * `session/load` stays as the fallback for a build that lacks `resume`.
+     * @returns the handshake result, or null when the conversation is gone (deleted elsewhere): start a new one.
+     */
+    async reopen(sessionId, cwd, init) {
+      const caps = init?.agentCapabilities?.sessionCapabilities ?? {};
+      const replay = !('resume' in caps);
+      if (replay) this.loading = true; // session/load replays the old conversation as updates: the chat already has it
+      try {
+        const method = replay ? 'session/load' : 'session/resume';
+        return (await this.rpc(method, { sessionId, cwd, mcpServers: [] }, HANDSHAKE_TIMEOUT_MS)) ?? {};
+      } catch {
+        return null; // gone (deleted, other machine), or the method was refused: start a new one
+      } finally {
+        this.loading = false;
+      }
+    }
+
+    /** initialize, then continue the project's session (session/resume) or start one, then model + mode. */
     async handshake(settings) {
-      await this.rpc('initialize', { protocolVersion: 1, clientCapabilities: CLIENT_CAPABILITIES }, HANDSHAKE_TIMEOUT_MS);
+      const init = await this.rpc('initialize', { protocolVersion: 1, clientCapabilities: CLIENT_CAPABILITIES }, HANDSHAKE_TIMEOUT_MS);
       const cwd = this.project.path;
       const known = this.hub.sessionIdFor(this.id);
       let res = null;
       if (known?.startsWith('ses_')) {
-        this.loading = true; // session/load replays the old conversation as updates: the chat already has it
-        try {
-          res = (await this.rpc('session/load', { sessionId: known, cwd, mcpServers: [] }, HANDSHAKE_TIMEOUT_MS)) ?? {};
-          this.acpSessionId = known;
-        } catch {
-          res = null; // gone (deleted, other machine): start a new one
-        } finally {
-          this.loading = false;
-        }
+        res = await this.reopen(known, cwd, init);
+        if (res) this.acpSessionId = known;
       }
       if (!res) {
         res = await this.rpc('session/new', { cwd, mcpServers: [] }, HANDSHAKE_TIMEOUT_MS);
@@ -2107,6 +2135,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const approvalId = `acp-${this.id}-${msg.id}-${this.rpcSeq}`;
       const label = describeTool(name, input);
       const chatId = this.hub.chat(this.id, { kind: 'approval', role, text: label, approvalId, status: 'pending' });
+      // Before the card is broadcast: an instant answer must never reach the office before the question does.
+      this.hub.office(this.id, { kind: 'ask', role, label: truncate(label, 120), ask: 'tool' });
       this.hub.requestApproval(
         this.id,
         { id: approvalId, chatId, role, kind: 'tool', tool: name, label, description: '', input: previewInput(name, input), canAlways: Boolean(pick('allow_always')) },
@@ -2128,7 +2158,6 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
           this.updateStatus();
         },
       );
-      this.hub.office(this.id, { kind: 'ask', role, label: truncate(label, 120), ask: 'tool' });
     }
 
     /**
@@ -2149,6 +2178,9 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const message = str(p.message, 300);
       const approvalId = `acp-ask-${this.id}-${randomUUID()}`;
       const chatId = this.hub.chat(this.id, { kind: 'approval', role, text: label, approvalId, status: 'pending' });
+      // The office reacts BEFORE its card is broadcast: requestApproval sends the card at once, and a client that
+      // answers instantly would otherwise see "ask_done" (and the card) before "ask" — the room never waits.
+      this.hub.office(this.id, { kind: 'ask', role, label: truncate(label, 120), ask: 'question' });
       this.hub.requestApproval(
         this.id,
         // OpenCode's question tool titles every form "Questions": the first question says more
@@ -2160,7 +2192,6 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
           this.updateStatus();
         },
       );
-      this.hub.office(this.id, { kind: 'ask', role, label: truncate(label, 120), ask: 'question' });
     }
 
     // ---------- usage ----------

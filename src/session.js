@@ -1243,6 +1243,9 @@ export class ClaudeSession {
     }
     const label = describeTool(req.tool_name, req.input ?? {});
     const chatId = this.hub.chat(this.id, { kind: 'approval', role, text: label, approvalId: msg.request_id, status: 'pending' });
+    // Before the card is broadcast: requestApproval sends it at once, so an instant answer must not reach the office
+    // before the question does (ask_done before ask leaves the room never waiting).
+    this.hub.office(this.id, { kind: 'ask', role, label, ask: kind }); // question / plan / tool look different in the office
     this.hub.requestApproval(
       this.id,
       {
@@ -1258,7 +1261,6 @@ export class ClaudeSession {
       },
       (decision) => this.respond(msg.request_id, req, role, decision),
     );
-    this.hub.office(this.id, { kind: 'ask', role, label, ask: kind }); // question / plan / tool look different in the office
   }
 
   respond(requestId, req, role, decision) {

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { CLIENT_CAPABILITIES, elicitationContent, elicitationFields, mapTool, PLAN_APPROVED_PROMPT } from '../src/acp-session.js';
+import { CLIENT_CAPABILITIES, elicitationContent, elicitationFields, mapTool, openCodeConfigContent, PLAN_APPROVED_PROMPT } from '../src/acp-session.js';
 import { CLIENT_INIT } from '../src/opencode-contract.js';
 
 // ---------- pure: schema ↔ card ----------
@@ -51,6 +51,19 @@ test('elicitationContent: labels back to values, typed answers into "_custom", l
   const other = elicitationFields({ type: 'object', properties: { b: { type: 'boolean', title: 'Lanjut?' }, c: { type: 'integer', title: 'Berapa?' }, d: { type: 'string', title: 'Nama' }, e: { type: 'string', title: 'Pilih', enum: ['a'] } } });
   assert.deepEqual(elicitationContent(other, { 'Lanjut?': 'Tidak', 'Berapa?': '3', Nama: 'Toko', Pilih: 'z' }), { b: false, c: 3, d: 'Toko' }, 'no "_custom" to put "z" in');
   assert.deepEqual(elicitationContent(other, { 'Berapa?': '2.5' }), {}, 'an integer stays an integer');
+});
+
+test('the per-process config turns on OpenCode V2 todos (off upstream by default), without losing the permission', () => {
+  const settings = { mode: 'build' };
+  const withTodo = JSON.parse(openCodeConfigContent(settings, {}, true));
+  assert.deepEqual(withTodo.experimental, { todo: true }, 'the whiteboard needs experimental.todo (V2 default: off)');
+  assert.deepEqual(withTodo.permission, { edit: 'allow', bash: 'ask', webfetch: 'ask' }, 'the permission is still written');
+  // A version that drops the flag must still start: the app can pass it off (empty whiteboard, never a broken turn).
+  const plain = JSON.parse(openCodeConfigContent(settings, {}, false));
+  assert.equal(plain.experimental, undefined);
+  assert.equal(plain.permission.edit, 'allow');
+  // Plan stays read-only whether or not the flag is set.
+  assert.equal(JSON.parse(openCodeConfigContent({ mode: 'plan' }, {}, true)).permission.bash, 'deny');
 });
 
 test('the question tool row reads as AskUserQuestion; initialize offers form elicitation (app and contract alike)', () => {
@@ -181,6 +194,22 @@ const finalText = (re) => waitFor((t, o) => t === 'chat_update' && o.project ===
 test('caps: OpenCode now offers the interactive question / plan cards', async () => {
   assert.equal(PLAN_APPROVED_PROMPT, 'Rencana disetujui. Kerjakan sekarang sesuai rencana di atas.');
   assert.equal((await snapshot()).config.engines.opencode.caps.askQuestion, true);
+});
+
+test('the office hears the question BEFORE its card (an instant answer can never race it)', async () => {
+  await openCodeProject('build');
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'tanya dulu' });
+  const card = await pendingCard();
+  // Both events are in `seen` by the time the card arrives: the room already waits when the card shows up. The old
+  // order broadcast the card first, so answering immediately produced ask_done before ask (the room never waited).
+  const at = (pred) => seen.findIndex((s, i) => i >= 0 && pred(s.type, s.obj));
+  const askAt = at((t, o) => t === 'office' && o.project === id && o.kind === 'ask' && o.ask === 'question');
+  assert.ok(askAt >= 0, 'the office is told it waits for an answer');
+  const cardAt = seen.findIndex((s) => s.type === 'approval' && s.obj.id === card.id);
+  assert.ok(askAt < cardAt, `ask (${askAt}) must be emitted before its card (${cardAt})`);
+  await api(`/api/approvals/${card.id}`, { allow: false, cancelled: true }); // leave the turn clean for the tests below
+  await result();
 });
 
 test('question: OpenCode\'s question tool → the question card; the answers go back as the form content', async () => {

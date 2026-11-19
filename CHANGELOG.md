@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **✅ Papan tulis OpenCode akhirnya terisi.** OpenCode V2 mematikan alat TODO-nya secara default, jadi selama ini papan tulis kantor kosong untuk semua project OpenCode walau AI-nya sedang membuat rencana bertahap. Aplikasi kini memintanya lewat `experimental.todo`, dan tetap berjalan normal bila versi OpenCode berikutnya menghapus flag itu (paling buruk: papan tulis kosong lagi, bukan error).
+- **💬 Kantor benar-benar terlihat "menunggu jawabanmu".** Kartu pertanyaan/izin/rencana dulu dikirim ke layar **sebelum** kantor diberi tahu bahwa kamu sedang dimintai jawaban, sehingga menjawab dengan cepat membuat animasi "menunggu" tidak pernah muncul (dan `ask_done` mendahului `ask`). Urutannya kini benar untuk OpenCode **dan** Claude Code: orangnya berhenti dan menoleh dulu, baru kartunya muncul.
+- **🔁 Membuka percakapan lama lebih ringan.** Untuk melanjutkan sesi OpenCode, aplikasi kini memakai `session/resume`, bukan `session/load`: sambungannya sama, tetapi OpenCode tidak lagi memutar ulang seluruh percakapan lama yang toh sudah ada di layar. Percakapan panjang terbuka lebih cepat dan tanpa lalu lintas data yang sia-sia. Build OpenCode lama yang belum punya `resume` tetap dilayani lewat `session/load`.
+
 ## 1.0.71
 
 - **🧩 Adhitron terasa satu aplikasi, bukan dua mesin.** Penyebutan "mesin" hilang dari seluruh teks yang kamu lihat (kartu, dialog, status, panduan di dalam aplikasi); yang tersisa hanya **"AI"** atau **"sumber model"** saat memang perlu. Tanda sumber per pesan (`✳`/`▢`), badge sumber di bar sesi, dan badge di daftar project dihapus: satu timeline, satu tempat kerja. Claude Code tetap ada dan tetap bisa dimatikan.

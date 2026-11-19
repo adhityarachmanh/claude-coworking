@@ -60,6 +60,7 @@ before(async () => {
       FAKE_ACP_SLOW_MODEL: path.join(TMP, 'slow-model'), // a model switch that takes 1.2 s (race test)
       FAKE_ACP_CLI_LOG: path.join(TMP, 'acp-cli.log'),
       FAKE_ACP_COMPACT: path.join(TMP, 'acp-compact'), // ✂ /compact advertised only while this file exists
+      FAKE_ACP_RPC_LOG: path.join(TMP, 'rpc.log'), // every incoming request's method (proves resume vs load)
       FAKE_MCP_LOG: path.join(TMP, 'mcp-add.log'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
@@ -1477,4 +1478,37 @@ test('OpenCode logout needs LOGOUT; the model of the logged-out provider is refu
   await api(`/api/projects/${id}/queue-remove`, { itemId: added.body.item.id });
   await api(`/api/projects/${id}/queue-pause`, { paused: false });
   await api(`/api/projects/${id}/settings`, { model: '' });
+});
+
+test('reopening a conversation uses session/resume (no replay); a build without it falls back to session/load', async () => {
+  const id = await projectId();
+  await useEngine('opencode');
+  await api(`/api/projects/${id}/settings`, { effort: '', model: 'opencode-go/beam-free' });
+  const rpcLog = path.join(TMP, 'rpc.log');
+  const calls = () => (existsSync(rpcLog) ? readFileSync(rpcLog, 'utf8').split('\n').filter(Boolean) : []);
+  const reset = () => existsSync(rpcLog) && rmSync(rpcLog);
+
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'halo resume' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false);
+  const sessionId = (await snapshot()).statuses[id].sessionId;
+  assert.match(sessionId, /^ses_fake/);
+
+  // Reopening through a REAL path: a mode change that needs a fresh process restarts the child, and the next prompt
+  // must continue the SAME conversation — that is the handshake reopening it.
+  reset();
+  await api(`/api/projects/${id}/settings`, { engine: 'opencode' }); // no-op on the engine, but a settings read
+  // "Sesi baru" clears the conversation, so the next one is new; the case under test is the opposite: an existing id.
+  // Closing the child directly is what a model/mode/permission change does: do it through plan → build.
+  await api(`/api/projects/${id}/settings`, { mode: 'plan' });
+  await api(`/api/projects/${id}/settings`, { mode: 'build' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'halo lagi' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  const used = calls();
+  assert.ok(used.includes('session/resume'), `a reopen prefers session/resume (saw: ${used.join(', ')})`);
+  assert.ok(!used.includes('session/load'), 'the replaying method is not used when resume is offered');
+  assert.equal((await snapshot()).statuses[id].sessionId, sessionId, 'the same conversation is kept');
+  await api(`/api/projects/${id}/settings`, { effort: '' });
 });

@@ -16,7 +16,7 @@
 // FAKE_ACP_REVERT_SLOW (the stage takes <file content> ms). FAKE_ACP_CLEAR_LOG=<file>: each session.revert.clear.
 // Contract check (src/opencode-contract.js): FAKE_ACP_VERSION = what --version / agentInfo claim; FAKE_ACP_BREAK =
 // comma list of parts to break: version-hang, initialize (never answers), acp-exit, load-session, session-new,
-// mode, commands, load, models, session-list. FAKE_ACP_RPC_LOG=<file>: every incoming request's method, one per line.
+// mode, commands, load, resume (a build without session/resume: the app falls back to session/load), models, session-list. FAKE_ACP_RPC_LOG=<file>: every incoming request's method, one per line.
 const BREAK = new Set((process.env.FAKE_ACP_BREAK ?? '').split(',').filter(Boolean));
 // FAKE_ACP_VERSION_FILE: the version read from a file at every start (an "update" while the server runs).
 const versionFromFile = () => {
@@ -766,7 +766,7 @@ async function handle(msg) {
       if (BREAK.has('acp-exit')) process.exit(4);
       if (BREAK.has('initialize')) return; // never answers
       formElicitation = params.clientCapabilities?.elicitation?.form != null;
-      return reply({ protocolVersion: 1, agentCapabilities: { loadSession: !BREAK.has('load-session'), promptCapabilities: { image: true, embeddedContext: true } }, authMethods: [], agentInfo: { name: 'OpenCode', version: FAKE_VERSION } });
+      return reply({ protocolVersion: 1, agentCapabilities: { loadSession: !BREAK.has('load-session'), promptCapabilities: { image: true, embeddedContext: true }, sessionCapabilities: { list: {}, resume: BREAK.has('resume') ? undefined : {}, fork: {} } }, authMethods: [], agentInfo: { name: 'OpenCode', version: FAKE_VERSION } });
     case 'session/new': {
       if (BREAK.has('session-new')) return send({ id, error: { code: -32603, message: 'Internal error' } });
       // with a store, unique across processes (a later process must not pick up an older session's messages)
@@ -789,6 +789,13 @@ async function handle(msg) {
       if (!sessions.has(params.sessionId) && !params.sessionId.startsWith('ses_fork_') && !loadStore(params.sessionId)) return send({ id, error: { code: -32002, message: 'Session not found' } });
       // The real agent replays the old conversation: the office must not show it again.
       update(params.sessionId, { sessionUpdate: 'agent_message_chunk', messageId: 'msg_old', content: { type: 'text', text: 'jawaban lama' } });
+      return reply({ configOptions: configOptions() });
+    // Real frame (probe of `opencode acp` 2.3.0, 2026-11-19): `session/resume` answers with the SAME shape as
+    // session/load and, unlike it, replays NOTHING (docs: "session/load replays the saved messages; session/resume
+    // and session/fork don't replay them"). A missing session is refused like load.
+    case 'session/resume':
+      if (BREAK.has('load')) return send({ id, error: { code: -32603, message: 'Internal error' } });
+      if (!sessions.has(params.sessionId) && !loadStore(params.sessionId)) return send({ id, error: { code: -32002, message: 'Session not found' } });
       return reply({ configOptions: configOptions() });
     case 'session/set_config_option':
       // A model switch is slow on a real provider (the next prompt must wait for it): FAKE_ACP_SLOW_MODEL=<file>.

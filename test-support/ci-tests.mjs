@@ -55,6 +55,9 @@ const SMOKE = [
   'settings-persist.test.mjs',
   'tailnet-autopair.test.mjs',
   'opencode-acp-shells.test.mjs',
+  // The interactive cards (question/plan) and the per-process config: a race here left the office spinning with no
+  // way back, so it belongs in the release gate rather than only in the nightly run.
+  'opencode-ask.test.mjs',
 ];
 
 if (mode === 'fast') {
