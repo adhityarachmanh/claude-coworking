@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.77
 
 - **🔐 Token server MCP tidak lagi lewat baris perintah.** Menambah server MCP dengan variabel lingkungan dulu mengirim `-e NAMA=nilai` sebagai argumen proses — di Windows nilai itu terlihat di Task Manager dan oleh proses lain. Untuk Claude Code (2.1.327+) aplikasi kini memakai `claude mcp add-json <nama> -`: JSON servernya (termasuk token) dikirim lewat **stdin**, jadi rahasianya tidak pernah menjadi argumen. Permintaan tanpa variabel lingkungan tetap memakai bentuk lama (kompatibel dengan versi Claude Code mana pun). OpenCode belum punya bentuk stdin, jadi jalurnya tetap seperti sekarang.
 - **🖥️ Perintah yang kehabisan timeout tidak lagi dianggap gagal (OpenCode 2.3.1+).** OpenCode 2.3.1 memindahkan shell yang timeout ke **latar** alih-alih membunuhnya, dengan kalimat pengumuman yang berbeda. Aplikasi kini mengenali kedua rumusan, sehingga build/test panjang tetap tercatat sebagai tugas latar (bisa dilihat outputnya, bisa dihentikan) dan tidak muncul sebagai baris menggantung.
