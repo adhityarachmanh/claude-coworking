@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.79
+
+- **🧠 File petunjuk OpenCode lagi-lagi `CLAUDE.md`.** Sejak OpenCode 2.3.1, OpenCode **kembali membaca `CLAUDE.md`** di folder project yang belum punya `AGENTS.md` (dan jatuh ke `~/.claude/CLAUDE.md` bila `AGENTS.md` global juga tidak ada). Dulu file itu tidak terlihat di editor 🧠 Memory, jadi bisa "menyetir" sesi tanpa kamu sadari. Sekarang tab `CLAUDE.md` cadangan ikut muncul saat OpenCode memang akan membacanya **atau** file itu sudah ada di disk; begitu `AGENTS.md` ada, `AGENTS.md` yang menang dan tab cadangan itu hilang lagi. File global (`~/.claude/CLAUDE.md`, dipakai bersama Claude Code) tetap hanya bisa diubah dari laptop.
+
 ## 1.0.78
 
 - **🩺 `claude doctor` kini memeriksa project yang sedang dibuka.** `doctor` membaca file setelan di **folder tempat ia dijalankan** (perintah `--help`-nya sendiri), jadi sebelumnya ia memeriksa folder aplikasi — yang tidak berisi config Claude milikmu. Kini tombol 🩺 **Doctor** di ⚙ → Kompatibilitas Claude Code menjalankannya **di folder project aktif**, sehingga yang dilaporkan adalah masalah project itu: `.claude/settings.json` yang rusak, agent/hook/command yang tidak termuat, keybinding salah, atau setelan izin yang diabaikan.
