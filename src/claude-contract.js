@@ -29,6 +29,7 @@ export const CHECKS = Object.freeze({
   model: 'kontrol: set_model',
   context: 'kontrol: get_context_usage',
   // the one light Haiku turn
+  login: 'login Claude Code',
   init: 'init: session_id, model, slash_commands',
   initAgents: 'init: --agents terpasang',
   delta: 'stream_event text_delta',
@@ -93,6 +94,43 @@ export function readClaudeVersion(claude, { timeoutMs = DEFAULT_TIMEOUTS.version
       resolve({ version: null, error: sanitize(err.message) });
     }
   });
+}
+
+/**
+ * Whether Claude Code is logged in: `claude auth status --json` → `loggedIn`. Cheap, bounded, never throws.
+ * A CLI that is *installed but nobody logged in* answers every prompt with "Not logged in · Please run /login"
+ * (no streaming), which would otherwise look like a protocol break. The update detector asks once so a logged-out
+ * machine reports the real cause instead of blaming a "broken" stream.
+ * @returns {Promise<boolean|null>} true/false, or null when the answer cannot be read (keep the old behaviour).
+ */
+export function readLogin(claude, { timeoutMs = DEFAULT_TIMEOUTS.control, env = process.env, execFileImpl = execFile } = {}) {
+  if (!claude) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      execFileImpl(claude.command, [...claude.args, 'auth', 'status', '--json'], { timeout: timeoutMs, windowsHide: true, encoding: 'utf8', maxBuffer: 256 * 1024, env: childEnv({}, env), shell: false }, (err, stdout) => {
+        // `auth status` exits 1 when logged out: the JSON on stdout is still the answer we want.
+        const text = String(stdout ?? '');
+        const start = text.indexOf('{');
+        if (start < 0) return resolve(null);
+        try {
+          const status = JSON.parse(text.slice(start));
+          resolve(typeof status.loggedIn === 'boolean' ? status.loggedIn : null);
+        } catch {
+          resolve(null);
+        }
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * True when an assistant text block is the CLI's logged-out notice ("Not logged in · Please run /login"). Anchored and
+ * short on purpose: the check must never mistake a long, real answer that merely mentions logging in for the notice.
+ */
+function isLoginNotice(block) {
+  return block?.type === 'text' && typeof block.text === 'string' && block.text.length <= 80 && /^\s*not logged in\b/i.test(block.text);
 }
 
 /** Ends a process and everything it started (MCP servers, shells): taskkill /T on Windows. Best effort. */
@@ -256,6 +294,12 @@ async function oneTurn(cli, check, { t }) {
     check(CHECKS.initAgents, Array.isArray(init.agents) && init.agents.includes('qa'));
     const result = await cli.next((m) => m.type === 'result', t.turn);
     const turn = cli.messages.slice(start);
+    // The turn's own output is the authority: a logged-out CLI answers with the notice and no streaming. Report it as
+    // the login check (never as a broken stream) — this also covers the case where `auth status` could not be read.
+    if (loginNotice(turn)) {
+      check(CHECKS.login, false, 'Claude Code belum login — jalankan `claude` lalu /login (atau `claude auth login`).');
+      return null;
+    }
     check(CHECKS.delta, turn.some((m) => m.type === 'stream_event' && m.event?.delta?.type === 'text_delta'));
     check(CHECKS.assistant, turn.some((m) => m.type === 'assistant' && m.message?.id && m.message.content?.some((b) => b.type === 'text')));
     check(CHECKS.result, result.subtype === 'success' && typeof result.usage?.output_tokens === 'number', sanitize(result.subtype, 40));
@@ -264,6 +308,16 @@ async function oneTurn(cli, check, { t }) {
     check('request kecil (Haiku) selesai', false, err.message);
     return null;
   }
+}
+
+/** The logged-out notice in this turn, or null when the turn is a real answer. */
+function loginNotice(turn) {
+  for (const m of turn) {
+    if (m.type !== 'assistant') continue;
+    const block = (Array.isArray(m.message?.content) ? m.message.content : []).find(isLoginNotice);
+    if (block) return block;
+  }
+  return null;
 }
 
 /** The full protocol run of `npm run test:claude` (several Haiku requests). Check names as they always were. */
@@ -285,6 +339,11 @@ async function protocolRun(claude, check, { cwd, env, t, deadline }) {
     check('init: --agents injected', init.agents?.includes('qa'));
     let result = await next((m) => m.type === 'result', t.turn);
     const turn = messages.slice(start);
+    if (loginNotice(turn)) {
+      // Logged out: every later prompt would answer the same notice, so report it once and stop.
+      check('login Claude Code', false, 'Claude Code belum login — jalankan `claude` lalu /login (atau `claude auth login`).');
+      return;
+    }
     check('stream_event text_delta', turn.some((m) => m.type === 'stream_event' && m.event?.delta?.type === 'text_delta'));
     check('assistant message carries id + text block', turn.some((m) => m.type === 'assistant' && m.message?.id && m.message.content?.some((b) => b.type === 'text')));
     check('result: success + usage', result.subtype === 'success' && typeof result.usage?.output_tokens === 'number');
@@ -373,19 +432,29 @@ export async function runContract({ claude, profile = 'light', allowModel = true
   if (!v.version) return report(null); // not Claude Code (or not answering): nothing else can be trusted
   if (signal?.aborted) return report(v.version); // server stopping: no new process
 
+  // A logged-out CLI answers every prompt with "Not logged in" and no streaming. Ask once up front (cheap, bounded) so
+  // we can skip a model turn that could only answer the notice — but never let it hide the token-free checks below,
+  // which do not need a login. When the answer cannot be read (null) the turn's own output decides (oneTurn).
+  const login = await readLogin(claude, { timeoutMs: t.control, env, execFileImpl });
+
   const dir = mkdtempSync(path.join(os.tmpdir(), 'office-contract-'));
   try {
     const cli = openCli(claude, appArgs(dir), { cwd: dir, env, deadline, signal });
     try {
       const ready = await tokenFree(cli, check, { version: v.version, t });
-      if (ready && profile === 'light' && allowModel && !signal?.aborted) {
+      // The login check is part of the model profile: it means "we could not try a real turn", so it is reported only
+      // when a turn was actually wanted (allowModel for light; always for full).
+      const wantsTurn = profile === 'full' || allowModel;
+      if (ready && login === false && wantsTurn) {
+        check(CHECKS.login, false, 'Claude Code belum login — jalankan `claude` lalu /login (atau `claude auth login`).');
+      } else if (ready && login !== false && profile === 'light' && allowModel && !signal?.aborted) {
         usedModel = true;
         await oneTurn(cli, check, { t });
       }
     } finally {
       await cli.close(t.exit);
     }
-    if (profile === 'full' && Date.now() < deadline && !signal?.aborted) {
+    if (profile === 'full' && login !== false && Date.now() < deadline && !signal?.aborted) {
       usedModel = true;
       await protocolRun(claude, check, { cwd: dir, env, t, deadline });
     }

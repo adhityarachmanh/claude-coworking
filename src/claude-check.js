@@ -10,7 +10,7 @@
 // Never details (they may hold paths or CLI output): those go, sanitised, to the server log only.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { readClaudeVersion as readVersionDefault, runContract as runContractDefault, sanitize } from './claude-contract.js';
+import { CHECKS, readClaudeVersion as readVersionDefault, runContract as runContractDefault, sanitize } from './claude-contract.js';
 
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const START_DELAY_MS = 20_000; // after start-up work (catalog probe, account), never in its way
@@ -161,6 +161,9 @@ export class ClaudeCheckService {
   needsCheck(version) {
     if (!version || version === this.state.lastGoodVersion) return false;
     const c = this.state.check;
+    // A login-only result is not "done": nothing about it is version-specific, so a later tick re-checks (the user may
+    // have logged in since). Every other finished check (ok/warning/failed) is remembered for that version.
+    if (c && c.version === version && c.failing?.length === 1 && c.failing[0] === CHECKS.login) return true;
     return !(c && c.version === version && DONE.has(c.result));
   }
 
@@ -251,7 +254,9 @@ export class ClaudeCheckService {
       this.state.version = report.version;
       this.state.versionAt = this.now();
     }
-    this.record({ version, result: report.result, failing: report.failing, reason: null, trigger, usedModel: report.usedModel, durationMs: report.durationMs });
+    // One failing check on a logged-out CLI is not "the protocol broke": say the real cause in the UI.
+    const loginOnly = report.failing?.length === 1 && report.failing[0] === CHECKS.login;
+    this.record({ version, result: report.result, failing: report.failing, reason: loginOnly ? 'Claude Code belum login — jalankan /login.' : null, trigger, usedModel: report.usedModel, durationMs: report.durationMs });
     this.running = false;
     this.save();
     // Log lines: names and sanitised details only (src/claude-contract.js sanitize).

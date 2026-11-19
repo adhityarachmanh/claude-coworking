@@ -111,7 +111,9 @@ if (args[0] === 'doctor' || args[0] === 'update') {
 //   FAKE_CLAUDE_CONTRACT=<file.json> {"version": "2.0.0", "break": ["agents", ...]}  (wins over the env vars)
 //   FAKE_CLAUDE_VERSION=2.0.0  FAKE_CLAUDE_BREAK=agents,set_model
 // break: version (unparseable --version) · version-hang · hang (never answers initialize) · exit (dies on start like an
-// unknown flag) · catalog · agents · set_model · context · init (init message without session_id)
+// unknown flag) · catalog · agents · set_model · context · init (init message without session_id) · no-auth (installed
+// but nobody is logged in: `auth status` says loggedIn:false with exit 1, and every prompt answers "Not logged in") ·
+// auth-unreadable (the CLI is logged out but `auth status` prints non-JSON: only the turn's output reveals it)
 const contract = (() => {
   let file = {};
   try {
@@ -136,6 +138,17 @@ if (broken('exit') && args.includes('--input-format')) {
 
 // Account commands: a fixed logged-in test account; `/usage` prints plan usage like the real CLI.
 if (args[0] === 'auth') {
+  // 'no-auth': installed but nobody is logged in. The real Claude Code prints this JSON on stdout and exits 1, so the
+  // fake does too — that is exactly the path `readLogin` must survive (read stdout even when the command "failed").
+  if (args[1] === 'status' && broken('auth-unreadable')) {
+    // The answer cannot be parsed at all: `readLogin` returns null and the turn's own output must decide.
+    console.log('auth status: unavailable (not json)');
+    process.exit(0);
+  }
+  if (args[1] === 'status' && broken('no-auth')) {
+    console.log(JSON.stringify({ loggedIn: false, authMethod: 'none' }));
+    process.exit(1);
+  }
   if (args[1] === 'status') console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', email: 'tester@example.com', orgId: 'org-test', orgName: 'Test Org', subscriptionType: 'team' }));
   else console.log(`auth ${args[1]} ok`);
   process.exit(0);
@@ -334,6 +347,14 @@ function result(extra = {}) {
 async function handlePrompt(text, content) {
   init();
   interrupted = false;
+  // No logged-in account: the real CLI answers with this plain message and NO streaming, then ends the turn. The
+  // contract check must recognise that case instead of mistaking it for a broken stream (src/claude-contract.js).
+  if (broken('no-auth') || broken('auth-unreadable')) {
+    // Not logged in (the second case only hides it from `auth status`): a plain text block, NO streaming, turn ends.
+    // The contract must recognise this from the turn itself, not mistake it for a broken stream.
+    send({ type: 'assistant', parent_tool_use_id: null, message: { id: `msg_${randomUUID()}`, content: [{ type: 'text', text: 'Not logged in · Please run /login' }] } });
+    return result({ is_error: true, subtype: 'error_during_execution', result: 'Not logged in · Please run /login' });
+  }
   // The context-bridge note rides with the prompt; it is information, never a request (it must not look like
   // "minta izin" or "rencana" just because the old conversation mentioned it).
   text = String(text ?? '').replace(/\[KONTEKS SESI[\s\S]*?\[\/KONTEKS SESI\]/g, ' ');

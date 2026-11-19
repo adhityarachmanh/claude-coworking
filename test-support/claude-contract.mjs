@@ -3,8 +3,8 @@
 // It checks every protocol assumption this app relies on, so a breaking CLI change shows up here first.
 // The checks live in src/claude-contract.js (the "full" profile); the server runs its "light" profile on its own
 // after a Claude Code update (src/claude-check.js).
+import { CHECKS, runContract } from '../src/claude-contract.js';
 import { findClaude } from '../src/claude-bin.js';
-import { runContract } from '../src/claude-contract.js';
 
 const claude = findClaude();
 if (!claude) {
@@ -20,5 +20,7 @@ const report = await runContract({
 
 const failed = report.failing.length;
 console.log(`\nClaude Code ${report.version ?? '(versi tidak terbaca)'} · ${Math.round(report.durationMs / 1000)} s`);
-console.log(failed ? `${failed} cek gagal — Claude Code mungkin mengubah protokolnya.` : `Semua ${report.checks.length} cek lolos.`);
+if (!failed) console.log(`Semua ${report.checks.length} cek lolos.`);
+else if (failed === 1 && report.failing[0] === CHECKS.login) console.log('Claude Code belum login — login dulu, lalu jalankan lagi.');
+else console.log(`${failed} cek gagal — Claude Code mungkin mengubah protokolnya.`);
 process.exit(failed ? 1 : 0);

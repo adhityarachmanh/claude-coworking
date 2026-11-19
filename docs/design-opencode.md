@@ -66,10 +66,11 @@ Sumber kebenaran: **https://github.com/anomalyco/opencode** (paket `@opencode/cl
 | 2026-11-18 | 2.3.0 | Panggilan `subagent`/`task` **selesai seketika** dengan “working in the background” + `rawOutput.metadata.sessionID`; kerja sesungguhnya ada di sesi anak, dan induk **dilanjutkan otomatis** saat anak melapor. Karena itu task delegasi tidak boleh ditutup oleh selesainya panggilan peluncuran. | Chat nyata Adhitron (RSRG: build APK di agent devops/qa) + frame fake ACP |
 | 2026-11-19 | 2.3.1 | OpenCode **kembali membaca `CLAUDE.md`** di direktori yang tidak punya `AGENTS.md`, dan jatuh ke `~/.claude/CLAUDE.md` bila `AGENTS.md` global tidak ada (termasuk instruksi di file bersarang). Editor 🧠 Memory kini menampilkan cadangan `CLAUDE.md` itu (project & global) saat OpenCode memang akan membacanya **atau** file itu sudah ada di disk; `AGENTS.md` tetap menang. Bisa dimatikan user lewat `OPENCODE_DISABLE_CLAUDE_CODE*`, tapi aplikasi tidak menyentuh env itu. | Catatan rilis v2.3.1 + PR [#64474](https://github.com/anomalyco/opencode/pull/64474)/[#64533](https://github.com/anomalyco/opencode/pull/64533) |
 | 2026-11-19 | 2.3.1 | `#64262` klien ACP sekarang menerima giliran yang **dibangunkan shell latar setelah giliran asli berakhir** — sama dengan jalur “lanjut otomatis” yang sudah ditangani (`pollResumeTurn`/`beginResumeTurn`/`expectResume`). `#64026` subagent selesai tidak lagi salah dilaporkan sedang berjalan. | Catatan rilis v2.3.1 |
-| 2026-11-19 | 2.3.1 | **Belum diterapkan — perlu probe.** `#64343`: satu reject kini hanya membatalkan permintaan lain dari **langkah yang sama**, bukan seluruh sesi; prompt izin dari subagent pun muncul. Ini menyentuh D6 (yang bersandar pada probe 2.3.0: "reject membatalkan giliran"). Binary terpasang masih **2.3.0**, jadi perilaku ACP pasca-reject belum bisa diprobe; D6 dibiarkan apa adanya sampai **2.3.1+ terpasang** dan diprobe ulang (`opencode acp`, approve → reject → perhatikan apakah `session/prompt` berlanjut). | Catatan rilis v2.3.1 ([#64343](https://github.com/anomalyco/opencode/pull/64343)) + D6 |
+| 2026-11-19 | 2.3.2 (terpasang) | **Koreksi D6 — reject tetap membatalkan seluruh permintaan sejenis di sesi itu, bukan hanya satu langkah.** Riset putaran ini membantah catatan lama (baris `#64343` di bawah): **dokumentasi resmi Permissions V2** menulis opsi *Reject* = "Reject it **and every other pending permission request in that session**", dan issue ACP [#57868](https://github.com/anomalyco/opencode/issues/57868) ("`reject_once` rejects unrelated pending calls") **ditutup `not planned`**: "by design: rejecting a permission request also rejects the other pending requests in the same session." Jadi perilaku D6 (satu reject → kartu lain ditutup, giliran dihentikan lalu dilanjutkan dengan catatan penolakan) **tetap benar**; tidak ada perubahan kode. Probe ACP hidup (approve → reject → lanjut?) tidak dijalankan di sini karena butuh giliran model nyata; bila versi mendatang mengubahnya, probe ulang dulu sebelum menyentuh D6. | https://opencode.ai/docs/permissions (tabel Replies) · issue #57868 · probe `opencode acp` 2.3.2 di mesin ini: `initialize` mengiklankan `sessionCapabilities: { additionalDirectories, close, delete, fork, list, resume }` + `_meta.steering.supported: true` (sama seperti 2.3.0) |
 | 2026-11-19 | 2.3.2 | Tanpa perubahan protokol/ACP: penembolokan prompt GPT-6.2 dan bentuk keluaran `webfetch`. Tidak ada aksi di aplikasi. | Catatan rilis v2.3.2 ([#64542](https://github.com/anomalyco/opencode/pull/64542), [#64544](https://github.com/anomalyco/opencode/pull/64544)) |
 
-**Mesin Claude Code (riset rilis 2.1.317–2.1.328, terpasang 2.1.316).** Tidak ada perubahan yang menyentuh mesin ini:
+**Mesin Claude Code (probe 2026-11-19 · terpasang 2.1.328 · riset 2.1.317–2.1.328).** Tidak ada perubahan protokol
+yang menyentuh mesin ini:
 aplikasi selalu mengirim `--permission-mode` eksplisit (`claudePermissionMode`: `plan`/`acceptEdits`), jadi default
 **auto mode** untuk sesi interaktif di Bedrock/Vertex/Foundry/gateway (2.1.328) tidak melonggarkan Adhitron. Spawn
 helper yang memakai mode eksplisit: `src/effort-classifier.js` (`manual`), `src/role-memory.js` (`plan`),
@@ -78,6 +79,22 @@ json --no-session-persistence`) — hanya menjalankan perintah lokal non-interak
 berlaku untuk sesi **interaktif**, jadi tidak terkena. `permissions.denyInsteadOfPrompting` (2.1.319), Code Mode, dan
 `claude remote-control` tidak dipakai. Banjir perbaikan (compaction, resume, MCP OAuth) hanya menguntungkan; tidak ada
 aksi kode.
+
+Dua temuan dari probe ini yang **tidak** menyangkut protokol: (1) paket npm pernah terpasang tanpa binary native
+(`bin/claude.exe` masih stub 500 B, "postinstall did not run"): `node node_modules/@anthropic-ai/claude-code/install.cjs`
+memulihkannya — ini urusan setup mesin, bukan kode aplikasi. (2) `claude auth status` menjawab `loggedIn: false`
+(`authMethod: none`) di mesin ini; kontrak lalu melaporkan "Not logged in" tiap prompt tanpa streaming. Sejak 1.0.80
+kontrak **memeriksa login** (`readLogin`, `cli auth status --json`) dan melaporkan cek `login Claude Code` yang jujur
+alih-alih menuduh `stream_event text_delta`/protokol rusak (lihat `CHECKS.login`, `runContract`). Gate login **tidak
+menutupi** cek tanpa token (launch/catalog/mode/model/context) — cek itu tetap jalan lebih dulu, jadi kerusakan protokol
+yang nyata tetap terdeteksi; hanya `oneTurn`/`protocolRun` yang dilewati. Bila `readLogin` mengembalikan `null`
+(`auth status` tak terbaca), keputusan jatuh ke **balasan giliran** (`loginNotice`): CLI yang menjawab notice "Not
+logged in" dilaporkan sebagai cek `login`, bukan "stream rusak". Hasil login-only tidak disimpan sebagai `DONE`, jadi
+tick berikutnya mencoba ulang (pengguna mungkin sudah login tanpa ganti versi).
+
+`additionalDirectories` (ACP `session/new|load|resume|fork`) diiklankan OpenCode 2.3.2 dan didukung ACP, tetapi
+aplikasi belum punya setelan folder tambahan per project: keputusan sadar untuk menundanya sebagai fitur tersendiri
+(butuh pemilih folder + validasi path absolut) — bukan sekadar mengirim frame.
 
 Kalau versi terpasang berbeda dari tabel ini, ulangi probe lebih dulu (lihat `AGENTS.md` → “Acuan upstream OpenCode”).
 

@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { CHECKS, classify, parseVersion, readClaudeVersion, runContract, sanitize } from '../src/claude-contract.js';
+import { CHECKS, classify, parseVersion, readClaudeVersion, readLogin, runContract, sanitize } from '../src/claude-contract.js';
 import { ClaudeCheckService } from '../src/claude-check.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -44,6 +44,12 @@ describe('claude-contract: helpers', () => {
     assert.equal(classify([{ name: CHECKS.launch, ok: true }, { name: CHECKS.agents, ok: false }]), 'warning');
     assert.equal(classify([{ name: CHECKS.launch, ok: false }]), 'failed');
     assert.equal(classify([{ name: CHECKS.version, ok: false }]), 'failed');
+  });
+
+  test('readLogin: logged in / not logged in / no CLI', async () => {
+    assert.equal(await readLogin(FAKE, { env: envFor('2.0.0') }), true);
+    assert.equal(await readLogin(FAKE, { env: envFor('2.0.0', ['no-auth']) }), false);
+    assert.equal(await readLogin(null), null);
   });
 });
 
@@ -86,6 +92,36 @@ describe('claude-contract: light profile against the fake CLI', () => {
     const r = await runContract({ claude: null });
     assert.equal(r.result, 'failed');
     assert.deepEqual(r.failing, [CHECKS.version]);
+  });
+
+  test('logged out: reported as the login check, not as a broken stream (no model call)', async () => {
+    // `auth status` says loggedIn:false (exit 1): the token-free checks still run, the model turn is skipped.
+    const light = await runContract({ claude: FAKE, allowModel: true, env: envFor('2.1.328', ['no-auth']) });
+    assert.equal(light.result, 'warning');
+    assert.deepEqual(light.failing, [CHECKS.login]);
+    assert.equal(light.usedModel, false, 'no model call is attempted for a logged-out CLI');
+    assert.match(light.checks.find((c) => c.name === CHECKS.login).detail, /belum login/);
+    assert.ok(!light.failing.includes(CHECKS.delta), 'never blames the stream for a logged-out CLI');
+    // The token-free checks (incl. the critical launch/catalog) are not hidden by the login gate.
+    assert.ok(light.checks.some((c) => c.name === CHECKS.catalog && c.ok), 'token-free checks still run when logged out');
+    assert.ok(light.checks.some((c) => c.name === CHECKS.launch && c.ok));
+
+    const full = await runContract({ claude: FAKE, profile: 'full', env: envFor('2.1.328', ['no-auth']) });
+    assert.equal(full.result, 'warning');
+    assert.deepEqual(full.failing, [CHECKS.login], 'the full run skips the protocol run when logged out');
+    assert.ok(full.checks.some((c) => c.name === CHECKS.launch && c.ok));
+
+    // Even a critical token-free check must win: a logged-out CLI that ALSO broke `catalog` is "failed", not "warning".
+    const brokenCatalog = await runContract({ claude: FAKE, allowModel: false, env: envFor('2.1.328', ['no-auth', 'catalog']) });
+    assert.equal(brokenCatalog.result, 'failed');
+    assert.deepEqual(brokenCatalog.failing, [CHECKS.catalog], 'a real break is never hidden by "not logged in"');
+  });
+
+  test('logged out but `auth status` unreadable: the turn\'s own notice decides (null is not silent "ok")', async () => {
+    const r = await runContract({ claude: FAKE, allowModel: true, env: envFor('2.1.328', ['auth-unreadable']) });
+    assert.equal(r.result, 'warning');
+    assert.deepEqual(r.failing, [CHECKS.login]);
+    assert.ok(!r.failing.includes(CHECKS.delta), 'the stream is never blamed');
   });
 
   test('timeouts are bounded: a CLI that never answers initialize, a --version that hangs', async () => {
@@ -230,6 +266,29 @@ describe('claude-check service', () => {
     assert.equal(calls[0].allowModel, false);
     assert.equal(svc.publicView().usedModel, false);
     assert.equal(svc.publicView().result, 'ok');
+  });
+
+  test('a logged-out CLI: the view says so (reason), and no "broken protocol" wording', async () => {
+    const { svc, logs } = service({ version: '2.1.328', broken: ['no-auth'] });
+    await svc.tick();
+    const view = svc.publicView();
+    assert.equal(view.result, 'warning');
+    assert.deepEqual(view.failing, [CHECKS.login]);
+    assert.match(view.reason, /belum login/);
+    assert.ok(logs.some((l) => /belum login/.test(l)), logs.join('\n'));
+  });
+
+  test('a login-only result is re-checked on the next tick (the user may have logged in since)', async () => {
+    const { svc, calls, setVersion } = service({ version: '2.1.328', broken: ['no-auth'] });
+    await svc.tick();
+    assert.equal(calls.length, 1);
+    assert.deepEqual(svc.publicView().failing, [CHECKS.login]);
+
+    // The user logs in: same version, but the login-only record must not be remembered as done forever.
+    setVersion('2.1.328');
+    await svc.tick();
+    assert.equal(calls.length, 2, 'a login-only result is retried, not remembered as done');
+    assert.equal(svc.publicView().result, 'ok', 'now logged in, the checks pass');
   });
 
   test('manual run: refused while busy / running / without Claude Code; otherwise runs in the background', async () => {
