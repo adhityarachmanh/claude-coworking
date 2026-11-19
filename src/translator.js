@@ -358,7 +358,9 @@ export class StreamTranslator {
       // task_notification has its own path below.
       if (wasRunning && t.background && t.source === 'acp' && p.status && p.status !== 'running' && p.status !== 'pending') {
         this.announceTaskDone(t, p.status === 'failed');
-        this.sink.resume?.(); // OpenCode resumes the session by itself when that work is done (src/acp-session.js)
+        // OpenCode resumes the session itself when that work is done (src/acp-session.js) — unless the closure came
+        // from OpenCode's OWN child-session status, which already reports the truth and need not be awaited again.
+        if (p.expectResume !== false) this.sink.resume?.();
       }
     } else if (msg.subtype === 'task_notification') {
       Object.assign(t, { status: msg.status, summary: msg.summary ?? t.summary, endedAt: Date.now() });

@@ -48,6 +48,11 @@ const RESUME_WINDOW_MS = envMs('OFFICE_RESUME_WINDOW_MS', 10 * 60_000);
 const RESUME_QUIET_MS = envMs('OFFICE_RESUME_QUIET_MS', 4_000);
 const RESUME_POLL_MS = envMs('OFFICE_RESUME_POLL_MS', 5_000);
 const RESUME_MAX_MS = envMs('OFFICE_RESUME_MAX_MS', 30 * 60_000);
+// A delegation the parent is waiting to hear back from can outlast the fixed resume window (a heavy build). While
+// such a task still runs, the liveness tick renews the window so OpenCode's eventual continuation is never dropped
+// as a foreign frame. If no continuation ever comes while the session is idle (upstream #56314: a failed resumed
+// turn leaves the parent silent), the user is told once instead of seeing the session stop with no explanation.
+const RESUME_MISS_MS = envMs('OFFICE_RESUME_MISS_MS', RESUME_WINDOW_MS);
 // ACP delegations (subagents) as ⧗ tasks: a child session that is no longer busy, with no new frame for this long,
 // is done. The parent's own resume is the primary signal (see beginResumeTurn); this is the fallback.
 const AGENT_QUIET_MS = envMs('OFFICE_AGENT_QUIET_MS', 20_000);
@@ -137,8 +142,13 @@ export const OPENCODE_CAPS = Object.freeze({
  * model is told to continue without an answer.
  * Steering is NOT declared here: it is a SERVER capability (`result._meta.steering.supported`, probe of `opencode acp`
  * 2.3.0, 2026-11-19) and the client only calls `_session/steering` when the server advertised it — see steer().
+ *
+ * `_meta["opencode/child-session-updates"]`: OpenCode's OFFICIAL way to hear about a delegate's own session. Declared,
+ * OpenCode sends `opencode/session/child_update` notifications (see onChildUpdate) whose `type:"status"` reports the
+ * child `completed`/`failed`/`interrupted` — a signal that does NOT depend on the parent's own continuation, which can
+ * be dropped (upstream #55760). Not declaring it leaves the app guessing from the parent's resumed turn alone.
  */
-export const CLIENT_CAPABILITIES = Object.freeze({ fs: Object.freeze({ readTextFile: false, writeTextFile: false }), terminal: false, elicitation: Object.freeze({ form: Object.freeze({}) }) });
+export const CLIENT_CAPABILITIES = Object.freeze({ fs: Object.freeze({ readTextFile: false, writeTextFile: false }), terminal: false, elicitation: Object.freeze({ form: Object.freeze({}) }), _meta: Object.freeze({ 'opencode/child-session-updates': true }) });
 
 /** A steering instruction is one line of intent, not a new prompt: the cap keeps a stray paste out of the turn. */
 const STEER_MAX = 2000;
@@ -931,6 +941,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.steeringSupported = false; // _session/steering advertised at initialize (OpenCode 2.3+, see steer())
       this.resumeUntil = 0; // OpenCode may resume the session on its own after a background task (see onUpdate)
       this.resumeTurn = null; // { uuid, started, lastAt, costBefore, epoch, timer } while that turn is running
+      this.awaitingResume = false; // a background end opened the resume window and no continuation has come yet
       this.autoSeq = 0;
       // Does this OpenCode build accept `_session/steering`? Only what `initialize` advertised
       // (`result._meta.steering.supported`) counts: an older build stays exactly as it is (no button, never a frame).
@@ -1228,6 +1239,8 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       // ■ Stop also ends this project's shells still running in the background (as it does for Claude Code)
       for (const id of this.translator?.runningTaskIds?.() ?? []) if (String(id).startsWith('oc:')) this.stopTask(id).catch(() => {});
       this.stopAgentTasks(); // delegations/subagents: no task may spin after its turn was cancelled
+      this.resumeUntil = 0; // a stopped turn drops the pending-continuation watch too
+      this.awaitingResume = false;
       if (this.resumeTurn) this.finishResumeTurn({ interrupted: true }).catch(() => {}); // the continuation OpenCode started: ended too
       this.afterProgress();
     }
@@ -1380,6 +1393,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         this.linkShells().catch(() => {});
         this.reapBackgroundShells().catch(() => {});
         this.reapAgentTasks().catch(() => {});
+        this.watchResume();
         // A restart deferred for a task that never reports must still land (RESTART_MAX_WAIT_MS), even when the
         // reapers above return early: this is the only timer that keeps running while the session is idle.
         if (this.restartPending) this.applyPendingRestart();
@@ -2024,6 +2038,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         this.resumeTurn = null;
       }
       this.resumeUntil = 0;
+      this.awaitingResume = false;
       for (const p of this.rpcPending.values()) {
         clearTimeout(p.timer);
         p.reject(new Error('OpenCode berhenti.'));
@@ -2113,6 +2128,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         return;
       }
       if (msg.method === 'session/update') return this.onUpdate(msg.params?.update ?? {});
+      if (msg.method === 'opencode/session/child_update') return this.onChildUpdate(msg.params ?? {});
       if (msg.method === 'session/request_permission' && msg.id != null) return this.onPermission(msg);
       if (msg.method === 'elicitation/create' && msg.id != null) return this.onElicitation(msg);
       // fs/* and terminal/* are not offered in initialize; anything else gets "method not found".
@@ -2144,6 +2160,48 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (this.resumeTurn) this.resumeTurn.lastAt = Date.now();
     }
 
+    /**
+     * OpenCode's OFFICIAL per-child-session notification (`opencode/session/child_update`), sent only because we declared
+     * `opencode/child-session-updates` at initialize. `type:"update"` carries a child's own session/update; `type:"status"`
+     * reports the child's lifecycle (created/running/completed/failed/interrupted). That status is the signal that closes
+     * a delegation's ⧗ task WITHOUT waiting for the parent's own continuation — which upstream #55760 shows can emit
+     * nothing at all. Frames from a child we cannot match to a launch are ignored (a nested delegation is not ours).
+     */
+    onChildUpdate(p) {
+      const sid = typeof p?.childSessionId === 'string' ? p.childSessionId : null;
+      const call = sid ? this.adapter?.childSessions.get(sid)?.call : null;
+      if (p?.type === 'update' && p.update) {
+        // Same path as a session/update that already carries the child marker; add it when OpenCode left it off.
+        const u = sid && !this.adapter?.childMarker(p.update) ? { ...p.update, _meta: { ...(p.update._meta ?? {}), 'opencode/child-session': { id: sid, parentID: p.parentSessionId, depth: p.depth, ...(p.title ? { title: p.title } : {}) } } } : p.update;
+        return this.onUpdate(u);
+      }
+      if (p?.type !== 'status' || !call) return;
+      const task = this.taskForCall(call);
+      if (p.status === 'created' || p.status === 'running') {
+        // The child is working: keep its ⧗ task and the pending-continuation window alive (its own frames may still come).
+        const info = this.adapter?.agents.get(String(call));
+        if (info) info.lastAt = Date.now();
+        if (task) this.expectResume({ quiet: true });
+        return;
+      }
+      // completed / failed / interrupted: the delegation's work is over — close its task now, honestly. The official
+      // status already IS the report's trigger, so do NOT expect the parent's own continuation (upstream #55760: it may
+      // never come). The honesty watch is cleared with it, but the window stays open so a late parent frame is still
+      // modeled as its turn rather than dropped as a foreign one.
+      this.awaitingResume = false;
+      if (task) this.closeAgentTask(task, { status: p.status === 'failed' ? 'failed' : p.status === 'interrupted' ? 'stopped' : 'completed', expectResume: false });
+      if (!this.busy) this.resumeUntil = Date.now() + RESUME_WINDOW_MS;
+    }
+
+    /** The ⧗ task of a delegation's launch call (`callId`), or null when it is not (or no longer) registered. */
+    taskForCall(callId) {
+      if (!callId) return null;
+      for (const t of this.translator?.bgTasks?.values() ?? []) {
+        if (t.kind === 'agent' && t.toolUseId === callId) return t;
+      }
+      return null;
+    }
+
     // ---------- the turn OpenCode starts by itself after a background task ----------
 
     /** Frames of an unsolicited continuation: agent text/tools/plan, inside the window a background finish opened. */
@@ -2153,13 +2211,42 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     }
 
     /** A background task ended (src/translator.js calls this sink): OpenCode may now resume the session by itself. */
-    expectResume() {
+    expectResume({ quiet = false } = {}) {
+      // A renewal from the liveness tick must NOT restart the honesty clock below: a real continuation past a long
+      // build has to arrive after the click's own quiet window, and a premature "no continuation" line would be wrong.
+      if (!quiet) this.resumeExpectAt = Date.now();
       this.resumeUntil = Date.now() + RESUME_WINDOW_MS;
+      this.awaitingResume = true;
+    }
+
+    /**
+     * The liveness tick: while a delegation/shell of this session still runs, renew the resume window so a heavy job
+     * is not cut off by the fixed window; once nothing is left to hear back from, tell the user honestly if OpenCode
+     * never sent the continuation it promised (upstream #56314 leaves the parent silent after a failed resumed turn).
+     */
+    watchResume() {
+      const t = this.translator;
+      if (!t) return;
+      const working = [...t.bgTasks.values()].some((x) => x.source === 'acp' && x.status === 'running');
+      if (working) {
+        if (!this.busy) this.expectResume({ quiet: true }); // keep the window alive for the eventual continuation
+        return;
+      }
+      if (!this.awaitingResume || this.busy) return;
+      if (Date.now() - (this.resumeExpectAt ?? 0) < RESUME_MISS_MS) return;
+      this.awaitingResume = false;
+      this.resumeUntil = 0;
+      this.hub.chat(this.id, {
+        kind: 'info',
+        level: 'warning',
+        text: 'OpenCode tidak melanjutkan sesi ini setelah tugas latar selesai — kemungkinan bug upstream (#56314). Kirim pesan apa pun untuk memicu ulang.',
+      });
     }
 
     /** The first frame of that continuation: model it as a turn (no user bubble) so busy/queue/result stay honest. */
     beginResumeTurn() {
       if (this.resumeTurn) return;
+      this.awaitingResume = false; // the continuation is here: the honesty watch below is done
       // OpenCode only resumes the parent after its delegations reported back: their tasks are done now.
       for (const task of [...(this.translator?.bgTasks?.values() ?? [])]) {
         if (task.source === 'acp' && task.kind === 'agent' && task.status === 'running') this.closeAgentTask(task);
@@ -2200,6 +2287,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.resumeTurn = null;
       clearInterval(turn.timer);
       this.resumeUntil = 0;
+      this.awaitingResume = false;
       if (turn.epoch !== this.epoch) {
         this.inflight.delete(turn.uuid); // the process was let go: nothing to end in it
         this.updateStatus();
@@ -2247,11 +2335,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     }
 
     /** Ends one ACP delegation task: close its child rows first, then let the translator announce it. */
-    closeAgentTask(task, { status = 'completed', note } = {}) {
+    closeAgentTask(task, { status = 'completed', note, expectResume } = {}) {
       if (!task || task.source !== 'acp' || task.kind !== 'agent' || task.status !== 'running') return false;
       this.adapter?.closeChildRows(task.toolUseId, note);
       this.adapter?.markAgentDone(task.toolUseId);
-      this.translator.handle({ type: 'system', subtype: 'task_updated', task_id: task.id, patch: { status } });
+      this.translator.handle({ type: 'system', subtype: 'task_updated', task_id: task.id, patch: { status, ...(expectResume === false ? { expectResume: false } : {}) } });
       return true;
     }
 

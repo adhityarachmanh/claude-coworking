@@ -29,6 +29,14 @@ before(async () => {
   mkdirSync(path.join(projects, 'aset'), { recursive: true });
   writeFileSync(path.join(projects, 'aset', 'README.md'), '# Aset\n');
   mkdirSync(path.join(TMP, 'claude-projects'));
+  // Delegation children as `session.list` sees them: the heavy build's child stays busy (its task must keep the
+  // resume window alive), the lost-report one is idle (its task is reaped, then OpenCode never continues).
+  writeFileSync(path.join(TMP, 'agents.json'), JSON.stringify([
+    { id: 'ses_anak_lambat', time: { busy: 2, idle: 1 } },
+    { id: 'ses_anak_hilang', time: { busy: 1, idle: 2 } },
+    // Busy forever: the reaper must NOT be the one to close its task — only OpenCode's official child status may.
+    { id: 'ses_anak_cdup', time: { busy: 2, idle: 1 } },
+  ]));
   const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('OPENCODE_')));
   server = spawn(process.execPath, [path.join(APP, 'server.js')], {
     windowsHide: true,
@@ -47,6 +55,13 @@ before(async () => {
       OFFICE_SHELL_GRACE_MS: '300',
       OFFICE_RESUME_POLL_MS: '150',
       OFFICE_RESUME_QUIET_MS: '300',
+      // A short window stands in for the real 10 minutes: a heavy job's continuation arrives AFTER it would have
+      // closed without the keep-alive, so a regression is visible here.
+      OFFICE_RESUME_WINDOW_MS: '700',
+      OFFICE_RESUME_MISS_MS: '1200',
+      OFFICE_AGENT_QUIET_MS: '300',
+      FAKE_ACP_RESUME_DELAY_MS: '1800',
+      FAKE_ACP_AGENT_STATE: path.join(TMP, 'agents.json'),
       CLAUDE_PROJECTS_DIR: path.join(TMP, 'claude-projects'),
       CLAUDE_CONFIG_FILE: path.join(TMP, 'no-such-claude.json'),
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude-config'),
@@ -173,4 +188,62 @@ test('a real background shell is tracked from its output text, closes, and its c
   const out = await api(`/api/projects/${id}/task-output`, { taskId: 'oc:sh_fakeasli' });
   assert.equal(out.status, 200, JSON.stringify(out.body));
   assert.match(out.body.output, /asli: selesai/);
+});
+
+test('a heavy delegation keeps the resume window alive: the continuation past the fixed window is not dropped', async () => {
+  mark = seen.length;
+  const sent = await api(`/api/projects/${id}/prompt`, { text: 'delegasilambat' });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  // The delegation is listed and the parent turn ends while the child still builds.
+  await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === 'oc-agent-call-agent-lambat' && x.status === 'running'), 20000, 'task delegasi lambat');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && o.ok === true, 15000, 'result induk');
+  // No child frame comes for FAKE_ACP_RESUME_DELAY_MS (1800 ms) — past the 700 ms window. Without the keep-alive the
+  // continuation below would be dropped and the session would sit idle with no report. It must arrive.
+  await waitFor(
+    (t, o) =>
+      (t === 'chat' && o.kind === 'assistant' && /Build berat selesai/.test(o.text ?? '')) ||
+      (t === 'chat_update' && /Build berat selesai/.test(o.patch?.text ?? '')),
+    15000,
+    'lanjutan setelah build berat',
+  );
+  await waitFor((t, o) => t === 'status' && o.project === id && o.busy === false, 10000, 'kembali idle');
+});
+
+test('a delegation whose continuation never comes is reported honestly, not left silent', async () => {
+  mark = seen.length;
+  const sent = await api(`/api/projects/${id}/prompt`, { text: 'delegasiresumahilang' });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === 'oc-agent-call-agent-hilang' && x.status === 'running'), 20000, 'task delegasi hilang');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && o.ok === true, 15000, 'result induk');
+  // The child goes idle, its task closes, and OpenCode never sends the promised continuation: the user is told once.
+  await waitFor(
+    (t, o) => t === 'chat' && o.project === id && o.kind === 'info' && /tidak melanjutkan sesi ini setelah tugas latar/.test(o.text ?? ''),
+    20000,
+    'kabar jujur laporan hilang',
+  );
+  // The delegation task is closed (not left spinning) — assert from the current snapshot, not the event history.
+  const snap = await snapshot();
+  const task = (snap.statuses[id].tasks ?? []).find((x) => x.id === 'oc-agent-call-agent-hilang');
+  assert.ok(task, 'the delegation task is still listed');
+  assert.notEqual(task.status, 'running', 'the delegation task is closed, not left running');
+});
+
+test("the official child-session status closes a delegation without the parent's own continuation", async () => {
+  mark = seen.length;
+  const from = mark;
+  const sent = await api(`/api/projects/${id}/prompt`, { text: 'delegasichildupdate' });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === 'oc-agent-call-agent-cdup' && x.status === 'running'), 20000, 'task delegasi child_update');
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result' && o.ok === true, 15000, 'result induk');
+  // The child's `opencode/session/child_update` status:"completed" arrives; the parent NEVER resumes (upstream #55760).
+  // The task must close from that status alone, and the app must NOT then claim "OpenCode did not continue".
+  await waitFor((t, o) => t === 'status' && o.project === id && (o.tasks ?? []).some((x) => x.id === 'oc-agent-call-agent-cdup' && x.status === 'completed'), 20000, 'task ditutup oleh child_update');
+  await sleep(1600); // longer than OFFICE_RESUME_MISS_MS (1200): the honesty line must NOT appear
+  assert.equal(
+    seen.slice(from).some((s) => s.type === 'chat' && s.obj?.project === id && s.obj?.kind === 'info' && /tidak melanjutkan sesi ini setelah tugas latar/.test(s.obj?.text ?? '')),
+    false,
+    'a clean child status is not "OpenCode went silent"',
+  );
+  const st = await snapshot();
+  assert.equal(st.statuses[id].busy, false, 'the session is idle, nothing spins');
 });

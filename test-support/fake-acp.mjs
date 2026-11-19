@@ -339,10 +339,17 @@ let cost = 0;
 let seq = 0;
 let cancelTurn = null;
 let formElicitation = false; // initialize: clientCapabilities.elicitation.form
+let childUpdates = false; // initialize: clientCapabilities._meta["opencode/child-session-updates"]
 const waiting = new Map(); // our request id -> resolve
 
 const send = (obj) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...obj })}\n`);
 const update = (sessionId, u) => send({ method: 'session/update', params: { sessionId, update: u } });
+// Real frame (packages/cli/src/acp/child.ts, @opencode/cli): OpenCode sends this ONLY when the client declared
+// `_meta["opencode/child-session-updates"]` at initialize. params { rootSessionId, childSessionId, parentSessionId,
+// depth, title } + either `type:"update"` (carrying a child SessionUpdate) or `type:"status"` with
+// status created|running|completed|failed|interrupted. It is the official signal that closes a delegation's ⧗ task.
+const childStatus = (rootSessionId, childSessionId, parentSessionId, status, title, depth = 1) =>
+  childUpdates && send({ method: 'opencode/session/child_update', params: { rootSessionId, childSessionId, parentSessionId, depth, ...(title ? { title } : {}), type: 'status', status } });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const configOptions = () => [
   { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: options.model, options: [{ value: 'opencode-go/beam-free', name: 'beam free' }, { value: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' }] },
@@ -563,6 +570,86 @@ async function turn(sessionId, text) {
     await say('msg_stop', 'Deploy berjalan di latar.');
     return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
   }
+  if (/^delegasilambat/.test(text)) {
+    // A HEAVY delegation: the child starts one long step and then stays silent for a while (a single `flutter build`
+    // with no intermediate frames), longer than the app's resume window. OpenCode later resumes the parent with the
+    // report, but only AFTER that silence — the app must not have dropped the window by then (AGENTS.md upstream note:
+    // the fixed 10-minute window with no keep-alive was the bug). FAKE_ACP_RESUME_DELAY_MS controls the silence.
+    const delay = Number(process.env.FAKE_ACP_RESUME_DELAY_MS) || 2500;
+    const call = 'call-agent-lambat';
+    const sid = 'ses_anak_lambat';
+    const meta = { 'opencode/child-session': { id: sid, parentID: sessionId, depth: 1, title: 'Build Berat' } };
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'subagent', kind: 'think', status: 'pending', rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, title: 'subagent', kind: 'think', status: 'in_progress', rawInput: { agent: 'devops', description: 'Build Berat', prompt: 'build' } });
+    await sleep(30);
+    update(sessionId, {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: call,
+      status: 'completed',
+      rawOutput: { metadata: { sessionID: sid, status: 'running', truncated: false } },
+      content: [{ type: 'content', content: { type: 'text', text: `The subagent is working in the background (sessionID: ${sid}).` } }],
+    });
+    // The child's one long step STARTS during the turn and never reports until the end: no frame renews anything.
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: `${sid}:sh_berat`, title: 'Build Berat: bash', kind: 'execute', status: 'pending', rawInput: {}, _meta: meta });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: `${sid}:sh_berat`, title: 'Build Berat: bash', kind: 'execute', status: 'in_progress', rawInput: { command: 'flutter build apk --release' }, _meta: meta });
+    await say('msg_lambat', 'Build berat jalan; laporan menyusul lama.');
+    setTimeout(() => {
+      // The parent's own continuation (the model's report), long after the turn ended.
+      update(sessionId, { sessionUpdate: 'agent_message_chunk', messageId: 'msg_lambat_done', content: { type: 'text', text: 'Build berat selesai; APK siap dipasang.' } });
+    }, delay);
+    return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
+  }
+  if (/^delegasiresumahilang/.test(text)) {
+    // The delegation ends (its child goes idle) but OpenCode never sends the continuation it promised (upstream
+    // #56314: a failed resumed turn leaves the parent silent). The app must tell the user once, not stop silently.
+    const call = 'call-agent-hilang';
+    const sid = 'ses_anak_hilang';
+    const meta = { 'opencode/child-session': { id: sid, parentID: sessionId, depth: 1, title: 'Cek Hilang' } };
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'subagent', kind: 'think', status: 'pending', rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, title: 'subagent', kind: 'think', status: 'in_progress', rawInput: { agent: 'qa', description: 'Cek Hilang', prompt: 'cek' } });
+    await sleep(30);
+    update(sessionId, {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: call,
+      status: 'completed',
+      rawOutput: { metadata: { sessionID: sid, status: 'running', truncated: false } },
+      content: [{ type: 'content', content: { type: 'text', text: `The subagent is working in the background (sessionID: ${sid}).` } }],
+    });
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: `${sid}:sh_cek`, title: 'Cek Hilang: bash', kind: 'execute', status: 'pending', rawInput: {}, _meta: meta });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: `${sid}:sh_cek`, title: 'Cek Hilang: bash', kind: 'execute', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'cek selesai' } }], _meta: meta });
+    await say('msg_hilang', 'Cek jalan di latar.');
+    // No continuation on purpose: the child goes idle (FAKE_ACP_AGENT_STATE) and its task is reaped, then silence.
+    return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
+  }
+  if (/^delegasichildupdate/.test(text)) {
+    // The OFFICIAL child lifecycle (packages/cli/src/acp/child.ts): the parent NEVER resumes (upstream #55760, a resumed
+    // turn that emits nothing), but OpenCode still sends `opencode/session/child_update` type:"status". The ⧗ task must
+    // close from that status alone — no parent continuation to wait for.
+    const call = 'call-agent-cdup';
+    const sid = 'ses_anak_cdup';
+    const meta = { 'opencode/child-session': { id: sid, parentID: sessionId, depth: 1, title: 'Rapikan UI' } };
+    childStatus(sessionId, sid, sessionId, 'created', 'Rapikan UI');
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: call, title: 'subagent', kind: 'think', status: 'pending', rawInput: {} });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: call, title: 'subagent', kind: 'think', status: 'in_progress', rawInput: { agent: 'frontend', description: 'Rapikan UI', prompt: 'rapi' } });
+    await sleep(30);
+    childStatus(sessionId, sid, sessionId, 'running', 'Rapikan UI');
+    update(sessionId, {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: call,
+      status: 'completed',
+      rawOutput: { metadata: { sessionID: sid, status: 'running', truncated: false } },
+      content: [{ type: 'content', content: { type: 'text', text: `The subagent is working in the background (sessionID: ${sid}).` } }],
+    });
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: `${sid}:sh_ui`, title: 'Rapikan UI: bash', kind: 'execute', status: 'pending', rawInput: {}, _meta: meta });
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: `${sid}:sh_ui`, title: 'Rapikan UI: bash', kind: 'execute', status: 'in_progress', rawInput: { command: 'npm test' }, _meta: meta });
+    await say('msg_cdup', 'Rapikan UI jalan di latar.');
+    // The child finishes (its own final step frame too), and OpenCode reports it — WITHOUT the parent resuming.
+    setTimeout(() => {
+      update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: `${sid}:sh_ui`, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'ui ok' } }], _meta: meta });
+      childStatus(sessionId, sid, sessionId, 'completed', 'Rapikan UI');
+    }, 200);
+    return { stopReason: 'end_turn', usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
+  }
   if (/^langkahterlambat/.test(text)) {
     // A child step that STARTS ONLY AFTER the turn's result and never gets its final update (the real failure in
     // chats-opencode: OpenCode stops relaying the child once the parent prompt resolved). No delegation task owns it
@@ -766,6 +853,7 @@ async function handle(msg) {
       if (BREAK.has('acp-exit')) process.exit(4);
       if (BREAK.has('initialize')) return; // never answers
       formElicitation = params.clientCapabilities?.elicitation?.form != null;
+      childUpdates = params.clientCapabilities?._meta?.['opencode/child-session-updates'] === true;
       return reply({ protocolVersion: 1, agentCapabilities: { loadSession: !BREAK.has('load-session'), promptCapabilities: { image: true, embeddedContext: true }, sessionCapabilities: { list: {}, resume: BREAK.has('resume') ? undefined : {}, fork: {} } }, authMethods: [], agentInfo: { name: 'OpenCode', version: FAKE_VERSION } });
     case 'session/new': {
       if (BREAK.has('session-new')) return send({ id, error: { code: -32603, message: 'Internal error' } });
