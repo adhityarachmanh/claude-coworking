@@ -64,6 +64,20 @@ Sumber kebenaran: **https://github.com/anomalyco/opencode** (paket `@opencode/cl
 | 2026-11-18 | 2.3.0 | Setelah tugas latar selesai, OpenCode **melanjutkan sesi sendiri** (“you will be resumed automatically”) tanpa `session/prompt`. ACP tidak punya notifikasi akhir giliran untuk itu; `session.active` (dipakai mirror) adalah penanda “masih bekerja”. | Teks tool OpenCode + `src/opencode-mirror.js` |
 | 2026-11-18 | 2.3.0 | `opencode api session.list` memberi `time.busy` / `time.idle` per sesi (termasuk sesi **anak**/subagent); `session.active` mengembalikan sesi yang sedang bekerja. Dipakai untuk menutup task delegasi. | Probe CLI di mesin ini |
 | 2026-11-18 | 2.3.0 | Panggilan `subagent`/`task` **selesai seketika** dengan “working in the background” + `rawOutput.metadata.sessionID`; kerja sesungguhnya ada di sesi anak, dan induk **dilanjutkan otomatis** saat anak melapor. Karena itu task delegasi tidak boleh ditutup oleh selesainya panggilan peluncuran. | Chat nyata Adhitron (RSRG: build APK di agent devops/qa) + frame fake ACP |
+| 2026-11-19 | 2.3.1 | OpenCode **kembali membaca `CLAUDE.md`** di direktori yang tidak punya `AGENTS.md`, dan jatuh ke `~/.claude/CLAUDE.md` bila `AGENTS.md` global tidak ada (termasuk instruksi di file bersarang). Editor 🧠 Memory kini menampilkan cadangan `CLAUDE.md` itu (project & global) saat OpenCode memang akan membacanya **atau** file itu sudah ada di disk; `AGENTS.md` tetap menang. Bisa dimatikan user lewat `OPENCODE_DISABLE_CLAUDE_CODE*`, tapi aplikasi tidak menyentuh env itu. | Catatan rilis v2.3.1 + PR [#64474](https://github.com/anomalyco/opencode/pull/64474)/[#64533](https://github.com/anomalyco/opencode/pull/64533) |
+| 2026-11-19 | 2.3.1 | `#64262` klien ACP sekarang menerima giliran yang **dibangunkan shell latar setelah giliran asli berakhir** — sama dengan jalur “lanjut otomatis” yang sudah ditangani (`pollResumeTurn`/`beginResumeTurn`/`expectResume`). `#64026` subagent selesai tidak lagi salah dilaporkan sedang berjalan. | Catatan rilis v2.3.1 |
+| 2026-11-19 | 2.3.1 | **Belum diterapkan — perlu probe.** `#64343`: satu reject kini hanya membatalkan permintaan lain dari **langkah yang sama**, bukan seluruh sesi; prompt izin dari subagent pun muncul. Ini menyentuh D6 (yang bersandar pada probe 2.3.0: "reject membatalkan giliran"). Binary terpasang masih **2.3.0**, jadi perilaku ACP pasca-reject belum bisa diprobe; D6 dibiarkan apa adanya sampai **2.3.1+ terpasang** dan diprobe ulang (`opencode acp`, approve → reject → perhatikan apakah `session/prompt` berlanjut). | Catatan rilis v2.3.1 ([#64343](https://github.com/anomalyco/opencode/pull/64343)) + D6 |
+| 2026-11-19 | 2.3.2 | Tanpa perubahan protokol/ACP: penembolokan prompt GPT-6.2 dan bentuk keluaran `webfetch`. Tidak ada aksi di aplikasi. | Catatan rilis v2.3.2 ([#64542](https://github.com/anomalyco/opencode/pull/64542), [#64544](https://github.com/anomalyco/opencode/pull/64544)) |
+
+**Mesin Claude Code (riset rilis 2.1.317–2.1.328, terpasang 2.1.316).** Tidak ada perubahan yang menyentuh mesin ini:
+aplikasi selalu mengirim `--permission-mode` eksplisit (`claudePermissionMode`: `plan`/`acceptEdits`), jadi default
+**auto mode** untuk sesi interaktif di Bedrock/Vertex/Foundry/gateway (2.1.328) tidak melonggarkan Adhitron. Spawn
+helper yang memakai mode eksplisit: `src/effort-classifier.js` (`manual`), `src/role-memory.js` (`plan`),
+`src/claude-contract.js` (`default`/`manual`). Satu helper tanpa mode — `src/account.js` `/usage` (`-p --output-format
+json --no-session-persistence`) — hanya menjalankan perintah lokal non-interaktif, dan default auto mode 2.1.328
+berlaku untuk sesi **interaktif**, jadi tidak terkena. `permissions.denyInsteadOfPrompting` (2.1.319), Code Mode, dan
+`claude remote-control` tidak dipakai. Banjir perbaikan (compaction, resume, MCP OAuth) hanya menguntungkan; tidak ada
+aksi kode.
 
 Kalau versi terpasang berbeda dari tabel ini, ulangi probe lebih dulu (lihat `AGENTS.md` → “Acuan upstream OpenCode”).
 

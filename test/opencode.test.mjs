@@ -463,10 +463,23 @@ test('OpenCode without the CLI: @file as a file reference, sessions forked / ren
   assert.equal(exp.data.info.title, 'Sesi lama OpenCode');
 
   const mem = (await api(`/api/projects/${id}/memory`)).body;
-  assert.deepEqual(mem.files.map((f) => f.label), ['AGENTS.md (project)', 'AGENTS.md (semua project)'], 'OpenCode reads AGENTS.md');
+  // OpenCode 2.3.1 again reads CLAUDE.md when a directory has no AGENTS.md (#64474/#64533): with neither file the
+  // editor offers AGENTS.md and its CLAUDE.md fallback, and every global file is user-scope (laptop-only to write).
+  const labels = mem.files.map((f) => f.label);
+  assert.equal(labels[0], 'AGENTS.md (project)', 'AGENTS.md first');
+  assert.ok(labels.includes('CLAUDE.md (project, cadangan)'), `OpenCode offers the CLAUDE.md fallback (saw: ${labels.join(' | ')})`);
+  assert.equal(mem.files[0].scope, 'project');
+  assert.ok(mem.files.filter((f) => f.scope === 'user').length >= 1, 'every global memory file is user-scope');
   assert.equal((await api(`/api/projects/${id}/memory/save`, { key: 'project', content: '# Aturan\n', mtime: mem.file.mtime })).status, 200);
   assert.equal(readFileSync(path.join(TMP, 'projects', 'toko', 'AGENTS.md'), 'utf8'), '# Aturan\n');
+  // With AGENTS.md in place the CLAUDE.md fallback drops out; writing the fallback itself still works when offered.
+  assert.ok(!(await api(`/api/projects/${id}/memory`)).body.files.map((f) => f.label).includes('CLAUDE.md (project, cadangan)'), 'AGENTS.md present: no fallback tab');
   rmSync(path.join(TMP, 'projects', 'toko', 'AGENTS.md'));
+  const again = (await api(`/api/projects/${id}/memory`, { key: 'project-claude' })).body;
+  assert.equal(again.file.key, 'project-claude', 'fallback returns once AGENTS.md is gone');
+  assert.equal((await api(`/api/projects/${id}/memory/save`, { key: 'project-claude', content: '# Lama\n', mtime: again.file.mtime })).status, 200);
+  assert.equal(readFileSync(path.join(TMP, 'projects', 'toko', 'CLAUDE.md'), 'utf8'), '# Lama\n');
+  rmSync(path.join(TMP, 'projects', 'toko', 'CLAUDE.md'));
 });
 
 test('🔌 MCP without the terminal: OpenCode lists opencode.json servers; ＋ Tambah through each engine\'s own `mcp add`', async () => {

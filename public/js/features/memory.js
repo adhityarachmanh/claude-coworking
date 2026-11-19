@@ -1,6 +1,7 @@
-// 🧠 Memory (/memory): edit CLAUDE.md / CLAUDE.local.md / ~/.claude/CLAUDE.md (Claude Code) or AGENTS.md (OpenCode)
-// right here, from the laptop or over Tailscale (server: src/routes/memory.js). A file changed elsewhere since it
-// was opened is never overwritten (409: reload first).
+// 🧠 Memory (/memory): edit CLAUDE.md / CLAUDE.local.md / ~/.claude/CLAUDE.md (Claude Code) or AGENTS.md — plus the
+// CLAUDE.md fallback OpenCode reads when no AGENTS.md exists (OpenCode 2.3.1+, #64474) — right here, from the laptop
+// or over Tailscale (server: src/routes/memory.js). A file changed elsewhere since it was opened is never overwritten
+// (409: reload first). The tab list is whatever src/memory-files.js says this engine actually reads for this project.
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';

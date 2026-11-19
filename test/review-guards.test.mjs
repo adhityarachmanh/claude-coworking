@@ -109,6 +109,31 @@ test('🧠 Memory: the user-level file is written from the laptop only; project 
   assert.equal(read.body.file.content, '# user\n');
 });
 
+test('🧠 Memory (OpenCode): the CLAUDE.md fallbacks are user-scope for the global one, and hidden once AGENTS.md wins', async (t) => {
+  const home = fakeHome(t);
+  const { ctx: claudeCtx, project } = projectCtx();
+  const ctx = { ...claudeCtx, hub: { ...claudeCtx.hub, engineOf: () => 'opencode' } };
+  const open = (req) => call('/api/projects/:id/memory', ctx, req, {}, { id: 'p1' });
+
+  let list = await open(LAPTOP);
+  // ~/.claude/CLAUDE.md is OpenCode's global fallback too: it must be laptop-only to write (like the Claude file).
+  const globalClaude = list.body.files.find((f) => f.key === 'user-claude');
+  assert.ok(globalClaude, 'the global CLAUDE.md fallback is offered');
+  assert.equal(globalClaude.scope, 'user');
+  assert.equal(list.body.files.find((f) => f.key === 'user').scope, 'user', 'the global AGENTS.md is user-scope too');
+  const denied = await call('/api/projects/:id/memory/save', ctx, TAILSCALE, { key: 'user-claude', content: '# x\n', mtime: 0 }, { id: 'p1' });
+  assert.equal(denied.status, 403);
+  assert.equal(existsSync(path.join(home, '.claude', 'CLAUDE.md')), false, 'nothing written over Tailscale');
+  // ...and the same file saves fine from the laptop.
+  assert.equal((await call('/api/projects/:id/memory/save', ctx, LAPTOP, { key: 'user-claude', content: '# x\n', mtime: 0 }, { id: 'p1' })).status, 200);
+  assert.equal(readFileSync(path.join(home, '.claude', 'CLAUDE.md'), 'utf8'), '# x\n');
+
+  // Once a project AGENTS.md exists it wins: the project CLAUDE.md fallback is no longer offered.
+  writeFileSync(path.join(project.path, 'AGENTS.md'), '# Aturan\n');
+  list = await open(LAPTOP);
+  assert.ok(!list.body.files.some((f) => f.key === 'project-claude'), 'AGENTS.md present: project fallback gone');
+});
+
 test('🧠 Memory: a symlink at a memory path is refused (read and write), the other files still list', async (t) => {
   fakeHome(t);
   const { ctx, project } = projectCtx();
