@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.73
 
 - **🔑 "Authentication required" tidak lagi menuduh API key-nya belum diisi.** Pesan itu datang dari OpenCode sendiri, yang menganggap **semua** HTTP 403 sebagai masalah login — padahal 403 juga berarti model tidak berhak, kredit habis, atau jaringan/region kantor memblokir. Sekarang aplikasi memeriksa status provider dulu: bila key **tersimpan**, pesannya menyebut kemungkinan 403/kuota/jaringan dan menyarankan login ulang, ganti model, atau jaringan lain; hanya provider yang benar-benar belum terhubung yang diarahkan ke **＋ Login provider**. Login key provider katalog juga baru dianggap berhasil setelah OpenCode melaporkan provider itu terhubung, dan model dari provider yang belum terhubung ditolak **sebelum** giliran berjalan — bukan gagal di tengah jalan.
 - **🩹 Ganti mode/model tidak lagi tertahan selamanya oleh tugas latar yang "hantu".** Delegasi subagent yang kehilangan laporan terakhirnya dulu tetap berstatus berjalan selamanya, sehingga perubahan mode (mis. Plan → Build) ditunda terus dan sesi tetap memakai agent lama — gejalanya: sudah ganti ke Build tetapi AI masih bilang "masih Plan mode". Tugas yang tidak melapor lebih dari 30 menit kini ditutup otomatis, barisnya dirapikan, dan perubahan mode/model yang tertunda tetap diterapkan paling lambat 10 menit.
