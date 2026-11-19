@@ -100,6 +100,7 @@ export function renderComposer() {
   renderModelOptions(st.model ?? '', engine);
   $('#effort').value = st.effortAuto ? 'auto' : (st.effort ?? '');
   $('#team-mode').checked = st.team ?? true;
+  $('#deny-unanswered').checked = st.denyUnanswered === true;
   applyCaps(caps, engine);
   // As in the CLI, a message sent mid-turn reaches Claude at its next step instead of waiting for the end.
   const line = hintLine(composerHints(st, { readOnly: state.readOnly, readOnlyHint: READ_ONLY_HINT }));
@@ -132,7 +133,7 @@ setInterval(() => {
 }, 1000);
 
 // Controls that change something: disabled (with the reason as tooltip) for a phone on plain WiFi.
-const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#model-field', '#model-search', '#effort', '#team-mode', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
+const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#model-field', '#model-search', '#effort', '#team-mode', '#deny-unanswered', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
 
 function applyReadOnly() {
   if (!state.readOnly) return; // fixed per connection: a laptop / Tailscale page never needs undoing
@@ -305,6 +306,17 @@ function applyCaps(caps, engine) {
   $('#team-mode').disabled = !caps.team || Boolean(state.readOnly);
   team.title = caps.team ? TEAM_TITLE() : capReason('team', engine);
   team.classList.toggle('cap-off', !caps.team);
+  // 🤖 "Tolak izin tak terjawab" is a Claude Code setting (denyInsteadOfPrompting); OpenCode has no counterpart, so the
+  // control is disabled there instead of silently doing nothing.
+  const deny = $('#deny-ctl');
+  if (deny) {
+    const claudeOnly = engine !== 'opencode';
+    $('#deny-unanswered').disabled = !claudeOnly || Boolean(state.readOnly);
+    deny.classList.toggle('cap-off', !claudeOnly);
+    deny.title = claudeOnly
+      ? 'Kalau kamu jauh dan kartu izin tidak terjawab, permintaan itu DITOLAK dan giliran lanjut (tidak menggantung). Hanya Claude Code.'
+      : 'Hanya untuk Claude Code: OpenCode tidak punya padanan setelan ini.';
+  }
   const off = Object.keys(CAP_NAMES).filter((c) => !caps[c]);
   const note = $('#engine-note');
   note.hidden = !off.length || state.active === DEMO_ID;
@@ -761,6 +773,7 @@ export async function saveSettings(extra = {}) {
       ...(pick === AUTO_MODEL ? { modelAuto: true } : { model: pick, modelAuto: false }),
       ...(auto ? { effortAuto: true } : { effort, effortAuto: false }),
       team: $('#team-mode').checked,
+      denyUnanswered: $('#deny-unanswered').checked,
       ...(agent !== undefined && { agent }),
       ...extra,
     });
@@ -936,7 +949,7 @@ export function initComposerControls() {
     const opener = $('#model-tiers-open');
     if (opener?.getClientRects().length) opener.focus({ preventScroll: true });
   }).observe($('#model-tiers-modal'), { attributeFilter: ['hidden'] });
-  for (const id of ['#agent', '#effort', '#team-mode']) {
+  for (const id of ['#agent', '#effort', '#team-mode', '#deny-unanswered']) {
     $(id).addEventListener('change', saveSettings);
     $(id).addEventListener('change', () => renderSettingsChip(state.statuses[state.active])); // right away, before the server echoes it
   }

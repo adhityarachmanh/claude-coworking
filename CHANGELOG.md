@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🛡️ Giliran tidak lagi menggantung saat kartu izin tak terjawab.** Kalau kamu memantau dari jauh lalu HP tidur atau sambungannya putus, permintaan izin yang tak pernah dijawab dulu menahan giliran selamanya. Di **Pengaturan giliran** kini ada sakelar **Tolak izin tak terjawab** (khusus Claude Code, 2.1.319+): permintaan seperti itu **ditolak** dan giliran lanjut. Setelannya disimpan per project, dikirim lewat file `--settings` tersendiri (file setelanmu tidak disentuh), dan otomatis tidak dipakai di mode Plan karena Plan sudah menolak semuanya. Di OpenCode sakelarnya dimatikan dengan penjelasan (belum ada padanannya).
+
 ## 1.0.75
 
 - **🌐 Alamat tanpa port untuk HP.** Jaringan kantor sering memblokir port tidak lazim, dan itu yang membuat `https://…ts.net:4318` tidak bisa dibuka. Di 📱 **Akses dari HP** kini ada tombol **Nyalakan Serve**: aplikasi menjalankan `tailscale serve` untuk menerbitkan kantor di **`https://<nama>.<tailnet>.ts.net`** (port 443, tanpa angka), lalu menampilkan URL-nya untuk disalin. Tetap **hanya di jaringan Tailscale** (bukan Funnel — aplikasi ini menyimpan data lokal), dan statusnya selalu dibaca ulang dari daemon Tailscale, jadi tidak pernah mengaku aktif kalau sebenarnya gagal.

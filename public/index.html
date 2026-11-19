@@ -208,6 +208,11 @@
             <label id="team-ctl" class="switch" title="Claude mendelegasikan ke tim (PM, BA, UI/UX, Dev, QA, …). Kantor lebih hidup, tapi lebih banyak token.">
               <input id="team-mode" type="checkbox" checked /> Mode tim
             </label>
+            <!-- 🤖 Claude Code 2.1.319+: a permission request that is never answered (phone asleep, link dropped) is
+                 DENIED and the turn continues instead of hanging forever. Only meaningful away from the laptop. -->
+            <label id="deny-ctl" class="switch" title="Kalau kamu jauh dan kartu izin tidak terjawab, permintaan itu DITOLAK dan giliran lanjut (tidak menggantung). Hanya Claude Code.">
+              <input id="deny-unanswered" type="checkbox" /> Tolak izin tak terjawab
+            </label>
             <!-- 🎤 input suara (features/voice.js): shown together with the 🎤 button, remembered per browser -->
             <label id="voice-lang-ctl" class="ctl" title="Bahasa input suara 🎤 (disimpan di browser ini)" hidden>
               <span>Suara</span>

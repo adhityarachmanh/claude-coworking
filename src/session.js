@@ -1,3 +1,10 @@
+/**
+ * 🤖 Should this spawn pass Claude Code's `--settings` (deny an unanswered permission request, 2.1.319+)? Only when the
+ * project turned it on and the mode is not Plan (Plan denies everything already). Pure, so the rule is testable.
+ * @param {{ denyUnanswered?: boolean, mode?: string }} settings
+ */
+export const shouldPassDenySettings = (settings) => settings?.denyUnanswered === true && settings.mode !== 'plan';
+
 // Runs one long-lived headless Claude Code process per project and bridges it to the web, as a thin
 // client of Claude Code's own control protocol (the one its IDE extensions speak):
 //   - prompts go in over stdin (stream-json) and Claude Code queues them itself, so a message sent
@@ -161,8 +168,22 @@ export class SessionManager {
    * command line). Content-addressed names: a process still running with the previous team keeps its files;
    * older ones are pruned (only the newest few stay).
    */
-  teamFiles() {
-    const dir = path.join(this.hub.dataDir ?? os.tmpdir(), 'team');
+  /**
+   * 🤖 Claude Code's `--settings` file for "deny an unanswered permission request" (2.1.319+). A dedicated file, so the
+   * user's own settings stay untouched and the behaviour disappears the moment the toggle is off (the flag is simply
+   * not passed). Written once; its content is a constant.
+   */
+  denySettingsFile() {
+    const dir = path.join(this.hub.dataDir ?? os.tmpdir(), 'claude');
+    const file = path.join(dir, 'deny-unanswered.json');
+    if (!existsSync(file)) {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(file, JSON.stringify({ permissions: { denyInsteadOfPrompting: true } }), 'utf8');
+    }
+    return file;
+  }
+
+  teamFiles() {    const dir = path.join(this.hub.dataDir ?? os.tmpdir(), 'team');
     const agents = JSON.stringify(this.agents);
     const hash = createHash('sha256').update(agents).update('\0').update(this.teamPrompt ?? '').digest('hex').slice(0, 16);
     const agentsFile = path.join(dir, `agents-${hash}.json`);
@@ -870,6 +891,9 @@ export class ClaudeSession {
     ];
     if (settings.model) args.push('--model', settings.model);
     if (settings.effort) args.push('--effort', settings.effort);
+    // 🤖 An unanswered permission request is DENIED instead of hanging the turn (Claude Code 2.1.319+). Plan already
+    // denies everything, so the flag is redundant there and is not passed (fewer files, nothing to explain).
+    if (shouldPassDenySettings(settings)) args.push('--settings', this.m.denySettingsFile());
     if (settings.team && Object.keys(this.m.agents).length) {
       // As files, not inline JSON: 17 roles' prompts exceed Windows' 32,767-char command line (spawn ENAMETOOLONG).
       // `--agents <file>` works with -p; the Lead's prompt goes the same way.

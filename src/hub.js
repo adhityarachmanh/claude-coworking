@@ -1317,6 +1317,9 @@ export class Hub {
     // OpenCode's primary agent (build, or a custom one from the user's opencode.json); '' = build
     if (patch.agent === '' || (typeof patch.agent === 'string' && /^[\w.-]{1,60}$/.test(patch.agent))) next.agent = patch.agent;
     if (typeof patch.team === 'boolean') next.team = patch.team;
+    // 🤖 Claude Code 2.1.319+ `permissions.denyInsteadOfPrompting`: an unanswered permission request is denied and
+    // the turn continues. Stored per project; only a real boolean flips it (an old tab never turns it on).
+    if (typeof patch.denyUnanswered === 'boolean') next.denyUnanswered = patch.denyUnanswered;
     return next;
   }
 
