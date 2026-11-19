@@ -336,7 +336,11 @@ export class StreamTranslator {
     if (Number.isFinite(msg.startedAt)) t.startedAt = msg.startedAt; // OpenCode's shell tasks start with the tool call
     if (msg.source) t.source = msg.source; // 'acp' (an ACP-hosted session's own shell) vs the service's shells
     if (msg.subtype === 'task_started') {
-      Object.assign(t, { kind: msg.subagent_type ? 'agent' : 'shell', agent: msg.subagent_type ?? null, background: Boolean(msg.is_backgrounded), status: 'running' });
+      // Claude Code 2.1.319+ moves an MCP server's tool call to the background as a task of its own ("MCP tasks in
+      // the terminal"). It is neither a subagent nor a Bash shell: `kind` stays 'mcp' so the panel does not offer
+      // shell-only actions (output file, ⧗ Pindah ke latar) for something that has neither.
+      const kind = msg.subagent_type ? 'agent' : /mcp/i.test(String(msg.task_type ?? '')) ? 'mcp' : 'shell';
+      Object.assign(t, { kind, agent: msg.subagent_type ?? null, background: Boolean(msg.is_backgrounded), status: 'running' });
       t.lastActivityAt ??= t.startedAt;
     } else if (msg.subtype === 'task_progress') {
       Object.assign(t, { summary: msg.summary ?? t.summary, lastTool: msg.last_tool_name ?? t.lastTool, tokens: msg.usage?.total_tokens ?? t.tokens, toolUses: msg.usage?.tool_uses ?? t.toolUses });
@@ -522,7 +526,11 @@ export class StreamTranslator {
     for (const x of tasks) {
       live.add(x.task_id);
       const t = this.bgTasks.get(x.task_id) ?? { id: x.task_id, status: 'running', startedAt: Date.now() };
-      Object.assign(t, { background: true, kind: x.task_type === 'local_agent' || x.subagent_type ? 'agent' : 'shell', agent: x.subagent_type ?? t.agent ?? null });
+      // `task_type` 'local_agent' = a delegation; 'mcp…' = an MCP server's task (Claude Code 2.1.319+, moved to the
+      // background by the CLI itself); anything else is a shell. Keeping the three apart matters: only a shell has
+      // an output file or can be moved to the background, and only an agent has a role at a desk.
+      const kind = x.task_type === 'local_agent' || x.subagent_type ? 'agent' : /mcp/i.test(String(x.task_type ?? '')) ? 'mcp' : 'shell';
+      Object.assign(t, { background: true, kind, agent: x.subagent_type ?? t.agent ?? null });
       if (x.description) t.description = truncate(x.description, 200);
       if (x.tool_use_id) t.toolUseId = x.tool_use_id;
       t.role ??= (t.toolUseId && this.toolRoles.get(t.toolUseId)) || (t.agent ? agentRole(t.agent, this.roleCtx) : null);

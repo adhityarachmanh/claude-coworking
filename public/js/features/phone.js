@@ -9,7 +9,7 @@ import { state } from '../core/state.js';
 import { qrSvg } from '../qr.js';
 
 // https: true = the 🔒 Tailscale (HTTPS) QR, false = an http address, null = not chosen yet (HTTPS when available).
-export const phone = { timer: null, pairing: null, ip: null, https: null, checking: false, pushing: false, firewall: null, fixing: false, fixError: null, manual: null };
+export const phone = { timer: null, pairing: null, ip: null, https: null, checking: false, pushing: false, firewall: null, fixing: false, fixError: null, manual: null, serve: null, serving: false };
 const ADDRESS_LABEL = { lan: '📶 WiFi yang sama', tailscale: '🌐 Dari mana saja (Tailscale)' };
 const HTTPS_LABEL = '🔒 Tailscale (HTTPS)';
 
@@ -44,14 +44,30 @@ export function httpsStatus(https) {
 function renderHttps(info) {
   const box = $('#phone-https');
   const status = info.enabled ? httpsStatus(info.https) : null;
-  const html = status
+  // 🌐 Tailscale Serve: an origin WITHOUT a port (`https://host.ts.net`) — office networks often block odd ports.
+  // Only offered once HTTPS itself works (Serve needs a valid certificate); tailnet-only, never Funnel.
+  const serve = info.enabled && info.serve ? serveStatus(info.serve, info.https) : null;
+  const html = `${status
     ? `<p class="https-status ${status.tone}"><span>${status.html}</span><span class="grow"></span><button type="button" data-https-check ${phone.checking ? 'disabled' : ''}>${phone.checking ? 'Memeriksa…' : 'Periksa lagi'}</button></p>`
-    : '';
+    : ''}${serve ?? ''}`;
   // Drawn apart from the per-second countdown: the "Periksa lagi" button keeps its focus.
   if (box.dataset.html !== html) {
     box.innerHTML = html;
     box.dataset.html = html;
   }
+}
+
+/**
+ * The Serve line: off (with the button that turns it on), on (the port-less URL to copy), or unavailable — with
+ * Tailscale's own reason. Nothing here claims success the daemon did not report.
+ */
+function serveStatus(serve, https) {
+  if (https?.state && https.state !== 'ok' && https.state !== 'expiring') return ''; // no certificate yet: Serve would fail
+  if (serve.active && serve.url) {
+    return `<p class="https-status ok"><span>🌐 <b>Alamat tanpa port:</b> <code>${escapeHtml(serve.url)}</code> <small class="muted">(Tailscale Serve — hanya di jaringan Tailscale)</small></span><span class="grow"></span><button type="button" data-serve-off ${phone.serving ? 'disabled' : ''}>${phone.serving ? 'Mematikan…' : 'Matikan'}</button></p>`;
+  }
+  const why = serve.error ? ` <small class="warn">${escapeHtml(serve.error)}</small>` : '';
+  return `<p class="https-status"><span>🌐 Pakai alamat <b>tanpa port</b> (<code>https://…ts.net</code>) supaya tidak diblokir jaringan kantor.${why}</span><span class="grow"></span><button type="button" data-serve-on ${phone.serving ? 'disabled' : ''}>${phone.serving ? 'Menyalakan…' : 'Nyalakan Serve'}</button></p>`;
 }
 
 // lastSeen is only stored about once an hour (server throttles disk writes), so recent use reads as "dalam 1 jam terakhir".
@@ -234,6 +250,24 @@ export function initPhone() {
     }
   });
   $('#phone-https').addEventListener('click', async (e) => {
+    // 🌐 Tailscale Serve on/off: one request; the answer carries the daemon's own status, so the line never lies.
+    const serveBtn = e.target.closest('[data-serve-on], [data-serve-off]');
+    if (serveBtn && !phone.serving) {
+      phone.serving = true;
+      renderPhone();
+      try {
+        const { serve, error } = await api('/api/remote/serve', { on: Boolean(e.target.closest('[data-serve-on]')) });
+        phone.serve = serve;
+        if (state.config?.remote) state.config.remote = { ...state.config.remote, serve };
+        toast(serve.active ? `Alamat tanpa port aktif: ${serve.url}` : error || 'Serve belum aktif.', serve.active ? 'ok' : undefined);
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        phone.serving = false;
+        renderPhone();
+      }
+      return;
+    }
     if (!e.target.closest('[data-https-check]') || phone.checking) return;
     phone.checking = true;
     renderPhone();

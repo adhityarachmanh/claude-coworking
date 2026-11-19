@@ -65,7 +65,7 @@ export function fmtDuration(ms) {
 const durationOf = (t) => (t.startedAt ? fmtDuration((t.endedAt ?? Date.now()) - t.startedAt) : '');
 const clock = (ts) => (ts ? new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '');
 const stateLabel = (t) => (isRunning(t) ? (t.background ? 'berjalan di latar' : 'berjalan') : (TASK_STATE[t.status] ?? t.status ?? ''));
-const icon = (t) => (t.kind === 'agent' ? '🤖' : '🖥');
+const icon = (t) => (t.kind === 'agent' ? '🤖' : t.kind === 'mcp' ? '🔌' : '🖥');
 const who = (t) => (t.role && CAST[t.role] ? CAST[t.role] : null);
 const counts = (t) => [t.tokens ? `${fmtTokens(t.tokens)} token` : '', t.toolUses ? `${t.toolUses} langkah` : ''].filter(Boolean);
 const selectedTask = () => tasksOf(tasksView.project).find((t) => t.id === tasksView.selected) ?? null;

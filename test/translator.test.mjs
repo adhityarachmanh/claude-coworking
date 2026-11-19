@@ -343,8 +343,28 @@ test('background work keeps its role at work until the task ends (shell + subage
   assert.ok(!translator.hasRunningTasks());
 });
 
-test('a delegated agent task never keeps spinning after its call is over', () => {
+test('an MCP server task (Claude Code 2.1.319+) is tracked as its own kind, not as a shell', () => {
   const { translator, status } = statusRecorder();
+  translator.handle({ type: 'system', subtype: 'task_started', task_id: 'M1', tool_use_id: 'm1', task_type: 'mcp_tool', description: 'crm: cari pelanggan', is_backgrounded: true });
+  const task = () => (status.tasks ?? []).find((t) => t.id === 'M1');
+  assert.equal(task().kind, 'mcp', 'bukan shell: tidak punya file output atau tombol pindah ke latar');
+  assert.equal(task().status, 'running');
+  assert.ok(translator.hasRunningTasks(), 'masih dihitung bekerja selama task MCP berjalan');
+  // Closing it ends the task (no stuck row: the same failure mode as a delegation that never reports).
+  translator.handle({ type: 'system', subtype: 'task_notification', task_id: 'M1', tool_use_id: 'm1', status: 'completed', summary: 'beres' });
+  assert.equal(task().status, 'completed');
+  assert.ok(!translator.hasRunningTasks());
+});
+
+test('the live background-task list keeps MCP tasks apart too', () => {
+  const { translator, status } = statusRecorder();
+  translator.onBackgroundTasks([{ task_id: 'M1', task_type: 'mcp_tool', description: 'crm', tool_use_id: 'm1' }]);
+  const task = () => (status.tasks ?? []).find((t) => t.id === 'M1');
+  assert.equal(task().kind, 'mcp');
+  assert.equal(task().background, true);
+});
+
+test('a delegated agent task never keeps spinning after its call is over', () => {  const { translator, status } = statusRecorder();
   const tasks = () => status.tasks ?? [];
   // The agent reports before Claude Code sends its task_notification: the tool result is enough to close the row.
   translator.handle(use('a1', 'Agent', { subagent_type: 'reviewer', description: 'review' }));

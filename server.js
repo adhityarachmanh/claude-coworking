@@ -38,7 +38,9 @@ import { DEVICE_COOKIE, HTTPS_DEVICE_COOKIE, READ_ONLY_ERROR, RemoteAccess, WIFI
 import { AccessPin, PinError, pinCooldownMs, pinMaxPerIpPerHour, pinMessage } from './src/access-pin.js';
 import { WaLink, WaLinkError, pairStatus } from './src/wa-link.js';
 import { EncryptedAuthStore } from './src/wa-auth-store.js';
-import { TailscaleCert, httpsPortFrom, restrictDir } from './src/tls.js';
+import { TailscaleCert, cliRunner, httpsPortFrom, restrictDir } from './src/tls.js';
+import { findTailscale } from './src/setup/tailscale.js';
+import { readServe, setServe } from './src/tailscale-serve.js';
 import { eligibleTailnetPeer } from './src/tailnet.js';
 import { purgeTrash, TRASH_RETENTION_DAYS } from './src/session-admin.js';
 import { PushService, wifiApproval } from './src/push.js';
@@ -422,9 +424,13 @@ function fakeWaSocket({ auth } = {}) {
   return socket;
 }
 
+// 🌐 Tailscale Serve: publish the office at `https://host.ts.net` (no port) through the daemon, tailnet-only.
+// The CLI is the same binary the certificate code uses; a machine without Tailscale simply reports "not serving".
+const serveCli = findTailscale({ platform: process.platform });
+const serveDeps = serveCli ? { run: cliRunner(serveCli) } : null;
+
 // The https listener's certificate (Tailscale MagicDNS name). Checked only while phone access is on.
-const tls = new TailscaleCert({
-  dir: path.join(DATA_DIR, 'tls'),
+const tls = new TailscaleCert({  dir: path.join(DATA_DIR, 'tls'),
   enabled: () => remote.enabled,
   // Runs from timers and background refreshes: a failure here must never take the server down.
   onChange: () => {
@@ -481,8 +487,29 @@ function httpsInfo() {
 }
 
 /** Phone access as browsers see it: devices, addresses, and the HTTPS (Tailscale) status. */
+// 🌐 Tailscale Serve: the last status the daemon reported. `remoteInfo()` is synchronous and called from many
+// places, so the cached value is what the UI shows; it is refreshed at start and after every change.
+let serveStateCache = { active: false, url: null, port: null, error: null };
+async function refreshServe() {
+  try {
+    serveStateCache = await readServe(serveDeps);
+  } catch {
+    serveStateCache = { active: false, url: null, port: null, error: 'Tailscale tidak menjawab' };
+  }
+  return serveStateCache;
+}
+/** The one object routes use: every read refreshes the cache, every change refreshes it after the daemon answered. */
+const serveState = {
+  read: refreshServe,
+  async set({ on }) {
+    const result = await setServe(serveDeps, { on });
+    await refreshServe();
+    return result;
+  },
+};
+
 function remoteInfo() {
-  return { ...remote.publicInfo(PORT), https: httpsInfo() };
+  return { ...remote.publicInfo(PORT), https: httpsInfo(), serve: serveStateCache };
 }
 
 const templates = new TemplateStore(hub);
@@ -1092,6 +1119,8 @@ const ctx = {
   accessPin, // 🔐 PIN WhatsApp: dropped when phone access goes off or a device is revoked (src/routes/remote.js)
   waLink, // 📱 WhatsApp in-process: /api/wa/* (src/routes/wa.js) and the PIN transport
   tls,
+  serveDeps, // 🌐 Tailscale Serve: `https://host.ts.net` without a port (src/tailscale-serve.js)
+  serveState, // …and its cached status + the route's read/set pair
   templates,
   taskQueue,
   metrics,
@@ -1546,6 +1575,7 @@ setInterval(() => {
 
 refreshProjects();
 hub.ready = true;
+refreshServe().catch(() => {}); // 🌐 Serve status for the phone dialog; refreshed again by every change
 setup.refresh({ deep: true }); // does not block start-up; config.setup is refreshed when the probe ends
 taskQueue.start();
 routines.start();

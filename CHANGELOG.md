@@ -2,6 +2,11 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🌐 Alamat tanpa port untuk HP.** Jaringan kantor sering memblokir port tidak lazim, dan itu yang membuat `https://…ts.net:4318` tidak bisa dibuka. Di 📱 **Akses dari HP** kini ada tombol **Nyalakan Serve**: aplikasi menjalankan `tailscale serve` untuk menerbitkan kantor di **`https://<nama>.<tailnet>.ts.net`** (port 443, tanpa angka), lalu menampilkan URL-nya untuk disalin. Tetap **hanya di jaringan Tailscale** (bukan Funnel — aplikasi ini menyimpan data lokal), dan statusnya selalu dibaca ulang dari daemon Tailscale, jadi tidak pernah mengaku aktif kalau sebenarnya gagal.
+- **🔌 Task dari server MCP tidak lagi menyamar jadi shell.** Claude Code 2.1.319+ memindahkan panggilan tool server MCP ke latar sebagai task tersendiri. Aplikasi kini mengenalinya sebagai jenis **mcp** (ikon 🔌 di ⧗ Tugas latar) — bukan shell — sehingga tidak ditawari aksi yang tidak masuk akal (file output, pindah ke latar), dan barisnya tetap tertutup rapi saat task selesai.
+
 ## 1.0.74
 
 - **↪ Arahkan giliran yang sedang berjalan, tanpa menunggu antrian.** Di OpenCode 2.3+ sebuah giliran bisa "dibelokkan" saat masih bekerja (`_session/steering`). Sekarang pesan yang masuk saat tim masih bekerja mendapat tombol **↪ Arahkan sekarang** di bubble antreannya: teksnya langsung disisipkan ke giliran berjalan — berguna saat arahnya melenceng dan kamu tidak mau menunggu giliran selesai. Bila OpenCode terpasang lebih lama (tanpa dukungan steering), tombolnya tidak muncul dan perilakunya tetap seperti sekarang: pesan masuk 📋 Antrian.

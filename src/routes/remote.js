@@ -24,6 +24,16 @@ export function register(router) {
     return json(res, 200, httpsInfo());
   });
   router.post('/api/remote/pairing', pairing);
+  // 🌐 Tailscale Serve: publish the office at `https://host.ts.net` (no port) — the origin office networks allow
+  // while they block odd ports. Tailnet-only by design (`serve`, never `funnel`: this app holds local data).
+  // 🌐 Tailscale Serve: publish the office at `https://host.ts.net` (no port) — the origin office networks allow
+  // while they block odd ports. Tailnet-only by design (`serve`, never `funnel`: this app holds local data).
+  router.post('/api/remote/serve', async ({ serveState }, req, res, params, body) => {
+    const status = await serveState.read();
+    if (body?.on === undefined) return json(res, 200, { serve: status }); // read-only probe
+    const result = await serveState.set({ on: body.on === true });
+    return json(res, result.ok ? 200 : 502, { serve: await serveState.read(), error: result.error ?? null });
+  });
   // 🔓 "Pasang otomatis dari perangkat tailnet" (📱 dialog): devices of the laptop owner's own tailnet
   // user pair without the code over the https listener (server.js checks the identity per attempt,
   // src/tailnet.js). Laptop only, like all of /api/remote; the boolean persists in the remote state.
