@@ -1673,6 +1673,20 @@ test('mode, model and effort switch live in the running Claude Code, without a r
   assert.equal((await snapshot()).statuses[id].model, 'fable', 'flags never pass as a model');
 });
 
+test('Auto (autopilot) applies live as --permission-mode auto and reads back as Auto, not Build', async () => {
+  const id = await projectId();
+  await api(`/api/projects/${id}/prompt`, { text: 'status?' });
+  const pid = (await nextReply(id, /pid=\d+/)).patch.text.match(/pid=(\d+)/)[1];
+  await api(`/api/projects/${id}/settings`, { mode: 'autopilot', modeChosen: true });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'status?' });
+  const reply = (await nextReply(id, /pid=\d+/)).patch.text;
+  assert.match(reply, /mode=auto /, 'Claude got the classifier mode, never bypassPermissions');
+  assert.doesNotMatch(reply, /bypassPermissions/);
+  assert.equal(reply.match(/pid=(\d+)/)[1], pid, 'same process: Auto applies live');
+  assert.equal((await snapshot()).statuses[id].mode, 'autopilot', "Claude's own 'auto' report reads back as Auto");
+});
+
 test("a prompt sent mid-turn waits in Claude Code's queue; Esc drops it and stops the turn", async () => {
   const id = await projectId();
   mark = seen.length;
