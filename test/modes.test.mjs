@@ -51,6 +51,29 @@ describe('Plan/Build modes', () => {
     for (const value of ['acceptEdits', 'default', undefined]) assert.equal(appModeFromCli(value), 'build');
   });
 
+  test('cleanSettings: autopilot tersimpan sebagai pilihan eksplisit; tab lama { mode:auto } tetap build', (t) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'modes-write-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const hub = new Hub({ dataDir: dir });
+    hub.updateSettings('p1', { mode: 'autopilot', modeChosen: true });
+    assert.equal(hub.settingsFor('p1').mode, 'autopilot');
+    assert.equal(hub.settingsFor('p1').modePendingChoice, undefined, 'pilihan eksplisit menutup gerbang mode lama');
+    hub.updateSettings('p2', { mode: 'auto' }); // tab versi lama: artinya auto-edit
+    assert.equal(hub.settingsFor('p2').mode, 'build', 'tab lama tidak boleh menjadi Auto');
+  });
+
+  test('migrateModes: autopilot canonical tidak ditulis ulang; auto lama tetap build', (t) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'modes-load-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const file = path.join(dir, 'state.json');
+    writeFileSync(file, JSON.stringify({ settings: { a: { mode: 'autopilot' }, b: { mode: 'auto' } } }));
+    const hub = new Hub({ dataDir: dir });
+    assert.equal(hub.settingsFor('a').mode, 'autopilot', 'Auto hasil pilihan user tidak boleh balik ke build saat restart');
+    assert.equal(hub.settingsFor('b').mode, 'build');
+    const again = new Hub({ dataDir: dir });
+    assert.equal(again.settingsFor('a').mode, 'autopilot', 'idempoten di load berikutnya');
+  });
+
   test('Hub migrates stored modes once; dontAsk becomes Plan pending an explicit choice', (t) => {
     const dir = mkdtempSync(path.join(tmpdir(), 'modes-hub-'));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
