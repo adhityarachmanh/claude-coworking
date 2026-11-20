@@ -2,7 +2,7 @@
 // The server sends OPENCODE_CAPS in config.engines.opencode.caps; these tests keep the server and UI in sync.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CLAUDE_CAPS, capReason, capsFor, engineChangeNeedsReload, engineDown, engineOf, favoriteModelList, openCodeProviderGroups } from '../public/js/core/engine-caps.js';
+import { CLAUDE_CAPS, capReason, capsFor, engineChangeNeedsReload, engineDown, engineOf, favoriteModelList, normalizeMode, openCodeProviderGroups } from '../public/js/core/engine-caps.js';
 import { OPENCODE_CAPS } from '../src/acp-session.js';
 
 const CONFIG = Object.freeze({
@@ -29,7 +29,7 @@ test('OpenCode turns off Claude-only permissions/extensions, but keeps conversat
   assert.equal(caps.extensions, false, 'plugins/agents/hooks are Claude Code files');
   assert.equal(caps.search, true, 'conversation search covers OpenCode sessions too');
   assert.equal(caps.exportSession, false, 'full session export reads Claude transcripts');
-  assert.deepEqual(caps.modes, ['build', 'plan'], 'OpenCode shows only Build and Plan');
+  assert.deepEqual(caps.modes, ['build', 'plan', 'autopilot'], 'OpenCode menawarkan Build, Plan, dan Auto');
 });
 
 test('caps without an engines entry fall back to Claude (older servers)', () => {
@@ -53,6 +53,12 @@ test('engineOf: a malformed status engine is ignored, never shown as a choice', 
   assert.equal(engineOf({ engine: 'Open Code!' }, { engine: 'opencode' }), 'opencode');
   assert.equal(engineOf({ engine: '' }, { engine: 'claude' }), 'claude');
   assert.equal(engineOf({ engine: 42 }, undefined), 'claude');
+});
+
+test('Auto ikut kosakata UI: normalizeMode mempertahankan autopilot, bukan auto lama', () => {
+  assert.equal(normalizeMode('autopilot'), 'autopilot');
+  assert.equal(normalizeMode('auto'), 'build', 'auto lama tetap Build');
+  assert.equal(normalizeMode('plan'), 'plan');
 });
 
 test('caps follow the project engine, not the default', () => {

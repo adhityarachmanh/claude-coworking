@@ -173,7 +173,7 @@ test('config.engines announces OpenCode with its caps; the engine is per project
   assert.equal(snap.config.engines.opencode.caps.permissions, false, 'Claude permission files are Claude-only');
   assert.equal(snap.config.engines.opencode.caps.extensions, false, 'Claude plugins/agents/hooks are Claude-only');
   assert.equal(snap.config.engines.opencode.caps.search, true, 'conversation search covers Claude and OpenCode sessions');
-  assert.deepEqual(snap.config.engines.opencode.caps.modes, ['build', 'plan'], 'OpenCode shows only Build and Plan');
+  assert.deepEqual(snap.config.engines.opencode.caps.modes, ['build', 'plan', 'autopilot'], 'OpenCode menawarkan Build, Plan, dan Auto');
   const id = await projectId();
   await api(`/api/projects/${id}/settings`, { model: 'opus' });
   assert.deepEqual((await api(`/api/projects/${id}/models`)).body.models, [], 'Claude models come with the app config');

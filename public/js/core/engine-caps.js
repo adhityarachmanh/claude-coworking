@@ -13,10 +13,10 @@ export const engineChangeNeedsReload = (data) => Boolean(data && typeof data ===
 /** Display names; an engine the server adds later still shows (its id) without a code change. */
 export const ENGINE_LABEL = { claude: 'Claude', opencode: 'OpenCode' };
 
-export const ALL_MODES = ['build', 'plan'];
+export const ALL_MODES = ['build', 'plan', 'autopilot'];
 
-/** Legacy/unknown values from an older server or state read as Build; Plan remains Plan. */
-export const normalizeMode = (mode) => (mode === 'plan' ? 'plan' : 'build');
+/** Legacy/unknown values from an older server or state read as Build; Plan and Auto remain themselves. */
+export const normalizeMode = (mode) => (mode === 'plan' ? 'plan' : mode === 'autopilot' ? 'autopilot' : 'build');
 
 /** Everything on: what Claude Code supports, and the safe default for a server without `config.engines`. */
 export const CLAUDE_CAPS = Object.freeze({

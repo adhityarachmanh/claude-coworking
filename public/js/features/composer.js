@@ -275,7 +275,7 @@ function renderAgentOptions(st, engine) {
 // One mode control for both engines: Plan/Build. The engine name still tells which machine it configures.
 const MODE_CTL = {
   label: 'Mode',
-  title: 'Plan: hanya menyusun rencana, tanpa mengubah file. Build: file boleh diubah otomatis, tetapi perintah shell dan jaringan tetap minta izin.',
+  title: 'Plan: hanya menyusun rencana, tanpa mengubah file. Build: file boleh diubah otomatis, tetapi perintah shell dan jaringan tetap minta izin. Auto: shell dan jaringan langsung dikerjakan tanpa kartu izin; aturan deny dan file rahasia tetap berlaku.',
 };
 
 function renderModeOptions(caps) {

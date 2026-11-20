@@ -4683,13 +4683,13 @@ for (const vp of VIEWPORTS) {
       assert.equal(caps.opencode.permissionsBtn, true, 'tombol di ⚙ ikut tersembunyi');
       assert.match(caps.opencode.plugins, /opencode\.json/i, 'plugin/agent Claude diarahkan ke opencode.json');
       assert.equal(caps.opencode.rewind, null, 'OpenCode project tetap boleh rewind');
-      assert.deepEqual(caps.opencode.modes, ['build', 'plan'], 'hanya Build & Plan');
+      assert.deepEqual(caps.opencode.modes, ['build', 'plan', 'autopilot'], 'Build, Plan, dan Auto');
       assert.equal(caps.opencode.note, '', 'OpenCode mendukung effort/team/rewind/MCP/tugas latar: tanpa catatan "belum mendukung"');
       assert.equal(caps.claude.permissions, false, 'project Claude menampilkan entri Claude-only');
       assert.equal(caps.claude.exportSession, false);
       assert.equal(caps.claude.permissionsBtn, false);
       assert.equal(caps.claude.plugins, null);
-      assert.deepEqual(caps.claude.modes, ['build', 'plan']);
+      assert.deepEqual(caps.claude.modes, ['build', 'plan', 'autopilot']);
       assert.deepEqual(realProblems(page), [], 'tanpa error console');
     });
 
@@ -4716,7 +4716,7 @@ for (const vp of VIEWPORTS) {
           hidden: document.querySelector('#mode-choice').hidden,
           buttons: [...document.querySelectorAll('#mode-choice [data-mode-choice]')].map((b) => b.dataset.modeChoice),
         }));
-        assert.deepEqual(view.options, ['build', 'plan'], 'hanya Build dan Plan');
+        assert.deepEqual(view.options, ['build', 'plan', 'autopilot'], 'Build, Plan, dan Auto');
         assert.equal(view.hidden, false, 'banner pilihan mode tampil');
         assert.deepEqual(view.buttons, ['plan', 'build']);
         await page.eval(() => document.querySelector('#mode-choice [data-mode-choice="build"]').click());

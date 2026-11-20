@@ -40,10 +40,10 @@ export function renderTodos(st) {
 }
 
 /** Short labels for the phone's settings chip (features/composer.js). One vocabulary for both engines. */
-export const MODE_SHORT = { build: '🔨 Build', plan: '📋 Plan' };
+export const MODE_SHORT = { build: '🔨 Build', plan: '📋 Plan', autopilot: '⚡ Auto' };
 
-const MODE_LABEL = { build: '🔨 build · edit otomatis', plan: '📋 plan dulu' };
-export const MODE_CYCLE = ['build', 'plan']; // Shift+Tab: Build ⇄ Plan
+const MODE_LABEL = { build: '🔨 build · edit otomatis', plan: '📋 plan dulu', autopilot: '⚡ auto · tanpa kartu izin shell/web' };
+export const MODE_CYCLE = ['build', 'plan', 'autopilot']; // Shift+Tab: Build → Plan → Auto
 export const modeShort = (mode) => MODE_SHORT[normalizeMode(mode)];
 export const modeLabel = (mode) => MODE_LABEL[normalizeMode(mode)];
 

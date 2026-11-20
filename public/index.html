@@ -168,11 +168,12 @@
           <div id="todos" class="todos-pinned" hidden></div>
           <div class="controls">
             <!-- One vocabulary for both engines: Plan (read-only) and Build (files may change; shell/network ask) -->
-            <label id="mode-ctl" class="ctl" title="Plan: hanya menyusun rencana, tanpa mengubah file. Build: file boleh diubah otomatis, tetapi perintah shell dan jaringan tetap minta izin.">
+            <label id="mode-ctl" class="ctl" title="Plan: hanya menyusun rencana, tanpa mengubah file. Build: file boleh diubah otomatis, tetapi perintah shell dan jaringan tetap minta izin. Auto: shell dan jaringan langsung dikerjakan tanpa kartu izin; aturan deny dan file rahasia tetap berlaku.">
               <span id="mode-label">Mode</span>
               <select id="mode">
                 <option value="build">🔨 Build</option>
                 <option value="plan">📋 Plan</option>
+                <option value="autopilot">⚡ Auto</option>
               </select>
             </label>
             <!-- OpenCode: its primary agents (build, the user's own from opencode.json); 📋 Plan = its plan agent -->
