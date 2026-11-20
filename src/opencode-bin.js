@@ -330,7 +330,7 @@ function splitRule(rule) {
 export function mergePermission(base, user, mode) {
   const tune = (a) =>
     mode === 'plan' && a !== 'deny' ? 'deny'
-    : mode === 'auto' && a === 'ask' ? 'allow'
+    : (mode === 'auto' || mode === 'autopilot') && a === 'ask' ? 'allow'
     : mode === 'dontAsk' && a !== 'deny' ? 'deny'
     : mode === 'readOnly' && a === 'ask' ? 'deny'
     : a;

@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import { permissionConfig } from '../src/acp-session.js';
 import { mergePermission, readOnlyOpenCodeEnv, readUserPermission, childOpenCodeEnv } from '../src/opencode-bin.js';
 
-const MODES = ['build', 'plan', 'dontAsk'];
+const MODES = ['build', 'plan', 'dontAsk', 'autopilot'];
 
 test('permissionConfig without user rules: the mode alone', () => {
   assert.deepEqual(permissionConfig('build'), { edit: 'allow', bash: 'ask', webfetch: 'ask' });
@@ -17,12 +17,24 @@ test('permissionConfig without user rules: the mode alone', () => {
   assert.deepEqual(permissionConfig('dontAsk'), { edit: 'deny', bash: 'deny', webfetch: 'deny' });
 });
 
+test('permissionConfig autopilot: shell & web jadi allow, plan/dontAsk tetap deny', () => {
+  assert.deepEqual(permissionConfig('autopilot'), { edit: 'allow', bash: 'allow', webfetch: 'allow' });
+});
+
+test('permissionConfig autopilot: deny user tetap deny, ask user jadi allow', () => {
+  assert.equal(permissionConfig('autopilot', { bash: 'deny' }).bash, 'deny', 'deny user tidak dilemahkan');
+  assert.equal(permissionConfig('autopilot', { bash: 'ask' }).bash, 'allow', 'ask user jadi allow (seperti --auto)');
+  assert.equal(permissionConfig('autopilot', { bash: { '*': 'deny', 'git status': 'allow' } }).bash['*'], 'deny');
+  assert.equal(permissionConfig('autopilot', { bash: { 'rm *': 'deny' } }).bash['rm *'], 'deny', 'pattern deny tetap deny');
+});
+
 test('permissionConfig: a user catch-all deny ({ "*": "deny" }) stays deny in every mode, its allow patterns stay', () => {
   const user = { bash: { '*': 'deny', 'git status': 'allow' }, edit: { '*': 'deny' } };
   for (const mode of MODES) {
     const out = permissionConfig(mode, user);
     assert.equal(out.bash['*'], 'deny', `${mode}: bash "*" stays deny`);
-    assert.equal(out.bash['git status'], mode === 'build' ? 'allow' : 'deny', `${mode}: the user's own allow pattern`);
+    // Build and Auto keep the user's own allow pattern; Plan/dontAsk turn everything into deny.
+    assert.equal(out.bash['git status'], mode === 'build' || mode === 'autopilot' ? 'allow' : 'deny', `${mode}: the user's own allow pattern`);
     assert.deepEqual(Object.keys(out.bash), ['*', 'git status'], `${mode}: "*" first, patterns after it (last match wins)`);
     assert.equal(out.edit, 'deny', `${mode}: edit stays deny`);
   }

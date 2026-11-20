@@ -141,9 +141,9 @@ export const OPENCODE_CAPS = Object.freeze({
   extensions: false, // Claude plugins/agents/hooks; OpenCode manages its own
   search: true, // Claude transcripts + OpenCode sessions (src/opencode-search.js)
   mirror: true, // sessions opened in a terminal, from the shared background service (src/opencode-mirror.js)
-  // The two native OpenCode modes: Build (normal work, auto-edit) and Plan (read-only planning). Shell and network
-  // still ask in Build; the app's deny rules always win.
-  modes: Object.freeze(['build', 'plan']),
+  // The three native OpenCode modes: Build (normal work, auto-edit), Plan (read-only planning) and Auto (shell/web
+  // without a permission card, like `opencode --auto`). The app's deny rules always win.
+  modes: Object.freeze(['build', 'plan', 'autopilot']),
 });
 
 /**
@@ -269,10 +269,12 @@ export { OPENCODE_ACCOUNT };
  */
 export function permissionConfig(mode, user = {}) {
   // Build = auto-edit: files may be written automatically; shell and network still ask. Plan is read-only: edit and
-  // shell are denied outright, and even a user "allow" cannot open them (mergePermission's plan rule). 'dontAsk'
-  // stays deny-all as a defence in depth for a legacy value that somehow reaches an engine.
+  // shell are denied outright, and even a user "allow" cannot open them (mergePermission's plan rule). Auto
+  // (autopilot) = like `opencode --auto`: shell and network are allowed too, but explicit user denies still win and
+  // the `read` tool is untouched (so OpenCode's own .env ask stays). 'dontAsk' stays deny-all as a defence in depth.
   const base =
     mode === 'dontAsk' || mode === 'plan' ? { edit: 'deny', bash: 'deny', webfetch: 'deny' }
+    : mode === 'autopilot' ? { edit: 'allow', bash: 'allow', webfetch: 'allow' }
     : { edit: 'allow', bash: 'ask', webfetch: 'ask' }; // build (and any legacy mode normalized to it)
   // The user's own rules are kept, never loosened by the mode: see mergePermission (src/opencode-bin.js).
   return mergePermission(base, user, mode);
