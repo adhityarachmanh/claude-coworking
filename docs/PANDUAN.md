@@ -19,7 +19,7 @@ Tips:
 - Project yang jarang dipakai bisa diarsipkan lewat **📦** di daftar project; toggle 📦 di judul dialog menampilkannya lagi.
 - Riwayat sesi bisa dirapikan dengan **🏷 tag** (ikut tercari, ada chip penyaring) dan **📦 arsip** (disembunyikan dari daftar utama, tetap bisa dilanjutkan); **Arsip otomatis** bisa menyembunyikan sesi yang tidak dipakai 30/90/180 hari. Centang beberapa sesi untuk memberi tag atau mengarsipkan sekaligus.
 - Repo terkait satu produk (web + api + mobile)? Klik **🏷** di daftar project untuk **menggrupkannya**: anggota berbadge di daftar, dan **🕘 Riwayat gabungan** menampilkan semua sesinya tergabung berlabel repo sumber — klik **📁 Buka di repo** untuk melanjutkannya di sana. Sesi tidak pernah dipindah.
-- Ingin Claude bekerja tanpa ditunggui? Ganti mode dengan `Shift+Tab`: **🔨 Build** mengubah file otomatis (perintah shell & jaringan tetap minta izin), **📋 Plan** hanya menyusun rencana.
+- Ingin Claude bekerja tanpa ditunggui? Ganti mode dengan `Shift+Tab`: **🔨 Build** mengubah file otomatis (perintah shell & jaringan tetap minta izin), **📋 Plan** hanya menyusun rencana, **⚡ Auto** menjalankan perintah shell & jaringan tanpa kartu izin (aturan `deny` tetap menang).
 - Pekerjaan berurutan? Masukkan ke **📋 Antrian** (`Alt+Enter`). Lihat [Antrian & batas](FITUR.md#antrian--batas).
 - Mau melihat antrian semua project sekaligus? Buka **🌐 Semua** di dialog 📋 Antrian (atau `Ctrl+P` → *Semua antrian*): **Buka** melompat ke antrian project itu, **Batal** membatalkan item yang masih menunggu. ETA `±X mnt` / `sebentar` di bubble **antre #N** hanya perkiraan, dan **Edit** pada bubble itu mengubah prompt yang masih antre di tempat, tanpa item kedua.
 
