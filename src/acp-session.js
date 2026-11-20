@@ -691,7 +691,12 @@ export class AcpAdapter {
    */
   finishInlineAgentTask(callId, status) {
     const agent = this.agents.get(callId);
-    if (agent) agent.done = true;
+    // Only a registered delegation has an `oc-agent-…` ⧗ task. Any other completed call (the parent's own read, a
+    // child session's step whose id is `<sid>:<callId>`) must NOT emit a close for a task that never existed — the
+    // translator would create a phantom "shell" row from that frame (kind defaults to 'shell') and every
+    // task-output/stop action on it would 404 ("Tugas tidak ditemukan").
+    if (!agent) return;
+    agent.done = true;
     // Frames go through `emit`, exactly like every other update: the translator owns the ⧗ task list.
     this.emit({ type: 'system', subtype: 'task_updated', task_id: `oc-agent-${callId}`, patch: { status: status === 'failed' ? 'failed' : 'completed' } });
   }

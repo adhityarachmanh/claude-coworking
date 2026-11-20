@@ -99,6 +99,31 @@ test('a delegation that reports INLINE (no child session) closes its ⧗ task, s
   );
 });
 
+test('a plain tool call completing emits NO `oc-agent-…` task frame (no phantom ⧗ row)', () => {
+  const h = harness();
+  // A parent's own read, no delegation involved: it must not manufacture an agent ⧗ task.
+  h.feed({ sessionUpdate: 'tool_call', toolCallId: 'call_read', title: 'read', kind: 'read', status: 'pending', rawInput: {} });
+  h.feed({ sessionUpdate: 'tool_call_update', toolCallId: 'call_read', title: 'read', kind: 'read', status: 'in_progress', rawInput: { path: 'a.md' } });
+  h.feed({ sessionUpdate: 'tool_call_update', toolCallId: 'call_read', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'isi' } }] });
+  const agentFrames = h.out.filter((m) => m.type === 'system' && String(m.task_id ?? '').startsWith('oc-agent-'));
+  assert.deepEqual(agentFrames, [], 'a non-delegation call never opens an agent task');
+});
+
+test("a delegation's own child step completing emits NO `oc-agent-<sid>:…` task frame", () => {
+  const h = harness();
+  h.feed(subPending('call-launch'));
+  h.feed(subRunning('call-launch', 'Cek API latar'));
+  h.feed(subLaunched('call-launch', CHILD_A));
+  h.endTurn();
+  h.feed(childStep(CHILD_A, 'chatcmpl-1', 'Cek API latar', 'read', 'pending'));
+  h.feed(childStep(CHILD_A, 'chatcmpl-1', 'Cek API latar', 'read', 'in_progress', { rawInput: { path: 'README.md' } }));
+  h.feed(childStep(CHILD_A, 'chatcmpl-1', 'Cek API latar', 'read', 'completed'));
+  const badIds = h.out
+    .filter((m) => m.type === 'system' && m.subtype === 'task_updated' && String(m.task_id ?? '').includes(CHILD_A))
+    .map((m) => m.task_id);
+  assert.deepEqual(badIds, [], "a child step's call id must never become its own agent task");
+});
+
 test('the launch resolving does NOT end the delegation: a step that starts AND finishes after it still links', () => {  const h = harness();
   h.feed(subPending('sub1'));
   h.feed(subRunning('sub1', 'Cek API latar'));

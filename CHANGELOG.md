@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **⧗ Tugas latar tidak lagi menampilkan baris "hantu" tanpa output.** Saat sebuah delegasi OpenCode bekerja, setiap langkah anaknya (mis. `read`, `grep`) yang selesai ternyata memancarkan sinyal penutup seolah-olah itu sebuah tugas agent, sehingga panel **⧗ Tugas latar** menampilkan baris palsu bergaya perintah (ikon 🖥, "Salin output") yang outputnya tidak pernah bisa dibaca — muncul pesan *"Gagal memuat output: Tugas tidak ditemukan."* Kini sinyal penutup itu hanya dipancarkan untuk delegasi yang benar-benar tertunda; langkah anak dan tool call biasa induk tidak lagi membuat baris palsu, sehingga yang tampil di panel sesuai kenyataan.
+
 ## 1.0.82
 
 - **⏳ Giliran OpenCode yang "macet diam" tidak lagi berputar selamanya.** `session/prompt` dikirim tanpa batas waktu (giliran memang bisa panjang), dan ada kemungkinan kegagalan panggilan model **non-tool** setelah retry tidak mengirim frame ACP apa pun ([#26350](https://github.com/anomalyco/opencode/issues/26350)) — akibatnya kantor bisa "Sedang berjalan…" tanpa akhir tanpa cara tahu. Sekarang ada pengaman **batas tidak-aktif** (bukan batas durasi total): selama OpenCode masih mengirim kemajuan (frame/tool/kartu), build atau agent berat boleh berjalan lama; kalau **tidak ada kemajuan sama sekali** melewati ambang (±10 menit), giliran dibatalkan lalu ditutup dengan pesan jujur, dan kamu bisa mengirim pesan lagi untuk mencoba ulang.
