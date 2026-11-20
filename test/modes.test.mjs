@@ -19,17 +19,25 @@ describe('Plan/Build modes', () => {
     assert.equal(migrateMode(undefined), null);
   });
 
-  test('only build and plan are storable; legacy/unknown values read as build', () => {
+  test('build, plan and autopilot are storable; auto legacy reads as build', () => {
     assert.equal(isMode('build'), true);
     assert.equal(isMode('plan'), true);
+    assert.equal(isMode('autopilot'), true);
     for (const value of ['manual', 'acceptEdits', 'auto', 'dontAsk', '', null]) assert.equal(isMode(value), false);
     assert.equal(normalizeMode('plan'), 'plan');
+    assert.equal(normalizeMode('autopilot'), 'autopilot');
     for (const value of ['build', 'manual', 'auto', 'dontAsk', 'nonsense', null]) assert.equal(normalizeMode(value), 'build');
   });
 
-  test('Claude gets Plan or auto-edit only: never a permission bypass', () => {
+  test('Auto memakai nilai tersimpan autopilot; auto legacy tetap bukan Auto', () => {
+    assert.equal(migrateMode('autopilot'), null, 'autopilot adalah nilai canonical, bukan migrasi');
+    assert.deepEqual(migrateMode('auto'), { mode: 'build', legacyMode: 'auto' }, 'auto lama tetap build');
+  });
+
+  test('Claude: Plan, auto-edit, atau classifier Auto; tidak pernah bypass', () => {
     assert.equal(claudePermissionMode('plan'), 'plan');
     assert.equal(claudePermissionMode('build'), 'acceptEdits');
+    assert.equal(claudePermissionMode('autopilot'), 'auto');
     for (const value of ['auto', 'dontAsk', 'manual', undefined]) {
       assert.equal(claudePermissionMode(value), 'acceptEdits');
       assert.notEqual(claudePermissionMode(value), 'bypassPermissions');
@@ -38,8 +46,9 @@ describe('Plan/Build modes', () => {
 
   test('a CLI mode reported outside the app is shown as build/plan, never stored as a looser mode', () => {
     assert.equal(appModeFromCli('plan'), 'plan');
+    assert.equal(appModeFromCli('auto'), 'autopilot', 'auto hanya kita kirim sendiri: dibaca sebagai Auto');
     assert.equal(appModeFromCli('dontAsk'), 'plan', 'the strictest CLI mode stays strict');
-    for (const value of ['acceptEdits', 'default', 'auto', undefined]) assert.equal(appModeFromCli(value), 'build');
+    for (const value of ['acceptEdits', 'default', undefined]) assert.equal(appModeFromCli(value), 'build');
   });
 
   test('Hub migrates stored modes once; dontAsk becomes Plan pending an explicit choice', (t) => {

@@ -1,17 +1,18 @@
-// The two ways a project can work, for Claude Code and OpenCode alike: Plan (read-only, propose first) and Build
-// (change files; shell/network still ask). One vocabulary in the UI and in state.json, while each engine keeps its
-// own mechanism underneath. Legacy values are migrated once and never interpreted again (see migrateMode).
-export const MODES = Object.freeze(['build', 'plan']);
+// The three ways a project can work, for Claude Code and OpenCode alike: Plan (read-only, propose first), Build
+// (change files; shell/network still ask) and Auto (shell/network run without a permission card; explicit deny rules
+// and secret files still win). One vocabulary in the UI and in state.json, while each engine keeps its own mechanism
+// underneath. Auto's stored value is 'autopilot' so the legacy 'auto' (meaning auto-edit) can never become it.
+export const MODES = Object.freeze(['build', 'plan', 'autopilot']);
 export const DEFAULT_MODE = 'build';
 
 export const MODE_CHOICE_MESSAGE = 'Mode izin lama (Jangan tanya) tidak lagi tersedia. Pilih Plan atau Build dulu sebelum melanjutkan.';
 
 /** A value the app may store as-is. Anything else is refused, never coerced on the write path. */
-export const isMode = (value) => value === 'build' || value === 'plan';
+export const isMode = (value) => value === 'build' || value === 'plan' || value === 'autopilot';
 
 /** Display/back-compat normalization: legacy and unknown values read as Build (never as a weaker permission). */
 export function normalizeMode(value) {
-  return value === 'plan' ? 'plan' : 'build';
+  return value === 'plan' ? 'plan' : value === 'autopilot' ? 'autopilot' : 'build';
 }
 
 /**
@@ -29,15 +30,17 @@ export function migrateMode(value) {
   return null;
 }
 
-/** What Claude Code's `--permission-mode` / `set_permission_mode` get: Plan, or auto-edit for Build. */
+/** What Claude Code's `--permission-mode` / `set_permission_mode` get: Plan, auto-edit for Build, or the classifier. */
 export function claudePermissionMode(mode) {
-  return mode === 'plan' ? 'plan' : 'acceptEdits';
+  return mode === 'plan' ? 'plan' : mode === 'autopilot' ? 'auto' : 'acceptEdits';
 }
 
-/** Claude Code reports its CLI name (`default`, `acceptEdits`...) - the app's vocabulary is only build/plan. */
+/** Claude Code reports its CLI name (`default`, `acceptEdits`, `auto`...) - the app maps it back to its own vocabulary. */
 export function appModeFromCli(mode) {
   if (mode === 'plan' || mode === 'dontAsk') return 'plan';
-  // A CLI started outside the app (default/acceptEdits/auto) is shown as Build; settings are not rewritten from it.
+  // `auto` is only ever sent by us (`--permission-mode auto`): read it back as our Auto, or the mode would flip to Build.
+  if (mode === 'auto') return 'autopilot';
+  // A CLI started outside the app (default/acceptEdits) is shown as Build; settings are not rewritten from it.
   return 'build';
 }
 
