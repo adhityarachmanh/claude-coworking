@@ -34,7 +34,12 @@ export default async (request) => {
     }
     const store = getStore({ name: 'adhitron-web', consistency: 'strong' });
     const repo = makeSqlRepo(await createNeonDb(process.env.DATABASE_URL));
-    const res = await handleChatApi(request, { repo, store, encryptionKey: process.env.ENCRYPTION_KEY }, url.pathname);
+    const env = {
+      repo, store, encryptionKey: process.env.ENCRYPTION_KEY,
+      // Browsing: mesin pencari opsional (DuckDuckGo dipakai bila keduanya kosong).
+      searchEngineEnv: { TAVILY_API_KEY: process.env.TAVILY_API_KEY, BRAVE_API_KEY: process.env.BRAVE_API_KEY },
+    };
+    const res = await handleChatApi(request, env, url.pathname);
     if (res) return res;
   }
   const site = handleSite(request, url);

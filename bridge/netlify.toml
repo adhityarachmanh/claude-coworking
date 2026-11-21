@@ -16,5 +16,10 @@
   # (export const config = { schedule: "* * * * *" }).
 
 # Env var yang wajib di-set operator (Netlify UI → Site configuration → Environment variables):
+#   DATABASE_URL   = connection string Neon (Postgres) untuk Adhitron Web (users, percakapan, dst).
+#                    Tanpa ini /chat/api/* menjawab 503.
 #   ENCRYPTION_KEY = 32-byte hex (64 karakter hex acak), mis. `openssl rand -hex 32`.
-#   Tanpa ini pendaftaran space menolak (kredensial user tidak akan pernah disimpan tanpa enkripsi).
+#                    Dipakai jembatan daya DAN untuk mengenkripsi API key milik user di Chat.
+# Env var opsional:
+#   TAVILY_API_KEY / BRAVE_API_KEY = mesin pencari untuk fitur Browsing.
+#                    Bila keduanya kosong, Browsing memakai DuckDuckGo HTML (tanpa key).

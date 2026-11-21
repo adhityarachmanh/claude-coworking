@@ -2,6 +2,26 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **💬 Adhitron Web: portal + chat AI multi-user di satu situs Netlify.** Situs kini punya satu portal `/` dengan
+  dua pintu: **💬 Chat** (baru) dan **🔌 Remote Power** (jembatan daya yang lama, kini dipasang di `/bridge`).
+  Di Chat, tiap orang **daftar/masuk dengan email + password miliknya** dan menempel **API key AI-nya sendiri**
+  (kuota & biaya jadi miliknya, bukan operator). API key disimpan **terenkripsi AES-256-GCM** dan hanya 4 karakter
+  terakhirnya yang ditampilkan.
+- **🧠 Obrolan seperti Gemini/Claude di browser.** Riwayat percakapan di sidebar (buat/buka/hapus), jawaban
+  mengalir (streaming) dengan tombol **Stop**, render markdown ringan, dan pilihan **Model** & **Effort**
+  (Default–Max) plus **Auto** (LLM memilih sendiri, mati secara default) — meniru Adhitron lokal. Provider yang
+  didukung: OpenAI-compatible, Anthropic, dan Google Gemini.
+- **🔎 Browsing.** Toggle per-percakapan; chat bisa mencari web dan membaca halaman lalu menjawab dengan
+  **chip sumber bernomor** yang bisa diklik. Mesin pencari default DuckDuckGo (tanpa kunci); Tavily/Brave opsional.
+  Dilengkapi penjagaan anti-SSRF (hanya http(s); alamat privat/loopback/metadata cloud diblokir) dan batas jumlah
+  pencarian per percakapan.
+- **🔐 Keamanan & privasi.** Sesi cookie `httpOnly`+`Secure`; permintaan pengubah state wajib same-origin
+  (anti-CSRF); login/daftar dibatasi per IP. Catatan privasi (UU PDP) ada di
+  [docs/privasi-adhitron-web.md](docs/privasi-adhitron-web.md). Login pihak ketiga (Google dll.) sengaja belum
+  dipakai di v1 — alasannya dicatat di [docs/design-adhitron-web.md](docs/design-adhitron-web.md).
+
 ## 1.0.83
 
 - **⚡ Mode ketiga Auto untuk Claude Code & OpenCode.** Satu pilihan resmi untuk "kerjakan saja, jangan tanya tiap langkah": OpenCode berhenti memunculkan kartu izin untuk perintah shell dan `webfetch`, dan Claude Code memakai `--permission-mode auto` (classifier bawaannya, bukan bypass). Aturan **deny** yang kamu tulis tetap menang, file rahasia (`.env`) tetap ditanya OpenCode seperti biasa, dan 📋 Plan tetap read-only. Mode lama `auto` dari versi aplikasi sebelumnya **tidak** berubah menjadi Auto — nilainya tetap berarti Build.

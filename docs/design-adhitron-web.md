@@ -1,6 +1,6 @@
 # Adhitron Web — portal + chat multi-user + browsing
 
-Status: **rencana disetujui, sedang dikerjakan** (M1–M8).
+Status: **M1–M7 selesai & ter-commit; M8 (dokumen, keamanan, rilis) berjalan.**
 Hosting: satu situs Netlify (folder `bridge/`, Netlify Functions v2 + Blobs + Neon).
 
 ## Masalah yang dipecahkan
@@ -34,34 +34,50 @@ Adhitron lokal (Node di PC) butuh PC hidup. Adhitron Web = versi hosting yang te
   Chip sumber bernomor. Anti-SSRF (allowlist http(s), blokir IP privat/loopback), timeout, cache per-URL,
   batas N pencarian per percakapan.
 
-## Skema Prisma (usulan)
+## Skema (Postgres)
 
-`User`, `Session`, `Provider`, `Conversation`, `Message`, `Citation`, `ToolRun` — semua milik `userId`.
+`users`, `sessions`, `providers`, `conversations`, `messages`, `citations`, `tool_runs` — semua milik `userId`
+(cascade saat user dihapus). DDL kanonik di `bridge/db/schema.sql`; diterapkan lewat `bridge/scripts/migrate.mjs`.
 
 ## Rute chat
 
 - `POST /chat/api/auth/{signup,login,logout}` · `GET /chat/api/me`
-- `GET|POST /chat/api/providers` (+ `/models`)
+- `GET /chat/api/provider-kinds` · `GET|POST /chat/api/providers` · `PATCH|DELETE /chat/api/providers/:id`
+  · `POST /chat/api/providers/:id/test`
 - `GET|POST /chat/api/conversations` · `GET|PATCH|DELETE /chat/api/conversations/:id`
 - `POST /chat/api/conversations/:id/messages` (SSE)
-- Proteksi: cookie httpOnly + cek `Origin` + anti-CSRF + rate-limit per user.
+- Proteksi: cookie httpOnly + cek `Origin` + anti-CSRF + rate-limit per IP/jendela.
+- Halaman: `/` portal · `/chat` aplikasi · `/chat/app.js` skrip klien (diuji syntax).
 
 ## Milestone
 
-- **M1** Neon/Postgres + skema Prisma + adapter (interface repo; impl Prisma + in-memory untuk test).
-- **M2** Restrukturisasi situs: portal `/` + jembatan pindah `/bridge` (API jembatan tetap kompatibel).
-- **M3** Auth signup/login/logout/session + rate-limit.
-- **M4** Provider CRUD + vault enkripsi + daftar model.
-- **M5** Chat core — streaming 3 provider + model/effort/tier + Auto classifier.
-- **M6** Browsing — `web_search` + `fetch_url` + anti-SSRF + kutipan.
-- **M7** UI chat penuh + polish portal.
-- **M8** Docs, CHANGELOG, build Netlify, security+compliance, rilis.
+- **M1** Neon/Postgres + skema (`bridge/db/schema.sql`) + interface repo (impl SQL + in-memory untuk test). ✅
+- **M2** Restrukturisasi situs: portal `/` + jembatan pindah `/bridge`. ✅
+- **M3** Auth signup/login/logout/session + rate-limit. ✅
+- **M4** Provider CRUD + vault enkripsi + daftar model. ✅
+- **M5** Chat core — streaming 3 provider + model/effort/tier + Auto classifier. ✅
+- **M6** Browsing — `web_search` + `fetch_url` + anti-SSRF + kutipan. ✅
+- **M7** UI chat penuh + polish portal. ✅
+- **M8** Docs, CHANGELOG, build Netlify, security+compliance, rilis. ⏳
 
 ## Catatan teknis penting
 
 - Netlify Functions v2 streaming/SSE timeout ~10–26 dtk — divalidasi di M5/M6; mitigasi: batas panjang,
   streaming bertahap, fallback non-stream.
 - **Kepatuhan material**: menyimpan API key & isi chat orang lain → wajib kebijakan privasi, ToS, hak hapus data,
-  review UU PDP sebelum rilis publik.
-- Deploy: `@netlify/blobs` store `adhitron-bridge`; `ENCRYPTION_KEY` = 32-byte hex; cron `* * * * *` di
-  `netlify/functions/scheduled.mjs`.
+  review UU PDP sebelum rilis publik (lihat `docs/privasi-adhitron-web.md`).
+- Deploy: `@netlify/blobs` store `adhitron-bridge` (jembatan) & `adhitron-web` (rate-limit chat);
+  `DATABASE_URL` = Neon; `ENCRYPTION_KEY` = 32-byte hex; cron `* * * * *` di `netlify/functions/scheduled.mjs`.
+- Env opsional browsing: `TAVILY_API_KEY` / `BRAVE_API_KEY` (kosong → DuckDuckGo HTML tanpa key).
+- **Auth: email + password saja.** Login pihak ketiga (Google dll.) sengaja **tidak** dipakai v1 — lihat catatan
+  di bawah.
+
+## Kenapa tanpa login pihak ketiga (v1)
+
+Login Google tidak bisa "numpang" OAuth client milik orang lain: Google mewajibkan `redirect_uri` situs kita
+terdaftar di client yang bersangkutan, dan hanya pemilik client yang bisa menambahkannya. Satu jalur tanpa setup
+adalah *shared credentials* Neon Auth — tetapi consent screen menampilkan branding Neon (bukan Adhitron) dan Neon
+sendiri menyebutnya untuk **dev/testing, bukan produksi**. Karena Adhitron Web adalah situs publik, v1 memakai
+email + password agar kredensial & identitas tetap di tangan operator. Bila nanti diinginkan, Google OAuth client
+sendiri (≈5 menit di GCP) bisa ditambahkan **tanpa mengubah** fondasi auth: cukup rute `/chat/api/auth/google` +
+callback yang menautkan ke tabel `users` lalu menerbitkan cookie sesi yang sama.
