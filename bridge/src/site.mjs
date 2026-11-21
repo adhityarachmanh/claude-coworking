@@ -4,7 +4,9 @@
 // file ini sengaja mandiri supaya portal bisa berevolusi tanpa menyentuh halaman jembatan.
 import { escapeHtml } from './pages.mjs';
 import { chatAppJs, authJs } from './chat-app.mjs';
-import { currentUser } from './chat-api.mjs';
+import { currentUser, POLICY_VERSION } from './chat-api.mjs';
+import { TOOL_RUN_KEEP_DAYS } from './retention.mjs';
+import { SESSION_TTL_DAYS } from './auth.mjs';
 
 const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
 <rect width="64" height="64" rx="14" fill="#17181e"/>
@@ -402,6 +404,7 @@ export function privacyPageHtml() {
   return shell('Kebijakan Privasi — Adhitron', `
 <h1>Kebijakan Privasi</h1>
 <p class="lead">Berlaku untuk situs Adhitron Web. Ringkas dan apa adanya.</p>
+<p class="muted">Versi kebijakan: <b>${POLICY_VERSION}</b>.</p>
 <h2>Data yang kami simpan</h2>
 <p>Email, hash password, API key milikmu (terenkripsi <b>AES-256-GCM</b>), riwayat percakapan, pesan,
 dan catatan pencarian saat fitur Browsing dipakai. API key hanya 4 karakter terakhirnya yang ditampilkan.</p>
@@ -415,11 +418,14 @@ pencari (DuckDuckGo, atau Tavily/Brave bila diaktifkan operator).</p>
 <h2>Catatan penting soal API key</h2>
 <p>API key-mu dienkripsi dengan kunci operator. Artinya secara teknis operator situs dapat mendekripsinya;
 kami berkomitmen tidak mengaksesnya kecuali untuk operasional yang kamu minta.</p>
+<h2>Retensi</h2>
+<p>Data akunmu (email, provider, riwayat percakapan) disimpan selama akunmu aktif. Sesi login berlaku
+<b>${SESSION_TTL_DAYS} hari</b> dan yang kedaluwarsa dibersihkan berkala. Catatan aktivitas Browsing
+(<code>tool_runs</code>: query/URL yang kamu pakai) disimpan paling lama <b>${TOOL_RUN_KEEP_DAYS} hari</b> lalu dihapus otomatis.
+Menghapus akun menghapus semuanya.</p>
 <h2>Hakmu</h2>
 <p>Kamu bisa <b>menghapus akun beserta seluruh datanya</b> kapan saja dari halaman Chat (⚙ / tombol Hapus akun).
 Penghapusan bersifat permanen. Permintaan lain (akses, koreksi, ekspor) bisa dikirim ke kontak di bawah.</p>
-<h2>Retensi</h2>
-<p>Data disimpan selama akunmu aktif. Sesi kedaluwarsa dibersihkan berkala. Menghapus akun menghapus semuanya.</p>
 <h2>Kontak</h2>
 <p>Pertanyaan privasi: hubungi operator situs ini.</p>
 <p class="muted"><a href="/">← Kembali ke portal</a></p>`);

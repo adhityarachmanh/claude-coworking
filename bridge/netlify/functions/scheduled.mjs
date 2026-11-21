@@ -16,8 +16,10 @@ async function chatRetention() {
   try {
     const repo = makeSqlRepo(await createNeonDb(process.env.DATABASE_URL));
     await sweepChatRetention(repo);
-  } catch {
-    // sengaja diabaikan: cron berikutnya akan mencoba lagi
+  } catch (err) {
+    // Jangan gagalkan sweep jembatan, tetapi jangan telan diam-diam: retensi yang tak jalan berarti
+    // data hidup melebihi janji kebijakan. Catat agar terlihat di log fungsi Netlify.
+    console.error('[retention] sweep gagal:', err?.message ?? err);
   }
 }
 

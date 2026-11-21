@@ -12,6 +12,7 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypt
 
 export const SESSION_COOKIE = 'adhitron_session';
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 hari
+export const SESSION_TTL_DAYS = 30;
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 32 };
 
 // ---------------------------------------------------------------- password

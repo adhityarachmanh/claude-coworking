@@ -1988,7 +1988,10 @@ test('portal: root menampilkan dua pintu (Chat & Remote Power) tanpa membocorkan
   assert.equal(chatLogged.status, 200, '/chat dengan sesi melayani aplikasi');
   const priv = await handleSite(req('/privasi'));
   assert.equal(priv.status, 200, '/privasi ada');
-  assert.match(await priv.text(), /Kebijakan Privasi/);
+  const privHtml = await priv.text();
+  assert.match(privHtml, /Kebijakan Privasi/);
+  assert.match(privHtml, /90 hari/, 'periode retensi tool_runs diumumkan di kebijakan');
+  assert.match(privHtml, /30 hari/, 'masa berlaku sesi diumumkan di kebijakan');
   const tos = await handleSite(req('/syarat'));
   assert.equal(tos.status, 200, '/syarat ada');
   assert.match(await tos.text(), /Syarat Layanan/);

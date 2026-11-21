@@ -3,7 +3,8 @@
 // Murni terhadap repo (tanpa I/O langsung), jadi bisa diuji cepat dengan repo memory.
 
 /** Umur maksimal jejak tool_run (audit browsing) sebelum dibuang. Dicatat di kebijakan privasi. */
-export const TOOL_RUN_KEEP_MS = 90 * 24 * 60 * 60 * 1000; // 90 hari
+export const TOOL_RUN_KEEP_DAYS = 90;
+export const TOOL_RUN_KEEP_MS = TOOL_RUN_KEEP_DAYS * 24 * 60 * 60 * 1000;
 
 /**
  * Satu pass retensi: hapus sesi kedaluwarsa + tool run lebih tua dari batas.
