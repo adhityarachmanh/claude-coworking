@@ -16,10 +16,14 @@ export function makeMemoryRepo(state = {}) {
   return {
     _state: db,
     // ---------------------------------------------------------------- users
-    async createUser({ email, displayName = null, passwordHash }) {
+    async createUser({ email, displayName = null, passwordHash, consentVersion = null }) {
       const e = lower(email);
       if (db.users.some((u) => u.email === e)) throw new Error('email sudah terdaftar');
-      const row = { id: randomUUID(), email: e, display_name: displayName, password_hash: passwordHash, created_at: nowIso(), updated_at: nowIso() };
+      const row = {
+        id: randomUUID(), email: e, display_name: displayName, password_hash: passwordHash,
+        consent_version: consentVersion, consent_at: consentVersion ? nowIso() : null,
+        created_at: nowIso(), updated_at: nowIso(),
+      };
       db.users.push(row);
       return { ...row };
     },

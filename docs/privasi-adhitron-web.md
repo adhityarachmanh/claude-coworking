@@ -9,7 +9,7 @@ Adhitron Web (`/chat`) menyimpan data berikut di database Neon Postgres operator
 
 | Data | Isi | Dasar | Sifat |
 |---|---|---|---|
-| `users` | email, nama tampilan (opsional), **hash** password (scrypt + salt) | Akun pengguna | Pribadi |
+| `users` | email, nama tampilan (opsional), **hash** password (scrypt + salt), versi & waktu persetujuan | Akun pengguna | Pribadi |
 | `sessions` | sha256 token sesi, waktu kedaluwarsa | Keamanan login | Pribadi |
 | `providers` | label, jenis, base URL, **API key user terenkripsi AES-256-GCM**, 4 karakter terakhir (hint) | Layanan chat | Rahasia |
 | `conversations` | judul, model/effort pilihan, toggle browsing | Riwayat chat | Pribadi |
@@ -43,7 +43,8 @@ Password **tidak pernah** disimpan/dilog dalam bentuk asli. API key user **tidak
 1. ✅ **Halaman Kebijakan Privasi** (`/privasi`) & **Syarat Layanan** (`/syarat`), ditaut dari footer semua halaman.
 2. ✅ **Hapus akun & data**: `DELETE /chat/api/me` + tombol "Hapus akun" (konfirmasi bertingkat); cascade membuang
    sessions/providers/conversations/messages/citations/tool_runs.
-3. ⬜ **Persetujuan** saat daftar (checkbox) + catatan versi kebijakan yang disetujui (kolom `consent_at`/`consent_version`).
+3. ✅ **Persetujuan** saat daftar (checkbox wajib) + catatan versi kebijakan yang disetujui (`consent_version`/`consent_at`,
+   diisi `POLICY_VERSION` di `bridge/src/chat-api.mjs`). Naikkan versi saat teks kebijakan berubah bermakna.
 4. ⬜ **Kontak** operator untuk permintaan subjek data (ganti "hubungi operator" dengan email/tautan resmi).
 5. ✅ **Retensi terjadwal**: cron Netlify tiap menit menjalankan `sweepChatRetention` (`bridge/src/retention.mjs`) —
    membersihkan sesi kedaluwarsa dan membuang jejak `tool_runs` lebih tua dari **90 hari** (`TOOL_RUN_KEEP_MS`).

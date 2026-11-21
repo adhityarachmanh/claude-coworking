@@ -14,11 +14,11 @@ export function makeSqlRepo(db) {
 
   return {
     // ---------------------------------------------------------------- users
-    async createUser({ email, displayName = null, passwordHash }) {
+    async createUser({ email, displayName = null, passwordHash, consentVersion = null }) {
       return one(
-        `insert into users (email, display_name, password_hash)
-         values ($1, $2, $3) returning *`,
-        [String(email).toLowerCase(), displayName, passwordHash],
+        `insert into users (email, display_name, password_hash, consent_version, consent_at)
+         values ($1, $2, $3, $4, case when $4 is null then null else now() end) returning *`,
+        [String(email).toLowerCase(), displayName, passwordHash, consentVersion],
       );
     },
     async getUserByEmail(email) {

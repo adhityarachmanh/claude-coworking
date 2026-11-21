@@ -12,9 +12,14 @@ create table if not exists users (
   email         text not null unique,
   display_name  text,
   password_hash text not null,          -- "scrypt$<salt hex>$<hash hex>"
+  consent_version text,                 -- versi Kebijakan Privasi & Syarat yang disetujui saat daftar
+  consent_at    timestamptz,            -- waktu persetujuan dicatat (null bila akun lama/undangan)
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+-- Kolom yang ditambahkan setelah tabel pertama dibuat (kepatuhan: catatan persetujuan).
+alter table users add column if not exists consent_version text;
+alter table users add column if not exists consent_at timestamptz;
 
 -- Sesi login. Cookie membawa token acak; yang tersimpan hanya sha256(token) (pola sama dengan bridge).
 create table if not exists sessions (

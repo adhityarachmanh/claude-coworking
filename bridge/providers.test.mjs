@@ -23,7 +23,7 @@ const body = async (r) => JSON.parse(await r.text());
 
 /** Akun masuk + cookie. */
 async function signedIn(env) {
-  const r = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }));
+  const r = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123', consent: true }));
   const setCookie = r.headers.get('set-cookie');
   const token = /adhitron_session=([0-9a-f]{64})/.exec(setCookie)?.[1];
   return { cookie: `adhitron_session=${token}` };

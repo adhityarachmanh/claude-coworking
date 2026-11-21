@@ -86,6 +86,9 @@ padding:28px 24px;box-shadow:0 18px 50px rgba(0,0,0,.35)}
 color:var(--muted);cursor:pointer;font:inherit;font-size:.8rem;padding:6px 8px;border-radius:8px}
 .authcard .row-in .peek:hover{color:var(--text)}
 .authcard .row-in input{padding-right:64px}
+.authcard .consent{display:flex;gap:9px;align-items:flex-start;margin:14px 0 4px;font-size:.84rem;color:var(--text-2);cursor:pointer}
+.authcard .consent input{margin-top:2px;flex:0 0 auto;width:16px;height:16px;accent-color:var(--accent)}
+.authcard .consent a{color:var(--accent)}
 .authcard .alt{margin:16px 0 0;font-size:.88rem;color:var(--text-2);text-align:center}
 .authcard .mini-links{margin:18px 0 0;text-align:center;font-size:.78rem;color:var(--muted)}
 .authcard .mini-links a{margin:0 6px}
@@ -336,7 +339,7 @@ export function chatPageHtml() {
 }
 
 /** Kerangka halaman auth (login/daftar): kartu terpusat, satu form per halaman. */
-function authPageHtml({ title, heading, lead, action, submit, alt, note }) {
+function authPageHtml({ title, heading, lead, action, submit, alt, note, consent = false }) {
   return shell(title, `
 <div class="authpage">
   <section class="authcard">
@@ -354,6 +357,9 @@ function authPageHtml({ title, heading, lead, action, submit, alt, note }) {
             enterkeyhint="go" required minlength="8">
           <button type="button" class="peek" id="peek" aria-label="Tampilkan password">Lihat</button>
         </div></div>
+      ${consent ? `<label class="consent"><input id="consent" name="consent" type="checkbox" required>
+        <span>Saya menyetujui <a href="/privasi" target="_blank" rel="noopener">Kebijakan Privasi</a> dan
+        <a href="/syarat" target="_blank" rel="noopener">Syarat Layanan</a>.</span></label>` : ''}
       <button class="btn on" type="submit">${submit}</button>
       <div id="authout" class="msg" hidden></div>
     </form>
@@ -387,6 +393,7 @@ export function registerPageHtml() {
     submit: 'Daftar',
     alt: 'Sudah punya akun? <a href="/auth/login">Masuk →</a>',
     note: '',
+    consent: true,
   });
 }
 

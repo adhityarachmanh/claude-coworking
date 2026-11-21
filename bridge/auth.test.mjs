@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import {
   clearedSessionCookie, hashPassword, isSameOrigin, parseCookies, sessionCookie, sessionTokenHash, verifyPassword,
 } from './src/auth.mjs';
-import { handleChatApi } from './src/chat-api.mjs';
+import { handleChatApi, POLICY_VERSION } from './src/chat-api.mjs';
 import { makeMemoryRepo } from './src/repo-memory.mjs';
 
 /** Driver Blobs palsu (bentuk sama seperti test jembatan) untuk rate-limit. */
@@ -64,7 +64,7 @@ test('anti-CSRF: Origin beda host / tidak ada → ditolak', () => {
 
 test('signup: membuat akun + cookie sesi, password TIDAK plaintext di repo', async () => {
   const env = makeEnv();
-  const r = await send(env, jsonReq('/chat/api/auth/signup', { email: 'Adhit@Example.com', password: 'rahasia123' }));
+  const r = await send(env, jsonReq('/chat/api/auth/signup', { email: 'Adhit@Example.com', password: 'rahasia123', consent: true }));
   assert.equal(r.status, 201, JSON.stringify(await r.clone().json()));
   const { user } = await body(r);
   assert.equal(user.email, 'adhit@example.com', 'email dinormalisasi');
@@ -79,13 +79,33 @@ test('signup: validasi email & password; email duplikat 409', async () => {
   const env = makeEnv();
   assert.equal((await send(env, jsonReq('/chat/api/auth/signup', { email: 'x', password: 'rahasia123' }))).status, 400);
   assert.equal((await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'pendek' }))).status, 400);
-  assert.equal((await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }))).status, 201);
-  assert.equal((await send(env, jsonReq('/chat/api/auth/signup', { email: 'A@B.co', password: 'rahasia123' }))).status, 409);
+  assert.equal((await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }))).status, 400, 'tanpa consent ditolak');
+  assert.equal((await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123', consent: true }))).status, 201);
+  assert.equal((await send(env, jsonReq('/chat/api/auth/signup', { email: 'A@B.co', password: 'rahasia123', consent: true }))).status, 409);
+});
+
+test('signup: tanpa persetujuan → 400 dan tidak ada akun', async () => {
+  const env = makeEnv();
+  const r = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }));
+  assert.equal(r.status, 400);
+  assert.match((await body(r)).error, /persetujuan/i);
+  assert.equal(await env.repo.getUserByEmail('a@b.co'), null, 'tanpa consent tidak ada akun dibuat');
+});
+
+test('signup: menyimpan catatan persetujuan (versi + waktu)', async () => {
+  const env = makeEnv();
+  const r = await send(env, jsonReq('/chat/api/auth/signup', {
+    email: 'a@b.co', password: 'rahasia123', consent: true, consentVersion: POLICY_VERSION,
+  }));
+  assert.equal(r.status, 201);
+  const stored = await env.repo.getUserByEmail('a@b.co');
+  assert.equal(stored.consent_version, POLICY_VERSION);
+  assert.ok(stored.consent_at, 'waktu persetujuan tercatat');
 });
 
 test('login: benar → cookie; salah → 401 dengan pesan seragam', async () => {
   const env = makeEnv();
-  await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }));
+  await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123', consent: true }));
   const ok = await send(env, jsonReq('/chat/api/auth/login', { email: 'a@b.co', password: 'rahasia123' }));
   assert.equal(ok.status, 200);
   const token = cookieOf(ok);
@@ -104,7 +124,7 @@ test('login: benar → cookie; salah → 401 dengan pesan seragam', async () => 
 test('me: tanpa cookie 401; dengan cookie mengembalikan user; sesi kedaluwarsa ditolak', async () => {
   const env = makeEnv();
   assert.equal((await send(env, req('/chat/api/me'))).status, 401);
-  const signup = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }));
+  const signup = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123', consent: true }));
   const cookie = `adhitron_session=${cookieOf(signup)}`;
   const me = await send(env, req('/chat/api/me', { headers: { Cookie: cookie } }));
   assert.equal(me.status, 200);
@@ -119,7 +139,7 @@ test('me: tanpa cookie 401; dengan cookie mengembalikan user; sesi kedaluwarsa d
 
 test('logout: menghapus sesi + cookie kosong', async () => {
   const env = makeEnv();
-  const signup = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }));
+  const signup = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123', consent: true }));
   const cookie = `adhitron_session=${cookieOf(signup)}`;
   const out = await send(env, req('/chat/api/auth/logout', { method: 'POST', headers: { Cookie: cookie } }));
   assert.equal(out.status, 200);
@@ -131,7 +151,7 @@ test('logout: menghapus sesi + cookie kosong', async () => {
 test('CSRF: signup/login/logout lintas-origin 403 dan tidak membuat sesi', async () => {
   const env = makeEnv();
   const r = await send(env, req('/chat/api/auth/signup', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'a@b.co', password: 'rahasia123' }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'a@b.co', password: 'rahasia123', consent: true }),
   }, 'https://evil.test'));
   assert.equal(r.status, 403);
   assert.equal(await env.repo.getUserByEmail('a@b.co'), null, 'tidak ada akun dibuat');
@@ -139,7 +159,7 @@ test('CSRF: signup/login/logout lintas-origin 403 dan tidak membuat sesi', async
 
 test('rate-limit: percobaan login per jam melebihi batas → 429', async () => {
   const env = makeEnv();
-  await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }));
+  await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123', consent: true }));
   let last = 0;
   for (let i = 0; i < 51; i++) {
     last = (await send(env, jsonReq('/chat/api/auth/login', { email: 'a@b.co', password: 'salah-sekali' }))).status;
@@ -156,7 +176,7 @@ test('rute tak dikenal → null (bukan 404 diam-diam); metode salah → 405', as
 
 test('hapus akun: DELETE /me menyapu seluruh data user + cookie kosong', async () => {
   const env = makeEnv();
-  const signup = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }));
+  const signup = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123', consent: true }));
   const cookie = `adhitron_session=${cookieOf(signup)}`;
   const user = await env.repo.getUserByEmail('a@b.co');
   const conv = await env.repo.createConversation(user.id, { title: 'x' });
@@ -175,7 +195,7 @@ test('hapus akun: DELETE /me menyapu seluruh data user + cookie kosong', async (
 test('hapus akun: tanpa login 401, lintas-origin 403', async () => {
   const env = makeEnv();
   assert.equal((await send(env, req('/chat/api/me', { method: 'DELETE' }))).status, 401);
-  const signup = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }));
+  const signup = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123', consent: true }));
   const cookie = `adhitron_session=${cookieOf(signup)}`;
   const r = await send(env, req('/chat/api/me', { method: 'DELETE', headers: { Cookie: cookie } }, 'https://evil.test'));
   assert.equal(r.status, 403);

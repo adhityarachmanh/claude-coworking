@@ -19,6 +19,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
   pencarian per percakapan. Base URL provider kustom juga tunduk aturan yang sama (host privat ditolak).
 - **🗑️ Retensi terjadwal.** Cron situs kini membersihkan sesi kedaluwarsa dan membuang jejak `tool_runs` (audit
   browsing) yang lebih tua dari 90 hari, sesuai kebijakan privasi.
+- **✅ Persetujuan saat daftar.** Halaman **Buat akun** kini memuat checkbox wajib menyetujui Kebijakan Privasi &
+  Syarat Layanan; akun tidak dibuat tanpa itu. Versi kebijakan yang disetujui turut dicatat (audit kepatuhan).
 - **🔐 Keamanan & privasi.** Sesi cookie `httpOnly`+`Secure`; permintaan pengubah state wajib same-origin
   (anti-CSRF); login/daftar dibatasi per IP. Ada halaman **Kebijakan Privasi** (`/privasi`) & **Syarat Layanan**
   (`/syarat`), serta tombol **Hapus akun** yang menyapu seluruh data user (hak hapus UU PDP). Catatan privasi di

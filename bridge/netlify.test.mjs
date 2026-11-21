@@ -1956,6 +1956,8 @@ test('portal: root menampilkan dua pintu (Chat & Remote Power) tanpa membocorkan
   assert.equal(reg.status, 200, '/auth/register melayani form');
   const regHtml = await reg.text();
   assert.match(regHtml, /data-action="signup"/, 'form daftar ada');
+  assert.match(regHtml, /name="consent"/, 'checkbox persetujuan ada di halaman daftar');
+  assert.doesNotMatch(loginHtml, /name="consent"/, 'halaman masuk tanpa checkbox persetujuan');
   assert.match(regHtml, /href="\/auth\/login"/, 'tautan ke halaman masuk');
   const authJs = await handleSite(req('/chat/auth.js'), null);
   assert.equal(authJs.status, 200, 'auth.js tersedia');

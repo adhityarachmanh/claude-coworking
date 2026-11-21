@@ -33,7 +33,7 @@ form.addEventListener('submit', async (e) => {
     const r = await fetch('/chat/api/auth/' + action, {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: f.get('email'), password: f.get('password') }),
+      body: JSON.stringify({ email: f.get('email'), password: f.get('password'), consent: form.querySelector('#consent') ? f.get('consent') === 'on' : undefined }),
     });
     const data = await r.json().catch(() => null);
     if (r.ok) { location.href = '/chat'; return; }

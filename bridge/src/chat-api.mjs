@@ -17,6 +17,9 @@ const CORS_SAME_ORIGIN = {
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { ...CORS_SAME_ORIGIN, ...headers } });
 
+/** Versi kebijakan privasi/syarat yang berlaku. Naikkan saat teksnya berubah bermakna (catat di CHANGELOG). */
+export const POLICY_VERSION = '2026-11-22';
+
 /** IP client (Netlify) — tak dipercaya kalau kosong; sama seperti jembatan. */
 function clientIp(request) {
   const raw = request.headers.get('x-nf-client-connection-ip');
@@ -80,8 +83,13 @@ async function signup(request, env) {
   const password = String(body?.password ?? '');
   const bad = emailProblem(email) || passwordProblem(password);
   if (bad) throw new HttpError(400, bad);
+  // Persetujuan kebijakan privasi & syarat wajib (UU PDP: dasar pemrosesan). Ditolak → tidak ada akun dibuat.
+  if (body?.consent !== true) throw new HttpError(400, 'Persetujuan Kebijakan Privasi & Syarat Layanan wajib dicentang');
   if (await env.repo.getUserByEmail(email)) throw new HttpError(409, 'Email sudah terdaftar');
-  const user = await env.repo.createUser({ email, displayName: body?.displayName ?? null, passwordHash: hashPassword(password) });
+  const user = await env.repo.createUser({
+    email, displayName: body?.displayName ?? null, passwordHash: hashPassword(password),
+    consentVersion: POLICY_VERSION,
+  });
   return issueSession(env, user, 201);
 }
 
