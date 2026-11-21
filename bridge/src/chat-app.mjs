@@ -7,6 +7,42 @@
 
 export function chatAppJs() { return APP; }
 
+/** Skrip halaman masuk/daftar (/chat/auth.js): satu form per halaman, tanpa jalur auth di sisi klien chat. */
+export function authJs() { return AUTH; }
+
+const AUTH = String.raw`
+'use strict';
+const form = document.getElementById('authform');
+const out = document.getElementById('authout');
+const show = (text, kind) => { out.textContent = text || ''; out.className = 'msg' + (kind ? ' ' + kind : ''); out.hidden = !text; };
+const peek = document.getElementById('peek');
+if (peek) peek.addEventListener('click', () => {
+  const p = document.getElementById('password');
+  const on = p.type === 'password';
+  p.type = on ? 'text' : 'password';
+  peek.textContent = on ? 'Sembunyikan' : 'Lihat';
+  peek.setAttribute('aria-label', on ? 'Sembunyikan password' : 'Tampilkan password');
+});
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(form);
+  const action = form.dataset.action;
+  show('Memproses…');
+  form.querySelector('button[type=submit]').disabled = true;
+  try {
+    const r = await fetch('/chat/api/auth/' + action, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: f.get('email'), password: f.get('password') }),
+    });
+    const data = await r.json().catch(() => null);
+    if (r.ok) { location.href = '/chat'; return; }
+    show((data && data.error) || 'Gagal, coba lagi', 'bad');
+  } catch { show('Tidak bisa menghubungi server', 'bad'); }
+  form.querySelector('button[type=submit]').disabled = false;
+});
+`;
+
 const APP = String.raw`
 'use strict';
 const $ = (id) => document.getElementById(id);
@@ -22,9 +58,6 @@ async function call(path, opts = {}) {
   });
   let data = null; try { data = await r.json(); } catch {}
   return { ok: r.ok, status: r.status, data };
-}
-function authMsg(text, kind) {
-  const el = $('authout'); el.textContent = text || ''; el.className = 'msg' + (kind ? ' ' + kind : ''); el.hidden = !text;
 }
 function provMsg(text, kind) {
   const el = $('provmsg'); el.textContent = text || ''; el.className = 'msg' + (kind ? ' ' + kind : ''); el.hidden = !text;
@@ -50,41 +83,23 @@ function md(text) {
   return t;
 }
 
-/* ---------------------------------------------------------------- auth */
+/* ---------------------------------------------------------------- sesi */
 async function refresh() {
   const { ok, data } = await call('/me');
-  if (ok) { ME = data.user; showApp(); } else { ME = null; showAuth(); }
+  if (!ok) { location.href = '/auth/login?expired=1'; return; }
+  ME = data.user; showApp();
 }
-function showAuth() { $('auth').hidden = false; $('app').hidden = true; }
 async function showApp() {
-  $('auth').hidden = true; $('app').hidden = false;
   $('who').textContent = 'masuk sebagai ' + ME.email;
   await loadCatalog(); await loadProviders(); await loadConvs();
+  if (!CONV) renderEmpty();
 }
-for (const tab of document.querySelectorAll('.tab')) {
-  tab.addEventListener('click', () => {
-    for (const t of document.querySelectorAll('.tab')) t.classList.toggle('active', t === tab);
-    $('f-login').hidden = tab.dataset.tab !== 'login';
-    $('f-signup').hidden = tab.dataset.tab !== 'signup';
-    authMsg('');
-  });
-}
-function wireAuth(form, path) {
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const f = new FormData(form); authMsg('Memproses…');
-    const { ok, data } = await call(path, { method: 'POST', body: JSON.stringify({ email: f.get('email'), password: f.get('password') }) });
-    if (ok) { authMsg(''); await refresh(); } else authMsg((data && data.error) || 'Gagal, coba lagi', 'bad');
-  });
-}
-wireAuth($('f-login'), '/auth/login');
-wireAuth($('f-signup'), '/auth/signup');
-$('logout').addEventListener('click', async () => { await call('/auth/logout', { method: 'POST' }); refresh(); });
+$('logout').addEventListener('click', async () => { await call('/auth/logout', { method: 'POST' }); location.href = '/auth/login'; });
 $('delacct').addEventListener('click', async () => {
   if (!confirm('Hapus akun beserta SELURUH data (percakapan, provider, API key)? Tindakan ini permanen.')) return;
   if (!confirm('Yakin? Data tidak bisa dikembalikan.')) return;
   const { ok, data } = await call('/me', { method: 'DELETE' });
-  if (ok) { alert('Akun dihapus.'); refresh(); } else alert((data && data.error) || 'Gagal menghapus akun');
+  if (ok) { alert('Akun dihapus.'); location.href = '/auth/login'; } else alert((data && data.error) || 'Gagal menghapus akun');
 });
 
 /* ---------------------------------------------------------------- katalog, provider */
@@ -96,7 +111,7 @@ async function loadProviders() {
   const { ok, data } = await call('/providers');
   PROVIDERS = ok ? data.providers : [];
   $('provlist').innerHTML = PROVIDERS.length
-    ? PROVIDERS.map((p) => '<div class="prov"><div class="meta"><b>' + esc(p.label) + '</b><span>' + esc(p.kind) + (p.keyHint ? ' · …' + esc(p.keyHint) : '') + '</span></div><div class="acts"><button class="mini" data-test="' + esc(p.id) + '">Uji</button><button class="mini danger" data-del="' + esc(p.id) + '">Hapus</button></div></div>').join('')
+    ? PROVIDERS.map((p) => '<div class="prov"><div class="meta"><b>' + esc(p.label) + '</b><span>' + esc(p.kind) + (p.keyHint ? ' · …' + esc(p.keyHint) : '') + (p.models && p.models.length ? ' · ' + p.models.length + ' model' : '') + '</span></div><div class="acts"><button class="mini" data-test="' + esc(p.id) + '">Uji &amp; muat model</button><button class="mini danger" data-del="' + esc(p.id) + '">Hapus</button></div></div>').join('')
     : '<p class="muted">Belum ada provider. Tambahkan API key milikmu di bawah.</p>';
   renderModelOptions();
 }
@@ -108,20 +123,55 @@ addEventListener('keydown', (e) => {
   if (!$('prov').hidden) $('prov').hidden = true;
   else if ($('side').classList.contains('open')) { closeSide(); $('menu').focus(); }
 });
+
+/* muat & pilih model hasil "cek key" (checklist, semua tercentang, ada pencarian) */
+let FOUND = [];
+function renderModels() {
+  const q = ($('mlfilter').value || '').toLowerCase();
+  const items = FOUND.filter((m) => !q || m.id.toLowerCase().includes(q) || String(m.label).toLowerCase().includes(q));
+  $('ml-items').innerHTML = items.map((m) => '<li><label><input type="checkbox" value="' + esc(m.id) + '"' + (m.checked ? ' checked' : '') + '><span>' + esc(m.label || m.id) + '</span></label></li>').join('')
+    || '<li class="muted">Tidak ada model cocok.</li>';
+  $('ml-count').textContent = FOUND.filter((m) => m.checked).length + ' / ' + FOUND.length + ' model dipilih';
+}
+function setModels(list) {
+  FOUND = (list || []).map((m) => ({ id: m.id, label: m.label || m.id, checked: m.checked !== false }));
+  $('modellist').hidden = !FOUND.length;
+  if (FOUND.length) renderModels(); else $('ml-count').textContent = '0 model';
+}
+$('probe').addEventListener('click', async () => {
+  const f = new FormData($('provform'));
+  const kind = f.get('kind'), apiKey = String(f.get('apiKey') || '').trim();
+  if (!apiKey) { provMsg('Isi API key dulu.', 'bad'); return; }
+  provMsg('Menghubungi provider…');
+  const { ok, data } = await call('/providers/models', { method: 'POST', body: JSON.stringify({ kind, apiKey, baseUrl: f.get('baseUrl') }) });
+  if (!ok) { provMsg('❌ ' + ((data && data.error) || 'Gagal'), 'bad'); setModels([]); return; }
+  setModels(data.models);
+  provMsg('✅ Key berlaku. ' + data.models.length + ' model dimuat — pilih yang ingin dipakai.');
+});
+$('mlfilter').addEventListener('input', renderModels);
+$('ml-all').addEventListener('click', () => { FOUND.forEach((m) => { m.checked = true; }); renderModels(); });
+$('ml-none').addEventListener('click', () => { FOUND.forEach((m) => { m.checked = false; }); renderModels(); });
+$('ml-items').addEventListener('change', (e) => {
+  const box = e.target.closest('input[type=checkbox]'); if (!box) return;
+  const m = FOUND.find((x) => x.id === box.value); if (m) m.checked = box.checked;
+  $('ml-count').textContent = FOUND.filter((x) => x.checked).length + ' / ' + FOUND.length + ' model dipilih';
+});
 $('provform').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = new FormData($('provform')); provMsg('Menyimpan…');
   const body = { kind: f.get('kind'), label: f.get('label'), apiKey: f.get('apiKey'), baseUrl: f.get('baseUrl') };
+  if (FOUND.length) body.models = FOUND.filter((m) => m.checked).map((m) => ({ id: m.id, label: m.label }));
   const { ok, data } = await call('/providers', { method: 'POST', body: JSON.stringify(body) });
-  if (ok) { $('provform').reset(); provMsg(''); await loadProviders(); }
+  if (ok) { $('provform').reset(); setModels([]); provMsg(''); await loadProviders(); }
   else provMsg((data && data.error) || 'Gagal menyimpan', 'bad');
 });
 $('provlist').addEventListener('click', async (e) => {
   const t = e.target.closest('[data-test]'), d = e.target.closest('[data-del]');
   if (t) {
-    provMsg('Menguji…');
+    provMsg('Menguji & memuat model…');
     const { ok, data } = await call('/providers/' + t.dataset.test + '/test', { method: 'POST' });
-    provMsg(ok ? '✅ Key berlaku' : '❌ ' + ((data && data.error) || 'Gagal'), ok ? '' : 'bad');
+    if (ok) { await loadProviders(); provMsg('✅ Key berlaku. ' + ((data.models && data.models.length) || 0) + ' model dimuat.'); renderModelOptions(); }
+    else provMsg('❌ ' + ((data && data.error) || 'Gagal'), 'bad');
   }
   if (d && confirm('Hapus provider ini beserta API key-nya?')) {
     await call('/providers/' + d.dataset.del, { method: 'DELETE' });
@@ -138,9 +188,12 @@ function currentKind() {
 function renderModelOptions() {
   if (!CONV) return;
   const kind = currentKind();
+  const prov = PROVIDERS.find((x) => x.id === (CONV && CONV.providerId)) || PROVIDERS[0];
+  const custom = prov && Array.isArray(prov.models) ? prov.models : null;
   const block = (CATALOG.kinds || []).find((k) => k.kind === kind);
-  const models = block ? block.models : [];
-  $('model').innerHTML = models.map((m) => '<option value="' + esc(m.id) + '">' + esc(m.label) + ' · ' + esc(m.tier) + '</option>').join('');
+  const models = custom && custom.length ? custom
+    : (block ? block.models : []);
+  $('model').innerHTML = models.map((m) => '<option value="' + esc(m.id) + '">' + esc(m.label || m.id) + '</option>').join('');
   $('effort').innerHTML = EFFORTS.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join('');
   if (CONV.model) $('model').value = CONV.model;
   if (CONV.effort) $('effort').value = CONV.effort;
@@ -174,14 +227,32 @@ $('newconv').addEventListener('click', async () => {
   const { ok, data } = await call('/conversations', { method: 'POST', body: JSON.stringify({ providerId: PROVIDERS[0].id }) });
   if (ok) { CONVS.unshift(data.conversation); openConv(data.conversation.id); closeSide(); }
 });
-$('menu').addEventListener('click', () => $('side').classList.toggle('open'));
-function closeSide() { $('side').classList.remove('open'); }
+$('menu').addEventListener('click', () => { const s = $('side'); s.classList.toggle('open'); if (s.classList.contains('open')) { s.setAttribute('aria-hidden', 'false'); } else { s.removeAttribute('aria-hidden'); } });
+function closeSide() { const s = $('side'); s.classList.remove('open'); s.removeAttribute('aria-hidden'); }
 
 function setConv(c) {
   CONV = c;
   $('ttl').textContent = c.title || 'Percakapan baru';
-  renderConvs(); renderModelOptions();
+  renderConvs(); renderModelOptions(); renderCtx();
 }
+
+/** Ringkas konteks percakapan di header: model · effort · browsing. */
+function renderCtx() {
+  if (!CONV) { $('ctx').textContent = ''; return; }
+  const prov = PROVIDERS.find((x) => x.id === CONV.providerId) || PROVIDERS[0];
+  const modelOpt = $('model').selectedOptions[0];
+  const modelLabel = modelOpt ? modelOpt.textContent : (CONV.model || '');
+  const bits = [];
+  if (prov) bits.push(prov.label);
+  if (modelLabel && (!CONV.modelAuto && !CONV.effortAuto)) bits.push(modelLabel);
+  if (CONV.modelAuto || CONV.effortAuto) bits.push('Auto');
+  if (CONV.browsing) bits.push('🔎 Browsing');
+  $('ctx').textContent = bits.join(' · ');
+}
+$('model').addEventListener('change', renderCtx);
+$('effort').addEventListener('change', renderCtx);
+$('auto').addEventListener('change', renderCtx);
+$('browsing').addEventListener('change', renderCtx);
 
 /* ---------------------------------------------------------------- thread */
 async function openConv(id) {
@@ -193,6 +264,7 @@ async function openConv(id) {
   scrollBottom();
 }
 function renderThread(messages, citations) {
+  if (!messages || !messages.length) { renderEmpty(); return; }
   const byMsg = {};
   for (const c of citations || []) (byMsg[c.messageId] = byMsg[c.messageId] || []).push(c);
   $('thread').innerHTML = messages.map((m) => {
@@ -202,6 +274,25 @@ function renderThread(messages, citations) {
   }).join('');
 }
 function scrollBottom() { const t = $('thread'); t.scrollTop = t.scrollHeight; }
+
+/** Empty state thread: sambutan + saran prompt yang mengisi composer saat diklik. */
+function renderEmpty() {
+  $('thread').innerHTML =
+    '<div class="empty">'
+    + '<div class="empty-ico" aria-hidden="true">💬</div>'
+    + '<h2>Mulai mengobrol</h2>'
+    + '<p class="muted">Pilih provider &amp; model di bawah, lalu kirim pesan. Tempel API key milikmu di ⚙ provider.</p>'
+    + '<div class="empty-sug" role="list">'
+    + '<button type="button" class="sug" data-sug="Jelaskan dengan sederhana: ">Jelaskan konsep ini dengan sederhana…</button>'
+    + '<button type="button" class="sug" data-sug="Buat ringkasan dari: ">Buat ringkasan dari…</button>'
+    + '<button type="button" class="sug" data-sug="Bantu saya membuat rencana untuk: ">Bantu saya membuat rencana…</button>'
+    + '</div></div>';
+}
+$('thread').addEventListener('click', (e) => {
+  const s = e.target.closest('.sug'); if (!s) return;
+  $('input').value = s.dataset.sug; $('input').focus();
+  $('input').dispatchEvent(new Event('input'));
+});
 
 /* ---------------------------------------------------------------- kirim + streaming */
 $('composer').addEventListener('submit', (e) => { e.preventDefault(); SENDING ? stop() : sendMsg(); });
@@ -223,6 +314,7 @@ async function sendMsg() {
   const text = $('input').value.trim();
   if (!text) return;
   $('input').value = ''; $('input').style.height = 'auto';
+  if ($('thread').querySelector('.empty')) $('thread').innerHTML = '';
   appendTurn('user', text);
   const asst = appendTurn('assistant', '');
   scrollBottom();

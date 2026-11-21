@@ -17,8 +17,36 @@ const withTimeout = (ms) => {
   return { signal: ctl.signal, done: () => clearTimeout(t) };
 };
 
-/** Uji key: panggil endpoint ringan yang membuktikan key berlaku. Tidak menyentuh model hasil generate. */
-export async function testProviderKey(provider, apiKey, fetchImpl = globalThis.fetch) {
+/**
+ * Normalisasi daftar model dari respons tiap provider menjadi [{ id, label }] (urut, tanpa duplikat).
+ * Bentuk mentah: OpenAI/Anthropic `{ data: [{ id, display_name? }] }`, Gemini `{ models: [{ name: "models/x" }] }`.
+ */
+export function normalizeModels(kind, payload) {
+  const out = [];
+  const seen = new Set();
+  const push = (id, label) => {
+    const key = String(id ?? '').trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push({ id: key, label: String(label ?? key).trim() || key });
+  };
+  if (kind === 'google') {
+    for (const m of payload?.models ?? []) {
+      const name = String(m?.name ?? '').replace(/^models\//, '');
+      push(name, m?.displayName);
+    }
+  } else {
+    for (const m of payload?.data ?? []) push(m?.id, m?.display_name ?? m?.displayName);
+  }
+  return out;
+}
+
+/**
+ * Ambil daftar model dari provider sekaligus membuktikan key berlaku. Mengembalikan
+ * `{ ok, models }` saat berhasil, atau `{ ok: false, error }` (key ditolak / provider tak menjawab).
+ * Key hanya dipakai untuk panggilan ini; tidak disimpan di sini.
+ */
+export async function probeModels(provider, apiKey, fetchImpl = globalThis.fetch) {
   const base = baseFor(provider);
   const { signal, done } = withTimeout(TIMEOUT_MS);
   try {
@@ -30,15 +58,24 @@ export async function testProviderKey(provider, apiKey, fetchImpl = globalThis.f
     } else {
       res = await fetchImpl(`${base}/models?key=${encodeURIComponent(apiKey)}`, { signal });
     }
-    if (res.ok) return { ok: true };
-    if (res.status === 401 || res.status === 403) return { ok: false, error: 'API key ditolak provider' };
-    if (res.status === 429) return { ok: false, error: 'Provider sedang membatasi (coba lagi nanti)' };
-    return { ok: false, error: `Provider menjawab ${res.status}` };
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) return { ok: false, error: 'API key ditolak provider' };
+      if (res.status === 429) return { ok: false, error: 'Provider sedang membatasi (coba lagi nanti)' };
+      return { ok: false, error: `Provider menjawab ${res.status}` };
+    }
+    const payload = typeof res.json === 'function' ? await res.json().catch(() => null) : null;
+    return { ok: true, models: normalizeModels(provider.kind, payload) };
   } catch (err) {
     return { ok: false, error: err?.name === 'AbortError' ? 'Provider tidak menjawab (timeout)' : 'Tidak bisa menghubungi provider' };
   } finally {
     done();
   }
+}
+
+/** Uji key: panggil endpoint ringan yang membuktikan key berlaku. Tidak menyentuh model hasil generate. */
+export async function testProviderKey(provider, apiKey, fetchImpl = globalThis.fetch) {
+  const probe = await probeModels(provider, apiKey, fetchImpl);
+  return probe.ok ? { ok: true } : { ok: false, error: probe.error };
 }
 
 /**

@@ -60,11 +60,11 @@ export function makeSqlRepo(db) {
     async getProvider(userId, id) {
       return one('select * from providers where user_id = $1 and id = $2', [userId, id]);
     },
-    async createProvider({ userId, kind, label, baseUrl = null, apiKeyEnc, keyHint = null }) {
+    async createProvider({ userId, kind, label, baseUrl = null, apiKeyEnc, keyHint = null, models = null }) {
       return one(
-        `insert into providers (user_id, kind, label, base_url, api_key_enc, key_hint)
-         values ($1, $2, $3, $4, $5, $6) returning *`,
-        [userId, kind, label, baseUrl, apiKeyEnc, keyHint],
+        `insert into providers (user_id, kind, label, base_url, api_key_enc, key_hint, models)
+         values ($1, $2, $3, $4, $5, $6, $7) returning *`,
+        [userId, kind, label, baseUrl, apiKeyEnc, keyHint, models],
       );
     },
     async updateProvider(userId, id, patch) {
@@ -72,9 +72,9 @@ export function makeSqlRepo(db) {
       if (!found) return null;
       const next = { ...found, ...patch, updated_at: nowIso() };
       return one(
-        `update providers set label = $3, base_url = $4, api_key_enc = $5, key_hint = $6, updated_at = $7
+        `update providers set label = $3, base_url = $4, api_key_enc = $5, key_hint = $6, models = $7, updated_at = $8
          where user_id = $1 and id = $2 returning *`,
-        [userId, id, next.label, next.base_url, next.api_key_enc, next.key_hint, next.updated_at],
+        [userId, id, next.label, next.base_url, next.api_key_enc, next.key_hint, next.models ?? null, next.updated_at],
       );
     },
     async deleteProvider(userId, id) {

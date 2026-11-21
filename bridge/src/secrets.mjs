@@ -47,12 +47,13 @@ export const keyHint = (apiKey) => {
   return s.length >= 4 ? s.slice(-4) : '';
 };
 
-/** Bentuk provider yang aman dikirim ke klien: tanpa ciphertext key. */
+/** Bentuk provider yang aman dikirim ke klien: tanpa ciphertext key. `models` = daftar hasil probe (bila ada). */
 export const publicProvider = (p) => ({
   id: p.id,
   kind: p.kind,
   label: p.label,
   baseUrl: p.base_url ?? null,
   keyHint: p.key_hint ?? null,
+  models: Array.isArray(p.models) ? p.models : null,
   createdAt: p.created_at,
 });

@@ -24,14 +24,14 @@ export function parseClassifierOutput(text) {
 }
 
 /** Model yang dipakai classifier untuk sebuah kind (model termurah user). */
-export const classifierModel = (kind) => cheapestModelFor(kind);
+export const classifierModel = (kind, providerModels) => cheapestModelFor(kind, providerModels);
 
 /**
  * Jalankan classifier. `callModel({ model, system, messages })` → Promise<string>.
  * Mengembalikan { effort, tier } yang sudah divalidasi; null bila gagal / tak terpakai.
  */
-export async function classify({ kind, callModel, prompt }) {
-  const model = classifierModel(kind);
+export async function classify({ kind, callModel, prompt, providerModels }) {
+  const model = classifierModel(kind, providerModels);
   if (!model) return null;
   let out;
   try {

@@ -8,6 +8,7 @@ import vm from 'node:vm';
 import { handleApi, scheduledSweep } from './src/bridge.mjs';
 import { readPlugStatus } from './src/tuya.mjs';
 import { handleSite } from './src/site.mjs';
+import { makeMemoryRepo } from './src/repo-memory.mjs';
 import { decryptCreds, decryptSecret, encryptCreds } from './src/vault.mjs';
 import * as store from './src/store.mjs';
 
@@ -1920,38 +1921,76 @@ test('manage: update memakai secret lama saat kosong, rotasi token mematikan tok
 
 // ---------------------------------------------------------------- portal + mount '/bridge'
 
+/** Repo memory dengan satu user + sesi yang belum kedaluwarsa; mengembalikan cookie untuk request. */
+async function seededSession() {
+  const repo = makeMemoryRepo();
+  const user = await repo.createUser({ email: 'u@test.co', passwordHash: 'scrypt$x$y' });
+  const token = 'cd'.repeat(32);
+  await repo.createSession({
+    tokenHash: createHash('sha256').update(token).digest('hex'),
+    userId: user.id,
+    expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+  });
+  return { repo, cookie: `adhitron_session=${token}` };
+}
+
 test('portal: root menampilkan dua pintu (Chat & Remote Power) tanpa membocorkan kredensial', async () => {
-  const r = handleSite(req('/'));
+  const r = await handleSite(req('/'));
   assert.equal(r.status, 200);
   const html = await r.text();
   assert.match(html, /href="\/chat"/, 'pintu Chat menuju /chat');
   assert.match(html, /href="\/bridge"/, 'pintu Remote Power menuju /bridge');
   assert.match(html, /API key milikmu sendiri/, 'menjelaskan key milik user');
-  assert.equal(handleSite(req('/halaman-asing')), null, 'path tak dikenal diserahkan ke pemanggil (404)');
-  const chat = await handleSite(req('/chat')).text();
-  assert.match(chat, /💬 Chat/, 'kerangka chat ada');
-  assert.match(chat, /id="f-login"/, 'form masuk');
-  assert.match(chat, /\/chat\/app\.js/, 'memuat skrip aplikasi chat');
+  assert.equal(await handleSite(req('/halaman-asing')), null, 'path tak dikenal diserahkan ke pemanggil (404)');
+  // /chat tanpa sesi tidak melayani form: dialihkan ke halaman masuk (tanpa kedip form).
+  const chatNoSesi = await handleSite(req('/chat'), null);
+  assert.equal(chatNoSesi.status, 302, '/chat tanpa sesi dialihkan');
+  assert.equal(chatNoSesi.headers.get('location'), '/auth/login');
+  // Halaman masuk & daftar terpisah.
+  const login = await handleSite(req('/auth/login'), null);
+  assert.equal(login.status, 200, '/auth/login melayani form');
+  const loginHtml = await login.text();
+  assert.match(loginHtml, /data-action="login"/, 'form masuk ada');
+  assert.match(loginHtml, /href="\/auth\/register"/, 'tautan ke halaman daftar');
+  const reg = await handleSite(req('/auth/register'), null);
+  assert.equal(reg.status, 200, '/auth/register melayani form');
+  const regHtml = await reg.text();
+  assert.match(regHtml, /data-action="signup"/, 'form daftar ada');
+  assert.match(regHtml, /href="\/auth\/login"/, 'tautan ke halaman masuk');
+  const authJs = await handleSite(req('/chat/auth.js'), null);
+  assert.equal(authJs.status, 200, 'auth.js tersedia');
+  assert.match(authJs.headers.get('content-type') || '', /javascript/);
+  const authJsText = await authJs.text();
+  assert.doesNotThrow(() => new vm.Script(authJsText), 'skrip auth harus valid');
+  // Halaman chat penuh hanya untuk yang sudah login (pakai repo memory + cookie sesi).
+  const { repo, cookie } = await seededSession();
+  const chat = await (await handleSite(req('/chat', { headers: { cookie } }), { repo })).text();
   assert.match(chat, /id="composer"/, 'komposer pesan ada');
   assert.match(chat, /id="convs"/, 'sidebar riwayat ada');
+  assert.match(chat, /id="ctx"/, 'header konteks ada');
+  assert.doesNotMatch(chat, /data-action="login"/, 'form masuk tidak lagi di /chat');
   assert.match(chat, /class="nochrome"/, 'kerangka chat tanpa header/footer kolom artikel');
   assert.match(chat, /viewport-fit=cover/, 'viewport menutup area aman (notch)');
   assert.match(chat, /--vv-h/, 'CSS memakai tinggi visualViewport');
-  assert.match(chat, /\.chatwrap\[hidden\]\{display:none\}/, 'panel chat sembunyi saat belum masuk (menang atas display:grid)');
-  const app = handleSite(req('/chat/app.js'));
+  const app = await handleSite(req('/chat/app.js'), null);
   assert.equal(app.status, 200, 'app.js tersedia');
   assert.match(app.headers.get('content-type') || '', /javascript/);
   const appText = await app.text();
   assert.doesNotThrow(() => new vm.Script(appText), 'skrip aplikasi chat harus valid');
   assert.match(appText, /visualViewport/, 'tinggi app mengikuti visualViewport (keyboard HP)');
-  assert.equal(handleSite(req('/chat/app.js', { method: 'POST' })), null, 'app.js hanya GET');
-  const priv = handleSite(req('/privasi'));
+  assert.equal(await handleSite(req('/chat/app.js', { method: 'POST' }), null), null, 'app.js hanya GET');
+  // Sudah login: /chat, /auth, /auth/login, /auth/register semuanya menuju /chat.
+  const env = { repo };
+  assert.equal((await handleSite(req('/auth', { headers: { cookie } }), { repo })).headers.get('location'), '/chat');
+  const chatLogged = await handleSite(req('/chat', { headers: { cookie } }), env);
+  assert.equal(chatLogged.status, 200, '/chat dengan sesi melayani aplikasi');
+  const priv = await handleSite(req('/privasi'));
   assert.equal(priv.status, 200, '/privasi ada');
   assert.match(await priv.text(), /Kebijakan Privasi/);
-  const tos = handleSite(req('/syarat'));
+  const tos = await handleSite(req('/syarat'));
   assert.equal(tos.status, 200, '/syarat ada');
   assert.match(await tos.text(), /Syarat Layanan/);
-  assert.equal(handleSite(req('/syarat', { method: 'POST' })), null, 'POST ke /syarat bukan rute');
+  assert.equal(await handleSite(req('/syarat', { method: 'POST' })), null, 'POST ke /syarat bukan rute');
 });
 
 test('mount /bridge: rute jembatan sama seperti di root, tapi URL yang diterbitkan berprefiks /bridge', async () => {

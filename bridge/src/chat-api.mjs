@@ -136,6 +136,20 @@ function catalog() {
   });
 }
 
+/** Bersihkan daftar model dari klien: [{ id, label }] unik, id wajib, dibatasi 500 entri. */
+function normalizeProviderModels(raw) {
+  if (!Array.isArray(raw)) return null;
+  const out = [];
+  const seen = new Set();
+  for (const m of raw.slice(0, 500)) {
+    const id = String(m?.id ?? '').trim().slice(0, 200);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, label: String(m?.label ?? id).trim().slice(0, 200) || id });
+  }
+  return out.length ? out : null;
+}
+
 async function listProviders(request, env) {
   const user = await requireUser(request, env);
   const rows = await env.repo.listProviders(user.id);
@@ -155,9 +169,10 @@ async function addProvider(request, env) {
   const base = cleanBaseUrl(body?.baseUrl);
   if (!base.ok) throw new HttpError(400, base.error);
   if (env.encryptionKey == null) throw new HttpError(500, 'Server belum dikonfigurasi untuk menyimpan key');
+  const models = normalizeProviderModels(body?.models);
   const row = await env.repo.createProvider({
     userId: user.id, kind, label, baseUrl: base.value,
-    apiKeyEnc: encryptSecret(env.encryptionKey, apiKey), keyHint: keyHint(apiKey),
+    apiKeyEnc: encryptSecret(env.encryptionKey, apiKey), keyHint: keyHint(apiKey), models,
   });
   return json({ provider: publicProvider(row) }, 201);
 }
@@ -180,6 +195,7 @@ async function updateProvider(request, env, id) {
     patch.api_key_enc = encryptSecret(env.encryptionKey, apiKey);
     patch.key_hint = keyHint(apiKey);
   }
+  if (body?.models !== undefined) patch.models = normalizeProviderModels(body.models);
   const row = await env.repo.updateProvider(user.id, id, patch);
   if (!row) throw new HttpError(404, 'Provider tidak ditemukan');
   return json({ provider: publicProvider(row) });
@@ -193,16 +209,41 @@ async function removeProvider(request, env, id) {
   return json({ ok: true });
 }
 
-/** Uji provider: dekripsi key dan panggil endpoint daftar model provider. Key tidak pernah direspons. */
+/**
+ * Uji provider: dekripsi key, ambil daftar modelnya sekaligus membuktikan key berlaku, lalu SIMPAN daftar
+ * itu di provider. Key tidak pernah direspons; hanya ok/error + daftar model.
+ */
 async function testProvider(request, env, id, fetchImpl) {
   if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
   const user = await requireUser(request, env);
   const row = await env.repo.getProvider(user.id, id);
   if (!row) throw new HttpError(404, 'Provider tidak ditemukan');
   const key = decryptSecret(env.encryptionKey, row.api_key_enc);
-  const { testProviderKey } = await import('./client.mjs');
-  const result = await testProviderKey(row, key, fetchImpl);
-  return json(result, result.ok ? 200 : 400);
+  const { probeModels } = await import('./client.mjs');
+  const probe = await probeModels(row, key, fetchImpl);
+  if (!probe.ok) return json({ ok: false, error: probe.error }, 400);
+  const saved = await env.repo.updateProvider(user.id, id, { models: probe.models });
+  return json({ ok: true, models: probe.models, provider: publicProvider(saved ?? row) });
+}
+
+/**
+ * Cek key calon provider (belum disimpan): ambil daftar modelnya. Body: { kind, apiKey, baseUrl? }.
+ * Key hanya dipakai untuk panggilan ini dan dibuang — tidak pernah dikembalikan.
+ */
+async function probeProviderModels(request, env, fetchImpl) {
+  if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
+  await requireUser(request, env);
+  const body = await readJson(request);
+  const kind = String(body?.kind ?? '');
+  if (!isValidKind(kind)) throw new HttpError(400, 'Jenis provider tidak dikenal');
+  const apiKey = String(body?.apiKey ?? '').trim();
+  if (apiKey.length < 8 || apiKey.length > 500) throw new HttpError(400, 'API key tidak valid');
+  const base = cleanBaseUrl(body?.baseUrl);
+  if (!base.ok) throw new HttpError(400, base.error);
+  const { probeModels } = await import('./client.mjs');
+  const probe = await probeModels({ kind, base_url: base.value }, apiKey, fetchImpl);
+  if (!probe.ok) return json({ ok: false, error: probe.error }, 400);
+  return json({ ok: true, kind, models: probe.models });
 }
 
 // ---------------------------------------------------------------- percakapan (M5)
@@ -321,11 +362,12 @@ export async function handleChatApi(request, env, path, fetchImpl) {
     ['provider-kinds', 'GET', (r, e) => catalog(r, e)],
     ['providers', 'GET', (r, e) => listProviders(r, e)],
     ['providers', 'POST', (r, e) => addProvider(r, e)],
+    ['providers/models', 'POST', (r, e, f) => probeProviderModels(r, e, f)],
     ['conversations', 'GET', (r, e) => listConversations(r, e)],
     ['conversations', 'POST', (r, e) => createConversation(r, e)],
   ];
   for (const [route, verb, fn] of ROUTES) {
-    if (seg === route && method === verb) return guard(() => fn(request, env));
+    if (seg === route && method === verb) return guard(() => fn(request, env, fetchImpl));
   }
   if (providerId) {
     if (method === 'PATCH' || method === 'PUT') return guard(() => updateProvider(request, env, providerId));

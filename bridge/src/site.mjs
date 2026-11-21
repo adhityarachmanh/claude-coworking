@@ -3,7 +3,8 @@
 // (jembatan daya yang dipasang di '/bridge'). Warna & pola mengikuti brand Adhitron (lihat pages.mjs);
 // file ini sengaja mandiri supaya portal bisa berevolusi tanpa menyentuh halaman jembatan.
 import { escapeHtml } from './pages.mjs';
-import { chatAppJs } from './chat-app.mjs';
+import { chatAppJs, authJs } from './chat-app.mjs';
+import { currentUser } from './chat-api.mjs';
 
 const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
 <rect width="64" height="64" rx="14" fill="#17181e"/>
@@ -71,6 +72,25 @@ border:1px solid transparent;font:inherit;font-size:1rem;font-weight:600;cursor:
 .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .msg{margin:12px 0;padding:10px 12px;border-radius:10px;font-size:.88rem;background:var(--surface-2);border:1px solid var(--line)}
 .msg.bad{background:#2a1614;border-color:#6e2a24}
+/* --- halaman auth (/auth/login, /auth/register) --- */
+.authpage{flex:1;display:flex;align-items:center;justify-content:center;
+padding:calc(28px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom))}
+.authcard{width:100%;max-width:400px;background:var(--surface);border:1px solid var(--line);border-radius:18px;
+padding:28px 24px;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+.authcard .brand{display:inline-flex;margin-bottom:18px;font-size:1rem}
+.authcard h1{font-size:1.45rem}
+.authcard .lead{margin-bottom:20px;font-size:.95rem}
+.authcard .field{margin:14px 0}
+.authcard .row-in{position:relative}
+.authcard .row-in .peek{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:transparent;border:0;
+color:var(--muted);cursor:pointer;font:inherit;font-size:.8rem;padding:6px 8px;border-radius:8px}
+.authcard .row-in .peek:hover{color:var(--text)}
+.authcard .row-in input{padding-right:64px}
+.authcard .alt{margin:16px 0 0;font-size:.88rem;color:var(--text-2);text-align:center}
+.authcard .mini-links{margin:18px 0 0;text-align:center;font-size:.78rem;color:var(--muted)}
+.authcard .mini-links a{margin:0 6px}
+.authnote{background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:10px;padding:10px 12px;
+font-size:.85rem;margin:0 0 16px;color:var(--text-2)}
 /* --- tata letak chat (M7) --- */
 .chatwrap{display:grid;gap:0;height:100svh;height:100dvh;grid-template-rows:minmax(0,1fr)}
 .chatwrap[hidden]{display:none}
@@ -164,6 +184,38 @@ body.nochrome .side{padding-bottom:env(safe-area-inset-bottom)}
 .bubble ul{margin:6px 0;padding-left:20px}
 .chip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prov .meta b,.prov .meta span{overflow-wrap:anywhere}
+/* --- sidebar: judul riwayat, identitas, aksi --- */
+.convs-head{padding:12px 16px 4px;font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.side-foot{margin-top:auto;padding:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.side-foot .who{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side-acts{display:flex;gap:6px}
+.side-acts .mini{flex:1}
+/* --- header percakapan + konteks --- */
+.chead{gap:10px}
+.chead-txt{display:flex;flex-direction:column;min-width:0}
+.chead-txt b{font-size:.98rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chead-txt #ctx{font-size:.74rem}
+/* --- empty state thread --- */
+.empty{margin:auto;text-align:center;max-width:420px;padding:16px}
+.empty-ico{font-size:2.4rem;line-height:1}
+.empty h2{margin:12px 0 6px;font-size:1.2rem}
+.empty-sug{display:grid;gap:8px;margin-top:18px}
+.sug{background:var(--surface);border:1px solid var(--line);border-radius:12px;color:var(--text-2);
+padding:12px 14px;font:inherit;font-size:.88rem;text-align:left;cursor:pointer}
+.sug:hover{border-color:var(--accent-line);color:var(--text)}
+/* --- checklist model hasil "cek key" --- */
+.modellist{margin:10px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.ml-head{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--surface-2);
+border-bottom:1px solid var(--line);font-size:.8rem;color:var(--text-2)}
+.ml-acts{display:flex;gap:6px}
+.ml-head .mini{padding:5px 9px;min-height:auto}
+.modellist > input{width:calc(100% - 20px);margin:10px;padding:9px 11px}
+.ml-items{list-style:none;margin:0;padding:0 10px 10px;max-height:220px;overflow:auto}
+.ml-items li{margin:1px 0}
+.ml-items label{display:flex;align-items:center;gap:9px;margin:0;font-size:.86rem;color:var(--text-2);
+font-weight:400;letter-spacing:0;padding:6px 4px;cursor:pointer}
+.ml-items input{width:auto}
+.ml-items li.muted{padding:6px 4px}
 `;
 
 const shell = (title, body, { bare = false, chrome = true } = {}) =>
@@ -201,61 +253,44 @@ dan kamu ingin menyalakannya dari HP.</p>
 <div class="note">🔐 Di Chat, API key-mu disimpan terenkripsi dan hanya dipakai untuk permintaanmu sendiri.</div>`);
 }
 
-/** Halaman chat penuh (M7): sidebar riwayat, thread, composer model/effort/browsing, setelan provider. */
+/** Halaman aplikasi chat (tanpa form masuk; /chat hanya untuk yang sudah login). */
 export function chatPageHtml() {
   return shell('Chat — Adhitron', `
-<section id="auth" class="authwrap">
-  <a class="brand" href="/" style="display:inline-flex;margin-bottom:8px">${LOGO}<span>Adhitron <em>Chat</em></span></a>
-  <h1>💬 Chat</h1>
-  <p class="lead">Masuk dengan akunmu, tempel API key milikmu sendiri, lalu ngobrol dengan pilihan model
-  &amp; effort serta browsing web.</p>
-  <div class="tabs">
-    <button class="tab active" data-tab="login" type="button">Masuk</button>
-    <button class="tab" data-tab="signup" type="button">Daftar</button>
-  </div>
-  <form id="f-login" class="authform">
-    <label>Email<input name="email" type="email" autocomplete="username" required></label>
-    <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="8"></label>
-    <button class="btn on" type="submit">Masuk</button>
-  </form>
-  <form id="f-signup" class="authform" hidden>
-    <label>Email<input name="email" type="email" autocomplete="username" required></label>
-    <label>Password (minimal 8 karakter)<input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
-    <button class="btn on" type="submit">Daftar</button>
-  </form>
-  <div id="authout" class="msg" hidden></div>
-  <p class="muted"><a href="/">← Kembali ke portal</a></p>
-</section>
-
-<section id="app" class="chatwrap" hidden>
+<section id="app" class="chatwrap">
   <div class="chatbody">
     <aside class="side" id="side">
       <div class="side-top">
         <button class="btn on" id="newconv" type="button">+ Percakapan baru</button>
         <button class="mini" id="settings" type="button">⚙ Provider &amp; API key</button>
       </div>
+      <div class="convs-head">Riwayat</div>
       <ul class="convs" id="convs"></ul>
-      <div class="side-top">
-        <div class="muted" id="who"></div>
-        <button class="mini danger" id="logout" type="button">Keluar</button>
-        <button class="mini danger" id="delacct" type="button">Hapus akun</button>
+      <div class="side-foot">
+        <div class="muted who" id="who"></div>
+        <div class="side-acts">
+          <button class="mini" id="logout" type="button">Keluar</button>
+          <button class="mini danger" id="delacct" type="button">Hapus akun</button>
+        </div>
       </div>
     </aside>
     <div class="chatmain">
-      <div class="top" style="gap:10px">
-        <button class="mini menu-btn" id="menu" type="button" aria-label="Riwayat">☰</button>
-        <b id="ttl">Percakapan baru</b>
+      <div class="top chead">
+        <button class="mini menu-btn" id="menu" type="button" aria-label="Buka riwayat">☰</button>
+        <div class="chead-txt">
+          <b id="ttl">Percakapan baru</b>
+          <span class="muted" id="ctx" aria-live="polite"></span>
+        </div>
       </div>
       <div class="thread" id="thread" aria-live="polite"></div>
       <form class="composer" id="composer">
         <div class="ctl">
           <select id="model" aria-label="Model"></select>
           <select id="effort" aria-label="Effort"></select>
-          <label class="chk" id="auto-wrap" title="Biarkan LLM memilih model & effort"><input type="checkbox" id="auto"> Auto</label>
-          <label class="chk" id="browse-wrap" title="Cari web & kutip sumber"><input type="checkbox" id="browsing"> 🔎 Browsing</label>
+          <label class="chk" id="auto-wrap" title="Biarkan LLM memilih model &amp; effort"><input type="checkbox" id="auto"> Auto</label>
+          <label class="chk" id="browse-wrap" title="Cari web &amp; kutip sumber"><input type="checkbox" id="browsing"> 🔎 Browsing</label>
         </div>
         <div class="rowin">
-          <textarea id="input" rows="2" placeholder="Tulis pesan… (Enter kirim, Shift+Enter baris baru)"></textarea>
+          <textarea id="input" rows="2" placeholder="Tulis pesan… (Enter kirim, Shift+Enter baris baru)" aria-label="Pesan"></textarea>
           <button class="sendbtn" id="send" type="submit" aria-label="Kirim">➤</button>
         </div>
         <div class="hint" id="hint"></div>
@@ -265,8 +300,8 @@ export function chatPageHtml() {
 </section>
 
 <div class="overlay" id="prov" hidden>
-  <div class="modal">
-    <h2>⚙ Provider &amp; API key</h2>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="prov-ttl">
+    <h2 id="prov-ttl">⚙ Provider &amp; API key</h2>
     <p class="muted">API key disimpan terenkripsi (AES-256-GCM) dan hanya dipakai untuk permintaanmu.</p>
     <div id="provlist"></div>
     <form id="provform">
@@ -276,8 +311,20 @@ export function chatPageHtml() {
       </div>
       <label>API key<input name="apiKey" type="password" autocomplete="off" required></label>
       <label>Base URL (opsional, untuk OpenAI-compatible)<input name="baseUrl" type="text" placeholder="https://..."></label>
+      <button class="btn ghost" type="button" id="probe">Cek key &amp; muat model</button>
+      <div id="modellist" class="modellist" hidden>
+        <div class="ml-head">
+          <span id="ml-count">0 model</span>
+          <span class="ml-acts">
+            <button type="button" class="mini" id="ml-all">Pilih semua</button>
+            <button type="button" class="mini" id="ml-none">Kosongkan</button>
+          </span>
+        </div>
+        <input name="mlfilter" id="mlfilter" type="text" placeholder="Cari model…" autocomplete="off">
+        <ul id="ml-items" class="ml-items"></ul>
+      </div>
       <div class="grid2" style="margin-top:10px">
-        <button class="btn on" type="submit">Tambah provider</button>
+        <button class="btn on" type="submit">Simpan provider</button>
         <button class="btn ghost" type="button" id="provclose">Tutup</button>
       </div>
       <div id="provmsg" class="msg" hidden></div>
@@ -286,6 +333,61 @@ export function chatPageHtml() {
 </div>
 
 <script src="/chat/app.js" defer></script>`, { chrome: false, bare: true });
+}
+
+/** Kerangka halaman auth (login/daftar): kartu terpusat, satu form per halaman. */
+function authPageHtml({ title, heading, lead, action, submit, alt, note }) {
+  return shell(title, `
+<div class="authpage">
+  <section class="authcard">
+    <a class="brand" href="/">${LOGO}<span>Adhitron <em>Chat</em></span></a>
+    <h1>${heading}</h1>
+    <p class="lead">${lead}</p>
+    ${note ? `<p class="authnote">${note}</p>` : ''}
+    <form id="authform" data-action="${action}">
+      <div class="field"><label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="username" inputmode="email"
+          autocapitalize="off" spellcheck="false" enterkeyhint="next" required></div>
+      <div class="field"><label for="password">Password</label>
+        <div class="row-in">
+          <input id="password" name="password" type="password" autocomplete="${action === 'signup' ? 'new-password' : 'current-password'}"
+            enterkeyhint="go" required minlength="8">
+          <button type="button" class="peek" id="peek" aria-label="Tampilkan password">Lihat</button>
+        </div></div>
+      <button class="btn on" type="submit">${submit}</button>
+      <div id="authout" class="msg" hidden></div>
+    </form>
+    <p class="alt">${alt}</p>
+    <p class="mini-links"><a href="/">← Portal</a><a href="/privasi">Privasi</a><a href="/syarat">Syarat</a></p>
+  </section>
+</div>
+<script src="/chat/auth.js" defer></script>`);
+}
+
+/** /auth/login — halaman masuk. */
+export function loginPageHtml({ note = '' } = {}) {
+  return authPageHtml({
+    title: 'Masuk — Adhitron Chat',
+    heading: 'Masuk',
+    lead: 'Lanjutkan ke percakapan AI-mu.',
+    action: 'login',
+    submit: 'Masuk',
+    alt: 'Belum punya akun? <a href="/auth/register">Buat akun baru →</a>',
+    note,
+  });
+}
+
+/** /auth/register — halaman daftar. */
+export function registerPageHtml() {
+  return authPageHtml({
+    title: 'Daftar — Adhitron Chat',
+    heading: 'Buat akun',
+    lead: 'Satu akun untuk chat dengan API key milikmu sendiri.',
+    action: 'signup',
+    submit: 'Daftar',
+    alt: 'Sudah punya akun? <a href="/auth/login">Masuk →</a>',
+    note: '',
+  });
 }
 
 /** Halaman kebijakan privasi (/privasi). Teks ringkas, jujur soal pihak ketiga & hak hapus. */
@@ -335,16 +437,35 @@ layanan bebas gangguan.</p>
 <p class="muted"><a href="/">← Kembali ke portal</a></p>`);
 }
 
-/** Router situs (portal + chat). Mengembalikan Response untuk path yang dikenal, atau null. */
-export function handleSite(request, url = new URL(request.url)) {
+/** Router situs (portal + chat + auth). Mengembalikan Response untuk path yang dikenal, atau null. */
+export async function handleSite(request, env, url = new URL(request.url)) {
   const path = url.pathname;
-  if (path === '/' && request.method === 'GET') return html(portalPageHtml());
-  if ((path === '/chat' || path === '/chat/') && request.method === 'GET') return html(chatPageHtml());
-  if (path === '/chat/app.js' && request.method === 'GET') return js(chatAppJs());
-  if ((path === '/privasi' || path === '/privasi/') && request.method === 'GET') return html(privacyPageHtml());
-  if ((path === '/syarat' || path === '/syarat/') && request.method === 'GET') return html(termsPageHtml());
+  const get = request.method === 'GET';
+
+  // Sesi dibaca lebih dulu untuk halaman yang bergantung padanya. Fail-open ke form bila DB error.
+  const wantsSession = path === '/' || path === '/chat' || path === '/chat/' || path.startsWith('/auth');
+  let user = null;
+  if (env?.repo && wantsSession) {
+    try { user = await currentUser(request, env); } catch { user = null; }
+  }
+
+  if (path === '/' && get) return html(portalPageHtml());
+  // /chat hanya untuk yang sudah login; tanpa sesi langsung ke halaman masuk (tanpa kedip form).
+  if ((path === '/chat' || path === '/chat/') && get) {
+    return user ? html(chatPageHtml()) : redirect('/auth/login');
+  }
+  if (path === '/chat/app.js' && get) return js(chatAppJs());
+  if (path === '/chat/auth.js' && get) return js(authJs());
+  // /auth (tanpa halaman) → arahkan ke halaman yang sesuai.
+  if (path === '/auth' || path === '/auth/') return redirect(user ? '/chat' : '/auth/login');
+  if (path === '/auth/login' && get) return user ? redirect('/chat') : html(loginPageHtml({ note: url.searchParams.get('expired') ? 'Sesi berakhir, silakan masuk lagi.' : '' }));
+  if (path === '/auth/register' && get) return user ? redirect('/chat') : html(registerPageHtml());
+  if ((path === '/privasi' || path === '/privasi/') && get) return html(privacyPageHtml());
+  if ((path === '/syarat' || path === '/syarat/') && get) return html(termsPageHtml());
   return null;
 }
+
+const redirect = (to) => new Response(null, { status: 302, headers: { Location: to, 'Cache-Control': 'no-store' } });
 
 const js = (body, status = 200) => new Response(body, {
   status,

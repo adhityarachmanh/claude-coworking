@@ -44,31 +44,75 @@ export const MODELS = Object.freeze({
   ],
 });
 
-/** Daftar model (salinan aman) untuk sebuah kind. */
+/** Daftar model statis (salinan aman) untuk sebuah kind. */
 export const modelsFor = (kind) => (MODELS[kind] ?? []).map((m) => ({ ...m }));
 
-/** Model default per kind (yang pertama). */
-export const defaultModelFor = (kind) => modelsFor(kind)[0]?.id ?? null;
+/**
+ * Tier perkiraan dari nama model: katalog statis menang bila id cocok; kalau tidak, tebak dari pola
+ * nama (meniru kelas model yang lazim). Dipakai untuk daftar model yang diambil langsung dari provider.
+ */
+const TIER_GUESS = [
+  [/nano|flash-lite|flash-lite|haiku|\bmini\b|\blite\b|\bsmall\b/, 'hemat'],
+  [/opus|\bpro\b|ultra|\blarge\b|gpt-5|o3|o4|sonnet/, 'kuat'],
+];
+export function tierFor(kind, modelId) {
+  const known = MODELS[kind]?.find((m) => m.id === modelId);
+  if (known) return known.tier;
+  const id = String(modelId).toLowerCase();
+  for (const [re, tier] of TIER_GUESS) if (re.test(id)) return tier;
+  return 'sedang';
+}
+
+/** Heuristik effort untuk model tak ada di katalog statis: hanya keluarga penalaran yang jelas. */
+const EFFORT_GUESS = /(^|[-_/])(o1|o3|o4|gpt-5|thinking|reasoning)($|[-_/])/;
+
+/**
+ * Apakah model (kind+id) mendukung effort. Katalog statis menang bila id cocok; kalau tidak, heuristik
+ * nama (model penalaran yang jelas). Selain itu false — parameter effort tidak dikirim (diabaikan diam-diam).
+ */
+export function modelSupportsEffort(kind, modelId) {
+  const known = MODELS[kind]?.find((m) => m.id === modelId);
+  if (known) return Boolean(known.effort);
+  return EFFORT_GUESS.test(String(modelId).toLowerCase());
+}
+
+/**
+ * Daftar model efektif untuk sebuah provider: daftar milik provider (hasil "cek key & muat model") bila ada,
+ * atau katalog statis bila belum. Selalu menyertakan tier & effort yang siap dipakai UI.
+ */
+export function effectiveModels(kind, providerModels) {
+  const custom = Array.isArray(providerModels) ? providerModels.filter((m) => m && m.id) : [];
+  if (!custom.length) return modelsFor(kind);
+  return custom.map((m) => ({
+    id: String(m.id),
+    label: String(m.label ?? m.id),
+    tier: tierFor(kind, m.id),
+    effort: modelSupportsEffort(kind, m.id),
+  }));
+}
+
+/** Label model untuk satu id (dari daftar efektif atau id itu sendiri). */
+export const labelForModel = (kind, providerModels, modelId) =>
+  effectiveModels(kind, providerModels).find((m) => m.id === modelId)?.label ?? modelId;
+
+/** Model default per kind (yang pertama). `providerModels` opsional (daftar milik provider). */
+export const defaultModelFor = (kind, providerModels) => effectiveModels(kind, providerModels)[0]?.id ?? null;
 
 /** Model termurah per kind — untuk classifier Auto effort (meniru Adhitron lokal). */
-export const cheapestModelFor = (kind) => {
-  const list = modelsFor(kind);
+export const cheapestModelFor = (kind, providerModels) => {
+  const list = effectiveModels(kind, providerModels);
   return list.find((m) => m.tier === 'hemat')?.id ?? list.at(-1)?.id ?? null;
 };
 
-/** Apakah model (kind+id) mendukung effort. Model tak dikenal → false (jangan kirim parameter). */
-export function modelSupportsEffort(kind, modelId) {
-  return Boolean(MODELS[kind]?.find((m) => m.id === modelId)?.effort);
-}
+/** Id model yang dikenal: dari daftar provider bila ada, kalau tidak dari katalog statis. */
+export const isKnownModel = (kind, modelId, providerModels) =>
+  effectiveModels(kind, providerModels).some((m) => m.id === modelId);
 
-/** Id model apa pun yang dikenal semua kind (untuk validasi tanpa tahu provider). */
-export const isKnownModel = (kind, modelId) => Boolean(MODELS[kind]?.some((m) => m.id === modelId));
-
-/** Tier → model pilihan user (dari model_tiers percakapan), dengan fallback ke model pertama kind. */
-export function modelForTier(kind, tier, modelTiers) {
+/** Tier → model pilihan user (dari model_tiers percakapan), dengan fallback ke model pertama daftar efektif. */
+export function modelForTier(kind, tier, modelTiers, providerModels) {
+  const list = effectiveModels(kind, providerModels);
   const picked = modelTiers?.[tier];
-  if (typeof picked === 'string' && isKnownModel(kind, picked)) return picked;
-  const list = modelsFor(kind);
+  if (typeof picked === 'string' && list.some((m) => m.id === picked)) return picked;
   return (list.find((m) => m.tier === tier) ?? list[0])?.id ?? null;
 }
 

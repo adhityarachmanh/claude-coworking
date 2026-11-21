@@ -35,10 +35,13 @@ create table if not exists providers (
   base_url   text,                      -- opsional: endpoint OpenAI-compatible kustom
   api_key_enc jsonb not null,
   key_hint   text,                      -- 4 karakter terakhir key (tampilan saja, bukan rahasia penuh)
+  models     jsonb,                     -- daftar model hasil "cek key & muat model" (null = pakai katalog statis)
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index if not exists providers_user_idx on providers (user_id);
+-- Kolom yang ditambahkan setelah tabel pertama dibuat (untuk instalasi yang sudah ada).
+alter table providers add column if not exists models jsonb;
 
 -- Percakapan. model/effort/Auto disimpan per-percakapan (meniru Adhitron lokal).
 create table if not exists conversations (

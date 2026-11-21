@@ -6,7 +6,7 @@ import {
   modelForTier, modelSupportsEffort, modelsFor, TIERS,
 } from './src/providers.mjs';
 import { decryptSecret, encryptSecret, keyHint, publicProvider } from './src/secrets.mjs';
-import { testProviderKey } from './src/client.mjs';
+import { testProviderKey, probeModels, normalizeModels } from './src/client.mjs';
 import { handleChatApi } from './src/chat-api.mjs';
 import { makeMemoryRepo } from './src/repo-memory.mjs';
 
@@ -156,4 +156,72 @@ test('client: testProviderKey mengirim header per provider & menangani timeout/g
   assert.match((await testProviderKey({ kind: 'openai', base_url: null }, 'k', boom)).error, /hubungi/);
   const refused = async () => ({ ok: false, status: 403 });
   assert.match((await testProviderKey({ kind: 'google', base_url: null }, 'k', refused)).error, /ditolak/);
+});
+
+test('normalizeModels: menormalkan bentuk OpenAI, Anthropic, & Gemini', () => {
+  assert.deepEqual(
+    normalizeModels('openai', { data: [{ id: 'gpt-5' }, { id: 'o4-mini', display_name: 'o4 mini' }, { id: 'gpt-5' }] }),
+    [{ id: 'gpt-5', label: 'gpt-5' }, { id: 'o4-mini', label: 'o4 mini' }],
+    'OpenAI: id saja, urut, tanpa duplikat',
+  );
+  assert.deepEqual(
+    normalizeModels('anthropic', { data: [{ id: 'claude-sonnet-4-5', display_name: 'Claude Sonnet 4.5' }] }),
+    [{ id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' }],
+  );
+  assert.deepEqual(
+    normalizeModels('google', { models: [{ name: 'models/gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' }] }),
+    [{ id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' }],
+    'Gemini: awalan models/ dibuang',
+  );
+  assert.deepEqual(normalizeModels('openai', null), [], 'payload rusak → daftar kosong, tidak melempar');
+});
+
+test('probeModels: ambil daftar model sekaligus membuktikan key; error diteruskan', async () => {
+  const fake = (j) => async () => ({ ok: true, status: 200, json: async () => j });
+  const openai = await probeModels({ kind: 'openai', base_url: null }, 'k', fake({ data: [{ id: 'gpt-5' }] }));
+  assert.deepEqual(openai, { ok: true, models: [{ id: 'gpt-5', label: 'gpt-5' }] });
+  const denied = async () => ({ ok: false, status: 401 });
+  assert.match((await probeModels({ kind: 'openai', base_url: null }, 'k', denied)).error, /ditolak/);
+});
+
+test('rute /providers/models: cek key calon provider (belum disimpan), tanpa login 401 & tanpa same-origin 403', async () => {
+  const env = makeEnv();
+  const { cookie } = await signedIn(env);
+  assert.equal((await send(env, jsonReq('/chat/api/providers/models', { kind: 'openai', apiKey: 'sk-abcdefgh' }))).status, 401, 'tanpa login');
+  assert.equal((await send(env, jsonReq('/chat/api/providers/models', { kind: 'openai', apiKey: 'sk-abcdefgh' }, { Cookie: cookie, Origin: 'https://jahat.test' }))).status, 403, 'bukan same-origin');
+  assert.equal((await send(env, jsonReq('/chat/api/providers/models', { kind: 'mars', apiKey: 'sk-abcdefgh' }, { Cookie: cookie }))).status, 400, 'kind tak dikenal');
+  const fake = async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: 'gpt-5' }, { id: 'gpt-5-mini' }] }) });
+  const r = await send(env, jsonReq('/chat/api/providers/models', { kind: 'openai', apiKey: 'sk-abcdefgh' }, { Cookie: cookie }), fake);
+  assert.equal(r.status, 200);
+  const data = await body(r);
+  assert.deepEqual(data.models.map((m) => m.id), ['gpt-5', 'gpt-5-mini']);
+  assert.equal(JSON.stringify(data).includes('abcdefgh'), false, 'key tidak dikembalikan');
+});
+
+test('provider menyimpan daftar model terpilih dan terbaca kembali', async () => {
+  const env = makeEnv();
+  const { cookie } = await signedIn(env);
+  const add = await send(env, jsonReq('/chat/api/providers', {
+    kind: 'openai', label: 'x', apiKey: 'sk-test-abcdefgh',
+    models: [{ id: 'gpt-5', label: 'GPT-5' }, { id: 'o4-mini', label: 'o4-mini' }, { id: 'gpt-5', label: 'dupe' }, { id: '' }],
+  }, { Cookie: cookie }));
+  assert.equal(add.status, 201);
+  const { provider } = await body(add);
+  assert.deepEqual(provider.models, [{ id: 'gpt-5', label: 'GPT-5' }, { id: 'o4-mini', label: 'o4-mini' }], 'bersih: unik, id wajib');
+  const list = await body(await send(env, req('/chat/api/providers', { headers: { Cookie: cookie } })));
+  assert.deepEqual(list.providers[0].models.map((m) => m.id), ['gpt-5', 'o4-mini']);
+});
+
+test('uji provider menyimpan daftar model hasil probe', async () => {
+  const env = makeEnv();
+  const { cookie } = await signedIn(env);
+  const add = await body(await send(env, jsonReq('/chat/api/providers', { kind: 'openai', label: 'x', apiKey: 'sk-test-abcdefgh' }, { Cookie: cookie })));
+  const fake = async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: 'gpt-5' }] }) });
+  const r = await send(env, req(`/chat/api/providers/${add.provider.id}/test`, { method: 'POST', headers: { Cookie: cookie } }), fake);
+  assert.equal(r.status, 200);
+  const data = await body(r);
+  assert.deepEqual(data.models, [{ id: 'gpt-5', label: 'gpt-5' }]);
+  assert.deepEqual(data.provider.models.map((m) => m.id), ['gpt-5']);
+  const stored = await env.repo.getProvider((await env.repo.getUserByEmail('a@b.co')).id, add.provider.id);
+  assert.deepEqual(stored.models.map((m) => m.id), ['gpt-5']);
 });

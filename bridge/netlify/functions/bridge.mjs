@@ -25,24 +25,32 @@ export default async (request) => {
       basePath: BRIDGE_BASE,
     });
   }
-  // Chat API: butuh DATABASE_URL (Neon). Repo dibuat per-request (driver HTTP: satu request per query).
-  if (url.pathname.startsWith('/chat/api/')) {
-    if (!process.env.DATABASE_URL) {
-      return new Response(JSON.stringify({ error: 'DATABASE_URL belum diset di server' }), {
-        status: 503, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
-      });
-    }
+  // Chat API & halaman situs ber-sesi: butuh DATABASE_URL (Neon). Repo dibuat per-request (driver HTTP).
+  const chatEnv = async () => {
+    if (!process.env.DATABASE_URL) return null;
     const store = getStore({ name: 'adhitron-web', consistency: 'strong' });
     const repo = makeSqlRepo(await createNeonDb(process.env.DATABASE_URL));
-    const env = {
+    return {
       repo, store, encryptionKey: process.env.ENCRYPTION_KEY,
       // Browsing: mesin pencari opsional (DuckDuckGo dipakai bila keduanya kosong).
       searchEngineEnv: { TAVILY_API_KEY: process.env.TAVILY_API_KEY, BRAVE_API_KEY: process.env.BRAVE_API_KEY },
     };
+  };
+
+  if (url.pathname.startsWith('/chat/api/')) {
+    const env = await chatEnv();
+    if (!env) {
+      return new Response(JSON.stringify({ error: 'DATABASE_URL belum diset di server' }), {
+        status: 503, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+    }
     const res = await handleChatApi(request, env, url.pathname);
     if (res) return res;
   }
-  const site = handleSite(request, url);
+  // Halaman situs: /chat & /auth butuh sesi → env dibuat bila DATABASE_URL ada (tanpa itu fail-open ke form).
+  let siteEnv = null;
+  try { siteEnv = await chatEnv(); } catch { siteEnv = null; }
+  const site = handleSite(request, siteEnv, url);
   if (site) return site;
   return new Response('Tidak ditemukan', { status: 404 });
 };

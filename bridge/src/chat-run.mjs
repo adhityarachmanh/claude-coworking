@@ -38,14 +38,15 @@ export async function resolveTurn(env, user, conv, { fetchImpl, text }) {
     const verdict = await classify({
       kind: provider.kind,
       prompt: text,
+      providerModels: provider.models,
       callModel, // disuntik di produksi (client.mjs) & di test
     });
     if (verdict) {
       if (conv.effort_auto) effort = clampEffort(verdict.effort);
-      if (conv.model_auto) model = modelForTier(provider.kind, verdict.tier, conv.model_tiers);
+      if (conv.model_auto) model = modelForTier(provider.kind, verdict.tier, conv.model_tiers, provider.models);
     }
   }
-  if (!model) model = defaultModelFor(provider.kind);
+  if (!model) model = defaultModelFor(provider.kind, provider.models);
   return { provider, apiKey, model, effort };
 }
 

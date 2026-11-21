@@ -72,8 +72,8 @@ export function makeMemoryRepo(state = {}) {
       const p = db.providers.find((x) => x.user_id === userId && x.id === id);
       return p ? { ...p } : null;
     },
-    async createProvider({ userId, kind, label, baseUrl = null, apiKeyEnc, keyHint = null }) {
-      const row = { id: randomUUID(), user_id: userId, kind, label, base_url: baseUrl, api_key_enc: apiKeyEnc, key_hint: keyHint, created_at: nowIso(), updated_at: nowIso() };
+    async createProvider({ userId, kind, label, baseUrl = null, apiKeyEnc, keyHint = null, models = null }) {
+      const row = { id: randomUUID(), user_id: userId, kind, label, base_url: baseUrl, api_key_enc: apiKeyEnc, key_hint: keyHint, models: models ?? null, created_at: nowIso(), updated_at: nowIso() };
       db.providers.push(row);
       return { ...row };
     },
