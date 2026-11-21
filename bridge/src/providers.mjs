@@ -2,6 +2,7 @@
 // Meniru Adhitron lokal: tiap provider punya daftar model + chip sumber, dan Effort
 // (Default/Low/Medium/High/X-High/Max) dipetakan sesuai kemampuan provider. Yang tidak didukung
 // diabaikan diam-diam (tidak error) — model tetap menerima permintaan tanpa parameter itu.
+import { isSafeUrl } from './ssrf.mjs';
 
 /** Jenis provider yang didukung v1. 'openai' mencakup semua endpoint OpenAI-compatible (base_url kustom). */
 export const PROVIDER_KINDS = Object.freeze(['openai', 'anthropic', 'google']);
@@ -150,7 +151,7 @@ export function effortParams(kind, modelId, effort = 'default') {
 /** Validasi kind. */
 export const isValidKind = (kind) => PROVIDER_KINDS.includes(kind);
 
-/** Validasi base_url kustom: https absolut saja (tanpa kredensial/query/hash), atau null. */
+/** Validasi base_url kustom: https absolut saja (tanpa kredensial/query/hash) DAN host publik (anti-SSRF), atau null. */
 export function cleanBaseUrl(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return { ok: true, value: null };
@@ -159,5 +160,7 @@ export function cleanBaseUrl(raw) {
   if (u.protocol !== 'https:') return { ok: false, error: 'URL harus https' };
   if (u.username || u.password) return { ok: false, error: 'URL tidak boleh memuat kredensial' };
   if (u.search || u.hash) return { ok: false, error: 'URL tidak boleh memuat query/fragmen' };
+  // Host privat/loopback/link-local/metadata diblokir: server ini memanggil base_url, jadi jangan jadi oracle SSRF.
+  if (!isSafeUrl(u.href).ok) return { ok: false, error: 'URL harus host publik' };
   return { ok: true, value: `${u.origin}${u.pathname.replace(/\/$/, '')}` };
 }

@@ -69,6 +69,20 @@ test('base_url: https absolut saja, tanpa kredensial/query', () => {
   assert.deepEqual(cleanBaseUrl('https://api.x.test/v1/'), { ok: true, value: 'https://api.x.test/v1' });
 });
 
+test('base_url: menolak host lokal/privat (anti-SSRF)', () => {
+  for (const bad of [
+    'https://localhost/v1', 'https://localhost:8080', 'https://foo.localhost',
+    'https://127.0.0.1', 'https://127.1', 'https://0x7f.0.0.1', 'https://[::1]',
+    'https://10.0.0.5', 'https://192.168.1.10', 'https://172.16.0.1',
+    'https://169.254.169.254/latest/meta-data', 'https://metadata.google.internal',
+    'https://api.internal', 'https://db.local', 'https://100.64.0.1',
+  ]) {
+    assert.equal(cleanBaseUrl(bad).ok, false, `${bad} seharusnya ditolak`);
+  }
+  // Host publik tetap lolos.
+  assert.deepEqual(cleanBaseUrl('https://api.openai.com/v1/'), { ok: true, value: 'https://api.openai.com/v1' });
+});
+
 // ---------------------------------------------------------------- enkripsi
 
 test('secrets: enkripsi-dekripsi simetris; kunci salah gagal; keyHint tidak membocorkan key', () => {
