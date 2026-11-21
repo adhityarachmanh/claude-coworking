@@ -1937,6 +1937,7 @@ test('portal: root menampilkan dua pintu (Chat & Remote Power) tanpa membocorkan
   assert.match(chat, /class="nochrome"/, 'kerangka chat tanpa header/footer kolom artikel');
   assert.match(chat, /viewport-fit=cover/, 'viewport menutup area aman (notch)');
   assert.match(chat, /--vv-h/, 'CSS memakai tinggi visualViewport');
+  assert.match(chat, /\.chatwrap\[hidden\]\{display:none\}/, 'panel chat sembunyi saat belum masuk (menang atas display:grid)');
   const app = handleSite(req('/chat/app.js'));
   assert.equal(app.status, 200, 'app.js tersedia');
   assert.match(app.headers.get('content-type') || '', /javascript/);

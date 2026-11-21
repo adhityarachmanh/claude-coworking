@@ -28,6 +28,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
   terpotong notch/home-indicator), input 16px anti-zoom iOS, target sentuh ≥ 44px, modal provider selalu di atas
   samping riwayat, `Escape` menutup samping/modal. Di sisi lokal, `pair.html` & panel tablet ikut menyesuaikan tinggi
   area terlihat.
+- **🔑 /chat hanya menampilkan form saat belum masuk.** Sebelumnya panel chat ikut terlihat di bawah form masuk
+  (grid `display:grid` menang atas atribut `hidden`); kini saat belum masuk yang tampil hanya form email + password,
+  dan fitur chat baru muncul setelah berhasil masuk.
 
 ## 1.0.83
 

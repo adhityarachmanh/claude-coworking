@@ -73,6 +73,7 @@ border:1px solid transparent;font:inherit;font-size:1rem;font-weight:600;cursor:
 .msg.bad{background:#2a1614;border-color:#6e2a24}
 /* --- tata letak chat (M7) --- */
 .chatwrap{display:grid;gap:0;height:100svh;height:100dvh;grid-template-rows:minmax(0,1fr)}
+.chatwrap[hidden]{display:none}
 .chatbody{display:grid;grid-template-columns:1fr;min-height:0}
 @media(min-width:820px){.chatbody{grid-template-columns:260px 1fr}}
 .side{border-right:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;min-height:0}
