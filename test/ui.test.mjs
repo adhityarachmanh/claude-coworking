@@ -4743,6 +4743,47 @@ for (const vp of VIEWPORTS) {
       }
     });
 
+    test('🧭 Shift+Tab memutar Build → Plan → Auto dan menyimpan pilihannya', async () => {
+      await ensureApp(page, `#${projectId}`);
+      await page.eval(async (pid) => {
+        const { state } = await import('/js/core/state.js');
+        state.statuses[pid] = { ...(state.statuses[pid] ?? {}), mode: 'build', modePendingChoice: undefined, modeNotice: undefined };
+        (await import('/js/features/composer.js')).renderComposer();
+        window.__modeCalls = [];
+        window.__modeFetch ??= window.fetch;
+        const prev = window.fetch;
+        window.fetch = (url, opts) => {
+          if (String(url).endsWith(`/api/projects/${pid}/settings`)) {
+            window.__modeCalls.push(JSON.parse(opts.body));
+            return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+          }
+          return prev(url, opts);
+        };
+      }, projectId);
+      const pressShiftTab = () =>
+        page.eval(() => {
+          const prompt = document.querySelector('#prompt');
+          prompt.focus();
+          // Dispatch on the prompt itself: the handler ignores events whose target is neither #prompt nor body.
+          prompt.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }));
+          return document.querySelector('#mode').value;
+        });
+      try {
+        assert.equal(await pressShiftTab(), 'plan', 'Build → Plan');
+        assert.equal(await pressShiftTab(), 'autopilot', 'Plan → Auto');
+        assert.equal(await pressShiftTab(), 'build', 'Auto → Build (membungkus)');
+        await page.waitFor(() => window.__modeCalls?.length === 3, { timeoutMs: 3000, message: 'tiap putaran tersimpan' });
+        assert.deepEqual(await page.eval(() => window.__modeCalls.map((c) => c.mode)), ['plan', 'autopilot', 'build']);
+      } finally {
+        await page.eval(async (pid) => {
+          window.fetch = window.__modeFetch;
+          const { state } = await import('/js/core/state.js');
+          state.statuses[pid] = { ...(state.statuses[pid] ?? {}), mode: 'build', modePendingChoice: undefined, modeNotice: undefined };
+          (await import('/js/features/composer.js')).renderComposer();
+        }, projectId);
+      }
+    });
+
     test('👤 Akun: dua tab info Claude/OpenCode, tanpa tombol ganti mesin & tanpa /api/engine', async () => {
       await ensureApp(page, `#${projectId}`);
       await page.eval(() => {
