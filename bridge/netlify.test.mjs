@@ -7,6 +7,7 @@ import { after, test } from 'node:test';
 import vm from 'node:vm';
 import { handleApi, scheduledSweep } from './src/bridge.mjs';
 import { readPlugStatus } from './src/tuya.mjs';
+import { handleSite } from './src/site.mjs';
 import { decryptCreds, decryptSecret, encryptCreds } from './src/vault.mjs';
 import * as store from './src/store.mjs';
 
@@ -1915,4 +1916,51 @@ test('manage: update memakai secret lama saat kosong, rotasi token mematikan tok
   assert.match(await del.text(), /Space dihapus/);
   assert.equal(await getSpace(env, id), null, 'record space hilang');
   assert.equal(await env.store.map.get(`token/${createHash('sha256').update(newToken).digest('hex')}`), undefined, 'index token (hash) hilang');
+});
+
+// ---------------------------------------------------------------- portal + mount '/bridge'
+
+test('portal: root menampilkan dua pintu (Chat & Remote Power) tanpa membocorkan kredensial', async () => {
+  const r = handleSite(req('/'));
+  assert.equal(r.status, 200);
+  const html = await r.text();
+  assert.match(html, /href="\/chat"/, 'pintu Chat menuju /chat');
+  assert.match(html, /href="\/bridge"/, 'pintu Remote Power menuju /bridge');
+  assert.match(html, /API key milikmu sendiri/, 'menjelaskan key milik user');
+  assert.equal(handleSite(req('/halaman-asing')), null, 'path tak dikenal diserahkan ke pemanggil (404)');
+  assert.equal((await handleSite(req('/chat')).text()).includes('💬 Chat'), true, 'kerangka chat ada');
+});
+
+test('mount /bridge: rute jembatan sama seperti di root, tapi URL yang diterbitkan berprefiks /bridge', async () => {
+  const env = { ...makeEnv(), basePath: '/bridge' };
+  fakeTuya();
+  // Halaman daftar jembatan melayani '/bridge' (prefix dipangkas) dan tautan internalnya berprefiks.
+  const page = await handleApi(req('/bridge'), env);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /href="\/bridge\/"/, 'brand menunjuk ke mount');
+  assert.match(html, /fetch\('\/bridge\/api\/space'/, 'form daftar memanggil API berprefiks');
+  // Register lewat mount: payload menerbitkan bridgeUrl/statusUrl/manageUrl berprefiks '/bridge'.
+  const reg = await statusOf(await handleApi(req('/bridge/api/space', {
+    method: 'POST',
+    headers: { 'x-nf-client-connection-ip': '1.2.3.4', 'Content-Type': 'application/json' },
+    body: JSON.stringify(defaultBody()),
+  }), env));
+  assert.equal(reg.status, 200, JSON.stringify(reg.body));
+  assert.equal(reg.body.bridgeUrl, 'https://bridge.test/bridge', 'URL jembatan untuk panel Adhitron berprefiks');
+  assert.match(reg.body.statusUrl, /^\/bridge\/s\/[0-9a-f]{8}$/);
+  assert.match(reg.body.manageUrl, /^\/bridge\/manage\?token=[0-9a-f]{64}$/);
+  // Halaman manage berprefiks tetap memvalidasi token (route + action berprefiks).
+  const manage = await handleApi(req(`/bridge/manage?token=${reg.body.token}`), env);
+  assert.equal(manage.status, 200);
+  assert.match(await manage.text(), /action="\/bridge\/api\/manage\?token=/, 'form manage memakai action berprefiks');
+});
+
+test('mount root (basePath kosong) tetap byte-identik: rute & URL tanpa prefiks', async () => {
+  const env = makeEnv();
+  fakeTuya();
+  const { body } = await doRegister(env);
+  assert.equal(body.bridgeUrl, 'https://bridge.test', 'tanpa prefiks saat basePath kosong');
+  assert.match(body.statusUrl, /^\/s\//);
+  assert.match(body.manageUrl, /^\/manage\?token=/);
 });

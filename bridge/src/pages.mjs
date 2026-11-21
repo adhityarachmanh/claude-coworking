@@ -118,11 +118,15 @@ export const escapeHtml = (s) => String(s ?? '')
 /** JSON aman untuk <script>: ganti '<' agar tidak bisa menutup tag lebih awal. */
 const jsonForScript = (value) => JSON.stringify(value).replaceAll('<', '\\u003c');
 
-const page = (title, body) =>
+/** Literal string ber-kutip-tunggal untuk sebuah path jembatan di dalam <script>. Saat base '' hasilnya
+ *  byte-identik dengan literal lama ('/api/space'); saat base '/bridge' path ikut berprefiks. */
+const jsPath = (base, path) => `'${base}${path}'`;
+
+const page = (title, body, base = '') =>
   `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark"><meta name="theme-color" content="#121317">
 <title>${escapeHtml(title)}</title><style>${CSS}</style></head><body>
-<header class="top"><a class="brand" href="/">${LOGO}<span>Adhitron <em>Remote&nbsp;Power</em></span></a></header>
+<header class="top"><a class="brand" href="${base}/">${LOGO}<span>Adhitron <em>Remote&nbsp;Power</em></span></a></header>
 <main class="card">${body}</main>
 <footer class="foot">Jembatan daya Adhitron · kredensial tersimpan terenkripsi, tidak pernah dibagikan</footer>
 </body></html>`;
@@ -164,14 +168,16 @@ token-mu sendiri.</li>
 sebarkan URL manage-mu</b> — token ada di URL-nya.</li>
 </ul></div></details>`;
 
-/** Bentuk yang diterbitkan server untuk "space" di localStorage (id 8 hex, token 64 hex). */
-const SPACE_SHAPE = Object.freeze({
+/** Bentuk yang diterbitkan server untuk "space" di localStorage (id 8 hex, token 64 hex).
+ *  `base` = prefiks mount situs ('/bridge' saat jembatan bukan di root): pola mengikuti supaya entri
+ *  localStorage yang diterbitkan server (manageUrl/statusUrl berprefiks) tetap diterima pembacaan klien. */
+const spaceShape = (base = '') => Object.freeze({
   id: /^[0-9a-f]{8}$/i,
   token: /^[0-9a-f]{64}$/i,
   bridgeUrl: /^https?:\/\/[^\s]+$/,
-  manageUrl: /^\/manage\?token=[0-9a-f]{64}$/i,
-  statusUrl: /^\/s\/[0-9a-f]{8}$/i,
-  tokenInManage: /^\/manage\?token=([0-9a-f]{64})$/i,
+  manageUrl: new RegExp(`^${base}/manage\\?token=[0-9a-f]{64}$`, 'i'),
+  statusUrl: new RegExp(`^${base}/s/[0-9a-f]{8}$`, 'i'),
+  tokenInManage: new RegExp(`^${base}/manage\\?token=([0-9a-f]{64})$`, 'i'),
 });
 
 /** Kode pasangan: 8 karakter base32 tanpa huruf/angka ambigu (tanpa backslash, aman disuntik ke <script>).
@@ -182,7 +188,7 @@ const PAIR_CODE_SOURCE = `^[${PAIR_DIGITS}${PAIR_LETTERS}]{8}$`;
 /** Atribut HTML pattern (case-insensitive: huruf kecil ikut diterima, backend juga menerimanya). */
 const PAIR_PATTERN = `[${PAIR_DIGITS}${PAIR_LETTERS}${PAIR_LETTERS.toLowerCase()}]{8}`;
 
-export function registerPageHtml(notice = '') {
+export function registerPageHtml(notice = '', base = '') {
   return page('Adhitron Remote Power — daftar', `
 <h1>Remote power untuk PC-mu</h1>
 <p class="lead">Nyalakan / matikan PC dari jauh lewat smart plug (Bardi, Smart Life, dsb.) — gratis, multi-user:
@@ -247,12 +253,12 @@ const SPACE_KEY = 'adhitron-space';
 // Bentuk yang benar-benar diterbitkan server. Regex-nya disuntik dari modul (SPACE_SHAPE) lewat new RegExp:
 // menulis regex literal di sini akan kehilangan backslash-nya (template string memakan \/ \? \s), dan
 // seluruh <script> jadi SyntaxError — perilaku ini dijaga test yang mengompilasi skrip halaman.
-const ID_RE = new RegExp(${jsonForScript(SPACE_SHAPE.id.source)}, 'i');
-const TOKEN_RE = new RegExp(${jsonForScript(SPACE_SHAPE.token.source)}, 'i');
-const BRIDGE_RE = new RegExp(${jsonForScript(SPACE_SHAPE.bridgeUrl.source)}, 'i');
-const MANAGE_RE = new RegExp(${jsonForScript(SPACE_SHAPE.manageUrl.source)}, 'i');
-const STATUS_RE = new RegExp(${jsonForScript(SPACE_SHAPE.statusUrl.source)}, 'i');
-const TOKEN_IN_MANAGE_RE = new RegExp(${jsonForScript(SPACE_SHAPE.tokenInManage.source)}, 'i');
+const ID_RE = new RegExp(${jsonForScript(spaceShape(base).id.source)}, 'i');
+const TOKEN_RE = new RegExp(${jsonForScript(spaceShape(base).token.source)}, 'i');
+const BRIDGE_RE = new RegExp(${jsonForScript(spaceShape(base).bridgeUrl.source)}, 'i');
+const MANAGE_RE = new RegExp(${jsonForScript(spaceShape(base).manageUrl.source)}, 'i');
+const STATUS_RE = new RegExp(${jsonForScript(spaceShape(base).statusUrl.source)}, 'i');
+const TOKEN_IN_MANAGE_RE = new RegExp(${jsonForScript(spaceShape(base).tokenInManage.source)}, 'i');
 const CODE_RE = new RegExp(${jsonForScript(PAIR_CODE_SOURCE)});
 // Entri localStorage bisa rusak/aneh (storage bersama, versi lama): yang tidak cocok diperlakukan sebagai
 // "belum ada space" — bukan dirender sebagai [object Object] dan bukan dipasang sebagai href.
@@ -327,7 +333,7 @@ $('paste').addEventListener('submit', (e) => {
     out.replaceChildren(warn);
     return;
   }
-  location.href = '/manage?token=' + encodeURIComponent(token);
+  location.href = ${jsPath(base, '/manage?token=')} + encodeURIComponent(token);
 });
 // 📲 Kode pasangan dari halaman Kelola di perangkat lain: sekali pakai, berlaku 2 menit.
 $('pair').addEventListener('submit', async (e) => {
@@ -343,7 +349,7 @@ $('pair').addEventListener('submit', async (e) => {
   if (!CODE_RE.test(code)) return warn('⚠ Kode harus 8 karakter: A–Z dan 2–9 (tanpa I, L, O, U).');
   out.innerHTML = '<p class="muted">Membuka…</p>';
   try {
-    const r = await fetch('/api/pair/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const r = await fetch(${jsPath(base, '/api/pair/claim')}, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: code }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) return warn('⚠ ' + errText(d, 'kode tidak dikenal atau kedaluwarsa'));
@@ -360,7 +366,7 @@ document.getElementById('reg').addEventListener('submit', async (e) => {
   const f = e.target, out = $('out');
   out.innerHTML = '<p class="muted">Mendaftarkan…</p>';
   try {
-    const r = await fetch('/api/space', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const r = await fetch(${jsPath(base, '/api/space')}, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(Object.fromEntries(new FormData(f))) });
     const d = await r.json();
     // B7: nilai dari server dirender via textContent (bukan innerHTML) — tidak ada jalur injeksi.
@@ -406,13 +412,13 @@ document.getElementById('reg').addEventListener('submit', async (e) => {
   }
 });
 renderSpace();
-</script>`);
+</script>`, base);
 }
 
 /** space.ownerToken tidak ada lagi di record (terenkripsi) — form action memakai token dari query request. */
-export function managePageHtml(space, queryToken, creds, { notice = '', newToken = null } = {}) {
+export function managePageHtml(space, queryToken, creds, { notice = '', newToken = null, base = '' } = {}) {
   const regionOpts = regionOptions(creds.tuyaRegion);
-  const formAction = `/api/manage?token=${encodeURIComponent(queryToken)}`;
+  const formAction = `${base}/api/manage?token=${encodeURIComponent(queryToken)}`;
   return page('Kelola space', `
 <h1>Kelola space</h1>
 <p class="muted">id: <code>${escapeHtml(space.id)}</code> · dibuat ${new Date(space.createdAt).toISOString().slice(0, 16).replaceAll('T', ' ')} UTC</p>
@@ -471,11 +477,11 @@ try {
       localStorage.setItem(KEY, JSON.stringify({
         id: id,
         bridgeUrl: location.origin,
-        statusUrl: '/s/' + id,
-        manageUrl: '/manage?token=' + encodeURIComponent(token),
+        statusUrl: ${jsPath(base, '/s/')} + id,
+        manageUrl: ${jsPath(base, '/manage?token=')} + encodeURIComponent(token),
       }));
     } else if (stored.id === id) {
-      stored.manageUrl = '/manage?token=' + encodeURIComponent(token);
+      stored.manageUrl = ${jsPath(base, '/manage?token=')} + encodeURIComponent(token);
       localStorage.setItem(KEY, JSON.stringify(stored));
     }
   }
@@ -519,7 +525,7 @@ byId('pair-new').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = 'Membuat kode…';
   try {
-    const r = await fetch('/api/pair', { method: 'POST', headers: { 'X-Bridge-Token': PAIR_TOKEN } });
+    const r = await fetch(${jsPath(base, '/api/pair')}, { method: 'POST', headers: { 'X-Bridge-Token': PAIR_TOKEN } });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d && typeof d.error === 'string' && d.error ? d.error : 'HTTP ' + r.status);
     const raw = d && typeof d.code === 'string' ? d.code.trim().toUpperCase() : ''; // kode selalu ditampilkan uppercase
@@ -536,7 +542,7 @@ byId('pair-new').addEventListener('click', async () => {
 });
 byId('pair-copy').addEventListener('click', async () => {
   if (!PAIR_TOKEN) return;
-  const link = location.origin + '/manage?token=' + encodeURIComponent(PAIR_TOKEN);
+  const link = location.origin + ${jsPath(base, '/manage?token=')} + encodeURIComponent(PAIR_TOKEN);
   try {
     if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') throw new Error('clipboard tidak tersedia');
     await navigator.clipboard.writeText(link);
@@ -545,12 +551,12 @@ byId('pair-copy').addEventListener('click', async () => {
     window.prompt('Salin link manage (Ctrl+C):', link); // fallback: tidak semua browser mengizinkan clipboard
   }
 });
-</script>`);
+</script>`, base);
 }
 
-export const deletedPageHtml = (id = '') => page('Space dihapus', `
+export const deletedPageHtml = (id = '', base = '') => page('Space dihapus', `
 <h1>🗑 Space dihapus</h1><p class="muted">Semua data (termasuk kredensial terenkripsi) sudah dihapus dari server.</p>
-<p><a href="/">← Daftar lagi</a></p>
+<p><a href="${base}/">← Daftar lagi</a></p>
 <script>
 // Kartu "Space kamu" di "/" tidak boleh menunjuk space yang sudah tidak ada (hanya yang id-nya cocok).
 try {
@@ -561,10 +567,10 @@ try {
     if (s && s.id === ${jsonForScript(String(id))}) localStorage.removeItem(KEY);
   }
 } catch {}
-</script>`);
+</script>`, base);
 
-export const errorPageHtml = (title, text) => page(escapeHtml(title), `
-<h1>${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p><p><a href="/">← Beranda</a></p>`);
+export const errorPageHtml = (title, text, base = '') => page(escapeHtml(title), `
+<h1>${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p><p><a href="${base}/">← Beranda</a></p>`, base);
 
 const POWER_OFF_W = 10; // sama dengan ambang bridge: ≤ ini listrik dianggap benar-benar terputus
 const POWER_ALIVE_W = 15; // sama dengan bridge: di atas ini listrik benar-benar mengalir (PC menarik daya)
@@ -665,7 +671,7 @@ function initialButtons(state, s) {
  *   unknown        → ⚡ Nyalakan paksa (?force=1, listrik disiklus — dijelaskan lewat confirm).
  * Selama jeda 2 menit sesudah listrik diputus, tombol Nyalakan memakai hitung mundur (1 dtk) dan aktif sendiri
  * saat mencapai 0 — tanpa menunggu poll; server tetap menolak dengan 409. */
-export function statusPageHtml(id, pollToken, fromTicket, status, adhitronUrl) {
+export function statusPageHtml(id, pollToken, fromTicket, status, adhitronUrl, base = '') {
   const state = stateOfStatus(status);
   const initial = {
     id, state, alive: status.alive, offAt: status.offAt, secondsUntilOff: status.secondsUntilOff,
@@ -694,6 +700,7 @@ export function statusPageHtml(id, pollToken, fromTicket, status, adhitronUrl) {
 <p class="muted" id="plug">${escapeHtml(plugLine(status))}</p>
 <script>
 const ID = ${jsonForScript(id)}, TOKEN = ${jsonForScript(pollToken)}, FROM_TICKET = ${jsonForScript(fromTicket)};
+const BASE = ${jsonForScript(base)};
 const OFF_DELAY = ${jsonForScript(Number.isInteger(status.offDelaySec) && status.offDelaySec >= 0 ? status.offDelaySec : 300)};
 const POWER_OFF_W = ${POWER_OFF_W}, POWER_ALIVE_W = ${POWER_ALIVE_W};
 const COOLDOWN_NOTE = ${jsonForScript(COOLDOWN_NOTE)};
@@ -704,7 +711,7 @@ let bootMode = false, timer = null, flash = '', last = null;
 let eUpdatedAt = 0, eBurst = 0;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-if (FROM_TICKET) history.replaceState(null, '', '/s/' + ID + '?t=' + TOKEN); // tiket sesi menggantikan tiket serah-terima di URL
+if (FROM_TICKET) history.replaceState(null, '', BASE + '/s/' + ID + '?t=' + TOKEN); // tiket sesi menggantikan tiket serah-terima di URL
 function fmt(sec) { const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); }
 function dtext(sec) { return sec >= 60 ? Math.round(sec / 60) + ' mnt' : sec + ' dtk'; }
 // Jeda 2 menit sesudah listrik diputus (semua pemutusan, ?force=1 ikut terkunci).
@@ -815,9 +822,9 @@ async function act(path, boot) {
   if (r.ok) refreshEnergyBurst(); // listrik berubah: beberapa sampel singkat lalu berhenti (kuota Tuya dijaga)
   poll();
 }
-function nyalakan() { act('/api/on', true); }
+function nyalakan() { act(BASE + '/api/on', true); }
 function nyalakanPaksa() {
-  if (confirm('Nyalakan paksa? Listrik akan disiklus OFF → ON. Kalau PC ternyata masih hidup, PC mati mendadak lalu hidup lagi. Lanjut?')) act('/api/on?force=1', true);
+  if (confirm('Nyalakan paksa? Listrik akan disiklus OFF → ON. Kalau PC ternyata masih hidup, PC mati mendadak lalu hidup lagi. Lanjut?')) act(BASE + '/api/on?force=1', true);
 }
 /** Konfirmasi TAMBAHAN sebelum memotong arus saat Bardi masih mengukur daya > 15 W (PC kemungkinan hidup).
  *  Tanpa data daya (plug tanpa sensor) tidak ada pertanyaan tambahan: konfirmasi biasa sudah cukup. */
@@ -830,28 +837,28 @@ function confirmPowerCut(what) {
 function offRapi() {
   if (!confirm('Putus arus listrik Bardi? Windows TIDAK dimatikan dari sini — matikan PC dari aplikasi dulu. Listrik diputus ' + dtext(OFF_DELAY) + ' lagi. Lanjut?')) return;
   if (!confirmPowerCut('Putus arus')) return;
-  act('/api/off?hold=1');
+  act(BASE + '/api/off?hold=1');
 }
 function putusArus() {
   if (!confirm('Putus arus listrik sekarang? Pastikan PC sudah mati (Windows sudah shutdown).')) return;
   if (!confirmPowerCut('Putus arus sekarang')) return;
-  act('/api/off?delay=0&hold=1');
+  act(BASE + '/api/off?delay=0&hold=1');
 }
 async function batalkan() {
   if (!confirm('Batalkan jadwal pemutusan listrik? PC tetap menyala.')) return;
   flash = '';
-  const r = await call('/api/off/cancel');
+  const r = await call(BASE + '/api/off/cancel');
   if (!r.ok) flash = r.error;
   poll();
 }
 function force() {
   if (!confirm('Putus paksa? Listrik diputus dalam 5 menit; kalau ternyata PC hidup lagi, jadwal otomatis batal.')) return;
   if (!confirmPowerCut('Putus paksa')) return;
-  act('/api/off?delay=300');
+  act(BASE + '/api/off?delay=300');
 }
 async function poll() {
   try {
-    const r = await fetch('/api/status', { headers: { 'X-Status-Token': TOKEN } });
+    const r = await fetch(BASE + '/api/status', { headers: { 'X-Status-Token': TOKEN } });
     if (r.status === 401) { $('state').textContent = '⚫ sesi kedaluwarsa — muat ulang halaman / minta link baru'; return; }
     const s = await r.json();
     setCooldown(s); // jeda 2 menit dari server: hitung mundur lokal dimulai ulang dari sisa detik terbaru
@@ -894,7 +901,7 @@ async function loadEnergy() {
   const btn = $('e-refresh');
   if (btn) btn.disabled = true;
   try {
-    const r = await fetch('/api/energy', { headers: { 'X-Status-Token': TOKEN } });
+    const r = await fetch(BASE + '/api/energy', { headers: { 'X-Status-Token': TOKEN } });
     const d = await r.json().catch(() => ({}));
     if (!d || d.ok !== true) {
       clearEnergy();
@@ -925,11 +932,11 @@ function refreshEnergyBurst() {
 $('e-refresh').addEventListener('click', () => loadEnergy());
 setInterval(() => { if (eUpdatedAt) energyNote(''); }, 5000); // teks "diperbarui N dtk lalu" (tanpa network)
 loadEnergy();
-</script>`);
+</script>`, base);
 }
 
 /** Halaman kalau tiket kedaluwarsa / token salah pada halaman HTML (401). */
-export const ticketExpiredHtml = () => page('Sesi kedaluwarsa', `
+export const ticketExpiredHtml = (base = '') => page('Sesi kedaluwarsa', `
 <h1>⌛ Link tidak berlaku</h1>
 <p class="muted">Link serah-terima hanya dipakai sekali dan kedaluwarsa 10 menit. Minta link baru (tombol Matikan PC di
-Adhitron) atau buka <code>/manage</code> dengan token-mu.</p><p><a href="/">← Beranda</a></p>`);
+Adhitron) atau buka <code>${base}/manage</code> dengan token-mu.</p><p><a href="${base}/">← Beranda</a></p>`, base);
