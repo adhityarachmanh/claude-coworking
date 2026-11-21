@@ -9,6 +9,16 @@ import { test } from 'node:test';
 import { permissionConfig } from '../src/acp-session.js';
 import { mergePermission, readOnlyOpenCodeEnv, readUserPermission, childOpenCodeEnv } from '../src/opencode-bin.js';
 
+test('permissionConfig autopilot: never writes a `read` rule, so the user .env / read rules still apply', () => {
+  // Auto loosens edit/bash/webfetch only. The config layer is the LAST one, so NOT writing `read` is what keeps
+  // the user's own read rules (and OpenCode's own ask for .env) effective underneath - the app must not override them.
+  assert.equal('read' in permissionConfig('autopilot'), false, 'Auto alone never writes a read rule');
+  assert.equal('read' in permissionConfig('autopilot', { read: { '*.env': 'ask', '*': 'allow' } }), false, 'a user read rule is left to their own layer, not restated here');
+  assert.equal('read' in permissionConfig('autopilot', { read: 'deny' }), false, 'even a user read deny is not ours to write');
+  // sanity: the other three tools are exactly the ones Auto writes.
+  assert.deepEqual(Object.keys(permissionConfig('autopilot')).sort(), ['bash', 'edit', 'webfetch']);
+});
+
 const MODES = ['build', 'plan', 'dontAsk', 'autopilot'];
 
 test('permissionConfig without user rules: the mode alone', () => {

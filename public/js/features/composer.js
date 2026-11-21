@@ -249,7 +249,7 @@ function renderSettingsChip(st) {  const chip = $('#settings-chip');
   note.textContent = $('#effort').title;
 }
 
-/** Modes the engine doesn't offer still leave the select and the Shift+Tab cycle (both engines offer both today). */
+/** Modes the engine doesn't offer still leave the select and the Shift+Tab cycle (both engines offer all three today). */
 /**
  * OpenCode's primary agents (status.agents from its `mode` option): build and the user's own agents. "plan" stays
  * under Mode → Plan (the Izin control on OpenCode), so it is not offered twice. Hidden for Claude Code or when there is only build.
@@ -272,7 +272,7 @@ function renderAgentOptions(st, engine) {
   select.title = st.mode === 'plan' ? 'Saat Mode = Plan, OpenCode memakai agent plan' : '';
 }
 
-// One mode control for both engines: Plan/Build. The engine name still tells which machine it configures.
+// One mode control for both engines: Plan/Build/Auto. The engine name still tells which machine it configures.
 const MODE_CTL = {
   label: 'Mode',
   title: 'Plan: hanya menyusun rencana, tanpa mengubah file. Build: file boleh diubah otomatis, tetapi perintah shell dan jaringan tetap minta izin. Auto: shell dan jaringan langsung dikerjakan tanpa kartu izin; aturan deny dan file rahasia tetap berlaku.',

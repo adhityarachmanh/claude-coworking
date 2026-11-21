@@ -8,8 +8,8 @@ import { teamOrder } from './roster.js';
 
 const TAU = Math.PI * 2;
 // The core's hue follows the permission mode: how freely the brain may act (r, g, b)
-const MODE_HUE = { plan: [110, 170, 255], build: [90, 220, 200], manual: [90, 220, 200], acceptEdits: [90, 220, 200], auto: [90, 220, 200], dontAsk: [110, 170, 255] };
-const MODE_NAME = { plan: 'rencana', build: 'build', manual: 'build', acceptEdits: 'build', auto: 'build', dontAsk: 'rencana' };
+const MODE_HUE = { plan: [110, 170, 255], build: [90, 220, 200], autopilot: [255, 190, 90], manual: [90, 220, 200], acceptEdits: [90, 220, 200], auto: [90, 220, 200], dontAsk: [110, 170, 255] };
+const MODE_NAME = { plan: 'rencana', build: 'build', autopilot: 'auto', manual: 'build', acceptEdits: 'build', auto: 'build', dontAsk: 'rencana' };
 const ease = (t) => 1 - (1 - t) ** 3;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const short = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);

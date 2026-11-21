@@ -1216,7 +1216,7 @@ export class Hub {
   settingsFor(id) {
     const engine = this.engineOf(id);
     const settings = { ...DEFAULT_SETTINGS, ...this.persisted.settings[id], engine };
-    // A hand-edited/older state.json could hold anything here: the engines only ever see build/plan.
+    // A hand-edited/older state.json could hold anything here: the engines only ever see build/plan/autopilot.
     settings.mode = normalizeMode(settings.mode);
     // A hand-edited state.json could hold anything here; ladders are validated when they are written instead.
     if (!isObject(settings.modelTiers)) settings.modelTiers = {};

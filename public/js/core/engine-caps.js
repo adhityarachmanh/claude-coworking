@@ -131,7 +131,7 @@ export function capReason(cap) {
   return CAP_REASON[cap] ?? `Belum tersedia untuk model yang aktif: ${CAP_FEATURE[cap] ?? cap}`;
 }
 
-/** A stored mode the engine doesn't offer is shown as the first mode it does offer (always Build or Plan). */
+/** A stored mode the engine doesn't offer is shown as the first mode it does offer (always Build, Plan or Auto). */
 export function modeFor(mode, caps) {
   const modes = caps?.modes ?? CLAUDE_CAPS.modes;
   const wanted = normalizeMode(mode);

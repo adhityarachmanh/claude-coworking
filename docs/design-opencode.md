@@ -341,7 +341,7 @@ OpenCode ──request session/request_permission {toolCall, options}──► A
 | `plan` | seperti `manual` | `plan` |
 | `dontAsk` | tidak ditawarkan (UI sembunyi); jika tersimpan → diperlakukan `manual` | `build` |
 
-> UI OpenCode hanya menampilkan **Build** (mode app `manual`) dan **Plan**; mode `acceptEdits`, `auto`, dan `dontAsk` tetap diterima dari settings lama/API untuk kompatibilitas, tetapi tidak ditawarkan lagi.
+> UI OpenCode menampilkan **Build** (mode app `manual`), **Plan**, dan **⚡ Auto** (mode app `autopilot`, ≈ CLI `opencode --auto`). Mode `acceptEdits` dan `dontAsk` tetap diterima dari settings lama/API untuk kompatibilitas, tetapi tidak ditawarkan lagi; `auto` lama tetap dibaca sebagai Build (bukan Auto).
 
 - Perubahan `edit/bash/webfetch` hanya berlaku lewat respawn (env) → `restartPending = true`, respawn saat idle + `session/load` (seperti `reloadSettings()`). Perubahan `plan` ↔ `build` saja → `set_config_option` tanpa respawn.
 - `OPENCODE_CONFIG_CONTENT` di-merge OpenCode **di atas** config user/project. Aturan `permission` yang lebih spesifik di config user (mis. `bash: {"git *": "allow"}`) mungkin tetap menang (Q2). Ini tidak melonggarkan mode `manual` lebih dari yang dipilih user sendiri.
@@ -360,7 +360,7 @@ config.engines = {
 };
 // caps (boolean): effort, team, rewind, mcp, bgTasks, askQuestion, exportSession, mirror, modes:[...]
 const CAPS_OPENCODE = { effort:false, team:false, rewind:false, mcp:false, bgTasks:false, askQuestion:false,
-                        exportSession:false, mirror:false, modes:['manual','plan'] };
+                        exportSession:false, mirror:false, modes:['build','plan','autopilot'] };
 ```
 
 Status project (`hub.setStatus`) menambah `engine` (sudah ada lewat settings) dan `models` **per project** untuk OpenCode:
