@@ -47,10 +47,11 @@ export default async (request) => {
     const res = await handleChatApi(request, env, url.pathname);
     if (res) return res;
   }
-  // Halaman situs: /chat & /auth butuh sesi → env dibuat bila DATABASE_URL ada (tanpa itu fail-open ke form).
+  // Halaman situs: /chat & /auth butuh sesi → env dibuat hanya untuk path itu (tanpa DATABASE_URL fail-open ke form).
+  const needsSession = url.pathname === '/chat' || url.pathname === '/chat/' || url.pathname === '/auth' || url.pathname.startsWith('/auth/');
   let siteEnv = null;
-  try { siteEnv = await chatEnv(); } catch { siteEnv = null; }
-  const site = handleSite(request, siteEnv, url);
+  if (needsSession) { try { siteEnv = await chatEnv(); } catch { siteEnv = null; } }
+  const site = await handleSite(request, siteEnv, url);
   if (site) return site;
   return new Response('Tidak ditemukan', { status: 404 });
 };

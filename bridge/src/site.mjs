@@ -443,7 +443,7 @@ export async function handleSite(request, env, url = new URL(request.url)) {
   const get = request.method === 'GET';
 
   // Sesi dibaca lebih dulu untuk halaman yang bergantung padanya. Fail-open ke form bila DB error.
-  const wantsSession = path === '/' || path === '/chat' || path === '/chat/' || path.startsWith('/auth');
+  const wantsSession = path === '/chat' || path === '/chat/' || path === '/auth' || path.startsWith('/auth/');
   let user = null;
   if (env?.repo && wantsSession) {
     try { user = await currentUser(request, env); } catch { user = null; }

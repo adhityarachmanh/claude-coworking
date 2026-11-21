@@ -52,7 +52,7 @@ export const modelsFor = (kind) => (MODELS[kind] ?? []).map((m) => ({ ...m }));
  * nama (meniru kelas model yang lazim). Dipakai untuk daftar model yang diambil langsung dari provider.
  */
 const TIER_GUESS = [
-  [/nano|flash-lite|flash-lite|haiku|\bmini\b|\blite\b|\bsmall\b/, 'hemat'],
+  [/nano|flash-lite|haiku|\bmini\b|\blite\b|\bsmall\b/, 'hemat'],
   [/opus|\bpro\b|ultra|\blarge\b|gpt-5|o3|o4|sonnet/, 'kuat'],
 ];
 export function tierFor(kind, modelId) {
@@ -83,17 +83,16 @@ export function modelSupportsEffort(kind, modelId) {
 export function effectiveModels(kind, providerModels) {
   const custom = Array.isArray(providerModels) ? providerModels.filter((m) => m && m.id) : [];
   if (!custom.length) return modelsFor(kind);
-  return custom.map((m) => ({
-    id: String(m.id),
-    label: String(m.label ?? m.id),
-    tier: tierFor(kind, m.id),
-    effort: modelSupportsEffort(kind, m.id),
-  }));
+  const seen = new Set();
+  const out = [];
+  for (const m of custom) {
+    const id = String(m.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, label: String(m.label ?? id), tier: tierFor(kind, id), effort: modelSupportsEffort(kind, id) });
+  }
+  return out;
 }
-
-/** Label model untuk satu id (dari daftar efektif atau id itu sendiri). */
-export const labelForModel = (kind, providerModels, modelId) =>
-  effectiveModels(kind, providerModels).find((m) => m.id === modelId)?.label ?? modelId;
 
 /** Model default per kind (yang pertama). `providerModels` opsional (daftar milik provider). */
 export const defaultModelFor = (kind, providerModels) => effectiveModels(kind, providerModels)[0]?.id ?? null;

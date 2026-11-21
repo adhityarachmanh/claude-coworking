@@ -176,6 +176,14 @@ test('normalizeModels: menormalkan bentuk OpenAI, Anthropic, & Gemini', () => {
   assert.deepEqual(normalizeModels('openai', null), [], 'payload rusak → daftar kosong, tidak melempar');
 });
 
+test('normalizeModels: model non-chat (embedding/gambar/tts) dibuang', () => {
+  const got = normalizeModels('openai', { data: [
+    { id: 'gpt-5' }, { id: 'text-embedding-3-small' }, { id: 'tts-1' }, { id: 'whisper-1' },
+    { id: 'dall-e-3' }, { id: 'gpt-image-1' }, { id: 'gpt-4o-mini-tts' }, { id: 'gpt-4.1-mini' },
+  ] });
+  assert.deepEqual(got.map((m) => m.id), ['gpt-5', 'gpt-4.1-mini']);
+});
+
 test('probeModels: ambil daftar model sekaligus membuktikan key; error diteruskan', async () => {
   const fake = (j) => async () => ({ ok: true, status: 200, json: async () => j });
   const openai = await probeModels({ kind: 'openai', base_url: null }, 'k', fake({ data: [{ id: 'gpt-5' }] }));
@@ -216,11 +224,11 @@ test('uji provider menyimpan daftar model hasil probe', async () => {
   const env = makeEnv();
   const { cookie } = await signedIn(env);
   const add = await body(await send(env, jsonReq('/chat/api/providers', { kind: 'openai', label: 'x', apiKey: 'sk-test-abcdefgh' }, { Cookie: cookie })));
-  const fake = async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: 'gpt-5' }] }) });
+  const fake = async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: 'gpt-5' }, { id: 'text-embedding-3-small' }] }) });
   const r = await send(env, req(`/chat/api/providers/${add.provider.id}/test`, { method: 'POST', headers: { Cookie: cookie } }), fake);
   assert.equal(r.status, 200);
   const data = await body(r);
-  assert.deepEqual(data.models, [{ id: 'gpt-5', label: 'gpt-5' }]);
+  assert.deepEqual(data.models, [{ id: 'gpt-5', label: 'gpt-5' }], 'model non-chat dibuang sebelum disimpan/dikembalikan');
   assert.deepEqual(data.provider.models.map((m) => m.id), ['gpt-5']);
   const stored = await env.repo.getProvider((await env.repo.getUserByEmail('a@b.co')).id, add.provider.id);
   assert.deepEqual(stored.models.map((m) => m.id), ['gpt-5']);

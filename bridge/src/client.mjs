@@ -18,15 +18,22 @@ const withTimeout = (ms) => {
 };
 
 /**
- * Normalisasi daftar model dari respons tiap provider menjadi [{ id, label }] (urut, tanpa duplikat).
- * Bentuk mentah: OpenAI/Anthropic `{ data: [{ id, display_name? }] }`, Gemini `{ models: [{ name: "models/x" }] }`.
+ * Model yang jelas-jelas bukan untuk chat (embedding/tts/gambar/video/moderasi). Dibuang dari daftar hasil
+ * probe supaya default & Auto tidak memilihnya; sisanya tetap muncul agar user bisa memfilter sendiri.
+ */
+const NON_CHAT_MODEL = /(embedding|\bembed\b|\btts\b|whisper|dall-e|gpt-image|imagen|moderation|\baqa\b|\bveo\b|\bsora\b|davinci|babbage|\bcurie\b)/i;
+
+/**
+ * Normalisasi daftar model dari respons tiap provider menjadi [{ id, label }] (urut, tanpa duplikat,
+ * tanpa model non-chat). Bentuk mentah: OpenAI/Anthropic `{ data: [{ id, display_name? }] }`,
+ * Gemini `{ models: [{ name: "models/x" }] }`.
  */
 export function normalizeModels(kind, payload) {
   const out = [];
   const seen = new Set();
   const push = (id, label) => {
     const key = String(id ?? '').trim();
-    if (!key || seen.has(key)) return;
+    if (!key || seen.has(key) || NON_CHAT_MODEL.test(key)) return;
     seen.add(key);
     out.push({ id: key, label: String(label ?? key).trim() || key });
   };

@@ -222,8 +222,9 @@ async function testProvider(request, env, id, fetchImpl) {
   const { probeModels } = await import('./client.mjs');
   const probe = await probeModels(row, key, fetchImpl);
   if (!probe.ok) return json({ ok: false, error: probe.error }, 400);
-  const saved = await env.repo.updateProvider(user.id, id, { models: probe.models });
-  return json({ ok: true, models: probe.models, provider: publicProvider(saved ?? row) });
+  const models = normalizeProviderModels(probe.models);
+  const saved = await env.repo.updateProvider(user.id, id, { models });
+  return json({ ok: true, models: models ?? [], provider: publicProvider(saved ?? row) });
 }
 
 /**
@@ -233,6 +234,7 @@ async function testProvider(request, env, id, fetchImpl) {
 async function probeProviderModels(request, env, fetchImpl) {
   if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
   await requireUser(request, env);
+  await enforceLimit(env, request, { name: 'probe', window: hourWindow(), limit: 60 });
   const body = await readJson(request);
   const kind = String(body?.kind ?? '');
   if (!isValidKind(kind)) throw new HttpError(400, 'Jenis provider tidak dikenal');
@@ -243,7 +245,7 @@ async function probeProviderModels(request, env, fetchImpl) {
   const { probeModels } = await import('./client.mjs');
   const probe = await probeModels({ kind, base_url: base.value }, apiKey, fetchImpl);
   if (!probe.ok) return json({ ok: false, error: probe.error }, 400);
-  return json({ ok: true, kind, models: probe.models });
+  return json({ ok: true, kind, models: normalizeProviderModels(probe.models) ?? [] });
 }
 
 // ---------------------------------------------------------------- percakapan (M5)
