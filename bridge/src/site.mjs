@@ -49,6 +49,27 @@ border-radius:16px;padding:20px;transition:border-color .15s,transform .15s}
 .foot{padding:14px 20px;border-top:1px solid var(--line);text-align:center;font-size:.75rem;color:var(--muted)}
 .note{background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:10px;
 padding:10px 12px;font-size:.85rem;margin:16px 0}
+.chat-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.tabs{display:flex;gap:6px;margin:16px 0 10px}
+.tab{flex:1;padding:10px 12px;min-height:44px;border-radius:10px;border:1px solid var(--line);
+background:var(--surface);color:var(--text-2);font:inherit;font-size:.95rem;font-weight:600;cursor:pointer}
+.tab.active{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.authform{margin-top:10px}
+label{display:block;margin:12px 0 4px;font-size:.8rem;font-weight:600;letter-spacing:.02em;color:var(--muted)}
+input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);
+color:var(--text);font:inherit;font-size:.95rem}
+input:focus{border-color:var(--accent);outline:none}
+.btn{display:block;width:100%;margin:14px 0 4px;padding:13px 16px;min-height:50px;border-radius:12px;
+border:1px solid transparent;font:inherit;font-size:1rem;font-weight:600;cursor:pointer;text-align:center;text-decoration:none}
+.btn:active{transform:translateY(1px)}
+.on{background:var(--accent-solid);color:#fff}
+.on:hover{background:var(--accent-hover)}
+.ghost{background:var(--surface-2);color:var(--text);border-color:var(--line)}
+.ghost:hover{background:var(--line)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.msg{margin:12px 0;padding:10px 12px;border-radius:10px;font-size:.88rem;background:var(--surface-2);border:1px solid var(--line)}
+.msg.bad{background:#2a1614;border-color:#6e2a24}
 `;
 
 const shell = (title, body) =>
@@ -84,15 +105,97 @@ dan kamu ingin menyalakannya dari HP.</p>
 <div class="note">🔐 Di Chat, API key-mu disimpan terenkripsi dan hanya dipakai untuk permintaanmu sendiri.</div>`);
 }
 
-/** Kerangka halaman chat. M3+ mengisi auth, provider, dan percakapan; untuk sekarang menampilkan status. */
+/** Kerangka halaman chat. M3: form masuk/daftar + status sesi. Percakapan menyusul (M7). */
 export function chatPageHtml() {
   return shell('Chat — Adhitron', `
-<h1>💬 Chat</h1>
-<p class="lead">Chat AI multi-user: masuk dengan akunmu, tempel API key milikmu, lalu ngobrol seperti di
-Gemini/Claude — dengan pilihan model &amp; effort dan browsing web.</p>
-<div class="note">🚧 Halaman chat sedang dibangun. Sementara itu, <a href="/bridge">Remote Power</a> sudah
-bisa dipakai.</div>
-<p class="muted"><a href="/">← Kembali ke portal</a></p>`);
+<div class="chat-head">
+  <h1>💬 Chat</h1>
+  <div id="who" class="muted" hidden></div>
+</div>
+<p class="lead">Chat AI multi-user: masuk dengan akunmu, tempel API key milikmu, lalu ngobrol dengan
+pilihan model &amp; effort dan browsing web.</p>
+
+<section id="auth">
+  <div class="tabs">
+    <button class="tab active" data-tab="login" type="button">Masuk</button>
+    <button class="tab" data-tab="signup" type="button">Daftar</button>
+  </div>
+  <form id="f-login" class="authform">
+    <label>Email<input name="email" type="email" autocomplete="username" required></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="8"></label>
+    <button class="btn on" type="submit">Masuk</button>
+  </form>
+  <form id="f-signup" class="authform" hidden>
+    <label>Email<input name="email" type="email" autocomplete="username" required></label>
+    <label>Password (minimal 8 karakter)<input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+    <button class="btn on" type="submit">Daftar</button>
+  </form>
+  <div id="authout" class="msg" hidden></div>
+</section>
+
+<section id="app" hidden>
+  <div class="note">✅ Kamu sudah masuk. Penyusun percakapan (model, effort, browsing) menyusul di langkah
+  berikutnya — untuk sekarang halaman ini memastikan akun &amp; sesi bekerja.</div>
+  <button class="btn ghost" id="logout" type="button">Keluar</button>
+</section>
+
+<p class="muted"><a href="/">← Kembali ke portal</a></p>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const API = '/chat/api';
+async function call(path, opts = {}) {
+  const r = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    ...opts,
+  });
+  let data = null;
+  try { data = await r.json(); } catch {}
+  return { ok: r.ok, status: r.status, data };
+}
+function msg(text, kind) {
+  const el = $('authout');
+  el.textContent = text;
+  el.className = 'msg' + (kind ? ' ' + kind : '');
+  el.hidden = !text;
+}
+async function refresh() {
+  const { ok, data } = await call('/me');
+  if (ok) {
+    $('auth').hidden = true;
+    $('app').hidden = false;
+    $('who').hidden = false;
+    $('who').textContent = 'masuk sebagai ' + data.user.email;
+  } else {
+    $('auth').hidden = false;
+    $('app').hidden = true;
+    $('who').hidden = true;
+  }
+}
+for (const tab of document.querySelectorAll('.tab')) {
+  tab.addEventListener('click', () => {
+    for (const t of document.querySelectorAll('.tab')) t.classList.toggle('active', t === tab);
+    $('f-login').hidden = tab.dataset.tab !== 'login';
+    $('f-signup').hidden = tab.dataset.tab !== 'signup';
+    msg('');
+  });
+}
+async function submit(form, path) {
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = new FormData(form);
+    msg('Memproses…');
+    const { ok, data } = await call(path, { method: 'POST', body: JSON.stringify({ email: f.get('email'), password: f.get('password') }) });
+    if (ok) { msg(''); await refresh(); }
+    else msg((data && data.error) || 'Gagal, coba lagi', 'bad');
+  });
+}
+submit($('f-login'), '/auth/login');
+submit($('f-signup'), '/auth/signup');
+$('logout').addEventListener('click', async () => { await call('/auth/logout', { method: 'POST' }); await refresh(); });
+refresh();
+</script>`);
 }
 
 /** Router situs (portal + chat). Mengembalikan Response untuk path yang dikenal, atau null. */

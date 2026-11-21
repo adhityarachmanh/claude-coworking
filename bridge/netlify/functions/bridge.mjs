@@ -6,6 +6,9 @@
 import { getStore } from '@netlify/blobs';
 import { handleApi } from '../../src/bridge.mjs';
 import { handleSite } from '../../src/site.mjs';
+import { handleChatApi } from '../../src/chat-api.mjs';
+import { createNeonDb } from '../../src/db.mjs';
+import { makeSqlRepo } from '../../src/repo.mjs';
 
 export const config = { path: ['/*'] };
 
@@ -21,6 +24,18 @@ export default async (request) => {
       encryptionKey: process.env.ENCRYPTION_KEY,
       basePath: BRIDGE_BASE,
     });
+  }
+  // Chat API: butuh DATABASE_URL (Neon). Repo dibuat per-request (driver HTTP: satu request per query).
+  if (url.pathname.startsWith('/chat/api/')) {
+    if (!process.env.DATABASE_URL) {
+      return new Response(JSON.stringify({ error: 'DATABASE_URL belum diset di server' }), {
+        status: 503, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+    }
+    const store = getStore({ name: 'adhitron-web', consistency: 'strong' });
+    const repo = makeSqlRepo(await createNeonDb(process.env.DATABASE_URL));
+    const res = await handleChatApi(request, { repo, store, encryptionKey: process.env.ENCRYPTION_KEY }, url.pathname);
+    if (res) return res;
   }
   const site = handleSite(request, url);
   if (site) return site;

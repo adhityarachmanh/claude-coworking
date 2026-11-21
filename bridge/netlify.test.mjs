@@ -1928,7 +1928,13 @@ test('portal: root menampilkan dua pintu (Chat & Remote Power) tanpa membocorkan
   assert.match(html, /href="\/bridge"/, 'pintu Remote Power menuju /bridge');
   assert.match(html, /API key milikmu sendiri/, 'menjelaskan key milik user');
   assert.equal(handleSite(req('/halaman-asing')), null, 'path tak dikenal diserahkan ke pemanggil (404)');
-  assert.equal((await handleSite(req('/chat')).text()).includes('💬 Chat'), true, 'kerangka chat ada');
+  const chat = await handleSite(req('/chat')).text();
+  assert.match(chat, /💬 Chat/, 'kerangka chat ada');
+  assert.match(chat, /id="f-login"/, 'form masuk');
+  assert.match(chat, /\/chat\/api/, 'memanggil chat API');
+  const scripts = [...chat.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  assert.equal(scripts.length, 1, 'satu blok skrip di halaman chat');
+  assert.doesNotThrow(() => new vm.Script(scripts[0]), 'skrip halaman chat harus valid');
 });
 
 test('mount /bridge: rute jembatan sama seperti di root, tapi URL yang diterbitkan berprefiks /bridge', async () => {
