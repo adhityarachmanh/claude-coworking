@@ -18,8 +18,11 @@ Adhitron lokal (Node di PC) butuh PC hidup. Adhitron Web = versi hosting yang te
 
 - Satu situs: `/` portal, `/chat/*` chat, `/bridge/*` remote power. Jembatan **tidak lagi di root**.
 - Auth v1: **email + password** (scrypt via `node:crypto`), session cookie `httpOnly`. Verifikasi email = fase 2.
-- DB: **Neon Postgres** via **Prisma** + `@prisma/adapter-neon` (tanpa binary engine — aman serverless).
-  Setiap query di-scope `userId`. `apiKeyEnc` tidak pernah meninggalkan server.
+- DB: **Neon Postgres** lewat **SQL langsung** (`@neondatabase/serverless`, driver HTTP — tanpa codegen/build
+  step, sesuai gaya repo). Skema eksplisit di `bridge/db/schema.sql`. Logika diuji lewat impl repo in-memory;
+  konektivitas Neon diuji terpisah saat `DATABASE_URL` ada. Setiap query di-scope `userId`.
+  `apiKeyEnc` tidak pernah meninggalkan server. *(Keputusan ini menggantikan Prisma dari rencana awal atas
+  persetujuan user: Prisma menambah langkah build `prisma generate` yang tidak cocok untuk Functions.)*
 - Provider v1: OpenAI-compatible, Anthropic, Google Gemini. API key user dienkripsi **AES-256-GCM** (pola
   `bridge/src/vault.mjs`).
 - **Model & Effort per-percakapan** meniru Adhitron lokal: daftar model per provider + chip sumber, favorit,

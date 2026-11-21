@@ -38,3 +38,19 @@ export const isUiFile = (source) => /test-support\/cdp\.mjs/.test(source);
 /** A slow test without a browser: it starts a server, spawns a process, or imports the fakes. */
 export const isSlowFile = (source) =>
   !isUiFile(source) && /node:child_process|test-support\/(fake-|cdp|run-each)|from '\.\.\/src\/server\.js'/.test(source);
+
+/**
+ * Every test file in the repo, relative to `appDir`, sorted: the office app's `test/` plus the
+ * self-contained Netlify site under `bridge/` (portal + chat + remote-power bridge). The bridge tests
+ * use fake Blobs/Tuya and no network, so they belong to the same fast/slow/UI classification.
+ * @param {string} appDir absolute repo root
+ * @param {(dir: string) => string[]} readdir like node:fs readdirSync (names only)
+ */
+export function discoverTests(appDir, readdir) {
+  let bridgeEntries = [];
+  try { bridgeEntries = readdir(`${appDir}/bridge`); } catch { bridgeEntries = []; }
+  return [
+    ...readdir(`${appDir}/test`).filter((f) => f.endsWith('.test.mjs')).map((f) => `test/${f}`),
+    ...bridgeEntries.filter((f) => f.endsWith('.test.mjs')).map((f) => `bridge/${f}`),
+  ].sort();
+}

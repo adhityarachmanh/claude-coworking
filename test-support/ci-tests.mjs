@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dropIsolationEnv, isSlowFile, isUiFile } from './test-files.mjs';
+import { dropIsolationEnv, isSlowFile, isUiFile, discoverTests } from './test-files.mjs';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mode = process.argv[2];
@@ -30,10 +30,7 @@ try {
   process.exit(2);
 }
 
-const files = readdirSync(path.join(APP, 'test'))
-  .filter((f) => f.endsWith('.test.mjs'))
-  .sort()
-  .map((f) => path.join('test', f));
+const files = discoverTests(APP, readdirSync);
 const source = (f) => readFileSync(path.join(APP, f), 'utf8');
 const isUi = (f) => isUiFile(source(f));
 const isSlow = (f) => isSlowFile(source(f));

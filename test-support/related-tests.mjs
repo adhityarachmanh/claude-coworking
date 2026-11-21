@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dropIsolationEnv, isSlowFile, isUiFile } from './test-files.mjs';
+import { dropIsolationEnv, isSlowFile, isUiFile, discoverTests } from './test-files.mjs';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -215,10 +215,7 @@ function main(argv) {
   }
   console.log(`test:related: ${changed.length} file berubah`);
 
-  const tests = readdirSync(path.join(APP, 'test'))
-    .filter((f) => f.endsWith('.test.mjs'))
-    .sort()
-    .map((f) => ({ file: `test/${f}`, source: read(`test/${f}`) }));
+  const tests = discoverTests(APP, readdirSync).map((file) => ({ file, source: read(file) }));
   const uiSourceFiles = tests.filter((t) => isUiFile(t.source));
   const uiSource = uiSourceFiles.map((f) => f.source).join('\n');
   const fast = tests
