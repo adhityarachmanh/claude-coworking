@@ -78,7 +78,7 @@ const STORED_AGENT = /^[\w.-]{1,60}$/;
 // '' = Default. none / minimal: offered by some OpenCode models (their own levels, from `model.list`).
 // Auto is a separate boolean (`effortAuto`): a generated level must never be sent as `--effort auto`.
 // Claude Code's permission modes ('manual' is the app's name for its 'default'); bypassPermissions is left out on purpose.
-// Claude Code's permission modes are an implementation detail now: the app only stores build/plan (src/modes.js).
+// Claude Code's permission modes are an implementation detail now: the app stores build/plan/autopilot (src/modes.js).
 // '' = default; otherwise what `--model` / /model take: an alias (fable, opus[1m], opusplan…), a full
 // claude-… id, or a model Claude Code itself listed. Anything else never reaches the command line.
 const MODEL_ALIAS = /^(?:best|opusplan|(?:opus|sonnet|haiku|fable)(?:\[1m\])?)$/;

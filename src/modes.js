@@ -44,5 +44,15 @@ export function appModeFromCli(mode) {
   return 'build';
 }
 
+/**
+ * What a CLI permission report means for a project whose process applied `applied`. Auto is only recognised as Auto
+ * when the process we launched actually ran with it: a CLI that reports `auto` on its own (a user's
+ * `permissions.defaultMode`, or a future CLI default) must never raise a Build/Plan project to the looser Auto.
+ */
+export function appModeForReported(applied, mode) {
+  const next = appModeFromCli(mode);
+  return next === 'autopilot' && applied !== 'autopilot' ? 'build' : next;
+}
+
 /** The OpenCode agent for a mode; Build may use the agent picked in turn settings. */
 export const agentForMode = (mode, agent = '') => (mode === 'plan' ? 'plan' : agent || 'build');

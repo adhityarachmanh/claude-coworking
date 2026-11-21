@@ -23,7 +23,7 @@ import { autoContext, classifyEffort } from './effort-classifier.js';
 import { shortModelLabel, tierFor, classifierModelFor } from './model-auto.js';
 import { killTree } from './proc.js';
 import { attachmentChips, contentBlocks } from './attachments.js';
-import { MODE_CHOICE_MESSAGE, appModeFromCli, claudePermissionMode, isMode } from './modes.js';
+import { MODE_CHOICE_MESSAGE, appModeForReported, claudePermissionMode, isMode } from './modes.js';
 import { HttpError } from './routes/http.js';
 import { ENGINE_LABEL, buildBrief, needsBridge, otherChat } from './handoff.js';
 import { HandoffStore } from './handoff-store.js';
@@ -1184,7 +1184,9 @@ export class ClaudeSession {
   }
 
   onModeReported(mode) {
-    const next = appModeFromCli(mode);
+    // Auto is only confirmed when the running process actually applied it: a CLI reporting `auto` on its own
+    // (a user's defaultMode, a future default) must never raise a Build/Plan project to the looser Auto.
+    const next = appModeForReported(this.applied?.mode ?? null, mode);
     if (this.applied) this.applied.mode = next;
     if (isMode(next) && this.hub.settingsFor(this.id).mode !== next) this.hub.updateSettings(this.id, { mode: next });
   }

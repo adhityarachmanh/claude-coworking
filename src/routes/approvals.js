@@ -1,7 +1,6 @@
 // Permission prompts / questions / plans waiting for an answer (POST /api/approvals/:id).
 import { budgetStop, consumeBudgetOverride } from '../budget.js';
 import { checkTurn } from '../concurrency.js';
-import { isMode } from '../modes.js';
 import { json } from './http.js';
 
 export function register(router) {
@@ -48,7 +47,8 @@ async function resolveApproval({ hub, sessions, ledger, metrics }, req, res, { i
     answers: body.answers && typeof body.answers === 'object' ? body.answers : undefined,
     message: typeof body.message === 'string' ? body.message.slice(0, 2000) : undefined,
     // Plan approved: only Build is a valid continuation (an old tab's manual/acceptEdits/auto also means Build).
-    mode: isMode(body.mode) ? body.mode : ['manual', 'acceptEdits', 'auto'].includes(body.mode) ? 'build' : undefined,
+    // `autopilot` is deliberately NOT accepted here: a plan card is not a place to switch a project into Auto.
+    mode: body.mode === 'build' || ['manual', 'acceptEdits', 'auto'].includes(body.mode) ? 'build' : undefined,
     cancelled,
     autoPrepared,
     preparedAuto,

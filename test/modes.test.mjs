@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 import { Hub } from '../src/hub.js';
-import { appModeFromCli, claudePermissionMode, isMode, migrateMode, normalizeMode } from '../src/modes.js';
+import { appModeForReported, appModeFromCli, claudePermissionMode, isMode, migrateMode, normalizeMode } from '../src/modes.js';
 
 describe('Plan/Build modes', () => {
   test('migrateMode: legacy asks become build, dontAsk waits for a choice, canonical values are untouched', () => {
@@ -49,6 +49,20 @@ describe('Plan/Build modes', () => {
     assert.equal(appModeFromCli('auto'), 'autopilot', 'auto hanya kita kirim sendiri: dibaca sebagai Auto');
     assert.equal(appModeFromCli('dontAsk'), 'plan', 'the strictest CLI mode stays strict');
     for (const value of ['acceptEdits', 'default', undefined]) assert.equal(appModeFromCli(value), 'build');
+  });
+
+  test('a reported auto never raises the mode on its own: Auto only when we applied it', () => {
+    // The app sent `--permission-mode auto` (applied Auto): the report confirms it.
+    assert.equal(appModeForReported('autopilot', 'auto'), 'autopilot');
+    // Claude reports `auto` while the app applied something else (a user defaultMode, a future CLI default):
+    // reading it as Auto would silently loosen a Build/Plan project, so it stays Build.
+    assert.equal(appModeForReported('build', 'auto'), 'build');
+    assert.equal(appModeForReported('plan', 'auto'), 'build');
+    assert.equal(appModeForReported(null, 'auto'), 'build');
+    // Everything else keeps the plain mapping (Plan stays Plan, acceptEdits/default are Build).
+    assert.equal(appModeForReported('build', 'plan'), 'plan');
+    assert.equal(appModeForReported('build', 'acceptEdits'), 'build');
+    assert.equal(appModeForReported('build', 'default'), 'build');
   });
 
   test('cleanSettings: autopilot tersimpan sebagai pilihan eksplisit; tab lama { mode:auto } tetap build', (t) => {

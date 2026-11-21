@@ -1713,6 +1713,20 @@ test('approving a plan picks the mode the work continues in, like the CLI plan d
   assert.equal((await snapshot()).statuses[id].mode, 'build');
 });
 
+test('a plan card never leaves the project in Auto, even if a client sends mode:autopilot', async () => {
+  const id = await projectId();
+  await api(`/api/projects/${id}/settings`, { mode: 'plan' });
+  mark = seen.length;
+  await api(`/api/projects/${id}/prompt`, { text: 'buat rencana' });
+  const approval = await waitFor((t, o) => t === 'approval' && o.project === id && o.kind === 'plan' && o.status === 'pending');
+  await api(`/api/approvals/${approval.id}`, { allow: true, mode: 'autopilot' });
+  await waitFor((t, o) => t === 'chat' && o.project === id && o.kind === 'result');
+  // Auto is not a plan continuation: approving a plan continues in Build, never the looser Auto.
+  const mode = (await snapshot()).statuses[id].mode;
+  assert.notEqual(mode, 'autopilot');
+  assert.equal(mode, 'build');
+});
+
 test('plan approval re-runs Model/Effort Auto on the plan; Selesai cancels without building', async () => {
   const id = await projectId();
   await api(`/api/projects/${id}/settings`, { mode: 'plan', modelAuto: false, effortAuto: false, model: 'sonnet', effort: 'low' });
