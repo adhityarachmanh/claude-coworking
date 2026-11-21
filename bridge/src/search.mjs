@@ -47,7 +47,8 @@ export async function webSearch(query, { fetchImpl = globalThis.fetch, env = {},
   return searchDuckDuckGo(q, limit, fetchImpl);
 }
 
-/** DuckDuckGo HTML endpoint (tanpa key). Parsing sederhana: hasil ada di blok result__a / result__snippet. */
+/** DuckDuckGo HTML endpoint (tanpa key). Parse blok hasil: tautan (`result__a`) dan cuplikan
+ *  (`result__snippet`) berada di elemen terpisah, jadi keduanya dicocokkan menurut urutan. */
 export async function searchDuckDuckGo(query, limit, fetchImpl) {
   const { signal, done } = withTimeout(TIMEOUT_MS);
   try {
@@ -59,13 +60,13 @@ export async function searchDuckDuckGo(query, limit, fetchImpl) {
     });
     if (!res.ok) return [];
     const html = await res.text();
+    const links = [...html.matchAll(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)];
+    const snippets = [...html.matchAll(/<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => stripTags(m[1]));
     const out = [];
-    const re = /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>)?/g;
-    let m;
-    while ((m = re.exec(html)) && out.length < limit) {
-      const url = unwrapDdgUrl(m[1]);
+    for (let i = 0; i < links.length && out.length < limit; i++) {
+      const url = unwrapDdgUrl(links[i][1]);
       if (!url || !/^https?:/i.test(url)) continue;
-      out.push({ title: stripTags(m[2]) || url, url, snippet: stripTags(m[3] ?? '') });
+      out.push({ title: stripTags(links[i][2]) || url, url, snippet: snippets[out.length] ?? '' });
     }
     return out;
   } catch { return []; } finally { done(); }

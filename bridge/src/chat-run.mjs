@@ -89,17 +89,22 @@ export async function runTurn(env, user, conv, request, { fetchImpl }) {
         controller.enqueue(encoder.encode(sse(event)));
       };
       let usedModel = model;
+      let cites = null;
       try {
         if (conv.browsing) {
           // Jalur browsing: menjalankan pencarian/`fetch` lalu satu permintaan final dengan sumber.
           const out = await runBrowsingTurn({ env, user, conv, provider, apiKey, model, effort, history, text, fetchImpl, send });
           usedModel = out.model ?? model;
+          cites = out.sources;
         } else {
           send({ type: 'meta', model, effort });
           await streamOnce({ provider, apiKey, model, effort, history, text, fetchImpl, send });
         }
         const meta = { model: usedModel, effort };
         const saved = await env.repo.addMessage(user.id, conv.id, { role: 'assistant', content: collected.text, meta });
+        if (cites?.length && saved?.id) {
+          await env.repo.addCitations(user.id, saved.id, cites.map((s, i) => ({ idx: i + 1, title: s.title, url: s.url, snippet: s.snippet })));
+        }
         send({ type: 'done', messageId: saved?.id ?? null });
       } catch {
         // Jangan bocorkan detail provider ke klien; simpan apa yang sempat ada.
@@ -120,7 +125,7 @@ export async function runTurn(env, user, conv, request, { fetchImpl }) {
  * Satu permintaan streaming ke provider (tanpa browsing). Mengembalikan { text }.
  * `send` menerima event SSE yang sudah dinormalkan.
  */
-export async function streamOnce({ provider, apiKey, model, effort, history, text, fetchImpl, send, system = BASE_SYSTEM, tools }) {
+export async function streamOnce({ provider, apiKey, model, effort, history, text, fetchImpl = globalThis.fetch, send, system = BASE_SYSTEM, tools }) {
   const { url, headers, body } = buildRequest(provider, apiKey, {
     model, effort, system, messages: [...history, { role: 'user', content: text }], tools,
   });
