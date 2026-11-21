@@ -188,5 +188,9 @@ export function makeSqlRepo(db) {
       );
       return row?.n ?? 0;
     },
+    /** Retensi: buang jejak tool run yang lebih lama dari cutoff (audit terbatas, bukan arsip permanen). */
+    async deleteOldToolRuns(before) {
+      await db.query('delete from tool_runs where created_at < $1', [before]);
+    },
   };
 }

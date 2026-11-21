@@ -173,5 +173,9 @@ export function makeMemoryRepo(state = {}) {
       if (!owned) return 0;
       return db.toolRuns.filter((t) => t.conversation_id === conversationId && (tool == null || t.tool === tool)).length;
     },
+    /** Retensi: buang jejak tool run yang lebih lama dari cutoff (audit terbatas, bukan arsip permanen). */
+    async deleteOldToolRuns(before) {
+      db.toolRuns = db.toolRuns.filter((t) => t.created_at >= before);
+    },
   };
 }

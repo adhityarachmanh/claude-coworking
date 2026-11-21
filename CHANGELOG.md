@@ -16,7 +16,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **🔎 Browsing.** Toggle per-percakapan; chat bisa mencari web dan membaca halaman lalu menjawab dengan
   **chip sumber bernomor** yang bisa diklik. Mesin pencari default DuckDuckGo (tanpa kunci); Tavily/Brave opsional.
   Dilengkapi penjagaan anti-SSRF (hanya http(s); alamat privat/loopback/metadata cloud diblokir) dan batas jumlah
-  pencarian per percakapan.
+  pencarian per percakapan. Base URL provider kustom juga tunduk aturan yang sama (host privat ditolak).
+- **🗑️ Retensi terjadwal.** Cron situs kini membersihkan sesi kedaluwarsa dan membuang jejak `tool_runs` (audit
+  browsing) yang lebih tua dari 90 hari, sesuai kebijakan privasi.
 - **🔐 Keamanan & privasi.** Sesi cookie `httpOnly`+`Secure`; permintaan pengubah state wajib same-origin
   (anti-CSRF); login/daftar dibatasi per IP. Ada halaman **Kebijakan Privasi** (`/privasi`) & **Syarat Layanan**
   (`/syarat`), serta tombol **Hapus akun** yang menyapu seluruh data user (hak hapus UU PDP). Catatan privasi di

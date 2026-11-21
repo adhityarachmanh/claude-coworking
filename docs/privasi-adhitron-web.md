@@ -26,7 +26,7 @@ Password **tidak pernah** disimpan/dilog dalam bentuk asli. API key user **tidak
 - **Hak hapus (UU PDP Pasal 35–36 / GDPR Pasal 17):** perlu jalur "hapus akun" yang menghapus **seluruh** baris
   milik user (users, sessions, providers, conversations, messages, citations, tool_runs). *(TODO: endpoint
   `DELETE /chat/api/me` + tombol di UI sebelum rilis publik.)*
-- Sesi kedaluwarsa dibersihkan saat diakses; sebaiknya ada pembersihan berkala.
+- Sesi kedaluwarsa dibersihkan saat diakses; cron juga membersihkannya berkala bersama jejak `tool_runs` (lihat bagian retensi).
 
 ## Pihak ketiga
 
@@ -45,7 +45,8 @@ Password **tidak pernah** disimpan/dilog dalam bentuk asli. API key user **tidak
    sessions/providers/conversations/messages/citations/tool_runs.
 3. ⬜ **Persetujuan** saat daftar (checkbox) + catatan versi kebijakan yang disetujui (kolom `consent_at`/`consent_version`).
 4. ⬜ **Kontak** operator untuk permintaan subjek data (ganti "hubungi operator" dengan email/tautan resmi).
-5. ⬜ **Retensi terjadwal**: job cron membersihkan sesi kedaluwarsa & menetapkan batas `tool_runs`; tulis periode di kebijakan.
+5. ✅ **Retensi terjadwal**: cron Netlify tiap menit menjalankan `sweepChatRetention` (`bridge/src/retention.mjs`) —
+   membersihkan sesi kedaluwarsa dan membuang jejak `tool_runs` lebih tua dari **90 hari** (`TOOL_RUN_KEEP_MS`).
 6. ✅ **Enkripsi at-rest & in-transit**: `ENCRYPTION_KEY` operator untuk API key; TLS wajib (Netlify).
 7. ✅ **Log**: tidak ada API key/password/isi chat yang tercatat di log server.
 8. ⬜ **Anak**: tetapkan batas usia minimum sesuai kebijakan.

@@ -87,6 +87,21 @@ const suite = (name, fresh) => {
     assert.equal((await repo.listCitations(alice.id, c.id)).length, 0, 'kutipan hilang bersama pesannya');
   });
 
+  test(`[${name}] retensi: tool run lebih lama dari batas dibuang, yang baru tetap`, async () => {
+    const { repo, alice } = await init();
+    const c = await repo.createConversation(alice.id, {});
+    await repo.addToolRun(alice.id, c.id, { tool: 'web_search', input: { q: 'lama' } });
+    // Mundurkan created_at baris lama dengan menandai cutoff di masa depan untuk baris "lama" saja.
+    // deleteOldToolRuns(before) membuang yang created_at < before; pakai before yang membedakan keduanya.
+    const old = (await repo.addToolRun(alice.id, c.id, { tool: 'web_search', input: { q: 'x' } }));
+    const cutoff = '2000-01-01T00:00:00.000Z'; // lebih tua dari semua → tidak ada yang dibuang
+    await repo.deleteOldToolRuns(cutoff);
+    assert.equal(await repo.countToolRuns(alice.id, c.id), 2, 'cutoff massa lalu tidak menghapus apa pun');
+    await repo.deleteOldToolRuns(new Date(Date.now() + 1000).toISOString()); // lebih baru dari semua → semua dibuang
+    assert.equal(await repo.countToolRuns(alice.id, c.id), 0, 'tool run lebih lama dari cutoff terbuang');
+    assert.ok(old, 'addToolRun tetap mengembalikan baris');
+  });
+
   test(`[${name}] hapus percakapan menyapu pesan, kutipan, dan tool run-nya`, async () => {
     const { repo, alice } = await init();
     const c = await repo.createConversation(alice.id, {});
