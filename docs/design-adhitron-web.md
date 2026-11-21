@@ -29,6 +29,9 @@ Adhitron lokal (Node di PC) butuh PC hidup. Adhitron Web = versi hosting yang te
   Effort Default/Low/Medium/High/X-High/Max + **Auto(LLM)** (ada tapi **mati secara default**), tier
   Hemat/Sedang/Kuat. Effort dipetakan per provider (Anthropic thinking / Gemini thinking budget / OpenAI
   `reasoning_effort`; yang tak didukung diabaikan diam-diam). Classifier Auto memakai model murah milik provider user.
+  Saat menambah provider, **cek key memuat daftar model asli** dari penyedimu; user memilih lewat checklist dan
+  pilihannya **disimpan per provider** (`providers.models` jsonb). Pemilih Model memakai daftar itu bila ada,
+  fallback ke katalog statis.
 - **Browsing**: toggle per-percakapan "🔎 Browsing". Tool `web_search` + `fetch_url`. Mesin default
   **DuckDuckGo HTML** (tanpa kunci); Tavily/Brave opsional via env. Native tool-calling dengan fallback "prompted".
   Chip sumber bernomor. Anti-SSRF (allowlist http(s), blokir IP privat/loopback), timeout, cache per-URL,
@@ -43,11 +46,13 @@ Adhitron lokal (Node di PC) butuh PC hidup. Adhitron Web = versi hosting yang te
 
 - `POST /chat/api/auth/{signup,login,logout}` · `GET /chat/api/me`
 - `GET /chat/api/provider-kinds` · `GET|POST /chat/api/providers` · `PATCH|DELETE /chat/api/providers/:id`
-  · `POST /chat/api/providers/:id/test`
+  · `POST /chat/api/providers/:id/test` · `POST /chat/api/providers/models` (cek key calon provider + daftar model)
 - `GET|POST /chat/api/conversations` · `GET|PATCH|DELETE /chat/api/conversations/:id`
 - `POST /chat/api/conversations/:id/messages` (SSE)
 - Proteksi: cookie httpOnly + cek `Origin` + anti-CSRF + rate-limit per IP/jendela.
-- Halaman: `/` portal · `/chat` aplikasi · `/chat/app.js` skrip klien (diuji syntax).
+- Halaman: `/` portal · `/auth/login` & `/auth/register` form terpisah · `/chat` aplikasi (tanpa form) ·
+  `/chat/app.js` & `/chat/auth.js` skrip klien (diuji syntax). Routing ber-sesi diputuskan di server: `/chat` tanpa
+  sesi → `302 /auth/login`, `/auth/*` dengan sesi → `302 /chat` (menghapus kedipan form saat refresh).
 
 ## Milestone
 

@@ -31,6 +31,21 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **🔑 /chat hanya menampilkan form saat belum masuk.** Sebelumnya panel chat ikut terlihat di bawah form masuk
   (grid `display:grid` menang atas atribut `hidden`); kini saat belum masuk yang tampil hanya form email + password,
   dan fitur chat baru muncul setelah berhasil masuk.
+- **🚪 Masuk & daftar kini halaman terpisah, dan `/chat` tidak lagi berkedip form.** Situs memutuskan di server:
+  membuka `/chat` tanpa sesi langsung dialihkan ke `/auth/login`, jadi form masuk tak pernah tampil sekilas di atas
+  panel chat saat halaman di-refresh. Halaman **`/auth/login`** (Masuk) dan **`/auth/register`** (Buat akun) berdiri
+  sendiri — masing-masing satu form dengan tautan ke halaman lain (tanpa tab). Sudah masuk lalu membuka `/auth/*`
+  otomatis diantar ke `/chat`. Bila sesi habis di tengah pemakaian, kamu diantar ke halaman masuk dengan catatan
+  “Sesi berakhir, silakan masuk lagi”.
+- **🧪 Cek key dulu, lalu pilih model.** Saat menambah provider (atau lewat tombol **Uji & muat model** pada provider
+  yang ada), Adhitron Web mengambil **daftar model asli** dari penyedimu sekaligus membuktikan API key berlaku.
+  Model yang terbaca tampil sebagai **checklist** (semua tercentang, ada pencarian dan tombol Pilih semua/Kosongkan)
+  supaya kamu bisa menyaring model mana yang muncul di pemilih Model. Daftar pilihan disimpan per provider; bila
+  belum pernah dimuat, pemilih kembali memakai katalog bawaan.
+- **🎨 Sapuan tampilan Chat.** Halaman masuk/daftar berupa kartu terpusat dengan tombol Lihat/Sembunyikan password
+  dan pesan error di dalam kartu (bukan pop-up). Di chat: halaman sambutan saat percakapan kosong dengan saran prompt
+  sekali-klik, sidebar berjudul “Riwayat” dengan identitas akun & aksi yang dikelompokkan, kepala percakapan
+  menampilkan konteks **provider · model · effort · browsing**, serta label ARIA dan fokus yang lebih rapi.
 
 ## 1.0.83
 
