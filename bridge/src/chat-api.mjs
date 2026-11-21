@@ -6,6 +6,8 @@ import {
   passwordProblem, sessionCookie, sessionExpiry, sessionTokenHash, sessionTokenOf, verifyPassword,
 } from './auth.mjs';
 import { hit, hourWindow } from './rate-limit.mjs';
+import { cleanBaseUrl, isValidKind, KIND_LABELS, modelsFor, PROVIDER_KINDS } from './providers.mjs';
+import { decryptSecret, encryptSecret, keyHint, publicProvider } from './secrets.mjs';
 
 const CORS_SAME_ORIGIN = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -113,21 +115,111 @@ async function me(request, env) {
   return json({ user: publicUser(user) });
 }
 
+// ---------------------------------------------------------------- provider (M4)
+
+/** Katalog statis: kind + label + daftar model (tanpa kredensial). Dipakai UI untuk membangun pemilih model. */
+function catalog() {
+  return json({
+    kinds: PROVIDER_KINDS.map((kind) => ({ kind, label: KIND_LABELS[kind], models: modelsFor(kind) })),
+  });
+}
+
+async function listProviders(request, env) {
+  const user = await requireUser(request, env);
+  const rows = await env.repo.listProviders(user.id);
+  return json({ providers: rows.map(publicProvider) });
+}
+
+/** Tambah provider. Body: { kind, label, apiKey, baseUrl? }. API key dienkripsi sebelum disimpan. */
+async function addProvider(request, env) {
+  if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
+  const user = await requireUser(request, env);
+  const body = await readJson(request);
+  const kind = String(body?.kind ?? '');
+  if (!isValidKind(kind)) throw new HttpError(400, 'Jenis provider tidak dikenal');
+  const label = String(body?.label ?? '').trim().slice(0, 60) || KIND_LABELS[kind];
+  const apiKey = String(body?.apiKey ?? '').trim();
+  if (apiKey.length < 8 || apiKey.length > 500) throw new HttpError(400, 'API key tidak valid');
+  const base = cleanBaseUrl(body?.baseUrl);
+  if (!base.ok) throw new HttpError(400, base.error);
+  if (env.encryptionKey == null) throw new HttpError(500, 'Server belum dikonfigurasi untuk menyimpan key');
+  const row = await env.repo.createProvider({
+    userId: user.id, kind, label, baseUrl: base.value,
+    apiKeyEnc: encryptSecret(env.encryptionKey, apiKey), keyHint: keyHint(apiKey),
+  });
+  return json({ provider: publicProvider(row) }, 201);
+}
+
+async function updateProvider(request, env, id) {
+  if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
+  const user = await requireUser(request, env);
+  const body = await readJson(request);
+  const patch = {};
+  if (body?.label != null) patch.label = String(body.label).trim().slice(0, 60) || 'Provider';
+  if (body?.baseUrl !== undefined) {
+    const base = cleanBaseUrl(body.baseUrl);
+    if (!base.ok) throw new HttpError(400, base.error);
+    patch.base_url = base.value;
+  }
+  if (body?.apiKey != null && String(body.apiKey).trim()) {
+    const apiKey = String(body.apiKey).trim();
+    if (apiKey.length < 8 || apiKey.length > 500) throw new HttpError(400, 'API key tidak valid');
+    if (env.encryptionKey == null) throw new HttpError(500, 'Server belum dikonfigurasi untuk menyimpan key');
+    patch.api_key_enc = encryptSecret(env.encryptionKey, apiKey);
+    patch.key_hint = keyHint(apiKey);
+  }
+  const row = await env.repo.updateProvider(user.id, id, patch);
+  if (!row) throw new HttpError(404, 'Provider tidak ditemukan');
+  return json({ provider: publicProvider(row) });
+}
+
+async function removeProvider(request, env, id) {
+  if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
+  const user = await requireUser(request, env);
+  if (!(await env.repo.getProvider(user.id, id))) throw new HttpError(404, 'Provider tidak ditemukan');
+  await env.repo.deleteProvider(user.id, id);
+  return json({ ok: true });
+}
+
+/** Uji provider: dekripsi key dan panggil endpoint daftar model provider. Key tidak pernah direspons. */
+async function testProvider(request, env, id, fetchImpl) {
+  if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
+  const user = await requireUser(request, env);
+  const row = await env.repo.getProvider(user.id, id);
+  if (!row) throw new HttpError(404, 'Provider tidak ditemukan');
+  const key = decryptSecret(env.encryptionKey, row.api_key_enc);
+  const { testProviderKey } = await import('./client.mjs');
+  const result = await testProviderKey(row, key, fetchImpl);
+  return json(result, result.ok ? 200 : 400);
+}
+
 /** Rute chat API. `path` sudah tanpa prefiks mount ('/chat/api/...'). null = bukan rute chat API. */
-export async function handleChatApi(request, env, path) {
+export async function handleChatApi(request, env, path, fetchImpl) {
   const seg = path.replace(/^\/chat\/api\/?/, '');
   const method = request.method;
+  const providerId = seg.match(/^providers\/([\w-]+)$/)?.[1];
+  const testMatch = seg.match(/^providers\/([\w-]+)\/test$/)?.[1];
+
   const ROUTES = [
-    ['auth/signup', 'POST', signup],
-    ['auth/login', 'POST', login],
-    ['auth/logout', 'POST', logout],
-    ['me', 'GET', me],
+    ['auth/signup', 'POST', (r, e) => signup(r, e)],
+    ['auth/login', 'POST', (r, e) => login(r, e)],
+    ['auth/logout', 'POST', (r, e) => logout(r, e)],
+    ['me', 'GET', (r, e) => me(r, e)],
+    ['provider-kinds', 'GET', (r, e) => catalog(r, e)],
+    ['providers', 'GET', (r, e) => listProviders(r, e)],
+    ['providers', 'POST', (r, e) => addProvider(r, e)],
   ];
   for (const [route, verb, fn] of ROUTES) {
     if (seg === route && method === verb) return guard(() => fn(request, env));
   }
+  if (providerId) {
+    if (method === 'PATCH' || method === 'PUT') return guard(() => updateProvider(request, env, providerId));
+    if (method === 'DELETE') return guard(() => removeProvider(request, env, providerId));
+  }
+  if (testMatch && method === 'POST') return guard(() => testProvider(request, env, testMatch, fetchImpl));
   // Rute dikenal tapi metode salah → 405; benar-benar tidak dikenal → 404 (pemanggil bisa coba handler lain).
-  for (const [route] of ROUTES) if (seg === route) return json({ error: 'Metode tidak didukung' }, 405);
+  const known = [...ROUTES.map(([route]) => route), 'providers/:id', 'providers/:id/test'];
+  if (known.some((r) => seg === r)) return json({ error: 'Metode tidak didukung' }, 405);
   return null;
 }
 
