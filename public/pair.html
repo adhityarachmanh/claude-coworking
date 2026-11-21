@@ -2,7 +2,7 @@
 <html lang="id">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#121317" />
     <title>Hubungkan perangkat — Adhitron</title>
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
@@ -10,7 +10,7 @@
     <style>
       :root { --bg: #121317; --surface: #1f232b; --border: #2c303b; --text: #ece9e4; --muted: #8d939f; --accent: #d97757; --err: #f0524a; --ok: #6fbf73; }
       * { box-sizing: border-box; }
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
+      body { margin: 0; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); background: var(--bg); color: var(--text); font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
       main { width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px 20px; text-align: center; }
       .logo { width: 48px; height: 48px; image-rendering: pixelated; }
       h1 { font-size: 19px; margin: 6px 0 4px; }

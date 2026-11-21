@@ -102,6 +102,7 @@ word-break:break-all}
 .ebtn{background:var(--surface-2);color:var(--text-2);border:1px solid var(--line);border-radius:8px;
 padding:7px 11px;min-height:34px;font:inherit;font-size:.78rem;cursor:pointer}
 .ebtn:hover{background:var(--line);color:var(--text)}
+@media(pointer:coarse){.ebtn{min-height:44px}}
 .epower{background:var(--surface);border:1px solid var(--accent-line);border-radius:12px;padding:12px 14px;margin:10px 0}
 .epower b{display:block;font-size:1.9rem;line-height:1.15;font-variant-numeric:tabular-nums;color:var(--accent-2)}
 .epower span{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
@@ -109,6 +110,7 @@ padding:7px 11px;min-height:34px;font:inherit;font-size:.78rem;cursor:pointer}
 .ecard{flex:1 1 30%;min-width:92px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 .ecard b{display:block;font-size:1.02rem;font-variant-numeric:tabular-nums}
 .ecard span{font-size:.72rem;color:var(--muted)}
+@media(pointer:coarse){main.card{padding-bottom:calc(44px + env(safe-area-inset-bottom))}.top{padding-top:calc(12px + env(safe-area-inset-top))}}
 `;
 
 export const escapeHtml = (s) => String(s ?? '')
@@ -123,7 +125,7 @@ const jsonForScript = (value) => JSON.stringify(value).replaceAll('<', '\\u003c'
 const jsPath = (base, path) => `'${base}${path}'`;
 
 const page = (title, body, base = '') =>
-  `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name="color-scheme" content="dark"><meta name="theme-color" content="#121317">
 <title>${escapeHtml(title)}</title><style>${CSS}</style></head><body>
 <header class="top"><a class="brand" href="${base}/">${LOGO}<span>Adhitron <em>Remote&nbsp;Power</em></span></a></header>

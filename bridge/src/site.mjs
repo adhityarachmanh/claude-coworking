@@ -72,7 +72,7 @@ border:1px solid transparent;font:inherit;font-size:1rem;font-weight:600;cursor:
 .msg{margin:12px 0;padding:10px 12px;border-radius:10px;font-size:.88rem;background:var(--surface-2);border:1px solid var(--line)}
 .msg.bad{background:#2a1614;border-color:#6e2a24}
 /* --- tata letak chat (M7) --- */
-.chatwrap{display:grid;gap:0;height:100vh;height:100dvh;grid-template-rows:auto 1fr}
+.chatwrap{display:grid;gap:0;height:100svh;height:100dvh;grid-template-rows:minmax(0,1fr)}
 .chatbody{display:grid;grid-template-columns:1fr;min-height:0}
 @media(min-width:820px){.chatbody{grid-template-columns:260px 1fr}}
 .side{border-right:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;min-height:0}
@@ -122,7 +122,7 @@ color:#fff;font-size:1.2rem;cursor:pointer}
 .sendbtn.stop{background:#6e2a24}
 .hint{font-size:.74rem;color:var(--muted);margin:6px 2px 0}
 .overlay{position:fixed;inset:0;background:rgba(6,7,10,.7);display:flex;align-items:flex-start;justify-content:center;
-padding:24px 12px;overflow:auto;z-index:20}
+padding:24px 12px;overflow:auto;z-index:40}
 .overlay[hidden]{display:none}
 .modal{background:var(--surface);border:1px solid var(--line);border-radius:16px;width:100%;max-width:560px;padding:18px}
 .modal h2{margin:0 0 4px;font-size:1.15rem}
@@ -143,17 +143,37 @@ font:inherit;font-size:.82rem;cursor:pointer;min-height:40px}
 border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle}
 @keyframes sp{to{transform:rotate(360deg)}}
 .menu-btn{display:none}
-@media(max-width:819px){.menu-btn{display:inline-flex}.side{position:fixed;top:0;bottom:0;left:0;width:280px;z-index:30;
-transform:translateX(-100%);transition:transform .18s}.side.open{transform:none;box-shadow:0 0 0 100vmax rgba(0,0,0,.5)}}
+@media(max-width:819px){.menu-btn{display:inline-flex}.side{position:fixed;top:0;bottom:0;left:0;width:min(280px,86vw);z-index:30;
+transform:translateX(-100%);transition:transform .18s}.side.open{transform:none;box-shadow:0 0 0 100vmax rgba(0,0,0,.5)}
+input,select,textarea,.ctl select,.ctl input[type=text]{font-size:16px}}
+@media(pointer:coarse){.conv,.mini,.menu-btn,.ctl select,.ctl input[type=text],.ctl label.chk{min-height:44px}
+.chip{padding:8px 12px}.conv .del{min-width:44px;min-height:44px}}
+/* --- kerangka penuh untuk /chat (tanpa header/footer) --- */
+body.nochrome{height:var(--vv-h,100dvh);min-height:0;overflow:hidden}
+body.nochrome .chatwrap{height:100%;padding-bottom:env(safe-area-inset-bottom)}
+body.nochrome .composer{padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+body.nochrome .side{padding-bottom:env(safe-area-inset-bottom)}
+.authwrap{width:100%;max-width:440px;margin:0 auto;padding:calc(28px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));overflow:auto;height:100svh;height:100dvh}
+@media(max-width:360px){.authwrap{padding:16px 12px}.doors{gap:10px}.door{padding:16px}}
+.overlay{padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+.scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.bubble img{max-width:100%;height:auto}
+.bubble p:first-child{margin-top:0}
+.bubble p:last-child{margin-bottom:0}
+.bubble ul{margin:6px 0;padding-left:20px}
+.chip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prov .meta b,.prov .meta span{overflow-wrap:anywhere}
 `;
 
-const shell = (title, body, { bare = false } = {}) =>
-  `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+const shell = (title, body, { bare = false, chrome = true } = {}) =>
+  `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name="color-scheme" content="dark"><meta name="theme-color" content="#121317">
-<title>${escapeHtml(title)}</title><style>${CSS}</style></head><body>
-<header class="top"><a class="brand" href="/">${LOGO}<span>Adhitron</span></a></header>
+<title>${escapeHtml(title)}</title><style>${CSS}</style></head><body${
+  chrome ? '' : ' class="nochrome"'
+}>
+${chrome ? `<header class="top"><a class="brand" href="/">${LOGO}<span>Adhitron</span></a></header>` : ''}
 ${bare ? body : `<main>${body}</main>`}
-<footer class="foot">Adhitron · kantor pixel-art untuk Claude Code &amp; OpenCode · <a href="/privasi">Privasi</a> · <a href="/syarat">Syarat</a></footer>
+${chrome ? '<footer class="foot">Adhitron · kantor pixel-art untuk Claude Code &amp; OpenCode · <a href="/privasi">Privasi</a> · <a href="/syarat">Syarat</a></footer>' : ''}
 </body></html>`;
 
 /** Portal '/': dua pintu. Chat memakai API key milik user; Remote power memakai jembatan '/bridge'. */
@@ -183,7 +203,8 @@ dan kamu ingin menyalakannya dari HP.</p>
 /** Halaman chat penuh (M7): sidebar riwayat, thread, composer model/effort/browsing, setelan provider. */
 export function chatPageHtml() {
   return shell('Chat — Adhitron', `
-<section id="auth">
+<section id="auth" class="authwrap">
+  <a class="brand" href="/" style="display:inline-flex;margin-bottom:8px">${LOGO}<span>Adhitron <em>Chat</em></span></a>
   <h1>💬 Chat</h1>
   <p class="lead">Masuk dengan akunmu, tempel API key milikmu sendiri, lalu ngobrol dengan pilihan model
   &amp; effort serta browsing web.</p>
@@ -263,7 +284,7 @@ export function chatPageHtml() {
   </div>
 </div>
 
-<script src="/chat/app.js" defer></script>`);
+<script src="/chat/app.js" defer></script>`, { chrome: false, bare: true });
 }
 
 /** Halaman kebijakan privasi (/privasi). Teks ringkas, jujur soal pihak ketiga & hak hapus. */

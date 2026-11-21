@@ -100,9 +100,14 @@ async function loadProviders() {
     : '<p class="muted">Belum ada provider. Tambahkan API key milikmu di bawah.</p>';
   renderModelOptions();
 }
-$('settings').addEventListener('click', () => { $('prov').hidden = false; });
+$('settings').addEventListener('click', () => { closeSide(); $('prov').hidden = false; });
 $('provclose').addEventListener('click', () => { $('prov').hidden = true; });
 $('prov').addEventListener('click', (e) => { if (e.target === $('prov')) $('prov').hidden = true; });
+addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!$('prov').hidden) $('prov').hidden = true;
+  else if ($('side').classList.contains('open')) { closeSide(); $('menu').focus(); }
+});
 $('provform').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = new FormData($('provform')); provMsg('Menyimpan…');
@@ -279,6 +284,17 @@ $('thread').addEventListener('click', (e) => {
   const chip = bubble && bubble.querySelectorAll('.chip')[idx - 1];
   if (chip) window.open(chip.href, '_blank', 'noopener');
 });
+
+/* keyboard HP: ikat tinggi app ke visualViewport supaya composer tak tertutup */
+(() => {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const root = document.documentElement;
+  const apply = () => root.style.setProperty('--vv-h', vv.height + 'px');
+  apply();
+  vv.addEventListener('resize', apply);
+  vv.addEventListener('scroll', apply);
+})();
 
 refresh();
 `;

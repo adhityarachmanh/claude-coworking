@@ -22,6 +22,12 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
   (`/syarat`), serta tombol **Hapus akun** yang menyapu seluruh data user (hak hapus UU PDP). Catatan privasi di
   [docs/privasi-adhitron-web.md](docs/privasi-adhitron-web.md). Login pihak ketiga (Google dll.) sengaja belum
   dipakai di v1 — alasannya dicatat di [docs/design-adhitron-web.md](docs/design-adhitron-web.md).
+- **📱 Tampilan menyesuaikan layar kecil & HP (Adhitron lokal + Web).** Halaman chat Web kini memakai seluruh
+  tinggi layar (bukan kolom artikel 720px): thread menggulir sendiri, composer selalu terlihat, dan tinggi mengikuti
+  `visualViewport` agar tidak tertutup keyboard HP. Ditambah `viewport-fit=cover` + safe-area (composer tidak lagi
+  terpotong notch/home-indicator), input 16px anti-zoom iOS, target sentuh ≥ 44px, modal provider selalu di atas
+  samping riwayat, `Escape` menutup samping/modal. Di sisi lokal, `pair.html` & panel tablet ikut menyesuaikan tinggi
+  area terlihat.
 
 ## 1.0.83
 

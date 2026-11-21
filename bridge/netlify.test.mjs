@@ -1934,11 +1934,15 @@ test('portal: root menampilkan dua pintu (Chat & Remote Power) tanpa membocorkan
   assert.match(chat, /\/chat\/app\.js/, 'memuat skrip aplikasi chat');
   assert.match(chat, /id="composer"/, 'komposer pesan ada');
   assert.match(chat, /id="convs"/, 'sidebar riwayat ada');
+  assert.match(chat, /class="nochrome"/, 'kerangka chat tanpa header/footer kolom artikel');
+  assert.match(chat, /viewport-fit=cover/, 'viewport menutup area aman (notch)');
+  assert.match(chat, /--vv-h/, 'CSS memakai tinggi visualViewport');
   const app = handleSite(req('/chat/app.js'));
   assert.equal(app.status, 200, 'app.js tersedia');
   assert.match(app.headers.get('content-type') || '', /javascript/);
   const appText = await app.text();
   assert.doesNotThrow(() => new vm.Script(appText), 'skrip aplikasi chat harus valid');
+  assert.match(appText, /visualViewport/, 'tinggi app mengikuti visualViewport (keyboard HP)');
   assert.equal(handleSite(req('/chat/app.js', { method: 'POST' })), null, 'app.js hanya GET');
   const priv = handleSite(req('/privasi'));
   assert.equal(priv.status, 200, '/privasi ada');

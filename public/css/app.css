@@ -1802,7 +1802,7 @@ body.read-only #composer-hint { color: var(--ask); }
   body { overflow: auto; height: auto; min-height: 100%; }
   .layout { grid-template-columns: minmax(0, 1fr); }
   .stage { height: 52vw; }
-  .panel { height: 80vh; border-left: 0; border-top: 1px solid var(--border); }
+  .panel { height: 80vh; height: 80dvh; border-left: 0; border-top: 1px solid var(--border); }
   .team { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 }
 
