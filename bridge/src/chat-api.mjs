@@ -8,6 +8,7 @@ import {
 import { hit, hourWindow } from './rate-limit.mjs';
 import { cleanBaseUrl, isValidKind, KIND_LABELS, modelsFor, PROVIDER_KINDS } from './providers.mjs';
 import { decryptSecret, encryptSecret, keyHint, publicProvider } from './secrets.mjs';
+import { runTurn } from './chat-run.mjs';
 
 const CORS_SAME_ORIGIN = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -193,12 +194,112 @@ async function testProvider(request, env, id, fetchImpl) {
   return json(result, result.ok ? 200 : 400);
 }
 
+// ---------------------------------------------------------------- percakapan (M5)
+
+const publicConversation = (c) => ({
+  id: c.id,
+  title: c.title,
+  providerId: c.provider_id ?? null,
+  model: c.model ?? null,
+  effort: c.effort ?? null,
+  modelAuto: Boolean(c.model_auto),
+  effortAuto: Boolean(c.effort_auto),
+  modelTiers: c.model_tiers ?? null,
+  browsing: Boolean(c.browsing),
+  createdAt: c.created_at,
+  updatedAt: c.updated_at,
+});
+
+const publicMessage = (m) => ({ id: m.id, role: m.role, content: m.content, meta: m.meta ?? null, createdAt: m.created_at });
+
+async function listConversations(request, env) {
+  const user = await requireUser(request, env);
+  const rows = await env.repo.listConversations(user.id);
+  return json({ conversations: rows.map(publicConversation) });
+}
+
+async function createConversation(request, env) {
+  if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
+  const user = await requireUser(request, env);
+  const body = await readJson(request);
+  const conv = await env.repo.createConversation(user.id, {
+    title: typeof body?.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 120) : 'Percakapan baru',
+    providerId: body?.providerId ?? null,
+    model: body?.model ?? null,
+    effort: body?.effort ?? null,
+    modelAuto: Boolean(body?.modelAuto),
+    effortAuto: Boolean(body?.effortAuto),
+    modelTiers: body?.modelTiers ?? null,
+    browsing: Boolean(body?.browsing),
+  });
+  return json({ conversation: publicConversation(conv) }, 201);
+}
+
+/** Muat percakapan milik user; lempar 404 kalau bukan miliknya. */
+async function ownedConversation(request, env, id) {
+  const user = await requireUser(request, env);
+  const conv = await env.repo.getConversation(user.id, id);
+  if (!conv) throw new HttpError(404, 'Percakapan tidak ditemukan');
+  return { user, conv };
+}
+
+async function getConversation(request, env, id) {
+  const { user, conv } = await ownedConversation(request, env, id);
+  const messages = await env.repo.listMessages(user.id, id);
+  const citations = await env.repo.listCitations(user.id, id);
+  return json({
+    conversation: publicConversation(conv),
+    messages: messages.map(publicMessage),
+    citations: citations.map((c) => ({ messageId: c.message_id, idx: c.idx, title: c.title, url: c.url, snippet: c.snippet })),
+  });
+}
+
+async function updateConversation(request, env, id) {
+  if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
+  const user = await requireUser(request, env);
+  const body = await readJson(request);
+  const patch = {};
+  // Hanya field yang dikirim yang diubah (undefined = biarkan).
+  if (body?.title != null) patch.title = String(body.title).trim().slice(0, 120) || 'Percakapan baru';
+  if (body?.providerId !== undefined) patch.provider_id = body.providerId;
+  if (body?.model !== undefined) patch.model = body.model;
+  if (body?.effort !== undefined) patch.effort = body.effort;
+  if (body?.modelAuto !== undefined) patch.model_auto = Boolean(body.modelAuto);
+  if (body?.effortAuto !== undefined) patch.effort_auto = Boolean(body.effortAuto);
+  if (body?.modelTiers !== undefined) patch.model_tiers = body.modelTiers;
+  if (body?.browsing !== undefined) patch.browsing = Boolean(body.browsing);
+  const row = await env.repo.updateConversation(user.id, id, patch);
+  if (!row) throw new HttpError(404, 'Percakapan tidak ditemukan');
+  return json({ conversation: publicConversation(row) });
+}
+
+async function deleteConversation(request, env, id) {
+  if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
+  const user = await requireUser(request, env);
+  if (!(await env.repo.getConversation(user.id, id))) throw new HttpError(404, 'Percakapan tidak ditemukan');
+  await env.repo.deleteConversation(user.id, id);
+  return json({ ok: true });
+}
+
+/**
+ * Kirim pesan user dan alirkan jawaban asisten (SSE). Membutuhkan `env.callModel` untuk Auto(LLM)
+ * dan `env.fetchImpl` (default fetch global) untuk provider. Membalas 400 JSON bila input salah.
+ */
+async function sendMessage(request, env, id, fetchImpl) {
+  if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
+  const { user, conv } = await ownedConversation(request, env, id);
+  const runEnv = { ...env, fetchImpl: fetchImpl ?? globalThis.fetch };
+  return runTurn(runEnv, user, conv, request, { fetchImpl: runEnv.fetchImpl });
+}
+
 /** Rute chat API. `path` sudah tanpa prefiks mount ('/chat/api/...'). null = bukan rute chat API. */
 export async function handleChatApi(request, env, path, fetchImpl) {
   const seg = path.replace(/^\/chat\/api\/?/, '');
   const method = request.method;
   const providerId = seg.match(/^providers\/([\w-]+)$/)?.[1];
   const testMatch = seg.match(/^providers\/([\w-]+)\/test$/)?.[1];
+  const convId = seg.match(/^conversations\/([\w-]+)$/)?.[1];
+  const msgMatch = seg.match(/^conversations\/([\w-]+)\/messages$/)?.[1];
 
   const ROUTES = [
     ['auth/signup', 'POST', (r, e) => signup(r, e)],
@@ -208,6 +309,8 @@ export async function handleChatApi(request, env, path, fetchImpl) {
     ['provider-kinds', 'GET', (r, e) => catalog(r, e)],
     ['providers', 'GET', (r, e) => listProviders(r, e)],
     ['providers', 'POST', (r, e) => addProvider(r, e)],
+    ['conversations', 'GET', (r, e) => listConversations(r, e)],
+    ['conversations', 'POST', (r, e) => createConversation(r, e)],
   ];
   for (const [route, verb, fn] of ROUTES) {
     if (seg === route && method === verb) return guard(() => fn(request, env));
@@ -217,8 +320,14 @@ export async function handleChatApi(request, env, path, fetchImpl) {
     if (method === 'DELETE') return guard(() => removeProvider(request, env, providerId));
   }
   if (testMatch && method === 'POST') return guard(() => testProvider(request, env, testMatch, fetchImpl));
+  if (convId) {
+    if (method === 'GET') return guard(() => getConversation(request, env, convId));
+    if (method === 'PATCH' || method === 'PUT') return guard(() => updateConversation(request, env, convId));
+    if (method === 'DELETE') return guard(() => deleteConversation(request, env, convId));
+  }
+  if (msgMatch && method === 'POST') return guard(() => sendMessage(request, env, msgMatch, fetchImpl));
   // Rute dikenal tapi metode salah → 405; benar-benar tidak dikenal → 404 (pemanggil bisa coba handler lain).
-  const known = [...ROUTES.map(([route]) => route), 'providers/:id', 'providers/:id/test'];
+  const known = [...ROUTES.map(([route]) => route), 'providers/:id', 'providers/:id/test', 'conversations/:id', 'conversations/:id/messages'];
   if (known.some((r) => seg === r)) return json({ error: 'Metode tidak didukung' }, 405);
   return null;
 }
