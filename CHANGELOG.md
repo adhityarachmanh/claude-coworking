@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.83
 
 - **⚡ Mode ketiga Auto untuk Claude Code & OpenCode.** Satu pilihan resmi untuk "kerjakan saja, jangan tanya tiap langkah": OpenCode berhenti memunculkan kartu izin untuk perintah shell dan `webfetch`, dan Claude Code memakai `--permission-mode auto` (classifier bawaannya, bukan bypass). Aturan **deny** yang kamu tulis tetap menang, file rahasia (`.env`) tetap ditanya OpenCode seperti biasa, dan 📋 Plan tetap read-only. Mode lama `auto` dari versi aplikasi sebelumnya **tidak** berubah menjadi Auto — nilainya tetap berarti Build.
 - **⧗ Tugas latar tidak lagi menampilkan baris "hantu" tanpa output.** Saat sebuah delegasi OpenCode bekerja, setiap langkah anaknya (mis. `read`, `grep`) yang selesai ternyata memancarkan sinyal penutup seolah-olah itu sebuah tugas agent, sehingga panel **⧗ Tugas latar** menampilkan baris palsu bergaya perintah (ikon 🖥, "Salin output") yang outputnya tidak pernah bisa dibaca — muncul pesan *"Gagal memuat output: Tugas tidak ditemukan."* Kini sinyal penutup itu hanya dipancarkan untuk delegasi yang benar-benar tertunda; langkah anak dan tool call biasa induk tidak lagi membuat baris palsu, sehingga yang tampil di panel sesuai kenyataan.
