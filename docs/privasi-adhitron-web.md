@@ -40,13 +40,17 @@ Password **tidak pernah** disimpan/dilog dalam bentuk asli. API key user **tidak
 
 ## Wajib sebelum rilis publik
 
-1. Halaman **Kebijakan Privasi** & **Syarat Layanan** yang bisa diakses dari `/chat` dan portal `/`.
-2. **Hapus akun & data** (endpoint + tombol), termasuk konfirmasi.
-3. **Persetujuan** saat daftar (checkbox) + catatan versi kebijakan yang disetujui.
-4. **Kontak** operator untuk permintaan subjek data.
-5. **Enkripsi at-rest & in-transit**: `ENCRYPTION_KEY` operator untuk API key; TLS wajib (Netlify).
-6. **Log**: pastikan tidak ada API key/password/isi chat yang tercatat di log server.
-7. **Anak**: tentukan batas usia minimum sesuai kebijakan.
+1. ✅ **Halaman Kebijakan Privasi** (`/privasi`) & **Syarat Layanan** (`/syarat`), ditaut dari footer semua halaman.
+2. ✅ **Hapus akun & data**: `DELETE /chat/api/me` + tombol "Hapus akun" (konfirmasi bertingkat); cascade membuang
+   sessions/providers/conversations/messages/citations/tool_runs.
+3. ⬜ **Persetujuan** saat daftar (checkbox) + catatan versi kebijakan yang disetujui (kolom `consent_at`/`consent_version`).
+4. ⬜ **Kontak** operator untuk permintaan subjek data (ganti "hubungi operator" dengan email/tautan resmi).
+5. ⬜ **Retensi terjadwal**: job cron membersihkan sesi kedaluwarsa & menetapkan batas `tool_runs`; tulis periode di kebijakan.
+6. ✅ **Enkripsi at-rest & in-transit**: `ENCRYPTION_KEY` operator untuk API key; TLS wajib (Netlify).
+7. ✅ **Log**: tidak ada API key/password/isi chat yang tercatat di log server.
+8. ⬜ **Anak**: tetapkan batas usia minimum sesuai kebijakan.
+9. ⬜ **Transfer lintas negara**: kunci region Neon + kumpulkan DPA Neon/Netlify; dokumentasikan dasar transfer.
+10. ⬜ **Notifikasi insiden**: runbook + template (UU PDP maks. 3×24 jam).
 
 ## Catatan teknis yang mendukung kepatuhan
 

@@ -1940,6 +1940,13 @@ test('portal: root menampilkan dua pintu (Chat & Remote Power) tanpa membocorkan
   const appText = await app.text();
   assert.doesNotThrow(() => new vm.Script(appText), 'skrip aplikasi chat harus valid');
   assert.equal(handleSite(req('/chat/app.js', { method: 'POST' })), null, 'app.js hanya GET');
+  const priv = handleSite(req('/privasi'));
+  assert.equal(priv.status, 200, '/privasi ada');
+  assert.match(await priv.text(), /Kebijakan Privasi/);
+  const tos = handleSite(req('/syarat'));
+  assert.equal(tos.status, 200, '/syarat ada');
+  assert.match(await tos.text(), /Syarat Layanan/);
+  assert.equal(handleSite(req('/syarat', { method: 'POST' })), null, 'POST ke /syarat bukan rute');
 });
 
 test('mount /bridge: rute jembatan sama seperti di root, tapi URL yang diterbitkan berprefiks /bridge', async () => {

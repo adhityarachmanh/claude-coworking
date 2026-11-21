@@ -153,3 +153,31 @@ test('rute tak dikenal → null (bukan 404 diam-diam); metode salah → 405', as
   const wrongMethod = await send(env, req('/chat/api/auth/login'));
   assert.equal(wrongMethod.status, 405);
 });
+
+test('hapus akun: DELETE /me menyapu seluruh data user + cookie kosong', async () => {
+  const env = makeEnv();
+  const signup = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }));
+  const cookie = `adhitron_session=${cookieOf(signup)}`;
+  const user = await env.repo.getUserByEmail('a@b.co');
+  const conv = await env.repo.createConversation(user.id, { title: 'x' });
+  await env.repo.addMessage(user.id, conv.id, { role: 'user', content: 'hai' });
+  await env.repo.createProvider({ userId: user.id, kind: 'openai', label: 'p', apiKeyEnc: { v: 1 } });
+
+  const del = await send(env, req('/chat/api/me', { method: 'DELETE', headers: { Cookie: cookie } }));
+  assert.equal(del.status, 200);
+  assert.match(del.headers.get('set-cookie'), /Max-Age=0/);
+  assert.equal(await env.repo.getUserByEmail('a@b.co'), null, 'user hilang');
+  assert.equal((await env.repo.listConversations(user.id)).length, 0, 'percakapan hilang');
+  assert.equal((await env.repo.listProviders(user.id)).length, 0, 'provider hilang');
+  assert.equal((await send(env, req('/chat/api/me', { headers: { Cookie: cookie } }))).status, 401, 'sesi mati');
+});
+
+test('hapus akun: tanpa login 401, lintas-origin 403', async () => {
+  const env = makeEnv();
+  assert.equal((await send(env, req('/chat/api/me', { method: 'DELETE' }))).status, 401);
+  const signup = await send(env, jsonReq('/chat/api/auth/signup', { email: 'a@b.co', password: 'rahasia123' }));
+  const cookie = `adhitron_session=${cookieOf(signup)}`;
+  const r = await send(env, req('/chat/api/me', { method: 'DELETE', headers: { Cookie: cookie } }, 'https://evil.test'));
+  assert.equal(r.status, 403);
+  assert.ok(await env.repo.getUserByEmail('a@b.co'), 'akun tetap ada');
+});

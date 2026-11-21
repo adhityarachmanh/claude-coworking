@@ -18,7 +18,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
   Dilengkapi penjagaan anti-SSRF (hanya http(s); alamat privat/loopback/metadata cloud diblokir) dan batas jumlah
   pencarian per percakapan.
 - **🔐 Keamanan & privasi.** Sesi cookie `httpOnly`+`Secure`; permintaan pengubah state wajib same-origin
-  (anti-CSRF); login/daftar dibatasi per IP. Catatan privasi (UU PDP) ada di
+  (anti-CSRF); login/daftar dibatasi per IP. Ada halaman **Kebijakan Privasi** (`/privasi`) & **Syarat Layanan**
+  (`/syarat`), serta tombol **Hapus akun** yang menyapu seluruh data user (hak hapus UU PDP). Catatan privasi di
   [docs/privasi-adhitron-web.md](docs/privasi-adhitron-web.md). Login pihak ketiga (Google dll.) sengaja belum
   dipakai di v1 — alasannya dicatat di [docs/design-adhitron-web.md](docs/design-adhitron-web.md).
 

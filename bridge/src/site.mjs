@@ -153,7 +153,7 @@ const shell = (title, body, { bare = false } = {}) =>
 <title>${escapeHtml(title)}</title><style>${CSS}</style></head><body>
 <header class="top"><a class="brand" href="/">${LOGO}<span>Adhitron</span></a></header>
 ${bare ? body : `<main>${body}</main>`}
-<footer class="foot">Adhitron · kantor pixel-art untuk Claude Code &amp; OpenCode</footer>
+<footer class="foot">Adhitron · kantor pixel-art untuk Claude Code &amp; OpenCode · <a href="/privasi">Privasi</a> · <a href="/syarat">Syarat</a></footer>
 </body></html>`;
 
 /** Portal '/': dua pintu. Chat memakai API key milik user; Remote power memakai jembatan '/bridge'. */
@@ -216,6 +216,7 @@ export function chatPageHtml() {
       <div class="side-top">
         <div class="muted" id="who"></div>
         <button class="mini danger" id="logout" type="button">Keluar</button>
+        <button class="mini danger" id="delacct" type="button">Hapus akun</button>
       </div>
     </aside>
     <div class="chatmain">
@@ -265,12 +266,61 @@ export function chatPageHtml() {
 <script src="/chat/app.js" defer></script>`);
 }
 
+/** Halaman kebijakan privasi (/privasi). Teks ringkas, jujur soal pihak ketiga & hak hapus. */
+export function privacyPageHtml() {
+  return shell('Kebijakan Privasi — Adhitron', `
+<h1>Kebijakan Privasi</h1>
+<p class="lead">Berlaku untuk situs Adhitron Web. Ringkas dan apa adanya.</p>
+<h2>Data yang kami simpan</h2>
+<p>Email, hash password, API key milikmu (terenkripsi <b>AES-256-GCM</b>), riwayat percakapan, pesan,
+dan catatan pencarian saat fitur Browsing dipakai. API key hanya 4 karakter terakhirnya yang ditampilkan.</p>
+<h2>Untuk apa</h2>
+<p>Hanya untuk menjalankan akunmu: login, menyimpan provider, dan mengobrol. Kami tidak menjual data dan tidak
+memasang pelacak iklan.</p>
+<h2>Pihak ketiga</h2>
+<p>Data disimpan di <b>Neon</b> (database) dan <b>Netlify</b> (hosting). Saat kamu mengobrol, isi pesan dikirim ke
+<b>penyedia AI milikmu</b> untuk menghasilkan jawaban. Saat Browsing aktif, teks pencarian dikirim ke mesin
+pencari (DuckDuckGo, atau Tavily/Brave bila diaktifkan operator).</p>
+<h2>Catatan penting soal API key</h2>
+<p>API key-mu dienkripsi dengan kunci operator. Artinya secara teknis operator situs dapat mendekripsinya;
+kami berkomitmen tidak mengaksesnya kecuali untuk operasional yang kamu minta.</p>
+<h2>Hakmu</h2>
+<p>Kamu bisa <b>menghapus akun beserta seluruh datanya</b> kapan saja dari halaman Chat (⚙ / tombol Hapus akun).
+Penghapusan bersifat permanen. Permintaan lain (akses, koreksi, ekspor) bisa dikirim ke kontak di bawah.</p>
+<h2>Retensi</h2>
+<p>Data disimpan selama akunmu aktif. Sesi kedaluwarsa dibersihkan berkala. Menghapus akun menghapus semuanya.</p>
+<h2>Kontak</h2>
+<p>Pertanyaan privasi: hubungi operator situs ini.</p>
+<p class="muted"><a href="/">← Kembali ke portal</a></p>`);
+}
+
+/** Halaman syarat layanan (/syarat). */
+export function termsPageHtml() {
+  return shell('Syarat Layanan — Adhitron', `
+<h1>Syarat Layanan</h1>
+<p class="lead">Aturan memakai Adhitron Web (versi sederhana).</p>
+<h2>Layanan ini apa</h2>
+<p>Alat untuk mengobrol dengan AI memakai <b>API key milikmu sendiri</b>. Biaya & kuota pemakaian AI sepenuhnya
+milikmu; situs hanya perantara.</p>
+<h2>Tanggung jawabmu</h2>
+<p>Jaga kerahasiaan password dan API key-mu. Jangan memakai layanan untuk hal melanggar hukum, menyebarkan
+konten berbahaya, atau mengganggu layanan orang lain.</p>
+<h2>Tanpa jaminan</h2>
+<p>Layanan disediakan "apa adanya". Jawaban AI bisa salah — periksa sebelum dipakai. Kami tidak menjamin
+layanan bebas gangguan.</p>
+<h2>Perubahan</h2>
+<p>Syarat bisa berubah; perubahan penting akan ditampilkan di situs.</p>
+<p class="muted"><a href="/">← Kembali ke portal</a></p>`);
+}
+
 /** Router situs (portal + chat). Mengembalikan Response untuk path yang dikenal, atau null. */
 export function handleSite(request, url = new URL(request.url)) {
   const path = url.pathname;
   if (path === '/' && request.method === 'GET') return html(portalPageHtml());
   if ((path === '/chat' || path === '/chat/') && request.method === 'GET') return html(chatPageHtml());
   if (path === '/chat/app.js' && request.method === 'GET') return js(chatAppJs());
+  if ((path === '/privasi' || path === '/privasi/') && request.method === 'GET') return html(privacyPageHtml());
+  if ((path === '/syarat' || path === '/syarat/') && request.method === 'GET') return html(termsPageHtml());
   return null;
 }
 

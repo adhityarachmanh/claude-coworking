@@ -116,6 +116,17 @@ async function me(request, env) {
   return json({ user: publicUser(user) });
 }
 
+/**
+ * Hapus akun & seluruh data user (hak hapus UU PDP Pasal 35–36 / GDPR Pasal 17). Cascade di skema
+ * membuang sessions/providers/conversations/messages/citations/tool_runs milik user. Cookie sesi ikut dihapus.
+ */
+async function deleteMe(request, env) {
+  if (!isSameOrigin(request)) throw new HttpError(403, 'Permintaan bukan dari situs ini');
+  const user = await requireUser(request, env);
+  await env.repo.deleteUser(user.id);
+  return json({ ok: true }, 200, { 'Set-Cookie': clearedSessionCookie() });
+}
+
 // ---------------------------------------------------------------- provider (M4)
 
 /** Katalog statis: kind + label + daftar model (tanpa kredensial). Dipakai UI untuk membangun pemilih model. */
@@ -306,6 +317,7 @@ export async function handleChatApi(request, env, path, fetchImpl) {
     ['auth/login', 'POST', (r, e) => login(r, e)],
     ['auth/logout', 'POST', (r, e) => logout(r, e)],
     ['me', 'GET', (r, e) => me(r, e)],
+    ['me', 'DELETE', (r, e) => deleteMe(r, e)],
     ['provider-kinds', 'GET', (r, e) => catalog(r, e)],
     ['providers', 'GET', (r, e) => listProviders(r, e)],
     ['providers', 'POST', (r, e) => addProvider(r, e)],

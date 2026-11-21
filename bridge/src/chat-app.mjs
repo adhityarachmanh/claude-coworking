@@ -80,6 +80,12 @@ function wireAuth(form, path) {
 wireAuth($('f-login'), '/auth/login');
 wireAuth($('f-signup'), '/auth/signup');
 $('logout').addEventListener('click', async () => { await call('/auth/logout', { method: 'POST' }); refresh(); });
+$('delacct').addEventListener('click', async () => {
+  if (!confirm('Hapus akun beserta SELURUH data (percakapan, provider, API key)? Tindakan ini permanen.')) return;
+  if (!confirm('Yakin? Data tidak bisa dikembalikan.')) return;
+  const { ok, data } = await call('/me', { method: 'DELETE' });
+  if (ok) { alert('Akun dihapus.'); refresh(); } else alert((data && data.error) || 'Gagal menghapus akun');
+});
 
 /* ---------------------------------------------------------------- katalog, provider */
 async function loadCatalog() {
