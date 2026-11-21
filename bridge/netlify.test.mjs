@@ -1931,10 +1931,15 @@ test('portal: root menampilkan dua pintu (Chat & Remote Power) tanpa membocorkan
   const chat = await handleSite(req('/chat')).text();
   assert.match(chat, /💬 Chat/, 'kerangka chat ada');
   assert.match(chat, /id="f-login"/, 'form masuk');
-  assert.match(chat, /\/chat\/api/, 'memanggil chat API');
-  const scripts = [...chat.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-  assert.equal(scripts.length, 1, 'satu blok skrip di halaman chat');
-  assert.doesNotThrow(() => new vm.Script(scripts[0]), 'skrip halaman chat harus valid');
+  assert.match(chat, /\/chat\/app\.js/, 'memuat skrip aplikasi chat');
+  assert.match(chat, /id="composer"/, 'komposer pesan ada');
+  assert.match(chat, /id="convs"/, 'sidebar riwayat ada');
+  const app = handleSite(req('/chat/app.js'));
+  assert.equal(app.status, 200, 'app.js tersedia');
+  assert.match(app.headers.get('content-type') || '', /javascript/);
+  const appText = await app.text();
+  assert.doesNotThrow(() => new vm.Script(appText), 'skrip aplikasi chat harus valid');
+  assert.equal(handleSite(req('/chat/app.js', { method: 'POST' })), null, 'app.js hanya GET');
 });
 
 test('mount /bridge: rute jembatan sama seperti di root, tapi URL yang diterbitkan berprefiks /bridge', async () => {
