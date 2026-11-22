@@ -37,6 +37,8 @@ const ENV_SAFE = /^\.env\.(example|sample|template|dist|defaults)$/i;
 export function isSecretPath(relPath) {
   const parts = String(relPath).split(/[\\/]+/).filter(Boolean);
   const name = parts.at(-1) ?? '';
+  // A SKILL.md steers the model, so it is the laptop's business (the skills API is gated the same way).
+  if (name.toLowerCase() === 'skill.md' && parts.some((p) => p.toLowerCase() === 'skills')) return true;
   if (parts.slice(0, -1).some((p) => SECRET_DIRS.has(p.toLowerCase()))) return true;
   if (/^\.env($|\.)/i.test(name)) return !ENV_SAFE.test(name);
   if (/^id_[\w-]+$/i.test(name)) return true; // id_rsa, id_ed25519 (id_rsa.pub has a dot: public)

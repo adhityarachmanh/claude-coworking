@@ -2,11 +2,11 @@
 // matter parsing, id validation, and where each engine looks for skills (Claude Code: .claude/skills; OpenCode
 // 2.3.2: .opencode/skills plus the .claude/skills and .agents/skills compatibility roots, global and per project).
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { deleteSkill, listSkills, parseSkillFrontmatter, readSkill, saveSkill, SkillError, skillRoots, validSkillId } from '../src/skills.js';
+import { deleteSkill, listSkills, parseSkillFrontmatter, readSkill, saveSkill, SkillError, skillDir, skillRoots, validSkillId } from '../src/skills.js';
 
 test('validSkillId: huruf kecil/angka/minus, 1–64 char', () => {
   assert.equal(validSkillId('git-release'), true);
@@ -16,6 +16,8 @@ test('validSkillId: huruf kecil/angka/minus, 1–64 char', () => {
   assert.equal(validSkillId('../evil'), false);
   assert.equal(validSkillId('a/b'), false);
   assert.equal(validSkillId('-x'), false);
+  // Windows device names are refused (a folder named "con" is unusable).
+  for (const name of ['con', 'prn', 'aux', 'nul', 'com1', 'lpt9']) assert.equal(validSkillId(name), false, name);
   assert.equal(validSkillId(''), false);
 });
 
@@ -107,4 +109,138 @@ test('deleteSkill: menghapus direktori skill, membackup bila ada', () => {
   const r = deleteSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'gone', dataDir });
   assert.equal(r.ok, true);
   assert.equal(existsSync(dir), false);
+});
+
+test('read→save round-trip: body tidak menggandakan frontmatter, meta asing tetap utuh di file', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'h-'));
+  const project = mkdtempSync(path.join(tmpdir(), 'p-'));
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'd-'));
+  const dir = path.join(project, '.claude', 'skills', 'git-release');
+  mkdirSync(dir, { recursive: true });
+  const original = '---\nname: Git Release\ndescription: Buat rilis\nlicense: MIT\n---\n\nLangkah A\nLangkah B\n';
+  writeFileSync(path.join(dir, 'SKILL.md'), original);
+  const r = readSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'git-release' });
+  assert.equal(r.content, 'Langkah A\nLangkah B\n', 'content adalah body, tanpa frontmatter');
+  saveSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'git-release', name: 'Git Release', description: 'Buat rilis', content: r.content, dataDir, baseMtime: r.mtime });
+  const written = readFileSync(path.join(dir, 'SKILL.md'), 'utf8');
+  assert.equal((written.match(/^---$/gm) || []).length, 2, 'tepat satu blok frontmatter');
+  assert.equal(written, original, 'simpan tanpa perubahan menghasilkan file yang sama (meta asing dipertahankan)');
+});
+
+test('rename: baseMtime file lama dipakai, direktori lama dihapus + SKILL.md-nya dibackup', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'h-'));
+  const project = mkdtempSync(path.join(tmpdir(), 'p-'));
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'd-'));
+  const oldDir = path.join(project, '.claude', 'skills', 'old');
+  mkdirSync(oldDir, { recursive: true });
+  writeFileSync(path.join(oldDir, 'SKILL.md'), '---\nname: Old\ndescription: x\n---\n\nbody\n');
+  writeFileSync(path.join(oldDir, 'helper.md'), 'support\n');
+  const loaded = readSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'old' });
+  const r = saveSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'new', previous: 'old', name: 'New', description: 'y', content: 'isi baru\n', dataDir, baseMtime: loaded.mtime });
+  assert.equal(r.backedUp, true, 'SKILL.md lama dibackup');
+  assert.ok(!existsSync(oldDir), 'direktori lama hilang');
+  const backups = readdirSync(path.join(dataDir, 'skills-backups'), { recursive: true }).filter((f) => String(f).endsWith('SKILL.md'));
+  assert.equal(backups.length, 1, 'satu backup dari file lama');
+  assert.match(readFileSync(path.join(project, '.claude', 'skills', 'new', 'SKILL.md'), 'utf8'), /isi baru/);
+});
+
+test('rename lintas scope: previousSource dipakai untuk menemukan file lama', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'h-'));
+  const project = mkdtempSync(path.join(tmpdir(), 'p-'));
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'd-'));
+  const oldDir = path.join(project, '.claude', 'skills', 'move-me');
+  mkdirSync(oldDir, { recursive: true });
+  writeFileSync(path.join(oldDir, 'SKILL.md'), '---\nname: M\ndescription: x\n---\n\nbody\n');
+  const loaded = readSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'move-me' });
+  const r = saveSkill({ engine: 'claude', projectPath: project, home, scope: 'user', source: '~/.claude/skills (semua project)', id: 'move-me', previous: 'move-me', previousScope: 'project', previousSource: '.claude/skills (project)', name: 'M', description: 'x', content: 'body\n', dataDir, baseMtime: loaded.mtime });
+  assert.equal(r.backedUp, true);
+  assert.ok(!existsSync(oldDir), 'folder project lama hilang');
+  assert.ok(existsSync(path.join(home, '.claude', 'skills', 'move-me', 'SKILL.md')), 'skill pindah ke folder user');
+});
+
+test('saveSkill: previous tak sah ditolak 400, tidak membuat direktori yatim', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'h-'));
+  const project = mkdtempSync(path.join(tmpdir(), 'p-'));
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'd-'));
+  assert.throws(() => saveSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'x', previous: '../evil', name: 'x', description: 'y', content: 'z', dataDir }), (e) => e instanceof SkillError && e.status === 400);
+});
+
+test('saveSkill: symlink direktori skill ditolak (tidak menulis keluar root)', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'h-'));
+  const project = mkdtempSync(path.join(tmpdir(), 'p-'));
+  const outside = mkdtempSync(path.join(tmpdir(), 'out-'));
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'd-'));
+  mkdirSync(path.join(project, '.claude', 'skills'), { recursive: true });
+  try {
+    symlinkSync(outside, path.join(project, '.claude', 'skills', 'link'), 'junction');
+  } catch {
+    return; // no privilege for symlinks here: nothing to assert
+  }
+  assert.throws(() => saveSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'link', name: 'x', description: 'y', content: 'ESCAPED\n', dataDir }), (e) => e instanceof SkillError && e.status === 409);
+  assert.ok(!existsSync(path.join(outside, 'SKILL.md')), 'tidak ada file yang ditulis di luar root');
+});
+
+test('saveSkill: hasil akhir (dengan frontmatter) melewati 256 KB ditolak, jadi file tetap bisa dibuka', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'h-'));
+  const project = mkdtempSync(path.join(tmpdir(), 'p-'));
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'd-'));
+  assert.throws(() => saveSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'big', name: 'x'.repeat(200), description: 'y'.repeat(200), content: 'a'.repeat(262_100), dataDir }), (e) => e instanceof SkillError && e.status === 413);
+});
+
+test('skillDir: pasangan scope+source yang tidak cocok ditolak 400', () => {
+  assert.throws(() => skillDir({ engine: 'claude', projectPath: 'C:/p', home: 'C:/h', scope: 'user', source: '.claude/skills (project)', id: 'x' }), (e) => e instanceof SkillError && e.status === 400);
+});
+
+test('symlink pada root skill ditolak: save & delete tidak menyentuh apa pun di luar project', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'h-'));
+  const project = mkdtempSync(path.join(tmpdir(), 'p-'));
+  const outside = mkdtempSync(path.join(tmpdir(), 'out-'));
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'd-'));
+  mkdirSync(path.join(outside, 'victim'), { recursive: true });
+  writeFileSync(path.join(outside, 'victim', 'precious.txt'), 'x');
+  mkdirSync(path.join(project, '.claude'), { recursive: true });
+  try {
+    symlinkSync(outside, path.join(project, '.claude', 'skills'), 'junction');
+  } catch {
+    return; // no privilege for symlinks here: nothing to assert
+  }
+  const args = { engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)' };
+  assert.throws(() => saveSkill({ ...args, id: 'baru', name: 'x', description: 'y', content: 'z', dataDir }), (e) => e instanceof SkillError && e.status === 409);
+  assert.ok(!existsSync(path.join(outside, 'baru', 'SKILL.md')), 'tidak ada folder yang dibuat di luar project');
+  assert.throws(() => deleteSkill({ ...args, id: 'victim', dataDir }), (e) => e instanceof SkillError && e.status === 409);
+  assert.ok(existsSync(path.join(outside, 'victim', 'precious.txt')), 'isi folder luar tidak terhapus');
+  assert.equal(listSkills({ engine: 'claude', projectPath: project, home }).length, 0, 'tidak ada skill dari luar yang terdaftar');
+});
+
+test('backup: SKILL.md berupa symlink tidak disalin ke folder data app', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'h-'));
+  const project = mkdtempSync(path.join(tmpdir(), 'p-'));
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'd-'));
+  const secret = path.join(mkdtempSync(path.join(tmpdir(), 'sec-')), 'id_rsa');
+  writeFileSync(secret, 'RAHASIA');
+  const dir = path.join(project, '.claude', 'skills', 'linked');
+  mkdirSync(dir, { recursive: true });
+  try {
+    symlinkSync(secret, path.join(dir, 'SKILL.md'), 'file');
+  } catch {
+    return; // no privilege for symlinks here: nothing to assert
+  }
+  const r = deleteSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'linked', dataDir });
+  assert.equal(r.backedUp, false, 'symlink tidak dibackup');
+  const backups = existsSync(path.join(dataDir, 'skills-backups')) ? readdirSync(path.join(dataDir, 'skills-backups'), { recursive: true }) : [];
+  assert.ok(!backups.some((f) => String(f).includes('linked')), 'tidak ada salinan rahasia di folder data app');
+});
+
+test('backup: hanya MAX_BACKUPS salinan terakhir yang disimpan per skill', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'h-'));
+  const project = mkdtempSync(path.join(tmpdir(), 'p-'));
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'd-'));
+  const dir = path.join(project, '.claude', 'skills', 'many');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'SKILL.md'), '---\nname: many\ndescription: y\n---\n\nisi\n');
+  const args = { engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'many', name: 'many', description: 'y', content: 'isi\n', dataDir };
+  for (let i = 0; i < 25; i++) saveSkill({ ...args, baseMtime: readSkill(args).mtime });
+  const folder = path.join(dataDir, 'skills-backups', path.basename(project));
+  const count = readdirSync(folder).filter((f) => f.endsWith('SKILL.md')).length;
+  assert.ok(count <= 20, `maks 20 backup, dapat ${count}`);
 });

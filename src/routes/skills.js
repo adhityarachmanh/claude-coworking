@@ -3,7 +3,7 @@
 // person at the laptop). A project skill is written over Tailscale too; a user-scope skill (~/.claude/skills,
 // ~/.config/opencode/skills, …) steers every project on this laptop, so it is written from the laptop only (like
 // plugins, MCP servers and user agents). Every overwrite leaves a backup in the app's data folder.
-import { listSkills, readSkill, saveSkill, deleteSkill, SkillError } from '../skills.js';
+import { listSkills, readSkill, saveSkill, deleteSkill, skillRoots, SkillError } from '../skills.js';
 import { json } from './http.js';
 import { withProject } from './project.js';
 
@@ -14,6 +14,9 @@ const engineOf = (hub, id) => (hub.engineOf ? hub.engineOf(id) : (hub.engine ?? 
 const userScopeFromLaptop = (ctx, req, scope) => {
   if (scope === 'user' && !ctx.isLocal(req)) throw new SkillError(403, 'Skill untuk semua project hanya bisa diubah dari laptop.');
 };
+
+/** Drops the laptop's absolute path from a skill before it goes to a phone (Tailscale). */
+const publicSkill = ({ file, ...rest }) => rest;
 
 const guard = (fn) => (ctx, req, res, params, body) => {
   if (ctx.isReadOnly?.(req) !== false) return json(res, 403, { error: 'Skills hanya bisa dibuka dari laptop atau lewat Tailscale.' });
@@ -26,15 +29,16 @@ const guard = (fn) => (ctx, req, res, params, body) => {
 };
 
 export function register(router) {
-  // → { engine, skills: [{ id, name, description, scope, source, engine, hasSupport }] }
+  // → { engine, roots: [{ scope, source, engine }], skills: [{ id, name, description, scope, source, engine, hasSupport }] }
   router.post('/api/projects/:id/skills', withProject(guard(({ hub }, req, res, { project }) => {
     const engine = engineOf(hub, project.id);
-    return json(res, 200, { engine, skills: listSkills({ engine, projectPath: project.path }).map(({ dir, file, ...rest }) => rest) });
+    const roots = skillRoots({ engine, projectPath: project.path }).map(({ scope, source, engine: e }) => ({ scope, source, engine: e }));
+    return json(res, 200, { engine, roots, skills: listSkills({ engine, projectPath: project.path }).map(({ dir, file, ...rest }) => rest) });
   })));
   // { scope, source, id } → { skill }
   router.post('/api/projects/:id/skills/read', withProject(guard(({ hub }, req, res, { project }, body) => {
     const engine = engineOf(hub, project.id);
-    return json(res, 200, { skill: readSkill({ engine, projectPath: project.path, scope: body?.scope, source: body?.source, id: body?.id }) });
+    return json(res, 200, { skill: publicSkill(readSkill({ engine, projectPath: project.path, scope: body?.scope, source: body?.source, id: body?.id })) });
   })));
   // { scope, source, id, previous, name, description, content, mtime } → { skill, backedUp }
   router.post('/api/projects/:id/skills/save', withProject(guard(({ hub, isLocal, dataDir }, req, res, { project }, body) => {
@@ -48,6 +52,8 @@ export function register(router) {
       source: body?.source,
       id: body?.id,
       previous: body?.previous,
+      previousScope: body?.previousScope,
+      previousSource: body?.previousSource,
       name: body?.name,
       description: body?.description,
       content: body?.content,
@@ -55,7 +61,7 @@ export function register(router) {
       baseMtime: body?.mtime,
     });
     console.log(`Skill disimpan: ${r.scope} ${r.id}`);
-    return json(res, 200, { ...r, skill: readSkill({ engine, projectPath: project.path, scope, source: body?.source, id: r.id }) });
+    return json(res, 200, { ...r, skill: publicSkill(readSkill({ engine, projectPath: project.path, scope, source: body?.source, id: r.id })) });
   })), { maxBody: 300 * 1024 });
   // { scope, source, id } → { ok, backedUp }
   router.post('/api/projects/:id/skills/delete', withProject(guard(({ hub, isLocal, dataDir }, req, res, { project }, body) => {

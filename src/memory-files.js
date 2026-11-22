@@ -6,7 +6,7 @@
 // would actually read them, or when they already exist on disk. The last matching file wins: AGENTS.md beats CLAUDE.md.
 // Only these fixed paths are ever read or written; writes are atomic and refuse a file changed meanwhile. A symlink
 // at one of these paths is refused (read and write): it could point anywhere on the laptop.
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -22,6 +22,10 @@ export class MemoryError extends Error {
 // The same encoding Claude Code uses for its project folder (~/.claude/projects/<cwd with non-alnum → '-'>, see
 // src/backup.js encodeProjectPath). Kept local so this module imports nothing heavy.
 const encodeProjectPath = (p) => String(p).replace(/[^a-zA-Z0-9]/g, '-');
+
+// Where Claude Code keeps its project folders: ~/.claude/projects, or CLAUDE_PROJECTS_DIR (the same override the
+// transcript reader and backup use, so tests and non-default installs point at the right folder).
+const claudeProjectsDir = (home) => process.env.CLAUDE_PROJECTS_DIR || path.join(home, '.claude', 'projects');
 
 /**
  * The rules a project declares per file type (`.claude/rules/*.md`) and Claude's own auto memory for this project
@@ -40,7 +44,7 @@ function extraClaudeFiles(projectPath, home) {
     // no rules folder: nothing to add
   }
   try {
-    const memDir = path.join(home, '.claude', 'projects', encodeProjectPath(projectPath), 'memory');
+    const memDir = path.join(claudeProjectsDir(home), encodeProjectPath(projectPath), 'memory');
     for (const f of readdirSync(memDir).filter((f) => f.toLowerCase().endsWith('.md') && !f.startsWith('.')).sort()) {
       const isIndex = f === 'MEMORY.md';
       out.push({ key: `auto:${f.slice(0, -3)}`, label: isIndex ? 'Auto memory (indeks)' : `Auto memory: ${f.slice(0, -3)}`, hint: 'Catatan yang ditulis Claude sendiri dari koreksi/preferensimu (auto memory). Milik project ini saja.', scope: 'project', path: path.join(memDir, f) });
@@ -89,9 +93,36 @@ function fileOf(engine, projectPath, key, home) {
   return file;
 }
 
+/**
+ * The real folder holding the file must stay inside one of the known bases (the project, the home folder, or Claude's
+ * projects folder for auto memory): a symlink or junction on a folder in the path could otherwise make a write land
+ * anywhere on the laptop. Only existing ancestors are resolved (a missing folder cannot be a link); the file itself is
+ * checked for a symlink by read/write, so its own message is kept.
+ */
+function assertMemoryInside(file, { projectPath, home }) {
+  const h = home ?? os.homedir();
+  const bases = [projectPath, h, claudeProjectsDir(h)].filter((b) => b && existsSync(b)).map((b) => realpathSync(b));
+  if (!bases.length) throw new MemoryError(409, 'Lokasi project tidak ditemukan.');
+  let dir = path.dirname(file.path);
+  while (!existsSync(dir) && !samePath(path.dirname(dir), dir)) dir = path.dirname(dir);
+  const realDir = realpathSync(dir);
+  const inside = bases.some((base) => {
+    const rel = path.relative(base, realDir);
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  });
+  if (!inside) throw new MemoryError(409, `${file.label} ada di luar folder project; buka file aslinya di editor.`);
+}
+
+const samePath = (a, b) => {
+  const x = path.resolve(a);
+  const y = path.resolve(b);
+  return process.platform === 'win32' ? x.toLowerCase() === y.toLowerCase() : x === y;
+};
+
 /** One file with its content; a missing file is empty (created on save). */
-export function readMemory(engine, projectPath, key, home) {
+export function readMemory(engine, projectPath, key, home = os.homedir()) {
   const file = fileOf(engine, projectPath, key, home);
+  assertMemoryInside(file, { projectPath, home });
   try {
     const st = lstatSync(file.path); // lstat: a symlink is seen as one, never followed
     if (st.isSymbolicLink()) throw new MemoryError(409, `${file.label} adalah symlink; buka file aslinya di editor.`);
@@ -109,8 +140,9 @@ export function readMemory(engine, projectPath, key, home) {
  * Saves `content`. `baseMtime` is the mtime the editor loaded (0 = file did not exist): a file changed since
  * (an edit in VS Code, Claude writing to it) is refused with 409 instead of being overwritten.
  */
-export function writeMemory(engine, projectPath, key, content, baseMtime, home) {
+export function writeMemory(engine, projectPath, key, content, baseMtime, home = os.homedir()) {
   const file = fileOf(engine, projectPath, key, home);
+  assertMemoryInside(file, { projectPath, home });
   if (typeof content !== 'string') throw new MemoryError(400, 'Isi file harus teks.');
   if (Buffer.byteLength(content) > MAX_MEMORY_BYTES) throw new MemoryError(413, 'Isi terlalu besar (maks 256 KB).');
   let current = 0;

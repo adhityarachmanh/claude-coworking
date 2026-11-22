@@ -105,3 +105,23 @@ test('memory: rules & auto memory round-trip through read/write (atomic, mtime g
   writeFileSync(path.join(memDir, 'MEMORY.md'), '# M\n');
   assert.equal(readMemory('claude', p, 'auto:MEMORY', h).content, '# M\n');
 });
+
+test('memoryFiles: auto memory mengikuti CLAUDE_PROJECTS_DIR (bukan hanya ~/.claude/projects)', () => {
+  const p = project();
+  const h = home();
+  const alt = mkdtempSync(path.join(TMP, 'claude-projects-'));
+  const enc = p.replace(/[^a-zA-Z0-9]/g, '-');
+  const memDir = path.join(alt, enc, 'memory');
+  mkdirSync(memDir, { recursive: true });
+  writeFileSync(path.join(memDir, 'MEMORY.md'), '# Alt\n');
+  const prev = process.env.CLAUDE_PROJECTS_DIR;
+  process.env.CLAUDE_PROJECTS_DIR = alt;
+  try {
+    const files = memoryFiles('claude', p, h);
+    assert.ok(files.some((f) => f.key === 'auto:MEMORY'), 'auto memory dari CLAUDE_PROJECTS_DIR');
+    assert.equal(readMemory('claude', p, 'auto:MEMORY', h).content, '# Alt\n');
+  } finally {
+    if (prev === undefined) delete process.env.CLAUDE_PROJECTS_DIR;
+    else process.env.CLAUDE_PROJECTS_DIR = prev;
+  }
+});

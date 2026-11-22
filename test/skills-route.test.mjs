@@ -130,9 +130,29 @@ test('skills/delete: menghapus direktori skill', async () => {
   assert.ok(!existsSync(dir), 'folder skill hilang');
 });
 
-test('skills: project ber-OpenCode tetap punya daftar (dua mesin)', async () => {
+test('skills: project ber-OpenCode membaca root kompatibilitas + .opencode/skills (dua mesin)', async () => {
+  const { listSkills } = await import('../src/skills.js');
+  const app = (await snapshot()).projects.find((p) => p.name === 'app');
+  const dir = path.join(app.path, '.opencode', 'skills', 'oc-only');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'SKILL.md'), '---\nname: OC Only\ndescription: hanya opencode\n---\n\nx\n');
+  const oc = listSkills({ engine: 'opencode', projectPath: app.path, home: TMP });
+  assert.ok(oc.some((s) => s.id === 'oc-only'), 'skill .opencode/skills terdaftar untuk OpenCode');
+  assert.ok(oc.some((s) => s.id === 'hello'), 'root kompatibilitas .claude/skills juga dibaca');
+  assert.ok(!listSkills({ engine: 'claude', projectPath: app.path, home: TMP }).some((s) => s.id === 'oc-only'), 'Claude tidak membaca .opencode/skills');
+});
+
+test('skills/read: path absolut laptop tidak dikirim ke klien (HP lewat Tailscale)', async () => {
   const id = await projectId('app');
-  const res = await api(`/api/projects/${id}/skills`);
-  assert.equal(res.status, 200);
-  assert.ok(Array.isArray(res.body.skills));
+  const res = await api(`/api/projects/${id}/skills/read`, { scope: 'project', source: '.claude/skills (project)', id: 'hello' });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.skill.file, undefined, 'field file tidak boleh ikut');
+  assert.ok(!JSON.stringify(res.body).includes('skills\\\\hello') && !JSON.stringify(res.body).includes('skills/hello'), 'tidak ada path laptop');
+});
+
+test('skills: isi SKILL.md dikenali sebagai rahasia oleh penampil file (tidak dibaca HP WiFi)', async () => {
+  const { isSecretPath } = await import('../src/file-view.js');
+  assert.equal(isSecretPath('.claude/skills/deploy/SKILL.md'), true);
+  assert.equal(isSecretPath('.opencode/skills/x/SKILL.md'), true);
+  assert.equal(isSecretPath('docs/notes.md'), false);
 });
