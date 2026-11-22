@@ -9,9 +9,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseJsonc } from './opencode-bin.js';
 
-export const OPENCODE_CONFIG_LIMITS = Object.freeze({ bytes: 512 * 1024, agents: 50, name: 64, description: 500, model: 200, prompt: 20_000 });
+export const OPENCODE_CONFIG_LIMITS = Object.freeze({ bytes: 512 * 1024, agents: 50, name: 64, description: 500, model: 200, prompt: 20_000, references: 50, referenceValue: 500, referenceBranch: 200 });
 const AGENT_NAME = /^[A-Za-z0-9][\w.-]{0,63}$/;
 const AGENT_MODES = new Set(['primary', 'subagent', 'all']);
+// Upstream: alias without empty spaces, `/`, `\`, backtick or comma; branch only [A-Za-z0-9/_.-], not starting `-`, no `..`.
+const REFERENCE_NAME = /^[^\s/\\`,\x00-\x1f]{1,64}$/;
+const REFERENCE_BRANCH = /^[A-Za-z0-9/_.-]+$/;
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const BACKUP_KEEP = 10; // newest backups kept per target
 const BACKUP_MAX_AGE_DAYS = 90;
@@ -228,6 +231,39 @@ const agentsView = (config) => {
 };
 
 /**
+ * A shorthand string is a local folder only when it looks like one (upstream: starts with `.`, `/` or `~`); any other
+ * bare string is a Git repository. Windows drive/UNC paths are local too, so the form never shows them as repositories.
+ */
+const isLocalReference = (value) => /^[.~/\\]/.test(value) || /^[A-Za-z]:[\\/]/.test(value);
+
+/** The `references` block as the form shows it: one row per alias, local path or Git repository. */
+const referencesView = (config) => {
+  const refs = isObject(config.references) ? config.references : {};
+  return Object.entries(refs)
+    .map(([name, ref]) => {
+      const row = { name, kind: 'path', path: '', repository: '', branch: '', description: '', hidden: false };
+      if (typeof ref === 'string') {
+        if (isLocalReference(ref)) return { ...row, path: ref };
+        return { ...row, kind: 'repository', repository: ref };
+      }
+      if (!isObject(ref)) return row;
+      const local = typeof ref.path === 'string' ? ref.path : '';
+      const repository = typeof ref.repository === 'string' ? ref.repository : '';
+      const kind = local || !repository ? 'path' : 'repository';
+      return {
+        ...row,
+        kind,
+        path: kind === 'path' ? local : '',
+        repository: kind === 'repository' ? repository : '',
+        branch: typeof ref.branch === 'string' ? ref.branch : '',
+        description: typeof ref.description === 'string' ? ref.description : '',
+        hidden: ref.hidden === true,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+};
+
+/**
  * Whether consolidateProjectConfig would accept this scope right now: project scope, an existing `.opencode` config,
  * and at least two sources it would merge (a `.jsonc` shadowed by its sibling `.json` is not one of them).
  */
@@ -272,6 +308,7 @@ export function readOpenCodeConfig({ scope, projectPath, home } = {}) {
     text,
     config,
     agents: agentsView(config),
+    references: referencesView(config),
     parseError,
     hash,
     sources,
@@ -618,22 +655,10 @@ export function restoreBackup(target, dataDir, id, { baseHash } = {}) {
   return { ...readOpenCodeConfig({ scope: target.scope, projectPath: target.projectPath, home: target.home }), restored: true, backup: backup?.path ?? null };
 }
 
-/** The form's model/small-model/agents merged into the existing config; unknown keys stay untouched. */
-export function mergeForm(base, form = {}) {
-  const config = validateObject(JSON.parse(JSON.stringify(isObject(base) ? base : {})));
-  if (!isObject(form)) throw new OpenCodeConfigError(400, 'Form config tidak valid.');
-  for (const [key, field] of [['model', 'model'], ['small_model', 'smallModel']]) {
-    const value = form[field];
-    if (value === undefined) continue;
-    if (typeof value !== 'string') throw new OpenCodeConfigError(400, `${field} harus berupa teks.`);
-    const clean = value.trim();
-    if (!clean) delete config[key];
-    else if (clean.length > OPENCODE_CONFIG_LIMITS.model) throw new OpenCodeConfigError(400, `${field} maksimal ${OPENCODE_CONFIG_LIMITS.model} karakter.`);
-    else config[key] = clean;
-  }
-  if (form.agents === undefined) return config;
-  if (!Array.isArray(form.agents)) throw new OpenCodeConfigError(400, 'Daftar agent tidak valid.');
-  if (form.agents.length > OPENCODE_CONFIG_LIMITS.agents) throw new OpenCodeConfigError(400, `Maksimal ${OPENCODE_CONFIG_LIMITS.agents} agent.`);
+/** The form's agent rows merged into `config.agent`; unknown keys of a kept agent survive, a removed row is dropped. */
+function mergeAgents(config, agents) {
+  if (!Array.isArray(agents)) throw new OpenCodeConfigError(400, 'Daftar agent tidak valid.');
+  if (agents.length > OPENCODE_CONFIG_LIMITS.agents) throw new OpenCodeConfigError(400, `Maksimal ${OPENCODE_CONFIG_LIMITS.agents} agent.`);
   if (config.agent !== undefined && !isObject(config.agent)) throw new OpenCodeConfigError(400, 'Bagian "agent" bukan objek. Perbaiki lewat tab JSON dulu.');
   const old = isObject(config.agent) ? config.agent : {};
   for (const [name, agent] of Object.entries(old)) {
@@ -641,7 +666,7 @@ export function mergeForm(base, form = {}) {
   }
   const next = {};
   const seen = new Set();
-  for (const item of form.agents) {
+  for (const item of agents) {
     if (!isObject(item)) throw new OpenCodeConfigError(400, 'Data agent tidak valid.');
     const name = String(item.name ?? '').trim();
     if (!AGENT_NAME.test(name)) throw new OpenCodeConfigError(400, 'Nama agent tidak valid (huruf/angka, -, _, titik; maks 64).');
@@ -670,6 +695,89 @@ export function mergeForm(base, form = {}) {
   }
   if (Object.keys(next).length) config.agent = next;
   else delete config.agent;
+}
+
+/**
+ * The form's reference rows merged into `config.references`: each row is one alias pointing at a local folder or a Git
+ * repository (upstream shape: `{ path | repository, branch?, description?, hidden? }`). Unknown keys of a kept entry
+ * survive; switching a row's kind writes exactly one of `path`/`repository`, and `branch` only belongs to a repository.
+ * An entry that is neither a string nor an object with `path`/`repository` refuses the save instead of being deleted.
+ */
+function mergeReferences(config, items) {
+  if (!Array.isArray(items)) throw new OpenCodeConfigError(400, 'Daftar reference tidak valid.');
+  if (items.length > OPENCODE_CONFIG_LIMITS.references) throw new OpenCodeConfigError(400, `Maksimal ${OPENCODE_CONFIG_LIMITS.references} reference.`);
+  if (config.references !== undefined && !isObject(config.references)) throw new OpenCodeConfigError(400, 'Bagian "references" bukan objek. Perbaiki lewat tab JSON dulu.');
+  const old = isObject(config.references) ? config.references : {};
+  for (const [name, ref] of Object.entries(old)) {
+    const usable = typeof ref === 'string' || (isObject(ref) && (typeof ref.path === 'string' || typeof ref.repository === 'string'));
+    if (!usable) throw new OpenCodeConfigError(400, `Reference "${name}" tidak dikenal. Perbaiki lewat tab JSON dulu.`);
+  }
+  const next = {};
+  const seen = new Set();
+  for (const item of items) {
+    if (!isObject(item)) throw new OpenCodeConfigError(400, 'Data reference tidak valid.');
+    const name = String(item.name ?? '').trim();
+    const pathValue = typeof item.path === 'string' ? item.path.trim() : '';
+    const repoValue = typeof item.repository === 'string' ? item.repository.trim() : '';
+    const branchValue = typeof item.branch === 'string' ? item.branch.trim() : '';
+    const descriptionValue = typeof item.description === 'string' ? item.description.trim() : '';
+    // A row the user never filled in is not an entry (the form starts with one blank row).
+    if (!name && !pathValue && !repoValue && !branchValue && !descriptionValue && item.hidden !== true) continue;
+    if (!REFERENCE_NAME.test(name)) throw new OpenCodeConfigError(400, 'Nama reference tidak valid (1–64 karakter, tanpa spasi, /, \\, backtick, atau koma).');
+    if (FORBIDDEN_KEYS.has(name)) throw new OpenCodeConfigError(400, `Nama reference tidak boleh "${name}".`);
+    if (seen.has(name)) throw new OpenCodeConfigError(400, `Nama reference ganda: ${name}.`);
+    seen.add(name);
+    if (item.kind !== undefined && item.kind !== 'path' && item.kind !== 'repository') throw new OpenCodeConfigError(400, `Jenis reference ${name} harus path atau repository.`);
+    const reference = isObject(old[name]) ? old[name] : {};
+    if (item.kind === 'path' || (item.kind === undefined && !repoValue)) {
+      if (!pathValue) throw new OpenCodeConfigError(400, `Path reference ${name} tidak boleh kosong.`);
+      if (pathValue.length > OPENCODE_CONFIG_LIMITS.referenceValue) throw new OpenCodeConfigError(400, `Path reference ${name} maksimal ${OPENCODE_CONFIG_LIMITS.referenceValue} karakter.`);
+      delete reference.repository;
+      delete reference.branch;
+      reference.path = pathValue;
+    } else {
+      if (!repoValue) throw new OpenCodeConfigError(400, `Repository reference ${name} tidak boleh kosong.`);
+      if (repoValue.length > OPENCODE_CONFIG_LIMITS.referenceValue) throw new OpenCodeConfigError(400, `Repository reference ${name} maksimal ${OPENCODE_CONFIG_LIMITS.referenceValue} karakter.`);
+      if (/^file:/i.test(repoValue)) throw new OpenCodeConfigError(400, `Repository reference ${name} tidak boleh memakai file:.`);
+      delete reference.path;
+      reference.repository = repoValue;
+      if (item.branch !== undefined) {
+        if (!branchValue) delete reference.branch;
+        else if (branchValue.length > OPENCODE_CONFIG_LIMITS.referenceBranch || !REFERENCE_BRANCH.test(branchValue) || branchValue.startsWith('-') || branchValue.includes('..')) {
+          throw new OpenCodeConfigError(400, `Cabang reference ${name} tidak valid.`);
+        } else reference.branch = branchValue;
+      }
+    }
+    if (item.description !== undefined) {
+      if (descriptionValue.length > OPENCODE_CONFIG_LIMITS.description) throw new OpenCodeConfigError(400, `Deskripsi reference ${name} maksimal ${OPENCODE_CONFIG_LIMITS.description} karakter.`);
+      if (descriptionValue) reference.description = descriptionValue;
+      else delete reference.description;
+    }
+    if (item.hidden !== undefined) {
+      if (item.hidden === true) reference.hidden = true;
+      else delete reference.hidden;
+    }
+    next[name] = reference;
+  }
+  if (Object.keys(next).length) config.references = next;
+  else delete config.references;
+}
+
+/** The form's model/small-model/agents/references merged into the existing config; unknown keys stay untouched. */
+export function mergeForm(base, form = {}) {
+  const config = validateObject(JSON.parse(JSON.stringify(isObject(base) ? base : {})));
+  if (!isObject(form)) throw new OpenCodeConfigError(400, 'Form config tidak valid.');
+  for (const [key, field] of [['model', 'model'], ['small_model', 'smallModel']]) {
+    const value = form[field];
+    if (value === undefined) continue;
+    if (typeof value !== 'string') throw new OpenCodeConfigError(400, `${field} harus berupa teks.`);
+    const clean = value.trim();
+    if (!clean) delete config[key];
+    else if (clean.length > OPENCODE_CONFIG_LIMITS.model) throw new OpenCodeConfigError(400, `${field} maksimal ${OPENCODE_CONFIG_LIMITS.model} karakter.`);
+    else config[key] = clean;
+  }
+  if (form.agents !== undefined) mergeAgents(config, form.agents);
+  if (form.references !== undefined) mergeReferences(config, form.references);
   return validateObject(config);
 }
 

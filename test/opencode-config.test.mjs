@@ -661,3 +661,76 @@ test('routes: 409 bodies carry a code (lock-missing, stale, busy), other errors 
   r = call('/api/opencode-config/save', { scope: 'project', projectId: 'r1', mode: 'json', text: '{broken', baseHash: r.body.hash });
   assert.deepEqual({ status: r.status, code: r.body.code }, { status: 400, code: undefined }, 'a 400 keeps its old shape');
 });
+
+test('readOpenCodeConfig: references tampil sebagai path atau repository (string shorthand ikut)', () => {
+  const dir = path.join(TMP, 'projects', 'refs-view');
+  write(path.join(dir, 'opencode.json'), JSON.stringify({
+    references: {
+      pustaka: { path: '~/lib', description: 'buku' },
+      web: 'owner/repo',
+      lokal: './docs',
+      'lokal-win': 'C:\\kerja\\pustaka',
+      sembunyi: { repository: 'https://contoh.test/x.git', branch: 'dev', hidden: true },
+    },
+  }));
+  const view = readOpenCodeConfig({ scope: 'project', projectPath: dir, home: HOME });
+  assert.deepEqual(view.references.map((r) => [r.name, r.kind]), [
+    ['lokal', 'path'],
+    ['lokal-win', 'path'],
+    ['pustaka', 'path'],
+    ['sembunyi', 'repository'],
+    ['web', 'repository'],
+  ]);
+  const pustaka = view.references.find((r) => r.name === 'pustaka');
+  assert.equal(pustaka.path, '~/lib');
+  assert.equal(pustaka.description, 'buku');
+  const sembunyi = view.references.find((r) => r.name === 'sembunyi');
+  assert.equal(sembunyi.repository, 'https://contoh.test/x.git');
+  assert.equal(sembunyi.branch, 'dev');
+  assert.equal(sembunyi.hidden, true);
+  const missing = readOpenCodeConfig({ scope: 'project', projectPath: path.join(TMP, 'projects', 'refs-none'), home: HOME });
+  assert.deepEqual(missing.references, []);
+});
+
+test('mergeForm references: path/repo/branch, field asing dipertahankan, entri kosong membuang blok', () => {
+  const base = { references: { pustaka: { path: '~/lib', extra: 1 } } };
+  const merged = mergeForm(base, {
+    references: [
+      { name: 'pustaka', kind: 'path', path: '~/lib2' },
+      { name: 'web', kind: 'repository', repository: 'owner/repo', branch: 'main', description: 'situs' },
+    ],
+  });
+  assert.equal(merged.references.pustaka.extra, 1, 'unknown fields of a kept entry survive');
+  assert.equal(merged.references.pustaka.path, '~/lib2');
+  assert.deepEqual(merged.references.web, { repository: 'owner/repo', branch: 'main', description: 'situs' });
+  assert.equal(mergeForm(merged, { references: [] }).references, undefined, 'no rows removes the whole block');
+  // Switching a row's kind writes exactly one of path/repository, and a branch only belongs to a repository.
+  const switched = mergeForm({ references: { x: { repository: 'owner/repo', branch: 'main' } } }, { references: [{ name: 'x', kind: 'path', path: '~/x' }] });
+  assert.deepEqual(switched.references.x, { path: '~/x' });
+});
+
+test('mergeForm references menolak alias tak sah, file:, branch ../.. tanpa menulis', () => {
+  const bad = [
+    { name: 'a/b', kind: 'path', path: '~/x' },
+    { name: 'a b', kind: 'path', path: '~/x' },
+    { name: 'a`b', kind: 'path', path: '~/x' },
+    { name: 'a,b', kind: 'path', path: '~/x' },
+    { name: '', kind: 'path', path: '~/x' },
+    { name: '__proto__', kind: 'path', path: '~/x' },
+    { name: 'x'.repeat(65), kind: 'path', path: '~/x' },
+    { name: 'x', kind: 'repository', repository: 'file:../repo' },
+    { name: 'x', kind: 'repository', repository: 'FILE:../repo' },
+    { name: 'x', kind: 'repository', repository: 'owner/repo', branch: '../main' },
+    { name: 'x', kind: 'repository', repository: 'owner/repo', branch: '-main' },
+    { name: 'x', kind: 'repository', repository: 'owner/repo', branch: 'main; rm -rf' },
+    { name: 'x', kind: 'lain', path: '~/x' },
+  ];
+  for (const item of bad) {
+    assert.throws(() => mergeForm({}, { references: [item] }), (err) => err.status === 400, JSON.stringify(item));
+  }
+  // A hand-written entry the form cannot represent refuses instead of silently deleting it.
+  for (const base of [{ references: { x: { hidden: true } } }, { references: [] }, { references: 'x' }]) {
+    assert.throws(() => mergeForm(base, { references: [] }), (err) => err.status === 400, JSON.stringify(base));
+  }
+  assert.equal(mergeForm({}, { references: [] }).references, undefined);
+});
