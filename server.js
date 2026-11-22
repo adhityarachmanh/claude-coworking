@@ -736,6 +736,7 @@ function refreshProjects() {
   // that is merely unreadable/offline is not missing: isMissing only accepts ENOENT/ENOTDIR.
   for (const dir of hub.persisted.custom) if (isDirectory(dir) || isMissing(dir)) hub.upsertProject(dir, 'custom');
   for (const [id, project] of hub.projects) if (!project.sources.length && !hub.runtime.get(id)?.status.busy) hub.projects.delete(id);
+  hub.ensureSystemProjects(); // 💬 the built-in "Chat umum" entry is never lost to a rescan
   hub.config = {
     roots: projectRoots(),
     defaultRoot: DEFAULT_ROOT,
