@@ -59,6 +59,9 @@ const MAX_STREAM_BACKLOG = 4 * 1024 * 1024;
 //   (not in data/chats) and the move is tried again at the next start.
 
 export const DEMO_ID = 'demo';
+// 💬 The built-in "Chat umum": a project with the same engines as any other, but its folder is an app-owned sandbox
+// under dataDir, so a general chat never touches a real project folder. A fixed id (never the folder hash).
+export const GENERAL_ID = 'chat-umum';
 export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {} };
 // Which coding agent runs the project: Claude Code (stream-json) or OpenCode (ACP, src/acp-session.js).
 export const ENGINES = ['claude', 'opencode'];
@@ -368,6 +371,32 @@ export class Hub {
     this.prunePreProjectBackups();
     this.closeStaleReplies();
     this.projects.set(DEMO_ID, { id: DEMO_ID, name: 'Demo kantor', path: null, sources: ['demo'], virtual: true });
+    this.ensureSystemProjects();
+  }
+
+  /**
+   * 💬 The built-in "Chat umum" entry: a project with the same engines as any other, but its folder is an
+   * app-owned sandbox under dataDir — so a general chat never touches a real project folder. Called at start and
+   * on every rescan, so deleting the entry (or its folder) still leaves it present.
+   */
+  ensureSystemProjects() {
+    const dir = path.join(this.dataDir, GENERAL_ID);
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch {
+      // unreadable folder: starting a session reports the real error
+    }
+    let project = this.projects.get(GENERAL_ID);
+    if (!project) {
+      project = { id: GENERAL_ID, name: 'Chat umum', path: dir, sources: ['system'], system: true };
+      this.projects.set(GENERAL_ID, project);
+    }
+    // A first-seen entry starts on the app-wide default engine (same rule as upsertProject).
+    if (!ENGINES.includes(this.persisted.settings?.[GENERAL_ID]?.engine)) {
+      this.persisted.settings ??= {};
+      this.persisted.settings[GENERAL_ID] = { ...this.persisted.settings?.[GENERAL_ID], engine: this.defaultEngine() };
+    }
+    return project;
   }
 
   load() {
