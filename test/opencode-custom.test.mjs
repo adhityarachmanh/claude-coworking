@@ -316,6 +316,7 @@ test('add: blok config benar, key lain tetap, key tidak masuk file/log audit, co
     name: 'River',
     package: '@opencode/ai/providers/openai-compatible',
     settings: { baseURL: 'https://api.river.ai/v1' },
+    body: { parallel_tool_calls: false },
     models: { 'river-1': {}, 'river-2': {} },
     env: ['RIVER_API_KEY'],
   });
@@ -686,6 +687,7 @@ test('addCustomProvider: derived env name, blok lain tetap, backup berisi isi la
     name: 'My Cool',
     package: '@opencode/ai/providers/openai-compatible',
     settings: { baseURL: 'https://api.example.test/v1' },
+    body: { parallel_tool_calls: false },
     models: { 'm-1': {} },
     env: ['MY_COOL_1_API_KEY'],
   });

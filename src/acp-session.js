@@ -118,6 +118,20 @@ export function authRequiredNote(message, { provider = null, connected = null, s
           : '';
   return `${text}\n${note}${hint ? `\n${hint}` : ''}`;
 }
+
+/**
+ * OpenCode's OpenAI Chat parser discards an entire turn when an OpenAI-compatible host sends one trailing chunk
+ * AFTER the `finish_reason` chunk (upstream anomalyco/opencode#56455). The reasoning/text case was fixed in #58851
+ * (v2.2.0), but a trailing `tool_calls` chunk — a model issuing several tool calls at once — is still rejected in
+ * v2.3.2, and the turn fails with "OpenAI Chat received content after the finish reason". This matches both the ACP
+ * error message and, defensively, an upstream `errorName` that may travel beside it.
+ */
+export const LATE_STREAM_CHUNK_RE = /received content after the finish reason/i;
+export const lateStreamChunkNote = (message) => {
+  const text = typeof message === 'string' ? message : '';
+  if (!LATE_STREAM_CHUNK_RE.test(text) || /bug parser OpenCode/.test(text)) return text;
+  return `${text}\nProvider ini mengirim penutup stream yang tidak lazim (satu potongan tool setelah giliran selesai), lalu OpenCode membatalkan giliran itu — bug parser OpenCode (upstream #56455), bukan kesalahanmu. Coba kirim ulang pesan yang sama. Bila sering terjadi, provider ini sebaiknya disetel memanggil tool satu per satu (dimatikan otomatis untuk provider custom yang dibuat lewat ＋ Login provider).`;
+}
 /**
  * What the UI may offer for an OpenCode project (config.engines.opencode.caps, read by public/js/core/engine-caps.js).
  * Effort = OpenCode's per-model "effort" config option (thought level); Mode tim = the roles as OpenCode subagents.
@@ -1066,7 +1080,16 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
                   return;
                 }
               }
-              this.endTurn(epoch, uuid, { ok: false, interrupted: stopped, error: await this.authErrorNote(err), started, costBefore });
+              // A trailing tool_calls chunk after the finish reason (upstream #56455) fails the whole turn — a
+              // provider stream quirk rather than a bad request, so re-sending once is worth it. Community reports
+              // note it can recur for the same context, hence exactly one retry and an honest note.
+              if (!stopped && !item.lateChunkRetried && LATE_STREAM_CHUNK_RE.test(`${err.data?.errorName ?? ''} ${err.message}`)) {
+                item.lateChunkRetried = true;
+                this.hub.chat(this.id, { kind: 'info', level: 'warning', text: 'Provider mengirim penutup stream yang tidak lazim — giliran dicoba ulang sekali (bug parser OpenCode #56455).' });
+                send();
+                return;
+              }
+              this.endTurn(epoch, uuid, { ok: false, interrupted: stopped, error: lateStreamChunkNote(await this.authErrorNote(err)), started, costBefore });
             },
           );
       send();

@@ -684,6 +684,11 @@ const PROVIDER_ID = /^[A-Za-z0-9][\w.-]{0,63}$/;
  * openai-compatible package, the base URL and models, and the env var name the API key is expected under. The key
  * itself is never written here — it goes to OpenCode's credential store. Everything else in the config is kept as
  * it is, a previous file is backed up first, and an existing block of the same id is replaced whole (never merged).
+ *
+ * `body.parallel_tool_calls: false` is written on purpose. Some OpenAI-compatible hosts send one trailing
+ * `tool_calls` chunk AFTER the `finish_reason` chunk when a model issues several tool calls at once, and OpenCode's
+ * parser rejects that as content after the finish (upstream anomalyco/opencode#56455 — the text/reasoning case was
+ * fixed in #58851/v2.2.0, the tool-call case is still open). Asking for one tool call at a time removes the trigger.
  * @param {{ id: string, name: string, baseURL: string, models: string[], home?: string, dataDir?: string }} input
  * @returns {{ ok: true, path: string, backup: string|null }}
  */
@@ -697,6 +702,8 @@ export function addCustomProvider({ id, name, baseURL, models, home, dataDir } =
     name,
     package: CUSTOM_PROVIDER_PACKAGE,
     settings: { baseURL },
+    // See the TSDoc above: one tool call at a time avoids the trailing-tool_calls stream bug in OpenCode.
+    body: { parallel_tool_calls: false },
     models: Object.fromEntries(models.map((model) => [model, {}])),
     env: [env],
   };

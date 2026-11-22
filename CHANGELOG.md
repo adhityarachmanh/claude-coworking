@@ -4,6 +4,16 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **🩺 Perbaikan: giliran OpenCode tidak lagi mati oleh `Internal error: OpenAI Chat received content after the finish
+  reason`.** Sebagian penyedia OpenAI-compatible (mis. `wally-custom`) mengirim satu potongan **tool call** setelah
+  penanda "giliran selesai"; parser OpenCode menolaknya dan membuang seluruh giliran (bug upstream
+  [anomalyco/opencode#56455](https://github.com/anomalyco/opencode/issues/56455) — hanya kasus teks yang sudah
+  diperbaiki di v2.2.0). Kini: (1) provider custom yang ditambahkan lewat **＋ Login provider** disetel **memanggil
+  tool satu per satu** (`parallel_tool_calls: false`) sehingga pemicunya hilang di provider baru; (2) bila giliran tetap
+  gagal karena pola ini, Adhitron mencoba ulang **sekali** otomatis dan mengganti pesan "Internal error" mentah dengan
+  penjelasan Bahasa Indonesia + saran kirim ulang. Provider custom lama bisa dibuat ulang lewat ＋ Login provider agar
+  ikut memakai setelan itu.
+
 - **🔧 Perbaikan penting: menambah provider dengan daftar model, dan pendaftaran akun.** Sejak fitur "cek key & muat
   model" dan persetujuan daftar ditambahkan, menyimpan provider yang membawa `models`, serta membuat akun baru, gagal
   dengan error server. Akarnya dua: driver Postgres mengirim array sebagai literal array (bukan JSON) ke kolom `jsonb`
