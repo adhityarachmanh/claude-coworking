@@ -8,7 +8,7 @@
 // skill folder or at the SKILL.md is refused, and the real path must stay inside the project (or the home folder for a
 // user-scope root), so a linked folder can never make a save or a recursive delete land outside it. Backups of
 // overwritten files live in the app's data folder, never next to the skill.
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -33,18 +33,19 @@ export const validSkillId = (id) => {
 };
 
 /**
- * "---\nname: x\ndescription: y\n---\nbody" → { meta, body }. Simple `key: value` front matter, quotes stripped.
- * A file with no front matter yields an empty meta and the whole text as body (never throws).
+ * "---\nname: x\ndescription: y\n---\nbody" → { meta, body, front }. `front` is the raw front matter block (null when
+ * there is none), so a save can rewrite only name/description and keep every other line (lists, slashes, comments)
+ * exactly as the user wrote it. A file with no front matter yields an empty meta and the whole text as body.
  */
 export function parseSkillFrontmatter(text) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(String(text));
-  if (!m) return { meta: {}, body: String(text) };
+  if (!m) return { meta: {}, body: String(text), front: null };
   const meta = {};
   for (const line of m[1].split(/\r?\n/)) {
-    const kv = /^([\w-]+):\s*(.*)$/.exec(line);
+    const kv = /^([\w./-]+):\s*(.*)$/.exec(line);
     if (kv) meta[kv[1]] = kv[2].replace(/^["']|["']$/g, '');
   }
-  return { meta, body: m[2] };
+  return { meta, body: m[2], front: m[1] };
 }
 
 const p = (...parts) => path.join(...parts);
@@ -84,25 +85,19 @@ export function skillDir({ engine, projectPath, home, scope, source, id }) {
 const oneLine = (s) => String(s ?? '').replace(/[\r\n]+/g, ' ').trim();
 
 /**
- * The SKILL.md text: front matter (the skill's own keys, with name/description updated) then the body. Unknown keys
- * (`license`, `allowed-tools`, …) are kept in their original order instead of being lost on save.
+ * The SKILL.md text: the raw front matter block with `name`/`description` replaced (added when missing), then the body.
+ * Every other front matter line — lists, `metadata.opencode/...`, comments — is kept exactly as the user wrote it.
  */
-const skillText = (meta, { id, name, description }, body) =>
-  [
-    '---',
-    ...meta.map(([k, v]) => `${k}: ${k === 'name' ? oneLine(name) || id : k === 'description' ? oneLine(description) : oneLine(v)}`),
-    '---',
-    '',
-    String(body ?? '').replace(/^\s*\n/, '').trimEnd(),
-    '',
-  ].join('\n');
-
-/** Front matter keys in order: the loaded ones (name/description replaced), plus name/description when missing. */
-const frontmatterKeys = (meta) => {
-  const base = meta && typeof meta === 'object' ? meta : {};
-  const keys = Object.keys(base);
-  for (const k of ['name', 'description']) if (!keys.includes(k)) keys.push(k);
-  return keys.map((k) => [k, base[k]]);
+const skillText = (front, { id, name, description }, body) => {
+  const lines = front == null ? [] : front.split(/\r?\n/);
+  const set = (key, value) => {
+    const at = lines.findIndex((l) => new RegExp(`^${key}:`).test(l));
+    if (at === -1) lines.push(`${key}: ${value}`);
+    else lines[at] = `${key}: ${value}`;
+  };
+  set('name', oneLine(name) || id);
+  set('description', oneLine(description));
+  return ['---', ...lines, '---', '', String(body ?? '').replace(/^\s*\n/, '').trimEnd(), ''].join('\n');
 };
 
 const samePath = (a, b) => {
@@ -140,12 +135,20 @@ const boundaryOf = ({ scope, projectPath, home }) => {
 };
 
 /**
- * Checks one operation's paths (the target skill folder, and the old folder when renaming) against the boundary. The
- * SKILL.md file itself is checked for a symlink in read/save.
+ * Checks one operation's paths (the target skill folder, and the old folder when renaming) against the boundary. A
+ * folder that is itself a symlink/junction is refused even when it resolves inside the project: the module promises
+ * that no link in the path is followed. The SKILL.md file itself is checked for a symlink in read/save.
  */
 function guardContainment(where, old) {
-  assertInside(boundaryOf(where), where.dir);
-  if (old) assertInside(boundaryOf(old), old.dir);
+  for (const w of [where, old]) {
+    if (!w) continue;
+    assertInside(boundaryOf(w), w.dir);
+    try {
+      if (lstatSync(w.dir).isSymbolicLink()) throw new SkillError(409, 'Folder skill adalah symlink; buka folder aslinya di editor.');
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+  }
 }
 
 /**
@@ -155,7 +158,7 @@ function guardContainment(where, old) {
  */
 export function listSkills({ engine, projectPath, home = os.homedir() }) {
   const out = [];
-  const seen = new Set();
+  const index = new Map();
   for (const root of skillRoots({ engine, projectPath, home })) {
     let entries;
     try {
@@ -171,32 +174,37 @@ export function listSkills({ engine, projectPath, home = os.homedir() }) {
     }
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-      const file = p(root.dir, entry.name, SKILL_FILE);
+      const dir = p(root.dir, entry.name);
+      const file = p(dir, SKILL_FILE);
       if (!existsSync(file)) continue;
-      const key = `${root.scope}:${entry.name}`;
-      if (seen.has(key)) continue; // a project .claude/skills skill is not listed twice across compat roots
-      seen.add(key);
-      // A folder that resolves outside the project/home (a symlink or junction) is not a skill here.
+      // A folder that resolves outside the project/home (a symlink or junction) is not a skill here. The containment
+      // check runs before the dedup, so a shadowed id in a refused root never hides the real skill in another root.
       try {
-        assertInside(base, p(root.dir, entry.name));
+        assertInside(base, dir);
       } catch {
         continue;
       }
-      let name = entry.name;
-      let description = '';
-      let hasSupport = false;
+      const skill = { id: entry.name, name: entry.name, description: '', scope: root.scope, source: root.source, engine: root.engine, dir, file, hasSupport: false };
       try {
         const st = statSync(file);
         if (st.size <= MAX_SKILL_BYTES) {
           const { meta } = parseSkillFrontmatter(readFileSync(file, 'utf8'));
-          name = meta.name || entry.name;
-          description = oneLine(meta.description);
+          skill.name = meta.name || entry.name;
+          skill.description = oneLine(meta.description);
         }
-        hasSupport = readdirSync(p(root.dir, entry.name)).some((f) => f !== SKILL_FILE);
+        skill.hasSupport = readdirSync(dir).some((f) => f !== SKILL_FILE);
       } catch {
         // unreadable: keep it listed with what we know
       }
-      out.push({ id: entry.name, name, description, scope: root.scope, source: root.source, engine: root.engine, dir: p(root.dir, entry.name), file, hasSupport });
+      // Precedence rises with the root order: a later root (higher precedence) replaces an earlier one with the same id.
+      const key = `${root.scope}:${entry.name}`;
+      const at = index.get(key);
+      if (at === undefined) {
+        index.set(key, out.length);
+        out.push(skill);
+      } else {
+        out[at] = skill;
+      }
     }
   }
   return out;
@@ -223,10 +231,10 @@ export function readSkill({ engine, projectPath, home, scope, source, id }) {
     if (st.isSymbolicLink()) throw new SkillError(409, 'SKILL.md adalah symlink; buka file aslinya di editor.');
     if (!st.isFile()) throw new SkillError(409, 'SKILL.md bukan file biasa.');
     if (st.size > MAX_SKILL_BYTES) throw new SkillError(413, 'SKILL.md terlalu besar untuk diedit di sini (maks 256 KB).');
-    const { meta, body } = parseSkillFrontmatter(readFileSync(where.file, 'utf8'));
+    const { meta, body, front } = parseSkillFrontmatter(readFileSync(where.file, 'utf8'));
     // The blank line after the closing `---` belongs to the front matter, not the body: strip one so an
-    // unchanged read→save round-trips to the same file. `metaKeys` keeps unknown keys in order for save.
-    return { id, name: meta.name || id, description: oneLine(meta.description), metaKeys: frontmatterKeys(meta), scope: where.scope, source: where.source, engine: where.engine, file: where.file, content: body.replace(/^\r?\n/, ''), mtime: st.mtimeMs, support, exists: true };
+    // unchanged read→save round-trips to the same file. `front` is the raw block, kept verbatim on save.
+    return { id, name: meta.name || id, description: oneLine(meta.description), front, scope: where.scope, source: where.source, engine: where.engine, file: where.file, content: body.replace(/^\r?\n/, ''), mtime: st.mtimeMs, support, exists: true };
   } catch (err) {
     if (err instanceof SkillError) throw err;
     if (err.code === 'ENOENT') return { id, name: id, description: '', scope: where.scope, source: where.source, engine: where.engine, file: where.file, content: '', mtime: 0, support, exists: false };
@@ -304,6 +312,18 @@ const backupDir = (dir, opts) => {
   return any;
 };
 
+/** Copies the support files (everything but SKILL.md) of a renamed skill into its new folder. */
+const copySupport = (from, to) => {
+  try {
+    for (const name of readdirSync(from)) {
+      if (name === SKILL_FILE) continue;
+      cpSync(p(from, name), p(to, name), { recursive: true, errorOnExist: false, force: true });
+    }
+  } catch {
+    // a missing folder or a refused file: the SKILL.md itself is what matters
+  }
+};
+
 // ---------- write / delete ----------
 
 function writeAtomic(file, data) {
@@ -339,7 +359,8 @@ function writeAtomic(file, data) {
 /**
  * Creates or replaces <root>/<id>/SKILL.md. `baseMtime` is the mtime the editor loaded (0 = file did not exist): a
  * file changed meanwhile (Claude, OpenCode or a hand edit) is refused with 409 instead of being overwritten. A rename
- * (`previous` different from `id`) writes the new directory, backs up the old SKILL.md, then removes the old directory.
+ * (`previous` different from `id`, or a scope change) writes the new folder, copies the old support files, backs up the
+ * whole old folder and then removes it.
  */
 export function saveSkill({ engine, projectPath, home, scope, source, id, previous = null, previousScope, previousSource, name, description, content, dataDir, baseMtime }) {
   const where = skillDir({ engine, projectPath, home, scope, source, id });
@@ -357,13 +378,13 @@ export function saveSkill({ engine, projectPath, home, scope, source, id, previo
   // The mtime guard follows the file the editor loaded: the old one when renaming, this one otherwise.
   const guard = old ?? where;
   let current = 0;
-  let priorMeta = {};
+  let priorFront = null;
   try {
     const st = lstatSync(guard.file);
     if (st.isSymbolicLink()) throw new SkillError(409, 'SKILL.md adalah symlink; buka file aslinya di editor.');
     if (!st.isFile()) throw new SkillError(409, 'SKILL.md bukan file biasa.');
     current = st.mtimeMs;
-    priorMeta = parseSkillFrontmatter(readFileSync(guard.file, 'utf8')).meta; // keep unknown keys (license, allowed-tools, …)
+    priorFront = parseSkillFrontmatter(readFileSync(guard.file, 'utf8')).front; // keep the raw block verbatim
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
   }
@@ -371,13 +392,14 @@ export function saveSkill({ engine, projectPath, home, scope, source, id, previo
   // A rename that also moves roots must not silently overwrite a different skill that already uses the target name.
   if (old && path.resolve(old.file) !== path.resolve(where.file) && existsSync(where.file)) throw new SkillError(409, `Skill "${id}" sudah ada di lokasi tujuan. Pilih nama lain atau hapus dulu.`);
   // Size is checked on the final file (front matter included), so a saved skill can always be reopened.
-  const text = skillText(frontmatterKeys(priorMeta), { id, name, description }, content);
+  const text = skillText(priorFront, { id, name, description }, content);
   if (Buffer.byteLength(text) > MAX_SKILL_BYTES) throw new SkillError(413, 'Isi skill terlalu besar (maks 256 KB, termasuk nama dan deskripsi).');
   // A rename backs up the whole old folder (SKILL.md + support files) before removing it; a plain save backs up the
-  // file it replaces.
+  // file it replaces. Support files are copied to the new folder so the renamed skill keeps working.
   const backedUp = old
     ? (backupDir(old.dir, { dataDir, projectPath, scope: old.scope }) || backupOne(guard.file, { dataDir, projectPath, scope: old.scope }))
     : backupOne(guard.file, { dataDir, projectPath, scope });
+  if (old) copySupport(old.dir, where.dir);
   writeAtomic(where.file, text);
   if (old) rmSync(old.dir, { recursive: true, force: true });
   return { id, scope: where.scope, source: where.source, backedUp };

@@ -3,7 +3,7 @@
 // in 🧠 Memory, timeouts that stop the whole process tree, and the phone-login alert for OpenCode providers.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
@@ -155,6 +155,19 @@ test('🧠 Memory: a symlink at a memory path is refused (read and write), the o
   assert.equal(list.status, 200);
   assert.equal(list.body.file.key, 'local');
   assert.ok(!JSON.stringify(list.body).includes('rahasia'));
+});
+
+test('🧩 Skills: memindahkan skill keluar dari scope "semua project" tetap butuh laptop', async (t) => {
+  const home = fakeHome(t);
+  const { ctx, project } = projectCtx();
+  const globalDir = path.join(home, '.claude', 'skills', 'global-skill');
+  mkdirSync(globalDir, { recursive: true });
+  writeFileSync(path.join(globalDir, 'SKILL.md'), '---\nname: Global\ndescription: x\n---\n\nbody\n');
+  const body = { id: 'global-skill', scope: 'project', source: '.claude/skills (project)', previous: 'global-skill', previousScope: 'user', previousSource: '~/.claude/skills (semua project)', name: 'Global', description: 'x', content: 'body\n', mtime: 0 };
+  const denied = await call('/api/projects/:id/skills/save', ctx, TAILSCALE, body, { id: 'p1' });
+  assert.equal(denied.status, 403, JSON.stringify(denied.body));
+  assert.ok(existsSync(path.join(globalDir, 'SKILL.md')), 'skill semua project tidak tersentuh dari HP');
+  assert.ok(!existsSync(path.join(project.path, '.claude', 'skills', 'global-skill')), 'tidak ada salinan yang dibuat');
 });
 
 test('🧩 Agents: scope "user" (~/.claude/agents) saved/deleted from the laptop only; project agents over Tailscale', async (t) => {

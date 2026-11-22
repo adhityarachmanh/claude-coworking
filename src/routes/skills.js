@@ -43,7 +43,9 @@ export function register(router) {
   // { scope, source, id, previous, name, description, content, mtime } → { skill, backedUp }
   router.post('/api/projects/:id/skills/save', withProject(guard(({ hub, isLocal, dataDir }, req, res, { project }, body) => {
     const scope = body?.scope === 'user' ? 'user' : 'project';
+    // A move into or out of the "semua project" scope touches the global root too, so both ends need the laptop.
     userScopeFromLaptop({ isLocal }, req, scope);
+    userScopeFromLaptop({ isLocal }, req, body?.previousScope);
     const engine = engineOf(hub, project.id);
     const r = saveSkill({
       engine,
