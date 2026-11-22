@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🐙 Pemeriksa CI GitHub kini bisa dimatikan per project.** Setelah setiap push, aplikasi mengikuti hasil GitHub Actions commit itu dan memberi kabar di chat — praktis, tapi untuk repo yang CI-nya memang belum siap (workflow template yang masih merah) baris **"❌ CI GitHub gagal"** terbaca seperti error yang harus ditindak. Di **Pengaturan giliran** ada saklar baru **Pantau CI setelah push**: matikan untuk project itu, dan tidak ada lagi pemantauan, chip di tab Perubahan, maupun baris di chat — sampai dinyalakan lagi. Bawaannya tetap nyala, jadi project yang memang memakai CI tidak berubah.
+
 ## 1.0.85
 
 - **💬 Chat umum.** Project bawaan untuk bertanya hal umum — menyusun timesheet, merencanakan sesuatu — tanpa
