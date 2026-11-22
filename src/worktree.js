@@ -87,10 +87,19 @@ export async function createWorktree(cwd, name) {
   if (!validWorktreeName(name)) throw new WorktreeError('Nama worktree hanya huruf kecil, angka, dan tanda hubung (1–64 karakter).', { code: 'invalid-name' });
   if (!(await isGitRepo(cwd))) throw new WorktreeError('Folder project ini bukan repository git, jadi belum bisa punya worktree.', { code: 'no-repo' });
   const target = worktreePath(cwd, name);
-  const res = await git(cwd, ['worktree', 'add', target, '-b', worktreeBranch(name)]);
-  if (res.ok) return { path: target, branch: worktreeBranch(name) };
+  const branch = worktreeBranch(name);
+  let res = await git(cwd, ['worktree', 'add', target, '-b', branch]);
+  if (!res.ok) {
+    const first = [res.out, res.err].filter(Boolean).join('\n').trim();
+    // Removing a worktree does not delete its branch: reusing the same name would fail with a misleading
+    // "branch already exists". Attach the existing branch instead of creating a new one.
+    if (/already exists/i.test(first) && /branch/i.test(first)) res = await git(cwd, ['worktree', 'add', target, branch]);
+    else if (/already exists|already registered|sudah ada/i.test(first)) throw new WorktreeError(`Worktree "${name}" sudah ada.`, { code: 'exists', status: 409, output: first });
+  }
+  if (res.ok) return { path: target, branch };
   const output = [res.out, res.err].filter(Boolean).join('\n').trim();
   if (/already exists|already registered|sudah ada/i.test(output)) throw new WorktreeError(`Worktree "${name}" sudah ada.`, { code: 'exists', status: 409, output });
+  if (res.timedOut) throw new WorktreeError('Gagal membuat worktree: git tidak menjawab dalam waktu 15 detik.', { code: 'failed', output });
   throw new WorktreeError(`Gagal membuat worktree: ${output || 'git menolak.'}`, { code: 'failed', output });
 }
 
@@ -103,8 +112,15 @@ export async function removeWorktree(cwd, dirPath, { force = false } = {}) {
   const res = await git(cwd, ['worktree', 'remove', ...(force ? ['--force'] : []), dirPath]);
   if (res.ok) return;
   const output = [res.out, res.err].filter(Boolean).join('\n').trim();
+  // The folder was deleted by hand: git's registration is stale, and `worktree remove` refuses it ("is not a
+  // working tree"). Prune the registration so the row can be cleared and the engine stops falling back to it.
+  if (/is not a working tree|not a working tree/i.test(output)) {
+    await git(cwd, ['worktree', 'prune']);
+    return;
+  }
   if (!force && /modified or untracked|--force|contains changes|ada perubahan/i.test(output)) {
     throw new WorktreeError('Worktree ini masih punya perubahan yang belum disimpan. Hapus tetap akan membuang perubahan itu.', { code: 'dirty', status: 409, output });
   }
+  if (res.timedOut) throw new WorktreeError('Gagal menghapus worktree: git tidak menjawab dalam waktu 15 detik.', { code: 'failed', output });
   throw new WorktreeError(`Gagal menghapus worktree: ${output || 'git menolak.'}`, { code: 'failed', output });
 }

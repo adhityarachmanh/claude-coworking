@@ -108,3 +108,27 @@ test('removeWorktree: worktree dengan perubahan ditolak tanpa force', async () =
     await removeWorktree(repo, wt.path, { force: true });
   } finally { rmSync(repo, { recursive: true, force: true }); }
 });
+
+test('createWorktree: nama yang sama bisa dibuat ulang setelah remove (branch lama dipakai)', async () => {
+  const repo = freshRepo();
+  try {
+    const first = await createWorktree(repo, 'login');
+    await removeWorktree(repo, first.path, { force: false });
+    // Removing a worktree leaves its branch behind; re-creating must reattach it, not fail with "exists".
+    const again = await createWorktree(repo, 'login');
+    assert.equal(again.branch, 'worktree-login');
+    assert.ok((await listWorktrees(repo)).some((w) => w.branch === 'worktree-login'));
+    await removeWorktree(repo, again.path, { force: false });
+  } finally { rmSync(repo, { recursive: true, force: true }); }
+});
+
+test('removeWorktree: folder yang dihapus manual dibersihkan lewat prune (bukan error)', async () => {
+  const repo = freshRepo();
+  try {
+    const wt = await createWorktree(repo, 'gone');
+    rmSync(wt.path, { recursive: true, force: true });
+    // git refuses a stale registration ("is not a working tree"); the row must still be clearable.
+    await removeWorktree(repo, wt.path, { force: true });
+    assert.ok(!(await listWorktrees(repo)).some((w) => w.branch === 'worktree-gone'), 'registrasi ikut dibersihkan');
+  } finally { rmSync(repo, { recursive: true, force: true }); }
+});
