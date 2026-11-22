@@ -30,6 +30,7 @@ import * as routines from './routines.js';
 import * as session from './session.js';
 import * as skills from './skills.js';
 import * as outputStyles from './output-styles.js';
+import * as opencodeCommands from './opencode-commands.js';
 import * as groups from './groups.js';
 import * as setup from './setup.js';
 import * as spotify from './spotify.js';
@@ -51,6 +52,7 @@ export function buildRouter() {
     extensions.register,
     skills.register,
     outputStyles.register,
+    opencodeCommands.register,
     files.register,
     memory.register,
     git.register,
