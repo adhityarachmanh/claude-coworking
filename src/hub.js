@@ -1277,7 +1277,7 @@ export class Hub {
   }
 
   /** Makes `wt` (or null to leave it) the project's active worktree. Stored in settings, project id unchanged. */
-    setWorktree(id, wt) {
+  setWorktree(id, wt) {
     this.updateSettings(id, { worktree: wt });
     this.broadcast('projects', this.listProjects());
   }
