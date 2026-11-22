@@ -387,7 +387,7 @@ Expected: PASS
 
 ## Catatan eksekusi
 
-**Status (2026-11-22):** Task 1–5 **selesai & ter-commit**; Task 6 (dokumentasi + gerbang) sedang berjalan.
+**Status (2026-11-22):** Task 1–6 **selesai**; Fase 2 dirilis sebagai **1.0.87** setelah dua putaran review independen (security + code) dan perbaikan temuan. Lihat `.superpowers/sdd/2026-11-22-fase-2-skills-memory/progress.md` untuk catatan eksekusi.
 
 - **Security review wajib** (menulis file ke folder project/user): setelah Task 5, minta review security atas `src/skills.js` + `src/routes/skills.js` (path traversal, symlink, backup, scope).
 - **Backup**: file skill lama disalin ke `dataDir/skills-backups/<scope-folder>/` sebelum ditimpa; tidak menyentuh folder config.
