@@ -21,6 +21,8 @@ const messageFor = (err) => MESSAGES[err?.data?.code] ?? err.message;
 
 /** Opens the dialog and loads the list for the active project. */
 export async function openWorktree() {
+  // The list route is laptop/Tailscale only (not in the plain-WiFi read allowlist): refuse before opening an empty dialog.
+  if (state.readOnly) return toast('Worktree hanya bisa dibuka dari laptop atau lewat Tailscale.', 'warn');
   if (!state.active || state.active === DEMO_ID) return toast('Pilih project dulu untuk mengelola worktree.');
   view.project = state.active;
   $('#worktree-project').textContent = `· ${projectName(state.active)}`;
