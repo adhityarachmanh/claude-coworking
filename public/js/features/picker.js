@@ -14,6 +14,7 @@ import { closeSuggest } from './suggest.js';
 
 function projectRank(p) {
   const st = state.statuses[p.id] ?? {};
+  if (p.system) return 4; // 💬 "Chat umum" always sits at the top
   if (p.id === DEMO_ID) return -1; // the demo sits at the bottom
   if (st.pending) return 3;
   if (st.busy || st.cliBusy) return 2;
@@ -30,20 +31,22 @@ export function renderSidebar() {
   const list = state.projects
     .filter((p) => picker.showArchived || !p.archived || p.id === state.active)
     .filter((p) => !q || p.name.toLowerCase().includes(q) || (p.path ?? '').toLowerCase().includes(q))
-    .sort((a, b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || projectRank(b) - projectRank(a) || (b.lastActivity ?? 0) - (a.lastActivity ?? 0) || Number(b.sources.includes('claude')) - Number(a.sources.includes('claude')) || a.name.localeCompare(b.name));
+    // 💬 A system entry ("Chat umum") is pinned above everything, even favourites.
+    .sort((a, b) => Number(Boolean(b.system)) - Number(Boolean(a.system)) || Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || projectRank(b) - projectRank(a) || (b.lastActivity ?? 0) - (a.lastActivity ?? 0) || Number(b.sources.includes('claude')) - Number(a.sources.includes('claude')) || a.name.localeCompare(b.name));
   picker.visible = list.map((p) => p.id);
   picker.cursor = Math.min(picker.cursor, Math.max(0, list.length - 1));
   const grouped = list.some((p) => p.favorite);
   $('#project-list').innerHTML = list
     .map((p, i) => {
-      // Section titles only when there are favourites to separate from the rest.
-      const head = !grouped ? '' : i === 0 ? '<li class="group">★ Favorit</li>' : !p.favorite && list[i - 1].favorite ? '<li class="group">Semua project</li>' : '';
+      // Section titles only when there are favourites to separate from the rest. A pinned system entry sits above
+      // the "★ Favorit" title, so the title goes on the first favourite, not blindly on row 0.
+      const head = !grouped || p.system ? '' : p.favorite && !list[i - 1]?.favorite ? '<li class="group">★ Favorit</li>' : !p.favorite && list[i - 1]?.favorite ? '<li class="group">Semua project</li>' : '';
       const favTitle = state.readOnly ? READ_ONLY_HINT : p.favorite ? 'Hapus dari favorit' : 'Jadikan favorit (selalu di atas)';
-      const star = p.id === DEMO_ID ? '' : `<button class="fav ${p.favorite ? 'on' : ''}" title="${favTitle}" aria-pressed="${Boolean(p.favorite)}" ${state.readOnly ? 'disabled' : ''}>${p.favorite ? '★' : '☆'}</button>`;
+      const star = p.id === DEMO_ID || p.system ? '' : `<button class="fav ${p.favorite ? 'on' : ''}" title="${favTitle}" aria-pressed="${Boolean(p.favorite)}" ${state.readOnly ? 'disabled' : ''}>${p.favorite ? '★' : '☆'}</button>`;
       // 🗂 Archived projects are hidden unless "tampilkan arsip" is on (the active one always stays).
       // Archiving is laptop-only (LOCAL_ONLY_ACTION in server.js): a phone gets no button it cannot use.
       const archive =
-        p.id === DEMO_ID || laptopBlocked('/api/projects/contoh/archive')
+        p.id === DEMO_ID || p.system || laptopBlocked('/api/projects/contoh/archive')
           ? ''
           : `<button class="arch ${p.archived ? 'on' : ''}" data-archive-project title="${state.readOnly ? READ_ONLY_HINT : p.archived ? 'Keluarkan dari arsip' : 'Arsipkan: sembunyikan dari daftar tanpa menghapus'}" aria-pressed="${Boolean(p.archived)}" aria-label="${p.archived ? 'Keluarkan dari arsip' : 'Arsipkan'}: ${escapeHtml(p.name)}" ${state.readOnly ? 'disabled' : ''}>${p.archived ? '↩' : '📦'}</button>`;
       const st = state.statuses[p.id] ?? {};
@@ -54,12 +57,12 @@ export function renderSidebar() {
           : st.alive
             ? '<span class="dot live"></span>'
             : '';
-      const icon = p.id === DEMO_ID ? '🎬' : p.sources.includes('claude') ? '✳' : '▢';
+      const icon = p.system ? '💬' : p.id === DEMO_ID ? '🎬' : p.sources.includes('claude') ? '✳' : '▢';
       // The engine is not a project trait any more (the model picks it), so a row does not carry an engine pill.
       // A project whose folder is gone can be purged safely: the action never deletes a folder, only the app's data.
       const missingTag = p.missing ? '<span class="badge missing" title="Folder project tidak ditemukan">folder hilang</span>' : '';
       const groupBadge = p.group ? `<span class="badge group" title="Grup ${escapeHtml(p.group.name)}">🗂 ${escapeHtml(p.group.name)}</span>` : '';
-      const purge = p.missing && p.id !== DEMO_ID
+      const purge = p.missing && p.id !== DEMO_ID && !p.system
         ? `<button class="purge" title="${state.readOnly ? READ_ONLY_HINT : 'Hapus data project ini (foldernya sudah tidak ada)'}" aria-label="Hapus data project ${escapeHtml(p.name)}" ${state.readOnly ? 'disabled' : ''}>🗑</button>`
         : '';
       return `${head}<li class="${p.id === state.active ? 'active' : ''} ${i === picker.cursor ? 'cursor' : ''}" data-id="${p.id}" title="${escapeHtml(p.path ?? 'Simulasi tanpa Claude Code')}">
@@ -102,7 +105,7 @@ let crumbHtml = '';
 
 function renderHeader() {
   const p = state.projects.find((x) => x.id === state.active);
-  const icon = !p ? '📁' : p.id === DEMO_ID ? '🎬' : p.sources.includes('claude') ? '✳' : '📁';
+  const icon = !p ? '📁' : p.system ? '💬' : p.id === DEMO_ID ? '🎬' : p.sources.includes('claude') ? '✳' : '📁';
   // The project list lives in a dialog, so the switcher itself tells you when another project needs you.
   const others = state.projects.filter((x) => x.id !== state.active).map((x) => state.statuses[x.id] ?? {});
   const waiting = others.reduce((n, st) => n + (st.pending ?? 0), 0);
