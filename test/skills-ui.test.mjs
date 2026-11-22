@@ -41,7 +41,7 @@ function listView() {
     rows: rows.map((li) => ({
       id: li.dataset.id,
       scope: li.dataset.scope,
-      description: li.querySelector('.sk-desc')?.textContent.trim() ?? '',
+      description: li.querySelector('p')?.textContent.trim() ?? '',
       canEdit: Boolean(li.querySelector('[data-sk="edit"]')),
     })),
     formVisible: Boolean(document.querySelector('#skills-form')?.getClientRects().length),

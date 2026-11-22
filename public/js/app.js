@@ -116,7 +116,7 @@ initWorktree(); // ⎇ dialog worktree + chip di bar sesi
 initOpenCodeRequests(); // 📡 OpenCode request log (global or one session)
 initMemory(); // 🧠 /memory: CLAUDE.md / AGENTS.md editor
 initExtensions(); // 🧩 /plugin /agents /hooks
-initSkills(); // 🧩 /skills: SKILL.md untuk kedua mesin
+initSkills(); // 🧩 /skills: SKILL.md editor for both engines
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initHeaderMore();

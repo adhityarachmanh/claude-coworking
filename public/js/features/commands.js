@@ -45,6 +45,7 @@ export const LOCAL_COMMANDS = [
   { name: 'plugin', aliases: ['plugins'], description: '🧩 Plugin Claude Code: pasang dari marketplace, aktif/nonaktif, hapus' },
   { name: 'agents', description: '🤖 Subagent buatan sendiri (.claude/agents): buat, edit, hapus' },
   { name: 'hooks', description: '🪝 Hooks yang aktif (settings.json user/project/pribadi)' },
+  { name: 'skills', description: '🧩 Skills (SKILL.md) untuk Claude Code & OpenCode: lihat, buat, edit, hapus' },
   { name: 'memory', description: '🧠 Edit instruksi memory: CLAUDE.md (Claude Code) / AGENTS.md (OpenCode)' },
   { name: 'dashboard', aliases: ['semua'], description: '🗂 Semua project: status setiap project sekaligus (izin, bekerja, antrian, idle)' },
   { name: 'help', description: 'Panduan & shortcut keyboard' },
