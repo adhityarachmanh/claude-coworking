@@ -194,7 +194,7 @@ test('pilih, buat, edit, tolak hapus gaya aktif, lalu hapus setelah ganti — mo
       await page.waitFor(() => document.querySelector('[data-os-delete="diagram-dulu"]'), { message: 'delete button after reload' });
       await page.eval(() => document.querySelector('[data-os-delete="diagram-dulu"]').click());
       await waitGone(styleFile('diagram-dulu'), 'style file deleted');
-      assert.equal(JSON.parse(readFileSync(settingsFile(), 'utf8')).outputStyle, undefined, 'default removes the key');
+      assert.equal(JSON.parse(readFileSync(settingsFile(), 'utf8')).outputStyle, 'default', 'Default ditulis sebagai gaya tersendiri');
 
       assert.equal(await page.eval(horizontalOverflow), false);
       assert.equal(await page.eval(modalOverflow), false);

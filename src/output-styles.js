@@ -2,7 +2,7 @@
 // `<user>/.claude/output-styles`), and the style a project actually uses. Pure reads here; writes live below.
 // The style names are case-sensitive (docs: `concise` is not Concise, it means Default), so every comparison is exact.
 import { randomBytes } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { settingsFile, userConfigDir } from './permissions.js';
 
@@ -34,16 +34,27 @@ export function styleRoots({ projectPath, userDir = userConfigDir() }) {
   ];
 }
 
-const unquote = (value) => String(value ?? '').trim().replace(/^["']|["']$/g, '');
+const unquote = (value) => {
+  const text = String(value ?? '').trim();
+  if (/^".*"$/.test(text)) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text.slice(1, -1);
+    }
+  }
+  return /^'.*'$/.test(text) ? text.slice(1, -1) : text;
+};
 
 /**
  * `---\nname: x\ndescription: y\nkeep-coding-instructions: true\n---\nbody` → fields plus the instructions body.
- * A file without a usable front matter keeps its whole text as the body and an empty name (the caller falls back
- * to the file name), so one malformed style never breaks the list.
+ * A BOM or blank lines before the front matter are tolerated (Claude Code's YAML parser does the same). A file
+ * without a usable front matter keeps its whole text as the body and an empty name (the caller falls back to the
+ * file name), so one malformed style never breaks the list.
  */
 export function parseStyleFile(text) {
-  const source = String(text ?? '');
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(source);
+  const source = String(text ?? '').replace(/^\uFEFF/, '');
+  const match = /^\s*---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(source);
   if (!match) return { name: '', description: '', keepCodingInstructions: false, body: source };
   const meta = {};
   for (const line of match[1].split(/\r?\n/)) {
@@ -62,7 +73,7 @@ export function parseStyleFile(text) {
 const readStyleFile = (file) => {
   try {
     const info = lstatSync(file);
-    if (info.isSymbolicLink()) return null;
+    if (info.isSymbolicLink() || info.size > 256 * 1024) return null; // a huge file is not an instruction file
     const parsed = parseStyleFile(readFileSync(file, 'utf8'));
     const slug = path.basename(file, '.md');
     return {
@@ -225,9 +236,11 @@ function backupStyle(file, { dataDir, scope, slug }) {
   const root = outputStyleBackupRoot(dataDir);
   mkdirSync(root, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dest = path.join(root, `${scope}-${slug}-${stamp}-${randomBytes(3).toString('hex')}.md`);
+  // `~` cannot appear in a slug, so `foo` and `foo-bar` never share a backup prefix/quotient.
+  const prefix = `${scope}~${slug}~`;
+  const dest = path.join(root, `${prefix}${stamp}-${randomBytes(3).toString('hex')}.md`);
   writeFileSync(dest, readFileSync(file));
-  const mine = readdirSync(root).filter((name) => name.startsWith(`${scope}-${slug}-`)).sort();
+  const mine = readdirSync(root).filter((name) => name.startsWith(prefix)).sort();
   for (const name of mine.slice(0, Math.max(0, mine.length - MAX_BACKUPS))) unlinkSync(path.join(root, name));
   return dest;
 }
@@ -285,6 +298,10 @@ export function saveStyle({
   const root = safeRoot(rootFor({ projectPath, userDir }, scope));
   const oldFile = oldSlug ? path.join(root, `${oldSlug}.md`) : null;
   const nextFile = path.join(root, `${nextSlug}.md`);
+  // The display name is what the picker and selection use: another file with the same name would make one of them
+  // invisible, so it is refused even when the file names (slugs) differ.
+  const taken = listMarkdown(root).some((style) => style.slug !== oldSlug && style.name === clean);
+  if (taken) throw new OutputStyleError(409, `Nama gaya "${clean}" sudah dipakai file lain.`);
   let backedUp = null;
   if (oldFile) {
     const info = safeFile(root, oldFile);
@@ -328,8 +345,9 @@ export function deleteStyle({ projectPath, userDir = userConfigDir(), dataDir, s
 
 /**
  * The project's own choice, written to `.claude/settings.local.json` (the file Claude Code's own command writes).
- * Only `outputStyle` changes: every other key, the indentation and the file mode stay as they were. `default`
- * removes the key so the project falls back to its shared/user setting. Invalid JSON is never overwritten.
+ * Only `outputStyle` changes: every other key, the indentation and the file mode stay as they were. `default` is a
+ * real style name Claude Code lists, so it is written as-is — removing the key would only reveal a project/user
+ * setting (`outputStyle: "Concise"`) that Claude would then use while the UI claimed Default.
  */
 export function saveSelection({ projectPath, userDir = userConfigDir(), name }) {
   if (name !== 'default' && (typeof name !== 'string' || !name.trim() || name.length > 200)) {
@@ -356,10 +374,10 @@ export function saveSelection({ projectPath, userDir = userConfigDir(), name }) 
     if (err.code !== 'ENOENT') throw new OutputStyleError(500, `Tidak bisa membaca ${path.basename(file)}: ${err.code ?? err.message}`);
     mkdirSync(path.dirname(file), { recursive: true });
   }
-  if (name === 'default') delete data.outputStyle;
+  if (name === 'default') data.outputStyle = 'default';
   else data.outputStyle = name;
   const temp = path.join(path.dirname(file), `.settings-${randomBytes(4).toString('hex')}.tmp`);
   writeFileSync(temp, `${JSON.stringify(data, null, indent)}\n`);
   renameSync(temp, file);
-  return { name: name === 'default' ? 'default' : name, file };
+  return { name, file };
 }

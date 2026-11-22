@@ -6,10 +6,10 @@ import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 
-const os = { project: null, styles: [], current: null, editing: null, busy: false, error: '' };
+const os = { project: null, styles: [], current: null, note: '', editing: null, busy: false, error: '' };
 
 const isLocal = () => state.local !== false;
-const activeName = () => (os.current?.name === 'default' ? 'Default' : os.current?.name ?? 'default');
+const activeName = () => (!os.current ? 'tidak terbaca' : os.current.name === 'default' ? 'Default' : os.current.name);
 const scopeLabel = (scope) => (scope === 'user' ? 'semua project' : scope === 'project' ? 'project ini' : 'bawaan');
 
 function render() {
@@ -42,11 +42,14 @@ function listHtml() {
       </li>`;
     })
     .join('');
+  const chosen = os.current
+    ? `<p class="muted small">Aktif sekarang: <b>${escapeHtml(activeName())}</b>${os.current.source && os.current.source !== 'default' ? ` (dari ${escapeHtml(scopeLabel(os.current.source === 'local' ? 'project' : os.current.source))}${os.current.source === 'local' ? ' · setelan lokal' : ''})` : ''}. Berlaku pada pesan berikutnya.</p>`
+    : `<p class="field-error" role="alert">${escapeHtml(os.note || 'Pilihan gaya yang aktif tidak terbaca.')}</p>`;
   const unknown = os.current?.unknown
     ? `<p class="field-error" role="alert">Nilai "${escapeHtml(os.current.unknown)}" di setelan tidak dikenal Claude Code (peka huruf besar/kecil), jadi Default yang dipakai.</p>`
     : '';
   return `<p class="muted small">Gaya mengatur peran, nada, dan format jawaban Claude untuk seluruh percakapan (seperti <code>/output-style</code> di terminal). Pilihan disimpan di <code>.claude/settings.local.json</code>; gaya kustom adalah file Markdown di <code>.claude/output-styles</code> (project) atau <code>~/.claude/output-styles</code> (semua project).</p>
-    <p class="muted small">Aktif sekarang: <b>${escapeHtml(activeName())}</b>${os.current?.source && os.current.source !== 'default' ? ` (dari ${escapeHtml(scopeLabel(os.current.source === 'local' ? 'project' : os.current.source))}${os.current.source === 'local' ? ' · setelan lokal' : ''})` : ''}. Berlaku pada pesan berikutnya.</p>
+    ${chosen}
     ${unknown}
     ${isLocal() ? '' : '<p class="muted small">🔒 Gaya untuk <b>semua project</b> hanya bisa diubah dari laptop; gaya project ini tetap bisa dari sini.</p>'}
     <ul class="ext-list" id="os-list">${rows || '<li><p class="muted small">Belum ada gaya.</p></li>'}</ul>
@@ -59,10 +62,10 @@ function formHtml() {
     <p class="muted small">${e.slug ? 'Ubah gaya kustom. Mengganti nama akan memindahkan berkasnya.' : 'Gaya baru disimpan sebagai file Markdown dengan frontmatter name/description/keep-coding-instructions.'}</p>
     <label class="oc-field"><span>Nama gaya *</span><input id="os-name" name="name" required maxlength="60" autocomplete="off" value="${escapeHtml(e.name ?? '')}" placeholder="Diagram dulu" /></label>
     <label class="oc-field"><span>Deskripsi (tampil di pemilih gaya)</span><input id="os-description" name="description" maxlength="300" autocomplete="off" value="${escapeHtml(e.description ?? '')}" placeholder="Mulai penjelasan dengan diagram" /></label>
-    <label class="oc-field"><span>Berlaku untuk</span><select id="os-scope" name="scope">
+    <label class="oc-field"><span>Berlaku untuk</span><select id="os-scope" name="scope"${e.slug ? ' disabled' : ''}>
       <option value="project"${e.scope !== 'user' ? ' selected' : ''}>Project ini (.claude/output-styles)</option>
       ${isLocal() ? `<option value="user"${e.scope === 'user' ? ' selected' : ''}>Semua project (~/.claude/output-styles)</option>` : ''}
-    </select>${isLocal() ? '' : '<small class="muted">Gaya semua project diubah dari laptop.</small>'}</label>
+    </select>${e.slug ? '<small class="muted">Scope tidak bisa dipindah saat mengedit; buat gaya baru untuk scope lain.</small>' : isLocal() ? '' : '<small class="muted">Gaya semua project diubah dari laptop.</small>'}</label>
     <label class="oc-field"><span>Pertahankan instruksi coding Claude Code</span><input id="os-keep" name="keep" type="checkbox"${e.keepCodingInstructions ? ' checked' : ''} /></label>
     <label class="oc-field"><span>Instruksi gaya *</span><textarea id="os-instructions" name="body" class="memory-text" rows="10" spellcheck="false" required>${escapeHtml(e.body ?? '')}</textarea></label>
     <p class="muted small">Simpan ke <code>${escapeHtml(e.scope === 'user' ? '~/.claude/output-styles' : '.claude/output-styles')}</code>. Salinan lama disimpan di folder data aplikasi sebelum ditimpa.</p>
@@ -75,7 +78,8 @@ async function load() {
   try {
     const data = await api(`/api/projects/${os.project}/output-styles`);
     os.styles = data.styles ?? [];
-    os.current = data.current ?? { name: 'default', source: 'default', unknown: null };
+    os.current = data.current ?? null;
+    os.note = data.note ?? '';
     os.error = '';
     render();
   } catch (err) {
@@ -88,6 +92,9 @@ export async function openOutputStyle() {
   if (state.readOnly) return toast('Output style hanya bisa dibuka dari laptop atau lewat Tailscale.', 'warn');
   os.project = state.active;
   os.editing = null;
+  os.styles = [];
+  os.current = null;
+  os.note = '';
   os.error = '';
   openModal('output-style-modal');
   render();

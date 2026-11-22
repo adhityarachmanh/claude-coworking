@@ -27,13 +27,24 @@ const guardTurn = (session) => {
   if (session?.turnActive?.()) throw new OutputStyleError(409, TURN_RUNNING);
 };
 
+/** The style in use may be unreadable (a broken/symlinked user settings file): the picker still opens, with a note. */
+const safeCurrent = (project) => {
+  try {
+    return { current: currentOutputStyle({ projectPath: project.path }), note: null };
+  } catch (err) {
+    if (err instanceof OutputStyleError) return { current: null, note: err.message };
+    throw err;
+  }
+};
+const activeName = (project) => safeCurrent(project).current?.name ?? null;
+
 /** The picker's payload: no absolute path (it may be a phone over Tailscale), and the style that applies here. */
 const view = (project) => ({
   styles: listOutputStyles({ projectPath: project.path }).map((style) => {
     const { file, ...rest } = style;
     return rest;
   }),
-  current: currentOutputStyle({ projectPath: project.path }),
+  ...safeCurrent(project),
 });
 
 export function register(router) {
@@ -66,7 +77,7 @@ export function register(router) {
             const result = saveSelection({ projectPath: project.path, name: picked });
             const applied = reload(session);
             ctx.hub.chat(project.id, { kind: 'info', text: `🎭 Output style: ${picked === 'default' ? 'Default' : picked} (berlaku pada pesan berikutnya).` });
-            return json(res, 200, { current: currentOutputStyle({ projectPath: project.path }), file: result.file, applied });
+            return json(res, 200, { ...safeCurrent(project), file: result.file, applied });
           }),
         'Output style',
       ),
@@ -104,7 +115,7 @@ export function register(router) {
             if (body?.slug) {
               // Renaming or deleting the style that is in use would leave the local choice pointing at nothing.
               const before = readStyle({ projectPath: project.path, scope, slug: body.slug });
-              if (before.name !== name && currentOutputStyle({ projectPath: project.path }).name === before.name) {
+              if (before.name !== name && activeName(project) === before.name) {
                 return json(res, 409, { error: 'Ganti dulu gaya yang sedang dipakai sebelum mengganti namanya.' });
               }
             }
@@ -121,7 +132,7 @@ export function register(router) {
             });
             const applied = reload(session);
             ctx.hub.chat(project.id, { kind: 'info', text: `🎭 Gaya "${result.style.name}" disimpan (${scope === 'user' ? 'semua project' : 'project ini'}).` });
-            return json(res, 200, { ...result, current: currentOutputStyle({ projectPath: project.path }), applied });
+            return json(res, 200, { ...result, ...safeCurrent(project), applied });
           }),
         'Output style',
       ),
@@ -140,13 +151,13 @@ export function register(router) {
             const session = sessionOf(ctx, project);
             guardTurn(session);
             const before = readStyle({ projectPath: project.path, scope, slug: body?.slug });
-            if (currentOutputStyle({ projectPath: project.path }).name === before.name) {
+            if (activeName(project) === before.name) {
               return json(res, 409, { error: 'Ganti dulu gaya yang sedang dipakai sebelum menghapusnya.' });
             }
             const result = deleteStyle({ projectPath: project.path, dataDir: ctx.hub.dataDir, scope, slug: body?.slug, mtime: body?.mtime });
             const applied = reload(session);
             ctx.hub.chat(project.id, { kind: 'info', text: `🎭 Gaya "${before.name}" dihapus (${scope === 'user' ? 'semua project' : 'project ini'}).` });
-            return json(res, 200, { ...result, current: currentOutputStyle({ projectPath: project.path }), applied });
+            return json(res, 200, { ...result, ...safeCurrent(project), applied });
           }),
         'Output style',
       ),

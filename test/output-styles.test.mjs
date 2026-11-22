@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFil
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { OutputStyleError, currentOutputStyle, deleteStyle, listOutputStyles, parseStyleFile, readStyle, saveStyle } from '../src/output-styles.js';
+import { OutputStyleError, currentOutputStyle, deleteStyle, listOutputStyles, parseStyleFile, readStyle, saveSelection, saveStyle } from '../src/output-styles.js';
 
 const tmp = (p) => mkdtempSync(path.join(tmpdir(), p));
 const write = (file, text) => {
@@ -100,4 +100,53 @@ test('deleteStyle: menghapus file dengan backup; file di luar scope tidak tersen
   if (!existsSync(path.join(linked, '.claude', 'output-styles', 'victim.md'))) return t.skip('junction is not readable in this environment');
   assert.throws(() => deleteStyle({ projectPath: linked, userDir, dataDir, scope: 'project', slug: 'victim' }), (e) => e.status === 409);
   assert.ok(existsSync(path.join(outside, 'victim.md')));
+});
+
+test('saveSelection: hanya mengubah outputStyle, mempertahankan kunci/indentasi, dan default menghapus kunci', () => {
+  const project = tmp('os-sel-');
+  const userDir = tmp('os-selu-');
+  const file = path.join(project, '.claude', 'settings.local.json');
+  write(file, '{\n  "permissions": { "allow": ["Read"] },\n  "outputStyle": "Concise"\n}\n');
+  const result = saveSelection({ projectPath: project, userDir, name: 'Explanatory' });
+  assert.equal(result.file, file);
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { permissions: { allow: ['Read'] }, outputStyle: 'Explanatory' });
+  assert.match(readFileSync(file, 'utf8'), /^\{\n {2}"permissions"/, 'indentasi 2 spasi dipertahankan');
+  saveSelection({ projectPath: project, userDir, name: 'default' });
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { permissions: { allow: ['Read'] }, outputStyle: 'default' });
+  write(file, '{rusak');
+  assert.throws(() => saveSelection({ projectPath: project, userDir, name: 'Concise' }), (e) => e.status === 409);
+  assert.equal(readFileSync(file, 'utf8'), '{rusak', 'file rusak tidak ditimpa');
+  const fresh = tmp('os-self-');
+  saveSelection({ projectPath: fresh, userDir, name: 'Concise' });
+  assert.deepEqual(JSON.parse(readFileSync(path.join(fresh, '.claude', 'settings.local.json'), 'utf8')), { outputStyle: 'Concise' });
+});
+
+test('Default menimpa setelan project/user, bukan hanya menghapus kunci lokal', () => {
+  const project = tmp('os-def-');
+  const userDir = tmp('os-defu-');
+  write(path.join(project, '.claude', 'settings.json'), JSON.stringify({ outputStyle: 'Concise' }));
+  write(path.join(project, '.claude', 'settings.local.json'), JSON.stringify({ outputStyle: 'Explanatory' }));
+  assert.deepEqual(currentOutputStyle({ projectPath: project, userDir }), { name: 'Explanatory', source: 'local', unknown: null });
+  saveSelection({ projectPath: project, userDir, name: 'default' });
+  assert.deepEqual(currentOutputStyle({ projectPath: project, userDir }), { name: 'default', source: 'local', unknown: null });
+});
+
+test('parseStyleFile: BOM/baris kosong sebelum frontmatter dan kutip/backslash round-trip', () => {
+  const parsed = parseStyleFile('\uFEFF\n---\nname: "Bom Style"\ndescription: "Pakai \\"verbatim\\" dan C:\\\\path"\n---\n\nhello\n');
+  assert.equal(parsed.name, 'Bom Style');
+  assert.equal(parsed.description, 'Pakai "verbatim" dan C:\\path');
+  const project = tmp('os-q-');
+  const userDir = tmp('os-qu-');
+  const dataDir = tmp('os-qd-');
+  saveStyle({ projectPath: project, userDir, dataDir, scope: 'project', name: "Kutip's", description: parsed.description, keepCodingInstructions: false, body: 'x\n' });
+  const back = readStyle({ projectPath: project, userDir, scope: 'project', slug: 'kutip-s' });
+  assert.equal(back.description, 'Pakai "verbatim" dan C:\\path');
+});
+
+test('saveStyle: nama yang sama dengan file lain ber-slug berbeda ditolak 409', () => {
+  const project = tmp('os-dup-');
+  const userDir = tmp('os-dupu-');
+  const dataDir = tmp('os-dupd-');
+  write(path.join(project, '.claude', 'output-styles', 'manual.md'), '---\nname: "Diagram dulu"\n---\n\nx\n');
+  assert.throws(() => saveStyle({ projectPath: project, userDir, dataDir, scope: 'project', name: 'Diagram dulu', description: '', keepCodingInstructions: false, body: 'y' }), (e) => e.status === 409);
 });
