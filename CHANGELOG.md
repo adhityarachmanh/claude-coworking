@@ -14,6 +14,9 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **🩹 Perbaikan: pemilih Model & Effort tidak lagi kosong.** Sebelumnya daftar Model dan Effort hanya terisi setelah
   sebuah percakapan dibuka, sehingga saat pertama membuka `/chat` kedua pilihan itu kosong. Kini daftarnya selalu
   terisi begitu halaman dimuat.
+- **🎨 Profil akun di sidebar dirapikan.** Kini berupa kartu: avatar bulat berisi huruf pertama + **nama tampilan**
+  (atau bagian depan email bila belum diisi) beserta email, lalu tombol **Keluar** dan **Hapus akun** tersusun rapi
+  di bawahnya — menggantikan baris teks "masuk sebagai …" yang polos.
 
 ## 1.0.84
 

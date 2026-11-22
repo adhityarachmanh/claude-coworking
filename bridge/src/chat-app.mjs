@@ -97,9 +97,21 @@ async function refresh() {
   ME = data.user; showApp();
 }
 async function showApp() {
-  $('who').textContent = 'masuk sebagai ' + ME.email;
+  renderAccount();
   await loadCatalog(); await loadProviders(); await loadConvs();
   await routeInitial();
+}
+/** Kartu akun di kaki sidebar: avatar (huruf pertama) + nama tampilan/email. */
+function renderAccount() {
+  const email = ME.email || '';
+  const name = (ME.displayName && String(ME.displayName).trim()) || email.split('@')[0] || 'Akun';
+  const initial = (String(name)[0] || email[0] || '?');
+  $('who').innerHTML =
+    '<span class="avatar" aria-hidden="true">' + esc(initial) + '</span>'
+    + '<span class="who-id">'
+    + '<span class="who-name" title="' + esc(name) + '">' + esc(name) + '</span>'
+    + '<span class="who-mail" title="' + esc(email) + '">' + esc(email) + '</span>'
+    + '</span>';
 }
 $('logout').addEventListener('click', async () => { await call('/auth/logout', { method: 'POST' }); location.href = '/auth/login'; });
 $('delacct').addEventListener('click', async () => {

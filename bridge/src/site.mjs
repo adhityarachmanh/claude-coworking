@@ -228,8 +228,14 @@ body.nochrome .side{padding-bottom:env(safe-area-inset-bottom)}
 .prov .meta b,.prov .meta span{overflow-wrap:anywhere}
 /* --- sidebar: judul riwayat, identitas, aksi --- */
 .convs-head{padding:12px 16px 4px;font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.side-foot{margin-top:auto;padding:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
-.side-foot .who{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side-foot{margin-top:auto;padding:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+/* kartu akun di kaki sidebar: avatar + identitas */
+.side-foot .who{display:flex;align-items:center;gap:10px;min-width:0}
+.side-foot .avatar{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;
+background:var(--accent-solid);color:#fff;font-weight:700;font-size:.95rem;text-transform:uppercase;user-select:none}
+.side-foot .who-id{display:flex;flex-direction:column;min-width:0;line-height:1.25}
+.side-foot .who-name{font-size:.88rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side-foot .who-mail{font-size:.74rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .side-acts{display:flex;gap:6px}
 .side-acts .mini{flex:1}
 /* --- header percakapan + konteks --- */
@@ -308,7 +314,7 @@ export function chatPageHtml() {
       <div class="convs-head">Riwayat</div>
       <ul class="convs" id="convs"></ul>
       <div class="side-foot">
-        <div class="muted who" id="who"></div>
+        <div class="who" id="who" role="group" aria-label="Akun kamu"></div>
         <div class="side-acts">
           <button class="mini" id="logout" type="button">Keluar</button>
           <button class="mini danger" id="delacct" type="button">Hapus akun</button>
