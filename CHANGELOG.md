@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.90
 
 - **🎭 Output style Claude dari aplikasi.** Gaya jawaban Claude — **Default**, Proactive, Concise, Explanatory, Learning, atau gaya kustom — kini dipilih dari dialog (menu **⋯ → 🎭 Output style…**, sheet ⋯ HP, atau perintah **/output-style [nama]**), tanpa terminal. Pilihan disimpan sebagai `outputStyle` di `.claude/settings.local.json`; kunci lain, indentasi, dan file yang bukan JSON valid tidak pernah diubah. Gaya kustom dibuat/diedit/dihapus langsung di `.claude/output-styles/*.md` (project) atau `~/.claude/output-styles` (semua project) dengan frontmatter name/description/keep-coding-instructions; setiap penimpaan menyimpan salinan lama di folder data aplikasi, nama yang sudah dipakai ditolak, symlink/junction ditolak, dan file yang berubah di tempat lain tidak ditimpa diam-diam. Gaya yang sedang aktif tidak bisa dihapus/diganti nama sebelum memilih gaya lain. Gaya **semua project** hanya diubah dari laptop; gaya project bisa dari laptop atau Tailscale; perubahan ditolak saat giliran berjalan dan berlaku pada **pesan berikutnya**. Nilai `outputStyle` yang tidak dikenal (Claude Code peka huruf besar/kecil) ditampilkan sebagai Default, bukan diam-diam dianggap aktif.
 
