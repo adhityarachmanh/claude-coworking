@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.84
 
 - **🩺 Perbaikan: giliran OpenCode tidak lagi mati oleh `Internal error: OpenAI Chat received content after the finish
   reason`.** Sebagian penyedia OpenAI-compatible (mis. `wally-custom`) mengirim satu potongan **tool call** setelah
@@ -13,6 +13,13 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
   gagal karena pola ini, Adhitron mencoba ulang **sekali** otomatis dan mengganti pesan "Internal error" mentah dengan
   penjelasan Bahasa Indonesia + saran kirim ulang. Provider custom lama bisa dibuat ulang lewat ＋ Login provider agar
   ikut memakai setelan itu.
+
+- **📎 Adhitron Web: lampiran gambar & file teks pada pesan.** Kotak pesan kini punya tombol **📎**, menerima
+  **tarik-lepas (drag & drop)** dan **tempel gambar dari clipboard**, lalu menampilkan chip (thumbnail gambar atau
+  ikon 📄) beserta nama & ukuran yang bisa dihapus sebelum kirim. Gambar (PNG/JPEG/GIF/WebP) dikirim sebagai gambar
+  (vision) dan file teks (log, kode, md, json, csv, …) disisipkan sebagai data ke prompt. Batas: maks 10 lampiran,
+  total 3 MB. Lampiran divalidasi ulang di server (jenis, magic bytes gambar, UTF-8 teks, nama) — hanya nama &
+  ukuran yang ditampilkan di riwayat, bukan isinya. PDF belum didukung di versi ini.
 
 - **🔧 Perbaikan penting: menambah provider dengan daftar model, dan pendaftaran akun.** Sejak fitur "cek key & muat
   model" dan persetujuan daftar ditambahkan, menyimpan provider yang membawa `models`, serta membuat akun baru, gagal
