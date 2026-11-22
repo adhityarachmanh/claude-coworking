@@ -1048,7 +1048,7 @@ export class Hub {
     this.persisted.custom = (this.persisted.custom ?? []).filter((p) => projectId(p) !== id);
     this.persisted.favorites = this.persisted.favorites.filter((f) => f !== id);
     this.persisted.archivedProjects = this.persisted.archivedProjects.filter((p) => p !== id);
-    for (const key of ['settings', 'sessions', 'activity', 'turns', 'interrupted', 'queues', 'sessionsByEngine', 'engineSettings']) if (this.persisted[key]) delete this.persisted[key][id];
+    for (const key of ['settings', 'sessions', 'activity', 'turns', 'interrupted', 'queues', 'sessionsByEngine', 'sessionsByWorkspace', 'engineSettings']) if (this.persisted[key]) delete this.persisted[key][id];
     if (this.legacyChats) delete this.legacyChats[id];
     // Both engines' histories are removed (switching never copied anything, so one may live in each store).
     for (const engine of ENGINES) {
@@ -1075,7 +1075,7 @@ export class Hub {
     this.persisted.favorites = this.persisted.favorites.filter((f) => f !== id);
     this.persisted.archivedProjects = this.persisted.archivedProjects.filter((p) => p !== id);
     this.removeProjectFromGroups(id); // a forgotten project also leaves its parent group
-    for (const key of ['settings', 'sessions', 'activity', 'turns', 'interrupted', 'queues', 'sessionsByEngine', 'engineSettings']) if (this.persisted[key]) delete this.persisted[key][id];
+    for (const key of ['settings', 'sessions', 'activity', 'turns', 'interrupted', 'queues', 'sessionsByEngine', 'sessionsByWorkspace', 'engineSettings']) if (this.persisted[key]) delete this.persisted[key][id];
     if (this.legacyChats) delete this.legacyChats[id];
     for (const engine of ENGINES) {
       delete this.storedChats[this.chatKey(engine, id)];
@@ -1212,7 +1212,7 @@ export class Hub {
       rt.events = [];
       if (rt.status) rt.status.sessionId = null;
     }
-    for (const key of ['sessions', 'sessionsByEngine', 'activity', 'turns', 'interrupted', 'queues', 'engineSettings', 'sessionMeta', 'runbooks', 'sessionAutoArchive', 'queueRetryOnce']) {
+    for (const key of ['sessions', 'sessionsByEngine', 'sessionsByWorkspace', 'activity', 'turns', 'interrupted', 'queues', 'engineSettings', 'sessionMeta', 'runbooks', 'sessionAutoArchive', 'queueRetryOnce']) {
       if (this.persisted[key]) delete this.persisted[key][id];
     }
     this.persisted.settings[id] = { engine };
@@ -1258,6 +1258,9 @@ export class Hub {
     // The folder the engine runs in: the worktree folder when one is active, else the project folder. Carried here so
     // a session's restart key (src/session.js) sees a change of workspace and respawns cleanly. Derived, never stored.
     settings.workspacePath = this.workspacePathFor(id);
+    // A hand-edited state.json could hold junk here: publish only what worktreeOf accepts, so the UI never renders a
+    // chip from a half-written entry. An absent key stays absent.
+    if (this.persisted.settings?.[id]?.worktree !== undefined) settings.worktree = this.worktreeOf(id);
     return settings;
   }
 
@@ -1871,7 +1874,9 @@ export class Hub {
    */
   exportState() {
     const { remote: _remote, catalog: _catalog, turns: _turns, interrupted: _interrupted, queues: _queues, backupSchedule: _backupSchedule, backupRuns: _backupRuns, chatSeq: _chatSeq, workspaces: _workspaces, ...rest } = this.persisted;
-    return structuredClone(rest);
+    // Per-worktree conversation ids point at absolute paths of THIS machine: a backup must not carry them.
+    const { sessionsByWorkspace: _sessionsByWorkspace, ...safe } = rest;
+    return structuredClone(safe);
   }
 
   /** The chats a backup carries as office/chats: Claude Code's folder (always kept, whatever the projects run on). */
@@ -2011,7 +2016,10 @@ export class Hub {
       } else if (switched) {
         // This machine's own settings stay; only the engine (and the values that engine remembers) comes back.
         this.rememberEngineSettings(to, current, this.settingsFor(to));
-        settingsMap[to] = { ...this.settingsFor(to), engine: target, ...this.engineSettingsFor(to, target) };
+        // settingsFor also carries `workspacePath`, which is derived and must never land in state.json
+        // (cleanSettings drops it on the normal path; this branch writes the map directly).
+        const { workspacePath: _ws, ...local } = this.settingsFor(to);
+        settingsMap[to] = { ...local, engine: target, ...this.engineSettingsFor(to, target) };
         if (this.runtime.has(to)) this.setStatus(to, this.settingsFor(to));
       }
       // A restored engine also moves a runtime that already exists (its chat must belong to that store).

@@ -34,6 +34,48 @@ test('cleanSettings: worktree divalidasi, junk diabaikan', () => {
   assert.equal(hub.cleanSettings(base, { worktree: null }).worktree, null, 'null menghapus');
 });
 
+test('settingsFor: worktree junk dari state.json yang diedit tangan tidak dipublikasikan', () => {
+  const hub = new Hub({ dataDir: mkdtempSync(path.join(tmpdir(), 'office-wtj-')) });
+  hub.projects.set('p1', { id: 'p1', path: 'C:/p', name: 'p1', sources: ['custom'] });
+  hub.persisted.settings.p1 = { engine: 'claude', worktree: 'junk' };
+  assert.equal(hub.settingsFor('p1').worktree, null, 'chip UI tidak akan menampilkan undefined');
+  hub.persisted.settings.p1 = { engine: 'claude', worktree: { name: 'Login', path: 'C:/p/.claude/worktrees/Login', branch: 'worktree-Login' } };
+  assert.equal(hub.settingsFor('p1').worktree, null, 'nama tak sah juga ditolak');
+});
+
+test('mergeProjectData: workspacePath turunan tidak bocor ke settings', async () => {
+  const { Hub } = await import('../src/hub.js');
+  const dir = mkdtempSync(path.join(tmpdir(), 'office-wt-merge-'));
+  try {
+    const hub = new Hub({ dataDir: dir });
+    hub.config = { engines: { opencode: { available: true } } };
+    hub.projects.set('proj1', { id: 'proj1', path: 'C:/p', name: 'proj1', sources: ['custom'] });
+    hub.persisted.settings.proj1 = { engine: 'claude', model: 'opus', effort: '' };
+    hub.mergeProjectData({ settings: { other: { engine: 'opencode' } } }, new Map([['other', 'proj1']]));
+    assert.equal(hub.persisted.settings.proj1.workspacePath, undefined, 'field turunan tidak ditulis ke state.json');
+    assert.equal(hub.settingsFor('proj1').engine, 'opencode');
+    clearTimeout(hub.saveTimer);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('forgetProject & clearProjectData membuang sessionsByWorkspace; exportState tidak membawanya', () => {
+  const hub = new Hub({ dataDir: mkdtempSync(path.join(tmpdir(), 'office-wt-clean-')) });
+  hub.projects.set('p1', { id: 'p1', path: 'C:/p', name: 'p1', sources: ['custom'] });
+  hub.persisted.sessionsByWorkspace = { p1: { 'C:/p/.claude/worktrees/login': { claude: 'abc-123' } } };
+  assert.equal(hub.forgetProject('p1'), true);
+  assert.equal(hub.persisted.sessionsByWorkspace.p1, undefined, 'forget membersihkan');
+
+  hub.projects.set('p2', { id: 'p2', path: 'C:/q', name: 'p2', sources: ['custom'] });
+  hub.persisted.sessionsByWorkspace.p2 = { 'C:/q/.claude/worktrees/x': { claude: 'def-456' } };
+  hub.clearProjectData('p2', 'claude');
+  assert.equal(hub.persisted.sessionsByWorkspace.p2, undefined, 'clear membersihkan');
+
+  hub.persisted.sessionsByWorkspace.p3 = { 'C:/r/.claude/worktrees/y': { claude: 'ghi-789' } };
+  assert.ok(!('sessionsByWorkspace' in hub.exportState()), 'backup tidak membawa id per-worktree mesin ini');
+});
+
 test('discoverProjects melewati folder di bawah .claude/worktrees', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'root-'));
   const proj = path.join(root, 'app'); mkdirSync(proj);
