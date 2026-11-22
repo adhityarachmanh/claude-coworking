@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.93
 
 - **🎭 Badge pengaturan giliran di HP kini ringkas.** Ringkasan di atas kotak pesan tidak lagi mengulang hal yang sama (`⚡ Auto · Auto · Auto · Tim` → `⚡ Auto · Tim`): mode, model, effort, dan Mode tim hanya muncul sekali, dan lebarnya dibatasi supaya tombol ＋, mikrofon, dan lipat tetap di tempatnya pada layar sempit.
 - **📋 Daftar tugas di HP jadi dialog, badge selesai tidak meluber.** Chip tugas di atas kotak pesan kini hanya `◼ 2/5 ▸`; ketuk untuk membuka daftar lengkap di dialog (seperti Ringkas), jadi judul tugas panjang tidak lagi memenuhi layar. Badge **✓ Selesai · waktu** di strip HP dipendekkan (detail langkah ada di judul dan di baris hasil chat), badge tugas latar menjadi `⏳ N`, dan baris hasil chat membungkus teksnya alih-alih melebar keluar layar.
