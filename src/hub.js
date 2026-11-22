@@ -15,6 +15,7 @@ import { basename, normalizePath, projectId } from './util.js';
 import { AUTO_CUT_MIN_SECONDS } from './power.js';
 import { isDirectory, isMissing } from './projects.js';
 import { validWorktreeName } from './worktree.js';
+import { cleanAddDirs } from './add-dirs.js';
 
 const EVENT_LIMIT = 80;
 // A running tool row in an idle project (no turn, no CLI, no background task) older than this is a leftover and is
@@ -63,7 +64,7 @@ export const DEMO_ID = 'demo';
 // 💬 The built-in "Chat umum": a project with the same engines as any other, but its folder is an app-owned sandbox
 // under dataDir, so a general chat never touches a real project folder. A fixed id (never the folder hash).
 export const GENERAL_ID = 'chat-umum';
-export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true };
+export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true, additionalDirectories: [] };
 // Which coding agent runs the project: Claude Code (stream-json) or OpenCode (ACP, src/acp-session.js).
 export const ENGINES = ['claude', 'opencode'];
 // Per-project data per engine lives in `settings[id].engine`, `engineSettings[id][engine]` and
@@ -1261,6 +1262,9 @@ export class Hub {
     // A hand-edited state.json could hold junk here: publish only what worktreeOf accepts, so the UI never renders a
     // chip from a half-written entry. An absent key stays absent.
     if (this.persisted.settings?.[id]?.worktree !== undefined) settings.worktree = this.worktreeOf(id);
+    // 📂 Folder tambahan (Claude --add-dir): the stored list is sanitized here too, so spawn arguments can only ever
+    // carry absolute, non-network paths (a hand-edited state.json must not reach the CLI).
+    settings.additionalDirectories = cleanAddDirs(this.persisted.settings?.[id]?.additionalDirectories);
     return settings;
   }
 
@@ -1391,6 +1395,8 @@ export class Hub {
     else if (isObject(patch.worktree) && validWorktreeName(patch.worktree.name) && typeof patch.worktree.path === 'string' && patch.worktree.path && typeof patch.worktree.branch === 'string' && patch.worktree.branch) {
       next.worktree = { name: patch.worktree.name, path: patch.worktree.path, branch: patch.worktree.branch };
     }
+    // 📂 Folder tambahan: the route validates first (absolute, existing, not network); this keeps the stored copy clean.
+    if (Array.isArray(patch.additionalDirectories)) next.additionalDirectories = cleanAddDirs(patch.additionalDirectories);
     // `workspacePath` is derived in settingsFor and read live: it must never be written back into state.json.
     delete next.workspacePath;
     return next;
