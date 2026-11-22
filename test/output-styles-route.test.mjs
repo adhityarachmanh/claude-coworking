@@ -52,6 +52,11 @@ test('route output style: baca, pilih, simpan kustom; gating laptop/Tailscale da
   const saved = await call(ctx, '/api/projects/:id/output-styles/save', { scope: 'project', name: 'Diagram dulu', description: '', keepCodingInstructions: false, body: 'x\n' });
   assert.equal(saved.status, 200);
   assert.equal(saved.body.style.slug, 'diagram-dulu');
+  const readBack = await call(ctx, '/api/projects/:id/output-styles/read', { scope: 'project', slug: 'diagram-dulu' });
+  assert.equal(readBack.status, 200);
+  assert.equal(readBack.body.style.body, 'x\n');
+  assert.equal(Object.hasOwn(readBack.body.style, 'file'), false);
+
   const bad = await call(ctx, '/api/projects/:id/output-styles/save', { scope: 'project', name: 'a/b', description: '', keepCodingInstructions: false, body: 'x' });
   assert.equal(bad.status, 400);
 

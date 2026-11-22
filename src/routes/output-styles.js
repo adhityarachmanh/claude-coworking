@@ -75,6 +75,22 @@ export function register(router) {
   );
 
   router.post(
+    '/api/projects/:id/output-styles/read',
+    withProject(
+      claudeOnly(
+        (ctx, req, res, { project }, body) =>
+          tool(res, () => {
+            if (ctx.isReadOnly?.(req) !== false) return json(res, 403, { error: READ_DENIED });
+            const { file, ...style } = readStyle({ projectPath: project.path, scope: scopeOf(body), slug: body?.slug });
+            return json(res, 200, { style });
+          }),
+        'Output style',
+      ),
+    ),
+    { maxBody: 1024 },
+  );
+
+  router.post(
     '/api/projects/:id/output-styles/save',
     withProject(
       claudeOnly(

@@ -156,6 +156,7 @@
               <button role="menuitem" data-more="worktree">⎇ Worktree…</button>
               <button role="menuitem" data-more="dirs" data-cap="permissions" title="Folder di luar project yang boleh dibaca dan ditulis Claude Code">📂 Folder tambahan…</button>
               <button role="menuitem" data-more="skills">🧩 Skills…</button>
+              <button role="menuitem" data-more="style" data-cap="permissions" title="Gaya jawaban Claude: bawaan atau kustom (.claude/output-styles)">🎭 Output style…</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
               <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
@@ -552,6 +553,14 @@
       <div class="modal-card ext-card" role="dialog" aria-modal="true" aria-labelledby="skills-title">
         <div class="modal-head"><b id="skills-title">🧩 Skills <small id="skills-project" class="muted"></small></b><button id="skills-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div id="skills-body" class="ext-body"></div>
+      </div>
+    </div>
+
+    <!-- 🎭 Output style Claude (features/output-styles.js) — built-in and custom styles, laptop or Tailscale -->
+    <div id="output-style-modal" class="modal" hidden>
+      <div class="modal-card ext-card" role="dialog" aria-modal="true" aria-labelledby="os-title">
+        <div class="modal-head"><b id="os-title">🎭 Output style <small id="os-project" class="muted"></small></b><button id="os-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div id="os-body" class="ext-body"></div>
       </div>
     </div>
 
@@ -1818,6 +1827,7 @@
           <button type="button" class="sheet-row" data-proxy="[data-more='worktree']" data-mutates><span aria-hidden="true">⎇</span><span>Worktree</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='dirs']" data-mutates data-cap="permissions"><span aria-hidden="true">📂</span><span>Folder tambahan</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='skills']" data-mutates><span aria-hidden="true">🧩</span><span>Skills</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='style']" data-mutates data-cap="permissions"><span aria-hidden="true">🎭</span><span>Output style</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>
           <h3 id="hm-g-chat" class="sheet-group-head">Percakapan</h3>

@@ -70,6 +70,7 @@ import { initShortcutLinks } from './features/shortcut-links.js';
 import { initMemory } from './features/memory.js';
 import { initExtensions } from './features/extensions.js';
 import { initSkills } from './features/skills.js';
+import { initOutputStyle } from './features/output-styles.js';
 import { initPullRequest } from './features/pull-request.js';
 import { initSettings } from './features/settings.js';
 import { initSpotify } from './features/spotify.js';
@@ -119,6 +120,7 @@ initOpenCodeRequests(); // 📡 OpenCode request log (global or one session)
 initMemory(); // 🧠 /memory: CLAUDE.md / AGENTS.md editor
 initExtensions(); // 🧩 /plugin /agents /hooks
 initSkills(); // 🧩 /skills: SKILL.md editor for both engines
+initOutputStyle(); // 🎭 output style Claude (built-in + custom)
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initHeaderMore();

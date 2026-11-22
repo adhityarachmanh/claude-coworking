@@ -13,6 +13,7 @@ import { openMcp } from './mcp.js';
 import { openMemory } from './memory.js';
 import { openExtensions } from './extensions.js';
 import { openSkills } from './skills.js';
+import { applyOutputStyle, openOutputStyle } from './output-styles.js';
 import { openQueue } from './queue.js';
 import { openPermissions } from './permissions.js';
 import { openRewind } from './rewind.js';
@@ -46,6 +47,7 @@ export const LOCAL_COMMANDS = [
   { name: 'agents', description: '🤖 Subagent buatan sendiri (.claude/agents): buat, edit, hapus' },
   { name: 'hooks', description: '🪝 Hooks yang aktif (settings.json user/project/pribadi)' },
   { name: 'skills', description: '🧩 Skills (SKILL.md) untuk Claude Code & OpenCode: lihat, buat, edit, hapus' },
+  { name: 'output-style', argumentHint: '[nama]', description: '🎭 Ganti output style Claude (bawaan atau kustom)' },
   { name: 'memory', description: '🧠 Edit instruksi memory: CLAUDE.md (Claude Code) / AGENTS.md (OpenCode)' },
   { name: 'dashboard', aliases: ['semua'], description: '🗂 Semua project: status setiap project sekaligus (izin, bekerja, antrian, idle)' },
   { name: 'help', description: 'Panduan & shortcut keyboard' },
@@ -66,7 +68,6 @@ export const CLI_ONLY = {
   login: 'Login/ganti akun ada di 👤 Akun.',
   logout: 'Logout ada di 👤 Akun.',
   status: 'Akun, kuota dan model ada di 👤 Akun dan status bar di bawah kotak chat.',
-  'output-style': 'Output style masih diatur dari terminal.',
   statusline: 'Status bar aplikasi ini ada di bawah kotak chat.',
   'terminal-setup': 'Khusus terminal.',
   vim: 'Khusus terminal.',
@@ -247,6 +248,14 @@ export function localCommand(text) {
       return true;
     case 'skills':
       openSkills();
+      return true;
+    case 'output-style':
+      if (projectEngine() !== 'claude') {
+        toast('Output style hanya untuk Claude Code.', 'warn');
+        return true;
+      }
+      if (value) applyOutputStyle(value);
+      else openOutputStyle();
       return true;
     case 'dashboard':
     case 'semua':
