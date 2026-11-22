@@ -276,6 +276,7 @@ const configView = (over = {}) => ({
   text: '{\n  "model": "anthropic/claude-lama"\n}\n',
   config: { model: 'anthropic/claude-lama' },
   agents: [{ name: 'reviewer', mode: 'subagent', model: '', description: '', prompt: 'old prompt' }],
+  references: [],
   parseError: null,
   hash: 'hash-1',
   sources: sourcesOf(),
@@ -337,7 +338,7 @@ function installConfigFake() {
       case '/api/opencode-config/save': {
         const failed = refuse(endpoint) ?? guard(body);
         if (failed) return failed;
-        fake.view = { ...read(), hash: 'hash-2', text: '{"model":"anthropic/claude-baru"}\n', config: { model: body.form?.model ?? 'anthropic/claude-baru' }, agents: [], parseError: null, backup: 'b-new' };
+        fake.view = { ...read(), hash: 'hash-2', text: '{"model":"anthropic/claude-baru"}\n', config: { model: body.form?.model ?? 'anthropic/claude-baru' }, agents: [], references: Array.isArray(body.form?.references) ? body.form.references : [], parseError: null, backup: 'b-new' };
         return json(read());
       }
       case '/api/opencode-config/backups':
@@ -845,6 +846,89 @@ for (const vp of VIEWPORTS) {
         const restored = await page.eval(() => window.__ocfake.posts.find((post) => post.path === '/api/opencode-config/restore').body);
         assert.ok(Object.hasOwn(restored, 'baseHash'), 'properti baseHash selalu ada');
         assert.equal(restored.baseHash, null);
+      } finally {
+        await page.close();
+      }
+    });
+  });
+}
+
+for (const vp of VIEWPORTS) {
+  describe(`OpenCode config: references — ${vp.name}`, () => {
+    test('tambah folder lokal dan repo Git, simpan, lalu terbaca lagi; jenis mengatur field; hapus baris', async () => {
+      const page = await configPage(vp);
+      try {
+        await openConfigEditor(page);
+        await page.waitFor(() => /Belum ada reference/.test(document.querySelector('#oc-reference-list').textContent), { message: 'daftar reference kosong' });
+
+        // Row 1: a local folder. The kind starts as path, so only the path field is offered.
+        await page.eval(() => {
+          document.querySelector('#oc-reference-add').click();
+          const row = [...document.querySelectorAll('#oc-reference-list .oc-agent')].at(-1);
+          const set = (key, value) => {
+            const el = row.querySelector(`[data-ref="${key}"]`);
+            el.value = value;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          };
+          set('name', 'pustaka');
+          set('path', '~/lib');
+          set('description', 'buku');
+        });
+        // Row 2: a Git repository with a branch; choosing the kind swaps which fields are visible.
+        await page.eval(() => {
+          document.querySelector('#oc-reference-add').click();
+          const row = [...document.querySelectorAll('#oc-reference-list .oc-agent')].at(-1);
+          const set = (key, value) => {
+            const el = row.querySelector(`[data-ref="${key}"]`);
+            el.value = value;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          };
+          set('name', 'web');
+          set('kind', 'repository');
+          set('repository', 'owner/repo');
+          set('branch', 'main');
+        });
+        const fields = await page.eval(() => [...document.querySelectorAll('#oc-reference-list .oc-agent')].map((row) => ({
+          pathHidden: row.querySelector('[data-ref-field="path"]').hidden,
+          repositoryHidden: row.querySelector('[data-ref-field="repository"]').hidden,
+          branchHidden: row.querySelector('[data-ref-field="branch"]').hidden,
+        })));
+        assert.deepEqual(fields, [
+          { pathHidden: false, repositoryHidden: true, branchHidden: true },
+          { pathHidden: true, repositoryHidden: false, branchHidden: false },
+        ]);
+
+        await page.eval(() => document.querySelector('#oc-config-save').click());
+        await page.waitFor(() => [...document.querySelectorAll('.toast')].some((toast) => /Config OpenCode disimpan/.test(toast.textContent)), { message: 'toast simpan' });
+        const saved = await page.eval(() => window.__ocfake.posts.find((post) => post.path === '/api/opencode-config/save'));
+        assert.deepEqual(saved.body.form.references, [
+          { name: 'pustaka', kind: 'path', path: '~/lib', repository: '', branch: '', description: 'buku', hidden: false },
+          { name: 'web', kind: 'repository', path: '', repository: 'owner/repo', branch: 'main', description: '', hidden: false },
+        ]);
+
+        // Load again from the server view: both rows come back with their values.
+        await page.eval(() => document.querySelector('#oc-config-reload').click());
+        await page.waitFor(() => document.querySelectorAll('#oc-reference-list .oc-agent').length === 2, { message: 'dua reference dari server' });
+        const shown = await page.eval(() => [...document.querySelectorAll('#oc-reference-list .oc-agent')].map((row) => ({
+          name: row.querySelector('[data-ref="name"]').value,
+          kind: row.querySelector('[data-ref="kind"]').value,
+          path: row.querySelector('[data-ref="path"]').value,
+          repository: row.querySelector('[data-ref="repository"]').value,
+          branch: row.querySelector('[data-ref="branch"]').value,
+        })));
+        assert.deepEqual(shown, [
+          { name: 'pustaka', kind: 'path', path: '~/lib', repository: '', branch: '' },
+          { name: 'web', kind: 'repository', path: '', repository: 'owner/repo', branch: 'main' },
+        ]);
+
+        // Hapus removes the row; with no rows left the placeholder comes back.
+        await page.eval(() => document.querySelectorAll('#oc-reference-list [data-ref-remove]')[1].click());
+        assert.equal(await page.eval(() => document.querySelectorAll('#oc-reference-list .oc-agent').length), 1);
+        await page.eval(() => document.querySelector('#oc-reference-list [data-ref-remove]').click());
+        await page.waitFor(() => /Belum ada reference/.test(document.querySelector('#oc-reference-list').textContent), { message: 'placeholder kembali' });
+        assert.equal(await page.eval(horizontalOverflow), false);
+        assert.equal(await page.eval(modalOverflow), false);
+        assert.deepEqual(page.problems, [], 'no console errors');
       } finally {
         await page.close();
       }

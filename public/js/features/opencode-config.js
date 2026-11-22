@@ -46,6 +46,47 @@ const renderAgents = (agents) => {
   $('#oc-agent-list').innerHTML = list.length ? list.map(agentRow).join('') : '<p class="muted small">Belum ada agent khusus.</p>';
 };
 
+/**
+ * One reference row (upstream `references` block): an alias pointing at a local folder or a Git repository. The kind
+ * swaps which value fields are visible; alias, description and the hidden flag apply to both.
+ */
+const referenceRow = (ref = {}) => {
+  const name = ref.name ?? '';
+  const kind = ref.kind === 'repository' ? 'repository' : 'path';
+  const value = (key) => escapeHtml(typeof ref[key] === 'string' ? ref[key] : '');
+  const hide = (field) => (field === 'path' ? kind !== 'path' : kind !== 'repository') ? ' hidden' : '';
+  return `<div class="oc-agent" data-ref-row>
+    <div class="oc-agent-head"><b>Reference</b><button type="button" class="ghost danger-text" data-ref-remove aria-label="Hapus reference ${escapeHtml(name || 'baru')}">Hapus</button></div>
+    <div class="oc-agent-grid">
+      <label class="oc-field"><span>Alias</span><input data-ref="name" type="text" maxlength="64" autocomplete="off" spellcheck="false" value="${escapeHtml(name)}" placeholder="pustaka" /></label>
+      <label class="oc-field"><span>Jenis</span><select data-ref="kind">
+        <option value="path"${kind === 'path' ? ' selected' : ''}>folder lokal</option>
+        <option value="repository"${kind === 'repository' ? ' selected' : ''}>repository Git</option>
+      </select></label>
+      <label class="oc-field" data-ref-field="path"${hide('path')}><span>Path</span><input data-ref="path" type="text" maxlength="500" autocomplete="off" spellcheck="false" value="${value('path')}" placeholder="~/pustaka atau C:\\kerja\\pustaka" /></label>
+      <label class="oc-field" data-ref-field="repository"${hide('repository')}><span>Repository</span><input data-ref="repository" type="text" maxlength="500" autocomplete="off" spellcheck="false" value="${value('repository')}" placeholder="owner/repo atau URL Git" /></label>
+      <label class="oc-field" data-ref-field="branch"${hide('branch')}><span>Cabang</span><input data-ref="branch" type="text" maxlength="200" autocomplete="off" spellcheck="false" value="${value('branch')}" placeholder="main (opsional)" /></label>
+      <label class="oc-field"><span>Deskripsi</span><input data-ref="description" type="text" maxlength="500" autocomplete="off" value="${value('description')}" placeholder="opsional" /></label>
+      <label class="oc-field"><span>Sembunyikan</span><input data-ref="hidden" type="checkbox"${ref.hidden === true ? ' checked' : ''} /></label>
+    </div>
+  </div>`;
+};
+
+/** Only the value fields of the chosen kind are shown; a hidden field keeps its value but is not offered. */
+const syncRefKind = (row) => {
+  if (!row) return;
+  const kind = row.querySelector('[data-ref="kind"]')?.value === 'repository' ? 'repository' : 'path';
+  for (const field of row.querySelectorAll('[data-ref-field]')) {
+    const mine = field.dataset.refField;
+    field.hidden = mine !== kind && !(kind === 'repository' && mine === 'branch');
+  }
+};
+
+const renderReferences = (references) => {
+  const list = (Array.isArray(references) ? references : []).filter((ref) => ref && typeof ref === 'object');
+  $('#oc-reference-list').innerHTML = list.length ? list.map(referenceRow).join('') : '<p class="muted small">Belum ada reference.</p>';
+};
+
 const dateOf = (value) => {
   if (value === null || value === undefined || value === '') return null;
   const date = new Date(value);
@@ -137,6 +178,7 @@ const renderView = () => {
   $('#oc-model').value = typeof view.config?.model === 'string' ? view.config.model : '';
   $('#oc-small-model').value = typeof view.config?.small_model === 'string' ? view.config.small_model : '';
   renderAgents(view.agents);
+  renderReferences(view.references);
   $('#oc-json-text').value = typeof view.text === 'string' && view.text ? view.text : '{\n}\n';
   $('#oc-config-error').textContent = typeof view.parseError === 'string' ? view.parseError : '';
   if (view.parseError) setMode('json'); // the raw file is the only way to repair it
@@ -239,6 +281,8 @@ const applyBusy = () => {
   $('#oc-scope-project').disabled = busy || !state.active || state.active === DEMO_ID;
   $('#oc-scope-global').disabled = busy;
   $('#oc-agent-add').disabled = busy;
+  $('#oc-reference-add').disabled = busy;
+  for (const button of document.querySelectorAll('#oc-reference-list [data-ref-remove]')) button.disabled = busy;
   $('#oc-conflict-consolidate').disabled = busy || editor.backupsBusy;
   for (const button of document.querySelectorAll('#oc-backup-list button[data-backup-preview], #oc-backup-list button[data-backup-restore]')) {
     button.disabled = busy || editor.backupsBusy || (button.dataset.backupRestore ? backupLocked(button.dataset.backupRestore) : false);
@@ -322,6 +366,26 @@ const collectAgents = () => {
   return out;
 };
 
+/** The reference rows exactly as the server's mergeForm expects them; a row the user never touched is skipped. */
+const collectReferences = () => {
+  const out = [];
+  for (const row of document.querySelectorAll('#oc-reference-list .oc-agent')) {
+    const value = (key) => row.querySelector(`[data-ref="${key}"]`)?.value ?? '';
+    const reference = {
+      name: value('name').trim(),
+      kind: value('kind') === 'repository' ? 'repository' : 'path',
+      path: value('path').trim(),
+      repository: value('repository').trim(),
+      branch: value('branch').trim(),
+      description: value('description').trim(),
+      hidden: row.querySelector('[data-ref="hidden"]')?.checked === true,
+    };
+    if (!reference.name && !reference.path && !reference.repository && !reference.branch && !reference.description && !reference.hidden) continue;
+    out.push(reference);
+  }
+  return out;
+};
+
 async function save() {
   if (editor.busy || !editor.view) return;
   setBusy(true);
@@ -332,6 +396,7 @@ async function save() {
       model: $('#oc-model').value.trim(),
       smallModel: $('#oc-small-model').value.trim(),
       agents: collectAgents(),
+      references: collectReferences(),
     };
   } else {
     body.text = $('#oc-json-text').value;
@@ -489,6 +554,25 @@ export function initOpenCodeConfig() {
     const row = remove.closest('.oc-agent');
     row?.remove();
     if (!document.querySelector('#oc-agent-list .oc-agent')) renderAgents([]);
+  });
+  $('#oc-reference-add').addEventListener('click', () => {
+    if (editor.busy) return;
+    const list = $('#oc-reference-list');
+    if (list.querySelector('.muted')) list.innerHTML = '';
+    list.insertAdjacentHTML('beforeend', referenceRow());
+    list.querySelector('.oc-agent:last-child [data-ref="name"]')?.focus();
+  });
+  // Choosing the kind only re-shows the fields that belong to it; the values stay in the DOM for switching back.
+  $('#oc-reference-list').addEventListener('change', (e) => {
+    const kind = e.target.closest('[data-ref="kind"]');
+    if (kind) syncRefKind(kind.closest('.oc-agent'));
+  });
+  $('#oc-reference-list').addEventListener('click', (e) => {
+    const remove = e.target.closest('[data-ref-remove]');
+    if (!remove || editor.busy) return;
+    const row = remove.closest('.oc-agent');
+    row?.remove();
+    if (!document.querySelector('#oc-reference-list .oc-agent')) renderReferences([]);
   });
   $('#oc-config-reload').addEventListener('click', load);
   $('#oc-config-save').addEventListener('click', save);
