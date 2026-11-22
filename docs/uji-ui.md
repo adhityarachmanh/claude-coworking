@@ -30,7 +30,8 @@ pernah menggantung karena server/browser yang dinyalakan untuknya tidak pernah d
   tidak pernah siap membuat run **gagal**, tidak menggantung.
 
 **Test UI di file terpisah.** Beberapa area punya file sendiri (mis. `test/activity-runs-ui.test.mjs` untuk
-"UI Aktivitas tim") karena tidak butuh seluruh setup `test/ui.test.mjs`. File seperti itu **tidak** bisa dipilih lewat
+"UI Aktivitas tim", `test/add-dirs-ui.test.mjs` untuk "UI Folder tambahan", `test/opencode-config-ui.test.mjs` untuk
+editor config OpenCode) karena tidak butuh seluruh setup `test/ui.test.mjs`. File seperti itu **tidak** bisa dipilih lewat
 `test:ui:area`; jalankan langsung, mis. `node --test test/activity-runs-ui.test.mjs`. File itu tetap ikut
 `npm run test:ui` karena mengimpor `test-support/cdp.mjs`.
 
