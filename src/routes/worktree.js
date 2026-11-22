@@ -1,6 +1,7 @@
 // ⎇ Worktree: create/list/enter/exit/remove git worktrees of a project. The app runs git itself (src/worktree.js)
 // and points the engine's cwd at the active one; a worktree is an attribute of the project (settings.worktree),
-// never a project of its own. Writes are laptop-only (LOCAL_ONLY_ACTION in server.js); the list is readable.
+// never a project of its own. Writes are laptop-only (LOCAL_ONLY_ACTION in server.js); the list is a read
+// (Tailscale only — it is not in the plain-WiFi allowlist, see server.js).
 import { basename } from 'node:path';
 import { createWorktree, listWorktrees, removeWorktree, WorktreeError } from '../worktree.js';
 import { json } from './http.js';
