@@ -332,6 +332,8 @@ Expected: PASS
 
 ### Task 5: UI — tab Skills + tab memory lanjutan
 
+> **Deviasi saat eksekusi (2026-11-22):** Skills dibuat sebagai **dialog sendiri** (`public/js/features/skills.js`, `#skills-modal`) + perintah `/skills` + item menu **⋯ → 🧩 Skills…** dan baris sheet HP — **bukan** tab di `#ext-modal`. Alasannya: dialog *Ekstensi* digerbangi **Claude-only** (`guardCap('extensions')`, `src/routes/extensions.js` `claude: true`), sedangkan Skills berlaku untuk **kedua mesin**; menaruhnya di sana akan salah menyembunyikannya saat project berjalan di OpenCode. Tab memory lanjutan **tidak perlu UI baru**: `public/js/features/memory.js` merender tab dari daftar `memoryFiles`, jadi kunci `rule:*`/`auto:*` otomatis muncul (Task 4).
+
 **Files:**
 - Modify: `public/index.html` (`#ext-tabs` tambah `<button data-tab="skills">🧩 Skills</button>`; `#memory-tabs` sudah dinamis)
 - Modify: `public/js/features/extensions.js` (tab `skills` + render/form/handler)
