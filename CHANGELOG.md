@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.92
 
 - **🛡️ Policies OpenCode (hard-deny).** Form config kini punya daftar **Policies**: statement `action` + `resource` + `allow`/`deny` yang hanya mengetatkan izin dan tidak pernah memunculkan kartu izin (contoh: `tool.use` + `shell:git push *` + `deny`, atau `provider.use` + `*` + `deny` lalu `allow` untuk satu provider). Urutan statement dipertahankan (yang terakhir cocok menang), effect selain allow/deny ditolak, statement dengan kunci tambahan tidak kehilangan kunci itu saat disimpan ulang. Action yang dikenal ditawarkan sebagai saran; action lain yang sah tetap bisa diketik. Tab JSON tetap ada untuk bentuk yang belum didukung form.
 - **⚙️ Config lanjutan OpenCode.** Bagian **Config lanjutan** mengedit `snapshots`, `formatter`, `compaction` (otomatis/pertahankan token/buffer), `warming` (prompt/interval/durasi), `watcher.ignore`, `media.image` (resize/lebar/tinggi/byte), `tool_output` (baris/byte), dan `experimental` (`todo`, kedalaman subagent, model gambar, idle lokasi). Pilihan **Bawaan** tidak menyentuh file; angka kosong menghapus field; nilai divalidasi (bilangan bulat dan batasnya); kunci asing di setiap objek serta `formatter` berbentuk objek dibiarkan lewat tab JSON. Field eksperimental bisa berubah di rilis OpenCode berikutnya.
