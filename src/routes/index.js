@@ -34,6 +34,7 @@ import * as tasks from './tasks.js';
 import * as team from './team.js';
 import * as templates from './templates.js';
 import * as wa from './wa.js';
+import * as worktree from './worktree.js';
 
 /** Builds the router. Registering touches no state, so tests can enumerate the routes without a server. */
 export function buildRouter() {
@@ -48,6 +49,7 @@ export function buildRouter() {
     files.register,
     memory.register,
     git.register,
+    worktree.register,
     health.register,
     permissions.register,
     queue.register,
