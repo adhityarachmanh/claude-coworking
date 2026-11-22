@@ -63,8 +63,13 @@ export class CiWatcher {
   watch(projectId) {
     const project = this.hub.projects.get(projectId);
     if (!this.gh || !project?.path) return false;
-    // 🐙 The project turned the check off (settings.ciFollow): a repo whose CI is not set up yet stays quiet.
-    if (this.hub.ciFollowFor?.(projectId) === false) return false;
+    // 🐙 The project turned the check off (settings.ciFollow): a repo whose CI is not set up yet stays quiet. Also
+    // drop any watch that is still alive (defense in depth — the settings route unwatches, but a hand-edited
+    // state.json could leave one running with nobody to stop it).
+    if (this.hub.ciFollowFor?.(projectId) === false) {
+      this.unwatch(projectId);
+      return false;
+    }
     clearTimeout(this.watching.get(projectId)?.timer);
     const w = { since: Date.now(), timer: null };
     this.watching.set(projectId, w);

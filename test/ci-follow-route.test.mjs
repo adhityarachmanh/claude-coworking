@@ -1,7 +1,8 @@
 // 🐙 Pantau CI per project, end to end against the real server: `POST /settings { ciFollow }` stops or starts the
-// GitHub check for that repo (no polling, no chip when off). Fake gh (OFFICE_GH_BIN) never touches the network.
+// GitHub check for that repo (no polling, no chip when off), and saving an unrelated setting never restarts a
+// finished watch. Fake gh (OFFICE_GH_BIN) never touches the network.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
@@ -28,11 +29,25 @@ const freePort = () =>
 
 before(async () => {
   const projects = path.join(TMP, 'projects');
-  mkdirSync(path.join(projects, 'toko'), { recursive: true });
-  writeFileSync(path.join(projects, 'toko', 'README.md'), '# toko\n');
+  const toko = path.join(projects, 'toko');
+  mkdirSync(toko, { recursive: true });
+  writeFileSync(path.join(toko, 'README.md'), '# toko\n');
+  // A real repo with one commit: the watcher asks git for HEAD and its branch, and the fake gh reports a run for it.
+  const git = (...args) => execFileSync('git', ['-c', 'user.email=t@t.local', '-c', 'user.name=t', ...args], { cwd: toko });
+  git('init', '-q');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'awal');
   mkdirSync(path.join(TMP, 'claude-projects'));
-  // A fake `gh` that answers `run list` with no runs: the watcher stays 'pending' (nothing to report yet).
-  writeFileSync(path.join(TMP, 'fake-gh.mjs'), "if (process.argv[2] === 'run') process.stdout.write('[]');\n");
+  // A fake `gh` that reports ONE completed, successful run for the repo's current commit: the watch ends at
+  // 'success' and stays there (the regression this guards: a later settings save must not restart it).
+  writeFileSync(
+    path.join(TMP, 'fake-gh.mjs'),
+    "import { execSync } from 'node:child_process';\n" +
+      "if (process.argv[2] === 'run') {\n" +
+      "  const sha = execSync('git rev-parse HEAD', { cwd: process.cwd() }).toString().trim();\n" +
+      "  process.stdout.write(JSON.stringify([{ databaseId: 1, name: 'ci', workflowName: 'ci', status: 'completed', conclusion: 'success', headSha: sha, url: 'https://github.com/o/r/actions/runs/1' }]));\n" +
+      '}\n',
+  );
   BASE = `http://localhost:${await freePort()}`;
   server = spawn(process.execPath, [path.join(APP, 'server.js')], {
     windowsHide: true,
@@ -102,10 +117,38 @@ test('ciFollow: mematikan menghentikan pemantauan dan membersihkan chip, menyala
   await until(async () => (await snapshot()).statuses[id]?.ciFollow === false, 'setelan tersimpan');
   assert.equal((await snapshot()).statuses[id].ci, null, 'chip dibersihkan');
 
-  // On: following the commit again puts it back to 'pending' (the fake gh has no runs for it yet).
+  // On: it follows the commit and reaches the fake run's terminal 'success'.
   assert.equal((await api(`/api/projects/${id}/settings`, { ciFollow: true })).status, 200);
-  await until(async () => (await snapshot()).statuses[id]?.ci?.state === 'pending', 'pemantauan kembali');
+  await until(async () => (await snapshot()).statuses[id]?.ci?.state === 'success', 'pemantauan kembali lalu selesai');
+});
 
+test('simpan setelan lain tidak me-restart pemantauan yang sudah selesai (tanpa baris CI ganda)', async () => {
+  const id = (await snapshot()).projects.find((p) => p.name === 'toko').id;
+  // The previous test left the watch finished at 'success' with one chat line.
+  await until(async () => (await snapshot()).statuses[id]?.ci?.state === 'success', 'sudah selesai');
+  const before = await snapshot();
+  const doneState = before.statuses[id].ci;
+  const chatsBefore = (before.chats[id] ?? []).filter((m) => /CI GitHub/.test(m.text ?? '')).length;
+  assert.equal(chatsBefore, 1, 'satu baris hasil CI');
+
+  // Saving an unrelated setting (effort) carries the default ciFollow: true (the composer always sends the
+  // checkbox); it must NOT start a new watch.
+  assert.equal((await api(`/api/projects/${id}/settings`, { effort: 'high', ciFollow: true })).status, 200);
+  await sleep(400); // several poll cycles at 50 ms would have run and rewritten the status by now
+  const after = await snapshot();
+  assert.deepEqual(after.statuses[id].ci, doneState, 'status CI tidak di-reset ke pending');
+  assert.equal((after.chats[id] ?? []).filter((m) => /CI GitHub/.test(m.text ?? '')).length, 1, 'tidak ada baris CI ganda');
+});
+
+test('mematikan di tengah jalan lalu menyalakan mengikuti commit lagi', async () => {
+  const id = (await snapshot()).projects.find((p) => p.name === 'toko').id;
+  assert.equal((await api(`/api/projects/${id}/settings`, { ciFollow: false })).status, 200);
+  await until(async () => (await snapshot()).statuses[id]?.ciFollow === false, 'mati');
+  assert.equal((await api(`/api/projects/${id}/settings`, { ciFollow: true })).status, 200);
+  await until(async () => {
+    const ci = (await snapshot()).statuses[id]?.ci;
+    return ci && ci.state !== 'none';
+  }, 'menyalakan lagi memantau (bukan sekadar pending selamanya)');
   // Restore the default so the file leaves nothing behind.
   await api(`/api/projects/${id}/settings`, { ciFollow: true });
 });
