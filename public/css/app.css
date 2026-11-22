@@ -1316,6 +1316,20 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .checklist-item.todo { border-style: dashed; }
 .checklist-item .cl-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .checklist-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.worktree-card { max-width: 620px; }
+.worktree-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
+.worktree-list li { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); font-size: var(--fs-sm); }
+.worktree-list li.active { border-color: var(--accent); background: var(--accent-tint); }
+.worktree-list .wt-name { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.worktree-list .wt-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.worktree-list .wt-name small { font-family: var(--mono); }
+.worktree-list .wt-badge { flex: none; padding: 2px 8px; border-radius: var(--r-pill); border: 1px solid var(--border); color: var(--muted); font-size: var(--fs-xs); }
+.worktree-list .wt-badge.on { border-color: var(--accent); color: var(--accent-2); font-weight: 600; }
+.worktree-list .wt-actions { display: inline-flex; gap: 4px; flex: none; }
+.worktree-create { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+.worktree-create input { flex: 1; min-width: 160px; }
+.sb-worktree { color: var(--accent-2); }
+.sb-worktree span { font-family: var(--mono); }
 .runbook-card { max-width: 640px; }
 .runbook-field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; font-size: var(--fs-sm); color: var(--text-2); }
 .runbook-field input, .runbook-field textarea { width: 100%; font: inherit; }

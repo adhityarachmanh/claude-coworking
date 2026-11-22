@@ -454,7 +454,7 @@ const PHONE_ROUTE = {
   '#sb-tasks': ['#statusline [data-open-tasks]'],
   '#sb-queue': ['#statusline [data-open-queue]'],
 };
-for (const item of ['export', 'export-session', 'permissions', 'roster', 'terminal']) PHONE_ROUTE[`#more-menu [data-more="${item}"]`] = viaHeadMore(`[data-more='${item}']`);
+for (const item of ['export', 'export-session', 'permissions', 'roster', 'terminal', 'worktree']) PHONE_ROUTE[`#more-menu [data-more="${item}"]`] = viaHeadMore(`[data-more='${item}']`);
 
 const shownInPage = (page, sel) => page.eval((s) => Boolean(document.querySelector(s)?.getClientRects().length), sel);
 

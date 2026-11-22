@@ -66,6 +66,16 @@ export function renderSessionBar() {
   // The next prompt carries the other source's brief (src/handoff.js): say it once, here, until it is sent.
   const handoff = st.handoffReady ? '<span class="sb-handoff" title="Ringkasan konteks dari sumber sebelumnya ikut pada pesan berikutnya">↪ konteks siap</span>' : '';
   $('#sb-meta').innerHTML = logo + escapeHtml(meta.filter(Boolean).join(' · ')) + handoff;
+  // ⎇ The session runs in a worktree, not the project folder: one chip says so and opens the dialog (features/worktree.js).
+  const wt = st.worktree ?? null;
+  const chip = $('#sb-worktree');
+  if (chip) {
+    chip.hidden = !wt;
+    if (wt) {
+      $('#sb-worktree-name').textContent = wt.name;
+      chip.title = `Sesi berjalan di worktree ${wt.name} (branch ${wt.branch}), bukan di folder project — klik untuk mengelola worktree`;
+    }
+  }
   // Phone header: the session bar is hidden there, its title and the turn's state sit under the project name.
   const status = st.pending ? 'menunggu izin' : st.busy || st.cliBusy ? 'bekerja…' : st.handoffReady ? '↪ konteks siap' : '';
   $('#head-sub').textContent = [$('#sb-title').textContent, status].filter(Boolean).join(' · ');

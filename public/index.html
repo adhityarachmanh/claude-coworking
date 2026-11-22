@@ -143,6 +143,8 @@
             <b id="sb-title">Percakapan baru</b>
             <button id="sb-tasks" class="sb-btn sb-tasks" type="button" hidden title="Tugas latar yang sedang berjalan (/tasks)"><span aria-hidden="true">⧗</span> <span id="sb-tasks-n">0</span> <span class="sb-tasks-lbl">berjalan</span></button>
             <button id="sb-queue" class="sb-btn sb-queue" type="button" hidden title="📋 Antrian prompt: dijalankan satu per satu saat tim tidak sibuk"><span aria-hidden="true">📋</span> <span id="sb-queue-n">0</span> <span class="sb-queue-lbl">antrian</span></button>
+            <!-- ⎇ Active worktree: the folder the engine runs in is not the project folder (features/worktree.js) -->
+            <button id="sb-worktree" class="sb-btn sb-worktree" type="button" hidden title="Sesi berjalan di worktree ini, bukan di folder project — klik untuk mengelola worktree"><span aria-hidden="true">⎇</span> <span id="sb-worktree-name"></span></button>
             <button id="btn-sessions" class="sb-btn" title="Lihat dan lanjutkan sesi Claude Code sebelumnya (dari terminal maupun web)">🕘 <span>Riwayat sesi</span></button>
             <button id="btn-new" class="sb-btn" title="Mulai percakapan baru — Claude tidak membawa konteks percakapan ini">＋ <span>Sesi baru</span></button>
             <button id="btn-more" class="sb-btn sb-more" title="Lainnya: export, lanjut di terminal, buka di VS Code" aria-haspopup="menu" aria-expanded="false" aria-label="Lainnya">⋯</button>
@@ -151,6 +153,7 @@
               <button role="menuitem" data-more="export">⬇ Export percakapan (.md)</button>
               <button role="menuitem" data-more="export-session" data-cap="exportSession" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">⬇ Export sesi lengkap (.md)</button>
               <button role="menuitem" data-more="permissions" data-cap="permissions">🛡️ Aturan izin (/permissions)</button>
+              <button role="menuitem" data-more="worktree">⎇ Worktree…</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
               <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
@@ -823,6 +826,22 @@
           <button type="button" id="checklist-scaffold" class="ghost" title="Buat README/AGENTS.md/.env.example/docs yang belum ada; file yang sudah ada tidak ditimpa">🛠 Buat kerangka yang belum ada</button>
         </div>
         <p id="checklist-laptop-note" class="muted small" hidden>🔒 Membuat kerangka file hanya bisa dari laptop: tombolnya menulis langsung ke folder project.</p>
+      </div>
+    </div>
+
+    <!-- ⎇ Worktree: git worktrees of this project (the app runs git itself; a worktree is never a project of its own) -->
+    <div id="worktree-modal" class="modal" hidden>
+      <div class="modal-card worktree-card" role="dialog" aria-modal="true" aria-labelledby="worktree-title">
+        <div class="modal-head"><b id="worktree-title">⎇ Worktree <small id="worktree-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="worktree-sum" class="muted small" role="status" aria-live="polite"></p>
+        <p class="muted small">Salinan kerja repo ini di folder terpisah (branch <code>worktree-&lt;nama&gt;</code>), supaya perubahan berisiko tidak mengganggu folder project. Sesi berikutnya berjalan di worktree yang aktif; pindah balik memakai percakapan yang tersimpan di folder itu.</p>
+        <ul id="worktree-list" class="worktree-list" aria-label="Daftar worktree"></ul>
+        <form id="worktree-create-form" class="worktree-create">
+          <input id="worktree-name" aria-label="Nama worktree baru" placeholder="nama-worktree, mis. login" autocomplete="off" spellcheck="false" maxlength="64" />
+          <button type="submit" id="worktree-create" class="primary">＋ Buat</button>
+          <button type="button" id="worktree-exit" class="ghost" hidden title="Sesi berikutnya kembali berjalan di folder project">⏏ Keluar</button>
+        </form>
+        <p id="worktree-laptop-note" class="muted small" hidden>🔒 Membuat, masuk, dan menghapus worktree hanya bisa dari laptop: aksi itu menjalankan git di komputer ini.</p>
       </div>
     </div>
 
@@ -1767,6 +1786,7 @@
           <button type="button" class="sheet-row" data-proxy="#btn-new" data-mutates><span aria-hidden="true">＋</span><span>Sesi baru</span></button>
           <button type="button" class="sheet-row" data-proxy="#sb-title" data-mutates data-needs-session><span aria-hidden="true">✎</span><span>Ganti nama sesi</span></button>
           <button type="button" class="sheet-row" data-action="rewind" data-mutates data-cap="rewind"><span aria-hidden="true">⏪</span><span>Rewind</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='worktree']"><span aria-hidden="true">⎇</span><span>Worktree</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>
           <h3 id="hm-g-chat" class="sheet-group-head">Percakapan</h3>
