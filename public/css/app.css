@@ -837,6 +837,8 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .activity .k-tool_fail { color: var(--err-text); }
 .activity .k-ask { color: var(--warn-text); }
 .activity li.activity-empty { display: block; padding: 18px 0; border: 0; color: var(--muted); text-align: center; }
+/* Busy with no run live: the team is between steps. Right in the list, so it never reads as stuck. */
+.activity li.activity-waiting { display: block; padding: 10px 0; border: 0; color: var(--muted); font-style: italic; }
 /* One row per agent (a "run"): the header is a button, the steps fold underneath. */
 .activity li.run { display: block; padding: 2px 0 6px; }
 .run-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; width: 100%; padding: 6px 4px 6px 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -860,6 +862,9 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .typing span:nth-child(2) { animation-delay: .15s; }
 .typing span:nth-child(3) { animation-delay: .3s; margin-right: 6px; }
 @keyframes bounce { 50% { transform: translateY(-4px); opacity: .5; } }
+
+/* The wait row in the chat tail while the turn runs and no step is running (no spinner: the turn IS alive). */
+.chat-waiting { margin: 8px 14px; color: var(--muted); font-size: var(--fs-sm); font-style: italic; opacity: .85; }
 
 .composer { position: relative; border-top: 1px solid var(--border); padding: 10px 12px 12px; background: var(--chrome); }
 .controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 8px; min-width: 0; }

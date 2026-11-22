@@ -17,6 +17,7 @@ import { attachmentChip, attachmentPayload, putBackAttachments, recallSent, reme
 import { isBookmarked, toggleBookmark } from '../core/bookmarks.js';
 
 import { fillComposer, openModelPicker } from './composer.js';
+import { nextStepHint, runningSteps } from '../core/turn-progress.js';
 import { openAccount } from './account.js';
 import { openCompact } from './compact.js';
 import { fileLinkHtml, linkifyPaths } from './file-viewer.js';
@@ -87,6 +88,27 @@ export function renderChat() {
   paintChat(messages, chatSearch ? 0 : Math.max(0, messages.length - CHAT_PAGE));
   if (chatSearch) applyChatSearch(chatSearch, { reset: false }); // a rebuild (reconnect) keeps the query, its marks and the position
   else scrollChat(true);
+  paintChatWaiting();
+}
+
+/**
+ * The gap between a finished step and the Lead's next one: one explicit row at the tail of the chat, so an empty
+ * tail never reads as "stuck". Not a message (never in state.chats); the stream's `status` event repaints it.
+ */
+export function paintChatWaiting(status = state.statuses[state.active] ?? {}) {
+  const hint = nextStepHint({ busy: Boolean(status.busy), running: runningSteps(state.chats[state.active] ?? []) });
+  let row = chatEl.querySelector('.chat-waiting');
+  if (!hint) {
+    row?.remove();
+    return;
+  }
+  // Always the last element: a message appended after it must not push it above the newest row.
+  row?.remove();
+  row = document.createElement('div');
+  row.className = 'chat-waiting';
+  row.setAttribute('role', 'status');
+  row.textContent = hint;
+  chatEl.append(row);
 }
 
 /** The "Muat N pesan lama" button above the rendered page. */

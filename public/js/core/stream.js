@@ -4,7 +4,7 @@ import { onAccountAlert, onAccountState, renderAccountButton } from '../features
 import { appendActivity } from '../features/activity.js';
 import { scheduleAttention, loadAttention } from '../features/attention.js';
 import { scheduleChanges } from '../features/changes.js';
-import { appendChat, renderChat, replaceChat, scheduleReplace } from '../features/chat.js';
+import { appendChat, paintChatWaiting, renderChat, replaceChat, scheduleReplace } from '../features/chat.js';
 import { applyClaudeCheck } from '../features/claude-check.js';
 import { applyOpenCodeCheck } from '../features/opencode-check.js';
 import { applyAppUpdate } from '../features/app-update.js';
@@ -153,6 +153,7 @@ const handlers = {
     if (status.project === state.active) {
       renderComposer();
       renderCi();
+      paintChatWaiting(status);
     }
     if (!$('#settings-modal').hidden) syncConcurrencySection(); // ⚡ "Saat ini X dari Y project sedang bekerja."
     updateTitle();
@@ -180,6 +181,7 @@ const handlers = {
     if (msg.project === state.active) {
       appendChat(msg);
       renderStatusline(state.statuses[msg.project] ?? {}); // the turn's progress chip follows every step
+      paintChatWaiting();
     }
     if (!live) {
       // replayed history: no notification for it
@@ -282,6 +284,7 @@ export function onChatUpdate({ project, id, patch }) {
     if (project === state.active) {
       scheduleReplace(msg);
       renderStatusline(state.statuses[project] ?? {});
+      paintChatWaiting();
     }
     return;
   }

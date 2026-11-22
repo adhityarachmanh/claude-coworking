@@ -5,6 +5,7 @@ import { $, escapeHtml } from '../core/dom.js';
 import { time } from '../core/format.js';
 import { state } from '../core/state.js';
 import { RECENT_DONE_MS, fmtRun, groupRuns, runMarkup } from '../core/agent-runs.js';
+import { nextStepHint } from '../core/turn-progress.js';
 import { roleColor, roleName } from '../office/cast.js';
 
 // ---------- activity ----------
@@ -75,8 +76,12 @@ export function renderActivity() {
   }
   dirty = false;
   const runs = runsNow();
+  // Busy with no run live (a finished step, the Lead's next one not started yet): say so right in the list, so the
+  // tail never reads as stuck. Replaces the "no activity" placeholder in exactly that window.
+  const waiting = nextStepHint({ busy: busyNow(), running: runs.filter((r) => r.status !== 'done').length });
+  const waitRow = waiting ? `<li class="activity-waiting">${escapeHtml(waiting)}</li>` : '';
   if (!runs.length) {
-    list.innerHTML = '<li class="activity-empty">Belum ada aktivitas di project ini.</li>';
+    list.innerHTML = waitRow || '<li class="activity-empty">Belum ada aktivitas di project ini.</li>';
     return;
   }
   // Keep only live keys: an old project's expanded/folded choices must not grow forever.
@@ -97,7 +102,7 @@ export function renderActivity() {
     time,
     escapeHtml,
     iconFor: (kind) => KIND_ICON[kind] ?? '',
-  });
+  }) + waitRow;
   list.scrollTop = scroll;
   if (focusedKey && focusedToggle) list.querySelector(`[data-run="${focusedKey}"] [data-run-toggle]`)?.focus({ preventScroll: true });
 }
