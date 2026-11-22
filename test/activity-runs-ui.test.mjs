@@ -133,5 +133,48 @@ describe('📋 Aktivitas per agent', { skip: SKIP ?? false }, () => {
 
       assert.deepEqual(page.problems, [], 'tanpa error konsol');
     });
+
+    it('baris tunggu antar-langkah: tampil saat giliran hidup tanpa langkah berjalan, hilang saat selesai', async () => {
+      // Force the one window that matters: busy, but no step running (the gap between steps).
+      await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), busy: true, working: {}, tasks: [] };
+        state.events[state.active] = [];
+        (await import('/js/features/activity.js')).renderActivity();
+        (await import('/js/features/chat.js')).paintChatWaiting();
+      });
+      const on = await page.eval(() => ({
+        activity: document.querySelector('#activity li.activity-waiting')?.textContent.trim() ?? '',
+        chat: document.querySelector('#chat .chat-waiting')?.textContent.trim() ?? '',
+      }));
+      assert.match(on.activity, /menyusun langkah berikutnya/, 'baris tunggu di Aktivitas');
+      assert.match(on.chat, /menyusun langkah berikutnya/, 'baris tunggu di chat');
+
+      // A running step means the wait row must go away (the step itself shows progress).
+      await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        state.events[state.active] = [{ kind: 'tool_start', role: 'backend', ts: Date.now() }];
+        (await import('/js/features/activity.js')).renderActivity();
+      });
+      const gone = await page.eval(() => Boolean(document.querySelector('#activity li.activity-waiting')));
+      assert.equal(gone, false, 'baris tunggu hilang saat ada langkah berjalan');
+
+      // Turn ended: neither row remains, and the plain placeholder is back.
+      await page.eval(async () => {
+        const { state } = await import('/js/core/state.js');
+        state.statuses[state.active] = { ...(state.statuses[state.active] ?? {}), busy: false };
+        state.events[state.active] = [];
+        (await import('/js/features/activity.js')).renderActivity();
+        (await import('/js/features/chat.js')).paintChatWaiting();
+      });
+      const off = await page.eval(() => ({
+        wait: Boolean(document.querySelector('#activity li.activity-waiting')),
+        chat: Boolean(document.querySelector('#chat .chat-waiting')),
+        empty: document.querySelector('#activity li.activity-empty')?.textContent ?? '',
+      }));
+      assert.deepEqual({ wait: off.wait, chat: off.chat }, { wait: false, chat: false }, 'tidak ada baris tunggu saat giliran selesai');
+      assert.match(off.empty, /Belum ada aktivitas/, 'placeholder biasa kembali');
+      assert.deepEqual(page.problems, [], 'tanpa error konsol');
+    });
   });
 });

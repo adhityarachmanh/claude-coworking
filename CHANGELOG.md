@@ -4,6 +4,8 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **⏳ Baris tunggu antar-langkah.** Setelah sebuah subagent menyelesaikan langkahnya, Lead kadang butuh beberapa saat mengirim langkah berikutnya. Dulu daftar chat/Aktivitas tampak berhenti di situ — mudah disangka macet. Sekarang muncul satu baris **"⏳ Tim sedang menyusun langkah berikutnya…"** selama giliran masih berjalan tetapi tidak ada langkah yang sedang berjalan; baris itu hilang begitu langkah berikutnya datang atau giliran selesai. Baris **"✓ Selesai"** milik subagent tidak berubah (memang benar ia selesai).
+
 - **🐙 Pemeriksa CI GitHub kini bisa dimatikan per project.** Setelah setiap push, aplikasi mengikuti hasil GitHub Actions commit itu dan memberi kabar di chat — praktis, tapi untuk repo yang CI-nya memang belum siap (workflow template yang masih merah) baris **"❌ CI GitHub gagal"** terbaca seperti error yang harus ditindak. Di **Pengaturan giliran** ada saklar baru **Pantau CI setelah push**: matikan untuk project itu, dan tidak ada lagi pemantauan, chip di tab Perubahan, maupun baris di chat — sampai dinyalakan lagi. Bawaannya tetap nyala, jadi project yang memang memakai CI tidak berubah.
 
 ## 1.0.85
