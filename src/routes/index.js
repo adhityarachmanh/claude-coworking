@@ -2,6 +2,7 @@
 // (Host/Origin, token, laptop-only paths, the WiFi read-only allowlist); a route only does its own work.
 import { Router } from './router.js';
 import * as account from './account.js';
+import * as addDirs from './add-dirs.js';
 import * as approvals from './approvals.js';
 import * as attention from './attention.js';
 import * as autologon from './autologon.js';
@@ -52,6 +53,7 @@ export function buildRouter() {
     memory.register,
     git.register,
     worktree.register,
+    addDirs.register,
     health.register,
     permissions.register,
     queue.register,

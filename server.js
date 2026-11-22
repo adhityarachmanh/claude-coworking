@@ -804,7 +804,7 @@ const ACCOUNT_AUTH = new Set(['/api/account/login', '/api/account/login/code', '
 // ⎇ Worktree writes (create/enter/exit/remove) run git and change the folder the engine runs in: laptop only too.
 // The list `/api/projects/:id/worktrees` is a read: a phone reaches it over Tailscale, but plain WiFi refuses it
 // (it is not in WIFI_READ_PROJECT — the dialog is a laptop/Tailscale tool).
-const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit|mcp-add|mcp-deny|session-import-json|checklist-scaffold|archive|worktree-create|worktree-enter|worktree-exit|worktree-remove)$/;
+const LOCAL_ONLY_ACTION = /^\/api\/projects\/[\w-]+\/(open|permissions-edit|mcp-add|mcp-deny|session-import-json|checklist-scaffold|archive|worktree-create|worktree-enter|worktree-exit|worktree-remove|dirs-add|dirs-remove)$/;
 // Rename/add/remove members only. `/api/groups/list` and `/api/groups/:id/sessions` are reads and stay available to a
 // paired phone; without the lookahead the id pattern swallowed `list` and the group dialog showed nothing but 403.
 const LOCAL_ONLY_GROUP = /^\/api\/groups\/(?!list$)[\w-]+$/;

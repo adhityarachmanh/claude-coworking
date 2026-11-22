@@ -451,6 +451,9 @@ test('Claude-only surfaces are closed while OpenCode is the app engine', async (
     ['/api/projects/:id/agents/delete', {}],
     ['/api/projects/:id/hooks', {}],
     ['/api/projects/:id/export-session', { sessionId: '00000000-0000-0000-0000-000000000000' }],
+    ['/api/projects/:id/dirs', {}],
+    ['/api/projects/:id/dirs-add', { path: 'C:\\kerja\\pustaka' }],
+    ['/api/projects/:id/dirs-remove', { path: 'C:\\kerja\\pustaka' }],
     ['/api/claude/plugins', {}],
     ['/api/claude/plugins/action', {}],
   ];
@@ -460,3 +463,14 @@ test('Claude-only surfaces are closed while OpenCode is the app engine', async (
     assert.match(res.body.error, /Claude/, `${pattern} says why`);
   }
 });
+
+test('📂 Folder tambahan: add/remove are laptop-only, the list itself is not', () => {
+  const text = readFileSync(path.join(APP, 'server.js'), 'utf8');
+  const source = /const LOCAL_ONLY_ACTION =\s*\/(.+)\/;/.exec(text)?.[1];
+  assert.ok(source, 'LOCAL_ONLY_ACTION found in server.js');
+  const re = new RegExp(source);
+  assert.ok(re.test('/api/projects/p1/dirs-add'));
+  assert.ok(re.test('/api/projects/p1/dirs-remove'));
+  assert.ok(!re.test('/api/projects/p1/dirs'), 'the list stays readable over Tailscale');
+});
+
