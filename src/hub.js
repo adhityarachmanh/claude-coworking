@@ -1277,7 +1277,7 @@ export class Hub {
   }
 
   /** Makes `wt` (or null to leave it) the project's active worktree. Stored in settings, project id unchanged. */
-  setWorktree(id, wt) {
+    setWorktree(id, wt) {
     this.updateSettings(id, { worktree: wt });
     this.broadcast('projects', this.listProjects());
   }
@@ -1561,6 +1561,14 @@ export class Hub {
 
   sessionIdFor(id) {
     const engine = this.engineOf(id);
+    // A worktree is its own folder with its own transcript: resuming the project folder's conversation there would
+    // replay a transcript written elsewhere. So the worktree keeps its own id; the project folder's id stays put.
+    const ws = this.workspacePathFor(id);
+    const home = this.projects.get(id)?.path;
+    if (ws && home && ws !== home) {
+      const per = this.persisted.sessionsByWorkspace?.[id]?.[ws];
+      return validSessionFor(engine, per?.[engine]) ? per[engine] : null;
+    }
     const byEngine = this.persisted.sessionsByEngine?.[id];
     // The per-engine map is authoritative once it exists: a missing entry means this engine has no conversation
     // yet. Falling back to `sessions[id]` here would hand out the OTHER engine's id (that map is a mirror of the
@@ -1574,6 +1582,19 @@ export class Hub {
 
   setSessionId(id, sessionId) {
     const engine = this.engineOf(id);
+    const ws = this.workspacePathFor(id);
+    const home = this.projects.get(id)?.path;
+    // The active worktree keeps its own conversation id; the project folder's stays untouched.
+    if (ws && home && ws !== home) {
+      const byWs = (this.persisted.sessionsByWorkspace ??= {});
+      const perWs = (byWs[id] ??= {});
+      const per = (perWs[ws] ??= {});
+      if (sessionId) per[engine] = sessionId;
+      else delete per[engine];
+      this.scheduleSave();
+      this.setStatus(id, { sessionId: sessionId ?? null });
+      return;
+    }
     const byEngine = (this.persisted.sessionsByEngine ??= {});
     const per = (byEngine[id] ??= {});
     if (sessionId) {

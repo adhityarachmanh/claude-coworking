@@ -48,8 +48,8 @@ const UUID = /^[0-9a-f-]{36}$/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const EFFORT_LABEL = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
 
-// Only the team setting (subagents + system prompt) needs a fresh process; mode/model/effort switch live.
-const restartKey = (s) => String(s.team);
+// The team setting needs a fresh process, and so does a change of workspace (e.g. between a folder and its worktree).
+const restartKey = (s) => String(s.team) + '|' + (s.workspacePath ?? '');
 
 const streamArgs = (claude) => [...claude.args, '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
 
@@ -548,7 +548,7 @@ export class ClaudeSession {
     let stderr = '';
     let child;
     try {
-      child = spawn(cmd, args, { cwd: this.project.path, env: childEnv(), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(cmd, args, { cwd: this.hub.workspacePathFor(this.id), env: childEnv(), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (err) {
       this.hub.updateChat(this.id, chatId, { status: 'fail', output: err.message });
       return;
@@ -770,7 +770,7 @@ export class ClaudeSession {
   rewindPoints() {
     const sessionId = this.hub.sessionIdFor(this.id);
     if (!sessionId) return [];
-    return promptChain(this.project.path, sessionId, { leaf: this.chainLeaf })
+    return promptChain(this.hub.workspacePathFor(this.id), sessionId, { leaf: this.chainLeaf })
       .filter((p) => UUID.test(String(p.uuid))) // the transcript is a file on disk: only well-formed ids reach the page
       .reverse()
       .slice(0, 80)
@@ -792,7 +792,7 @@ export class ClaudeSession {
     if (!code && !conversation) throw new Error('Pilih kode, percakapan, atau keduanya.');
     if (this.busy) throw new Error('Hentikan dulu pekerjaan yang sedang berjalan (Esc).');
     const sessionId = this.hub.sessionIdFor(this.id);
-    const point = sessionId ? promptChain(this.project.path, sessionId, { leaf: this.chainLeaf }).find((p) => p.uuid === uuid) : null;
+    const point = sessionId ? promptChain(this.hub.workspacePathFor(this.id), sessionId, { leaf: this.chainLeaf }).find((p) => p.uuid === uuid) : null;
     if (!point) throw new Error('Pesan itu tidak ada di percakapan ini.');
     if (code) {
       if (!this.ensureChild()) throw new Error('Claude Code tidak bisa dijalankan.');
@@ -882,6 +882,8 @@ export class ClaudeSession {
 
   spawn(settings) {
     if (!this.m.claude) return false;
+    // The folder the engine actually runs in: the project folder, or its active worktree.
+    const cwd = this.hub.workspacePathFor(this.id);
     const args = [
       ...streamArgs(this.m.claude),
       '--include-partial-messages',
@@ -912,7 +914,7 @@ export class ClaudeSession {
     let child;
     try {
       child = spawn(this.m.claude.command, args, {
-        cwd: this.project.path,
+        cwd,
         // File checkpoints before every edit (always on in the interactive CLI): what rewind restores.
         env: childEnv({ OFFICE_MANAGED: '1', CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: 'true' }),
         windowsHide: true,

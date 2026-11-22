@@ -312,7 +312,7 @@ export function openCodeConfigContent(settings, user = {}, todo = true) {
 
 const agentMode = (s) => agentForMode(s.mode, s.agent);
 /** Settings that only a fresh process can change (the permission config and the team are read at start). */
-const processKey = (s) => JSON.stringify([permissionConfig(s.mode), Boolean(s.team)]);
+const processKey = (s) => JSON.stringify([permissionConfig(s.mode), Boolean(s.team), s.workspacePath ?? '']);
 
 /** OpenCode's slash commands (available_commands_update) for the app's autocomplete. */
 const cleanCommands = (list) =>
@@ -1027,7 +1027,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const handoff = this.takeHandoffContext();
       const context = this.shellContext.splice(0).join('\n');
       const body = [handoff ? `[KONTEKS SESI — INFORMASI, BUKAN PERMINTAAN BARU]\n${handoff}\n[/KONTEKS SESI]` : '', context, text].filter(Boolean).join('\n\n');
-      const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false, blocks: promptBlocks(body, attachments, this.project.path) };
+      const item = { chatId, text, files: attachments.length, state: this.busy ? 'queued' : 'started', announced: false, blocks: promptBlocks(body, attachments, this.hub.workspacePathFor(this.id)) };
       this.inflight.set(uuid, item);
       clearTimeout(this.idleTimer);
       if (item.state === 'started') this.runTurn(uuid, item);
@@ -1569,7 +1569,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       this.shellLookup = true;
       try {
         const { matchShell, runningShells } = await import('./opencode-shells.js');
-        const shells = await runningShells(this.m.opencode, this.project.path);
+        const shells = await runningShells(this.m.opencode, this.hub.workspacePathFor(this.id));
         const taken = new Set([...t.linkedTaskIds()].map((id) => String(id).replace(/^oc:/, '')));
         for (const s of waiting) {
           const sh = matchShell(shells, s.command, taken);
@@ -1648,7 +1648,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       }
       const shell = await this.ownShell(taskId);
       const { shellOutput } = await import('./opencode-shells.js');
-      return shellOutput(this.m.opencode, this.project.path, shell);
+      return shellOutput(this.m.opencode, this.hub.workspacePathFor(this.id), shell);
     }
 
     async stopTask(taskId) {
@@ -1657,7 +1657,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (task?.source === 'acp') return this.stopAcpShell(task);
       const shell = await this.ownShell(taskId);
       const { stopShell } = await import('./opencode-shells.js');
-      await stopShell(this.m.opencode, this.project.path, shell);
+      await stopShell(this.m.opencode, this.hub.workspacePathFor(this.id), shell);
       return { ok: true };
     }
 
@@ -1699,7 +1699,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const id = this.hub.sessionIdFor(this.id);
       if (!id) throw Object.assign(new Error('Belum ada sesi. Kirim pesan dulu.'), { status: 409 });
       const { renameOpenCodeSession } = await import('./session-admin.js');
-      const clean = await renameOpenCodeSession({ opencode: this.m.opencode, projectPath: this.project.path, sessionId: id, title });
+      const clean = await renameOpenCodeSession({ opencode: this.m.opencode, projectPath: this.hub.workspacePathFor(this.id), sessionId: id, title });
       this.hub.setStatus(this.id, { title: clean });
       return { title: clean };
     }
@@ -1768,7 +1768,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         const chatId = this.chatEntryFor(points, uuid); // before the revert: the chat still matches OpenCode's list
         // The ACP process holds the old conversation: the next prompt starts a fresh one that loads the shortened session.
         this.closeChild();
-        const { files } = await revertOpenCodeSession({ opencode: this.m.opencode, projectPath: this.project.path, sessionId, messageId: uuid, files: code, budget });
+        const { files } = await revertOpenCodeSession({ opencode: this.m.opencode, projectPath: this.hub.workspacePathFor(this.id), sessionId, messageId: uuid, files: code, budget });
         this.hub.clearInterrupted(this.id); // a cut-short turn after this point is gone
         this.shellContext = [];
         this.hub.setStatus(this.id, { todos: null, context: null, tasks: null });
@@ -1816,13 +1816,13 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     /** /mcp: configured servers + their live state from OpenCode's service (src/opencode-mcp.js). */
     async mcpStatus() {
       const { openCodeMcpStatus } = await import('./opencode-mcp.js');
-      return openCodeMcpStatus(this.m.opencode, this.project.path);
+      return openCodeMcpStatus(this.m.opencode, this.hub.workspacePathFor(this.id));
     }
 
     /** ↻ / ▶ / ⏸ / 🔑 login / pasted callback, through OpenCode's service. */
     async mcpAction(name, action, callbackUrl) {
       const { openCodeMcpAction } = await import('./opencode-mcp.js');
-      return openCodeMcpAction(this.m.opencode, this.project.path, name, action, callbackUrl);
+      return openCodeMcpAction(this.m.opencode, this.hub.workspacePathFor(this.id), name, action, callbackUrl);
     }
 
     refreshContext() {} // usage_update keeps the context meter current
@@ -1844,7 +1844,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       let child;
       try {
         child = spawn(bin.command, [...bin.args, 'acp'], {
-          cwd: this.project.path,
+          cwd: this.hub.workspacePathFor(this.id),
           windowsHide: true,
           env: childEnv({
             ...childOpenCodeEnv(process.env),
@@ -1852,7 +1852,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
             OPENCODE_DISABLE_AUTOUPDATE: '1',
             // Per-process config: the user's ~/.config/opencode stays untouched.
             // The user's own rules are merged in (a deny stays a deny): see permissionConfig.
-            OPENCODE_CONFIG_CONTENT: openCodeConfigContent(settings, readUserPermission(this.project.path)),
+            OPENCODE_CONFIG_CONTENT: openCodeConfigContent(settings, readUserPermission(this.hub.workspacePathFor(this.id))),
             // Mode tim: the roles as subagents + the Lead's prompt, from a file (17 prompts pass Windows' 32 KB env limit).
             ...(settings.team && Object.keys(this.m.agents).length ? { OPENCODE_CONFIG: this.m.openCodeTeamConfig() } : {}),
           }),
@@ -1863,7 +1863,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         return false;
       }
       this.child = child;
-      this.applied = { mode: settings.mode, agent: settings.agent, model: settings.model, effort: settings.effort, team: settings.team };
+      this.applied = { mode: settings.mode, agent: settings.agent, model: settings.model, effort: settings.effort, team: settings.team, workspacePath: settings.workspacePath };
       this.stderr = '';
       this.cost = null;
       this.translator = new StreamTranslator({
@@ -1960,7 +1960,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       // OpenCode 2.3+ advertises `_meta.steering.supported`: a running turn can be redirected (see steer()).
       // Older builds omit it, and then the affordance stays off — never send a frame the server does not know.
       this.steeringSupported = init?._meta?.steering?.supported === true;
-      const cwd = this.project.path;
+      const cwd = this.hub.workspacePathFor(this.id);
       const known = this.hub.sessionIdFor(this.id);
       let res = null;
       if (known?.startsWith('ses_')) {
