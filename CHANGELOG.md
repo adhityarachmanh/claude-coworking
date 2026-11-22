@@ -4,6 +4,13 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **💬 Chat umum.** Project bawaan untuk bertanya hal umum — menyusun timesheet, merencanakan sesuatu — tanpa
+  mengotori folder project kerja. Ia memakai mesin yang sama seperti project lain (Claude Code atau OpenCode, bisa
+  diganti) dengan pilihan model/effort, Effort/Model Auto, 📋 Antrian, riwayat/resume, dan rewind; bedanya, konteksnya
+  **global**: mesin bekerja di folder sandbox milik aplikasi (`data/chat-umum/`), bukan folder project. Selalu muncul
+  **paling atas** di daftar project dengan ikon 💬 dan **tidak bisa dihapus/diarsipkan**. Ia juga tak dihitung sebagai
+  "project nyata" di 🩺 Kesehatan.
+
 - **🔌 Jembatan Remote Power kembali berdiri sendiri.** Fitur **Chat online (Adhitron Web)** yang sempat
   ditambahkan ke jembatan dihapus; `bridge/` kini kembali **hanya** jembatan daya — portal `/` lagi-lagi langsung
   ke halaman pendaftaran/status dan jembatan tidak lagi dipasang di prefiks `/bridge`. Kode jembatan (Tuya,
