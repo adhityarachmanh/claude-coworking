@@ -45,3 +45,18 @@ test('mergePolicies: urutan, validasi effect/action/resource, field asing dipert
     assert.throws(() => mergePolicies({}, bad), (e) => e.status === 400, JSON.stringify(bad).slice(0, 80));
   }
 });
+
+test('mergePolicies: statement yang tak bisa ditampilkan menolak simpan; duplikat mempertahankan catatan masing-masing', () => {
+  assert.throws(() => mergePolicies({ policies: [{ action: 'tool.use', resource: 'x', effect: 'ask' }] }, []), (e) => e.status === 400);
+  const base = {
+    policies: [
+      { action: 'tool.use', resource: 'x', effect: 'deny', note: 'one' },
+      { action: 'tool.use', resource: 'x', effect: 'deny', note: 'two' },
+    ],
+  };
+  mergePolicies(base, [
+    { action: 'tool.use', resource: 'x', effect: 'deny' },
+    { action: 'tool.use', resource: 'x', effect: 'deny' },
+  ]);
+  assert.deepEqual(base.policies.map((policy) => policy.note), ['one', 'two']);
+});

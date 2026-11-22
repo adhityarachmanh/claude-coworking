@@ -749,7 +749,8 @@ test('readOpenCodeConfig: instructions dan websearch tampil apa adanya', () => {
   assert.deepEqual(readOpenCodeConfig({ scope: 'project', projectPath: dir, home: HOME }).websearch, { mode: 'inherit', provider: '' });
 });
 
-test('mergeForm instructions/websearch: validasi, kosong menghapus, kunci lain aman', () => {  const base = { theme: 'x', websearch: { provider: 'exa', extra: 1 }, instructions: ['lama.md'] };
+test('mergeForm instructions/websearch: validasi, kosong menghapus, kunci lain aman', () => {
+  const base = { theme: 'x', websearch: { provider: 'exa', extra: 1 }, instructions: ['lama.md'] };
   let merged = mergeForm(base, { instructions: ['AGENTS.md', 'AGENTS.md', ' https://contoh.test/a.md '], websearch: { mode: 'provider', provider: 'tavily' } });
   assert.deepEqual(merged.instructions, ['AGENTS.md', 'https://contoh.test/a.md']);
   assert.deepEqual(merged.websearch, { provider: 'tavily', extra: 1 });
@@ -807,4 +808,9 @@ test('view/merge wiring: policies dan advanced ikut, kunci lain tidak tersentuh'
   assert.equal(untouched.policies.length, 1);
   assert.throws(() => mergeForm({}, { policies: [{ action: 'tool.use', resource: 'x', effect: 'ask' }] }), (e) => e.status === 400);
   assert.throws(() => mergeForm({}, { advanced: { toolOutput: { maxLines: 'x' } } }), (e) => e.status === 400);
+  // A policy the form cannot show refuses the save instead of silently dropping a hard-deny rule.
+  assert.throws(() => mergeForm({ policies: [{ action: 'tool.use', resource: 'x', effect: 'ask' }] }, { policies: [] }), (e) => e.status === 400);
+  // `__proto__` is never a provider: writing through it would pollute every object in the server process.
+  assert.throws(() => mergeForm({ providers: { ok: {} } }, { advanced: { providers: [{ id: '__proto__', headers: '{}' }] } }), (e) => e.status === 400);
+  assert.equal(Object.prototype.headers, undefined);
 });

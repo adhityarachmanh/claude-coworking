@@ -67,7 +67,7 @@ test('mergeAdvanced: inherit tidak menyentuh, angka divalidasi, kunci asing aman
   for (const bad of [
     { toolOutput: { maxLines: '-1' } },
     { toolOutput: { maxLines: '1.5' } },
-    { mediaImage: { maxWidth: '99999999' } },
+    { mediaImage: { maxWidth: '2147483648' } },
     { experimental: { subagentDepth: '6' } },
     { compaction: { buffer: 'x'.repeat(21) } },
     { providers: [{ id: 'openai', headers: '[1]' }] },
@@ -76,4 +76,30 @@ test('mergeAdvanced: inherit tidak menyentuh, angka divalidasi, kunci asing aman
   ]) {
     assert.throws(() => mergeAdvanced(JSON.parse(JSON.stringify(base)), bad), (e) => e.status === 400, JSON.stringify(bad).slice(0, 80));
   }
+});
+
+test('mergeAdvanced: bentuk yang tak bisa ditampilkan form tidak hilang, id provider berbahaya ditolak', () => {
+  const config = {
+    warming: { auto: true },
+    media: { image: { max_width: 1.5 } },
+    experimental: { location_idle_timeout: 60000 },
+    providers: { p: { headers: ['bukan', 'objek'], body: { a: 1 } } },
+  };
+  mergeAdvanced(config, {
+    warming: { enabled: 'on', prompt: '', interval: '', duration: '' },
+    mediaImage: { auto_resize: 'on', maxWidth: '', maxHeight: '', maxBase64Bytes: '' },
+    experimental: { todo: 'inherit', subagentDepth: '', imageModel: '', locationIdleTimeout: '' },
+    providers: [{ id: 'p', headers: '', body: '{"a":1}' }],
+  });
+  assert.deepEqual(config.warming, { auto: true }, 'warming objek asing tidak runtuh jadi true');
+  assert.equal(config.media.image.max_width, 1.5, 'nilai non-integer yang tak terlihat tidak dihapus');
+  assert.equal(config.experimental.location_idle_timeout, 60000, 'idle berupa angka tidak dihapus');
+  assert.deepEqual(config.providers.p.headers, ['bukan', 'objek'], 'headers non-objek tidak dihapus');
+  assert.deepEqual(config.providers.p.body, { a: 1 });
+
+  for (const id of ['__proto__', 'constructor', 'prototype']) {
+    assert.throws(() => mergeAdvanced({ providers: { ok: {} } }, { providers: [{ id, headers: '{}' }] }), (e) => e.status === 400, id);
+  }
+  assert.equal(Object.prototype.headers, undefined, 'tidak ada polusi prototype');
+  assert.throws(() => mergeAdvanced({ watcher: { ignore: ['x', 1] } }, { watcherIgnore: ['x'] }), (e) => e.status === 400);
 });

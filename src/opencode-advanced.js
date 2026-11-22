@@ -2,7 +2,9 @@
 // tool_output, experimental.* and provider headers/body. Unknown keys at every level survive a save; "inherit"
 // (or an untouched field) never changes the file. A shape the form cannot represent (a formatter object) is left
 // exactly as it was for the JSON tab.
-export const ADVANCED_LIMITS = Object.freeze({ ignore: 100, entry: 500, number: 10_000_000, depth: 5, buffer: 20, warming: 500, duration: 40, model: 200 });
+export const ADVANCED_LIMITS = Object.freeze({ ignore: 100, entry: 500, number: 2_147_483_647, depth: 5, buffer: 20, warming: 500, duration: 40, model: 200 });
+const PROVIDER_ID = /^[A-Za-z0-9][\w.-]{0,63}$/;
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 export class OpenCodeAdvancedError extends Error {
   constructor(status, message) {
@@ -30,6 +32,9 @@ const cleanInt = (value, { name, max = ADVANCED_LIMITS.number, min = 0 }) => {
   if (parsed < min || parsed > max) throw new OpenCodeAdvancedError(400, `${name} harus ${min}–${max}.`);
   return parsed;
 };
+
+/** Deleting a field is only right when what is on disk can be shown in the form; a shape it cannot show stays. */
+const canDrop = (value, max = ADVANCED_LIMITS.number) => value === undefined || (Number.isInteger(value) && value >= 0 && value <= max);
 
 const cleanText = (value, { name, max }) => {
   const parsed = String(value ?? '').trim();
@@ -102,6 +107,10 @@ const writeTri = (owner, key, value, name) => {
 function mergeWatcher(config, ignore) {
   if (!Array.isArray(ignore)) throw new OpenCodeAdvancedError(400, 'Daftar watcher.ignore tidak valid.');
   if (ignore.length > ADVANCED_LIMITS.ignore) throw new OpenCodeAdvancedError(400, `Maksimal ${ADVANCED_LIMITS.ignore} pola watcher.`);
+  const previous = Array.isArray(config.watcher?.ignore) ? config.watcher.ignore : [];
+  if (previous.some((item) => typeof item !== 'string')) {
+    throw new OpenCodeAdvancedError(400, 'watcher.ignore berisi entri yang bukan teks. Perbaiki lewat tab JSON dulu.');
+  }
   const seen = new Set();
   const list = [];
   for (const item of ignore) {
@@ -133,8 +142,9 @@ function mergeMedia(config, form) {
     ['max_base64_bytes', 'maxBase64Bytes', 'media.image.max_base64_bytes'],
   ]) {
     const parsed = cleanInt(form[field], { name });
-    if (parsed == null) delete image[key];
-    else image[key] = parsed;
+    if (parsed == null) {
+      if (canDrop(image[key])) delete image[key];
+    } else image[key] = parsed;
   }
   dropIfEmpty(media, 'image');
   dropIfEmpty(config, 'media');
@@ -150,8 +160,9 @@ function mergeToolOutput(config, form) {
     ['max_bytes', 'maxBytes', 'tool_output.max_bytes'],
   ]) {
     const parsed = cleanInt(form[field], { name });
-    if (parsed == null) delete output[key];
-    else output[key] = parsed;
+    if (parsed == null) {
+      if (canDrop(output[key])) delete output[key];
+    } else output[key] = parsed;
   }
   dropIfEmpty(config, 'tool_output');
 }
@@ -164,7 +175,7 @@ function mergeCompaction(config, form) {
   writeTri(compaction, 'auto', form.auto, 'compaction.auto');
   const tokens = cleanInt(form.keepTokens, { name: 'compaction.keep.tokens' });
   if (tokens == null) {
-    if (isObject(compaction.keep)) delete compaction.keep.tokens;
+    if (isObject(compaction.keep) && canDrop(compaction.keep.tokens)) delete compaction.keep.tokens;
   } else {
     const keep = requireObject(compaction, 'keep', 'compaction.keep');
     keep.tokens = tokens;
@@ -188,6 +199,8 @@ function mergeWarming(config, form) {
   const interval = cleanText(form.interval, { name: 'warming.interval', max: ADVANCED_LIMITS.duration });
   const duration = cleanText(form.duration, { name: 'warming.duration', max: ADVANCED_LIMITS.duration });
   if (prompt == null && interval == null && duration == null) {
+    // An object the form cannot show (only foreign keys) must not collapse into `true`.
+    if (isObject(config.warming)) return;
     config.warming = true;
     return;
   }
@@ -212,17 +225,22 @@ function mergeExperimental(config, form) {
   if (!write) return;
   const experimental = requireObject(config, 'experimental', 'experimental');
   writeTri(experimental, 'todo', form.todo, 'experimental.todo');
-  if (depth == null) delete experimental.subagent_depth;
-  else experimental.subagent_depth = depth;
+  if (depth == null) {
+    if (canDrop(experimental.subagent_depth, ADVANCED_LIMITS.depth)) delete experimental.subagent_depth;
+  } else experimental.subagent_depth = depth;
   if (model == null) {
-    if (isObject(experimental.image_generate)) delete experimental.image_generate.model;
+    const current = experimental.image_generate?.model;
+    if (isObject(experimental.image_generate) && (current === undefined || typeof current === 'string')) delete experimental.image_generate.model;
   } else {
     const imageGenerate = requireObject(experimental, 'image_generate', 'experimental.image_generate');
     imageGenerate.model = model;
   }
   dropIfEmpty(experimental, 'image_generate');
-  if (!idleText) delete experimental.location_idle_timeout;
-  else experimental.location_idle_timeout = idleText === 'false' ? false : idleText;
+  if (!idleText) {
+    if (experimental.location_idle_timeout === undefined || typeof experimental.location_idle_timeout === 'string' || experimental.location_idle_timeout === false) {
+      delete experimental.location_idle_timeout;
+    }
+  } else experimental.location_idle_timeout = idleText === 'false' ? false : idleText;
   dropIfEmpty(config, 'experimental');
 }
 
@@ -245,16 +263,23 @@ function mergeProviders(config, rows) {
     throw new OpenCodeAdvancedError(400, 'Bagian "providers" bukan objek. Perbaiki lewat tab JSON dulu.');
   }
   for (const row of rows) {
-    if (!isObject(row) || typeof row.id !== 'string') throw new OpenCodeAdvancedError(400, 'Baris provider tidak valid.');
-    if (!isObject(config.providers) || !isObject(config.providers[row.id])) {
-      throw new OpenCodeAdvancedError(400, `Provider "${row.id}" tidak ada di config. Tambahkan provider lewat Akun atau tab JSON.`);
+    if (!isObject(row) || typeof row.id !== 'string' || !PROVIDER_ID.test(row.id) || FORBIDDEN_KEYS.has(row.id)) {
+      throw new OpenCodeAdvancedError(400, 'ID provider tidak valid.');
+    }
+    // Object.hasOwn: `__proto__` and friends are not providers even though they resolve on plain objects.
+    if (!isObject(config.providers) || !Object.hasOwn(config.providers, row.id) || !isObject(config.providers[row.id])) {
+      throw new OpenCodeAdvancedError(400, `Provider "${row.id}" tidak ada di config saat ini. Muat ulang editor; provider baru ditambahkan lewat Akun atau tab JSON.`);
     }
     const block = config.providers[row.id];
     for (const [key, field] of [['headers', 'headers'], ['body', 'body']]) {
       if (row[field] === undefined) continue;
-      const parsed = parseProviderJson(row[field], `providers.${row.id}.${key}`);
-      if (parsed == null) delete block[key];
-      else block[key] = parsed;
+      const value = String(row[field] ?? '').trim();
+      if (!value) {
+        // A form can only clear an object it showed; an array/string shape stays for the JSON tab.
+        if (block[key] === undefined || isObject(block[key])) delete block[key];
+        continue;
+      }
+      block[key] = parseProviderJson(value, `providers.${row.id}.${key}`);
     }
   }
 }

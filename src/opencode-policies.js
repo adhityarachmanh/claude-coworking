@@ -44,10 +44,16 @@ export function mergePolicies(config, items) {
   if (config.policies !== undefined && !Array.isArray(config.policies)) {
     throw new OpenCodePolicyError(400, 'Bagian "policies" bukan array. Perbaiki lewat tab JSON dulu.');
   }
+  const raw = Array.isArray(config.policies) ? config.policies : [];
+  // Removing a hand-written statement the form cannot show would make the config *looser*; refuse instead.
+  if (raw.length && policiesView(config).length !== raw.length) {
+    throw new OpenCodePolicyError(400, 'Ada policy yang bentuknya tidak dikenali (effect harus allow/deny). Perbaiki lewat tab JSON dulu.');
+  }
   const old = new Map();
-  for (const item of Array.isArray(config.policies) ? config.policies : []) {
-    if (!isObject(item) || typeof item.action !== 'string' || typeof item.resource !== 'string') continue;
-    old.set(keyOf(item.action, item.resource), item);
+  for (const item of raw) {
+    const key = keyOf(item.action, item.resource);
+    if (!old.has(key)) old.set(key, []);
+    old.get(key).push(item);
   }
   const next = [];
   for (const item of items) {
@@ -60,7 +66,9 @@ export function mergePolicies(config, items) {
     if (resource.length > POLICY_LIMITS.resource) throw new OpenCodePolicyError(400, `Resource policy maksimal ${POLICY_LIMITS.resource} karakter.`);
     if (/[\u0000-\u001f\u007f]/.test(resource)) throw new OpenCodePolicyError(400, 'Resource policy tidak boleh memuat karakter kontrol.');
     if (effect !== 'allow' && effect !== 'deny') throw new OpenCodePolicyError(400, 'Effect policy harus allow atau deny (policy tidak pernah meminta izin).');
-    next.push({ ...(old.get(keyOf(action, resource)) ?? {}), action, resource, effect });
+    // Duplicate statements keep their own unknown fields, in order.
+    const previous = old.get(keyOf(action, resource))?.shift();
+    next.push({ ...(previous ?? {}), action, resource, effect });
   }
   if (next.length) config.policies = next;
   else delete config.policies;
