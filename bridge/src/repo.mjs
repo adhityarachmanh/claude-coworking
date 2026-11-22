@@ -7,6 +7,13 @@ import { randomUUID } from 'node:crypto';
 
 const nowIso = () => new Date().toISOString();
 
+/**
+ * Serialisasi nilai untuk kolom jsonb. Driver pg/Neon meng-`JSON.stringify` objek tetapi mengirim array JS
+ * sebagai literal array Postgres (`{...}`), yang ditolak kolom jsonb ("invalid input syntax for type json").
+ * Karena itu nilai jsonb selalu kita kirim sebagai string JSON eksplisit; null tetap null.
+ */
+const jsonb = (value) => (value == null ? null : JSON.stringify(value));
+
 /** Repo SQL. `db.query(text, params)` → array baris. */
 export function makeSqlRepo(db) {
   const one = async (text, params) => (await db.query(text, params))[0] ?? null;
@@ -17,8 +24,8 @@ export function makeSqlRepo(db) {
     async createUser({ email, displayName = null, passwordHash, consentVersion = null }) {
       return one(
         `insert into users (email, display_name, password_hash, consent_version, consent_at)
-         values ($1, $2, $3, $4, case when $4 is null then null else now() end) returning *`,
-        [String(email).toLowerCase(), displayName, passwordHash, consentVersion],
+         values ($1, $2, $3, $4, $5) returning *`,
+        [String(email).toLowerCase(), displayName, passwordHash, consentVersion, consentVersion == null ? null : nowIso()],
       );
     },
     async getUserByEmail(email) {
@@ -64,7 +71,7 @@ export function makeSqlRepo(db) {
       return one(
         `insert into providers (user_id, kind, label, base_url, api_key_enc, key_hint, models)
          values ($1, $2, $3, $4, $5, $6, $7) returning *`,
-        [userId, kind, label, baseUrl, apiKeyEnc, keyHint, models],
+        [userId, kind, label, baseUrl, jsonb(apiKeyEnc), keyHint, jsonb(models)],
       );
     },
     async updateProvider(userId, id, patch) {
@@ -74,7 +81,7 @@ export function makeSqlRepo(db) {
       return one(
         `update providers set label = $3, base_url = $4, api_key_enc = $5, key_hint = $6, models = $7, updated_at = $8
          where user_id = $1 and id = $2 returning *`,
-        [userId, id, next.label, next.base_url, next.api_key_enc, next.key_hint, next.models ?? null, next.updated_at],
+        [userId, id, next.label, next.base_url, jsonb(next.api_key_enc), next.key_hint, jsonb(next.models), next.updated_at],
       );
     },
     async deleteProvider(userId, id) {
@@ -101,7 +108,7 @@ export function makeSqlRepo(db) {
            (id, user_id, title, provider_id, model, effort, model_auto, effort_auto, model_tiers, browsing, created_at, updated_at)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,
         [c.id, c.user_id, c.title, c.provider_id, c.model, c.effort, c.model_auto, c.effort_auto,
-          c.model_tiers, c.browsing, c.created_at, c.updated_at],
+          jsonb(c.model_tiers), c.browsing, c.created_at, c.updated_at],
       );
     },
     async updateConversation(userId, id, patch) {
@@ -113,7 +120,7 @@ export function makeSqlRepo(db) {
            effort_auto=$8, model_tiers=$9, browsing=$10, updated_at=$11
          where user_id=$1 and id=$2 returning *`,
         [userId, id, n.title, n.provider_id, n.model, n.effort, n.model_auto, n.effort_auto,
-          n.model_tiers, n.browsing, nowIso()],
+          jsonb(n.model_tiers), n.browsing, nowIso()],
       );
     },
     async deleteConversation(userId, id) {
@@ -135,7 +142,7 @@ export function makeSqlRepo(db) {
       const row = await one(
         `insert into messages (conversation_id, role, content, meta)
          values ($1, $2, $3, $4) returning *`,
-        [conversationId, role, content, meta],
+        [conversationId, role, content, jsonb(meta)],
       );
       await db.query('update conversations set updated_at = $2 where id = $1', [conversationId, nowIso()]);
       return row;
@@ -177,7 +184,7 @@ export function makeSqlRepo(db) {
       return one(
         `insert into tool_runs (conversation_id, message_id, tool, input, status, error)
          values ($1, $2, $3, $4, $5, $6) returning *`,
-        [conversationId, messageId, tool, input, status, error],
+        [conversationId, messageId, tool, jsonb(input), status, error],
       );
     },
     async countToolRuns(userId, conversationId, tool = null) {

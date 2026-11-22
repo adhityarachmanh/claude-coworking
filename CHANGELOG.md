@@ -4,6 +4,12 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
+- **🔧 Perbaikan penting: menambah provider dengan daftar model, dan pendaftaran akun.** Sejak fitur "cek key & muat
+  model" dan persetujuan daftar ditambahkan, menyimpan provider yang membawa `models`, serta membuat akun baru, gagal
+  dengan error server. Akarnya dua: driver Postgres mengirim array sebagai literal array (bukan JSON) ke kolom `jsonb`
+  sehingga daftar model ditolak, dan kolom waktu persetujuan diisi lewat `CASE` yang membuat tipe parameter tak
+  terdefinisi. Keduanya kini diperbaiki dan diuji (tambah provider dengan model + daftar akun berhasil lagi).
+
 - **💬 Adhitron Web: portal + chat AI multi-user di satu situs Netlify.** Situs kini punya satu portal `/` dengan
   dua pintu: **💬 Chat** (baru) dan **🔌 Remote Power** (jembatan daya yang lama, kini dipasang di `/bridge`).
   Di Chat, tiap orang **daftar/masuk dengan email + password miliknya** dan menempel **API key AI-nya sendiri**

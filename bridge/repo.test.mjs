@@ -172,3 +172,43 @@ test('sql repo: setiap query terparameterkan (tidak ada interpolasi nilai ke SQL
   assert.equal(seen[0].params[0], "x'; drop table users; --", 'nilai mentah diteruskan sebagai param');
   assert.equal(seen[0].text.includes('drop table'), false, 'SQL tidak memuat nilai user');
 });
+
+test('sql repo: kolom jsonb diserialisasi sebagai JSON (array models tidak dikirim mentah)', async () => {
+  // Regresi: driver pg/Neon menyerialisasi array JS sebagai literal array Postgres ({...}), bukan JSON, sehingga
+  // insert ke kolom jsonb gagal "invalid input syntax for type json". Repo harus mengirim string JSON eksplisit.
+  const { makeSqlRepo } = await import('./src/repo.mjs');
+  const seen = [];
+  const db = { query: async (text, params) => { seen.push({ text, params }); return [{}]; } };
+  const repo = makeSqlRepo(db);
+  await repo.createProvider({ userId: 'u', kind: 'openai', label: 'x', apiKeyEnc: { v: 1, ct: 'aa' }, keyHint: 'abcd', models: [{ id: 'm', label: 'm' }] });
+  await repo.createConversation('u', { modelTiers: { hemat: 'm' } });
+  await repo.addMessage('u', 'c', { role: 'user', content: 'hai', meta: { model: 'm' } });
+  await repo.addToolRun('u', 'c', { tool: 'web_search', input: { q: 'x' } });
+  const ins = (re) => seen.find((s) => re.test(s.text)).params;
+  const pv = ins(/insert into providers/);
+  assert.equal(typeof pv[6], 'string', 'models dikirim sebagai string JSON, bukan array');
+  assert.deepEqual(JSON.parse(pv[6]), [{ id: 'm', label: 'm' }]);
+  assert.equal(typeof pv[4], 'string', 'api_key_enc juga string JSON');
+  const cv = ins(/insert into conversations/);
+  assert.equal(typeof cv[8], 'string', 'model_tiers string JSON');
+  const mv = ins(/insert into messages/);
+  assert.equal(typeof mv[3], 'string', 'meta string JSON');
+  const tv = ins(/insert into tool_runs/);
+  assert.equal(typeof tv[3], 'string', 'input string JSON');
+});
+
+test('sql repo: createUser mengirim consent_at sebagai nilai (bukan CASE yang membingungkan tipe param)', async () => {
+  // Regresi: `case when $4 is null then null else now() end` membuat Neon gagal "could not determine data type
+  // of parameter $4", sehingga pendaftaran gagal 500. Nilai harus dikirim eksplisit sebagai parameter.
+  const { makeSqlRepo } = await import('./src/repo.mjs');
+  const seen = [];
+  const db = { query: async (text, params) => { seen.push({ text, params }); return [{}]; } };
+  const repo = makeSqlRepo(db);
+  await repo.createUser({ email: 'a@b.co', passwordHash: 'scrypt$a$b', consentVersion: '2026-11-22' });
+  assert.equal(/case when/i.test(seen[0].text), false, 'tidak ada CASE yang bergantung null-ness param');
+  assert.equal(seen[0].params[3], '2026-11-22');
+  assert.match(seen[0].params[4], /^\d{4}-\d{2}-\d{2}T/, 'consent_at dikirim sebagai timestamp');
+  seen.length = 0;
+  await repo.createUser({ email: 'c@d.co', passwordHash: 'scrypt$a$b' });
+  assert.equal(seen[0].params[4], null, 'tanpa consent, consent_at null');
+});
