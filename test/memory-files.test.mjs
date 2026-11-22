@@ -2,7 +2,7 @@
 // 2.3.1 CLAUDE.md fallback (#64474/#64533: OpenCode reads CLAUDE.md in any directory that has no AGENTS.md, and
 // falls back to ~/.claude/CLAUDE.md when the global AGENTS.md is missing).
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
@@ -126,7 +126,7 @@ test('memoryFiles: auto memory mengikuti CLAUDE_PROJECTS_DIR (bukan hanya ~/.cla
   }
 });
 
-test('memory: folder rules berupa symlink ke luar project ditolak (baca & tulis)', () => {
+test('memory: folder rules berupa symlink ke luar project ditolak (baca & tulis)', (t) => {
   const p = project();
   const h = home();
   const outside = mkdtempSync(path.join(TMP, 'outside-'));
@@ -135,8 +135,11 @@ test('memory: folder rules berupa symlink ke luar project ditolak (baca & tulis)
   try {
     symlinkSync(outside, path.join(p, '.claude', 'rules'), 'junction');
   } catch {
-    return; // no privilege for symlinks here: nothing to assert
+    return t.skip('no privilege for symlinks here: nothing to assert');
   }
+  // Some Windows setups create the junction but Node cannot traverse it (UNKNOWN on stat/realpath); the guard still
+  // matters where junctions do work, so skip instead of failing the suite on such a machine.
+  if (!existsSync(path.join(p, '.claude', 'rules', 'api.md'))) return t.skip('junction is not readable in this environment');
   assert.throws(() => readMemory('claude', p, 'rule:api', h), (e) => e instanceof MemoryError && e.status === 409);
   assert.throws(() => writeMemory('claude', p, 'rule:api', '# ditimpa\n', 0, h), (e) => e instanceof MemoryError && e.status === 409);
   assert.equal(readFileSync(path.join(outside, 'api.md'), 'utf8'), '# aturan asli\n', 'file luar tidak berubah');

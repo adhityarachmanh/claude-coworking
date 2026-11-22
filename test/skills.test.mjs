@@ -165,17 +165,21 @@ test('saveSkill: previous tak sah ditolak 400, tidak membuat direktori yatim', (
   assert.throws(() => saveSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'x', previous: '../evil', name: 'x', description: 'y', content: 'z', dataDir }), (e) => e instanceof SkillError && e.status === 400);
 });
 
-test('saveSkill: symlink direktori skill ditolak (tidak menulis keluar root)', () => {
+test('saveSkill: symlink direktori skill ditolak (tidak menulis keluar root)', (t) => {
   const home = mkdtempSync(path.join(tmpdir(), 'h-'));
   const project = mkdtempSync(path.join(tmpdir(), 'p-'));
   const outside = mkdtempSync(path.join(tmpdir(), 'out-'));
   const dataDir = mkdtempSync(path.join(tmpdir(), 'd-'));
   mkdirSync(path.join(project, '.claude', 'skills'), { recursive: true });
+  const link = path.join(project, '.claude', 'skills', 'link');
   try {
-    symlinkSync(outside, path.join(project, '.claude', 'skills', 'link'), 'junction');
+    symlinkSync(outside, link, 'junction');
   } catch {
-    return; // no privilege for symlinks here: nothing to assert
+    return t.skip('no privilege for symlinks here: nothing to assert');
   }
+  // Some Windows setups create the junction but Node cannot traverse it (UNKNOWN on stat/realpath); the guard still
+  // matters where junctions do work, so skip instead of failing the suite on such a machine.
+  if (!existsSync(link)) return t.skip('junction is not readable in this environment');
   assert.throws(() => saveSkill({ engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'link', name: 'x', description: 'y', content: 'ESCAPED\n', dataDir }), (e) => e instanceof SkillError && e.status === 409);
   assert.ok(!existsSync(path.join(outside, 'SKILL.md')), 'tidak ada file yang ditulis di luar root');
 });
@@ -191,7 +195,7 @@ test('skillDir: pasangan scope+source yang tidak cocok ditolak 400', () => {
   assert.throws(() => skillDir({ engine: 'claude', projectPath: 'C:/p', home: 'C:/h', scope: 'user', source: '.claude/skills (project)', id: 'x' }), (e) => e instanceof SkillError && e.status === 400);
 });
 
-test('symlink pada root skill ditolak: save & delete tidak menyentuh apa pun di luar project', () => {
+test('symlink pada root skill ditolak: save & delete tidak menyentuh apa pun di luar project', (t) => {
   const home = mkdtempSync(path.join(tmpdir(), 'h-'));
   const project = mkdtempSync(path.join(tmpdir(), 'p-'));
   const outside = mkdtempSync(path.join(tmpdir(), 'out-'));
@@ -199,11 +203,15 @@ test('symlink pada root skill ditolak: save & delete tidak menyentuh apa pun di 
   mkdirSync(path.join(outside, 'victim'), { recursive: true });
   writeFileSync(path.join(outside, 'victim', 'precious.txt'), 'x');
   mkdirSync(path.join(project, '.claude'), { recursive: true });
+  const link = path.join(project, '.claude', 'skills');
   try {
-    symlinkSync(outside, path.join(project, '.claude', 'skills'), 'junction');
+    symlinkSync(outside, link, 'junction');
   } catch {
-    return; // no privilege for symlinks here: nothing to assert
+    return t.skip('no privilege for symlinks here: nothing to assert');
   }
+  // Some Windows setups create the junction but Node cannot traverse it (UNKNOWN on stat/realpath); the guard still
+  // matters where junctions do work, so skip instead of failing the suite on such a machine.
+  if (!existsSync(link)) return t.skip('junction is not readable in this environment');
   const args = { engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)' };
   assert.throws(() => saveSkill({ ...args, id: 'baru', name: 'x', description: 'y', content: 'z', dataDir }), (e) => e instanceof SkillError && e.status === 409);
   assert.ok(!existsSync(path.join(outside, 'baru', 'SKILL.md')), 'tidak ada folder yang dibuat di luar project');
@@ -260,17 +268,22 @@ test('listSkills: root ber-precedence lebih tinggi menang, dan skill nyata tidak
   assert.equal(oc2.find((s) => s.id === 'real').description, 'dalam');
 });
 
-test('saveSkill: folder skill berupa symlink (menunjuk di dalam project) tetap ditolak', () => {
+test('saveSkill: folder skill berupa symlink (menunjuk di dalam project) tetap ditolak', (t) => {
   const home = mkdtempSync(path.join(tmpdir(), 'h-'));
   const project = mkdtempSync(path.join(tmpdir(), 'p-'));
   const dataDir = mkdtempSync(path.join(tmpdir(), 'd-'));
   mkdirSync(path.join(project, 'src', 'config'), { recursive: true });
   mkdirSync(path.join(project, '.claude', 'skills'), { recursive: true });
+  const link = path.join(project, '.claude', 'skills', 'x');
   try {
-    symlinkSync(path.join(project, 'src', 'config'), path.join(project, '.claude', 'skills', 'x'), 'junction');
+    symlinkSync(path.join(project, 'src', 'config'), link, 'junction');
   } catch {
-    return; // no privilege for symlinks here
+    return t.skip('no privilege for symlinks here');
   }
+  // Some Windows setups create the junction but Node cannot traverse it (UNKNOWN on stat/realpath). The guard still
+  // matters where junctions do work, so skip instead of failing the suite on such a machine (same guard as the
+  // OpenCode config junction test).
+  if (!existsSync(link)) return t.skip('junction is not readable in this environment');
   const args = { engine: 'claude', projectPath: project, home, scope: 'project', source: '.claude/skills (project)', id: 'x' };
   assert.throws(() => saveSkill({ ...args, name: 'x', description: 'y', content: 'OVERWRITE\n', dataDir }), (e) => e instanceof SkillError && e.status === 409);
   assert.ok(!existsSync(path.join(project, 'src', 'config', 'SKILL.md')), 'tidak menulis lewat symlink di dalam project');

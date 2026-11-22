@@ -1,7 +1,7 @@
 // Folder tambahan routes: list (laptop/Tailscale), add/remove (laptop only). The route validates the path through
 // src/add-dirs.js and stores the cleaned list in the project's settings; a change reaches the next Claude process.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
