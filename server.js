@@ -21,7 +21,7 @@ import { DesktopUpdater } from './src/desktop-update.js';
 import { Hub } from './src/hub.js';
 import { pruneAuth } from './src/auth-audit.js';
 import { recordAudit } from './src/audit-log.js';
-import { discoverProjects, isDirectory, isInside, isMissing } from './src/projects.js';
+import { discoverProjects, isDirectory, isInside, isMissing, isWorktreeDir } from './src/projects.js';
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
 import { writeBackup } from './src/backup.js';
 import { AccountService, accountPrivacyView, accountViewKey } from './src/account.js';
@@ -723,6 +723,7 @@ const projectRoots = () => (hub.persisted.roots.length ? hub.persisted.roots : [
 
 /** Folders that may appear as projects: under a configured root, or explicitly added via "Tambah project". */
 function insideKnownProjectDir(dir) {
+  if (isWorktreeDir(dir)) return false; // a worktree folder belongs to its project, never a project of its own
   return isInside(dir, [...projectRoots(), ...(hub.persisted.custom ?? [])]);
 }
 

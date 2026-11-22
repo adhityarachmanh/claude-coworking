@@ -13,7 +13,8 @@ import { describeTool } from './roles.js';
 import { migrateTeamNames } from './role-catalog.js';
 import { basename, normalizePath, projectId } from './util.js';
 import { AUTO_CUT_MIN_SECONDS } from './power.js';
-import { isMissing } from './projects.js';
+import { isDirectory, isMissing } from './projects.js';
+import { validWorktreeName } from './worktree.js';
 
 const EVENT_LIMIT = 80;
 // A running tool row in an idle project (no turn, no CLI, no background task) older than this is a leftover and is
@@ -1254,7 +1255,31 @@ export class Hub {
     settings.mode = normalizeMode(settings.mode);
     // A hand-edited state.json could hold anything here; ladders are validated when they are written instead.
     if (!isObject(settings.modelTiers)) settings.modelTiers = {};
+    // The folder the engine runs in: the worktree folder when one is active, else the project folder. Carried here so
+    // a session's restart key (src/session.js) sees a change of workspace and respawns cleanly. Derived, never stored.
+    settings.workspacePath = this.workspacePathFor(id);
     return settings;
+  }
+
+  /** A valid stored worktree { name, path, branch } for this project, or null. */
+  worktreeOf(id) {
+    const wt = this.persisted.settings?.[id]?.worktree;
+    if (!isObject(wt) || !validWorktreeName(wt.name) || typeof wt.path !== 'string' || !wt.path || typeof wt.branch !== 'string' || !wt.branch) return null;
+    return { name: wt.name, path: wt.path, branch: wt.branch };
+  }
+
+  /** The folder the project's engine runs in: the active worktree while its folder exists, else the project folder. */
+  workspacePathFor(id) {
+    const project = this.projects.get(id);
+    const wt = this.worktreeOf(id);
+    if (wt && isDirectory(wt.path)) return wt.path;
+    return project?.path ?? wt?.path ?? '';
+  }
+
+  /** Makes `wt` (or null to leave it) the project's active worktree. Stored in settings, project id unchanged. */
+  setWorktree(id, wt) {
+    this.updateSettings(id, { worktree: wt });
+    this.broadcast('projects', this.listProjects());
   }
 
   /**
@@ -1357,6 +1382,14 @@ export class Hub {
     // 🐙 Pantau CI (src/github-ci.js) after a push: a repo whose CI is not set up yet can turn the whole check off
     // (no polling, no chip, no chat line). Only a real boolean flips it — absent/hand-edited junk stays "on".
     if (typeof patch.ciFollow === 'boolean') next.ciFollow = patch.ciFollow;
+    // ⎇ The project's active worktree (an attribute, not a new project): null leaves it, a well-formed
+    // { name, path, branch } enters it. Junk (a hand-edited state.json) is ignored and the stored value stays.
+    if (patch.worktree === null) next.worktree = null;
+    else if (isObject(patch.worktree) && validWorktreeName(patch.worktree.name) && typeof patch.worktree.path === 'string' && patch.worktree.path && typeof patch.worktree.branch === 'string' && patch.worktree.branch) {
+      next.worktree = { name: patch.worktree.name, path: patch.worktree.path, branch: patch.worktree.branch };
+    }
+    // `workspacePath` is derived in settingsFor and read live: it must never be written back into state.json.
+    delete next.workspacePath;
     return next;
   }
 

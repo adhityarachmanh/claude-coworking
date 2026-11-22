@@ -11,6 +11,13 @@ const SKIP = new Set(['node_modules', 'backup']);
  */
 export const isNetworkPath = (p) => /^([\\/]{2}|\\\?\?\\)/.test(String(p ?? '').trim());
 
+/**
+ * Is this path inside a git worktree folder (`<project>/.claude/worktrees/<name>`)? Such a folder is never a
+ * project of its own: Claude Code records its cwd in ~/.claude.json, and a turn there must keep belonging to the
+ * project that owns the worktree.
+ */
+export const isWorktreeDir = (p) => /(^|[\\/])\.claude[\\/]worktrees[\\/]/.test(String(p ?? '').replace(/\\/g, '/'));
+
 export function isDirectory(p) {
   if (isNetworkPath(p)) return false;
   try {
@@ -58,7 +65,7 @@ export function discoverProjects({ roots, extra = [] }) {
   const found = [];
   try {
     const config = JSON.parse(readFileSync(process.env.CLAUDE_CONFIG_FILE ?? path.join(os.homedir(), '.claude.json'), 'utf8'));
-    for (const dir of Object.keys(config.projects ?? {})) if (isDirectory(dir) && (isInside(dir, allowed) || allowed.some((r) => path.resolve(r) === path.resolve(dir)))) found.push([dir, 'claude']);
+    for (const dir of Object.keys(config.projects ?? {})) if (isDirectory(dir) && !isWorktreeDir(dir) && (isInside(dir, allowed) || allowed.some((r) => path.resolve(r) === path.resolve(dir)))) found.push([dir, 'claude']);
   } catch {
     // No Claude Code config yet.
   }
@@ -66,7 +73,8 @@ export function discoverProjects({ roots, extra = [] }) {
     if (isNetworkPath(root)) continue;
     try {
       for (const entry of readdirSync(root, { withFileTypes: true })) {
-        if (entry.isDirectory() && !entry.name.startsWith('.') && !SKIP.has(entry.name)) found.push([path.join(root, entry.name), 'folder']);
+        const dir = path.join(root, entry.name);
+        if (entry.isDirectory() && !entry.name.startsWith('.') && !SKIP.has(entry.name) && !isWorktreeDir(dir)) found.push([dir, 'folder']);
       }
     } catch {
       // Root not readable.

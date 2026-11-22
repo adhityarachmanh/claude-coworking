@@ -4,7 +4,7 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { childEnv } from './child-env.js';
-import { isInside } from './projects.js';
+import { isInside, isWorktreeDir } from './projects.js';
 
 const GIT_TIMEOUT = 15 * 1000;
 const MAX_NAME = 64;
@@ -42,7 +42,7 @@ export const worktreeBranch = (name) => `worktree-${name}`;
  * Is this path (absolute or relative) a worktree folder, i.e. under `.claude/worktrees/`? Used to keep worktrees
  * out of the project list and the CLI-session mirror: Claude Code records their cwd in ~/.claude.json.
  */
-export const isWorktreeDir = (p) => /(^|[\\/])\.claude[\\/]worktrees[\\/]/.test(String(p ?? '').replace(/\\/g, '/'));
+export { isWorktreeDir };
 
 /** `git worktree list --porcelain` output → [{ path, branch, head, isMain }]; the first block is the main worktree. */
 export function parseWorktreeList(text) {
