@@ -62,7 +62,7 @@ export const DEMO_ID = 'demo';
 // 💬 The built-in "Chat umum": a project with the same engines as any other, but its folder is an app-owned sandbox
 // under dataDir, so a general chat never touches a real project folder. A fixed id (never the folder hash).
 export const GENERAL_ID = 'chat-umum';
-export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {} };
+export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true };
 // Which coding agent runs the project: Claude Code (stream-json) or OpenCode (ACP, src/acp-session.js).
 export const ENGINES = ['claude', 'opencode'];
 // Per-project data per engine lives in `settings[id].engine`, `engineSettings[id][engine]` and
@@ -1220,6 +1220,11 @@ export class Hub {
     return true;
   }
 
+  /** 🐙 Whether the GitHub CI check follows this project's pushes (on unless turned off). */
+  ciFollowFor(id) {
+    return this.settingsFor(id).ciFollow !== false;
+  }
+
   /** 🔁 Retry a failed queue item once, automatically, on this project. */
   queueRetryOnceFor(id) {
     return this.persisted.queueRetryOnce?.[id] === true;
@@ -1349,6 +1354,9 @@ export class Hub {
     // 🤖 Claude Code 2.1.319+ `permissions.denyInsteadOfPrompting`: an unanswered permission request is denied and
     // the turn continues. Stored per project; only a real boolean flips it (an old tab never turns it on).
     if (typeof patch.denyUnanswered === 'boolean') next.denyUnanswered = patch.denyUnanswered;
+    // 🐙 Pantau CI (src/github-ci.js) after a push: a repo whose CI is not set up yet can turn the whole check off
+    // (no polling, no chip, no chat line). Only a real boolean flips it — absent/hand-edited junk stays "on".
+    if (typeof patch.ciFollow === 'boolean') next.ciFollow = patch.ciFollow;
     return next;
   }
 
