@@ -708,7 +708,9 @@ export class ClaudeSession {
     // The team setting, and going back to the default effort, need a fresh process.
     if (restartKey(s) !== this.childKey || (a.effort && !s.effort)) {
       if (this.busy) this.restartPending = true;
-      else this.closeChild();
+      // Background agents/shells still running: never cut them off (same rule as reloadSettings); the idle
+      // shutdown closes the process once they are done, and the next one reads the new settings.
+      else if (!this.autoTurn && !this.translator?.hasRunningTasks()) this.closeChild();
       return;
     }
     if (s.mode !== a.mode) {

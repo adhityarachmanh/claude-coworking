@@ -720,6 +720,8 @@ test('mergeForm references menolak alias tak sah, file:, branch ../.. tanpa menu
     { name: 'x'.repeat(65), kind: 'path', path: '~/x' },
     { name: 'x', kind: 'repository', repository: 'file:../repo' },
     { name: 'x', kind: 'repository', repository: 'FILE:../repo' },
+    { name: 'x', kind: 'repository', repository: '-owner/repo' },
+    { name: 'x', kind: 'repository', repository: '--upload-pack=evil' },
     { name: 'x', kind: 'repository', repository: 'owner/repo', branch: '../main' },
     { name: 'x', kind: 'repository', repository: 'owner/repo', branch: '-main' },
     { name: 'x', kind: 'repository', repository: 'owner/repo', branch: 'main; rm -rf' },

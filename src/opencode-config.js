@@ -739,6 +739,7 @@ function mergeReferences(config, items) {
       if (!repoValue) throw new OpenCodeConfigError(400, `Repository reference ${name} tidak boleh kosong.`);
       if (repoValue.length > OPENCODE_CONFIG_LIMITS.referenceValue) throw new OpenCodeConfigError(400, `Repository reference ${name} maksimal ${OPENCODE_CONFIG_LIMITS.referenceValue} karakter.`);
       if (/^file:/i.test(repoValue)) throw new OpenCodeConfigError(400, `Repository reference ${name} tidak boleh memakai file:.`);
+      if (repoValue.startsWith('-')) throw new OpenCodeConfigError(400, `Repository reference ${name} tidak boleh diawali tanda -.`);
       delete reference.path;
       reference.repository = repoValue;
       if (item.branch !== undefined) {

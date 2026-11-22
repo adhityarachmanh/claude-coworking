@@ -17,6 +17,7 @@ test('addDirectory: absolut, ada, bukan jaringan; ~ dikembangkan', () => {
   assert.deepEqual(addDirectory({ list: [], value: '~/pustaka', home }), [lib]);
   assert.throws(() => addDirectory({ list: [], value: 'pustaka', home }), /absolut/);
   assert.throws(() => addDirectory({ list: [], value: '\\\\server\\share', home }), /jaringan/);
+  assert.throws(() => addDirectory({ list: [], value: '//server/share', home }), /jaringan/);
   assert.throws(() => addDirectory({ list: [], value: path.join(home, 'hilang'), home }), /tidak ditemukan/);
 });
 

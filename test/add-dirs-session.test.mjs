@@ -72,6 +72,24 @@ test('daftar folder baru menutup proses idle supaya pesan berikutnya memakai daf
   assert.equal(session.child, null, 'proses ditutup: spawn berikutnya membawa --add-dir');
 });
 
+test('daftar folder baru tidak memotong tugas latar: proses ditutup setelah tugas selesai', () => {
+  const { hub, dir, project } = freshHubAndProject('ab');
+  const a = path.join(dir, 'a');
+  mkdirSync(a);
+  const session = managerFor(hub, dir).get(project);
+  session.spawn(hub.settingsFor(project.id));
+  assert.ok(session.child, 'proses berjalan setelah spawn');
+  // A background shell/agent still runs inside that idle process: adding a folder must not end it.
+  session.translator.hasRunningTasks = () => true;
+  hub.updateSettings(project.id, { additionalDirectories: [a] });
+  session.syncSettings();
+  assert.ok(session.child, 'proses tetap hidup selama tugas latar berjalan');
+  // Once the tasks finish, the idle shutdown closes it; the next process reads the new list.
+  session.translator.hasRunningTasks = () => false;
+  session.idleShutdown();
+  assert.equal(session.child, null, 'proses ditutup setelah tugas latar selesai');
+});
+
 test('settingsFor membersihkan additionalDirectories dari state.json yang diedit tangan', () => {
   const { hub, dir, project } = freshHubAndProject('aj');
   hub.updateSettings(project.id, {}); // pastikan entri settings ada
