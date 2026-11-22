@@ -298,6 +298,16 @@ if (process.argv[2] === 'session' && process.argv[3] === 'export') {
 }
 if (process.argv[2] === 'session' && process.argv[3] === 'list') {
   if (BREAK.has('session-list')) (console.log('Error: database locked'), process.exit(0));
+  // Real OpenCode lists the CURRENT project's sessions only: `opencode session list --help` (v2.3.2) says "List
+  // top-level sessions in the current project". A seeded store entry carries its `dir`; once one exists the fixture
+  // belongs to that folder and is never listed for another — so a global search sweeping several projects does not
+  // see one project's session under a second folder (each project's sandbox keeps its own). No store yet (most
+  // tests) → the fixed fixture is returned as before.
+  const seeded = loadStore('ses_fakeold');
+  if (seeded?.dir && path.resolve(seeded.dir) !== path.resolve(process.cwd())) {
+    console.log(JSON.stringify([]));
+    process.exit(0);
+  }
   console.log(JSON.stringify([{ id: 'ses_fakeold', title: 'Sesi lama OpenCode', updated: 1700000000000, created: 1700000000000, directory: process.cwd() }]));
   process.exit(0);
 }
@@ -314,6 +324,7 @@ if (process.argv[2] !== 'acp') {
 // FAKE_ACP_FAIL_ONCE=<file>: the very first `acp` process dies at initialize (a cold start), later ones work.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 const failOnce = process.env.FAKE_ACP_FAIL_ONCE;
 const coldStart = Boolean(failOnce) && !existsSync(failOnce);
 if (coldStart) writeFileSync(failOnce, 'started');
