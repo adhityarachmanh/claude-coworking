@@ -68,6 +68,7 @@ import { initOpenCodeRequests } from './features/opencode-requests.js';
 import { initShortcutLinks } from './features/shortcut-links.js';
 import { initMemory } from './features/memory.js';
 import { initExtensions } from './features/extensions.js';
+import { initSkills } from './features/skills.js';
 import { initPullRequest } from './features/pull-request.js';
 import { initSettings } from './features/settings.js';
 import { initSpotify } from './features/spotify.js';
@@ -115,6 +116,7 @@ initWorktree(); // ⎇ dialog worktree + chip di bar sesi
 initOpenCodeRequests(); // 📡 OpenCode request log (global or one session)
 initMemory(); // 🧠 /memory: CLAUDE.md / AGENTS.md editor
 initExtensions(); // 🧩 /plugin /agents /hooks
+initSkills(); // 🧩 /skills: SKILL.md untuk kedua mesin
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initHeaderMore();

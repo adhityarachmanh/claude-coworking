@@ -9,6 +9,7 @@ import { openPermissions } from './permissions.js';
 import { exportActiveSession } from './conversations.js';
 import { openRoster } from './roster.js';
 import { openWorktree } from './worktree.js';
+import { openSkills } from './skills.js';
 
 export function toggleMoreMenu(open = $('#more-menu').hidden) {
   $('#more-menu').hidden = !open;
@@ -91,6 +92,7 @@ export function initMoreMenu() {
       if (item.dataset.more === 'export') exportChat();
       else if (item.dataset.more === 'permissions') openPermissions();
       else if (item.dataset.more === 'worktree') openWorktree();
+      else if (item.dataset.more === 'skills') openSkills();
       else if (item.dataset.more === 'roster') openRoster();
       else if (item.dataset.more === 'export-session') await exportActiveSession();
       else if (item.dataset.more === 'terminal') {

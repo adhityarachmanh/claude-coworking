@@ -154,6 +154,7 @@
               <button role="menuitem" data-more="export-session" data-cap="exportSession" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">⬇ Export sesi lengkap (.md)</button>
               <button role="menuitem" data-more="permissions" data-cap="permissions">🛡️ Aturan izin (/permissions)</button>
               <button role="menuitem" data-more="worktree">⎇ Worktree…</button>
+              <button role="menuitem" data-more="skills">🧩 Skills…</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
               <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
@@ -542,6 +543,14 @@
           <div class="acct-actions"><button type="button" id="pr-claude" class="ghost" title="Claude menulis judul & deskripsi dari perubahannya, lalu membuat PR">✳ Biar Claude yang buat</button><button class="primary">⇡ Buat PR</button></div>
           <p id="pr-result" class="small"></p>
         </form>
+      </div>
+    </div>
+
+    <!-- 🧩 Skills (/skills; features/skills.js) — both engines, laptop or Tailscale -->
+    <div id="skills-modal" class="modal" hidden>
+      <div class="modal-card ext-card" role="dialog" aria-modal="true" aria-labelledby="skills-title">
+        <div class="modal-head"><b id="skills-title">🧩 Skills <small id="skills-project" class="muted"></small></b><button id="skills-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div id="skills-body" class="ext-body"></div>
       </div>
     </div>
 
@@ -1787,6 +1796,7 @@
           <button type="button" class="sheet-row" data-proxy="#sb-title" data-mutates data-needs-session><span aria-hidden="true">✎</span><span>Ganti nama sesi</span></button>
           <button type="button" class="sheet-row" data-action="rewind" data-mutates data-cap="rewind"><span aria-hidden="true">⏪</span><span>Rewind</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='worktree']" data-mutates><span aria-hidden="true">⎇</span><span>Worktree</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='skills']" data-mutates><span aria-hidden="true">🧩</span><span>Skills</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>
           <h3 id="hm-g-chat" class="sheet-group-head">Percakapan</h3>

@@ -12,6 +12,7 @@ import { openDashboard } from './dashboard.js';
 import { openMcp } from './mcp.js';
 import { openMemory } from './memory.js';
 import { openExtensions } from './extensions.js';
+import { openSkills } from './skills.js';
 import { openQueue } from './queue.js';
 import { openPermissions } from './permissions.js';
 import { openRewind } from './rewind.js';
@@ -242,6 +243,9 @@ export function localCommand(text) {
       return true;
     case 'hooks':
       openExtensions('hooks');
+      return true;
+    case 'skills':
+      openSkills();
       return true;
     case 'dashboard':
     case 'semua':
