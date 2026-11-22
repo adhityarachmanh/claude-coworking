@@ -101,6 +101,7 @@ export function renderComposer() {
   $('#effort').value = st.effortAuto ? 'auto' : (st.effort ?? '');
   $('#team-mode').checked = st.team ?? true;
   $('#deny-unanswered').checked = st.denyUnanswered === true;
+  $('#ci-follow').checked = st.ciFollow !== false;
   applyCaps(caps, engine);
   // As in the CLI, a message sent mid-turn reaches Claude at its next step instead of waiting for the end.
   const line = hintLine(composerHints(st, { readOnly: state.readOnly, readOnlyHint: READ_ONLY_HINT }));
@@ -133,7 +134,7 @@ setInterval(() => {
 }, 1000);
 
 // Controls that change something: disabled (with the reason as tooltip) for a phone on plain WiFi.
-const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#model-field', '#model-search', '#effort', '#team-mode', '#deny-unanswered', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
+const ACTION_CONTROLS = ['#prompt', '#btn-send', '#btn-plus', '#settings-chip', '#typing-stop', '#btn-attach', '#btn-template','#btn-stop', '#btn-queue-add', '#mode', '#model', '#model-field', '#model-search', '#effort', '#team-mode', '#deny-unanswered', '#ci-follow', '#btn-new', '#btn-demo', '#ch-review', '#ch-message', '#ch-commit button', '#sessions-new', '#refresh-projects', '#team-reset', '#team-form button.primary'];
 
 function applyReadOnly() {
   if (!state.readOnly) return; // fixed per connection: a laptop / Tailscale page never needs undoing
@@ -774,6 +775,7 @@ export async function saveSettings(extra = {}) {
       ...(auto ? { effortAuto: true } : { effort, effortAuto: false }),
       team: $('#team-mode').checked,
       denyUnanswered: $('#deny-unanswered').checked,
+      ciFollow: $('#ci-follow').checked,
       ...(agent !== undefined && { agent }),
       ...extra,
     });
@@ -949,7 +951,7 @@ export function initComposerControls() {
     const opener = $('#model-tiers-open');
     if (opener?.getClientRects().length) opener.focus({ preventScroll: true });
   }).observe($('#model-tiers-modal'), { attributeFilter: ['hidden'] });
-  for (const id of ['#agent', '#effort', '#team-mode', '#deny-unanswered']) {
+  for (const id of ['#agent', '#effort', '#team-mode', '#deny-unanswered', '#ci-follow']) {
     $(id).addEventListener('change', saveSettings);
     $(id).addEventListener('change', () => renderSettingsChip(state.statuses[state.active])); // right away, before the server echoes it
   }

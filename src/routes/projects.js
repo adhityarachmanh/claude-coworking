@@ -131,6 +131,15 @@ export function registerProjectActions(router) {
     }
     const before = hub.settingsFor(project.id);
     hub.updateSettings(project.id, patch);
+    // 🐙 Pantau CI per project: turning it off stops the watcher and clears the chip at once; turning it on follows
+    // the current commit again. The settings status below carries `ciFollow` to the open pages.
+    if (patch.ciFollow === false) {
+      hub.ciUnwatch?.(project.id);
+      hub.setStatus(project.id, { ci: null });
+    } else if (patch.ciFollow === true) {
+      hub.ciWatch?.(project.id);
+    }
+    hub.setStatus(project.id, hub.settingsFor(project.id));
     // Picking a model (or Default) answers the "provider logged out" warning (routes/account.js modelStale):
     // the same field clears it, so the next prompt is let through even when the model is unchanged.
     if (patch.model !== undefined || patch.modelAuto !== undefined) hub.setStatus(project.id, { modelStale: false });

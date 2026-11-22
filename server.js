@@ -1586,6 +1586,7 @@ openCodeMirror.start();
 // ✅ GitHub checks after every push (test servers: only with OFFICE_GH_BIN, i.e. a fake gh)
 const ciWatcher = new CiWatcher({ hub, gh: process.env.CLAUDE_BIN && !process.env.OFFICE_GH_BIN ? null : findGh(), pollMs: Number(process.env.OFFICE_CI_POLL_MS ?? 20_000), firstMs: Number(process.env.OFFICE_CI_FIRST_MS ?? 8000) });
 hub.ciWatch = (projectId) => ciWatcher.watch(projectId);
+hub.ciUnwatch = (projectId) => ciWatcher.unwatch(projectId);
 // Know who is logged in (usage is tagged with it); notice logins/logouts done in a terminal too.
 account.refreshProfile(true).catch(() => {});
 setInterval(() => account.refreshProfile(true).catch(() => {}), 60_000).unref();

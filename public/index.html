@@ -214,6 +214,11 @@
             <label id="deny-ctl" class="switch" title="Kalau kamu jauh dan kartu izin tidak terjawab, permintaan itu DITOLAK dan giliran lanjut (tidak menggantung). Hanya Claude Code.">
               <input id="deny-unanswered" type="checkbox" /> Tolak izin tak terjawab
             </label>
+            <!-- 🐙 After a push, follow that commit's GitHub Actions runs and say so in the chat (src/github-ci.js).
+                 A repo whose CI is not set up yet can turn the whole check off: no polling, no chip, no chat line. -->
+            <label id="ci-ctl" class="switch" title="Setelah push, pantau hasil pemeriksaan (GitHub Actions) commit itu dan beri kabar di chat. Matikan untuk repo yang CI-nya belum siap.">
+              <input id="ci-follow" type="checkbox" checked /> Pantau CI setelah push
+            </label>
             <!-- 🎤 input suara (features/voice.js): shown together with the 🎤 button, remembered per browser -->
             <label id="voice-lang-ctl" class="ctl" title="Bahasa input suara 🎤 (disimpan di browser ini)" hidden>
               <span>Suara</span>

@@ -16,7 +16,7 @@ export function renderCi() {
   const el = $('#ch-git-ci');
   if (!el) return;
   const ci = state.active ? state.statuses[state.active]?.ci : null;
-  const look = ci && LOOK[ci.state];
+  const look = ci && state.statuses[state.active]?.ciFollow !== false ? LOOK[ci.state] : null;
   if (!look) {
     el.hidden = true;
     return;
