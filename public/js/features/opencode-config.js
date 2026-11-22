@@ -126,6 +126,106 @@ const renderWebsearch = (websearch) => {
   select.value = mode === 'provider' ? provider : mode;
 };
 
+const policyRow = (policy = {}) => `<div class="oc-agent" data-policy-row>
+  <div class="oc-agent-head"><b>Policy</b><button type="button" class="ghost danger-text" data-policy-remove aria-label="Hapus policy">Hapus</button></div>
+  <div class="oc-agent-grid">
+    <label class="oc-field"><span>Action</span><input data-policy-action list="oc-policy-actions" maxlength="64" autocomplete="off" spellcheck="false" value="${escapeHtml(policy.action ?? '')}" placeholder="tool.use" /></label>
+    <label class="oc-field"><span>Resource</span><input data-policy-resource maxlength="500" autocomplete="off" spellcheck="false" value="${escapeHtml(policy.resource ?? '')}" placeholder="shell:git push *" /></label>
+    <label class="oc-field"><span>Effect</span><select data-policy-effect><option value="allow"${policy.effect !== 'deny' ? ' selected' : ''}>allow</option><option value="deny"${policy.effect === 'deny' ? ' selected' : ''}>deny</option></select></label>
+  </div>
+</div>`;
+
+const renderPolicies = (policies) => {
+  const list = (Array.isArray(policies) ? policies : []).filter((policy) => policy && typeof policy === 'object');
+  $('#oc-policy-list').innerHTML = list.length ? list.map(policyRow).join('') : '<p class="muted small">Belum ada policy.</p>';
+};
+
+const collectPolicies = () =>
+  [...document.querySelectorAll('#oc-policy-list .oc-agent')]
+    .map((row) => ({
+      action: row.querySelector('[data-policy-action]')?.value.trim() ?? '',
+      resource: row.querySelector('[data-policy-resource]')?.value.trim() ?? '',
+      effect: row.querySelector('[data-policy-effect]')?.value === 'deny' ? 'deny' : 'allow',
+    }))
+    .filter((policy) => policy.action || policy.resource);
+
+const watcherRow = (value = '') => `<div class="oc-agent" data-watcher-row>
+  <div class="oc-agent-head"><b>Pola</b><button type="button" class="ghost danger-text" data-watcher-remove aria-label="Hapus pola">Hapus</button></div>
+  <div class="oc-agent-grid"><label class="oc-field"><span>Pola file/folder</span><input data-watcher-ignore maxlength="500" autocomplete="off" spellcheck="false" value="${escapeHtml(value)}" placeholder="dist/**" /></label></div>
+</div>`;
+
+const renderWatchers = (ignore) => {
+  const list = (Array.isArray(ignore) ? ignore : []).filter((item) => typeof item === 'string');
+  $('#oc-watcher-list').innerHTML = list.length ? list.map(watcherRow).join('') : '<p class="muted small">Belum ada pola.</p>';
+};
+
+const collectWatchers = () => [...document.querySelectorAll('#oc-watcher-list [data-watcher-ignore]')].map((input) => input.value.trim()).filter(Boolean);
+
+const providerRow = (provider) => `<div class="oc-agent" data-provider-row="${escapeHtml(provider.id)}">
+  <div class="oc-agent-head"><b>${escapeHtml(provider.id)}</b></div>
+  <label class="oc-field"><span>Headers (JSON objek)</span><textarea data-provider-headers class="memory-text" rows="2" spellcheck="false" placeholder='{"X-Custom":"1"}'>${escapeHtml(provider.headers ?? '')}</textarea></label>
+  <label class="oc-field"><span>Body (JSON objek)</span><textarea data-provider-body class="memory-text" rows="2" spellcheck="false" placeholder='{"temperature":0}'>${escapeHtml(provider.body ?? '')}</textarea></label>
+</div>`;
+
+const renderProviders = (providers) => {
+  const list = (Array.isArray(providers) ? providers : []).filter((provider) => provider && typeof provider.id === 'string');
+  $('#oc-provider-list').innerHTML = list.length ? list.map(providerRow).join('') : '<p class="muted small">Belum ada provider dengan headers/body.</p>';
+};
+
+const collectProviders = () =>
+  [...document.querySelectorAll('#oc-provider-list [data-provider-row]')].map((row) => ({
+    id: row.dataset.providerRow,
+    headers: row.querySelector('[data-provider-headers]')?.value ?? '',
+    body: row.querySelector('[data-provider-body]')?.value ?? '',
+  }));
+
+const setField = (id, value, fallback = '') => {
+  const field = $(id);
+  field.value = value == null || value === '' ? fallback : String(value);
+};
+
+const renderAdvanced = (advanced) => {
+  const a = advanced ?? {};
+  setField('#oc-snapshots', a.snapshots, 'inherit');
+  setField('#oc-formatter', a.formatter, 'inherit');
+  setField('#oc-compaction-auto', a.compaction?.auto, 'inherit');
+  setField('#oc-compaction-keep', a.compaction?.keepTokens);
+  setField('#oc-compaction-buffer', a.compaction?.buffer);
+  setField('#oc-warming-enabled', a.warming?.enabled, 'inherit');
+  setField('#oc-warming-prompt', a.warming?.prompt);
+  setField('#oc-warming-interval', a.warming?.interval);
+  setField('#oc-warming-duration', a.warming?.duration);
+  setField('#oc-media-autoresize', a.mediaImage?.auto_resize, 'inherit');
+  setField('#oc-media-width', a.mediaImage?.maxWidth);
+  setField('#oc-media-height', a.mediaImage?.maxHeight);
+  setField('#oc-media-base64', a.mediaImage?.maxBase64Bytes);
+  setField('#oc-output-lines', a.toolOutput?.maxLines);
+  setField('#oc-output-bytes', a.toolOutput?.maxBytes);
+  setField('#oc-exp-todo', a.experimental?.todo, 'inherit');
+  setField('#oc-exp-depth', a.experimental?.subagentDepth);
+  setField('#oc-exp-image', a.experimental?.imageModel);
+  setField('#oc-exp-idle', a.experimental?.locationIdleTimeout);
+  renderWatchers(a.watcherIgnore);
+  renderProviders(a.providers);
+};
+
+const collectAdvanced = () => ({
+  snapshots: $('#oc-snapshots').value,
+  formatter: $('#oc-formatter').value,
+  watcherIgnore: collectWatchers(),
+  mediaImage: {
+    auto_resize: $('#oc-media-autoresize').value,
+    maxWidth: $('#oc-media-width').value,
+    maxHeight: $('#oc-media-height').value,
+    maxBase64Bytes: $('#oc-media-base64').value,
+  },
+  toolOutput: { maxLines: $('#oc-output-lines').value, maxBytes: $('#oc-output-bytes').value },
+  compaction: { auto: $('#oc-compaction-auto').value, keepTokens: $('#oc-compaction-keep').value, buffer: $('#oc-compaction-buffer').value },
+  warming: { enabled: $('#oc-warming-enabled').value, prompt: $('#oc-warming-prompt').value, interval: $('#oc-warming-interval').value, duration: $('#oc-warming-duration').value },
+  experimental: { todo: $('#oc-exp-todo').value, subagentDepth: $('#oc-exp-depth').value, imageModel: $('#oc-exp-image').value, locationIdleTimeout: $('#oc-exp-idle').value },
+  providers: collectProviders(),
+});
+
 const dateOf = (value) => {
   if (value === null || value === undefined || value === '') return null;
   const date = new Date(value);
@@ -220,6 +320,8 @@ const renderView = () => {
   renderReferences(view.references);
   renderInstructions(view.instructions);
   renderWebsearch(view.websearch);
+  renderPolicies(view.policies);
+  renderAdvanced(view.advanced);
   $('#oc-json-text').value = typeof view.text === 'string' && view.text ? view.text : '{\n}\n';
   $('#oc-config-error').textContent = typeof view.parseError === 'string' ? view.parseError : '';
   if (view.parseError) setMode('json'); // the raw file is the only way to repair it
@@ -444,6 +546,8 @@ async function save() {
         const value = $('#oc-websearch').value;
         return value === 'inherit' || value === 'off' ? { mode: value, provider: '' } : { mode: 'provider', provider: value };
       })(),
+      policies: collectPolicies(),
+      advanced: collectAdvanced(),
     };
   } else {
     body.text = $('#oc-json-text').value;
@@ -634,6 +738,32 @@ export function initOpenCodeConfig() {
     if (!remove || editor.busy) return;
     remove.closest('.oc-agent')?.remove();
     if (!document.querySelector('#oc-instruction-list .oc-agent')) renderInstructions([]);
+  });
+  $('#oc-policy-add').addEventListener('click', () => {
+    if (editor.busy) return;
+    const list = $('#oc-policy-list');
+    if (list.querySelector('.muted')) list.innerHTML = '';
+    list.insertAdjacentHTML('beforeend', policyRow());
+    list.querySelector('.oc-agent:last-child [data-policy-action]')?.focus();
+  });
+  $('#oc-policy-list').addEventListener('click', (e) => {
+    const remove = e.target.closest('[data-policy-remove]');
+    if (!remove || editor.busy) return;
+    remove.closest('.oc-agent')?.remove();
+    if (!document.querySelector('#oc-policy-list .oc-agent')) renderPolicies([]);
+  });
+  $('#oc-watcher-add').addEventListener('click', () => {
+    if (editor.busy) return;
+    const list = $('#oc-watcher-list');
+    if (list.querySelector('.muted')) list.innerHTML = '';
+    list.insertAdjacentHTML('beforeend', watcherRow());
+    list.querySelector('.oc-agent:last-child [data-watcher-ignore]')?.focus();
+  });
+  $('#oc-watcher-list').addEventListener('click', (e) => {
+    const remove = e.target.closest('[data-watcher-remove]');
+    if (!remove || editor.busy) return;
+    remove.closest('.oc-agent')?.remove();
+    if (!document.querySelector('#oc-watcher-list .oc-agent')) renderWatchers([]);
   });
   $('#oc-config-save').addEventListener('click', save);
   $('#oc-conflict-consolidate').addEventListener('click', consolidate);

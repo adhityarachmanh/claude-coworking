@@ -279,6 +279,18 @@ const configView = (over = {}) => ({
   references: [],
   instructions: [],
   websearch: { mode: 'inherit', provider: '' },
+  policies: [],
+  advanced: {
+    snapshots: 'inherit',
+    formatter: 'inherit',
+    watcherIgnore: [],
+    mediaImage: { auto_resize: 'inherit', maxWidth: '', maxHeight: '', maxBase64Bytes: '' },
+    toolOutput: { maxLines: '', maxBytes: '' },
+    compaction: { auto: 'inherit', keepTokens: '', buffer: '' },
+    warming: { enabled: 'inherit', prompt: '', interval: '', duration: '' },
+    experimental: { todo: 'inherit', subagentDepth: '', imageModel: '', locationIdleTimeout: '' },
+    providers: [],
+  },
   parseError: null,
   hash: 'hash-1',
   sources: sourcesOf(),
@@ -340,7 +352,7 @@ function installConfigFake() {
       case '/api/opencode-config/save': {
         const failed = refuse(endpoint) ?? guard(body);
         if (failed) return failed;
-        fake.view = { ...read(), hash: 'hash-2', text: '{"model":"anthropic/claude-baru"}\n', config: { model: body.form?.model ?? 'anthropic/claude-baru' }, agents: [], references: Array.isArray(body.form?.references) ? body.form.references : [], instructions: Array.isArray(body.form?.instructions) ? body.form.instructions : [], websearch: body.form?.websearch ?? { mode: 'inherit', provider: '' }, parseError: null, backup: 'b-new' };
+        fake.view = { ...read(), hash: 'hash-2', text: '{"model":"anthropic/claude-baru"}\n', config: { model: body.form?.model ?? 'anthropic/claude-baru' }, agents: [], references: Array.isArray(body.form?.references) ? body.form.references : [], instructions: Array.isArray(body.form?.instructions) ? body.form.instructions : [], websearch: body.form?.websearch ?? { mode: 'inherit', provider: '' }, policies: Array.isArray(body.form?.policies) ? body.form.policies : [], advanced: body.form?.advanced ?? configView().advanced, parseError: null, backup: 'b-new' };
         return json(read());
       }
       case '/api/opencode-config/backups':
@@ -970,6 +982,79 @@ test('form config: instructions dan provider web search tampil, ditambah, lalu d
       saved = await page.eval(() => window.__ocfake.posts.filter((post) => post.path.endsWith('/save')).at(-1).body.form);
       assert.deepEqual(saved.instructions, []);
       assert.deepEqual(saved.websearch, { mode: 'provider', provider: 'tavily' });
+
+      assert.equal(await page.eval(horizontalOverflow), false);
+      assert.equal(await page.eval(modalOverflow), false);
+      assert.deepEqual(page.problems, [], 'no console errors');
+    } finally {
+      await page.close();
+    }
+  }
+});
+
+test('form config: policies dan config lanjutan tampil, diubah, lalu dikirim — mobile & desktop', async () => {
+  const advanced = {
+    snapshots: 'off',
+    formatter: 'inherit',
+    watcherIgnore: ['dist/**'],
+    mediaImage: { auto_resize: 'off', maxWidth: 1000, maxHeight: '', maxBase64Bytes: '' },
+    toolOutput: { maxLines: 100, maxBytes: '' },
+    compaction: { auto: 'on', keepTokens: 5000, buffer: '15%' },
+    warming: { enabled: 'on', prompt: 'OK', interval: 'auto', duration: '' },
+    experimental: { todo: 'on', subagentDepth: 2, imageModel: '', locationIdleTimeout: 'false' },
+    providers: [{ id: 'openai', headers: '{"A":"1"}', body: '' }],
+  };
+  for (const vp of VIEWPORTS) {
+    const page = await configPage(vp);
+    try {
+      await openConfigEditor(page, { view: configView({ policies: [{ action: 'tool.use', resource: 'shell:rm *', effect: 'deny' }], advanced }) });
+      await page.waitFor(() => document.querySelectorAll('#oc-policy-list .oc-agent').length === 1, { message: 'policy dari server' });
+      assert.equal(await page.eval(() => document.querySelector('[data-policy-resource]').value), 'shell:rm *');
+      assert.equal(await page.eval(() => document.querySelector('#oc-snapshots').value), 'off');
+      assert.equal(await page.eval(() => document.querySelector('#oc-output-lines').value), '100');
+      assert.equal(await page.eval(() => document.querySelector('[data-provider-headers]').value), '{"A":"1"}');
+
+      await page.eval(() => {
+        document.querySelector('[data-policy-effect]').value = 'allow';
+        document.querySelector('#oc-policy-add').click();
+        const row = [...document.querySelectorAll('#oc-policy-list .oc-agent')].at(-1);
+        const set = (selector, value) => {
+          const el = row.querySelector(selector);
+          el.value = value;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        set('[data-policy-action]', 'provider.use');
+        set('[data-policy-resource]', '*');
+        document.querySelector('#oc-output-lines').value = '50';
+        document.querySelector('#oc-media-width').value = '1500';
+        document.querySelector('#oc-warming-prompt').value = 'Halo';
+        document.querySelector('#oc-exp-depth').value = '3';
+        const headers = document.querySelector('[data-provider-headers]');
+        headers.value = '{"B":"2"}';
+        headers.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('#oc-config-save').click();
+      });
+      await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => /Config OpenCode disimpan/.test(t.textContent)), { message: 'toast simpan' });
+      let saved = await page.eval(() => window.__ocfake.posts.filter((post) => post.path.endsWith('/save')).at(-1).body.form);
+      assert.deepEqual(saved.policies, [
+        { action: 'tool.use', resource: 'shell:rm *', effect: 'allow' },
+        { action: 'provider.use', resource: '*', effect: 'allow' },
+      ]);
+      assert.equal(saved.advanced.snapshots, 'off');
+      assert.equal(saved.advanced.toolOutput.maxLines, '50');
+      assert.equal(saved.advanced.mediaImage.maxWidth, '1500');
+      assert.equal(saved.advanced.warming.prompt, 'Halo');
+      assert.equal(saved.advanced.experimental.subagentDepth, '3');
+      assert.deepEqual(saved.advanced.watcherIgnore, ['dist/**']);
+      assert.deepEqual(saved.advanced.providers, [{ id: 'openai', headers: '{"B":"2"}', body: '' }]);
+
+      await page.eval(() => {
+        for (const button of document.querySelectorAll('#oc-policy-list [data-policy-remove]')) button.click();
+        document.querySelector('#oc-config-save').click();
+      });
+      await page.waitFor(() => window.__ocfake.posts.filter((post) => post.path.endsWith('/save')).length >= 2, { message: 'simpan kedua' });
+      saved = await page.eval(() => window.__ocfake.posts.filter((post) => post.path.endsWith('/save')).at(-1).body.form);
+      assert.deepEqual(saved.policies, []);
 
       assert.equal(await page.eval(horizontalOverflow), false);
       assert.equal(await page.eval(modalOverflow), false);

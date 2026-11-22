@@ -1437,6 +1437,62 @@
           <p class="muted small">Provider tool pencarian OpenCode. <b>Bawaan</b> membiarkan OpenCode memilih; <b>Nonaktif</b> menghapus tool pencarian. Kunci (API key) provider diatur dari 👤 Akun → provider web search.</p>
           <div class="acct-actions"><button type="button" id="oc-commands-open" class="ghost">📝 Commands OpenCode…</button></div>
           <p class="muted small">Command = file <code>.opencode/commands</code> (project) atau <code>~/.config/opencode/commands</code> (semua project). Memakai <code>$ARGUMENTS</code>, <code>$1</code>, dan <code>!`cmd`</code>; OpenCode memuat ulang otomatis.</p>
+          <details class="oc-backups" id="oc-policies-wrap">
+            <summary>🛡️ Policies (hard-deny)</summary>
+            <p class="muted small">Statement biner <code>allow</code>/<code>deny</code> yang hanya mengetatkan izin (tidak pernah bertanya). Urutan dipertahankan; statement terakhir yang cocok menang. Contoh: <code>tool.use</code> + <code>shell:git push *</code> + <code>deny</code>.</p>
+            <datalist id="oc-policy-actions">
+              <option value="provider.use"></option><option value="tool.use"></option><option value="integration.connect"></option><option value="integration.use"></option><option value="mcp.use"></option><option value="skill.use"></option><option value="plugin.use"></option><option value="websearch.use"></option>
+            </datalist>
+            <div id="oc-policy-list" class="oc-agent-list"></div>
+            <div class="acct-actions"><button type="button" id="oc-policy-add" class="ghost">＋ Policy</button></div>
+          </details>
+          <details class="oc-backups" id="oc-advanced-wrap">
+            <summary>⚙️ Config lanjutan</summary>
+            <p class="muted small">Kosongkan angka untuk menghapus field. <b>Bawaan</b> tidak menyentuh file. Bentuk <code>formatter</code> objek atau kunci eksperimental lain diatur lewat tab JSON. Field <code>experimental.*</code> bisa berubah di rilis OpenCode berikutnya.</p>
+            <div class="oc-form-grid">
+              <label class="oc-field"><span>Snapshots (undo/revert)</span><select id="oc-snapshots"><option value="inherit">Bawaan</option><option value="on">Aktif</option><option value="off">Nonaktif</option></select></label>
+              <label class="oc-field"><span>Formatter setelah write/edit</span><select id="oc-formatter"><option value="inherit">Bawaan (bentuk objek lewat JSON)</option><option value="on">Aktif</option><option value="off">Nonaktif</option></select></label>
+            </div>
+            <div class="oc-agents-head"><b>Compaction</b></div>
+            <div class="oc-form-grid">
+              <label class="oc-field"><span>Otomatis</span><select id="oc-compaction-auto"><option value="inherit">Bawaan</option><option value="on">Aktif</option><option value="off">Nonaktif</option></select></label>
+              <label class="oc-field"><span>Pertahankan token</span><input id="oc-compaction-keep" type="number" min="0" step="1" placeholder="15000" /></label>
+              <label class="oc-field"><span>Buffer konteks</span><input id="oc-compaction-buffer" maxlength="20" placeholder="15%" /></label>
+            </div>
+            <div class="oc-agents-head"><b>Warming</b></div>
+            <div class="oc-form-grid">
+              <label class="oc-field"><span>Warming</span><select id="oc-warming-enabled"><option value="inherit">Bawaan (nonaktif)</option><option value="on">Aktif</option><option value="off">Nonaktif</option></select></label>
+              <label class="oc-field"><span>Prompt</span><input id="oc-warming-prompt" maxlength="500" placeholder="Do not perform any work. Reply with exactly: OK" /></label>
+              <label class="oc-field"><span>Interval</span><input id="oc-warming-interval" maxlength="40" placeholder="auto" /></label>
+              <label class="oc-field"><span>Durasi</span><input id="oc-warming-duration" maxlength="40" placeholder="30 minutes" /></label>
+            </div>
+            <div class="oc-agents-head"><b>Watcher</b><button type="button" id="oc-watcher-add" class="ghost">＋ Pola</button></div>
+            <div id="oc-watcher-list" class="oc-agent-list"></div>
+            <div class="oc-agents-head"><b>Media gambar</b></div>
+            <div class="oc-form-grid">
+              <label class="oc-field"><span>Resize otomatis</span><select id="oc-media-autoresize"><option value="inherit">Bawaan</option><option value="on">Aktif</option><option value="off">Nonaktif</option></select></label>
+              <label class="oc-field"><span>Lebar maks</span><input id="oc-media-width" type="number" min="0" step="1" placeholder="2000" /></label>
+              <label class="oc-field"><span>Tinggi maks</span><input id="oc-media-height" type="number" min="0" step="1" placeholder="2000" /></label>
+              <label class="oc-field"><span>Byte base64 maks</span><input id="oc-media-base64" type="number" min="0" step="1" placeholder="5242880" /></label>
+            </div>
+            <div class="oc-agents-head"><b>Output tool</b></div>
+            <div class="oc-form-grid">
+              <label class="oc-field"><span>Baris maks</span><input id="oc-output-lines" type="number" min="0" step="1" placeholder="2000" /></label>
+              <label class="oc-field"><span>Byte maks</span><input id="oc-output-bytes" type="number" min="0" step="1" placeholder="51200" /></label>
+            </div>
+            <div class="oc-agents-head"><b>Experimental</b></div>
+            <div class="oc-form-grid">
+              <label class="oc-field"><span>Todos (todowrite)</span><select id="oc-exp-todo"><option value="inherit">Bawaan</option><option value="on">Aktif</option><option value="off">Nonaktif</option></select></label>
+              <label class="oc-field"><span>Kedalaman subagent</span><input id="oc-exp-depth" type="number" min="0" max="5" step="1" placeholder="1" /></label>
+              <label class="oc-field"><span>Model gambar</span><input id="oc-exp-image" maxlength="200" placeholder="openai/gpt-image-2" /></label>
+              <label class="oc-field"><span>Idle lokasi</span><input id="oc-exp-idle" maxlength="40" placeholder="60 minutes atau false" /></label>
+            </div>
+          </details>
+          <details class="oc-backups" id="oc-providers-wrap">
+            <summary>🔌 Provider: headers &amp; body</summary>
+            <p class="muted small">Hanya provider yang sudah ada di config. Isi JSON objek; kosongkan untuk menghapus. Kunci provider lain (<code>package</code>, <code>env</code>, <code>models</code>) tidak disentuh.</p>
+            <div id="oc-provider-list" class="oc-agent-list"></div>
+          </details>
         </div>
         <div id="oc-json-panel" class="oc-json-panel" hidden>
           <label class="oc-field"><span>Isi file</span><textarea id="oc-json-text" rows="16" spellcheck="false" aria-label="Isi config OpenCode"></textarea></label>

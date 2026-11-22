@@ -15,7 +15,6 @@ const isObject = (value) => Boolean(value) && typeof value === 'object' && !Arra
 const tri = (value) => (value === true ? 'on' : value === false ? 'off' : 'inherit');
 const num = (value) => (Number.isInteger(value) ? value : '');
 const text = (value) => (typeof value === 'string' ? value : '');
-const obj = (value) => (isObject(value) ? value : {});
 
 const requireObject = (parent, key, name) => {
   if (parent[key] === undefined) parent[key] = {};
