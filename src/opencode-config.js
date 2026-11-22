@@ -216,6 +216,16 @@ const parseConfig = (text) => {
   return validateObject(config);
 };
 
+/** `instructions` is an array of files/globs/URLs always read into the prompt; anything else is ignored by the form. */
+const instructionsView = (config) => (Array.isArray(config.instructions) ? config.instructions.filter((item) => typeof item === 'string') : []);
+
+/** `websearch` is `false`, `{ provider }`, or absent (OpenCode's own default). */
+const websearchView = (config) => {
+  if (config.websearch === false) return { mode: 'off', provider: '' };
+  const provider = isObject(config.websearch) && typeof config.websearch.provider === 'string' ? config.websearch.provider : '';
+  return provider ? { mode: 'provider', provider } : { mode: 'inherit', provider: '' };
+};
+
 const agentsView = (config) => {
   const agents = isObject(config.agent) ? config.agent : {};
   return Object.entries(agents)
@@ -309,6 +319,8 @@ export function readOpenCodeConfig({ scope, projectPath, home } = {}) {
     config,
     agents: agentsView(config),
     references: referencesView(config),
+    instructions: instructionsView(config),
+    websearch: websearchView(config),
     parseError,
     hash,
     sources,
@@ -764,6 +776,45 @@ function mergeReferences(config, items) {
   else delete config.references;
 }
 
+/** The form's `instructions` list: trimmed, de-duplicated, bounded; an empty list removes the key. */
+function mergeInstructions(config, items) {
+  if (!Array.isArray(items)) throw new OpenCodeConfigError(400, 'Daftar instructions tidak valid.');
+  const out = [];
+  const seen = new Set();
+  for (const item of items) {
+    if (typeof item !== 'string') throw new OpenCodeConfigError(400, 'Setiap instruksi harus berupa teks.');
+    const clean = item.trim();
+    if (!clean) continue;
+    if (clean.length > 500) throw new OpenCodeConfigError(400, 'Satu instruksi maksimal 500 karakter.');
+    if (/[\u0000-\u001f\u007f]/.test(clean)) throw new OpenCodeConfigError(400, 'Instruksi tidak boleh memuat karakter kontrol.');
+    if (seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+    if (out.length > 100) throw new OpenCodeConfigError(400, 'Maksimal 100 instruksi.');
+  }
+  if (out.length) config.instructions = out;
+  else delete config.instructions;
+}
+
+/** `websearch`: inherit (remove the key), off (`false`), or one provider id. Other keys of the old object survive. */
+function mergeWebsearch(config, value) {
+  if (!isObject(value)) throw new OpenCodeConfigError(400, 'Pengaturan web search tidak valid.');
+  if (value.mode === 'inherit') {
+    delete config.websearch;
+    return;
+  }
+  if (value.mode === 'off') {
+    config.websearch = false;
+    return;
+  }
+  if (value.mode !== 'provider') throw new OpenCodeConfigError(400, 'Mode web search tidak dikenal.');
+  const provider = typeof value.provider === 'string' ? value.provider.trim() : '';
+  if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(provider)) {
+    throw new OpenCodeConfigError(400, 'Provider web search tidak valid (huruf kecil, angka, minus).');
+  }
+  config.websearch = { ...(isObject(config.websearch) ? config.websearch : {}), provider };
+}
+
 /** The form's model/small-model/agents/references merged into the existing config; unknown keys stay untouched. */
 export function mergeForm(base, form = {}) {
   const config = validateObject(JSON.parse(JSON.stringify(isObject(base) ? base : {})));
@@ -779,6 +830,8 @@ export function mergeForm(base, form = {}) {
   }
   if (form.agents !== undefined) mergeAgents(config, form.agents);
   if (form.references !== undefined) mergeReferences(config, form.references);
+  if (form.instructions !== undefined) mergeInstructions(config, form.instructions);
+  if (form.websearch !== undefined) mergeWebsearch(config, form.websearch);
   return validateObject(config);
 }
 

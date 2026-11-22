@@ -736,3 +736,44 @@ test('mergeForm references menolak alias tak sah, file:, branch ../.. tanpa menu
   }
   assert.equal(mergeForm({}, { references: [] }).references, undefined);
 });
+
+test('readOpenCodeConfig: instructions dan websearch tampil apa adanya', () => {
+  const dir = path.join(TMP, 'projects', 'oc-view');
+  write(path.join(dir, 'opencode.json'), JSON.stringify({ instructions: ['AGENTS.md', '~/aturan/*.md'], websearch: { provider: 'exa' } }));
+  const view = readOpenCodeConfig({ scope: 'project', projectPath: dir, home: HOME });
+  assert.deepEqual(view.instructions, ['AGENTS.md', '~/aturan/*.md']);
+  assert.deepEqual(view.websearch, { mode: 'provider', provider: 'exa' });
+  write(path.join(dir, 'opencode.json'), JSON.stringify({ websearch: false }));
+  assert.deepEqual(readOpenCodeConfig({ scope: 'project', projectPath: dir, home: HOME }).websearch, { mode: 'off', provider: '' });
+  write(path.join(dir, 'opencode.json'), JSON.stringify({ websearch: true }));
+  assert.deepEqual(readOpenCodeConfig({ scope: 'project', projectPath: dir, home: HOME }).websearch, { mode: 'inherit', provider: '' });
+});
+
+test('mergeForm instructions/websearch: validasi, kosong menghapus, kunci lain aman', () => {
+  const base = { theme: 'x', websearch: { provider: 'exa', extra: 1 }, instructions: ['lama.md'] };
+  let merged = mergeForm(base, { instructions: ['AGENTS.md', 'AGENTS.md', ' https://contoh.test/a.md '], websearch: { mode: 'provider', provider: 'tavily' } });
+  assert.deepEqual(merged.instructions, ['AGENTS.md', 'https://contoh.test/a.md']);
+  assert.deepEqual(merged.websearch, { provider: 'tavily', extra: 1 });
+  assert.equal(merged.theme, 'x');
+  merged = mergeForm(merged, { instructions: [], websearch: { mode: 'off', provider: '' } });
+  assert.equal(merged.instructions, undefined);
+  assert.equal(merged.websearch, false);
+  merged = mergeForm(merged, { websearch: { mode: 'inherit', provider: '' } });
+  assert.equal('websearch' in merged, false);
+  // Untouched fields stay untouched.
+  const kept = mergeForm({ instructions: ['a.md'], websearch: { provider: 'exa' } }, { model: 'anthropic/x' });
+  assert.deepEqual(kept.instructions, ['a.md']);
+  assert.deepEqual(kept.websearch, { provider: 'exa' });
+  for (const bad of [
+    { instructions: 'x' },
+    { instructions: ['x'.repeat(501)] },
+    { instructions: ['a\nb'] },
+    { instructions: Array.from({ length: 101 }, (_, i) => `a${i}.md`) },
+    { websearch: { mode: 'provider', provider: '' } },
+    { websearch: { mode: 'provider', provider: 'Bad Provider' } },
+    { websearch: { mode: 'lain', provider: '' } },
+    { websearch: 'exa' },
+  ]) {
+    assert.throws(() => mergeForm({}, bad), (e) => e.status === 400, JSON.stringify(bad));
+  }
+});
