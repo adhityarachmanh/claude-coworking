@@ -154,6 +154,7 @@
               <button role="menuitem" data-more="export-session" data-cap="exportSession" title="Seluruh sesi dari transcript Claude Code (judul, tanggal, pesan; tanpa thinking)">⬇ Export sesi lengkap (.md)</button>
               <button role="menuitem" data-more="permissions" data-cap="permissions">🛡️ Aturan izin (/permissions)</button>
               <button role="menuitem" data-more="worktree">⎇ Worktree…</button>
+              <button role="menuitem" data-more="dirs" data-cap="permissions" title="Folder di luar project yang boleh dibaca dan ditulis Claude Code">📂 Folder tambahan…</button>
               <button role="menuitem" data-more="skills">🧩 Skills…</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
@@ -851,6 +852,22 @@
           <button type="button" id="worktree-exit" class="ghost" hidden title="Sesi berikutnya kembali berjalan di folder project">⏏ Keluar</button>
         </form>
         <p id="worktree-laptop-note" class="muted small" hidden>🔒 Membuat, masuk, dan menghapus worktree hanya bisa dari laptop: aksi itu menjalankan git di komputer ini.</p>
+      </div>
+    </div>
+
+    <!-- 📂 Folder tambahan: folders outside the project Claude may read and write (features/add-dirs.js) -->
+    <div id="dirs-modal" class="modal" hidden>
+      <div class="modal-card worktree-card" role="dialog" aria-modal="true" aria-labelledby="dirs-title">
+        <div class="modal-head"><b id="dirs-title">📂 Folder tambahan <small id="dirs-project" class="muted"></small></b><button type="button" class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="dirs-sum" class="muted small" role="status" aria-live="polite"></p>
+        <p class="muted small">Claude boleh membaca dan menulis folder ini di luar folder project (seperti <code>--add-dir</code>). Daftar dibatasi 10 folder, dan perubahan berlaku pada pesan berikutnya.</p>
+        <ul id="dirs-list" class="worktree-list" aria-label="Daftar folder tambahan"></ul>
+        <form id="dirs-add-form" class="worktree-create">
+          <input id="dirs-path" aria-label="Path folder tambahan" placeholder="C:\kerja\pustaka" autocomplete="off" spellcheck="false" maxlength="500" />
+          <button type="submit" id="dirs-add" class="primary">＋ Tambah</button>
+        </form>
+        <p id="dirs-error" class="field-error" role="alert" hidden></p>
+        <p id="dirs-laptop-note" class="muted small" hidden>📂 Menambah dan melepas folder hanya bisa dari laptop: folder itu ada di komputer ini.</p>
       </div>
     </div>
 
@@ -1796,6 +1813,7 @@
           <button type="button" class="sheet-row" data-proxy="#sb-title" data-mutates data-needs-session><span aria-hidden="true">✎</span><span>Ganti nama sesi</span></button>
           <button type="button" class="sheet-row" data-action="rewind" data-mutates data-cap="rewind"><span aria-hidden="true">⏪</span><span>Rewind</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='worktree']" data-mutates><span aria-hidden="true">⎇</span><span>Worktree</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='dirs']" data-mutates data-cap="permissions"><span aria-hidden="true">📂</span><span>Folder tambahan</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='skills']" data-mutates><span aria-hidden="true">🧩</span><span>Skills</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>
