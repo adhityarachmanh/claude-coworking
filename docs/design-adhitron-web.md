@@ -73,6 +73,26 @@ Adhitron lokal (Node di PC) butuh PC hidup. Adhitron Web = versi hosting yang te
   review UU PDP sebelum rilis publik (lihat `docs/privasi-adhitron-web.md`).
 - Deploy: `@netlify/blobs` store `adhitron-bridge` (jembatan) & `adhitron-web` (rate-limit chat);
   `DATABASE_URL` = Neon; `ENCRYPTION_KEY` = 32-byte hex; cron `* * * * *` di `netlify/functions/scheduled.mjs`.
+
+### Menjalankan lokal (`bridge/`)
+
+```powershell
+cd bridge
+Copy-Item .env.example .env   # isi ENCRYPTION_KEY (salin dari Netlify UI; nilai disamarkan di CLI)
+npm run dev                   # → http://localhost:8888
+```
+
+- `npm run dev` menjalankan `scripts/dev-server.mjs`: memuat `.env` lalu menyerahkan ke
+  `netlify functions:serve`. **`DATABASE_URL`** boleh dikosongkan di `.env` — CLI menyuntik dari project
+  Netlify (context default = produksi). **`ENCRYPTION_KEY` wajib diisi di `.env`** karena tidak disuntik
+  untuk fungsi lokal; tanpa itu penambahan provider menjawab **500** `Server belum dikonfigurasi untuk menyimpan key`.
+  Nilai aslinya hanya bisa disalin dari **Netlify UI → Environment variables** (`netlify env:get` menyamarkannya, mis. `****e0aa`).
+- Situs ini menyajikan **fungsi/fungsi-saja** (tanpa static server/portal) — cukup untuk menguji `/chat/*` dan API.
+  Aset statis (`/chat/app.js`, halaman) tetap dilayani karena situs dirender dari fungsi `bridge.mjs`.
+- `netlify dev` **tidak** dipakai di mesin ini: proxy fungsinya macet (edge-bundler butuh `deno`, dan ada folder
+  `netlify/` nyasar di root repo yang membingungkan resolve sehingga semua rute 404), walau ia bisa membaca `.env`.
+  `netlify functions:serve` melayani fungsi dengan andal tetapi **tidak** membaca `.env` — itulah kenapa ada runner.
+- `.env` **tidak pernah** di-commit (`bridge/.gitignore`: `.env` / `.env.*`, dengan pengecualian `!.env.example`).
 - Env opsional browsing: `TAVILY_API_KEY` / `BRAVE_API_KEY` (kosong → DuckDuckGo HTML tanpa key).
 - **Auth: email + password saja.** Login pihak ketiga (Google dll.) sengaja **tidak** dipakai v1 — lihat catatan
   di bawah.
