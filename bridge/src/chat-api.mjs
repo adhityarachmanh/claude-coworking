@@ -18,7 +18,7 @@ const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { ...CORS_SAME_ORIGIN, ...headers } });
 
 /** Versi kebijakan privasi/syarat yang berlaku. Naikkan saat teksnya berubah bermakna (catat di CHANGELOG). */
-export const POLICY_VERSION = '2026-11-22';
+export const POLICY_VERSION = '2026-11-23';
 
 /** IP client (Netlify) — tak dipercaya kalau kosong; sama seperti jembatan. */
 function clientIp(request) {

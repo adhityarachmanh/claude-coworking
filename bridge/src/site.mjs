@@ -146,7 +146,33 @@ textarea:focus{border-color:var(--accent);outline:none}
 color:#fff;font-size:1.2rem;cursor:pointer}
 .sendbtn:disabled{opacity:.5;cursor:default}
 .sendbtn.stop{background:#6e2a24}
+/* --- 📎 lampiran (composer + chip pesan) --- */
+.attachments{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.attachments[hidden]{display:none}
+.chip-att{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;padding:3px 4px 3px 3px;
+border-radius:999px;border:1px solid var(--line);background:var(--surface-2);font-size:.78rem;color:var(--text-2)}
+.chip-att .thumb{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;overflow:hidden;
+background:var(--surface);font-size:1.1rem}
+.chip-att .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.chip-att .name{min-width:0;max-width:22ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip-att .size{flex:none;color:var(--muted)}
+.chip-att .rm{flex:none;width:26px;height:26px;padding:0;border:0;border-radius:50%;background:transparent;
+color:var(--muted);font:inherit;line-height:1;cursor:pointer}
+.chip-att .rm:hover{color:var(--accent-2);background:var(--line)}
+.chip-att .rm:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.attach{flex:none;width:44px;min-height:52px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);
+color:var(--text-2);font:inherit;font-size:1.2rem;cursor:pointer}
+.attach:hover{border-color:var(--accent-line);color:var(--text)}
+.attach:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.composer.drop{border-radius:0;box-shadow:inset 0 0 0 2px var(--accent)}
+.composer.drop textarea{border-color:var(--accent);background:var(--accent-soft)}
+/* chip lampiran pada bubble pesan user (dari riwayat, tanpa isi) */
+.msg-attachments{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.msg-attachments .chip-att{background:transparent;border-color:var(--accent-line)}
+.msg-attachments .chip-att .thumb{background:transparent}
+.msg-attachments .chip-att .size{color:var(--muted)}
 .hint{font-size:.74rem;color:var(--muted);margin:6px 2px 0}
+.hint.bad{color:var(--accent-2)}
 .overlay{position:fixed;inset:0;background:rgba(6,7,10,.7);display:flex;align-items:flex-start;justify-content:center;
 padding:24px 12px;overflow:auto;z-index:40}
 .overlay[hidden]{display:none}
@@ -173,7 +199,8 @@ border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle}
 transform:translateX(-100%);transition:transform .18s}.side.open{transform:none;box-shadow:0 0 0 100vmax rgba(0,0,0,.5)}
 input,select,textarea,.ctl select,.ctl input[type=text]{font-size:16px}}
 @media(pointer:coarse){.conv,.mini,.menu-btn,.ctl select,.ctl input[type=text],.ctl label.chk{min-height:44px}
-.chip{padding:8px 12px}.conv .del{min-width:44px;min-height:44px}}
+.chip{padding:8px 12px}.conv .del{min-width:44px;min-height:44px}
+.chip-att{min-height:44px}.chip-att .rm{width:40px;height:40px}}
 /* --- kerangka penuh untuk /chat (tanpa header/footer) --- */
 body.nochrome{height:var(--vv-h,100dvh);min-height:0;overflow:hidden}
 body.nochrome .chatwrap{height:100%;padding-bottom:env(safe-area-inset-bottom)}
@@ -294,7 +321,10 @@ export function chatPageHtml() {
           <label class="chk" id="auto-wrap" title="Biarkan LLM memilih model &amp; effort"><input type="checkbox" id="auto"> Auto</label>
           <label class="chk" id="browse-wrap" title="Cari web &amp; kutip sumber"><input type="checkbox" id="browsing"> 🔎 Browsing</label>
         </div>
+        <div id="attachments" class="attachments" hidden></div>
         <div class="rowin">
+          <button class="attach" id="btn-attach" type="button" title="Lampirkan file: gambar atau teks (bisa juga drag &amp; drop ke kotak ini)" aria-label="Lampirkan file">📎</button>
+          <input id="file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp,text/*,.log,.md,.json,.csv" multiple hidden>
           <textarea id="input" rows="2" placeholder="Tulis pesan… (Enter kirim, Shift+Enter baris baru)" aria-label="Pesan"></textarea>
           <button class="sendbtn" id="send" type="submit" aria-label="Kirim">➤</button>
         </div>
@@ -408,6 +438,11 @@ export function privacyPageHtml() {
 <h2>Data yang kami simpan</h2>
 <p>Email, hash password, API key milikmu (terenkripsi <b>AES-256-GCM</b>), riwayat percakapan, pesan,
 dan catatan pencarian saat fitur Browsing dipakai. API key hanya 4 karakter terakhirnya yang ditampilkan.</p>
+<p>Jika kamu melampirkan file, kami menyimpan <b>nama file, jenis, dan ukurannya</b> sebagai bagian dari riwayat
+pesan. Untuk <b>file teks</b> (log, kode, md, json, csv, …), <b>isi teksnya juga disimpan</b> agar percakapan
+lanjutan tetap memiliki konteks. <b>Isi gambar tidak kami simpan</b> — gambar hanya diteruskan ke penyedia AI
+untuk giliran bersangkutan. Karena itu, jangan melampirkan file yang memuat data pribadi orang lain tanpa izin,
+atau data sensitif (mis. dokumen identitas, data kesehatan, data keuangan).</p>
 <h2>Untuk apa</h2>
 <p>Hanya untuk menjalankan akunmu: login, menyimpan provider, dan mengobrol. Kami tidak menjual data dan tidak
 memasang pelacak iklan. Pemrosesan dilakukan untuk <b>menjalankan layanan yang kamu minta</b> (akun, provider, chat)
@@ -416,8 +451,10 @@ dan atas <b>kepentingan sah</b> menjaga keamanan layanan.</p>
 <p>Situs hanya memakai satu <b>cookie sesi</b> yang diperlukan agar kamu tetap masuk (httpOnly, Secure, SameSite).
 Tidak ada cookie iklan atau pelacak pihak ketiga.</p>
 <h2>Pihak ketiga</h2>
-<p>Data disimpan di <b>Neon</b> (database) dan <b>Netlify</b> (hosting). Saat kamu mengobrol, isi pesan dikirim ke
-<b>penyedia AI milikmu</b> untuk menghasilkan jawaban. Saat Browsing aktif, teks pencarian dikirim ke mesin
+<p>Data disimpan di <b>Neon</b> (database) dan <b>Netlify</b> (hosting). Saat kamu mengobrol, <b>isi pesanmu beserta
+lampiran yang kamu kirim</b> (teks file dan/atau gambar) diteruskan ke <b>penyedia AI milikmu</b> untuk menghasilkan
+jawaban — data yang sudah diterima penyedia tunduk pada kebijakan privasi & masa retensi penyedia itu, di luar
+kendali operator situs ini. Saat Browsing aktif, teks pencarian dikirim ke mesin
 pencari (DuckDuckGo, atau Tavily/Brave bila diaktifkan operator).</p>
 <h2>Catatan penting soal API key</h2>
 <p>API key-mu dienkripsi dengan kunci operator. Artinya secara teknis operator situs dapat mendekripsinya;
@@ -426,6 +463,8 @@ kami berkomitmen tidak mengaksesnya kecuali untuk operasional yang kamu minta.</
 <p>Data akunmu (email, provider, riwayat percakapan) disimpan selama akunmu aktif. Sesi login berlaku
 <b>${SESSION_TTL_DAYS} hari</b> dan yang kedaluwarsa dibersihkan berkala. Catatan aktivitas Browsing
 (<code>tool_runs</code>: query/URL yang kamu pakai) disimpan paling lama <b>${TOOL_RUN_KEEP_DAYS} hari</b> lalu dihapus otomatis.
+Nama file dan isi lampiran teks ikut terhapus saat kamu menghapus pesan, percakapan, atau akunmu — tidak ada batas
+retensi terpisah untuk lampiran selain masa hidup akunmu.
 Menghapus akun menghapus semuanya.</p>
 <h2>Hakmu</h2>
 <p>Kamu bisa <b>menghapus akun beserta seluruh datanya</b> kapan saja dari halaman Chat (⚙ / tombol Hapus akun).
@@ -446,7 +485,9 @@ export function termsPageHtml() {
 milikmu; situs hanya perantara.</p>
 <h2>Tanggung jawabmu</h2>
 <p>Jaga kerahasiaan password dan API key-mu. Jangan memakai layanan untuk hal melanggar hukum, menyebarkan
-konten berbahaya, atau mengganggu layanan orang lain.</p>
+konten berbahaya, atau mengganggu layanan orang lain. Kamu <b>bertanggung jawab atas isi yang kamu lampirkan</b>:
+jangan melampirkan data pribadi pihak lain (mis. nama, NIK, email, nomor telepon pada screenshot atau log) tanpa
+dasar yang sah, dan jangan melampirkan data yang bersifat sensitif.</p>
 <h2>Tanpa jaminan</h2>
 <p>Layanan disediakan "apa adanya". Jawaban AI bisa salah — periksa sebelum dipakai. Kami tidak menjamin
 layanan bebas gangguan.</p>

@@ -3,7 +3,7 @@
 // Semua tanpa jaringan: `fetchImpl` palsu yang mengembalikan aliran SSE.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildRequest, parseStream, messageProblem, allowedModels, MAX_MESSAGE_CHARS } from './src/chat.mjs';
+import { buildRequest, blocksToContent, parseStream, messageProblem, allowedModels, MAX_MESSAGE_CHARS } from './src/chat.mjs';
 import { classify, parseClassifierOutput, classifierModel, CLASSIFIER_PROMPT } from './src/auto.mjs';
 import { encryptSecret } from './src/secrets.mjs';
 import { handleChatApi } from './src/chat-api.mjs';
@@ -84,6 +84,52 @@ test('messageProblem & allowedModels', () => {
   assert.match(messageProblem('   '), /kosong/);
   assert.match(messageProblem('x'.repeat(MAX_MESSAGE_CHARS + 1)), /panjang/);
   assert.deepEqual(allowedModels('openai'), ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-4.1', 'gpt-4.1-mini', 'o4-mini']);
+});
+
+test('messageProblem: pesan kosong boleh bila ada lampiran; tetap tolak bila panjang', () => {
+  assert.equal(messageProblem('', true), null);
+  assert.equal(messageProblem('   ', true), null);
+  assert.match(messageProblem('x'.repeat(MAX_MESSAGE_CHARS + 1), true), /panjang/);
+});
+
+// ---------------------------------------------------------------- blok konten (lampiran)
+
+test('blocksToContent: teks & gambar diterjemahkan per provider', () => {
+  const blocks = [
+    { type: 'text', text: 'hai' },
+    { type: 'image', mediaType: 'image/png', data: 'ABC' },
+  ];
+  assert.deepEqual(blocksToContent('openai', blocks), [
+    { type: 'text', text: 'hai' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,ABC' } },
+  ]);
+  assert.deepEqual(blocksToContent('anthropic', blocks), [
+    { type: 'text', text: 'hai' },
+    { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'ABC' } },
+  ]);
+  assert.deepEqual(blocksToContent('google', blocks), [
+    { text: 'hai' },
+    { inlineData: { mimeType: 'image/png', data: 'ABC' } },
+  ]);
+  assert.throws(() => blocksToContent('mars', blocks));
+});
+
+test('buildRequest: messages dengan array blok per provider; string tetap string', () => {
+  const blocks = [
+    { type: 'text', text: 'lihat ini' },
+    { type: 'image', mediaType: 'image/jpeg', data: 'ZZZ' },
+  ];
+  const o = buildRequest({ kind: 'openai', base_url: null }, 'k', { model: 'gpt-5', messages: [{ role: 'user', content: blocks }] });
+  assert.deepEqual(o.body.messages[0].content, blocksToContent('openai', blocks));
+  const a = buildRequest({ kind: 'anthropic', base_url: null }, 'k', { model: 'm', messages: [{ role: 'user', content: blocks }] });
+  assert.deepEqual(a.body.messages[0].content, blocksToContent('anthropic', blocks));
+  const g = buildRequest({ kind: 'google', base_url: null }, 'k', { model: 'm', messages: [{ role: 'user', content: blocks }] });
+  assert.deepEqual(g.body.contents[0].parts, blocksToContent('google', blocks));
+  // Regresi: content string tetap berupa string (bukan array), sama seperti sebelumnya.
+  const s = buildRequest({ kind: 'openai', base_url: null }, 'k', { model: 'm', messages: [{ role: 'user', content: 'halo' }] });
+  assert.equal(s.body.messages[0].content, 'halo');
+  const sg = buildRequest({ kind: 'google', base_url: null }, 'k', { model: 'm', messages: [{ role: 'user', content: 'halo' }] });
+  assert.deepEqual(sg.body.contents[0].parts, [{ text: 'halo' }]);
 });
 
 // ---------------------------------------------------------------- parseStream

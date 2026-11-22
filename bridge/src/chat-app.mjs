@@ -233,6 +233,7 @@ function closeSide() { const s = $('side'); s.classList.remove('open'); s.remove
 function setConv(c) {
   CONV = c;
   $('ttl').textContent = c.title || 'Percakapan baru';
+  clearAttach();
   renderConvs(); renderModelOptions(); renderCtx();
 }
 
@@ -270,7 +271,8 @@ function renderThread(messages, citations) {
   $('thread').innerHTML = messages.map((m) => {
     const cites = byMsg[m.id] || [];
     const chips = cites.length ? '<div class="chips">' + cites.map((c) => '<a class="chip" href="' + esc(c.url) + '" target="_blank" rel="noopener noreferrer"><b>[' + c.idx + ']</b> ' + esc(c.title || c.url) + '</a>').join('') + '</div>' : '';
-    return '<div class="turn ' + esc(m.role) + '" data-id="' + esc(m.id) + '"><div class="who">' + (m.role === 'user' ? 'Kamu' : 'Asisten') + '</div><div class="bubble">' + md(m.content || '') + chips + '</div></div>';
+    const atts = m.meta && Array.isArray(m.meta.attachments) ? historyAttachments(m.meta.attachments) : '';
+    return '<div class="turn ' + esc(m.role) + '" data-id="' + esc(m.id) + '"><div class="who">' + (m.role === 'user' ? 'Kamu' : 'Asisten') + '</div><div class="bubble">' + md(m.content || '') + atts + chips + '</div></div>';
   }).join('');
 }
 function scrollBottom() { const t = $('thread'); t.scrollTop = t.scrollHeight; }
@@ -294,6 +296,166 @@ $('thread').addEventListener('click', (e) => {
   $('input').dispatchEvent(new Event('input'));
 });
 
+/* ---------------------------------------------------------------- lampiran (📎) */
+// Client side rules (kinds, limits, refusals). The server checks every upload again — this is only UX.
+const ATT_LIMITS = { maxFiles: 10, imageBytes: Math.floor((5 * 1024 * 1024 * 3) / 4), textBytes: 200 * 1024, totalBytes: 3 * 1024 * 1024 };
+const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+const TEXT_EXT = ['txt', 'text', 'log', 'out', 'err', 'md', 'markdown', 'mdx', 'rst', 'json', 'jsonc', 'json5', 'jsonl', 'ndjson',
+  'csv', 'tsv', 'yaml', 'yml', 'xml', 'toml', 'ini', 'cfg', 'conf', 'env', 'sql', 'graphql', 'diff', 'patch',
+  'html', 'htm', 'css', 'scss', 'svg', 'js', 'mjs', 'cjs', 'jsx', 'ts', 'mts', 'cts', 'tsx', 'py', 'rb', 'go', 'rs',
+  'java', 'kt', 'swift', 'c', 'h', 'cc', 'cpp', 'hpp', 'cs', 'php', 'dart', 'lua', 'pl', 'r', 'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd'];
+const TEXT_NAMES = ['dockerfile', 'makefile', 'readme', 'license', 'changelog', 'codeowners', '.gitignore', '.env'];
+const TEXT_MIME = /^(text\/|application\/(json|ld\+json|xml|x-yaml|yaml|sql|javascript|x-javascript|typescript|x-sh|toml|x-ndjson|graphql)$)/;
+// Pending files: [{ kind, name, size, mediaType, data(base64), url? }]
+let ATTACH = [];
+let readingAtt = Promise.resolve();
+
+function attExt(name) {
+  const b = String(name || '').toLowerCase();
+  const d = b.lastIndexOf('.');
+  return d > 0 ? b.slice(d + 1) : '';
+}
+/** 'image' | 'text' | null (extension first, then MIME). */
+function attachmentKind(name, mediaType) {
+  const base = String(name || '').toLowerCase();
+  const ext = attExt(base);
+  const type = String(mediaType || '').toLowerCase();
+  if (IMAGE_EXT.indexOf(ext) >= 0) return 'image';
+  if (TEXT_EXT.indexOf(ext) >= 0 || TEXT_NAMES.indexOf(base) >= 0 || /\.log(\.|$)/.test(base)) return 'text';
+  if (/^image\/(png|jpeg|gif|webp)$/.test(type)) return 'image';
+  if (TEXT_MIME.test(type)) return 'text';
+  return null;
+}
+function fmtSize(bytes) {
+  const n = Math.max(0, Number(bytes) || 0);
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+  return (n / 1024 / 1024).toFixed(1).replace('.', ',') + ' MB';
+}
+/** Name safe to show and to send: no folders, no control/bidi characters, at most 100 chars. */
+function safeName(name) {
+  let base = String(name || '').split(/[\\/]/).pop();
+  base = base.replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '');
+  base = base.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029"<>\x60|?*:]/g, '_').replace(/\s+/g, ' ').trim();
+  base = base.replace(/^\.+$/, '');
+  const chars = Array.from(base);
+  if (chars.length > 100) {
+    const ext = attExt(base);
+    const keep = ext && ext.length < 12 ? '.' + ext : '';
+    base = chars.slice(0, 100 - Array.from(keep).length - 1).join('') + '…' + keep;
+  }
+  return base || 'lampiran';
+}
+/** Image type from magic bytes only (the declared MIME is never trusted). */
+function imageMagic(b) {
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return 'image/png';
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38 && (b[4] === 0x37 || b[4] === 0x39) && b[5] === 0x61) return 'image/gif';
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  return null;
+}
+/** Base64 of raw bytes (never btoa on a unicode string). */
+function toBase64(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+/** UTF-8/UTF-16 text, or null when the bytes are binary. */
+function decodeText(bytes) {
+  try {
+    let text;
+    if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) text = new TextDecoder('utf-16le', { fatal: true }).decode(bytes.subarray(2));
+    else if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) text = new TextDecoder('utf-16be', { fatal: true }).decode(bytes.subarray(2));
+    else text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
+    return text.indexOf('\u0000') >= 0 ? null : text;
+  } catch { return null; }
+}
+function attError(msg) {
+  const h = $('hint');
+  h.textContent = '⚠ ' + msg;
+  h.className = 'hint bad';
+}
+function chipHtml(a, i) {
+  const icon = a.kind === 'image' && a.url
+    ? '<span class="thumb"><img src="' + esc(a.url) + '" alt=""></span>'
+    : '<span class="thumb" aria-hidden="true">📄</span>';
+  const rm = i === null || i === undefined ? '' : '<button type="button" class="rm" data-i="' + i + '" title="Hapus" aria-label="Hapus lampiran ' + esc(a.name) + '">×</button>';
+  return '<span class="chip-att" title="' + esc(a.name) + '">' + icon
+    + '<span class="name">' + esc(a.name) + '</span><span class="size">' + fmtSize(a.size) + '</span>' + rm + '</span>';
+}
+function renderAttach() {
+  const box = $('attachments');
+  box.hidden = !ATTACH.length;
+  box.innerHTML = ATTACH.map((a, i) => chipHtml(a, i)).join('');
+}
+function clearAttach() { ATTACH = []; renderAttach(); }
+/** Chips of a message's stored attachments (name + size only, no body). */
+function historyAttachments(list) {
+  if (!Array.isArray(list) || !list.length) return '';
+  const chips = list
+    .filter((a) => a && typeof a === 'object')
+    .map((a) => chipHtml({ kind: a.kind === 'image' ? 'image' : 'text', name: safeName(a.name), size: a.size }, null));
+  return chips.length ? '<div class="msg-attachments">' + chips.join('') + '</div>' : '';
+}
+function totalAttach() { return ATTACH.reduce((sum, a) => sum + (a.size || 0), 0); }
+
+/** Reads picked/dropped/pasted files one by one so the totals are checked in order. */
+function addFiles(files) {
+  const list = files ? [].slice.call(files) : [];
+  if (!list.length) return readingAtt;
+  readingAtt = readingAtt.then(async () => {
+    for (const file of list) {
+      const name = safeName(file.name);
+      const kind = attachmentKind(name, file.type);
+      if (!kind) { attError(name + ': jenis file tidak didukung. Lampirkan gambar (PNG/JPEG/GIF/WebP) atau file teks (log, kode, md, json, csv, …).'); continue; }
+      const size = file.size || 0;
+      if (!size) { attError(name + ' kosong.'); continue; }
+      if (kind === 'image' && size > ATT_LIMITS.imageBytes) { attError(name + ' lebih dari ' + fmtSize(ATT_LIMITS.imageBytes) + '.'); continue; }
+      if (kind === 'text' && size > ATT_LIMITS.textBytes) { attError(name + ' lebih dari ' + fmtSize(ATT_LIMITS.textBytes) + '.'); continue; }
+      if (ATTACH.length >= ATT_LIMITS.maxFiles) { attError('Maksimal ' + ATT_LIMITS.maxFiles + ' lampiran per pesan.'); break; }
+      if (totalAttach() + size > ATT_LIMITS.totalBytes) { attError('Total lampiran lebih dari ' + fmtSize(ATT_LIMITS.totalBytes) + '.'); continue; }
+      let bytes;
+      try { bytes = new Uint8Array(await file.arrayBuffer()); } catch { attError(name + ' tidak bisa dibaca.'); continue; }
+      if (kind === 'image') {
+        const type = imageMagic(bytes);
+        if (!type) { attError(name + ' bukan gambar PNG/JPEG/GIF/WebP yang valid.'); continue; }
+        const data = toBase64(bytes);
+        ATTACH.push({ kind: 'image', name, size, mediaType: type, data, url: 'data:' + type + ';base64,' + data });
+      } else {
+        if (decodeText(bytes) === null) { attError(name + ' bukan file teks (UTF-8).'); continue; }
+        ATTACH.push({ kind: 'text', name, size, mediaType: 'text/plain', data: toBase64(bytes) });
+      }
+      renderAttach();
+    }
+  });
+  return readingAtt;
+}
+
+$('btn-attach').addEventListener('click', () => $('file-input').click());
+$('file-input').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+$('attachments').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-i]');
+  if (!b) return;
+  ATTACH.splice(Number(b.dataset.i), 1);
+  renderAttach();
+});
+// Paste an image from the clipboard (text paste stays a normal paste).
+$('input').addEventListener('paste', (e) => {
+  const files = e.clipboardData && e.clipboardData.files ? [].slice.call(e.clipboardData.files) : [];
+  if (!files.length || (e.clipboardData.getData && e.clipboardData.getData('text/plain'))) return;
+  e.preventDefault();
+  addFiles(files);
+});
+// Drag & drop over the composer box.
+const composerEl = $('composer');
+composerEl.addEventListener('dragover', (e) => { e.preventDefault(); composerEl.classList.add('drop'); });
+composerEl.addEventListener('dragleave', (e) => { if (!composerEl.contains(e.relatedTarget)) composerEl.classList.remove('drop'); });
+composerEl.addEventListener('drop', (e) => {
+  e.preventDefault();
+  composerEl.classList.remove('drop');
+  if (e.dataTransfer) addFiles(e.dataTransfer.files);
+});
+
 /* ---------------------------------------------------------------- kirim + streaming */
 $('composer').addEventListener('submit', (e) => { e.preventDefault(); SENDING ? stop() : sendMsg(); });
 $('input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!SENDING) sendMsg(); } });
@@ -305,6 +467,7 @@ function setSending(on) {
   b.classList.toggle('stop', on);
   b.textContent = on ? '■' : '➤';
   b.title = on ? 'Stop' : 'Kirim';
+  $('hint').className = 'hint';
   $('hint').innerHTML = on ? '<span class="spin"></span> Asisten menulis…' : '';
 }
 function stop() { if (CONTROLLER) CONTROLLER.abort(); }
@@ -312,10 +475,12 @@ function stop() { if (CONTROLLER) CONTROLLER.abort(); }
 async function sendMsg() {
   if (!CONV) { alert('Buat atau buka percakapan dulu.'); return; }
   const text = $('input').value.trim();
-  if (!text) return;
+  if (!text && !ATTACH.length) return;
   $('input').value = ''; $('input').style.height = 'auto';
   if ($('thread').querySelector('.empty')) $('thread').innerHTML = '';
-  appendTurn('user', text);
+  appendTurn('user', text, ATTACH.map((a) => ({ kind: a.kind, name: a.name, size: a.size })));
+  const sent = ATTACH.slice();
+  clearAttach();
   const asst = appendTurn('assistant', '');
   scrollBottom();
   setSending(true);
@@ -324,11 +489,15 @@ async function sendMsg() {
   try {
     const res = await fetch('/chat/api/conversations/' + CONV.id + '/messages', {
       method: 'POST', credentials: 'same-origin', signal: CONTROLLER.signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, attachments: sent.map((a) => ({ name: a.name, mediaType: a.mediaType, data: a.data })) }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       asst.bubble.innerHTML = '<span class="msg bad">' + esc(err.error || 'Gagal mengirim') + '</span>';
+      // The message never left: put the files back (ATTACH was cleared before sending) so they can be retried.
+      ATTACH = sent;
+      renderAttach();
       finished = true; return;
     }
     const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''; let acc = ''; let cites = [];
@@ -360,10 +529,11 @@ function chipsHtml(cites) {
   if (!cites || !cites.length) return '';
   return '<div class="chips">' + cites.map((c, i) => '<a class="chip" href="' + esc(c.url) + '" target="_blank" rel="noopener noreferrer"><b>[' + (i + 1) + ']</b> ' + esc(c.title || c.url) + '</a>').join('') + '</div>';
 }
-function appendTurn(role, text) {
+function appendTurn(role, text, atts) {
   const el = document.createElement('div');
   el.className = 'turn ' + role;
-  el.innerHTML = '<div class="who">' + (role === 'user' ? 'Kamu' : 'Asisten') + '</div><div class="bubble">' + (text ? md(text) : '<span class="muted"><span class="spin"></span> …</span>') + '</div>';
+  const attHtml = historyAttachments(atts);
+  el.innerHTML = '<div class="who">' + (role === 'user' ? 'Kamu' : 'Asisten') + '</div><div class="bubble">' + (text ? md(text) : '<span class="muted"><span class="spin"></span> …</span>') + attHtml + '</div>';
   $('thread').appendChild(el);
   return { el, bubble: el.querySelector('.bubble') };
 }

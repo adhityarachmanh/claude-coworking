@@ -6,16 +6,30 @@ import { modelForTier, defaultModelFor, EFFORT_LEVELS } from './providers.mjs';
 import { decryptSecret } from './secrets.mjs';
 import { makeCallModel } from './client.mjs';
 import { runBrowsingTurn } from './browsing.mjs';
+import { AttachmentError, attachmentChips, contentBlocks, readAttachments, renderTextBlocks } from './attachments.mjs';
 
 /** System prompt dasar. Browsing menambah instruksi kutipan (lihat browsing.mjs). */
 const BASE_SYSTEM = 'Kamu adalah asisten AI di Adhitron Web. Jawab dalam bahasa yang dipakai pengguna, ringkas dan jelas.';
 
 const clampEffort = (e) => (EFFORT_LEVELS.includes(e) ? e : 'default');
 
-/** Bentuk riwayat untuk provider: hanya role user/assistant + teks. */
+/**
+ * Bentuk riwayat untuk provider. Pesan user dibangun ulang sebagai array blok netral: blok teks lampiran
+ * yang tersimpan (`meta.textBlocks`) disisipkan lagi, diikuti teks ketik. Gambar lama TIDAK dikirim ulang
+ * (hemat token; lihat docs/design-adhitron-web.md §4). Pesan user tanpa isi apa pun dilewati agar provider
+ * tidak menolak `content` kosong.
+ */
 const historyFor = (messages) => messages
   .filter((m) => m.role === 'user' || m.role === 'assistant')
-  .map((m) => ({ role: m.role, content: m.content }));
+  .map((m) => {
+    if (m.role === 'assistant') return { role: m.role, content: m.content };
+    const blocks = [
+      ...(m.meta?.textBlocks ?? []).map((t) => ({ type: 'text', text: t })),
+      ...(String(m.content ?? '').trim() ? [{ type: 'text', text: m.content }] : []),
+    ];
+    return { role: 'user', content: blocks };
+  })
+  .filter((m) => (typeof m.content === 'string' ? true : m.content.length > 0));
 
 const sse = (event) => `data: ${JSON.stringify(event)}\n\n`;
 
@@ -62,7 +76,17 @@ export async function resolveTurn(env, user, conv, { fetchImpl, text }) {
 export async function runTurn(env, user, conv, request, { fetchImpl }) {
   const body = await request.json().catch(() => null);
   const text = String(body?.text ?? '').trim();
-  const problem = messageProblem(text);
+  // Lampiran divalidasi ulang di server sebelum apa pun disimpan; input salah → 400 tanpa efek samping.
+  let items;
+  try {
+    items = readAttachments(body);
+  } catch (err) {
+    if (err instanceof AttachmentError) {
+      return new Response(JSON.stringify({ error: err.message }), { status: 400, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
+    }
+    throw err;
+  }
+  const problem = messageProblem(text, items.length > 0);
   if (problem) {
     return new Response(JSON.stringify({ error: problem }), { status: 400, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
   }
@@ -72,10 +96,17 @@ export async function runTurn(env, user, conv, request, { fetchImpl }) {
   }
   const { provider, apiKey, model, effort } = resolved;
 
+  // Blok teks lampiran dirender SEKALI: dipakai untuk giliran ini DAN disimpan, agar id acak anti-injeksi
+  // tetap sama saat riwayat dikirim ulang pada giliran lanjutan (docs §4).
+  const textBlocks = renderTextBlocks(items);
+  const blocks = contentBlocks(items, text, textBlocks);
+  // Simpan chip + blok teks yang sudah dirender HANYA bila ada lampiran; isi gambar (base64) TIDAK disimpan.
+  const meta = items.length ? { attachments: attachmentChips(items), textBlocks } : null;
   // Simpan pesan user lebih dulu (muncul di riwayat walau stream gagal).
-  const userMsg = await env.repo.addMessage(user.id, conv.id, { role: 'user', content: text });
-  if (conv.title === 'Percakapan baru' && text) {
-    await env.repo.updateConversation(user.id, conv.id, { title: text.slice(0, 60) });
+  const userMsg = await env.repo.addMessage(user.id, conv.id, { role: 'user', content: text, meta });
+  if (conv.title === 'Percakapan baru') {
+    const title = text || items[0]?.name || 'Lampiran';
+    await env.repo.updateConversation(user.id, conv.id, { title: title.slice(0, 60) });
   }
   const prior = await env.repo.listMessages(user.id, conv.id);
   const history = historyFor(prior.filter((m) => m.id !== userMsg.id));
@@ -94,12 +125,12 @@ export async function runTurn(env, user, conv, request, { fetchImpl }) {
       try {
         if (conv.browsing) {
           // Jalur browsing: menjalankan pencarian/`fetch` lalu satu permintaan final dengan sumber.
-          const out = await runBrowsingTurn({ env, user, conv, provider, apiKey, model, effort, history, text, fetchImpl, send });
+          const out = await runBrowsingTurn({ env, user, conv, provider, apiKey, model, effort, history, text, content: blocks, fetchImpl, send });
           usedModel = out.model ?? model;
           cites = out.sources;
         } else {
           send({ type: 'meta', model, effort });
-          await streamOnce({ provider, apiKey, model, effort, history, text, fetchImpl, send });
+          await streamOnce({ provider, apiKey, model, effort, history, content: blocks, fetchImpl, send });
         }
         const meta = { model: usedModel, effort };
         const saved = await env.repo.addMessage(user.id, conv.id, { role: 'assistant', content: collected.text, meta });
@@ -124,11 +155,13 @@ export async function runTurn(env, user, conv, request, { fetchImpl }) {
 
 /**
  * Satu permintaan streaming ke provider (tanpa browsing). Mengembalikan { text }.
- * `send` menerima event SSE yang sudah dinormalkan.
+ * `send` menerima event SSE yang sudah dinormalkan. `content` (string atau array blok netral) adalah isi
+ * pesan user; `text` dipakai bila `content` tidak diberikan (mis. jalur browsing).
  */
-export async function streamOnce({ provider, apiKey, model, effort, history, text, fetchImpl = globalThis.fetch, send, system = BASE_SYSTEM, tools }) {
+export async function streamOnce({ provider, apiKey, model, effort, history, text, content, fetchImpl = globalThis.fetch, send, system = BASE_SYSTEM, tools }) {
+  const userContent = content ?? text;
   const { url, headers, body } = buildRequest(provider, apiKey, {
-    model, effort, system, messages: [...history, { role: 'user', content: text }], tools,
+    model, effort, system, messages: [...history, { role: 'user', content: userContent }], tools,
   });
   const res = await fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`provider ${res.status}`);

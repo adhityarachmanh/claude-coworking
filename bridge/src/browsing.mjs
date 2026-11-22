@@ -31,7 +31,7 @@ export function sourcesBlock(sources) {
  * `env` boleh menyuntikkan `searchImpl` (query, engine, limit) dan `fetchPageImpl` (url) untuk test,
  * plus `searchEngineEnv` untuk memilih mesin (Tavily/Brave/DuckDuckGo).
  */
-export async function runBrowsingTurn({ env, user, conv, provider, apiKey, model, effort, history, text, fetchImpl, send }) {
+export async function runBrowsingTurn({ env, user, conv, provider, apiKey, model, effort, history, text, content, fetchImpl, send }) {
   send({ type: 'meta', model, effort, browsing: true });
 
   // Batas pencarian per percakapan: hitung dari tool_runs, berhenti memakai browsing bila habis.
@@ -70,7 +70,7 @@ export async function runBrowsingTurn({ env, user, conv, provider, apiKey, model
   const out = await streamOnce({
     provider, apiKey, model, effort,
     system: `${BROWSING_SYSTEM}\n\n${context}`,
-    history, text, fetchImpl, send,
+    history, content, text, fetchImpl, send,
   });
   return { text: out.text, sources, model };
 }

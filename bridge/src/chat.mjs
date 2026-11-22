@@ -14,8 +14,8 @@ const baseFor = (provider) => provider.base_url || {
  * Bangun permintaan chat (streaming) ke provider.
  * @param {object} provider baris provider (kind, base_url, id)
  * @param {string} apiKey
- * @param {{ model: string, effort?: string, system?: string, messages: {role,content}[],
- *   tools?: object[], maxTokens?: number }} opts
+ * @param {{ model: string, effort?: string, system?: string, messages: {role,content:string|object[]}[],
+ *   tools?: object[], maxTokens?: number }} opts (content: string atau array blok netral — lihat blocksToContent)
  */
 export function buildRequest(provider, apiKey, opts) {
   const { model, effort = 'default', messages, system, tools, maxTokens = 4096 } = opts;
@@ -25,7 +25,10 @@ export function buildRequest(provider, apiKey, opts) {
   if (provider.kind === 'openai') {
     const body = {
       model, stream: true, max_completion_tokens: maxTokens,
-      messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages],
+      messages: [
+        ...(system ? [{ role: 'system', content: system }] : []),
+        ...messages.map((m) => ({ role: m.role, content: contentFor('openai', m.content) })),
+      ],
       ...extra,
     };
     if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
@@ -35,7 +38,7 @@ export function buildRequest(provider, apiKey, opts) {
   if (provider.kind === 'anthropic') {
     const body = {
       model, stream: true, max_tokens: maxTokens,
-      messages: messages.map((m) => ({ role: m.role === 'system' ? 'user' : m.role, content: m.content })),
+      messages: messages.map((m) => ({ role: m.role === 'system' ? 'user' : m.role, content: contentFor('anthropic', m.content) })),
       ...extra,
     };
     if (system) body.system = system;
@@ -45,7 +48,7 @@ export function buildRequest(provider, apiKey, opts) {
 
   if (provider.kind === 'google') {
     const body = {
-      contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+      contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: googleParts(m.content) })),
       generationConfig: { maxOutputTokens: maxTokens, ...extra },
     };
     if (system) body.systemInstruction = { parts: [{ text: system }] };
@@ -58,6 +61,27 @@ export function buildRequest(provider, apiKey, opts) {
 
 const anthropicTool = (t) => ({ name: t.function.name, description: t.function.description, input_schema: t.function.parameters });
 const googleTool = (t) => ({ name: t.function.name, description: t.function.description, parameters: t.function.parameters });
+
+/**
+ * Terjemahkan array blok konten netral ke bentuk satu provider (fungsi murni; hanya di sini perbedaan
+ * provider diketahui). Blok netral: { type:'text', text } | { type:'image', mediaType, data(base64) }.
+ * @returns blok OpenAI (`text`/`image_url`) atau Anthropic (`text`/`image`) atau parts Google (`text`/`inlineData`)
+ */
+export function blocksToContent(kind, blocks) {
+  return blocks.map((b) => {
+    if (b.type === 'image') {
+      if (kind === 'openai') return { type: 'image_url', image_url: { url: `data:${b.mediaType};base64,${b.data}` } };
+      if (kind === 'anthropic') return { type: 'image', source: { type: 'base64', media_type: b.mediaType, data: b.data } };
+      if (kind === 'google') return { inlineData: { mimeType: b.mediaType, data: b.data } };
+      throw new Error(`Provider kind tidak dikenal: ${kind}`);
+    }
+    return kind === 'google' ? { text: b.text } : { type: 'text', text: b.text };
+  });
+}
+
+// `content` pesan boleh string (perilaku lama, tak berubah) atau array blok netral.
+const contentFor = (kind, content) => (typeof content === 'string' ? content : blocksToContent(kind, content));
+const googleParts = (content) => (typeof content === 'string' ? [{ text: content }] : blocksToContent('google', content));
 
 /**
  * Parser aliran per provider. Mengembalikan fungsi `push(chunkText)` yang mengembalikan array event.
@@ -152,9 +176,10 @@ const safeJson = (s) => { try { return JSON.parse(s || '{}'); } catch { return {
 
 /** Batas panjang pesan user (dipakai rute; dites di sini agar konsisten). */
 export const MAX_MESSAGE_CHARS = 32_000;
-export const messageProblem = (text) => {
+/** `hasAttachments` true → pesan boleh tanpa teks (lampiran saja). */
+export const messageProblem = (text, hasAttachments = false) => {
   const t = String(text ?? '').trim();
-  if (!t) return 'Pesan kosong';
+  if (!t) return hasAttachments ? null : 'Pesan kosong';
   if (t.length > MAX_MESSAGE_CHARS) return `Pesan terlalu panjang (maksimal ${MAX_MESSAGE_CHARS} karakter)`;
   return null;
 };
