@@ -749,8 +749,7 @@ test('readOpenCodeConfig: instructions dan websearch tampil apa adanya', () => {
   assert.deepEqual(readOpenCodeConfig({ scope: 'project', projectPath: dir, home: HOME }).websearch, { mode: 'inherit', provider: '' });
 });
 
-test('mergeForm instructions/websearch: validasi, kosong menghapus, kunci lain aman', () => {
-  const base = { theme: 'x', websearch: { provider: 'exa', extra: 1 }, instructions: ['lama.md'] };
+test('mergeForm instructions/websearch: validasi, kosong menghapus, kunci lain aman', () => {  const base = { theme: 'x', websearch: { provider: 'exa', extra: 1 }, instructions: ['lama.md'] };
   let merged = mergeForm(base, { instructions: ['AGENTS.md', 'AGENTS.md', ' https://contoh.test/a.md '], websearch: { mode: 'provider', provider: 'tavily' } });
   assert.deepEqual(merged.instructions, ['AGENTS.md', 'https://contoh.test/a.md']);
   assert.deepEqual(merged.websearch, { provider: 'tavily', extra: 1 });
@@ -778,4 +777,34 @@ test('mergeForm instructions/websearch: validasi, kosong menghapus, kunci lain a
   ]) {
     assert.throws(() => mergeForm({}, bad), (e) => e.status === 400, JSON.stringify(bad));
   }
+});
+
+test('view/merge wiring: policies dan advanced ikut, kunci lain tidak tersentuh', () => {
+  const dir = path.join(TMP, 'projects', 'oc-wiring');
+  write(path.join(dir, 'opencode.json'), JSON.stringify({
+    model: 'anthropic/x',
+    policies: [{ action: 'tool.use', resource: 'shell:rm *', effect: 'deny' }],
+    snapshots: false,
+    providers: { openai: { headers: { A: '1' }, models: {} } },
+  }));
+  const view = readOpenCodeConfig({ scope: 'project', projectPath: dir, home: HOME });
+  assert.deepEqual(view.policies, [{ action: 'tool.use', resource: 'shell:rm *', effect: 'deny' }]);
+  assert.equal(view.advanced.snapshots, 'off');
+  assert.deepEqual(view.advanced.providers, [{ id: 'openai', headers: '{"A":"1"}', body: '' }]);
+
+  const merged = mergeForm(view.config, {
+    policies: [{ action: 'provider.use', resource: '*', effect: 'deny' }],
+    advanced: { toolOutput: { maxLines: '50', maxBytes: '' }, providers: [{ id: 'openai', headers: '{"B":"2"}', body: '' }] },
+  });
+  assert.equal(merged.model, 'anthropic/x');
+  assert.deepEqual(merged.policies, [{ action: 'provider.use', resource: '*', effect: 'deny' }]);
+  assert.deepEqual(merged.tool_output, { max_lines: 50 });
+  assert.equal(merged.providers.openai.headers.B, '2');
+  assert.deepEqual(merged.providers.openai.models, {});
+
+  const untouched = mergeForm({ snapshots: false, policies: [{ action: 'tool.use', resource: 'y', effect: 'deny' }] }, { model: 'anthropic/y' });
+  assert.equal(untouched.snapshots, false);
+  assert.equal(untouched.policies.length, 1);
+  assert.throws(() => mergeForm({}, { policies: [{ action: 'tool.use', resource: 'x', effect: 'ask' }] }), (e) => e.status === 400);
+  assert.throws(() => mergeForm({}, { advanced: { toolOutput: { maxLines: 'x' } } }), (e) => e.status === 400);
 });

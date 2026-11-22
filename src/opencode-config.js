@@ -8,6 +8,8 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync,
 import os from 'node:os';
 import path from 'node:path';
 import { parseJsonc } from './opencode-bin.js';
+import { advancedView, mergeAdvanced } from './opencode-advanced.js';
+import { mergePolicies, policiesView } from './opencode-policies.js';
 
 export const OPENCODE_CONFIG_LIMITS = Object.freeze({ bytes: 512 * 1024, agents: 50, name: 64, description: 500, model: 200, prompt: 20_000, references: 50, referenceValue: 500, referenceBranch: 200 });
 const AGENT_NAME = /^[A-Za-z0-9][\w.-]{0,63}$/;
@@ -321,6 +323,8 @@ export function readOpenCodeConfig({ scope, projectPath, home } = {}) {
     references: referencesView(config),
     instructions: instructionsView(config),
     websearch: websearchView(config),
+    policies: policiesView(config),
+    advanced: advancedView(config),
     parseError,
     hash,
     sources,
@@ -832,6 +836,17 @@ export function mergeForm(base, form = {}) {
   if (form.references !== undefined) mergeReferences(config, form.references);
   if (form.instructions !== undefined) mergeInstructions(config, form.instructions);
   if (form.websearch !== undefined) mergeWebsearch(config, form.websearch);
+  // Policies and the advanced form have their own error types; the route only knows OpenCodeConfigError.
+  const asConfigError = (fn) => {
+    try {
+      fn();
+    } catch (err) {
+      if (err?.status === 400 && typeof err.message === 'string') throw new OpenCodeConfigError(400, err.message);
+      throw err;
+    }
+  };
+  if (form.policies !== undefined) asConfigError(() => mergePolicies(config, form.policies));
+  if (form.advanced !== undefined) asConfigError(() => mergeAdvanced(config, form.advanced));
   return validateObject(config);
 }
 
