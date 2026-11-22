@@ -3,16 +3,11 @@
 // Commands are read by OpenCode on demand, so no process restart follows a save. Nothing here starts OpenCode.
 import { CommandError, commandRoots, deleteCommand, listCommands, readCommand, saveCommand } from '../opencode-commands.js';
 import { json } from './http.js';
-import { withProject } from './project.js';
+import { openCodeOnly, withProject } from './project.js';
 
 const READ_DENIED = 'Commands OpenCode hanya bisa dibuka dari laptop atau lewat Tailscale.';
 const LAPTOP_ONLY = 'Command untuk semua project hanya bisa diubah dari laptop.';
 
-const openCodeOnly = (fn) => (ctx, req, res, params, body) => {
-  const engine = params?.project && ctx.hub?.engineOf ? ctx.hub.engineOf(params.project.id) : (ctx.hub?.engine ?? 'claude');
-  if (engine !== 'opencode') return json(res, 409, { error: 'Commands OpenCode hanya tersedia saat OpenCode aktif.' });
-  return fn(ctx, req, res, params, body);
-};
 const tool = async (res, fn) => {
   try {
     return await fn();

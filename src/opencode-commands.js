@@ -3,7 +3,7 @@
 // discovers. A command's path is its name (`team/deploy.md` → `/team/deploy`); the front matter carries metadata and
 // the body is the template. Nothing here starts OpenCode: writes are validated, atomic, backed up, and contained.
 import { randomBytes } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { openCodeConfigRoot } from './opencode-config.js';
 
@@ -17,12 +17,17 @@ export class CommandError extends Error {
 }
 
 const SEGMENT = /^[A-Za-z0-9][\w.-]{0,63}$/;
+const DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 const MAX_BACKUPS = 20;
 
 export function validCommandId(id) {
   const text = String(id ?? '');
   const parts = text.split('/');
-  return parts.length >= 1 && parts.length <= COMMAND_LIMITS.depth && parts.every((part) => SEGMENT.test(part) && part !== '.' && part !== '..');
+  return parts.length >= 1 && parts.length <= COMMAND_LIMITS.depth && parts.every((part) => {
+    if (!SEGMENT.test(part) || part === '.' || part === '..' || part.endsWith('.')) return false;
+    // Windows device names (NUL, CON, …) look like files but writes silently vanish.
+    return process.platform !== 'win32' || !DEVICE_NAME.test(part);
+  });
 }
 
 /** The roots OpenCode reads, in rising precedence: project (canonical, then legacy) and global (canonical, then legacy). */
@@ -36,18 +41,31 @@ export function commandRoots({ projectPath, env = process.env }) {
   ];
 }
 
+const unquote = (value) => {
+  const text = String(value ?? '').trim();
+  if (/^".*"$/.test(text)) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text.slice(1, -1);
+    }
+  }
+  return /^'.*'$/.test(text) ? text.slice(1, -1) : text;
+};
+
 /**
- * "---\ndescription: x\n---\nbody" → fields, the template body and the raw front block. A file without front matter
- * keeps its whole text as the template. Unknown front matter lines survive a save through `front`.
+ * "---\ndescription: x\n---\nbody" → fields, the template body and the raw front block. A BOM or blank lines before
+ * the front matter are tolerated (OpenCode's YAML parser ignores them too); a file without front matter keeps its
+ * whole text as the template. Unknown front matter lines survive a save through `front`.
  */
 export function parseCommandFile(text) {
-  const source = String(text ?? '');
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(source);
+  const source = String(text ?? '').replace(/^\uFEFF/, '');
+  const match = /^\s*---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(source);
   if (!match) return { description: '', agent: '', model: '', subagent: null, subtask: null, front: null, template: source };
   const meta = {};
   for (const line of match[1].split(/\r?\n/)) {
     const pair = /^([\w-]+):\s*(.*)$/.exec(line);
-    if (pair) meta[pair[1]] = pair[2].trim().replace(/^["']|["']$/g, '');
+    if (pair) meta[pair[1]] = unquote(pair[2]);
   }
   const bool = (value) => (value === 'true' ? true : value === 'false' ? false : null);
   return {
@@ -62,7 +80,6 @@ export function parseCommandFile(text) {
 }
 
 const oneLine = (value) => String(value ?? '').replace(/[\r\n]+/g, ' ').trim();
-const samePath = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
 
 const rootFor = ({ projectPath, env, scope, source }) => {
   const roots = commandRoots({ projectPath, env }).filter((root) => root.scope === scope);
@@ -72,24 +89,34 @@ const rootFor = ({ projectPath, env, scope, source }) => {
 };
 
 function safeRoot(dir, { create = true } = {}) {
-  if (create) mkdirSync(dir, { recursive: true });
+  if (create) {
+    try {
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      throw new CommandError(409, `Folder command tidak bisa dibuat/dibaca (${err.code ?? err.message}).`);
+    }
+  }
   let info;
   try {
     info = lstatSync(dir);
   } catch (err) {
     if (err.code === 'ENOENT') return null;
-    throw new CommandError(500, `Tidak bisa membaca folder command: ${err.code ?? err.message}`);
+    throw new CommandError(409, `Folder command tidak bisa dibaca (${err.code ?? err.message}).`);
   }
   if (info.isSymbolicLink() || !info.isDirectory()) throw new CommandError(409, 'Folder command berupa symlink; ubah langsung di folder aslinya.');
-  let real;
+  // A junction/symlink above the project folder is fine (the project itself may be one); only the folder itself is
+  // refused above. Resolving the real path keeps every file check inside what the project actually points at.
   try {
-    real = realpathSync(dir);
+    return realpathSync(dir);
   } catch (err) {
     throw new CommandError(409, `Folder command tidak bisa dibaca (${err.code ?? err.message}).`);
   }
-  if (!samePath(real, path.resolve(dir))) throw new CommandError(409, 'Folder command menunjuk ke luar folder project; ubah langsung di folder aslinya.');
-  return real;
 }
+
+const inside = (root, target) => {
+  const rel = path.relative(root, target);
+  return Boolean(rel) && !rel.startsWith('..') && !path.isAbsolute(rel);
+};
 
 function safeFile(realRoot, file) {
   if (!existsSync(file)) return null;
@@ -97,12 +124,27 @@ function safeFile(realRoot, file) {
   if (info.isSymbolicLink()) throw new CommandError(409, 'File command berupa symlink; ubah langsung di file aslinya.');
   if (!info.isFile()) throw new CommandError(409, 'File command bukan berkas biasa.');
   const real = realpathSync(file);
-  if (!samePath(path.dirname(real), realRoot)) throw new CommandError(409, 'File command menunjuk ke luar folder project; ubah langsung di file aslinya.');
+  // A nested id (`team/deploy`) is inside a subfolder; any link pointing outside the resolved root is refused.
+  if (!inside(realRoot, real)) throw new CommandError(409, 'File command menunjuk ke luar folder project; ubah langsung di file aslinya.');
   return info;
 }
 
 const fileFor = (dir, id) => path.join(dir, ...String(id).split('/')) + '.md';
 const idOf = (root, file) => path.relative(root, file).split(path.sep).join('/').replace(/\.md$/i, '');
+
+/** Removes the now-empty subfolders of a deleted/renamed nested id, never the root itself. */
+function removeEmptyParents(file, root) {
+  let dir = path.dirname(file);
+  while (inside(root, dir)) {
+    try {
+      if (readdirSync(dir).length) return;
+      rmdirSync(dir);
+    } catch {
+      return;
+    }
+    dir = path.dirname(dir);
+  }
+}
 
 /** All `.md` files under one root (depth-limited, hidden folders skipped). */
 function walk(dir, base, out, depth = 0) {
@@ -197,7 +239,7 @@ function backupCommand(file, { dataDir, scope, id }) {
   const root = commandBackupRoot(dataDir);
   mkdirSync(root, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const prefix = `${scope}~${id.replace(/\//g, '__')}~`;
+  const prefix = `${scope}~${encodeURIComponent(id)}~`;
   const dest = path.join(root, `${prefix}${stamp}-${randomBytes(3).toString('hex')}.md`);
   writeFileSync(dest, readFileSync(file));
   const mine = readdirSync(root).filter((name) => name.startsWith(prefix)).sort();
@@ -224,9 +266,9 @@ function commandText(front, fields, template) {
     if (at === -1) lines.push(`${key}: ${value}`);
     else lines[at] = `${key}: ${value}`;
   };
-  set('description', fields.description);
-  set('agent', fields.agent);
-  set('model', fields.model);
+  set('description', fields.description ? JSON.stringify(fields.description) : '');
+  set('agent', fields.agent ? JSON.stringify(fields.agent) : '');
+  set('model', fields.model ? JSON.stringify(fields.model) : '');
   set('subagent', fields.subagent === true ? 'true' : null);
   // An explicit false in the form overrides a legacy `subtask: true`; both keys are then absent (session default).
   if (fields.subagent === true || fields.subagent === false) {
@@ -282,9 +324,21 @@ export function saveCommand({
   const text = commandText(front, { description: descriptionText, agent: agentText, model: modelText, subagent: subagent === true ? true : subagent === false ? false : null }, template);
   mkdirSync(path.dirname(nextFile), { recursive: true });
   const temp = path.join(path.dirname(nextFile), `.${path.basename(nextFile)}-${randomBytes(4).toString('hex')}.tmp`);
-  writeFileSync(temp, text);
-  renameSync(temp, nextFile);
-  if (oldFile && previous !== id) unlinkSync(oldFile);
+  try {
+    writeFileSync(temp, text);
+    renameSync(temp, nextFile);
+  } catch (err) {
+    try {
+      unlinkSync(temp);
+    } catch {
+      // already gone
+    }
+    throw new CommandError(500, `Tidak bisa menulis command: ${err.code ?? err.message}`);
+  }
+  if (oldFile && previous !== id) {
+    unlinkSync(oldFile);
+    removeEmptyParents(oldFile, root);
+  }
   return { command: { id, description: descriptionText, agent: agentText, model: modelText, subagent: subagent === true ? true : subagent === false ? false : null, scope, source, mtime: statSync(nextFile).mtimeMs }, backedUp };
 }
 
@@ -300,5 +354,6 @@ export function deleteCommand({ projectPath, env = process.env, dataDir, scope, 
   if (mtime != null && Number(mtime) !== info.mtimeMs) throw new CommandError(409, 'File command sudah berubah di tempat lain. Muat ulang dulu, lalu coba lagi.');
   const backedUp = backupCommand(file, { dataDir, scope, id });
   unlinkSync(file);
+  removeEmptyParents(file, root);
   return { backedUp };
 }

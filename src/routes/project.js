@@ -23,3 +23,10 @@ export const claudeOnly = (fn, feature = 'Fitur ini') => (ctx, req, res, params,
   if (engine !== 'claude') return json(res, 409, { error: `${feature} hanya tersedia saat model Claude aktif.` });
   return fn(ctx, req, res, params, body);
 };
+
+/** The mirror of claudeOnly for the surfaces only OpenCode reads (commands and its own config files). */
+export const openCodeOnly = (fn, feature = 'Fitur ini') => (ctx, req, res, params, body) => {
+  const engine = params?.project && ctx.hub?.engineOf ? ctx.hub.engineOf(params.project.id) : (ctx.hub?.engine ?? 'claude');
+  if (engine !== 'opencode') return json(res, 409, { error: `${feature} hanya tersedia saat OpenCode aktif.` });
+  return fn(ctx, req, res, params, body);
+};

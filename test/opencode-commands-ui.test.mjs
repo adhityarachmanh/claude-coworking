@@ -149,7 +149,7 @@ test('kelola command OpenCode: buat, edit, hapus — mobile & desktop', async ()
         document.querySelector('#oc-command-save').click();
       });
       await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => /Command "review" tersimpan/.test(t.textContent)), { message: 'create toast' });
-      await waitFile(commandFile('review'), /description: Review perubahan/, 'created command file');
+      await waitFile(commandFile('review'), /description: "Review perubahan"/, 'created command file');
       await page.waitFor(() => document.querySelector('[data-cmd-edit="review"]'), { message: 'row after create' });
 
       await page.eval(() => document.querySelector('[data-cmd-edit="review"]').click());

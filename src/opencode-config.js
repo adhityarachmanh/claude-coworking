@@ -809,8 +809,8 @@ function mergeWebsearch(config, value) {
   }
   if (value.mode !== 'provider') throw new OpenCodeConfigError(400, 'Mode web search tidak dikenal.');
   const provider = typeof value.provider === 'string' ? value.provider.trim() : '';
-  if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(provider)) {
-    throw new OpenCodeConfigError(400, 'Provider web search tidak valid (huruf kecil, angka, minus).');
+  if (!/^[A-Za-z0-9][\w.-]{0,63}$/.test(provider)) {
+    throw new OpenCodeConfigError(400, 'Provider web search tidak valid (huruf/angka, -, _, titik).');
   }
   config.websearch = { ...(isObject(config.websearch) ? config.websearch : {}), provider };
 }

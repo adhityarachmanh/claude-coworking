@@ -764,6 +764,8 @@ test('mergeForm instructions/websearch: validasi, kosong menghapus, kunci lain a
   const kept = mergeForm({ instructions: ['a.md'], websearch: { provider: 'exa' } }, { model: 'anthropic/x' });
   assert.deepEqual(kept.instructions, ['a.md']);
   assert.deepEqual(kept.websearch, { provider: 'exa' });
+  // A provider id the app's own custom-provider block uses (upper case/dots) is accepted too.
+  assert.deepEqual(mergeForm({}, { websearch: { mode: 'provider', provider: 'MyProxy' } }).websearch, { provider: 'MyProxy' });
   for (const bad of [
     { instructions: 'x' },
     { instructions: ['x'.repeat(501)] },
