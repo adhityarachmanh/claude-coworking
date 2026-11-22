@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.89
+
+- **📂 Folder tambahan: tugas latar tidak lagi terpotong (temuan review).** Menambah atau melepas folder saat proses Claude sedang idle tetapi masih menjalankan shell/agent latar tidak lagi menutup proses itu; proses ditutup setelah tugas selesai, lalu pesan berikutnya memakai daftar folder baru. Repository reference OpenCode yang diawali `-` kini ditolak seperti cabang, dan `//server/share` ikut diuji sebagai path jaringan.
+
 ## 1.0.88
 
 - **📂 Folder tambahan (Claude Code).** Claude boleh membaca dan menulis folder di luar folder project — pustaka bersama, folder aset, repo lain — tanpa menyalinnya ke dalam project. Buka menu **⋯ → 📂 Folder tambahan…** (juga di sheet ⋯ HP): tambahkan path absolut (`C:\kerja\pustaka`, `~/lib`), lihat mana yang foldernya masih ada, dan lepas yang tidak dipakai. Daftarnya disimpan sebagai setelan project dan diteruskan ke Claude Code lewat `--add-dir`, jadi berlaku pada **pesan berikutnya** (giliran yang sedang berjalan tidak berubah di tengah jalan). Maksimal **10** folder; path jaringan (`\\server\share`) dan path relatif ditolak, folder yang sama tidak bisa masuk dua kali, dan folder yang sudah dihapus manual tetap bisa dilepas dari daftar. Hanya untuk project Claude Code dan hanya bisa diubah dari **laptop**; daftarnya tetap bisa dilihat dari HP lewat Tailscale.
