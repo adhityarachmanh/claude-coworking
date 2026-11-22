@@ -138,7 +138,7 @@ export function register(router) {
     if (body?.confirm !== 'HAPUS') return json(res, 400, { error: 'Konfirmasi tidak cocok. Ketik HAPUS untuk melanjutkan.' });
     const id = String(body?.projectId ?? '');
     const project = hub.projects.get(id);
-    if (!project || id === DEMO_ID || project.virtual) return json(res, 404, { error: 'Project tidak ditemukan.' });
+    if (!project || id === DEMO_ID || project.virtual || project.system) return json(res, 404, { error: 'Project tidak ditemukan.' });
     taskQueue?.forget?.(id);
     ledger?.removeProject?.(id);
     hub.clearProjectData(id);

@@ -174,10 +174,12 @@ export function registerProjectActions(router) {
   }));
   // 🗂 Archive hides a project from the picker without touching its data or folder.
   router.post('/api/projects/:id/archive', withSession(({ hub }, req, res, { project }, body) => {
+    if (project.system) return json(res, 409, { error: 'Project bawaan «Chat umum» tidak bisa diarsipkan.' });
     const archived = hub.setProjectArchived(project.id, body.archived === true);
     return json(res, 200, { ok: true, archived });
   }));
   router.post('/api/projects/:id/forget', withSession(({ hub, sessions, taskQueue }, req, res, { project, session }) => {
+    if (project.system) return json(res, 409, { error: 'Project bawaan «Chat umum» tidak bisa dihapus dari daftar.' });
     taskQueue.forget(project.id);
     session.reset();
     session.kill();
@@ -189,6 +191,7 @@ export function registerProjectActions(router) {
   router.post('/api/projects/:id/purge', ({ hub, ledger, sessions, taskQueue }, req, res, params, body) => {
     const id = String(params.id ?? '');
     if (!/^[0-9a-f]{8,32}$/.test(id)) return json(res, 400, { error: 'Project tidak valid.' });
+    if (hub.projects.get(id)?.system) return json(res, 409, { error: 'Project bawaan «Chat umum» tidak bisa dihapus.' });
     if (body?.confirm !== id) return json(res, 400, { error: 'Kirim confirm berisi project id untuk menghapus project ini.' });
     // Safety beyond the picker: only an orphan (folder gone, or no row at all) may be purged. Purging a project whose
     // folder still exists would throw away its settings/chat for no reason; the UI never offers it.
