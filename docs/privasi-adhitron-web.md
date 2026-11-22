@@ -57,6 +57,12 @@ Password **tidak pernah** disimpan/dilog dalam bentuk asli. API key user **tidak
 
 ## Catatan teknis yang mendukung kepatuhan
 
+- **Arsip versi kebijakan.** `POLICY_VERSION` (`bridge/src/chat-api.mjs`) dicatat di tiap akun saat daftar
+  (`users.consent_version`). Teks tiap versi terarsip permanen di riwayat git (commit yang memuatnya), jadi isi
+  yang disetujui user dapat dibuktikan. Naikkan versi **sebelum** mengubah teks kebijakan yang sudah dilihat user.
+  - `2026-11-22` — versi publik pertama (persetujuan wajib saat daftar; retensi, dasar pemrosesan, cookie, dan
+    hak subjek data). Belum dirilis saat dokumen ini ditulis; tetapkan commit rilisnya di `CHANGELOG.md`.
+
 - API key user dienkripsi AES-256-GCM dengan kunci operator (`bridge/src/secrets.mjs`); bentuk publik hanya hint.
 - Cookie sesi `httpOnly` + `Secure` + `SameSite=Lax`; state-changing request wajib same-origin (anti-CSRF).
 - Semua query repo ter-scope `userId`; data user lain tidak dapat diakses lewat API.
