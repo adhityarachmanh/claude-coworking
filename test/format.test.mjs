@@ -1,7 +1,7 @@
 // Label/format helpers used by the composer (pure, no DOM).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { shortOptionLabel } from '../public/js/core/format.js';
+import { settingsChipText, shortOptionLabel } from '../public/js/core/format.js';
 
 test('settings chip label drops the parenthetical detail always and the price hint on a phone', () => {
   assert.equal(shortOptionLabel('Default (Fable 5 · 200k konteks)'), 'Default');
@@ -15,4 +15,13 @@ test('settings chip label drops the parenthetical detail always and the price hi
   assert.equal(shortOptionLabel('claude-opus-5-5', { price: true }), 'claude-opus-5-5');
   assert.equal(shortOptionLabel(''), '');
   assert.equal(shortOptionLabel(undefined), '');
+});
+
+test('settingsChipText: token yang sama tidak diulang (emoji tidak dihitung)', () => {
+  // The phone chip showed "⚡ Auto · Auto · Auto · Tim": mode, model and effort all said the same thing.
+  assert.equal(settingsChipText(['⚡ Auto', 'Auto', 'Auto', 'Tim']), '⚡ Auto · Tim');
+  assert.equal(settingsChipText(['🔨 Build', 'Auto', 'High', 'Tim']), '🔨 Build · Auto · High · Tim');
+  assert.equal(settingsChipText(['📋 Plan', 'Opus', '', '', 'Tim']), '📋 Plan · Opus · Tim');
+  assert.equal(settingsChipText(['Auto', 'auto']), 'Auto');
+  assert.equal(settingsChipText([]), '');
 });

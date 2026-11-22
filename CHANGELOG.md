@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🎭 Badge pengaturan giliran di HP kini ringkas.** Ringkasan di atas kotak pesan tidak lagi mengulang hal yang sama (`⚡ Auto · Auto · Auto · Tim` → `⚡ Auto · Tim`): mode, model, effort, dan Mode tim hanya muncul sekali, dan lebarnya dibatasi supaya tombol ＋, mikrofon, dan lipat tetap di tempatnya pada layar sempit.
+
 ## 1.0.92
 
 - **🛡️ Policies OpenCode (hard-deny).** Form config kini punya daftar **Policies**: statement `action` + `resource` + `allow`/`deny` yang hanya mengetatkan izin dan tidak pernah memunculkan kartu izin (contoh: `tool.use` + `shell:git push *` + `deny`, atau `provider.use` + `*` + `deny` lalu `allow` untuk satu provider). Urutan statement dipertahankan (yang terakhir cocok menang), effect selain allow/deny ditolak, statement dengan kunci tambahan tidak kehilangan kunci itu saat disimpan ulang. Action yang dikenal ditawarkan sebagai saran; action lain yang sah tetap bisa diketik. Statement yang bentuknya tidak dikenali (mis. `effect: ask` dari editan tangan) **menolak simpan** alih-alih dihapus diam-diam; perbaiki lewat tab JSON. Tab JSON tetap ada untuk bentuk yang belum didukung form.

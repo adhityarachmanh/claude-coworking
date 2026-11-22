@@ -7,7 +7,7 @@ import { modelPanelHtml, mpApplyRow, mpHighlight } from './model-picker.js';
 import { capReason, capsFor, engineOf, modeFor, modelsPerProject } from '../core/engine-caps.js';
 import { typingText } from '../core/composer-typing.js';
 import { syncWakeLock } from './wake-lock.js';
-import { fmtNum, shortOptionLabel } from '../core/format.js';
+import { fmtNum, settingsChipText, shortOptionLabel } from '../core/format.js';
 import { DEMO_ID, READ_ONLY_HINT, state } from '../core/state.js';
 import { setMobileView } from '../ui/layout.js';
 import { attachmentPayload, attachments, attachmentsReady, clearAttachments, rememberSent, restoreAttachments } from './attachments.js';
@@ -234,8 +234,9 @@ function renderSettingsChip(st) {  const chip = $('#settings-chip');
   const model = st.modelAuto === true || $('#model').value === AUTO_MODEL ? 'Auto' : label('#model') || 'Default';
   const effort = $('#effort').value && !$('#effort').disabled ? label('#effort') : '';
   const team = $('#team-mode').checked && !$('#team-ctl').classList.contains('cap-off');
-  // The engine follows the model: the chip stays mode · model · effort · tim on both laptop and phone.
-  const text = [modeShort(mode), model, effort, team ? 'Tim' : ''].filter(Boolean).join(' · ');
+  // The engine follows the model: the chip stays mode · model · effort · tim on both laptop and phone, without
+  // repeating a token ("⚡ Auto · Auto · Auto" was the same fact three times on a 390 px screen).
+  const text = settingsChipText([modeShort(mode), model, effort, team ? 'Tim' : '']);
   // The active model's logo leads the text (the same ai_logos the brain uses); an unknown family shows none.
   const { file } = activeModelOf(st, engine);
   const html = `${file ? `<img class="chip-logo" src="/ai-logos/${escapeHtml(file)}" alt="" aria-hidden="true">` : ''}<span>${escapeHtml(text)}</span>`;

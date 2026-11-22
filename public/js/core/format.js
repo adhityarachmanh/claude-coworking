@@ -17,8 +17,26 @@ export const fmtUsd = (n) => (n == null ? '—' : `$${n.toFixed(2)}`);
  */
 export const shortOptionLabel = (text, { price = false } = {}) => {
   let out = String(text ?? '');
-  if (price) out = out.replace(/\s+—.*$/u, '');
+  if (price) out = out.replace(/\s+[—–-].*$/u, '');
   return out.replace(/\s*\(.*$/u, '').trim();
+};
+
+/**
+ * The composer chip's one-line summary: mode · model · effort · tim, with a token repeated only once. On a phone
+ * "⚡ Auto · Auto · Auto" wasted the whole row; the emoji is ignored when comparing, so "Auto" matches "⚡ Auto".
+ */
+export const settingsChipText = (parts) => {
+  const seen = new Set();
+  const out = [];
+  for (const part of parts ?? []) {
+    const text = String(part ?? '').trim();
+    if (!text) continue;
+    const key = text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out.join(' · ');
 };
 
 /** "baru saja", "12 menit lalu", "3 jam lalu", else a short date. */
