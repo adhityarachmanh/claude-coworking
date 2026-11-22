@@ -689,13 +689,15 @@ for (const vp of PHONES) {
       }));
       assert.equal(strip.collapsed, true, 'todo terlipat di HP');
       assert.ok(strip.todoH <= 44, `todo 1 baris (${strip.todoH} px)`);
-      assert.equal(strip.todoText, '◼ 2/5 Menulis test ▸');
+      assert.match(strip.todoText, /◼ 2\/5 ▸/, 'chip tugas hanya jumlah dan panah');
+      assert.ok(!strip.todoText.includes('Menulis test'), 'judul tugas tidak lagi memenuhi badge');
       assert.deepEqual(strip.chips, ['⧗ 1', '📋 2', 'konteks 78%', '🧹 Ringkas']);
       assert.equal(strip.sameRow, true, 'todo dan chip satu baris');
       assert.equal(await page.eval(horizontalOverflow), null);
       await page.click('#todos .todos-head');
-      assert.equal(await page.eval(() => document.querySelectorAll('#todos li').length), 5, 'ketuk → daftar terbuka');
-      await page.click('#todos .todos-head');
+      await page.waitFor(() => !document.querySelector('#todos-modal').hidden && document.querySelectorAll('#todos-dialog-list li').length === 5, { timeoutMs: 3000, message: 'ketuk → daftar tugas di dialog' });
+      await page.press('Escape');
+      await page.waitFor(() => document.querySelector('#todos-modal').hidden, { timeoutMs: 2000, message: 'dialog tugas tertutup' });
       await page.click('#statusline [data-open-queue]');
       await page.waitFor(() => !document.querySelector('#queue-modal').hidden, { timeoutMs: 3000, message: '📋 membuka antrian' });
       await closeModals(page);

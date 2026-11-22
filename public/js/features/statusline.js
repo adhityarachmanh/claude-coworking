@@ -5,17 +5,38 @@ import { fmtTokens } from '../core/format.js';
 import { freshnessText } from '../core/freshness.js';
 import { requestResync } from '../core/resync.js';
 import { DEMO_ID, state } from '../core/state.js';
-import { progressLabel, turnProgress } from '../core/turn-progress.js';
+import { progressLabel, progressLabelShort, turnProgress } from '../core/turn-progress.js';
 import { api, toast } from '../core/api.js';
 import { openCompact } from './compact.js';
+import { openModal } from '../ui/modals.js';
 import { connection, lastEventAgeSec } from './connection.js';
 import { openQueue } from './queue.js';
 import { fmtDuration, openTasks, runningCount } from './tasks.js';
 
 /** Claude's todo list, pinned above the composer while there is work left (CLI: ☐ ◼ ☒). */
+let lastTodos = [];
+
+const TODO_MARK = { completed: '☒', in_progress: '◼' };
+
+const todoItemsHtml = (todos) =>
+  `<ul>${todos
+    .map((t) => `<li class="st-${t.status}"><span>${TODO_MARK[t.status] ?? '☐'}</span>${escapeHtml(t.status === 'in_progress' && t.activeForm ? t.activeForm : t.content)}</li>`)
+    .join('')}</ul>`;
+
+/** The phone's chip opens the list in a dialog (like Ringkas), so the composer keeps its one row. */
+function openTodosDialog() {
+  if (!lastTodos.length) return;
+  const done = lastTodos.filter((t) => t.status === 'completed').length;
+  const now = lastTodos.find((t) => t.status === 'in_progress');
+  $('#todos-dialog-summary').textContent = `${done} dari ${lastTodos.length} selesai${now ? ` · sekarang: ${now.activeForm || now.content}` : ''}`;
+  $('#todos-dialog-list').innerHTML = todoItemsHtml(lastTodos);
+  openModal('todos-modal');
+}
+
 export function renderTodos(st) {
   const box = $('#todos');
   const todos = state.active === DEMO_ID ? [] : (st.todos ?? []);
+  lastTodos = todos;
   const done = todos.filter((t) => t.status === 'completed').length;
   // Like the CLI: the list goes away once everything is done and the turn has ended.
   if (!todos.length || (done === todos.length && !st.busy)) {
@@ -23,20 +44,16 @@ export function renderTodos(st) {
     return;
   }
   box.hidden = false;
+  if (narrow.matches) {
+    // One short chip: "◼ 2/5 ▸". The current task and the full list live in the dialog.
+    const now = todos.find((t) => t.status === 'in_progress');
+    box.classList.add('collapsed');
+    box.innerHTML = `<button class="todos-head" type="button" data-open-todos aria-haspopup="dialog" aria-label="Daftar tugas ${done} dari ${todos.length} selesai${now ? `, sekarang: ${escapeHtml(now.activeForm || now.content)}` : ''} — buka">◼ <small>${done}/${todos.length}</small> ▸</button>`;
+    return;
+  }
   const collapsed = box.classList.contains('collapsed');
-  const mark = { completed: '☒', in_progress: '◼' };
-  const now = todos.find((t) => t.status === 'in_progress');
-  // Phone, folded: one line "◼ 2/5 Menulis test ▸" (what is being done right now).
-  const head = narrow.matches && collapsed
-    ? `<button class="todos-head" type="button" aria-expanded="false" aria-label="Daftar tugas ${done} dari ${todos.length} selesai${now ? `, sekarang: ${escapeHtml(now.activeForm || now.content)}` : ''} — tampilkan">◼ <small>${done}/${todos.length}</small> <span class="todos-now">${escapeHtml(now ? now.activeForm || now.content : 'Daftar tugas')}</span> ▸</button>`
-    : `<button class="todos-head" type="button" title="Sembunyikan / tampilkan daftar tugas"${narrow.matches ? ' aria-expanded="true"' : ''}>${collapsed ? '▸' : '▾'} Daftar tugas <small>${done}/${todos.length}</small></button>`;
-  box.innerHTML = `${head}${
-    collapsed
-      ? ''
-      : `<ul>${todos
-          .map((t) => `<li class="st-${t.status}"><span>${mark[t.status] ?? '☐'}</span>${escapeHtml(t.status === 'in_progress' && t.activeForm ? t.activeForm : t.content)}</li>`)
-          .join('')}</ul>`
-  }`;
+  const head = `<button class="todos-head" type="button" title="Sembunyikan / tampilkan daftar tugas">${collapsed ? '▸' : '▾'} Daftar tugas <small>${done}/${todos.length}</small></button>`;
+  box.innerHTML = `${head}${collapsed ? '' : todoItemsHtml(todos)}`;
 }
 
 /** Short labels for the phone's settings chip (features/composer.js). One vocabulary for both engines. */
@@ -68,7 +85,7 @@ function turnChip(st) {
   });
   if (!p || (!p.total && !p.finished)) return null;
   if (p.finished && Date.now() - p.startedAt > 2 * 60 * 60_000) return null; // yesterday's turn is not news
-  return { text: progressLabel(p, fmtDuration), finished: p.finished, ok: p.ok };
+  return { text: progressLabel(p, fmtDuration), short: progressLabelShort(p, fmtDuration), finished: p.finished, ok: p.ok };
 }
 
 /** Status line under the composer: permission mode, model, and how full the context is. */
@@ -124,7 +141,7 @@ function renderStrip(line, st, running) {
   if (st.autoApprove) chips.push('<span class="sl-chip sl-warn">⚠ Semua izin otomatis</span>');
   if (!connection.online) chips.push('<span class="sl-chip sl-warn">⚡ Belum tersambung</span>');
   const turn = turnChip(st);
-  if (turn) chips.push(`<span class="sl-chip sl-turn ${turn.finished ? (turn.ok === false ? 'stop' : 'done') : 'live'}" title="Progres giliran terakhir">${escapeHtml(turn.text)}</span>`);
+  if (turn) chips.push(`<span class="sl-chip sl-turn ${turn.finished ? (turn.ok === false ? 'stop' : 'done') : 'live'}" title="${escapeHtml(turn.text)}">${escapeHtml(turn.short)}</span>`);
   const stale = staleText();
   if (stale) chips.push(`<button type="button" class="sl-chip sl-stale" data-resync aria-label="${escapeHtml(stale)} — ketuk untuk menyegarkan">⟳ ${escapeHtml(stale)}</button>`);
   // Context only once it matters (≥ 70 % of where auto-compact starts), as text: the /compact tip stays in the title.
@@ -171,6 +188,7 @@ export function initStatusline() {
 
   $('#todos').addEventListener('click', (e) => {
     if (!e.target.closest('.todos-head')) return;
+    if (narrow.matches) return openTodosDialog();
     $('#todos').classList.toggle('collapsed');
     renderTodos(state.statuses[state.active] ?? {});
   });

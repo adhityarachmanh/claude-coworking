@@ -809,7 +809,7 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .plan-preparing .dots span:nth-child(2) { animation-delay: .15s; }
 .plan-preparing .dots span:nth-child(3) { animation-delay: .3s; }
 
-.result { align-self: center; font-size: var(--fs-sm); color: var(--muted); padding: 3px 12px; border-radius: var(--r-pill); background: var(--surface-2); margin: 4px 0 8px; }
+.result { align-self: center; max-width: 100%; font-size: var(--fs-sm); color: var(--muted); padding: 3px 12px; border-radius: var(--r-pill); background: var(--surface-2); margin: 4px 0 8px; white-space: normal; overflow-wrap: anywhere; }
 .result.ok { color: var(--ok-text); }
 .result.fail { color: var(--err-text); }
 /* A finished turn with live background work (tasks.js's count): the result line says so right away. */
@@ -936,6 +936,12 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 .todos-pinned li.st-in_progress { color: var(--text); font-weight: 600; }
 .todos-pinned li.st-in_progress span { color: var(--accent-2); }
 .todos-pinned li.st-completed { color: var(--muted); text-decoration: line-through; }
+.todos-dialog-list ul { list-style: none; margin: 0; padding: 0; max-height: 55vh; overflow-y: auto; }
+.todos-dialog-list li { display: flex; gap: 6px; padding: 2px 0; line-height: 1.45; color: var(--text-2); }
+.todos-dialog-list li span { flex: none; font-family: var(--mono); }
+.todos-dialog-list li.st-in_progress { color: var(--text); font-weight: 600; }
+.todos-dialog-list li.st-in_progress span { color: var(--accent-2); }
+.todos-dialog-list li.st-completed { color: var(--muted); text-decoration: line-through; }
 
 /* A turn cut short by a server restart (features/resume-turn.js) */
 .resume-turn { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; padding: 6px 10px; border: 1px solid var(--warn-line); border-radius: var(--r-md); background: var(--warn-soft); color: var(--warn-text-strong); font-size: var(--fs-sm); }

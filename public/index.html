@@ -611,6 +611,15 @@
       </div>
     </div>
 
+    <!-- 📋 Daftar tugas (phone): the pinned chip opens the full list here, like Ringkas -->
+    <div id="todos-modal" class="modal" hidden>
+      <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="todos-title">
+        <div class="modal-head"><b id="todos-title">📋 Daftar tugas</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p id="todos-dialog-summary" class="compact-summary"></p>
+        <div id="todos-dialog-list" class="todos-dialog-list"></div>
+      </div>
+    </div>
+
     <!-- MCP servers (/mcp): status, reconnect, enable/disable, OAuth login -->
     <div id="mcp-modal" class="modal" hidden>
       <div class="modal-card mcp-card" role="dialog" aria-modal="true" aria-label="Server MCP">

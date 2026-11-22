@@ -63,6 +63,18 @@ export function progressLabel(p, fmtDuration = (ms) => `${Math.round(ms / 1000)}
 }
 
 /**
+ * The phone strip's version: one short pill that fits next to the other chips. The full label stays in the title
+ * and in the result line inside the chat, so nothing is lost — only the duration is repeated here.
+ */
+export function progressLabelShort(p, fmtDuration = (ms) => `${Math.round(ms / 1000)} dtk`) {
+  if (!p) return '';
+  const dur = fmtDuration(p.durationMs);
+  if (!p.finished) return `⏳ ${dur}`;
+  if (p.cut) return `■ Tidak selesai · ${dur}`;
+  return `${p.ok === false ? '■ Berhenti' : '✓ Selesai'} · ${dur}`;
+}
+
+/**
  * The wait row between steps: visible while the turn is still running but nothing is running yet, so a gap
  * between a finished subagent step and the Lead's next step never reads as "stuck".
  */

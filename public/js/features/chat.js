@@ -1,6 +1,6 @@
 // The chat log: messages, tool rows, follow-the-bottom scrolling.
 import { api, toast } from '../core/api.js';
-import { $, escapeHtml } from '../core/dom.js';
+import { $, escapeHtml, narrow } from '../core/dom.js';
 import { logoFileFor, logoIndex } from '../core/model-logo.js';
 import { fmtTokens, fmtUsd, time } from '../core/format.js';
 import { providerErrorHint } from '../core/provider-error.js';
@@ -737,7 +737,7 @@ function fillChatBody(node, msg) {
       node.className = `result ${msg.ok ? 'ok' : 'fail'}`;
       // A finished turn can leave subagents working in the background: say so right on the result line.
       const live = runningCount(state.statuses[state.active]);
-      const liveBadge = live ? ` <span class="bg-live" title="Tugas latar masih berjalan — buka ⧗ untuk memantau">⏳ ${live} masih bekerja</span>` : '';
+      const liveBadge = live ? ` <span class="bg-live" title="Tugas latar masih berjalan — buka ⧗ untuk memantau">⏳ ${narrow.matches ? live : `${live} masih bekerja`}</span>` : '';
       node.innerHTML = (msg.ok ? `✓ Selesai · ${parts.join(' · ')}` : `■ Berhenti${msg.text ? `: ${escapeHtml(msg.text)}` : ''}`) + liveBadge + (msg.ok ? '' : providerHintHtml(msg.text));
       break;
     }

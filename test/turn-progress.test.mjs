@@ -1,7 +1,7 @@
 // Turn progress rules (public/js/core/turn-progress.js): the line that answers "is it finished?" without asking.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { progressLabel, turnProgress } from '../public/js/core/turn-progress.js';
+import { progressLabel, progressLabelShort, turnProgress } from '../public/js/core/turn-progress.js';
 
 const T = 1_000_000;
 const user = (ts = T) => ({ kind: 'user', ts, text: 'kerjakan' });
@@ -52,4 +52,14 @@ test('turnProgress: hanya giliran terakhir yang dihitung', () => {
 test('turnProgress: tanpa pesan user → tidak ada baris', () => {
   assert.equal(turnProgress([tool(T, 'ok')], { now: T, busy: false }), null);
   assert.equal(progressLabel(null), '');
+});
+
+test('progressLabelShort: chip HP hanya membawa status dan durasi', () => {
+  const live = turnProgress([user(), tool(T + 1000, 'ok'), tool(T + 2000, 'running')], { now: T + 60_000, busy: true });
+  assert.equal(progressLabelShort(live, fmt), '⏳ 1 mnt 0 dtk');
+  const done = turnProgress([user(), tool(T + 1000, 'ok'), result(T + 90_000)], { now: T + 90_000 });
+  assert.equal(progressLabelShort(done, fmt), '✓ Selesai · 1 mnt 30 dtk');
+  const failed = turnProgress([user(), tool(T + 1000, 'fail'), result(T + 90_000, false)], { now: T + 90_000 });
+  assert.equal(progressLabelShort(failed, fmt), '■ Berhenti · 1 mnt 30 dtk');
+  assert.equal(progressLabelShort(null), '');
 });
