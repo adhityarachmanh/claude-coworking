@@ -410,7 +410,11 @@ export function privacyPageHtml() {
 dan catatan pencarian saat fitur Browsing dipakai. API key hanya 4 karakter terakhirnya yang ditampilkan.</p>
 <h2>Untuk apa</h2>
 <p>Hanya untuk menjalankan akunmu: login, menyimpan provider, dan mengobrol. Kami tidak menjual data dan tidak
-memasang pelacak iklan.</p>
+memasang pelacak iklan. Pemrosesan dilakukan untuk <b>menjalankan layanan yang kamu minta</b> (akun, provider, chat)
+dan atas <b>kepentingan sah</b> menjaga keamanan layanan.</p>
+<h2>Cookie</h2>
+<p>Situs hanya memakai satu <b>cookie sesi</b> yang diperlukan agar kamu tetap masuk (httpOnly, Secure, SameSite).
+Tidak ada cookie iklan atau pelacak pihak ketiga.</p>
 <h2>Pihak ketiga</h2>
 <p>Data disimpan di <b>Neon</b> (database) dan <b>Netlify</b> (hosting). Saat kamu mengobrol, isi pesan dikirim ke
 <b>penyedia AI milikmu</b> untuk menghasilkan jawaban. Saat Browsing aktif, teks pencarian dikirim ke mesin
@@ -425,7 +429,8 @@ kami berkomitmen tidak mengaksesnya kecuali untuk operasional yang kamu minta.</
 Menghapus akun menghapus semuanya.</p>
 <h2>Hakmu</h2>
 <p>Kamu bisa <b>menghapus akun beserta seluruh datanya</b> kapan saja dari halaman Chat (⚙ / tombol Hapus akun).
-Penghapusan bersifat permanen. Permintaan lain (akses, koreksi, ekspor) bisa dikirim ke kontak di bawah.</p>
+Penghapusan bersifat permanen. Kamu juga berhak meminta <b>akses, koreksi, atau ekspor</b> datamu, <b>menarik
+persetujuan</b>, dan <b>mengadu</b> ke lembaga perlindungan data. Semua permintaan dikirim ke kontak di bawah.</p>
 <h2>Kontak</h2>
 <p>Pertanyaan privasi: hubungi operator situs ini.</p>
 <p class="muted"><a href="/">← Kembali ke portal</a></p>`);

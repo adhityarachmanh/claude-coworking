@@ -23,9 +23,9 @@ Password **tidak pernah** disimpan/dilog dalam bentuk asli. API key user **tidak
 ## Retensi & penghapusan
 
 - Menghapus percakapan menghapus pesan & kutipannya (cascade). Menghapus provider menghapus API key-nya.
-- **Hak hapus (UU PDP Pasal 35–36 / GDPR Pasal 17):** perlu jalur "hapus akun" yang menghapus **seluruh** baris
-  milik user (users, sessions, providers, conversations, messages, citations, tool_runs). *(TODO: endpoint
-  `DELETE /chat/api/me` + tombol di UI sebelum rilis publik.)*
+- **Hak hapus (UU PDP Pasal 35–36 / GDPR Pasal 17):** jalur "hapus akun" (`DELETE /chat/api/me` + tombol di UI)
+  menghapus **seluruh** baris milik user (users, sessions, providers, conversations, messages, citations, tool_runs)
+  lewat cascade FK. Lihat item #2 di daftar wajib.
 - Sesi kedaluwarsa dibersihkan saat diakses; cron juga membersihkannya berkala bersama jejak `tool_runs` (lihat bagian retensi).
 
 ## Pihak ketiga
@@ -52,7 +52,8 @@ Password **tidak pernah** disimpan/dilog dalam bentuk asli. API key user **tidak
 7. ✅ **Log**: tidak ada API key/password/isi chat yang tercatat di log server.
 8. ⬜ **Anak**: tetapkan batas usia minimum sesuai kebijakan.
 9. ⬜ **Transfer lintas negara**: kunci region Neon + kumpulkan DPA Neon/Netlify; dokumentasikan dasar transfer.
-10. ⬜ **Notifikasi insiden**: runbook + template (UU PDP maks. 3×24 jam).
+10. ✅ **Notifikasi insiden**: runbook + template di [runbook-insiden-adhitron-web.md](runbook-insiden-adhitron-web.md)
+    (UU PDP: pemberitahuan ke subjek data & lembaga maks. 3×24 jam; GDPR: 72 jam ke otoritas).
 
 ## Catatan teknis yang mendukung kepatuhan
 
