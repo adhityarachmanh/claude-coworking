@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.91
 
 - **📝 Commands OpenCode dari aplikasi.** Kelola **slash command** OpenCode tanpa terminal: daftar command yang terbaca, **＋ Command baru**, **✎ Edit**, dan **Hapus**, dari tombol **📝 Commands OpenCode…** di editor **Config & Agent OpenCode**. Command = file Markdown di `.opencode/commands` (project) atau folder config OpenCode global (semua project); folder bersarang menjadi `/team/deploy`, dan frontmatter `description`/`agent`/`model`/`subagent` diisi lewat form (kunci asing di file dipertahankan). Template memakai `$ARGUMENTS`, `$1`, dan `` !`cmd` `` persis seperti OpenCode; OpenCode memuat ulang otomatis, jadi tidak perlu restart sesi. Setiap penimpaan menyimpan salinan lama di folder data aplikasi, file yang berubah di tempat lain tidak ditimpa diam-diam, nama tak sah (termasuk `../`) ditolak, dan symlink/junction tidak bisa mengarahkan tulis/hapus keluar folder. Command **semua project** hanya diubah dari laptop; command project bisa dari laptop atau Tailscale; tombolnya hanya muncul saat project memakai OpenCode.
 - **📚 Instruksi tambahan OpenCode (`instructions`).** Form config kini punya daftar **Instructions**: file, glob, atau URL yang selalu dibaca OpenCode (mis. `AGENTS.md`, `~/aturan/*.md`, `https://contoh.test/aturan.md`). Maksimal 100 entri, tiap entri maksimal 500 karakter, duplikat dirapikan; mengosongkan daftar menghapus kunci.
