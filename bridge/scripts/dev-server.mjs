@@ -38,13 +38,29 @@ function parseEnv(text) {
   return out;
 }
 
-// `.env` hanya pelengkap: nilai yang sudah ada di lingkungan (mis. di-set eksplisit) tidak ditimpa.
+// `.env` untuk runner ini bersifat MENGIKAT: nilainya menimpa variabel lingkungan yang sudah ada.
+// Alasannya, shell di mesin ini kadang sudah memuat DATABASE_URL lokal (dari aplikasi terpasang) yang
+// akan menutupi env project Netlify — `.env` harus bisa menang agar konfigurasi lokal dapat diandalkan.
+// Variabel yang tidak diisi di `.env` tetap disuntik CLI dari project Netlify.
+// Nilai KOSONG (`KEY=`) di artikan "tidak diisi": variabel itu dibuang dari process.env agar CLI
+// (mis. DATABASE_URL dari project Netlify) ikut menyuntik — bukan dikunci jadi string kosong.
 if (existsSync(ENV_FILE)) {
   const loaded = parseEnv(readFileSync(ENV_FILE, 'utf8'));
+  const cleared = [];
+  const overridden = [];
   for (const [key, value] of Object.entries(loaded)) {
-    if (process.env[key] === undefined) process.env[key] = value;
+    if (value === '') {
+      if (process.env[key] !== undefined) cleared.push(key);
+      delete process.env[key];
+      continue;
+    }
+    if (process.env[key] !== undefined && process.env[key] !== value) overridden.push(key);
+    process.env[key] = value;
   }
-  console.log(`[dev-server] memuat ${Object.keys(loaded).length} variabel dari .env`);
+  const notes = [];
+  if (overridden.length) notes.push(`menimpa: ${overridden.join(', ')}`);
+  if (cleared.length) notes.push(`dikosongkan: ${cleared.join(', ')}`);
+  console.log(`[dev-server] memuat ${Object.keys(loaded).length} variabel dari .env` + (notes.length ? ` (${notes.join('; ')})` : ''));
 } else {
   console.log('[dev-server] .env tidak ada; memakai env project Netlify (DATABASE_URL) apa adanya.');
 }

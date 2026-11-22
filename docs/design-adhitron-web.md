@@ -82,10 +82,10 @@ Copy-Item .env.example .env   # isi ENCRYPTION_KEY (salin dari Netlify UI; nilai
 npm run dev                   # → http://localhost:8888
 ```
 
-- `npm run dev` menjalankan `scripts/dev-server.mjs`: memuat `.env` lalu menyerahkan ke
-  `netlify functions:serve`. **`DATABASE_URL`** boleh dikosongkan di `.env` — CLI menyuntik dari project
-  Netlify (context default = produksi). **`ENCRYPTION_KEY` wajib diisi di `.env`** karena tidak disuntik
-  untuk fungsi lokal; tanpa itu penambahan provider menjawab **500** `Server belum dikonfigurasi untuk menyimpan key`.
+- `npm run dev` menjalankan `scripts/dev-server.mjs`: memuat `.env` (**mengikat** — menimpa env shell
+  yang sudah ada) lalu menyerahkan ke `netlify functions:serve`. **`DATABASE_URL`** boleh dikosongkan di
+  `.env` — CLI menyuntik dari project Netlify (context default = produksi). **`ENCRYPTION_KEY` wajib diisi di `.env`**
+  karena tidak disuntik untuk fungsi lokal; tanpa itu penambahan provider menjawab **500** `Server belum dikonfigurasi untuk menyimpan key`.
   Nilai aslinya hanya bisa disalin dari **Netlify UI → Environment variables** (`netlify env:get` menyamarkannya, mis. `****e0aa`).
 - Situs ini menyajikan **fungsi/fungsi-saja** (tanpa static server/portal) — cukup untuk menguji `/chat/*` dan API.
   Aset statis (`/chat/app.js`, halaman) tetap dilayani karena situs dirender dari fungsi `bridge.mjs`.
