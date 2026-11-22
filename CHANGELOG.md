@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.85
 
 - **💬 Chat umum.** Project bawaan untuk bertanya hal umum — menyusun timesheet, merencanakan sesuatu — tanpa
   mengotori folder project kerja. Ia memakai mesin yang sama seperti project lain (Claude Code atau OpenCode, bisa
