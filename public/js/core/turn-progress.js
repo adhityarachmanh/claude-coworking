@@ -61,3 +61,28 @@ export function progressLabel(p, fmtDuration = (ms) => `${Math.round(ms / 1000)}
   if (p.background) bits.push(`${p.background} di latar`);
   return bits.join(' · ');
 }
+
+/**
+ * The wait row between steps: visible while the turn is still running but nothing is running yet, so a gap
+ * between a finished subagent step and the Lead's next step never reads as "stuck".
+ */
+export function nextStepHint({ busy = false, running = 0 } = {}) {
+  return busy && Number(running) === 0 ? '⏳ Tim sedang menyusun langkah berikutnya…' : '';
+}
+
+/** How many steps after the latest user prompt are still running (the wait row hides while any is). */
+export function runningSteps(messages = []) {
+  let start = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.kind === 'user') {
+      start = i;
+      break;
+    }
+  }
+  let running = 0;
+  for (let i = start + 1; i < messages.length; i++) {
+    const m = messages[i];
+    if ((m?.kind === 'tool' || m?.kind === 'delegate') && m.status === 'running') running += 1;
+  }
+  return running;
+}
