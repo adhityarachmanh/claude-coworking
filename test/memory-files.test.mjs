@@ -63,3 +63,45 @@ test('OpenCode memory: the CLAUDE.md fallback round-trips through read (missing 
   assert.equal(saved.key, 'project-claude');
   assert.equal(readFileSync(path.join(p, 'CLAUDE.md'), 'utf8'), '# Aturan lama\n');
 });
+
+test('memoryFiles: .claude/rules/*.md muncul sebagai kunci dinamis (project)', () => {
+  const p = project();
+  const rules = path.join(p, '.claude', 'rules');
+  mkdirSync(rules, { recursive: true });
+  writeFileSync(path.join(rules, 'api.md'), '# Aturan API\n');
+  const files = memoryFiles('claude', p, home());
+  const rule = files.find((f) => f.key === 'rule:api');
+  assert.ok(rule, 'rule:api terdaftar');
+  assert.equal(rule.scope, 'project');
+  // The fixed files stay in front, the rules are appended.
+  assert.deepEqual(files.slice(0, 3).map((f) => f.key), ['project', 'local', 'user']);
+});
+
+test('memoryFiles: auto memory project (~/.claude/projects/<encoded>/memory) muncul', () => {
+  const p = project();
+  const h = home();
+  const enc = p.replace(/[^a-zA-Z0-9]/g, '-');
+  const memDir = path.join(h, '.claude', 'projects', enc, 'memory');
+  mkdirSync(memDir, { recursive: true });
+  writeFileSync(path.join(memDir, 'MEMORY.md'), '# Memori\n');
+  writeFileSync(path.join(memDir, 'catatan.md'), 'x\n');
+  const files = memoryFiles('claude', p, h);
+  assert.ok(files.some((f) => f.key === 'auto:MEMORY'), 'MEMORY.md auto memory');
+  assert.ok(files.some((f) => f.key === 'auto:catatan'), 'catatan.md auto memory');
+});
+
+test('memory: rules & auto memory round-trip through read/write (atomic, mtime guard)', () => {
+  const p = project();
+  const h = home();
+  mkdirSync(path.join(p, '.claude', 'rules'), { recursive: true });
+  writeFileSync(path.join(p, '.claude', 'rules', 'api.md'), '# API\n');
+  assert.equal(readMemory('claude', p, 'rule:api', h).content, '# API\n');
+  writeMemory('claude', p, 'rule:api', '# API baru\n', readMemory('claude', p, 'rule:api', h).mtime, h);
+  assert.equal(readFileSync(path.join(p, '.claude', 'rules', 'api.md'), 'utf8'), '# API baru\n');
+
+  const enc = p.replace(/[^a-zA-Z0-9]/g, '-');
+  const memDir = path.join(h, '.claude', 'projects', enc, 'memory');
+  mkdirSync(memDir, { recursive: true });
+  writeFileSync(path.join(memDir, 'MEMORY.md'), '# M\n');
+  assert.equal(readMemory('claude', p, 'auto:MEMORY', h).content, '# M\n');
+});

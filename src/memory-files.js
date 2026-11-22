@@ -6,7 +6,7 @@
 // would actually read them, or when they already exist on disk. The last matching file wins: AGENTS.md beats CLAUDE.md.
 // Only these fixed paths are ever read or written; writes are atomic and refuse a file changed meanwhile. A symlink
 // at one of these paths is refused (read and write): it could point anywhere on the laptop.
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -17,6 +17,38 @@ export class MemoryError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+// The same encoding Claude Code uses for its project folder (~/.claude/projects/<cwd with non-alnum → '-'>, see
+// src/backup.js encodeProjectPath). Kept local so this module imports nothing heavy.
+const encodeProjectPath = (p) => String(p).replace(/[^a-zA-Z0-9]/g, '-');
+
+/**
+ * The rules a project declares per file type (`.claude/rules/*.md`) and Claude's own auto memory for this project
+ * (`~/.claude/projects/<encoded-cwd>/memory/*.md`, written by Claude from corrections and preferences). Both are
+ * Claude Code features; OpenCode has neither, so they are only offered for that engine. Keys are dynamic
+ * (`rule:<name>` / `auto:<name>`) so each file can be edited on its own.
+ */
+function extraClaudeFiles(projectPath, home) {
+  const out = [];
+  try {
+    const rulesDir = path.join(projectPath, '.claude', 'rules');
+    for (const f of readdirSync(rulesDir).filter((f) => f.toLowerCase().endsWith('.md') && !f.startsWith('.')).sort()) {
+      out.push({ key: `rule:${f.slice(0, -3)}`, label: `Aturan: ${f.slice(0, -3)}`, hint: 'Aturan yang dicakup per tipe file (.claude/rules). Dibaca Claude Code untuk project ini.', scope: 'project', path: path.join(rulesDir, f) });
+    }
+  } catch {
+    // no rules folder: nothing to add
+  }
+  try {
+    const memDir = path.join(home, '.claude', 'projects', encodeProjectPath(projectPath), 'memory');
+    for (const f of readdirSync(memDir).filter((f) => f.toLowerCase().endsWith('.md') && !f.startsWith('.')).sort()) {
+      const isIndex = f === 'MEMORY.md';
+      out.push({ key: `auto:${f.slice(0, -3)}`, label: isIndex ? 'Auto memory (indeks)' : `Auto memory: ${f.slice(0, -3)}`, hint: 'Catatan yang ditulis Claude sendiri dari koreksi/preferensimu (auto memory). Milik project ini saja.', scope: 'project', path: path.join(memDir, f) });
+    }
+  } catch {
+    // no auto memory yet: nothing to add
+  }
+  return out;
 }
 
 /**
@@ -47,6 +79,7 @@ export function memoryFiles(engine, projectPath, home = os.homedir()) {
     { key: 'project', label: 'CLAUDE.md (project)', hint: 'Instruksi untuk project ini. Biasanya ikut di-commit ke git, dibaca semua orang di tim.', scope: 'project', path: path.join(projectPath, 'CLAUDE.md') },
     { key: 'local', label: 'CLAUDE.local.md (pribadi)', hint: 'Instruksi pribadimu untuk project ini. Tambahkan ke .gitignore.', scope: 'project', path: path.join(projectPath, 'CLAUDE.local.md') },
     { key: 'user', label: 'CLAUDE.md (semua project)', hint: 'Instruksi pribadimu untuk semua project (~/.claude/CLAUDE.md).', scope: 'user', path: path.join(home, '.claude', 'CLAUDE.md') },
+    ...extraClaudeFiles(projectPath, home),
   ];
 }
 
