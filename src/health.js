@@ -170,9 +170,9 @@ export function buildHealth(ctx = {}, { now = Date.now() } = {}) {
   const roots = safe(() => c.projectRoots?.() ?? [], []) ?? [];
   const existingRoots = roots.filter((root) => safe(() => existsSync(root), false));
   const registry = safe(() => (c.hub?.projects ? [...c.hub.projects.values()] : null), null);
-  // A real project: not the built-in demo and not a virtual entry (both live in hub.projects with `virtual: true`).
-  // A ctx without the hub (a test, a future caller) falls back to the existing roots: still something to work in.
-  const realProjects = (registry ?? []).filter((p) => p && p.id !== 'demo' && !p.virtual);
+  // A real project: not the built-in demo, not a virtual entry, and not a system entry like 💬 "Chat umum"
+  // (all live in hub.projects). A ctx without the hub (a test, a future caller) falls back to the existing roots.
+  const realProjects = (registry ?? []).filter((p) => p && p.id !== 'demo' && !p.virtual && !p.system);
   const realCount = registry ? realProjects.length : existingRoots.length;
   const hasProject = realCount > 0;
 
