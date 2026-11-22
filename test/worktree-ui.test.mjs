@@ -180,6 +180,28 @@ describe('⎇ UI Worktree', { skip: SKIP ?? false }, () => {
       assert.deepEqual(page.problems, [], 'tanpa error konsol');
     });
 
+    it('baris nama di luar slug (dibuat di luar app) tidak menawarkan Masuk', async () => {
+      // A worktree made with `git worktree add` / `claude -w`: the folder name is not a valid slug.
+      const { execFileSync } = await import('node:child_process');
+      const repo = path.join(TMP, 'projects', 'repo');
+      execFileSync('git', ['worktree', 'add', path.join(repo, '.claude', 'worktrees', 'My_Feature'), '-b', 'feature-1'], { cwd: repo, stdio: 'ignore' });
+      try {
+        await page.eval(async () => {
+          document.querySelectorAll('.modal').forEach((m) => (m.hidden = true));
+          (await import('/js/features/worktree.js')).openWorktree();
+        });
+        await page.waitFor(() => [...document.querySelectorAll('#worktree-list li[data-name]')].some((li) => li.dataset.name === 'My_Feature'), { timeoutMs: 10_000, message: 'baris My_Feature tampil' });
+        const view = await page.eval(listView);
+        const row = view.rows.find((r) => r.name === 'My_Feature');
+        assert.equal(row.canEnter, false, 'nama tak didukung: tidak ada tombol Masuk');
+        assert.equal(row.canRemove, true, 'tetap bisa dihapus');
+        assert.equal(row.badge, 'nama tak didukung');
+        assert.deepEqual(page.problems, [], 'tanpa error konsol');
+      } finally {
+        execFileSync('git', ['worktree', 'remove', '--force', path.join(repo, '.claude', 'worktrees', 'My_Feature')], { cwd: repo, stdio: 'ignore' });
+      }
+    });
+
     it('menu ⋯ membawa item Worktree yang membuka dialog; Hapus membersihkan worktree', async () => {
       await page.eval(() => {
         document.querySelectorAll('.modal').forEach((m) => (m.hidden = true));

@@ -7,6 +7,9 @@ import { openModal } from '../ui/modals.js';
 
 const view = { project: null, busy: false };
 
+/** The same slug rule the server stores (src/worktree.js): a name outside it cannot become the active worktree. */
+const validName = (name) => /^[a-z0-9][a-z0-9-]{0,63}$/.test(String(name ?? ''));
+
 /** The server's error codes as the user sees them; an unknown one falls back to the server's own message. */
 const MESSAGES = {
   'no-repo': 'Folder project ini bukan repository git, jadi belum bisa punya worktree.',
@@ -15,6 +18,7 @@ const MESSAGES = {
   dirty: 'Worktree itu masih punya perubahan yang belum di-commit. Hapus paksa akan membuang perubahan tersebut.',
   busy: 'Masih ada giliran yang berjalan. Tunggu selesai dulu, lalu coba lagi.',
   'not-found': 'Worktree itu sudah tidak ada. Muat ulang daftarnya.',
+  invalid: 'Repo utama bukan worktree: sesi sudah berjalan di folder project.',
 };
 
 const messageFor = (err) => MESSAGES[err?.data?.code] ?? err.message;
@@ -61,10 +65,13 @@ function render(data) {
       const isActive = !w.isMain && active === name;
       const branch = w.branch ? `<small class="muted">${escapeHtml(w.branch)}</small>` : '';
       const badge = w.isMain ? '<span class="wt-badge">repo utama</span>' : isActive ? '<span class="wt-badge on">aktif</span>' : '';
+      // A worktree made outside the app can carry a name the app cannot store: no Masuk button, only Hapus.
+      const enterable = !w.isMain && validName(name);
       const actions = w.isMain
         ? ''
-        : `<span class="wt-actions">${isActive ? '' : `<button type="button" class="ghost" data-wt="enter"${blocked ? ' disabled' : ''} title="${ro ? READ_ONLY_HINT : 'Jalankan sesi berikutnya di worktree ini'}">Masuk</button>`}<button type="button" class="ghost danger-text" data-wt="remove"${blocked ? ' disabled' : ''} title="${ro ? READ_ONLY_HINT : 'Hapus folder worktree ini'}">Hapus</button></span>`;
-      return `<li data-name="${escapeHtml(name)}" data-main="${w.isMain}" data-active="${isActive}"${isActive ? ' class="active"' : ''}><span class="wt-name"><b>${escapeHtml(name)}</b>${branch}</span>${badge}${actions}</li>`;
+        : `<span class="wt-actions">${isActive || !enterable ? '' : `<button type="button" class="ghost" data-wt="enter"${blocked ? ' disabled' : ''} title="${ro ? READ_ONLY_HINT : 'Jalankan sesi berikutnya di worktree ini'}">Masuk</button>`}<button type="button" class="ghost danger-text" data-wt="remove"${blocked ? ' disabled' : ''} title="${ro ? READ_ONLY_HINT : 'Hapus folder worktree ini'}">Hapus</button></span>`;
+      const note = !w.isMain && !enterable ? '<span class="wt-badge">nama tak didukung</span>' : '';
+      return `<li data-name="${escapeHtml(name)}" data-main="${w.isMain}" data-active="${isActive}"${isActive ? ' class="active"' : ''}><span class="wt-name"><b>${escapeHtml(name)}</b>${branch}</span>${badge}${note}${actions}</li>`;
     })
     .join('');
   const btn = $('#worktree-create');

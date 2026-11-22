@@ -191,6 +191,41 @@ test('nama tak sah ditolak sebagai invalid-name, bukan lewat git', async () => {
   assert.equal(res.body.code, 'invalid-name');
 });
 
+test('worktree-enter: repo utama dan nama di luar slug ditolak, bukan sukses palsu', async () => {
+  const id = await projectId('repo');
+  const project = (await snapshot()).projects.find((p) => p.id === id);
+  const mainName = (await api(`/api/projects/${id}/worktrees`)).body.worktrees.find((w) => w.isMain).name;
+  const main = await api(`/api/projects/${id}/worktree-enter`, { name: mainName });
+  assert.equal(main.status, 400, JSON.stringify(main.body));
+  assert.equal(main.body.code, 'invalid');
+  assert.equal((await statusOf(id)).worktree ?? null, null, 'repo utama tidak mengaktifkan atribut worktree');
+
+  // A worktree made outside the app (claude -w / git worktree add): its folder name is not a valid slug.
+  const external = path.join(project.path, '.claude', 'worktrees', 'My_Feature');
+  execFileSync('git', ['worktree', 'add', external, '-b', 'feature-1'], { cwd: project.path, stdio: 'ignore' });
+  const bad = await api(`/api/projects/${id}/worktree-enter`, { name: 'My_Feature' });
+  assert.equal(bad.status, 400, JSON.stringify(bad.body));
+  assert.equal(bad.body.code, 'invalid-name');
+  assert.equal(path.resolve((await statusOf(id)).workspacePath ?? project.path), path.resolve(project.path), 'sesi tetap di folder project, tidak ada klaim palsu');
+  execFileSync('git', ['worktree', 'remove', '--force', external], { cwd: project.path, stdio: 'ignore' });
+});
+
+test('worktree-remove: hapus ditolak (dirty) mengembalikan worktree aktif sebelumnya', async () => {
+  const id = await projectId('repo');
+  const project = (await snapshot()).projects.find((p) => p.id === id);
+  await api(`/api/projects/${id}/worktree-create`, { name: 'keepme' });
+  await api(`/api/projects/${id}/worktree-enter`, { name: 'keepme' });
+  const wtPath = path.join(project.path, '.claude', 'worktrees', 'keepme');
+  writeFileSync(path.join(wtPath, 'dirty.txt'), 'x');
+  const res = await api(`/api/projects/${id}/worktree-remove`, { name: 'keepme' });
+  assert.equal(res.status, 409, JSON.stringify(res.body));
+  assert.equal(res.body.code, 'dirty');
+  assert.equal((await statusOf(id)).worktree?.name, 'keepme', 'worktree aktif tetap aktif setelah hapus gagal');
+  assert.equal(path.resolve((await statusOf(id)).workspacePath), path.resolve(wtPath), 'sesi tetap di worktree');
+  await api(`/api/projects/${id}/worktree-remove`, { name: 'keepme', force: true });
+  assert.equal((await statusOf(id)).worktree ?? null, null, 'hapus paksa tetap keluar dari worktree');
+});
+
 test('state.json menyimpan worktree sebagai atribut settings project induk', async () => {
   const id = await projectId('repo');
   await api(`/api/projects/${id}/worktree-create`, { name: 'stored' });

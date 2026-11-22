@@ -3,11 +3,12 @@
 // never a project of its own. Writes are laptop-only (LOCAL_ONLY_ACTION in server.js); the list is a read
 // (Tailscale only — it is not in the plain-WiFi allowlist, see server.js).
 import { basename } from 'node:path';
-import { createWorktree, listWorktrees, removeWorktree, WorktreeError } from '../worktree.js';
+import { createWorktree, listWorktrees, removeWorktree, validWorktreeName, WorktreeError } from '../worktree.js';
 import { json } from './http.js';
 import { withProject } from './project.js';
 
-const hasRunningTurn = (sessions) => [...(sessions?.sessions?.values() ?? [])].some((s) => s.turnActive?.());
+/** Only this project's own running turn blocks a worktree change (other projects are unrelated). */
+const hasRunningTurn = (sessions, id) => Boolean(sessions?.sessions?.get(id)?.turnActive?.());
 const TURN_RUNNING = 'Tidak bisa mengubah worktree saat masih ada giliran yang berjalan.';
 
 /** The project's live session, if one exists: it is told the workspace moved so the next prompt respawns there. */
@@ -58,7 +59,7 @@ export function register(router) {
     '/api/projects/:id/worktree-create',
     withProject((ctx, req, res, { project }, body) =>
       tool(res, async () => {
-        if (hasRunningTurn(ctx.sessions)) return json(res, 409, { error: TURN_RUNNING, code: 'busy' });
+        if (hasRunningTurn(ctx.sessions, project.id)) return json(res, 409, { error: TURN_RUNNING, code: 'busy' });
         const created = await createWorktree(project.path, String(body.name ?? ''));
         ctx.hub.chat(project.id, { kind: 'info', text: `⎇ Worktree ${basename(created.path)} dibuat (branch ${created.branch}).` });
         return json(res, 200, { worktree: { name: basename(created.path), path: created.path, branch: created.branch }, workspace: ctx.hub.workspacePathFor(project.id) });
@@ -71,9 +72,13 @@ export function register(router) {
     '/api/projects/:id/worktree-enter',
     withProject((ctx, req, res, { project }, body) =>
       tool(res, async () => {
-        if (hasRunningTurn(ctx.sessions)) return json(res, 409, { error: TURN_RUNNING, code: 'busy' });
+        if (hasRunningTurn(ctx.sessions, project.id)) return json(res, 409, { error: TURN_RUNNING, code: 'busy' });
         const wt = await findWorktree(project, body.name);
         if (!wt) return json(res, 404, { error: 'Worktree itu tidak ada di project ini.', code: 'not-found' });
+        if (wt.isMain) return json(res, 400, { error: 'Repo utama bukan worktree: sesi sudah berjalan di folder project.', code: 'invalid' });
+        // A worktree made outside the app (claude -w / git worktree add) may carry a name the app cannot store;
+        // say so instead of reporting success and leaving the session in the project folder.
+        if (!validWorktreeName(wt.name)) return json(res, 400, { error: `Nama worktree "${wt.name}" tidak bisa dipakai aplikasi (hanya huruf kecil, angka, dan tanda hubung).`, code: 'invalid-name' });
         ctx.hub.setWorktree(project.id, { name: wt.name, path: wt.path, branch: wt.branch ?? `worktree-${wt.name}` });
         syncSession(ctx, project.id);
         ctx.hub.chat(project.id, { kind: 'info', text: `⎇ Worktree ${wt.name} aktif — sesi berikutnya berjalan di sana.` });
@@ -87,7 +92,7 @@ export function register(router) {
     '/api/projects/:id/worktree-exit',
     withProject((ctx, req, res, { project }) =>
       tool(res, async () => {
-        if (hasRunningTurn(ctx.sessions)) return json(res, 409, { error: TURN_RUNNING, code: 'busy' });
+        if (hasRunningTurn(ctx.sessions, project.id)) return json(res, 409, { error: TURN_RUNNING, code: 'busy' });
         const before = ctx.hub.worktreeOf(project.id);
         ctx.hub.setWorktree(project.id, null);
         syncSession(ctx, project.id);
@@ -102,16 +107,28 @@ export function register(router) {
     '/api/projects/:id/worktree-remove',
     withProject((ctx, req, res, { project }, body) =>
       tool(res, async () => {
-        if (hasRunningTurn(ctx.sessions)) return json(res, 409, { error: TURN_RUNNING, code: 'busy' });
+        if (hasRunningTurn(ctx.sessions, project.id)) return json(res, 409, { error: TURN_RUNNING, code: 'busy' });
         const wt = await findWorktree(project, body.name);
         if (!wt) return json(res, 404, { error: 'Worktree itu tidak ada di project ini.', code: 'not-found' });
         if (wt.isMain) return json(res, 400, { error: 'Repo utama tidak bisa dihapus.', code: 'invalid' });
         // Leaving first, so the engine is never pointed at a folder that is about to disappear.
-        if (ctx.hub.worktreeOf(project.id)?.name === wt.name) {
+        const wasActive = ctx.hub.worktreeOf(project.id)?.name === wt.name;
+        const before = wasActive ? ctx.hub.worktreeOf(project.id) : null;
+        if (wasActive) {
           ctx.hub.setWorktree(project.id, null);
           syncSession(ctx, project.id);
         }
-        await removeWorktree(project.path, wt.path, { force: body.force === true });
+        try {
+          await removeWorktree(project.path, wt.path, { force: body.force === true });
+        } catch (err) {
+          // The remove did not happen (dirty without force, git error): put the session back where it was,
+          // so a cancelled "hapus paksa" leaves the project exactly as the user found it.
+          if (wasActive) {
+            ctx.hub.setWorktree(project.id, before);
+            syncSession(ctx, project.id);
+          }
+          throw err;
+        }
         ctx.hub.chat(project.id, { kind: 'info', text: `⎇ Worktree ${wt.name} dihapus.` });
         return json(res, 200, { workspace: ctx.hub.workspacePathFor(project.id) });
       }),
