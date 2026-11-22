@@ -10,7 +10,7 @@ const LAPTOP_ONLY = 'Command untuk semua project hanya bisa diubah dari laptop.'
 
 const openCodeOnly = (fn) => (ctx, req, res, params, body) => {
   const engine = params?.project && ctx.hub?.engineOf ? ctx.hub.engineOf(params.project.id) : (ctx.hub?.engine ?? 'claude');
-  if (engine !== 'opencode') return json(res, 409, { error: 'Commands OpenCode hanya tersedia saat mesin OpenCode aktif.' });
+  if (engine !== 'opencode') return json(res, 409, { error: 'Commands OpenCode hanya tersedia saat OpenCode aktif.' });
   return fn(ctx, req, res, params, body);
 };
 const tool = async (res, fn) => {

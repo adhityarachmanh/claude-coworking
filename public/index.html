@@ -1435,6 +1435,8 @@
           <p class="muted small">File, glob, atau URL instruksi yang selalu dibaca OpenCode — mis. <code>AGENTS.md</code>, <code>~/aturan/*.md</code>, <code>https://contoh.test/aturan.md</code>. Maksimal 100 entri.</p>
           <label class="oc-field"><span>Web search</span><select id="oc-websearch"></select></label>
           <p class="muted small">Provider tool pencarian OpenCode. <b>Bawaan</b> membiarkan OpenCode memilih; <b>Nonaktif</b> menghapus tool pencarian. Kunci (API key) provider diatur dari 👤 Akun → provider web search.</p>
+          <div class="acct-actions"><button type="button" id="oc-commands-open" class="ghost">📝 Commands OpenCode…</button></div>
+          <p class="muted small">Command = file <code>.opencode/commands</code> (project) atau <code>~/.config/opencode/commands</code> (semua project). Memakai <code>$ARGUMENTS</code>, <code>$1</code>, dan <code>!`cmd`</code>; OpenCode memuat ulang otomatis.</p>
         </div>
         <div id="oc-json-panel" class="oc-json-panel" hidden>
           <label class="oc-field"><span>Isi file</span><textarea id="oc-json-text" rows="16" spellcheck="false" aria-label="Isi config OpenCode"></textarea></label>
@@ -1455,6 +1457,14 @@
           <button type="button" id="oc-config-reload" class="ghost">↻ Muat ulang</button>
           <button type="button" id="oc-config-save" class="primary">Simpan</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 📝 Commands OpenCode (features/opencode-commands.js) — file .opencode/commands, dari editor config -->
+    <div id="oc-commands-modal" class="modal" hidden>
+      <div class="modal-card ext-card" role="dialog" aria-modal="true" aria-labelledby="oc-commands-title">
+        <div class="modal-head"><b id="oc-commands-title">📝 Commands OpenCode <small id="oc-commands-project" class="muted"></small></b><button id="oc-commands-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div id="oc-commands-body" class="ext-body"></div>
       </div>
     </div>
 

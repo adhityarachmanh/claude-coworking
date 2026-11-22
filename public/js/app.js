@@ -71,6 +71,7 @@ import { initMemory } from './features/memory.js';
 import { initExtensions } from './features/extensions.js';
 import { initSkills } from './features/skills.js';
 import { initOutputStyle } from './features/output-styles.js';
+import { initOpenCodeCommands } from './features/opencode-commands.js';
 import { initPullRequest } from './features/pull-request.js';
 import { initSettings } from './features/settings.js';
 import { initSpotify } from './features/spotify.js';
@@ -121,6 +122,7 @@ initMemory(); // 🧠 /memory: CLAUDE.md / AGENTS.md editor
 initExtensions(); // 🧩 /plugin /agents /hooks
 initSkills(); // 🧩 /skills: SKILL.md editor for both engines
 initOutputStyle(); // 🎭 output style Claude (built-in + custom)
+initOpenCodeCommands(); // 📝 OpenCode .opencode/commands editor
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initHeaderMore();
