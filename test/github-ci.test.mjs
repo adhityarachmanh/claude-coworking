@@ -40,6 +40,28 @@ test('not logged in to gh: said once', async () => {
   assert.equal(h.chats.filter((c) => /login GitHub/.test(c.text)).length, 1);
 });
 
+test('pantau CI mati: tidak ada polling, status, maupun baris chat', async () => {
+  const h = hub();
+  h.ciFollowFor = () => false;
+  const w = new CiWatcher({ hub: h, gh: 'gh', check: async () => ({ state: 'failure', runs: [{ name: 'ci', status: 'completed', conclusion: 'failure', url: 'https://github.com/o/r/actions/runs/1' }], url: 'https://github.com/o/r/actions/runs/1' }), pollMs: 5, firstMs: 5 });
+  assert.equal(w.watch('p1'), false);
+  await wait(40);
+  assert.equal(h.statuses.length, 0, 'tidak menulis status');
+  assert.equal(h.chats.length, 0, 'tidak menulis chat');
+});
+
+test('unwatch: menghentikan pemantauan yang berjalan, tanpa baris chat', async () => {
+  const h = hub();
+  const w = new CiWatcher({ hub: h, gh: 'gh', check: async () => ({ state: 'running', runs: [{ name: 'ci', status: 'in_progress', conclusion: '' }] }), pollMs: 5, firstMs: 5 });
+  w.watch('p1');
+  await wait(20);
+  w.unwatch('p1');
+  assert.equal(w.watching.size, 0);
+  const seen = h.chats.length;
+  await wait(40);
+  assert.equal(h.chats.length, seen, 'tidak ada baris chat setelah dihentikan');
+});
+
 test('a `git push` the team ran (and only a successful one) starts the watch', () => {
   let pushed = 0;
   const t = new StreamTranslator({ office() {}, chat: () => 'c', updateChat() {}, status() {}, gitPushed: () => pushed++ });

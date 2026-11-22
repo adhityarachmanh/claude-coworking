@@ -63,6 +63,8 @@ export class CiWatcher {
   watch(projectId) {
     const project = this.hub.projects.get(projectId);
     if (!this.gh || !project?.path) return false;
+    // 🐙 The project turned the check off (settings.ciFollow): a repo whose CI is not set up yet stays quiet.
+    if (this.hub.ciFollowFor?.(projectId) === false) return false;
     clearTimeout(this.watching.get(projectId)?.timer);
     const w = { since: Date.now(), timer: null };
     this.watching.set(projectId, w);
@@ -70,6 +72,13 @@ export class CiWatcher {
     w.timer = setTimeout(() => this.poll(projectId, w), this.firstMs);
     w.timer.unref?.();
     return true;
+  }
+
+  /** Stops following a project (the check was turned off): no timer, and a poll already awaiting `check` drops its
+   *  result because `poll` compares the watcher identity it started with. */
+  unwatch(projectId) {
+    clearTimeout(this.watching.get(projectId)?.timer);
+    this.watching.delete(projectId);
   }
 
   async poll(projectId, w) {
