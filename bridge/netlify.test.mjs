@@ -1980,7 +1980,24 @@ test('portal: root menampilkan dua pintu (Chat & Remote Power) tanpa membocorkan
   const appText = await app.text();
   assert.doesNotThrow(() => new vm.Script(appText), 'skrip aplikasi chat harus valid');
   assert.match(appText, /visualViewport/, 'tinggi app mengikuti visualViewport (keyboard HP)');
+  // Regresi: select Model/Effort harus SELALU terisi, bukan hanya saat ada percakapan terbuka.
+  assert.match(appText, /function renderModelSelectors\(\)/, 'pemilih model/effort dipisah agar selalu terisi');
+  assert.match(appText, /function renderModelOptions\(\) \{ renderModelSelectors\(\); syncConvControls\(\); \}/,
+    'renderModelOptions selalu mengisi opsi lalu menyamakan nilai');
+  assert.match(appText, /groupConversations/, 'pengelompokan riwayat disematkan dari chat-list.mjs');
+  assert.match(appText, /pushState/, 'navigasi per-percakapan memakai pushState');
   assert.equal(await handleSite(req('/chat/app.js', { method: 'POST' }), null), null, 'app.js hanya GET');
+  // Rute per-percakapan /chat/<uuid>: halaman chat yang sama bila ada sesi, dialihkan bila tidak.
+  const uuid = '11111111-2222-3333-4444-555555555555';
+  const convNoSesi = await handleSite(req('/chat/' + uuid), null);
+  assert.equal(convNoSesi.status, 302, '/chat/<uuid> tanpa sesi dialihkan');
+  assert.equal(convNoSesi.headers.get('location'), '/auth/login');
+  const convSesi = await handleSite(req('/chat/' + uuid, { headers: { cookie } }), { repo });
+  assert.equal(convSesi.status, 200, '/chat/<uuid> dengan sesi melayani halaman chat');
+  assert.match(await convSesi.text(), /id="composer"/, 'halaman chat yang sama');
+  // Hanya bentuk uuid yang jadi rute percakapan; selain itu 404 (bukan halaman chat).
+  assert.equal(await handleSite(req('/chat/bukan-uuid')), null, '/chat/<id-ngawur> diserahkan ke pemanggil (404)');
+  assert.equal(await handleSite(req('/chat/123')), null, '/chat/<id pendek> → 404');
   // Sudah login: /chat, /auth, /auth/login, /auth/register semuanya menuju /chat.
   const env = { repo };
   assert.equal((await handleSite(req('/auth', { headers: { cookie } }), { repo })).headers.get('location'), '/chat');

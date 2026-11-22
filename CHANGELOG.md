@@ -2,6 +2,19 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **💬 Adhitron Web: tiap percakapan punya alamat sendiri (`/chat/<id>`) + riwayat yang bisa dikelola.** Sebelumnya
+  chat hanya punya satu URL `/chat`: menyegarkan halaman selalu kembali ke layar kosong, dan percakapan tak bisa
+  di-bookmark atau dibuka di tab lain. Kini membuka percakapan mengubah URL (`/chat/<id>`), jadi **refresh tetap di
+  tempat**, tombol **kembali/maju** browser bekerja, dan tiap percakapan bisa di-bookmark atau dibuka di tab lain.
+  **Riwayat di sidebar dikelompokkan Hari ini / Kemarin / 7 hari terakhir / Lebih lama**, judul tiap percakapan bisa
+  **diganti** (ikon ✎) dan bisa **dihapus** (ikon 🗑, dengan konfirmasi). Percakapan baru yang belum dikirim tidak lagi
+  muncul sebagai item kosong — baru dibuat saat pesan pertama terkirim.
+- **🩹 Perbaikan: pemilih Model & Effort tidak lagi kosong.** Sebelumnya daftar Model dan Effort hanya terisi setelah
+  sebuah percakapan dibuka, sehingga saat pertama membuka `/chat` kedua pilihan itu kosong. Kini daftarnya selalu
+  terisi begitu halaman dimuat.
+
 ## 1.0.84
 
 - **🩺 Perbaikan: giliran OpenCode tidak lagi mati oleh `Internal error: OpenAI Chat received content after the finish

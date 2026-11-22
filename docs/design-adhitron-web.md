@@ -51,8 +51,12 @@ Adhitron lokal (Node di PC) butuh PC hidup. Adhitron Web = versi hosting yang te
 - `POST /chat/api/conversations/:id/messages` (SSE)
 - Proteksi: cookie httpOnly + cek `Origin` + anti-CSRF + rate-limit per IP/jendela.
 - Halaman: `/` portal · `/auth/login` & `/auth/register` form terpisah · `/chat` aplikasi (tanpa form) ·
-  `/chat/app.js` & `/chat/auth.js` skrip klien (diuji syntax). Routing ber-sesi diputuskan di server: `/chat` tanpa
-  sesi → `302 /auth/login`, `/auth/*` dengan sesi → `302 /chat` (menghapus kedipan form saat refresh).
+  `/chat/<id>` aplikasi yang sama dengan percakapan itu langsung terbuka (id dari URL; klien memverifikasi
+  kepemilikan lewat `GET /conversations/:id`, id asing/kedaluwarsa → kembali ke `/chat`) ·
+  `/chat/app.js` & `/chat/auth.js` skrip klien (diuji syntax). Routing ber-sesi diputuskan di server: `/chat`
+  (dan `/chat/<uuid>`) tanpa sesi → `302 /auth/login`, `/auth/*` dengan sesi → `302 /chat` (menghapus kedipan
+  form saat refresh). Berpindah antar-percakapan memakai `history.pushState` (tanpa reload); riwayat sidebar
+  dikelompokkan Hari ini/Kemarin/7 hari/Lebih lama dan bisa diganti nama (`PATCH`) atau dihapus (`DELETE`).
 
 ## Milestone
 

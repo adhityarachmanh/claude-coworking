@@ -112,8 +112,18 @@ color:var(--text-2);padding:9px 10px;border-radius:9px;font:inherit;font-size:.8
 .conv:hover{background:var(--surface-2)}
 .conv.active{background:var(--accent-soft);border-color:var(--accent-line);color:var(--text)}
 .conv .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.conv .del{color:var(--muted);border:none;background:transparent;font:inherit;cursor:pointer;padding:2px 4px}
-.conv .del:hover{color:var(--accent-2)}
+/* kelompok tanggal di riwayat */
+.glabel{padding:10px 10px 2px;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.glabel:first-child{padding-top:4px}
+/* aksi per-item (ganti nama / hapus): muncul saat hover/focus, selalu tampak di perangkat sentuh */
+.conv .acts{display:flex;gap:2px;flex:none;opacity:0;transition:opacity .12s}
+.conv:hover .acts,.conv:focus-within .acts,.conv.active .acts{opacity:1}
+@media(pointer:coarse){.conv .acts{opacity:1}}
+.conv .ic{color:var(--muted);border:none;background:transparent;font:inherit;cursor:pointer;padding:2px 5px;border-radius:6px;line-height:1}
+.conv .ic:hover{color:var(--text);background:var(--line)}
+.conv .ic.del:hover{color:var(--accent-2)}
+.rename{width:calc(100% - 20px);margin:2px 10px;padding:8px 9px;background:var(--surface-2);border:1px solid var(--accent);
+border-radius:9px;color:var(--text);font:inherit;font-size:.88rem}
 .chatmain{display:flex;flex-direction:column;min-height:0}
 .thread{flex:1;overflow:auto;padding:18px 16px 8px;display:flex;flex-direction:column;gap:14px}
 .turn{display:flex;flex-direction:column;gap:6px;max-width:100%}
@@ -501,8 +511,12 @@ export async function handleSite(request, env, url = new URL(request.url)) {
   const path = url.pathname;
   const get = request.method === 'GET';
 
+  // Rute percakapan: /chat/<uuid> memakai halaman chat yang sama; klien membaca id dari location.pathname.
+  // Hanya bentuk uuid yang dikenali — selain itu 404 (bukan halaman chat).
+  const convPath = /^\/chat\/([0-9a-fA-F-]{36})$/.exec(path);
+  const isChatShell = path === '/chat' || path === '/chat/';
   // Sesi dibaca lebih dulu untuk halaman yang bergantung padanya. Fail-open ke form bila DB error.
-  const wantsSession = path === '/chat' || path === '/chat/' || path === '/auth' || path.startsWith('/auth/');
+  const wantsSession = isChatShell || Boolean(convPath) || path === '/auth' || path.startsWith('/auth/');
   let user = null;
   if (env?.repo && wantsSession) {
     try { user = await currentUser(request, env); } catch { user = null; }
@@ -510,7 +524,8 @@ export async function handleSite(request, env, url = new URL(request.url)) {
 
   if (path === '/' && get) return html(portalPageHtml());
   // /chat hanya untuk yang sudah login; tanpa sesi langsung ke halaman masuk (tanpa kedip form).
-  if ((path === '/chat' || path === '/chat/') && get) {
+  // Keberadaan percakapan (apakah id milik user) tetap dicek klien lewat GET /conversations/:id.
+  if ((isChatShell || Boolean(convPath)) && get) {
     return user ? html(chatPageHtml()) : redirect('/auth/login');
   }
   if (path === '/chat/app.js' && get) return js(chatAppJs());

@@ -2,8 +2,11 @@
 // /chat/app.js; hanya memakai API publik /chat/api/* dan stream SSE dari /chat/api/conversations/:id/messages.
 // Ditulis sebagai string (bukan modul Node) supaya bisa diuji: `chatAppJs()` harus valid syntax.
 //
-// Fitur: masuk/daftar, sidebar riwayat (buat/buka/hapus), thread dengan streaming + Stop, markdown ringan,
-// chip sumber bernomor yang bisa diklik, pilih Model & Effort + Auto, toggle Browsing, dan panel Provider.
+// Fitur: masuk/daftar, sidebar riwayat (buat/buka/ganti nama/hapus), thread dengan streaming + Stop,
+// markdown ringan, chip sumber bernomor yang bisa diklik, pilih Model & Effort + Auto, toggle Browsing,
+// panel Provider, dan URL per-percakapan (/chat/<id>, bisa di-refresh/bookmark).
+
+import { groupConversations } from './chat-list.mjs';
 
 export function chatAppJs() { return APP; }
 
@@ -49,6 +52,10 @@ const $ = (id) => document.getElementById(id);
 const API = '/chat/api';
 let ME = null, CONVS = [], CONV = null, CATALOG = { kinds: [] }, PROVIDERS = [], CONTROLLER = null, SENDING = false;
 
+/* Pengelompokan riwayat (fungsi murni dari src/chat-list.mjs, disematkan sebagai sumber — satu sumber
+   kebenaran, diuji langsung di chat-list.test.mjs). */
+const groupChats = ${groupConversations};
+
 /* ---------------------------------------------------------------- utils */
 async function call(path, opts = {}) {
   const r = await fetch(API + path, {
@@ -92,7 +99,7 @@ async function refresh() {
 async function showApp() {
   $('who').textContent = 'masuk sebagai ' + ME.email;
   await loadCatalog(); await loadProviders(); await loadConvs();
-  if (!CONV) renderEmpty();
+  await routeInitial();
 }
 $('logout').addEventListener('click', async () => { await call('/auth/logout', { method: 'POST' }); location.href = '/auth/login'; });
 $('delacct').addEventListener('click', async () => {
@@ -185,21 +192,25 @@ function currentKind() {
   const p = PROVIDERS.find((x) => x.id === (CONV && CONV.providerId)) || PROVIDERS[0];
   return p ? p.kind : (CATALOG.kinds[0] ? CATALOG.kinds[0].kind : null);
 }
-function renderModelOptions() {
-  if (!CONV) return;
+/** Opsi model & effort SELALU terisi dari provider efektif (bukan hanya saat ada percakapan). */
+function renderModelSelectors() {
   const kind = currentKind();
   const prov = PROVIDERS.find((x) => x.id === (CONV && CONV.providerId)) || PROVIDERS[0];
   const custom = prov && Array.isArray(prov.models) ? prov.models : null;
   const block = (CATALOG.kinds || []).find((k) => k.kind === kind);
-  const models = custom && custom.length ? custom
-    : (block ? block.models : []);
+  const models = custom && custom.length ? custom : (block ? block.models : []);
   $('model').innerHTML = models.map((m) => '<option value="' + esc(m.id) + '">' + esc(m.label || m.id) + '</option>').join('');
   $('effort').innerHTML = EFFORTS.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join('');
-  if (CONV.model) $('model').value = CONV.model;
-  if (CONV.effort) $('effort').value = CONV.effort;
-  $('auto').checked = !!CONV.modelAuto || !!CONV.effortAuto;
-  $('browsing').checked = !!CONV.browsing;
 }
+/** Nilai kontrol yang spesifik percakapan (model/effort/auto/browsing). Tanpa percakapan → default. */
+function syncConvControls() {
+  if (CONV && CONV.model) $('model').value = CONV.model;
+  if (CONV && CONV.effort) $('effort').value = CONV.effort;
+  $('auto').checked = !!(CONV && (CONV.modelAuto || CONV.effortAuto));
+  $('browsing').checked = !!(CONV && CONV.browsing);
+}
+/** Isi opsi (selalu) lalu samakan nilai dengan percakapan aktif. */
+function renderModelOptions() { renderModelSelectors(); syncConvControls(); }
 function patchConv(patch) {
   if (!CONV) return;
   Object.assign(CONV, patch);
@@ -210,23 +221,92 @@ $('effort').addEventListener('change', () => patchConv({ effort: $('effort').val
 $('auto').addEventListener('change', () => patchConv({ modelAuto: $('auto').checked, effortAuto: $('auto').checked }));
 $('browsing').addEventListener('change', () => patchConv({ browsing: $('browsing').checked }));
 
-/* ---------------------------------------------------------------- daftar percakapan */
+/* ---------------------------------------------------------------- daftar percakapan (riwayat) */
+
+/** id percakapan dari URL (/chat/<uuid>), atau null. */
+function convIdFromPath() {
+  const m = /^\/chat\/([0-9a-fA-F-]{36})$/.exec(location.pathname);
+  return m ? m[1] : null;
+}
+
 async function loadConvs() {
   const { ok, data } = await call('/conversations');
   CONVS = ok ? data.conversations : [];
+  if (CONV) { const cur = CONVS.find((x) => x.id === CONV.id); if (cur) { CONV.title = cur.title; $('ttl').textContent = cur.title || 'Percakapan baru'; } }
   renderConvs();
 }
+function convItem(c) {
+  const active = CONV && c.id === CONV.id;
+  return '<li><div class="conv' + (active ? ' active' : '') + '" data-open="' + esc(c.id) + '" role="button" tabindex="0" title="' + esc(c.title) + '">'
+    + '<span class="t">' + esc(c.title) + '</span>'
+    + '<span class="acts">'
+    + '<button class="ic" type="button" data-rename="' + esc(c.id) + '" title="Ganti nama" aria-label="Ganti nama">✎</button>'
+    + '<button class="ic del" type="button" data-del="' + esc(c.id) + '" title="Hapus" aria-label="Hapus percakapan">🗑</button>'
+    + '</span></div></li>';
+}
 function renderConvs() {
-  $('convs').innerHTML = CONVS.map((c) => '<li><button class="conv' + (CONV && c.id === CONV.id ? ' active' : '') + '" data-open="' + esc(c.id) + '"><span class="t">' + esc(c.title) + '</span></button></li>').join('');
+  const groups = groupChats(CONVS, Date.now());
+  $('convs').innerHTML = groups.length
+    ? groups.map((g) => '<li class="glabel">' + esc(g.label) + '</li>' + g.items.map(convItem).join('')).join('')
+    : '<li class="muted" style="padding:10px">Belum ada percakapan.</li>';
 }
 $('convs').addEventListener('click', (e) => {
+  const r = e.target.closest('[data-rename]'); if (r) { e.stopPropagation(); startRename(r.dataset.rename); return; }
+  const d = e.target.closest('[data-del]'); if (d) { e.stopPropagation(); deleteConv(d.dataset.del); return; }
   const b = e.target.closest('[data-open]'); if (b) openConv(b.dataset.open);
 });
-$('newconv').addEventListener('click', async () => {
-  if (!PROVIDERS.length) { $('prov').hidden = false; provMsg('Tambahkan provider dulu.'); return; }
-  const { ok, data } = await call('/conversations', { method: 'POST', body: JSON.stringify({ providerId: PROVIDERS[0].id }) });
-  if (ok) { CONVS.unshift(data.conversation); openConv(data.conversation.id); closeSide(); }
+$('convs').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const b = e.target.closest('[data-open]'); if (!b) return;
+  e.preventDefault(); openConv(b.dataset.open);
 });
+
+/** Ganti nama inline: ganti item jadi input, simpan via PATCH saat Enter/blur. */
+function startRename(id) {
+  const c = CONVS.find((x) => x.id === id); if (!c) return;
+  const box = $('convs').querySelector('[data-open="' + id + '"]'); if (!box) return;
+  const input = document.createElement('input');
+  input.className = 'rename'; input.type = 'text'; input.value = c.title; input.maxLength = 120;
+  input.setAttribute('aria-label', 'Judul percakapan');
+  box.replaceWith(input); input.focus(); input.select();
+  let done = false;
+  const finish = async (save) => {
+    if (done) return; done = true;
+    const title = input.value.trim();
+    if (save && title && title !== c.title) {
+      const { ok, data } = await call('/conversations/' + id, { method: 'PATCH', body: JSON.stringify({ title }) });
+      if (ok) { c.title = data.conversation.title; if (CONV && CONV.id === id) { CONV.title = c.title; $('ttl').textContent = c.title; } }
+    }
+    renderConvs();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+async function deleteConv(id) {
+  const c = CONVS.find((x) => x.id === id);
+  if (!confirm('Hapus percakapan "' + (c ? c.title : '') + '" beserta pesannya? Tidak bisa dikembalikan.')) return;
+  const { ok } = await call('/conversations/' + id, { method: 'DELETE' });
+  if (!ok) { alert('Gagal menghapus percakapan.'); return; }
+  CONVS = CONVS.filter((x) => x.id !== id);
+  if (CONV && CONV.id === id) newChatView();
+  else renderConvs();
+}
+
+/** Tampilan percakapan baru (belum dibuat); URL kembali ke /chat. */
+function newChatView(skipUrl) {
+  CONV = null;
+  $('ttl').textContent = 'Percakapan baru';
+  clearAttach();
+  renderConvs(); renderModelOptions(); renderCtx();
+  renderEmpty();
+  if (!skipUrl) history.replaceState(null, '', '/chat');
+}
+
+$('newconv').addEventListener('click', () => { newChatView(); closeSide(); $('input').focus(); });
 $('menu').addEventListener('click', () => { const s = $('side'); s.classList.toggle('open'); if (s.classList.contains('open')) { s.setAttribute('aria-hidden', 'false'); } else { s.removeAttribute('aria-hidden'); } });
 function closeSide() { const s = $('side'); s.classList.remove('open'); s.removeAttribute('aria-hidden'); }
 
@@ -258,11 +338,18 @@ $('browsing').addEventListener('change', renderCtx);
 /* ---------------------------------------------------------------- thread */
 async function openConv(id) {
   const { ok, data } = await call('/conversations/' + id);
-  if (!ok) return;
+  if (!ok) {
+    // Id di URL bukan milik user (atau sudah dihapus): kembali ke /chat dengan empty state.
+    if (convIdFromPath() === id) history.replaceState(null, '', '/chat');
+    newChatView(true);
+    return;
+  }
   setConv(data.conversation);
+  if (convIdFromPath() !== id) history.pushState(null, '', '/chat/' + id);
   renderThread(data.messages, data.citations);
   closeSide();
   scrollBottom();
+  $('input').focus();
 }
 function renderThread(messages, citations) {
   if (!messages || !messages.length) { renderEmpty(); return; }
@@ -279,11 +366,14 @@ function scrollBottom() { const t = $('thread'); t.scrollTop = t.scrollHeight; }
 
 /** Empty state thread: sambutan + saran prompt yang mengisi composer saat diklik. */
 function renderEmpty() {
+  const noProv = !PROVIDERS.length;
   $('thread').innerHTML =
     '<div class="empty">'
     + '<div class="empty-ico" aria-hidden="true">💬</div>'
     + '<h2>Mulai mengobrol</h2>'
-    + '<p class="muted">Pilih provider &amp; model di bawah, lalu kirim pesan. Tempel API key milikmu di ⚙ provider.</p>'
+    + '<p class="muted">' + (noProv
+      ? 'Belum ada provider. Tempel API key milikmu di ⚙ Provider, lalu kirim pesan.'
+      : 'Pilih model &amp; effort di bawah, lalu kirim pesan.') + '</p>'
     + '<div class="empty-sug" role="list">'
     + '<button type="button" class="sug" data-sug="Jelaskan dengan sederhana: ">Jelaskan konsep ini dengan sederhana…</button>'
     + '<button type="button" class="sug" data-sug="Buat ringkasan dari: ">Buat ringkasan dari…</button>'
@@ -473,9 +563,17 @@ function setSending(on) {
 function stop() { if (CONTROLLER) CONTROLLER.abort(); }
 
 async function sendMsg() {
-  if (!CONV) { alert('Buat atau buka percakapan dulu.'); return; }
   const text = $('input').value.trim();
   if (!text && !ATTACH.length) return;
+  if (!CONV) {
+    if (!PROVIDERS.length) { $('prov').hidden = false; provMsg('Tambahkan provider dulu.'); return; }
+    // Percakapan dibuat saat pesan pertama (bukan saat menekan "+ Percakapan baru").
+    const { ok, data } = await call('/conversations', { method: 'POST', body: JSON.stringify({ providerId: PROVIDERS[0].id }) });
+    if (!ok) { alert((data && data.error) || 'Gagal membuat percakapan'); return; }
+    CONVS.unshift(data.conversation);
+    setConv(data.conversation);
+    history.replaceState(null, '', '/chat/' + CONV.id);
+  }
   $('input').value = ''; $('input').style.height = 'auto';
   if ($('thread').querySelector('.empty')) $('thread').innerHTML = '';
   appendTurn('user', text, ATTACH.map((a) => ({ kind: a.kind, name: a.name, size: a.size })));
@@ -557,6 +655,21 @@ $('thread').addEventListener('click', (e) => {
   vv.addEventListener('resize', apply);
   vv.addEventListener('scroll', apply);
 })();
+
+/* Navigasi browser (back/forward) → buka percakapan sesuai URL. */
+addEventListener('popstate', async () => {
+  const id = convIdFromPath();
+  if (id) await openConv(id);
+  else if (CONV) newChatView(true);
+  else { $('ttl').textContent = 'Percakapan baru'; renderConvs(); renderModelOptions(); renderCtx(); }
+});
+
+/** Tampilan awal: buka percakapan dari URL (/chat/<id>) atau empty state. */
+async function routeInitial() {
+  const id = convIdFromPath();
+  if (id) await openConv(id);
+  else newChatView(true);
+}
 
 refresh();
 `;
