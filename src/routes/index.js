@@ -29,6 +29,7 @@ import * as remote from './remote.js';
 import * as routines from './routines.js';
 import * as session from './session.js';
 import * as skills from './skills.js';
+import * as outputStyles from './output-styles.js';
 import * as groups from './groups.js';
 import * as setup from './setup.js';
 import * as spotify from './spotify.js';
@@ -49,6 +50,7 @@ export function buildRouter() {
     tasks.register,
     extensions.register,
     skills.register,
+    outputStyles.register,
     files.register,
     memory.register,
     git.register,

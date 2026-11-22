@@ -61,7 +61,8 @@ export function parseStyleFile(text) {
 /** Reads one Markdown style file; a symlink is invisible to the list (its target may be anywhere). */
 const readStyleFile = (file) => {
   try {
-    if (lstatSync(file).isSymbolicLink()) return null;
+    const info = lstatSync(file);
+    if (info.isSymbolicLink()) return null;
     const parsed = parseStyleFile(readFileSync(file, 'utf8'));
     const slug = path.basename(file, '.md');
     return {
@@ -69,6 +70,7 @@ const readStyleFile = (file) => {
       slug,
       description: parsed.description,
       keepCodingInstructions: parsed.keepCodingInstructions,
+      mtime: info.mtimeMs,
       file,
     };
   } catch {
@@ -322,4 +324,42 @@ export function deleteStyle({ projectPath, userDir = userConfigDir(), dataDir, s
   const backedUp = backupStyle(file, { dataDir, scope, slug });
   unlinkSync(file);
   return { backedUp };
+}
+
+/**
+ * The project's own choice, written to `.claude/settings.local.json` (the file Claude Code's own command writes).
+ * Only `outputStyle` changes: every other key, the indentation and the file mode stay as they were. `default`
+ * removes the key so the project falls back to its shared/user setting. Invalid JSON is never overwritten.
+ */
+export function saveSelection({ projectPath, userDir = userConfigDir(), name }) {
+  if (name !== 'default' && (typeof name !== 'string' || !name.trim() || name.length > 200)) {
+    throw new OutputStyleError(400, 'Nama gaya tidak valid.');
+  }
+  const file = settingsFile(projectPath, 'local', userDir);
+  let data = {};
+  let indent = 2;
+  try {
+    const info = lstatSync(file);
+    if (info.isSymbolicLink()) throw new OutputStyleError(409, `${path.basename(file)} berupa symlink; ubah langsung di file aslinya.`);
+    const text = readFileSync(file, 'utf8');
+    try {
+      data = text.trim() ? JSON.parse(text.replace(/^\uFEFF/, '')) : {};
+    } catch (err) {
+      throw new OutputStyleError(409, `${path.basename(file)} bukan JSON yang valid (${err.message}). Perbaiki file itu dulu; Adhitron tidak akan menimpanya.`);
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new OutputStyleError(409, `${path.basename(file)} harus berisi objek JSON ({ … }).`);
+    }
+    indent = text.match(/^[{[]\r?\n([ \t]+)/)?.[1] ?? 2;
+  } catch (err) {
+    if (err instanceof OutputStyleError) throw err;
+    if (err.code !== 'ENOENT') throw new OutputStyleError(500, `Tidak bisa membaca ${path.basename(file)}: ${err.code ?? err.message}`);
+    mkdirSync(path.dirname(file), { recursive: true });
+  }
+  if (name === 'default') delete data.outputStyle;
+  else data.outputStyle = name;
+  const temp = path.join(path.dirname(file), `.settings-${randomBytes(4).toString('hex')}.tmp`);
+  writeFileSync(temp, `${JSON.stringify(data, null, indent)}\n`);
+  renameSync(temp, file);
+  return { name: name === 'default' ? 'default' : name, file };
 }
