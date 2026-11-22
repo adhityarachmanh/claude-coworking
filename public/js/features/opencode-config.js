@@ -87,6 +87,45 @@ const renderReferences = (references) => {
   $('#oc-reference-list').innerHTML = list.length ? list.map(referenceRow).join('') : '<p class="muted small">Belum ada reference.</p>';
 };
 
+const WEBSEARCH_PROVIDERS = [
+  ['inherit', 'Bawaan (tidak diatur)'],
+  ['off', 'Nonaktif'],
+  ['opencode', 'OpenCode Web Search'],
+  ['random', 'Acak otomatis'],
+  ['exa', 'Exa'],
+  ['firecrawl', 'Firecrawl'],
+  ['parallel', 'Parallel'],
+  ['tavily', 'Tavily'],
+  ['tinyfish', 'TinyFish'],
+];
+
+const instructionRow = (value = '') => `<div class="oc-agent" data-instruction-row>
+  <div class="oc-agent-head"><b>Instruksi</b><button type="button" class="ghost danger-text" data-instruction-remove aria-label="Hapus instruksi">Hapus</button></div>
+  <div class="oc-agent-grid">
+    <label class="oc-field"><span>Path, glob, atau URL</span><input data-instruction type="text" maxlength="500" autocomplete="off" spellcheck="false" value="${escapeHtml(value)}" placeholder="AGENTS.md, ~/aturan/*.md, https://…" /></label>
+  </div>
+</div>`;
+
+const renderInstructions = (instructions) => {
+  const list = (Array.isArray(instructions) ? instructions : []).filter((item) => typeof item === 'string');
+  $('#oc-instruction-list').innerHTML = list.length ? list.map(instructionRow).join('') : '<p class="muted small">Belum ada instruksi tambahan.</p>';
+};
+
+const collectInstructions = () =>
+  [...document.querySelectorAll('#oc-instruction-list [data-instruction]')].map((input) => input.value.trim()).filter(Boolean);
+
+/** The provider the form shows; one the list does not know yet keeps its value instead of being reset. */
+const renderWebsearch = (websearch) => {
+  const select = $('#oc-websearch');
+  if (!select.options.length) select.innerHTML = WEBSEARCH_PROVIDERS.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+  const mode = websearch?.mode === 'off' ? 'off' : websearch?.mode === 'provider' ? 'provider' : 'inherit';
+  const provider = typeof websearch?.provider === 'string' ? websearch.provider : '';
+  if (provider && ![...select.options].some((option) => option.value === provider)) {
+    select.append(new Option(provider, provider));
+  }
+  select.value = mode === 'provider' ? provider : mode;
+};
+
 const dateOf = (value) => {
   if (value === null || value === undefined || value === '') return null;
   const date = new Date(value);
@@ -179,6 +218,8 @@ const renderView = () => {
   $('#oc-small-model').value = typeof view.config?.small_model === 'string' ? view.config.small_model : '';
   renderAgents(view.agents);
   renderReferences(view.references);
+  renderInstructions(view.instructions);
+  renderWebsearch(view.websearch);
   $('#oc-json-text').value = typeof view.text === 'string' && view.text ? view.text : '{\n}\n';
   $('#oc-config-error').textContent = typeof view.parseError === 'string' ? view.parseError : '';
   if (view.parseError) setMode('json'); // the raw file is the only way to repair it
@@ -282,7 +323,8 @@ const applyBusy = () => {
   $('#oc-scope-global').disabled = busy;
   $('#oc-agent-add').disabled = busy;
   $('#oc-reference-add').disabled = busy;
-  for (const button of document.querySelectorAll('#oc-reference-list [data-ref-remove]')) button.disabled = busy;
+  $('#oc-instruction-add').disabled = busy;
+  for (const button of document.querySelectorAll('#oc-reference-list [data-ref-remove], #oc-instruction-list [data-instruction-remove]')) button.disabled = busy;
   $('#oc-conflict-consolidate').disabled = busy || editor.backupsBusy;
   for (const button of document.querySelectorAll('#oc-backup-list button[data-backup-preview], #oc-backup-list button[data-backup-restore]')) {
     button.disabled = busy || editor.backupsBusy || (button.dataset.backupRestore ? backupLocked(button.dataset.backupRestore) : false);
@@ -397,6 +439,11 @@ async function save() {
       smallModel: $('#oc-small-model').value.trim(),
       agents: collectAgents(),
       references: collectReferences(),
+      instructions: collectInstructions(),
+      websearch: (() => {
+        const value = $('#oc-websearch').value;
+        return value === 'inherit' || value === 'off' ? { mode: value, provider: '' } : { mode: 'provider', provider: value };
+      })(),
     };
   } else {
     body.text = $('#oc-json-text').value;
@@ -575,6 +622,19 @@ export function initOpenCodeConfig() {
     if (!document.querySelector('#oc-reference-list .oc-agent')) renderReferences([]);
   });
   $('#oc-config-reload').addEventListener('click', load);
+  $('#oc-instruction-add').addEventListener('click', () => {
+    if (editor.busy) return;
+    const list = $('#oc-instruction-list');
+    if (list.querySelector('.muted')) list.innerHTML = '';
+    list.insertAdjacentHTML('beforeend', instructionRow());
+    list.querySelector('.oc-agent:last-child [data-instruction]')?.focus();
+  });
+  $('#oc-instruction-list').addEventListener('click', (e) => {
+    const remove = e.target.closest('[data-instruction-remove]');
+    if (!remove || editor.busy) return;
+    remove.closest('.oc-agent')?.remove();
+    if (!document.querySelector('#oc-instruction-list .oc-agent')) renderInstructions([]);
+  });
   $('#oc-config-save').addEventListener('click', save);
   $('#oc-conflict-consolidate').addEventListener('click', consolidate);
   $('#oc-conflict-close').addEventListener('click', () => {

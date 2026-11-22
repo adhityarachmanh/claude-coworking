@@ -1430,6 +1430,11 @@
           <div class="oc-agents-head"><b>References</b><button type="button" id="oc-reference-add" class="ghost">＋ Reference</button></div>
           <div id="oc-reference-list" class="oc-agent-list"></div>
           <p class="muted small">Folder lokal (mis. <code>~/pustaka</code>) atau repository Git yang boleh dibaca agent. Alias tanpa spasi, <code>/</code>, backtick, atau koma; branch hanya untuk repository. Kosongkan alias untuk membuang baris.</p>
+          <div class="oc-agents-head"><b>Instructions</b><button type="button" id="oc-instruction-add" class="ghost">＋ Instruksi</button></div>
+          <div id="oc-instruction-list" class="oc-agent-list"></div>
+          <p class="muted small">File, glob, atau URL instruksi yang selalu dibaca OpenCode — mis. <code>AGENTS.md</code>, <code>~/aturan/*.md</code>, <code>https://contoh.test/aturan.md</code>. Maksimal 100 entri.</p>
+          <label class="oc-field"><span>Web search</span><select id="oc-websearch"></select></label>
+          <p class="muted small">Provider tool pencarian OpenCode. <b>Bawaan</b> membiarkan OpenCode memilih; <b>Nonaktif</b> menghapus tool pencarian. Kunci (API key) provider diatur dari 👤 Akun → provider web search.</p>
         </div>
         <div id="oc-json-panel" class="oc-json-panel" hidden>
           <label class="oc-field"><span>Isi file</span><textarea id="oc-json-text" rows="16" spellcheck="false" aria-label="Isi config OpenCode"></textarea></label>

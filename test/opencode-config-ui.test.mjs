@@ -277,6 +277,8 @@ const configView = (over = {}) => ({
   config: { model: 'anthropic/claude-lama' },
   agents: [{ name: 'reviewer', mode: 'subagent', model: '', description: '', prompt: 'old prompt' }],
   references: [],
+  instructions: [],
+  websearch: { mode: 'inherit', provider: '' },
   parseError: null,
   hash: 'hash-1',
   sources: sourcesOf(),
@@ -338,7 +340,7 @@ function installConfigFake() {
       case '/api/opencode-config/save': {
         const failed = refuse(endpoint) ?? guard(body);
         if (failed) return failed;
-        fake.view = { ...read(), hash: 'hash-2', text: '{"model":"anthropic/claude-baru"}\n', config: { model: body.form?.model ?? 'anthropic/claude-baru' }, agents: [], references: Array.isArray(body.form?.references) ? body.form.references : [], parseError: null, backup: 'b-new' };
+        fake.view = { ...read(), hash: 'hash-2', text: '{"model":"anthropic/claude-baru"}\n', config: { model: body.form?.model ?? 'anthropic/claude-baru' }, agents: [], references: Array.isArray(body.form?.references) ? body.form.references : [], instructions: Array.isArray(body.form?.instructions) ? body.form.instructions : [], websearch: body.form?.websearch ?? { mode: 'inherit', provider: '' }, parseError: null, backup: 'b-new' };
         return json(read());
       }
       case '/api/opencode-config/backups':
@@ -935,3 +937,46 @@ for (const vp of VIEWPORTS) {
     });
   });
 }
+
+test('form config: instructions dan provider web search tampil, ditambah, lalu dikosongkan — mobile & desktop', async () => {
+  for (const vp of VIEWPORTS) {
+    const page = await configPage(vp);
+    try {
+      await openConfigEditor(page, { view: configView({ instructions: ['AGENTS.md'], websearch: { mode: 'provider', provider: 'exa' } }) });
+      await page.waitFor(() => document.querySelectorAll('#oc-instruction-list .oc-agent').length === 1, { message: 'satu instruksi dari server' });
+      assert.equal(await page.eval(() => document.querySelector('[data-instruction]').value), 'AGENTS.md');
+      assert.equal(await page.eval(() => document.querySelector('#oc-websearch').value), 'exa');
+
+      await page.eval(() => {
+        document.querySelector('#oc-instruction-add').click();
+        const rows = [...document.querySelectorAll('#oc-instruction-list [data-instruction]')];
+        rows.at(-1).value = 'baru.md';
+        rows.at(-1).dispatchEvent(new Event('input', { bubbles: true }));
+        const select = document.querySelector('#oc-websearch');
+        select.value = 'tavily';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        document.querySelector('#oc-config-save').click();
+      });
+      await page.waitFor(() => [...document.querySelectorAll('.toast')].some((t) => /Config OpenCode disimpan/.test(t.textContent)), { message: 'toast simpan' });
+      let saved = await page.eval(() => window.__ocfake.posts.filter((post) => post.path.endsWith('/save')).at(-1).body.form);
+      assert.deepEqual(saved.instructions, ['AGENTS.md', 'baru.md']);
+      assert.deepEqual(saved.websearch, { mode: 'provider', provider: 'tavily' });
+
+      await page.eval(() => {
+        for (const button of document.querySelectorAll('#oc-instruction-list [data-instruction-remove]')) button.click();
+        document.querySelector('#oc-config-save').click();
+      });
+      await page.waitFor(() => window.__ocfake.posts.filter((post) => post.path.endsWith('/save')).length >= 2, { message: 'simpan kedua' });
+      saved = await page.eval(() => window.__ocfake.posts.filter((post) => post.path.endsWith('/save')).at(-1).body.form);
+      assert.deepEqual(saved.instructions, []);
+      assert.deepEqual(saved.websearch, { mode: 'provider', provider: 'tavily' });
+
+      assert.equal(await page.eval(horizontalOverflow), false);
+      assert.equal(await page.eval(modalOverflow), false);
+      assert.deepEqual(page.problems, [], 'no console errors');
+    } finally {
+      await page.close();
+    }
+  }
+});
+
