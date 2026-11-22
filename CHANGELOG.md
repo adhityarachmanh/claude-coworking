@@ -4,19 +4,11 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 
 ## Belum dirilis
 
-- **💬 Adhitron Web: tiap percakapan punya alamat sendiri (`/chat/<id>`) + riwayat yang bisa dikelola.** Sebelumnya
-  chat hanya punya satu URL `/chat`: menyegarkan halaman selalu kembali ke layar kosong, dan percakapan tak bisa
-  di-bookmark atau dibuka di tab lain. Kini membuka percakapan mengubah URL (`/chat/<id>`), jadi **refresh tetap di
-  tempat**, tombol **kembali/maju** browser bekerja, dan tiap percakapan bisa di-bookmark atau dibuka di tab lain.
-  **Riwayat di sidebar dikelompokkan Hari ini / Kemarin / 7 hari terakhir / Lebih lama**, judul tiap percakapan bisa
-  **diganti** (ikon ✎) dan bisa **dihapus** (ikon 🗑, dengan konfirmasi). Percakapan baru yang belum dikirim tidak lagi
-  muncul sebagai item kosong — baru dibuat saat pesan pertama terkirim.
-- **🩹 Perbaikan: pemilih Model & Effort tidak lagi kosong.** Sebelumnya daftar Model dan Effort hanya terisi setelah
-  sebuah percakapan dibuka, sehingga saat pertama membuka `/chat` kedua pilihan itu kosong. Kini daftarnya selalu
-  terisi begitu halaman dimuat.
-- **🎨 Profil akun di sidebar dirapikan.** Kini berupa kartu: avatar bulat berisi huruf pertama + **nama tampilan**
-  (atau bagian depan email bila belum diisi) beserta email, lalu tombol **Keluar** dan **Hapus akun** tersusun rapi
-  di bawahnya — menggantikan baris teks "masuk sebagai …" yang polos.
+- **🔌 Jembatan Remote Power kembali berdiri sendiri.** Fitur **Chat online (Adhitron Web)** yang sempat
+  ditambahkan ke jembatan dihapus; `bridge/` kini kembali **hanya** jembatan daya — portal `/` lagi-lagi langsung
+  ke halaman pendaftaran/status dan jembatan tidak lagi dipasang di prefiks `/bridge`. Kode jembatan (Tuya,
+  kredensial terenkripsi, halaman status/manage) tidak berubah perilakunya. Chat AI akan menjadi fitur di
+  **aplikasi Adhitron lokal**, bukan di situs web.
 
 ## 1.0.84
 
@@ -29,68 +21,6 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
   gagal karena pola ini, Adhitron mencoba ulang **sekali** otomatis dan mengganti pesan "Internal error" mentah dengan
   penjelasan Bahasa Indonesia + saran kirim ulang. Provider custom lama bisa dibuat ulang lewat ＋ Login provider agar
   ikut memakai setelan itu.
-
-- **📎 Adhitron Web: lampiran gambar & file teks pada pesan.** Kotak pesan kini punya tombol **📎**, menerima
-  **tarik-lepas (drag & drop)** dan **tempel gambar dari clipboard**, lalu menampilkan chip (thumbnail gambar atau
-  ikon 📄) beserta nama & ukuran yang bisa dihapus sebelum kirim. Gambar (PNG/JPEG/GIF/WebP) dikirim sebagai gambar
-  (vision) dan file teks (log, kode, md, json, csv, …) disisipkan sebagai data ke prompt. Batas: maks 10 lampiran,
-  total 3 MB. Lampiran divalidasi ulang di server (jenis, magic bytes gambar, UTF-8 teks, nama) — hanya nama &
-  ukuran yang ditampilkan di riwayat, bukan isinya. PDF belum didukung di versi ini.
-
-- **🔧 Perbaikan penting: menambah provider dengan daftar model, dan pendaftaran akun.** Sejak fitur "cek key & muat
-  model" dan persetujuan daftar ditambahkan, menyimpan provider yang membawa `models`, serta membuat akun baru, gagal
-  dengan error server. Akarnya dua: driver Postgres mengirim array sebagai literal array (bukan JSON) ke kolom `jsonb`
-  sehingga daftar model ditolak, dan kolom waktu persetujuan diisi lewat `CASE` yang membuat tipe parameter tak
-  terdefinisi. Keduanya kini diperbaiki dan diuji (tambah provider dengan model + daftar akun berhasil lagi).
-
-- **💬 Adhitron Web: portal + chat AI multi-user di satu situs Netlify.** Situs kini punya satu portal `/` dengan
-  dua pintu: **💬 Chat** (baru) dan **🔌 Remote Power** (jembatan daya yang lama, kini dipasang di `/bridge`).
-  Di Chat, tiap orang **daftar/masuk dengan email + password miliknya** dan menempel **API key AI-nya sendiri**
-  (kuota & biaya jadi miliknya, bukan operator). API key disimpan **terenkripsi AES-256-GCM** dan hanya 4 karakter
-  terakhirnya yang ditampilkan.
-- **🧠 Obrolan seperti Gemini/Claude di browser.** Riwayat percakapan di sidebar (buat/buka/hapus), jawaban
-  mengalir (streaming) dengan tombol **Stop**, render markdown ringan, dan pilihan **Model** & **Effort**
-  (Default–Max) plus **Auto** (LLM memilih sendiri, mati secara default) — meniru Adhitron lokal. Provider yang
-  didukung: OpenAI-compatible, Anthropic, dan Google Gemini.
-- **🔎 Browsing.** Toggle per-percakapan; chat bisa mencari web dan membaca halaman lalu menjawab dengan
-  **chip sumber bernomor** yang bisa diklik. Mesin pencari default DuckDuckGo (tanpa kunci); Tavily/Brave opsional.
-  Dilengkapi penjagaan anti-SSRF (hanya http(s); alamat privat/loopback/metadata cloud diblokir) dan batas jumlah
-  pencarian per percakapan. Base URL provider kustom juga tunduk aturan yang sama (host privat ditolak).
-- **🗑️ Retensi terjadwal.** Cron situs kini membersihkan sesi kedaluwarsa dan membuang jejak `tool_runs` (audit
-  browsing) yang lebih tua dari 90 hari, sesuai kebijakan privasi. Periode retensi (sesi 30 hari, `tool_runs`
-  90 hari) kini juga dicantumkan di halaman **Kebijakan Privasi**, yang menampilkan versi kebijakannya dan
-  melengkapi dasar pemrosesan, penggunaan cookie, serta hak (akses/koreksi/ekspor, menarik persetujuan, mengadu).
-- **✅ Persetujuan saat daftar.** Halaman **Buat akun** kini memuat checkbox wajib menyetujui Kebijakan Privasi &
-  Syarat Layanan; akun tidak dibuat tanpa itu. Versi kebijakan yang disetujui turut dicatat (audit kepatuhan).
-- **🔐 Keamanan & privasi.** Sesi cookie `httpOnly`+`Secure`; permintaan pengubah state wajib same-origin
-  (anti-CSRF); login/daftar dibatasi per IP. Ada halaman **Kebijakan Privasi** (`/privasi`) & **Syarat Layanan**
-  (`/syarat`), serta tombol **Hapus akun** yang menyapu seluruh data user (hak hapus UU PDP). Catatan privasi di
-  [docs/privasi-adhitron-web.md](docs/privasi-adhitron-web.md). Login pihak ketiga (Google dll.) sengaja belum
-  dipakai di v1 — alasannya dicatat di [docs/design-adhitron-web.md](docs/design-adhitron-web.md).
-- **📱 Tampilan menyesuaikan layar kecil & HP (Adhitron lokal + Web).** Halaman chat Web kini memakai seluruh
-  tinggi layar (bukan kolom artikel 720px): thread menggulir sendiri, composer selalu terlihat, dan tinggi mengikuti
-  `visualViewport` agar tidak tertutup keyboard HP. Ditambah `viewport-fit=cover` + safe-area (composer tidak lagi
-  terpotong notch/home-indicator), input 16px anti-zoom iOS, target sentuh ≥ 44px, modal provider selalu di atas
-  samping riwayat, `Escape` menutup samping/modal. Di sisi lokal, `pair.html` & panel tablet ikut menyesuaikan tinggi
-  area terlihat.
-- **🔑 /chat hanya menampilkan form saat belum masuk.** Sebelumnya panel chat ikut terlihat di bawah form masuk
-  (grid `display:grid` menang atas atribut `hidden`); kini saat belum masuk yang tampil hanya form email + password,
-  dan fitur chat baru muncul setelah berhasil masuk.
-- **🚪 Masuk & daftar kini halaman terpisah, dan `/chat` tidak lagi berkedip form.** Situs memutuskan di server:
-  membuka `/chat` tanpa sesi langsung dialihkan ke `/auth/login`, jadi form masuk tak pernah tampil sekilas di atas
-  panel chat saat halaman di-refresh. Halaman **`/auth/login`** (Masuk) dan **`/auth/register`** (Buat akun) berdiri
-  sendiri — masing-masing satu form dengan tautan ke halaman lain (tanpa tab). Sudah masuk lalu membuka `/auth/*`
-  otomatis diantar ke `/chat`. Bila sesi habis di tengah pemakaian, kamu diantar ke halaman masuk dengan catatan
-  “Sesi berakhir, silakan masuk lagi”.
-- **🧪 Cek key dulu, lalu pilih model.** Saat menambah provider (atau lewat tombol **Uji & muat model** pada provider
-  yang ada), Adhitron Web mengambil **daftar model asli** dari penyedimu sekaligus membuktikan API key berlaku.
-  Model yang terbaca tampil sebagai **checklist** (semua tercentang, ada pencarian dan tombol Pilih semua/Kosongkan)
-  supaya kamu bisa menyaring model mana yang muncul di pemilih Model. Daftar pilihan disimpan per provider; bila
-  belum pernah dimuat, pemilih kembali memakai katalog bawaan.
-- **🎨 Sapuan tampilan Chat.** Halaman masuk/daftar berupa kartu terpusat dengan tombol Lihat/Sembunyikan password
-  dan pesan error di dalam kartu (bukan pop-up). Di chat: halaman sambutan saat percakapan kosong dengan saran prompt
-  sekali-klik, sidebar berjudul “Riwayat” dengan identitas akun & aksi yang dikelompokkan, kepala percakapan
-  menampilkan konteks **provider · model · effort · browsing**, serta label ARIA dan fokus yang lebih rapi.
 
 ## 1.0.83
 

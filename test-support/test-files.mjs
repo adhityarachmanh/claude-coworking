@@ -41,7 +41,7 @@ export const isSlowFile = (source) =>
 
 /**
  * Every test file in the repo, relative to `appDir`, sorted: the office app's `test/` plus the
- * self-contained Netlify site under `bridge/` (portal + chat + remote-power bridge). The bridge tests
+ * self-contained Netlify site under `bridge/` (the remote-power bridge). The bridge tests
  * use fake Blobs/Tuya and no network, so they belong to the same fast/slow/UI classification.
  * @param {string} appDir absolute repo root
  * @param {(dir: string) => string[]} readdir like node:fs readdirSync (names only)

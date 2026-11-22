@@ -236,30 +236,15 @@ const readJson = async (request) => request.json().catch(() => { throw new HttpE
 
 // ---------------------------------------------------------------- endpoint: register
 
-/** Prefiks mount situs untuk jembatan ('' = root, '/bridge' = portal di root situs yang sama). Semua URL
- *  yang diterbitkan jembatan (bridgeUrl, halaman, fetch skrip) mengikuti prefiks ini supaya portal/chat
- *  bisa memakai root. Test lama memanggil handleApi tanpa basePath → '' dan perilakunya tak berubah. */
-const basePathOf = (env) => env.basePath ?? '';
-/** URL absolut-relatif sebuah path jembatan di bawah prefiks mount. */
-export const bridgeUrlPath = (base, path) => `${base}${path}`;
-/** Buang prefiks mount dari pathname request supaya routing di bawahnya selalu melihat path jembatan lokal
- *  ('/api/status', '/', '/s/<id>'). base '' (root) tidak mengubah apa pun. */
-export function stripBase(pathname, base) {
-  if (!base) return pathname;
-  if (pathname === base) return '/';
-  if (pathname.startsWith(`${base}/`)) return pathname.slice(base.length);
-  return pathname;
-}
-
 /** Respons "perangkat ini sekarang memegang space": register dan klaim kode pasangan memakai bentuk yang sama. */
-function devicePayload(space, ownerToken, url, base = '') {
+function devicePayload(space, ownerToken, url) {
   return {
     ok: true,
     id: space.id,
     token: ownerToken,
-    bridgeUrl: `${url.origin}${base}`, // tempel ini + token di panel ⚙ Remote power Adhitron
-    statusUrl: bridgeUrlPath(base, `/s/${space.id}`),
-    manageUrl: bridgeUrlPath(base, `/manage?token=${ownerToken}`),
+    bridgeUrl: url.origin, // tempel ini + token di panel ⚙ Remote power Adhitron
+    statusUrl: `/s/${space.id}`,
+    manageUrl: `/manage?token=${ownerToken}`,
   };
 }
 
@@ -314,7 +299,7 @@ async function register(request, env, url) {
   };
   await store.putSpace(env, space);
   await store.putTokenIndex(env, ownerToken, id);
-  return json(devicePayload(space, ownerToken, url, basePathOf(env)));
+  return json(devicePayload(space, ownerToken, url));
 }
 
 // ---------------------------------------------------------------- endpoint: kode pasangan
@@ -394,7 +379,7 @@ async function pairClaim(request, env, url) {
   const space = await store.getSpace(env, rec.spaceId);
   // Space sudah dihapus (manage/retensi) di antara pembuatan dan klaim kode: mati juga untuk perangkat ini.
   if (!space) await failClaim();
-  return jsonNoCors(devicePayload(space, ownerTokenOf(env, space), url, basePathOf(env)));
+  return jsonNoCors(devicePayload(space, ownerTokenOf(env, space), url));
 }
 
 // ---------------------------------------------------------------- endpoint: heartbeat
@@ -709,7 +694,6 @@ async function energy(request, env) {
 // ---------------------------------------------------------------- halaman HTML
 
 async function statusPage(env, id, url) {
-  const base = basePathOf(env);
   const space = await store.getSpace(env, id);
   if (!space) throw new HttpError(404, 'Space tidak ditemukan');
   const now = Date.now();
@@ -721,7 +705,7 @@ async function statusPage(env, id, url) {
     // Tiket serah-terima (jenis 'h') SEKALI PAKAI: dipakai → dihapus, lalu dicetak tiket sesi (jenis
     // 's', reusable) untuk polling halaman.
     const ticket = await store.getTicket(env, 'h', ticketValue);
-    if (!ticket || ticket.spaceId !== id || ticket.exp <= now) return html(ticketExpiredHtml(base), 401);
+    if (!ticket || ticket.spaceId !== id || ticket.exp <= now) return html(ticketExpiredHtml(), 401);
     await store.deleteTicket(env, 'h', ticketValue);
     pollToken = hex(32);
     await store.putTicket(env, 's', pollToken, { spaceId: id, exp: now + TICKET_TTL_MS });
@@ -735,13 +719,13 @@ async function statusPage(env, id, url) {
   }
   await samplePower(env, space, now);
   const st = statusOf(space, now);
-  return html(statusPageHtml(id, pollToken, fromTicket, st, space.adhitronUrl, base));
+  return html(statusPageHtml(id, pollToken, fromTicket, st, space.adhitronUrl));
 }
 
 async function managePage(env, url) {
   const space = await requireOwnerQuery(env, url);
   const creds = decryptCreds(ownerTokenOf(env, space), env.encryptionKey, space.enc);
-  return html(managePageHtml(space, url.searchParams.get('token'), creds, { base: basePathOf(env) }));
+  return html(managePageHtml(space, url.searchParams.get('token'), creds));
 }
 
 /** Halaman manage hanya menerima ownerToken lewat query (aturan spesifikasi: ?token= untuk halaman HTML). */
@@ -785,7 +769,7 @@ async function manageAction(env, url, request) {
     space.tokenHash = store.tokenHashOf(newToken);
     await store.putSpace(env, space);
     await store.putTokenIndex(env, newToken, space.id);
-    return html(managePageHtml(space, newToken, creds, { newToken, notice: '<div class="note">🔁 Token dirotasi — token lama mati.</div>', base: basePathOf(env) }));
+    return html(managePageHtml(space, newToken, creds, { newToken, notice: '<div class="note">🔁 Token dirotasi — token lama mati.</div>' }));
   }
   if (action === 'delete') {
     if (form.get('confirm') !== 'HAPUS') throw new HttpError(400, 'Hapus wajib konfirmasi: centang kotak "Saya yakin".');
@@ -793,7 +777,7 @@ async function manageAction(env, url, request) {
     await store.deleteTicketsOfSpace(env, space.id); // tiket milik space ikut mati
     await store.deletePairCodeOfSpace(env, space.id); // kode pasangan aktif + referensinya ikut mati
     await store.deleteSpace(env, space.id);
-    return html(deletedPageHtml(space.id, basePathOf(env)));
+    return html(deletedPageHtml(space.id));
   }
   throw new HttpError(400, 'action tidak dikenal');
 }
@@ -803,22 +787,19 @@ async function manageAction(env, url, request) {
 /** Semua rute jembatan. Error HttpError → statusnya; error lain → 502 (mis. Tuya menolak). */
 export async function handleApi(request, env) {
   const url = new URL(request.url);
-  const base = basePathOf(env);
-  // Path routing selalu melihat path jembatan lokal ('/', '/api/status', '/s/<id>') tanpa prefiks mount,
-  // supaya jembatan bisa dipasang di root ('' = deploy lama) atau di '/bridge' tanpa mengubah rutenya.
-  const path = stripBase(url.pathname, base);
+  const path = url.pathname;
   if (request.method === 'OPTIONS') {
     // Preflight: endpoint kode pasangan tidak membawa CORS sama sekali (dipanggil same-origin oleh halaman bridge).
     return new Response(null, { status: 204, headers: isPairApi(path) ? {} : CORS });
   }
   try {
-    if (path === '/' && request.method === 'GET') return html(registerPageHtml('', base));
+    if (path === '/' && request.method === 'GET') return html(registerPageHtml());
     if (path === '/api/space' && request.method === 'POST') return await register(request, env, url);
     if (path === '/api/pair' && request.method === 'POST') return await pair(request, env);
     if (path === '/api/pair/claim' && request.method === 'POST') return await pairClaim(request, env, url);
     if (path === '/manage' && request.method === 'GET') return await managePage(env, url);
     if (path === '/api/manage' && request.method === 'POST') return await manageAction(env, url, request);
-    if (path === '/s' || path === '/s/') return html(errorPageHtml('Link tidak lengkap', 'URL halaman status: /s/<id>?t=<tiket>', base));
+    if (path === '/s' || path === '/s/') return html(errorPageHtml('Link tidak lengkap', 'URL halaman status: /s/<id>?t=<tiket>'));
     if (path.startsWith('/s/') && request.method === 'GET') return await statusPage(env, path.slice(3), url);
     if (path === '/api/heartbeat' && request.method === 'POST') return await heartbeat(request, env);
     if (path === '/api/off/cancel' && request.method === 'POST') return await cancelOff(request, env);

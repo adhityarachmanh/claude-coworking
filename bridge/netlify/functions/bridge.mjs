@@ -1,57 +1,12 @@
-// bridge/netlify/functions/bridge.mjs — satu situs Netlify (Netlify Functions v2).
-// Portal & chat di root ('/', '/chat/*'); jembatan daya dipasang di '/bridge' (basePath '/bridge'):
-// handler inti src/bridge.mjs tidak tahu-menahu soal mount — ia menerima basePath dan memangkas prefiks
-// itu sendiri dari pathname, jadi rute jembatan tetap '/', '/api/*', '/s/*', '/manage'.
-// Hanya lapis perekat: mengikat Netlify Blobs + env ke handler inti.
+// bridge/netlify/functions/bridge.mjs — jembatan Netlify Functions v2 (pengganti bridge/worker.js).
+// Hanya lapis perekat: mengikat Netlify Blobs + env ke handler inti di src/bridge.mjs (yang di-test langsung).
+// config.path membuat fungsi melayani seluruh situs — bridge/ di-deploy sebagai root situs Netlify.
 import { getStore } from '@netlify/blobs';
 import { handleApi } from '../../src/bridge.mjs';
-import { handleSite } from '../../src/site.mjs';
-import { handleChatApi } from '../../src/chat-api.mjs';
-import { createNeonDb } from '../../src/db.mjs';
-import { makeSqlRepo } from '../../src/repo.mjs';
 
-export const config = { path: ['/*'] };
-
-const BRIDGE_BASE = '/bridge';
-const inBridge = (pathname) => pathname === BRIDGE_BASE || pathname.startsWith(`${BRIDGE_BASE}/`);
+export const config = { path: ['/', '/api/*', '/s/*', '/manage'] };
 
 export default async (request) => {
-  const url = new URL(request.url);
-  if (inBridge(url.pathname)) {
-    const store = getStore({ name: 'adhitron-bridge', consistency: 'strong' });
-    return handleApi(request, {
-      store,
-      encryptionKey: process.env.ENCRYPTION_KEY,
-      basePath: BRIDGE_BASE,
-    });
-  }
-  // Chat API & halaman situs ber-sesi: butuh DATABASE_URL (Neon). Repo dibuat per-request (driver HTTP).
-  const chatEnv = async () => {
-    if (!process.env.DATABASE_URL) return null;
-    const store = getStore({ name: 'adhitron-web', consistency: 'strong' });
-    const repo = makeSqlRepo(await createNeonDb(process.env.DATABASE_URL));
-    return {
-      repo, store, encryptionKey: process.env.ENCRYPTION_KEY,
-      // Browsing: mesin pencari opsional (DuckDuckGo dipakai bila keduanya kosong).
-      searchEngineEnv: { TAVILY_API_KEY: process.env.TAVILY_API_KEY, BRAVE_API_KEY: process.env.BRAVE_API_KEY },
-    };
-  };
-
-  if (url.pathname.startsWith('/chat/api/')) {
-    const env = await chatEnv();
-    if (!env) {
-      return new Response(JSON.stringify({ error: 'DATABASE_URL belum diset di server' }), {
-        status: 503, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
-      });
-    }
-    const res = await handleChatApi(request, env, url.pathname);
-    if (res) return res;
-  }
-  // Halaman situs: /chat & /auth butuh sesi → env dibuat hanya untuk path itu (tanpa DATABASE_URL fail-open ke form).
-  const needsSession = url.pathname === '/chat' || url.pathname === '/chat/' || url.pathname === '/auth' || url.pathname.startsWith('/auth/');
-  let siteEnv = null;
-  if (needsSession) { try { siteEnv = await chatEnv(); } catch { siteEnv = null; } }
-  const site = await handleSite(request, siteEnv, url);
-  if (site) return site;
-  return new Response('Tidak ditemukan', { status: 404 });
+  const store = getStore({ name: 'adhitron-bridge', consistency: 'strong' });
+  return handleApi(request, { store, encryptionKey: process.env.ENCRYPTION_KEY });
 };
