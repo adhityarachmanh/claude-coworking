@@ -8,9 +8,18 @@ import { $, escapeHtml } from '../core/dom.js';
 import { DEMO_ID, projectName, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 
-const sk = { project: null, engine: 'claude', skills: [], editing: null, saving: false };
+const sk = { project: null, engine: 'claude', roots: [], skills: [], editing: null, saving: false };
 
 const isLocal = () => state.local !== false;
+
+/** The source label of the root to write for a scope (the highest-precedence root of that scope wins). */
+function sourceFor(scope, engine = sk.engine) {
+  const ofScope = sk.roots.filter((r) => r.scope === scope);
+  if (ofScope.length) return ofScope[ofScope.length - 1].source;
+  return scope === 'user'
+    ? (engine === 'opencode' ? '~/.config/opencode/skills (semua project)' : '~/.claude/skills (semua project)')
+    : (engine === 'opencode' ? '.opencode/skills (project)' : '.claude/skills (project)');
+}
 
 function render() {
   $('#skills-project').textContent = sk.project ? `· ${projectName(sk.project)}` : '';
@@ -53,6 +62,7 @@ async function load() {
   try {
     const data = await api(`/api/projects/${sk.project}/skills`);
     sk.engine = data.engine;
+    sk.roots = data.roots ?? [];
     sk.skills = data.skills;
     render();
   } catch (err) {
@@ -76,7 +86,7 @@ export function initSkills() {
   $('#skills-body').addEventListener('click', async (e) => {
     const t = e.target;
     if (t.closest('#skills-new')) {
-      sk.editing = { id: '', scope: 'project', description: '', content: '', source: sk.skills.find((s) => s.scope === 'project')?.source ?? (sk.engine === 'opencode' ? '.opencode/skills (project)' : '.claude/skills (project)'), previous: null };
+      sk.editing = { id: '', scope: 'project', description: '', content: '', source: sourceFor('project'), previous: null, previousScope: null, previousSource: null };
       return render();
     }
     if (t.closest('[data-sk-cancel]')) {
@@ -89,7 +99,7 @@ export function initSkills() {
       const s = sk.skills.find((x) => x.id === row.dataset.id && x.scope === row.dataset.scope);
       try {
         const { skill } = await api(`/api/projects/${sk.project}/skills/read`, { scope: s.scope, source: s.source, id: s.id });
-        sk.editing = { ...skill, previous: skill.id, source: s.source, scope: s.scope };
+        sk.editing = { ...skill, previous: skill.id, previousScope: s.scope, previousSource: s.source, source: s.source, scope: s.scope };
         render();
       } catch (err) {
         toast(err.message, 'warn');
@@ -114,7 +124,10 @@ export function initSkills() {
     if (e.target.id !== 'skills-form' || sk.saving) return;
     e.preventDefault();
     const f = e.target.elements;
-    const body = { id: f.skillId.value.trim(), scope: f.scope.value, source: sk.editing.source, previous: sk.editing.previous ?? null, name: f.skillId.value.trim(), description: f.description.value, content: f.content.value, mtime: sk.editing.mtime ?? 0 };
+    const scope = f.scope.value === 'user' ? 'user' : 'project';
+    // Editing keeps the skill's own root; changing scope moves it to the highest-precedence root of that scope.
+    const source = sk.editing.previous && scope === sk.editing.previousScope ? sk.editing.previousSource : sourceFor(scope);
+    const body = { id: f.skillId.value.trim(), scope, source, previous: sk.editing.previous ?? null, previousScope: sk.editing.previousScope ?? null, previousSource: sk.editing.previousSource ?? null, name: f.skillId.value.trim(), description: f.description.value, content: f.content.value, mtime: sk.editing.mtime ?? 0 };
     sk.saving = true;
     try {
       await api(`/api/projects/${sk.project}/skills/save`, body);

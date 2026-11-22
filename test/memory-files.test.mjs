@@ -2,11 +2,11 @@
 // 2.3.1 CLAUDE.md fallback (#64474/#64533: OpenCode reads CLAUDE.md in any directory that has no AGENTS.md, and
 // falls back to ~/.claude/CLAUDE.md when the global AGENTS.md is missing).
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { memoryFiles, readMemory, writeMemory } from '../src/memory-files.js';
+import { memoryFiles, MemoryError, readMemory, writeMemory } from '../src/memory-files.js';
 
 const TMP = mkdtempSync(path.join(tmpdir(), 'office-memfiles-'));
 after(() => rmSync(TMP, { recursive: true, force: true }));
@@ -124,4 +124,20 @@ test('memoryFiles: auto memory mengikuti CLAUDE_PROJECTS_DIR (bukan hanya ~/.cla
     if (prev === undefined) delete process.env.CLAUDE_PROJECTS_DIR;
     else process.env.CLAUDE_PROJECTS_DIR = prev;
   }
+});
+
+test('memory: folder rules berupa symlink ke luar project ditolak (baca & tulis)', () => {
+  const p = project();
+  const h = home();
+  const outside = mkdtempSync(path.join(TMP, 'outside-'));
+  writeFileSync(path.join(outside, 'api.md'), '# aturan asli\n');
+  mkdirSync(path.join(p, '.claude'), { recursive: true });
+  try {
+    symlinkSync(outside, path.join(p, '.claude', 'rules'), 'junction');
+  } catch {
+    return; // no privilege for symlinks here: nothing to assert
+  }
+  assert.throws(() => readMemory('claude', p, 'rule:api', h), (e) => e instanceof MemoryError && e.status === 409);
+  assert.throws(() => writeMemory('claude', p, 'rule:api', '# ditimpa\n', 0, h), (e) => e instanceof MemoryError && e.status === 409);
+  assert.equal(readFileSync(path.join(outside, 'api.md'), 'utf8'), '# aturan asli\n', 'file luar tidak berubah');
 });

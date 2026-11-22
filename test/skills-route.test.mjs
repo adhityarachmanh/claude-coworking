@@ -119,6 +119,18 @@ test('skills/save: id tak sah ditolak 400', async () => {
   assert.equal(res.status, 400, JSON.stringify(res.body));
 });
 
+test('skills/save: ganti nama (previous) menulis id baru dan menghapus folder lama', async () => {
+  const id = await projectId('app');
+  const app = (await snapshot()).projects.find((p) => p.id === id);
+  const base = { scope: 'project', source: '.claude/skills (project)' };
+  await api(`/api/projects/${id}/skills/save`, { ...base, id: 'ren-src', name: 'Ren', description: 'x', content: 'isi\n' });
+  const before = (await api(`/api/projects/${id}/skills/read`, { ...base, id: 'ren-src' })).body.skill;
+  const res = await api(`/api/projects/${id}/skills/save`, { ...base, id: 'ren-dst', previous: 'ren-src', previousScope: 'project', previousSource: '.claude/skills (project)', name: 'Ren', description: 'x', content: before.content, mtime: before.mtime });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.ok(existsSync(path.join(app.path, '.claude', 'skills', 'ren-dst', 'SKILL.md')), 'id baru tertulis');
+  assert.ok(!existsSync(path.join(app.path, '.claude', 'skills', 'ren-src')), 'folder lama hilang');
+});
+
 test('skills/delete: menghapus direktori skill', async () => {
   const id = await projectId('app');
   const app = (await snapshot()).projects.find((p) => p.id === id);
