@@ -261,7 +261,7 @@
             <button id="btn-voice" class="ghost icon attach voice-btn" type="button" title="Input suara (Alt+M)" aria-label="Mulai input suara" aria-pressed="false" aria-keyshortcuts="Alt+M" hidden>🎤</button>
             <button id="btn-stop" class="danger" hidden title="Hentikan giliran yang sedang berjalan (Esc)" aria-label="Hentikan giliran">■ Stop</button>
             <button id="btn-queue-add" class="ghost icon attach queue-add" type="button" title="Tambah ke 📋 Antrian, dijalankan saat tim tidak sibuk (Alt+Enter). Kotak kosong: buka antrian" aria-label="Tambah ke antrian">📋</button>
-            <button id="btn-send" class="primary" aria-label="Kirim pesan">Kirim</button>
+            <button id="btn-send" class="primary" aria-label="Kirim pesan">Kirim pesan</button>
             <!-- Phone only: fold the whole input area away to read with the full screen (features/phone-fold.js) -->
             <button id="btn-fold" class="ghost icon phone-only" type="button" aria-expanded="true" aria-controls="composer" aria-label="Lipat area input (mode baca)">▾</button>
           </div>
@@ -552,7 +552,7 @@
     <!-- 🧩 Skills (/skills; features/skills.js) — both engines, laptop or Tailscale -->
     <div id="skills-modal" class="modal" hidden>
       <div class="modal-card ext-card" role="dialog" aria-modal="true" aria-labelledby="skills-title">
-        <div class="modal-head"><b id="skills-title">🧩 Skills <small id="skills-project" class="muted"></small></b><button id="skills-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="skills-title">Skills <small id="skills-project" class="muted"></small></b><button id="skills-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div id="skills-body" class="ext-body"></div>
       </div>
     </div>
@@ -560,7 +560,7 @@
     <!-- 🎭 Output style Claude (features/output-styles.js) — built-in and custom styles, laptop or Tailscale -->
     <div id="output-style-modal" class="modal" hidden>
       <div class="modal-card ext-card" role="dialog" aria-modal="true" aria-labelledby="os-title">
-        <div class="modal-head"><b id="os-title">🎭 Output style <small id="os-project" class="muted"></small></b><button id="os-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="os-title">Output style <small id="os-project" class="muted"></small></b><button id="os-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div id="os-body" class="ext-body"></div>
       </div>
     </div>
@@ -615,7 +615,7 @@
     <!-- 📋 Daftar tugas (phone): the pinned chip opens the full list here, like Ringkas -->
     <div id="todos-modal" class="modal" hidden>
       <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="todos-title">
-        <div class="modal-head"><b id="todos-title">📋 Daftar tugas</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="todos-title">Daftar tugas</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <p id="todos-dialog-summary" class="compact-summary"></p>
         <div id="todos-dialog-list" class="todos-dialog-list"></div>
       </div>
@@ -1521,7 +1521,7 @@
         </details>
         <div class="backup-actions oc-config-actions">
           <button type="button" id="oc-config-reload" class="ghost">↻ Muat ulang</button>
-          <button type="button" id="oc-config-save" class="primary">Simpan</button>
+          <button type="button" id="oc-config-save" class="primary">Simpan config</button>
         </div>
       </div>
     </div>
@@ -1529,7 +1529,7 @@
     <!-- 📝 Commands OpenCode (features/opencode-commands.js) — file .opencode/commands, dari editor config -->
     <div id="oc-commands-modal" class="modal" hidden>
       <div class="modal-card ext-card" role="dialog" aria-modal="true" aria-labelledby="oc-commands-title">
-        <div class="modal-head"><b id="oc-commands-title">📝 Commands OpenCode <small id="oc-commands-project" class="muted"></small></b><button id="oc-commands-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="oc-commands-title">Commands OpenCode <small id="oc-commands-project" class="muted"></small></b><button id="oc-commands-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">↻</button><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <div id="oc-commands-body" class="ext-body"></div>
       </div>
     </div>
@@ -1537,7 +1537,7 @@
     <!-- 🔔 Pengaturan notifikasi (features/notify.js): per device (localStorage), also on a phone (Ctrl+P / 🔎) -->
     <div id="claude-flags-modal" class="modal" hidden>
       <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="claude-flags-title">
-        <div class="modal-head"><b id="claude-flags-title">⚙️ Flag Claude <small id="claude-flags-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <div class="modal-head"><b id="claude-flags-title">Flag Claude <small id="claude-flags-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
         <p class="muted small">Argumen CLI untuk project ini, diteruskan saat proses Claude dimulai. Berlaku pada pesan berikutnya.</p>
         <div class="oc-form-grid">
           <label class="oc-field"><span>Model cadangan (--fallback-model)</span><input id="cf-fallback" maxlength="200" placeholder="sonnet,haiku" /></label>
@@ -1549,7 +1549,7 @@
         <label class="oc-field"><span>Larang (--disallowedTools)</span><textarea id="cf-disallowed" rows="3" placeholder="Bash(rm *)"></textarea></label>
         <label class="oc-field"><span>Sumber setting (--setting-sources)</span><input id="cf-sources" maxlength="40" placeholder="user,project,local (kosong = semua)" /></label>
         <p id="claude-flags-error" class="field-error" role="alert"></p>
-        <div class="acct-actions"><button type="button" class="ghost" data-close>Batal</button><button type="button" id="claude-flags-save" class="primary">💾 Simpan</button></div>
+        <div class="acct-actions"><button type="button" class="ghost" data-close>Batal</button><button type="button" id="claude-flags-save" class="primary">💾 Simpan flag</button></div>
       </div>
     </div>
 

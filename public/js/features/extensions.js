@@ -145,7 +145,7 @@ function agentFormHtml(a) {
     <label class="oc-field"><span>Tools (kosong = semua)</span><input name="tools" value="${escapeHtml(a.tools ?? '')}" placeholder="Read, Grep, Glob" autocomplete="off" /></label>
     <label class="oc-field"><span>Model (kosong = ikut sesi)</span><input name="model" value="${escapeHtml(a.model ?? '')}" placeholder="sonnet, opus, haiku, inherit" autocomplete="off" /></label>
     <label class="oc-field"><span>Instruksi (system prompt) *</span><textarea name="prompt" rows="10" class="memory-text" required>${escapeHtml(a.prompt ?? '')}</textarea></label>
-    <div class="acct-actions"><button type="button" class="ghost" data-agent-cancel>Batal</button><button class="primary">💾 Simpan</button></div>
+    <div class="acct-actions"><button type="button" class="ghost" data-agent-cancel>Batal</button><button class="primary">💾 Simpan agent</button></div>
   </form>`;
 }
 
@@ -192,7 +192,7 @@ function hookFormHtml(h) {
     <label class="oc-field"><span>Perintah</span><textarea name="command" rows="3" required>${escapeHtml(h.command ?? '')}</textarea></label>
     <label class="oc-field"><span>Timeout (detik, opsional)</span><input name="timeout" type="number" min="0" max="3600" step="1" value="${h.timeout ?? ''}" /></label>
     <datalist id="hook-events">${hookEventOptions().map((e) => `<option value="${e}"></option>`).join('')}</datalist>
-    <div class="acct-actions"><button type="button" class="ghost" data-hook-cancel>Batal</button><button type="submit" class="primary">💾 Simpan</button></div>
+    <div class="acct-actions"><button type="button" class="ghost" data-hook-cancel>Batal</button><button type="submit" class="primary">💾 Simpan hook</button></div>
   </form>`;
 }
 

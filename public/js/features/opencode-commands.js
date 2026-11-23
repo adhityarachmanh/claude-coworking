@@ -54,7 +54,7 @@ function formHtml() {
     <label class="oc-field"><span>Template *</span><textarea id="oc-command-template" class="memory-text" rows="10" spellcheck="false" required>${escapeHtml(e.template ?? '')}</textarea></label>
     <p class="muted small">Salinan lama disimpan di folder data aplikasi sebelum ditimpa.</p>
     <p id="oc-command-error" class="field-error" role="alert">${escapeHtml(oc.error)}</p>
-    <div class="acct-actions"><button type="button" class="ghost" id="oc-command-cancel">Batal</button><button type="submit" class="primary" id="oc-command-save">💾 Simpan</button></div>
+    <div class="acct-actions"><button type="button" class="ghost" id="oc-command-cancel">Batal</button><button type="submit" class="primary" id="oc-command-save">💾 Simpan command</button></div>
   </form>`;
 }
 

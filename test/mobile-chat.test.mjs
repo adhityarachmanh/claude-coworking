@@ -889,7 +889,7 @@ describe('desktop 1440x900 tidak berubah', { skip: SKIP ?? false }, () => {
       assert.deepEqual(await page.eval(() => ['#mode', '#model', '#effort'].map((s) => document.querySelector(s).getClientRects().length > 0)), [true, true, true], 'Izin, Model, Effort di dialog');
       await page.press('Escape');
       assert.equal(fp['#mobile-nav'].shown, false);
-      assert.equal(fp['#btn-send'].text, 'Kirim', 'teks Kirim tetap');
+      assert.equal(fp['#btn-send'].text, 'Kirim pesan', 'teks tombol menyebut hasilnya');
       assert.equal(fp['#btn-send'].font, '14px', 'Kirim tetap berteks (bukan ikon)');
       assert.deepEqual(await page.eval(visibleControls, '.input'), ['btn-attach', 'btn-template', 'prompt', 'btn-voice', 'btn-queue-add', 'btn-send'].filter((id) => id !== 'btn-voice' || fp['#btn-voice'].shown));
       // Mode/model stay in the DOM (compatibility), but the line only shows when something needs attention.

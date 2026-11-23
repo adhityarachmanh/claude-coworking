@@ -70,7 +70,7 @@ function formHtml() {
     <label class="oc-field"><span>Instruksi gaya *</span><textarea id="os-instructions" name="body" class="memory-text" rows="10" spellcheck="false" required>${escapeHtml(e.body ?? '')}</textarea></label>
     <p class="muted small">Simpan ke <code>${escapeHtml(e.scope === 'user' ? '~/.claude/output-styles' : '.claude/output-styles')}</code>. Salinan lama disimpan di folder data aplikasi sebelum ditimpa.</p>
     <p id="os-error" class="field-error" role="alert">${escapeHtml(os.error)}</p>
-    <div class="acct-actions"><button type="button" class="ghost" id="os-cancel">Batal</button><button type="submit" class="primary" id="os-save">💾 Simpan</button></div>
+    <div class="acct-actions"><button type="button" class="ghost" id="os-cancel">Batal</button><button type="submit" class="primary" id="os-save">💾 Simpan gaya</button></div>
   </form>`;
 }
 
