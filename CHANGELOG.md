@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.4.0
 
 - **🧪 Nilai jawaban terakhir.** ⋯ → **Nilai jawaban terakhir** meminta model kedua (Claude, tanpa tool, sesi tidak disimpan) menilai jawaban asisten terakhir: yang benar, kesalahan/risiko, verifikasi yang kurang, dan saran. Fokus dan model penilai bisa diisi; satu penilaian memakai token.
 
