@@ -40,6 +40,8 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `claude purge` | ⋯ → **Bersihkan data Claude** (pratinjau `--dry-run`, ketik path folder kerja untuk konfirmasi, laptop, tidak saat giliran/antrian berjalan; worktree aktif ikut jadi sasaran) | ✅ |
 | `claude import` (dari Codex/Cursor/…) | 🚫 sesi interaktif yang menulis config agen lain; menjalankannya butuh TTY dan keputusan per item | 🚫 |
 | Flag system prompt (`--system-prompt`/`--append-…`) | ⚠ di luar cakupan: butuh teks prompt khusus per sesi; bisa lewat output style/CLAUDE.md | 🚫 |
+| `/context` rincian + statistik prompt cache | sebagian: ringkasan token/window/auto-compact dari `get_context_usage`; `detail:"full"` dan field cache hanya ada di status line JSON / butuh probe sesi nyata | ✅ (ringkas) |
+| Elicitation MCP (server minta input) | `-p` non-interaktif: Claude Code membatalkan permintaan input MCP (docs); kartu form hanya ada di jalur ACP | 🚫 (batasan `-p`) |
 | `/init`, `/doctor`, `/status`, `/usage` | sebagian: ⚙ Kompatibilitas Claude Code | ✅ (status/usage via 👤 Akun & status bar) |
 | `/sandbox` | Windows native tidak di-sandbox; nilai ~0 | 🚫 |
 | `/batch` | memicu 5–30 subagent worktree (mahal, butuh worktree) | 🚫 |
