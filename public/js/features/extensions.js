@@ -7,7 +7,7 @@ import { DEMO_ID, projectName, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { guardCap } from './engine.js';
 
-const ext = { tab: 'plugins', project: null, plugins: null, filter: '', agents: [], editing: null, hooks: [], hookEditing: null };
+const ext = { tab: 'plugins', project: null, plugins: null, filter: '', agents: [], editing: null, hooks: [], hookEvents: [], hookEditing: null };
 const MAX_LIST = 60;
 
 export function openExtensions(tab = 'plugins') {
@@ -32,7 +32,11 @@ async function load(force = false) {
       ext.agents = [];
       ext.hooks = [];
     } else if (ext.tab === 'agents') ext.agents = (await api(`/api/projects/${ext.project}/agents`)).agents;
-    else ext.hooks = (await api(`/api/projects/${ext.project}/hooks`)).hooks;
+    else {
+      const data = await api(`/api/projects/${ext.project}/hooks`);
+      ext.hooks = data.hooks;
+      ext.hookEvents = data.events ?? ext.hookEvents;
+    }
   } catch (err) {
     $('#ext-body').innerHTML = `<p class="state-error">${escapeHtml(err.message)}</p>`;
     return;
@@ -147,20 +151,26 @@ function agentFormHtml(a) {
 
 // ---------- hooks ----------
 
-const HOOK_EVENTS = ['SessionStart', 'Setup', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'Notification', 'SubagentStart', 'SubagentStop', 'Stop', 'SessionEnd', 'PreCompact', 'PostCompact', 'PreModelSwitch', 'PostModelSwitch', 'FileChanged', 'CwdChanged', 'DirectoryAdded'];
+const FALLBACK_HOOK_EVENTS = ['SessionStart', 'Setup', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'Notification', 'Stop', 'SessionEnd', 'PreCompact', 'PostCompact', 'PreModelSwitch', 'PostModelSwitch', 'FileChanged', 'CwdChanged', 'DirectoryAdded'];
 const isLocal = () => state.local !== false;
-const flatHooks = () => ext.hooks.flatMap((h) => (h.commands ?? []).map((command) => ({ ...h, command })));
+const hookEventOptions = () => (ext.hookEvents.length ? ext.hookEvents : FALLBACK_HOOK_EVENTS);
+const flatHooks = () => ext.hooks.flatMap((h) => (h.handlers ?? []).map((handler) => ({ ...h, ...handler })));
 
 function hooksHtml() {
   if (ext.hookEditing) return hookFormHtml(ext.hookEditing);
-  const rows = ext.hooks.flatMap((h) => (h.commands ?? []).map((command) => ({ ...h, command })));
+  const rows = flatHooks();
   const list = rows.length
     ? `<ul class="ext-list">${rows
-        .map((h, i) => `<li><div><b>${escapeHtml(h.event)}${h.matcher ? ` <small class="muted">${escapeHtml(h.matcher)}</small>` : ''}</b> <small class="muted">${escapeHtml(h.source)}</small><pre class="cc-output">${escapeHtml(h.command)}</pre></div><div class="ext-actions">${
-          isLocal() || h.scope !== 'user'
+        .map((h, i) => {
+          const command = h.type === 'command';
+          const label = command ? `<pre class="cc-output">${escapeHtml(h.command)}${h.timeout !== undefined ? ` <small class="muted">· ${h.timeout} dtk</small>` : ''}</pre>` : `<p class="muted small">${escapeHtml(h.label ?? h.type)} — atur handler ini lewat editor JSON.</p>`;
+          const actions = command && (isLocal() || h.scope !== 'user')
             ? `<button type="button" class="ghost" data-hook-edit="${i}">✎ Edit</button><button type="button" class="ghost danger-text" data-hook-del="${i}">Hapus</button>`
-            : '<small class="muted">ubah dari laptop</small>'
-        }</div></li>`)
+            : command
+              ? '<small class="muted">ubah dari laptop</small>'
+              : '';
+          return `<li><div><b>${escapeHtml(h.event)}${h.matcher ? ` <small class="muted">${escapeHtml(h.matcher)}</small>` : ''}</b> <small class="muted">${escapeHtml(h.source)}</small>${label}</div><div class="ext-actions">${actions}</div></li>`;
+        })
         .join('')}</ul>`
     : '<p class="muted small">Belum ada hooks di settings.json (user, project, pribadi).</p>';
   return `<p class="muted small">Hooks menjalankan perintah otomatis di titik tertentu (mis. sebelum tool dipakai). Berlaku mulai sesi berikutnya.</p>
@@ -180,8 +190,8 @@ function hookFormHtml(h) {
       ${isLocal() ? `<option value="user"${h.scope === 'user' ? ' selected' : ''}>Semua project (~/.claude)</option>` : ''}
     </select></label>
     <label class="oc-field"><span>Perintah</span><textarea name="command" rows="3" required>${escapeHtml(h.command ?? '')}</textarea></label>
-    <label class="oc-field"><span>Timeout (ms, opsional)</span><input name="timeout" type="number" min="0" max="600000" step="1" value="${h.timeout ?? ''}" /></label>
-    <datalist id="hook-events">${HOOK_EVENTS.map((e) => `<option value="${e}"></option>`).join('')}</datalist>
+    <label class="oc-field"><span>Timeout (detik, opsional)</span><input name="timeout" type="number" min="0" max="3600" step="1" value="${h.timeout ?? ''}" /></label>
+    <datalist id="hook-events">${hookEventOptions().map((e) => `<option value="${e}"></option>`).join('')}</datalist>
     <div class="acct-actions"><button type="button" class="ghost" data-hook-cancel>Batal</button><button type="submit" class="primary">💾 Simpan</button></div>
   </form>`;
 }

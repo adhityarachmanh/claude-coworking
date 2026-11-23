@@ -49,7 +49,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const EFFORT_LABEL = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
 
 // The team setting needs a fresh process, and so does a change of workspace (e.g. between a folder and its worktree).
-const restartKey = (s) => String(s.team) + '|' + (s.workspacePath ?? '') + '|' + (s.additionalDirectories ?? []).join('\n') + '|' + String(s.claudeFallbackModel ?? '') + '|' + String(s.claudeMaxTurns ?? '') + '|' + String(s.claudeMaxBudgetUsd ?? '') + '|' + String(s.claudeTools ?? '') + '|' + (s.claudeAllowedTools ?? []).join('\n') + '|' + (s.claudeDisallowedTools ?? []).join('\n') + '|' + String(s.claudeSettingSources ?? '');
+const restartKey = (s) => String(s.team) + '|' + (s.workspacePath ?? '') + '|' + (s.additionalDirectories ?? []).join('\n') + '|' + String(s.claudeFallbackModel ?? '') + '|' + String(s.claudeMaxTurns ?? '') + '|' + String(s.claudeMaxBudgetUsd ?? '') + '|' + String(s.claudeTools ?? '') + '|' + (Array.isArray(s.claudeAllowedTools) ? s.claudeAllowedTools : []).join('\n') + '|' + (Array.isArray(s.claudeDisallowedTools) ? s.claudeDisallowedTools : []).join('\n') + '|' + String(s.claudeSettingSources ?? '');
 
 const streamArgs = (claude) => [...claude.args, '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
 

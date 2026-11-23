@@ -3,7 +3,7 @@
 // subagent (~/.claude/agents: every project) and the GitHub login: laptop only (a plugin runs code on this laptop;
 // a user agent steers every project, like plugins and MCP servers; gh's login opens a device flow for this
 // machine). A project's own agents (.claude/agents) can be edited over Tailscale too.
-import { AdminError, deleteAgent, deleteHook, listAgents, listHooks, listPlugins, pluginAction, saveAgent, saveHook } from '../claude-admin.js';
+import { AdminError, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listHooks, listPlugins, pluginAction, saveAgent, saveHook } from '../claude-admin.js';
 import { gitAction } from '../git.js';
 import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
 import { json } from './http.js';
@@ -68,7 +68,7 @@ export function register(router) {
     session.reloadSettings?.();
     return r;
   }, { claude: true })));
-  router.post('/api/projects/:id/hooks', withProject(guard((ctx, req, res, { project }) => ({ hooks: listHooks(project.path) }), { claude: true })));
+  router.post('/api/projects/:id/hooks', withProject(guard((ctx, req, res, { project }) => ({ hooks: listHooks(project.path), events: [...HOOK_EVENTS] }), { claude: true })));
   router.post('/api/projects/:id/hooks/save', withSession(guard((ctx, req, res, { project, session }, body) => {
     userScopeFromLaptop(ctx, req, body);
     const saved = saveHook({ projectPath: project.path, scope: body.scope, event: body.event, matcher: body.matcher, command: body.command, timeout: body.timeout });

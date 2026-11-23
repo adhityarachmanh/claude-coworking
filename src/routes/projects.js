@@ -4,11 +4,11 @@
 // Opening VS Code / Explorer (`open`) is laptop only (LOCAL_ONLY_ACTION).
 import { providersWithoutCredentials, modelsOffered, openCodeModelEfforts, openCodeModels } from '../opencode-bin.js';
 import path from 'node:path';
-import { ENGINES } from '../hub.js';
 import { readModelPrices } from '../model-prices.js';
 import { isDirectory, isMissing, isNetworkPath } from '../projects.js';
 import { openInApp } from '../open.js';
-import { observedPrices } from '../usage.js';import { json } from './http.js';
+import { observedPrices } from '../usage.js';
+import { json } from './http.js';
 import { withProject, withSession } from './project.js';
 
 // The turn settings picker's cost per model: list prices for OpenCode Go, a blended effective price from the
@@ -124,7 +124,24 @@ export function registerProjectActions(router) {
     const { hub, sessions } = ctx;
     const patch = asBody(body);
     const engine = patch.engine === undefined ? undefined : String(patch.engine);
-    if (engine !== undefined && !ENGINES.includes(engine)) return json(res, 400, { error: 'Sumber model tidak dikenal.' });
+    if (engine !== undefined && engine !== 'claude' && engine !== 'opencode') return json(res, 400, { error: 'Sumber model tidak dikenal.' });
+    // Flag tool mengubah apa yang boleh dijalankan tanpa kartu izin: laptop only, like the permission editor.
+    if ((patch.claudeTools !== undefined || patch.claudeAllowedTools !== undefined || patch.claudeDisallowedTools !== undefined) && ctx.isLocal?.(req) !== true) {
+      return json(res, 403, { error: 'Flag tool Claude hanya bisa diubah dari laptop.' });
+    }
+    for (const [key, decimal] of [['claudeMaxTurns', false], ['claudeMaxBudgetUsd', true]]) {
+      if (patch[key] === undefined || patch[key] === null || patch[key] === '') continue;
+      const value = Number(patch[key]);
+      if (!Number.isFinite(value) || value <= 0 || value > 1_000_000 || (!decimal && !Number.isInteger(value))) {
+        return json(res, 400, { error: `${key === 'claudeMaxTurns' ? 'Batas giliran' : 'Batas anggaran'} tidak valid.` });
+      }
+    }
+    for (const key of ['claudeTools', 'claudeFallbackModel', 'claudeSettingSources']) {
+      if (patch[key] !== undefined && patch[key] !== null && typeof patch[key] !== 'string') return json(res, 400, { error: 'Nilai flag Claude tidak valid.' });
+    }
+    for (const key of ['claudeAllowedTools', 'claudeDisallowedTools']) {
+      if (patch[key] !== undefined && !Array.isArray(patch[key])) return json(res, 400, { error: 'Daftar tool Claude tidak valid.' });
+    }
     if (engine !== undefined && engine !== hub.engineOf(project.id)) {
       const refusal = engineSwitchRefusal(ctx, project, engine);
       if (refusal) return json(res, 409, refusal);

@@ -46,6 +46,15 @@ test('cleanSettings: flag Claude valid disimpan, junk diabaikan', () => {
   assert.equal(cleaned.claudeMaxBudgetUsd, 5);
   assert.deepEqual(cleaned.claudeAllowedTools, ['Read', 'Bash(git log *)']);
 
+  assert.equal(cleaned.claudeSettingSources, 'user,project');
+  // A decimal budget is valid (the CLI takes 5.00); a fractional turn count is not.
+  hub.updateSettings(project.id, { claudeMaxBudgetUsd: 2.5, claudeMaxTurns: 3.5 });
+  assert.equal(hub.settingsFor(project.id).claudeMaxBudgetUsd, 2.5);
+  assert.equal(hub.settingsFor(project.id).claudeMaxTurns, 3);
+  // A tool rule starting with "-" would be read as another CLI option: it is dropped, never passed through.
+  hub.updateSettings(project.id, { claudeAllowedTools: ['Read', '--dangerously-skip-permissions'] });
+  assert.deepEqual(hub.settingsFor(project.id).claudeAllowedTools, ['Read']);
+
   hub.updateSettings(project.id, { claudeMaxTurns: null, claudeTools: '', claudeAllowedTools: [], claudeSettingSources: '' });
   const cleared = hub.settingsFor(project.id);
   assert.equal(cleared.claudeMaxTurns, null);
@@ -64,5 +73,26 @@ test('cleanSettings: default kosong untuk project baru', () => {
   assert.equal(s.claudeTools, null);
   assert.deepEqual(s.claudeAllowedTools, []);
   assert.deepEqual(s.claudeDisallowedTools, []);
+  assert.equal(s.claudeSettingSources, null);
+});
+
+test('settingsFor: state.json yang diedit tangan tidak bisa mengirim argumen aneh', () => {
+  const hub = new Hub({ dataDir: mkdtempSync(path.join(tmpdir(), 'cf-junk-')) });
+  const project = hub.upsertProject(mkdtempSync(path.join(tmpdir(), 'cf-junkp-')), 'custom');
+  hub.updateSettings(project.id, {});
+  Object.assign(hub.persisted.settings[project.id], {
+    claudeAllowedTools: 'Read', // a string must never be spread into argv characters
+    claudeDisallowedTools: ['-x'],
+    claudeMaxTurns: 3.5,
+    claudeMaxBudgetUsd: -2,
+    claudeTools: '--evil',
+    claudeSettingSources: 'user,cloud',
+  });
+  const s = hub.settingsFor(project.id);
+  assert.deepEqual(s.claudeAllowedTools, []);
+  assert.deepEqual(s.claudeDisallowedTools, []);
+  assert.equal(s.claudeMaxTurns, null);
+  assert.equal(s.claudeMaxBudgetUsd, null);
+  assert.equal(s.claudeTools, null);
   assert.equal(s.claudeSettingSources, null);
 });

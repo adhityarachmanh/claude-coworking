@@ -290,8 +290,9 @@ function buildItems() {
 
   // Slash commands: the app's own run here; Claude Code's go into the composer to be sent.
   const local = new Set(LOCAL_COMMANDS.flatMap((c) => [c.name, ...(c.aliases ?? [])]));
+  const forward = new Set(LOCAL_COMMANDS.filter((c) => c.forward).flatMap((c) => [c.name, ...(c.aliases ?? [])]));
   for (const c of slashCatalog()) {
-    const own = local.has(c.name);
+    const own = local.has(c.name) && !forward.has(c.name);
     add({
       id: `command:${c.name}`,
       group: 'command',

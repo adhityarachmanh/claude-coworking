@@ -87,9 +87,11 @@ export function applySuggest(i = suggest.index) {
  */
 export function slashCatalog() {
   const byName = new Map();
-  for (const c of LOCAL_COMMANDS) byName.set(c.name, c);
+  // Claude-only commands that are forwarded as text must not appear for an OpenCode project.
+  const opencode = engineOf(state.statuses[state.active] ?? {}, state.config) === 'opencode';
+  for (const c of LOCAL_COMMANDS) if (!(opencode && c.forward)) byName.set(c.name, c);
   // The project's engine, not the app-wide default (Akun): each engine has its own slash commands.
-  if (engineOf(state.statuses[state.active] ?? {}, state.config) === 'opencode') {
+  if (opencode) {
     for (const c of state.statuses[state.active]?.commands ?? []) if (!byName.has(c.name)) byName.set(c.name, { ...c, description: c.description || 'Command OpenCode' });
     return [...byName.values()];
   }

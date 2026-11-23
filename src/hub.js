@@ -65,6 +65,77 @@ export const DEMO_ID = 'demo';
 // under dataDir, so a general chat never touches a real project folder. A fixed id (never the folder hash).
 export const GENERAL_ID = 'chat-umum';
 export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true, additionalDirectories: [], claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null };
+
+// 🎛️ Claude's per-project spawn flags. One sanitizer for both the write path (cleanSettings) and settingsFor, so a
+// hand-edited state.json can never reach the spawn arguments.
+const CLAUDE_FALLBACK = /^[\w./:#,-]{0,200}$/;
+const CLAUDE_TOOL_TEXT = /^[\x20-\x7e]{0,500}$/;
+const CLAUDE_SOURCES = /^(user|project|local)(,(user|project|local)){0,2}$/;
+const CLAUDE_FLAG_DEFAULTS = { claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null };
+
+const cleanFlagNumber = (raw, { decimal = false } = {}) => {
+  if (raw === null || raw === '') return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0 || value > 1_000_000) return undefined;
+  if (!decimal && !Number.isInteger(value)) return undefined;
+  return value;
+};
+const cleanFlagText = (raw, pattern) => (typeof raw === 'string' && pattern.test(raw) && !raw.trimStart().startsWith('-') ? raw : undefined);
+const cleanToolList = (raw) => {
+  if (!Array.isArray(raw)) return undefined;
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const clean = item.trim();
+    // `-x` would be read by the CLI as another option (not a tool rule): never pass it through.
+    if (!clean || clean.length > 500 || clean.startsWith('-') || /[\u0000-\u001f\u007f]/.test(clean) || seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+    if (out.length >= 50) break;
+  }
+  return out;
+};
+
+function cleanClaudeFlags(base, patch) {
+  const next = { ...base };
+  if (!isObject(patch)) return next;
+  if ('claudeFallbackModel' in patch) {
+    if (patch.claudeFallbackModel === '') next.claudeFallbackModel = '';
+    else {
+      const value = cleanFlagText(patch.claudeFallbackModel, CLAUDE_FALLBACK);
+      if (value !== undefined) next.claudeFallbackModel = value;
+    }
+  }
+  if ('claudeMaxTurns' in patch) {
+    const value = cleanFlagNumber(patch.claudeMaxTurns);
+    if (value !== undefined) next.claudeMaxTurns = value;
+  }
+  if ('claudeMaxBudgetUsd' in patch) {
+    const value = cleanFlagNumber(patch.claudeMaxBudgetUsd, { decimal: true });
+    if (value !== undefined) next.claudeMaxBudgetUsd = value;
+  }
+  if ('claudeTools' in patch) {
+    if (patch.claudeTools === null || patch.claudeTools === '') next.claudeTools = null;
+    else {
+      const value = cleanFlagText(patch.claudeTools, CLAUDE_TOOL_TEXT);
+      if (value !== undefined) next.claudeTools = value;
+    }
+  }
+  for (const key of ['claudeAllowedTools', 'claudeDisallowedTools']) {
+    if (!(key in patch)) continue;
+    const list = cleanToolList(patch[key]);
+    if (list && (list.length || (Array.isArray(patch[key]) && patch[key].length === 0))) next[key] = list;
+  }
+  if ('claudeSettingSources' in patch) {
+    if (patch.claudeSettingSources === null || patch.claudeSettingSources === '') next.claudeSettingSources = null;
+    else {
+      const value = cleanFlagText(patch.claudeSettingSources, CLAUDE_SOURCES);
+      if (value !== undefined) next.claudeSettingSources = value;
+    }
+  }
+  return next;
+}
 // Which coding agent runs the project: Claude Code (stream-json) or OpenCode (ACP, src/acp-session.js).
 export const ENGINES = ['claude', 'opencode'];
 // Per-project data per engine lives in `settings[id].engine`, `engineSettings[id][engine]` and
@@ -1265,6 +1336,8 @@ export class Hub {
     // 📂 Folder tambahan (Claude --add-dir): the stored list is sanitized here too, so spawn arguments can only ever
     // carry absolute, non-network paths (a hand-edited state.json must not reach the CLI).
     settings.additionalDirectories = cleanAddDirs(this.persisted.settings?.[id]?.additionalDirectories);
+    // 🎛️ Claude flags: clean the stored copy here too — spawn arguments and the restart key read this directly.
+    Object.assign(settings, cleanClaudeFlags(CLAUDE_FLAG_DEFAULTS, this.persisted.settings?.[id] ?? {}));
     return settings;
   }
 
@@ -1398,47 +1471,7 @@ export class Hub {
     // 📂 Folder tambahan: the route validates first (absolute, existing, not network); this keeps the stored copy clean.
     if (Array.isArray(patch.additionalDirectories)) next.additionalDirectories = cleanAddDirs(patch.additionalDirectories);
     // 🎛️ Flag Claude per project (spawn arguments; Claude-only). Junk from a hand-edited state.json is ignored.
-    if ('claudeFallbackModel' in patch) {
-      const value = patch.claudeFallbackModel;
-      next.claudeFallbackModel = value === '' || (typeof value === 'string' && /^[\w./:#,-]{0,200}$/.test(value)) ? value : next.claudeFallbackModel;
-    }
-    const cleanFlagInt = (raw) => {
-      if (raw === null || raw === '') return null;
-      const value = Number(raw);
-      return Number.isInteger(value) && value > 0 && value <= 1_000_000 ? value : null;
-    };
-    if ('claudeMaxTurns' in patch) next.claudeMaxTurns = patch.claudeMaxTurns === null || patch.claudeMaxTurns === '' ? null : cleanFlagInt(patch.claudeMaxTurns) ?? next.claudeMaxTurns;
-    if ('claudeMaxBudgetUsd' in patch) next.claudeMaxBudgetUsd = patch.claudeMaxBudgetUsd === null || patch.claudeMaxBudgetUsd === '' ? null : cleanFlagInt(patch.claudeMaxBudgetUsd) ?? next.claudeMaxBudgetUsd;
-    if ('claudeTools' in patch) {
-      const value = patch.claudeTools;
-      next.claudeTools = value === null || value === '' ? null : typeof value === 'string' ? (value.trim().slice(0, 500) || null) : next.claudeTools;
-    }
-    const cleanToolList = (raw) => {
-      if (!Array.isArray(raw)) return null;
-      const seen = new Set();
-      const out = [];
-      for (const item of raw) {
-        if (typeof item !== 'string') continue;
-        const clean = item.trim().slice(0, 500);
-        if (!clean || /[\u0000-\u001f\u007f]/.test(clean) || seen.has(clean)) continue;
-        seen.add(clean);
-        out.push(clean);
-        if (out.length >= 50) break;
-      }
-      return out;
-    };
-    if ('claudeAllowedTools' in patch) {
-      const list = cleanToolList(patch.claudeAllowedTools);
-      if (list && (list.length || patch.claudeAllowedTools.length === 0)) next.claudeAllowedTools = list;
-    }
-    if ('claudeDisallowedTools' in patch) {
-      const list = cleanToolList(patch.claudeDisallowedTools);
-      if (list && (list.length || patch.claudeDisallowedTools.length === 0)) next.claudeDisallowedTools = list;
-    }
-    if ('claudeSettingSources' in patch) {
-      const value = patch.claudeSettingSources;
-      next.claudeSettingSources = value === null || value === '' ? null : typeof value === 'string' && /^(user|project|local)(,(user|project|local)){0,2}$/.test(value) ? value : next.claudeSettingSources;
-    }
+    Object.assign(next, cleanClaudeFlags(next, patch));
     // `workspacePath` is derived in settingsFor and read live: it must never be written back into state.json.
     delete next.workspacePath;
     return next;

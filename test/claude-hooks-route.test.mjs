@@ -34,7 +34,7 @@ const call = async (ctx, pattern, body = {}) => {
 test('route hooks: simpan project, hapus, user scope dari Tailscale ditolak', async () => {
   router = buildRouter();
   const { ctx, dir } = mkCtx();
-  const saved = await call(ctx, '/api/projects/:id/hooks/save', { scope: 'project', event: 'PreToolUse', matcher: 'Edit', command: 'npm run lint', timeout: 30000 });
+  const saved = await call(ctx, '/api/projects/:id/hooks/save', { scope: 'project', event: 'PreToolUse', matcher: 'Edit', command: 'npm run lint', timeout: 30 });
   assert.equal(saved.status, 200, JSON.stringify(saved.body));
   const file = path.join(dir, '.claude', 'settings.json');
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).hooks.PreToolUse[0].hooks[0].command, 'npm run lint');
