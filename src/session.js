@@ -499,7 +499,7 @@ export class ClaudeSession {
       throw Object.assign(new Error(MODE_CHOICE_MESSAGE), { status: 409, code: 'mode-choice' });
     }
     this.hub.clearInterrupted(this.id); // the user carries on (or starts over): the cut-short notice is done
-    this.hub.setStatus(this.id, { suggestion: null }); // a new prompt makes the previous prediction stale
+    this.hub.clearSuggestion?.(this.id); // a new prompt makes the previous prediction stale (no extra status event)
     const uuid = randomUUID();
     const { queueChatId, ...fields } = extra ?? {};
     // Only a bubble that is still in this project's chat can be reused: a trimmed/deleted one gets a fresh bubble.

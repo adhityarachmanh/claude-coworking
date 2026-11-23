@@ -6,6 +6,7 @@ import { scheduleAttention, loadAttention } from '../features/attention.js';
 import { scheduleChanges } from '../features/changes.js';
 import { appendChat, paintChatWaiting, renderChat, replaceChat, scheduleReplace } from '../features/chat.js';
 import { applyClaudeCheck } from '../features/claude-check.js';
+import { hidePromptSuggestion } from '../features/prompt-suggestion.js';
 import { applyOpenCodeCheck } from '../features/opencode-check.js';
 import { applyAppUpdate } from '../features/app-update.js';
 import { renderComposer } from '../features/composer.js';
@@ -179,6 +180,7 @@ const handlers = {
     }
     if (live) noteLiveMessage(msg); // a sample of the browser/server clock difference (stuck detector)
     if (msg.project === state.active) {
+      if (msg.kind === 'user') hidePromptSuggestion(); // the prompt is out: the old prediction is stale
       appendChat(msg);
       renderStatusline(state.statuses[msg.project] ?? {}); // the turn's progress chip follows every step
       paintChatWaiting();

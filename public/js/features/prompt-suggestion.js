@@ -16,6 +16,11 @@ export function renderPromptSuggestion(st) {
   button.title = `Isi kotak pesan dengan saran ini: ${text}`; // the row cuts long text with an ellipsis
 }
 
+export function hidePromptSuggestion() {
+  dismissed = $('#prompt-suggestion-text').textContent;
+  $('#prompt-suggestion').hidden = true;
+}
+
 export function initPromptSuggestion() {
   $('#prompt-suggestion-text').addEventListener('click', () => {
     const text = $('#prompt-suggestion-text').textContent.trim();
@@ -26,11 +31,7 @@ export function initPromptSuggestion() {
     input.dispatchEvent(new Event('input', { bubbles: true })); // autosize, draft save and autocomplete react as if typed
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
-    dismissed = text;
-    $('#prompt-suggestion').hidden = true;
+    hidePromptSuggestion();
   });
-  $('#prompt-suggestion-dismiss').addEventListener('click', () => {
-    dismissed = $('#prompt-suggestion-text').textContent;
-    $('#prompt-suggestion').hidden = true;
-  });
+  $('#prompt-suggestion-dismiss').addEventListener('click', hidePromptSuggestion);
 }

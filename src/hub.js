@@ -2318,6 +2318,16 @@ export class Hub {
     this.broadcast('status', status);
   }
 
+  /**
+   * Drops a stale prompt suggestion without a status broadcast: the prompt is about to make the session busy, and that
+   * status update already carries the cleared value. Broadcasting one here would look like an idle session to anything
+   * watching for "busy false" (and to the server tests that wait for the turn to settle).
+   */
+  clearSuggestion(id) {
+    const status = this.rt(id).status;
+    if (status.suggestion != null) status.suggestion = null;
+  }
+
   /** A project's live status as last sent to the browser (the same object, not a copy). */
   statusFor(id) {
     return this.rt(id).status;
