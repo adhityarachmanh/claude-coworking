@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.2.1
 
 - **🎬 Model video OpenCode.** Config lanjutan kini punya **Model video** (`experimental.video_generate.model`, OpenCode 2.4+), di samping model gambar yang sudah ada. Pada OpenCode 2.3.x field ini diabaikan sampai mesinnya diperbarui.
 
