@@ -2,6 +2,11 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.96
+
+- **Label tombol menyebut hasilnya.** Tombol kirim chat menjadi **Kirim pesan**, dan tombol simpan di dialog menyebut objeknya: **Simpan config**, **Simpan flag**, **Simpan hook**, **Simpan agent**, **Simpan gaya**, **Simpan command**. Ikon aksi (💾, ↻, ✕) tetap.
+- **Judul dialog tanpa ikon dekoratif.** Ikon di 39 judul modal (Panduan, Kelola tim, Riwayat sesi, Memory, MCP, Aturan izin, Config OpenCode, Akun, dan lainnya) serta lima judul teks bantuan dihapus; ikon di menu dan tombol aksi tetap karena membantu pemindaian.
+
 ## 1.0.95
 
 - **Perbaikan CI setelah 1.0.94.** Test integrasi ekstensi kini mengikuti bentuk data hook `handlers` (bukan `commands`); tidak ada perubahan perilaku aplikasi.
