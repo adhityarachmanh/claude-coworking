@@ -9,6 +9,7 @@ import * as autologon from './autologon.js';
 import * as backup from './backup.js';
 import * as budget from './budget.js';
 import * as checklist from './checklist.js';
+import * as compare from './compare.js';
 import * as cliBridge from './cli-bridge.js';
 import * as data from './data.js';
 import * as claudeCheck from './claude-check.js';
@@ -17,6 +18,7 @@ import * as extensions from './extensions.js';
 import * as files from './files.js';
 import * as git from './git.js';
 import * as health from './health.js';
+import * as insights from './insights.js';
 import * as memory from './memory.js';
 import * as misc from './misc.js';
 import * as opencodeCheck from './opencode-check.js';
@@ -64,6 +66,8 @@ export function buildRouter() {
     routines.register,
     approvals.register,
     attention.register,
+    insights.register,
+    compare.register,
     cliBridge.register,
     templates.register,
     team.register,

@@ -70,6 +70,14 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Worktree | ⎇ Worktree (aplikasi) | ✅ |
 | `opencode uninstall/share/run/service get-set-unset/debug heap-dump/mini/serve/acp/api/pair/ci` | internal/khusus terminal/berisiko | 🚫 |
 
+## Fitur di luar CLI (pembeda Adhitron)
+
+| Kemampuan | Di Adhitron | Status |
+|---|---|---|
+| Papan “perlu tindakan” lintas project | izin/rencana/pertanyaan, model hilang, mode lama, budget, CI gagal, OpenCode berhenti, antrian, giliran terputus, jadwal gagal; tunda 1 jam | ✅ |
+| Laporan pola kerja | biaya/token/permintaan/sesi per project, model, dan jam (7/30/90 hari) | ✅ |
+| Bandingkan model | satu pertanyaan ke dua model Claude (tool mati, sesi tidak disimpan), jawaban + biaya + durasi | ✅ |
+
 ---
 
 Catatan: baris 🔜 dikerjakan di **Fase 6**; setelahnya matriks ini diperbarui menjadi ✅ dan dicatat di CHANGELOG. Baris 🚫 disengaja dan tidak akan dibangun kecuali kebutuhan berubah.

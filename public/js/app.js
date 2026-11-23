@@ -76,6 +76,8 @@ import { initClaudeFlags } from './features/claude-flags.js';
 import { initPurge } from './features/claude-purge.js';
 import { initPromptSuggestion } from './features/prompt-suggestion.js';
 import { initSavedPermissions } from './features/opencode-saved-permissions.js';
+import { initInsights } from './features/insights.js';
+import { initCompare } from './features/compare.js';
 import { initPullRequest } from './features/pull-request.js';
 import { initSettings } from './features/settings.js';
 import { initSpotify } from './features/spotify.js';
@@ -131,6 +133,8 @@ initClaudeFlags(); // ⚙️ flag Claude per project (spawn args)
 initPurge(); // 🧹 hapus data Claude Code satu project
 initPromptSuggestion(); // 💡 saran prompt berikutnya mengisi kotak, tidak mengirim
 initSavedPermissions(); // 🛡️ izin tersimpan OpenCode
+initInsights(); // 📈 pola kerja
+initCompare(); // ⚖️ bandingkan dua model
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initHeaderMore();

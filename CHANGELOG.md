@@ -2,6 +2,12 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **⚠ Papan perlu tindakan lebih lengkap.** Selain izin/rencana, budget, antrian, giliran terputus, dan jadwal, daftar di atas 🗂 Semua project kini juga menandai **CI gagal**, **model yang tidak tersedia lagi** (mis. setelah logout provider), **pilihan mode izin lama**, dan **proses OpenCode yang berhenti**. Ketuk item model/mode untuk membuka pengaturan giliran.
+- **📈 Pola kerja.** ⋯ → **Pola kerja** merangkum ledger 7/30/90 hari: biaya, token, permintaan, sesi, project aktif, jam tersibuk, serta tabel project dan model dengan biaya terbesar. Hanya dari laptop/Tailscale.
+- **⚖️ Bandingkan model.** ⋯ → **Bandingkan model** menjalankan satu pertanyaan ke dua model Claude dengan tool dimatikan dan sesi tidak disimpan, lalu menampilkan jawaban, biaya, dan durasi bersebelahan; satu jawaban bisa langsung dimasukkan ke kotak pesan. Dua jawaban memakai token (biaya nyata); hanya dari laptop.
+
 ## 1.0.99
 
 - **⚙️ Auto-compact & event hook Claude.** ⚙️ Flag Claude kini punya **Auto-compact** (`--autocompact`, `auto` atau mis. `500k`, minimal 100k token) dan **Event hook di chat** (`--include-hook-events`). Hook yang gagal muncul sebagai baris peringatan berisi event, nama hook, dan baris pertama stderr; hook yang sukses tidak menambah kebisingan.

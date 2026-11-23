@@ -50,7 +50,27 @@ function list({ hub, ledger, taskQueue }, req, res) {
     items.push({ id: `routine:${routine.id}`, kind: 'routine', project: routine.projectId, projectName: projectName(hub, routine.projectId), label: 'Jadwal gagal', detail: routine.lastError || routine.error || routine.prompt?.slice(0, 80) || '' });
   }
 
-  const order = { approval: 0, plan: 0, question: 0, budget: 1, queue: 2, interrupted: 3, routine: 4 };
+  // A red CI, a model that disappeared (provider logout), the legacy mode choice, and an OpenCode process that died:
+  // each one blocks or degrades the next prompt, so it belongs on the same board.
+  for (const [id, rt] of hub.runtime ?? []) {
+    if (!hub.projects?.has?.(id)) continue;
+    const st = rt.status ?? {};
+    if (st.ci?.state === 'failure' && st.ciFollow !== false) {
+      items.push({ id: `ci:${id}`, kind: 'ci', project: id, projectName: projectName(hub, id), label: 'CI gagal', detail: st.ci.url ? 'Cek hasil GitHub Actions' : 'Push terakhir gagal di GitHub Actions' });
+    }
+    if (st.modelStale === true) {
+      items.push({ id: `model:${id}`, kind: 'model', project: id, projectName: projectName(hub, id), label: 'Model tidak tersedia lagi', detail: 'Pilih model lain sebelum mengirim pesan' });
+    }
+    if (st.openCodeDown === true) {
+      items.push({ id: `engine:${id}`, kind: 'engine', project: id, projectName: projectName(hub, id), label: 'OpenCode berhenti', detail: 'Proses OpenCode berhenti sendiri — mulai ulang dari status bar' });
+    }
+  }
+  for (const id of hub.projects?.keys?.() ?? []) {
+    if (hub.settingsFor?.(id)?.modePendingChoice !== true) continue;
+    items.push({ id: `mode:${id}`, kind: 'mode', project: id, projectName: projectName(hub, id), label: 'Pilih mode izin', detail: 'Mode lama “Jangan tanya” tidak lagi tersedia — pilih Plan atau Build' });
+  }
+
+  const order = { approval: 0, plan: 0, question: 0, model: 1, mode: 1, budget: 2, ci: 3, engine: 3, queue: 4, interrupted: 5, routine: 6 };
   items.sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
   return json(res, 200, { items: items.slice(0, 30), count: items.length });
 }

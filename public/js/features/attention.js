@@ -16,7 +16,7 @@ const MIN_GAP_MS = 5000;
 let timer = null;
 
 const projectName = (id) => state.projects.find((p) => p.id === id)?.name ?? 'project';
-const ICON = { approval: '✋', plan: '📋', question: '❓', budget: '💰', queue: '📋', interrupted: '▶', routine: '⏰' };
+const ICON = { approval: '✋', plan: '📋', question: '❓', budget: '💰', queue: '📋', interrupted: '▶', routine: '⏰', ci: '❌', model: '⚠', engine: '⛔', mode: '🎚' };
 
 // ⏰ Tunda: hide one item for an hour without touching the server. The list only reflects it; the state behind
 // it (a pending approval, a paused queue) is unchanged. Stored per browser, so a reload keeps the quiet.
@@ -133,6 +133,11 @@ function go(item) {
   if (item.kind === 'routine') {
     openModal('settings-modal');
     selectSettingsTab('jadwal');
+    return;
+  }
+  if (item.kind === 'model' || item.kind === 'mode') {
+    document.querySelector('#settings-chip')?.click();
+    openModal('turn-settings-modal');
     return;
   }
   if (!item.chatId) return;

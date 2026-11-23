@@ -15,6 +15,8 @@ import { openOutputStyle } from './output-styles.js';
 import { openClaudeFlags, openAutoMode } from './claude-flags.js';
 import { openPurge } from './claude-purge.js';
 import { openSavedPermissions } from './opencode-saved-permissions.js';
+import { openInsights } from './insights.js';
+import { openCompare } from './compare.js';
 
 export function toggleMoreMenu(open = $('#more-menu').hidden) {
   $('#more-menu').hidden = !open;
@@ -104,6 +106,8 @@ export function initMoreMenu() {
       else if (item.dataset.more === 'auto-mode') openAutoMode();
       else if (item.dataset.more === 'purge') openPurge();
       else if (item.dataset.more === 'oc-saved-permissions') openSavedPermissions();
+      else if (item.dataset.more === 'insights') openInsights();
+      else if (item.dataset.more === 'compare') openCompare();
       else if (item.dataset.more === 'roster') openRoster();
       else if (item.dataset.more === 'export-session') await exportActiveSession();
       else if (item.dataset.more === 'terminal') {
