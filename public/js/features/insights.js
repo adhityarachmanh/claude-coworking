@@ -3,6 +3,7 @@
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
 import { fmtNum, fmtUsd } from '../core/format.js';
+import { copyText } from '../core/util.js';
 import { state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 
@@ -51,4 +52,18 @@ export function openInsights() {
 
 export function initInsights() {
   $('#insights-days').addEventListener('change', load);
+  $('#insights-digest').addEventListener('click', async () => {
+    const out = $('#insights-digest-out');
+    out.hidden = false;
+    out.textContent = 'Menyusun rekap…';
+    try {
+      const data = await api('/api/digest');
+      out.textContent = String(data.markdown ?? '');
+      $('#insights-copy').hidden = !out.textContent;
+    } catch (err) {
+      out.textContent = err.message;
+      $('#insights-copy').hidden = true;
+    }
+  });
+  $('#insights-copy').addEventListener('click', () => copyText($('#insights-digest-out').textContent));
 }

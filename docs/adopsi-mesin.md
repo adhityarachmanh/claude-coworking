@@ -82,6 +82,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Tanya arsip | cari lintas transkrip, jawab hanya dari kutipan dengan nomor sumber yang bisa dibuka | ✅ |
 | Nilai jawaban terakhir | model kedua menilai kebenaran/risiko/verifikasi jawaban terakhir, tanpa tool | ✅ |
 | Anggaran per model | batas harian/mingguan/bulanan per model, dicek sebelum prompt/antrean | ✅ |
+| Rekap mingguan | ringkasan Markdown 7 hari dari ledger (total, project, model, jam) tanpa model call | ✅ |
 
 ---
 

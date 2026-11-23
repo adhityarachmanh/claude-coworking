@@ -16,6 +16,7 @@ import * as cliBridge from './cli-bridge.js';
 import * as data from './data.js';
 import * as claudeCheck from './claude-check.js';
 import * as diagnostics from './diagnostics.js';
+import * as digest from './digest.js';
 import * as extensions from './extensions.js';
 import * as files from './files.js';
 import * as git from './git.js';
@@ -73,6 +74,7 @@ export function buildRouter() {
     compare.register,
     archive.register,
     answerReview.register,
+    digest.register,
     opencodeAutomations.register,
     cliBridge.register,
     templates.register,
