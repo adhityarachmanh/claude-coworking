@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.97
 
 - **🔧 Cek versi Claude Code tidak lagi gagal setelah update.** Setelah Claude Code memperbarui diri saat sesi berjalan, paket npm bisa kehilangan `bin/claude.exe` (hanya menyisakan `claude.exe.old` dan `cli-wrapper.cjs`), dan shim nvm-windows gagal menjalankannya karena path berisi spasi. Aplikasi kini menjalankan `cli-wrapper.cjs` bila binary native hilang, jadi cek versi/kontrak membaca versi yang benar-benar terpasang (di mesin ini `2.1.328`) alih-alih melaporkan “1 cek gagal: versi”. Setelah memperbarui, tekan **Cek ulang** di kartu kompatibilitas.
 - **🧠 Advisor & fast mode per project.** ⚙️ Flag Claude kini punya **Model advisor** (`--advisor`) dan **Fast mode**. Karena `/fast` hanya ada di sesi interaktif, fast mode untuk proses `-p` dinyalakan lewat `--settings {"fastMode":true}` yang digabung dengan setelan sesi lain. Keduanya hanya berlaku pada model/provider yang mendukung; fast mode bisa lebih mahal.
