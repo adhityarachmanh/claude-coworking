@@ -149,7 +149,7 @@ export function steerQueueItem(taskQueue, projectId, chatId) {
 export function register(router) {
   router.post('/api/projects/:id/prompt', withSession(async ({ hub, claude, opencode, ledger, taskQueue, metrics }, req, res, { project, session }, body) => {
     // 💰 Hard stop: never start a paid turn while a configured window is at/over its limit. A running turn is not cut.
-    const stop = budgetStop(hub, ledger, Date.now(), project.id, hub.settingsFor(project.id).model);
+    const stop = budgetStop(hub, ledger, Date.now(), project.id, hub.settingsFor?.(project.id)?.model ?? null);
     if (stop && !consumeBudgetOverride(hub)) return json(res, 409, { error: stop.message, code: 'budget' });
     // The provider of the active model was logged out (👤 Akun, routes/account.js): no silent replacement.
     if (hub.statusFor(project.id)?.modelStale) {
@@ -221,7 +221,7 @@ export function register(router) {
     // required", and a 403 there may really be a network/entitlement problem). Refuse before the turn starts and name
     // the way to log in. An unreadable provider list proceeds (never refuse on a guess); Claude is untouched.
     if (hub.engineOf(project.id) === 'opencode' && opencode) {
-      const model = String(hub.settingsFor(project.id).model ?? '');
+      const model = String(hub.settingsFor?.(project.id)?.model ?? '');
       const provider = model.includes('/') ? model.slice(0, model.indexOf('/')) : '';
       if (/^[\w.@-]{1,100}$/.test(provider)) {
         const view = await providersWithoutCredentials(opencode).catch(() => null);
@@ -251,7 +251,7 @@ export function register(router) {
   // ✂ Ringkas konteks: the engine's own /compact as a normal prompt, so Claude Code's compact_boundary/auto-compact
   // status keeps working. Refused while anything runs, waits or asks: nothing is stopped to make room for it.
   router.post('/api/projects/:id/compact', withSession(({ hub, claude, opencode, ledger, metrics }, req, res, { project, session }, body) => {
-    const stop = budgetStop(hub, ledger, Date.now(), project.id, hub.settingsFor(project.id).model);
+    const stop = budgetStop(hub, ledger, Date.now(), project.id, hub.settingsFor?.(project.id)?.model ?? null);
     if (stop && !consumeBudgetOverride(hub)) return json(res, 409, { error: stop.message, code: 'budget' });
     if (body.focus !== undefined && body.focus !== null && typeof body.focus !== 'string') return json(res, 400, { error: 'Fokus ringkasan harus berupa teks.' });
     const focus = String(body.focus ?? '').trim();
@@ -443,7 +443,7 @@ export function register(router) {
       hub.clearInterrupted(project.id);
       return ok(res);
     }
-    const stop = budgetStop(hub, ledger, Date.now(), project.id, hub.settingsFor(project.id).model);
+    const stop = budgetStop(hub, ledger, Date.now(), project.id, hub.settingsFor?.(project.id)?.model ?? null);
     if (stop && !consumeBudgetOverride(hub)) return json(res, 409, { error: stop.message, code: 'budget' });
     const gate = checkTurn(hub, project.id, session);
     if (gate) {

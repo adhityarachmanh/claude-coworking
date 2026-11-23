@@ -907,7 +907,7 @@ export class TaskQueue {
       this.scheduleAll(); // another project may use the slot while this one was only classifying
     }
     // 💰 The global budget is a hard stop too: hold the queue (and say why) instead of spending past the limit.
-    const stop = budgetStop(this.hub, this.ledger, this.now(), id, this.hub.settingsFor(id).model);
+    const stop = budgetStop(this.hub, this.ledger, this.now(), id, this.hub.settingsFor?.(id)?.model ?? null);
     if (stop && !consumeBudgetOverride(this.hub, this.now())) return this.pauseFor(id, 'budget', `budget ${stop.label} tercapai`);
     if (budgetExceeded(q.budget)) return this.checkBudget(id); // used up while the queue was empty or paused
     const project = this.hub.projects.get(id);
