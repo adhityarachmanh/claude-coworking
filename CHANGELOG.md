@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.0.95
+
+- **Perbaikan CI setelah 1.0.94.** Test integrasi ekstensi kini mengikuti bentuk data hook `handlers` (bukan `commands`); tidak ada perubahan perilaku aplikasi.
+
 ## 1.0.94
 
 - **🪝 Hooks Claude dari aplikasi.** Tab **🪝 Hooks** kini bisa **menambah, mengubah, dan menghapus** hook command (bukan hanya melihat): pilih event (PreToolUse, UserPromptSubmit, …), matcher opsional (mis. `Edit`), perintah, timeout, dan scope (pribadi project / project bersama / semua project). Ditulis ke `settings.json` yang benar tanpa menyentuh kunci lain; file JSON rusak atau symlink ditolak, hook untuk semua project hanya dari laptop, dan perubahan berlaku mulai sesi berikutnya. Handler non-command (`http`, `prompt`, `agent`) tetap diatur lewat editor JSON.
