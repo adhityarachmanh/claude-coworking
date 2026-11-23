@@ -1,11 +1,12 @@
 // 🧩 Ekstensi Claude Code without the terminal: plugins (`claude plugin …`), your own subagents (.claude/agents/*.md)
 // and a view of the hooks in the settings files. Plugins go through Claude Code's own CLI (it owns their config);
 // agents are plain Markdown files with front matter, written only at the two fixed agent folders.
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileTree } from './proc.js';
 import { childEnv } from './child-env.js';
+import { settingsFile, userConfigDir } from './permissions.js';
 
 export class AdminError extends Error {
   constructor(status, message) {
@@ -179,4 +180,113 @@ export function listHooks(projectPath, home = os.homedir()) {
     }
   }
   return out;
+}
+
+// ---------- hooks (edit) ----------
+
+/** Hook events Claude Code recognizes (a subset; the datalist suggests them, a hand-written one is still accepted). */
+export const HOOK_EVENTS = Object.freeze([
+  'SessionStart', 'Setup', 'UserPromptSubmit', 'UserPromptExpansion', 'PreToolUse', 'PermissionRequest',
+  'PermissionDenied', 'PostToolUse', 'PostToolUseFailure', 'PostToolBatch', 'Notification', 'SubagentStart',
+  'SubagentStop', 'Stop', 'StopFailure', 'SessionEnd', 'PreCompact', 'PostCompact', 'PreModelSwitch',
+  'PostModelSwitch', 'FileChanged', 'CwdChanged', 'DirectoryAdded',
+]);
+
+export const HOOK_LIMITS = Object.freeze({ command: 2000, matcher: 200, timeout: 600000, hooks: 100 });
+
+export class HookError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const EVENT = /^[A-Za-z][A-Za-z0-9]*$/;
+const MATCHER = /^[\x20-\x7e]{0,200}$/;
+
+const loadHooksFile = (file) => {
+  let text;
+  try {
+    const info = lstatSync(file);
+    if (info.isSymbolicLink()) throw new HookError(409, `${path.basename(file)} berupa symlink; ubah langsung di file aslinya.`);
+    text = readFileSync(file, 'utf8');
+  } catch (err) {
+    if (err instanceof HookError) throw err;
+    if (err.code === 'ENOENT') return { exists: false, data: {}, indent: 2 };
+    throw new HookError(500, `Tidak bisa membaca ${path.basename(file)}: ${err.code ?? err.message}`);
+  }
+  let data;
+  try {
+    data = text.trim() ? JSON.parse(text.replace(/^\uFEFF/, '')) : {};
+  } catch (err) {
+    throw new HookError(409, `${path.basename(file)} bukan JSON yang valid (${err.message}). Perbaiki file itu dulu; Adhitron tidak akan menimpanya.`);
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new HookError(409, `${path.basename(file)} harus berisi objek JSON ({ … }).`);
+  return { exists: true, data, indent: text.match(/^[{[]\r?\n([ \t]+)/)?.[1] ?? 2 };
+};
+
+const writeHooksFile = (file, data, indent) => {
+  const temp = path.join(path.dirname(file), `.settings-${Date.now().toString(36)}.tmp`);
+  writeFileSync(temp, `${JSON.stringify(data, null, indent)}\n`);
+  renameSync(temp, file);
+};
+
+/**
+ * Adds or replaces one command hook: `hooks[event]` is a list of groups; a group is
+ * `{ matcher?, hooks: [{ type: "command", command, timeout? }] }`. Everything else in the file is preserved.
+ */
+export function saveHook({ projectPath, userDir = userConfigDir(), scope, event, matcher, command, timeout }) {
+  if (!EVENT.test(String(event ?? ''))) throw new HookError(400, 'Nama event hook tidak valid.');
+  if (matcher !== undefined && matcher !== null && matcher !== '' && !MATCHER.test(String(matcher))) {
+    throw new HookError(400, 'Matcher hook tidak valid (maks 200 karakter, tanpa baris baru).');
+  }
+  const commandText = String(command ?? '').trim();
+  if (!commandText) throw new HookError(400, 'Perintah hook tidak boleh kosong.');
+  if (commandText.length > HOOK_LIMITS.command) throw new HookError(400, `Perintah hook maksimal ${HOOK_LIMITS.command} karakter.`);
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(commandText)) throw new HookError(400, 'Perintah hook tidak boleh memuat karakter kontrol.');
+  const parsedTimeout = timeout === undefined || timeout === null || timeout === '' ? undefined : Number(timeout);
+  if (parsedTimeout !== undefined && (!Number.isInteger(parsedTimeout) || parsedTimeout < 0 || parsedTimeout > HOOK_LIMITS.timeout)) {
+    throw new HookError(400, `Timeout hook harus bilangan bulat 0–${HOOK_LIMITS.timeout} ms.`);
+  }
+  const file = settingsFile(projectPath, scope, userDir);
+  const { data, indent } = loadHooksFile(file);
+  if (!data.hooks || typeof data.hooks !== 'object' || Array.isArray(data.hooks)) data.hooks = {};
+  const matcherText = matcher ? String(matcher) : undefined;
+  const hook = { type: 'command', command: commandText, ...(parsedTimeout !== undefined ? { timeout: parsedTimeout } : {}) };
+  const groupIndex = (data.hooks[event] ?? []).findIndex((g) => g && typeof g === 'object' && (g.matcher ?? undefined) === matcherText);
+  if (groupIndex === -1) {
+    data.hooks[event] ??= [];
+    if (data.hooks[event].length >= HOOK_LIMITS.hooks) throw new HookError(400, `Maksimal ${HOOK_LIMITS.hooks} hook per event.`);
+    data.hooks[event].push({ ...(matcherText ? { matcher: matcherText } : {}), hooks: [hook] });
+  } else {
+    data.hooks[event][groupIndex].hooks = [hook];
+  }
+  writeHooksFile(file, data, indent);
+  return { hook: { event, matcher: matcherText, command: commandText, timeout: parsedTimeout } };
+}
+
+/** Removes one command hook; a group with no command hooks left is dropped, and an empty event key is dropped too. */
+export function deleteHook({ projectPath, userDir = userConfigDir(), scope, event, matcher, command }) {
+  if (!EVENT.test(String(event ?? ''))) throw new HookError(400, 'Nama event hook tidak valid.');
+  const commandText = String(command ?? '').trim();
+  const file = settingsFile(projectPath, scope, userDir);
+  const { data, indent } = loadHooksFile(file);
+  const groups = Array.isArray(data.hooks?.[event]) ? data.hooks[event] : null;
+  if (!groups) throw new HookError(404, 'Hook tidak ditemukan.');
+  const matcherText = matcher ? String(matcher) : undefined;
+  let removed = false;
+  for (const group of groups) {
+    if (!group || typeof group !== 'object') continue;
+    if ((group.matcher ?? undefined) !== matcherText) continue;
+    const hooks = Array.isArray(group.hooks) ? group.hooks : [];
+    const before = hooks.length;
+    group.hooks = hooks.filter((h) => !(h?.type === 'command' && String(h.command ?? '').trim() === commandText));
+    if (group.hooks.length !== before) removed = true;
+  }
+  data.hooks[event] = groups.filter((group) => !group || !Array.isArray(group.hooks) || group.hooks.length);
+  if (!data.hooks[event].length) delete data.hooks[event];
+  if (!Object.keys(data.hooks).length) delete data.hooks;
+  if (!removed) throw new HookError(404, 'Hook tidak ditemukan.');
+  writeHooksFile(file, data, indent);
+  return { removed: true };
 }
