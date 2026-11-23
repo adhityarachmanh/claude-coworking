@@ -277,6 +277,14 @@ export class StreamTranslator {
   /** Claude Code's system events, shown the way the CLI shows them. */
   onSystem(msg) {
     switch (msg.subtype) {
+      // With --include-hook-events: only a hook that did not succeed is worth a chat row (a success is routine).
+      case 'hook_response':
+        if (msg.outcome && msg.outcome !== 'success') {
+          const why = String(msg.stderr || msg.stdout || msg.output || '').split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+          const label = [msg.hook_event, msg.hook_name].filter(Boolean).join(' · ');
+          this.sink.chat({ kind: 'info', text: truncate(`🪝 Hook gagal${label ? ` (${label})` : ''}${why ? `: ${why}` : '.'}`, 400), level: 'warning' });
+        }
+        break;
       case 'compact_boundary':
         this.sink.chat({ kind: 'info', text: 'Konteks percakapan dipadatkan (compact).' });
         this.status({ compacting: false });

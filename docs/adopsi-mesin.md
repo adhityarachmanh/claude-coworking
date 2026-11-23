@@ -33,6 +33,8 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `--advisor` (model penasihat) | ⚙️ Flag Claude → **Model advisor** → `--advisor` | ✅ |
 | `/fast` (fast mode) | ⚙️ Flag Claude → **Fast mode** → `--settings` `{"fastMode":true}` (flag `/fast` hanya untuk sesi interaktif) | ✅ |
 | `--prompt-suggestions` | ⚙️ Flag Claude → **Saran prompt berikutnya**; bar “Saran berikutnya” di atas kotak pesan mengisi kotak, tidak mengirim sendiri | ✅ |
+| `--autocompact <auto\|tokens>` | ⚙️ Flag Claude → **Auto-compact** (`auto`/`500k`, minimal 100k) → `--autocompact` | ✅ |
+| `--include-hook-events` | ⚙️ Flag Claude → **Event hook di chat** → hook yang gagal muncul sebagai baris peringatan (nama event + baris pertama stderr) | ✅ |
 | `claude auto-mode defaults\|reset`, `/auto-mode-setup` | ⋯ → **Auto mode Claude** (editor `autoMode` di `~/.claude/settings.json`, laptop) | ✅ (reset = kosongkan daftar) |
 | `claude purge` | ⋯ → **Bersihkan data Claude** (pratinjau `--dry-run`, ketik path folder kerja untuk konfirmasi, laptop, tidak saat giliran/antrian berjalan; worktree aktif ikut jadi sasaran) | ✅ |
 | `claude import` (dari Codex/Cursor/…) | 🚫 sesi interaktif yang menulis config agen lain; menjalankannya butuh TTY dan keputusan per item | 🚫 |
@@ -57,6 +59,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Permissions & Policies | Aturan izin (permissions) · 🛡️ Policies | ✅ |
 | Instructions (`instructions`) | 📚 Instruksi tambahan (form config) | ✅ |
 | Web search (`websearch.provider`) | 🔎 Provider web search (form config) | ✅ |
+| Lampiran (teks, gambar, PDF) | kotak pesan; PDF dikirim sebagai `resource` blob ACP | ✅ |
 | Config lanjutan (compaction, warming, snapshots, watcher, formatter, media, tool_output, experimental) | ⚙️ Config lanjutan | ✅ |
 | Providers (login, kustom, headers/body) | 👤 Akun → provider, 🔌 header/body | ✅ |
 | Varian model `#variant` | pemilih model | ✅ |

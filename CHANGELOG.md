@@ -2,6 +2,11 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **⚙️ Auto-compact & event hook Claude.** ⚙️ Flag Claude kini punya **Auto-compact** (`--autocompact`, `auto` atau mis. `500k`, minimal 100k token) dan **Event hook di chat** (`--include-hook-events`). Hook yang gagal muncul sebagai baris peringatan berisi event, nama hook, dan baris pertama stderr; hook yang sukses tidak menambah kebisingan.
+- **📎 PDF ke OpenCode.** Dokumen PDF kini dikirim ke OpenCode sebagai blok `resource` (blob + `application/pdf`), bukan lagi placeholder “tidak bisa dikirim”, sehingga model bisa membacanya seperti di terminal.
+
 ## 1.0.98
 
 - **Perbaikan rilis 1.0.97.** Mengosongkan saran prompt saat pesan dikirim tidak lagi mengirim pembaruan status (itu membuat sesi terlihat menganggur sebelum giliran dimulai, sehingga test izin berlanjut saat sesi masih sibuk). Bar “Saran berikutnya” sekarang disembunyikan di browser begitu pesan terkirim.

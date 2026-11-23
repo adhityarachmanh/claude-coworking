@@ -51,6 +51,8 @@ test('spawn meneruskan flag Claude per project', async () => {
     claudeAdvisor: 'opus',
     claudeFastMode: true,
     claudePromptSuggestions: true,
+    claudeAutocompact: '500k',
+    claudeIncludeHookEvents: true,
   });
   const session = manager.get(project);
   session.spawn(hub.settingsFor(project.id));
@@ -66,6 +68,8 @@ test('spawn meneruskan flag Claude per project', async () => {
   assert.equal(argv[at('--setting-sources') + 1], 'user,project');
   assert.equal(argv[at('--advisor') + 1], 'opus');
   assert.ok(argv.includes('--prompt-suggestions'), 'saran prompt ikut saat dinyalakan');
+  assert.equal(argv[at('--autocompact') + 1], '500k');
+  assert.ok(argv.includes('--include-hook-events'));
   const settingsFile = argv[at('--settings') + 1];
   assert.ok(settingsFile && readFileSync(settingsFile, 'utf8').includes('"fastMode":true'), 'fast mode lewat --settings');
   session.closeChild();

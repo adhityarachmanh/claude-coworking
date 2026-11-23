@@ -496,3 +496,16 @@ test('prompt_suggestion (2.1.328: {type, suggestion, uuid, session_id}) reaches 
   t.handle({ type: 'prompt_suggestion' });
   assert.deepEqual(got, ['Jalankan test lagi']);
 });
+
+test('hook_response (--include-hook-events): hanya kegagalan yang muncul di chat', () => {
+  const { translator, chat } = recorder();
+  translator.handle({ type: 'system', subtype: 'hook_response', hook_event: 'PreToolUse', hook_name: 'lint', outcome: 'success', exit_code: 0, stdout: 'ok' });
+  translator.handle({ type: 'system', subtype: 'hook_response', hook_event: 'PreToolUse', hook_name: 'lint', outcome: 'error', exit_code: 2, stderr: 'eslint: 3 errors\nmore' });
+  const rows = chat();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].kind, 'info');
+  assert.equal(rows[0].level, 'warning');
+  assert.match(rows[0].text, /PreToolUse · lint/);
+  assert.match(rows[0].text, /eslint: 3 errors/);
+  assert.doesNotMatch(rows[0].text, /more/);
+});

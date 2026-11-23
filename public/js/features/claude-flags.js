@@ -25,6 +25,8 @@ function render() {
   set('#cf-advisor', st.claudeAdvisor ?? '');
   $('#cf-fast').checked = st.claudeFastMode === true;
   $('#cf-suggest').checked = st.claudePromptSuggestions === true;
+  set('#cf-autocompact', st.claudeAutocompact ?? '');
+  $('#cf-hook-events').checked = st.claudeIncludeHookEvents === true;
   $('#claude-flags-error').textContent = '';
 }
 
@@ -54,6 +56,8 @@ async function save() {
     claudeAdvisor: advisor,
     claudeFastMode: $('#cf-fast').checked,
     claudePromptSuggestions: $('#cf-suggest').checked,
+    claudeAutocompact: $('#cf-autocompact').value.trim() || null,
+    claudeIncludeHookEvents: $('#cf-hook-events').checked,
   };
   try {
     await api(`/api/projects/${state.active}/settings`, body);

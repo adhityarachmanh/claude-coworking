@@ -934,11 +934,13 @@ export function mentionLinks(text, projectPath) {
   return links;
 }
 
-function promptBlocks(text, attachments = [], projectPath = null) {
+export function promptBlocks(text, attachments = [], projectPath = null) {
   const blocks = [];
   const extra = [];
   for (const a of attachments) {
     if (a.kind === 'image' && a.data) blocks.push({ type: 'image', mimeType: a.mediaType, data: a.data });
+    // ACP `resource` with a blob + mimeType: OpenCode attaches it (PDFs included). Not inlined as text.
+    else if (a.kind === 'pdf' && a.data) blocks.push({ type: 'resource', resource: { uri: `attachment://${encodeURIComponent(a.name)}`, mimeType: 'application/pdf', blob: a.data } });
     else if (typeof a.text === 'string') extra.push(`<file name="${a.name}">\n${a.text}\n</file>`);
     else extra.push(`(lampiran ${a.name} tidak bisa dikirim ke OpenCode)`);
   }

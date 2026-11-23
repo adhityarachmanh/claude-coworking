@@ -64,14 +64,14 @@ export const DEMO_ID = 'demo';
 // 💬 The built-in "Chat umum": a project with the same engines as any other, but its folder is an app-owned sandbox
 // under dataDir, so a general chat never touches a real project folder. A fixed id (never the folder hash).
 export const GENERAL_ID = 'chat-umum';
-export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true, additionalDirectories: [], claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false };
+export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true, additionalDirectories: [], claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false, claudeAutocompact: null, claudeIncludeHookEvents: false };
 
 // 🎛️ Claude's per-project spawn flags. One sanitizer for both the write path (cleanSettings) and settingsFor, so a
 // hand-edited state.json can never reach the spawn arguments.
 const CLAUDE_FALLBACK = /^[\w./:#,-]{0,200}$/;
 const CLAUDE_TOOL_TEXT = /^[\x20-\x7e]{0,500}$/;
 const CLAUDE_SOURCES = /^(user|project|local)(,(user|project|local)){0,2}$/;
-const CLAUDE_FLAG_DEFAULTS = { claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false };
+const CLAUDE_FLAG_DEFAULTS = { claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false, claudeAutocompact: null, claudeIncludeHookEvents: false };
 
 const cleanFlagNumber = (raw, { decimal = false } = {}) => {
   if (raw === null || raw === '') return null;
@@ -143,6 +143,20 @@ function cleanClaudeFlags(base, patch) {
   }
   if (typeof patch.claudeFastMode === 'boolean') next.claudeFastMode = patch.claudeFastMode;
   if (typeof patch.claudePromptSuggestions === 'boolean') next.claudePromptSuggestions = patch.claudePromptSuggestions;
+  if (typeof patch.claudeIncludeHookEvents === 'boolean') next.claudeIncludeHookEvents = patch.claudeIncludeHookEvents;
+  if ('claudeAutocompact' in patch) {
+    const raw = patch.claudeAutocompact;
+    if (raw === '' || raw === null) next.claudeAutocompact = null;
+    else {
+      const text = String(raw).trim();
+      // `--autocompact <auto|tokens>`; a window is at least 100k tokens ("500k" or "500000").
+      const k = /^(\d{1,4})k$/i.exec(text);
+      const n = /^(\d{6,8})$/.exec(text);
+      if (text === 'auto') next.claudeAutocompact = 'auto';
+      else if (k && Number(k[1]) >= 100) next.claudeAutocompact = `${Number(k[1])}k`;
+      else if (n && Number(n[1]) >= 100_000) next.claudeAutocompact = n[1];
+    }
+  }
   return next;
 }
 // Which coding agent runs the project: Claude Code (stream-json) or OpenCode (ACP, src/acp-session.js).
