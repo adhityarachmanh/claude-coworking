@@ -7,7 +7,7 @@ import { DEMO_ID, projectName, state } from '../core/state.js';
 import { openModal } from '../ui/modals.js';
 import { guardCap } from './engine.js';
 
-const ext = { tab: 'plugins', project: null, plugins: null, filter: '', agents: [], editing: null, hooks: [] };
+const ext = { tab: 'plugins', project: null, plugins: null, filter: '', agents: [], editing: null, hooks: [], hookEditing: null };
 const MAX_LIST = 60;
 
 export function openExtensions(tab = 'plugins') {
@@ -147,12 +147,43 @@ function agentFormHtml(a) {
 
 // ---------- hooks ----------
 
+const HOOK_EVENTS = ['SessionStart', 'Setup', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'Notification', 'SubagentStart', 'SubagentStop', 'Stop', 'SessionEnd', 'PreCompact', 'PostCompact', 'PreModelSwitch', 'PostModelSwitch', 'FileChanged', 'CwdChanged', 'DirectoryAdded'];
+const isLocal = () => state.local !== false;
+const flatHooks = () => ext.hooks.flatMap((h) => (h.commands ?? []).map((command) => ({ ...h, command })));
+
 function hooksHtml() {
-  if (!ext.hooks.length) return '<p class="muted small">Tidak ada hooks di settings.json (user, project, pribadi).</p>';
-  return `<p class="muted small">Hooks berjalan otomatis di setiap sesi. Ubah lewat file settings-nya (Memory/editor), atau minta Claude mengubahnya.</p>
-    <ul class="ext-list">${ext.hooks
-      .map((h) => `<li><div><b>${escapeHtml(h.event)}</b> <small class="muted">${escapeHtml(h.matcher)} · ${escapeHtml(h.source)}</small>${h.commands.map((c) => `<pre class="cc-output">${escapeHtml(c)}</pre>`).join('')}</div></li>`)
-      .join('')}</ul>`;
+  if (ext.hookEditing) return hookFormHtml(ext.hookEditing);
+  const rows = ext.hooks.flatMap((h) => (h.commands ?? []).map((command) => ({ ...h, command })));
+  const list = rows.length
+    ? `<ul class="ext-list">${rows
+        .map((h, i) => `<li><div><b>${escapeHtml(h.event)}${h.matcher ? ` <small class="muted">${escapeHtml(h.matcher)}</small>` : ''}</b> <small class="muted">${escapeHtml(h.source)}</small><pre class="cc-output">${escapeHtml(h.command)}</pre></div><div class="ext-actions">${
+          isLocal() || h.scope !== 'user'
+            ? `<button type="button" class="ghost" data-hook-edit="${i}">✎ Edit</button><button type="button" class="ghost danger-text" data-hook-del="${i}">Hapus</button>`
+            : '<small class="muted">ubah dari laptop</small>'
+        }</div></li>`)
+        .join('')}</ul>`
+    : '<p class="muted small">Belum ada hooks di settings.json (user, project, pribadi).</p>';
+  return `<p class="muted small">Hooks menjalankan perintah otomatis di titik tertentu (mis. sebelum tool dipakai). Berlaku mulai sesi berikutnya.</p>
+    ${isLocal() ? '' : '<p class="muted small">🔒 Hook untuk <b>semua project</b> hanya bisa diubah dari laptop.</p>'}
+    ${list}<div class="acct-actions"><button type="button" class="primary" id="hook-new">＋ Hook</button></div>`;
+}
+
+function hookFormHtml(h) {
+  return `<form id="hook-form" class="oc-form">
+    <div class="oc-form-grid">
+      <label class="oc-field"><span>Event</span><input name="event" list="hook-events" required value="${escapeHtml(h.event ?? '')}" placeholder="PreToolUse" autocomplete="off" /></label>
+      <label class="oc-field"><span>Matcher (opsional)</span><input name="matcher" maxlength="200" value="${escapeHtml(h.matcher ?? '')}" placeholder="Edit" autocomplete="off" /></label>
+    </div>
+    <label class="oc-field"><span>Berlaku untuk</span><select name="scope">
+      <option value="local"${h.scope === 'local' ? ' selected' : ''}>Project ini, pribadi (settings.local.json)</option>
+      <option value="project"${h.scope === 'project' ? ' selected' : ''}>Project ini, bersama (settings.json)</option>
+      ${isLocal() ? `<option value="user"${h.scope === 'user' ? ' selected' : ''}>Semua project (~/.claude)</option>` : ''}
+    </select></label>
+    <label class="oc-field"><span>Perintah</span><textarea name="command" rows="3" required>${escapeHtml(h.command ?? '')}</textarea></label>
+    <label class="oc-field"><span>Timeout (ms, opsional)</span><input name="timeout" type="number" min="0" max="600000" step="1" value="${h.timeout ?? ''}" /></label>
+    <datalist id="hook-events">${HOOK_EVENTS.map((e) => `<option value="${e}"></option>`).join('')}</datalist>
+    <div class="acct-actions"><button type="button" class="ghost" data-hook-cancel>Batal</button><button type="submit" class="primary">💾 Simpan</button></div>
+  </form>`;
 }
 
 export function initExtensions() {
@@ -193,8 +224,38 @@ export function initExtensions() {
         toast(err.message, 'warn');
       }
     }
+    if (t.closest('#hook-new')) return (ext.hookEditing = { scope: 'local', event: '', matcher: '', command: '', timeout: '' }), render();
+    if (t.closest('[data-hook-cancel]')) return (ext.hookEditing = null), render();
+    const hookEdit = t.closest('[data-hook-edit]');
+    if (hookEdit) return (ext.hookEditing = flatHooks()[Number(hookEdit.dataset.hookEdit)]), render();
+    const hookDel = t.closest('[data-hook-del]');
+    if (hookDel) {
+      const h = flatHooks()[Number(hookDel.dataset.hookDel)];
+      if (!window.confirm(`Hapus hook ${h.event}${h.matcher ? `:${h.matcher}` : ''}?\n\n${h.command}`)) return;
+      try {
+        await api(`/api/projects/${ext.project}/hooks/delete`, { scope: h.scope, event: h.event, matcher: h.matcher, command: h.command });
+        toast(`Hook ${h.event} dihapus.`, 'ok');
+        load();
+      } catch (err) {
+        toast(err.message, 'warn');
+      }
+    }
   });
   $('#ext-body').addEventListener('submit', async (e) => {
+    if (e.target.id === 'hook-form') {
+      e.preventDefault();
+      const f = e.target.elements;
+      const body = { scope: f.scope.value, event: f.event.value.trim(), matcher: f.matcher.value.trim(), command: f.command.value.trim(), timeout: f.timeout.value };
+      try {
+        await api(`/api/projects/${ext.project}/hooks/save`, body);
+        toast(`Hook ${body.event} tersimpan. Berlaku mulai sesi berikutnya.`, 'ok');
+        ext.hookEditing = null;
+        load();
+      } catch (err) {
+        toast(err.message, 'warn');
+      }
+      return;
+    }
     if (e.target.id !== 'ext-agent-form') return;
     e.preventDefault();
     const f = e.target.elements;

@@ -159,12 +159,12 @@ export function deleteAgent(projectPath, { scope, name }, home) {
 /** The hooks configured in each settings file (user, project, local): [{ source, event, matcher, commands }]. */
 export function listHooks(projectPath, home = os.homedir()) {
   const files = [
-    ['Semua project (~/.claude/settings.json)', path.join(home, '.claude', 'settings.json')],
-    ['Project (.claude/settings.json)', path.join(projectPath, '.claude', 'settings.json')],
-    ['Project, pribadi (.claude/settings.local.json)', path.join(projectPath, '.claude', 'settings.local.json')],
+    ['user', 'Semua project (~/.claude/settings.json)', path.join(home, '.claude', 'settings.json')],
+    ['project', 'Project (.claude/settings.json)', path.join(projectPath, '.claude', 'settings.json')],
+    ['local', 'Project, pribadi (.claude/settings.local.json)', path.join(projectPath, '.claude', 'settings.local.json')],
   ];
   const out = [];
-  for (const [source, file] of files) {
+  for (const [scope, source, file] of files) {
     let hooks;
     try {
       hooks = JSON.parse(readFileSync(file, 'utf8')).hooks;
@@ -175,7 +175,7 @@ export function listHooks(projectPath, home = os.homedir()) {
     for (const [event, groups] of Object.entries(hooks)) {
       for (const g of Array.isArray(groups) ? groups : []) {
         const commands = (g?.hooks ?? []).map((h) => (h?.type === 'command' ? String(h.command ?? '') : `${h?.type ?? '?'}${h?.url ? ` ${h.url}` : ''}`)).filter(Boolean);
-        out.push({ source, file, event, matcher: String(g?.matcher ?? '') || '(semua)', commands: commands.map((c) => c.slice(0, 500)) });
+        out.push({ scope, source, file, event, matcher: String(g?.matcher ?? ''), commands: commands.map((c) => c.slice(0, 500)) });
       }
     }
   }
