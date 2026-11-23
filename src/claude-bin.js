@@ -39,18 +39,41 @@ function setupRuntimeDirs() {
   }
 }
 
+/** A real Node executable: the packaged app runs as Node SEA (process.execPath is Adhitron.exe), which cannot run a .js/.cjs script. */
+function nodeRuntime() {
+  const explicit = process.env.OFFICE_NODE_BIN;
+  if (explicit && existsSync(explicit)) return explicit;
+  if (/^node(\.exe)?$/i.test(path.basename(process.execPath))) return process.execPath;
+  for (const dir of (process.env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
+    const candidate = path.join(dir, WIN ? 'node.exe' : 'node');
+    if (existsSync(candidate)) return candidate;
+  }
+  for (const dir of setupRuntimeDirs()) {
+    const candidate = path.join(dir, WIN ? 'node.exe' : 'node');
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 /** The npm package (real binary, an older cli.js, or the current cli-wrapper.cjs) in each folder. */
 function findPackages(dirs) {
   for (const dir of dirs) {
     const pkg = path.join(dir, 'node_modules', '@anthropic-ai', 'claude-code');
     const native = path.join(pkg, 'bin', EXE);
     if (existsSync(native)) return { command: native, args: [] };
+    // The platform package behind bin/claude.exe survives a self-update that could not replace the top-level copy
+    // (typically a running session holds it open). Prefer it: it is the real native program.
+    for (const base of [pkg, dir]) {
+      const platform = path.join(base, 'node_modules', '@anthropic-ai', `claude-code-${process.platform}-${process.arch}`, EXE);
+      if (existsSync(platform)) return { command: platform, args: [] };
+    }
+    const node = nodeRuntime();
     const cli = path.join(pkg, 'cli.js');
-    if (existsSync(cli)) return { command: process.execPath, args: [cli] };
+    if (node && existsSync(cli)) return { command: node, args: [cli] };
     // After a self-update while a session holds bin/claude.exe open, the installer leaves only
     // bin/claude.exe.old plus cli-wrapper.cjs. The wrapper still runs the installed CLI.
     const wrapper = path.join(pkg, 'cli-wrapper.cjs');
-    if (existsSync(wrapper)) return { command: process.execPath, args: [wrapper] };
+    if (node && existsSync(wrapper)) return { command: node, args: [wrapper] };
   }
   return null;
 }

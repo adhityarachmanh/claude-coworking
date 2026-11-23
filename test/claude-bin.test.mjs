@@ -43,3 +43,25 @@ test('windowsInstallDirs: folder installs version manager dan npm global ikut di
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('findClaude: binary platform di dalam paket dipakai saat bin/claude.exe hilang', { skip: process.platform !== 'win32' }, () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), 'office-cplat-'));
+  const pkg = path.join(tmp, 'node_modules', '@anthropic-ai', 'claude-code');
+  const platform = path.join(pkg, 'node_modules', '@anthropic-ai', `claude-code-${process.platform}-${process.arch}`);
+  mkdirSync(platform, { recursive: true });
+  writeFileSync(path.join(platform, 'claude.exe'), 'native');
+  const saved = Object.fromEntries(['PATH', 'CLAUDE_BIN', 'NVM_HOME', 'LOCALAPPDATA', 'APPDATA', 'ProgramFiles', 'OFFICE_NODE_BIN'].map((key) => [key, process.env[key]]));
+  try {
+    process.env.PATH = tmp;
+    delete process.env.CLAUDE_BIN;
+    process.env.OFFICE_NODE_BIN = path.join(tmp, 'absent');
+    for (const key of ['NVM_HOME', 'LOCALAPPDATA', 'APPDATA', 'ProgramFiles']) process.env[key] = path.join(tmp, 'absent');
+    assert.deepEqual(findClaude(), { command: path.join(platform, 'claude.exe'), args: [] });
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
