@@ -3,7 +3,7 @@
 // subagent (~/.claude/agents: every project) and the GitHub login: laptop only (a plugin runs code on this laptop;
 // a user agent steers every project, like plugins and MCP servers; gh's login opens a device flow for this
 // machine). A project's own agents (.claude/agents) can be edited over Tailscale too.
-import { AdminError, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listHooks, listPlugins, pluginAction, saveAgent, saveHook } from '../claude-admin.js';
+import { AdminError, claudePurgePlan, claudePurgeProject, deleteAgent, deleteHook, HOOK_EVENTS, listAgents, listHooks, listPlugins, pluginAction, readAutoMode, saveAgent, saveAutoMode, saveHook } from '../claude-admin.js';
 import { gitAction } from '../git.js';
 import { checkPrBranch, createPr, findGh, ghLoginCancel, ghLoginStart, ghLoginState, ghStatus, PrError } from '../github-pr.js';
 import { json } from './http.js';
@@ -81,6 +81,40 @@ export function register(router) {
     session.reloadSettings?.();
     return removed;
   }, { claude: true })), { maxBody: 4096 });
+
+  // 🎛️ Auto mode (classifier rules): user settings only, so the laptop is the only place to change it. Claude reads
+  // them when a process starts, so idle Claude processes are closed to pick them up on the next prompt.
+  router.post('/api/claude/auto-mode', guard(() => readAutoMode(), { laptop: true }));
+  router.post('/api/claude/auto-mode/save', guard((ctx, req, res, params, body) => {
+    const saved = saveAutoMode(body);
+    ctx.sessions?.accountChanged?.();
+    return saved;
+  }, { laptop: true }), { maxBody: 64 * 1024 });
+
+  // 🧹 Bersihkan data lokal Claude untuk satu project (`claude purge`): laptop only, never during a turn or with
+  // queued work, and the destructive call needs the workspace path typed back as confirmation.
+  const purgeBusy = (ctx, session, project) => {
+    if (session?.turnActive?.() || session?.busy || session?.inflight?.size) return true;
+    return Boolean(ctx.taskQueue?.queues?.[project.id]?.items?.some((i) => i.status === 'waiting' || i.status === 'running'));
+  };
+  const purgeTarget = (ctx, project) => ctx.hub.workspacePathFor(project.id) ?? project.path;
+  router.post('/api/projects/:id/claude-purge/plan', withSession(guard(async (ctx, req, res, { project, session }) => {
+    if (purgeBusy(ctx, session, project)) throw new AdminError(409, 'Tidak bisa membersihkan data saat masih ada giliran atau antrian yang berjalan.');
+    const target = purgeTarget(ctx, project);
+    return { ...(await claudePurgePlan(ctx.claude, target)), path: target };
+  }, { laptop: true, claude: true })));
+  router.post('/api/projects/:id/claude-purge', withSession(guard(async (ctx, req, res, { project, session }, body) => {
+    if (purgeBusy(ctx, session, project)) throw new AdminError(409, 'Tidak bisa membersihkan data saat masih ada giliran atau antrian yang berjalan.');
+    const target = purgeTarget(ctx, project);
+    if (String(body?.confirm ?? '') !== target) throw new AdminError(400, 'Ketik path folder kerja persis untuk mengonfirmasi.');
+    // Close the idle process first so Claude Code cannot write the deleted state back; the chat column in the app stays,
+    // but the next prompt starts a new Claude session instead of resuming a transcript that no longer exists.
+    session.closeChild();
+    const result = await claudePurgeProject(ctx.claude, target);
+    ctx.hub.setSessionId(project.id, null);
+    ctx.hub.clearInterrupted(project.id);
+    return result;
+  }, { laptop: true, claude: true })));
 
   // ⇡ Pull request
   router.post('/api/github/status', guard(async () => ({ ...(await ghStatus(ghBin)), login: ghLoginState() })));

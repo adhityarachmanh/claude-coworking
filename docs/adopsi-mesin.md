@@ -4,7 +4,7 @@ Tujuan Adhitron: mengoperasikan Claude Code dan OpenCode dari aplikasi tanpa CLI
 
 Sumber otoritatif: https://code.claude.com/docs (cli-reference, commands, hooks, settings, permissions, skills, output-styles, plugins, sub-agents, mcp, agent-view, worktrees, goal, scheduled-tasks) dan https://opencode.ai/docs (config, commands, policies, permissions, skills, plugins, providers, websearch, mcp-servers, cli). Ditinjau ulang 2026-11-23.
 
-Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (disebut alasannya) · 🔜 = direncanakan (Fase 6).
+Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (disebut alasannya).
 
 ## Claude Code
 
@@ -30,6 +30,12 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `/loop` | diteruskan sebagai command (katalog `/loop`) | ✅ |
 | `/fewer-permission-prompts` | diteruskan sebagai skill (katalog) | ✅ |
 | Flag `--fallback-model`, `--max-turns`, `--max-budget-usd`, `--tools`, `--allowedTools`, `--disallowedTools`, `--setting-sources` | ⚙️ Flag Claude (menu) → setelan project → spawn | ✅ |
+| `--advisor` (model penasihat) | ⚙️ Flag Claude → **Model advisor** → `--advisor` | ✅ |
+| `/fast` (fast mode) | ⚙️ Flag Claude → **Fast mode** → `--settings` `{"fastMode":true}` (flag `/fast` hanya untuk sesi interaktif) | ✅ |
+| `--prompt-suggestions` | ⚙️ Flag Claude → **Saran prompt berikutnya**; bar “Saran berikutnya” di atas kotak pesan mengisi kotak, tidak mengirim sendiri | ✅ |
+| `claude auto-mode defaults\|reset`, `/auto-mode-setup` | ⋯ → **Auto mode Claude** (editor `autoMode` di `~/.claude/settings.json`, laptop) | ✅ (reset = kosongkan daftar) |
+| `claude purge` | ⋯ → **Bersihkan data Claude** (pratinjau `--dry-run`, ketik path folder kerja untuk konfirmasi, laptop, tidak saat giliran/antrian berjalan; worktree aktif ikut jadi sasaran) | ✅ |
+| `claude import` (dari Codex/Cursor/…) | 🚫 sesi interaktif yang menulis config agen lain; menjalankannya butuh TTY dan keputusan per item | 🚫 |
 | Flag system prompt (`--system-prompt`/`--append-…`) | ⚠ di luar cakupan: butuh teks prompt khusus per sesi; bisa lewat output style/CLAUDE.md | 🚫 |
 | `/init`, `/doctor`, `/status`, `/usage` | sebagian: ⚙ Kompatibilitas Claude Code | ✅ (status/usage via 👤 Akun & status bar) |
 | `/sandbox` | Windows native tidak di-sandbox; nilai ~0 | 🚫 |

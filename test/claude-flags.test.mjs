@@ -96,3 +96,20 @@ test('settingsFor: state.json yang diedit tangan tidak bisa mengirim argumen ane
   assert.equal(s.claudeTools, null);
   assert.equal(s.claudeSettingSources, null);
 });
+
+test('cleanSettings: advisor, fast mode, dan saran prompt divalidasi', () => {
+  const hub = new Hub({ dataDir: mkdtempSync(path.join(tmpdir(), 'cf-adv-')) });
+  const project = hub.upsertProject(mkdtempSync(path.join(tmpdir(), 'cf-advp-')), 'custom');
+  const defaults = hub.settingsFor(project.id);
+  assert.equal(defaults.claudeAdvisor, '');
+  assert.equal(defaults.claudeFastMode, false);
+  assert.equal(defaults.claudePromptSuggestions, false);
+  hub.updateSettings(project.id, { claudeAdvisor: 'opus', claudeFastMode: true, claudePromptSuggestions: true });
+  assert.equal(hub.settingsFor(project.id).claudeAdvisor, 'opus');
+  assert.equal(hub.settingsFor(project.id).claudeFastMode, true);
+  assert.equal(hub.settingsFor(project.id).claudePromptSuggestions, true);
+  hub.updateSettings(project.id, { claudeAdvisor: '--evil', claudeFastMode: 'yes', claudePromptSuggestions: 'yes' });
+  assert.equal(hub.settingsFor(project.id).claudeAdvisor, 'opus', 'nilai berawalan - diabaikan');
+  assert.equal(hub.settingsFor(project.id).claudeFastMode, true, 'bukan boolean diabaikan');
+  assert.equal(hub.settingsFor(project.id).claudePromptSuggestions, true, 'bukan boolean diabaikan');
+});

@@ -29,6 +29,13 @@ test('parseSkillFrontmatter: key:value sederhana + body; tanpa frontmatter = met
   assert.deepEqual(parseSkillFrontmatter('# Tanpa frontmatter').meta, {});
 });
 
+test('parseSkillFrontmatter: description blok YAML (>- dan |) terbaca sebagai teks', () => {
+  const folded = parseSkillFrontmatter('---\nname: Neon\ndescription: >-\n  Skill untuk Neon\n  auth dan data.\n---\n\nIsi\n');
+  assert.equal(folded.meta.description, 'Skill untuk Neon auth dan data.');
+  const literal = parseSkillFrontmatter('---\nname: X\ndescription: |\n  Baris satu\n  baris dua\n---\nIsi\n');
+  assert.equal(literal.meta.description, 'Baris satu\nbaris dua');
+});
+
 test('skillRoots: Claude & OpenCode, project + user, precedence naik', () => {
   const claude = skillRoots({ engine: 'claude', projectPath: 'C:/p', home: 'C:/h' }).map((r) => r.dir.replace(/\\/g, '/'));
   assert.ok(claude.some((d) => d.endsWith('p/.claude/skills')), 'project .claude/skills');

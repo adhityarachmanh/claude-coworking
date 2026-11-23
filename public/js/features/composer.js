@@ -29,6 +29,7 @@ import { composerHints, hintLine } from './hints.js';
 import { placeholders, tabToPlaceholder } from './templates.js';
 import { renderQueueChip } from './queue.js';
 import { renderVoice } from './voice.js';
+import { renderPromptSuggestion } from './prompt-suggestion.js';
 import { closeModal, openModal } from '../ui/modals.js';
 
 // A shorter hint fits a phone-width composer on one line.
@@ -120,6 +121,7 @@ export function renderComposer() {
   renderModelStale(st);
   renderModeChoice(st);
   renderVoice();
+  renderPromptSuggestion(st);
   renderSettingsChip(st);
   renderFoldFlags(st);
   applyReadOnly();

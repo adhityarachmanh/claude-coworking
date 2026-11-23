@@ -48,6 +48,9 @@ test('spawn meneruskan flag Claude per project', async () => {
     claudeAllowedTools: ['Read', 'Bash(git log *)'],
     claudeDisallowedTools: ['Edit'],
     claudeSettingSources: 'user,project',
+    claudeAdvisor: 'opus',
+    claudeFastMode: true,
+    claudePromptSuggestions: true,
   });
   const session = manager.get(project);
   session.spawn(hub.settingsFor(project.id));
@@ -61,6 +64,10 @@ test('spawn meneruskan flag Claude per project', async () => {
   assert.deepEqual(argv.slice(at('--allowedTools') + 1, at('--allowedTools') + 3), ['Read', 'Bash(git log *)']);
   assert.equal(argv[at('--disallowedTools') + 1], 'Edit');
   assert.equal(argv[at('--setting-sources') + 1], 'user,project');
+  assert.equal(argv[at('--advisor') + 1], 'opus');
+  assert.ok(argv.includes('--prompt-suggestions'), 'saran prompt ikut saat dinyalakan');
+  const settingsFile = argv[at('--settings') + 1];
+  assert.ok(settingsFile && readFileSync(settingsFile, 'utf8').includes('"fastMode":true'), 'fast mode lewat --settings');
   session.closeChild();
 });
 

@@ -64,14 +64,14 @@ export const DEMO_ID = 'demo';
 // 💬 The built-in "Chat umum": a project with the same engines as any other, but its folder is an app-owned sandbox
 // under dataDir, so a general chat never touches a real project folder. A fixed id (never the folder hash).
 export const GENERAL_ID = 'chat-umum';
-export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true, additionalDirectories: [], claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null };
+export const DEFAULT_SETTINGS = { mode: DEFAULT_MODE, model: '', modelAuto: false, effort: '', effortAuto: false, team: true, engine: 'claude', modelTiers: {}, ciFollow: true, additionalDirectories: [], claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false };
 
 // 🎛️ Claude's per-project spawn flags. One sanitizer for both the write path (cleanSettings) and settingsFor, so a
 // hand-edited state.json can never reach the spawn arguments.
 const CLAUDE_FALLBACK = /^[\w./:#,-]{0,200}$/;
 const CLAUDE_TOOL_TEXT = /^[\x20-\x7e]{0,500}$/;
 const CLAUDE_SOURCES = /^(user|project|local)(,(user|project|local)){0,2}$/;
-const CLAUDE_FLAG_DEFAULTS = { claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null };
+const CLAUDE_FLAG_DEFAULTS = { claudeFallbackModel: '', claudeMaxTurns: null, claudeMaxBudgetUsd: null, claudeTools: null, claudeAllowedTools: [], claudeDisallowedTools: [], claudeSettingSources: null, claudeAdvisor: '', claudeFastMode: false, claudePromptSuggestions: false };
 
 const cleanFlagNumber = (raw, { decimal = false } = {}) => {
   if (raw === null || raw === '') return null;
@@ -134,6 +134,15 @@ function cleanClaudeFlags(base, patch) {
       if (value !== undefined) next.claudeSettingSources = value;
     }
   }
+  if ('claudeAdvisor' in patch) {
+    if (patch.claudeAdvisor === '' || patch.claudeAdvisor === null) next.claudeAdvisor = '';
+    else {
+      const value = cleanFlagText(patch.claudeAdvisor, /^[\w./:#-]{1,100}$/);
+      if (value !== undefined) next.claudeAdvisor = value;
+    }
+  }
+  if (typeof patch.claudeFastMode === 'boolean') next.claudeFastMode = patch.claudeFastMode;
+  if (typeof patch.claudePromptSuggestions === 'boolean') next.claudePromptSuggestions = patch.claudePromptSuggestions;
   return next;
 }
 // Which coding agent runs the project: Claude Code (stream-json) or OpenCode (ACP, src/acp-session.js).

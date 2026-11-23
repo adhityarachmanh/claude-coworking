@@ -2,6 +2,16 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🔧 Cek versi Claude Code tidak lagi gagal setelah update.** Setelah Claude Code memperbarui diri saat sesi berjalan, paket npm bisa kehilangan `bin/claude.exe` (hanya menyisakan `claude.exe.old` dan `cli-wrapper.cjs`), dan shim nvm-windows gagal menjalankannya karena path berisi spasi. Aplikasi kini menjalankan `cli-wrapper.cjs` bila binary native hilang, jadi cek versi/kontrak membaca versi yang benar-benar terpasang (di mesin ini `2.1.328`) alih-alih melaporkan “1 cek gagal: versi”. Setelah memperbarui, tekan **Cek ulang** di kartu kompatibilitas.
+- **🧠 Advisor & fast mode per project.** ⚙️ Flag Claude kini punya **Model advisor** (`--advisor`) dan **Fast mode**. Karena `/fast` hanya ada di sesi interaktif, fast mode untuk proses `-p` dinyalakan lewat `--settings {"fastMode":true}` yang digabung dengan setelan sesi lain. Keduanya hanya berlaku pada model/provider yang mendukung; fast mode bisa lebih mahal.
+- **🎛️ Auto mode Claude.** ⋯ → **Auto mode Claude** mengedit aturan classifier (`environment`, `allow`, `soft_deny`, `hard_deny`, `classifyAllShell`) di `~/.claude/settings.json` untuk semua project. Kunci lain di file tetap utuh, file rusak/symlink ditolak, dan hanya bisa diubah dari laptop. Proses Claude yang sedang menganggur ditutup agar aturan dipakai pada pesan berikutnya; yang sedang bekerja menyusul setelah gilirannya.
+- **🧹 Bersihkan data Claude per project.** ⋯ → **Bersihkan data Claude** menjalankan `claude purge`: pratinjau `--dry-run` lebih dulu (termasuk peringatan `backups/`), lalu path folder kerja harus diketik persis untuk menghapus transkrip, daftar tugas Claude, riwayat perubahan file, riwayat prompt, dan entri project di `~/.claude.json`. Folder project, chat Adhitron, backup, dan shell-snapshot tidak dihapus. Bila worktree aktif, yang dibersihkan folder worktree itu. Hanya dari laptop dan tidak saat giliran/antrian berjalan; project tanpa data Claude dilaporkan kosong, bukan gagal.
+- **💡 Saran prompt berikutnya.** ⚙️ Flag Claude → **Saran prompt berikutnya** menyalakan `--prompt-suggestions`; bar “Saran berikutnya” di atas kotak pesan mengisi kotak saat diklik (tidak pernah terkirim sendiri) dan hilang saat pesan berikutnya dikirim.
+- **🧩 Frontmatter skill berbentuk blok.** `description: >-` dan `|` (YAML blok) kini terbaca utuh sebagai deskripsi skill, bukan baris `>-` saja; baris skill di daftar dirapikan dan penjelasan folder bisa dilipat.
+- **📱 Field Model di HP.** Kolom model di pengaturan giliran kini selebar field lain, baris model setinggi 44 px, dan label sumber model dipendekkan agar tidak meluber di layar sempit.
+
 ## 1.0.96
 
 - **Label tombol menyebut hasilnya.** Tombol kirim chat menjadi **Kirim pesan**, dan tombol simpan di dialog menyebut objeknya: **Simpan config**, **Simpan flag**, **Simpan hook**, **Simpan agent**, **Simpan gaya**, **Simpan command**. Ikon aksi (💾, ↻, ✕) tetap.

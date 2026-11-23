@@ -12,7 +12,8 @@ import { openWorktree } from './worktree.js';
 import { openAddDirs } from './add-dirs.js';
 import { openSkills } from './skills.js';
 import { openOutputStyle } from './output-styles.js';
-import { openClaudeFlags } from './claude-flags.js';
+import { openClaudeFlags, openAutoMode } from './claude-flags.js';
+import { openPurge } from './claude-purge.js';
 
 export function toggleMoreMenu(open = $('#more-menu').hidden) {
   $('#more-menu').hidden = !open;
@@ -99,6 +100,8 @@ export function initMoreMenu() {
       else if (item.dataset.more === 'skills') openSkills();
       else if (item.dataset.more === 'style') openOutputStyle();
       else if (item.dataset.more === 'claude-flags') openClaudeFlags();
+      else if (item.dataset.more === 'auto-mode') openAutoMode();
+      else if (item.dataset.more === 'purge') openPurge();
       else if (item.dataset.more === 'roster') openRoster();
       else if (item.dataset.more === 'export-session') await exportActiveSession();
       else if (item.dataset.more === 'terminal') {

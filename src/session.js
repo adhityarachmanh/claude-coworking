@@ -49,7 +49,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const EFFORT_LABEL = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
 
 // The team setting needs a fresh process, and so does a change of workspace (e.g. between a folder and its worktree).
-const restartKey = (s) => String(s.team) + '|' + (s.workspacePath ?? '') + '|' + (s.additionalDirectories ?? []).join('\n') + '|' + String(s.claudeFallbackModel ?? '') + '|' + String(s.claudeMaxTurns ?? '') + '|' + String(s.claudeMaxBudgetUsd ?? '') + '|' + String(s.claudeTools ?? '') + '|' + (Array.isArray(s.claudeAllowedTools) ? s.claudeAllowedTools : []).join('\n') + '|' + (Array.isArray(s.claudeDisallowedTools) ? s.claudeDisallowedTools : []).join('\n') + '|' + String(s.claudeSettingSources ?? '');
+const restartKey = (s) => String(s.team) + '|' + (s.workspacePath ?? '') + '|' + (s.additionalDirectories ?? []).join('\n') + '|' + String(s.claudeFallbackModel ?? '') + '|' + String(s.claudeMaxTurns ?? '') + '|' + String(s.claudeMaxBudgetUsd ?? '') + '|' + String(s.claudeTools ?? '') + '|' + (Array.isArray(s.claudeAllowedTools) ? s.claudeAllowedTools : []).join('\n') + '|' + (Array.isArray(s.claudeDisallowedTools) ? s.claudeDisallowedTools : []).join('\n') + '|' + String(s.claudeSettingSources ?? '') + '|' + String(s.claudeAdvisor ?? '') + '|' + String(Boolean(s.claudeFastMode)) + '|' + String(Boolean(s.claudePromptSuggestions));
 
 const streamArgs = (claude) => [...claude.args, '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
 
@@ -164,26 +164,32 @@ export class SessionManager {
   }
 
   /**
-   * The team as files for `--agents <file>` and `--append-system-prompt-file` (inline they overflow Windows'
-   * command line). Content-addressed names: a process still running with the previous team keeps its files;
-   * older ones are pruned (only the newest few stay).
+   * One `--settings` file for the per-session switches that only exist at launch: deny-unanswered (2.1.319+) and
+   * fast mode (in `-p`, `/fast` only works when the session started with `fastMode` in this value). Null when neither
+   * applies, so no flag is passed.
    */
-  /**
-   * 🤖 Claude Code's `--settings` file for "deny an unanswered permission request" (2.1.319+). A dedicated file, so the
-   * user's own settings stay untouched and the behaviour disappears the moment the toggle is off (the flag is simply
-   * not passed). Written once; its content is a constant.
-   */
-  denySettingsFile() {
+  claudeSettingsFile(settings = {}) {
+    const config = {};
+    if (shouldPassDenySettings(settings)) config.permissions = { denyInsteadOfPrompting: true };
+    if (settings.claudeFastMode === true) config.fastMode = true;
+    if (!Object.keys(config).length) return null;
     const dir = path.join(this.hub.dataDir ?? os.tmpdir(), 'claude');
-    const file = path.join(dir, 'deny-unanswered.json');
+    const hash = createHash('sha256').update(JSON.stringify(config)).digest('hex').slice(0, 12);
+    const file = path.join(dir, `session-${hash}.json`);
     if (!existsSync(file)) {
       mkdirSync(dir, { recursive: true });
-      writeFileSync(file, JSON.stringify({ permissions: { denyInsteadOfPrompting: true } }), 'utf8');
+      writeFileSync(file, JSON.stringify(config), 'utf8');
     }
     return file;
   }
 
-  teamFiles() {    const dir = path.join(this.hub.dataDir ?? os.tmpdir(), 'team');
+  /**
+   * The team as files for `--agents <file>` and `--append-system-prompt-file` (inline they overflow Windows'
+   * command line). Content-addressed names: a process still running with the previous team keeps its files;
+   * older ones are pruned (only the newest few stay).
+   */
+  teamFiles() {
+    const dir = path.join(this.hub.dataDir ?? os.tmpdir(), 'team');
     const agents = JSON.stringify(this.agents);
     const hash = createHash('sha256').update(agents).update('\0').update(this.teamPrompt ?? '').digest('hex').slice(0, 16);
     const agentsFile = path.join(dir, `agents-${hash}.json`);
@@ -493,6 +499,7 @@ export class ClaudeSession {
       throw Object.assign(new Error(MODE_CHOICE_MESSAGE), { status: 409, code: 'mode-choice' });
     }
     this.hub.clearInterrupted(this.id); // the user carries on (or starts over): the cut-short notice is done
+    this.hub.setStatus(this.id, { suggestion: null }); // a new prompt makes the previous prediction stale
     const uuid = randomUUID();
     const { queueChatId, ...fields } = extra ?? {};
     // Only a bubble that is still in this project's chat can be reused: a trimmed/deleted one gets a fresh bubble.
@@ -580,7 +587,7 @@ export class ClaudeSession {
     this.clearHandoffContext();
     this.hub.clearInterrupted(this.id);
     this.hub.setSessionId(this.id, sessionId);
-    this.hub.setStatus(this.id, { todos: null, context: null, tasks: null, title: null }); // known again after the first turn
+    this.hub.setStatus(this.id, { todos: null, context: null, tasks: null, title: null, suggestion: null }); // known again after the first turn
     this.hub.chat(this.id, { kind: 'divider', text: `Melanjutkan sesi ${sessionId.slice(0, 8)}` });
     for (const msg of history) this.hub.chat(this.id, msg);
   }
@@ -620,7 +627,7 @@ export class ClaudeSession {
     this.closeChild();
     this.hub.clearInterrupted(this.id);
     this.hub.setSessionId(this.id, null);
-    this.hub.setStatus(this.id, { todos: null, context: null, tasks: null, title: null });
+    this.hub.setStatus(this.id, { todos: null, context: null, tasks: null, title: null, suggestion: null });
     this.shellContext = [];
     this.resumeAt = null;
     this.chainLeaf = null;
@@ -903,11 +910,14 @@ export class ClaudeSession {
     if (settings.claudeAllowedTools?.length) args.push('--allowedTools', ...settings.claudeAllowedTools);
     if (settings.claudeDisallowedTools?.length) args.push('--disallowedTools', ...settings.claudeDisallowedTools);
     if (settings.claudeSettingSources) args.push('--setting-sources', settings.claudeSettingSources);
+    if (settings.claudeAdvisor) args.push('--advisor', settings.claudeAdvisor);
+    if (settings.claudePromptSuggestions) args.push('--prompt-suggestions');
     // 📂 Extra folders outside the project. One variadic flag: `--add-dir <directories...>` (Claude Code 2.1.328).
     if (settings.additionalDirectories?.length) args.push('--add-dir', ...settings.additionalDirectories);
     // 🤖 An unanswered permission request is DENIED instead of hanging the turn (Claude Code 2.1.319+). Plan already
     // denies everything, so the flag is redundant there and is not passed (fewer files, nothing to explain).
-    if (shouldPassDenySettings(settings)) args.push('--settings', this.m.denySettingsFile());
+    const sessionSettings = this.m.claudeSettingsFile(settings);
+    if (sessionSettings) args.push('--settings', sessionSettings);
     if (settings.team && Object.keys(this.m.agents).length) {
       // As files, not inline JSON: 17 roles' prompts exceed Windows' 32,767-char command line (spawn ENAMETOOLONG).
       // `--agents <file>` works with -p; the Lead's prompt goes the same way.
@@ -950,6 +960,7 @@ export class ClaudeSession {
       chat: (msg) => this.hub.chat(this.id, msg),
       updateChat: (chatId, patch) => this.hub.updateChat(this.id, chatId, patch),
       status: (patch) => this.hub.setStatus(this.id, patch),
+      suggestion: (text) => this.hub.setStatus(this.id, { suggestion: { text, at: Date.now() } }),
       gitPushed: () => this.hub.ciWatch?.(this.id),
     }, { projectPath: this.project.path });
 

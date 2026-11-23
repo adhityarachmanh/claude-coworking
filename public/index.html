@@ -158,6 +158,8 @@
               <button role="menuitem" data-more="skills">🧩 Skills…</button>
               <button role="menuitem" data-more="style" data-cap="permissions" title="Gaya jawaban Claude: bawaan atau kustom (.claude/output-styles)">🎭 Output style…</button>
               <button role="menuitem" data-more="claude-flags" data-cap="permissions" title="Flag Claude per project: model cadangan, batas giliran/anggaran, tool, sumber setting">⚙️ Flag Claude…</button>
+              <button role="menuitem" data-more="auto-mode" data-cap="permissions" title="Aturan classifier Auto mode Claude (semua project, laptop)">🎛️ Auto mode Claude…</button>
+              <button role="menuitem" data-more="purge" data-cap="permissions" title="Hapus riwayat, memory, dan snapshot Claude Code untuk project ini (bukan folder project)">🧹 Bersihkan data Claude…</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
               <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
@@ -238,6 +240,12 @@
             <p id="model-engine-note" class="muted small model-engine-note">Memilih model dari sumber lain mengirim ringkasan percakapan ini ke sumber itu.</p>
           </div>
           <div id="suggest" class="suggest" hidden></div>
+          <!-- 💡 Claude's predicted next prompt (--prompt-suggestions): fills the box, never sends by itself -->
+          <div id="prompt-suggestion" class="prompt-suggestion" role="status" aria-live="polite" hidden>
+            <span class="ps-label">Saran berikutnya</span>
+            <button type="button" id="prompt-suggestion-text" class="ps-text" title="Isi kotak pesan dengan saran ini"></button>
+            <button type="button" id="prompt-suggestion-dismiss" class="ghost icon" title="Tutup saran" aria-label="Tutup saran">✕</button>
+          </div>
           <!-- 🎤 what is being heard (interim), before it lands in the box at the cursor -->
           <div id="voice-live" class="voice-live" role="status" aria-live="polite"></div>
           <div id="attachments" class="attachments" hidden></div>
@@ -1535,6 +1543,32 @@
     </div>
 
     <!-- 🔔 Pengaturan notifikasi (features/notify.js): per device (localStorage), also on a phone (Ctrl+P / 🔎) -->
+    <div id="auto-mode-modal" class="modal" hidden>
+      <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="auto-mode-title">
+        <div class="modal-head"><b id="auto-mode-title">Auto mode Claude</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Aturan classifier Auto mode, disimpan di <code>~/.claude/settings.json</code> dan berlaku untuk semua project di laptop ini. Satu entri per baris; <code>$defaults</code> mempertahankan aturan bawaan.</p>
+        <label class="oc-field"><span>Environment / infrastruktur tepercaya</span><textarea id="am-environment" rows="5" spellcheck="false" placeholder="Source control: github.example.com/acme-corp&#10;Trusted cloud buckets: s3://acme-builds"></textarea></label>
+        <label class="oc-field"><span>Allow (pengecualian)</span><textarea id="am-allow" rows="3" spellcheck="false"></textarea></label>
+        <label class="oc-field"><span>Soft deny</span><textarea id="am-soft" rows="3" spellcheck="false"></textarea></label>
+        <label class="oc-field"><span>Hard deny</span><textarea id="am-hard" rows="3" spellcheck="false"></textarea></label>
+        <label class="oc-field"><span>Periksa semua perintah shell lewat classifier</span><input id="am-classify" type="checkbox" /></label>
+        <p id="auto-mode-error" class="field-error" role="alert"></p>
+        <div class="acct-actions"><button type="button" class="ghost" data-close>Batal</button><button type="button" id="auto-mode-save" class="primary">Simpan aturan</button></div>
+      </div>
+    </div>
+
+    <div id="purge-modal" class="modal" hidden>
+      <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="purge-title">
+        <div class="modal-head"><b id="purge-title">Bersihkan data Claude</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Menghapus state Claude Code untuk folder kerja ini: transkrip, daftar tugas Claude, riwayat perubahan file, riwayat prompt, dan entri project di <code>~/.claude.json</code>. Folder project, chat Adhitron, backup Claude Code, dan shell-snapshot tidak dihapus. Tidak bisa dibatalkan.</p>
+        <pre id="purge-plan" class="cc-output" aria-live="polite">Memuat rencana…</pre>
+        <label class="oc-field"><span>Ketik path folder kerja persis untuk mengonfirmasi</span><input id="purge-confirm" autocomplete="off" spellcheck="false" placeholder="C:\kerja\project" /></label>
+        <p id="purge-path" class="muted small"></p>
+        <p id="purge-error" class="field-error" role="alert"></p>
+        <div class="acct-actions"><button type="button" class="ghost" data-close>Batal</button><button type="button" id="purge-run" class="danger">Hapus data</button></div>
+      </div>
+    </div>
+
     <div id="claude-flags-modal" class="modal" hidden>
       <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="claude-flags-title">
         <div class="modal-head"><b id="claude-flags-title">Flag Claude <small id="claude-flags-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
@@ -1548,6 +1582,12 @@
         <label class="oc-field"><span>Boleh tanpa prompt (--allowedTools)</span><textarea id="cf-allowed" rows="3" placeholder="Read&#10;Bash(git log *)"></textarea></label>
         <label class="oc-field"><span>Larang (--disallowedTools)</span><textarea id="cf-disallowed" rows="3" placeholder="Bash(rm *)"></textarea></label>
         <label class="oc-field"><span>Sumber setting (--setting-sources)</span><input id="cf-sources" maxlength="40" placeholder="user,project,local (kosong = semua)" /></label>
+        <div class="oc-form-grid">
+          <label class="oc-field"><span>Model advisor (--advisor)</span><input id="cf-advisor" maxlength="100" placeholder="opus / sonnet (kosong = mati)" /></label>
+          <label class="oc-field"><span>Fast mode</span><input id="cf-fast" type="checkbox" /></label>
+        </div>
+        <label class="oc-field"><span>Saran prompt berikutnya (--prompt-suggestions)</span><input id="cf-suggest" type="checkbox" /></label>
+        <p class="muted small">Advisor dan fast mode hanya berlaku pada model/provider yang mendukung; fast mode memakai kredit penggunaan dan bisa lebih mahal.</p>
         <p id="claude-flags-error" class="field-error" role="alert"></p>
         <div class="acct-actions"><button type="button" class="ghost" data-close>Batal</button><button type="button" id="claude-flags-save" class="primary">💾 Simpan flag</button></div>
       </div>
@@ -1929,6 +1969,8 @@
           <button type="button" class="sheet-row" data-proxy="[data-more='skills']" data-mutates><span aria-hidden="true">🧩</span><span>Skills</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='style']" data-mutates data-cap="permissions"><span aria-hidden="true">🎭</span><span>Output style</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='claude-flags']" data-mutates data-cap="permissions"><span aria-hidden="true">⚙️</span><span>Flag Claude</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='auto-mode']" data-mutates data-cap="permissions"><span aria-hidden="true">🎛️</span><span>Auto mode Claude</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='purge']" data-mutates data-cap="permissions"><span aria-hidden="true">🧹</span><span>Bersihkan data Claude</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>
           <h3 id="hm-g-chat" class="sheet-group-head">Percakapan</h3>

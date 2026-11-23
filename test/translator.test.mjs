@@ -487,3 +487,12 @@ test('result cost and output tokens are per turn (session turnUsage), never the 
   assert.equal(chat()[0].meta.costUsd, 1.25);
   assert.equal(chat()[0].meta.tokensOut, 900, 'subagents included');
 });
+
+test('prompt_suggestion (2.1.328: {type, suggestion, uuid, session_id}) reaches the composer, blanks ignored', () => {
+  const got = [];
+  const t = new StreamTranslator({ office() {}, chat: () => 'c', updateChat() {}, status() {}, suggestion: (text) => got.push(text) });
+  t.handle({ type: 'prompt_suggestion', suggestion: ' Jalankan test lagi ', uuid: 'u1', session_id: 's1' });
+  t.handle({ type: 'prompt_suggestion', suggestion: '   ' });
+  t.handle({ type: 'prompt_suggestion' });
+  assert.deepEqual(got, ['Jalankan test lagi']);
+});

@@ -727,6 +727,10 @@ select.mp-state { position: absolute; width: 1px; height: 1px; opacity: 0; point
 @media (max-width: 700px) {
   #model-panel { position: relative; top: 0; left: 0; width: 100%; max-height: 55vh; box-shadow: none; }
   #model-field { max-width: 100%; width: 100%; justify-content: space-between; }
+  #turn-settings-modal #model-field { min-height: 44px; }
+  #model-panel .mp-row { min-height: 44px; padding: 8px; gap: 8px; }
+  #model-panel .mp-head { padding: 8px 8px 4px; }
+  #model-panel .mp-src { max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 .tag.auto-effort, .tag.auto-model { background: var(--accent-soft); color: var(--accent-2); max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The reason Effort Auto gave, visible next to the level: small and muted so the row keeps its normal height. */
@@ -1266,6 +1270,12 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .suggest.described .opt { white-space: normal; }
 .suggest .opt .arg { color: var(--muted); }
 .suggest .opt small { display: block; font: var(--fs-sm)/1.35 var(--font); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 💡 The predicted next prompt: one line above the composer, flat and quiet (never a second send button) */
+.prompt-suggestion { display: flex; align-items: center; gap: 8px; margin: 8px 12px 0; padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
+.prompt-suggestion[hidden] { display: none; }
+.prompt-suggestion .ps-label { flex: none; color: var(--muted); font-size: var(--fs-sm); }
+.prompt-suggestion .ps-text { flex: 1; min-width: 0; padding: 4px 6px; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.prompt-suggestion .ps-text:hover { color: var(--accent-2); }
 .modal-card.sessions-card { max-width: 640px; height: min(680px, calc(100vh - 32px)); display: flex; flex-direction: column; }
 .sessions-card > p { margin: 0 0 10px; }
 .sessions-tools { display: flex; gap: 8px; margin-bottom: 8px; }
@@ -2699,7 +2709,9 @@ body.read-only #composer-hint { color: var(--ask); }
 #turn-settings-modal .ctl::after, #turn-settings-modal .switch::after { content: attr(title); font-size: var(--fs-xs); line-height: 1.35; color: var(--muted); }
 #turn-settings-modal select, #turn-settings-modal input[type='search'] { max-width: none; width: 100%; min-height: 34px; }
 /* Model is a button-styled picker, not a <select>: full width like the selects around it */
-#turn-settings-modal #model-field { width: 100%; max-width: none; }
+#turn-settings-modal #model-field { width: 100%; max-width: none; padding: 7px 10px; justify-content: flex-start; gap: 8px; background: var(--surface-2); }
+#turn-settings-modal #model-field .mp-name { flex: 1; min-width: 0; text-align: left; }
+#turn-settings-modal #model-field .mp-chev { margin-left: auto; }
 #turn-settings-modal #model-panel { left: 0; right: 0; min-width: 0; }
 #turn-settings-modal .switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); font-size: var(--fs-md); color: var(--text); white-space: normal; }
 #turn-settings-modal .switch::after { flex: 1 0 100%; }

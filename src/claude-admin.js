@@ -28,6 +28,26 @@ export function runClaude(bin, args, { cwd, timeout = 120_000 } = {}) {
 
 const firstLine = (r) => `${r.err}\n${r.out}`.split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('at ')) ?? 'Gagal.';
 
+// `claude purge` exits 1 with this message when the folder has no Claude Code data (a new project, an OpenCode
+// project, or a second purge). That is an empty plan, not a failure.
+const NO_DATA = /no claude code project data/i;
+
+/** `claude purge <path> --dry-run`: the deletion plan only, never deletes. Both streams: the warnings live on stderr. */
+export async function claudePurgePlan(claude, projectPath) {
+  const r = await runClaude(claude, ['purge', projectPath, '--dry-run'], { cwd: os.homedir(), timeout: 60_000 });
+  const text = [r.out, r.err].filter(Boolean).join('\n').trim();
+  if (!r.ok && !NO_DATA.test(text)) throw new AdminError(400, `Rencana purge gagal: ${firstLine(r)}`);
+  return { output: r.ok ? text : '' };
+}
+
+/** `claude purge <path> --yes`: deletes Claude Code's local state for one project (never the project folder). */
+export async function claudePurgeProject(claude, projectPath) {
+  const r = await runClaude(claude, ['purge', projectPath, '--yes'], { cwd: os.homedir(), timeout: 120_000 });
+  const text = [r.out, r.err].filter(Boolean).join('\n').trim();
+  if (!r.ok && !NO_DATA.test(text)) throw new AdminError(400, `Purge gagal: ${firstLine(r)}`);
+  return { output: r.ok ? text : '' };
+}
+
 // ---------- plugins ----------
 
 // First character a letter or digit: the id is a CLI argument and must never read as an option ("--x").
@@ -231,7 +251,7 @@ const loadHooksFile = (file) => {
   return { exists: true, data, indent: text.match(/^[{[]\r?\n([ \t]+)/)?.[1] ?? 2 };
 };
 
-const writeHooksFile = (file, data, indent) => {
+const writeSettingsFile = (file, data, indent) => {
   mkdirSync(path.dirname(file), { recursive: true });
   const temp = path.join(path.dirname(file), `.settings-${Date.now().toString(36)}.tmp`);
   writeFileSync(temp, `${JSON.stringify(data, null, indent)}\n`);
@@ -300,7 +320,7 @@ export function saveHook({ projectPath, userDir = userConfigDir(), scope, event,
     }
     group.hooks = handlers;
   }
-  writeHooksFile(file, data, indent);
+  writeSettingsFile(file, data, indent);
   return { hook: { event, matcher: matcherText || undefined, command: commandText, timeout: parsedTimeout } };
 }
 
@@ -326,6 +346,76 @@ export function deleteHook({ projectPath, userDir = userConfigDir(), scope, even
   if (!data.hooks[event].length) delete data.hooks[event];
   if (!Object.keys(data.hooks).length) delete data.hooks;
   if (!removed) throw new HookError(404, 'Hook tidak ditemukan.');
-  writeHooksFile(file, data, indent);
+  writeSettingsFile(file, data, indent);
   return { removed: true };
+}
+
+// ---------- auto mode (user settings only) ----------
+
+const AUTO_MODE_LISTS = { environment: 'environment', allow: 'allow', softDeny: 'soft_deny', hardDeny: 'hard_deny' };
+const AUTO_MODE_LIMITS = { entries: 100, entry: 500 };
+
+const autoModeFile = (userDir = userConfigDir()) => path.join(userDir, 'settings.json');
+
+/** The `autoMode` block Claude's classifier reads (user settings only, per its docs). */
+export function readAutoMode(userDir = userConfigDir()) {
+  const file = autoModeFile(userDir);
+  let data;
+  try {
+    const info = lstatSync(file);
+    if (info.isSymbolicLink()) throw new HookError(409, 'settings.json berupa symlink; ubah langsung di file aslinya.');
+    if (info.size > HOOK_LIMITS.bytes) throw new HookError(409, 'settings.json terlalu besar (> 1 MB).');
+    data = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+  } catch (err) {
+    if (err instanceof HookError) throw err;
+    if (err.code === 'ENOENT') return { environment: [], allow: [], softDeny: [], hardDeny: [], classifyAllShell: false };
+    if (err instanceof SyntaxError) throw new HookError(409, `settings.json bukan JSON yang valid (${err.message}).`);
+    throw new HookError(500, `Tidak bisa membaca settings.json: ${err.code ?? err.message}`);
+  }
+  const block = data && typeof data.autoMode === 'object' && !Array.isArray(data.autoMode) ? data.autoMode : {};
+  const list = (key) => (Array.isArray(block[key]) ? block[key].filter((item) => typeof item === 'string') : []);
+  return {
+    environment: list('environment'),
+    allow: list('allow'),
+    softDeny: list('soft_deny'),
+    hardDeny: list('hard_deny'),
+    classifyAllShell: block.classifyAllShell === true,
+  };
+}
+
+/** Saves the classifier rules to `~/.claude/settings.json`, preserving every other key. Laptop only at the route. */
+export function saveAutoMode({ userDir = userConfigDir(), environment, allow, softDeny, hardDeny, classifyAllShell }) {
+  const file = autoModeFile(userDir);
+  const cleanList = (items, field) => {
+    if (items === undefined) return undefined;
+    if (!Array.isArray(items)) throw new HookError(400, `Daftar ${field} tidak valid.`);
+    const out = [];
+    for (const item of items) {
+      if (typeof item !== 'string') throw new HookError(400, `Setiap entri ${field} harus berupa teks.`);
+      const text = item.trim();
+      if (!text) continue;
+      if (text.length > AUTO_MODE_LIMITS.entry) throw new HookError(400, `Satu entri ${field} maksimal ${AUTO_MODE_LIMITS.entry} karakter.`);
+      if (/[\u0000-\u001f\u007f]/.test(text)) throw new HookError(400, `Entri ${field} tidak boleh memuat karakter kontrol.`);
+      out.push(text);
+    }
+    if (out.length > AUTO_MODE_LIMITS.entries) throw new HookError(400, `Maksimal ${AUTO_MODE_LIMITS.entries} entri ${field}.`);
+    return out;
+  };
+  const nextLists = {};
+  for (const [field, key] of Object.entries(AUTO_MODE_LISTS)) {
+    const cleaned = cleanList(field === 'environment' ? environment : field === 'allow' ? allow : field === 'softDeny' ? softDeny : hardDeny, field);
+    if (cleaned !== undefined) nextLists[key] = cleaned;
+  }
+  const { data, indent } = loadHooksFile(file);
+  const block = data.autoMode && typeof data.autoMode === 'object' && !Array.isArray(data.autoMode) ? data.autoMode : {};
+  for (const [key, value] of Object.entries(nextLists)) {
+    if (value.length) block[key] = value;
+    else delete block[key];
+  }
+  if (classifyAllShell === true) block.classifyAllShell = true;
+  else if (classifyAllShell === false) delete block.classifyAllShell;
+  if (Object.keys(block).length) data.autoMode = block;
+  else delete data.autoMode;
+  writeSettingsFile(file, data, indent);
+  return readAutoMode(userDir);
 }

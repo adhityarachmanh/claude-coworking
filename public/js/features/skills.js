@@ -29,16 +29,18 @@ function render() {
 function listHtml() {
   const rows = sk.skills.length
     ? `<ul class="ext-list" id="skills-list">${sk.skills
-        .map(
-          (s) => `<li data-id="${escapeHtml(s.id)}" data-scope="${escapeHtml(s.scope)}"><div><b>${escapeHtml(s.name)}</b> <small class="muted">${escapeHtml(s.id)} · ${escapeHtml(s.source)}${s.hasSupport ? ' · +berkas' : ''}</small><p class="muted small">${escapeHtml(s.description || '(tanpa deskripsi — model sulit menemukannya)')}</p></div><div class="ext-actions">${
-            isLocal() || s.scope !== 'user'
-              ? `<button class="ghost" data-sk="edit">✎ Edit</button><button class="ghost danger-text" data-sk="del">Hapus</button>`
-              : '<small class="muted">ubah dari laptop</small>'
-          }</div></li>`,
-        )
+        .map((s) => {
+          const meta = [s.id !== s.name ? s.id : '', s.source, s.hasSupport ? '+berkas' : ''].filter(Boolean).join(' · ');
+          const note = isLocal() || s.scope !== 'user' ? '' : ' · ubah dari laptop';
+          const canEdit = isLocal() || s.scope !== 'user';
+          return `<li data-id="${escapeHtml(s.id)}" data-scope="${escapeHtml(s.scope)}"><div><b>${escapeHtml(s.name)}</b> <small class="muted">${escapeHtml(meta)}${note}</small><p class="muted small">${escapeHtml(s.description || '(tanpa deskripsi — model sulit menemukannya)')}</p></div>${
+            canEdit ? `<div class="ext-actions"><button class="ghost" data-sk="edit">✎ Edit</button><button class="ghost danger-text" data-sk="del">Hapus</button></div>` : ''
+          }</li>`;
+        })
         .join('')}</ul>`
     : '<p class="muted small">Belum ada skill di project ini.</p>';
-  return `<p class="muted small">Skill = folder berisi <code>SKILL.md</code> yang dimuat saat relevan (seperti <code>/skills</code> di terminal). Claude Code: <code>.claude/skills</code>; OpenCode juga membaca <code>.opencode/skills</code>, <code>.claude/skills</code> dan <code>.agents/skills</code>. Menambah skill hanya menambah instruksi, tidak memberi izin baru.</p>
+  return `<p class="muted small">Skill = folder berisi <code>SKILL.md</code> yang dimuat saat relevan. Menambah skill hanya menambah instruksi, tidak memberi izin baru.</p>
+    <details><summary class="muted small">Folder yang dibaca Claude Code &amp; OpenCode</summary><p class="muted small">Claude Code: <code>.claude/skills</code>. OpenCode juga membaca <code>.opencode/skills</code>, <code>.claude/skills</code>, dan <code>.agents/skills</code> (project maupun semua project).</p></details>
     ${isLocal() ? '' : '<p class="muted small">🔒 Skill untuk <b>semua project</b> hanya bisa diubah dari laptop; skill project ini tetap bisa dari sini.</p>'}
     ${rows}<div class="acct-actions"><button class="primary" id="skills-new">＋ Skill baru</button></div>`;
 }

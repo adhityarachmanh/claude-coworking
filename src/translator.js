@@ -267,6 +267,10 @@ export class StreamTranslator {
         }
         break;
       }
+      // 2.1.328 shape, from the installed binary's schema: { type, suggestion, uuid, session_id }.
+      case 'prompt_suggestion':
+        if (typeof msg.suggestion === 'string' && msg.suggestion.trim()) this.sink.suggestion?.(truncate(msg.suggestion.trim(), 500));
+        break;
     }
   }
 

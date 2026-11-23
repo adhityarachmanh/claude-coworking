@@ -41,9 +41,23 @@ export function parseSkillFrontmatter(text) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(String(text));
   if (!m) return { meta: {}, body: String(text), front: null };
   const meta = {};
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = /^([\w./-]+):\s*(.*)$/.exec(line);
-    if (kv) meta[kv[1]] = kv[2].replace(/^["']|["']$/g, '');
+  const lines = m[1].split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const kv = /^([\w./-]+):\s*(.*)$/.exec(lines[i]);
+    if (!kv) continue;
+    const value = kv[2].trim();
+    if (/^[>|][+-]?$/.test(value)) {
+      const folded = value.startsWith('>');
+      const chunks = [];
+      while (i + 1 < lines.length && (lines[i + 1].trim() === '' || /^\s/.test(lines[i + 1]))) {
+        chunks.push(lines[i + 1].replace(/^\s+/, ''));
+        i += 1;
+      }
+      while (chunks.length && !chunks[chunks.length - 1]) chunks.pop();
+      meta[kv[1]] = folded ? chunks.join(' ').replace(/\s+/g, ' ').trim() : chunks.join('\n').trim();
+    } else {
+      meta[kv[1]] = value.replace(/^["']|["']$/g, '');
+    }
   }
   return { meta, body: m[2], front: m[1] };
 }
