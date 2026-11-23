@@ -223,6 +223,7 @@ const renderAdvanced = (advanced) => {
   setField('#oc-exp-todo', a.experimental?.todo, 'inherit');
   setField('#oc-exp-depth', a.experimental?.subagentDepth);
   setField('#oc-exp-image', a.experimental?.imageModel);
+  setField('#oc-exp-video', a.experimental?.videoModel);
   setField('#oc-exp-idle', a.experimental?.locationIdleTimeout);
   renderWatchers(a.watcherIgnore);
   renderProviders(a.providers);
@@ -241,7 +242,7 @@ const collectAdvanced = () => ({
   toolOutput: { maxLines: $('#oc-output-lines').value, maxBytes: $('#oc-output-bytes').value },
   compaction: { auto: $('#oc-compaction-auto').value, background: $('#oc-compaction-background').value, keepTokens: $('#oc-compaction-keep').value, buffer: $('#oc-compaction-buffer').value },
   warming: { enabled: $('#oc-warming-enabled').value, prompt: $('#oc-warming-prompt').value, interval: $('#oc-warming-interval').value, duration: $('#oc-warming-duration').value },
-  experimental: { todo: $('#oc-exp-todo').value, subagentDepth: $('#oc-exp-depth').value, imageModel: $('#oc-exp-image').value, locationIdleTimeout: $('#oc-exp-idle').value },
+  experimental: { todo: $('#oc-exp-todo').value, subagentDepth: $('#oc-exp-depth').value, imageModel: $('#oc-exp-image').value, videoModel: $('#oc-exp-video').value, locationIdleTimeout: $('#oc-exp-idle').value },
   providers: collectProviders(),
 });
 

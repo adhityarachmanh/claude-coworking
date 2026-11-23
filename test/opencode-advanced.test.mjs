@@ -14,7 +14,7 @@ test('advancedView: bentuk form, tri-state, dan provider headers/body', () => {
     tool_output: { max_lines: 100 },
     compaction: { auto: true, background: false, keep: { tokens: 5000 }, buffer: '15%' },
     warming: { prompt: 'OK', interval: 'auto' },
-    experimental: { todo: true, subagent_depth: 2, image_generate: { model: 'openai/gpt-image-2' }, location_idle_timeout: false },
+    experimental: { todo: true, subagent_depth: 2, image_generate: { model: 'openai/gpt-image-2' }, video_generate: { model: 'openai/sora-2' }, location_idle_timeout: false },
     providers: { openai: { headers: { 'X-A': '1' }, body: { temperature: 0 }, models: {} } },
   });
   assert.equal(view.snapshots, 'off');
@@ -27,6 +27,7 @@ test('advancedView: bentuk form, tri-state, dan provider headers/body', () => {
   assert.equal(view.warming.enabled, 'on');
   assert.equal(view.experimental.todo, 'on');
   assert.equal(view.experimental.locationIdleTimeout, 'false');
+  assert.equal(view.experimental.videoModel, 'openai/sora-2');
   assert.deepEqual(view.providers, [{ id: 'openai', headers: '{"X-A":"1"}', body: '{"temperature":0}' }]);
 });
 
@@ -41,7 +42,7 @@ test('mergeAdvanced: inherit tidak menyentuh, angka divalidasi, kunci asing aman
     experimental: { todo: true, image_generate: { model: 'x', extra: 6 }, extra: 7 },
     providers: { openai: { headers: { A: '1' }, models: { m: {} }, package: 'pkg' }, lain: { models: {} } },
   };
-  mergeAdvanced(base, { snapshots: 'inherit', formatter: 'inherit', mediaImage: { auto_resize: 'inherit', maxWidth: '', maxHeight: '', maxBase64Bytes: '' }, toolOutput: { maxLines: '', maxBytes: '' }, compaction: { auto: 'inherit', background: 'inherit', keepTokens: '', buffer: '' }, warming: { enabled: 'inherit', prompt: '', interval: '', duration: '' }, experimental: { todo: 'inherit', subagentDepth: '', imageModel: '', locationIdleTimeout: '' }, watcherIgnore: [], providers: [] });
+  mergeAdvanced(base, { snapshots: 'inherit', formatter: 'inherit', mediaImage: { auto_resize: 'inherit', maxWidth: '', maxHeight: '', maxBase64Bytes: '' }, toolOutput: { maxLines: '', maxBytes: '' }, compaction: { auto: 'inherit', background: 'inherit', keepTokens: '', buffer: '' }, warming: { enabled: 'inherit', prompt: '', interval: '', duration: '' }, experimental: { todo: 'inherit', subagentDepth: '', imageModel: '', videoModel: '', locationIdleTimeout: '' }, watcherIgnore: [], providers: [] });
   assert.deepEqual(base.snapshots, false);
   assert.deepEqual(Object.keys(base.formatter), ['prettier']);
   assert.equal(base.media.image.extra, 1);
@@ -89,7 +90,7 @@ test('mergeAdvanced: bentuk yang tak bisa ditampilkan form tidak hilang, id prov
   mergeAdvanced(config, {
     warming: { enabled: 'on', prompt: '', interval: '', duration: '' },
     mediaImage: { auto_resize: 'on', maxWidth: '', maxHeight: '', maxBase64Bytes: '' },
-    experimental: { todo: 'inherit', subagentDepth: '', imageModel: '', locationIdleTimeout: '' },
+    experimental: { todo: 'inherit', subagentDepth: '', imageModel: '', videoModel: '', locationIdleTimeout: '' },
     providers: [{ id: 'p', headers: '', body: '{"a":1}' }],
   });
   assert.deepEqual(config.warming, { auto: true }, 'warming objek asing tidak runtuh jadi true');

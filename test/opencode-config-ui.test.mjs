@@ -290,7 +290,7 @@ const configView = (over = {}) => ({
     toolOutput: { maxLines: '', maxBytes: '' },
     compaction: { auto: 'inherit', background: 'inherit', keepTokens: '', buffer: '' },
     warming: { enabled: 'inherit', prompt: '', interval: '', duration: '' },
-    experimental: { todo: 'inherit', subagentDepth: '', imageModel: '', locationIdleTimeout: '' },
+    experimental: { todo: 'inherit', subagentDepth: '', imageModel: '', videoModel: '', locationIdleTimeout: '' },
     providers: [],
   },
   parseError: null,
@@ -1003,7 +1003,7 @@ test('form config: policies dan config lanjutan tampil, diubah, lalu dikirim —
     toolOutput: { maxLines: 100, maxBytes: '' },
     compaction: { auto: 'on', background: 'off', keepTokens: 5000, buffer: '15%' },
     warming: { enabled: 'on', prompt: 'OK', interval: 'auto', duration: '' },
-    experimental: { todo: 'on', subagentDepth: 2, imageModel: '', locationIdleTimeout: 'false' },
+    experimental: { todo: 'on', subagentDepth: 2, imageModel: '', videoModel: '', locationIdleTimeout: 'false' },
     providers: [{ id: 'openai', headers: '{"A":"1"}', body: '' }],
   };
   for (const vp of VIEWPORTS) {

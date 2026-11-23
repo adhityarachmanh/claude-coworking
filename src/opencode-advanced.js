@@ -63,6 +63,7 @@ export function advancedView(config = {}) {
   const warming = isObject(config.warming) ? config.warming : {};
   const experimental = isObject(config.experimental) ? config.experimental : {};
   const imageGenerate = isObject(experimental.image_generate) ? experimental.image_generate : {};
+  const videoGenerate = isObject(experimental.video_generate) ? experimental.video_generate : {};
   const providers = isObject(config.providers) ? config.providers : {};
   return {
     snapshots: tri(config.snapshots),
@@ -86,6 +87,7 @@ export function advancedView(config = {}) {
       todo: tri(experimental.todo),
       subagentDepth: num(experimental.subagent_depth),
       imageModel: text(imageGenerate.model),
+      videoModel: text(videoGenerate.model),
       locationIdleTimeout: experimental.location_idle_timeout === false ? 'false' : text(experimental.location_idle_timeout),
     },
     providers: Object.entries(providers)
@@ -220,9 +222,10 @@ function mergeExperimental(config, form) {
   const todo = triValue(form.todo, 'experimental.todo');
   const depth = cleanInt(form.subagentDepth, { name: 'experimental.subagent_depth', max: ADVANCED_LIMITS.depth });
   const model = cleanText(form.imageModel, { name: 'experimental.image_generate.model', max: ADVANCED_LIMITS.model });
+  const videoModel = cleanText(form.videoModel, { name: 'experimental.video_generate.model', max: ADVANCED_LIMITS.model });
   const idleText = String(form.locationIdleTimeout ?? '').trim();
   if (idleText && idleText.length > ADVANCED_LIMITS.duration) throw new OpenCodeAdvancedError(400, 'experimental.location_idle_timeout terlalu panjang.');
-  const write = todo !== 'inherit' || depth != null || model != null || idleText !== '';
+  const write = todo !== 'inherit' || depth != null || model != null || videoModel != null || idleText !== '';
   if (!write) return;
   const experimental = requireObject(config, 'experimental', 'experimental');
   writeTri(experimental, 'todo', form.todo, 'experimental.todo');
@@ -237,6 +240,14 @@ function mergeExperimental(config, form) {
     imageGenerate.model = model;
   }
   dropIfEmpty(experimental, 'image_generate');
+  if (videoModel == null) {
+    const current = experimental.video_generate?.model;
+    if (isObject(experimental.video_generate) && (current === undefined || typeof current === 'string')) delete experimental.video_generate.model;
+  } else {
+    const videoGenerate = requireObject(experimental, 'video_generate', 'experimental.video_generate');
+    videoGenerate.model = videoModel;
+  }
+  dropIfEmpty(experimental, 'video_generate');
   if (!idleText) {
     if (experimental.location_idle_timeout === undefined || typeof experimental.location_idle_timeout === 'string' || experimental.location_idle_timeout === false) {
       delete experimental.location_idle_timeout;

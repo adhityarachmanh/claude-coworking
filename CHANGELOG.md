@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🎬 Model video OpenCode.** Config lanjutan kini punya **Model video** (`experimental.video_generate.model`, OpenCode 2.4+), di samping model gambar yang sudah ada. Pada OpenCode 2.3.x field ini diabaikan sampai mesinnya diperbarui.
+
 ## 1.2.0
 
 - **🔒 Mode privat, safe mode, dan debug Claude.** ⚙️ Flag Claude kini punya **Mode privat** (`--no-session-persistence`: transkrip tidak ditulis ke disk, sesi tidak bisa dilanjutkan), **Safe mode** (`--safe-mode`: CLAUDE.md, skill, plugin, hook, dan MCP dilepas untuk diagnosa), dan **Debug log** (`--debug`). Semua per project dan berlaku pada pesan berikutnya.
