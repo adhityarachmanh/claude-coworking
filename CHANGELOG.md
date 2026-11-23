@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.0.94
 
 - **🪝 Hooks Claude dari aplikasi.** Tab **🪝 Hooks** kini bisa **menambah, mengubah, dan menghapus** hook command (bukan hanya melihat): pilih event (PreToolUse, UserPromptSubmit, …), matcher opsional (mis. `Edit`), perintah, timeout, dan scope (pribadi project / project bersama / semua project). Ditulis ke `settings.json` yang benar tanpa menyentuh kunci lain; file JSON rusak atau symlink ditolak, hook untuk semua project hanya dari laptop, dan perubahan berlaku mulai sesi berikutnya. Handler non-command (`http`, `prompt`, `agent`) tetap diatur lewat editor JSON.
 - **⚙️ Flag Claude per project.** Dialog **⚙️ Flag Claude…** (menu ⋯) mengatur argumen CLI per project: `--fallback-model`, `--max-turns`, `--max-budget-usd`, `--tools`, `--allowedTools`, `--disallowedTools`, dan `--setting-sources`. Nilai divalidasi (angka bulat positif, daftar tool wajar), diteruskan sebagai satu argumen utuh saat proses Claude dimulai, dan perubahan menutup proses idle agar langsung dipakai pada pesan berikutnya. Hanya untuk project Claude.
