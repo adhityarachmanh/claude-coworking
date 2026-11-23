@@ -157,6 +157,7 @@
               <button role="menuitem" data-more="dirs" data-cap="permissions" title="Folder di luar project yang boleh dibaca dan ditulis Claude Code">📂 Folder tambahan…</button>
               <button role="menuitem" data-more="skills">🧩 Skills…</button>
               <button role="menuitem" data-more="style" data-cap="permissions" title="Gaya jawaban Claude: bawaan atau kustom (.claude/output-styles)">🎭 Output style…</button>
+              <button role="menuitem" data-more="claude-flags" data-cap="permissions" title="Flag Claude per project: model cadangan, batas giliran/anggaran, tool, sumber setting">⚙️ Flag Claude…</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
               <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
@@ -1534,6 +1535,25 @@
     </div>
 
     <!-- 🔔 Pengaturan notifikasi (features/notify.js): per device (localStorage), also on a phone (Ctrl+P / 🔎) -->
+    <div id="claude-flags-modal" class="modal" hidden>
+      <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="claude-flags-title">
+        <div class="modal-head"><b id="claude-flags-title">⚙️ Flag Claude <small id="claude-flags-project" class="muted"></small></b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Argumen CLI untuk project ini, diteruskan saat proses Claude dimulai. Berlaku pada pesan berikutnya.</p>
+        <div class="oc-form-grid">
+          <label class="oc-field"><span>Model cadangan (--fallback-model)</span><input id="cf-fallback" maxlength="200" placeholder="sonnet,haiku" /></label>
+          <label class="oc-field"><span>Batas giliran (--max-turns)</span><input id="cf-max-turns" type="number" min="1" max="1000000" step="1" placeholder="kosong = tanpa batas" /></label>
+        </div>
+        <label class="oc-field"><span>Batas anggaran USD (--max-budget-usd)</span><input id="cf-budget" type="number" min="0.01" max="1000000" step="0.01" placeholder="kosong = tanpa batas" /></label>
+        <label class="oc-field"><span>Tool tersedia (--tools)</span><input id="cf-tools" maxlength="500" placeholder="Bash,Edit,Read (kosong = bawaan)" /></label>
+        <label class="oc-field"><span>Boleh tanpa prompt (--allowedTools)</span><textarea id="cf-allowed" rows="3" placeholder="Read&#10;Bash(git log *)"></textarea></label>
+        <label class="oc-field"><span>Larang (--disallowedTools)</span><textarea id="cf-disallowed" rows="3" placeholder="Bash(rm *)"></textarea></label>
+        <label class="oc-field"><span>Sumber setting (--setting-sources)</span><input id="cf-sources" maxlength="40" placeholder="user,project,local (kosong = semua)" /></label>
+        <p id="claude-flags-error" class="field-error" role="alert"></p>
+        <div class="acct-actions"><button type="button" class="ghost" data-close>Batal</button><button type="button" id="claude-flags-save" class="primary">💾 Simpan</button></div>
+      </div>
+    </div>
+
+    <!-- 🔔 Pengaturan notifikasi (features/notify.js): per device (localStorage), also on a phone (Ctrl+P / 🔎) -->
     <div id="notify-modal" class="modal" hidden>
       <div class="modal-card notify-card" role="dialog" aria-modal="true" aria-labelledby="notify-title" aria-describedby="notify-desc">
         <div class="modal-head"><b id="notify-title">🔔 Pengaturan notifikasi</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
@@ -1908,6 +1928,7 @@
           <button type="button" class="sheet-row" data-proxy="[data-more='dirs']" data-mutates data-cap="permissions"><span aria-hidden="true">📂</span><span>Folder tambahan</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='skills']" data-mutates><span aria-hidden="true">🧩</span><span>Skills</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='style']" data-mutates data-cap="permissions"><span aria-hidden="true">🎭</span><span>Output style</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='claude-flags']" data-mutates data-cap="permissions"><span aria-hidden="true">⚙️</span><span>Flag Claude</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>
           <h3 id="hm-g-chat" class="sheet-group-head">Percakapan</h3>

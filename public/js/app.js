@@ -72,6 +72,7 @@ import { initExtensions } from './features/extensions.js';
 import { initSkills } from './features/skills.js';
 import { initOutputStyle } from './features/output-styles.js';
 import { initOpenCodeCommands } from './features/opencode-commands.js';
+import { initClaudeFlags } from './features/claude-flags.js';
 import { initPullRequest } from './features/pull-request.js';
 import { initSettings } from './features/settings.js';
 import { initSpotify } from './features/spotify.js';
@@ -123,6 +124,7 @@ initExtensions(); // 🧩 /plugin /agents /hooks
 initSkills(); // 🧩 /skills: SKILL.md editor for both engines
 initOutputStyle(); // 🎭 output style Claude (built-in + custom)
 initOpenCodeCommands(); // 📝 OpenCode .opencode/commands editor
+initClaudeFlags(); // ⚙️ flag Claude per project (spawn args)
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initHeaderMore();

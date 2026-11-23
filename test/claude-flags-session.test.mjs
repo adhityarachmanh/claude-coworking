@@ -1,6 +1,6 @@
 // Claude flags → spawn (src/session.js): the stored values reach the process as single argv elements.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -65,7 +65,7 @@ test('spawn meneruskan flag Claude per project', async () => {
 });
 
 test('perubahan flag menutup proses idle (restartKey)', () => {
-  const { hub, dir, project, manager } = fresh();
+  const { hub, project, manager } = fresh();
   const session = manager.get(project);
   session.spawn(hub.settingsFor(project.id));
   assert.ok(session.child, 'proses berjalan');
