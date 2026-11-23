@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.3.0
 
 - **⏰ Automation OpenCode.** ⋯ → **Automation OpenCode** mengelola jadwal OpenCode 2.4: prompt atau skrip Code Mode, dipicu tiap interval, cron, sekali waktu, atau event MCP. Daftar menampilkan status, jadwal berikutnya, hasil terakhir, dan tombol **Jeda/Lanjutkan/Hapus**. Automation dibuat di folder project aktif; hanya project OpenCode; perubahan hanya dari laptop, pembacaan juga lewat Tailscale.
 
