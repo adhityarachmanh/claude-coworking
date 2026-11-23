@@ -2,6 +2,13 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **🪝 Hooks Claude dari aplikasi.** Tab **🪝 Hooks** kini bisa **menambah, mengubah, dan menghapus** hook command (bukan hanya melihat): pilih event (PreToolUse, UserPromptSubmit, …), matcher opsional (mis. `Edit`), perintah, timeout, dan scope (pribadi project / project bersama / semua project). Ditulis ke `settings.json` yang benar tanpa menyentuh kunci lain; file JSON rusak atau symlink ditolak, hook untuk semua project hanya dari laptop, dan perubahan berlaku mulai sesi berikutnya. Handler non-command (`http`, `prompt`, `agent`) tetap diatur lewat editor JSON.
+- **⚙️ Flag Claude per project.** Dialog **⚙️ Flag Claude…** (menu ⋯) mengatur argumen CLI per project: `--fallback-model`, `--max-turns`, `--max-budget-usd`, `--tools`, `--allowedTools`, `--disallowedTools`, dan `--setting-sources`. Nilai divalidasi (angka bulat positif, daftar tool wajar), diteruskan sebagai satu argumen utuh saat proses Claude dimulai, dan perubahan menutup proses idle agar langsung dipakai pada pesan berikutnya. Hanya untuk project Claude.
+- **🎯 /goal, /loop, /fewer-permission-prompts.** Ketiga command Claude kini muncul di autocomplete dengan penjelasan dan diteruskan apa adanya ke Claude (goal berkelanjutan, prompt terjadwal, dan allowlist untuk mengurangi prompt izin).
+- **📋 Matriks adopsi mesin.** `docs/adopsi-mesin.md` memetakan setiap kemampuan Claude Code dan OpenCode ke tempatnya di Adhitron, atau menandainya di luar cakupan dengan alasan — sumber dan versi dicatat.
+
 ## 1.0.93
 
 - **🎭 Badge pengaturan giliran di HP kini ringkas.** Ringkasan di atas kotak pesan tidak lagi mengulang hal yang sama (`⚡ Auto · Auto · Auto · Tim` → `⚡ Auto · Tim`): mode, model, effort, dan Mode tim hanya muncul sekali, dan lebarnya dibatasi supaya tombol ＋, mikrofon, dan lipat tetap di tempatnya pada layar sempit.
