@@ -35,6 +35,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | `--prompt-suggestions` | ⚙️ Flag Claude → **Saran prompt berikutnya**; bar “Saran berikutnya” di atas kotak pesan mengisi kotak, tidak mengirim sendiri | ✅ |
 | `--autocompact <auto\|tokens>` | ⚙️ Flag Claude → **Auto-compact** (`auto`/`500k`, minimal 100k) → `--autocompact` | ✅ |
 | `--include-hook-events` | ⚙️ Flag Claude → **Event hook di chat** → hook yang gagal muncul sebagai baris peringatan (nama event + baris pertama stderr) | ✅ |
+| `--forward-subagent-text` | ⚙️ Flag Claude → **Transkrip subagent di kartu delegasi**: kata-kata subagent ikut tersimpan di detail kartu, lalu laporan akhirnya | ✅ |
 | `claude auto-mode defaults\|reset`, `/auto-mode-setup` | ⋯ → **Auto mode Claude** (editor `autoMode` di `~/.claude/settings.json`, laptop) | ✅ (reset = kosongkan daftar) |
 | `claude purge` | ⋯ → **Bersihkan data Claude** (pratinjau `--dry-run`, ketik path folder kerja untuk konfirmasi, laptop, tidak saat giliran/antrian berjalan; worktree aktif ikut jadi sasaran) | ✅ |
 | `claude import` (dari Codex/Cursor/…) | 🚫 sesi interaktif yang menulis config agen lain; menjalankannya butuh TTY dan keputusan per item | 🚫 |

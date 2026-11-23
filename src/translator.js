@@ -110,6 +110,8 @@ export class StreamTranslator {
     this.agentRoles = new Map(); // Agent tool_use_id -> office role of that subagent
     this.tasks = new Map(); // TaskCreate id -> { subject, status }
     this.lastBuilder = null; // role that last edited product code (who gets QA's bug report)
+    // Subagent text from --forward-subagent-text, kept per Agent tool_use id for the delegation card's detail.
+    this.agentText = new Map();
     // One chat bubble per API message: `done` = finished text blocks, `live` = block being streamed.
     this.lastAssistant = null;
     this.streamMessageId = null;
@@ -209,7 +211,10 @@ export class StreamTranslator {
     const info = this.tools.get(toolUseId);
     if (!info?.agent) return;
     this.tools.delete(toolUseId);
-    this.sink.updateChat(info.chatId, { status: failed ? 'fail' : 'ok', ...(report ? { output: clip(report, OUTPUT_LIMIT) } : {}) });
+    const extra = this.agentText.get(toolUseId) ?? '';
+    this.agentText.delete(toolUseId);
+    const detail = [extra, report].filter(Boolean).join('\n\n').trim();
+    this.sink.updateChat(info.chatId, { status: failed ? 'fail' : 'ok', ...(detail ? { output: clip(detail, OUTPUT_LIMIT) } : {}) });
     this.sink.office({
       kind: 'agent_stop',
       role: info.role,
@@ -666,6 +671,10 @@ export class StreamTranslator {
 
   onText(text, parentId, parentRole, messageId) {
     if (parentId) {
+      // --forward-subagent-text: keep the subagent's own words for the delegation card (not the chat column).
+      const prev = this.agentText.get(parentId) ?? '';
+      this.agentText.set(parentId, clip(prev ? `${prev}\n\n${text}` : text, OUTPUT_LIMIT));
+      if (this.agentText.size > 50) this.agentText.delete(this.agentText.keys().next().value);
       this.sink.office({ kind: 'say', role: parentRole, text: firstSentence(text) });
       return;
     }

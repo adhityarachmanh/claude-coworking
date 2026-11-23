@@ -135,7 +135,8 @@ test('subagent work is attributed to its role and its report is kept', () => {
   const delegate = chat()[0];
   assert.equal(delegate.kind, 'delegate');
   assert.equal(delegate.status, 'ok');
-  assert.equal(delegate.output, 'Laporan: semua lulus.');
+  // --forward-subagent-text keeps the subagent's own words above the final report (this is the card's detail).
+  assert.equal(delegate.output, 'Saya cek dulu.\n\nLaporan: semua lulus.');
   assert.equal(chat()[1].role, 'qa'); // the ls ran inside the qa subagent
   assert.ok(office.some((e) => e.kind === 'say' && e.role === 'qa'));
   assert.equal(office.at(-1).kind, 'agent_stop');
@@ -508,4 +509,14 @@ test('hook_response (--include-hook-events): hanya kegagalan yang muncul di chat
   assert.match(rows[0].text, /PreToolUse · lint/);
   assert.match(rows[0].text, /eslint: 3 errors/);
   assert.doesNotMatch(rows[0].text, /more/);
+});
+
+test('forward subagent text (--forward-subagent-text): kata-kata subagent menjadi detail kartu delegasi', () => {
+  const { translator, chat } = recorder();
+  translator.handle(use('a1', 'Agent', { subagent_type: 'qa', description: 'uji checkout' }));
+  translator.handle(text('m1', 'Saya menemukan satu bug di checkout.', 'a1'));
+  translator.handle(done('a1', 'laporan akhir'));
+  const card = chat().find((m) => m.kind === 'delegate');
+  assert.ok(card, 'kartu delegasi ada');
+  assert.match(card.output, /Saya menemukan satu bug di checkout/);
 });

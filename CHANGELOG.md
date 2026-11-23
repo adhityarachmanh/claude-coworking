@@ -5,6 +5,7 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 ## Belum dirilis
 
 - **⚙️ Auto-compact & event hook Claude.** ⚙️ Flag Claude kini punya **Auto-compact** (`--autocompact`, `auto` atau mis. `500k`, minimal 100k token) dan **Event hook di chat** (`--include-hook-events`). Hook yang gagal muncul sebagai baris peringatan berisi event, nama hook, dan baris pertama stderr; hook yang sukses tidak menambah kebisingan.
+- **🗣 Transkrip subagent.** **Transkrip subagent di kartu delegasi** (`--forward-subagent-text`) menyimpan kata-kata subagent di detail kartu delegasi, di atas laporan akhirnya — bukan lagi hanya tool call dan hasil akhir.
 - **📎 PDF ke OpenCode.** Dokumen PDF kini dikirim ke OpenCode sebagai blok `resource` (blob + `application/pdf`), bukan lagi placeholder “tidak bisa dikirim”, sehingga model bisa membacanya seperti di terminal.
 - **🛡️ Izin tersimpan OpenCode.** ⋯ → **Izin tersimpan OpenCode** menampilkan daftar “Selalu izinkan” (`permission.saved.list`) yang tersimpan di laptop ini; **Hapus** mencabutnya lewat `permission.saved.remove`, sehingga permintaan berikutnya kembali bertanya. Hanya untuk project OpenCode; membaca dari laptop/Tailscale, menghapus hanya dari laptop.
 

@@ -53,6 +53,7 @@ test('spawn meneruskan flag Claude per project', async () => {
     claudePromptSuggestions: true,
     claudeAutocompact: '500k',
     claudeIncludeHookEvents: true,
+    claudeForwardSubagentText: true,
   });
   const session = manager.get(project);
   session.spawn(hub.settingsFor(project.id));
@@ -70,6 +71,7 @@ test('spawn meneruskan flag Claude per project', async () => {
   assert.ok(argv.includes('--prompt-suggestions'), 'saran prompt ikut saat dinyalakan');
   assert.equal(argv[at('--autocompact') + 1], '500k');
   assert.ok(argv.includes('--include-hook-events'));
+  assert.ok(argv.includes('--forward-subagent-text'));
   const settingsFile = argv[at('--settings') + 1];
   assert.ok(settingsFile && readFileSync(settingsFile, 'utf8').includes('"fastMode":true'), 'fast mode lewat --settings');
   session.closeChild();
