@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.6.0
 
 - **📅 Rekap mingguan.** Di ⋯ → **Pola kerja** ada **Buat rekap 7 hari**: ringkasan Markdown berisi biaya, token, permintaan, sesi, project aktif, jam tersibuk, dan tabel project/model — dihitung dari ledger tanpa memanggil model, lalu bisa disalin.
 
