@@ -220,6 +220,7 @@ const parseConfig = (text) => {
 
 /** `instructions` is an array of files/globs/URLs always read into the prompt; anything else is ignored by the form. */
 const instructionsView = (config) => (Array.isArray(config.instructions) ? config.instructions.filter((item) => typeof item === 'string') : []);
+const skillsView = (config) => (Array.isArray(config.skills) ? config.skills.filter((item) => typeof item === 'string') : []);
 
 /** `websearch` is `false`, `{ provider }`, or absent (OpenCode's own default). */
 const websearchView = (config) => {
@@ -229,7 +230,8 @@ const websearchView = (config) => {
 };
 
 const agentsView = (config) => {
-  const agents = isObject(config.agent) ? config.agent : {};
+  // V2 reads `agents`; V1 `agent` is still normalized upstream, so read whichever exists (V2 first).
+  const agents = isObject(config.agents) ? config.agents : isObject(config.agent) ? config.agent : {};
   return Object.entries(agents)
     .filter(([, a]) => isObject(a))
     .map(([name, a]) => ({
@@ -238,6 +240,10 @@ const agentsView = (config) => {
       model: typeof a.model === 'string' ? a.model : '',
       description: typeof a.description === 'string' ? a.description : '',
       prompt: typeof a.system === 'string' ? a.system : typeof a.prompt === 'string' ? a.prompt : '',
+      steps: Number.isInteger(a.steps) && a.steps > 0 ? a.steps : '',
+      color: typeof a.color === 'string' ? a.color : '',
+      hidden: a.hidden === true,
+      disabled: a.disabled === true,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 };
@@ -320,8 +326,10 @@ export function readOpenCodeConfig({ scope, projectPath, home } = {}) {
     text,
     config,
     agents: agentsView(config),
+    defaultAgent: typeof config.default_agent === 'string' ? config.default_agent : '',
     references: referencesView(config),
     instructions: instructionsView(config),
+    skills: skillsView(config),
     websearch: websearchView(config),
     policies: policiesView(config),
     advanced: advancedView(config),
@@ -671,15 +679,18 @@ export function restoreBackup(target, dataDir, id, { baseHash } = {}) {
   return { ...readOpenCodeConfig({ scope: target.scope, projectPath: target.projectPath, home: target.home }), restored: true, backup: backup?.path ?? null };
 }
 
-/** The form's agent rows merged into `config.agent`; unknown keys of a kept agent survive, a removed row is dropped. */
+/** The form's agent rows merged into `config.agents` (V2) or `config.agent` (V1: the key the file already uses). */
 function mergeAgents(config, agents) {
   if (!Array.isArray(agents)) throw new OpenCodeConfigError(400, 'Daftar agent tidak valid.');
   if (agents.length > OPENCODE_CONFIG_LIMITS.agents) throw new OpenCodeConfigError(400, `Maksimal ${OPENCODE_CONFIG_LIMITS.agents} agent.`);
-  if (config.agent !== undefined && !isObject(config.agent)) throw new OpenCodeConfigError(400, 'Bagian "agent" bukan objek. Perbaiki lewat tab JSON dulu.');
-  const old = isObject(config.agent) ? config.agent : {};
-  for (const [name, agent] of Object.entries(old)) {
-    if (!isObject(agent)) throw new OpenCodeConfigError(400, `Agent "${name}" bukan objek. Perbaiki lewat tab JSON dulu.`);
+  for (const key of ['agents', 'agent']) {
+    if (config[key] !== undefined && !isObject(config[key])) throw new OpenCodeConfigError(400, `Bagian "${key}" bukan objek. Perbaiki lewat tab JSON dulu.`);
+    for (const [name, agent] of Object.entries(isObject(config[key]) ? config[key] : {})) {
+      if (!isObject(agent)) throw new OpenCodeConfigError(400, `Agent "${name}" bukan objek. Perbaiki lewat tab JSON dulu.`);
+    }
   }
+  const target = isObject(config.agents) ? 'agents' : isObject(config.agent) ? 'agent' : 'agents';
+  const old = isObject(config[target]) ? config[target] : {};
   const next = {};
   const seen = new Set();
   for (const item of agents) {
@@ -689,7 +700,7 @@ function mergeAgents(config, agents) {
     if (seen.has(name)) throw new OpenCodeConfigError(400, `Nama agent ganda: ${name}.`);
     seen.add(name);
     const agent = isObject(old[name]) ? old[name] : {};
-    for (const [key, field, max] of [['description', 'description', OPENCODE_CONFIG_LIMITS.description], ['model', 'model', OPENCODE_CONFIG_LIMITS.model], ['mode', 'mode', 20]]) {
+    for (const [key, field, max] of [['description', 'description', OPENCODE_CONFIG_LIMITS.description], ['model', 'model', OPENCODE_CONFIG_LIMITS.model], ['mode', 'mode', 20], ['color', 'color', 20]]) {
       const value = item[field];
       if (value === undefined) continue;
       if (typeof value !== 'string') throw new OpenCodeConfigError(400, `${field} agent ${name} harus berupa teks.`);
@@ -698,6 +709,17 @@ function mergeAgents(config, agents) {
       else if (key === 'mode' && !AGENT_MODES.has(clean)) throw new OpenCodeConfigError(400, `Mode agent ${name} tidak dikenal.`);
       else if (clean.length > max) throw new OpenCodeConfigError(400, `${field} agent ${name} terlalu panjang.`);
       else agent[key] = clean;
+    }
+    if (item.steps !== undefined && item.steps !== '') {
+      const steps = Number(item.steps);
+      if (!Number.isInteger(steps) || steps < 1 || steps > 100) throw new OpenCodeConfigError(400, `steps agent ${name} harus bilangan bulat 1–100.`);
+      agent.steps = steps;
+    } else if (item.steps === '' || item.steps === null) delete agent.steps;
+    for (const key of ['hidden', 'disabled']) {
+      if (typeof item[key] === 'boolean') {
+        if (item[key]) agent[key] = true;
+        else delete agent[key];
+      }
     }
     if (item.prompt !== undefined) {
       if (typeof item.prompt !== 'string') throw new OpenCodeConfigError(400, `prompt agent ${name} harus berupa teks.`);
@@ -709,8 +731,19 @@ function mergeAgents(config, agents) {
     }
     next[name] = agent;
   }
-  if (Object.keys(next).length) config.agent = next;
-  else delete config.agent;
+  if (Object.keys(next).length) config[target] = next;
+  else delete config[target];
+}
+
+/** `default_agent` names an agent the file really defines; empty removes the key. */
+function mergeDefaultAgent(config, value) {
+  if (typeof value !== 'string') throw new OpenCodeConfigError(400, 'Agent bawaan harus berupa teks.');
+  const name = value.trim();
+  if (!name) return delete config.default_agent;
+  if (!AGENT_NAME.test(name)) throw new OpenCodeConfigError(400, 'Nama agent bawaan tidak valid (huruf/angka, -, _, titik; maks 64).');
+  const known = new Set([...Object.keys(isObject(config.agents) ? config.agents : {}), ...Object.keys(isObject(config.agent) ? config.agent : {})]);
+  if (!known.has(name)) throw new OpenCodeConfigError(400, `Agent bawaan "${name}" tidak ada di daftar agent.`);
+  config.default_agent = name;
 }
 
 /**
@@ -800,6 +833,28 @@ function mergeInstructions(config, items) {
   else delete config.instructions;
 }
 
+/** The form's `skills` sources (docs: local folder or HTTP catalog): trimmed, de-duplicated, bounded. */
+function mergeSkills(config, items) {
+  if (!Array.isArray(items)) throw new OpenCodeConfigError(400, 'Daftar skills tidak valid.');
+  const out = [];
+  const seen = new Set();
+  for (const item of items) {
+    if (typeof item !== 'string') throw new OpenCodeConfigError(400, 'Setiap sumber skill harus berupa teks.');
+    const clean = item.trim();
+    if (!clean) continue;
+    if (clean.length > 500) throw new OpenCodeConfigError(400, 'Satu sumber skill maksimal 500 karakter.');
+    if (/[\u0000-\u001f\u007f]/.test(clean)) throw new OpenCodeConfigError(400, 'Sumber skill tidak boleh memuat karakter kontrol.');
+    if (/^file:/i.test(clean)) throw new OpenCodeConfigError(400, 'Sumber skill tidak boleh memakai file:.');
+    if (/^[a-z]+:/i.test(clean) && !/^https?:/i.test(clean)) throw new OpenCodeConfigError(400, 'Katalog skill harus http(s), bukan skema lain.');
+    if (seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+    if (out.length > 50) throw new OpenCodeConfigError(400, 'Maksimal 50 sumber skill.');
+  }
+  if (out.length) config.skills = out;
+  else delete config.skills;
+}
+
 /** `websearch`: inherit (remove the key), off (`false`), or one provider id. Other keys of the old object survive. */
 function mergeWebsearch(config, value) {
   if (!isObject(value)) throw new OpenCodeConfigError(400, 'Pengaturan web search tidak valid.');
@@ -833,8 +888,10 @@ export function mergeForm(base, form = {}) {
     else config[key] = clean;
   }
   if (form.agents !== undefined) mergeAgents(config, form.agents);
+  if (form.defaultAgent !== undefined) mergeDefaultAgent(config, form.defaultAgent);
   if (form.references !== undefined) mergeReferences(config, form.references);
   if (form.instructions !== undefined) mergeInstructions(config, form.instructions);
+  if (form.skills !== undefined) mergeSkills(config, form.skills);
   if (form.websearch !== undefined) mergeWebsearch(config, form.websearch);
   // Policies and the advanced form have their own error types; the route only knows OpenCodeConfigError.
   const asConfigError = (fn) => {

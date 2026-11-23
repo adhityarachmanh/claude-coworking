@@ -8,6 +8,12 @@ Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); pa
 - **🗣 Transkrip subagent.** **Transkrip subagent di kartu delegasi** (`--forward-subagent-text`) menyimpan kata-kata subagent di detail kartu delegasi, di atas laporan akhirnya — bukan lagi hanya tool call dan hasil akhir.
 - **📎 PDF ke OpenCode.** Dokumen PDF kini dikirim ke OpenCode sebagai blok `resource` (blob + `application/pdf`), bukan lagi placeholder “tidak bisa dikirim”, sehingga model bisa membacanya seperti di terminal.
 - **🛡️ Izin tersimpan OpenCode.** ⋯ → **Izin tersimpan OpenCode** menampilkan daftar “Selalu izinkan” (`permission.saved.list`) yang tersimpan di laptop ini; **Hapus** mencabutnya lewat `permission.saved.remove`, sehingga permintaan berikutnya kembali bertanya. Hanya untuk project OpenCode; membaca dari laptop/Tailscale, menghapus hanya dari laptop.
+- **🤖 Agent OpenCode V2.** Form config kini membaca/menulis `agents` (jatuh ke `agent` V1 bila file masih memakainya) dengan field baru **langkah maksimal**, **warna**, **sembunyikan dari daftar**, **nonaktif**, dan **Agent bawaan (`default_agent`)**. Kunci agent lain (mis. `permissions`) tetap utuh saat disimpan.
+- **🗜 Compaction OpenCode.** Form config punya **Di latar belakang** (`compaction.background`), dan penanda `opencode/compaction` dari ACP kini tampil sebagai status “Memadatkan konteks…” serta baris selesai/gagal di chat.
+- **🔁 Pindah akun provider OpenCode.** Di 👤 Akun → provider, akun tersimpan yang tidak aktif punya tombol **Pakai** (`credential.activate`); akun aktif ditandai. Key/token tidak pernah dikirim ke browser.
+- **📚 Sumber skill OpenCode.** Form config punya daftar **Sumber skill**: folder lokal (`./team-skills`, `~/shared/...`) atau katalog HTTP berisi `index.json` (`skills` array). Skema selain http(s) dan `file:` ditolak.
+- **📂 Folder tambahan untuk OpenCode.** Daftar 📂 Folder tambahan kini juga dikirim ke OpenCode sebagai ACP `additionalDirectories` saat sesi dibuat/dilanjutkan.
+- **🧠 `/btw`, `/recap`, `/insights`.** Ketiganya tersedia lewat kotak pesan seperti command lain (diteruskan ke Claude Code; hasilnya muncul di chat).
 
 ## 1.0.98
 

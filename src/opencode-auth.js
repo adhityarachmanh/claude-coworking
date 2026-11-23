@@ -106,14 +106,15 @@ function customProviderIds() {
  * OpenAI-compatible provider this app wrote (those carry a Hapus button, they never leave a stale model behind).
  */
 export async function openCodeProviders(bin) {
-  const list = (await openCodeApi(bin, 'integration.list')) ?? [];
+  const [list, credentials] = await Promise.all([openCodeApi(bin, 'integration.list'), openCodeCredentials(bin).catch(() => [])]);
+  const active = new Set(credentials.filter((c) => c.active).map((c) => c.id));
   const custom = customProviderIds();
   const providers = (Array.isArray(list) ? list : []).filter((i) => i && ID.test(String(i.id))).map((i) => ({
     id: i.id,
     name: i.name ?? i.id,
     methods: (i.methods ?? []).filter((m) => m.type === 'key' || m.type === 'oauth').map(publicMethod),
     env: (i.methods ?? []).filter((m) => m.type === 'env').flatMap((m) => m.names ?? []),
-    connections: (i.connections ?? []).map(publicConnection),
+    connections: (i.connections ?? []).map((c) => ({ ...publicConnection(c), active: c.type === 'credential' ? active.has(c.id) : true })),
     custom: custom.has(i.id),
   }));
   return {
@@ -143,6 +144,32 @@ const checkId = (id, what) => {
   if (!ID.test(String(id ?? ''))) throw Object.assign(new Error(`${what} tidak valid.`), { status: 400 });
   return String(id);
 };
+
+/**
+ * Stored credentials per provider (`credential.list`). Only identity/state leave this function: the payload carries the
+ * key/OAuth tokens and must never reach the browser.
+ */
+export async function openCodeCredentials(bin) {
+  const out = (await openCodeApi(bin, 'credential.list')) ?? [];
+  const rows = Array.isArray(out) ? out : Array.isArray(out?.data) ? out.data : [];
+  return rows
+    .filter((c) => c && ID.test(String(c.id ?? '')) && ID.test(String(c.integrationID ?? '')))
+    .map((c) => ({
+      id: String(c.id),
+      integrationID: String(c.integrationID),
+      label: typeof c.label === 'string' ? c.label.slice(0, 120) : 'Default',
+      active: c.active === true,
+      type: c.value && typeof c.value.type === 'string' ? c.value.type : '',
+    }));
+}
+
+/** `credential.activate`: make one stored credential the provider's active account. */
+export async function openCodeActivateCredential(bin, credentialID) {
+  const id = checkId(credentialID, 'Kredensial');
+  await openCodeApi(bin, 'credential.activate', { params: { credentialID: id } });
+  clearModelCache();
+  return { ok: true };
+}
 
 /**
  * Waits until OpenCode's service lists a provider. A config block written a moment ago needs a beat before the

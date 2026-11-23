@@ -14,7 +14,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Model, effort, Mode tim | Pengaturan giliran (⚙), chip model/effort, /model /effort | ✅ |
 | Mode izin (Build/Plan/Auto + deny) | Mode (Shift+Tab), Aturan izin. `acceptEdits` dipetakan ke Build (auto-edit) dan `dontAsk` ke Plan (menolak semua yang bertanya), jadi mode Claude tidak muncul mentah di UI | ✅ |
 | Permission rules (allow/ask/deny) | Aturan izin (`/permissions`), kartu izin | ✅ |
-| Working dir & folder tambahan | 📂 Folder tambahan (`--add-dir`) | ✅ |
+| Working dir & folder tambahan | 📂 Folder tambahan (`--add-dir`); untuk OpenCode lewat ACP `additionalDirectories` | ✅ |
 | Memory (CLAUDE.md, rules, auto memory) | Editor Memory (`/memory`) | ✅ |
 | Skills | 🧩 Skills (`/skills`) | ✅ |
 | Output styles | 🎭 Output style (`/output-style`) | ✅ |
@@ -26,9 +26,8 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Tugas latar & agent view | ⧗ Tugas latar (`/tasks`), Monitor | ✅ |
 | Worktree (`claude -w`) | ⎇ Worktree (menu) | ✅ |
 | PR (`gh`) | 🧩 Pull request | ✅ |
-| `/goal` | diteruskan sebagai command (katalog `/goal`) | ✅ |
-| `/loop` | diteruskan sebagai command (katalog `/loop`) | ✅ |
-| `/fewer-permission-prompts` | diteruskan sebagai skill (katalog) | ✅ |
+| `/goal`, `/loop`, `/fewer-permission-prompts` | diteruskan sebagai command (katalog `/goal`, `/loop`, `/fewer-permission-prompts`) | ✅ |
+| `/btw`, `/recap`, `/insights` | diteruskan sebagai command (katalog); hasilnya muncul di chat, tanpa panel khusus | ✅ |
 | Flag `--fallback-model`, `--max-turns`, `--max-budget-usd`, `--tools`, `--allowedTools`, `--disallowedTools`, `--setting-sources` | ⚙️ Flag Claude (menu) → setelan project → spawn | ✅ |
 | `--advisor` (model penasihat) | ⚙️ Flag Claude → **Model advisor** → `--advisor` | ✅ |
 | `/fast` (fast mode) | ⚙️ Flag Claude → **Fast mode** → `--settings` `{"fastMode":true}` (flag `/fast` hanya untuk sesi interaktif) | ✅ |
@@ -54,17 +53,17 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 |---|---|---|
 | Sesi & ACP | mesin OpenCode (engine), resume | ✅ |
 | Model & effort | Pengaturan giliran (⚙) | ✅ |
-| Config `opencode.json(c)` (model, small_model, agent) | Config & Agent OpenCode (Form/JSON) | ✅ |
+| Config `opencode.json(c)` (model, small_model, agent) | Config & Agent OpenCode (Form/JSON); `agents` V2: mode, steps, color, hidden, disabled, `default_agent` | ✅ |
 | References (path/repo) | 🔗 References di form config | ✅ |
 | Commands (`.opencode/commands`) | 📝 Commands OpenCode | ✅ |
-| Skills | 🧩 Skills (Claude + OpenCode) | ✅ |
+| Skills | 🧩 Skills (Claude + OpenCode); sumber tambahan lewat `skills` array (folder/katalog HTTP) di form config | ✅ |
 | Memory (AGENTS.md) | Editor Memory | ✅ |
 | Permissions & Policies | Aturan izin (permissions) · 🛡️ Policies · **izin tersimpan** (`permission.saved.list/remove`) bisa ditinjau dan dihapus | ✅ |
 | Instructions (`instructions`) | 📚 Instruksi tambahan (form config) | ✅ |
 | Web search (`websearch.provider`) | 🔎 Provider web search (form config) | ✅ |
 | Lampiran (teks, gambar, PDF) | kotak pesan; PDF dikirim sebagai `resource` blob ACP | ✅ |
-| Config lanjutan (compaction, warming, snapshots, watcher, formatter, media, tool_output, experimental) | ⚙️ Config lanjutan | ✅ |
-| Providers (login, kustom, headers/body) | 👤 Akun → provider, 🔌 header/body | ✅ |
+| Config lanjutan (compaction, warming, snapshots, watcher, formatter, media, tool_output, experimental) | ⚙️ Config lanjutan; `compaction.background` + penanda compaction di chat | ✅ |
+| Providers (login, kustom, headers/body) | 👤 Akun → provider, 🔌 header/body; akun tersimpan bisa diganti (credential.activate) | ✅ |
 | Varian model `#variant` | pemilih model | ✅ |
 | Plugins | 🧩 Plugin OpenCode | ✅ |
 | MCP servers | 🔌 MCP | ✅ |

@@ -75,7 +75,7 @@ export function advancedView(config = {}) {
       maxBase64Bytes: num(image.max_base64_bytes),
     },
     toolOutput: { maxLines: num(output.max_lines), maxBytes: num(output.max_bytes) },
-    compaction: { auto: tri(compaction.auto), keepTokens: num(keep.tokens), buffer: text(compaction.buffer) },
+    compaction: { auto: tri(compaction.auto), background: tri(compaction.background), keepTokens: num(keep.tokens), buffer: text(compaction.buffer) },
     warming: {
       enabled: config.warming === true || isObject(config.warming) ? 'on' : config.warming === false ? 'off' : 'inherit',
       prompt: text(warming.prompt),
@@ -169,10 +169,11 @@ function mergeToolOutput(config, form) {
 
 function mergeCompaction(config, form) {
   if (!isObject(form)) throw new OpenCodeAdvancedError(400, 'Pengaturan compaction tidak valid.');
-  const write = form.auto === 'on' || form.auto === 'off' || form.keepTokens !== '' || form.buffer !== '';
+  const write = form.auto === 'on' || form.auto === 'off' || form.background === 'on' || form.background === 'off' || form.keepTokens !== '' || form.buffer !== '';
   if (!write) return;
   const compaction = requireObject(config, 'compaction', 'compaction');
   writeTri(compaction, 'auto', form.auto, 'compaction.auto');
+  writeTri(compaction, 'background', form.background, 'compaction.background');
   const tokens = cleanInt(form.keepTokens, { name: 'compaction.keep.tokens' });
   if (tokens == null) {
     if (isObject(compaction.keep) && canDrop(compaction.keep.tokens)) delete compaction.keep.tokens;

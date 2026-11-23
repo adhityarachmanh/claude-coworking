@@ -36,6 +36,10 @@ const agentRow = (agent = {}) => {
       </select></label>
       <label class="oc-field"><span>Model</span><input data-agent="model" type="text" maxlength="200" autocomplete="off" spellcheck="false" value="${escapeHtml(agent.model ?? '')}" placeholder="provider/model (opsional)" /></label>
       <label class="oc-field"><span>Deskripsi</span><input data-agent="description" type="text" maxlength="500" autocomplete="off" value="${escapeHtml(agent.description ?? '')}" placeholder="opsional" /></label>
+      <label class="oc-field"><span>Langkah maksimal</span><input data-agent="steps" type="number" min="1" max="100" step="1" value="${escapeHtml(agent.steps ?? '')}" placeholder="opsional" /></label>
+      <label class="oc-field"><span>Warna</span><input data-agent="color" type="text" maxlength="20" autocomplete="off" spellcheck="false" value="${escapeHtml(agent.color ?? '')}" placeholder="mis. #4f8cff" /></label>
+      <label class="oc-field"><span>Sembunyikan dari daftar</span><input data-agent="hidden" type="checkbox"${agent.hidden ? ' checked' : ''} /></label>
+      <label class="oc-field"><span>Nonaktif</span><input data-agent="disabled" type="checkbox"${agent.disabled ? ' checked' : ''} /></label>
       <label class="oc-field oc-field-wide"><span>Prompt / system</span><textarea data-agent="prompt" rows="3" maxlength="20000" spellcheck="false" placeholder="Instruksi agent (opsional)">${escapeHtml(agent.prompt ?? '')}</textarea></label>
     </div>
   </div>`;
@@ -114,6 +118,20 @@ const renderInstructions = (instructions) => {
 const collectInstructions = () =>
   [...document.querySelectorAll('#oc-instruction-list [data-instruction]')].map((input) => input.value.trim()).filter(Boolean);
 
+const skillRow = (value = '') => `<div class="oc-agent" data-skill-row>
+  <div class="oc-agent-head"><b>Sumber skill</b><button type="button" class="ghost danger-text" data-skill-remove aria-label="Hapus sumber skill">Hapus</button></div>
+  <div class="oc-agent-grid">
+    <label class="oc-field"><span>Folder atau katalog HTTP</span><input data-skill type="text" maxlength="500" autocomplete="off" spellcheck="false" value="${escapeHtml(value)}" placeholder="./team-skills, ~/shared/skills, https://…" /></label>
+  </div>
+</div>`;
+
+const renderSkills = (skills) => {
+  const list = (Array.isArray(skills) ? skills : []).filter((item) => typeof item === 'string');
+  $('#oc-skill-list').innerHTML = list.length ? list.map(skillRow).join('') : '<p class="muted small">Belum ada sumber skill tambahan.</p>';
+};
+
+const collectSkills = () => [...document.querySelectorAll('#oc-skill-list [data-skill]')].map((input) => input.value.trim()).filter(Boolean);
+
 /** The provider the form shows; one the list does not know yet keeps its value instead of being reset. */
 const renderWebsearch = (websearch) => {
   const select = $('#oc-websearch');
@@ -189,6 +207,7 @@ const renderAdvanced = (advanced) => {
   setField('#oc-snapshots', a.snapshots, 'inherit');
   setField('#oc-formatter', a.formatter, 'inherit');
   setField('#oc-compaction-auto', a.compaction?.auto, 'inherit');
+  setField('#oc-compaction-background', a.compaction?.background, 'inherit');
   setField('#oc-compaction-keep', a.compaction?.keepTokens);
   setField('#oc-compaction-buffer', a.compaction?.buffer);
   setField('#oc-warming-enabled', a.warming?.enabled, 'inherit');
@@ -220,7 +239,7 @@ const collectAdvanced = () => ({
     maxBase64Bytes: $('#oc-media-base64').value,
   },
   toolOutput: { maxLines: $('#oc-output-lines').value, maxBytes: $('#oc-output-bytes').value },
-  compaction: { auto: $('#oc-compaction-auto').value, keepTokens: $('#oc-compaction-keep').value, buffer: $('#oc-compaction-buffer').value },
+  compaction: { auto: $('#oc-compaction-auto').value, background: $('#oc-compaction-background').value, keepTokens: $('#oc-compaction-keep').value, buffer: $('#oc-compaction-buffer').value },
   warming: { enabled: $('#oc-warming-enabled').value, prompt: $('#oc-warming-prompt').value, interval: $('#oc-warming-interval').value, duration: $('#oc-warming-duration').value },
   experimental: { todo: $('#oc-exp-todo').value, subagentDepth: $('#oc-exp-depth').value, imageModel: $('#oc-exp-image').value, locationIdleTimeout: $('#oc-exp-idle').value },
   providers: collectProviders(),
@@ -317,8 +336,10 @@ const renderView = () => {
   $('#oc-model').value = typeof view.config?.model === 'string' ? view.config.model : '';
   $('#oc-small-model').value = typeof view.config?.small_model === 'string' ? view.config.small_model : '';
   renderAgents(view.agents);
+  $('#oc-default-agent').value = view.defaultAgent ?? '';
   renderReferences(view.references);
   renderInstructions(view.instructions);
+  renderSkills(view.skills);
   renderWebsearch(view.websearch);
   renderPolicies(view.policies);
   renderAdvanced(view.advanced);
@@ -426,7 +447,8 @@ const applyBusy = () => {
   $('#oc-agent-add').disabled = busy;
   $('#oc-reference-add').disabled = busy;
   $('#oc-instruction-add').disabled = busy;
-  for (const button of document.querySelectorAll('#oc-reference-list [data-ref-remove], #oc-instruction-list [data-instruction-remove]')) button.disabled = busy;
+  $('#oc-skill-add').disabled = busy;
+  for (const button of document.querySelectorAll('#oc-reference-list [data-ref-remove], #oc-instruction-list [data-instruction-remove], #oc-skill-list [data-skill-remove]')) button.disabled = busy;
   $('#oc-conflict-consolidate').disabled = busy || editor.backupsBusy;
   for (const button of document.querySelectorAll('#oc-backup-list button[data-backup-preview], #oc-backup-list button[data-backup-restore]')) {
     button.disabled = busy || editor.backupsBusy || (button.dataset.backupRestore ? backupLocked(button.dataset.backupRestore) : false);
@@ -503,8 +525,12 @@ const collectAgents = () => {
       model: value('model').trim(),
       description: value('description').trim(),
       prompt: value('prompt'),
+      steps: value('steps').trim(),
+      color: value('color').trim(),
+      hidden: row.querySelector('[data-agent="hidden"]')?.checked === true,
+      disabled: row.querySelector('[data-agent="disabled"]')?.checked === true,
     };
-    if (!agent.name && !agent.mode && !agent.model && !agent.description && !agent.prompt.trim()) continue;
+    if (!agent.name && !agent.mode && !agent.model && !agent.description && !agent.prompt.trim() && !agent.steps && !agent.color) continue;
     out.push(agent);
   }
   return out;
@@ -540,8 +566,10 @@ async function save() {
       model: $('#oc-model').value.trim(),
       smallModel: $('#oc-small-model').value.trim(),
       agents: collectAgents(),
+      defaultAgent: $('#oc-default-agent').value.trim(),
       references: collectReferences(),
       instructions: collectInstructions(),
+      skills: collectSkills(),
       websearch: (() => {
         const value = $('#oc-websearch').value;
         return value === 'inherit' || value === 'off' ? { mode: value, provider: '' } : { mode: 'provider', provider: value };
@@ -738,6 +766,19 @@ export function initOpenCodeConfig() {
     if (!remove || editor.busy) return;
     remove.closest('.oc-agent')?.remove();
     if (!document.querySelector('#oc-instruction-list .oc-agent')) renderInstructions([]);
+  });
+  $('#oc-skill-add').addEventListener('click', () => {
+    if (editor.busy) return;
+    const list = $('#oc-skill-list');
+    if (list.querySelector('.muted')) list.innerHTML = '';
+    list.insertAdjacentHTML('beforeend', skillRow());
+    list.querySelector('.oc-agent:last-child [data-skill]')?.focus();
+  });
+  $('#oc-skill-list').addEventListener('click', (e) => {
+    const remove = e.target.closest('[data-skill-remove]');
+    if (!remove || editor.busy) return;
+    remove.closest('.oc-agent')?.remove();
+    if (!document.querySelector('#oc-skill-list .oc-agent')) renderSkills([]);
   });
   $('#oc-policy-add').addEventListener('click', () => {
     if (editor.busy) return;

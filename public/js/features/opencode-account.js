@@ -1,7 +1,7 @@
 // 👤 Akun → tab OpenCode: provider logins and usage. OpenCode has no single account: every model provider
 // (OpenCode Zen/Go, Anthropic, OpenAI, GitHub Copilot…) logs in on its own (API key or OAuth), the same store
-// `opencode auth login|logout|list` uses (src/opencode-auth.js). The tab is information only: it never switches an
-// engine (the model picked in Pengaturan giliran does that).
+// `opencode auth login|logout|list` uses (src/opencode-auth.js). The tab never switches an engine (the model picked in
+// Pengaturan giliran does that); it can switch between stored accounts of the same provider.
 import { accountImpactText } from '../core/account-impact.js';
 import { api, toast } from '../core/api.js';
 import { $, escapeHtml } from '../core/dom.js';
@@ -74,7 +74,11 @@ export async function loadOpenCode(rerender) {
 
 const connectionHtml = (p, c) =>
   c.type === 'credential'
-    ? `<li><span>${escapeHtml(c.label)} <small class="muted">${c.method === 'oauth' ? 'OAuth' : 'API key'}</small></span><button class="ghost danger-text" data-act="oc-logout" data-cred="${escapeHtml(c.id)}" data-name="${escapeHtml(p.name)}">Logout</button></li>`
+    ? `<li><span>${escapeHtml(c.label)} <small class="muted">${c.method === 'oauth' ? 'OAuth' : 'API key'}</small>${c.active ? ' <small class="ok-text">Aktif</small>' : ''}</span><span class="perm-acts">${
+        !c.active && state.accountAuth
+          ? `<button class="ghost" data-act="oc-activate" data-cred="${escapeHtml(c.id)}" data-name="${escapeHtml(p.name)}" title="Jadikan akun aktif untuk provider ini">Pakai</button>`
+          : ''
+      }<button class="ghost danger-text" data-act="oc-logout" data-cred="${escapeHtml(c.id)}" data-name="${escapeHtml(p.name)}">Logout</button></span></li>`
     : `<li><span>${escapeHtml(c.label)} <small class="muted">variabel lingkungan</small></span><small class="muted" title="Diatur di environment Windows, bukan dari aplikasi">diatur di luar app</small></li>`;
 
 /** Three cards for one range, plus the exact per-model table when the console provided it. */
@@ -500,6 +504,22 @@ export async function onOpenCodeAction(act, el, rerender) {
       oc.attempt = null;
       rerender();
       if (a) await api('/api/opencode/login/cancel', { provider: oc.provider.id, attemptID: a.attemptID }).catch(() => {});
+      return true;
+    }
+    case 'oc-activate': {
+      const name = el.dataset.name;
+      const credentialID = el.dataset.cred;
+      if (!credentialID) return true;
+      oc.logoutError = null;
+      try {
+        await api('/api/opencode/credentials/activate', { id: credentialID });
+      } catch (err) {
+        oc.logoutError = err.data?.error ?? err.message;
+        rerender();
+        return true;
+      }
+      toast(`Akun ${name} yang dipakai sekarang sudah diganti.`, 'ok');
+      await loadOpenCode(rerender);
       return true;
     }
     case 'oc-logout': {

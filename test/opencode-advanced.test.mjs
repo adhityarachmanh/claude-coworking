@@ -12,7 +12,7 @@ test('advancedView: bentuk form, tri-state, dan provider headers/body', () => {
     formatter: true,
     media: { image: { auto_resize: false, max_width: 1000 } },
     tool_output: { max_lines: 100 },
-    compaction: { auto: true, keep: { tokens: 5000 }, buffer: '15%' },
+    compaction: { auto: true, background: false, keep: { tokens: 5000 }, buffer: '15%' },
     warming: { prompt: 'OK', interval: 'auto' },
     experimental: { todo: true, subagent_depth: 2, image_generate: { model: 'openai/gpt-image-2' }, location_idle_timeout: false },
     providers: { openai: { headers: { 'X-A': '1' }, body: { temperature: 0 }, models: {} } },
@@ -22,6 +22,7 @@ test('advancedView: bentuk form, tri-state, dan provider headers/body', () => {
   assert.deepEqual(view.watcherIgnore, ['dist/**']);
   assert.equal(view.mediaImage.maxWidth, 1000);
   assert.equal(view.compaction.auto, 'on');
+  assert.equal(view.compaction.background, 'off');
   assert.equal(view.compaction.keepTokens, 5000);
   assert.equal(view.warming.enabled, 'on');
   assert.equal(view.experimental.todo, 'on');
@@ -35,12 +36,12 @@ test('mergeAdvanced: inherit tidak menyentuh, angka divalidasi, kunci asing aman
     formatter: { prettier: { command: ['prettier'] } },
     media: { image: { auto_resize: false, extra: 1 } },
     tool_output: { max_lines: 100, extra: 2 },
-    compaction: { auto: true, keep: { tokens: 5000, extra: 3 }, buffer: '15%', extra: 4 },
+    compaction: { auto: true, background: true, keep: { tokens: 5000, extra: 3 }, buffer: '15%', extra: 4 },
     warming: { prompt: 'OK', extra: 5 },
     experimental: { todo: true, image_generate: { model: 'x', extra: 6 }, extra: 7 },
     providers: { openai: { headers: { A: '1' }, models: { m: {} }, package: 'pkg' }, lain: { models: {} } },
   };
-  mergeAdvanced(base, { snapshots: 'inherit', formatter: 'inherit', mediaImage: { auto_resize: 'inherit', maxWidth: '', maxHeight: '', maxBase64Bytes: '' }, toolOutput: { maxLines: '', maxBytes: '' }, compaction: { auto: 'inherit', keepTokens: '', buffer: '' }, warming: { enabled: 'inherit', prompt: '', interval: '', duration: '' }, experimental: { todo: 'inherit', subagentDepth: '', imageModel: '', locationIdleTimeout: '' }, watcherIgnore: [], providers: [] });
+  mergeAdvanced(base, { snapshots: 'inherit', formatter: 'inherit', mediaImage: { auto_resize: 'inherit', maxWidth: '', maxHeight: '', maxBase64Bytes: '' }, toolOutput: { maxLines: '', maxBytes: '' }, compaction: { auto: 'inherit', background: 'inherit', keepTokens: '', buffer: '' }, warming: { enabled: 'inherit', prompt: '', interval: '', duration: '' }, experimental: { todo: 'inherit', subagentDepth: '', imageModel: '', locationIdleTimeout: '' }, watcherIgnore: [], providers: [] });
   assert.deepEqual(base.snapshots, false);
   assert.deepEqual(Object.keys(base.formatter), ['prettier']);
   assert.equal(base.media.image.extra, 1);
@@ -50,12 +51,12 @@ test('mergeAdvanced: inherit tidak menyentuh, angka divalidasi, kunci asing aman
   assert.equal(base.providers.openai.package, 'pkg');
   assert.ok('lain' in base.providers);
 
-  mergeAdvanced(base, { snapshots: 'on', formatter: 'off', mediaImage: { auto_resize: 'off', maxWidth: '1500', maxHeight: '0', maxBase64Bytes: '' }, toolOutput: { maxLines: '50', maxBytes: '1000' }, compaction: { auto: 'off', keepTokens: '100', buffer: '10%' }, warming: { enabled: 'on', prompt: 'Hi', interval: 'auto', duration: '30 minutes' }, experimental: { todo: 'on', subagentDepth: '2', imageModel: 'openai/gpt-image-2', locationIdleTimeout: 'false' }, watcherIgnore: ['dist/**', 'dist/**', ' coverage/** '], providers: [{ id: 'openai', headers: '{"X-A":"2"}', body: '' }] });
+  mergeAdvanced(base, { snapshots: 'on', formatter: 'off', mediaImage: { auto_resize: 'off', maxWidth: '1500', maxHeight: '0', maxBase64Bytes: '' }, toolOutput: { maxLines: '50', maxBytes: '1000' }, compaction: { auto: 'off', background: 'off', keepTokens: '100', buffer: '10%' }, warming: { enabled: 'on', prompt: 'Hi', interval: 'auto', duration: '30 minutes' }, experimental: { todo: 'on', subagentDepth: '2', imageModel: 'openai/gpt-image-2', locationIdleTimeout: 'false' }, watcherIgnore: ['dist/**', 'dist/**', ' coverage/** '], providers: [{ id: 'openai', headers: '{"X-A":"2"}', body: '' }] });
   assert.equal(base.snapshots, true);
   assert.equal(base.formatter, false);
   assert.deepEqual(base.media.image, { auto_resize: false, max_width: 1500, max_height: 0, extra: 1 });
   assert.deepEqual(base.tool_output, { max_lines: 50, max_bytes: 1000, extra: 2 });
-  assert.deepEqual(base.compaction, { auto: false, keep: { tokens: 100, extra: 3 }, buffer: '10%', extra: 4 });
+  assert.deepEqual(base.compaction, { auto: false, background: false, keep: { tokens: 100, extra: 3 }, buffer: '10%', extra: 4 });
   assert.deepEqual(base.warming, { prompt: 'Hi', interval: 'auto', duration: '30 minutes', extra: 5 });
   assert.deepEqual(base.watcher, { ignore: ['dist/**', 'coverage/**'] });
   assert.equal(base.experimental.todo, true);

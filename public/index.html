@@ -1444,14 +1444,18 @@
             <label class="oc-field"><span>Small model</span><input id="oc-small-model" type="text" autocomplete="off" spellcheck="false" maxlength="200" placeholder="opsional" /></label>
           </div>
           <div class="oc-agents-head"><b>Agent</b><button type="button" id="oc-agent-add" class="ghost">＋ Agent</button></div>
+          <label class="oc-field"><span>Agent bawaan (default_agent)</span><input id="oc-default-agent" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="nama agent (opsional)" /></label>
           <div id="oc-agent-list" class="oc-agent-list"></div>
-          <p class="muted small">Kosongkan prompt untuk menghapusnya. Agent bawaan OpenCode tidak perlu ditambahkan di sini.</p>
+          <p class="muted small">Kosongkan prompt untuk menghapusnya. Agent bawaan OpenCode tidak perlu ditambahkan di sini. Mode, langkah, warna, sembunyikan, dan nonaktif mengikuti config OpenCode V2.</p>
           <div class="oc-agents-head"><b>References</b><button type="button" id="oc-reference-add" class="ghost">＋ Reference</button></div>
           <div id="oc-reference-list" class="oc-agent-list"></div>
           <p class="muted small">Folder lokal (mis. <code>~/pustaka</code>) atau repository Git yang boleh dibaca agent. Alias tanpa spasi, <code>/</code>, backtick, atau koma; branch hanya untuk repository. Kosongkan alias untuk membuang baris.</p>
           <div class="oc-agents-head"><b>Instructions</b><button type="button" id="oc-instruction-add" class="ghost">＋ Instruksi</button></div>
           <div id="oc-instruction-list" class="oc-agent-list"></div>
           <p class="muted small">File, glob, atau URL instruksi yang selalu dibaca OpenCode — mis. <code>AGENTS.md</code>, <code>~/aturan/*.md</code>, <code>https://contoh.test/aturan.md</code>. Maksimal 100 entri.</p>
+          <div class="oc-agents-head"><b>Sumber skill</b><button type="button" id="oc-skill-add" class="ghost">＋ Sumber</button></div>
+          <div id="oc-skill-list" class="oc-agent-list"></div>
+          <p class="muted small">Folder lokal (<code>./team-skills</code>, <code>~/shared/opencode-skills</code>) atau katalog HTTP berisi <code>index.json</code>. Skill bawaan OpenCode dan folder <code>.opencode/skills</code> tetap dibaca tanpa entri di sini.</p>
           <label class="oc-field"><span>Web search</span><select id="oc-websearch"></select></label>
           <p class="muted small">Provider tool pencarian OpenCode. <b>Bawaan</b> membiarkan OpenCode memilih; <b>Nonaktif</b> menghapus tool pencarian. Kunci (API key) provider diatur dari 👤 Akun → provider web search.</p>
           <div class="acct-actions"><button type="button" id="oc-commands-open" class="ghost">📝 Commands OpenCode…</button></div>
@@ -1475,6 +1479,7 @@
             <div class="oc-agents-head"><b>Compaction</b></div>
             <div class="oc-form-grid">
               <label class="oc-field"><span>Otomatis</span><select id="oc-compaction-auto"><option value="inherit">Bawaan</option><option value="on">Aktif</option><option value="off">Nonaktif</option></select></label>
+              <label class="oc-field"><span>Di latar belakang</span><select id="oc-compaction-background"><option value="inherit">Bawaan</option><option value="on">Aktif</option><option value="off">Nonaktif</option></select></label>
               <label class="oc-field"><span>Pertahankan token</span><input id="oc-compaction-keep" type="number" min="0" step="1" placeholder="15000" /></label>
               <label class="oc-field"><span>Buffer konteks</span><input id="oc-compaction-buffer" maxlength="20" placeholder="15%" /></label>
             </div>

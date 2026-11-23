@@ -65,8 +65,8 @@ test('readOpenCodeConfig: agents expose name/mode/model/prompt, missing file is 
   assert.equal(view.format, 'jsonc');
   assert.equal(view.config.model, 'anthropic/claude-sonnet-4');
   assert.deepEqual(view.agents, [
-    { name: 'helper', mode: '', model: '', description: '', prompt: 'Help' },
-    { name: 'reviewer', mode: 'subagent', model: 'openai/gpt-5', description: 'Review changes', prompt: 'Be strict' },
+    { name: 'helper', mode: '', model: '', description: '', prompt: 'Help', steps: '', color: '', hidden: false, disabled: false },
+    { name: 'reviewer', mode: 'subagent', model: 'openai/gpt-5', description: 'Review changes', prompt: 'Be strict', steps: '', color: '', hidden: false, disabled: false },
   ]);
   assert.match(view.text, /a comment survives/);
   assert.equal(view.consolidatable, false, 'global is never consolidatable');
@@ -120,7 +120,7 @@ test('save form merges model/small model and agents, preserving unknown fields',
     system: 'new prompt',
     model: 'openai/gpt-5',
   });
-  assert.deepEqual(saved.agents, [{ name: 'keep', mode: 'primary', model: 'openai/gpt-5', description: '', prompt: 'new prompt' }]);
+  assert.deepEqual(saved.agents, [{ name: 'keep', mode: 'primary', model: 'openai/gpt-5', description: '', prompt: 'new prompt', steps: '', color: '', hidden: false, disabled: false }]);
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), saved.config);
 });
 

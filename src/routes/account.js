@@ -8,7 +8,7 @@ import { recordAuth, recentAuth } from '../auth-audit.js';
 import { ENGINES } from '../hub.js';
 import { readModelPrices } from '../model-prices.js';
 import { OPENCODE_ACCOUNT } from '../opencode-account.js';
-import { openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders, waitForProvider } from '../opencode-auth.js';
+import { openCodeActivateCredential, openCodeConnectKey, openCodeLogout, openCodeOAuthCancel, openCodeOAuthComplete, openCodeOAuthStart, openCodeOAuthStatus, openCodeProviders, waitForProvider } from '../opencode-auth.js';
 import { addCustomProvider, CUSTOM_PROVIDER_PACKAGE, readOpenCodeConfig, removeCustomProvider, restoreProviderBlock } from '../opencode-config.js';
 import { clearModelCache } from '../opencode-bin.js';
 import { GO_PLANS, goAllowance } from '../opencode-go.js';
@@ -164,6 +164,7 @@ export function register(router) {
   router.post('/api/opencode/login/code', audited('oauth-complete', (body) => body.provider, (bin, body, ctx) => openCodeOAuthComplete(bin, body.provider, body.attemptID, body.code).then(loggedIn(ctx))));
   router.post('/api/opencode/login/cancel', audited('cancel', (body) => body.provider, (bin, body) => openCodeOAuthCancel(bin, body.provider, body.attemptID)));
   router.post('/api/opencode/logout', openCode(openCodeLogoutRoute));
+  router.post('/api/opencode/credentials/activate', openCode((bin, body) => openCodeActivateCredential(bin, body.id)));
   // Provider kustom OpenAI-compatible: cek endpoint /models, lalu blok config + API key + efek login standar,
   // dan Hapus: kredensial + blok config sekaligus (blok yang tertinggal membuat model mati tetap tampil).
   router.post('/api/opencode/custom/check', openCode(customCheck));

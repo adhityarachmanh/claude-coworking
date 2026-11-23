@@ -1439,6 +1439,7 @@ pre.diff .add { color: var(--ok-text); background: #16321f66; background: color-
 .pair-info code { font: var(--fs-md) var(--mono); color: var(--accent-2); overflow-wrap: anywhere; }
 .pair .code { font: 700 var(--fs-3xl)/1.2 var(--mono); letter-spacing: 4px; color: var(--text); margin: 4px 0; }
 .warn { color: var(--warn-text); font-size: var(--fs-md); }
+.ok-text { color: var(--ok-text); }
 .access-modes { margin: 0 0 10px; padding-left: 18px; }
 .access-modes li { margin-bottom: 4px; }
 .access-mode { font-size: var(--fs-md); margin: 10px 0 0; padding: 6px 10px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border); }

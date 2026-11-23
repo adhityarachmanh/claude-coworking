@@ -275,9 +275,11 @@ const configView = (over = {}) => ({
   format: 'json',
   text: '{\n  "model": "anthropic/claude-lama"\n}\n',
   config: { model: 'anthropic/claude-lama' },
-  agents: [{ name: 'reviewer', mode: 'subagent', model: '', description: '', prompt: 'old prompt' }],
+  agents: [{ name: 'reviewer', mode: 'subagent', model: '', description: '', prompt: 'old prompt', steps: '', color: '', hidden: false, disabled: false }],
+  defaultAgent: '',
   references: [],
   instructions: [],
+  skills: [],
   websearch: { mode: 'inherit', provider: '' },
   policies: [],
   advanced: {
@@ -286,7 +288,7 @@ const configView = (over = {}) => ({
     watcherIgnore: [],
     mediaImage: { auto_resize: 'inherit', maxWidth: '', maxHeight: '', maxBase64Bytes: '' },
     toolOutput: { maxLines: '', maxBytes: '' },
-    compaction: { auto: 'inherit', keepTokens: '', buffer: '' },
+    compaction: { auto: 'inherit', background: 'inherit', keepTokens: '', buffer: '' },
     warming: { enabled: 'inherit', prompt: '', interval: '', duration: '' },
     experimental: { todo: 'inherit', subagentDepth: '', imageModel: '', locationIdleTimeout: '' },
     providers: [],
@@ -352,7 +354,7 @@ function installConfigFake() {
       case '/api/opencode-config/save': {
         const failed = refuse(endpoint) ?? guard(body);
         if (failed) return failed;
-        fake.view = { ...read(), hash: 'hash-2', text: '{"model":"anthropic/claude-baru"}\n', config: { model: body.form?.model ?? 'anthropic/claude-baru' }, agents: [], references: Array.isArray(body.form?.references) ? body.form.references : [], instructions: Array.isArray(body.form?.instructions) ? body.form.instructions : [], websearch: body.form?.websearch ?? { mode: 'inherit', provider: '' }, policies: Array.isArray(body.form?.policies) ? body.form.policies : [], advanced: body.form?.advanced ?? configView().advanced, parseError: null, backup: 'b-new' };
+        fake.view = { ...read(), hash: 'hash-2', text: '{"model":"anthropic/claude-baru"}\n', config: { model: body.form?.model ?? 'anthropic/claude-baru' }, agents: [], defaultAgent: body.form?.defaultAgent ?? '', references: Array.isArray(body.form?.references) ? body.form.references : [], instructions: Array.isArray(body.form?.instructions) ? body.form.instructions : [], skills: Array.isArray(body.form?.skills) ? body.form.skills : [], websearch: body.form?.websearch ?? { mode: 'inherit', provider: '' }, policies: Array.isArray(body.form?.policies) ? body.form.policies : [], advanced: body.form?.advanced ?? configView().advanced, parseError: null, backup: 'b-new' };
         return json(read());
       }
       case '/api/opencode-config/backups':
@@ -999,7 +1001,7 @@ test('form config: policies dan config lanjutan tampil, diubah, lalu dikirim —
     watcherIgnore: ['dist/**'],
     mediaImage: { auto_resize: 'off', maxWidth: 1000, maxHeight: '', maxBase64Bytes: '' },
     toolOutput: { maxLines: 100, maxBytes: '' },
-    compaction: { auto: 'on', keepTokens: 5000, buffer: '15%' },
+    compaction: { auto: 'on', background: 'off', keepTokens: 5000, buffer: '15%' },
     warming: { enabled: 'on', prompt: 'OK', interval: 'auto', duration: '' },
     experimental: { todo: 'on', subagentDepth: 2, imageModel: '', locationIdleTimeout: 'false' },
     providers: [{ id: 'openai', headers: '{"A":"1"}', body: '' }],

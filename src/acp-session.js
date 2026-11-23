@@ -133,6 +133,21 @@ export const lateStreamChunkNote = (message) => {
   return `${text}\nProvider ini mengirim penutup stream yang tidak lazim (satu potongan tool setelah giliran selesai), lalu OpenCode membatalkan giliran itu — bug parser OpenCode (upstream #56455), bukan kesalahanmu. Coba kirim ulang pesan yang sama. Bila sering terjadi, provider ini sebaiknya disetel memanggil tool satu per satu (dimatikan otomatis untuk provider custom yang dibuat lewat ＋ Login provider).`;
 }
 /**
+ * `session_info_update._meta["opencode/compaction"]` (docs: ACP compaction marker, used when the client does not
+ * advertise session.compaction). Returns the status patch and chat line to show, or null for an unknown status.
+ */
+export function compactionMarker(meta) {
+  const c = meta?.['opencode/compaction'];
+  if (!c || typeof c !== 'object' || typeof c.status !== 'string') return null;
+  if (c.status === 'started') return { compacting: true, note: '', failed: false };
+  if (c.status === 'completed') return { compacting: false, note: c.reason === 'auto' ? 'Konteks dipadatkan otomatis.' : 'Konteks dipadatkan.', failed: false };
+  if (c.status === 'failed') {
+    const why = typeof c.error?.message === 'string' && c.error.message ? `: ${c.error.message.slice(0, 300)}` : '.';
+    return { compacting: false, note: `Gagal memadatkan konteks${why}`, failed: true };
+  }
+  return null;
+}
+/**
  * What the UI may offer for an OpenCode project (config.engines.opencode.caps, read by public/js/core/engine-caps.js).
  * Effort = OpenCode's per-model "effort" config option (thought level); Mode tim = the roles as OpenCode subagents.
  * Rewind = OpenCode's session.revert (conversation, with or without its file snapshots; no "code only").
@@ -914,6 +929,15 @@ export class AcpAdapter {
  * `@path` mentions of files inside the project → ACP resource_link blocks (the text keeps the mention), so OpenCode
  * knows the real file like in its own TUI. Only existing files below the project folder; at most 20.
  */
+/**
+ * Parameters for `session/new`, `session/load`, `session/resume`: the app's 📂 folder tambahan become ACP
+ * `additionalDirectories` (docs: each request replaces the session's list). Empty keeps the current shape exactly.
+ */
+export function sessionParams(cwd, settings = {}) {
+  const dirs = Array.isArray(settings.additionalDirectories) ? settings.additionalDirectories.filter((d) => typeof d === 'string' && d) : [];
+  return { cwd, mcpServers: [], ...(dirs.length ? { additionalDirectories: dirs } : {}) };
+}
+
 export function mentionLinks(text, projectPath) {
   if (!projectPath) return [];
   const root = path.resolve(projectPath);
@@ -1942,13 +1966,13 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
      * `session/load` stays as the fallback for a build that lacks `resume`.
      * @returns the handshake result, or null when the conversation is gone (deleted elsewhere): start a new one.
      */
-    async reopen(sessionId, cwd, init) {
+    async reopen(sessionId, cwd, init, settings) {
       const caps = init?.agentCapabilities?.sessionCapabilities ?? {};
       const replay = !('resume' in caps);
       if (replay) this.loading = true; // session/load replays the old conversation as updates: the chat already has it
       try {
         const method = replay ? 'session/load' : 'session/resume';
-        return (await this.rpc(method, { sessionId, cwd, mcpServers: [] }, HANDSHAKE_TIMEOUT_MS)) ?? {};
+        return (await this.rpc(method, { sessionId, ...sessionParams(cwd, settings) }, HANDSHAKE_TIMEOUT_MS)) ?? {};
       } catch {
         return null; // gone (deleted, other machine), or the method was refused: start a new one
       } finally {
@@ -1966,11 +1990,11 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       const known = this.hub.sessionIdFor(this.id);
       let res = null;
       if (known?.startsWith('ses_')) {
-        res = await this.reopen(known, cwd, init);
+        res = await this.reopen(known, cwd, init, settings);
         if (res) this.acpSessionId = known;
       }
       if (!res) {
-        res = await this.rpc('session/new', { cwd, mcpServers: [] }, HANDSHAKE_TIMEOUT_MS);
+        res = await this.rpc('session/new', sessionParams(cwd, settings), HANDSHAKE_TIMEOUT_MS);
         this.acpSessionId = res.sessionId;
         this.hub.setSessionId(this.id, res.sessionId);
       }
@@ -2192,6 +2216,14 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
     onUpdate(u) {
       if (this.loading && u?.sessionUpdate !== 'available_commands_update') return;
       this.lastFrameAt = Date.now(); // progress: the stalled-turn watchdog (watchStall) counts from the last frame
+      if (u.sessionUpdate === 'session_info_update' && u._meta?.['opencode/compaction']) {
+        const marker = compactionMarker(u._meta);
+        if (marker) {
+          this.hub.setStatus(this.id, { compacting: marker.compacting });
+          if (marker.note) this.hub.chat(this.id, marker.failed ? { kind: 'error', text: marker.note } : { kind: 'info', text: marker.note, level: 'notice' });
+        }
+        return;
+      }
       if (u.sessionUpdate === 'usage_update') {
         if (Number.isFinite(u.cost?.amount)) this.cost = u.cost.amount;
         if (Number.isFinite(u.used) && Number.isFinite(u.size) && u.size > 0) this.hub.setStatus(this.id, { context: { used: u.used, window: u.size, autoCompactAt: null } });
