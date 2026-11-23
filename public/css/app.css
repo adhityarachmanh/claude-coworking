@@ -2271,6 +2271,8 @@ body.read-only #composer-hint { color: var(--ask); }
 .cmp-col .cc-output { max-height: 320px; margin: 0; }
 .cmp-col button { align-self: flex-start; }
 @media (max-width: 760px) { .cmp-grid { grid-template-columns: 1fr; } }
+.budget-models { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.budget-model-rows .budget-row { align-items: center; }
 .archive-answer { margin-top: 10px; }
 .archive-answer .md { font-size: var(--fs-md); line-height: 1.55; overflow-wrap: anywhere; }
 .archive-sources { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }

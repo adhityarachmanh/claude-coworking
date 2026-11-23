@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## Belum dirilis
+
+- **💰 Budget per model.** Bagian Budget pemakaian kini punya **Budget per model**: satu batas harian/mingguan/bulanan untuk model tertentu (mis. `opus` atau `openai/gpt-5`), berlaku di semua project. Pemeriksaan tetap dilakukan sebelum prompt/antrean/giliran OpenCode; model Auto baru dicek setelah classifier memilih model. Daftar menampilkan model, jendela terburuk, dan **Hapus**. Disimpan di `modelBudgets` pada `state.json` dan tercatat di riwayat perubahan budget.
+
 ## 1.4.0
 
 - **🧪 Nilai jawaban terakhir.** ⋯ → **Nilai jawaban terakhir** meminta model kedua (Claude, tanpa tool, sesi tidak disimpan) menilai jawaban asisten terakhir: yang benar, kesalahan/risiko, verifikasi yang kurang, dan saran. Fokus dan model penilai bisa diisi; satu penilaian memakai token.

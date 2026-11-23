@@ -41,17 +41,23 @@ function state({ hub, ledger }, req, res, params, body) {
 function save({ hub, ledger, device, dataDir }, req, res, params, body) {
   let patch;
   let projectId = null;
+  const model = typeof body?.model === 'string' ? body.model.trim() : '';
   try {
     projectId = projectOf(hub, body);
     patch = cleanBudgetPatch(body);
   } catch (err) {
     return json(res, err.status ?? 400, { error: err.message });
   }
-  if (projectId) hub.setProjectBudget(projectId, patch);
-  else hub.setBudget(patch);
+  try {
+    if (model) hub.setModelBudget(model, patch);
+    else if (projectId) hub.setProjectBudget(projectId, patch);
+    else hub.setBudget(patch);
+  } catch (err) {
+    return json(res, err.status ?? 400, { error: err.message });
+  }
   if (device) console.log(`Batas pemakaian diubah dari HP "${device.name}"`);
   recordBudget(
-    { action: 'save', scope: projectId ? 'project' : 'global', projectId, actor: device?.name ?? 'laptop', detail: Object.entries(patch).map(([key, value]) => `${key}=${value ?? 'off'}`).join(' · ') },
+    { action: 'save', scope: model ? 'model' : projectId ? 'project' : 'global', projectId, model: model || undefined, actor: device?.name ?? 'laptop', detail: Object.entries(patch).map(([key, value]) => `${key}=${value ?? 'off'}`).join(' · ') },
     { dataDir: dataDir ?? hub.dataDir },
   );
   return json(res, 200, { budget: { ...budgetView(hub, ledger, Date.now(), projectId), projectId } });

@@ -219,3 +219,23 @@ test('hub: setBudget rounds to cents, writes state.json at once, broadcasts, and
   const restarted = new Hub({ dataDir: dir });
   assert.deepEqual(restarted.persisted.budget, { dailyUsd: null, weeklyUsd: 5.5, monthlyUsd: null });
 });
+
+test('budget per model: spend per model, hard stop, view, dan validasi simpan', () => {
+  const ledger = ledgerWith(ROWS);
+  assert.deepEqual(spend(ledger, NOW, null, 'm').day, { usd: 2, rows: 3, known: 2 });
+  const hub = { persisted: { budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, modelBudgets: { m: { dailyUsd: 1, weeklyUsd: null, monthlyUsd: null } } } };
+  const stop = budgetStop(hub, ledger, NOW, null, 'm');
+  assert.deepEqual(stop.modelWindows, ['day']);
+  assert.match(stop.label, /^model m harian \$2,00 \/ \$1,00$/);
+  assert.equal(budgetStop(hub, ledger, NOW, null, 'lain'), null, 'model lain tidak terpengaruh');
+  assert.equal(budgetView(hub, ledger, NOW).models[0].model, 'm');
+
+  const real = new Hub({ dataDir: tempDir() });
+  const project = real.upsertProject(tempDir(), 'custom');
+  real.setModelBudget('openai/gpt-5', { dailyUsd: 5 });
+  assert.equal(real.persisted.modelBudgets['openai/gpt-5'].dailyUsd, 5);
+  assert.throws(() => real.setModelBudget('--evil', { dailyUsd: 1 }), (e) => e.status === 400);
+  real.setModelBudget('openai/gpt-5', { dailyUsd: null });
+  assert.equal('openai/gpt-5' in real.persisted.modelBudgets, false);
+  assert.ok(project.id);
+});

@@ -2,7 +2,7 @@
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { BUDGET_KEYS, BUDGET_MAX_USD, cents, cleanLimits, cleanProjectBudgets } from './budget.js';
+import { BUDGET_KEYS, BUDGET_MAX_USD, cents, cleanLimits, cleanModelBudgets, cleanProjectBudgets } from './budget.js';
 import { cleanRoutines } from './routines.js';
 import { CHAT_LIMIT, ChatStore, isChatId } from './chat-store.js';
 import { EFFORT_LEVELS } from './effort.js';
@@ -439,6 +439,7 @@ export class Hub {
     this.persisted.routines = cleanRoutines(this.persisted.routines);
     // 💰 Per-project budgets: only valid limits survive.
     this.persisted.projectBudgets = cleanProjectBudgets(this.persisted.projectBudgets);
+    this.persisted.modelBudgets = cleanModelBudgets(this.persisted.modelBudgets);
     // 🏷/📦 Session tags and archive flags: only valid entries survive.
     this.persisted.sessionMeta = cleanSessionMeta(this.persisted.sessionMeta);
     this.persisted.sessionAutoArchive = cleanSessionAutoArchive(this.persisted.sessionAutoArchive);
@@ -503,7 +504,7 @@ export class Hub {
     // turns: the turn running right now per project (written when it starts, removed when it ends); one left
     // over at start means the server died mid-turn. interrupted: turns cut short by a server stop, kept until
     // the user continues or dismisses them (see recoverTurns / interruptTurn).
-    const empty = { roots: [], custom: [], favorites: [], favoriteModels: [], projectGroups: [], remotePower: { bridgeUrl: '', token: '', offDelaySec: 120, shutdownPc: false, autoCut: false }, settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, routines: [] };
+    const empty = { roots: [], custom: [], favorites: [], favoriteModels: [], projectGroups: [], remotePower: { bridgeUrl: '', token: '', offDelaySec: 120, shutdownPc: false, autoCut: false }, settings: {}, engineSettings: {}, sessions: {}, sessionsByEngine: {}, activity: {}, turns: {}, interrupted: {}, engine: 'claude', opencodeGoPlan: 'go', budget: { dailyUsd: null, weeklyUsd: null, monthlyUsd: null }, projectBudgets: {}, modelBudgets: {}, routines: [] };
     let stored = {};
     let parsedOk = false;
     try {
@@ -1537,6 +1538,31 @@ export class Hub {
     this.save();
     this.broadcast('budget', this.persisted.budget);
     return this.persisted.budget;
+  }
+
+  setModelBudget(model, patch) {
+    const key = String(model ?? '').trim();
+    if (!/^[\w./:#][\w./:#-]{0,199}$/.test(key)) throw Object.assign(new Error('Model tidak valid.'), { status: 400 });
+    const next = cleanLimits(this.persisted?.modelBudgets?.[key]);
+    if (isObject(patch)) {
+      for (const name of BUDGET_KEYS) {
+        if (!(name in patch)) continue;
+        const raw = patch[name];
+        if (raw === null || raw === '' || raw === 0) {
+          next[name] = null;
+          continue;
+        }
+        const value = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() ? Number(raw.trim().replace(',', '.')) : NaN;
+        if (!Number.isFinite(value) || value < 0 || value > BUDGET_MAX_USD) continue;
+        next[name] = value > 0 ? cents(value) : null;
+      }
+    }
+    this.persisted.modelBudgets ??= {};
+    if (BUDGET_KEYS.some((name) => next[name] > 0)) this.persisted.modelBudgets[key] = next;
+    else delete this.persisted.modelBudgets[key];
+    this.save();
+    this.broadcast('budget', this.persisted.budget);
+    return next;
   }
 
   /** The per-project budget now stored (all off when nothing real was saved). */

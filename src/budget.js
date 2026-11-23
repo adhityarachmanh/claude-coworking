@@ -90,11 +90,14 @@ export function cleanBudgetPatch(input) {
  * @param {number} [now] epoch ms (the windows are local calendar periods, see periodStart)
  * @returns {Record<'day'|'week'|'month', { usd: number, rows: number, known: number }>}
  */
-export function spend(ledger, now = Date.now(), projectId = null) {
+export function spend(ledger, now = Date.now(), projectId = null, model = null) {
   const at = isNumber(now) ? now : Date.now();
+  const wanted = typeof model === 'string' && model ? model : null;
   const out = {};
   for (const unit of WINDOW_UNITS) {
-    const rows = typeof ledger?.query === 'function' ? ledger.query({ accountId: 'all', projectId, from: periodStart(at, unit), to: at }) : [];
+    const rows = (typeof ledger?.query === 'function' ? ledger.query({ accountId: 'all', projectId, from: periodStart(at, unit), to: at }) : []).filter(
+      (row) => !wanted || row?.model === wanted || String(row?.model ?? '').split('#')[0] === wanted,
+    );
     let usd = 0;
     let known = 0;
     for (const row of rows) {
@@ -110,6 +113,25 @@ export function spend(ledger, now = Date.now(), projectId = null) {
 /** The limits currently stored in state.json (invalid values read as off). Per project when `projectId` is given. */
 export function limitsOf(hub, projectId = null) {
   return cleanLimits(projectId ? hub?.persisted?.projectBudgets?.[projectId] : hub?.persisted?.budget);
+}
+
+const MODEL_KEY = /^[\w./:#][\w./:#-]{0,199}$/;
+
+/** The global per-model limits (same windows as the project/global budget). */
+export function modelLimitsOf(hub, model) {
+  return MODEL_KEY.test(String(model ?? '')) ? cleanLimits(hub?.persisted?.modelBudgets?.[model]) : cleanLimits(null);
+}
+
+/** A stored/hand-edited per-model map: valid model ids and at least one real limit survive. */
+export function cleanModelBudgets(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [model, value] of Object.entries(raw).slice(0, 50)) {
+    if (!MODEL_KEY.test(model)) continue;
+    const limits = cleanLimits(value);
+    if (hasBudget(limits)) out[model] = limits;
+  }
+  return out;
 }
 
 /** The per-project budget map from a stored/hand-edited value: valid ids and at least one real limit survive. */
@@ -214,6 +236,26 @@ export function budgetView(hub, ledger, now = Date.now(), projectId = null) {
     };
   }
   const forecast = monthForecast(spent.month.usd, now);
+  // Per-model limits are global (one model across projects); the global view lists them for the settings section.
+  const models = [];
+  if (!projectId) {
+    for (const [model, rawLimits] of Object.entries(hub.persisted?.modelBudgets ?? {}).slice(0, 50)) {
+      const limits = cleanLimits(rawLimits);
+      if (!hasBudget(limits)) continue;
+      const perModel = spend(ledger, now, null, model);
+      let worst = null;
+      const modelWindows = {};
+      for (const unit of WINDOW_UNITS) {
+        const limit = limits[WINDOW_LIMITS[unit]];
+        const usd = perModel[unit].usd;
+        const ratio = limit ? usd / limit : 0;
+        modelWindows[unit] = { limit, usd, percent: limit ? Math.round(ratio * 1e4) / 1e4 : 0, state: !limit ? 'off' : ratio >= 1 ? 'over' : ratio >= WARN_RATIO ? 'warn' : 'ok' };
+        if (!limit) continue;
+        if (!worst || ratio > worst.ratio) worst = { unit, usd, limit, ratio };
+      }
+      models.push({ model, windows: modelWindows, worst, coverage: perModel.day });
+    }
+  }
   // The global view also carries the projects that have their own limit, for the dashboard badge (most urgent window).
   const projects = [];
   if (!projectId) {
@@ -240,7 +282,7 @@ export function budgetView(hub, ledger, now = Date.now(), projectId = null) {
       });
     }
   }
-  return { budget, spend: spent, windows, forecast, trend: dailyTrend(ledger, now, projectId), projects, note: budgetNote(spent, projectId) };
+  return { budget, spend: spent, windows, forecast, trend: dailyTrend(ledger, now, projectId), projects, models, note: budgetNote(spent, projectId) };
 }
 
 /**
@@ -248,7 +290,7 @@ export function budgetView(hub, ledger, now = Date.now(), projectId = null) {
  * message for the user. A running turn is never cut; the next prompt, plan build, or queue item is refused.
  * @returns {{ windows: string[], label: string, message: string }|null}
  */
-export function budgetStop(hub, ledger, now = Date.now(), projectId = null) {
+export function budgetStop(hub, ledger, now = Date.now(), projectId = null, model = null) {
   const scopes = [{ project: false, view: budgetView(hub, ledger, now) }];
   if (projectId) scopes.push({ project: true, view: budgetView(hub, ledger, now, projectId) });
   const over = [];
@@ -258,11 +300,25 @@ export function budgetStop(hub, ledger, now = Date.now(), projectId = null) {
       over.push({ project, unit, label: `${project ? 'project ' : ''}${WINDOW_LABEL[unit]} ${usdText(view.windows[unit].usd)} / ${usdText(view.windows[unit].limit)}` });
     }
   }
+  // A concrete selected model can have its own ceiling; Auto has no model to check before the classifier picks one.
+  const wanted = typeof model === 'string' && MODEL_KEY.test(model) ? model : null;
+  if (wanted) {
+    const limits = modelLimitsOf(hub, wanted);
+    if (hasBudget(limits)) {
+      const spent = spend(ledger, now, null, wanted);
+      for (const unit of WINDOW_UNITS) {
+        const limit = limits[WINDOW_LIMITS[unit]];
+        if (!limit || spent[unit].usd < limit) continue;
+        over.push({ project: false, model: wanted, unit, label: `model ${wanted} ${WINDOW_LABEL[unit]} ${usdText(spent[unit].usd)} / ${usdText(limit)}` });
+      }
+    }
+  }
   if (!over.length) return null;
   const label = over.map((item) => item.label).join(' · ');
   return {
-    windows: over.filter((item) => !item.project).map((item) => item.unit),
+    windows: over.filter((item) => !item.project && !item.model).map((item) => item.unit),
     projectWindows: over.filter((item) => item.project).map((item) => item.unit),
+    modelWindows: over.filter((item) => item.model).map((item) => item.unit),
     label,
     message: `⛔ Budget ${label} sudah tercapai. Pengiriman prompt dihentikan sampai batas dinaikkan atau dikosongkan di ⚙ Pengaturan → Umum → Budget pemakaian.`,
   };

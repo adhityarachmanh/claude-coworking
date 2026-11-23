@@ -1196,7 +1196,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
       if (decision.allow) {
         // The web route checked the budget before resolving; a phone notification answers directly, so check here.
         if (!decision.autoPrepared) {
-          const stop = budgetStop(this.m.hub, this.m.ledger, Date.now(), this.id);
+          const stop = budgetStop(this.m.hub, this.m.ledger, Date.now(), this.id, this.hub.settingsFor(this.id).model);
           if (stop && !consumeBudgetOverride(this.m.hub)) {
             this.hub.chat(this.id, { kind: 'info', level: 'warning', text: stop.message });
             return;
@@ -1224,7 +1224,7 @@ export function acpSessionClass(ClaudeSession, { previewInput }) {
         this.prompt(PLAN_APPROVED_PROMPT, [], autoExtra(auto)); // syncSettings switches the agent (or the process) before it is sent
       } else if (decision.message?.trim()) {
         // A revision is a new prompt to the plan agent: classify it too, so the bubble carries the same Auto tags.
-        const stop = budgetStop(this.m.hub, this.m.ledger, Date.now(), this.id);
+        const stop = budgetStop(this.m.hub, this.m.ledger, Date.now(), this.id, this.hub.settingsFor(this.id).model);
         if (stop && !consumeBudgetOverride(this.m.hub)) {
           this.hub.chat(this.id, { kind: 'info', level: 'warning', text: stop.message });
           return;

@@ -1046,6 +1046,18 @@
             <p id="budget-stop" class="field-error" role="alert" hidden></p>
             <button type="button" id="budget-override" class="ghost" hidden>Izinkan 1 giliran</button>
             <p id="budget-note" class="muted small">Batas biaya tercatat, bukan tagihan. OpenCode Go berlangganan, jadi budget ini terutama untuk Claude.</p>
+            <div id="budget-models" class="budget-models">
+              <b>Budget per model</b>
+              <ul id="budget-model-rows" class="budget-rows budget-model-rows" aria-live="polite"><li class="muted small">Memuat budget model.</li></ul>
+              <div class="budget-form">
+                <label class="budget-field"><span>Model</span><input id="budget-model-name" maxlength="200" autocomplete="off" spellcheck="false" placeholder="opus / openai/gpt-5" /></label>
+                <label class="budget-field"><span>Harian (USD)</span><input id="budget-m-daily" type="number" inputmode="decimal" min="0" max="10000" step="0.01" placeholder="tanpa batas" /></label>
+                <label class="budget-field"><span>Mingguan (USD)</span><input id="budget-m-weekly" type="number" inputmode="decimal" min="0" max="10000" step="0.01" placeholder="tanpa batas" /></label>
+                <label class="budget-field"><span>Bulanan (USD)</span><input id="budget-m-monthly" type="number" inputmode="decimal" min="0" max="10000" step="0.01" placeholder="tanpa batas" /></label>
+                <button type="button" id="budget-model-save" class="primary">Simpan model</button>
+              </div>
+              <p class="muted small">Berlaku untuk model itu di semua project. Model Auto tidak dicek sebelum classifier memilih model.</p>
+            </div>
             <details id="budget-audit" class="budget-audit">
               <summary>Riwayat perubahan budget</summary>
               <ul id="budget-audit-list"><li class="muted small">Buka untuk memuat riwayat…</li></ul>

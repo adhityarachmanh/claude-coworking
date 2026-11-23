@@ -267,7 +267,7 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
     }
   };
   const view = (await api('/api/budget', {})).body.budget;
-  assert.deepEqual(Object.keys(view).sort(), ['budget', 'forecast', 'note', 'projectId', 'projects', 'spend', 'trend', 'windows']);
+  assert.deepEqual(Object.keys(view).sort(), ['budget', 'forecast', 'models', 'note', 'projectId', 'projects', 'spend', 'trend', 'windows']);
   assert.deepEqual(Object.keys(view.forecast).sort(), ['dailyUsd', 'daysInMonth', 'elapsedDays', 'monthUsd', 'projectedUsd']);
   assert.ok(view.forecast.projectedUsd >= 0);
   assert.equal(view.trend.length, 7, 'tujuh hari terakhir');
@@ -301,6 +301,10 @@ test('💰 batas pemakaian: /api/budget shape, save validation + persistence, he
   const b = saved.body.budget;
   assert.deepEqual(b.budget, { dailyUsd: 20, weeklyUsd: null, monthlyUsd: 100 });
   assert.equal(b.windows.day.limit, 20);
+  const modelSave = await api('/api/budget/save', { model: 'opus', dailyUsd: 1 });
+  assert.equal(modelSave.status, 200, JSON.stringify(modelSave.body));
+  assert.equal(modelSave.body.budget.models[0].model, 'opus');
+  assert.equal((await api('/api/budget/save', { model: '--evil', dailyUsd: 1 })).status, 400);
   assert.deepEqual([b.windows.week.limit, b.windows.week.state], [null, 'off']);
   // the percentage always matches the ledger behind it (earlier fake turns may have left costs)
   for (const unit of ['day', 'week', 'month']) {

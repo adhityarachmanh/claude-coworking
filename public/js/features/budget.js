@@ -17,9 +17,9 @@ const WARN_AT = 0.8; // 80% of the limit: amber; 100%: red
 
 /** The three windows in display order; `field` is the save-body key, `input` the field in ⚙ → Umum. */
 const WINDOWS = [
-  { key: 'day', label: 'Harian', field: 'dailyUsd', input: '#budget-daily' },
-  { key: 'week', label: 'Mingguan', field: 'weeklyUsd', input: '#budget-weekly' },
-  { key: 'month', label: 'Bulanan', field: 'monthlyUsd', input: '#budget-monthly' },
+  { key: 'day', label: 'Harian', field: 'dailyUsd', input: '#budget-daily', modelInput: '#budget-m-daily' },
+  { key: 'week', label: 'Mingguan', field: 'weeklyUsd', input: '#budget-weekly', modelInput: '#budget-m-weekly' },
+  { key: 'month', label: 'Bulanan', field: 'monthlyUsd', input: '#budget-monthly', modelInput: '#budget-m-monthly' },
 ];
 
 const AMOUNT = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -76,7 +76,22 @@ export function normalizeBudgetView(raw) {
       window: ['day', 'week', 'month'].includes(p.window) ? p.window : 'month',
       state: ['ok', 'warn', 'over'].includes(p.state) ? p.state : 'ok',
     }));
-  return { rows, forecast, trend, projects, note: typeof view.note === 'string' ? view.note.trim().slice(0, 300) : '' };
+  const models = (Array.isArray(view.models) ? view.models : [])
+    .filter((m) => m && typeof m.model === 'string' && m.model)
+    .slice(0, 50)
+    .map((m) => {
+      const rows = {};
+      for (const w of WINDOWS) {
+        const win = m.windows && typeof m.windows[w.key] === 'object' ? m.windows[w.key] : {};
+        const limit = amount(win.limit) ?? 0;
+        const used = amount(win.usd) ?? 0;
+        const percent = limit > 0 ? used / limit : null;
+        rows[w.key] = { limit, usd: used, percent, tone: limit <= 0 ? 'off' : percent >= 1 ? 'over' : percent >= WARN_AT ? 'warn' : 'ok' };
+      }
+      const worst = m.worst && typeof m.worst === 'object' ? { unit: ['day', 'week', 'month'].includes(m.worst.unit) ? m.worst.unit : 'month' } : null;
+      return { model: m.model, rows, worst };
+    });
+  return { rows, forecast, trend, projects, models, note: typeof view.note === 'string' ? view.note.trim().slice(0, 300) : '' };
 }
 
 /** "sisa $7,70" while there is room, "lewat $2,40" once the limit is passed. */
@@ -185,6 +200,17 @@ export function syncBudgetSection() {
     el.disabled = disabled;
     el.title = blocked ? READ_ONLY_HINT : '';
   }
+  // Per-model limits are global; the project scope hides that block instead of showing stale global numbers.
+  const models = $('#budget-models');
+  if (models) models.hidden = blocked || Boolean(budgetView.scope);
+  for (const sel of ['#budget-model-name', ...WINDOWS.map((w) => w.modelInput)]) {
+    const el = $(sel);
+    if (!el) continue;
+    el.disabled = disabled || Boolean(budgetView.scope);
+    el.title = blocked || budgetView.scope ? READ_ONLY_HINT : '';
+  }
+  const modelSave = $('#budget-model-save');
+  if (modelSave) modelSave.disabled = disabled || Boolean(budgetView.scope);
   const btn = $('#budget-save');
   if (btn) {
     btn.disabled = disabled;
@@ -227,6 +253,7 @@ function renderBudget() {
     }
   }
   syncBudgetSection();
+  renderModelRows();
 }
 
 /** One request at a time; the in-memory view is reused unless `force` (a first open with no data asks once). */
@@ -340,10 +367,72 @@ async function loadBudgetAudit() {
   }
 }
 
+/** Per-model limits: one short row per model, worst window first. Remove clears the model's three limits. */
+function modelRowsHtml(view = budgetView.data) {
+  if (!view?.models?.length) return '<li class="muted small">Belum ada budget per model.</li>';
+  return view.models
+    .map((m) => {
+      const unit = m.worst?.unit ?? 'month';
+      const row = m.rows[unit] ?? m.rows.month;
+      const label = WINDOWS.find((w) => w.key === unit)?.label ?? 'Bulanan';
+      return `<li class="budget-row ${row.tone}">
+        <span class="budget-window" title="${escapeHtml(m.model)}">${escapeHtml(m.model)}</span>
+        <span class="budget-main"><span class="budget-amount">${label}: ${usdText(row.usd)} / ${limitText(row.limit)}</span><span class="budget-rest">${restText(row)}</span></span>
+        <button type="button" class="ghost danger-text" data-budget-model-remove="${escapeHtml(m.model)}">Hapus</button>
+      </li>`;
+    })
+    .join('');
+}
+
+function renderModelRows() {
+  const box = $('#budget-model-rows');
+  if (box) box.innerHTML = budgetView.data ? modelRowsHtml() : '<li class="muted small">Belum ada data budget model.</li>';
+}
+
+async function saveModelBudget() {
+  const model = $('#budget-model-name').value.trim();
+  if (!model) return showBudgetError('Isi nama model dulu.', null);
+  const body = { model };
+  for (const w of WINDOWS) body[w.field] = ($(w.modelInput)?.value ?? '').trim();
+  budgetView.saving = true;
+  syncBudgetSection();
+  try {
+    const data = await api(SAVE, body);
+    budgetView.data = normalizeBudgetView(data.budget);
+    budgetView.error = null;
+    budgetView.fieldsKey = null;
+    showBudgetError('');
+    toast(`Budget model ${model} tersimpan.`, 'ok');
+  } catch (err) {
+    showBudgetError(`Gagal menyimpan budget model: ${err?.message ?? 'tidak diketahui'}`);
+  } finally {
+    budgetView.saving = false;
+    syncBudgetSection();
+    renderBudget();
+    renderModelRows();
+  }
+}
+
 export function initBudget() {
   const save = $('#budget-save');
   if (!save) return;
   save.addEventListener('click', () => saveBudget());
+  $('#budget-model-save')?.addEventListener('click', saveModelBudget);
+  $('#budget-model-rows')?.addEventListener('click', async (e) => {
+    const button = e.target.closest('[data-budget-model-remove]');
+    if (!button) return;
+    const model = button.dataset.budgetModelRemove;
+    if (!window.confirm(`Hapus budget model ${model}?`)) return;
+    try {
+      await api(SAVE, { model, dailyUsd: null, weeklyUsd: null, monthlyUsd: null });
+      budgetView.data = normalizeBudgetView((await api('/api/budget', {})).budget);
+      toast(`Budget model ${model} dihapus.`, 'ok');
+      renderBudget();
+      renderModelRows();
+    } catch (err) {
+      showBudgetError(`Gagal menghapus budget model: ${err?.message ?? 'tidak diketahui'}`);
+    }
+  });
   $('#budget-audit')?.addEventListener('toggle', (e) => {
     if (e.target.open) loadBudgetAudit();
   });
