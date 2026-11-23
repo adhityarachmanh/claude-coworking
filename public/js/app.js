@@ -79,6 +79,7 @@ import { initSavedPermissions } from './features/opencode-saved-permissions.js';
 import { initInsights } from './features/insights.js';
 import { initCompare } from './features/compare.js';
 import { initArchiveAsk } from './features/archive-ask.js';
+import { initAutomations } from './features/opencode-automations.js';
 import { initPullRequest } from './features/pull-request.js';
 import { initSettings } from './features/settings.js';
 import { initSpotify } from './features/spotify.js';
@@ -137,6 +138,7 @@ initSavedPermissions(); // 🛡️ izin tersimpan OpenCode
 initInsights(); // 📈 pola kerja
 initCompare(); // ⚖️ bandingkan dua model
 initArchiveAsk(); // 💬 tanya arsip
+initAutomations(); // ⏰ automation OpenCode
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initHeaderMore();

@@ -24,6 +24,7 @@ import * as memory from './memory.js';
 import * as misc from './misc.js';
 import * as opencodeCheck from './opencode-check.js';
 import * as opencodeConfig from './opencode-config.js';
+import * as opencodeAutomations from './opencode-automations.js';
 import * as permissions from './permissions.js';
 import * as projects from './projects.js';
 import * as push from './push.js';
@@ -70,6 +71,7 @@ export function buildRouter() {
     insights.register,
     compare.register,
     archive.register,
+    opencodeAutomations.register,
     cliBridge.register,
     templates.register,
     team.register,

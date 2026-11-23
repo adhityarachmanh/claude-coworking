@@ -163,6 +163,7 @@
               <button role="menuitem" data-more="insights" title="Pola kerja 7/30/90 hari: biaya, token, project, model, dan jam tersibuk">📈 Pola kerja…</button>
               <button role="menuitem" data-more="compare" title="Jalankan pertanyaan yang sama ke dua model Claude, lihat jawaban dan biayanya">⚖️ Bandingkan model…</button>
               <button role="menuitem" data-more="archive-ask" title="Tanya lintas transkrip sesi lama; jawaban hanya dari kutipan arsip">💬 Tanya arsip…</button>
+              <button role="menuitem" data-more="oc-automations" title="Jadwal prompt/Code Mode OpenCode untuk project ini (OpenCode 2.4)">⏰ Automation OpenCode…</button>
               <button role="menuitem" data-more="oc-saved-permissions" data-cap="permissions" title="Izin “Selalu izinkan” OpenCode yang tersimpan di laptop ini">🛡️ Izin tersimpan OpenCode…</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
@@ -1567,6 +1568,41 @@
       </div>
     </div>
 
+    <div id="oc-automations-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="oc-auto-title">
+        <div class="modal-head"><b id="oc-auto-title">Automation OpenCode</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Jadwal berjalan di OpenCode, bukan di Adhitron: prompt atau skrip Code Mode dijalankan otomatis di folder project ini (tetap memakai kuota). Membuat/mengubah hanya dari laptop.</p>
+        <p id="oc-auto-error" class="field-error" role="alert"></p>
+        <ul id="oc-auto-list" class="oc-auto-list"></ul>
+        <details class="oc-backups" id="oc-auto-create">
+          <summary>＋ Automation baru</summary>
+          <div class="oc-form-grid">
+            <label class="oc-field"><span>Nama</span><input id="oc-auto-name" maxlength="80" autocomplete="off" placeholder="Cek build tiap pagi" /></label>
+            <label class="oc-field"><span>Jadwal</span><select id="oc-auto-trigger">
+              <option value="every">Tiap interval</option>
+              <option value="cron">Cron</option>
+              <option value="at">Sekali waktu</option>
+              <option value="event">Event MCP</option>
+            </select></label>
+          </div>
+          <div class="oc-form-grid" data-trigger-field="every"><label class="oc-field"><span>Interval</span><input id="oc-auto-every" maxlength="60" placeholder="1 hour / 90 seconds" /></label></div>
+          <div class="oc-form-grid" data-trigger-field="cron"><label class="oc-field"><span>Cron (5 field)</span><input id="oc-auto-cron" maxlength="120" placeholder="0 9 * * 1-5" /></label></div>
+          <div class="oc-form-grid" data-trigger-field="at"><label class="oc-field"><span>Waktu</span><input id="oc-auto-at" maxlength="120" placeholder="in 20 minutes / 2026-11-27T09:00" /></label></div>
+          <div class="oc-form-grid" data-trigger-field="event">
+            <label class="oc-field"><span>Server MCP</span><input id="oc-auto-server" maxlength="100" placeholder="ci" /></label>
+            <label class="oc-field"><span>Event</span><input id="oc-auto-event" maxlength="120" placeholder="build.failed" /></label>
+          </div>
+          <div class="oc-form-grid">
+            <label class="oc-field"><span>Isi</span><select id="oc-auto-action"><option value="prompt">Prompt</option><option value="code">Skrip Code Mode</option></select></label>
+            <label class="oc-field"><span>Berakhir (opsional)</span><input id="oc-auto-expires" maxlength="60" placeholder="7 days" /></label>
+          </div>
+          <label class="oc-field" data-action-field="prompt"><span>Prompt yang dikirim</span><textarea id="oc-auto-prompt" rows="3" maxlength="4000" placeholder="Periksa build terakhir dan laporkan yang gagal."></textarea></label>
+          <label class="oc-field" data-action-field="code"><span>Kode Code Mode</span><textarea id="oc-auto-code" rows="5" maxlength="20000" spellcheck="false" placeholder="return { done: true }"></textarea></label>
+          <div class="acct-actions"><button type="button" id="oc-auto-save" class="primary">Simpan automation</button></div>
+        </details>
+      </div>
+    </div>
+
     <div id="archive-modal" class="modal" hidden>
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="archive-title">
         <div class="modal-head"><b id="archive-title">Tanya arsip</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
@@ -2043,6 +2079,7 @@
           <button type="button" class="sheet-row" data-proxy="[data-more='insights']"><span aria-hidden="true">📈</span><span>Pola kerja</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='compare']"><span aria-hidden="true">⚖️</span><span>Bandingkan model</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='archive-ask']"><span aria-hidden="true">💬</span><span>Tanya arsip</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='oc-automations']"><span aria-hidden="true">⏰</span><span>Automation OpenCode</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='oc-saved-permissions']" data-mutates data-cap="permissions"><span aria-hidden="true">🛡️</span><span>Izin tersimpan OpenCode</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>

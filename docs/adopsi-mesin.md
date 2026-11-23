@@ -69,6 +69,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Plugins | 🧩 Plugin OpenCode | ✅ |
 | MCP servers | 🔌 MCP; status/reconnect/disable/login; field lanjutan (`timeout`, `codemode`, `pool`, `protocol`, `disabled`) lewat tab JSON | ✅ |
 | Worktree | ⎇ Worktree (aplikasi) | ✅ |
+| Automations (2.4) | ⏰ Automation OpenCode: prompt/Code Mode, interval/cron/sekali/event MCP, jeda/lanjut/hapus | ✅ |
 | `opencode uninstall/share/run/service get-set-unset/debug heap-dump/mini/serve/acp/api/pair/ci` | internal/khusus terminal/berisiko | 🚫 |
 
 ## Fitur di luar CLI (pembeda Adhitron)
