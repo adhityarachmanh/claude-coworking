@@ -2,6 +2,10 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
+## 1.6.1
+
+- **Perbaikan rilis 1.6.0.** Pemeriksaan budget per model kini aman saat hub tidak menyediakan `settingsFor` (unit test antrean memakai hub palsu), dan ekspresi model di sesi OpenCode diperbaiki. Tidak ada perubahan perilaku untuk pengguna.
+
 ## 1.6.0
 
 - **📅 Rekap mingguan.** Di ⋯ → **Pola kerja** ada **Buat rekap 7 hari**: ringkasan Markdown berisi biaya, token, permintaan, sesi, project aktif, jam tersibuk, dan tabel project/model — dihitung dari ledger tanpa memanggil model, lalu bisa disalin.
