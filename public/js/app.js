@@ -75,6 +75,7 @@ import { initOpenCodeCommands } from './features/opencode-commands.js';
 import { initClaudeFlags } from './features/claude-flags.js';
 import { initPurge } from './features/claude-purge.js';
 import { initPromptSuggestion } from './features/prompt-suggestion.js';
+import { initSavedPermissions } from './features/opencode-saved-permissions.js';
 import { initPullRequest } from './features/pull-request.js';
 import { initSettings } from './features/settings.js';
 import { initSpotify } from './features/spotify.js';
@@ -129,6 +130,7 @@ initOpenCodeCommands(); // 📝 OpenCode .opencode/commands editor
 initClaudeFlags(); // ⚙️ flag Claude per project (spawn args)
 initPurge(); // 🧹 hapus data Claude Code satu project
 initPromptSuggestion(); // 💡 saran prompt berikutnya mengisi kotak, tidak mengirim
+initSavedPermissions(); // 🛡️ izin tersimpan OpenCode
 initPullRequest(); // ⇡ PR (gh)
 initMoreMenu();
 initHeaderMore();

@@ -3,7 +3,7 @@
 // The status itself reaches every browser through the config (config.opencodeCheck); WiFi read-only phones are refused
 // by the default-deny allowlist.
 import { OPENCODE_SETTING_KEYS } from '../opencode-check.js';
-import { addOpenCodePlugin, checkOpenCodePlugins, listOpenCodePlugins, OpenCodeAdminError, openCodeInfo, openCodeService, openCodeStats, reloadOpenCode, removeOpenCodePlugin, restartOpenCodeService, updateOpenCode, updateOpenCodePlugins } from '../opencode-admin.js';
+import { addOpenCodePlugin, checkOpenCodePlugins, listOpenCodePlugins, listSavedPermissions, OpenCodeAdminError, openCodeInfo, openCodeService, openCodeStats, reloadOpenCode, removeOpenCodePlugin, removeSavedPermission, restartOpenCodeService, updateOpenCode, updateOpenCodePlugins } from '../opencode-admin.js';
 import { json } from './http.js';
 
 let maintenanceBusy = false;
@@ -72,6 +72,26 @@ export function register(router) {
       return json(res, err.status ?? 502, { error: err.message });
     } finally {
       maintenanceBusy = false;
+    }
+  }, { maxBody: 1024 });
+
+  // 🛡️ Izin tersimpan OpenCode ("Allow always"): read from laptop/Tailscale, remove from the laptop only. Deleting a
+  // rule never touches a running turn; the next matching call simply asks again.
+  router.post('/api/opencode-permissions/saved', async ({ opencode }, req, res) => {
+    if (!opencode) return json(res, 404, { error: 'OpenCode tidak ditemukan.' });
+    try {
+      return json(res, 200, { permissions: await listSavedPermissions(opencode) });
+    } catch (err) {
+      return json(res, err.status ?? 502, { error: err.message });
+    }
+  }, { maxBody: 1024 });
+  router.post('/api/opencode-permissions/remove', async ({ opencode, isLocal }, req, res, params, body) => {
+    if (!opencode) return json(res, 404, { error: 'OpenCode tidak ditemukan.' });
+    if (!isLocal(req)) return json(res, 403, { error: 'Hanya dari laptop.' });
+    try {
+      return json(res, 200, await removeSavedPermission(opencode, body?.id));
+    } catch (err) {
+      return json(res, err.status ?? 502, { error: err.message });
     }
   }, { maxBody: 1024 });
 

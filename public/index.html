@@ -160,6 +160,7 @@
               <button role="menuitem" data-more="claude-flags" data-cap="permissions" title="Flag Claude per project: model cadangan, batas giliran/anggaran, tool, sumber setting">⚙️ Flag Claude…</button>
               <button role="menuitem" data-more="auto-mode" data-cap="permissions" title="Aturan classifier Auto mode Claude (semua project, laptop)">🎛️ Auto mode Claude…</button>
               <button role="menuitem" data-more="purge" data-cap="permissions" title="Hapus riwayat, memory, dan snapshot Claude Code untuk project ini (bukan folder project)">🧹 Bersihkan data Claude…</button>
+              <button role="menuitem" data-more="oc-saved-permissions" data-cap="permissions" title="Izin “Selalu izinkan” OpenCode yang tersimpan di laptop ini">🛡️ Izin tersimpan OpenCode…</button>
               <button role="menuitem" data-more="roster">👥 Kelola tim (/team)</button>
               <button role="menuitem" data-more="terminal">⌨ Salin perintah lanjut di terminal</button>
               <button role="menuitem" data-more="code" class="local-only">🧭 Buka project di VS Code</button>
@@ -1557,6 +1558,16 @@
       </div>
     </div>
 
+    <div id="oc-perm-modal" class="modal" hidden>
+      <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="oc-perm-title">
+        <div class="modal-head"><b id="oc-perm-title">Izin tersimpan OpenCode</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
+        <p class="muted small">Izin “Selalu izinkan” yang tersimpan di laptop ini. Menghapus satu izin membuat permintaan berikutnya kembali bertanya; giliran yang sedang berjalan tidak terpengaruh.</p>
+        <p id="oc-perm-error" class="field-error" role="alert"></p>
+        <ul id="oc-perm-list" class="perm-list"></ul>
+        <div class="acct-actions"><button type="button" class="ghost" data-close>Tutup</button></div>
+      </div>
+    </div>
+
     <div id="purge-modal" class="modal" hidden>
       <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="purge-title">
         <div class="modal-head"><b id="purge-title">Bersihkan data Claude</b><button class="icon-btn" data-close title="Tutup" aria-label="Tutup">✕</button></div>
@@ -1975,6 +1986,7 @@
           <button type="button" class="sheet-row" data-proxy="[data-more='claude-flags']" data-mutates data-cap="permissions"><span aria-hidden="true">⚙️</span><span>Flag Claude</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='auto-mode']" data-mutates data-cap="permissions"><span aria-hidden="true">🎛️</span><span>Auto mode Claude</span></button>
           <button type="button" class="sheet-row" data-proxy="[data-more='purge']" data-mutates data-cap="permissions"><span aria-hidden="true">🧹</span><span>Bersihkan data Claude</span></button>
+          <button type="button" class="sheet-row" data-proxy="[data-more='oc-saved-permissions']" data-mutates data-cap="permissions"><span aria-hidden="true">🛡️</span><span>Izin tersimpan OpenCode</span></button>
         </div>
         <div class="sheet-group" role="group" aria-labelledby="hm-g-chat" data-view="chat" data-needs-project>
           <h3 id="hm-g-chat" class="sheet-group-head">Percakapan</h3>

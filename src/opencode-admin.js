@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { clearSessionCache } from './opencode-bin.js';
 import { childEnv } from './child-env.js';
+import { openCodeApi } from './opencode-auth.js';
 import { execFileTree } from './proc.js';
 
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
@@ -199,4 +200,37 @@ export async function importOpenCodeSession({ opencode, projectPath, data, timeo
   clearSessionCache(projectPath);
   const sessionId = result.output.match(/\bses_[\w-]{1,100}\b/)?.[0] ?? null;
   return { ok: true, sessionId, message: firstLine(result) };
+}
+
+// ---------- izin tersimpan ("Allow always") ----------
+
+const SAVED_PERMISSION_ID = /^[A-Za-z0-9_-]{1,200}$/;
+
+/**
+ * `permission.saved.list` (OpenAPI): the durable "Allow always" entries. They are not per session, so the app shows
+ * them all for this machine (an OpenCode project id is opaque to the app). Read-only.
+ */
+export async function listSavedPermissions(bin) {
+  if (!bin) throw new OpenCodeAdminError(404, 'OpenCode tidak ditemukan.');
+  const out = await openCodeApi(bin, 'permission.saved.list', { timeout: 60_000 });
+  const rows = Array.isArray(out) ? out : Array.isArray(out?.data) ? out.data : [];
+  return rows
+    .filter((p) => p && typeof p.id === 'string' && typeof p.action === 'string' && typeof p.resource === 'string')
+    .map((p) => ({
+      id: p.id,
+      projectID: String(p.projectID ?? ''),
+      action: p.action.slice(0, 200),
+      resource: p.resource.slice(0, 500),
+      created: Number.isFinite(p.time?.created) ? p.time.created : null,
+      updated: Number.isFinite(p.time?.updated) ? p.time.updated : null,
+    }));
+}
+
+/** `permission.saved.remove`: forget one durable allow so the next matching call asks again. */
+export async function removeSavedPermission(bin, id) {
+  if (!bin) throw new OpenCodeAdminError(404, 'OpenCode tidak ditemukan.');
+  const value = String(id ?? '');
+  if (!SAVED_PERMISSION_ID.test(value)) throw new OpenCodeAdminError(400, 'ID izin tidak valid.');
+  await openCodeApi(bin, 'permission.saved.remove', { params: { id: value }, timeout: 30_000 });
+  return { removed: true };
 }

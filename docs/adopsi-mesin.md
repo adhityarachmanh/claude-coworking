@@ -12,7 +12,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 |---|---|---|
 | Sesi & prompt (`claude -p`, resume, lanjut) | kotak pesan, Antrian, Riwayat/Riwayat Sesi, ▶ Lanjutkan | ✅ |
 | Model, effort, Mode tim | Pengaturan giliran (⚙), chip model/effort, /model /effort | ✅ |
-| Mode izin (Build/Plan/Auto + deny) | Mode (Shift+Tab), Aturan izin | ✅ |
+| Mode izin (Build/Plan/Auto + deny) | Mode (Shift+Tab), Aturan izin. `acceptEdits` dipetakan ke Build (auto-edit) dan `dontAsk` ke Plan (menolak semua yang bertanya), jadi mode Claude tidak muncul mentah di UI | ✅ |
 | Permission rules (allow/ask/deny) | Aturan izin (`/permissions`), kartu izin | ✅ |
 | Working dir & folder tambahan | 📂 Folder tambahan (`--add-dir`) | ✅ |
 | Memory (CLAUDE.md, rules, auto memory) | Editor Memory (`/memory`) | ✅ |
@@ -56,7 +56,7 @@ Status: ✅ = diadopsi (disebut lokasinya) · 🚫 = di luar cakupan sadar (dise
 | Commands (`.opencode/commands`) | 📝 Commands OpenCode | ✅ |
 | Skills | 🧩 Skills (Claude + OpenCode) | ✅ |
 | Memory (AGENTS.md) | Editor Memory | ✅ |
-| Permissions & Policies | Aturan izin (permissions) · 🛡️ Policies | ✅ |
+| Permissions & Policies | Aturan izin (permissions) · 🛡️ Policies · **izin tersimpan** (`permission.saved.list/remove`) bisa ditinjau dan dihapus | ✅ |
 | Instructions (`instructions`) | 📚 Instruksi tambahan (form config) | ✅ |
 | Web search (`websearch.provider`) | 🔎 Provider web search (form config) | ✅ |
 | Lampiran (teks, gambar, PDF) | kotak pesan; PDF dikirim sebagai `resource` blob ACP | ✅ |
