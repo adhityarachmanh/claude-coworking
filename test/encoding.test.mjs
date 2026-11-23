@@ -46,7 +46,7 @@ const MARKERS = [
   '📦 Paket', // the 🛡️ Aturan izin preset button ("📦 Paket &amp; test")
   '🛡️ Aturan izin', // the permissions modal head and the project button
   '🔀 Buat PR', // the PR button
-  '📊 Laporan penggunaan token', // the usage report modal head
+  'Laporan penggunaan token', // the usage report modal head
   '📱 Buka dari HP', // the phone modal head
   'Pengaturan giliran', // the turn-settings dialog (its emoji lives on the chip that opens it)
 ];
