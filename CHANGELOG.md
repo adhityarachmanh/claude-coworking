@@ -2,7 +2,7 @@
 
 Perubahan yang terasa oleh pengguna. Detail fitur ada di [README](README.md); panduan harian di [docs/PANDUAN.md](docs/PANDUAN.md).
 
-## Belum dirilis
+## 1.2.2
 
 - **Perbaikan cek versi & update Claude Code di aplikasi terpasang.** Update Claude Code saat aplikasi berjalan bisa menyisakan `bin/claude.exe` hilang. Di aplikasi terpasang (Node SEA), fallback lama menjalankan `cli-wrapper.cjs` dengan `Adhitron.exe` — bukan Node — sehingga cek versi/update selalu gagal. Aplikasi kini memakai binary native di paket platform (`claude-code-<platform>/claude.exe`) bila ada, dan hanya menjalankan `cli.js`/wrapper dengan executable Node yang benar.
 
